@@ -176,7 +176,7 @@ Only dispatch subagents for files listed in `.graphify_uncached.txt`. If all fil
 
 **Step B1 - Split into chunks**
 
-Load files from `.graphify_uncached.txt`.
+Load files from `.graphify_uncached.txt`. Split into chunks of 20-25 files each. Each image gets its own chunk (vision needs separate context). When splitting, group files from the same directory together so related artifacts land in the same chunk and cross-file relationships are more likely to be extracted.
 
 **Step B2 - Sequential extraction (OpenClaw)**
 

@@ -182,7 +182,7 @@ Only dispatch subagents for files listed in `graphify-out/.graphify_uncached.txt
 
 **Step B1 - Split into chunks**
 
-Load files from `graphify-out/.graphify_uncached.txt`. Split into chunks of 20-25 files each. Each image gets its own chunk (vision needs separate context).
+Load files from `graphify-out/.graphify_uncached.txt`. Split into chunks of 20-25 files each. Each image gets its own chunk (vision needs separate context). When splitting, group files from the same directory together so related artifacts land in the same chunk and cross-file relationships are more likely to be extracted.
 
 **Step B2 - Dispatch ALL subagents in a single message**
 
