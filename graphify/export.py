@@ -365,7 +365,7 @@ def to_html(
     legend_data = []
     for cid in sorted((community_labels or {}).keys()):
         color = COMMUNITY_COLORS[cid % len(COMMUNITY_COLORS)]
-        lbl = (community_labels or {}).get(cid, f"Community {cid}")
+        lbl = _html.escape(sanitize_label((community_labels or {}).get(cid, f"Community {cid}")))
         n = len(communities.get(cid, []))
         legend_data.append({"cid": cid, "color": color, "label": lbl, "count": n})
 

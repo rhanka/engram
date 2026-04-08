@@ -17,6 +17,11 @@ if [ -n "$GRAPHIFY_BIN" ]; then
         */env\\ *) GRAPHIFY_PYTHON="${_SHEBANG#*/env }" ;;
         *)         GRAPHIFY_PYTHON="$_SHEBANG" ;;
     esac
+    # Allowlist: only keep characters valid in a filesystem path to prevent
+    # injection if the shebang contains shell metacharacters
+    case "$GRAPHIFY_PYTHON" in
+        *[!a-zA-Z0-9/_.-]*) GRAPHIFY_PYTHON="python3" ;;
+    esac
     if ! "$GRAPHIFY_PYTHON" -c "import graphify" 2>/dev/null; then
         GRAPHIFY_PYTHON="python3"
     fi
