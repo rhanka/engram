@@ -5,7 +5,7 @@
 [![CI](https://github.com/safishamsi/graphify/actions/workflows/ci.yml/badge.svg?branch=v3)](https://github.com/safishamsi/graphify/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/graphifyy)](https://pypi.org/project/graphifyy/)
 
-**一个面向 AI 编码助手的技能。** 在 Claude Code、Codex、OpenCode 或 OpenClaw 中输入 `/graphify`，它会读取你的文件、构建知识图谱，并把原本不明显的结构关系还给你。更快理解代码库，找到架构决策背后的“为什么”。
+**一个面向 AI 编码助手的技能。** 在 Claude Code、Codex、OpenCode、OpenClaw、Factory Droid 或 Trae 中输入 `/graphify`，它会读取你的文件、构建知识图谱，并把原本不明显的结构关系还给你。更快理解代码库，找到架构决策背后的"为什么"。
 
 完全多模态。你可以直接丢进去代码、PDF、Markdown、截图、流程图、白板照片，甚至其他语言的图片 —— graphify 会用 Claude vision 从这些内容中提取概念和关系，并把它们连接到同一张图里。
 
@@ -33,7 +33,7 @@ graphify 分两轮执行。第一轮是确定性的 AST 提取，对代码文件
 
 ## 安装
 
-**要求：** Python 3.10+，并且使用以下平台之一：[Claude Code](https://claude.ai/code)、[Codex](https://openai.com/codex)、[OpenCode](https://opencode.ai) 或 [OpenClaw](https://openclaw.ai)
+**要求：** Python 3.10+，并且使用以下平台之一：[Claude Code](https://claude.ai/code)、[Codex](https://openai.com/codex)、[OpenCode](https://opencode.ai)、[OpenClaw](https://openclaw.ai)、[Factory Droid](https://factory.ai) 或 [Trae](https://trae.com)
 
 ```bash
 pip install graphifyy && graphify install
@@ -49,8 +49,11 @@ pip install graphifyy && graphify install
 | Codex | `graphify install --platform codex` |
 | OpenCode | `graphify install --platform opencode` |
 | OpenClaw | `graphify install --platform claw` |
+| Factory Droid | `graphify install --platform droid` |
+| Trae | `graphify install --platform trae` |
+| Trae CN | `graphify install --platform trae-cn` |
 
-Codex 用户还需要在 `~/.codex/config.toml` 的 `[features]` 下打开 `multi_agent = true`，这样才能并行提取。OpenClaw 目前的并行 agent 支持还比较早期，所以使用顺序提取。
+Codex 用户还需要在 `~/.codex/config.toml` 的 `[features]` 下打开 `multi_agent = true`，这样才能并行提取。OpenClaw 目前的并行 agent 支持还比较早期，所以使用顺序提取。Trae 使用 Agent 工具进行并行子代理调度，**不支持** PreToolUse hook，因此 AGENTS.md 是其常驻机制。
 
 然后打开你的 AI 编码助手，输入：
 
@@ -68,6 +71,9 @@ Codex 用户还需要在 `~/.codex/config.toml` 的 `[features]` 下打开 `mult
 | Codex | `graphify codex install` |
 | OpenCode | `graphify opencode install` |
 | OpenClaw | `graphify claw install` |
+| Factory Droid | `graphify droid install` |
+| Trae | `graphify trae install` |
+| Trae CN | `graphify trae-cn install` |
 
 **Claude Code** 会做两件事：
 1. 在 `CLAUDE.md` 中写入一段规则，告诉 Claude 在回答架构问题前先读 `graphify-out/GRAPH_REPORT.md`
@@ -75,7 +81,7 @@ Codex 用户还需要在 `~/.codex/config.toml` 的 `[features]` 下打开 `mult
 
 如果知识图谱存在，Claude 会先看到：_"graphify: Knowledge graph exists. Read graphify-out/GRAPH_REPORT.md for god nodes and community structure before searching raw files."_ —— 这样 Claude 会优先按图谱导航，而不是一上来就 grep 整个项目。
 
-**Codex、OpenCode、OpenClaw** 会把同样的规则写进项目根目录的 `AGENTS.md`。这些平台没有 PreToolUse hook，所以 `AGENTS.md` 是它们的常驻机制。
+**Codex、OpenCode、OpenClaw、Factory Droid、Trae** 会把同样的规则写进项目根目录的 `AGENTS.md`。这些平台没有 PreToolUse hook，所以 `AGENTS.md` 是它们的常驻机制。
 
 卸载时使用对应平台的 uninstall 命令即可（例如 `graphify claude uninstall`）。
 
@@ -146,6 +152,11 @@ graphify claude uninstall
 graphify codex install             # AGENTS.md（Codex）
 graphify opencode install          # AGENTS.md（OpenCode）
 graphify claw install              # AGENTS.md（OpenClaw）
+graphify droid install             # AGENTS.md（Factory Droid）
+graphify trae install              # AGENTS.md（Trae）
+graphify trae uninstall
+graphify trae-cn install           # AGENTS.md（Trae CN）
+graphify trae-cn uninstall
 ```
 
 支持混合文件类型：

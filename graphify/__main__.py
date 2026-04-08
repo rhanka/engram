@@ -72,6 +72,16 @@ _PLATFORM_CONFIG: dict[str, dict] = {
         "skill_dst": Path(".factory") / "skills" / "graphify" / "SKILL.md",
         "claude_md": False,
     },
+    "trae": {
+        "skill_file": "skill-trae.md",
+        "skill_dst": Path(".trae") / "skills" / "graphify" / "SKILL.md",
+        "claude_md": False,
+    },
+    "trae-cn": {
+        "skill_file": "skill-trae.md",
+        "skill_dst": Path(".trae-cn") / "skills" / "graphify" / "SKILL.md",
+        "claude_md": False,
+    },
     "windows": {
         "skill_file": "skill-windows.md",
         "skill_dst": Path(".claude") / "skills" / "graphify" / "SKILL.md",
@@ -373,7 +383,7 @@ def main() -> None:
         print("Usage: graphify <command>")
         print()
         print("Commands:")
-        print("  install [--platform P]  copy skill to platform config dir (claude|windows|codex|opencode|claw|droid)")
+        print("  install [--platform P]  copy skill to platform config dir (claude|windows|codex|opencode|claw|droid|trae|trae-cn)")
         print("  query \"<question>\"       BFS traversal of graph.json for a question")
         print("    --dfs                   use depth-first instead of breadth-first")
         print("    --budget N              cap output at N tokens (default 2000)")
@@ -391,7 +401,11 @@ def main() -> None:
         print("  claw install            write graphify section to AGENTS.md (OpenClaw)")
         print("  claw uninstall          remove graphify section from AGENTS.md")
         print("  droid install           write graphify section to AGENTS.md (Factory Droid)")
-        print("  droid uninstall         remove graphify section from AGENTS.md")
+        print("  droid uninstall        remove graphify section from AGENTS.md")
+        print("  trae install            write graphify section to AGENTS.md (Trae)")
+        print("  trae uninstall         remove graphify section from AGENTS.md")
+        print("  trae-cn install         write graphify section to AGENTS.md (Trae CN)")
+        print("  trae-cn uninstall      remove graphify section from AGENTS.md")
         print()
         return
 
@@ -421,7 +435,7 @@ def main() -> None:
         else:
             print("Usage: graphify claude [install|uninstall]", file=sys.stderr)
             sys.exit(1)
-    elif cmd in ("codex", "opencode", "claw", "droid"):
+    elif cmd in ("codex", "opencode", "claw", "droid", "trae", "trae-cn"):
         subcmd = sys.argv[2] if len(sys.argv) > 2 else ""
         if subcmd == "install":
             _agents_install(Path("."), cmd)

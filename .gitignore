@@ -19,3 +19,6 @@ graphify-out/
 .claude/
 skills/
 docs/superpowers/
+.vscode/
+openspec/
+uv.lock
