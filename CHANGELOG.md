@@ -2,6 +2,19 @@
 
 Full release notes with details on each version: [GitHub Releases](https://github.com/safishamsi/graphify/releases)
 
+## 0.3.15 (2026-04-08)
+
+- Feat: Trae and Trae CN platform support (`graphify install --platform trae` / `trae-cn`)
+- Fix: `skill-droid.md` was missing from PyPI package data — Factory Droid users couldn't install the skill
+- Fix: XSS in HTML legend — community labels now HTML-escaped before `innerHTML` injection
+- Fix: Shebang allowlist validation in `hooks.py` and all 6 skill files — prevents metacharacter injection from malicious binaries
+- Fix: `louvain_communities()` kwargs now inspected at runtime for cross-version NetworkX compatibility
+- Fix: pipx installs now detected correctly in git hooks (reads shebang from graphify binary)
+- Fix: graspologic ANSI escape codes no longer corrupt PowerShell 5.1 scroll buffer
+- Docs: Japanese README added
+- Docs: `graph.json` + LLM workflow example added to README
+- Docs: Codex PreToolUse hook now documented in platform table
+
 ## 0.3.14 (2026-04-08)
 
 - Fix: `graphify codex install` now also writes a PreToolUse hook to `.codex/hooks.json` so the graph reminder fires before every Bash tool call (#86)
