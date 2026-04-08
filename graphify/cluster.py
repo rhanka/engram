@@ -1,8 +1,8 @@
 """Community detection on NetworkX graphs. Uses Leiden (graspologic) if available, falls back to Louvain (networkx). Splits oversized communities. Returns cohesion scores."""
 from __future__ import annotations
 import contextlib
+import inspect
 import io
-import os
 import sys
 import networkx as nx
 
@@ -42,10 +42,13 @@ def _partition(G: nx.Graph) -> dict[str, int]:
     except ImportError:
         pass
 
-    # Fallback: networkx louvain (available since networkx 2.7)
-    # max_level=10 and threshold=1e-4 prevent indefinite hangs on large sparse graphs
-    # while producing equivalent community quality to the defaults on typical corpora
-    communities = nx.community.louvain_communities(G, seed=42, max_level=10, threshold=1e-4)
+    # Fallback: networkx louvain (available since networkx 2.7).
+    # Inspect kwargs to stay compatible across NetworkX versions — max_level
+    # was added in a later release and prevents hangs on large sparse graphs.
+    kwargs: dict = {"seed": 42, "threshold": 1e-4}
+    if "max_level" in inspect.signature(nx.community.louvain_communities).parameters:
+        kwargs["max_level"] = 10
+    communities = nx.community.louvain_communities(G, **kwargs)
     return {node: cid for cid, nodes in enumerate(communities) for node in nodes}
 
 
