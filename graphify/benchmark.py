@@ -76,7 +76,10 @@ def run_benchmark(
     Returns dict with: corpus_tokens, avg_query_tokens, reduction_ratio, per_question
     """
     data = json.loads(Path(graph_path).read_text())
-    G = json_graph.node_link_graph(data, edges="links")
+    try:
+        G = json_graph.node_link_graph(data, edges="links")
+    except TypeError:
+        G = json_graph.node_link_graph(data)
 
     if corpus_words is None:
         # Rough estimate: each node label is ~3 words, plus source context

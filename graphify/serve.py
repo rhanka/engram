@@ -12,7 +12,10 @@ def _load_graph(graph_path: str) -> nx.Graph:
     try:
         safe = validate_graph_path(graph_path)
         data = json.loads(safe.read_text())
-        return json_graph.node_link_graph(data, edges="links")
+        try:
+            return json_graph.node_link_graph(data, edges="links")
+        except TypeError:
+            return json_graph.node_link_graph(data)
     except (ValueError, FileNotFoundError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(1)

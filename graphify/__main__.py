@@ -502,7 +502,11 @@ def main() -> None:
         try:
             import json as _json
             import networkx as _nx
-            G = json_graph.node_link_graph(_json.loads(gp.read_text(encoding="utf-8")), edges="links")
+            _raw = _json.loads(gp.read_text(encoding="utf-8"))
+            try:
+                G = json_graph.node_link_graph(_raw, edges="links")
+            except TypeError:
+                G = json_graph.node_link_graph(_raw)
         except Exception as exc:
             print(f"error: could not load graph: {exc}", file=sys.stderr)
             sys.exit(1)

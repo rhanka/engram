@@ -2362,6 +2362,7 @@ def extract(paths: list[Path]) -> dict:
     _DISPATCH: dict[str, Any] = {
         ".py": extract_python,
         ".js": extract_js,
+        ".jsx": extract_js,
         ".ts": extract_js,
         ".tsx": extract_js,
         ".go": extract_go,
