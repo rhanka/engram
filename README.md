@@ -270,7 +270,7 @@ NetworkX + Leiden (graspologic) + tree-sitter + vis.js. Semantic extraction via 
 
 ## Star history
 
-[![Star History Chart](https://api.star-history.com/svg?repos=safishamsi/graphify&type=Date)](https://star-history.com/#safishamsi/graphify&Date)
+[![Star History Chart](https://starchart.cc/safishamsi/graphify.svg)](https://starchart.cc/safishamsi/graphify)
 
 <details>
 <summary>Contributing</summary>
