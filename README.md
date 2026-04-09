@@ -268,6 +268,10 @@ graphify sends file contents to your AI coding assistant's underlying model API 
 
 NetworkX + Leiden (graspologic) + tree-sitter + vis.js. Semantic extraction via Claude (Claude Code), GPT-4 (Codex), or whichever model your platform runs. No Neo4j required, no server, runs entirely locally.
 
+## What we are building next
+
+graphify is the graph layer. We are building [Penpax](https://safishamsi.github.io/penpax.ai) on top of it — an on-device digital twin that connects your meetings, browser history, files, emails, and code into one continuously updating knowledge graph. No cloud, no training on your data. [Join the waitlist.](https://safishamsi.github.io/penpax.ai)
+
 ## Star history
 
 [![Star History Chart](https://starchart.cc/safishamsi/graphify.svg)](https://starchart.cc/safishamsi/graphify)
