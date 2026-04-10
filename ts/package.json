@@ -1,0 +1,85 @@
+{
+  "name": "graphifyy",
+  "version": "0.4.0",
+  "description": "AI coding assistant skill (Claude Code, Codex, OpenCode, OpenClaw) - turn any folder of code, docs, papers, or images into a queryable knowledge graph",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "bin": {
+    "graphify": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "src/skills"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit",
+    "test:smoke": "./scripts/smoke-test.sh",
+    "test:parity": "vitest run tests/parity.test.ts",
+    "test:pipeline": "vitest run tests/pipeline.test.ts",
+    "test:all": "vitest run && npm run test:smoke",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "codex",
+    "opencode",
+    "knowledge-graph",
+    "rag",
+    "graphrag",
+    "obsidian",
+    "community-detection",
+    "tree-sitter",
+    "louvain",
+    "llm"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/safishamsi/graphify"
+  },
+  "homepage": "https://github.com/safishamsi/graphify",
+  "bugs": {
+    "url": "https://github.com/safishamsi/graphify/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "graphology": "^0.25.4",
+    "graphology-communities-louvain": "^2.0.1",
+    "graphology-metrics": "^2.1.0",
+    "graphology-shortest-path": "^2.1.0",
+    "graphology-types": "^0.24.7",
+    "web-tree-sitter": "^0.24.7",
+    "commander": "^12.1.0"
+  },
+  "optionalDependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "chokidar": "^4.0.0",
+    "pdf-parse": "^1.1.1",
+    "turndown": "^7.2.0",
+    "mammoth": "^1.8.0",
+    "exceljs": "^4.4.0",
+    "neo4j-driver": "^5.27.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "tsup": "^8.3.0",
+    "vitest": "^2.1.0",
+    "@types/node": "^22.10.0"
+  }
+}
