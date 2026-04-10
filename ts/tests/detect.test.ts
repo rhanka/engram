@@ -1,0 +1,106 @@
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { detect, classifyFile } from "../src/detect.js";
+import { FileType } from "../src/types.js";
+
+describe("classifyFile", () => {
+  it("classifies .py as CODE", () => {
+    expect(classifyFile("test.py")).toBe(FileType.CODE);
+  });
+
+  it("classifies .ts as CODE", () => {
+    expect(classifyFile("test.ts")).toBe(FileType.CODE);
+  });
+
+  it("classifies .go as CODE", () => {
+    expect(classifyFile("test.go")).toBe(FileType.CODE);
+  });
+
+  it("classifies .md as DOCUMENT", () => {
+    expect(classifyFile("README.md")).toBe(FileType.DOCUMENT);
+  });
+
+  it("classifies .pdf as PAPER", () => {
+    expect(classifyFile("paper.pdf")).toBe(FileType.PAPER);
+  });
+
+  it("classifies .png as IMAGE", () => {
+    expect(classifyFile("screenshot.png")).toBe(FileType.IMAGE);
+  });
+
+  it("returns null for unknown extensions", () => {
+    expect(classifyFile("data.xyz")).toBeNull();
+  });
+
+  it("classifies all supported code extensions", () => {
+    const codeExts = [".py", ".ts", ".js", ".jsx", ".tsx", ".go", ".rs", ".java",
+      ".cpp", ".c", ".h", ".rb", ".swift", ".kt", ".cs", ".scala", ".php",
+      ".lua", ".zig", ".ps1", ".ex", ".m", ".jl"];
+    for (const ext of codeExts) {
+      expect(classifyFile(`test${ext}`)).toBe(FileType.CODE);
+    }
+  });
+});
+
+describe("detect", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = join(tmpdir(), `graphify-test-detect-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("finds code files", () => {
+    writeFileSync(join(tmpDir, "main.py"), "print('hello')");
+    writeFileSync(join(tmpDir, "lib.ts"), "export const x = 1;");
+    const result = detect(tmpDir);
+    expect(result.files.code).toHaveLength(2);
+    expect(result.total_files).toBe(2);
+  });
+
+  it("skips hidden files", () => {
+    writeFileSync(join(tmpDir, ".hidden.py"), "secret");
+    writeFileSync(join(tmpDir, "visible.py"), "public");
+    const result = detect(tmpDir);
+    expect(result.files.code).toHaveLength(1);
+  });
+
+  it("skips node_modules", () => {
+    mkdirSync(join(tmpDir, "node_modules", "dep"), { recursive: true });
+    writeFileSync(join(tmpDir, "node_modules", "dep", "index.js"), "module.exports = {}");
+    writeFileSync(join(tmpDir, "main.js"), "require('dep')");
+    const result = detect(tmpDir);
+    expect(result.files.code).toHaveLength(1);
+  });
+
+  it("skips sensitive files", () => {
+    writeFileSync(join(tmpDir, ".env"), "SECRET=xxx");
+    writeFileSync(join(tmpDir, "credentials.json"), "{}");
+    writeFileSync(join(tmpDir, "main.py"), "print('hello')");
+    const result = detect(tmpDir);
+    expect(result.files.code).toHaveLength(1);
+    expect(result.skipped_sensitive.length).toBeGreaterThan(0);
+  });
+
+  it("respects .graphifyignore", () => {
+    writeFileSync(join(tmpDir, ".graphifyignore"), "ignored.py\n");
+    writeFileSync(join(tmpDir, "ignored.py"), "# should be ignored");
+    writeFileSync(join(tmpDir, "kept.py"), "# should be kept");
+    const result = detect(tmpDir);
+    expect(result.files.code).toHaveLength(1);
+    expect(result.files.code[0]).toContain("kept.py");
+  });
+
+  it("warns for small corpus", () => {
+    writeFileSync(join(tmpDir, "tiny.py"), "x = 1");
+    const result = detect(tmpDir);
+    expect(result.needs_graph).toBe(false);
+    expect(result.warning).toContain("may not need a graph");
+  });
+});
