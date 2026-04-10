@@ -1,0 +1,209 @@
+name: CI
+
+on:
+  push:
+    branches: ["v1", "v2", "v3", "main"]
+  pull_request:
+    branches: ["v1", "v2", "v3", "main"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ["20", "22"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install dependencies
+        working-directory: ts
+        run: npm ci
+
+      - name: Build
+        working-directory: ts
+        run: npm run build
+
+      - name: Run unit tests
+        working-directory: ts
+        run: npm test
+
+      - name: Run pipeline E2E test
+        working-directory: ts
+        run: npx vitest run tests/pipeline.test.ts
+
+      - name: Verify CLI works end-to-end
+        working-directory: ts
+        run: |
+          node dist/cli.js --help
+          node dist/cli.js --version
+          node dist/cli.js install --platform claude || true
+
+  # Pre-publish UAT: npm pack → install from tarball → verify
+  smoke-test:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install, build, and pack
+        working-directory: ts
+        run: |
+          npm ci
+          npm run build
+          TARBALL=$(npm pack 2>/dev/null | tail -1)
+          echo "TARBALL=$TARBALL" >> $GITHUB_ENV
+
+      - name: Install from tarball in clean directory
+        run: |
+          mkdir /tmp/smoke-test && cd /tmp/smoke-test
+          npm init -y --silent
+          npm install "${{ github.workspace }}/ts/${{ env.TARBALL }}"
+
+      - name: Verify CLI from installed package
+        run: |
+          cd /tmp/smoke-test
+          npx graphify --help | grep -q "Usage:"
+          npx graphify --version | grep -qE '^[0-9]+\.[0-9]+'
+          echo "CLI works from installed package"
+
+      - name: Verify library exports
+        run: |
+          cd /tmp/smoke-test
+          node -e "
+            const g = require('graphifyy');
+            const expected = ['validateExtraction', 'buildFromJson', 'cluster', 'godNodes', 'generateReport', 'toJson', 'toHtml'];
+            for (const fn of expected) {
+              if (typeof g[fn] !== 'function') {
+                throw new Error('Missing export: ' + fn);
+              }
+            }
+            console.log('All exports verified');
+          "
+
+      - name: Verify skill files are bundled
+        run: |
+          cd /tmp/smoke-test
+          SKILL_COUNT=$(find node_modules/graphifyy/src/skills -name "*.md" | wc -l)
+          if [ "$SKILL_COUNT" -lt 7 ]; then
+            echo "Expected 7+ skill files, found $SKILL_COUNT"
+            exit 1
+          fi
+          echo "$SKILL_COUNT skill files bundled"
+
+  # Parity test: compare TypeScript vs Python output (optional)
+  parity:
+    needs: test
+    runs-on: ubuntu-latest
+    continue-on-error: true  # Don't block publish on parity - algorithmic variance is expected
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python graphify
+        run: pip install -e ".[mcp]"
+
+      - name: Install TypeScript graphify
+        working-directory: ts
+        run: npm ci
+
+      - name: Run parity test
+        working-directory: ts
+        run: npx vitest run tests/parity.test.ts
+
+  # Publish to npm
+  publish:
+    needs: [test, smoke-test]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install and build
+        working-directory: ts
+        run: |
+          npm ci
+          npm run build
+
+      - name: Publish to npm
+        working-directory: ts
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # Post-publish validation: install from npm and verify
+  post-publish-check:
+    needs: publish
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Wait for npm propagation
+        run: sleep 30
+
+      - name: Install from npm
+        run: |
+          mkdir /tmp/post-publish && cd /tmp/post-publish
+          npm init -y --silent
+          npm install graphifyy@latest
+
+      - name: Verify CLI
+        run: |
+          cd /tmp/post-publish
+          npx graphify --help | grep -q "Usage:"
+          npx graphify --version
+          echo "Post-publish CLI verification passed"
+
+      - name: Verify library
+        run: |
+          cd /tmp/post-publish
+          node -e "
+            const g = require('graphifyy');
+            console.log('Exports:', Object.keys(g).filter(k => typeof g[k] === 'function').join(', '));
+            // Quick functional test: build a graph from inline extraction
+            const ext = {
+              nodes: [
+                {id: 'a', label: 'A', file_type: 'code', source_file: 'a.py'},
+                {id: 'b', label: 'B', file_type: 'code', source_file: 'b.py'}
+              ],
+              edges: [{source: 'a', target: 'b', relation: 'calls', confidence: 'EXTRACTED', source_file: 'a.py'}],
+              input_tokens: 0, output_tokens: 0
+            };
+            const G = g.buildFromJson(ext);
+            console.log('Graph:', G.order, 'nodes,', G.size, 'edges');
+            if (G.order !== 2 || G.size !== 1) throw new Error('Graph construction failed');
+            console.log('Post-publish functional test passed');
+          "
+
+      - name: Verify skill install
+        run: |
+          cd /tmp/post-publish
+          npx graphify install --platform claude || true
+          echo "Skill install command executed"
