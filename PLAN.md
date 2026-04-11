@@ -105,7 +105,7 @@
 - [x] Commit 1 - close the TypeScript runtime/package contract, CLI surface, and verification helpers
 - [x] Commit 2 - align the non-Codex skill markdown files with the shipped runtime contract
 - [x] Commit 3 - make Codex use `$graphify` end to end in Python/Codex skills, docs, and UAT evidence
-- [ ] Commit 4 - harden Codex install/UAT on a real repo and record that the successful skill pipeline is still Python-backed
+- [x] Commit 4 - harden Codex install/UAT on a real repo and record that the successful skill pipeline is still Python-backed
 
 ## Track 5 - Symmetrize The Repo Before Python Removal
 
@@ -127,7 +127,7 @@
 - [x] No documented package command in `ts/src/skills/*.md` is missing from the released CLI/public API
 - [x] The default `graphify` command path is the TypeScript one for local usage
 - [x] Smoke-level product UAT is green from the user-facing command path
-- [ ] Working tree is clean except for intentional tracked changes
+- [x] Working tree is clean except for intentional tracked changes
 - [ ] The runtime used by Codex UAT is explicit and matches the target runtime under test
 - [ ] Push branch to origin
 - [ ] Tag the release
