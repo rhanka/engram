@@ -6,7 +6,7 @@
  * Doc/paper/image changes write a flag and notify the user.
  */
 import { existsSync, mkdirSync, writeFileSync, unlinkSync } from "node:fs";
-import { resolve as pathResolve, extname } from "node:path";
+import { resolve as pathResolve, extname, basename } from "node:path";
 
 const WATCHED_EXTENSIONS = new Set([
   ".py", ".ts", ".js", ".go", ".rs", ".java", ".cpp", ".c", ".rb", ".swift", ".kt",
@@ -234,14 +234,9 @@ export async function watch(
 // CLI entry point
 // ---------------------------------------------------------------------------
 
-let isDirectExecution = false;
-if (typeof process !== "undefined" && process.argv[1]) {
-  try {
-    isDirectExecution = import.meta.url.endsWith(process.argv[1]);
-  } catch {
-    isDirectExecution = false;
-  }
-}
+const isDirectExecution = typeof process !== "undefined" &&
+  typeof process.argv[1] === "string" &&
+  /^watch\.(?:js|mjs|cjs|ts)$/.test(basename(process.argv[1]));
 
 if (isDirectExecution) {
   const watchPath = process.argv[2] ?? ".";

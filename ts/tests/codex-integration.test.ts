@@ -24,6 +24,8 @@ describe("Codex integration contract", () => {
 
     expect(section).toContain("use the installed `graphify` skill");
     expect(section).toContain("`$graphify ...`");
+    expect(section).toContain("not a Bash subcommand");
+    expect(section).toContain(".graphify_runtime.json");
     expect(section).not.toContain("CLAUDE.md");
   });
 
@@ -33,9 +35,19 @@ describe("Codex integration contract", () => {
 
     expect(skill).toContain("trigger: $graphify");
     expect(skill).toContain("### Step 2 - Detect files");
-    expect(skill).toContain("### Step 4 - Build graph, cluster, analyze, generate outputs");
+    expect(skill).toContain("finalize-build");
+    expect(skill).toContain("finalize-update");
+    expect(skill).toContain(".graphify_runtime.json");
+    expect(skill).toContain("skill-runtime.js");
+    expect(skill).toContain("not a Bash command like `graphify .`");
+    expect(skill).toContain("files.code");
+    expect(skill).toContain("files.document");
+    expect(skill).toContain("files.paper");
+    expect(skill).toContain("files.image");
     expect(skill).toContain("graphify codex install");
     expect(skill).toContain("codex mcp add graphify");
+    expect(skill).not.toContain(".graphify_python");
+    expect(skill).not.toContain("python3 -m graphify");
     expect(skill).not.toContain("graphify claude install");
 
     expect(readme).toContain("`$graphify` in Codex");

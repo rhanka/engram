@@ -18,6 +18,8 @@ $graphify .                        # Codex
 /graphify .                        # Claude Code / OpenCode / OpenClaw / Droid / Trae
 ```
 
+In Codex, `$graphify` is a skill trigger, not a Bash subcommand like `graphify .`. A successful TypeScript-backed Codex run should leave `graphify-out/.graphify_runtime.json` with `runtime: "typescript"`.
+
 ```
 graphify-out/
 ├── graph.html       interactive graph - click nodes, search, filter by community
@@ -138,13 +140,13 @@ If your assistant supports tool calling or MCP, use the graph directly instead
 of pasting text. graphify can expose `graph.json` as an MCP server:
 
 ```bash
-python -m graphify.serve graphify-out/graph.json
+graphify serve graphify-out/graph.json
 ```
 
 In Codex, register that server with:
 
 ```bash
-codex mcp add graphify -- python -m graphify.serve /absolute/path/to/graphify-out/graph.json
+codex mcp add graphify -- graphify serve /absolute/path/to/graphify-out/graph.json
 ```
 
 That gives the assistant structured graph access for repeated queries such as

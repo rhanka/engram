@@ -32,4 +32,12 @@ export default defineConfig([
     splitting: false,
     external: optionalRuntimeDeps,
   },
+  {
+    entry: { "skill-runtime": "src/skill-runtime.ts" },
+    format: ["esm"],
+    sourcemap: true,
+    target: "node20",
+    splitting: false,
+    external: optionalRuntimeDeps,
+  },
 ]);

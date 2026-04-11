@@ -6,6 +6,7 @@
 import { readFileSync } from "node:fs";
 import Graph from "graphology";
 import { bidirectional } from "graphology-shortest-path/unweighted.js";
+import { basename } from "node:path";
 import { validateGraphPath, sanitizeLabel } from "./security.js";
 import { godNodes as computeGodNodes } from "./analyze.js";
 
@@ -525,14 +526,9 @@ export async function serve(
 // CLI entry point
 // ---------------------------------------------------------------------------
 
-let isDirectExecution = false;
-if (typeof process !== "undefined" && process.argv[1]) {
-  try {
-    isDirectExecution = import.meta.url.endsWith(process.argv[1]);
-  } catch {
-    isDirectExecution = false;
-  }
-}
+const isDirectExecution = typeof process !== "undefined" &&
+  typeof process.argv[1] === "string" &&
+  /^serve\.(?:js|mjs|cjs|ts)$/.test(basename(process.argv[1]));
 
 if (isDirectExecution) {
   const graphPath = process.argv[2] ?? "graphify-out/graph.json";

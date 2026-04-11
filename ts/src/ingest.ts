@@ -412,14 +412,9 @@ export function saveQueryResult(
 // CLI entry point
 // ---------------------------------------------------------------------------
 
-let isDirectExecution = false;
-if (typeof process !== "undefined" && process.argv[1]) {
-  try {
-    isDirectExecution = import.meta.url.endsWith(process.argv[1]);
-  } catch {
-    isDirectExecution = false;
-  }
-}
+const isDirectExecution = typeof process !== "undefined" &&
+  typeof process.argv[1] === "string" &&
+  /^ingest\.(?:js|mjs|cjs|ts)$/.test(basename(process.argv[1]));
 
 if (isDirectExecution) {
   const url = process.argv[2];

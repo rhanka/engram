@@ -152,6 +152,8 @@ export function getAgentsMdSection(platformName: string): string {
       7,
       0,
       "- In Codex, the reliable explicit skill invocation is `$graphify ...`; do not rely on `/graphify ...`",
+      "- `$graphify ...` is a Codex skill trigger, not a Bash subcommand like `graphify .`",
+      "- A successful TypeScript-backed Codex build should leave `graphify-out/.graphify_runtime.json` with `runtime: typescript`",
     );
   }
   return lines.join("\n") + "\n";
@@ -204,6 +206,9 @@ function installSkill(platformName: string): void {
   if (platformName === "codex") {
     console.log();
     console.log("Codex explicit skill calls use `$graphify`, not `/graphify`.");
+    console.log("`$graphify ...` is a Codex skill trigger, not a Bash command like `graphify .`.");
+    console.log("A successful TypeScript Codex run should leave graphify-out/.graphify_runtime.json");
+    console.log("with runtime=typescript.");
   }
   console.log();
 }

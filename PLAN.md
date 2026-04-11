@@ -98,8 +98,12 @@
   - [x] Make `graphify codex install` re-register the Codex hook even when `AGENTS.md` already exists
   - [x] Restore the full Codex skill pipeline in the packaged `skill-codex.md`
 - [x] Confirm the current successful Codex skill pipeline still runs the Python graph build path
-- [ ] Decide whether Codex natural-language invocation should be documented as first-class or left undocumented until separately validated
-- [ ] Port the Codex skill build/update pipeline so Codex can drive the TypeScript runtime end to end instead of Python
+- [x] Decide whether Codex natural-language invocation should be documented as first-class or left undocumented until separately validated
+  - [x] Keep only `$graphify ...` as the documented Codex entrypoint until natural-language invocation is separately validated
+- [x] Port the Codex skill build/update pipeline so Codex can drive the TypeScript runtime end to end instead of Python
+  - [x] Add a dedicated TypeScript `skill-runtime.js` entrypoint for the Codex skill pipeline
+  - [x] Make the Codex skill fail closed unless `graphify-out/.graphify_runtime.json` reports `runtime: "typescript"`
+  - [x] Complete a real-repo Codex run on `.` that finishes with the TypeScript runtime and writes the expected outputs
 
 ## Commit Rollout
 
@@ -109,6 +113,7 @@
 - [x] Commit 4 - harden Codex install/UAT on a real repo and record that the successful skill pipeline is still Python-backed
 - [x] Commit 5 - move the Python runtime and Python tests under `py/` and repair top-level paths
 - [x] Commit 6 - move Python packaging into `py/` and split root GitHub Actions into Python and TypeScript CI workflows
+- [x] Commit 7 - port the Codex skill pipeline to the TypeScript runtime and require runtime-proofed UAT
 
 ## Track 5 - Symmetrize The Repo Before Python Removal
 
@@ -125,8 +130,8 @@
 - [ ] Add a cross-runtime parity harness on shared fixtures/corpora
   - Compare graph shape and key report sections for Python vs TypeScript outputs
   - Record intentional divergences explicitly
-- [ ] Make Codex runtime selection explicit in docs and tests so UAT cannot silently fall back to Python
-- [ ] Require green Codex end-to-end UAT on the TypeScript runtime before deleting Python
+- [x] Make Codex runtime selection explicit in docs and tests so UAT cannot silently fall back to Python
+- [x] Require green Codex end-to-end UAT on the TypeScript runtime before deleting Python
 
 ## Release Gate
 
@@ -134,7 +139,7 @@
 - [x] The default `graphify` command path is the TypeScript one for local usage
 - [x] Smoke-level product UAT is green from the user-facing command path
 - [x] Working tree is clean except for intentional tracked changes
-- [ ] The runtime used by Codex UAT is explicit and matches the target runtime under test
+- [x] The runtime used by Codex UAT is explicit and matches the target runtime under test
 - [ ] Push branch to origin
 - [ ] Tag the release
 - [ ] Publish the npm package
