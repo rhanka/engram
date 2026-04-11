@@ -1,5 +1,17 @@
 import { defineConfig } from "tsup";
 
+const optionalRuntimeDeps = [
+  "@mixmark-io/domino",
+  "@modelcontextprotocol/sdk",
+  "@modelcontextprotocol/sdk/*",
+  "chokidar",
+  "exceljs",
+  "mammoth",
+  "neo4j-driver",
+  "pdf-parse",
+  "turndown",
+];
+
 export default defineConfig([
   {
     entry: { index: "src/index.ts" },
@@ -9,6 +21,7 @@ export default defineConfig([
     clean: true,
     target: "node20",
     splitting: false,
+    external: optionalRuntimeDeps,
   },
   {
     entry: { cli: "src/cli.ts" },
@@ -17,5 +30,6 @@ export default defineConfig([
     sourcemap: true,
     target: "node20",
     splitting: false,
+    external: optionalRuntimeDeps,
   },
 ]);

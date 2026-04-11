@@ -5,13 +5,15 @@
 import Graph from "graphology";
 import betweennessCentrality from "graphology-metrics/centrality/betweenness.js";
 import type { GodNodeEntry, SurpriseEntry, SuggestedQuestion, GraphDiffResult } from "./types.js";
+import { type NumericMapLike, toNumericMap } from "./collections.js";
 import { cohesionScore } from "./cluster.js";
 
 type GraphInstance = InstanceType<typeof Graph>;
 
-function nodeCommunityMap(communities: Map<number, string[]>): Map<string, number> {
+function nodeCommunityMap(communities: NumericMapLike<string[]>): Map<string, number> {
+  const communityMap = toNumericMap(communities);
   const result = new Map<string, number>();
-  for (const [cid, nodes] of communities) {
+  for (const [cid, nodes] of communityMap) {
     for (const n of nodes) result.set(n, cid);
   }
   return result;
@@ -136,10 +138,10 @@ export function godNodes(G: Graph, topN: number = 10): GodNodeEntry[] {
 
 export function surprisingConnections(
   G: Graph,
-  communities?: Map<number, string[]>,
+  communities?: NumericMapLike<string[]>,
   topN: number = 5,
 ): SurpriseEntry[] {
-  const comms = communities ?? new Map<number, string[]>();
+  const comms = toNumericMap(communities);
   const sourceFiles = new Set<string>();
   G.forEachNode((_, data) => {
     const sf = (data.source_file as string) ?? "";
@@ -274,12 +276,14 @@ function edgeBetweennessSurprises(G: Graph, topN: number): SurpriseEntry[] {
 
 export function suggestQuestions(
   G: Graph,
-  communities: Map<number, string[]>,
-  communityLabels: Map<number, string>,
+  communities: NumericMapLike<string[]>,
+  communityLabels: NumericMapLike<string>,
   topN: number = 7,
 ): SuggestedQuestion[] {
+  const communityMap = toNumericMap(communities);
+  const labelMap = toNumericMap(communityLabels);
   const questions: SuggestedQuestion[] = [];
-  const nodeCommunity = nodeCommunityMap(communities);
+  const nodeCommunity = nodeCommunityMap(communityMap);
 
   // 1. AMBIGUOUS edges
   G.forEachEdge((edge, data, u, v) => {
@@ -306,14 +310,14 @@ export function suggestQuestions(
     for (const [nodeId, score] of bridges) {
       const label = (G.getNodeAttribute(nodeId, "label") as string) ?? nodeId;
       const cid = nodeCommunity.get(nodeId);
-      const commLabel = cid !== undefined ? (communityLabels.get(cid) ?? `Community ${cid}`) : "unknown";
+      const commLabel = cid !== undefined ? (labelMap.get(cid) ?? `Community ${cid}`) : "unknown";
       const neighborComms = new Set<number>();
       G.forEachNeighbor(nodeId, (n) => {
         const nc = nodeCommunity.get(n);
         if (nc !== undefined && nc !== cid) neighborComms.add(nc);
       });
       if (neighborComms.size > 0) {
-        const otherLabels = [...neighborComms].map((c) => communityLabels.get(c) ?? `Community ${c}`);
+        const otherLabels = [...neighborComms].map((c) => labelMap.get(c) ?? `Community ${c}`);
         questions.push({
           type: "bridge_node",
           question: `Why does \`${label}\` connect \`${commLabel}\` to ${otherLabels.map((l) => `\`${l}\``).join(", ")}?`,
@@ -366,10 +370,10 @@ export function suggestQuestions(
   }
 
   // 5. Low-cohesion communities
-  for (const [cid, nodes] of communities) {
+  for (const [cid, nodes] of communityMap) {
     const score = cohesionScore(G, nodes);
     if (score < 0.15 && nodes.length >= 5) {
-      const label = communityLabels.get(cid) ?? `Community ${cid}`;
+      const label = labelMap.get(cid) ?? `Community ${cid}`;
       questions.push({
         type: "low_cohesion",
         question: `Should \`${label}\` be split into smaller, more focused modules?`,

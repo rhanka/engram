@@ -67,6 +67,11 @@ const SAMPLE_QUESTIONS = [
   "what are the core abstractions",
 ];
 
+interface BenchmarkOptions {
+  corpusWords?: number;
+  questions?: string[];
+}
+
 function loadGraph(graphPath: string): Graph {
   const raw = JSON.parse(readFileSync(graphPath, "utf-8"));
   const G = new Graph({ type: "undirected" });
@@ -85,21 +90,27 @@ function loadGraph(graphPath: string): Graph {
 
 export function runBenchmark(
   graphPath: string = "graphify-out/graph.json",
-  corpusWords?: number,
+  corpusWordsOrOptions?: number | BenchmarkOptions,
   questions?: string[],
 ): BenchmarkResult {
+  const options = typeof corpusWordsOrOptions === "number"
+    ? { corpusWords: corpusWordsOrOptions, questions }
+    : (corpusWordsOrOptions ?? {});
+
   if (!existsSync(graphPath)) {
     return { error: `Graph file not found: ${graphPath}. Build the graph first.` };
   }
 
   const G = loadGraph(graphPath);
 
+  const corpusWords = options.corpusWords ?? (G.order * 50);
+
   if (corpusWords === undefined) {
-    corpusWords = G.order * 50;
+    return { error: "Could not determine corpus size." };
   }
 
   const corpusTokens = Math.floor((corpusWords * 100) / 75);
-  const qs = questions ?? SAMPLE_QUESTIONS;
+  const qs = options.questions ?? SAMPLE_QUESTIONS;
   const perQuestion: Array<{ question: string; query_tokens: number; reduction: number }> = [];
 
   for (const q of qs) {

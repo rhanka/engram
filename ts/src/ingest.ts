@@ -233,6 +233,28 @@ async function downloadBinary(
   return outPath;
 }
 
+interface IngestOptions {
+  author?: string | null;
+  contributor?: string | null;
+}
+
+function normalizeIngestOptions(
+  authorOrOptions: string | IngestOptions | null | undefined,
+  contributor: string | null | undefined,
+): { author: string | null; contributor: string | null } {
+  if (typeof authorOrOptions === "string" || authorOrOptions == null) {
+    return {
+      author: authorOrOptions ?? null,
+      contributor: contributor ?? null,
+    };
+  }
+
+  return {
+    author: authorOrOptions.author ?? null,
+    contributor: authorOrOptions.contributor ?? null,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Main ingest function
 // ---------------------------------------------------------------------------
@@ -240,11 +262,15 @@ async function downloadBinary(
 export async function ingest(
   url: string,
   targetDir: string,
-  author: string | null = null,
+  authorOrOptions: string | IngestOptions | null = null,
   contributor: string | null = null,
 ): Promise<string> {
   mkdirSync(targetDir, { recursive: true });
   const urlType = detectUrlType(url);
+  const { author, contributor: normalizedContributor } = normalizeIngestOptions(
+    authorOrOptions,
+    contributor,
+  );
 
   await validateUrl(url);
 
@@ -271,11 +297,11 @@ export async function ingest(
   }
 
   if (urlType === "tweet") {
-    [content, filename] = await fetchTweet(url, author, contributor);
+    [content, filename] = await fetchTweet(url, author, normalizedContributor);
   } else if (urlType === "arxiv") {
-    [content, filename] = await fetchArxiv(url, author, contributor);
+    [content, filename] = await fetchArxiv(url, author, normalizedContributor);
   } else {
-    [content, filename] = await fetchWebpage(url, author, contributor);
+    [content, filename] = await fetchWebpage(url, author, normalizedContributor);
   }
 
   let outPath = pathResolve(targetDir, filename);
@@ -296,16 +322,44 @@ export async function ingest(
 // ---------------------------------------------------------------------------
 
 export function saveQueryResult(
-  question: string,
-  answer: string,
-  memoryDir: string,
+  questionOrOptions:
+    | string
+    | {
+      question: string;
+      answer: string;
+      memoryDir: string;
+      queryType?: string;
+      sourceNodes?: string[] | null;
+    },
+  answer?: string,
+  memoryDir?: string,
   queryType: string = "query",
   sourceNodes: string[] | null = null,
 ): string {
-  mkdirSync(memoryDir, { recursive: true });
+  const payload = typeof questionOrOptions === "string"
+    ? {
+      question: questionOrOptions,
+      answer: answer ?? "",
+      memoryDir: memoryDir ?? "",
+      queryType,
+      sourceNodes,
+    }
+    : {
+      question: questionOrOptions.question,
+      answer: questionOrOptions.answer,
+      memoryDir: questionOrOptions.memoryDir,
+      queryType: questionOrOptions.queryType ?? "query",
+      sourceNodes: questionOrOptions.sourceNodes ?? null,
+    };
+
+  if (!payload.question) throw new Error("saveQueryResult requires a question");
+  if (!payload.memoryDir) throw new Error("saveQueryResult requires a memoryDir");
+
+  const effectiveAnswer = payload.answer ?? "";
+  mkdirSync(payload.memoryDir, { recursive: true });
 
   const now = new Date();
-  const slug = question
+  const slug = payload.question
     .toLowerCase()
     .replace(/[^\w]/g, "_")
     .slice(0, 50)
@@ -319,13 +373,13 @@ export function saveQueryResult(
 
   const frontmatterLines = [
     "---",
-    `type: "${queryType}"`,
+    `type: "${payload.queryType}"`,
     `date: "${now.toISOString()}"`,
-    `question: "${yamlStr(question)}"`,
+    `question: "${yamlStr(payload.question)}"`,
     'contributor: "graphify"',
   ];
-  if (sourceNodes && sourceNodes.length > 0) {
-    const nodesStr = sourceNodes
+  if (payload.sourceNodes && payload.sourceNodes.length > 0) {
+    const nodesStr = payload.sourceNodes
       .slice(0, 10)
       .map((n) => `"${n}"`)
       .join(", ");
@@ -335,21 +389,21 @@ export function saveQueryResult(
 
   const bodyLines = [
     "",
-    `# Q: ${question}`,
+    `# Q: ${payload.question}`,
     "",
     "## Answer",
     "",
-    answer,
+    effectiveAnswer,
   ];
-  if (sourceNodes && sourceNodes.length > 0) {
+  if (payload.sourceNodes && payload.sourceNodes.length > 0) {
     bodyLines.push("", "## Source Nodes", "");
-    for (const n of sourceNodes) {
+    for (const n of payload.sourceNodes) {
       bodyLines.push(`- ${n}`);
     }
   }
 
   const content = [...frontmatterLines, ...bodyLines].join("\n");
-  const outPath = pathResolve(memoryDir, filename);
+  const outPath = pathResolve(payload.memoryDir, filename);
   writeFileSync(outPath, content, "utf-8");
   return outPath;
 }
@@ -358,11 +412,16 @@ export function saveQueryResult(
 // CLI entry point
 // ---------------------------------------------------------------------------
 
-if (
-  typeof process !== "undefined" &&
-  process.argv[1] &&
-  import.meta.url.endsWith(process.argv[1])
-) {
+let isDirectExecution = false;
+if (typeof process !== "undefined" && process.argv[1]) {
+  try {
+    isDirectExecution = import.meta.url.endsWith(process.argv[1]);
+  } catch {
+    isDirectExecution = false;
+  }
+}
+
+if (isDirectExecution) {
   const url = process.argv[2];
   const targetDir = process.argv[3] ?? "./raw";
   const author = process.argv[4] ?? null;

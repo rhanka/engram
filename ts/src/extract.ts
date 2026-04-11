@@ -8,21 +8,37 @@
 
 import { readFileSync, readdirSync, lstatSync, realpathSync, existsSync } from "node:fs";
 import { resolve, basename, extname, dirname, join, sep } from "node:path";
+import { createRequire } from "node:module";
 import type { GraphNode, GraphEdge, Extraction } from "./types.js";
 import { loadCached, saveCached } from "./cache.js";
 
 // ---------------------------------------------------------------------------
 // web-tree-sitter types  (re-exported from the package)
 // ---------------------------------------------------------------------------
-import Parser from "web-tree-sitter";
-type SyntaxNode = Parser.SyntaxNode;
-type Tree = Parser.Tree;
+import * as TreeSitter from "web-tree-sitter";
+type SyntaxNode = TreeSitter.Node;
+type Tree = TreeSitter.Tree;
+
+const Parser = (
+  (TreeSitter as unknown as { Parser?: typeof TreeSitter.Parser }).Parser ??
+  (TreeSitter as unknown as { default?: typeof TreeSitter.Parser }).default
+)!;
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 let _parserInitialized = false;
+
+function getModuleRequire(): NodeJS.Require {
+  try {
+    return createRequire(import.meta.url);
+  } catch {
+    return require;
+  }
+}
+
+const moduleRequire = getModuleRequire();
 
 async function ensureParserInit(): Promise<void> {
   if (!_parserInitialized) {
@@ -31,17 +47,31 @@ async function ensureParserInit(): Promise<void> {
   }
 }
 
+function parseText(parser: InstanceType<typeof Parser>, source: string): Tree {
+  const tree = parser.parse(source);
+  if (!tree) {
+    throw new Error("Parser returned null");
+  }
+  return tree;
+}
+
 /** Try to locate a WASM grammar file. Returns the resolved path or null. */
 function resolveGrammarWasm(langName: string): string | null {
+  const packageName = new Map<string, string>([
+    ["c_sharp", "c-sharp"],
+  ]).get(langName) ?? langName;
   // Try common npm package conventions
   const candidates = [
-    `tree-sitter-${langName}/tree-sitter-${langName}.wasm`,
-    `tree-sitter-${langName}/tree_sitter_${langName}.wasm`,
-    `tree-sitter-${langName}/${langName}.wasm`,
+    `tree-sitter-${packageName}/tree-sitter-${langName}.wasm`,
+    `tree-sitter-${packageName}/tree-sitter-${packageName}.wasm`,
+    `tree-sitter-${packageName}/tree_sitter_${langName}.wasm`,
+    `tree-sitter-${packageName}/tree_sitter_${packageName.replace(/-/g, "_")}.wasm`,
+    `tree-sitter-${packageName}/${langName}.wasm`,
+    `tree-sitter-${packageName}/${packageName}.wasm`,
   ];
   for (const candidate of candidates) {
     try {
-      const resolved = require.resolve(candidate);
+      const resolved = moduleRequire.resolve(candidate);
       if (existsSync(resolved)) return resolved;
     } catch {
       /* not found via require.resolve — skip */
@@ -60,14 +90,14 @@ function resolveGrammarWasm(langName: string): string | null {
  * Cache of loaded Parser.Language instances keyed by language name.
  * Avoids re-reading WASM files on every file extraction.
  */
-const _languageCache = new Map<string, Parser.Language>();
+const _languageCache = new Map<string, TreeSitter.Language>();
 
-async function loadLanguage(langName: string): Promise<Parser.Language | null> {
+async function loadLanguage(langName: string): Promise<TreeSitter.Language | null> {
   if (_languageCache.has(langName)) return _languageCache.get(langName)!;
   const wasmPath = resolveGrammarWasm(langName);
   if (!wasmPath) return null;
   try {
-    const lang = await Parser.Language.load(wasmPath);
+    const lang = await TreeSitter.Language.load(wasmPath);
     _languageCache.set(langName, lang);
     return lang;
   } catch {
@@ -782,7 +812,7 @@ const _SWIFT_CONFIG: LanguageConfig = defaultConfig({
 // Generic extractor
 // ---------------------------------------------------------------------------
 
-interface ExtractionResult {
+export interface ExtractionResult {
   nodes: GraphNode[];
   edges: GraphEdge[];
   error?: string;
@@ -801,7 +831,7 @@ async function _extractGeneric(filePath: string, config: LanguageConfig): Promis
     const parser = new Parser();
     parser.setLanguage(lang);
     source = readFileSync(filePath, "utf-8");
-    tree = parser.parse(source);
+    tree = parseText(parser, source);
   } catch (e: unknown) {
     return { nodes: [], edges: [], error: String(e) };
   }
@@ -1218,7 +1248,7 @@ async function _extractPythonRationale(filePath: string, result: ExtractionResul
     const parser = new Parser();
     parser.setLanguage(lang);
     source = readFileSync(filePath, "utf-8");
-    const tree = parser.parse(source);
+    const tree = parseText(parser, source);
     root = tree.rootNode;
   } catch {
     return;
@@ -1390,7 +1420,7 @@ export async function extractJulia(filePath: string): Promise<ExtractionResult> 
     const parser = new Parser();
     parser.setLanguage(lang);
     source = readFileSync(filePath, "utf-8");
-    tree = parser.parse(source);
+    tree = parseText(parser, source);
   } catch (e: unknown) {
     return { nodes: [], edges: [], error: String(e) };
   }
@@ -1618,7 +1648,7 @@ export async function extractGo(filePath: string): Promise<ExtractionResult> {
     const parser = new Parser();
     parser.setLanguage(lang);
     source = readFileSync(filePath, "utf-8");
-    tree = parser.parse(source);
+    tree = parseText(parser, source);
   } catch (e: unknown) {
     return { nodes: [], edges: [], error: String(e) };
   }
@@ -1823,7 +1853,7 @@ export async function extractRust(filePath: string): Promise<ExtractionResult> {
     const parser = new Parser();
     parser.setLanguage(lang);
     source = readFileSync(filePath, "utf-8");
-    tree = parser.parse(source);
+    tree = parseText(parser, source);
   } catch (e: unknown) {
     return { nodes: [], edges: [], error: String(e) };
   }
@@ -2001,7 +2031,7 @@ export async function extractZig(filePath: string): Promise<ExtractionResult> {
     const parser = new Parser();
     parser.setLanguage(lang);
     source = readFileSync(filePath, "utf-8");
-    tree = parser.parse(source);
+    tree = parseText(parser, source);
   } catch (e: unknown) {
     return { nodes: [], edges: [], error: String(e) };
   }
@@ -2187,7 +2217,7 @@ export async function extractPowershell(filePath: string): Promise<ExtractionRes
     const parser = new Parser();
     parser.setLanguage(lang);
     source = readFileSync(filePath, "utf-8");
-    tree = parser.parse(source);
+    tree = parseText(parser, source);
   } catch (e: unknown) {
     return { nodes: [], edges: [], error: String(e) };
   }
@@ -2382,7 +2412,7 @@ export async function extractObjc(filePath: string): Promise<ExtractionResult> {
     const parser = new Parser();
     parser.setLanguage(lang);
     source = readFileSync(filePath, "utf-8");
-    tree = parser.parse(source);
+    tree = parseText(parser, source);
   } catch (e: unknown) {
     return { nodes: [], edges: [], error: String(e) };
   }
@@ -2606,7 +2636,7 @@ export async function extractElixir(filePath: string): Promise<ExtractionResult>
     const parser = new Parser();
     parser.setLanguage(lang);
     source = readFileSync(filePath, "utf-8");
-    tree = parser.parse(source);
+    tree = parseText(parser, source);
   } catch (e: unknown) {
     return { nodes: [], edges: [], error: String(e) };
   }
@@ -2856,7 +2886,7 @@ async function _resolveCrossFileImports(
     let tree: Tree;
     try {
       source = readFileSync(filePath, "utf-8");
-      tree = parser.parse(source);
+      tree = parseText(parser, source);
     } catch {
       continue;
     }
@@ -2973,8 +3003,19 @@ const _DISPATCH: Record<string, ExtractorFn> = {
  * 2. Cross-file import resolution: turns file-level imports into
  *    class-level INFERRED edges (DigestAuth --uses--> Response)
  */
-export async function extract(paths: string[]): Promise<Extraction> {
+export interface ExtractionDiagnostic {
+  filePath: string;
+  error: string;
+}
+
+export interface ExtractWithDiagnosticsResult {
+  extraction: Extraction;
+  diagnostics: ExtractionDiagnostic[];
+}
+
+export async function extractWithDiagnostics(paths: string[]): Promise<ExtractWithDiagnosticsResult> {
   const perFile: ExtractionResult[] = [];
+  const diagnostics: ExtractionDiagnostic[] = [];
 
   // Infer a common root for cache keys
   let root = ".";
@@ -3020,6 +3061,8 @@ export async function extract(paths: string[]): Promise<Extraction> {
     const result = await extractor(filePath);
     if (!result.error) {
       saveCached(filePath, result as unknown as Record<string, unknown>, root);
+    } else {
+      diagnostics.push({ filePath, error: result.error });
     }
     perFile.push(result);
   }
@@ -3048,11 +3091,19 @@ export async function extract(paths: string[]): Promise<Extraction> {
   }
 
   return {
-    nodes: allNodes,
-    edges: allEdges,
-    input_tokens: 0,
-    output_tokens: 0,
+    extraction: {
+      nodes: allNodes,
+      edges: allEdges,
+      input_tokens: 0,
+      output_tokens: 0,
+    },
+    diagnostics,
   };
+}
+
+export async function extract(paths: string[]): Promise<Extraction> {
+  const { extraction } = await extractWithDiagnostics(paths);
+  return extraction;
 }
 
 // ---------------------------------------------------------------------------

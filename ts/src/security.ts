@@ -186,7 +186,7 @@ export function validateGraphPath(filePath: string, base?: string): string {
 
   if (!existsSync(resolvedBase)) {
     throw new Error(
-      `Graph base directory does not exist: ${resolvedBase}. Run /graphify first to build the graph.`,
+      `Graph base directory does not exist: ${resolvedBase}. Run the graphify skill first to build the graph (for Codex: $graphify .).`,
     );
   }
 

@@ -5,6 +5,7 @@
  */
 import Graph from "graphology";
 import louvain from "graphology-communities-louvain";
+import { type NumericMapLike, toNumericMap } from "./collections.js";
 
 const MAX_COMMUNITY_FRACTION = 0.25;
 const MIN_SPLIT_SIZE = 10;
@@ -127,10 +128,11 @@ export function cohesionScore(G: Graph, communityNodes: string[]): number {
 
 export function scoreAll(
   G: Graph,
-  communities: Map<number, string[]>,
+  communities: NumericMapLike<string[]>,
 ): Map<number, number> {
+  const communityMap = toNumericMap(communities);
   const result = new Map<number, number>();
-  for (const [cid, nodes] of communities) {
+  for (const [cid, nodes] of communityMap) {
     result.set(cid, cohesionScore(G, nodes));
   }
   return result;

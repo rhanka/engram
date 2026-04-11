@@ -27,7 +27,7 @@ function loadGraph(graphPath: string): Graph {
     data = JSON.parse(readFileSync(safePath, "utf-8")) as Record<string, unknown>;
   } catch (err) {
     console.error(
-      `error: graph.json is corrupted (${err instanceof Error ? err.message : err}). Re-run /graphify to rebuild.`,
+      `error: graph.json is corrupted (${err instanceof Error ? err.message : err}). Re-run the graphify skill to rebuild it (for Codex: $graphify .).`,
     );
     process.exit(1);
   }
@@ -525,11 +525,16 @@ export async function serve(
 // CLI entry point
 // ---------------------------------------------------------------------------
 
-if (
-  typeof process !== "undefined" &&
-  process.argv[1] &&
-  import.meta.url.endsWith(process.argv[1])
-) {
+let isDirectExecution = false;
+if (typeof process !== "undefined" && process.argv[1]) {
+  try {
+    isDirectExecution = import.meta.url.endsWith(process.argv[1]);
+  } catch {
+    isDirectExecution = false;
+  }
+}
+
+if (isDirectExecution) {
   const graphPath = process.argv[2] ?? "graphify-out/graph.json";
   serve(graphPath).catch((err) => {
     console.error(err);

@@ -1,7 +1,7 @@
 /**
  * graphify CLI - `graphify install` sets up the AI coding assistant skill.
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync, realpathSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { homedir, platform } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -104,16 +104,6 @@ Rules:
 - After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
 `;
 
-const AGENTS_MD_SECTION = `## graphify
-
-This project has a graphify knowledge graph at graphify-out/.
-
-Rules:
-- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
-- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
-- After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
-`;
-
 const MD_MARKER = "## graphify";
 
 // ---------------------------------------------------------------------------
@@ -131,6 +121,32 @@ function findSkillFile(filename: string): string | null {
     if (existsSync(p)) return p;
   }
   return null;
+}
+
+export function getInvocationExample(platformName: string): string {
+  return platformName === "codex" ? "$graphify ." : "/graphify .";
+}
+
+export function getAgentsMdSection(platformName: string): string {
+  const lines = [
+    "## graphify",
+    "",
+    "This project has a graphify knowledge graph at graphify-out/.",
+    "",
+    "Rules:",
+    "- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure",
+    "- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files",
+    "- If the user asks to build, update, query, path, or explain the graph, use the installed `graphify` skill instead of ad-hoc file traversal",
+    "- After modifying code files in this session, run `npx graphify hook-rebuild` to keep the graph current",
+  ];
+  if (platformName === "codex") {
+    lines.splice(
+      7,
+      0,
+      "- In Codex, the reliable explicit skill invocation is `$graphify ...`; do not rely on `/graphify ...`",
+    );
+  }
+  return lines.join("\n") + "\n";
 }
 
 // ---------------------------------------------------------------------------
@@ -176,7 +192,11 @@ function installSkill(platformName: string): void {
   console.log();
   console.log("Done. Open your AI coding assistant and type:");
   console.log();
-  console.log("  /graphify .");
+  console.log(`  ${getInvocationExample(platformName)}`);
+  if (platformName === "codex") {
+    console.log();
+    console.log("Codex explicit skill calls use `$graphify`, not `/graphify`.");
+  }
   console.log();
 }
 
@@ -318,15 +338,16 @@ function uninstallCodexHook(projectDir: string): void {
 
 function agentsInstall(projectDir: string, platformName: string): void {
   const target = join(projectDir, "AGENTS.md");
+  const section = getAgentsMdSection(platformName);
   if (existsSync(target)) {
     const content = readFileSync(target, "utf-8");
     if (content.includes(MD_MARKER)) {
       console.log(`graphify already configured in AGENTS.md`);
       return;
     }
-    writeFileSync(target, content.trimEnd() + "\n\n" + AGENTS_MD_SECTION, "utf-8");
+    writeFileSync(target, content.trimEnd() + "\n\n" + section, "utf-8");
   } else {
-    writeFileSync(target, AGENTS_MD_SECTION, "utf-8");
+    writeFileSync(target, section, "utf-8");
   }
   console.log(`graphify section written to ${resolve(target)}`);
 
@@ -417,8 +438,16 @@ export function main(): void {
 
   for (const cmd of ["codex", "opencode", "claw", "droid", "trae", "trae-cn"]) {
     const sub = program.command(cmd).description(`${cmd} skill management`);
-    sub.command("install").description(`Write graphify section to AGENTS.md`).action(() => agentsInstall(".", cmd));
-    sub.command("uninstall").description(`Remove graphify section from AGENTS.md`).action(() => {
+    sub.command("install").description(
+      cmd === "codex"
+        ? "Write graphify section to AGENTS.md + PreToolUse hook"
+        : "Write graphify section to AGENTS.md",
+    ).action(() => agentsInstall(".", cmd));
+    sub.command("uninstall").description(
+      cmd === "codex"
+        ? "Remove graphify section from AGENTS.md + PreToolUse hook"
+        : "Remove graphify section from AGENTS.md",
+    ).action(() => {
       agentsUninstall(".", cmd);
     });
   }
@@ -437,6 +466,26 @@ export function main(): void {
     const { status } = await import("./hooks.js");
     console.log(status("."));
   });
+
+  // MCP server
+  program
+    .command("serve [graph]")
+    .description("Start a stdio MCP server for graph.json")
+    .action(async (graphPath) => {
+      const { serve } = await import("./serve.js");
+      await serve(graphPath ?? "graphify-out/graph.json");
+    });
+
+  // Watcher
+  program
+    .command("watch [path]")
+    .description("Watch a folder and auto-rebuild graph outputs on code changes")
+    .option("--debounce <seconds>", "Wait time before rebuild", "3")
+    .action(async (watchPath, opts) => {
+      const { watch } = await import("./watch.js");
+      const debounce = Number.parseFloat(opts.debounce);
+      await watch(watchPath ?? ".", Number.isFinite(debounce) ? debounce : 3);
+    });
 
   // Query command
   program
@@ -590,4 +639,15 @@ export function main(): void {
   program.parse();
 }
 
-main();
+function isDirectCliExecution(): boolean {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === __filename;
+  } catch {
+    return resolve(process.argv[1]) === __filename;
+  }
+}
+
+if (isDirectCliExecution()) {
+  main();
+}

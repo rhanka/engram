@@ -24,13 +24,13 @@ const CODE_EXTENSIONS = new Set([
 // Rebuild pipeline (code-only, no LLM)
 // ---------------------------------------------------------------------------
 
-async function rebuildCode(
+export async function rebuildCode(
   watchPath: string,
   followSymlinks: boolean = false,
 ): Promise<boolean> {
   try {
     // Dynamic imports - these modules are in the same package
-    const { collectFiles, extract } = await import("./extract.js");
+    const { collectFiles, extractWithDiagnostics } = await import("./extract.js");
     const { buildFromJson } = await import("./build.js");
     const { cluster, scoreAll } = await import("./cluster.js");
     const { godNodes, surprisingConnections, suggestQuestions } = await import("./analyze.js");
@@ -50,7 +50,17 @@ async function rebuildCode(
       return false;
     }
 
-    const result = await extract(codeFiles);
+    const { extraction: result, diagnostics } = await extractWithDiagnostics(codeFiles);
+    if (diagnostics.length > 0) {
+      console.log(
+        `[graphify watch] AST extraction failed for ${diagnostics.length} file(s): ` +
+        `${diagnostics.slice(0, 3).map((d) => `${d.filePath}: ${d.error}`).join(" | ")}`,
+      );
+    }
+    if (result.nodes.length === 0) {
+      console.log("[graphify watch] Rebuild failed: AST extraction produced no graph nodes.");
+      return false;
+    }
 
     const detection = {
       files: {
@@ -131,7 +141,7 @@ function notifyOnly(watchPath: string): void {
     "[graphify watch] Non-code files changed - semantic re-extraction requires LLM.",
   );
   console.log(
-    "[graphify watch] Run `/graphify --update` in Claude Code to update the graph.",
+    "[graphify watch] Run the graphify skill with `--update` to refresh semantic data (for Codex: `$graphify . --update`).",
   );
   console.log(`[graphify watch] Flag written to ${flagPath}`);
 }
@@ -188,7 +198,7 @@ export async function watch(
     `[graphify watch] Watching ${resolvedPath} - press Ctrl+C to stop`,
   );
   console.log(
-    `[graphify watch] Code changes rebuild graph automatically. Doc/image changes require /graphify --update.`,
+    "[graphify watch] Code changes rebuild graph automatically. Doc/image changes require a graphify skill `--update` run.",
   );
   console.log(`[graphify watch] Debounce: ${debounce}s`);
 
@@ -224,11 +234,16 @@ export async function watch(
 // CLI entry point
 // ---------------------------------------------------------------------------
 
-if (
-  typeof process !== "undefined" &&
-  process.argv[1] &&
-  import.meta.url.endsWith(process.argv[1])
-) {
+let isDirectExecution = false;
+if (typeof process !== "undefined" && process.argv[1]) {
+  try {
+    isDirectExecution = import.meta.url.endsWith(process.argv[1]);
+  } catch {
+    isDirectExecution = false;
+  }
+}
+
+if (isDirectExecution) {
   const watchPath = process.argv[2] ?? ".";
   const debounce = process.argv[3] ? parseFloat(process.argv[3]) : 3.0;
   watch(watchPath, debounce).catch((err) => {

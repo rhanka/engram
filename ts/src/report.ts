@@ -3,20 +3,30 @@
  */
 import Graph from "graphology";
 import type { GodNodeEntry, SurpriseEntry, SuggestedQuestion, DetectionResult } from "./types.js";
+import { type NumericMapLike, toNumericMap } from "./collections.js";
 import { isFileNode, isConceptNode } from "./analyze.js";
 
 export function generate(
   G: Graph,
-  communities: Map<number, string[]>,
-  cohesionScores: Map<number, number>,
-  communityLabels: Map<number, string>,
+  communities: NumericMapLike<string[]>,
+  cohesionScores: NumericMapLike<number>,
+  communityLabels: NumericMapLike<string>,
   godNodeList: GodNodeEntry[],
   surpriseList: SurpriseEntry[],
   detectionResult: DetectionResult,
   tokenCost: { input: number; output: number },
   root: string,
-  suggestedQuestions?: SuggestedQuestion[] | null,
+  suggestedQuestions?:
+    | SuggestedQuestion[]
+    | { suggestedQuestions?: SuggestedQuestion[] | null }
+    | null,
 ): string {
+  const communityMap = toNumericMap(communities);
+  const cohesionMap = toNumericMap(cohesionScores);
+  const labelMap = toNumericMap(communityLabels);
+  const suggestedQuestionList = Array.isArray(suggestedQuestions)
+    ? suggestedQuestions
+    : (suggestedQuestions?.suggestedQuestions ?? null);
   const today = new Date().toISOString().slice(0, 10);
 
   const confidences: string[] = [];
@@ -56,7 +66,7 @@ export function generate(
   lines.push(
     "",
     "## Summary",
-    `- ${G.order} nodes · ${G.size} edges · ${communities.size} communities detected`,
+    `- ${G.order} nodes · ${G.size} edges · ${communityMap.size} communities detected`,
     `- Extraction: ${extPct}% EXTRACTED · ${infPct}% INFERRED · ${ambPct}% AMBIGUOUS` +
       (infAvg !== null ? ` · INFERRED: ${infEdges.length} edges (avg confidence: ${infAvg})` : ""),
     `- Token cost: ${tokenCost.input.toLocaleString()} input · ${tokenCost.output.toLocaleString()} output`,
@@ -100,9 +110,9 @@ export function generate(
   }
 
   lines.push("", "## Communities");
-  for (const [cid, nodes] of communities) {
-    const label = communityLabels.get(cid) ?? `Community ${cid}`;
-    const score = cohesionScores.get(cid) ?? 0.0;
+  for (const [cid, nodes] of communityMap) {
+    const label = labelMap.get(cid) ?? `Community ${cid}`;
+    const score = cohesionMap.get(cid) ?? 0.0;
     const realNodes = nodes.filter((n) => !isFileNode(G, n));
     const display = realNodes.slice(0, 8).map((n) => (G.getNodeAttribute(n, "label") as string) ?? n);
     const suffix = realNodes.length > 8 ? ` (+${realNodes.length - 8} more)` : "";
@@ -135,7 +145,7 @@ export function generate(
     (n) => G.degree(n) <= 1 && !isFileNode(G, n) && !isConceptNode(G, n),
   );
   const thinCommunities = new Map<number, string[]>();
-  for (const [cid, nodes] of communities) {
+  for (const [cid, nodes] of communityMap) {
     if (nodes.length < 3) thinCommunities.set(cid, nodes);
   }
   const gapCount = isolated.length + thinCommunities.size;
@@ -152,7 +162,7 @@ export function generate(
     }
     if (thinCommunities.size > 0) {
       for (const [cid, nodes] of thinCommunities) {
-        const label = communityLabels.get(cid) ?? `Community ${cid}`;
+        const label = labelMap.get(cid) ?? `Community ${cid}`;
         const nodeLabels = nodes.map((n) => (G.getNodeAttribute(n, "label") as string) ?? n);
         lines.push(
           `- **Thin community \`${label}\`** (${nodes.length} nodes): ${nodeLabels.map((l) => `\`${l}\``).join(", ")}`,
@@ -165,14 +175,14 @@ export function generate(
     }
   }
 
-  if (suggestedQuestions && suggestedQuestions.length > 0) {
+  if (suggestedQuestionList && suggestedQuestionList.length > 0) {
     lines.push("", "## Suggested Questions");
-    const noSignal = suggestedQuestions.length === 1 && suggestedQuestions[0]!.type === "no_signal";
+    const noSignal = suggestedQuestionList.length === 1 && suggestedQuestionList[0]!.type === "no_signal";
     if (noSignal) {
-      lines.push(`_${suggestedQuestions[0]!.why}_`);
+      lines.push(`_${suggestedQuestionList[0]!.why}_`);
     } else {
       lines.push("_Questions this graph is uniquely positioned to answer:_", "");
-      for (const q of suggestedQuestions) {
+      for (const q of suggestedQuestionList) {
         if (q.question) {
           lines.push(`- **${q.question}**`, `  _${q.why}_`);
         }

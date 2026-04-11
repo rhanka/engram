@@ -6,6 +6,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import Graph from "graphology";
 import type { GodNodeEntry } from "./types.js";
+import { type NumericMapLike, toNumericMap } from "./collections.js";
 
 function safeFilename(name: string): string {
   return name.replace(/\//g, "-").replace(/ /g, "_").replace(/:/g, "-");
@@ -15,14 +16,15 @@ function crossCommunityLinks(
   G: Graph,
   nodes: string[],
   ownCid: number,
-  labels: Map<number, string>,
+  labels: NumericMapLike<string>,
 ): [string, number][] {
+  const labelMap = toNumericMap(labels);
   const counts = new Map<string, number>();
   for (const nid of nodes) {
     G.forEachNeighbor(nid, (neighbor) => {
       const ncid = G.getNodeAttribute(neighbor, "community") as number | undefined;
       if (ncid !== undefined && ncid !== ownCid) {
-        const label = labels.get(ncid) ?? `Community ${ncid}`;
+        const label = labelMap.get(ncid) ?? `Community ${ncid}`;
         counts.set(label, (counts.get(label) ?? 0) + 1);
       }
     });
@@ -188,24 +190,27 @@ function indexMd(
 
 export function toWiki(
   G: Graph,
-  communities: Map<number, string[]>,
+  communities: NumericMapLike<string[]>,
   outputDir: string,
   options?: {
-    communityLabels?: Map<number, string>;
-    cohesion?: Map<number, number>;
+    communityLabels?: NumericMapLike<string>;
+    cohesion?: NumericMapLike<number>;
     godNodesData?: GodNodeEntry[];
   },
 ): number {
+  const communityMap = toNumericMap(communities);
   mkdirSync(outputDir, { recursive: true });
 
-  const labels = options?.communityLabels ?? new Map([...communities.keys()].map((cid) => [cid, `Community ${cid}`]));
-  const cohesion = options?.cohesion ?? new Map();
+  const labels = options?.communityLabels
+    ? toNumericMap(options.communityLabels)
+    : new Map([...communityMap.keys()].map((cid) => [cid, `Community ${cid}`]));
+  const cohesion = toNumericMap(options?.cohesion);
   const godNodesData = options?.godNodesData ?? [];
 
   let count = 0;
 
   // Community articles
-  for (const [cid, nodes] of communities) {
+  for (const [cid, nodes] of communityMap) {
     const label = labels.get(cid) ?? `Community ${cid}`;
     const article = communityArticle(G, cid, nodes, label, labels, cohesion.get(cid));
     writeFileSync(join(outputDir, `${safeFilename(label)}.md`), article);
@@ -225,7 +230,7 @@ export function toWiki(
   // Index
   writeFileSync(
     join(outputDir, "index.md"),
-    indexMd(communities, labels, godNodesData, G.order, G.size),
+    indexMd(communityMap, labels, godNodesData, G.order, G.size),
   );
 
   return count;
