@@ -1,4 +1,4 @@
-"""graphify CLI - `graphify install` sets up the Claude Code skill."""
+"""graphify CLI - `graphify install` sets up assistant skills."""
 from __future__ import annotations
 import json
 import platform
@@ -22,6 +22,10 @@ def _check_skill_version(skill_dst: Path) -> None:
     installed = version_file.read_text(encoding="utf-8").strip()
     if installed != __version__:
         print(f"  warning: skill is from graphify {installed}, package is {__version__}. Run 'graphify install' to update.")
+
+
+def _get_invocation_example(platform_name: str) -> str:
+    return "$graphify ." if platform_name == "codex" else "/graphify ."
 
 _SETTINGS_HOOK = {
     "matcher": "Glob|Grep",
@@ -128,7 +132,10 @@ def install(platform: str = "claude") -> None:
     print()
     print("Done. Open your AI coding assistant and type:")
     print()
-    print("  /graphify .")
+    print(f"  {_get_invocation_example(platform)}")
+    if platform == "codex":
+        print()
+        print("Codex explicit skill calls use `$graphify`, not `/graphify`.")
     print()
 
 
@@ -147,18 +154,27 @@ _CLAUDE_MD_MARKER = "## graphify"
 
 # AGENTS.md section for Codex, OpenCode, and OpenClaw.
 # All three platforms read AGENTS.md in the project root for persistent instructions.
-_AGENTS_MD_SECTION = """\
-## graphify
-
-This project has a graphify knowledge graph at graphify-out/.
-
-Rules:
-- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
-- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
-- After modifying code files in this session, run `python3 -c "from graphify.watch import _rebuild_code; from pathlib import Path; _rebuild_code(Path('.'))"` to keep the graph current
-"""
-
 _AGENTS_MD_MARKER = "## graphify"
+
+
+def _agents_md_section(platform_name: str) -> str:
+    lines = [
+        "## graphify",
+        "",
+        "This project has a graphify knowledge graph at graphify-out/.",
+        "",
+        "Rules:",
+        "- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure",
+        "- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files",
+        "- If the user asks to build, update, query, path, or explain the graph, use the installed `graphify` skill instead of ad-hoc file traversal",
+        '- After modifying code files in this session, run `python3 -c "from graphify.watch import _rebuild_code; from pathlib import Path; _rebuild_code(Path(\'.\'))"` to keep the graph current',
+    ]
+    if platform_name == "codex":
+        lines.insert(
+            7,
+            "- In Codex, the reliable explicit skill invocation is `$graphify ...`; do not rely on `/graphify ...`",
+        )
+    return "\n".join(lines) + "\n"
 
 _CODEX_HOOK = {
     "hooks": {
@@ -229,9 +245,9 @@ def _agents_install(project_dir: Path, platform: str) -> None:
         if _AGENTS_MD_MARKER in content:
             print(f"graphify already configured in AGENTS.md")
             return
-        new_content = content.rstrip() + "\n\n" + _AGENTS_MD_SECTION
+        new_content = content.rstrip() + "\n\n" + _agents_md_section(platform)
     else:
-        new_content = _AGENTS_MD_SECTION
+        new_content = _agents_md_section(platform)
 
     target.write_text(new_content, encoding="utf-8")
     print(f"graphify section written to {target.resolve()}")
@@ -394,8 +410,8 @@ def main() -> None:
         print("  hook status             check if git hooks are installed")
         print("  claude install          write graphify section to CLAUDE.md + PreToolUse hook (Claude Code)")
         print("  claude uninstall        remove graphify section from CLAUDE.md + PreToolUse hook")
-        print("  codex install           write graphify section to AGENTS.md (Codex)")
-        print("  codex uninstall         remove graphify section from AGENTS.md")
+        print("  codex install           write graphify section to AGENTS.md + PreToolUse hook (Codex)")
+        print("  codex uninstall         remove graphify section from AGENTS.md + PreToolUse hook")
         print("  opencode install        write graphify section to AGENTS.md (OpenCode)")
         print("  opencode uninstall      remove graphify section from AGENTS.md")
         print("  claw install            write graphify section to AGENTS.md (OpenClaw)")

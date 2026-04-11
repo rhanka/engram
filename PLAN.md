@@ -94,7 +94,7 @@
 
 - [x] Commit 1 - close the TypeScript runtime/package contract, CLI surface, and verification helpers
 - [x] Commit 2 - align the non-Codex skill markdown files with the shipped runtime contract
-- [ ] Commit 3 - make Codex use `$graphify` end to end in Python/Codex skills, docs, and UAT evidence
+- [x] Commit 3 - make Codex use `$graphify` end to end in Python/Codex skills, docs, and UAT evidence
 
 ## Release Gate
 

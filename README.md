@@ -6,14 +6,15 @@
 [![PyPI](https://img.shields.io/pypi/v/graphifyy)](https://pypi.org/project/graphifyy/)
 [![Sponsor](https://img.shields.io/badge/sponsor-safishamsi-ea4aaa?logo=github-sponsors)](https://github.com/sponsors/safishamsi)
 
-**An AI coding assistant skill.** Type `/graphify` in Claude Code, Codex, OpenCode, OpenClaw, Factory Droid, or Trae - it reads your files, builds a knowledge graph, and gives you back structure you didn't know was there. Understand a codebase faster. Find the "why" behind architectural decisions.
+**An AI coding assistant skill.** Type `/graphify` in Claude Code or `$graphify` in Codex - it reads your files, builds a knowledge graph, and gives you back structure you didn't know was there. Understand a codebase faster. Find the "why" behind architectural decisions.
 
-Fully multimodal. Drop in code, PDFs, markdown, screenshots, diagrams, whiteboard photos, even images in other languages - graphify uses Claude vision to extract concepts and relationships from all of it and connects them into one graph. 20 languages supported via tree-sitter AST (Python, JS, TS, Go, Rust, Java, C, C++, Ruby, C#, Kotlin, Scala, PHP, Swift, Lua, Zig, PowerShell, Elixir, Objective-C, Julia).
+Fully multimodal. Drop in code, PDFs, markdown, screenshots, diagrams, whiteboard photos, even images in other languages - graphify uses your platform's multimodal model to extract concepts and relationships from all of it and connects them into one graph. 20 languages supported via tree-sitter AST (Python, JS, TS, Go, Rust, Java, C, C++, Ruby, C#, Kotlin, Scala, PHP, Swift, Lua, Zig, PowerShell, Elixir, Objective-C, Julia).
 
 > Andrej Karpathy keeps a `/raw` folder where he drops papers, tweets, screenshots, and notes. graphify is the answer to that problem - 71.5x fewer tokens per query vs reading the raw files, persistent across sessions, honest about what it found vs guessed.
 
-```
-/graphify .                        # works on any folder - your codebase, notes, papers, anything
+```bash
+$graphify .                        # Codex
+/graphify .                        # Claude Code / OpenCode / OpenClaw / Droid / Trae
 ```
 
 ```
@@ -38,9 +39,9 @@ Same syntax as `.gitignore`. Patterns match against file paths relative to the f
 
 ## How it works
 
-graphify runs in two passes. First, a deterministic AST pass extracts structure from code files (classes, functions, imports, call graphs, docstrings, rationale comments) with no LLM needed. Second, Claude subagents run in parallel over docs, papers, and images to extract concepts, relationships, and design rationale. The results are merged into a NetworkX graph, clustered with Leiden community detection, and exported as interactive HTML, queryable JSON, and a plain-language audit report.
+graphify runs in two passes. First, a deterministic AST pass extracts structure from code files (classes, functions, imports, call graphs, docstrings, rationale comments) with no LLM needed. Second, model-backed subagents run in parallel over docs, papers, and images to extract concepts, relationships, and design rationale. The results are merged into a NetworkX graph, clustered with Leiden community detection, and exported as interactive HTML, queryable JSON, and a plain-language audit report.
 
-**Clustering is graph-topology-based — no embeddings.** Leiden finds communities by edge density. The semantic similarity edges that Claude extracts (`semantically_similar_to`, marked INFERRED) are already in the graph, so they influence community detection directly. The graph structure is the similarity signal — no separate embedding step or vector database needed.
+**Clustering is graph-topology-based — no embeddings.** Leiden finds communities by edge density. The semantic similarity edges that the model extracts (`semantically_similar_to`, marked INFERRED) are already in the graph, so they influence community detection directly. The graph structure is the similarity signal — no separate embedding step or vector database needed.
 
 Every relationship is tagged `EXTRACTED` (found directly in source), `INFERRED` (reasonable inference, with a confidence score), or `AMBIGUOUS` (flagged for review). You always know what was found vs guessed.
 
@@ -69,13 +70,12 @@ pip install graphifyy && graphify install
 
 Codex users also need `multi_agent = true` under `[features]` in `~/.codex/config.toml` for parallel extraction. Factory Droid uses the `Task` tool for parallel subagent dispatch. OpenClaw uses sequential extraction (parallel agent support is still early on that platform). Trae uses the Agent tool for parallel subagent dispatch and does **not** support PreToolUse hooks — AGENTS.md is the always-on mechanism.
 
-Then open your AI coding assistant and type:
+Then open your AI coding assistant and invoke the skill:
 
+```bash
+$graphify .                        # Codex
+/graphify .                        # Claude Code / OpenCode / OpenClaw / Droid / Trae
 ```
-/graphify .
-```
-
-Note: Codex uses `$` instead of `/` for skill calling, so type `$graphify .` instead.
 
 ### Make your assistant always use the graph (recommended)
 
@@ -93,7 +93,7 @@ After building a graph, run this once in your project:
 
 **Claude Code** does two things: writes a `CLAUDE.md` section telling Claude to read `graphify-out/GRAPH_REPORT.md` before answering architecture questions, and installs a **PreToolUse hook** (`settings.json`) that fires before every Glob and Grep call. If a knowledge graph exists, Claude sees: _"graphify: Knowledge graph exists. Read GRAPH_REPORT.md for god nodes and community structure before searching raw files."_ — so Claude navigates via the graph instead of grepping through every file.
 
-**Codex** writes to `AGENTS.md` and also installs a **PreToolUse hook** in `.codex/hooks.json` that fires before every Bash tool call — same always-on mechanism as Claude Code.
+**Codex** writes to `AGENTS.md`, teaches Codex to use the installed `graphify` skill for graph build/update/query tasks, and also installs a **PreToolUse hook** in `.codex/hooks.json` that fires before every Bash tool call.
 
 **OpenCode, OpenClaw, Factory Droid, Trae** write the same rules to `AGENTS.md` in your project root. These platforms don't support PreToolUse hooks, so AGENTS.md is the always-on mechanism.
 
@@ -103,9 +103,9 @@ Uninstall with the matching uninstall command (e.g. `graphify claude uninstall`)
 
 The always-on hook surfaces `GRAPH_REPORT.md` — a one-page summary of god nodes, communities, and surprising connections. Your assistant reads this before searching files, so it navigates by structure instead of keyword matching. That covers most everyday questions.
 
-`/graphify query`, `/graphify path`, and `/graphify explain` go deeper: they traverse the raw `graph.json` hop by hop, trace exact paths between nodes, and surface edge-level detail (relation type, confidence score, source location). Use them when you want a specific question answered from the graph rather than a general orientation.
+The explicit skill commands (`$graphify ...` in Codex, `/graphify ...` in Claude-style clients) go deeper: they traverse the raw `graph.json` hop by hop, trace exact paths between nodes, and surface edge-level detail (relation type, confidence score, source location). Use them when you want a specific question answered from the graph rather than a general orientation.
 
-Think of it this way: the always-on hook gives your assistant a map. The `/graphify` commands let it navigate the map precisely.
+Think of it this way: the always-on hook gives your assistant a map. The explicit graphify skill commands let it navigate the map precisely.
 
 ## Using `graph.json` with an LLM
 
@@ -140,6 +140,12 @@ of pasting text. graphify can expose `graph.json` as an MCP server:
 python -m graphify.serve graphify-out/graph.json
 ```
 
+In Codex, register that server with:
+
+```bash
+codex mcp add graphify -- python -m graphify.serve /absolute/path/to/graphify-out/graph.json
+```
+
 That gives the assistant structured graph access for repeated queries such as
 `query_graph`, `get_node`, `get_neighbors`, and `shortest_path`.
 
@@ -162,6 +168,8 @@ When the user types `/graphify`, invoke the Skill tool with `skill: "graphify"` 
 </details>
 
 ## Usage
+
+In Codex, replace the leading `/` in the examples below with `$`.
 
 ```
 /graphify                          # run on current directory
@@ -221,10 +229,10 @@ Works with any mix of file types:
 | Type | Extensions | Extraction |
 |------|-----------|------------|
 | Code | `.py .ts .js .jsx .tsx .go .rs .java .c .cpp .rb .cs .kt .scala .php .swift .lua .zig .ps1 .ex .exs .m .mm .jl` | AST via tree-sitter + call-graph + docstring/comment rationale |
-| Docs | `.md .txt .rst` | Concepts + relationships + design rationale via Claude |
-| Office | `.docx .xlsx` | Converted to markdown then extracted via Claude (requires `pip install graphifyy[office]`) |
+| Docs | `.md .txt .rst` | Concepts + relationships + design rationale via the platform model |
+| Office | `.docx .xlsx` | Converted to markdown then extracted via the platform model (requires `pip install graphifyy[office]`) |
 | Papers | `.pdf` | Citation mining + concept extraction |
-| Images | `.png .jpg .webp .gif` | Claude vision - screenshots, diagrams, any language |
+| Images | `.png .jpg .webp .gif` | Multimodal vision - screenshots, diagrams, any language |
 
 ## What you get
 
@@ -266,7 +274,7 @@ graphify sends file contents to your AI coding assistant's underlying model API 
 
 ## Tech stack
 
-NetworkX + Leiden (graspologic) + tree-sitter + vis.js. Semantic extraction via Claude (Claude Code), GPT-4 (Codex), or whichever model your platform runs. No Neo4j required, no server, runs entirely locally.
+NetworkX + Leiden (graspologic) + tree-sitter + vis.js. Semantic extraction via your platform's model (Claude Code, Codex, or another supported client). No Neo4j required, no server, runs entirely locally.
 
 ## What we are building next
 
@@ -279,7 +287,7 @@ graphify is the graph layer. We are building [Penpax](https://safishamsi.github.
 <details>
 <summary>Contributing</summary>
 
-**Worked examples** are the most trust-building contribution. Run `/graphify` on a real corpus, save output to `worked/{slug}/`, write an honest `review.md` evaluating what the graph got right and wrong, submit a PR.
+**Worked examples** are the most trust-building contribution. Run the graphify skill on a real corpus (`$graphify` in Codex, `/graphify` elsewhere), save output to `worked/{slug}/`, write an honest `review.md` evaluating what the graph got right and wrong, submit a PR.
 
 **Extraction bugs** - open an issue with the input file, the cache entry (`graphify-out/cache/`), and what was missed or invented.
 
