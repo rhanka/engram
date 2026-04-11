@@ -1,6 +1,6 @@
 # Architecture
 
-graphify is a Claude Code skill backed by a Python library. The skill orchestrates the library; the library can be used standalone.
+graphify is an assistant skill backed by a Python library in `py/graphify/`. The skill orchestrates the library; the library can be used standalone.
 
 ## Pipeline
 
@@ -60,7 +60,7 @@ Every extractor returns:
 2. Register the file suffix in `extract()` dispatch and `collect_files()`.
 3. Add the suffix to `CODE_EXTENSIONS` in `detect.py` and `_WATCHED_EXTENSIONS` in `watch.py`.
 4. Add the tree-sitter package to `pyproject.toml` dependencies.
-5. Add a fixture file to `tests/fixtures/` and tests to `tests/test_languages.py`.
+5. Add a fixture file to `py/tests/fixtures/` and tests to `py/tests/test_languages.py`.
 
 ## Security
 
@@ -78,7 +78,7 @@ See `SECURITY.md` for the full threat model.
 One test file per module under `tests/`. Run with:
 
 ```bash
-pytest tests/ -q
+pytest py/tests/ -q
 ```
 
 All tests are pure unit tests - no network calls, no file system side effects outside `tmp_path`.

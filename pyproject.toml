@@ -53,7 +53,7 @@ all = ["mcp", "neo4j", "pypdf", "html2text", "watchdog", "graspologic", "python-
 graphify = "graphify.__main__:main"
 
 [tool.setuptools.packages.find]
-where = ["."]
+where = ["py"]
 include = ["graphify*"]
 
 [tool.setuptools.package-data]

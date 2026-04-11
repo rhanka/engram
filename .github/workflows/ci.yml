@@ -28,7 +28,7 @@ jobs:
 
       - name: Run tests
         run: |
-          python -m pytest tests/ -q --tb=short
+          python -m pytest py/tests/ -q --tb=short
 
       - name: Verify install works end-to-end
         run: |

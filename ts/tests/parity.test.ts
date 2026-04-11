@@ -84,7 +84,7 @@ describe("Python ↔ TypeScript parity", () => {
     const script = `
 import json, sys
 from pathlib import Path
-sys.path.insert(0, "${resolve(__dirname, "..", "..")}")
+sys.path.insert(0, "${resolve(__dirname, "..", "..", "py")}")
 from graphify.build import build_from_json
 from graphify.cluster import cluster, score_all
 from graphify.analyze import god_nodes, surprising_connections, suggest_questions

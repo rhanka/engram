@@ -106,7 +106,7 @@ Codex ユーザーは並列抽出のために `~/.codex/config.toml` の `[featu
 
 ```bash
 mkdir -p ~/.claude/skills/graphify
-curl -fsSL https://raw.githubusercontent.com/safishamsi/graphify/v3/graphify/skill.md \
+curl -fsSL https://raw.githubusercontent.com/safishamsi/graphify/v3/py/graphify/skill.md \
   > ~/.claude/skills/graphify/SKILL.md
 ```
 

@@ -85,7 +85,7 @@
   - [x] Update the Codex install output to recommend `$graphify .`
   - [x] Update `AGENTS.md` rules for Codex to point Codex at the installed `graphify` skill
 - [x] Remove Claude-centric wording from the Codex-specific skill and docs
-  - [x] Update `graphify/skill-codex.md`
+  - [x] Update `py/graphify/skill-codex.md`
   - [x] Update `ts/src/skills/skill-codex.md`
   - [x] Update the root `README.md`
 - [x] Run a real Codex end-to-end build on this repository
@@ -106,10 +106,11 @@
 - [x] Commit 2 - align the non-Codex skill markdown files with the shipped runtime contract
 - [x] Commit 3 - make Codex use `$graphify` end to end in Python/Codex skills, docs, and UAT evidence
 - [x] Commit 4 - harden Codex install/UAT on a real repo and record that the successful skill pipeline is still Python-backed
+- [x] Commit 5 - move the Python runtime and Python tests under `py/` and repair top-level paths
 
 ## Track 5 - Symmetrize The Repo Before Python Removal
 
-- [ ] Move the Python runtime into a first-class `py/` workspace
+- [x] Move the Python runtime into a first-class `py/` workspace
 - [ ] Keep `ts/` as the parallel TypeScript workspace with matching top-level layout
 - [ ] Define which files stay shared at repo root vs runtime-specific under `py/` and `ts/`
   - Shared candidates: fixtures, `worked/`, parity specs, release docs

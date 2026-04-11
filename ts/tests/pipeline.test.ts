@@ -1,6 +1,6 @@
 /**
  * End-to-end pipeline test: detect → extract → build → cluster → analyze → report → export
- * Runs on tests/fixtures/ and verifies all outputs are generated correctly.
+ * Runs on py/tests/fixtures/ and verifies all outputs are generated correctly.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { mkdirSync, existsSync, readFileSync, rmSync } from "node:fs";
