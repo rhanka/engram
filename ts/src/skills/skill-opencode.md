@@ -332,7 +332,7 @@ const cohesion = scoreAll(G, communities);
 const tokens = {input: extraction.input_tokens || 0, output: extraction.output_tokens || 0};
 const gods = godNodes(G);
 const surprises = surprisingConnections(G, communities);
-const labels = Object.fromEntries(Object.keys(communities).map(cid => [cid, 'Community ' + cid]));
+const labels = new Map(Array.from(communities.keys(), cid => [cid, 'Community ' + cid]));
 const questions = suggestQuestions(G, communities, labels);
 
 const report = generateReport(G, communities, cohesion, labels, gods, surprises, detection, tokens, 'INPUT_PATH', {suggestedQuestions: questions});
@@ -340,8 +340,8 @@ fs.writeFileSync('graphify-out/GRAPH_REPORT.md', report);
 toJson(G, communities, 'graphify-out/graph.json');
 
 const analysis = {
-    communities: Object.fromEntries(Object.entries(communities).map(([k, v]) => [String(k), v])),
-    cohesion: Object.fromEntries(Object.entries(cohesion).map(([k, v]) => [String(k), v])),
+    communities: Object.fromEntries(Array.from(communities.entries(), ([k, v]) => [String(k), v])),
+    cohesion: Object.fromEntries(Array.from(cohesion.entries(), ([k, v]) => [String(k), v])),
     gods,
     surprises,
     questions,
@@ -352,7 +352,7 @@ if (G.order === 0) {
     console.log('Possible causes: all files were skipped, binary-only corpus, or extraction failed.');
     process.exit(1);
 }
-console.log(\`Graph: ${G.order} nodes, ${G.size} edges, ${Object.keys(communities).length} communities\`);
+console.log(\`Graph: ${G.order} nodes, ${G.size} edges, ${communities.size} communities\`);
 "
 ```
 
@@ -758,20 +758,20 @@ const communities = cluster(G);
 const cohesion = scoreAll(G, communities);
 const gods = godNodes(G);
 const surprises = surprisingConnections(G, communities);
-const labels = Object.fromEntries(Object.keys(communities).map(cid => [cid, 'Community ' + cid]));
+const labels = new Map(Array.from(communities.keys(), cid => [cid, 'Community ' + cid]));
 
 const report = generateReport(G, communities, cohesion, labels, gods, surprises, detection, tokens, '.');
 fs.writeFileSync('graphify-out/GRAPH_REPORT.md', report);
 toJson(G, communities, 'graphify-out/graph.json');
 
 const analysis = {
-    communities: Object.fromEntries(Object.entries(communities).map(([k, v]) => [String(k), v])),
-    cohesion: Object.fromEntries(Object.entries(cohesion).map(([k, v]) => [String(k), v])),
+    communities: Object.fromEntries(Array.from(communities.entries(), ([k, v]) => [String(k), v])),
+    cohesion: Object.fromEntries(Array.from(cohesion.entries(), ([k, v]) => [String(k), v])),
     gods,
     surprises,
 };
 fs.writeFileSync('.graphify_analysis.json', JSON.stringify(analysis, null, 2));
-console.log(\`Re-clustered: ${Object.keys(communities).length} communities\`);
+console.log(\`Re-clustered: ${communities.size} communities\`);
 "
 ```
 

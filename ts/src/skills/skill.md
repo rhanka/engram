@@ -331,7 +331,7 @@ const cohesion = scoreAll(G, communities);
 const tokens = {input: extraction.input_tokens || 0, output: extraction.output_tokens || 0};
 const gods = godNodes(G);
 const surprises = surprisingConnections(G, communities);
-const labels = Object.fromEntries(Object.keys(communities).map(cid => [cid, 'Community ' + cid]));
+const labels = new Map(Array.from(communities.keys(), cid => [cid, 'Community ' + cid]));
 const questions = suggestQuestions(G, communities, labels);
 
 const report = generateReport(G, communities, cohesion, labels, gods, surprises, detection, tokens, 'INPUT_PATH', {suggestedQuestions: questions});
@@ -339,8 +339,8 @@ fs.writeFileSync('graphify-out/GRAPH_REPORT.md', report);
 toJson(G, communities, 'graphify-out/graph.json');
 
 const analysis = {
-    communities: Object.fromEntries(Object.entries(communities).map(([k, v]) => [String(k), v])),
-    cohesion: Object.fromEntries(Object.entries(cohesion).map(([k, v]) => [String(k), v])),
+    communities: Object.fromEntries(Array.from(communities.entries(), ([k, v]) => [String(k), v])),
+    cohesion: Object.fromEntries(Array.from(cohesion.entries(), ([k, v]) => [String(k), v])),
     gods,
     surprises,
     questions,
@@ -351,7 +351,7 @@ if (G.order === 0) {
     console.log('Possible causes: all files were skipped, binary-only corpus, or extraction failed.');
     process.exit(1);
 }
-console.log(\`Graph: \${G.order} nodes, \${G.size} edges, \${Object.keys(communities).length} communities\`);
+console.log(\`Graph: \${G.order} nodes, \${G.size} edges, \${communities.size} communities\`);
 "
 ```
 
@@ -479,6 +479,7 @@ console.log('cypher.txt written - import with: cypher-shell < graphify-out/cyphe
 
 ```bash
 node -e "
+(async () => {
 const fs = require('fs');
 const { buildFromJson, pushToNeo4j } = require('graphifyy');
 
@@ -487,8 +488,12 @@ const analysis = JSON.parse(fs.readFileSync('graphify-out/.graphify_analysis.jso
 const G = buildFromJson(extraction);
 const communities = Object.fromEntries(Object.entries(analysis.communities).map(([k, v]) => [Number(k), v]));
 
-const result = pushToNeo4j(G, {uri: 'NEO4J_URI', user: 'NEO4J_USER', password: 'NEO4J_PASSWORD', communities});
+const result = await pushToNeo4j(G, {uri: 'NEO4J_URI', user: 'NEO4J_USER', password: 'NEO4J_PASSWORD', communities});
 console.log(\`Pushed to Neo4j: \${result.nodes} nodes, \${result.edges} edges\`);
+})().catch((e) => {
+    console.error(\`error: \${e.message}\`);
+    process.exit(1);
+});
 "
 ```
 
@@ -770,20 +775,20 @@ const communities = cluster(G);
 const cohesion = scoreAll(G, communities);
 const gods = godNodes(G);
 const surprises = surprisingConnections(G, communities);
-const labels = Object.fromEntries(Object.keys(communities).map(cid => [cid, 'Community ' + cid]));
+const labels = new Map(Array.from(communities.keys(), cid => [cid, 'Community ' + cid]));
 
 const report = generateReport(G, communities, cohesion, labels, gods, surprises, detection, tokens, '.');
 fs.writeFileSync('graphify-out/GRAPH_REPORT.md', report);
 toJson(G, communities, 'graphify-out/graph.json');
 
 const analysis = {
-    communities: Object.fromEntries(Object.entries(communities).map(([k, v]) => [String(k), v])),
-    cohesion: Object.fromEntries(Object.entries(cohesion).map(([k, v]) => [String(k), v])),
+    communities: Object.fromEntries(Array.from(communities.entries(), ([k, v]) => [String(k), v])),
+    cohesion: Object.fromEntries(Array.from(cohesion.entries(), ([k, v]) => [String(k), v])),
     gods,
     surprises,
 };
 fs.writeFileSync('graphify-out/.graphify_analysis.json', JSON.stringify(analysis, null, 2));
-console.log(\`Re-clustered: \${Object.keys(communities).length} communities\`);
+console.log(\`Re-clustered: \${communities.size} communities\`);
 "
 ```
 
@@ -1111,14 +1116,14 @@ Fetch a URL and add it to the corpus, then update the graph.
 
 ```bash
 node -e "
+(async () => {
 const { ingest } = require('graphifyy');
-try {
-    const out = ingest('URL', './raw', {author: 'AUTHOR', contributor: 'CONTRIBUTOR'});
-    console.log(\`Saved to \${out}\`);
-} catch (e) {
+const out = await ingest('URL', './raw', {author: 'AUTHOR', contributor: 'CONTRIBUTOR'});
+console.log(\`Saved to \${out}\`);
+})().catch((e) => {
     console.error(\`error: \${e.message}\`);
     process.exit(1);
-}
+});
 "
 ```
 
