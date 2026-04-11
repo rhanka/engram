@@ -2,7 +2,8 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja-JP.md)
 
-[![CI](https://github.com/safishamsi/graphify/actions/workflows/ci.yml/badge.svg?branch=v3)](https://github.com/safishamsi/graphify/actions/workflows/ci.yml)
+[![Python CI](https://github.com/safishamsi/graphify/actions/workflows/python-ci.yml/badge.svg?branch=v3)](https://github.com/safishamsi/graphify/actions/workflows/python-ci.yml)
+[![TypeScript CI](https://github.com/safishamsi/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=v3)](https://github.com/safishamsi/graphify/actions/workflows/typescript-ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/graphifyy)](https://pypi.org/project/graphifyy/)
 [![Sponsor](https://img.shields.io/badge/sponsor-safishamsi-ea4aaa?logo=github-sponsors)](https://github.com/sponsors/safishamsi)
 

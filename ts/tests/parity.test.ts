@@ -4,7 +4,7 @@
  * Runs the Python graphify on extraction.json, then runs TypeScript graphify,
  * and compares: node counts, edge counts, community structure, report sections.
  *
- * Requires Python graphify to be installed (`pip install -e ../`).
+ * Requires Python graphify to be installed (`pip install -e ../py`).
  * Skipped gracefully if Python is not available.
  */
 import { describe, it, expect, beforeAll } from "vitest";

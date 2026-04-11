@@ -1,4 +1,4 @@
-name: CI
+name: TypeScript CI
 
 on:
   push:
@@ -118,6 +118,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install Python graphify
+        working-directory: py
         run: pip install -e ".[mcp]"
 
       - name: Install TypeScript graphify

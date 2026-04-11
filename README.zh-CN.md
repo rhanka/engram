@@ -2,7 +2,8 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja-JP.md)
 
-[![CI](https://github.com/safishamsi/graphify/actions/workflows/ci.yml/badge.svg?branch=v3)](https://github.com/safishamsi/graphify/actions/workflows/ci.yml)
+[![Python CI](https://github.com/safishamsi/graphify/actions/workflows/python-ci.yml/badge.svg?branch=v3)](https://github.com/safishamsi/graphify/actions/workflows/python-ci.yml)
+[![TypeScript CI](https://github.com/safishamsi/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=v3)](https://github.com/safishamsi/graphify/actions/workflows/typescript-ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/graphifyy)](https://pypi.org/project/graphifyy/)
 
 **一个面向 AI 编码助手的技能。** 在 Claude Code、Codex、OpenCode、OpenClaw、Factory Droid 或 Trae 中输入 `/graphify`，它会读取你的文件、构建知识图谱，并把原本不明显的结构关系还给你。更快理解代码库，找到架构决策背后的"为什么"。

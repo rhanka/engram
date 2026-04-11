@@ -11,6 +11,7 @@
 - [x] Port test fixtures
 - [x] Port the automated test suite
 - [x] Add Node.js CI/CD and npm publish workflow
+- [x] Split active GitHub CI into root-level Python and TypeScript workflows
 - [x] Convert all 7 skill markdown files from Python to Node.js
 - [x] Keep the work split into 13 atomic commits on top of `origin/v3`
 - [x] Verify local build passes with `npm run build`
@@ -107,11 +108,15 @@
 - [x] Commit 3 - make Codex use `$graphify` end to end in Python/Codex skills, docs, and UAT evidence
 - [x] Commit 4 - harden Codex install/UAT on a real repo and record that the successful skill pipeline is still Python-backed
 - [x] Commit 5 - move the Python runtime and Python tests under `py/` and repair top-level paths
+- [x] Commit 6 - move Python packaging into `py/` and split root GitHub Actions into Python and TypeScript CI workflows
 
 ## Track 5 - Symmetrize The Repo Before Python Removal
 
 - [x] Move the Python runtime into a first-class `py/` workspace
-- [ ] Keep `ts/` as the parallel TypeScript workspace with matching top-level layout
+- [x] Keep `ts/` as the parallel TypeScript workspace with matching top-level layout
+  - [x] Keep Python packaging metadata under `py/`
+  - [x] Keep TypeScript packaging metadata under `ts/`
+  - [x] Run root GitHub Actions workflows against both workspaces explicitly
 - [ ] Define which files stay shared at repo root vs runtime-specific under `py/` and `ts/`
   - Shared candidates: fixtures, `worked/`, parity specs, release docs
   - Runtime-specific candidates: package metadata, runtime tests, skill templates, build tooling
