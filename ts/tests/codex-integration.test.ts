@@ -1,7 +1,17 @@
-import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { afterEach, describe, expect, it } from "vitest";
 
-import { getAgentsMdSection, getInvocationExample } from "../src/cli.js";
+import { agentsInstall, getAgentsMdSection, getInvocationExample, installCodexHook } from "../src/cli.js";
+
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  while (tempDirs.length > 0) {
+    rmSync(tempDirs.pop()!, { recursive: true, force: true });
+  }
+});
 
 describe("Codex integration contract", () => {
   it("uses $graphify as the explicit Codex invocation hint", () => {
@@ -22,11 +32,33 @@ describe("Codex integration contract", () => {
     const readme = readFileSync(new URL("../../README.md", import.meta.url), "utf-8");
 
     expect(skill).toContain("trigger: $graphify");
+    expect(skill).toContain("### Step 2 - Detect files");
+    expect(skill).toContain("### Step 4 - Build graph, cluster, analyze, generate outputs");
     expect(skill).toContain("graphify codex install");
     expect(skill).toContain("codex mcp add graphify");
     expect(skill).not.toContain("graphify claude install");
 
     expect(readme).toContain("`$graphify` in Codex");
     expect(readme).toContain("codex mcp add graphify");
+  });
+
+  it("skips hook registration when .codex is a file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-codex-hook-"));
+    tempDirs.push(dir);
+    writeFileSync(join(dir, ".codex"), "");
+
+    expect(() => installCodexHook(dir)).not.toThrow();
+    expect(existsSync(join(dir, ".codex", "hooks.json"))).toBe(false);
+  });
+
+  it("repairs a missing Codex hook when AGENTS.md already exists", () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-codex-agents-"));
+    tempDirs.push(dir);
+
+    agentsInstall(dir, "codex");
+    rmSync(join(dir, ".codex", "hooks.json"));
+
+    expect(() => agentsInstall(dir, "codex")).not.toThrow();
+    expect(existsSync(join(dir, ".codex", "hooks.json"))).toBe(true);
   });
 });

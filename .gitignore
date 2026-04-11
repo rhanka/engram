@@ -7,6 +7,7 @@ __pycache__/
 .eggs/
 dist/
 build/
+node_modules/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -17,8 +18,13 @@ graphify-out/
 .graphify_*.json
 .graphify_python
 .claude/
+CLAUDE.md
+AGENTS.md
 skills/
 docs/superpowers/
 .vscode/
+.codex
+.codex/
 openspec/
+ts/VALIDATION.md
 uv.lock

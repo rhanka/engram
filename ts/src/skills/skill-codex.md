@@ -60,8 +60,338 @@ Follow these steps in order. Do not skip steps.
 ### Step 1 - Ensure graphify is installed
 
 ```bash
-command -v graphify >/dev/null 2>&1 || npm install -g graphifyy 2>&1 | tail -3
+# Detect the correct Python interpreter (handles pipx, venv, system installs)
+GRAPHIFY_BIN=$(which graphify 2>/dev/null)
+if [ -n "$GRAPHIFY_BIN" ]; then
+    PYTHON=$(head -1 "$GRAPHIFY_BIN" | tr -d '#!')
+    case "$PYTHON" in
+        *[!a-zA-Z0-9/_.-]*) PYTHON="python3" ;;
+    esac
+else
+    PYTHON="python3"
+fi
+"$PYTHON" -c "import graphify" 2>/dev/null || pip install graphifyy -q --break-system-packages 2>&1 | tail -3
+# Write interpreter path for all subsequent steps
+"$PYTHON" -c "import sys; open('graphify-out/.graphify_python', 'w').write(sys.executable)"
+```
+
+If the import succeeds, print nothing and move straight to Step 2.
+
+**In every subsequent bash block, replace `python3` with `$(cat .graphify_python)` to use the correct interpreter.**
+
+### Step 2 - Detect files
+
+```bash
+$(cat .graphify_python) -c "
+import json
+from graphify.detect import detect
+from pathlib import Path
+result = detect(Path('INPUT_PATH'))
+print(json.dumps(result))
+" > .graphify_detect.json
+```
+
+Replace INPUT_PATH with the actual path the user provided. Do NOT cat or print the JSON - read it silently and present a clean summary instead:
+
+```
+Corpus: X files · ~Y words
+  code:     N files (.py .ts .go ...)
+  docs:     N files (.md .txt ...)
+  papers:   N files (.pdf ...)
+  images:   N files
+```
+
+Then act on it:
+- If `total_files` is 0: stop with "No supported files found in [path]."
+- If `skipped_sensitive` is non-empty: mention file count skipped, not the file names.
+- If `total_words` > 2,000,000 OR `total_files` > 200: show the warning and the top 5 subdirectories by file count, then ask which subfolder to run on. Wait for the user's answer before proceeding.
+- Otherwise: proceed directly to Step 3 - no need to ask anything.
+
+### Step 3 - Extract entities and relationships
+
+**Before starting:** note whether `--mode deep` was given. You must pass `DEEP_MODE=true` to every subagent in Step B2 if it was. Track this from the original invocation - do not lose it.
+
+This step has two parts: **structural extraction** (deterministic, free) and **semantic extraction** (multimodal LLM, costs tokens).
+
+**Run Part A (AST) and Part B (semantic) in parallel. Dispatch all semantic subagents AND start AST extraction in the same message. Both can run simultaneously since they operate on different file types. Merge results in Part C as before.**
+
+Note: Parallelizing AST + semantic saves 5-15s on large corpora. AST is deterministic and fast; start it while subagents are processing docs/papers.
+
+#### Part A - Structural extraction for code files
+
+For any code files detected, run AST extraction in parallel with Part B subagents:
+
+```bash
+$(cat .graphify_python) -c "
+import sys, json
+from graphify.extract import collect_files, extract
+from pathlib import Path
+import json
+
+code_files = []
+detect = json.loads(Path(\".graphify_detect.json\").read_text())
+for f in detect.get(\"files\", {}).get(\"code\", []):
+    code_files.extend(collect_files(Path(f)) if Path(f).is_dir() else [Path(f)])
+
+if code_files:
+    result = extract(code_files)
+    Path(\".graphify_ast.json\").write_text(json.dumps(result, indent=2))
+    node_count = len(result.get(\"nodes\", []))
+    edge_count = len(result.get(\"edges\", []))
+    print(f\"AST: {node_count} nodes, {edge_count} edges\")
+else:
+    Path(\".graphify_ast.json\").write_text(
+        json.dumps({\"nodes\": [], \"edges\": [], \"input_tokens\": 0, \"output_tokens\": 0})
+    )
+    print(\"No code files - skipping AST extraction\")
+"
+```
+
+#### Part B - Semantic extraction (parallel subagents)
+
+**Fast path:** If detection found zero docs, papers, and images (code-only corpus), skip Part B entirely and go straight to Part C. AST handles code - there is nothing for semantic subagents to do.
+
+**MANDATORY: You MUST use the Agent tool here. Reading files yourself one-by-one is forbidden - it is 5-10x slower. If you do not use the Agent tool you are doing this wrong.**
+
+Before dispatching subagents, print a timing estimate:
+- Load `total_words` and file counts from `.graphify_detect.json`
+- Estimate agents needed: `ceil(uncached_non_code_files / 22)` (chunk size is 20-25)
+- Estimate time: ~45s per agent batch (they run in parallel, so total ≈ 45s × ceil(agents/parallel_limit))
+- Print: "Semantic extraction: ~N files → X agents, estimated ~Ys"
+
+**Step B0 - Check extraction cache first**
+
+Before dispatching any subagents, check which files already have cached extraction results:
+
+```bash
+$(cat .graphify_python) -c "
+import json
+from graphify.cache import check_semantic_cache
+from pathlib import Path
+
+detect = json.loads(Path('.graphify_detect.json').read_text())
+all_files = [f for files in detect['files'].values() for f in files]
+
+cached_nodes, cached_edges, cached_hyperedges, uncached = check_semantic_cache(all_files)
+
+if cached_nodes or cached_edges or cached_hyperedges:
+    Path('.graphify_cached.json').write_text(json.dumps({'nodes': cached_nodes, 'edges': cached_edges, 'hyperedges': cached_hyperedges}))
+Path('.graphify_uncached.txt').write_text('\n'.join(uncached))
+print(f'Cache: {len(all_files)-len(uncached)} files hit, {len(uncached)} files need extraction')
+"
+```
+
+Only dispatch subagents for files listed in `.graphify_uncached.txt`. If all files are cached, skip to Part C directly.
+
+**Step B1 - Split into chunks**
+
+Load files from `.graphify_uncached.txt`. Split into chunks of 20-25 files each. Each image gets its own chunk (vision needs separate context). When splitting, group files from the same directory together so related artifacts land in the same chunk and cross-file relationships are more likely to be extracted.
+
+**Step B2 - Dispatch ALL subagents in a single message (Codex)**
+
+> **Codex platform:** Uses `spawn_agent` + `wait` + `close_agent` instead of the Agent tool.
+> Requires `multi_agent = true` under `[features]` in `~/.codex/config.toml`.
+> If `spawn_agent` is unavailable, tell the user to add that config and restart Codex.
+
+Call `spawn_agent` once per chunk — ALL in the same response so they run in parallel. Build the message by wrapping the extraction prompt below in task-delegation framing:
+
+```
+spawn_agent(agent_type="worker", message="Your task is to perform the following. Follow the instructions below exactly.\n\n<agent-instructions>\n[extraction prompt below, with FILE_LIST, CHUNK_NUM, TOTAL_CHUNKS, DEEP_MODE substituted]\n</agent-instructions>\n\nExecute this now. Output ONLY the structured JSON response.")
+```
+
+After all agents are dispatched, collect results sequentially:
+```
+result = wait(handle); close_agent(handle)   # repeat per handle
+```
+
+Parse each result as JSON. Accumulate nodes/edges/hyperedges across all results and write to `.graphify_semantic_new.json`.
+
+The extraction prompt each subagent receives (substitute FILE_LIST, CHUNK_NUM, TOTAL_CHUNKS, DEEP_MODE):
+
+```
+You are a graphify extraction subagent. Read the files listed and extract a knowledge graph fragment.
+Output ONLY valid JSON matching the schema below - no explanation, no markdown fences, no preamble.
+
+Files (chunk CHUNK_NUM of TOTAL_CHUNKS):
+FILE_LIST
+
+Rules:
+- EXTRACTED: relationship explicit in source (import, call, citation, "see §3.2")
+- INFERRED: reasonable inference (shared data structure, implied dependency)
+- AMBIGUOUS: uncertain - flag for review, do not omit
+
+Code files: focus on semantic edges AST cannot find (call relationships, shared data, arch patterns).
+  Do not re-extract imports - AST already has those.
+Doc/paper files: extract named concepts, entities, citations. Also extract rationale — sections that explain WHY a decision was made, trade-offs chosen, or design intent. These become nodes with `rationale_for` edges pointing to the concept they explain.
+Image files: use vision to understand what the image IS - do not just OCR.
+  UI screenshot: layout patterns, design decisions, key elements, purpose.
+  Chart: metric, trend/insight, data source.
+  Tweet/post: claim as node, author, concepts mentioned.
+  Diagram: components and connections.
+  Research figure: what it demonstrates, method, result.
+  Handwritten/whiteboard: ideas and arrows, mark uncertain readings AMBIGUOUS.
+
+DEEP_MODE (if --mode deep was given): be aggressive with INFERRED edges - indirect deps,
+  shared assumptions, latent couplings. Mark uncertain ones AMBIGUOUS instead of omitting.
+
+Semantic similarity: if two concepts in this chunk solve the same problem or represent the same idea without any structural link (no import, no call, no citation), add a `semantically_similar_to` edge marked INFERRED with a confidence_score reflecting how similar they are (0.6-0.95). Examples:
+- Two functions that both validate user input but never call each other
+- A class in code and a concept in a paper that describe the same algorithm
+- Two error types that handle the same failure mode differently
+Only add these when the similarity is genuinely non-obvious and cross-cutting. Do not add them for trivially similar things.
+
+Hyperedges: if 3 or more nodes clearly participate together in a shared concept, flow, or pattern that is not captured by pairwise edges alone, add a hyperedge to a top-level `hyperedges` array. Examples:
+- All classes that implement a common protocol or interface
+- All functions in an authentication flow (even if they don't all call each other)
+- All concepts from a paper section that form one coherent idea
+Use sparingly — only when the group relationship adds information beyond the pairwise edges. Maximum 3 hyperedges per chunk.
+
+If a file has YAML frontmatter (--- ... ---), copy source_url, captured_at, author,
+  contributor onto every node from that file.
+
+confidence_score is REQUIRED on every edge - never omit it, never use 0.5 as a default:
+- EXTRACTED edges: confidence_score = 1.0 always
+- INFERRED edges: reason about each edge individually.
+  Direct structural evidence (shared data structure, clear dependency): 0.8-0.9.
+  Reasonable inference with some uncertainty: 0.6-0.7.
+  Weak or speculative: 0.4-0.5. Most edges should be 0.6-0.9, not 0.5.
+- AMBIGUOUS edges: 0.1-0.3
+
+Output exactly this JSON (no other text):
+{"nodes":[{"id":"filestem_entityname","label":"Human Readable Name","file_type":"code|document|paper|image","source_file":"relative/path","source_location":null,"source_url":null,"captured_at":null,"author":null,"contributor":null}],"edges":[{"source":"node_id","target":"node_id","relation":"calls|implements|references|cites|conceptually_related_to|shares_data_with|semantically_similar_to|rationale_for","confidence":"EXTRACTED|INFERRED|AMBIGUOUS","confidence_score":1.0,"source_file":"relative/path","source_location":null,"weight":1.0}],"hyperedges":[{"id":"snake_case_id","label":"Human Readable Label","nodes":["node_id1","node_id2","node_id3"],"relation":"participate_in|implement|form","confidence":"EXTRACTED|INFERRED","confidence_score":0.75,"source_file":"relative/path"}],"input_tokens":0,"output_tokens":0}
+```
+
+**Step B3 - Collect, cache, and merge**
+
+Wait for all subagents. For each result:
+- If a subagent returned valid JSON with `nodes` and `edges`, include it and save each file's nodes/edges to the cache
+- If a subagent failed or returned invalid JSON, print a warning and skip that chunk - do not abort
+
+If more than half the chunks failed, stop and tell the user.
+
+Save new results to cache:
+```bash
+$(cat .graphify_python) -c "
+import json
+from graphify.cache import save_semantic_cache
+from pathlib import Path
+
+new = json.loads(Path('.graphify_semantic_new.json').read_text()) if Path('.graphify_semantic_new.json').exists() else {'nodes':[],'edges':[],'hyperedges':[]}
+saved = save_semantic_cache(new.get('nodes', []), new.get('edges', []), new.get('hyperedges', []))
+print(f'Cached {saved} files')
+"
+```
+
+Merge cached + new results into `.graphify_semantic.json`:
+```bash
+$(cat .graphify_python) -c "
+import json
+from pathlib import Path
+
+cached = json.loads(Path('.graphify_cached.json').read_text()) if Path('.graphify_cached.json').exists() else {'nodes':[],'edges':[],'hyperedges':[]}
+new = json.loads(Path('.graphify_semantic_new.json').read_text()) if Path('.graphify_semantic_new.json').exists() else {'nodes':[],'edges':[],'hyperedges':[]}
+
+all_nodes = cached['nodes'] + new.get('nodes', [])
+all_edges = cached['edges'] + new.get('edges', [])
+all_hyperedges = cached.get('hyperedges', []) + new.get('hyperedges', [])
+seen = set()
+deduped = []
+for n in all_nodes:
+    if n['id'] not in seen:
+        seen.add(n['id'])
+        deduped.append(n)
+
+merged = {
+    'nodes': deduped,
+    'edges': all_edges,
+    'hyperedges': all_hyperedges,
+    'input_tokens': new.get('input_tokens', 0),
+    'output_tokens': new.get('output_tokens', 0),
+}
+Path('.graphify_semantic.json').write_text(json.dumps(merged, indent=2))
+print(f'Extraction complete - {len(deduped)} nodes, {len(all_edges)} edges ({len(cached[\"nodes\"])} from cache, {len(new.get(\"nodes\",[]))} new)')
+"
+```
+Clean up temp files: `rm -f .graphify_cached.json .graphify_uncached.txt .graphify_semantic_new.json`
+
+#### Part C - Merge AST + semantic into final extraction
+
+```bash
+$(cat .graphify_python) -c "
+import sys, json
+from pathlib import Path
+
+ast = json.loads(Path('.graphify_ast.json').read_text())
+sem = json.loads(Path('.graphify_semantic.json').read_text())
+
+# Merge: AST nodes first, semantic nodes deduplicated by id
+seen = {n['id'] for n in ast['nodes']}
+merged_nodes = list(ast['nodes'])
+for n in sem['nodes']:
+    if n['id'] not in seen:
+        merged_nodes.append(n)
+        seen.add(n['id'])
+
+merged_edges = ast['edges'] + sem['edges']
+merged_hyperedges = sem.get('hyperedges', [])
+merged = {
+    'nodes': merged_nodes,
+    'edges': merged_edges,
+    'hyperedges': merged_hyperedges,
+    'input_tokens': sem.get('input_tokens', 0),
+    'output_tokens': sem.get('output_tokens', 0),
+}
+Path('.graphify_extract.json').write_text(json.dumps(merged, indent=2))
+total = len(merged_nodes)
+edges = len(merged_edges)
+print(f'Merged: {total} nodes, {edges} edges ({len(ast[\"nodes\"])} AST + {len(sem[\"nodes\"])} semantic)')
+"
+```
+
+### Step 4 - Build graph, cluster, analyze, generate outputs
+
+```bash
 mkdir -p graphify-out
+$(cat .graphify_python) -c "
+import sys, json
+from graphify.build import build_from_json
+from graphify.cluster import cluster, score_all
+from graphify.analyze import god_nodes, surprising_connections, suggest_questions
+from graphify.report import generate
+from graphify.export import to_json
+from pathlib import Path
+
+extraction = json.loads(Path('.graphify_extract.json').read_text())
+detection  = json.loads(Path('.graphify_detect.json').read_text())
+
+G = build_from_json(extraction)
+communities = cluster(G)
+cohesion = score_all(G, communities)
+tokens = {'input': extraction.get('input_tokens', 0), 'output': extraction.get('output_tokens', 0)}
+gods = god_nodes(G)
+surprises = surprising_connections(G, communities)
+labels = {cid: 'Community ' + str(cid) for cid in communities}
+# Placeholder questions - regenerated with real labels in Step 5
+questions = suggest_questions(G, communities, labels)
+
+report = generate(G, communities, cohesion, labels, gods, surprises, detection, tokens, 'INPUT_PATH', suggested_questions=questions)
+Path('graphify-out/GRAPH_REPORT.md').write_text(report)
+to_json(G, communities, 'graphify-out/graph.json')
+
+analysis = {
+    'communities': {str(k): v for k, v in communities.items()},
+    'cohesion': {str(k): v for k, v in cohesion.items()},
+    'gods': gods,
+    'surprises': surprises,
+    'questions': questions,
+}
+Path('.graphify_analysis.json').write_text(json.dumps(analysis, indent=2))
+if G.number_of_nodes() == 0:
+    print('ERROR: Graph is empty - extraction produced no nodes.')
+    print('Possible causes: all files were skipped, binary-only corpus, or extraction failed.')
+    raise SystemExit(1)
+print(f'Graph: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges, {len(communities)} communities')
+"
 ```
 
 If this step prints `ERROR: Graph is empty`, stop and tell the user what happened - do not proceed to labeling or visualization.
@@ -75,31 +405,33 @@ Read `.graphify_analysis.json`. For each community key, look at its node labels 
 Then regenerate the report and save the labels for the visualizer:
 
 ```bash
-node -e "
-const fs = require('fs');
-const { buildFromJson } = require('graphifyy');
-const { scoreAll } = require('graphifyy');
-const { godNodes, surprisingConnections, suggestQuestions } = require('graphifyy');
-const { generateReport } = require('graphifyy');
+$(cat .graphify_python) -c "
+import sys, json
+from graphify.build import build_from_json
+from graphify.cluster import score_all
+from graphify.analyze import god_nodes, surprising_connections, suggest_questions
+from graphify.report import generate
+from pathlib import Path
 
-const extraction = JSON.parse(fs.readFileSync('.graphify_extract.json', 'utf-8'));
-const detection = JSON.parse(fs.readFileSync('.graphify_detect.json', 'utf-8'));
-const analysis = JSON.parse(fs.readFileSync('.graphify_analysis.json', 'utf-8'));
+extraction = json.loads(Path('.graphify_extract.json').read_text())
+detection  = json.loads(Path('.graphify_detect.json').read_text())
+analysis   = json.loads(Path('.graphify_analysis.json').read_text())
 
-const G = buildFromJson(extraction);
-const communities = Object.fromEntries(Object.entries(analysis.communities).map(([k, v]) => [Number(k), v]));
-const cohesion = Object.fromEntries(Object.entries(analysis.cohesion).map(([k, v]) => [Number(k), v]));
-const tokens = {input: extraction.input_tokens || 0, output: extraction.output_tokens || 0};
+G = build_from_json(extraction)
+communities = {int(k): v for k, v in analysis['communities'].items()}
+cohesion = {int(k): v for k, v in analysis['cohesion'].items()}
+tokens = {'input': extraction.get('input_tokens', 0), 'output': extraction.get('output_tokens', 0)}
 
-// LABELS - replace these with the names you chose above
-const labels = LABELS_DICT;
+# LABELS - replace these with the names you chose above
+labels = LABELS_DICT
 
-const questions = suggestQuestions(G, communities, labels);
+# Regenerate questions with real community labels (labels affect question phrasing)
+questions = suggest_questions(G, communities, labels)
 
-const report = generateReport(G, communities, cohesion, labels, analysis.gods, analysis.surprises, detection, tokens, 'INPUT_PATH', {suggestedQuestions: questions});
-fs.writeFileSync('graphify-out/GRAPH_REPORT.md', report);
-fs.writeFileSync('.graphify_labels.json', JSON.stringify(Object.fromEntries(Object.entries(labels).map(([k, v]) => [String(k), v]))));
-console.log('Report updated with community labels');
+report = generate(G, communities, cohesion, labels, analysis['gods'], analysis['surprises'], detection, tokens, 'INPUT_PATH', suggested_questions=questions)
+Path('graphify-out/GRAPH_REPORT.md').write_text(report)
+Path('.graphify_labels.json').write_text(json.dumps({str(k): v for k, v in labels.items()}))
+print('Report updated with community labels')
 "
 ```
 
@@ -113,55 +445,56 @@ Replace INPUT_PATH with the actual path.
 If `--obsidian` was given:
 
 ```bash
-node -e "
-const fs = require('fs');
-const { buildFromJson } = require('graphifyy');
-const { toWiki, toCanvas } = require('graphifyy');
+$(cat .graphify_python) -c "
+import sys, json
+from graphify.build import build_from_json
+from graphify.export import to_obsidian, to_canvas
+from pathlib import Path
 
-const extraction = JSON.parse(fs.readFileSync('.graphify_extract.json', 'utf-8'));
-const analysis = JSON.parse(fs.readFileSync('.graphify_analysis.json', 'utf-8'));
-const labelsRaw = fs.existsSync('.graphify_labels.json') ? JSON.parse(fs.readFileSync('.graphify_labels.json', 'utf-8')) : {};
+extraction = json.loads(Path('.graphify_extract.json').read_text())
+analysis   = json.loads(Path('.graphify_analysis.json').read_text())
+labels_raw = json.loads(Path('.graphify_labels.json').read_text()) if Path('.graphify_labels.json').exists() else {}
 
-const G = buildFromJson(extraction);
-const communities = Object.fromEntries(Object.entries(analysis.communities).map(([k, v]) => [Number(k), v]));
-const cohesion = Object.fromEntries(Object.entries(analysis.cohesion).map(([k, v]) => [Number(k), v]));
-const labels = Object.fromEntries(Object.entries(labelsRaw).map(([k, v]) => [Number(k), v]));
+G = build_from_json(extraction)
+communities = {int(k): v for k, v in analysis['communities'].items()}
+cohesion = {int(k): v for k, v in analysis['cohesion'].items()}
+labels = {int(k): v for k, v in labels_raw.items()}
 
-const n = toWiki(G, communities, 'graphify-out/obsidian', {communityLabels: Object.keys(labels).length ? labels : undefined, cohesion});
-console.log(\`Obsidian vault: ${n} notes in graphify-out/obsidian/\`);
+n = to_obsidian(G, communities, 'graphify-out/obsidian', community_labels=labels or None, cohesion=cohesion)
+print(f'Obsidian vault: {n} notes in graphify-out/obsidian/')
 
-toCanvas(G, communities, 'graphify-out/obsidian/graph.canvas', {communityLabels: Object.keys(labels).length ? labels : undefined});
-console.log('Canvas: graphify-out/obsidian/graph.canvas - open in Obsidian for structured community layout');
-console.log();
-console.log('Open graphify-out/obsidian/ as a vault in Obsidian.');
-console.log('  Graph view   - nodes colored by community (set automatically)');
-console.log('  graph.canvas - structured layout with communities as groups');
-console.log('  _COMMUNITY_* - overview notes with cohesion scores and dataview queries');
+to_canvas(G, communities, 'graphify-out/obsidian/graph.canvas', community_labels=labels or None)
+print('Canvas: graphify-out/obsidian/graph.canvas - open in Obsidian for structured community layout')
+print()
+print('Open graphify-out/obsidian/ as a vault in Obsidian.')
+print('  Graph view   - nodes colored by community (set automatically)')
+print('  graph.canvas - structured layout with communities as groups')
+print('  _COMMUNITY_* - overview notes with cohesion scores and dataview queries')
 "
 ```
 
 Generate the HTML graph (always, unless `--no-viz`):
 
 ```bash
-node -e "
-const fs = require('fs');
-const { buildFromJson } = require('graphifyy');
-const { toHtml } = require('graphifyy');
+$(cat .graphify_python) -c "
+import sys, json
+from graphify.build import build_from_json
+from graphify.export import to_html
+from pathlib import Path
 
-const extraction = JSON.parse(fs.readFileSync('.graphify_extract.json', 'utf-8'));
-const analysis = JSON.parse(fs.readFileSync('.graphify_analysis.json', 'utf-8'));
-const labelsRaw = fs.existsSync('.graphify_labels.json') ? JSON.parse(fs.readFileSync('.graphify_labels.json', 'utf-8')) : {};
+extraction = json.loads(Path('.graphify_extract.json').read_text())
+analysis   = json.loads(Path('.graphify_analysis.json').read_text())
+labels_raw = json.loads(Path('.graphify_labels.json').read_text()) if Path('.graphify_labels.json').exists() else {}
 
-const G = buildFromJson(extraction);
-const communities = Object.fromEntries(Object.entries(analysis.communities).map(([k, v]) => [Number(k), v]));
-const labels = Object.fromEntries(Object.entries(labelsRaw).map(([k, v]) => [Number(k), v]));
+G = build_from_json(extraction)
+communities = {int(k): v for k, v in analysis['communities'].items()}
+labels = {int(k): v for k, v in labels_raw.items()}
 
-if (G.order > 5000) {
-    console.log(\`Graph has ${G.order} nodes - too large for HTML viz. Use Obsidian vault instead.\`);
-} else {
-    toHtml(G, communities, 'graphify-out/graph.html', {communityLabels: Object.keys(labels).length ? labels : undefined});
-    console.log('graph.html written - open in any browser, no server needed');
-}
+if G.number_of_nodes() > 5000:
+    print(f'Graph has {G.number_of_nodes()} nodes - too large for HTML viz. Use Obsidian vault instead.')
+else:
+    to_html(G, communities, 'graphify-out/graph.html', community_labels=labels or None)
+    print('graph.html written - open in any browser, no server needed')
 "
 ```
 
@@ -170,30 +503,35 @@ if (G.order > 5000) {
 **If `--neo4j`** - generate a Cypher file for manual import:
 
 ```bash
-node -e "
-const fs = require('fs');
-const { buildFromJson, toCypher } = require('graphifyy');
+$(cat .graphify_python) -c "
+import sys, json
+from graphify.build import build_from_json
+from graphify.export import to_cypher
+from pathlib import Path
 
-const G = buildFromJson(JSON.parse(fs.readFileSync('.graphify_extract.json', 'utf-8')));
-toCypher(G, 'graphify-out/cypher.txt');
-console.log('cypher.txt written - import with: cypher-shell < graphify-out/cypher.txt');
+G = build_from_json(json.loads(Path('.graphify_extract.json').read_text()))
+to_cypher(G, 'graphify-out/cypher.txt')
+print('cypher.txt written - import with: cypher-shell < graphify-out/cypher.txt')
 "
 ```
 
 **If `--neo4j-push <uri>`** - push directly to a running Neo4j instance. Ask the user for credentials if not provided:
 
 ```bash
-node -e "
-const fs = require('fs');
-const { buildFromJson, pushToNeo4j } = require('graphifyy');
+$(cat .graphify_python) -c "
+import sys, json
+from graphify.build import build_from_json
+from graphify.cluster import cluster
+from graphify.export import push_to_neo4j
+from pathlib import Path
 
-const extraction = JSON.parse(fs.readFileSync('.graphify_extract.json', 'utf-8'));
-const analysis = JSON.parse(fs.readFileSync('.graphify_analysis.json', 'utf-8'));
-const G = buildFromJson(extraction);
-const communities = Object.fromEntries(Object.entries(analysis.communities).map(([k, v]) => [Number(k), v]));
+extraction = json.loads(Path('.graphify_extract.json').read_text())
+analysis   = json.loads(Path('.graphify_analysis.json').read_text())
+G = build_from_json(extraction)
+communities = {int(k): v for k, v in analysis['communities'].items()}
 
-const result = pushToNeo4j(G, {uri: 'NEO4J_URI', user: 'NEO4J_USER', password: 'NEO4J_PASSWORD', communities});
-console.log(\`Pushed to Neo4j: ${result.nodes} nodes, ${result.edges} edges\`);
+result = push_to_neo4j(G, uri='NEO4J_URI', user='NEO4J_USER', password='NEO4J_PASSWORD', communities=communities)
+print(f'Pushed to Neo4j: {result[\"nodes\"]} nodes, {result[\"edges\"]} edges')
 "
 ```
 
@@ -202,52 +540,56 @@ Replace `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD` with actual values. Default 
 ### Step 7b - SVG export (only if --svg flag)
 
 ```bash
-node -e "
-const fs = require('fs');
-const { buildFromJson, toSvg } = require('graphifyy');
+$(cat .graphify_python) -c "
+import sys, json
+from graphify.build import build_from_json
+from graphify.export import to_svg
+from pathlib import Path
 
-const extraction = JSON.parse(fs.readFileSync('.graphify_extract.json', 'utf-8'));
-const analysis = JSON.parse(fs.readFileSync('.graphify_analysis.json', 'utf-8'));
-const labelsRaw = fs.existsSync('.graphify_labels.json') ? JSON.parse(fs.readFileSync('.graphify_labels.json', 'utf-8')) : {};
+extraction = json.loads(Path('.graphify_extract.json').read_text())
+analysis   = json.loads(Path('.graphify_analysis.json').read_text())
+labels_raw = json.loads(Path('.graphify_labels.json').read_text()) if Path('.graphify_labels.json').exists() else {}
 
-const G = buildFromJson(extraction);
-const communities = Object.fromEntries(Object.entries(analysis.communities).map(([k, v]) => [Number(k), v]));
-const labels = Object.fromEntries(Object.entries(labelsRaw).map(([k, v]) => [Number(k), v]));
+G = build_from_json(extraction)
+communities = {int(k): v for k, v in analysis['communities'].items()}
+labels = {int(k): v for k, v in labels_raw.items()}
 
-toSvg(G, communities, 'graphify-out/graph.svg', {communityLabels: Object.keys(labels).length ? labels : undefined});
-console.log('graph.svg written - embeds in Obsidian, Notion, GitHub READMEs');
+to_svg(G, communities, 'graphify-out/graph.svg', community_labels=labels or None)
+print('graph.svg written - embeds in Obsidian, Notion, GitHub READMEs')
 "
 ```
 
 ### Step 7c - GraphML export (only if --graphml flag)
 
 ```bash
-node -e "
-const fs = require('fs');
-const { buildFromJson, toGraphml } = require('graphifyy');
+$(cat .graphify_python) -c "
+import json
+from graphify.build import build_from_json
+from graphify.export import to_graphml
+from pathlib import Path
 
-const extraction = JSON.parse(fs.readFileSync('.graphify_extract.json', 'utf-8'));
-const analysis = JSON.parse(fs.readFileSync('.graphify_analysis.json', 'utf-8'));
+extraction = json.loads(Path('.graphify_extract.json').read_text())
+analysis   = json.loads(Path('.graphify_analysis.json').read_text())
 
-const G = buildFromJson(extraction);
-const communities = Object.fromEntries(Object.entries(analysis.communities).map(([k, v]) => [Number(k), v]));
+G = build_from_json(extraction)
+communities = {int(k): v for k, v in analysis['communities'].items()}
 
-toGraphml(G, communities, 'graphify-out/graph.graphml');
-console.log('graph.graphml written - open in Gephi, yEd, or any GraphML tool');
+to_graphml(G, communities, 'graphify-out/graph.graphml')
+print('graph.graphml written - open in Gephi, yEd, or any GraphML tool')
 "
 ```
 
 ### Step 7d - MCP server (only if --mcp flag)
 
 ```bash
-npx graphify serve graphify-out/graph.json
+python3 -m graphify.serve graphify-out/graph.json
 ```
 
 This starts a stdio MCP server that exposes tools: `query_graph`, `get_node`, `get_neighbors`, `get_community`, `god_nodes`, `graph_stats`, `shortest_path`. Add it to Codex or any MCP-compatible agent orchestrator so other agents can query the graph live.
 
 To register it in Codex:
 ```bash
-codex mcp add graphify -- graphify serve /absolute/path/to/graphify-out/graph.json
+codex mcp add graphify -- python3 -m graphify.serve /absolute/path/to/graphify-out/graph.json
 ```
 
 ### Step 8 - Token reduction benchmark (only if total_words > 5000)
@@ -255,13 +597,14 @@ codex mcp add graphify -- graphify serve /absolute/path/to/graphify-out/graph.js
 If `total_words` from `.graphify_detect.json` is greater than 5,000, run:
 
 ```bash
-node -e "
-const fs = require('fs');
-const { runBenchmark, printBenchmark } = require('graphifyy');
+$(cat .graphify_python) -c "
+import json
+from graphify.benchmark import run_benchmark, print_benchmark
+from pathlib import Path
 
-const detection = JSON.parse(fs.readFileSync('.graphify_detect.json', 'utf-8'));
-const result = runBenchmark('graphify-out/graph.json', {corpusWords: detection.total_words});
-printBenchmark(result);
+detection = json.loads(Path('.graphify_detect.json').read_text())
+result = run_benchmark('graphify-out/graph.json', corpus_words=detection['total_words'])
+print_benchmark(result)
 "
 ```
 
@@ -272,32 +615,39 @@ Print the output directly in chat. If `total_words <= 5000`, skip silently - the
 ### Step 9 - Save manifest, update cost tracker, clean up, and report
 
 ```bash
-node -e "
-const fs = require('fs');
-const { saveManifest } = require('graphifyy');
+$(cat .graphify_python) -c "
+import json
+from pathlib import Path
+from datetime import datetime, timezone
+from graphify.detect import save_manifest
 
-const detect = JSON.parse(fs.readFileSync('.graphify_detect.json', 'utf-8'));
-saveManifest(detect.files);
+# Save manifest for --update
+detect = json.loads(Path('.graphify_detect.json').read_text())
+save_manifest(detect['files'])
 
-const extract = JSON.parse(fs.readFileSync('.graphify_extract.json', 'utf-8'));
-const inputTok = extract.input_tokens || 0;
-const outputTok = extract.output_tokens || 0;
+# Update cumulative cost tracker
+extract = json.loads(Path('.graphify_extract.json').read_text())
+input_tok = extract.get('input_tokens', 0)
+output_tok = extract.get('output_tokens', 0)
 
-const costPath = 'graphify-out/cost.json';
-const cost = fs.existsSync(costPath) ? JSON.parse(fs.readFileSync(costPath, 'utf-8')) : {runs: [], total_input_tokens: 0, total_output_tokens: 0};
+cost_path = Path('graphify-out/cost.json')
+if cost_path.exists():
+    cost = json.loads(cost_path.read_text())
+else:
+    cost = {'runs': [], 'total_input_tokens': 0, 'total_output_tokens': 0}
 
-cost.runs.push({
-    date: new Date().toISOString(),
-    input_tokens: inputTok,
-    output_tokens: outputTok,
-    files: detect.total_files || 0,
-});
-cost.total_input_tokens += inputTok;
-cost.total_output_tokens += outputTok;
-fs.writeFileSync(costPath, JSON.stringify(cost, null, 2));
+cost['runs'].append({
+    'date': datetime.now(timezone.utc).isoformat(),
+    'input_tokens': input_tok,
+    'output_tokens': output_tok,
+    'files': detect.get('total_files', 0),
+})
+cost['total_input_tokens'] += input_tok
+cost['total_output_tokens'] += output_tok
+cost_path.write_text(json.dumps(cost, indent=2))
 
-console.log(\`This run: \${inputTok.toLocaleString()} input tokens, \${outputTok.toLocaleString()} output tokens\`);
-console.log(\`All time: \${cost.total_input_tokens.toLocaleString()} input, \${cost.total_output_tokens.toLocaleString()} output (\${cost.runs.length} runs)\`);
+print(f'This run: {input_tok:,} input tokens, {output_tok:,} output tokens')
+print(f'All time: {cost[\"total_input_tokens\"]:,} input, {cost[\"total_output_tokens\"]:,} output ({len(cost[\"runs\"])} runs)')
 "
 rm -f .graphify_detect.json .graphify_extract.json .graphify_ast.json .graphify_semantic.json .graphify_analysis.json .graphify_labels.json
 rm -f graphify-out/.needs_update 2>/dev/null || true
@@ -337,35 +687,35 @@ The graph is the map. Your job after the pipeline is to be the guide.
 Use when you've added or modified files since the last run. Only re-extracts changed files - saves tokens and time.
 
 ```bash
-node -e "
-const fs = require('fs');
-const { detectIncremental } = require('graphifyy');
+$(cat .graphify_python) -c "
+import sys, json
+from graphify.detect import detect_incremental, save_manifest
+from pathlib import Path
 
-const result = detectIncremental('INPUT_PATH');
-const newTotal = result.new_total || 0;
-console.log(JSON.stringify(result, null, 2));
-fs.writeFileSync('.graphify_incremental.json', JSON.stringify(result));
-if (newTotal === 0) {
-    console.log('No files changed since last run. Nothing to update.');
-    process.exit(0);
-}
-console.log(\`${newTotal} new/changed file(s) to re-extract.\`);
+result = detect_incremental(Path('INPUT_PATH'))
+new_total = result.get('new_total', 0)
+print(json.dumps(result, indent=2))
+Path('.graphify_incremental.json').write_text(json.dumps(result))
+if new_total == 0:
+    print('No files changed since last run. Nothing to update.')
+    raise SystemExit(0)
+print(f'{new_total} new/changed file(s) to re-extract.')
 "
 ```
 
 If new files exist, first check whether all changed files are code files:
 
 ```bash
-node -e "
-const fs = require('fs');
-const path = require('path');
+$(cat .graphify_python) -c "
+import json
+from pathlib import Path
 
-const result = fs.existsSync('.graphify_incremental.json') ? JSON.parse(fs.readFileSync('.graphify_incremental.json', 'utf-8')) : {};
-const codeExts = new Set(['.py','.ts','.js','.go','.rs','.java','.cpp','.c','.rb','.swift','.kt','.cs','.scala','.php','.cc','.cxx','.hpp','.h','.kts','.lua','.toc']);
-const newFiles = result.new_files || {};
-const allChanged = Object.values(newFiles).flat();
-const codeOnly = allChanged.every(f => codeExts.has(path.extname(f).toLowerCase()));
-console.log('code_only:', codeOnly);
+result = json.loads(open('.graphify_incremental.json').read()) if Path('.graphify_incremental.json').exists() else {}
+code_exts = {'.py','.ts','.js','.go','.rs','.java','.cpp','.c','.rb','.swift','.kt','.cs','.scala','.php','.cc','.cxx','.hpp','.h','.kts'}
+new_files = result.get('new_files', {})
+all_changed = [f for files in new_files.values() for f in files]
+code_only = all(Path(f).suffix.lower() in code_exts for f in all_changed)
+print('code_only:', code_only)
 "
 ```
 
@@ -376,25 +726,25 @@ If `code_only` is False (any changed file is a doc/paper/image): run the full St
 Then:
 
 ```bash
-node -e "
-const fs = require('fs');
-const Graph = require('graphology');
-const { buildFromJson } = require('graphifyy');
+$(cat .graphify_python) -c "
+import sys, json
+from graphify.build import build_from_json
+from graphify.export import to_json
+from networkx.readwrite import json_graph
+import networkx as nx
+from pathlib import Path
 
-// Load existing graph
-const existingData = JSON.parse(fs.readFileSync('graphify-out/graph.json', 'utf-8'));
-const GExisting = new Graph({type: 'undirected'});
-for (const n of existingData.nodes) { const {id, ...a} = n; GExisting.mergeNode(id, a); }
-for (const l of existingData.links) { const {source, target, ...a} = l; if (GExisting.hasNode(source) && GExisting.hasNode(target)) try { GExisting.mergeEdge(source, target, a); } catch {} }
+# Load existing graph
+existing_data = json.loads(Path('graphify-out/graph.json').read_text())
+G_existing = json_graph.node_link_graph(existing_data, edges='links')
 
-// Load new extraction
-const newExtraction = JSON.parse(fs.readFileSync('.graphify_extract.json', 'utf-8'));
-const GNew = buildFromJson(newExtraction);
+# Load new extraction
+new_extraction = json.loads(Path('.graphify_extract.json').read_text())
+G_new = build_from_json(new_extraction)
 
-// Merge: new nodes/edges into existing graph
-GNew.forEachNode((n, a) => GExisting.mergeNode(n, a));
-GNew.forEachEdge((e, a, s, t) => { try { GExisting.mergeEdge(s, t, a); } catch {} });
-console.log(\`Merged: ${GExisting.order} nodes, ${GExisting.size} edges\`);
+# Merge: new nodes/edges into existing graph
+G_existing.update(G_new)
+print(f'Merged: {G_existing.number_of_nodes()} nodes, {G_existing.number_of_edges()} edges')
 " 
 ```
 
@@ -403,28 +753,27 @@ Then run Steps 4–8 on the merged graph as normal.
 After Step 4, show the graph diff:
 
 ```bash
-node -e "
-const fs = require('fs');
-const Graph = require('graphology');
-const { graphDiff, buildFromJson } = require('graphifyy');
+$(cat .graphify_python) -c "
+import json
+from graphify.analyze import graph_diff
+from graphify.build import build_from_json
+from networkx.readwrite import json_graph
+import networkx as nx
+from pathlib import Path
 
-const oldData = fs.existsSync('.graphify_old.json') ? JSON.parse(fs.readFileSync('.graphify_old.json', 'utf-8')) : null;
-const newExtract = JSON.parse(fs.readFileSync('.graphify_extract.json', 'utf-8'));
-const GNew = buildFromJson(newExtract);
+# Load old graph (before update) from backup written before merge
+old_data = json.loads(Path('.graphify_old.json').read_text()) if Path('.graphify_old.json').exists() else None
+new_extract = json.loads(Path('.graphify_extract.json').read_text())
+G_new = build_from_json(new_extract)
 
-if (oldData) {
-    const GOld = new Graph({type: 'undirected'});
-    for (const n of oldData.nodes) { const {id, ...a} = n; GOld.mergeNode(id, a); }
-    for (const l of oldData.links) { const {source, target, ...a} = l; if (GOld.hasNode(source) && GOld.hasNode(target)) try { GOld.mergeEdge(source, target, a); } catch {} }
-    const diff = graphDiff(GOld, GNew);
-    console.log(diff.summary);
-    if (diff.new_nodes && diff.new_nodes.length) {
-        console.log('New nodes:', diff.new_nodes.slice(0, 5).map(n => n.label).join(', '));
-    }
-    if (diff.new_edges && diff.new_edges.length) {
-        console.log('New edges:', diff.new_edges.length);
-    }
-}
+if old_data:
+    G_old = json_graph.node_link_graph(old_data, edges='links')
+    diff = graph_diff(G_old, G_new)
+    print(diff['summary'])
+    if diff['new_nodes']:
+        print('New nodes:', ', '.join(n['label'] for n in diff['new_nodes'][:5]))
+    if diff['new_edges']:
+        print('New edges:', len(diff['new_edges']))
 "
 ```
 
@@ -438,41 +787,41 @@ Clean up after: `rm -f .graphify_old.json`
 Skip Steps 1–3. Load the existing graph from `graphify-out/graph.json` and re-run clustering:
 
 ```bash
-node -e "
-const fs = require('fs');
-const Graph = require('graphology');
-const { cluster, scoreAll } = require('graphifyy');
-const { godNodes, surprisingConnections } = require('graphifyy');
-const { generateReport } = require('graphifyy');
-const { toJson } = require('graphifyy');
+$(cat .graphify_python) -c "
+import sys, json
+from graphify.cluster import cluster, score_all
+from graphify.analyze import god_nodes, surprising_connections
+from graphify.report import generate
+from graphify.export import to_json
+from networkx.readwrite import json_graph
+import networkx as nx
+from pathlib import Path
 
-const data = JSON.parse(fs.readFileSync('graphify-out/graph.json', 'utf-8'));
-const G = new Graph({type: 'undirected'});
-for (const n of data.nodes) { const {id, ...a} = n; G.mergeNode(id, a); }
-for (const l of data.links) { const {source, target, ...a} = l; if (G.hasNode(source) && G.hasNode(target)) try { G.mergeEdge(source, target, a); } catch {} }
+data = json.loads(Path('graphify-out/graph.json').read_text())
+G = json_graph.node_link_graph(data, edges='links')
 
-const detection = {total_files: 0, total_words: 99999, needs_graph: true, warning: null,
-             files: {code: [], document: [], paper: []}};
-const tokens = {input: 0, output: 0};
+detection = {'total_files': 0, 'total_words': 99999, 'needs_graph': True, 'warning': None,
+             'files': {'code': [], 'document': [], 'paper': []}}
+tokens = {'input': 0, 'output': 0}
 
-const communities = cluster(G);
-const cohesion = scoreAll(G, communities);
-const gods = godNodes(G);
-const surprises = surprisingConnections(G, communities);
-const labels = new Map(Array.from(communities.keys(), cid => [cid, 'Community ' + cid]));
+communities = cluster(G)
+cohesion = score_all(G, communities)
+gods = god_nodes(G)
+surprises = surprising_connections(G, communities)
+labels = {cid: 'Community ' + str(cid) for cid in communities}
 
-const report = generateReport(G, communities, cohesion, labels, gods, surprises, detection, tokens, '.');
-fs.writeFileSync('graphify-out/GRAPH_REPORT.md', report);
-toJson(G, communities, 'graphify-out/graph.json');
+report = generate(G, communities, cohesion, labels, gods, surprises, detection, tokens, '.')
+Path('graphify-out/GRAPH_REPORT.md').write_text(report)
+to_json(G, communities, 'graphify-out/graph.json')
 
-const analysis = {
-    communities: Object.fromEntries(Array.from(communities.entries(), ([k, v]) => [String(k), v])),
-    cohesion: Object.fromEntries(Array.from(cohesion.entries(), ([k, v]) => [String(k), v])),
-    gods,
-    surprises,
-};
-fs.writeFileSync('.graphify_analysis.json', JSON.stringify(analysis, null, 2));
-console.log(\`Re-clustered: ${communities.size} communities\`);
+analysis = {
+    'communities': {str(k): v for k, v in communities.items()},
+    'cohesion': {str(k): v for k, v in cohesion.items()},
+    'gods': gods,
+    'surprises': surprises,
+}
+Path('.graphify_analysis.json').write_text(json.dumps(analysis, indent=2))
+print(f'Re-clustered: {len(communities)} communities')
 "
 ```
 
@@ -491,12 +840,11 @@ Two traversal modes - choose based on the question:
 
 First check the graph exists:
 ```bash
-node -e "
-const fs = require('fs');
-if (!fs.existsSync('graphify-out/graph.json')) {
-    console.log('ERROR: No graph found. Run $graphify <path> first to build the graph.');
-    process.exit(1);
-}
+$(cat .graphify_python) -c "
+from pathlib import Path
+if not Path('graphify-out/graph.json').exists():
+    print('ERROR: No graph found. Run $graphify <path> first to build the graph.')
+    raise SystemExit(1)
 "
 ```
 If it fails, stop and tell the user to run `$graphify <path>` first.
@@ -510,67 +858,89 @@ Load `graphify-out/graph.json`, then:
 5. If the graph lacks enough information, say so - do not hallucinate edges.
 
 ```bash
-node -e "
-const fs = require('fs');
-const Graph = require('graphology');
+$(cat .graphify_python) -c "
+import sys, json
+from networkx.readwrite import json_graph
+import networkx as nx
+from pathlib import Path
 
-const data = JSON.parse(fs.readFileSync('graphify-out/graph.json', 'utf-8'));
-const G = new Graph({type: 'undirected'});
-for (const n of data.nodes) { const {id, ...a} = n; G.mergeNode(id, a); }
-for (const l of data.links) { const {source, target, ...a} = l; if (G.hasNode(source) && G.hasNode(target)) try { G.mergeEdge(source, target, a); } catch {} }
+data = json.loads(Path('graphify-out/graph.json').read_text())
+G = json_graph.node_link_graph(data, edges='links')
 
-const question = 'QUESTION';
-const mode = 'MODE';
-const terms = question.split(/\s+/).filter(t => t.length > 3).map(t => t.toLowerCase());
+question = 'QUESTION'
+mode = 'MODE'  # 'bfs' or 'dfs'
+terms = [t.lower() for t in question.split() if len(t) > 3]
 
-const scored = [];
-G.forEachNode((nid, ndata) => {
-    const label = (ndata.label || '').toLowerCase();
-    const score = terms.filter(t => label.includes(t)).length;
-    if (score > 0) scored.push([score, nid]);
-});
-scored.sort((a, b) => b[0] - a[0]);
-const startNodes = scored.slice(0, 3).map(s => s[1]);
+# Find best-matching start nodes
+scored = []
+for nid, ndata in G.nodes(data=True):
+    label = ndata.get('label', '').lower()
+    score = sum(1 for t in terms if t in label)
+    if score > 0:
+        scored.append((score, nid))
+scored.sort(reverse=True)
+start_nodes = [nid for _, nid in scored[:3]]
 
-if (!startNodes.length) { console.log('No matching nodes found for query terms:', terms); process.exit(0); }
+if not start_nodes:
+    print('No matching nodes found for query terms:', terms)
+    sys.exit(0)
 
-const subgraphNodes = new Set();
-const subgraphEdges = [];
+subgraph_nodes = set()
+subgraph_edges = []
 
-if (mode === 'dfs') {
-    const visited = new Set();
-    const stack = [...startNodes].reverse().map(n => [n, 0]);
-    while (stack.length) {
-        const [node, depth] = stack.pop();
-        if (visited.has(node) || depth > 6) continue;
-        visited.add(node); subgraphNodes.add(node);
-        G.forEachNeighbor(node, neighbor => { if (!visited.has(neighbor)) { stack.push([neighbor, depth + 1]); subgraphEdges.push([node, neighbor]); } });
-    }
-} else {
-    let frontier = new Set(startNodes);
-    startNodes.forEach(n => subgraphNodes.add(n));
-    for (let i = 0; i < 3; i++) {
-        const nextFrontier = new Set();
-        for (const n of frontier) { G.forEachNeighbor(n, neighbor => { if (!subgraphNodes.has(neighbor)) { nextFrontier.add(neighbor); subgraphEdges.push([n, neighbor]); } }); }
-        nextFrontier.forEach(n => subgraphNodes.add(n));
-        frontier = nextFrontier;
-    }
-}
+if mode == 'dfs':
+    # DFS: follow one path as deep as possible before backtracking.
+    # Depth-limited to 6 to avoid traversing the whole graph.
+    visited = set()
+    stack = [(n, 0) for n in reversed(start_nodes)]
+    while stack:
+        node, depth = stack.pop()
+        if node in visited or depth > 6:
+            continue
+        visited.add(node)
+        subgraph_nodes.add(node)
+        for neighbor in G.neighbors(node):
+            if neighbor not in visited:
+                stack.append((neighbor, depth + 1))
+                subgraph_edges.append((node, neighbor))
+else:
+    # BFS: explore all neighbors layer by layer up to depth 3.
+    frontier = set(start_nodes)
+    subgraph_nodes = set(start_nodes)
+    for _ in range(3):
+        next_frontier = set()
+        for n in frontier:
+            for neighbor in G.neighbors(n):
+                if neighbor not in subgraph_nodes:
+                    next_frontier.add(neighbor)
+                    subgraph_edges.append((n, neighbor))
+        subgraph_nodes.update(next_frontier)
+        frontier = next_frontier
 
-const tokenBudget = BUDGET;
-const charBudget = tokenBudget * 4;
-const relevance = nid => { const label = (G.getNodeAttributes(nid).label || '').toLowerCase(); return terms.filter(t => label.includes(t)).length; };
-const rankedNodes = [...subgraphNodes].sort((a, b) => relevance(b) - relevance(a));
+# Token-budget aware output: rank by relevance, cut at budget (~4 chars/token)
+token_budget = BUDGET  # default 2000
+char_budget = token_budget * 4
 
-const lines = [\`Traversal: \${mode.toUpperCase()} | Start: \${JSON.stringify(startNodes.map(n => G.getNodeAttribute(n, 'label') || n))} | \${subgraphNodes.size} nodes\`];
-for (const nid of rankedNodes) { const d = G.getNodeAttributes(nid); lines.push(\`  NODE \${d.label || nid} [src=\${d.source_file || ''} loc=\${d.source_location || ''}]\`); }
-for (const [u, v] of subgraphEdges) { if (subgraphNodes.has(u) && subgraphNodes.has(v)) { const edge = G.hasEdge(u, v) ? G.getEdgeAttributes(G.edge(u, v)) : {}; lines.push(\`  EDGE \${G.getNodeAttribute(u, 'label') || u} --\${edge.relation || ''} [\${edge.confidence || ''}]--> \${G.getNodeAttribute(v, 'label') || v}\`); } }
+# Score each node by term overlap for ranked output
+def relevance(nid):
+    label = G.nodes[nid].get('label', '').lower()
+    return sum(1 for t in terms if t in label)
 
-let output = lines.join('
-');
-if (output.length > charBudget) { output = output.slice(0, charBudget) + \`
-... (truncated at ~\${tokenBudget} token budget - use --budget N for more)\`; }
-console.log(output);
+ranked_nodes = sorted(subgraph_nodes, key=relevance, reverse=True)
+
+lines = [f'Traversal: {mode.upper()} | Start: {[G.nodes[n].get(\"label\",n) for n in start_nodes]} | {len(subgraph_nodes)} nodes']
+for nid in ranked_nodes:
+    d = G.nodes[nid]
+    lines.append(f'  NODE {d.get(\"label\", nid)} [src={d.get(\"source_file\",\"\")} loc={d.get(\"source_location\",\"\")}]')
+for u, v in subgraph_edges:
+    if u in subgraph_nodes and v in subgraph_nodes:
+        d = G.edges[u, v]
+        lines.append(f'  EDGE {G.nodes[u].get(\"label\",u)} --{d.get(\"relation\",\"\")} [{d.get(\"confidence\",\"\")}]--> {G.nodes[v].get(\"label\",v)}')
+
+output = '\n'.join(lines)
+if len(output) > char_budget:
+    output = output[:char_budget] + f'\n... (truncated at ~{token_budget} token budget - use --budget N for more)'
+print(output)
 "
 ```
 
@@ -579,16 +949,17 @@ Replace `QUESTION` with the user's actual question, `MODE` with `bfs` or `dfs`, 
 After writing the answer, save it back into the graph so it improves future queries:
 
 ```bash
-node -e "
-const { saveQueryResult } = require('graphifyy');
-saveQueryResult({
-    question: 'QUESTION',
-    answer: 'ANSWER',
-    memoryDir: 'graphify-out/memory',
-    queryType: 'query',
-    sourceNodes: SOURCE_NODES,  // list of node labels cited, or []
-});
-console.log('Query result saved to graphify-out/memory/');
+$(cat .graphify_python) -c "
+from graphify.ingest import save_query_result
+from pathlib import Path
+save_query_result(
+    question='QUESTION',
+    answer='ANSWER',
+    memory_dir=Path('graphify-out/memory'),
+    query_type='query',
+    source_nodes=SOURCE_NODES,  # list of node labels cited, or []
+)
+print('Query result saved to graphify-out/memory/')
 "
 ```
 
@@ -602,67 +973,60 @@ Find the shortest path between two named concepts in the graph.
 
 First check the graph exists:
 ```bash
-node -e "
-const fs = require('fs');
-if (!fs.existsSync('graphify-out/graph.json')) {
-    console.log('ERROR: No graph found. Run $graphify <path> first to build the graph.');
-    process.exit(1);
-}
+$(cat .graphify_python) -c "
+from pathlib import Path
+if not Path('graphify-out/graph.json').exists():
+    print('ERROR: No graph found. Run $graphify <path> first to build the graph.')
+    raise SystemExit(1)
 "
 ```
 If it fails, stop and tell the user to run `$graphify <path>` first.
 
 ```bash
-node -e "
-const fs = require('fs');
-const Graph = require('graphology');
-const { bidirectional } = require('graphology-shortest-path/unweighted');
+$(cat .graphify_python) -c "
+import json, sys
+import networkx as nx
+from networkx.readwrite import json_graph
+from pathlib import Path
 
-const data = JSON.parse(fs.readFileSync('graphify-out/graph.json', 'utf-8'));
-const G = new Graph({type: 'undirected'});
-for (const n of data.nodes) { const {id, ...a} = n; G.mergeNode(id, a); }
-for (const l of data.links) { const {source, target, ...a} = l; if (G.hasNode(source) && G.hasNode(target)) try { G.mergeEdge(source, target, a); } catch {} }
+data = json.loads(Path('graphify-out/graph.json').read_text())
+G = json_graph.node_link_graph(data, edges='links')
 
-const aTerm = 'NODE_A';
-const bTerm = 'NODE_B';
+a_term = 'NODE_A'
+b_term = 'NODE_B'
 
-function findNode(term) {
-    term = term.toLowerCase();
-    const scored = [];
-    G.forEachNode((n, a) => {
-        const label = (a.label || '').toLowerCase();
-        const score = term.split(/\s+/).filter(w => label.includes(w)).length;
-        if (score > 0) scored.push([score, n]);
-    });
-    scored.sort((a, b) => b[0] - a[0]);
-    return scored.length && scored[0][0] > 0 ? scored[0][1] : null;
-}
+def find_node(term):
+    term = term.lower()
+    scored = sorted(
+        [(sum(1 for w in term.split() if w in G.nodes[n].get('label','').lower()), n)
+         for n in G.nodes()],
+        reverse=True
+    )
+    return scored[0][1] if scored and scored[0][0] > 0 else None
 
-const src = findNode(aTerm);
-const tgt = findNode(bTerm);
+src = find_node(a_term)
+tgt = find_node(b_term)
 
-if (!src || !tgt) {
-    console.log(\`Could not find nodes matching: '${aTerm}' or '${bTerm}'\`);
-    process.exit(0);
-}
+if not src or not tgt:
+    print(f'Could not find nodes matching: {a_term!r} or {b_term!r}')
+    sys.exit(0)
 
-const path = bidirectional(G, src, tgt);
-if (!path) {
-    console.log(\`No path found between '${aTerm}' and '${bTerm}'\`);
-} else {
-    console.log(\`Shortest path (${path.length - 1} hops):\`);
-    for (let i = 0; i < path.length; i++) {
-        const nid = path[i];
-        const label = G.getNodeAttribute(nid, 'label') || nid;
-        if (i < path.length - 1) {
-            const edgeKey = G.edge(nid, path[i + 1]);
-            const edge = edgeKey ? G.getEdgeAttributes(edgeKey) : {};
-            console.log(\`  ${label} --${edge.relation || ''}--> [${edge.confidence || ''}]\`);
-        } else {
-            console.log(\`  ${label}\`);
-        }
-    }
-}
+try:
+    path = nx.shortest_path(G, src, tgt)
+    print(f'Shortest path ({len(path)-1} hops):')
+    for i, nid in enumerate(path):
+        label = G.nodes[nid].get('label', nid)
+        if i < len(path) - 1:
+            edge = G.edges[nid, path[i+1]]
+            rel = edge.get('relation', '')
+            conf = edge.get('confidence', '')
+            print(f'  {label} --{rel}--> [{conf}]')
+        else:
+            print(f'  {label}')
+except nx.NetworkXNoPath:
+    print(f'No path found between {a_term!r} and {b_term!r}')
+except nx.NodeNotFound as e:
+    print(f'Node not found: {e}')
 "
 ```
 
@@ -671,16 +1035,17 @@ Replace `NODE_A` and `NODE_B` with the actual concept names from the user. Then 
 After writing the explanation, save it back:
 
 ```bash
-node -e "
-const { saveQueryResult } = require('graphifyy');
-saveQueryResult({
-    question: 'Path from NODE_A to NODE_B',
-    answer: 'ANSWER',
-    memoryDir: 'graphify-out/memory',
-    queryType: 'path_query',
-    sourceNodes: PATH_NODES,  // list of node labels on the path
-});
-console.log('Path result saved to graphify-out/memory/');
+$(cat .graphify_python) -c "
+from graphify.ingest import save_query_result
+from pathlib import Path
+save_query_result(
+    question='Path from NODE_A to NODE_B',
+    answer='ANSWER',
+    memory_dir=Path('graphify-out/memory'),
+    query_type='path_query',
+    source_nodes=PATH_NODES,  # list of node labels on the path
+)
+print('Path result saved to graphify-out/memory/')
 "
 ```
 
@@ -692,47 +1057,53 @@ Give a plain-language explanation of a single node - everything connected to it.
 
 First check the graph exists:
 ```bash
-node -e "
-const fs = require('fs');
-if (!fs.existsSync('graphify-out/graph.json')) {
-    console.log('ERROR: No graph found. Run $graphify <path> first to build the graph.');
-    process.exit(1);
-}
+$(cat .graphify_python) -c "
+from pathlib import Path
+if not Path('graphify-out/graph.json').exists():
+    print('ERROR: No graph found. Run $graphify <path> first to build the graph.')
+    raise SystemExit(1)
 "
 ```
 If it fails, stop and tell the user to run `$graphify <path>` first.
 
 ```bash
-node -e "
-const fs = require('fs');
-const Graph = require('graphology');
+$(cat .graphify_python) -c "
+import json, sys
+import networkx as nx
+from networkx.readwrite import json_graph
+from pathlib import Path
 
-const data = JSON.parse(fs.readFileSync('graphify-out/graph.json', 'utf-8'));
-const G = new Graph({type: 'undirected'});
-for (const n of data.nodes) { const {id, ...a} = n; G.mergeNode(id, a); }
-for (const l of data.links) { const {source, target, ...a} = l; if (G.hasNode(source) && G.hasNode(target)) try { G.mergeEdge(source, target, a); } catch {} }
+data = json.loads(Path('graphify-out/graph.json').read_text())
+G = json_graph.node_link_graph(data, edges='links')
 
-const term = 'NODE_NAME';
-const termLower = term.toLowerCase();
+term = 'NODE_NAME'
+term_lower = term.lower()
 
-const scored = [];
-G.forEachNode((n, a) => { const label = (a.label || '').toLowerCase(); const score = termLower.split(/\s+/).filter(w => label.includes(w)).length; if (score > 0) scored.push([score, n]); });
-scored.sort((a, b) => b[0] - a[0]);
-if (!scored.length || scored[0][0] === 0) { console.log(\`No node matching '\${term}'\`); process.exit(0); }
+# Find best matching node
+scored = sorted(
+    [(sum(1 for w in term_lower.split() if w in G.nodes[n].get('label','').lower()), n)
+     for n in G.nodes()],
+    reverse=True
+)
+if not scored or scored[0][0] == 0:
+    print(f'No node matching {term!r}')
+    sys.exit(0)
 
-const nid = scored[0][1];
-const dataN = G.getNodeAttributes(nid);
-console.log(\`NODE: \${dataN.label || nid}\`);
-console.log(\`  source: \${dataN.source_file || 'unknown'}\`);
-console.log(\`  type: \${dataN.file_type || 'unknown'}\`);
-console.log(\`  degree: \${G.degree(nid)}\`);
-console.log();
-console.log('CONNECTIONS:');
-G.forEachNeighbor(nid, (neighbor) => {
-    const ek = G.edge(nid, neighbor); const edge = ek ? G.getEdgeAttributes(ek) : {};
-    const nlabel = G.getNodeAttribute(neighbor, 'label') || neighbor;
-    console.log(\`  --\${edge.relation || ''}--> \${nlabel} [\${edge.confidence || ''}] (\${G.getNodeAttribute(neighbor, 'source_file') || ''})\`);
-});
+nid = scored[0][1]
+data_n = G.nodes[nid]
+print(f'NODE: {data_n.get(\"label\", nid)}')
+print(f'  source: {data_n.get(\"source_file\",\"unknown\")}')
+print(f'  type: {data_n.get(\"file_type\",\"unknown\")}')
+print(f'  degree: {G.degree(nid)}')
+print()
+print('CONNECTIONS:')
+for neighbor in G.neighbors(nid):
+    edge = G.edges[nid, neighbor]
+    nlabel = G.nodes[neighbor].get('label', neighbor)
+    rel = edge.get('relation', '')
+    conf = edge.get('confidence', '')
+    src_file = G.nodes[neighbor].get('source_file', '')
+    print(f'  --{rel}--> {nlabel} [{conf}] ({src_file})')
 "
 ```
 
@@ -741,16 +1112,17 @@ Replace `NODE_NAME` with the concept the user asked about. Then write a 3-5 sent
 After writing the explanation, save it back:
 
 ```bash
-node -e "
-const { saveQueryResult } = require('graphifyy');
-saveQueryResult({
-    question: 'Explain NODE_NAME',
-    answer: 'ANSWER',
-    memoryDir: 'graphify-out/memory',
-    queryType: 'explain',
-    sourceNodes: ['NODE_NAME'],
-});
-console.log('Explanation saved to graphify-out/memory/');
+$(cat .graphify_python) -c "
+from graphify.ingest import save_query_result
+from pathlib import Path
+save_query_result(
+    question='Explain NODE_NAME',
+    answer='ANSWER',
+    memory_dir=Path('graphify-out/memory'),
+    query_type='explain',
+    source_nodes=['NODE_NAME'],
+)
+print('Explanation saved to graphify-out/memory/')
 "
 ```
 
@@ -761,15 +1133,20 @@ console.log('Explanation saved to graphify-out/memory/');
 Fetch a URL and add it to the corpus, then update the graph.
 
 ```bash
-node -e "
-const { ingest } = require('graphifyy');
-try {
-    const out = ingest('URL', './raw', {author: 'AUTHOR', contributor: 'CONTRIBUTOR'});
-    console.log(\`Saved to ${out}\`);
-} catch (e) {
-    console.error(\`error: ${e.message}\`);
-    process.exit(1);
-}
+$(cat .graphify_python) -c "
+import sys
+from graphify.ingest import ingest
+from pathlib import Path
+
+try:
+    out = ingest('URL', Path('./raw'), author='AUTHOR', contributor='CONTRIBUTOR')
+    print(f'Saved to {out}')
+except ValueError as e:
+    print(f'error: {e}', file=sys.stderr)
+    sys.exit(1)
+except RuntimeError as e:
+    print(f'error: {e}', file=sys.stderr)
+    sys.exit(1)
 "
 ```
 
@@ -789,7 +1166,7 @@ Supported URL types (auto-detected):
 Start a background watcher that monitors a folder and auto-updates the graph when files change.
 
 ```bash
-npx graphify watch INPUT_PATH --debounce 3
+python3 -m graphify.watch INPUT_PATH --debounce 3
 ```
 
 Replace INPUT_PATH with the folder to watch. Behavior depends on what changed:

@@ -88,13 +88,39 @@
   - [x] Update `graphify/skill-codex.md`
   - [x] Update `ts/src/skills/skill-codex.md`
   - [x] Update the root `README.md`
+- [x] Run a real Codex end-to-end build on this repository
+  - [x] Refresh the globally installed Codex skill from the repo before UAT
+  - [x] Confirm `$graphify .` generates `graphify-out/graph.json`, `GRAPH_REPORT.md`, and `graph.html`
+  - [x] Confirm `graphify query --graph graphify-out/graph.json "codex install"` works on the generated graph
+- [x] Close the concrete Codex install/UAT gaps discovered during real-repo testing
+  - [x] Fix `graphify codex install` when `.codex` is a file instead of a directory
+  - [x] Make `graphify codex install` re-register the Codex hook even when `AGENTS.md` already exists
+  - [x] Restore the full Codex skill pipeline in the packaged `skill-codex.md`
+- [x] Confirm the current successful Codex skill pipeline still runs the Python graph build path
 - [ ] Decide whether Codex natural-language invocation should be documented as first-class or left undocumented until separately validated
+- [ ] Port the Codex skill build/update pipeline so Codex can drive the TypeScript runtime end to end instead of Python
 
 ## Commit Rollout
 
 - [x] Commit 1 - close the TypeScript runtime/package contract, CLI surface, and verification helpers
 - [x] Commit 2 - align the non-Codex skill markdown files with the shipped runtime contract
 - [x] Commit 3 - make Codex use `$graphify` end to end in Python/Codex skills, docs, and UAT evidence
+- [ ] Commit 4 - harden Codex install/UAT on a real repo and record that the successful skill pipeline is still Python-backed
+
+## Track 5 - Symmetrize The Repo Before Python Removal
+
+- [ ] Move the Python runtime into a first-class `py/` workspace
+- [ ] Keep `ts/` as the parallel TypeScript workspace with matching top-level layout
+- [ ] Define which files stay shared at repo root vs runtime-specific under `py/` and `ts/`
+  - Shared candidates: fixtures, `worked/`, parity specs, release docs
+  - Runtime-specific candidates: package metadata, runtime tests, skill templates, build tooling
+- [ ] Add a runtime parity spec that maps every Python module to its TypeScript counterpart
+  - `detect`, `extract`, `build`, `cluster`, `analyze`, `report`, `export`, `serve`, `watch`, `security`, `ingest`, `cache`, `hooks`, `cli`, `skills`
+- [ ] Add a cross-runtime parity harness on shared fixtures/corpora
+  - Compare graph shape and key report sections for Python vs TypeScript outputs
+  - Record intentional divergences explicitly
+- [ ] Make Codex runtime selection explicit in docs and tests so UAT cannot silently fall back to Python
+- [ ] Require green Codex end-to-end UAT on the TypeScript runtime before deleting Python
 
 ## Release Gate
 
@@ -102,6 +128,7 @@
 - [x] The default `graphify` command path is the TypeScript one for local usage
 - [x] Smoke-level product UAT is green from the user-facing command path
 - [ ] Working tree is clean except for intentional tracked changes
+- [ ] The runtime used by Codex UAT is explicit and matches the target runtime under test
 - [ ] Push branch to origin
 - [ ] Tag the release
 - [ ] Publish the npm package

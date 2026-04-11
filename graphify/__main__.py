@@ -199,8 +199,13 @@ _CODEX_HOOK = {
 
 def _install_codex_hook(project_dir: Path) -> None:
     """Add graphify PreToolUse hook to .codex/hooks.json."""
-    hooks_path = project_dir / ".codex" / "hooks.json"
-    hooks_path.parent.mkdir(parents=True, exist_ok=True)
+    hooks_dir = project_dir / ".codex"
+    if hooks_dir.exists() and not hooks_dir.is_dir():
+        print("  .codex/hooks.json  ->  skipped (cannot create hook dir because .codex is a file)")
+        return
+
+    hooks_path = hooks_dir / "hooks.json"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
 
     if hooks_path.exists():
         try:
@@ -239,18 +244,22 @@ def _uninstall_codex_hook(project_dir: Path) -> None:
 def _agents_install(project_dir: Path, platform: str) -> None:
     """Write the graphify section to the local AGENTS.md (Codex/OpenCode/OpenClaw)."""
     target = (project_dir or Path(".")) / "AGENTS.md"
+    already_configured = False
 
     if target.exists():
         content = target.read_text(encoding="utf-8")
         if _AGENTS_MD_MARKER in content:
+            already_configured = True
             print(f"graphify already configured in AGENTS.md")
-            return
-        new_content = content.rstrip() + "\n\n" + _agents_md_section(platform)
+            new_content = content
+        else:
+            new_content = content.rstrip() + "\n\n" + _agents_md_section(platform)
     else:
         new_content = _agents_md_section(platform)
 
-    target.write_text(new_content, encoding="utf-8")
-    print(f"graphify section written to {target.resolve()}")
+    if not already_configured:
+        target.write_text(new_content, encoding="utf-8")
+        print(f"graphify section written to {target.resolve()}")
 
     if platform == "codex":
         _install_codex_hook(project_dir or Path("."))
@@ -294,18 +303,22 @@ def _agents_uninstall(project_dir: Path) -> None:
 def claude_install(project_dir: Path | None = None) -> None:
     """Write the graphify section to the local CLAUDE.md."""
     target = (project_dir or Path(".")) / "CLAUDE.md"
+    already_configured = False
 
     if target.exists():
         content = target.read_text(encoding="utf-8")
         if _CLAUDE_MD_MARKER in content:
+            already_configured = True
             print("graphify already configured in CLAUDE.md")
-            return
-        new_content = content.rstrip() + "\n\n" + _CLAUDE_MD_SECTION
+            new_content = content
+        else:
+            new_content = content.rstrip() + "\n\n" + _CLAUDE_MD_SECTION
     else:
         new_content = _CLAUDE_MD_SECTION
 
-    target.write_text(new_content, encoding="utf-8")
-    print(f"graphify section written to {target.resolve()}")
+    if not already_configured:
+        target.write_text(new_content, encoding="utf-8")
+        print(f"graphify section written to {target.resolve()}")
 
     # Also write Claude Code PreToolUse hook to .claude/settings.json
     _install_claude_hook(project_dir or Path("."))

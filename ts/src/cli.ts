@@ -1,7 +1,15 @@
 /**
  * graphify CLI - `graphify install` sets up the AI coding assistant skill.
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync, realpathSync } from "node:fs";
+import {
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  mkdirSync,
+  copyFileSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { homedir, platform } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -246,18 +254,23 @@ function uninstallClaudeHook(projectDir: string): void {
 }
 
 function claudeInstall(projectDir: string = "."): void {
+  let alreadyConfigured = false;
   const target = join(projectDir, "CLAUDE.md");
   if (existsSync(target)) {
     const content = readFileSync(target, "utf-8");
     if (content.includes(MD_MARKER)) {
+      alreadyConfigured = true;
       console.log("graphify already configured in CLAUDE.md");
-      return;
+    } else {
+      writeFileSync(target, content.trimEnd() + "\n\n" + CLAUDE_MD_SECTION, "utf-8");
     }
-    writeFileSync(target, content.trimEnd() + "\n\n" + CLAUDE_MD_SECTION, "utf-8");
   } else {
     writeFileSync(target, CLAUDE_MD_SECTION, "utf-8");
   }
-  console.log(`graphify section written to ${resolve(target)}`);
+
+  if (!alreadyConfigured) {
+    console.log(`graphify section written to ${resolve(target)}`);
+  }
   installClaudeHook(projectDir);
   console.log();
   console.log("Claude Code will now check the knowledge graph before answering");
@@ -287,9 +300,15 @@ function claudeUninstall(projectDir: string = "."): void {
   uninstallClaudeHook(projectDir);
 }
 
-function installCodexHook(projectDir: string): void {
-  const hooksPath = join(projectDir, ".codex", "hooks.json");
-  mkdirSync(dirname(hooksPath), { recursive: true });
+export function installCodexHook(projectDir: string): void {
+  const hooksDir = join(projectDir, ".codex");
+  if (existsSync(hooksDir) && !statSync(hooksDir).isDirectory()) {
+    console.log("  .codex/hooks.json  ->  skipped (cannot create hook dir because .codex is a file)");
+    return;
+  }
+
+  const hooksPath = join(hooksDir, "hooks.json");
+  mkdirSync(hooksDir, { recursive: true });
 
   let existing: Record<string, unknown> = {};
   if (existsSync(hooksPath)) {
@@ -336,20 +355,25 @@ function uninstallCodexHook(projectDir: string): void {
   console.log(`  .codex/hooks.json  ->  PreToolUse hook removed`);
 }
 
-function agentsInstall(projectDir: string, platformName: string): void {
+export function agentsInstall(projectDir: string, platformName: string): void {
+  let alreadyConfigured = false;
   const target = join(projectDir, "AGENTS.md");
   const section = getAgentsMdSection(platformName);
   if (existsSync(target)) {
     const content = readFileSync(target, "utf-8");
     if (content.includes(MD_MARKER)) {
+      alreadyConfigured = true;
       console.log(`graphify already configured in AGENTS.md`);
-      return;
+    } else {
+      writeFileSync(target, content.trimEnd() + "\n\n" + section, "utf-8");
     }
-    writeFileSync(target, content.trimEnd() + "\n\n" + section, "utf-8");
   } else {
     writeFileSync(target, section, "utf-8");
   }
-  console.log(`graphify section written to ${resolve(target)}`);
+
+  if (!alreadyConfigured) {
+    console.log(`graphify section written to ${resolve(target)}`);
+  }
 
   if (platformName === "codex") {
     installCodexHook(projectDir);

@@ -123,6 +123,23 @@ def test_agents_install_idempotent(tmp_path):
     assert content.count("## graphify") == 1
 
 
+def test_codex_agents_install_repairs_missing_hook_when_section_already_exists(tmp_path):
+    _agents_install(tmp_path, "codex")
+    hooks_path = tmp_path / ".codex" / "hooks.json"
+    hooks_path.unlink()
+    _agents_install(tmp_path, "codex")
+    assert hooks_path.exists()
+
+
+def test_codex_agents_install_skips_hook_when_dot_codex_is_a_file(tmp_path, capsys):
+    (tmp_path / ".codex").write_text("")
+    _agents_install(tmp_path, "codex")
+    out = capsys.readouterr().out
+    assert (tmp_path / "AGENTS.md").exists()
+    assert "skipped" in out
+    assert not (tmp_path / ".codex" / "hooks.json").exists()
+
+
 def test_agents_install_appends_to_existing(tmp_path):
     """Installs into an existing AGENTS.md without overwriting other content."""
     agents_md = tmp_path / "AGENTS.md"
