@@ -372,7 +372,7 @@ export async function serve(
   const communities = communitiesFromGraph(G);
 
   const server = new Server(
-    { name: "graphify", version: "0.4.0" },
+    { name: "graphify", version: "0.3.17" },
     { capabilities: { tools: {} } },
   );
 

@@ -33,7 +33,7 @@
 ## Reality Check Before Continuing
 
 - [x] Confirm the TypeScript CLI works via `node dist/cli.js --help`
-- [x] Confirm the TypeScript CLI reports version `0.4.0`
+- [x] Confirm the TypeScript CLI reports the aligned release version `0.3.17`
 - [x] Confirm the default shell originally resolved `graphify` to the legacy Python binary in `/home/antoinefa/.local/bin/graphify`
 - [x] Confirm `npm link` created the TypeScript binary in `/home/antoinefa/.npm-global/bin/graphify`
 - [x] Confirm `/graphify <path>` is still a skill workflow entrypoint, not a packaged `graphify` binary command
@@ -47,7 +47,7 @@
   - [x] Create the linked npm binary with `npm link`
   - [x] Back up the legacy Python shim to `~/.local/bin/graphify.python-backup-20260410`
   - [x] Repoint `~/.local/bin/graphify` to the npm-linked TypeScript binary
-  - [x] Verify `graphify --version` returns `0.4.0` from the user-facing shell path
+  - [x] Verify `graphify --version` returns the aligned release version from the user-facing shell path
 
 - [x] Implement the real missing package contract used by the TypeScript skills
   - [x] Add `graphify serve [graph]`
