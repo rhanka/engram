@@ -1,4 +1,4 @@
-# TypeScript Port Execution Plan
+# TypeScript Runtime Plan
 
 ## Status Snapshot
 
@@ -18,6 +18,15 @@
 - [x] Verify local test suite passes with `npm test`
 - [x] Verify packaging smoke test passes with a writable npm cache (`NPM_CONFIG_CACHE=/tmp/... npm run test:smoke`)
 - [x] Keep the TypeScript command surface aligned with the Python CLI
+- [x] Add real automated coverage for the TypeScript MCP server path
+- [x] Promote the TypeScript runtime from `ts/` to the repository root
+- [x] Remove the Python workspace and Python CI from the repository
+- [x] Keep the canonical MIT license at the repository root
+- [x] Update the README to state clearly that this repository is the TypeScript port of the original project
+- [x] Confirm the npm package name `graphifyy` is still available
+- [ ] Confirm local npm authentication is valid for manual publish
+- [ ] Configure the GitHub Actions `NPM_TOKEN` repository secret
+- [x] Validate the publish payload with `npm publish --dry-run`
 - [ ] Push to origin
 - [ ] Publish npm package
 
@@ -65,7 +74,7 @@
 - [x] Use this file as the execution source of truth until push
 - [x] Update the root README to match the Python/TypeScript CLI surface exactly
 - [x] Reconcile the skill files with the final released CLI/package contract
-- [ ] Remove or absorb `ts/VALIDATION.md` once the remaining useful checks are covered here
+- [x] Remove the old `ts/VALIDATION.md` during the root migration
 - [ ] Decide whether packaging/test scripts should set a local npm cache by default for sandbox-safe runs
 
 ## Track 3 - Usage-Driven UAT Before Push
@@ -75,6 +84,10 @@
 - [x] Verify `graphify query "<question>"` works against the generated graph
 - [x] Verify one platform install flow end-to-end from the TypeScript CLI
 - [x] Verify hook install/status from the final CLI shape
+- [x] Add end-to-end TypeScript coverage for `graphify serve [graph]`
+  - [x] Validate the MCP stdio handshake and tool listing
+  - [x] Validate representative MCP tool calls against a fixture graph
+  - [x] Cover the public `graphify serve` path in automated verification
 - [ ] Record and fix any remaining Python vs TypeScript behavior gaps discovered during UAT
   - Remaining practical product gap: `/graphify <path>` is still a skill workflow, not a packaged CLI command, in both Python and TypeScript
 
@@ -114,24 +127,23 @@
 - [x] Commit 5 - move the Python runtime and Python tests under `py/` and repair top-level paths
 - [x] Commit 6 - move Python packaging into `py/` and split root GitHub Actions into Python and TypeScript CI workflows
 - [x] Commit 7 - port the Codex skill pipeline to the TypeScript runtime and require runtime-proofed UAT
+- [x] Commit 8 - delete the Python runtime, promote TypeScript to the repo root, and keep the repo MIT-licensed
 
-## Track 5 - Symmetrize The Repo Before Python Removal
+## Track 5 - Collapse To A Root TypeScript Runtime
 
-- [x] Move the Python runtime into a first-class `py/` workspace
-- [x] Keep `ts/` as the parallel TypeScript workspace with matching top-level layout
-  - [x] Keep Python packaging metadata under `py/`
-  - [x] Keep TypeScript packaging metadata under `ts/`
-  - [x] Run root GitHub Actions workflows against both workspaces explicitly
-- [ ] Define which files stay shared at repo root vs runtime-specific under `py/` and `ts/`
-  - Shared candidates: fixtures, `worked/`, parity specs, release docs
-  - Runtime-specific candidates: package metadata, runtime tests, skill templates, build tooling
-- [ ] Add a runtime parity spec that maps every Python module to its TypeScript counterpart
-  - `detect`, `extract`, `build`, `cluster`, `analyze`, `report`, `export`, `serve`, `watch`, `security`, `ingest`, `cache`, `hooks`, `cli`, `skills`
-- [ ] Add a cross-runtime parity harness on shared fixtures/corpora
-  - Compare graph shape and key report sections for Python vs TypeScript outputs
-  - Record intentional divergences explicitly
-- [x] Make Codex runtime selection explicit in docs and tests so UAT cannot silently fall back to Python
-- [x] Require green Codex end-to-end UAT on the TypeScript runtime before deleting Python
+- [x] Keep only the TypeScript runtime in the repository
+  - [x] Delete the tracked `py/` workspace
+  - [x] Delete the root Python CI workflow
+  - [x] Remove the Python parity test from the TypeScript suite
+- [x] Promote the packaged TypeScript runtime to the repository root
+  - [x] Move `package.json`, `package-lock.json`, `tsconfig.json`, `tsup.config.ts`, and `vitest.config.ts` to root
+  - [x] Move `src/`, `tests/`, and `scripts/` to root
+  - [x] Remove the old tracked `ts/` workspace files after promotion
+- [x] Realign repo metadata around the TypeScript-only runtime
+  - [x] Update the active GitHub Actions workflow to run from root
+  - [x] Remove Python-specific packaging and install instructions from the main README
+  - [x] Keep the MIT license canonical at `LICENSE`
+  - [x] Add an explicit acknowledgement that this repository is a TypeScript port of the original project
 
 ## Release Gate
 
@@ -140,6 +152,10 @@
 - [x] Smoke-level product UAT is green from the user-facing command path
 - [x] Working tree is clean except for intentional tracked changes
 - [x] The runtime used by Codex UAT is explicit and matches the target runtime under test
+- [x] The npm package name is free on the public registry
+- [ ] A valid npm auth token is available for local publish
+- [ ] The `NPM_TOKEN` GitHub Actions secret is configured
+- [x] `npm publish --dry-run` succeeds from the repository root
 - [ ] Push branch to origin
 - [ ] Tag the release
 - [ ] Publish the npm package

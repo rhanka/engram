@@ -2,12 +2,11 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja-JP.md)
 
-[![Python CI](https://github.com/safishamsi/graphify/actions/workflows/python-ci.yml/badge.svg?branch=v3)](https://github.com/safishamsi/graphify/actions/workflows/python-ci.yml)
-[![TypeScript CI](https://github.com/safishamsi/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=v3)](https://github.com/safishamsi/graphify/actions/workflows/typescript-ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/graphifyy)](https://pypi.org/project/graphifyy/)
-[![Sponsor](https://img.shields.io/badge/sponsor-safishamsi-ea4aaa?logo=github-sponsors)](https://github.com/sponsors/safishamsi)
+[![TypeScript CI](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=v3)](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml)
 
 **An AI coding assistant skill.** Type `/graphify` in Claude Code or `$graphify` in Codex - it reads your files, builds a knowledge graph, and gives you back structure you didn't know was there. Understand a codebase faster. Find the "why" behind architectural decisions.
+
+This repository is the maintained TypeScript port of the original Graphify project. Thanks to the original work by [Safi Shamsi](https://github.com/safishamsi/graphify) for the product direction, workflow, and initial implementation.
 
 Fully multimodal. Drop in code, PDFs, markdown, screenshots, diagrams, whiteboard photos, even images in other languages - graphify uses your platform's multimodal model to extract concepts and relationships from all of it and connects them into one graph. 20 languages supported via tree-sitter AST (Python, JS, TS, Go, Rust, Java, C, C++, Ruby, C#, Kotlin, Scala, PHP, Swift, Lua, Zig, PowerShell, Elixir, Objective-C, Julia).
 
@@ -42,21 +41,22 @@ Same syntax as `.gitignore`. Patterns match against file paths relative to the f
 
 ## How it works
 
-graphify runs in two passes. First, a deterministic AST pass extracts structure from code files (classes, functions, imports, call graphs, docstrings, rationale comments) with no LLM needed. Second, model-backed subagents run in parallel over docs, papers, and images to extract concepts, relationships, and design rationale. The results are merged into a NetworkX graph, clustered with Leiden community detection, and exported as interactive HTML, queryable JSON, and a plain-language audit report.
+graphify runs in two passes. First, a deterministic AST pass extracts structure from code files (classes, functions, imports, call graphs, docstrings, rationale comments) with no LLM needed. Second, model-backed subagents run in parallel over docs, papers, and images to extract concepts, relationships, and design rationale. The results are merged into a Graphology graph, clustered with Louvain community detection, and exported as interactive HTML, queryable JSON, and a plain-language audit report.
 
-**Clustering is graph-topology-based — no embeddings.** Leiden finds communities by edge density. The semantic similarity edges that the model extracts (`semantically_similar_to`, marked INFERRED) are already in the graph, so they influence community detection directly. The graph structure is the similarity signal — no separate embedding step or vector database needed.
+**Clustering is graph-topology-based — no embeddings.** Louvain finds communities by edge density. The semantic similarity edges that the model extracts (`semantically_similar_to`, marked INFERRED) are already in the graph, so they influence community detection directly. The graph structure is the similarity signal — no separate embedding step or vector database needed.
 
 Every relationship is tagged `EXTRACTED` (found directly in source), `INFERRED` (reasonable inference, with a confidence score), or `AMBIGUOUS` (flagged for review). You always know what was found vs guessed.
 
 ## Install
 
-**Requires:** Python 3.10+ and one of: [Claude Code](https://claude.ai/code), [Codex](https://openai.com/codex), [OpenCode](https://opencode.ai), [OpenClaw](https://openclaw.ai), [Factory Droid](https://factory.ai), or [Trae](https://trae.com)
+**Requires:** Node.js 20+ and one of: [Claude Code](https://claude.ai/code), [Codex](https://openai.com/codex), [OpenCode](https://opencode.ai), [OpenClaw](https://openclaw.ai), [Factory Droid](https://factory.ai), or [Trae](https://trae.com)
 
 ```bash
-pip install graphifyy && graphify install
+npm install -g graphifyy
+graphify install
 ```
 
-> The PyPI package is temporarily named `graphifyy` while the `graphify` name is being reclaimed. The CLI and skill command are still `graphify`.
+> The npm package is temporarily named `graphifyy` while the `graphify` name is being reclaimed. The CLI and skill command are still `graphify`.
 
 ### Platform support
 
@@ -157,7 +157,7 @@ That gives the assistant structured graph access for repeated queries such as
 
 ```bash
 mkdir -p ~/.claude/skills/graphify
-curl -fsSL https://raw.githubusercontent.com/safishamsi/graphify/v3/py/graphify/skill.md \
+curl -fsSL https://raw.githubusercontent.com/rhanka/graphify/v3/src/skills/skill.md \
   > ~/.claude/skills/graphify/SKILL.md
 ```
 
@@ -233,7 +233,7 @@ Works with any mix of file types:
 |------|-----------|------------|
 | Code | `.py .ts .js .jsx .tsx .go .rs .java .c .cpp .rb .cs .kt .scala .php .swift .lua .zig .ps1 .ex .exs .m .mm .jl` | AST via tree-sitter + call-graph + docstring/comment rationale |
 | Docs | `.md .txt .rst` | Concepts + relationships + design rationale via the platform model |
-| Office | `.docx .xlsx` | Converted to markdown then extracted via the platform model (requires `pip install graphifyy[office]`) |
+| Office | `.docx .xlsx` | Converted to markdown then extracted via the platform model |
 | Papers | `.pdf` | Citation mining + concept extraction |
 | Images | `.png .jpg .webp .gif` | Multimodal vision - screenshots, diagrams, any language |
 
@@ -277,15 +277,15 @@ graphify sends file contents to your AI coding assistant's underlying model API 
 
 ## Tech stack
 
-NetworkX + Leiden (graspologic) + tree-sitter + vis.js. Semantic extraction via your platform's model (Claude Code, Codex, or another supported client). No Neo4j required, no server, runs entirely locally.
+Graphology + Louvain (`graphology-communities-louvain`) + tree-sitter + vis-network. Semantic extraction via your platform's model (Claude Code, Codex, or another supported client). No Neo4j required, and the default HTML output is fully static.
 
-## What we are building next
+## Acknowledgements
 
-graphify is the graph layer. We are building [Penpax](https://safishamsi.github.io/penpax.ai) on top of it — an on-device digital twin that connects your meetings, browser history, files, emails, and code into one continuously updating knowledge graph. No cloud, no training on your data. [Join the waitlist.](https://safishamsi.github.io/penpax.ai)
+This repository is a TypeScript port of the original Graphify project by [Safi Shamsi](https://github.com/safishamsi/graphify). The current codebase keeps the assistant-skill workflow and knowledge-graph model, while shipping the maintained runtime as TypeScript at the repository root.
 
-## Star history
+## License
 
-[![Star History Chart](https://starchart.cc/safishamsi/graphify.svg)](https://starchart.cc/safishamsi/graphify)
+MIT. See [LICENSE](LICENSE).
 
 <details>
 <summary>Contributing</summary>

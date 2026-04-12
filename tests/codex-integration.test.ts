@@ -31,7 +31,7 @@ describe("Codex integration contract", () => {
 
   it("documents the Codex skill with Codex-native invocation and install flow", () => {
     const skill = readFileSync(new URL("../src/skills/skill-codex.md", import.meta.url), "utf-8");
-    const readme = readFileSync(new URL("../../README.md", import.meta.url), "utf-8");
+    const readme = readFileSync(new URL("../README.md", import.meta.url), "utf-8");
 
     expect(skill).toContain("trigger: $graphify");
     expect(skill).toContain("### Step 2 - Detect files");

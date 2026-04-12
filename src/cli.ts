@@ -438,7 +438,7 @@ function checkSkillVersion(skillDst: string): void {
 // Main CLI
 // ---------------------------------------------------------------------------
 
-export function main(): void {
+export async function main(): Promise<void> {
   // Check installed skill versions
   for (const cfg of Object.values(PLATFORM_CONFIG)) {
     checkSkillVersion(join(homedir(), cfg.skill_dst));
@@ -665,7 +665,7 @@ export function main(): void {
       await rebuildCode(".");
     });
 
-  program.parse();
+  await program.parseAsync();
 }
 
 function isDirectCliExecution(): boolean {
@@ -678,5 +678,8 @@ function isDirectCliExecution(): boolean {
 }
 
 if (isDirectCliExecution()) {
-  main();
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
 }

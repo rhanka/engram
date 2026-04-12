@@ -22,23 +22,21 @@ jobs:
           node-version: ${{ matrix.node-version }}
 
       - name: Install dependencies
-        working-directory: ts
         run: npm ci
 
       - name: Build
-        working-directory: ts
         run: npm run build
 
       - name: Run unit tests
-        working-directory: ts
         run: npm test
 
       - name: Run pipeline E2E test
-        working-directory: ts
         run: npx vitest run tests/pipeline.test.ts
 
+      - name: Run MCP serve test
+        run: npm run test:serve
+
       - name: Verify CLI works end-to-end
-        working-directory: ts
         run: |
           node dist/cli.js --help
           node dist/cli.js --version
@@ -56,7 +54,6 @@ jobs:
           node-version: "22"
 
       - name: Install, build, and pack
-        working-directory: ts
         run: |
           npm ci
           npm run build
@@ -67,7 +64,7 @@ jobs:
         run: |
           mkdir /tmp/smoke-test && cd /tmp/smoke-test
           npm init -y --silent
-          npm install "${{ github.workspace }}/ts/${{ env.TARBALL }}"
+          npm install "${{ github.workspace }}/${{ env.TARBALL }}"
 
       - name: Verify CLI from installed package
         run: |
@@ -100,35 +97,6 @@ jobs:
           fi
           echo "$SKILL_COUNT skill files bundled"
 
-  # Parity test: compare TypeScript vs Python output (optional)
-  parity:
-    needs: test
-    runs-on: ubuntu-latest
-    continue-on-error: true  # Don't block publish on parity - algorithmic variance is expected
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install Python graphify
-        working-directory: py
-        run: pip install -e ".[mcp]"
-
-      - name: Install TypeScript graphify
-        working-directory: ts
-        run: npm ci
-
-      - name: Run parity test
-        working-directory: ts
-        run: npx vitest run tests/parity.test.ts
-
   # Publish to npm
   publish:
     needs: [test, smoke-test]
@@ -144,13 +112,11 @@ jobs:
           registry-url: "https://registry.npmjs.org"
 
       - name: Install and build
-        working-directory: ts
         run: |
           npm ci
           npm run build
 
       - name: Publish to npm
-        working-directory: ts
         run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

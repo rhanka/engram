@@ -77,6 +77,7 @@ PKG_DIR="$TMP_DIR/node_modules/graphifyy"
 [ -f "$PKG_DIR/dist/index.cjs" ] || { echo "  ✗ dist/index.cjs missing"; exit 1; }
 [ -f "$PKG_DIR/dist/index.d.ts" ] || { echo "  ✗ dist/index.d.ts missing"; exit 1; }
 [ -f "$PKG_DIR/dist/cli.js" ] || { echo "  ✗ dist/cli.js missing"; exit 1; }
+[ -f "$PKG_DIR/dist/skill-runtime.js" ] || { echo "  ✗ dist/skill-runtime.js missing"; exit 1; }
 echo "  ✓ dist/ contains all expected files"
 
 # skills/ should be bundled

@@ -2,9 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja-JP.md)
 
-[![Python CI](https://github.com/safishamsi/graphify/actions/workflows/python-ci.yml/badge.svg?branch=v3)](https://github.com/safishamsi/graphify/actions/workflows/python-ci.yml)
-[![TypeScript CI](https://github.com/safishamsi/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=v3)](https://github.com/safishamsi/graphify/actions/workflows/typescript-ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/graphifyy)](https://pypi.org/project/graphifyy/)
+[![TypeScript CI](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=v3)](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml)
 
 **一个面向 AI 编码助手的技能。** 在 Claude Code、Codex、OpenCode、OpenClaw、Factory Droid 或 Trae 中输入 `/graphify`，它会读取你的文件、构建知识图谱，并把原本不明显的结构关系还给你。更快理解代码库，找到架构决策背后的"为什么"。
 
@@ -34,13 +32,14 @@ graphify 分两轮执行。第一轮是确定性的 AST 提取，对代码文件
 
 ## 安装
 
-**要求：** Python 3.10+，并且使用以下平台之一：[Claude Code](https://claude.ai/code)、[Codex](https://openai.com/codex)、[OpenCode](https://opencode.ai)、[OpenClaw](https://openclaw.ai)、[Factory Droid](https://factory.ai) 或 [Trae](https://trae.com)
+**要求：** Node.js 20+，并且使用以下平台之一：[Claude Code](https://claude.ai/code)、[Codex](https://openai.com/codex)、[OpenCode](https://opencode.ai)、[OpenClaw](https://openclaw.ai)、[Factory Droid](https://factory.ai) 或 [Trae](https://trae.com)
 
 ```bash
-pip install graphifyy && graphify install
+npm install -g graphifyy
+graphify install
 ```
 
-> PyPI 包当前暂时叫 `graphifyy`，因为 `graphify` 这个名字还在回收中。CLI 命令和 skill 命令仍然都是 `graphify`。
+> npm 包当前暂时叫 `graphifyy`，因为 `graphify` 这个名字还在回收中。CLI 命令和 skill 命令仍然都是 `graphify`。
 
 ### 平台支持
 
@@ -99,7 +98,7 @@ Codex 用户还需要在 `~/.codex/config.toml` 的 `[features]` 下打开 `mult
 
 ```bash
 mkdir -p ~/.claude/skills/graphify
-curl -fsSL https://raw.githubusercontent.com/safishamsi/graphify/v3/py/graphify/skill.md \
+curl -fsSL https://raw.githubusercontent.com/rhanka/graphify/v3/src/skills/skill.md \
   > ~/.claude/skills/graphify/SKILL.md
 ```
 

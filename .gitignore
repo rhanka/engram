@@ -4,10 +4,12 @@ env/
 __pycache__/
 *.pyc
 *.egg-info/
+graphifyy.egg-info/
 .eggs/
 dist/
 build/
 node_modules/
+*.tsbuildinfo
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -26,5 +28,4 @@ docs/superpowers/
 .codex
 .codex/
 openspec/
-ts/VALIDATION.md
 uv.lock

@@ -2,10 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja-JP.md)
 
-[![Python CI](https://github.com/safishamsi/graphify/actions/workflows/python-ci.yml/badge.svg?branch=v3)](https://github.com/safishamsi/graphify/actions/workflows/python-ci.yml)
-[![TypeScript CI](https://github.com/safishamsi/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=v3)](https://github.com/safishamsi/graphify/actions/workflows/typescript-ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/graphifyy)](https://pypi.org/project/graphifyy/)
-[![Sponsor](https://img.shields.io/badge/sponsor-safishamsi-ea4aaa?logo=github-sponsors)](https://github.com/sponsors/safishamsi)
+[![TypeScript CI](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=v3)](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml)
 
 **AIコーディングアシスタント向けのスキル。** Claude Code、Codex、OpenCode、OpenClaw、Factory Droid で `/graphify` と入力するだけで、ファイルを読み込んでナレッジグラフを構築し、あなたが気づいていなかった構造を返します。コードベースをより速く理解し、アーキテクチャ上の意思決定の「なぜ」を見つけ出します。
 
@@ -47,13 +44,14 @@ graphify は 2 パスで動作します。まず、決定論的な AST パスが
 
 ## インストール
 
-**必要なもの:** Python 3.10+ および以下のいずれか： [Claude Code](https://claude.ai/code), [Codex](https://openai.com/codex), [OpenCode](https://opencode.ai), [OpenClaw](https://openclaw.ai), または [Factory Droid](https://factory.ai)
+**必要なもの:** Node.js 20+ および以下のいずれか： [Claude Code](https://claude.ai/code), [Codex](https://openai.com/codex), [OpenCode](https://opencode.ai), [OpenClaw](https://openclaw.ai), または [Factory Droid](https://factory.ai)
 
 ```bash
-pip install graphifyy && graphify install
+npm install -g graphifyy
+graphify install
 ```
 
-> PyPI パッケージは `graphify` の名前が再取得されるまでの間、一時的に `graphifyy` となっています。CLI とスキルコマンドは依然として `graphify` です。
+> npm パッケージは `graphify` の名前が再取得されるまでの間、一時的に `graphifyy` となっています。CLI とスキルコマンドは依然として `graphify` です。
 
 ### プラットフォームサポート
 
@@ -107,7 +105,7 @@ Codex ユーザーは並列抽出のために `~/.codex/config.toml` の `[featu
 
 ```bash
 mkdir -p ~/.claude/skills/graphify
-curl -fsSL https://raw.githubusercontent.com/safishamsi/graphify/v3/py/graphify/skill.md \
+curl -fsSL https://raw.githubusercontent.com/rhanka/graphify/v3/src/skills/skill.md \
   > ~/.claude/skills/graphify/SKILL.md
 ```
 
@@ -177,7 +175,7 @@ graphify query "..." --graph path/to/graph.json
 |------|-----------|------------|
 | コード | `.py .ts .js .go .rs .java .c .cpp .rb .cs .kt .scala .php .swift .lua .zig .ps1 .ex .exs .m .mm` | tree-sitter による AST + コールグラフ + docstring/コメントの根拠 |
 | ドキュメント | `.md .txt .rst` | Claude による概念 + 関係性 + 設計根拠 |
-| Office | `.docx .xlsx` | Markdown に変換した後 Claude で抽出（`pip install graphifyy[office]` が必要） |
+| Office | `.docx .xlsx` | Markdown に変換した後 Claude で抽出 |
 | 論文 | `.pdf` | 引用マイニング + 概念抽出 |
 | 画像 | `.png .jpg .webp .gif` | Claude Vision - スクリーンショット、図、任意の言語 |
 

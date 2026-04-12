@@ -8,9 +8,9 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.cjs"
     }
   },
   "bin": {
@@ -26,8 +26,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
+    "test:serve": "vitest run tests/serve.test.ts",
     "test:smoke": "./scripts/smoke-test.sh",
-    "test:parity": "vitest run tests/parity.test.ts",
     "test:pipeline": "vitest run tests/pipeline.test.ts",
     "test:all": "vitest run && npm run test:smoke",
     "prepublishOnly": "npm run build && npm test"
@@ -49,11 +49,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/safishamsi/graphify"
+    "url": "https://github.com/rhanka/graphify"
   },
-  "homepage": "https://github.com/safishamsi/graphify",
+  "homepage": "https://github.com/rhanka/graphify",
   "bugs": {
-    "url": "https://github.com/safishamsi/graphify/issues"
+    "url": "https://github.com/rhanka/graphify/issues"
   },
   "engines": {
     "node": ">=20"

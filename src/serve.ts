@@ -9,6 +9,7 @@ import { bidirectional } from "graphology-shortest-path/unweighted.js";
 import { basename } from "node:path";
 import { validateGraphPath, sanitizeLabel } from "./security.js";
 import { godNodes as computeGodNodes } from "./analyze.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 
 // ---------------------------------------------------------------------------
 // Graph loading
@@ -346,6 +347,7 @@ function toolShortestPath(G: Graph, args: Record<string, unknown>): string {
 
 export async function serve(
   graphPath: string = "graphify-out/graph.json",
+  transport?: Transport,
 ): Promise<void> {
   let Server: typeof import("@modelcontextprotocol/sdk/server/index.js").Server;
   let StdioServerTransport: typeof import("@modelcontextprotocol/sdk/server/stdio.js").StdioServerTransport;
@@ -518,8 +520,28 @@ export async function serve(
     return { content: [{ type: "text" as const, text }] };
   });
 
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  const serverTransport = transport ?? new StdioServerTransport();
+  let keepAlive: NodeJS.Timeout | undefined;
+  if (!transport) {
+    keepAlive = setInterval(() => undefined, 60_000);
+    process.stdin?.resume();
+  }
+
+  const closed = new Promise<void>((resolve) => {
+    const previousOnClose = server.onclose;
+    server.onclose = () => {
+      if (keepAlive) {
+        clearInterval(keepAlive);
+      }
+      previousOnClose?.();
+      resolve();
+    };
+  });
+
+  await server.connect(serverTransport);
+  if (transport) {
+    await closed;
+  }
 }
 
 // ---------------------------------------------------------------------------
