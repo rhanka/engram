@@ -1,174 +1,233 @@
-# TypeScript Runtime Plan
+# Upstream Catch-up Plan
 
-## Status Snapshot
+## Snapshot
 
-- [x] Create the TypeScript workspace in `ts/`
-- [x] Port the core library modules to TypeScript
-- [x] Port the extraction engine for 20 languages
-- [x] Port graph build, clustering, analysis, report, export, wiki, serve, watch, ingest, benchmark
-- [x] Add the TypeScript package/tooling scaffold (`package.json`, `tsconfig`, `tsup`, `vitest`)
-- [x] Add the initial TypeScript CLI entry point
-- [x] Port test fixtures
-- [x] Port the automated test suite
-- [x] Add Node.js CI/CD and npm publish workflow
-- [x] Split active GitHub CI into root-level Python and TypeScript workflows
-- [x] Convert all 7 skill markdown files from Python to Node.js
-- [x] Keep the work split into 13 atomic commits on top of `origin/v3`
-- [x] Verify local build passes with `npm run build`
-- [x] Verify local test suite passes with `npm test`
-- [x] Verify packaging smoke test passes with a writable npm cache (`NPM_CONFIG_CACHE=/tmp/... npm run test:smoke`)
-- [x] Keep the TypeScript command surface aligned with the Python CLI
-- [x] Add real automated coverage for the TypeScript MCP server path
-- [x] Promote the TypeScript runtime from `ts/` to the repository root
-- [x] Remove the Python workspace and Python CI from the repository
-- [x] Keep the canonical MIT license at the repository root
-- [x] Update the README to state clearly that this repository is the TypeScript port of the original project
-- [x] Confirm the npm package name `graphifyy` is still available
-- [x] Confirm local npm authentication is valid for manual publish
-- [x] Configure the GitHub Actions `NPM_TOKEN` repository secret
-- [x] Validate the publish payload with `npm publish --dry-run`
-- [x] Push to origin
-- [x] Publish npm package
+- [x] Create a dedicated catch-up branch: `chore/upstream-v3-rattrapage`
+- [x] Fetch the upstream repository and refresh all refs/tags
+- [x] Confirm local baseline branch: `v3` at `fbc6929`
+- [x] Confirm upstream target branch for this catch-up: `upstream/v3` at `699e996`
+- [x] Confirm last upstream `v3` tag: `v0.3.28`
+- [x] Record the initial gap table in [UPSTREAM_GAP.md](UPSTREAM_GAP.md)
+- [ ] Keep this file as the execution source of truth for the catch-up branch
+- [ ] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) after every completed lot
 
-## Reality Check Before Continuing
+## Guardrails
 
-- [x] Confirm the TypeScript CLI works via `node dist/cli.js --help`
-- [x] Confirm the TypeScript CLI reports the aligned release version `0.3.17`
-- [x] Confirm the default shell originally resolved `graphify` to the legacy Python binary in `/home/antoinefa/.local/bin/graphify`
-- [x] Confirm `npm link` created the TypeScript binary in `/home/antoinefa/.npm-global/bin/graphify`
-- [x] Confirm `/graphify <path>` is still a skill workflow entrypoint, not a packaged `graphify` binary command
-- [x] Confirm the real package contract is: npm CLI commands + `require('graphifyy')` helpers used in the converted skills
-- [x] Close the contract mismatch between `ts/src/skills/*.md`, the package public API, and `ts/src/cli.ts`
+- [ ] Do not mix `upstream/v4` or `upstream/main` work into this branch until the `upstream/v3` delta is triaged
+- [ ] Keep the npm/package release version unchanged while doing parity catch-up unless a release lot explicitly requires a bump
+- [ ] Keep one commit group per upstream release bucket where practical
+- [ ] For every implementation lot:
+  - [ ] run targeted tests first
+  - [ ] run full `npm test` before closing the lot
+  - [ ] run `npx graphify hook-rebuild` after code changes
+  - [ ] update this plan and [UPSTREAM_GAP.md](UPSTREAM_GAP.md)
+- [ ] Mark Python-only upstream fixes as explicit `n/a` instead of silently ignoring them
 
-## Track 1 - Make The Product Usable
+## Lot 0 - Planning Baseline
 
-- [x] Make the default `graphify` command resolve to the TypeScript binary for local UAT
-  - [x] Build the CLI bundle in `ts/dist/`
-  - [x] Create the linked npm binary with `npm link`
-  - [x] Back up the legacy Python shim to `~/.local/bin/graphify.python-backup-20260410`
-  - [x] Repoint `~/.local/bin/graphify` to the npm-linked TypeScript binary
-  - [x] Verify `graphify --version` returns the aligned release version from the user-facing shell path
+- [x] Build an initial release-by-release delta map from `v0.3.18` through current `upstream/v3`
+- [ ] Add upstream commit links beside each release lot in this plan
+- [ ] Decide the exact close-out rule for each lot:
+  - [ ] `covered`
+  - [ ] `partial but acceptable`
+  - [ ] `n/a`
+  - [ ] `implemented`
 
-- [x] Implement the real missing package contract used by the TypeScript skills
-  - [x] Add `graphify serve [graph]`
-  - [x] Add `graphify watch [path] --debounce <seconds>`
-  - [x] Export the documented runtime helpers from `graphifyy`
-  - [x] Make `require('graphifyy')` work from the built CJS bundle
-  - [x] Accept the object/option-style helper signatures used in converted Node snippets where safe
-  - [x] Update converted skill snippets for the remaining non-maskable issues (`Map` handling and `await` on async helpers)
-- [x] Revert the temporary public `build|index` TS-only command to preserve strict Python CLI parity
+## Lot 1 - Upstream `v0.3.18`
 
-- [x] Verify the existing implemented commands still work after contract changes
-  - [x] `graphify install`
-  - [x] `graphify claude install|uninstall`
-  - [x] `graphify codex|opencode|claw|droid|trae|trae-cn install|uninstall`
-  - [x] `graphify hook install|uninstall|status`
-  - [x] `graphify query <question>`
-  - [x] `graphify benchmark [graph]`
-  - [x] internal `graphify hook-rebuild`
-  - [x] `graphify serve [graph]`
-  - [x] `graphify watch [path]`
+Upstream scope:
+- skill coverage fixes
+- Windows skill fixes
+- click detection fix
+- `.graphify_python` persistence
 
-## Track 2 - Keep Docs And Plan Aligned With Reality
+Plan:
+- [ ] Audit upstream commits `11dff7e`, `29c639d`, `4d8cffe`
+- [ ] Diff current TS skill files against the upstream `v0.3.18` behavior changes
+- [ ] Verify whether the Windows skill still misses any commands or examples
+- [ ] Verify whether the click-detection issue has a TS/UI equivalent
+- [ ] Mark `.graphify_python` persistence as `n/a` for the TS-only runtime unless a real TS runtime-proof persistence gap exists
+- [ ] Add targeted regressions for any retained fixes
+- [ ] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.18`
+- [ ] Commit the `v0.3.18` catch-up lot
 
-- [x] Use this file as the execution source of truth until push
-- [x] Update the root README to match the Python/TypeScript CLI surface exactly
-- [x] Reconcile the skill files with the final released CLI/package contract
-- [x] Remove the old `ts/VALIDATION.md` during the root migration
-- [ ] Decide whether packaging/test scripts should set a local npm cache by default for sandbox-safe runs
+## Lot 2 - Upstream `v0.3.19`
 
-## Track 3 - Usage-Driven UAT Before Push
+Upstream scope:
+- OpenCode `tool.execute.before` plugin integration
 
-- [x] Run smoke-level UAT through the user-facing `graphify` command path (`--version`, `--help`, `hook status`)
-- [x] Run the TypeScript CLI through the user-facing `graphify` command on a real local corpus
-- [x] Verify `graphify query "<question>"` works against the generated graph
-- [x] Verify one platform install flow end-to-end from the TypeScript CLI
-- [x] Verify hook install/status from the final CLI shape
-- [x] Add end-to-end TypeScript coverage for `graphify serve [graph]`
-  - [x] Validate the MCP stdio handshake and tool listing
-  - [x] Validate representative MCP tool calls against a fixture graph
-  - [x] Cover the public `graphify serve` path in automated verification
-- [ ] Record and fix any remaining Python vs TypeScript behavior gaps discovered during UAT
-  - Remaining practical product gap: `/graphify <path>` is still a skill workflow, not a packaged CLI command, in both Python and TypeScript
+Plan:
+- [ ] Audit upstream commits `3501605`, `e1864d7`, `096a76f`
+- [ ] Decide whether TS should support true OpenCode plugin-style install parity or intentionally keep the current install model
+- [ ] If parity is required, add the OpenCode plugin install path
+- [ ] If parity is not required, document the intentional divergence in [UPSTREAM_GAP.md](UPSTREAM_GAP.md)
+- [ ] Add regression coverage for OpenCode install idempotency and resulting config shape
+- [ ] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.19`
+- [ ] Commit the `v0.3.19` catch-up lot
 
-## Track 4 - Make Codex The Primary Skill Target
+## Lot 3 - Upstream `v0.3.20`
 
-- [x] Verify the explicit Codex skill invocation that actually works in `codex exec`
-  - [x] Confirm `$graphify .` triggers the installed `graphify` skill in Codex
-- [x] Align Codex-specific install hints and always-on instructions with the verified invocation path
-  - [x] Update the Codex install output to recommend `$graphify .`
-  - [x] Update `AGENTS.md` rules for Codex to point Codex at the installed `graphify` skill
-- [x] Remove Claude-centric wording from the Codex-specific skill and docs
-  - [x] Update `py/graphify/skill-codex.md`
-  - [x] Update `ts/src/skills/skill-codex.md`
-  - [x] Update the root `README.md`
-- [x] Run a real Codex end-to-end build on this repository
-  - [x] Refresh the globally installed Codex skill from the repo before UAT
-  - [x] Confirm `$graphify .` generates `graphify-out/graph.json`, `GRAPH_REPORT.md`, and `graph.html`
-  - [x] Confirm `graphify query --graph graphify-out/graph.json "codex install"` works on the generated graph
-- [x] Close the concrete Codex install/UAT gaps discovered during real-repo testing
-  - [x] Fix `graphify codex install` when `.codex` is a file instead of a directory
-  - [x] Make `graphify codex install` re-register the Codex hook even when `AGENTS.md` already exists
-  - [x] Restore the full Codex skill pipeline in the packaged `skill-codex.md`
-- [x] Confirm the current successful Codex skill pipeline still runs the Python graph build path
-- [x] Decide whether Codex natural-language invocation should be documented as first-class or left undocumented until separately validated
-  - [x] Keep only `$graphify ...` as the documented Codex entrypoint until natural-language invocation is separately validated
-- [x] Port the Codex skill build/update pipeline so Codex can drive the TypeScript runtime end to end instead of Python
-  - [x] Add a dedicated TypeScript `skill-runtime.js` entrypoint for the Codex skill pipeline
-  - [x] Make the Codex skill fail closed unless `graphify-out/.graphify_runtime.json` reports `runtime: "typescript"`
-  - [x] Complete a real-repo Codex run on `.` that finishes with the TypeScript runtime and writes the expected outputs
+Upstream scope:
+- AST call-edge confidence forced to `EXTRACTED`
+- tree-sitter version/runtime guard
 
-## Commit Rollout
+Plan:
+- [ ] Audit upstream commits `b7fd5ac`, `b101a99`
+- [ ] Confirm TS extractors already emit AST call edges as `EXTRACTED`
+- [ ] Audit whether TS needs an explicit runtime/version guard for tree-sitter packages or WASM grammars
+- [ ] Decide whether missing grammar/runtime failures should be hardened further in TS
+- [ ] Add regression coverage if any runtime/version guard is introduced
+- [ ] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.20`
+- [ ] Commit the `v0.3.20` catch-up lot
 
-- [x] Commit 1 - close the TypeScript runtime/package contract, CLI surface, and verification helpers
-- [x] Commit 2 - align the non-Codex skill markdown files with the shipped runtime contract
-- [x] Commit 3 - make Codex use `$graphify` end to end in Python/Codex skills, docs, and UAT evidence
-- [x] Commit 4 - harden Codex install/UAT on a real repo and record that the successful skill pipeline is still Python-backed
-- [x] Commit 5 - move the Python runtime and Python tests under `py/` and repair top-level paths
-- [x] Commit 6 - move Python packaging into `py/` and split root GitHub Actions into Python and TypeScript CI workflows
-- [x] Commit 7 - port the Codex skill pipeline to the TypeScript runtime and require runtime-proofed UAT
-- [x] Commit 8 - delete the Python runtime, promote TypeScript to the repo root, and keep the repo MIT-licensed
+## Lot 4 - Upstream `v0.3.21`
 
-## Track 5 - Collapse To A Root TypeScript Runtime
+Upstream scope:
+- Codex hook JSON schema fix
+- `#!/bin/sh` portability for Windows hooks
 
-- [x] Keep only the TypeScript runtime in the repository
-  - [x] Delete the tracked `py/` workspace
-  - [x] Delete the root Python CI workflow
-  - [x] Remove the Python parity test from the TypeScript suite
-- [x] Promote the packaged TypeScript runtime to the repository root
-  - [x] Move `package.json`, `package-lock.json`, `tsconfig.json`, `tsup.config.ts`, and `vitest.config.ts` to root
-  - [x] Move `src/`, `tests/`, and `scripts/` to root
-  - [x] Remove the old tracked `ts/` workspace files after promotion
-- [x] Realign repo metadata around the TypeScript-only runtime
-  - [x] Update the active GitHub Actions workflow to run from root
-  - [x] Remove Python-specific packaging and install instructions from the main README
-  - [x] Keep the MIT license canonical at `LICENSE`
-  - [x] Add an explicit acknowledgement that this repository is a TypeScript port of the original project
+Plan:
+- [ ] Audit upstream commit `6f9fc65`
+- [ ] Confirm current TS Codex hook JSON shape still matches the fixed upstream schema
+- [ ] Audit hook shell portability in the TS runtime
+- [ ] Decide whether any hook script shebang or shell portability fix is still missing
+- [ ] Add/extend hook tests if needed
+- [ ] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.21`
+- [ ] Commit the `v0.3.21` catch-up lot
 
-## Release Gate
+## Lot 5 - Upstream `v0.3.22`
 
-- [x] No documented package command in `ts/src/skills/*.md` is missing from the released CLI/public API
-- [x] The default `graphify` command path is the TypeScript one for local usage
-- [x] Smoke-level product UAT is green from the user-facing command path
-- [x] Working tree is clean except for intentional tracked changes
-- [x] The runtime used by Codex UAT is explicit and matches the target runtime under test
-- [x] The npm package name is free on the public registry
-- [x] A valid npm auth token is available for local publish
-- [x] The `NPM_TOKEN` GitHub Actions secret is configured
-- [x] `npm publish --dry-run` succeeds from the repository root
-- [x] Push branch to origin
-- [ ] Tag the release
-- [x] Publish the npm package
+Upstream scope:
+- Cursor support
+- watcher/export crash fixes in Python
 
-## Track 6 - Prepare 0.3.18
+Plan:
+- [ ] Audit upstream commit `f770712`
+- [ ] Add Cursor as a first-class platform target if still missing
+- [ ] Verify whether any Python watcher/export crash fix has a TS analogue
+- [ ] Mark Python-only crash fixes as `n/a` if there is no TS analogue
+- [ ] Add install + docs + regression coverage for Cursor if implemented
+- [ ] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.22`
+- [ ] Commit the `v0.3.22` catch-up lot
 
-- [x] Add Gemini CLI as a first-class platform target
-  - [x] `graphify install --platform gemini`
-  - [x] `graphify gemini install|uninstall`
-  - [x] `/graphify` custom command for Gemini CLI
-  - [x] `GEMINI.md` + `.gemini/settings.json` project integration
-  - [x] Automated Gemini integration coverage
-- [x] Migrate the GitHub Actions npm publish job from `NPM_TOKEN` to Trusted Publishing
-  - [x] Remove the workflow dependency on `NODE_AUTH_TOKEN`
-  - [x] Add `id-token: write` for the publish job
-  - [x] Configure npm Trusted Publishing for `rhanka/graphify` and `typescript-ci.yml`
+## Lot 6 - Upstream `v0.3.23`
+
+Upstream scope:
+- Gemini CLI support
+
+Plan:
+- [x] Confirm Gemini CLI support already exists in TS
+- [ ] Audit the upstream Gemini install/details against the current TS implementation
+- [ ] Close any doc/install drift that remains
+- [ ] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.23`
+- [ ] Commit only if audit finds a real delta
+
+## Lot 7 - Upstream `v0.3.24`
+
+Upstream scope:
+- Codex/OpenCode install idempotency
+
+Plan:
+- [ ] Audit upstream commit `ee43236`
+- [ ] Confirm Codex idempotency parity is already covered in TS
+- [ ] Audit OpenCode install/uninstall idempotency in TS
+- [ ] Add regression coverage if OpenCode still lags
+- [ ] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.24`
+- [ ] Commit the `v0.3.24` catch-up lot
+
+## Lot 8 - Upstream `v0.3.25`
+
+Upstream scope:
+- Aider support
+- Copilot CLI support
+- directed graphs
+- frontmatter cache
+- `.graphifyignore` parent-directory discovery
+- MCP fixes
+
+Plan:
+- [ ] Audit upstream commit `1cbcee5`
+- [ ] Split this release into sub-lots before coding:
+  - [ ] platform additions: Aider + Copilot CLI
+  - [ ] detection behavior: `.graphifyignore` parent discovery
+  - [ ] graph model decision: directed graphs
+  - [ ] metadata/caching: frontmatter cache
+  - [ ] MCP delta audit
+- [ ] Implement Aider as a first-class platform target if accepted
+- [ ] Implement Copilot CLI as a first-class platform target if accepted
+- [ ] Add `.graphifyignore` parent-directory discovery if still missing
+- [ ] Decide explicitly whether TS should remain undirected or adopt directed-graph support
+- [ ] Audit whether frontmatter metadata persistence is already enough or whether a dedicated cache layer is still missing
+- [ ] Add regressions for every accepted sub-lot
+- [ ] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.25`
+- [ ] Commit the `v0.3.25` catch-up lot
+
+## Lot 9 - Upstream `v0.3.26`
+
+Upstream scope:
+- MCP path validation security fix
+
+Plan:
+- [x] Confirm the TS port already has MCP graph-path validation
+- [ ] Audit upstream commit `863100c` against the current TS implementation
+- [ ] Tighten tests only if there is still a mismatch
+- [ ] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.26`
+- [ ] Commit only if the audit finds a real delta
+
+## Lot 10 - Upstream `v0.3.27`
+
+Upstream scope:
+- Gemini install missing skill file copy
+
+Plan:
+- [x] Confirm TS already copies the Gemini skill/custom command file
+- [ ] Audit upstream commit `55964bc` against the current TS implementation
+- [ ] Tighten tests only if there is still a mismatch
+- [ ] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.27`
+- [ ] Commit only if the audit finds a real delta
+
+## Lot 11 - Upstream `v0.3.28`
+
+Upstream scope:
+- hook reinstall
+- CRLF labels
+- Windows skill command coverage
+
+Plan:
+- [ ] Audit upstream commit `210243f`
+- [ ] Confirm hook reinstall parity in TS with explicit regression evidence
+- [ ] Audit whether CRLF normalization still breaks labels anywhere in the TS pipeline
+- [ ] Re-audit `skill-windows` against upstream command coverage
+- [ ] Add tests for any remaining CRLF or Windows-skill gaps
+- [ ] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.28`
+- [ ] Commit the `v0.3.28` catch-up lot
+
+## Lot 12 - Post-`v0.3.28` Upstream `v3` Commits
+
+Upstream scope:
+- audio/video corpus support
+- `yt-dlp` download path
+- local transcription / Whisper path
+- docs and CI follow-ups
+- removal of Anthropic API dependency from transcription flow
+
+Plan:
+- [ ] Audit upstream commits `79acb7e`, `f758911`, `a2872ca`, `2c21bc0`, `699e996`
+- [ ] Decide whether this branch should absorb multimodal/audio-video support now or defer it to a dedicated feature branch
+- [ ] If deferred, mark the whole block as intentionally postponed in [UPSTREAM_GAP.md](UPSTREAM_GAP.md)
+- [ ] If accepted, split implementation into sub-lots:
+  - [ ] corpus detection for audio/video
+  - [ ] YouTube/download ingestion path
+  - [ ] local transcription runtime
+  - [ ] docs and CI support
+- [ ] Keep this block separate from the pure parity lots above
+- [ ] Commit only after that decision is explicit
+
+## Exit Criteria For This Branch
+
+- [ ] Every upstream `v3` release bucket from `v0.3.18` through `v0.3.28` is marked `covered`, `n/a`, or explicitly deferred with justification
+- [ ] Every intentional divergence is documented in [UPSTREAM_GAP.md](UPSTREAM_GAP.md)
+- [ ] The remaining delta to `upstream/v3` is only the explicitly deferred post-`v0.3.28` multimodal block, or it is also closed
+- [ ] `npm test` passes after the final catch-up lot
+- [ ] `npx graphify hook-rebuild` passes after the final catch-up lot
+- [ ] The branch is clean and ready either for merge or for the next dedicated feature branch
