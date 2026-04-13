@@ -129,4 +129,38 @@ describe("public API compatibility", () => {
     expect(benchmark.error).toBeUndefined();
     expect(benchmark.corpus_words).toBe(1200);
   });
+
+  it("serializes directed graphs with the directed flag and community labels", () => {
+    const dir = makeTempDir();
+    const G = new Graph({ type: "directed" });
+    G.addNode("alpha", {
+      label: "AlphaService",
+      source_file: "src/alpha.ts",
+      file_type: "code",
+    });
+    G.addNode("beta", {
+      label: "BetaRepository",
+      source_file: "src/beta.ts",
+      file_type: "code",
+    });
+    G.addDirectedEdge("alpha", "beta", {
+      relation: "uses",
+      confidence: "EXTRACTED",
+    });
+
+    api.toJson(G, { 0: ["alpha", "beta"] }, join(dir, "graph.json"), {
+      communityLabels: { 0: "Core Services" },
+    });
+
+    const graphJson = JSON.parse(readFileSync(join(dir, "graph.json"), "utf-8")) as {
+      directed?: boolean;
+      graph?: { community_labels?: Record<string, string> };
+      nodes: Array<{ id: string; community_name?: string }>;
+      links: Array<{ source: string; target: string }>;
+    };
+
+    expect(graphJson.directed).toBe(true);
+    expect(graphJson.graph?.community_labels).toMatchObject({ 0: "Core Services" });
+    expect(graphJson.links).toContainEqual(expect.objectContaining({ source: "alpha", target: "beta" }));
+  });
 });

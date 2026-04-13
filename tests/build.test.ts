@@ -63,6 +63,13 @@ describe("buildFromJson", () => {
     const hyper = G.getAttribute("hyperedges") as unknown[];
     expect(hyper).toHaveLength(1);
   });
+
+  it("creates a directed graph when requested", () => {
+    const G = buildFromJson(SAMPLE_EXTRACTION, { directed: true });
+    expect(G.type).toBe("directed");
+    expect(G.outboundNeighbors("a").sort()).toEqual(["b", "c"]);
+    expect(G.outboundNeighbors("b")).toEqual([]);
+  });
 });
 
 describe("build (merge)", () => {
@@ -82,5 +89,24 @@ describe("build (merge)", () => {
     const G = build([ext1, ext2]);
     expect(G.order).toBe(2);
     expect(G.size).toBe(1);
+  });
+
+  it("can merge multiple extractions into a directed graph", () => {
+    const ext1: Extraction = {
+      nodes: [{ id: "a", label: "A", file_type: "code", source_file: "a.py" }],
+      edges: [],
+      input_tokens: 0,
+      output_tokens: 0,
+    };
+    const ext2: Extraction = {
+      nodes: [{ id: "b", label: "B", file_type: "code", source_file: "b.py" }],
+      edges: [{ source: "a", target: "b", relation: "calls", confidence: "EXTRACTED", source_file: "b.py" }],
+      input_tokens: 0,
+      output_tokens: 0,
+    };
+    const G = build([ext1, ext2], { directed: true });
+    expect(G.type).toBe("directed");
+    expect(G.outboundNeighbors("a")).toEqual(["b"]);
+    expect(G.outboundNeighbors("b")).toEqual([]);
   });
 });

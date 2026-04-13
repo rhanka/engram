@@ -15,6 +15,7 @@ import { join, resolve, dirname } from "node:path";
 import { homedir, platform } from "node:os";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
+import { forEachTraversalNeighbor, loadGraphFromData } from "./graph.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -1028,20 +1029,8 @@ export async function main(): Promise<void> {
       }
 
       try {
-        const Graph = (await import("graphology")).default;
         const raw = JSON.parse(rf(gp, "utf-8"));
-        const G = new Graph({ type: "undirected" });
-
-        for (const node of raw.nodes ?? []) {
-          const { id, ...attrs } = node;
-          G.mergeNode(id, attrs);
-        }
-        for (const link of raw.links ?? []) {
-          const { source, target, ...attrs } = link;
-          if (G.hasNode(source) && G.hasNode(target)) {
-            try { G.mergeEdge(source, target, attrs); } catch { /* ignore */ }
-          }
-        }
+        const G = loadGraphFromData(raw);
 
         const terms = question.toLowerCase().split(/\s+/).filter((t: string) => t.length > 2);
         const scored: [number, string][] = [];
@@ -1072,7 +1061,7 @@ export async function main(): Promise<void> {
             if (d > 2) continue;
             if (d > 0 && visited.has(node)) continue;
             visited.add(node);
-            G.forEachNeighbor(node, (neighbor: string) => {
+            forEachTraversalNeighbor(G, node, (neighbor: string) => {
               if (!visited.has(neighbor)) {
                 stack.push([neighbor, d + 1]);
                 edgesSeen.push([node, neighbor]);
@@ -1084,7 +1073,7 @@ export async function main(): Promise<void> {
           for (let depth = 0; depth < 2; depth++) {
             const nextFrontier = new Set<string>();
             for (const n of frontier) {
-              G.forEachNeighbor(n, (neighbor: string) => {
+              forEachTraversalNeighbor(G, n, (neighbor: string) => {
                 if (!visited.has(neighbor)) {
                   nextFrontier.add(neighbor);
                   edgesSeen.push([n, neighbor]);

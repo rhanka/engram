@@ -29,7 +29,7 @@ This branch tracks the delta between this TypeScript port and the upstream Pytho
 | `v0.3.22` | Cursor support, Python watcher/export crash fixes | `covered` | Covered in TS by adding project-scoped Cursor rules; the upstream watcher/export crashes are Python-specific and `n/a` for the current TS runtime |
 | `v0.3.23` | Gemini CLI support | `covered` | Keep synced as upstream evolves, but base support is already present |
 | `v0.3.24` | Codex/OpenCode install idempotency | `covered` | Covered in TS via Codex hook repair and OpenCode plugin reinstallation when `AGENTS.md` already exists |
-| `v0.3.25` | Aider + Copilot CLI support, directed graphs, frontmatter cache, `.graphifyignore` parent discovery, MCP fixes | `partial` | Aider + Copilot CLI support, `.graphifyignore` parent discovery, markdown-frontmatter cache hashing, and the MCP path/error fixes are now covered in TS; only the directed-graph decision remains open |
+| `v0.3.25` | Aider + Copilot CLI support, directed graphs, frontmatter cache, `.graphifyignore` parent discovery, MCP fixes | `covered` | Covered in TS via Aider + Copilot CLI support, `.graphifyignore` parent discovery, markdown-frontmatter cache hashing, MCP path/error fixes, and optional directed graphs threaded through build, serialization, loaders, runtime commands, README, and the base/Codex skills |
 | `v0.3.26` | MCP path validation security fix | `covered` | Keep existing TS validation tests aligned |
 | `v0.3.27` | Gemini install missing skill file copy | `covered` | No immediate action beyond regression retention |
 | `v0.3.28` | hook reinstall, CRLF labels, `skill-windows` missing commands | `partial` | Hook reinstall is covered; audit CRLF handling and Windows skill parity |
@@ -47,7 +47,6 @@ This branch tracks the delta between this TypeScript port and the upstream Pytho
 
 ### Clear missing targets vs upstream `v3`
 
-- Directed graph support, or an explicit decision to remain undirected
 - Audio/video ingestion + local transcription (`yt-dlp` + Whisper path)
 
 ### Items to audit before coding
@@ -55,14 +54,12 @@ This branch tracks the delta between this TypeScript port and the upstream Pytho
 - OpenCode install idempotency
 - Windows skill parity vs latest upstream `skill-windows.md`
 - CRLF label handling
-- Whether TS should support directed graphs, or intentionally keep the current undirected graphology contract
 - Whether "frontmatter cache" in upstream maps to a real missing persistence layer in TS or is already subsumed by current metadata flow
 
 ## Recommended Catch-up Order
 
-1. Decide explicitly on directed-graph support instead of drifting into it accidentally.
-2. Close `v0.3.28` parity on platform/install/runtime behavior only.
-3. Treat audio/video + Whisper as a dedicated feature branch after the `v3` parity table is mostly green.
+1. Close `v0.3.28` parity on platform/install/runtime behavior only.
+2. Treat audio/video + Whisper as a dedicated feature branch after the `v3` parity table is mostly green.
 
 ## Branching Rule
 

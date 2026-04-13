@@ -29,6 +29,7 @@ export interface BuildProjectOptions {
   followSymlinks?: boolean;
   html?: boolean;
   wiki?: boolean;
+  directed?: boolean;
 }
 
 export interface BuildProjectWarning {
@@ -154,7 +155,7 @@ export async function buildProject(
     );
   }
 
-  const G = buildFromJson(extraction);
+  const G = buildFromJson(extraction, { directed: options?.directed === true });
   if (G.order === 0) {
     throw new Error("Graph is empty after buildFromJson().");
   }

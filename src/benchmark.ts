@@ -3,6 +3,7 @@
  */
 import { readFileSync, existsSync } from "node:fs";
 import Graph from "graphology";
+import { forEachTraversalNeighbor, loadGraphFromData, type SerializedGraphData } from "./graph.js";
 import type { BenchmarkResult } from "./types.js";
 
 const CHARS_PER_TOKEN = 4;
@@ -30,7 +31,7 @@ function querySubgraphTokens(G: Graph, question: string, depth: number = 3): num
   for (let d = 0; d < depth; d++) {
     const nextFrontier = new Set<string>();
     for (const n of frontier) {
-      G.forEachNeighbor(n, (neighbor) => {
+      forEachTraversalNeighbor(G, n, (neighbor) => {
         if (!visited.has(neighbor)) {
           nextFrontier.add(neighbor);
           edgesSeen.push([n, neighbor]);
@@ -73,19 +74,8 @@ interface BenchmarkOptions {
 }
 
 function loadGraph(graphPath: string): Graph {
-  const raw = JSON.parse(readFileSync(graphPath, "utf-8"));
-  const G = new Graph({ type: "undirected" });
-  for (const node of raw.nodes ?? []) {
-    const { id, ...attrs } = node;
-    G.mergeNode(id, attrs);
-  }
-  for (const link of raw.links ?? []) {
-    const { source, target, ...attrs } = link;
-    if (G.hasNode(source) && G.hasNode(target)) {
-      try { G.mergeEdge(source, target, attrs); } catch { /* ignore */ }
-    }
-  }
-  return G;
+  const raw = JSON.parse(readFileSync(graphPath, "utf-8")) as SerializedGraphData;
+  return loadGraphFromData(raw);
 }
 
 export function runBenchmark(

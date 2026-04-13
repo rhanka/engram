@@ -163,16 +163,16 @@ Upstream scope:
 
 Plan:
 - [x] Audit upstream commit `1cbcee5`
-- [ ] Split this release into sub-lots before coding:
+- [x] Split this release into sub-lots before coding:
   - [x] platform additions: Aider + Copilot CLI
   - [x] detection behavior: `.graphifyignore` parent discovery
-  - [ ] graph model decision: directed graphs
+  - [x] graph model decision: directed graphs
   - [x] metadata/caching: frontmatter cache
   - [x] MCP delta audit
 - [x] Implement Aider as a first-class platform target if accepted
 - [x] Implement Copilot CLI as a first-class platform target if accepted
 - [x] Add `.graphifyignore` parent-directory discovery if still missing
-- [ ] Decide explicitly whether TS should remain undirected or adopt directed-graph support
+- [x] Decide explicitly whether TS should remain undirected or adopt directed-graph support
 - [x] Audit whether frontmatter metadata persistence is already enough or whether a dedicated cache layer is still missing
 - [x] Close the current TS MCP delta around graph-path scoping and handler errors
 - [x] Add regressions for every accepted sub-lot

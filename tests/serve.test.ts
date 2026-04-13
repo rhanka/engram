@@ -28,12 +28,13 @@ function makeExternalTempDir(): string {
   return dir;
 }
 
-function writeFixtureGraph(dir: string): string {
+function writeFixtureGraph(dir: string, directed: boolean = false): string {
   const graphPath = join(dir, "graph.json");
   writeFileSync(
     graphPath,
     JSON.stringify(
       {
+        directed,
         graph: {
           community_labels: {
             "0": "Core Services",
@@ -240,6 +241,41 @@ describe("MCP stdio server", () => {
         }),
       );
       expect(toolError).toContain("Error executing get_node");
+    } finally {
+      await client.close().catch(() => undefined);
+      await clientTransport.close().catch(() => undefined);
+      await serverPromise.catch(() => undefined);
+    }
+  });
+
+  it("preserves directed graph traversal semantics when graph.json is directed", async () => {
+    const dir = makeTempDir();
+    const graphPath = writeFixtureGraph(dir, true);
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const serverPromise = serve(graphPath, serverTransport);
+    const client = new Client({ name: "graphify-serve-test", version: "0.0.0" });
+
+    try {
+      await client.connect(clientTransport);
+
+      const betaNeighbors = toolText(
+        await client.callTool({
+          name: "get_neighbors",
+          arguments: { label: "BetaRepository" },
+        }),
+      );
+      expect(betaNeighbors).toContain("GammaDocs [documents] [INFERRED]");
+      expect(betaNeighbors).toContain("DeltaAnalyzer [calls] [EXTRACTED]");
+      expect(betaNeighbors).not.toContain("AlphaService [uses] [EXTRACTED]");
+
+      const alphaNeighbors = toolText(
+        await client.callTool({
+          name: "get_neighbors",
+          arguments: { label: "AlphaService" },
+        }),
+      );
+      expect(alphaNeighbors).toContain("BetaRepository [uses] [EXTRACTED]");
+      expect(alphaNeighbors).not.toContain("GammaDocs");
     } finally {
       await client.close().catch(() => undefined);
       await clientTransport.close().catch(() => undefined);

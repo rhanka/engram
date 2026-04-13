@@ -10,9 +10,14 @@
  */
 import Graph from "graphology";
 import type { Extraction } from "./types.js";
+import { createGraph } from "./graph.js";
 import { validateExtraction } from "./validate.js";
 
-export function buildFromJson(extraction: Extraction): Graph {
+export interface BuildOptions {
+  directed?: boolean;
+}
+
+export function buildFromJson(extraction: Extraction, options?: BuildOptions): Graph {
   const errors = validateExtraction(extraction);
   // Dangling edges (stdlib/external imports) are expected - only warn about real schema errors.
   const realErrors = errors.filter((e) => !e.includes("does not match any node id"));
@@ -22,7 +27,7 @@ export function buildFromJson(extraction: Extraction): Graph {
     );
   }
 
-  const G = new Graph({ type: "undirected", multi: false });
+  const G = createGraph(options?.directed === true);
 
   for (const node of extraction.nodes ?? []) {
     const { id, ...attrs } = node;
@@ -57,7 +62,7 @@ export function buildFromJson(extraction: Extraction): Graph {
  * Merge multiple extraction results into one graph.
  * Extractions are merged in order — last attributes win for duplicate node IDs.
  */
-export function build(extractions: Extraction[]): Graph {
+export function build(extractions: Extraction[], options?: BuildOptions): Graph {
   const combined: Extraction = {
     nodes: [],
     edges: [],
@@ -72,5 +77,5 @@ export function build(extractions: Extraction[]): Graph {
     combined.input_tokens += ext.input_tokens ?? 0;
     combined.output_tokens += ext.output_tokens ?? 0;
   }
-  return buildFromJson(combined);
+  return buildFromJson(combined, options);
 }

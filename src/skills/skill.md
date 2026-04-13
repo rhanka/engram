@@ -13,6 +13,7 @@ Turn any folder of files into a navigable knowledge graph with community detecti
 ```
 /graphify                                             # full pipeline on current directory → Obsidian vault
 /graphify <path>                                      # full pipeline on specific path
+/graphify <path> --directed                           # build directed graph (preserves source→target)
 /graphify <path> --mode deep                          # thorough extraction, richer INFERRED edges
 /graphify <path> --update                             # incremental - re-extract only new/changed files
 /graphify <path> --cluster-only                       # rerun clustering on existing graph
@@ -94,7 +95,7 @@ Then act on it:
 
 ### Step 3 - Extract entities and relationships
 
-**Before starting:** note whether `--mode deep` was given. You must pass `DEEP_MODE=true` to every subagent in Step B2 if it was. Track this from the original invocation - do not lose it.
+**Before starting:** note whether `--mode deep` and `--directed` were given. You must pass `DEEP_MODE=true` to every subagent in Step B2 if it was. Track both flags from the original invocation - do not lose them.
 
 This step has two parts: **structural extraction** (deterministic, free) and **semantic extraction** (Claude, costs tokens).
 
@@ -311,6 +312,8 @@ console.log(\`Merged: \${mergedNodes.length} nodes, \${mergedEdges.length} edges
 ```
 
 ### Step 4 - Build graph, cluster, analyze, generate outputs
+
+**Before starting:** if `--directed` was given, replace each `buildFromJson(...)` call in the build/export steps below with `buildFromJson(..., { directed: true })`, and when manually reconstructing `graph.json`, use `new Graph({type: 'directed'})` instead of `undirected`.
 
 ```bash
 mkdir -p graphify-out

@@ -7,6 +7,7 @@ import { join } from "node:path";
 import Graph from "graphology";
 import type { GodNodeEntry } from "./types.js";
 import { type NumericMapLike, toNumericMap } from "./collections.js";
+import { traversalNeighbors } from "./graph.js";
 
 function safeFilename(name: string): string {
   return name.replace(/\//g, "-").replace(/ /g, "_").replace(/:/g, "-");
@@ -21,13 +22,13 @@ function crossCommunityLinks(
   const labelMap = toNumericMap(labels);
   const counts = new Map<string, number>();
   for (const nid of nodes) {
-    G.forEachNeighbor(nid, (neighbor) => {
+    for (const neighbor of traversalNeighbors(G, nid)) {
       const ncid = G.getNodeAttribute(neighbor, "community") as number | undefined;
       if (ncid !== undefined && ncid !== ownCid) {
         const label = labelMap.get(ncid) ?? `Community ${ncid}`;
         counts.set(label, (counts.get(label) ?? 0) + 1);
       }
-    });
+    }
   }
   return [...counts.entries()].sort((a, b) => b[1] - a[1]);
 }
@@ -120,7 +121,7 @@ function godNodeArticle(G: Graph, nid: string, labels: Map<number, string>): str
   }
 
   const byRelation = new Map<string, string[]>();
-  const neighbors = [...G.neighbors(nid)].sort((a, b) => G.degree(b) - G.degree(a));
+  const neighbors = traversalNeighbors(G, nid).sort((a, b) => G.degree(b) - G.degree(a));
   for (const neighbor of neighbors) {
     const ed = G.getEdgeAttributes(G.edge(nid, neighbor)!);
     const rel = (ed.relation as string) ?? "related";

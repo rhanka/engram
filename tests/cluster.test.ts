@@ -57,6 +57,23 @@ describe("cluster", () => {
       expect(sizes[i]!).toBeLessThanOrEqual(sizes[i - 1]!);
     }
   });
+
+  it("accepts directed graphs and clusters them via an undirected pass", () => {
+    const G = new Graph({ type: "directed" });
+    G.mergeNode("a");
+    G.mergeNode("b");
+    G.mergeNode("c");
+    G.mergeNode("d");
+    G.mergeEdge("a", "b");
+    G.mergeEdge("b", "c");
+    G.mergeEdge("c", "a");
+    G.mergeEdge("c", "d");
+
+    const result = cluster(G);
+    const allNodes = [...result.values()].flat().sort();
+
+    expect(allNodes).toEqual(["a", "b", "c", "d"]);
+  });
 });
 
 describe("cohesionScore", () => {

@@ -7,6 +7,7 @@ import betweennessCentrality from "graphology-metrics/centrality/betweenness.js"
 import type { GodNodeEntry, SurpriseEntry, SuggestedQuestion, GraphDiffResult } from "./types.js";
 import { type NumericMapLike, toNumericMap } from "./collections.js";
 import { cohesionScore } from "./cluster.js";
+import { traversalNeighbors } from "./graph.js";
 import {
   CODE_EXTENSIONS,
   DOC_EXTENSIONS,
@@ -314,10 +315,10 @@ export function suggestQuestions(
       const cid = nodeCommunity.get(nodeId);
       const commLabel = cid !== undefined ? (labelMap.get(cid) ?? `Community ${cid}`) : "unknown";
       const neighborComms = new Set<number>();
-      G.forEachNeighbor(nodeId, (n) => {
+      for (const n of traversalNeighbors(G, nodeId)) {
         const nc = nodeCommunity.get(n);
         if (nc !== undefined && nc !== cid) neighborComms.add(nc);
-      });
+      }
       if (neighborComms.size > 0) {
         const otherLabels = [...neighborComms].map((c) => labelMap.get(c) ?? `Community ${c}`);
         questions.push({

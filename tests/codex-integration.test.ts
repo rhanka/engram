@@ -35,9 +35,12 @@ describe("Codex integration contract", () => {
 
     expect(skill).toContain("trigger: $graphify");
     expect(skill).toContain("### Step 2 - Detect files");
+    expect(skill).toContain("$graphify <path> --directed");
+    expect(skill).toContain("GRAPHIFY_DIRECTED_FLAG");
     expect(skill).toContain("finalize-build");
     expect(skill).toContain("finalize-update");
     expect(skill).toContain("regenerate the labeled artifacts");
+    expect(skill).toContain("--directed");
     expect(skill).toContain("--graph-out graphify-out/graph.json");
     expect(skill).toContain("--html-out graphify-out/graph.html");
     expect(skill).toContain(".graphify_runtime.json");
@@ -55,6 +58,7 @@ describe("Codex integration contract", () => {
 
     expect(readme).toContain("`$graphify` in Codex");
     expect(readme).toContain("codex mcp add graphify");
+    expect(readme).toContain("/graphify ./raw --directed");
   });
 
   it("skips hook registration when .codex is a file", () => {

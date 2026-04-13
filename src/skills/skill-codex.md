@@ -15,6 +15,7 @@ This Codex skill is **TypeScript-backed**. Before calling the run successful, co
 ```bash
 $graphify                                             # full pipeline on current directory
 $graphify <path>                                      # full pipeline on specific path
+$graphify <path> --directed                           # build directed graph (preserves source->target)
 $graphify <path> --mode deep                          # richer INFERRED edges during semantic extraction
 $graphify <path> --update                             # incremental - re-extract only new/changed files
 $graphify <path> --cluster-only                       # re-run clustering/report on existing graph
@@ -127,7 +128,14 @@ Then act on it:
 
 ### Step 3 - Extract entities and relationships
 
-Track whether `--mode deep` was given. Pass that mode to every semantic subagent prompt.
+Track whether `--mode deep` and `--directed` were given. Pass deep mode to every semantic subagent prompt.
+
+Before running the build/finalization commands below, set this once:
+
+```bash
+GRAPHIFY_DIRECTED_FLAG=""
+if the original invocation included --directed, set GRAPHIFY_DIRECTED_FLAG="--directed"
+```
 
 This step has two parts:
 - structural extraction for code files, using the TypeScript runtime
@@ -224,6 +232,7 @@ Then run one finalization command. It will:
 
 ```bash
 $(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" finalize-build \
+  $GRAPHIFY_DIRECTED_FLAG \
   --detect graphify-out/.graphify_detect.json \
   --ast graphify-out/.graphify_ast.json \
   --cached graphify-out/.graphify_cached.json \
@@ -246,6 +255,7 @@ Write those labels to [graphify-out/.graphify_labels.json](graphify-out/.graphif
 
 ```bash
 $(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" write-labeled-report \
+  $GRAPHIFY_DIRECTED_FLAG \
   --extract graphify-out/.graphify_extract.json \
   --detect graphify-out/.graphify_detect.json \
   --analysis graphify-out/.graphify_analysis.json \
@@ -264,6 +274,7 @@ If you intentionally skipped `--html-out` in finalization and still want HTML af
 
 ```bash
 $(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" export-html \
+  $GRAPHIFY_DIRECTED_FLAG \
   --extract graphify-out/.graphify_extract.json \
   --analysis graphify-out/.graphify_analysis.json \
   --labels graphify-out/.graphify_labels.json \
@@ -274,6 +285,7 @@ If `--svg` was requested:
 
 ```bash
 $(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" export-svg \
+  $GRAPHIFY_DIRECTED_FLAG \
   --extract graphify-out/.graphify_extract.json \
   --analysis graphify-out/.graphify_analysis.json \
   --labels graphify-out/.graphify_labels.json \
@@ -284,6 +296,7 @@ If `--graphml` was requested:
 
 ```bash
 $(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" export-graphml \
+  $GRAPHIFY_DIRECTED_FLAG \
   --extract graphify-out/.graphify_extract.json \
   --analysis graphify-out/.graphify_analysis.json \
   --out graphify-out/graph.graphml
@@ -293,6 +306,7 @@ If `--neo4j` was requested:
 
 ```bash
 $(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" export-cypher \
+  $GRAPHIFY_DIRECTED_FLAG \
   --extract graphify-out/.graphify_extract.json \
   --out graphify-out/cypher.txt
 ```
@@ -301,6 +315,7 @@ If `--neo4j-push <uri>` was requested, ask for credentials if needed, then run:
 
 ```bash
 $(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" push-neo4j \
+  $GRAPHIFY_DIRECTED_FLAG \
   --extract graphify-out/.graphify_extract.json \
   --analysis graphify-out/.graphify_analysis.json \
   --uri "NEO4J_URI" \
@@ -417,6 +432,7 @@ Then finalize the update in one command:
 
 ```bash
 $(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" finalize-update \
+  $GRAPHIFY_DIRECTED_FLAG \
   --detect graphify-out/.graphify_incremental.json \
   --ast graphify-out/.graphify_ast.json \
   --cached graphify-out/.graphify_cached.json \

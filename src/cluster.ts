@@ -6,13 +6,14 @@
 import Graph from "graphology";
 import louvain from "graphology-communities-louvain";
 import { type NumericMapLike, toNumericMap } from "./collections.js";
+import { toUndirectedGraph } from "./graph.js";
 
 const MAX_COMMUNITY_FRACTION = 0.25;
 const MIN_SPLIT_SIZE = 10;
 
 function partition(G: Graph): Map<string, number> {
   // louvain assigns community attribute to each node, returns mapping
-  const result = louvain(G);
+  const result = louvain(G.type === "directed" ? toUndirectedGraph(G) : G);
   const map = new Map<string, number>();
   for (const [node, cid] of Object.entries(result)) {
     map.set(node, cid as number);

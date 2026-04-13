@@ -17,6 +17,12 @@ import { cluster, scoreAll } from "./cluster.js";
 import { detect, detectIncremental, saveManifest } from "./detect.js";
 import { toCypher, toGraphml, toHtml, toJson, toSvg, pushToNeo4j } from "./export.js";
 import { extractWithDiagnostics } from "./extract.js";
+import {
+  forEachTraversalNeighbor,
+  isDirectedGraph,
+  loadGraphFromData,
+  type SerializedGraphData,
+} from "./graph.js";
 import { ingest, saveQueryResult } from "./ingest.js";
 import { generate } from "./report.js";
 import type {
@@ -93,35 +99,15 @@ function ensureExtractionShape(value?: Partial<Extraction> | null): Extraction {
 }
 
 function loadGraph(graphPath: string): Graph {
-  const raw = readJson<{
-    graph?: Record<string, unknown>;
-    nodes?: Array<Record<string, unknown> & { id: string }>;
-    links?: Array<Record<string, unknown> & { source: string; target: string }>;
-    hyperedges?: Array<Record<string, unknown>>;
-  }>(graphPath);
-  const G = new Graph({ type: "undirected" });
+  const raw = readJson<SerializedGraphData>(graphPath);
+  return loadGraphFromData(raw);
+}
 
-  for (const [key, value] of Object.entries(raw.graph ?? {})) {
-    G.setAttribute(key, value);
-  }
-
-  for (const node of raw.nodes ?? []) {
-    const { id, ...attrs } = node;
-    G.mergeNode(id, attrs);
-  }
-  for (const link of raw.links ?? []) {
-    const { source, target, ...attrs } = link;
-    if (!G.hasNode(source) || !G.hasNode(target)) continue;
-    try {
-      G.mergeEdge(source, target, attrs);
-    } catch {
-      /* ignore duplicate merge failures */
-    }
-  }
-  if (raw.hyperedges && raw.hyperedges.length > 0) {
-    G.setAttribute("hyperedges", raw.hyperedges);
-  }
-  return G;
+function shouldBuildDirected(
+  opts: { directed?: boolean },
+  existingGraph?: Graph,
+): boolean {
+  return opts.directed === true || (existingGraph ? isDirectedGraph(existingGraph) : false);
 }
 
 function mergeHyperedges(
@@ -516,6 +502,7 @@ async function main(): Promise<void> {
     .requiredOption("--report-out <path>")
     .requiredOption("--analysis-out <path>")
     .requiredOption("--cost-out <path>")
+    .option("--directed", "Build a directed graph (preserves source->target)")
     .option("--cached <path>", "Optional cached semantic JSON")
     .option("--semantic-new <path>", "Optional fresh semantic JSON")
     .option("--html-out <path>", "Optional graph.html output path")
@@ -540,7 +527,7 @@ async function main(): Promise<void> {
 
       const semantic = mergeSemanticArtifacts(cached, semanticNew);
       const extraction = mergeAstAndSemantic(ast, semantic);
-      const G = buildFromJson(extraction);
+      const G = buildFromJson(extraction, { directed: shouldBuildDirected(opts) });
       if (G.order === 0) {
         throw new Error("Graph is empty - extraction produced no nodes.");
       }
@@ -580,6 +567,7 @@ async function main(): Promise<void> {
     .requiredOption("--report-out <path>")
     .requiredOption("--analysis-out <path>")
     .requiredOption("--cost-out <path>")
+    .option("--directed", "Build a directed graph (preserves source->target)")
     .option("--cached <path>", "Optional cached semantic JSON")
     .option("--semantic-new <path>", "Optional fresh semantic JSON")
     .option("--html-out <path>", "Optional graph.html output path")
@@ -607,7 +595,9 @@ async function main(): Promise<void> {
 
       const oldGraph = loadGraph(opts.existingGraph);
       const mergedGraph = loadGraph(opts.existingGraph);
-      const newGraph = buildFromJson(extraction);
+      const newGraph = buildFromJson(extraction, {
+        directed: shouldBuildDirected(opts, oldGraph),
+      });
       mergeGraphs(mergedGraph, newGraph);
 
       const analyzed = analyzeGraph(
@@ -645,11 +635,12 @@ async function main(): Promise<void> {
     .requiredOption("--graph-out <path>")
     .requiredOption("--report-out <path>")
     .requiredOption("--analysis-out <path>")
+    .option("--directed", "Build a directed graph (preserves source->target)")
     .action((opts) => {
       const extraction = ensureExtractionShape(readJson<Partial<Extraction>>(opts.extract));
       const detection = readJson<DetectionResult>(opts.detect);
       const root = resolve(opts.root);
-      const G = buildFromJson(extraction);
+      const G = buildFromJson(extraction, { directed: shouldBuildDirected(opts) });
 
       if (G.order === 0) {
         throw new Error("Graph is empty - extraction produced no nodes.");
@@ -680,6 +671,7 @@ async function main(): Promise<void> {
     .requiredOption("--labels <path>")
     .requiredOption("--root <path>")
     .requiredOption("--report-out <path>")
+    .option("--directed", "Build a directed graph (preserves source->target)")
     .option("--graph-out <path>")
     .option("--html-out <path>")
     .action((opts) => {
@@ -688,7 +680,7 @@ async function main(): Promise<void> {
       const analysis = readJson<AnalysisFile>(opts.analysis);
       const labelObject = readJson<Record<string, string>>(opts.labels);
       const labels = objectToStringMap(labelObject);
-      const G = buildFromJson(extraction);
+      const G = buildFromJson(extraction, { directed: shouldBuildDirected(opts) });
       const communities = new Map<number, string[]>(
         Object.entries(analysis.communities).map(([key, value]) => [Number.parseInt(key, 10), value]),
       );
@@ -728,6 +720,7 @@ async function main(): Promise<void> {
     .requiredOption("--analysis <path>")
     .option("--labels <path>")
     .requiredOption("--out <path>")
+    .option("--directed", "Build a directed graph (preserves source->target)")
     .action((opts) => {
       const extraction = ensureExtractionShape(readJson<Partial<Extraction>>(opts.extract));
       const analysis = readJson<AnalysisFile>(opts.analysis);
@@ -735,7 +728,7 @@ async function main(): Promise<void> {
       const communities = new Map<number, string[]>(
         Object.entries(analysis.communities).map(([key, value]) => [Number.parseInt(key, 10), value]),
       );
-      const G = buildFromJson(extraction);
+      const G = buildFromJson(extraction, { directed: shouldBuildDirected(opts) });
       toHtml(G, communities, resolve(opts.out), { communityLabels: labels });
       console.log("graph.html written - open in any browser, no server needed");
     });
@@ -746,6 +739,7 @@ async function main(): Promise<void> {
     .requiredOption("--analysis <path>")
     .option("--labels <path>")
     .requiredOption("--out <path>")
+    .option("--directed", "Build a directed graph (preserves source->target)")
     .action((opts) => {
       const extraction = ensureExtractionShape(readJson<Partial<Extraction>>(opts.extract));
       const analysis = readJson<AnalysisFile>(opts.analysis);
@@ -753,7 +747,7 @@ async function main(): Promise<void> {
       const communities = new Map<number, string[]>(
         Object.entries(analysis.communities).map(([key, value]) => [Number.parseInt(key, 10), value]),
       );
-      const G = buildFromJson(extraction);
+      const G = buildFromJson(extraction, { directed: shouldBuildDirected(opts) });
       toSvg(G, communities, resolve(opts.out), labels);
       console.log("graph.svg written - embeds in Obsidian, Notion, GitHub READMEs");
     });
@@ -763,13 +757,14 @@ async function main(): Promise<void> {
     .requiredOption("--extract <path>")
     .requiredOption("--analysis <path>")
     .requiredOption("--out <path>")
+    .option("--directed", "Build a directed graph (preserves source->target)")
     .action((opts) => {
       const extraction = ensureExtractionShape(readJson<Partial<Extraction>>(opts.extract));
       const analysis = readJson<AnalysisFile>(opts.analysis);
       const communities = new Map<number, string[]>(
         Object.entries(analysis.communities).map(([key, value]) => [Number.parseInt(key, 10), value]),
       );
-      const G = buildFromJson(extraction);
+      const G = buildFromJson(extraction, { directed: shouldBuildDirected(opts) });
       toGraphml(G, communities, resolve(opts.out));
       console.log("graph.graphml written - open in Gephi, yEd, or any GraphML tool");
     });
@@ -778,9 +773,10 @@ async function main(): Promise<void> {
     .command("export-cypher")
     .requiredOption("--extract <path>")
     .requiredOption("--out <path>")
+    .option("--directed", "Build a directed graph (preserves source->target)")
     .action((opts) => {
       const extraction = ensureExtractionShape(readJson<Partial<Extraction>>(opts.extract));
-      const G = buildFromJson(extraction);
+      const G = buildFromJson(extraction, { directed: shouldBuildDirected(opts) });
       toCypher(G, resolve(opts.out));
       console.log("cypher.txt written - import with: cypher-shell < graphify-out/cypher.txt");
     });
@@ -792,10 +788,11 @@ async function main(): Promise<void> {
     .requiredOption("--uri <uri>")
     .requiredOption("--user <user>")
     .requiredOption("--password <password>")
+    .option("--directed", "Build a directed graph (preserves source->target)")
     .action(async (opts) => {
       const extraction = ensureExtractionShape(readJson<Partial<Extraction>>(opts.extract));
       const analysis = readJson<AnalysisFile>(opts.analysis);
-      const G = buildFromJson(extraction);
+      const G = buildFromJson(extraction, { directed: shouldBuildDirected(opts) });
       const communities = new Map<number, string[]>(
         Object.entries(analysis.communities).map(([key, value]) => [Number.parseInt(key, 10), value]),
       );
@@ -864,12 +861,15 @@ async function main(): Promise<void> {
     .requiredOption("--graph-out <path>")
     .requiredOption("--report-out <path>")
     .requiredOption("--analysis-out <path>")
+    .option("--directed", "Build a directed graph (preserves source->target)")
     .action((opts) => {
       const oldGraph = loadGraph(opts.existingGraph);
       const mergedGraph = loadGraph(opts.existingGraph);
       const extraction = ensureExtractionShape(readJson<Partial<Extraction>>(opts.extract));
       const detection = readJson<DetectionResult>(opts.detect);
-      const newGraph = buildFromJson(extraction);
+      const newGraph = buildFromJson(extraction, {
+        directed: shouldBuildDirected(opts, oldGraph),
+      });
 
       mergeGraphs(mergedGraph, newGraph);
 
@@ -972,7 +972,7 @@ async function main(): Promise<void> {
       console.log(`  degree: ${G.degree(nodeId)}`);
       console.log("");
       console.log("CONNECTIONS:");
-      G.forEachNeighbor(nodeId, (neighbor) => {
+      forEachTraversalNeighbor(G, nodeId, (neighbor) => {
         const edgeId = G.edge(nodeId, neighbor);
         const edge = edgeId ? G.getEdgeAttributes(edgeId) : {};
         const label = (G.getNodeAttribute(neighbor, "label") as string) ?? neighbor;

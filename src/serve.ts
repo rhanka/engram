@@ -7,6 +7,11 @@ import { readFileSync } from "node:fs";
 import Graph from "graphology";
 import { bidirectional } from "graphology-shortest-path/unweighted.js";
 import { basename, dirname, resolve } from "node:path";
+import {
+  forEachTraversalNeighbor,
+  loadGraphFromData,
+  type SerializedGraphData,
+} from "./graph.js";
 import { validateGraphPath, sanitizeLabel } from "./security.js";
 import { godNodes as computeGodNodes } from "./analyze.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
@@ -24,9 +29,9 @@ function loadGraph(graphPath: string): Graph {
     process.exit(1);
   }
 
-  let data: Record<string, unknown>;
+  let data: SerializedGraphData;
   try {
-    data = JSON.parse(readFileSync(safePath, "utf-8")) as Record<string, unknown>;
+    data = JSON.parse(readFileSync(safePath, "utf-8")) as SerializedGraphData;
   } catch (err) {
     console.error(
       `error: graph.json is corrupted (${err instanceof Error ? err.message : err}). Re-run the graphify skill to rebuild it (for Codex: $graphify .).`,
@@ -34,33 +39,7 @@ function loadGraph(graphPath: string): Graph {
     process.exit(1);
   }
 
-  const G = new Graph({ type: "undirected", multi: false });
-
-  const graphAttrs = data.graph;
-  if (graphAttrs && typeof graphAttrs === "object" && !Array.isArray(graphAttrs)) {
-    for (const [key, value] of Object.entries(graphAttrs)) {
-      G.setAttribute(key, value);
-    }
-  }
-
-  // Reconstruct from node-link format
-  const nodes = (data.nodes ?? []) as Array<Record<string, unknown>>;
-  for (const node of nodes) {
-    const { id, ...attrs } = node;
-    G.mergeNode(id as string, attrs);
-  }
-
-  const links = (data.links ?? data.edges ?? []) as Array<Record<string, unknown>>;
-  for (const link of links) {
-    const { source, target, ...attrs } = link;
-    try {
-      G.mergeEdge(source as string, target as string, attrs);
-    } catch {
-      // ignore duplicate edges or missing nodes
-    }
-  }
-
-  return G;
+  return loadGraphFromData(data);
 }
 
 // ---------------------------------------------------------------------------
@@ -114,7 +93,7 @@ function bfs(
   for (let i = 0; i < depth; i++) {
     const nextFrontier = new Set<string>();
     for (const n of frontier) {
-      G.forEachNeighbor(n, (neighbor) => {
+      forEachTraversalNeighbor(G, n, (neighbor) => {
         if (!visited.has(neighbor)) {
           nextFrontier.add(neighbor);
           edges.push([n, neighbor]);
@@ -139,7 +118,7 @@ function dfs(
     const [node, d] = stack.pop()!;
     if (visited.has(node) || d > depth) continue;
     visited.add(node);
-    G.forEachNeighbor(node, (neighbor) => {
+    forEachTraversalNeighbor(G, node, (neighbor) => {
       if (!visited.has(neighbor)) {
         stack.push([neighbor, d + 1]);
         edges.push([node, neighbor]);
@@ -258,7 +237,7 @@ function toolGetNeighbors(G: Graph, args: Record<string, unknown>): string {
   if (matches.length === 0) return `No node matching '${label}' found.`;
   const nid = matches[0]!;
   const lines = [`Neighbors of ${(G.getNodeAttribute(nid, "label") as string) ?? nid}:`];
-  G.forEachNeighbor(nid, (neighbor) => {
+  forEachTraversalNeighbor(G, nid, (neighbor) => {
     const edgeKey = G.edge(nid, neighbor);
     if (!edgeKey) return;
     const d = G.getEdgeAttributes(edgeKey);

@@ -194,6 +194,7 @@ In Codex, replace the leading `/` in the examples below with `$`. Gemini CLI, Gi
 ```
 /graphify                          # run on current directory
 /graphify ./raw                    # run on a specific folder
+/graphify ./raw --directed         # build directed graph (preserves source->target)
 /graphify ./raw --mode deep        # more aggressive INFERRED edge extraction
 /graphify ./raw --update           # re-extract only changed files, merge into existing graph
 /graphify ./raw --cluster-only     # rerun clustering on existing graph, no re-extraction

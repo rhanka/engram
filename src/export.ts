@@ -4,6 +4,7 @@
 import { writeFileSync } from "node:fs";
 import Graph from "graphology";
 import { sanitizeLabel, escapeHtml } from "./security.js";
+import { isDirectedGraph } from "./graph.js";
 import type { Hyperedge } from "./types.js";
 import {
   type NumericMapLike,
@@ -143,7 +144,7 @@ export function toJson(
     : {};
 
   const output = {
-    directed: false,
+    directed: isDirectedGraph(G),
     multigraph: false,
     graph: {
       community_labels: communityLabelsObject,
@@ -723,7 +724,7 @@ export function toGraphml(
   lines.push('  <key id="relation" for="edge" attr.name="relation" attr.type="string"/>');
   lines.push('  <key id="confidence" for="edge" attr.name="confidence" attr.type="string"/>');
 
-  lines.push('  <graph id="G" edgedefault="undirected">');
+  lines.push(`  <graph id="G" edgedefault="${isDirectedGraph(G) ? "directed" : "undirected"}">`);
 
   G.forEachNode((nodeId, data) => {
     lines.push(`    <node id="${xmlEsc(nodeId)}">`);
