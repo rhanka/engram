@@ -30,6 +30,15 @@ describe("classifyFile", () => {
     expect(classifyFile("screenshot.png")).toBe(FileType.IMAGE);
   });
 
+  it("classifies supported video and audio extensions as VIDEO", () => {
+    expect(classifyFile("lecture.mp4")).toBe(FileType.VIDEO);
+    expect(classifyFile("podcast.mp3")).toBe(FileType.VIDEO);
+    expect(classifyFile("talk.mov")).toBe(FileType.VIDEO);
+    expect(classifyFile("recording.wav")).toBe(FileType.VIDEO);
+    expect(classifyFile("webinar.webm")).toBe(FileType.VIDEO);
+    expect(classifyFile("audio.m4a")).toBe(FileType.VIDEO);
+  });
+
   it("returns null for unknown extensions", () => {
     expect(classifyFile("data.xyz")).toBeNull();
   });
@@ -149,5 +158,27 @@ describe("detect", () => {
     const result = detect(tmpDir);
     expect(result.needs_graph).toBe(false);
     expect(result.warning).toContain("may not need a graph");
+  });
+
+  it("always includes a video key even when no video files are present", () => {
+    writeFileSync(join(tmpDir, "main.py"), "x = 1");
+    const result = detect(tmpDir);
+    expect(result.files).toHaveProperty("video");
+    expect(result.files.video).toEqual([]);
+  });
+
+  it("finds video files without counting them as words", () => {
+    writeFileSync(join(tmpDir, "lecture.mp4"), Buffer.from("fake video data"));
+    writeFileSync(join(tmpDir, "notes.md"), "# Notes\nSome content here.");
+    const result = detect(tmpDir);
+    expect(result.files.video).toHaveLength(1);
+    expect(result.files.video[0]).toContain("lecture.mp4");
+    expect(result.total_words).toBeGreaterThanOrEqual(0);
+  });
+
+  it("does not add video-only corpora to total_words", () => {
+    writeFileSync(join(tmpDir, "clip.mp4"), Buffer.alloc(100));
+    const result = detect(tmpDir);
+    expect(result.total_words).toBe(0);
   });
 });

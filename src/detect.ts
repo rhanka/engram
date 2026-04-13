@@ -21,6 +21,9 @@ export const DOC_EXTENSIONS = new Set([".md", ".txt", ".rst"]);
 export const PAPER_EXTENSIONS = new Set([".pdf"]);
 export const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"]);
 export const OFFICE_EXTENSIONS = new Set([".docx", ".xlsx"]);
+export const VIDEO_EXTENSIONS = new Set([
+  ".mp4", ".mov", ".webm", ".mkv", ".avi", ".m4v", ".mp3", ".wav", ".m4a", ".ogg",
+]);
 
 const CORPUS_WARN_THRESHOLD = 50_000;
 const CORPUS_UPPER_THRESHOLD = 500_000;
@@ -71,6 +74,7 @@ export function classifyFile(filePath: string): FileType | null {
     return FileType.PAPER;
   }
   if (IMAGE_EXTENSIONS.has(ext)) return FileType.IMAGE;
+  if (VIDEO_EXTENSIONS.has(ext)) return FileType.VIDEO;
   if (DOC_EXTENSIONS.has(ext)) {
     if (looksLikePaper(filePath)) return FileType.PAPER;
     return FileType.DOCUMENT;
@@ -282,7 +286,7 @@ export function detect(root: string, options?: { followSymlinks?: boolean }): De
   const memoryDir = join(rootResolved, "graphify-out", "memory");
 
   const files: Record<string, string[]> = {
-    code: [], document: [], paper: [], image: [],
+    code: [], document: [], paper: [], image: [], video: [],
   };
   let totalWords = 0;
   const skippedSensitive: string[] = [];
@@ -324,7 +328,9 @@ export function detect(root: string, options?: { followSymlinks?: boolean }): De
     }
 
     files[ftype]!.push(p);
-    totalWords += countWords(p);
+    if (ftype !== FileType.VIDEO) {
+      totalWords += countWords(p);
+    }
   }
 
   const totalFiles = Object.values(files).reduce((s, v) => s + v.length, 0);

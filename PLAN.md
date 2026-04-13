@@ -244,9 +244,9 @@ Plan:
   - [x] Do not reintroduce a hidden Python `graphify` runtime fallback
   - [x] Prefer wrapping the same upstream toolchain (`yt-dlp` + `faster-whisper`) from the TS runtime over inventing a Node-native alternative
 - [ ] Split implementation into sub-lots:
-  - [ ] corpus detection for audio/video
+  - [x] corpus detection for audio/video
   - [ ] YouTube/download ingestion path
-  - [ ] local transcription runtime
+  - [x] local transcription runtime
   - [ ] skill/runtime wiring so transcripts feed semantic extraction
   - [ ] docs, package metadata, and CI support
 - [x] Keep this block separate from the pure parity lots above

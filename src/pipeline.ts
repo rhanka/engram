@@ -75,7 +75,8 @@ function countNonCodeFiles(detection: DetectionResult): number {
   return (
     fileList(detection, "document").length +
     fileList(detection, "paper").length +
-    fileList(detection, "image").length
+    fileList(detection, "image").length +
+    fileList(detection, "video").length
   );
 }
 
@@ -115,7 +116,7 @@ export async function buildProject(
     if (nonCode > 0) {
       throw new Error(
         "No supported code files found. The standalone CLI currently builds the AST graph " +
-        `from code only; this folder has ${nonCode} doc/paper/image file(s). ` +
+        `from code only; this folder has ${nonCode} doc/paper/image/video file(s). ` +
         "Use the graphify skill in your assistant for semantic extraction of non-code inputs.",
       );
     }
@@ -128,7 +129,7 @@ export async function buildProject(
       code: "non_code_skipped",
       message:
         `Skipped ${nonCode} non-code file(s) in standalone AST mode ` +
-        `(docs=${fileList(detection, "document").length}, papers=${fileList(detection, "paper").length}, images=${fileList(detection, "image").length}). ` +
+        `(docs=${fileList(detection, "document").length}, papers=${fileList(detection, "paper").length}, images=${fileList(detection, "image").length}, video=${fileList(detection, "video").length}). ` +
         "Use the graphify assistant skill for semantic extraction of those inputs.",
     });
   }

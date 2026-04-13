@@ -4,6 +4,7 @@ export enum FileType {
   DOCUMENT = "document",
   PAPER = "paper",
   IMAGE = "image",
+  VIDEO = "video",
 }
 
 /** Confidence level for extracted relationships. */

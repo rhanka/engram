@@ -202,7 +202,7 @@ function analyzeGraph(
 
 function placeholderDetection(root: string = "."): DetectionResult {
   return {
-    files: { code: [], document: [], paper: [], image: [] },
+    files: { code: [], document: [], paper: [], image: [], video: [] },
     total_files: 0,
     total_words: 0,
     needs_graph: true,
