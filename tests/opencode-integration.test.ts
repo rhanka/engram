@@ -47,6 +47,17 @@ describe("OpenCode integration contract", () => {
     expect(config.plugin).toEqual([".opencode/plugins/graphify.js"]);
   });
 
+  it("repairs a missing OpenCode plugin when AGENTS.md already exists", () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-opencode-repair-"));
+    tempDirs.push(dir);
+
+    agentsInstall(dir, "opencode");
+    unlinkSync(join(dir, ".opencode", "plugins", "graphify.js"));
+
+    expect(() => agentsInstall(dir, "opencode")).not.toThrow();
+    expect(existsSync(join(dir, ".opencode", "plugins", "graphify.js"))).toBe(true);
+  });
+
   it("removes the plugin even when AGENTS.md is already gone", async () => {
     const dir = mkdtempSync(join(tmpdir(), "graphify-opencode-uninstall-"));
     tempDirs.push(dir);

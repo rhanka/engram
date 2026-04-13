@@ -28,7 +28,7 @@ This branch tracks the delta between this TypeScript port and the upstream Pytho
 | `v0.3.21` | Codex hook JSON schema fix, `#!/bin/sh` for Windows git hooks | `covered` | Covered in TS via the corrected Codex hook JSON payload and `/bin/sh` git hook installation/removal parity |
 | `v0.3.22` | Cursor support, Python watcher/export crash fixes | `covered` | Covered in TS by adding project-scoped Cursor rules; the upstream watcher/export crashes are Python-specific and `n/a` for the current TS runtime |
 | `v0.3.23` | Gemini CLI support | `covered` | Keep synced as upstream evolves, but base support is already present |
-| `v0.3.24` | Codex/OpenCode install idempotency | `partial` | Codex is covered; audit OpenCode install path and add regression if needed |
+| `v0.3.24` | Codex/OpenCode install idempotency | `covered` | Covered in TS via Codex hook repair and OpenCode plugin reinstallation when `AGENTS.md` already exists |
 | `v0.3.25` | Aider + Copilot CLI support, directed graphs, frontmatter cache, `.graphifyignore` parent discovery, MCP fixes | `missing` | Split into separate catch-up tasks; Aider/Copilot and `.graphifyignore` parent discovery are the clearest missing pieces |
 | `v0.3.26` | MCP path validation security fix | `covered` | Keep existing TS validation tests aligned |
 | `v0.3.27` | Gemini install missing skill file copy | `covered` | No immediate action beyond regression retention |
@@ -50,7 +50,6 @@ This branch tracks the delta between this TypeScript port and the upstream Pytho
 - Aider platform support
 - Copilot CLI platform support
 - `.graphifyignore` parent-directory discovery
-- OpenCode plugin-style install parity
 - Audio/video ingestion + local transcription (`yt-dlp` + Whisper path)
 
 ### Items to audit before coding

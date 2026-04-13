@@ -142,11 +142,11 @@ Upstream scope:
 - Codex/OpenCode install idempotency
 
 Plan:
-- [ ] Audit upstream commit `ee43236`
-- [ ] Confirm Codex idempotency parity is already covered in TS
-- [ ] Audit OpenCode install/uninstall idempotency in TS
-- [ ] Add regression coverage if OpenCode still lags
-- [ ] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.24`
+- [x] Audit upstream commit `ee43236`
+- [x] Confirm Codex idempotency parity is already covered in TS
+- [x] Audit OpenCode install/uninstall idempotency in TS
+- [x] Add regression coverage if OpenCode still lags
+- [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.24`
 - [ ] Commit the `v0.3.24` catch-up lot
 
 ## Lot 8 - Upstream `v0.3.25`
