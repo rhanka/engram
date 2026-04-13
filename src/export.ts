@@ -35,6 +35,7 @@ const CONFIDENCE_SCORE_DEFAULTS: Record<string, number> = {
 
 type CommunityLabelsInput = NumericMapLike<string>;
 type CommunityLabelOptions = { communityLabels?: CommunityLabelsInput };
+type JsonOptions = CommunityLabelOptions;
 type SvgOptions = CommunityLabelOptions & { figsize?: [number, number] };
 type CanvasOptions = CommunityLabelOptions & { nodeFilenames?: StringMapLike<string> };
 type Neo4jPushOptions = {
@@ -99,15 +100,22 @@ export function toJson(
   G: Graph,
   communities: NumericMapLike<string[]>,
   outputPath: string,
+  communityLabelsOrOptions?: CommunityLabelsInput | JsonOptions,
 ): void {
   const nodeComm = nodeCommunityMap(communities);
+  const communityLabels = normalizeCommunityLabels(communityLabelsOrOptions);
 
   const nodes: Record<string, unknown>[] = [];
   G.forEachNode((nodeId, attrs) => {
+    const communityId = nodeComm.get(nodeId) ?? null;
     nodes.push({
       id: nodeId,
       ...attrs,
-      community: nodeComm.get(nodeId) ?? null,
+      community: communityId,
+      community_name:
+        communityId !== null
+          ? sanitizeLabel(communityLabels?.get(communityId) ?? `Community ${communityId}`)
+          : null,
     });
   });
 
@@ -126,11 +134,20 @@ export function toJson(
   });
 
   const hyperedges = (G.getAttribute("hyperedges") as Hyperedge[] | undefined) ?? [];
+  const communityLabelsObject = communityLabels
+    ? Object.fromEntries(
+        [...communityLabels.entries()]
+          .sort((a, b) => a[0] - b[0])
+          .map(([cid, label]) => [String(cid), sanitizeLabel(label)]),
+      )
+    : {};
 
   const output = {
     directed: false,
     multigraph: false,
-    graph: {},
+    graph: {
+      community_labels: communityLabelsObject,
+    },
     nodes,
     links,
     hyperedges,

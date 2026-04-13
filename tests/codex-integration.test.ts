@@ -37,6 +37,9 @@ describe("Codex integration contract", () => {
     expect(skill).toContain("### Step 2 - Detect files");
     expect(skill).toContain("finalize-build");
     expect(skill).toContain("finalize-update");
+    expect(skill).toContain("regenerate the labeled artifacts");
+    expect(skill).toContain("--graph-out graphify-out/graph.json");
+    expect(skill).toContain("--html-out graphify-out/graph.html");
     expect(skill).toContain(".graphify_runtime.json");
     expect(skill).toContain("skill-runtime.js");
     expect(skill).toContain("not a Bash command like `graphify .`");

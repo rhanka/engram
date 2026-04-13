@@ -104,7 +104,7 @@ export async function rebuildCode(
       questions,
     );
     writeFileSync(pathResolve(outDir, "GRAPH_REPORT.md"), report, "utf-8");
-    toJson(G, communities, pathResolve(outDir, "graph.json"));
+    toJson(G, communities, pathResolve(outDir, "graph.json"), { communityLabels: labels });
 
     // Clear stale needs_update flag if present
     const flagPath = pathResolve(outDir, "needs_update");

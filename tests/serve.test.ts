@@ -27,6 +27,12 @@ function writeFixtureGraph(dir: string): string {
     graphPath,
     JSON.stringify(
       {
+        graph: {
+          community_labels: {
+            "0": "Core Services",
+            "1": "Docs + Analysis",
+          },
+        },
         nodes: [
           {
             id: "alpha",
@@ -35,6 +41,7 @@ function writeFixtureGraph(dir: string): string {
             source_location: "10",
             file_type: "code",
             community: 0,
+            community_name: "Core Services",
           },
           {
             id: "beta",
@@ -43,6 +50,7 @@ function writeFixtureGraph(dir: string): string {
             source_location: "24",
             file_type: "code",
             community: 0,
+            community_name: "Core Services",
           },
           {
             id: "gamma",
@@ -51,6 +59,7 @@ function writeFixtureGraph(dir: string): string {
             source_location: "4",
             file_type: "document",
             community: 1,
+            community_name: "Docs + Analysis",
           },
           {
             id: "delta",
@@ -59,6 +68,7 @@ function writeFixtureGraph(dir: string): string {
             source_location: "8",
             file_type: "code",
             community: 1,
+            community_name: "Docs + Analysis",
           },
         ],
         links: [
@@ -149,7 +159,7 @@ describe("MCP stdio server", () => {
       expect(node).toContain("Node: AlphaService");
       expect(node).toContain("Source: src/alpha.ts 10");
       expect(node).toContain("Type: code");
-      expect(node).toContain("Community: 0");
+      expect(node).toContain("Community: 0 (Core Services)");
 
       const neighbors = toolText(
         await client.callTool({
@@ -168,7 +178,7 @@ describe("MCP stdio server", () => {
           arguments: { community_id: 0 },
         }),
       );
-      expect(community).toContain("Community 0 (2 nodes):");
+      expect(community).toContain("Community 0 - Core Services (2 nodes):");
       expect(community).toContain("AlphaService [src/alpha.ts]");
       expect(community).toContain("BetaRepository [src/beta.ts]");
 

@@ -85,7 +85,7 @@ describe("public API compatibility", () => {
       { suggestedQuestions: questions },
     );
 
-    api.toJson(G, communities, join(dir, "graph.json"));
+    api.toJson(G, communities, join(dir, "graph.json"), { communityLabels: labels });
     api.toHtml(G, communities, join(dir, "graph.html"), { communityLabels: labels });
     api.toSvg(G, communities, join(dir, "graph.svg"), { communityLabels: labels });
     api.toCanvas(G, communities, join(dir, "graph.canvas"), { communityLabels: labels });
@@ -102,6 +102,13 @@ describe("public API compatibility", () => {
     expect(existsSync(join(dir, "graph.canvas"))).toBe(true);
     expect(existsSync(join(dir, "wiki", "index.md"))).toBe(true);
     expect(wikiCount).toBeGreaterThan(0);
+
+    const graphJson = JSON.parse(readFileSync(join(dir, "graph.json"), "utf-8")) as {
+      graph?: { community_labels?: Record<string, string> };
+      nodes: Array<{ id: string; community_name?: string }>;
+    };
+    expect(graphJson.graph?.community_labels).toMatchObject({ 0: "Core Services" });
+    expect(graphJson.nodes.find((node) => node.id === "alpha")?.community_name).toBe("Core Services");
   });
 
   it("supports the object form for saveQueryResult and runBenchmark", () => {

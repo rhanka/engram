@@ -242,7 +242,7 @@ If this step fails because the graph is empty, stop and tell the user exactly th
 
 Read [graphify-out/.graphify_analysis.json](graphify-out/.graphify_analysis.json). For each community key, choose a 2-5 word plain-language name.
 
-Write those labels to [graphify-out/.graphify_labels.json](graphify-out/.graphify_labels.json), then regenerate the report:
+Write those labels to [graphify-out/.graphify_labels.json](graphify-out/.graphify_labels.json), then regenerate the labeled artifacts:
 
 ```bash
 $(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" write-labeled-report \
@@ -251,12 +251,14 @@ $(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)
   --analysis graphify-out/.graphify_analysis.json \
   --labels graphify-out/.graphify_labels.json \
   --root "INPUT_PATH" \
-  --report-out graphify-out/GRAPH_REPORT.md
+  --report-out graphify-out/GRAPH_REPORT.md \
+  --graph-out graphify-out/graph.json \
+  --html-out graphify-out/graph.html
 ```
 
 ### Step 6 - Export extras
 
-If `--no-viz` was given, skip HTML generation during finalization and do not run `export-html`.
+If `--no-viz` was given, skip HTML generation during finalization and omit `--html-out` from Step 5.
 
 If you intentionally skipped `--html-out` in finalization and still want HTML afterwards, run:
 

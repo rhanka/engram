@@ -180,7 +180,7 @@ export async function buildProject(
   );
 
   writeFileSync(reportPath, report, "utf-8");
-  toJson(G, communities, graphPath);
+  toJson(G, communities, graphPath, { communityLabels: labels });
 
   let htmlPath: string | undefined;
   if (options?.html !== false) {

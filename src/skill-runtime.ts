@@ -94,11 +94,16 @@ function ensureExtractionShape(value?: Partial<Extraction> | null): Extraction {
 
 function loadGraph(graphPath: string): Graph {
   const raw = readJson<{
+    graph?: Record<string, unknown>;
     nodes?: Array<Record<string, unknown> & { id: string }>;
     links?: Array<Record<string, unknown> & { source: string; target: string }>;
     hyperedges?: Array<Record<string, unknown>>;
   }>(graphPath);
   const G = new Graph({ type: "undirected" });
+
+  for (const [key, value] of Object.entries(raw.graph ?? {})) {
+    G.setAttribute(key, value);
+  }
 
   for (const node of raw.nodes ?? []) {
     const { id, ...attrs } = node;
@@ -547,7 +552,9 @@ async function main(): Promise<void> {
         { input: extraction.input_tokens ?? 0, output: extraction.output_tokens ?? 0 },
       );
 
-      toJson(G, analyzed.communities, resolve(opts.graphOut));
+      toJson(G, analyzed.communities, resolve(opts.graphOut), {
+        communityLabels: analyzed.labels,
+      });
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
       writeJson(opts.analysisOut, analyzed.analysis);
       if (opts.htmlOut) {
@@ -611,7 +618,9 @@ async function main(): Promise<void> {
       );
       analyzed.analysis.diff = graphDiff(oldGraph, mergedGraph);
 
-      toJson(mergedGraph, analyzed.communities, resolve(opts.graphOut));
+      toJson(mergedGraph, analyzed.communities, resolve(opts.graphOut), {
+        communityLabels: analyzed.labels,
+      });
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
       writeJson(opts.analysisOut, analyzed.analysis);
       if (opts.htmlOut) {
@@ -654,7 +663,9 @@ async function main(): Promise<void> {
       );
 
       mkdirSync(dirname(resolve(opts.graphOut)), { recursive: true });
-      toJson(G, analyzed.communities, resolve(opts.graphOut));
+      toJson(G, analyzed.communities, resolve(opts.graphOut), {
+        communityLabels: analyzed.labels,
+      });
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
       writeJson(opts.analysisOut, analyzed.analysis);
       saveManifest(detection.files, join(dirname(resolve(opts.graphOut)), "manifest.json"));
@@ -669,6 +680,8 @@ async function main(): Promise<void> {
     .requiredOption("--labels <path>")
     .requiredOption("--root <path>")
     .requiredOption("--report-out <path>")
+    .option("--graph-out <path>")
+    .option("--html-out <path>")
     .action((opts) => {
       const extraction = ensureExtractionShape(readJson<Partial<Extraction>>(opts.extract));
       const detection = readJson<DetectionResult>(opts.detect);
@@ -699,8 +712,14 @@ async function main(): Promise<void> {
       analysis.questions = questions;
       analysis.labels = mapToObject(labels);
       writeFileSync(resolve(opts.reportOut), report, "utf-8");
+      if (opts.graphOut) {
+        toJson(G, communities, resolve(opts.graphOut), { communityLabels: labels });
+      }
+      if (opts.htmlOut) {
+        toHtml(G, communities, resolve(opts.htmlOut), { communityLabels: labels });
+      }
       writeJson(opts.analysis, analysis);
-      console.log("Report updated with community labels");
+      console.log("Labeled artifacts updated");
     });
 
   program
@@ -862,7 +881,9 @@ async function main(): Promise<void> {
       );
       analyzed.analysis.diff = graphDiff(oldGraph, mergedGraph);
 
-      toJson(mergedGraph, analyzed.communities, resolve(opts.graphOut));
+      toJson(mergedGraph, analyzed.communities, resolve(opts.graphOut), {
+        communityLabels: analyzed.labels,
+      });
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
       writeJson(opts.analysisOut, analyzed.analysis);
       saveManifest(detection.files, join(dirname(resolve(opts.graphOut)), "manifest.json"));
@@ -886,7 +907,9 @@ async function main(): Promise<void> {
         resolve(opts.root),
         { input: 0, output: 0 },
       );
-      toJson(G, analyzed.communities, resolve(opts.graphOut));
+      toJson(G, analyzed.communities, resolve(opts.graphOut), {
+        communityLabels: analyzed.labels,
+      });
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
       writeJson(opts.analysisOut, analyzed.analysis);
       console.log(`Re-clustered: ${analyzed.communities.size} communities`);

@@ -36,6 +36,13 @@ function loadGraph(graphPath: string): Graph {
 
   const G = new Graph({ type: "undirected", multi: false });
 
+  const graphAttrs = data.graph;
+  if (graphAttrs && typeof graphAttrs === "object" && !Array.isArray(graphAttrs)) {
+    for (const [key, value] of Object.entries(graphAttrs)) {
+      G.setAttribute(key, value);
+    }
+  }
+
   // Reconstruct from node-link format
   const nodes = (data.nodes ?? []) as Array<Record<string, unknown>>;
   for (const node of nodes) {
@@ -70,6 +77,16 @@ function communitiesFromGraph(G: Graph): Map<number, string[]> {
     }
   });
   return communities;
+}
+
+function communityName(G: Graph, cid: number | string | null | undefined): string | null {
+  if (cid === undefined || cid === null) return null;
+  const labels = G.getAttribute("community_labels") as Record<string, unknown> | undefined;
+  const fromGraph = labels?.[String(cid)];
+  if (typeof fromGraph === "string" && fromGraph.length > 0) {
+    return sanitizeLabel(fromGraph);
+  }
+  return null;
 }
 
 function scoreNodes(G: Graph, terms: string[]): Array<[number, string]> {
@@ -225,7 +242,11 @@ function toolGetNode(G: Graph, args: Record<string, unknown>): string {
     `  ID: ${nid}`,
     `  Source: ${d.source_file ?? ""} ${d.source_location ?? ""}`,
     `  Type: ${d.file_type ?? ""}`,
-    `  Community: ${d.community ?? ""}`,
+    `  Community: ${
+      d.community_name
+        ? `${d.community ?? ""} (${d.community_name as string})`
+        : (communityName(G, d.community as number | undefined) ?? String(d.community ?? ""))
+    }`,
     `  Degree: ${G.degree(nid)}`,
   ].join("\n");
 }
@@ -258,7 +279,10 @@ function toolGetCommunity(
   const cid = Number(args.community_id);
   const nodes = communities.get(cid);
   if (!nodes || nodes.length === 0) return `Community ${cid} not found.`;
-  const lines = [`Community ${cid} (${nodes.length} nodes):`];
+  const label = communityName(G, cid);
+  const lines = [label
+    ? `Community ${cid} - ${label} (${nodes.length} nodes):`
+    : `Community ${cid} (${nodes.length} nodes):`];
   for (const n of nodes) {
     const d = G.getNodeAttributes(n);
     lines.push(`  ${d.label ?? n} [${d.source_file ?? ""}]`);
