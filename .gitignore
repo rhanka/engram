@@ -29,3 +29,6 @@ docs/superpowers/
 .codex/
 openspec/
 uv.lock
+.playwright-mcp/
+npm-*.json
+npm-*.png

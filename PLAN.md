@@ -24,8 +24,8 @@
 - [x] Keep the canonical MIT license at the repository root
 - [x] Update the README to state clearly that this repository is the TypeScript port of the original project
 - [x] Confirm the npm package name `graphifyy` is still available
-- [ ] Confirm local npm authentication is valid for manual publish
-- [ ] Configure the GitHub Actions `NPM_TOKEN` repository secret
+- [x] Confirm local npm authentication is valid for manual publish
+- [x] Configure the GitHub Actions `NPM_TOKEN` repository secret
 - [x] Validate the publish payload with `npm publish --dry-run`
 - [ ] Push to origin
 - [ ] Publish npm package
@@ -153,8 +153,8 @@
 - [x] Working tree is clean except for intentional tracked changes
 - [x] The runtime used by Codex UAT is explicit and matches the target runtime under test
 - [x] The npm package name is free on the public registry
-- [ ] A valid npm auth token is available for local publish
-- [ ] The `NPM_TOKEN` GitHub Actions secret is configured
+- [x] A valid npm auth token is available for local publish
+- [x] The `NPM_TOKEN` GitHub Actions secret is configured
 - [x] `npm publish --dry-run` succeeds from the repository root
 - [ ] Push branch to origin
 - [ ] Tag the release
