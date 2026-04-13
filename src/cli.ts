@@ -136,6 +136,31 @@ const GEMINI_MCP_SERVER = {
   description: "graphify knowledge graph MCP server",
 };
 
+const OPENCODE_PLUGIN_ENTRY = ".opencode/plugins/graphify.js";
+const OPENCODE_PLUGIN_JS = `// graphify OpenCode plugin
+// Injects a knowledge graph reminder before bash tool calls when the graph exists.
+import { existsSync } from "fs";
+import { join } from "path";
+
+export const GraphifyPlugin = async ({ directory }) => {
+  let reminded = false;
+
+  return {
+    "tool.execute.before": async (input, output) => {
+      if (reminded) return;
+      if (!existsSync(join(directory, "graphify-out", "graph.json"))) return;
+
+      if (input.tool === "bash") {
+        output.args.command =
+          'echo "[graphify] Knowledge graph available. Read graphify-out/GRAPH_REPORT.md for god nodes and architecture context before searching files." && ' +
+          output.args.command;
+        reminded = true;
+      }
+    },
+  };
+};
+`;
+
 const MD_MARKER = "## graphify";
 
 // ---------------------------------------------------------------------------
@@ -235,6 +260,71 @@ function uninstallGeminiMcp(projectDir: string): void {
   }
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
   console.log("  .gemini/settings.json  ->  graphify MCP server removed");
+}
+
+function installOpenCodePlugin(projectDir: string): void {
+  const opencodeDir = join(projectDir, ".opencode");
+  if (existsSync(opencodeDir) && !statSync(opencodeDir).isDirectory()) {
+    console.log(`  ${OPENCODE_PLUGIN_ENTRY}  ->  skipped (cannot create plugin dir because .opencode is a file)`);
+    return;
+  }
+
+  const pluginPath = join(projectDir, ".opencode", "plugins", "graphify.js");
+  mkdirSync(dirname(pluginPath), { recursive: true });
+  writeFileSync(pluginPath, OPENCODE_PLUGIN_JS, "utf-8");
+  console.log(`  ${OPENCODE_PLUGIN_ENTRY}  ->  tool.execute.before hook written`);
+
+  const configPath = join(projectDir, "opencode.json");
+  let config: Record<string, unknown> = {};
+  if (existsSync(configPath)) {
+    try {
+      config = JSON.parse(readFileSync(configPath, "utf-8"));
+    } catch {
+      config = {};
+    }
+  }
+
+  const plugins = Array.isArray(config.plugin) ? [...config.plugin] : [];
+  if (plugins.includes(OPENCODE_PLUGIN_ENTRY)) {
+    console.log("  opencode.json  ->  plugin already registered (no change)");
+    return;
+  }
+
+  plugins.push(OPENCODE_PLUGIN_ENTRY);
+  config.plugin = plugins;
+  writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
+  console.log("  opencode.json  ->  plugin registered");
+}
+
+function uninstallOpenCodePlugin(projectDir: string): void {
+  const pluginPath = join(projectDir, ".opencode", "plugins", "graphify.js");
+  if (existsSync(pluginPath)) {
+    const { unlinkSync } = require("node:fs");
+    unlinkSync(pluginPath);
+    console.log(`  ${OPENCODE_PLUGIN_ENTRY}  ->  removed`);
+  }
+
+  const configPath = join(projectDir, "opencode.json");
+  if (!existsSync(configPath)) return;
+
+  let config: Record<string, unknown>;
+  try {
+    config = JSON.parse(readFileSync(configPath, "utf-8"));
+  } catch {
+    return;
+  }
+
+  const plugins = Array.isArray(config.plugin) ? [...config.plugin] : [];
+  if (!plugins.includes(OPENCODE_PLUGIN_ENTRY)) return;
+
+  const filtered = plugins.filter((entry) => entry !== OPENCODE_PLUGIN_ENTRY);
+  if (filtered.length === 0) {
+    delete config.plugin;
+  } else {
+    config.plugin = filtered;
+  }
+  writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
+  console.log("  opencode.json  ->  plugin deregistered");
 }
 
 // ---------------------------------------------------------------------------
@@ -510,12 +600,14 @@ export function agentsInstall(projectDir: string, platformName: string): void {
 
   if (platformName === "codex") {
     installCodexHook(projectDir);
+  } else if (platformName === "opencode") {
+    installOpenCodePlugin(projectDir);
   }
 
   console.log();
   console.log(`${platformName.charAt(0).toUpperCase() + platformName.slice(1)} will now check the knowledge graph before answering`);
   console.log("codebase questions and rebuild it after code changes.");
-  if (platformName !== "codex") {
+  if (!["codex", "opencode"].includes(platformName)) {
     console.log();
     console.log("Note: unlike Claude Code, there is no PreToolUse hook equivalent for");
     console.log(`${platformName.charAt(0).toUpperCase() + platformName.slice(1)} — the AGENTS.md rules are the always-on mechanism.`);
@@ -526,24 +618,26 @@ function agentsUninstall(projectDir: string, platformName: string): void {
   const target = join(projectDir, "AGENTS.md");
   if (!existsSync(target)) {
     console.log("No AGENTS.md found in current directory - nothing to do");
-    return;
-  }
-  const content = readFileSync(target, "utf-8");
-  if (!content.includes(MD_MARKER)) {
-    console.log("graphify section not found in AGENTS.md - nothing to do");
-    return;
-  }
-  const cleaned = content.replace(/\n*## graphify\n[\s\S]*?(?=\n## |\s*$)/, "").trim();
-  if (cleaned) {
-    writeFileSync(target, cleaned + "\n", "utf-8");
-    console.log(`graphify section removed from ${resolve(target)}`);
   } else {
-    const { unlinkSync } = require("node:fs");
-    unlinkSync(target);
-    console.log(`AGENTS.md was empty after removal - deleted ${resolve(target)}`);
+    const content = readFileSync(target, "utf-8");
+    if (!content.includes(MD_MARKER)) {
+      console.log("graphify section not found in AGENTS.md - nothing to do");
+    } else {
+      const cleaned = content.replace(/\n*## graphify\n[\s\S]*?(?=\n## |\s*$)/, "").trim();
+      if (cleaned) {
+        writeFileSync(target, cleaned + "\n", "utf-8");
+        console.log(`graphify section removed from ${resolve(target)}`);
+      } else {
+        const { unlinkSync } = require("node:fs");
+        unlinkSync(target);
+        console.log(`AGENTS.md was empty after removal - deleted ${resolve(target)}`);
+      }
+    }
   }
   if (platformName === "codex") {
     uninstallCodexHook(projectDir);
+  } else if (platformName === "opencode") {
+    uninstallOpenCodePlugin(projectDir);
   }
 }
 
@@ -639,12 +733,16 @@ export async function main(): Promise<void> {
     sub.command("install").description(
       cmd === "codex"
         ? "Write graphify section to AGENTS.md + PreToolUse hook"
-        : "Write graphify section to AGENTS.md",
+        : cmd === "opencode"
+          ? "Write graphify section to AGENTS.md + tool.execute.before plugin"
+          : "Write graphify section to AGENTS.md",
     ).action(() => agentsInstall(".", cmd));
     sub.command("uninstall").description(
       cmd === "codex"
         ? "Remove graphify section from AGENTS.md + PreToolUse hook"
-        : "Remove graphify section from AGENTS.md",
+        : cmd === "opencode"
+          ? "Remove graphify section from AGENTS.md + plugin"
+          : "Remove graphify section from AGENTS.md",
     ).action(() => {
       agentsUninstall(".", cmd);
     });

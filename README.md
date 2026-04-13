@@ -72,7 +72,7 @@ graphify install
 | Trae | `graphify install --platform trae` |
 | Trae CN | `graphify install --platform trae-cn` |
 
-Codex users also need `multi_agent = true` under `[features]` in `~/.codex/config.toml` for parallel extraction. Gemini CLI exposes `/graphify` through a custom command installed into `~/.gemini/commands/graphify.toml`, and the project install writes `.gemini/settings.json` so Gemini can use `graphify serve` as an MCP server. Factory Droid uses the `Task` tool for parallel subagent dispatch. OpenClaw uses sequential extraction (parallel agent support is still early on that platform). Trae uses the Agent tool for parallel subagent dispatch and does **not** support PreToolUse hooks — AGENTS.md is the always-on mechanism.
+Codex users also need `multi_agent = true` under `[features]` in `~/.codex/config.toml` for parallel extraction. Gemini CLI exposes `/graphify` through a custom command installed into `~/.gemini/commands/graphify.toml`, and the project install writes `.gemini/settings.json` so Gemini can use `graphify serve` as an MCP server. OpenCode installs a project-local `tool.execute.before` plugin in `.opencode/plugins/graphify.js` and registers it in `opencode.json`, so OpenCode gets the same graph reminder before bash tool calls. Factory Droid uses the `Task` tool for parallel subagent dispatch. OpenClaw uses sequential extraction (parallel agent support is still early on that platform). Trae uses the Agent tool for parallel subagent dispatch and does **not** support PreToolUse hooks — AGENTS.md is the always-on mechanism.
 
 Then open your AI coding assistant and invoke the skill:
 
@@ -102,7 +102,9 @@ After building a graph, run this once in your project:
 
 **Gemini CLI** writes `GEMINI.md` in your project root and registers a project-scoped `graphify` MCP server in `.gemini/settings.json`. Gemini CLI does not have a Claude/Codex-style PreToolUse hook, so `GEMINI.md` is the always-on mechanism and `/graphify` is the explicit custom command.
 
-**OpenCode, OpenClaw, Factory Droid, Trae** write the same rules to `AGENTS.md` in your project root. These platforms don't support PreToolUse hooks, so AGENTS.md is the always-on mechanism.
+**OpenCode** writes to `AGENTS.md` and installs a project-local `tool.execute.before` plugin in `.opencode/plugins/graphify.js`, registered via `opencode.json`, so bash tool calls get the same graph reminder before raw-file traversal.
+
+**OpenClaw, Factory Droid, Trae** write the same rules to `AGENTS.md` in your project root. These platforms don't support PreToolUse hooks, so AGENTS.md is the always-on mechanism.
 
 Uninstall with the matching uninstall command (e.g. `graphify claude uninstall`).
 
@@ -218,7 +220,7 @@ graphify claude uninstall
 graphify codex install             # AGENTS.md (Codex)
 graphify gemini install            # GEMINI.md + .gemini/settings.json (Gemini CLI)
 graphify gemini uninstall
-graphify opencode install          # AGENTS.md (OpenCode)
+graphify opencode install          # AGENTS.md + opencode.json plugin (OpenCode)
 graphify claw install              # AGENTS.md (OpenClaw)
 graphify droid install             # AGENTS.md (Factory Droid)
 graphify trae install              # AGENTS.md (Trae)

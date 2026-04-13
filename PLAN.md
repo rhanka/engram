@@ -61,12 +61,12 @@ Upstream scope:
 - OpenCode `tool.execute.before` plugin integration
 
 Plan:
-- [ ] Audit upstream commits `3501605`, `e1864d7`, `096a76f`
-- [ ] Decide whether TS should support true OpenCode plugin-style install parity or intentionally keep the current install model
-- [ ] If parity is required, add the OpenCode plugin install path
-- [ ] If parity is not required, document the intentional divergence in [UPSTREAM_GAP.md](UPSTREAM_GAP.md)
-- [ ] Add regression coverage for OpenCode install idempotency and resulting config shape
-- [ ] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.19`
+- [x] Audit upstream commits `3501605`, `e1864d7`, `096a76f`
+- [x] Decide whether TS should support true OpenCode plugin-style install parity or intentionally keep the current install model
+- [x] If parity is required, add the OpenCode plugin install path
+- [x] If parity is not required, document the intentional divergence in [UPSTREAM_GAP.md](UPSTREAM_GAP.md)
+- [x] Add regression coverage for OpenCode install idempotency and resulting config shape
+- [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.19`
 - [ ] Commit the `v0.3.19` catch-up lot
 
 ## Lot 3 - Upstream `v0.3.20`

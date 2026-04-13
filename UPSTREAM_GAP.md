@@ -23,7 +23,7 @@ This branch tracks the delta between this TypeScript port and the upstream Pytho
 | Upstream ref | Upstream scope | TS status | Catch-up action |
 | --- | --- | --- | --- |
 | `v0.3.18` | skill coverage, Windows skill fixes, click detection, `.graphify_python` persistence | `covered` | Covered in TS via installable skill coverage, Windows skill audit, HTML hover/click fallback, and synchronized extension sets in `detect`/`analyze`/`watch`; `.graphify_python` is `n/a` |
-| `v0.3.19` | OpenCode `tool.execute.before` plugin install | `missing` | Decide whether TS should mirror plugin-style OpenCode integration or keep current install shape |
+| `v0.3.19` | OpenCode `tool.execute.before` plugin install | `covered` | Covered in TS via `.opencode/plugins/graphify.js`, `opencode.json` registration, install/uninstall idempotency, and README parity |
 | `v0.3.20` | AST call edges forced to `EXTRACTED`, tree-sitter version guard | `partial` | `EXTRACTED` is already true in TS; audit whether we also need an explicit runtime/version guard |
 | `v0.3.21` | Codex hook JSON schema fix, `#!/bin/sh` for Windows git hooks | `partial` | Codex hook schema is covered; audit hook shell portability vs upstream |
 | `v0.3.22` | Cursor support, Python watcher/export crash fixes | `partial` | Add Cursor as first-class platform target; mark Python-specific crash fixes as `n/a` unless a TS analog exists |
