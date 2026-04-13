@@ -33,7 +33,7 @@ This branch tracks the delta between this TypeScript port and the upstream Pytho
 | `v0.3.26` | MCP path validation security fix | `covered` | Keep existing TS validation tests aligned |
 | `v0.3.27` | Gemini install missing skill file copy | `covered` | No immediate action beyond regression retention |
 | `v0.3.28` | hook reinstall, CRLF labels, `skill-windows` missing commands | `covered` | Covered in TS by replacing existing graphify Claude/Codex hooks on reinstall, normalizing CRLF before wiki/canvas filename generation, and restoring the missing `--directed` / `--wiki` / `--obsidian-dir` lines in `skill-windows` |
-| `699e996` (post-`v0.3.28`) | audio/video corpus support, `yt-dlp`, Whisper transcription, YouTube docs, CI fix, remove Anthropic API dependency | `partial` | Video/audio detection and a local transcription runtime wrapper are now present in TS; remaining work is YouTube/download wiring in `ingest`, skill/runtime wiring so transcripts feed semantic extraction, and docs/CI parity via the same upstream `yt-dlp` + `faster-whisper` toolchain |
+| `699e996` (post-`v0.3.28`) | audio/video corpus support, `yt-dlp`, Whisper transcription, YouTube docs, CI fix, remove Anthropic API dependency | `covered` | Covered in TS via audio/video detection, `ingest()` YouTube download wiring, local `yt-dlp` + `faster-whisper` transcription, transcript-aware semantic extraction in the runtime and skills, updated package/docs metadata, and CI-safe regression coverage without reintroducing any Anthropic-specific transcription dependency |
 
 ## Current Delta Assessment
 
@@ -47,7 +47,7 @@ This branch tracks the delta between this TypeScript port and the upstream Pytho
 
 ### Clear missing targets vs upstream `v3`
 
-- Audio/video ingestion + local transcription (`yt-dlp` + Whisper path)
+- None on the `upstream/v3` line after the post-`v0.3.28` multimodal catch-up
 
 ### Items to audit before coding
 
@@ -55,7 +55,7 @@ This branch tracks the delta between this TypeScript port and the upstream Pytho
 
 ## Recommended Catch-up Order
 
-1. Treat audio/video + Whisper as a dedicated feature branch after the `v3` parity table is green through `v0.3.28`.
+1. Keep future tracking focused on `upstream/v4` / `upstream/main`; the `upstream/v3` table is now closed.
 
 ## Branching Rule
 

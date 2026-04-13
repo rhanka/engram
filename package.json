@@ -1,7 +1,7 @@
 {
   "name": "graphifyy",
   "version": "0.3.28",
-  "description": "AI coding assistant skill (Claude Code, Codex, Gemini CLI, GitHub Copilot CLI, Aider, OpenCode, OpenClaw) - turn any folder of code, docs, papers, or images into a queryable knowledge graph",
+  "description": "AI coding assistant skill (Claude Code, Codex, Gemini CLI, GitHub Copilot CLI, Aider, OpenCode, OpenClaw) - turn any folder of code, docs, papers, images, or audio/video transcripts into a queryable knowledge graph",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -49,7 +49,11 @@
     "community-detection",
     "tree-sitter",
     "louvain",
-    "llm"
+    "llm",
+    "audio",
+    "video",
+    "whisper",
+    "youtube"
   ],
   "license": "MIT",
   "repository": {

@@ -50,6 +50,10 @@ describe("Codex integration contract", () => {
     expect(skill).toContain("files.document");
     expect(skill).toContain("files.paper");
     expect(skill).toContain("files.image");
+    expect(skill).toContain("files.video");
+    expect(skill).toContain("prepare-semantic-detect");
+    expect(skill).toContain(".graphify_detect_semantic.json");
+    expect(skill).toContain(".graphify_transcripts.json");
     expect(skill).toContain("graphify codex install");
     expect(skill).toContain("codex mcp add graphify");
     expect(skill).not.toContain(".graphify_python");

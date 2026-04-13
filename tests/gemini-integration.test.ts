@@ -60,6 +60,8 @@ describe("Gemini integration contract", () => {
     expect(skill).toContain("finalize-build");
     expect(skill).toContain("graphify query");
     expect(skill).toContain("skill-runtime");
+    expect(skill).toContain("prepare-semantic-detect");
+    expect(skill).toContain("files.video");
     expect(skill).not.toContain("python3 -m graphify");
 
     expect(readme).toContain("Gemini CLI");

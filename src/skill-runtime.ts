@@ -25,6 +25,7 @@ import {
 } from "./graph.js";
 import { ingest, saveQueryResult } from "./ingest.js";
 import { generate } from "./report.js";
+import { augmentDetectionWithTranscripts } from "./transcribe.js";
 import type {
   DetectionResult,
   Extraction,
@@ -357,6 +358,32 @@ async function main(): Promise<void> {
       } else {
         console.log(JSON.stringify(result, null, 2));
       }
+    });
+
+  program
+    .command("prepare-semantic-detect")
+    .requiredOption("--detect <path>", "Path to the base detection JSON")
+    .requiredOption("--out <path>", "Path to the augmented semantic detection JSON")
+    .requiredOption("--transcripts-out <path>", "Path to the transcript path list JSON")
+    .option("--analysis <path>", "Optional analysis JSON from a previous run")
+    .option("--incremental", "Use detection.new_files.video and force retranscription")
+    .option("--whisper-model <name>", "Whisper model override for local transcription")
+    .action((opts) => {
+      const detection = readJson<DetectionResult>(opts.detect);
+      const analysis = opts.analysis && existsSync(resolve(opts.analysis))
+        ? readJson<AnalysisFile>(opts.analysis)
+        : null;
+      const transcriptsDir = join(dirname(resolve(opts.out)), "transcripts");
+      const { detection: semanticDetection, transcriptPaths } = augmentDetectionWithTranscripts(detection, {
+        outputDir: transcriptsDir,
+        godNodes: analysis?.gods,
+        incremental: opts.incremental,
+        whisperModel: opts.whisperModel,
+      });
+
+      writeJson(opts.out, semanticDetection);
+      writeJson(opts.transcriptsOut, transcriptPaths);
+      console.log(`Transcribed ${transcriptPaths.length} video file(s) -> treating as docs`);
     });
 
   program

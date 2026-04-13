@@ -1,5 +1,5 @@
 /**
- * URL ingestion - fetch URLs (tweet/arxiv/pdf/web/image) and save as annotated markdown.
+ * URL ingestion - fetch URLs (tweet/arxiv/pdf/web/image/youtube) and save as annotated markdown or audio.
  *
  * Uses Node.js global fetch, turndown for HTML-to-markdown conversion, and
  * security helpers for safe fetching and URL validation.
@@ -7,6 +7,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve as pathResolve, basename, extname } from "node:path";
 import { safeFetch, safeFetchText, validateUrl } from "./security.js";
+import { downloadAudio } from "./transcribe.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -293,6 +294,12 @@ export async function ingest(
     const suffix = extname(parsed.pathname) || ".jpg";
     const out = await downloadBinary(url, suffix, targetDir);
     console.log(`Downloaded image: ${basename(out)}`);
+    return out;
+  }
+
+  if (urlType === "youtube") {
+    const out = downloadAudio(url, targetDir);
+    console.log(`Downloaded audio: ${basename(out)}`);
     return out;
   }
 

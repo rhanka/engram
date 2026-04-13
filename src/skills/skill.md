@@ -85,13 +85,43 @@ Corpus: X files · ~Y words
   docs:     N files (.md .txt ...)
   papers:   N files (.pdf ...)
   images:   N files
+  video:    N files (.mp4 .mp3 ...)
 ```
 
 Then act on it:
 - If `total_files` is 0: stop with "No supported files found in [path]."
 - If `skipped_sensitive` is non-empty: mention file count skipped, not the file names.
 - If `total_words` > 2,000,000 OR `total_files` > 200: show the warning and the top 5 subdirectories by file count, then ask which subfolder to run on. Wait for the user's answer before proceeding.
-- Otherwise: proceed directly to Step 3 - no need to ask anything.
+- Otherwise: proceed to Step 2.5. It is a safe no-op if no video files were detected.
+
+### Step 2.5 - Prepare semantic detection, including video / audio transcripts when needed
+
+Always run this step. If `detect` returned zero `video` files, it simply writes an unchanged semantic-detection file. If video/audio files are present, it transcribes them to text first, then treats the transcripts as doc files in Step 3.
+
+```bash
+node -e "
+const fs = require('fs');
+const { augmentDetectionWithTranscripts } = require('graphifyy');
+
+const detect = JSON.parse(fs.readFileSync('graphify-out/.graphify_detect.json', 'utf-8'));
+const analysis = fs.existsSync('graphify-out/.graphify_analysis.json')
+  ? JSON.parse(fs.readFileSync('graphify-out/.graphify_analysis.json', 'utf-8'))
+  : null;
+
+const { detection: semanticDetect, transcriptPaths } = augmentDetectionWithTranscripts(detect, {
+  outputDir: 'graphify-out/transcripts',
+  godNodes: (analysis && analysis.gods) || [],
+});
+
+fs.writeFileSync('graphify-out/.graphify_detect_semantic.json', JSON.stringify(semanticDetect, null, 2));
+fs.writeFileSync('graphify-out/.graphify_transcripts.json', JSON.stringify(transcriptPaths, null, 2));
+console.log(\`Transcribed \${transcriptPaths.length} video file(s) -> treating as docs\`);
+"
+```
+
+After transcription:
+- use `graphify-out/.graphify_detect_semantic.json` for semantic cache and semantic extraction
+- keep `graphify-out/.graphify_detect.json` for corpus summary, manifest, and final reporting
 
 ### Step 3 - Extract entities and relationships
 
@@ -131,7 +161,7 @@ if (codeFiles.length > 0) {
 
 #### Part B - Semantic extraction (parallel subagents)
 
-**Fast path:** If detection found zero docs, papers, and images (code-only corpus), skip Part B entirely and go straight to Part C. AST handles code - there is nothing for semantic subagents to do.
+**Fast path:** If semantic detection found zero docs, papers, images, and transcripts (code-only corpus), skip Part B entirely and go straight to Part C. AST handles code - there is nothing for semantic subagents to do.
 
 **MANDATORY: You MUST use the Agent tool here. Reading files yourself one-by-one is forbidden - it is 5-10x slower. If you do not use the Agent tool you are doing this wrong.**
 
@@ -150,8 +180,12 @@ node -e "
 const fs = require('fs');
 const { checkSemanticCache } = require('graphifyy');
 
-const detect = JSON.parse(fs.readFileSync('graphify-out/.graphify_detect.json', 'utf-8'));
-const allFiles = Object.values(detect.files).flat();
+const detect = JSON.parse(fs.readFileSync('graphify-out/.graphify_detect_semantic.json', 'utf-8'));
+const allFiles = [
+  ...((detect.files || {}).document || []),
+  ...((detect.files || {}).paper || []),
+  ...((detect.files || {}).image || []),
+];
 
 const [cachedNodes, cachedEdges, cachedHyperedges, uncached] = checkSemanticCache(allFiles);
 
@@ -282,7 +316,7 @@ fs.writeFileSync('graphify-out/.graphify_semantic.json', JSON.stringify(merged, 
 console.log(\`Extraction complete - \${deduped.length} nodes, \${allEdges.length} edges (\${cached.nodes.length} from cache, \${(raw.nodes||[]).length} new)\`);
 "
 ```
-Clean up temp files: `rm -f graphify-out/.graphify_cached.json graphify-out/.graphify_uncached.txt graphify-out/.graphify_semantic_new.json`
+Clean up temp files: `rm -f graphify-out/.graphify_cached.json graphify-out/.graphify_uncached.txt graphify-out/.graphify_semantic_new.json graphify-out/.graphify_detect_semantic.json graphify-out/.graphify_transcripts.json`
 
 #### Part C - Merge AST + semantic into final extraction
 
@@ -681,7 +715,33 @@ console.log('code_only:', codeOnly);
 
 If `code_only` is True: print `[graphify update] Code-only changes detected - skipping semantic extraction (no LLM needed)`, run only Step 3A (AST) on the changed files, skip Step 3B entirely (no subagents), then go straight to merge and Steps 4–8.
 
-If `code_only` is False (any changed file is a doc/paper/image): run the full Steps 3A–3C pipeline as normal.
+If `code_only` is False (any changed file is a doc/paper/image/video): first prepare transcripts if needed, then run the full Steps 3A–3C pipeline as normal.
+
+When `code_only` is False, run this before Step 3B:
+
+```bash
+node -e "
+const fs = require('fs');
+const { augmentDetectionWithTranscripts } = require('graphifyy');
+
+const detect = JSON.parse(fs.readFileSync('graphify-out/.graphify_incremental.json', 'utf-8'));
+const analysis = fs.existsSync('graphify-out/.graphify_analysis.json')
+  ? JSON.parse(fs.readFileSync('graphify-out/.graphify_analysis.json', 'utf-8'))
+  : null;
+
+const { detection: semanticDetect, transcriptPaths } = augmentDetectionWithTranscripts(detect, {
+  outputDir: 'graphify-out/transcripts',
+  godNodes: (analysis && analysis.gods) || [],
+  incremental: true,
+});
+
+fs.writeFileSync('graphify-out/.graphify_incremental_semantic.json', JSON.stringify(semanticDetect, null, 2));
+fs.writeFileSync('graphify-out/.graphify_transcripts.json', JSON.stringify(transcriptPaths, null, 2));
+console.log(\`Transcribed \${transcriptPaths.length} video file(s) -> treating as docs\`);
+"
+```
+
+When re-running Step 3B in update mode, use `.graphify_incremental_semantic.json` instead of `.graphify_detect_semantic.json`.
 
 Then:
 
@@ -748,7 +808,7 @@ if (oldData) {
 ```
 
 Before the merge step, save the old graph: `cp graphify-out/graph.json graphify-out/.graphify_old.json`
-Clean up after: `rm -f graphify-out/.graphify_old.json`
+Clean up after: `rm -f graphify-out/.graphify_old.json graphify-out/.graphify_incremental_semantic.json graphify-out/.graphify_transcripts.json`
 
 ---
 
@@ -1135,6 +1195,7 @@ Replace `URL` with the actual URL, `AUTHOR` with the user's name if provided, `C
 Supported URL types (auto-detected):
 - Twitter/X → fetched via oEmbed, saved as `.md` with tweet text and author
 - arXiv → abstract + metadata saved as `.md`  
+- YouTube / video URLs → audio downloaded locally via `yt-dlp`; transcript generated on the next build/update (requires local `yt-dlp` + `faster-whisper`)
 - PDF → downloaded as `.pdf`
 - Images (.png/.jpg/.webp) → downloaded, Claude vision extracts on next run
 - Any webpage → converted to markdown via html2text

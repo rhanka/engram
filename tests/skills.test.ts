@@ -22,6 +22,18 @@ describe("skill cache examples", () => {
     }
   });
 
+  it("documents transcript preparation before semantic extraction", () => {
+    for (const relativePath of SKILLS) {
+      const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
+      expect(content).toContain("Step 2.5");
+      expect(
+        content.includes("prepare-semantic-detect")
+        || content.includes("augmentDetectionWithTranscripts"),
+      ).toBe(true);
+      expect(content).toContain("treating as docs");
+    }
+  });
+
   it("keeps the Windows skill usage lines aligned with upstream v0.3.28", () => {
     const content = readFileSync(new URL("../src/skills/skill-windows.md", import.meta.url), "utf-8");
 

@@ -16,6 +16,6 @@ export { fileHash, loadCached, saveCached, checkSemanticCache, saveSemanticCache
 export { validateUrl, safeFetch, safeFetchText, validateGraphPath, sanitizeLabel } from "./security.js";
 export { runBenchmark, printBenchmark } from "./benchmark.js";
 export { ingest, saveQueryResult } from "./ingest.js";
-export { downloadAudio, buildWhisperPrompt, transcribe, transcribeAll } from "./transcribe.js";
+export { downloadAudio, buildWhisperPrompt, transcribe, transcribeAll, augmentDetectionWithTranscripts } from "./transcribe.js";
 export { serve } from "./serve.js";
 export { watch, rebuildCode } from "./watch.js";

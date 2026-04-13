@@ -8,7 +8,7 @@
 
 这个仓库是原始 Graphify 项目的受维护 TypeScript 版本。产品方向、工作流和最初实现来自 [Safi Shamsi](https://github.com/safishamsi/graphify) 的原始项目，这里保留了同样的知识图谱与 assistant-skill 交互模型。
 
-graphify 是多模态的，而且这个 TypeScript 端口正按 upstream `v3` 的发布节奏逐版追平。当前 TS runtime 已经覆盖代码、Markdown、PDF、Office 文档、截图、图表和其他图片。本分支还补上了本地音频/视频检测，以及基于 `yt-dlp` + `faster-whisper` 的转录包装；把这些 transcript 并入同一条语义抽取流水线，是下一步 parity 工作。代码 AST 侧通过 tree-sitter 支持 20 种语言（Python、JS、TS、Go、Rust、Java、C、C++、Ruby、C#、Kotlin、Scala、PHP、Swift、Lua、Zig、PowerShell、Elixir、Objective-C、Julia）。
+graphify 是多模态的，而且这个 TypeScript 端口正按 upstream `v3` 的发布节奏逐版追平。当前 TS runtime 已经覆盖代码、Markdown、PDF、Office 文档、截图、图表和其他图片。本分支还补上了本地音频/视频检测，以及基于 `yt-dlp` + `faster-whisper` 的转录包装；这些 transcript 现在也会并入同一条语义抽取流水线。代码 AST 侧通过 tree-sitter 支持 20 种语言（Python、JS、TS、Go、Rust、Java、C、C++、Ruby、C#、Kotlin、Scala、PHP、Swift、Lua、Zig、PowerShell、Elixir、Objective-C、Julia）。
 
 > Andrej Karpathy 会维护一个 `/raw` 文件夹，把论文、推文、截图和笔记都丢进去。graphify 就是在解决这类问题 —— 相比直接读取原始文件，每次查询的 token 消耗可降低 **71.5 倍**，结果还能跨会话持久保存，并且会明确区分哪些内容是实际发现的，哪些只是合理推断。
 
@@ -27,7 +27,7 @@ graphify-out/
 
 ## 工作原理
 
-graphify 把确定性的结构提取和模型驱动的语义提取组合在一起，中间按需做本地预处理。代码文件先走无 LLM 的 AST 流水线，提取类、函数、导入、调用图、docstring 和 rationale 注释。文档、论文、Office 文件和图片会先被规范化成文本或多模态输入，再交给平台模型驱动的子代理抽取概念、关系和设计动机。本分支还补上了本地音频/视频检测，并可以通过 TypeScript runtime 调用 `yt-dlp` + `faster-whisper` 做转录；把 transcript 自动接到同一条语义抽取流水线，是当前剩余的 upstream parity 项。最终结果会合并到 Graphology 图里，用 Louvain 社区发现做聚类，并导出成可交互 HTML、可查询 JSON 和人类可读的审计报告。
+graphify 把确定性的结构提取和模型驱动的语义提取组合在一起，中间按需做本地预处理。代码文件先走无 LLM 的 AST 流水线，提取类、函数、导入、调用图、docstring 和 rationale 注释。文档、论文、Office 文件和图片会先被规范化成文本或多模态输入，再交给平台模型驱动的子代理抽取概念、关系和设计动机。本分支还补上了本地音频/视频检测，并可以通过 TypeScript runtime 调用 `yt-dlp` + `faster-whisper` 做转录；生成出的 transcript 会和其他文档一起进入同一条语义抽取流水线。最终结果会合并到 Graphology 图里，用 Louvain 社区发现做聚类，并导出成可交互 HTML、可查询 JSON 和人类可读的审计报告。
 
 **聚类是基于图拓扑完成的，不依赖 embeddings。** Louvain 按边密度发现社区。平台模型抽取出的语义相似边（`semantically_similar_to`，标记为 `INFERRED`）本来就存在于图中，所以会直接影响社区划分。图结构本身就是相似性信号，不需要额外的 embedding 步骤，也不需要向量数据库。
 
@@ -141,6 +141,7 @@ When the user types `/graphify`, invoke the Skill tool with `skill: "graphify"` 
 /graphify ./raw --obsidian         # 额外生成 Obsidian vault（可选）
 
 /graphify add https://arxiv.org/abs/1706.03762        # 拉取论文、保存并更新图谱
+/graphify add https://www.youtube.com/watch?v=...     # 下载视频音频，下一次 build/update 时转成 transcript
 /graphify add https://x.com/karpathy/status/...       # 拉取推文
 /graphify add https://... --author "Name"             # 标记原作者
 /graphify add https://... --contributor "Name"        # 标记是谁把它加入语料库的
@@ -194,7 +195,7 @@ graphify trae-cn uninstall
 | Office | `.docx .xlsx` | 先转换成 markdown，再交给当前平台模型做抽取 |
 | 论文 | `.pdf` | 引文挖掘 + 概念提取 |
 | 图片 | `.png .jpg .webp .gif` | 平台多模态视觉 —— 截图、图表、任意语言都可以 |
-| 音频 / 视频 | `.mp4 .mov .webm .mkv .avi .m4v .mp3 .wav .m4a .ogg` | 本地检测；本分支的 TS runtime 已支持 `yt-dlp` + `faster-whisper` 转录包装 |
+| 音频 / 视频 | `.mp4 .mov .webm .mkv .avi .m4v .mp3 .wav .m4a .ogg` | 本地检测；通过 `yt-dlp` + `faster-whisper` 做本地转录，再进入和文档相同的语义抽取路径 |
 
 ## 你会得到什么
 

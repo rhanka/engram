@@ -9,7 +9,7 @@ vi.mock("node:child_process", () => ({
 }));
 
 import { spawnSync } from "node:child_process";
-import { buildWhisperPrompt, downloadAudio, isUrl, transcribe, transcribeAll } from "../src/transcribe.js";
+import { augmentDetectionWithTranscripts, buildWhisperPrompt, downloadAudio, isUrl, transcribe, transcribeAll } from "../src/transcribe.js";
 
 const tempDirs: string[] = [];
 const spawnSyncMock = vi.mocked(spawnSync);
@@ -152,5 +152,72 @@ describe("transcribe helpers", () => {
     expect(results).toEqual([join(tmpDir, "out", "a.txt")]);
     expect(existsSync(join(tmpDir, "out", "a.txt"))).toBe(true);
     expect(existsSync(join(tmpDir, "out", "b.txt"))).toBe(false);
+  });
+
+  it("augments detection files with transcript paths for semantic extraction", () => {
+    const video = join(tmpDir, "lecture.mp4");
+    writeFileSync(video, "audio");
+    spawnSyncMock.mockImplementation((_cmd, args, _options) => {
+      const transcriptPath = String(args?.[3]);
+      writeFileSync(transcriptPath, "lecture transcript");
+      return { status: 0, stdout: "en|1", stderr: "", output: [] } as ReturnType<typeof spawnSync>;
+    });
+
+    const baseDetection = {
+      files: { code: [], document: [], paper: [], image: [], video: [video] },
+      total_files: 1,
+      total_words: 0,
+      needs_graph: true,
+      warning: null,
+      skipped_sensitive: [],
+      graphifyignore_patterns: 0,
+    };
+
+    const result = augmentDetectionWithTranscripts(baseDetection, {
+      outputDir: join(tmpDir, "transcripts"),
+      godNodes: [{ label: "transformers" }],
+    });
+
+    expect(result.transcriptPaths).toEqual([join(tmpDir, "transcripts", "lecture.txt")]);
+    expect(result.detection.files.document).toEqual([join(tmpDir, "transcripts", "lecture.txt")]);
+    expect(result.detection.files.video).toEqual([video]);
+    expect(result.prompt).toContain("transformers");
+  });
+
+  it("forces retranscription for incremental video changes", () => {
+    const video = join(tmpDir, "clip.mp4");
+    const outDir = join(tmpDir, "transcripts");
+    writeFileSync(video, "audio");
+    mkdirSync(outDir, { recursive: true });
+    writeFileSync(join(outDir, "clip.txt"), "stale transcript");
+
+    spawnSyncMock.mockImplementation((_cmd, args, _options) => {
+      const transcriptPath = String(args?.[3]);
+      writeFileSync(transcriptPath, "fresh transcript");
+      return { status: 0, stdout: "en|1", stderr: "", output: [] } as ReturnType<typeof spawnSync>;
+    });
+
+    const baseDetection = {
+      files: { code: [], document: [], paper: [], image: [], video: [video] },
+      total_files: 1,
+      total_words: 0,
+      needs_graph: true,
+      warning: null,
+      skipped_sensitive: [],
+      graphifyignore_patterns: 0,
+      incremental: true,
+      new_files: { code: [], document: [], paper: [], image: [], video: [video] },
+      unchanged_files: { code: [], document: [], paper: [], image: [], video: [] },
+      new_total: 1,
+      deleted_files: [],
+    };
+
+    const result = augmentDetectionWithTranscripts(baseDetection, {
+      outputDir: outDir,
+      incremental: true,
+    });
+
+    expect(readFileSync(result.transcriptPaths[0]!, "utf-8")).toBe("fresh transcript");
+    expect(result.detection.new_files?.document).toEqual([join(outDir, "clip.txt")]);
   });
 });

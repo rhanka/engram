@@ -8,7 +8,7 @@
 
 このリポジトリは元の Graphify プロジェクトの保守中 TypeScript ポートです。製品の方向性、ワークフロー、初期実装は [Safi Shamsi](https://github.com/safishamsi/graphify) による原典プロジェクトに依拠しています。
 
-graphify はマルチモーダルであり、この TypeScript ポートは upstream `v3` に対してリリース単位でキャッチアップしています。現在の TS ランタイムはコード、Markdown、PDF、Office 文書、スクリーンショット、図表、その他の画像を処理できます。このブランチではさらにローカルの音声/動画検出と `yt-dlp` + `faster-whisper` による文字起こしラッパーを追加しています。生成された transcript を同じ意味抽出パスに流し込むのが次の parity 作業です。tree-sitter AST により 20 言語をサポートします（Python、JS、TS、Go、Rust、Java、C、C++、Ruby、C#、Kotlin、Scala、PHP、Swift、Lua、Zig、PowerShell、Elixir、Objective-C、Julia）。
+graphify はマルチモーダルであり、この TypeScript ポートは upstream `v3` に対してリリース単位でキャッチアップしています。現在の TS ランタイムはコード、Markdown、PDF、Office 文書、スクリーンショット、図表、その他の画像を処理できます。このブランチではさらにローカルの音声/動画検出と `yt-dlp` + `faster-whisper` による文字起こしラッパーを追加しており、生成された transcript も同じ意味抽出パスに流し込まれます。tree-sitter AST により 20 言語をサポートします（Python、JS、TS、Go、Rust、Java、C、C++、Ruby、C#、Kotlin、Scala、PHP、Swift、Lua、Zig、PowerShell、Elixir、Objective-C、Julia）。
 
 > Andrej Karpathy は論文、ツイート、スクリーンショット、メモを放り込む `/raw` フォルダを持っています。graphify はまさにその問題への答えです――生ファイルを読むのに比べて1クエリあたりのトークン数が 71.5 倍少なく、セッションをまたいで永続化され、見つけたものと推測したものを正直に区別します。
 
@@ -39,7 +39,7 @@ dist/
 
 ## 仕組み
 
-graphify は決定論的な構造抽出とモデル駆動の意味抽出を組み合わせ、必要に応じてその間にローカル前処理を挟みます。コードは LLM を使わない AST パスでクラス、関数、インポート、コールグラフ、docstring、根拠コメントを抽出します。ドキュメント、論文、Office 文書、画像はテキストまたはマルチモーダル入力に正規化したうえで、プラットフォーム側モデルのサブエージェントが概念、関係、設計意図を抽出します。このキャッチアップブランチでは音声/動画もローカルで検出でき、TypeScript ランタイムから `yt-dlp` + `faster-whisper` で文字起こしできます。生成 transcript を同じ意味抽出パスに接続するのが残っている upstream parity 項目です。結果は Graphology グラフにマージされ、Louvain コミュニティ検出でクラスタリングされ、インタラクティブ HTML、クエリ可能な JSON、平易な監査レポートとしてエクスポートされます。
+graphify は決定論的な構造抽出とモデル駆動の意味抽出を組み合わせ、必要に応じてその間にローカル前処理を挟みます。コードは LLM を使わない AST パスでクラス、関数、インポート、コールグラフ、docstring、根拠コメントを抽出します。ドキュメント、論文、Office 文書、画像はテキストまたはマルチモーダル入力に正規化したうえで、プラットフォーム側モデルのサブエージェントが概念、関係、設計意図を抽出します。このキャッチアップブランチでは音声/動画もローカルで検出でき、TypeScript ランタイムから `yt-dlp` + `faster-whisper` で文字起こしし、その transcript も他のドキュメントと同じ意味抽出パスに流し込みます。結果は Graphology グラフにマージされ、Louvain コミュニティ検出でクラスタリングされ、インタラクティブ HTML、クエリ可能な JSON、平易な監査レポートとしてエクスポートされます。
 
 **クラスタリングはグラフトポロジベースで、埋め込みは使いません。** Louvain はエッジ密度によってコミュニティを見つけます。プラットフォームモデルが抽出する意味的類似性エッジ（`semantically_similar_to`、`INFERRED`）は既にグラフに含まれているため、コミュニティ検出に直接影響します。グラフ構造そのものが類似性シグナルであり、別途の embedding ステップやベクターデータベースは不要です。
 
@@ -152,6 +152,7 @@ When the user types `/graphify`, invoke the Skill tool with `skill: "graphify"` 
 /graphify ./raw --obsidian --obsidian-dir ~/vaults/myproject  # ボールトを特定のディレクトリに書き込み
 
 /graphify add https://arxiv.org/abs/1706.03762        # 論文を取得、保存、グラフを更新
+/graphify add https://www.youtube.com/watch?v=...     # 動画の音声を取得し、次回 build/update で transcript 化
 /graphify add https://x.com/karpathy/status/...       # ツイートを取得
 /graphify add https://... --author "Name"             # 元の著者をタグ付け
 /graphify add https://... --contributor "Name"        # コーパスに追加した人をタグ付け
@@ -211,7 +212,7 @@ graphify query "..." --graph path/to/graph.json
 | Office | `.docx .xlsx` | Markdown に変換した後、現在のプラットフォームモデルで抽出 |
 | 論文 | `.pdf` | 引用マイニング + 概念抽出 |
 | 画像 | `.png .jpg .webp .gif` | プラットフォームのマルチモーダルモデル - スクリーンショット、図、任意の言語 |
-| 音声 / 動画 | `.mp4 .mov .webm .mkv .avi .m4v .mp3 .wav .m4a .ogg` | ローカルで検出。現在のキャッチアップブランチでは `yt-dlp` + `faster-whisper` による文字起こしラッパーを搭載 |
+| 音声 / 動画 | `.mp4 .mov .webm .mkv .avi .m4v .mp3 .wav .m4a .ogg` | ローカルで検出し、`yt-dlp` + `faster-whisper` で文字起こししたうえで、ドキュメントと同じ意味抽出パスに流し込む |
 
 ## 得られるもの
 

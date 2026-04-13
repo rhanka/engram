@@ -245,10 +245,10 @@ Plan:
   - [x] Prefer wrapping the same upstream toolchain (`yt-dlp` + `faster-whisper`) from the TS runtime over inventing a Node-native alternative
 - [ ] Split implementation into sub-lots:
   - [x] corpus detection for audio/video
-  - [ ] YouTube/download ingestion path
+  - [x] YouTube/download ingestion path
   - [x] local transcription runtime
-  - [ ] skill/runtime wiring so transcripts feed semantic extraction
-  - [ ] docs, package metadata, and CI support
+  - [x] skill/runtime wiring so transcripts feed semantic extraction
+  - [x] docs, package metadata, and CI support
 - [x] Keep this block separate from the pure parity lots above
 - [x] Commit only after that decision is explicit
 
@@ -256,7 +256,7 @@ Plan:
 
 - [ ] Every upstream `v3` release bucket from `v0.3.18` through `v0.3.28` is marked `covered`, `n/a`, or explicitly deferred with justification
 - [ ] Every intentional divergence is documented in [UPSTREAM_GAP.md](UPSTREAM_GAP.md)
-- [ ] The remaining delta to `upstream/v3` is only the explicitly deferred post-`v0.3.28` multimodal block, or it is also closed
+- [x] The remaining delta to `upstream/v3` is only the explicitly deferred post-`v0.3.28` multimodal block, or it is also closed
 - [ ] `npm test` passes after the final catch-up lot
 - [ ] `npx graphify hook-rebuild` passes after the final catch-up lot
 - [ ] The branch is clean and ready either for merge or for the next dedicated feature branch

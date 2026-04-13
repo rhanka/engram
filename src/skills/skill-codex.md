@@ -17,6 +17,7 @@ $graphify                                             # full pipeline on current
 $graphify <path>                                      # full pipeline on specific path
 $graphify <path> --directed                           # build directed graph (preserves source->target)
 $graphify <path> --mode deep                          # richer INFERRED edges during semantic extraction
+$graphify <path> --whisper-model medium               # use a larger Whisper model for local transcription
 $graphify <path> --update                             # incremental - re-extract only new/changed files
 $graphify <path> --cluster-only                       # re-run clustering/report on existing graph
 $graphify <path> --no-viz                             # skip HTML generation
@@ -112,6 +113,7 @@ Corpus: X files · ~Y words
   docs:     N files
   papers:   N files
   images:   N files
+  video:    N files
 ```
 
 The detection JSON shape is:
@@ -119,12 +121,34 @@ The detection JSON shape is:
 - `files.document`
 - `files.paper`
 - `files.image`
+- `files.video`
 
 Then act on it:
 - If `total_files` is `0`: stop with `No supported files found in [path].`
 - If `skipped_sensitive` is non-empty: mention the number skipped, not the names.
 - If `total_words > 2_000_000` or `total_files > 200`: show the warning and the top 5 subdirectories by file count, then ask which subfolder to run on.
-- Otherwise: proceed directly to Step 3.
+- Otherwise: proceed to Step 2.5. It is a safe no-op if no video files were detected.
+
+### Step 2.5 - Prepare semantic detection, including video / audio transcripts when needed
+
+Always run this step. If `files.video` is empty, it simply writes an unchanged semantic-detection file. If video/audio files are present, it transcribes them to text first and treats those transcripts as docs during semantic extraction.
+
+```bash
+GRAPHIFY_WHISPER_FLAG=""
+if the original invocation included --whisper-model <name>, set GRAPHIFY_WHISPER_FLAG="--whisper-model <name>"
+
+$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" prepare-semantic-detect \
+  $GRAPHIFY_WHISPER_FLAG \
+  --detect graphify-out/.graphify_detect.json \
+  --out graphify-out/.graphify_detect_semantic.json \
+  --transcripts-out graphify-out/.graphify_transcripts.json \
+  --analysis graphify-out/.graphify_analysis.json
+```
+
+After this step:
+- use [graphify-out/.graphify_detect_semantic.json](graphify-out/.graphify_detect_semantic.json) for semantic cache and semantic extraction
+- keep using [graphify-out/.graphify_detect.json](graphify-out/.graphify_detect.json) for manifest, cost, and final reporting
+- the runtime prints `Transcribed N video file(s) -> treating as docs`
 
 ### Step 3 - Extract entities and relationships
 
@@ -139,7 +163,7 @@ if the original invocation included --directed, set GRAPHIFY_DIRECTED_FLAG="--di
 
 This step has two parts:
 - structural extraction for code files, using the TypeScript runtime
-- semantic extraction for docs, papers, and images, using Codex subagents
+- semantic extraction for docs, papers, images, and generated transcripts, using Codex subagents
 
 Run Part A and Part B in parallel.
 
@@ -153,7 +177,7 @@ $(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)
 
 #### Part B - Semantic extraction with Codex
 
-If there are zero docs, papers, and images, skip Part B entirely and go straight to Part C.
+If there are zero docs, papers, images, and generated transcripts, skip Part B entirely and go straight to Part C.
 
 Use this rule:
 - If the uncached non-code set fits in a single chunk of 20 files or fewer, stay in the main Codex thread and extract it directly.
@@ -163,7 +187,7 @@ Use this rule:
 
 ```bash
 $(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" check-semantic-cache \
-  --detect graphify-out/.graphify_detect.json \
+  --detect graphify-out/.graphify_detect_semantic.json \
   --root . \
   --cached-out graphify-out/.graphify_cached.json \
   --uncached-out graphify-out/.graphify_uncached.txt
@@ -354,7 +378,7 @@ $(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)
 Clean up temp files:
 
 ```bash
-rm -f graphify-out/.graphify_detect.json graphify-out/.graphify_ast.json graphify-out/.graphify_cached.json graphify-out/.graphify_uncached.txt graphify-out/.graphify_semantic_new.json graphify-out/.graphify_analysis.json graphify-out/.graphify_labels.json
+rm -f graphify-out/.graphify_detect.json graphify-out/.graphify_detect_semantic.json graphify-out/.graphify_transcripts.json graphify-out/.graphify_ast.json graphify-out/.graphify_cached.json graphify-out/.graphify_uncached.txt graphify-out/.graphify_semantic_new.json graphify-out/.graphify_analysis.json graphify-out/.graphify_labels.json
 rm -f graphify-out/.needs_update 2>/dev/null || true
 ```
 
@@ -419,8 +443,24 @@ EOF
 
 If not code-only:
 - run the full Step 3 flow again, but use [graphify-out/.graphify_incremental.json](graphify-out/.graphify_incremental.json) as the detection file
+- always prepare the semantic detection file first. It is a safe no-op if `new_files.video` is empty:
+
+```bash
+GRAPHIFY_WHISPER_FLAG=""
+if the original invocation included --whisper-model <name>, set GRAPHIFY_WHISPER_FLAG="--whisper-model <name>"
+
+$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" prepare-semantic-detect \
+  $GRAPHIFY_WHISPER_FLAG \
+  --detect graphify-out/.graphify_incremental.json \
+  --out graphify-out/.graphify_incremental_semantic.json \
+  --transcripts-out graphify-out/.graphify_transcripts.json \
+  --analysis graphify-out/.graphify_analysis.json \
+  --incremental
+```
+
+- in update mode, wherever Step 3 normally references [graphify-out/.graphify_detect_semantic.json](graphify-out/.graphify_detect_semantic.json), use [graphify-out/.graphify_incremental_semantic.json](graphify-out/.graphify_incremental_semantic.json) instead
 - for AST, call `extract-ast --incremental`
-- for semantic cache, call `check-semantic-cache --incremental`
+- for semantic cache, call `check-semantic-cache --incremental` against [graphify-out/.graphify_incremental_semantic.json](graphify-out/.graphify_incremental_semantic.json)
 
 Before merging, keep a copy of the old graph:
 
@@ -449,7 +489,7 @@ $(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)
 Then run Steps 5-7 again. Clean up:
 
 ```bash
-rm -f graphify-out/.graphify_old.json graphify-out/.graphify_incremental.json
+rm -f graphify-out/.graphify_old.json graphify-out/.graphify_incremental.json graphify-out/.graphify_incremental_semantic.json graphify-out/.graphify_transcripts.json
 ```
 
 ## For --cluster-only

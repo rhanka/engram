@@ -34,7 +34,7 @@ function makeGraph(): Graph {
 }
 
 const detection = {
-  files: { code: ["src/alpha.ts", "src/beta.ts"], document: [], paper: [], image: [] },
+  files: { code: ["src/alpha.ts", "src/beta.ts"], document: [], paper: [], image: [], video: [] },
   total_files: 2,
   total_words: 1200,
   needs_graph: true,
@@ -60,6 +60,7 @@ describe("public API compatibility", () => {
     expect(typeof api.watch).toBe("function");
     expect(typeof api.rebuildCode).toBe("function");
     expect(typeof api.pushToNeo4j).toBe("function");
+    expect(typeof api.augmentDetectionWithTranscripts).toBe("function");
   });
 
   it("accepts object-style map inputs and option objects", () => {

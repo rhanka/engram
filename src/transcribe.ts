@@ -2,6 +2,7 @@ import * as childProcess from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";
+import type { DetectionResult } from "./types.js";
 
 const URL_PREFIXES = ["http://", "https://", "www."];
 const CACHED_AUDIO_EXTENSIONS = [".m4a", ".opus", ".mp3", ".ogg", ".wav", ".webm"];
@@ -147,6 +148,7 @@ export function transcribeAll(
   videoFiles: string[],
   outputDir?: string,
   initialPrompt?: string,
+  force: boolean = false,
 ): string[] {
   if (videoFiles.length === 0) {
     return [];
@@ -155,11 +157,60 @@ export function transcribeAll(
   const transcriptPaths: string[] = [];
   for (const videoFile of videoFiles) {
     try {
-      transcriptPaths.push(transcribe(videoFile, outputDir, initialPrompt));
+      transcriptPaths.push(transcribe(videoFile, outputDir, initialPrompt, force));
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       console.log(`  warning: could not transcribe ${videoFile}: ${detail}`);
     }
   }
   return transcriptPaths;
+}
+
+function cloneDetection(detection: DetectionResult): DetectionResult {
+  return JSON.parse(JSON.stringify(detection)) as DetectionResult;
+}
+
+export function augmentDetectionWithTranscripts(
+  detection: DetectionResult,
+  options?: {
+    outputDir?: string;
+    initialPrompt?: string;
+    godNodes?: Array<{ label?: string | null }>;
+    incremental?: boolean;
+    whisperModel?: string;
+  },
+): { detection: DetectionResult; transcriptPaths: string[]; prompt: string } {
+  const nextDetection = cloneDetection(detection);
+  const source = options?.incremental && nextDetection.new_files ? nextDetection.new_files : nextDetection.files;
+  const videoFiles = [...(source.video ?? [])];
+  const prompt = options?.initialPrompt ?? buildWhisperPrompt(options?.godNodes ?? []);
+
+  if (videoFiles.length === 0) {
+    return { detection: nextDetection, transcriptPaths: [], prompt };
+  }
+
+  const previousModel = process.env.GRAPHIFY_WHISPER_MODEL;
+  if (options?.whisperModel) {
+    process.env.GRAPHIFY_WHISPER_MODEL = options.whisperModel;
+  }
+
+  try {
+    const transcriptPaths = transcribeAll(
+      videoFiles,
+      options?.outputDir,
+      prompt,
+      options?.incremental === true,
+    );
+    const existingDocuments = source.document ?? [];
+    source.document = [...existingDocuments, ...transcriptPaths];
+    return { detection: nextDetection, transcriptPaths, prompt };
+  } finally {
+    if (options?.whisperModel) {
+      if (previousModel === undefined) {
+        delete process.env.GRAPHIFY_WHISPER_MODEL;
+      } else {
+        process.env.GRAPHIFY_WHISPER_MODEL = previousModel;
+      }
+    }
+  }
 }

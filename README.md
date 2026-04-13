@@ -8,7 +8,7 @@
 
 This repository is the maintained TypeScript port of the original Graphify project. Thanks to the original work by [Safi Shamsi](https://github.com/safishamsi/graphify) for the product direction, workflow, and initial implementation.
 
-Multimodal, with the TypeScript catch-up tracked release-by-release against upstream `v3`. Code, markdown, PDFs, Office docs, screenshots, diagrams, and other images already flow through the current TS runtime. This branch also adds local audio/video detection plus a `yt-dlp` + `faster-whisper` transcription wrapper; feeding those transcripts into the same assistant-driven semantic pass is the next parity step. 20 languages are supported via tree-sitter AST (Python, JS, TS, Go, Rust, Java, C, C++, Ruby, C#, Kotlin, Scala, PHP, Swift, Lua, Zig, PowerShell, Elixir, Objective-C, Julia).
+Multimodal, with the TypeScript catch-up tracked release-by-release against upstream `v3`. Code, markdown, PDFs, Office docs, screenshots, diagrams, and other images already flow through the current TS runtime. This branch also adds local audio/video detection plus a `yt-dlp` + `faster-whisper` transcription wrapper, and those transcripts now feed the same assistant-driven semantic pass as docs and papers. 20 languages are supported via tree-sitter AST (Python, JS, TS, Go, Rust, Java, C, C++, Ruby, C#, Kotlin, Scala, PHP, Swift, Lua, Zig, PowerShell, Elixir, Objective-C, Julia).
 
 > Andrej Karpathy keeps a `/raw` folder where he drops papers, tweets, screenshots, and notes. graphify is the answer to that problem - 71.5x fewer tokens per query vs reading the raw files, persistent across sessions, honest about what it found vs guessed.
 
@@ -41,7 +41,7 @@ Same syntax as `.gitignore`. Patterns are discovered from the folder you run gra
 
 ## How it works
 
-graphify combines a deterministic structural pass with a model-backed semantic pass, with local preprocessing in between when needed. Code goes through a no-LLM AST pass that extracts classes, functions, imports, call graphs, docstrings, and rationale comments. Docs, papers, Office files, and images are normalized into text or multimodal inputs, then platform-backed subagents extract concepts, relationships, and design rationale. On this catch-up branch, audio/video files are also detected locally and can be transcribed through the TypeScript runtime with `yt-dlp` + `faster-whisper`; wiring those transcripts into the same semantic pass is the remaining upstream parity step. The results are merged into a Graphology graph, clustered with Louvain community detection, and exported as interactive HTML, queryable JSON, and a plain-language audit report.
+graphify combines a deterministic structural pass with a model-backed semantic pass, with local preprocessing in between when needed. Code goes through a no-LLM AST pass that extracts classes, functions, imports, call graphs, docstrings, and rationale comments. Docs, papers, Office files, and images are normalized into text or multimodal inputs, then platform-backed subagents extract concepts, relationships, and design rationale. On this catch-up branch, audio/video files are also detected locally, transcribed through the TypeScript runtime with `yt-dlp` + `faster-whisper`, and fed into the same semantic extraction path as any other document. The results are merged into a Graphology graph, clustered with Louvain community detection, and exported as interactive HTML, queryable JSON, and a plain-language audit report.
 
 **Clustering is graph-topology-based — no embeddings.** Louvain finds communities by edge density. The semantic similarity edges that the model extracts (`semantically_similar_to`, marked INFERRED) are already in the graph, so they influence community detection directly. The graph structure is the similarity signal — no separate embedding step or vector database needed.
 
@@ -203,6 +203,7 @@ In Codex, replace the leading `/` in the examples below with `$`. Gemini CLI, Gi
 /graphify ./raw --obsidian --obsidian-dir ~/vaults/myproject  # write vault to a specific directory
 
 /graphify add https://arxiv.org/abs/1706.03762        # fetch a paper, save, update graph
+/graphify add https://www.youtube.com/watch?v=...     # download video audio, then transcribe it on the next build/update
 /graphify add https://x.com/karpathy/status/...       # fetch a tweet
 /graphify add https://... --author "Name"             # tag the original author
 /graphify add https://... --contributor "Name"        # tag who added it to the corpus
@@ -262,7 +263,7 @@ Works with any mix of file types:
 | Office | `.docx .xlsx` | Converted to markdown then extracted via the platform model |
 | Papers | `.pdf` | Citation mining + concept extraction |
 | Images | `.png .jpg .webp .gif` | Multimodal vision - screenshots, diagrams, any language |
-| Audio / Video | `.mp4 .mov .webm .mkv .avi .m4v .mp3 .wav .m4a .ogg` | Detected locally; local transcription via `yt-dlp` + `faster-whisper` is available in the TS runtime on this catch-up branch |
+| Audio / Video | `.mp4 .mov .webm .mkv .avi .m4v .mp3 .wav .m4a .ogg` | Detected locally; transcribed via `yt-dlp` + `faster-whisper`, then fed through the same semantic extraction path as docs |
 
 ## What you get
 
