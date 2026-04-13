@@ -112,12 +112,12 @@ Upstream scope:
 - watcher/export crash fixes in Python
 
 Plan:
-- [ ] Audit upstream commit `f770712`
-- [ ] Add Cursor as a first-class platform target if still missing
-- [ ] Verify whether any Python watcher/export crash fix has a TS analogue
-- [ ] Mark Python-only crash fixes as `n/a` if there is no TS analogue
-- [ ] Add install + docs + regression coverage for Cursor if implemented
-- [ ] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.22`
+- [x] Audit upstream commit `f770712`
+- [x] Add Cursor as a first-class platform target if still missing
+- [x] Verify whether any Python watcher/export crash fix has a TS analogue
+- [x] Mark Python-only crash fixes as `n/a` if there is no TS analogue
+- [x] Add install + docs + regression coverage for Cursor if implemented
+- [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.22`
 - [ ] Commit the `v0.3.22` catch-up lot
 
 ## Lot 6 - Upstream `v0.3.23`

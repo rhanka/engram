@@ -26,7 +26,7 @@ This branch tracks the delta between this TypeScript port and the upstream Pytho
 | `v0.3.19` | OpenCode `tool.execute.before` plugin install | `covered` | Covered in TS via `.opencode/plugins/graphify.js`, `opencode.json` registration, install/uninstall idempotency, and README parity |
 | `v0.3.20` | AST call edges forced to `EXTRACTED`, tree-sitter version guard | `covered` | Covered in TS by fixing remaining AST `calls` edges to `EXTRACTED`/`1.0`; the upstream version guard is Python-binding-specific and maps to pinned `web-tree-sitter` deps plus existing missing-grammar diagnostics in TS |
 | `v0.3.21` | Codex hook JSON schema fix, `#!/bin/sh` for Windows git hooks | `covered` | Covered in TS via the corrected Codex hook JSON payload and `/bin/sh` git hook installation/removal parity |
-| `v0.3.22` | Cursor support, Python watcher/export crash fixes | `partial` | Add Cursor as first-class platform target; mark Python-specific crash fixes as `n/a` unless a TS analog exists |
+| `v0.3.22` | Cursor support, Python watcher/export crash fixes | `covered` | Covered in TS by adding project-scoped Cursor rules; the upstream watcher/export crashes are Python-specific and `n/a` for the current TS runtime |
 | `v0.3.23` | Gemini CLI support | `covered` | Keep synced as upstream evolves, but base support is already present |
 | `v0.3.24` | Codex/OpenCode install idempotency | `partial` | Codex is covered; audit OpenCode install path and add regression if needed |
 | `v0.3.25` | Aider + Copilot CLI support, directed graphs, frontmatter cache, `.graphifyignore` parent discovery, MCP fixes | `missing` | Split into separate catch-up tasks; Aider/Copilot and `.graphifyignore` parent discovery are the clearest missing pieces |
@@ -49,7 +49,6 @@ This branch tracks the delta between this TypeScript port and the upstream Pytho
 
 - Aider platform support
 - Copilot CLI platform support
-- Cursor platform support
 - `.graphifyignore` parent-directory discovery
 - OpenCode plugin-style install parity
 - Audio/video ingestion + local transcription (`yt-dlp` + Whisper path)

@@ -49,7 +49,7 @@ Every relationship is tagged `EXTRACTED` (found directly in source), `INFERRED` 
 
 ## Install
 
-**Requires:** Node.js 20+ and one of: [Claude Code](https://claude.ai/code), [Codex](https://openai.com/codex), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [OpenCode](https://opencode.ai), [OpenClaw](https://openclaw.ai), [Factory Droid](https://factory.ai), or [Trae](https://trae.com)
+**Requires:** Node.js 20+ and one of: [Claude Code](https://claude.ai/code), [Codex](https://openai.com/codex), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [OpenCode](https://opencode.ai), [OpenClaw](https://openclaw.ai), [Factory Droid](https://factory.ai), [Trae](https://trae.com), or [Cursor](https://cursor.com)
 
 ```bash
 npm install -g graphifyy
@@ -95,6 +95,7 @@ After building a graph, run this once in your project:
 | Factory Droid | `graphify droid install` |
 | Trae | `graphify trae install` |
 | Trae CN | `graphify trae-cn install` |
+| Cursor | `graphify cursor install` |
 
 **Claude Code** does two things: writes a `CLAUDE.md` section telling Claude to read `graphify-out/GRAPH_REPORT.md` before answering architecture questions, and installs a **PreToolUse hook** (`settings.json`) that fires before every Glob and Grep call. If a knowledge graph exists, Claude sees: _"graphify: Knowledge graph exists. Read GRAPH_REPORT.md for god nodes and community structure before searching raw files."_ — so Claude navigates via the graph instead of grepping through every file.
 
@@ -103,6 +104,8 @@ After building a graph, run this once in your project:
 **Gemini CLI** writes `GEMINI.md` in your project root and registers a project-scoped `graphify` MCP server in `.gemini/settings.json`. Gemini CLI does not have a Claude/Codex-style PreToolUse hook, so `GEMINI.md` is the always-on mechanism and `/graphify` is the explicit custom command.
 
 **OpenCode** writes to `AGENTS.md` and installs a project-local `tool.execute.before` plugin in `.opencode/plugins/graphify.js`, registered via `opencode.json`, so bash tool calls get the same graph reminder before raw-file traversal.
+
+**Cursor** writes `.cursor/rules/graphify.mdc` with `alwaysApply: true`, so Cursor always sees the graph context before it starts crawling raw files.
 
 **OpenClaw, Factory Droid, Trae** write the same rules to `AGENTS.md` in your project root. These platforms don't support PreToolUse hooks, so AGENTS.md is the always-on mechanism.
 
@@ -220,6 +223,8 @@ graphify claude uninstall
 graphify codex install             # AGENTS.md (Codex)
 graphify gemini install            # GEMINI.md + .gemini/settings.json (Gemini CLI)
 graphify gemini uninstall
+graphify cursor install            # .cursor/rules/graphify.mdc (Cursor)
+graphify cursor uninstall
 graphify opencode install          # AGENTS.md + opencode.json plugin (OpenCode)
 graphify claw install              # AGENTS.md (OpenClaw)
 graphify droid install             # AGENTS.md (Factory Droid)

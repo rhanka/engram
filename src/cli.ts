@@ -162,6 +162,18 @@ export const GraphifyPlugin = async ({ directory }) => {
 `;
 
 const MD_MARKER = "## graphify";
+const CURSOR_RULE_ENTRY = ".cursor/rules/graphify.mdc";
+const CURSOR_RULE = `---
+description: graphify knowledge graph context
+alwaysApply: true
+---
+
+This project has a graphify knowledge graph at graphify-out/.
+
+- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
+- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
+- After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
+`;
 
 // ---------------------------------------------------------------------------
 // Skill resolution
@@ -260,6 +272,31 @@ function uninstallGeminiMcp(projectDir: string): void {
   }
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
   console.log("  .gemini/settings.json  ->  graphify MCP server removed");
+}
+
+export function cursorInstall(projectDir: string = "."): void {
+  const rulePath = join(projectDir, ".cursor", "rules", "graphify.mdc");
+  mkdirSync(dirname(rulePath), { recursive: true });
+  if (existsSync(rulePath)) {
+    console.log(`graphify rule already exists at ${resolve(rulePath)} (no change)`);
+  } else {
+    writeFileSync(rulePath, CURSOR_RULE, "utf-8");
+    console.log(`graphify rule written to ${resolve(rulePath)}`);
+  }
+  console.log();
+  console.log("Cursor will now always include the knowledge graph context.");
+  console.log("Run `$graphify .` or `/graphify .` in your assistant first if you have not built the graph yet.");
+}
+
+export function cursorUninstall(projectDir: string = "."): void {
+  const rulePath = join(projectDir, ".cursor", "rules", "graphify.mdc");
+  if (!existsSync(rulePath)) {
+    console.log("No graphify Cursor rule found - nothing to do");
+    return;
+  }
+  const { unlinkSync } = require("node:fs");
+  unlinkSync(rulePath);
+  console.log(`graphify Cursor rule removed from ${resolve(rulePath)}`);
 }
 
 function installOpenCodePlugin(projectDir: string): void {
@@ -726,6 +763,12 @@ export async function main(): Promise<void> {
     const sub = program.command(cmd).description(`${cmd} skill management`);
     sub.command("install").description("Write graphify section to GEMINI.md + project MCP config").action(() => geminiInstall());
     sub.command("uninstall").description("Remove graphify section from GEMINI.md + project MCP config").action(() => geminiUninstall());
+  }
+
+  {
+    const sub = program.command("cursor").description("cursor skill management");
+    sub.command("install").description("Write .cursor/rules/graphify.mdc").action(() => cursorInstall());
+    sub.command("uninstall").description("Remove .cursor/rules/graphify.mdc").action(() => cursorUninstall());
   }
 
   for (const cmd of ["codex", "opencode", "claw", "droid", "trae", "trae-cn"]) {
