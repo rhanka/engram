@@ -4,14 +4,17 @@
 
 [![TypeScript CI](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=v3)](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml)
 
-**一个面向 AI 编码助手的技能。** 在 Claude Code、Codex、OpenCode、OpenClaw、Factory Droid 或 Trae 中输入 `/graphify`，它会读取你的文件、构建知识图谱，并把原本不明显的结构关系还给你。更快理解代码库，找到架构决策背后的"为什么"。
+**一个面向 AI 编码助手的技能。** 在 Claude Code、Gemini CLI、GitHub Copilot CLI、Aider、OpenCode、OpenClaw、Factory Droid 或 Trae 中输入 `/graphify`，在 Codex 中输入 `$graphify`，它会读取你的文件、构建知识图谱，并把原本不明显的结构关系还给你。更快理解代码库，找到架构决策背后的“为什么”。
 
-完全多模态。你可以直接丢进去代码、PDF、Markdown、截图、流程图、白板照片，甚至其他语言的图片 —— graphify 会用 Claude vision 从这些内容中提取概念和关系，并把它们连接到同一张图里。
+这个仓库是原始 Graphify 项目的受维护 TypeScript 版本。产品方向、工作流和最初实现来自 [Safi Shamsi](https://github.com/safishamsi/graphify) 的原始项目，这里保留了同样的知识图谱与 assistant-skill 交互模型。
+
+graphify 是多模态的，而且这个 TypeScript 端口正按 upstream `v3` 的发布节奏逐版追平。当前 TS runtime 已经覆盖代码、Markdown、PDF、Office 文档、截图、图表和其他图片。本分支还补上了本地音频/视频检测，以及基于 `yt-dlp` + `faster-whisper` 的转录包装；把这些 transcript 并入同一条语义抽取流水线，是下一步 parity 工作。代码 AST 侧通过 tree-sitter 支持 20 种语言（Python、JS、TS、Go、Rust、Java、C、C++、Ruby、C#、Kotlin、Scala、PHP、Swift、Lua、Zig、PowerShell、Elixir、Objective-C、Julia）。
 
 > Andrej Karpathy 会维护一个 `/raw` 文件夹，把论文、推文、截图和笔记都丢进去。graphify 就是在解决这类问题 —— 相比直接读取原始文件，每次查询的 token 消耗可降低 **71.5 倍**，结果还能跨会话持久保存，并且会明确区分哪些内容是实际发现的，哪些只是合理推断。
 
-```
-/graphify .                        # 可用于任意目录：代码库、笔记、论文都可以
+```bash
+$graphify .                        # Codex
+/graphify .                        # Claude Code / Gemini CLI / Copilot CLI / Aider / OpenCode / OpenClaw / Droid / Trae
 ```
 
 ```
@@ -24,15 +27,15 @@ graphify-out/
 
 ## 工作原理
 
-graphify 分两轮执行。第一轮是确定性的 AST 提取，对代码文件做结构分析（类、函数、导入、调用图、docstring、解释性注释），这一轮不需要 LLM。第二轮会并行调用 Claude 子代理处理文档、论文和图片，从中提取概念、关系和设计动机。最后把两边结果合并到一个 NetworkX 图里，用 Leiden 社区发现算法做聚类，并导出成可交互 HTML、可查询 JSON，以及一份人类可读的审计报告。
+graphify 把确定性的结构提取和模型驱动的语义提取组合在一起，中间按需做本地预处理。代码文件先走无 LLM 的 AST 流水线，提取类、函数、导入、调用图、docstring 和 rationale 注释。文档、论文、Office 文件和图片会先被规范化成文本或多模态输入，再交给平台模型驱动的子代理抽取概念、关系和设计动机。本分支还补上了本地音频/视频检测，并可以通过 TypeScript runtime 调用 `yt-dlp` + `faster-whisper` 做转录；把 transcript 自动接到同一条语义抽取流水线，是当前剩余的 upstream parity 项。最终结果会合并到 Graphology 图里，用 Louvain 社区发现做聚类，并导出成可交互 HTML、可查询 JSON 和人类可读的审计报告。
 
-**聚类是基于图拓扑完成的，不依赖 embeddings。** Leiden 按边密度发现社区。Claude 抽取出的语义相似边（`semantically_similar_to`，标记为 `INFERRED`）本来就存在于图中，所以会直接影响社区划分。图结构本身就是相似性信号，不需要额外的 embedding 步骤，也不需要向量数据库。
+**聚类是基于图拓扑完成的，不依赖 embeddings。** Louvain 按边密度发现社区。平台模型抽取出的语义相似边（`semantically_similar_to`，标记为 `INFERRED`）本来就存在于图中，所以会直接影响社区划分。图结构本身就是相似性信号，不需要额外的 embedding 步骤，也不需要向量数据库。
 
 每条关系都会被标记为 `EXTRACTED`（直接在源材料中找到）、`INFERRED`（合理推断，并附带置信度分数）或 `AMBIGUOUS`（有歧义，需要复核）。所以你始终知道哪些是实际发现的，哪些是模型猜出来的。
 
 ## 安装
 
-**要求：** Node.js 20+，并且使用以下平台之一：[Claude Code](https://claude.ai/code)、[Codex](https://openai.com/codex)、[OpenCode](https://opencode.ai)、[OpenClaw](https://openclaw.ai)、[Factory Droid](https://factory.ai) 或 [Trae](https://trae.com)
+**要求：** Node.js 20+，并且使用以下平台之一：[Claude Code](https://claude.ai/code)、[Codex](https://openai.com/codex)、[Gemini CLI](https://github.com/google-gemini/gemini-cli)、[GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli)、[Aider](https://aider.chat)、[OpenCode](https://opencode.ai)、[OpenClaw](https://openclaw.ai)、[Factory Droid](https://factory.ai)、[Trae](https://trae.com) 或 [Cursor](https://cursor.com)
 
 ```bash
 npm install -g graphifyy
@@ -45,20 +48,25 @@ graphify install
 
 | 平台 | 安装命令 |
 |------|----------|
-| Claude Code | `graphify install` |
+| Claude Code（Linux / Mac） | `graphify install` |
+| Claude Code（Windows） | `graphify install`（自动检测）或 `graphify install --platform windows` |
 | Codex | `graphify install --platform codex` |
+| Gemini CLI | `graphify install --platform gemini` |
+| GitHub Copilot CLI | `graphify install --platform copilot` |
+| Aider | `graphify install --platform aider` |
 | OpenCode | `graphify install --platform opencode` |
 | OpenClaw | `graphify install --platform claw` |
 | Factory Droid | `graphify install --platform droid` |
 | Trae | `graphify install --platform trae` |
 | Trae CN | `graphify install --platform trae-cn` |
 
-Codex 用户还需要在 `~/.codex/config.toml` 的 `[features]` 下打开 `multi_agent = true`，这样才能并行提取。OpenClaw 目前的并行 agent 支持还比较早期，所以使用顺序提取。Trae 使用 Agent 工具进行并行子代理调度，**不支持** PreToolUse hook，因此 AGENTS.md 是其常驻机制。
+Codex 用户还需要在 `~/.codex/config.toml` 的 `[features]` 下打开 `multi_agent = true`，这样才能并行提取。Gemini CLI 会把 `/graphify` 作为自定义命令安装到 `~/.gemini/commands/graphify.toml`，项目级安装还会写入 `.gemini/settings.json`，让 Gemini 通过 `graphify serve` 访问 MCP。GitHub Copilot CLI 会安装全局 `~/.copilot/skills/graphify/SKILL.md`。Aider 会安装全局 `~/.aider/graphify/SKILL.md`，但该平台上的语义抽取仍然是串行的。OpenClaw 目前的并行 agent 支持还比较早期，所以使用顺序提取。Trae 使用 Agent 工具进行并行子代理调度，**不支持** PreToolUse hook，因此 AGENTS.md 是其常驻机制。
 
 然后打开你的 AI 编码助手，输入：
 
-```
-/graphify .
+```bash
+$graphify .                        # Codex
+/graphify .                        # Claude Code / Gemini CLI / Copilot CLI / Aider / OpenCode / OpenClaw / Droid / Trae
 ```
 
 ### 让助手始终优先使用图谱（推荐）
@@ -69,11 +77,15 @@ Codex 用户还需要在 `~/.codex/config.toml` 的 `[features]` 下打开 `mult
 |------|------|
 | Claude Code | `graphify claude install` |
 | Codex | `graphify codex install` |
+| Gemini CLI | `graphify gemini install` |
+| GitHub Copilot CLI | `graphify copilot install` |
+| Aider | `graphify aider install` |
 | OpenCode | `graphify opencode install` |
 | OpenClaw | `graphify claw install` |
 | Factory Droid | `graphify droid install` |
 | Trae | `graphify trae install` |
 | Trae CN | `graphify trae-cn install` |
+| Cursor | `graphify cursor install` |
 
 **Claude Code** 会做两件事：
 1. 在 `CLAUDE.md` 中写入一段规则，告诉 Claude 在回答架构问题前先读 `graphify-out/GRAPH_REPORT.md`
@@ -81,7 +93,13 @@ Codex 用户还需要在 `~/.codex/config.toml` 的 `[features]` 下打开 `mult
 
 如果知识图谱存在，Claude 会先看到：_"graphify: Knowledge graph exists. Read graphify-out/GRAPH_REPORT.md for god nodes and community structure before searching raw files."_ —— 这样 Claude 会优先按图谱导航，而不是一上来就 grep 整个项目。
 
-**Codex、OpenCode、OpenClaw、Factory Droid、Trae** 会把同样的规则写进项目根目录的 `AGENTS.md`。这些平台没有 PreToolUse hook，所以 `AGENTS.md` 是它们的常驻机制。
+**Codex** 会把规则写进 `AGENTS.md`，并在 `.codex/hooks.json` 里安装 PreToolUse hook。  
+**Gemini CLI** 会写入项目根目录的 `GEMINI.md`，并在 `.gemini/settings.json` 中注册项目级 `graphify` MCP server。  
+**GitHub Copilot CLI** 依赖全局 `~/.copilot/skills/graphify/SKILL.md`，这个端口里没有单独的项目级 hook。  
+**Aider** 会写入项目根目录的 `AGENTS.md`，并依赖全局 `~/.aider/graphify/SKILL.md`，但目前语义抽取仍是串行。  
+**OpenCode** 会写入 `AGENTS.md`，并在 `.opencode/plugins/graphify.js` 里安装项目级 `tool.execute.before` 插件，再通过 `opencode.json` 注册。  
+**Cursor** 会写入 `.cursor/rules/graphify.mdc`，并设置 `alwaysApply: true`。  
+**OpenClaw、Factory Droid、Trae、Trae CN** 会把规则写进项目根目录的 `AGENTS.md`，这些平台没有 Claude/Codex 风格的 PreToolUse hook，所以 `AGENTS.md` 是常驻机制。
 
 卸载时使用对应平台的 uninstall 命令即可（例如 `graphify claude uninstall`）。
 
@@ -150,6 +168,14 @@ graphify hook status
 graphify claude install            # CLAUDE.md + PreToolUse hook（Claude Code）
 graphify claude uninstall
 graphify codex install             # AGENTS.md（Codex）
+graphify gemini install            # GEMINI.md + .gemini/settings.json（Gemini CLI）
+graphify gemini uninstall
+graphify copilot install           # ~/.copilot/skills/graphify/SKILL.md（GitHub Copilot CLI）
+graphify copilot uninstall
+graphify aider install             # AGENTS.md（Aider）
+graphify aider uninstall
+graphify cursor install            # .cursor/rules/graphify.mdc（Cursor）
+graphify cursor uninstall
 graphify opencode install          # AGENTS.md（OpenCode）
 graphify claw install              # AGENTS.md（OpenClaw）
 graphify droid install             # AGENTS.md（Factory Droid）
@@ -163,10 +189,12 @@ graphify trae-cn uninstall
 
 | 类型 | 扩展名 | 提取方式 |
 |------|--------|----------|
-| 代码 | `.py .ts .js .go .rs .java .c .cpp .rb .cs .kt .scala .php` | tree-sitter AST + 调用图 + docstring / 注释中的 rationale |
-| 文档 | `.md .txt .rst` | 通过 Claude 提取概念、关系和设计动机 |
+| 代码 | `.py .ts .js .jsx .tsx .go .rs .java .c .cpp .rb .cs .kt .scala .php .swift .lua .zig .ps1 .ex .exs .m .mm .jl` | tree-sitter AST + 调用图 + docstring / 注释中的 rationale |
+| 文档 | `.md .txt .rst` | 通过当前平台模型提取概念、关系和设计动机 |
+| Office | `.docx .xlsx` | 先转换成 markdown，再交给当前平台模型做抽取 |
 | 论文 | `.pdf` | 引文挖掘 + 概念提取 |
-| 图片 | `.png .jpg .webp .gif` | Claude vision —— 截图、图表、任意语言都可以 |
+| 图片 | `.png .jpg .webp .gif` | 平台多模态视觉 —— 截图、图表、任意语言都可以 |
+| 音频 / 视频 | `.mp4 .mov .webm .mkv .avi .m4v .mp3 .wav .m4a .ogg` | 本地检测；本分支的 TS runtime 已支持 `yt-dlp` + `faster-whisper` 转录包装 |
 
 ## 你会得到什么
 
@@ -204,11 +232,19 @@ Token 压缩效果会随着语料规模增大而更明显。6 个文件本来就
 
 ## 隐私
 
-graphify 会把文档、论文和图片的内容发送给你所用 AI 编码助手背后的模型 API 来做语义提取 —— 可能是 Anthropic（Claude Code）、OpenAI（Codex），或者你当前平台使用的其他提供方。代码文件则完全在本地通过 tree-sitter AST 处理，不会把代码内容发出去。项目本身没有任何遥测、使用跟踪或分析。唯一的网络请求就是语义提取阶段调用你平台自己的模型 API，使用的也是你自己的 API key。
+graphify 会把文档、论文和图片的内容发送给你所用 AI 编码助手背后的模型 API 来做语义提取 —— 可能是 Anthropic（Claude Code）、OpenAI（Codex）、Google（Gemini CLI），或者你当前平台使用的其他提供方。代码文件则完全在本地通过 tree-sitter AST 处理，不会把代码内容发出去。若你启用本分支的音频/视频转录能力，这一步会通过你本机上的 `yt-dlp` + `faster-whisper` 工具链完成。项目本身没有任何遥测、使用跟踪或分析。网络请求只包括你显式要求 graphify 拉取的 URL，以及语义提取阶段调用你平台自己的模型 API，使用的也是你自己的 API key。
 
 ## 技术栈
 
-NetworkX + Leiden（graspologic）+ tree-sitter + vis.js。语义提取由 Claude（Claude Code）、GPT-4（Codex）或你当前平台所运行的模型完成。不需要 Neo4j，不需要 server，整体是纯本地运行。
+Graphology + Louvain（`graphology-communities-louvain`）+ tree-sitter + vis-network，再加上 `pdf-parse`、`mammoth`、`exceljs`、`turndown`，以及本分支中按 upstream 对齐的 `yt-dlp` + `faster-whisper` 包装。语义提取由你当前平台运行的模型完成（Claude Code、Codex、Gemini CLI 或其他已支持客户端）。默认 HTML 输出是纯静态文件，不需要 Neo4j。
+
+## 致谢
+
+本仓库是 [Safi Shamsi](https://github.com/safishamsi/graphify) 原始 Graphify 项目的 TypeScript 端口。当前代码库保留了原项目的 assistant-skill 工作流和知识图谱模型，同时把受维护的 runtime 迁移到了仓库根目录的 TypeScript 实现。
+
+## 许可证
+
+MIT。见 [LICENSE](LICENSE)。
 
 <details>
 <summary>贡献</summary>

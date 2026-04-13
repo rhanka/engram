@@ -4,14 +4,17 @@
 
 [![TypeScript CI](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=v3)](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml)
 
-**AIコーディングアシスタント向けのスキル。** Claude Code、Codex、OpenCode、OpenClaw、Factory Droid で `/graphify` と入力するだけで、ファイルを読み込んでナレッジグラフを構築し、あなたが気づいていなかった構造を返します。コードベースをより速く理解し、アーキテクチャ上の意思決定の「なぜ」を見つけ出します。
+**AIコーディングアシスタント向けのスキル。** Claude Code、Gemini CLI、GitHub Copilot CLI、Aider、OpenCode、OpenClaw、Factory Droid、Trae では `/graphify`、Codex では `$graphify` と入力すると、ファイルを読み込んでナレッジグラフを構築し、あなたが気づいていなかった構造を返します。コードベースをより速く理解し、アーキテクチャ上の意思決定の「なぜ」を見つけ出します。
 
-完全にマルチモーダル対応。コード、PDF、Markdown、スクリーンショット、図、ホワイトボード写真、他言語の画像まで――graphify は Claude Vision を使ってそれらすべてから概念と関係性を抽出し、1 つのグラフに接続します。tree-sitter AST により 19 言語をサポート（Python、JS、TS、Go、Rust、Java、C、C++、Ruby、C#、Kotlin、Scala、PHP、Swift、Lua、Zig、PowerShell、Elixir、Objective-C）。
+このリポジトリは元の Graphify プロジェクトの保守中 TypeScript ポートです。製品の方向性、ワークフロー、初期実装は [Safi Shamsi](https://github.com/safishamsi/graphify) による原典プロジェクトに依拠しています。
+
+graphify はマルチモーダルであり、この TypeScript ポートは upstream `v3` に対してリリース単位でキャッチアップしています。現在の TS ランタイムはコード、Markdown、PDF、Office 文書、スクリーンショット、図表、その他の画像を処理できます。このブランチではさらにローカルの音声/動画検出と `yt-dlp` + `faster-whisper` による文字起こしラッパーを追加しています。生成された transcript を同じ意味抽出パスに流し込むのが次の parity 作業です。tree-sitter AST により 20 言語をサポートします（Python、JS、TS、Go、Rust、Java、C、C++、Ruby、C#、Kotlin、Scala、PHP、Swift、Lua、Zig、PowerShell、Elixir、Objective-C、Julia）。
 
 > Andrej Karpathy は論文、ツイート、スクリーンショット、メモを放り込む `/raw` フォルダを持っています。graphify はまさにその問題への答えです――生ファイルを読むのに比べて1クエリあたりのトークン数が 71.5 倍少なく、セッションをまたいで永続化され、見つけたものと推測したものを正直に区別します。
 
-```
-/graphify .                        # どのフォルダでも動作 - コードベース、メモ、論文、なんでも
+```bash
+$graphify .                        # Codex
+/graphify .                        # Claude Code / Gemini CLI / Copilot CLI / Aider / OpenCode / OpenClaw / Droid / Trae
 ```
 
 ```
@@ -36,15 +39,15 @@ dist/
 
 ## 仕組み
 
-graphify は 2 パスで動作します。まず、決定論的な AST パスがコードファイルから構造（クラス、関数、インポート、コールグラフ、docstring、根拠コメント）を LLM なしで抽出します。次に、Claude サブエージェントがドキュメント、論文、画像に対して並列に実行され、概念、関係性、設計の根拠を抽出します。結果は NetworkX グラフにマージされ、Leiden コミュニティ検出でクラスタリングされ、インタラクティブ HTML、クエリ可能な JSON、平易な言葉の監査レポートとしてエクスポートされます。
+graphify は決定論的な構造抽出とモデル駆動の意味抽出を組み合わせ、必要に応じてその間にローカル前処理を挟みます。コードは LLM を使わない AST パスでクラス、関数、インポート、コールグラフ、docstring、根拠コメントを抽出します。ドキュメント、論文、Office 文書、画像はテキストまたはマルチモーダル入力に正規化したうえで、プラットフォーム側モデルのサブエージェントが概念、関係、設計意図を抽出します。このキャッチアップブランチでは音声/動画もローカルで検出でき、TypeScript ランタイムから `yt-dlp` + `faster-whisper` で文字起こしできます。生成 transcript を同じ意味抽出パスに接続するのが残っている upstream parity 項目です。結果は Graphology グラフにマージされ、Louvain コミュニティ検出でクラスタリングされ、インタラクティブ HTML、クエリ可能な JSON、平易な監査レポートとしてエクスポートされます。
 
-**クラスタリングはグラフトポロジベース――埋め込みは使いません。** Leiden はエッジ密度によってコミュニティを見つけます。Claude が抽出する意味的類似性エッジ（`semantically_similar_to`、INFERRED とマーク）は既にグラフに含まれているため、コミュニティ検出に直接影響します。グラフ構造そのものが類似性シグナルであり――別途の埋め込みステップやベクターデータベースは不要です。
+**クラスタリングはグラフトポロジベースで、埋め込みは使いません。** Louvain はエッジ密度によってコミュニティを見つけます。プラットフォームモデルが抽出する意味的類似性エッジ（`semantically_similar_to`、`INFERRED`）は既にグラフに含まれているため、コミュニティ検出に直接影響します。グラフ構造そのものが類似性シグナルであり、別途の embedding ステップやベクターデータベースは不要です。
 
 すべての関係は `EXTRACTED`（ソースから直接見つかった）、`INFERRED`（合理的な推論、信頼度スコア付き）、`AMBIGUOUS`（レビュー対象としてフラグ付け）のいずれかでタグ付けされます。何が見つかったもので何が推測されたものか、常に分かります。
 
 ## インストール
 
-**必要なもの:** Node.js 20+ および以下のいずれか： [Claude Code](https://claude.ai/code), [Codex](https://openai.com/codex), [OpenCode](https://opencode.ai), [OpenClaw](https://openclaw.ai), または [Factory Droid](https://factory.ai)
+**必要なもの:** Node.js 20+ と、次のいずれかのクライアント: [Claude Code](https://claude.ai/code), [Codex](https://openai.com/codex), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli), [Aider](https://aider.chat), [OpenCode](https://opencode.ai), [OpenClaw](https://openclaw.ai), [Factory Droid](https://factory.ai), [Trae](https://trae.com), [Cursor](https://cursor.com)
 
 ```bash
 npm install -g graphifyy
@@ -60,16 +63,22 @@ graphify install
 | Claude Code (Linux/Mac) | `graphify install` |
 | Claude Code (Windows) | `graphify install`（自動検出）または `graphify install --platform windows` |
 | Codex | `graphify install --platform codex` |
+| Gemini CLI | `graphify install --platform gemini` |
+| GitHub Copilot CLI | `graphify install --platform copilot` |
+| Aider | `graphify install --platform aider` |
 | OpenCode | `graphify install --platform opencode` |
 | OpenClaw | `graphify install --platform claw` |
 | Factory Droid | `graphify install --platform droid` |
+| Trae | `graphify install --platform trae` |
+| Trae CN | `graphify install --platform trae-cn` |
 
-Codex ユーザーは並列抽出のために `~/.codex/config.toml` の `[features]` の下に `multi_agent = true` も必要です。Factory Droid は並列サブエージェントディスパッチに `Task` ツールを使用します。OpenClaw は逐次抽出を使用します（並列エージェントサポートはこのプラットフォームではまだ初期段階です）。
+Codex ユーザーは並列抽出のために `~/.codex/config.toml` の `[features]` の下に `multi_agent = true` も必要です。Gemini CLI は `/graphify` を `~/.gemini/commands/graphify.toml` のカスタムコマンドとして登録し、プロジェクトインストール時には `.gemini/settings.json` に `graphify serve` 用の MCP 設定も書き込みます。GitHub Copilot CLI はグローバルな `~/.copilot/skills/graphify/SKILL.md` を使います。Aider は `~/.aider/graphify/SKILL.md` を使いますが、このプラットフォームでは意味抽出はまだ逐次実行です。Factory Droid は並列サブエージェントディスパッチに `Task` ツールを使用します。OpenClaw は逐次抽出を使用します（並列エージェントサポートはこのプラットフォームではまだ初期段階です）。Trae は `Agent` ツールを使いますが、Claude/Codex 型の PreToolUse フックは持たないため `AGENTS.md` が常時有効の仕組みです。
 
 次に、AI コーディングアシスタントを開いて入力します：
 
-```
-/graphify .
+```bash
+$graphify .                        # Codex
+/graphify .                        # Claude Code / Gemini CLI / Copilot CLI / Aider / OpenCode / OpenClaw / Droid / Trae
 ```
 
 注意：Codex はスキル呼び出しに `/` ではなく `$` を使用するため、代わりに `$graphify .` と入力してください。
@@ -82,13 +91,25 @@ Codex ユーザーは並列抽出のために `~/.codex/config.toml` の `[featu
 |----------|---------|
 | Claude Code | `graphify claude install` |
 | Codex | `graphify codex install` |
+| Gemini CLI | `graphify gemini install` |
+| GitHub Copilot CLI | `graphify copilot install` |
+| Aider | `graphify aider install` |
+| Cursor | `graphify cursor install` |
 | OpenCode | `graphify opencode install` |
 | OpenClaw | `graphify claw install` |
 | Factory Droid | `graphify droid install` |
+| Trae | `graphify trae install` |
+| Trae CN | `graphify trae-cn install` |
 
 **Claude Code** は 2 つのことを行います：Claude にアーキテクチャの質問に答える前に `graphify-out/GRAPH_REPORT.md` を読むように指示する `CLAUDE.md` セクションを書き込み、すべての Glob と Grep 呼び出しの前に発火する **PreToolUse フック**（`settings.json`）をインストールします。ナレッジグラフが存在する場合、Claude は次のメッセージを見ます：_"graphify: Knowledge graph exists. Read GRAPH_REPORT.md for god nodes and community structure before searching raw files."_ ――これにより Claude はすべてのファイルを grep するのではなく、グラフを介してナビゲートします。
 
-**Codex、OpenCode、OpenClaw、Factory Droid** は同じルールをプロジェクトルートの `AGENTS.md` に書き込みます。これらのプラットフォームは PreToolUse フックをサポートしていないため、AGENTS.md が常時有効のメカニズムとなります。
+**Codex** は `AGENTS.md` にルールを書き込み、`.codex/hooks.json` に PreToolUse フックも追加します。  
+**Gemini CLI** は `GEMINI.md` を書き込み、`.gemini/settings.json` でプロジェクトスコープの `graphify` MCP サーバーを登録します。  
+**GitHub Copilot CLI** はグローバル `~/.copilot/skills/graphify/SKILL.md` を使います。  
+**Aider** はプロジェクトルートの `AGENTS.md` とグローバル `~/.aider/graphify/SKILL.md` を使いますが、意味抽出はまだ逐次です。  
+**Cursor** は `.cursor/rules/graphify.mdc` を `alwaysApply: true` で書き込みます。  
+**OpenCode** は `AGENTS.md` に加え、`.opencode/plugins/graphify.js` と `opencode.json` でプロジェクトローカルプラグインを登録します。  
+**OpenClaw、Factory Droid、Trae、Trae CN** は同じルールをプロジェクトルートの `AGENTS.md` に書き込みます。これらのプラットフォームは Claude/Codex 型の PreToolUse フックをサポートしていないため、AGENTS.md が常時有効のメカニズムとなります。
 
 アンインストールは対応するアンインストールコマンドで行います（例：`graphify claude uninstall`）。
 
@@ -158,9 +179,21 @@ graphify hook status
 graphify claude install            # CLAUDE.md + PreToolUse フック（Claude Code）
 graphify claude uninstall
 graphify codex install             # AGENTS.md（Codex）
+graphify gemini install            # GEMINI.md + .gemini/settings.json（Gemini CLI）
+graphify gemini uninstall
+graphify copilot install           # ~/.copilot/skills/graphify/SKILL.md（GitHub Copilot CLI）
+graphify copilot uninstall
+graphify aider install             # AGENTS.md（Aider）
+graphify aider uninstall
+graphify cursor install            # .cursor/rules/graphify.mdc（Cursor）
+graphify cursor uninstall
 graphify opencode install          # AGENTS.md（OpenCode）
 graphify claw install              # AGENTS.md（OpenClaw）
 graphify droid install             # AGENTS.md（Factory Droid）
+graphify trae install              # AGENTS.md（Trae）
+graphify trae uninstall
+graphify trae-cn install           # AGENTS.md（Trae CN）
+graphify trae-cn uninstall
 
 # ターミナルから直接グラフをクエリ（AI アシスタント不要）
 graphify query "アテンションとオプティマイザを結ぶものは？"
@@ -173,11 +206,12 @@ graphify query "..." --graph path/to/graph.json
 
 | タイプ | 拡張子 | 抽出方法 |
 |------|-----------|------------|
-| コード | `.py .ts .js .go .rs .java .c .cpp .rb .cs .kt .scala .php .swift .lua .zig .ps1 .ex .exs .m .mm` | tree-sitter による AST + コールグラフ + docstring/コメントの根拠 |
-| ドキュメント | `.md .txt .rst` | Claude による概念 + 関係性 + 設計根拠 |
-| Office | `.docx .xlsx` | Markdown に変換した後 Claude で抽出 |
+| コード | `.py .ts .js .jsx .tsx .go .rs .java .c .cpp .rb .cs .kt .scala .php .swift .lua .zig .ps1 .ex .exs .m .mm .jl` | tree-sitter による AST + コールグラフ + docstring / コメントの根拠 |
+| ドキュメント | `.md .txt .rst` | 現在のプラットフォームモデルによる概念 + 関係性 + 設計根拠 |
+| Office | `.docx .xlsx` | Markdown に変換した後、現在のプラットフォームモデルで抽出 |
 | 論文 | `.pdf` | 引用マイニング + 概念抽出 |
-| 画像 | `.png .jpg .webp .gif` | Claude Vision - スクリーンショット、図、任意の言語 |
+| 画像 | `.png .jpg .webp .gif` | プラットフォームのマルチモーダルモデル - スクリーンショット、図、任意の言語 |
+| 音声 / 動画 | `.mp4 .mov .webm .mkv .avi .m4v .mp3 .wav .m4a .ogg` | ローカルで検出。現在のキャッチアップブランチでは `yt-dlp` + `faster-whisper` による文字起こしラッパーを搭載 |
 
 ## 得られるもの
 
@@ -215,11 +249,19 @@ graphify query "..." --graph path/to/graph.json
 
 ## プライバシー
 
-graphify はドキュメント、論文、画像の意味的抽出のために、ファイル内容を AI コーディングアシスタントの基盤モデル API に送信します――Anthropic（Claude Code）、OpenAI（Codex）、またはプラットフォームが使用するプロバイダーです。コードファイルは tree-sitter AST を介してローカルで処理されます――コードに関してはファイル内容がマシンから出ることはありません。テレメトリ、利用追跡、分析は一切ありません。ネットワーク呼び出しは抽出中のプラットフォームのモデル API への呼び出しのみで、あなた自身の API キーを使用します。
+graphify はドキュメント、論文、画像の意味的抽出のために、ファイル内容を AI コーディングアシスタントの基盤モデル API に送信します。Anthropic（Claude Code）、OpenAI（Codex）、Google（Gemini CLI）など、利用中プラットフォームのプロバイダーが対象です。コードファイルは tree-sitter AST を介してローカルで処理されるため、コードに関してはファイル内容がマシンから出ることはありません。音声/動画の文字起こしを使う場合、その工程はローカルの `yt-dlp` + `faster-whisper` ツールチェーンで実行されます。テレメトリ、利用追跡、分析は一切ありません。ネットワーク呼び出しは、あなたが明示的に ingestion を指示した URL 取得と、抽出中のプラットフォームのモデル API 呼び出しのみです。
 
 ## 技術スタック
 
-NetworkX + Leiden（graspologic） + tree-sitter + vis.js。意味的抽出は Claude（Claude Code）、GPT-4（Codex）、またはプラットフォームが実行するモデルを介して行われます。Neo4j は不要、サーバーも不要、完全にローカルで実行されます。
+Graphology + Louvain（`graphology-communities-louvain`） + tree-sitter + vis-network に加え、`pdf-parse`、`mammoth`、`exceljs`、`turndown`、そしてこのキャッチアップブランチで upstream に合わせて導入した `yt-dlp` + `faster-whisper` ラッパーを使います。意味的抽出は利用中プラットフォームのモデル（Claude Code、Codex、Gemini CLI など）を介して行われます。デフォルトの HTML 出力は完全な静的ファイルです。
+
+## 謝辞
+
+このリポジトリは [Safi Shamsi](https://github.com/safishamsi/graphify) による元の Graphify プロジェクトの TypeScript ポートです。現行コードベースは assistant-skill ワークフローとナレッジグラフモデルを維持しつつ、保守されるランタイムをリポジトリルートの TypeScript 実装へ移しています。
+
+## ライセンス
+
+MIT。詳細は [LICENSE](LICENSE) を参照してください。
 
 ## スター履歴
 

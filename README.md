@@ -8,7 +8,7 @@
 
 This repository is the maintained TypeScript port of the original Graphify project. Thanks to the original work by [Safi Shamsi](https://github.com/safishamsi/graphify) for the product direction, workflow, and initial implementation.
 
-Fully multimodal. Drop in code, PDFs, markdown, screenshots, diagrams, whiteboard photos, even images in other languages - graphify uses your platform's multimodal model to extract concepts and relationships from all of it and connects them into one graph. 20 languages supported via tree-sitter AST (Python, JS, TS, Go, Rust, Java, C, C++, Ruby, C#, Kotlin, Scala, PHP, Swift, Lua, Zig, PowerShell, Elixir, Objective-C, Julia).
+Multimodal, with the TypeScript catch-up tracked release-by-release against upstream `v3`. Code, markdown, PDFs, Office docs, screenshots, diagrams, and other images already flow through the current TS runtime. This branch also adds local audio/video detection plus a `yt-dlp` + `faster-whisper` transcription wrapper; feeding those transcripts into the same assistant-driven semantic pass is the next parity step. 20 languages are supported via tree-sitter AST (Python, JS, TS, Go, Rust, Java, C, C++, Ruby, C#, Kotlin, Scala, PHP, Swift, Lua, Zig, PowerShell, Elixir, Objective-C, Julia).
 
 > Andrej Karpathy keeps a `/raw` folder where he drops papers, tweets, screenshots, and notes. graphify is the answer to that problem - 71.5x fewer tokens per query vs reading the raw files, persistent across sessions, honest about what it found vs guessed.
 
@@ -41,7 +41,7 @@ Same syntax as `.gitignore`. Patterns are discovered from the folder you run gra
 
 ## How it works
 
-graphify runs in two passes. First, a deterministic AST pass extracts structure from code files (classes, functions, imports, call graphs, docstrings, rationale comments) with no LLM needed. Second, model-backed subagents run in parallel over docs, papers, and images to extract concepts, relationships, and design rationale. The results are merged into a Graphology graph, clustered with Louvain community detection, and exported as interactive HTML, queryable JSON, and a plain-language audit report.
+graphify combines a deterministic structural pass with a model-backed semantic pass, with local preprocessing in between when needed. Code goes through a no-LLM AST pass that extracts classes, functions, imports, call graphs, docstrings, and rationale comments. Docs, papers, Office files, and images are normalized into text or multimodal inputs, then platform-backed subagents extract concepts, relationships, and design rationale. On this catch-up branch, audio/video files are also detected locally and can be transcribed through the TypeScript runtime with `yt-dlp` + `faster-whisper`; wiring those transcripts into the same semantic pass is the remaining upstream parity step. The results are merged into a Graphology graph, clustered with Louvain community detection, and exported as interactive HTML, queryable JSON, and a plain-language audit report.
 
 **Clustering is graph-topology-based — no embeddings.** Louvain finds communities by edge density. The semantic similarity edges that the model extracts (`semantically_similar_to`, marked INFERRED) are already in the graph, so they influence community detection directly. The graph structure is the similarity signal — no separate embedding step or vector database needed.
 
@@ -262,6 +262,7 @@ Works with any mix of file types:
 | Office | `.docx .xlsx` | Converted to markdown then extracted via the platform model |
 | Papers | `.pdf` | Citation mining + concept extraction |
 | Images | `.png .jpg .webp .gif` | Multimodal vision - screenshots, diagrams, any language |
+| Audio / Video | `.mp4 .mov .webm .mkv .avi .m4v .mp3 .wav .m4a .ogg` | Detected locally; local transcription via `yt-dlp` + `faster-whisper` is available in the TS runtime on this catch-up branch |
 
 ## What you get
 
@@ -299,11 +300,11 @@ Token reduction scales with corpus size. 6 files fits in a context window anyway
 
 ## Privacy
 
-graphify sends file contents to your AI coding assistant's underlying model API for semantic extraction of docs, papers, and images — Anthropic (Claude Code), OpenAI (Codex), or whichever provider your platform uses. Code files are processed locally via tree-sitter AST — no file contents leave your machine for code. No telemetry, usage tracking, or analytics of any kind. The only network calls are to your platform's model API during extraction, using your own API key.
+graphify sends file contents to your AI coding assistant's underlying model API for semantic extraction of docs, papers, and images — Anthropic (Claude Code), OpenAI (Codex), Google (Gemini CLI), or whichever provider your platform uses. Code files are processed locally via tree-sitter AST — no file contents leave your machine for code. When you use audio/video transcription on this catch-up branch, that step runs through your local `yt-dlp` + `faster-whisper` toolchain. No telemetry, usage tracking, or analytics of any kind. The only network calls are to your platform's model API during extraction, using your own API key, plus any URL fetches you explicitly ask graphify to ingest.
 
 ## Tech stack
 
-Graphology + Louvain (`graphology-communities-louvain`) + tree-sitter + vis-network. Semantic extraction via your platform's model (Claude Code, Codex, or another supported client). No Neo4j required, and the default HTML output is fully static.
+Graphology + Louvain (`graphology-communities-louvain`) + tree-sitter + vis-network, with `pdf-parse`, `mammoth`, `exceljs`, `turndown`, and the upstream-aligned `yt-dlp` + `faster-whisper` wrapper on this catch-up branch. Semantic extraction runs through your platform's model (Claude Code, Codex, Gemini CLI, or another supported client). No Neo4j required, and the default HTML output is fully static.
 
 ## Acknowledgements
 
