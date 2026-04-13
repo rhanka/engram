@@ -434,13 +434,48 @@ function checkSkillVersion(skillDst: string): void {
   }
 }
 
+export function getPlatformsToCheck(argv: string[]): string[] {
+  const seen = new Set<string>();
+  const add = (platformName: string | undefined): void => {
+    if (!platformName || !(platformName in PLATFORM_CONFIG)) return;
+    seen.add(platformName);
+  };
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const token = argv[i];
+    if (token in PLATFORM_CONFIG) {
+      add(token);
+      continue;
+    }
+    if (token === "--platform") {
+      add(argv[i + 1]);
+      i += 1;
+      continue;
+    }
+    if (token.startsWith("--platform=")) {
+      add(token.slice("--platform=".length));
+    }
+  }
+
+  if (seen.size > 0) {
+    return [...seen];
+  }
+
+  if (argv[0] === "install") {
+    return [platform() === "win32" ? "windows" : "claude"];
+  }
+
+  return [];
+}
+
 // ---------------------------------------------------------------------------
 // Main CLI
 // ---------------------------------------------------------------------------
 
 export async function main(): Promise<void> {
-  // Check installed skill versions
-  for (const cfg of Object.values(PLATFORM_CONFIG)) {
+  // Only warn for the platform(s) relevant to the current command.
+  for (const platformName of getPlatformsToCheck(process.argv.slice(2))) {
+    const cfg = PLATFORM_CONFIG[platformName];
     checkSkillVersion(join(homedir(), cfg.skill_dst));
   }
 

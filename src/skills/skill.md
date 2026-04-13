@@ -152,7 +152,7 @@ const { checkSemanticCache } = require('graphifyy');
 const detect = JSON.parse(fs.readFileSync('graphify-out/.graphify_detect.json', 'utf-8'));
 const allFiles = Object.values(detect.files).flat();
 
-const { cachedNodes, cachedEdges, cachedHyperedges, uncached } = checkSemanticCache(allFiles);
+const [cachedNodes, cachedEdges, cachedHyperedges, uncached] = checkSemanticCache(allFiles);
 
 if (cachedNodes.length || cachedEdges.length || cachedHyperedges.length) {
     fs.writeFileSync('graphify-out/.graphify_cached.json', JSON.stringify({nodes: cachedNodes, edges: cachedEdges, hyperedges: cachedHyperedges}));
