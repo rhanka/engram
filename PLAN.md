@@ -118,7 +118,7 @@ Plan:
 - [x] Mark Python-only crash fixes as `n/a` if there is no TS analogue
 - [x] Add install + docs + regression coverage for Cursor if implemented
 - [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.22`
-- [ ] Commit the `v0.3.22` catch-up lot
+- [x] Commit the `v0.3.22` catch-up lot
 
 ## Lot 6 - Upstream `v0.3.23`
 
