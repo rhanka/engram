@@ -67,7 +67,7 @@ Plan:
 - [x] If parity is not required, document the intentional divergence in [UPSTREAM_GAP.md](UPSTREAM_GAP.md)
 - [x] Add regression coverage for OpenCode install idempotency and resulting config shape
 - [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.19`
-- [ ] Commit the `v0.3.19` catch-up lot
+- [x] Commit the `v0.3.19` catch-up lot
 
 ## Lot 3 - Upstream `v0.3.20`
 
