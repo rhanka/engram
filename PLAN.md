@@ -84,7 +84,7 @@ Plan:
 - [x] Decide whether missing grammar/runtime failures should be hardened further in TS
 - [x] Add regression coverage if any runtime/version guard is introduced
 - [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.20`
-- [ ] Commit the `v0.3.20` catch-up lot
+- [x] Commit the `v0.3.20` catch-up lot
 
 ## Lot 4 - Upstream `v0.3.21`
 
