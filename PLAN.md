@@ -238,16 +238,19 @@ Upstream scope:
 - removal of Anthropic API dependency from transcription flow
 
 Plan:
-- [ ] Audit upstream commits `79acb7e`, `f758911`, `a2872ca`, `2c21bc0`, `699e996`
-- [ ] Decide whether this branch should absorb multimodal/audio-video support now or defer it to a dedicated feature branch
-- [ ] If deferred, mark the whole block as intentionally postponed in [UPSTREAM_GAP.md](UPSTREAM_GAP.md)
-- [ ] If accepted, split implementation into sub-lots:
+- [x] Audit upstream commits `79acb7e`, `f758911`, `a2872ca`, `2c21bc0`, `699e996`
+- [x] Decide whether this branch should absorb multimodal/audio-video support now or defer it to a dedicated feature branch
+- [ ] Keep the implementation ISO in behavior while staying TS-first in orchestration:
+  - [x] Do not reintroduce a hidden Python `graphify` runtime fallback
+  - [x] Prefer wrapping the same upstream toolchain (`yt-dlp` + `faster-whisper`) from the TS runtime over inventing a Node-native alternative
+- [ ] Split implementation into sub-lots:
   - [ ] corpus detection for audio/video
   - [ ] YouTube/download ingestion path
   - [ ] local transcription runtime
-  - [ ] docs and CI support
-- [ ] Keep this block separate from the pure parity lots above
-- [ ] Commit only after that decision is explicit
+  - [ ] skill/runtime wiring so transcripts feed semantic extraction
+  - [ ] docs, package metadata, and CI support
+- [x] Keep this block separate from the pure parity lots above
+- [x] Commit only after that decision is explicit
 
 ## Exit Criteria For This Branch
 
