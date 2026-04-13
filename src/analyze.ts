@@ -7,6 +7,12 @@ import betweennessCentrality from "graphology-metrics/centrality/betweenness.js"
 import type { GodNodeEntry, SurpriseEntry, SuggestedQuestion, GraphDiffResult } from "./types.js";
 import { type NumericMapLike, toNumericMap } from "./collections.js";
 import { cohesionScore } from "./cluster.js";
+import {
+  CODE_EXTENSIONS,
+  DOC_EXTENSIONS,
+  PAPER_EXTENSIONS,
+  IMAGE_EXTENSIONS,
+} from "./detect.js";
 
 type GraphInstance = InstanceType<typeof Graph>;
 
@@ -44,18 +50,14 @@ export function isConceptNode(G: Graph, nodeId: string): boolean {
   return false;
 }
 
-const CODE_EXTENSIONS = new Set([
-  "py", "ts", "tsx", "js", "go", "rs", "java", "rb", "cpp", "c", "h", "cs", "kt", "scala", "php",
-]);
-const DOC_EXTENSIONS = new Set(["md", "txt", "rst"]);
-const PAPER_EXTENSIONS = new Set(["pdf"]);
-const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp", "gif", "svg"]);
-
 function fileCategory(path: string): string {
-  const ext = path.includes(".") ? path.split(".").pop()?.toLowerCase() ?? "" : "";
+  const ext = path.includes(".")
+    ? `.${path.split(".").pop()?.toLowerCase() ?? ""}`
+    : "";
   if (CODE_EXTENSIONS.has(ext)) return "code";
   if (PAPER_EXTENSIONS.has(ext)) return "paper";
   if (IMAGE_EXTENSIONS.has(ext)) return "image";
+  if (DOC_EXTENSIONS.has(ext)) return "doc";
   return "doc";
 }
 

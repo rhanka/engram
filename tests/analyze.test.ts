@@ -62,6 +62,28 @@ describe("surprisingConnections", () => {
     G.mergeNode("a", { label: "A", source_file: "a.py" });
     expect(surprisingConnections(G)).toEqual([]);
   });
+
+  it("treats newer code extensions as code instead of docs", () => {
+    const G = new Graph({ type: "undirected" });
+    G.mergeNode("swift_node", {
+      label: "SwiftService",
+      source_file: "Sources/App/main.swift",
+      file_type: "code",
+    });
+    G.mergeNode("zig_node", {
+      label: "ZigWorker",
+      source_file: "src/worker.zig",
+      file_type: "code",
+    });
+    G.mergeEdge("swift_node", "zig_node", {
+      relation: "uses",
+      confidence: "INFERRED",
+    });
+
+    const surprises = surprisingConnections(G, new Map([[0, ["swift_node"]], [1, ["zig_node"]]]));
+    expect(surprises).toHaveLength(1);
+    expect(surprises[0]?.why).not.toContain("crosses file types");
+  });
 });
 
 describe("suggestQuestions", () => {

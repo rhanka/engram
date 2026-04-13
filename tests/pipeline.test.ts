@@ -167,6 +167,8 @@ describe("End-to-end pipeline", () => {
     expect(html).toContain("<!DOCTYPE html>");
     expect(html).toContain("vis-network"); // vis.js
     expect(html).toContain("graphify");
+    expect(html).toContain("network.on('hoverNode'");
+    expect(html).toContain("container.addEventListener('click'");
   });
 
   it("Step 6c - toSvg writes valid SVG", async () => {

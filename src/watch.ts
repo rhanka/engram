@@ -7,17 +7,18 @@
  */
 import { existsSync, mkdirSync, writeFileSync, unlinkSync } from "node:fs";
 import { resolve as pathResolve, extname, basename } from "node:path";
+import {
+  CODE_EXTENSIONS,
+  DOC_EXTENSIONS,
+  PAPER_EXTENSIONS,
+  IMAGE_EXTENSIONS,
+} from "./detect.js";
 
 const WATCHED_EXTENSIONS = new Set([
-  ".py", ".ts", ".js", ".go", ".rs", ".java", ".cpp", ".c", ".rb", ".swift", ".kt",
-  ".cs", ".scala", ".php", ".cc", ".cxx", ".hpp", ".h", ".kts",
-  ".md", ".txt", ".rst", ".pdf",
-  ".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg",
-]);
-
-const CODE_EXTENSIONS = new Set([
-  ".py", ".ts", ".js", ".go", ".rs", ".java", ".cpp", ".c", ".rb", ".swift", ".kt",
-  ".cs", ".scala", ".php", ".cc", ".cxx", ".hpp", ".h", ".kts",
+  ...CODE_EXTENSIONS,
+  ...DOC_EXTENSIONS,
+  ...PAPER_EXTENSIONS,
+  ...IMAGE_EXTENSIONS,
 ]);
 
 // ---------------------------------------------------------------------------

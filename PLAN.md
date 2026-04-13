@@ -8,7 +8,7 @@
 - [x] Confirm upstream target branch for this catch-up: `upstream/v3` at `699e996`
 - [x] Confirm last upstream `v3` tag: `v0.3.28`
 - [x] Record the initial gap table in [UPSTREAM_GAP.md](UPSTREAM_GAP.md)
-- [ ] Keep this file as the execution source of truth for the catch-up branch
+- [x] Keep this file as the execution source of truth for the catch-up branch
 - [ ] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) after every completed lot
 
 ## Guardrails
@@ -17,16 +17,16 @@
 - [ ] Keep the npm/package release version unchanged while doing parity catch-up unless a release lot explicitly requires a bump
 - [ ] Keep one commit group per upstream release bucket where practical
 - [ ] For every implementation lot:
-  - [ ] run targeted tests first
-  - [ ] run full `npm test` before closing the lot
-  - [ ] run `npx graphify hook-rebuild` after code changes
-  - [ ] update this plan and [UPSTREAM_GAP.md](UPSTREAM_GAP.md)
+  - [x] run targeted tests first
+  - [x] run full `npm test` before closing the lot
+  - [x] run `npx graphify hook-rebuild` after code changes
+  - [x] update this plan and [UPSTREAM_GAP.md](UPSTREAM_GAP.md)
 - [ ] Mark Python-only upstream fixes as explicit `n/a` instead of silently ignoring them
 
 ## Lot 0 - Planning Baseline
 
 - [x] Build an initial release-by-release delta map from `v0.3.18` through current `upstream/v3`
-- [ ] Add upstream commit links beside each release lot in this plan
+- [x] Add upstream commit links beside each release lot in this plan
 - [ ] Decide the exact close-out rule for each lot:
   - [ ] `covered`
   - [ ] `partial but acceptable`
@@ -35,6 +35,8 @@
 
 ## Lot 1 - Upstream `v0.3.18`
 
+Upstream commits: `11dff7e`, `29c639d`, `4d8cffe`
+
 Upstream scope:
 - skill coverage fixes
 - Windows skill fixes
@@ -42,16 +44,18 @@ Upstream scope:
 - `.graphify_python` persistence
 
 Plan:
-- [ ] Audit upstream commits `11dff7e`, `29c639d`, `4d8cffe`
-- [ ] Diff current TS skill files against the upstream `v0.3.18` behavior changes
-- [ ] Verify whether the Windows skill still misses any commands or examples
-- [ ] Verify whether the click-detection issue has a TS/UI equivalent
-- [ ] Mark `.graphify_python` persistence as `n/a` for the TS-only runtime unless a real TS runtime-proof persistence gap exists
-- [ ] Add targeted regressions for any retained fixes
-- [ ] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.18`
+- [x] Audit upstream commits `11dff7e`, `29c639d`, `4d8cffe`
+- [x] Diff current TS skill files against the upstream `v0.3.18` behavior changes
+- [x] Verify whether the Windows skill still misses any commands or examples
+- [x] Verify whether the click-detection issue has a TS/UI equivalent
+- [x] Mark `.graphify_python` persistence as `n/a` for the TS-only runtime unless a real TS runtime-proof persistence gap exists
+- [x] Add targeted regressions for any retained fixes
+- [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.18`
 - [ ] Commit the `v0.3.18` catch-up lot
 
 ## Lot 2 - Upstream `v0.3.19`
+
+Upstream commits: `3501605`, `e1864d7`, `096a76f`
 
 Upstream scope:
 - OpenCode `tool.execute.before` plugin integration
@@ -66,6 +70,8 @@ Plan:
 - [ ] Commit the `v0.3.19` catch-up lot
 
 ## Lot 3 - Upstream `v0.3.20`
+
+Upstream commits: `b7fd5ac`, `b101a99`
 
 Upstream scope:
 - AST call-edge confidence forced to `EXTRACTED`
@@ -82,6 +88,8 @@ Plan:
 
 ## Lot 4 - Upstream `v0.3.21`
 
+Upstream commit: `6f9fc65`
+
 Upstream scope:
 - Codex hook JSON schema fix
 - `#!/bin/sh` portability for Windows hooks
@@ -96,6 +104,8 @@ Plan:
 - [ ] Commit the `v0.3.21` catch-up lot
 
 ## Lot 5 - Upstream `v0.3.22`
+
+Upstream commit: `f770712`
 
 Upstream scope:
 - Cursor support
@@ -112,6 +122,8 @@ Plan:
 
 ## Lot 6 - Upstream `v0.3.23`
 
+Upstream commit: `dcc402e`
+
 Upstream scope:
 - Gemini CLI support
 
@@ -123,6 +135,8 @@ Plan:
 - [ ] Commit only if audit finds a real delta
 
 ## Lot 7 - Upstream `v0.3.24`
+
+Upstream commit: `ee43236`
 
 Upstream scope:
 - Codex/OpenCode install idempotency
@@ -136,6 +150,8 @@ Plan:
 - [ ] Commit the `v0.3.24` catch-up lot
 
 ## Lot 8 - Upstream `v0.3.25`
+
+Upstream commit: `1cbcee5`
 
 Upstream scope:
 - Aider support
@@ -164,6 +180,8 @@ Plan:
 
 ## Lot 9 - Upstream `v0.3.26`
 
+Upstream commit: `863100c`
+
 Upstream scope:
 - MCP path validation security fix
 
@@ -176,6 +194,8 @@ Plan:
 
 ## Lot 10 - Upstream `v0.3.27`
 
+Upstream commits: `55964bc`, `af3a3d2`
+
 Upstream scope:
 - Gemini install missing skill file copy
 
@@ -187,6 +207,8 @@ Plan:
 - [ ] Commit only if the audit finds a real delta
 
 ## Lot 11 - Upstream `v0.3.28`
+
+Upstream commits: `210243f`, `f7ee752`
 
 Upstream scope:
 - hook reinstall
@@ -203,6 +225,8 @@ Plan:
 - [ ] Commit the `v0.3.28` catch-up lot
 
 ## Lot 12 - Post-`v0.3.28` Upstream `v3` Commits
+
+Upstream commits: `79acb7e`, `f758911`, `a2872ca`, `2c21bc0`, `699e996`
 
 Upstream scope:
 - audio/video corpus support
