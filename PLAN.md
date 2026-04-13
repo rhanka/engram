@@ -147,7 +147,7 @@ Plan:
 - [x] Audit OpenCode install/uninstall idempotency in TS
 - [x] Add regression coverage if OpenCode still lags
 - [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.24`
-- [ ] Commit the `v0.3.24` catch-up lot
+- [x] Commit the `v0.3.24` catch-up lot
 
 ## Lot 8 - Upstream `v0.3.25`
 
