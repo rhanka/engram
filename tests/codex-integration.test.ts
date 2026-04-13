@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
@@ -79,6 +79,43 @@ describe("Codex integration contract", () => {
 
     expect(() => agentsInstall(dir, "codex")).not.toThrow();
     expect(existsSync(join(dir, ".codex", "hooks.json"))).toBe(true);
+  });
+
+  it("replaces an existing graphify Codex hook instead of keeping stale config", () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-codex-hook-reinstall-"));
+    tempDirs.push(dir);
+    mkdirSync(join(dir, ".codex"), { recursive: true });
+    writeFileSync(
+      join(dir, ".codex", "hooks.json"),
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: "Bash",
+              hooks: [{ type: "command", command: "echo stale graphify hook" }],
+            },
+            {
+              matcher: "Bash",
+              hooks: [{ type: "command", command: "echo unrelated hook" }],
+            },
+          ],
+        },
+      }, null, 2),
+      "utf-8",
+    );
+
+    installCodexHook(dir);
+
+    const hooks = JSON.parse(readFileSync(join(dir, ".codex", "hooks.json"), "utf-8")) as {
+      hooks?: { PreToolUse?: Array<{ hooks?: Array<{ command?: string }> }> };
+    };
+    const commands = (hooks.hooks?.PreToolUse ?? []).flatMap((entry) =>
+      (entry.hooks ?? []).map((hook) => hook.command ?? "")
+    );
+
+    expect(commands.filter((command) => command.includes("graphify"))).toHaveLength(1);
+    expect(commands.some((command) => command.includes("stale graphify hook"))).toBe(false);
+    expect(commands.some((command) => command.includes("unrelated hook"))).toBe(true);
   });
 
   it("writes the corrected Codex hook JSON contract", () => {

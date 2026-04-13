@@ -21,4 +21,12 @@ describe("skill cache examples", () => {
       );
     }
   });
+
+  it("keeps the Windows skill usage lines aligned with upstream v0.3.28", () => {
+    const content = readFileSync(new URL("../src/skills/skill-windows.md", import.meta.url), "utf-8");
+
+    expect(content).toContain("/graphify <path> --directed");
+    expect(content).toContain("/graphify <path> --wiki");
+    expect(content).toContain("/graphify <path> --obsidian --obsidian-dir ~/vaults/my-project");
+  });
 });

@@ -876,7 +876,12 @@ export function toCanvas(
   const CANVAS_COLORS = ["1", "2", "3", "4", "5", "6"];
 
   function safeName(label: string): string {
-    return label.replace(/[\\/*?:"<>|#^[\]]/g, "").trim() || "unnamed";
+    return label
+      .replace(/\r\n/g, " ")
+      .replace(/\r/g, " ")
+      .replace(/\n/g, " ")
+      .replace(/[\\/*?:"<>|#^[\]]/g, "")
+      .trim() || "unnamed";
   }
 
   // Build nodeFilenames if not provided

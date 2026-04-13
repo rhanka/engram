@@ -10,7 +10,13 @@ import { type NumericMapLike, toNumericMap } from "./collections.js";
 import { traversalNeighbors } from "./graph.js";
 
 function safeFilename(name: string): string {
-  return name.replace(/\//g, "-").replace(/ /g, "_").replace(/:/g, "-");
+  return name
+    .replace(/\r\n/g, " ")
+    .replace(/\r/g, " ")
+    .replace(/\n/g, " ")
+    .replace(/\//g, "-")
+    .replace(/ /g, "_")
+    .replace(/:/g, "-");
 }
 
 function crossCommunityLinks(

@@ -60,4 +60,15 @@ describe("toWiki", () => {
     const index = readFileSync(join(tmpDir, "index.md"), "utf-8");
     expect(index).toContain("[[AuthModule]]");
   });
+
+  it("normalizes CRLF labels when writing filenames", () => {
+    const G = new Graph({ type: "undirected" });
+    G.mergeNode("a", { label: "ClassA", source_file: "a.py", community: 0 });
+    const communities = new Map([[0, ["a"]]]);
+    const labels = new Map([[0, "Core\r\nModule"]]);
+
+    toWiki(G, communities, tmpDir, { communityLabels: labels });
+
+    expect(existsSync(join(tmpDir, "Core_Module.md"))).toBe(true);
+  });
 });

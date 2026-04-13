@@ -594,7 +594,7 @@ function installSkill(platformName: string): void {
   console.log();
 }
 
-function installClaudeHook(projectDir: string): void {
+export function installClaudeHook(projectDir: string): void {
   const settingsPath = join(projectDir, ".claude", "settings.json");
   mkdirSync(dirname(settingsPath), { recursive: true });
 
@@ -607,14 +607,12 @@ function installClaudeHook(projectDir: string): void {
 
   const hooks = (settings.hooks ?? {}) as Record<string, unknown>;
   const preTool = (hooks.PreToolUse ?? []) as Array<Record<string, unknown>>;
+  const filtered = preTool.filter(
+    (h) => !(h.matcher === "Glob|Grep" && JSON.stringify(h).includes("graphify")),
+  );
 
-  if (preTool.some((h) => h.matcher === "Glob|Grep" && JSON.stringify(h).includes("graphify"))) {
-    console.log(`  .claude/settings.json  ->  hook already registered (no change)`);
-    return;
-  }
-
-  preTool.push(SETTINGS_HOOK);
-  hooks.PreToolUse = preTool;
+  filtered.push(SETTINGS_HOOK);
+  hooks.PreToolUse = filtered;
   settings.hooks = hooks;
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
   console.log(`  .claude/settings.json  ->  PreToolUse hook registered`);
@@ -753,13 +751,9 @@ export function installCodexHook(projectDir: string): void {
 
   const hooks = (existing.hooks ?? {}) as Record<string, unknown>;
   const preTool = (hooks.PreToolUse ?? []) as Array<Record<string, unknown>>;
+  const filtered = preTool.filter((h) => !JSON.stringify(h).includes("graphify"));
 
-  if (preTool.some((h) => JSON.stringify(h).includes("graphify"))) {
-    console.log(`  .codex/hooks.json  ->  hook already registered (no change)`);
-    return;
-  }
-
-  preTool.push({
+  filtered.push({
     matcher: "Bash",
     hooks: [
       {
@@ -771,7 +765,7 @@ export function installCodexHook(projectDir: string): void {
       },
     ],
   });
-  hooks.PreToolUse = preTool;
+  hooks.PreToolUse = filtered;
   existing.hooks = hooks;
   writeFileSync(hooksPath, JSON.stringify(existing, null, 2), "utf-8");
   console.log(`  .codex/hooks.json  ->  PreToolUse hook registered`);

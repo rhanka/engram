@@ -218,13 +218,13 @@ Upstream scope:
 - Windows skill command coverage
 
 Plan:
-- [ ] Audit upstream commit `210243f`
-- [ ] Confirm hook reinstall parity in TS with explicit regression evidence
-- [ ] Audit whether CRLF normalization still breaks labels anywhere in the TS pipeline
-- [ ] Re-audit `skill-windows` against upstream command coverage
-- [ ] Add tests for any remaining CRLF or Windows-skill gaps
-- [ ] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.28`
-- [ ] Commit the `v0.3.28` catch-up lot
+- [x] Audit upstream commit `210243f`
+- [x] Confirm hook reinstall parity in TS with explicit regression evidence
+- [x] Audit whether CRLF normalization still breaks labels anywhere in the TS pipeline
+- [x] Re-audit `skill-windows` against upstream command coverage
+- [x] Add tests for any remaining CRLF or Windows-skill gaps
+- [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.28`
+- [x] Commit the `v0.3.28` catch-up lot
 
 ## Lot 12 - Post-`v0.3.28` Upstream `v3` Commits
 

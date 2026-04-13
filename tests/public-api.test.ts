@@ -163,4 +163,21 @@ describe("public API compatibility", () => {
     expect(graphJson.graph?.community_labels).toMatchObject({ 0: "Core Services" });
     expect(graphJson.links).toContainEqual(expect.objectContaining({ source: "alpha", target: "beta" }));
   });
+
+  it("normalizes CRLF labels when generating canvas filenames", () => {
+    const dir = makeTempDir();
+    const G = new Graph({ type: "undirected" });
+    G.addNode("alpha", {
+      label: "Alpha\r\nService",
+      source_file: "src/alpha.ts",
+      file_type: "code",
+    });
+
+    api.toCanvas(G, { 0: ["alpha"] }, join(dir, "graph.canvas"));
+
+    const canvas = JSON.parse(readFileSync(join(dir, "graph.canvas"), "utf-8")) as {
+      nodes: Array<{ file?: string }>;
+    };
+    expect(canvas.nodes.some((node) => node.file === "graphify/obsidian/Alpha Service.md")).toBe(true);
+  });
 });

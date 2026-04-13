@@ -32,7 +32,7 @@ This branch tracks the delta between this TypeScript port and the upstream Pytho
 | `v0.3.25` | Aider + Copilot CLI support, directed graphs, frontmatter cache, `.graphifyignore` parent discovery, MCP fixes | `covered` | Covered in TS via Aider + Copilot CLI support, `.graphifyignore` parent discovery, markdown-frontmatter cache hashing, MCP path/error fixes, and optional directed graphs threaded through build, serialization, loaders, runtime commands, README, and the base/Codex skills |
 | `v0.3.26` | MCP path validation security fix | `covered` | Keep existing TS validation tests aligned |
 | `v0.3.27` | Gemini install missing skill file copy | `covered` | No immediate action beyond regression retention |
-| `v0.3.28` | hook reinstall, CRLF labels, `skill-windows` missing commands | `partial` | Hook reinstall is covered; audit CRLF handling and Windows skill parity |
+| `v0.3.28` | hook reinstall, CRLF labels, `skill-windows` missing commands | `covered` | Covered in TS by replacing existing graphify Claude/Codex hooks on reinstall, normalizing CRLF before wiki/canvas filename generation, and restoring the missing `--directed` / `--wiki` / `--obsidian-dir` lines in `skill-windows` |
 | `699e996` (post-`v0.3.28`) | audio/video corpus support, `yt-dlp`, Whisper transcription, YouTube docs, CI fix, remove Anthropic API dependency | `missing` | Treat as separate workstream after `v0.3.28` parity; this is a product expansion, not a small patch |
 
 ## Current Delta Assessment
@@ -51,15 +51,11 @@ This branch tracks the delta between this TypeScript port and the upstream Pytho
 
 ### Items to audit before coding
 
-- OpenCode install idempotency
-- Windows skill parity vs latest upstream `skill-windows.md`
-- CRLF label handling
-- Whether "frontmatter cache" in upstream maps to a real missing persistence layer in TS or is already subsumed by current metadata flow
+- Post-`v0.3.28` multimodal/audio-video scope only
 
 ## Recommended Catch-up Order
 
-1. Close `v0.3.28` parity on platform/install/runtime behavior only.
-2. Treat audio/video + Whisper as a dedicated feature branch after the `v3` parity table is mostly green.
+1. Treat audio/video + Whisper as a dedicated feature branch after the `v3` parity table is green through `v0.3.28`.
 
 ## Branching Rule
 
