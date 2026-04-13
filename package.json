@@ -1,6 +1,6 @@
 {
   "name": "graphifyy",
-  "version": "0.3.25",
+  "version": "0.3.26",
   "description": "AI coding assistant skill (Claude Code, Codex, Gemini CLI, GitHub Copilot CLI, Aider, OpenCode, OpenClaw) - turn any folder of code, docs, papers, or images into a queryable knowledge graph",
   "type": "module",
   "main": "./dist/index.cjs",

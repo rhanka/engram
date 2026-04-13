@@ -178,7 +178,7 @@ Plan:
 - [x] Add regressions for every accepted sub-lot
 - [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.25`
 - [x] Commit the `v0.3.25` checkpoint for platforms/detection/cache/MCP
-- [ ] Commit the `v0.3.25` catch-up lot
+- [x] Commit the `v0.3.25` catch-up lot
 
 ## Lot 9 - Upstream `v0.3.26`
 
@@ -189,10 +189,10 @@ Upstream scope:
 
 Plan:
 - [x] Confirm the TS port already has MCP graph-path validation
-- [ ] Audit upstream commit `863100c` against the current TS implementation
-- [ ] Tighten tests only if there is still a mismatch
-- [ ] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.26`
-- [ ] Commit only if the audit finds a real delta
+- [x] Audit upstream commit `863100c` against the current TS implementation
+- [x] Tighten tests only if there is still a mismatch
+- [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.26`
+- [x] Commit only if the audit finds a real delta
 
 ## Lot 10 - Upstream `v0.3.27`
 
@@ -203,10 +203,10 @@ Upstream scope:
 
 Plan:
 - [x] Confirm TS already copies the Gemini skill/custom command file
-- [ ] Audit upstream commit `55964bc` against the current TS implementation
-- [ ] Tighten tests only if there is still a mismatch
-- [ ] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.27`
-- [ ] Commit only if the audit finds a real delta
+- [x] Audit upstream commit `55964bc` against the current TS implementation
+- [x] Tighten tests only if there is still a mismatch
+- [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.27`
+- [x] Commit only if the audit finds a real delta
 
 ## Lot 11 - Upstream `v0.3.28`
 
