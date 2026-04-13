@@ -27,8 +27,8 @@
 - [x] Confirm local npm authentication is valid for manual publish
 - [x] Configure the GitHub Actions `NPM_TOKEN` repository secret
 - [x] Validate the publish payload with `npm publish --dry-run`
-- [ ] Push to origin
-- [ ] Publish npm package
+- [x] Push to origin
+- [x] Publish npm package
 
 ## Reality Check Before Continuing
 
@@ -156,6 +156,19 @@
 - [x] A valid npm auth token is available for local publish
 - [x] The `NPM_TOKEN` GitHub Actions secret is configured
 - [x] `npm publish --dry-run` succeeds from the repository root
-- [ ] Push branch to origin
+- [x] Push branch to origin
 - [ ] Tag the release
-- [ ] Publish the npm package
+- [x] Publish the npm package
+
+## Track 6 - Prepare 0.3.18
+
+- [x] Add Gemini CLI as a first-class platform target
+  - [x] `graphify install --platform gemini`
+  - [x] `graphify gemini install|uninstall`
+  - [x] `/graphify` custom command for Gemini CLI
+  - [x] `GEMINI.md` + `.gemini/settings.json` project integration
+  - [x] Automated Gemini integration coverage
+- [x] Migrate the GitHub Actions npm publish job from `NPM_TOKEN` to Trusted Publishing
+  - [x] Remove the workflow dependency on `NODE_AUTH_TOKEN`
+  - [x] Add `id-token: write` for the publish job
+  - [x] Configure npm Trusted Publishing for `rhanka/graphify` and `typescript-ci.yml`

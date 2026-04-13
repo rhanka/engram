@@ -1,0 +1,190 @@
+description = "Turn any folder into a graphify knowledge graph from Gemini CLI."
+prompt = '''
+You are the graphify custom command for Gemini CLI.
+
+The user's raw `/graphify ...` command arguments are appended below these instructions. Parse them carefully and execute the matching graphify workflow.
+
+Use the installed TypeScript runtime only. Do not fall back to Python.
+
+## Command routing
+
+- `/graphify` with no path means the current directory `.`
+- `/graphify <path> [flags]` means build or update the graph for that path
+- `/graphify query "<question>"` means answer from `graphify-out/graph.json`
+- `/graphify path "A" "B"` means show the shortest path between two nodes
+- `/graphify explain "Node"` means explain one node and its neighbors
+- `/graphify add <url>` means ingest the URL into `./raw` and then update the graph
+
+Always prefer graphify outputs and graphify runtime commands over ad-hoc file traversal:
+- If `graphify-out/GRAPH_REPORT.md` exists, read it before searching raw files
+- If `graphify-out/wiki/index.md` exists, navigate it before reading raw files
+- If the user asks about build/update/query/path/explain, stay on graphify artifacts and commands
+
+## Runtime proof
+
+Before any build/update flow, pin the runtime:
+
+```bash
+GRAPHIFY_BIN=$(command -v graphify 2>/dev/null || true)
+NODE_BIN=$(command -v node 2>/dev/null || true)
+
+if [ -z "$GRAPHIFY_BIN" ]; then
+  echo "ERROR: graphify is not installed. Run: npm install -g graphifyy"
+  exit 1
+fi
+
+if [ -z "$NODE_BIN" ]; then
+  echo "ERROR: node is not available in PATH."
+  exit 1
+fi
+
+GRAPHIFY_CLI=$("$NODE_BIN" -e "const fs=require('fs'); console.log(fs.realpathSync(process.argv[1]));" "$GRAPHIFY_BIN")
+GRAPHIFY_DIST_DIR=$("$NODE_BIN" -e "const path=require('path'); console.log(path.dirname(process.argv[1]));" "$GRAPHIFY_CLI")
+GRAPHIFY_RUNTIME="$GRAPHIFY_DIST_DIR/skill-runtime.js"
+
+mkdir -p graphify-out
+printf '%s' "$NODE_BIN" > graphify-out/.graphify_node
+printf '%s' "$GRAPHIFY_RUNTIME" > graphify-out/.graphify_runtime_script
+"$NODE_BIN" "$GRAPHIFY_RUNTIME" runtime-info > graphify-out/.graphify_runtime.json
+
+"$NODE_BIN" -e "
+  const fs = require('fs');
+  const runtime = JSON.parse(fs.readFileSync('graphify-out/.graphify_runtime.json', 'utf8'));
+  if (runtime.runtime !== 'typescript') {
+    console.error('ERROR: expected TypeScript runtime, got', runtime.runtime);
+    process.exit(1);
+  }
+"
+```
+
+In every subsequent shell block, use:
+
+```bash
+$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" ...
+```
+
+## Build and update flow
+
+For a build or update request:
+
+1. Detect files:
+
+```bash
+$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" detect "INPUT_PATH" --out graphify-out/.graphify_detect.json
+```
+
+2. Summarize the corpus cleanly from the detection JSON:
+- `files.code`
+- `files.document`
+- `files.paper`
+- `files.image`
+
+3. Extract AST structure:
+
+```bash
+$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" extract-ast \
+  --detect graphify-out/.graphify_detect.json \
+  --out graphify-out/.graphify_ast.json
+```
+
+4. Check semantic cache:
+
+```bash
+$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" check-semantic-cache \
+  --detect graphify-out/.graphify_detect.json \
+  --root . \
+  --cached-out graphify-out/.graphify_cached.json \
+  --uncached-out graphify-out/.graphify_uncached.txt
+```
+
+5. If `graphify-out/.graphify_uncached.txt` is non-empty, read those docs, papers, and images yourself in manageable batches and write `graphify-out/.graphify_semantic_new.json` matching exactly:
+
+```json
+{"nodes":[{"id":"filestem_entityname","label":"Human Readable Name","file_type":"code|document|paper|image","source_file":"relative/path","source_location":null,"source_url":null,"captured_at":null,"author":null,"contributor":null}],"edges":[{"source":"node_id","target":"node_id","relation":"calls|implements|references|cites|conceptually_related_to|shares_data_with|semantically_similar_to|rationale_for","confidence":"EXTRACTED|INFERRED|AMBIGUOUS","confidence_score":1.0,"source_file":"relative/path","source_location":null,"weight":1.0}],"hyperedges":[{"id":"snake_case_id","label":"Human Readable Label","nodes":["node_id1","node_id2","node_id3"],"relation":"participate_in|implement|form","confidence":"EXTRACTED|INFERRED","confidence_score":0.75,"source_file":"relative/path"}],"input_tokens":0,"output_tokens":0}
+```
+
+Rules:
+- `EXTRACTED`: explicit in source
+- `INFERRED`: reasonable inference
+- `AMBIGUOUS`: uncertain, flag it rather than omitting it
+- for code files, only add semantic edges AST would miss
+- for image files, use vision if available
+- if a file has YAML frontmatter, copy `source_url`, `captured_at`, `author`, `contributor` onto every node from that file
+
+6. Finalize:
+
+For a new build:
+
+```bash
+$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" finalize-build \
+  --detect graphify-out/.graphify_detect.json \
+  --ast graphify-out/.graphify_ast.json \
+  --cached graphify-out/.graphify_cached.json \
+  --semantic-new graphify-out/.graphify_semantic_new.json \
+  --root . \
+  --graph-out graphify-out/graph.json \
+  --report-out graphify-out/GRAPH_REPORT.md \
+  --analysis-out graphify-out/.graphify_analysis.json \
+  --cost-out graphify-out/cost.json \
+  --html-out graphify-out/graph.html
+```
+
+For `--update`, use `detect-incremental` and `finalize-update`.
+
+For `--cluster-only`, use:
+
+```bash
+$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" cluster-only \
+  --graph graphify-out/graph.json \
+  --root . \
+  --graph-out graphify-out/graph.json \
+  --report-out graphify-out/GRAPH_REPORT.md \
+  --analysis-out graphify-out/.graphify_analysis.json
+```
+
+For `--svg`, `--graphml`, `--neo4j`, `--neo4j-push`, call the matching `export-*` or `push-neo4j` runtime command after the build.
+
+For `--mcp`, use the configured `graphify` MCP server from `.gemini/settings.json` if present, otherwise tell the user to run `graphify gemini install`.
+
+After a successful build/update, confirm these outputs:
+- `graphify-out/graph.json`
+- `graphify-out/GRAPH_REPORT.md`
+- `graphify-out/graph.html`
+- `graphify-out/.graphify_runtime.json`
+
+## Query, path, explain, and ingest
+
+For `query`, use the public CLI:
+
+```bash
+graphify query "<question>" --graph graphify-out/graph.json
+```
+
+For `path`, use the runtime:
+
+```bash
+$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" path --graph graphify-out/graph.json "NODE_A" "NODE_B"
+```
+
+For `explain`, use the runtime:
+
+```bash
+$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" explain --graph graphify-out/graph.json "NODE_NAME"
+```
+
+For `add <url>`, ingest first, then run the update flow:
+
+```bash
+$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" ingest "<url>" --target-dir ./raw
+```
+
+## Final reporting
+
+When you finish, give the user:
+- the corpus summary
+- whether the run was build/update/query/path/explain/add
+- the runtime proof (`typescript`)
+- the key output files that were produced or reused
+
+The user's raw `/graphify ...` arguments are appended below this prompt.
+'''

@@ -95,6 +95,7 @@ jobs:
             echo "Expected 7+ skill files, found $SKILL_COUNT"
             exit 1
           fi
+          test -f node_modules/graphifyy/src/skills/skill-gemini.toml
           echo "$SKILL_COUNT skill files bundled"
 
   # Publish to npm
@@ -102,6 +103,9 @@ jobs:
     needs: [test, smoke-test]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - uses: actions/checkout@v4
@@ -118,8 +122,6 @@ jobs:
 
       - name: Publish to npm
         run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   # Post-publish validation: install from npm and verify
   post-publish-check:

@@ -50,6 +50,11 @@ const PLATFORM_CONFIG: Record<string, PlatformConfig> = {
     skill_dst: join(".agents", "skills", "graphify", "SKILL.md"),
     claude_md: false,
   },
+  gemini: {
+    skill_file: "skill-gemini.toml",
+    skill_dst: join(".gemini", "commands", "graphify.toml"),
+    claude_md: false,
+  },
   opencode: {
     skill_file: "skill-opencode.md",
     skill_dst: join(".config", "opencode", "skills", "graphify", "SKILL.md"),
@@ -112,6 +117,25 @@ Rules:
 - After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
 `;
 
+const GEMINI_MD_SECTION = `## graphify
+
+This project has a graphify knowledge graph at graphify-out/.
+
+Rules:
+- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
+- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
+- In Gemini CLI, the reliable explicit custom command is \`/graphify ...\`
+- If the user asks to build, update, query, path, or explain the graph, use the installed \`/graphify\` custom command or the configured \`graphify\` MCP server instead of ad-hoc file traversal
+- After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
+`;
+
+const GEMINI_MCP_SERVER = {
+  command: "graphify",
+  args: ["serve", "graphify-out/graph.json"],
+  trust: false,
+  description: "graphify knowledge graph MCP server",
+};
+
 const MD_MARKER = "## graphify";
 
 // ---------------------------------------------------------------------------
@@ -157,6 +181,60 @@ export function getAgentsMdSection(platformName: string): string {
     );
   }
   return lines.join("\n") + "\n";
+}
+
+function installGeminiMcp(projectDir: string): void {
+  const geminiDir = join(projectDir, ".gemini");
+  if (existsSync(geminiDir) && !statSync(geminiDir).isDirectory()) {
+    console.log("  .gemini/settings.json  ->  skipped (cannot create config dir because .gemini is a file)");
+    return;
+  }
+
+  const settingsPath = join(geminiDir, "settings.json");
+  mkdirSync(dirname(settingsPath), { recursive: true });
+
+  let settings: Record<string, unknown> = {};
+  if (existsSync(settingsPath)) {
+    try {
+      settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+    } catch { /* ignore */ }
+  }
+
+  const mcpServers = (settings.mcpServers ?? {}) as Record<string, unknown>;
+  const existing = mcpServers.graphify as Record<string, unknown> | undefined;
+  if (JSON.stringify(existing) === JSON.stringify(GEMINI_MCP_SERVER)) {
+    console.log("  .gemini/settings.json  ->  graphify MCP already registered (no change)");
+    return;
+  }
+
+  mcpServers.graphify = GEMINI_MCP_SERVER;
+  settings.mcpServers = mcpServers;
+  writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
+  console.log("  .gemini/settings.json  ->  graphify MCP server registered");
+}
+
+function uninstallGeminiMcp(projectDir: string): void {
+  const settingsPath = join(projectDir, ".gemini", "settings.json");
+  if (!existsSync(settingsPath)) return;
+
+  let settings: Record<string, unknown>;
+  try {
+    settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+  } catch {
+    return;
+  }
+
+  const mcpServers = { ...((settings.mcpServers ?? {}) as Record<string, unknown>) };
+  if (!("graphify" in mcpServers)) return;
+
+  delete mcpServers.graphify;
+  if (Object.keys(mcpServers).length === 0) {
+    delete settings.mcpServers;
+  } else {
+    settings.mcpServers = mcpServers;
+  }
+  writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
+  console.log("  .gemini/settings.json  ->  graphify MCP server removed");
 }
 
 // ---------------------------------------------------------------------------
@@ -303,6 +381,56 @@ function claudeUninstall(projectDir: string = "."): void {
     console.log(`CLAUDE.md was empty after removal - deleted ${resolve(target)}`);
   }
   uninstallClaudeHook(projectDir);
+}
+
+export function geminiInstall(projectDir: string = "."): void {
+  let alreadyConfigured = false;
+  const target = join(projectDir, "GEMINI.md");
+  if (existsSync(target)) {
+    const content = readFileSync(target, "utf-8");
+    if (content.includes(MD_MARKER)) {
+      alreadyConfigured = true;
+      console.log("graphify already configured in GEMINI.md");
+    } else {
+      writeFileSync(target, content.trimEnd() + "\n\n" + GEMINI_MD_SECTION, "utf-8");
+    }
+  } else {
+    writeFileSync(target, GEMINI_MD_SECTION, "utf-8");
+  }
+
+  if (!alreadyConfigured) {
+    console.log(`graphify section written to ${resolve(target)}`);
+  }
+  installGeminiMcp(projectDir);
+  console.log();
+  console.log("Gemini CLI will now check the knowledge graph before answering");
+  console.log("codebase questions and can access graphify via the configured MCP server.");
+  console.log();
+  console.log("Note: install the `/graphify` custom command globally with");
+  console.log("`graphify install --platform gemini` if you have not done that yet.");
+}
+
+export function geminiUninstall(projectDir: string = "."): void {
+  const target = join(projectDir, "GEMINI.md");
+  if (!existsSync(target)) {
+    console.log("No GEMINI.md found in current directory - nothing to do");
+  } else {
+    const content = readFileSync(target, "utf-8");
+    if (!content.includes(MD_MARKER)) {
+      console.log("graphify section not found in GEMINI.md - nothing to do");
+    } else {
+      const cleaned = content.replace(/\n*## graphify\n[\s\S]*?(?=\n## |\s*$)/, "").trim();
+      if (cleaned) {
+        writeFileSync(target, cleaned + "\n", "utf-8");
+        console.log(`graphify section removed from ${resolve(target)}`);
+      } else {
+        const { unlinkSync } = require("node:fs");
+        unlinkSync(target);
+        console.log(`GEMINI.md was empty after removal - deleted ${resolve(target)}`);
+      }
+    }
+  }
+  uninstallGeminiMcp(projectDir);
 }
 
 export function installCodexHook(projectDir: string): void {
@@ -498,6 +626,12 @@ export async function main(): Promise<void> {
     const sub = program.command(cmd).description(`${cmd} skill management`);
     sub.command("install").description(`Write graphify section to CLAUDE.md + PreToolUse hook`).action(() => claudeInstall());
     sub.command("uninstall").description(`Remove graphify section from CLAUDE.md + PreToolUse hook`).action(() => claudeUninstall());
+  }
+
+  for (const cmd of ["gemini"]) {
+    const sub = program.command(cmd).description(`${cmd} skill management`);
+    sub.command("install").description("Write graphify section to GEMINI.md + project MCP config").action(() => geminiInstall());
+    sub.command("uninstall").description("Remove graphify section from GEMINI.md + project MCP config").action(() => geminiUninstall());
   }
 
   for (const cmd of ["codex", "opencode", "claw", "droid", "trae", "trae-cn"]) {

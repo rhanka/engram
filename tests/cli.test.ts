@@ -13,6 +13,11 @@ describe("CLI platform-scoped version checks", () => {
     expect(getPlatformsToCheck(["codex", "install"])).toEqual(["codex"]);
   });
 
+  it("checks only the explicitly targeted Gemini platform", () => {
+    expect(getPlatformsToCheck(["install", "--platform", "gemini"])).toEqual(["gemini"]);
+    expect(getPlatformsToCheck(["gemini", "install"])).toEqual(["gemini"]);
+  });
+
   it("does not warn for unrelated global skills on generic commands", () => {
     expect(getPlatformsToCheck(["hook", "status"])).toEqual([]);
     expect(getPlatformsToCheck(["query", "--graph", "graphify-out/graph.json", "install flow"])).toEqual([]);

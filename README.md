@@ -4,7 +4,7 @@
 
 [![TypeScript CI](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=v3)](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml)
 
-**An AI coding assistant skill.** Type `/graphify` in Claude Code or `$graphify` in Codex - it reads your files, builds a knowledge graph, and gives you back structure you didn't know was there. Understand a codebase faster. Find the "why" behind architectural decisions.
+**An AI coding assistant skill.** Type `/graphify` in Claude Code or Gemini CLI, or `$graphify` in Codex - it reads your files, builds a knowledge graph, and gives you back structure you didn't know was there. Understand a codebase faster. Find the "why" behind architectural decisions.
 
 This repository is the maintained TypeScript port of the original Graphify project. Thanks to the original work by [Safi Shamsi](https://github.com/safishamsi/graphify) for the product direction, workflow, and initial implementation.
 
@@ -14,7 +14,7 @@ Fully multimodal. Drop in code, PDFs, markdown, screenshots, diagrams, whiteboar
 
 ```bash
 $graphify .                        # Codex
-/graphify .                        # Claude Code / OpenCode / OpenClaw / Droid / Trae
+/graphify .                        # Claude Code / Gemini CLI / OpenCode / OpenClaw / Droid / Trae
 ```
 
 In Codex, `$graphify` is a skill trigger, not a Bash subcommand like `graphify .`. A successful TypeScript-backed Codex run should leave `graphify-out/.graphify_runtime.json` with `runtime: "typescript"`.
@@ -49,7 +49,7 @@ Every relationship is tagged `EXTRACTED` (found directly in source), `INFERRED` 
 
 ## Install
 
-**Requires:** Node.js 20+ and one of: [Claude Code](https://claude.ai/code), [Codex](https://openai.com/codex), [OpenCode](https://opencode.ai), [OpenClaw](https://openclaw.ai), [Factory Droid](https://factory.ai), or [Trae](https://trae.com)
+**Requires:** Node.js 20+ and one of: [Claude Code](https://claude.ai/code), [Codex](https://openai.com/codex), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [OpenCode](https://opencode.ai), [OpenClaw](https://openclaw.ai), [Factory Droid](https://factory.ai), or [Trae](https://trae.com)
 
 ```bash
 npm install -g graphifyy
@@ -65,19 +65,20 @@ graphify install
 | Claude Code (Linux/Mac) | `graphify install` |
 | Claude Code (Windows) | `graphify install` (auto-detected) or `graphify install --platform windows` |
 | Codex | `graphify install --platform codex` |
+| Gemini CLI | `graphify install --platform gemini` |
 | OpenCode | `graphify install --platform opencode` |
 | OpenClaw | `graphify install --platform claw` |
 | Factory Droid | `graphify install --platform droid` |
 | Trae | `graphify install --platform trae` |
 | Trae CN | `graphify install --platform trae-cn` |
 
-Codex users also need `multi_agent = true` under `[features]` in `~/.codex/config.toml` for parallel extraction. Factory Droid uses the `Task` tool for parallel subagent dispatch. OpenClaw uses sequential extraction (parallel agent support is still early on that platform). Trae uses the Agent tool for parallel subagent dispatch and does **not** support PreToolUse hooks — AGENTS.md is the always-on mechanism.
+Codex users also need `multi_agent = true` under `[features]` in `~/.codex/config.toml` for parallel extraction. Gemini CLI exposes `/graphify` through a custom command installed into `~/.gemini/commands/graphify.toml`, and the project install writes `.gemini/settings.json` so Gemini can use `graphify serve` as an MCP server. Factory Droid uses the `Task` tool for parallel subagent dispatch. OpenClaw uses sequential extraction (parallel agent support is still early on that platform). Trae uses the Agent tool for parallel subagent dispatch and does **not** support PreToolUse hooks — AGENTS.md is the always-on mechanism.
 
 Then open your AI coding assistant and invoke the skill:
 
 ```bash
 $graphify .                        # Codex
-/graphify .                        # Claude Code / OpenCode / OpenClaw / Droid / Trae
+/graphify .                        # Claude Code / Gemini CLI / OpenCode / OpenClaw / Droid / Trae
 ```
 
 ### Make your assistant always use the graph (recommended)
@@ -88,6 +89,7 @@ After building a graph, run this once in your project:
 |----------|---------|
 | Claude Code | `graphify claude install` |
 | Codex | `graphify codex install` |
+| Gemini CLI | `graphify gemini install` |
 | OpenCode | `graphify opencode install` |
 | OpenClaw | `graphify claw install` |
 | Factory Droid | `graphify droid install` |
@@ -97,6 +99,8 @@ After building a graph, run this once in your project:
 **Claude Code** does two things: writes a `CLAUDE.md` section telling Claude to read `graphify-out/GRAPH_REPORT.md` before answering architecture questions, and installs a **PreToolUse hook** (`settings.json`) that fires before every Glob and Grep call. If a knowledge graph exists, Claude sees: _"graphify: Knowledge graph exists. Read GRAPH_REPORT.md for god nodes and community structure before searching raw files."_ — so Claude navigates via the graph instead of grepping through every file.
 
 **Codex** writes to `AGENTS.md`, teaches Codex to use the installed `graphify` skill for graph build/update/query tasks, and also installs a **PreToolUse hook** in `.codex/hooks.json` that fires before every Bash tool call.
+
+**Gemini CLI** writes `GEMINI.md` in your project root and registers a project-scoped `graphify` MCP server in `.gemini/settings.json`. Gemini CLI does not have a Claude/Codex-style PreToolUse hook, so `GEMINI.md` is the always-on mechanism and `/graphify` is the explicit custom command.
 
 **OpenCode, OpenClaw, Factory Droid, Trae** write the same rules to `AGENTS.md` in your project root. These platforms don't support PreToolUse hooks, so AGENTS.md is the always-on mechanism.
 
@@ -172,7 +176,7 @@ When the user types `/graphify`, invoke the Skill tool with `skill: "graphify"` 
 
 ## Usage
 
-In Codex, replace the leading `/` in the examples below with `$`.
+In Codex, replace the leading `/` in the examples below with `$`. Gemini CLI uses the `/graphify` form directly.
 
 ```
 /graphify                          # run on current directory
@@ -212,6 +216,8 @@ graphify hook status
 graphify claude install            # CLAUDE.md + PreToolUse hook (Claude Code)
 graphify claude uninstall
 graphify codex install             # AGENTS.md (Codex)
+graphify gemini install            # GEMINI.md + .gemini/settings.json (Gemini CLI)
+graphify gemini uninstall
 graphify opencode install          # AGENTS.md (OpenCode)
 graphify claw install              # AGENTS.md (OpenClaw)
 graphify droid install             # AGENTS.md (Factory Droid)
