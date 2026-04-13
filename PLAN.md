@@ -129,10 +129,10 @@ Upstream scope:
 
 Plan:
 - [x] Confirm Gemini CLI support already exists in TS
-- [ ] Audit the upstream Gemini install/details against the current TS implementation
-- [ ] Close any doc/install drift that remains
-- [ ] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.23`
-- [ ] Commit only if audit finds a real delta
+- [x] Audit the upstream Gemini install/details against the current TS implementation
+- [x] Close any doc/install drift that remains
+- [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.23`
+- [x] No code commit needed beyond a plan checkpoint because the audit found no remaining TS delta
 
 ## Lot 7 - Upstream `v0.3.24`
 
