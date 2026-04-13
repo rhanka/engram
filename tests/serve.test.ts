@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { once } from "node:events";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -17,6 +18,12 @@ const cliPath = join(tsRoot, "dist/cli.js");
 function makeTempDir(): string {
   mkdirSync(graphifyOutRoot, { recursive: true });
   const dir = mkdtempSync(join(graphifyOutRoot, "serve-test-"));
+  tempDirs.push(dir);
+  return dir;
+}
+
+function makeExternalTempDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), "graphify-serve-external-"));
   tempDirs.push(dir);
   return dir;
 }
@@ -128,6 +135,30 @@ describe("MCP stdio server", () => {
     }
   });
 
+  it("accepts a graph path outside the local graphify-out directory", async () => {
+    const dir = makeExternalTempDir();
+    const graphPath = writeFixtureGraph(dir);
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const serverPromise = serve(graphPath, serverTransport);
+    const client = new Client({ name: "graphify-serve-test", version: "0.0.0" });
+
+    try {
+      await client.connect(clientTransport);
+      const stats = toolText(
+        await client.callTool({
+          name: "graph_stats",
+          arguments: {},
+        }),
+      );
+      expect(stats).toContain("Nodes: 4");
+      expect(stats).toContain("Edges: 3");
+    } finally {
+      await client.close().catch(() => undefined);
+      await clientTransport.close().catch(() => undefined);
+      await serverPromise.catch(() => undefined);
+    }
+  });
+
   it("serves representative tools over stdio", async () => {
     const dir = makeTempDir();
     const graphPath = writeFixtureGraph(dir);
@@ -201,6 +232,14 @@ describe("MCP stdio server", () => {
       expect(path).toContain("Shortest path (2 hops):");
       expect(path).toContain("AlphaService --uses [EXTRACTED]--> BetaRepository");
       expect(path).toContain("BetaRepository --documents [INFERRED]--> GammaDocs");
+
+      const toolError = toolText(
+        await client.callTool({
+          name: "get_node",
+          arguments: {},
+        }),
+      );
+      expect(toolError).toContain("Error executing get_node");
     } finally {
       await client.close().catch(() => undefined);
       await clientTransport.close().catch(() => undefined);

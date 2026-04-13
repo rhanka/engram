@@ -58,4 +58,22 @@ describe("cache", () => {
     clearCache(tmpDir);
     expect(loadCached(f, tmpDir)).toBeNull();
   });
+
+  it("ignores markdown frontmatter-only changes when hashing", () => {
+    const f = join(tmpDir, "doc.md");
+    writeFileSync(f, "---\nreviewed: 2026-01-01\n---\n\n# Title\n\nBody text.");
+    const h1 = fileHash(f);
+    writeFileSync(f, "---\nreviewed: 2026-04-09\n---\n\n# Title\n\nBody text.");
+    const h2 = fileHash(f);
+    expect(h1).toBe(h2);
+  });
+
+  it("still changes markdown hashes when the body changes", () => {
+    const f = join(tmpDir, "doc.md");
+    writeFileSync(f, "---\nreviewed: 2026-01-01\n---\n\n# Title\n\nOriginal body.");
+    const h1 = fileHash(f);
+    writeFileSync(f, "---\nreviewed: 2026-04-09\n---\n\n# Title\n\nChanged body.");
+    const h2 = fileHash(f);
+    expect(h1).not.toBe(h2);
+  });
 });

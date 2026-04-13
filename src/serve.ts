@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 import Graph from "graphology";
 import { bidirectional } from "graphology-shortest-path/unweighted.js";
-import { basename } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { validateGraphPath, sanitizeLabel } from "./security.js";
 import { godNodes as computeGodNodes } from "./analyze.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
@@ -18,7 +18,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 function loadGraph(graphPath: string): Graph {
   let safePath: string;
   try {
-    safePath = validateGraphPath(graphPath);
+    safePath = validateGraphPath(graphPath, dirname(resolve(graphPath)));
   } catch (err) {
     console.error(`error: ${err instanceof Error ? err.message : err}`);
     process.exit(1);
@@ -540,8 +540,13 @@ export async function serve(
     if (!handler) {
       return { content: [{ type: "text" as const, text: `Unknown tool: ${name}` }] };
     }
-    const text = handler((args ?? {}) as Record<string, unknown>);
-    return { content: [{ type: "text" as const, text }] };
+    try {
+      const text = handler((args ?? {}) as Record<string, unknown>);
+      return { content: [{ type: "text" as const, text }] };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { content: [{ type: "text" as const, text: `Error executing ${name}: ${message}` }] };
+    }
   });
 
   const serverTransport = transport ?? new StdioServerTransport();

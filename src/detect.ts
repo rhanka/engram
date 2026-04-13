@@ -4,7 +4,7 @@
 import {
   readdirSync, readFileSync, writeFileSync, statSync, existsSync, mkdirSync, lstatSync,
 } from "node:fs";
-import { join, resolve, extname, basename, relative, sep } from "node:path";
+import { join, resolve, extname, basename, relative, sep, dirname } from "node:path";
 import { createHash } from "node:crypto";
 import { FileType } from "./types.js";
 import type { DetectionResult } from "./types.js";
@@ -177,14 +177,29 @@ function isNoiseDir(part: string): boolean {
 }
 
 function loadGraphifyignore(root: string): string[] {
-  const ignoreFile = join(root, ".graphifyignore");
-  if (!existsSync(ignoreFile)) return [];
   const patterns: string[] = [];
-  for (let line of readFileSync(ignoreFile, "utf-8").split("\n")) {
-    line = line.trim();
-    if (line && !line.startsWith("#")) {
-      patterns.push(line);
+  let current = resolve(root);
+
+  while (true) {
+    const ignoreFile = join(current, ".graphifyignore");
+    if (existsSync(ignoreFile)) {
+      for (let line of readFileSync(ignoreFile, "utf-8").split("\n")) {
+        line = line.trim();
+        if (line && !line.startsWith("#")) {
+          patterns.push(line);
+        }
+      }
     }
+
+    if (existsSync(join(current, ".git"))) {
+      break;
+    }
+
+    const parent = dirname(current);
+    if (parent === current) {
+      break;
+    }
+    current = parent;
   }
   return patterns;
 }

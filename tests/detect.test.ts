@@ -97,6 +97,53 @@ describe("detect", () => {
     expect(result.files.code[0]).toContain("kept.py");
   });
 
+  it("discovers .graphifyignore patterns from parent directories", () => {
+    writeFileSync(join(tmpDir, ".graphifyignore"), "vendor/\n");
+    const subDir = join(tmpDir, "packages", "mylib");
+    mkdirSync(subDir, { recursive: true });
+    writeFileSync(join(subDir, "main.py"), "x = 1");
+    mkdirSync(join(subDir, "vendor"), { recursive: true });
+    writeFileSync(join(subDir, "vendor", "dep.py"), "y = 2");
+
+    const result = detect(subDir);
+
+    expect(result.files.code).toHaveLength(1);
+    expect(result.files.code[0]).toContain("main.py");
+    expect(result.graphifyignore_patterns).toBeGreaterThanOrEqual(1);
+  });
+
+  it("stops .graphifyignore discovery at the git boundary", () => {
+    writeFileSync(join(tmpDir, ".graphifyignore"), "main.py\n");
+    const repoDir = join(tmpDir, "repo");
+    mkdirSync(join(repoDir, ".git"), { recursive: true });
+    const subDir = join(repoDir, "sub");
+    mkdirSync(subDir, { recursive: true });
+    writeFileSync(join(subDir, "main.py"), "x = 1");
+
+    const result = detect(subDir);
+
+    expect(result.files.code).toHaveLength(1);
+    expect(result.files.code[0]).toContain("main.py");
+    expect(result.graphifyignore_patterns).toBe(0);
+  });
+
+  it("includes .graphifyignore from the git repo root", () => {
+    const repoDir = join(tmpDir, "repo");
+    mkdirSync(join(repoDir, ".git"), { recursive: true });
+    writeFileSync(join(repoDir, ".graphifyignore"), "vendor/\n");
+    const subDir = join(repoDir, "packages", "mylib");
+    mkdirSync(subDir, { recursive: true });
+    writeFileSync(join(subDir, "main.py"), "x = 1");
+    mkdirSync(join(subDir, "vendor"), { recursive: true });
+    writeFileSync(join(subDir, "vendor", "dep.py"), "y = 2");
+
+    const result = detect(subDir);
+
+    expect(result.files.code).toHaveLength(1);
+    expect(result.files.code[0]).toContain("main.py");
+    expect(result.graphifyignore_patterns).toBe(1);
+  });
+
   it("warns for small corpus", () => {
     writeFileSync(join(tmpDir, "tiny.py"), "x = 1");
     const result = detect(tmpDir);

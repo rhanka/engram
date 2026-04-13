@@ -3,11 +3,29 @@
  */
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync, renameSync, existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { extname, join, resolve } from "node:path";
 
-/** SHA256 of file contents + resolved path. Prevents cache collisions on identical content. */
+function bodyContent(content: Buffer): Buffer {
+  const text = content.toString("utf-8");
+  if (!text.startsWith("---")) {
+    return content;
+  }
+  const end = text.indexOf("\n---", 3);
+  if (end === -1) {
+    return content;
+  }
+  return Buffer.from(text.slice(end + 4), "utf-8");
+}
+
+/**
+ * SHA256 of file contents + resolved path. Prevents cache collisions on identical content.
+ *
+ * For Markdown files, YAML frontmatter is stripped before hashing so metadata-only
+ * changes do not invalidate semantic extraction cache entries.
+ */
 export function fileHash(filePath: string): string {
-  const content = readFileSync(filePath);
+  const raw = readFileSync(filePath);
+  const content = extname(filePath).toLowerCase() === ".md" ? bodyContent(raw) : raw;
   const resolved = resolve(filePath);
   const h = createHash("sha256");
   h.update(content);

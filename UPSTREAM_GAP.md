@@ -29,7 +29,7 @@ This branch tracks the delta between this TypeScript port and the upstream Pytho
 | `v0.3.22` | Cursor support, Python watcher/export crash fixes | `covered` | Covered in TS by adding project-scoped Cursor rules; the upstream watcher/export crashes are Python-specific and `n/a` for the current TS runtime |
 | `v0.3.23` | Gemini CLI support | `covered` | Keep synced as upstream evolves, but base support is already present |
 | `v0.3.24` | Codex/OpenCode install idempotency | `covered` | Covered in TS via Codex hook repair and OpenCode plugin reinstallation when `AGENTS.md` already exists |
-| `v0.3.25` | Aider + Copilot CLI support, directed graphs, frontmatter cache, `.graphifyignore` parent discovery, MCP fixes | `missing` | Split into separate catch-up tasks; Aider/Copilot and `.graphifyignore` parent discovery are the clearest missing pieces |
+| `v0.3.25` | Aider + Copilot CLI support, directed graphs, frontmatter cache, `.graphifyignore` parent discovery, MCP fixes | `partial` | Aider + Copilot CLI support, `.graphifyignore` parent discovery, markdown-frontmatter cache hashing, and the MCP path/error fixes are now covered in TS; only the directed-graph decision remains open |
 | `v0.3.26` | MCP path validation security fix | `covered` | Keep existing TS validation tests aligned |
 | `v0.3.27` | Gemini install missing skill file copy | `covered` | No immediate action beyond regression retention |
 | `v0.3.28` | hook reinstall, CRLF labels, `skill-windows` missing commands | `partial` | Hook reinstall is covered; audit CRLF handling and Windows skill parity |
@@ -47,9 +47,7 @@ This branch tracks the delta between this TypeScript port and the upstream Pytho
 
 ### Clear missing targets vs upstream `v3`
 
-- Aider platform support
-- Copilot CLI platform support
-- `.graphifyignore` parent-directory discovery
+- Directed graph support, or an explicit decision to remain undirected
 - Audio/video ingestion + local transcription (`yt-dlp` + Whisper path)
 
 ### Items to audit before coding
@@ -62,11 +60,9 @@ This branch tracks the delta between this TypeScript port and the upstream Pytho
 
 ## Recommended Catch-up Order
 
-1. Close `v0.3.28` parity on platform/install/runtime behavior only.
-2. Add missing platform targets: Cursor, Aider, Copilot CLI.
-3. Fix `.graphifyignore` parent discovery and any remaining install idempotency gaps.
-4. Decide explicitly on directed-graph support instead of drifting into it accidentally.
-5. Treat audio/video + Whisper as a dedicated feature branch after the `v3` parity table is mostly green.
+1. Decide explicitly on directed-graph support instead of drifting into it accidentally.
+2. Close `v0.3.28` parity on platform/install/runtime behavior only.
+3. Treat audio/video + Whisper as a dedicated feature branch after the `v3` parity table is mostly green.
 
 ## Branching Rule
 

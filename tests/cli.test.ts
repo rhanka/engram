@@ -13,6 +13,13 @@ describe("CLI platform-scoped version checks", () => {
     expect(getPlatformsToCheck(["codex", "install"])).toEqual(["codex"]);
   });
 
+  it("checks only the explicitly targeted Aider and Copilot platforms", () => {
+    expect(getPlatformsToCheck(["install", "--platform", "aider"])).toEqual(["aider"]);
+    expect(getPlatformsToCheck(["aider", "install"])).toEqual(["aider"]);
+    expect(getPlatformsToCheck(["install", "--platform", "copilot"])).toEqual(["copilot"]);
+    expect(getPlatformsToCheck(["copilot", "install"])).toEqual(["copilot"]);
+  });
+
   it("checks only the explicitly targeted Gemini platform", () => {
     expect(getPlatformsToCheck(["install", "--platform", "gemini"])).toEqual(["gemini"]);
     expect(getPlatformsToCheck(["gemini", "install"])).toEqual(["gemini"]);

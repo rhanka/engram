@@ -162,20 +162,22 @@ Upstream scope:
 - MCP fixes
 
 Plan:
-- [ ] Audit upstream commit `1cbcee5`
+- [x] Audit upstream commit `1cbcee5`
 - [ ] Split this release into sub-lots before coding:
-  - [ ] platform additions: Aider + Copilot CLI
-  - [ ] detection behavior: `.graphifyignore` parent discovery
+  - [x] platform additions: Aider + Copilot CLI
+  - [x] detection behavior: `.graphifyignore` parent discovery
   - [ ] graph model decision: directed graphs
-  - [ ] metadata/caching: frontmatter cache
-  - [ ] MCP delta audit
-- [ ] Implement Aider as a first-class platform target if accepted
-- [ ] Implement Copilot CLI as a first-class platform target if accepted
-- [ ] Add `.graphifyignore` parent-directory discovery if still missing
+  - [x] metadata/caching: frontmatter cache
+  - [x] MCP delta audit
+- [x] Implement Aider as a first-class platform target if accepted
+- [x] Implement Copilot CLI as a first-class platform target if accepted
+- [x] Add `.graphifyignore` parent-directory discovery if still missing
 - [ ] Decide explicitly whether TS should remain undirected or adopt directed-graph support
-- [ ] Audit whether frontmatter metadata persistence is already enough or whether a dedicated cache layer is still missing
-- [ ] Add regressions for every accepted sub-lot
-- [ ] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.25`
+- [x] Audit whether frontmatter metadata persistence is already enough or whether a dedicated cache layer is still missing
+- [x] Close the current TS MCP delta around graph-path scoping and handler errors
+- [x] Add regressions for every accepted sub-lot
+- [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.25`
+- [x] Commit the `v0.3.25` checkpoint for platforms/detection/cache/MCP
 - [ ] Commit the `v0.3.25` catch-up lot
 
 ## Lot 9 - Upstream `v0.3.26`

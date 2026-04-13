@@ -4,7 +4,7 @@
 
 [![TypeScript CI](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=v3)](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml)
 
-**An AI coding assistant skill.** Type `/graphify` in Claude Code or Gemini CLI, or `$graphify` in Codex - it reads your files, builds a knowledge graph, and gives you back structure you didn't know was there. Understand a codebase faster. Find the "why" behind architectural decisions.
+**An AI coding assistant skill.** Type `/graphify` in Claude Code, Gemini CLI, GitHub Copilot CLI, Aider, OpenCode, OpenClaw, Factory Droid, or Trae, or `$graphify` in Codex - it reads your files, builds a knowledge graph, and gives you back structure you didn't know was there. Understand a codebase faster. Find the "why" behind architectural decisions.
 
 This repository is the maintained TypeScript port of the original Graphify project. Thanks to the original work by [Safi Shamsi](https://github.com/safishamsi/graphify) for the product direction, workflow, and initial implementation.
 
@@ -14,7 +14,7 @@ Fully multimodal. Drop in code, PDFs, markdown, screenshots, diagrams, whiteboar
 
 ```bash
 $graphify .                        # Codex
-/graphify .                        # Claude Code / Gemini CLI / OpenCode / OpenClaw / Droid / Trae
+/graphify .                        # Claude Code / Gemini CLI / Copilot CLI / Aider / OpenCode / OpenClaw / Droid / Trae
 ```
 
 In Codex, `$graphify` is a skill trigger, not a Bash subcommand like `graphify .`. A successful TypeScript-backed Codex run should leave `graphify-out/.graphify_runtime.json` with `runtime: "typescript"`.
@@ -37,7 +37,7 @@ dist/
 *.generated.py
 ```
 
-Same syntax as `.gitignore`. Patterns match against file paths relative to the folder you run graphify on.
+Same syntax as `.gitignore`. Patterns are discovered from the folder you run graphify on and its ancestors up to the git root, then matched against paths relative to the folder being scanned.
 
 ## How it works
 
@@ -49,7 +49,7 @@ Every relationship is tagged `EXTRACTED` (found directly in source), `INFERRED` 
 
 ## Install
 
-**Requires:** Node.js 20+ and one of: [Claude Code](https://claude.ai/code), [Codex](https://openai.com/codex), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [OpenCode](https://opencode.ai), [OpenClaw](https://openclaw.ai), [Factory Droid](https://factory.ai), [Trae](https://trae.com), or [Cursor](https://cursor.com)
+**Requires:** Node.js 20+ and one of: [Claude Code](https://claude.ai/code), [Codex](https://openai.com/codex), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli), [Aider](https://aider.chat), [OpenCode](https://opencode.ai), [OpenClaw](https://openclaw.ai), [Factory Droid](https://factory.ai), [Trae](https://trae.com), or [Cursor](https://cursor.com)
 
 ```bash
 npm install -g graphifyy
@@ -66,19 +66,21 @@ graphify install
 | Claude Code (Windows) | `graphify install` (auto-detected) or `graphify install --platform windows` |
 | Codex | `graphify install --platform codex` |
 | Gemini CLI | `graphify install --platform gemini` |
+| GitHub Copilot CLI | `graphify install --platform copilot` |
+| Aider | `graphify install --platform aider` |
 | OpenCode | `graphify install --platform opencode` |
 | OpenClaw | `graphify install --platform claw` |
 | Factory Droid | `graphify install --platform droid` |
 | Trae | `graphify install --platform trae` |
 | Trae CN | `graphify install --platform trae-cn` |
 
-Codex users also need `multi_agent = true` under `[features]` in `~/.codex/config.toml` for parallel extraction. Gemini CLI exposes `/graphify` through a custom command installed into `~/.gemini/commands/graphify.toml`, and the project install writes `.gemini/settings.json` so Gemini can use `graphify serve` as an MCP server. OpenCode installs a project-local `tool.execute.before` plugin in `.opencode/plugins/graphify.js` and registers it in `opencode.json`, so OpenCode gets the same graph reminder before bash tool calls. Factory Droid uses the `Task` tool for parallel subagent dispatch. OpenClaw uses sequential extraction (parallel agent support is still early on that platform). Trae uses the Agent tool for parallel subagent dispatch and does **not** support PreToolUse hooks — AGENTS.md is the always-on mechanism.
+Codex users also need `multi_agent = true` under `[features]` in `~/.codex/config.toml` for parallel extraction. Gemini CLI exposes `/graphify` through a custom command installed into `~/.gemini/commands/graphify.toml`, and the project install writes `.gemini/settings.json` so Gemini can use `graphify serve` as an MCP server. GitHub Copilot CLI installs a global `~/.copilot/skills/graphify/SKILL.md`. Aider uses a global `~/.aider/graphify/SKILL.md`, but semantic extraction stays sequential there because multi-agent dispatch is still early on that platform. OpenCode installs a project-local `tool.execute.before` plugin in `.opencode/plugins/graphify.js` and registers it in `opencode.json`, so OpenCode gets the same graph reminder before bash tool calls. Factory Droid uses the `Task` tool for parallel subagent dispatch. OpenClaw uses sequential extraction (parallel agent support is still early on that platform). Trae uses the Agent tool for parallel subagent dispatch and does **not** support PreToolUse hooks — AGENTS.md is the always-on mechanism.
 
 Then open your AI coding assistant and invoke the skill:
 
 ```bash
 $graphify .                        # Codex
-/graphify .                        # Claude Code / Gemini CLI / OpenCode / OpenClaw / Droid / Trae
+/graphify .                        # Claude Code / Gemini CLI / Copilot CLI / Aider / OpenCode / OpenClaw / Droid / Trae
 ```
 
 ### Make your assistant always use the graph (recommended)
@@ -90,6 +92,8 @@ After building a graph, run this once in your project:
 | Claude Code | `graphify claude install` |
 | Codex | `graphify codex install` |
 | Gemini CLI | `graphify gemini install` |
+| GitHub Copilot CLI | `graphify copilot install` |
+| Aider | `graphify aider install` |
 | OpenCode | `graphify opencode install` |
 | OpenClaw | `graphify claw install` |
 | Factory Droid | `graphify droid install` |
@@ -102,6 +106,10 @@ After building a graph, run this once in your project:
 **Codex** writes to `AGENTS.md`, teaches Codex to use the installed `graphify` skill for graph build/update/query tasks, and also installs a **PreToolUse hook** in `.codex/hooks.json` that fires before every Bash tool call.
 
 **Gemini CLI** writes `GEMINI.md` in your project root and registers a project-scoped `graphify` MCP server in `.gemini/settings.json`. Gemini CLI does not have a Claude/Codex-style PreToolUse hook, so `GEMINI.md` is the always-on mechanism and `/graphify` is the explicit custom command.
+
+**GitHub Copilot CLI** installs the global `graphify` skill in `~/.copilot/skills/graphify/SKILL.md`. There is no separate project-scoped hook in this port, so `/graphify` is the explicit entrypoint.
+
+**Aider** writes `AGENTS.md` in your project root and relies on the installed global skill in `~/.aider/graphify/SKILL.md`. Semantic extraction is sequential there, so expect it to be slower than Codex/OpenCode on large doc-heavy corpora.
 
 **OpenCode** writes to `AGENTS.md` and installs a project-local `tool.execute.before` plugin in `.opencode/plugins/graphify.js`, registered via `opencode.json`, so bash tool calls get the same graph reminder before raw-file traversal.
 
@@ -181,7 +189,7 @@ When the user types `/graphify`, invoke the Skill tool with `skill: "graphify"` 
 
 ## Usage
 
-In Codex, replace the leading `/` in the examples below with `$`. Gemini CLI uses the `/graphify` form directly.
+In Codex, replace the leading `/` in the examples below with `$`. Gemini CLI, GitHub Copilot CLI, and Aider use the `/graphify` form directly.
 
 ```
 /graphify                          # run on current directory
@@ -223,6 +231,10 @@ graphify claude uninstall
 graphify codex install             # AGENTS.md (Codex)
 graphify gemini install            # GEMINI.md + .gemini/settings.json (Gemini CLI)
 graphify gemini uninstall
+graphify copilot install           # ~/.copilot/skills/graphify/SKILL.md (GitHub Copilot CLI)
+graphify copilot uninstall
+graphify aider install             # AGENTS.md (Aider)
+graphify aider uninstall
 graphify cursor install            # .cursor/rules/graphify.mdc (Cursor)
 graphify cursor uninstall
 graphify opencode install          # AGENTS.md + opencode.json plugin (OpenCode)

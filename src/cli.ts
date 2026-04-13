@@ -6,9 +6,10 @@ import {
   writeFileSync,
   existsSync,
   mkdirSync,
-  copyFileSync,
   realpathSync,
   statSync,
+  unlinkSync,
+  rmdirSync,
 } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { homedir, platform } from "node:os";
@@ -58,6 +59,16 @@ const PLATFORM_CONFIG: Record<string, PlatformConfig> = {
   opencode: {
     skill_file: "skill-opencode.md",
     skill_dst: join(".config", "opencode", "skills", "graphify", "SKILL.md"),
+    claude_md: false,
+  },
+  aider: {
+    skill_file: "skill.md",
+    skill_dst: join(".aider", "graphify", "SKILL.md"),
+    claude_md: false,
+  },
+  copilot: {
+    skill_file: "skill.md",
+    skill_dst: join(".copilot", "skills", "graphify", "SKILL.md"),
     claude_md: false,
   },
   claw: {
@@ -175,6 +186,118 @@ This project has a graphify knowledge graph at graphify-out/.
 - After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
 `;
 
+const AIDER_SEMANTIC_SECTION = `#### Part B - Semantic extraction (sequential extraction on Aider)
+
+**Fast path:** If detection found zero docs, papers, and images (code-only corpus), skip Part B entirely and go straight to Part C. AST handles code - there is nothing for semantic extraction to do.
+
+> **Aider platform:** Multi-agent support is still early on Aider. Extraction runs sequentially - read and extract each uncached file yourself instead of dispatching parallel Agent calls.
+
+Print: \`Semantic extraction: N files (sequential - Aider)\`
+
+**Step B0 - Check extraction cache first**
+
+Before reading any docs, papers, or images, check which files already have cached semantic extraction results:
+
+\`\`\`bash
+node -e "
+const fs = require('fs');
+const { checkSemanticCache } = require('graphifyy');
+
+const detect = JSON.parse(fs.readFileSync('graphify-out/.graphify_detect.json', 'utf-8'));
+const allFiles = Object.values(detect.files).flat();
+
+const [cachedNodes, cachedEdges, cachedHyperedges, uncached] = checkSemanticCache(allFiles);
+
+if (cachedNodes.length || cachedEdges.length || cachedHyperedges.length) {
+    fs.writeFileSync('graphify-out/.graphify_cached.json', JSON.stringify({nodes: cachedNodes, edges: cachedEdges, hyperedges: cachedHyperedges}));
+}
+fs.writeFileSync('graphify-out/.graphify_uncached.txt', uncached.join('\\n'));
+console.log(\`Cache: \${allFiles.length - uncached.length} files hit, \${uncached.length} files need extraction\`);
+"
+\`\`\`
+
+Only extract files listed in \`graphify-out/.graphify_uncached.txt\`. If all files are cached, skip to Part C directly.
+
+**Step B1 - Split into chunks**
+
+Load files from \`graphify-out/.graphify_uncached.txt\`. Split them into logical batches of 20-25 files, but process them sequentially on Aider. Keep files from the same directory together. Each image still deserves focused attention because vision context is expensive.
+
+**Step B2 - Sequential extraction (Aider)**
+
+Process each uncached file one at a time. For each file:
+
+1. Read the file contents.
+2. Extract nodes, edges, and hyperedges using the same graphify rules:
+   - EXTRACTED: relationship explicit in source (import, call, citation, "see section 3.2")
+   - INFERRED: reasonable inference (shared structure, implied dependency)
+   - AMBIGUOUS: uncertain - flag it instead of omitting it
+   - Code files: only add semantic edges AST cannot find. Do not re-extract imports.
+   - Doc/paper files: extract named concepts, entities, citations, and rationale nodes (WHY decisions were made -> \`rationale_for\` edges)
+   - Image files: use vision to understand what the image is, not just OCR
+   - If \`--mode deep\` was given, be more aggressive with INFERRED edges
+   - Add \`semantically_similar_to\` only for genuinely non-obvious cross-cutting similarities
+   - Add hyperedges only when 3+ nodes clearly participate in one shared concept or flow
+   - \`confidence_score\` is REQUIRED on every edge: EXTRACTED=1.0, INFERRED=0.6-0.9, AMBIGUOUS=0.1-0.3
+3. Accumulate the results across all files.
+
+Write the accumulated result to \`graphify-out/.graphify_semantic_new.json\` using this exact schema:
+
+\`\`\`json
+{"nodes":[{"id":"filestem_entityname","label":"Human Readable Name","file_type":"code|document|paper|image","source_file":"relative/path","source_location":null,"source_url":null,"captured_at":null,"author":null,"contributor":null}],"edges":[{"source":"node_id","target":"node_id","relation":"calls|implements|references|cites|conceptually_related_to|shares_data_with|semantically_similar_to|rationale_for","confidence":"EXTRACTED|INFERRED|AMBIGUOUS","confidence_score":1.0,"source_file":"relative/path","source_location":null,"weight":1.0}],"hyperedges":[{"id":"snake_case_id","label":"Human Readable Label","nodes":["node_id1","node_id2","node_id3"],"relation":"participate_in|implement|form","confidence":"EXTRACTED|INFERRED","confidence_score":0.75,"source_file":"relative/path"}],"input_tokens":0,"output_tokens":0}
+\`\`\`
+
+**Step B3 - Cache and merge**
+
+If more than half the sequential batches failed, stop and tell the user.
+
+Save new results to cache:
+
+\`\`\`bash
+node -e "
+const fs = require('fs');
+const { saveSemanticCache } = require('graphifyy');
+
+const raw = fs.existsSync('graphify-out/.graphify_semantic_new.json') ? JSON.parse(fs.readFileSync('graphify-out/.graphify_semantic_new.json', 'utf-8')) : {nodes:[],edges:[],hyperedges:[]};
+const saved = saveSemanticCache(raw.nodes || [], raw.edges || [], raw.hyperedges || []);
+console.log(\`Cached \${saved} files\`);
+"
+\`\`\`
+
+Merge cached + new results into \`graphify-out/.graphify_semantic.json\`:
+
+\`\`\`bash
+node -e "
+const fs = require('fs');
+
+const cached = fs.existsSync('graphify-out/.graphify_cached.json') ? JSON.parse(fs.readFileSync('graphify-out/.graphify_cached.json', 'utf-8')) : {nodes:[],edges:[],hyperedges:[]};
+const fresh = fs.existsSync('graphify-out/.graphify_semantic_new.json') ? JSON.parse(fs.readFileSync('graphify-out/.graphify_semantic_new.json', 'utf-8')) : {nodes:[],edges:[],hyperedges:[]};
+
+const allNodes = [...cached.nodes, ...(fresh.nodes || [])];
+const allEdges = [...cached.edges, ...(fresh.edges || [])];
+const allHyperedges = [...(cached.hyperedges || []), ...(fresh.hyperedges || [])];
+
+const seen = new Set();
+const dedupedNodes = [];
+for (const node of allNodes) {
+  if (seen.has(node.id)) continue;
+  seen.add(node.id);
+  dedupedNodes.push(node);
+}
+
+fs.writeFileSync('graphify-out/.graphify_semantic.json', JSON.stringify({
+  nodes: dedupedNodes,
+  edges: allEdges,
+  hyperedges: allHyperedges,
+  input_tokens: fresh.input_tokens || 0,
+  output_tokens: fresh.output_tokens || 0
+}, null, 2));
+
+console.log(\`Extraction complete - \${dedupedNodes.length} nodes, \${allEdges.length} edges (\${cached.nodes.length} from cache, \${(fresh.nodes || []).length} new)\`);
+"
+\`\`\`
+
+Clean up temp files: \`rm -f graphify-out/.graphify_cached.json graphify-out/.graphify_uncached.txt graphify-out/.graphify_semantic_new.json\``;
+
 // ---------------------------------------------------------------------------
 // Skill resolution
 // ---------------------------------------------------------------------------
@@ -190,6 +313,64 @@ function findSkillFile(filename: string): string | null {
     if (existsSync(p)) return p;
   }
   return null;
+}
+
+function renderAiderSkill(baseSkill: string): string {
+  return baseSkill.replace(
+    /#### Part B - Semantic extraction \(parallel subagents\)[\s\S]*?(?=\n#### Part C - Merge AST \+ semantic into final extraction)/,
+    AIDER_SEMANTIC_SECTION,
+  );
+}
+
+function loadSkillContent(platformName: string): string {
+  const cfg = PLATFORM_CONFIG[platformName];
+  if (!cfg) {
+    console.error(`error: unknown platform '${platformName}'. Choose from: ${Object.keys(PLATFORM_CONFIG).join(", ")}`);
+    process.exit(1);
+  }
+
+  const skillSrc = findSkillFile(cfg.skill_file);
+  if (!skillSrc) {
+    console.error(`error: ${cfg.skill_file} not found in package - reinstall graphify`);
+    process.exit(1);
+  }
+
+  const baseSkill = readFileSync(skillSrc, "utf-8");
+  if (platformName === "aider") {
+    const rendered = renderAiderSkill(baseSkill);
+    if (rendered === baseSkill) {
+      throw new Error("failed to render Aider skill overrides");
+    }
+    return rendered;
+  }
+  return baseSkill;
+}
+
+function uninstallSkill(platformName: string): void {
+  const cfg = PLATFORM_CONFIG[platformName];
+  if (!cfg) {
+    console.error(`error: unknown platform '${platformName}'. Choose from: ${Object.keys(PLATFORM_CONFIG).join(", ")}`);
+    process.exit(1);
+  }
+
+  const skillDst = join(homedir(), cfg.skill_dst);
+  const removed: string[] = [];
+  if (existsSync(skillDst)) {
+    unlinkSync(skillDst);
+    removed.push(`skill removed: ${skillDst}`);
+  }
+  const versionFile = join(dirname(skillDst), ".graphify_version");
+  if (existsSync(versionFile)) {
+    unlinkSync(versionFile);
+  }
+  for (let dir = dirname(skillDst); dir !== dirname(dir); dir = dirname(dir)) {
+    try {
+      rmdirSync(dir);
+    } catch {
+      break;
+    }
+  }
+  console.log(removed.length > 0 ? removed.join("; ") : "nothing to remove");
 }
 
 export function getInvocationExample(platformName: string): string {
@@ -375,15 +556,9 @@ function installSkill(platformName: string): void {
     process.exit(1);
   }
 
-  const skillSrc = findSkillFile(cfg.skill_file);
-  if (!skillSrc) {
-    console.error(`error: ${cfg.skill_file} not found in package - reinstall graphify`);
-    process.exit(1);
-  }
-
   const skillDst = join(homedir(), cfg.skill_dst);
   mkdirSync(dirname(skillDst), { recursive: true });
-  copyFileSync(skillSrc, skillDst);
+  writeFileSync(skillDst, loadSkillContent(platformName), "utf-8");
   writeFileSync(join(dirname(skillDst), ".graphify_version"), VERSION, "utf-8");
   console.log(`  skill installed  ->  ${skillDst}`);
 
@@ -771,7 +946,13 @@ export async function main(): Promise<void> {
     sub.command("uninstall").description("Remove .cursor/rules/graphify.mdc").action(() => cursorUninstall());
   }
 
-  for (const cmd of ["codex", "opencode", "claw", "droid", "trae", "trae-cn"]) {
+  {
+    const sub = program.command("copilot").description("copilot skill management");
+    sub.command("install").description("Copy graphify skill to ~/.copilot/skills").action(() => installSkill("copilot"));
+    sub.command("uninstall").description("Remove graphify skill from ~/.copilot/skills").action(() => uninstallSkill("copilot"));
+  }
+
+  for (const cmd of ["aider", "codex", "opencode", "claw", "droid", "trae", "trae-cn"]) {
     const sub = program.command(cmd).description(`${cmd} skill management`);
     sub.command("install").description(
       cmd === "codex"
