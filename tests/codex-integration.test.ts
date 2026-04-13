@@ -76,4 +76,20 @@ describe("Codex integration contract", () => {
     expect(() => agentsInstall(dir, "codex")).not.toThrow();
     expect(existsSync(join(dir, ".codex", "hooks.json"))).toBe(true);
   });
+
+  it("writes the corrected Codex hook JSON contract", () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-codex-hook-json-"));
+    tempDirs.push(dir);
+
+    agentsInstall(dir, "codex");
+
+    const hooks = JSON.parse(readFileSync(join(dir, ".codex", "hooks.json"), "utf-8")) as {
+      hooks?: { PreToolUse?: Array<{ hooks?: Array<{ command?: string }> }> };
+    };
+    const command = hooks.hooks?.PreToolUse?.[0]?.hooks?.[0]?.command ?? "";
+
+    expect(command).toContain("\"permissionDecision\":\"allow\"");
+    expect(command).toContain("\"systemMessage\":\"graphify: Knowledge graph exists.");
+    expect(command).not.toContain("\"additionalContext\"");
+  });
 });

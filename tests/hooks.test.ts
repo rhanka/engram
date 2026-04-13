@@ -22,6 +22,8 @@ describe("hooks", () => {
     expect(result).toContain("post-checkout: installed");
     expect(existsSync(join(tmpDir, ".git", "hooks", "post-commit"))).toBe(true);
     expect(existsSync(join(tmpDir, ".git", "hooks", "post-checkout"))).toBe(true);
+    expect(readFileSync(join(tmpDir, ".git", "hooks", "post-commit"), "utf-8").startsWith("#!/bin/sh\n")).toBe(true);
+    expect(readFileSync(join(tmpDir, ".git", "hooks", "post-checkout"), "utf-8").startsWith("#!/bin/sh\n")).toBe(true);
   });
 
   it("detects already installed hooks", () => {

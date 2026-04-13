@@ -25,7 +25,7 @@ This branch tracks the delta between this TypeScript port and the upstream Pytho
 | `v0.3.18` | skill coverage, Windows skill fixes, click detection, `.graphify_python` persistence | `covered` | Covered in TS via installable skill coverage, Windows skill audit, HTML hover/click fallback, and synchronized extension sets in `detect`/`analyze`/`watch`; `.graphify_python` is `n/a` |
 | `v0.3.19` | OpenCode `tool.execute.before` plugin install | `covered` | Covered in TS via `.opencode/plugins/graphify.js`, `opencode.json` registration, install/uninstall idempotency, and README parity |
 | `v0.3.20` | AST call edges forced to `EXTRACTED`, tree-sitter version guard | `covered` | Covered in TS by fixing remaining AST `calls` edges to `EXTRACTED`/`1.0`; the upstream version guard is Python-binding-specific and maps to pinned `web-tree-sitter` deps plus existing missing-grammar diagnostics in TS |
-| `v0.3.21` | Codex hook JSON schema fix, `#!/bin/sh` for Windows git hooks | `partial` | Codex hook schema is covered; audit hook shell portability vs upstream |
+| `v0.3.21` | Codex hook JSON schema fix, `#!/bin/sh` for Windows git hooks | `covered` | Covered in TS via the corrected Codex hook JSON payload and `/bin/sh` git hook installation/removal parity |
 | `v0.3.22` | Cursor support, Python watcher/export crash fixes | `partial` | Add Cursor as first-class platform target; mark Python-specific crash fixes as `n/a` unless a TS analog exists |
 | `v0.3.23` | Gemini CLI support | `covered` | Keep synced as upstream evolves, but base support is already present |
 | `v0.3.24` | Codex/OpenCode install idempotency | `partial` | Codex is covered; audit OpenCode install path and add regression if needed |

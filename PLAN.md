@@ -95,12 +95,12 @@ Upstream scope:
 - `#!/bin/sh` portability for Windows hooks
 
 Plan:
-- [ ] Audit upstream commit `6f9fc65`
-- [ ] Confirm current TS Codex hook JSON shape still matches the fixed upstream schema
-- [ ] Audit hook shell portability in the TS runtime
-- [ ] Decide whether any hook script shebang or shell portability fix is still missing
-- [ ] Add/extend hook tests if needed
-- [ ] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.21`
+- [x] Audit upstream commit `6f9fc65`
+- [x] Confirm current TS Codex hook JSON shape still matches the fixed upstream schema
+- [x] Audit hook shell portability in the TS runtime
+- [x] Decide whether any hook script shebang or shell portability fix is still missing
+- [x] Add/extend hook tests if needed
+- [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.21`
 - [ ] Commit the `v0.3.21` catch-up lot
 
 ## Lot 5 - Upstream `v0.3.22`

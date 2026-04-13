@@ -84,7 +84,7 @@ function installHook(hooksDir: string, name: string, script: string, marker: str
     writeFileSync(hookPath, content.trimEnd() + "\n\n" + script);
     return `appended to existing ${name} hook at ${hookPath}`;
   }
-  writeFileSync(hookPath, "#!/bin/bash\n" + script);
+  writeFileSync(hookPath, "#!/bin/sh\n" + script);
   chmodSync(hookPath, 0o755);
   return `installed at ${hookPath}`;
 }
@@ -101,7 +101,7 @@ function uninstallHook(hooksDir: string, name: string, marker: string, markerEnd
   );
   let newContent = content.replace(regex, "").trim();
 
-  if (!newContent || newContent === "#!/bin/bash") {
+  if (!newContent || ["#!/bin/bash", "#!/bin/sh"].includes(newContent)) {
     unlinkSync(hookPath);
     return `removed ${name} hook at ${hookPath}`;
   }
