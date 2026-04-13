@@ -1200,8 +1200,8 @@ async function _extractGeneric(filePath: string, config: LanguageConfig): Promis
             const line = node.startPosition.row + 1;
             edges.push({
               source: callerNid, target: tgtNid, relation: "calls",
-              confidence: "INFERRED", source_file: strPath,
-              source_location: `L${line}`, weight: 0.8,
+              confidence: "EXTRACTED", source_file: strPath,
+              source_location: `L${line}`, weight: 1.0,
             });
           }
         }
@@ -1813,8 +1813,8 @@ export async function extractGo(filePath: string): Promise<ExtractionResult> {
             const line = node.startPosition.row + 1;
             edges.push({
               source: callerNid, target: tgtNid, relation: "calls",
-              confidence: "INFERRED", source_file: strPath,
-              source_location: `L${line}`, weight: 0.8,
+              confidence: "EXTRACTED", source_file: strPath,
+              source_location: `L${line}`, weight: 1.0,
             });
           }
         }
@@ -1991,8 +1991,8 @@ export async function extractRust(filePath: string): Promise<ExtractionResult> {
             const line = node.startPosition.row + 1;
             edges.push({
               source: callerNid, target: tgtNid, relation: "calls",
-              confidence: "INFERRED", source_file: strPath,
-              source_location: `L${line}`, weight: 0.8,
+              confidence: "EXTRACTED", source_file: strPath,
+              source_location: `L${line}`, weight: 1.0,
             });
           }
         }
@@ -2179,7 +2179,7 @@ export async function extractZig(filePath: string): Promise<ExtractionResult> {
           const pair = `${callerNid}|${tgtNid}`;
           if (!seenCallPairs.has(pair)) {
             seenCallPairs.add(pair);
-            addEdge(callerNid, tgtNid, "calls", node.startPosition.row + 1, "INFERRED", 0.8);
+            addEdge(callerNid, tgtNid, "calls", node.startPosition.row + 1, "EXTRACTED", 1.0);
           }
         }
       }
@@ -2373,7 +2373,7 @@ export async function extractPowershell(filePath: string): Promise<ExtractionRes
             const pair = `${callerNid}|${tgtNid}`;
             if (!seenCallPairs.has(pair)) {
               seenCallPairs.add(pair);
-              addEdge(callerNid, tgtNid, "calls", node.startPosition.row + 1, "INFERRED", 0.8);
+              addEdge(callerNid, tgtNid, "calls", node.startPosition.row + 1, "EXTRACTED", 1.0);
             }
           }
         }
@@ -2602,7 +2602,7 @@ export async function extractObjc(filePath: string): Promise<ExtractionResult> {
                 const pair = `${callerNid}|${candidate}`;
                 if (!seenCalls.has(pair) && callerNid !== candidate) {
                   seenCalls.add(pair);
-                  addEdge(callerNid, candidate, "calls", bodyNode.startPosition.row + 1, "INFERRED", 0.8);
+                  addEdge(callerNid, candidate, "calls", bodyNode.startPosition.row + 1, "EXTRACTED", 1.0);
                 }
               }
             }
@@ -2807,7 +2807,7 @@ export async function extractElixir(filePath: string): Promise<ExtractionResult>
         const pair = `${callerNid}|${tgtNid}`;
         if (!seenCallPairs.has(pair)) {
           seenCallPairs.add(pair);
-          addEdge(callerNid, tgtNid, "calls", node.startPosition.row + 1, "INFERRED", 0.8);
+          addEdge(callerNid, tgtNid, "calls", node.startPosition.row + 1, "EXTRACTED", 1.0);
         }
       }
     }
