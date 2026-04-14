@@ -58,7 +58,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rhanka/graphify"
+    "url": "git+https://github.com/rhanka/graphify.git"
   },
   "homepage": "https://github.com/rhanka/graphify",
   "bugs": {
