@@ -8,7 +8,7 @@
 
 このリポジトリは元の Graphify プロジェクトの保守中 TypeScript ポートです。製品の方向性、ワークフロー、初期実装は [Safi Shamsi](https://github.com/safishamsi/graphify) による原典プロジェクトに依拠しています。
 
-graphify はマルチモーダルであり、この TypeScript ポートは upstream `v3` に対してリリース単位でキャッチアップしています。現在の TS ランタイムはコード、Markdown、PDF、Office 文書、スクリーンショット、図表、その他の画像を処理できます。このブランチではさらにローカルの音声/動画検出と `yt-dlp` + `faster-whisper` による文字起こしラッパーを追加しており、生成された transcript も同じ意味抽出パスに流し込まれます。tree-sitter AST により 20 言語をサポートします（Python、JS、TS、Go、Rust、Java、C、C++、Ruby、C#、Kotlin、Scala、PHP、Swift、Lua、Zig、PowerShell、Elixir、Objective-C、Julia）。
+graphify はマルチモーダルであり、この TypeScript ポートは upstream `v3` に対してリリース単位でキャッチアップしています。現在の TS ランタイムはコード、Markdown、PDF、Office 文書、スクリーンショット、図表、その他の画像を処理できます。このブランチではさらにローカルの音声/動画検出と `yt-dlp` + `ffmpeg` + `sherpa-onnx-node` による文字起こし経路を追加しており、生成された transcript も同じ意味抽出パスに流し込まれます。tree-sitter AST により 20 言語をサポートします（Python、JS、TS、Go、Rust、Java、C、C++、Ruby、C#、Kotlin、Scala、PHP、Swift、Lua、Zig、PowerShell、Elixir、Objective-C、Julia）。
 
 > Andrej Karpathy は論文、ツイート、スクリーンショット、メモを放り込む `/raw` フォルダを持っています。graphify はまさにその問題への答えです――生ファイルを読むのに比べて1クエリあたりのトークン数が 71.5 倍少なく、セッションをまたいで永続化され、見つけたものと推測したものを正直に区別します。
 
@@ -39,7 +39,7 @@ dist/
 
 ## 仕組み
 
-graphify は決定論的な構造抽出とモデル駆動の意味抽出を組み合わせ、必要に応じてその間にローカル前処理を挟みます。コードは LLM を使わない AST パスでクラス、関数、インポート、コールグラフ、docstring、根拠コメントを抽出します。ドキュメント、論文、Office 文書、画像はテキストまたはマルチモーダル入力に正規化したうえで、プラットフォーム側モデルのサブエージェントが概念、関係、設計意図を抽出します。このキャッチアップブランチでは音声/動画もローカルで検出でき、TypeScript ランタイムから `yt-dlp` + `faster-whisper` で文字起こしし、その transcript も他のドキュメントと同じ意味抽出パスに流し込みます。結果は Graphology グラフにマージされ、Louvain コミュニティ検出でクラスタリングされ、インタラクティブ HTML、クエリ可能な JSON、平易な監査レポートとしてエクスポートされます。
+graphify は決定論的な構造抽出とモデル駆動の意味抽出を組み合わせ、必要に応じてその間にローカル前処理を挟みます。コードは LLM を使わない AST パスでクラス、関数、インポート、コールグラフ、docstring、根拠コメントを抽出します。ドキュメント、論文、Office 文書、画像はテキストまたはマルチモーダル入力に正規化したうえで、プラットフォーム側モデルのサブエージェントが概念、関係、設計意図を抽出します。このキャッチアップブランチでは音声/動画もローカルで検出でき、TypeScript ランタイムから `yt-dlp` で音声を取得し、`ffmpeg` で正規化し、`sherpa-onnx-node` で文字起こしします。その transcript も他のドキュメントと同じ意味抽出パスに流し込みます。結果は Graphology グラフにマージされ、Louvain コミュニティ検出でクラスタリングされ、インタラクティブ HTML、クエリ可能な JSON、平易な監査レポートとしてエクスポートされます。
 
 **クラスタリングはグラフトポロジベースで、埋め込みは使いません。** Louvain はエッジ密度によってコミュニティを見つけます。プラットフォームモデルが抽出する意味的類似性エッジ（`semantically_similar_to`、`INFERRED`）は既にグラフに含まれているため、コミュニティ検出に直接影響します。グラフ構造そのものが類似性シグナルであり、別途の embedding ステップやベクターデータベースは不要です。
 
@@ -212,7 +212,7 @@ graphify query "..." --graph path/to/graph.json
 | Office | `.docx .xlsx` | Markdown に変換した後、現在のプラットフォームモデルで抽出 |
 | 論文 | `.pdf` | 引用マイニング + 概念抽出 |
 | 画像 | `.png .jpg .webp .gif` | プラットフォームのマルチモーダルモデル - スクリーンショット、図、任意の言語 |
-| 音声 / 動画 | `.mp4 .mov .webm .mkv .avi .m4v .mp3 .wav .m4a .ogg` | ローカルで検出し、`yt-dlp` + `faster-whisper` で文字起こししたうえで、ドキュメントと同じ意味抽出パスに流し込む |
+| 音声 / 動画 | `.mp4 .mov .webm .mkv .avi .m4v .mp3 .wav .m4a .ogg` | ローカルで検出し、必要に応じて `yt-dlp` で取得、`ffmpeg` で正規化、`sherpa-onnx-node` で文字起こししたうえで、ドキュメントと同じ意味抽出パスに流し込む |
 
 ## 得られるもの
 
@@ -250,11 +250,11 @@ graphify query "..." --graph path/to/graph.json
 
 ## プライバシー
 
-graphify はドキュメント、論文、画像の意味的抽出のために、ファイル内容を AI コーディングアシスタントの基盤モデル API に送信します。Anthropic（Claude Code）、OpenAI（Codex）、Google（Gemini CLI）など、利用中プラットフォームのプロバイダーが対象です。コードファイルは tree-sitter AST を介してローカルで処理されるため、コードに関してはファイル内容がマシンから出ることはありません。音声/動画の文字起こしを使う場合、その工程はローカルの `yt-dlp` + `faster-whisper` ツールチェーンで実行されます。テレメトリ、利用追跡、分析は一切ありません。ネットワーク呼び出しは、あなたが明示的に ingestion を指示した URL 取得と、抽出中のプラットフォームのモデル API 呼び出しのみです。
+graphify はドキュメント、論文、画像の意味的抽出のために、ファイル内容を AI コーディングアシスタントの基盤モデル API に送信します。Anthropic（Claude Code）、OpenAI（Codex）、Google（Gemini CLI）など、利用中プラットフォームのプロバイダーが対象です。コードファイルは tree-sitter AST を介してローカルで処理されるため、コードに関してはファイル内容がマシンから出ることはありません。音声/動画の文字起こしを使う場合、その工程はローカルの `yt-dlp` + `ffmpeg` + `sherpa-onnx-node` ツールチェーンで実行されます。テレメトリ、利用追跡、分析は一切ありません。ネットワーク呼び出しは、あなたが明示的に ingestion を指示した URL 取得と、抽出中のプラットフォームのモデル API 呼び出しのみです。
 
 ## 技術スタック
 
-Graphology + Louvain（`graphology-communities-louvain`） + tree-sitter + vis-network に加え、`pdf-parse`、`mammoth`、`exceljs`、`turndown`、そしてこのキャッチアップブランチで upstream に合わせて導入した `yt-dlp` + `faster-whisper` ラッパーを使います。意味的抽出は利用中プラットフォームのモデル（Claude Code、Codex、Gemini CLI など）を介して行われます。デフォルトの HTML 出力は完全な静的ファイルです。
+Graphology + Louvain（`graphology-communities-louvain`） + tree-sitter + vis-network に加え、`pdf-parse`、`mammoth`、`exceljs`、`turndown`、そしてこのキャッチアップブランチで upstream に合わせて導入した `yt-dlp` + `ffmpeg` + `sherpa-onnx-node` の文字起こし経路を使います。意味的抽出は利用中プラットフォームのモデル（Claude Code、Codex、Gemini CLI など）を介して行われます。デフォルトの HTML 出力は完全な静的ファイルです。
 
 ## 謝辞
 

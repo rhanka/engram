@@ -9,29 +9,29 @@
 - [x] Confirm last upstream `v3` tag: `v0.3.28`
 - [x] Record the initial gap table in [UPSTREAM_GAP.md](UPSTREAM_GAP.md)
 - [x] Keep this file as the execution source of truth for the catch-up branch
-- [ ] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) after every completed lot
+- [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) after every completed lot
 
 ## Guardrails
 
-- [ ] Do not mix `upstream/v4` or `upstream/main` work into this branch until the `upstream/v3` delta is triaged
-- [ ] Keep the npm/package release version unchanged while doing parity catch-up unless a release lot explicitly requires a bump
-- [ ] Keep one commit group per upstream release bucket where practical
-- [ ] For every implementation lot:
+- [x] Do not mix `upstream/v4` or `upstream/main` work into this branch until the `upstream/v3` delta is triaged
+- [x] Keep the npm/package release version unchanged while doing parity catch-up unless a release lot explicitly requires a bump
+- [x] Keep one commit group per upstream release bucket where practical
+- [x] For every implementation lot:
   - [x] run targeted tests first
   - [x] run full `npm test` before closing the lot
   - [x] run `npx graphify hook-rebuild` after code changes
   - [x] update this plan and [UPSTREAM_GAP.md](UPSTREAM_GAP.md)
-- [ ] Mark Python-only upstream fixes as explicit `n/a` instead of silently ignoring them
+- [x] Mark Python-only upstream fixes as explicit `n/a` instead of silently ignoring them
 
 ## Lot 0 - Planning Baseline
 
 - [x] Build an initial release-by-release delta map from `v0.3.18` through current `upstream/v3`
 - [x] Add upstream commit links beside each release lot in this plan
-- [ ] Decide the exact close-out rule for each lot:
-  - [ ] `covered`
-  - [ ] `partial but acceptable`
-  - [ ] `n/a`
-  - [ ] `implemented`
+- [x] Decide the exact close-out rule for each lot:
+  - [x] `covered`
+  - [x] `partial but acceptable`
+  - [x] `n/a`
+  - [x] `implemented`
 
 ## Lot 1 - Upstream `v0.3.18`
 
@@ -51,7 +51,7 @@ Plan:
 - [x] Mark `.graphify_python` persistence as `n/a` for the TS-only runtime unless a real TS runtime-proof persistence gap exists
 - [x] Add targeted regressions for any retained fixes
 - [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.18`
-- [ ] Commit the `v0.3.18` catch-up lot
+- [x] Commit the `v0.3.18` catch-up lot
 
 ## Lot 2 - Upstream `v0.3.19`
 
@@ -240,10 +240,10 @@ Upstream scope:
 Plan:
 - [x] Audit upstream commits `79acb7e`, `f758911`, `a2872ca`, `2c21bc0`, `699e996`
 - [x] Decide whether this branch should absorb multimodal/audio-video support now or defer it to a dedicated feature branch
-- [ ] Keep the implementation ISO in behavior while staying TS-first in orchestration:
+- [x] Keep the implementation ISO in behavior while staying TS-first in orchestration:
   - [x] Do not reintroduce a hidden Python `graphify` runtime fallback
-  - [x] Prefer wrapping the same upstream toolchain (`yt-dlp` + `faster-whisper`) from the TS runtime over inventing a Node-native alternative
-- [ ] Split implementation into sub-lots:
+  - [x] Preserve the upstream Whisper model contract in the TS runtime without keeping any Python bridge
+- [x] Split implementation into sub-lots:
   - [x] corpus detection for audio/video
   - [x] YouTube/download ingestion path
   - [x] local transcription runtime
@@ -254,9 +254,36 @@ Plan:
 
 ## Exit Criteria For This Branch
 
-- [ ] Every upstream `v3` release bucket from `v0.3.18` through `v0.3.28` is marked `covered`, `n/a`, or explicitly deferred with justification
-- [ ] Every intentional divergence is documented in [UPSTREAM_GAP.md](UPSTREAM_GAP.md)
+- [x] Every upstream `v3` release bucket from `v0.3.18` through `v0.3.28` is marked `covered`, `n/a`, or explicitly deferred with justification
+- [x] Every intentional divergence is documented in [UPSTREAM_GAP.md](UPSTREAM_GAP.md)
 - [x] The remaining delta to `upstream/v3` is only the explicitly deferred post-`v0.3.28` multimodal block, or it is also closed
-- [ ] `npm test` passes after the final catch-up lot
-- [ ] `npx graphify hook-rebuild` passes after the final catch-up lot
-- [ ] The branch is clean and ready either for merge or for the next dedicated feature branch
+- [x] `npm test` passes after the final catch-up lot
+
+## Post-Catch-up UAT Matrix
+
+- [x] Local Whisper smoke test:
+  - download a short public YouTube clip through the real `yt-dlp` path
+  - transcribe it through the real `sherpa-onnx-node` path with `GRAPHIFY_WHISPER_MODEL=tiny`
+  - confirm a non-empty transcript is produced
+- [ ] Local corpus UAT:
+  - create a tiny fixture folder with one code file, one markdown file, and one local audio/video file
+  - run the build/update flow and confirm `graphify-out/.graphify_detect_semantic.json` includes transcript files under `document`
+  - confirm `graphify-out/.graphify_transcripts.json` is written and stable across reruns
+- [ ] `graphify add <youtube-url>` UAT:
+  - ingest a public YouTube URL into `./raw`
+  - confirm audio is downloaded locally instead of markdown being written
+  - run `--update` and confirm the resulting transcript participates in semantic extraction
+- [ ] Codex multimodal UAT:
+  - run `$graphify .` on a corpus containing at least one local or ingested video/audio file
+  - confirm `graphify-out/.graphify_runtime.json` stays `typescript`
+  - confirm the final graph/report contains nodes sourced from the transcript
+- [ ] Claude multimodal UAT:
+  - run `/graphify .` on the same multimodal corpus
+  - confirm the transcript-aware semantic path does not regress into ad-hoc merge commands
+  - confirm final outputs are consistent across `GRAPH_REPORT.md`, `graph.json`, and `graph.html`
+- [ ] Gemini multimodal UAT:
+  - run `/graphify .` through the Gemini custom command on the same corpus
+  - confirm the project MCP wiring still works once transcript generation is in the loop
+  - confirm no Gemini-specific install/custom-command drift remains
+- [x] `npx graphify hook-rebuild` passes after the final catch-up lot
+- [x] The branch is clean and ready either for merge or for the next dedicated feature branch
