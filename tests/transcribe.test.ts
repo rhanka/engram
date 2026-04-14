@@ -4,33 +4,99 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const { createAsyncMock, readWaveMock } = vi.hoisted(() => ({
+  createAsyncMock: vi.fn(),
+  readWaveMock: vi.fn(),
+}));
+
 vi.mock("node:child_process", () => ({
   spawnSync: vi.fn(),
 }));
 
+vi.mock("sherpa-onnx-node", () => ({
+  OfflineRecognizer: {
+    createAsync: createAsyncMock,
+  },
+  readWave: readWaveMock,
+}));
+
 import { spawnSync } from "node:child_process";
-import { augmentDetectionWithTranscripts, buildWhisperPrompt, downloadAudio, isUrl, transcribe, transcribeAll } from "../src/transcribe.js";
+import {
+  augmentDetectionWithTranscripts,
+  buildWhisperPrompt,
+  downloadAudio,
+  isUrl,
+  transcribe,
+  transcribeAll,
+} from "../src/transcribe.js";
 
 const tempDirs: string[] = [];
 const spawnSyncMock = vi.mocked(spawnSync);
 
 describe("transcribe helpers", () => {
   let tmpDir: string;
+  let fetchMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "graphify-transcribe-"));
     tempDirs.push(tmpDir);
+    process.env.GRAPHIFY_WHISPER_CACHE_DIR = join(tmpDir, "model-cache");
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    readWaveMock.mockReturnValue({
+      samples: new Float32Array([0, 0.2, -0.1]),
+      sampleRate: 16000,
+    });
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     spawnSyncMock.mockReset();
+    createAsyncMock.mockReset();
+    readWaveMock.mockReset();
+    vi.unstubAllGlobals();
     while (tempDirs.length > 0) {
       rmSync(tempDirs.pop()!, { recursive: true, force: true });
     }
     delete process.env.GRAPHIFY_WHISPER_PROMPT;
     delete process.env.GRAPHIFY_WHISPER_MODEL;
+    delete process.env.GRAPHIFY_WHISPER_CACHE_DIR;
   });
+
+  function mockModelDownload(modelName: string = "base"): void {
+    fetchMock.mockResolvedValue(
+      new Response(new Uint8Array([1, 2, 3]), {
+        status: 200,
+        headers: { "content-type": "application/octet-stream" },
+      }),
+    );
+
+    createAsyncMock.mockResolvedValue({
+      createStream: () => ({
+        acceptWaveform: vi.fn(),
+        setOption: vi.fn(),
+      }),
+      decodeAsync: vi.fn().mockResolvedValue({ text: "decoded speech" }),
+    });
+
+    spawnSyncMock.mockImplementation((cmd, args) => {
+      const argv = (args ?? []).map(String);
+      if (cmd === "ffmpeg") {
+        writeFileSync(String(argv.at(-1)), "wav");
+        return { status: 0, stdout: "", stderr: "", output: [] } as ReturnType<typeof spawnSync>;
+      }
+      if (cmd === "tar") {
+        const extractDir = String(argv[3]);
+        const modelDir = join(extractDir, `sherpa-onnx-whisper-${modelName}`);
+        mkdirSync(modelDir, { recursive: true });
+        writeFileSync(join(modelDir, `${modelName}-encoder.int8.onnx`), "encoder");
+        writeFileSync(join(modelDir, `${modelName}-decoder.int8.onnx`), "decoder");
+        writeFileSync(join(modelDir, `${modelName}-tokens.txt`), "tokens");
+        return { status: 0, stdout: "", stderr: "", output: [] } as ReturnType<typeof spawnSync>;
+      }
+      return { status: 0, stdout: "", stderr: "", output: [] } as ReturnType<typeof spawnSync>;
+    });
+  }
 
   it("detects URL-looking inputs", () => {
     expect(isUrl("https://example.com/video")).toBe(true);
@@ -70,7 +136,7 @@ describe("transcribe helpers", () => {
   it("downloads audio with yt-dlp and returns the downloaded path", () => {
     const url = "https://www.youtube.com/watch?v=abc";
     const hash = createHash("sha1").update(url).digest("hex").slice(0, 12);
-    spawnSyncMock.mockImplementation((_cmd, _args, _options) => {
+    spawnSyncMock.mockImplementation(() => {
       writeFileSync(join(tmpDir, `yt_${hash}.m4a`), "audio");
       return { status: 0, stdout: "", stderr: "", output: [] } as ReturnType<typeof spawnSync>;
     });
@@ -80,88 +146,123 @@ describe("transcribe helpers", () => {
     expect(result).toBe(join(tmpDir, `yt_${hash}.m4a`));
   });
 
-  it("returns a cached transcript without rerunning Whisper", () => {
+  it("returns a cached transcript without rerunning local transcription", async () => {
     const video = join(tmpDir, "lecture.mp4");
     const outDir = join(tmpDir, "transcripts");
     writeFileSync(video, "audio");
     mkdirSync(outDir, { recursive: true });
     writeFileSync(join(outDir, "lecture.txt"), "cached transcript");
 
-    const result = transcribe(video, outDir);
+    const result = await transcribe(video, outDir);
 
     expect(result).toBe(join(outDir, "lecture.txt"));
     expect(spawnSyncMock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("force reruns Whisper and writes the transcript output", () => {
+  it("force reruns transcription through ffmpeg + sherpa and writes the transcript output", async () => {
     const video = join(tmpDir, "talk.mp4");
     const outDir = join(tmpDir, "transcripts");
     writeFileSync(video, "audio");
     mkdirSync(outDir, { recursive: true });
     writeFileSync(join(outDir, "talk.txt"), "old transcript");
+    mockModelDownload();
 
-    spawnSyncMock.mockImplementation((_cmd, args, _options) => {
-      const transcriptPath = String(args?.[3]);
-      writeFileSync(transcriptPath, "new transcript");
-      return { status: 0, stdout: "en|1", stderr: "", output: [] } as ReturnType<typeof spawnSync>;
-    });
-
-    const result = transcribe(video, outDir, "Custom prompt", true);
+    const result = await transcribe(video, outDir, "Custom prompt", true);
 
     expect(result).toBe(join(outDir, "talk.txt"));
-    expect(readFileSync(result, "utf-8")).toBe("new transcript");
+    expect(readFileSync(result, "utf-8")).toBe("decoded speech");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-base.tar.bz2",
+    );
+    expect(createAsyncMock).toHaveBeenCalledTimes(1);
+    expect(createAsyncMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelConfig: expect.objectContaining({
+          whisper: expect.objectContaining({
+            task: "transcribe",
+          }),
+        }),
+      }),
+    );
   });
 
-  it("propagates a clear error when faster-whisper is unavailable", () => {
+  it("maps the large alias to the upstream-compatible large-v3 model asset", async () => {
+    const video = join(tmpDir, "townhall.mp4");
+    writeFileSync(video, "audio");
+    process.env.GRAPHIFY_WHISPER_MODEL = "large";
+    mockModelDownload("large-v3");
+
+    await transcribe(video, join(tmpDir, "out"), undefined, true);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-large-v3.tar.bz2",
+    );
+  });
+
+  it("propagates a clear error when ffmpeg is unavailable", async () => {
     const video = join(tmpDir, "clip.mp4");
     writeFileSync(video, "audio");
-    spawnSyncMock.mockImplementation(() => {
-      return {
-        status: 1,
-        stdout: "",
-        stderr: "ModuleNotFoundError: No module named 'faster_whisper'",
-        output: [],
-      } as ReturnType<typeof spawnSync>;
+    spawnSyncMock.mockImplementation((cmd) => {
+      if (cmd === "ffmpeg") {
+        return {
+          status: 1,
+          stdout: "",
+          stderr: "ffmpeg: command not found",
+          output: [],
+        } as ReturnType<typeof spawnSync>;
+      }
+      return { status: 0, stdout: "", stderr: "", output: [] } as ReturnType<typeof spawnSync>;
     });
 
-    expect(() => transcribe(video, join(tmpDir, "out"), undefined, true)).toThrow(/faster-whisper/i);
+    await expect(transcribe(video, join(tmpDir, "out"), undefined, true)).rejects.toThrow(/ffmpeg/i);
   });
 
-  it("transcribeAll returns an empty list for empty input", () => {
-    expect(transcribeAll([])).toEqual([]);
+  it("transcribeAll returns an empty list for empty input", async () => {
+    await expect(transcribeAll([])).resolves.toEqual([]);
   });
 
-  it("transcribeAll skips failed files and keeps successful ones", () => {
+  it("transcribeAll skips failed files and keeps successful ones", async () => {
     const videoA = join(tmpDir, "a.mp4");
     const videoB = join(tmpDir, "b.mp4");
     writeFileSync(videoA, "a");
     writeFileSync(videoB, "b");
+    mockModelDownload();
 
-    spawnSyncMock.mockImplementation((_cmd, args, _options) => {
-      const audioPath = String(args?.[2]);
-      const transcriptPath = String(args?.[3]);
-      if (audioPath.endsWith("b.mp4")) {
-        return { status: 1, stdout: "", stderr: "boom", output: [] } as ReturnType<typeof spawnSync>;
+    let ffmpegCalls = 0;
+    spawnSyncMock.mockImplementation((cmd, args) => {
+      const argv = (args ?? []).map(String);
+      if (cmd === "tar") {
+        const extractDir = String(argv[3]);
+        const modelDir = join(extractDir, "sherpa-onnx-whisper-base");
+        mkdirSync(modelDir, { recursive: true });
+        writeFileSync(join(modelDir, "base-encoder.int8.onnx"), "encoder");
+        writeFileSync(join(modelDir, "base-decoder.int8.onnx"), "decoder");
+        writeFileSync(join(modelDir, "base-tokens.txt"), "tokens");
+        return { status: 0, stdout: "", stderr: "", output: [] } as ReturnType<typeof spawnSync>;
       }
-      writeFileSync(transcriptPath, "ok");
-      return { status: 0, stdout: "en|1", stderr: "", output: [] } as ReturnType<typeof spawnSync>;
+      if (cmd === "ffmpeg") {
+        ffmpegCalls += 1;
+        if (ffmpegCalls === 2) {
+          return { status: 1, stdout: "", stderr: "boom", output: [] } as ReturnType<typeof spawnSync>;
+        }
+        writeFileSync(String(argv.at(-1)), "wav");
+        return { status: 0, stdout: "", stderr: "", output: [] } as ReturnType<typeof spawnSync>;
+      }
+      return { status: 0, stdout: "", stderr: "", output: [] } as ReturnType<typeof spawnSync>;
     });
 
-    const results = transcribeAll([videoA, videoB], join(tmpDir, "out"), "Prompt");
+    const results = await transcribeAll([videoA, videoB], join(tmpDir, "out"), "Prompt");
 
     expect(results).toEqual([join(tmpDir, "out", "a.txt")]);
     expect(existsSync(join(tmpDir, "out", "a.txt"))).toBe(true);
     expect(existsSync(join(tmpDir, "out", "b.txt"))).toBe(false);
   });
 
-  it("augments detection files with transcript paths for semantic extraction", () => {
+  it("augments detection files with transcript paths for semantic extraction", async () => {
     const video = join(tmpDir, "lecture.mp4");
     writeFileSync(video, "audio");
-    spawnSyncMock.mockImplementation((_cmd, args, _options) => {
-      const transcriptPath = String(args?.[3]);
-      writeFileSync(transcriptPath, "lecture transcript");
-      return { status: 0, stdout: "en|1", stderr: "", output: [] } as ReturnType<typeof spawnSync>;
-    });
+    mockModelDownload();
 
     const baseDetection = {
       files: { code: [], document: [], paper: [], image: [], video: [video] },
@@ -173,7 +274,7 @@ describe("transcribe helpers", () => {
       graphifyignore_patterns: 0,
     };
 
-    const result = augmentDetectionWithTranscripts(baseDetection, {
+    const result = await augmentDetectionWithTranscripts(baseDetection, {
       outputDir: join(tmpDir, "transcripts"),
       godNodes: [{ label: "transformers" }],
     });
@@ -184,18 +285,13 @@ describe("transcribe helpers", () => {
     expect(result.prompt).toContain("transformers");
   });
 
-  it("forces retranscription for incremental video changes", () => {
+  it("forces retranscription for incremental video changes", async () => {
     const video = join(tmpDir, "clip.mp4");
     const outDir = join(tmpDir, "transcripts");
     writeFileSync(video, "audio");
     mkdirSync(outDir, { recursive: true });
     writeFileSync(join(outDir, "clip.txt"), "stale transcript");
-
-    spawnSyncMock.mockImplementation((_cmd, args, _options) => {
-      const transcriptPath = String(args?.[3]);
-      writeFileSync(transcriptPath, "fresh transcript");
-      return { status: 0, stdout: "en|1", stderr: "", output: [] } as ReturnType<typeof spawnSync>;
-    });
+    mockModelDownload();
 
     const baseDetection = {
       files: { code: [], document: [], paper: [], image: [], video: [video] },
@@ -212,12 +308,12 @@ describe("transcribe helpers", () => {
       deleted_files: [],
     };
 
-    const result = augmentDetectionWithTranscripts(baseDetection, {
+    const result = await augmentDetectionWithTranscripts(baseDetection, {
       outputDir: outDir,
       incremental: true,
     });
 
-    expect(readFileSync(result.transcriptPaths[0]!, "utf-8")).toBe("fresh transcript");
+    expect(readFileSync(result.transcriptPaths[0]!, "utf-8")).toBe("decoded speech");
     expect(result.detection.new_files?.document).toEqual([join(outDir, "clip.txt")]);
   });
 });

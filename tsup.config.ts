@@ -9,6 +9,7 @@ const optionalRuntimeDeps = [
   "mammoth",
   "neo4j-driver",
   "pdf-parse",
+  "sherpa-onnx-node",
   "turndown",
 ];
 

@@ -100,6 +100,7 @@ Always run this step. If `detect` returned zero `video` files, it simply writes 
 
 ```bash
 node -e "
+(async () => {
 const fs = require('fs');
 const { augmentDetectionWithTranscripts } = require('graphifyy');
 
@@ -108,7 +109,7 @@ const analysis = fs.existsSync('graphify-out/.graphify_analysis.json')
   ? JSON.parse(fs.readFileSync('graphify-out/.graphify_analysis.json', 'utf-8'))
   : null;
 
-const { detection: semanticDetect, transcriptPaths } = augmentDetectionWithTranscripts(detect, {
+const { detection: semanticDetect, transcriptPaths } = await augmentDetectionWithTranscripts(detect, {
   outputDir: 'graphify-out/transcripts',
   godNodes: (analysis && analysis.gods) || [],
 });
@@ -116,6 +117,10 @@ const { detection: semanticDetect, transcriptPaths } = augmentDetectionWithTrans
 fs.writeFileSync('graphify-out/.graphify_detect_semantic.json', JSON.stringify(semanticDetect, null, 2));
 fs.writeFileSync('graphify-out/.graphify_transcripts.json', JSON.stringify(transcriptPaths, null, 2));
 console.log(\`Transcribed \${transcriptPaths.length} video file(s) -> treating as docs\`);
+)().catch((error) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+});
 "
 ```
 
@@ -721,6 +726,7 @@ When `code_only` is False, run this before Step 3B:
 
 ```bash
 node -e "
+(async () => {
 const fs = require('fs');
 const { augmentDetectionWithTranscripts } = require('graphifyy');
 
@@ -729,7 +735,7 @@ const analysis = fs.existsSync('graphify-out/.graphify_analysis.json')
   ? JSON.parse(fs.readFileSync('graphify-out/.graphify_analysis.json', 'utf-8'))
   : null;
 
-const { detection: semanticDetect, transcriptPaths } = augmentDetectionWithTranscripts(detect, {
+const { detection: semanticDetect, transcriptPaths } = await augmentDetectionWithTranscripts(detect, {
   outputDir: 'graphify-out/transcripts',
   godNodes: (analysis && analysis.gods) || [],
   incremental: true,
@@ -738,6 +744,10 @@ const { detection: semanticDetect, transcriptPaths } = augmentDetectionWithTrans
 fs.writeFileSync('graphify-out/.graphify_incremental_semantic.json', JSON.stringify(semanticDetect, null, 2));
 fs.writeFileSync('graphify-out/.graphify_transcripts.json', JSON.stringify(transcriptPaths, null, 2));
 console.log(\`Transcribed \${transcriptPaths.length} video file(s) -> treating as docs\`);
+)().catch((error) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+});
 "
 ```
 
@@ -1195,7 +1205,7 @@ Replace `URL` with the actual URL, `AUTHOR` with the user's name if provided, `C
 Supported URL types (auto-detected):
 - Twitter/X → fetched via oEmbed, saved as `.md` with tweet text and author
 - arXiv → abstract + metadata saved as `.md`  
-- YouTube / video URLs → audio downloaded locally via `yt-dlp`; transcript generated on the next build/update (requires local `yt-dlp` + `faster-whisper`)
+- YouTube / video URLs → audio downloaded locally via `yt-dlp`; transcript generated on the next build/update (requires local `yt-dlp`, `ffmpeg`, and `sherpa-onnx-node`)
 - PDF → downloaded as `.pdf`
 - Images (.png/.jpg/.webp) → downloaded, Claude vision extracts on next run
 - Any webpage → converted to markdown via html2text

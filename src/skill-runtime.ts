@@ -368,13 +368,13 @@ async function main(): Promise<void> {
     .option("--analysis <path>", "Optional analysis JSON from a previous run")
     .option("--incremental", "Use detection.new_files.video and force retranscription")
     .option("--whisper-model <name>", "Whisper model override for local transcription")
-    .action((opts) => {
+    .action(async (opts) => {
       const detection = readJson<DetectionResult>(opts.detect);
       const analysis = opts.analysis && existsSync(resolve(opts.analysis))
         ? readJson<AnalysisFile>(opts.analysis)
         : null;
       const transcriptsDir = join(dirname(resolve(opts.out)), "transcripts");
-      const { detection: semanticDetection, transcriptPaths } = augmentDetectionWithTranscripts(detection, {
+      const { detection: semanticDetection, transcriptPaths } = await augmentDetectionWithTranscripts(detection, {
         outputDir: transcriptsDir,
         godNodes: analysis?.gods,
         incremental: opts.incremental,
