@@ -113,8 +113,15 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          # npm Trusted Publishing requires a recent Node/npm pair.
+          node-version: "24"
           registry-url: "https://registry.npmjs.org"
+
+      - name: Upgrade npm for Trusted Publishing
+        run: |
+          npm install -g npm@11.6.2
+          node --version
+          npm --version
 
       - name: Install and build
         run: |
@@ -133,7 +140,7 @@ jobs:
     steps:
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
 
       - name: Wait for npm propagation
         run: sleep 30
