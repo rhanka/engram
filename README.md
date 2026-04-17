@@ -72,6 +72,7 @@ Every relationship is tagged `EXTRACTED` (found directly in source), `INFERRED` 
 ```bash
 npm install -g graphifyy
 graphify install
+Install commands now print a mutation preview before writing files, including the exact assistant instruction files and hook/MCP config they will touch.
 ```
 
 > The npm package is temporarily named `graphifyy` while the `graphify` name is being reclaimed. The CLI and skill command are still `graphify`.

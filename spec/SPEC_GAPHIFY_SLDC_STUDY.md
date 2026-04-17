@@ -579,3 +579,7 @@ Lot 9 adds an advisory-only commit recommendation prototype. The runtime now gro
 ## Implementation checkpoint after tenth lot
 
 Lot 10 adds a separate review-analysis surface instead of overloading review-delta. The new layer reports blast radius, bridge nodes, test-gap hints, impacted-community summaries, and multimodal/doc safety. It also adds a deterministic review-eval harness that measures token savings versus naive file reads, impacted-file recall, review summary precision, and multimodal regression safety from JSON cases. Embeddings, SQLite, and editor-extension parity remain explicitly deferred.
+
+## Implementation checkpoint after eleventh lot
+
+Lot 11 adds install mutation previews. Project-scoped assistant installs now print the exact instruction files and hook/MCP/plugin configuration files they will touch before writing. Global skill installs likewise preview the skill file and .graphify_version marker. Integration coverage was rerun for maintained install surfaces after the .graphify migration.

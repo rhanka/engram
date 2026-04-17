@@ -200,6 +200,85 @@ export const GraphifyPlugin = async ({ directory }) => {
 };
 `;
 
+export interface InstallMutationPreview {
+  platform: string;
+  action: "install" | "uninstall";
+  writes: string[];
+  hooks: string[];
+  removes: string[];
+  notes: string[];
+}
+
+function previewPath(base: string, relativePath: string): string {
+  return resolve(join(base, relativePath));
+}
+
+function emptyPreview(platformName: string, action: "install" | "uninstall"): InstallMutationPreview {
+  return { platform: platformName, action, writes: [], hooks: [], removes: [], notes: [] };
+}
+
+export function platformInstallPreview(projectDir: string = ".", platformName: string): InstallMutationPreview {
+  const preview = emptyPreview(platformName, "install");
+  if (platformName === "claude" || platformName === "windows") {
+    preview.writes.push(previewPath(projectDir, "CLAUDE.md"), previewPath(projectDir, ".claude/settings.json"));
+    preview.hooks.push(".claude/settings.json: PreToolUse Glob|Grep graphify reminder");
+    return preview;
+  }
+  if (platformName === "gemini") {
+    preview.writes.push(previewPath(projectDir, "GEMINI.md"), previewPath(projectDir, ".gemini/settings.json"));
+    preview.hooks.push(".gemini/settings.json: mcpServers.graphify stdio server");
+    return preview;
+  }
+  if (platformName === "cursor") {
+    preview.writes.push(previewPath(projectDir, ".cursor/rules/graphify.mdc"));
+    return preview;
+  }
+
+  preview.writes.push(previewPath(projectDir, "AGENTS.md"));
+  if (platformName === "codex") {
+    preview.writes.push(previewPath(projectDir, ".codex/hooks.json"));
+    preview.hooks.push(".codex/hooks.json: PreToolUse Bash graphify reminder");
+  } else if (platformName === "opencode") {
+    preview.writes.push(previewPath(projectDir, OPENCODE_PLUGIN_ENTRY), previewPath(projectDir, "opencode.json"));
+    preview.hooks.push("opencode.json: tool.execute.before graphify plugin");
+  } else {
+    preview.notes.push("No platform hook equivalent; AGENTS.md is the always-on mechanism.");
+  }
+  return preview;
+}
+
+export function globalSkillInstallPreview(platformName: string): InstallMutationPreview {
+  const cfg = PLATFORM_CONFIG[platformName];
+  const preview = emptyPreview(platformName, "install");
+  if (!cfg) return preview;
+  const skillDst = join(homedir(), cfg.skill_dst);
+  preview.writes.push(skillDst, join(dirname(skillDst), ".graphify_version"));
+  if (cfg.claude_md) {
+    preview.writes.push(join(homedir(), ".claude", "CLAUDE.md"));
+  }
+  return preview;
+}
+
+function printMutationPreview(preview: InstallMutationPreview): void {
+  console.log("Preview: graphify " + preview.platform + " " + preview.action + " will touch:");
+  if (preview.writes.length > 0) {
+    console.log("  writes:");
+    for (const item of preview.writes) console.log("  - " + item);
+  }
+  if (preview.hooks.length > 0) {
+    console.log("  hooks/config:");
+    for (const item of preview.hooks) console.log("  - " + item);
+  }
+  if (preview.removes.length > 0) {
+    console.log("  removes:");
+    for (const item of preview.removes) console.log("  - " + item);
+  }
+  if (preview.notes.length > 0) {
+    console.log("  notes:");
+    for (const item of preview.notes) console.log("  - " + item);
+  }
+}
+
 const MD_MARKER = "## graphify";
 const CURSOR_RULE_ENTRY = ".cursor/rules/graphify.mdc";
 const CURSOR_RULE = `---
@@ -488,6 +567,7 @@ function uninstallGeminiMcp(projectDir: string): void {
 }
 
 export function cursorInstall(projectDir: string = "."): void {
+  printMutationPreview(platformInstallPreview(projectDir, "cursor"));
   const rulePath = join(projectDir, ".cursor", "rules", "graphify.mdc");
   mkdirSync(dirname(rulePath), { recursive: true });
   if (existsSync(rulePath)) {
@@ -582,6 +662,7 @@ function uninstallOpenCodePlugin(projectDir: string): void {
 // ---------------------------------------------------------------------------
 
 function installSkill(platformName: string): void {
+  printMutationPreview(globalSkillInstallPreview(platformName));
   const cfg = PLATFORM_CONFIG[platformName];
   if (!cfg) {
     console.error(`error: unknown platform '${platformName}'. Choose from: ${Object.keys(PLATFORM_CONFIG).join(", ")}`);
@@ -669,6 +750,7 @@ function uninstallClaudeHook(projectDir: string): void {
 }
 
 function claudeInstall(projectDir: string = "."): void {
+  printMutationPreview(platformInstallPreview(projectDir, "claude"));
   let alreadyConfigured = false;
   const target = join(projectDir, "CLAUDE.md");
   if (existsSync(target)) {
@@ -716,6 +798,7 @@ function claudeUninstall(projectDir: string = "."): void {
 }
 
 export function geminiInstall(projectDir: string = "."): void {
+  printMutationPreview(platformInstallPreview(projectDir, "gemini"));
   let alreadyConfigured = false;
   const target = join(projectDir, "GEMINI.md");
   if (existsSync(target)) {
@@ -817,6 +900,7 @@ function uninstallCodexHook(projectDir: string): void {
 }
 
 export function agentsInstall(projectDir: string, platformName: string): void {
+  printMutationPreview(platformInstallPreview(projectDir, platformName));
   let alreadyConfigured = false;
   const target = join(projectDir, "AGENTS.md");
   const section = getAgentsMdSection(platformName);

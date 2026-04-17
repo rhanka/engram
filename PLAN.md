@@ -190,10 +190,10 @@
 
 ## Lot 11 - Install And Platform Preview Improvements
 
-- [ ] Add clearer install previews for platform-specific mutations
-- [ ] Surface exactly which files and hooks will be written before install actions
-- [ ] Verify all platform install/uninstall flows still behave correctly after the `.graphify/` migration
-- [ ] Re-run integration coverage for Codex, Claude, Gemini, Copilot, Aider, OpenCode, Cursor, and other maintained surfaces
+- [x] Add clearer install previews for platform-specific mutations
+- [x] Surface exactly which files and hooks will be written before install actions
+- [x] Verify all platform install/uninstall flows still behave correctly after the `.graphify/` migration
+- [x] Re-run integration coverage for Codex, Claude, Gemini, Copilot, Aider, OpenCode, Cursor, and other maintained surfaces
 
 ## Lot 12 - SPEC Refactor And Convergence
 
