@@ -2,13 +2,25 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja-JP.md)
 
-[![TypeScript CI](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=v3)](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml)
+[![TypeScript CI](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=v3-typescript)](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml)
 
 **AIコーディングアシスタント向けのスキル。** Claude Code、Gemini CLI、GitHub Copilot CLI、Aider、OpenCode、OpenClaw、Factory Droid、Trae では `/graphify`、Codex では `$graphify` と入力すると、ファイルを読み込んでナレッジグラフを構築し、あなたが気づいていなかった構造を返します。コードベースをより速く理解し、アーキテクチャ上の意思決定の「なぜ」を見つけ出します。
 
 このリポジトリは元の Graphify プロジェクトの保守中 TypeScript ポートです。製品の方向性、ワークフロー、初期実装は [Safi Shamsi](https://github.com/safishamsi/graphify) による原典プロジェクトに依拠しています。
 
 graphify はマルチモーダルであり、この TypeScript ポートは upstream `v3` に対してリリース単位でキャッチアップしています。現在の TS ランタイムはコード、Markdown、PDF、Office 文書、スクリーンショット、図表、その他の画像を処理できます。このブランチではさらにローカルの音声/動画検出と `yt-dlp` + `ffmpeg` + `sherpa-onnx-node` による文字起こし経路を追加しており、生成された transcript も同じ意味抽出パスに流し込まれます。tree-sitter AST により 20 言語をサポートします（Python、JS、TS、Go、Rust、Java、C、C++、Ruby、C#、Kotlin、Scala、PHP、Swift、Lua、Zig、PowerShell、Elixir、Objective-C、Julia）。
+
+## ブランチモデル
+
+- `v3-typescript` は現在のデフォルトで、保守対象の TypeScript 製品ブランチです。
+- `v3` は元の Python Graphify 系譜を追跡する upstream mirror / alignment ブランチです。
+- キャッチアップ作業はバージョンごとに記録し、差分を明示します。
+
+## アラインメントと分岐
+
+- 元の Graphify は製品系譜と parity 目標です。
+- TypeScript ポートは npm 配布、ローカル runtime state、MCP / install surfaces、git worktree lifecycle などを TS-native に強化します。
+- `code-review-graph` は将来の review-mode の参考であり、主系譜ではありません。
 
 > Andrej Karpathy は論文、ツイート、スクリーンショット、メモを放り込む `/raw` フォルダを持っています。graphify はまさにその問題への答えです――生ファイルを読むのに比べて1クエリあたりのトークン数が 71.5 倍少なく、セッションをまたいで永続化され、見つけたものと推測したものを正直に区別します。
 
@@ -18,12 +30,14 @@ $graphify .                        # Codex
 ```
 
 ```
-graphify-out/
+.graphify/
 ├── graph.html       インタラクティブなグラフ - ノードをクリック、検索、コミュニティでフィルタ
 ├── GRAPH_REPORT.md  ゴッドノード、意外なつながり、推奨される質問
 ├── graph.json       永続化されたグラフ - 数週間後でも再読み込みなしでクエリ可能
 └── cache/           SHA256 キャッシュ - 再実行時は変更されたファイルのみ処理
 ```
+
+`.graphify/` はローカルの runtime state です。デフォルトで gitignore され、worked examples やエクスポート済み artifact として意図的に公開する場合を除き、コミットしないでください。
 
 グラフに含めたくないフォルダを除外するには `.graphifyignore` ファイルを追加します：
 
@@ -101,7 +115,7 @@ $graphify .                        # Codex
 | Trae | `graphify trae install` |
 | Trae CN | `graphify trae-cn install` |
 
-**Claude Code** は 2 つのことを行います：Claude にアーキテクチャの質問に答える前に `graphify-out/GRAPH_REPORT.md` を読むように指示する `CLAUDE.md` セクションを書き込み、すべての Glob と Grep 呼び出しの前に発火する **PreToolUse フック**（`settings.json`）をインストールします。ナレッジグラフが存在する場合、Claude は次のメッセージを見ます：_"graphify: Knowledge graph exists. Read GRAPH_REPORT.md for god nodes and community structure before searching raw files."_ ――これにより Claude はすべてのファイルを grep するのではなく、グラフを介してナビゲートします。
+**Claude Code** は 2 つのことを行います：Claude にアーキテクチャの質問に答える前に `.graphify/GRAPH_REPORT.md` を読むように指示する `CLAUDE.md` セクションを書き込み、すべての Glob と Grep 呼び出しの前に発火する **PreToolUse フック**（`settings.json`）をインストールします。ナレッジグラフが存在する場合、Claude は次のメッセージを見ます：_"graphify: Knowledge graph exists. Read GRAPH_REPORT.md for god nodes and community structure before searching raw files."_ ――これにより Claude はすべてのファイルを grep するのではなく、グラフを介してナビゲートします。
 
 **Codex** は `AGENTS.md` にルールを書き込み、`.codex/hooks.json` に PreToolUse フックも追加します。  
 **Gemini CLI** は `GEMINI.md` を書き込み、`.gemini/settings.json` でプロジェクトスコープの `graphify` MCP サーバーを登録します。  
@@ -126,7 +140,7 @@ $graphify .                        # Codex
 
 ```bash
 mkdir -p ~/.claude/skills/graphify
-curl -fsSL https://raw.githubusercontent.com/rhanka/graphify/v3/src/skills/skill.md \
+curl -fsSL https://raw.githubusercontent.com/rhanka/graphify/v3-typescript/src/skills/skill.md \
   > ~/.claude/skills/graphify/SKILL.md
 ```
 
@@ -171,10 +185,12 @@ When the user types `/graphify`, invoke the Skill tool with `skill: "graphify"` 
 /graphify ./raw --neo4j-push bolt://localhost:7687    # 実行中の Neo4j インスタンスに直接プッシュ
 /graphify ./raw --mcp              # MCP stdio サーバーを起動
 
-# git フック - プラットフォーム非依存、コミット時とブランチ切り替え時にグラフを再構築
+# git フック - プラットフォーム非依存。Git ライフサイクルイベントで stale 化し、軽量再構築を試行
 graphify hook install
 graphify hook uninstall
 graphify hook status
+graphify state status            # .graphify/worktree.json + branch.json を確認
+graphify state prune             # 非破壊の stale-state クリーンアップ計画を表示
 
 # 常時有効のアシスタント指示 - プラットフォーム固有
 graphify claude install            # CLAUDE.md + PreToolUse フック（Claude Code）
@@ -234,7 +250,7 @@ graphify query "..." --graph path/to/graph.json
 
 **自動同期** (`--watch`) - バックグラウンドターミナルで実行し、コードベースが変更されるとグラフが自動的に更新されます。コードファイルの保存は即座の再構築をトリガーします（AST のみ、LLM なし）。ドキュメント/画像の変更は、LLM の再パスのために `--update` を実行するよう通知します。
 
-**Git フック** (`graphify hook install`) - post-commit と post-checkout フックをインストールします。コミットごと、ブランチ切り替えごとにグラフが自動的に再構築されます。再構築が失敗した場合、フックは非ゼロコードで終了するため、git がエラーを表面化し、静かに続行することはありません。バックグラウンドプロセスは不要です。
+**Git フック** (`graphify hook install`) - worktree 互換の `post-commit`、`post-checkout`、`post-merge`、`post-rewrite` フックをインストールします。フックはまず `.graphify/` を stale としてマークし、branch/worktree メタデータを更新し、安全で低コストな場合だけ非ブロッキングの code-only rebuild を試みます。フック失敗は Git 操作をブロックしません。`graphify state status` でライフサイクルメタデータを確認し、`graphify state prune` で stale cleanup を削除なしでプレビューできます。
 
 **Wiki** (`--wiki`) - コミュニティごとおよびゴッドノードごとの Wikipedia スタイルの Markdown 記事と、`index.md` エントリポイント。任意のエージェントを `index.md` に向ければ、JSON をパースする代わりにファイルを読むことでナレッジベースをナビゲートできます。
 
@@ -273,7 +289,7 @@ MIT。詳細は [LICENSE](LICENSE) を参照してください。
 
 **実例** は最も信頼を築くコントリビューションです。実際のコーパスで `/graphify` を実行し、出力を `worked/{slug}/` に保存し、グラフが正しく捉えたもの・間違えたものを評価する正直な `review.md` を書き、PR を提出してください。
 
-**抽出バグ** - 入力ファイル、キャッシュエントリ（`graphify-out/cache/`）、何が見逃された/捏造されたかを添えて issue を開いてください。
+**抽出バグ** - 入力ファイル、キャッシュエントリ（`.graphify/cache/`）、何が見逃された/捏造されたかを添えて issue を開いてください。
 
 モジュールの責任と言語の追加方法については [ARCHITECTURE.md](ARCHITECTURE.md) を参照してください。
 

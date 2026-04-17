@@ -118,18 +118,18 @@
 
 ## Lot 6 - README, Install Surface, And Repo Narrative Refresh
 
-- [ ] Update [README.md](README.md) for the new `.graphify/` state root
-- [ ] Update [README.zh-CN.md](README.zh-CN.md) for the new `.graphify/` state root
-- [ ] Update [README.ja-JP.md](README.ja-JP.md) for the new `.graphify/` state root
-- [ ] Add a compact branch-model section:
-  - [ ] `v3-typescript` as maintained TS product branch
-  - [ ] `v3` as upstream mirror
-- [ ] Add a concise alignment/divergence section:
-  - [ ] aligned to upstream Graphify for product lineage and parity tracking
-  - [ ] augmented by TS-native runtime/platform work
-  - [ ] selectively informed by `code-review-graph` review-mode ideas
-- [ ] Update `AGENTS.md`, `CLAUDE.md`, and install-generated instruction sections to reference `.graphify/`
-- [ ] Ensure docs do not imply `.graphify/` should be committed
+- [x] Update [README.md](README.md) for the new `.graphify/` state root
+- [x] Update [README.zh-CN.md](README.zh-CN.md) for the new `.graphify/` state root
+- [x] Update [README.ja-JP.md](README.ja-JP.md) for the new `.graphify/` state root
+- [x] Add a compact branch-model section:
+  - [x] `v3-typescript` as maintained TS product branch
+  - [x] `v3` as upstream mirror
+- [x] Add a concise alignment/divergence section:
+  - [x] aligned to upstream Graphify for product lineage and parity tracking
+  - [x] augmented by TS-native runtime/platform work
+  - [x] selectively informed by `code-review-graph` review-mode ideas
+- [x] Update `AGENTS.md`, `CLAUDE.md`, and install-generated instruction sections to reference `.graphify/`
+- [x] Ensure docs do not imply `.graphify/` should be committed
 
 ## Lot 7 - Minimal Review-Mode Foundation
 

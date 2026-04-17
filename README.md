@@ -2,13 +2,25 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja-JP.md)
 
-[![TypeScript CI](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=v3)](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml)
+[![TypeScript CI](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=v3-typescript)](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml)
 
 **An AI coding assistant skill.** Type `/graphify` in Claude Code, Gemini CLI, GitHub Copilot CLI, Aider, OpenCode, OpenClaw, Factory Droid, or Trae, or `$graphify` in Codex - it reads your files, builds a knowledge graph, and gives you back structure you didn't know was there. Understand a codebase faster. Find the "why" behind architectural decisions.
 
 This repository is the maintained TypeScript port of the original Graphify project. Thanks to the original work by [Safi Shamsi](https://github.com/safishamsi/graphify) for the product direction, workflow, and initial implementation.
 
 Multimodal, with the TypeScript catch-up tracked release-by-release against upstream `v3`. Code, markdown, PDFs, Office docs, screenshots, diagrams, and other images already flow through the current TS runtime. This branch also adds local audio/video detection plus a `yt-dlp` + `ffmpeg` + `sherpa-onnx-node` transcription path, and those transcripts now feed the same assistant-driven semantic pass as docs and papers. 20 languages are supported via tree-sitter AST (Python, JS, TS, Go, Rust, Java, C, C++, Ruby, C#, Kotlin, Scala, PHP, Swift, Lua, Zig, PowerShell, Elixir, Objective-C, Julia).
+
+## Branch Model
+
+- `v3-typescript` is the maintained TypeScript product branch and the default branch for this repository.
+- `v3` is kept as an upstream mirror / alignment branch for the original Python Graphify lineage.
+- Catch-up work is tracked version-by-version so parity gaps stay explicit instead of being hidden in the fork.
+
+## Alignment And Divergence
+
+- Upstream Graphify remains the product lineage and parity target.
+- This TypeScript port diverges where npm distribution, TS-native runtime state, MCP/install surfaces, and git worktree lifecycle need first-class support.
+- `code-review-graph` is treated as a reference for future review-mode ideas, not as the primary lineage source.
 
 > Andrej Karpathy keeps a `/raw` folder where he drops papers, tweets, screenshots, and notes. graphify is the answer to that problem - 71.5x fewer tokens per query vs reading the raw files, persistent across sessions, honest about what it found vs guessed.
 
@@ -17,15 +29,17 @@ $graphify .                        # Codex
 /graphify .                        # Claude Code / Gemini CLI / Copilot CLI / Aider / OpenCode / OpenClaw / Droid / Trae
 ```
 
-In Codex, `$graphify` is a skill trigger, not a Bash subcommand like `graphify .`. A successful TypeScript-backed Codex run should leave `graphify-out/.graphify_runtime.json` with `runtime: "typescript"`.
+In Codex, `$graphify` is a skill trigger, not a Bash subcommand like `graphify .`. A successful TypeScript-backed Codex run should leave `.graphify/.graphify_runtime.json` with `runtime: "typescript"`.
 
 ```
-graphify-out/
+.graphify/
 ├── graph.html       interactive graph - click nodes, search, filter by community
 ├── GRAPH_REPORT.md  god nodes, surprising connections, suggested questions
 ├── graph.json       persistent graph - query weeks later without re-reading
 └── cache/           SHA256 cache - re-runs only process changed files
 ```
+
+`.graphify/` is local runtime state. It is gitignored by default and should not be committed unless you intentionally publish worked examples or exported artifacts elsewhere.
 
 Add a `.graphifyignore` file to exclude folders you don't want in the graph:
 
@@ -101,7 +115,7 @@ After building a graph, run this once in your project:
 | Trae CN | `graphify trae-cn install` |
 | Cursor | `graphify cursor install` |
 
-**Claude Code** does two things: writes a `CLAUDE.md` section telling Claude to read `graphify-out/GRAPH_REPORT.md` before answering architecture questions, and installs a **PreToolUse hook** (`settings.json`) that fires before every Glob and Grep call. If a knowledge graph exists, Claude sees: _"graphify: Knowledge graph exists. Read GRAPH_REPORT.md for god nodes and community structure before searching raw files."_ — so Claude navigates via the graph instead of grepping through every file.
+**Claude Code** does two things: writes a `CLAUDE.md` section telling Claude to read `.graphify/GRAPH_REPORT.md` before answering architecture questions, and installs a **PreToolUse hook** (`settings.json`) that fires before every Glob and Grep call. If a knowledge graph exists, Claude sees: _"graphify: Knowledge graph exists. Read GRAPH_REPORT.md for god nodes and community structure before searching raw files."_ — so Claude navigates via the graph instead of grepping through every file.
 
 **Codex** writes to `AGENTS.md`, teaches Codex to use the installed `graphify` skill for graph build/update/query tasks, and also installs a **PreToolUse hook** in `.codex/hooks.json` that fires before every Bash tool call.
 
@@ -132,7 +146,7 @@ Think of it this way: the always-on hook gives your assistant a map. The explici
 `graph.json` is not meant to be pasted into a prompt all at once. The useful
 workflow is:
 
-1. Start with `graphify-out/GRAPH_REPORT.md` for the high-level overview.
+1. Start with `.graphify/GRAPH_REPORT.md` for the high-level overview.
 2. Use `graphify query` to pull a smaller subgraph for the specific question
    you want to answer.
 3. Give that focused output to your assistant instead of dumping the full raw
@@ -141,8 +155,8 @@ workflow is:
 For example, after running graphify on a project:
 
 ```bash
-graphify query "show the auth flow" --graph graphify-out/graph.json
-graphify query "what connects DigestAuth to Response?" --graph graphify-out/graph.json
+graphify query "show the auth flow" --graph .graphify/graph.json
+graphify query "what connects DigestAuth to Response?" --graph .graphify/graph.json
 ```
 
 The output includes node labels, edge types, confidence tags, source files, and
@@ -157,13 +171,13 @@ If your assistant supports tool calling or MCP, use the graph directly instead
 of pasting text. graphify can expose `graph.json` as an MCP server:
 
 ```bash
-graphify serve graphify-out/graph.json
+graphify serve .graphify/graph.json
 ```
 
 In Codex, register that server with:
 
 ```bash
-codex mcp add graphify -- graphify serve /absolute/path/to/graphify-out/graph.json
+codex mcp add graphify -- graphify serve /absolute/path/to/.graphify/graph.json
 ```
 
 That gives the assistant structured graph access for repeated queries such as
@@ -174,7 +188,7 @@ That gives the assistant structured graph access for repeated queries such as
 
 ```bash
 mkdir -p ~/.claude/skills/graphify
-curl -fsSL https://raw.githubusercontent.com/rhanka/graphify/v3/src/skills/skill.md \
+curl -fsSL https://raw.githubusercontent.com/rhanka/graphify/v3-typescript/src/skills/skill.md \
   > ~/.claude/skills/graphify/SKILL.md
 ```
 
@@ -322,7 +336,7 @@ MIT. See [LICENSE](LICENSE).
 
 **Worked examples** are the most trust-building contribution. Run the graphify skill on a real corpus (`$graphify` in Codex, `/graphify` elsewhere), save output to `worked/{slug}/`, write an honest `review.md` evaluating what the graph got right and wrong, submit a PR.
 
-**Extraction bugs** - open an issue with the input file, the cache entry (`graphify-out/cache/`), and what was missed or invented.
+**Extraction bugs** - open an issue with the input file, the cache entry (`.graphify/cache/`), and what was missed or invented.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for module responsibilities and how to add a language.
 

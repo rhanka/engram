@@ -152,6 +152,13 @@ Implementation checkpoint after the fifth lot:
 - bundled skills include lifecycle guidance for `.graphify/needs_update` and `.graphify/branch.json` stale state.
 - skill integration tests assert `.graphify/` paths and lifecycle guidance.
 
+Implementation checkpoint after the sixth lot:
+
+- `README.md`, `README.zh-CN.md`, and `README.ja-JP.md` document `.graphify/` as local ignored runtime state.
+- the multilingual README set now states that `v3-typescript` is the maintained TypeScript product branch and `v3` is the upstream Python alignment branch.
+- the README narrative keeps upstream Graphify as the parity target while naming TypeScript-native runtime/platform work and `code-review-graph` review-mode ideas as intentional divergence areas.
+- local ignored `AGENTS.md` / `CLAUDE.md` were refreshed in the working copy; generated install instructions already carry the `.graphify/needs_update` and stale branch metadata guidance.
+
 ### State root
 
 Move Graphify runtime state under a single hidden workspace directory:

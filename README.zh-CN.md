@@ -2,13 +2,25 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja-JP.md)
 
-[![TypeScript CI](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=v3)](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml)
+[![TypeScript CI](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=v3-typescript)](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml)
 
 **一个面向 AI 编码助手的技能。** 在 Claude Code、Gemini CLI、GitHub Copilot CLI、Aider、OpenCode、OpenClaw、Factory Droid 或 Trae 中输入 `/graphify`，在 Codex 中输入 `$graphify`，它会读取你的文件、构建知识图谱，并把原本不明显的结构关系还给你。更快理解代码库，找到架构决策背后的“为什么”。
 
 这个仓库是原始 Graphify 项目的受维护 TypeScript 版本。产品方向、工作流和最初实现来自 [Safi Shamsi](https://github.com/safishamsi/graphify) 的原始项目，这里保留了同样的知识图谱与 assistant-skill 交互模型。
 
 graphify 是多模态的，而且这个 TypeScript 端口正按 upstream `v3` 的发布节奏逐版追平。当前 TS runtime 已经覆盖代码、Markdown、PDF、Office 文档、截图、图表和其他图片。本分支还补上了本地音频/视频检测，以及基于 `yt-dlp` + `ffmpeg` + `sherpa-onnx-node` 的转录路径；这些 transcript 现在也会并入同一条语义抽取流水线。代码 AST 侧通过 tree-sitter 支持 20 种语言（Python、JS、TS、Go、Rust、Java、C、C++、Ruby、C#、Kotlin、Scala、PHP、Swift、Lua、Zig、PowerShell、Elixir、Objective-C、Julia）。
+
+## 分支模型
+
+- `v3-typescript` 是当前默认分支和受维护的 TypeScript 产品分支。
+- `v3` 保留为原始 Python Graphify 的 upstream mirror / 对齐分支。
+- 追平工作按版本记录，方便明确 TypeScript 端口与 upstream 的差异。
+
+## 对齐与分叉
+
+- 原始 Graphify 仍是产品血统和功能对齐目标。
+- TypeScript 端口会在 npm 发布、本地运行时状态、MCP / 安装面、git worktree 生命周期等方面提供 TS-native 增强。
+- `code-review-graph` 只作为未来 review-mode 的参考来源，不是主血统。
 
 > Andrej Karpathy 会维护一个 `/raw` 文件夹，把论文、推文、截图和笔记都丢进去。graphify 就是在解决这类问题 —— 相比直接读取原始文件，每次查询的 token 消耗可降低 **71.5 倍**，结果还能跨会话持久保存，并且会明确区分哪些内容是实际发现的，哪些只是合理推断。
 
@@ -18,12 +30,14 @@ $graphify .                        # Codex
 ```
 
 ```
-graphify-out/
+.graphify/
 ├── graph.html       可交互图谱：可点节点、搜索、按社区过滤
 ├── GRAPH_REPORT.md  God nodes、意外连接、建议提问
 ├── graph.json       持久化图谱：数周后仍可查询，无需重新读原始文件
 └── cache/           SHA256 缓存：重复运行时只处理变更过的文件
 ```
+
+`.graphify/` 是本地运行时状态，默认会被 git 忽略。除非你明确要发布 worked examples 或导出的 artifact，否则不要把它提交进仓库。
 
 ## 工作原理
 
@@ -88,10 +102,10 @@ $graphify .                        # Codex
 | Cursor | `graphify cursor install` |
 
 **Claude Code** 会做两件事：
-1. 在 `CLAUDE.md` 中写入一段规则，告诉 Claude 在回答架构问题前先读 `graphify-out/GRAPH_REPORT.md`
+1. 在 `CLAUDE.md` 中写入一段规则，告诉 Claude 在回答架构问题前先读 `.graphify/GRAPH_REPORT.md`
 2. 安装一个 **PreToolUse hook**（写入 `settings.json`），在每次 `Glob` 和 `Grep` 前触发
 
-如果知识图谱存在，Claude 会先看到：_"graphify: Knowledge graph exists. Read graphify-out/GRAPH_REPORT.md for god nodes and community structure before searching raw files."_ —— 这样 Claude 会优先按图谱导航，而不是一上来就 grep 整个项目。
+如果知识图谱存在，Claude 会先看到：_"graphify: Knowledge graph exists. Read .graphify/GRAPH_REPORT.md for god nodes and community structure before searching raw files."_ —— 这样 Claude 会优先按图谱导航，而不是一上来就 grep 整个项目。
 
 **Codex** 会把规则写进 `AGENTS.md`，并在 `.codex/hooks.json` 里安装 PreToolUse hook。  
 **Gemini CLI** 会写入项目根目录的 `GEMINI.md`，并在 `.gemini/settings.json` 中注册项目级 `graphify` MCP server。  
@@ -116,7 +130,7 @@ $graphify .                        # Codex
 
 ```bash
 mkdir -p ~/.claude/skills/graphify
-curl -fsSL https://raw.githubusercontent.com/rhanka/graphify/v3/src/skills/skill.md \
+curl -fsSL https://raw.githubusercontent.com/rhanka/graphify/v3-typescript/src/skills/skill.md \
   > ~/.claude/skills/graphify/SKILL.md
 ```
 
@@ -160,10 +174,12 @@ When the user types `/graphify`, invoke the Skill tool with `skill: "graphify"` 
 /graphify ./raw --neo4j-push bolt://localhost:7687    # 直接推送到运行中的 Neo4j
 /graphify ./raw --mcp              # 启动 MCP stdio server
 
-# git hooks - 跨平台，在 commit 和切分支后重建图谱
+# git hooks - 跨平台，先标记 stale，再在 git 生命周期事件后尝试轻量重建
 graphify hook install
 graphify hook uninstall
 graphify hook status
+graphify state status            # 查看 .graphify/worktree.json + branch.json
+graphify state prune             # 打印非破坏性的 stale-state 清理计划
 
 # 常驻助手规则 - 按平台区分
 graphify claude install            # CLAUDE.md + PreToolUse hook（Claude Code）
@@ -217,7 +233,7 @@ graphify trae-cn uninstall
 
 **自动同步**（`--watch`）—— 在后台终端里跑着，代码库一变化，图谱就会跟着更新。代码文件保存会立刻触发重建（只走 AST，不用 LLM）；文档/图片变更则会提醒你跑 `--update` 进行 LLM 再提取。
 
-**Git hooks**（`graphify hook install`）—— 安装 `post-commit` 和 `post-checkout` hook。每次 commit 后、每次切分支后都会自动重建图谱，不需要额外开一个后台进程。
+**Git hooks**（`graphify hook install`）—— 安装兼容 worktree 的 `post-commit`、`post-checkout`、`post-merge` 和 `post-rewrite` hook。hook 会先把 `.graphify/` 标记为 stale，更新 branch/worktree 元数据，然后在安全且成本低时尝试非阻塞的 code-only rebuild。hook 失败不会阻塞 Git 操作。用 `graphify state status` 查看生命周期元数据，用 `graphify state prune` 预览 stale 清理计划。
 
 **Wiki**（`--wiki`）—— 为每个 community 和 god node 生成类似维基百科的 Markdown 文章，并提供 `index.md` 作为入口。任何 agent 只要读 `index.md`，就能通过普通文件导航整个知识库，而不必直接解析 JSON。
 
@@ -252,7 +268,7 @@ MIT。见 [LICENSE](LICENSE)。
 
 **Worked examples** 是最能建立信任的贡献方式。对一个真实语料跑 `/graphify`，把输出保存到 `worked/{slug}/`，再写一份诚实的 `review.md`，评价图谱哪些地方做得对、哪些地方做得不对，然后提交 PR。
 
-**提取 bug** —— 提 issue 时请附上输入文件、对应的缓存项（`graphify-out/cache/`）以及它漏提取或瞎编了什么。
+**提取 bug** —— 提 issue 时请附上输入文件、对应的缓存项（`.graphify/cache/`）以及它漏提取或瞎编了什么。
 
 模块职责和新增语言的方法见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
