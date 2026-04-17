@@ -67,6 +67,15 @@ describe("skill cache examples", () => {
     }
   });
 
+  it("documents the advisory commit recommendation workflow", () => {
+    for (const relativePath of ALL_SKILL_DOCS) {
+      const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
+      expect(content).toContain("recommend-commits");
+      expect(content).toContain("advisory-only");
+      expect(content).toContain("do not auto-stage");
+    }
+  });
+
   it("keeps the Windows skill usage lines aligned with upstream v0.3.28", () => {
     const content = readFileSync(new URL("../src/skills/skill-windows.md", import.meta.url), "utf-8");
 

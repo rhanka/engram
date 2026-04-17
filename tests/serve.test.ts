@@ -127,6 +127,7 @@ describe("MCP stdio server", () => {
           "graph_stats",
           "first_hop_summary",
           "review_delta",
+          "recommend_commits",
           "query_graph",
           "shortest_path",
         ].sort(),
@@ -247,6 +248,17 @@ describe("MCP stdio server", () => {
       expect(reviewDelta).toContain("src/beta.ts");
       expect(reviewDelta).toContain("GammaDocs");
       expect(reviewDelta).toContain("Likely test gaps:");
+
+      const commitRecommendation = toolText(
+        await client.callTool({
+          name: "recommend_commits",
+          arguments: { changed_files: ["src/beta.ts"] },
+        }),
+      );
+      expect(commitRecommendation).toContain("Graphify Commit Recommendation");
+      expect(commitRecommendation).toContain("Advisory only");
+      expect(commitRecommendation).toContain("src/beta.ts");
+      expect(commitRecommendation).toContain("Suggested commit groups:");
 
       const path = toolText(
         await client.callTool({

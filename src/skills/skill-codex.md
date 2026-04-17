@@ -35,6 +35,7 @@ $graphify query "<question>" --dfs                    # DFS - trace one chain
 $graphify query "<question>" --budget 1500            # cap answer at N tokens
 $graphify summary --graph .graphify/graph.json        # compact first-hop orientation before deep traversal
 $graphify review-delta --files src/auth.ts --graph .graphify/graph.json  # review impact for changed files
+$graphify recommend-commits --files src/auth.ts,src/session.ts --graph .graphify/graph.json  # advisory commit grouping
 $graphify path "AuthModule" "Database"                # shortest path between concepts
 $graphify explain "SwinTransformer"                   # explain one node and its neighbors
 ```
@@ -517,6 +518,7 @@ Use the public TypeScript CLI:
 
 ```bash
 graphify summary --graph .graphify/graph.json
+graphify recommend-commits --files src/auth.ts,src/session.ts --graph .graphify/graph.json
 graphify query "QUESTION" --graph .graphify/graph.json
 graphify query "QUESTION" --dfs --graph .graphify/graph.json
 graphify query "QUESTION" --budget 1500 --graph .graphify/graph.json
@@ -588,3 +590,5 @@ Behavior:
 - Use `.graphify/wiki/index.md` first when present, then `.graphify/GRAPH_REPORT.md`, before searching raw files.
 - If `.graphify/needs_update` exists or `.graphify/branch.json` has `"stale": true`, tell the user the graph is stale and run the platform graphify command with `--update` before relying on semantic results.
 - Git hooks may mark stale state after branch switches, merges, and rewrites. Never delete `.graphify/` automatically; use `graphify state prune` only as a non-destructive cleanup preview.
+
+Commit recommendation workflow: `graphify recommend-commits` is advisory-only. It may suggest groups and commit messages, but the user remains the actor; do not auto-stage, auto-commit, or mutate branches.

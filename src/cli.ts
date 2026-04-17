@@ -1111,6 +1111,55 @@ export async function main(): Promise<void> {
     });
 
   program
+    .command("recommend-commits [files...]")
+    .description("Advisory-only commit grouping for changed files")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--files <csv>", "Comma or newline separated changed files")
+    .option("--base <ref>", "Git base ref; when omitted, compare working tree to HEAD")
+    .option("--head <ref>", "Git head ref to compare with --base", "HEAD")
+    .option("--staged", "Use staged changes only")
+    .option("--max-groups <n>", "Maximum commit groups", "6")
+    .option("--max-nodes <n>", "Maximum impacted nodes per group", "60")
+    .option("--max-chains <n>", "Maximum high-risk chains per group", "4")
+    .action(async (files, opts) => {
+      const changedFiles = [
+        ...files,
+        ...splitFiles(opts.files),
+      ];
+      const resolvedChangedFiles = changedFiles.length > 0
+        ? [...new Set(changedFiles)].sort()
+        : changedFilesFromGit({ base: opts.base, head: opts.head, staged: opts.staged });
+      if (resolvedChangedFiles.length === 0) {
+        console.log("No changed files found for recommend-commits.");
+        return;
+      }
+
+      const { readFileSync: rf } = await import("node:fs");
+      const { resolve: res } = await import("node:path");
+      const gp = res(resolveGraphInputPath(opts.graph));
+      const graphAvailable = existsSync(gp);
+      let G;
+      if (graphAvailable) {
+        G = loadGraphFromData(JSON.parse(rf(gp, "utf-8")));
+      } else {
+        const { default: Graph } = await import("graphology");
+        G = new Graph({ type: "undirected" });
+      }
+      const paths = resolveGraphifyPaths();
+      const { readLifecycleMetadata } = await import("./lifecycle.js");
+      const { buildCommitRecommendation, commitRecommendationToText } = await import("./recommend.js");
+      const recommendation = buildCommitRecommendation(G, resolvedChangedFiles, {
+        lifecycle: readLifecycleMetadata("."),
+        needsUpdate: existsSync(paths.needsUpdate),
+        graphAvailable,
+        maxGroups: Number(opts.maxGroups),
+        maxNodes: Number(opts.maxNodes),
+        maxChains: Number(opts.maxChains),
+      });
+      console.log(commitRecommendationToText(recommendation));
+    });
+
+  program
     .command("query <question>")
     .description("BFS traversal of graph.json for a question")
     .option("--dfs", "Use depth-first instead of breadth-first")

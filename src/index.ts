@@ -26,5 +26,7 @@ export { buildFirstHopSummary, firstHopSummaryToText } from "./summary.js";
 export type { FirstHopSummary, FirstHopHub, FirstHopCommunity, FirstHopSummaryOptions } from "./summary.js";
 export { buildReviewDelta, reviewDeltaToText } from "./review.js";
 export type { ReviewDelta, ReviewNode, ReviewChain, ReviewDeltaOptions } from "./review.js";
+export { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
+export type { CommitRecommendation, CommitRecommendationGroup, CommitRecommendationStaleness, CommitRecommendationConfidence, CommitRecommendationOptions } from "./recommend.js";
 export { serve } from "./serve.js";
 export { watch, rebuildCode } from "./watch.js";

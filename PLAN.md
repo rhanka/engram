@@ -161,14 +161,14 @@
 
 ## Lot 9 - Advisory Commit Recommendation Prototype
 
-- [ ] Implement advisory-only commit grouping on top of branch/worktree metadata
-- [ ] Base recommendations on Git-tracked changes plus graph impact, not on hidden state alone
-- [ ] Include explicit confidence/staleness signals in recommendation output
-- [ ] Keep the user as the actor:
-  - [ ] no auto-stage
-  - [ ] no auto-commit
-  - [ ] no silent branch mutation
-- [ ] Add risk-focused tests for stale state, rebases, and partial graphs
+- [x] Implement advisory-only commit grouping on top of branch/worktree metadata
+- [x] Base recommendations on Git-tracked changes plus graph impact, not on hidden state alone
+- [x] Include explicit confidence/staleness signals in recommendation output
+- [x] Keep the user as the actor:
+  - [x] no auto-stage
+  - [x] no auto-commit
+  - [x] no silent branch mutation
+- [x] Add risk-focused tests for stale state, rebases, and partial graphs
 
 ## Lot 10 - Review-Oriented Analysis And Evaluation
 

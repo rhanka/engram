@@ -65,6 +65,8 @@ describe("public API compatibility", () => {
     expect(typeof api.firstHopSummaryToText).toBe("function");
     expect(typeof api.buildReviewDelta).toBe("function");
     expect(typeof api.reviewDeltaToText).toBe("function");
+    expect(typeof api.buildCommitRecommendation).toBe("function");
+    expect(typeof api.commitRecommendationToText).toBe("function");
   });
 
   it("accepts object-style map inputs and option objects", () => {

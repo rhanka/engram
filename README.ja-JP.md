@@ -176,6 +176,7 @@ When the user types `/graphify`, invoke the Skill tool with `skill: "graphify"` 
 /graphify query "アテンションとオプティマイザを結ぶものは？" --budget 1500  # N トークンで上限設定
 /graphify summary --graph .graphify/graph.json        # 深い traversal の前に compact first-hop orientation を取得
 /graphify review-delta --files src/auth.ts --graph .graphify/graph.json  # 変更ファイルの review impact
+/graphify recommend-commits --files src/auth.ts,src/session.ts --graph .graphify/graph.json  # advisory-only のコミット分割提案
 /graphify path "DigestAuth" "Response"
 /graphify explain "SwinTransformer"
 
@@ -192,6 +193,7 @@ graphify hook install
 graphify hook uninstall
 graphify hook status
 graphify state status            # .graphify/worktree.json + branch.json を確認
+graphify recommend-commits          # 現在の Git 変更から advisory-only のコミット分割を提案
 graphify state prune             # 非破壊の stale-state クリーンアップ計画を表示
 
 # 常時有効のアシスタント指示 - プラットフォーム固有
@@ -220,6 +222,7 @@ graphify query "認証フローを表示" --dfs
 graphify query "CfgNode とは？" --budget 500
 graphify summary --graph .graphify/graph.json
 graphify review-delta --files src/auth.ts,src/session.ts --graph .graphify/graph.json
+graphify recommend-commits --files src/auth.ts,src/session.ts --graph .graphify/graph.json
 graphify query "..." --graph path/to/graph.json
 ```
 

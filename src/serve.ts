@@ -17,6 +17,7 @@ import { validateGraphPath, sanitizeLabel } from "./security.js";
 import { godNodes as computeGodNodes } from "./analyze.js";
 import { buildFirstHopSummary, firstHopSummaryToText } from "./summary.js";
 import { buildReviewDelta, reviewDeltaToText } from "./review.js";
+import { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 
 // ---------------------------------------------------------------------------
@@ -319,6 +320,22 @@ function toolReviewDelta(G: Graph, args: Record<string, unknown>): string {
   return reviewDeltaToText(delta);
 }
 
+function toolRecommendCommits(G: Graph, args: Record<string, unknown>): string {
+  const changedFiles = Array.isArray(args.changed_files)
+    ? args.changed_files.filter((item): item is string => typeof item === "string")
+    : [];
+  if (changedFiles.length === 0) {
+    return "No changed_files provided. Pass repository-relative paths to compute advisory commit groups.";
+  }
+  const recommendation = buildCommitRecommendation(G, changedFiles, {
+    graphAvailable: true,
+    maxGroups: Number(args.max_groups ?? 6),
+    maxNodes: Number(args.max_nodes ?? 60),
+    maxChains: Number(args.max_chains ?? 4),
+  });
+  return commitRecommendationToText(recommendation);
+}
+
 function toolShortestPath(G: Graph, args: Record<string, unknown>): string {
   const srcTerms = (args.source as string)
     .split(/\s+/)
@@ -422,6 +439,25 @@ export async function serve(
             },
             max_nodes: { type: "integer", default: 80 },
             max_chains: { type: "integer", default: 8 },
+          },
+          required: ["changed_files"],
+        },
+      },
+      {
+        name: "recommend_commits",
+        description:
+          "Return advisory-only commit grouping recommendations for changed files. Never stages, commits, or mutates branches.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            changed_files: {
+              type: "array",
+              items: { type: "string" },
+              description: "Repository-relative changed files",
+            },
+            max_groups: { type: "integer", default: 6 },
+            max_nodes: { type: "integer", default: 60 },
+            max_chains: { type: "integer", default: 4 },
           },
           required: ["changed_files"],
         },
@@ -551,6 +587,7 @@ export async function serve(
   > = {
     first_hop_summary: () => toolFirstHopSummary(G),
     review_delta: (a) => toolReviewDelta(G, a),
+    recommend_commits: (a) => toolRecommendCommits(G, a),
     query_graph: (a) => toolQueryGraph(G, a),
     get_node: (a) => toolGetNode(G, a),
     get_neighbors: (a) => toolGetNeighbors(G, a),

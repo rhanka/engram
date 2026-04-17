@@ -165,6 +165,7 @@ When the user types `/graphify`, invoke the Skill tool with `skill: "graphify"` 
 /graphify query "what connects attention to the optimizer?" --budget 1500  # 把预算限制在 N tokens
 /graphify summary --graph .graphify/graph.json        # 深度遍历前的紧凑 first-hop 概览
 /graphify review-delta --files src/auth.ts --graph .graphify/graph.json  # 变更文件的 review impact
+/graphify recommend-commits --files src/auth.ts,src/session.ts --graph .graphify/graph.json  # advisory-only 提交分组建议
 /graphify path "DigestAuth" "Response"
 /graphify explain "SwinTransformer"
 
@@ -181,6 +182,7 @@ graphify hook install
 graphify hook uninstall
 graphify hook status
 graphify state status            # 查看 .graphify/worktree.json + branch.json
+graphify recommend-commits          # 基于当前 Git 变更给出 advisory-only 提交分组
 graphify state prune             # 打印非破坏性的 stale-state 清理计划
 
 # 常驻助手规则 - 按平台区分

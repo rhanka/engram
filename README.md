@@ -41,6 +41,8 @@ In Codex, `$graphify` is a skill trigger, not a Bash subcommand like `graphify .
 
 `.graphify/` is local runtime state. It is gitignored by default and should not be committed unless you intentionally publish worked examples or exported artifacts elsewhere.
 
+`graphify recommend-commits` is advisory-only: it suggests groups and messages from Git changes plus graph impact, but it never stages files, creates commits, or mutates branches.
+
 Add a `.graphifyignore` file to exclude folders you don't want in the graph:
 
 ```
@@ -227,6 +229,7 @@ In Codex, replace the leading `/` in the examples below with `$`. Gemini CLI, Gi
 /graphify query "what connects attention to the optimizer?" --budget 1500  # cap at N tokens
 /graphify summary --graph .graphify/graph.json        # compact first-hop orientation before deep traversal
 /graphify review-delta --files src/auth.ts --graph .graphify/graph.json  # review impact for changed files
+/graphify recommend-commits --files src/auth.ts,src/session.ts --graph .graphify/graph.json  # advisory commit grouping
 /graphify path "DigestAuth" "Response"
 /graphify explain "SwinTransformer"
 
@@ -244,6 +247,7 @@ graphify hook uninstall
 graphify hook status
 graphify state status            # inspect .graphify/worktree.json + branch.json
 graphify state prune             # print a non-destructive stale-state cleanup plan
+graphify recommend-commits          # advisory-only commit grouping from current Git changes
 
 # always-on assistant instructions - platform-specific
 graphify claude install            # CLAUDE.md + PreToolUse hook (Claude Code)
@@ -271,6 +275,7 @@ graphify query "show the auth flow" --dfs
 graphify query "what is CfgNode?" --budget 500
 graphify summary --graph .graphify/graph.json
 graphify review-delta --files src/auth.ts,src/session.ts --graph .graphify/graph.json
+graphify recommend-commits --files src/auth.ts,src/session.ts --graph .graphify/graph.json
 graphify query "..." --graph path/to/graph.json
 ```
 

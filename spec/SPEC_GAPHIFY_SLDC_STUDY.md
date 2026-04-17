@@ -571,3 +571,7 @@ The migration should not be a blind path rename. It should be implemented as:
 4. commit recommendation experiments last
 
 That sequencing keeps the risk bounded and prevents a half-migrated skill surface from becoming the new source of drift.
+
+## Implementation checkpoint after ninth lot
+
+Lot 9 adds an advisory-only commit recommendation prototype. The runtime now groups Git changed files by graph-backed community where possible, falls back to repository path grouping for partial graphs, and reports explicit confidence plus stale-state reasons from .graphify lifecycle metadata. The CLI, skill runtime, MCP server, public API, README, and assistant skill docs expose the workflow as recommendation-only: no staging, no commits, and no branch mutation are performed. Tests cover stale state, post-rewrite/rebase signals, and partial graph fallbacks.

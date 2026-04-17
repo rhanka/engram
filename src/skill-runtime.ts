@@ -28,6 +28,7 @@ import { generate } from "./report.js";
 import { defaultManifestPath, resolveGraphifyPaths } from "./paths.js";
 import { buildFirstHopSummary, firstHopSummaryToText } from "./summary.js";
 import { buildReviewDelta, reviewDeltaToText } from "./review.js";
+import { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
 import { augmentDetectionWithTranscripts } from "./transcribe.js";
 import type {
   DetectionResult,
@@ -987,6 +988,27 @@ async function main(): Promise<void> {
         maxChains: Number(opts.maxChains),
       });
       console.log(reviewDeltaToText(delta));
+    });
+
+  program
+    .command("recommend-commits")
+    .requiredOption("--graph <path>")
+    .requiredOption("--files <csv>", "Comma or newline separated changed files")
+    .option("--max-groups <n>", "Maximum commit groups", "6")
+    .option("--max-nodes <n>", "Maximum impacted nodes per group", "60")
+    .option("--max-chains <n>", "Maximum high-risk chains per group", "4")
+    .action((opts) => {
+      const G = loadGraph(opts.graph);
+      const files = String(opts.files)
+        .split(/[\n,]/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const recommendation = buildCommitRecommendation(G, files, {
+        maxGroups: Number(opts.maxGroups),
+        maxNodes: Number(opts.maxNodes),
+        maxChains: Number(opts.maxChains),
+      });
+      console.log(commitRecommendationToText(recommendation));
     });
 
   program
