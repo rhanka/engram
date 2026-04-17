@@ -8,6 +8,7 @@
 - Upstream alignment branch: v3, mirroring upstream Python Graphify v3
 - Runtime state root: .graphify/
 - Legacy read fallback: graphify-out/graph.json is still accepted for compatibility, but new writes target .graphify/
+- Legacy migration: graphify migrate-state plans/copies graphify-out/ into .graphify/ and advises git mv for tracked artifacts
 
 This document describes the implemented TypeScript product state after the evolution lots. It is not a proposal document and does not describe the upstream Python runtime except where branch alignment matters.
 
@@ -62,6 +63,9 @@ Legacy compatibility:
 
 - graphify-out/graph.json remains a read fallback for implicit graph consumers during the compatibility window.
 - graphify-out/ is not the current write target.
+- graphify migrate-state --dry-run prints a non-destructive migration plan and git advice.
+- graphify migrate-state copies legacy local state into .graphify/ without deleting graphify-out/.
+- If graphify-out/ is tracked in a committed repo, the migration advice recommends reviewing git mv -f graphify-out .graphify and a commit message before mutating Git history.
 
 ## Core Build Pipeline
 
@@ -90,6 +94,7 @@ Build and maintain:
 - graphify <path> --watch
 - graphify hook install/status/uninstall
 - graphify state status/prune
+- graphify migrate-state --dry-run/--force
 
 Query and inspect:
 

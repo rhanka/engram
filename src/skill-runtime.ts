@@ -302,16 +302,17 @@ function updateCostFile(
 
 function findBestMatchingNode(G: Graph, term: string): string | null {
   const words = term.toLowerCase().split(/\s+/).filter(Boolean);
-  let best: { score: number; nodeId: string } | null = null;
+  let bestNodeId: string | null = null;
+  let bestScore = 0;
   G.forEachNode((nodeId, data) => {
     const label = ((data.label as string) ?? "").toLowerCase();
     const score = words.filter((word) => label.includes(word)).length;
-    if (score <= 0) return;
-    if (!best || score > best.score) {
-      best = { score, nodeId };
+    if (score > bestScore) {
+      bestScore = score;
+      bestNodeId = nodeId;
     }
   });
-  return best?.nodeId ?? null;
+  return bestNodeId;
 }
 
 function runtimeInfo(): Record<string, unknown> {
@@ -343,6 +344,23 @@ async function main(): Promise<void> {
     .argument("[root]", "Workspace root", ".")
     .action((root) => {
       console.log(JSON.stringify(resolveGraphifyPaths({ root: resolve(root) }), null, 2));
+    });
+
+  program
+    .command("migrate-state")
+    .description("Migrate legacy graphify-out state into .graphify")
+    .option("--root <path>", "Workspace root", ".")
+    .option("--dry-run", "Print the migration plan without writing files")
+    .option("--force", "Overwrite existing files under .graphify")
+    .option("--json", "Print JSON output")
+    .action(async (opts) => {
+      const { migrateGraphifyOut, migrationResultToText } = await import("./migrate-state.js");
+      const result = migrateGraphifyOut({ root: opts.root, dryRun: opts.dryRun, force: opts.force });
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(migrationResultToText(result));
+      }
     });
 
   program

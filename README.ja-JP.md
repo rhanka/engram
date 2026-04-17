@@ -39,6 +39,8 @@ $graphify .                        # Codex
 
 `.graphify/` はローカルの runtime state です。デフォルトで gitignore され、worked examples やエクスポート済み artifact として意図的に公開する場合を除き、コミットしないでください。
 
+古いリポジトリに `graphify-out/` が残っている場合は、まず `graphify migrate-state --dry-run` を実行してください。移行はローカル state を `.graphify/` にコピーし、旧ディレクトリは削除しません。`graphify-out` が Git で追跡されている場合は、確認用に `git mv -f graphify-out .graphify` と commit message を表示します。
+
 `graphify recommend-commits` は advisory-only です。Git 変更とグラフ影響から分割案とコミットメッセージを提案しますが、stage、commit、ブランチ変更は行いません。
 
 `graphify review-analysis` は review 向けに blast radius、bridge nodes、test-gap hints、impacted communities、multimodal/doc regression safety を追加します。`graphify review-eval` は JSON cases から token savings、impacted-file recall、review summary precision、multimodal regression safety を測定します。

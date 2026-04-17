@@ -63,7 +63,7 @@ describe("Gemini integration contract", () => {
     expect(skill).toContain("prepare-semantic-detect");
     expect(skill).toContain("files.video");
     expect(skill).toContain(".graphify/branch.json");
-    expect(skill).not.toContain("graphify-out");
+    expect(skill).toContain("graphify migrate-state --dry-run");
     expect(skill).not.toContain("python3 -m graphify");
 
     expect(readme).toContain("Gemini CLI");

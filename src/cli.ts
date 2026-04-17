@@ -147,6 +147,7 @@ This project has a graphify knowledge graph at .graphify/.
 Rules:
 - Before answering architecture or codebase questions, read .graphify/GRAPH_REPORT.md for god nodes and community structure
 - If .graphify/wiki/index.md exists, navigate it instead of reading raw files
+- If .graphify/graph.json is missing but graphify-out/graph.json exists, run \`graphify migrate-state --dry-run\` first; if tracked legacy artifacts are reported, ask before using the recommended \`git mv -f graphify-out .graphify\` and commit message
 - If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run /graphify . --update when appropriate
 - Before deep graph traversal, prefer \`graphify summary --graph .graphify/graph.json\` for compact first-hop orientation
 - For review impact on changed files, use \`graphify review-delta --graph .graphify/graph.json\` instead of generic traversal
@@ -160,6 +161,7 @@ This project has a graphify knowledge graph at .graphify/.
 Rules:
 - Before answering architecture or codebase questions, read .graphify/GRAPH_REPORT.md for god nodes and community structure
 - If .graphify/wiki/index.md exists, navigate it instead of reading raw files
+- If .graphify/graph.json is missing but graphify-out/graph.json exists, run \`graphify migrate-state --dry-run\` first; if tracked legacy artifacts are reported, ask before using the recommended \`git mv -f graphify-out .graphify\` and commit message
 - If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run /graphify . --update when appropriate
 - In Gemini CLI, the reliable explicit custom command is \`/graphify ...\`
 - If the user asks to build, update, query, path, or explain the graph, use the installed \`/graphify\` custom command or the configured \`graphify\` MCP server instead of ad-hoc file traversal
@@ -290,6 +292,7 @@ This project has a graphify knowledge graph at .graphify/.
 
 - Before answering architecture or codebase questions, read .graphify/GRAPH_REPORT.md for god nodes and community structure
 - If .graphify/wiki/index.md exists, navigate it instead of reading raw files
+- If .graphify/graph.json is missing but graphify-out/graph.json exists, run \`graphify migrate-state --dry-run\` first; if tracked legacy artifacts are reported, ask before using the recommended \`git mv -f graphify-out .graphify\` and commit message
 - If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run /graphify . --update when appropriate
 - After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
 `;
@@ -494,6 +497,7 @@ export function getAgentsMdSection(platformName: string): string {
     "Rules:",
     "- Before answering architecture or codebase questions, read .graphify/GRAPH_REPORT.md for god nodes and community structure",
     "- If .graphify/wiki/index.md exists, navigate it instead of reading raw files",
+    "- If .graphify/graph.json is missing but graphify-out/graph.json exists, run `graphify migrate-state --dry-run` first; if tracked legacy artifacts are reported, ask before using the recommended `git mv -f graphify-out .graphify` and commit message",
     "- If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run the graphify skill with --update when appropriate",
     "- If the user asks to build, update, query, path, or explain the graph, use the installed `graphify` skill instead of ad-hoc file traversal",
     "- Before deep graph traversal, prefer `graphify summary --graph .graphify/graph.json` for compact first-hop orientation",
@@ -987,6 +991,7 @@ export function getPlatformsToCheck(argv: string[]): string[] {
 
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
+    if (!token) continue;
     if (token in PLATFORM_CONFIG) {
       add(token);
       continue;
@@ -1020,6 +1025,7 @@ export async function main(): Promise<void> {
   // Only warn for the platform(s) relevant to the current command.
   for (const platformName of getPlatformsToCheck(process.argv.slice(2))) {
     const cfg = PLATFORM_CONFIG[platformName];
+    if (!cfg) continue;
     checkSkillVersion(join(homedir(), cfg.skill_dst));
   }
 
@@ -1081,6 +1087,23 @@ export async function main(): Promise<void> {
       agentsUninstall(".", cmd);
     });
   }
+
+  program
+    .command("migrate-state")
+    .description("Migrate legacy graphify-out state into .graphify")
+    .option("--root <path>", "Workspace root", ".")
+    .option("--dry-run", "Print the migration plan without writing files")
+    .option("--force", "Overwrite existing files under .graphify")
+    .option("--json", "Print JSON output")
+    .action(async (opts) => {
+      const { migrateGraphifyOut, migrationResultToText } = await import("./migrate-state.js");
+      const result = migrateGraphifyOut({ root: opts.root, dryRun: opts.dryRun, force: opts.force });
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(migrationResultToText(result));
+      }
+    });
 
   // Hook management
   const hook = program.command("hook").description("Git hook management");

@@ -30,5 +30,7 @@ export { buildReviewAnalysis, reviewAnalysisToText, evaluateReviewAnalysis, revi
 export type { ReviewAnalysis, ReviewAnalysisOptions, ReviewBlastRadius, ReviewImpactedCommunity, ReviewMultimodalSafety, ReviewEvaluationCase, ReviewEvaluationCaseResult, ReviewEvaluationResult, ReviewEvaluationOptions, ReviewRiskLevel } from "./review-analysis.js";
 export { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
 export type { CommitRecommendation, CommitRecommendationGroup, CommitRecommendationStaleness, CommitRecommendationConfidence, CommitRecommendationOptions } from "./recommend.js";
+export { planGraphifyOutMigration, migrateGraphifyOut, migrationResultToText } from "./migrate-state.js";
+export type { MigrationAction, MigrationEntryType, MigrationEntry, MigrationGitAdvice, GraphifyOutMigrationPlan, GraphifyOutMigrationResult, MigrationOptions } from "./migrate-state.js";
 export { serve } from "./serve.js";
 export { watch, rebuildCode } from "./watch.js";

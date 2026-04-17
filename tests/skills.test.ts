@@ -48,7 +48,8 @@ describe("skill cache examples", () => {
       expect(content).toContain(".graphify/graph.json");
       expect(content).toContain(".graphify/branch.json");
       expect(content).toContain("graphify state prune");
-      expect(content).not.toContain("graphify-out");
+      expect(content).toContain("graphify migrate-state --dry-run");
+      expect(content).toContain("git mv -f graphify-out .graphify");
     }
   });
 

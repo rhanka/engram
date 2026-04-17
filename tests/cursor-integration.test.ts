@@ -24,6 +24,7 @@ describe("Cursor integration contract", () => {
     expect(rule).toContain("alwaysApply: true");
     expect(rule).toContain(".graphify/GRAPH_REPORT.md");
     expect(rule).toContain("npx graphify hook-rebuild");
+    expect(rule).toContain("graphify migrate-state --dry-run");
   });
 
   it("is idempotent and does not overwrite an existing rule", () => {

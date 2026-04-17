@@ -57,7 +57,7 @@ describe("Codex integration contract", () => {
     expect(skill).toContain("graphify codex install");
     expect(skill).toContain("codex mcp add graphify");
     expect(skill).toContain(".graphify/branch.json");
-    expect(skill).not.toContain("graphify-out");
+    expect(skill).toContain("graphify migrate-state --dry-run");
     expect(skill).not.toContain(".graphify_python");
     expect(skill).not.toContain("python3 -m graphify");
     expect(skill).not.toContain("graphify claude install");

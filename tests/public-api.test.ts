@@ -71,6 +71,9 @@ describe("public API compatibility", () => {
     expect(typeof api.reviewEvaluationToText).toBe("function");
     expect(typeof api.buildCommitRecommendation).toBe("function");
     expect(typeof api.commitRecommendationToText).toBe("function");
+    expect(typeof api.planGraphifyOutMigration).toBe("function");
+    expect(typeof api.migrateGraphifyOut).toBe("function");
+    expect(typeof api.migrationResultToText).toBe("function");
   });
 
   it("accepts object-style map inputs and option objects", () => {

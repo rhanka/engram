@@ -41,6 +41,8 @@ In Codex, `$graphify` is a skill trigger, not a Bash subcommand like `graphify .
 
 `.graphify/` is local runtime state. It is gitignored by default and should not be committed unless you intentionally publish worked examples or exported artifacts elsewhere.
 
+If an older repo still has `graphify-out/`, run `graphify migrate-state --dry-run` first. The migration copies local state into `.graphify/` without deleting the legacy folder; when `graphify-out` is tracked, the command prints the `git mv -f graphify-out .graphify` + commit message to review before you mutate Git history.
+
 `graphify recommend-commits` is advisory-only: it suggests groups and messages from Git changes plus graph impact, but it never stages files, creates commits, or mutates branches.
 
 `graphify review-analysis` adds review-specific views for blast radius, bridge nodes, test-gap hints, impacted communities, and multimodal/doc regression safety. `graphify review-eval` measures token savings versus naive file reads, impacted-file recall, review summary precision, and multimodal regression safety from JSON cases.
@@ -251,6 +253,7 @@ graphify hook uninstall
 graphify hook status
 graphify state status            # inspect .graphify/worktree.json + branch.json
 graphify state prune             # print a non-destructive stale-state cleanup plan
+graphify migrate-state --dry-run # plan graphify-out -> .graphify migration and git mv advice
 graphify recommend-commits          # advisory-only commit grouping from current Git changes
 
 # always-on assistant instructions - platform-specific

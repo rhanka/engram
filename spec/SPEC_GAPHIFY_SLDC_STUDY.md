@@ -48,6 +48,7 @@ Implemented:
 Residual compatibility:
 
 - legacy graphify-out read fallback exists for one compatibility window.
+- graphify migrate-state provides a non-destructive graphify-out -> .graphify migration with git mv advice for tracked artifacts.
 - explicit user paths are respected.
 
 ### 3. Git Hooks And Worktree Lifecycle
@@ -152,7 +153,7 @@ Rejected for this phase. recommend-commits is advisory-only and never stages, co
 
 ## Residual Risks
 
-- Existing users with only graphify-out/ artifacts rely on the compatibility fallback until they rebuild.
+- Existing users with only graphify-out/ artifacts can run graphify migrate-state --dry-run, then graphify migrate-state, or follow the printed git mv plan if those artifacts are intentionally tracked.
 - Optional Tree-sitter grammars may be unavailable for some fixture languages; current rebuilds tolerate known warnings for kotlin, swift, and zig fixtures.
 - Semantic graph quality still depends on assistant extraction quality and cache correctness.
 - Review recall metrics are only meaningful when users maintain representative review-eval cases.
@@ -179,7 +180,7 @@ Known acceptable hook-rebuild warnings:
 | Topic | Current contract |
 |---|---|
 | State root | .graphify/ |
-| Legacy path | graphify-out/ read fallback only |
+| Legacy path | graphify-out/ read fallback plus graphify migrate-state migration |
 | Product branch | v3-typescript |
 | Upstream branch | v3 mirrors Python Graphify |
 | Distribution | npm package graphifyy |

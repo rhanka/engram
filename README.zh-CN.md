@@ -39,6 +39,8 @@ $graphify .                        # Codex
 
 `.graphify/` 是本地运行时状态，默认会被 git 忽略。除非你明确要发布 worked examples 或导出的 artifact，否则不要把它提交进仓库。
 
+如果旧仓库里还有 `graphify-out/`，先运行 `graphify migrate-state --dry-run`。迁移会把本地状态复制到 `.graphify/`，不会删除旧目录；如果 `graphify-out` 已被 Git 跟踪，命令会打印建议的 `git mv -f graphify-out .graphify` 和 commit message，供你确认后再执行。
+
 `graphify recommend-commits` 仅提供 advisory-only 建议：它会基于 Git 变更和图影响推荐分组与提交信息，但不会 stage 文件、创建 commit 或修改分支。
 
 `graphify review-analysis` 增加面向 review 的 blast radius、bridge nodes、test-gap hints、impacted communities 和 multimodal/doc regression safety 视图。`graphify review-eval` 可用 JSON cases 衡量 token savings、impacted-file recall、review summary precision 和 multimodal regression safety。
