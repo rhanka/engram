@@ -39,6 +39,10 @@ $graphify .                        # Codex
 
 `.graphify/` 是本地运行时状态，默认会被 git 忽略。除非你明确要发布 worked examples 或导出的 artifact，否则不要把它提交进仓库。
 
+`graphify recommend-commits` 仅提供 advisory-only 建议：它会基于 Git 变更和图影响推荐分组与提交信息，但不会 stage 文件、创建 commit 或修改分支。
+
+`graphify review-analysis` 增加面向 review 的 blast radius、bridge nodes、test-gap hints、impacted communities 和 multimodal/doc regression safety 视图。`graphify review-eval` 可用 JSON cases 衡量 token savings、impacted-file recall、review summary precision 和 multimodal regression safety。
+
 ## 工作原理
 
 graphify 把确定性的结构提取和模型驱动的语义提取组合在一起，中间按需做本地预处理。代码文件先走无 LLM 的 AST 流水线，提取类、函数、导入、调用图、docstring 和 rationale 注释。文档、论文、Office 文件和图片会先被规范化成文本或多模态输入，再交给平台模型驱动的子代理抽取概念、关系和设计动机。本分支还补上了本地音频/视频检测，并通过 TypeScript runtime 调用 `yt-dlp` + `ffmpeg` + `sherpa-onnx-node` 做本地转录；生成出的 transcript 会和其他文档一起进入同一条语义抽取流水线。最终结果会合并到 Graphology 图里，用 Louvain 社区发现做聚类，并导出成可交互 HTML、可查询 JSON 和人类可读的审计报告。
@@ -165,6 +169,7 @@ When the user types `/graphify`, invoke the Skill tool with `skill: "graphify"` 
 /graphify query "what connects attention to the optimizer?" --budget 1500  # 把预算限制在 N tokens
 /graphify summary --graph .graphify/graph.json        # 深度遍历前的紧凑 first-hop 概览
 /graphify review-delta --files src/auth.ts --graph .graphify/graph.json  # 变更文件的 review impact
+/graphify review-analysis --files src/auth.ts --graph .graphify/graph.json  # blast radius + review 视图
 /graphify recommend-commits --files src/auth.ts,src/session.ts --graph .graphify/graph.json  # advisory-only 提交分组建议
 /graphify path "DigestAuth" "Response"
 /graphify explain "SwinTransformer"

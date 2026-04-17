@@ -28,6 +28,7 @@ import { generate } from "./report.js";
 import { defaultManifestPath, resolveGraphifyPaths } from "./paths.js";
 import { buildFirstHopSummary, firstHopSummaryToText } from "./summary.js";
 import { buildReviewDelta, reviewDeltaToText } from "./review.js";
+import { buildReviewAnalysis, reviewAnalysisToText, evaluateReviewAnalysis, reviewEvaluationToText } from "./review-analysis.js";
 import { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
 import { augmentDetectionWithTranscripts } from "./transcribe.js";
 import type {
@@ -988,6 +989,43 @@ async function main(): Promise<void> {
         maxChains: Number(opts.maxChains),
       });
       console.log(reviewDeltaToText(delta));
+    });
+
+  program
+    .command("review-analysis")
+    .requiredOption("--graph <path>")
+    .requiredOption("--files <csv>", "Comma or newline separated changed files")
+    .option("--max-nodes <n>", "Maximum impacted nodes", "120")
+    .option("--max-chains <n>", "Maximum high-risk chains", "12")
+    .option("--max-communities <n>", "Maximum impacted communities", "8")
+    .action((opts) => {
+      const G = loadGraph(opts.graph);
+      const files = String(opts.files)
+        .split(/[\n,]/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const analysis = buildReviewAnalysis(G, files, {
+        maxNodes: Number(opts.maxNodes),
+        maxChains: Number(opts.maxChains),
+        maxCommunities: Number(opts.maxCommunities),
+      });
+      console.log(reviewAnalysisToText(analysis));
+    });
+
+  program
+    .command("review-eval")
+    .requiredOption("--graph <path>")
+    .requiredOption("--cases <path>", "JSON file: array of cases or {cases:[...]}")
+    .option("--default-file-tokens <n>", "Fallback naive token estimate per file", "800")
+    .action((opts) => {
+      const rawCases = JSON.parse(readFileSync(resolve(opts.cases), "utf-8"));
+      const cases = Array.isArray(rawCases) ? rawCases : rawCases.cases;
+      if (!Array.isArray(cases)) throw new Error("--cases must contain an array or an object with a cases array");
+      const G = loadGraph(opts.graph);
+      const evaluation = evaluateReviewAnalysis(G, cases, {
+        defaultFileTokens: Number(opts.defaultFileTokens),
+      });
+      console.log(reviewEvaluationToText(evaluation));
     });
 
   program

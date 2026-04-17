@@ -39,6 +39,10 @@ $graphify .                        # Codex
 
 `.graphify/` はローカルの runtime state です。デフォルトで gitignore され、worked examples やエクスポート済み artifact として意図的に公開する場合を除き、コミットしないでください。
 
+`graphify recommend-commits` は advisory-only です。Git 変更とグラフ影響から分割案とコミットメッセージを提案しますが、stage、commit、ブランチ変更は行いません。
+
+`graphify review-analysis` は review 向けに blast radius、bridge nodes、test-gap hints、impacted communities、multimodal/doc regression safety を追加します。`graphify review-eval` は JSON cases から token savings、impacted-file recall、review summary precision、multimodal regression safety を測定します。
+
 グラフに含めたくないフォルダを除外するには `.graphifyignore` ファイルを追加します：
 
 ```
@@ -176,6 +180,7 @@ When the user types `/graphify`, invoke the Skill tool with `skill: "graphify"` 
 /graphify query "アテンションとオプティマイザを結ぶものは？" --budget 1500  # N トークンで上限設定
 /graphify summary --graph .graphify/graph.json        # 深い traversal の前に compact first-hop orientation を取得
 /graphify review-delta --files src/auth.ts --graph .graphify/graph.json  # 変更ファイルの review impact
+/graphify review-analysis --files src/auth.ts --graph .graphify/graph.json  # blast radius + review ビュー
 /graphify recommend-commits --files src/auth.ts,src/session.ts --graph .graphify/graph.json  # advisory-only のコミット分割提案
 /graphify path "DigestAuth" "Response"
 /graphify explain "SwinTransformer"
@@ -222,6 +227,8 @@ graphify query "認証フローを表示" --dfs
 graphify query "CfgNode とは？" --budget 500
 graphify summary --graph .graphify/graph.json
 graphify review-delta --files src/auth.ts,src/session.ts --graph .graphify/graph.json
+graphify review-analysis --files src/auth.ts --graph .graphify/graph.json
+graphify review-eval --cases .graphify/review-cases.json --graph .graphify/graph.json
 graphify recommend-commits --files src/auth.ts,src/session.ts --graph .graphify/graph.json
 graphify query "..." --graph path/to/graph.json
 ```

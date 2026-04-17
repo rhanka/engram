@@ -575,3 +575,7 @@ That sequencing keeps the risk bounded and prevents a half-migrated skill surfac
 ## Implementation checkpoint after ninth lot
 
 Lot 9 adds an advisory-only commit recommendation prototype. The runtime now groups Git changed files by graph-backed community where possible, falls back to repository path grouping for partial graphs, and reports explicit confidence plus stale-state reasons from .graphify lifecycle metadata. The CLI, skill runtime, MCP server, public API, README, and assistant skill docs expose the workflow as recommendation-only: no staging, no commits, and no branch mutation are performed. Tests cover stale state, post-rewrite/rebase signals, and partial graph fallbacks.
+
+## Implementation checkpoint after tenth lot
+
+Lot 10 adds a separate review-analysis surface instead of overloading review-delta. The new layer reports blast radius, bridge nodes, test-gap hints, impacted-community summaries, and multimodal/doc safety. It also adds a deterministic review-eval harness that measures token savings versus naive file reads, impacted-file recall, review summary precision, and multimodal regression safety from JSON cases. Embeddings, SQLite, and editor-extension parity remain explicitly deferred.

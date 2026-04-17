@@ -172,21 +172,21 @@
 
 ## Lot 10 - Review-Oriented Analysis And Evaluation
 
-- [ ] Add review-facing analysis views where they materially improve actionability:
-  - [ ] blast radius
-  - [ ] bridge nodes
-  - [ ] test-gap hints
-  - [ ] impacted-community summaries
-- [ ] Add an evaluation harness for the new review-mode surfaces
-- [ ] Measure:
-  - [ ] token savings versus naive file reads
-  - [ ] impacted-file recall
-  - [ ] review summary precision
-  - [ ] multimodal regression safety
-- [ ] Keep optional/stretch items explicitly deferred:
-  - [ ] embeddings
-  - [ ] SQLite backend
-  - [ ] editor extension parity
+- [x] Add review-facing analysis views where they materially improve actionability:
+  - [x] blast radius
+  - [x] bridge nodes
+  - [x] test-gap hints
+  - [x] impacted-community summaries
+- [x] Add an evaluation harness for the new review-mode surfaces
+- [x] Measure:
+  - [x] token savings versus naive file reads
+  - [x] impacted-file recall
+  - [x] review summary precision
+  - [x] multimodal regression safety
+- [x] Keep optional/stretch items explicitly deferred:
+  - [x] embeddings
+  - [x] SQLite backend
+  - [x] editor extension parity
 
 ## Lot 11 - Install And Platform Preview Improvements
 

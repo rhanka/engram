@@ -1111,6 +1111,74 @@ export async function main(): Promise<void> {
     });
 
   program
+    .command("review-analysis [files...]")
+    .description("Actionable review analysis: blast radius, communities, bridges, test gaps, multimodal safety")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--files <csv>", "Comma or newline separated changed files")
+    .option("--base <ref>", "Git base ref; when omitted, compare working tree to HEAD")
+    .option("--head <ref>", "Git head ref to compare with --base", "HEAD")
+    .option("--staged", "Use staged changes only")
+    .option("--max-nodes <n>", "Maximum impacted nodes", "120")
+    .option("--max-chains <n>", "Maximum high-risk chains", "12")
+    .option("--max-communities <n>", "Maximum impacted communities", "8")
+    .action(async (files, opts) => {
+      const changedFiles = [
+        ...files,
+        ...splitFiles(opts.files),
+      ];
+      const resolvedChangedFiles = changedFiles.length > 0
+        ? [...new Set(changedFiles)].sort()
+        : changedFilesFromGit({ base: opts.base, head: opts.head, staged: opts.staged });
+      if (resolvedChangedFiles.length === 0) {
+        console.log("No changed files found for review-analysis.");
+        return;
+      }
+      const { readFileSync: rf } = await import("node:fs");
+      const { resolve: res } = await import("node:path");
+      const gp = res(resolveGraphInputPath(opts.graph));
+      if (!existsSync(gp)) {
+        console.error(`error: graph file not found: ${gp}`);
+        process.exit(1);
+      }
+      const G = loadGraphFromData(JSON.parse(rf(gp, "utf-8")));
+      const { buildReviewAnalysis, reviewAnalysisToText } = await import("./review-analysis.js");
+      const analysis = buildReviewAnalysis(G, resolvedChangedFiles, {
+        maxNodes: Number(opts.maxNodes),
+        maxChains: Number(opts.maxChains),
+        maxCommunities: Number(opts.maxCommunities),
+      });
+      console.log(reviewAnalysisToText(analysis));
+    });
+
+  program
+    .command("review-eval")
+    .description("Evaluate review-analysis cases against expected impacted files and summary terms")
+    .requiredOption("--cases <path>", "JSON file: array of cases or {cases:[...]}")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--default-file-tokens <n>", "Fallback naive token estimate per file", "800")
+    .action(async (opts) => {
+      const { readFileSync: rf } = await import("node:fs");
+      const { resolve: res } = await import("node:path");
+      const gp = res(resolveGraphInputPath(opts.graph));
+      if (!existsSync(gp)) {
+        console.error(`error: graph file not found: ${gp}`);
+        process.exit(1);
+      }
+      const rawCases = JSON.parse(rf(res(opts.cases), "utf-8"));
+      const cases = Array.isArray(rawCases) ? rawCases : rawCases.cases;
+      if (!Array.isArray(cases)) {
+        console.error("error: --cases must contain an array or an object with a cases array");
+        process.exit(1);
+      }
+      const G = loadGraphFromData(JSON.parse(rf(gp, "utf-8")));
+      const { evaluateReviewAnalysis, reviewEvaluationToText } = await import("./review-analysis.js");
+      const evaluation = evaluateReviewAnalysis(G, cases, {
+        defaultFileTokens: Number(opts.defaultFileTokens),
+      });
+      console.log(reviewEvaluationToText(evaluation));
+    });
+
+  program
     .command("recommend-commits [files...]")
     .description("Advisory-only commit grouping for changed files")
     .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())

@@ -17,6 +17,7 @@ import { validateGraphPath, sanitizeLabel } from "./security.js";
 import { godNodes as computeGodNodes } from "./analyze.js";
 import { buildFirstHopSummary, firstHopSummaryToText } from "./summary.js";
 import { buildReviewDelta, reviewDeltaToText } from "./review.js";
+import { buildReviewAnalysis, reviewAnalysisToText } from "./review-analysis.js";
 import { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 
@@ -336,6 +337,21 @@ function toolRecommendCommits(G: Graph, args: Record<string, unknown>): string {
   return commitRecommendationToText(recommendation);
 }
 
+function toolReviewAnalysis(G: Graph, args: Record<string, unknown>): string {
+  const changedFiles = Array.isArray(args.changed_files)
+    ? args.changed_files.filter((item): item is string => typeof item === "string")
+    : [];
+  if (changedFiles.length === 0) {
+    return "No changed_files provided. Pass repository-relative paths to compute review analysis.";
+  }
+  const analysis = buildReviewAnalysis(G, changedFiles, {
+    maxNodes: Number(args.max_nodes ?? 120),
+    maxChains: Number(args.max_chains ?? 12),
+    maxCommunities: Number(args.max_communities ?? 8),
+  });
+  return reviewAnalysisToText(analysis);
+}
+
 function toolShortestPath(G: Graph, args: Record<string, unknown>): string {
   const srcTerms = (args.source as string)
     .split(/\s+/)
@@ -439,6 +455,25 @@ export async function serve(
             },
             max_nodes: { type: "integer", default: 80 },
             max_chains: { type: "integer", default: 8 },
+          },
+          required: ["changed_files"],
+        },
+      },
+      {
+        name: "review_analysis",
+        description:
+          "Return actionable review analysis: blast radius, impacted communities, bridge nodes, test gaps, and multimodal/doc safety.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            changed_files: {
+              type: "array",
+              items: { type: "string" },
+              description: "Repository-relative changed files",
+            },
+            max_nodes: { type: "integer", default: 120 },
+            max_chains: { type: "integer", default: 12 },
+            max_communities: { type: "integer", default: 8 },
           },
           required: ["changed_files"],
         },
@@ -587,6 +622,7 @@ export async function serve(
   > = {
     first_hop_summary: () => toolFirstHopSummary(G),
     review_delta: (a) => toolReviewDelta(G, a),
+    review_analysis: (a) => toolReviewAnalysis(G, a),
     recommend_commits: (a) => toolRecommendCommits(G, a),
     query_graph: (a) => toolQueryGraph(G, a),
     get_node: (a) => toolGetNode(G, a),

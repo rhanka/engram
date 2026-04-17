@@ -12,6 +12,7 @@ Use the installed TypeScript runtime only. Do not fall back to Python.
 - `/graphify <path> [flags]` means build or update the graph for that path
 - `/graphify summary` means return compact first-hop orientation from `.graphify/graph.json`
 - `/graphify review-delta [files...]` means return review-oriented impact for changed files
+- `/graphify review-analysis [files...]` means return blast radius, impacted communities, bridges, test gaps, and multimodal safety
 - `/graphify recommend-commits [files...]` means return advisory-only commit groups; never stage, commit, or mutate branches
 - `/graphify query "<question>"` means answer from `.graphify/graph.json`
 - `/graphify path "A" "B"` means show the shortest path between two nodes
@@ -180,6 +181,8 @@ Before deep query/path/explain traversal, get the compact first-hop orientation:
 ```bash
 graphify summary --graph .graphify/graph.json
 graphify recommend-commits --files src/auth.ts,src/session.ts --graph .graphify/graph.json
+graphify review-analysis --files src/auth.ts --graph .graphify/graph.json
+graphify review-eval --cases .graphify/review-cases.json --graph .graphify/graph.json
 ```
 
 Use that output to choose whether a query, node explanation, community read, or shortest path is the right next graph action.
@@ -228,3 +231,6 @@ The user's raw `/graphify ...` arguments are appended below this prompt.
 
 # Commit recommendation workflow
 # `graphify recommend-commits` is advisory-only. The user remains the actor; do not auto-stage, auto-commit, or mutate branches.
+
+# Review analysis workflow
+# `graphify review-analysis` adds blast radius, bridge nodes, test-gap hints, impacted communities, and multimodal/doc safety. `graphify review-eval` measures token savings, impacted-file recall, review summary precision, and multimodal regression safety.
