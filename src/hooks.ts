@@ -1,112 +1,242 @@
 /**
- * Git hook integration - install/uninstall graphify post-commit and post-checkout hooks.
+ * Git hook integration.
+ *
+ * Git owns the repository topology. Resolve worktree roots and hook paths with
+ * `git rev-parse` so linked worktrees and gitfiles do not break installation.
  */
-import { readFileSync, writeFileSync, existsSync, chmodSync, unlinkSync, mkdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { execFileSync } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
 
-const HOOK_MARKER = "# graphify-hook-start";
-const HOOK_MARKER_END = "# graphify-hook-end";
-const CHECKOUT_MARKER = "# graphify-checkout-hook-start";
-const CHECKOUT_MARKER_END = "# graphify-checkout-hook-end";
+const POST_COMMIT_MARKER = "# graphify-hook-start";
+const POST_COMMIT_MARKER_END = "# graphify-hook-end";
+const POST_CHECKOUT_MARKER = "# graphify-checkout-hook-start";
+const POST_CHECKOUT_MARKER_END = "# graphify-checkout-hook-end";
+const POST_MERGE_MARKER = "# graphify-post-merge-hook-start";
+const POST_MERGE_MARKER_END = "# graphify-post-merge-hook-end";
+const POST_REWRITE_MARKER = "# graphify-post-rewrite-hook-start";
+const POST_REWRITE_MARKER_END = "# graphify-post-rewrite-hook-end";
 
-const NODE_DETECT = `
-# Detect the correct Node.js / graphify binary
-GRAPHIFY_BIN=$(command -v graphify 2>/dev/null)
-if [ -z "$GRAPHIFY_BIN" ]; then
-    # Try npx
+interface GitContext {
+  worktreeRoot: string;
+  gitDir: string;
+  commonGitDir: string;
+  hooksDir: string;
+}
+
+interface HookDefinition {
+  name: string;
+  marker: string;
+  markerEnd: string;
+  script: string;
+}
+
+const HOOK_HELPERS = `
+# Shared graphify hook helpers. Hooks are advisory and must not block git.
+graphify_has_state() {
+    [ -f ".graphify/graph.json" ] || [ -f "graphify-out/graph.json" ] || [ -d ".graphify" ] || [ -d "graphify-out" ]
+}
+
+graphify_mark_stale() {
+    mkdir -p ".graphify"
+    printf "1\\n" > ".graphify/needs_update"
+}
+
+graphify_detect_cmd() {
+    if command -v graphify >/dev/null 2>&1; then
+        GRAPHIFY_CMD="graphify"
+        return 0
+    fi
     if command -v npx >/dev/null 2>&1; then
         GRAPHIFY_CMD="npx graphify"
-    else
-        echo "[graphify hook] graphify not found. Install with: npm install -g graphifyy"
-        exit 0
+        return 0
     fi
-else
-    GRAPHIFY_CMD="graphify"
-fi
+    echo "[graphify hook] graphify not found. Install with: npm install -g graphifyy"
+    return 1
+}
+
+graphify_rebuild_code() {
+    graphify_detect_cmd || return 0
+    $GRAPHIFY_CMD hook-rebuild >/dev/null 2>&1 || true
+}
 `;
 
-const HOOK_SCRIPT = `# graphify-hook-start
-# Auto-rebuilds the knowledge graph after each commit (code files only, no LLM needed).
+const POST_COMMIT_SCRIPT = `${POST_COMMIT_MARKER}
+# Marks graph state stale and rebuilds code-only graph after each commit.
 # Installed by: graphify hook install
 
-CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git diff --name-only HEAD 2>/dev/null)
+CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git diff --name-only HEAD 2>/dev/null || true)
 if [ -z "$CHANGED" ]; then
     exit 0
 fi
 
-${NODE_DETECT}
+${HOOK_HELPERS}
+graphify_mark_stale
 export GRAPHIFY_CHANGED="$CHANGED"
-$GRAPHIFY_CMD hook-rebuild 2>/dev/null || true
-# graphify-hook-end
+graphify_rebuild_code
+${POST_COMMIT_MARKER_END}
 `;
 
-const CHECKOUT_SCRIPT = `# graphify-checkout-hook-start
-# Auto-rebuilds the knowledge graph (code only) when switching branches.
+const POST_CHECKOUT_SCRIPT = `${POST_CHECKOUT_MARKER}
+# Marks graph state stale when switching branches and optionally rebuilds code-only graph.
 # Installed by: graphify hook install
 
 PREV_HEAD=$1
 NEW_HEAD=$2
 BRANCH_SWITCH=$3
 
-# Only run on branch switches, not file checkouts
+# Only run on branch switches, not file checkouts.
 if [ "$BRANCH_SWITCH" != "1" ]; then
     exit 0
 fi
 
-# Only run if graphify-out/ exists (graph has been built before)
-if [ ! -d "graphify-out" ]; then
-    exit 0
+${HOOK_HELPERS}
+graphify_has_state || exit 0
+graphify_mark_stale
+if [ -n "$PREV_HEAD" ] && [ -n "$NEW_HEAD" ]; then
+    GRAPHIFY_CHANGED=$(git diff --name-only "$PREV_HEAD" "$NEW_HEAD" 2>/dev/null || true)
+    export GRAPHIFY_CHANGED
 fi
-
-${NODE_DETECT}
-echo "[graphify] Branch switched - rebuilding knowledge graph (code files)..."
-$GRAPHIFY_CMD hook-rebuild 2>/dev/null || true
-# graphify-checkout-hook-end
+graphify_rebuild_code
+${POST_CHECKOUT_MARKER_END}
 `;
 
-function gitRoot(path: string): string | null {
-  let current = resolve(path);
-  while (true) {
-    if (existsSync(join(current, ".git"))) return current;
-    const parent = resolve(current, "..");
-    if (parent === current) return null;
-    current = parent;
+const POST_MERGE_SCRIPT = `${POST_MERGE_MARKER}
+# Marks graph state stale after merges and optionally rebuilds code-only graph.
+# Installed by: graphify hook install
+
+${HOOK_HELPERS}
+graphify_has_state || exit 0
+graphify_mark_stale
+GRAPHIFY_CHANGED=$(git diff --name-only ORIG_HEAD HEAD 2>/dev/null || true)
+export GRAPHIFY_CHANGED
+graphify_rebuild_code
+${POST_MERGE_MARKER_END}
+`;
+
+const POST_REWRITE_SCRIPT = `${POST_REWRITE_MARKER}
+# Marks graph state stale after history rewrites and optionally rebuilds code-only graph.
+# Installed by: graphify hook install
+
+${HOOK_HELPERS}
+graphify_has_state || exit 0
+graphify_mark_stale
+unset GRAPHIFY_CHANGED
+graphify_rebuild_code
+${POST_REWRITE_MARKER_END}
+`;
+
+const HOOKS: HookDefinition[] = [
+  {
+    name: "post-commit",
+    marker: POST_COMMIT_MARKER,
+    markerEnd: POST_COMMIT_MARKER_END,
+    script: POST_COMMIT_SCRIPT,
+  },
+  {
+    name: "post-checkout",
+    marker: POST_CHECKOUT_MARKER,
+    markerEnd: POST_CHECKOUT_MARKER_END,
+    script: POST_CHECKOUT_SCRIPT,
+  },
+  {
+    name: "post-merge",
+    marker: POST_MERGE_MARKER,
+    markerEnd: POST_MERGE_MARKER_END,
+    script: POST_MERGE_SCRIPT,
+  },
+  {
+    name: "post-rewrite",
+    marker: POST_REWRITE_MARKER,
+    markerEnd: POST_REWRITE_MARKER_END,
+    script: POST_REWRITE_SCRIPT,
+  },
+];
+
+function gitRevParse(cwd: string, args: string[]): string {
+  return execGit(cwd, ["rev-parse", ...args]);
+}
+
+function execGit(cwd: string, args: string[]): string {
+  try {
+    return execFileSync("git", ["-C", cwd, ...args], {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  } catch (err) {
+    // Some sandboxes report EPERM even when the child process exited with 0.
+    // Treat that as success if Node still captured stdout from git.
+    const maybe = err as { status?: number; stdout?: string | Buffer };
+    if (maybe.status === 0 && maybe.stdout !== undefined) {
+      return String(maybe.stdout).trim();
+    }
+    throw err;
   }
 }
 
-function installHook(hooksDir: string, name: string, script: string, marker: string): string {
-  const hookPath = join(hooksDir, name);
+function resolveFromGitCwd(cwd: string, value: string): string {
+  return isAbsolute(value) ? resolve(value) : resolve(cwd, value);
+}
+
+function resolveGitContext(path: string): GitContext | null {
+  const cwd = resolve(path);
+  try {
+    const worktreeRoot = resolve(gitRevParse(cwd, ["--show-toplevel"]));
+    const gitDir = resolve(gitRevParse(cwd, ["--absolute-git-dir"]));
+    const commonGitDir = resolveFromGitCwd(cwd, gitRevParse(cwd, ["--git-common-dir"]));
+    const hooksDir = resolveFromGitCwd(cwd, gitRevParse(cwd, ["--git-path", "hooks"]));
+    return { worktreeRoot, gitDir, commonGitDir, hooksDir };
+  } catch {
+    return null;
+  }
+}
+
+function installHook(hooksDir: string, definition: HookDefinition): string {
+  const hookPath = join(hooksDir, definition.name);
+  const script = definition.script.trimEnd() + "\n";
+
   if (existsSync(hookPath)) {
     const content = readFileSync(hookPath, "utf-8");
-    if (content.includes(marker)) {
-      return `already installed at ${hookPath}`;
+    if (content.includes(definition.marker)) {
+      const regex = hookBlockRegex(definition.marker, definition.markerEnd);
+      const updated = content.replace(regex, script);
+      if (updated === content) return `already installed at ${hookPath}`;
+      writeFileSync(hookPath, updated.trimEnd() + "\n", "utf-8");
+      chmodSync(hookPath, 0o755);
+      return `updated at ${hookPath}`;
     }
-    writeFileSync(hookPath, content.trimEnd() + "\n\n" + script);
-    return `appended to existing ${name} hook at ${hookPath}`;
+    writeFileSync(hookPath, content.trimEnd() + "\n\n" + script, "utf-8");
+    chmodSync(hookPath, 0o755);
+    return `appended to existing ${definition.name} hook at ${hookPath}`;
   }
-  writeFileSync(hookPath, "#!/bin/sh\n" + script);
+
+  writeFileSync(hookPath, "#!/bin/sh\n" + script, "utf-8");
   chmodSync(hookPath, 0o755);
   return `installed at ${hookPath}`;
 }
 
-function uninstallHook(hooksDir: string, name: string, marker: string, markerEnd: string): string {
-  const hookPath = join(hooksDir, name);
-  if (!existsSync(hookPath)) return `no ${name} hook found - nothing to remove.`;
+function uninstallHook(hooksDir: string, definition: HookDefinition): string {
+  const hookPath = join(hooksDir, definition.name);
+  if (!existsSync(hookPath)) return `no ${definition.name} hook found - nothing to remove.`;
 
   const content = readFileSync(hookPath, "utf-8");
-  if (!content.includes(marker)) return `graphify hook not found in ${name} - nothing to remove.`;
+  if (!content.includes(definition.marker)) {
+    return `graphify hook not found in ${definition.name} - nothing to remove.`;
+  }
 
-  const regex = new RegExp(
-    escapeRegExp(marker) + "[\\s\\S]*?" + escapeRegExp(markerEnd) + "\\n?",
-  );
-  let newContent = content.replace(regex, "").trim();
+  const newContent = content.replace(hookBlockRegex(definition.marker, definition.markerEnd), "").trim();
 
   if (!newContent || ["#!/bin/bash", "#!/bin/sh"].includes(newContent)) {
     unlinkSync(hookPath);
-    return `removed ${name} hook at ${hookPath}`;
+    return `removed ${definition.name} hook at ${hookPath}`;
   }
-  writeFileSync(hookPath, newContent + "\n");
-  return `graphify removed from ${name} at ${hookPath} (other hook content preserved)`;
+  writeFileSync(hookPath, newContent + "\n", "utf-8");
+  chmodSync(hookPath, 0o755);
+  return `graphify removed from ${definition.name} at ${hookPath} (other hook content preserved)`;
+}
+
+function hookBlockRegex(marker: string, markerEnd: string): RegExp {
+  return new RegExp(escapeRegExp(marker) + "[\\s\\S]*?" + escapeRegExp(markerEnd) + "\\n?", "m");
 }
 
 function escapeRegExp(s: string): string {
@@ -114,48 +244,39 @@ function escapeRegExp(s: string): string {
 }
 
 export function install(path: string = "."): string {
-  const root = gitRoot(path);
-  if (root === null) {
+  const context = resolveGitContext(path);
+  if (context === null) {
     throw new Error(`No git repository found at or above ${resolve(path)}`);
   }
-  const hooksDir = join(root, ".git", "hooks");
-  mkdirSync(hooksDir, { recursive: true });
 
-  const commitMsg = installHook(hooksDir, "post-commit", HOOK_SCRIPT, HOOK_MARKER);
-  const checkoutMsg = installHook(hooksDir, "post-checkout", CHECKOUT_SCRIPT, CHECKOUT_MARKER);
-
-  return `post-commit: ${commitMsg}\npost-checkout: ${checkoutMsg}`;
+  mkdirSync(context.hooksDir, { recursive: true });
+  return HOOKS.map((definition) => (
+    `${definition.name}: ${installHook(context.hooksDir, definition)}`
+  )).join("\n");
 }
 
 export function uninstall(path: string = "."): string {
-  const root = gitRoot(path);
-  if (root === null) {
+  const context = resolveGitContext(path);
+  if (context === null) {
     throw new Error(`No git repository found at or above ${resolve(path)}`);
   }
-  const hooksDir = join(root, ".git", "hooks");
 
-  const commitMsg = uninstallHook(hooksDir, "post-commit", HOOK_MARKER, HOOK_MARKER_END);
-  const checkoutMsg = uninstallHook(hooksDir, "post-checkout", CHECKOUT_MARKER, CHECKOUT_MARKER_END);
-
-  return `post-commit: ${commitMsg}\npost-checkout: ${checkoutMsg}`;
+  return HOOKS.map((definition) => (
+    `${definition.name}: ${uninstallHook(context.hooksDir, definition)}`
+  )).join("\n");
 }
 
 export function status(path: string = "."): string {
-  const root = gitRoot(path);
-  if (root === null) return "Not in a git repository.";
+  const context = resolveGitContext(path);
+  if (context === null) return "Not in a git repository.";
 
-  const hooksDir = join(root, ".git", "hooks");
-
-  function check(name: string, marker: string): string {
-    const p = join(hooksDir, name);
-    if (!existsSync(p)) return "not installed";
-    const content = readFileSync(p, "utf-8");
-    return content.includes(marker)
+  return HOOKS.map((definition) => {
+    const hookPath = join(context.hooksDir, definition.name);
+    if (!existsSync(hookPath)) return `${definition.name}: not installed`;
+    const content = readFileSync(hookPath, "utf-8");
+    const hookStatus = content.includes(definition.marker)
       ? "installed"
       : "not installed (hook exists but graphify not found)";
-  }
-
-  const commit = check("post-commit", HOOK_MARKER);
-  const checkout = check("post-checkout", CHECKOUT_MARKER);
-  return `post-commit: ${commit}\npost-checkout: ${checkout}`;
+    return `${definition.name}: ${hookStatus}`;
+  }).join("\n");
 }

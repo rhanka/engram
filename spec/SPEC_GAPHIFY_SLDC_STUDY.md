@@ -128,6 +128,14 @@ Implementation checkpoint after the second lot:
 - root-level `.graphify_detect.json` is no longer the standalone build default; runtime scratch paths move under the state root.
 - platform skill prose still needs its separate migration lot, because those files contain a much larger assistant-facing path contract.
 
+Implementation checkpoint after the third lot:
+
+- Git hook installation now resolves repositories through `git rev-parse`, not `.git` directory walking.
+- hook paths use `git rev-parse --git-path hooks`, so install/status/uninstall work from linked worktrees.
+- lifecycle coverage now includes `post-commit`, `post-checkout`, `post-merge`, and `post-rewrite`.
+- hooks mark `.graphify/needs_update` first, then attempt a non-blocking code-only rebuild.
+- semantic extraction remains outside hooks; branch metadata and recommendation invalidation stay in the next lifecycle lots.
+
 ### State root
 
 Move Graphify runtime state under a single hidden workspace directory:

@@ -11,7 +11,7 @@ import {
   unlinkSync,
   rmdirSync,
 } from "node:fs";
-import { join, resolve, dirname } from "node:path";
+import { join, resolve, dirname, extname } from "node:path";
 import { homedir, platform } from "node:os";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
@@ -970,7 +970,7 @@ export async function main(): Promise<void> {
 
   // Hook management
   const hook = program.command("hook").description("Git hook management");
-  hook.command("install").description("Install post-commit/post-checkout git hooks").action(async () => {
+  hook.command("install").description("Install post-commit/post-checkout/post-merge/post-rewrite git hooks").action(async () => {
     const { install } = await import("./hooks.js");
     console.log(install("."));
   });
@@ -1141,6 +1141,16 @@ export async function main(): Promise<void> {
     .description("Internal: rebuild graph from code files (called by git hooks)")
     .action(async () => {
       const { rebuildCode } = await import("./watch.js");
+      const changedFiles = (process.env.GRAPHIFY_CHANGED ?? "")
+        .split(/\r?\n/)
+        .map((p) => p.trim())
+        .filter(Boolean);
+      if (changedFiles.length > 0) {
+        const { CODE_EXTENSIONS } = await import("./detect.js");
+        if (!changedFiles.some((p) => CODE_EXTENSIONS.has(extname(p).toLowerCase()))) {
+          return;
+        }
+      }
       await rebuildCode(".");
     });
 

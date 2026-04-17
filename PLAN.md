@@ -69,22 +69,22 @@
 
 ## Lot 3 - Git Hook And Worktree Correctness
 
-- [ ] Replace filesystem-based git root/hook discovery with Git-native resolution:
-  - [ ] `git rev-parse --show-toplevel`
-  - [ ] `git rev-parse --absolute-git-dir`
-  - [ ] `git rev-parse --git-common-dir`
-  - [ ] `git rev-parse --git-path hooks`
-- [ ] Make hook install/uninstall/status work in linked worktrees
-- [ ] Extend lifecycle coverage beyond current hooks:
-  - [ ] `post-commit`
-  - [ ] `post-checkout`
-  - [ ] `post-merge`
-  - [ ] `post-rewrite`
-- [ ] Keep hooks lightweight:
-  - [ ] freshness markers first
-  - [ ] rebuild only when safe and cheap
-  - [ ] no heavy semantic work in hooks
-- [ ] Add explicit tests for worktree-compatible hook behavior
+- [x] Replace filesystem-based git root/hook discovery with Git-native resolution:
+  - [x] `git rev-parse --show-toplevel`
+  - [x] `git rev-parse --absolute-git-dir`
+  - [x] `git rev-parse --git-common-dir`
+  - [x] `git rev-parse --git-path hooks`
+- [x] Make hook install/uninstall/status work in linked worktrees
+- [x] Extend lifecycle coverage beyond current hooks:
+  - [x] `post-commit`
+  - [x] `post-checkout`
+  - [x] `post-merge`
+  - [x] `post-rewrite`
+- [x] Keep hooks lightweight:
+  - [x] freshness markers first
+  - [x] rebuild only when safe and cheap
+  - [x] no heavy semantic work in hooks
+- [x] Add explicit tests for worktree-compatible hook behavior
 
 ## Lot 4 - Branch And Worktree Lifecycle Metadata
 

@@ -222,7 +222,7 @@ In Codex, replace the leading `/` in the examples below with `$`. Gemini CLI, Gi
 /graphify ./raw --neo4j-push bolt://localhost:7687    # push directly to a running Neo4j instance
 /graphify ./raw --mcp              # start MCP stdio server
 
-# git hooks - platform-agnostic, rebuild graph on commit and branch switch
+# git hooks - platform-agnostic, mark stale and rebuild code graph on git lifecycle events
 graphify hook install
 graphify hook uninstall
 graphify hook status
@@ -285,7 +285,7 @@ Works with any mix of file types:
 
 **Auto-sync** (`--watch`) - run in a background terminal and the graph updates itself as your codebase changes. Code file saves trigger an instant rebuild (AST only, no LLM). Doc/image changes notify you to run `--update` for the LLM re-pass.
 
-**Git hooks** (`graphify hook install`) - installs post-commit and post-checkout hooks. Graph rebuilds automatically after every commit and every branch switch. If a rebuild fails, the hook exits with a non-zero code so git surfaces the error instead of silently continuing. No background process needed.
+**Git hooks** (`graphify hook install`) - installs worktree-compatible `post-commit`, `post-checkout`, `post-merge`, and `post-rewrite` hooks. Hooks mark `.graphify/` stale first, then try a non-blocking code-only rebuild when it is safe and cheap. No background process needed, and hook failures do not block Git operations.
 
 **Wiki** (`--wiki`) - Wikipedia-style markdown articles per community and god node, with an `index.md` entry point. Point any agent at `index.md` and it can navigate the knowledge base by reading files instead of parsing JSON.
 
