@@ -2,528 +2,236 @@
 
 ## Status
 
-- Product: `graphify`
-- Package: `graphifyy@0.3.28`
-- Current repo branch: `v3-typescript`
-- Source of truth for this document: the TypeScript repo state in `/home/antoinefa/src/graphify`
-- Scope: describe the current maintained TypeScript port, not the upstream Python implementation except where the TS port intentionally mirrors it
+- Product: Graphify TypeScript port
+- npm package: graphifyy@0.3.28
+- Maintained product branch: v3-typescript
+- Upstream alignment branch: v3, mirroring upstream Python Graphify v3
+- Runtime state root: .graphify/
+- Legacy read fallback: graphify-out/graph.json is still accepted for compatibility, but new writes target .graphify/
 
-## Product Summary
+This document describes the implemented TypeScript product state after the evolution lots. It is not a proposal document and does not describe the upstream Python runtime except where branch alignment matters.
 
-Graphify turns a folder into a durable knowledge graph and an assistant-friendly workflow surface. It is both a CLI and a set of assistant integrations. The current TypeScript repo is the maintained port: it keeps the assistant skill experience, the graph pipeline, the local multimodal transcription path, and the export formats in a single npm package.
+## Product Identity
+
+Graphify turns a workspace or corpus folder into a durable knowledge graph for assistants and humans. It remains a general multimodal knowledge-graph product, not a code-review-only product.
 
-The core value proposition is:
+The TypeScript port keeps the original Graphify idea: a folder becomes a graph with explicit provenance, communities, reports, exports, and assistant-facing traversal. The TypeScript branch adds npm distribution, TypeScript-native runtime commands, local .graphify state, branch/worktree lifecycle metadata, MCP tools, review projections, and broader assistant installers.
 
-- preserve structural relationships across sessions
-- keep provenance explicit with confidence labels
-- support code and non-code inputs in the same graph
-- let assistants answer from graph state instead of re-reading raw files
-- keep the whole system local and workspace-scoped
+## Non-Negotiable Contracts
 
-## Goals
+- New runtime artifacts are written under .graphify/.
+- .graphify/ is local state and is gitignored by default.
+- Assistants must prefer .graphify/GRAPH_REPORT.md and .graphify/wiki/index.md before broad raw-file traversal.
+- Codex explicit invocation is $graphify, not /graphify.
+- The TypeScript skill runtime must prove runtime: typescript in .graphify/.graphify_runtime.json.
+- Review and commit recommendation features are advisory. They do not stage files, create commits, or mutate branches.
+- The graph remains file-based by default. SQLite and embeddings are deferred, not default architecture.
 
-- Build a queryable knowledge graph from code, documents, papers, images, and supported audio/video inputs.
-- Keep the graph honest: explicit edges stay distinct from inferred edges and ambiguous edges.
-- Make the graph durable across sessions through `graphify-out/graph.json` and related artifacts.
-- Support multiple assistant surfaces with platform-specific install flows.
-- Keep code and non-code workflows compatible with the current TypeScript runtime.
-- Preserve the ability to query, traverse, explain, and export the graph later without rebuilding the corpus.
-- Support incremental rebuilds and watch mode for code changes.
+## Supported Inputs
 
-## Personas
+Graphify supports one graph across code and non-code inputs:
 
-- Assistant user: wants fast context, path queries, and a compact graph-backed answer instead of broad file traversal.
-- Codebase explorer: wants a structural map, god nodes, clusters, and surprising links.
-- Research corpus user: wants papers, notes, screenshots, and URLs folded into one graph.
-- Maintainer: wants reproducible outputs, deterministic cache behavior, and clear release/versioning contracts.
-- Platform integrator: wants a consistent install story across Codex, Claude Code, Gemini CLI, Copilot CLI, Aider, OpenCode, OpenClaw, Droid, Trae, Cursor, and related clients.
+- code: Tree-sitter AST extraction for supported languages
+- markdown/text/reStructuredText: semantic extraction through assistant skill flow
+- PDF: paper/document extraction through assistant skill flow
+- Office docs: .docx and .xlsx conversion to markdown sidecars before semantic extraction
+- images: multimodal assistant extraction
+- URLs: arXiv, PDF, image, general web pages, X/Twitter, YouTube audio ingestion
+- audio/video: local transcription through yt-dlp when needed, ffmpeg normalization, and sherpa-onnx-node Whisper-compatible transcription
 
-## Supported Platforms
+Generated transcripts are treated as document inputs for semantic extraction.
 
-Graphify supports a broad set of assistant entry points, but the install and invocation contract is platform-specific.
+## Runtime Artifacts
 
-| Platform | Trigger | Install surface |
-|---|---|---|
-| Codex | `$graphify ...` | `graphify install --platform codex`, `graphify codex install` |
-| Claude Code | `/graphify ...` | `graphify install`, `graphify claude install` |
-| Gemini CLI | `/graphify ...` | `graphify install --platform gemini`, `graphify gemini install` |
-| GitHub Copilot CLI | `/graphify ...` | `graphify install --platform copilot`, `graphify copilot install` |
-| Aider | `/graphify ...` | `graphify install --platform aider`, `graphify aider install` |
-| OpenCode | `/graphify ...` | `graphify install --platform opencode`, `graphify opencode install` |
-| OpenClaw | `/graphify ...` | `graphify install --platform claw`, `graphify claw install` |
-| Factory Droid | `/graphify ...` | `graphify install --platform droid`, `graphify droid install` |
-| Trae / Trae CN | `/graphify ...` | `graphify install --platform trae`, `graphify install --platform trae-cn` |
-| Cursor | no slash trigger; rule-based | `graphify cursor install` |
+Canonical state under .graphify/:
 
-Current platform contracts:
+- graph.json: serialized graph
+- GRAPH_REPORT.md: human audit report and assistant first stop
+- graph.html: interactive visualization unless disabled
+- manifest.json and cost.json
+- cache/: semantic cache
+- transcripts/: downloaded/converted/transcribed media artifacts
+- converted/: converted Office/docs sidecars
+- memory/: saved graph-backed Q&A
+- wiki/: optional agent-crawlable community wiki
+- worktree.json and branch.json: lifecycle metadata
+- needs_update: stale marker
+- .graphify_*.json scratch files under .graphify/, not repo root
 
-- Codex uses `AGENTS.md` plus a Bash PreToolUse hook and the explicit `$graphify` skill trigger.
-- Claude Code uses `CLAUDE.md` plus a PreToolUse hook.
-- Gemini CLI uses `GEMINI.md`, `.gemini/settings.json`, and the `/graphify` custom command.
-- OpenCode uses `AGENTS.md` plus a local plugin hook.
-- Aider, OpenClaw, Droid, Trae, and Trae CN rely on `AGENTS.md` as the always-on mechanism.
-- Cursor writes `.cursor/rules/graphify.mdc`.
+Legacy compatibility:
 
-## Main Workflows
+- graphify-out/graph.json remains a read fallback for implicit graph consumers during the compatibility window.
+- graphify-out/ is not the current write target.
 
-### Build a graph
+## Core Build Pipeline
 
-The primary workflow is to run graphify on a path, usually the current directory.
+1. Detect corpus files and classify them by type.
+2. Convert supported Office files and prepare transcript-backed document inputs.
+3. Extract deterministic code structure through Tree-sitter.
+4. Run semantic extraction for docs, papers, images, transcripts, and non-code materials through the assistant skill contract.
+5. Validate extraction JSON.
+6. Merge AST and semantic extraction.
+7. Build a Graphology graph.
+8. Cluster with Louvain and compute cohesion.
+9. Label communities and compute analysis.
+10. Export graph.json, GRAPH_REPORT.md, graph.html, optional wiki and export formats.
 
-Inputs:
+Every edge keeps provenance confidence: EXTRACTED, INFERRED, or AMBIGUOUS, with scores where available.
 
-- a folder path
-- optional flags such as `--directed`, `--mode deep`, `--update`, `--cluster-only`, `--no-viz`, `--wiki`, `--svg`, `--graphml`, `--neo4j`, `--neo4j-push`, `--mcp`, `--watch`
+## Public CLI Surfaces
 
-Outputs:
+Build and maintain:
 
-- `graphify-out/graph.json`
-- `graphify-out/GRAPH_REPORT.md`
-- `graphify-out/graph.html` unless disabled
-- optional export files such as `graph.svg`, `graph.graphml`, `cypher.txt`, and wiki pages
+- graphify <path>
+- graphify <path> --directed
+- graphify <path> --mode deep
+- graphify <path> --update
+- graphify <path> --cluster-only
+- graphify <path> --watch
+- graphify hook install/status/uninstall
+- graphify state status/prune
 
-### Query a built graph
+Query and inspect:
 
-Graphify exposes graph traversal and explanation commands over the built graph:
+- graphify summary --graph .graphify/graph.json
+- graphify query "question" --graph .graphify/graph.json
+- graphify path "A" "B" --graph .graphify/graph.json
+- graphify explain "Node" --graph .graphify/graph.json
 
-- `query` for BFS or DFS context retrieval
-- `path` for shortest path between nodes
-- `explain` for a node and its neighborhood
+Review projections:
 
-### Add external content
+- graphify review-delta --files src/a.ts --graph .graphify/graph.json
+- graphify review-analysis --files src/a.ts --graph .graphify/graph.json
+- graphify review-eval --cases .graphify/review-cases.json --graph .graphify/graph.json
+- graphify recommend-commits --graph .graphify/graph.json
 
-Graphify can ingest URLs into a local corpus folder and then fold them into the graph.
+Exports and services:
 
-Supported URL classes in the current repo:
+- graphify <path> --wiki
+- graphify <path> --svg
+- graphify <path> --graphml
+- graphify <path> --neo4j
+- graphify <path> --neo4j-push bolt://localhost:7687
+- graphify serve .graphify/graph.json
 
-- arXiv papers
-- tweets / X posts
-- general webpages
-- PDFs
-- images
-- YouTube URLs
+## Assistant And Platform Contracts
 
-### Maintain the graph as you work
+Project-scoped installers:
 
-- `watch` rebuilds code-only changes automatically.
-- `hook install` adds Git hooks so the graph stays fresh across commits and branch changes.
-- `hook-rebuild` is the internal rebuild path used by hooks.
+- graphify claude install writes CLAUDE.md and .claude/settings.json PreToolUse hook.
+- graphify codex install writes AGENTS.md and .codex/hooks.json PreToolUse hook.
+- graphify gemini install writes GEMINI.md and .gemini/settings.json MCP config.
+- graphify opencode install writes AGENTS.md, .opencode/plugins/graphify.js, and opencode.json.
+- graphify cursor install writes .cursor/rules/graphify.mdc.
+- Aider, OpenClaw, Droid, Trae, and Trae CN write AGENTS.md instructions.
 
-## Architecture
+Global skill installers:
 
-Graphify is a TypeScript package and CLI with a graph-oriented runtime plus assistant-specific skill installation.
+- graphify install --platform <platform> writes the platform skill file and .graphify_version marker.
 
-High-level flow:
+All install commands now print mutation previews before writing, including exact files and hook/MCP/plugin configuration that will be touched.
 
-1. detect the corpus and classify files by type
-2. normalize non-code inputs when needed
-3. extract AST structure from code via Tree-sitter
-4. extract semantic entities and relations from docs, papers, images, and transcripts through the assistant skill path
-5. merge structural and semantic extraction
-6. build a Graphology graph
-7. cluster it with Louvain
-8. analyze hubs, surprises, and suggested questions
-9. export HTML, JSON, and audit report artifacts
+## MCP Tools
 
-Main runtime surfaces:
+The MCP server exposes graph traversal and review-oriented tools:
 
-- `src/cli.ts` for install, graph, query, path, explain, watch, serve, hook, and skill management commands
-- `src/skill-runtime.ts` for the Codex/Cross-platform explicit runtime commands used by the skill prompts
-- `src/pipeline.ts` for standalone AST-first build orchestration
-- `src/transcribe.ts` for local audio/video transcription
-- `src/ingest.ts` for URL ingestion
-- `src/detect.ts` for file discovery and type classification
-- `src/extract.ts` for code AST extraction
-- `src/build.ts` for building a Graphology graph from extraction JSON
-- `src/cluster.ts` for Louvain communities and cohesion
-- `src/analyze.ts` for god nodes, surprises, and suggested questions
-- `src/report.ts` for `GRAPH_REPORT.md`
-- `src/export.ts` for HTML, JSON, SVG, GraphML, Obsidian Canvas, Cypher, and Neo4j exports
-- `src/wiki.ts` for community wiki generation
-- `src/serve.ts` for the MCP stdio server
-- `src/watch.ts` for incremental code rebuilds and file watching
+- first_hop_summary
+- review_delta
+- review_analysis
+- recommend_commits
+- query_graph
+- get_node
+- get_neighbors
+- get_community
+- god_nodes
+- graph_stats
+- shortest_path
 
-## Core Modules
+The MCP review tools are projections over the same graph, not a separate backend.
 
-### `src/detect.ts`
+## Review And Commit Recommendation Features
 
-- Classifies files into `code`, `document`, `paper`, `image`, and `video`.
-- Detects supported code languages via extension lists and optional Tree-sitter grammar packages.
-- Treats `.docx` and `.xlsx` as document inputs and converts them into markdown sidecars for semantic extraction.
-- Flags sensitive files and honors `.graphifyignore` plus ancestor patterns up to the git root.
-- Saves manifest and detection artifacts for downstream steps.
+First-hop summary:
 
-### `src/extract.ts`
+- gives graph size, density, average degree, top hubs, key communities, and next graph action
+- should be used before deeper traversal
 
-- Performs AST extraction for code files.
-- Uses Tree-sitter grammars and returns a structural extraction with nodes, edges, and token counts.
-- Keeps code extraction deterministic and separate from semantic extraction.
+Review delta:
 
-### `src/transcribe.ts`
+- starts from changed files
+- surfaces changed nodes, impacted nodes/files, hubs, bridges, likely test gaps, and high-risk chains
+- can infer files from local git diff when not explicitly passed
 
-- Resolves local audio/video inputs.
-- Downloads audio for URLs through `yt-dlp`.
-- Normalizes audio through `ffmpeg`.
-- Runs local Whisper-compatible transcription through `sherpa-onnx-node`.
-- Writes transcript `.txt` files into `graphify-out/transcripts/`.
-- Feeds generated transcripts back into the semantic detection pass.
+Review analysis:
 
-### `src/skill-runtime.ts`
+- adds blast radius
+- summarizes impacted communities
+- highlights bridge nodes and test-gap hints
+- surfaces multimodal/doc regression safety
 
-- Implements the explicit runtime commands that the assistant skills rely on.
-- Resolves runtime proof for TypeScript-backed Codex execution.
-- Handles detection, semantic cache checks, AST extraction, merge/finalize, analysis, labels, path, explain, and ingest operations.
-- Is the contract the skill prompts use when they need deterministic, file-based runtime steps instead of improvising shell snippets.
+Review evaluation:
 
-### `src/build.ts`
+- reads JSON cases
+- measures token savings versus naive file reads
+- measures impacted-file recall
+- measures review summary precision
+- measures multimodal regression safety
 
-- Merges extraction JSON into a Graphology graph.
-- Supports directed or undirected builds.
-- Treats graph construction as the structural merge layer, not as the semantic extraction layer.
+Commit recommendation:
 
-### `src/cluster.ts`
+- groups changed files by graph community when possible
+- falls back to path grouping for partial graphs
+- reports confidence and stale-state reasons
+- remains advisory-only: no auto-stage, no auto-commit, no branch mutation
 
-- Runs Louvain community detection via `graphology-communities-louvain`.
-- Splits oversized communities.
-- Computes cohesion scores.
+## Lifecycle Model
 
-### `src/analyze.ts`
+Graphify tracks local git lifecycle state under .graphify/:
 
-- Identifies god nodes.
-- Finds surprising connections.
-- Generates suggested questions from the graph.
-- Computes graph diff output.
+- worktree.json records worktree path, git dir, common git dir, first/last seen HEAD, and last analyzed HEAD
+- branch.json records branch name, upstream, merge-base, first/last seen HEAD, last analyzed HEAD, stale flag, stale reason, stale timestamp, and lifecycle event
+- needs_update marks stale state
 
-### `src/report.ts`
+Hooks are git-native and worktree-aware. They resolve hook paths through git rev-parse instead of assuming .git is a directory. Covered events include post-commit, post-checkout, post-merge, and post-rewrite.
 
-- Generates `GRAPH_REPORT.md`.
-- Summarizes corpus size, edge confidence mix, god nodes, surprises, communities, knowledge gaps, and suggested questions.
-- Serves as the human-readable audit trail and the first stop for assistant orientation.
+Hooks mark state stale first, then attempt a non-blocking code-only rebuild when safe. Semantic extraction is not run from hooks.
 
-### `src/export.ts`
+## Upstream Alignment And Divergence
 
-- Exports graph data to JSON, HTML, SVG, GraphML, Obsidian Canvas, Cypher, and Neo4j.
-- Adds community labels and `community_name` fields to JSON output.
-- Generates the browser-facing `graph.html` visualization.
+Alignment:
 
-### `src/wiki.ts`
+- v3 tracks upstream Python Graphify v3 for parity analysis.
+- v3-typescript is the maintained TypeScript product branch.
+- The TypeScript port keeps the original assistant-skill graph workflow and MIT license attribution.
 
-- Generates an agent-crawlable markdown wiki per community.
-- Adds `index.md` plus community pages when requested.
+Intentional TypeScript divergence:
 
-### `src/serve.ts`
+- npm distribution and TypeScript runtime
+- .graphify local state contract
+- local sherpa-onnx-node transcription instead of Python faster-whisper
+- broader assistant installer matrix
+- MCP tools for summary/review/recommendation
+- review-mode projections inspired by code-review-graph
+- install mutation previews
 
-- Exposes the graph as an MCP stdio server.
-- Tools currently include `query_graph`, `get_node`, `get_neighbors`, `get_community`, `god_nodes`, `graph_stats`, and `shortest_path`.
+## Deferred Items
 
-### `src/watch.ts`
+- review-pr workflow
+- embeddings
+- SQLite backend
+- editor extension parity
+- richer flow model
+- persisted review summary cache
+- remote service or shared backend
+- auto-commit or auto-stage behavior
 
-- Rebuilds code-only graphs on filesystem change.
-- Uses `chokidar`.
-- Signals non-code changes as requiring a semantic update through the skill path.
+## Acceptance Criteria
 
-## Data Model
+The implemented product is considered aligned with this spec when:
 
-### Graph nodes
-
-Graphify nodes currently carry:
-
-- `id`
-- `label`
-- `file_type`
-- `source_file`
-- optional `source_location`
-- optional `confidence`
-- optional `community`
-
-Node `file_type` values in the current TS model are:
-
-- `code`
-- `document`
-- `paper`
-- `image`
-- `rationale`
-
-### Graph edges
-
-Edges currently carry:
-
-- `source`
-- `target`
-- `relation`
-- `confidence`
-- `confidence_score`
-- `source_file`
-- optional `source_location`
-- optional `weight`
-- optional preserved direction fields for display
-
-Edge confidence values:
-
-- `EXTRACTED`
-- `INFERRED`
-- `AMBIGUOUS`
-
-### Hyperedges
-
-Hyperedges group three or more nodes that participate in one shared concept or flow. They are first-class in the extraction pipeline and persist through export.
-
-### Detection model
-
-Detection results classify the corpus by file kind:
-
-- `files.code`
-- `files.document`
-- `files.paper`
-- `files.image`
-- `files.video`
-
-Detection also tracks:
-
-- totals for files and words
-- sensitive-file skips
-- `.graphifyignore` pattern count
-- incremental change metadata when update mode is used
-
-### Output JSON
-
-`graphify-out/graph.json` is the canonical graph artifact. It contains:
-
-- `directed`
-- `graph.community_labels`
-- `nodes`
-- `links`
-- `hyperedges`
-
-## Graph Pipeline
-
-### Full build
-
-1. Detect files and classify corpus contents.
-2. Emit `graphify-out/.graphify_detect.json`.
-3. Prepare semantic detection.
-4. Extract AST structure from code.
-5. Check the semantic cache for documents, papers, images, and generated transcripts.
-6. Extract uncached semantic inputs.
-7. Merge cached and fresh semantic fragments.
-8. Merge AST and semantic extraction into one final extraction.
-9. Build a Graphology graph.
-10. Cluster communities with Louvain.
-11. Compute god nodes, surprises, and suggested questions.
-12. Write `GRAPH_REPORT.md`, `graph.json`, `manifest.json`, `cost.json`, and optionally `graph.html`.
-
-### Incremental update
-
-- `--update` reuses detection manifests and only re-extracts changed inputs.
-- Code changes can be rebuilt quickly through the AST path.
-- Non-code semantic inputs can be refreshed through the transcript and semantic extraction path.
-
-### Cluster-only
-
-- `--cluster-only` reruns community detection and report generation on an existing graph.
-- Useful when graph structure is unchanged but community labels or clustering need refresh.
-
-### Watch mode
-
-- Code changes trigger immediate rebuilds.
-- Non-code changes are reported as requiring a semantic update through the assistant skill path.
-
-## Skills and Orchestration
-
-Graphify is skill-driven as well as CLI-driven.
-
-### Explicit skill invocation
-
-- Codex uses `$graphify ...` as the reliable explicit trigger.
-- Claude Code, Gemini CLI, Copilot CLI, Aider, OpenCode, OpenClaw, Droid, and Trae use `/graphify ...`.
-
-### Install contract
-
-`graphify install` installs the appropriate assistant integration and stores the current package version in a `.graphify_version` marker beside the installed skill.
-
-Platform-specific installers add the right instruction surface:
-
-- `CLAUDE.md` plus hook config for Claude Code
-- `AGENTS.md` plus hook config for Codex and other agents that use AGENTS rules
-- `GEMINI.md` plus `.gemini/settings.json` for Gemini CLI
-- `.cursor/rules/graphify.mdc` for Cursor
-- global skill directories for Copilot and Aider
-
-### Runtime proof
-
-Codex runs are considered successful only when `graphify-out/.graphify_runtime.json` reports `runtime: "typescript"`.
-
-## Multimodal and Transcription
-
-Graphify currently supports semantic extraction for:
-
-- code
-- markdown and text
-- papers and PDFs
-- Office documents (`.docx`, `.xlsx`) via text conversion
-- images and screenshots
-- web pages, tweets, and arXiv pages through ingestion
-- audio/video via local transcription
-
-The current multimodal path is:
-
-1. classify video/audio inputs
-2. download audio with `yt-dlp` when the source is a URL
-3. normalize through `ffmpeg`
-4. transcribe locally with `sherpa-onnx-node`
-5. write transcript `.txt` files
-6. treat transcripts as document inputs during semantic extraction
-
-Important current constraints:
-
-- this repo does not use a Python transcription bridge anymore
-- `GRAPHIFY_WHISPER_MODEL` defaults to `base`
-- `large` is accepted as an alias for `large-v3`
-- `GRAPHIFY_WHISPER_PROMPT` can override the prompt used for transcription
-
-## Outputs and Artifacts
-
-Canonical outputs:
-
-- `graphify-out/graph.json`
-- `graphify-out/GRAPH_REPORT.md`
-- `graphify-out/graph.html`
-- `graphify-out/manifest.json`
-- `graphify-out/cost.json`
-
-Supporting artifacts:
-
-- `graphify-out/.graphify_runtime.json`
-- `graphify-out/.graphify_detect.json`
-- `graphify-out/.graphify_detect_semantic.json`
-- `graphify-out/.graphify_ast.json`
-- `graphify-out/.graphify_cached.json`
-- `graphify-out/.graphify_uncached.txt`
-- `graphify-out/.graphify_semantic_new.json`
-- `graphify-out/.graphify_semantic.json`
-- `graphify-out/.graphify_analysis.json`
-- `graphify-out/.graphify_transcripts.json`
-- `graphify-out/wiki/` when wiki generation is enabled
-
-Optional exports:
-
-- `graph.svg`
-- `graph.graphml`
-- `cypher.txt`
-- Obsidian vault output
-
-## CLI Contract
-
-Package and binary:
-
-- npm package name: `graphifyy`
-- CLI binary: `graphify`
-- minimum Node version: `>=20`
-
-Core commands:
-
-- `graphify install`
-- `graphify claude install|uninstall`
-- `graphify codex install|uninstall`
-- `graphify gemini install|uninstall`
-- `graphify copilot install|uninstall`
-- `graphify aider install|uninstall`
-- `graphify opencode install|uninstall`
-- `graphify claw install|uninstall`
-- `graphify droid install|uninstall`
-- `graphify trae install|uninstall`
-- `graphify trae-cn install|uninstall`
-- `graphify cursor install|uninstall`
-- `graphify hook install|uninstall|status`
-- `graphify serve [graph.json]`
-- `graphify watch [path]`
-- `graphify query <question>`
-- `graphify path "A" "B"`
-- `graphify explain <node>`
-- `graphify add <url>`
-
-Install behavior:
-
-- `graphify install` auto-detects a default platform, with a Windows-specific Claude fallback.
-- Platform-specific install commands write only the platform-relevant instructions and hooks.
-- `graphify codex install` must preserve the `$graphify` trigger contract and the runtime proof expectation.
-
-## Release and Versioning Assumptions
-
-- The current repo is a maintained TypeScript port, not a fresh rewrite.
-- The default product branch is `v3-typescript`.
-- `v3` mirrors the upstream Python `v3` branch and is treated as reference-only.
-- The published npm package is `graphifyy` until the `graphify` name is reclaimed.
-- The current version line for this branch is `0.3.28`.
-- Skill installations record the installed version in `.graphify_version` and warn when the package version and installed skill diverge.
-
-## Repository Positioning And README Strategy
-
-The repository now has two legitimate truths and the documentation must present both cleanly:
-
-- `v3-typescript` is the maintained product branch and the default branch of the repo.
-- `v3` is an upstream-aligned mirror branch used as a parity and diff reference against the original Python project.
-
-That split must stay explicit in the README and in install-facing docs. The repo should not present itself as a generic fork anymore, but it should also not pretend the upstream lineage is irrelevant.
-
-### README positioning requirements
-
-- The first screen of the README must say this is the maintained TypeScript port and npm-distributed product.
-- The README must thank and link to the original Graphify project as the upstream source of product direction and the `v3` reference line.
-- The README must state the branch model plainly:
-  - `v3-typescript`: the maintained TypeScript product branch
-  - `v3`: upstream Python mirror for parity tracking
-- The README must not imply that every upstream change lands automatically; it should describe alignment as release-by-release or lot-by-lot catch-up.
-- The README must also not imply that the TS repo is merely a thin wrapper. It already carries TS-specific runtime decisions, assistant integrations, and now local multimodal transcription through the TS runtime.
-
-### README structure expectations
-
-The README should evolve toward an explicit structure:
-
-1. product positioning
-2. branch model and upstream relationship
-3. current alignment status
-4. where the TS repo intentionally diverges
-5. installation and usage
-6. multimodal and assistant platform support
-
-### Divergence policy
-
-The repo should maintain a narrow, documented divergence surface:
-
-- divergence is acceptable when required for a TypeScript-native runtime, npm distribution, or cross-assistant installation model
-- divergence is not acceptable when it is just drift or undocumented product creep
-- each meaningful divergence should be documented either in the main README, in `UPSTREAM_GAP.md`, or in a dedicated spec if it changes the product contract
-
-### Multi-language README expectations
-
-The English, Simplified Chinese, and Japanese READMEs should continue to move together on:
-
-- product positioning
-- branch model
-- alignment language
-- supported modalities and platforms
-- artifact path conventions
-
-They do not need to be word-for-word identical, but they should not disagree on product identity or install behavior.
-
-## Non-Goals
-
-- Graphify is not a code-review-only product.
-- Graphify is not a SQLite-backed repository database in the current TS port.
-- Graphify is not embedding-first or vector-DB-first.
-- Graphify is not a remote hosted service.
-- Graphify is not a general-purpose notebook platform.
-- Graphify is not a browser automation tool.
-- Graphify is not expected to infer every hidden relationship without explicit evidence or a confidence label.
-
-## Known Constraints
-
-- `graphifyy` is a temporary npm name and must remain documented as such.
-- Some code languages depend on optional Tree-sitter grammars being installed.
-- Non-code semantic extraction depends on the assistant skill path and the current platform integration.
-- Large corpora may need chunking and/or incremental updates.
-- `watch` rebuilds code automatically, but semantic refresh for documents and media still depends on the skill/runtime path.
-- `graphify serve` is MCP stdio, not a network server.
-- `graphify-out` is workspace state and must be kept current; stale outputs can mislead assistant behavior.
-- The current system is intentionally local and file-based, so it favors reproducibility over central indexing services.
+- npm build succeeds
+- full test suite succeeds
+- .graphify hook rebuild succeeds, allowing known optional fixture grammar warnings
+- README and multilingual READMEs describe .graphify, v3-typescript, v3 upstream mirror, review features, and install previews consistently
+- assistant skills reference .graphify and TypeScript runtime proof
+- review and commit recommendation outputs remain advisory

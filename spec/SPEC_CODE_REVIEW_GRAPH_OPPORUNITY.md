@@ -1,410 +1,294 @@
 # SPEC_CODE_REVIEW_GRAPH_OPPORUNITY
 
-## Purpose
+## Status
 
-This document compares the current Graphify TypeScript repo against the cloned `code-review-graph` project and turns that comparison into a concrete backlog for an augmented Graphify. It is a product/spec document, not a marketing note and not a feature checklist.
+This document records what was adopted, adapted, rejected, and deferred from the cloned code-review-graph project after Graphify TypeScript evolution. It is no longer an opportunity brainstorm.
 
-The baseline for Graphify is [`spec/SPEC_GRAPHIFY.md`](/home/antoinefa/src/graphify/spec/SPEC_GRAPHIFY.md). The comparison target is the cloned repo in `/tmp/code-review-graph`.
+- Baseline product: Graphify TypeScript on v3-typescript
+- Comparison target: code-review-graph clone
+- Outcome: selected review ideas were incorporated without turning Graphify into a code-review-only product
 
-## Scope Of Comparison
+## Product Boundary
 
-This comparison is intentionally selective. It focuses on the parts of `code-review-graph` that are strategically reusable for Graphify, and on the parts that Graphify should explicitly not copy.
+Graphify remains a multimodal knowledge-graph product. code-review-graph is code-review-first. The adopted work is therefore a review projection over Graphify's existing graph, not a replacement product identity.
 
-Compared dimensions:
+Graphify keeps:
 
-- product intent and target workflows
-- graph architecture and storage model
-- review and diff workflows
-- assistant integration model
-- data model and persistence
-- evaluation and benchmarks
-- install and distribution
+- file-based graph artifacts
+- multimodal inputs
+- multi-assistant installers
+- provenance/confidence labels
+- assistant skill workflows
+- npm TypeScript runtime
 
-Explicitly out of scope:
+Graphify does not adopt:
 
-- Python runtime parity
-- exact API or CLI name matching
-- a wholesale rewrite of Graphify into a code-review-only tool
+- Python runtime
+- SQLite as default storage
+- embeddings as a baseline dependency
+- review-only product positioning
 
-## Baseline Summary
+## Adopted Opportunities
 
-### Graphify
+### Compact First-Hop Summary
 
-Graphify is the maintained TypeScript port. It is a multimodal, assistant-native knowledge-graph product that turns folders into durable graph artifacts and supports code, documents, papers, images, URLs, and local audio/video transcripts. Its primary outputs are `graph.json`, `GRAPH_REPORT.md`, and `graph.html`, with optional wiki and export formats.
+Adopted as:
 
-### code-review-graph
+- buildFirstHopSummary / firstHopSummaryToText
+- CLI: graphify summary --graph .graphify/graph.json
+- MCP: first_hop_summary
+- skill guidance to use summary before deep traversal
 
-`code-review-graph` is a Python 3.10+ code-review product. It is centered on incremental repository parsing, review-delta analysis, blast-radius computation, flows, communities, optional embeddings, and an MCP surface designed to answer "what changed and what should I read" questions.
+Reason:
 
-## High-Signal Deltas
+- high value, low risk
+- reduces assistant context cost
+- applies to all graph workflows, not only review
 
-| Dimension | Graphify today | code-review-graph today | What it means |
-|---|---|---|---|
-| Product center | General knowledge graph for assistants | Code-review-first review system | Graphify can borrow review workflows without narrowing its identity |
-| Input scope | Code + multimodal corpora | Code-centric, with notebooks and review metadata | Graphify is broader; clone is deeper on review mechanics |
-| Storage | File-based graph artifacts and caches | SQLite graph store with migrations | Clone is persistence-first; Graphify is portability-first |
-| Retrieval | Graph traversal, explanation, exports | Blast radius, FTS, embeddings, review context | Clone is stronger at fast review context; Graphify is stronger at cross-assistant portability |
-| Assistant surface | Multi-platform skills and runtime proof | Claude Code-centric MCP prompts and tools | Graphify has wider distribution; clone has a tighter review UX |
-| Benchmarks | Build/query/report metrics, but no systematic review eval suite | Explicit eval framework and benchmark reports | Graphify needs a better measurement loop if it wants review-mode credibility |
+### Review Delta
 
-## Product Spec Deltas
+Adopted as:
 
-### Graphify strengths to preserve
+- buildReviewDelta / reviewDeltaToText
+- CLI: graphify review-delta
+- skill runtime: review-delta
+- MCP: review_delta
 
-- Multimodal scope is part of the product identity. It already covers code, documents, papers, screenshots, URLs, and audio/video transcription.
-- The assistant skill model is portable across Codex, Claude, Gemini, Copilot CLI, Aider, OpenCode, Cursor, Droid, Trae, and others.
-- File-based artifacts are easy to inspect, version, and hand to other tools.
-- Confidence and provenance labels are explicit, which keeps the graph honest.
+Implemented output:
 
-### code-review-graph strengths to borrow
+- changed files
+- impacted files
+- changed nodes
+- impacted nodes
+- hub nodes
+- bridge nodes
+- likely test gaps
+- high-risk dependency chains
+- next best action
 
-- It frames the product around a concrete user outcome: reviewing changes with minimal context.
-- It exposes review-specific vocabulary: blast radius, impacted files, test gaps, hub nodes, bridge nodes, flows, and pre-merge checks.
-- It provides a compact first-hop tool for assistants before deeper analysis.
+Reason:
 
-### Product delta that matters
+- code-review-graph showed that changed-file-first graph traversal is more actionable than generic traversal for review
+- Graphify already had graph data and git helpers
 
-Graphify should not become a review-only product. The best opportunity is a review-first slice on top of the existing multimodal graph: a code-review projection, a review-delta workflow, and a minimal-context first hop, while leaving the broader knowledge-graph product intact.
+### Review Analysis Views
 
-## Architectural Deltas
+Adopted as a separate surface:
 
-### Graphify architecture
+- buildReviewAnalysis / reviewAnalysisToText
+- CLI: graphify review-analysis
+- MCP: review_analysis
+- skill runtime: review-analysis
 
-- TypeScript runtime with Graphology as the main graph structure.
-- Graph and audit outputs are file-based.
-- Assistant skills call explicit runtime commands for deterministic steps.
-- Multimodal inputs are normalized and merged into the same graph pipeline.
+Implemented views:
 
-### code-review-graph architecture
+- blast radius
+- impacted communities
+- bridge nodes
+- test-gap hints
+- multimodal/doc safety
 
-- Python runtime with a SQLite persistence layer.
-- Incremental update and post-process steps are part of the architecture, not only the UX.
-- MCP tools are the primary assistant interface.
-- Review-specific derived tables and summary views are precomputed.
+Reason:
 
-### Strategic architectural implications
+- keeps review-delta stable while adding higher-level review UX
+- makes review output actionable without changing core graph semantics
 
-- Graphify should keep the TypeScript runtime and file-based artifacts as the default architecture.
-- The SQLite storage model is a good idea for a review database, but it is not a good default rewrite for Graphify.
-- The most reusable architectural idea is not SQLite itself; it is the split between raw graph, derived review views, and compact assistant-facing summaries.
+### Review Evaluation Harness
 
-## Workflow Deltas
+Adopted as:
 
-### Graphify workflows
+- evaluateReviewAnalysis / reviewEvaluationToText
+- CLI: graphify review-eval --cases <json>
+- skill runtime: review-eval
 
-- build a graph from a workspace or path
-- query, path, explain, and traverse the graph
-- add external content into the graph
-- watch and hook-based rebuilds
-- assistant-specific install flows
+Implemented metrics:
 
-### code-review-graph workflows
-
-- build
-- update
-- detect-changes
-- review-delta
-- review-pr
-- status, visualize, wiki, register, eval, serve
-
-### Workflow opportunity
-
-Graphify has the underlying graph substrate but not a first-class review workflow. The highest-value addition is a `review-delta` / `review-pr` layer that starts from changed files, computes a minimal impacted subgraph, and returns review guidance instead of generic graph traversal.
-
-## Data Model And Storage Deltas
-
-### Graphify data model
-
-- `nodes`, `links`, and `hyperedges`
-- confidence labels such as `EXTRACTED`, `INFERRED`, and `AMBIGUOUS`
-- semantic provenance is explicit and visible in outputs
-- the canonical artifact is `graphify-out/graph.json`
-
-### code-review-graph data model
-
-- SQLite `nodes`, `edges`, `metadata`, `flows`, `communities`, and FTS tables
-- optional `embeddings` table
-- precomputed summary tables for community, flow, and risk views
-- code entities are the primary node types
-
-### Storage implication
-
-Graphify should not replace its file-based graph with SQLite just to mirror the clone. The better opportunity is a review-oriented derived layer on top of the existing graph:
-
-- a code-review projection over the existing graph
-- compact review summaries persisted as artifacts
-- optional cache or registry layers if they materially improve review latency
-
-## Assistant Integration Deltas
-
-### Graphify today
-
-- Multi-platform skills are first-class.
-- Codex uses `$graphify ...`; Claude and most other assistants use `/graphify ...`.
-- Platform installers write the right instructions and hooks for each client.
-- The TypeScript runtime exposes explicit deterministic steps to the skills.
-
-### code-review-graph today
-
-- The assistant surface is narrower and review-centric.
-- MCP prompts are opinionated workflows: review, architecture, debug, onboarding, pre-merge.
-- The MCP tools are tailored to blast radius and review quality.
-
-### Integration implication
-
-Graphify should reuse the idea of compact first-hop review prompts and small assistant-facing workflow templates, but keep its broader multi-assistant installation model. The product opportunity is "review mode for many assistants", not "one assistant plugin to rule them all".
-
-## Evaluation And Benchmark Deltas
-
-### code-review-graph advantage
-
-- It has explicit eval fixtures and benchmark reports for token efficiency, impact accuracy, build performance, search quality, and workflow quality.
-- It can show whether a review workflow is actually cheaper and better than naive file scanning.
-
-### Graphify gap
-
-- Graphify has build and smoke tests, but it does not yet have an equally explicit evaluation system for review-focused workflows.
-
-### Evaluation implication
-
-If Graphify adds review-mode features, they should come with benchmarks. The right metrics are not just build speed:
-
-- token savings versus raw file reads
+- token savings versus naive file reads
 - impacted-file recall
-- precision of review context
-- quality of the compact first-hop summary
-- multimodal extraction regression coverage
+- review summary precision
+- multimodal regression safety
 
-## Install And Distribution Deltas
+Reason:
 
-### code-review-graph distribution
+- review features need measurement, not only snapshots
+- JSON cases keep the harness portable and repo-local
 
-- Python `pip` / `pipx` / `uvx`
-- MCP configuration written during install
-- optional dependency groups for embeddings, communities, wiki, and eval
+### Install-Time Preview
 
-### Graphify distribution
+Adopted as:
 
-- npm package `graphifyy`
-- assistant-specific installers
-- npm/Node is already the correct release path for the current repo
+- platformInstallPreview
+- globalSkillInstallPreview
+- printed mutation previews before install writes
 
-### Distribution implication
+Implemented previews include:
 
-Graphify should keep npm as the distribution root. The reusable idea from `code-review-graph` is not the Python packaging stack; it is the install-time preview, platform detection, and targeted configuration story.
+- instruction files
+- hook config files
+- MCP config files
+- plugin config files
+- global skill file and .graphify_version marker
 
-## Opportunity Backlog For An Augmented Graphify
+Reason:
 
-### P0
+- code-review-graph's tighter install story was worth borrowing
+- Graphify has more platform targets, so previews reduce surprise
 
-#### 1. `adopt` minimal-context first hop
+## Adapted Opportunities
 
-Why:
+### Review Mode Instead Of Review Product
 
-- `code-review-graph` has a strong "ask for the small summary first" pattern.
-- Graphify already has enough graph data to return a compact, assistant-friendly overview.
-- This is low-risk and immediately useful across assistants.
+Adaptation:
 
-TS repo implications:
+- code-review-graph review language is used as a projection over Graphify's graph
+- Graphify still supports docs, papers, images, URL ingestion, transcripts, exports, and wiki
 
-- add a compact MCP/tool surface or CLI subcommand that returns graph size, top hubs, key communities, and the next best graph action
-- wire skills so the first call is a minimal summary, not a deep traversal
-- keep the response small enough to be the default entry point for large repos
+Why adapted:
 
-#### 2. `adapt` review-delta / review-pr workflows
+- wholesale review-only repositioning would conflict with Graphify's broader product
 
-Why:
+### File-Based Derived Views Instead Of SQLite
 
-- This is the core feature Graphify does not yet have.
-- The clone shows that a review-oriented product can be much more actionable than generic graph exploration.
-- Graphify already has graph traversal, diff awareness, and analysis primitives to support it.
+Adaptation:
 
-TS repo implications:
+- review-delta, review-analysis, and review-eval compute from graph.json
+- no SQLite backend is required
 
-- add a review-specific workflow that starts from changed files or a PR diff
-- compute an impacted subgraph and return prioritized findings
-- expose test-gap warnings, dependency chains, and risk level
-- consider `graphify review-delta` and `graphify review-pr` as first-class modes
+Why adapted:
 
-#### 3. `adapt` blast-radius, hub, bridge, and knowledge-gap analysis
+- file-based state is inspectable, portable, npm-friendly, and assistant-friendly
+- SQLite may become useful later for large review databases but is not the default architecture
 
-Why:
+### MCP Review Tools Across Assistants
 
-- The clone’s architecture vocabulary is sharper for maintainers and reviewers.
-- Graphify already computes communities and surprising links, so this is a natural extension.
+Adaptation:
 
-TS repo implications:
+- MCP tools exist for compatible clients
+- skills and CLI remain first-class for non-MCP assistants
 
-- add review-oriented report sections for hub nodes, bridge nodes, and impacted tests
-- surface a "what could break" view alongside existing god-node and surprise analysis
-- derive the review view from the existing graph rather than storing a separate code-review database
+Why adapted:
 
-#### 4. `adopt` evaluation harness for review quality
+- Graphify supports Codex, Claude, Gemini, Copilot CLI, Aider, OpenCode, Cursor, and others
+- not every platform has the same MCP UX
 
-Why:
+### Commit Recommendation As Advisory-Only
 
-- A review product needs proof, not just output.
-- The clone’s eval framework is one of its strongest product assets.
+Adaptation:
 
-TS repo implications:
+- recommendation groups changed files by graph community or path
+- output includes confidence and stale-state reasons
+- no staging, committing, or branch mutation is performed
 
-- add benchmark cases for token efficiency, impact recall, and review guidance quality
-- keep benchmark outputs reproducible and committed to the repo
-- report both structural metrics and assistant-facing metrics
+Why adapted:
 
-### P1
+- Graphify can suggest commit boundaries, but Git actions must remain user-controlled
 
-#### 5. `adapt` optional embeddings and hybrid search
+### Multimodal Safety In Review
 
-Why:
+Adaptation:
 
-- Useful for large corpora and fuzzy retrieval.
-- Should remain optional, because Graphify’s core identity is graph-first, not vector-first.
+- review-analysis explicitly reports multimodal/doc safety
+- metrics include multimodal regression safety
 
-TS repo implications:
+Why adapted:
 
-- add embeddings as an opt-in accelerator, not a default storage model
-- keep structural graph traversal as the primary truth
-- use embeddings to improve retrieval and first-hop suggestions, not to replace the graph
+- Graphify's advantage over code-review-graph is that docs, images, and transcripts live in the same graph
 
-#### 6. `adapt` multi-repo registry
+## Rejected Or Deferred Opportunities
 
-Why:
+### SQLite Backend
 
-- Valuable for teams with many repos.
-- It extends Graphify from workspace-scoped to fleet-scoped without changing the core graph model.
+Status: deferred.
 
-TS repo implications:
+Reason:
 
-- add an optional registry layer for multiple repositories and aliases
-- keep per-repo graphs local and versioned
-- support cross-repo search only when explicitly requested
+- useful for large review stores and precomputed views
+- not needed for the current npm-first, file-artifact architecture
+- would add migration and locking complexity
 
-#### 7. `adapt` review-oriented prompt pack and docs slices
+### Embeddings
 
-Why:
+Status: deferred.
 
-- The clone’s `review_changes`, `architecture_map`, `debug_issue`, and `pre_merge_check` prompts are a good shape.
-- Graphify already has assistant-specific skills; it can expose a tighter set of workflow prompts for review mode.
+Reason:
 
-TS repo implications:
+- Louvain clustering already uses graph topology
+- semantic similarity can be represented as explicit graph edges
+- embeddings require model/runtime choices and evaluation first
 
-- add small assistant-facing review prompts or skill sections
-- keep the prompt surfaces narrow and deterministic
-- make the prompts consume the new minimal-context and review-delta primitives
+### review-pr
 
-#### 8. `adapt` install-time previews and better per-platform targeting
+Status: deferred.
 
-Why:
+Reason:
 
-- The clone’s install flow is explicit about what it will touch.
-- Graphify already supports many platforms, so better install previews would reduce footguns.
+- local review-delta and review-analysis contracts are now stable enough to build on
+- PR-specific provider behavior should be a separate lot
 
-TS repo implications:
+### Flow Tables
 
-- add or preserve dry-run style previews for install actions
-- keep platform detection explicit
-- surface exactly which files and hooks will be written before changes are applied
+Status: deferred/adapt later.
 
-### P2
+Reason:
 
-#### 9. `defer` VS Code extension parity
+- high-value for code-review workflows
+- needs a stable flow schema and probably stronger code-level extraction before persistence
 
-Why:
+### Editor Extension Parity
 
-- The clone ships an editor extension, but Graphify’s current leverage is in assistant integration and portable graph artifacts.
-- An extension is useful, but it is not the highest-value reuse target.
+Status: deferred.
 
-TS repo implications:
+Reason:
 
-- treat an editor extension as a later distribution surface, not part of the core graph engine work
-- only build it once review-mode workflows and assistant primitives are stable
+- install and CLI surfaces are now clearer
+- editor-specific extension parity is a separate distribution problem
 
-#### 10. `defer` SQLite persistence as an optional backend
+### Python Runtime Adoption
 
-Why:
+Status: rejected.
 
-- It could improve review-specific indexing and caching.
-- It would also make Graphify less portable and would complicate the current file-based product identity.
+Reason:
 
-TS repo implications:
+- this repo is the maintained TypeScript port
+- audio transcription is implemented through TypeScript-local sherpa-onnx-node, not Python faster-whisper
 
-- do not switch the default store
-- only add SQLite if a specific review-mode performance problem cannot be solved with file artifacts and caches
+## Current Implemented Review Surface
 
-### Rejections
+User-facing commands:
 
-#### 11. `reject` Python runtime and packaging model
+- graphify summary
+- graphify review-delta
+- graphify review-analysis
+- graphify review-eval
+- graphify recommend-commits
 
-Why:
+MCP tools:
 
-- The current repo is explicitly a maintained TypeScript port.
-- The npm/TS distribution and assistant integration model are strategic assets, not temporary scaffolding.
+- first_hop_summary
+- review_delta
+- review_analysis
+- recommend_commits
 
-TS repo implications:
+Public API:
 
-- do not copy the Python packaging stack
-- do not move release responsibility away from npm
-- keep the TS runtime as the source of truth for the maintained repo
+- buildFirstHopSummary
+- buildReviewDelta
+- buildReviewAnalysis
+- evaluateReviewAnalysis
+- buildCommitRecommendation
 
-#### 12. `reject` narrowing Graphify into a code-review-only product
+## Residual Risks
 
-Why:
+- Review quality depends on graph freshness.
+- Test-gap hints are graph-visible hints, not proof of missing tests.
+- Impacted-file recall requires curated eval cases to be meaningful.
+- Review-analysis can overstate risk when generated graphs contain high-degree utility nodes.
+- Multimodal regression safety detects surfaced artifacts; it does not validate content correctness.
 
-- This would delete one of Graphify’s strongest differentiators: multimodal input and assistant portability.
-- The best version of Graphify is augmented, not shrunk.
+## Next Candidate Lots
 
-TS repo implications:
-
-- add a review-focused slice on top of the existing graph
-- keep docs, papers, images, URLs, and transcripts in scope
-- do not make review mode the only supported workflow
-
-## Recommended Augmented Graphify Shape
-
-The highest-value future shape is:
-
-- keep the current multimodal, file-based Graphify graph as the source of truth
-- add a review-delta / review-pr workflow for code changes
-- add a minimal-context first hop for assistants
-- add blast-radius, hub, bridge, and gap analysis views as review aids
-- add optional embeddings only as a retrieval accelerator
-- add a multi-repo registry only if team use cases need it
-- keep the TypeScript runtime and skill-based assistant integration model intact
-
-That path borrows the strongest ideas from `code-review-graph` without copying its storage model or narrowing Graphify’s product identity.
-
-## README And Positioning Implications
-
-If Graphify adopts features inspired by `code-review-graph`, the README and repo narrative need to stay disciplined. The product should be presented as an augmented Graphify, not as a clone and not as a stealth pivot away from the upstream line.
-
-Required narrative points:
-
-- Graphify remains the maintained TypeScript port of the original Graphify product.
-- `code-review-graph` is a useful comparison point and idea source for review-mode workflows, not the repository this project is trying to become.
-- The repo still aligns against the original Graphify `v3` line through the mirrored `v3` branch.
-- New review-oriented features should be described as an additional operating mode on top of the multimodal graph, not as a replacement product.
-
-README evolution implied by this opportunity set:
-
-- add a compact "branch model" section explaining `v3-typescript` versus `v3`
-- add an "alignment and divergence" note explaining that upstream Graphify remains the parity anchor while review-mode ideas may be borrowed from other adjacent systems
-- add a "review mode" roadmap or feature slice only after there is a real implementation surface, not while it is still a thought experiment
-- avoid wording that suggests Graphify now depends on SQLite, Python packaging, or a code-review-only runtime
-
-This matters because the repo now sits between two reference points:
-
-- upstream Graphify for parity and product lineage
-- `code-review-graph` for workflow ideas around review-mode ergonomics
-
-The documentation should acknowledge both without becoming ambiguous about which product this repo actually ships.
-
-## Spec Boundary
-
-This document is an opportunity analysis, not a commitment to implement every borrowed feature. The useful questions are:
-
-- what makes review faster and more accurate?
-- what can be layered on top of the existing Graphify graph?
-- what should stay out because it would weaken Graphify’s broader product?
-
-The short answer is: adopt the review workflow, adapt the analysis and eval layers, defer editor/database extras, and reject anything that would replace Graphify’s multimodal, TS-native identity.
+- review-pr provider integration
+- flow extraction and flow-aware review summaries
+- persisted review summary cache
+- optional SQLite prototype for large repos
+- embeddings benchmark before any embedding runtime is added

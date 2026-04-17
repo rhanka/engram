@@ -20,7 +20,7 @@ Multimodal, with the TypeScript catch-up tracked release-by-release against upst
 
 - Upstream Graphify remains the product lineage and parity target.
 - This TypeScript port diverges where npm distribution, TS-native runtime state, MCP/install surfaces, and git worktree lifecycle need first-class support.
-- `code-review-graph` is treated as a reference for future review-mode ideas, not as the primary lineage source.
+- `code-review-graph` is treated as a reference for review-mode vocabulary and evaluation ideas, not as the primary lineage source.
 
 > Andrej Karpathy keeps a `/raw` folder where he drops papers, tweets, screenshots, and notes. graphify is the answer to that problem - 71.5x fewer tokens per query vs reading the raw files, persistent across sessions, honest about what it found vs guessed.
 

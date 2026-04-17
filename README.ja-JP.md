@@ -20,7 +20,7 @@ graphify はマルチモーダルであり、この TypeScript ポートは upst
 
 - 元の Graphify は製品系譜と parity 目標です。
 - TypeScript ポートは npm 配布、ローカル runtime state、MCP / install surfaces、git worktree lifecycle などを TS-native に強化します。
-- `code-review-graph` は将来の review-mode の参考であり、主系譜ではありません。
+- `code-review-graph` は review-mode の語彙と評価アイデアの参考であり、主系譜ではありません。
 
 > Andrej Karpathy は論文、ツイート、スクリーンショット、メモを放り込む `/raw` フォルダを持っています。graphify はまさにその問題への答えです――生ファイルを読むのに比べて1クエリあたりのトークン数が 71.5 倍少なく、セッションをまたいで永続化され、見つけたものと推測したものを正直に区別します。
 

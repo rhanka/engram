@@ -197,29 +197,29 @@
 
 ## Lot 12 - SPEC Refactor And Convergence
 
-- [ ] Refactor [spec/SPEC_GRAPHIFY.md](spec/SPEC_GRAPHIFY.md) from aspirational design notes into the post-implementation product spec
-- [ ] Refactor [spec/SPEC_CODE_REVIEW_GRAPH_OPPORUNITY.md](spec/SPEC_CODE_REVIEW_GRAPH_OPPORUNITY.md) to separate:
-  - [ ] adopted opportunities
-  - [ ] adapted opportunities
-  - [ ] rejected/deferred opportunities
-- [ ] Refactor [spec/SPEC_GAPHIFY_SLDC_STUDY.md](spec/SPEC_GAPHIFY_SLDC_STUDY.md) into:
-  - [ ] what was implemented
-  - [ ] what remained deferred
-  - [ ] lessons learned / residual risks
-- [ ] Remove or rewrite statements in the SPEC files that are no longer hypothetical
-- [ ] Ensure the final README and the final SPEC set do not contradict each other on:
-  - [ ] state root
-  - [ ] branch model
-  - [ ] lifecycle behavior
-  - [ ] review-mode scope
+- [x] Refactor [spec/SPEC_GRAPHIFY.md](spec/SPEC_GRAPHIFY.md) from aspirational design notes into the post-implementation product spec
+- [x] Refactor [spec/SPEC_CODE_REVIEW_GRAPH_OPPORUNITY.md](spec/SPEC_CODE_REVIEW_GRAPH_OPPORUNITY.md) to separate:
+  - [x] adopted opportunities
+  - [x] adapted opportunities
+  - [x] rejected/deferred opportunities
+- [x] Refactor [spec/SPEC_GAPHIFY_SLDC_STUDY.md](spec/SPEC_GAPHIFY_SLDC_STUDY.md) into:
+  - [x] what was implemented
+  - [x] what remained deferred
+  - [x] lessons learned / residual risks
+- [x] Remove or rewrite statements in the SPEC files that are no longer hypothetical
+- [x] Ensure the final README and the final SPEC set do not contradict each other on:
+  - [x] state root
+  - [x] branch model
+  - [x] lifecycle behavior
+  - [x] review-mode scope
 
 ## Exit Criteria
 
-- [ ] `.graphify/` is the canonical runtime state root
-- [ ] worktrees and branch lifecycle are handled correctly in hooks and runtime metadata
-- [ ] assistant skills use a shared path contract instead of hardcoded legacy paths
-- [ ] README and install surfaces explain the branch model and divergence/alignment cleanly
-- [ ] at least one concrete review-mode workflow exists on top of the Graphify graph
-- [ ] commit recommendation, if present, remains advisory and branch-aware
-- [ ] SPEC documents have been refactored to describe the implemented system, not the pre-implementation intent
-- [ ] full `npm test` passes on the final branch state
+- [x] `.graphify/` is the canonical runtime state root
+- [x] worktrees and branch lifecycle are handled correctly in hooks and runtime metadata
+- [x] assistant skills use a shared path contract instead of hardcoded legacy paths
+- [x] README and install surfaces explain the branch model and divergence/alignment cleanly
+- [x] at least one concrete review-mode workflow exists on top of the Graphify graph
+- [x] commit recommendation, if present, remains advisory and branch-aware
+- [x] SPEC documents have been refactored to describe the implemented system, not the pre-implementation intent
+- [x] full `npm test` passes on the final branch state
