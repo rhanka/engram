@@ -14,6 +14,7 @@ export { detect, classifyFile, detectIncremental, saveManifest } from "./detect.
 export { extract, collectFiles } from "./extract.js";
 export { fileHash, loadCached, saveCached, checkSemanticCache, saveSemanticCache } from "./cache.js";
 export { validateUrl, safeFetch, safeFetchText, validateGraphPath, sanitizeLabel } from "./security.js";
+export { DEFAULT_GRAPHIFY_STATE_DIR, NEXT_GRAPHIFY_STATE_DIR, resolveGraphifyPaths, defaultGraphPath, defaultManifestPath, defaultTranscriptsDir } from "./paths.js";
 export { runBenchmark, printBenchmark } from "./benchmark.js";
 export { ingest, saveQueryResult } from "./ingest.js";
 export { downloadAudio, buildWhisperPrompt, transcribe, transcribeAll, augmentDetectionWithTranscripts } from "./transcribe.js";

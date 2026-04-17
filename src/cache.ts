@@ -4,6 +4,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync, renameSync, existsSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
+import { resolveGraphifyPaths } from "./paths.js";
 
 function bodyContent(content: Buffer): Buffer {
   const text = content.toString("utf-8");
@@ -34,9 +35,9 @@ export function fileHash(filePath: string): string {
   return h.digest("hex");
 }
 
-/** Returns graphify-out/cache/ path - creates it if needed. */
+/** Returns graphify cache path - creates it if needed. */
 export function cacheDir(root: string = "."): string {
-  const d = join(root, "graphify-out", "cache");
+  const d = resolveGraphifyPaths({ root }).cacheDir;
   mkdirSync(d, { recursive: true });
   return d;
 }
@@ -88,7 +89,7 @@ export function cachedFiles(root: string = "."): Set<string> {
   return result;
 }
 
-/** Delete all graphify-out/cache/*.json files. */
+/** Delete all graphify cache entries. */
 export function clearCache(root: string = "."): void {
   const d = cacheDir(root);
   try {

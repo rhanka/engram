@@ -15,42 +15,42 @@
 - [ ] Keep `v3-typescript` as the product line and `v3` as the upstream mirror; do not blur their roles in code, docs, or release behavior
 - [ ] Keep one coherent commit per lot or tightly coupled file set; do not batch unrelated changes
 - [ ] After each code-changing lot:
-  - [ ] run targeted tests first
-  - [ ] run full `npm test`
-  - [ ] run `npx graphify hook-rebuild`
-  - [ ] update this plan and any touched SPEC files
-- [ ] Do not introduce a remote service or shared backend for Graphify state
-- [ ] Keep `.graphify/` ignored by default; do not make runtime state part of the normal committed source of truth
-- [ ] Treat commit recommendations as advisory only; no automatic staging or committing
-- [ ] Keep deferred items explicit instead of half-implementing them
+  - [x] run targeted tests first
+  - [x] run full `npm test`
+  - [x] run `npx graphify hook-rebuild`
+  - [x] update this plan and any touched SPEC files
+- [x] Do not introduce a remote service or shared backend for Graphify state
+- [x] Keep `.graphify/` ignored by default; do not make runtime state part of the normal committed source of truth
+- [x] Treat commit recommendations as advisory only; no automatic staging or committing
+- [x] Keep deferred items explicit instead of half-implementing them
 
 ## Lot 0 - Path And Lifecycle Audit Baseline
 
-- [ ] Create a central inventory of all `graphify-out/` and repo-root `.graphify_*` usages in runtime, skills, docs, and tests
-- [ ] Create a central inventory of all Git lifecycle assumptions in hooks, CLI, and skills
-- [ ] Confirm which state files are durable artifacts versus scratch/runtime metadata
-- [ ] Decide the canonical `.graphify/` internal layout:
-  - [ ] durable artifacts
-  - [ ] cache/transcripts/converted/memory
-  - [ ] scratch/runtime metadata
-- [ ] Record any path-contract decisions back into the relevant SPEC files before coding
+- [x] Create a central inventory of all `graphify-out/` and repo-root `.graphify_*` usages in runtime, skills, docs, and tests
+- [x] Create a central inventory of all Git lifecycle assumptions in hooks, CLI, and skills
+- [x] Confirm which state files are durable artifacts versus scratch/runtime metadata
+- [x] Decide the canonical `.graphify/` internal layout:
+  - [x] durable artifacts
+  - [x] cache/transcripts/converted/memory
+  - [x] scratch/runtime metadata
+- [x] Record any path-contract decisions back into the relevant SPEC files before coding
 
 ## Lot 1 - State Path Abstraction
 
-- [ ] Add a single runtime path resolver for Graphify state instead of duplicating `graphify-out/...` joins
-- [ ] Define canonical getters for:
-  - [ ] state root
-  - [ ] graph path
-  - [ ] report path
-  - [ ] html path
-  - [ ] manifest path
-  - [ ] cost path
-  - [ ] cache path
-  - [ ] transcripts path
-  - [ ] scratch/tmp paths
-- [ ] Refactor CLI/runtime modules to use the shared path resolver
-- [ ] Refactor security/path validation to use the shared path resolver
-- [ ] Add tests for the new path contract before switching defaults
+- [x] Add a single runtime path resolver for Graphify state instead of duplicating `graphify-out/...` joins
+- [x] Define canonical getters for:
+  - [x] state root
+  - [x] graph path
+  - [x] report path
+  - [x] html path
+  - [x] manifest path
+  - [x] cost path
+  - [x] cache path
+  - [x] transcripts path
+  - [x] scratch/tmp paths
+- [x] Refactor CLI/runtime modules to use the shared path resolver
+- [x] Refactor security/path validation to use the shared path resolver
+- [x] Add tests for the new path contract before switching defaults
 
 ## Lot 2 - `.graphify/` Runtime Migration
 

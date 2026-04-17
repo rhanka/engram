@@ -25,6 +25,7 @@ import {
 } from "./graph.js";
 import { ingest, saveQueryResult } from "./ingest.js";
 import { generate } from "./report.js";
+import { defaultManifestPath } from "./paths.js";
 import { augmentDetectionWithTranscripts } from "./transcribe.js";
 import type {
   DetectionResult,
@@ -348,7 +349,7 @@ async function main(): Promise<void> {
   program
     .command("detect-incremental")
     .argument("<inputPath>")
-    .option("--manifest <path>", "Path to manifest.json", "graphify-out/manifest.json")
+    .option("--manifest <path>", "Path to manifest.json", defaultManifestPath())
     .option("--out <path>")
     .action((inputPath, opts) => {
       const result = detectIncremental(resolve(inputPath), resolve(opts.manifest));

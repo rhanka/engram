@@ -6,10 +6,9 @@ import {
 } from "node:fs";
 import { join, resolve, extname, basename, relative, sep, dirname } from "node:path";
 import { createHash } from "node:crypto";
+import { defaultManifestPath, resolveGraphifyPaths } from "./paths.js";
 import { FileType } from "./types.js";
 import type { DetectionResult } from "./types.js";
-
-const MANIFEST_PATH = "graphify-out/manifest.json";
 
 export const CODE_EXTENSIONS = new Set([
   ".py", ".ts", ".js", ".jsx", ".tsx", ".go", ".rs", ".java", ".cpp", ".cc", ".cxx",
@@ -281,9 +280,10 @@ function walkDir(
 export function detect(root: string, options?: { followSymlinks?: boolean }): DetectionResult {
   const followSymlinks = options?.followSymlinks ?? false;
   const rootResolved = resolve(root);
+  const paths = resolveGraphifyPaths({ root: rootResolved });
   const ignorePatterns = loadGraphifyignore(rootResolved);
-  const convertedDir = join(rootResolved, "graphify-out", "converted");
-  const memoryDir = join(rootResolved, "graphify-out", "memory");
+  const convertedDir = paths.convertedDir;
+  const memoryDir = paths.memoryDir;
 
   const files: Record<string, string[]> = {
     code: [], document: [], paper: [], image: [], video: [],
@@ -357,7 +357,7 @@ export function detect(root: string, options?: { followSymlinks?: boolean }): De
   };
 }
 
-export function loadManifest(manifestPath: string = MANIFEST_PATH): Record<string, number> {
+export function loadManifest(manifestPath: string = defaultManifestPath()): Record<string, number> {
   try {
     return JSON.parse(readFileSync(manifestPath, "utf-8")) as Record<string, number>;
   } catch {
@@ -365,7 +365,7 @@ export function loadManifest(manifestPath: string = MANIFEST_PATH): Record<strin
   }
 }
 
-export function saveManifest(files: Record<string, string[]>, manifestPath: string = MANIFEST_PATH): void {
+export function saveManifest(files: Record<string, string[]>, manifestPath: string = defaultManifestPath()): void {
   const manifest: Record<string, number> = {};
   for (const fileList of Object.values(files)) {
     for (const f of fileList) {
@@ -379,7 +379,7 @@ export function saveManifest(files: Record<string, string[]>, manifestPath: stri
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
 }
 
-export function detectIncremental(root: string, manifestPath: string = MANIFEST_PATH): DetectionResult {
+export function detectIncremental(root: string, manifestPath: string = defaultManifestPath(root)): DetectionResult {
   const full = detect(root);
   const manifest = loadManifest(manifestPath);
 

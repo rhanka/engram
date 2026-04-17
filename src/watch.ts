@@ -7,6 +7,7 @@
  */
 import { existsSync, mkdirSync, writeFileSync, unlinkSync } from "node:fs";
 import { resolve as pathResolve, extname, basename } from "node:path";
+import { DEFAULT_GRAPHIFY_STATE_DIR, resolveGraphifyPaths } from "./paths.js";
 import {
   CODE_EXTENSIONS,
   DOC_EXTENSIONS,
@@ -30,6 +31,7 @@ export async function rebuildCode(
   followSymlinks: boolean = false,
 ): Promise<boolean> {
   try {
+    const paths = resolveGraphifyPaths({ root: watchPath });
     // Dynamic imports - these modules are in the same package
     const { collectFiles, extractWithDiagnostics } = await import("./extract.js");
     const { buildFromJson } = await import("./build.js");
@@ -41,7 +43,7 @@ export async function rebuildCode(
     let codeFiles = await collectFiles(watchPath, { followSymlinks });
     codeFiles = codeFiles.filter(
       (f: string) =>
-        !f.includes("graphify-out") &&
+        !f.includes(DEFAULT_GRAPHIFY_STATE_DIR) &&
         !f.includes("__pycache__") &&
         !f.includes("node_modules"),
     );
@@ -89,7 +91,7 @@ export async function rebuildCode(
     }
     const questions = suggestQuestions(G, communities, labels);
 
-    const outDir = pathResolve(watchPath, "graphify-out");
+    const outDir = paths.stateDir;
     mkdirSync(outDir, { recursive: true });
 
     const report = generate(
@@ -104,11 +106,11 @@ export async function rebuildCode(
       watchPath,
       questions,
     );
-    writeFileSync(pathResolve(outDir, "GRAPH_REPORT.md"), report, "utf-8");
-    toJson(G, communities, pathResolve(outDir, "graph.json"), { communityLabels: labels });
+    writeFileSync(paths.report, report, "utf-8");
+    toJson(G, communities, paths.graph, { communityLabels: labels });
 
     // Clear stale needs_update flag if present
-    const flagPath = pathResolve(outDir, "needs_update");
+    const flagPath = paths.needsUpdate;
     if (existsSync(flagPath)) {
       unlinkSync(flagPath);
     }
@@ -133,9 +135,10 @@ export async function rebuildCode(
 // ---------------------------------------------------------------------------
 
 function notifyOnly(watchPath: string): void {
-  const outDir = pathResolve(watchPath, "graphify-out");
+  const paths = resolveGraphifyPaths({ root: watchPath });
+  const outDir = paths.stateDir;
   mkdirSync(outDir, { recursive: true });
-  const flagPath = pathResolve(outDir, "needs_update");
+  const flagPath = paths.needsUpdate;
   writeFileSync(flagPath, "1", "utf-8");
   console.log(`\n[graphify watch] New or changed files detected in ${watchPath}`);
   console.log(
@@ -178,7 +181,7 @@ export async function watch(
     ignored: [
       /node_modules/,
       /\.git/,
-      /graphify-out/,
+      new RegExp(DEFAULT_GRAPHIFY_STATE_DIR),
     ],
   });
 

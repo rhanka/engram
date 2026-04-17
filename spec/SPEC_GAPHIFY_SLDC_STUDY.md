@@ -106,6 +106,20 @@ That is not robust for linked worktrees, where hook resolution should go through
 
 ## Recommended Target State
 
+### Initial Implementation Decisions
+
+Before switching defaults, the implementation should introduce a central path contract while keeping `graphify-out/` as the public default. The first implementation checkpoint deliberately separates path abstraction from path migration.
+
+Decisions for the first checkpoint:
+
+- `graphify-out/` remains the default state root until the migration lot explicitly changes it.
+- `src/paths.ts` is the runtime owner for state-root resolution and canonical artifact paths.
+- skill/runtime scratch files are modeled as state-root files even before every skill is migrated.
+- current standalone build behavior may keep repo-root `.graphify_detect.json` temporarily as a named legacy scratch path.
+- `.graphify/` is exposed as the next target state root, not enabled by default yet.
+
+This keeps the first code lot behavior-preserving. It creates a seam for the later `.graphify/` switch without forcing the skill migration, README migration, and lifecycle metadata changes into the same patch.
+
 ### State root
 
 Move Graphify runtime state under a single hidden workspace directory:

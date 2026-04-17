@@ -12,6 +12,7 @@ import {
   loadGraphFromData,
   type SerializedGraphData,
 } from "./graph.js";
+import { defaultGraphPath } from "./paths.js";
 import { validateGraphPath, sanitizeLabel } from "./security.js";
 import { godNodes as computeGodNodes } from "./analyze.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
@@ -349,7 +350,7 @@ function toolShortestPath(G: Graph, args: Record<string, unknown>): string {
 // ---------------------------------------------------------------------------
 
 export async function serve(
-  graphPath: string = "graphify-out/graph.json",
+  graphPath: string = defaultGraphPath(),
   transport?: Transport,
 ): Promise<void> {
   let Server: typeof import("@modelcontextprotocol/sdk/server/index.js").Server;
@@ -561,7 +562,7 @@ const isDirectExecution = typeof process !== "undefined" &&
   /^serve\.(?:js|mjs|cjs|ts)$/.test(basename(process.argv[1]));
 
 if (isDirectExecution) {
-  const graphPath = process.argv[2] ?? "graphify-out/graph.json";
+  const graphPath = process.argv[2] ?? defaultGraphPath();
   serve(graphPath).catch((err) => {
     console.error(err);
     process.exit(1);

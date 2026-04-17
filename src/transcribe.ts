@@ -15,12 +15,12 @@ import { homedir, platform, tmpdir } from "node:os";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { defaultTranscriptsDir } from "./paths.js";
 import type { DetectionResult } from "./types.js";
 
 const URL_PREFIXES = ["http://", "https://", "www."];
 const CACHED_AUDIO_EXTENSIONS = [".m4a", ".opus", ".mp3", ".ogg", ".wav", ".webm"];
 const DEFAULT_MODEL = "base";
-const TRANSCRIPTS_DIR = "graphify-out/transcripts";
 const FALLBACK_PROMPT = "Use proper punctuation and paragraph breaks.";
 const SHERPA_RELEASE_BASE =
   "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models";
@@ -405,7 +405,7 @@ export function buildWhisperPrompt(
 
 export async function transcribe(
   videoPath: string,
-  outputDir: string = TRANSCRIPTS_DIR,
+  outputDir: string = defaultTranscriptsDir(),
   initialPrompt?: string,
   force: boolean = false,
 ): Promise<string> {

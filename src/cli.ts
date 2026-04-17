@@ -16,6 +16,7 @@ import { homedir, platform } from "node:os";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { forEachTraversalNeighbor, loadGraphFromData } from "./graph.js";
+import { defaultGraphPath } from "./paths.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -988,7 +989,7 @@ export async function main(): Promise<void> {
     .description("Start a stdio MCP server for graph.json")
     .action(async (graphPath) => {
       const { serve } = await import("./serve.js");
-      await serve(graphPath ?? "graphify-out/graph.json");
+      await serve(graphPath ?? defaultGraphPath());
     });
 
   // Watcher
@@ -1008,7 +1009,7 @@ export async function main(): Promise<void> {
     .description("BFS traversal of graph.json for a question")
     .option("--dfs", "Use depth-first instead of breadth-first")
     .option("--budget <n>", "Cap output at N tokens", "2000")
-    .option("--graph <path>", "Path to graph.json", "graphify-out/graph.json")
+    .option("--graph <path>", "Path to graph.json", defaultGraphPath())
     .action(async (question, opts) => {
       const { readFileSync: rf } = await import("node:fs");
       const { resolve: res } = await import("node:path");
@@ -1118,7 +1119,7 @@ export async function main(): Promise<void> {
     .description("Measure token reduction vs naive full-corpus approach")
     .action(async (graphPath) => {
       const { runBenchmark, printBenchmark } = await import("./benchmark.js");
-      const gp = graphPath ?? "graphify-out/graph.json";
+      const gp = graphPath ?? defaultGraphPath();
       let corpusWords: number | undefined;
       if (existsSync(".graphify_detect.json")) {
         try {
