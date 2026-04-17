@@ -163,6 +163,7 @@ When the user types `/graphify`, invoke the Skill tool with `skill: "graphify"` 
 /graphify query "what connects attention to the optimizer?"
 /graphify query "what connects attention to the optimizer?" --dfs   # 追踪一条具体路径
 /graphify query "what connects attention to the optimizer?" --budget 1500  # 把预算限制在 N tokens
+/graphify summary --graph .graphify/graph.json        # 深度遍历前的紧凑 first-hop 概览
 /graphify path "DigestAuth" "Response"
 /graphify explain "SwinTransformer"
 

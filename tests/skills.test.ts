@@ -13,6 +13,7 @@ const ALL_SKILL_DOCS = [
   ...SKILLS,
   "../src/skills/skill-claw.md",
   "../src/skills/skill-codex.md",
+  "../src/skills/skill-gemini.toml",
   "../src/skills/skill-trae.md",
 ];
 
@@ -48,6 +49,13 @@ describe("skill cache examples", () => {
       expect(content).toContain(".graphify/branch.json");
       expect(content).toContain("graphify state prune");
       expect(content).not.toContain("graphify-out");
+    }
+  });
+
+  it("prefers the compact first-hop summary before deep traversal", () => {
+    for (const relativePath of ALL_SKILL_DOCS) {
+      const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
+      expect(content).toContain("graphify summary --graph .graphify/graph.json");
     }
   });
 

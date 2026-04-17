@@ -10,6 +10,7 @@ Use the installed TypeScript runtime only. Do not fall back to Python.
 
 - `/graphify` with no path means the current directory `.`
 - `/graphify <path> [flags]` means build or update the graph for that path
+- `/graphify summary` means return compact first-hop orientation from `.graphify/graph.json`
 - `/graphify query "<question>"` means answer from `.graphify/graph.json`
 - `/graphify path "A" "B"` means show the shortest path between two nodes
 - `/graphify explain "Node"` means explain one node and its neighbors
@@ -19,6 +20,7 @@ Always prefer graphify outputs and graphify runtime commands over ad-hoc file tr
 - If `.graphify/GRAPH_REPORT.md` exists, read it before searching raw files
 - If `.graphify/wiki/index.md` exists, navigate it before reading raw files
 - If the user asks about build/update/query/path/explain, stay on graphify artifacts and commands
+- Before deep query/path/explain traversal, run the compact first-hop summary first
 
 ## Runtime proof
 
@@ -170,6 +172,14 @@ After a successful build/update, confirm these outputs:
 - `.graphify/.graphify_runtime.json`
 
 ## Query, path, explain, and ingest
+
+Before deep query/path/explain traversal, get the compact first-hop orientation:
+
+```bash
+graphify summary --graph .graphify/graph.json
+```
+
+Use that output to choose whether a query, node explanation, community read, or shortest path is the right next graph action.
 
 For `query`, use the public CLI:
 

@@ -174,6 +174,7 @@ When the user types `/graphify`, invoke the Skill tool with `skill: "graphify"` 
 /graphify query "アテンションとオプティマイザを結ぶものは？"
 /graphify query "アテンションとオプティマイザを結ぶものは？" --dfs   # 特定のパスをトレース
 /graphify query "アテンションとオプティマイザを結ぶものは？" --budget 1500  # N トークンで上限設定
+/graphify summary --graph .graphify/graph.json        # 深い traversal の前に compact first-hop orientation を取得
 /graphify path "DigestAuth" "Response"
 /graphify explain "SwinTransformer"
 
@@ -216,6 +217,7 @@ graphify trae-cn uninstall
 graphify query "アテンションとオプティマイザを結ぶものは？"
 graphify query "認証フローを表示" --dfs
 graphify query "CfgNode とは？" --budget 500
+graphify summary --graph .graphify/graph.json
 graphify query "..." --graph path/to/graph.json
 ```
 

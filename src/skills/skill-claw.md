@@ -30,6 +30,7 @@ Turn any folder of files into a navigable knowledge graph with community detecti
 /graphify query "<question>"                          # BFS traversal - broad context
 /graphify query "<question>" --dfs                    # DFS - trace a specific path
 /graphify query "<question>" --budget 1500            # cap answer at N tokens
+/graphify summary --graph .graphify/graph.json        # compact first-hop orientation before deep traversal
 /graphify path "AuthModule" "Database"                # shortest path between two concepts
 /graphify explain "SwinTransformer"                   # plain-language explanation of a node
 ```
@@ -505,6 +506,12 @@ if (!fs.existsSync('.graphify/graph.json')) {
 "
 ```
 If it fails, stop and tell the user to run `/graphify <path>` first.
+
+Before deep traversal, run the compact first-hop summary and use it to choose the right graph action:
+
+```bash
+graphify summary --graph .graphify/graph.json
+```
 
 Load `.graphify/graph.json`, then:
 

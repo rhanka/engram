@@ -33,6 +33,7 @@ $graphify add <url> --contributor "Name"              # tag who added it
 $graphify query "<question>"                          # BFS traversal - broad context
 $graphify query "<question>" --dfs                    # DFS - trace one chain
 $graphify query "<question>" --budget 1500            # cap answer at N tokens
+$graphify summary --graph .graphify/graph.json        # compact first-hop orientation before deep traversal
 $graphify path "AuthModule" "Database"                # shortest path between concepts
 $graphify explain "SwinTransformer"                   # explain one node and its neighbors
 ```
@@ -514,10 +515,13 @@ First check that [.graphify/graph.json](.graphify/graph.json) exists. If not, st
 Use the public TypeScript CLI:
 
 ```bash
+graphify summary --graph .graphify/graph.json
 graphify query "QUESTION" --graph .graphify/graph.json
 graphify query "QUESTION" --dfs --graph .graphify/graph.json
 graphify query "QUESTION" --budget 1500 --graph .graphify/graph.json
 ```
+
+Use the summary as the first-hop orientation. It is intentionally compact and deterministic: graph size, density, top hubs, key communities, and the next graph action. Then run the specific query/path/explain command needed for the user's question.
 
 Answer using only what the graph traversal shows. If the graph lacks the answer, say so.
 

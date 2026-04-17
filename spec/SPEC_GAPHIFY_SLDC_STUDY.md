@@ -159,6 +159,14 @@ Implementation checkpoint after the sixth lot:
 - the README narrative keeps upstream Graphify as the parity target while naming TypeScript-native runtime/platform work and `code-review-graph` review-mode ideas as intentional divergence areas.
 - local ignored `AGENTS.md` / `CLAUDE.md` were refreshed in the working copy; generated install instructions already carry the `.graphify/needs_update` and stale branch metadata guidance.
 
+Implementation checkpoint after the seventh lot:
+
+- `buildFirstHopSummary` / `firstHopSummaryToText` provide a deterministic compact orientation surface for assistants.
+- the public CLI exposes `graphify summary --graph .graphify/graph.json`, and the MCP server exposes `first_hop_summary`.
+- the summary includes graph size, density, average degree, top hubs, key communities, and a next-best graph action.
+- assistant skills and generated install instructions prefer this compact first hop before deeper query/path/explain traversal.
+- tests cover response shape, deterministic ordering, public API export, MCP exposure, and skill guidance.
+
 ### State root
 
 Move Graphify runtime state under a single hidden workspace directory:

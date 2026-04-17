@@ -125,6 +125,7 @@ describe("MCP stdio server", () => {
           "get_node",
           "god_nodes",
           "graph_stats",
+          "first_hop_summary",
           "query_graph",
           "shortest_path",
         ].sort(),
@@ -223,6 +224,17 @@ describe("MCP stdio server", () => {
       expect(stats).toContain("Nodes: 4");
       expect(stats).toContain("Edges: 3");
       expect(stats).toContain("Communities: 2");
+
+      const firstHop = toolText(
+        await client.callTool({
+          name: "first_hop_summary",
+          arguments: {},
+        }),
+      );
+      expect(firstHop).toContain("Graphify First-Hop Summary");
+      expect(firstHop).toContain("Graph: 4 nodes, 3 edges, 2 communities, density 0.5");
+      expect(firstHop).toContain("BetaRepository (degree 3, community 0 Core Services, src/beta.ts)");
+      expect(firstHop).toContain("Next best action: Start with get_neighbors on \"BetaRepository\"");
 
       const path = toolText(
         await client.callTool({

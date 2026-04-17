@@ -61,6 +61,8 @@ describe("public API compatibility", () => {
     expect(typeof api.rebuildCode).toBe("function");
     expect(typeof api.pushToNeo4j).toBe("function");
     expect(typeof api.augmentDetectionWithTranscripts).toBe("function");
+    expect(typeof api.buildFirstHopSummary).toBe("function");
+    expect(typeof api.firstHopSummaryToText).toBe("function");
   });
 
   it("accepts object-style map inputs and option objects", () => {

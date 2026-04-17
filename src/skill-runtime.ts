@@ -26,6 +26,7 @@ import {
 import { ingest, saveQueryResult } from "./ingest.js";
 import { generate } from "./report.js";
 import { defaultManifestPath, resolveGraphifyPaths } from "./paths.js";
+import { buildFirstHopSummary, firstHopSummaryToText } from "./summary.js";
 import { augmentDetectionWithTranscripts } from "./transcribe.js";
 import type {
   DetectionResult,
@@ -950,6 +951,22 @@ async function main(): Promise<void> {
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
       writeJson(opts.analysisOut, analyzed.analysis);
       console.log(`Re-clustered: ${analyzed.communities.size} communities`);
+    });
+
+  program
+    .command("summary")
+    .requiredOption("--graph <path>")
+    .option("--top-hubs <n>", "Number of hubs to include", "5")
+    .option("--top-communities <n>", "Number of communities to include", "5")
+    .option("--nodes-per-community <n>", "Number of representative nodes per community", "3")
+    .action((opts) => {
+      const G = loadGraph(opts.graph);
+      const summary = buildFirstHopSummary(G, {
+        topHubs: Number(opts.topHubs),
+        topCommunities: Number(opts.topCommunities),
+        nodesPerCommunity: Number(opts.nodesPerCommunity),
+      });
+      console.log(firstHopSummaryToText(summary));
     });
 
   program

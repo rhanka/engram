@@ -133,15 +133,15 @@
 
 ## Lot 7 - Minimal Review-Mode Foundation
 
-- [ ] Implement a compact first-hop summary surface for assistants
-- [ ] Make the first-hop summary intentionally small and deterministic
-- [ ] Include:
-  - [ ] graph size / density snapshot
-  - [ ] top hubs / god nodes
-  - [ ] key communities
-  - [ ] next-best graph action
-- [ ] Wire assistant skills to prefer this compact first hop before deep traversal where appropriate
-- [ ] Add tests for response shape and determinism
+- [x] Implement a compact first-hop summary surface for assistants
+- [x] Make the first-hop summary intentionally small and deterministic
+- [x] Include:
+  - [x] graph size / density snapshot
+  - [x] top hubs / god nodes
+  - [x] key communities
+  - [x] next-best graph action
+- [x] Wire assistant skills to prefer this compact first hop before deep traversal where appropriate
+- [x] Add tests for response shape and determinism
 
 ## Lot 8 - Review-Delta / Review-PR Workflow
 

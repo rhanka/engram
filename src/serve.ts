@@ -15,6 +15,7 @@ import {
 import { resolveGraphInputPath } from "./paths.js";
 import { validateGraphPath, sanitizeLabel } from "./security.js";
 import { godNodes as computeGodNodes } from "./analyze.js";
+import { buildFirstHopSummary, firstHopSummaryToText } from "./summary.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 
 // ---------------------------------------------------------------------------
@@ -299,6 +300,10 @@ function toolGraphStats(
   ].join("\n");
 }
 
+function toolFirstHopSummary(G: Graph): string {
+  return firstHopSummaryToText(buildFirstHopSummary(G));
+}
+
 function toolShortestPath(G: Graph, args: Record<string, unknown>): string {
   const srcTerms = (args.source as string)
     .split(/\s+/)
@@ -382,6 +387,12 @@ export async function serve(
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
+      {
+        name: "first_hop_summary",
+        description:
+          "Return a compact deterministic first-hop orientation: graph size, density, top hubs, key communities, and next graph action.",
+        inputSchema: { type: "object" as const, properties: {} },
+      },
       {
         name: "query_graph",
         description:
@@ -505,6 +516,7 @@ export async function serve(
     string,
     (args: Record<string, unknown>) => string
   > = {
+    first_hop_summary: () => toolFirstHopSummary(G),
     query_graph: (a) => toolQueryGraph(G, a),
     get_node: (a) => toolGetNode(G, a),
     get_neighbors: (a) => toolGetNeighbors(G, a),

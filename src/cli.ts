@@ -128,6 +128,7 @@ Rules:
 - Before answering architecture or codebase questions, read .graphify/GRAPH_REPORT.md for god nodes and community structure
 - If .graphify/wiki/index.md exists, navigate it instead of reading raw files
 - If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run /graphify . --update when appropriate
+- Before deep graph traversal, prefer \`graphify summary --graph .graphify/graph.json\` for compact first-hop orientation
 - After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
 `;
 
@@ -141,6 +142,7 @@ Rules:
 - If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run /graphify . --update when appropriate
 - In Gemini CLI, the reliable explicit custom command is \`/graphify ...\`
 - If the user asks to build, update, query, path, or explain the graph, use the installed \`/graphify\` custom command or the configured \`graphify\` MCP server instead of ad-hoc file traversal
+- Before deep graph traversal, prefer \`graphify summary --graph .graphify/graph.json\` or MCP \`first_hop_summary\` for compact first-hop orientation
 - After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
 `;
 
@@ -393,6 +395,7 @@ export function getAgentsMdSection(platformName: string): string {
     "- If .graphify/wiki/index.md exists, navigate it instead of reading raw files",
     "- If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run the graphify skill with --update when appropriate",
     "- If the user asks to build, update, query, path, or explain the graph, use the installed `graphify` skill instead of ad-hoc file traversal",
+    "- Before deep graph traversal, prefer `graphify summary --graph .graphify/graph.json` for compact first-hop orientation",
     "- After modifying code files in this session, run `npx graphify hook-rebuild` to keep the graph current",
   ];
   if (platformName === "codex") {
@@ -1019,6 +1022,32 @@ export async function main(): Promise<void> {
     });
 
   // Query command
+  program
+    .command("summary [graph]")
+    .description("Compact first-hop orientation for graph-guided assistant work")
+    .option("--graph <path>", "Path to graph.json")
+    .option("--top-hubs <n>", "Number of hubs to include", "5")
+    .option("--top-communities <n>", "Number of communities to include", "5")
+    .option("--nodes-per-community <n>", "Number of representative nodes per community", "3")
+    .action(async (graphPath, opts) => {
+      const { readFileSync: rf } = await import("node:fs");
+      const { resolve: res } = await import("node:path");
+      const gp = res(resolveGraphInputPath(opts.graph ?? graphPath));
+      if (!existsSync(gp)) {
+        console.error(`error: graph file not found: ${gp}`);
+        process.exit(1);
+      }
+      const raw = JSON.parse(rf(gp, "utf-8"));
+      const G = loadGraphFromData(raw);
+      const { buildFirstHopSummary, firstHopSummaryToText } = await import("./summary.js");
+      const summary = buildFirstHopSummary(G, {
+        topHubs: Number(opts.topHubs),
+        topCommunities: Number(opts.topCommunities),
+        nodesPerCommunity: Number(opts.nodesPerCommunity),
+      });
+      console.log(firstHopSummaryToText(summary));
+    });
+
   program
     .command("query <question>")
     .description("BFS traversal of graph.json for a question")

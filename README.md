@@ -225,6 +225,7 @@ In Codex, replace the leading `/` in the examples below with `$`. Gemini CLI, Gi
 /graphify query "what connects attention to the optimizer?"
 /graphify query "what connects attention to the optimizer?" --dfs   # trace a specific path
 /graphify query "what connects attention to the optimizer?" --budget 1500  # cap at N tokens
+/graphify summary --graph .graphify/graph.json        # compact first-hop orientation before deep traversal
 /graphify path "DigestAuth" "Response"
 /graphify explain "SwinTransformer"
 
@@ -267,6 +268,7 @@ graphify trae-cn uninstall
 graphify query "what connects attention to the optimizer?"
 graphify query "show the auth flow" --dfs
 graphify query "what is CfgNode?" --budget 500
+graphify summary --graph .graphify/graph.json
 graphify query "..." --graph path/to/graph.json
 ```
 
