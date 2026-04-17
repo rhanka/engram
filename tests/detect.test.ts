@@ -88,6 +88,18 @@ describe("detect", () => {
     expect(result.files.code).toHaveLength(1);
   });
 
+  it("skips current and legacy graphify state directories", () => {
+    mkdirSync(join(tmpDir, ".graphify"), { recursive: true });
+    mkdirSync(join(tmpDir, "graphify-out"), { recursive: true });
+    writeFileSync(join(tmpDir, ".graphify", "generated.ts"), "export const hidden = true;");
+    writeFileSync(join(tmpDir, "graphify-out", "generated.ts"), "export const legacy = true;");
+    writeFileSync(join(tmpDir, "main.ts"), "export const kept = true;");
+
+    const result = detect(tmpDir);
+
+    expect(result.files.code).toEqual([join(tmpDir, "main.ts")]);
+  });
+
   it("skips sensitive files", () => {
     writeFileSync(join(tmpDir, ".env"), "SECRET=xxx");
     writeFileSync(join(tmpDir, "credentials.json"), "{}");

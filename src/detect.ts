@@ -6,7 +6,12 @@ import {
 } from "node:fs";
 import { join, resolve, extname, basename, relative, sep, dirname } from "node:path";
 import { createHash } from "node:crypto";
-import { defaultManifestPath, resolveGraphifyPaths } from "./paths.js";
+import {
+  DEFAULT_GRAPHIFY_STATE_DIR,
+  LEGACY_GRAPHIFY_STATE_DIR,
+  defaultManifestPath,
+  resolveGraphifyPaths,
+} from "./paths.js";
 import { FileType } from "./types.js";
 import type { DetectionResult } from "./types.js";
 
@@ -170,6 +175,7 @@ const SKIP_DIRS = new Set([
   "venv", ".venv", "env", ".env", "node_modules", "__pycache__", ".git",
   "dist", "build", "target", "out", "site-packages", "lib64",
   ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox", ".eggs",
+  DEFAULT_GRAPHIFY_STATE_DIR, LEGACY_GRAPHIFY_STATE_DIR,
 ]);
 
 function isNoiseDir(part: string): boolean {

@@ -99,7 +99,7 @@ export async function buildProject(
   const rootResolved = resolve(root);
   const paths = resolveGraphifyPaths({ root: rootResolved, stateDir: options?.outputDir });
   const outputDir = paths.stateDir;
-  const detectionPath = paths.legacyRootScratch.detect;
+  const detectionPath = paths.scratch.detect;
   const manifestPath = paths.manifest;
   const reportPath = paths.report;
   const graphPath = paths.graph;

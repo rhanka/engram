@@ -47,10 +47,10 @@ describe("sanitizeLabel", () => {
 
 describe("validateGraphPath", () => {
   const tmpDir = join(tmpdir(), "graphify-test-security-" + Date.now());
-  const graphifyOut = join(tmpDir, "graphify-out");
+  const graphifyOut = join(tmpDir, ".graphify");
 
   it("rejects when base directory does not exist", () => {
-    expect(() => validateGraphPath("graphify-out/graph.json", join(tmpDir, "nope"))).toThrow("does not exist");
+    expect(() => validateGraphPath(".graphify/graph.json", join(tmpDir, "nope"))).toThrow("does not exist");
   });
 
   it("rejects path traversal", () => {
@@ -60,7 +60,7 @@ describe("validateGraphPath", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it("accepts valid path inside graphify-out", () => {
+  it("accepts valid path inside graphify state dir", () => {
     mkdirSync(graphifyOut, { recursive: true });
     writeFileSync(join(graphifyOut, "graph.json"), "{}");
     const result = validateGraphPath(join(graphifyOut, "graph.json"), graphifyOut);

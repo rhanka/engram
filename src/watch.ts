@@ -7,7 +7,11 @@
  */
 import { existsSync, mkdirSync, writeFileSync, unlinkSync } from "node:fs";
 import { resolve as pathResolve, extname, basename } from "node:path";
-import { DEFAULT_GRAPHIFY_STATE_DIR, resolveGraphifyPaths } from "./paths.js";
+import {
+  DEFAULT_GRAPHIFY_STATE_DIR,
+  LEGACY_GRAPHIFY_STATE_DIR,
+  resolveGraphifyPaths,
+} from "./paths.js";
 import {
   CODE_EXTENSIONS,
   DOC_EXTENSIONS,
@@ -44,6 +48,7 @@ export async function rebuildCode(
     codeFiles = codeFiles.filter(
       (f: string) =>
         !f.includes(DEFAULT_GRAPHIFY_STATE_DIR) &&
+        !f.includes(LEGACY_GRAPHIFY_STATE_DIR) &&
         !f.includes("__pycache__") &&
         !f.includes("node_modules"),
     );
@@ -181,7 +186,8 @@ export async function watch(
     ignored: [
       /node_modules/,
       /\.git/,
-      new RegExp(DEFAULT_GRAPHIFY_STATE_DIR),
+      /\.graphify/,
+      /graphify-out/,
     ],
   });
 

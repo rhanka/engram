@@ -120,6 +120,14 @@ Decisions for the first checkpoint:
 
 This keeps the first code lot behavior-preserving. It creates a seam for the later `.graphify/` switch without forcing the skill migration, README migration, and lifecycle metadata changes into the same patch.
 
+Implementation checkpoint after the second lot:
+
+- `.graphify/` becomes the default runtime state root for producers.
+- legacy `graphify-out/graph.json` remains a read fallback for implicit graph consumers such as serve, query, and benchmark.
+- no explicit migration command is introduced yet; fresh writes create `.graphify/`, while old users can still read existing `graphify-out/` graphs until the skill/docs migration catches up.
+- root-level `.graphify_detect.json` is no longer the standalone build default; runtime scratch paths move under the state root.
+- platform skill prose still needs its separate migration lot, because those files contain a much larger assistant-facing path contract.
+
 ### State root
 
 Move Graphify runtime state under a single hidden workspace directory:
@@ -458,7 +466,7 @@ This is a large but mechanical migration if the runtime path contract lands firs
 
 - add a central state-dir/path resolver in the runtime
 - stop duplicating path logic across pipeline, serve, security, watch, hooks, and skills
-- keep `graphify-out/` as default externally for one short compatibility window if needed
+- keep `graphify-out/` as a read fallback for one short compatibility window if needed
 
 ### Phase 2: `.graphify/` switch
 

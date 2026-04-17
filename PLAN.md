@@ -54,18 +54,18 @@
 
 ## Lot 2 - `.graphify/` Runtime Migration
 
-- [ ] Switch the default state root from `graphify-out/` to `.graphify/`
-- [ ] Move repo-root `.graphify_*.json` scratch files under `.graphify/`
-- [ ] Migrate:
-  - [ ] pipeline outputs
-  - [ ] cache storage
-  - [ ] transcript outputs
-  - [ ] converted Office-file sidecars
-  - [ ] watch/update markers
-  - [ ] MCP/default graph paths
-- [ ] Add a compatibility read window for legacy `graphify-out/` where it materially reduces breakage
-- [ ] Decide whether to provide an explicit migration command or do lazy migration on first run
-- [ ] Update tests that currently assert `graphify-out/...`
+- [x] Switch the default state root from `graphify-out/` to `.graphify/`
+- [x] Move repo-root `.graphify_*.json` scratch files under `.graphify/`
+- [x] Migrate:
+  - [x] pipeline outputs
+  - [x] cache storage
+  - [x] transcript outputs
+  - [x] converted Office-file sidecars
+  - [x] watch/update markers
+  - [x] MCP/default graph paths
+- [x] Add a compatibility read window for legacy `graphify-out/` where it materially reduces breakage
+- [x] Decide whether to provide an explicit migration command or do lazy migration on first run
+- [x] Update tests that currently assert `graphify-out/...`
 
 ## Lot 3 - Git Hook And Worktree Correctness
 

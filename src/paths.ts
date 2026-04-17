@@ -1,18 +1,20 @@
 /**
  * Central path contract for graphify-owned workspace state.
  *
- * The current public default remains graphify-out/. The next migration can
- * switch this module to .graphify/ without rediscovering hardcoded joins.
+ * The public default is now .graphify/. Legacy graphify-out/ paths are kept
+ * as read fallbacks for one compatibility window.
  */
+import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-export const DEFAULT_GRAPHIFY_STATE_DIR = "graphify-out";
-export const NEXT_GRAPHIFY_STATE_DIR = ".graphify";
+export const DEFAULT_GRAPHIFY_STATE_DIR = ".graphify";
+export const LEGACY_GRAPHIFY_STATE_DIR = "graphify-out";
+export const NEXT_GRAPHIFY_STATE_DIR = DEFAULT_GRAPHIFY_STATE_DIR;
 
 export interface GraphifyPathOptions {
   /** Workspace root. Defaults to the current process directory. */
   root?: string;
-  /** State directory relative to root, or absolute. Defaults to graphify-out. */
+  /** State directory relative to root, or absolute. Defaults to .graphify. */
   stateDir?: string;
 }
 
@@ -121,6 +123,25 @@ export function resolveGraphifyPaths(options: GraphifyPathOptions = {}): Graphif
 
 export function defaultGraphPath(root?: string): string {
   return resolveGraphifyPaths({ root }).graph;
+}
+
+export function legacyGraphPath(root?: string): string {
+  return resolveGraphifyPaths({ root, stateDir: LEGACY_GRAPHIFY_STATE_DIR }).graph;
+}
+
+/**
+ * Resolve a graph input path for read operations.
+ *
+ * Explicit user paths are respected. Implicit/default reads prefer .graphify,
+ * then fall back to legacy graphify-out if only the old artifact exists.
+ */
+export function resolveGraphInputPath(graphPath?: string, root?: string): string {
+  if (graphPath) return resolve(graphPath);
+  const current = defaultGraphPath(root);
+  if (existsSync(current)) return current;
+  const legacy = legacyGraphPath(root);
+  if (existsSync(legacy)) return legacy;
+  return current;
 }
 
 export function defaultManifestPath(root?: string): string {
