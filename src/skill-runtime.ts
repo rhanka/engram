@@ -25,7 +25,7 @@ import {
 } from "./graph.js";
 import { ingest, saveQueryResult } from "./ingest.js";
 import { generate } from "./report.js";
-import { defaultManifestPath } from "./paths.js";
+import { defaultManifestPath, resolveGraphifyPaths } from "./paths.js";
 import { augmentDetectionWithTranscripts } from "./transcribe.js";
 import type {
   DetectionResult,
@@ -310,7 +310,7 @@ function findBestMatchingNode(G: Graph, term: string): string | null {
   return best?.nodeId ?? null;
 }
 
-function runtimeInfo(): Record<string, string> {
+function runtimeInfo(): Record<string, unknown> {
   return {
     runtime: "typescript",
     version: getVersion(),
@@ -318,6 +318,7 @@ function runtimeInfo(): Record<string, string> {
     script: __filename,
     module: join(__dirname, "index.js"),
     cli: join(__dirname, "cli.js"),
+    paths: resolveGraphifyPaths(),
   };
 }
 
@@ -330,6 +331,14 @@ async function main(): Promise<void> {
     .description("Print the runtime metadata for the Codex TypeScript skill")
     .action(() => {
       console.log(JSON.stringify(runtimeInfo(), null, 2));
+    });
+
+  program
+    .command("paths")
+    .description("Print the graphify state path contract for a workspace root")
+    .argument("[root]", "Workspace root", ".")
+    .action((root) => {
+      console.log(JSON.stringify(resolveGraphifyPaths({ root: resolve(root) }), null, 2));
     });
 
   program
@@ -806,7 +815,7 @@ async function main(): Promise<void> {
       const extraction = ensureExtractionShape(readJson<Partial<Extraction>>(opts.extract));
       const G = buildFromJson(extraction, { directed: shouldBuildDirected(opts) });
       toCypher(G, resolve(opts.out));
-      console.log("cypher.txt written - import with: cypher-shell < graphify-out/cypher.txt");
+      console.log("cypher.txt written - import with: cypher-shell < .graphify/cypher.txt");
     });
 
   program

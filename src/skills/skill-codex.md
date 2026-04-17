@@ -8,7 +8,7 @@ trigger: $graphify
 
 Turn any folder of files into a navigable knowledge graph with community detection, an honest audit trail, and three outputs: interactive HTML, GraphRAG-ready JSON, and a plain-language `GRAPH_REPORT.md`.
 
-This Codex skill is **TypeScript-backed**. Before calling the run successful, confirm [graphify-out/.graphify_runtime.json](graphify-out/.graphify_runtime.json) exists and contains `"runtime": "typescript"`.
+This Codex skill is **TypeScript-backed**. Before calling the run successful, confirm [.graphify/.graphify_runtime.json](.graphify/.graphify_runtime.json) exists and contains `"runtime": "typescript"`.
 
 ## Usage
 
@@ -23,7 +23,7 @@ $graphify <path> --cluster-only                       # re-run clustering/report
 $graphify <path> --no-viz                             # skip HTML generation
 $graphify <path> --svg                                # also export graph.svg
 $graphify <path> --graphml                            # also export graph.graphml
-$graphify <path> --neo4j                              # export graphify-out/cypher.txt
+$graphify <path> --neo4j                              # export .graphify/cypher.txt
 $graphify <path> --neo4j-push bolt://localhost:7687   # push directly to Neo4j
 $graphify <path> --mcp                                # start MCP stdio server for agent access
 $graphify <path> --watch                              # watch folder, auto-rebuild on code changes
@@ -74,14 +74,14 @@ GRAPHIFY_CLI=$("$NODE_BIN" -e "const fs=require('fs'); console.log(fs.realpathSy
 GRAPHIFY_DIST_DIR=$("$NODE_BIN" -e "const path=require('path'); console.log(path.dirname(process.argv[1]));" "$GRAPHIFY_CLI")
 GRAPHIFY_RUNTIME="$GRAPHIFY_DIST_DIR/skill-runtime.js"
 
-mkdir -p graphify-out
-printf '%s' "$NODE_BIN" > graphify-out/.graphify_node
-printf '%s' "$GRAPHIFY_RUNTIME" > graphify-out/.graphify_runtime_script
-"$NODE_BIN" "$GRAPHIFY_RUNTIME" runtime-info > graphify-out/.graphify_runtime.json
+mkdir -p .graphify
+printf '%s' "$NODE_BIN" > .graphify/.graphify_node
+printf '%s' "$GRAPHIFY_RUNTIME" > .graphify/.graphify_runtime_script
+"$NODE_BIN" "$GRAPHIFY_RUNTIME" runtime-info > .graphify/.graphify_runtime.json
 
 "$NODE_BIN" -e "
   const fs = require('fs');
-  const runtime = JSON.parse(fs.readFileSync('graphify-out/.graphify_runtime.json', 'utf8'));
+  const runtime = JSON.parse(fs.readFileSync('.graphify/.graphify_runtime.json', 'utf8'));
   if (runtime.runtime !== 'typescript') {
     console.error('ERROR: expected TypeScript runtime, got', runtime.runtime);
     process.exit(1);
@@ -94,7 +94,7 @@ If this step fails, stop and tell the user exactly why. Do not continue with a P
 **In every subsequent bash block, use:**
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" ...
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" ...
 ```
 
 That keeps the run pinned to the resolved TypeScript runtime.
@@ -102,7 +102,7 @@ That keeps the run pinned to the resolved TypeScript runtime.
 ### Step 2 - Detect files
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" detect "INPUT_PATH" --out graphify-out/.graphify_detect.json
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" detect "INPUT_PATH" --out .graphify/.graphify_detect.json
 ```
 
 Replace `INPUT_PATH` with the actual path the user provided. Do not print the raw JSON. Read it silently and present a clean summary:
@@ -137,17 +137,17 @@ Always run this step. If `files.video` is empty, it simply writes an unchanged s
 GRAPHIFY_WHISPER_FLAG=""
 if the original invocation included --whisper-model <name>, set GRAPHIFY_WHISPER_FLAG="--whisper-model <name>"
 
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" prepare-semantic-detect \
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" prepare-semantic-detect \
   $GRAPHIFY_WHISPER_FLAG \
-  --detect graphify-out/.graphify_detect.json \
-  --out graphify-out/.graphify_detect_semantic.json \
-  --transcripts-out graphify-out/.graphify_transcripts.json \
-  --analysis graphify-out/.graphify_analysis.json
+  --detect .graphify/.graphify_detect.json \
+  --out .graphify/.graphify_detect_semantic.json \
+  --transcripts-out .graphify/.graphify_transcripts.json \
+  --analysis .graphify/.graphify_analysis.json
 ```
 
 After this step:
-- use [graphify-out/.graphify_detect_semantic.json](graphify-out/.graphify_detect_semantic.json) for semantic cache and semantic extraction
-- keep using [graphify-out/.graphify_detect.json](graphify-out/.graphify_detect.json) for manifest, cost, and final reporting
+- use [.graphify/.graphify_detect_semantic.json](.graphify/.graphify_detect_semantic.json) for semantic cache and semantic extraction
+- keep using [.graphify/.graphify_detect.json](.graphify/.graphify_detect.json) for manifest, cost, and final reporting
 - the runtime prints `Transcribed N video file(s) -> treating as docs`
 
 ### Step 3 - Extract entities and relationships
@@ -170,9 +170,9 @@ Run Part A and Part B in parallel.
 #### Part A - Structural extraction for code files
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" extract-ast \
-  --detect graphify-out/.graphify_detect.json \
-  --out graphify-out/.graphify_ast.json
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" extract-ast \
+  --detect .graphify/.graphify_detect.json \
+  --out .graphify/.graphify_ast.json
 ```
 
 #### Part B - Semantic extraction with Codex
@@ -186,30 +186,30 @@ Use this rule:
 ##### Step B0 - Check semantic extraction cache first
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" check-semantic-cache \
-  --detect graphify-out/.graphify_detect_semantic.json \
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" check-semantic-cache \
+  --detect .graphify/.graphify_detect_semantic.json \
   --root . \
-  --cached-out graphify-out/.graphify_cached.json \
-  --uncached-out graphify-out/.graphify_uncached.txt
+  --cached-out .graphify/.graphify_cached.json \
+  --uncached-out .graphify/.graphify_uncached.txt
 ```
 
-Only extract files listed in [graphify-out/.graphify_uncached.txt](graphify-out/.graphify_uncached.txt). If that file is empty, skip straight to Part C.
+Only extract files listed in [.graphify/.graphify_uncached.txt](.graphify/.graphify_uncached.txt). If that file is empty, skip straight to Part C.
 
 ##### Step B1 - Split uncached files into chunks
 
-Load the file list from [graphify-out/.graphify_uncached.txt](graphify-out/.graphify_uncached.txt). Split into chunks of 20-25 files each. Put each image in its own chunk. Keep files from the same directory together when possible.
+Load the file list from [.graphify/.graphify_uncached.txt](.graphify/.graphify_uncached.txt). Split into chunks of 20-25 files each. Put each image in its own chunk. Keep files from the same directory together when possible.
 
 ##### Step B2 - Choose local extraction vs subagents
 
 If there is exactly one chunk and it contains 20 files or fewer:
 - stay in the main Codex thread
 - read those files directly
-- produce [graphify-out/.graphify_semantic_new.json](graphify-out/.graphify_semantic_new.json) yourself, using the exact schema below
+- produce [.graphify/.graphify_semantic_new.json](.graphify/.graphify_semantic_new.json) yourself, using the exact schema below
 
 If there are multiple chunks:
 - use `spawn_agent` once per chunk
 - dispatch them all in the same response so they run in parallel
-- collect each result, validate JSON, and write the merged result to [graphify-out/.graphify_semantic_new.json](graphify-out/.graphify_semantic_new.json)
+- collect each result, validate JSON, and write the merged result to [.graphify/.graphify_semantic_new.json](.graphify/.graphify_semantic_new.json)
 
 Use this extraction prompt, whether you apply it locally or inside subagents:
 
@@ -242,9 +242,9 @@ Output exactly:
 
 ##### Step B3 - Finalize the build
 
-If you used subagents, wait for all of them, parse each result as JSON, skip failed chunks with a warning, and merge the successful chunks into [graphify-out/.graphify_semantic_new.json](graphify-out/.graphify_semantic_new.json). If more than half the chunks fail, stop.
+If you used subagents, wait for all of them, parse each result as JSON, skip failed chunks with a warning, and merge the successful chunks into [.graphify/.graphify_semantic_new.json](.graphify/.graphify_semantic_new.json). If more than half the chunks fail, stop.
 
-If you extracted locally, write your final JSON directly to [graphify-out/.graphify_semantic_new.json](graphify-out/.graphify_semantic_new.json).
+If you extracted locally, write your final JSON directly to [.graphify/.graphify_semantic_new.json](.graphify/.graphify_semantic_new.json).
 
 Then run one finalization command. It will:
 - save fresh semantic results into the cache
@@ -255,39 +255,39 @@ Then run one finalization command. It will:
 - optionally write `graph.html` if you pass `--html-out`
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" finalize-build \
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" finalize-build \
   $GRAPHIFY_DIRECTED_FLAG \
-  --detect graphify-out/.graphify_detect.json \
-  --ast graphify-out/.graphify_ast.json \
-  --cached graphify-out/.graphify_cached.json \
-  --semantic-new graphify-out/.graphify_semantic_new.json \
+  --detect .graphify/.graphify_detect.json \
+  --ast .graphify/.graphify_ast.json \
+  --cached .graphify/.graphify_cached.json \
+  --semantic-new .graphify/.graphify_semantic_new.json \
   --root "INPUT_PATH" \
-  --graph-out graphify-out/graph.json \
-  --report-out graphify-out/GRAPH_REPORT.md \
-  --analysis-out graphify-out/.graphify_analysis.json \
-  --cost-out graphify-out/cost.json \
-  --html-out graphify-out/graph.html
+  --graph-out .graphify/graph.json \
+  --report-out .graphify/GRAPH_REPORT.md \
+  --analysis-out .graphify/.graphify_analysis.json \
+  --cost-out .graphify/cost.json \
+  --html-out .graphify/graph.html
 ```
 
 If this step fails because the graph is empty, stop and tell the user exactly that.
 
 ### Step 5 - Label communities
 
-Read [graphify-out/.graphify_analysis.json](graphify-out/.graphify_analysis.json). For each community key, choose a 2-5 word plain-language name.
+Read [.graphify/.graphify_analysis.json](.graphify/.graphify_analysis.json). For each community key, choose a 2-5 word plain-language name.
 
-Write those labels to [graphify-out/.graphify_labels.json](graphify-out/.graphify_labels.json), then regenerate the labeled artifacts:
+Write those labels to [.graphify/.graphify_labels.json](.graphify/.graphify_labels.json), then regenerate the labeled artifacts:
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" write-labeled-report \
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" write-labeled-report \
   $GRAPHIFY_DIRECTED_FLAG \
-  --extract graphify-out/.graphify_extract.json \
-  --detect graphify-out/.graphify_detect.json \
-  --analysis graphify-out/.graphify_analysis.json \
-  --labels graphify-out/.graphify_labels.json \
+  --extract .graphify/.graphify_extract.json \
+  --detect .graphify/.graphify_detect.json \
+  --analysis .graphify/.graphify_analysis.json \
+  --labels .graphify/.graphify_labels.json \
   --root "INPUT_PATH" \
-  --report-out graphify-out/GRAPH_REPORT.md \
-  --graph-out graphify-out/graph.json \
-  --html-out graphify-out/graph.html
+  --report-out .graphify/GRAPH_REPORT.md \
+  --graph-out .graphify/graph.json \
+  --html-out .graphify/graph.html
 ```
 
 ### Step 6 - Export extras
@@ -297,51 +297,51 @@ If `--no-viz` was given, skip HTML generation during finalization and omit `--ht
 If you intentionally skipped `--html-out` in finalization and still want HTML afterwards, run:
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" export-html \
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" export-html \
   $GRAPHIFY_DIRECTED_FLAG \
-  --extract graphify-out/.graphify_extract.json \
-  --analysis graphify-out/.graphify_analysis.json \
-  --labels graphify-out/.graphify_labels.json \
-  --out graphify-out/graph.html
+  --extract .graphify/.graphify_extract.json \
+  --analysis .graphify/.graphify_analysis.json \
+  --labels .graphify/.graphify_labels.json \
+  --out .graphify/graph.html
 ```
 
 If `--svg` was requested:
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" export-svg \
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" export-svg \
   $GRAPHIFY_DIRECTED_FLAG \
-  --extract graphify-out/.graphify_extract.json \
-  --analysis graphify-out/.graphify_analysis.json \
-  --labels graphify-out/.graphify_labels.json \
-  --out graphify-out/graph.svg
+  --extract .graphify/.graphify_extract.json \
+  --analysis .graphify/.graphify_analysis.json \
+  --labels .graphify/.graphify_labels.json \
+  --out .graphify/graph.svg
 ```
 
 If `--graphml` was requested:
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" export-graphml \
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" export-graphml \
   $GRAPHIFY_DIRECTED_FLAG \
-  --extract graphify-out/.graphify_extract.json \
-  --analysis graphify-out/.graphify_analysis.json \
-  --out graphify-out/graph.graphml
+  --extract .graphify/.graphify_extract.json \
+  --analysis .graphify/.graphify_analysis.json \
+  --out .graphify/graph.graphml
 ```
 
 If `--neo4j` was requested:
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" export-cypher \
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" export-cypher \
   $GRAPHIFY_DIRECTED_FLAG \
-  --extract graphify-out/.graphify_extract.json \
-  --out graphify-out/cypher.txt
+  --extract .graphify/.graphify_extract.json \
+  --out .graphify/cypher.txt
 ```
 
 If `--neo4j-push <uri>` was requested, ask for credentials if needed, then run:
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" push-neo4j \
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" push-neo4j \
   $GRAPHIFY_DIRECTED_FLAG \
-  --extract graphify-out/.graphify_extract.json \
-  --analysis graphify-out/.graphify_analysis.json \
+  --extract .graphify/.graphify_extract.json \
+  --analysis .graphify/.graphify_analysis.json \
   --uri "NEO4J_URI" \
   --user "NEO4J_USER" \
   --password "NEO4J_PASSWORD"
@@ -350,13 +350,13 @@ $(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)
 If `--mcp` was requested, use the public TypeScript CLI:
 
 ```bash
-graphify serve graphify-out/graph.json
+graphify serve .graphify/graph.json
 ```
 
 To register it in Codex:
 
 ```bash
-codex mcp add graphify -- graphify serve /absolute/path/to/graphify-out/graph.json
+codex mcp add graphify -- graphify serve /absolute/path/to/.graphify/graph.json
 ```
 
 If `--watch` was requested, use the public TypeScript watcher:
@@ -370,27 +370,27 @@ graphify watch "INPUT_PATH" --debounce 3
 If `total_words > 5000`, run:
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" benchmark \
-  --graph graphify-out/graph.json \
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" benchmark \
+  --graph .graphify/graph.json \
   --corpus-words TOTAL_WORDS
 ```
 
 Clean up temp files:
 
 ```bash
-rm -f graphify-out/.graphify_detect.json graphify-out/.graphify_detect_semantic.json graphify-out/.graphify_transcripts.json graphify-out/.graphify_ast.json graphify-out/.graphify_cached.json graphify-out/.graphify_uncached.txt graphify-out/.graphify_semantic_new.json graphify-out/.graphify_analysis.json graphify-out/.graphify_labels.json
-rm -f graphify-out/.needs_update 2>/dev/null || true
+rm -f .graphify/.graphify_detect.json .graphify/.graphify_detect_semantic.json .graphify/.graphify_transcripts.json .graphify/.graphify_ast.json .graphify/.graphify_cached.json .graphify/.graphify_uncached.txt .graphify/.graphify_semantic_new.json .graphify/.graphify_analysis.json .graphify/.graphify_labels.json
+rm -f .graphify/needs_update 2>/dev/null || true
 ```
 
 Tell the user:
 
 ```text
-Graph complete. Outputs in PATH_TO_DIR/graphify-out/
+Graph complete. Outputs in PATH_TO_DIR/.graphify/
 
   graph.html                 - interactive graph
   GRAPH_REPORT.md            - audit report
   graph.json                 - raw graph data
-  .graphify_runtime.json     - runtime proof for this Codex run
+  .graphify/.graphify_runtime.json     - runtime proof for this Codex run
 ```
 
 Then paste only these sections from `GRAPH_REPORT.md`:
@@ -400,7 +400,7 @@ Then paste only these sections from `GRAPH_REPORT.md`:
 
 End with:
 
-> "The runtime proof is in `graphify-out/.graphify_runtime.json` and should say `typescript`. Want me to trace one of the suggested questions?"
+> "The runtime proof is in `.graphify/.graphify_runtime.json` and should say `typescript`. Want me to trace one of the suggested questions?"
 
 ## For --update
 
@@ -409,10 +409,10 @@ Use this when files changed since the last run.
 First detect only the changed files:
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" detect-incremental \
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" detect-incremental \
   "INPUT_PATH" \
-  --manifest graphify-out/manifest.json \
-  --out graphify-out/.graphify_incremental.json
+  --manifest .graphify/manifest.json \
+  --out .graphify/.graphify_incremental.json
 ```
 
 If `new_total == 0`, stop with `No files changed since last run. Nothing to update.`
@@ -422,7 +422,7 @@ Then determine whether all changed files are code files:
 ```bash
 node -e "
   const fs = require('fs');
-  const data = JSON.parse(fs.readFileSync('graphify-out/.graphify_incremental.json', 'utf8'));
+  const data = JSON.parse(fs.readFileSync('.graphify/.graphify_incremental.json', 'utf8'));
   const codeExts = new Set(['.py','.ts','.tsx','.js','.jsx','.go','.rs','.java','.cpp','.cc','.cxx','.c','.h','.hpp','.rb','.swift','.kt','.kts','.cs','.scala','.php','.lua','.zig','.ps1','.ex','.exs','.m','.mm','.jl']);
   const changed = Object.values(data.new_files || {}).flat();
   const codeOnly = changed.length > 0 && changed.every((file) => codeExts.has(require('path').extname(file).toLowerCase()));
@@ -436,60 +436,60 @@ If code-only:
 - write an empty semantic extraction JSON:
 
 ```bash
-cat > graphify-out/.graphify_semantic.json <<'EOF'
+cat > .graphify/.graphify_semantic.json <<'EOF'
 {"nodes":[],"edges":[],"hyperedges":[],"input_tokens":0,"output_tokens":0}
 EOF
 ```
 
 If not code-only:
-- run the full Step 3 flow again, but use [graphify-out/.graphify_incremental.json](graphify-out/.graphify_incremental.json) as the detection file
+- run the full Step 3 flow again, but use [.graphify/.graphify_incremental.json](.graphify/.graphify_incremental.json) as the detection file
 - always prepare the semantic detection file first. It is a safe no-op if `new_files.video` is empty:
 
 ```bash
 GRAPHIFY_WHISPER_FLAG=""
 if the original invocation included --whisper-model <name>, set GRAPHIFY_WHISPER_FLAG="--whisper-model <name>"
 
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" prepare-semantic-detect \
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" prepare-semantic-detect \
   $GRAPHIFY_WHISPER_FLAG \
-  --detect graphify-out/.graphify_incremental.json \
-  --out graphify-out/.graphify_incremental_semantic.json \
-  --transcripts-out graphify-out/.graphify_transcripts.json \
-  --analysis graphify-out/.graphify_analysis.json \
+  --detect .graphify/.graphify_incremental.json \
+  --out .graphify/.graphify_incremental_semantic.json \
+  --transcripts-out .graphify/.graphify_transcripts.json \
+  --analysis .graphify/.graphify_analysis.json \
   --incremental
 ```
 
-- in update mode, wherever Step 3 normally references [graphify-out/.graphify_detect_semantic.json](graphify-out/.graphify_detect_semantic.json), use [graphify-out/.graphify_incremental_semantic.json](graphify-out/.graphify_incremental_semantic.json) instead
+- in update mode, wherever Step 3 normally references [.graphify/.graphify_detect_semantic.json](.graphify/.graphify_detect_semantic.json), use [.graphify/.graphify_incremental_semantic.json](.graphify/.graphify_incremental_semantic.json) instead
 - for AST, call `extract-ast --incremental`
-- for semantic cache, call `check-semantic-cache --incremental` against [graphify-out/.graphify_incremental_semantic.json](graphify-out/.graphify_incremental_semantic.json)
+- for semantic cache, call `check-semantic-cache --incremental` against [.graphify/.graphify_incremental_semantic.json](.graphify/.graphify_incremental_semantic.json)
 
 Before merging, keep a copy of the old graph:
 
 ```bash
-cp graphify-out/graph.json graphify-out/.graphify_old.json
+cp .graphify/graph.json .graphify/.graphify_old.json
 ```
 
 Then finalize the update in one command:
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" finalize-update \
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" finalize-update \
   $GRAPHIFY_DIRECTED_FLAG \
-  --detect graphify-out/.graphify_incremental.json \
-  --ast graphify-out/.graphify_ast.json \
-  --cached graphify-out/.graphify_cached.json \
-  --semantic-new graphify-out/.graphify_semantic_new.json \
-  --existing-graph graphify-out/.graphify_old.json \
+  --detect .graphify/.graphify_incremental.json \
+  --ast .graphify/.graphify_ast.json \
+  --cached .graphify/.graphify_cached.json \
+  --semantic-new .graphify/.graphify_semantic_new.json \
+  --existing-graph .graphify/.graphify_old.json \
   --root "INPUT_PATH" \
-  --graph-out graphify-out/graph.json \
-  --report-out graphify-out/GRAPH_REPORT.md \
-  --analysis-out graphify-out/.graphify_analysis.json \
-  --cost-out graphify-out/cost.json \
-  --html-out graphify-out/graph.html
+  --graph-out .graphify/graph.json \
+  --report-out .graphify/GRAPH_REPORT.md \
+  --analysis-out .graphify/.graphify_analysis.json \
+  --cost-out .graphify/cost.json \
+  --html-out .graphify/graph.html
 ```
 
 Then run Steps 5-7 again. Clean up:
 
 ```bash
-rm -f graphify-out/.graphify_old.json graphify-out/.graphify_incremental.json graphify-out/.graphify_incremental_semantic.json graphify-out/.graphify_transcripts.json
+rm -f .graphify/.graphify_old.json .graphify/.graphify_incremental.json .graphify/.graphify_incremental_semantic.json .graphify/.graphify_transcripts.json
 ```
 
 ## For --cluster-only
@@ -497,26 +497,26 @@ rm -f graphify-out/.graphify_old.json graphify-out/.graphify_incremental.json gr
 Skip detection and extraction. Re-run clustering/reporting from the existing graph:
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" cluster-only \
-  --graph graphify-out/graph.json \
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" cluster-only \
+  --graph .graphify/graph.json \
   --root "INPUT_PATH" \
-  --graph-out graphify-out/graph.json \
-  --report-out graphify-out/GRAPH_REPORT.md \
-  --analysis-out graphify-out/.graphify_analysis.json
+  --graph-out .graphify/graph.json \
+  --report-out .graphify/GRAPH_REPORT.md \
+  --analysis-out .graphify/.graphify_analysis.json
 ```
 
 Then run Steps 5-7 again.
 
 ## For $graphify query
 
-First check that [graphify-out/graph.json](graphify-out/graph.json) exists. If not, stop and tell the user to run `$graphify <path>` first.
+First check that [.graphify/graph.json](.graphify/graph.json) exists. If not, stop and tell the user to run `$graphify <path>` first.
 
 Use the public TypeScript CLI:
 
 ```bash
-graphify query "QUESTION" --graph graphify-out/graph.json
-graphify query "QUESTION" --dfs --graph graphify-out/graph.json
-graphify query "QUESTION" --budget 1500 --graph graphify-out/graph.json
+graphify query "QUESTION" --graph .graphify/graph.json
+graphify query "QUESTION" --dfs --graph .graphify/graph.json
+graphify query "QUESTION" --budget 1500 --graph .graphify/graph.json
 ```
 
 Answer using only what the graph traversal shows. If the graph lacks the answer, say so.
@@ -524,10 +524,10 @@ Answer using only what the graph traversal shows. If the graph lacks the answer,
 After answering, save the Q&A back into the graph memory:
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" save-query-result \
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" save-query-result \
   --question "QUESTION" \
   --answer "ANSWER" \
-  --memory-dir graphify-out/memory \
+  --memory-dir .graphify/memory \
   --query-type query \
   --source-nodes-json '["NODE_A","NODE_B"]'
 ```
@@ -535,8 +535,8 @@ $(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)
 ## For $graphify path
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" path \
-  --graph graphify-out/graph.json \
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" path \
+  --graph .graphify/graph.json \
   "NODE_A" \
   "NODE_B"
 ```
@@ -546,8 +546,8 @@ Explain the path in plain language, then save it with `save-query-result`.
 ## For $graphify explain
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" explain \
-  --graph graphify-out/graph.json \
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" explain \
+  --graph .graphify/graph.json \
   "NODE_NAME"
 ```
 
@@ -556,7 +556,7 @@ Write a 3-5 sentence explanation, then save it with `save-query-result`.
 ## For $graphify add
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" ingest \
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" ingest \
   "URL" \
   --target-dir ./raw \
   --author "AUTHOR" \
@@ -576,3 +576,10 @@ graphify watch "INPUT_PATH" --debounce 3
 Behavior:
 - code-only changes: rebuild immediately, no LLM needed
 - docs, papers, images: the watcher marks that a semantic refresh is needed, then you should run `$graphify --update`
+
+## Lifecycle State
+
+- Runtime state lives under `.graphify/`; do not create legacy visible state directories.
+- Use `.graphify/wiki/index.md` first when present, then `.graphify/GRAPH_REPORT.md`, before searching raw files.
+- If `.graphify/needs_update` exists or `.graphify/branch.json` has `"stale": true`, tell the user the graph is stale and run the platform graphify command with `--update` before relying on semantic results.
+- Git hooks may mark stale state after branch switches, merges, and rewrites. Never delete `.graphify/` automatically; use `graphify state prune` only as a non-destructive cleanup preview.

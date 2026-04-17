@@ -106,8 +106,8 @@ const SETTINGS_HOOK = {
     {
       type: "command",
       command:
-        '[ -f graphify-out/graph.json ] && ' +
-        "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"graphify: Knowledge graph exists. Read graphify-out/GRAPH_REPORT.md for god nodes and community structure before searching raw files.\"}}' " +
+        '[ -f .graphify/graph.json ] && ' +
+        "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"graphify: Knowledge graph exists. Read .graphify/GRAPH_REPORT.md for god nodes and community structure before searching raw files.\"}}' " +
         '|| true',
     },
   ],
@@ -122,21 +122,23 @@ const SKILL_REGISTRATION =
 
 const CLAUDE_MD_SECTION = `## graphify
 
-This project has a graphify knowledge graph at graphify-out/.
+This project has a graphify knowledge graph at .graphify/.
 
 Rules:
-- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
-- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
+- Before answering architecture or codebase questions, read .graphify/GRAPH_REPORT.md for god nodes and community structure
+- If .graphify/wiki/index.md exists, navigate it instead of reading raw files
+- If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run /graphify . --update when appropriate
 - After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
 `;
 
 const GEMINI_MD_SECTION = `## graphify
 
-This project has a graphify knowledge graph at graphify-out/.
+This project has a graphify knowledge graph at .graphify/.
 
 Rules:
-- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
-- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
+- Before answering architecture or codebase questions, read .graphify/GRAPH_REPORT.md for god nodes and community structure
+- If .graphify/wiki/index.md exists, navigate it instead of reading raw files
+- If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run /graphify . --update when appropriate
 - In Gemini CLI, the reliable explicit custom command is \`/graphify ...\`
 - If the user asks to build, update, query, path, or explain the graph, use the installed \`/graphify\` custom command or the configured \`graphify\` MCP server instead of ad-hoc file traversal
 - After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
@@ -144,7 +146,7 @@ Rules:
 
 const GEMINI_MCP_SERVER = {
   command: "graphify",
-  args: ["serve", "graphify-out/graph.json"],
+  args: ["serve", ".graphify/graph.json"],
   trust: false,
   description: "graphify knowledge graph MCP server",
 };
@@ -161,11 +163,11 @@ export const GraphifyPlugin = async ({ directory }) => {
   return {
     "tool.execute.before": async (input, output) => {
       if (reminded) return;
-      if (!existsSync(join(directory, "graphify-out", "graph.json"))) return;
+      if (!existsSync(join(directory, ".graphify", "graph.json"))) return;
 
       if (input.tool === "bash") {
         output.args.command =
-          'echo "[graphify] Knowledge graph available. Read graphify-out/GRAPH_REPORT.md for god nodes and architecture context before searching files." && ' +
+          'echo "[graphify] Knowledge graph available. Read .graphify/GRAPH_REPORT.md for god nodes and architecture context before searching files." && ' +
           output.args.command;
         reminded = true;
       }
@@ -181,10 +183,11 @@ description: graphify knowledge graph context
 alwaysApply: true
 ---
 
-This project has a graphify knowledge graph at graphify-out/.
+This project has a graphify knowledge graph at .graphify/.
 
-- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
-- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
+- Before answering architecture or codebase questions, read .graphify/GRAPH_REPORT.md for god nodes and community structure
+- If .graphify/wiki/index.md exists, navigate it instead of reading raw files
+- If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run /graphify . --update when appropriate
 - After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
 `;
 
@@ -205,24 +208,24 @@ node -e "
 const fs = require('fs');
 const { checkSemanticCache } = require('graphifyy');
 
-const detect = JSON.parse(fs.readFileSync('graphify-out/.graphify_detect.json', 'utf-8'));
+const detect = JSON.parse(fs.readFileSync('.graphify/.graphify_detect.json', 'utf-8'));
 const allFiles = Object.values(detect.files).flat();
 
 const [cachedNodes, cachedEdges, cachedHyperedges, uncached] = checkSemanticCache(allFiles);
 
 if (cachedNodes.length || cachedEdges.length || cachedHyperedges.length) {
-    fs.writeFileSync('graphify-out/.graphify_cached.json', JSON.stringify({nodes: cachedNodes, edges: cachedEdges, hyperedges: cachedHyperedges}));
+    fs.writeFileSync('.graphify/.graphify_cached.json', JSON.stringify({nodes: cachedNodes, edges: cachedEdges, hyperedges: cachedHyperedges}));
 }
-fs.writeFileSync('graphify-out/.graphify_uncached.txt', uncached.join('\\n'));
+fs.writeFileSync('.graphify/.graphify_uncached.txt', uncached.join('\\n'));
 console.log(\`Cache: \${allFiles.length - uncached.length} files hit, \${uncached.length} files need extraction\`);
 "
 \`\`\`
 
-Only extract files listed in \`graphify-out/.graphify_uncached.txt\`. If all files are cached, skip to Part C directly.
+Only extract files listed in \`.graphify/.graphify_uncached.txt\`. If all files are cached, skip to Part C directly.
 
 **Step B1 - Split into chunks**
 
-Load files from \`graphify-out/.graphify_uncached.txt\`. Split them into logical batches of 20-25 files, but process them sequentially on Aider. Keep files from the same directory together. Each image still deserves focused attention because vision context is expensive.
+Load files from \`.graphify/.graphify_uncached.txt\`. Split them into logical batches of 20-25 files, but process them sequentially on Aider. Keep files from the same directory together. Each image still deserves focused attention because vision context is expensive.
 
 **Step B2 - Sequential extraction (Aider)**
 
@@ -242,7 +245,7 @@ Process each uncached file one at a time. For each file:
    - \`confidence_score\` is REQUIRED on every edge: EXTRACTED=1.0, INFERRED=0.6-0.9, AMBIGUOUS=0.1-0.3
 3. Accumulate the results across all files.
 
-Write the accumulated result to \`graphify-out/.graphify_semantic_new.json\` using this exact schema:
+Write the accumulated result to \`.graphify/.graphify_semantic_new.json\` using this exact schema:
 
 \`\`\`json
 {"nodes":[{"id":"filestem_entityname","label":"Human Readable Name","file_type":"code|document|paper|image","source_file":"relative/path","source_location":null,"source_url":null,"captured_at":null,"author":null,"contributor":null}],"edges":[{"source":"node_id","target":"node_id","relation":"calls|implements|references|cites|conceptually_related_to|shares_data_with|semantically_similar_to|rationale_for","confidence":"EXTRACTED|INFERRED|AMBIGUOUS","confidence_score":1.0,"source_file":"relative/path","source_location":null,"weight":1.0}],"hyperedges":[{"id":"snake_case_id","label":"Human Readable Label","nodes":["node_id1","node_id2","node_id3"],"relation":"participate_in|implement|form","confidence":"EXTRACTED|INFERRED","confidence_score":0.75,"source_file":"relative/path"}],"input_tokens":0,"output_tokens":0}
@@ -259,20 +262,20 @@ node -e "
 const fs = require('fs');
 const { saveSemanticCache } = require('graphifyy');
 
-const raw = fs.existsSync('graphify-out/.graphify_semantic_new.json') ? JSON.parse(fs.readFileSync('graphify-out/.graphify_semantic_new.json', 'utf-8')) : {nodes:[],edges:[],hyperedges:[]};
+const raw = fs.existsSync('.graphify/.graphify_semantic_new.json') ? JSON.parse(fs.readFileSync('.graphify/.graphify_semantic_new.json', 'utf-8')) : {nodes:[],edges:[],hyperedges:[]};
 const saved = saveSemanticCache(raw.nodes || [], raw.edges || [], raw.hyperedges || []);
 console.log(\`Cached \${saved} files\`);
 "
 \`\`\`
 
-Merge cached + new results into \`graphify-out/.graphify_semantic.json\`:
+Merge cached + new results into \`.graphify/.graphify_semantic.json\`:
 
 \`\`\`bash
 node -e "
 const fs = require('fs');
 
-const cached = fs.existsSync('graphify-out/.graphify_cached.json') ? JSON.parse(fs.readFileSync('graphify-out/.graphify_cached.json', 'utf-8')) : {nodes:[],edges:[],hyperedges:[]};
-const fresh = fs.existsSync('graphify-out/.graphify_semantic_new.json') ? JSON.parse(fs.readFileSync('graphify-out/.graphify_semantic_new.json', 'utf-8')) : {nodes:[],edges:[],hyperedges:[]};
+const cached = fs.existsSync('.graphify/.graphify_cached.json') ? JSON.parse(fs.readFileSync('.graphify/.graphify_cached.json', 'utf-8')) : {nodes:[],edges:[],hyperedges:[]};
+const fresh = fs.existsSync('.graphify/.graphify_semantic_new.json') ? JSON.parse(fs.readFileSync('.graphify/.graphify_semantic_new.json', 'utf-8')) : {nodes:[],edges:[],hyperedges:[]};
 
 const allNodes = [...cached.nodes, ...(fresh.nodes || [])];
 const allEdges = [...cached.edges, ...(fresh.edges || [])];
@@ -286,7 +289,7 @@ for (const node of allNodes) {
   dedupedNodes.push(node);
 }
 
-fs.writeFileSync('graphify-out/.graphify_semantic.json', JSON.stringify({
+fs.writeFileSync('.graphify/.graphify_semantic.json', JSON.stringify({
   nodes: dedupedNodes,
   edges: allEdges,
   hyperedges: allHyperedges,
@@ -298,7 +301,7 @@ console.log(\`Extraction complete - \${dedupedNodes.length} nodes, \${allEdges.l
 "
 \`\`\`
 
-Clean up temp files: \`rm -f graphify-out/.graphify_cached.json graphify-out/.graphify_uncached.txt graphify-out/.graphify_semantic_new.json\``;
+Clean up temp files: \`rm -f .graphify/.graphify_cached.json .graphify/.graphify_uncached.txt .graphify/.graphify_semantic_new.json\``;
 
 // ---------------------------------------------------------------------------
 // Skill resolution
@@ -383,11 +386,12 @@ export function getAgentsMdSection(platformName: string): string {
   const lines = [
     "## graphify",
     "",
-    "This project has a graphify knowledge graph at graphify-out/.",
+    "This project has a graphify knowledge graph at .graphify/.",
     "",
     "Rules:",
-    "- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure",
-    "- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files",
+    "- Before answering architecture or codebase questions, read .graphify/GRAPH_REPORT.md for god nodes and community structure",
+    "- If .graphify/wiki/index.md exists, navigate it instead of reading raw files",
+    "- If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run the graphify skill with --update when appropriate",
     "- If the user asks to build, update, query, path, or explain the graph, use the installed `graphify` skill instead of ad-hoc file traversal",
     "- After modifying code files in this session, run `npx graphify hook-rebuild` to keep the graph current",
   ];
@@ -397,7 +401,7 @@ export function getAgentsMdSection(platformName: string): string {
       0,
       "- In Codex, the reliable explicit skill invocation is `$graphify ...`; do not rely on `/graphify ...`",
       "- `$graphify ...` is a Codex skill trigger, not a Bash subcommand like `graphify .`",
-      "- A successful TypeScript-backed Codex build should leave `graphify-out/.graphify_runtime.json` with `runtime: typescript`",
+      "- A successful TypeScript-backed Codex build should leave `.graphify/.graphify_runtime.json` with `runtime: typescript`",
     );
   }
   return lines.join("\n") + "\n";
@@ -589,7 +593,7 @@ function installSkill(platformName: string): void {
     console.log();
     console.log("Codex explicit skill calls use `$graphify`, not `/graphify`.");
     console.log("`$graphify ...` is a Codex skill trigger, not a Bash command like `graphify .`.");
-    console.log("A successful TypeScript Codex run should leave graphify-out/.graphify_runtime.json");
+    console.log("A successful TypeScript Codex run should leave .graphify/.graphify_runtime.json");
     console.log("with runtime=typescript.");
   }
   console.log();
@@ -760,8 +764,8 @@ export function installCodexHook(projectDir: string): void {
       {
         type: "command",
         command:
-          '[ -f graphify-out/graph.json ] && ' +
-          "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\"},\"systemMessage\":\"graphify: Knowledge graph exists. Read graphify-out/GRAPH_REPORT.md for god nodes and community structure before searching raw files.\"}' " +
+          '[ -f .graphify/graph.json ] && ' +
+          "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\"},\"systemMessage\":\"graphify: Knowledge graph exists. Read .graphify/GRAPH_REPORT.md for god nodes and community structure before searching raw files.\"}' " +
           '|| true',
       },
     ],

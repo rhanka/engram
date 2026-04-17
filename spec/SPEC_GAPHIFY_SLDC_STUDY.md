@@ -144,6 +144,14 @@ Implementation checkpoint after the fourth lot:
 - `graphify state status` exposes current lifecycle metadata, and `graphify state prune` prints a non-destructive cleanup plan.
 - stale branch/worktree state is tracked, but no hook deletes state automatically.
 
+Implementation checkpoint after the fifth lot:
+
+- the TypeScript skill runtime exposes the path contract through `runtime-info.paths` and a `paths` command.
+- Codex, Gemini, Claude/Cursor/OpenCode generated instructions now point to `.graphify/` artifacts.
+- bundled skills no longer instruct agents to create new `graphify-out/` paths or repo-root `.graphify_*.json` scratch files.
+- bundled skills include lifecycle guidance for `.graphify/needs_update` and `.graphify/branch.json` stale state.
+- skill integration tests assert `.graphify/` paths and lifecycle guidance.
+
 ### State root
 
 Move Graphify runtime state under a single hidden workspace directory:

@@ -9,6 +9,13 @@ const SKILLS = [
   "../src/skills/skill-windows.md",
 ];
 
+const ALL_SKILL_DOCS = [
+  ...SKILLS,
+  "../src/skills/skill-claw.md",
+  "../src/skills/skill-codex.md",
+  "../src/skills/skill-trae.md",
+];
+
 describe("skill cache examples", () => {
   it("use tuple destructuring for checkSemanticCache", () => {
     for (const relativePath of SKILLS) {
@@ -31,6 +38,16 @@ describe("skill cache examples", () => {
         || content.includes("augmentDetectionWithTranscripts"),
       ).toBe(true);
       expect(content).toContain("treating as docs");
+    }
+  });
+
+  it("uses the .graphify state contract and lifecycle guidance", () => {
+    for (const relativePath of ALL_SKILL_DOCS) {
+      const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
+      expect(content).toContain(".graphify/graph.json");
+      expect(content).toContain(".graphify/branch.json");
+      expect(content).toContain("graphify state prune");
+      expect(content).not.toContain("graphify-out");
     }
   });
 

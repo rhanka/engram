@@ -104,17 +104,17 @@
 
 ## Lot 5 - Skill Path Contract Migration
 
-- [ ] Add a runtime-exposed path contract for skills instead of hardcoding `.graphify/...` or `graphify-out/...` strings everywhere
-- [ ] Migrate Codex skill to the new path contract
-- [ ] Migrate Claude skill to the new path contract
-- [ ] Migrate Gemini custom command to the new path contract
-- [ ] Migrate remaining assistant skills/platform docs to the new path contract
-- [ ] Remove repo-root scratch path assumptions from skills
-- [ ] Add lifecycle awareness to skills:
-  - [ ] initialize metadata when missing
-  - [ ] warn or rebuild on stale branch/worktree state
-  - [ ] invalidate advisory recommendation state after merge/rewrite events
-- [ ] Extend skill integration tests to assert the new state-root behavior
+- [x] Add a runtime-exposed path contract for skills instead of hardcoding `.graphify/...` or `graphify-out/...` strings everywhere
+- [x] Migrate Codex skill to the new path contract
+- [x] Migrate Claude skill to the new path contract
+- [x] Migrate Gemini custom command to the new path contract
+- [x] Migrate remaining assistant skills/platform docs to the new path contract
+- [x] Remove repo-root scratch path assumptions from skills
+- [x] Add lifecycle awareness to skills:
+  - [x] initialize metadata when missing
+  - [x] warn or rebuild on stale branch/worktree state
+  - [x] invalidate advisory recommendation state after merge/rewrite events
+- [x] Extend skill integration tests to assert the new state-root behavior
 
 ## Lot 6 - README, Install Surface, And Repo Narrative Refresh
 
