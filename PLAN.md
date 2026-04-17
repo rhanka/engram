@@ -145,19 +145,19 @@
 
 ## Lot 8 - Review-Delta / Review-PR Workflow
 
-- [ ] Define the review-mode contract on top of the existing multimodal graph
-- [ ] Implement a changed-files or diff-driven review entrypoint
-- [ ] Compute an impacted subgraph instead of generic traversal only
-- [ ] Surface:
-  - [ ] impacted files
-  - [ ] hub / bridge nodes
-  - [ ] likely test gaps
-  - [ ] high-risk dependency chains
-- [ ] Decide the initial CLI and MCP surface:
-  - [ ] `review-delta`
-  - [ ] `review-pr`
-  - [ ] or a narrower first iteration
-- [ ] Keep this additive; do not narrow Graphify into a code-review-only product
+- [x] Define the review-mode contract on top of the existing multimodal graph
+- [x] Implement a changed-files or diff-driven review entrypoint
+- [x] Compute an impacted subgraph instead of generic traversal only
+- [x] Surface:
+  - [x] impacted files
+  - [x] hub / bridge nodes
+  - [x] likely test gaps
+  - [x] high-risk dependency chains
+- [x] Decide the initial CLI and MCP surface:
+  - [x] `review-delta`
+  - [x] `review-pr` deferred until the local delta contract is stable
+  - [x] or a narrower first iteration
+- [x] Keep this additive; do not narrow Graphify into a code-review-only product
 
 ## Lot 9 - Advisory Commit Recommendation Prototype
 

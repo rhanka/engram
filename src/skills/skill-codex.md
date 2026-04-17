@@ -34,6 +34,7 @@ $graphify query "<question>"                          # BFS traversal - broad co
 $graphify query "<question>" --dfs                    # DFS - trace one chain
 $graphify query "<question>" --budget 1500            # cap answer at N tokens
 $graphify summary --graph .graphify/graph.json        # compact first-hop orientation before deep traversal
+$graphify review-delta --files src/auth.ts --graph .graphify/graph.json  # review impact for changed files
 $graphify path "AuthModule" "Database"                # shortest path between concepts
 $graphify explain "SwinTransformer"                   # explain one node and its neighbors
 ```

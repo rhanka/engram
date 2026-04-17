@@ -24,5 +24,7 @@ export { ingest, saveQueryResult } from "./ingest.js";
 export { downloadAudio, buildWhisperPrompt, transcribe, transcribeAll, augmentDetectionWithTranscripts } from "./transcribe.js";
 export { buildFirstHopSummary, firstHopSummaryToText } from "./summary.js";
 export type { FirstHopSummary, FirstHopHub, FirstHopCommunity, FirstHopSummaryOptions } from "./summary.js";
+export { buildReviewDelta, reviewDeltaToText } from "./review.js";
+export type { ReviewDelta, ReviewNode, ReviewChain, ReviewDeltaOptions } from "./review.js";
 export { serve } from "./serve.js";
 export { watch, rebuildCode } from "./watch.js";

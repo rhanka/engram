@@ -27,6 +27,7 @@ import { ingest, saveQueryResult } from "./ingest.js";
 import { generate } from "./report.js";
 import { defaultManifestPath, resolveGraphifyPaths } from "./paths.js";
 import { buildFirstHopSummary, firstHopSummaryToText } from "./summary.js";
+import { buildReviewDelta, reviewDeltaToText } from "./review.js";
 import { augmentDetectionWithTranscripts } from "./transcribe.js";
 import type {
   DetectionResult,
@@ -967,6 +968,25 @@ async function main(): Promise<void> {
         nodesPerCommunity: Number(opts.nodesPerCommunity),
       });
       console.log(firstHopSummaryToText(summary));
+    });
+
+  program
+    .command("review-delta")
+    .requiredOption("--graph <path>")
+    .requiredOption("--files <csv>", "Comma or newline separated changed files")
+    .option("--max-nodes <n>", "Maximum impacted nodes", "80")
+    .option("--max-chains <n>", "Maximum high-risk chains", "8")
+    .action((opts) => {
+      const G = loadGraph(opts.graph);
+      const files = String(opts.files)
+        .split(/[\n,]/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const delta = buildReviewDelta(G, files, {
+        maxNodes: Number(opts.maxNodes),
+        maxChains: Number(opts.maxChains),
+      });
+      console.log(reviewDeltaToText(delta));
     });
 
   program

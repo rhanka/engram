@@ -59,6 +59,14 @@ describe("skill cache examples", () => {
     }
   });
 
+  it("documents the additive review-delta workflow", () => {
+    for (const relativePath of ALL_SKILL_DOCS) {
+      const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
+      expect(content).toContain("review-delta");
+      expect(content).toContain("impact");
+    }
+  });
+
   it("keeps the Windows skill usage lines aligned with upstream v0.3.28", () => {
     const content = readFileSync(new URL("../src/skills/skill-windows.md", import.meta.url), "utf-8");
 

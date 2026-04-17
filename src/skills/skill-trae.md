@@ -31,6 +31,7 @@ Turn any folder of files into a navigable knowledge graph with community detecti
 /graphify query "<question>" --dfs                    # DFS - trace a specific path
 /graphify query "<question>" --budget 1500            # cap answer at N tokens
 /graphify summary --graph .graphify/graph.json        # compact first-hop orientation before deep traversal
+/graphify review-delta --files src/auth.ts --graph .graphify/graph.json  # review impact for changed files
 /graphify path "AuthModule" "Database"                # shortest path between two concepts
 /graphify explain "SwinTransformer"                   # plain-language explanation of a node
 ```

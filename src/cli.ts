@@ -16,6 +16,7 @@ import { homedir, platform } from "node:os";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { forEachTraversalNeighbor, loadGraphFromData } from "./graph.js";
+import { safeExecGit } from "./git.js";
 import { resolveGraphInputPath, resolveGraphifyPaths } from "./paths.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -31,6 +32,25 @@ function getVersion(): string {
 }
 
 const VERSION = getVersion();
+
+function splitFiles(value?: string): string[] {
+  return (value ?? "")
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function changedFilesFromGit(options: { base?: string; head?: string; staged?: boolean }): string[] {
+  if (options.staged) {
+    return splitFiles(safeExecGit(".", ["diff", "--name-only", "--cached", "--"]) ?? "");
+  }
+  if (options.base) {
+    return splitFiles(safeExecGit(".", ["diff", "--name-only", `${options.base}...${options.head ?? "HEAD"}`, "--"]) ?? "");
+  }
+  const tracked = splitFiles(safeExecGit(".", ["diff", "--name-only", "HEAD", "--"]) ?? "");
+  const untracked = splitFiles(safeExecGit(".", ["ls-files", "--others", "--exclude-standard"]) ?? "");
+  return [...new Set([...tracked, ...untracked])].sort();
+}
 
 // ---------------------------------------------------------------------------
 // Platform configuration
@@ -129,6 +149,7 @@ Rules:
 - If .graphify/wiki/index.md exists, navigate it instead of reading raw files
 - If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run /graphify . --update when appropriate
 - Before deep graph traversal, prefer \`graphify summary --graph .graphify/graph.json\` for compact first-hop orientation
+- For review impact on changed files, use \`graphify review-delta --graph .graphify/graph.json\` instead of generic traversal
 - After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
 `;
 
@@ -143,6 +164,7 @@ Rules:
 - In Gemini CLI, the reliable explicit custom command is \`/graphify ...\`
 - If the user asks to build, update, query, path, or explain the graph, use the installed \`/graphify\` custom command or the configured \`graphify\` MCP server instead of ad-hoc file traversal
 - Before deep graph traversal, prefer \`graphify summary --graph .graphify/graph.json\` or MCP \`first_hop_summary\` for compact first-hop orientation
+- For review impact on changed files, use \`graphify review-delta --graph .graphify/graph.json\` or MCP \`review_delta\` instead of generic traversal
 - After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
 `;
 
@@ -396,6 +418,7 @@ export function getAgentsMdSection(platformName: string): string {
     "- If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run the graphify skill with --update when appropriate",
     "- If the user asks to build, update, query, path, or explain the graph, use the installed `graphify` skill instead of ad-hoc file traversal",
     "- Before deep graph traversal, prefer `graphify summary --graph .graphify/graph.json` for compact first-hop orientation",
+    "- For review impact on changed files, use `graphify review-delta --graph .graphify/graph.json` instead of generic traversal",
     "- After modifying code files in this session, run `npx graphify hook-rebuild` to keep the graph current",
   ];
   if (platformName === "codex") {
@@ -1046,6 +1069,45 @@ export async function main(): Promise<void> {
         nodesPerCommunity: Number(opts.nodesPerCommunity),
       });
       console.log(firstHopSummaryToText(summary));
+    });
+
+  program
+    .command("review-delta [files...]")
+    .description("Review-oriented graph impact for changed files")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--files <csv>", "Comma or newline separated changed files")
+    .option("--base <ref>", "Git base ref; when omitted, compare working tree to HEAD")
+    .option("--head <ref>", "Git head ref to compare with --base", "HEAD")
+    .option("--staged", "Use staged changes only")
+    .option("--max-nodes <n>", "Maximum impacted nodes", "80")
+    .option("--max-chains <n>", "Maximum high-risk chains", "8")
+    .action(async (files, opts) => {
+      const changedFiles = [
+        ...files,
+        ...splitFiles(opts.files),
+      ];
+      const resolvedChangedFiles = changedFiles.length > 0
+        ? [...new Set(changedFiles)].sort()
+        : changedFilesFromGit({ base: opts.base, head: opts.head, staged: opts.staged });
+      if (resolvedChangedFiles.length === 0) {
+        console.log("No changed files found for review-delta.");
+        return;
+      }
+      const { readFileSync: rf } = await import("node:fs");
+      const { resolve: res } = await import("node:path");
+      const gp = res(resolveGraphInputPath(opts.graph));
+      if (!existsSync(gp)) {
+        console.error(`error: graph file not found: ${gp}`);
+        process.exit(1);
+      }
+      const raw = JSON.parse(rf(gp, "utf-8"));
+      const G = loadGraphFromData(raw);
+      const { buildReviewDelta, reviewDeltaToText } = await import("./review.js");
+      const delta = buildReviewDelta(G, resolvedChangedFiles, {
+        maxNodes: Number(opts.maxNodes),
+        maxChains: Number(opts.maxChains),
+      });
+      console.log(reviewDeltaToText(delta));
     });
 
   program

@@ -11,6 +11,7 @@ Use the installed TypeScript runtime only. Do not fall back to Python.
 - `/graphify` with no path means the current directory `.`
 - `/graphify <path> [flags]` means build or update the graph for that path
 - `/graphify summary` means return compact first-hop orientation from `.graphify/graph.json`
+- `/graphify review-delta [files...]` means return review-oriented impact for changed files
 - `/graphify query "<question>"` means answer from `.graphify/graph.json`
 - `/graphify path "A" "B"` means show the shortest path between two nodes
 - `/graphify explain "Node"` means explain one node and its neighbors

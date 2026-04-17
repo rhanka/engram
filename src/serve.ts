@@ -16,6 +16,7 @@ import { resolveGraphInputPath } from "./paths.js";
 import { validateGraphPath, sanitizeLabel } from "./security.js";
 import { godNodes as computeGodNodes } from "./analyze.js";
 import { buildFirstHopSummary, firstHopSummaryToText } from "./summary.js";
+import { buildReviewDelta, reviewDeltaToText } from "./review.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 
 // ---------------------------------------------------------------------------
@@ -304,6 +305,20 @@ function toolFirstHopSummary(G: Graph): string {
   return firstHopSummaryToText(buildFirstHopSummary(G));
 }
 
+function toolReviewDelta(G: Graph, args: Record<string, unknown>): string {
+  const changedFiles = Array.isArray(args.changed_files)
+    ? args.changed_files.filter((item): item is string => typeof item === "string")
+    : [];
+  if (changedFiles.length === 0) {
+    return "No changed_files provided. Pass repository-relative paths to compute review impact.";
+  }
+  const delta = buildReviewDelta(G, changedFiles, {
+    maxNodes: Number(args.max_nodes ?? 80),
+    maxChains: Number(args.max_chains ?? 8),
+  });
+  return reviewDeltaToText(delta);
+}
+
 function toolShortestPath(G: Graph, args: Record<string, unknown>): string {
   const srcTerms = (args.source as string)
     .split(/\s+/)
@@ -392,6 +407,24 @@ export async function serve(
         description:
           "Return a compact deterministic first-hop orientation: graph size, density, top hubs, key communities, and next graph action.",
         inputSchema: { type: "object" as const, properties: {} },
+      },
+      {
+        name: "review_delta",
+        description:
+          "Return review-oriented graph impact for changed files: impacted files, hubs, bridges, likely test gaps, and high-risk chains.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            changed_files: {
+              type: "array",
+              items: { type: "string" },
+              description: "Repository-relative changed files",
+            },
+            max_nodes: { type: "integer", default: 80 },
+            max_chains: { type: "integer", default: 8 },
+          },
+          required: ["changed_files"],
+        },
       },
       {
         name: "query_graph",
@@ -517,6 +550,7 @@ export async function serve(
     (args: Record<string, unknown>) => string
   > = {
     first_hop_summary: () => toolFirstHopSummary(G),
+    review_delta: (a) => toolReviewDelta(G, a),
     query_graph: (a) => toolQueryGraph(G, a),
     get_node: (a) => toolGetNode(G, a),
     get_neighbors: (a) => toolGetNeighbors(G, a),

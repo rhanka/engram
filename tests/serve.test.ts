@@ -126,6 +126,7 @@ describe("MCP stdio server", () => {
           "god_nodes",
           "graph_stats",
           "first_hop_summary",
+          "review_delta",
           "query_graph",
           "shortest_path",
         ].sort(),
@@ -235,6 +236,17 @@ describe("MCP stdio server", () => {
       expect(firstHop).toContain("Graph: 4 nodes, 3 edges, 2 communities, density 0.5");
       expect(firstHop).toContain("BetaRepository (degree 3, community 0 Core Services, src/beta.ts)");
       expect(firstHop).toContain("Next best action: Start with get_neighbors on \"BetaRepository\"");
+
+      const reviewDelta = toolText(
+        await client.callTool({
+          name: "review_delta",
+          arguments: { changed_files: ["src/beta.ts"] },
+        }),
+      );
+      expect(reviewDelta).toContain("Graphify Review Delta");
+      expect(reviewDelta).toContain("src/beta.ts");
+      expect(reviewDelta).toContain("GammaDocs");
+      expect(reviewDelta).toContain("Likely test gaps:");
 
       const path = toolText(
         await client.callTool({

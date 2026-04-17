@@ -167,6 +167,14 @@ Implementation checkpoint after the seventh lot:
 - assistant skills and generated install instructions prefer this compact first hop before deeper query/path/explain traversal.
 - tests cover response shape, deterministic ordering, public API export, MCP exposure, and skill guidance.
 
+Implementation checkpoint after the eighth lot:
+
+- `buildReviewDelta` / `reviewDeltaToText` define a review-mode contract on top of the existing graph instead of creating a separate code-review product.
+- the initial surface is deliberately narrow: public CLI `graphify review-delta`, skill-runtime `review-delta`, and MCP `review_delta`.
+- `review-delta` accepts explicit files or a local git diff and surfaces impacted files, changed/impacted nodes, hubs, bridges, likely test gaps, and high-risk chains.
+- no PR-specific workflow is added yet; `review-pr` stays open for a later lot once the local delta contract is stable.
+- tests cover pure review analysis, public API export, MCP exposure, and skill guidance.
+
 ### State root
 
 Move Graphify runtime state under a single hidden workspace directory:
