@@ -16,6 +16,7 @@ import { generate } from "./report.js";
 import { toHtml, toJson } from "./export.js";
 import { extractWithDiagnostics, type ExtractionDiagnostic } from "./extract.js";
 import { resolveGraphifyPaths } from "./paths.js";
+import { markLifecycleAnalyzed } from "./lifecycle.js";
 import { toWiki } from "./wiki.js";
 import type {
   DetectionResult,
@@ -210,6 +211,8 @@ export async function buildProject(
       godNodesData: gods,
     });
   }
+
+  markLifecycleAnalyzed(rootResolved);
 
   return {
     root: rootResolved,

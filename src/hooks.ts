@@ -4,9 +4,9 @@
  * Git owns the repository topology. Resolve worktree roots and hook paths with
  * `git rev-parse` so linked worktrees and gitfiles do not break installation.
  */
-import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
+import { resolveGitContext } from "./git.js";
 
 const POST_COMMIT_MARKER = "# graphify-hook-start";
 const POST_COMMIT_MARKER_END = "# graphify-hook-end";
@@ -16,13 +16,6 @@ const POST_MERGE_MARKER = "# graphify-post-merge-hook-start";
 const POST_MERGE_MARKER_END = "# graphify-post-merge-hook-end";
 const POST_REWRITE_MARKER = "# graphify-post-rewrite-hook-start";
 const POST_REWRITE_MARKER_END = "# graphify-post-rewrite-hook-end";
-
-interface GitContext {
-  worktreeRoot: string;
-  gitDir: string;
-  commonGitDir: string;
-  hooksDir: string;
-}
 
 interface HookDefinition {
   name: string;
@@ -38,8 +31,12 @@ graphify_has_state() {
 }
 
 graphify_mark_stale() {
+    GRAPHIFY_STALE_REASON=\${1:-hook}
     mkdir -p ".graphify"
     printf "1\\n" > ".graphify/needs_update"
+    if graphify_detect_cmd; then
+        $GRAPHIFY_CMD hook-mark-stale "$GRAPHIFY_STALE_REASON" >/dev/null 2>&1 || true
+    fi
 }
 
 graphify_detect_cmd() {
@@ -71,7 +68,7 @@ if [ -z "$CHANGED" ]; then
 fi
 
 ${HOOK_HELPERS}
-graphify_mark_stale
+graphify_mark_stale "post-commit"
 export GRAPHIFY_CHANGED="$CHANGED"
 graphify_rebuild_code
 ${POST_COMMIT_MARKER_END}
@@ -92,7 +89,7 @@ fi
 
 ${HOOK_HELPERS}
 graphify_has_state || exit 0
-graphify_mark_stale
+graphify_mark_stale "post-checkout"
 if [ -n "$PREV_HEAD" ] && [ -n "$NEW_HEAD" ]; then
     GRAPHIFY_CHANGED=$(git diff --name-only "$PREV_HEAD" "$NEW_HEAD" 2>/dev/null || true)
     export GRAPHIFY_CHANGED
@@ -107,7 +104,7 @@ const POST_MERGE_SCRIPT = `${POST_MERGE_MARKER}
 
 ${HOOK_HELPERS}
 graphify_has_state || exit 0
-graphify_mark_stale
+graphify_mark_stale "post-merge"
 GRAPHIFY_CHANGED=$(git diff --name-only ORIG_HEAD HEAD 2>/dev/null || true)
 export GRAPHIFY_CHANGED
 graphify_rebuild_code
@@ -120,7 +117,7 @@ const POST_REWRITE_SCRIPT = `${POST_REWRITE_MARKER}
 
 ${HOOK_HELPERS}
 graphify_has_state || exit 0
-graphify_mark_stale
+graphify_mark_stale "post-rewrite"
 unset GRAPHIFY_CHANGED
 graphify_rebuild_code
 ${POST_REWRITE_MARKER_END}
@@ -152,44 +149,6 @@ const HOOKS: HookDefinition[] = [
     script: POST_REWRITE_SCRIPT,
   },
 ];
-
-function gitRevParse(cwd: string, args: string[]): string {
-  return execGit(cwd, ["rev-parse", ...args]);
-}
-
-function execGit(cwd: string, args: string[]): string {
-  try {
-    return execFileSync("git", ["-C", cwd, ...args], {
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "pipe"],
-    }).trim();
-  } catch (err) {
-    // Some sandboxes report EPERM even when the child process exited with 0.
-    // Treat that as success if Node still captured stdout from git.
-    const maybe = err as { status?: number; stdout?: string | Buffer };
-    if (maybe.status === 0 && maybe.stdout !== undefined) {
-      return String(maybe.stdout).trim();
-    }
-    throw err;
-  }
-}
-
-function resolveFromGitCwd(cwd: string, value: string): string {
-  return isAbsolute(value) ? resolve(value) : resolve(cwd, value);
-}
-
-function resolveGitContext(path: string): GitContext | null {
-  const cwd = resolve(path);
-  try {
-    const worktreeRoot = resolve(gitRevParse(cwd, ["--show-toplevel"]));
-    const gitDir = resolve(gitRevParse(cwd, ["--absolute-git-dir"]));
-    const commonGitDir = resolveFromGitCwd(cwd, gitRevParse(cwd, ["--git-common-dir"]));
-    const hooksDir = resolveFromGitCwd(cwd, gitRevParse(cwd, ["--git-path", "hooks"]));
-    return { worktreeRoot, gitDir, commonGitDir, hooksDir };
-  } catch {
-    return null;
-  }
-}
 
 function installHook(hooksDir: string, definition: HookDefinition): string {
   const hookPath = join(hooksDir, definition.name);

@@ -136,6 +136,14 @@ Implementation checkpoint after the third lot:
 - hooks mark `.graphify/needs_update` first, then attempt a non-blocking code-only rebuild.
 - semantic extraction remains outside hooks; branch metadata and recommendation invalidation stay in the next lifecycle lots.
 
+Implementation checkpoint after the fourth lot:
+
+- `.graphify/worktree.json` records worktree path, git dir, common git dir, first-seen HEAD, last-seen HEAD, and last analyzed HEAD.
+- `.graphify/branch.json` records branch name, upstream, merge-base, first-seen HEAD, last-seen HEAD, last analyzed HEAD, and stale reason/timestamp.
+- build and code-only rebuild paths lazily refresh lifecycle metadata; hook stale events call an internal `hook-mark-stale` command.
+- `graphify state status` exposes current lifecycle metadata, and `graphify state prune` prints a non-destructive cleanup plan.
+- stale branch/worktree state is tracked, but no hook deletes state automatically.
+
 ### State root
 
 Move Graphify runtime state under a single hidden workspace directory:

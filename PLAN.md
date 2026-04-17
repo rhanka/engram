@@ -88,19 +88,19 @@
 
 ## Lot 4 - Branch And Worktree Lifecycle Metadata
 
-- [ ] Add `.graphify/worktree.json`
-- [ ] Add `.graphify/branch.json`
-- [ ] Define and persist:
-  - [ ] branch name
-  - [ ] worktree path
-  - [ ] git dir / common dir
-  - [ ] first-seen HEAD
-  - [ ] last analyzed HEAD
-  - [ ] merge-base or tracked upstream
-  - [ ] freshness / stale-state markers
-- [ ] Initialize lifecycle metadata lazily on first Graphify run in a branch/worktree
-- [ ] Mark state stale on branch switches, merges, and rewrites
-- [ ] Add cleanup/prune semantics for abandoned branch state without destructive automation
+- [x] Add `.graphify/worktree.json`
+- [x] Add `.graphify/branch.json`
+- [x] Define and persist:
+  - [x] branch name
+  - [x] worktree path
+  - [x] git dir / common dir
+  - [x] first-seen HEAD
+  - [x] last analyzed HEAD
+  - [x] merge-base or tracked upstream
+  - [x] freshness / stale-state markers
+- [x] Initialize lifecycle metadata lazily on first Graphify run in a branch/worktree
+- [x] Mark state stale on branch switches, merges, and rewrites
+- [x] Add cleanup/prune semantics for abandoned branch state without destructive automation
 
 ## Lot 5 - Skill Path Contract Migration
 

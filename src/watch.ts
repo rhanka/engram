@@ -18,6 +18,7 @@ import {
   PAPER_EXTENSIONS,
   IMAGE_EXTENSIONS,
 } from "./detect.js";
+import { markLifecycleAnalyzed, markLifecycleStale } from "./lifecycle.js";
 
 const WATCHED_EXTENSIONS = new Set([
   ...CODE_EXTENSIONS,
@@ -33,6 +34,7 @@ const WATCHED_EXTENSIONS = new Set([
 export async function rebuildCode(
   watchPath: string,
   followSymlinks: boolean = false,
+  options: { clearStale?: boolean } = {},
 ): Promise<boolean> {
   try {
     const paths = resolveGraphifyPaths({ root: watchPath });
@@ -114,10 +116,13 @@ export async function rebuildCode(
     writeFileSync(paths.report, report, "utf-8");
     toJson(G, communities, paths.graph, { communityLabels: labels });
 
-    // Clear stale needs_update flag if present
-    const flagPath = paths.needsUpdate;
-    if (existsSync(flagPath)) {
-      unlinkSync(flagPath);
+    if (options.clearStale !== false) {
+      // Clear stale needs_update flag if present
+      const flagPath = paths.needsUpdate;
+      if (existsSync(flagPath)) {
+        unlinkSync(flagPath);
+      }
+      markLifecycleAnalyzed(watchPath);
     }
 
     console.log(
@@ -145,6 +150,7 @@ function notifyOnly(watchPath: string): void {
   mkdirSync(outDir, { recursive: true });
   const flagPath = paths.needsUpdate;
   writeFileSync(flagPath, "1", "utf-8");
+  markLifecycleStale(watchPath, "watch-non-code-change");
   console.log(`\n[graphify watch] New or changed files detected in ${watchPath}`);
   console.log(
     "[graphify watch] Non-code files changed - semantic re-extraction requires LLM.",

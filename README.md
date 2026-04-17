@@ -226,6 +226,8 @@ In Codex, replace the leading `/` in the examples below with `$`. Gemini CLI, Gi
 graphify hook install
 graphify hook uninstall
 graphify hook status
+graphify state status            # inspect .graphify/worktree.json + branch.json
+graphify state prune             # print a non-destructive stale-state cleanup plan
 
 # always-on assistant instructions - platform-specific
 graphify claude install            # CLAUDE.md + PreToolUse hook (Claude Code)
@@ -285,7 +287,7 @@ Works with any mix of file types:
 
 **Auto-sync** (`--watch`) - run in a background terminal and the graph updates itself as your codebase changes. Code file saves trigger an instant rebuild (AST only, no LLM). Doc/image changes notify you to run `--update` for the LLM re-pass.
 
-**Git hooks** (`graphify hook install`) - installs worktree-compatible `post-commit`, `post-checkout`, `post-merge`, and `post-rewrite` hooks. Hooks mark `.graphify/` stale first, then try a non-blocking code-only rebuild when it is safe and cheap. No background process needed, and hook failures do not block Git operations.
+**Git hooks** (`graphify hook install`) - installs worktree-compatible `post-commit`, `post-checkout`, `post-merge`, and `post-rewrite` hooks. Hooks mark `.graphify/` stale first, update branch/worktree metadata, then try a non-blocking code-only rebuild when it is safe and cheap. No background process needed, and hook failures do not block Git operations. Use `graphify state status` to inspect lifecycle metadata and `graphify state prune` to preview stale cleanup without deleting files.
 
 **Wiki** (`--wiki`) - Wikipedia-style markdown articles per community and god node, with an `index.md` entry point. Point any agent at `index.md` and it can navigate the knowledge base by reading files instead of parsing JSON.
 

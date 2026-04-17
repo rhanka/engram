@@ -983,6 +983,17 @@ export async function main(): Promise<void> {
     console.log(status("."));
   });
 
+  const state = program.command("state").description("Graphify local state metadata");
+  state.command("status").description("Print branch/worktree lifecycle metadata").action(async () => {
+    const { readLifecycleMetadata, refreshLifecycleMetadata } = await import("./lifecycle.js");
+    const metadata = readLifecycleMetadata(".") ?? refreshLifecycleMetadata(".");
+    console.log(JSON.stringify(metadata, null, 2));
+  });
+  state.command("prune").description("Plan stale lifecycle cleanup without deleting files").action(async () => {
+    const { planLifecyclePrune } = await import("./lifecycle.js");
+    console.log(JSON.stringify(planLifecyclePrune("."), null, 2));
+  });
+
   // MCP server
   program
     .command("serve [graph]")
@@ -1145,13 +1156,24 @@ export async function main(): Promise<void> {
         .split(/\r?\n/)
         .map((p) => p.trim())
         .filter(Boolean);
+      let clearStale = true;
       if (changedFiles.length > 0) {
         const { CODE_EXTENSIONS } = await import("./detect.js");
-        if (!changedFiles.some((p) => CODE_EXTENSIONS.has(extname(p).toLowerCase()))) {
+        const hasCodeChange = changedFiles.some((p) => CODE_EXTENSIONS.has(extname(p).toLowerCase()));
+        if (!hasCodeChange) {
           return;
         }
+        clearStale = changedFiles.every((p) => CODE_EXTENSIONS.has(extname(p).toLowerCase()));
       }
-      await rebuildCode(".");
+      await rebuildCode(".", false, { clearStale });
+    });
+
+  program
+    .command("hook-mark-stale [reason]", { hidden: true })
+    .description("Internal: mark graphify lifecycle state stale (called by git hooks)")
+    .action(async (reason) => {
+      const { markLifecycleStale } = await import("./lifecycle.js");
+      markLifecycleStale(".", reason ?? "hook");
     });
 
   await program.parseAsync();
