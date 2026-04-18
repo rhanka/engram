@@ -184,7 +184,7 @@ Known acceptable hook-rebuild warnings:
 | Product branch | v3-typescript |
 | Upstream branch | v3 mirrors Python Graphify |
 | Distribution | npm package graphifyy |
-| Transcription | TypeScript-local sherpa-onnx-node + ffmpeg |
+| Transcription | TypeScript-local faster-whisper-ts + ffmpeg |
 | Review mode | additive graph projection |
 | Commit recommendation | advisory-only |
 | Installers | mutation preview before writes |

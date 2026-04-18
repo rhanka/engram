@@ -38,7 +38,7 @@ Graphify supports one graph across code and non-code inputs:
 - Office docs: .docx and .xlsx conversion to markdown sidecars before semantic extraction
 - images: multimodal assistant extraction
 - URLs: arXiv, PDF, image, general web pages, X/Twitter, YouTube audio ingestion
-- audio/video: local transcription through yt-dlp when needed, ffmpeg normalization, and sherpa-onnx-node Whisper-compatible transcription
+- audio/video: local transcription through yt-dlp when needed, ffmpeg normalization, and faster-whisper-ts Whisper-compatible transcription
 
 Generated transcripts are treated as document inputs for semantic extraction.
 
@@ -213,7 +213,7 @@ Intentional TypeScript divergence:
 
 - npm distribution and TypeScript runtime
 - .graphify local state contract
-- local sherpa-onnx-node transcription instead of Python faster-whisper
+- local faster-whisper-ts transcription instead of Python faster-whisper
 - broader assistant installer matrix
 - MCP tools for summary/review/recommendation
 - review-mode projections inspired by code-review-graph

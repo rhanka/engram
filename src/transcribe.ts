@@ -1,18 +1,17 @@
 import * as childProcess from "node:child_process";
 import { createHash } from "node:crypto";
 import {
-  cpSync,
   createWriteStream,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
-  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { homedir, platform, tmpdir } from "node:os";
-import { basename, dirname, extname, join, resolve } from "node:path";
+import { basename, extname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { defaultTranscriptsDir } from "./paths.js";
@@ -22,9 +21,9 @@ const URL_PREFIXES = ["http://", "https://", "www."];
 const CACHED_AUDIO_EXTENSIONS = [".m4a", ".opus", ".mp3", ".ogg", ".wav", ".webm"];
 const DEFAULT_MODEL = "base";
 const FALLBACK_PROMPT = "Use proper punctuation and paragraph breaks.";
-const SHERPA_RELEASE_BASE =
-  "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models";
-const AUDIO_SAMPLE_RATE = 16000;
+const FASTER_WHISPER_PACKAGE: string = "faster-whisper-ts";
+const HUGGING_FACE_RESOLVE_BASE = "https://huggingface.co";
+const REQUIRED_MODEL_FILES = ["config.json", "model.bin", "tokenizer.json", "vocabulary.txt"] as const;
 const SUPPORTED_MODELS = new Set([
   "tiny",
   "tiny.en",
@@ -49,43 +48,45 @@ const MODEL_ALIASES: Record<string, string> = {
   large: "large-v3",
 };
 
-interface SherpaWave {
-  samples: Float32Array;
-  sampleRate: number;
-}
-
-interface SherpaResult {
+interface FasterWhisperSegment {
   text?: string;
 }
 
-interface SherpaStream {
-  acceptWaveform(input: SherpaWave): void;
-  setOption?(key: string, value: string): void;
+interface FasterWhisperTranscriptionOptions {
+  beamSize?: number;
+  vadFilter?: boolean;
+  initialPrompt?: string;
 }
 
-interface SherpaRecognizer {
-  createStream(): SherpaStream;
-  decodeAsync(stream: SherpaStream): Promise<SherpaResult>;
+interface FasterWhisperModel {
+  transcribe(
+    audioData: string | Buffer | Uint8Array | Float32Array,
+    options?: FasterWhisperTranscriptionOptions,
+    language?: string,
+    task?: string,
+  ): Promise<[FasterWhisperSegment[], unknown]>;
+  free(): void;
 }
 
-interface SherpaModule {
-  OfflineRecognizer: {
-    createAsync(config: unknown): Promise<SherpaRecognizer>;
-  };
-  readWave(path: string): SherpaWave;
+interface FasterWhisperModule {
+  WhisperModel: new (
+    modelPath: string,
+    device?: string,
+    deviceIndex?: number,
+    computeType?: string,
+  ) => FasterWhisperModel;
 }
 
 interface WhisperArtifacts {
   requestedModel: string;
   resolvedModel: string;
   modelDir: string;
-  encoderPath: string;
-  decoderPath: string;
-  tokensPath: string;
+  repoId: string;
+  revision: string;
 }
 
-const recognizerCache = new Map<string, Promise<SherpaRecognizer>>();
-let sherpaModulePromise: Promise<SherpaModule> | null = null;
+const modelCache = new Map<string, Promise<FasterWhisperModel>>();
+let fasterWhisperModulePromise: Promise<FasterWhisperModule> | null = null;
 
 function runCommand(
   command: string,
@@ -100,7 +101,7 @@ function runCommand(
     throw result.error;
   }
   if (result.status !== 0) {
-    throw new Error(result.stderr?.trim() || result.stdout?.trim() || `${command} failed`);
+    throw new Error(result.stderr?.trim() || result.stdout?.trim() || command + " failed");
   }
   return result;
 }
@@ -113,18 +114,10 @@ function defaultWhisperCacheDir(): string {
     return join(
       process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"),
       "graphify",
-      "whisper",
+      "faster-whisper",
     );
   }
-  return join(process.env.XDG_CACHE_HOME ?? join(homedir(), ".cache"), "graphify", "whisper");
-}
-
-function ffmpegBinary(): string {
-  return process.env.GRAPHIFY_FFMPEG_BIN ?? "ffmpeg";
-}
-
-function tarBinary(): string {
-  return process.env.GRAPHIFY_TAR_BIN ?? "tar";
+  return join(process.env.XDG_CACHE_HOME ?? join(homedir(), ".cache"), "graphify", "faster-whisper");
 }
 
 function resolveRequestedModel(modelName?: string): { requested: string; resolved: string } {
@@ -132,115 +125,100 @@ function resolveRequestedModel(modelName?: string): { requested: string; resolve
   const resolved = MODEL_ALIASES[requested] ?? requested;
   if (!SUPPORTED_MODELS.has(resolved)) {
     throw new Error(
-      `Unsupported GRAPHIFY_WHISPER_MODEL "${requested}". ` +
-      `Supported local TS models: ${[...SUPPORTED_MODELS].sort().join(", ")}`,
+      "Unsupported GRAPHIFY_WHISPER_MODEL \"" + requested + "\". " +
+      "Supported local TS faster-whisper models: " + [...SUPPORTED_MODELS].sort().join(", "),
     );
   }
   return { requested, resolved };
 }
 
-function walkFiles(dir: string): string[] {
-  if (!existsSync(dir)) return [];
-  const files: string[] = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const fullPath = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      files.push(...walkFiles(fullPath));
-    } else {
-      files.push(fullPath);
-    }
-  }
-  return files;
+function sanitizeCacheSegment(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_.-]+/g, "__").replace(/^_+|_+$/g, "") || "model";
 }
 
-function findArtifactsIn(dir: string): Omit<WhisperArtifacts, "requestedModel" | "resolvedModel"> | null {
-  const files = walkFiles(dir);
-  const encoderPath =
-    files.find((path) => path.endsWith("-encoder.int8.onnx"))
-    ?? files.find((path) => path.endsWith("-encoder.onnx"));
-  const decoderPath =
-    files.find((path) => path.endsWith("-decoder.int8.onnx"))
-    ?? files.find((path) => path.endsWith("-decoder.onnx"));
-  const tokensPath = files.find((path) => path.endsWith("-tokens.txt"));
-  if (!encoderPath || !decoderPath || !tokensPath) {
-    return null;
+function missingModelFiles(modelDir: string): string[] {
+  return REQUIRED_MODEL_FILES.filter((fileName) => !existsSync(join(modelDir, fileName)));
+}
+
+function validateWhisperModelDir(modelDir: string, resolvedModel: string): void {
+  const missing = missingModelFiles(modelDir);
+  if (missing.length > 0) {
+    throw new Error(
+      "CTranslate2 faster-whisper model for " + resolvedModel + " is incomplete at " + modelDir + "; " +
+      "missing " + missing.join(", "),
+    );
   }
-  return {
-    modelDir: dir,
-    encoderPath,
-    decoderPath,
-    tokensPath,
-  };
+}
+
+function whisperModelRepoId(resolvedModel: string): string {
+  return process.env.GRAPHIFY_WHISPER_MODEL_ID ?? "Systran/faster-whisper-" + resolvedModel;
+}
+
+function whisperModelRevision(): string {
+  return process.env.GRAPHIFY_WHISPER_MODEL_REVISION ?? "main";
+}
+
+function modelDownloadUrl(repoId: string, revision: string, fileName: string): string {
+  return HUGGING_FACE_RESOLVE_BASE + "/" + repoId + "/resolve/" + revision + "/" + fileName;
 }
 
 function normalizeModelError(detail: string): string {
-  if (detail.includes("404")) {
-    return `${detail}. The local sherpa-onnx release asset was not found for this Whisper model name.`;
+  if (/HTTP 404|not found/i.test(detail)) {
+    return detail + ". The CTranslate2 faster-whisper model file was not found. " +
+      "Set GRAPHIFY_WHISPER_MODEL_ID or GRAPHIFY_WHISPER_MODEL_DIR for a custom model repository/path.";
   }
   return detail;
 }
 
-async function writeResponseToFile(response: Response, destination: string): Promise<void> {
+async function downloadFile(url: string, destination: string): Promise<void> {
+  const response = await fetch(url);
   if (!response.ok || !response.body) {
-    throw new Error(`HTTP ${response.status} while downloading ${response.url}`);
+    throw new Error("HTTP " + response.status + " while downloading " + url);
   }
   await pipeline(Readable.fromWeb(response.body as globalThis.ReadableStream<Uint8Array>), createWriteStream(destination));
 }
 
 async function ensureWhisperArtifacts(modelName?: string): Promise<WhisperArtifacts> {
   const { requested, resolved } = resolveRequestedModel(modelName);
+  const explicitModelDir = process.env.GRAPHIFY_WHISPER_MODEL_DIR;
+  if (explicitModelDir) {
+    const modelDir = resolve(explicitModelDir);
+    validateWhisperModelDir(modelDir, resolved);
+    return {
+      requestedModel: requested,
+      resolvedModel: resolved,
+      modelDir,
+      repoId: "local",
+      revision: "local",
+    };
+  }
+
   const cacheRoot = defaultWhisperCacheDir();
+  const repoId = whisperModelRepoId(resolved);
+  const revision = whisperModelRevision();
+  const modelDir = join(cacheRoot, sanitizeCacheSegment(repoId) + "-" + sanitizeCacheSegment(revision));
   mkdirSync(cacheRoot, { recursive: true });
 
-  const modelDir = join(cacheRoot, `sherpa-onnx-whisper-${resolved}`);
-  const cached = findArtifactsIn(modelDir);
-  if (cached) {
-    return { requestedModel: requested, resolvedModel: resolved, ...cached };
+  if (missingModelFiles(modelDir).length === 0) {
+    return { requestedModel: requested, resolvedModel: resolved, modelDir, repoId, revision };
   }
 
   const tempDir = mkdtempSync(join(tmpdir(), "graphify-whisper-model-"));
-  const extractDir = join(tempDir, "extract");
-  const archiveName = `sherpa-onnx-whisper-${resolved}.tar.bz2`;
-  const archivePath = join(tempDir, archiveName);
-  mkdirSync(extractDir, { recursive: true });
-
   try {
-    const url = `${SHERPA_RELEASE_BASE}/${archiveName}`;
-    console.log(`  downloading whisper model: ${resolved}`);
-    const response = await fetch(url);
-    await writeResponseToFile(response, archivePath);
-
-    runCommand(tarBinary(), ["-xjf", archivePath, "-C", extractDir]);
-
-    const extractedRoot = walkFiles(extractDir)
-      .map((path) => dirname(path))
-      .find((path) => findArtifactsIn(path) !== null);
-    const sourceDir =
-      extractedRoot
-      ?? readdirSync(extractDir, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => join(extractDir, entry.name))
-        .find((path) => findArtifactsIn(path) !== null);
-
-    if (!sourceDir) {
-      throw new Error(`Downloaded archive for ${resolved} but could not locate Whisper model files`);
+    console.log("  downloading faster-whisper model: " + resolved + " (" + repoId + "@" + revision + ")");
+    mkdirSync(tempDir, { recursive: true });
+    for (const fileName of REQUIRED_MODEL_FILES) {
+      await downloadFile(modelDownloadUrl(repoId, revision, fileName), join(tempDir, fileName));
     }
 
-    if (existsSync(modelDir)) {
-      rmSync(modelDir, { recursive: true, force: true });
-    }
-    try {
-      renameSync(sourceDir, modelDir);
-    } catch {
-      cpSync(sourceDir, modelDir, { recursive: true });
+    validateWhisperModelDir(tempDir, resolved);
+    rmSync(modelDir, { recursive: true, force: true });
+    mkdirSync(modelDir, { recursive: true });
+    for (const fileName of REQUIRED_MODEL_FILES) {
+      writeFileSync(join(modelDir, fileName), await readFile(join(tempDir, fileName)));
     }
 
-    const artifacts = findArtifactsIn(modelDir);
-    if (!artifacts) {
-      throw new Error(`Model cache for ${resolved} is incomplete after extraction`);
-    }
-
-    return { requestedModel: requested, resolvedModel: resolved, ...artifacts };
+    return { requestedModel: requested, resolvedModel: resolved, modelDir, repoId, revision };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(normalizeModelError(detail));
@@ -249,97 +227,94 @@ async function ensureWhisperArtifacts(modelName?: string): Promise<WhisperArtifa
   }
 }
 
-async function loadSherpaModule(): Promise<SherpaModule> {
-  if (!sherpaModulePromise) {
-    sherpaModulePromise = import("sherpa-onnx-node")
-      .then((imported) => (
-        Reflect.has(imported, "default")
-          ? Reflect.get(imported, "default")
-          : imported
-      ) as SherpaModule)
+async function loadFasterWhisperModule(): Promise<FasterWhisperModule> {
+  if (!fasterWhisperModulePromise) {
+    fasterWhisperModulePromise = import(FASTER_WHISPER_PACKAGE)
+      .then((imported) => {
+        const candidate = Reflect.has(imported, "WhisperModel")
+          ? imported
+          : Reflect.get(imported, "default");
+        const WhisperModel = candidate ? Reflect.get(candidate, "WhisperModel") : undefined;
+        if (typeof WhisperModel !== "function") {
+          throw new Error("faster-whisper-ts did not expose WhisperModel");
+        }
+        return candidate as FasterWhisperModule;
+      })
       .catch((error) => {
-        sherpaModulePromise = null;
+        fasterWhisperModulePromise = null;
         const detail = error instanceof Error ? error.message : String(error);
         throw new Error(
-          "Video transcription requires the optional dependency sherpa-onnx-node. " +
-          `Install it locally, then retry. ${detail}`,
+          "Video transcription requires the optional dependency faster-whisper-ts. " +
+          "Install it locally, then retry. " + detail,
         );
       });
   }
-  return sherpaModulePromise;
+  return fasterWhisperModulePromise;
 }
 
-async function getRecognizer(
-  modelName?: string,
-  sherpa?: SherpaModule,
-): Promise<{ recognizer: SherpaRecognizer; artifacts: WhisperArtifacts }> {
+function envNumber(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function envBoolean(name: string, fallback: boolean): boolean {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  return !["0", "false", "no", "off"].includes(raw.toLowerCase());
+}
+
+async function getWhisperModel(modelName?: string): Promise<{ model: FasterWhisperModel; artifacts: WhisperArtifacts }> {
   const artifacts = await ensureWhisperArtifacts(modelName);
-  const cacheKey = artifacts.modelDir;
-  const existing = recognizerCache.get(cacheKey);
+  const device = process.env.GRAPHIFY_WHISPER_DEVICE ?? "cpu";
+  const deviceIndex = envNumber("GRAPHIFY_WHISPER_DEVICE_INDEX", 0);
+  const computeType = process.env.GRAPHIFY_WHISPER_COMPUTE_TYPE ?? "int8";
+  const cacheKey = [artifacts.modelDir, device, String(deviceIndex), computeType].join("|");
+  const existing = modelCache.get(cacheKey);
   if (existing) {
-    return { recognizer: await existing, artifacts };
+    return { model: await existing, artifacts };
   }
 
-  const createRecognizer = (async () => {
-    const runtime = sherpa ?? (await loadSherpaModule());
-    return runtime.OfflineRecognizer.createAsync({
-      featConfig: {
-        sampleRate: AUDIO_SAMPLE_RATE,
-        featureDim: 80,
-      },
-      modelConfig: {
-        whisper: {
-          encoder: artifacts.encoderPath,
-          decoder: artifacts.decoderPath,
-          task: "transcribe",
-        },
-        tokens: artifacts.tokensPath,
-        numThreads: 1,
-        provider: "cpu",
-        debug: 0,
-      },
-    });
+  const createModel = (async () => {
+    const runtime = await loadFasterWhisperModule();
+    return new runtime.WhisperModel(artifacts.modelDir, device, deviceIndex, computeType);
   })();
 
-  recognizerCache.set(
+  modelCache.set(
     cacheKey,
-    createRecognizer.catch((error) => {
-      recognizerCache.delete(cacheKey);
+    createModel.catch((error) => {
+      modelCache.delete(cacheKey);
       throw error;
     }),
   );
 
-  return { recognizer: await recognizerCache.get(cacheKey)!, artifacts };
+  return { model: await modelCache.get(cacheKey)!, artifacts };
 }
 
-function normalizeToWave(audioPath: string, workingDir: string): string {
-  const wavPath = join(workingDir, `${basename(audioPath, extname(audioPath))}.wav`);
-  try {
-    runCommand(ffmpegBinary(), [
-      "-y",
-      "-i",
-      audioPath,
-      "-vn",
-      "-ac",
-      "1",
-      "-ar",
-      String(AUDIO_SAMPLE_RATE),
-      "-c:a",
-      "pcm_s16le",
-      wavPath,
-    ]);
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      "Video transcription requires ffmpeg in PATH. " +
-      `Install ffmpeg locally, then retry. ${detail}`,
-    );
+function stripPromptEcho(transcript: string, prompt?: string): string {
+  const normalizedTranscript = transcript.replace(/\s+/g, " ").trim();
+  const normalizedPrompt = String(prompt ?? "").replace(/\s+/g, " ").trim();
+  if (!normalizedPrompt) {
+    return normalizedTranscript;
   }
-  return wavPath;
+
+  if (normalizedTranscript.toLowerCase().startsWith(normalizedPrompt.toLowerCase())) {
+    return normalizedTranscript
+      .slice(normalizedPrompt.length)
+      .replace(/^[\s.,:;!?-]+/, "")
+      .trim();
+  }
+
+  return normalizedTranscript;
 }
 
-function extractTranscriptText(result: SherpaResult): string {
-  return String(result.text ?? "").trim();
+function extractTranscriptText(segments: FasterWhisperSegment[], prompt?: string): string {
+  const transcript = segments
+    .map((segment) => String(segment.text ?? "").trim())
+    .filter(Boolean)
+    .join(" ");
+  return stripPromptEcho(transcript, prompt);
 }
 
 export function isUrl(pathLike: string): boolean {
@@ -351,16 +326,16 @@ export function downloadAudio(url: string, outputDir: string): string {
 
   const urlHash = createHash("sha1").update(url).digest("hex").slice(0, 12);
   for (const ext of CACHED_AUDIO_EXTENSIONS) {
-    const candidate = join(outputDir, `yt_${urlHash}${ext}`);
+    const candidate = join(outputDir, "yt_" + urlHash + ext);
     if (existsSync(candidate)) {
-      console.log(`  cached audio: ${basename(candidate)}`);
+      console.log("  cached audio: " + basename(candidate));
       return candidate;
     }
   }
 
-  const outTemplate = join(outputDir, `yt_${urlHash}.%(ext)s`);
+  const outTemplate = join(outputDir, "yt_" + urlHash + ".%(ext)s");
   try {
-    console.log(`  downloading audio: ${url.slice(0, 80)} ...`);
+    console.log("  downloading audio: " + url.slice(0, 80) + " ...");
     runCommand("yt-dlp", [
       "-f",
       "bestaudio[ext=m4a]/bestaudio/best",
@@ -374,17 +349,17 @@ export function downloadAudio(url: string, outputDir: string): string {
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(
-      `YouTube/URL download requires yt-dlp. Install yt-dlp to enable video ingestion. ${detail}`,
+      "YouTube/URL download requires yt-dlp. Install yt-dlp to enable video ingestion. " + detail,
     );
   }
 
   for (const entry of readdirSync(outputDir)) {
-    if (entry.startsWith(`yt_${urlHash}.`)) {
+    if (entry.startsWith("yt_" + urlHash + ".")) {
       return join(outputDir, entry);
     }
   }
 
-  throw new Error(`yt-dlp finished without producing an audio file for ${url}`);
+  throw new Error("yt-dlp finished without producing an audio file for " + url);
 }
 
 export function buildWhisperPrompt(
@@ -400,7 +375,7 @@ export function buildWhisperPrompt(
   if (labels.length === 0) {
     return FALLBACK_PROMPT;
   }
-  return `Technical discussion about ${labels.join(", ")}. ${FALLBACK_PROMPT}`;
+  return "Technical discussion about " + labels.join(", ") + ". " + FALLBACK_PROMPT;
 }
 
 export async function transcribe(
@@ -415,7 +390,7 @@ export async function transcribe(
   const audioPath = isUrl(videoPath)
     ? downloadAudio(videoPath, join(outDir, "downloads"))
     : resolve(videoPath);
-  const transcriptPath = join(outDir, `${basename(audioPath, extname(audioPath))}.txt`);
+  const transcriptPath = join(outDir, basename(audioPath, extname(audioPath)) + ".txt");
 
   if (existsSync(transcriptPath) && !force) {
     return transcriptPath;
@@ -423,28 +398,29 @@ export async function transcribe(
 
   const prompt = initialPrompt ?? process.env.GRAPHIFY_WHISPER_PROMPT ?? FALLBACK_PROMPT;
   const requestedModel = process.env.GRAPHIFY_WHISPER_MODEL ?? DEFAULT_MODEL;
-  const tempDir = mkdtempSync(join(tmpdir(), "graphify-transcribe-"));
+  const previousFfmpegPath = process.env.FASTER_WHISPER_FFMPEG_PATH;
+  const shouldRestoreFfmpegPath = previousFfmpegPath === undefined && Boolean(process.env.GRAPHIFY_FFMPEG_BIN);
+  if (shouldRestoreFfmpegPath) {
+    process.env.FASTER_WHISPER_FFMPEG_PATH = process.env.GRAPHIFY_FFMPEG_BIN;
+  }
 
   try {
-    console.log(`  transcribing ${basename(audioPath)} (model=${requestedModel}) ...`);
-    const wavPath = normalizeToWave(audioPath, tempDir);
-    const sherpa = await loadSherpaModule();
-    const { recognizer, artifacts } = await getRecognizer(requestedModel, sherpa);
-    const wave = sherpa.readWave(wavPath);
-    const stream = recognizer.createStream();
-    if (prompt && typeof stream.setOption === "function") {
-      try {
-        stream.setOption("prompt", prompt);
-      } catch {
-        /* ignored: sherpa-onnx does not guarantee prompt support across builds */
-      }
-    }
-    stream.acceptWaveform({ samples: wave.samples, sampleRate: wave.sampleRate });
-    const result = await recognizer.decodeAsync(stream);
-    const transcript = extractTranscriptText(result);
+    console.log("  transcribing " + basename(audioPath) + " (model=" + requestedModel + ") ...");
+    const { model, artifacts } = await getWhisperModel(requestedModel);
+    const [segments] = await model.transcribe(
+      audioPath,
+      {
+        beamSize: envNumber("GRAPHIFY_WHISPER_BEAM_SIZE", 5),
+        vadFilter: envBoolean("GRAPHIFY_WHISPER_VAD_FILTER", true),
+        initialPrompt: prompt,
+      },
+      process.env.GRAPHIFY_WHISPER_LANGUAGE,
+      "transcribe",
+    );
+    const transcript = extractTranscriptText(segments, prompt);
     writeFileSync(transcriptPath, transcript, "utf-8");
     if (artifacts.requestedModel !== artifacts.resolvedModel) {
-      console.log(`  model alias: ${artifacts.requestedModel} -> ${artifacts.resolvedModel}`);
+      console.log("  model alias: " + artifacts.requestedModel + " -> " + artifacts.resolvedModel);
     }
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("Unsupported GRAPHIFY_WHISPER_MODEL")) {
@@ -452,11 +428,13 @@ export async function transcribe(
     }
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(
-      "Video transcription requires the local TypeScript toolchain: sherpa-onnx-node + ffmpeg. " +
-      `Retry after installing them. ${detail}`,
+      "Video transcription requires the local TypeScript faster-whisper toolchain: " +
+      "faster-whisper-ts + ffmpeg. Retry after installing them. " + detail,
     );
   } finally {
-    rmSync(tempDir, { recursive: true, force: true });
+    if (shouldRestoreFfmpegPath) {
+      delete process.env.FASTER_WHISPER_FFMPEG_PATH;
+    }
   }
 
   return transcriptPath;
@@ -478,7 +456,7 @@ export async function transcribeAll(
       transcriptPaths.push(await transcribe(videoFile, outputDir, initialPrompt, force));
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
-      console.log(`  warning: could not transcribe ${videoFile}: ${detail}`);
+      console.log("  warning: could not transcribe " + videoFile + ": " + detail);
     }
   }
   return transcriptPaths;

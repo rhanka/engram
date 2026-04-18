@@ -213,6 +213,15 @@
   - [x] lifecycle behavior
   - [x] review-mode scope
 
+## Lot 13 - TypeScript faster-whisper Runtime
+
+- [x] Replace the previous transcription workaround with the published `faster-whisper-ts` runtime
+- [x] Resolve/download CTranslate2 faster-whisper model directories without invoking Python
+- [x] Align default model/runtime settings with upstream Graphify Python (`base`, CPU, `int8`)
+- [x] Preserve URL ingestion through `yt-dlp` and the existing prompt/model env behavior
+- [x] Update tests, README files, SPEC files, and generated skills to describe the TypeScript faster-whisper path
+- [x] Validate targeted transcription tests, lint/build, full tests, and `npx graphify hook-rebuild`
+
 ## Exit Criteria
 
 - [x] `.graphify/` is the canonical runtime state root

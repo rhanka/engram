@@ -8,7 +8,7 @@
 
 このリポジトリは元の Graphify プロジェクトの保守中 TypeScript ポートです。製品の方向性、ワークフロー、初期実装は [Safi Shamsi](https://github.com/safishamsi/graphify) による原典プロジェクトに依拠しています。
 
-graphify はマルチモーダルであり、この TypeScript ポートは upstream `v3` に対してリリース単位でキャッチアップしています。現在の TS ランタイムはコード、Markdown、PDF、Office 文書、スクリーンショット、図表、その他の画像を処理できます。このブランチではさらにローカルの音声/動画検出と `yt-dlp` + `ffmpeg` + `sherpa-onnx-node` による文字起こし経路を追加しており、生成された transcript も同じ意味抽出パスに流し込まれます。tree-sitter AST により 20 言語をサポートします（Python、JS、TS、Go、Rust、Java、C、C++、Ruby、C#、Kotlin、Scala、PHP、Swift、Lua、Zig、PowerShell、Elixir、Objective-C、Julia）。
+graphify はマルチモーダルであり、この TypeScript ポートは upstream `v3` に対してリリース単位でキャッチアップしています。現在の TS ランタイムはコード、Markdown、PDF、Office 文書、スクリーンショット、図表、その他の画像を処理できます。このブランチではさらにローカルの音声/動画検出と `yt-dlp` + `ffmpeg` + `faster-whisper-ts` による文字起こし経路を追加しており、生成された transcript も同じ意味抽出パスに流し込まれます。tree-sitter AST により 20 言語をサポートします（Python、JS、TS、Go、Rust、Java、C、C++、Ruby、C#、Kotlin、Scala、PHP、Swift、Lua、Zig、PowerShell、Elixir、Objective-C、Julia）。
 
 ## ブランチモデル
 
@@ -16,11 +16,13 @@ graphify はマルチモーダルであり、この TypeScript ポートは upst
 - `v3` は元の Python Graphify 系譜を追跡する upstream mirror / alignment ブランチです。
 - キャッチアップ作業はバージョンごとに記録し、差分を明示します。
 
-## アラインメントと分岐
+## 系譜とアラインメント
 
-- 元の Graphify は製品系譜と parity 目標です。
-- TypeScript ポートは npm 配布、ローカル runtime state、MCP / install surfaces、git worktree lifecycle などを TS-native に強化します。
-- `code-review-graph` は review-mode の語彙と評価アイデアの参考であり、主系譜ではありません。
+| 出典 | このリポジトリで維持または適応するもの | アラインメント契約 |
+|---|---|---|
+| [Safi Shamsi](https://github.com/safishamsi/graphify) による元の Graphify | 中核となる製品アイデア：フォルダ -> ナレッジグラフ、assistant-skill ワークフロー、graph/report/html 出力、provenance ラベル、コミュニティ検出、マルチモーダルなコーパス運用。 | `v3` は upstream Python Graphify をミラーし、キャッチアップ作業はバージョンごとに追跡します。 |
+| この TypeScript ポート | npm パッケージ、リポジトリルートの TypeScript runtime、`.graphify/` state、複数アシスタント向け installer、MCP surface、git/worktree lifecycle、TS ツールチェーンによるローカル音声/動画文字起こし。 | `v3-typescript` が保守対象のデフォルトブランチです。TS 固有の挙動は upstream parity ではなく、意図的な分岐として文書化します。 |
+| `code-review-graph` 参照プロジェクト | review 向けのグラフ投影：first-hop summary、review delta、review analysis、review evaluation、install preview、advisory commit grouping の語彙。 | Graphify のグラフ上に追加される review surface として採用します。Graphify は review-only にはならず、SQLite/embeddings をデフォルト採用せず、マルチモーダル対応を維持します。 |
 
 > Andrej Karpathy は論文、ツイート、スクリーンショット、メモを放り込む `/raw` フォルダを持っています。graphify はまさにその問題への答えです――生ファイルを読むのに比べて1クエリあたりのトークン数が 71.5 倍少なく、セッションをまたいで永続化され、見つけたものと推測したものを正直に区別します。
 
@@ -59,7 +61,7 @@ dist/
 
 ## 仕組み
 
-graphify は決定論的な構造抽出とモデル駆動の意味抽出を組み合わせ、必要に応じてその間にローカル前処理を挟みます。コードは LLM を使わない AST パスでクラス、関数、インポート、コールグラフ、docstring、根拠コメントを抽出します。ドキュメント、論文、Office 文書、画像はテキストまたはマルチモーダル入力に正規化したうえで、プラットフォーム側モデルのサブエージェントが概念、関係、設計意図を抽出します。このキャッチアップブランチでは音声/動画もローカルで検出でき、TypeScript ランタイムから `yt-dlp` で音声を取得し、`ffmpeg` で正規化し、`sherpa-onnx-node` で文字起こしします。その transcript も他のドキュメントと同じ意味抽出パスに流し込みます。結果は Graphology グラフにマージされ、Louvain コミュニティ検出でクラスタリングされ、インタラクティブ HTML、クエリ可能な JSON、平易な監査レポートとしてエクスポートされます。
+graphify は決定論的な構造抽出とモデル駆動の意味抽出を組み合わせ、必要に応じてその間にローカル前処理を挟みます。コードは LLM を使わない AST パスでクラス、関数、インポート、コールグラフ、docstring、根拠コメントを抽出します。ドキュメント、論文、Office 文書、画像はテキストまたはマルチモーダル入力に正規化したうえで、プラットフォーム側モデルのサブエージェントが概念、関係、設計意図を抽出します。このキャッチアップブランチでは音声/動画もローカルで検出でき、TypeScript ランタイムから `yt-dlp` で音声を取得し、`ffmpeg` で正規化し、`faster-whisper-ts` で文字起こしします。その transcript も他のドキュメントと同じ意味抽出パスに流し込みます。結果は Graphology グラフにマージされ、Louvain コミュニティ検出でクラスタリングされ、インタラクティブ HTML、クエリ可能な JSON、平易な監査レポートとしてエクスポートされます。
 
 **クラスタリングはグラフトポロジベースで、埋め込みは使いません。** Louvain はエッジ密度によってコミュニティを見つけます。プラットフォームモデルが抽出する意味的類似性エッジ（`semantically_similar_to`、`INFERRED`）は既にグラフに含まれているため、コミュニティ検出に直接影響します。グラフ構造そのものが類似性シグナルであり、別途の embedding ステップやベクターデータベースは不要です。
 
@@ -245,7 +247,13 @@ graphify query "..." --graph path/to/graph.json
 | Office | `.docx .xlsx` | Markdown に変換した後、現在のプラットフォームモデルで抽出 |
 | 論文 | `.pdf` | 引用マイニング + 概念抽出 |
 | 画像 | `.png .jpg .webp .gif` | プラットフォームのマルチモーダルモデル - スクリーンショット、図、任意の言語 |
-| 音声 / 動画 | `.mp4 .mov .webm .mkv .avi .m4v .mp3 .wav .m4a .ogg` | ローカルで検出し、必要に応じて `yt-dlp` で取得、`ffmpeg` で正規化、`sherpa-onnx-node` で文字起こししたうえで、ドキュメントと同じ意味抽出パスに流し込む |
+| 音声 / 動画 | `.mp4 .mov .webm .mkv .avi .m4v .mp3 .wav .m4a .ogg` | ローカルで検出し、必要に応じて `yt-dlp` で取得、`ffmpeg` で正規化、`faster-whisper-ts` で文字起こししたうえで、ドキュメントと同じ意味抽出パスに流し込む |
+
+### ローカル音声/動画文字起こし
+
+TypeScript ポートは公開済みの `faster-whisper-ts` runtime を使用し、Python は呼び出しません。デフォルトの文字起こし設定は upstream Python Graphify と意図的に揃えており、Whisper モデルは `base`、デバイスは CPU、compute type は `int8` です。別のローカル CTranslate2 モデルや runtime target が必要な場合は、`GRAPHIFY_WHISPER_MODEL`、`GRAPHIFY_WHISPER_MODEL_DIR`、`GRAPHIFY_WHISPER_MODEL_ID`、`GRAPHIFY_WHISPER_MODEL_REVISION`、`GRAPHIFY_WHISPER_DEVICE`、`GRAPHIFY_WHISPER_COMPUTE_TYPE` で上書きできます。
+
+URL ingestion は引き続き `yt-dlp` を使います。ローカルの音声/動画デコードは `faster-whisper-ts` とシステム `ffmpeg` が処理します。生成された transcript はデフォルトで `.graphify/transcripts/` に書き込まれ、その後は通常のドキュメント入力として意味抽出に渡されます。
 
 ## 得られるもの
 
@@ -283,15 +291,15 @@ graphify query "..." --graph path/to/graph.json
 
 ## プライバシー
 
-graphify はドキュメント、論文、画像の意味的抽出のために、ファイル内容を AI コーディングアシスタントの基盤モデル API に送信します。Anthropic（Claude Code）、OpenAI（Codex）、Google（Gemini CLI）など、利用中プラットフォームのプロバイダーが対象です。コードファイルは tree-sitter AST を介してローカルで処理されるため、コードに関してはファイル内容がマシンから出ることはありません。音声/動画の文字起こしを使う場合、その工程はローカルの `yt-dlp` + `ffmpeg` + `sherpa-onnx-node` ツールチェーンで実行されます。テレメトリ、利用追跡、分析は一切ありません。ネットワーク呼び出しは、あなたが明示的に ingestion を指示した URL 取得と、抽出中のプラットフォームのモデル API 呼び出しのみです。
+graphify はドキュメント、論文、画像の意味的抽出のために、ファイル内容を AI コーディングアシスタントの基盤モデル API に送信します。Anthropic（Claude Code）、OpenAI（Codex）、Google（Gemini CLI）など、利用中プラットフォームのプロバイダーが対象です。コードファイルは tree-sitter AST を介してローカルで処理されるため、コードに関してはファイル内容がマシンから出ることはありません。音声/動画の文字起こしを使う場合、その工程はローカルの `yt-dlp` + `ffmpeg` + `faster-whisper-ts` ツールチェーンで実行されます。テレメトリ、利用追跡、分析は一切ありません。ネットワーク呼び出しは、あなたが明示的に ingestion を指示した URL 取得と、抽出中のプラットフォームのモデル API 呼び出しのみです。
 
 ## 技術スタック
 
-Graphology + Louvain（`graphology-communities-louvain`） + tree-sitter + vis-network に加え、`pdf-parse`、`mammoth`、`exceljs`、`turndown`、そしてこのキャッチアップブランチで upstream に合わせて導入した `yt-dlp` + `ffmpeg` + `sherpa-onnx-node` の文字起こし経路を使います。意味的抽出は利用中プラットフォームのモデル（Claude Code、Codex、Gemini CLI など）を介して行われます。デフォルトの HTML 出力は完全な静的ファイルです。
+Graphology + Louvain（`graphology-communities-louvain`） + tree-sitter + vis-network に加え、`pdf-parse`、`mammoth`、`exceljs`、`turndown`、そしてこのキャッチアップブランチで upstream に合わせて導入した `yt-dlp` + `ffmpeg` + `faster-whisper-ts` の文字起こし経路を使います。意味的抽出は利用中プラットフォームのモデル（Claude Code、Codex、Gemini CLI など）を介して行われます。デフォルトの HTML 出力は完全な静的ファイルです。
 
 ## 謝辞
 
-このリポジトリは [Safi Shamsi](https://github.com/safishamsi/graphify) による元の Graphify プロジェクトの TypeScript ポートです。現行コードベースは assistant-skill ワークフローとナレッジグラフモデルを維持しつつ、保守されるランタイムをリポジトリルートの TypeScript 実装へ移しています。
+このリポジトリは [Safi Shamsi](https://github.com/safishamsi/graphify) による元の Graphify プロジェクトの TypeScript ポートです。一部の review ワークフローのアイデアは、[spec/SPEC_CODE_REVIEW_GRAPH_OPPORUNITY.md](spec/SPEC_CODE_REVIEW_GRAPH_OPPORUNITY.md) に記録した `code-review-graph` 比較作業からも適応しています。保守対象の製品は引き続き Graphify TypeScript であり、マルチモーダル、ファイルベースをデフォルトとし、parity が重要な箇所では upstream Graphify に合わせます。
 
 ## ライセンス
 

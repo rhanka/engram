@@ -250,7 +250,7 @@ Status: rejected.
 Reason:
 
 - this repo is the maintained TypeScript port
-- audio transcription is implemented through TypeScript-local sherpa-onnx-node, not Python faster-whisper
+- audio transcription is implemented through the TypeScript faster-whisper-ts port, not Python faster-whisper
 
 ## Current Implemented Review Surface
 
