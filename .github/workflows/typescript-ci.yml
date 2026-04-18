@@ -2,10 +2,10 @@ name: TypeScript CI
 
 on:
   push:
-    branches: ["v1", "v2", "v3", "main"]
+    branches: ["v1", "v2", "v3", "v3-typescript", "main"]
     tags: ["v*"]
   pull_request:
-    branches: ["v1", "v2", "v3", "main"]
+    branches: ["v1", "v2", "v3", "v3-typescript", "main"]
 
 jobs:
   test:
