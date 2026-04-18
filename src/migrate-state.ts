@@ -118,7 +118,7 @@ function gitAdvice(root: string, sourceDir: string, targetDir: string): Migratio
   const notes: string[] = [];
 
   if (hasCommits && legacyTrackedCount > 0) {
-    recommendedCommands.push("git mv " + (targetIgnored ? "-f " : "") + shellQuote(legacyPath) + " " + shellQuote(targetPath));
+    recommendedCommands.push("git mv -f " + shellQuote(legacyPath) + " " + shellQuote(targetPath));
     recommendedCommands.push('git commit -m "chore: migrate graphify state directory"');
     notes.push("Tracked legacy graph artifacts detected; use git mv before copying if you want Git history to show a rename.");
     if (targetIgnored) {
