@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -330,7 +331,7 @@ function runtimeInfo(): Record<string, unknown> {
   };
 }
 
-async function main(): Promise<void> {
+export async function main(argv: string[] = process.argv): Promise<void> {
   const program = new Command();
   program.name("graphify-skill-runtime");
 
@@ -975,6 +976,7 @@ async function main(): Promise<void> {
     .requiredOption("--graph-out <path>")
     .requiredOption("--report-out <path>")
     .requiredOption("--analysis-out <path>")
+    .option("--html-out <path>")
     .action((opts) => {
       const G = loadGraph(opts.graph);
       const analyzed = analyzeGraph(
@@ -988,6 +990,13 @@ async function main(): Promise<void> {
       });
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
       writeJson(opts.analysisOut, analyzed.analysis);
+      if (opts.htmlOut) {
+        safeToHtml(G, analyzed.communities, resolve(opts.htmlOut), {
+          communityLabels: analyzed.labels,
+        }, {
+          onWarning: (message) => console.warn(message),
+        });
+      }
       console.log(`Re-clustered: ${analyzed.communities.size} communities`);
     });
 
@@ -1152,6 +1161,7 @@ async function main(): Promise<void> {
 
   program
     .command("ingest")
+    .alias("add")
     .argument("<url>")
     .option("--target-dir <path>", "Directory to save fetched content", "./raw")
     .option("--author <name>")
@@ -1182,11 +1192,22 @@ async function main(): Promise<void> {
       console.log(`Saved to ${outPath}`);
     });
 
-  await program.parseAsync(process.argv);
+  await program.parseAsync(argv);
 }
 
-main().catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(message);
-  process.exit(1);
-});
+function isDirectRuntimeExecution(): boolean {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === __filename;
+  } catch {
+    return resolve(process.argv[1]) === __filename;
+  }
+}
+
+if (isDirectRuntimeExecution()) {
+  main().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(message);
+    process.exit(1);
+  });
+}

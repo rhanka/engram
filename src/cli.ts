@@ -15,6 +15,7 @@ import { join, resolve, dirname, extname } from "node:path";
 import { homedir, platform } from "node:os";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
+import type Graph from "graphology";
 import { forEachTraversalNeighbor, loadGraphFromData } from "./graph.js";
 import { safeExecGit } from "./git.js";
 import { resolveGraphInputPath, resolveGraphifyPaths } from "./paths.js";
@@ -51,6 +52,32 @@ function changedFilesFromGit(options: { base?: string; head?: string; staged?: b
   const tracked = splitFiles(safeExecGit(".", ["diff", "--name-only", "HEAD", "--"]) ?? "");
   const untracked = splitFiles(safeExecGit(".", ["ls-files", "--others", "--exclude-standard"]) ?? "");
   return [...new Set([...tracked, ...untracked])].sort();
+}
+
+function loadCliGraph(graphPath: string): Graph {
+  const gp = resolveGraphInputPath(graphPath);
+  if (!existsSync(gp)) {
+    throw new Error(`graph file not found: ${gp}`);
+  }
+  return loadGraphFromData(JSON.parse(readFileSync(gp, "utf-8")));
+}
+
+function findBestMatchingNode(G: Graph, query: string): string | null {
+  const terms = normalizeSearchText(query)
+    .split(/\s+/)
+    .filter((term) => term.length > 1);
+  let bestScore = 0;
+  let bestNodeId: string | null = null;
+  G.forEachNode((nodeId, data) => {
+    const label = normalizeSearchText((data.label as string) ?? nodeId);
+    const source = normalizeSearchText((data.source_file as string) ?? "");
+    const score = terms.filter((term) => label.includes(term) || source.includes(term)).length;
+    if (score > 0 && (!bestNodeId || score > bestScore || (score === bestScore && G.degree(nodeId) > G.degree(bestNodeId)))) {
+      bestScore = score;
+      bestNodeId = nodeId;
+    }
+  });
+  return bestNodeId;
 }
 
 // ---------------------------------------------------------------------------
@@ -1414,6 +1441,180 @@ export async function main(): Promise<void> {
       const { watch } = await import("./watch.js");
       const debounce = Number.parseFloat(opts.debounce);
       await watch(watchPath ?? ".", Number.isFinite(debounce) ? debounce : 3);
+    });
+
+  program
+    .command("update [path]")
+    .description("One-shot code-only graph rebuild")
+    .action(async (updatePath = ".") => {
+      if (!existsSync(updatePath)) {
+        console.error(`error: path not found: ${updatePath}`);
+        process.exit(1);
+      }
+      const { rebuildCode } = await import("./watch.js");
+      console.log(`Re-extracting code files in ${updatePath} (no LLM needed)...`);
+      const ok = await rebuildCode(updatePath);
+      if (!ok) {
+        console.error("Nothing to update or rebuild failed - check output above.");
+        process.exit(1);
+      }
+      console.log("Code graph updated. For doc/paper/image changes run the graphify skill with --update.");
+    });
+
+  program
+    .command("cluster-only [path]")
+    .description("Rerun clustering/report/HTML on an existing .graphify/graph.json")
+    .action(async (clusterPath = ".") => {
+      const root = resolve(clusterPath);
+      const paths = resolveGraphifyPaths({ root });
+      if (!existsSync(paths.graph)) {
+        console.error(`error: no graph found at ${paths.graph} - run /graphify first`);
+        process.exit(1);
+      }
+
+      const G = loadGraphFromData(JSON.parse(readFileSync(paths.graph, "utf-8")));
+      const { cluster, scoreAll } = await import("./cluster.js");
+      const { godNodes, surprisingConnections, suggestQuestions } = await import("./analyze.js");
+      const { generate } = await import("./report.js");
+      const { toJson } = await import("./export.js");
+      const { safeToHtml } = await import("./html-export.js");
+
+      const communities = cluster(G);
+      const cohesion = scoreAll(G, communities);
+      const gods = godNodes(G);
+      const surprises = surprisingConnections(G, communities);
+      const labels = new Map<number, string>();
+      for (const cid of communities.keys()) labels.set(cid, `Community ${cid}`);
+      const questions = suggestQuestions(G, communities, labels);
+      const detection = {
+        files: { code: [], document: [], paper: [], image: [], video: [] },
+        total_files: 0,
+        total_words: 0,
+        needs_graph: true,
+        warning: "cluster-only mode - file stats not available",
+        skipped_sensitive: [],
+        graphifyignore_patterns: 0,
+      };
+      const report = generate(G, communities, cohesion, labels, gods, surprises, detection, { input: 0, output: 0 }, root, questions);
+      writeFileSync(paths.report, report, "utf-8");
+      toJson(G, communities, paths.graph, { communityLabels: labels });
+      safeToHtml(G, communities, paths.html, { communityLabels: labels }, {
+        onWarning: (message) => console.warn(message),
+      });
+      const analysis = {
+        communities: Object.fromEntries([...communities.entries()].map(([key, value]) => [String(key), value])),
+        cohesion: Object.fromEntries([...cohesion.entries()].map(([key, value]) => [String(key), value])),
+        gods,
+        surprises,
+        labels: Object.fromEntries([...labels.entries()].map(([key, value]) => [String(key), value])),
+        questions,
+      };
+      writeFileSync(paths.scratch.analysis, JSON.stringify(analysis, null, 2), "utf-8");
+      console.log(`Done - ${communities.size} communities. GRAPH_REPORT.md, graph.json and graph.html updated.`);
+    });
+
+  program
+    .command("path")
+    .description("Shortest path between two graph nodes")
+    .argument("<source>")
+    .argument("<target>")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .action(async (sourceLabel, targetLabel, opts) => {
+      try {
+        const G = loadCliGraph(opts.graph);
+        const source = findBestMatchingNode(G, sourceLabel);
+        const target = findBestMatchingNode(G, targetLabel);
+        if (!source) {
+          console.error(`No node matching '${sourceLabel}' found.`);
+          process.exit(1);
+        }
+        if (!target) {
+          console.error(`No node matching '${targetLabel}' found.`);
+          process.exit(1);
+        }
+        const shortestPath = await import("graphology-shortest-path/unweighted.js");
+        const path = shortestPath.bidirectional(G, source, target) ?? [];
+        if (path.length === 0) {
+          console.log(`No path found between '${sourceLabel}' and '${targetLabel}'.`);
+          return;
+        }
+        const segments: string[] = [];
+        for (let i = 0; i < path.length - 1; i += 1) {
+          const nodeId = path[i]!;
+          const nextNode = path[i + 1]!;
+          const edgeId = G.edge(nodeId, nextNode);
+          const edge = edgeId ? G.getEdgeAttributes(edgeId) : {};
+          if (i === 0) segments.push((G.getNodeAttribute(nodeId, "label") as string) ?? nodeId);
+          const label = (G.getNodeAttribute(nextNode, "label") as string) ?? nextNode;
+          const confidence = edge.confidence ? ` [${edge.confidence}]` : "";
+          segments.push(`--${edge.relation ?? ""}${confidence}--> ${label}`);
+        }
+        console.log(`Shortest path (${path.length - 1} hops):\n  ${segments.join(" ")}`);
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    });
+
+  program
+    .command("explain")
+    .description("Plain-language details for one graph node")
+    .argument("<node>")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .action((nodeLabel, opts) => {
+      try {
+        const G = loadCliGraph(opts.graph);
+        const nodeId = findBestMatchingNode(G, nodeLabel);
+        if (!nodeId) {
+          console.log(`No node matching '${nodeLabel}' found.`);
+          return;
+        }
+        const attrs = G.getNodeAttributes(nodeId);
+        console.log(`Node: ${(attrs.label as string) ?? nodeId}`);
+        console.log(`  ID:        ${nodeId}`);
+        console.log(`  Source:    ${(attrs.source_file as string) ?? ""} ${(attrs.source_location as string) ?? ""}`.trimEnd());
+        console.log(`  Type:      ${(attrs.file_type as string) ?? ""}`);
+        console.log(`  Community: ${attrs.community ?? ""}`);
+        console.log(`  Degree:    ${G.degree(nodeId)}`);
+        const neighbors: string[] = [];
+        forEachTraversalNeighbor(G, nodeId, (neighbor) => neighbors.push(neighbor));
+        if (neighbors.length > 0) {
+          console.log(`\nConnections (${neighbors.length}):`);
+          for (const neighbor of neighbors.sort((a, b) => G.degree(b) - G.degree(a)).slice(0, 20)) {
+            const edgeId = G.edge(nodeId, neighbor);
+            const edge = edgeId ? G.getEdgeAttributes(edgeId) : {};
+            const label = (G.getNodeAttribute(neighbor, "label") as string) ?? neighbor;
+            console.log(`  --> ${label} [${edge.relation ?? ""}] [${edge.confidence ?? ""}]`);
+          }
+          if (neighbors.length > 20) console.log(`  ... and ${neighbors.length - 20} more`);
+        }
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    });
+
+  program
+    .command("add")
+    .description("Fetch a URL into ./raw for the next graph update")
+    .argument("<url>")
+    .option("--dir <path>", "Directory to save fetched content", "./raw")
+    .option("--target-dir <path>", "Alias for --dir")
+    .option("--author <name>")
+    .option("--contributor <name>")
+    .action(async (url, opts) => {
+      try {
+        const { ingest } = await import("./ingest.js");
+        const outPath = await ingest(url, resolve(opts.targetDir ?? opts.dir), {
+          author: opts.author ?? null,
+          contributor: opts.contributor ?? null,
+        });
+        console.log(`Saved to ${outPath}`);
+        console.log("Run the graphify skill with --update to update the graph.");
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
     });
 
   // Query command

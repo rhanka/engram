@@ -1,12 +1,12 @@
 # Graph Report - .  (2026-04-19)
 
 ## Corpus Check
-- 116 files · ~0 words
+- 117 files · ~0 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1833 nodes · 3551 edges · 83 communities detected
-- Extraction: 93% EXTRACTED · 7% INFERRED · 0% AMBIGUOUS · INFERRED: 233 edges (avg confidence: 0.5)
+- 1859 nodes · 3602 edges · 84 communities detected
+- Extraction: 94% EXTRACTED · 6% INFERRED · 0% AMBIGUOUS · INFERRED: 233 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
 
 ## God Nodes (most connected - your core abstractions)
@@ -37,7 +37,7 @@
 
 ### Community 0 - "Community 0"
 Cohesion: 0.01
-Nodes (291): agentsInstall(), agentsUninstall(), antigravityInstall(), antigravityUninstall(), applyEntry(), average(), bfs(), bodyContent() (+283 more)
+Nodes (307): agentsInstall(), agentsUninstall(), antigravityInstall(), antigravityUninstall(), applyEntry(), average(), bfs(), bodyContent() (+299 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.01
@@ -168,28 +168,28 @@ Cohesion: 0.67
 Nodes (5): buildProject(), countNonCodeFiles(), defaultLabels(), fileList(), formatDiagnosticSummary()
 
 ### Community 33 - "Community 33"
-Cohesion: 0.4
-Nodes (0):
+Cohesion: 0.47
+Nodes (3): runCli(), runMain(), runSkillRuntime()
 
 ### Community 34 - "Community 34"
 Cohesion: 0.4
 Nodes (0):
 
 ### Community 35 - "Community 35"
+Cohesion: 0.4
+Nodes (0):
+
+### Community 36 - "Community 36"
 Cohesion: 0.83
 Nodes (3): normalizeSearchText(), scoreSearchText(), textMatchesQuery()
 
-### Community 36 - "Community 36"
+### Community 37 - "Community 37"
 Cohesion: 0.67
 Nodes (0):
-
-### Community 37 - "Community 37"
-Cohesion: 1
-Nodes (2): git(), hookPath()
 
 ### Community 38 - "Community 38"
-Cohesion: 0.67
-Nodes (0):
+Cohesion: 1
+Nodes (2): git(), hookPath()
 
 ### Community 39 - "Community 39"
 Cohesion: 0.67
@@ -200,7 +200,7 @@ Cohesion: 0.67
 Nodes (0):
 
 ### Community 41 - "Community 41"
-Cohesion: 1
+Cohesion: 0.67
 Nodes (0):
 
 ### Community 42 - "Community 42"
@@ -367,92 +367,96 @@ Nodes (0):
 Cohesion: 1
 Nodes (0):
 
+### Community 83 - "Community 83"
+Cohesion: 1
+Nodes (0):
+
 ## Knowledge Gaps
 - **72 isolated node(s):** `GraphifyDemo`, `LinearAlgebra`, `Base`, `-initWithName`, `-speak` (+67 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **Thin community `Community 41`** (2 nodes): `html-export.ts`, `safeToHtml()`
+- **Thin community `Community 42`** (2 nodes): `html-export.ts`, `safeToHtml()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 42`** (2 nodes): `report.ts`, `generate()`
+- **Thin community `Community 43`** (2 nodes): `report.ts`, `generate()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 43`** (2 nodes): `semantic-prepare.ts`, `prepareSemanticDetection()`
+- **Thin community `Community 44`** (2 nodes): `semantic-prepare.ts`, `prepareSemanticDetection()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 44`** (2 nodes): `analyze.test.ts`, `buildTestGraph()`
+- **Thin community `Community 45`** (2 nodes): `analyze.test.ts`, `buildTestGraph()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 45`** (2 nodes): `build-project.test.ts`, `makeProjectDir()`
+- **Thin community `Community 46`** (2 nodes): `build-project.test.ts`, `makeProjectDir()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 46`** (2 nodes): `cluster.test.ts`, `makeGraph()`
+- **Thin community `Community 47`** (2 nodes): `cluster.test.ts`, `makeGraph()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 47`** (2 nodes): `platform-v4-integration.test.ts`, `runCliInTemp()`
+- **Thin community `Community 48`** (2 nodes): `platform-v4-integration.test.ts`, `runCliInTemp()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 48`** (2 nodes): `review-analysis.test.ts`, `makeGraph()`
+- **Thin community `Community 49`** (2 nodes): `review-analysis.test.ts`, `makeGraph()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 49`** (2 nodes): `review.test.ts`, `makeGraph()`
+- **Thin community `Community 50`** (2 nodes): `review.test.ts`, `makeGraph()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 50`** (2 nodes): `summary.test.ts`, `makeGraph()`
+- **Thin community `Community 51`** (2 nodes): `summary.test.ts`, `makeGraph()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 51`** (2 nodes): `transcribe.test.ts`, `mockYtDlpDownload()`
+- **Thin community `Community 52`** (2 nodes): `transcribe.test.ts`, `mockYtDlpDownload()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 52`** (1 nodes): `index.d.ts`
+- **Thin community `Community 53`** (1 nodes): `index.d.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 53`** (1 nodes): `types.ts`
+- **Thin community `Community 54`** (1 nodes): `types.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 54`** (1 nodes): `aider-integration.test.ts`
+- **Thin community `Community 55`** (1 nodes): `aider-integration.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 55`** (1 nodes): `build.test.ts`
+- **Thin community `Community 56`** (1 nodes): `build.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 56`** (1 nodes): `cache.test.ts`
+- **Thin community `Community 57`** (1 nodes): `cache.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 57`** (1 nodes): `claude-integration.test.ts`
+- **Thin community `Community 58`** (1 nodes): `claude-integration.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 58`** (1 nodes): `cli.test.ts`
+- **Thin community `Community 59`** (1 nodes): `cli.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 59`** (1 nodes): `codex-integration.test.ts`
+- **Thin community `Community 60`** (1 nodes): `codex-integration.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 60`** (1 nodes): `copilot-integration.test.ts`
+- **Thin community `Community 61`** (1 nodes): `copilot-integration.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 61`** (1 nodes): `cursor-integration.test.ts`
+- **Thin community `Community 62`** (1 nodes): `cursor-integration.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 62`** (1 nodes): `detect.test.ts`
+- **Thin community `Community 63`** (1 nodes): `detect.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 63`** (1 nodes): `extract-call-confidence.test.ts`
+- **Thin community `Community 64`** (1 nodes): `extract-call-confidence.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 64`** (1 nodes): `gemini-integration.test.ts`
+- **Thin community `Community 65`** (1 nodes): `gemini-integration.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 65`** (1 nodes): `html-export.test.ts`
+- **Thin community `Community 66`** (1 nodes): `html-export.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 66`** (1 nodes): `ingest.test.ts`
+- **Thin community `Community 67`** (1 nodes): `ingest.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 67`** (1 nodes): `install-preview.test.ts`
+- **Thin community `Community 68`** (1 nodes): `install-preview.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 68`** (1 nodes): `language-surface.test.ts`
+- **Thin community `Community 69`** (1 nodes): `language-surface.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 69`** (1 nodes): `lifecycle.test.ts`
+- **Thin community `Community 70`** (1 nodes): `lifecycle.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 70`** (1 nodes): `mistral-ocr.integration.test.ts`
+- **Thin community `Community 71`** (1 nodes): `mistral-ocr.integration.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 71`** (1 nodes): `opencode-integration.test.ts`
+- **Thin community `Community 72`** (1 nodes): `opencode-integration.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 72`** (1 nodes): `paths.test.ts`
+- **Thin community `Community 73`** (1 nodes): `paths.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 73`** (1 nodes): `pdf-preflight.test.ts`
+- **Thin community `Community 74`** (1 nodes): `pdf-preflight.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 74`** (1 nodes): `pipeline.test.ts`
+- **Thin community `Community 75`** (1 nodes): `pipeline.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 75`** (1 nodes): `report.test.ts`
+- **Thin community `Community 76`** (1 nodes): `report.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 76`** (1 nodes): `search.test.ts`
+- **Thin community `Community 77`** (1 nodes): `search.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 77`** (1 nodes): `security.test.ts`
+- **Thin community `Community 78`** (1 nodes): `security.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 78`** (1 nodes): `skills.test.ts`
+- **Thin community `Community 79`** (1 nodes): `skills.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 79`** (1 nodes): `validate.test.ts`
+- **Thin community `Community 80`** (1 nodes): `validate.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 80`** (1 nodes): `wiki.test.ts`
+- **Thin community `Community 81`** (1 nodes): `wiki.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 81`** (1 nodes): `tsup.config.ts`
+- **Thin community `Community 82`** (1 nodes): `tsup.config.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 82`** (1 nodes): `vitest.config.ts`
+- **Thin community `Community 83`** (1 nodes): `vitest.config.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 
 ## Suggested Questions

@@ -387,11 +387,11 @@ git commit -m "feat(v4-parity): add missing upstream assistant platforms"
 - Modify command/runtime tests under `tests/`
 - Modify: `UPSTREAM_GAP.md`
 
-- [ ] **Step 6.1: Verify MCP blank-line handling**
+- [x] **Step 6.1: Verify MCP blank-line handling**
 
 Add or confirm a test where stdio receives an empty line and does not crash.
 
-- [ ] **Step 6.2: Verify bare command parity**
+- [x] **Step 6.2: Verify bare command parity**
 
 Confirm these commands work without Python-specific wrappers:
 
@@ -404,11 +404,11 @@ update
 cluster-only
 ```
 
-- [ ] **Step 6.3: Verify update/cluster-only artifact behavior**
+- [x] **Step 6.3: Verify update/cluster-only artifact behavior**
 
 Assert `graph.html` is emitted when export succeeds and does not block JSON/report artifacts when export fails.
 
-- [ ] **Step 6.4: Verify and commit**
+- [x] **Step 6.4: Verify and commit**
 
 Run:
 

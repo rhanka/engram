@@ -352,3 +352,24 @@ cliSmoke("keeps the public graphify serve CLI alive until terminated", async () 
     ]);
   }
 });
+
+cliSmoke("ignores blank MCP stdio lines instead of terminating", async () => {
+  const dir = makeTempDir();
+  const graphPath = writeFixtureGraph(dir);
+  const child = spawn("node", [cliPath, "serve", graphPath], {
+    cwd: tsRoot,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+
+  try {
+    child.stdin.write("\n\n");
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(child.exitCode).toBeNull();
+  } finally {
+    child.kill("SIGTERM");
+    await Promise.race([
+      once(child, "exit"),
+      new Promise((resolve) => setTimeout(resolve, 2000)),
+    ]);
+  }
+});
