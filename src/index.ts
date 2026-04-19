@@ -22,6 +22,12 @@ export type { WorktreeMetadata, BranchMetadata, LifecycleMetadata, RefreshLifecy
 export { runBenchmark, printBenchmark } from "./benchmark.js";
 export { ingest, saveQueryResult } from "./ingest.js";
 export { downloadAudio, buildWhisperPrompt, transcribe, transcribeAll, augmentDetectionWithTranscripts } from "./transcribe.js";
+export { parsePdfOcrMode, preflightPdf, pdfOcrSidecarStem } from "./pdf-preflight.js";
+export type { PdfOcrMode, PdfPreflightOptions, PdfPreflightResult } from "./pdf-preflight.js";
+export { augmentDetectionWithPdfPreflight } from "./pdf-ocr.js";
+export type { PdfPreparationArtifact, PdfPreparationOptions } from "./pdf-ocr.js";
+export { prepareSemanticDetection } from "./semantic-prepare.js";
+export type { SemanticPreparationOptions, SemanticPreparationResult } from "./semantic-prepare.js";
 export { buildFirstHopSummary, firstHopSummaryToText } from "./summary.js";
 export type { FirstHopSummary, FirstHopHub, FirstHopCommunity, FirstHopSummaryOptions } from "./summary.js";
 export { buildReviewDelta, reviewDeltaToText } from "./review.js";

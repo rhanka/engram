@@ -30,7 +30,8 @@ import { buildFirstHopSummary, firstHopSummaryToText } from "./summary.js";
 import { buildReviewDelta, reviewDeltaToText } from "./review.js";
 import { buildReviewAnalysis, reviewAnalysisToText, evaluateReviewAnalysis, reviewEvaluationToText } from "./review-analysis.js";
 import { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
-import { augmentDetectionWithTranscripts } from "./transcribe.js";
+import { parsePdfOcrMode } from "./pdf-preflight.js";
+import { prepareSemanticDetection } from "./semantic-prepare.js";
 import type {
   DetectionResult,
   Extraction,
@@ -397,25 +398,33 @@ async function main(): Promise<void> {
     .requiredOption("--detect <path>", "Path to the base detection JSON")
     .requiredOption("--out <path>", "Path to the augmented semantic detection JSON")
     .requiredOption("--transcripts-out <path>", "Path to the transcript path list JSON")
+    .option("--pdf-out <path>", "Path to the PDF preflight/OCR artifact list JSON")
     .option("--analysis <path>", "Optional analysis JSON from a previous run")
-    .option("--incremental", "Use detection.new_files.video and force retranscription")
+    .option("--incremental", "Use detection.new_files.video/paper and force derived artifacts")
     .option("--whisper-model <name>", "Whisper model override for local transcription")
+    .option("--pdf-ocr <mode>", "PDF OCR mode: off, auto, always, dry-run", "auto")
+    .option("--pdf-ocr-model <name>", "Mistral OCR model override")
     .action(async (opts) => {
       const detection = readJson<DetectionResult>(opts.detect);
       const analysis = opts.analysis && existsSync(resolve(opts.analysis))
         ? readJson<AnalysisFile>(opts.analysis)
         : null;
-      const transcriptsDir = join(dirname(resolve(opts.out)), "transcripts");
-      const { detection: semanticDetection, transcriptPaths } = await augmentDetectionWithTranscripts(detection, {
-        outputDir: transcriptsDir,
+      const stateDir = dirname(resolve(opts.out));
+      const { detection: semanticDetection, transcriptPaths, pdfArtifacts } = await prepareSemanticDetection(detection, {
+        transcriptOutputDir: join(stateDir, "transcripts"),
+        pdfOutputDir: join(stateDir, "converted", "pdf"),
         godNodes: analysis?.gods,
         incremental: opts.incremental,
         whisperModel: opts.whisperModel,
+        pdfOcrMode: parsePdfOcrMode(opts.pdfOcr),
+        pdfOcrModel: opts.pdfOcrModel,
       });
 
       writeJson(opts.out, semanticDetection);
       writeJson(opts.transcriptsOut, transcriptPaths);
-      console.log(`Transcribed ${transcriptPaths.length} video file(s) -> treating as docs`);
+      if (opts.pdfOut) writeJson(opts.pdfOut, pdfArtifacts);
+      const pdfConverted = pdfArtifacts.filter((item) => item.markdownPath).length;
+      console.log(`Prepared semantic inputs: ${transcriptPaths.length} transcript(s), ${pdfConverted} PDF sidecar(s)`);
     });
 
   program

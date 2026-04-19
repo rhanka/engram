@@ -36,6 +36,7 @@ describe("graphify path contract", () => {
     expect(paths.scratch.detect).toBe(join(root, ".graphify", ".graphify_detect.json"));
     expect(paths.scratch.runtime).toBe(join(root, ".graphify", ".graphify_runtime.json"));
     expect(paths.scratch.semanticNew).toBe(join(root, ".graphify", ".graphify_semantic_new.json"));
+    expect(paths.scratch.pdfOcr).toBe(join(root, ".graphify", ".graphify_pdf_ocr.json"));
   });
 
   it("preserves legacy root scratch paths for the current standalone build behavior", () => {

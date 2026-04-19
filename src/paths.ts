@@ -30,6 +30,7 @@ export interface GraphifyScratchPaths {
   analysis: string;
   labels: string;
   transcripts: string;
+  pdfOcr: string;
   incremental: string;
   incrementalSemantic: string;
   oldGraph: string;
@@ -86,6 +87,7 @@ export function resolveGraphifyPaths(options: GraphifyPathOptions = {}): Graphif
     analysis: join(stateDir, ".graphify_analysis.json"),
     labels: join(stateDir, ".graphify_labels.json"),
     transcripts: join(stateDir, ".graphify_transcripts.json"),
+    pdfOcr: join(stateDir, ".graphify_pdf_ocr.json"),
     incremental: join(stateDir, ".graphify_incremental.json"),
     incrementalSemantic: join(stateDir, ".graphify_incremental_semantic.json"),
     oldGraph: join(stateDir, ".graphify_old.json"),
