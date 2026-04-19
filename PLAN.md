@@ -524,7 +524,7 @@ git add src/serve.ts tests/serve.test.ts package.json package-lock.json PLAN.md 
 git commit -m "release(v4-parity): prepare 0.4.23"
 ```
 
-- [ ] **Step 8.5: Push branch and open PR**
+- [x] **Step 8.5: Push branch and open PR**
 
 Run:
 
@@ -532,6 +532,8 @@ Run:
 git push -u origin chore/upstream-v4-0.4.23-parity
 gh pr create --repo rhanka/graphify --base v3-typescript --head chore/upstream-v4-0.4.23-parity --title "Release 0.4.23 upstream parity" --body-file /tmp/graphify-0.4.23-pr.md
 ```
+
+Opened PR `#6`: `https://github.com/rhanka/graphify/pull/6`.
 
 - [ ] **Step 8.6: Merge PR before tagging**
 
