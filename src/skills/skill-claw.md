@@ -14,6 +14,7 @@ Turn any folder of files into a navigable knowledge graph with community detecti
 /graphify                                             # full pipeline on current directory → Obsidian vault
 /graphify <path>                                      # full pipeline on specific path
 /graphify <path> --mode deep                          # thorough extraction, richer INFERRED edges
+/graphify <path> --pdf-ocr auto                       # preflight PDFs; OCR scanned/low-text PDFs with mistral-ocr when needed
 /graphify <path> --update                             # incremental - re-extract only new/changed files
 /graphify <path> --cluster-only                       # rerun clustering on existing graph
 /graphify <path> --no-viz                             # skip visualization, just report + JSON
@@ -799,7 +800,7 @@ Supported URL types (auto-detected):
 - arXiv → abstract + metadata saved as `.md`  
 - YouTube / video URLs → audio downloaded locally via `yt-dlp`; transcript generated on the next build/update (requires local `yt-dlp`, `ffmpeg`, and `faster-whisper-ts`)
 - PDF → downloaded as `.pdf`
-- Images (.png/.jpg/.webp) → downloaded, Claude vision extracts on next run
+- Images (.png/.jpg/.webp) → downloaded, vision extracts on next run; if they are PDF-extracted artifacts, decode diagrams/tables/embedded text with assistant vision or a configured delegated OCR/vision model while preserving PDF provenance
 - Any webpage → converted to markdown via html2text
 
 ---

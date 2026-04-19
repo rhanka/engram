@@ -86,17 +86,21 @@ $(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" dete
 - `files.image`
 - `files.video`
 
-Always prepare the semantic detection file before semantic extraction. If `files.video` is empty, this is a no-op that simply copies the detection shape forward. If video/audio files exist, it transcribes them first:
+Always prepare the semantic detection file before semantic extraction. If there is no video/audio and no PDF requiring preparation, this simply copies the detection shape forward. It transcribes video/audio when present. For PDFs, it runs local preflight, converts text-layer PDFs locally, and keeps two OCR paths explicit: Gemini vision may interpret the original PDF or extracted image chunks during semantic extraction, while `mistral-ocr` may be used only when OCR is explicitly requested or when a configured `MISTRAL_API_KEY` is available and preflight detects a scanned/low-text PDF. In `auto` mode, if no key/provider is available, leave the source PDF in semantic inputs.
 
 ```bash
 GRAPHIFY_WHISPER_FLAG=""
 if the original invocation included --whisper-model <name>, set GRAPHIFY_WHISPER_FLAG="--whisper-model <name>"
+GRAPHIFY_PDF_OCR_FLAG=""
+if the original invocation included --pdf-ocr <mode>, set GRAPHIFY_PDF_OCR_FLAG="--pdf-ocr <mode>"
 
 $(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" prepare-semantic-detect \
   $GRAPHIFY_WHISPER_FLAG \
+  $GRAPHIFY_PDF_OCR_FLAG \
   --detect .graphify/.graphify_detect.json \
   --out .graphify/.graphify_detect_semantic.json \
   --transcripts-out .graphify/.graphify_transcripts.json \
+  --pdf-out .graphify/.graphify_pdf_ocr.json \
   --analysis .graphify/.graphify_analysis.json
 ```
 
@@ -120,7 +124,7 @@ $(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" chec
   --uncached-out .graphify/.graphify_uncached.txt
 ```
 
-5. If `.graphify/.graphify_uncached.txt` is non-empty, read those docs, papers, images, and generated transcripts yourself in manageable batches and write `.graphify/.graphify_semantic_new.json` matching exactly:
+5. If `.graphify/.graphify_uncached.txt` is non-empty, read those docs, papers, images, generated transcripts, PDF sidecars, and relevant PDF-extracted image artifacts yourself in manageable batches and write `.graphify/.graphify_semantic_new.json` matching exactly:
 
 ```json
 {"nodes":[{"id":"filestem_entityname","label":"Human Readable Name","file_type":"code|document|paper|image","source_file":"relative/path","source_location":null,"source_url":null,"captured_at":null,"author":null,"contributor":null}],"edges":[{"source":"node_id","target":"node_id","relation":"calls|implements|references|cites|conceptually_related_to|shares_data_with|semantically_similar_to|rationale_for","confidence":"EXTRACTED|INFERRED|AMBIGUOUS","confidence_score":1.0,"source_file":"relative/path","source_location":null,"weight":1.0}],"hyperedges":[{"id":"snake_case_id","label":"Human Readable Label","nodes":["node_id1","node_id2","node_id3"],"relation":"participate_in|implement|form","confidence":"EXTRACTED|INFERRED","confidence_score":0.75,"source_file":"relative/path"}],"input_tokens":0,"output_tokens":0}
@@ -131,7 +135,7 @@ Rules:
 - `INFERRED`: reasonable inference
 - `AMBIGUOUS`: uncertain, flag it rather than omitting it
 - for code files, only add semantic edges AST would miss
-- for image files, use vision if available
+- for image files, use vision if available; for images extracted from PDFs, decode figures, tables, diagrams, captions, and embedded text when they carry meaning, or use a delegated OCR/vision model when configured, while preserving provenance to the source PDF and sidecar
 - if a file has YAML frontmatter, copy `source_url`, `captured_at`, `author`, `contributor` onto every node from that file
 
 6. Finalize:

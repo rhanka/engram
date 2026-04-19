@@ -14,6 +14,7 @@ Turn any folder of files into a navigable knowledge graph with community detecti
 /graphify                                             # full pipeline on current directory → Obsidian vault
 /graphify <path>                                      # full pipeline on specific path
 /graphify <path> --mode deep                          # thorough extraction, richer INFERRED edges
+/graphify <path> --pdf-ocr auto                       # preflight PDFs; OCR scanned/low-text PDFs with mistral-ocr when needed
 /graphify <path> --update                             # incremental - re-extract only new/changed files
 /graphify <path> --directed                           # build directed graph (preserves source→target)
 /graphify <path> --cluster-only                       # rerun clustering on existing graph
@@ -97,31 +98,33 @@ Then act on it:
 - If `total_files` is 0: stop with "No supported files found in [path]."
 - If `skipped_sensitive` is non-empty: mention file count skipped, not the file names.
 - If `total_words` > 2,000,000 OR `total_files` > 200: show the warning and the top 5 subdirectories by file count, then ask which subfolder to run on. Wait for the user's answer before proceeding.
-- Otherwise: proceed to Step 2.5. It is a safe no-op if no video files were detected.
+- Otherwise: proceed to Step 2.5. It is a safe no-op if no video or PDF files need preprocessing.
 
-### Step 2.5 - Prepare semantic detection, including video / audio transcripts when needed
+### Step 2.5 - Prepare semantic detection, including audio/video transcripts and PDF preflight/OCR when needed
 
-Always run this step. If `detect` returned zero `video` files, it simply writes an unchanged semantic-detection file. If video/audio files are present, it transcribes them to text first, then treats the transcripts as doc files in Step 3.
+Always run this step. It transcribes audio/video when present, runs local PDF preflight for papers, and converts text-layer PDFs locally. For scanned/low-text PDFs, keep two OCR paths explicit: the assistant vision model may interpret the original PDF or extracted image chunks during semantic extraction, and `mistral-ocr` may be used when OCR is explicitly requested or when a configured `MISTRAL_API_KEY` is available and preflight detects a scanned/low-text PDF. Do not call Mistral blindly. In `auto` mode, if no key/provider is available, leave the source PDF in semantic inputs so the assistant path can still handle it. Generated transcripts, PDF Markdown sidecars, and relevant PDF-extracted images are treated as semantic inputs in Step 3.
 
 ```powershell
 node -e "
 (async () => {
 const fs = require('fs');
-const { augmentDetectionWithTranscripts } = require('graphifyy');
+const { prepareSemanticDetection } = require('graphifyy');
 
 const detect = JSON.parse(fs.readFileSync('.graphify/.graphify_detect.json', 'utf-8'));
 const analysis = fs.existsSync('.graphify/.graphify_analysis.json')
   ? JSON.parse(fs.readFileSync('.graphify/.graphify_analysis.json', 'utf-8'))
   : null;
 
-const { detection: semanticDetect, transcriptPaths } = await augmentDetectionWithTranscripts(detect, {
-  outputDir: '.graphify/transcripts',
+const { detection: semanticDetect, transcriptPaths, pdfArtifacts } = await prepareSemanticDetection(detect, {
+  transcriptOutputDir: '.graphify/transcripts',
+  pdfOutputDir: '.graphify/converted/pdf',
   godNodes: (analysis && analysis.gods) || [],
 });
 
 fs.writeFileSync('.graphify/.graphify_detect_semantic.json', JSON.stringify(semanticDetect, null, 2));
 fs.writeFileSync('.graphify/.graphify_transcripts.json', JSON.stringify(transcriptPaths, null, 2));
-console.log(\`Transcribed ${transcriptPaths.length} video file(s) -> treating as docs\`);
+fs.writeFileSync('.graphify/.graphify_pdf_ocr.json', JSON.stringify(pdfArtifacts, null, 2));
+console.log('Prepared semantic inputs: ' + transcriptPaths.length + ' transcript(s), ' + pdfArtifacts.filter((item) => item.markdownPath).length + ' PDF sidecar(s)');
 )().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
@@ -208,7 +211,7 @@ Only dispatch subagents for files listed in `.graphify/.graphify_uncached.txt`. 
 
 **Step B1 - Split into chunks**
 
-Load files from `.graphify/.graphify_uncached.txt`. Split into chunks of 20-25 files each. Each image gets its own chunk (vision needs separate context).
+Load files from `.graphify/.graphify_uncached.txt`. Split into chunks of 20-25 files each. Each image gets its own chunk (vision needs separate context). PDF sidecar Markdown can reference extracted image artifacts under `.graphify/converted/pdf/*_images/`; when those images contain diagrams, tables, captions, or embedded text that carry meaning, include them as image chunks or describe the delegated OCR/vision output with provenance back to the source PDF.
 
 **Step B2 - Dispatch ALL subagents in a single message**
 
@@ -239,7 +242,7 @@ Rules:
 Code files: focus on semantic edges AST cannot find (call relationships, shared data, arch patterns).
   Do not re-extract imports - AST already has those.
 Doc/paper files: extract named concepts, entities, citations. Also extract rationale — sections that explain WHY a decision was made, trade-offs chosen, or design intent. These become nodes with `rationale_for` edges pointing to the concept they explain.
-Image files: use vision to understand what the image IS - do not just OCR.
+Image files: use vision to understand what the image IS - do not just OCR. For images extracted from PDFs, decode figures, tables, diagrams, captions, and embedded text when they carry meaning; use the assistant vision model by default, or a delegated OCR/vision model when configured, and keep provenance to the source PDF and sidecar.
   UI screenshot: layout patterns, design decisions, key elements, purpose.
   Chart: metric, trend/insight, data source.
   Tweet/post: claim as node, author, concepts mentioned.
@@ -323,7 +326,7 @@ fs.writeFileSync('.graphify/.graphify_semantic.json', JSON.stringify(merged, nul
 console.log(\`Extraction complete - ${deduped.length} nodes, ${allEdges.length} edges (${cached.nodes.length} from cache, ${(raw.nodes||[]).length} new)\`);
 "
 ```
-Clean up temp files: `Remove-Item -ErrorAction SilentlyContinue .graphify/.graphify_cached.json, .graphify/.graphify_uncached.txt, .graphify/.graphify_semantic_new.json, .graphify/.graphify_detect_semantic.json, .graphify/.graphify_transcripts.json`
+Clean up temp files: `Remove-Item -ErrorAction SilentlyContinue .graphify/.graphify_cached.json, .graphify/.graphify_uncached.txt, .graphify/.graphify_semantic_new.json, .graphify/.graphify_detect_semantic.json, .graphify/.graphify_transcripts.json, .graphify/.graphify_pdf_ocr.json`
 
 #### Part C - Merge AST + semantic into final extraction
 
@@ -715,7 +718,7 @@ console.log('code_only:', codeOnly);
 
 If `code_only` is True: print `[graphify update] Code-only changes detected - skipping semantic extraction (no LLM needed)`, run only Step 3A (AST) on the changed files, skip Step 3B entirely (no subagents), then go straight to merge and Steps 4–8.
 
-If `code_only` is False (any changed file is a doc/paper/image/video): first prepare transcripts if needed, then run the full Steps 3A–3C pipeline as normal.
+If `code_only` is False (any changed file is a doc/paper/image/video): first prepare transcripts and PDF sidecars if needed, then run the full Steps 3A–3C pipeline as normal.
 
 When `code_only` is False, run this before Step 3B:
 
@@ -723,22 +726,24 @@ When `code_only` is False, run this before Step 3B:
 node -e "
 (async () => {
 const fs = require('fs');
-const { augmentDetectionWithTranscripts } = require('graphifyy');
+const { prepareSemanticDetection } = require('graphifyy');
 
 const detect = JSON.parse(fs.readFileSync('.graphify/.graphify_incremental.json', 'utf-8'));
 const analysis = fs.existsSync('.graphify/.graphify_analysis.json')
   ? JSON.parse(fs.readFileSync('.graphify/.graphify_analysis.json', 'utf-8'))
   : null;
 
-const { detection: semanticDetect, transcriptPaths } = await augmentDetectionWithTranscripts(detect, {
-  outputDir: '.graphify/transcripts',
+const { detection: semanticDetect, transcriptPaths, pdfArtifacts } = await prepareSemanticDetection(detect, {
+  transcriptOutputDir: '.graphify/transcripts',
+  pdfOutputDir: '.graphify/converted/pdf',
   godNodes: (analysis && analysis.gods) || [],
   incremental: true,
 });
 
 fs.writeFileSync('.graphify/.graphify_incremental_semantic.json', JSON.stringify(semanticDetect, null, 2));
 fs.writeFileSync('.graphify/.graphify_transcripts.json', JSON.stringify(transcriptPaths, null, 2));
-console.log(\`Transcribed ${transcriptPaths.length} video file(s) -> treating as docs\`);
+fs.writeFileSync('.graphify/.graphify_pdf_ocr.json', JSON.stringify(pdfArtifacts, null, 2));
+console.log('Prepared semantic inputs: ' + transcriptPaths.length + ' transcript(s), ' + pdfArtifacts.filter((item) => item.markdownPath).length + ' PDF sidecar(s)');
 )().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);

@@ -17,6 +17,7 @@ $graphify                                             # full pipeline on current
 $graphify <path>                                      # full pipeline on specific path
 $graphify <path> --directed                           # build directed graph (preserves source->target)
 $graphify <path> --mode deep                          # richer INFERRED edges during semantic extraction
+$graphify <path> --pdf-ocr auto                       # preflight PDFs; OCR scanned/low-text PDFs with mistral-ocr when needed
 $graphify <path> --whisper-model medium               # use a larger Whisper model for local transcription
 $graphify <path> --update                             # incremental - re-extract only new/changed files
 $graphify <path> --cluster-only                       # re-run clustering/report on existing graph
@@ -132,28 +133,32 @@ Then act on it:
 - If `total_files` is `0`: stop with `No supported files found in [path].`
 - If `skipped_sensitive` is non-empty: mention the number skipped, not the names.
 - If `total_words > 2_000_000` or `total_files > 200`: show the warning and the top 5 subdirectories by file count, then ask which subfolder to run on.
-- Otherwise: proceed to Step 2.5. It is a safe no-op if no video files were detected.
+- Otherwise: proceed to Step 2.5. It is a safe no-op if no video or PDF files need preprocessing.
 
-### Step 2.5 - Prepare semantic detection, including video / audio transcripts when needed
+### Step 2.5 - Prepare semantic detection, including audio/video transcripts and PDF preflight/OCR when needed
 
-Always run this step. If `files.video` is empty, it simply writes an unchanged semantic-detection file. If video/audio files are present, it transcribes them to text first and treats those transcripts as docs during semantic extraction.
+Always run this step. It transcribes audio/video when present, runs local PDF preflight for papers, and converts text-layer PDFs locally. For scanned/low-text PDFs, keep two OCR paths explicit: the assistant vision model may interpret the original PDF or extracted image chunks during semantic extraction, and `mistral-ocr` may be used when OCR is explicitly requested or when a configured `MISTRAL_API_KEY` is available and preflight detects a scanned/low-text PDF. Do not call Mistral blindly. In `auto` mode, if no key/provider is available, leave the source PDF in semantic inputs so the assistant path can still handle it. Generated transcripts, PDF Markdown sidecars, and relevant PDF-extracted images are treated as semantic inputs during semantic extraction.
 
 ```bash
 GRAPHIFY_WHISPER_FLAG=""
 if the original invocation included --whisper-model <name>, set GRAPHIFY_WHISPER_FLAG="--whisper-model <name>"
+GRAPHIFY_PDF_OCR_FLAG=""
+if the original invocation included --pdf-ocr <mode>, set GRAPHIFY_PDF_OCR_FLAG="--pdf-ocr <mode>"
 
 $(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" prepare-semantic-detect \
   $GRAPHIFY_WHISPER_FLAG \
+  $GRAPHIFY_PDF_OCR_FLAG \
   --detect .graphify/.graphify_detect.json \
   --out .graphify/.graphify_detect_semantic.json \
   --transcripts-out .graphify/.graphify_transcripts.json \
+  --pdf-out .graphify/.graphify_pdf_ocr.json \
   --analysis .graphify/.graphify_analysis.json
 ```
 
 After this step:
 - use [.graphify/.graphify_detect_semantic.json](.graphify/.graphify_detect_semantic.json) for semantic cache and semantic extraction
 - keep using [.graphify/.graphify_detect.json](.graphify/.graphify_detect.json) for manifest, cost, and final reporting
-- the runtime prints `Transcribed N video file(s) -> treating as docs`
+- the runtime prints `Prepared semantic inputs: N transcript(s), M PDF sidecar(s)`
 
 ### Step 3 - Extract entities and relationships
 
@@ -168,7 +173,7 @@ if the original invocation included --directed, set GRAPHIFY_DIRECTED_FLAG="--di
 
 This step has two parts:
 - structural extraction for code files, using the TypeScript runtime
-- semantic extraction for docs, papers, images, and generated transcripts, using Codex subagents
+- semantic extraction for docs, papers, images, generated transcripts, and PDF sidecars, using Codex subagents
 
 Run Part A and Part B in parallel.
 
@@ -182,7 +187,7 @@ $(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" extr
 
 #### Part B - Semantic extraction with Codex
 
-If there are zero docs, papers, images, and generated transcripts, skip Part B entirely and go straight to Part C.
+If there are zero docs, papers, images, generated transcripts, and PDF sidecars, skip Part B entirely and go straight to Part C.
 
 Use this rule:
 - If the uncached non-code set fits in a single chunk of 20 files or fewer, stay in the main Codex thread and extract it directly.
@@ -202,7 +207,7 @@ Only extract files listed in [.graphify/.graphify_uncached.txt](.graphify/.graph
 
 ##### Step B1 - Split uncached files into chunks
 
-Load the file list from [.graphify/.graphify_uncached.txt](.graphify/.graphify_uncached.txt). Split into chunks of 20-25 files each. Put each image in its own chunk. Keep files from the same directory together when possible.
+Load the file list from [.graphify/.graphify_uncached.txt](.graphify/.graphify_uncached.txt). Split into chunks of 20-25 files each. Put each image in its own chunk. PDF sidecar Markdown can reference extracted image artifacts under `.graphify/converted/pdf/*_images/`; when those images contain diagrams, tables, captions, or embedded text that carry meaning, include them as image chunks or describe the delegated OCR/vision output with provenance back to the source PDF. Keep files from the same directory together when possible.
 
 ##### Step B2 - Choose local extraction vs subagents
 
@@ -232,7 +237,7 @@ Rules:
 
 Code files: focus on semantic edges AST cannot find. Do not re-extract imports.
 Doc/paper files: extract named concepts, entities, citations, and rationale.
-Image files: use vision to understand what the image is, not just OCR.
+Image files: use vision to understand what the image is, not just OCR. For images extracted from PDFs, decode figures, tables, diagrams, captions, and embedded text when they carry meaning; use Codex vision by default, or a delegated OCR/vision model when configured, and keep provenance to the source PDF and sidecar.
 
 DEEP_MODE=true means: be aggressive with INFERRED edges, but mark uncertain ones AMBIGUOUS.
 
@@ -383,7 +388,7 @@ $(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" benc
 Clean up temp files:
 
 ```bash
-rm -f .graphify/.graphify_detect.json .graphify/.graphify_detect_semantic.json .graphify/.graphify_transcripts.json .graphify/.graphify_ast.json .graphify/.graphify_cached.json .graphify/.graphify_uncached.txt .graphify/.graphify_semantic_new.json .graphify/.graphify_analysis.json .graphify/.graphify_labels.json
+rm -f .graphify/.graphify_detect.json .graphify/.graphify_detect_semantic.json .graphify/.graphify_transcripts.json .graphify/.graphify_pdf_ocr.json .graphify/.graphify_ast.json .graphify/.graphify_cached.json .graphify/.graphify_uncached.txt .graphify/.graphify_semantic_new.json .graphify/.graphify_analysis.json .graphify/.graphify_labels.json
 rm -f .graphify/needs_update 2>/dev/null || true
 ```
 
@@ -448,17 +453,21 @@ EOF
 
 If not code-only:
 - run the full Step 3 flow again, but use [.graphify/.graphify_incremental.json](.graphify/.graphify_incremental.json) as the detection file
-- always prepare the semantic detection file first. It is a safe no-op if `new_files.video` is empty:
+- always prepare the semantic detection file first. It is a safe no-op if `new_files.video` and `new_files.paper` are empty:
 
 ```bash
 GRAPHIFY_WHISPER_FLAG=""
 if the original invocation included --whisper-model <name>, set GRAPHIFY_WHISPER_FLAG="--whisper-model <name>"
+GRAPHIFY_PDF_OCR_FLAG=""
+if the original invocation included --pdf-ocr <mode>, set GRAPHIFY_PDF_OCR_FLAG="--pdf-ocr <mode>"
 
 $(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" prepare-semantic-detect \
   $GRAPHIFY_WHISPER_FLAG \
+  $GRAPHIFY_PDF_OCR_FLAG \
   --detect .graphify/.graphify_incremental.json \
   --out .graphify/.graphify_incremental_semantic.json \
   --transcripts-out .graphify/.graphify_transcripts.json \
+  --pdf-out .graphify/.graphify_pdf_ocr.json \
   --analysis .graphify/.graphify_analysis.json \
   --incremental
 ```
@@ -494,7 +503,7 @@ $(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" fina
 Then run Steps 5-7 again. Clean up:
 
 ```bash
-rm -f .graphify/.graphify_old.json .graphify/.graphify_incremental.json .graphify/.graphify_incremental_semantic.json .graphify/.graphify_transcripts.json
+rm -f .graphify/.graphify_old.json .graphify/.graphify_incremental.json .graphify/.graphify_incremental_semantic.json .graphify/.graphify_transcripts.json .graphify/.graphify_pdf_ocr.json
 ```
 
 ## For --cluster-only

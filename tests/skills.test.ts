@@ -36,9 +36,12 @@ describe("skill cache examples", () => {
       expect(content).toContain("Step 2.5");
       expect(
         content.includes("prepare-semantic-detect")
+        || content.includes("prepareSemanticDetection")
         || content.includes("augmentDetectionWithTranscripts"),
       ).toBe(true);
-      expect(content).toContain("treating as docs");
+      expect(content).toContain("PDF sidecar");
+      expect(content).toContain("assistant vision model");
+      expect(content).toContain("PDF-extracted images");
     }
   });
 
@@ -84,6 +87,7 @@ describe("skill cache examples", () => {
       expect(content).toContain("review-eval");
       expect(content).toContain("blast radius");
       expect(content).toContain("multimodal");
+      expect(content).toContain("delegated OCR/vision");
     }
   });
 
