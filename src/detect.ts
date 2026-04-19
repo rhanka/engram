@@ -18,10 +18,11 @@ import type { DetectionResult } from "./types.js";
 export const CODE_EXTENSIONS = new Set([
   ".py", ".ts", ".js", ".jsx", ".tsx", ".go", ".rs", ".java", ".cpp", ".cc", ".cxx",
   ".c", ".h", ".hpp", ".rb", ".swift", ".kt", ".kts", ".cs", ".scala", ".php",
-  ".lua", ".toc", ".zig", ".ps1", ".ex", ".exs", ".m", ".mm", ".jl",
+  ".lua", ".toc", ".zig", ".ps1", ".ex", ".exs", ".m", ".mm", ".jl", ".vue",
+  ".svelte", ".dart", ".v", ".sv", ".mjs", ".ejs",
 ]);
 
-export const DOC_EXTENSIONS = new Set([".md", ".txt", ".rst"]);
+export const DOC_EXTENSIONS = new Set([".md", ".mdx", ".txt", ".rst", ".html"]);
 export const PAPER_EXTENSIONS = new Set([".pdf"]);
 export const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"]);
 export const OFFICE_EXTENSIONS = new Set([".docx", ".xlsx"]);

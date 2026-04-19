@@ -98,7 +98,7 @@ git commit -m "plan(v4-parity): target upstream v0.4.23"
 - Modify or create: extractor fixture tests under `tests/`
 - Modify: `UPSTREAM_GAP.md`
 
-- [ ] **Step 1.1: Add failing detection tests for missing extensions**
+- [x] **Step 1.1: Add failing detection tests for missing extensions**
 
 Add tests proving these files are collected/classified:
 
@@ -123,7 +123,7 @@ npx vitest run tests/detect.test.ts
 
 Expected before implementation: at least one new assertion fails for each missing extension group.
 
-- [ ] **Step 1.2: Implement detection mapping**
+- [x] **Step 1.2: Implement detection mapping**
 
 Update extension tables and language routing so:
 
@@ -135,7 +135,7 @@ Update extension tables and language routing so:
 .mdx, .html => document inputs
 ```
 
-- [ ] **Step 1.3: Add extraction fixtures**
+- [x] **Step 1.3: Add extraction fixtures**
 
 Create or extend tests proving extractor output has stable nodes for Vue/Svelte, Blade, Dart, Verilog/SystemVerilog, MJS/EJS, MDX, and HTML.
 
@@ -145,7 +145,7 @@ Run:
 npx vitest run tests/detect.test.ts tests/extract-call-confidence.test.ts tests/pipeline.test.ts
 ```
 
-- [ ] **Step 1.4: Update traceability**
+- [x] **Step 1.4: Update traceability**
 
 Mark these rows covered or intentional-delta as appropriate:
 
@@ -153,7 +153,7 @@ Mark these rows covered or intentional-delta as appropriate:
 v0.4.3, v0.4.7, v0.4.9, v0.4.13, v0.4.15, v0.4.16, v0.4.22, v0.4.23
 ```
 
-- [ ] **Step 1.5: Full verification and commit**
+- [x] **Step 1.5: Full verification and commit**
 
 Run:
 

@@ -1631,6 +1631,76 @@ export async function extractJulia(filePath: string): Promise<ExtractionResult> 
   return { nodes, edges };
 }
 
+function lineForIndex(source: string, index: number): number {
+  return source.slice(0, index).split("\n").length;
+}
+
+async function extractRegexBackedCode(filePath: string): Promise<ExtractionResult> {
+  let source: string;
+  try {
+    source = readFileSync(filePath, "utf-8");
+  } catch (e: unknown) {
+    return { nodes: [], edges: [], error: String(e) };
+  }
+
+  const stem = basename(filePath, extname(filePath));
+  const fileNid = _makeId(stem);
+  const nodes: GraphNode[] = [{
+    id: fileNid,
+    label: basename(filePath),
+    file_type: "code",
+    source_file: filePath,
+    source_location: "L1",
+  }];
+  const edges: GraphEdge[] = [];
+  const seenIds = new Set([fileNid]);
+
+  function addNode(name: string, label: string, relation: string, index: number): void {
+    const nid = _makeId(stem, name);
+    if (!seenIds.has(nid)) {
+      seenIds.add(nid);
+      nodes.push({
+        id: nid,
+        label,
+        file_type: "code",
+        source_file: filePath,
+        source_location: `L${lineForIndex(source, index)}`,
+      });
+    }
+    edges.push({
+      source: fileNid,
+      target: nid,
+      relation,
+      confidence: "EXTRACTED",
+      source_file: filePath,
+      source_location: `L${lineForIndex(source, index)}`,
+      weight: 1.0,
+    });
+  }
+
+  const classPattern = /\bclass\s+([A-Za-z_$][\w$]*)/g;
+  for (const match of source.matchAll(classPattern)) {
+    addNode(match[1]!, match[1]!, "contains", match.index ?? 0);
+  }
+
+  const functionPatterns = [
+    /\bfunction\s+([A-Za-z_$][\w$]*)\s*\(/g,
+    /\b(?:void|int|double|num|String|bool|dynamic|Future(?:<[^>]+>)?)\s+([A-Za-z_$][\w$]*)\s*\(/g,
+  ];
+  for (const pattern of functionPatterns) {
+    for (const match of source.matchAll(pattern)) {
+      addNode(match[1]!, `${match[1]!}()`, "contains", match.index ?? 0);
+    }
+  }
+
+  const modulePattern = /\bmodule\s+([A-Za-z_$][\w$]*)\b/g;
+  for (const match of source.matchAll(modulePattern)) {
+    addNode(match[1]!, match[1]!, "contains", match.index ?? 0);
+  }
+
+  return { nodes, edges };
+}
+
 // ---------------------------------------------------------------------------
 // Go extractor (custom walk)
 // ---------------------------------------------------------------------------
@@ -2966,8 +3036,15 @@ const _DISPATCH: Record<string, ExtractorFn> = {
   ".py": extractPython,
   ".js": extractJs,
   ".jsx": extractJs,
+  ".mjs": extractJs,
   ".ts": extractJs,
   ".tsx": extractJs,
+  ".vue": extractRegexBackedCode,
+  ".svelte": extractRegexBackedCode,
+  ".dart": extractRegexBackedCode,
+  ".v": extractRegexBackedCode,
+  ".sv": extractRegexBackedCode,
+  ".ejs": extractRegexBackedCode,
   ".go": extractGo,
   ".rs": extractRust,
   ".java": extractJava,
@@ -3049,7 +3126,9 @@ export async function extractWithDiagnostics(paths: string[]): Promise<ExtractWi
     }
     const filePath = paths[i]!;
     const ext = extname(filePath);
-    const extractor = _DISPATCH[ext];
+    const extractor = basename(filePath).endsWith(".blade.php")
+      ? extractRegexBackedCode
+      : _DISPATCH[ext];
     if (!extractor) continue;
 
     const cached = loadCached(filePath, root);
@@ -3111,12 +3190,13 @@ export async function extract(paths: string[]): Promise<Extraction> {
 // ---------------------------------------------------------------------------
 
 const _EXTENSIONS = new Set([
-  ".py", ".js", ".ts", ".tsx", ".go", ".rs",
+  ".py", ".js", ".jsx", ".mjs", ".ts", ".tsx", ".go", ".rs",
   ".java", ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp",
   ".rb", ".cs", ".kt", ".kts", ".scala", ".php", ".swift",
   ".lua", ".toc", ".zig", ".ps1",
   ".m", ".mm",
-  ".jl", ".jsx", ".ex", ".exs",
+  ".jl", ".ex", ".exs",
+  ".vue", ".svelte", ".dart", ".v", ".sv", ".ejs",
 ]);
 
 /**
