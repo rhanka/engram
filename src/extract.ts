@@ -1749,6 +1749,10 @@ export async function extractGo(filePath: string): Promise<ExtractionResult> {
   const fileNid = _makeId(stem);
   addNode(fileNid, basename(filePath), 1);
 
+  function goImportNodeId(importPath: string): string {
+    return _makeId("go_pkg", importPath);
+  }
+
   function walk(node: SyntaxNode): void {
     const t = node.type;
 
@@ -1826,8 +1830,7 @@ export async function extractGo(filePath: string): Promise<ExtractionResult> {
               const pathNode = spec.childForFieldName("path");
               if (pathNode) {
                 const raw = _readText(pathNode, source).replace(/^"|"$/g, "");
-                const moduleName = raw.split("/").pop()!;
-                const tgtNid = _makeId(moduleName);
+                const tgtNid = goImportNodeId(raw);
                 addEdge(fileNid, tgtNid, "imports_from", spec.startPosition.row + 1);
               }
             }
@@ -1836,8 +1839,7 @@ export async function extractGo(filePath: string): Promise<ExtractionResult> {
           const pathNode = child.childForFieldName("path");
           if (pathNode) {
             const raw = _readText(pathNode, source).replace(/^"|"$/g, "");
-            const moduleName = raw.split("/").pop()!;
-            const tgtNid = _makeId(moduleName);
+            const tgtNid = goImportNodeId(raw);
             addEdge(fileNid, tgtNid, "imports_from", child.startPosition.row + 1);
           }
         }

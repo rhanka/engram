@@ -86,7 +86,7 @@ The target is direct TypeScript release `0.4.23`. Rows must not remain `missing`
 | `v0.4.20` / `69a0cfc`, `36fa62a` | JS/MJS import path normalization; CLI update/cluster-only emits `graph.html` | `covered` / `partial` | Lot 1, Lot 7 | JS import normalization and HTML output are largely covered; `.mjs` dispatch remains in Lot 1. |
 | `v0.4.21` / `35fa45d`, `7662f04` | cluster-only stats guard; update writes merged extraction before final analysis | `covered` | Lot 7 verification | TS runtime has equivalent merge/placeholder protections; keep final command audit. |
 | `v0.4.22` / `5011857`, `2e82e49` | explicit AST cache root; `.mdx` documents | `covered` | Lot 1 | Cache-root contract is covered; `.mdx` document detection is covered by Lot 1. |
-| `v0.4.23` / `42599a7`, `8d908c5`, `baa4474` | refresh all version stamps, `.html` documents, safe large-graph HTML export, Go import node ID collision, pipx docs | `partial` | Lot 1, Lot 2, Lot 3, Lot 8 | `.html` document detection is covered by Lot 1. Go import prefixing, safe HTML export, version stamp refresh, and npm/global install docs remain. |
+| `v0.4.23` / `42599a7`, `8d908c5`, `baa4474` | refresh all version stamps, `.html` documents, safe large-graph HTML export, Go import node ID collision, pipx docs | `partial` | Lot 1, Lot 2, Lot 3, Lot 8 | `.html` document detection is covered by Lot 1. Go import prefixing is covered by Lot 2. Safe HTML export, version stamp refresh, and npm/global install docs remain. |
 | post-`v0.4.23` / `04790e2`, `dc1158b`, `7a0a5ac` | README download badge changes only | `n/a` | Lot 8 | Not part of TypeScript runtime parity; optionally ignore or adapt docs without copying Python download badges. |
 
 ## Release Gate

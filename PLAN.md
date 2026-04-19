@@ -181,7 +181,7 @@ git commit -m "feat(v4-parity): add upstream language surface coverage"
 - Modify or create: Go extractor regression test under `tests/`
 - Modify: `UPSTREAM_GAP.md`
 
-- [ ] **Step 2.1: Add failing Go collision test**
+- [x] **Step 2.1: Add failing Go collision test**
 
 Create a fixture with:
 
@@ -200,7 +200,7 @@ npx vitest run tests/extract-call-confidence.test.ts
 
 Expected before implementation: import edge targets the wrong or ambiguous node.
 
-- [ ] **Step 2.2: Prefix Go package import IDs**
+- [x] **Step 2.2: Prefix Go package import IDs**
 
 Update Go import extraction so package imports use a stable namespace such as:
 
@@ -209,7 +209,7 @@ go_pkg_context
 go_pkg_github_com_owner_pkg
 ```
 
-- [ ] **Step 2.3: Verify and commit**
+- [x] **Step 2.3: Verify and commit**
 
 Run:
 
