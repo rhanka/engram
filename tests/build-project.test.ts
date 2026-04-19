@@ -65,12 +65,12 @@ describe("buildProject", () => {
     const result = await buildProject(dir, { wiki: true });
 
     expect(result.graph.order).toBe(2);
-    expect(existsSync(join(dir, "graphify-out", "graph.json"))).toBe(true);
-    expect(existsSync(join(dir, "graphify-out", "GRAPH_REPORT.md"))).toBe(true);
-    expect(existsSync(join(dir, "graphify-out", "graph.html"))).toBe(true);
-    expect(existsSync(join(dir, "graphify-out", "wiki", "index.md"))).toBe(true);
-    expect(readFileSync(join(dir, "graphify-out", "GRAPH_REPORT.md"), "utf-8")).toContain("## Summary");
-    expect(readFileSync(join(dir, ".graphify_detect.json"), "utf-8")).toContain("\"total_files\"");
+    expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
+    expect(existsSync(join(dir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
+    expect(existsSync(join(dir, ".graphify", "graph.html"))).toBe(true);
+    expect(existsSync(join(dir, ".graphify", "wiki", "index.md"))).toBe(true);
+    expect(readFileSync(join(dir, ".graphify", "GRAPH_REPORT.md"), "utf-8")).toContain("## Summary");
+    expect(readFileSync(join(dir, ".graphify", ".graphify_detect.json"), "utf-8")).toContain("\"total_files\"");
   });
 
   it("fails loudly when AST extraction produces no nodes", async () => {

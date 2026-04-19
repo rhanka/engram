@@ -34,7 +34,7 @@ describe("Gemini integration contract", () => {
     expect(settings.mcpServers).toMatchObject({
       graphify: {
         command: "graphify",
-        args: ["serve", "graphify-out/graph.json"],
+        args: ["serve", ".graphify/graph.json"],
         trust: false,
       },
     });
@@ -61,7 +61,12 @@ describe("Gemini integration contract", () => {
     expect(skill).toContain("graphify query");
     expect(skill).toContain("skill-runtime");
     expect(skill).toContain("prepare-semantic-detect");
+    expect(skill).toContain(".graphify_pdf_ocr.json");
+    expect(skill).toContain("Gemini vision");
+    expect(skill).toContain("delegated OCR/vision");
     expect(skill).toContain("files.video");
+    expect(skill).toContain(".graphify/branch.json");
+    expect(skill).toContain("graphify migrate-state --dry-run");
     expect(skill).not.toContain("python3 -m graphify");
 
     expect(readme).toContain("Gemini CLI");

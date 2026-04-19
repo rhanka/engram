@@ -2,13 +2,27 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja-JP.md)
 
-[![TypeScript CI](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=v3)](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml)
+[![TypeScript CI](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=v3-typescript)](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml)
 
 **An AI coding assistant skill.** Type `/graphify` in Claude Code, Gemini CLI, GitHub Copilot CLI, Aider, OpenCode, OpenClaw, Factory Droid, or Trae, or `$graphify` in Codex - it reads your files, builds a knowledge graph, and gives you back structure you didn't know was there. Understand a codebase faster. Find the "why" behind architectural decisions.
 
 This repository is the maintained TypeScript port of the original Graphify project. Thanks to the original work by [Safi Shamsi](https://github.com/safishamsi/graphify) for the product direction, workflow, and initial implementation.
 
-Multimodal, with the TypeScript catch-up tracked release-by-release against upstream `v3`. Code, markdown, PDFs, Office docs, screenshots, diagrams, and other images already flow through the current TS runtime. This branch also adds local audio/video detection plus a `yt-dlp` + `ffmpeg` + `sherpa-onnx-node` transcription path, and those transcripts now feed the same assistant-driven semantic pass as docs and papers. 20 languages are supported via tree-sitter AST (Python, JS, TS, Go, Rust, Java, C, C++, Ruby, C#, Kotlin, Scala, PHP, Swift, Lua, Zig, PowerShell, Elixir, Objective-C, Julia).
+Multimodal, with the TypeScript catch-up tracked release-by-release against upstream `v3`. Code, markdown, PDFs, Office docs, screenshots, diagrams, and other images flow through the current TS runtime. PDFs now go through a local preflight: text-layer PDFs are converted with `pdf-parse` and a `pdftotext` fallback when available, while scanned/low-text PDFs can be converted to Markdown + images through `mistral-ocr`. This branch also adds local audio/video detection plus a `yt-dlp` + `ffmpeg` + `faster-whisper-ts` transcription path, and generated transcripts/PDF sidecars feed the same assistant-driven semantic pass as docs and papers. 20 languages are supported via tree-sitter AST (Python, JS, TS, Go, Rust, Java, C, C++, Ruby, C#, Kotlin, Scala, PHP, Swift, Lua, Zig, PowerShell, Elixir, Objective-C, Julia).
+
+## Branch Model
+
+- `v3-typescript` is the maintained TypeScript product branch and the default branch for this repository.
+- `v3` is kept as an upstream mirror / alignment branch for the original Python Graphify lineage.
+- Catch-up work is tracked version-by-version so parity gaps stay explicit instead of being hidden in the fork.
+
+## Lineage And Alignment
+
+| Source | What this repo keeps or adapts | Alignment contract |
+|---|---|---|
+| Original Graphify by [Safi Shamsi](https://github.com/safishamsi/graphify) | Core product idea: folder -> knowledge graph, assistant skill workflow, graph/report/html outputs, provenance labels, community detection, and multimodal corpus workflow. | `v3` mirrors upstream Python Graphify; catch-up work is tracked version-by-version. |
+| This TypeScript port | npm package, TypeScript runtime at repo root, `.graphify/` state, multi-assistant installers, MCP surfaces, git/worktree lifecycle, and local audio/video transcription through the TS toolchain. | `v3-typescript` is the maintained default branch; TS-specific behavior is documented as deliberate divergence, not upstream parity. |
+| `code-review-graph` reference | Review-oriented graph projections: first-hop summary, review delta, review analysis, review evaluation, install previews, and advisory commit grouping vocabulary. | Adopted as additive review surfaces over Graphify's graph; Graphify does not become review-only, does not adopt SQLite/embeddings as default, and keeps multimodal support. |
 
 > Andrej Karpathy keeps a `/raw` folder where he drops papers, tweets, screenshots, and notes. graphify is the answer to that problem - 71.5x fewer tokens per query vs reading the raw files, persistent across sessions, honest about what it found vs guessed.
 
@@ -17,15 +31,23 @@ $graphify .                        # Codex
 /graphify .                        # Claude Code / Gemini CLI / Copilot CLI / Aider / OpenCode / OpenClaw / Droid / Trae
 ```
 
-In Codex, `$graphify` is a skill trigger, not a Bash subcommand like `graphify .`. A successful TypeScript-backed Codex run should leave `graphify-out/.graphify_runtime.json` with `runtime: "typescript"`.
+In Codex, `$graphify` is a skill trigger, not a Bash subcommand like `graphify .`. A successful TypeScript-backed Codex run should leave `.graphify/.graphify_runtime.json` with `runtime: "typescript"`.
 
 ```
-graphify-out/
+.graphify/
 ├── graph.html       interactive graph - click nodes, search, filter by community
 ├── GRAPH_REPORT.md  god nodes, surprising connections, suggested questions
 ├── graph.json       persistent graph - query weeks later without re-reading
 └── cache/           SHA256 cache - re-runs only process changed files
 ```
+
+`.graphify/` is local runtime state. It is gitignored by default and should not be committed unless you intentionally publish worked examples or exported artifacts elsewhere.
+
+If an older repo still has `graphify-out/`, run `graphify migrate-state --dry-run` first. The migration copies local state into `.graphify/` without deleting the legacy folder; when `graphify-out` is tracked, the command prints the `git mv -f graphify-out .graphify` + commit message to review before you mutate Git history.
+
+`graphify recommend-commits` is advisory-only: it suggests groups and messages from Git changes plus graph impact, but it never stages files, creates commits, or mutates branches.
+
+`graphify review-analysis` adds review-specific views for blast radius, bridge nodes, test-gap hints, impacted communities, and multimodal/doc regression safety. `graphify review-eval` measures token savings versus naive file reads, impacted-file recall, review summary precision, and multimodal regression safety from JSON cases.
 
 Add a `.graphifyignore` file to exclude folders you don't want in the graph:
 
@@ -41,7 +63,7 @@ Same syntax as `.gitignore`. Patterns are discovered from the folder you run gra
 
 ## How it works
 
-graphify combines a deterministic structural pass with a model-backed semantic pass, with local preprocessing in between when needed. Code goes through a no-LLM AST pass that extracts classes, functions, imports, call graphs, docstrings, and rationale comments. Docs, papers, Office files, and images are normalized into text or multimodal inputs, then platform-backed subagents extract concepts, relationships, and design rationale. On this catch-up branch, audio/video files are also detected locally, normalized through `ffmpeg`, transcribed through the TypeScript runtime with `sherpa-onnx-node`, and fed into the same semantic extraction path as any other document. The results are merged into a Graphology graph, clustered with Louvain community detection, and exported as interactive HTML, queryable JSON, and a plain-language audit report.
+graphify combines a deterministic structural pass with a model-backed semantic pass, with local preprocessing in between when needed. Code goes through a no-LLM AST pass that extracts classes, functions, imports, call graphs, docstrings, and rationale comments. Docs, papers, Office files, and images are normalized into text or multimodal inputs, then platform-backed subagents extract concepts, relationships, and design rationale. PDFs first pass a local preflight: if a usable text layer exists, `pdf-parse` or the local `pdftotext` CLI creates a Markdown sidecar; if the text layer is missing or too sparse, `mistral-ocr` can be called in `auto` or `always` mode to produce Markdown plus extracted images. PDF-extracted images are still semantic inputs when they carry meaning: the assistant vision model can decode them directly, or a configured delegated OCR/vision model can be used while preserving PDF provenance. On this catch-up branch, audio/video files are also detected locally, normalized through `ffmpeg`, transcribed through the TypeScript runtime with `faster-whisper-ts`, and fed into the same semantic extraction path as any other document. The results are merged into a Graphology graph, clustered with Louvain community detection, and exported as interactive HTML, queryable JSON, and a plain-language audit report.
 
 **Clustering is graph-topology-based — no embeddings.** Louvain finds communities by edge density. The semantic similarity edges that the model extracts (`semantically_similar_to`, marked INFERRED) are already in the graph, so they influence community detection directly. The graph structure is the similarity signal — no separate embedding step or vector database needed.
 
@@ -54,6 +76,7 @@ Every relationship is tagged `EXTRACTED` (found directly in source), `INFERRED` 
 ```bash
 npm install -g graphifyy
 graphify install
+Install commands now print a mutation preview before writing files, including the exact assistant instruction files and hook/MCP config they will touch.
 ```
 
 > The npm package is temporarily named `graphifyy` while the `graphify` name is being reclaimed. The CLI and skill command are still `graphify`.
@@ -101,7 +124,7 @@ After building a graph, run this once in your project:
 | Trae CN | `graphify trae-cn install` |
 | Cursor | `graphify cursor install` |
 
-**Claude Code** does two things: writes a `CLAUDE.md` section telling Claude to read `graphify-out/GRAPH_REPORT.md` before answering architecture questions, and installs a **PreToolUse hook** (`settings.json`) that fires before every Glob and Grep call. If a knowledge graph exists, Claude sees: _"graphify: Knowledge graph exists. Read GRAPH_REPORT.md for god nodes and community structure before searching raw files."_ — so Claude navigates via the graph instead of grepping through every file.
+**Claude Code** does two things: writes a `CLAUDE.md` section telling Claude to read `.graphify/GRAPH_REPORT.md` before answering architecture questions, and installs a **PreToolUse hook** (`settings.json`) that fires before every Glob and Grep call. If a knowledge graph exists, Claude sees: _"graphify: Knowledge graph exists. Read GRAPH_REPORT.md for god nodes and community structure before searching raw files."_ — so Claude navigates via the graph instead of grepping through every file.
 
 **Codex** writes to `AGENTS.md`, teaches Codex to use the installed `graphify` skill for graph build/update/query tasks, and also installs a **PreToolUse hook** in `.codex/hooks.json` that fires before every Bash tool call.
 
@@ -132,7 +155,7 @@ Think of it this way: the always-on hook gives your assistant a map. The explici
 `graph.json` is not meant to be pasted into a prompt all at once. The useful
 workflow is:
 
-1. Start with `graphify-out/GRAPH_REPORT.md` for the high-level overview.
+1. Start with `.graphify/GRAPH_REPORT.md` for the high-level overview.
 2. Use `graphify query` to pull a smaller subgraph for the specific question
    you want to answer.
 3. Give that focused output to your assistant instead of dumping the full raw
@@ -141,8 +164,8 @@ workflow is:
 For example, after running graphify on a project:
 
 ```bash
-graphify query "show the auth flow" --graph graphify-out/graph.json
-graphify query "what connects DigestAuth to Response?" --graph graphify-out/graph.json
+graphify query "show the auth flow" --graph .graphify/graph.json
+graphify query "what connects DigestAuth to Response?" --graph .graphify/graph.json
 ```
 
 The output includes node labels, edge types, confidence tags, source files, and
@@ -157,13 +180,13 @@ If your assistant supports tool calling or MCP, use the graph directly instead
 of pasting text. graphify can expose `graph.json` as an MCP server:
 
 ```bash
-graphify serve graphify-out/graph.json
+graphify serve .graphify/graph.json
 ```
 
 In Codex, register that server with:
 
 ```bash
-codex mcp add graphify -- graphify serve /absolute/path/to/graphify-out/graph.json
+codex mcp add graphify -- graphify serve /absolute/path/to/.graphify/graph.json
 ```
 
 That gives the assistant structured graph access for repeated queries such as
@@ -174,7 +197,7 @@ That gives the assistant structured graph access for repeated queries such as
 
 ```bash
 mkdir -p ~/.claude/skills/graphify
-curl -fsSL https://raw.githubusercontent.com/rhanka/graphify/v3/src/skills/skill.md \
+curl -fsSL https://raw.githubusercontent.com/rhanka/graphify/v3-typescript/src/skills/skill.md \
   > ~/.claude/skills/graphify/SKILL.md
 ```
 
@@ -196,6 +219,7 @@ In Codex, replace the leading `/` in the examples below with `$`. Gemini CLI, Gi
 /graphify ./raw                    # run on a specific folder
 /graphify ./raw --directed         # build directed graph (preserves source->target)
 /graphify ./raw --mode deep        # more aggressive INFERRED edge extraction
+/graphify ./raw --pdf-ocr auto     # preflight PDFs; OCR scanned/low-text PDFs with mistral-ocr when needed
 /graphify ./raw --update           # re-extract only changed files, merge into existing graph
 /graphify ./raw --cluster-only     # rerun clustering on existing graph, no re-extraction
 /graphify ./raw --no-viz           # skip HTML, just produce report + JSON
@@ -211,6 +235,10 @@ In Codex, replace the leading `/` in the examples below with `$`. Gemini CLI, Gi
 /graphify query "what connects attention to the optimizer?"
 /graphify query "what connects attention to the optimizer?" --dfs   # trace a specific path
 /graphify query "what connects attention to the optimizer?" --budget 1500  # cap at N tokens
+/graphify summary --graph .graphify/graph.json        # compact first-hop orientation before deep traversal
+/graphify review-delta --files src/auth.ts --graph .graphify/graph.json  # review impact for changed files
+/graphify review-analysis --files src/auth.ts --graph .graphify/graph.json  # blast radius + review views
+/graphify recommend-commits --files src/auth.ts,src/session.ts --graph .graphify/graph.json  # advisory commit grouping
 /graphify path "DigestAuth" "Response"
 /graphify explain "SwinTransformer"
 
@@ -222,10 +250,14 @@ In Codex, replace the leading `/` in the examples below with `$`. Gemini CLI, Gi
 /graphify ./raw --neo4j-push bolt://localhost:7687    # push directly to a running Neo4j instance
 /graphify ./raw --mcp              # start MCP stdio server
 
-# git hooks - platform-agnostic, rebuild graph on commit and branch switch
+# git hooks - platform-agnostic, mark stale and rebuild code graph on git lifecycle events
 graphify hook install
 graphify hook uninstall
 graphify hook status
+graphify state status            # inspect .graphify/worktree.json + branch.json
+graphify state prune             # print a non-destructive stale-state cleanup plan
+graphify migrate-state --dry-run # plan graphify-out -> .graphify migration and git mv advice
+graphify recommend-commits          # advisory-only commit grouping from current Git changes
 
 # always-on assistant instructions - platform-specific
 graphify claude install            # CLAUDE.md + PreToolUse hook (Claude Code)
@@ -251,6 +283,11 @@ graphify trae-cn uninstall
 graphify query "what connects attention to the optimizer?"
 graphify query "show the auth flow" --dfs
 graphify query "what is CfgNode?" --budget 500
+graphify summary --graph .graphify/graph.json
+graphify review-delta --files src/auth.ts,src/session.ts --graph .graphify/graph.json
+graphify review-analysis --files src/auth.ts --graph .graphify/graph.json
+graphify review-eval --cases .graphify/review-cases.json --graph .graphify/graph.json
+graphify recommend-commits --files src/auth.ts,src/session.ts --graph .graphify/graph.json
 graphify query "..." --graph path/to/graph.json
 ```
 
@@ -261,9 +298,21 @@ Works with any mix of file types:
 | Code | `.py .ts .js .jsx .tsx .go .rs .java .c .cpp .rb .cs .kt .scala .php .swift .lua .zig .ps1 .ex .exs .m .mm .jl` | AST via tree-sitter + call-graph + docstring/comment rationale |
 | Docs | `.md .txt .rst` | Concepts + relationships + design rationale via the platform model |
 | Office | `.docx .xlsx` | Converted to markdown then extracted via the platform model |
-| Papers | `.pdf` | Citation mining + concept extraction |
+| Papers | `.pdf` | Local PDF preflight; text-layer PDFs become Markdown via `pdf-parse`/`pdftotext`; scanned/low-text PDFs can use `mistral-ocr` for Markdown + images before semantic extraction |
 | Images | `.png .jpg .webp .gif` | Multimodal vision - screenshots, diagrams, any language |
-| Audio / Video | `.mp4 .mov .webm .mkv .avi .m4v .mp3 .wav .m4a .ogg` | Detected locally; downloaded with `yt-dlp` when needed, normalized with `ffmpeg`, transcribed via `sherpa-onnx-node`, then fed through the same semantic extraction path as docs |
+| Audio / Video | `.mp4 .mov .webm .mkv .avi .m4v .mp3 .wav .m4a .ogg` | Detected locally; downloaded with `yt-dlp` when needed, normalized with `ffmpeg`, transcribed via `faster-whisper-ts`, then fed through the same semantic extraction path as docs |
+
+### Local audio/video transcription
+
+The TypeScript port uses the published `faster-whisper-ts` runtime, not Python. Its default transcription settings intentionally match upstream Python Graphify: Whisper model `base`, CPU device, and `int8` compute type. Override them with `GRAPHIFY_WHISPER_MODEL`, `GRAPHIFY_WHISPER_MODEL_DIR`, `GRAPHIFY_WHISPER_MODEL_ID`, `GRAPHIFY_WHISPER_MODEL_REVISION`, `GRAPHIFY_WHISPER_DEVICE`, and `GRAPHIFY_WHISPER_COMPUTE_TYPE` when you need a different local CTranslate2 model or runtime target.
+
+URL ingestion still goes through `yt-dlp`; local audio/video decoding is handled by `faster-whisper-ts` and system `ffmpeg`. Generated transcripts are written under `.graphify/transcripts/` by default and are then treated like regular document inputs for semantic extraction.
+
+### PDF preflight and Mistral OCR
+
+PDFs are never sent to OCR blindly. `GRAPHIFY_PDF_OCR` controls the behavior: `auto` (default) runs a local `pdf-parse` preflight with `pdftotext` fallback when available, and calls `mistral-ocr` only when the PDF has too little extractable text; `off` keeps the original PDF as-is; `always` forces Mistral OCR; `dry-run` records the preflight decision without calling the API. Use `GRAPHIFY_PDF_OCR_MODEL` to override the Mistral model. Mistral OCR requires `MISTRAL_API_KEY`; if the key is missing in `auto` mode, graphify warns and leaves the source PDF in the semantic input instead of failing the run.
+
+Generated PDF sidecars are written under `.graphify/converted/pdf/` with provenance frontmatter pointing back to the original PDF. The sidecars then flow through the normal document semantic extraction path. If OCR produces image artifacts for figures, tables, diagrams, or embedded text, graphify adds those artifacts to semantic image inputs; the skills instruct the assistant to decode them with platform vision by default, or with a configured delegated OCR/vision provider, keeping the link back to the source PDF.
 
 ## What you get
 
@@ -285,7 +334,7 @@ Works with any mix of file types:
 
 **Auto-sync** (`--watch`) - run in a background terminal and the graph updates itself as your codebase changes. Code file saves trigger an instant rebuild (AST only, no LLM). Doc/image changes notify you to run `--update` for the LLM re-pass.
 
-**Git hooks** (`graphify hook install`) - installs post-commit and post-checkout hooks. Graph rebuilds automatically after every commit and every branch switch. If a rebuild fails, the hook exits with a non-zero code so git surfaces the error instead of silently continuing. No background process needed.
+**Git hooks** (`graphify hook install`) - installs worktree-compatible `post-commit`, `post-checkout`, `post-merge`, and `post-rewrite` hooks. Hooks mark `.graphify/` stale first, update branch/worktree metadata, then try a non-blocking code-only rebuild when it is safe and cheap. No background process needed, and hook failures do not block Git operations. Use `graphify state status` to inspect lifecycle metadata and `graphify state prune` to preview stale cleanup without deleting files.
 
 **Wiki** (`--wiki`) - Wikipedia-style markdown articles per community and god node, with an `index.md` entry point. Point any agent at `index.md` and it can navigate the knowledge base by reading files instead of parsing JSON.
 
@@ -301,15 +350,15 @@ Token reduction scales with corpus size. 6 files fits in a context window anyway
 
 ## Privacy
 
-graphify sends file contents to your AI coding assistant's underlying model API for semantic extraction of docs, papers, and images — Anthropic (Claude Code), OpenAI (Codex), Google (Gemini CLI), or whichever provider your platform uses. Code files are processed locally via tree-sitter AST — no file contents leave your machine for code. When you use audio/video transcription on this catch-up branch, that step runs through your local `yt-dlp` + `ffmpeg` + `sherpa-onnx-node` toolchain. No telemetry, usage tracking, or analytics of any kind. The only network calls are to your platform's model API during extraction, using your own API key, plus any URL fetches you explicitly ask graphify to ingest.
+graphify sends file contents to your AI coding assistant's underlying model API for semantic extraction of docs, papers, and images — Anthropic (Claude Code), OpenAI (Codex), Google (Gemini CLI), or whichever provider your platform uses. Code files are processed locally via tree-sitter AST — no file contents leave your machine for code. When you use audio/video transcription on this catch-up branch, that step runs through your local `yt-dlp` + `ffmpeg` + `faster-whisper-ts` toolchain. PDF text preflight is local (`pdf-parse`, with optional `pdftotext` fallback); Mistral OCR is the only additional PDF-specific network call, and it runs only when `GRAPHIFY_PDF_OCR=auto` detects a scanned/low-text PDF or when you explicitly force OCR. No telemetry, usage tracking, or analytics of any kind. The only network calls are to your platform's model API during extraction, optional Mistral OCR when PDF OCR mode requires it, and any URL fetches you explicitly ask graphify to ingest; all use your own API keys or local credentials.
 
 ## Tech stack
 
-Graphology + Louvain (`graphology-communities-louvain`) + tree-sitter + vis-network, with `pdf-parse`, `mammoth`, `exceljs`, `turndown`, and the upstream-aligned `yt-dlp` + `ffmpeg` + `sherpa-onnx-node` transcription path on this catch-up branch. Semantic extraction runs through your platform's model (Claude Code, Codex, Gemini CLI, or another supported client). No Neo4j required, and the default HTML output is fully static.
+Graphology + Louvain (`graphology-communities-louvain`) + tree-sitter + vis-network, with `pdf-parse`, optional system `pdftotext`, optional `mistral-ocr`, `mammoth`, `exceljs`, `turndown`, and the upstream-aligned `yt-dlp` + `ffmpeg` + `faster-whisper-ts` transcription path on this catch-up branch. Semantic extraction runs through your platform's model (Claude Code, Codex, Gemini CLI, or another supported client). No Neo4j required, and the default HTML output is fully static.
 
 ## Acknowledgements
 
-This repository is a TypeScript port of the original Graphify project by [Safi Shamsi](https://github.com/safishamsi/graphify). The current codebase keeps the assistant-skill workflow and knowledge-graph model, while shipping the maintained runtime as TypeScript at the repository root.
+This repository is a TypeScript port of the original Graphify project by [Safi Shamsi](https://github.com/safishamsi/graphify). Selected review-workflow ideas were also adapted from the `code-review-graph` comparison work, as documented in [spec/SPEC_CODE_REVIEW_GRAPH_OPPORUNITY.md](spec/SPEC_CODE_REVIEW_GRAPH_OPPORUNITY.md). The maintained product remains Graphify TypeScript: multimodal, file-based by default, and aligned against upstream Graphify where parity matters.
 
 ## License
 
@@ -320,7 +369,7 @@ MIT. See [LICENSE](LICENSE).
 
 **Worked examples** are the most trust-building contribution. Run the graphify skill on a real corpus (`$graphify` in Codex, `/graphify` elsewhere), save output to `worked/{slug}/`, write an honest `review.md` evaluating what the graph got right and wrong, submit a PR.
 
-**Extraction bugs** - open an issue with the input file, the cache entry (`graphify-out/cache/`), and what was missed or invented.
+**Extraction bugs** - open an issue with the input file, the cache entry (`.graphify/cache/`), and what was missed or invented.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for module responsibilities and how to add a language.
 

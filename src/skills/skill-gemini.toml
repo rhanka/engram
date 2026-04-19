@@ -10,15 +10,21 @@ Use the installed TypeScript runtime only. Do not fall back to Python.
 
 - `/graphify` with no path means the current directory `.`
 - `/graphify <path> [flags]` means build or update the graph for that path
-- `/graphify query "<question>"` means answer from `graphify-out/graph.json`
+- `/graphify summary` means return compact first-hop orientation from `.graphify/graph.json`
+- `/graphify review-delta [files...]` means return review-oriented impact for changed files
+- `/graphify review-analysis [files...]` means return blast radius, impacted communities, bridges, test gaps, and multimodal safety
+- `/graphify recommend-commits [files...]` means return advisory-only commit groups; never stage, commit, or mutate branches
+- `/graphify query "<question>"` means answer from `.graphify/graph.json`
 - `/graphify path "A" "B"` means show the shortest path between two nodes
 - `/graphify explain "Node"` means explain one node and its neighbors
 - `/graphify add <url>` means ingest the URL into `./raw` and then update the graph
+- `/graphify migrate-state` means run `graphify migrate-state --dry-run` first, then ask before applying migration or git mv advice
 
 Always prefer graphify outputs and graphify runtime commands over ad-hoc file traversal:
-- If `graphify-out/GRAPH_REPORT.md` exists, read it before searching raw files
-- If `graphify-out/wiki/index.md` exists, navigate it before reading raw files
+- If `.graphify/GRAPH_REPORT.md` exists, read it before searching raw files
+- If `.graphify/wiki/index.md` exists, navigate it before reading raw files
 - If the user asks about build/update/query/path/explain, stay on graphify artifacts and commands
+- Before deep query/path/explain traversal, run the compact first-hop summary first
 
 ## Runtime proof
 
@@ -42,14 +48,14 @@ GRAPHIFY_CLI=$("$NODE_BIN" -e "const fs=require('fs'); console.log(fs.realpathSy
 GRAPHIFY_DIST_DIR=$("$NODE_BIN" -e "const path=require('path'); console.log(path.dirname(process.argv[1]));" "$GRAPHIFY_CLI")
 GRAPHIFY_RUNTIME="$GRAPHIFY_DIST_DIR/skill-runtime.js"
 
-mkdir -p graphify-out
-printf '%s' "$NODE_BIN" > graphify-out/.graphify_node
-printf '%s' "$GRAPHIFY_RUNTIME" > graphify-out/.graphify_runtime_script
-"$NODE_BIN" "$GRAPHIFY_RUNTIME" runtime-info > graphify-out/.graphify_runtime.json
+mkdir -p .graphify
+printf '%s' "$NODE_BIN" > .graphify/.graphify_node
+printf '%s' "$GRAPHIFY_RUNTIME" > .graphify/.graphify_runtime_script
+"$NODE_BIN" "$GRAPHIFY_RUNTIME" runtime-info > .graphify/.graphify_runtime.json
 
 "$NODE_BIN" -e "
   const fs = require('fs');
-  const runtime = JSON.parse(fs.readFileSync('graphify-out/.graphify_runtime.json', 'utf8'));
+  const runtime = JSON.parse(fs.readFileSync('.graphify/.graphify_runtime.json', 'utf8'));
   if (runtime.runtime !== 'typescript') {
     console.error('ERROR: expected TypeScript runtime, got', runtime.runtime);
     process.exit(1);
@@ -60,7 +66,7 @@ printf '%s' "$GRAPHIFY_RUNTIME" > graphify-out/.graphify_runtime_script
 In every subsequent shell block, use:
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" ...
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" ...
 ```
 
 ## Build and update flow
@@ -70,7 +76,7 @@ For a build or update request:
 1. Detect files:
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" detect "INPUT_PATH" --out graphify-out/.graphify_detect.json
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" detect "INPUT_PATH" --out .graphify/.graphify_detect.json
 ```
 
 2. Summarize the corpus cleanly from the detection JSON:
@@ -80,41 +86,45 @@ $(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)
 - `files.image`
 - `files.video`
 
-Always prepare the semantic detection file before semantic extraction. If `files.video` is empty, this is a no-op that simply copies the detection shape forward. If video/audio files exist, it transcribes them first:
+Always prepare the semantic detection file before semantic extraction. If there is no video/audio and no PDF requiring preparation, this simply copies the detection shape forward. It transcribes video/audio when present. For PDFs, it runs local preflight, converts text-layer PDFs locally, and keeps two OCR paths explicit: Gemini vision may interpret the original PDF or extracted image chunks during semantic extraction, while `mistral-ocr` may be used only when OCR is explicitly requested or when a configured `MISTRAL_API_KEY` is available and preflight detects a scanned/low-text PDF. In `auto` mode, if no key/provider is available, leave the source PDF in semantic inputs.
 
 ```bash
 GRAPHIFY_WHISPER_FLAG=""
 if the original invocation included --whisper-model <name>, set GRAPHIFY_WHISPER_FLAG="--whisper-model <name>"
+GRAPHIFY_PDF_OCR_FLAG=""
+if the original invocation included --pdf-ocr <mode>, set GRAPHIFY_PDF_OCR_FLAG="--pdf-ocr <mode>"
 
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" prepare-semantic-detect \
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" prepare-semantic-detect \
   $GRAPHIFY_WHISPER_FLAG \
-  --detect graphify-out/.graphify_detect.json \
-  --out graphify-out/.graphify_detect_semantic.json \
-  --transcripts-out graphify-out/.graphify_transcripts.json \
-  --analysis graphify-out/.graphify_analysis.json
+  $GRAPHIFY_PDF_OCR_FLAG \
+  --detect .graphify/.graphify_detect.json \
+  --out .graphify/.graphify_detect_semantic.json \
+  --transcripts-out .graphify/.graphify_transcripts.json \
+  --pdf-out .graphify/.graphify_pdf_ocr.json \
+  --analysis .graphify/.graphify_analysis.json
 ```
 
-Use `graphify-out/.graphify_detect_semantic.json` for semantic cache and semantic extraction after this step. Keep `graphify-out/.graphify_detect.json` for manifest/cost/reporting.
+Use `.graphify/.graphify_detect_semantic.json` for semantic cache and semantic extraction after this step. Keep `.graphify/.graphify_detect.json` for manifest/cost/reporting.
 
 3. Extract AST structure:
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" extract-ast \
-  --detect graphify-out/.graphify_detect.json \
-  --out graphify-out/.graphify_ast.json
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" extract-ast \
+  --detect .graphify/.graphify_detect.json \
+  --out .graphify/.graphify_ast.json
 ```
 
 4. Check semantic cache:
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" check-semantic-cache \
-  --detect graphify-out/.graphify_detect_semantic.json \
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" check-semantic-cache \
+  --detect .graphify/.graphify_detect_semantic.json \
   --root . \
-  --cached-out graphify-out/.graphify_cached.json \
-  --uncached-out graphify-out/.graphify_uncached.txt
+  --cached-out .graphify/.graphify_cached.json \
+  --uncached-out .graphify/.graphify_uncached.txt
 ```
 
-5. If `graphify-out/.graphify_uncached.txt` is non-empty, read those docs, papers, images, and generated transcripts yourself in manageable batches and write `graphify-out/.graphify_semantic_new.json` matching exactly:
+5. If `.graphify/.graphify_uncached.txt` is non-empty, read those docs, papers, images, generated transcripts, PDF sidecars, and relevant PDF-extracted image artifacts yourself in manageable batches and write `.graphify/.graphify_semantic_new.json` matching exactly:
 
 ```json
 {"nodes":[{"id":"filestem_entityname","label":"Human Readable Name","file_type":"code|document|paper|image","source_file":"relative/path","source_location":null,"source_url":null,"captured_at":null,"author":null,"contributor":null}],"edges":[{"source":"node_id","target":"node_id","relation":"calls|implements|references|cites|conceptually_related_to|shares_data_with|semantically_similar_to|rationale_for","confidence":"EXTRACTED|INFERRED|AMBIGUOUS","confidence_score":1.0,"source_file":"relative/path","source_location":null,"weight":1.0}],"hyperedges":[{"id":"snake_case_id","label":"Human Readable Label","nodes":["node_id1","node_id2","node_id3"],"relation":"participate_in|implement|form","confidence":"EXTRACTED|INFERRED","confidence_score":0.75,"source_file":"relative/path"}],"input_tokens":0,"output_tokens":0}
@@ -125,7 +135,7 @@ Rules:
 - `INFERRED`: reasonable inference
 - `AMBIGUOUS`: uncertain, flag it rather than omitting it
 - for code files, only add semantic edges AST would miss
-- for image files, use vision if available
+- for image files, use vision if available; for images extracted from PDFs, decode figures, tables, diagrams, captions, and embedded text when they carry meaning, or use a delegated OCR/vision model when configured, while preserving provenance to the source PDF and sidecar
 - if a file has YAML frontmatter, copy `source_url`, `captured_at`, `author`, `contributor` onto every node from that file
 
 6. Finalize:
@@ -133,17 +143,17 @@ Rules:
 For a new build:
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" finalize-build \
-  --detect graphify-out/.graphify_detect.json \
-  --ast graphify-out/.graphify_ast.json \
-  --cached graphify-out/.graphify_cached.json \
-  --semantic-new graphify-out/.graphify_semantic_new.json \
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" finalize-build \
+  --detect .graphify/.graphify_detect.json \
+  --ast .graphify/.graphify_ast.json \
+  --cached .graphify/.graphify_cached.json \
+  --semantic-new .graphify/.graphify_semantic_new.json \
   --root . \
-  --graph-out graphify-out/graph.json \
-  --report-out graphify-out/GRAPH_REPORT.md \
-  --analysis-out graphify-out/.graphify_analysis.json \
-  --cost-out graphify-out/cost.json \
-  --html-out graphify-out/graph.html
+  --graph-out .graphify/graph.json \
+  --report-out .graphify/GRAPH_REPORT.md \
+  --analysis-out .graphify/.graphify_analysis.json \
+  --cost-out .graphify/cost.json \
+  --html-out .graphify/graph.html
 ```
 
 For `--update`, use `detect-incremental`, then rerun `prepare-semantic-detect --incremental` before semantic cache/extraction, and finish with `finalize-update`.
@@ -151,12 +161,12 @@ For `--update`, use `detect-incremental`, then rerun `prepare-semantic-detect --
 For `--cluster-only`, use:
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" cluster-only \
-  --graph graphify-out/graph.json \
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" cluster-only \
+  --graph .graphify/graph.json \
   --root . \
-  --graph-out graphify-out/graph.json \
-  --report-out graphify-out/GRAPH_REPORT.md \
-  --analysis-out graphify-out/.graphify_analysis.json
+  --graph-out .graphify/graph.json \
+  --report-out .graphify/GRAPH_REPORT.md \
+  --analysis-out .graphify/.graphify_analysis.json
 ```
 
 For `--svg`, `--graphml`, `--neo4j`, `--neo4j-push`, call the matching `export-*` or `push-neo4j` runtime command after the build.
@@ -164,35 +174,46 @@ For `--svg`, `--graphml`, `--neo4j`, `--neo4j-push`, call the matching `export-*
 For `--mcp`, use the configured `graphify` MCP server from `.gemini/settings.json` if present, otherwise tell the user to run `graphify gemini install`.
 
 After a successful build/update, confirm these outputs:
-- `graphify-out/graph.json`
-- `graphify-out/GRAPH_REPORT.md`
-- `graphify-out/graph.html`
-- `graphify-out/.graphify_runtime.json`
+- `.graphify/graph.json`
+- `.graphify/GRAPH_REPORT.md`
+- `.graphify/graph.html`
+- `.graphify/.graphify_runtime.json`
 
 ## Query, path, explain, and ingest
+
+Before deep query/path/explain traversal, get the compact first-hop orientation:
+
+```bash
+graphify summary --graph .graphify/graph.json
+graphify recommend-commits --files src/auth.ts,src/session.ts --graph .graphify/graph.json
+graphify review-analysis --files src/auth.ts --graph .graphify/graph.json
+graphify review-eval --cases .graphify/review-cases.json --graph .graphify/graph.json
+```
+
+Use that output to choose whether a query, node explanation, community read, or shortest path is the right next graph action.
 
 For `query`, use the public CLI:
 
 ```bash
-graphify query "<question>" --graph graphify-out/graph.json
+graphify query "<question>" --graph .graphify/graph.json
 ```
 
 For `path`, use the runtime:
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" path --graph graphify-out/graph.json "NODE_A" "NODE_B"
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" path --graph .graphify/graph.json "NODE_A" "NODE_B"
 ```
 
 For `explain`, use the runtime:
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" explain --graph graphify-out/graph.json "NODE_NAME"
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" explain --graph .graphify/graph.json "NODE_NAME"
 ```
 
 For `add <url>`, ingest first, then run the update flow:
 
 ```bash
-$(cat graphify-out/.graphify_node) "$(cat graphify-out/.graphify_runtime_script)" ingest "<url>" --target-dir ./raw
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" ingest "<url>" --target-dir ./raw
 ```
 
 ## Final reporting
@@ -203,5 +224,19 @@ When you finish, give the user:
 - the runtime proof (`typescript`)
 - the key output files that were produced or reused
 
+## Lifecycle State
+
+- Runtime state lives under `.graphify/`; do not create legacy visible state directories.
+- If `.graphify/graph.json` is missing but legacy `graphify-out/graph.json` exists, run `graphify migrate-state --dry-run` first. If it reports tracked legacy artifacts, ask before using the recommended `git mv -f graphify-out .graphify` and commit message; do not auto-stage or auto-commit.
+- Use `.graphify/wiki/index.md` first when present, then `.graphify/GRAPH_REPORT.md`, before searching raw files.
+- If `.graphify/needs_update` exists or `.graphify/branch.json` has `"stale": true`, tell the user the graph is stale and run the platform graphify command with `--update` before relying on semantic results.
+- Git hooks may mark stale state after branch switches, merges, and rewrites. Never delete `.graphify/` automatically; use `graphify state prune` only as a non-destructive cleanup preview.
+
 The user's raw `/graphify ...` arguments are appended below this prompt.
 '''
+
+# Commit recommendation workflow
+# `graphify recommend-commits` is advisory-only. The user remains the actor; do not auto-stage, auto-commit, or mutate branches.
+
+# Review analysis workflow
+# `graphify review-analysis` adds blast radius, bridge nodes, test-gap hints, impacted communities, and multimodal/doc safety. `graphify review-eval` measures token savings, impacted-file recall, review summary precision, and multimodal regression safety.

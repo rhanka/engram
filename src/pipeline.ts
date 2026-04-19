@@ -5,7 +5,7 @@
  * core graphify outputs without depending on assistant slash commands.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import type Graph from "graphology";
 
 import { detect, saveManifest } from "./detect.js";
@@ -15,6 +15,8 @@ import { godNodes, surprisingConnections, suggestQuestions } from "./analyze.js"
 import { generate } from "./report.js";
 import { toHtml, toJson } from "./export.js";
 import { extractWithDiagnostics, type ExtractionDiagnostic } from "./extract.js";
+import { resolveGraphifyPaths } from "./paths.js";
+import { markLifecycleAnalyzed } from "./lifecycle.js";
 import { toWiki } from "./wiki.js";
 import type {
   DetectionResult,
@@ -96,11 +98,12 @@ export async function buildProject(
   options?: BuildProjectOptions,
 ): Promise<BuildProjectResult> {
   const rootResolved = resolve(root);
-  const outputDir = resolve(rootResolved, options?.outputDir ?? "graphify-out");
-  const detectionPath = join(rootResolved, ".graphify_detect.json");
-  const manifestPath = join(outputDir, "manifest.json");
-  const reportPath = join(outputDir, "GRAPH_REPORT.md");
-  const graphPath = join(outputDir, "graph.json");
+  const paths = resolveGraphifyPaths({ root: rootResolved, stateDir: options?.outputDir });
+  const outputDir = paths.stateDir;
+  const detectionPath = paths.scratch.detect;
+  const manifestPath = paths.manifest;
+  const reportPath = paths.report;
+  const graphPath = paths.graph;
   const warnings: BuildProjectWarning[] = [];
 
   mkdirSync(outputDir, { recursive: true });
@@ -187,7 +190,7 @@ export async function buildProject(
   let htmlPath: string | undefined;
   if (options?.html !== false) {
     try {
-      htmlPath = join(outputDir, "graph.html");
+      htmlPath = paths.html;
       toHtml(G, communities, htmlPath, { communityLabels: labels });
     } catch (error) {
       htmlPath = undefined;
@@ -201,13 +204,15 @@ export async function buildProject(
 
   let wikiDir: string | undefined;
   if (options?.wiki) {
-    wikiDir = join(outputDir, "wiki");
+    wikiDir = paths.wikiDir;
     toWiki(G, communities, wikiDir, {
       communityLabels: labels,
       cohesion,
       godNodesData: gods,
     });
   }
+
+  markLifecycleAnalyzed(rootResolved);
 
   return {
     root: rootResolved,

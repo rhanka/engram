@@ -12,8 +12,13 @@ import {
   loadGraphFromData,
   type SerializedGraphData,
 } from "./graph.js";
+import { resolveGraphInputPath } from "./paths.js";
 import { validateGraphPath, sanitizeLabel } from "./security.js";
 import { godNodes as computeGodNodes } from "./analyze.js";
+import { buildFirstHopSummary, firstHopSummaryToText } from "./summary.js";
+import { buildReviewDelta, reviewDeltaToText } from "./review.js";
+import { buildReviewAnalysis, reviewAnalysisToText } from "./review-analysis.js";
+import { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 
 // ---------------------------------------------------------------------------
@@ -298,6 +303,55 @@ function toolGraphStats(
   ].join("\n");
 }
 
+function toolFirstHopSummary(G: Graph): string {
+  return firstHopSummaryToText(buildFirstHopSummary(G));
+}
+
+function toolReviewDelta(G: Graph, args: Record<string, unknown>): string {
+  const changedFiles = Array.isArray(args.changed_files)
+    ? args.changed_files.filter((item): item is string => typeof item === "string")
+    : [];
+  if (changedFiles.length === 0) {
+    return "No changed_files provided. Pass repository-relative paths to compute review impact.";
+  }
+  const delta = buildReviewDelta(G, changedFiles, {
+    maxNodes: Number(args.max_nodes ?? 80),
+    maxChains: Number(args.max_chains ?? 8),
+  });
+  return reviewDeltaToText(delta);
+}
+
+function toolRecommendCommits(G: Graph, args: Record<string, unknown>): string {
+  const changedFiles = Array.isArray(args.changed_files)
+    ? args.changed_files.filter((item): item is string => typeof item === "string")
+    : [];
+  if (changedFiles.length === 0) {
+    return "No changed_files provided. Pass repository-relative paths to compute advisory commit groups.";
+  }
+  const recommendation = buildCommitRecommendation(G, changedFiles, {
+    graphAvailable: true,
+    maxGroups: Number(args.max_groups ?? 6),
+    maxNodes: Number(args.max_nodes ?? 60),
+    maxChains: Number(args.max_chains ?? 4),
+  });
+  return commitRecommendationToText(recommendation);
+}
+
+function toolReviewAnalysis(G: Graph, args: Record<string, unknown>): string {
+  const changedFiles = Array.isArray(args.changed_files)
+    ? args.changed_files.filter((item): item is string => typeof item === "string")
+    : [];
+  if (changedFiles.length === 0) {
+    return "No changed_files provided. Pass repository-relative paths to compute review analysis.";
+  }
+  const analysis = buildReviewAnalysis(G, changedFiles, {
+    maxNodes: Number(args.max_nodes ?? 120),
+    maxChains: Number(args.max_chains ?? 12),
+    maxCommunities: Number(args.max_communities ?? 8),
+  });
+  return reviewAnalysisToText(analysis);
+}
+
 function toolShortestPath(G: Graph, args: Record<string, unknown>): string {
   const srcTerms = (args.source as string)
     .split(/\s+/)
@@ -349,7 +403,7 @@ function toolShortestPath(G: Graph, args: Record<string, unknown>): string {
 // ---------------------------------------------------------------------------
 
 export async function serve(
-  graphPath: string = "graphify-out/graph.json",
+  graphPath: string = resolveGraphInputPath(),
   transport?: Transport,
 ): Promise<void> {
   let Server: typeof import("@modelcontextprotocol/sdk/server/index.js").Server;
@@ -381,6 +435,68 @@ export async function serve(
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
+      {
+        name: "first_hop_summary",
+        description:
+          "Return a compact deterministic first-hop orientation: graph size, density, top hubs, key communities, and next graph action.",
+        inputSchema: { type: "object" as const, properties: {} },
+      },
+      {
+        name: "review_delta",
+        description:
+          "Return review-oriented graph impact for changed files: impacted files, hubs, bridges, likely test gaps, and high-risk chains.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            changed_files: {
+              type: "array",
+              items: { type: "string" },
+              description: "Repository-relative changed files",
+            },
+            max_nodes: { type: "integer", default: 80 },
+            max_chains: { type: "integer", default: 8 },
+          },
+          required: ["changed_files"],
+        },
+      },
+      {
+        name: "review_analysis",
+        description:
+          "Return actionable review analysis: blast radius, impacted communities, bridge nodes, test gaps, and multimodal/doc safety.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            changed_files: {
+              type: "array",
+              items: { type: "string" },
+              description: "Repository-relative changed files",
+            },
+            max_nodes: { type: "integer", default: 120 },
+            max_chains: { type: "integer", default: 12 },
+            max_communities: { type: "integer", default: 8 },
+          },
+          required: ["changed_files"],
+        },
+      },
+      {
+        name: "recommend_commits",
+        description:
+          "Return advisory-only commit grouping recommendations for changed files. Never stages, commits, or mutates branches.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            changed_files: {
+              type: "array",
+              items: { type: "string" },
+              description: "Repository-relative changed files",
+            },
+            max_groups: { type: "integer", default: 6 },
+            max_nodes: { type: "integer", default: 60 },
+            max_chains: { type: "integer", default: 4 },
+          },
+          required: ["changed_files"],
+        },
+      },
       {
         name: "query_graph",
         description:
@@ -504,6 +620,10 @@ export async function serve(
     string,
     (args: Record<string, unknown>) => string
   > = {
+    first_hop_summary: () => toolFirstHopSummary(G),
+    review_delta: (a) => toolReviewDelta(G, a),
+    review_analysis: (a) => toolReviewAnalysis(G, a),
+    recommend_commits: (a) => toolRecommendCommits(G, a),
     query_graph: (a) => toolQueryGraph(G, a),
     get_node: (a) => toolGetNode(G, a),
     get_neighbors: (a) => toolGetNeighbors(G, a),
@@ -561,7 +681,7 @@ const isDirectExecution = typeof process !== "undefined" &&
   /^serve\.(?:js|mjs|cjs|ts)$/.test(basename(process.argv[1]));
 
 if (isDirectExecution) {
-  const graphPath = process.argv[2] ?? "graphify-out/graph.json";
+  const graphPath = resolveGraphInputPath(process.argv[2]);
   serve(graphPath).catch((err) => {
     console.error(err);
     process.exit(1);

@@ -61,6 +61,19 @@ describe("public API compatibility", () => {
     expect(typeof api.rebuildCode).toBe("function");
     expect(typeof api.pushToNeo4j).toBe("function");
     expect(typeof api.augmentDetectionWithTranscripts).toBe("function");
+    expect(typeof api.buildFirstHopSummary).toBe("function");
+    expect(typeof api.firstHopSummaryToText).toBe("function");
+    expect(typeof api.buildReviewDelta).toBe("function");
+    expect(typeof api.reviewDeltaToText).toBe("function");
+    expect(typeof api.buildReviewAnalysis).toBe("function");
+    expect(typeof api.reviewAnalysisToText).toBe("function");
+    expect(typeof api.evaluateReviewAnalysis).toBe("function");
+    expect(typeof api.reviewEvaluationToText).toBe("function");
+    expect(typeof api.buildCommitRecommendation).toBe("function");
+    expect(typeof api.commitRecommendationToText).toBe("function");
+    expect(typeof api.planGraphifyOutMigration).toBe("function");
+    expect(typeof api.migrateGraphifyOut).toBe("function");
+    expect(typeof api.migrationResultToText).toBe("function");
   });
 
   it("accepts object-style map inputs and option objects", () => {

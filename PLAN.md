@@ -1,289 +1,255 @@
-# Upstream Catch-up Plan
+# Spec Evolution Implementation Plan
 
 ## Snapshot
 
-- [x] Create a dedicated catch-up branch: `chore/upstream-v3-rattrapage`
-- [x] Fetch the upstream repository and refresh all refs/tags
-- [x] Confirm local baseline branch: `v3` at `fbc6929`
-- [x] Confirm upstream target branch for this catch-up: `upstream/v3` at `699e996`
-- [x] Confirm last upstream `v3` tag: `v0.3.28`
-- [x] Record the initial gap table in [UPSTREAM_GAP.md](UPSTREAM_GAP.md)
-- [x] Keep this file as the execution source of truth for the catch-up branch
-- [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) after every completed lot
+- [x] Commit the initial spec bundle on `feat/spec-graphify-vs-code-review-graph`
+- [x] Create a dedicated execution branch: `feat/spec-evolution-implementation-plan`
+- [x] Keep the current reference specs as the design baseline:
+  - [x] [spec/SPEC_GRAPHIFY.md](spec/SPEC_GRAPHIFY.md)
+  - [x] [spec/SPEC_CODE_REVIEW_GRAPH_OPPORUNITY.md](spec/SPEC_CODE_REVIEW_GRAPH_OPPORUNITY.md)
+  - [x] [spec/SPEC_GAPHIFY_SLDC_STUDY.md](spec/SPEC_GAPHIFY_SLDC_STUDY.md)
+  - [x] [spec/SPEC_PDF_OCR_PREPROCESSING.md](spec/SPEC_PDF_OCR_PREPROCESSING.md)
+- [x] Use this file as the execution source of truth for the implementation branch
 
 ## Guardrails
 
-- [x] Do not mix `upstream/v4` or `upstream/main` work into this branch until the `upstream/v3` delta is triaged
-- [x] Keep the npm/package release version unchanged while doing parity catch-up unless a release lot explicitly requires a bump
-- [x] Keep one commit group per upstream release bucket where practical
-- [x] For every implementation lot:
+- [ ] Keep `v3-typescript` as the product line and `v3` as the upstream mirror; do not blur their roles in code, docs, or release behavior
+- [ ] Keep one coherent commit per lot or tightly coupled file set; do not batch unrelated changes
+- [ ] After each code-changing lot:
   - [x] run targeted tests first
-  - [x] run full `npm test` before closing the lot
-  - [x] run `npx graphify hook-rebuild` after code changes
-  - [x] update this plan and [UPSTREAM_GAP.md](UPSTREAM_GAP.md)
-- [x] Mark Python-only upstream fixes as explicit `n/a` instead of silently ignoring them
+  - [x] run full `npm test`
+  - [x] run `npx graphify hook-rebuild`
+  - [x] update this plan and any touched SPEC files
+- [x] Do not introduce a remote service or shared backend for Graphify state
+- [x] Keep `.graphify/` ignored by default; do not make runtime state part of the normal committed source of truth
+- [x] Treat commit recommendations as advisory only; no automatic staging or committing
+- [x] Keep deferred items explicit instead of half-implementing them
 
-## Lot 0 - Planning Baseline
+## Lot 0 - Path And Lifecycle Audit Baseline
 
-- [x] Build an initial release-by-release delta map from `v0.3.18` through current `upstream/v3`
-- [x] Add upstream commit links beside each release lot in this plan
-- [x] Decide the exact close-out rule for each lot:
-  - [x] `covered`
-  - [x] `partial but acceptable`
-  - [x] `n/a`
-  - [x] `implemented`
+- [x] Create a central inventory of all `graphify-out/` and repo-root `.graphify_*` usages in runtime, skills, docs, and tests
+- [x] Create a central inventory of all Git lifecycle assumptions in hooks, CLI, and skills
+- [x] Confirm which state files are durable artifacts versus scratch/runtime metadata
+- [x] Decide the canonical `.graphify/` internal layout:
+  - [x] durable artifacts
+  - [x] cache/transcripts/converted/memory
+  - [x] scratch/runtime metadata
+- [x] Record any path-contract decisions back into the relevant SPEC files before coding
 
-## Lot 1 - Upstream `v0.3.18`
+## Lot 1 - State Path Abstraction
 
-Upstream commits: `11dff7e`, `29c639d`, `4d8cffe`
+- [x] Add a single runtime path resolver for Graphify state instead of duplicating `graphify-out/...` joins
+- [x] Define canonical getters for:
+  - [x] state root
+  - [x] graph path
+  - [x] report path
+  - [x] html path
+  - [x] manifest path
+  - [x] cost path
+  - [x] cache path
+  - [x] transcripts path
+  - [x] scratch/tmp paths
+- [x] Refactor CLI/runtime modules to use the shared path resolver
+- [x] Refactor security/path validation to use the shared path resolver
+- [x] Add tests for the new path contract before switching defaults
 
-Upstream scope:
-- skill coverage fixes
-- Windows skill fixes
-- click detection fix
-- `.graphify_python` persistence
+## Lot 2 - `.graphify/` Runtime Migration
 
-Plan:
-- [x] Audit upstream commits `11dff7e`, `29c639d`, `4d8cffe`
-- [x] Diff current TS skill files against the upstream `v0.3.18` behavior changes
-- [x] Verify whether the Windows skill still misses any commands or examples
-- [x] Verify whether the click-detection issue has a TS/UI equivalent
-- [x] Mark `.graphify_python` persistence as `n/a` for the TS-only runtime unless a real TS runtime-proof persistence gap exists
-- [x] Add targeted regressions for any retained fixes
-- [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.18`
-- [x] Commit the `v0.3.18` catch-up lot
+- [x] Switch the default state root from `graphify-out/` to `.graphify/`
+- [x] Move repo-root `.graphify_*.json` scratch files under `.graphify/`
+- [x] Migrate:
+  - [x] pipeline outputs
+  - [x] cache storage
+  - [x] transcript outputs
+  - [x] converted Office-file sidecars
+  - [x] watch/update markers
+  - [x] MCP/default graph paths
+- [x] Add a compatibility read window for legacy `graphify-out/` where it materially reduces breakage
+- [x] Decide whether to provide an explicit migration command or do lazy migration on first run
+- [x] Update tests that currently assert `graphify-out/...`
 
-## Lot 2 - Upstream `v0.3.19`
+## Lot 3 - Git Hook And Worktree Correctness
 
-Upstream commits: `3501605`, `e1864d7`, `096a76f`
+- [x] Replace filesystem-based git root/hook discovery with Git-native resolution:
+  - [x] `git rev-parse --show-toplevel`
+  - [x] `git rev-parse --absolute-git-dir`
+  - [x] `git rev-parse --git-common-dir`
+  - [x] `git rev-parse --git-path hooks`
+- [x] Make hook install/uninstall/status work in linked worktrees
+- [x] Extend lifecycle coverage beyond current hooks:
+  - [x] `post-commit`
+  - [x] `post-checkout`
+  - [x] `post-merge`
+  - [x] `post-rewrite`
+- [x] Keep hooks lightweight:
+  - [x] freshness markers first
+  - [x] rebuild only when safe and cheap
+  - [x] no heavy semantic work in hooks
+- [x] Add explicit tests for worktree-compatible hook behavior
 
-Upstream scope:
-- OpenCode `tool.execute.before` plugin integration
+## Lot 4 - Branch And Worktree Lifecycle Metadata
 
-Plan:
-- [x] Audit upstream commits `3501605`, `e1864d7`, `096a76f`
-- [x] Decide whether TS should support true OpenCode plugin-style install parity or intentionally keep the current install model
-- [x] If parity is required, add the OpenCode plugin install path
-- [x] If parity is not required, document the intentional divergence in [UPSTREAM_GAP.md](UPSTREAM_GAP.md)
-- [x] Add regression coverage for OpenCode install idempotency and resulting config shape
-- [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.19`
-- [x] Commit the `v0.3.19` catch-up lot
+- [x] Add `.graphify/worktree.json`
+- [x] Add `.graphify/branch.json`
+- [x] Define and persist:
+  - [x] branch name
+  - [x] worktree path
+  - [x] git dir / common dir
+  - [x] first-seen HEAD
+  - [x] last analyzed HEAD
+  - [x] merge-base or tracked upstream
+  - [x] freshness / stale-state markers
+- [x] Initialize lifecycle metadata lazily on first Graphify run in a branch/worktree
+- [x] Mark state stale on branch switches, merges, and rewrites
+- [x] Add cleanup/prune semantics for abandoned branch state without destructive automation
 
-## Lot 3 - Upstream `v0.3.20`
+## Lot 5 - Skill Path Contract Migration
 
-Upstream commits: `b7fd5ac`, `b101a99`
+- [x] Add a runtime-exposed path contract for skills instead of hardcoding `.graphify/...` or `graphify-out/...` strings everywhere
+- [x] Migrate Codex skill to the new path contract
+- [x] Migrate Claude skill to the new path contract
+- [x] Migrate Gemini custom command to the new path contract
+- [x] Migrate remaining assistant skills/platform docs to the new path contract
+- [x] Remove repo-root scratch path assumptions from skills
+- [x] Add lifecycle awareness to skills:
+  - [x] initialize metadata when missing
+  - [x] warn or rebuild on stale branch/worktree state
+  - [x] invalidate advisory recommendation state after merge/rewrite events
+- [x] Extend skill integration tests to assert the new state-root behavior
 
-Upstream scope:
-- AST call-edge confidence forced to `EXTRACTED`
-- tree-sitter version/runtime guard
+## Lot 6 - README, Install Surface, And Repo Narrative Refresh
 
-Plan:
-- [x] Audit upstream commits `b7fd5ac`, `b101a99`
-- [x] Confirm TS extractors already emit AST call edges as `EXTRACTED`
-- [x] Audit whether TS needs an explicit runtime/version guard for tree-sitter packages or WASM grammars
-- [x] Decide whether missing grammar/runtime failures should be hardened further in TS
-- [x] Add regression coverage if any runtime/version guard is introduced
-- [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.20`
-- [x] Commit the `v0.3.20` catch-up lot
+- [x] Update [README.md](README.md) for the new `.graphify/` state root
+- [x] Update [README.zh-CN.md](README.zh-CN.md) for the new `.graphify/` state root
+- [x] Update [README.ja-JP.md](README.ja-JP.md) for the new `.graphify/` state root
+- [x] Add a compact branch-model section:
+  - [x] `v3-typescript` as maintained TS product branch
+  - [x] `v3` as upstream mirror
+- [x] Add a concise alignment/divergence section:
+  - [x] aligned to upstream Graphify for product lineage and parity tracking
+  - [x] augmented by TS-native runtime/platform work
+  - [x] selectively informed by `code-review-graph` review-mode ideas
+- [x] Update `AGENTS.md`, `CLAUDE.md`, and install-generated instruction sections to reference `.graphify/`
+- [x] Ensure docs do not imply `.graphify/` should be committed
 
-## Lot 4 - Upstream `v0.3.21`
+## Lot 7 - Minimal Review-Mode Foundation
 
-Upstream commit: `6f9fc65`
+- [x] Implement a compact first-hop summary surface for assistants
+- [x] Make the first-hop summary intentionally small and deterministic
+- [x] Include:
+  - [x] graph size / density snapshot
+  - [x] top hubs / god nodes
+  - [x] key communities
+  - [x] next-best graph action
+- [x] Wire assistant skills to prefer this compact first hop before deep traversal where appropriate
+- [x] Add tests for response shape and determinism
 
-Upstream scope:
-- Codex hook JSON schema fix
-- `#!/bin/sh` portability for Windows hooks
+## Lot 8 - Review-Delta / Review-PR Workflow
 
-Plan:
-- [x] Audit upstream commit `6f9fc65`
-- [x] Confirm current TS Codex hook JSON shape still matches the fixed upstream schema
-- [x] Audit hook shell portability in the TS runtime
-- [x] Decide whether any hook script shebang or shell portability fix is still missing
-- [x] Add/extend hook tests if needed
-- [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.21`
-- [x] Commit the `v0.3.21` catch-up lot
+- [x] Define the review-mode contract on top of the existing multimodal graph
+- [x] Implement a changed-files or diff-driven review entrypoint
+- [x] Compute an impacted subgraph instead of generic traversal only
+- [x] Surface:
+  - [x] impacted files
+  - [x] hub / bridge nodes
+  - [x] likely test gaps
+  - [x] high-risk dependency chains
+- [x] Decide the initial CLI and MCP surface:
+  - [x] `review-delta`
+  - [x] `review-pr` deferred until the local delta contract is stable
+  - [x] or a narrower first iteration
+- [x] Keep this additive; do not narrow Graphify into a code-review-only product
 
-## Lot 5 - Upstream `v0.3.22`
+## Lot 9 - Advisory Commit Recommendation Prototype
 
-Upstream commit: `f770712`
+- [x] Implement advisory-only commit grouping on top of branch/worktree metadata
+- [x] Base recommendations on Git-tracked changes plus graph impact, not on hidden state alone
+- [x] Include explicit confidence/staleness signals in recommendation output
+- [x] Keep the user as the actor:
+  - [x] no auto-stage
+  - [x] no auto-commit
+  - [x] no silent branch mutation
+- [x] Add risk-focused tests for stale state, rebases, and partial graphs
 
-Upstream scope:
-- Cursor support
-- watcher/export crash fixes in Python
+## Lot 10 - Review-Oriented Analysis And Evaluation
 
-Plan:
-- [x] Audit upstream commit `f770712`
-- [x] Add Cursor as a first-class platform target if still missing
-- [x] Verify whether any Python watcher/export crash fix has a TS analogue
-- [x] Mark Python-only crash fixes as `n/a` if there is no TS analogue
-- [x] Add install + docs + regression coverage for Cursor if implemented
-- [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.22`
-- [x] Commit the `v0.3.22` catch-up lot
+- [x] Add review-facing analysis views where they materially improve actionability:
+  - [x] blast radius
+  - [x] bridge nodes
+  - [x] test-gap hints
+  - [x] impacted-community summaries
+- [x] Add an evaluation harness for the new review-mode surfaces
+- [x] Measure:
+  - [x] token savings versus naive file reads
+  - [x] impacted-file recall
+  - [x] review summary precision
+  - [x] multimodal regression safety
+- [x] Keep optional/stretch items explicitly deferred:
+  - [x] embeddings
+  - [x] SQLite backend
+  - [x] editor extension parity
 
-## Lot 6 - Upstream `v0.3.23`
+## Lot 11 - Install And Platform Preview Improvements
 
-Upstream commit: `dcc402e`
+- [x] Add clearer install previews for platform-specific mutations
+- [x] Surface exactly which files and hooks will be written before install actions
+- [x] Verify all platform install/uninstall flows still behave correctly after the `.graphify/` migration
+- [x] Re-run integration coverage for Codex, Claude, Gemini, Copilot, Aider, OpenCode, Cursor, and other maintained surfaces
 
-Upstream scope:
-- Gemini CLI support
+## Lot 12 - SPEC Refactor And Convergence
 
-Plan:
-- [x] Confirm Gemini CLI support already exists in TS
-- [x] Audit the upstream Gemini install/details against the current TS implementation
-- [x] Close any doc/install drift that remains
-- [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.23`
-- [x] No code commit needed beyond a plan checkpoint because the audit found no remaining TS delta
+- [x] Refactor [spec/SPEC_GRAPHIFY.md](spec/SPEC_GRAPHIFY.md) from aspirational design notes into the post-implementation product spec
+- [x] Refactor [spec/SPEC_CODE_REVIEW_GRAPH_OPPORUNITY.md](spec/SPEC_CODE_REVIEW_GRAPH_OPPORUNITY.md) to separate:
+  - [x] adopted opportunities
+  - [x] adapted opportunities
+  - [x] rejected/deferred opportunities
+- [x] Refactor [spec/SPEC_GAPHIFY_SLDC_STUDY.md](spec/SPEC_GAPHIFY_SLDC_STUDY.md) into:
+  - [x] what was implemented
+  - [x] what remained deferred
+  - [x] lessons learned / residual risks
+- [x] Remove or rewrite statements in the SPEC files that are no longer hypothetical
+- [x] Ensure the final README and the final SPEC set do not contradict each other on:
+  - [x] state root
+  - [x] branch model
+  - [x] lifecycle behavior
+  - [x] review-mode scope
 
-## Lot 7 - Upstream `v0.3.24`
+## Lot 13 - TypeScript faster-whisper Runtime
 
-Upstream commit: `ee43236`
+- [x] Replace the previous transcription workaround with the published `faster-whisper-ts` runtime
+- [x] Resolve/download CTranslate2 faster-whisper model directories without invoking Python
+- [x] Align default model/runtime settings with upstream Graphify Python (`base`, CPU, `int8`)
+- [x] Preserve URL ingestion through `yt-dlp` and the existing prompt/model env behavior
+- [x] Update tests, README files, SPEC files, and generated skills to describe the TypeScript faster-whisper path
+- [x] Validate targeted transcription tests, lint/build, full tests, and `npx graphify hook-rebuild`
 
-Upstream scope:
-- Codex/OpenCode install idempotency
+## Lot 14 - PDF Preflight And Mistral OCR
 
-Plan:
-- [x] Audit upstream commit `ee43236`
-- [x] Confirm Codex idempotency parity is already covered in TS
-- [x] Audit OpenCode install/uninstall idempotency in TS
-- [x] Add regression coverage if OpenCode still lags
-- [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.24`
-- [x] Commit the `v0.3.24` catch-up lot
+- [x] Add [spec/SPEC_PDF_OCR_PREPROCESSING.md](spec/SPEC_PDF_OCR_PREPROCESSING.md) for the PDF preflight/OCR contract
+- [x] Add local PDF preflight based on `pdf-parse` text density, page count, and image/XObject markers
+- [x] Add `GRAPHIFY_PDF_OCR=off|auto|always|dry-run` mode handling
+- [x] Integrate optional `mistral-ocr` as the OCR provider for scanned/low-text PDFs
+- [x] Write PDF Markdown sidecars and OCR metadata under `.graphify/converted/pdf/`
+- [x] Add Mistral-extracted PDF images to semantic `files.image` so assistant vision or delegated OCR/vision can decode them
+- [x] Add generated PDF sidecars to semantic detection without changing the original detection used for reporting/manifest
+- [x] Update Codex, Claude/base, Gemini, OpenCode, Droid, and Windows skills for PDF preparation artifacts
+- [x] Update skills to make the OCR choice explicit: assistant vision path first, optional Mistral/delegated OCR when configured, and PDF-extracted image decoding with provenance
+- [x] Update README.md, README.zh-CN.md, README.ja-JP.md, and SPEC docs for PDF preflight/OCR behavior
+- [x] Add tests for preflight decisions, local PDF conversion, mocked Mistral OCR, dry-run, missing-key fallback, and unified semantic preparation
+- [x] Add `pdftotext` fallback for `pdf-parse` failures and cover it with a regression test
+- [x] Run local UAT with generated text-layer and scanned PDFs
+- [x] Run real Mistral OCR UAT with `MISTRAL_API_KEY` from local env, without logging the key
+- [x] Add GitHub Actions secret-backed real Mistral OCR integration test, gated to Node 22 and skipped when the secret is absent
+- [x] Validate `npm run lint`, `npm run build`, `npm test`, `npx graphify hook-rebuild`, and `git diff --check`
 
-## Lot 8 - Upstream `v0.3.25`
+## Exit Criteria
 
-Upstream commit: `1cbcee5`
-
-Upstream scope:
-- Aider support
-- Copilot CLI support
-- directed graphs
-- frontmatter cache
-- `.graphifyignore` parent-directory discovery
-- MCP fixes
-
-Plan:
-- [x] Audit upstream commit `1cbcee5`
-- [x] Split this release into sub-lots before coding:
-  - [x] platform additions: Aider + Copilot CLI
-  - [x] detection behavior: `.graphifyignore` parent discovery
-  - [x] graph model decision: directed graphs
-  - [x] metadata/caching: frontmatter cache
-  - [x] MCP delta audit
-- [x] Implement Aider as a first-class platform target if accepted
-- [x] Implement Copilot CLI as a first-class platform target if accepted
-- [x] Add `.graphifyignore` parent-directory discovery if still missing
-- [x] Decide explicitly whether TS should remain undirected or adopt directed-graph support
-- [x] Audit whether frontmatter metadata persistence is already enough or whether a dedicated cache layer is still missing
-- [x] Close the current TS MCP delta around graph-path scoping and handler errors
-- [x] Add regressions for every accepted sub-lot
-- [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.25`
-- [x] Commit the `v0.3.25` checkpoint for platforms/detection/cache/MCP
-- [x] Commit the `v0.3.25` catch-up lot
-
-## Lot 9 - Upstream `v0.3.26`
-
-Upstream commit: `863100c`
-
-Upstream scope:
-- MCP path validation security fix
-
-Plan:
-- [x] Confirm the TS port already has MCP graph-path validation
-- [x] Audit upstream commit `863100c` against the current TS implementation
-- [x] Tighten tests only if there is still a mismatch
-- [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.26`
-- [x] Commit only if the audit finds a real delta
-
-## Lot 10 - Upstream `v0.3.27`
-
-Upstream commits: `55964bc`, `af3a3d2`
-
-Upstream scope:
-- Gemini install missing skill file copy
-
-Plan:
-- [x] Confirm TS already copies the Gemini skill/custom command file
-- [x] Audit upstream commit `55964bc` against the current TS implementation
-- [x] Tighten tests only if there is still a mismatch
-- [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.27`
-- [x] Commit only if the audit finds a real delta
-
-## Lot 11 - Upstream `v0.3.28`
-
-Upstream commits: `210243f`, `f7ee752`
-
-Upstream scope:
-- hook reinstall
-- CRLF labels
-- Windows skill command coverage
-
-Plan:
-- [x] Audit upstream commit `210243f`
-- [x] Confirm hook reinstall parity in TS with explicit regression evidence
-- [x] Audit whether CRLF normalization still breaks labels anywhere in the TS pipeline
-- [x] Re-audit `skill-windows` against upstream command coverage
-- [x] Add tests for any remaining CRLF or Windows-skill gaps
-- [x] Update [UPSTREAM_GAP.md](UPSTREAM_GAP.md) for `v0.3.28`
-- [x] Commit the `v0.3.28` catch-up lot
-
-## Lot 12 - Post-`v0.3.28` Upstream `v3` Commits
-
-Upstream commits: `79acb7e`, `f758911`, `a2872ca`, `2c21bc0`, `699e996`
-
-Upstream scope:
-- audio/video corpus support
-- `yt-dlp` download path
-- local transcription / Whisper path
-- docs and CI follow-ups
-- removal of Anthropic API dependency from transcription flow
-
-Plan:
-- [x] Audit upstream commits `79acb7e`, `f758911`, `a2872ca`, `2c21bc0`, `699e996`
-- [x] Decide whether this branch should absorb multimodal/audio-video support now or defer it to a dedicated feature branch
-- [x] Keep the implementation ISO in behavior while staying TS-first in orchestration:
-  - [x] Do not reintroduce a hidden Python `graphify` runtime fallback
-  - [x] Preserve the upstream Whisper model contract in the TS runtime without keeping any Python bridge
-- [x] Split implementation into sub-lots:
-  - [x] corpus detection for audio/video
-  - [x] YouTube/download ingestion path
-  - [x] local transcription runtime
-  - [x] skill/runtime wiring so transcripts feed semantic extraction
-  - [x] docs, package metadata, and CI support
-- [x] Keep this block separate from the pure parity lots above
-- [x] Commit only after that decision is explicit
-
-## Exit Criteria For This Branch
-
-- [x] Every upstream `v3` release bucket from `v0.3.18` through `v0.3.28` is marked `covered`, `n/a`, or explicitly deferred with justification
-- [x] Every intentional divergence is documented in [UPSTREAM_GAP.md](UPSTREAM_GAP.md)
-- [x] The remaining delta to `upstream/v3` is only the explicitly deferred post-`v0.3.28` multimodal block, or it is also closed
-- [x] `npm test` passes after the final catch-up lot
-
-## Post-Catch-up UAT Matrix
-
-- [x] Local Whisper smoke test:
-  - download a short public YouTube clip through the real `yt-dlp` path
-  - transcribe it through the real `sherpa-onnx-node` path with `GRAPHIFY_WHISPER_MODEL=tiny`
-  - confirm a non-empty transcript is produced
-- [ ] Local corpus UAT:
-  - create a tiny fixture folder with one code file, one markdown file, and one local audio/video file
-  - run the build/update flow and confirm `graphify-out/.graphify_detect_semantic.json` includes transcript files under `document`
-  - confirm `graphify-out/.graphify_transcripts.json` is written and stable across reruns
-- [ ] `graphify add <youtube-url>` UAT:
-  - ingest a public YouTube URL into `./raw`
-  - confirm audio is downloaded locally instead of markdown being written
-  - run `--update` and confirm the resulting transcript participates in semantic extraction
-- [ ] Codex multimodal UAT:
-  - run `$graphify .` on a corpus containing at least one local or ingested video/audio file
-  - confirm `graphify-out/.graphify_runtime.json` stays `typescript`
-  - confirm the final graph/report contains nodes sourced from the transcript
-- [ ] Claude multimodal UAT:
-  - run `/graphify .` on the same multimodal corpus
-  - confirm the transcript-aware semantic path does not regress into ad-hoc merge commands
-  - confirm final outputs are consistent across `GRAPH_REPORT.md`, `graph.json`, and `graph.html`
-- [ ] Gemini multimodal UAT:
-  - run `/graphify .` through the Gemini custom command on the same corpus
-  - confirm the project MCP wiring still works once transcript generation is in the loop
-  - confirm no Gemini-specific install/custom-command drift remains
-- [x] `npx graphify hook-rebuild` passes after the final catch-up lot
-- [x] The branch is clean and ready either for merge or for the next dedicated feature branch
+- [x] `.graphify/` is the canonical runtime state root
+- [x] worktrees and branch lifecycle are handled correctly in hooks and runtime metadata
+- [x] assistant skills use a shared path contract instead of hardcoded legacy paths
+- [x] README and install surfaces explain the branch model and divergence/alignment cleanly
+- [x] at least one concrete review-mode workflow exists on top of the Graphify graph
+- [x] commit recommendation, if present, remains advisory and branch-aware
+- [x] SPEC documents have been refactored to describe the implemented system, not the pre-implementation intent
+- [x] full `npm test` passes on the final branch state
+- [x] PDF text-layer and scanned-PDF preprocessing are explicit, tested, and optional-network by mode

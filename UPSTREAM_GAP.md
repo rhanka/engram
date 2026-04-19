@@ -33,7 +33,7 @@ This branch tracks the delta between this TypeScript port and the upstream Pytho
 | `v0.3.26` | MCP path validation security fix | `covered` | Keep existing TS validation tests aligned |
 | `v0.3.27` | Gemini install missing skill file copy | `covered` | No immediate action beyond regression retention |
 | `v0.3.28` | hook reinstall, CRLF labels, `skill-windows` missing commands | `covered` | Covered in TS by replacing existing graphify Claude/Codex hooks on reinstall, normalizing CRLF before wiki/canvas filename generation, and restoring the missing `--directed` / `--wiki` / `--obsidian-dir` lines in `skill-windows` |
-| `699e996` (post-`v0.3.28`) | audio/video corpus support, `yt-dlp`, Whisper transcription, YouTube docs, CI fix, remove Anthropic API dependency | `covered` | Covered in TS via audio/video detection, `ingest()` YouTube download wiring, local `yt-dlp` + `ffmpeg` + `sherpa-onnx-node` transcription, transcript-aware semantic extraction in the runtime and skills, updated package/docs metadata, and CI-safe regression coverage without reintroducing any Anthropic-specific transcription dependency |
+| `699e996` (post-`v0.3.28`) | audio/video corpus support, `yt-dlp`, Whisper transcription, YouTube docs, CI fix, remove Anthropic API dependency | `covered` | Covered in TS via audio/video detection, `ingest()` YouTube download wiring, local `yt-dlp` + `ffmpeg` + `faster-whisper-ts` transcription, transcript-aware semantic extraction in the runtime and skills, updated package/docs metadata, and CI-safe regression coverage without reintroducing any Anthropic-specific transcription dependency |
 
 ## Current Delta Assessment
 

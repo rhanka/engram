@@ -41,8 +41,8 @@ describe("Codex integration contract", () => {
     expect(skill).toContain("finalize-update");
     expect(skill).toContain("regenerate the labeled artifacts");
     expect(skill).toContain("--directed");
-    expect(skill).toContain("--graph-out graphify-out/graph.json");
-    expect(skill).toContain("--html-out graphify-out/graph.html");
+    expect(skill).toContain("--graph-out .graphify/graph.json");
+    expect(skill).toContain("--html-out .graphify/graph.html");
     expect(skill).toContain(".graphify_runtime.json");
     expect(skill).toContain("skill-runtime.js");
     expect(skill).toContain("not a Bash command like `graphify .`");
@@ -54,8 +54,14 @@ describe("Codex integration contract", () => {
     expect(skill).toContain("prepare-semantic-detect");
     expect(skill).toContain(".graphify_detect_semantic.json");
     expect(skill).toContain(".graphify_transcripts.json");
+    expect(skill).toContain(".graphify_pdf_ocr.json");
+    expect(skill).toContain("--pdf-ocr");
+    expect(skill).toContain("Codex vision");
+    expect(skill).toContain("delegated OCR/vision");
     expect(skill).toContain("graphify codex install");
     expect(skill).toContain("codex mcp add graphify");
+    expect(skill).toContain(".graphify/branch.json");
+    expect(skill).toContain("graphify migrate-state --dry-run");
     expect(skill).not.toContain(".graphify_python");
     expect(skill).not.toContain("python3 -m graphify");
     expect(skill).not.toContain("graphify claude install");

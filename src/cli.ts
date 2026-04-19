@@ -11,11 +11,13 @@ import {
   unlinkSync,
   rmdirSync,
 } from "node:fs";
-import { join, resolve, dirname } from "node:path";
+import { join, resolve, dirname, extname } from "node:path";
 import { homedir, platform } from "node:os";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { forEachTraversalNeighbor, loadGraphFromData } from "./graph.js";
+import { safeExecGit } from "./git.js";
+import { resolveGraphInputPath, resolveGraphifyPaths } from "./paths.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -30,6 +32,25 @@ function getVersion(): string {
 }
 
 const VERSION = getVersion();
+
+function splitFiles(value?: string): string[] {
+  return (value ?? "")
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function changedFilesFromGit(options: { base?: string; head?: string; staged?: boolean }): string[] {
+  if (options.staged) {
+    return splitFiles(safeExecGit(".", ["diff", "--name-only", "--cached", "--"]) ?? "");
+  }
+  if (options.base) {
+    return splitFiles(safeExecGit(".", ["diff", "--name-only", `${options.base}...${options.head ?? "HEAD"}`, "--"]) ?? "");
+  }
+  const tracked = splitFiles(safeExecGit(".", ["diff", "--name-only", "HEAD", "--"]) ?? "");
+  const untracked = splitFiles(safeExecGit(".", ["ls-files", "--others", "--exclude-standard"]) ?? "");
+  return [...new Set([...tracked, ...untracked])].sort();
+}
 
 // ---------------------------------------------------------------------------
 // Platform configuration
@@ -105,8 +126,8 @@ const SETTINGS_HOOK = {
     {
       type: "command",
       command:
-        '[ -f graphify-out/graph.json ] && ' +
-        "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"graphify: Knowledge graph exists. Read graphify-out/GRAPH_REPORT.md for god nodes and community structure before searching raw files.\"}}' " +
+        '[ -f .graphify/graph.json ] && ' +
+        "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"graphify: Knowledge graph exists. Read .graphify/GRAPH_REPORT.md for god nodes and community structure before searching raw files.\"}}' " +
         '|| true',
     },
   ],
@@ -121,29 +142,37 @@ const SKILL_REGISTRATION =
 
 const CLAUDE_MD_SECTION = `## graphify
 
-This project has a graphify knowledge graph at graphify-out/.
+This project has a graphify knowledge graph at .graphify/.
 
 Rules:
-- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
-- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
+- Before answering architecture or codebase questions, read .graphify/GRAPH_REPORT.md for god nodes and community structure
+- If .graphify/wiki/index.md exists, navigate it instead of reading raw files
+- If .graphify/graph.json is missing but graphify-out/graph.json exists, run \`graphify migrate-state --dry-run\` first; if tracked legacy artifacts are reported, ask before using the recommended \`git mv -f graphify-out .graphify\` and commit message
+- If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run /graphify . --update when appropriate
+- Before deep graph traversal, prefer \`graphify summary --graph .graphify/graph.json\` for compact first-hop orientation
+- For review impact on changed files, use \`graphify review-delta --graph .graphify/graph.json\` instead of generic traversal
 - After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
 `;
 
 const GEMINI_MD_SECTION = `## graphify
 
-This project has a graphify knowledge graph at graphify-out/.
+This project has a graphify knowledge graph at .graphify/.
 
 Rules:
-- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
-- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
+- Before answering architecture or codebase questions, read .graphify/GRAPH_REPORT.md for god nodes and community structure
+- If .graphify/wiki/index.md exists, navigate it instead of reading raw files
+- If .graphify/graph.json is missing but graphify-out/graph.json exists, run \`graphify migrate-state --dry-run\` first; if tracked legacy artifacts are reported, ask before using the recommended \`git mv -f graphify-out .graphify\` and commit message
+- If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run /graphify . --update when appropriate
 - In Gemini CLI, the reliable explicit custom command is \`/graphify ...\`
 - If the user asks to build, update, query, path, or explain the graph, use the installed \`/graphify\` custom command or the configured \`graphify\` MCP server instead of ad-hoc file traversal
+- Before deep graph traversal, prefer \`graphify summary --graph .graphify/graph.json\` or MCP \`first_hop_summary\` for compact first-hop orientation
+- For review impact on changed files, use \`graphify review-delta --graph .graphify/graph.json\` or MCP \`review_delta\` instead of generic traversal
 - After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
 `;
 
 const GEMINI_MCP_SERVER = {
   command: "graphify",
-  args: ["serve", "graphify-out/graph.json"],
+  args: ["serve", ".graphify/graph.json"],
   trust: false,
   description: "graphify knowledge graph MCP server",
 };
@@ -160,11 +189,11 @@ export const GraphifyPlugin = async ({ directory }) => {
   return {
     "tool.execute.before": async (input, output) => {
       if (reminded) return;
-      if (!existsSync(join(directory, "graphify-out", "graph.json"))) return;
+      if (!existsSync(join(directory, ".graphify", "graph.json"))) return;
 
       if (input.tool === "bash") {
         output.args.command =
-          'echo "[graphify] Knowledge graph available. Read graphify-out/GRAPH_REPORT.md for god nodes and architecture context before searching files." && ' +
+          'echo "[graphify] Knowledge graph available. Read .graphify/GRAPH_REPORT.md for god nodes and architecture context before searching files." && ' +
           output.args.command;
         reminded = true;
       }
@@ -173,6 +202,85 @@ export const GraphifyPlugin = async ({ directory }) => {
 };
 `;
 
+export interface InstallMutationPreview {
+  platform: string;
+  action: "install" | "uninstall";
+  writes: string[];
+  hooks: string[];
+  removes: string[];
+  notes: string[];
+}
+
+function previewPath(base: string, relativePath: string): string {
+  return resolve(join(base, relativePath));
+}
+
+function emptyPreview(platformName: string, action: "install" | "uninstall"): InstallMutationPreview {
+  return { platform: platformName, action, writes: [], hooks: [], removes: [], notes: [] };
+}
+
+export function platformInstallPreview(projectDir: string = ".", platformName: string): InstallMutationPreview {
+  const preview = emptyPreview(platformName, "install");
+  if (platformName === "claude" || platformName === "windows") {
+    preview.writes.push(previewPath(projectDir, "CLAUDE.md"), previewPath(projectDir, ".claude/settings.json"));
+    preview.hooks.push(".claude/settings.json: PreToolUse Glob|Grep graphify reminder");
+    return preview;
+  }
+  if (platformName === "gemini") {
+    preview.writes.push(previewPath(projectDir, "GEMINI.md"), previewPath(projectDir, ".gemini/settings.json"));
+    preview.hooks.push(".gemini/settings.json: mcpServers.graphify stdio server");
+    return preview;
+  }
+  if (platformName === "cursor") {
+    preview.writes.push(previewPath(projectDir, ".cursor/rules/graphify.mdc"));
+    return preview;
+  }
+
+  preview.writes.push(previewPath(projectDir, "AGENTS.md"));
+  if (platformName === "codex") {
+    preview.writes.push(previewPath(projectDir, ".codex/hooks.json"));
+    preview.hooks.push(".codex/hooks.json: PreToolUse Bash graphify reminder");
+  } else if (platformName === "opencode") {
+    preview.writes.push(previewPath(projectDir, OPENCODE_PLUGIN_ENTRY), previewPath(projectDir, "opencode.json"));
+    preview.hooks.push("opencode.json: tool.execute.before graphify plugin");
+  } else {
+    preview.notes.push("No platform hook equivalent; AGENTS.md is the always-on mechanism.");
+  }
+  return preview;
+}
+
+export function globalSkillInstallPreview(platformName: string): InstallMutationPreview {
+  const cfg = PLATFORM_CONFIG[platformName];
+  const preview = emptyPreview(platformName, "install");
+  if (!cfg) return preview;
+  const skillDst = join(homedir(), cfg.skill_dst);
+  preview.writes.push(skillDst, join(dirname(skillDst), ".graphify_version"));
+  if (cfg.claude_md) {
+    preview.writes.push(join(homedir(), ".claude", "CLAUDE.md"));
+  }
+  return preview;
+}
+
+function printMutationPreview(preview: InstallMutationPreview): void {
+  console.log("Preview: graphify " + preview.platform + " " + preview.action + " will touch:");
+  if (preview.writes.length > 0) {
+    console.log("  writes:");
+    for (const item of preview.writes) console.log("  - " + item);
+  }
+  if (preview.hooks.length > 0) {
+    console.log("  hooks/config:");
+    for (const item of preview.hooks) console.log("  - " + item);
+  }
+  if (preview.removes.length > 0) {
+    console.log("  removes:");
+    for (const item of preview.removes) console.log("  - " + item);
+  }
+  if (preview.notes.length > 0) {
+    console.log("  notes:");
+    for (const item of preview.notes) console.log("  - " + item);
+  }
+}
+
 const MD_MARKER = "## graphify";
 const CURSOR_RULE_ENTRY = ".cursor/rules/graphify.mdc";
 const CURSOR_RULE = `---
@@ -180,10 +288,12 @@ description: graphify knowledge graph context
 alwaysApply: true
 ---
 
-This project has a graphify knowledge graph at graphify-out/.
+This project has a graphify knowledge graph at .graphify/.
 
-- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
-- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
+- Before answering architecture or codebase questions, read .graphify/GRAPH_REPORT.md for god nodes and community structure
+- If .graphify/wiki/index.md exists, navigate it instead of reading raw files
+- If .graphify/graph.json is missing but graphify-out/graph.json exists, run \`graphify migrate-state --dry-run\` first; if tracked legacy artifacts are reported, ask before using the recommended \`git mv -f graphify-out .graphify\` and commit message
+- If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run /graphify . --update when appropriate
 - After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
 `;
 
@@ -204,24 +314,24 @@ node -e "
 const fs = require('fs');
 const { checkSemanticCache } = require('graphifyy');
 
-const detect = JSON.parse(fs.readFileSync('graphify-out/.graphify_detect.json', 'utf-8'));
+const detect = JSON.parse(fs.readFileSync('.graphify/.graphify_detect.json', 'utf-8'));
 const allFiles = Object.values(detect.files).flat();
 
 const [cachedNodes, cachedEdges, cachedHyperedges, uncached] = checkSemanticCache(allFiles);
 
 if (cachedNodes.length || cachedEdges.length || cachedHyperedges.length) {
-    fs.writeFileSync('graphify-out/.graphify_cached.json', JSON.stringify({nodes: cachedNodes, edges: cachedEdges, hyperedges: cachedHyperedges}));
+    fs.writeFileSync('.graphify/.graphify_cached.json', JSON.stringify({nodes: cachedNodes, edges: cachedEdges, hyperedges: cachedHyperedges}));
 }
-fs.writeFileSync('graphify-out/.graphify_uncached.txt', uncached.join('\\n'));
+fs.writeFileSync('.graphify/.graphify_uncached.txt', uncached.join('\\n'));
 console.log(\`Cache: \${allFiles.length - uncached.length} files hit, \${uncached.length} files need extraction\`);
 "
 \`\`\`
 
-Only extract files listed in \`graphify-out/.graphify_uncached.txt\`. If all files are cached, skip to Part C directly.
+Only extract files listed in \`.graphify/.graphify_uncached.txt\`. If all files are cached, skip to Part C directly.
 
 **Step B1 - Split into chunks**
 
-Load files from \`graphify-out/.graphify_uncached.txt\`. Split them into logical batches of 20-25 files, but process them sequentially on Aider. Keep files from the same directory together. Each image still deserves focused attention because vision context is expensive.
+Load files from \`.graphify/.graphify_uncached.txt\`. Split them into logical batches of 20-25 files, but process them sequentially on Aider. Keep files from the same directory together. Each image still deserves focused attention because vision context is expensive.
 
 **Step B2 - Sequential extraction (Aider)**
 
@@ -241,7 +351,7 @@ Process each uncached file one at a time. For each file:
    - \`confidence_score\` is REQUIRED on every edge: EXTRACTED=1.0, INFERRED=0.6-0.9, AMBIGUOUS=0.1-0.3
 3. Accumulate the results across all files.
 
-Write the accumulated result to \`graphify-out/.graphify_semantic_new.json\` using this exact schema:
+Write the accumulated result to \`.graphify/.graphify_semantic_new.json\` using this exact schema:
 
 \`\`\`json
 {"nodes":[{"id":"filestem_entityname","label":"Human Readable Name","file_type":"code|document|paper|image","source_file":"relative/path","source_location":null,"source_url":null,"captured_at":null,"author":null,"contributor":null}],"edges":[{"source":"node_id","target":"node_id","relation":"calls|implements|references|cites|conceptually_related_to|shares_data_with|semantically_similar_to|rationale_for","confidence":"EXTRACTED|INFERRED|AMBIGUOUS","confidence_score":1.0,"source_file":"relative/path","source_location":null,"weight":1.0}],"hyperedges":[{"id":"snake_case_id","label":"Human Readable Label","nodes":["node_id1","node_id2","node_id3"],"relation":"participate_in|implement|form","confidence":"EXTRACTED|INFERRED","confidence_score":0.75,"source_file":"relative/path"}],"input_tokens":0,"output_tokens":0}
@@ -258,20 +368,20 @@ node -e "
 const fs = require('fs');
 const { saveSemanticCache } = require('graphifyy');
 
-const raw = fs.existsSync('graphify-out/.graphify_semantic_new.json') ? JSON.parse(fs.readFileSync('graphify-out/.graphify_semantic_new.json', 'utf-8')) : {nodes:[],edges:[],hyperedges:[]};
+const raw = fs.existsSync('.graphify/.graphify_semantic_new.json') ? JSON.parse(fs.readFileSync('.graphify/.graphify_semantic_new.json', 'utf-8')) : {nodes:[],edges:[],hyperedges:[]};
 const saved = saveSemanticCache(raw.nodes || [], raw.edges || [], raw.hyperedges || []);
 console.log(\`Cached \${saved} files\`);
 "
 \`\`\`
 
-Merge cached + new results into \`graphify-out/.graphify_semantic.json\`:
+Merge cached + new results into \`.graphify/.graphify_semantic.json\`:
 
 \`\`\`bash
 node -e "
 const fs = require('fs');
 
-const cached = fs.existsSync('graphify-out/.graphify_cached.json') ? JSON.parse(fs.readFileSync('graphify-out/.graphify_cached.json', 'utf-8')) : {nodes:[],edges:[],hyperedges:[]};
-const fresh = fs.existsSync('graphify-out/.graphify_semantic_new.json') ? JSON.parse(fs.readFileSync('graphify-out/.graphify_semantic_new.json', 'utf-8')) : {nodes:[],edges:[],hyperedges:[]};
+const cached = fs.existsSync('.graphify/.graphify_cached.json') ? JSON.parse(fs.readFileSync('.graphify/.graphify_cached.json', 'utf-8')) : {nodes:[],edges:[],hyperedges:[]};
+const fresh = fs.existsSync('.graphify/.graphify_semantic_new.json') ? JSON.parse(fs.readFileSync('.graphify/.graphify_semantic_new.json', 'utf-8')) : {nodes:[],edges:[],hyperedges:[]};
 
 const allNodes = [...cached.nodes, ...(fresh.nodes || [])];
 const allEdges = [...cached.edges, ...(fresh.edges || [])];
@@ -285,7 +395,7 @@ for (const node of allNodes) {
   dedupedNodes.push(node);
 }
 
-fs.writeFileSync('graphify-out/.graphify_semantic.json', JSON.stringify({
+fs.writeFileSync('.graphify/.graphify_semantic.json', JSON.stringify({
   nodes: dedupedNodes,
   edges: allEdges,
   hyperedges: allHyperedges,
@@ -297,7 +407,7 @@ console.log(\`Extraction complete - \${dedupedNodes.length} nodes, \${allEdges.l
 "
 \`\`\`
 
-Clean up temp files: \`rm -f graphify-out/.graphify_cached.json graphify-out/.graphify_uncached.txt graphify-out/.graphify_semantic_new.json\``;
+Clean up temp files: \`rm -f .graphify/.graphify_cached.json .graphify/.graphify_uncached.txt .graphify/.graphify_semantic_new.json\``;
 
 // ---------------------------------------------------------------------------
 // Skill resolution
@@ -382,12 +492,16 @@ export function getAgentsMdSection(platformName: string): string {
   const lines = [
     "## graphify",
     "",
-    "This project has a graphify knowledge graph at graphify-out/.",
+    "This project has a graphify knowledge graph at .graphify/.",
     "",
     "Rules:",
-    "- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure",
-    "- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files",
+    "- Before answering architecture or codebase questions, read .graphify/GRAPH_REPORT.md for god nodes and community structure",
+    "- If .graphify/wiki/index.md exists, navigate it instead of reading raw files",
+    "- If .graphify/graph.json is missing but graphify-out/graph.json exists, run `graphify migrate-state --dry-run` first; if tracked legacy artifacts are reported, ask before using the recommended `git mv -f graphify-out .graphify` and commit message",
+    "- If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run the graphify skill with --update when appropriate",
     "- If the user asks to build, update, query, path, or explain the graph, use the installed `graphify` skill instead of ad-hoc file traversal",
+    "- Before deep graph traversal, prefer `graphify summary --graph .graphify/graph.json` for compact first-hop orientation",
+    "- For review impact on changed files, use `graphify review-delta --graph .graphify/graph.json` instead of generic traversal",
     "- After modifying code files in this session, run `npx graphify hook-rebuild` to keep the graph current",
   ];
   if (platformName === "codex") {
@@ -396,7 +510,7 @@ export function getAgentsMdSection(platformName: string): string {
       0,
       "- In Codex, the reliable explicit skill invocation is `$graphify ...`; do not rely on `/graphify ...`",
       "- `$graphify ...` is a Codex skill trigger, not a Bash subcommand like `graphify .`",
-      "- A successful TypeScript-backed Codex build should leave `graphify-out/.graphify_runtime.json` with `runtime: typescript`",
+      "- A successful TypeScript-backed Codex build should leave `.graphify/.graphify_runtime.json` with `runtime: typescript`",
     );
   }
   return lines.join("\n") + "\n";
@@ -457,6 +571,7 @@ function uninstallGeminiMcp(projectDir: string): void {
 }
 
 export function cursorInstall(projectDir: string = "."): void {
+  printMutationPreview(platformInstallPreview(projectDir, "cursor"));
   const rulePath = join(projectDir, ".cursor", "rules", "graphify.mdc");
   mkdirSync(dirname(rulePath), { recursive: true });
   if (existsSync(rulePath)) {
@@ -551,6 +666,7 @@ function uninstallOpenCodePlugin(projectDir: string): void {
 // ---------------------------------------------------------------------------
 
 function installSkill(platformName: string): void {
+  printMutationPreview(globalSkillInstallPreview(platformName));
   const cfg = PLATFORM_CONFIG[platformName];
   if (!cfg) {
     console.error(`error: unknown platform '${platformName}'. Choose from: ${Object.keys(PLATFORM_CONFIG).join(", ")}`);
@@ -588,7 +704,7 @@ function installSkill(platformName: string): void {
     console.log();
     console.log("Codex explicit skill calls use `$graphify`, not `/graphify`.");
     console.log("`$graphify ...` is a Codex skill trigger, not a Bash command like `graphify .`.");
-    console.log("A successful TypeScript Codex run should leave graphify-out/.graphify_runtime.json");
+    console.log("A successful TypeScript Codex run should leave .graphify/.graphify_runtime.json");
     console.log("with runtime=typescript.");
   }
   console.log();
@@ -638,6 +754,7 @@ function uninstallClaudeHook(projectDir: string): void {
 }
 
 function claudeInstall(projectDir: string = "."): void {
+  printMutationPreview(platformInstallPreview(projectDir, "claude"));
   let alreadyConfigured = false;
   const target = join(projectDir, "CLAUDE.md");
   if (existsSync(target)) {
@@ -685,6 +802,7 @@ function claudeUninstall(projectDir: string = "."): void {
 }
 
 export function geminiInstall(projectDir: string = "."): void {
+  printMutationPreview(platformInstallPreview(projectDir, "gemini"));
   let alreadyConfigured = false;
   const target = join(projectDir, "GEMINI.md");
   if (existsSync(target)) {
@@ -759,8 +877,8 @@ export function installCodexHook(projectDir: string): void {
       {
         type: "command",
         command:
-          '[ -f graphify-out/graph.json ] && ' +
-          "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\"},\"systemMessage\":\"graphify: Knowledge graph exists. Read graphify-out/GRAPH_REPORT.md for god nodes and community structure before searching raw files.\"}' " +
+          '[ -f .graphify/graph.json ] && ' +
+          "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\"},\"systemMessage\":\"graphify: Knowledge graph exists. Read .graphify/GRAPH_REPORT.md for god nodes and community structure before searching raw files.\"}' " +
           '|| true',
       },
     ],
@@ -786,6 +904,7 @@ function uninstallCodexHook(projectDir: string): void {
 }
 
 export function agentsInstall(projectDir: string, platformName: string): void {
+  printMutationPreview(platformInstallPreview(projectDir, platformName));
   let alreadyConfigured = false;
   const target = join(projectDir, "AGENTS.md");
   const section = getAgentsMdSection(platformName);
@@ -872,6 +991,7 @@ export function getPlatformsToCheck(argv: string[]): string[] {
 
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
+    if (!token) continue;
     if (token in PLATFORM_CONFIG) {
       add(token);
       continue;
@@ -905,6 +1025,7 @@ export async function main(): Promise<void> {
   // Only warn for the platform(s) relevant to the current command.
   for (const platformName of getPlatformsToCheck(process.argv.slice(2))) {
     const cfg = PLATFORM_CONFIG[platformName];
+    if (!cfg) continue;
     checkSkillVersion(join(homedir(), cfg.skill_dst));
   }
 
@@ -967,9 +1088,26 @@ export async function main(): Promise<void> {
     });
   }
 
+  program
+    .command("migrate-state")
+    .description("Migrate legacy graphify-out state into .graphify")
+    .option("--root <path>", "Workspace root", ".")
+    .option("--dry-run", "Print the migration plan without writing files")
+    .option("--force", "Overwrite existing files under .graphify")
+    .option("--json", "Print JSON output")
+    .action(async (opts) => {
+      const { migrateGraphifyOut, migrationResultToText } = await import("./migrate-state.js");
+      const result = migrateGraphifyOut({ root: opts.root, dryRun: opts.dryRun, force: opts.force });
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(migrationResultToText(result));
+      }
+    });
+
   // Hook management
   const hook = program.command("hook").description("Git hook management");
-  hook.command("install").description("Install post-commit/post-checkout git hooks").action(async () => {
+  hook.command("install").description("Install post-commit/post-checkout/post-merge/post-rewrite git hooks").action(async () => {
     const { install } = await import("./hooks.js");
     console.log(install("."));
   });
@@ -982,13 +1120,24 @@ export async function main(): Promise<void> {
     console.log(status("."));
   });
 
+  const state = program.command("state").description("Graphify local state metadata");
+  state.command("status").description("Print branch/worktree lifecycle metadata").action(async () => {
+    const { readLifecycleMetadata, refreshLifecycleMetadata } = await import("./lifecycle.js");
+    const metadata = readLifecycleMetadata(".") ?? refreshLifecycleMetadata(".");
+    console.log(JSON.stringify(metadata, null, 2));
+  });
+  state.command("prune").description("Plan stale lifecycle cleanup without deleting files").action(async () => {
+    const { planLifecyclePrune } = await import("./lifecycle.js");
+    console.log(JSON.stringify(planLifecyclePrune("."), null, 2));
+  });
+
   // MCP server
   program
     .command("serve [graph]")
     .description("Start a stdio MCP server for graph.json")
     .action(async (graphPath) => {
       const { serve } = await import("./serve.js");
-      await serve(graphPath ?? "graphify-out/graph.json");
+      await serve(resolveGraphInputPath(graphPath));
     });
 
   // Watcher
@@ -1004,11 +1153,193 @@ export async function main(): Promise<void> {
 
   // Query command
   program
+    .command("summary [graph]")
+    .description("Compact first-hop orientation for graph-guided assistant work")
+    .option("--graph <path>", "Path to graph.json")
+    .option("--top-hubs <n>", "Number of hubs to include", "5")
+    .option("--top-communities <n>", "Number of communities to include", "5")
+    .option("--nodes-per-community <n>", "Number of representative nodes per community", "3")
+    .action(async (graphPath, opts) => {
+      const { readFileSync: rf } = await import("node:fs");
+      const { resolve: res } = await import("node:path");
+      const gp = res(resolveGraphInputPath(opts.graph ?? graphPath));
+      if (!existsSync(gp)) {
+        console.error(`error: graph file not found: ${gp}`);
+        process.exit(1);
+      }
+      const raw = JSON.parse(rf(gp, "utf-8"));
+      const G = loadGraphFromData(raw);
+      const { buildFirstHopSummary, firstHopSummaryToText } = await import("./summary.js");
+      const summary = buildFirstHopSummary(G, {
+        topHubs: Number(opts.topHubs),
+        topCommunities: Number(opts.topCommunities),
+        nodesPerCommunity: Number(opts.nodesPerCommunity),
+      });
+      console.log(firstHopSummaryToText(summary));
+    });
+
+  program
+    .command("review-delta [files...]")
+    .description("Review-oriented graph impact for changed files")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--files <csv>", "Comma or newline separated changed files")
+    .option("--base <ref>", "Git base ref; when omitted, compare working tree to HEAD")
+    .option("--head <ref>", "Git head ref to compare with --base", "HEAD")
+    .option("--staged", "Use staged changes only")
+    .option("--max-nodes <n>", "Maximum impacted nodes", "80")
+    .option("--max-chains <n>", "Maximum high-risk chains", "8")
+    .action(async (files, opts) => {
+      const changedFiles = [
+        ...files,
+        ...splitFiles(opts.files),
+      ];
+      const resolvedChangedFiles = changedFiles.length > 0
+        ? [...new Set(changedFiles)].sort()
+        : changedFilesFromGit({ base: opts.base, head: opts.head, staged: opts.staged });
+      if (resolvedChangedFiles.length === 0) {
+        console.log("No changed files found for review-delta.");
+        return;
+      }
+      const { readFileSync: rf } = await import("node:fs");
+      const { resolve: res } = await import("node:path");
+      const gp = res(resolveGraphInputPath(opts.graph));
+      if (!existsSync(gp)) {
+        console.error(`error: graph file not found: ${gp}`);
+        process.exit(1);
+      }
+      const raw = JSON.parse(rf(gp, "utf-8"));
+      const G = loadGraphFromData(raw);
+      const { buildReviewDelta, reviewDeltaToText } = await import("./review.js");
+      const delta = buildReviewDelta(G, resolvedChangedFiles, {
+        maxNodes: Number(opts.maxNodes),
+        maxChains: Number(opts.maxChains),
+      });
+      console.log(reviewDeltaToText(delta));
+    });
+
+  program
+    .command("review-analysis [files...]")
+    .description("Actionable review analysis: blast radius, communities, bridges, test gaps, multimodal safety")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--files <csv>", "Comma or newline separated changed files")
+    .option("--base <ref>", "Git base ref; when omitted, compare working tree to HEAD")
+    .option("--head <ref>", "Git head ref to compare with --base", "HEAD")
+    .option("--staged", "Use staged changes only")
+    .option("--max-nodes <n>", "Maximum impacted nodes", "120")
+    .option("--max-chains <n>", "Maximum high-risk chains", "12")
+    .option("--max-communities <n>", "Maximum impacted communities", "8")
+    .action(async (files, opts) => {
+      const changedFiles = [
+        ...files,
+        ...splitFiles(opts.files),
+      ];
+      const resolvedChangedFiles = changedFiles.length > 0
+        ? [...new Set(changedFiles)].sort()
+        : changedFilesFromGit({ base: opts.base, head: opts.head, staged: opts.staged });
+      if (resolvedChangedFiles.length === 0) {
+        console.log("No changed files found for review-analysis.");
+        return;
+      }
+      const { readFileSync: rf } = await import("node:fs");
+      const { resolve: res } = await import("node:path");
+      const gp = res(resolveGraphInputPath(opts.graph));
+      if (!existsSync(gp)) {
+        console.error(`error: graph file not found: ${gp}`);
+        process.exit(1);
+      }
+      const G = loadGraphFromData(JSON.parse(rf(gp, "utf-8")));
+      const { buildReviewAnalysis, reviewAnalysisToText } = await import("./review-analysis.js");
+      const analysis = buildReviewAnalysis(G, resolvedChangedFiles, {
+        maxNodes: Number(opts.maxNodes),
+        maxChains: Number(opts.maxChains),
+        maxCommunities: Number(opts.maxCommunities),
+      });
+      console.log(reviewAnalysisToText(analysis));
+    });
+
+  program
+    .command("review-eval")
+    .description("Evaluate review-analysis cases against expected impacted files and summary terms")
+    .requiredOption("--cases <path>", "JSON file: array of cases or {cases:[...]}")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--default-file-tokens <n>", "Fallback naive token estimate per file", "800")
+    .action(async (opts) => {
+      const { readFileSync: rf } = await import("node:fs");
+      const { resolve: res } = await import("node:path");
+      const gp = res(resolveGraphInputPath(opts.graph));
+      if (!existsSync(gp)) {
+        console.error(`error: graph file not found: ${gp}`);
+        process.exit(1);
+      }
+      const rawCases = JSON.parse(rf(res(opts.cases), "utf-8"));
+      const cases = Array.isArray(rawCases) ? rawCases : rawCases.cases;
+      if (!Array.isArray(cases)) {
+        console.error("error: --cases must contain an array or an object with a cases array");
+        process.exit(1);
+      }
+      const G = loadGraphFromData(JSON.parse(rf(gp, "utf-8")));
+      const { evaluateReviewAnalysis, reviewEvaluationToText } = await import("./review-analysis.js");
+      const evaluation = evaluateReviewAnalysis(G, cases, {
+        defaultFileTokens: Number(opts.defaultFileTokens),
+      });
+      console.log(reviewEvaluationToText(evaluation));
+    });
+
+  program
+    .command("recommend-commits [files...]")
+    .description("Advisory-only commit grouping for changed files")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--files <csv>", "Comma or newline separated changed files")
+    .option("--base <ref>", "Git base ref; when omitted, compare working tree to HEAD")
+    .option("--head <ref>", "Git head ref to compare with --base", "HEAD")
+    .option("--staged", "Use staged changes only")
+    .option("--max-groups <n>", "Maximum commit groups", "6")
+    .option("--max-nodes <n>", "Maximum impacted nodes per group", "60")
+    .option("--max-chains <n>", "Maximum high-risk chains per group", "4")
+    .action(async (files, opts) => {
+      const changedFiles = [
+        ...files,
+        ...splitFiles(opts.files),
+      ];
+      const resolvedChangedFiles = changedFiles.length > 0
+        ? [...new Set(changedFiles)].sort()
+        : changedFilesFromGit({ base: opts.base, head: opts.head, staged: opts.staged });
+      if (resolvedChangedFiles.length === 0) {
+        console.log("No changed files found for recommend-commits.");
+        return;
+      }
+
+      const { readFileSync: rf } = await import("node:fs");
+      const { resolve: res } = await import("node:path");
+      const gp = res(resolveGraphInputPath(opts.graph));
+      const graphAvailable = existsSync(gp);
+      let G;
+      if (graphAvailable) {
+        G = loadGraphFromData(JSON.parse(rf(gp, "utf-8")));
+      } else {
+        const { default: Graph } = await import("graphology");
+        G = new Graph({ type: "undirected" });
+      }
+      const paths = resolveGraphifyPaths();
+      const { readLifecycleMetadata } = await import("./lifecycle.js");
+      const { buildCommitRecommendation, commitRecommendationToText } = await import("./recommend.js");
+      const recommendation = buildCommitRecommendation(G, resolvedChangedFiles, {
+        lifecycle: readLifecycleMetadata("."),
+        needsUpdate: existsSync(paths.needsUpdate),
+        graphAvailable,
+        maxGroups: Number(opts.maxGroups),
+        maxNodes: Number(opts.maxNodes),
+        maxChains: Number(opts.maxChains),
+      });
+      console.log(commitRecommendationToText(recommendation));
+    });
+
+  program
     .command("query <question>")
     .description("BFS traversal of graph.json for a question")
     .option("--dfs", "Use depth-first instead of breadth-first")
     .option("--budget <n>", "Cap output at N tokens", "2000")
-    .option("--graph <path>", "Path to graph.json", "graphify-out/graph.json")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
     .action(async (question, opts) => {
       const { readFileSync: rf } = await import("node:fs");
       const { resolve: res } = await import("node:path");
@@ -1118,11 +1449,15 @@ export async function main(): Promise<void> {
     .description("Measure token reduction vs naive full-corpus approach")
     .action(async (graphPath) => {
       const { runBenchmark, printBenchmark } = await import("./benchmark.js");
-      const gp = graphPath ?? "graphify-out/graph.json";
+      const gp = resolveGraphInputPath(graphPath);
       let corpusWords: number | undefined;
-      if (existsSync(".graphify_detect.json")) {
+      const paths = resolveGraphifyPaths();
+      const detectPath = existsSync(paths.scratch.detect)
+        ? paths.scratch.detect
+        : paths.legacyRootScratch.detect;
+      if (existsSync(detectPath)) {
         try {
-          const data = JSON.parse(readFileSync(".graphify_detect.json", "utf-8"));
+          const data = JSON.parse(readFileSync(detectPath, "utf-8"));
           corpusWords = data.total_words;
         } catch { /* ignore */ }
       }
@@ -1136,7 +1471,28 @@ export async function main(): Promise<void> {
     .description("Internal: rebuild graph from code files (called by git hooks)")
     .action(async () => {
       const { rebuildCode } = await import("./watch.js");
-      await rebuildCode(".");
+      const changedFiles = (process.env.GRAPHIFY_CHANGED ?? "")
+        .split(/\r?\n/)
+        .map((p) => p.trim())
+        .filter(Boolean);
+      let clearStale = true;
+      if (changedFiles.length > 0) {
+        const { CODE_EXTENSIONS } = await import("./detect.js");
+        const hasCodeChange = changedFiles.some((p) => CODE_EXTENSIONS.has(extname(p).toLowerCase()));
+        if (!hasCodeChange) {
+          return;
+        }
+        clearStale = changedFiles.every((p) => CODE_EXTENSIONS.has(extname(p).toLowerCase()));
+      }
+      await rebuildCode(".", false, { clearStale });
+    });
+
+  program
+    .command("hook-mark-stale [reason]", { hidden: true })
+    .description("Internal: mark graphify lifecycle state stale (called by git hooks)")
+    .action(async (reason) => {
+      const { markLifecycleStale } = await import("./lifecycle.js");
+      markLifecycleStale(".", reason ?? "hook");
     });
 
   await program.parseAsync();

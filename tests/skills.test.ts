@@ -9,6 +9,14 @@ const SKILLS = [
   "../src/skills/skill-windows.md",
 ];
 
+const ALL_SKILL_DOCS = [
+  ...SKILLS,
+  "../src/skills/skill-claw.md",
+  "../src/skills/skill-codex.md",
+  "../src/skills/skill-gemini.toml",
+  "../src/skills/skill-trae.md",
+];
+
 describe("skill cache examples", () => {
   it("use tuple destructuring for checkSemanticCache", () => {
     for (const relativePath of SKILLS) {
@@ -28,9 +36,58 @@ describe("skill cache examples", () => {
       expect(content).toContain("Step 2.5");
       expect(
         content.includes("prepare-semantic-detect")
+        || content.includes("prepareSemanticDetection")
         || content.includes("augmentDetectionWithTranscripts"),
       ).toBe(true);
-      expect(content).toContain("treating as docs");
+      expect(content).toContain("PDF sidecar");
+      expect(content).toContain("assistant vision model");
+      expect(content).toContain("PDF-extracted images");
+    }
+  });
+
+  it("uses the .graphify state contract and lifecycle guidance", () => {
+    for (const relativePath of ALL_SKILL_DOCS) {
+      const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
+      expect(content).toContain(".graphify/graph.json");
+      expect(content).toContain(".graphify/branch.json");
+      expect(content).toContain("graphify state prune");
+      expect(content).toContain("graphify migrate-state --dry-run");
+      expect(content).toContain("git mv -f graphify-out .graphify");
+    }
+  });
+
+  it("prefers the compact first-hop summary before deep traversal", () => {
+    for (const relativePath of ALL_SKILL_DOCS) {
+      const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
+      expect(content).toContain("graphify summary --graph .graphify/graph.json");
+    }
+  });
+
+  it("documents the additive review-delta workflow", () => {
+    for (const relativePath of ALL_SKILL_DOCS) {
+      const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
+      expect(content).toContain("review-delta");
+      expect(content).toContain("impact");
+    }
+  });
+
+  it("documents the advisory commit recommendation workflow", () => {
+    for (const relativePath of ALL_SKILL_DOCS) {
+      const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
+      expect(content).toContain("recommend-commits");
+      expect(content).toContain("advisory-only");
+      expect(content).toContain("do not auto-stage");
+    }
+  });
+
+  it("documents review analysis and evaluation workflows", () => {
+    for (const relativePath of ALL_SKILL_DOCS) {
+      const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
+      expect(content).toContain("review-analysis");
+      expect(content).toContain("review-eval");
+      expect(content).toContain("blast radius");
+      expect(content).toContain("multimodal");
+      expect(content).toContain("delegated OCR/vision");
     }
   });
 

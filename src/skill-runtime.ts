@@ -25,7 +25,13 @@ import {
 } from "./graph.js";
 import { ingest, saveQueryResult } from "./ingest.js";
 import { generate } from "./report.js";
-import { augmentDetectionWithTranscripts } from "./transcribe.js";
+import { defaultManifestPath, resolveGraphifyPaths } from "./paths.js";
+import { buildFirstHopSummary, firstHopSummaryToText } from "./summary.js";
+import { buildReviewDelta, reviewDeltaToText } from "./review.js";
+import { buildReviewAnalysis, reviewAnalysisToText, evaluateReviewAnalysis, reviewEvaluationToText } from "./review-analysis.js";
+import { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
+import { parsePdfOcrMode } from "./pdf-preflight.js";
+import { prepareSemanticDetection } from "./semantic-prepare.js";
 import type {
   DetectionResult,
   Extraction,
@@ -297,19 +303,20 @@ function updateCostFile(
 
 function findBestMatchingNode(G: Graph, term: string): string | null {
   const words = term.toLowerCase().split(/\s+/).filter(Boolean);
-  let best: { score: number; nodeId: string } | null = null;
+  let bestNodeId: string | null = null;
+  let bestScore = 0;
   G.forEachNode((nodeId, data) => {
     const label = ((data.label as string) ?? "").toLowerCase();
     const score = words.filter((word) => label.includes(word)).length;
-    if (score <= 0) return;
-    if (!best || score > best.score) {
-      best = { score, nodeId };
+    if (score > bestScore) {
+      bestScore = score;
+      bestNodeId = nodeId;
     }
   });
-  return best?.nodeId ?? null;
+  return bestNodeId;
 }
 
-function runtimeInfo(): Record<string, string> {
+function runtimeInfo(): Record<string, unknown> {
   return {
     runtime: "typescript",
     version: getVersion(),
@@ -317,6 +324,7 @@ function runtimeInfo(): Record<string, string> {
     script: __filename,
     module: join(__dirname, "index.js"),
     cli: join(__dirname, "cli.js"),
+    paths: resolveGraphifyPaths(),
   };
 }
 
@@ -329,6 +337,31 @@ async function main(): Promise<void> {
     .description("Print the runtime metadata for the Codex TypeScript skill")
     .action(() => {
       console.log(JSON.stringify(runtimeInfo(), null, 2));
+    });
+
+  program
+    .command("paths")
+    .description("Print the graphify state path contract for a workspace root")
+    .argument("[root]", "Workspace root", ".")
+    .action((root) => {
+      console.log(JSON.stringify(resolveGraphifyPaths({ root: resolve(root) }), null, 2));
+    });
+
+  program
+    .command("migrate-state")
+    .description("Migrate legacy graphify-out state into .graphify")
+    .option("--root <path>", "Workspace root", ".")
+    .option("--dry-run", "Print the migration plan without writing files")
+    .option("--force", "Overwrite existing files under .graphify")
+    .option("--json", "Print JSON output")
+    .action(async (opts) => {
+      const { migrateGraphifyOut, migrationResultToText } = await import("./migrate-state.js");
+      const result = migrateGraphifyOut({ root: opts.root, dryRun: opts.dryRun, force: opts.force });
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(migrationResultToText(result));
+      }
     });
 
   program
@@ -348,7 +381,7 @@ async function main(): Promise<void> {
   program
     .command("detect-incremental")
     .argument("<inputPath>")
-    .option("--manifest <path>", "Path to manifest.json", "graphify-out/manifest.json")
+    .option("--manifest <path>", "Path to manifest.json", defaultManifestPath())
     .option("--out <path>")
     .action((inputPath, opts) => {
       const result = detectIncremental(resolve(inputPath), resolve(opts.manifest));
@@ -365,25 +398,33 @@ async function main(): Promise<void> {
     .requiredOption("--detect <path>", "Path to the base detection JSON")
     .requiredOption("--out <path>", "Path to the augmented semantic detection JSON")
     .requiredOption("--transcripts-out <path>", "Path to the transcript path list JSON")
+    .option("--pdf-out <path>", "Path to the PDF preflight/OCR artifact list JSON")
     .option("--analysis <path>", "Optional analysis JSON from a previous run")
-    .option("--incremental", "Use detection.new_files.video and force retranscription")
+    .option("--incremental", "Use detection.new_files.video/paper and force derived artifacts")
     .option("--whisper-model <name>", "Whisper model override for local transcription")
+    .option("--pdf-ocr <mode>", "PDF OCR mode: off, auto, always, dry-run", "auto")
+    .option("--pdf-ocr-model <name>", "Mistral OCR model override")
     .action(async (opts) => {
       const detection = readJson<DetectionResult>(opts.detect);
       const analysis = opts.analysis && existsSync(resolve(opts.analysis))
         ? readJson<AnalysisFile>(opts.analysis)
         : null;
-      const transcriptsDir = join(dirname(resolve(opts.out)), "transcripts");
-      const { detection: semanticDetection, transcriptPaths } = await augmentDetectionWithTranscripts(detection, {
-        outputDir: transcriptsDir,
+      const stateDir = dirname(resolve(opts.out));
+      const { detection: semanticDetection, transcriptPaths, pdfArtifacts } = await prepareSemanticDetection(detection, {
+        transcriptOutputDir: join(stateDir, "transcripts"),
+        pdfOutputDir: join(stateDir, "converted", "pdf"),
         godNodes: analysis?.gods,
         incremental: opts.incremental,
         whisperModel: opts.whisperModel,
+        pdfOcrMode: parsePdfOcrMode(opts.pdfOcr),
+        pdfOcrModel: opts.pdfOcrModel,
       });
 
       writeJson(opts.out, semanticDetection);
       writeJson(opts.transcriptsOut, transcriptPaths);
-      console.log(`Transcribed ${transcriptPaths.length} video file(s) -> treating as docs`);
+      if (opts.pdfOut) writeJson(opts.pdfOut, pdfArtifacts);
+      const pdfConverted = pdfArtifacts.filter((item) => item.markdownPath).length;
+      console.log(`Prepared semantic inputs: ${transcriptPaths.length} transcript(s), ${pdfConverted} PDF sidecar(s)`);
     });
 
   program
@@ -805,7 +846,7 @@ async function main(): Promise<void> {
       const extraction = ensureExtractionShape(readJson<Partial<Extraction>>(opts.extract));
       const G = buildFromJson(extraction, { directed: shouldBuildDirected(opts) });
       toCypher(G, resolve(opts.out));
-      console.log("cypher.txt written - import with: cypher-shell < graphify-out/cypher.txt");
+      console.log("cypher.txt written - import with: cypher-shell < .graphify/cypher.txt");
     });
 
   program
@@ -940,6 +981,99 @@ async function main(): Promise<void> {
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
       writeJson(opts.analysisOut, analyzed.analysis);
       console.log(`Re-clustered: ${analyzed.communities.size} communities`);
+    });
+
+  program
+    .command("summary")
+    .requiredOption("--graph <path>")
+    .option("--top-hubs <n>", "Number of hubs to include", "5")
+    .option("--top-communities <n>", "Number of communities to include", "5")
+    .option("--nodes-per-community <n>", "Number of representative nodes per community", "3")
+    .action((opts) => {
+      const G = loadGraph(opts.graph);
+      const summary = buildFirstHopSummary(G, {
+        topHubs: Number(opts.topHubs),
+        topCommunities: Number(opts.topCommunities),
+        nodesPerCommunity: Number(opts.nodesPerCommunity),
+      });
+      console.log(firstHopSummaryToText(summary));
+    });
+
+  program
+    .command("review-delta")
+    .requiredOption("--graph <path>")
+    .requiredOption("--files <csv>", "Comma or newline separated changed files")
+    .option("--max-nodes <n>", "Maximum impacted nodes", "80")
+    .option("--max-chains <n>", "Maximum high-risk chains", "8")
+    .action((opts) => {
+      const G = loadGraph(opts.graph);
+      const files = String(opts.files)
+        .split(/[\n,]/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const delta = buildReviewDelta(G, files, {
+        maxNodes: Number(opts.maxNodes),
+        maxChains: Number(opts.maxChains),
+      });
+      console.log(reviewDeltaToText(delta));
+    });
+
+  program
+    .command("review-analysis")
+    .requiredOption("--graph <path>")
+    .requiredOption("--files <csv>", "Comma or newline separated changed files")
+    .option("--max-nodes <n>", "Maximum impacted nodes", "120")
+    .option("--max-chains <n>", "Maximum high-risk chains", "12")
+    .option("--max-communities <n>", "Maximum impacted communities", "8")
+    .action((opts) => {
+      const G = loadGraph(opts.graph);
+      const files = String(opts.files)
+        .split(/[\n,]/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const analysis = buildReviewAnalysis(G, files, {
+        maxNodes: Number(opts.maxNodes),
+        maxChains: Number(opts.maxChains),
+        maxCommunities: Number(opts.maxCommunities),
+      });
+      console.log(reviewAnalysisToText(analysis));
+    });
+
+  program
+    .command("review-eval")
+    .requiredOption("--graph <path>")
+    .requiredOption("--cases <path>", "JSON file: array of cases or {cases:[...]}")
+    .option("--default-file-tokens <n>", "Fallback naive token estimate per file", "800")
+    .action((opts) => {
+      const rawCases = JSON.parse(readFileSync(resolve(opts.cases), "utf-8"));
+      const cases = Array.isArray(rawCases) ? rawCases : rawCases.cases;
+      if (!Array.isArray(cases)) throw new Error("--cases must contain an array or an object with a cases array");
+      const G = loadGraph(opts.graph);
+      const evaluation = evaluateReviewAnalysis(G, cases, {
+        defaultFileTokens: Number(opts.defaultFileTokens),
+      });
+      console.log(reviewEvaluationToText(evaluation));
+    });
+
+  program
+    .command("recommend-commits")
+    .requiredOption("--graph <path>")
+    .requiredOption("--files <csv>", "Comma or newline separated changed files")
+    .option("--max-groups <n>", "Maximum commit groups", "6")
+    .option("--max-nodes <n>", "Maximum impacted nodes per group", "60")
+    .option("--max-chains <n>", "Maximum high-risk chains per group", "4")
+    .action((opts) => {
+      const G = loadGraph(opts.graph);
+      const files = String(opts.files)
+        .split(/[\n,]/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const recommendation = buildCommitRecommendation(G, files, {
+        maxGroups: Number(opts.maxGroups),
+        maxNodes: Number(opts.maxNodes),
+        maxChains: Number(opts.maxChains),
+      });
+      console.log(commitRecommendationToText(recommendation));
     });
 
   program

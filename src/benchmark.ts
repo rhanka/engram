@@ -4,6 +4,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import Graph from "graphology";
 import { forEachTraversalNeighbor, loadGraphFromData, type SerializedGraphData } from "./graph.js";
+import { resolveGraphInputPath } from "./paths.js";
 import type { BenchmarkResult } from "./types.js";
 
 const CHARS_PER_TOKEN = 4;
@@ -79,7 +80,7 @@ function loadGraph(graphPath: string): Graph {
 }
 
 export function runBenchmark(
-  graphPath: string = "graphify-out/graph.json",
+  graphPath: string = resolveGraphInputPath(),
   corpusWordsOrOptions?: number | BenchmarkOptions,
   questions?: string[],
 ): BenchmarkResult {

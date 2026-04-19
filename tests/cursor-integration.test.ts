@@ -22,8 +22,9 @@ describe("Cursor integration contract", () => {
 
     const rule = readFileSync(join(dir, ".cursor", "rules", "graphify.mdc"), "utf-8");
     expect(rule).toContain("alwaysApply: true");
-    expect(rule).toContain("graphify-out/GRAPH_REPORT.md");
+    expect(rule).toContain(".graphify/GRAPH_REPORT.md");
     expect(rule).toContain("npx graphify hook-rebuild");
+    expect(rule).toContain("graphify migrate-state --dry-run");
   });
 
   it("is idempotent and does not overwrite an existing rule", () => {

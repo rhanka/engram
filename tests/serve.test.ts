@@ -125,6 +125,10 @@ describe("MCP stdio server", () => {
           "get_node",
           "god_nodes",
           "graph_stats",
+          "first_hop_summary",
+          "review_delta",
+          "review_analysis",
+          "recommend_commits",
           "query_graph",
           "shortest_path",
         ].sort(),
@@ -223,6 +227,49 @@ describe("MCP stdio server", () => {
       expect(stats).toContain("Nodes: 4");
       expect(stats).toContain("Edges: 3");
       expect(stats).toContain("Communities: 2");
+
+      const firstHop = toolText(
+        await client.callTool({
+          name: "first_hop_summary",
+          arguments: {},
+        }),
+      );
+      expect(firstHop).toContain("Graphify First-Hop Summary");
+      expect(firstHop).toContain("Graph: 4 nodes, 3 edges, 2 communities, density 0.5");
+      expect(firstHop).toContain("BetaRepository (degree 3, community 0 Core Services, src/beta.ts)");
+      expect(firstHop).toContain("Next best action: Start with get_neighbors on \"BetaRepository\"");
+
+      const reviewDelta = toolText(
+        await client.callTool({
+          name: "review_delta",
+          arguments: { changed_files: ["src/beta.ts"] },
+        }),
+      );
+      expect(reviewDelta).toContain("Graphify Review Delta");
+      expect(reviewDelta).toContain("src/beta.ts");
+      expect(reviewDelta).toContain("GammaDocs");
+      expect(reviewDelta).toContain("Likely test gaps:");
+
+      const reviewAnalysis = toolText(
+        await client.callTool({
+          name: "review_analysis",
+          arguments: { changed_files: ["src/beta.ts"] },
+        }),
+      );
+      expect(reviewAnalysis).toContain("Graphify Review Analysis");
+      expect(reviewAnalysis).toContain("Blast radius:");
+      expect(reviewAnalysis).toContain("Impacted communities:");
+
+      const commitRecommendation = toolText(
+        await client.callTool({
+          name: "recommend_commits",
+          arguments: { changed_files: ["src/beta.ts"] },
+        }),
+      );
+      expect(commitRecommendation).toContain("Graphify Commit Recommendation");
+      expect(commitRecommendation).toContain("Advisory only");
+      expect(commitRecommendation).toContain("src/beta.ts");
+      expect(commitRecommendation).toContain("Suggested commit groups:");
 
       const path = toolText(
         await client.callTool({
