@@ -5,7 +5,8 @@
 This document is the completed SLDC study after implementation. It records what changed, what remained deferred, and what risks remain after moving Graphify TypeScript to the .graphify lifecycle model.
 
 - Product branch: v3-typescript
-- Upstream mirror branch: v3
+- Upstream mirror branch: v3 for the closed Python v3 baseline
+- Active upstream parity target: Python v4 through v0.4.23, tracked in UPSTREAM_GAP.md
 - Runtime state root: .graphify/
 - Legacy fallback: graphify-out/graph.json remains readable for compatibility only
 - Commit recommendations: advisory-only
@@ -80,7 +81,7 @@ Implemented:
 
 Implemented:
 
-- Codex, Claude, Gemini, Cursor, OpenCode, Aider, Copilot, OpenClaw, Droid, Trae, and Trae CN skill docs use .graphify/.
+- Codex, Claude, Gemini, VS Code Copilot Chat, Cursor, OpenCode, Aider, Copilot CLI, OpenClaw, Factory Droid, Trae, Trae CN, Hermes, Kiro, and Google Antigravity skill docs use .graphify/.
 - Codex instructions explicitly use $graphify and TypeScript runtime proof.
 - Gemini instructions include custom command and MCP expectations.
 - skills warn on stale .graphify/needs_update or branch metadata.
@@ -92,9 +93,9 @@ Implemented:
 Implemented:
 
 - README.md, README.zh-CN.md, and README.ja-JP.md describe .graphify/ as local ignored state.
-- README documents v3-typescript as maintained TypeScript branch and v3 as upstream Python mirror.
+- README documents v3-typescript as maintained TypeScript branch, v3 as the closed upstream Python mirror, and v4/v0.4.23 as the active parity target.
 - README preserves upstream attribution and TypeScript port positioning.
-- README documents review surfaces and install mutation previews.
+- README documents review surfaces, install mutation previews, new assistant platforms, and release-tag publishing safety.
 
 ### 7. Review-Oriented Graph Enhancements
 
@@ -182,12 +183,13 @@ Known acceptable hook-rebuild warnings:
 | State root | .graphify/ |
 | Legacy path | graphify-out/ read fallback plus graphify migrate-state migration |
 | Product branch | v3-typescript |
-| Upstream branch | v3 mirrors Python Graphify |
+| Upstream branches | v3 mirrors the closed Python baseline; v4/v0.4.23 is the active parity target |
 | Distribution | npm package graphifyy |
 | Transcription | TypeScript-local faster-whisper-ts + ffmpeg |
 | Review mode | additive graph projection |
 | Commit recommendation | advisory-only |
 | Installers | mutation preview before writes |
+| Release publishing | trusted npm publishing guarded by merged release tags |
 | Storage | file-based Graphology artifacts |
 | Deferred storage | SQLite |
 | Deferred similarity | embeddings |

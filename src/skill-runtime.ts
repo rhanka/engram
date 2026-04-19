@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -16,6 +17,7 @@ import { buildFromJson } from "./build.js";
 import { cluster, scoreAll } from "./cluster.js";
 import { detect, detectIncremental, saveManifest } from "./detect.js";
 import { toCypher, toGraphml, toHtml, toJson, toSvg, pushToNeo4j } from "./export.js";
+import { safeToHtml } from "./html-export.js";
 import { extractWithDiagnostics } from "./extract.js";
 import {
   forEachTraversalNeighbor,
@@ -32,6 +34,7 @@ import { buildReviewAnalysis, reviewAnalysisToText, evaluateReviewAnalysis, revi
 import { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
 import { parsePdfOcrMode } from "./pdf-preflight.js";
 import { prepareSemanticDetection } from "./semantic-prepare.js";
+import { normalizeSearchText } from "./search.js";
 import type {
   DetectionResult,
   Extraction,
@@ -302,11 +305,11 @@ function updateCostFile(
 }
 
 function findBestMatchingNode(G: Graph, term: string): string | null {
-  const words = term.toLowerCase().split(/\s+/).filter(Boolean);
+  const words = normalizeSearchText(term).split(/\s+/).filter(Boolean);
   let bestNodeId: string | null = null;
   let bestScore = 0;
   G.forEachNode((nodeId, data) => {
-    const label = ((data.label as string) ?? "").toLowerCase();
+    const label = normalizeSearchText((data.label as string) ?? "");
     const score = words.filter((word) => label.includes(word)).length;
     if (score > bestScore) {
       bestScore = score;
@@ -328,7 +331,7 @@ function runtimeInfo(): Record<string, unknown> {
   };
 }
 
-async function main(): Promise<void> {
+export async function main(argv: string[] = process.argv): Promise<void> {
   const program = new Command();
   program.name("graphify-skill-runtime");
 
@@ -613,8 +616,10 @@ async function main(): Promise<void> {
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
       writeJson(opts.analysisOut, analyzed.analysis);
       if (opts.htmlOut) {
-        toHtml(G, analyzed.communities, resolve(opts.htmlOut), {
+        safeToHtml(G, analyzed.communities, resolve(opts.htmlOut), {
           communityLabels: analyzed.labels,
+        }, {
+          onWarning: (message) => console.warn(message),
         });
       }
       saveManifest(detection.files, join(dirname(resolve(opts.graphOut)), "manifest.json"));
@@ -682,8 +687,10 @@ async function main(): Promise<void> {
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
       writeJson(opts.analysisOut, analyzed.analysis);
       if (opts.htmlOut) {
-        toHtml(mergedGraph, analyzed.communities, resolve(opts.htmlOut), {
+        safeToHtml(mergedGraph, analyzed.communities, resolve(opts.htmlOut), {
           communityLabels: analyzed.labels,
+        }, {
+          onWarning: (message) => console.warn(message),
         });
       }
       saveManifest(detection.files, join(dirname(resolve(opts.graphOut)), "manifest.json"));
@@ -776,7 +783,9 @@ async function main(): Promise<void> {
         toJson(G, communities, resolve(opts.graphOut), { communityLabels: labels });
       }
       if (opts.htmlOut) {
-        toHtml(G, communities, resolve(opts.htmlOut), { communityLabels: labels });
+        safeToHtml(G, communities, resolve(opts.htmlOut), { communityLabels: labels }, {
+          onWarning: (message) => console.warn(message),
+        });
       }
       writeJson(opts.analysis, analysis);
       console.log("Labeled artifacts updated");
@@ -967,6 +976,7 @@ async function main(): Promise<void> {
     .requiredOption("--graph-out <path>")
     .requiredOption("--report-out <path>")
     .requiredOption("--analysis-out <path>")
+    .option("--html-out <path>")
     .action((opts) => {
       const G = loadGraph(opts.graph);
       const analyzed = analyzeGraph(
@@ -980,6 +990,13 @@ async function main(): Promise<void> {
       });
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
       writeJson(opts.analysisOut, analyzed.analysis);
+      if (opts.htmlOut) {
+        safeToHtml(G, analyzed.communities, resolve(opts.htmlOut), {
+          communityLabels: analyzed.labels,
+        }, {
+          onWarning: (message) => console.warn(message),
+        });
+      }
       console.log(`Re-clustered: ${analyzed.communities.size} communities`);
     });
 
@@ -1144,6 +1161,7 @@ async function main(): Promise<void> {
 
   program
     .command("ingest")
+    .alias("add")
     .argument("<url>")
     .option("--target-dir <path>", "Directory to save fetched content", "./raw")
     .option("--author <name>")
@@ -1174,11 +1192,22 @@ async function main(): Promise<void> {
       console.log(`Saved to ${outPath}`);
     });
 
-  await program.parseAsync(process.argv);
+  await program.parseAsync(argv);
 }
 
-main().catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(message);
-  process.exit(1);
-});
+function isDirectRuntimeExecution(): boolean {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === __filename;
+  } catch {
+    return resolve(process.argv[1]) === __filename;
+  }
+}
+
+if (isDirectRuntimeExecution()) {
+  main().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(message);
+    process.exit(1);
+  });
+}

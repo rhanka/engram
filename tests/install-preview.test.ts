@@ -46,6 +46,31 @@ describe("install mutation previews", () => {
     expect(preview.writes.some((path) => path.endsWith(".agents/skills/graphify/.graphify_version"))).toBe(true);
   });
 
+  it("lists upstream v4 platform project files", () => {
+    expect(platformInstallPreview("/repo", "antigravity").writes).toEqual([
+      resolve("/repo/.agent/rules/graphify.md"),
+      resolve("/repo/.agent/workflows/graphify.md"),
+    ]);
+
+    expect(platformInstallPreview("/repo", "kiro").writes).toEqual([
+      resolve("/repo/.kiro/skills/graphify/SKILL.md"),
+      resolve("/repo/.kiro/skills/graphify/.graphify_version"),
+      resolve("/repo/.kiro/steering/graphify.md"),
+    ]);
+
+    expect(platformInstallPreview("/repo", "vscode-copilot-chat").writes).toEqual([
+      resolve("/repo/.github/copilot-instructions.md"),
+    ]);
+  });
+
+  it("lists global skill files for upstream v4 assistant platforms", () => {
+    for (const platformName of ["hermes", "antigravity", "vscode-copilot-chat"]) {
+      const preview = globalSkillInstallPreview(platformName);
+      expect(preview.writes.some((path) => path.endsWith("skills/graphify/SKILL.md"))).toBe(true);
+      expect(preview.writes.some((path) => path.endsWith("skills/graphify/.graphify_version"))).toBe(true);
+    }
+  });
+
   it("prints the preview before mutating project install files", () => {
     const dir = mkdtempSync(join(tmpdir(), "graphify-install-preview-"));
     tempDirs.push(dir);

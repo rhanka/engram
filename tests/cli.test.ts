@@ -25,6 +25,17 @@ describe("CLI platform-scoped version checks", () => {
     expect(getPlatformsToCheck(["gemini", "install"])).toEqual(["gemini"]);
   });
 
+  it("checks only the explicitly targeted upstream v4 assistant platforms", () => {
+    expect(getPlatformsToCheck(["install", "--platform", "antigravity"])).toEqual(["antigravity"]);
+    expect(getPlatformsToCheck(["antigravity", "install"])).toEqual(["antigravity"]);
+    expect(getPlatformsToCheck(["install", "--platform", "hermes"])).toEqual(["hermes"]);
+    expect(getPlatformsToCheck(["hermes", "install"])).toEqual(["hermes"]);
+    expect(getPlatformsToCheck(["install", "--platform", "kiro"])).toEqual(["kiro"]);
+    expect(getPlatformsToCheck(["kiro", "install"])).toEqual(["kiro"]);
+    expect(getPlatformsToCheck(["install", "--platform", "vscode-copilot-chat"])).toEqual(["vscode-copilot-chat"]);
+    expect(getPlatformsToCheck(["vscode", "install"])).toEqual(["vscode-copilot-chat"]);
+  });
+
   it("does not warn for unrelated global skills on generic commands", () => {
     expect(getPlatformsToCheck(["hook", "status"])).toEqual([]);
     expect(getPlatformsToCheck(["query", "--graph", "graphify-out/graph.json", "install flow"])).toEqual([]);

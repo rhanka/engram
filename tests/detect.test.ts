@@ -46,10 +46,20 @@ describe("classifyFile", () => {
   it("classifies all supported code extensions", () => {
     const codeExts = [".py", ".ts", ".js", ".jsx", ".tsx", ".go", ".rs", ".java",
       ".cpp", ".c", ".h", ".rb", ".swift", ".kt", ".cs", ".scala", ".php",
-      ".lua", ".zig", ".ps1", ".ex", ".m", ".jl"];
+      ".lua", ".zig", ".ps1", ".ex", ".m", ".jl", ".vue", ".svelte", ".dart",
+      ".v", ".sv", ".mjs", ".ejs"];
     for (const ext of codeExts) {
       expect(classifyFile(`test${ext}`)).toBe(FileType.CODE);
     }
+  });
+
+  it("classifies Blade templates as CODE", () => {
+    expect(classifyFile("resources/views/welcome.blade.php")).toBe(FileType.CODE);
+  });
+
+  it("classifies MDX and HTML as DOCUMENT", () => {
+    expect(classifyFile("docs/page.mdx")).toBe(FileType.DOCUMENT);
+    expect(classifyFile("docs/page.html")).toBe(FileType.DOCUMENT);
   });
 });
 

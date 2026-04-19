@@ -75,7 +75,8 @@ export function generate(
   );
 
   godNodeList.forEach((node, i) => {
-    lines.push(`${i + 1}. \`${node.label}\` - ${node.edges} edges`);
+    const degree = node.degree ?? node.edges;
+    lines.push(`${i + 1}. \`${node.label}\` - ${degree} edges`);
   });
 
   lines.push("", "## Surprising Connections (you probably didn't know these)");
@@ -114,7 +115,7 @@ export function generate(
     const label = labelMap.get(cid) ?? `Community ${cid}`;
     const score = cohesionMap.get(cid) ?? 0.0;
     const realNodes = nodes.filter((n) => !isFileNode(G, n));
-    const display = realNodes.slice(0, 8).map((n) => (G.getNodeAttribute(n, "label") as string) ?? n);
+    const display = realNodes.slice(0, 8).map((n) => (G.getNodeAttribute(n, "label") as string | undefined) ?? n);
     const suffix = realNodes.length > 8 ? ` (+${realNodes.length - 8} more)` : "";
     lines.push(
       "",
@@ -153,7 +154,7 @@ export function generate(
   if (gapCount > 0 || ambPct > 20) {
     lines.push("", "## Knowledge Gaps");
     if (isolated.length > 0) {
-      const isolatedLabels = isolated.slice(0, 5).map((n) => (G.getNodeAttribute(n, "label") as string) ?? n);
+      const isolatedLabels = isolated.slice(0, 5).map((n) => (G.getNodeAttribute(n, "label") as string | undefined) ?? n);
       const suffix = isolated.length > 5 ? ` (+${isolated.length - 5} more)` : "";
       lines.push(
         `- **${isolated.length} isolated node(s):** ${isolatedLabels.map((l) => `\`${l}\``).join(", ")}${suffix}`,
@@ -163,7 +164,7 @@ export function generate(
     if (thinCommunities.size > 0) {
       for (const [cid, nodes] of thinCommunities) {
         const label = labelMap.get(cid) ?? `Community ${cid}`;
-        const nodeLabels = nodes.map((n) => (G.getNodeAttribute(n, "label") as string) ?? n);
+        const nodeLabels = nodes.map((n) => (G.getNodeAttribute(n, "label") as string | undefined) ?? n);
         lines.push(
           `- **Thin community \`${label}\`** (${nodes.length} nodes): ${nodeLabels.map((l) => `\`${l}\``).join(", ")}`,
           "  Too small to be a meaningful cluster - may be noise or needs more connections extracted.",

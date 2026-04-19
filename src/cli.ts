@@ -15,9 +15,11 @@ import { join, resolve, dirname, extname } from "node:path";
 import { homedir, platform } from "node:os";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
+import type Graph from "graphology";
 import { forEachTraversalNeighbor, loadGraphFromData } from "./graph.js";
 import { safeExecGit } from "./git.js";
 import { resolveGraphInputPath, resolveGraphifyPaths } from "./paths.js";
+import { normalizeSearchText } from "./search.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -50,6 +52,32 @@ function changedFilesFromGit(options: { base?: string; head?: string; staged?: b
   const tracked = splitFiles(safeExecGit(".", ["diff", "--name-only", "HEAD", "--"]) ?? "");
   const untracked = splitFiles(safeExecGit(".", ["ls-files", "--others", "--exclude-standard"]) ?? "");
   return [...new Set([...tracked, ...untracked])].sort();
+}
+
+function loadCliGraph(graphPath: string): Graph {
+  const gp = resolveGraphInputPath(graphPath);
+  if (!existsSync(gp)) {
+    throw new Error(`graph file not found: ${gp}`);
+  }
+  return loadGraphFromData(JSON.parse(readFileSync(gp, "utf-8")));
+}
+
+function findBestMatchingNode(G: Graph, query: string): string | null {
+  const terms = normalizeSearchText(query)
+    .split(/\s+/)
+    .filter((term) => term.length > 1);
+  let bestScore = 0;
+  let bestNodeId: string | null = null;
+  G.forEachNode((nodeId, data) => {
+    const label = normalizeSearchText((data.label as string) ?? nodeId);
+    const source = normalizeSearchText((data.source_file as string) ?? "");
+    const score = terms.filter((term) => label.includes(term) || source.includes(term)).length;
+    if (score > 0 && (!bestNodeId || score > bestScore || (score === bestScore && G.degree(nodeId) > G.degree(bestNodeId)))) {
+      bestScore = score;
+      bestNodeId = nodeId;
+    }
+  });
+  return bestNodeId;
 }
 
 // ---------------------------------------------------------------------------
@@ -113,12 +141,44 @@ const PLATFORM_CONFIG: Record<string, PlatformConfig> = {
     skill_dst: join(".trae-cn", "skills", "graphify", "SKILL.md"),
     claude_md: false,
   },
+  hermes: {
+    skill_file: "skill-claw.md",
+    skill_dst: join(".hermes", "skills", "graphify", "SKILL.md"),
+    claude_md: false,
+  },
+  kiro: {
+    skill_file: "skill-kiro.md",
+    skill_dst: join(".kiro", "skills", "graphify", "SKILL.md"),
+    claude_md: false,
+  },
+  antigravity: {
+    skill_file: "skill.md",
+    skill_dst: join(".agent", "skills", "graphify", "SKILL.md"),
+    claude_md: false,
+  },
+  "vscode-copilot-chat": {
+    skill_file: "skill-vscode.md",
+    skill_dst: join(".copilot", "skills", "graphify", "SKILL.md"),
+    claude_md: false,
+  },
   windows: {
     skill_file: "skill-windows.md",
     skill_dst: join(".claude", "skills", "graphify", "SKILL.md"),
     claude_md: true,
   },
 };
+
+const PLATFORM_ALIASES: Record<string, string> = {
+  vscode: "vscode-copilot-chat",
+};
+
+function canonicalPlatformName(platformName: string): string {
+  return PLATFORM_ALIASES[platformName] ?? platformName;
+}
+
+function platformNamesForError(): string {
+  return [...Object.keys(PLATFORM_CONFIG), ...Object.keys(PLATFORM_ALIASES)].join(", ");
+}
 
 const SETTINGS_HOOK = {
   matcher: "Glob|Grep",
@@ -220,6 +280,7 @@ function emptyPreview(platformName: string, action: "install" | "uninstall"): In
 }
 
 export function platformInstallPreview(projectDir: string = ".", platformName: string): InstallMutationPreview {
+  platformName = canonicalPlatformName(platformName);
   const preview = emptyPreview(platformName, "install");
   if (platformName === "claude" || platformName === "windows") {
     preview.writes.push(previewPath(projectDir, "CLAUDE.md"), previewPath(projectDir, ".claude/settings.json"));
@@ -233,6 +294,28 @@ export function platformInstallPreview(projectDir: string = ".", platformName: s
   }
   if (platformName === "cursor") {
     preview.writes.push(previewPath(projectDir, ".cursor/rules/graphify.mdc"));
+    return preview;
+  }
+  if (platformName === "antigravity") {
+    preview.writes.push(
+      previewPath(projectDir, ".agent/rules/graphify.md"),
+      previewPath(projectDir, ".agent/workflows/graphify.md"),
+    );
+    preview.notes.push("No platform hook equivalent; Antigravity rules are the always-on mechanism.");
+    return preview;
+  }
+  if (platformName === "kiro") {
+    preview.writes.push(
+      previewPath(projectDir, ".kiro/skills/graphify/SKILL.md"),
+      previewPath(projectDir, ".kiro/skills/graphify/.graphify_version"),
+      previewPath(projectDir, ".kiro/steering/graphify.md"),
+    );
+    preview.notes.push("Kiro steering is always-on; /graphify invokes the project skill.");
+    return preview;
+  }
+  if (platformName === "vscode-copilot-chat") {
+    preview.writes.push(previewPath(projectDir, ".github/copilot-instructions.md"));
+    preview.notes.push("VS Code Copilot Chat reads copilot-instructions.md automatically.");
     return preview;
   }
 
@@ -250,6 +333,7 @@ export function platformInstallPreview(projectDir: string = ".", platformName: s
 }
 
 export function globalSkillInstallPreview(platformName: string): InstallMutationPreview {
+  platformName = canonicalPlatformName(platformName);
   const cfg = PLATFORM_CONFIG[platformName];
   const preview = emptyPreview(platformName, "install");
   if (!cfg) return preview;
@@ -295,6 +379,48 @@ This project has a graphify knowledge graph at .graphify/.
 - If .graphify/graph.json is missing but graphify-out/graph.json exists, run \`graphify migrate-state --dry-run\` first; if tracked legacy artifacts are reported, ask before using the recommended \`git mv -f graphify-out .graphify\` and commit message
 - If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run /graphify . --update when appropriate
 - After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
+`;
+
+const ANTIGRAVITY_RULE_PATH = join(".agent", "rules", "graphify.md");
+const ANTIGRAVITY_WORKFLOW_PATH = join(".agent", "workflows", "graphify.md");
+const ANTIGRAVITY_RULE = `## graphify
+
+This project has a graphify knowledge graph at .graphify/.
+
+Rules:
+- Before answering architecture or codebase questions, read .graphify/GRAPH_REPORT.md for god nodes and community structure
+- If .graphify/wiki/index.md exists, navigate it instead of reading raw files
+- If .graphify/graph.json is missing but graphify-out/graph.json exists, run \`graphify migrate-state --dry-run\` before relying on legacy state
+- If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run /graphify . --update when appropriate
+- If the graphify MCP server is active, prefer graph tools like \`query_graph\`, \`get_node\`, and \`shortest_path\` for architecture navigation
+- After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
+`;
+
+const ANTIGRAVITY_WORKFLOW = `# Workflow: graphify
+**Command:** /graphify
+**Description:** Turn any folder of files into a navigable knowledge graph
+
+## Steps
+Follow the graphify skill installed at ~/.agent/skills/graphify/SKILL.md to run the full TypeScript-backed pipeline.
+
+If no path argument is given, use \`.\` (current directory).
+`;
+
+const KIRO_STEERING = `---
+inclusion: always
+---
+
+graphify: A knowledge graph of this project lives in \`.graphify/\`. If \`.graphify/GRAPH_REPORT.md\` exists, read it before answering architecture questions, tracing dependencies, or searching files. If \`.graphify/wiki/index.md\` exists, navigate it for deep questions. Prefer graph structure over raw grep when graph context is current.
+`;
+
+const KIRO_STEERING_MARKER = "graphify: A knowledge graph of this project";
+
+const VSCODE_INSTRUCTIONS_SECTION = `## graphify
+
+Before answering architecture or codebase questions, read \`.graphify/GRAPH_REPORT.md\` if it exists.
+If \`.graphify/wiki/index.md\` exists, navigate it for deep questions.
+If \`.graphify/graph.json\` is missing but \`graphify-out/graph.json\` exists, run \`graphify migrate-state --dry-run\` before relying on legacy state.
+Type \`/graphify\` in Copilot Chat to build or update the knowledge graph.
 `;
 
 const AIDER_SEMANTIC_SECTION = `#### Part B - Semantic extraction (sequential extraction on Aider)
@@ -434,9 +560,10 @@ function renderAiderSkill(baseSkill: string): string {
 }
 
 function loadSkillContent(platformName: string): string {
+  platformName = canonicalPlatformName(platformName);
   const cfg = PLATFORM_CONFIG[platformName];
   if (!cfg) {
-    console.error(`error: unknown platform '${platformName}'. Choose from: ${Object.keys(PLATFORM_CONFIG).join(", ")}`);
+    console.error(`error: unknown platform '${platformName}'. Choose from: ${platformNamesForError()}`);
     process.exit(1);
   }
 
@@ -458,9 +585,10 @@ function loadSkillContent(platformName: string): string {
 }
 
 function uninstallSkill(platformName: string): void {
+  platformName = canonicalPlatformName(platformName);
   const cfg = PLATFORM_CONFIG[platformName];
   if (!cfg) {
-    console.error(`error: unknown platform '${platformName}'. Choose from: ${Object.keys(PLATFORM_CONFIG).join(", ")}`);
+    console.error(`error: unknown platform '${platformName}'. Choose from: ${platformNamesForError()}`);
     process.exit(1);
   }
 
@@ -596,6 +724,138 @@ export function cursorUninstall(projectDir: string = "."): void {
   console.log(`graphify Cursor rule removed from ${resolve(rulePath)}`);
 }
 
+export function antigravityInstall(projectDir: string = "."): void {
+  printMutationPreview(platformInstallPreview(projectDir, "antigravity"));
+  printMutationPreview(globalSkillInstallPreview("antigravity"));
+  writeGlobalSkill("antigravity");
+
+  const rulePath = join(projectDir, ANTIGRAVITY_RULE_PATH);
+  mkdirSync(dirname(rulePath), { recursive: true });
+  if (existsSync(rulePath)) {
+    console.log(`graphify Antigravity rule already exists at ${resolve(rulePath)} (no change)`);
+  } else {
+    writeFileSync(rulePath, ANTIGRAVITY_RULE, "utf-8");
+    console.log(`graphify Antigravity rule written to ${resolve(rulePath)}`);
+  }
+
+  const workflowPath = join(projectDir, ANTIGRAVITY_WORKFLOW_PATH);
+  mkdirSync(dirname(workflowPath), { recursive: true });
+  if (existsSync(workflowPath)) {
+    console.log(`graphify Antigravity workflow already exists at ${resolve(workflowPath)} (no change)`);
+  } else {
+    writeFileSync(workflowPath, ANTIGRAVITY_WORKFLOW, "utf-8");
+    console.log(`graphify Antigravity workflow written to ${resolve(workflowPath)}`);
+  }
+
+  console.log();
+  console.log("Antigravity will now check the knowledge graph before answering codebase questions.");
+  console.log("Run /graphify first to build or update the graph.");
+}
+
+export function antigravityUninstall(projectDir: string = "."): void {
+  for (const relativePath of [ANTIGRAVITY_RULE_PATH, ANTIGRAVITY_WORKFLOW_PATH]) {
+    const target = join(projectDir, relativePath);
+    if (existsSync(target)) {
+      unlinkSync(target);
+      console.log(`graphify Antigravity file removed from ${resolve(target)}`);
+    }
+  }
+  uninstallSkill("antigravity");
+}
+
+export function kiroInstall(projectDir: string = "."): void {
+  printMutationPreview(platformInstallPreview(projectDir, "kiro"));
+
+  const skillPath = join(projectDir, ".kiro", "skills", "graphify", "SKILL.md");
+  mkdirSync(dirname(skillPath), { recursive: true });
+  writeFileSync(skillPath, loadSkillContent("kiro"), "utf-8");
+  writeFileSync(join(dirname(skillPath), ".graphify_version"), VERSION, "utf-8");
+  console.log(`  .kiro/skills/graphify/SKILL.md  ->  /graphify skill`);
+
+  const steeringPath = join(projectDir, ".kiro", "steering", "graphify.md");
+  mkdirSync(dirname(steeringPath), { recursive: true });
+  if (existsSync(steeringPath) && readFileSync(steeringPath, "utf-8").includes(KIRO_STEERING_MARKER)) {
+    console.log("  .kiro/steering/graphify.md  ->  already configured");
+  } else {
+    writeFileSync(steeringPath, KIRO_STEERING, "utf-8");
+    console.log("  .kiro/steering/graphify.md  ->  always-on steering written");
+  }
+
+  console.log();
+  console.log("Kiro will now read the knowledge graph before every conversation.");
+  console.log("Use /graphify to build or update the graph.");
+}
+
+export function kiroUninstall(projectDir: string = "."): void {
+  const targets = [
+    join(projectDir, ".kiro", "skills", "graphify", "SKILL.md"),
+    join(projectDir, ".kiro", "skills", "graphify", ".graphify_version"),
+    join(projectDir, ".kiro", "steering", "graphify.md"),
+  ];
+  let removed = 0;
+  for (const target of targets) {
+    if (existsSync(target)) {
+      unlinkSync(target);
+      removed += 1;
+      console.log(`  removed ${resolve(target)}`);
+    }
+  }
+  for (const dir of [
+    join(projectDir, ".kiro", "skills", "graphify"),
+    join(projectDir, ".kiro", "skills"),
+    join(projectDir, ".kiro", "steering"),
+    join(projectDir, ".kiro"),
+  ]) {
+    try {
+      rmdirSync(dir);
+    } catch {
+      // Keep non-empty platform directories.
+    }
+  }
+  if (removed === 0) console.log("No graphify Kiro files found - nothing to do");
+}
+
+export function vscodeInstall(projectDir: string = "."): void {
+  printMutationPreview(platformInstallPreview(projectDir, "vscode-copilot-chat"));
+  printMutationPreview(globalSkillInstallPreview("vscode-copilot-chat"));
+  writeGlobalSkill("vscode-copilot-chat");
+
+  const instructionsPath = join(projectDir, ".github", "copilot-instructions.md");
+  mkdirSync(dirname(instructionsPath), { recursive: true });
+  if (existsSync(instructionsPath)) {
+    const content = readFileSync(instructionsPath, "utf-8");
+    if (content.includes(MD_MARKER)) {
+      console.log(`  .github/copilot-instructions.md  ->  already configured (no change)`);
+    } else {
+      writeFileSync(instructionsPath, content.trimEnd() + "\n\n" + VSCODE_INSTRUCTIONS_SECTION, "utf-8");
+      console.log(`  .github/copilot-instructions.md  ->  graphify section added`);
+    }
+  } else {
+    writeFileSync(instructionsPath, VSCODE_INSTRUCTIONS_SECTION, "utf-8");
+    console.log(`  .github/copilot-instructions.md  ->  created`);
+  }
+
+  console.log();
+  console.log("VS Code Copilot Chat configured. Type /graphify in the chat panel to build the graph.");
+  console.log("For GitHub Copilot CLI in a terminal, use: graphify copilot install");
+}
+
+export function vscodeUninstall(projectDir: string = "."): void {
+  uninstallSkill("vscode-copilot-chat");
+  const instructionsPath = join(projectDir, ".github", "copilot-instructions.md");
+  if (!existsSync(instructionsPath)) return;
+  const content = readFileSync(instructionsPath, "utf-8");
+  if (!content.includes(MD_MARKER)) return;
+  const cleaned = content.replace(/\n*## graphify\n[\s\S]*?(?=\n## |\s*$)/, "").trim();
+  if (cleaned) {
+    writeFileSync(instructionsPath, cleaned + "\n", "utf-8");
+    console.log(`  graphify section removed from ${resolve(instructionsPath)}`);
+  } else {
+    unlinkSync(instructionsPath);
+    console.log(`  ${resolve(instructionsPath)}  ->  deleted (was empty after removal)`);
+  }
+}
+
 function installOpenCodePlugin(projectDir: string): void {
   const opencodeDir = join(projectDir, ".opencode");
   if (existsSync(opencodeDir) && !statSync(opencodeDir).isDirectory()) {
@@ -665,11 +925,11 @@ function uninstallOpenCodePlugin(projectDir: string): void {
 // Install commands
 // ---------------------------------------------------------------------------
 
-function installSkill(platformName: string): void {
-  printMutationPreview(globalSkillInstallPreview(platformName));
+function writeGlobalSkill(platformName: string): string {
+  platformName = canonicalPlatformName(platformName);
   const cfg = PLATFORM_CONFIG[platformName];
   if (!cfg) {
-    console.error(`error: unknown platform '${platformName}'. Choose from: ${Object.keys(PLATFORM_CONFIG).join(", ")}`);
+    console.error(`error: unknown platform '${platformName}'. Choose from: ${platformNamesForError()}`);
     process.exit(1);
   }
 
@@ -695,6 +955,14 @@ function installSkill(platformName: string): void {
       console.log(`  CLAUDE.md        ->  created at ${claudeMd}`);
     }
   }
+
+  return skillDst;
+}
+
+function installSkill(platformName: string): void {
+  platformName = canonicalPlatformName(platformName);
+  printMutationPreview(globalSkillInstallPreview(platformName));
+  writeGlobalSkill(platformName);
 
   console.log();
   console.log("Done. Open your AI coding assistant and type:");
@@ -985,14 +1253,16 @@ function checkSkillVersion(skillDst: string): void {
 export function getPlatformsToCheck(argv: string[]): string[] {
   const seen = new Set<string>();
   const add = (platformName: string | undefined): void => {
-    if (!platformName || !(platformName in PLATFORM_CONFIG)) return;
-    seen.add(platformName);
+    if (!platformName) return;
+    const canonical = canonicalPlatformName(platformName);
+    if (!(canonical in PLATFORM_CONFIG)) return;
+    seen.add(canonical);
   };
 
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (!token) continue;
-    if (token in PLATFORM_CONFIG) {
+    if (token in PLATFORM_CONFIG || token in PLATFORM_ALIASES) {
       add(token);
       continue;
     }
@@ -1068,7 +1338,25 @@ export async function main(): Promise<void> {
     sub.command("uninstall").description("Remove graphify skill from ~/.copilot/skills").action(() => uninstallSkill("copilot"));
   }
 
-  for (const cmd of ["aider", "codex", "opencode", "claw", "droid", "trae", "trae-cn"]) {
+  {
+    const sub = program.command("vscode").description("VS Code Copilot Chat skill management");
+    sub.command("install").description("Configure VS Code Copilot Chat skill + instructions").action(() => vscodeInstall());
+    sub.command("uninstall").description("Remove VS Code Copilot Chat configuration").action(() => vscodeUninstall());
+  }
+
+  {
+    const sub = program.command("kiro").description("Kiro skill management");
+    sub.command("install").description("Write .kiro skill + always-on steering file").action(() => kiroInstall());
+    sub.command("uninstall").description("Remove .kiro skill + steering file").action(() => kiroUninstall());
+  }
+
+  {
+    const sub = program.command("antigravity").description("Google Antigravity skill management");
+    sub.command("install").description("Write .agent rules/workflow + global skill").action(() => antigravityInstall());
+    sub.command("uninstall").description("Remove .agent rules/workflow + global skill").action(() => antigravityUninstall());
+  }
+
+  for (const cmd of ["aider", "codex", "opencode", "claw", "droid", "trae", "trae-cn", "hermes"]) {
     const sub = program.command(cmd).description(`${cmd} skill management`);
     sub.command("install").description(
       cmd === "codex"
@@ -1076,7 +1364,10 @@ export async function main(): Promise<void> {
         : cmd === "opencode"
           ? "Write graphify section to AGENTS.md + tool.execute.before plugin"
           : "Write graphify section to AGENTS.md",
-    ).action(() => agentsInstall(".", cmd));
+    ).action(() => {
+      if (cmd === "hermes") installSkill("hermes");
+      agentsInstall(".", cmd);
+    });
     sub.command("uninstall").description(
       cmd === "codex"
         ? "Remove graphify section from AGENTS.md + PreToolUse hook"
@@ -1085,6 +1376,7 @@ export async function main(): Promise<void> {
           : "Remove graphify section from AGENTS.md",
     ).action(() => {
       agentsUninstall(".", cmd);
+      if (cmd === "hermes") uninstallSkill("hermes");
     });
   }
 
@@ -1149,6 +1441,180 @@ export async function main(): Promise<void> {
       const { watch } = await import("./watch.js");
       const debounce = Number.parseFloat(opts.debounce);
       await watch(watchPath ?? ".", Number.isFinite(debounce) ? debounce : 3);
+    });
+
+  program
+    .command("update [path]")
+    .description("One-shot code-only graph rebuild")
+    .action(async (updatePath = ".") => {
+      if (!existsSync(updatePath)) {
+        console.error(`error: path not found: ${updatePath}`);
+        process.exit(1);
+      }
+      const { rebuildCode } = await import("./watch.js");
+      console.log(`Re-extracting code files in ${updatePath} (no LLM needed)...`);
+      const ok = await rebuildCode(updatePath);
+      if (!ok) {
+        console.error("Nothing to update or rebuild failed - check output above.");
+        process.exit(1);
+      }
+      console.log("Code graph updated. For doc/paper/image changes run the graphify skill with --update.");
+    });
+
+  program
+    .command("cluster-only [path]")
+    .description("Rerun clustering/report/HTML on an existing .graphify/graph.json")
+    .action(async (clusterPath = ".") => {
+      const root = resolve(clusterPath);
+      const paths = resolveGraphifyPaths({ root });
+      if (!existsSync(paths.graph)) {
+        console.error(`error: no graph found at ${paths.graph} - run /graphify first`);
+        process.exit(1);
+      }
+
+      const G = loadGraphFromData(JSON.parse(readFileSync(paths.graph, "utf-8")));
+      const { cluster, scoreAll } = await import("./cluster.js");
+      const { godNodes, surprisingConnections, suggestQuestions } = await import("./analyze.js");
+      const { generate } = await import("./report.js");
+      const { toJson } = await import("./export.js");
+      const { safeToHtml } = await import("./html-export.js");
+
+      const communities = cluster(G);
+      const cohesion = scoreAll(G, communities);
+      const gods = godNodes(G);
+      const surprises = surprisingConnections(G, communities);
+      const labels = new Map<number, string>();
+      for (const cid of communities.keys()) labels.set(cid, `Community ${cid}`);
+      const questions = suggestQuestions(G, communities, labels);
+      const detection = {
+        files: { code: [], document: [], paper: [], image: [], video: [] },
+        total_files: 0,
+        total_words: 0,
+        needs_graph: true,
+        warning: "cluster-only mode - file stats not available",
+        skipped_sensitive: [],
+        graphifyignore_patterns: 0,
+      };
+      const report = generate(G, communities, cohesion, labels, gods, surprises, detection, { input: 0, output: 0 }, root, questions);
+      writeFileSync(paths.report, report, "utf-8");
+      toJson(G, communities, paths.graph, { communityLabels: labels });
+      safeToHtml(G, communities, paths.html, { communityLabels: labels }, {
+        onWarning: (message) => console.warn(message),
+      });
+      const analysis = {
+        communities: Object.fromEntries([...communities.entries()].map(([key, value]) => [String(key), value])),
+        cohesion: Object.fromEntries([...cohesion.entries()].map(([key, value]) => [String(key), value])),
+        gods,
+        surprises,
+        labels: Object.fromEntries([...labels.entries()].map(([key, value]) => [String(key), value])),
+        questions,
+      };
+      writeFileSync(paths.scratch.analysis, JSON.stringify(analysis, null, 2), "utf-8");
+      console.log(`Done - ${communities.size} communities. GRAPH_REPORT.md, graph.json and graph.html updated.`);
+    });
+
+  program
+    .command("path")
+    .description("Shortest path between two graph nodes")
+    .argument("<source>")
+    .argument("<target>")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .action(async (sourceLabel, targetLabel, opts) => {
+      try {
+        const G = loadCliGraph(opts.graph);
+        const source = findBestMatchingNode(G, sourceLabel);
+        const target = findBestMatchingNode(G, targetLabel);
+        if (!source) {
+          console.error(`No node matching '${sourceLabel}' found.`);
+          process.exit(1);
+        }
+        if (!target) {
+          console.error(`No node matching '${targetLabel}' found.`);
+          process.exit(1);
+        }
+        const shortestPath = await import("graphology-shortest-path/unweighted.js");
+        const path = shortestPath.bidirectional(G, source, target) ?? [];
+        if (path.length === 0) {
+          console.log(`No path found between '${sourceLabel}' and '${targetLabel}'.`);
+          return;
+        }
+        const segments: string[] = [];
+        for (let i = 0; i < path.length - 1; i += 1) {
+          const nodeId = path[i]!;
+          const nextNode = path[i + 1]!;
+          const edgeId = G.edge(nodeId, nextNode);
+          const edge = edgeId ? G.getEdgeAttributes(edgeId) : {};
+          if (i === 0) segments.push((G.getNodeAttribute(nodeId, "label") as string) ?? nodeId);
+          const label = (G.getNodeAttribute(nextNode, "label") as string) ?? nextNode;
+          const confidence = edge.confidence ? ` [${edge.confidence}]` : "";
+          segments.push(`--${edge.relation ?? ""}${confidence}--> ${label}`);
+        }
+        console.log(`Shortest path (${path.length - 1} hops):\n  ${segments.join(" ")}`);
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    });
+
+  program
+    .command("explain")
+    .description("Plain-language details for one graph node")
+    .argument("<node>")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .action((nodeLabel, opts) => {
+      try {
+        const G = loadCliGraph(opts.graph);
+        const nodeId = findBestMatchingNode(G, nodeLabel);
+        if (!nodeId) {
+          console.log(`No node matching '${nodeLabel}' found.`);
+          return;
+        }
+        const attrs = G.getNodeAttributes(nodeId);
+        console.log(`Node: ${(attrs.label as string) ?? nodeId}`);
+        console.log(`  ID:        ${nodeId}`);
+        console.log(`  Source:    ${(attrs.source_file as string) ?? ""} ${(attrs.source_location as string) ?? ""}`.trimEnd());
+        console.log(`  Type:      ${(attrs.file_type as string) ?? ""}`);
+        console.log(`  Community: ${attrs.community ?? ""}`);
+        console.log(`  Degree:    ${G.degree(nodeId)}`);
+        const neighbors: string[] = [];
+        forEachTraversalNeighbor(G, nodeId, (neighbor) => neighbors.push(neighbor));
+        if (neighbors.length > 0) {
+          console.log(`\nConnections (${neighbors.length}):`);
+          for (const neighbor of neighbors.sort((a, b) => G.degree(b) - G.degree(a)).slice(0, 20)) {
+            const edgeId = G.edge(nodeId, neighbor);
+            const edge = edgeId ? G.getEdgeAttributes(edgeId) : {};
+            const label = (G.getNodeAttribute(neighbor, "label") as string) ?? neighbor;
+            console.log(`  --> ${label} [${edge.relation ?? ""}] [${edge.confidence ?? ""}]`);
+          }
+          if (neighbors.length > 20) console.log(`  ... and ${neighbors.length - 20} more`);
+        }
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    });
+
+  program
+    .command("add")
+    .description("Fetch a URL into ./raw for the next graph update")
+    .argument("<url>")
+    .option("--dir <path>", "Directory to save fetched content", "./raw")
+    .option("--target-dir <path>", "Alias for --dir")
+    .option("--author <name>")
+    .option("--contributor <name>")
+    .action(async (url, opts) => {
+      try {
+        const { ingest } = await import("./ingest.js");
+        const outPath = await ingest(url, resolve(opts.targetDir ?? opts.dir), {
+          author: opts.author ?? null,
+          contributor: opts.contributor ?? null,
+        });
+        console.log(`Saved to ${outPath}`);
+        console.log("Run the graphify skill with --update to update the graph.");
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
     });
 
   // Query command
@@ -1357,10 +1823,10 @@ export async function main(): Promise<void> {
         const raw = JSON.parse(rf(gp, "utf-8"));
         const G = loadGraphFromData(raw);
 
-        const terms = question.toLowerCase().split(/\s+/).filter((t: string) => t.length > 2);
+        const terms = normalizeSearchText(question).split(/\s+/).filter((t: string) => t.length > 2);
         const scored: [number, string][] = [];
         G.forEachNode((nid: string, data: Record<string, unknown>) => {
-          const label = ((data.label as string) ?? "").toLowerCase();
+          const label = normalizeSearchText((data.label as string) ?? "");
           const score = terms.filter((t: string) => label.includes(t)).length;
           if (score > 0) scored.push([score, nid]);
         });

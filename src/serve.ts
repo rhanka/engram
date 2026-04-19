@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import Graph from "graphology";
 import { bidirectional } from "graphology-shortest-path/unweighted.js";
 import { basename, dirname, resolve } from "node:path";
+import pkg from "../package.json";
 import {
   forEachTraversalNeighbor,
   loadGraphFromData,
@@ -14,6 +15,7 @@ import {
 } from "./graph.js";
 import { resolveGraphInputPath } from "./paths.js";
 import { validateGraphPath, sanitizeLabel } from "./security.js";
+import { normalizeSearchText, scoreSearchText, textMatchesQuery } from "./search.js";
 import { godNodes as computeGodNodes } from "./analyze.js";
 import { buildFirstHopSummary, firstHopSummaryToText } from "./summary.js";
 import { buildReviewDelta, reviewDeltaToText } from "./review.js";
@@ -47,6 +49,10 @@ function loadGraph(graphPath: string): Graph {
   return loadGraphFromData(data);
 }
 
+function getVersion(): string {
+  return pkg.version ?? "unknown";
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -76,11 +82,9 @@ function communityName(G: Graph, cid: number | string | null | undefined): strin
 function scoreNodes(G: Graph, terms: string[]): Array<[number, string]> {
   const scored: Array<[number, string]> = [];
   G.forEachNode((nid, data) => {
-    const label = ((data.label as string) ?? "").toLowerCase();
-    const source = ((data.source_file as string) ?? "").toLowerCase();
-    const score =
-      terms.reduce((s, t) => s + (label.includes(t) ? 1 : 0), 0) +
-      terms.reduce((s, t) => s + (source.includes(t) ? 0.5 : 0), 0);
+    const label = (data.label as string) ?? "";
+    const source = (data.source_file as string) ?? "";
+    const score = scoreSearchText(label, source, terms);
     if (score > 0) scored.push([score, nid]);
   });
   scored.sort((a, b) => b[0] - a[0]);
@@ -167,12 +171,12 @@ function subgraphToText(
 }
 
 function findNode(G: Graph, label: string): string[] {
-  const term = label.toLowerCase();
+  const term = normalizeSearchText(label);
   const result: string[] = [];
   G.forEachNode((nid, d) => {
     if (
-      ((d.label as string) ?? "").toLowerCase().includes(term) ||
-      nid.toLowerCase() === term
+      textMatchesQuery((d.label as string) ?? "", term) ||
+      normalizeSearchText(nid) === term
     ) {
       result.push(nid);
     }
@@ -192,7 +196,7 @@ function toolQueryGraph(G: Graph, args: Record<string, unknown>): string {
   const terms = question
     .split(/\s+/)
     .filter((t) => t.length > 2)
-    .map((t) => t.toLowerCase());
+    .map(normalizeSearchText);
 
   const scored = scoreNodes(G, terms);
   const startNodes = scored.slice(0, 3).map(([, nid]) => nid);
@@ -209,12 +213,12 @@ function toolQueryGraph(G: Graph, args: Record<string, unknown>): string {
 }
 
 function toolGetNode(G: Graph, args: Record<string, unknown>): string {
-  const label = (args.label as string).toLowerCase();
+  const label = normalizeSearchText(args.label as string);
   const matches: Array<[string, Record<string, unknown>]> = [];
   G.forEachNode((nid, d) => {
     if (
-      ((d.label as string) ?? "").toLowerCase().includes(label) ||
-      nid.toLowerCase() === label
+      textMatchesQuery((d.label as string) ?? "", label) ||
+      normalizeSearchText(nid) === label
     ) {
       matches.push([nid, d]);
     }
@@ -429,7 +433,7 @@ export async function serve(
   const communities = communitiesFromGraph(G);
 
   const server = new Server(
-    { name: "graphify", version: "0.3.17" },
+    { name: "graphify", version: getVersion() },
     { capabilities: { tools: {} } },
   );
 

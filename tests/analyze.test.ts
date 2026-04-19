@@ -25,6 +25,7 @@ describe("godNodes", () => {
     const gods = godNodes(G, 3);
     expect(gods.length).toBeGreaterThan(0);
     expect(gods[0]!.edges).toBeGreaterThanOrEqual(gods[gods.length - 1]!.edges);
+    expect(gods[0]!.degree).toBe(gods[0]!.edges);
   });
 
   it("excludes file nodes", () => {

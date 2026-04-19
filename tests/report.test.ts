@@ -53,4 +53,31 @@ describe("generate report", () => {
     );
     expect(report).toContain("Corpus too small");
   });
+
+  it("falls back to node IDs when community node labels are missing", () => {
+    const G = new Graph({ type: "undirected" });
+    G.mergeNode("missing_label", { source_file: "a.py", file_type: "code" });
+    const report = generate(
+      G,
+      new Map([[0, ["missing_label"]]]),
+      new Map([[0, 1.0]]),
+      new Map([[0, "Core"]]),
+      [],
+      [],
+      {
+        files: { code: ["a.py"], document: [], paper: [], image: [] },
+        total_files: 1,
+        total_words: 1000,
+        needs_graph: true,
+        warning: null,
+        skipped_sensitive: [],
+        graphifyignore_patterns: 0,
+      },
+      { input: 0, output: 0 },
+      ".",
+    );
+
+    expect(report).toContain("missing_label");
+    expect(report).not.toContain("undefined");
+  });
 });
