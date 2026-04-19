@@ -8,7 +8,7 @@
 
 This repository is the maintained TypeScript port of the original Graphify project. Thanks to the original work by [Safi Shamsi](https://github.com/safishamsi/graphify) for the product direction, workflow, and initial implementation.
 
-Multimodal, with the TypeScript catch-up tracked release-by-release against upstream `v3`. Code, markdown, PDFs, Office docs, screenshots, diagrams, and other images already flow through the current TS runtime. This branch also adds local audio/video detection plus a `yt-dlp` + `ffmpeg` + `faster-whisper-ts` transcription path, and those transcripts now feed the same assistant-driven semantic pass as docs and papers. 20 languages are supported via tree-sitter AST (Python, JS, TS, Go, Rust, Java, C, C++, Ruby, C#, Kotlin, Scala, PHP, Swift, Lua, Zig, PowerShell, Elixir, Objective-C, Julia).
+Multimodal, with the TypeScript catch-up tracked release-by-release against upstream `v3`. Code, markdown, PDFs, Office docs, screenshots, diagrams, and other images flow through the current TS runtime. PDFs now go through a local preflight: text-layer PDFs are converted with `pdf-parse` and a `pdftotext` fallback when available, while scanned/low-text PDFs can be converted to Markdown + images through `mistral-ocr`. This branch also adds local audio/video detection plus a `yt-dlp` + `ffmpeg` + `faster-whisper-ts` transcription path, and generated transcripts/PDF sidecars feed the same assistant-driven semantic pass as docs and papers. 20 languages are supported via tree-sitter AST (Python, JS, TS, Go, Rust, Java, C, C++, Ruby, C#, Kotlin, Scala, PHP, Swift, Lua, Zig, PowerShell, Elixir, Objective-C, Julia).
 
 ## Branch Model
 
@@ -63,7 +63,7 @@ Same syntax as `.gitignore`. Patterns are discovered from the folder you run gra
 
 ## How it works
 
-graphify combines a deterministic structural pass with a model-backed semantic pass, with local preprocessing in between when needed. Code goes through a no-LLM AST pass that extracts classes, functions, imports, call graphs, docstrings, and rationale comments. Docs, papers, Office files, and images are normalized into text or multimodal inputs, then platform-backed subagents extract concepts, relationships, and design rationale. On this catch-up branch, audio/video files are also detected locally, normalized through `ffmpeg`, transcribed through the TypeScript runtime with `faster-whisper-ts`, and fed into the same semantic extraction path as any other document. The results are merged into a Graphology graph, clustered with Louvain community detection, and exported as interactive HTML, queryable JSON, and a plain-language audit report.
+graphify combines a deterministic structural pass with a model-backed semantic pass, with local preprocessing in between when needed. Code goes through a no-LLM AST pass that extracts classes, functions, imports, call graphs, docstrings, and rationale comments. Docs, papers, Office files, and images are normalized into text or multimodal inputs, then platform-backed subagents extract concepts, relationships, and design rationale. PDFs first pass a local preflight: if a usable text layer exists, `pdf-parse` or the local `pdftotext` CLI creates a Markdown sidecar; if the text layer is missing or too sparse, `mistral-ocr` can be called in `auto` or `always` mode to produce Markdown plus extracted images. PDF-extracted images are still semantic inputs when they carry meaning: the assistant vision model can decode them directly, or a configured delegated OCR/vision model can be used while preserving PDF provenance. On this catch-up branch, audio/video files are also detected locally, normalized through `ffmpeg`, transcribed through the TypeScript runtime with `faster-whisper-ts`, and fed into the same semantic extraction path as any other document. The results are merged into a Graphology graph, clustered with Louvain community detection, and exported as interactive HTML, queryable JSON, and a plain-language audit report.
 
 **Clustering is graph-topology-based — no embeddings.** Louvain finds communities by edge density. The semantic similarity edges that the model extracts (`semantically_similar_to`, marked INFERRED) are already in the graph, so they influence community detection directly. The graph structure is the similarity signal — no separate embedding step or vector database needed.
 
@@ -219,6 +219,7 @@ In Codex, replace the leading `/` in the examples below with `$`. Gemini CLI, Gi
 /graphify ./raw                    # run on a specific folder
 /graphify ./raw --directed         # build directed graph (preserves source->target)
 /graphify ./raw --mode deep        # more aggressive INFERRED edge extraction
+/graphify ./raw --pdf-ocr auto     # preflight PDFs; OCR scanned/low-text PDFs with mistral-ocr when needed
 /graphify ./raw --update           # re-extract only changed files, merge into existing graph
 /graphify ./raw --cluster-only     # rerun clustering on existing graph, no re-extraction
 /graphify ./raw --no-viz           # skip HTML, just produce report + JSON
@@ -297,7 +298,7 @@ Works with any mix of file types:
 | Code | `.py .ts .js .jsx .tsx .go .rs .java .c .cpp .rb .cs .kt .scala .php .swift .lua .zig .ps1 .ex .exs .m .mm .jl` | AST via tree-sitter + call-graph + docstring/comment rationale |
 | Docs | `.md .txt .rst` | Concepts + relationships + design rationale via the platform model |
 | Office | `.docx .xlsx` | Converted to markdown then extracted via the platform model |
-| Papers | `.pdf` | Citation mining + concept extraction |
+| Papers | `.pdf` | Local PDF preflight; text-layer PDFs become Markdown via `pdf-parse`/`pdftotext`; scanned/low-text PDFs can use `mistral-ocr` for Markdown + images before semantic extraction |
 | Images | `.png .jpg .webp .gif` | Multimodal vision - screenshots, diagrams, any language |
 | Audio / Video | `.mp4 .mov .webm .mkv .avi .m4v .mp3 .wav .m4a .ogg` | Detected locally; downloaded with `yt-dlp` when needed, normalized with `ffmpeg`, transcribed via `faster-whisper-ts`, then fed through the same semantic extraction path as docs |
 
@@ -306,6 +307,12 @@ Works with any mix of file types:
 The TypeScript port uses the published `faster-whisper-ts` runtime, not Python. Its default transcription settings intentionally match upstream Python Graphify: Whisper model `base`, CPU device, and `int8` compute type. Override them with `GRAPHIFY_WHISPER_MODEL`, `GRAPHIFY_WHISPER_MODEL_DIR`, `GRAPHIFY_WHISPER_MODEL_ID`, `GRAPHIFY_WHISPER_MODEL_REVISION`, `GRAPHIFY_WHISPER_DEVICE`, and `GRAPHIFY_WHISPER_COMPUTE_TYPE` when you need a different local CTranslate2 model or runtime target.
 
 URL ingestion still goes through `yt-dlp`; local audio/video decoding is handled by `faster-whisper-ts` and system `ffmpeg`. Generated transcripts are written under `.graphify/transcripts/` by default and are then treated like regular document inputs for semantic extraction.
+
+### PDF preflight and Mistral OCR
+
+PDFs are never sent to OCR blindly. `GRAPHIFY_PDF_OCR` controls the behavior: `auto` (default) runs a local `pdf-parse` preflight with `pdftotext` fallback when available, and calls `mistral-ocr` only when the PDF has too little extractable text; `off` keeps the original PDF as-is; `always` forces Mistral OCR; `dry-run` records the preflight decision without calling the API. Use `GRAPHIFY_PDF_OCR_MODEL` to override the Mistral model. Mistral OCR requires `MISTRAL_API_KEY`; if the key is missing in `auto` mode, graphify warns and leaves the source PDF in the semantic input instead of failing the run.
+
+Generated PDF sidecars are written under `.graphify/converted/pdf/` with provenance frontmatter pointing back to the original PDF. The sidecars then flow through the normal document semantic extraction path. If OCR produces image artifacts for figures, tables, diagrams, or embedded text, graphify adds those artifacts to semantic image inputs; the skills instruct the assistant to decode them with platform vision by default, or with a configured delegated OCR/vision provider, keeping the link back to the source PDF.
 
 ## What you get
 
@@ -343,11 +350,11 @@ Token reduction scales with corpus size. 6 files fits in a context window anyway
 
 ## Privacy
 
-graphify sends file contents to your AI coding assistant's underlying model API for semantic extraction of docs, papers, and images — Anthropic (Claude Code), OpenAI (Codex), Google (Gemini CLI), or whichever provider your platform uses. Code files are processed locally via tree-sitter AST — no file contents leave your machine for code. When you use audio/video transcription on this catch-up branch, that step runs through your local `yt-dlp` + `ffmpeg` + `faster-whisper-ts` toolchain. No telemetry, usage tracking, or analytics of any kind. The only network calls are to your platform's model API during extraction, using your own API key, plus any URL fetches you explicitly ask graphify to ingest.
+graphify sends file contents to your AI coding assistant's underlying model API for semantic extraction of docs, papers, and images — Anthropic (Claude Code), OpenAI (Codex), Google (Gemini CLI), or whichever provider your platform uses. Code files are processed locally via tree-sitter AST — no file contents leave your machine for code. When you use audio/video transcription on this catch-up branch, that step runs through your local `yt-dlp` + `ffmpeg` + `faster-whisper-ts` toolchain. PDF text preflight is local (`pdf-parse`, with optional `pdftotext` fallback); Mistral OCR is the only additional PDF-specific network call, and it runs only when `GRAPHIFY_PDF_OCR=auto` detects a scanned/low-text PDF or when you explicitly force OCR. No telemetry, usage tracking, or analytics of any kind. The only network calls are to your platform's model API during extraction, optional Mistral OCR when PDF OCR mode requires it, and any URL fetches you explicitly ask graphify to ingest; all use your own API keys or local credentials.
 
 ## Tech stack
 
-Graphology + Louvain (`graphology-communities-louvain`) + tree-sitter + vis-network, with `pdf-parse`, `mammoth`, `exceljs`, `turndown`, and the upstream-aligned `yt-dlp` + `ffmpeg` + `faster-whisper-ts` transcription path on this catch-up branch. Semantic extraction runs through your platform's model (Claude Code, Codex, Gemini CLI, or another supported client). No Neo4j required, and the default HTML output is fully static.
+Graphology + Louvain (`graphology-communities-louvain`) + tree-sitter + vis-network, with `pdf-parse`, optional system `pdftotext`, optional `mistral-ocr`, `mammoth`, `exceljs`, `turndown`, and the upstream-aligned `yt-dlp` + `ffmpeg` + `faster-whisper-ts` transcription path on this catch-up branch. Semantic extraction runs through your platform's model (Claude Code, Codex, Gemini CLI, or another supported client). No Neo4j required, and the default HTML output is fully static.
 
 ## Acknowledgements
 

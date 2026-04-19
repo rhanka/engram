@@ -8,6 +8,7 @@
   - [x] [spec/SPEC_GRAPHIFY.md](spec/SPEC_GRAPHIFY.md)
   - [x] [spec/SPEC_CODE_REVIEW_GRAPH_OPPORUNITY.md](spec/SPEC_CODE_REVIEW_GRAPH_OPPORUNITY.md)
   - [x] [spec/SPEC_GAPHIFY_SLDC_STUDY.md](spec/SPEC_GAPHIFY_SLDC_STUDY.md)
+  - [x] [spec/SPEC_PDF_OCR_PREPROCESSING.md](spec/SPEC_PDF_OCR_PREPROCESSING.md)
 - [x] Use this file as the execution source of truth for the implementation branch
 
 ## Guardrails
@@ -222,6 +223,25 @@
 - [x] Update tests, README files, SPEC files, and generated skills to describe the TypeScript faster-whisper path
 - [x] Validate targeted transcription tests, lint/build, full tests, and `npx graphify hook-rebuild`
 
+## Lot 14 - PDF Preflight And Mistral OCR
+
+- [x] Add [spec/SPEC_PDF_OCR_PREPROCESSING.md](spec/SPEC_PDF_OCR_PREPROCESSING.md) for the PDF preflight/OCR contract
+- [x] Add local PDF preflight based on `pdf-parse` text density, page count, and image/XObject markers
+- [x] Add `GRAPHIFY_PDF_OCR=off|auto|always|dry-run` mode handling
+- [x] Integrate optional `mistral-ocr` as the OCR provider for scanned/low-text PDFs
+- [x] Write PDF Markdown sidecars and OCR metadata under `.graphify/converted/pdf/`
+- [x] Add Mistral-extracted PDF images to semantic `files.image` so assistant vision or delegated OCR/vision can decode them
+- [x] Add generated PDF sidecars to semantic detection without changing the original detection used for reporting/manifest
+- [x] Update Codex, Claude/base, Gemini, OpenCode, Droid, and Windows skills for PDF preparation artifacts
+- [x] Update skills to make the OCR choice explicit: assistant vision path first, optional Mistral/delegated OCR when configured, and PDF-extracted image decoding with provenance
+- [x] Update README.md, README.zh-CN.md, README.ja-JP.md, and SPEC docs for PDF preflight/OCR behavior
+- [x] Add tests for preflight decisions, local PDF conversion, mocked Mistral OCR, dry-run, missing-key fallback, and unified semantic preparation
+- [x] Add `pdftotext` fallback for `pdf-parse` failures and cover it with a regression test
+- [x] Run local UAT with generated text-layer and scanned PDFs
+- [x] Run real Mistral OCR UAT with `MISTRAL_API_KEY` from local env, without logging the key
+- [x] Add GitHub Actions secret-backed real Mistral OCR integration test, gated to Node 22 and skipped when the secret is absent
+- [x] Validate `npm run lint`, `npm run build`, `npm test`, `npx graphify hook-rebuild`, and `git diff --check`
+
 ## Exit Criteria
 
 - [x] `.graphify/` is the canonical runtime state root
@@ -232,3 +252,4 @@
 - [x] commit recommendation, if present, remains advisory and branch-aware
 - [x] SPEC documents have been refactored to describe the implemented system, not the pre-implementation intent
 - [x] full `npm test` passes on the final branch state
+- [x] PDF text-layer and scanned-PDF preprocessing are explicit, tested, and optional-network by mode

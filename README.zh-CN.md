@@ -8,7 +8,7 @@
 
 这个仓库是原始 Graphify 项目的受维护 TypeScript 版本。产品方向、工作流和最初实现来自 [Safi Shamsi](https://github.com/safishamsi/graphify) 的原始项目，这里保留了同样的知识图谱与 assistant-skill 交互模型。
 
-graphify 是多模态的，而且这个 TypeScript 端口正按 upstream `v3` 的发布节奏逐版追平。当前 TS runtime 已经覆盖代码、Markdown、PDF、Office 文档、截图、图表和其他图片。本分支还补上了本地音频/视频检测，以及基于 `yt-dlp` + `ffmpeg` + `faster-whisper-ts` 的转录路径；这些 transcript 现在也会并入同一条语义抽取流水线。代码 AST 侧通过 tree-sitter 支持 20 种语言（Python、JS、TS、Go、Rust、Java、C、C++、Ruby、C#、Kotlin、Scala、PHP、Swift、Lua、Zig、PowerShell、Elixir、Objective-C、Julia）。
+graphify 是多模态的，而且这个 TypeScript 端口正按 upstream `v3` 的发布节奏逐版追平。当前 TS runtime 已经覆盖代码、Markdown、PDF、Office 文档、截图、图表和其他图片。PDF 会先走本地 preflight：有可读文本层时用 `pdf-parse` 转成 Markdown，并在可用时回退到 `pdftotext`；扫描件或低文本 PDF 可通过 `mistral-ocr` 转成 Markdown + 图片。本分支还补上了本地音频/视频检测，以及基于 `yt-dlp` + `ffmpeg` + `faster-whisper-ts` 的转录路径；这些 transcript 和 PDF sidecar 现在都会并入同一条语义抽取流水线。代码 AST 侧通过 tree-sitter 支持 20 种语言（Python、JS、TS、Go、Rust、Java、C、C++、Ruby、C#、Kotlin、Scala、PHP、Swift、Lua、Zig、PowerShell、Elixir、Objective-C、Julia）。
 
 ## 分支模型
 
@@ -49,7 +49,7 @@ $graphify .                        # Codex
 
 ## 工作原理
 
-graphify 把确定性的结构提取和模型驱动的语义提取组合在一起，中间按需做本地预处理。代码文件先走无 LLM 的 AST 流水线，提取类、函数、导入、调用图、docstring 和 rationale 注释。文档、论文、Office 文件和图片会先被规范化成文本或多模态输入，再交给平台模型驱动的子代理抽取概念、关系和设计动机。本分支还补上了本地音频/视频检测，并通过 TypeScript runtime 调用 `yt-dlp` + `ffmpeg` + `faster-whisper-ts` 做本地转录；生成出的 transcript 会和其他文档一起进入同一条语义抽取流水线。最终结果会合并到 Graphology 图里，用 Louvain 社区发现做聚类，并导出成可交互 HTML、可查询 JSON 和人类可读的审计报告。
+graphify 把确定性的结构提取和模型驱动的语义提取组合在一起，中间按需做本地预处理。代码文件先走无 LLM 的 AST 流水线，提取类、函数、导入、调用图、docstring 和 rationale 注释。文档、论文、Office 文件和图片会先被规范化成文本或多模态输入，再交给平台模型驱动的子代理抽取概念、关系和设计动机。PDF 会先经过本地 preflight；可读文本层用 `pdf-parse` 转成 Markdown，并在可用时回退到本地 `pdftotext`；扫描件或低文本 PDF 可在 `auto` 或 `always` 模式下调用 `mistral-ocr` 生成 Markdown + 图片。PDF 中抽出的图片如果承载图表、表格、示意图或嵌入文字，也会作为语义输入：默认由助手的视觉模型解读，或在配置时交给外部 OCR/视觉模型，同时保留 PDF provenance。本分支还补上了本地音频/视频检测，并通过 TypeScript runtime 调用 `yt-dlp` + `ffmpeg` + `faster-whisper-ts` 做本地转录；生成出的 transcript 会和其他文档一起进入同一条语义抽取流水线。最终结果会合并到 Graphology 图里，用 Louvain 社区发现做聚类，并导出成可交互 HTML、可查询 JSON 和人类可读的审计报告。
 
 **聚类是基于图拓扑完成的，不依赖 embeddings。** Louvain 按边密度发现社区。平台模型抽取出的语义相似边（`semantically_similar_to`，标记为 `INFERRED`）本来就存在于图中，所以会直接影响社区划分。图结构本身就是相似性信号，不需要额外的 embedding 步骤，也不需要向量数据库。
 
@@ -158,6 +158,7 @@ When the user types `/graphify`, invoke the Skill tool with `skill: "graphify"` 
 /graphify                          # 对当前目录运行
 /graphify ./raw                    # 对指定目录运行
 /graphify ./raw --mode deep        # 更激进地抽取 INFERRED 边
+/graphify ./raw --pdf-ocr auto     # PDF preflight；必要时用 mistral-ocr 处理扫描件/低文本 PDF
 /graphify ./raw --update           # 只重新提取变更文件，并合并到已有图谱
 /graphify ./raw --cluster-only     # 只重新聚类已有图谱，不重新提取
 /graphify ./raw --no-viz           # 跳过 HTML，只生成 report + JSON
@@ -223,7 +224,7 @@ graphify trae-cn uninstall
 | 代码 | `.py .ts .js .jsx .tsx .go .rs .java .c .cpp .rb .cs .kt .scala .php .swift .lua .zig .ps1 .ex .exs .m .mm .jl` | tree-sitter AST + 调用图 + docstring / 注释中的 rationale |
 | 文档 | `.md .txt .rst` | 通过当前平台模型提取概念、关系和设计动机 |
 | Office | `.docx .xlsx` | 先转换成 markdown，再交给当前平台模型做抽取 |
-| 论文 | `.pdf` | 引文挖掘 + 概念提取 |
+| 论文 | `.pdf` | 本地 PDF preflight；文本层 PDF 用 `pdf-parse`/`pdftotext` 转 Markdown；扫描件/低文本 PDF 可用 `mistral-ocr` 生成 Markdown + 图片后再抽取 |
 | 图片 | `.png .jpg .webp .gif` | 平台多模态视觉 —— 截图、图表、任意语言都可以 |
 | 音频 / 视频 | `.mp4 .mov .webm .mkv .avi .m4v .mp3 .wav .m4a .ogg` | 本地检测；需要时先用 `yt-dlp` 下载音频，再用 `ffmpeg` 规范化并通过 `faster-whisper-ts` 做本地转录，随后进入和文档相同的语义抽取路径 |
 
@@ -232,6 +233,12 @@ graphify trae-cn uninstall
 TypeScript 端口使用已发布的 `faster-whisper-ts` runtime，不调用 Python。默认转录设置刻意与 upstream Python Graphify 保持一致：Whisper 模型为 `base`、设备为 CPU、compute type 为 `int8`。如果需要不同的本地 CTranslate2 模型或 runtime target，可以通过 `GRAPHIFY_WHISPER_MODEL`、`GRAPHIFY_WHISPER_MODEL_DIR`、`GRAPHIFY_WHISPER_MODEL_ID`、`GRAPHIFY_WHISPER_MODEL_REVISION`、`GRAPHIFY_WHISPER_DEVICE` 和 `GRAPHIFY_WHISPER_COMPUTE_TYPE` 覆盖。
 
 URL ingestion 仍然通过 `yt-dlp` 完成；本地音频/视频解码由 `faster-whisper-ts` 和系统 `ffmpeg` 处理。生成的 transcript 默认写入 `.graphify/transcripts/`，之后会像普通文档一样进入语义抽取流程。
+
+### PDF preflight 与 Mistral OCR
+
+Graphify 不会盲目把 PDF 送去 OCR。`GRAPHIFY_PDF_OCR` 控制行为：`auto`（默认）先用本地 `pdf-parse` 做 preflight，并在可用时回退到 `pdftotext`，只在文本过少时调用 `mistral-ocr`；`off` 保留原 PDF；`always` 强制 Mistral OCR；`dry-run` 只记录判断，不调用 API。可以用 `GRAPHIFY_PDF_OCR_MODEL` 覆盖 Mistral 模型。Mistral OCR 需要 `MISTRAL_API_KEY`；如果 `auto` 模式下缺少 key，graphify 会警告并保留原 PDF，而不是让整次运行失败。
+
+生成的 PDF sidecar 会写入 `.graphify/converted/pdf/`，并带有指向原始 PDF 的 provenance frontmatter，然后作为普通文档进入语义抽取。如果 OCR 生成了图片工件，graphify 会把它们加入语义图片输入；skills 会要求助手用平台视觉能力解读图表、表格、示意图和嵌入文字，也可以在配置时交给外部 OCR/视觉模型，并保留原始 PDF 关联。
 
 ## 你会得到什么
 
@@ -269,11 +276,11 @@ Token 压缩效果会随着语料规模增大而更明显。6 个文件本来就
 
 ## 隐私
 
-graphify 会把文档、论文和图片的内容发送给你所用 AI 编码助手背后的模型 API 来做语义提取 —— 可能是 Anthropic（Claude Code）、OpenAI（Codex）、Google（Gemini CLI），或者你当前平台使用的其他提供方。代码文件则完全在本地通过 tree-sitter AST 处理，不会把代码内容发出去。若你启用本分支的音频/视频转录能力，这一步会通过你本机上的 `yt-dlp` + `ffmpeg` + `faster-whisper-ts` 工具链完成。项目本身没有任何遥测、使用跟踪或分析。网络请求只包括你显式要求 graphify 拉取的 URL，以及语义提取阶段调用你平台自己的模型 API，使用的也是你自己的 API key。
+graphify 会把文档、论文和图片的内容发送给你所用 AI 编码助手背后的模型 API 来做语义提取 —— 可能是 Anthropic（Claude Code）、OpenAI（Codex）、Google（Gemini CLI），或者你当前平台使用的其他提供方。代码文件则完全在本地通过 tree-sitter AST 处理，不会把代码内容发出去。若你启用本分支的音频/视频转录能力，这一步会通过你本机上的 `yt-dlp` + `ffmpeg` + `faster-whisper-ts` 工具链完成。PDF 文本 preflight 是本地执行（`pdf-parse`，可选回退到 `pdftotext`）；Mistral OCR 是唯一新增的 PDF 专用网络调用，并且只会在 `GRAPHIFY_PDF_OCR=auto` 检测到扫描件/低文本 PDF 或你显式强制 OCR 时发生。项目本身没有任何遥测、使用跟踪或分析。网络请求只包括语义提取阶段调用你平台自己的模型 API、PDF OCR 模式需要时调用可选的 Mistral OCR，以及你显式要求 graphify 拉取的 URL；这些都使用你自己的 API key 或本地凭据。
 
 ## 技术栈
 
-Graphology + Louvain（`graphology-communities-louvain`）+ tree-sitter + vis-network，再加上 `pdf-parse`、`mammoth`、`exceljs`、`turndown`，以及本分支中按 upstream 对齐的 `yt-dlp` + `ffmpeg` + `faster-whisper-ts` 转录路径。语义提取由你当前平台运行的模型完成（Claude Code、Codex、Gemini CLI 或其他已支持客户端）。默认 HTML 输出是纯静态文件，不需要 Neo4j。
+Graphology + Louvain（`graphology-communities-louvain`）+ tree-sitter + vis-network，再加上 `pdf-parse`、可选的系统 `pdftotext`、可选的 `mistral-ocr`、`mammoth`、`exceljs`、`turndown`，以及本分支中按 upstream 对齐的 `yt-dlp` + `ffmpeg` + `faster-whisper-ts` 转录路径。语义提取由你当前平台运行的模型完成（Claude Code、Codex、Gemini CLI 或其他已支持客户端）。默认 HTML 输出是纯静态文件，不需要 Neo4j。
 
 ## 致谢
 

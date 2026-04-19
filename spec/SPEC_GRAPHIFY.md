@@ -3,7 +3,7 @@
 ## Status
 
 - Product: Graphify TypeScript port
-- npm package: graphifyy@0.3.28
+- npm package: graphifyy@0.3.29
 - Maintained product branch: v3-typescript
 - Upstream alignment branch: v3, mirroring upstream Python Graphify v3
 - Runtime state root: .graphify/
@@ -34,13 +34,13 @@ Graphify supports one graph across code and non-code inputs:
 
 - code: Tree-sitter AST extraction for supported languages
 - markdown/text/reStructuredText: semantic extraction through assistant skill flow
-- PDF: paper/document extraction through assistant skill flow
+- PDF: local preflight, text-layer Markdown sidecars through pdf-parse or pdftotext fallback, and optional Mistral OCR sidecars for scanned/low-text PDFs before assistant semantic extraction
 - Office docs: .docx and .xlsx conversion to markdown sidecars before semantic extraction
 - images: multimodal assistant extraction
 - URLs: arXiv, PDF, image, general web pages, X/Twitter, YouTube audio ingestion
 - audio/video: local transcription through yt-dlp when needed, ffmpeg normalization, and faster-whisper-ts Whisper-compatible transcription
 
-Generated transcripts are treated as document inputs for semantic extraction.
+Generated transcripts and PDF Markdown sidecars are treated as document inputs for semantic extraction.
 
 ## Runtime Artifacts
 
@@ -52,7 +52,7 @@ Canonical state under .graphify/:
 - manifest.json and cost.json
 - cache/: semantic cache
 - transcripts/: downloaded/converted/transcribed media artifacts
-- converted/: converted Office/docs sidecars
+- converted/: converted Office/docs sidecars, including converted/pdf/ PDF text/OCR sidecars
 - memory/: saved graph-backed Q&A
 - wiki/: optional agent-crawlable community wiki
 - worktree.json and branch.json: lifecycle metadata
@@ -70,9 +70,9 @@ Legacy compatibility:
 ## Core Build Pipeline
 
 1. Detect corpus files and classify them by type.
-2. Convert supported Office files and prepare transcript-backed document inputs.
+2. Convert supported Office files, prepare transcript-backed document inputs, and run PDF preflight/OCR sidecar generation when configured.
 3. Extract deterministic code structure through Tree-sitter.
-4. Run semantic extraction for docs, papers, images, transcripts, and non-code materials through the assistant skill contract.
+4. Run semantic extraction for docs, papers, images, transcripts, PDF sidecars, and non-code materials through the assistant skill contract.
 5. Validate extraction JSON.
 6. Merge AST and semantic extraction.
 7. Build a Graphology graph.
@@ -82,6 +82,22 @@ Legacy compatibility:
 
 Every edge keeps provenance confidence: EXTRACTED, INFERRED, or AMBIGUOUS, with scores where available.
 
+## PDF Preflight And OCR
+
+PDF handling is normalized before semantic extraction. The preparation step reads every paper/PDF in the semantic detection copy and applies the contract in [SPEC_PDF_OCR_PREPROCESSING.md](SPEC_PDF_OCR_PREPROCESSING.md).
+
+Behavior:
+
+- `GRAPHIFY_PDF_OCR=auto` is the default. It runs local `pdf-parse` preflight with optional `pdftotext` fallback and calls `mistral-ocr` only for scanned/low-text PDFs.
+- `GRAPHIFY_PDF_OCR=off` leaves PDFs in `files.paper`.
+- `GRAPHIFY_PDF_OCR=always` forces Mistral OCR and fails clearly without `MISTRAL_API_KEY`.
+- `GRAPHIFY_PDF_OCR=dry-run` records the decision without a provider call.
+- text-layer PDFs become Markdown through `pdf-parse` or `pdftotext`, without a paid OCR call.
+- generated sidecars live under `.graphify/converted/pdf/` and are added to `files.document` in the semantic detection copy.
+- image artifacts extracted from PDFs are added to semantic `files.image` when present, so they can be decoded when they carry diagrams, tables, captions, or embedded text; skills prefer the assistant vision model and may delegate to a configured OCR/vision provider while preserving source PDF provenance.
+
+The original detection remains the manifest/report source of truth. The augmented semantic detection is only for cache lookup and assistant semantic extraction.
+
 ## Public CLI Surfaces
 
 Build and maintain:
@@ -89,6 +105,7 @@ Build and maintain:
 - graphify <path>
 - graphify <path> --directed
 - graphify <path> --mode deep
+- graphify <path> --pdf-ocr off|auto|always|dry-run
 - graphify <path> --update
 - graphify <path> --cluster-only
 - graphify <path> --watch
@@ -214,6 +231,7 @@ Intentional TypeScript divergence:
 - npm distribution and TypeScript runtime
 - .graphify local state contract
 - local faster-whisper-ts transcription instead of Python faster-whisper
+- PDF preflight plus optional Mistral OCR sidecars through the TypeScript runtime
 - broader assistant installer matrix
 - MCP tools for summary/review/recommendation
 - review-mode projections inspired by code-review-graph
