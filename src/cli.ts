@@ -114,12 +114,44 @@ const PLATFORM_CONFIG: Record<string, PlatformConfig> = {
     skill_dst: join(".trae-cn", "skills", "graphify", "SKILL.md"),
     claude_md: false,
   },
+  hermes: {
+    skill_file: "skill-claw.md",
+    skill_dst: join(".hermes", "skills", "graphify", "SKILL.md"),
+    claude_md: false,
+  },
+  kiro: {
+    skill_file: "skill-kiro.md",
+    skill_dst: join(".kiro", "skills", "graphify", "SKILL.md"),
+    claude_md: false,
+  },
+  antigravity: {
+    skill_file: "skill.md",
+    skill_dst: join(".agent", "skills", "graphify", "SKILL.md"),
+    claude_md: false,
+  },
+  "vscode-copilot-chat": {
+    skill_file: "skill-vscode.md",
+    skill_dst: join(".copilot", "skills", "graphify", "SKILL.md"),
+    claude_md: false,
+  },
   windows: {
     skill_file: "skill-windows.md",
     skill_dst: join(".claude", "skills", "graphify", "SKILL.md"),
     claude_md: true,
   },
 };
+
+const PLATFORM_ALIASES: Record<string, string> = {
+  vscode: "vscode-copilot-chat",
+};
+
+function canonicalPlatformName(platformName: string): string {
+  return PLATFORM_ALIASES[platformName] ?? platformName;
+}
+
+function platformNamesForError(): string {
+  return [...Object.keys(PLATFORM_CONFIG), ...Object.keys(PLATFORM_ALIASES)].join(", ");
+}
 
 const SETTINGS_HOOK = {
   matcher: "Glob|Grep",
@@ -221,6 +253,7 @@ function emptyPreview(platformName: string, action: "install" | "uninstall"): In
 }
 
 export function platformInstallPreview(projectDir: string = ".", platformName: string): InstallMutationPreview {
+  platformName = canonicalPlatformName(platformName);
   const preview = emptyPreview(platformName, "install");
   if (platformName === "claude" || platformName === "windows") {
     preview.writes.push(previewPath(projectDir, "CLAUDE.md"), previewPath(projectDir, ".claude/settings.json"));
@@ -234,6 +267,28 @@ export function platformInstallPreview(projectDir: string = ".", platformName: s
   }
   if (platformName === "cursor") {
     preview.writes.push(previewPath(projectDir, ".cursor/rules/graphify.mdc"));
+    return preview;
+  }
+  if (platformName === "antigravity") {
+    preview.writes.push(
+      previewPath(projectDir, ".agent/rules/graphify.md"),
+      previewPath(projectDir, ".agent/workflows/graphify.md"),
+    );
+    preview.notes.push("No platform hook equivalent; Antigravity rules are the always-on mechanism.");
+    return preview;
+  }
+  if (platformName === "kiro") {
+    preview.writes.push(
+      previewPath(projectDir, ".kiro/skills/graphify/SKILL.md"),
+      previewPath(projectDir, ".kiro/skills/graphify/.graphify_version"),
+      previewPath(projectDir, ".kiro/steering/graphify.md"),
+    );
+    preview.notes.push("Kiro steering is always-on; /graphify invokes the project skill.");
+    return preview;
+  }
+  if (platformName === "vscode-copilot-chat") {
+    preview.writes.push(previewPath(projectDir, ".github/copilot-instructions.md"));
+    preview.notes.push("VS Code Copilot Chat reads copilot-instructions.md automatically.");
     return preview;
   }
 
@@ -251,6 +306,7 @@ export function platformInstallPreview(projectDir: string = ".", platformName: s
 }
 
 export function globalSkillInstallPreview(platformName: string): InstallMutationPreview {
+  platformName = canonicalPlatformName(platformName);
   const cfg = PLATFORM_CONFIG[platformName];
   const preview = emptyPreview(platformName, "install");
   if (!cfg) return preview;
@@ -296,6 +352,48 @@ This project has a graphify knowledge graph at .graphify/.
 - If .graphify/graph.json is missing but graphify-out/graph.json exists, run \`graphify migrate-state --dry-run\` first; if tracked legacy artifacts are reported, ask before using the recommended \`git mv -f graphify-out .graphify\` and commit message
 - If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run /graphify . --update when appropriate
 - After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
+`;
+
+const ANTIGRAVITY_RULE_PATH = join(".agent", "rules", "graphify.md");
+const ANTIGRAVITY_WORKFLOW_PATH = join(".agent", "workflows", "graphify.md");
+const ANTIGRAVITY_RULE = `## graphify
+
+This project has a graphify knowledge graph at .graphify/.
+
+Rules:
+- Before answering architecture or codebase questions, read .graphify/GRAPH_REPORT.md for god nodes and community structure
+- If .graphify/wiki/index.md exists, navigate it instead of reading raw files
+- If .graphify/graph.json is missing but graphify-out/graph.json exists, run \`graphify migrate-state --dry-run\` before relying on legacy state
+- If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run /graphify . --update when appropriate
+- If the graphify MCP server is active, prefer graph tools like \`query_graph\`, \`get_node\`, and \`shortest_path\` for architecture navigation
+- After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
+`;
+
+const ANTIGRAVITY_WORKFLOW = `# Workflow: graphify
+**Command:** /graphify
+**Description:** Turn any folder of files into a navigable knowledge graph
+
+## Steps
+Follow the graphify skill installed at ~/.agent/skills/graphify/SKILL.md to run the full TypeScript-backed pipeline.
+
+If no path argument is given, use \`.\` (current directory).
+`;
+
+const KIRO_STEERING = `---
+inclusion: always
+---
+
+graphify: A knowledge graph of this project lives in \`.graphify/\`. If \`.graphify/GRAPH_REPORT.md\` exists, read it before answering architecture questions, tracing dependencies, or searching files. If \`.graphify/wiki/index.md\` exists, navigate it for deep questions. Prefer graph structure over raw grep when graph context is current.
+`;
+
+const KIRO_STEERING_MARKER = "graphify: A knowledge graph of this project";
+
+const VSCODE_INSTRUCTIONS_SECTION = `## graphify
+
+Before answering architecture or codebase questions, read \`.graphify/GRAPH_REPORT.md\` if it exists.
+If \`.graphify/wiki/index.md\` exists, navigate it for deep questions.
+If \`.graphify/graph.json\` is missing but \`graphify-out/graph.json\` exists, run \`graphify migrate-state --dry-run\` before relying on legacy state.
+Type \`/graphify\` in Copilot Chat to build or update the knowledge graph.
 `;
 
 const AIDER_SEMANTIC_SECTION = `#### Part B - Semantic extraction (sequential extraction on Aider)
@@ -435,9 +533,10 @@ function renderAiderSkill(baseSkill: string): string {
 }
 
 function loadSkillContent(platformName: string): string {
+  platformName = canonicalPlatformName(platformName);
   const cfg = PLATFORM_CONFIG[platformName];
   if (!cfg) {
-    console.error(`error: unknown platform '${platformName}'. Choose from: ${Object.keys(PLATFORM_CONFIG).join(", ")}`);
+    console.error(`error: unknown platform '${platformName}'. Choose from: ${platformNamesForError()}`);
     process.exit(1);
   }
 
@@ -459,9 +558,10 @@ function loadSkillContent(platformName: string): string {
 }
 
 function uninstallSkill(platformName: string): void {
+  platformName = canonicalPlatformName(platformName);
   const cfg = PLATFORM_CONFIG[platformName];
   if (!cfg) {
-    console.error(`error: unknown platform '${platformName}'. Choose from: ${Object.keys(PLATFORM_CONFIG).join(", ")}`);
+    console.error(`error: unknown platform '${platformName}'. Choose from: ${platformNamesForError()}`);
     process.exit(1);
   }
 
@@ -597,6 +697,138 @@ export function cursorUninstall(projectDir: string = "."): void {
   console.log(`graphify Cursor rule removed from ${resolve(rulePath)}`);
 }
 
+export function antigravityInstall(projectDir: string = "."): void {
+  printMutationPreview(platformInstallPreview(projectDir, "antigravity"));
+  printMutationPreview(globalSkillInstallPreview("antigravity"));
+  writeGlobalSkill("antigravity");
+
+  const rulePath = join(projectDir, ANTIGRAVITY_RULE_PATH);
+  mkdirSync(dirname(rulePath), { recursive: true });
+  if (existsSync(rulePath)) {
+    console.log(`graphify Antigravity rule already exists at ${resolve(rulePath)} (no change)`);
+  } else {
+    writeFileSync(rulePath, ANTIGRAVITY_RULE, "utf-8");
+    console.log(`graphify Antigravity rule written to ${resolve(rulePath)}`);
+  }
+
+  const workflowPath = join(projectDir, ANTIGRAVITY_WORKFLOW_PATH);
+  mkdirSync(dirname(workflowPath), { recursive: true });
+  if (existsSync(workflowPath)) {
+    console.log(`graphify Antigravity workflow already exists at ${resolve(workflowPath)} (no change)`);
+  } else {
+    writeFileSync(workflowPath, ANTIGRAVITY_WORKFLOW, "utf-8");
+    console.log(`graphify Antigravity workflow written to ${resolve(workflowPath)}`);
+  }
+
+  console.log();
+  console.log("Antigravity will now check the knowledge graph before answering codebase questions.");
+  console.log("Run /graphify first to build or update the graph.");
+}
+
+export function antigravityUninstall(projectDir: string = "."): void {
+  for (const relativePath of [ANTIGRAVITY_RULE_PATH, ANTIGRAVITY_WORKFLOW_PATH]) {
+    const target = join(projectDir, relativePath);
+    if (existsSync(target)) {
+      unlinkSync(target);
+      console.log(`graphify Antigravity file removed from ${resolve(target)}`);
+    }
+  }
+  uninstallSkill("antigravity");
+}
+
+export function kiroInstall(projectDir: string = "."): void {
+  printMutationPreview(platformInstallPreview(projectDir, "kiro"));
+
+  const skillPath = join(projectDir, ".kiro", "skills", "graphify", "SKILL.md");
+  mkdirSync(dirname(skillPath), { recursive: true });
+  writeFileSync(skillPath, loadSkillContent("kiro"), "utf-8");
+  writeFileSync(join(dirname(skillPath), ".graphify_version"), VERSION, "utf-8");
+  console.log(`  .kiro/skills/graphify/SKILL.md  ->  /graphify skill`);
+
+  const steeringPath = join(projectDir, ".kiro", "steering", "graphify.md");
+  mkdirSync(dirname(steeringPath), { recursive: true });
+  if (existsSync(steeringPath) && readFileSync(steeringPath, "utf-8").includes(KIRO_STEERING_MARKER)) {
+    console.log("  .kiro/steering/graphify.md  ->  already configured");
+  } else {
+    writeFileSync(steeringPath, KIRO_STEERING, "utf-8");
+    console.log("  .kiro/steering/graphify.md  ->  always-on steering written");
+  }
+
+  console.log();
+  console.log("Kiro will now read the knowledge graph before every conversation.");
+  console.log("Use /graphify to build or update the graph.");
+}
+
+export function kiroUninstall(projectDir: string = "."): void {
+  const targets = [
+    join(projectDir, ".kiro", "skills", "graphify", "SKILL.md"),
+    join(projectDir, ".kiro", "skills", "graphify", ".graphify_version"),
+    join(projectDir, ".kiro", "steering", "graphify.md"),
+  ];
+  let removed = 0;
+  for (const target of targets) {
+    if (existsSync(target)) {
+      unlinkSync(target);
+      removed += 1;
+      console.log(`  removed ${resolve(target)}`);
+    }
+  }
+  for (const dir of [
+    join(projectDir, ".kiro", "skills", "graphify"),
+    join(projectDir, ".kiro", "skills"),
+    join(projectDir, ".kiro", "steering"),
+    join(projectDir, ".kiro"),
+  ]) {
+    try {
+      rmdirSync(dir);
+    } catch {
+      // Keep non-empty platform directories.
+    }
+  }
+  if (removed === 0) console.log("No graphify Kiro files found - nothing to do");
+}
+
+export function vscodeInstall(projectDir: string = "."): void {
+  printMutationPreview(platformInstallPreview(projectDir, "vscode-copilot-chat"));
+  printMutationPreview(globalSkillInstallPreview("vscode-copilot-chat"));
+  writeGlobalSkill("vscode-copilot-chat");
+
+  const instructionsPath = join(projectDir, ".github", "copilot-instructions.md");
+  mkdirSync(dirname(instructionsPath), { recursive: true });
+  if (existsSync(instructionsPath)) {
+    const content = readFileSync(instructionsPath, "utf-8");
+    if (content.includes(MD_MARKER)) {
+      console.log(`  .github/copilot-instructions.md  ->  already configured (no change)`);
+    } else {
+      writeFileSync(instructionsPath, content.trimEnd() + "\n\n" + VSCODE_INSTRUCTIONS_SECTION, "utf-8");
+      console.log(`  .github/copilot-instructions.md  ->  graphify section added`);
+    }
+  } else {
+    writeFileSync(instructionsPath, VSCODE_INSTRUCTIONS_SECTION, "utf-8");
+    console.log(`  .github/copilot-instructions.md  ->  created`);
+  }
+
+  console.log();
+  console.log("VS Code Copilot Chat configured. Type /graphify in the chat panel to build the graph.");
+  console.log("For GitHub Copilot CLI in a terminal, use: graphify copilot install");
+}
+
+export function vscodeUninstall(projectDir: string = "."): void {
+  uninstallSkill("vscode-copilot-chat");
+  const instructionsPath = join(projectDir, ".github", "copilot-instructions.md");
+  if (!existsSync(instructionsPath)) return;
+  const content = readFileSync(instructionsPath, "utf-8");
+  if (!content.includes(MD_MARKER)) return;
+  const cleaned = content.replace(/\n*## graphify\n[\s\S]*?(?=\n## |\s*$)/, "").trim();
+  if (cleaned) {
+    writeFileSync(instructionsPath, cleaned + "\n", "utf-8");
+    console.log(`  graphify section removed from ${resolve(instructionsPath)}`);
+  } else {
+    unlinkSync(instructionsPath);
+    console.log(`  ${resolve(instructionsPath)}  ->  deleted (was empty after removal)`);
+  }
+}
+
 function installOpenCodePlugin(projectDir: string): void {
   const opencodeDir = join(projectDir, ".opencode");
   if (existsSync(opencodeDir) && !statSync(opencodeDir).isDirectory()) {
@@ -666,11 +898,11 @@ function uninstallOpenCodePlugin(projectDir: string): void {
 // Install commands
 // ---------------------------------------------------------------------------
 
-function installSkill(platformName: string): void {
-  printMutationPreview(globalSkillInstallPreview(platformName));
+function writeGlobalSkill(platformName: string): string {
+  platformName = canonicalPlatformName(platformName);
   const cfg = PLATFORM_CONFIG[platformName];
   if (!cfg) {
-    console.error(`error: unknown platform '${platformName}'. Choose from: ${Object.keys(PLATFORM_CONFIG).join(", ")}`);
+    console.error(`error: unknown platform '${platformName}'. Choose from: ${platformNamesForError()}`);
     process.exit(1);
   }
 
@@ -696,6 +928,14 @@ function installSkill(platformName: string): void {
       console.log(`  CLAUDE.md        ->  created at ${claudeMd}`);
     }
   }
+
+  return skillDst;
+}
+
+function installSkill(platformName: string): void {
+  platformName = canonicalPlatformName(platformName);
+  printMutationPreview(globalSkillInstallPreview(platformName));
+  writeGlobalSkill(platformName);
 
   console.log();
   console.log("Done. Open your AI coding assistant and type:");
@@ -986,14 +1226,16 @@ function checkSkillVersion(skillDst: string): void {
 export function getPlatformsToCheck(argv: string[]): string[] {
   const seen = new Set<string>();
   const add = (platformName: string | undefined): void => {
-    if (!platformName || !(platformName in PLATFORM_CONFIG)) return;
-    seen.add(platformName);
+    if (!platformName) return;
+    const canonical = canonicalPlatformName(platformName);
+    if (!(canonical in PLATFORM_CONFIG)) return;
+    seen.add(canonical);
   };
 
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (!token) continue;
-    if (token in PLATFORM_CONFIG) {
+    if (token in PLATFORM_CONFIG || token in PLATFORM_ALIASES) {
       add(token);
       continue;
     }
@@ -1069,7 +1311,25 @@ export async function main(): Promise<void> {
     sub.command("uninstall").description("Remove graphify skill from ~/.copilot/skills").action(() => uninstallSkill("copilot"));
   }
 
-  for (const cmd of ["aider", "codex", "opencode", "claw", "droid", "trae", "trae-cn"]) {
+  {
+    const sub = program.command("vscode").description("VS Code Copilot Chat skill management");
+    sub.command("install").description("Configure VS Code Copilot Chat skill + instructions").action(() => vscodeInstall());
+    sub.command("uninstall").description("Remove VS Code Copilot Chat configuration").action(() => vscodeUninstall());
+  }
+
+  {
+    const sub = program.command("kiro").description("Kiro skill management");
+    sub.command("install").description("Write .kiro skill + always-on steering file").action(() => kiroInstall());
+    sub.command("uninstall").description("Remove .kiro skill + steering file").action(() => kiroUninstall());
+  }
+
+  {
+    const sub = program.command("antigravity").description("Google Antigravity skill management");
+    sub.command("install").description("Write .agent rules/workflow + global skill").action(() => antigravityInstall());
+    sub.command("uninstall").description("Remove .agent rules/workflow + global skill").action(() => antigravityUninstall());
+  }
+
+  for (const cmd of ["aider", "codex", "opencode", "claw", "droid", "trae", "trae-cn", "hermes"]) {
     const sub = program.command(cmd).description(`${cmd} skill management`);
     sub.command("install").description(
       cmd === "codex"
@@ -1077,7 +1337,10 @@ export async function main(): Promise<void> {
         : cmd === "opencode"
           ? "Write graphify section to AGENTS.md + tool.execute.before plugin"
           : "Write graphify section to AGENTS.md",
-    ).action(() => agentsInstall(".", cmd));
+    ).action(() => {
+      if (cmd === "hermes") installSkill("hermes");
+      agentsInstall(".", cmd);
+    });
     sub.command("uninstall").description(
       cmd === "codex"
         ? "Remove graphify section from AGENTS.md + PreToolUse hook"
@@ -1086,6 +1349,7 @@ export async function main(): Promise<void> {
           : "Remove graphify section from AGENTS.md",
     ).action(() => {
       agentsUninstall(".", cmd);
+      if (cmd === "hermes") uninstallSkill("hermes");
     });
   }
 

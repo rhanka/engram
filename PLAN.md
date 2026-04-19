@@ -337,7 +337,7 @@ git commit -m "fix(v4-parity): add normalized report compatibility guards"
 - Modify translated READMEs if present
 - Modify: `UPSTREAM_GAP.md`
 
-- [ ] **Step 5.1: Add install-preview tests for missing platforms**
+- [x] **Step 5.1: Add install-preview tests for missing platforms**
 
 Add preview assertions for:
 
@@ -348,15 +348,15 @@ kiro
 vscode-copilot-chat
 ```
 
-- [ ] **Step 5.2: Implement platform templates**
+- [x] **Step 5.2: Implement platform templates**
 
 Add install/uninstall/preview support while keeping generated instructions free of platform-inappropriate Claude-only wording.
 
-- [ ] **Step 5.3: Refresh version stamp behavior**
+- [x] **Step 5.3: Refresh version stamp behavior**
 
 Ensure install refreshes stale `.graphify_version` files across known platform skill directories.
 
-- [ ] **Step 5.4: Verify and commit**
+- [x] **Step 5.4: Verify and commit**
 
 Run:
 
