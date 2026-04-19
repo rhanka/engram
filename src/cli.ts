@@ -18,6 +18,7 @@ import { Command } from "commander";
 import { forEachTraversalNeighbor, loadGraphFromData } from "./graph.js";
 import { safeExecGit } from "./git.js";
 import { resolveGraphInputPath, resolveGraphifyPaths } from "./paths.js";
+import { normalizeSearchText } from "./search.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -1357,10 +1358,10 @@ export async function main(): Promise<void> {
         const raw = JSON.parse(rf(gp, "utf-8"));
         const G = loadGraphFromData(raw);
 
-        const terms = question.toLowerCase().split(/\s+/).filter((t: string) => t.length > 2);
+        const terms = normalizeSearchText(question).split(/\s+/).filter((t: string) => t.length > 2);
         const scored: [number, string][] = [];
         G.forEachNode((nid: string, data: Record<string, unknown>) => {
-          const label = ((data.label as string) ?? "").toLowerCase();
+          const label = normalizeSearchText((data.label as string) ?? "");
           const score = terms.filter((t: string) => label.includes(t)).length;
           if (score > 0) scored.push([score, nid]);
         });

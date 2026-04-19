@@ -33,6 +33,7 @@ import { buildReviewAnalysis, reviewAnalysisToText, evaluateReviewAnalysis, revi
 import { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
 import { parsePdfOcrMode } from "./pdf-preflight.js";
 import { prepareSemanticDetection } from "./semantic-prepare.js";
+import { normalizeSearchText } from "./search.js";
 import type {
   DetectionResult,
   Extraction,
@@ -303,11 +304,11 @@ function updateCostFile(
 }
 
 function findBestMatchingNode(G: Graph, term: string): string | null {
-  const words = term.toLowerCase().split(/\s+/).filter(Boolean);
+  const words = normalizeSearchText(term).split(/\s+/).filter(Boolean);
   let bestNodeId: string | null = null;
   let bestScore = 0;
   G.forEachNode((nodeId, data) => {
-    const label = ((data.label as string) ?? "").toLowerCase();
+    const label = normalizeSearchText((data.label as string) ?? "");
     const score = words.filter((word) => label.includes(word)).length;
     if (score > bestScore) {
       bestScore = score;

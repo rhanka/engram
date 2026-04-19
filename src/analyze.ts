@@ -133,6 +133,7 @@ export function godNodes(G: Graph, topN: number = 10): GodNodeEntry[] {
       id: nodeId,
       label: (G.getNodeAttribute(nodeId, "label") as string) ?? nodeId,
       edges: deg,
+      degree: deg,
     });
     if (result.length >= topN) break;
   }

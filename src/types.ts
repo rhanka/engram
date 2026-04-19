@@ -82,6 +82,7 @@ export interface GodNodeEntry {
   id: string;
   label: string;
   edges: number;
+  degree?: number;
 }
 
 /** A surprising connection. */

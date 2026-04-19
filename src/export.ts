@@ -356,9 +356,11 @@ function drawHyperedges() {
         ctx.beginPath();
         const scale = network.getScale();
         const offset = network.getViewPosition();
+        const canvasWidth = canvas.clientWidth || canvas.width;
+        const canvasHeight = canvas.clientHeight || canvas.height;
         const toCanvas = (p) => ({
-            x: (p.x - offset.x) * scale + canvas.width / 2,
-            y: (p.y - offset.y) * scale + canvas.height / 2
+            x: (p.x - offset.x) * scale + canvasWidth / 2,
+            y: (p.y - offset.y) * scale + canvasHeight / 2
         });
         const pts = positions.map(toCanvas);
         // Expand hull slightly
@@ -488,11 +490,12 @@ network.on('click', params => {
 
 const searchInput = document.getElementById('search');
 const searchResults = document.getElementById('search-results');
+const normalizeSearch = value => value.normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase();
 searchInput.addEventListener('input', () => {
-  const q = searchInput.value.toLowerCase().trim();
+  const q = normalizeSearch(searchInput.value).trim();
   searchResults.innerHTML = '';
   if (!q) { searchResults.style.display = 'none'; return; }
-  const matches = RAW_NODES.filter(n => n.label.toLowerCase().includes(q)).slice(0, 20);
+  const matches = RAW_NODES.filter(n => normalizeSearch(n.label).includes(q)).slice(0, 20);
   if (!matches.length) { searchResults.style.display = 'none'; return; }
   searchResults.style.display = 'block';
   matches.forEach(n => {

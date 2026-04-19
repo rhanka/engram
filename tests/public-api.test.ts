@@ -123,6 +123,10 @@ describe("public API compatibility", () => {
     };
     expect(graphJson.graph?.community_labels).toMatchObject({ 0: "Core Services" });
     expect(graphJson.nodes.find((node) => node.id === "alpha")?.community_name).toBe("Core Services");
+
+    const graphHtml = readFileSync(join(dir, "graph.html"), "utf-8");
+    expect(graphHtml).toContain("normalizeSearch");
+    expect(graphHtml).toContain("canvas.clientWidth");
   });
 
   it("supports the object form for saveQueryResult and runBenchmark", () => {

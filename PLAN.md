@@ -292,19 +292,19 @@ git commit -m "fix(v4-parity): keep graph artifacts when html export fails"
 - Modify tests under `tests/`
 - Modify: `UPSTREAM_GAP.md`
 
-- [ ] **Step 4.1: Add diacritic search regression**
+- [x] **Step 4.1: Add diacritic search regression**
 
 Assert search/lookup behavior treats `Résumé` and `Resume` as matchable where upstream added normalized labels.
 
-- [ ] **Step 4.2: Add null-label and hyperedge export regressions**
+- [x] **Step 4.2: Add null-label and hyperedge export regressions**
 
 Assert reports and HTML/canvas export do not crash on missing labels and do not double-apply device-pixel-ratio transforms.
 
-- [ ] **Step 4.3: Decide `edges` vs `degree` compatibility**
+- [x] **Step 4.3: Decide `edges` vs `degree` compatibility**
 
 If changing `godNodes()` from `edges` to `degree` would break the TS public API, keep `edges` and add `degree` as compatibility alias.
 
-- [ ] **Step 4.4: Verify and commit**
+- [x] **Step 4.4: Verify and commit**
 
 Run:
 
