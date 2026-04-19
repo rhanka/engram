@@ -14,8 +14,8 @@
 
 - [x] PR `#4` (`Release 0.3.29 with TypeScript faster-whisper runtime`) is merged into `v3-typescript` by merge commit `83ffcb2`.
 - [x] PR `#5` (`Guard npm publish behind merged release tags`) is merged into `v3-typescript` by merge commit `359d652`.
-- [x] Current branch is `chore/upstream-v4-0.4.23-parity`, created from `origin/v3-typescript@359d652`.
-- [x] Current npm publication is `graphifyy@0.3.29`.
+- [x] Parity branch `chore/upstream-v4-0.4.23-parity` was created from `origin/v3-typescript@359d652` and merged by PR `#6`.
+- [x] Current npm publication is `graphifyy@0.4.23`.
 - [x] Upstream parity target is Python `upstream/v4` tag `v0.4.23` at `8d908c5`.
 - [x] `UPSTREAM_GAP.md` is the source of truth for version-by-version traceability.
 
@@ -541,7 +541,7 @@ Use a merge commit, not squash, if a tag will be pushed from a branch commit.
 
 Merged PR `#6` into `v3-typescript` by merge commit `404fc23`.
 
-- [ ] **Step 8.7: Tag only after merge**
+- [x] **Step 8.7: Tag only after merge**
 
 After the release PR is merged and local `v3-typescript` is updated:
 
@@ -553,6 +553,10 @@ git push origin v0.4.23
 ```
 
 The CI `release-guard` must prove the tag commit is already contained in the default branch before npm publish.
+
+Pushed tag `v0.4.23` on `v3-typescript@5a306e1`.
+GitHub Actions run `24640530280` passed `release-guard`, `publish`, and `post-publish-check`.
+`npm view graphifyy version` returned `0.4.23`.
 
 ## Exit Criteria
 
@@ -566,4 +570,4 @@ The CI `release-guard` must prove the tag commit is already contained in the def
 - [x] `npm run test:smoke` passes.
 - [x] `npx graphify hook-rebuild` passes.
 - [x] Release PR is merged before tag.
-- [ ] `v0.4.23` tag publish passes npm trusted publishing.
+- [x] `v0.4.23` tag publish passes npm trusted publishing.
