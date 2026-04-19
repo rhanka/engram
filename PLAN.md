@@ -239,7 +239,7 @@ git commit -m "fix(v4-parity): avoid Go import node collisions"
 - Modify or create: runtime/export regression tests under `tests/`
 - Modify: `UPSTREAM_GAP.md`
 
-- [ ] **Step 3.1: Add failing large-graph HTML test**
+- [x] **Step 3.1: Add failing large-graph HTML test**
 
 Create a regression where HTML export throws but `graph.json` and `GRAPH_REPORT.md` still write successfully.
 
@@ -249,7 +249,7 @@ Run:
 npx vitest run tests/pipeline.test.ts tests/serve.test.ts tests/public-api.test.ts
 ```
 
-- [ ] **Step 3.2: Wrap direct runtime `toHtml()` call sites**
+- [x] **Step 3.2: Wrap direct runtime `toHtml()` call sites**
 
 Ensure `build`, `update`, `cluster-only`, and skill-runtime paths treat HTML export as best-effort:
 
@@ -261,7 +261,7 @@ warning is emitted
 process exits successfully
 ```
 
-- [ ] **Step 3.3: Verify and commit**
+- [x] **Step 3.3: Verify and commit**
 
 Run:
 

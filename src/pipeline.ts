@@ -13,7 +13,8 @@ import { buildFromJson } from "./build.js";
 import { cluster, scoreAll } from "./cluster.js";
 import { godNodes, surprisingConnections, suggestQuestions } from "./analyze.js";
 import { generate } from "./report.js";
-import { toHtml, toJson } from "./export.js";
+import { toJson } from "./export.js";
+import { safeToHtml } from "./html-export.js";
 import { extractWithDiagnostics, type ExtractionDiagnostic } from "./extract.js";
 import { resolveGraphifyPaths } from "./paths.js";
 import { markLifecycleAnalyzed } from "./lifecycle.js";
@@ -189,17 +190,14 @@ export async function buildProject(
 
   let htmlPath: string | undefined;
   if (options?.html !== false) {
-    try {
-      htmlPath = paths.html;
-      toHtml(G, communities, htmlPath, { communityLabels: labels });
-    } catch (error) {
-      htmlPath = undefined;
+    htmlPath = safeToHtml(G, communities, paths.html, { communityLabels: labels }, {
+      onWarning: (message) => {
       warnings.push({
         code: "html_skipped",
-        message:
-          `HTML export skipped: ${error instanceof Error ? error.message : String(error)}`,
+          message,
       });
-    }
+      },
+    });
   }
 
   let wikiDir: string | undefined;

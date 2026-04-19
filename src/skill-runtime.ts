@@ -16,6 +16,7 @@ import { buildFromJson } from "./build.js";
 import { cluster, scoreAll } from "./cluster.js";
 import { detect, detectIncremental, saveManifest } from "./detect.js";
 import { toCypher, toGraphml, toHtml, toJson, toSvg, pushToNeo4j } from "./export.js";
+import { safeToHtml } from "./html-export.js";
 import { extractWithDiagnostics } from "./extract.js";
 import {
   forEachTraversalNeighbor,
@@ -613,8 +614,10 @@ async function main(): Promise<void> {
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
       writeJson(opts.analysisOut, analyzed.analysis);
       if (opts.htmlOut) {
-        toHtml(G, analyzed.communities, resolve(opts.htmlOut), {
+        safeToHtml(G, analyzed.communities, resolve(opts.htmlOut), {
           communityLabels: analyzed.labels,
+        }, {
+          onWarning: (message) => console.warn(message),
         });
       }
       saveManifest(detection.files, join(dirname(resolve(opts.graphOut)), "manifest.json"));
@@ -682,8 +685,10 @@ async function main(): Promise<void> {
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
       writeJson(opts.analysisOut, analyzed.analysis);
       if (opts.htmlOut) {
-        toHtml(mergedGraph, analyzed.communities, resolve(opts.htmlOut), {
+        safeToHtml(mergedGraph, analyzed.communities, resolve(opts.htmlOut), {
           communityLabels: analyzed.labels,
+        }, {
+          onWarning: (message) => console.warn(message),
         });
       }
       saveManifest(detection.files, join(dirname(resolve(opts.graphOut)), "manifest.json"));
@@ -776,7 +781,9 @@ async function main(): Promise<void> {
         toJson(G, communities, resolve(opts.graphOut), { communityLabels: labels });
       }
       if (opts.htmlOut) {
-        toHtml(G, communities, resolve(opts.htmlOut), { communityLabels: labels });
+        safeToHtml(G, communities, resolve(opts.htmlOut), { communityLabels: labels }, {
+          onWarning: (message) => console.warn(message),
+        });
       }
       writeJson(opts.analysis, analysis);
       console.log("Labeled artifacts updated");
