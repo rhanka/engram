@@ -10,6 +10,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      HAS_MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY != '' }}
     strategy:
       matrix:
         node-version: ["20", "22"]
@@ -30,6 +32,13 @@ jobs:
 
       - name: Run unit tests
         run: npm test
+
+      - name: Run Mistral OCR integration test
+        if: matrix.node-version == '22' && env.HAS_MISTRAL_API_KEY == 'true'
+        env:
+          GRAPHIFY_RUN_MISTRAL_OCR_UAT: "1"
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+        run: npx vitest run tests/mistral-ocr.integration.test.ts
 
       - name: Run pipeline E2E test
         run: npx vitest run tests/pipeline.test.ts
