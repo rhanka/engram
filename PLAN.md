@@ -78,7 +78,7 @@ git diff --check
 
 Expected: no output.
 
-- [ ] **Step 0.6: Commit traceability bootstrap**
+- [x] **Step 0.6: Commit traceability bootstrap**
 
 Run:
 
