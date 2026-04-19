@@ -5,7 +5,7 @@
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1859 nodes · 3602 edges · 84 communities detected
+- 1863 nodes · 3609 edges · 84 communities detected
 - Extraction: 94% EXTRACTED · 6% INFERRED · 0% AMBIGUOUS · INFERRED: 233 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
 
@@ -37,11 +37,11 @@
 
 ### Community 0 - "Community 0"
 Cohesion: 0.01
-Nodes (307): agentsInstall(), agentsUninstall(), antigravityInstall(), antigravityUninstall(), applyEntry(), average(), bfs(), bodyContent() (+299 more)
+Nodes (308): agentsInstall(), agentsUninstall(), antigravityInstall(), antigravityUninstall(), applyEntry(), average(), bfs(), bodyContent() (+300 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.01
-Nodes (305): applyEntry(), assertValid(), augmentDetectionWithPdfPreflight(), augmentDetectionWithTranscripts(), average(), bfs(), bodyContent(), build() (+297 more)
+Nodes (306): applyEntry(), assertValid(), augmentDetectionWithPdfPreflight(), augmentDetectionWithTranscripts(), average(), bfs(), bodyContent(), build() (+298 more)
 
 ### Community 2 - "Community 2"
 Cohesion: 0.01
@@ -81,11 +81,11 @@ Nodes (16): buildReviewDelta(), changedNodeIds(), compareNodes(), compareStrings
 
 ### Community 11 - "Community 11"
 Cohesion: 0.14
-Nodes (12): average(), buildBlastRadius(), buildReviewAnalysis(), communityRisk(), evaluateReviewAnalysis(), formatMetric(), impactedCommunities(), multimodalSafety() (+4 more)
+Nodes (15): bfs(), communitiesFromGraph(), communityName(), dfs(), findNode(), getVersion(), loadGraph(), scoreNodes() (+7 more)
 
 ### Community 12 - "Community 12"
 Cohesion: 0.14
-Nodes (14): bfs(), communitiesFromGraph(), communityName(), dfs(), findNode(), loadGraph(), scoreNodes(), serve() (+6 more)
+Nodes (12): average(), buildBlastRadius(), buildReviewAnalysis(), communityRisk(), evaluateReviewAnalysis(), formatMetric(), impactedCommunities(), multimodalSafety() (+4 more)
 
 ### Community 13 - "Community 13"
 Cohesion: 0.19

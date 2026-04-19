@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { once } from "node:events";
@@ -14,6 +14,7 @@ const tempDirs: string[] = [];
 const tsRoot = fileURLToPath(new URL("..", import.meta.url));
 const graphifyOutRoot = join(tsRoot, "graphify-out");
 const cliPath = join(tsRoot, "dist/cli.js");
+const packageVersion = JSON.parse(readFileSync(join(tsRoot, "package.json"), "utf-8")).version as string;
 
 function makeTempDir(): string {
   mkdirSync(graphifyOutRoot, { recursive: true });
@@ -106,6 +107,23 @@ afterEach(() => {
 });
 
 describe("MCP stdio server", () => {
+  it("announces the package version during MCP initialization", async () => {
+    const dir = makeTempDir();
+    const graphPath = writeFixtureGraph(dir);
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const serverPromise = serve(graphPath, serverTransport);
+    const client = new Client({ name: "graphify-serve-test", version: "0.0.0" });
+
+    try {
+      await client.connect(clientTransport);
+      expect(client.getServerVersion()).toEqual({ name: "graphify", version: packageVersion });
+    } finally {
+      await client.close().catch(() => undefined);
+      await clientTransport.close().catch(() => undefined);
+      await serverPromise.catch(() => undefined);
+    }
+  });
+
   it("handshakes and lists the expected tools", async () => {
     const dir = makeTempDir();
     const graphPath = writeFixtureGraph(dir);

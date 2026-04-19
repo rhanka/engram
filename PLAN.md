@@ -476,13 +476,15 @@ git commit -m "docs(v4-parity): document upstream parity and fork deltas"
 ## Lot 8 - Version Bump, Release PR, And Publication
 
 **Files:**
+- Modify: `src/serve.ts`
+- Modify: `tests/serve.test.ts`
 - Modify: `package.json`
 - Modify: `package-lock.json`
 - Modify generated skill/version files if present
 - Modify: `PLAN.md`
 - Modify: `UPSTREAM_GAP.md`
 
-- [ ] **Step 8.1: Close all active gap rows**
+- [x] **Step 8.1: Close all active gap rows**
 
 Before version bump, ensure no active v4 row remains:
 
@@ -492,7 +494,7 @@ partial
 needs-audit
 ```
 
-- [ ] **Step 8.2: Bump package version to `0.4.23`**
+- [x] **Step 8.2: Bump package version to `0.4.23`**
 
 Run:
 
@@ -500,7 +502,7 @@ Run:
 npm version 0.4.23 --no-git-tag-version
 ```
 
-- [ ] **Step 8.3: Final local verification**
+- [x] **Step 8.3: Final local verification**
 
 Run:
 
@@ -518,7 +520,7 @@ git diff --check
 Run:
 
 ```bash
-git add package.json package-lock.json PLAN.md UPSTREAM_GAP.md .graphify
+git add src/serve.ts tests/serve.test.ts package.json package-lock.json PLAN.md UPSTREAM_GAP.md .graphify
 git commit -m "release(v4-parity): prepare 0.4.23"
 ```
 

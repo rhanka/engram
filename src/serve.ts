@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import Graph from "graphology";
 import { bidirectional } from "graphology-shortest-path/unweighted.js";
 import { basename, dirname, resolve } from "node:path";
+import pkg from "../package.json";
 import {
   forEachTraversalNeighbor,
   loadGraphFromData,
@@ -46,6 +47,10 @@ function loadGraph(graphPath: string): Graph {
   }
 
   return loadGraphFromData(data);
+}
+
+function getVersion(): string {
+  return pkg.version ?? "unknown";
 }
 
 // ---------------------------------------------------------------------------
@@ -428,7 +433,7 @@ export async function serve(
   const communities = communitiesFromGraph(G);
 
   const server = new Server(
-    { name: "graphify", version: "0.3.17" },
+    { name: "graphify", version: getVersion() },
     { capabilities: { tools: {} } },
   );
 
