@@ -515,7 +515,7 @@ npx graphify hook-rebuild
 git diff --check
 ```
 
-- [ ] **Step 8.4: Commit release prep**
+- [x] **Step 8.4: Commit release prep**
 
 Run:
 
