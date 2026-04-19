@@ -21,16 +21,16 @@
 
 ## Non-Negotiable Guardrails
 
-- [ ] Do not delete or regress `.graphify/` canonical state root and `graphify-out/` migration support.
-- [ ] Do not delete or regress branch/worktree lifecycle metadata.
-- [ ] Do not delete or regress `summary`, `review-delta`, `review-analysis`, `review-eval`, or `recommend-commits`.
-- [ ] Do not replace TypeScript `faster-whisper-ts` with Python faster-whisper.
-- [ ] Do not delete or regress PDF preflight and optional `mistral-ocr`.
-- [ ] Keep npm trusted publishing guarded by merged release tags.
-- [ ] Keep fork narrative and code-review-graph-inspired additions in README/specs.
-- [ ] After every code-changing lot run targeted tests, `npm run lint`, `npm run build`, `npm test`, `npx graphify hook-rebuild`, and `git diff --check`.
-- [ ] Mark `UPSTREAM_GAP.md` rows `covered` only after tests or explicit verification prove the row.
-- [ ] Do not bump to `0.4.23` until all active v4 rows are `covered`, `n/a`, or `intentional-delta`.
+- [x] Do not delete or regress `.graphify/` canonical state root and `graphify-out/` migration support.
+- [x] Do not delete or regress branch/worktree lifecycle metadata.
+- [x] Do not delete or regress `summary`, `review-delta`, `review-analysis`, `review-eval`, or `recommend-commits`.
+- [x] Do not replace TypeScript `faster-whisper-ts` with Python faster-whisper.
+- [x] Do not delete or regress PDF preflight and optional `mistral-ocr`.
+- [x] Keep npm trusted publishing guarded by merged release tags.
+- [x] Keep fork narrative and code-review-graph-inspired additions in README/specs.
+- [x] After every code-changing lot run targeted tests, `npm run lint`, `npm run build`, `npm test`, `npx graphify hook-rebuild`, and `git diff --check`.
+- [x] Mark `UPSTREAM_GAP.md` rows `covered` only after tests or explicit verification prove the row.
+- [x] Do not bump to `0.4.23` until all active v4 rows are `covered`, `n/a`, or `intentional-delta`.
 
 ## Lot 0 - Traceability Bootstrap
 
@@ -535,9 +535,11 @@ gh pr create --repo rhanka/graphify --base v3-typescript --head chore/upstream-v
 
 Opened PR `#6`: `https://github.com/rhanka/graphify/pull/6`.
 
-- [ ] **Step 8.6: Merge PR before tagging**
+- [x] **Step 8.6: Merge PR before tagging**
 
 Use a merge commit, not squash, if a tag will be pushed from a branch commit.
+
+Merged PR `#6` into `v3-typescript` by merge commit `404fc23`.
 
 - [ ] **Step 8.7: Tag only after merge**
 
@@ -554,14 +556,14 @@ The CI `release-guard` must prove the tag commit is already contained in the def
 
 ## Exit Criteria
 
-- [ ] PR `#4` and PR `#5` are merged.
-- [ ] `UPSTREAM_GAP.md` has closed traceability from upstream Python `v0.3.18` through `v0.4.23`.
-- [ ] All active v4 rows are `covered`, `n/a`, or `intentional-delta`.
-- [ ] All non-negotiable TypeScript deltas still have tests or explicit final verification.
-- [ ] `npm run lint` passes.
-- [ ] `npm run build` passes.
-- [ ] `npm test` passes.
-- [ ] `npm run test:smoke` passes.
-- [ ] `npx graphify hook-rebuild` passes.
-- [ ] Release PR is merged before tag.
+- [x] PR `#4` and PR `#5` are merged.
+- [x] `UPSTREAM_GAP.md` has closed traceability from upstream Python `v0.3.18` through `v0.4.23`.
+- [x] All active v4 rows are `covered`, `n/a`, or `intentional-delta`.
+- [x] All non-negotiable TypeScript deltas still have tests or explicit final verification.
+- [x] `npm run lint` passes.
+- [x] `npm run build` passes.
+- [x] `npm test` passes.
+- [x] `npm run test:smoke` passes.
+- [x] `npx graphify hook-rebuild` passes.
+- [x] Release PR is merged before tag.
 - [ ] `v0.4.23` tag publish passes npm trusted publishing.
