@@ -439,15 +439,15 @@ git commit -m "test(v4-parity): lock runtime command parity"
 - Modify: `UPSTREAM_GAP.md`
 - Modify: `PLAN.md`
 
-- [ ] **Step 7.1: Refresh README without disrupting fork narrative**
+- [x] **Step 7.1: Refresh README without disrupting fork narrative**
 
 Document imported upstream parity features, retained TS deltas, npm install flow, and release-tag safety.
 
-- [ ] **Step 7.2: Refresh translations**
+- [x] **Step 7.2: Refresh translations**
 
 Apply equivalent high-level changes to translated READMEs while preserving localized structure.
 
-- [ ] **Step 7.3: Refresh specs**
+- [x] **Step 7.3: Refresh specs**
 
 Update specs to separate:
 
@@ -458,7 +458,7 @@ code-review-graph-inspired additions
 release/publishing contract
 ```
 
-- [ ] **Step 7.4: Verify and commit**
+- [x] **Step 7.4: Verify and commit**
 
 Run:
 

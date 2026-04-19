@@ -7,6 +7,7 @@ This document records what was adopted, adapted, rejected, and deferred from the
 - Baseline product: Graphify TypeScript on v3-typescript
 - Comparison target: code-review-graph clone
 - Outcome: selected review ideas were incorporated without turning Graphify into a code-review-only product
+- Upstream alignment: review additions are TypeScript product deltas and are preserved while the runtime catches up to upstream Python Graphify v0.4.23
 
 ## Product Boundary
 
@@ -276,6 +277,16 @@ Public API:
 - buildReviewAnalysis
 - evaluateReviewAnalysis
 - buildCommitRecommendation
+
+## README And Fork Presentation Contract
+
+The README should present code-review-graph ideas as additive review workflows, not as a second product lineage equal to upstream Graphify. The durable framing is:
+
+- Original Graphify supplies the core folder-to-knowledge-graph workflow, assistant skill loop, graph/report/html artifacts, provenance, and multimodal corpus model.
+- The TypeScript port supplies npm distribution, .graphify state, TypeScript local preprocessing, multi-assistant installers, MCP tools, lifecycle metadata, and trusted npm publishing.
+- code-review-graph supplies review-oriented vocabulary and projections: first-hop summary, review-delta, review-analysis, review-eval, install previews, and advisory commit grouping.
+
+This keeps future upstream realignments simpler: upstream parity remains tracked in UPSTREAM_GAP.md, while review additions remain clearly marked as TypeScript product deltas.
 
 ## Residual Risks
 

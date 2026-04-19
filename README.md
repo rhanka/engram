@@ -4,23 +4,24 @@
 
 [![TypeScript CI](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=v3-typescript)](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml)
 
-**An AI coding assistant skill.** Type `/graphify` in Claude Code, Gemini CLI, GitHub Copilot CLI, Aider, OpenCode, OpenClaw, Factory Droid, or Trae, or `$graphify` in Codex - it reads your files, builds a knowledge graph, and gives you back structure you didn't know was there. Understand a codebase faster. Find the "why" behind architectural decisions.
+**An AI coding assistant skill.** Type `/graphify` in Claude Code, Gemini CLI, VS Code Copilot Chat, GitHub Copilot CLI, Aider, OpenCode, OpenClaw, Factory Droid, Trae, Kiro, or Google Antigravity, or `$graphify` in Codex - it reads your files, builds a knowledge graph, and gives you back structure you didn't know was there. Understand a codebase faster. Find the "why" behind architectural decisions.
 
 This repository is the maintained TypeScript port of the original Graphify project. Thanks to the original work by [Safi Shamsi](https://github.com/safishamsi/graphify) for the product direction, workflow, and initial implementation.
 
-Multimodal, with the TypeScript catch-up tracked release-by-release against upstream `v3`. Code, markdown, PDFs, Office docs, screenshots, diagrams, and other images flow through the current TS runtime. PDFs now go through a local preflight: text-layer PDFs are converted with `pdf-parse` and a `pdftotext` fallback when available, while scanned/low-text PDFs can be converted to Markdown + images through `mistral-ocr`. This branch also adds local audio/video detection plus a `yt-dlp` + `ffmpeg` + `faster-whisper-ts` transcription path, and generated transcripts/PDF sidecars feed the same assistant-driven semantic pass as docs and papers. 20 languages are supported via tree-sitter AST (Python, JS, TS, Go, Rust, Java, C, C++, Ruby, C#, Kotlin, Scala, PHP, Swift, Lua, Zig, PowerShell, Elixir, Objective-C, Julia).
+Multimodal, with the TypeScript port tracked release-by-release against upstream Python Graphify `v4` and targeted at `v0.4.23` parity. Code, Markdown, MDX, HTML, PDFs, Office docs, screenshots, diagrams, and other images flow through the current TS runtime. PDFs go through a local preflight: text-layer PDFs are converted with `pdf-parse` and a `pdftotext` fallback when available, while scanned/low-text PDFs can be converted to Markdown + images through `mistral-ocr`. Local audio/video detection uses `yt-dlp` + `ffmpeg` + `faster-whisper-ts`, and generated transcripts/PDF sidecars feed the same assistant-driven semantic pass as docs and papers. 20 languages are supported via tree-sitter AST (Python, JS, TS, Go, Rust, Java, C, C++, Ruby, C#, Kotlin, Scala, PHP, Swift, Lua, Zig, PowerShell, Elixir, Objective-C, Julia), with upstream-aligned fallback support for Vue, Svelte, Blade, Dart, Verilog/SystemVerilog, MJS, and EJS.
 
 ## Branch Model
 
 - `v3-typescript` is the maintained TypeScript product branch and the default branch for this repository.
 - `v3` is kept as an upstream mirror / alignment branch for the original Python Graphify lineage.
-- Catch-up work is tracked version-by-version so parity gaps stay explicit instead of being hidden in the fork.
+- Current catch-up work tracks upstream Python Graphify `v4` through `v0.4.23`; parity gaps stay explicit instead of being hidden in the fork.
+- npm publication is guarded by GitHub Actions trusted publishing. Release tags are only valid when the tagged commit is already contained in the default branch and the tag version matches `package.json`.
 
 ## Lineage And Alignment
 
 | Source | What this repo keeps or adapts | Alignment contract |
 |---|---|---|
-| Original Graphify by [Safi Shamsi](https://github.com/safishamsi/graphify) | Core product idea: folder -> knowledge graph, assistant skill workflow, graph/report/html outputs, provenance labels, community detection, and multimodal corpus workflow. | `v3` mirrors upstream Python Graphify; catch-up work is tracked version-by-version. |
+| Original Graphify by [Safi Shamsi](https://github.com/safishamsi/graphify) | Core product idea: folder -> knowledge graph, assistant skill workflow, graph/report/html outputs, provenance labels, community detection, and multimodal corpus workflow. | `v3` mirrors upstream Python Graphify; `UPSTREAM_GAP.md` tracks `v4` parity through `v0.4.23`. |
 | This TypeScript port | npm package, TypeScript runtime at repo root, `.graphify/` state, multi-assistant installers, MCP surfaces, git/worktree lifecycle, and local audio/video transcription through the TS toolchain. | `v3-typescript` is the maintained default branch; TS-specific behavior is documented as deliberate divergence, not upstream parity. |
 | `code-review-graph` reference | Review-oriented graph projections: first-hop summary, review delta, review analysis, review evaluation, install previews, and advisory commit grouping vocabulary. | Adopted as additive review surfaces over Graphify's graph; Graphify does not become review-only, does not adopt SQLite/embeddings as default, and keeps multimodal support. |
 
@@ -28,7 +29,7 @@ Multimodal, with the TypeScript catch-up tracked release-by-release against upst
 
 ```bash
 $graphify .                        # Codex
-/graphify .                        # Claude Code / Gemini CLI / Copilot CLI / Aider / OpenCode / OpenClaw / Droid / Trae
+/graphify .                        # Claude Code / Gemini CLI / Copilot / Aider / OpenCode / OpenClaw / Droid / Trae / Kiro / Antigravity
 ```
 
 In Codex, `$graphify` is a skill trigger, not a Bash subcommand like `graphify .`. A successful TypeScript-backed Codex run should leave `.graphify/.graphify_runtime.json` with `runtime: "typescript"`.
@@ -63,7 +64,7 @@ Same syntax as `.gitignore`. Patterns are discovered from the folder you run gra
 
 ## How it works
 
-graphify combines a deterministic structural pass with a model-backed semantic pass, with local preprocessing in between when needed. Code goes through a no-LLM AST pass that extracts classes, functions, imports, call graphs, docstrings, and rationale comments. Docs, papers, Office files, and images are normalized into text or multimodal inputs, then platform-backed subagents extract concepts, relationships, and design rationale. PDFs first pass a local preflight: if a usable text layer exists, `pdf-parse` or the local `pdftotext` CLI creates a Markdown sidecar; if the text layer is missing or too sparse, `mistral-ocr` can be called in `auto` or `always` mode to produce Markdown plus extracted images. PDF-extracted images are still semantic inputs when they carry meaning: the assistant vision model can decode them directly, or a configured delegated OCR/vision model can be used while preserving PDF provenance. On this catch-up branch, audio/video files are also detected locally, normalized through `ffmpeg`, transcribed through the TypeScript runtime with `faster-whisper-ts`, and fed into the same semantic extraction path as any other document. The results are merged into a Graphology graph, clustered with Louvain community detection, and exported as interactive HTML, queryable JSON, and a plain-language audit report.
+graphify combines a deterministic structural pass with a model-backed semantic pass, with local preprocessing in between when needed. Code goes through a no-LLM AST pass that extracts classes, functions, imports, call graphs, docstrings, and rationale comments. Docs, papers, Office files, and images are normalized into text or multimodal inputs, then platform-backed subagents extract concepts, relationships, and design rationale. PDFs first pass a local preflight: if a usable text layer exists, `pdf-parse` or the local `pdftotext` CLI creates a Markdown sidecar; if the text layer is missing or too sparse, `mistral-ocr` can be called in `auto` or `always` mode to produce Markdown plus extracted images. PDF-extracted images are still semantic inputs when they carry meaning: the assistant vision model can decode them directly, or a configured delegated OCR/vision model can be used while preserving PDF provenance. Audio/video files are also detected locally, normalized through `ffmpeg`, transcribed through the TypeScript runtime with `faster-whisper-ts`, and fed into the same semantic extraction path as any other document. The results are merged into a Graphology graph, clustered with Louvain community detection, and exported as interactive HTML, queryable JSON, and a plain-language audit report.
 
 **Clustering is graph-topology-based — no embeddings.** Louvain finds communities by edge density. The semantic similarity edges that the model extracts (`semantically_similar_to`, marked INFERRED) are already in the graph, so they influence community detection directly. The graph structure is the similarity signal — no separate embedding step or vector database needed.
 
@@ -71,15 +72,16 @@ Every relationship is tagged `EXTRACTED` (found directly in source), `INFERRED` 
 
 ## Install
 
-**Requires:** Node.js 20+ and one of: [Claude Code](https://claude.ai/code), [Codex](https://openai.com/codex), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli), [Aider](https://aider.chat), [OpenCode](https://opencode.ai), [OpenClaw](https://openclaw.ai), [Factory Droid](https://factory.ai), [Trae](https://trae.com), or [Cursor](https://cursor.com)
+**Requires:** Node.js 20+ and one of: [Claude Code](https://claude.ai/code), [Codex](https://openai.com/codex), [Gemini CLI](https://github.com/google-gemini/gemini-cli), VS Code Copilot Chat, [GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli), [Aider](https://aider.chat), [OpenCode](https://opencode.ai), [OpenClaw](https://openclaw.ai), [Factory Droid](https://factory.ai), [Trae](https://trae.com), [Cursor](https://cursor.com), Hermes, Kiro, or Google Antigravity.
 
 ```bash
 npm install -g graphifyy
 graphify install
-Install commands now print a mutation preview before writing files, including the exact assistant instruction files and hook/MCP config they will touch.
 ```
 
 > The npm package is temporarily named `graphifyy` while the `graphify` name is being reclaimed. The CLI and skill command are still `graphify`.
+
+Install commands print a mutation preview before writing files, including the exact assistant instruction files and hook/MCP/plugin config they will touch.
 
 ### Platform support
 
@@ -90,20 +92,25 @@ Install commands now print a mutation preview before writing files, including th
 | Codex | `graphify install --platform codex` |
 | Gemini CLI | `graphify install --platform gemini` |
 | GitHub Copilot CLI | `graphify install --platform copilot` |
+| VS Code Copilot Chat | `graphify install --platform vscode` |
 | Aider | `graphify install --platform aider` |
 | OpenCode | `graphify install --platform opencode` |
 | OpenClaw | `graphify install --platform claw` |
 | Factory Droid | `graphify install --platform droid` |
 | Trae | `graphify install --platform trae` |
 | Trae CN | `graphify install --platform trae-cn` |
+| Cursor | `graphify install --platform cursor` |
+| Hermes | `graphify install --platform hermes` |
+| Kiro | `graphify install --platform kiro` |
+| Google Antigravity | `graphify install --platform antigravity` |
 
-Codex users also need `multi_agent = true` under `[features]` in `~/.codex/config.toml` for parallel extraction. Gemini CLI exposes `/graphify` through a custom command installed into `~/.gemini/commands/graphify.toml`, and the project install writes `.gemini/settings.json` so Gemini can use `graphify serve` as an MCP server. GitHub Copilot CLI installs a global `~/.copilot/skills/graphify/SKILL.md`. Aider uses a global `~/.aider/graphify/SKILL.md`, but semantic extraction stays sequential there because multi-agent dispatch is still early on that platform. OpenCode installs a project-local `tool.execute.before` plugin in `.opencode/plugins/graphify.js` and registers it in `opencode.json`, so OpenCode gets the same graph reminder before bash tool calls. Factory Droid uses the `Task` tool for parallel subagent dispatch. OpenClaw uses sequential extraction (parallel agent support is still early on that platform). Trae uses the Agent tool for parallel subagent dispatch and does **not** support PreToolUse hooks — AGENTS.md is the always-on mechanism.
+Codex users also need `multi_agent = true` under `[features]` in `~/.codex/config.toml` for parallel extraction. Gemini CLI exposes `/graphify` through a custom command installed into `~/.gemini/commands/graphify.toml`, and the project install writes `.gemini/settings.json` so Gemini can use `graphify serve` as an MCP server. GitHub Copilot CLI installs a global `~/.copilot/skills/graphify/SKILL.md`; VS Code Copilot Chat installs the same global skill plus project `.github/copilot-instructions.md`. Aider uses a global `~/.aider/graphify/SKILL.md`, but semantic extraction stays sequential there because multi-agent dispatch is still early on that platform. OpenCode installs a project-local `tool.execute.before` plugin in `.opencode/plugins/graphify.js` and registers it in `opencode.json`, so OpenCode gets the same graph reminder before bash tool calls. Factory Droid uses the `Task` tool for parallel subagent dispatch. OpenClaw and Hermes use sequential extraction. Kiro writes a project `.kiro/skills/graphify/SKILL.md` plus always-on `.kiro/steering/graphify.md`. Google Antigravity writes `.agent/rules/graphify.md`, `.agent/workflows/graphify.md`, and a global `~/.agent/skills/graphify/SKILL.md`. Trae uses the Agent tool for parallel subagent dispatch and does **not** support PreToolUse hooks — AGENTS.md is the always-on mechanism.
 
 Then open your AI coding assistant and invoke the skill:
 
 ```bash
 $graphify .                        # Codex
-/graphify .                        # Claude Code / Gemini CLI / Copilot CLI / Aider / OpenCode / OpenClaw / Droid / Trae
+/graphify .                        # Claude Code / Gemini CLI / Copilot / Aider / OpenCode / OpenClaw / Droid / Trae / Kiro / Antigravity
 ```
 
 ### Make your assistant always use the graph (recommended)
@@ -116,6 +123,7 @@ After building a graph, run this once in your project:
 | Codex | `graphify codex install` |
 | Gemini CLI | `graphify gemini install` |
 | GitHub Copilot CLI | `graphify copilot install` |
+| VS Code Copilot Chat | `graphify vscode install` |
 | Aider | `graphify aider install` |
 | OpenCode | `graphify opencode install` |
 | OpenClaw | `graphify claw install` |
@@ -123,6 +131,9 @@ After building a graph, run this once in your project:
 | Trae | `graphify trae install` |
 | Trae CN | `graphify trae-cn install` |
 | Cursor | `graphify cursor install` |
+| Hermes | `graphify hermes install` |
+| Kiro | `graphify kiro install` |
+| Google Antigravity | `graphify antigravity install` |
 
 **Claude Code** does two things: writes a `CLAUDE.md` section telling Claude to read `.graphify/GRAPH_REPORT.md` before answering architecture questions, and installs a **PreToolUse hook** (`settings.json`) that fires before every Glob and Grep call. If a knowledge graph exists, Claude sees: _"graphify: Knowledge graph exists. Read GRAPH_REPORT.md for god nodes and community structure before searching raw files."_ — so Claude navigates via the graph instead of grepping through every file.
 
@@ -132,11 +143,19 @@ After building a graph, run this once in your project:
 
 **GitHub Copilot CLI** installs the global `graphify` skill in `~/.copilot/skills/graphify/SKILL.md`. There is no separate project-scoped hook in this port, so `/graphify` is the explicit entrypoint.
 
+**VS Code Copilot Chat** installs the global `graphify` skill and writes `.github/copilot-instructions.md`, so Copilot Chat sees the graph rules automatically in the repository and `/graphify` remains the explicit entrypoint.
+
 **Aider** writes `AGENTS.md` in your project root and relies on the installed global skill in `~/.aider/graphify/SKILL.md`. Semantic extraction is sequential there, so expect it to be slower than Codex/OpenCode on large doc-heavy corpora.
 
 **OpenCode** writes to `AGENTS.md` and installs a project-local `tool.execute.before` plugin in `.opencode/plugins/graphify.js`, registered via `opencode.json`, so bash tool calls get the same graph reminder before raw-file traversal.
 
 **Cursor** writes `.cursor/rules/graphify.mdc` with `alwaysApply: true`, so Cursor always sees the graph context before it starts crawling raw files.
+
+**Kiro** writes `.kiro/skills/graphify/SKILL.md`, a `.graphify_version` marker, and `.kiro/steering/graphify.md` with `inclusion: always`, so graph context is present before conversations.
+
+**Google Antigravity** writes `.agent/rules/graphify.md`, `.agent/workflows/graphify.md`, and a global `~/.agent/skills/graphify/SKILL.md`; the rules/workflow files are the always-on mechanism.
+
+**Hermes** installs a global `~/.hermes/skills/graphify/SKILL.md` and uses the same explicit `/graphify` skill contract.
 
 **OpenClaw, Factory Droid, Trae** write the same rules to `AGENTS.md` in your project root. These platforms don't support PreToolUse hooks, so AGENTS.md is the always-on mechanism.
 
@@ -267,17 +286,28 @@ graphify gemini install            # GEMINI.md + .gemini/settings.json (Gemini C
 graphify gemini uninstall
 graphify copilot install           # ~/.copilot/skills/graphify/SKILL.md (GitHub Copilot CLI)
 graphify copilot uninstall
+graphify vscode install            # ~/.copilot/skills/graphify/SKILL.md + .github/copilot-instructions.md (VS Code Copilot Chat)
+graphify vscode uninstall
 graphify aider install             # AGENTS.md (Aider)
 graphify aider uninstall
 graphify cursor install            # .cursor/rules/graphify.mdc (Cursor)
 graphify cursor uninstall
 graphify opencode install          # AGENTS.md + opencode.json plugin (OpenCode)
+graphify opencode uninstall
 graphify claw install              # AGENTS.md (OpenClaw)
+graphify claw uninstall
 graphify droid install             # AGENTS.md (Factory Droid)
+graphify droid uninstall
 graphify trae install              # AGENTS.md (Trae)
 graphify trae uninstall
 graphify trae-cn install           # AGENTS.md (Trae CN)
 graphify trae-cn uninstall
+graphify hermes install            # ~/.hermes/skills/graphify/SKILL.md (Hermes)
+graphify hermes uninstall
+graphify kiro install              # .kiro/skills/graphify/SKILL.md + .kiro/steering/graphify.md (Kiro)
+graphify kiro uninstall
+graphify antigravity install       # .agent/rules + .agent/workflows + ~/.agent/skills (Google Antigravity)
+graphify antigravity uninstall
 
 # query the graph directly from the terminal (no AI assistant needed)
 graphify query "what connects attention to the optimizer?"
@@ -295,8 +325,8 @@ Works with any mix of file types:
 
 | Type | Extensions | Extraction |
 |------|-----------|------------|
-| Code | `.py .ts .js .jsx .tsx .go .rs .java .c .cpp .rb .cs .kt .scala .php .swift .lua .zig .ps1 .ex .exs .m .mm .jl` | AST via tree-sitter + call-graph + docstring/comment rationale |
-| Docs | `.md .txt .rst` | Concepts + relationships + design rationale via the platform model |
+| Code | `.py .ts .js .jsx .tsx .mjs .vue .svelte .ejs .go .rs .java .c .cpp .rb .cs .kt .scala .php .blade.php .swift .lua .zig .ps1 .ex .exs .m .mm .jl .dart .v .sv` | AST via tree-sitter when available, plus fallback extraction for upstream v4 surface languages, call-graph, and docstring/comment rationale |
+| Docs | `.md .mdx .txt .rst .html` | Concepts + relationships + design rationale via the platform model |
 | Office | `.docx .xlsx` | Converted to markdown then extracted via the platform model |
 | Papers | `.pdf` | Local PDF preflight; text-layer PDFs become Markdown via `pdf-parse`/`pdftotext`; scanned/low-text PDFs can use `mistral-ocr` for Markdown + images before semantic extraction |
 | Images | `.png .jpg .webp .gif` | Multimodal vision - screenshots, diagrams, any language |
@@ -350,11 +380,11 @@ Token reduction scales with corpus size. 6 files fits in a context window anyway
 
 ## Privacy
 
-graphify sends file contents to your AI coding assistant's underlying model API for semantic extraction of docs, papers, and images — Anthropic (Claude Code), OpenAI (Codex), Google (Gemini CLI), or whichever provider your platform uses. Code files are processed locally via tree-sitter AST — no file contents leave your machine for code. When you use audio/video transcription on this catch-up branch, that step runs through your local `yt-dlp` + `ffmpeg` + `faster-whisper-ts` toolchain. PDF text preflight is local (`pdf-parse`, with optional `pdftotext` fallback); Mistral OCR is the only additional PDF-specific network call, and it runs only when `GRAPHIFY_PDF_OCR=auto` detects a scanned/low-text PDF or when you explicitly force OCR. No telemetry, usage tracking, or analytics of any kind. The only network calls are to your platform's model API during extraction, optional Mistral OCR when PDF OCR mode requires it, and any URL fetches you explicitly ask graphify to ingest; all use your own API keys or local credentials.
+graphify sends file contents to your AI coding assistant's underlying model API for semantic extraction of docs, papers, and images — Anthropic (Claude Code), OpenAI (Codex), Google (Gemini CLI), or whichever provider your platform uses. Code files are processed locally via tree-sitter AST or fallback extractors — no file contents leave your machine for code. Audio/video transcription runs through your local `yt-dlp` + `ffmpeg` + `faster-whisper-ts` toolchain. PDF text preflight is local (`pdf-parse`, with optional `pdftotext` fallback); Mistral OCR is the only additional PDF-specific network call, and it runs only when `GRAPHIFY_PDF_OCR=auto` detects a scanned/low-text PDF or when you explicitly force OCR. No telemetry, usage tracking, or analytics of any kind. The only network calls are to your platform's model API during extraction, optional Mistral OCR when PDF OCR mode requires it, and any URL fetches you explicitly ask graphify to ingest; all use your own API keys or local credentials.
 
 ## Tech stack
 
-Graphology + Louvain (`graphology-communities-louvain`) + tree-sitter + vis-network, with `pdf-parse`, optional system `pdftotext`, optional `mistral-ocr`, `mammoth`, `exceljs`, `turndown`, and the upstream-aligned `yt-dlp` + `ffmpeg` + `faster-whisper-ts` transcription path on this catch-up branch. Semantic extraction runs through your platform's model (Claude Code, Codex, Gemini CLI, or another supported client). No Neo4j required, and the default HTML output is fully static.
+Graphology + Louvain (`graphology-communities-louvain`) + tree-sitter + vis-network, with regex-backed language fallbacks, `pdf-parse`, optional system `pdftotext`, optional `mistral-ocr`, `mammoth`, `exceljs`, `turndown`, and the upstream-aligned `yt-dlp` + `ffmpeg` + `faster-whisper-ts` transcription path. Semantic extraction runs through your platform's model (Claude Code, Codex, Gemini CLI, or another supported client). No Neo4j required, and the default HTML output is fully static.
 
 ## Acknowledgements
 

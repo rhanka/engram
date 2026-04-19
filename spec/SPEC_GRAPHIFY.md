@@ -3,9 +3,9 @@
 ## Status
 
 - Product: Graphify TypeScript port
-- npm package: graphifyy@0.3.29
+- Target npm package: graphifyy@0.4.23
 - Maintained product branch: v3-typescript
-- Upstream alignment branch: v3, mirroring upstream Python Graphify v3
+- Upstream alignment branches: v3 mirrors the closed Python v3 baseline; v4 is the active Python parity target through v0.4.23
 - Runtime state root: .graphify/
 - Legacy read fallback: graphify-out/graph.json is still accepted for compatibility, but new writes target .graphify/
 - Legacy migration: graphify migrate-state plans/copies graphify-out/ into .graphify/ and advises git mv for tracked artifacts
@@ -33,7 +33,8 @@ The TypeScript port keeps the original Graphify idea: a folder becomes a graph w
 Graphify supports one graph across code and non-code inputs:
 
 - code: Tree-sitter AST extraction for supported languages
-- markdown/text/reStructuredText: semantic extraction through assistant skill flow
+- code fallback surface: Vue, Svelte, Blade, Dart, Verilog/SystemVerilog, MJS, and EJS are classified and extracted through upstream-aligned fallback extractors when full grammar support is unavailable
+- markdown/MDX/HTML/text/reStructuredText: semantic extraction through assistant skill flow
 - PDF: local preflight, text-layer Markdown sidecars through pdf-parse or pdftotext fallback, and optional Mistral OCR sidecars for scanned/low-text PDFs before assistant semantic extraction
 - Office docs: .docx and .xlsx conversion to markdown sidecars before semantic extraction
 - images: multimodal assistant extraction
@@ -108,6 +109,9 @@ Build and maintain:
 - graphify <path> --pdf-ocr off|auto|always|dry-run
 - graphify <path> --update
 - graphify <path> --cluster-only
+- graphify update <path>
+- graphify cluster-only <path>
+- graphify add <url>
 - graphify <path> --watch
 - graphify hook install/status/uninstall
 - graphify state status/prune
@@ -145,11 +149,15 @@ Project-scoped installers:
 - graphify gemini install writes GEMINI.md and .gemini/settings.json MCP config.
 - graphify opencode install writes AGENTS.md, .opencode/plugins/graphify.js, and opencode.json.
 - graphify cursor install writes .cursor/rules/graphify.mdc.
-- Aider, OpenClaw, Droid, Trae, and Trae CN write AGENTS.md instructions.
+- graphify vscode install writes .github/copilot-instructions.md and the global Copilot skill.
+- graphify kiro install writes .kiro/skills/graphify/SKILL.md, .graphify_version, and .kiro/steering/graphify.md.
+- graphify antigravity install writes .agent/rules/graphify.md, .agent/workflows/graphify.md, and the global Antigravity skill.
+- Aider, OpenClaw, Droid, Trae, Trae CN, and related AGENTS.md platforms write AGENTS.md instructions.
 
 Global skill installers:
 
 - graphify install --platform <platform> writes the platform skill file and .graphify_version marker.
+- Supported global skill targets include Claude, Windows Claude, Codex, Gemini, Copilot CLI, VS Code Copilot Chat, Aider, OpenCode, OpenClaw, Factory Droid, Trae, Trae CN, Cursor, Hermes, Kiro, and Google Antigravity.
 
 All install commands now print mutation previews before writing, including exact files and hook/MCP/plugin configuration that will be touched.
 
@@ -222,7 +230,9 @@ Hooks mark state stale first, then attempt a non-blocking code-only rebuild when
 
 Alignment:
 
-- v3 tracks upstream Python Graphify v3 for parity analysis.
+- v3 tracks the closed upstream Python Graphify v3 baseline for parity analysis.
+- v4 is the active upstream Python parity target through v0.4.23.
+- UPSTREAM_GAP.md is the source of truth for version-by-version coverage and intentional deltas.
 - v3-typescript is the maintained TypeScript product branch.
 - The TypeScript port keeps the original assistant-skill graph workflow and MIT license attribution.
 
@@ -236,6 +246,13 @@ Intentional TypeScript divergence:
 - MCP tools for summary/review/recommendation
 - review-mode projections inspired by code-review-graph
 - install mutation previews
+- GitHub Actions trusted npm publishing with a release guard that only publishes tags whose commit is already contained in the default branch and whose tag version matches package.json
+
+Code-review-graph-inspired additions:
+
+- summary, review-delta, review-analysis, review-eval, and recommend-commits are additive projections over graph.json
+- these features do not change the product into a review-only tool
+- SQLite, embeddings, persisted review databases, and provider-specific review-pr workflows remain deferred
 
 ## Deferred Items
 
@@ -255,6 +272,6 @@ The implemented product is considered aligned with this spec when:
 - npm build succeeds
 - full test suite succeeds
 - .graphify hook rebuild succeeds, allowing known optional fixture grammar warnings
-- README and multilingual READMEs describe .graphify, v3-typescript, v3 upstream mirror, review features, and install previews consistently
+- README and multilingual READMEs describe .graphify, v3-typescript, v3/v4 upstream alignment, review features, assistant platform installers, release guards, and install previews consistently
 - assistant skills reference .graphify and TypeScript runtime proof
 - review and commit recommendation outputs remain advisory
