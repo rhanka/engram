@@ -881,7 +881,7 @@ Expected: report is deterministic and additive.
 - Create: `tests/profile-pipeline.test.ts`
 - Modify only if needed: `tests/pipeline.test.ts`
 
-- [ ] **Step 14.1: Add synthetic E2E test**
+- [x] **Step 14.1: Add synthetic E2E test**
 
 Use `tests/fixtures/profile-demo` to run:
 
@@ -897,7 +897,7 @@ profile report
 graph build with registry and synthetic semantic extraction
 ```
 
-- [ ] **Step 14.2: Verify graph export preserves profile attributes**
+- [x] **Step 14.2: Verify graph export preserves profile attributes**
 
 Assert `graph.json` nodes preserve:
 
@@ -909,11 +909,11 @@ status
 citations
 ```
 
-- [ ] **Step 14.3: Verify normal pipeline remains unchanged**
+- [x] **Step 14.3: Verify normal pipeline remains unchanged**
 
 Run the existing pipeline tests alongside profile E2E.
 
-- [ ] **Step 14.4: Run E2E verification**
+- [x] **Step 14.4: Run E2E verification**
 
 Run:
 
