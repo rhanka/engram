@@ -948,7 +948,7 @@ Expected: profile E2E passes and non-profile pipeline/validation tests pass.
 - Read and modify only if profile/config wording is relevant: `worked/karpathy-repos/README.md`
 - Read and modify only if profile/config wording is relevant: `worked/mixed-corpus/README.md`
 
-- [ ] **Step 15.1: Update README in English**
+- [x] **Step 15.1: Update README in English**
 
 Document:
 
@@ -966,7 +966,7 @@ LLM Wiki compatibility
 no behavior change without config/profile
 ```
 
-- [ ] **Step 15.2: Update translated READMEs**
+- [x] **Step 15.2: Update translated READMEs**
 
 Mirror the English README changes in:
 
@@ -977,7 +977,7 @@ README.zh-CN.md
 
 Keep translations aligned structurally with `README.md` and preserve the TypeScript fork narrative.
 
-- [ ] **Step 15.3: Audit example READMEs**
+- [x] **Step 15.3: Audit example READMEs**
 
 Read:
 
@@ -990,7 +990,7 @@ worked/mixed-corpus/README.md
 
 Update only the example READMEs that mention run flow, profile/config behavior, skill invocation, `.graphify/`, or semantic extraction. Do not add ontology-profile examples to unrelated worked examples.
 
-- [ ] **Step 15.4: Re-check all skills after docs**
+- [x] **Step 15.4: Re-check all skills after docs**
 
 After README wording is settled, re-check distributed skills for consistency:
 
@@ -1009,7 +1009,7 @@ src/skills/skill-kiro.md
 
 Expected: no skill contradicts README or claims profile mode runs without config/profile activation.
 
-- [ ] **Step 15.5: Update global product spec**
+- [x] **Step 15.5: Update global product spec**
 
 Update `spec/SPEC_GRAPHIFY.md` with:
 
@@ -1021,11 +1021,11 @@ LLM Wiki remains .graphify/wiki/index.md
 MCP/embeddings/database remain deferred for this feature
 ```
 
-- [ ] **Step 15.6: Update profile spec after implementation**
+- [x] **Step 15.6: Update profile spec after implementation**
 
 Reflect actual command names, artifact paths, cache isolation mechanism, validation behavior, and deferred items.
 
-- [ ] **Step 15.7: Verify docs and skills**
+- [x] **Step 15.7: Verify docs and skills**
 
 Run:
 

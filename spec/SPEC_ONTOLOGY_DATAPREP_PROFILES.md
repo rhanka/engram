@@ -7,7 +7,7 @@
 - Target: additive feature; no behavior change without a project config, profile flag, or config flag
 - State root: `.graphify/`
 
-This document defines how Graphify can run ontology-aware dataprep through project configuration while preserving the normal one-command user experience:
+This document defines how Graphify runs ontology-aware dataprep through project configuration while preserving the normal one-command assistant experience:
 
 ```bash
 $graphify
@@ -48,16 +48,16 @@ Make `$graphify` convention-driven.
 
 When Graphify runs in a project root, it should look for a project config file, load it, then run the configured dataprep and ontology extraction pipeline.
 
-Nominal command:
+Nominal assistant command:
 
 ```bash
 $graphify
 ```
 
-Equivalent explicit CLI:
+Equivalent local deterministic CLI entrypoint:
 
 ```bash
-graphify . --config graphify.yaml
+graphify profile dataprep . --config graphify.yaml
 ```
 
 The project config points to an ontology profile. The ontology profile defines semantic constraints. The project config defines physical inputs and dataprep behavior.
@@ -67,7 +67,7 @@ Compatibility clarification:
 - Profile behavior is activated only by a discovered project config, an explicit `--config`, or an explicit `--profile`.
 - A committed `graphify.yaml` is an intentional project opt-in, equivalent to passing `--config graphify.yaml`.
 - If no project config, `--config`, or `--profile` is present, Graphify behavior must remain unchanged.
-- The full semantic extraction path remains assistant/skill orchestrated in this lot. CLI/runtime commands should expose deterministic local steps for discovery, dataprep, validation and reporting; they must fail clearly rather than pretending to run assistant semantic extraction without an assistant or configured provider.
+- The full semantic extraction path remains assistant/skill orchestrated in this lot. CLI/runtime commands expose deterministic local steps for discovery, dataprep, prompt generation, validation and reporting; they fail clearly rather than pretending to run assistant semantic extraction without an assistant or configured provider.
 
 ## Non-Goals
 
@@ -248,17 +248,26 @@ Graphify should:
 
 ### Explicit Overrides
 
-These should remain possible:
+These deterministic local commands are available:
 
 ```bash
-graphify . --config graphify.yaml
-graphify raw/manuals --profile graphify/ontology-profile.yaml
-graphify raw/manuals --profile graphify/ontology-profile.yaml --pdf-ocr auto
+graphify profile validate --config graphify.yaml
+graphify profile dataprep . --config graphify.yaml
+graphify profile validate-extraction --profile-state .graphify/profile/profile-state.json --input extraction.json
+graphify profile report --profile-state .graphify/profile/profile-state.json --graph .graphify/graph.json --out .graphify/profile/profile-report.md
 ```
 
-`--config` loads both physical inputs and profile.
+The assistant skill runtime exposes the same mechanics through `dist/skill-runtime.js` as:
 
-`--profile` applies ontology constraints to the explicit input path. It is useful for quick tests but should not be required for the normal configured-project workflow.
+```bash
+node dist/skill-runtime.js project-config --root . --out .graphify/profile/project-config.normalized.json --profile-out .graphify/profile/ontology-profile.normalized.json
+node dist/skill-runtime.js configured-dataprep --root . --config graphify.yaml
+node dist/skill-runtime.js profile-prompt --profile-state .graphify/profile/profile-state.json --out .graphify/profile/profile-prompt.md
+node dist/skill-runtime.js profile-validate-extraction --profile-state .graphify/profile/profile-state.json --input extraction.json
+node dist/skill-runtime.js profile-report --profile-state .graphify/profile/profile-state.json --graph .graphify/graph.json --out .graphify/profile/profile-report.md
+```
+
+`--config` loads both physical inputs and the referenced profile. `--profile` remains an activation concept for explicit profile-aware assistant flows, but the current public local CLI exposes profile behavior through the `graphify profile ...` namespace rather than pretending `graphify . --profile` can perform assistant extraction by itself.
 
 ### No Config
 
@@ -341,13 +350,17 @@ Expected artifacts:
 ```text
 .graphify/profile/project-config.normalized.json
 .graphify/profile/ontology-profile.normalized.json
+.graphify/profile/profile-state.json
 .graphify/profile/registries/*.json
 .graphify/profile/registry-extraction.json
 .graphify/profile/semantic-detection.json
 .graphify/profile/dataprep-report.md
+.graphify/profile/profile-report.md
 ```
 
 Configured dataprep must reuse the existing PDF/OCR/transcript pipeline.
+
+Semantic cache isolation is profile-aware. The generic cache path remains compatible; profile flows derive a namespace from `profile-state.json` and the normalized profile hash so generic cached extraction cannot satisfy profile-aware extraction.
 
 ### Profile Prompt Builder
 

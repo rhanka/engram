@@ -49,7 +49,7 @@ raw/
 Install and set up the skill for your platform:
 
 ```bash
-pip install graphifyy
+npm install -g graphifyy
 
 graphify install                        # Claude Code
 graphify install --platform codex       # Codex
@@ -60,7 +60,8 @@ graphify install --platform claw        # OpenClaw
 Then open your AI coding assistant in this directory and type:
 
 ```
-/graphify ./raw
+$graphify ./raw        # Codex
+/graphify ./raw        # Claude Code / Gemini CLI / other supported assistants
 ```
 
 ## What to expect

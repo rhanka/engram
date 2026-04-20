@@ -20,7 +20,7 @@ raw/
 ## How to run
 
 ```bash
-pip install graphifyy
+npm install -g graphifyy
 
 graphify install                        # Claude Code
 graphify install --platform codex       # Codex
@@ -31,7 +31,8 @@ graphify install --platform claw        # OpenClaw
 Then open your AI coding assistant in this directory and type:
 
 ```
-/graphify ./raw
+$graphify ./raw        # Codex
+/graphify ./raw        # Claude Code / Gemini CLI / other supported assistants
 ```
 
 No PDF or image extraction — runs entirely on AST and markdown with no token cost for semantic extraction.
@@ -53,4 +54,4 @@ Ask questions from your AI coding assistant:
 - "which module has the most connections?"
 - "what does the architecture doc say about the storage design?"
 
-The graph lives in `graphify-out/` and persists across sessions.
+The graph lives in `.graphify/` and persists across sessions.

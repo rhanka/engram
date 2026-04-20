@@ -4,7 +4,7 @@
 
 - Product: Graphify TypeScript port
 - Target npm package: graphifyy@0.4.23
-- Maintained product branch: v3-typescript
+- Maintained product branch: main
 - Upstream alignment branches: v3 mirrors the closed Python v3 baseline; v4 is the active Python parity target through v0.4.23
 - Runtime state root: .graphify/
 - Legacy read fallback: graphify-out/graph.json is still accepted for compatibility, but new writes target .graphify/
@@ -83,6 +83,27 @@ Legacy compatibility:
 
 Every edge keeps provenance confidence: EXTRACTED, INFERRED, or AMBIGUOUS, with scores where available.
 
+## Configured Ontology Dataprep Profiles
+
+Configured ontology dataprep profiles are an additive layer over the existing pipeline. They activate only through a discovered project config (`graphify.yaml`, `graphify.yml`, `.graphify/config.yaml`, `.graphify/config.yml`) or an explicit `--config`/`--profile` option. Without that activation, the normal non-profile graphify behavior and base `validateExtraction()` contract remain unchanged.
+
+Project config owns physical inputs: corpus paths, generated semantic sidecars, registry files, exclusions, PDF/OCR policy, and `.graphify/` output state. Ontology profiles own semantic constraints: allowed node types, relation types, citation policy, hardening statuses, and named registry bindings. CSV, JSON, and YAML registries are normalized into ordinary Graphify extraction fragments.
+
+Profile artifacts live under `.graphify/profile/`:
+
+- project-config.normalized.json
+- ontology-profile.normalized.json
+- profile-state.json
+- registries/*.json
+- registry-extraction.json
+- semantic-detection.json
+- dataprep-report.md
+- profile-report.md when requested
+
+Semantic cache entries can be namespace-isolated by profile hash, so a generic cache hit cannot satisfy profile-aware extraction. Full semantic extraction remains assistant/skill orchestrated: runtime and CLI commands expose deterministic project config loading, configured dataprep, profile prompt generation, profile validation, and profile QA reporting.
+
+The LLM Wiki remains `.graphify/wiki/index.md`. This feature does not add MCP-specific profile tools, embeddings, databases, remote registry fetching, or a separate profile wiki.
+
 ## PDF Preflight And OCR
 
 PDF handling is normalized before semantic extraction. The preparation step reads every paper/PDF in the semantic detection copy and applies the contract in [SPEC_PDF_OCR_PREPROCESSING.md](SPEC_PDF_OCR_PREPROCESSING.md).
@@ -131,6 +152,13 @@ Review projections:
 - graphify review-eval --cases .graphify/review-cases.json --graph .graphify/graph.json
 - graphify recommend-commits --graph .graphify/graph.json
 
+Configured profiles:
+
+- graphify profile validate --config graphify.yaml
+- graphify profile dataprep . --config graphify.yaml
+- graphify profile validate-extraction --profile-state .graphify/profile/profile-state.json --input extraction.json
+- graphify profile report --profile-state .graphify/profile/profile-state.json --graph .graphify/graph.json --out .graphify/profile/profile-report.md
+
 Exports and services:
 
 - graphify <path> --wiki
@@ -160,6 +188,8 @@ Global skill installers:
 - Supported global skill targets include Claude, Windows Claude, Codex, Gemini, Copilot CLI, VS Code Copilot Chat, Aider, OpenCode, OpenClaw, Factory Droid, Trae, Trae CN, Cursor, Hermes, Kiro, and Google Antigravity.
 
 All install commands now print mutation previews before writing, including exact files and hook/MCP/plugin configuration that will be touched.
+
+Profile-aware skills use the TypeScript runtime commands `project-config`, `configured-dataprep`, `profile-prompt`, `profile-validate-extraction`, and `profile-report` when a project config or explicit profile is active. Skills must fall back to the normal non-profile flow when no config/profile activation is present.
 
 ## MCP Tools
 
@@ -233,7 +263,7 @@ Alignment:
 - v3 tracks the closed upstream Python Graphify v3 baseline for parity analysis.
 - v4 is the active upstream Python parity target through v0.4.23.
 - UPSTREAM_GAP.md is the source of truth for version-by-version coverage and intentional deltas.
-- v3-typescript is the maintained TypeScript product branch.
+- main is the maintained TypeScript product branch.
 - The TypeScript port keeps the original assistant-skill graph workflow and MIT license attribution.
 
 Intentional TypeScript divergence:
@@ -272,6 +302,6 @@ The implemented product is considered aligned with this spec when:
 - npm build succeeds
 - full test suite succeeds
 - .graphify hook rebuild succeeds, allowing known optional fixture grammar warnings
-- README and multilingual READMEs describe .graphify, v3-typescript, v3/v4 upstream alignment, review features, assistant platform installers, release guards, and install previews consistently
+- README and multilingual READMEs describe .graphify, main, v3/v4 upstream alignment, review features, assistant platform installers, release guards, install previews, and configured ontology dataprep profiles consistently
 - assistant skills reference .graphify and TypeScript runtime proof
 - review and commit recommendation outputs remain advisory
