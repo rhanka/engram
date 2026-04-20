@@ -23,7 +23,17 @@
 - [x] Calibration gate requires `false_primary = 0`; missing or ambiguous labels produce `pending_labels`.
 - [x] Production cascade requires `accept_matrix`; otherwise Graphify must block automatic cascade routing.
 - [x] Ontology alias/canonicalization ambiguity is `candidate-only`, marked `needs_review`, and excluded from hardened outputs.
-- [ ] Commit the three new specs plus this plan update.
+- [x] Commit the three new specs plus this plan update.
+- [x] Lot A committed as `8f65cba` (`feat: add advanced dataprep config contracts`).
+- [x] Lot B committed as `752c5e6` (`feat: add provider-neutral llm execution ports`).
+- [x] Lot C committed as `22c2c39` (`feat: add image dataprep manifests and schemas`).
+- [x] Lot D core committed as `ea49a61` (`feat: add image routing calibration workflow`).
+- [x] Lot E core committed as `6027541` (`feat: add image dataprep batch import export`).
+- [x] Lot F core committed as `57d9873` (`feat: add optional ontology output artifacts`).
+- [ ] Lot D CLI/skill workflow integration remains.
+- [ ] Lot E accepted-rule deep-pass export and overwrite policy remains.
+- [ ] Lot F profile-report/CLI integration remains.
+- [ ] Lot G README, skills and UAT remains.
 
 ## Next Evolution Plan - Image Dataprep, LLM Ports, Ontology Outputs
 
@@ -31,11 +41,11 @@
 
 **Compatibility Guardrails:**
 
-- [ ] No direct LLM provider is constructed without explicit config.
-- [ ] No image dataprep artifacts are generated without `dataprep.image_analysis.enabled: true` or an explicit image dataprep command.
-- [ ] No `.graphify/ontology/` output is generated without explicit ontology output config.
-- [ ] No domain-specific type, taxonomy, label, registry or ontology example is added to Graphify.
-- [ ] Existing non-configured tests prove `detect()`, `prepareSemanticDetection()`, `validateExtraction()`, build, report and export behavior are unchanged.
+- [x] No direct LLM provider is constructed without explicit config.
+- [x] No image dataprep artifacts are generated without `dataprep.image_analysis.enabled: true` or an explicit image dataprep command.
+- [x] No `.graphify/ontology/` output is generated without explicit ontology output config.
+- [x] No domain-specific type, taxonomy, label, registry or ontology example is added to Graphify.
+- [x] Existing non-configured tests prove `detect()`, `prepareSemanticDetection()`, `validateExtraction()`, build, report and export behavior are unchanged.
 
 ### Lot A - Config Surface And Type Contracts
 
@@ -46,13 +56,13 @@
 - Modify: `tests/public-api.test.ts`
 - Modify: `spec/SPEC_GRAPHIFY.md`
 
-- [ ] Add `GraphifyImageAnalysisPolicy` with `enabled`, `mode`, `artifact_source`, `caption_schema`, `routing_profile`, `primary_model`, `deep_model`, `calibration`, `max_markdown_context_chars`, and `batch`.
-- [ ] Add `GraphifyLlmExecutionPolicy` with `mode: assistant|batch|mesh|off`, text JSON, vision JSON, batch and mesh config blocks.
-- [ ] Add ontology output config types for profile-declared `outputs.ontology`.
-- [ ] Normalize config paths for `calibration.rules_path` and `calibration.labels_path` relative to `graphify.yaml`.
-- [ ] Validate `mode` enums and fail fast for malformed advanced config.
-- [ ] Add tests proving absent advanced config normalizes to inert defaults.
-- [ ] Commit as `feat: add advanced dataprep config contracts`.
+- [x] Add `GraphifyImageAnalysisPolicy` with `enabled`, `mode`, `artifact_source`, `caption_schema`, `routing_profile`, `primary_model`, `deep_model`, `calibration`, `max_markdown_context_chars`, and `batch`.
+- [x] Add `GraphifyLlmExecutionPolicy` with `mode: assistant|batch|mesh|off`, text JSON, vision JSON, batch and mesh config blocks.
+- [x] Add ontology output config types for profile-declared `outputs.ontology`.
+- [x] Normalize config paths for `calibration.rules_path` and `calibration.labels_path` relative to `graphify.yaml`.
+- [x] Validate `mode` enums and fail fast for malformed advanced config.
+- [x] Add tests proving absent advanced config normalizes to inert defaults.
+- [x] Commit as `feat: add advanced dataprep config contracts`.
 
 ### Lot B - LLM Execution Ports
 
@@ -61,14 +71,14 @@
 - Create: `tests/llm-execution.test.ts`
 - Modify: `src/index.ts`
 
-- [ ] Define `TextJsonGenerationClient`, `VisionJsonAnalysisClient`, `BatchVisionJsonClient`, and `LlmMeshAdapter` ports.
-- [ ] Implement assistant no-call adapter that writes/validates instruction artifacts only.
-- [ ] Implement preflight validation for `batch` and `mesh` modes without adding provider SDK dependencies.
-- [ ] Add secret redaction helpers for generated audit metadata.
-- [ ] Add tests proving default config constructs no provider and reads no API key.
-- [ ] Add tests proving `assistant` mode works without credentials.
-- [ ] Add tests proving `batch` and `mesh` fail clearly without required adapter/provider config.
-- [ ] Commit as `feat: add provider-neutral llm execution ports`.
+- [x] Define `TextJsonGenerationClient`, `VisionJsonAnalysisClient`, `BatchVisionJsonClient`, and `LlmMeshAdapter` ports.
+- [x] Implement assistant no-call adapter that writes/validates instruction artifacts only.
+- [x] Implement preflight validation for `batch` and `mesh` modes without adding provider SDK dependencies.
+- [x] Add secret redaction helpers for generated audit metadata.
+- [x] Add tests proving default config constructs no provider and reads no API key.
+- [x] Add tests proving `assistant` mode works without credentials.
+- [x] Add tests proving `batch` and `mesh` fail clearly without required adapter/provider config.
+- [x] Commit as `feat: add provider-neutral llm execution ports`.
 
 ### Lot C - Image Dataprep Manifest And Caption Schemas
 
@@ -80,14 +90,14 @@
 - Modify: `src/skill-runtime.ts`
 - Modify: `src/cli.ts`
 
-- [ ] Build `.graphify/image-dataprep/manifest.json` from OCR crop artifacts and direct image inputs.
-- [ ] Preserve provenance to original file, source page, sidecar path, image path, MIME type and SHA-256.
-- [ ] Validate `generic_image_caption_v1` sidecars.
-- [ ] Validate `generic_image_routing_v1` sidecars.
-- [ ] Ensure full-page screenshot artifacts are excluded by default.
-- [ ] Add assistant-mode prompt artifact generation without provider calls.
-- [ ] Add tests proving no image dataprep directory is created without opt-in.
-- [ ] Commit as `feat: add image dataprep manifests and schemas`.
+- [x] Build `.graphify/image-dataprep/manifest.json` from OCR crop artifacts and direct image inputs.
+- [x] Preserve provenance to original file, source page, sidecar path, image path, MIME type and SHA-256.
+- [x] Validate `generic_image_caption_v1` sidecars.
+- [x] Validate `generic_image_routing_v1` sidecars.
+- [x] Ensure full-page screenshot artifacts are excluded by default.
+- [x] Add assistant-mode prompt artifact generation without provider calls.
+- [x] Add tests proving no image dataprep directory is created without opt-in.
+- [x] Commit as `feat: add image dataprep manifests and schemas`.
 
 ### Lot D - Calibration Workflow
 
@@ -99,12 +109,12 @@
 - Modify: `src/skills/*`
 
 - [ ] Implement deterministic sample selection into `.graphify/calibration/<run-id>/samples.json`.
-- [ ] Implement machine-readable labels loader for `graphify_image_routing_labels_v1`.
-- [ ] Implement project-owned routing rules loader for `graphify_image_routing_rules_v1`.
-- [ ] Implement TypeScript replay of proposed rules without provider calls.
-- [ ] Compute `false_primary`, false `deep`, missing labels, ambiguous labels and estimated deep ratio.
-- [ ] Gate acceptance with `false_primary = 0`; missing or ambiguous labels produce `pending_labels`.
-- [ ] Emit decisions `accept_matrix`, `revise_matrix`, `reject_cascade`, or `pending_labels`.
+- [x] Implement machine-readable labels loader for `graphify_image_routing_labels_v1`.
+- [x] Implement project-owned routing rules loader for `graphify_image_routing_rules_v1`.
+- [x] Implement TypeScript replay of proposed rules without provider calls.
+- [x] Compute `false_primary`, false `deep`, missing labels, ambiguous labels and estimated deep ratio.
+- [x] Gate acceptance with `false_primary = 0`; missing or ambiguous labels produce `pending_labels`.
+- [x] Emit decisions `accept_matrix`, `revise_matrix`, `reject_cascade`, or `pending_labels`.
 - [ ] Block automatic production cascade unless rules declare `decision: accept_matrix`.
 - [ ] Update skills so Codex/Claude/Gemini can act as `assistant-as-calibration-analyst`.
 - [ ] Commit as `feat: add image routing calibration workflow`.
@@ -118,13 +128,13 @@
 - Modify: `src/skill-runtime.ts`
 - Modify: `src/cli.ts`
 
-- [ ] Export provider-neutral JSONL requests for primary captioning.
-- [ ] Import mocked primary results into caption and routing sidecars.
+- [x] Export provider-neutral JSONL requests for primary captioning.
+- [x] Import mocked primary results into caption and routing sidecars.
 - [ ] Generate deep-pass JSONL only for accepted-rule `deep` routes.
 - [ ] Import mocked deep results without overwriting valid prior sidecars unless `--force`.
-- [ ] Reject invalid provider JSON before downstream use.
-- [ ] Redact all secrets from manifests, reports and logs.
-- [ ] Commit as `feat: add image dataprep batch import export`.
+- [x] Reject invalid provider JSON before downstream use.
+- [x] Redact all secrets from manifests, reports and logs.
+- [x] Commit as `feat: add image dataprep batch import export`.
 
 ### Lot F - Ontology Output Artifacts
 
@@ -136,16 +146,16 @@
 - Modify: `src/skill-runtime.ts`
 - Modify: `src/cli.ts`
 
-- [ ] Generate `.graphify/ontology/manifest.json` only when ontology outputs are configured.
-- [ ] Compile profile-selected canonical candidate nodes into `nodes.json`.
-- [ ] Compile alias records into `aliases.json`.
-- [ ] Compile profile-valid relations into `relations.json`.
-- [ ] Compile source refs and occurrence-like records according to profile declarations.
-- [ ] Mark ambiguous canonicalization or alias attachment as `needs_review`.
-- [ ] Exclude `needs_review` ambiguity from hardened outputs.
-- [ ] Generate entity-centric wiki pages only for configured page node types.
-- [ ] Generate `index.json` retrieval projection without prescribing consuming application channel names.
-- [ ] Commit as `feat: add optional ontology output artifacts`.
+- [x] Generate `.graphify/ontology/manifest.json` only when ontology outputs are configured.
+- [x] Compile profile-selected canonical candidate nodes into `nodes.json`.
+- [x] Compile alias records into `aliases.json`.
+- [x] Compile profile-valid relations into `relations.json`.
+- [x] Compile source refs and occurrence-like records according to profile declarations.
+- [x] Mark ambiguous canonicalization or alias attachment as `needs_review`.
+- [x] Exclude `needs_review` ambiguity from hardened outputs.
+- [x] Generate entity-centric wiki pages only for configured page node types.
+- [x] Generate `index.json` retrieval projection without prescribing consuming application channel names.
+- [x] Commit as `feat: add optional ontology output artifacts`.
 
 ### Lot G - Documentation, Skills, And UAT
 
