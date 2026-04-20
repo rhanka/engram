@@ -51,6 +51,11 @@ afterEach(() => {
 
 describe("public API compatibility", () => {
   it("exports the documented runtime helpers", () => {
+    expect(typeof api.discoverProjectConfig).toBe("function");
+    expect(typeof api.loadProjectConfig).toBe("function");
+    expect(typeof api.parseProjectConfig).toBe("function");
+    expect(typeof api.normalizeProjectConfig).toBe("function");
+    expect(typeof api.validateProjectConfig).toBe("function");
     expect(typeof api.runBenchmark).toBe("function");
     expect(typeof api.printBenchmark).toBe("function");
     expect(typeof api.ingest).toBe("function");

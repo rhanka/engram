@@ -3,6 +3,47 @@
  */
 
 export { type GraphNode, type GraphEdge, type Extraction, type Hyperedge, type DetectionResult, FileType } from "./types.js";
+export type {
+  GraphifyDataprepPolicy,
+  GraphifyOutputPolicy,
+  GraphifyPdfOcrMode,
+  GraphifyProjectConfig,
+  GraphifyProjectConfigProfile,
+  GraphifyProjectInputs,
+  NormalizedDataprepPolicy,
+  NormalizedOutputPolicy,
+  NormalizedProjectConfig,
+  NormalizedProjectInputs,
+  NormalizedProjectProfile,
+  ProjectConfigDiscoveryResult,
+  ProjectConfigValidationIssue,
+  NormalizedOntologyProfile,
+  NormalizedOntologyRegistrySpec,
+  NormalizedOntologyRelationType,
+  OntologyCitationPolicy,
+  OntologyHardeningPolicy,
+  OntologyNodeType,
+  OntologyProfile,
+  OntologyRegistrySpec,
+  OntologyRelationType,
+  OntologyStatus,
+  ProfileBinding,
+} from "./types.js";
+export {
+  discoverProjectConfig,
+  loadProjectConfig,
+  normalizeProjectConfig,
+  parseProjectConfig,
+  validateProjectConfig,
+} from "./project-config.js";
+export {
+  bindOntologyProfile,
+  hashOntologyProfile,
+  loadOntologyProfile,
+  normalizeOntologyProfile,
+  parseOntologyProfile,
+  validateOntologyProfile,
+} from "./ontology-profile.js";
 export { validateExtraction, assertValid } from "./validate.js";
 export { buildFromJson, build } from "./build.js";
 export { cluster, cohesionScore, scoreAll } from "./cluster.js";

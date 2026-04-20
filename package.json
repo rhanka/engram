@@ -77,7 +77,8 @@
     "graphology-metrics": "^2.1.0",
     "graphology-shortest-path": "^2.1.0",
     "graphology-types": "^0.24.7",
-    "web-tree-sitter": "^0.26.8"
+    "web-tree-sitter": "^0.26.8",
+    "yaml": "^2.8.3"
   },
   "optionalDependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

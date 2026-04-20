@@ -131,3 +131,179 @@ export interface PlatformConfig {
   skill_dst: string;
   claude_md: boolean;
 }
+
+export type GraphifyPdfOcrMode = "off" | "auto" | "always" | "dry-run";
+
+export interface GraphifyProjectConfigProfile {
+  path?: string;
+}
+
+export interface GraphifyProjectInputs {
+  corpus?: string[];
+  registries?: string[];
+  generated?: string[];
+  exclude?: string[];
+}
+
+export interface GraphifyDataprepPolicy {
+  pdf_ocr?: GraphifyPdfOcrMode;
+  prefer_ocr_markdown?: boolean;
+  use_extracted_pdf_images?: boolean;
+  full_page_screenshot_vision?: boolean;
+  citation_minimum?: "file" | "page" | "section" | "paragraph";
+  preserve_source_structure?: boolean;
+}
+
+export interface GraphifyOutputPolicy {
+  state_dir?: string;
+  write_html?: boolean;
+  write_wiki?: boolean;
+  write_profile_report?: boolean;
+}
+
+export interface GraphifyProjectConfig {
+  version?: number;
+  profile?: GraphifyProjectConfigProfile;
+  inputs?: GraphifyProjectInputs;
+  dataprep?: GraphifyDataprepPolicy;
+  outputs?: GraphifyOutputPolicy;
+}
+
+export interface NormalizedProjectProfile {
+  path: string;
+  resolvedPath: string;
+}
+
+export interface NormalizedProjectInputs {
+  corpus: string[];
+  registries: string[];
+  registrySources: Record<string, string>;
+  generated: string[];
+  exclude: string[];
+}
+
+export interface NormalizedDataprepPolicy {
+  pdf_ocr: GraphifyPdfOcrMode;
+  prefer_ocr_markdown: boolean;
+  use_extracted_pdf_images: boolean;
+  full_page_screenshot_vision: boolean;
+  citation_minimum: "file" | "page" | "section" | "paragraph";
+  preserve_source_structure: boolean;
+}
+
+export interface NormalizedOutputPolicy {
+  state_dir: string;
+  write_html: boolean;
+  write_wiki: boolean;
+  write_profile_report: boolean;
+}
+
+export interface NormalizedProjectConfig {
+  version: number;
+  sourcePath: string;
+  configDir: string;
+  profile: NormalizedProjectProfile;
+  inputs: NormalizedProjectInputs;
+  dataprep: NormalizedDataprepPolicy;
+  outputs: NormalizedOutputPolicy;
+}
+
+export interface ProjectConfigDiscoveryResult {
+  found: boolean;
+  path: string | null;
+  searched: string[];
+}
+
+export interface ProjectConfigValidationIssue {
+  path: string;
+  message: string;
+}
+
+export type OntologyStatus =
+  | "candidate"
+  | "attached"
+  | "needs_review"
+  | "validated"
+  | "rejected"
+  | "superseded"
+  | string;
+
+export interface OntologyNodeType {
+  aliases?: string[];
+  registry?: string;
+  source_backed?: boolean;
+  status_policy?: string;
+}
+
+export interface OntologyRelationType {
+  source?: string | string[];
+  target?: string | string[];
+  source_types?: string[];
+  target_types?: string[];
+}
+
+export interface OntologyRegistrySpec {
+  source?: string;
+  id_column?: string;
+  label_column?: string;
+  alias_columns?: string[];
+  node_type?: string;
+  bound_source_path?: string;
+}
+
+export interface OntologyCitationPolicy {
+  minimum_granularity?: "file" | "page" | "section" | "paragraph";
+  require_source_file?: boolean;
+  allow_bbox?: boolean | "when_available";
+}
+
+export interface OntologyHardeningPolicy {
+  statuses?: OntologyStatus[];
+  default_status?: OntologyStatus;
+  promotion_requires?: string[];
+}
+
+export interface OntologyProfile {
+  id?: string;
+  version?: string | number;
+  default_language?: string;
+  sourcePath?: string;
+  profile_hash?: string;
+  node_types?: Record<string, OntologyNodeType>;
+  relation_types?: Record<string, OntologyRelationType>;
+  registries?: Record<string, OntologyRegistrySpec>;
+  citation_policy?: OntologyCitationPolicy;
+  hardening?: OntologyHardeningPolicy;
+}
+
+export interface NormalizedOntologyRelationType {
+  source_types: string[];
+  target_types: string[];
+}
+
+export interface NormalizedOntologyRegistrySpec {
+  source: string;
+  id_column: string;
+  label_column: string;
+  alias_columns: string[];
+  node_type: string;
+  bound_source_path?: string;
+}
+
+export interface NormalizedOntologyProfile {
+  id: string;
+  version: string;
+  default_language: string;
+  sourcePath?: string;
+  profile_hash: string;
+  node_types: Record<string, OntologyNodeType>;
+  relation_types: Record<string, NormalizedOntologyRelationType>;
+  registries: Record<string, NormalizedOntologyRegistrySpec>;
+  citation_policy: Required<OntologyCitationPolicy>;
+  hardening: Required<OntologyHardeningPolicy>;
+}
+
+export interface ProfileBinding {
+  profile: NormalizedOntologyProfile;
+  projectConfig: NormalizedProjectConfig;
+}
