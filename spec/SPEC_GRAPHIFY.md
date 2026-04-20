@@ -102,7 +102,11 @@ Profile artifacts live under `.graphify/profile/`:
 
 Semantic cache entries can be namespace-isolated by profile hash, so a generic cache hit cannot satisfy profile-aware extraction. Full semantic extraction remains assistant/skill orchestrated: runtime and CLI commands expose deterministic project config loading, configured dataprep, profile prompt generation, profile validation, and profile QA reporting.
 
-The LLM Wiki remains `.graphify/wiki/index.md`. This feature does not add MCP-specific profile tools, embeddings, databases, remote registry fetching, or a separate profile wiki.
+Optional profile-declared ontology outputs compile under `.graphify/ontology/` through `graphify profile ontology-output` or the runtime `ontology-output` command. They are inert unless `outputs.ontology.enabled: true` is present in the ontology profile.
+
+Optional image dataprep artifacts live under `.graphify/image-dataprep/` and calibration proposals under `.graphify/calibration/`. Runtime commands cover deterministic sample writing, calibration replay, provider-neutral batch export/import, and accepted-matrix deep-pass export. Production cascade routing is blocked unless project-owned rules declare `decision: accept_matrix`.
+
+The LLM Wiki remains `.graphify/wiki/index.md`. This feature does not add MCP-specific profile tools, embeddings, databases, remote registry fetching, or a resident LLM backend.
 
 ## PDF Preflight And OCR
 
@@ -158,6 +162,7 @@ Configured profiles:
 - graphify profile dataprep . --config graphify.yaml
 - graphify profile validate-extraction --profile-state .graphify/profile/profile-state.json --input extraction.json
 - graphify profile report --profile-state .graphify/profile/profile-state.json --graph .graphify/graph.json --out .graphify/profile/profile-report.md
+- graphify profile ontology-output --profile-state .graphify/profile/profile-state.json --input extraction.json --out-dir .graphify/ontology
 
 Exports and services:
 
@@ -189,7 +194,7 @@ Global skill installers:
 
 All install commands now print mutation previews before writing, including exact files and hook/MCP/plugin configuration that will be touched.
 
-Profile-aware skills use the TypeScript runtime commands `project-config`, `configured-dataprep`, `profile-prompt`, `profile-validate-extraction`, and `profile-report` when a project config or explicit profile is active. Skills must fall back to the normal non-profile flow when no config/profile activation is present.
+Profile-aware skills use the TypeScript runtime commands `project-config`, `configured-dataprep`, `profile-prompt`, `profile-validate-extraction`, `profile-report`, `ontology-output`, `image-calibration-samples`, `image-calibration-replay`, `image-batch-export`, and `image-batch-import` when a project config or explicit profile is active. Skills must fall back to the normal non-profile flow when no config/profile activation is present.
 
 ## MCP Tools
 

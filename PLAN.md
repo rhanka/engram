@@ -30,10 +30,10 @@
 - [x] Lot D core committed as `ea49a61` (`feat: add image routing calibration workflow`).
 - [x] Lot E core committed as `6027541` (`feat: add image dataprep batch import export`).
 - [x] Lot F core committed as `57d9873` (`feat: add optional ontology output artifacts`).
-- [ ] Lot D CLI/skill workflow integration remains.
-- [ ] Lot E accepted-rule deep-pass export and overwrite policy remains.
-- [ ] Lot F profile-report/CLI integration remains.
-- [ ] Lot G README, skills and UAT remains.
+- [x] Lot D CLI/skill workflow integration committed as `4f4c409` (`feat: integrate advanced dataprep runtime workflows`).
+- [x] Lot E accepted-rule deep-pass export and overwrite policy committed as `4f4c409` (`feat: integrate advanced dataprep runtime workflows`).
+- [x] Lot F profile-report/CLI integration committed as `4f4c409` (`feat: integrate advanced dataprep runtime workflows`).
+- [x] Lot G README, skills and UAT prepared in the docs tranche.
 
 ## Next Evolution Plan - Image Dataprep, LLM Ports, Ontology Outputs
 
@@ -108,16 +108,16 @@
 - Modify: `src/cli.ts`
 - Modify: `src/skills/*`
 
-- [ ] Implement deterministic sample selection into `.graphify/calibration/<run-id>/samples.json`.
+- [x] Implement deterministic sample selection into `.graphify/calibration/<run-id>/samples.json`.
 - [x] Implement machine-readable labels loader for `graphify_image_routing_labels_v1`.
 - [x] Implement project-owned routing rules loader for `graphify_image_routing_rules_v1`.
 - [x] Implement TypeScript replay of proposed rules without provider calls.
 - [x] Compute `false_primary`, false `deep`, missing labels, ambiguous labels and estimated deep ratio.
 - [x] Gate acceptance with `false_primary = 0`; missing or ambiguous labels produce `pending_labels`.
 - [x] Emit decisions `accept_matrix`, `revise_matrix`, `reject_cascade`, or `pending_labels`.
-- [ ] Block automatic production cascade unless rules declare `decision: accept_matrix`.
-- [ ] Update skills so Codex/Claude/Gemini can act as `assistant-as-calibration-analyst`.
-- [ ] Commit as `feat: add image routing calibration workflow`.
+- [x] Block automatic production cascade unless rules declare `decision: accept_matrix`.
+- [x] Update skills so Codex/Claude/Gemini can act as `assistant-as-calibration-analyst`.
+- [x] Commit integration as `feat: integrate advanced dataprep runtime workflows`.
 
 ### Lot E - Batch And Mesh Import/Export
 
@@ -130,8 +130,8 @@
 
 - [x] Export provider-neutral JSONL requests for primary captioning.
 - [x] Import mocked primary results into caption and routing sidecars.
-- [ ] Generate deep-pass JSONL only for accepted-rule `deep` routes.
-- [ ] Import mocked deep results without overwriting valid prior sidecars unless `--force`.
+- [x] Generate deep-pass JSONL only for accepted-rule `deep` routes.
+- [x] Import mocked deep results without overwriting valid prior sidecars unless `--force`.
 - [x] Reject invalid provider JSON before downstream use.
 - [x] Redact all secrets from manifests, reports and logs.
 - [x] Commit as `feat: add image dataprep batch import export`.
@@ -166,15 +166,23 @@
 - Modify: `src/skills/*`
 - Modify: `PLAN.md`
 
-- [ ] Update README with opt-in image dataprep, LLM execution ports, calibration workflow and ontology outputs.
-- [ ] Update specs to reflect final implemented CLI names and artifact paths.
-- [ ] Update all assistant skills with calibration analyst workflow and non-disruption rules.
-- [ ] Add UATs for baseline no-config behavior, assistant calibration, accepted rules, blocked cascade and ontology output generation.
-- [ ] Run `npm run lint`.
-- [ ] Run `npm run build`.
-- [ ] Run `npm test`.
-- [ ] Run `git diff --check`.
+- [x] Update README with opt-in image dataprep, LLM execution ports, calibration workflow and ontology outputs.
+- [x] Update specs to reflect final implemented CLI names and artifact paths.
+- [x] Update all assistant skills with calibration analyst workflow and non-disruption rules.
+- [x] Add UATs for baseline no-config behavior, assistant calibration, accepted rules, blocked cascade and ontology output generation.
+- [x] Run `npm run lint`.
+- [x] Run `npm run build`.
+- [x] Run `npm test`.
+- [x] Run `git diff --check`.
 - [ ] Check off completed plan items and commit as `docs: document advanced dataprep workflows`.
+
+### UAT Checklist
+
+- [ ] Baseline no-config: run `graphify update .` in a repo without `graphify.yaml` and verify no `.graphify/image-dataprep/` or `.graphify/ontology/` directory is created.
+- [ ] Assistant calibration: run runtime `image-calibration-samples`, let the assistant propose labels/rules, then run `image-calibration-replay` and verify the decision is reviewable.
+- [ ] Accepted rules: set project-owned routing rules to `decision: accept_matrix`, run deep `image-batch-export`, and verify only deterministic `deep` routes are exported.
+- [ ] Blocked cascade: change rules to `pending_labels` or `revise_matrix`, rerun deep `image-batch-export`, and verify it fails before writing production deep requests.
+- [ ] Ontology output: run `graphify profile ontology-output --profile-state .graphify/profile/profile-state.json --input extraction.json --out-dir .graphify/ontology` on a synthetic profile with `outputs.ontology.enabled: true` and verify JSON + wiki artifacts are generated.
 
 ## Scope And Compatibility Rules
 

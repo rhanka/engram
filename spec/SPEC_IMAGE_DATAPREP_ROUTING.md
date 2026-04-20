@@ -361,6 +361,16 @@ Batch mode has four phases:
 
 Provider-specific upload mechanics belong in the LLM execution adapter, not in this spec.
 
+Implemented runtime command names:
+
+- `image-calibration-samples --manifest <json> --captions-dir <dir> --out-dir .graphify/calibration --run-id <id>` writes deterministic stratified samples.
+- `image-calibration-replay --samples <json> --labels <yaml|json> --rules <yaml|json> --out <json>` runs TypeScript replay and writes the calibration decision.
+- `image-batch-export --manifest <json> --out <jsonl> --schema <name> --prompt <text>` writes primary provider-neutral JSONL.
+- `image-batch-export --pass deep --captions-dir <dir> --rules <yaml|json>` writes deep JSONL only when rules declare `decision: accept_matrix`.
+- `image-batch-import --input <jsonl> --out-dir .graphify/image-dataprep [--force]` imports normalized sidecars and refuses to overwrite valid existing sidecars unless forced.
+
+These commands are runtime building blocks for skills and adapters. They do not submit provider jobs, read API keys, or make model calls.
+
 ## Assistant Flow
 
 Assistant mode does not call a provider from Graphify runtime. Instead, Graphify writes a compact manifest and prompt instructions so Codex, Claude, Gemini, or another assistant can:
@@ -396,8 +406,12 @@ Automated tests should cover:
 - full-page screenshot exclusion by default
 - caption schema validation
 - deterministic routing from synthetic captions
+- deterministic calibration sample writing
+- production cascade blocking unless `decision: accept_matrix`
 - batch JSONL export without provider calls
+- deep-pass JSONL export only for accepted deterministic deep routes
 - import of mocked provider outputs
+- import overwrite protection unless explicitly forced
 - assistant mode writing instructions without requiring API keys
 - profile-aware rejection of undeclared type hints
 

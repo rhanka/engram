@@ -128,6 +128,13 @@ Generated artifacts live under `.graphify/ontology/`:
 
 These artifacts are local runtime outputs by default. Whether a consuming project commits them is a project decision, not a Graphify default.
 
+Implemented command surface:
+
+- `graphify profile ontology-output --profile-state .graphify/profile/profile-state.json --input extraction.json --out-dir .graphify/ontology` is the public CLI wrapper.
+- `ontology-output --profile-state <path> --input <path> --out-dir <dir>` is the skill runtime command.
+
+Both commands are inert unless the loaded ontology profile declares `outputs.ontology.enabled: true`. They compile deterministic artifacts from already-produced extraction/profile evidence and do not initialize an LLM port.
+
 ## Manifest
 
 `manifest.json`:
@@ -371,6 +378,7 @@ Validation output goes to `.graphify/ontology/validation.json` and profile repor
 Automated tests should cover:
 
 - no ontology output directory when outputs are not configured
+- profile loader validation for `outputs.ontology` type declarations
 - profile config validation for output declarations
 - deterministic canonical node compilation from synthetic extraction
 - registry-backed alias compilation

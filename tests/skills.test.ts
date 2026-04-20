@@ -108,6 +108,12 @@ describe("skill cache examples", () => {
       expect(content).toContain("profile-prompt");
       expect(content).toContain("profile-validate-extraction");
       expect(content).toContain("profile-report");
+      expect(content).toContain("ontology-output");
+      expect(content).toContain("image-calibration-samples");
+      expect(content).toContain("image-calibration-replay");
+      expect(content).toContain("image-batch-export");
+      expect(content).toContain("image-batch-import");
+      expect(content).toContain("decision: accept_matrix");
       expect(content).toContain("fallback to the existing non-profile workflow");
       expect(content).toContain(".graphify/.graphify_runtime.json");
       expect(content).toContain('"runtime": "typescript"');

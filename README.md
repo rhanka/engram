@@ -332,6 +332,10 @@ graphify profile report \
   --profile-state .graphify/profile/profile-state.json \
   --graph .graphify/graph.json \
   --out .graphify/profile/profile-report.md
+graphify profile ontology-output \
+  --profile-state .graphify/profile/profile-state.json \
+  --input extraction.json \
+  --out-dir .graphify/ontology
 ```
 
 Works with any mix of file types:
@@ -370,11 +374,14 @@ graphify profile validate --config graphify.yaml
 graphify profile dataprep . --config graphify.yaml
 graphify profile validate-extraction --profile-state .graphify/profile/profile-state.json --input extraction.json
 graphify profile report --profile-state .graphify/profile/profile-state.json --graph .graphify/graph.json --out .graphify/profile/profile-report.md
+graphify profile ontology-output --profile-state .graphify/profile/profile-state.json --input extraction.json --out-dir .graphify/ontology
 ```
 
-Assistant skills use the same runtime via `project-config`, `configured-dataprep`, `profile-prompt`, `profile-validate-extraction`, and `profile-report`. Full semantic extraction remains skill-orchestrated: the assistant reads the profile prompt, extracts profile-shaped Graphify JSON, validates it with the base schema plus profile rules, then merges it through the existing graph build/report/export/wiki flow.
+Assistant skills use the same runtime via `project-config`, `configured-dataprep`, `profile-prompt`, `profile-validate-extraction`, `profile-report`, and `ontology-output`. Full semantic extraction remains skill-orchestrated: the assistant reads the profile prompt, extracts profile-shaped Graphify JSON, validates it with the base schema plus profile rules, then merges it through the existing graph build/report/export/wiki flow.
 
-Profile artifacts live under `.graphify/profile/`, semantic cache entries are isolated by profile hash, and the normal LLM Wiki remains `.graphify/wiki/index.md`. Graphify ships only synthetic profile examples and fixtures; real project configs, registries, and proprietary ontologies belong in consuming repositories. MCP-specific profile tools, embeddings, databases, remote registries, and a separate profile wiki are deferred.
+Advanced image dataprep is also opt-in through `dataprep.image_analysis.enabled`. In assistant mode, Graphify writes manifests and instructions only; Codex, Claude, Gemini, or another assistant can caption crops and propose calibration labels, but TypeScript replay owns deterministic acceptance. In batch mode, the runtime can export provider-neutral primary JSONL requests, import normalized caption/routing sidecars, and export a deep-pass JSONL only when project-owned routing rules declare `decision: accept_matrix`. Existing valid sidecars are not overwritten unless `--force` is explicitly used.
+
+Profile artifacts live under `.graphify/profile/`, image dataprep artifacts under `.graphify/image-dataprep/`, calibration proposals under `.graphify/calibration/`, and optional profile-declared ontology artifacts under `.graphify/ontology/`. Semantic cache entries are isolated by profile hash, and the normal LLM Wiki remains `.graphify/wiki/index.md`. Graphify ships only synthetic profile examples and fixtures; real project configs, registries, labels, routing rules, and proprietary ontologies belong in consuming repositories. MCP-specific profile tools, embeddings, databases, remote registries, and a resident LLM backend are deferred.
 
 ## What you get
 
