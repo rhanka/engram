@@ -859,11 +859,11 @@ PDF/OCR sidecar summary when present
 
 Write `.graphify/profile/profile-report.md` or the configured output path. Do not replace `GRAPH_REPORT.md`.
 
-- [ ] **Step 13.3: Keep report advisory**
+- [x] **Step 13.3: Keep report advisory**
 
 The report is QA and review guidance. It must not label outputs as business-approved truth.
 
-- [ ] **Step 13.4: Verify report**
+- [x] **Step 13.4: Verify report**
 
 Run:
 

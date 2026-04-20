@@ -132,5 +132,7 @@ describe("profile QA report", () => {
     expect(report).toContain("## PDF/OCR Sidecars");
     expect(report).toContain("manual.pdf -> .graphify/converted/pdf/manual.md");
     expect(report).toContain("scan.pdf requires OCR");
+    expect(report).toContain("This QA report is advisory");
+    expect(report).not.toContain("business-approved truth");
   });
 });

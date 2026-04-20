@@ -214,6 +214,7 @@ export function buildProfileReport(context: ProfileReportContext): string {
     `- Links: ${graphLinks}`,
     "",
     "## Compatibility",
+    "- This QA report is advisory review guidance, not an approval or source of truth.",
     "- This report is additive and does not replace GRAPH_REPORT.md.",
     "- Profile mode remains generic and uses synthetic-safe ontology constraints only.",
     "",
