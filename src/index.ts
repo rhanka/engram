@@ -52,6 +52,29 @@ export {
   validateProjectConfig,
 } from "./project-config.js";
 export {
+  createAssistantTextJsonClient,
+  createAssistantVisionJsonClient,
+  preflightLlmExecution,
+  redactSecrets,
+} from "./llm-execution.js";
+export type {
+  AssistantLlmClientOptions,
+  BatchVisionExportInput,
+  BatchVisionExportResult,
+  BatchVisionImportInput,
+  BatchVisionImportResult,
+  BatchVisionJsonClient,
+  LlmExecutionCapability,
+  LlmExecutionResult,
+  LlmMeshAdapter,
+  TextJsonGenerationClient,
+  TextJsonGenerationInput,
+  TextJsonGenerationResult,
+  VisionJsonAnalysisClient,
+  VisionJsonAnalysisInput,
+  VisionJsonAnalysisResult,
+} from "./llm-execution.js";
+export {
   bindOntologyProfile,
   hashOntologyProfile,
   loadOntologyProfile,
