@@ -91,6 +91,29 @@ describe("skill cache examples", () => {
     }
   });
 
+  it("documents the configured ontology profile branch in every distributed skill", () => {
+    for (const relativePath of [
+      ...ALL_SKILL_DOCS,
+      "../src/skills/skill-vscode.md",
+      "../src/skills/skill-kiro.md",
+    ]) {
+      const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
+      expect(content).toContain("Configured Project Profiles");
+      expect(content).toContain("graphify.yaml");
+      expect(content).toContain(".graphify/config.yaml");
+      expect(content).toContain("--config");
+      expect(content).toContain("--profile");
+      expect(content).toContain("profile activation");
+      expect(content).toContain("configured-dataprep");
+      expect(content).toContain("profile-prompt");
+      expect(content).toContain("profile-validate-extraction");
+      expect(content).toContain("profile-report");
+      expect(content).toContain("fallback to the existing non-profile workflow");
+      expect(content).toContain(".graphify/.graphify_runtime.json");
+      expect(content).toContain('"runtime": "typescript"');
+    }
+  });
+
   it("keeps the Windows skill usage lines aligned with upstream v0.3.28", () => {
     const content = readFileSync(new URL("../src/skills/skill-windows.md", import.meta.url), "utf-8");
 

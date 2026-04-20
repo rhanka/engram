@@ -764,7 +764,7 @@ Expected: profile CLI commands pass and existing CLI commands remain unchanged.
 - Modify: `tests/skills.test.ts`
 - Modify: `tests/codex-integration.test.ts`
 
-- [ ] **Step 12.1: Add failing skill tests**
+- [x] **Step 12.1: Add failing skill tests**
 
 Assert every distributed skill includes the same profile/config contract, adapted to its platform invocation syntax:
 
@@ -778,7 +778,7 @@ profile report runtime command
 fallback to existing flow when no config/profile is active
 ```
 
-- [ ] **Step 12.2: Update Codex skill workflow**
+- [x] **Step 12.2: Update Codex skill workflow**
 
 Add a branch:
 
@@ -796,7 +796,7 @@ else:
   keep existing non-profile workflow
 ```
 
-- [ ] **Step 12.3: Propagate equivalent workflow to non-Codex skills**
+- [x] **Step 12.3: Propagate equivalent workflow to non-Codex skills**
 
 Apply the same configured-project branch to:
 
@@ -814,11 +814,11 @@ Kiro skill: Kiro skill and steering wording
 
 Do not blindly copy Codex shell snippets into platforms that use different command or shell conventions.
 
-- [ ] **Step 12.4: Preserve runtime proof**
+- [x] **Step 12.4: Preserve runtime proof**
 
 Skills that already prove the TypeScript runtime must still verify `.graphify/.graphify_runtime.json` contains `"runtime": "typescript"`. Skills without runtime-proof blocks must still tell users to use the TypeScript package and not Python fallback behavior.
 
-- [ ] **Step 12.5: Verify skill updates**
+- [x] **Step 12.5: Verify skill updates**
 
 Run:
 

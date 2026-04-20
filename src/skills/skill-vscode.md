@@ -31,6 +31,21 @@ Use graphify from VS Code Copilot Chat to build, update, and query the project k
 - If `.graphify/needs_update` exists or `.graphify/branch.json` has `stale=true`, warn before relying on semantic results and run `/graphify . --update` when appropriate.
 - After modifying code files, run `npx graphify hook-rebuild` to keep the graph current.
 
+## Configured Project Profiles
+
+The profile activation rule is explicit: use this branch only when `graphify.yaml`, `graphify.yml`, `.graphify/config.yaml`, or `.graphify/config.yml` exists, or the invocation includes `--config` or `--profile`. If none is active, fallback to the existing non-profile workflow.
+
+Configured profile workflow:
+1. Keep the TypeScript runtime proof in `.graphify/.graphify_runtime.json`; it must contain `"runtime": "typescript"`.
+2. Run `project-config` to normalize config/profile artifacts.
+3. Run the `configured-dataprep` runtime command to produce `.graphify/profile/profile-state.json`, semantic detection, and registry extraction.
+4. Run the `profile-prompt` runtime command and use that prompt for assistant semantic extraction.
+5. Run base extraction validation, then the `profile-validate-extraction` runtime command.
+6. Merge `.graphify/profile/registry-extraction.json` with AST and semantic extraction, then finalize through the existing build/report/export runtime commands.
+7. Run the `profile-report` runtime command to write `.graphify/profile/profile-report.md`.
+
+Do not add MCP, embeddings, databases, or a forked OCR/PDF pipeline for this branch.
+
 ## Minimal Execution
 
 ```bash
