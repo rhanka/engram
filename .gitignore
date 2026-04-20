@@ -9,6 +9,7 @@ graphifyy.egg-info/
 dist/
 build/
 node_modules/
+.worktrees/
 *.tsbuildinfo
 .pytest_cache/
 .mypy_cache/

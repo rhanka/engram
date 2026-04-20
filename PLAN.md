@@ -10,6 +10,162 @@
 
 ---
 
+## Current Status
+
+- [x] `ontology dataprep profiles` base implementation is complete.
+- [x] `spec/SPEC_IMAGE_DATAPREP_ROUTING.md` defines optional crop/caption/routing dataprep.
+- [x] `spec/SPEC_LLM_EXECUTION_PORTS.md` defines provider-neutral assistant, batch, mesh and off execution modes.
+- [x] `spec/SPEC_ONTOLOGY_OUTPUT_ARTIFACTS.md` defines optional ontology/wiki output compilation.
+- [x] Ambiguity policy is `review-required non-blocking`.
+- [x] Image routing policy is `calibration-first`; Graphify must not ship magic cascade rules.
+- [x] Assistant role is `assistant-as-calibration-analyst`; TypeScript replay owns acceptance.
+- [x] Routing rules and labels are project-owned, versionable files referenced from `graphify.yaml`.
+- [x] Calibration gate requires `false_primary = 0`; missing or ambiguous labels produce `pending_labels`.
+- [x] Production cascade requires `accept_matrix`; otherwise Graphify must block automatic cascade routing.
+- [x] Ontology alias/canonicalization ambiguity is `candidate-only`, marked `needs_review`, and excluded from hardened outputs.
+- [ ] Commit the three new specs plus this plan update.
+
+## Next Evolution Plan - Image Dataprep, LLM Ports, Ontology Outputs
+
+**Goal:** Implement the three new specs as strictly opt-in capabilities without changing default `$graphify` behavior.
+
+**Compatibility Guardrails:**
+
+- [ ] No direct LLM provider is constructed without explicit config.
+- [ ] No image dataprep artifacts are generated without `dataprep.image_analysis.enabled: true` or an explicit image dataprep command.
+- [ ] No `.graphify/ontology/` output is generated without explicit ontology output config.
+- [ ] No domain-specific type, taxonomy, label, registry or ontology example is added to Graphify.
+- [ ] Existing non-configured tests prove `detect()`, `prepareSemanticDetection()`, `validateExtraction()`, build, report and export behavior are unchanged.
+
+### Lot A - Config Surface And Type Contracts
+
+**Files:**
+- Modify: `src/types.ts`
+- Modify: `src/project-config.ts`
+- Modify: `tests/project-config.test.ts`
+- Modify: `tests/public-api.test.ts`
+- Modify: `spec/SPEC_GRAPHIFY.md`
+
+- [ ] Add `GraphifyImageAnalysisPolicy` with `enabled`, `mode`, `artifact_source`, `caption_schema`, `routing_profile`, `primary_model`, `deep_model`, `calibration`, `max_markdown_context_chars`, and `batch`.
+- [ ] Add `GraphifyLlmExecutionPolicy` with `mode: assistant|batch|mesh|off`, text JSON, vision JSON, batch and mesh config blocks.
+- [ ] Add ontology output config types for profile-declared `outputs.ontology`.
+- [ ] Normalize config paths for `calibration.rules_path` and `calibration.labels_path` relative to `graphify.yaml`.
+- [ ] Validate `mode` enums and fail fast for malformed advanced config.
+- [ ] Add tests proving absent advanced config normalizes to inert defaults.
+- [ ] Commit as `feat: add advanced dataprep config contracts`.
+
+### Lot B - LLM Execution Ports
+
+**Files:**
+- Create: `src/llm-execution.ts`
+- Create: `tests/llm-execution.test.ts`
+- Modify: `src/index.ts`
+
+- [ ] Define `TextJsonGenerationClient`, `VisionJsonAnalysisClient`, `BatchVisionJsonClient`, and `LlmMeshAdapter` ports.
+- [ ] Implement assistant no-call adapter that writes/validates instruction artifacts only.
+- [ ] Implement preflight validation for `batch` and `mesh` modes without adding provider SDK dependencies.
+- [ ] Add secret redaction helpers for generated audit metadata.
+- [ ] Add tests proving default config constructs no provider and reads no API key.
+- [ ] Add tests proving `assistant` mode works without credentials.
+- [ ] Add tests proving `batch` and `mesh` fail clearly without required adapter/provider config.
+- [ ] Commit as `feat: add provider-neutral llm execution ports`.
+
+### Lot C - Image Dataprep Manifest And Caption Schemas
+
+**Files:**
+- Create: `src/image-dataprep.ts`
+- Create: `src/image-caption-schema.ts`
+- Create: `tests/image-dataprep.test.ts`
+- Modify: `src/paths.ts`
+- Modify: `src/skill-runtime.ts`
+- Modify: `src/cli.ts`
+
+- [ ] Build `.graphify/image-dataprep/manifest.json` from OCR crop artifacts and direct image inputs.
+- [ ] Preserve provenance to original file, source page, sidecar path, image path, MIME type and SHA-256.
+- [ ] Validate `generic_image_caption_v1` sidecars.
+- [ ] Validate `generic_image_routing_v1` sidecars.
+- [ ] Ensure full-page screenshot artifacts are excluded by default.
+- [ ] Add assistant-mode prompt artifact generation without provider calls.
+- [ ] Add tests proving no image dataprep directory is created without opt-in.
+- [ ] Commit as `feat: add image dataprep manifests and schemas`.
+
+### Lot D - Calibration Workflow
+
+**Files:**
+- Create: `src/image-routing-calibration.ts`
+- Create: `tests/image-routing-calibration.test.ts`
+- Modify: `src/skill-runtime.ts`
+- Modify: `src/cli.ts`
+- Modify: `src/skills/*`
+
+- [ ] Implement deterministic sample selection into `.graphify/calibration/<run-id>/samples.json`.
+- [ ] Implement machine-readable labels loader for `graphify_image_routing_labels_v1`.
+- [ ] Implement project-owned routing rules loader for `graphify_image_routing_rules_v1`.
+- [ ] Implement TypeScript replay of proposed rules without provider calls.
+- [ ] Compute `false_primary`, false `deep`, missing labels, ambiguous labels and estimated deep ratio.
+- [ ] Gate acceptance with `false_primary = 0`; missing or ambiguous labels produce `pending_labels`.
+- [ ] Emit decisions `accept_matrix`, `revise_matrix`, `reject_cascade`, or `pending_labels`.
+- [ ] Block automatic production cascade unless rules declare `decision: accept_matrix`.
+- [ ] Update skills so Codex/Claude/Gemini can act as `assistant-as-calibration-analyst`.
+- [ ] Commit as `feat: add image routing calibration workflow`.
+
+### Lot E - Batch And Mesh Import/Export
+
+**Files:**
+- Create: `src/image-dataprep-batch.ts`
+- Create: `tests/image-dataprep-batch.test.ts`
+- Modify: `src/llm-execution.ts`
+- Modify: `src/skill-runtime.ts`
+- Modify: `src/cli.ts`
+
+- [ ] Export provider-neutral JSONL requests for primary captioning.
+- [ ] Import mocked primary results into caption and routing sidecars.
+- [ ] Generate deep-pass JSONL only for accepted-rule `deep` routes.
+- [ ] Import mocked deep results without overwriting valid prior sidecars unless `--force`.
+- [ ] Reject invalid provider JSON before downstream use.
+- [ ] Redact all secrets from manifests, reports and logs.
+- [ ] Commit as `feat: add image dataprep batch import export`.
+
+### Lot F - Ontology Output Artifacts
+
+**Files:**
+- Create: `src/ontology-output.ts`
+- Create: `tests/ontology-output.test.ts`
+- Modify: `src/profile-report.ts`
+- Modify: `src/paths.ts`
+- Modify: `src/skill-runtime.ts`
+- Modify: `src/cli.ts`
+
+- [ ] Generate `.graphify/ontology/manifest.json` only when ontology outputs are configured.
+- [ ] Compile profile-selected canonical candidate nodes into `nodes.json`.
+- [ ] Compile alias records into `aliases.json`.
+- [ ] Compile profile-valid relations into `relations.json`.
+- [ ] Compile source refs and occurrence-like records according to profile declarations.
+- [ ] Mark ambiguous canonicalization or alias attachment as `needs_review`.
+- [ ] Exclude `needs_review` ambiguity from hardened outputs.
+- [ ] Generate entity-centric wiki pages only for configured page node types.
+- [ ] Generate `index.json` retrieval projection without prescribing consuming application channel names.
+- [ ] Commit as `feat: add optional ontology output artifacts`.
+
+### Lot G - Documentation, Skills, And UAT
+
+**Files:**
+- Modify: `README.md`
+- Modify: translated README files if present
+- Modify: `spec/SPEC_GRAPHIFY.md`
+- Modify: `src/skills/*`
+- Modify: `PLAN.md`
+
+- [ ] Update README with opt-in image dataprep, LLM execution ports, calibration workflow and ontology outputs.
+- [ ] Update specs to reflect final implemented CLI names and artifact paths.
+- [ ] Update all assistant skills with calibration analyst workflow and non-disruption rules.
+- [ ] Add UATs for baseline no-config behavior, assistant calibration, accepted rules, blocked cascade and ontology output generation.
+- [ ] Run `npm run lint`.
+- [ ] Run `npm run build`.
+- [ ] Run `npm test`.
+- [ ] Run `git diff --check`.
+- [ ] Check off completed plan items and commit as `docs: document advanced dataprep workflows`.
+
 ## Scope And Compatibility Rules
 
 - [x] Profile behavior activates only when Graphify discovers a project config, receives `--config`, or receives `--profile`.
