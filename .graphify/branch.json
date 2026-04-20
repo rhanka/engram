@@ -1,16 +1,16 @@
 {
   "schemaVersion": 1,
-  "branchName": "chore/upstream-v4-0.4.23-parity",
+  "branchName": "feat/ontology-dataprep-profiles",
   "worktreePath": "/home/antoinefa/src/graphify",
-  "upstream": "origin/v3-typescript",
-  "mergeBase": "359d652631e03e9fa8065a674c207b9f5925e2d5",
-  "firstSeenHead": "33edbd579fb84763b43f4c3478b4d719d92c96f5",
-  "lastSeenHead": "8529541f9371e3e15e95f244370ab743ef9151a4",
-  "lastAnalyzedHead": "8529541f9371e3e15e95f244370ab743ef9151a4",
+  "upstream": null,
+  "mergeBase": null,
+  "firstSeenHead": "969dabfa30237d213723f19a5a37732cc253693f",
+  "lastSeenHead": "969dabfa30237d213723f19a5a37732cc253693f",
+  "lastAnalyzedHead": "969dabfa30237d213723f19a5a37732cc253693f",
   "stale": false,
   "staleReason": null,
   "staleSince": null,
   "lifecycleEvent": null,
-  "createdAt": "2026-04-19T20:49:26.962Z",
-  "updatedAt": "2026-04-19T22:06:39.819Z"
+  "createdAt": "2026-04-20T12:03:14.684Z",
+  "updatedAt": "2026-04-20T12:03:14.684Z"
 }

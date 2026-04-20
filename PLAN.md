@@ -12,39 +12,39 @@
 
 ## Scope And Compatibility Rules
 
-- [ ] Profile behavior activates only when Graphify discovers a project config, receives `--config`, or receives `--profile`.
-- [ ] A committed `graphify.yaml` is an explicit project opt-in. Without config/profile activation, existing commands and skills must behave exactly as they do today.
-- [ ] Do not introduce real customer, partner, project, dataset, registry, or proprietary ontology examples into code, docs, fixtures, tests, or package assets.
-- [ ] Use synthetic equipment-maintenance fixtures only.
-- [ ] Do not add new MCP tools, embeddings, vector stores, databases, remote registry fetching, or a forked PDF/OCR/transcript pipeline in this lot.
-- [ ] Reuse `detect()`, `prepareSemanticDetection()`, PDF/OCR sidecars, semantic cache mechanics, `validateExtraction()`, build, report, export, and wiki.
-- [ ] Keep `.graphify/` as the state root. Profile artifacts live under `.graphify/profile/`.
-- [ ] Keep base `Extraction`, `GraphNode`, `GraphEdge`, and `Hyperedge` backward compatible.
-- [ ] Keep profile validation as an additional wrapper. Do not weaken or overload `validateExtraction()`.
-- [ ] Keep semantic cache compatible but profile-isolated, so generic cached extraction cannot satisfy profile-aware extraction.
+- [x] Profile behavior activates only when Graphify discovers a project config, receives `--config`, or receives `--profile`.
+- [x] A committed `graphify.yaml` is an explicit project opt-in. Without config/profile activation, existing commands and skills must behave exactly as they do today.
+- [x] Do not introduce real customer, partner, project, dataset, registry, or proprietary ontology examples into code, docs, fixtures, tests, or package assets.
+- [x] Use synthetic equipment-maintenance fixtures only.
+- [x] Do not add new MCP tools, embeddings, vector stores, databases, remote registry fetching, or a forked PDF/OCR/transcript pipeline in this lot.
+- [x] Reuse `detect()`, `prepareSemanticDetection()`, PDF/OCR sidecars, semantic cache mechanics, `validateExtraction()`, build, report, export, and wiki.
+- [x] Keep `.graphify/` as the state root. Profile artifacts live under `.graphify/profile/`.
+- [x] Keep base `Extraction`, `GraphNode`, `GraphEdge`, and `Hyperedge` backward compatible.
+- [x] Keep profile validation as an additional wrapper. Do not weaken or overload `validateExtraction()`.
+- [x] Keep semantic cache compatible but profile-isolated, so generic cached extraction cannot satisfy profile-aware extraction.
 
 ## Contradictions Resolved In The Spec
 
-- [ ] `--profile` is not the only activation path. `graphify.yaml` and `--config` are explicit project opt-ins and therefore compatible with the additive contract.
-- [ ] `graphify . --config graphify.yaml` must not pretend to perform assistant semantic extraction from a pure local CLI if no assistant/provider path exists. The local CLI/runtime can validate config, run local dataprep, produce prompts, validate fragments, and report; the skill orchestrates assistant extraction.
-- [ ] Profile reports and profile artifacts are additive. They do not replace `GRAPH_REPORT.md`, `graph.json`, `graph.html`, or `.graphify/wiki/index.md`.
+- [x] `--profile` is not the only activation path. `graphify.yaml` and `--config` are explicit project opt-ins and therefore compatible with the additive contract.
+- [x] `graphify . --config graphify.yaml` must not pretend to perform assistant semantic extraction from a pure local CLI if no assistant/provider path exists. The local CLI/runtime can validate config, run local dataprep, produce prompts, validate fragments, and report; the skill orchestrates assistant extraction.
+- [x] Profile reports and profile artifacts are additive. They do not replace `GRAPH_REPORT.md`, `graph.json`, `graph.html`, or `.graphify/wiki/index.md`.
 
 ## File Responsibility Map
 
-- [ ] `src/project-config.ts`: discover and load `graphify.yaml`, `graphify.yml`, `.graphify/config.yaml`, `.graphify/config.yml`; resolve physical input paths; normalize dataprep defaults.
-- [ ] `src/ontology-profile.ts`: load YAML/JSON ontology profiles; validate semantic constraints; bind profile registry declarations to project config registry sources.
-- [ ] `src/profile-registry.ts`: load CSV/JSON/YAML registries; map configured columns to canonical records; convert records to base-valid Graphify extraction fragments.
-- [ ] `src/configured-dataprep.ts`: expand configured inputs, apply exclusions, call `detect()` and `prepareSemanticDetection()`, load registries, and write deterministic `.graphify/profile/` artifacts.
-- [ ] `src/profile-prompts.ts`: build profile-aware extraction prompts for skills and chunked semantic extraction.
-- [ ] `src/profile-validate.ts`: run `validateExtraction()` first, then enforce profile node, relation, citation, status, and registry constraints.
-- [ ] `src/profile-report.ts`: write profile QA reports from config, profile, registries, graph, and validation results.
-- [ ] `src/paths.ts`: add typed profile artifact paths under `.graphify/profile/`.
-- [ ] `src/cache.ts`: add optional profile cache namespace/hash support without changing current generic cache keys.
-- [ ] `src/skill-runtime.ts`: expose deterministic runtime commands for skills.
-- [ ] `src/cli.ts`: expose minimal public profile/config commands without disrupting existing commands.
-- [ ] `src/skills/*`: add the configured-project branch to every distributed assistant skill, with platform-specific syntax preserved.
-- [ ] `src/index.ts`: export public profile/config types and helper functions.
-- [ ] `tests/fixtures/profile-demo/`: synthetic config, profile, registries, docs, generated-artifact folders, and expected normalized outputs.
+- [x] `src/project-config.ts`: discover and load `graphify.yaml`, `graphify.yml`, `.graphify/config.yaml`, `.graphify/config.yml`; resolve physical input paths; normalize dataprep defaults.
+- [x] `src/ontology-profile.ts`: load YAML/JSON ontology profiles; validate semantic constraints; bind profile registry declarations to project config registry sources.
+- [x] `src/profile-registry.ts`: load CSV/JSON/YAML registries; map configured columns to canonical records; convert records to base-valid Graphify extraction fragments.
+- [x] `src/configured-dataprep.ts`: expand configured inputs, apply exclusions, call `detect()` and `prepareSemanticDetection()`, load registries, and write deterministic `.graphify/profile/` artifacts.
+- [x] `src/profile-prompts.ts`: build profile-aware extraction prompts for skills and chunked semantic extraction.
+- [x] `src/profile-validate.ts`: run `validateExtraction()` first, then enforce profile node, relation, citation, status, and registry constraints.
+- [x] `src/profile-report.ts`: write profile QA reports from config, profile, registries, graph, and validation results.
+- [x] `src/paths.ts`: add typed profile artifact paths under `.graphify/profile/`.
+- [x] `src/cache.ts`: add optional profile cache namespace/hash support without changing current generic cache keys.
+- [x] `src/skill-runtime.ts`: expose deterministic runtime commands for skills.
+- [x] `src/cli.ts`: expose minimal public profile/config commands without disrupting existing commands.
+- [x] `src/skills/*`: add the configured-project branch to every distributed assistant skill, with platform-specific syntax preserved.
+- [x] `src/index.ts`: export public profile/config types and helper functions.
+- [x] `tests/fixtures/profile-demo/`: synthetic config, profile, registries, docs, generated-artifact folders, and expected normalized outputs.
 
 ---
 
@@ -1042,7 +1042,7 @@ Expected: skill tests pass, no stale branch references unless historical, and no
 **Files:**
 - Modify after code changes: `.graphify/`
 
-- [ ] **Step 16.1: Run full test suite**
+- [x] **Step 16.1: Run full test suite**
 
 Run:
 
@@ -1055,7 +1055,7 @@ git diff --check
 
 Expected: all pass.
 
-- [ ] **Step 16.2: Refresh graph state**
+- [x] **Step 16.2: Refresh graph state**
 
 Run after code changes:
 
@@ -1065,7 +1065,7 @@ npx graphify hook-rebuild
 
 Expected: `.graphify/` is current for changed code files.
 
-- [ ] **Step 16.3: Inspect graph impact**
+- [x] **Step 16.3: Inspect graph impact**
 
 Run:
 
@@ -1076,7 +1076,7 @@ graphify review-delta --graph .graphify/graph.json
 
 Expected: profile changes are localized to config/profile/dataprep/validation/skill areas.
 
-- [ ] **Step 16.4: Commit in coherent lots**
+- [x] **Step 16.4: Commit in coherent lots**
 
 Use one commit per implementation lot or tightly coupled group:
 
@@ -1090,7 +1090,7 @@ runtime/CLI/skill
 report/E2E/docs
 ```
 
-- [ ] **Step 16.5: PR checklist**
+- [x] **Step 16.5: PR checklist**
 
 The PR must state:
 
