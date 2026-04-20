@@ -85,6 +85,7 @@ describe("public API compatibility", () => {
     expect(typeof api.buildProfileExtractionPrompt).toBe("function");
     expect(typeof api.buildProfileChunkPrompt).toBe("function");
     expect(typeof api.buildProfileValidationPrompt).toBe("function");
+    expect(typeof api.buildProfileReport).toBe("function");
   });
 
   it("accepts object-style map inputs and option objects", () => {

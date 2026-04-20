@@ -72,6 +72,12 @@ export type {
   ProfilePromptOptions,
   ProfilePromptState,
 } from "./profile-prompts.js";
+export { buildProfileReport } from "./profile-report.js";
+export type {
+  ProfileReportContext,
+  ProfileReportGraphData,
+  ProfileReportPdfArtifact,
+} from "./profile-report.js";
 export { validateExtraction, assertValid } from "./validate.js";
 export { buildFromJson, build } from "./build.js";
 export { cluster, cohesionScore, scoreAll } from "./cluster.js";

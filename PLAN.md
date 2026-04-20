@@ -837,7 +837,7 @@ Expected: skill tests pass, Codex integration tests pass, and every distributed 
 - Create: `tests/profile-report.test.ts`
 - Modify: `src/index.ts`
 
-- [ ] **Step 13.1: Add failing profile report tests**
+- [x] **Step 13.1: Add failing profile report tests**
 
 Assert report includes:
 
@@ -855,7 +855,7 @@ candidates eligible for human review
 PDF/OCR sidecar summary when present
 ```
 
-- [ ] **Step 13.2: Implement profile report**
+- [x] **Step 13.2: Implement profile report**
 
 Write `.graphify/profile/profile-report.md` or the configured output path. Do not replace `GRAPH_REPORT.md`.
 
