@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   writeFileSync,
 } from "node:fs";
@@ -34,6 +35,12 @@ import { buildReviewAnalysis, reviewAnalysisToText, evaluateReviewAnalysis, revi
 import { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
 import { parsePdfOcrMode } from "./pdf-preflight.js";
 import { prepareSemanticDetection } from "./semantic-prepare.js";
+import { discoverProjectConfig, loadProjectConfig } from "./project-config.js";
+import { loadOntologyProfile } from "./ontology-profile.js";
+import { runConfiguredDataprep, type ProfileState } from "./configured-dataprep.js";
+import { buildProfileExtractionPrompt, type ProfilePromptState } from "./profile-prompts.js";
+import { validateProfileExtraction, profileValidationResultToMarkdown } from "./profile-validate.js";
+import { buildProfileReport } from "./profile-report.js";
 import { normalizeSearchText } from "./search.js";
 import type {
   DetectionResult,
@@ -42,6 +49,9 @@ import type {
   GraphDiffResult,
   SuggestedQuestion,
   SurpriseEntry,
+  NormalizedOntologyProfile,
+  NormalizedProjectConfig,
+  RegistryRecord,
 } from "./types.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -76,6 +86,38 @@ function cacheOptionsFromRuntime(opts: { cacheNamespace?: string; profileState?:
     throw new Error(`Profile state ${resolve(opts.profileState)} is missing profile_hash`);
   }
   return { profileHash };
+}
+
+interface ProfileRuntimeContext extends ProfilePromptState {
+  profileState: ProfileState;
+  profile: NormalizedOntologyProfile;
+  projectConfig?: NormalizedProjectConfig;
+  registries?: Record<string, RegistryRecord[]>;
+}
+
+function loadProfileRuntimeContext(profileStatePath: string): ProfileRuntimeContext {
+  const resolvedStatePath = resolve(profileStatePath);
+  const profileDir = dirname(resolvedStatePath);
+  const profileState = readJson<ProfileState>(resolvedStatePath);
+  const profile = readJson<NormalizedOntologyProfile>(join(profileDir, "ontology-profile.normalized.json"));
+  const projectConfigPath = join(profileDir, "project-config.normalized.json");
+  const registriesDir = join(profileDir, "registries");
+  const projectConfig = existsSync(projectConfigPath)
+    ? readJson<NormalizedProjectConfig>(projectConfigPath)
+    : undefined;
+  const registries: Record<string, RegistryRecord[]> = {};
+  if (existsSync(registriesDir)) {
+    for (const file of readdirSync(registriesDir)) {
+      if (!file.endsWith(".json")) continue;
+      registries[file.slice(0, -".json".length)] = readJson<RegistryRecord[]>(join(registriesDir, file));
+    }
+  }
+  return {
+    profileState,
+    profile,
+    ...(projectConfig ? { projectConfig } : {}),
+    registries,
+  };
 }
 
 function getVersion(): string {
@@ -359,6 +401,88 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .argument("[root]", "Workspace root", ".")
     .action((root) => {
       console.log(JSON.stringify(resolveGraphifyPaths({ root: resolve(root) }), null, 2));
+    });
+
+  program
+    .command("project-config")
+    .description("Load and normalize a configured Graphify project profile")
+    .option("--root <path>", "Workspace root", ".")
+    .option("--config <path>", "Explicit graphify.yaml path")
+    .requiredOption("--out <path>", "Path to write normalized project config JSON")
+    .option("--profile-out <path>", "Path to write bound ontology profile JSON")
+    .action((opts) => {
+      const root = resolve(opts.root);
+      const configPath = opts.config
+        ? resolve(opts.config)
+        : discoverProjectConfig(root).path;
+      if (!configPath) {
+        throw new Error(`No graphify project config found under ${root}`);
+      }
+      const projectConfig = loadProjectConfig(configPath);
+      const profile = loadOntologyProfile(projectConfig.profile.resolvedPath, { projectConfig });
+      writeJson(opts.out, projectConfig);
+      if (opts.profileOut) writeJson(opts.profileOut, profile);
+      console.log(`Loaded profile ${profile.id} from ${projectConfig.sourcePath}`);
+    });
+
+  program
+    .command("configured-dataprep")
+    .description("Run deterministic local dataprep for a configured profile project")
+    .option("--root <path>", "Workspace root", ".")
+    .option("--config <path>", "Explicit graphify.yaml path")
+    .option("--out-dir <path>", "State output directory relative to root or absolute")
+    .action(async (opts) => {
+      const result = await runConfiguredDataprep(resolve(opts.root), {
+        ...(opts.config ? { configPath: resolve(opts.config) } : {}),
+        ...(opts.outDir ? { stateDir: opts.outDir } : {}),
+      });
+      console.log(
+        `Configured dataprep: ${result.semanticDetection.total_files} semantic file(s), ` +
+        `${result.registryExtraction.nodes.length} registry node(s)`,
+      );
+    });
+
+  program
+    .command("profile-prompt")
+    .description("Write a profile-aware extraction prompt for assistant skills")
+    .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
+    .requiredOption("--out <path>", "Prompt markdown output path")
+    .action((opts) => {
+      const context = loadProfileRuntimeContext(opts.profileState);
+      writeFileSync(resolve(opts.out), buildProfileExtractionPrompt(context), "utf-8");
+      console.log(`Profile prompt written to ${resolve(opts.out)}`);
+    });
+
+  program
+    .command("profile-validate-extraction")
+    .description("Validate an extraction JSON against a profile state")
+    .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
+    .requiredOption("--input <path>", "Extraction JSON to validate")
+    .option("--json", "Print JSON instead of markdown")
+    .action((opts) => {
+      const context = loadProfileRuntimeContext(opts.profileState);
+      const extraction = ensureExtractionShape(readJson<Partial<Extraction>>(opts.input));
+      const result = validateProfileExtraction(extraction, { profile: context.profile });
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(profileValidationResultToMarkdown(result));
+      }
+      if (!result.valid) process.exit(1);
+    });
+
+  program
+    .command("profile-report")
+    .description("Write an additive profile QA report")
+    .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
+    .requiredOption("--graph <path>", "Graph JSON path")
+    .requiredOption("--out <path>", "Report markdown output path")
+    .action((opts) => {
+      const context = loadProfileRuntimeContext(opts.profileState);
+      const graph = readJson<{ nodes?: unknown[]; links?: unknown[] }>(opts.graph);
+      const report = buildProfileReport({ ...context, graph });
+      writeFileSync(resolve(opts.out), report, "utf-8");
+      console.log(`Profile report written to ${resolve(opts.out)}`);
     });
 
   program

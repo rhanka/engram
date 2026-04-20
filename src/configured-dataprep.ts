@@ -48,6 +48,7 @@ export interface ProfileState {
 export interface ConfiguredDataprepOptions {
   configPath?: string;
   profilePath?: string;
+  stateDir?: string;
   followSymlinks?: boolean;
   incremental?: boolean;
   semanticPrepare?: (
@@ -272,7 +273,16 @@ export async function runConfiguredDataprep(
   options: ConfiguredDataprepOptions = {},
 ): Promise<ConfiguredDataprepResult> {
   const resolvedRoot = resolve(root);
-  const projectConfig = loadProjectConfig(resolveConfigPath(resolvedRoot, options));
+  const loadedProjectConfig = loadProjectConfig(resolveConfigPath(resolvedRoot, options));
+  const projectConfig = options.stateDir
+    ? {
+      ...loadedProjectConfig,
+      outputs: {
+        ...loadedProjectConfig.outputs,
+        state_dir: resolve(resolvedRoot, options.stateDir),
+      },
+    }
+    : loadedProjectConfig;
   const profile = loadOntologyProfile(options.profilePath ?? projectConfig.profile.resolvedPath, {
     projectConfig,
   });

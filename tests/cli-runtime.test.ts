@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -14,6 +14,12 @@ afterEach(() => {
 function tempProject(): string {
   const dir = mkdtempSync(join(tmpdir(), "graphify-cli-runtime-"));
   tempDirs.push(dir);
+  return dir;
+}
+
+function tempProfileProject(): string {
+  const dir = tempProject();
+  cpSync(resolve(process.cwd(), "tests", "fixtures", "profile-demo"), dir, { recursive: true });
   return dir;
 }
 
@@ -244,5 +250,67 @@ describe("skill runtime artifact parity", () => {
     expect(JSON.parse(readFileSync(profileCachedPath, "utf-8")).nodes).toHaveLength(1);
     expect(genericMiss.logs.join("\n")).toContain("Cache: 0 files hit, 1 files need extraction");
     expect(readFileSync(genericUncachedPath, "utf-8")).toBe(docPath);
+  });
+
+  it("writes normalized project config and profile artifacts", async () => {
+    const dir = tempProfileProject();
+    const configOut = join(dir, ".graphify", "profile", "project-config.normalized.json");
+    const profileOut = join(dir, ".graphify", "profile", "ontology-profile.normalized.json");
+
+    const result = await runSkillRuntime([
+      "project-config",
+      "--root", dir,
+      "--out", configOut,
+      "--profile-out", profileOut,
+    ], dir);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.logs.join("\n")).toContain("Loaded profile equipment-maintenance-demo");
+    expect(JSON.parse(readFileSync(configOut, "utf-8")).inputs.corpus[0]).toBe(join(dir, "raw", "manuals"));
+    expect(JSON.parse(readFileSync(profileOut, "utf-8")).id).toBe("equipment-maintenance-demo");
+  });
+
+  it("runs configured profile dataprep and downstream profile runtime commands", async () => {
+    const dir = tempProfileProject();
+    const statePath = join(dir, ".graphify", "profile", "profile-state.json");
+    const promptPath = join(dir, ".graphify", "profile", "prompt.md");
+    const validationInput = join(dir, ".graphify", "profile", "registry-extraction.json");
+    const reportPath = join(dir, ".graphify", "profile", "profile-report.md");
+    const graphPath = writeGraph(dir);
+
+    const dataprep = await runSkillRuntime([
+      "configured-dataprep",
+      "--root", dir,
+      "--config", join(dir, "graphify.yaml"),
+      "--out-dir", ".graphify",
+    ], dir);
+    const prompt = await runSkillRuntime([
+      "profile-prompt",
+      "--profile-state", statePath,
+      "--out", promptPath,
+    ], dir);
+    const validation = await runSkillRuntime([
+      "profile-validate-extraction",
+      "--profile-state", statePath,
+      "--input", validationInput,
+      "--json",
+    ], dir);
+    const report = await runSkillRuntime([
+      "profile-report",
+      "--profile-state", statePath,
+      "--graph", graphPath,
+      "--out", reportPath,
+    ], dir);
+
+    expect(dataprep.exitCode).toBe(0);
+    expect(dataprep.logs.join("\n")).toContain("Configured dataprep");
+    expect(existsSync(statePath)).toBe(true);
+    expect(prompt.exitCode).toBe(0);
+    expect(readFileSync(promptPath, "utf-8")).toContain("Allowed node types");
+    expect(validation.exitCode).toBe(0);
+    expect(JSON.parse(validation.logs.join("\n")).valid).toBe(true);
+    expect(report.exitCode).toBe(0);
+    expect(readFileSync(reportPath, "utf-8")).toContain("# Graphify Profile Report");
+    expect(readFileSync(reportPath, "utf-8")).toContain("equipment-maintenance-demo");
   });
 });

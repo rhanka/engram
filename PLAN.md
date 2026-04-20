@@ -666,7 +666,7 @@ Expected: prompts are deterministic, profile-aware, and generic.
 - Modify: `src/skill-runtime.ts`
 - Modify: `tests/cli-runtime.test.ts`
 
-- [ ] **Step 10.1: Add failing runtime command tests**
+- [x] **Step 10.1: Add failing runtime command tests**
 
 Add tests for:
 
@@ -678,15 +678,15 @@ profile-validate-extraction --profile-state <file> --input <json> --json
 profile-report --profile-state <file> --graph <graph.json> --out <md>
 ```
 
-- [ ] **Step 10.2: Implement runtime commands**
+- [x] **Step 10.2: Implement runtime commands**
 
 Commands must write deterministic files and return non-zero on invalid config/profile/extraction.
 
-- [ ] **Step 10.3: Preserve existing runtime commands**
+- [x] **Step 10.3: Preserve existing runtime commands**
 
 Existing commands such as `detect`, `prepare-semantic-detect`, `check-semantic-cache`, `merge-semantic`, `merge-extraction`, and `finalize-build` must keep their current arguments and behavior.
 
-- [ ] **Step 10.4: Verify runtime**
+- [x] **Step 10.4: Verify runtime**
 
 Run:
 
