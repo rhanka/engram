@@ -6,7 +6,7 @@
  * Doc/paper/image changes write a flag and notify the user.
  */
 import { existsSync, mkdirSync, writeFileSync, unlinkSync } from "node:fs";
-import { resolve as pathResolve, extname, basename } from "node:path";
+import { resolve as pathResolve, extname, basename, relative } from "node:path";
 import {
   DEFAULT_GRAPHIFY_STATE_DIR,
   LEGACY_GRAPHIFY_STATE_DIR,
@@ -30,6 +30,23 @@ const WATCHED_EXTENSIONS = new Set([
 // ---------------------------------------------------------------------------
 // Rebuild pipeline (code-only, no LLM)
 // ---------------------------------------------------------------------------
+
+function portablePath(path: string): string {
+  return path.replace(/\\/g, "/");
+}
+
+function projectRelativePath(root: string, filePath: string): string {
+  const rel = relative(root, pathResolve(filePath));
+  if (rel && !rel.startsWith("..")) return portablePath(rel);
+  return portablePath(basename(filePath));
+}
+
+function projectRootLabel(root: string): string {
+  const rel = relative(process.cwd(), root);
+  if (!rel) return ".";
+  if (!rel.startsWith("..")) return portablePath(rel);
+  return basename(root);
+}
 
 export async function rebuildCode(
   watchPath: string,
@@ -72,14 +89,32 @@ export async function rebuildCode(
       return false;
     }
 
+    const root = pathResolve(watchPath);
+    const relativeResult = {
+      ...result,
+      nodes: result.nodes.map((node) => ({
+        ...node,
+        source_file: projectRelativePath(root, node.source_file),
+      })),
+      edges: result.edges.map((edge) => ({
+        ...edge,
+        source_file: projectRelativePath(root, edge.source_file),
+      })),
+      hyperedges: (result.hyperedges ?? []).map((hyperedge) => ({
+        ...hyperedge,
+        source_file: projectRelativePath(root, hyperedge.source_file),
+      })),
+    };
+    const relativeCodeFiles = codeFiles.map((file) => projectRelativePath(root, file));
+
     const detection = {
       files: {
-        code: codeFiles,
+        code: relativeCodeFiles,
         document: [] as string[],
         paper: [] as string[],
         image: [] as string[],
       },
-      total_files: codeFiles.length,
+      total_files: relativeCodeFiles.length,
       total_words: 0,
       needs_graph: true,
       warning: null,
@@ -87,7 +122,7 @@ export async function rebuildCode(
       graphifyignore_patterns: 0,
     };
 
-    const G = buildFromJson(result);
+    const G = buildFromJson(relativeResult);
     const communities = cluster(G);
     const cohesion = scoreAll(G, communities);
     const gods = godNodes(G);
@@ -110,7 +145,7 @@ export async function rebuildCode(
       surprises,
       detection,
       { input: 0, output: 0 },
-      watchPath,
+      projectRootLabel(root),
       questions,
     );
     writeFileSync(paths.report, report, "utf-8");

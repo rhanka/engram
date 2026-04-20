@@ -135,6 +135,23 @@ describe("public CLI runtime command parity", () => {
     expect(existsSync(join(dir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
   });
 
+  it("keeps one-shot update artifacts project-relative", async () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+
+    const result = await runCli(["update", "."], dir);
+    const graphText = readFileSync(join(dir, ".graphify", "graph.json"), "utf-8");
+    const reportText = readFileSync(join(dir, ".graphify", "GRAPH_REPORT.md"), "utf-8");
+    const graph = JSON.parse(graphText) as { nodes: Array<{ source_file?: string }> };
+
+    expect(result.exitCode).toBe(0);
+    expect(graph.nodes.some((node) => node.source_file === "src/alpha.ts")).toBe(true);
+    expect(graphText).not.toContain(dir);
+    expect(reportText).not.toContain(dir);
+    expect(reportText).toContain("# Graph Report - .");
+  });
+
   it("supports cluster-only and refreshes graph.html", async () => {
     const dir = tempProject();
     writeGraph(dir);
