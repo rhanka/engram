@@ -48,6 +48,16 @@
 - [x] Run full verification: targeted Vitest, `npm run lint`, `npm run build`, `npm test`, `git diff --check`.
 - [ ] After merge, delete/regenerate `.graphify` in the main worktree and run `graphify portable-check .graphify` before committing generated graph artifacts.
 
+## Deferred Branch - Input Scope Modes
+
+**Goal:** Add a safe input inventory layer so code and review runs default to committed Git files, while knowledge-base runs can explicitly opt into broader folder scans.
+
+- [x] Create isolated worktree `spec/input-scope-modes`.
+- [x] Write `spec/SPEC_INPUT_SCOPE_MODES.md`.
+- [x] Commit initial scope spec and baseline inventory prototype.
+- [ ] Rebase the branch on current `main` before continuing implementation.
+- [ ] Finish CLI/runtime exposure (`--scope`, `scope inspect`, report summary, skill guidance) before proposing merge.
+
 ## Next Evolution Plan - Image Dataprep, LLM Ports, Ontology Outputs
 
 **Goal:** Implement the three new specs as strictly opt-in capabilities without changing default `$graphify` behavior.
