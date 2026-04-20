@@ -704,7 +704,7 @@ Expected: new profile runtime commands pass and existing runtime command tests s
 - Modify: `src/cli.ts`
 - Modify: `tests/cli.test.ts`
 
-- [ ] **Step 11.1: Add failing CLI tests**
+- [x] **Step 11.1: Add failing CLI tests**
 
 Cover:
 
@@ -717,7 +717,7 @@ graphify . --config graphify.yaml does not run fake LLM extraction from local CL
 graphify . without config/profile preserves existing behavior
 ```
 
-- [ ] **Step 11.2: Implement minimal `profile` namespace**
+- [x] **Step 11.2: Implement minimal `profile` namespace**
 
 Add:
 
@@ -728,15 +728,15 @@ graphify profile validate-extraction
 graphify profile report
 ```
 
-- [ ] **Step 11.3: Add config/profile flags carefully**
+- [x] **Step 11.3: Add config/profile flags carefully**
 
 If a standalone `graphify <path>` route exists during implementation, add `--config` and `--profile` there. If it does not, add a tested safe path fallback or `build [path]` route without stealing existing subcommands.
 
-- [ ] **Step 11.4: Fail clearly without assistant/provider semantic extraction**
+- [x] **Step 11.4: Fail clearly without assistant/provider semantic extraction**
 
 The local CLI must not claim to complete profile semantic extraction unless it has actually received/validated extraction JSON or is running inside an assistant skill flow.
 
-- [ ] **Step 11.5: Verify CLI**
+- [x] **Step 11.5: Verify CLI**
 
 Run:
 
