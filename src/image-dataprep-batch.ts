@@ -1,14 +1,23 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import type { ImageDataprepManifest } from "./image-dataprep.js";
 import { validateImageCaption, validateImageRouting } from "./image-caption-schema.js";
+import {
+  assertAcceptedImageRoutingRules,
+  imageRoutingSampleFromCaption,
+  routeImageWithRules,
+  type ImageRoutingRulesFile,
+} from "./image-routing-calibration.js";
 
 export interface ExportImageDataprepBatchRequestsOptions {
   manifest: ImageDataprepManifest;
   outputPath: string;
   schema: string;
   prompt: string;
+  pass?: "primary" | "deep";
+  captionsDir?: string;
+  rules?: ImageRoutingRulesFile;
 }
 
 export interface ExportImageDataprepBatchRequestsResult {
@@ -44,11 +53,33 @@ function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
+function readCaption(path: string): unknown {
+  return JSON.parse(readFileSync(path, "utf-8")) as unknown;
+}
+
+function artifactHasDeepRoute(
+  artifactId: string,
+  options: ExportImageDataprepBatchRequestsOptions,
+): boolean {
+  if (!options.rules) throw new Error("Deep-pass export requires routing rules");
+  if (!options.captionsDir) throw new Error("Deep-pass export requires captionsDir");
+  assertAcceptedImageRoutingRules(options.rules);
+  const caption = readCaption(join(options.captionsDir, `${artifactId}.caption.json`));
+  const errors = validateImageCaption(caption);
+  if (errors.length > 0) {
+    throw new Error(`Invalid caption sidecar for ${artifactId}:\n${errors.map((item) => `  - ${item}`).join("\n")}`);
+  }
+  return routeImageWithRules(options.rules, imageRoutingSampleFromCaption(artifactId, caption)).route === "deep";
+}
+
 export function exportImageDataprepBatchRequests(
   options: ExportImageDataprepBatchRequestsOptions,
 ): ExportImageDataprepBatchRequestsResult {
   mkdirSync(dirname(options.outputPath), { recursive: true });
-  const content = options.manifest.artifacts.map((artifact) => jsonlLine({
+  const artifacts = options.pass === "deep"
+    ? options.manifest.artifacts.filter((artifact) => artifactHasDeepRoute(artifact.id, options))
+    : options.manifest.artifacts;
+  const content = artifacts.map((artifact) => jsonlLine({
     id: artifact.id,
     schema: options.schema,
     prompt: options.prompt,
@@ -59,7 +90,18 @@ export function exportImageDataprepBatchRequests(
     mime_type: artifact.mime_type,
   })).join("");
   writeFileSync(options.outputPath, content, "utf-8");
-  return { outputPath: options.outputPath, requestCount: options.manifest.artifacts.length };
+  return { outputPath: options.outputPath, requestCount: artifacts.length };
+}
+
+function existingValidSidecarErrors(captionPath: string, routingPath: string): string[] {
+  const errors: string[] = [];
+  if (existsSync(captionPath) && validateImageCaption(readCaption(captionPath)).length === 0) {
+    errors.push(`caption sidecar already exists: ${captionPath}`);
+  }
+  if (existsSync(routingPath) && validateImageRouting(readCaption(routingPath)).length === 0) {
+    errors.push(`routing sidecar already exists: ${routingPath}`);
+  }
+  return errors;
 }
 
 export function importImageDataprepBatchResults(
@@ -75,12 +117,17 @@ export function importImageDataprepBatchResults(
     const artifactId = String(record.artifact_id ?? record.id ?? "");
     const caption = record.caption;
     const routing = record.routing;
+    const captionPath = join(captionsDir, `${artifactId}.caption.json`);
+    const routingPath = join(routingDir, `${artifactId}.routing.json`);
     const errors = [
       ...validateImageCaption(caption),
       ...validateImageRouting(routing),
     ];
 
     if (!artifactId) errors.push("artifact_id is required");
+    if (!options.force) {
+      errors.push(...existingValidSidecarErrors(captionPath, routingPath));
+    }
     if (errors.length > 0) {
       failures.push({ artifact_id: artifactId || "unknown", errors });
       continue;
@@ -88,8 +135,8 @@ export function importImageDataprepBatchResults(
 
     mkdirSync(captionsDir, { recursive: true });
     mkdirSync(routingDir, { recursive: true });
-    writeFileSync(join(captionsDir, `${artifactId}.caption.json`), JSON.stringify(caption, null, 2) + "\n", "utf-8");
-    writeFileSync(join(routingDir, `${artifactId}.routing.json`), JSON.stringify(routing, null, 2) + "\n", "utf-8");
+    writeFileSync(captionPath, JSON.stringify(caption, null, 2) + "\n", "utf-8");
+    writeFileSync(routingPath, JSON.stringify(routing, null, 2) + "\n", "utf-8");
     importedCount++;
   }
 

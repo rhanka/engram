@@ -5,12 +5,14 @@ import { parse as parseYaml } from "yaml";
 
 import type {
   NormalizedOntologyProfile,
+  NormalizedOntologyProfileOutputs,
   NormalizedOntologyRegistrySpec,
   NormalizedOntologyRelationType,
   NormalizedProjectConfig,
   OntologyCitationPolicy,
   OntologyHardeningPolicy,
   OntologyNodeType,
+  OntologyOutputPolicy,
   OntologyProfile,
   OntologyRegistrySpec,
   OntologyRelationType,
@@ -98,6 +100,42 @@ function normalizeHardeningPolicy(policy: OntologyHardeningPolicy | undefined): 
   };
 }
 
+function relationExports(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (typeof item === "string") return item;
+      const record = asRecord(item);
+      return typeof record.relation_type === "string" ? record.relation_type : "";
+    })
+    .filter((item) => item.trim().length > 0);
+}
+
+function normalizeOutputs(outputs: unknown): NormalizedOntologyProfileOutputs {
+  const outputRecord = asRecord(outputs);
+  const ontology = asRecord(outputRecord.ontology) as OntologyOutputPolicy;
+  const wiki = asRecord(ontology.wiki);
+  return {
+    ontology: {
+      enabled: ontology.enabled === true,
+      artifact_schema: typeof ontology.artifact_schema === "string" && ontology.artifact_schema.trim()
+        ? ontology.artifact_schema
+        : "graphify_ontology_outputs_v1",
+      canonical_node_types: asStringArray(ontology.canonical_node_types),
+      source_node_types: asStringArray(ontology.source_node_types),
+      occurrence_node_types: asStringArray(ontology.occurrence_node_types),
+      alias_fields: asStringArray(ontology.alias_fields),
+      relation_exports: relationExports(ontology.relation_exports),
+      wiki: {
+        enabled: wiki.enabled === true,
+        page_node_types: asStringArray(wiki.page_node_types),
+        include_backlinks: wiki.include_backlinks === true,
+        include_source_snippets: wiki.include_source_snippets === true,
+      },
+    },
+  };
+}
+
 export function parseOntologyProfile(raw: string | Record<string, unknown>, sourcePath?: string): OntologyProfile {
   if (typeof raw !== "string") return asRecord(raw) as OntologyProfile;
   const trimmed = raw.trim();
@@ -112,7 +150,9 @@ export function validateOntologyProfile(profile: OntologyProfile): string[] {
   const nodeTypes = normalizeStringMap<OntologyNodeType>(profile.node_types);
   const relationTypes = normalizeStringMap<OntologyRelationType>(profile.relation_types);
   const registries = normalizeStringMap<OntologyRegistrySpec>(profile.registries);
+  const outputs = normalizeOutputs(profile.outputs);
   const knownNodeTypes = new Set(Object.keys(nodeTypes));
+  const knownRelationTypes = new Set(Object.keys(relationTypes));
 
   if (typeof profile.id !== "string" || profile.id.trim().length === 0) {
     errors.push("id is required");
@@ -162,6 +202,32 @@ export function validateOntologyProfile(profile: OntologyProfile): string[] {
     }
   }
 
+  for (const nodeType of outputs.ontology.canonical_node_types) {
+    if (!knownNodeTypes.has(nodeType)) {
+      errors.push(`outputs.ontology.canonical_node_types references unknown node type ${nodeType}`);
+    }
+  }
+  for (const nodeType of outputs.ontology.source_node_types) {
+    if (!knownNodeTypes.has(nodeType)) {
+      errors.push(`outputs.ontology.source_node_types references unknown node type ${nodeType}`);
+    }
+  }
+  for (const nodeType of outputs.ontology.occurrence_node_types) {
+    if (!knownNodeTypes.has(nodeType)) {
+      errors.push(`outputs.ontology.occurrence_node_types references unknown node type ${nodeType}`);
+    }
+  }
+  for (const nodeType of outputs.ontology.wiki.page_node_types) {
+    if (!knownNodeTypes.has(nodeType)) {
+      errors.push(`outputs.ontology.wiki.page_node_types references unknown node type ${nodeType}`);
+    }
+  }
+  for (const relationType of outputs.ontology.relation_exports) {
+    if (!knownRelationTypes.has(relationType)) {
+      errors.push(`outputs.ontology.relation_exports references unknown relation type ${relationType}`);
+    }
+  }
+
   return errors;
 }
 
@@ -194,6 +260,7 @@ export function normalizeOntologyProfile(profile: OntologyProfile, sourcePath?: 
     ),
     citation_policy: normalizeCitationPolicy(profile.citation_policy),
     hardening: normalizeHardeningPolicy(profile.hardening),
+    outputs: normalizeOutputs(profile.outputs),
   };
 
   return {

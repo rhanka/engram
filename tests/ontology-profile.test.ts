@@ -90,6 +90,7 @@ describe("ontology profile loader", () => {
     expect(profile.relation_types.inspects.target_types).toEqual(["Component"]);
     expect(profile.citation_policy.minimum_granularity).toBe("page");
     expect(profile.hardening.default_status).toBe("candidate");
+    expect(profile.outputs.ontology.enabled).toBe(false);
     expect(profile.profile_hash).toMatch(/^[a-f0-9]{64}$/);
   });
 
@@ -164,6 +165,28 @@ describe("ontology profile loader", () => {
 
     expect(validateOntologyProfile(raw)).toContain(
       "registries.components.node_type references unknown node type MissingType",
+    );
+  });
+
+  it("rejects ontology output declarations that reference unknown profile types", () => {
+    const raw = parseOntologyProfile(
+      [
+        "id: equipment-maintenance-demo",
+        "version: 1",
+        "node_types:",
+        "  Component: {}",
+        "relation_types: {}",
+        "outputs:",
+        "  ontology:",
+        "    enabled: true",
+        "    canonical_node_types: [MissingType]",
+        "",
+      ].join("\n"),
+      "ontology-profile.yaml",
+    );
+
+    expect(validateOntologyProfile(raw)).toContain(
+      "outputs.ontology.canonical_node_types references unknown node type MissingType",
     );
   });
 

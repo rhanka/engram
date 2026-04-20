@@ -8,6 +8,7 @@ import {
   importImageDataprepBatchResults,
 } from "../src/image-dataprep-batch.js";
 import type { ImageDataprepManifest } from "../src/image-dataprep.js";
+import type { ImageRoutingRulesFile } from "../src/image-routing-calibration.js";
 
 const cleanupDirs: string[] = [];
 
@@ -119,5 +120,139 @@ describe("image dataprep batch import/export", () => {
     expect(result.importedCount).toBe(0);
     expect(result.failedCount).toBe(1);
     expect(existsSync(join(outputDir, "captions", "artifact-a.caption.json"))).toBe(false);
+  });
+
+  it("exports deep-pass requests only for accepted deterministic deep routes", () => {
+    const root = makeTempDir();
+    const outputDir = join(root, "image-dataprep");
+    const captionsDir = join(outputDir, "captions");
+    mkdirSync(captionsDir, { recursive: true });
+    const dense = {
+      schema: "generic_image_caption_v1",
+      artifact_id: "artifact-a",
+      summary: "A dense flow.",
+      visible_text: [],
+      visual_content_type: "flow_diagram",
+      semantic_density: "high",
+      entity_candidates: [{ label: "A" }, { label: "B" }],
+      relationship_candidates: [{ source_label: "A", target_label: "B" }],
+      uncertainties: [],
+      provenance: { source_file: "manual.pdf", image_path: "image.png" },
+    };
+    const simple = {
+      ...dense,
+      artifact_id: "artifact-b",
+      visual_content_type: "simple_view",
+      relationship_candidates: [],
+    };
+    writeFileSync(join(captionsDir, "artifact-a.caption.json"), JSON.stringify(dense), "utf-8");
+    writeFileSync(join(captionsDir, "artifact-b.caption.json"), JSON.stringify(simple), "utf-8");
+    const graphifyManifest = manifest(root);
+    graphifyManifest.artifacts.push({ ...graphifyManifest.artifacts[0]!, id: "artifact-b" });
+    graphifyManifest.artifact_count = 2;
+    const rules: ImageRoutingRulesFile = {
+      schema: "graphify_image_routing_rules_v1",
+      decision: "accept_matrix",
+      routes: {
+        deep: { visual_content_types: ["flow_diagram"] },
+        primary: { visual_content_types: ["simple_view"] },
+      },
+    };
+
+    const result = exportImageDataprepBatchRequests({
+      manifest: graphifyManifest,
+      outputPath: join(outputDir, "batch", "deep.jsonl"),
+      schema: "generic_image_caption_v1",
+      prompt: "Deep pass.",
+      pass: "deep",
+      captionsDir,
+      rules,
+    });
+
+    expect(result.requestCount).toBe(1);
+    const line = JSON.parse(readFileSync(join(outputDir, "batch", "deep.jsonl"), "utf-8").trim()) as { id: string };
+    expect(line.id).toBe("artifact-a");
+  });
+
+  it("refuses deep-pass export when routing rules are not accepted", () => {
+    const root = makeTempDir();
+    const outputDir = join(root, "image-dataprep");
+
+    expect(() => exportImageDataprepBatchRequests({
+      manifest: manifest(root),
+      outputPath: join(outputDir, "batch", "deep.jsonl"),
+      schema: "generic_image_caption_v1",
+      prompt: "Deep pass.",
+      pass: "deep",
+      captionsDir: join(outputDir, "captions"),
+      rules: {
+        schema: "graphify_image_routing_rules_v1",
+        decision: "pending_labels",
+        routes: {},
+      },
+    })).toThrow("accepted routing matrix");
+  });
+
+  it("does not overwrite valid prior sidecars unless force is set", () => {
+    const root = makeTempDir();
+    const input = join(root, "results.jsonl");
+    const outputDir = join(root, "image-dataprep");
+    const captionPath = join(outputDir, "captions", "artifact-a.caption.json");
+    const routingPath = join(outputDir, "routing", "artifact-a.routing.json");
+    mkdirSync(join(outputDir, "captions"), { recursive: true });
+    mkdirSync(join(outputDir, "routing"), { recursive: true });
+    writeFileSync(captionPath, JSON.stringify({
+      schema: "generic_image_caption_v1",
+      artifact_id: "artifact-a",
+      summary: "Original.",
+      visible_text: [],
+      visual_content_type: "flow_diagram",
+      semantic_density: "high",
+      entity_candidates: [],
+      relationship_candidates: [],
+      uncertainties: [],
+      provenance: { source_file: "manual.pdf", image_path: "image.png" },
+    }), "utf-8");
+    writeFileSync(routingPath, JSON.stringify({
+      schema: "generic_image_routing_v1",
+      artifact_id: "artifact-a",
+      visual_content_type: "flow_diagram",
+      routing_signal: "deep",
+      reasons: ["existing"],
+      requires_deep_reasoning: true,
+      proposed_next_model: "config:deep_model",
+    }), "utf-8");
+    writeFileSync(input, JSON.stringify({
+      artifact_id: "artifact-a",
+      caption: {
+        schema: "generic_image_caption_v1",
+        artifact_id: "artifact-a",
+        summary: "Replacement.",
+        visible_text: [],
+        visual_content_type: "flow_diagram",
+        semantic_density: "high",
+        entity_candidates: [],
+        relationship_candidates: [],
+        uncertainties: [],
+        provenance: { source_file: "manual.pdf", image_path: "image.png" },
+      },
+      routing: {
+        schema: "generic_image_routing_v1",
+        artifact_id: "artifact-a",
+        visual_content_type: "flow_diagram",
+        routing_signal: "deep",
+        reasons: ["replacement"],
+        requires_deep_reasoning: true,
+        proposed_next_model: "config:deep_model",
+      },
+    }) + "\n", "utf-8");
+
+    const blocked = importImageDataprepBatchResults({ inputPath: input, outputDir });
+    const forced = importImageDataprepBatchResults({ inputPath: input, outputDir, force: true });
+
+    expect(blocked.importedCount).toBe(0);
+    expect(blocked.failures[0]?.errors.join("\n")).toContain("already exists");
+    expect(forced.importedCount).toBe(1);
+    expect(readFileSync(captionPath, "utf-8")).toContain("Replacement.");
   });
 });

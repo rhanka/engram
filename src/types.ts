@@ -353,6 +353,30 @@ export interface OntologyHardeningPolicy {
   promotion_requires?: string[];
 }
 
+export type OntologyRelationExport = string | { relation_type?: string };
+
+export interface OntologyOutputWikiPolicy {
+  enabled?: boolean;
+  page_node_types?: string[];
+  include_backlinks?: boolean;
+  include_source_snippets?: boolean;
+}
+
+export interface OntologyOutputPolicy {
+  enabled?: boolean;
+  artifact_schema?: string;
+  canonical_node_types?: string[];
+  source_node_types?: string[];
+  occurrence_node_types?: string[];
+  alias_fields?: string[];
+  relation_exports?: OntologyRelationExport[];
+  wiki?: OntologyOutputWikiPolicy;
+}
+
+export interface OntologyProfileOutputs {
+  ontology?: OntologyOutputPolicy;
+}
+
 export interface OntologyProfile {
   id?: string;
   version?: string | number;
@@ -364,6 +388,7 @@ export interface OntologyProfile {
   registries?: Record<string, OntologyRegistrySpec>;
   citation_policy?: OntologyCitationPolicy;
   hardening?: OntologyHardeningPolicy;
+  outputs?: OntologyProfileOutputs;
 }
 
 export interface NormalizedOntologyRelationType {
@@ -380,6 +405,26 @@ export interface NormalizedOntologyRegistrySpec {
   bound_source_path?: string;
 }
 
+export interface NormalizedOntologyOutputPolicy {
+  enabled: boolean;
+  artifact_schema: string;
+  canonical_node_types: string[];
+  source_node_types: string[];
+  occurrence_node_types: string[];
+  alias_fields: string[];
+  relation_exports: string[];
+  wiki: {
+    enabled: boolean;
+    page_node_types: string[];
+    include_backlinks: boolean;
+    include_source_snippets: boolean;
+  };
+}
+
+export interface NormalizedOntologyProfileOutputs {
+  ontology: NormalizedOntologyOutputPolicy;
+}
+
 export interface NormalizedOntologyProfile {
   id: string;
   version: string;
@@ -391,6 +436,7 @@ export interface NormalizedOntologyProfile {
   registries: Record<string, NormalizedOntologyRegistrySpec>;
   citation_policy: Required<OntologyCitationPolicy>;
   hardening: Required<OntologyHardeningPolicy>;
+  outputs: NormalizedOntologyProfileOutputs;
 }
 
 export interface ProfileBinding {

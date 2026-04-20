@@ -1,5 +1,8 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
+
+import type { ImageDataprepManifest } from "./image-dataprep.js";
 
 export type ImageRoutingLabel =
   | "primary_sufficient"
@@ -80,6 +83,27 @@ export interface ImageRoutingCalibrationResult {
   }>;
 }
 
+export interface ImageRoutingSamplesFile {
+  schema: "graphify_image_routing_samples_v1";
+  run_id: string;
+  sample_count: number;
+  samples: ImageRoutingSample[];
+}
+
+export interface WriteImageRoutingCalibrationSamplesOptions {
+  manifest: ImageDataprepManifest;
+  captionsDir: string;
+  outputDir: string;
+  runId: string;
+  maxSamples?: number;
+}
+
+export interface WriteImageRoutingCalibrationSamplesResult {
+  runDir: string;
+  samplesPath: string;
+  sampleCount: number;
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
@@ -95,6 +119,23 @@ function stringArray(value: unknown): string[] {
 
 function numberValue(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function countArray(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
+}
+
+export function imageRoutingSampleFromCaption(artifactId: string, caption: unknown): ImageRoutingSample {
+  const record = asRecord(caption);
+  const visualType = typeof record.visual_content_type === "string" && record.visual_content_type.trim()
+    ? record.visual_content_type
+    : "unknown";
+  return {
+    artifact_id: artifactId,
+    visual_content_type: visualType,
+    entity_count: countArray(record.entity_candidates),
+    relationship_count: countArray(record.relationship_candidates),
+  };
 }
 
 function normalizeBucket(value: unknown): ImageRoutingRuleBucket {
@@ -144,6 +185,51 @@ export function loadImageRoutingRules(path: string): ImageRoutingRulesFile {
       deep: routes.deep === undefined ? undefined : normalizeBucket(routes.deep),
     },
   };
+}
+
+export function assertAcceptedImageRoutingRules(rules: ImageRoutingRulesFile): void {
+  if (rules.decision !== "accept_matrix") {
+    throw new Error("Image routing production cascade requires an accepted routing matrix (decision: accept_matrix)");
+  }
+}
+
+export function writeImageRoutingCalibrationSamples(
+  options: WriteImageRoutingCalibrationSamplesOptions,
+): WriteImageRoutingCalibrationSamplesResult {
+  const maxSamples = Math.max(0, Math.floor(options.maxSamples ?? options.manifest.artifacts.length));
+  const allSamples = options.manifest.artifacts
+    .map((artifact) => {
+      const caption = parseFile(join(options.captionsDir, `${artifact.id}.caption.json`));
+      return imageRoutingSampleFromCaption(artifact.id, caption);
+    })
+    .sort((left, right) => left.visual_content_type.localeCompare(right.visual_content_type) ||
+      left.artifact_id.localeCompare(right.artifact_id));
+
+  const selected = new Map<string, ImageRoutingSample>();
+  const seenTypes = new Set<string>();
+  for (const sample of allSamples) {
+    if (selected.size >= maxSamples) break;
+    if (seenTypes.has(sample.visual_content_type)) continue;
+    selected.set(sample.artifact_id, sample);
+    seenTypes.add(sample.visual_content_type);
+  }
+  for (const sample of allSamples.sort((left, right) => left.artifact_id.localeCompare(right.artifact_id))) {
+    if (selected.size >= maxSamples) break;
+    selected.set(sample.artifact_id, sample);
+  }
+
+  const samples = [...selected.values()].sort((left, right) => left.artifact_id.localeCompare(right.artifact_id));
+  const runDir = join(options.outputDir, options.runId);
+  const samplesPath = join(runDir, "samples.json");
+  const payload: ImageRoutingSamplesFile = {
+    schema: "graphify_image_routing_samples_v1",
+    run_id: options.runId,
+    sample_count: samples.length,
+    samples,
+  };
+  mkdirSync(runDir, { recursive: true });
+  writeFileSync(samplesPath, JSON.stringify(payload, null, 2) + "\n", "utf-8");
+  return { runDir, samplesPath, sampleCount: samples.length };
 }
 
 function bucketMatches(bucket: ImageRoutingRuleBucket | undefined, sample: ImageRoutingSample): boolean {

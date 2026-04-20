@@ -137,6 +137,7 @@ describe("profile CLI commands", () => {
     const statePath = join(dir, ".graphify", "profile", "profile-state.json");
     const extractionPath = join(dir, ".graphify", "profile", "registry-extraction.json");
     const reportPath = join(dir, ".graphify", "profile", "profile-report.md");
+    const ontologyDir = join(dir, ".graphify", "ontology");
     const graphPath = writeGraph(dir);
 
     const dataprep = await runCli([
@@ -155,6 +156,12 @@ describe("profile CLI commands", () => {
       "--graph", graphPath,
       "--out", reportPath,
     ], dir);
+    const ontology = await runCli([
+      "profile", "ontology-output",
+      "--profile-state", statePath,
+      "--input", extractionPath,
+      "--out-dir", ontologyDir,
+    ], dir);
 
     expect(dataprep.exitCode).toBe(0);
     expect(dataprep.logs.join("\n")).toContain("Profile dataprep");
@@ -163,6 +170,9 @@ describe("profile CLI commands", () => {
     expect(validation.logs.join("\n")).toContain("Valid: yes");
     expect(report.exitCode).toBe(0);
     expect(readFileSync(reportPath, "utf-8")).toContain("# Graphify Profile Report");
+    expect(ontology.exitCode).toBe(0);
+    expect(ontology.logs.join("\n")).toContain("Ontology outputs");
+    expect(existsSync(join(ontologyDir, "manifest.json"))).toBe(true);
   });
 
   it("does not fake local LLM extraction through an implicit graphify path command", async () => {

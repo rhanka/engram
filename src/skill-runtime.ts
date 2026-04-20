@@ -41,6 +41,18 @@ import { runConfiguredDataprep, type ProfileState } from "./configured-dataprep.
 import { buildProfileExtractionPrompt, type ProfilePromptState } from "./profile-prompts.js";
 import { validateProfileExtraction, profileValidationResultToMarkdown } from "./profile-validate.js";
 import { buildProfileReport } from "./profile-report.js";
+import { compileOntologyOutputs } from "./ontology-output.js";
+import {
+  calibrateImageRouting,
+  loadImageRoutingLabels,
+  loadImageRoutingRules,
+  writeImageRoutingCalibrationSamples,
+  type ImageRoutingSamplesFile,
+} from "./image-routing-calibration.js";
+import {
+  exportImageDataprepBatchRequests,
+  importImageDataprepBatchResults,
+} from "./image-dataprep-batch.js";
 import { normalizeSearchText } from "./search.js";
 import type {
   DetectionResult,
@@ -483,6 +495,107 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       const report = buildProfileReport({ ...context, graph });
       writeFileSync(resolve(opts.out), report, "utf-8");
       console.log(`Profile report written to ${resolve(opts.out)}`);
+    });
+
+  program
+    .command("ontology-output")
+    .description("Compile optional profile-declared ontology output artifacts")
+    .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
+    .requiredOption("--input <path>", "Extraction JSON to compile")
+    .requiredOption("--out-dir <path>", "Ontology output directory")
+    .action((opts) => {
+      const context = loadProfileRuntimeContext(opts.profileState);
+      const extraction = ensureExtractionShape(readJson<Partial<Extraction>>(opts.input));
+      const result = compileOntologyOutputs({
+        outputDir: resolve(opts.outDir),
+        extraction,
+        profile: context.profile,
+        config: context.profile.outputs.ontology,
+      });
+      if (!result.enabled) {
+        console.log("Ontology outputs disabled by profile config");
+        return;
+      }
+      console.log(
+        `Ontology outputs: ${result.nodeCount} node(s), ${result.relationCount} relation(s), ` +
+        `${result.wikiPageCount} wiki page(s)`,
+      );
+    });
+
+  program
+    .command("image-calibration-samples")
+    .description("Write deterministic image routing calibration samples")
+    .requiredOption("--manifest <path>", "Image dataprep manifest JSON")
+    .requiredOption("--captions-dir <path>", "Caption sidecar directory")
+    .requiredOption("--out-dir <path>", "Calibration root directory")
+    .requiredOption("--run-id <id>", "Calibration run id")
+    .option("--max-samples <n>", "Maximum sample count")
+    .action((opts) => {
+      const result = writeImageRoutingCalibrationSamples({
+        manifest: readJson(opts.manifest),
+        captionsDir: resolve(opts.captionsDir),
+        outputDir: resolve(opts.outDir),
+        runId: opts.runId,
+        ...(opts.maxSamples ? { maxSamples: Number.parseInt(opts.maxSamples, 10) } : {}),
+      });
+      console.log(`Image calibration samples: ${result.sampleCount} written to ${result.samplesPath}`);
+    });
+
+  program
+    .command("image-calibration-replay")
+    .description("Replay proposed image routing rules against project labels")
+    .requiredOption("--samples <path>", "Calibration samples JSON")
+    .requiredOption("--labels <path>", "Project-owned labels YAML/JSON")
+    .requiredOption("--rules <path>", "Project-owned or proposed rules YAML/JSON")
+    .requiredOption("--out <path>", "Replay result JSON")
+    .action((opts) => {
+      const samples = readJson<ImageRoutingSamplesFile>(opts.samples);
+      const result = calibrateImageRouting({
+        samples: samples.samples,
+        labels: loadImageRoutingLabels(resolve(opts.labels)),
+        rules: loadImageRoutingRules(resolve(opts.rules)),
+      });
+      writeJson(opts.out, result);
+      console.log(`Image calibration replay: ${result.decision}`);
+    });
+
+  program
+    .command("image-batch-export")
+    .description("Export provider-neutral image dataprep JSONL requests")
+    .requiredOption("--manifest <path>", "Image dataprep manifest JSON")
+    .requiredOption("--out <path>", "JSONL output path")
+    .requiredOption("--schema <name>", "Expected result schema")
+    .requiredOption("--prompt <text>", "Prompt text")
+    .option("--pass <pass>", "Batch pass: primary or deep", "primary")
+    .option("--captions-dir <path>", "Caption sidecar directory for deep pass")
+    .option("--rules <path>", "Accepted routing rules YAML/JSON for deep pass")
+    .action((opts) => {
+      const result = exportImageDataprepBatchRequests({
+        manifest: readJson(opts.manifest),
+        outputPath: resolve(opts.out),
+        schema: opts.schema,
+        prompt: opts.prompt,
+        pass: opts.pass === "deep" ? "deep" : "primary",
+        ...(opts.captionsDir ? { captionsDir: resolve(opts.captionsDir) } : {}),
+        ...(opts.rules ? { rules: loadImageRoutingRules(resolve(opts.rules)) } : {}),
+      });
+      console.log(`Image batch export: ${result.requestCount} request(s) written to ${result.outputPath}`);
+    });
+
+  program
+    .command("image-batch-import")
+    .description("Import provider-normalized image dataprep JSONL results")
+    .requiredOption("--input <path>", "Provider-normalized JSONL input")
+    .requiredOption("--out-dir <path>", "Image dataprep output directory")
+    .option("--force", "Overwrite valid existing sidecars")
+    .action((opts) => {
+      const result = importImageDataprepBatchResults({
+        inputPath: resolve(opts.input),
+        outputDir: resolve(opts.outDir),
+        force: opts.force === true,
+      });
+      console.log(`Image batch import: ${result.importedCount} imported, ${result.failedCount} failed`);
+      if (result.failedCount > 0) process.exit(1);
     });
 
   program

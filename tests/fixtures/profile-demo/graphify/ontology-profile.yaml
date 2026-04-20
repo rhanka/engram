@@ -60,3 +60,12 @@ hardening:
     - source_citation
     - allowed_relation_type
     - registry_match_for_registered_types
+
+outputs:
+  ontology:
+    enabled: true
+    canonical_node_types: [Component, Tool]
+    relation_exports: [requires_tool]
+    wiki:
+      enabled: true
+      page_node_types: [Component]

@@ -1529,6 +1529,31 @@ export async function main(): Promise<void> {
       console.log(`Profile report written to ${resolve(opts.out)}`);
     });
 
+  profile
+    .command("ontology-output")
+    .description("Compile optional profile-declared ontology output artifacts")
+    .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
+    .requiredOption("--input <path>", "Extraction JSON to compile")
+    .requiredOption("--out-dir <path>", "Ontology output directory")
+    .action(async (opts) => {
+      const { compileOntologyOutputs } = await import("./ontology-output.js");
+      const context = loadCliProfileContext(opts.profileState);
+      const result = compileOntologyOutputs({
+        outputDir: resolve(opts.outDir),
+        extraction: readJson(opts.input),
+        profile: context.profile,
+        config: context.profile.outputs.ontology,
+      });
+      if (!result.enabled) {
+        console.log("Ontology outputs disabled by profile config");
+        return;
+      }
+      console.log(
+        `Ontology outputs: ${result.nodeCount} node(s), ${result.relationCount} relation(s), ` +
+        `${result.wikiPageCount} wiki page(s)`,
+      );
+    });
+
   // MCP server
   program
     .command("serve [graph]")

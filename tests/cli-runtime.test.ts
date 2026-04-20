@@ -252,6 +252,78 @@ describe("skill runtime artifact parity", () => {
     expect(readFileSync(genericUncachedPath, "utf-8")).toBe(docPath);
   });
 
+  it("supports image calibration samples and deep batch export runtime commands", async () => {
+    const dir = tempProject();
+    const imageDir = join(dir, ".graphify", "image-dataprep");
+    const captionsDir = join(imageDir, "captions");
+    mkdirSync(captionsDir, { recursive: true });
+    const manifestPath = join(imageDir, "manifest.json");
+    const rulesPath = join(dir, "image-routing-rules.yaml");
+    const samplesRoot = join(dir, ".graphify", "calibration");
+    const deepJsonl = join(imageDir, "batch", "deep.jsonl");
+    writeFileSync(manifestPath, JSON.stringify({
+      schema: "graphify_image_dataprep_manifest_v1",
+      source_state_hash: "state",
+      mode: "batch",
+      artifact_count: 1,
+      generated_at: "2026-04-20T00:00:00.000Z",
+      artifacts: [{
+        id: "artifact-a",
+        path: join(dir, "a.png"),
+        source_file: join(dir, "manual.pdf"),
+        source_page: 1,
+        source_sidecar: join(dir, "manual.md"),
+        source_kind: "ocr_crop",
+        mime_type: "image/png",
+        sha256: "a",
+      }],
+    }), "utf-8");
+    writeFileSync(join(captionsDir, "artifact-a.caption.json"), JSON.stringify({
+      schema: "generic_image_caption_v1",
+      artifact_id: "artifact-a",
+      summary: "A dense flow.",
+      visible_text: [],
+      visual_content_type: "flow_diagram",
+      semantic_density: "high",
+      entity_candidates: [{ label: "A" }, { label: "B" }],
+      relationship_candidates: [{ source_label: "A", target_label: "B" }],
+      uncertainties: [],
+      provenance: { source_file: "manual.pdf", image_path: "a.png" },
+    }), "utf-8");
+    writeFileSync(rulesPath, [
+      "schema: graphify_image_routing_rules_v1",
+      "decision: accept_matrix",
+      "routes:",
+      "  deep:",
+      "    visual_content_types: [flow_diagram]",
+      "",
+    ].join("\n"), "utf-8");
+
+    const samples = await runSkillRuntime([
+      "image-calibration-samples",
+      "--manifest", manifestPath,
+      "--captions-dir", captionsDir,
+      "--out-dir", samplesRoot,
+      "--run-id", "run-1",
+      "--max-samples", "1",
+    ], dir);
+    const deep = await runSkillRuntime([
+      "image-batch-export",
+      "--manifest", manifestPath,
+      "--out", deepJsonl,
+      "--schema", "generic_image_caption_v1",
+      "--prompt", "Deep pass.",
+      "--pass", "deep",
+      "--captions-dir", captionsDir,
+      "--rules", rulesPath,
+    ], dir);
+
+    expect(samples.exitCode).toBe(0);
+    expect(existsSync(join(samplesRoot, "run-1", "samples.json"))).toBe(true);
+    expect(deep.exitCode).toBe(0);
+    expect(readFileSync(deepJsonl, "utf-8")).toContain("artifact-a");
+  });
+
   it("writes normalized project config and profile artifacts", async () => {
     const dir = tempProfileProject();
     const configOut = join(dir, ".graphify", "profile", "project-config.normalized.json");
@@ -276,6 +348,7 @@ describe("skill runtime artifact parity", () => {
     const promptPath = join(dir, ".graphify", "profile", "prompt.md");
     const validationInput = join(dir, ".graphify", "profile", "registry-extraction.json");
     const reportPath = join(dir, ".graphify", "profile", "profile-report.md");
+    const ontologyDir = join(dir, ".graphify", "ontology");
     const graphPath = writeGraph(dir);
 
     const dataprep = await runSkillRuntime([
@@ -301,6 +374,12 @@ describe("skill runtime artifact parity", () => {
       "--graph", graphPath,
       "--out", reportPath,
     ], dir);
+    const ontology = await runSkillRuntime([
+      "ontology-output",
+      "--profile-state", statePath,
+      "--input", validationInput,
+      "--out-dir", ontologyDir,
+    ], dir);
 
     expect(dataprep.exitCode).toBe(0);
     expect(dataprep.logs.join("\n")).toContain("Configured dataprep");
@@ -312,5 +391,9 @@ describe("skill runtime artifact parity", () => {
     expect(report.exitCode).toBe(0);
     expect(readFileSync(reportPath, "utf-8")).toContain("# Graphify Profile Report");
     expect(readFileSync(reportPath, "utf-8")).toContain("equipment-maintenance-demo");
+    expect(ontology.exitCode).toBe(0);
+    expect(ontology.logs.join("\n")).toContain("Ontology outputs");
+    expect(existsSync(join(ontologyDir, "nodes.json"))).toBe(true);
+    expect(existsSync(join(ontologyDir, "wiki", "index.md"))).toBe(true);
   });
 });
