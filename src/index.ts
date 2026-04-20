@@ -57,6 +57,14 @@ export {
   preflightLlmExecution,
   redactSecrets,
 } from "./llm-execution.js";
+export {
+  buildImageDataprepManifest,
+  runImageDataprep,
+} from "./image-dataprep.js";
+export {
+  validateImageCaption,
+  validateImageRouting,
+} from "./image-caption-schema.js";
 export type {
   AssistantLlmClientOptions,
   BatchVisionExportInput,
@@ -74,6 +82,14 @@ export type {
   VisionJsonAnalysisInput,
   VisionJsonAnalysisResult,
 } from "./llm-execution.js";
+export type {
+  BuildImageDataprepManifestOptions,
+  ImageDataprepArtifact,
+  ImageDataprepManifest,
+  ImageDataprepSourceKind,
+  RunImageDataprepOptions,
+  RunImageDataprepResult,
+} from "./image-dataprep.js";
 export {
   bindOntologyProfile,
   hashOntologyProfile,

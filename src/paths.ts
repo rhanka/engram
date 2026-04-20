@@ -59,6 +59,16 @@ export interface GraphifyProfilePaths {
   dataprepReport: string;
 }
 
+export interface GraphifyImageDataprepPaths {
+  dir: string;
+  manifest: string;
+  captionsDir: string;
+  routingDir: string;
+  batchDir: string;
+  importsDir: string;
+  assistantInstructions: string;
+}
+
 export interface GraphifyPaths {
   root: string;
   stateDir: string;
@@ -75,6 +85,7 @@ export interface GraphifyPaths {
   wikiDir: string;
   needsUpdate: string;
   profile: GraphifyProfilePaths;
+  imageDataprep: GraphifyImageDataprepPaths;
   scratch: GraphifyScratchPaths;
   legacyRootScratch: GraphifyLegacyRootScratchPaths;
 }
@@ -87,6 +98,7 @@ export function resolveGraphifyPaths(options: GraphifyPathOptions = {}): Graphif
   const root = resolve(options.root ?? ".");
   const stateDir = statePath(root, options.stateDir ?? DEFAULT_GRAPHIFY_STATE_DIR);
   const profileDir = join(stateDir, "profile");
+  const imageDataprepDir = join(stateDir, "image-dataprep");
 
   const scratch: GraphifyScratchPaths = {
     detect: join(stateDir, ".graphify_detect.json"),
@@ -133,6 +145,15 @@ export function resolveGraphifyPaths(options: GraphifyPathOptions = {}): Graphif
       registryExtraction: join(profileDir, "registry-extraction.json"),
       semanticDetection: join(profileDir, "semantic-detection.json"),
       dataprepReport: join(profileDir, "dataprep-report.md"),
+    },
+    imageDataprep: {
+      dir: imageDataprepDir,
+      manifest: join(imageDataprepDir, "manifest.json"),
+      captionsDir: join(imageDataprepDir, "captions"),
+      routingDir: join(imageDataprepDir, "routing"),
+      batchDir: join(imageDataprepDir, "batch"),
+      importsDir: join(imageDataprepDir, "imports"),
+      assistantInstructions: join(imageDataprepDir, "assistant-instructions.md"),
     },
     scratch,
     legacyRootScratch: {
