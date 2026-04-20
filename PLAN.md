@@ -455,7 +455,7 @@ Expected: registry extraction passes `validateExtraction()`; existing validation
 - Create: `tests/configured-dataprep.test.ts`
 - Modify: `tests/pipeline.test.ts`
 
-- [ ] **Step 6.1: Add profile path contract tests**
+- [x] **Step 6.1: Add profile path contract tests**
 
 Expected profile paths:
 
@@ -469,11 +469,11 @@ Expected profile paths:
 .graphify/profile/dataprep-report.md
 ```
 
-- [ ] **Step 6.2: Implement profile paths**
+- [x] **Step 6.2: Implement profile paths**
 
 Extend `resolveGraphifyPaths()` with a `profile` path group while preserving all existing fields.
 
-- [ ] **Step 6.3: Add configured dataprep tests**
+- [x] **Step 6.3: Add configured dataprep tests**
 
 Cover:
 
@@ -487,7 +487,7 @@ registry extraction is written
 dataprep report is written
 ```
 
-- [ ] **Step 6.4: Implement configured dataprep**
+- [x] **Step 6.4: Implement configured dataprep**
 
 Implement:
 
@@ -498,11 +498,11 @@ applyConfiguredExcludes(detection, config)
 writeProfileState(result)
 ```
 
-- [ ] **Step 6.5: Reuse existing PDF/OCR/transcript pipeline**
+- [x] **Step 6.5: Reuse existing PDF/OCR/transcript pipeline**
 
 `configured-dataprep.ts` must call `prepareSemanticDetection()` and must not import provider-specific OCR modules directly.
 
-- [ ] **Step 6.6: Verify dataprep**
+- [x] **Step 6.6: Verify dataprep**
 
 Run:
 

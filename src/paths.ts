@@ -48,6 +48,17 @@ export interface GraphifyLegacyRootScratchPaths {
   oldGraph: string;
 }
 
+export interface GraphifyProfilePaths {
+  dir: string;
+  projectConfig: string;
+  ontologyProfile: string;
+  state: string;
+  registriesDir: string;
+  registryExtraction: string;
+  semanticDetection: string;
+  dataprepReport: string;
+}
+
 export interface GraphifyPaths {
   root: string;
   stateDir: string;
@@ -63,6 +74,7 @@ export interface GraphifyPaths {
   memoryDir: string;
   wikiDir: string;
   needsUpdate: string;
+  profile: GraphifyProfilePaths;
   scratch: GraphifyScratchPaths;
   legacyRootScratch: GraphifyLegacyRootScratchPaths;
 }
@@ -74,6 +86,7 @@ function statePath(root: string, stateDir: string): string {
 export function resolveGraphifyPaths(options: GraphifyPathOptions = {}): GraphifyPaths {
   const root = resolve(options.root ?? ".");
   const stateDir = statePath(root, options.stateDir ?? DEFAULT_GRAPHIFY_STATE_DIR);
+  const profileDir = join(stateDir, "profile");
 
   const scratch: GraphifyScratchPaths = {
     detect: join(stateDir, ".graphify_detect.json"),
@@ -111,6 +124,16 @@ export function resolveGraphifyPaths(options: GraphifyPathOptions = {}): Graphif
     memoryDir: join(stateDir, "memory"),
     wikiDir: join(stateDir, "wiki"),
     needsUpdate: join(stateDir, "needs_update"),
+    profile: {
+      dir: profileDir,
+      projectConfig: join(profileDir, "project-config.normalized.json"),
+      ontologyProfile: join(profileDir, "ontology-profile.normalized.json"),
+      state: join(profileDir, "profile-state.json"),
+      registriesDir: join(profileDir, "registries"),
+      registryExtraction: join(profileDir, "registry-extraction.json"),
+      semanticDetection: join(profileDir, "semantic-detection.json"),
+      dataprepReport: join(profileDir, "dataprep-report.md"),
+    },
     scratch,
     legacyRootScratch: {
       detect: join(root, ".graphify_detect.json"),
