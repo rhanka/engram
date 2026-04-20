@@ -1,0 +1,31 @@
+version: 1
+
+profile:
+  path: graphify/ontology-profile.yaml
+
+inputs:
+  corpus:
+    - raw/manuals
+  registries:
+    - references/components.csv
+    - references/tooling.csv
+  generated:
+    - derived/ocr
+    - derived/extracted-images
+  exclude:
+    - derived/full-page-screenshots
+    - tmp
+
+dataprep:
+  pdf_ocr: auto
+  prefer_ocr_markdown: true
+  use_extracted_pdf_images: true
+  full_page_screenshot_vision: false
+  citation_minimum: page
+  preserve_source_structure: true
+
+outputs:
+  state_dir: .graphify
+  write_html: true
+  write_wiki: true
+  write_profile_report: true

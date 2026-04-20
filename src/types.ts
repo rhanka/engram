@@ -307,3 +307,13 @@ export interface ProfileBinding {
   profile: NormalizedOntologyProfile;
   projectConfig: NormalizedProjectConfig;
 }
+
+export interface RegistryRecord {
+  registryId: string;
+  id: string;
+  label: string;
+  aliases: string[];
+  nodeType: string;
+  sourceFile: string;
+  raw: Record<string, unknown>;
+}

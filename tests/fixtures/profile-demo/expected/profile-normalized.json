@@ -1,0 +1,76 @@
+{
+  "id": "equipment-maintenance-demo",
+  "version": "1",
+  "default_language": "en",
+  "sourcePath": "__FIXTURE_ROOT__/graphify/ontology-profile.yaml",
+  "node_types": {
+    "MaintenanceProcess": {
+      "aliases": ["process", "maintenance step"],
+      "status_policy": "hardenable"
+    },
+    "Component": {
+      "aliases": ["part", "replaceable unit"],
+      "registry": "components"
+    },
+    "Procedure": {
+      "source_backed": true
+    },
+    "Tool": {
+      "aliases": ["tool", "fixture", "software utility"],
+      "registry": "tooling"
+    },
+    "Figure": {
+      "source_backed": true
+    }
+  },
+  "relation_types": {
+    "inspects": {
+      "source_types": ["MaintenanceProcess"],
+      "target_types": ["Component"]
+    },
+    "replaces": {
+      "source_types": ["MaintenanceProcess"],
+      "target_types": ["Component"]
+    },
+    "requires_tool": {
+      "source_types": ["MaintenanceProcess"],
+      "target_types": ["Tool"]
+    },
+    "evidences": {
+      "source_types": ["Procedure"],
+      "target_types": ["MaintenanceProcess", "Component", "Tool"]
+    },
+    "depicts": {
+      "source_types": ["Figure"],
+      "target_types": ["MaintenanceProcess", "Component", "Tool"]
+    }
+  },
+  "registries": {
+    "components": {
+      "source": "components",
+      "id_column": "component_id",
+      "label_column": "component_name",
+      "alias_columns": ["component_code"],
+      "node_type": "Component",
+      "bound_source_path": "__FIXTURE_ROOT__/references/components.csv"
+    },
+    "tooling": {
+      "source": "tooling",
+      "id_column": "tool_id",
+      "label_column": "tool_name",
+      "alias_columns": ["tool_code"],
+      "node_type": "Tool",
+      "bound_source_path": "__FIXTURE_ROOT__/references/tooling.csv"
+    }
+  },
+  "citation_policy": {
+    "minimum_granularity": "page",
+    "require_source_file": true,
+    "allow_bbox": "when_available"
+  },
+  "hardening": {
+    "statuses": ["candidate", "attached", "needs_review", "validated", "rejected", "superseded"],
+    "default_status": "candidate",
+    "promotion_requires": ["source_citation", "allowed_relation_type", "registry_match_for_registered_types"]
+  }
+}

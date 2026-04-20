@@ -72,6 +72,7 @@
   },
   "dependencies": {
     "commander": "^12.1.0",
+    "csv-parse": "^6.2.1",
     "graphology": "^0.25.4",
     "graphology-communities-louvain": "^2.0.1",
     "graphology-metrics": "^2.1.0",

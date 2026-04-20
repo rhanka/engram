@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "sourcePath": "__FIXTURE_ROOT__/graphify.yaml",
+  "configDir": "__FIXTURE_ROOT__",
+  "profile": {
+    "path": "graphify/ontology-profile.yaml",
+    "resolvedPath": "__FIXTURE_ROOT__/graphify/ontology-profile.yaml"
+  },
+  "inputs": {
+    "corpus": [
+      "__FIXTURE_ROOT__/raw/manuals"
+    ],
+    "registries": [
+      "__FIXTURE_ROOT__/references/components.csv",
+      "__FIXTURE_ROOT__/references/tooling.csv"
+    ],
+    "registrySources": {
+      "components": "__FIXTURE_ROOT__/references/components.csv",
+      "tooling": "__FIXTURE_ROOT__/references/tooling.csv"
+    },
+    "generated": [
+      "__FIXTURE_ROOT__/derived/ocr",
+      "__FIXTURE_ROOT__/derived/extracted-images"
+    ],
+    "exclude": [
+      "__FIXTURE_ROOT__/derived/full-page-screenshots",
+      "__FIXTURE_ROOT__/tmp"
+    ]
+  },
+  "dataprep": {
+    "pdf_ocr": "auto",
+    "prefer_ocr_markdown": true,
+    "use_extracted_pdf_images": true,
+    "full_page_screenshot_vision": false,
+    "citation_minimum": "page",
+    "preserve_source_structure": true
+  },
+  "outputs": {
+    "state_dir": "__FIXTURE_ROOT__/.graphify",
+    "write_html": true,
+    "write_wiki": true,
+    "write_profile_report": true
+  }
+}

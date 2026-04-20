@@ -60,6 +60,38 @@ describe("validateExtraction", () => {
     });
     expect(errors).toEqual([]);
   });
+
+  it("accepts additive profile metadata on nodes and edges", () => {
+    const errors = validateExtraction({
+      nodes: [
+        {
+          id: "registry_components_CMP_001",
+          label: "Demo Filter Cartridge",
+          file_type: "document",
+          source_file: "references/components.csv",
+          node_type: "Component",
+          registry_id: "components",
+          registry_record_id: "CMP-001",
+          aliases: ["DFC-001"],
+          status: "validated",
+          citations: [{ source_file: "manual.md", page: 2 }],
+        },
+      ],
+      edges: [
+        {
+          source: "registry_components_CMP_001",
+          target: "registry_components_CMP_001",
+          relation: "inspects",
+          confidence: "EXTRACTED",
+          source_file: "manual.md",
+          status: "candidate",
+          citations: [{ source_file: "manual.md", page: 2 }],
+          evidence_text: "Synthetic evidence text.",
+        },
+      ],
+    });
+    expect(errors).toEqual([]);
+  });
 });
 
 describe("assertValid", () => {

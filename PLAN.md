@@ -262,7 +262,7 @@ Expected: ontology loader tests, config tests, lint, and build pass.
 - Create: `tests/fixtures/profile-demo/expected/project-config-normalized.json`
 - Create: `tests/fixtures/profile-demo/expected/profile-normalized.json`
 
-- [ ] **Step 3.1: Create synthetic project config fixture**
+- [x] **Step 3.1: Create synthetic project config fixture**
 
 The fixture config must include:
 
@@ -279,7 +279,7 @@ dataprep.full_page_screenshot_vision
 outputs.state_dir
 ```
 
-- [ ] **Step 3.2: Create synthetic ontology profile fixture**
+- [x] **Step 3.2: Create synthetic ontology profile fixture**
 
 Use synthetic types only:
 
@@ -301,7 +301,7 @@ evidences
 depicts
 ```
 
-- [ ] **Step 3.3: Create synthetic registry fixtures**
+- [x] **Step 3.3: Create synthetic registry fixtures**
 
 Registry rows must use fake IDs and labels such as:
 
@@ -310,7 +310,7 @@ CMP-001, Demo Filter Cartridge, DFC-001
 TOOL-001, Demo Torque Fixture, DTF-001
 ```
 
-- [ ] **Step 3.4: Add fixture hygiene check**
+- [x] **Step 3.4: Add fixture hygiene check**
 
 Run:
 
@@ -328,11 +328,11 @@ Expected: no output.
 - Modify: `package-lock.json`
 - Create: `tests/profile-registry.test.ts`
 
-- [ ] **Step 4.1: Add direct CSV dependency**
+- [x] **Step 4.1: Add direct CSV dependency**
 
 Add `csv-parse` as a direct dependency and use `csv-parse/sync` for deterministic fixture tests.
 
-- [ ] **Step 4.2: Add failing registry loader tests**
+- [x] **Step 4.2: Add failing registry loader tests**
 
 Cover:
 
@@ -349,7 +349,7 @@ duplicate record ID rejection
 unknown configured registry source rejection
 ```
 
-- [ ] **Step 4.3: Define canonical registry record**
+- [x] **Step 4.3: Define canonical registry record**
 
 Implement the spec shape:
 
@@ -365,7 +365,7 @@ RegistryRecord {
 }
 ```
 
-- [ ] **Step 4.4: Implement registry loading**
+- [x] **Step 4.4: Implement registry loading**
 
 Implement:
 
@@ -375,7 +375,7 @@ loadProfileRegistry(registrySpec, sourcePath)
 normalizeRegistryRecord(registrySpec, rawRecord, sourceFile)
 ```
 
-- [ ] **Step 4.5: Verify registry loader**
+- [x] **Step 4.5: Verify registry loader**
 
 Run:
 
@@ -394,7 +394,7 @@ Expected: registry loader, profile loader, lint, and build pass.
 - Modify: `tests/profile-registry.test.ts`
 - Modify: `tests/validate.test.ts`
 
-- [ ] **Step 5.1: Add failing registry extraction tests**
+- [x] **Step 5.1: Add failing registry extraction tests**
 
 Assert registry records convert to a base-valid `Extraction` with:
 
@@ -406,7 +406,7 @@ input_tokens: 0
 output_tokens: 0
 ```
 
-- [ ] **Step 5.2: Implement stable registry node IDs**
+- [x] **Step 5.2: Implement stable registry node IDs**
 
 Use deterministic node IDs:
 
@@ -416,7 +416,7 @@ registry_<registryId>_<recordId>
 
 Normalize unsafe characters while keeping stable mapping.
 
-- [ ] **Step 5.3: Preserve profile attributes on nodes**
+- [x] **Step 5.3: Preserve profile attributes on nodes**
 
 Registry node attributes must include:
 
@@ -433,11 +433,11 @@ source_file
 file_type: document
 ```
 
-- [ ] **Step 5.4: Do not infer registry edges by default**
+- [x] **Step 5.4: Do not infer registry edges by default**
 
 Only create edges when a later explicit profile mapping is introduced. This lot emits registry nodes only.
 
-- [ ] **Step 5.5: Verify base validation compatibility**
+- [x] **Step 5.5: Verify base validation compatibility**
 
 Run:
 

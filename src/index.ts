@@ -28,6 +28,7 @@ export type {
   OntologyRelationType,
   OntologyStatus,
   ProfileBinding,
+  RegistryRecord,
 } from "./types.js";
 export {
   discoverProjectConfig,
@@ -44,6 +45,12 @@ export {
   parseOntologyProfile,
   validateOntologyProfile,
 } from "./ontology-profile.js";
+export {
+  loadProfileRegistries,
+  loadProfileRegistry,
+  normalizeRegistryRecord,
+  registryRecordsToExtraction,
+} from "./profile-registry.js";
 export { validateExtraction, assertValid } from "./validate.js";
 export { buildFromJson, build } from "./build.js";
 export { cluster, cohesionScore, scoreAll } from "./cluster.js";
