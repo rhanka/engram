@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 
 import { graphDiff, godNodes, surprisingConnections, suggestQuestions } from "./analyze.js";
 import { runBenchmark, printBenchmark } from "./benchmark.js";
-import { saveSemanticCache, checkSemanticCache } from "./cache.js";
+import { saveSemanticCache, checkSemanticCache, type CacheOptions } from "./cache.js";
 import { buildFromJson } from "./build.js";
 import { cluster, scoreAll } from "./cluster.js";
 import { detect, detectIncremental, saveManifest } from "./detect.js";
@@ -65,6 +65,17 @@ function writeJson(path: string, value: unknown): void {
   const resolved = resolve(path);
   mkdirSync(dirname(resolved), { recursive: true });
   writeFileSync(resolved, JSON.stringify(value, null, 2), "utf-8");
+}
+
+function cacheOptionsFromRuntime(opts: { cacheNamespace?: string; profileState?: string }): CacheOptions {
+  if (opts.cacheNamespace) return { namespace: opts.cacheNamespace };
+  if (!opts.profileState) return {};
+  const state = readJson<Record<string, unknown>>(opts.profileState);
+  const profileHash = String(state.profile_hash ?? "").trim();
+  if (!profileHash) {
+    throw new Error(`Profile state ${resolve(opts.profileState)} is missing profile_hash`);
+  }
+  return { profileHash };
 }
 
 function getVersion(): string {
@@ -465,6 +476,8 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .requiredOption("--detect <path>", "Path to detection JSON")
     .option("--incremental", "Use detection.new_files when present")
     .option("--root <path>", "Graph root for cache resolution", ".")
+    .option("--cache-namespace <value>", "Optional semantic cache namespace")
+    .option("--profile-state <path>", "Optional profile-state.json used to derive a profile cache namespace")
     .requiredOption("--cached-out <path>", "Path to cached extraction JSON")
     .requiredOption("--uncached-out <path>", "Path to newline-delimited uncached file list")
     .action((opts) => {
@@ -478,6 +491,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       const [cachedNodes, cachedEdges, cachedHyperedges, uncached] = checkSemanticCache(
         allFiles,
         resolve(opts.root),
+        cacheOptionsFromRuntime(opts),
       );
       writeJson(opts.cachedOut, {
         nodes: cachedNodes,
@@ -493,6 +507,8 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .command("save-semantic-cache")
     .requiredOption("--input <path>", "Path to semantic extraction JSON")
     .option("--root <path>", "Graph root for cache resolution", ".")
+    .option("--cache-namespace <value>", "Optional semantic cache namespace")
+    .option("--profile-state <path>", "Optional profile-state.json used to derive a profile cache namespace")
     .action((opts) => {
       const extraction = ensureExtractionShape(readJson<Partial<Extraction>>(opts.input));
       const saved = saveSemanticCache(
@@ -500,6 +516,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         extraction.edges as Array<Record<string, unknown>>,
         (extraction.hyperedges ?? []) as Array<Record<string, unknown>>,
         resolve(opts.root),
+        cacheOptionsFromRuntime(opts),
       );
       console.log(`Cached ${saved} files`);
     });

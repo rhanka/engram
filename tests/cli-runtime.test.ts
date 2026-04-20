@@ -179,4 +179,70 @@ describe("skill runtime artifact parity", () => {
     expect(result.errors.join("\n")).toContain("Invalid URL");
     expect(result.errors.join("\n")).not.toContain("unknown command");
   });
+
+  it("isolates semantic cache commands by cache namespace", async () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, "docs"), { recursive: true });
+    const docPath = join(dir, "docs", "manual.md");
+    writeFileSync(docPath, "# Synthetic manual\n", "utf-8");
+    const detectionPath = join(dir, ".graphify", "detect.json");
+    const semanticPath = join(dir, ".graphify", "semantic.json");
+    const profileCachedPath = join(dir, ".graphify", "cached-profile.json");
+    const profileUncachedPath = join(dir, ".graphify", "uncached-profile.txt");
+    const genericCachedPath = join(dir, ".graphify", "cached-generic.json");
+    const genericUncachedPath = join(dir, ".graphify", "uncached-generic.txt");
+    mkdirSync(join(dir, ".graphify"), { recursive: true });
+    writeFileSync(
+      detectionPath,
+      JSON.stringify({
+        files: { code: [], document: [docPath], paper: [], image: [], video: [] },
+        total_files: 1,
+        total_words: 2,
+        needs_graph: false,
+        warning: null,
+        skipped_sensitive: [],
+        graphifyignore_patterns: 0,
+      }),
+      "utf-8",
+    );
+    writeFileSync(
+      semanticPath,
+      JSON.stringify({
+        nodes: [{ id: "profile-node", label: "Profile Node", source_file: "docs/manual.md" }],
+        edges: [],
+        hyperedges: [],
+        input_tokens: 0,
+        output_tokens: 0,
+      }),
+      "utf-8",
+    );
+
+    const save = await runSkillRuntime([
+      "save-semantic-cache",
+      "--input", semanticPath,
+      "--root", dir,
+      "--cache-namespace", "profile-demo",
+    ], dir);
+    const profileHit = await runSkillRuntime([
+      "check-semantic-cache",
+      "--detect", detectionPath,
+      "--root", dir,
+      "--cached-out", profileCachedPath,
+      "--uncached-out", profileUncachedPath,
+      "--cache-namespace", "profile-demo",
+    ], dir);
+    const genericMiss = await runSkillRuntime([
+      "check-semantic-cache",
+      "--detect", detectionPath,
+      "--root", dir,
+      "--cached-out", genericCachedPath,
+      "--uncached-out", genericUncachedPath,
+    ], dir);
+
+    expect(save.exitCode).toBe(0);
+    expect(profileHit.logs.join("\n")).toContain("Cache: 1 files hit, 0 files need extraction");
+    expect(JSON.parse(readFileSync(profileCachedPath, "utf-8")).nodes).toHaveLength(1);
+    expect(genericMiss.logs.join("\n")).toContain("Cache: 0 files hit, 1 files need extraction");
+    expect(readFileSync(genericUncachedPath, "utf-8")).toBe(docPath);
+  });
 });

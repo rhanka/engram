@@ -2,7 +2,14 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { fileHash, loadCached, saveCached, clearCache } from "../src/cache.js";
+import {
+  checkSemanticCache,
+  clearCache,
+  fileHash,
+  loadCached,
+  saveCached,
+  saveSemanticCache,
+} from "../src/cache.js";
 
 describe("cache", () => {
   let tmpDir: string;
@@ -57,6 +64,66 @@ describe("cache", () => {
     expect(loadCached(f, tmpDir)).not.toBeNull();
     clearCache(tmpDir);
     expect(loadCached(f, tmpDir)).toBeNull();
+  });
+
+  it("keeps generic and profile cache entries isolated", () => {
+    const f = join(tmpDir, "doc.md");
+    writeFileSync(f, "# Synthetic manual\n");
+
+    saveCached(f, { nodes: [{ id: "generic" }], edges: [] }, tmpDir);
+    saveCached(f, { nodes: [{ id: "profile-a" }], edges: [] }, tmpDir, { profileHash: "profile-a-hash" });
+
+    expect(loadCached(f, tmpDir)).toEqual({ nodes: [{ id: "generic" }], edges: [] });
+    expect(loadCached(f, tmpDir, { profileHash: "profile-a-hash" })).toEqual({
+      nodes: [{ id: "profile-a" }],
+      edges: [],
+    });
+    expect(loadCached(f, tmpDir, { profileHash: "profile-b-hash" })).toBeNull();
+  });
+
+  it("does not satisfy profile semantic cache from generic cache hits", () => {
+    const f = join(tmpDir, "doc.md");
+    writeFileSync(f, "# Synthetic manual\n");
+    saveSemanticCache(
+      [{ id: "generic", label: "Generic", source_file: f }],
+      [],
+      [],
+      tmpDir,
+    );
+
+    const [genericNodes, , , genericUncached] = checkSemanticCache([f], tmpDir);
+    const [profileNodes, , , profileUncached] = checkSemanticCache([f], tmpDir, {
+      namespace: "profile-profile-a-hash",
+    });
+
+    expect(genericNodes).toEqual([{ id: "generic", label: "Generic", source_file: f }]);
+    expect(genericUncached).toEqual([]);
+    expect(profileNodes).toEqual([]);
+    expect(profileUncached).toEqual([f]);
+  });
+
+  it("reuses semantic cache for the same profile hash only", () => {
+    const f = join(tmpDir, "doc.md");
+    writeFileSync(f, "# Synthetic manual\n");
+    saveSemanticCache(
+      [{ id: "profile-a", label: "Profile A", source_file: f }],
+      [],
+      [],
+      tmpDir,
+      { profileHash: "profile-a-hash" },
+    );
+
+    const [sameProfileNodes, , , sameProfileUncached] = checkSemanticCache([f], tmpDir, {
+      profileHash: "profile-a-hash",
+    });
+    const [otherProfileNodes, , , otherProfileUncached] = checkSemanticCache([f], tmpDir, {
+      profileHash: "profile-b-hash",
+    });
+
+    expect(sameProfileNodes).toEqual([{ id: "profile-a", label: "Profile A", source_file: f }]);
+    expect(sameProfileUncached).toEqual([]);
+    expect(otherProfileNodes).toEqual([]);
+    expect(otherProfileUncached).toEqual([f]);
   });
 
   it("ignores markdown frontmatter-only changes when hashing", () => {

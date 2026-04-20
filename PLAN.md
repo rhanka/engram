@@ -522,7 +522,7 @@ Expected: configured dataprep tests pass and existing pipeline tests remain unch
 - Create or modify: `tests/cache.test.ts`
 - Modify: `tests/cli-runtime.test.ts`
 
-- [ ] **Step 7.1: Add failing cache isolation tests**
+- [x] **Step 7.1: Add failing cache isolation tests**
 
 Prove:
 
@@ -533,15 +533,15 @@ same profile hash can reuse profile cache
 generic cache API remains backward compatible
 ```
 
-- [ ] **Step 7.2: Implement optional cache namespace**
+- [x] **Step 7.2: Implement optional cache namespace**
 
 Add optional cache namespace/profile hash parameters to cache helpers. Default behavior must write/read the same paths as today.
 
-- [ ] **Step 7.3: Thread namespace through runtime commands**
+- [x] **Step 7.3: Thread namespace through runtime commands**
 
 Add optional `--cache-namespace <value>` or `--profile-state <path>` to semantic cache runtime commands used by profile mode.
 
-- [ ] **Step 7.4: Verify cache behavior**
+- [x] **Step 7.4: Verify cache behavior**
 
 Run:
 

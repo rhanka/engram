@@ -6,6 +6,11 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync, rename
 import { extname, join, resolve } from "node:path";
 import { resolveGraphifyPaths } from "./paths.js";
 
+export interface CacheOptions {
+  namespace?: string;
+  profileHash?: string;
+}
+
 function bodyContent(content: Buffer): Buffer {
   const text = content.toString("utf-8");
   if (!text.startsWith("---")) {
@@ -35,9 +40,27 @@ export function fileHash(filePath: string): string {
   return h.digest("hex");
 }
 
+function safeNamespace(value: string): string {
+  const normalized = value
+    .trim()
+    .replace(/[^A-Za-z0-9_.-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  if (normalized) return normalized;
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function cacheNamespace(options: CacheOptions = {}): string | null {
+  if (options.namespace) return safeNamespace(options.namespace);
+  if (options.profileHash) return safeNamespace(`profile-${options.profileHash}`);
+  return null;
+}
+
 /** Returns graphify cache path - creates it if needed. */
-export function cacheDir(root: string = "."): string {
-  const d = resolveGraphifyPaths({ root }).cacheDir;
+export function cacheDir(root: string = ".", options: CacheOptions = {}): string {
+  const namespace = cacheNamespace(options);
+  const d = namespace
+    ? join(resolveGraphifyPaths({ root }).cacheDir, namespace)
+    : resolveGraphifyPaths({ root }).cacheDir;
   mkdirSync(d, { recursive: true });
   return d;
 }
@@ -45,14 +68,18 @@ export function cacheDir(root: string = "."): string {
 /**
  * Return cached extraction for this file if hash matches, else null.
  */
-export function loadCached(filePath: string, root: string = "."): Record<string, unknown> | null {
+export function loadCached(
+  filePath: string,
+  root: string = ".",
+  options: CacheOptions = {},
+): Record<string, unknown> | null {
   let h: string;
   try {
     h = fileHash(filePath);
   } catch {
     return null;
   }
-  const entry = join(cacheDir(root), `${h}.json`);
+  const entry = join(cacheDir(root, options), `${h}.json`);
   if (!existsSync(entry)) return null;
   try {
     return JSON.parse(readFileSync(entry, "utf-8")) as Record<string, unknown>;
@@ -62,9 +89,14 @@ export function loadCached(filePath: string, root: string = "."): Record<string,
 }
 
 /** Save extraction result for this file. */
-export function saveCached(filePath: string, result: Record<string, unknown>, root: string = "."): void {
+export function saveCached(
+  filePath: string,
+  result: Record<string, unknown>,
+  root: string = ".",
+  options: CacheOptions = {},
+): void {
   const h = fileHash(filePath);
-  const entry = join(cacheDir(root), `${h}.json`);
+  const entry = join(cacheDir(root, options), `${h}.json`);
   const tmp = entry + ".tmp";
   try {
     writeFileSync(tmp, JSON.stringify(result));
@@ -76,8 +108,8 @@ export function saveCached(filePath: string, result: Record<string, unknown>, ro
 }
 
 /** Return set of file hashes that have a valid cache entry. */
-export function cachedFiles(root: string = "."): Set<string> {
-  const d = cacheDir(root);
+export function cachedFiles(root: string = ".", options: CacheOptions = {}): Set<string> {
+  const d = cacheDir(root, options);
   const result = new Set<string>();
   try {
     for (const f of readdirSync(d)) {
@@ -90,8 +122,8 @@ export function cachedFiles(root: string = "."): Set<string> {
 }
 
 /** Delete all graphify cache entries. */
-export function clearCache(root: string = "."): void {
-  const d = cacheDir(root);
+export function clearCache(root: string = ".", options: CacheOptions = {}): void {
+  const d = cacheDir(root, options);
   try {
     for (const f of readdirSync(d)) {
       if (f.endsWith(".json")) {
@@ -114,6 +146,7 @@ interface ExtractionPart {
 export function checkSemanticCache(
   files: string[],
   root: string = ".",
+  options: CacheOptions = {},
 ): [Array<Record<string, unknown>>, Array<Record<string, unknown>>, Array<Record<string, unknown>>, string[]] {
   const cachedNodes: Array<Record<string, unknown>> = [];
   const cachedEdges: Array<Record<string, unknown>> = [];
@@ -121,7 +154,7 @@ export function checkSemanticCache(
   const uncached: string[] = [];
 
   for (const fpath of files) {
-    const result = loadCached(fpath, root);
+    const result = loadCached(fpath, root, options);
     if (result !== null) {
       const r = result as unknown as ExtractionPart;
       cachedNodes.push(...(r.nodes ?? []));
@@ -144,6 +177,7 @@ export function saveSemanticCache(
   edges: Array<Record<string, unknown>>,
   hyperedges: Array<Record<string, unknown>> | null = null,
   root: string = ".",
+  options: CacheOptions = {},
 ): number {
   const byFile = new Map<string, ExtractionPart>();
 
@@ -170,7 +204,7 @@ export function saveSemanticCache(
   for (const [fpath, result] of byFile) {
     const p = resolve(root, fpath);
     if (existsSync(p)) {
-      saveCached(p, result as unknown as Record<string, unknown>, root);
+      saveCached(p, result as unknown as Record<string, unknown>, root, options);
       saved++;
     }
   }
