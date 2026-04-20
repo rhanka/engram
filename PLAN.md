@@ -561,7 +561,7 @@ Expected: generic cache tests and profile cache isolation tests pass.
 - Modify: `tests/validate.test.ts`
 - Modify: `src/index.ts`
 
-- [ ] **Step 8.1: Add failing validation wrapper tests**
+- [x] **Step 8.1: Add failing validation wrapper tests**
 
 Cover:
 
@@ -577,7 +577,7 @@ registry-backed type without registry link is an error or warning per hardening 
 generic AST code nodes without node_type are accepted
 ```
 
-- [ ] **Step 8.2: Implement profile validation wrapper**
+- [x] **Step 8.2: Implement profile validation wrapper**
 
 Implement:
 
@@ -589,7 +589,7 @@ profileValidationResultToJson(result)
 
 The first operation must be `validateExtraction(extraction)`.
 
-- [ ] **Step 8.3: Keep issue severities machine-readable**
+- [x] **Step 8.3: Keep issue severities machine-readable**
 
 Use explicit severities:
 
@@ -599,7 +599,7 @@ warning
 info
 ```
 
-- [ ] **Step 8.4: Verify profile validation**
+- [x] **Step 8.4: Verify profile validation**
 
 Run:
 

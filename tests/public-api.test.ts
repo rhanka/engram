@@ -79,6 +79,9 @@ describe("public API compatibility", () => {
     expect(typeof api.planGraphifyOutMigration).toBe("function");
     expect(typeof api.migrateGraphifyOut).toBe("function");
     expect(typeof api.migrationResultToText).toBe("function");
+    expect(typeof api.validateProfileExtraction).toBe("function");
+    expect(typeof api.profileValidationResultToMarkdown).toBe("function");
+    expect(typeof api.profileValidationResultToJson).toBe("function");
   });
 
   it("accepts object-style map inputs and option objects", () => {

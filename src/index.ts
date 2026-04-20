@@ -51,6 +51,17 @@ export {
   normalizeRegistryRecord,
   registryRecordsToExtraction,
 } from "./profile-registry.js";
+export {
+  profileValidationResultToJson,
+  profileValidationResultToMarkdown,
+  validateProfileExtraction,
+} from "./profile-validate.js";
+export type {
+  ProfileValidationContext,
+  ProfileValidationIssue,
+  ProfileValidationResult,
+  ProfileValidationSeverity,
+} from "./profile-validate.js";
 export { validateExtraction, assertValid } from "./validate.js";
 export { buildFromJson, build } from "./build.js";
 export { cluster, cohesionScore, scoreAll } from "./cluster.js";
