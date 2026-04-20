@@ -65,6 +65,12 @@ export {
   validateImageCaption,
   validateImageRouting,
 } from "./image-caption-schema.js";
+export {
+  calibrateImageRouting,
+  loadImageRoutingLabels,
+  loadImageRoutingRules,
+  routeImageWithRules,
+} from "./image-routing-calibration.js";
 export type {
   AssistantLlmClientOptions,
   BatchVisionExportInput,
@@ -90,6 +96,19 @@ export type {
   RunImageDataprepOptions,
   RunImageDataprepResult,
 } from "./image-dataprep.js";
+export type {
+  ImageRoute,
+  ImageRoutingCalibrationDecision,
+  ImageRoutingCalibrationInput,
+  ImageRoutingCalibrationResult,
+  ImageRoutingDecision,
+  ImageRoutingLabel,
+  ImageRoutingLabelEntry,
+  ImageRoutingLabelsFile,
+  ImageRoutingRuleBucket,
+  ImageRoutingRulesFile,
+  ImageRoutingSample,
+} from "./image-routing-calibration.js";
 export {
   bindOntologyProfile,
   hashOntologyProfile,
