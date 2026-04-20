@@ -82,6 +82,9 @@ describe("public API compatibility", () => {
     expect(typeof api.validateProfileExtraction).toBe("function");
     expect(typeof api.profileValidationResultToMarkdown).toBe("function");
     expect(typeof api.profileValidationResultToJson).toBe("function");
+    expect(typeof api.buildProfileExtractionPrompt).toBe("function");
+    expect(typeof api.buildProfileChunkPrompt).toBe("function");
+    expect(typeof api.buildProfileValidationPrompt).toBe("function");
   });
 
   it("accepts object-style map inputs and option objects", () => {

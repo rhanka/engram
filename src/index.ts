@@ -62,6 +62,16 @@ export type {
   ProfileValidationResult,
   ProfileValidationSeverity,
 } from "./profile-validate.js";
+export {
+  buildProfileChunkPrompt,
+  buildProfileExtractionPrompt,
+  buildProfileValidationPrompt,
+} from "./profile-prompts.js";
+export type {
+  ProfilePromptChunk,
+  ProfilePromptOptions,
+  ProfilePromptState,
+} from "./profile-prompts.js";
 export { validateExtraction, assertValid } from "./validate.js";
 export { buildFromJson, build } from "./build.js";
 export { cluster, cohesionScore, scoreAll } from "./cluster.js";

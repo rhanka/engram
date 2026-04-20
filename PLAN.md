@@ -618,7 +618,7 @@ Expected: profile validation is enforced only by the wrapper.
 - Create: `tests/profile-prompts.test.ts`
 - Modify: `src/index.ts`
 
-- [ ] **Step 9.1: Add failing prompt builder tests**
+- [x] **Step 9.1: Add failing prompt builder tests**
 
 Assert prompt output includes:
 
@@ -634,7 +634,7 @@ instruction to avoid invented proprietary ontology content
 chunk-specific document/paper/image guidance
 ```
 
-- [ ] **Step 9.2: Implement prompt builder**
+- [x] **Step 9.2: Implement prompt builder**
 
 Implement:
 
@@ -644,11 +644,11 @@ buildProfileChunkPrompt(profileState, chunk, options)
 buildProfileValidationPrompt(profileState, extraction, options)
 ```
 
-- [ ] **Step 9.3: Bound prompt size**
+- [x] **Step 9.3: Bound prompt size**
 
 Registry context must include counts and small synthetic-safe samples, not entire large registries.
 
-- [ ] **Step 9.4: Verify prompts**
+- [x] **Step 9.4: Verify prompts**
 
 Run:
 
