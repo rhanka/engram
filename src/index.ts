@@ -71,6 +71,10 @@ export {
   loadImageRoutingRules,
   routeImageWithRules,
 } from "./image-routing-calibration.js";
+export {
+  exportImageDataprepBatchRequests,
+  importImageDataprepBatchResults,
+} from "./image-dataprep-batch.js";
 export type {
   AssistantLlmClientOptions,
   BatchVisionExportInput,
@@ -109,6 +113,12 @@ export type {
   ImageRoutingRulesFile,
   ImageRoutingSample,
 } from "./image-routing-calibration.js";
+export type {
+  ExportImageDataprepBatchRequestsOptions,
+  ExportImageDataprepBatchRequestsResult,
+  ImportImageDataprepBatchResultsOptions,
+  ImportImageDataprepBatchResultsResult,
+} from "./image-dataprep-batch.js";
 export {
   bindOntologyProfile,
   hashOntologyProfile,
