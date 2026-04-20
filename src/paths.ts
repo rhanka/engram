@@ -69,6 +69,19 @@ export interface GraphifyImageDataprepPaths {
   assistantInstructions: string;
 }
 
+export interface GraphifyOntologyOutputPaths {
+  dir: string;
+  manifest: string;
+  nodes: string;
+  aliases: string;
+  relations: string;
+  sources: string;
+  occurrences: string;
+  validation: string;
+  index: string;
+  wikiDir: string;
+}
+
 export interface GraphifyPaths {
   root: string;
   stateDir: string;
@@ -86,6 +99,7 @@ export interface GraphifyPaths {
   needsUpdate: string;
   profile: GraphifyProfilePaths;
   imageDataprep: GraphifyImageDataprepPaths;
+  ontologyOutput: GraphifyOntologyOutputPaths;
   scratch: GraphifyScratchPaths;
   legacyRootScratch: GraphifyLegacyRootScratchPaths;
 }
@@ -99,6 +113,7 @@ export function resolveGraphifyPaths(options: GraphifyPathOptions = {}): Graphif
   const stateDir = statePath(root, options.stateDir ?? DEFAULT_GRAPHIFY_STATE_DIR);
   const profileDir = join(stateDir, "profile");
   const imageDataprepDir = join(stateDir, "image-dataprep");
+  const ontologyOutputDir = join(stateDir, "ontology");
 
   const scratch: GraphifyScratchPaths = {
     detect: join(stateDir, ".graphify_detect.json"),
@@ -154,6 +169,18 @@ export function resolveGraphifyPaths(options: GraphifyPathOptions = {}): Graphif
       batchDir: join(imageDataprepDir, "batch"),
       importsDir: join(imageDataprepDir, "imports"),
       assistantInstructions: join(imageDataprepDir, "assistant-instructions.md"),
+    },
+    ontologyOutput: {
+      dir: ontologyOutputDir,
+      manifest: join(ontologyOutputDir, "manifest.json"),
+      nodes: join(ontologyOutputDir, "nodes.json"),
+      aliases: join(ontologyOutputDir, "aliases.json"),
+      relations: join(ontologyOutputDir, "relations.json"),
+      sources: join(ontologyOutputDir, "sources.json"),
+      occurrences: join(ontologyOutputDir, "occurrences.json"),
+      validation: join(ontologyOutputDir, "validation.json"),
+      index: join(ontologyOutputDir, "index.json"),
+      wikiDir: join(ontologyOutputDir, "wiki"),
     },
     scratch,
     legacyRootScratch: {

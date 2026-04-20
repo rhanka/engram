@@ -75,6 +75,9 @@ export {
   exportImageDataprepBatchRequests,
   importImageDataprepBatchResults,
 } from "./image-dataprep-batch.js";
+export {
+  compileOntologyOutputs,
+} from "./ontology-output.js";
 export type {
   AssistantLlmClientOptions,
   BatchVisionExportInput,
@@ -119,6 +122,11 @@ export type {
   ImportImageDataprepBatchResultsOptions,
   ImportImageDataprepBatchResultsResult,
 } from "./image-dataprep-batch.js";
+export type {
+  CompileOntologyOutputsOptions,
+  CompileOntologyOutputsResult,
+  OntologyOutputConfig,
+} from "./ontology-output.js";
 export {
   bindOntologyProfile,
   hashOntologyProfile,
