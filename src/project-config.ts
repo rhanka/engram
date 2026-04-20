@@ -4,6 +4,8 @@ import { parse as parseYaml } from "yaml";
 
 import type {
   GraphifyDataprepPolicy,
+  GraphifyImageAnalysisPolicy,
+  GraphifyLlmExecutionPolicy,
   GraphifyOutputPolicy,
   GraphifyProjectConfig,
   GraphifyProjectInputs,
@@ -21,6 +23,8 @@ const CONFIG_CANDIDATES = [
 
 const VALID_PDF_OCR_MODES = new Set(["off", "auto", "always", "dry-run"]);
 const VALID_CITATION_MINIMUMS = new Set(["file", "page", "section", "paragraph"]);
+const VALID_LLM_EXECUTION_MODES = new Set(["assistant", "batch", "mesh", "off"]);
+const VALID_IMAGE_ARTIFACT_SOURCES = new Set(["ocr_crops", "images", "all"]);
 
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -36,6 +40,14 @@ function asStringArray(value: unknown): string[] {
 
 function asBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
+}
+
+function asString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function asNumber(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
 function resolvePath(configDir: string, value: string): string {
@@ -70,6 +82,20 @@ function parseCitationMinimum(value: unknown): "file" | "page" | "section" | "pa
     : "page";
 }
 
+function parseLlmExecutionMode(value: unknown, fallback: "assistant" | "batch" | "mesh" | "off"): "assistant" | "batch" | "mesh" | "off" {
+  const normalized = String(value ?? fallback).trim().toLowerCase();
+  return VALID_LLM_EXECUTION_MODES.has(normalized)
+    ? normalized as "assistant" | "batch" | "mesh" | "off"
+    : fallback;
+}
+
+function parseImageArtifactSource(value: unknown): "ocr_crops" | "images" | "all" {
+  const normalized = String(value ?? "ocr_crops").trim().toLowerCase();
+  return VALID_IMAGE_ARTIFACT_SOURCES.has(normalized)
+    ? normalized as "ocr_crops" | "images" | "all"
+    : "ocr_crops";
+}
+
 export function discoverProjectConfig(root: string = "."): ProjectConfigDiscoveryResult {
   const resolvedRoot = resolve(root);
   const searched = CONFIG_CANDIDATES.map((candidate) => join(resolvedRoot, candidate));
@@ -94,6 +120,8 @@ export function validateProjectConfig(config: GraphifyProjectConfig): string[] {
   const profile = asRecord(config.profile) as GraphifyProjectConfigProfile;
   const inputs = asRecord(config.inputs) as GraphifyProjectInputs;
   const dataprep = asRecord(config.dataprep) as GraphifyDataprepPolicy;
+  const imageAnalysis = asRecord(dataprep.image_analysis) as GraphifyImageAnalysisPolicy;
+  const llmExecution = asRecord(config.llm_execution) as GraphifyLlmExecutionPolicy;
   const outputs = asRecord(config.outputs) as GraphifyOutputPolicy;
 
   if (config.version !== undefined && config.version !== 1) {
@@ -124,6 +152,24 @@ export function validateProjectConfig(config: GraphifyProjectConfig): string[] {
   ) {
     errors.push("dataprep.citation_minimum must be one of file, page, section, paragraph");
   }
+  if (
+    imageAnalysis.mode !== undefined &&
+    !VALID_LLM_EXECUTION_MODES.has(String(imageAnalysis.mode))
+  ) {
+    errors.push("dataprep.image_analysis.mode must be one of assistant, batch, mesh, off");
+  }
+  if (
+    imageAnalysis.artifact_source !== undefined &&
+    !VALID_IMAGE_ARTIFACT_SOURCES.has(String(imageAnalysis.artifact_source))
+  ) {
+    errors.push("dataprep.image_analysis.artifact_source must be one of ocr_crops, images, all");
+  }
+  if (
+    llmExecution.mode !== undefined &&
+    !VALID_LLM_EXECUTION_MODES.has(String(llmExecution.mode))
+  ) {
+    errors.push("llm_execution.mode must be one of assistant, batch, mesh, off");
+  }
   if (outputs.state_dir !== undefined && typeof outputs.state_dir !== "string") {
     errors.push("outputs.state_dir must be a path string");
   }
@@ -144,9 +190,19 @@ export function normalizeProjectConfig(
   const profile = asRecord(config.profile) as GraphifyProjectConfigProfile;
   const inputs = asRecord(config.inputs) as GraphifyProjectInputs;
   const dataprep = asRecord(config.dataprep) as GraphifyDataprepPolicy;
+  const imageAnalysis = asRecord(dataprep.image_analysis) as GraphifyImageAnalysisPolicy;
+  const imageCalibration = asRecord(imageAnalysis.calibration);
+  const imageBatch = asRecord(imageAnalysis.batch);
+  const llmExecution = asRecord(config.llm_execution) as GraphifyLlmExecutionPolicy;
+  const textJson = asRecord(llmExecution.text_json);
+  const visionJson = asRecord(llmExecution.vision_json);
+  const llmBatch = asRecord(llmExecution.batch);
+  const llmMesh = asRecord(llmExecution.mesh);
   const outputs = asRecord(config.outputs) as GraphifyOutputPolicy;
 
   const registries = asStringArray(inputs.registries).map((item) => resolvePath(configDir, item));
+  const imageRulesPath = asString(imageCalibration.rules_path);
+  const imageLabelsPath = asString(imageCalibration.labels_path);
 
   return {
     version: config.version ?? 1,
@@ -170,6 +226,44 @@ export function normalizeProjectConfig(
       full_page_screenshot_vision: asBoolean(dataprep.full_page_screenshot_vision, false),
       citation_minimum: parseCitationMinimum(dataprep.citation_minimum),
       preserve_source_structure: asBoolean(dataprep.preserve_source_structure, true),
+      image_analysis: {
+        enabled: asBoolean(imageAnalysis.enabled, false),
+        mode: parseLlmExecutionMode(imageAnalysis.mode, "off"),
+        artifact_source: parseImageArtifactSource(imageAnalysis.artifact_source),
+        caption_schema: asString(imageAnalysis.caption_schema) ?? "generic_image_caption_v1",
+        routing_profile: asString(imageAnalysis.routing_profile) ?? "generic_image_routing_v1",
+        primary_model: asString(imageAnalysis.primary_model),
+        deep_model: asString(imageAnalysis.deep_model),
+        calibration: {
+          rules_path: imageRulesPath,
+          resolvedRulesPath: imageRulesPath ? resolvePath(configDir, imageRulesPath) : null,
+          labels_path: imageLabelsPath,
+          resolvedLabelsPath: imageLabelsPath ? resolvePath(configDir, imageLabelsPath) : null,
+        },
+        max_markdown_context_chars: asNumber(imageAnalysis.max_markdown_context_chars, 8000),
+        batch: {
+          completion_window: asString(imageBatch.completion_window) ?? "24h",
+          output_dir: resolvePath(configDir, asString(imageBatch.output_dir) ?? ".graphify/image-dataprep/batch"),
+        },
+      },
+    },
+    llm_execution: {
+      mode: parseLlmExecutionMode(llmExecution.mode, "assistant"),
+      provider: asString(llmExecution.provider),
+      text_json: {
+        model: asString(textJson.model) ?? "",
+      },
+      vision_json: {
+        primary_model: asString(visionJson.primary_model) ?? "",
+        deep_model: asString(visionJson.deep_model) ?? "",
+      },
+      batch: {
+        provider: asString(llmBatch.provider) ?? "",
+        completion_window: asString(llmBatch.completion_window) ?? "24h",
+      },
+      mesh: {
+        adapter: asString(llmMesh.adapter) ?? "",
+      },
     },
     outputs: {
       state_dir: resolvePath(configDir, outputs.state_dir ?? ".graphify"),

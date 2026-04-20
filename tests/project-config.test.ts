@@ -82,6 +82,15 @@ describe("project config loader", () => {
         "dataprep:",
         "  pdf_ocr: dry-run",
         "  full_page_screenshot_vision: false",
+        "  image_analysis:",
+        "    enabled: true",
+        "    mode: assistant",
+        "    artifact_source: ocr_crops",
+        "    calibration:",
+        "      rules_path: ../graphify/image-routing-rules.yaml",
+        "      labels_path: ../graphify/image-routing-labels.yaml",
+        "llm_execution:",
+        "  mode: assistant",
         "outputs:",
         "  state_dir: ../.graphify",
         "  write_wiki: true",
@@ -106,6 +115,20 @@ describe("project config loader", () => {
     expect(loaded.dataprep.use_extracted_pdf_images).toBe(true);
     expect(loaded.dataprep.full_page_screenshot_vision).toBe(false);
     expect(loaded.dataprep.citation_minimum).toBe("page");
+    expect(loaded.dataprep.image_analysis.enabled).toBe(true);
+    expect(loaded.dataprep.image_analysis.mode).toBe("assistant");
+    expect(loaded.dataprep.image_analysis.artifact_source).toBe("ocr_crops");
+    expect(loaded.dataprep.image_analysis.caption_schema).toBe("generic_image_caption_v1");
+    expect(loaded.dataprep.image_analysis.routing_profile).toBe("generic_image_routing_v1");
+    expect(loaded.dataprep.image_analysis.calibration.rules_path).toBe("../graphify/image-routing-rules.yaml");
+    expect(loaded.dataprep.image_analysis.calibration.resolvedRulesPath).toBe(
+      join(root, "graphify", "image-routing-rules.yaml"),
+    );
+    expect(loaded.dataprep.image_analysis.calibration.labels_path).toBe("../graphify/image-routing-labels.yaml");
+    expect(loaded.dataprep.image_analysis.calibration.resolvedLabelsPath).toBe(
+      join(root, "graphify", "image-routing-labels.yaml"),
+    );
+    expect(loaded.llm_execution.mode).toBe("assistant");
     expect(loaded.outputs.state_dir).toBe(join(root, ".graphify"));
     expect(loaded.outputs.write_html).toBe(true);
     expect(loaded.outputs.write_wiki).toBe(true);
@@ -134,6 +157,11 @@ describe("project config loader", () => {
     expect(loaded.outputs.write_html).toBe(true);
     expect(loaded.outputs.write_wiki).toBe(false);
     expect(loaded.outputs.write_profile_report).toBe(true);
+    expect(loaded.dataprep.image_analysis.enabled).toBe(false);
+    expect(loaded.dataprep.image_analysis.mode).toBe("off");
+    expect(loaded.dataprep.image_analysis.calibration.resolvedRulesPath).toBeNull();
+    expect(loaded.dataprep.image_analysis.calibration.resolvedLabelsPath).toBeNull();
+    expect(loaded.llm_execution.mode).toBe("assistant");
   });
 
   it("validates required config fields", () => {
@@ -142,6 +170,33 @@ describe("project config loader", () => {
 
     expect(errors).toContain("profile.path is required");
     expect(errors).toContain("inputs.corpus must contain at least one path");
+  });
+
+  it("validates advanced dataprep and LLM mode enums", () => {
+    const raw = parseProjectConfig(
+      [
+        "version: 1",
+        "profile:",
+        "  path: graphify/ontology-profile.yaml",
+        "inputs:",
+        "  corpus: [raw]",
+        "dataprep:",
+        "  image_analysis:",
+        "    enabled: true",
+        "    mode: provider",
+        "    artifact_source: full_page",
+        "llm_execution:",
+        "  mode: direct",
+        "",
+      ].join("\n"),
+      "graphify.yaml",
+    );
+
+    const errors = validateProjectConfig(raw);
+
+    expect(errors).toContain("dataprep.image_analysis.mode must be one of assistant, batch, mesh, off");
+    expect(errors).toContain("dataprep.image_analysis.artifact_source must be one of ocr_crops, images, all");
+    expect(errors).toContain("llm_execution.mode must be one of assistant, batch, mesh, off");
   });
 
   it("normalizes an already parsed object without reading files", () => {

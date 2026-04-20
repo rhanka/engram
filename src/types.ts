@@ -133,6 +133,8 @@ export interface PlatformConfig {
 }
 
 export type GraphifyPdfOcrMode = "off" | "auto" | "always" | "dry-run";
+export type GraphifyLlmExecutionMode = "assistant" | "batch" | "mesh" | "off";
+export type GraphifyImageArtifactSource = "ocr_crops" | "images" | "all";
 
 export interface GraphifyProjectConfigProfile {
   path?: string;
@@ -145,6 +147,29 @@ export interface GraphifyProjectInputs {
   exclude?: string[];
 }
 
+export interface GraphifyImageAnalysisCalibrationPolicy {
+  rules_path?: string;
+  labels_path?: string;
+}
+
+export interface GraphifyImageAnalysisBatchPolicy {
+  completion_window?: string;
+  output_dir?: string;
+}
+
+export interface GraphifyImageAnalysisPolicy {
+  enabled?: boolean;
+  mode?: GraphifyLlmExecutionMode;
+  artifact_source?: GraphifyImageArtifactSource;
+  caption_schema?: string;
+  routing_profile?: string;
+  primary_model?: string;
+  deep_model?: string;
+  calibration?: GraphifyImageAnalysisCalibrationPolicy;
+  max_markdown_context_chars?: number;
+  batch?: GraphifyImageAnalysisBatchPolicy;
+}
+
 export interface GraphifyDataprepPolicy {
   pdf_ocr?: GraphifyPdfOcrMode;
   prefer_ocr_markdown?: boolean;
@@ -152,6 +177,34 @@ export interface GraphifyDataprepPolicy {
   full_page_screenshot_vision?: boolean;
   citation_minimum?: "file" | "page" | "section" | "paragraph";
   preserve_source_structure?: boolean;
+  image_analysis?: GraphifyImageAnalysisPolicy;
+}
+
+export interface GraphifyLlmExecutionTextJsonPolicy {
+  model?: string;
+}
+
+export interface GraphifyLlmExecutionVisionJsonPolicy {
+  primary_model?: string;
+  deep_model?: string;
+}
+
+export interface GraphifyLlmExecutionBatchPolicy {
+  provider?: string;
+  completion_window?: string;
+}
+
+export interface GraphifyLlmExecutionMeshPolicy {
+  adapter?: string;
+}
+
+export interface GraphifyLlmExecutionPolicy {
+  mode?: GraphifyLlmExecutionMode;
+  provider?: string;
+  text_json?: GraphifyLlmExecutionTextJsonPolicy;
+  vision_json?: GraphifyLlmExecutionVisionJsonPolicy;
+  batch?: GraphifyLlmExecutionBatchPolicy;
+  mesh?: GraphifyLlmExecutionMeshPolicy;
 }
 
 export interface GraphifyOutputPolicy {
@@ -166,6 +219,7 @@ export interface GraphifyProjectConfig {
   profile?: GraphifyProjectConfigProfile;
   inputs?: GraphifyProjectInputs;
   dataprep?: GraphifyDataprepPolicy;
+  llm_execution?: GraphifyLlmExecutionPolicy;
   outputs?: GraphifyOutputPolicy;
 }
 
@@ -182,6 +236,31 @@ export interface NormalizedProjectInputs {
   exclude: string[];
 }
 
+export interface NormalizedImageAnalysisCalibrationPolicy {
+  rules_path: string | null;
+  resolvedRulesPath: string | null;
+  labels_path: string | null;
+  resolvedLabelsPath: string | null;
+}
+
+export interface NormalizedImageAnalysisBatchPolicy {
+  completion_window: string;
+  output_dir: string;
+}
+
+export interface NormalizedImageAnalysisPolicy {
+  enabled: boolean;
+  mode: GraphifyLlmExecutionMode;
+  artifact_source: GraphifyImageArtifactSource;
+  caption_schema: string;
+  routing_profile: string;
+  primary_model: string | null;
+  deep_model: string | null;
+  calibration: NormalizedImageAnalysisCalibrationPolicy;
+  max_markdown_context_chars: number;
+  batch: NormalizedImageAnalysisBatchPolicy;
+}
+
 export interface NormalizedDataprepPolicy {
   pdf_ocr: GraphifyPdfOcrMode;
   prefer_ocr_markdown: boolean;
@@ -189,6 +268,16 @@ export interface NormalizedDataprepPolicy {
   full_page_screenshot_vision: boolean;
   citation_minimum: "file" | "page" | "section" | "paragraph";
   preserve_source_structure: boolean;
+  image_analysis: NormalizedImageAnalysisPolicy;
+}
+
+export interface NormalizedLlmExecutionPolicy {
+  mode: GraphifyLlmExecutionMode;
+  provider: string | null;
+  text_json: { model: string };
+  vision_json: { primary_model: string; deep_model: string };
+  batch: { provider: string; completion_window: string };
+  mesh: { adapter: string };
 }
 
 export interface NormalizedOutputPolicy {
@@ -205,6 +294,7 @@ export interface NormalizedProjectConfig {
   profile: NormalizedProjectProfile;
   inputs: NormalizedProjectInputs;
   dataprep: NormalizedDataprepPolicy;
+  llm_execution: NormalizedLlmExecutionPolicy;
   outputs: NormalizedOutputPolicy;
 }
 
