@@ -86,6 +86,10 @@ describe("public API compatibility", () => {
     expect(typeof api.buildProfileChunkPrompt).toBe("function");
     expect(typeof api.buildProfileValidationPrompt).toBe("function");
     expect(typeof api.buildProfileReport).toBe("function");
+    expect(typeof api.assertAcceptedImageRoutingRules).toBe("function");
+    expect(typeof api.writeImageRoutingCalibrationSamples).toBe("function");
+    expect(typeof api.imageRoutingSampleFromCaption).toBe("function");
+    expect(typeof api.compileOntologyOutputs).toBe("function");
   });
 
   it("accepts object-style map inputs and option objects", () => {

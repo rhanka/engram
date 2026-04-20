@@ -37,10 +37,16 @@ export type {
   OntologyCitationPolicy,
   OntologyHardeningPolicy,
   OntologyNodeType,
+  OntologyOutputPolicy,
+  OntologyOutputWikiPolicy,
   OntologyProfile,
+  OntologyProfileOutputs,
   OntologyRegistrySpec,
+  OntologyRelationExport,
   OntologyRelationType,
   OntologyStatus,
+  NormalizedOntologyOutputPolicy,
+  NormalizedOntologyProfileOutputs,
   ProfileBinding,
   RegistryRecord,
 } from "./types.js";
@@ -67,9 +73,12 @@ export {
 } from "./image-caption-schema.js";
 export {
   calibrateImageRouting,
+  assertAcceptedImageRoutingRules,
+  imageRoutingSampleFromCaption,
   loadImageRoutingLabels,
   loadImageRoutingRules,
   routeImageWithRules,
+  writeImageRoutingCalibrationSamples,
 } from "./image-routing-calibration.js";
 export {
   exportImageDataprepBatchRequests,
@@ -115,6 +124,9 @@ export type {
   ImageRoutingRuleBucket,
   ImageRoutingRulesFile,
   ImageRoutingSample,
+  ImageRoutingSamplesFile,
+  WriteImageRoutingCalibrationSamplesOptions,
+  WriteImageRoutingCalibrationSamplesResult,
 } from "./image-routing-calibration.js";
 export type {
   ExportImageDataprepBatchRequestsOptions,
