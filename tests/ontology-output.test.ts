@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { compileOntologyOutputs } from "../src/ontology-output.js";
+import { validateProfileExtraction } from "../src/profile-validate.js";
 import type { Extraction, NormalizedOntologyProfile } from "../src/types.js";
 
 const cleanupDirs: string[] = [];
@@ -92,7 +93,7 @@ describe("ontology output artifacts", () => {
     expect(existsSync(join(root, ".graphify", "ontology"))).toBe(false);
   });
 
-  it("compiles nodes, aliases, relations, manifest and entity wiki pages", () => {
+  it("compiles legacy type nodes, aliases, relations, manifest and entity wiki pages", () => {
     const root = makeTempDir();
     const outputDir = join(root, ".graphify", "ontology");
 
@@ -119,6 +120,66 @@ describe("ontology output artifacts", () => {
     expect(readFileSync(join(outputDir, "relations.json"), "utf-8")).toContain("requires_tool");
     expect(readFileSync(join(outputDir, "wiki", "entities", "component-a.md"), "utf-8")).toContain(
       "# Synthetic Component",
+    );
+  });
+
+  it("compiles profile-validated node_type nodes into ontology outputs", () => {
+    const root = makeTempDir();
+    const outputDir = join(root, ".graphify", "ontology");
+    const profileExtraction: Extraction = {
+      input_tokens: 0,
+      output_tokens: 0,
+      nodes: [
+        {
+          id: "component-b",
+          label: "Profile Component",
+          node_type: "Component",
+          aliases: ["profile component alias"],
+          file_type: "document",
+          source_file: "manual.md",
+          status: "validated",
+          citations: [{ source_file: "manual.md", page: 1 }],
+        },
+        {
+          id: "tool-b",
+          label: "Profile Tool",
+          node_type: "Tool",
+          file_type: "document",
+          source_file: "manual.md",
+          citations: [{ source_file: "manual.md", page: 1 }],
+        },
+      ],
+      edges: [{
+        source: "component-b",
+        target: "tool-b",
+        relation: "requires_tool",
+        confidence: "EXTRACTED",
+        source_file: "manual.md",
+        citations: [{ source_file: "manual.md", page: 1 }],
+      }],
+    };
+
+    expect(validateProfileExtraction(profileExtraction, { profile }).valid).toBe(true);
+
+    const result = compileOntologyOutputs({
+      outputDir,
+      extraction: profileExtraction,
+      profile,
+      config: {
+        enabled: true,
+        canonical_node_types: ["Component", "Tool"],
+        relation_exports: ["requires_tool"],
+        wiki: { enabled: true, page_node_types: ["Component"] },
+      },
+    });
+
+    expect(result.nodeCount).toBe(2);
+    expect(result.relationCount).toBe(1);
+    const nodes = JSON.parse(readFileSync(join(outputDir, "nodes.json"), "utf-8")) as Array<{ type: string }>;
+    expect(nodes.map((node) => node.type)).toEqual(["Component", "Tool"]);
+    expect(readFileSync(join(outputDir, "relations.json"), "utf-8")).toContain("requires_tool");
+    expect(readFileSync(join(outputDir, "wiki", "entities", "component-b.md"), "utf-8")).toContain(
+      "Type: Component",
     );
   });
 

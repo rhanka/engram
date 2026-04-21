@@ -64,8 +64,14 @@ function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
-function nodeType(node: GraphNode): string | null {
-  return typeof node.type === "string" && node.type.trim().length > 0 ? node.type : null;
+function stringValue(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function ontologyNodeType(node: GraphNode): string | null {
+  return stringValue(node.node_type) ?? stringValue(node.type);
 }
 
 function confidenceScore(value: GraphNode | GraphEdge): number | null {
@@ -94,16 +100,17 @@ function compileNodes(
   const allowedTypes = new Set(config.canonical_node_types ?? Object.keys(profile.node_types));
   const nodes = extraction.nodes
     .filter((node) => {
-      const type = nodeType(node);
+      const type = ontologyNodeType(node);
       return type !== null && allowedTypes.has(type);
     })
     .map((node): CompiledNode => {
+      const type = ontologyNodeType(node)!;
       const aliases = stringArray(node.aliases);
       const terms = [node.label, ...aliases].map(normalizedTerm).filter(Boolean);
       const status = typeof node.status === "string" ? node.status : profile.hardening.default_status;
       return {
         id: node.id,
-        type: nodeType(node)!,
+        type,
         label: node.label,
         aliases,
         normalized_terms: Array.from(new Set(terms)),

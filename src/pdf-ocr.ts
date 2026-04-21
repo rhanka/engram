@@ -95,7 +95,8 @@ async function loadMistralOcrModule(): Promise<MistralOcrModule> {
         mistralOcrModulePromise = null;
         const detail = error instanceof Error ? error.message : String(error);
         throw new Error(
-          "PDF OCR requires the optional dependency mistral-ocr. Install graphify with optional dependencies, then retry. " + detail,
+          "PDF OCR requires the bundled dependency mistral-ocr, but it could not be loaded. " +
+          "Reinstall graphifyy globally with `npm install -g graphifyy`, then retry. " + detail,
         );
       });
   }

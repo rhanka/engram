@@ -67,6 +67,21 @@ describe("PDF preflight and OCR preparation", () => {
     expect(() => parsePdfOcrMode("bad")).toThrow(/Unsupported/);
   });
 
+  it("packages mistral-ocr as a required runtime dependency", () => {
+    const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8")) as {
+      dependencies?: Record<string, string>;
+      optionalDependencies?: Record<string, string>;
+    };
+    const packageLock = JSON.parse(readFileSync(new URL("../package-lock.json", import.meta.url), "utf-8")) as {
+      packages?: Record<string, { dependencies?: Record<string, string>; optionalDependencies?: Record<string, string> }>;
+    };
+
+    expect(packageJson.dependencies).toHaveProperty("mistral-ocr");
+    expect(packageJson.optionalDependencies ?? {}).not.toHaveProperty("mistral-ocr");
+    expect(packageLock.packages?.[""]?.dependencies).toHaveProperty("mistral-ocr");
+    expect(packageLock.packages?.[""]?.optionalDependencies ?? {}).not.toHaveProperty("mistral-ocr");
+  });
+
   it("marks low-text PDFs as needing OCR in auto mode", async () => {
     pdfParseMock.mockResolvedValueOnce({ text: "tiny", numpages: 3 });
 
