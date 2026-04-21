@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { collectFiles, extract } from "../src/extract.js";
@@ -32,6 +32,28 @@ describe("upstream v4 language surface", () => {
     }
 
     expect(collectFiles(dir).map((p) => p.split("/").pop()).sort()).toEqual(files.sort());
+  });
+
+  it("collects files when the explicit project root is inside a hidden parent", () => {
+    const worktreeRoot = join(dir, ".worktrees", "feature-branch");
+    mkdirSync(join(worktreeRoot, "src"), { recursive: true });
+    writeFileSync(join(worktreeRoot, "src", "main.ts"), "export const value = 1;\n");
+
+    const files = collectFiles(worktreeRoot);
+
+    expect(files).toContain(join(worktreeRoot, "src", "main.ts"));
+  });
+
+  it("does not collect sibling worktree files from the main project root", () => {
+    mkdirSync(join(dir, "src"), { recursive: true });
+    mkdirSync(join(dir, ".worktrees", "feature-branch", "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "main.ts"), "export const main = true;\n");
+    writeFileSync(join(dir, ".worktrees", "feature-branch", "src", "branch.ts"), "export const branch = true;\n");
+
+    const files = collectFiles(dir);
+
+    expect(files).toContain(join(dir, "src", "main.ts"));
+    expect(files).not.toContain(join(dir, ".worktrees", "feature-branch", "src", "branch.ts"));
   });
 
   it("extracts stable nodes from regex-backed upstream v4 languages", async () => {
