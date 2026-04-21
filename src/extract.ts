@@ -7,7 +7,7 @@
  */
 
 import { readFileSync, readdirSync, lstatSync, realpathSync, existsSync } from "node:fs";
-import { resolve, basename, extname, dirname, join, sep } from "node:path";
+import { resolve, basename, extname, dirname, join, relative, sep } from "node:path";
 import { createRequire } from "node:module";
 import type { GraphNode, GraphEdge, Extraction } from "./types.js";
 import { loadCached, saveCached } from "./cache.js";
@@ -3218,6 +3218,12 @@ export function collectFiles(target: string, options?: { followSymlinks?: boolea
 
   const results: string[] = [];
 
+  function hasHiddenPartInsideRoot(path: string): boolean {
+    const rel = relative(resolved, path);
+    if (!rel || rel.startsWith("..")) return false;
+    return rel.split(sep).some((part) => part.startsWith("."));
+  }
+
   function walkDir(dir: string, visited: Set<string>): void {
     let entries: string[];
     try {
@@ -3253,9 +3259,9 @@ export function collectFiles(target: string, options?: { followSymlinks?: boolea
           }
         }
 
-        // Skip hidden directories
-        const pathParts = fullPath.split(sep);
-        if (pathParts.some((part) => part.startsWith("."))) continue;
+        // Skip hidden directories inside the scanned root, but do not reject
+        // project roots that live under hidden worktree containers.
+        if (hasHiddenPartInsideRoot(fullPath)) continue;
 
         walkDir(fullPath, visited);
       } else if (stat.isFile()) {
