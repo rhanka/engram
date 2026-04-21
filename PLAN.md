@@ -1,573 +1,124 @@
-# Graphify 0.4.23 Upstream Parity Implementation Plan
-
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
-**Goal:** Bring the TypeScript port to conceptual parity with upstream Python Graphify `v0.4.23` while preserving all TypeScript-only additions shipped through `0.3.29`.
-
-**Architecture:** Treat upstream `safishamsi/graphify@v4` as the behavioral source and port user-facing behavior into the existing TypeScript runtime. Preserve `.graphify/`, lifecycle metadata, review workflows, `faster-whisper-ts`, PDF/Mistral OCR, trusted npm publishing, and the fork narrative as intentional product deltas.
-
-**Tech Stack:** TypeScript, Node.js 20+, graphology, web-tree-sitter/WASM where available, regex fallback extractors, Vitest, GitHub Actions, npm trusted publishing.
-
----
-
-## Current Snapshot
-
-- [x] PR `#4` (`Release 0.3.29 with TypeScript faster-whisper runtime`) is merged into `v3-typescript` by merge commit `83ffcb2`.
-- [x] PR `#5` (`Guard npm publish behind merged release tags`) is merged into `v3-typescript` by merge commit `359d652`.
-- [x] Parity branch `chore/upstream-v4-0.4.23-parity` was created from `origin/v3-typescript@359d652` and merged by PR `#6`.
-- [x] Current npm publication is `graphifyy@0.4.23`.
-- [x] Upstream parity target is Python `upstream/v4` tag `v0.4.23` at `8d908c5`.
-- [x] `UPSTREAM_GAP.md` is the source of truth for version-by-version traceability.
-
-## Non-Negotiable Guardrails
-
-- [x] Do not delete or regress `.graphify/` canonical state root and `graphify-out/` migration support.
-- [x] Do not delete or regress branch/worktree lifecycle metadata.
-- [x] Do not delete or regress `summary`, `review-delta`, `review-analysis`, `review-eval`, or `recommend-commits`.
-- [x] Do not replace TypeScript `faster-whisper-ts` with Python faster-whisper.
-- [x] Do not delete or regress PDF preflight and optional `mistral-ocr`.
-- [x] Keep npm trusted publishing guarded by merged release tags.
-- [x] Keep fork narrative and code-review-graph-inspired additions in README/specs.
-- [x] After every code-changing lot run targeted tests, `npm run lint`, `npm run build`, `npm test`, `npx graphify hook-rebuild`, and `git diff --check`.
-- [x] Mark `UPSTREAM_GAP.md` rows `covered` only after tests or explicit verification prove the row.
-- [x] Do not bump to `0.4.23` until all active v4 rows are `covered`, `n/a`, or `intentional-delta`.
-
-## Lot 0 - Traceability Bootstrap
-
-**Files:**
-- Modify: `PLAN.md`
-- Modify: `UPSTREAM_GAP.md`
-
-- [x] **Step 0.1: Merge `0.3.29` PR before parity work**
-
-Verified:
-
-```text
-PR #4 state=MERGED
-mergeCommit=83ffcb2
-```
-
-- [x] **Step 0.2: Merge release-guard PR before parity work**
-
-Verified:
-
-```text
-PR #5 state=MERGED
-mergeCommit=359d652
-```
-
-- [x] **Step 0.3: Create parity branch from corrected product branch**
-
-Run:
-
-```bash
-git switch -c chore/upstream-v4-0.4.23-parity origin/v3-typescript
-```
-
-- [x] **Step 0.4: Add v4 parity rows**
-
-`UPSTREAM_GAP.md` now tracks `v0.4.0` through `v0.4.23` with status, plan lot, and catch-up action.
-
-- [x] **Step 0.5: Verify docs-only diff**
-
-Run:
-
-```bash
-git diff --check
-```
-
-Expected: no output.
-
-- [x] **Step 0.6: Commit traceability bootstrap**
-
-Run:
-
-```bash
-git add PLAN.md UPSTREAM_GAP.md
-git commit -m "plan(v4-parity): target upstream v0.4.23"
-```
-
-## Lot 1 - Input And Language Surface Parity
-
-**Upstream refs:** `v0.4.3`, `v0.4.7`, `v0.4.9`, `v0.4.13`, `v0.4.15`, `v0.4.16`, `v0.4.22`, `v0.4.23`
-
-**Files:**
-- Modify: `src/detect.ts`
-- Modify: `src/extract.ts`
-- Modify: `tests/detect.test.ts`
-- Modify or create: extractor fixture tests under `tests/`
-- Modify: `UPSTREAM_GAP.md`
-
-- [x] **Step 1.1: Add failing detection tests for missing extensions**
-
-Add tests proving these files are collected/classified:
-
-```text
-component.vue
-component.svelte
-template.blade.php
-main.dart
-module.v
-module.sv
-script.mjs
-template.ejs
-notes.mdx
-page.html
-```
-
-Run:
-
-```bash
-npx vitest run tests/detect.test.ts
-```
-
-Expected before implementation: at least one new assertion fails for each missing extension group.
-
-- [x] **Step 1.2: Implement detection mapping**
-
-Update extension tables and language routing so:
-
-```text
-.vue, .svelte, .mjs, .ejs => code/web inputs
-.blade.php => PHP/Blade code input
-.dart => Dart code input
-.v, .sv => Verilog/SystemVerilog code input
-.mdx, .html => document inputs
-```
-
-- [x] **Step 1.3: Add extraction fixtures**
-
-Create or extend tests proving extractor output has stable nodes for Vue/Svelte, Blade, Dart, Verilog/SystemVerilog, MJS/EJS, MDX, and HTML.
-
-Run:
-
-```bash
-npx vitest run tests/detect.test.ts tests/extract-call-confidence.test.ts tests/pipeline.test.ts
-```
-
-- [x] **Step 1.4: Update traceability**
-
-Mark these rows covered or intentional-delta as appropriate:
-
-```text
-v0.4.3, v0.4.7, v0.4.9, v0.4.13, v0.4.15, v0.4.16, v0.4.22, v0.4.23
-```
-
-- [x] **Step 1.5: Full verification and commit**
-
-Run:
-
-```bash
-npm run lint
-npm run build
-npm test
-npx graphify hook-rebuild
-git diff --check
-```
-
-Commit:
-
-```bash
-git add src/detect.ts src/extract.ts tests UPSTREAM_GAP.md .graphify
-git commit -m "feat(v4-parity): add upstream language surface coverage"
-```
-
-## Lot 2 - Go Import Node Collision
-
-**Upstream refs:** `v0.4.23`, issue `#431`
-
-**Files:**
-- Modify: `src/extract.ts`
-- Modify or create: Go extractor regression test under `tests/`
-- Modify: `UPSTREAM_GAP.md`
-
-- [x] **Step 2.1: Add failing Go collision test**
-
-Create a fixture with:
-
-```text
-context.go
-main.go importing "context"
-```
-
-Assert the import node ID cannot collide with the local `context.go` node.
-
-Run:
-
-```bash
-npx vitest run tests/extract-call-confidence.test.ts
-```
-
-Expected before implementation: import edge targets the wrong or ambiguous node.
-
-- [x] **Step 2.2: Prefix Go package import IDs**
-
-Update Go import extraction so package imports use a stable namespace such as:
-
-```text
-go_pkg_context
-go_pkg_github_com_owner_pkg
-```
-
-- [x] **Step 2.3: Verify and commit**
-
-Run:
-
-```bash
-npx vitest run tests/extract-call-confidence.test.ts
-npm run lint
-npm run build
-npm test
-npx graphify hook-rebuild
-git diff --check
-```
-
-Commit:
-
-```bash
-git add src/extract.ts tests UPSTREAM_GAP.md .graphify
-git commit -m "fix(v4-parity): avoid Go import node collisions"
-```
-
-## Lot 3 - Safe HTML Export In Runtime Commands
-
-**Upstream refs:** `v0.4.20`, `v0.4.23`, issue `#432`
-
-**Files:**
-- Modify: `src/pipeline.ts`
-- Modify: `src/skill-runtime.ts`
-- Modify or create: runtime/export regression tests under `tests/`
-- Modify: `UPSTREAM_GAP.md`
-
-- [x] **Step 3.1: Add failing large-graph HTML test**
-
-Create a regression where HTML export throws but `graph.json` and `GRAPH_REPORT.md` still write successfully.
-
-Run:
-
-```bash
-npx vitest run tests/pipeline.test.ts tests/serve.test.ts tests/public-api.test.ts
-```
-
-- [x] **Step 3.2: Wrap direct runtime `toHtml()` call sites**
-
-Ensure `build`, `update`, `cluster-only`, and skill-runtime paths treat HTML export as best-effort:
-
-```text
-graph.json survives
-GRAPH_REPORT.md survives
-stale graph.html is removed or clearly not refreshed
-warning is emitted
-process exits successfully
-```
-
-- [x] **Step 3.3: Verify and commit**
-
-Run:
-
-```bash
-npx vitest run tests/pipeline.test.ts tests/serve.test.ts tests/public-api.test.ts
-npm run lint
-npm run build
-npm test
-npx graphify hook-rebuild
-git diff --check
-```
-
-Commit:
-
-```bash
-git add src/pipeline.ts src/skill-runtime.ts tests UPSTREAM_GAP.md .graphify
-git commit -m "fix(v4-parity): keep graph artifacts when html export fails"
-```
-
-## Lot 4 - Search, Report, And Compatibility Guards
-
-**Upstream refs:** `v0.4.9`, `v0.4.13`, `v0.4.15`
-
-**Files:**
-- Modify: `src/analyze.ts`
-- Modify: `src/report.ts`
-- Modify: `src/export.ts`
-- Modify tests under `tests/`
-- Modify: `UPSTREAM_GAP.md`
-
-- [x] **Step 4.1: Add diacritic search regression**
-
-Assert search/lookup behavior treats `Résumé` and `Resume` as matchable where upstream added normalized labels.
-
-- [x] **Step 4.2: Add null-label and hyperedge export regressions**
-
-Assert reports and HTML/canvas export do not crash on missing labels and do not double-apply device-pixel-ratio transforms.
-
-- [x] **Step 4.3: Decide `edges` vs `degree` compatibility**
-
-If changing `godNodes()` from `edges` to `degree` would break the TS public API, keep `edges` and add `degree` as compatibility alias.
-
-- [x] **Step 4.4: Verify and commit**
-
-Run:
-
-```bash
-npx vitest run tests/analyze.test.ts tests/report.test.ts tests/export.test.ts
-npm run lint
-npm run build
-npm test
-npx graphify hook-rebuild
-git diff --check
-```
-
-Commit:
-
-```bash
-git add src/analyze.ts src/report.ts src/export.ts tests UPSTREAM_GAP.md .graphify
-git commit -m "fix(v4-parity): add normalized report compatibility guards"
-```
-
-## Lot 5 - Platform Installer Parity
-
-**Upstream refs:** `v0.4.6`, `v0.4.9`, `v0.4.12`, `v0.4.15`, `v0.4.19`, `v0.4.23`
-
-**Files:**
-- Modify: `src/cli.ts`
-- Modify: `src/skills/*`
-- Modify: `tests/install-preview.test.ts`
-- Modify: `tests/cli.test.ts`
-- Modify: `README.md`
-- Modify translated READMEs if present
-- Modify: `UPSTREAM_GAP.md`
-
-- [x] **Step 5.1: Add install-preview tests for missing platforms**
-
-Add preview assertions for:
-
-```text
-antigravity
-hermes
-kiro
-vscode-copilot-chat
-```
-
-- [x] **Step 5.2: Implement platform templates**
-
-Add install/uninstall/preview support while keeping generated instructions free of platform-inappropriate Claude-only wording.
-
-- [x] **Step 5.3: Refresh version stamp behavior**
-
-Ensure install refreshes stale `.graphify_version` files across known platform skill directories.
-
-- [x] **Step 5.4: Verify and commit**
-
-Run:
-
-```bash
-npx vitest run tests/install-preview.test.ts tests/cli.test.ts tests/codex-integration.test.ts tests/copilot-integration.test.ts
-npm run lint
-npm run build
-npm test
-npx graphify hook-rebuild
-git diff --check
-```
-
-Commit:
-
-```bash
-git add src/cli.ts src/skills tests README.md UPSTREAM_GAP.md .graphify
-git commit -m "feat(v4-parity): add missing upstream assistant platforms"
-```
-
-## Lot 6 - Runtime Command Audit
-
-**Upstream refs:** `v0.4.5`, `v0.4.10`, `v0.4.11`, `v0.4.14`, `v0.4.20`, `v0.4.21`
-
-**Files:**
-- Modify: `src/cli.ts`
-- Modify: `src/mcp.ts`
-- Modify: `src/skill-runtime.ts`
-- Modify command/runtime tests under `tests/`
-- Modify: `UPSTREAM_GAP.md`
-
-- [x] **Step 6.1: Verify MCP blank-line handling**
-
-Add or confirm a test where stdio receives an empty line and does not crash.
-
-- [x] **Step 6.2: Verify bare command parity**
-
-Confirm these commands work without Python-specific wrappers:
-
-```text
-path
-explain
-add
-watch
-update
-cluster-only
-```
-
-- [x] **Step 6.3: Verify update/cluster-only artifact behavior**
-
-Assert `graph.html` is emitted when export succeeds and does not block JSON/report artifacts when export fails.
-
-- [x] **Step 6.4: Verify and commit**
-
-Run:
-
-```bash
-npx vitest run tests/cli.test.ts tests/mcp.test.ts tests/skills.test.ts tests/pipeline.test.ts
-npm run lint
-npm run build
-npm test
-npx graphify hook-rebuild
-git diff --check
-```
-
-Commit:
-
-```bash
-git add src/cli.ts src/mcp.ts src/skill-runtime.ts tests UPSTREAM_GAP.md .graphify
-git commit -m "test(v4-parity): lock runtime command parity"
-```
-
-## Lot 7 - Documentation And Fork Narrative
-
-**Upstream refs:** README/docs through `v0.4.23`
-
-**Files:**
-- Modify: `README.md`
-- Modify translated README files if present
-- Modify: `spec/*.md`
-- Modify: `UPSTREAM_GAP.md`
-- Modify: `PLAN.md`
-
-- [x] **Step 7.1: Refresh README without disrupting fork narrative**
-
-Document imported upstream parity features, retained TS deltas, npm install flow, and release-tag safety.
-
-- [x] **Step 7.2: Refresh translations**
-
-Apply equivalent high-level changes to translated READMEs while preserving localized structure.
-
-- [x] **Step 7.3: Refresh specs**
-
-Update specs to separate:
-
-```text
-upstream Python parity
-TypeScript product deltas
-code-review-graph-inspired additions
-release/publishing contract
-```
-
-- [x] **Step 7.4: Verify and commit**
-
-Run:
-
-```bash
-git diff --check
-```
-
-Commit:
-
-```bash
-git add README.md spec PLAN.md UPSTREAM_GAP.md
-git commit -m "docs(v4-parity): document upstream parity and fork deltas"
-```
-
-## Lot 8 - Version Bump, Release PR, And Publication
-
-**Files:**
-- Modify: `src/serve.ts`
-- Modify: `tests/serve.test.ts`
-- Modify: `package.json`
-- Modify: `package-lock.json`
-- Modify generated skill/version files if present
-- Modify: `PLAN.md`
-- Modify: `UPSTREAM_GAP.md`
-
-- [x] **Step 8.1: Close all active gap rows**
-
-Before version bump, ensure no active v4 row remains:
-
-```text
-missing
-partial
-needs-audit
-```
-
-- [x] **Step 8.2: Bump package version to `0.4.23`**
-
-Run:
-
-```bash
-npm version 0.4.23 --no-git-tag-version
-```
-
-- [x] **Step 8.3: Final local verification**
-
-Run:
-
-```bash
-npm run lint
-npm run build
-npm test
-npm run test:smoke
-npx graphify hook-rebuild
-git diff --check
-```
-
-- [x] **Step 8.4: Commit release prep**
-
-Run:
-
-```bash
-git add src/serve.ts tests/serve.test.ts package.json package-lock.json PLAN.md UPSTREAM_GAP.md .graphify
-git commit -m "release(v4-parity): prepare 0.4.23"
-```
-
-- [x] **Step 8.5: Push branch and open PR**
-
-Run:
-
-```bash
-git push -u origin chore/upstream-v4-0.4.23-parity
-gh pr create --repo rhanka/graphify --base v3-typescript --head chore/upstream-v4-0.4.23-parity --title "Release 0.4.23 upstream parity" --body-file /tmp/graphify-0.4.23-pr.md
-```
-
-Opened PR `#6`: `https://github.com/rhanka/graphify/pull/6`.
-
-- [x] **Step 8.6: Merge PR before tagging**
-
-Use a merge commit, not squash, if a tag will be pushed from a branch commit.
-
-Merged PR `#6` into `v3-typescript` by merge commit `404fc23`.
-
-- [x] **Step 8.7: Tag only after merge**
-
-After the release PR is merged and local `v3-typescript` is updated:
-
-```bash
-git switch v3-typescript
-git pull --ff-only origin v3-typescript
-git tag v0.4.23
-git push origin v0.4.23
-```
-
-The CI `release-guard` must prove the tag commit is already contained in the default branch before npm publish.
-
-Pushed tag `v0.4.23` on `v3-typescript@5a306e1`.
-GitHub Actions run `24640530280` passed `release-guard`, `publish`, and `post-publish-check`.
-`npm view graphifyy version` returned `0.4.23`.
-
-## Exit Criteria
-
-- [x] PR `#4` and PR `#5` are merged.
-- [x] `UPSTREAM_GAP.md` has closed traceability from upstream Python `v0.3.18` through `v0.4.23`.
-- [x] All active v4 rows are `covered`, `n/a`, or `intentional-delta`.
-- [x] All non-negotiable TypeScript deltas still have tests or explicit final verification.
-- [x] `npm run lint` passes.
-- [x] `npm run build` passes.
-- [x] `npm test` passes.
-- [x] `npm run test:smoke` passes.
-- [x] `npx graphify hook-rebuild` passes.
-- [x] Release PR is merged before tag.
-- [x] `v0.4.23` tag publish passes npm trusted publishing.
+# LLM Wiki Benchmark Follow-up Plan
+
+> For agentic workers: this branch is docs/spec only. Do not implement product
+> changes from this plan. Convert selected lots into separate specs or a new
+> implementation branch before touching runtime code.
+
+Goal: use `spec/SPEC_LLM_WIKI_BENCHMARK_2026_04.md` to decide which LLM
+wiki/repo-wiki/codebase-map ideas are worth specifying for Graphify.
+
+Architecture: docs-only planning around Graphify's existing `.graphify/` graph,
+wiki output, summary, review-delta, review-analysis, and MCP-facing workflows.
+
+Tech stack: Markdown specs, Graphify CLI concepts, public primary-source
+benchmark evidence.
+
+## Status
+
+- [x] Create a primary-source April 2026 benchmark for LLM wiki, repo-to-wiki,
+  codebase wiki, knowledge-graph docs, and semantic codebase-map projects.
+- [x] Retain only candidates with verified April 2026 commit, release, tag, or
+  package publish evidence.
+- [x] Record exclusions for notable projects that did not meet the April 2026
+  activity rule.
+- [x] Identify Graphify-relevant feature lots without implementing product code.
+- [ ] Review the benchmark manually before turning any recommendation into a
+  product roadmap item.
+
+## Guardrails
+
+- [ ] Keep this branch docs-only unless a new instruction explicitly authorizes
+  implementation.
+- [ ] Re-check all stars, forks, releases, package versions, and downloads before
+  publishing or citing the benchmark outside this branch.
+- [ ] Preserve Graphify's deterministic graph provenance; do not replace it with
+  weaker generated-wiki or embedding-only semantics.
+- [ ] Distinguish observed code evidence, documented features, and inferred
+  relevance in all follow-up specs.
+- [ ] Use `non publié` when a primary source does not publish a metric.
+- [ ] Avoid proprietary/customer examples in follow-up specs.
+
+## Follow-up Lots
+
+### Lot 1 - Benchmark Acceptance
+
+- [ ] Re-read `spec/SPEC_LLM_WIKI_BENCHMARK_2026_04.md` for factual consistency.
+- [ ] Spot-check at least the retained top five projects against current primary
+  sources if the benchmark is used after 2026-04-21.
+- [ ] Decide whether the retained set is sufficient or whether another dated
+  refresh is needed.
+- [ ] Mark any disputed feature as `documented` or `inferred` instead of
+  `observed in code`.
+
+### Lot 2 - Graphify Wiki v2 Contract Spec
+
+- [ ] Draft a spec for stable wiki article IDs, article manifests, source
+  citations, stale metadata, related-reading paths, and graph-derived article
+  taxonomy.
+- [ ] Compare the draft against Codesight, RepoWiki, Litho, and
+  karpathy-llm-wiki patterns from the benchmark.
+- [ ] Define acceptance criteria for terminal-readable Markdown and
+  machine-readable JSON sidecars.
+
+### Lot 3 - Agent and MCP Wiki Tools Spec
+
+- [ ] Draft contracts for wiki index, wiki read, wiki search, graph path explain,
+  and wiki lint tools.
+- [ ] Include token-bounded response behavior inspired by Repomix and SwarmVault.
+- [ ] Specify how tools report graph staleness and source provenance.
+
+### Lot 4 - Token-aware Context Packs Spec
+
+- [ ] Specify token counting for wiki articles, communities, graph paths, and
+  changed-file impact reports.
+- [ ] Define `--max-tokens` packing behavior for summary, review-delta, and wiki
+  retrieval.
+- [ ] Specify security and ignore filtering before context pack creation.
+
+### Lot 5 - Reviewable Wiki Rebuild Spec
+
+- [ ] Specify approval bundles for regenerated wiki pages.
+- [ ] Specify manual-edit protection and generated-section boundaries.
+- [ ] Specify accept/reject/retry flows for individual article changes.
+- [ ] Specify how rejection notes influence subsequent regeneration.
+
+### Lot 6 - Provenance and Lifecycle Spec
+
+- [ ] Define metadata labels for observed, documented, and inferred statements.
+- [ ] Define lifecycle states for generated, reviewed, edited, stale, and retired
+  wiki pages.
+- [ ] Define stale propagation from graph build metadata to wiki articles.
+- [ ] Define confidence or review status fields without overclaiming automated
+  truth verification.
+
+### Lot 7 - Diagram Validation Spec
+
+- [ ] Specify Mermaid generation constrained by deterministic graph facts.
+- [ ] Specify Mermaid syntax validation, repair attempts, and failure reporting.
+- [ ] Specify click-to-source metadata for diagram nodes.
+- [ ] Decide whether diagram output belongs in wiki v2 or an optional export lot.
+
+### Lot 8 - Optional Semantic Search Adapter Spec
+
+- [ ] Keep this lot deferred until wiki/MCP/token contracts are clearer.
+- [ ] Specify an optional adapter that maps semantic search hits back to Graphify
+  node IDs, source paths, and wiki article IDs.
+- [ ] Preserve deterministic graph generation as the default behavior.
+
+### Lot 9 - Benchmark Refresh Procedure
+
+- [ ] Create a repeatable checklist for date-bound competitive research.
+- [ ] Capture required primary-source fields: URL, April proof, date, popularity,
+  license, runtime, inputs, outputs, search/index, graph/wiki, agent UX,
+  CI/release, limits, and Graphify relevance.
+- [ ] Document clone hygiene: clone only into `/tmp` or ignored worktree paths.
+- [ ] Document the exclusion rule for stale projects with only `updated_at` or
+  `pushed_at` activity.
+
+## Completion Criteria
+
+- [ ] A maintainer has reviewed the benchmark and selected which follow-up specs
+  to draft.
+- [ ] Any selected lot has a standalone spec before implementation starts.
+- [ ] No runtime code changes are introduced on this benchmark branch.
+- [ ] The branch remains suitable for a docs-only PR.
