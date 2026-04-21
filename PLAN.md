@@ -1,3 +1,215 @@
+# Upstream Dual Catch-up Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Recover high-value concepts from Safi Python Graphify and `tirth8205/code-review-graph` while preserving TypeScript Graphify's `.graphify/`, multimodal, lifecycle, review, and profile/dataprep deltas.
+
+**Architecture:** Treat Safi Python Graphify `v4` as the lineage/parity source and `code-review-graph` as a review-oriented reference. Implement future work as additive TypeScript features over existing `graph.json` and Graphology surfaces; do not switch to Python, SQLite, embeddings, or review-only behavior by default.
+
+**Tech Stack:** TypeScript, Node.js 20+, Graphology, existing Graphify skill runtime, existing `.graphify/` state, Vitest. Heavy optional dependencies require a separate spec and explicit opt-in.
+
+---
+
+## Study Branch Context
+
+- [x] Worktree: `.worktrees/spec-upstream-dual-catchup-2026-04`
+- [x] Branch: `spec/upstream-dual-catchup-2026-04`
+- [x] Base: local `main@40ef55b98c799bccdcee72cddb2930c2b1d795c5`
+- [x] Spec: `spec/SPEC_UPSTREAM_DUAL_CATCHUP_2026_04.md`
+- [x] Safi Python Graphify refs inspected: `v4@6c8f21272c2343c4c044e3ea8a53459599f2c838`, `v0.4.23@8d908c5d43d079579604a82873fd7cff33a1b343`, `main@494f519bf43ea8243fba8c40a4e72a1071a74395`
+- [x] code-review-graph refs inspected: `v2.3.2@db2d2df789c25a101e33477b898c1840fb4c7bc7`, `main@b0f8527087b5b3287f648da039a94c3badc7a143`
+- [x] Local conductor branch delta noted: `feat/ontology-dataprep-profiles@4790d162e4e942ea812e97d358b43d6da782bbb5`
+
+## Guardrails
+
+- [ ] Keep Graphify generic: code, docs, papers, images, audio/video, and profile/dataprep corpora remain first-class.
+- [ ] Preserve `.graphify/` as the canonical state root and keep `graphify-out/` only as legacy migration support.
+- [ ] Preserve current TypeScript additions: review commands, lifecycle metadata, PDF/OCR preflight, `faster-whisper-ts`, npm distribution, and multi-platform skill installers.
+- [ ] Preserve `feat/ontology-dataprep-profiles` before implementation starts; do not overwrite that work with a `main`-only catch-up branch.
+- [ ] Do not add real customer, partner, proprietary ontology, production asset, or private dataset examples.
+- [ ] Do not add SQLite, embeddings, cloud providers, a VS Code extension, or other heavy dependencies without a separate opt-in spec.
+- [ ] Mark every recovered feature as observed, inferred, or opportunity in traceability docs.
+
+## Lot 0 - Source Lock And Traceability Refresh
+
+**Files:**
+- Modify: `UPSTREAM_GAP.md`
+- Modify: `spec/SPEC_UPSTREAM_DUAL_CATCHUP_2026_04.md`
+- Modify: `PLAN.md`
+
+- [ ] Add a source-lock section with the exact upstream URLs and SHAs from the spec.
+- [ ] Record that `safishamsi/graphify` `v4` is the active Python parity line and `main` is older by package metadata.
+- [ ] Record the `git fetch upstream --tags` tag-clobber warning for `v0.3.28` and `v0.4.23`.
+- [ ] Record that `code-review-graph@v2.3.2` is the stable review baseline and `main@b0f8527` contains unreleased/noisy additions.
+- [ ] Add a "do not implement from stale local tags" checklist to the parity docs.
+- [ ] Run `git diff --check`.
+- [ ] Commit as `docs: lock dual upstream source refs`.
+
+## Lot 1 - Safi Python v4 Drift Audit
+
+**Files:**
+- Modify: `UPSTREAM_GAP.md`
+- Modify: `README.md`
+- Modify: localized README files only if English README changes require sync
+
+- [ ] Compare TypeScript `main` plus `feat/ontology-dataprep-profiles` against `safishamsi/graphify@v4`.
+- [ ] Verify post-`v0.4.23` commits `04790e2`, `dc1158b`, `7a0a5ac`, and `6c8f212` are docs/logo-only.
+- [ ] Decide whether to adopt `docs/logo-icon.svg` or ignore it as non-product drift.
+- [ ] Confirm CLI parity for `query`, `path`, `explain`, `add`, `watch`, `update`, `cluster-only`, `wiki`, `svg`, `graphml`, `neo4j`, and `mcp`.
+- [ ] Confirm TypeScript deltas remain intentional for `.graphify/`, Graphology/Louvain, PDF/OCR, `faster-whisper-ts`, lifecycle metadata, and review commands.
+- [ ] Run `npm run lint`, `npm run build`, `npm test`, `git diff --check`.
+- [ ] If code changed, run `npx graphify hook-rebuild`.
+- [ ] Commit as `docs: refresh python v4 drift audit` or an implementation-specific commit if code changes are required.
+
+## Lot 2 - Minimal Review Context
+
+**Files:**
+- Modify: `src/review.ts` or create a focused review summary module
+- Modify: `src/cli.ts`
+- Modify: `src/skill-runtime.ts`
+- Modify: `src/serve.ts` only if MCP exposure is required
+- Modify: `tests/review*.test.ts`
+- Modify: README and skill files after behavior is implemented
+
+- [ ] Write failing tests for a compact review summary over a small fixture graph.
+- [ ] Include changed files, impacted files, impacted communities, hub nodes, bridge nodes, likely test gaps, and next tool suggestion.
+- [ ] Enforce bounded output with a default max-node/max-chain budget.
+- [ ] Implement using current Graphology graph data only; do not add SQLite or embeddings.
+- [ ] Expose through either `review-analysis --minimal` or a new clearly named command.
+- [ ] Run targeted tests for review modules.
+- [ ] Run `npm run lint`, `npm run build`, `npm test`, `npx graphify hook-rebuild`, `git diff --check`.
+- [ ] Commit as `feat(review): add minimal graph review context`.
+
+## Lot 3 - Changed-range Mapping And Risk Scoring
+
+**Files:**
+- Modify: `src/review-analysis.ts`
+- Modify or create: `src/git-diff.ts`
+- Modify: `src/cli.ts`
+- Modify: `tests/review-analysis.test.ts`
+
+- [ ] Add tests for parsing `git diff --unified=0` with additions, deletions, renames, and binary-file fallbacks.
+- [ ] Map changed line ranges to nodes by `source_file` and `source_location` when available.
+- [ ] Fall back to file-level changed nodes when source locations are absent or non-standard.
+- [ ] Score review risk with graph spread, community spread, hub/bridge count, inferred/ambiguous edges, and test-gap hints.
+- [ ] Reject unsafe git refs using the existing git/security helpers.
+- [ ] Run targeted review and git tests.
+- [ ] Run `npm run lint`, `npm run build`, `npm test`, `npx graphify hook-rebuild`, `git diff --check`.
+- [ ] Commit as `feat(review): map changed ranges to graph risk`.
+
+## Lot 4 - Flow Snapshots
+
+**Files:**
+- Create: `src/flows.ts`
+- Create: `tests/flows.test.ts`
+- Modify: `src/review-analysis.ts`
+- Modify: `src/report.ts`
+- Modify: `src/wiki.ts` only if report sections are ready
+
+- [ ] Define TypeScript flow snapshot types derived from existing Graphify nodes and edges.
+- [ ] Add tests for entrypoint heuristics: `main`, handlers, tests, CLI-like functions, and route-like names.
+- [ ] Traverse existing `calls` edges with a safe depth/node cap.
+- [ ] Compute flow criticality without a database or external dependency.
+- [ ] Surface affected flows in review analysis output.
+- [ ] Keep flow snapshots optional and recomputable from `graph.json`.
+- [ ] Run targeted flow/review/report tests.
+- [ ] Run `npm run lint`, `npm run build`, `npm test`, `npx graphify hook-rebuild`, `git diff --check`.
+- [ ] Commit as `feat(review): derive flow snapshots from graph edges`.
+
+## Lot 5 - Report, Wiki, And Visualization Enrichment
+
+**Files:**
+- Modify: `src/report.ts`
+- Modify: `src/wiki.ts`
+- Modify: `src/html-export.ts` and/or `src/export.ts`
+- Modify: `tests/report.test.ts`
+- Modify: `tests/wiki.test.ts`
+- Modify or create: HTML export tests
+
+- [ ] Add report sections for review risk and affected flows only when the analysis data exists.
+- [ ] Add wiki sections for flow/risk context without replacing existing community and god-node articles.
+- [ ] Prototype large-graph aggregate HTML mode using current HTML exporter.
+- [ ] Preserve safe large-graph behavior: `graph.json` and `GRAPH_REPORT.md` must still write if HTML is skipped.
+- [ ] Avoid a full D3/extension rewrite unless a separate visual spec approves it.
+- [ ] Run report/wiki/export tests.
+- [ ] Run `npm run lint`, `npm run build`, `npm test`, `npx graphify hook-rebuild`, `git diff --check`.
+- [ ] Commit as `feat(output): add optional review flow summaries`.
+
+## Lot 6 - Language And Input Triage
+
+**Files:**
+- Modify: `src/detect.ts`
+- Modify: `src/extract.ts`
+- Modify: `tests/language-surface.test.ts`
+- Add fixture tests only for selected languages
+
+- [ ] Create a decision table for CRG-only inputs: notebooks, Bash/Shell, R, Solidity, Perl/XS, ReScript, GDScript, Luau.
+- [ ] Prioritize `.ipynb` notebook parsing if it can be implemented with JSON parsing and no runtime notebook dependency.
+- [ ] Add one language/input per commit with detection and extraction tests.
+- [ ] Reject blanket language imports that require broad new parser dependency bundles.
+- [ ] Keep every fixture synthetic and generic.
+- [ ] Run language tests after each selected input.
+- [ ] Run `npm run lint`, `npm run build`, `npm test`, `npx graphify hook-rebuild`, `git diff --check`.
+- [ ] Commit each selected surface as `feat(extract): add <input> graph extraction`.
+
+## Lot 7 - Platform Installer Triage
+
+**Files:**
+- Modify: `src/cli.ts`
+- Modify or create: `src/skills/*`
+- Modify: `tests/skills.test.ts`
+- Modify: README platform tables
+
+- [ ] Review CRG platform install contracts for Qwen, Qoder, Windsurf, Zed, and Continue from primary sources.
+- [ ] Add only stable, lightweight instruction/MCP config targets.
+- [ ] Keep Codex `$graphify` and `.graphify/` instructions canonical.
+- [ ] Add dry-run/mutation preview tests for every new platform.
+- [ ] Do not add platform support that requires a proprietary binary or undocumented config path.
+- [ ] Run skill/CLI tests.
+- [ ] Run `npm run lint`, `npm run build`, `npm test`, `npx graphify hook-rebuild`, `git diff --check`.
+- [ ] Commit as `feat(install): add selected assistant platform targets`.
+
+## Lot 8 - Profile/Dataprep Preservation Merge
+
+**Files:**
+- Merge/rebase from `feat/ontology-dataprep-profiles` before implementation lots that touch CLI, runtime, paths, cache, skills, or README.
+- Modify conflict files only as needed.
+
+- [ ] Create a product implementation branch from the correct base after this study branch is reviewed.
+- [ ] Bring in `feat/ontology-dataprep-profiles@4790d16` or its successor before review/flow changes.
+- [ ] Resolve overlaps in `src/cli.ts`, `src/skill-runtime.ts`, `src/paths.ts`, `src/cache.ts`, `src/types.ts`, README, and skill files.
+- [ ] Verify profile activation remains explicit: discovered config, `--config`, or `--profile`.
+- [ ] Verify no profile artifacts are written when no profile/config is active.
+- [ ] Run profile tests, cache tests, CLI runtime tests, skills tests, lint, build, full test suite, `npx graphify hook-rebuild`, and `git diff --check`.
+- [ ] Commit as `chore: preserve profile dataprep before upstream catch-up`.
+
+## Lot 9 - Deferred Heavy Features
+
+**Files:**
+- Create separate specs under `spec/` before implementation.
+
+- [ ] Write a separate embeddings spec before adding local or cloud embedding providers.
+- [ ] Write a separate storage/index spec before adding SQLite or any persistent sidecar database.
+- [ ] Write a separate multi-repo registry spec before adding cross-repo search.
+- [ ] Write a separate VS Code extension spec before adding an editor extension package.
+- [ ] Require privacy, dependency, install, CI, and opt-in UAT criteria in each heavy-feature spec.
+- [ ] Do not implement these features in the dual catch-up branch.
+
+## Release Gate For Any Future Product Catch-up
+
+- [ ] Source-lock table references exact upstream commits and tags.
+- [ ] Every feature copied from an upstream has a traceability row and test evidence.
+- [ ] `npm run lint` passes.
+- [ ] `npm run build` passes.
+- [ ] `npm test` passes.
+- [ ] `npm run test:smoke` passes when packaging behavior changes.
+- [ ] `npx graphify hook-rebuild` runs after code changes.
+- [ ] `git diff --check` has no output.
+- [ ] README and skill docs mention only implemented behavior.
+- [ ] No real/proprietary examples appear in docs, tests, fixtures, or package assets.
+
+---
+
 # Graphify 0.4.23 Upstream Parity Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
