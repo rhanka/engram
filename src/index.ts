@@ -236,6 +236,11 @@ export {
 } from "./review-context.js";
 export type { BuildReviewContextOptions, ReviewContextDetailLevel, ReviewContextPayload, ReviewContextResult, ReviewContextRisk } from "./review-context.js";
 export {
+  evaluateReviewBenchmarks,
+  reviewBenchmarkToMarkdown,
+} from "./review-benchmark.js";
+export type { ReviewBenchmarkCase, ReviewBenchmarkCaseResult, ReviewBenchmarkMetrics, ReviewBenchmarkOptions, ReviewBenchmarkResult, ReviewBenchmarkTokenBudgetStatus } from "./review-benchmark.js";
+export {
   analyzeChanges,
   computeRiskScore,
   detectChangesToMinimal,

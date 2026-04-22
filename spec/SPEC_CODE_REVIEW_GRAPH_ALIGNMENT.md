@@ -1132,6 +1132,88 @@ Port/synthesize:
 - duplicate normalized titles generate suffixed filenames and alias links.
 - empty graph/wiki behavior stays valid.
 
+## F12 Benchmarks, Honesty Metrics, And Known Limits
+
+### CRG Source Contract
+
+F12 ports CRG evaluation intent, not its network clone runner:
+
+- `code_review_graph/eval/benchmarks/impact_accuracy.py` measures impact accuracy conservatively.
+- `code_review_graph/eval/benchmarks/flow_completeness.py` measures whether expected flows are surfaced.
+- `code_review_graph/eval/benchmarks/token_efficiency.py` estimates context reduction versus naive file reads.
+- `code_review_graph/eval/scorer.py`, `runner.py`, and `reporter.py` separate case schema, scoring, and output formatting.
+- `tests/test_eval.py` keeps benchmark behavior deterministic.
+
+### Graphify Target
+
+Graphify must provide deterministic local benchmark fixtures before claiming CRG-equivalent review quality. The default test path must not clone external repositories, call network services, or require real provider keys.
+
+### Benchmark Case Schema
+
+```ts
+interface ReviewBenchmarkCase {
+  name: string;
+  changedFiles: string[];
+  changedRanges?: ChangedRangesByFile;
+  expectedChangedNodes?: string[];
+  expectedImpactedFiles?: string[];
+  expectedAffectedFlows?: string[];
+  expectedTestGaps?: string[];
+  expectedSummaryFacts?: string[];
+  naiveTokenEstimate?: number;
+  tokenBudget?: number;
+}
+```
+
+Expected node/flow values may use stable IDs, qualified names, or labels where the underlying Graphify graph exposes them.
+
+### Metrics
+
+F12 metrics are intentionally conservative:
+
+- changed-node recall.
+- impacted-file precision.
+- impacted-file recall.
+- impacted-file F1.
+- flow completeness.
+- test-gap recall.
+- summary fact recall.
+- false-positive count.
+- estimated graph-context tokens.
+- token budget pass/fail.
+
+Precision/recall metrics are `null` when no expectation is supplied. False positives count impacted files that were not expected and were not directly changed. Token counts are estimates unless actual model usage is supplied in a future benchmark runner.
+
+### Output Contract
+
+The benchmark API returns machine-readable JSON and a Markdown formatter:
+
+```ts
+evaluateReviewBenchmarks(store, cases, { flows })
+reviewBenchmarkToMarkdown(result)
+```
+
+Markdown output must include an honesty note that tokens are estimated and that flow quality depends on language/parser metadata. JSON output must keep per-case metrics plus aggregate averages.
+
+### README Contract
+
+README must document that review benchmarks are deterministic fixtures, not a universal quality guarantee. It must state:
+
+- review impact favors recall over precision.
+- false positives are reported instead of hidden.
+- flow quality is weaker where parser/call metadata is weak or direction is unavailable.
+- token metrics are estimates unless backed by actual model calls.
+
+### F12 Test Matrix
+
+Port/synthesize:
+
+- benchmark case with expected changed node, impacted files, affected flow, and test gap.
+- benchmark case with a known false-positive impacted file.
+- aggregate averages ignore null metrics.
+- Markdown formatter includes metrics and the estimated-token honesty note.
+- README contains the review benchmark limitations.
+
 ## Compatibility Rules
 
 - No behavior changes without a new command or explicit option unless current behavior is backward-compatible.

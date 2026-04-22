@@ -1353,7 +1353,7 @@ This is the required implementation order even though F4 is the user-facing firs
 - [x] F4 minimal context first-call tool.
 - [x] F10 skills and LLM review workflow.
 - [x] F11 report, wiki, and HTML enrichment after F7/F8 flow artifacts exist.
-- [ ] F12 benchmarks, honesty metrics, and known limits.
+- [x] F12 benchmarks, honesty metrics, and known limits.
 
 F9 is a gate, not only a standalone feature: every algorithmic feature below must port the relevant CRG behavior tests before runtime code is accepted.
 
@@ -1817,16 +1817,16 @@ Do not overclaim flow quality in languages where parser metadata is weak.
 Use deterministic local fixtures by default; do not import CRG's network clone runner into the default test path.
 ```
 
-- [ ] **Spec phase:** Add F12 benchmark section to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
-- [ ] **Spec phase:** Define benchmark case schema: graph input, changed files or diff ranges, expected impacted nodes/files/flows, expected tests, and expected review summary facts.
-- [ ] **Spec phase:** Define metrics: changed-node recall, impacted-file precision, impacted-file recall, impacted-file F1, token budget, flow completeness, test-gap recall, false-positive count.
-- [ ] **Spec phase:** Define output format for both Markdown and machine-readable JSON benchmark results.
-- [ ] **Implementation phase:** Add `tests/review-benchmark.test.ts` or `tests/review-uat.test.ts` with synthetic repositories.
-- [ ] **Implementation phase:** Add a CLI/internal command only if it is useful for maintainers; otherwise keep benchmarks as tests.
-- [ ] **Documentation phase:** Document known limits in README after implementation.
-- [ ] **Documentation phase:** Label token measurements as estimates unless measured from actual model calls.
-- [ ] **Verification phase:** Run benchmark tests and full suite.
-- [ ] **Commit:** `test(review): add code review graph alignment benchmarks`
+- [x] **Spec phase:** Add F12 benchmark section to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
+- [x] **Spec phase:** Define benchmark case schema: graph input, changed files or diff ranges, expected impacted nodes/files/flows, expected tests, and expected review summary facts.
+- [x] **Spec phase:** Define metrics: changed-node recall, impacted-file precision, impacted-file recall, impacted-file F1, token budget, flow completeness, test-gap recall, false-positive count.
+- [x] **Spec phase:** Define output format for both Markdown and machine-readable JSON benchmark results.
+- [x] **Implementation phase:** Add `tests/review-benchmark.test.ts` or `tests/review-uat.test.ts` with synthetic repositories.
+- [x] **Implementation phase:** Add a CLI/internal command only if it is useful for maintainers; otherwise keep benchmarks as tests.
+- [x] **Documentation phase:** Document known limits in README after implementation.
+- [x] **Documentation phase:** Label token measurements as estimates unless measured from actual model calls.
+- [x] **Verification phase:** Run benchmark tests and full suite.
+- [x] **Commit:** `test(review): add code review graph alignment benchmarks`
 
 ### Deferred CRG Features
 
