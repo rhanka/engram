@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import Graph from "graphology";
 import { generate } from "../src/report.js";
+import type { AffectedFlowsResult, ReviewFlowArtifact } from "../src/flows.js";
 
 describe("generate report", () => {
   it("generates a valid markdown report", () => {
@@ -79,5 +80,106 @@ describe("generate report", () => {
 
     expect(report).toContain("missing_label");
     expect(report).not.toContain("undefined");
+  });
+
+  it("renders flow-aware review sections only when grounded data is provided", () => {
+    const G = new Graph({ type: "directed" });
+    G.mergeNode("route", { label: "handler", source_file: "routes.ts", file_type: "code" });
+    G.mergeNode("auth", { label: "verifyAuthToken", source_file: "auth.ts", file_type: "code" });
+    G.mergeEdge("route", "auth", { relation: "calls", confidence: "EXTRACTED", source_file: "routes.ts" });
+
+    const flows: ReviewFlowArtifact = {
+      version: 1,
+      generatedAt: "2026-04-22T00:00:00.000Z",
+      graphPath: ".graphify/graph.json",
+      maxDepth: 15,
+      includeTests: false,
+      warnings: [],
+      flows: [
+        {
+          id: "flow:handler",
+          name: "handler",
+          entryPoint: "routes.ts::handler",
+          entryPointId: "route",
+          path: ["route", "auth"],
+          qualifiedPath: ["routes.ts::handler", "auth.ts::verifyAuthToken"],
+          depth: 1,
+          nodeCount: 2,
+          fileCount: 2,
+          files: ["auth.ts", "routes.ts"],
+          criticality: 0.82,
+          warnings: [],
+        },
+      ],
+    };
+    const affectedFlows: AffectedFlowsResult = {
+      changedFiles: ["auth.ts"],
+      matchedNodeIds: ["auth"],
+      unmatchedFiles: [],
+      affectedFlows: [
+        {
+          ...flows.flows[0]!,
+          steps: [
+            {
+              nodeId: "route",
+              name: "handler",
+              kind: "Function",
+              file: "routes.ts",
+              lineStart: 1,
+              lineEnd: 4,
+              qualifiedName: "routes.ts::handler",
+            },
+            {
+              nodeId: "auth",
+              name: "verifyAuthToken",
+              kind: "Function",
+              file: "auth.ts",
+              lineStart: 10,
+              lineEnd: 20,
+              qualifiedName: "auth.ts::verifyAuthToken",
+            },
+          ],
+        },
+      ],
+      total: 1,
+    };
+
+    const report = generate(
+      G,
+      new Map([[0, ["route", "auth"]]]),
+      new Map([[0, 0.9]]),
+      new Map([[0, "Auth"]]),
+      [],
+      [],
+      {
+        files: { code: ["routes.ts", "auth.ts"], document: [], paper: [], image: [] },
+        total_files: 2,
+        total_words: 300,
+        needs_graph: true,
+        warning: null,
+        skipped_sensitive: [],
+        graphifyignore_patterns: 0,
+      },
+      { input: 0, output: 0 },
+      ".",
+      {
+        review: {
+          flows,
+          affectedFlows,
+          highRiskNodes: [{ name: "verifyAuthToken", file: "auth.ts", riskScore: 0.91 }],
+          testGaps: [{ name: "verifyAuthToken", file: "auth.ts", reason: "No TESTED_BY edge" }],
+        },
+      },
+    );
+
+    expect(report).toContain("## Execution Flows");
+    expect(report).toContain("handler");
+    expect(report).toContain("criticality 0.8200");
+    expect(report).toContain("## Affected Flows");
+    expect(report).toContain("auth.ts");
+    expect(report).toContain("## High-Risk Nodes");
+    expect(report).toContain("verifyAuthToken");
+    expect(report).toContain("## Test Gaps");
+    expect(report).toContain("No TESTED_BY edge");
   });
 });

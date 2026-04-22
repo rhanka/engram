@@ -1075,6 +1075,63 @@ F11 report/wiki/HTML enrichment must render only grounded flow/review data and m
 
 F12 benchmarks must use deterministic local fixtures and must label token metrics as estimates unless backed by actual model usage.
 
+## F11 Report, Wiki, And HTML Enrichment After Flows
+
+### CRG Source Contract
+
+F11 ports CRG output enrichment patterns:
+
+- `code_review_graph/wiki.py` adds execution-flow context to generated wiki pages.
+- `code_review_graph/visualization.py` supports flow highlighting in graph views.
+- `code_review_graph/tools/build.py` precomputes summaries so agents do not repeatedly traverse the same graph.
+- `tests/test_wiki.py` protects expected sections, links, idempotence, empty graph behavior, and slug collision behavior.
+
+### Graphify Target
+
+Graphify report/wiki output remains unchanged unless flow or review artifacts are explicitly passed to the renderer. No placeholder flow/review section is rendered without grounded data.
+
+Report enrichment may include:
+
+- top critical execution flows from a `ReviewFlowArtifact`.
+- affected flows for a current diff from an `AffectedFlowsResult`.
+- high-risk nodes from the F6 risk analysis result or a normalized caller-provided list.
+- test gaps from the F6 risk analysis result or a normalized caller-provided list.
+
+Wiki enrichment may include:
+
+- execution flows passing through each community.
+- generated flow pages with flow steps, criticality, files, and linked communities.
+- community-to-flow links using wiki links.
+
+### Slug And Link Compatibility
+
+Keep current wiki links unchanged when page titles are unique. If two generated pages normalize to the same filename, keep the first filename and suffix later files with `_2`, `_3`, etc. Links to suffixed pages must use wiki alias syntax:
+
+```text
+[[Core]]
+[[Core_2|Core]]
+```
+
+This matches CRG-style unique slug suffixing while preserving existing Graphify links in the common no-collision case.
+
+### HTML Boundary
+
+Flow highlighting is deferred unless the current HTML exporter can support it without a renderer rewrite. F11 must not block report/wiki flow context on HTML work. If implemented later, HTML flow highlighting must be optional, non-blocking, and disabled for oversized graphs using the existing large-graph safety posture.
+
+### F11 Test Matrix
+
+Port/synthesize:
+
+- report omits flow sections when no flow/review data exists.
+- report includes top critical flows when a flow artifact is passed.
+- report includes affected flows, high-risk nodes, and test gaps only when those grounded lists exist.
+- wiki omits flow sections when no flow artifact exists.
+- wiki community pages list flows through the community when a flow artifact is passed.
+- wiki generates flow pages with steps/files/criticality.
+- wiki index keeps existing community links and adds flow links only when flow pages exist.
+- duplicate normalized titles generate suffixed filenames and alias links.
+- empty graph/wiki behavior stays valid.
+
 ## Compatibility Rules
 
 - No behavior changes without a new command or explicit option unless current behavior is backward-compatible.

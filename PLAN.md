@@ -1352,7 +1352,7 @@ This is the required implementation order even though F4 is the user-facing firs
 - [x] F6 risk-scored detect changes.
 - [x] F4 minimal context first-call tool.
 - [x] F10 skills and LLM review workflow.
-- [ ] F11 report, wiki, and HTML enrichment after F7/F8 flow artifacts exist.
+- [x] F11 report, wiki, and HTML enrichment after F7/F8 flow artifacts exist.
 - [ ] F12 benchmarks, honesty metrics, and known limits.
 
 F9 is a gate, not only a standalone feature: every algorithmic feature below must port the relevant CRG behavior tests before runtime code is accepted.
@@ -1769,18 +1769,18 @@ Add HTML flow highlighting only if current exporter can support it without a ful
 Keep existing Graphify god nodes, surprises, hyperedges, communities, ambiguous nodes, knowledge gaps, suggested questions, and audit sections intact.
 ```
 
-- [ ] **Spec phase:** Add F11 report/wiki/html section to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
-- [ ] **Spec phase:** Define report sections: top critical flows, affected flows for current diff, high-risk nodes, test gaps.
-- [ ] **Spec phase:** Define wiki sections: flows through community and flow membership links.
-- [ ] **Spec phase:** Define slug-collision behavior compatible with CRG's unique slug suffixing while preserving current Graphify wiki links.
-- [ ] **Spec phase:** Define HTML behavior as optional and non-blocking if graph is too large.
-- [ ] **Implementation phase:** Modify `src/report.ts`, `src/wiki.ts`, and possibly `src/html-export.ts`.
-- [ ] **Implementation phase:** Render flow/review sections only when grounded data exists; no placeholder sections that look authoritative.
-- [ ] **Implementation phase:** Add `tests/report.test.ts`, `tests/wiki.test.ts`, and focused HTML tests only if HTML changes.
-- [ ] **Verification phase:** Generate a synthetic graph with flows and verify report/wiki include CRG-style flow sections.
-- [ ] **Verification phase:** Port wiki tests for expected sections, generated index links, idempotent generation, empty graph handling, and slug collisions.
-- [ ] **Verification phase:** Run report/wiki/export tests, lint, build, full tests, `git diff --check`.
-- [ ] **Commit:** `feat(output): add flow-aware report and wiki sections`
+- [x] **Spec phase:** Add F11 report/wiki/html section to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
+- [x] **Spec phase:** Define report sections: top critical flows, affected flows for current diff, high-risk nodes, test gaps.
+- [x] **Spec phase:** Define wiki sections: flows through community and flow membership links.
+- [x] **Spec phase:** Define slug-collision behavior compatible with CRG's unique slug suffixing while preserving current Graphify wiki links.
+- [x] **Spec phase:** Define HTML behavior as optional and non-blocking if graph is too large.
+- [x] **Implementation phase:** Modify `src/report.ts` and `src/wiki.ts`; keep HTML highlighting deferred to avoid a renderer rewrite.
+- [x] **Implementation phase:** Render flow/review sections only when grounded data exists; no placeholder sections that look authoritative.
+- [x] **Implementation phase:** Add `tests/report.test.ts` and `tests/wiki.test.ts`; skip focused HTML tests because HTML behavior is deferred.
+- [x] **Verification phase:** Generate a synthetic graph with flows and verify report/wiki include CRG-style flow sections.
+- [x] **Verification phase:** Port wiki tests for expected sections, generated index links, idempotent generation, empty graph handling, and slug collisions.
+- [x] **Verification phase:** Run report/wiki/export tests, lint, build, full tests, `git diff --check`.
+- [x] **Commit:** `feat(output): add flow-aware report and wiki sections`
 
 ### F12 - Benchmarks, Honesty Metrics, And Known Limits
 

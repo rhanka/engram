@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import Graph from "graphology";
 import { toWiki } from "../src/wiki.js";
+import type { ReviewFlowArtifact } from "../src/flows.js";
 
 describe("toWiki", () => {
   let tmpDir: string;
@@ -70,5 +71,74 @@ describe("toWiki", () => {
     toWiki(G, communities, tmpDir, { communityLabels: labels });
 
     expect(existsSync(join(tmpDir, "Core_Module.md"))).toBe(true);
+  });
+
+  it("adds community flow sections and generated flow pages when flows are provided", () => {
+    const G = new Graph({ type: "directed" });
+    G.mergeNode("route", { label: "handler", source_file: "routes.ts", community: 0 });
+    G.mergeNode("auth", { label: "verifyAuthToken", source_file: "auth.ts", community: 1 });
+    G.mergeDirectedEdge("route", "auth", { relation: "calls", confidence: "EXTRACTED" });
+    const communities = new Map([
+      [0, ["route"]],
+      [1, ["auth"]],
+    ]);
+    const labels = new Map([
+      [0, "API"],
+      [1, "Auth"],
+    ]);
+    const flows: ReviewFlowArtifact = {
+      version: 1,
+      generatedAt: "2026-04-22T00:00:00.000Z",
+      graphPath: ".graphify/graph.json",
+      maxDepth: 15,
+      includeTests: false,
+      warnings: [],
+      flows: [
+        {
+          id: "flow:handler",
+          name: "handler",
+          entryPoint: "routes.ts::handler",
+          entryPointId: "route",
+          path: ["route", "auth"],
+          qualifiedPath: ["routes.ts::handler", "auth.ts::verifyAuthToken"],
+          depth: 1,
+          nodeCount: 2,
+          fileCount: 2,
+          files: ["auth.ts", "routes.ts"],
+          criticality: 0.82,
+          warnings: [],
+        },
+      ],
+    };
+
+    const count = toWiki(G, communities, tmpDir, { communityLabels: labels, flows });
+
+    expect(count).toBe(3);
+    expect(readFileSync(join(tmpDir, "API.md"), "utf-8")).toContain("## Execution Flows");
+    expect(readFileSync(join(tmpDir, "API.md"), "utf-8")).toContain("[[Flow handler]]");
+    expect(readFileSync(join(tmpDir, "Flow_handler.md"), "utf-8")).toContain("routes.ts::handler");
+    expect(readFileSync(join(tmpDir, "index.md"), "utf-8")).toContain("## Execution Flows");
+  });
+
+  it("uses suffixed filenames and alias links for duplicate normalized wiki titles", () => {
+    const G = new Graph({ type: "undirected" });
+    G.mergeNode("a", { label: "ClassA", source_file: "a.py", community: 0 });
+    G.mergeNode("b", { label: "ClassB", source_file: "b.py", community: 1 });
+    const communities = new Map([
+      [0, ["a"]],
+      [1, ["b"]],
+    ]);
+    const labels = new Map([
+      [0, "Core"],
+      [1, "Core"],
+    ]);
+
+    toWiki(G, communities, tmpDir, { communityLabels: labels });
+
+    expect(existsSync(join(tmpDir, "Core.md"))).toBe(true);
+    expect(existsSync(join(tmpDir, "Core_2.md"))).toBe(true);
+    const index = readFileSync(join(tmpDir, "index.md"), "utf-8");
+    expect(index).toContain("[[Core]]");
+    expect(index).toContain("[[Core_2|Core]]");
   });
 });
