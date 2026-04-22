@@ -1,5 +1,4 @@
 # Ontology Dataprep Profiles Implementation Plan
-
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a generic configured-project `ontology dataprep profiles` mode that lets Graphify load project config, ontology profile constraints, synthetic-style registries, and profile-aware validation while preserving the normal non-configured Graphify behavior.
@@ -1292,3 +1291,21 @@ non-profile tests pass
 - Standalone provider-backed CLI semantic extraction.
 - Separate profile wiki product.
 - New OCR/PDF/transcript pipeline.
+
+
+---
+
+## Research Backlog - Dual Upstream Catch-up
+
+Source spec: `spec/SPEC_UPSTREAM_DUAL_CATCHUP_2026_04.md`. This is a research backlog, not implemented behavior.
+
+- [x] Merge the dual upstream catch-up study branch into main as docs-only material.
+- [ ] Lock exact upstream refs in the long-lived upstream traceability docs before product work.
+- [ ] Review Safi Python Graphify v4 drift and keep TypeScript deltas intentional.
+- [ ] Decide whether to implement minimal review context over existing `graph.json`.
+- [ ] Decide whether to implement changed-range mapping and graph risk scoring.
+- [ ] Decide whether to derive flow snapshots from existing CALLS/import edges.
+- [ ] Decide whether to enrich report/wiki/HTML with optional review-flow sections.
+- [ ] Triage notebook/language additions one input at a time with synthetic fixtures.
+- [ ] Triage additional assistant installer targets only when config contracts are stable.
+- [ ] Keep SQLite, embeddings, multi-repo registry, and VS Code extension work behind separate opt-in specs.
