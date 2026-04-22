@@ -1348,7 +1348,7 @@ This is the required implementation order even though F4 is the user-facing firs
 - [x] F3 review graph store adapter.
 - [ ] F7 execution flows.
 - [x] F8 affected flows.
-- [ ] F5 review context and blast radius.
+- [x] F5 review context and blast radius.
 - [ ] F6 risk-scored detect changes.
 - [ ] F4 minimal context first-call tool.
 - [ ] F10 skills and LLM review workflow.
@@ -1518,13 +1518,13 @@ Use F3 adapter and existing Graphify review blast-radius helpers where equivalen
 - [x] **Spec phase:** Define `detail_level=minimal|standard` and `include_source` behavior aligned with CRG.
 - [x] **Spec phase:** Define source-snippet safety caps and sensitive-file exclusions.
 - [x] **Spec phase:** Decide where existing `review-delta` and `review-analysis` delegate to the new CRG-aligned implementation without breaking current outputs.
-- [ ] **Implementation phase:** Create `src/review-context.ts`.
-- [ ] **Implementation phase:** Create `tests/review-context.test.ts`.
-- [ ] **Implementation phase:** Add CLI and skill-runtime commands.
-- [ ] **Implementation phase:** Generate review guidance for test gaps, wide blast radius, inheritance edges, and cross-file impact.
-- [ ] **Verification phase:** Port CRG review context tests using synthetic TypeScript/Python fixtures.
-- [ ] **Verification phase:** Run targeted tests, lint, build, full tests, `git diff --check`.
-- [ ] **Commit:** `feat(review): add focused review context`
+- [x] **Implementation phase:** Create `src/review-context.ts`.
+- [x] **Implementation phase:** Create `tests/review-context.test.ts`.
+- [x] **Implementation phase:** Add CLI and skill-runtime commands.
+- [x] **Implementation phase:** Generate review guidance for test gaps, wide blast radius, inheritance edges, and cross-file impact.
+- [x] **Verification phase:** Port CRG review context tests using synthetic TypeScript/Python fixtures.
+- [x] **Verification phase:** Run targeted tests, lint, build, full tests, `git diff --check`.
+- [x] **Commit:** `feat(review): add focused review context`
 
 ### F6 - Risk-Scored Detect Changes
 

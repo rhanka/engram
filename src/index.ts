@@ -229,6 +229,12 @@ export {
   writeFlowArtifact,
 } from "./flows.js";
 export type { AffectedFlowsResult, BuildFlowArtifactOptions, DetectEntryPointsOptions, ListFlowsOptions, ReviewFlow, ReviewFlowArtifact, ReviewFlowDetail, ReviewFlowStep, TraceFlowsOptions } from "./flows.js";
+export {
+  buildReviewContext,
+  extractRelevantLines,
+  reviewContextToText,
+} from "./review-context.js";
+export type { BuildReviewContextOptions, ReviewContextDetailLevel, ReviewContextPayload, ReviewContextResult, ReviewContextRisk } from "./review-context.js";
 export { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
 export type { CommitRecommendation, CommitRecommendationGroup, CommitRecommendationStaleness, CommitRecommendationConfidence, CommitRecommendationOptions } from "./recommend.js";
 export { planGraphifyOutMigration, migrateGraphifyOut, migrationResultToText } from "./migrate-state.js";

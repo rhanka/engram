@@ -213,6 +213,28 @@ describe("public CLI runtime command parity", () => {
     expect(affected.logs.join("\n")).toContain("Affected flows: 1");
     expect(runtimeAffected.logs.join("\n")).toContain("src/service.ts::run");
   });
+
+  it("supports focused review context commands", async () => {
+    const dir = tempProject();
+    const graphPath = writeFlowGraph(dir);
+
+    const cli = await runCli([
+      "review-context",
+      "--graph", graphPath,
+      "--files", "src/service.ts",
+      "--detail-level", "minimal",
+    ], dir);
+    const runtime = await runSkillRuntime([
+      "review-context",
+      "--graph", graphPath,
+      "--files", "src/service.ts",
+      "--detail-level", "minimal",
+    ], dir);
+
+    expect(cli.exitCode).toBe(0);
+    expect(cli.logs.join("\n")).toContain("Review context for 1 changed file(s)");
+    expect(runtime.logs.join("\n")).toContain("Next tools: detect-changes, affected-flows, review-context");
+  });
 });
 
 describe("skill runtime artifact parity", () => {

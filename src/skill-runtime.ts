@@ -32,6 +32,7 @@ import { defaultManifestPath, resolveGraphifyPaths } from "./paths.js";
 import { buildFirstHopSummary, firstHopSummaryToText } from "./summary.js";
 import { buildReviewDelta, reviewDeltaToText } from "./review.js";
 import { buildReviewAnalysis, reviewAnalysisToText, evaluateReviewAnalysis, reviewEvaluationToText } from "./review-analysis.js";
+import { buildReviewContext, reviewContextToText } from "./review-context.js";
 import { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
 import { createReviewGraphStore } from "./review-store.js";
 import {
@@ -1360,6 +1361,35 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         return;
       }
       console.log(affectedFlowsToText(result));
+    });
+
+  program
+    .command("review-context")
+    .requiredOption("--graph <path>")
+    .requiredOption("--files <csv>", "Comma or newline separated changed files")
+    .option("--detail-level <level>", "minimal|standard", "standard")
+    .option("--include-source", "Include capped source snippets")
+    .option("--max-depth <n>", "Impact radius depth", "2")
+    .option("--max-lines-per-file <n>", "Maximum full-file snippet lines", "200")
+    .option("--repo-root <path>", "Repository root for source snippets", ".")
+    .option("--json", "Print JSON")
+    .action((opts) => {
+      const files = String(opts.files)
+        .split(/[\n,]/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const result = buildReviewContext(createReviewGraphStore(loadGraph(opts.graph)), files, {
+        detailLevel: opts.detailLevel === "minimal" ? "minimal" : "standard",
+        includeSource: opts.includeSource === true,
+        maxDepth: Number(opts.maxDepth),
+        maxLinesPerFile: Number(opts.maxLinesPerFile),
+        repoRoot: opts.repoRoot,
+      });
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      console.log(reviewContextToText(result));
     });
 
   program
