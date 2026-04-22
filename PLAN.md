@@ -1642,8 +1642,8 @@ Use F7 flow artifacts and F3 adapter.
 Expose as a separate skill-runtime command and reference it from minimal-context and detect-changes suggestions.
 ```
 
-- [ ] **Spec phase:** Add F8 details to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
-- [ ] **Spec phase:** Define changed-file discovery from explicit `--files` or `--base`.
+- [x] **Spec phase:** Add F8 details to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
+- [x] **Spec phase:** Define changed-file discovery from explicit `--files` or `--base`.
 - [ ] **Implementation phase:** Add affected-flow query to `src/flows.ts` or create `src/affected-flows.ts`.
 - [ ] **Implementation phase:** Add `tests/affected-flows.test.ts`.
 - [ ] **Implementation phase:** Add CLI and skill-runtime commands.

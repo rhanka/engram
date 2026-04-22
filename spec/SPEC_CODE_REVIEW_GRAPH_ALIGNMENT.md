@@ -517,6 +517,96 @@ Port CRG `tests/test_flows.py` behaviors into Vitest:
 - sort modes match CRG intent.
 - directed-edge degradation warning is emitted for undirected edges that lack preserved direction.
 
+## F8 Affected Flows
+
+### CRG Source Contract
+
+F8 ports `code_review_graph/flows.py:get_affected_flows()` and the corresponding review tool wrappers.
+
+CRG behavior:
+
+- accepts `changed_files`.
+- returns empty result when `changed_files` is empty.
+- maps changed files to node IDs.
+- finds flow IDs whose memberships include any of those nodes.
+- returns full flow details with steps.
+- sorts affected flows by descending `criticality`.
+
+### Graphify Target
+
+Graphify must consume the F7 `.graphify/flows.json` artifact and F3 `ReviewGraphStoreLike`:
+
+- `flows.json` supplies derived flow memberships.
+- `graph.json` supplies node metadata and step details.
+- no SQLite table or separate membership store is introduced.
+- if the flow artifact is missing, CLI commands fail clearly and tell the user to run `graphify flows build`.
+
+### API Surface
+
+Add to `src/flows.ts`:
+
+```ts
+export interface AffectedFlowsResult {
+  changedFiles: string[];
+  matchedNodeIds: string[];
+  unmatchedFiles: string[];
+  affectedFlows: ReviewFlowDetail[];
+  total: number;
+}
+
+export function getAffectedFlows(
+  artifact: ReviewFlowArtifact,
+  changedFiles: string[],
+  store: ReviewGraphStoreLike,
+): AffectedFlowsResult;
+```
+
+Mapping rules:
+
+- For each changed file, call `store.getNodesByFile(file)`.
+- A flow is affected when any changed node ID appears in `flow.path`.
+- `matchedNodeIds` is stable sorted unique.
+- `unmatchedFiles` includes changed files with no matched graph nodes.
+- `affectedFlows` includes `steps` from `getFlowById(..., store)`.
+- Sort by descending `criticality`, then name for deterministic ties.
+
+### Changed File Discovery
+
+Public CLI supports the same file discovery convention as existing review commands:
+
+```text
+graphify affected-flows [files...] --flows .graphify/flows.json --graph .graphify/graph.json
+graphify affected-flows --files src/a.ts,src/b.ts
+graphify affected-flows --base main --head HEAD
+graphify affected-flows --staged
+```
+
+Resolution order:
+
+1. positional files and `--files` if present.
+2. `--base/--head` or `--staged`.
+3. working tree diff against `HEAD` plus untracked files, matching existing `review-delta`.
+
+Skill-runtime stays deterministic and requires explicit files:
+
+```text
+graphify-skill-runtime affected-flows --flows <path> --graph <path> --files <csv>
+```
+
+### Output Contract
+
+Text output starts with:
+
+```text
+Affected flows: <total>
+Changed files: <n>
+Matched nodes: <n>
+```
+
+JSON output is exactly `AffectedFlowsResult`.
+
+F8 must not trigger a graph rebuild or flow rebuild implicitly. Agents may suggest `graphify flows build` when artifacts are missing or stale, but the command itself stays a read-only query.
+
 ## F4-F12 Spec Skeleton
 
 F4 minimal context must be implemented after F7, F8, F5, and F6. It will combine graph stats, changed-risk summary, top communities, affected flows, and next tool suggestions.
