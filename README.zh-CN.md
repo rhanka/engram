@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja-JP.md)
 
-[![TypeScript CI](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=v3-typescript)](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml)
+[![TypeScript CI](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=main)](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml)
 
 **一个面向 AI 编码助手的技能。** 在 Claude Code、Gemini CLI、VS Code Copilot Chat、GitHub Copilot CLI、Aider、OpenCode、OpenClaw、Factory Droid、Trae、Kiro 或 Google Antigravity 中输入 `/graphify`，在 Codex 中输入 `$graphify`，它会读取你的文件、构建知识图谱，并把原本不明显的结构关系还给你。更快理解代码库，找到架构决策背后的“为什么”。
 
@@ -12,7 +12,7 @@ graphify 是多模态的，而且这个 TypeScript 端口正按 upstream Python 
 
 ## 分支模型
 
-- `v3-typescript` 是当前默认分支和受维护的 TypeScript 产品分支。
+- `main` 是当前默认分支和受维护的 TypeScript 产品分支。
 - `v3` 保留为原始 Python Graphify 的 upstream mirror / 对齐分支。
 - 当前追平工作覆盖 upstream Python Graphify `v4` 到 `v0.4.23`；差异通过 `UPSTREAM_GAP.md` 显式记录。
 - npm 发布使用 GitHub Actions trusted publishing 保护。release tag 只有在 tag commit 已经进入默认分支且 tag 版本匹配 `package.json` 时才允许发布。
@@ -22,7 +22,7 @@ graphify 是多模态的，而且这个 TypeScript 端口正按 upstream Python 
 | 来源 | 本仓库保留或改造的内容 | 对齐约定 |
 |---|---|---|
 | [Safi Shamsi](https://github.com/safishamsi/graphify) 的原始 Graphify | 核心产品思路：文件夹 -> 知识图谱、assistant-skill 工作流、graph/report/html 输出、provenance 标签、社区发现、多模态语料工作流。 | `v3` 镜像 upstream Python Graphify；`UPSTREAM_GAP.md` 跟踪到 `v0.4.23` 的 v4 parity。 |
-| 当前 TypeScript 端口 | npm 包、仓库根目录的 TypeScript runtime、`.graphify/` 状态、多助手安装器、MCP surface、git/worktree 生命周期，以及通过 TS 工具链完成的本地音频/视频转录。 | `v3-typescript` 是受维护的默认分支；TS 特有行为会作为有意分叉记录，而不是伪装成 upstream parity。 |
+| 当前 TypeScript 端口 | npm 包、仓库根目录的 TypeScript runtime、`.graphify/` 状态、多助手安装器、MCP surface、git/worktree 生命周期，以及通过 TS 工具链完成的本地音频/视频转录。 | `main` 是受维护的默认分支；TS 特有行为会作为有意分叉记录，而不是伪装成 upstream parity。 |
 | `code-review-graph` 参考项目 | 面向 review 的图投影：first-hop summary、review delta、review analysis、review evaluation、install preview，以及 advisory commit grouping 术语。 | 作为 Graphify 图上的增量 review surface 采用；Graphify 不转向 review-only，不默认采用 SQLite/embeddings，并继续保留多模态支持。 |
 
 > Andrej Karpathy 会维护一个 `/raw` 文件夹，把论文、推文、截图和笔记都丢进去。graphify 就是在解决这类问题 —— 相比直接读取原始文件，每次查询的 token 消耗可降低 **71.5 倍**，结果还能跨会话持久保存，并且会明确区分哪些内容是实际发现的，哪些只是合理推断。
@@ -154,7 +154,7 @@ $graphify .                        # Codex
 
 ```bash
 mkdir -p ~/.claude/skills/graphify
-curl -fsSL https://raw.githubusercontent.com/rhanka/graphify/v3-typescript/src/skills/skill.md \
+curl -fsSL https://raw.githubusercontent.com/rhanka/graphify/main/src/skills/skill.md \
   > ~/.claude/skills/graphify/SKILL.md
 ```
 
@@ -241,6 +241,19 @@ graphify kiro install              # .kiro/skills/graphify/SKILL.md + .kiro/stee
 graphify kiro uninstall
 graphify antigravity install       # .agent/rules + .agent/workflows + ~/.agent/skills（Google Antigravity）
 graphify antigravity uninstall
+
+# 配置型 ontology dataprep profiles - 通过 config/profile 显式 opt-in
+graphify profile validate --config graphify.yaml \
+  --out .graphify/profile/project-config.normalized.json \
+  --profile-out .graphify/profile/ontology-profile.normalized.json
+graphify profile dataprep . --config graphify.yaml
+graphify profile validate-extraction \
+  --profile-state .graphify/profile/profile-state.json \
+  --input extraction.json
+graphify profile report \
+  --profile-state .graphify/profile/profile-state.json \
+  --graph .graphify/graph.json \
+  --out .graphify/profile/profile-report.md
 ```
 
 支持混合文件类型：
@@ -265,6 +278,25 @@ URL ingestion 仍然通过 `yt-dlp` 完成；本地音频/视频解码由 `faste
 Graphify 不会盲目把 PDF 送去 OCR。`GRAPHIFY_PDF_OCR` 控制行为：`auto`（默认）先用本地 `pdf-parse` 做 preflight，并在可用时回退到 `pdftotext`，只在文本过少时调用 `mistral-ocr`；`off` 保留原 PDF；`always` 强制 Mistral OCR；`dry-run` 只记录判断，不调用 API。可以用 `GRAPHIFY_PDF_OCR_MODEL` 覆盖 Mistral 模型。Mistral OCR 需要 `MISTRAL_API_KEY`；如果 `auto` 模式下缺少 key，graphify 会警告并保留原 PDF，而不是让整次运行失败。
 
 生成的 PDF sidecar 会写入 `.graphify/converted/pdf/`，并带有指向原始 PDF 的 provenance frontmatter，然后作为普通文档进入语义抽取。如果 OCR 生成了图片工件，graphify 会把它们加入语义图片输入；skills 会要求助手用平台视觉能力解读图表、表格、示意图和嵌入文字，也可以在配置时交给外部 OCR/视觉模型，并保留原始 PDF 关联。
+
+### 配置型 ontology dataprep profiles
+
+Profile mode 是严格增量能力。只有当 graphify 发现 `graphify.yaml`、`graphify.yml`、`.graphify/config.yaml`、`.graphify/config.yml`，或你显式传入 `--config` / `--profile` 时才会启用。没有这些激活条件时，普通 graphify 行为不变。
+
+Project config 描述物理输入：corpus 目录、需要参与语义抽取的生成 sidecar、registry 文件、排除路径、PDF/OCR 策略，以及 `.graphify/` 下的 state 输出。Ontology profile 描述语义约束：允许的 node type、relation type、citation 要求、review status 和命名 registry binding。Registry 可以是 CSV、JSON 或 YAML，会被规范化成带稳定 ID 和 profile 属性的普通 Graphify extraction fragment。
+
+本地 CLI/runtime 只覆盖确定性步骤：
+
+```bash
+graphify profile validate --config graphify.yaml
+graphify profile dataprep . --config graphify.yaml
+graphify profile validate-extraction --profile-state .graphify/profile/profile-state.json --input extraction.json
+graphify profile report --profile-state .graphify/profile/profile-state.json --graph .graphify/graph.json --out .graphify/profile/profile-report.md
+```
+
+Assistant skills 通过同一套 runtime 命令工作：`project-config`、`configured-dataprep`、`profile-prompt`、`profile-validate-extraction` 和 `profile-report`。完整语义抽取仍由 skill 编排：助手读取 profile prompt，抽取符合 profile 的 Graphify JSON，先通过基础 schema 再通过 profile rules 校验，然后并入现有 graph build/report/export/wiki 流程。
+
+Profile artifact 位于 `.graphify/profile/`，semantic cache 按 profile hash 隔离，普通 LLM Wiki 仍然是 `.graphify/wiki/index.md`。Graphify 只内置合成 profile 示例和 fixture；真实项目 config、registry、专有 ontology 应放在消费方仓库中。MCP 专用 profile tool、embeddings、数据库、远程 registry 和独立 profile wiki 都在本批次之外。
 
 ## 你会得到什么
 

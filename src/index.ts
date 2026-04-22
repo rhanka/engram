@@ -3,6 +3,183 @@
  */
 
 export { type GraphNode, type GraphEdge, type Extraction, type Hyperedge, type DetectionResult, FileType } from "./types.js";
+export type {
+  GraphifyDataprepPolicy,
+  GraphifyImageAnalysisBatchPolicy,
+  GraphifyImageAnalysisCalibrationPolicy,
+  GraphifyImageAnalysisPolicy,
+  GraphifyImageArtifactSource,
+  GraphifyLlmExecutionBatchPolicy,
+  GraphifyLlmExecutionMeshPolicy,
+  GraphifyLlmExecutionMode,
+  GraphifyLlmExecutionPolicy,
+  GraphifyLlmExecutionTextJsonPolicy,
+  GraphifyLlmExecutionVisionJsonPolicy,
+  GraphifyOutputPolicy,
+  GraphifyPdfOcrMode,
+  GraphifyProjectConfig,
+  GraphifyProjectConfigProfile,
+  GraphifyProjectInputs,
+  NormalizedDataprepPolicy,
+  NormalizedImageAnalysisBatchPolicy,
+  NormalizedImageAnalysisCalibrationPolicy,
+  NormalizedImageAnalysisPolicy,
+  NormalizedLlmExecutionPolicy,
+  NormalizedOutputPolicy,
+  NormalizedProjectConfig,
+  NormalizedProjectInputs,
+  NormalizedProjectProfile,
+  ProjectConfigDiscoveryResult,
+  ProjectConfigValidationIssue,
+  NormalizedOntologyProfile,
+  NormalizedOntologyRegistrySpec,
+  NormalizedOntologyRelationType,
+  OntologyCitationPolicy,
+  OntologyHardeningPolicy,
+  OntologyNodeType,
+  OntologyOutputPolicy,
+  OntologyOutputWikiPolicy,
+  OntologyProfile,
+  OntologyProfileOutputs,
+  OntologyRegistrySpec,
+  OntologyRelationExport,
+  OntologyRelationType,
+  OntologyStatus,
+  NormalizedOntologyOutputPolicy,
+  NormalizedOntologyProfileOutputs,
+  ProfileBinding,
+  RegistryRecord,
+} from "./types.js";
+export {
+  discoverProjectConfig,
+  loadProjectConfig,
+  normalizeProjectConfig,
+  parseProjectConfig,
+  validateProjectConfig,
+} from "./project-config.js";
+export {
+  createAssistantTextJsonClient,
+  createAssistantVisionJsonClient,
+  preflightLlmExecution,
+  redactSecrets,
+} from "./llm-execution.js";
+export {
+  buildImageDataprepManifest,
+  runImageDataprep,
+} from "./image-dataprep.js";
+export {
+  validateImageCaption,
+  validateImageRouting,
+} from "./image-caption-schema.js";
+export {
+  calibrateImageRouting,
+  assertAcceptedImageRoutingRules,
+  imageRoutingSampleFromCaption,
+  loadImageRoutingLabels,
+  loadImageRoutingRules,
+  routeImageWithRules,
+  writeImageRoutingCalibrationSamples,
+} from "./image-routing-calibration.js";
+export {
+  exportImageDataprepBatchRequests,
+  importImageDataprepBatchResults,
+} from "./image-dataprep-batch.js";
+export {
+  compileOntologyOutputs,
+} from "./ontology-output.js";
+export type {
+  AssistantLlmClientOptions,
+  BatchVisionExportInput,
+  BatchVisionExportResult,
+  BatchVisionImportInput,
+  BatchVisionImportResult,
+  BatchVisionJsonClient,
+  LlmExecutionCapability,
+  LlmExecutionResult,
+  LlmMeshAdapter,
+  TextJsonGenerationClient,
+  TextJsonGenerationInput,
+  TextJsonGenerationResult,
+  VisionJsonAnalysisClient,
+  VisionJsonAnalysisInput,
+  VisionJsonAnalysisResult,
+} from "./llm-execution.js";
+export type {
+  BuildImageDataprepManifestOptions,
+  ImageDataprepArtifact,
+  ImageDataprepManifest,
+  ImageDataprepSourceKind,
+  RunImageDataprepOptions,
+  RunImageDataprepResult,
+} from "./image-dataprep.js";
+export type {
+  ImageRoute,
+  ImageRoutingCalibrationDecision,
+  ImageRoutingCalibrationInput,
+  ImageRoutingCalibrationResult,
+  ImageRoutingDecision,
+  ImageRoutingLabel,
+  ImageRoutingLabelEntry,
+  ImageRoutingLabelsFile,
+  ImageRoutingRuleBucket,
+  ImageRoutingRulesFile,
+  ImageRoutingSample,
+  ImageRoutingSamplesFile,
+  WriteImageRoutingCalibrationSamplesOptions,
+  WriteImageRoutingCalibrationSamplesResult,
+} from "./image-routing-calibration.js";
+export type {
+  ExportImageDataprepBatchRequestsOptions,
+  ExportImageDataprepBatchRequestsResult,
+  ImportImageDataprepBatchResultsOptions,
+  ImportImageDataprepBatchResultsResult,
+} from "./image-dataprep-batch.js";
+export type {
+  CompileOntologyOutputsOptions,
+  CompileOntologyOutputsResult,
+  OntologyOutputConfig,
+} from "./ontology-output.js";
+export {
+  bindOntologyProfile,
+  hashOntologyProfile,
+  loadOntologyProfile,
+  normalizeOntologyProfile,
+  parseOntologyProfile,
+  validateOntologyProfile,
+} from "./ontology-profile.js";
+export {
+  loadProfileRegistries,
+  loadProfileRegistry,
+  normalizeRegistryRecord,
+  registryRecordsToExtraction,
+} from "./profile-registry.js";
+export {
+  profileValidationResultToJson,
+  profileValidationResultToMarkdown,
+  validateProfileExtraction,
+} from "./profile-validate.js";
+export type {
+  ProfileValidationContext,
+  ProfileValidationIssue,
+  ProfileValidationResult,
+  ProfileValidationSeverity,
+} from "./profile-validate.js";
+export {
+  buildProfileChunkPrompt,
+  buildProfileExtractionPrompt,
+  buildProfileValidationPrompt,
+} from "./profile-prompts.js";
+export type {
+  ProfilePromptChunk,
+  ProfilePromptOptions,
+  ProfilePromptState,
+} from "./profile-prompts.js";
+export { buildProfileReport } from "./profile-report.js";
+export type {
+  ProfileReportContext,
+  ProfileReportGraphData,
+  ProfileReportPdfArtifact,
+} from "./profile-report.js";
 export { validateExtraction, assertValid } from "./validate.js";
 export { buildFromJson, build } from "./build.js";
 export { cluster, cohesionScore, scoreAll } from "./cluster.js";

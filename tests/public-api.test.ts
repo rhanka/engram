@@ -51,6 +51,11 @@ afterEach(() => {
 
 describe("public API compatibility", () => {
   it("exports the documented runtime helpers", () => {
+    expect(typeof api.discoverProjectConfig).toBe("function");
+    expect(typeof api.loadProjectConfig).toBe("function");
+    expect(typeof api.parseProjectConfig).toBe("function");
+    expect(typeof api.normalizeProjectConfig).toBe("function");
+    expect(typeof api.validateProjectConfig).toBe("function");
     expect(typeof api.runBenchmark).toBe("function");
     expect(typeof api.printBenchmark).toBe("function");
     expect(typeof api.ingest).toBe("function");
@@ -74,6 +79,17 @@ describe("public API compatibility", () => {
     expect(typeof api.planGraphifyOutMigration).toBe("function");
     expect(typeof api.migrateGraphifyOut).toBe("function");
     expect(typeof api.migrationResultToText).toBe("function");
+    expect(typeof api.validateProfileExtraction).toBe("function");
+    expect(typeof api.profileValidationResultToMarkdown).toBe("function");
+    expect(typeof api.profileValidationResultToJson).toBe("function");
+    expect(typeof api.buildProfileExtractionPrompt).toBe("function");
+    expect(typeof api.buildProfileChunkPrompt).toBe("function");
+    expect(typeof api.buildProfileValidationPrompt).toBe("function");
+    expect(typeof api.buildProfileReport).toBe("function");
+    expect(typeof api.assertAcceptedImageRoutingRules).toBe("function");
+    expect(typeof api.writeImageRoutingCalibrationSamples).toBe("function");
+    expect(typeof api.imageRoutingSampleFromCaption).toBe("function");
+    expect(typeof api.compileOntologyOutputs).toBe("function");
   });
 
   it("accepts object-style map inputs and option objects", () => {

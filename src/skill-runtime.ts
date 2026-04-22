@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   writeFileSync,
 } from "node:fs";
@@ -12,7 +13,7 @@ import { fileURLToPath } from "node:url";
 
 import { graphDiff, godNodes, surprisingConnections, suggestQuestions } from "./analyze.js";
 import { runBenchmark, printBenchmark } from "./benchmark.js";
-import { saveSemanticCache, checkSemanticCache } from "./cache.js";
+import { saveSemanticCache, checkSemanticCache, type CacheOptions } from "./cache.js";
 import { buildFromJson } from "./build.js";
 import { cluster, scoreAll } from "./cluster.js";
 import { detect, detectIncremental, saveManifest } from "./detect.js";
@@ -34,6 +35,24 @@ import { buildReviewAnalysis, reviewAnalysisToText, evaluateReviewAnalysis, revi
 import { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
 import { parsePdfOcrMode } from "./pdf-preflight.js";
 import { prepareSemanticDetection } from "./semantic-prepare.js";
+import { discoverProjectConfig, loadProjectConfig } from "./project-config.js";
+import { loadOntologyProfile } from "./ontology-profile.js";
+import { runConfiguredDataprep, type ProfileState } from "./configured-dataprep.js";
+import { buildProfileExtractionPrompt, type ProfilePromptState } from "./profile-prompts.js";
+import { validateProfileExtraction, profileValidationResultToMarkdown } from "./profile-validate.js";
+import { buildProfileReport } from "./profile-report.js";
+import { compileOntologyOutputs } from "./ontology-output.js";
+import {
+  calibrateImageRouting,
+  loadImageRoutingLabels,
+  loadImageRoutingRules,
+  writeImageRoutingCalibrationSamples,
+  type ImageRoutingSamplesFile,
+} from "./image-routing-calibration.js";
+import {
+  exportImageDataprepBatchRequests,
+  importImageDataprepBatchResults,
+} from "./image-dataprep-batch.js";
 import { normalizeSearchText } from "./search.js";
 import type {
   DetectionResult,
@@ -42,6 +61,9 @@ import type {
   GraphDiffResult,
   SuggestedQuestion,
   SurpriseEntry,
+  NormalizedOntologyProfile,
+  NormalizedProjectConfig,
+  RegistryRecord,
 } from "./types.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -65,6 +87,49 @@ function writeJson(path: string, value: unknown): void {
   const resolved = resolve(path);
   mkdirSync(dirname(resolved), { recursive: true });
   writeFileSync(resolved, JSON.stringify(value, null, 2), "utf-8");
+}
+
+function cacheOptionsFromRuntime(opts: { cacheNamespace?: string; profileState?: string }): CacheOptions {
+  if (opts.cacheNamespace) return { namespace: opts.cacheNamespace };
+  if (!opts.profileState) return {};
+  const state = readJson<Record<string, unknown>>(opts.profileState);
+  const profileHash = String(state.profile_hash ?? "").trim();
+  if (!profileHash) {
+    throw new Error(`Profile state ${resolve(opts.profileState)} is missing profile_hash`);
+  }
+  return { profileHash };
+}
+
+interface ProfileRuntimeContext extends ProfilePromptState {
+  profileState: ProfileState;
+  profile: NormalizedOntologyProfile;
+  projectConfig?: NormalizedProjectConfig;
+  registries?: Record<string, RegistryRecord[]>;
+}
+
+function loadProfileRuntimeContext(profileStatePath: string): ProfileRuntimeContext {
+  const resolvedStatePath = resolve(profileStatePath);
+  const profileDir = dirname(resolvedStatePath);
+  const profileState = readJson<ProfileState>(resolvedStatePath);
+  const profile = readJson<NormalizedOntologyProfile>(join(profileDir, "ontology-profile.normalized.json"));
+  const projectConfigPath = join(profileDir, "project-config.normalized.json");
+  const registriesDir = join(profileDir, "registries");
+  const projectConfig = existsSync(projectConfigPath)
+    ? readJson<NormalizedProjectConfig>(projectConfigPath)
+    : undefined;
+  const registries: Record<string, RegistryRecord[]> = {};
+  if (existsSync(registriesDir)) {
+    for (const file of readdirSync(registriesDir)) {
+      if (!file.endsWith(".json")) continue;
+      registries[file.slice(0, -".json".length)] = readJson<RegistryRecord[]>(join(registriesDir, file));
+    }
+  }
+  return {
+    profileState,
+    profile,
+    ...(projectConfig ? { projectConfig } : {}),
+    registries,
+  };
 }
 
 function getVersion(): string {
@@ -351,6 +416,189 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     });
 
   program
+    .command("project-config")
+    .description("Load and normalize a configured Graphify project profile")
+    .option("--root <path>", "Workspace root", ".")
+    .option("--config <path>", "Explicit graphify.yaml path")
+    .requiredOption("--out <path>", "Path to write normalized project config JSON")
+    .option("--profile-out <path>", "Path to write bound ontology profile JSON")
+    .action((opts) => {
+      const root = resolve(opts.root);
+      const configPath = opts.config
+        ? resolve(opts.config)
+        : discoverProjectConfig(root).path;
+      if (!configPath) {
+        throw new Error(`No graphify project config found under ${root}`);
+      }
+      const projectConfig = loadProjectConfig(configPath);
+      const profile = loadOntologyProfile(projectConfig.profile.resolvedPath, { projectConfig });
+      writeJson(opts.out, projectConfig);
+      if (opts.profileOut) writeJson(opts.profileOut, profile);
+      console.log(`Loaded profile ${profile.id} from ${projectConfig.sourcePath}`);
+    });
+
+  program
+    .command("configured-dataprep")
+    .description("Run deterministic local dataprep for a configured profile project")
+    .option("--root <path>", "Workspace root", ".")
+    .option("--config <path>", "Explicit graphify.yaml path")
+    .option("--out-dir <path>", "State output directory relative to root or absolute")
+    .action(async (opts) => {
+      const result = await runConfiguredDataprep(resolve(opts.root), {
+        ...(opts.config ? { configPath: resolve(opts.config) } : {}),
+        ...(opts.outDir ? { stateDir: opts.outDir } : {}),
+      });
+      console.log(
+        `Configured dataprep: ${result.semanticDetection.total_files} semantic file(s), ` +
+        `${result.registryExtraction.nodes.length} registry node(s)`,
+      );
+    });
+
+  program
+    .command("profile-prompt")
+    .description("Write a profile-aware extraction prompt for assistant skills")
+    .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
+    .requiredOption("--out <path>", "Prompt markdown output path")
+    .action((opts) => {
+      const context = loadProfileRuntimeContext(opts.profileState);
+      writeFileSync(resolve(opts.out), buildProfileExtractionPrompt(context), "utf-8");
+      console.log(`Profile prompt written to ${resolve(opts.out)}`);
+    });
+
+  program
+    .command("profile-validate-extraction")
+    .description("Validate an extraction JSON against a profile state")
+    .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
+    .requiredOption("--input <path>", "Extraction JSON to validate")
+    .option("--json", "Print JSON instead of markdown")
+    .action((opts) => {
+      const context = loadProfileRuntimeContext(opts.profileState);
+      const extraction = ensureExtractionShape(readJson<Partial<Extraction>>(opts.input));
+      const result = validateProfileExtraction(extraction, { profile: context.profile });
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(profileValidationResultToMarkdown(result));
+      }
+      if (!result.valid) process.exit(1);
+    });
+
+  program
+    .command("profile-report")
+    .description("Write an additive profile QA report")
+    .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
+    .requiredOption("--graph <path>", "Graph JSON path")
+    .requiredOption("--out <path>", "Report markdown output path")
+    .action((opts) => {
+      const context = loadProfileRuntimeContext(opts.profileState);
+      const graph = readJson<{ nodes?: unknown[]; links?: unknown[] }>(opts.graph);
+      const report = buildProfileReport({ ...context, graph });
+      writeFileSync(resolve(opts.out), report, "utf-8");
+      console.log(`Profile report written to ${resolve(opts.out)}`);
+    });
+
+  program
+    .command("ontology-output")
+    .description("Compile optional profile-declared ontology output artifacts")
+    .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
+    .requiredOption("--input <path>", "Extraction JSON to compile")
+    .requiredOption("--out-dir <path>", "Ontology output directory")
+    .action((opts) => {
+      const context = loadProfileRuntimeContext(opts.profileState);
+      const extraction = ensureExtractionShape(readJson<Partial<Extraction>>(opts.input));
+      const result = compileOntologyOutputs({
+        outputDir: resolve(opts.outDir),
+        extraction,
+        profile: context.profile,
+        config: context.profile.outputs.ontology,
+      });
+      if (!result.enabled) {
+        console.log("Ontology outputs disabled by profile config");
+        return;
+      }
+      console.log(
+        `Ontology outputs: ${result.nodeCount} node(s), ${result.relationCount} relation(s), ` +
+        `${result.wikiPageCount} wiki page(s)`,
+      );
+    });
+
+  program
+    .command("image-calibration-samples")
+    .description("Write deterministic image routing calibration samples")
+    .requiredOption("--manifest <path>", "Image dataprep manifest JSON")
+    .requiredOption("--captions-dir <path>", "Caption sidecar directory")
+    .requiredOption("--out-dir <path>", "Calibration root directory")
+    .requiredOption("--run-id <id>", "Calibration run id")
+    .option("--max-samples <n>", "Maximum sample count")
+    .action((opts) => {
+      const result = writeImageRoutingCalibrationSamples({
+        manifest: readJson(opts.manifest),
+        captionsDir: resolve(opts.captionsDir),
+        outputDir: resolve(opts.outDir),
+        runId: opts.runId,
+        ...(opts.maxSamples ? { maxSamples: Number.parseInt(opts.maxSamples, 10) } : {}),
+      });
+      console.log(`Image calibration samples: ${result.sampleCount} written to ${result.samplesPath}`);
+    });
+
+  program
+    .command("image-calibration-replay")
+    .description("Replay proposed image routing rules against project labels")
+    .requiredOption("--samples <path>", "Calibration samples JSON")
+    .requiredOption("--labels <path>", "Project-owned labels YAML/JSON")
+    .requiredOption("--rules <path>", "Project-owned or proposed rules YAML/JSON")
+    .requiredOption("--out <path>", "Replay result JSON")
+    .action((opts) => {
+      const samples = readJson<ImageRoutingSamplesFile>(opts.samples);
+      const result = calibrateImageRouting({
+        samples: samples.samples,
+        labels: loadImageRoutingLabels(resolve(opts.labels)),
+        rules: loadImageRoutingRules(resolve(opts.rules)),
+      });
+      writeJson(opts.out, result);
+      console.log(`Image calibration replay: ${result.decision}`);
+    });
+
+  program
+    .command("image-batch-export")
+    .description("Export provider-neutral image dataprep JSONL requests")
+    .requiredOption("--manifest <path>", "Image dataprep manifest JSON")
+    .requiredOption("--out <path>", "JSONL output path")
+    .requiredOption("--schema <name>", "Expected result schema")
+    .requiredOption("--prompt <text>", "Prompt text")
+    .option("--pass <pass>", "Batch pass: primary or deep", "primary")
+    .option("--captions-dir <path>", "Caption sidecar directory for deep pass")
+    .option("--rules <path>", "Accepted routing rules YAML/JSON for deep pass")
+    .action((opts) => {
+      const result = exportImageDataprepBatchRequests({
+        manifest: readJson(opts.manifest),
+        outputPath: resolve(opts.out),
+        schema: opts.schema,
+        prompt: opts.prompt,
+        pass: opts.pass === "deep" ? "deep" : "primary",
+        ...(opts.captionsDir ? { captionsDir: resolve(opts.captionsDir) } : {}),
+        ...(opts.rules ? { rules: loadImageRoutingRules(resolve(opts.rules)) } : {}),
+      });
+      console.log(`Image batch export: ${result.requestCount} request(s) written to ${result.outputPath}`);
+    });
+
+  program
+    .command("image-batch-import")
+    .description("Import provider-normalized image dataprep JSONL results")
+    .requiredOption("--input <path>", "Provider-normalized JSONL input")
+    .requiredOption("--out-dir <path>", "Image dataprep output directory")
+    .option("--force", "Overwrite valid existing sidecars")
+    .action((opts) => {
+      const result = importImageDataprepBatchResults({
+        inputPath: resolve(opts.input),
+        outputDir: resolve(opts.outDir),
+        force: opts.force === true,
+      });
+      console.log(`Image batch import: ${result.importedCount} imported, ${result.failedCount} failed`);
+      if (result.failedCount > 0) process.exit(1);
+    });
+
+  program
     .command("migrate-state")
     .description("Migrate legacy graphify-out state into .graphify")
     .option("--root <path>", "Workspace root", ".")
@@ -465,6 +713,8 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .requiredOption("--detect <path>", "Path to detection JSON")
     .option("--incremental", "Use detection.new_files when present")
     .option("--root <path>", "Graph root for cache resolution", ".")
+    .option("--cache-namespace <value>", "Optional semantic cache namespace")
+    .option("--profile-state <path>", "Optional profile-state.json used to derive a profile cache namespace")
     .requiredOption("--cached-out <path>", "Path to cached extraction JSON")
     .requiredOption("--uncached-out <path>", "Path to newline-delimited uncached file list")
     .action((opts) => {
@@ -478,6 +728,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       const [cachedNodes, cachedEdges, cachedHyperedges, uncached] = checkSemanticCache(
         allFiles,
         resolve(opts.root),
+        cacheOptionsFromRuntime(opts),
       );
       writeJson(opts.cachedOut, {
         nodes: cachedNodes,
@@ -493,6 +744,8 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .command("save-semantic-cache")
     .requiredOption("--input <path>", "Path to semantic extraction JSON")
     .option("--root <path>", "Graph root for cache resolution", ".")
+    .option("--cache-namespace <value>", "Optional semantic cache namespace")
+    .option("--profile-state <path>", "Optional profile-state.json used to derive a profile cache namespace")
     .action((opts) => {
       const extraction = ensureExtractionShape(readJson<Partial<Extraction>>(opts.input));
       const saved = saveSemanticCache(
@@ -500,6 +753,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         extraction.edges as Array<Record<string, unknown>>,
         (extraction.hyperedges ?? []) as Array<Record<string, unknown>>,
         resolve(opts.root),
+        cacheOptionsFromRuntime(opts),
       );
       console.log(`Cached ${saved} files`);
     });

@@ -39,6 +39,20 @@ describe("graphify path contract", () => {
     expect(paths.scratch.pdfOcr).toBe(join(root, ".graphify", ".graphify_pdf_ocr.json"));
   });
 
+  it("groups ontology dataprep profile artifacts under the state root", () => {
+    const root = resolve("/tmp/graphify-path-contract");
+    const paths = resolveGraphifyPaths({ root });
+
+    expect(paths.profile.dir).toBe(join(root, ".graphify", "profile"));
+    expect(paths.profile.projectConfig).toBe(join(root, ".graphify", "profile", "project-config.normalized.json"));
+    expect(paths.profile.ontologyProfile).toBe(join(root, ".graphify", "profile", "ontology-profile.normalized.json"));
+    expect(paths.profile.state).toBe(join(root, ".graphify", "profile", "profile-state.json"));
+    expect(paths.profile.registriesDir).toBe(join(root, ".graphify", "profile", "registries"));
+    expect(paths.profile.registryExtraction).toBe(join(root, ".graphify", "profile", "registry-extraction.json"));
+    expect(paths.profile.semanticDetection).toBe(join(root, ".graphify", "profile", "semantic-detection.json"));
+    expect(paths.profile.dataprepReport).toBe(join(root, ".graphify", "profile", "dataprep-report.md"));
+  });
+
   it("preserves legacy root scratch paths for the current standalone build behavior", () => {
     const root = resolve("/tmp/graphify-path-contract");
     const paths = resolveGraphifyPaths({ root });

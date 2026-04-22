@@ -1,508 +1,1222 @@
-# Graphify 0.4.23 Upstream Parity Implementation Plan
+# Ontology Dataprep Profiles Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Bring the TypeScript port to conceptual parity with upstream Python Graphify `v0.4.23` while preserving all TypeScript-only additions shipped through `0.3.29`.
+**Goal:** Add a generic configured-project `ontology dataprep profiles` mode that lets Graphify load project config, ontology profile constraints, synthetic-style registries, and profile-aware validation while preserving the normal non-configured Graphify behavior.
 
-**Architecture:** Treat upstream `safishamsi/graphify@v4` as the behavioral source and port user-facing behavior into the existing TypeScript runtime. Preserve `.graphify/`, lifecycle metadata, review workflows, `faster-whisper-ts`, PDF/Mistral OCR, trusted npm publishing, and the fork narrative as intentional product deltas.
+**Architecture:** This is an additive layer over the existing TypeScript pipeline. Project config and ontology profiles normalize inputs before calling `detect()` and `prepareSemanticDetection()`, registry records become ordinary Graphify `Extraction` fragments, profile validation wraps `validateExtraction()`, and graph build/report/export/wiki remain the existing pipeline. Full semantic extraction remains assistant/skill orchestrated in this lot; CLI/runtime commands expose deterministic local discovery, dataprep, validation, prompt and reporting steps.
 
-**Tech Stack:** TypeScript, Node.js 20+, graphology, web-tree-sitter/WASM where available, regex fallback extractors, Vitest, GitHub Actions, npm trusted publishing.
+**Tech Stack:** TypeScript, Node.js 20+, Commander, Vitest, existing Graphify modules, direct `yaml` dependency for YAML parsing, direct `csv-parse` dependency for CSV registries, existing PDF/OCR/transcript preparation.
 
 ---
 
-## Current Snapshot
+## Current Status
 
-- [x] PR `#4` (`Release 0.3.29 with TypeScript faster-whisper runtime`) is merged into `v3-typescript` by merge commit `83ffcb2`.
-- [x] PR `#5` (`Guard npm publish behind merged release tags`) is merged into `v3-typescript` by merge commit `359d652`.
-- [x] Parity branch `chore/upstream-v4-0.4.23-parity` was created from `origin/v3-typescript@359d652` and merged by PR `#6`.
-- [x] Current npm publication is `graphifyy@0.4.23`.
-- [x] Upstream parity target is Python `upstream/v4` tag `v0.4.23` at `8d908c5`.
-- [x] `UPSTREAM_GAP.md` is the source of truth for version-by-version traceability.
+- [x] `ontology dataprep profiles` base implementation is complete.
+- [x] `spec/SPEC_IMAGE_DATAPREP_ROUTING.md` defines optional crop/caption/routing dataprep.
+- [x] `spec/SPEC_LLM_EXECUTION_PORTS.md` defines provider-neutral assistant, batch, mesh and off execution modes.
+- [x] `spec/SPEC_ONTOLOGY_OUTPUT_ARTIFACTS.md` defines optional ontology/wiki output compilation.
+- [x] Ambiguity policy is `review-required non-blocking`.
+- [x] Image routing policy is `calibration-first`; Graphify must not ship magic cascade rules.
+- [x] Assistant role is `assistant-as-calibration-analyst`; TypeScript replay owns acceptance.
+- [x] Routing rules and labels are project-owned, versionable files referenced from `graphify.yaml`.
+- [x] Calibration gate requires `false_primary = 0`; missing or ambiguous labels produce `pending_labels`.
+- [x] Production cascade requires `accept_matrix`; otherwise Graphify must block automatic cascade routing.
+- [x] Ontology alias/canonicalization ambiguity is `candidate-only`, marked `needs_review`, and excluded from hardened outputs.
+- [x] Commit the three new specs plus this plan update.
+- [x] Lot A committed as `8f65cba` (`feat: add advanced dataprep config contracts`).
+- [x] Lot B committed as `752c5e6` (`feat: add provider-neutral llm execution ports`).
+- [x] Lot C committed as `22c2c39` (`feat: add image dataprep manifests and schemas`).
+- [x] Lot D core committed as `ea49a61` (`feat: add image routing calibration workflow`).
+- [x] Lot E core committed as `6027541` (`feat: add image dataprep batch import export`).
+- [x] Lot F core committed as `57d9873` (`feat: add optional ontology output artifacts`).
+- [x] Lot D CLI/skill workflow integration committed as `4f4c409` (`feat: integrate advanced dataprep runtime workflows`).
+- [x] Lot E accepted-rule deep-pass export and overwrite policy committed as `4f4c409` (`feat: integrate advanced dataprep runtime workflows`).
+- [x] Lot F profile-report/CLI integration committed as `4f4c409` (`feat: integrate advanced dataprep runtime workflows`).
+- [x] Lot G README, skills and UAT prepared in the docs tranche.
 
-## Non-Negotiable Guardrails
+## Next Evolution Plan - Image Dataprep, LLM Ports, Ontology Outputs
 
-- [x] Do not delete or regress `.graphify/` canonical state root and `graphify-out/` migration support.
-- [x] Do not delete or regress branch/worktree lifecycle metadata.
-- [x] Do not delete or regress `summary`, `review-delta`, `review-analysis`, `review-eval`, or `recommend-commits`.
-- [x] Do not replace TypeScript `faster-whisper-ts` with Python faster-whisper.
-- [x] Do not delete or regress PDF preflight and optional `mistral-ocr`.
-- [x] Keep npm trusted publishing guarded by merged release tags.
-- [x] Keep fork narrative and code-review-graph-inspired additions in README/specs.
-- [x] After every code-changing lot run targeted tests, `npm run lint`, `npm run build`, `npm test`, `npx graphify hook-rebuild`, and `git diff --check`.
-- [x] Mark `UPSTREAM_GAP.md` rows `covered` only after tests or explicit verification prove the row.
-- [x] Do not bump to `0.4.23` until all active v4 rows are `covered`, `n/a`, or `intentional-delta`.
+**Goal:** Implement the three new specs as strictly opt-in capabilities without changing default `$graphify` behavior.
 
-## Lot 0 - Traceability Bootstrap
+**Compatibility Guardrails:**
+
+- [x] No direct LLM provider is constructed without explicit config.
+- [x] No image dataprep artifacts are generated without `dataprep.image_analysis.enabled: true` or an explicit image dataprep command.
+- [x] No `.graphify/ontology/` output is generated without explicit ontology output config.
+- [x] No domain-specific type, taxonomy, label, registry or ontology example is added to Graphify.
+- [x] Existing non-configured tests prove `detect()`, `prepareSemanticDetection()`, `validateExtraction()`, build, report and export behavior are unchanged.
+
+### Lot A - Config Surface And Type Contracts
 
 **Files:**
+- Modify: `src/types.ts`
+- Modify: `src/project-config.ts`
+- Modify: `tests/project-config.test.ts`
+- Modify: `tests/public-api.test.ts`
+- Modify: `spec/SPEC_GRAPHIFY.md`
+
+- [x] Add `GraphifyImageAnalysisPolicy` with `enabled`, `mode`, `artifact_source`, `caption_schema`, `routing_profile`, `primary_model`, `deep_model`, `calibration`, `max_markdown_context_chars`, and `batch`.
+- [x] Add `GraphifyLlmExecutionPolicy` with `mode: assistant|batch|mesh|off`, text JSON, vision JSON, batch and mesh config blocks.
+- [x] Add ontology output config types for profile-declared `outputs.ontology`.
+- [x] Normalize config paths for `calibration.rules_path` and `calibration.labels_path` relative to `graphify.yaml`.
+- [x] Validate `mode` enums and fail fast for malformed advanced config.
+- [x] Add tests proving absent advanced config normalizes to inert defaults.
+- [x] Commit as `feat: add advanced dataprep config contracts`.
+
+### Lot B - LLM Execution Ports
+
+**Files:**
+- Create: `src/llm-execution.ts`
+- Create: `tests/llm-execution.test.ts`
+- Modify: `src/index.ts`
+
+- [x] Define `TextJsonGenerationClient`, `VisionJsonAnalysisClient`, `BatchVisionJsonClient`, and `LlmMeshAdapter` ports.
+- [x] Implement assistant no-call adapter that writes/validates instruction artifacts only.
+- [x] Implement preflight validation for `batch` and `mesh` modes without adding provider SDK dependencies.
+- [x] Add secret redaction helpers for generated audit metadata.
+- [x] Add tests proving default config constructs no provider and reads no API key.
+- [x] Add tests proving `assistant` mode works without credentials.
+- [x] Add tests proving `batch` and `mesh` fail clearly without required adapter/provider config.
+- [x] Commit as `feat: add provider-neutral llm execution ports`.
+
+### Lot C - Image Dataprep Manifest And Caption Schemas
+
+**Files:**
+- Create: `src/image-dataprep.ts`
+- Create: `src/image-caption-schema.ts`
+- Create: `tests/image-dataprep.test.ts`
+- Modify: `src/paths.ts`
+- Modify: `src/skill-runtime.ts`
+- Modify: `src/cli.ts`
+
+- [x] Build `.graphify/image-dataprep/manifest.json` from OCR crop artifacts and direct image inputs.
+- [x] Preserve provenance to original file, source page, sidecar path, image path, MIME type and SHA-256.
+- [x] Validate `generic_image_caption_v1` sidecars.
+- [x] Validate `generic_image_routing_v1` sidecars.
+- [x] Ensure full-page screenshot artifacts are excluded by default.
+- [x] Add assistant-mode prompt artifact generation without provider calls.
+- [x] Add tests proving no image dataprep directory is created without opt-in.
+- [x] Commit as `feat: add image dataprep manifests and schemas`.
+
+### Lot D - Calibration Workflow
+
+**Files:**
+- Create: `src/image-routing-calibration.ts`
+- Create: `tests/image-routing-calibration.test.ts`
+- Modify: `src/skill-runtime.ts`
+- Modify: `src/cli.ts`
+- Modify: `src/skills/*`
+
+- [x] Implement deterministic sample selection into `.graphify/calibration/<run-id>/samples.json`.
+- [x] Implement machine-readable labels loader for `graphify_image_routing_labels_v1`.
+- [x] Implement project-owned routing rules loader for `graphify_image_routing_rules_v1`.
+- [x] Implement TypeScript replay of proposed rules without provider calls.
+- [x] Compute `false_primary`, false `deep`, missing labels, ambiguous labels and estimated deep ratio.
+- [x] Gate acceptance with `false_primary = 0`; missing or ambiguous labels produce `pending_labels`.
+- [x] Emit decisions `accept_matrix`, `revise_matrix`, `reject_cascade`, or `pending_labels`.
+- [x] Block automatic production cascade unless rules declare `decision: accept_matrix`.
+- [x] Update skills so Codex/Claude/Gemini can act as `assistant-as-calibration-analyst`.
+- [x] Commit integration as `feat: integrate advanced dataprep runtime workflows`.
+
+### Lot E - Batch And Mesh Import/Export
+
+**Files:**
+- Create: `src/image-dataprep-batch.ts`
+- Create: `tests/image-dataprep-batch.test.ts`
+- Modify: `src/llm-execution.ts`
+- Modify: `src/skill-runtime.ts`
+- Modify: `src/cli.ts`
+
+- [x] Export provider-neutral JSONL requests for primary captioning.
+- [x] Import mocked primary results into caption and routing sidecars.
+- [x] Generate deep-pass JSONL only for accepted-rule `deep` routes.
+- [x] Import mocked deep results without overwriting valid prior sidecars unless `--force`.
+- [x] Reject invalid provider JSON before downstream use.
+- [x] Redact all secrets from manifests, reports and logs.
+- [x] Commit as `feat: add image dataprep batch import export`.
+
+### Lot F - Ontology Output Artifacts
+
+**Files:**
+- Create: `src/ontology-output.ts`
+- Create: `tests/ontology-output.test.ts`
+- Modify: `src/profile-report.ts`
+- Modify: `src/paths.ts`
+- Modify: `src/skill-runtime.ts`
+- Modify: `src/cli.ts`
+
+- [x] Generate `.graphify/ontology/manifest.json` only when ontology outputs are configured.
+- [x] Compile profile-selected canonical candidate nodes into `nodes.json`.
+- [x] Compile alias records into `aliases.json`.
+- [x] Compile profile-valid relations into `relations.json`.
+- [x] Compile source refs and occurrence-like records according to profile declarations.
+- [x] Mark ambiguous canonicalization or alias attachment as `needs_review`.
+- [x] Exclude `needs_review` ambiguity from hardened outputs.
+- [x] Generate entity-centric wiki pages only for configured page node types.
+- [x] Generate `index.json` retrieval projection without prescribing consuming application channel names.
+- [x] Commit as `feat: add optional ontology output artifacts`.
+
+### Lot G - Documentation, Skills, And UAT
+
+**Files:**
+- Modify: `README.md`
+- Modify: translated README files if present
+- Modify: `spec/SPEC_GRAPHIFY.md`
+- Modify: `src/skills/*`
 - Modify: `PLAN.md`
-- Modify: `UPSTREAM_GAP.md`
 
-- [x] **Step 0.1: Merge `0.3.29` PR before parity work**
+- [x] Update README with opt-in image dataprep, LLM execution ports, calibration workflow and ontology outputs.
+- [x] Update specs to reflect final implemented CLI names and artifact paths.
+- [x] Update all assistant skills with calibration analyst workflow and non-disruption rules.
+- [x] Add UATs for baseline no-config behavior, assistant calibration, accepted rules, blocked cascade and ontology output generation.
+- [x] Run `npm run lint`.
+- [x] Run `npm run build`.
+- [x] Run `npm test`.
+- [x] Run `git diff --check`.
+- [ ] Check off completed plan items and commit as `docs: document advanced dataprep workflows`.
 
-Verified:
+### UAT Checklist
 
-```text
-PR #4 state=MERGED
-mergeCommit=83ffcb2
-```
+- [ ] Baseline no-config: run `graphify update .` in a repo without `graphify.yaml` and verify no `.graphify/image-dataprep/` or `.graphify/ontology/` directory is created.
+- [ ] Assistant calibration: run runtime `image-calibration-samples`, let the assistant propose labels/rules, then run `image-calibration-replay` and verify the decision is reviewable.
+- [ ] Accepted rules: set project-owned routing rules to `decision: accept_matrix`, run deep `image-batch-export`, and verify only deterministic `deep` routes are exported.
+- [ ] Blocked cascade: change rules to `pending_labels` or `revise_matrix`, rerun deep `image-batch-export`, and verify it fails before writing production deep requests.
+- [ ] Ontology output: run `graphify profile ontology-output --profile-state .graphify/profile/profile-state.json --input extraction.json --out-dir .graphify/ontology` on a synthetic profile with `outputs.ontology.enabled: true` and verify JSON + wiki artifacts are generated.
 
-- [x] **Step 0.2: Merge release-guard PR before parity work**
+## Scope And Compatibility Rules
 
-Verified:
+- [x] Profile behavior activates only when Graphify discovers a project config, receives `--config`, or receives `--profile`.
+- [x] A committed `graphify.yaml` is an explicit project opt-in. Without config/profile activation, existing commands and skills must behave exactly as they do today.
+- [x] Do not introduce real customer, partner, project, dataset, registry, or proprietary ontology examples into code, docs, fixtures, tests, or package assets.
+- [x] Use synthetic equipment-maintenance fixtures only.
+- [x] Do not add new MCP tools, embeddings, vector stores, databases, remote registry fetching, or a forked PDF/OCR/transcript pipeline in this lot.
+- [x] Reuse `detect()`, `prepareSemanticDetection()`, PDF/OCR sidecars, semantic cache mechanics, `validateExtraction()`, build, report, export, and wiki.
+- [x] Keep `.graphify/` as the state root. Profile artifacts live under `.graphify/profile/`.
+- [x] Keep base `Extraction`, `GraphNode`, `GraphEdge`, and `Hyperedge` backward compatible.
+- [x] Keep profile validation as an additional wrapper. Do not weaken or overload `validateExtraction()`.
+- [x] Keep semantic cache compatible but profile-isolated, so generic cached extraction cannot satisfy profile-aware extraction.
 
-```text
-PR #5 state=MERGED
-mergeCommit=359d652
-```
+## Contradictions Resolved In The Spec
 
-- [x] **Step 0.3: Create parity branch from corrected product branch**
+- [x] `--profile` is not the only activation path. `graphify.yaml` and `--config` are explicit project opt-ins and therefore compatible with the additive contract.
+- [x] `graphify . --config graphify.yaml` must not pretend to perform assistant semantic extraction from a pure local CLI if no assistant/provider path exists. The local CLI/runtime can validate config, run local dataprep, produce prompts, validate fragments, and report; the skill orchestrates assistant extraction.
+- [x] Profile reports and profile artifacts are additive. They do not replace `GRAPH_REPORT.md`, `graph.json`, `graph.html`, or `.graphify/wiki/index.md`.
+
+## File Responsibility Map
+
+- [x] `src/project-config.ts`: discover and load `graphify.yaml`, `graphify.yml`, `.graphify/config.yaml`, `.graphify/config.yml`; resolve physical input paths; normalize dataprep defaults.
+- [x] `src/ontology-profile.ts`: load YAML/JSON ontology profiles; validate semantic constraints; bind profile registry declarations to project config registry sources.
+- [x] `src/profile-registry.ts`: load CSV/JSON/YAML registries; map configured columns to canonical records; convert records to base-valid Graphify extraction fragments.
+- [x] `src/configured-dataprep.ts`: expand configured inputs, apply exclusions, call `detect()` and `prepareSemanticDetection()`, load registries, and write deterministic `.graphify/profile/` artifacts.
+- [x] `src/profile-prompts.ts`: build profile-aware extraction prompts for skills and chunked semantic extraction.
+- [x] `src/profile-validate.ts`: run `validateExtraction()` first, then enforce profile node, relation, citation, status, and registry constraints.
+- [x] `src/profile-report.ts`: write profile QA reports from config, profile, registries, graph, and validation results.
+- [x] `src/paths.ts`: add typed profile artifact paths under `.graphify/profile/`.
+- [x] `src/cache.ts`: add optional profile cache namespace/hash support without changing current generic cache keys.
+- [x] `src/skill-runtime.ts`: expose deterministic runtime commands for skills.
+- [x] `src/cli.ts`: expose minimal public profile/config commands without disrupting existing commands.
+- [x] `src/skills/*`: add the configured-project branch to every distributed assistant skill, with platform-specific syntax preserved.
+- [x] `src/index.ts`: export public profile/config types and helper functions.
+- [x] `tests/fixtures/profile-demo/`: synthetic config, profile, registries, docs, generated-artifact folders, and expected normalized outputs.
+
+---
+
+## Lot 0 - Baseline And Spec Alignment
+
+**Files:**
+- Read: `spec/SPEC_ONTOLOGY_DATAPREP_PROFILES.md`
+- Read: `spec/SPEC_GRAPHIFY.md`
+- Read: `spec/SPEC_PDF_OCR_PREPROCESSING.md`
+- Modify: `PLAN.md`
+- Modify only if contradictory: `spec/SPEC_ONTOLOGY_DATAPREP_PROFILES.md`
+
+- [x] **Step 0.1: Verify working tree before implementation**
 
 Run:
 
 ```bash
-git switch -c chore/upstream-v4-0.4.23-parity origin/v3-typescript
+git status --short --branch
 ```
 
-- [x] **Step 0.4: Add v4 parity rows**
+Expected: only intended docs/spec changes are present before code implementation starts.
 
-`UPSTREAM_GAP.md` now tracks `v0.4.0` through `v0.4.23` with status, plan lot, and catch-up action.
-
-- [x] **Step 0.5: Verify docs-only diff**
+- [x] **Step 0.2: Verify baseline tests before code changes**
 
 Run:
 
 ```bash
+npm run lint
+npm run build
+npm test
 git diff --check
+```
+
+Expected: baseline is green or any pre-existing failure is recorded before implementation starts.
+
+- [x] **Step 0.3: Record the activation rule**
+
+The implementation PR must state:
+
+```text
+Profile activation requires one of: discovered project config, --config, --profile.
+No config/profile activation means no behavior change.
+```
+
+## Lot 1 - Project Config Types And Loader
+
+**Files:**
+- Modify: `src/types.ts`
+- Create: `src/project-config.ts`
+- Modify: `src/index.ts`
+- Create: `tests/project-config.test.ts`
+- Modify: `tests/public-api.test.ts`
+
+- [x] **Step 1.1: Add failing public type/export tests**
+
+Add assertions that `GraphifyProjectConfig`, config loader functions, and normalized config result types are exported from `src/index.ts`.
+
+Run:
+
+```bash
+npx vitest run tests/public-api.test.ts
+```
+
+Expected before implementation: export assertions fail.
+
+- [x] **Step 1.2: Define project config types**
+
+Add additive TypeScript types for:
+
+```text
+GraphifyProjectConfig
+GraphifyProjectConfigProfile
+GraphifyProjectInputs
+GraphifyDataprepPolicy
+GraphifyOutputPolicy
+NormalizedProjectConfig
+ProjectConfigDiscoveryResult
+ProjectConfigValidationIssue
+```
+
+- [x] **Step 1.3: Add config discovery tests**
+
+Cover discovery order:
+
+```text
+graphify.yaml
+graphify.yml
+.graphify/config.yaml
+.graphify/config.yml
+```
+
+Expected: first existing file in the documented order wins.
+
+- [x] **Step 1.4: Implement config discovery and loading**
+
+Implement:
+
+```text
+discoverProjectConfig(root)
+loadProjectConfig(configPath)
+parseProjectConfig(raw, sourcePath)
+normalizeProjectConfig(config, sourcePath)
+validateProjectConfig(config)
+```
+
+- [x] **Step 1.5: Resolve paths relative to config**
+
+Tests must prove:
+
+```text
+profile.path resolves relative to config file
+inputs.corpus resolves relative to config file
+inputs.registries resolves relative to config file
+inputs.generated resolves relative to config file
+inputs.exclude resolves relative to config file
+outputs.state_dir defaults to .graphify
+```
+
+- [x] **Step 1.6: Verify project config loader**
+
+Run:
+
+```bash
+npx vitest run tests/project-config.test.ts tests/public-api.test.ts
+npm run lint
+npm run build
+```
+
+Expected: project config loader tests, lint, and build pass.
+
+## Lot 2 - Ontology Profile Types And Loader
+
+**Files:**
+- Modify: `src/types.ts`
+- Create: `src/ontology-profile.ts`
+- Modify: `src/index.ts`
+- Modify: `package.json`
+- Modify: `package-lock.json`
+- Create: `tests/ontology-profile.test.ts`
+
+- [x] **Step 2.1: Add direct YAML dependency**
+
+Add `yaml` as a direct dependency. Do not rely on transitive dependencies.
+
+- [x] **Step 2.2: Add failing profile loader tests**
+
+Cover:
+
+```text
+valid YAML profile
+valid JSON profile
+missing id
+missing version
+invalid node type map
+invalid relation source type
+invalid relation target type
+registry referencing unknown config registry source
+stable profile hash
+default status from hardening.default_status
+```
+
+- [x] **Step 2.3: Define ontology profile types**
+
+Add:
+
+```text
+OntologyProfile
+OntologyNodeType
+OntologyRelationType
+OntologyRegistrySpec
+OntologyCitationPolicy
+OntologyHardeningPolicy
+OntologyStatus
+ProfileBinding
+```
+
+- [x] **Step 2.4: Implement profile loading**
+
+Implement:
+
+```text
+loadOntologyProfile(profilePath, options)
+parseOntologyProfile(raw, sourcePath)
+normalizeOntologyProfile(profile)
+bindOntologyProfile(profile, normalizedProjectConfig)
+hashOntologyProfile(profile)
+validateOntologyProfile(profile)
+```
+
+- [x] **Step 2.5: Keep semantics separate from paths**
+
+Profile loader may bind named registry sources from project config, but it must not encode project-specific physical path conventions.
+
+- [x] **Step 2.6: Verify ontology profile loader**
+
+Run:
+
+```bash
+npx vitest run tests/ontology-profile.test.ts tests/project-config.test.ts
+npm run lint
+npm run build
+```
+
+Expected: ontology loader tests, config tests, lint, and build pass.
+
+## Lot 3 - Synthetic Fixture Set
+
+**Files:**
+- Create: `tests/fixtures/profile-demo/graphify.yaml`
+- Create: `tests/fixtures/profile-demo/graphify/ontology-profile.yaml`
+- Create: `tests/fixtures/profile-demo/references/components.csv`
+- Create: `tests/fixtures/profile-demo/references/tooling.csv`
+- Create: `tests/fixtures/profile-demo/raw/manuals/manual.md`
+- Create: `tests/fixtures/profile-demo/derived/full-page-screenshots/page-001.png` or text stub if image binary is unnecessary
+- Create: `tests/fixtures/profile-demo/expected/project-config-normalized.json`
+- Create: `tests/fixtures/profile-demo/expected/profile-normalized.json`
+
+- [x] **Step 3.1: Create synthetic project config fixture**
+
+The fixture config must include:
+
+```text
+profile.path
+inputs.corpus
+inputs.registries
+inputs.generated
+inputs.exclude
+dataprep.pdf_ocr
+dataprep.prefer_ocr_markdown
+dataprep.use_extracted_pdf_images
+dataprep.full_page_screenshot_vision
+outputs.state_dir
+```
+
+- [x] **Step 3.2: Create synthetic ontology profile fixture**
+
+Use synthetic types only:
+
+```text
+MaintenanceProcess
+Component
+Procedure
+Tool
+Figure
+```
+
+Use synthetic relations only:
+
+```text
+inspects
+replaces
+requires_tool
+evidences
+depicts
+```
+
+- [x] **Step 3.3: Create synthetic registry fixtures**
+
+Registry rows must use fake IDs and labels such as:
+
+```text
+CMP-001, Demo Filter Cartridge, DFC-001
+TOOL-001, Demo Torque Fixture, DTF-001
+```
+
+- [x] **Step 3.4: Add fixture hygiene check**
+
+Run:
+
+```bash
+rg -n "customer|partner|client|proprietary|confidential|real project|production asset|account" tests/fixtures/profile-demo
 ```
 
 Expected: no output.
 
-- [x] **Step 0.6: Commit traceability bootstrap**
-
-Run:
-
-```bash
-git add PLAN.md UPSTREAM_GAP.md
-git commit -m "plan(v4-parity): target upstream v0.4.23"
-```
-
-## Lot 1 - Input And Language Surface Parity
-
-**Upstream refs:** `v0.4.3`, `v0.4.7`, `v0.4.9`, `v0.4.13`, `v0.4.15`, `v0.4.16`, `v0.4.22`, `v0.4.23`
+## Lot 4 - Registry Loader And Canonical Records
 
 **Files:**
-- Modify: `src/detect.ts`
-- Modify: `src/extract.ts`
-- Modify: `tests/detect.test.ts`
-- Modify or create: extractor fixture tests under `tests/`
-- Modify: `UPSTREAM_GAP.md`
-
-- [x] **Step 1.1: Add failing detection tests for missing extensions**
-
-Add tests proving these files are collected/classified:
-
-```text
-component.vue
-component.svelte
-template.blade.php
-main.dart
-module.v
-module.sv
-script.mjs
-template.ejs
-notes.mdx
-page.html
-```
-
-Run:
-
-```bash
-npx vitest run tests/detect.test.ts
-```
-
-Expected before implementation: at least one new assertion fails for each missing extension group.
-
-- [x] **Step 1.2: Implement detection mapping**
-
-Update extension tables and language routing so:
-
-```text
-.vue, .svelte, .mjs, .ejs => code/web inputs
-.blade.php => PHP/Blade code input
-.dart => Dart code input
-.v, .sv => Verilog/SystemVerilog code input
-.mdx, .html => document inputs
-```
-
-- [x] **Step 1.3: Add extraction fixtures**
-
-Create or extend tests proving extractor output has stable nodes for Vue/Svelte, Blade, Dart, Verilog/SystemVerilog, MJS/EJS, MDX, and HTML.
-
-Run:
-
-```bash
-npx vitest run tests/detect.test.ts tests/extract-call-confidence.test.ts tests/pipeline.test.ts
-```
-
-- [x] **Step 1.4: Update traceability**
-
-Mark these rows covered or intentional-delta as appropriate:
-
-```text
-v0.4.3, v0.4.7, v0.4.9, v0.4.13, v0.4.15, v0.4.16, v0.4.22, v0.4.23
-```
-
-- [x] **Step 1.5: Full verification and commit**
-
-Run:
-
-```bash
-npm run lint
-npm run build
-npm test
-npx graphify hook-rebuild
-git diff --check
-```
-
-Commit:
-
-```bash
-git add src/detect.ts src/extract.ts tests UPSTREAM_GAP.md .graphify
-git commit -m "feat(v4-parity): add upstream language surface coverage"
-```
-
-## Lot 2 - Go Import Node Collision
-
-**Upstream refs:** `v0.4.23`, issue `#431`
-
-**Files:**
-- Modify: `src/extract.ts`
-- Modify or create: Go extractor regression test under `tests/`
-- Modify: `UPSTREAM_GAP.md`
-
-- [x] **Step 2.1: Add failing Go collision test**
-
-Create a fixture with:
-
-```text
-context.go
-main.go importing "context"
-```
-
-Assert the import node ID cannot collide with the local `context.go` node.
-
-Run:
-
-```bash
-npx vitest run tests/extract-call-confidence.test.ts
-```
-
-Expected before implementation: import edge targets the wrong or ambiguous node.
-
-- [x] **Step 2.2: Prefix Go package import IDs**
-
-Update Go import extraction so package imports use a stable namespace such as:
-
-```text
-go_pkg_context
-go_pkg_github_com_owner_pkg
-```
-
-- [x] **Step 2.3: Verify and commit**
-
-Run:
-
-```bash
-npx vitest run tests/extract-call-confidence.test.ts
-npm run lint
-npm run build
-npm test
-npx graphify hook-rebuild
-git diff --check
-```
-
-Commit:
-
-```bash
-git add src/extract.ts tests UPSTREAM_GAP.md .graphify
-git commit -m "fix(v4-parity): avoid Go import node collisions"
-```
-
-## Lot 3 - Safe HTML Export In Runtime Commands
-
-**Upstream refs:** `v0.4.20`, `v0.4.23`, issue `#432`
-
-**Files:**
-- Modify: `src/pipeline.ts`
-- Modify: `src/skill-runtime.ts`
-- Modify or create: runtime/export regression tests under `tests/`
-- Modify: `UPSTREAM_GAP.md`
-
-- [x] **Step 3.1: Add failing large-graph HTML test**
-
-Create a regression where HTML export throws but `graph.json` and `GRAPH_REPORT.md` still write successfully.
-
-Run:
-
-```bash
-npx vitest run tests/pipeline.test.ts tests/serve.test.ts tests/public-api.test.ts
-```
-
-- [x] **Step 3.2: Wrap direct runtime `toHtml()` call sites**
-
-Ensure `build`, `update`, `cluster-only`, and skill-runtime paths treat HTML export as best-effort:
-
-```text
-graph.json survives
-GRAPH_REPORT.md survives
-stale graph.html is removed or clearly not refreshed
-warning is emitted
-process exits successfully
-```
-
-- [x] **Step 3.3: Verify and commit**
-
-Run:
-
-```bash
-npx vitest run tests/pipeline.test.ts tests/serve.test.ts tests/public-api.test.ts
-npm run lint
-npm run build
-npm test
-npx graphify hook-rebuild
-git diff --check
-```
-
-Commit:
-
-```bash
-git add src/pipeline.ts src/skill-runtime.ts tests UPSTREAM_GAP.md .graphify
-git commit -m "fix(v4-parity): keep graph artifacts when html export fails"
-```
-
-## Lot 4 - Search, Report, And Compatibility Guards
-
-**Upstream refs:** `v0.4.9`, `v0.4.13`, `v0.4.15`
-
-**Files:**
-- Modify: `src/analyze.ts`
-- Modify: `src/report.ts`
-- Modify: `src/export.ts`
-- Modify tests under `tests/`
-- Modify: `UPSTREAM_GAP.md`
-
-- [x] **Step 4.1: Add diacritic search regression**
-
-Assert search/lookup behavior treats `Résumé` and `Resume` as matchable where upstream added normalized labels.
-
-- [x] **Step 4.2: Add null-label and hyperedge export regressions**
-
-Assert reports and HTML/canvas export do not crash on missing labels and do not double-apply device-pixel-ratio transforms.
-
-- [x] **Step 4.3: Decide `edges` vs `degree` compatibility**
-
-If changing `godNodes()` from `edges` to `degree` would break the TS public API, keep `edges` and add `degree` as compatibility alias.
-
-- [x] **Step 4.4: Verify and commit**
-
-Run:
-
-```bash
-npx vitest run tests/analyze.test.ts tests/report.test.ts tests/export.test.ts
-npm run lint
-npm run build
-npm test
-npx graphify hook-rebuild
-git diff --check
-```
-
-Commit:
-
-```bash
-git add src/analyze.ts src/report.ts src/export.ts tests UPSTREAM_GAP.md .graphify
-git commit -m "fix(v4-parity): add normalized report compatibility guards"
-```
-
-## Lot 5 - Platform Installer Parity
-
-**Upstream refs:** `v0.4.6`, `v0.4.9`, `v0.4.12`, `v0.4.15`, `v0.4.19`, `v0.4.23`
-
-**Files:**
-- Modify: `src/cli.ts`
-- Modify: `src/skills/*`
-- Modify: `tests/install-preview.test.ts`
-- Modify: `tests/cli.test.ts`
-- Modify: `README.md`
-- Modify translated READMEs if present
-- Modify: `UPSTREAM_GAP.md`
-
-- [x] **Step 5.1: Add install-preview tests for missing platforms**
-
-Add preview assertions for:
-
-```text
-antigravity
-hermes
-kiro
-vscode-copilot-chat
-```
-
-- [x] **Step 5.2: Implement platform templates**
-
-Add install/uninstall/preview support while keeping generated instructions free of platform-inappropriate Claude-only wording.
-
-- [x] **Step 5.3: Refresh version stamp behavior**
-
-Ensure install refreshes stale `.graphify_version` files across known platform skill directories.
-
-- [x] **Step 5.4: Verify and commit**
-
-Run:
-
-```bash
-npx vitest run tests/install-preview.test.ts tests/cli.test.ts tests/codex-integration.test.ts tests/copilot-integration.test.ts
-npm run lint
-npm run build
-npm test
-npx graphify hook-rebuild
-git diff --check
-```
-
-Commit:
-
-```bash
-git add src/cli.ts src/skills tests README.md UPSTREAM_GAP.md .graphify
-git commit -m "feat(v4-parity): add missing upstream assistant platforms"
-```
-
-## Lot 6 - Runtime Command Audit
-
-**Upstream refs:** `v0.4.5`, `v0.4.10`, `v0.4.11`, `v0.4.14`, `v0.4.20`, `v0.4.21`
-
-**Files:**
-- Modify: `src/cli.ts`
-- Modify: `src/mcp.ts`
-- Modify: `src/skill-runtime.ts`
-- Modify command/runtime tests under `tests/`
-- Modify: `UPSTREAM_GAP.md`
-
-- [x] **Step 6.1: Verify MCP blank-line handling**
-
-Add or confirm a test where stdio receives an empty line and does not crash.
-
-- [x] **Step 6.2: Verify bare command parity**
-
-Confirm these commands work without Python-specific wrappers:
-
-```text
-path
-explain
-add
-watch
-update
-cluster-only
-```
-
-- [x] **Step 6.3: Verify update/cluster-only artifact behavior**
-
-Assert `graph.html` is emitted when export succeeds and does not block JSON/report artifacts when export fails.
-
-- [x] **Step 6.4: Verify and commit**
-
-Run:
-
-```bash
-npx vitest run tests/cli.test.ts tests/mcp.test.ts tests/skills.test.ts tests/pipeline.test.ts
-npm run lint
-npm run build
-npm test
-npx graphify hook-rebuild
-git diff --check
-```
-
-Commit:
-
-```bash
-git add src/cli.ts src/mcp.ts src/skill-runtime.ts tests UPSTREAM_GAP.md .graphify
-git commit -m "test(v4-parity): lock runtime command parity"
-```
-
-## Lot 7 - Documentation And Fork Narrative
-
-**Upstream refs:** README/docs through `v0.4.23`
-
-**Files:**
-- Modify: `README.md`
-- Modify translated README files if present
-- Modify: `spec/*.md`
-- Modify: `UPSTREAM_GAP.md`
-- Modify: `PLAN.md`
-
-- [x] **Step 7.1: Refresh README without disrupting fork narrative**
-
-Document imported upstream parity features, retained TS deltas, npm install flow, and release-tag safety.
-
-- [x] **Step 7.2: Refresh translations**
-
-Apply equivalent high-level changes to translated READMEs while preserving localized structure.
-
-- [x] **Step 7.3: Refresh specs**
-
-Update specs to separate:
-
-```text
-upstream Python parity
-TypeScript product deltas
-code-review-graph-inspired additions
-release/publishing contract
-```
-
-- [x] **Step 7.4: Verify and commit**
-
-Run:
-
-```bash
-git diff --check
-```
-
-Commit:
-
-```bash
-git add README.md spec PLAN.md UPSTREAM_GAP.md
-git commit -m "docs(v4-parity): document upstream parity and fork deltas"
-```
-
-## Lot 8 - Version Bump, Release PR, And Publication
-
-**Files:**
-- Modify: `src/serve.ts`
-- Modify: `tests/serve.test.ts`
+- Create: `src/profile-registry.ts`
 - Modify: `package.json`
 - Modify: `package-lock.json`
-- Modify generated skill/version files if present
-- Modify: `PLAN.md`
-- Modify: `UPSTREAM_GAP.md`
+- Create: `tests/profile-registry.test.ts`
 
-- [x] **Step 8.1: Close all active gap rows**
+- [x] **Step 4.1: Add direct CSV dependency**
 
-Before version bump, ensure no active v4 row remains:
+Add `csv-parse` as a direct dependency and use `csv-parse/sync` for deterministic fixture tests.
+
+- [x] **Step 4.2: Add failing registry loader tests**
+
+Cover:
 
 ```text
-missing
-partial
-needs-audit
+CSV registry from configured source
+JSON registry from configured source
+YAML registry from configured source
+id_column mapping
+label_column mapping
+alias_columns mapping
+raw field preservation
+sourceFile provenance
+duplicate record ID rejection
+unknown configured registry source rejection
 ```
 
-- [x] **Step 8.2: Bump package version to `0.4.23`**
+- [x] **Step 4.3: Define canonical registry record**
+
+Implement the spec shape:
+
+```text
+RegistryRecord {
+  registryId
+  id
+  label
+  aliases
+  nodeType
+  sourceFile
+  raw
+}
+```
+
+- [x] **Step 4.4: Implement registry loading**
+
+Implement:
+
+```text
+loadProfileRegistries(binding)
+loadProfileRegistry(registrySpec, sourcePath)
+normalizeRegistryRecord(registrySpec, rawRecord, sourceFile)
+```
+
+- [x] **Step 4.5: Verify registry loader**
 
 Run:
 
 ```bash
-npm version 0.4.23 --no-git-tag-version
+npx vitest run tests/profile-registry.test.ts tests/ontology-profile.test.ts
+npm run lint
+npm run build
 ```
 
-- [x] **Step 8.3: Final local verification**
+Expected: registry loader, profile loader, lint, and build pass.
+
+## Lot 5 - Registry To Graphify Extraction Conversion
+
+**Files:**
+- Modify: `src/profile-registry.ts`
+- Modify: `tests/profile-registry.test.ts`
+- Modify: `tests/validate.test.ts`
+
+- [x] **Step 5.1: Add failing registry extraction tests**
+
+Assert registry records convert to a base-valid `Extraction` with:
+
+```text
+nodes
+edges: []
+hyperedges: []
+input_tokens: 0
+output_tokens: 0
+```
+
+- [x] **Step 5.2: Implement stable registry node IDs**
+
+Use deterministic node IDs:
+
+```text
+registry_<registryId>_<recordId>
+```
+
+Normalize unsafe characters while keeping stable mapping.
+
+- [x] **Step 5.3: Preserve profile attributes on nodes**
+
+Registry node attributes must include:
+
+```text
+node_type
+registry_id
+registry_record_id
+aliases
+status
+profile_id
+profile_version
+profile_hash
+source_file
+file_type: document
+```
+
+- [x] **Step 5.4: Do not infer registry edges by default**
+
+Only create edges when a later explicit profile mapping is introduced. This lot emits registry nodes only.
+
+- [x] **Step 5.5: Verify base validation compatibility**
+
+Run:
+
+```bash
+npx vitest run tests/profile-registry.test.ts tests/validate.test.ts
+```
+
+Expected: registry extraction passes `validateExtraction()`; existing validation tests still pass.
+
+## Lot 6 - Profile Paths And Configured Dataprep
+
+**Files:**
+- Modify: `src/paths.ts`
+- Create: `src/configured-dataprep.ts`
+- Create: `tests/configured-dataprep.test.ts`
+- Modify: `tests/pipeline.test.ts`
+
+- [x] **Step 6.1: Add profile path contract tests**
+
+Expected profile paths:
+
+```text
+.graphify/profile/project-config.normalized.json
+.graphify/profile/ontology-profile.normalized.json
+.graphify/profile/profile-state.json
+.graphify/profile/registries/
+.graphify/profile/registry-extraction.json
+.graphify/profile/semantic-detection.json
+.graphify/profile/dataprep-report.md
+```
+
+- [x] **Step 6.2: Implement profile paths**
+
+Extend `resolveGraphifyPaths()` with a `profile` path group while preserving all existing fields.
+
+- [x] **Step 6.3: Add configured dataprep tests**
+
+Cover:
+
+```text
+configured corpus roots are included
+configured generated roots are included when semantically useful
+configured exclude roots are removed before detection
+full-page screenshot folder is excluded from image semantic extraction when full_page_screenshot_vision is false
+prepareSemanticDetection() is called with configured PDF/OCR policy
+registry extraction is written
+dataprep report is written
+```
+
+- [x] **Step 6.4: Implement configured dataprep**
+
+Implement:
+
+```text
+runConfiguredDataprep(root, options)
+buildConfiguredDetectionInputs(config)
+applyConfiguredExcludes(detection, config)
+writeProfileState(result)
+```
+
+- [x] **Step 6.5: Reuse existing PDF/OCR/transcript pipeline**
+
+`configured-dataprep.ts` must call `prepareSemanticDetection()` and must not import provider-specific OCR modules directly.
+
+- [x] **Step 6.6: Verify dataprep**
+
+Run:
+
+```bash
+npx vitest run tests/configured-dataprep.test.ts tests/pipeline.test.ts
+npm run lint
+npm run build
+```
+
+Expected: configured dataprep tests pass and existing pipeline tests remain unchanged.
+
+## Lot 7 - Profile-Isolated Semantic Cache
+
+**Files:**
+- Modify: `src/cache.ts`
+- Modify: `src/skill-runtime.ts`
+- Create or modify: `tests/cache.test.ts`
+- Modify: `tests/cli-runtime.test.ts`
+
+- [x] **Step 7.1: Add failing cache isolation tests**
+
+Prove:
+
+```text
+generic cache hit does not satisfy profile cache
+profile A cache does not satisfy profile B cache
+same profile hash can reuse profile cache
+generic cache API remains backward compatible
+```
+
+- [x] **Step 7.2: Implement optional cache namespace**
+
+Add optional cache namespace/profile hash parameters to cache helpers. Default behavior must write/read the same paths as today.
+
+- [x] **Step 7.3: Thread namespace through runtime commands**
+
+Add optional `--cache-namespace <value>` or `--profile-state <path>` to semantic cache runtime commands used by profile mode.
+
+- [x] **Step 7.4: Verify cache behavior**
+
+Run:
+
+```bash
+npx vitest run tests/cache.test.ts tests/cli-runtime.test.ts
+npm run lint
+npm run build
+```
+
+Expected: generic cache tests and profile cache isolation tests pass.
+
+## Lot 8 - Profile-Aware Validation
+
+**Files:**
+- Create: `src/profile-validate.ts`
+- Create: `tests/profile-validate.test.ts`
+- Modify: `tests/validate.test.ts`
+- Modify: `src/index.ts`
+
+- [x] **Step 8.1: Add failing validation wrapper tests**
+
+Cover:
+
+```text
+base invalid extraction returns base validation errors
+unknown node_type is an error for profile-aware nodes
+unknown relation is an error
+incompatible source node type is an error
+incompatible target node type is an error
+missing source_file citation is an error when required
+missing page citation is an error when minimum_granularity is page
+registry-backed type without registry link is an error or warning per hardening policy
+generic AST code nodes without node_type are accepted
+```
+
+- [x] **Step 8.2: Implement profile validation wrapper**
+
+Implement:
+
+```text
+validateProfileExtraction(extraction, profileState, options)
+profileValidationResultToMarkdown(result)
+profileValidationResultToJson(result)
+```
+
+The first operation must be `validateExtraction(extraction)`.
+
+- [x] **Step 8.3: Keep issue severities machine-readable**
+
+Use explicit severities:
+
+```text
+error
+warning
+info
+```
+
+- [x] **Step 8.4: Verify profile validation**
+
+Run:
+
+```bash
+npx vitest run tests/profile-validate.test.ts tests/validate.test.ts
+npm run lint
+npm run build
+```
+
+Expected: profile validation is enforced only by the wrapper.
+
+## Lot 9 - Profile Prompt Builder
+
+**Files:**
+- Create: `src/profile-prompts.ts`
+- Create: `tests/profile-prompts.test.ts`
+- Modify: `src/index.ts`
+
+- [x] **Step 9.1: Add failing prompt builder tests**
+
+Assert prompt output includes:
+
+```text
+allowed node types
+allowed relation types
+registry matching rules
+citation policy
+status/hardening rules
+configured input hints
+JSON Extraction output schema
+instruction to avoid invented proprietary ontology content
+chunk-specific document/paper/image guidance
+```
+
+- [x] **Step 9.2: Implement prompt builder**
+
+Implement:
+
+```text
+buildProfileExtractionPrompt(profileState, options)
+buildProfileChunkPrompt(profileState, chunk, options)
+buildProfileValidationPrompt(profileState, extraction, options)
+```
+
+- [x] **Step 9.3: Bound prompt size**
+
+Registry context must include counts and small synthetic-safe samples, not entire large registries.
+
+- [x] **Step 9.4: Verify prompts**
+
+Run:
+
+```bash
+npx vitest run tests/profile-prompts.test.ts
+npm run lint
+npm run build
+```
+
+Expected: prompts are deterministic, profile-aware, and generic.
+
+## Lot 10 - Runtime Commands For Skills
+
+**Files:**
+- Modify: `src/skill-runtime.ts`
+- Modify: `tests/cli-runtime.test.ts`
+
+- [x] **Step 10.1: Add failing runtime command tests**
+
+Add tests for:
+
+```text
+project-config --root <dir> --out <json> --profile-out <json>
+configured-dataprep --root <dir> --config <file> --out-dir .graphify
+profile-prompt --profile-state <file> --out <md>
+profile-validate-extraction --profile-state <file> --input <json> --json
+profile-report --profile-state <file> --graph <graph.json> --out <md>
+```
+
+- [x] **Step 10.2: Implement runtime commands**
+
+Commands must write deterministic files and return non-zero on invalid config/profile/extraction.
+
+- [x] **Step 10.3: Preserve existing runtime commands**
+
+Existing commands such as `detect`, `prepare-semantic-detect`, `check-semantic-cache`, `merge-semantic`, `merge-extraction`, and `finalize-build` must keep their current arguments and behavior.
+
+- [x] **Step 10.4: Verify runtime**
+
+Run:
+
+```bash
+npx vitest run tests/cli-runtime.test.ts
+npm run lint
+npm run build
+```
+
+Expected: new profile runtime commands pass and existing runtime command tests still pass.
+
+## Lot 11 - Public CLI Surface
+
+**Files:**
+- Modify: `src/cli.ts`
+- Modify: `tests/cli.test.ts`
+
+- [x] **Step 11.1: Add failing CLI tests**
+
+Cover:
+
+```text
+graphify profile validate --config graphify.yaml
+graphify profile dataprep . --config graphify.yaml
+graphify profile validate-extraction --profile-state .graphify/profile/profile-state.json --input extraction.json
+graphify profile report --profile-state .graphify/profile/profile-state.json --graph .graphify/graph.json --out .graphify/profile/profile-report.md
+graphify . --config graphify.yaml does not run fake LLM extraction from local CLI
+graphify . without config/profile preserves existing behavior
+```
+
+- [x] **Step 11.2: Implement minimal `profile` namespace**
+
+Add:
+
+```text
+graphify profile validate
+graphify profile dataprep
+graphify profile validate-extraction
+graphify profile report
+```
+
+- [x] **Step 11.3: Add config/profile flags carefully**
+
+If a standalone `graphify <path>` route exists during implementation, add `--config` and `--profile` there. If it does not, add a tested safe path fallback or `build [path]` route without stealing existing subcommands.
+
+- [x] **Step 11.4: Fail clearly without assistant/provider semantic extraction**
+
+The local CLI must not claim to complete profile semantic extraction unless it has actually received/validated extraction JSON or is running inside an assistant skill flow.
+
+- [x] **Step 11.5: Verify CLI**
+
+Run:
+
+```bash
+npx vitest run tests/cli.test.ts tests/cli-runtime.test.ts
+npm run lint
+npm run build
+```
+
+Expected: profile CLI commands pass and existing CLI commands remain unchanged.
+
+## Lot 12 - Assistant Skills Configured-Project Branch
+
+**Files:**
+- Modify: `src/skills/skill-codex.md`
+- Modify: `src/skills/skill.md`
+- Modify: `src/skills/skill-gemini.toml`
+- Modify: `src/skills/skill-opencode.md`
+- Modify: `src/skills/skill-claw.md`
+- Modify: `src/skills/skill-droid.md`
+- Modify: `src/skills/skill-trae.md`
+- Modify: `src/skills/skill-windows.md`
+- Modify: `src/skills/skill-vscode.md`
+- Modify: `src/skills/skill-kiro.md`
+- Modify: `tests/skills.test.ts`
+- Modify: `tests/codex-integration.test.ts`
+
+- [x] **Step 12.1: Add failing skill tests**
+
+Assert every distributed skill includes the same profile/config contract, adapted to its platform invocation syntax:
+
+```text
+config discovery before normal detection
+profile activation rule
+configured-dataprep runtime command
+profile prompt runtime command
+profile validation runtime command
+profile report runtime command
+fallback to existing flow when no config/profile is active
+```
+
+- [x] **Step 12.2: Update Codex skill workflow**
+
+Add a branch:
+
+```text
+if graphify.yaml/.graphify/config.yaml exists or invocation includes --config/--profile:
+  run project-config/configured-dataprep
+  use profile semantic detection and profile prompt
+  run semantic extraction as today
+  validate base extraction
+  validate profile extraction
+  merge registry, AST and semantic extraction
+  finalize through existing build/report/export runtime commands
+  write profile QA report
+else:
+  keep existing non-profile workflow
+```
+
+- [x] **Step 12.3: Propagate equivalent workflow to non-Codex skills**
+
+Apply the same configured-project branch to:
+
+```text
+Claude skill: /graphify syntax
+Gemini skill: TOML command syntax
+OpenCode skill: /graphify syntax
+OpenClaw skill: /graphify syntax
+Factory Droid skill: /graphify syntax
+Trae skill: /graphify syntax
+Windows Claude skill: PowerShell-compatible snippets where present
+VS Code Copilot skill: Copilot instruction wording
+Kiro skill: Kiro skill and steering wording
+```
+
+Do not blindly copy Codex shell snippets into platforms that use different command or shell conventions.
+
+- [x] **Step 12.4: Preserve runtime proof**
+
+Skills that already prove the TypeScript runtime must still verify `.graphify/.graphify_runtime.json` contains `"runtime": "typescript"`. Skills without runtime-proof blocks must still tell users to use the TypeScript package and not Python fallback behavior.
+
+- [x] **Step 12.5: Verify skill updates**
+
+Run:
+
+```bash
+npx vitest run tests/skills.test.ts tests/codex-integration.test.ts
+npm run lint
+npm run build
+```
+
+Expected: skill tests pass, Codex integration tests pass, and every distributed skill documents the configured-project branch as opt-in.
+
+## Lot 13 - Profile QA Report
+
+**Files:**
+- Create: `src/profile-report.ts`
+- Create: `tests/profile-report.test.ts`
+- Modify: `src/index.ts`
+
+- [x] **Step 13.1: Add failing profile report tests**
+
+Assert report includes:
+
+```text
+project config summary
+profile id/version/hash
+configured input summary
+registry coverage
+orphan registry records
+extracted entities without registry attachment
+invalid or ambiguous relations
+high-degree nodes
+low-evidence relation types
+candidates eligible for human review
+PDF/OCR sidecar summary when present
+```
+
+- [x] **Step 13.2: Implement profile report**
+
+Write `.graphify/profile/profile-report.md` or the configured output path. Do not replace `GRAPH_REPORT.md`.
+
+- [x] **Step 13.3: Keep report advisory**
+
+The report is QA and review guidance. It must not label outputs as business-approved truth.
+
+- [x] **Step 13.4: Verify report**
+
+Run:
+
+```bash
+npx vitest run tests/profile-report.test.ts
+npm run lint
+npm run build
+```
+
+Expected: report is deterministic and additive.
+
+## Lot 14 - Synthetic End-To-End Flow
+
+**Files:**
+- Create: `tests/profile-pipeline.test.ts`
+- Modify only if needed: `tests/pipeline.test.ts`
+
+- [x] **Step 14.1: Add synthetic E2E test**
+
+Use `tests/fixtures/profile-demo` to run:
+
+```text
+project config discovery
+ontology profile loading
+registry loading
+registry extraction conversion
+configured dataprep
+profile prompt generation
+profile validation wrapper
+profile report
+graph build with registry and synthetic semantic extraction
+```
+
+- [x] **Step 14.2: Verify graph export preserves profile attributes**
+
+Assert `graph.json` nodes preserve:
+
+```text
+node_type
+registry_id
+registry_record_id
+status
+citations
+```
+
+- [x] **Step 14.3: Verify normal pipeline remains unchanged**
+
+Run the existing pipeline tests alongside profile E2E.
+
+- [x] **Step 14.4: Run E2E verification**
+
+Run:
+
+```bash
+npx vitest run tests/profile-pipeline.test.ts tests/pipeline.test.ts tests/validate.test.ts
+npm run lint
+npm run build
+```
+
+Expected: profile E2E passes and non-profile pipeline/validation tests pass.
+
+## Lot 15 - Skills, READMEs, And Product Spec Updates
+
+**Files:**
+- Re-check: `src/skills/skill-codex.md`
+- Re-check: `src/skills/skill.md`
+- Re-check: `src/skills/skill-gemini.toml`
+- Re-check: `src/skills/skill-opencode.md`
+- Re-check: `src/skills/skill-claw.md`
+- Re-check: `src/skills/skill-droid.md`
+- Re-check: `src/skills/skill-trae.md`
+- Re-check: `src/skills/skill-windows.md`
+- Re-check: `src/skills/skill-vscode.md`
+- Re-check: `src/skills/skill-kiro.md`
+- Modify: `README.md`
+- Modify: `README.ja-JP.md`
+- Modify: `README.zh-CN.md`
+- Modify: `spec/SPEC_GRAPHIFY.md`
+- Modify: `spec/SPEC_ONTOLOGY_DATAPREP_PROFILES.md`
+- Read and modify only if profile/config wording is relevant: `worked/example/README.md`
+- Read and modify only if profile/config wording is relevant: `worked/httpx/README.md`
+- Read and modify only if profile/config wording is relevant: `worked/karpathy-repos/README.md`
+- Read and modify only if profile/config wording is relevant: `worked/mixed-corpus/README.md`
+
+- [x] **Step 15.1: Update README in English**
+
+Document:
+
+```text
+what project config does
+what ontology profiles do
+what registries do
+synthetic example only
+config/profile activation rule
+CLI/runtime commands
+skill-driven full semantic extraction
+profile validation
+profile QA report
+LLM Wiki compatibility
+no behavior change without config/profile
+```
+
+- [x] **Step 15.2: Update translated READMEs**
+
+Mirror the English README changes in:
+
+```text
+README.ja-JP.md
+README.zh-CN.md
+```
+
+Keep translations aligned structurally with `README.md` and preserve the TypeScript fork narrative.
+
+- [x] **Step 15.3: Audit example READMEs**
+
+Read:
+
+```text
+worked/example/README.md
+worked/httpx/README.md
+worked/karpathy-repos/README.md
+worked/mixed-corpus/README.md
+```
+
+Update only the example READMEs that mention run flow, profile/config behavior, skill invocation, `.graphify/`, or semantic extraction. Do not add ontology-profile examples to unrelated worked examples.
+
+- [x] **Step 15.4: Re-check all skills after docs**
+
+After README wording is settled, re-check distributed skills for consistency:
+
+```text
+src/skills/skill-codex.md
+src/skills/skill.md
+src/skills/skill-gemini.toml
+src/skills/skill-opencode.md
+src/skills/skill-claw.md
+src/skills/skill-droid.md
+src/skills/skill-trae.md
+src/skills/skill-windows.md
+src/skills/skill-vscode.md
+src/skills/skill-kiro.md
+```
+
+Expected: no skill contradicts README or claims profile mode runs without config/profile activation.
+
+- [x] **Step 15.5: Update global product spec**
+
+Update `spec/SPEC_GRAPHIFY.md` with:
+
+```text
+maintained branch is main
+configured ontology dataprep profiles are additive
+profile artifacts live under .graphify/profile/
+LLM Wiki remains .graphify/wiki/index.md
+MCP/embeddings/database remain deferred for this feature
+```
+
+- [x] **Step 15.6: Update profile spec after implementation**
+
+Reflect actual command names, artifact paths, cache isolation mechanism, validation behavior, and deferred items.
+
+- [x] **Step 15.7: Verify docs and skills**
+
+Run:
+
+```bash
+git diff --check
+npx vitest run tests/skills.test.ts tests/codex-integration.test.ts
+rg -n "v3[-]typescript|TO[D]O|TB[D]" README.md README.ja-JP.md README.zh-CN.md spec PLAN.md src/skills
+```
+
+Expected: skill tests pass, no stale branch references unless historical, and no placeholder markers.
+
+## Lot 16 - Final Verification, Graph Refresh, And Commit Discipline
+
+**Files:**
+- Modify after code changes: `.graphify/`
+
+- [x] **Step 16.1: Run full test suite**
 
 Run:
 
@@ -510,64 +1224,71 @@ Run:
 npm run lint
 npm run build
 npm test
-npm run test:smoke
-npx graphify hook-rebuild
 git diff --check
 ```
 
-- [x] **Step 8.4: Commit release prep**
+Expected: all pass.
+
+- [x] **Step 16.2: Refresh graph state**
+
+Run after code changes:
+
+```bash
+npx graphify hook-rebuild
+```
+
+Expected: `.graphify/` is current for changed code files.
+
+- [x] **Step 16.3: Inspect graph impact**
 
 Run:
 
 ```bash
-git add src/serve.ts tests/serve.test.ts package.json package-lock.json PLAN.md UPSTREAM_GAP.md .graphify
-git commit -m "release(v4-parity): prepare 0.4.23"
+graphify summary --graph .graphify/graph.json
+graphify review-delta --graph .graphify/graph.json
 ```
 
-- [x] **Step 8.5: Push branch and open PR**
+Expected: profile changes are localized to config/profile/dataprep/validation/skill areas.
 
-Run:
+- [x] **Step 16.4: Commit in coherent lots**
 
-```bash
-git push -u origin chore/upstream-v4-0.4.23-parity
-gh pr create --repo rhanka/graphify --base v3-typescript --head chore/upstream-v4-0.4.23-parity --title "Release 0.4.23 upstream parity" --body-file /tmp/graphify-0.4.23-pr.md
+Use one commit per implementation lot or tightly coupled group:
+
+```text
+types/config loader
+profile loader
+fixtures/registry loader
+dataprep/cache
+validation/prompts
+runtime/CLI/skill
+report/E2E/docs
 ```
 
-Opened PR `#6`: `https://github.com/rhanka/graphify/pull/6`.
+- [x] **Step 16.5: PR checklist**
 
-- [x] **Step 8.6: Merge PR before tagging**
+The PR must state:
 
-Use a merge commit, not squash, if a tag will be pushed from a branch commit.
-
-Merged PR `#6` into `v3-typescript` by merge commit `404fc23`.
-
-- [x] **Step 8.7: Tag only after merge**
-
-After the release PR is merged and local `v3-typescript` is updated:
-
-```bash
-git switch v3-typescript
-git pull --ff-only origin v3-typescript
-git tag v0.4.23
-git push origin v0.4.23
+```text
+profile mode is activated only by config/profile
+fixtures are synthetic
+PDF/OCR/transcript pipeline is reused
+semantic cache is profile-isolated
+base validateExtraction behavior is unchanged
+full semantic extraction remains skill-orchestrated
+profile QA report is additive
+all distributed skills are updated
+README.md and translated READMEs are updated
+non-profile tests pass
 ```
 
-The CI `release-guard` must prove the tag commit is already contained in the default branch before npm publish.
+## Deferred Out Of This Lot
 
-Pushed tag `v0.4.23` on `v3-typescript@5a306e1`.
-GitHub Actions run `24640530280` passed `release-guard`, `publish`, and `post-publish-check`.
-`npm view graphifyy version` returned `0.4.23`.
-
-## Exit Criteria
-
-- [x] PR `#4` and PR `#5` are merged.
-- [x] `UPSTREAM_GAP.md` has closed traceability from upstream Python `v0.3.18` through `v0.4.23`.
-- [x] All active v4 rows are `covered`, `n/a`, or `intentional-delta`.
-- [x] All non-negotiable TypeScript deltas still have tests or explicit final verification.
-- [x] `npm run lint` passes.
-- [x] `npm run build` passes.
-- [x] `npm test` passes.
-- [x] `npm run test:smoke` passes.
-- [x] `npx graphify hook-rebuild` passes.
-- [x] Release PR is merged before tag.
-- [x] `v0.4.23` tag publish passes npm trusted publishing.
+- New MCP profile tools.
+- Embeddings or vector search.
+- Database-backed registries.
+- Remote registry fetching.
+- Proprietary ontology packs.
+- Automatic domain ontology inference.
+- Standalone provider-backed CLI semantic extraction.
+- Separate profile wiki product.
+- New OCR/PDF/transcript pipeline.

@@ -48,6 +48,40 @@ export interface GraphifyLegacyRootScratchPaths {
   oldGraph: string;
 }
 
+export interface GraphifyProfilePaths {
+  dir: string;
+  projectConfig: string;
+  ontologyProfile: string;
+  state: string;
+  registriesDir: string;
+  registryExtraction: string;
+  semanticDetection: string;
+  dataprepReport: string;
+}
+
+export interface GraphifyImageDataprepPaths {
+  dir: string;
+  manifest: string;
+  captionsDir: string;
+  routingDir: string;
+  batchDir: string;
+  importsDir: string;
+  assistantInstructions: string;
+}
+
+export interface GraphifyOntologyOutputPaths {
+  dir: string;
+  manifest: string;
+  nodes: string;
+  aliases: string;
+  relations: string;
+  sources: string;
+  occurrences: string;
+  validation: string;
+  index: string;
+  wikiDir: string;
+}
+
 export interface GraphifyPaths {
   root: string;
   stateDir: string;
@@ -63,6 +97,9 @@ export interface GraphifyPaths {
   memoryDir: string;
   wikiDir: string;
   needsUpdate: string;
+  profile: GraphifyProfilePaths;
+  imageDataprep: GraphifyImageDataprepPaths;
+  ontologyOutput: GraphifyOntologyOutputPaths;
   scratch: GraphifyScratchPaths;
   legacyRootScratch: GraphifyLegacyRootScratchPaths;
 }
@@ -74,6 +111,9 @@ function statePath(root: string, stateDir: string): string {
 export function resolveGraphifyPaths(options: GraphifyPathOptions = {}): GraphifyPaths {
   const root = resolve(options.root ?? ".");
   const stateDir = statePath(root, options.stateDir ?? DEFAULT_GRAPHIFY_STATE_DIR);
+  const profileDir = join(stateDir, "profile");
+  const imageDataprepDir = join(stateDir, "image-dataprep");
+  const ontologyOutputDir = join(stateDir, "ontology");
 
   const scratch: GraphifyScratchPaths = {
     detect: join(stateDir, ".graphify_detect.json"),
@@ -111,6 +151,37 @@ export function resolveGraphifyPaths(options: GraphifyPathOptions = {}): Graphif
     memoryDir: join(stateDir, "memory"),
     wikiDir: join(stateDir, "wiki"),
     needsUpdate: join(stateDir, "needs_update"),
+    profile: {
+      dir: profileDir,
+      projectConfig: join(profileDir, "project-config.normalized.json"),
+      ontologyProfile: join(profileDir, "ontology-profile.normalized.json"),
+      state: join(profileDir, "profile-state.json"),
+      registriesDir: join(profileDir, "registries"),
+      registryExtraction: join(profileDir, "registry-extraction.json"),
+      semanticDetection: join(profileDir, "semantic-detection.json"),
+      dataprepReport: join(profileDir, "dataprep-report.md"),
+    },
+    imageDataprep: {
+      dir: imageDataprepDir,
+      manifest: join(imageDataprepDir, "manifest.json"),
+      captionsDir: join(imageDataprepDir, "captions"),
+      routingDir: join(imageDataprepDir, "routing"),
+      batchDir: join(imageDataprepDir, "batch"),
+      importsDir: join(imageDataprepDir, "imports"),
+      assistantInstructions: join(imageDataprepDir, "assistant-instructions.md"),
+    },
+    ontologyOutput: {
+      dir: ontologyOutputDir,
+      manifest: join(ontologyOutputDir, "manifest.json"),
+      nodes: join(ontologyOutputDir, "nodes.json"),
+      aliases: join(ontologyOutputDir, "aliases.json"),
+      relations: join(ontologyOutputDir, "relations.json"),
+      sources: join(ontologyOutputDir, "sources.json"),
+      occurrences: join(ontologyOutputDir, "occurrences.json"),
+      validation: join(ontologyOutputDir, "validation.json"),
+      index: join(ontologyOutputDir, "index.json"),
+      wikiDir: join(ontologyOutputDir, "wiki"),
+    },
     scratch,
     legacyRootScratch: {
       detect: join(root, ".graphify_detect.json"),

@@ -1,0 +1,71 @@
+id: equipment-maintenance-demo
+version: 1
+default_language: en
+
+node_types:
+  MaintenanceProcess:
+    aliases: [process, maintenance step]
+    status_policy: hardenable
+  Component:
+    aliases: [part, replaceable unit]
+    registry: components
+  Procedure:
+    source_backed: true
+  Tool:
+    aliases: [tool, fixture, software utility]
+    registry: tooling
+  Figure:
+    source_backed: true
+
+relation_types:
+  inspects:
+    source: MaintenanceProcess
+    target: Component
+  replaces:
+    source: MaintenanceProcess
+    target: Component
+  requires_tool:
+    source: MaintenanceProcess
+    target: Tool
+  evidences:
+    source: Procedure
+    target: [MaintenanceProcess, Component, Tool]
+  depicts:
+    source: Figure
+    target: [MaintenanceProcess, Component, Tool]
+
+registries:
+  components:
+    source: components
+    id_column: component_id
+    label_column: component_name
+    alias_columns: [component_code]
+    node_type: Component
+  tooling:
+    source: tooling
+    id_column: tool_id
+    label_column: tool_name
+    alias_columns: [tool_code]
+    node_type: Tool
+
+citation_policy:
+  minimum_granularity: page
+  require_source_file: true
+  allow_bbox: when_available
+
+hardening:
+  statuses: [candidate, attached, needs_review, validated, rejected, superseded]
+  default_status: candidate
+  promotion_requires:
+    - source_citation
+    - allowed_relation_type
+    - registry_match_for_registered_types
+
+outputs:
+  ontology:
+    enabled: true
+    canonical_node_types: [Component, Tool]
+    relation_exports: [requires_tool]
+    wiki:
+      enabled: true
+      page_node_types: [Component]

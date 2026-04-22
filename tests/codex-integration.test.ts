@@ -60,6 +60,12 @@ describe("Codex integration contract", () => {
     expect(skill).toContain("delegated OCR/vision");
     expect(skill).toContain("graphify codex install");
     expect(skill).toContain("codex mcp add graphify");
+    expect(skill).toContain("Configured Project Profiles");
+    expect(skill).toContain("configured-dataprep");
+    expect(skill).toContain("profile-prompt");
+    expect(skill).toContain("profile-validate-extraction");
+    expect(skill).toContain("profile-report");
+    expect(skill).toContain("fallback to the existing non-profile workflow");
     expect(skill).toContain(".graphify/branch.json");
     expect(skill).toContain("graphify migrate-state --dry-run");
     expect(skill).not.toContain(".graphify_python");

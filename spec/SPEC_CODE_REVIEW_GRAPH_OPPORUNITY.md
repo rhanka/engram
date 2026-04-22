@@ -4,7 +4,7 @@
 
 This document records what was adopted, adapted, rejected, and deferred from the cloned code-review-graph project after Graphify TypeScript evolution. It is no longer an opportunity brainstorm.
 
-- Baseline product: Graphify TypeScript on v3-typescript
+- Baseline product: Graphify TypeScript on main
 - Comparison target: code-review-graph clone
 - Outcome: selected review ideas were incorporated without turning Graphify into a code-review-only product
 - Upstream alignment: review additions are TypeScript product deltas and are preserved while the runtime catches up to upstream Python Graphify v0.4.23

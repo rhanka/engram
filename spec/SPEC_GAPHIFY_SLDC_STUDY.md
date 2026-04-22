@@ -4,7 +4,7 @@
 
 This document is the completed SLDC study after implementation. It records what changed, what remained deferred, and what risks remain after moving Graphify TypeScript to the .graphify lifecycle model.
 
-- Product branch: v3-typescript
+- Product branch: main
 - Upstream mirror branch: v3 for the closed Python v3 baseline
 - Active upstream parity target: Python v4 through v0.4.23, tracked in UPSTREAM_GAP.md
 - Runtime state root: .graphify/
@@ -93,7 +93,7 @@ Implemented:
 Implemented:
 
 - README.md, README.zh-CN.md, and README.ja-JP.md describe .graphify/ as local ignored state.
-- README documents v3-typescript as maintained TypeScript branch, v3 as the closed upstream Python mirror, and v4/v0.4.23 as the active parity target.
+- README documents main as the maintained TypeScript branch, v3 as the closed upstream Python mirror, and v4/v0.4.23 as the active parity target.
 - README preserves upstream attribution and TypeScript port positioning.
 - README documents review surfaces, install mutation previews, new assistant platforms, and release-tag publishing safety.
 
@@ -182,7 +182,7 @@ Known acceptable hook-rebuild warnings:
 |---|---|
 | State root | .graphify/ |
 | Legacy path | graphify-out/ read fallback plus graphify migrate-state migration |
-| Product branch | v3-typescript |
+| Product branch | main |
 | Upstream branches | v3 mirrors the closed Python baseline; v4/v0.4.23 is the active parity target |
 | Distribution | npm package graphifyy |
 | Transcription | TypeScript-local faster-whisper-ts + ffmpeg |

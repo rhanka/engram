@@ -16,6 +16,8 @@ import { homedir, platform } from "node:os";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import type Graph from "graphology";
+import type { NormalizedOntologyProfile, NormalizedProjectConfig } from "./types.js";
+import type { ProfileState } from "./configured-dataprep.js";
 import { forEachTraversalNeighbor, loadGraphFromData } from "./graph.js";
 import { safeExecGit } from "./git.js";
 import { resolveGraphInputPath, resolveGraphifyPaths } from "./paths.js";
@@ -60,6 +62,30 @@ function loadCliGraph(graphPath: string): Graph {
     throw new Error(`graph file not found: ${gp}`);
   }
   return loadGraphFromData(JSON.parse(readFileSync(gp, "utf-8")));
+}
+
+function readJson<T>(path: string): T {
+  return JSON.parse(readFileSync(resolve(path), "utf-8")) as T;
+}
+
+function writeJson(path: string, value: unknown): void {
+  const resolved = resolve(path);
+  mkdirSync(dirname(resolved), { recursive: true });
+  writeFileSync(resolved, JSON.stringify(value, null, 2), "utf-8");
+}
+
+function loadCliProfileContext(profileStatePath: string): {
+  profileState: ProfileState;
+  profile: NormalizedOntologyProfile;
+  projectConfig?: NormalizedProjectConfig;
+} {
+  const profileDir = dirname(resolve(profileStatePath));
+  const projectConfigPath = join(profileDir, "project-config.normalized.json");
+  return {
+    profileState: readJson<ProfileState>(profileStatePath),
+    profile: readJson<NormalizedOntologyProfile>(join(profileDir, "ontology-profile.normalized.json")),
+    ...(existsSync(projectConfigPath) ? { projectConfig: readJson<NormalizedProjectConfig>(projectConfigPath) } : {}),
+  };
 }
 
 function findBestMatchingNode(G: Graph, query: string): string | null {
@@ -1422,6 +1448,111 @@ export async function main(): Promise<void> {
     const { planLifecyclePrune } = await import("./lifecycle.js");
     console.log(JSON.stringify(planLifecyclePrune("."), null, 2));
   });
+
+  const profile = program.command("profile").description("Configured ontology dataprep profile commands");
+  profile
+    .command("validate")
+    .description("Validate and normalize graphify.yaml plus its ontology profile")
+    .option("--root <path>", "Workspace root", ".")
+    .option("--config <path>", "Explicit graphify.yaml path")
+    .option("--out <path>", "Optional normalized project config output")
+    .option("--profile-out <path>", "Optional normalized ontology profile output")
+    .action(async (opts) => {
+      const { discoverProjectConfig, loadProjectConfig } = await import("./project-config.js");
+      const { loadOntologyProfile } = await import("./ontology-profile.js");
+      const root = resolve(opts.root);
+      const configPath = opts.config ? resolve(opts.config) : discoverProjectConfig(root).path;
+      if (!configPath) {
+        console.error(`error: no graphify project config found under ${root}`);
+        process.exit(1);
+      }
+      const projectConfig = loadProjectConfig(configPath);
+      const ontologyProfile = loadOntologyProfile(projectConfig.profile.resolvedPath, { projectConfig });
+      if (opts.out) writeJson(opts.out, projectConfig);
+      if (opts.profileOut) writeJson(opts.profileOut, ontologyProfile);
+      console.log(`Profile config valid: ${ontologyProfile.id}`);
+    });
+
+  profile
+    .command("dataprep [path]")
+    .description("Run deterministic local dataprep for a configured ontology profile")
+    .option("--config <path>", "Explicit graphify.yaml path")
+    .option("--out-dir <path>", "State output directory relative to root or absolute")
+    .action(async (profilePath = ".", opts) => {
+      const { runConfiguredDataprep } = await import("./configured-dataprep.js");
+      const result = await runConfiguredDataprep(resolve(profilePath), {
+        ...(opts.config ? { configPath: resolve(opts.config) } : {}),
+        ...(opts.outDir ? { stateDir: opts.outDir } : {}),
+      });
+      console.log(
+        `Profile dataprep: ${result.semanticDetection.total_files} semantic file(s), ` +
+        `${result.registryExtraction.nodes.length} registry node(s)`,
+      );
+    });
+
+  profile
+    .command("validate-extraction")
+    .description("Validate an extraction JSON against profile artifacts")
+    .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
+    .requiredOption("--input <path>", "Extraction JSON to validate")
+    .option("--json", "Print JSON instead of markdown")
+    .action(async (opts) => {
+      const { validateProfileExtraction, profileValidationResultToMarkdown } = await import("./profile-validate.js");
+      const context = loadCliProfileContext(opts.profileState);
+      const extraction = readJson<unknown>(opts.input);
+      const result = validateProfileExtraction(extraction, { profile: context.profile });
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(profileValidationResultToMarkdown(result));
+      }
+      if (!result.valid) process.exit(1);
+    });
+
+  profile
+    .command("report")
+    .description("Write an additive profile report")
+    .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
+    .requiredOption("--graph <path>", "Graph JSON path")
+    .requiredOption("--out <path>", "Report markdown output path")
+    .action(async (opts) => {
+      const { buildProfileReport } = await import("./profile-report.js");
+      const context = loadCliProfileContext(opts.profileState);
+      const report = buildProfileReport({
+        profileState: context.profileState,
+        profile: context.profile,
+        ...(context.projectConfig ? { projectConfig: context.projectConfig } : {}),
+        graph: readJson<{ nodes?: unknown[]; links?: unknown[] }>(opts.graph),
+      });
+      mkdirSync(dirname(resolve(opts.out)), { recursive: true });
+      writeFileSync(resolve(opts.out), report, "utf-8");
+      console.log(`Profile report written to ${resolve(opts.out)}`);
+    });
+
+  profile
+    .command("ontology-output")
+    .description("Compile optional profile-declared ontology output artifacts")
+    .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
+    .requiredOption("--input <path>", "Extraction JSON to compile")
+    .requiredOption("--out-dir <path>", "Ontology output directory")
+    .action(async (opts) => {
+      const { compileOntologyOutputs } = await import("./ontology-output.js");
+      const context = loadCliProfileContext(opts.profileState);
+      const result = compileOntologyOutputs({
+        outputDir: resolve(opts.outDir),
+        extraction: readJson(opts.input),
+        profile: context.profile,
+        config: context.profile.outputs.ontology,
+      });
+      if (!result.enabled) {
+        console.log("Ontology outputs disabled by profile config");
+        return;
+      }
+      console.log(
+        `Ontology outputs: ${result.nodeCount} node(s), ${result.relationCount} relation(s), ` +
+        `${result.wikiPageCount} wiki page(s)`,
+      );
+    });
 
   // MCP server
   program

@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja-JP.md)
 
-[![TypeScript CI](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=v3-typescript)](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml)
+[![TypeScript CI](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=main)](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml)
 
 **An AI coding assistant skill.** Type `/graphify` in Claude Code, Gemini CLI, VS Code Copilot Chat, GitHub Copilot CLI, Aider, OpenCode, OpenClaw, Factory Droid, Trae, Kiro, or Google Antigravity, or `$graphify` in Codex - it reads your files, builds a knowledge graph, and gives you back structure you didn't know was there. Understand a codebase faster. Find the "why" behind architectural decisions.
 
@@ -12,7 +12,7 @@ Multimodal, with the TypeScript port tracked release-by-release against upstream
 
 ## Branch Model
 
-- `v3-typescript` is the maintained TypeScript product branch and the default branch for this repository.
+- `main` is the maintained TypeScript product branch and the default branch for this repository.
 - `v3` is kept as an upstream mirror / alignment branch for the original Python Graphify lineage.
 - Current catch-up work tracks upstream Python Graphify `v4` through `v0.4.23`; parity gaps stay explicit instead of being hidden in the fork.
 - npm publication is guarded by GitHub Actions trusted publishing. Release tags are only valid when the tagged commit is already contained in the default branch and the tag version matches `package.json`.
@@ -22,7 +22,7 @@ Multimodal, with the TypeScript port tracked release-by-release against upstream
 | Source | What this repo keeps or adapts | Alignment contract |
 |---|---|---|
 | Original Graphify by [Safi Shamsi](https://github.com/safishamsi/graphify) | Core product idea: folder -> knowledge graph, assistant skill workflow, graph/report/html outputs, provenance labels, community detection, and multimodal corpus workflow. | `v3` mirrors upstream Python Graphify; `UPSTREAM_GAP.md` tracks `v4` parity through `v0.4.23`. |
-| This TypeScript port | npm package, TypeScript runtime at repo root, `.graphify/` state, multi-assistant installers, MCP surfaces, git/worktree lifecycle, and local audio/video transcription through the TS toolchain. | `v3-typescript` is the maintained default branch; TS-specific behavior is documented as deliberate divergence, not upstream parity. |
+| This TypeScript port | npm package, TypeScript runtime at repo root, `.graphify/` state, multi-assistant installers, MCP surfaces, git/worktree lifecycle, and local audio/video transcription through the TS toolchain. | `main` is the maintained default branch; TS-specific behavior is documented as deliberate divergence, not upstream parity. |
 | `code-review-graph` reference | Review-oriented graph projections: first-hop summary, review delta, review analysis, review evaluation, install previews, and advisory commit grouping vocabulary. | Adopted as additive review surfaces over Graphify's graph; Graphify does not become review-only, does not adopt SQLite/embeddings as default, and keeps multimodal support. |
 
 > Andrej Karpathy keeps a `/raw` folder where he drops papers, tweets, screenshots, and notes. graphify is the answer to that problem - 71.5x fewer tokens per query vs reading the raw files, persistent across sessions, honest about what it found vs guessed.
@@ -216,7 +216,7 @@ That gives the assistant structured graph access for repeated queries such as
 
 ```bash
 mkdir -p ~/.claude/skills/graphify
-curl -fsSL https://raw.githubusercontent.com/rhanka/graphify/v3-typescript/src/skills/skill.md \
+curl -fsSL https://raw.githubusercontent.com/rhanka/graphify/main/src/skills/skill.md \
   > ~/.claude/skills/graphify/SKILL.md
 ```
 
@@ -319,6 +319,23 @@ graphify review-analysis --files src/auth.ts --graph .graphify/graph.json
 graphify review-eval --cases .graphify/review-cases.json --graph .graphify/graph.json
 graphify recommend-commits --files src/auth.ts,src/session.ts --graph .graphify/graph.json
 graphify query "..." --graph path/to/graph.json
+
+# configured ontology dataprep profiles - explicit opt-in through config/profile
+graphify profile validate --config graphify.yaml \
+  --out .graphify/profile/project-config.normalized.json \
+  --profile-out .graphify/profile/ontology-profile.normalized.json
+graphify profile dataprep . --config graphify.yaml
+graphify profile validate-extraction \
+  --profile-state .graphify/profile/profile-state.json \
+  --input extraction.json
+graphify profile report \
+  --profile-state .graphify/profile/profile-state.json \
+  --graph .graphify/graph.json \
+  --out .graphify/profile/profile-report.md
+graphify profile ontology-output \
+  --profile-state .graphify/profile/profile-state.json \
+  --input extraction.json \
+  --out-dir .graphify/ontology
 ```
 
 Works with any mix of file types:
@@ -343,6 +360,28 @@ URL ingestion still goes through `yt-dlp`; local audio/video decoding is handled
 PDFs are never sent to OCR blindly. `GRAPHIFY_PDF_OCR` controls the behavior: `auto` (default) runs a local `pdf-parse` preflight with `pdftotext` fallback when available, and calls `mistral-ocr` only when the PDF has too little extractable text; `off` keeps the original PDF as-is; `always` forces Mistral OCR; `dry-run` records the preflight decision without calling the API. Use `GRAPHIFY_PDF_OCR_MODEL` to override the Mistral model. Mistral OCR requires `MISTRAL_API_KEY`; if the key is missing in `auto` mode, graphify warns and leaves the source PDF in the semantic input instead of failing the run.
 
 Generated PDF sidecars are written under `.graphify/converted/pdf/` with provenance frontmatter pointing back to the original PDF. The sidecars then flow through the normal document semantic extraction path. If OCR produces image artifacts for figures, tables, diagrams, or embedded text, graphify adds those artifacts to semantic image inputs; the skills instruct the assistant to decode them with platform vision by default, or with a configured delegated OCR/vision provider, keeping the link back to the source PDF.
+
+### Configured ontology dataprep profiles
+
+Profile mode is strictly additive. It activates only when graphify discovers `graphify.yaml`, `graphify.yml`, `.graphify/config.yaml`, or `.graphify/config.yml`, or when you pass an explicit `--config`/`--profile` option. Without that activation, normal graphify behavior is unchanged.
+
+A project config describes physical inputs: corpus folders, generated-but-semantic sidecars, registry files, exclusions, PDF/OCR policy, and output state under `.graphify/`. An ontology profile describes semantic constraints: allowed node types, relation types, citation requirements, review statuses, and named registry bindings. Registries can be CSV, JSON, or YAML; they are normalized into ordinary Graphify extraction fragments with stable IDs and profile attributes.
+
+The local CLI/runtime covers deterministic steps only:
+
+```bash
+graphify profile validate --config graphify.yaml
+graphify profile dataprep . --config graphify.yaml
+graphify profile validate-extraction --profile-state .graphify/profile/profile-state.json --input extraction.json
+graphify profile report --profile-state .graphify/profile/profile-state.json --graph .graphify/graph.json --out .graphify/profile/profile-report.md
+graphify profile ontology-output --profile-state .graphify/profile/profile-state.json --input extraction.json --out-dir .graphify/ontology
+```
+
+Assistant skills use the same runtime via `project-config`, `configured-dataprep`, `profile-prompt`, `profile-validate-extraction`, `profile-report`, and `ontology-output`. Full semantic extraction remains skill-orchestrated: the assistant reads the profile prompt, extracts profile-shaped Graphify JSON, validates it with the base schema plus profile rules, then merges it through the existing graph build/report/export/wiki flow.
+
+Advanced image dataprep is also opt-in through `dataprep.image_analysis.enabled`. In assistant mode, Graphify writes manifests and instructions only; Codex, Claude, Gemini, or another assistant can caption crops and propose calibration labels, but TypeScript replay owns deterministic acceptance. In batch mode, the runtime can export provider-neutral primary JSONL requests, import normalized caption/routing sidecars, and export a deep-pass JSONL only when project-owned routing rules declare `decision: accept_matrix`. Existing valid sidecars are not overwritten unless `--force` is explicitly used.
+
+Profile artifacts live under `.graphify/profile/`, image dataprep artifacts under `.graphify/image-dataprep/`, calibration proposals under `.graphify/calibration/`, and optional profile-declared ontology artifacts under `.graphify/ontology/`. Semantic cache entries are isolated by profile hash, and the normal LLM Wiki remains `.graphify/wiki/index.md`. Graphify ships only synthetic profile examples and fixtures; real project configs, registries, labels, routing rules, and proprietary ontologies belong in consuming repositories. MCP-specific profile tools, embeddings, databases, remote registries, and a resident LLM backend are deferred.
 
 ## What you get
 

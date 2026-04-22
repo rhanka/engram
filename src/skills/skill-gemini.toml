@@ -224,6 +224,24 @@ When you finish, give the user:
 - the runtime proof (`typescript`)
 - the key output files that were produced or reused
 
+## Configured Project Profiles
+
+The profile activation rule is explicit: use this branch only when `graphify.yaml`, `graphify.yml`, `.graphify/config.yaml`, or `.graphify/config.yml` exists, or the invocation includes `--config` or `--profile`. If none is active, fallback to the existing non-profile workflow.
+
+Configured profile workflow:
+1. Keep the TypeScript runtime proof in `.graphify/.graphify_runtime.json`; it must contain `"runtime": "typescript"`.
+2. Run `project-config` to normalize config/profile artifacts.
+3. Run the `configured-dataprep` runtime command to produce `.graphify/profile/profile-state.json`, semantic detection, and registry extraction.
+4. Run the `profile-prompt` runtime command and use that prompt for assistant semantic extraction.
+5. Run base extraction validation, then the `profile-validate-extraction` runtime command.
+6. Merge `.graphify/profile/registry-extraction.json` with AST and semantic extraction, then finalize through the existing build/report/export runtime commands.
+7. Run the `profile-report` runtime command to write `.graphify/profile/profile-report.md`.
+8. If `dataprep.image_analysis.enabled` is true, use `image-calibration-samples` and `image-calibration-replay` for calibration. The assistant may propose labels or rule changes, but TypeScript replay owns acceptance.
+9. For batch image analysis, use `image-batch-export` and `image-batch-import`. A deep-pass export is allowed only when project-owned routing rules declare `decision: accept_matrix`; do not make production route decisions in the assistant.
+10. If the profile declares `outputs.ontology.enabled: true`, run `ontology-output` to compile `.graphify/ontology/` after validated extraction exists.
+
+Do not add MCP, embeddings, databases, direct provider SDKs, a resident LLM backend, or a forked OCR/PDF pipeline for this branch.
+
 ## Lifecycle State
 
 - Runtime state lives under `.graphify/`; do not create legacy visible state directories.
