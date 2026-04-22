@@ -5,6 +5,96 @@ import Graph from "graphology";
 import type { GodNodeEntry, SurpriseEntry, SuggestedQuestion, DetectionResult } from "./types.js";
 import { type NumericMapLike, toNumericMap } from "./collections.js";
 import { isFileNode, isConceptNode } from "./analyze.js";
+import type { AffectedFlowsResult, ReviewFlow, ReviewFlowArtifact } from "./flows.js";
+
+export interface ReportHighRiskNode {
+  name: string;
+  file?: string | null;
+  riskScore?: number | null;
+  reason?: string | null;
+}
+
+export interface ReportTestGap {
+  name: string;
+  file?: string | null;
+  reason?: string | null;
+}
+
+export interface ReportReviewOptions {
+  flows?: ReviewFlowArtifact | ReviewFlow[] | null;
+  affectedFlows?: AffectedFlowsResult | ReviewFlow[] | null;
+  highRiskNodes?: ReportHighRiskNode[] | null;
+  testGaps?: ReportTestGap[] | null;
+}
+
+export interface GenerateReportOptions {
+  suggestedQuestions?: SuggestedQuestion[] | null;
+  review?: ReportReviewOptions | null;
+}
+
+function compareFlowCriticality(a: ReviewFlow, b: ReviewFlow): number {
+  return b.criticality - a.criticality || a.name.localeCompare(b.name);
+}
+
+function normalizeFlows(input?: ReviewFlowArtifact | ReviewFlow[] | null): ReviewFlow[] {
+  if (!input) return [];
+  return Array.isArray(input) ? input : input.flows;
+}
+
+function normalizeAffectedFlows(input?: AffectedFlowsResult | ReviewFlow[] | null): ReviewFlow[] {
+  if (!input) return [];
+  return Array.isArray(input) ? input : input.affectedFlows;
+}
+
+function formatFlow(flow: ReviewFlow): string {
+  const files = flow.files.length > 0 ? ` · files ${flow.files.join(", ")}` : "";
+  return `- **${flow.name}** entry=\`${flow.entryPoint}\` criticality ${flow.criticality.toFixed(4)} ` +
+    `depth ${flow.depth} · nodes ${flow.nodeCount}${files}`;
+}
+
+function appendReviewSections(lines: string[], review?: ReportReviewOptions | null): void {
+  if (!review) return;
+
+  const topFlows = [...normalizeFlows(review.flows)].sort(compareFlowCriticality).slice(0, 5);
+  if (topFlows.length > 0) {
+    lines.push("## Execution Flows");
+    for (const flow of topFlows) lines.push(formatFlow(flow));
+    lines.push("");
+  }
+
+  const affectedFlows = [...normalizeAffectedFlows(review.affectedFlows)].sort(compareFlowCriticality).slice(0, 8);
+  if (affectedFlows.length > 0) {
+    lines.push("## Affected Flows");
+    if (review.affectedFlows && !Array.isArray(review.affectedFlows)) {
+      lines.push(`Changed files: ${review.affectedFlows.changedFiles.join(", ") || "none"}`);
+    }
+    for (const flow of affectedFlows) lines.push(formatFlow(flow));
+    lines.push("");
+  }
+
+  const highRiskNodes = review.highRiskNodes ?? [];
+  if (highRiskNodes.length > 0) {
+    lines.push("## High-Risk Nodes");
+    for (const node of highRiskNodes.slice(0, 12)) {
+      const file = node.file ? ` · \`${node.file}\`` : "";
+      const score = node.riskScore != null ? ` · risk ${node.riskScore.toFixed(4)}` : "";
+      const reason = node.reason ? ` · ${node.reason}` : "";
+      lines.push(`- **${node.name}**${file}${score}${reason}`);
+    }
+    lines.push("");
+  }
+
+  const testGaps = review.testGaps ?? [];
+  if (testGaps.length > 0) {
+    lines.push("## Test Gaps");
+    for (const gap of testGaps.slice(0, 12)) {
+      const file = gap.file ? ` · \`${gap.file}\`` : "";
+      const reason = gap.reason ? ` · ${gap.reason}` : "";
+      lines.push(`- **${gap.name}**${file}${reason}`);
+    }
+    lines.push("");
+  }
+}
 
 export function generate(
   G: Graph,
@@ -18,7 +108,7 @@ export function generate(
   root: string,
   suggestedQuestions?:
     | SuggestedQuestion[]
-    | { suggestedQuestions?: SuggestedQuestion[] | null }
+    | GenerateReportOptions
     | null,
 ): string {
   const communityMap = toNumericMap(communities);
@@ -27,6 +117,9 @@ export function generate(
   const suggestedQuestionList = Array.isArray(suggestedQuestions)
     ? suggestedQuestions
     : (suggestedQuestions?.suggestedQuestions ?? null);
+  const reviewOptions = Array.isArray(suggestedQuestions)
+    ? null
+    : (suggestedQuestions?.review ?? null);
   const today = new Date().toISOString().slice(0, 10);
 
   const confidences: string[] = [];
@@ -71,8 +164,11 @@ export function generate(
       (infAvg !== null ? ` · INFERRED: ${infEdges.length} edges (avg confidence: ${infAvg})` : ""),
     `- Token cost: ${tokenCost.input.toLocaleString()} input · ${tokenCost.output.toLocaleString()} output`,
     "",
-    "## God Nodes (most connected - your core abstractions)",
   );
+
+  appendReviewSections(lines, reviewOptions);
+
+  lines.push("## God Nodes (most connected - your core abstractions)");
 
   godNodeList.forEach((node, i) => {
     const degree = node.degree ?? node.edges;

@@ -4,15 +4,22 @@ This document tracks the delta between this TypeScript port and upstream Python 
 
 ## Scope
 
-- Current TypeScript product branch: `v3-typescript`
-- Current working branch: `chore/upstream-v4-0.4.23-parity`
-- Current release PR: `#4` (`Release 0.3.29 with TypeScript faster-whisper runtime`) was merged on 2026-04-19 by merge commit `83ffcb2`.
-- Current release safety PR: `#5` (`Guard npm publish behind merged release tags`) was merged on 2026-04-19 by merge commit `359d652`.
-- Current TypeScript npm release: `graphifyy@0.3.29`
+- Current TypeScript product branch: `main`
+- Current TypeScript baseline: `b1e2e5a2728167f483a0ec52a3221cc7249a50d2`
+- Current TypeScript npm release: `graphifyy@0.4.25`
+- Durable traceability spec: `spec/SPEC_UPSTREAM_TRACEABILITY.md`
 - Closed upstream `v3` baseline: `upstream/v3` at `699e996`
-- Active upstream parity target: `upstream/v4` tag `v0.4.23` at `8d908c5`
-- Upstream `upstream/v4` head after tag: `7a0a5ac`, containing README badge-only commits after `v0.4.23`
-- Target TypeScript release: direct bump to `0.4.23` after parity is complete
+- Closed Python parity target: remote tag `v0.4.23` at `8d908c5d43d079579604a82873fd7cff33a1b343`
+- Active Python drift target: remote tag `v0.4.27` / `upstream/v4` at `64e4c64d7bec574e5a56c1f0b9219e543ddbb5f3`
+- Active CRG review reference: `tirth8205/code-review-graph` tag `v2.3.2` at `db2d2df789c25a101e33477b898c1840fb4c7bc7`
+- Current implementation branch for traceability work: `feat/upstream-traceability-crg`
+
+## Source Lock Notes
+
+- `git ls-remote` is the authority for Safi Python tags while local tag clobber risk exists.
+- Local `refs/tags/v0.4.23` is not trusted for parity claims because it differs from the remote tag observed by `git ls-remote`.
+- Python `upstream/v4` was fetched on 2026-04-22 and now points to `64e4c64d7bec574e5a56c1f0b9219e543ddbb5f3`.
+- CRG `v2.3.2` remains the stable review-feature source. CRG `main` has advanced and is intentionally deferred until a new spec updates the source lock.
 
 ## Fork Guardrail
 
@@ -35,6 +42,9 @@ These local additions are intentional deltas and must be preserved:
 - `partial`: equivalent behavior exists, but parity is incomplete or not fully tested
 - `missing`: not present in the TypeScript port
 - `needs-audit`: likely covered or intentionally different, but not yet verified carefully
+- `needs-review`: upstream moved or behavior is not yet mapped to local implementation/tests
+- `deferred`: valid upstream concept, but not in the active implementation scope
+- `rejected`: intentionally not adopted
 - `n/a`: upstream fix targeted Python-only behavior that does not map to the TypeScript runtime
 - `intentional-delta`: TypeScript port deliberately differs while preserving the same user-level contract
 
@@ -59,7 +69,7 @@ This table is retained for history. It should stay closed unless upstream rewrit
 
 ## Active v4 Release Gap Table
 
-The target is direct TypeScript release `0.4.23`. Rows must not remain `missing`, `partial`, or `needs-audit` before release.
+The TypeScript port has already shipped the original direct `0.4.23` parity target. Rows below are retained as the closed v4 parity table. New Python drift after `v0.4.23` is tracked in the next section and must not be treated as covered until reviewed.
 
 | Upstream ref | Upstream scope | TS status | Plan lot | Catch-up action |
 | --- | --- | --- | --- | --- |
@@ -89,18 +99,31 @@ The target is direct TypeScript release `0.4.23`. Rows must not remain `missing`
 | `v0.4.23` / `42599a7`, `8d908c5`, `baa4474` | refresh all version stamps, `.html` documents, safe large-graph HTML export, Go import node ID collision, pipx docs | `covered` | Lot 1, Lot 2, Lot 3, Lot 8 | `.html` document detection is covered by Lot 1. Go import prefixing is covered by Lot 2. Safe HTML export is covered by Lot 3. npm/global install docs are covered by Lot 7. Package and MCP server version stamps now read `0.4.23` from `package.json`. |
 | post-`v0.4.23` / `04790e2`, `dc1158b`, `7a0a5ac` | README download badge changes only | `n/a` | Lot 8 | Not part of TypeScript runtime parity; optionally ignore or adapt docs without copying Python download badges. |
 
+## Active Python v4 Drift After TypeScript `0.4.25`
+
+This table starts from the remote Python `v0.4.23` source lock and tracks current `upstream/v4` through remote tag `v0.4.27`.
+
+| Upstream ref | Upstream scope | TS status | Plan lot | Catch-up action |
+| --- | --- | --- | --- | --- |
+| `v0.4.24` / `2b8c08f` | version bump after fixes; later release-line commits include cache hashing, hook handling, watch output, semantic cache directory handling, sensitive directory false-positive fix, label crash guards, and packaging/interpreter docs | `needs-review` | F2 drift audit | Audit against TS cache, hook, watch, security, export, and packaging tests before marking covered. |
+| docs/translations commits / `53d516f`..`5a0c167` | multilingual README expansion and move to `docs/translations/` | `deferred` | separate docs lot | Do not mix translation relocation into runtime parity. Decide separately whether the TS README translation strategy should follow upstream. |
+| `v0.4.25` / `cc917a7` | empty-community report fixes; graph-query CLI rules in installed instructions | `needs-review` | F2 drift audit | Audit TS `report.ts` empty-community behavior and skill/query guidance. |
+| `v0.4.26` / `7891fa8` | wiki encoding and slug collision fixes; hook rebase guard; detect path resolution; README `.gitignore` docs | `needs-review` | F2 drift audit | Audit TS wiki slug/encoding behavior, hook branch safety, detect path resolution, and README guidance. |
+| `v0.4.27` / `64e4c64` | deterministic large-graph `GRAPH_REPORT`, stable edge node IDs, corrected common-root inference | `needs-review` | F2 drift audit | Create parity implementation lots if TS lacks deterministic report ordering, stable extracted edge IDs, or matching common-root inference. |
+
 ## Release Gate
 
-Before publishing TypeScript `0.4.23`:
+Before claiming catch-up through Python `v0.4.27` or publishing a TypeScript parity release:
 
-- all active v4 rows must be `covered`, `n/a`, or `intentional-delta`
+- all active Python drift rows must be `covered`, `n/a`, `deferred`, `rejected`, or `intentional-delta`
+- no row may remain `missing`, `partial`, `needs-audit`, or `needs-review`
 - `PLAN.md` exit criteria must be checked
 - `npm run lint` must pass
 - `npm run build` must pass
 - `npm test` must pass
-- `npm run test:smoke` must pass
-- `npx graphify hook-rebuild` must pass
-- GitHub Actions tag publish and post-publish npm install check must pass
+- `npm run test:smoke` must pass when runtime/package behavior changed
+- `npx graphify hook-rebuild` must pass after code changes
+- GitHub Actions release and post-publish npm install checks must pass for release commits
 
 ## Branching Rule
 

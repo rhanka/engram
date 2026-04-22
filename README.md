@@ -50,6 +50,8 @@ If an older repo still has `graphify-out/`, run `graphify migrate-state --dry-ru
 
 `graphify review-analysis` adds review-specific views for blast radius, bridge nodes, test-gap hints, impacted communities, and multimodal/doc regression safety. `graphify review-eval` measures token savings versus naive file reads, impacted-file recall, review summary precision, and multimodal regression safety from JSON cases.
 
+Review benchmarks are deterministic local fixtures, not a universal quality guarantee. Review impact rules intentionally favor recall over precision, and false positives are reported instead of hidden. Flow quality depends on parser and call-direction metadata; it is weaker when language support is fallback-only or when directed calls cannot be recovered. Token metrics are estimates unless backed by actual model calls.
+
 Add a `.graphifyignore` file to exclude folders you don't want in the graph:
 
 ```

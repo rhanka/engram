@@ -47,6 +47,28 @@ function writeGraph(dir: string): string {
   return graphPath;
 }
 
+function writeFlowGraph(dir: string): string {
+  const graphDir = join(dir, ".graphify");
+  mkdirSync(graphDir, { recursive: true });
+  const graphPath = join(graphDir, "graph.json");
+  writeFileSync(
+    graphPath,
+    JSON.stringify({
+      directed: true,
+      graph: {},
+      nodes: [
+        { id: "src/app.ts::main", label: "main", kind: "Function", qualified_name: "src/app.ts::main", source_file: "src/app.ts", line_start: 1, line_end: 5 },
+        { id: "src/service.ts::run", label: "run", kind: "Function", qualified_name: "src/service.ts::run", source_file: "src/service.ts", line_start: 7, line_end: 12 },
+      ],
+      links: [
+        { source: "src/app.ts::main", target: "src/service.ts::run", relation: "calls", confidence: "EXTRACTED", source_file: "src/app.ts" },
+      ],
+    }, null, 2),
+    "utf-8",
+  );
+  return graphPath;
+}
+
 async function runCli(args: string[], cwd: string, options: { interceptExit?: boolean } = {}) {
   const { main } = await import("../src/cli.js");
   return runMain(() => main(), ["node", "graphify", ...args], cwd, options);
@@ -168,6 +190,102 @@ describe("public CLI runtime command parity", () => {
     expect(result.logs.join("\n")).toContain("graph.html updated");
     expect(existsSync(join(dir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
     expect(existsSync(join(dir, ".graphify", "graph.html"))).toBe(true);
+  });
+
+  it("supports execution flow build, list, and get commands", async () => {
+    const dir = tempProject();
+    const graphPath = writeFlowGraph(dir);
+    const flowsPath = join(dir, ".graphify", "flows.json");
+
+    const build = await runCli(["flows", "build", "--graph", graphPath, "--out", flowsPath], dir);
+    const artifact = JSON.parse(readFileSync(flowsPath, "utf-8")) as { flows: Array<{ id: string }> };
+    const list = await runCli(["flows", "list", "--flows", flowsPath], dir);
+    const get = await runCli(["flows", "get", artifact.flows[0]!.id, "--flows", flowsPath, "--graph", graphPath], dir);
+    const runtimeList = await runSkillRuntime(["flows-list", "--flows", flowsPath], dir);
+    const affected = await runCli(["affected-flows", "--flows", flowsPath, "--graph", graphPath, "--files", "src/service.ts"], dir);
+    const runtimeAffected = await runSkillRuntime(["affected-flows", "--flows", flowsPath, "--graph", graphPath, "--files", "src/service.ts"], dir);
+
+    expect(build.exitCode).toBe(0);
+    expect(build.logs.join("\n")).toContain("Execution flows: 1");
+    expect(list.logs.join("\n")).toContain("src/app.ts::main");
+    expect(get.logs.join("\n")).toContain("src/service.ts::run");
+    expect(runtimeList.logs.join("\n")).toContain("src/app.ts::main");
+    expect(affected.logs.join("\n")).toContain("Affected flows: 1");
+    expect(runtimeAffected.logs.join("\n")).toContain("src/service.ts::run");
+  });
+
+  it("supports focused review context commands", async () => {
+    const dir = tempProject();
+    const graphPath = writeFlowGraph(dir);
+
+    const cli = await runCli([
+      "review-context",
+      "--graph", graphPath,
+      "--files", "src/service.ts",
+      "--detail-level", "minimal",
+    ], dir);
+    const runtime = await runSkillRuntime([
+      "review-context",
+      "--graph", graphPath,
+      "--files", "src/service.ts",
+      "--detail-level", "minimal",
+    ], dir);
+
+    expect(cli.exitCode).toBe(0);
+    expect(cli.logs.join("\n")).toContain("Review context for 1 changed file(s)");
+    expect(runtime.logs.join("\n")).toContain("Next tools: detect-changes, affected-flows, review-context");
+  });
+
+  it("supports risk-scored detect changes commands", async () => {
+    const dir = tempProject();
+    const graphPath = writeFlowGraph(dir);
+    const flowsPath = join(dir, ".graphify", "flows.json");
+    await runCli(["flows", "build", "--graph", graphPath, "--out", flowsPath], dir);
+
+    const cli = await runCli([
+      "detect-changes",
+      "--graph", graphPath,
+      "--flows", flowsPath,
+      "--files", "src/service.ts",
+      "--detail-level", "minimal",
+    ], dir);
+    const runtime = await runSkillRuntime([
+      "detect-changes",
+      "--graph", graphPath,
+      "--flows", flowsPath,
+      "--files", "src/service.ts",
+      "--detail-level", "minimal",
+    ], dir);
+
+    expect(cli.exitCode).toBe(0);
+    expect(cli.logs.join("\n")).toContain("Risk score:");
+    expect(runtime.logs.join("\n")).toContain("Review priorities:");
+  });
+
+  it("supports compact minimal context commands", async () => {
+    const dir = tempProject();
+    const graphPath = writeFlowGraph(dir);
+    const flowsPath = join(dir, ".graphify", "flows.json");
+    await runCli(["flows", "build", "--graph", graphPath, "--out", flowsPath], dir);
+
+    const cli = await runCli([
+      "minimal-context",
+      "--graph", graphPath,
+      "--flows", flowsPath,
+      "--files", "src/service.ts",
+      "--task", "review PR",
+    ], dir);
+    const runtime = await runSkillRuntime([
+      "minimal-context",
+      "--graph", graphPath,
+      "--flows", flowsPath,
+      "--files", "src/service.ts",
+      "--task", "review PR",
+    ], dir);
+
+    expect(cli.exitCode).toBe(0);
+    expect(cli.logs.join("\n")).toContain("Next tools: detect-changes, affected-flows, review-context");
+    expect(runtime.logs.join("\n")).toContain("Flows available: yes");
   });
 });
 

@@ -211,6 +211,50 @@ export { buildReviewDelta, reviewDeltaToText } from "./review.js";
 export type { ReviewDelta, ReviewNode, ReviewChain, ReviewDeltaOptions } from "./review.js";
 export { buildReviewAnalysis, reviewAnalysisToText, evaluateReviewAnalysis, reviewEvaluationToText } from "./review-analysis.js";
 export type { ReviewAnalysis, ReviewAnalysisOptions, ReviewBlastRadius, ReviewImpactedCommunity, ReviewMultimodalSafety, ReviewEvaluationCase, ReviewEvaluationCaseResult, ReviewEvaluationResult, ReviewEvaluationOptions, ReviewRiskLevel } from "./review-analysis.js";
+export { createReviewGraphStore } from "./review-store.js";
+export type { ReviewGraphEdge, ReviewGraphNode, ReviewGraphNodeKind, ReviewGraphStats, ReviewGraphStoreLike, ReviewImpactRadius } from "./review-store.js";
+export {
+  affectedFlowsToText,
+  buildFlowArtifact,
+  computeFlowCriticality,
+  detectEntryPoints,
+  flowDetailToText,
+  flowListToText,
+  flowToSteps,
+  getAffectedFlows,
+  getFlowById,
+  listFlows,
+  readFlowArtifact,
+  traceFlows,
+  writeFlowArtifact,
+} from "./flows.js";
+export type { AffectedFlowsResult, BuildFlowArtifactOptions, DetectEntryPointsOptions, ListFlowsOptions, ReviewFlow, ReviewFlowArtifact, ReviewFlowDetail, ReviewFlowStep, TraceFlowsOptions } from "./flows.js";
+export {
+  buildReviewContext,
+  extractRelevantLines,
+  reviewContextToText,
+} from "./review-context.js";
+export type { BuildReviewContextOptions, ReviewContextDetailLevel, ReviewContextPayload, ReviewContextResult, ReviewContextRisk } from "./review-context.js";
+export {
+  evaluateReviewBenchmarks,
+  reviewBenchmarkToMarkdown,
+} from "./review-benchmark.js";
+export type { ReviewBenchmarkCase, ReviewBenchmarkCaseResult, ReviewBenchmarkMetrics, ReviewBenchmarkOptions, ReviewBenchmarkResult, ReviewBenchmarkTokenBudgetStatus } from "./review-benchmark.js";
+export {
+  analyzeChanges,
+  computeRiskScore,
+  detectChangesToMinimal,
+  detectChangesToText,
+  isSafeGitRef,
+  mapChangesToNodes,
+  parseUnifiedDiff,
+} from "./detect-changes.js";
+export type { AnalyzeChangesOptions, ChangedRange, ChangedRangesByFile, ComputeRiskScoreOptions, DetectChangesMinimalResult, DetectChangesNodeRisk, DetectChangesResult, DetectChangesTestGap } from "./detect-changes.js";
+export {
+  buildMinimalContext,
+  minimalContextToText,
+} from "./minimal-context.js";
+export type { BuildMinimalContextOptions, MinimalContextResult, MinimalContextRisk } from "./minimal-context.js";
 export { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
 export type { CommitRecommendation, CommitRecommendationGroup, CommitRecommendationStaleness, CommitRecommendationConfidence, CommitRecommendationOptions } from "./recommend.js";
 export { planGraphifyOutMigration, migrateGraphifyOut, migrationResultToText } from "./migrate-state.js";

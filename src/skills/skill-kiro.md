@@ -18,6 +18,7 @@ Use graphify to build, update, and query the project knowledge graph stored in `
 /graphify . --wiki
 /graphify query "architecture question"
 /graphify summary --graph .graphify/graph.json
+/graphify minimal-context --task "review PR" --graph .graphify/graph.json
 /graphify review-delta --graph .graphify/graph.json
 ```
 
@@ -30,6 +31,10 @@ Use graphify to build, update, and query the project knowledge graph stored in `
 - If `.graphify/graph.json` is missing but `graphify-out/graph.json` exists, run `graphify migrate-state --dry-run` before relying on legacy state.
 - If `.graphify/needs_update` exists or `.graphify/branch.json` has `stale=true`, warn before relying on semantic results and run `/graphify . --update` when appropriate.
 - After modifying code files, run `npx graphify hook-rebuild` to keep the graph current.
+
+## CRG Review Workflow
+
+`graphify minimal-context` is the first review call. Keep graph review context within `<=5 graph tool calls` and `<=800` graph-context tokens. Then follow only the compact route: `graphify detect-changes` for risk, `graphify affected-flows` for flow impact, and `graphify review-context` for snippets or radius detail. If `.graphify/flows.json` is missing and flows are needed, run `graphify flows build` first. If `.graphify/needs_update` exists or `.graphify/branch.json` has `stale=true`, warn and update before trusting semantic review output. Explicit `--files`, `--base`, `--head`, or `--staged` inputs override unrelated dirty worktree noise; mention dirty worktrees as a warning and never mutate git state.
 
 ## Configured Project Profiles
 

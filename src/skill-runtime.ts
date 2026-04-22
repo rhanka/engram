@@ -32,7 +32,23 @@ import { defaultManifestPath, resolveGraphifyPaths } from "./paths.js";
 import { buildFirstHopSummary, firstHopSummaryToText } from "./summary.js";
 import { buildReviewDelta, reviewDeltaToText } from "./review.js";
 import { buildReviewAnalysis, reviewAnalysisToText, evaluateReviewAnalysis, reviewEvaluationToText } from "./review-analysis.js";
+import { buildReviewContext, reviewContextToText } from "./review-context.js";
+import { analyzeChanges, detectChangesToMinimal, detectChangesToText } from "./detect-changes.js";
+import { buildMinimalContext, minimalContextToText } from "./minimal-context.js";
 import { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
+import { createReviewGraphStore } from "./review-store.js";
+import {
+  affectedFlowsToText,
+  buildFlowArtifact,
+  flowDetailToText,
+  flowListToText,
+  getAffectedFlows,
+  getFlowById,
+  listFlows,
+  readFlowArtifact,
+  writeFlowArtifact,
+  type ListFlowsOptions,
+} from "./flows.js";
 import { parsePdfOcrMode } from "./pdf-preflight.js";
 import { prepareSemanticDetection } from "./semantic-prepare.js";
 import { discoverProjectConfig, loadProjectConfig } from "./project-config.js";
@@ -1268,6 +1284,162 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         nodesPerCommunity: Number(opts.nodesPerCommunity),
       });
       console.log(firstHopSummaryToText(summary));
+    });
+
+  program
+    .command("flows-build")
+    .requiredOption("--graph <path>")
+    .requiredOption("--out <path>")
+    .option("--max-depth <n>", "Maximum CALLS depth", "15")
+    .option("--include-tests", "Include tests as possible entry points")
+    .action((opts) => {
+      const G = loadGraph(opts.graph);
+      const artifact = buildFlowArtifact(createReviewGraphStore(G), {
+        graphPath: opts.graph,
+        maxDepth: Number(opts.maxDepth),
+        includeTests: opts.includeTests === true,
+      });
+      writeFlowArtifact(artifact, opts.out);
+      console.log(`Execution flows: ${artifact.flows.length} written to ${opts.out}`);
+      for (const warning of artifact.warnings) console.warn(warning);
+    });
+
+  program
+    .command("flows-list")
+    .requiredOption("--flows <path>")
+    .option("--sort <key>", "criticality|depth|node-count|file-count|name", "criticality")
+    .option("--limit <n>", "Maximum flows to show", "50")
+    .option("--json", "Print JSON")
+    .action((opts) => {
+      const artifact = readFlowArtifact(opts.flows);
+      const sortBy = ["criticality", "depth", "node-count", "file-count", "name"].includes(String(opts.sort))
+        ? String(opts.sort) as ListFlowsOptions["sortBy"]
+        : "criticality";
+      const listOptions: ListFlowsOptions = {
+        sortBy,
+        limit: Number(opts.limit),
+      };
+      if (opts.json) {
+        console.log(JSON.stringify(listFlows(artifact, listOptions), null, 2));
+        return;
+      }
+      console.log(flowListToText(artifact, listOptions));
+    });
+
+  program
+    .command("flows-get")
+    .requiredOption("--flows <path>")
+    .requiredOption("--graph <path>")
+    .requiredOption("--id <flow-id>")
+    .option("--json", "Print JSON")
+    .action((opts) => {
+      const detail = getFlowById(readFlowArtifact(opts.flows), opts.id, createReviewGraphStore(loadGraph(opts.graph)));
+      if (!detail) throw new Error(`flow not found: ${opts.id}`);
+      if (opts.json) {
+        console.log(JSON.stringify(detail, null, 2));
+        return;
+      }
+      console.log(flowDetailToText(detail));
+    });
+
+  program
+    .command("affected-flows")
+    .requiredOption("--flows <path>")
+    .requiredOption("--graph <path>")
+    .requiredOption("--files <csv>", "Comma or newline separated changed files")
+    .option("--json", "Print JSON")
+    .action((opts) => {
+      const files = String(opts.files)
+        .split(/[\n,]/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const result = getAffectedFlows(
+        readFlowArtifact(opts.flows),
+        files,
+        createReviewGraphStore(loadGraph(opts.graph)),
+      );
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      console.log(affectedFlowsToText(result));
+    });
+
+  program
+    .command("review-context")
+    .requiredOption("--graph <path>")
+    .requiredOption("--files <csv>", "Comma or newline separated changed files")
+    .option("--detail-level <level>", "minimal|standard", "standard")
+    .option("--include-source", "Include capped source snippets")
+    .option("--max-depth <n>", "Impact radius depth", "2")
+    .option("--max-lines-per-file <n>", "Maximum full-file snippet lines", "200")
+    .option("--repo-root <path>", "Repository root for source snippets", ".")
+    .option("--json", "Print JSON")
+    .action((opts) => {
+      const files = String(opts.files)
+        .split(/[\n,]/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const result = buildReviewContext(createReviewGraphStore(loadGraph(opts.graph)), files, {
+        detailLevel: opts.detailLevel === "minimal" ? "minimal" : "standard",
+        includeSource: opts.includeSource === true,
+        maxDepth: Number(opts.maxDepth),
+        maxLinesPerFile: Number(opts.maxLinesPerFile),
+        repoRoot: opts.repoRoot,
+      });
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      console.log(reviewContextToText(result));
+    });
+
+  program
+    .command("detect-changes")
+    .requiredOption("--graph <path>")
+    .requiredOption("--files <csv>", "Comma or newline separated changed files")
+    .option("--flows <path>", "Optional path to flows.json")
+    .option("--detail-level <level>", "minimal|standard", "standard")
+    .option("--json", "Print JSON")
+    .action((opts) => {
+      const files = String(opts.files)
+        .split(/[\n,]/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const flowsArtifact = opts.flows ? readFlowArtifact(opts.flows) : null;
+      const result = analyzeChanges(createReviewGraphStore(loadGraph(opts.graph)), files, {
+        flows: flowsArtifact,
+      });
+      const output = opts.detailLevel === "minimal" ? detectChangesToMinimal(result) : result;
+      if (opts.json) {
+        console.log(JSON.stringify(output, null, 2));
+        return;
+      }
+      console.log(detectChangesToText(output));
+    });
+
+  program
+    .command("minimal-context")
+    .requiredOption("--graph <path>")
+    .option("--files <csv>", "Comma or newline separated changed files", "")
+    .option("--flows <path>", "Optional path to flows.json")
+    .option("--task <text>", "Task intent used to route next graph tools", "")
+    .option("--json", "Print JSON")
+    .action((opts) => {
+      const files = String(opts.files)
+        .split(/[\n,]/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const result = buildMinimalContext(createReviewGraphStore(loadGraph(opts.graph)), {
+        changedFiles: files,
+        flows: opts.flows ? readFlowArtifact(opts.flows) : null,
+        task: opts.task,
+      });
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      console.log(minimalContextToText(result));
     });
 
   program

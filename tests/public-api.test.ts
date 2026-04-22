@@ -74,6 +74,8 @@ describe("public API compatibility", () => {
     expect(typeof api.reviewAnalysisToText).toBe("function");
     expect(typeof api.evaluateReviewAnalysis).toBe("function");
     expect(typeof api.reviewEvaluationToText).toBe("function");
+    expect(typeof api.evaluateReviewBenchmarks).toBe("function");
+    expect(typeof api.reviewBenchmarkToMarkdown).toBe("function");
     expect(typeof api.buildCommitRecommendation).toBe("function");
     expect(typeof api.commitRecommendationToText).toBe("function");
     expect(typeof api.planGraphifyOutMigration).toBe("function");

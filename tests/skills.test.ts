@@ -17,6 +17,12 @@ const ALL_SKILL_DOCS = [
   "../src/skills/skill-trae.md",
 ];
 
+const DISTRIBUTED_SKILL_DOCS = [
+  ...ALL_SKILL_DOCS,
+  "../src/skills/skill-vscode.md",
+  "../src/skills/skill-kiro.md",
+];
+
 describe("skill cache examples", () => {
   it("use tuple destructuring for checkSemanticCache", () => {
     for (const relativePath of SKILLS) {
@@ -88,6 +94,20 @@ describe("skill cache examples", () => {
       expect(content).toContain("blast radius");
       expect(content).toContain("multimodal");
       expect(content).toContain("delegated OCR/vision");
+    }
+  });
+
+  it("documents minimal-context as the first CRG-style review call", () => {
+    for (const relativePath of DISTRIBUTED_SKILL_DOCS) {
+      const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
+      expect(content).toContain("minimal-context");
+      expect(content).toContain("first review call");
+      expect(content).toContain("detect-changes");
+      expect(content).toContain("affected-flows");
+      expect(content).toContain("review-context");
+      expect(content).toContain("<=5 graph tool calls");
+      expect(content).toContain("<=800");
+      expect(content).toContain("stale=true");
     }
   });
 

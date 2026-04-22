@@ -88,6 +88,7 @@ export interface GraphifyPaths {
   graph: string;
   report: string;
   html: string;
+  flows: string;
   manifest: string;
   cost: string;
   cacheDir: string;
@@ -142,6 +143,7 @@ export function resolveGraphifyPaths(options: GraphifyPathOptions = {}): Graphif
     graph: join(stateDir, "graph.json"),
     report: join(stateDir, "GRAPH_REPORT.md"),
     html: join(stateDir, "graph.html"),
+    flows: join(stateDir, "flows.json"),
     manifest: join(stateDir, "manifest.json"),
     cost: join(stateDir, "cost.json"),
     cacheDir: join(stateDir, "cache"),

@@ -1775,6 +1775,254 @@ export async function main(): Promise<void> {
       console.log(firstHopSummaryToText(summary));
     });
 
+  const flows = program.command("flows").description("Execution flow analysis derived from graph CALLS edges");
+
+  flows
+    .command("build")
+    .description("Build .graphify/flows.json from graph.json")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--out <path>", "Path to write flows.json", resolveGraphifyPaths().flows)
+    .option("--max-depth <n>", "Maximum CALLS depth", "15")
+    .option("--include-tests", "Include tests as possible entry points")
+    .option("--json", "Print the generated artifact as JSON")
+    .action(async (opts) => {
+      const gp = resolveGraphInputPath(opts.graph);
+      if (!existsSync(gp)) {
+        console.error(`error: graph file not found: ${gp}`);
+        process.exit(1);
+      }
+      const raw = JSON.parse(readFileSync(gp, "utf-8"));
+      const G = loadGraphFromData(raw);
+      const { createReviewGraphStore } = await import("./review-store.js");
+      const { buildFlowArtifact, writeFlowArtifact } = await import("./flows.js");
+      const artifact = buildFlowArtifact(createReviewGraphStore(G), {
+        graphPath: gp,
+        maxDepth: Number(opts.maxDepth),
+        includeTests: opts.includeTests === true,
+      });
+      writeFlowArtifact(artifact, opts.out);
+      if (opts.json) {
+        console.log(JSON.stringify(artifact, null, 2));
+        return;
+      }
+      console.log(`Execution flows: ${artifact.flows.length} written to ${opts.out}`);
+      for (const warning of artifact.warnings) console.warn(warning);
+    });
+
+  flows
+    .command("list")
+    .description("List execution flows from .graphify/flows.json")
+    .option("--flows <path>", "Path to flows.json", resolveGraphifyPaths().flows)
+    .option("--sort <key>", "criticality|depth|node-count|file-count|name", "criticality")
+    .option("--limit <n>", "Maximum flows to show", "50")
+    .option("--json", "Print JSON")
+    .action(async (opts) => {
+      const { flowListToText, listFlows, readFlowArtifact } = await import("./flows.js");
+      const artifact = readFlowArtifact(opts.flows);
+      const sortBy = ["criticality", "depth", "node-count", "file-count", "name"].includes(String(opts.sort))
+        ? String(opts.sort) as "criticality" | "depth" | "node-count" | "file-count" | "name"
+        : "criticality";
+      const listOptions = {
+        sortBy,
+        limit: Number(opts.limit),
+      };
+      if (opts.json) {
+        console.log(JSON.stringify(listFlows(artifact, listOptions), null, 2));
+        return;
+      }
+      console.log(flowListToText(artifact, listOptions));
+    });
+
+  flows
+    .command("get")
+    .description("Show execution flow details")
+    .argument("<flow-id>")
+    .option("--flows <path>", "Path to flows.json", resolveGraphifyPaths().flows)
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--json", "Print JSON")
+    .action(async (flowId, opts) => {
+      const gp = resolveGraphInputPath(opts.graph);
+      if (!existsSync(gp)) {
+        console.error(`error: graph file not found: ${gp}`);
+        process.exit(1);
+      }
+      const G = loadGraphFromData(JSON.parse(readFileSync(gp, "utf-8")));
+      const { createReviewGraphStore } = await import("./review-store.js");
+      const { flowDetailToText, getFlowById, readFlowArtifact } = await import("./flows.js");
+      const detail = getFlowById(readFlowArtifact(opts.flows), flowId, createReviewGraphStore(G));
+      if (!detail) {
+        console.error(`error: flow not found: ${flowId}`);
+        process.exit(1);
+      }
+      if (opts.json) {
+        console.log(JSON.stringify(detail, null, 2));
+        return;
+      }
+      console.log(flowDetailToText(detail));
+    });
+
+  program
+    .command("affected-flows [files...]")
+    .description("Find execution flows affected by changed files")
+    .option("--flows <path>", "Path to flows.json", resolveGraphifyPaths().flows)
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--files <csv>", "Comma or newline separated changed files")
+    .option("--base <ref>", "Git base ref; when omitted, compare working tree to HEAD")
+    .option("--head <ref>", "Git head ref to compare with --base", "HEAD")
+    .option("--staged", "Use staged changes only")
+    .option("--json", "Print JSON")
+    .action(async (files, opts) => {
+      const changedFiles = [
+        ...files,
+        ...splitFiles(opts.files),
+      ];
+      const resolvedChangedFiles = changedFiles.length > 0
+        ? [...new Set(changedFiles)].sort()
+        : changedFilesFromGit({ base: opts.base, head: opts.head, staged: opts.staged });
+      const gp = resolveGraphInputPath(opts.graph);
+      if (!existsSync(gp)) {
+        console.error(`error: graph file not found: ${gp}`);
+        process.exit(1);
+      }
+      if (!existsSync(opts.flows)) {
+        console.error(`error: flow artifact not found: ${opts.flows}. Run graphify flows build first.`);
+        process.exit(1);
+      }
+      const G = loadGraphFromData(JSON.parse(readFileSync(gp, "utf-8")));
+      const { createReviewGraphStore } = await import("./review-store.js");
+      const { affectedFlowsToText, getAffectedFlows, readFlowArtifact } = await import("./flows.js");
+      const result = getAffectedFlows(readFlowArtifact(opts.flows), resolvedChangedFiles, createReviewGraphStore(G));
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      console.log(affectedFlowsToText(result));
+    });
+
+  program
+    .command("review-context [files...]")
+    .description("Focused CRG-style review context for changed files")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--files <csv>", "Comma or newline separated changed files")
+    .option("--base <ref>", "Git base ref; when omitted, compare working tree to HEAD")
+    .option("--head <ref>", "Git head ref to compare with --base", "HEAD")
+    .option("--staged", "Use staged changes only")
+    .option("--detail-level <level>", "minimal|standard", "standard")
+    .option("--include-source", "Include capped source snippets")
+    .option("--max-depth <n>", "Impact radius depth", "2")
+    .option("--max-lines-per-file <n>", "Maximum full-file snippet lines", "200")
+    .option("--json", "Print JSON")
+    .action(async (files, opts) => {
+      const changedFiles = [
+        ...files,
+        ...splitFiles(opts.files),
+      ];
+      const resolvedChangedFiles = changedFiles.length > 0
+        ? [...new Set(changedFiles)].sort()
+        : changedFilesFromGit({ base: opts.base, head: opts.head, staged: opts.staged });
+      const gp = resolveGraphInputPath(opts.graph);
+      if (!existsSync(gp)) {
+        console.error(`error: graph file not found: ${gp}`);
+        process.exit(1);
+      }
+      const G = loadGraphFromData(JSON.parse(readFileSync(gp, "utf-8")));
+      const { createReviewGraphStore } = await import("./review-store.js");
+      const { buildReviewContext, reviewContextToText } = await import("./review-context.js");
+      const result = buildReviewContext(createReviewGraphStore(G), resolvedChangedFiles, {
+        detailLevel: opts.detailLevel === "minimal" ? "minimal" : "standard",
+        includeSource: opts.includeSource === true,
+        maxDepth: Number(opts.maxDepth),
+        maxLinesPerFile: Number(opts.maxLinesPerFile),
+        repoRoot: ".",
+      });
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      console.log(reviewContextToText(result));
+    });
+
+  program
+    .command("detect-changes [files...]")
+    .description("CRG-style line-aware risk scoring for changed files")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--flows <path>", "Optional path to flows.json")
+    .option("--files <csv>", "Comma or newline separated changed files")
+    .option("--base <ref>", "Git base ref; when omitted, compare working tree to HEAD")
+    .option("--head <ref>", "Git head ref to compare with --base", "HEAD")
+    .option("--staged", "Use staged changes only")
+    .option("--detail-level <level>", "minimal|standard", "standard")
+    .option("--json", "Print JSON")
+    .action(async (files, opts) => {
+      const changedFiles = [
+        ...files,
+        ...splitFiles(opts.files),
+      ];
+      const resolvedChangedFiles = changedFiles.length > 0
+        ? [...new Set(changedFiles)].sort()
+        : changedFilesFromGit({ base: opts.base, head: opts.head, staged: opts.staged });
+      const gp = resolveGraphInputPath(opts.graph);
+      if (!existsSync(gp)) {
+        console.error(`error: graph file not found: ${gp}`);
+        process.exit(1);
+      }
+      const G = loadGraphFromData(JSON.parse(readFileSync(gp, "utf-8")));
+      const { createReviewGraphStore } = await import("./review-store.js");
+      const { readFlowArtifact } = await import("./flows.js");
+      const { analyzeChanges, detectChangesToMinimal, detectChangesToText } = await import("./detect-changes.js");
+      const flowsArtifact = opts.flows && existsSync(opts.flows) ? readFlowArtifact(opts.flows) : null;
+      const result = analyzeChanges(createReviewGraphStore(G), resolvedChangedFiles, {
+        flows: flowsArtifact,
+      });
+      const output = opts.detailLevel === "minimal" ? detectChangesToMinimal(result) : result;
+      if (opts.json) {
+        console.log(JSON.stringify(output, null, 2));
+        return;
+      }
+      console.log(detectChangesToText(output));
+    });
+
+  program
+    .command("minimal-context [files...]")
+    .description("Compact first-call CRG context and next-tool routing")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--flows <path>", "Optional path to flows.json")
+    .option("--files <csv>", "Comma or newline separated changed files")
+    .option("--base <ref>", "Git base ref; when omitted, compare working tree to HEAD")
+    .option("--head <ref>", "Git head ref to compare with --base", "HEAD")
+    .option("--staged", "Use staged changes only")
+    .option("--task <text>", "Task intent used to route next graph tools", "")
+    .option("--json", "Print JSON")
+    .action(async (files, opts) => {
+      const changedFiles = [
+        ...files,
+        ...splitFiles(opts.files),
+      ];
+      const resolvedChangedFiles = changedFiles.length > 0
+        ? [...new Set(changedFiles)].sort()
+        : changedFilesFromGit({ base: opts.base, head: opts.head, staged: opts.staged });
+      const gp = resolveGraphInputPath(opts.graph);
+      if (!existsSync(gp)) {
+        console.error(`error: graph file not found: ${gp}`);
+        process.exit(1);
+      }
+      const G = loadGraphFromData(JSON.parse(readFileSync(gp, "utf-8")));
+      const { createReviewGraphStore } = await import("./review-store.js");
+      const { readFlowArtifact } = await import("./flows.js");
+      const { buildMinimalContext, minimalContextToText } = await import("./minimal-context.js");
+      const flowsArtifact = opts.flows && existsSync(opts.flows) ? readFlowArtifact(opts.flows) : null;
+      const result = buildMinimalContext(createReviewGraphStore(G), {
+        changedFiles: resolvedChangedFiles,
+        flows: flowsArtifact,
+        task: opts.task,
+      });
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      console.log(minimalContextToText(result));
+    });
+
   program
     .command("review-delta [files...]")
     .description("Review-oriented graph impact for changed files")
