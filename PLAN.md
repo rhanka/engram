@@ -1681,16 +1681,16 @@ Every CRG-aligned feature starts RED by porting the relevant CRG test semantics 
 Fixtures remain synthetic and generic.
 ```
 
-- [ ] **Spec phase:** Add a CRG test-porting matrix to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
-- [ ] **Spec phase:** For every CRG test copied conceptually, record source test path and Graphify target test path.
-- [ ] **Spec phase:** Define fixture fields required for functions, classes, tests, CALLS edges, TESTED_BY-style edges, communities, flows, changed ranges, and line metadata.
-- [ ] **Implementation phase:** Create fixture helpers for review graph nodes, calls, TESTED_BY edges, communities, and flows.
-- [ ] **Implementation phase:** Port flow tests before prompt/report/benchmark tests because later features depend on reliable flow artifacts.
-- [ ] **Implementation phase:** Port change/risk tests before minimal-context and review-context tests because those outputs depend on changed-node accuracy.
-- [ ] **Implementation phase:** Keep each feature's tests in its feature file rather than one giant test file.
-- [ ] **Verification phase:** Require RED/GREEN evidence in every feature commit.
-- [ ] **Verification phase:** Include one integration fixture that exercises changed files, affected flows, test gaps, report/wiki enrichment, and benchmark metrics together.
-- [ ] **Commit:** Fold test-port commits into each feature lot rather than one separate commit unless shared test helpers are needed.
+- [x] **Spec phase:** Add a CRG test-porting matrix to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
+- [x] **Spec phase:** For every CRG test copied conceptually, record source test path and Graphify target test path.
+- [x] **Spec phase:** Define fixture fields required for functions, classes, tests, CALLS edges, TESTED_BY-style edges, communities, flows, changed ranges, and line metadata.
+- [x] **Implementation phase:** Keep feature-local fixture helpers for review graph nodes, calls, TESTED_BY-style edges, communities, and flows unless a shared helper becomes necessary.
+- [x] **Implementation phase:** Port flow tests before prompt/report/benchmark tests because later features depend on reliable flow artifacts.
+- [x] **Implementation phase:** Port change/risk tests before minimal-context and review-context tests because those outputs depend on changed-node accuracy.
+- [x] **Implementation phase:** Keep each feature's tests in its feature file rather than one giant test file.
+- [x] **Verification phase:** Require test-first evidence in every feature lot.
+- [x] **Verification phase:** Include an integration-style benchmark fixture that exercises changed files, affected flows, test gaps, and benchmark metrics together.
+- [x] **Commit:** Fold test-port commits into each feature lot rather than one separate commit unless shared test helpers are needed.
 
 ### F10 - Skills And LLM Review Workflow
 

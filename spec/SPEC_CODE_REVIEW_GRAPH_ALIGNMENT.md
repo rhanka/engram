@@ -66,6 +66,41 @@ Primary CRG tests to port conceptually:
 - `tests/test_eval.py`
 - `tests/test_integration_v2.py`
 
+## F9 Test-Porting Gate
+
+F9 is not a user-facing command. It is the acceptance gate that keeps every CRG-aligned feature backed by a synthetic Vitest fixture before Graphify claims the behavior.
+
+### Porting Matrix
+
+| Feature | CRG source behavior | Graphify target tests | Notes |
+| --- | --- | --- | --- |
+| F3 store adapter | `graph.py:GraphStore`, `tests/test_tools.py`, `tests/test_changes.py` | `tests/review-store.test.ts` | Uses Graphology fixtures instead of SQLite and preserves `.graphify/graph.json` as source of truth. |
+| F7 execution flows | `flows.py`, `tests/test_flows.py` | `tests/flows.test.ts` | Ports entrypoint heuristics, BFS flow tracing, cycle/depth handling, test exclusion, criticality, list/get persistence, and directed-edge degradation. |
+| F8 affected flows | `flows.py:get_affected_flows`, MCP review wrappers | `tests/affected-flows.test.ts` | Keeps affected-flow expansion separate so agents only pay for it when needed. |
+| F5 review context | `tools/review.py:get_review_context`, `_extract_relevant_lines`, `_generate_review_guidance` | `tests/review-context.test.ts` | Covers minimal/standard output, snippets, sensitive-file caps, test gaps, and blast-radius guidance. |
+| F6 detect changes | `changes.py`, `tools/review.py:detect_changes_func`, `tests/test_changes.py` | `tests/detect-changes.test.ts` | Covers unified diff parsing, safe refs, line overlap mapping, fallback mapping, risk factors, affected flows, and test gaps. |
+| F4 minimal context | `tools/context.py:get_minimal_context`, `docs/LLM-OPTIMIZED-REFERENCE.md` | `tests/minimal-context.test.ts` | Keeps the first-call context compact and verifies task-based next-tool routing. |
+| F10 skills | `CLAUDE.md`, `prompts.py`, `skills.py`, `skills/review-*`, `tests/test_prompts.py`, `tests/test_skills.py` | `tests/skills.test.ts`, `tests/codex-integration.test.ts`, `tests/gemini-integration.test.ts` | Preserves platform-specific syntax while making `minimal-context` the first review call. |
+| F11 report/wiki | `wiki.py`, `visualization.py`, `tests/test_wiki.py` | `tests/report.test.ts`, `tests/wiki.test.ts` | HTML flow highlighting stays deferred; report/wiki flow sections are grounded and optional. |
+| F12 benchmarks | `eval/benchmarks/*.py`, `eval/scorer.py`, `eval/reporter.py`, `tests/test_eval.py` | `tests/review-benchmark.test.ts`, `tests/public-api.test.ts` | Ports deterministic scoring and honesty notes, not CRG's external network clone runner. |
+
+### Fixture Contract
+
+CRG-aligned tests use synthetic fixtures only. Feature-local helpers are acceptable and preferred over one global fixture factory when the fields differ by feature. Every fixture that exercises review algorithms should declare only the fields it needs from this generic set:
+
+- function/class/test nodes with `id`, `label`, `qualified_name`, `kind`, `source_file`, `line_start`, `line_end`, `community`, and optional `is_test`.
+- directed `CALLS` edges with source/target orientation preserved.
+- `TESTED_BY`, `validated_by`, inheritance, or implementation edges when the feature being tested needs coverage or relationship guidance.
+- flow artifacts with stable IDs, names, entry points, ordered steps, files, criticality, and generated timestamp.
+- changed files and optional unified-diff line ranges.
+- compact review expectations: changed nodes, impacted files, affected flows, test gaps, summary facts, and token budgets.
+
+No fixture may include a real customer, partner, proprietary ontology, private repository, or production dataset.
+
+### Acceptance Rule
+
+For each algorithmic feature, the relevant Vitest fixture must exist in the same feature lot before the runtime implementation is accepted. When Graphify intentionally deviates from CRG, the target test must encode the Graphify-specific behavior instead of silently dropping the CRG expectation.
+
 ## F3 ReviewGraphStoreLike Adapter
 
 ### Existing Graphify Graph Shape
