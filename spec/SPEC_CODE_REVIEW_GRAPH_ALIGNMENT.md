@@ -885,6 +885,115 @@ Port CRG tests:
 - fallback with no ranges maps all nodes in changed files.
 - CLI/runtime minimal and standard outputs use the same implementation.
 
+## F4 Minimal Context First-Call Tool
+
+### CRG Source Contract
+
+F4 ports `code_review_graph/tools/context.py:get_minimal_context()` conceptually:
+
+- return the smallest useful orientation for an agent first call.
+- include graph stats, risk if changed files exist, key entities, top communities, top flows, and next tool suggestions.
+- route suggestions by task keywords.
+- target roughly 100 tokens and stay under the LLM reference budget of 800 context tokens.
+
+### Graphify Target
+
+Create `src/minimal-context.ts` after F7/F8/F5/F6 are available.
+
+Graphify input sources:
+
+- F3 `ReviewGraphStoreLike.getGraphStats()`.
+- Graph attributes `community_labels` and node community counts for top communities.
+- F7 `.graphify/flows.json` when provided.
+- F6 `analyzeChanges()` when changed files are explicit or discovered by CLI.
+
+No source snippets, raw file reads, graph rebuilds, or flow rebuilds are allowed in F4.
+
+### Output Contract
+
+```ts
+export interface MinimalContextResult {
+  summary: string;
+  keyEntities?: string[];
+  risk: "unknown" | "low" | "medium" | "high";
+  riskScore: number;
+  communities?: string[];
+  flowsAffected?: string[];
+  flowsAvailable: boolean;
+  nextToolSuggestions: string[];
+}
+```
+
+`summary` format:
+
+```text
+<nodes> nodes, <edges> edges across <files> files. Risk: <risk> (<score>). <n> test gaps.
+```
+
+Risk is:
+
+- `unknown` when no changed files are provided or detected.
+- `high` when F6 risk score > `0.7`.
+- `medium` when > `0.4`.
+- `low` otherwise.
+
+### Suggestion Routing
+
+Port CRG keyword routing but use Graphify command names:
+
+- review/pr/merge/diff -> `detect-changes`, `affected-flows`, `review-context`
+- debug/bug/error/fix -> `summary`, `query`, `flows get`
+- refactor/rename/dead/clean -> `review-context`, `detect-changes`, `recommend-commits`
+- onboard/understand/explore/arch -> `summary`, `flows list`, `path`
+- default -> `detect-changes`, `summary`, `review-context`
+
+### Flows Behavior
+
+When no flow artifact is provided:
+
+- `flowsAvailable` is false.
+- omit `flowsAffected` from text output or return `[]` in JSON.
+- next suggestions may still include `flows list` only for onboarding/architecture tasks, because the assistant can then choose to run `flows build` first if needed.
+
+When flow artifact is provided:
+
+- top flows are the three highest-criticality flow names.
+- if changed files are provided, prefer F8 affected flow names for `flowsAffected`.
+
+### CLI And Runtime
+
+Public CLI:
+
+```text
+graphify minimal-context --task "review PR" --graph .graphify/graph.json
+graphify minimal-context --files src/a.ts --flows .graphify/flows.json
+graphify minimal-context --base main --head HEAD
+graphify minimal-context --json
+```
+
+Skill runtime:
+
+```text
+graphify-skill-runtime minimal-context --graph <path> [--task <text>] [--files <csv>] [--flows <path>]
+```
+
+Runtime does not auto-detect git changes; public CLI may use the same changed-file discovery as F6 when no files are passed.
+
+### F4 Test Matrix
+
+Port/synthesize:
+
+- returns graph stats summary and `risk=unknown` with no changed files.
+- review task suggests `detect-changes`, `affected-flows`, `review-context`.
+- debug task suggests `summary`, `query`, `flows get`.
+- refactor task suggests `review-context`, `detect-changes`, `recommend-commits`.
+- onboard/architecture task suggests `summary`, `flows list`, `path`.
+- changed files invoke F6 risk and key entities.
+- no `flows.json` sets `flowsAvailable=false`.
+- flow artifact exposes top three critical flows.
+- serialized JSON length stays below 800 words in fixture tests.
+- CLI/runtime emit the same implementation.
+
 ## F4-F12 Spec Skeleton
 
 F4 minimal context must be implemented after F7, F8, F5, and F6. It will combine graph stats, changed-risk summary, top communities, affected flows, and next tool suggestions.

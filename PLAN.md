@@ -1471,10 +1471,10 @@ Use Graphify's existing summary/community data plus F3 adapter and F7 flows when
 Implement after F7, F8, F5, and F6 even though this is the recommended first assistant call.
 ```
 
-- [ ] **Spec phase:** Add F4 details to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
-- [ ] **Spec phase:** Copy CRG output contract conceptually: `summary`, `risk`, `key_entities`, `communities`, `flows_affected`, `next_tool_suggestions`.
-- [ ] **Spec phase:** Define behavior before flows exist: omit `flows_affected` or return empty list with `flows_available=false`.
-- [ ] **Spec phase:** Define compactness budget based on CRG `<=800` context-token guidance and Graphify's existing `summary` output.
+- [x] **Spec phase:** Add F4 details to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
+- [x] **Spec phase:** Copy CRG output contract conceptually: `summary`, `risk`, `key_entities`, `communities`, `flows_affected`, `next_tool_suggestions`.
+- [x] **Spec phase:** Define behavior before flows exist: omit `flows_affected` or return empty list with `flows_available=false`.
+- [x] **Spec phase:** Define compactness budget based on CRG `<=800` context-token guidance and Graphify's existing `summary` output.
 - [ ] **Implementation phase:** Create `src/minimal-context.ts`.
 - [ ] **Implementation phase:** Create `tests/minimal-context.test.ts`.
 - [ ] **Implementation phase:** Add CLI command `minimal-context --task <task> --base <ref> --graph <path>`.
