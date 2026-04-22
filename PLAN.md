@@ -1433,10 +1433,10 @@ Do not introduce SQLite as default storage.
 Keep an optional index/cache sidecar deferred unless performance forces it.
 ```
 
-- [ ] **Spec phase:** Write `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md` as the umbrella spec for F3-F12.
-- [ ] **Spec phase:** Define `ReviewGraphStoreLike` methods matching CRG review needs.
-- [ ] **Spec phase:** Map CRG `GraphNode` fields to Graphify nodes, including `id`, `name`, `qualified_name`, `kind`, `file_path`, `line_start`, `line_end`, `is_test`, `community_id`, and `extra`.
-- [ ] **Spec phase:** Record deviations where Graphify lacks line ranges or TESTED_BY edges and define fallback behavior.
+- [x] **Spec phase:** Write `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md` as the umbrella spec for F3-F12.
+- [x] **Spec phase:** Define `ReviewGraphStoreLike` methods matching CRG review needs.
+- [x] **Spec phase:** Map CRG `GraphNode` fields to Graphify nodes, including `id`, `name`, `qualified_name`, `kind`, `file_path`, `line_start`, `line_end`, `is_test`, `community_id`, and `extra`.
+- [x] **Spec phase:** Record deviations where Graphify lacks line ranges or TESTED_BY edges and define fallback behavior.
 - [ ] **Implementation phase:** Create `src/review-store.ts`.
 - [ ] **Implementation phase:** Create `tests/review-store.test.ts`.
 - [ ] **Implementation phase:** Load from `graph.json`, normalize paths, expose node/edge query helpers, and preserve current graph JSON schema.
