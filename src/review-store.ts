@@ -83,6 +83,7 @@ export interface ReviewGraphStoreLike {
   getTransitiveTests(qualifiedNameOrId: string, maxDepth?: number): ReviewGraphNode[];
   getNodeCommunityId(qualifiedNameOrId: string): number | null;
   getCommunityIdsByQualifiedNames(qualifiedNamesOrIds: string[]): Map<string, number | null>;
+  getCommunityLabels(): Map<number, string>;
   getGraphStats(): ReviewGraphStats;
 }
 
@@ -432,6 +433,17 @@ export function createReviewGraphStore(G: Graph): ReviewGraphStoreLike {
       const result = new Map<string, number | null>();
       for (const value of qualifiedNamesOrIds) result.set(value, getNode(value)?.communityId ?? null);
       return result;
+    },
+    getCommunityLabels: () => {
+      const rawLabels = G.getAttribute("community_labels") as Record<string, unknown> | undefined;
+      const labels = new Map<number, string>();
+      for (const [key, value] of Object.entries(rawLabels ?? {})) {
+        const id = Number.parseInt(key, 10);
+        if (Number.isFinite(id) && typeof value === "string" && value.trim().length > 0) {
+          labels.set(id, value);
+        }
+      }
+      return labels;
     },
     getGraphStats: () => {
       const nodesByKind: Record<string, number> = {};

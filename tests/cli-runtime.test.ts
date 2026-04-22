@@ -261,6 +261,32 @@ describe("public CLI runtime command parity", () => {
     expect(cli.logs.join("\n")).toContain("Risk score:");
     expect(runtime.logs.join("\n")).toContain("Review priorities:");
   });
+
+  it("supports compact minimal context commands", async () => {
+    const dir = tempProject();
+    const graphPath = writeFlowGraph(dir);
+    const flowsPath = join(dir, ".graphify", "flows.json");
+    await runCli(["flows", "build", "--graph", graphPath, "--out", flowsPath], dir);
+
+    const cli = await runCli([
+      "minimal-context",
+      "--graph", graphPath,
+      "--flows", flowsPath,
+      "--files", "src/service.ts",
+      "--task", "review PR",
+    ], dir);
+    const runtime = await runSkillRuntime([
+      "minimal-context",
+      "--graph", graphPath,
+      "--flows", flowsPath,
+      "--files", "src/service.ts",
+      "--task", "review PR",
+    ], dir);
+
+    expect(cli.exitCode).toBe(0);
+    expect(cli.logs.join("\n")).toContain("Next tools: detect-changes, affected-flows, review-context");
+    expect(runtime.logs.join("\n")).toContain("Flows available: yes");
+  });
 });
 
 describe("skill runtime artifact parity", () => {

@@ -1346,11 +1346,11 @@ This is the required implementation order even though F4 is the user-facing firs
 - [x] F1 source lock and durable traceability.
 - [x] F2 Python Graphify v4 drift audit.
 - [x] F3 review graph store adapter.
-- [ ] F7 execution flows.
+- [x] F7 execution flows.
 - [x] F8 affected flows.
 - [x] F5 review context and blast radius.
 - [x] F6 risk-scored detect changes.
-- [ ] F4 minimal context first-call tool.
+- [x] F4 minimal context first-call tool.
 - [ ] F10 skills and LLM review workflow.
 - [ ] F11 report, wiki, and HTML enrichment after F7/F8 flow artifacts exist.
 - [ ] F12 benchmarks, honesty metrics, and known limits.
@@ -1475,15 +1475,15 @@ Implement after F7, F8, F5, and F6 even though this is the recommended first ass
 - [x] **Spec phase:** Copy CRG output contract conceptually: `summary`, `risk`, `key_entities`, `communities`, `flows_affected`, `next_tool_suggestions`.
 - [x] **Spec phase:** Define behavior before flows exist: omit `flows_affected` or return empty list with `flows_available=false`.
 - [x] **Spec phase:** Define compactness budget based on CRG `<=800` context-token guidance and Graphify's existing `summary` output.
-- [ ] **Implementation phase:** Create `src/minimal-context.ts`.
-- [ ] **Implementation phase:** Create `tests/minimal-context.test.ts`.
-- [ ] **Implementation phase:** Add CLI command `minimal-context --task <task> --base <ref> --graph <path>`.
-- [ ] **Implementation phase:** Add skill-runtime command for assistant workflows.
-- [ ] **Implementation phase:** Add MCP/serve surface only if it reuses the same implementation and does not become a parallel API contract.
-- [ ] **Verification phase:** Port CRG behavior tests for review/debug/refactor/onboard suggestion routing.
-- [ ] **Verification phase:** Assert compact output does not require reading raw source files wholesale.
-- [ ] **Verification phase:** Run targeted tests, lint, build, full tests, `git diff --check`.
-- [ ] **Commit:** `feat(review): add minimal context entrypoint`
+- [x] **Implementation phase:** Create `src/minimal-context.ts`.
+- [x] **Implementation phase:** Create `tests/minimal-context.test.ts`.
+- [x] **Implementation phase:** Add CLI command `minimal-context --task <task> --base <ref> --graph <path>`.
+- [x] **Implementation phase:** Add skill-runtime command for assistant workflows.
+- [x] **Implementation phase:** Keep MCP/serve surface deferred; no parallel API contract added.
+- [x] **Verification phase:** Port CRG behavior tests for review/debug/refactor/onboard suggestion routing.
+- [x] **Verification phase:** Assert compact output does not require reading raw source files wholesale.
+- [x] **Verification phase:** Run targeted tests, lint, build, full tests, `git diff --check`.
+- [x] **Commit:** `feat(review): add minimal context entrypoint`
 
 ### F5 - Review Context And Blast Radius
 

@@ -1983,6 +1983,47 @@ export async function main(): Promise<void> {
     });
 
   program
+    .command("minimal-context [files...]")
+    .description("Compact first-call CRG context and next-tool routing")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--flows <path>", "Optional path to flows.json")
+    .option("--files <csv>", "Comma or newline separated changed files")
+    .option("--base <ref>", "Git base ref; when omitted, compare working tree to HEAD")
+    .option("--head <ref>", "Git head ref to compare with --base", "HEAD")
+    .option("--staged", "Use staged changes only")
+    .option("--task <text>", "Task intent used to route next graph tools", "")
+    .option("--json", "Print JSON")
+    .action(async (files, opts) => {
+      const changedFiles = [
+        ...files,
+        ...splitFiles(opts.files),
+      ];
+      const resolvedChangedFiles = changedFiles.length > 0
+        ? [...new Set(changedFiles)].sort()
+        : changedFilesFromGit({ base: opts.base, head: opts.head, staged: opts.staged });
+      const gp = resolveGraphInputPath(opts.graph);
+      if (!existsSync(gp)) {
+        console.error(`error: graph file not found: ${gp}`);
+        process.exit(1);
+      }
+      const G = loadGraphFromData(JSON.parse(readFileSync(gp, "utf-8")));
+      const { createReviewGraphStore } = await import("./review-store.js");
+      const { readFlowArtifact } = await import("./flows.js");
+      const { buildMinimalContext, minimalContextToText } = await import("./minimal-context.js");
+      const flowsArtifact = opts.flows && existsSync(opts.flows) ? readFlowArtifact(opts.flows) : null;
+      const result = buildMinimalContext(createReviewGraphStore(G), {
+        changedFiles: resolvedChangedFiles,
+        flows: flowsArtifact,
+        task: opts.task,
+      });
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      console.log(minimalContextToText(result));
+    });
+
+  program
     .command("review-delta [files...]")
     .description("Review-oriented graph impact for changed files")
     .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
