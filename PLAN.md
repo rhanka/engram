@@ -1838,16 +1838,18 @@ Use deterministic local fixtures by default; do not import CRG's network clone r
 
 ### Release Gate For CRG-Aligned Review Features
 
-- [ ] `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md` exists and cites CRG source files/functions/tests.
-- [ ] Every accepted feature has a spec phase completed before implementation.
-- [ ] Every algorithmic feature ports CRG tests or equivalent Vitest fixtures before implementation.
-- [ ] `npm run lint` passes.
-- [ ] `npm run build` passes.
-- [ ] `npm test` passes.
-- [ ] `git diff --check` passes.
-- [ ] `npx graphify hook-rebuild` or `graphify update .` runs after code changes.
+- [x] `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md` exists and cites CRG source files/functions/tests.
+- [x] Every accepted feature has a spec phase completed before implementation.
+- [x] Every algorithmic feature ports CRG tests or equivalent Vitest fixtures before implementation.
+- [x] `npm run lint` passes.
+- [x] `npm run build` passes.
+- [x] `npm test` passes.
+- [x] `git diff --check` passes.
+- [x] `npx graphify hook-rebuild` or `graphify update .` runs after code changes.
 - [ ] `.graphify` output does not include transient worktree paths.
-- [ ] README and skills describe only implemented review behavior.
+- [x] README and skills describe only implemented review behavior.
+
+Current branch note: `.graphify/branch.json` and `.graphify/worktree.json` record the absolute worktree path after local rebuild, so `.graphify` is intentionally left unstaged for this branch.
 
 ---
 
