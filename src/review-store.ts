@@ -36,6 +36,7 @@ export interface ReviewGraphEdge {
   targetQualified: string;
   sourceId: string;
   targetId: string;
+  direction: "directed" | "preserved" | "undirected";
   filePath: string | null;
   line: number | null;
   confidence: number;
@@ -253,9 +254,13 @@ export function createReviewGraphStore(G: Graph): ReviewGraphStoreLike {
   function normalizeEdge(edgeId: string, attrs: Record<string, unknown>, graphSource: string, graphTarget: string): ReviewGraphEdge | null {
     let sourceId = graphSource;
     let targetId = graphTarget;
+    let direction: ReviewGraphEdge["direction"] = "directed";
     if (G.type !== "directed") {
-      sourceId = asString(attrs._src) ?? graphSource;
-      targetId = asString(attrs._tgt) ?? graphTarget;
+      const preservedSource = asString(attrs._src);
+      const preservedTarget = asString(attrs._tgt);
+      direction = preservedSource && preservedTarget ? "preserved" : "undirected";
+      sourceId = preservedSource ?? graphSource;
+      targetId = preservedTarget ?? graphTarget;
     }
     const source = nodesById.get(sourceId);
     const target = nodesById.get(targetId);
@@ -269,6 +274,7 @@ export function createReviewGraphStore(G: Graph): ReviewGraphStoreLike {
       targetQualified: target.qualifiedName,
       sourceId,
       targetId,
+      direction,
       filePath: asString(attrs.source_file) ?? asString(attrs.sourceFile),
       line: lineStart,
       confidence: confidenceValue(confidenceTier, attrs.confidence_score, attrs.weight),

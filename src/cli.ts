@@ -1775,6 +1775,92 @@ export async function main(): Promise<void> {
       console.log(firstHopSummaryToText(summary));
     });
 
+  const flows = program.command("flows").description("Execution flow analysis derived from graph CALLS edges");
+
+  flows
+    .command("build")
+    .description("Build .graphify/flows.json from graph.json")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--out <path>", "Path to write flows.json", resolveGraphifyPaths().flows)
+    .option("--max-depth <n>", "Maximum CALLS depth", "15")
+    .option("--include-tests", "Include tests as possible entry points")
+    .option("--json", "Print the generated artifact as JSON")
+    .action(async (opts) => {
+      const gp = resolveGraphInputPath(opts.graph);
+      if (!existsSync(gp)) {
+        console.error(`error: graph file not found: ${gp}`);
+        process.exit(1);
+      }
+      const raw = JSON.parse(readFileSync(gp, "utf-8"));
+      const G = loadGraphFromData(raw);
+      const { createReviewGraphStore } = await import("./review-store.js");
+      const { buildFlowArtifact, writeFlowArtifact } = await import("./flows.js");
+      const artifact = buildFlowArtifact(createReviewGraphStore(G), {
+        graphPath: gp,
+        maxDepth: Number(opts.maxDepth),
+        includeTests: opts.includeTests === true,
+      });
+      writeFlowArtifact(artifact, opts.out);
+      if (opts.json) {
+        console.log(JSON.stringify(artifact, null, 2));
+        return;
+      }
+      console.log(`Execution flows: ${artifact.flows.length} written to ${opts.out}`);
+      for (const warning of artifact.warnings) console.warn(warning);
+    });
+
+  flows
+    .command("list")
+    .description("List execution flows from .graphify/flows.json")
+    .option("--flows <path>", "Path to flows.json", resolveGraphifyPaths().flows)
+    .option("--sort <key>", "criticality|depth|node-count|file-count|name", "criticality")
+    .option("--limit <n>", "Maximum flows to show", "50")
+    .option("--json", "Print JSON")
+    .action(async (opts) => {
+      const { flowListToText, listFlows, readFlowArtifact } = await import("./flows.js");
+      const artifact = readFlowArtifact(opts.flows);
+      const sortBy = ["criticality", "depth", "node-count", "file-count", "name"].includes(String(opts.sort))
+        ? String(opts.sort) as "criticality" | "depth" | "node-count" | "file-count" | "name"
+        : "criticality";
+      const listOptions = {
+        sortBy,
+        limit: Number(opts.limit),
+      };
+      if (opts.json) {
+        console.log(JSON.stringify(listFlows(artifact, listOptions), null, 2));
+        return;
+      }
+      console.log(flowListToText(artifact, listOptions));
+    });
+
+  flows
+    .command("get")
+    .description("Show execution flow details")
+    .argument("<flow-id>")
+    .option("--flows <path>", "Path to flows.json", resolveGraphifyPaths().flows)
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--json", "Print JSON")
+    .action(async (flowId, opts) => {
+      const gp = resolveGraphInputPath(opts.graph);
+      if (!existsSync(gp)) {
+        console.error(`error: graph file not found: ${gp}`);
+        process.exit(1);
+      }
+      const G = loadGraphFromData(JSON.parse(readFileSync(gp, "utf-8")));
+      const { createReviewGraphStore } = await import("./review-store.js");
+      const { flowDetailToText, getFlowById, readFlowArtifact } = await import("./flows.js");
+      const detail = getFlowById(readFlowArtifact(opts.flows), flowId, createReviewGraphStore(G));
+      if (!detail) {
+        console.error(`error: flow not found: ${flowId}`);
+        process.exit(1);
+      }
+      if (opts.json) {
+        console.log(JSON.stringify(detail, null, 2));
+        return;
+      }
+      console.log(flowDetailToText(detail));
+    });
+
   program
     .command("review-delta [files...]")
     .description("Review-oriented graph impact for changed files")

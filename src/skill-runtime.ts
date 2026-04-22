@@ -33,6 +33,17 @@ import { buildFirstHopSummary, firstHopSummaryToText } from "./summary.js";
 import { buildReviewDelta, reviewDeltaToText } from "./review.js";
 import { buildReviewAnalysis, reviewAnalysisToText, evaluateReviewAnalysis, reviewEvaluationToText } from "./review-analysis.js";
 import { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
+import { createReviewGraphStore } from "./review-store.js";
+import {
+  buildFlowArtifact,
+  flowDetailToText,
+  flowListToText,
+  getFlowById,
+  listFlows,
+  readFlowArtifact,
+  writeFlowArtifact,
+  type ListFlowsOptions,
+} from "./flows.js";
 import { parsePdfOcrMode } from "./pdf-preflight.js";
 import { prepareSemanticDetection } from "./semantic-prepare.js";
 import { discoverProjectConfig, loadProjectConfig } from "./project-config.js";
@@ -1268,6 +1279,62 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         nodesPerCommunity: Number(opts.nodesPerCommunity),
       });
       console.log(firstHopSummaryToText(summary));
+    });
+
+  program
+    .command("flows-build")
+    .requiredOption("--graph <path>")
+    .requiredOption("--out <path>")
+    .option("--max-depth <n>", "Maximum CALLS depth", "15")
+    .option("--include-tests", "Include tests as possible entry points")
+    .action((opts) => {
+      const G = loadGraph(opts.graph);
+      const artifact = buildFlowArtifact(createReviewGraphStore(G), {
+        graphPath: opts.graph,
+        maxDepth: Number(opts.maxDepth),
+        includeTests: opts.includeTests === true,
+      });
+      writeFlowArtifact(artifact, opts.out);
+      console.log(`Execution flows: ${artifact.flows.length} written to ${opts.out}`);
+      for (const warning of artifact.warnings) console.warn(warning);
+    });
+
+  program
+    .command("flows-list")
+    .requiredOption("--flows <path>")
+    .option("--sort <key>", "criticality|depth|node-count|file-count|name", "criticality")
+    .option("--limit <n>", "Maximum flows to show", "50")
+    .option("--json", "Print JSON")
+    .action((opts) => {
+      const artifact = readFlowArtifact(opts.flows);
+      const sortBy = ["criticality", "depth", "node-count", "file-count", "name"].includes(String(opts.sort))
+        ? String(opts.sort) as ListFlowsOptions["sortBy"]
+        : "criticality";
+      const listOptions: ListFlowsOptions = {
+        sortBy,
+        limit: Number(opts.limit),
+      };
+      if (opts.json) {
+        console.log(JSON.stringify(listFlows(artifact, listOptions), null, 2));
+        return;
+      }
+      console.log(flowListToText(artifact, listOptions));
+    });
+
+  program
+    .command("flows-get")
+    .requiredOption("--flows <path>")
+    .requiredOption("--graph <path>")
+    .requiredOption("--id <flow-id>")
+    .option("--json", "Print JSON")
+    .action((opts) => {
+      const detail = getFlowById(readFlowArtifact(opts.flows), opts.id, createReviewGraphStore(loadGraph(opts.graph)));
+      if (!detail) throw new Error(`flow not found: ${opts.id}`);
+      if (opts.json) {
+        console.log(JSON.stringify(detail, null, 2));
+        return;
+      }
+      console.log(flowDetailToText(detail));
     });
 
   program

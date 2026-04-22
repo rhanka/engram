@@ -1607,13 +1607,13 @@ Do not require a database.
 - [x] **Spec phase:** Copy CRG entrypoint decorator/name patterns into a TypeScript constants section.
 - [x] **Spec phase:** Define Graphify flow artifact schema: `name`, `entry_point`, `path`, `depth`, `node_count`, `file_count`, `files`, `criticality`.
 - [x] **Spec phase:** Define whether `tests` are excluded by default and how `include_tests` works.
-- [ ] **Implementation phase:** Create `src/flows.ts`.
-- [ ] **Implementation phase:** Create `tests/flows.test.ts`.
-- [ ] **Implementation phase:** Port CRG tests for roots, decorators, name patterns, test exclusion, cycles, max depth, multi-file flows, and criticality.
-- [ ] **Implementation phase:** Add CLI commands `flows build`, `flows list`, and `flows get`.
-- [ ] **Implementation phase:** Add skill-runtime commands for list/get.
-- [ ] **Verification phase:** Run targeted flow tests, lint, build, full tests, `git diff --check`.
-- [ ] **Commit:** `feat(review): derive execution flows`
+- [x] **Implementation phase:** Create `src/flows.ts`.
+- [x] **Implementation phase:** Create `tests/flows.test.ts`.
+- [x] **Implementation phase:** Port CRG tests for roots, decorators, name patterns, test exclusion, cycles, max depth, multi-file flows, and criticality.
+- [x] **Implementation phase:** Add CLI commands `flows build`, `flows list`, and `flows get`.
+- [x] **Implementation phase:** Add skill-runtime commands for list/get.
+- [x] **Verification phase:** Run targeted flow tests, lint, build, full tests, `git diff --check`.
+- [x] **Commit:** `feat(review): derive execution flows`
 
 ### F8 - Affected Flows
 
