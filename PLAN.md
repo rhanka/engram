@@ -1343,8 +1343,8 @@ Only deviate from code-review-graph when the deviation preserves Graphify's exis
 
 This is the required implementation order even though F4 is the user-facing first-call tool:
 
-- [ ] F1 source lock and durable traceability.
-- [ ] F2 Python Graphify v4 drift audit.
+- [x] F1 source lock and durable traceability.
+- [x] F2 Python Graphify v4 drift audit.
 - [ ] F3 review graph store adapter.
 - [ ] F7 execution flows.
 - [ ] F8 affected flows.
@@ -1374,14 +1374,14 @@ UPSTREAM_GAP.md becomes the durable source-lock and decision table.
 spec/SPEC_UPSTREAM_DUAL_CATCHUP_2026_04.md remains the dated research snapshot.
 ```
 
-- [ ] **Spec phase:** Write `spec/SPEC_UPSTREAM_TRACEABILITY.md` using `SPEC_UPSTREAM_DUAL_CATCHUP_2026_04.md` as the initial source-lock table.
-- [ ] **Spec phase:** Record exact refs for Safi Python Graphify v4, Safi Python `v0.4.23`, and CRG `v2.3.2`.
-- [ ] **Spec phase:** Define row states `covered`, `intentional-delta`, `deferred`, `rejected`, `needs-review`.
-- [ ] **Spec phase:** Define a rule that local tags are never trusted when `git fetch --tags` reports clobber risk.
-- [ ] **Implementation phase:** Update `UPSTREAM_GAP.md` with the durable source-lock table.
-- [ ] **Implementation phase:** Add an upstream refresh checklist to `PLAN.md`.
-- [ ] **Verification phase:** Run `git diff --check`.
-- [ ] **Commit:** `docs: lock upstream traceability refs`
+- [x] **Spec phase:** Write `spec/SPEC_UPSTREAM_TRACEABILITY.md` using `SPEC_UPSTREAM_DUAL_CATCHUP_2026_04.md` as the initial source-lock table.
+- [x] **Spec phase:** Record exact refs for Safi Python Graphify v4, Safi Python `v0.4.23`, and CRG `v2.3.2`.
+- [x] **Spec phase:** Define row states `covered`, `intentional-delta`, `deferred`, `rejected`, `needs-review`.
+- [x] **Spec phase:** Define a rule that local tags are never trusted when `git fetch --tags` reports clobber risk.
+- [x] **Implementation phase:** Update `UPSTREAM_GAP.md` with the durable source-lock table.
+- [x] **Implementation phase:** Add an upstream refresh checklist to `PLAN.md`.
+- [x] **Verification phase:** Run `git diff --check`.
+- [x] **Commit:** `docs: lock upstream traceability refs`
 
 ### F2 - Safi Python Graphify v4 Drift Audit
 
@@ -1399,12 +1399,12 @@ Python v4 is audited for conceptual drift.
 TypeScript deltas remain intentional: .graphify, npm, faster-whisper-ts, OCR/PDF, lifecycle, review commands.
 ```
 
-- [ ] **Spec phase:** Extend `spec/SPEC_UPSTREAM_TRACEABILITY.md` with a Python v4 audit section.
-- [ ] **Spec phase:** Define the allowed result types: docs-only, parity-needed, intentional-delta, obsolete-upstream.
-- [ ] **Implementation phase:** Update `UPSTREAM_GAP.md` with latest Python v4 refs and drift summary.
-- [ ] **Implementation phase:** Update README only if Python v4 changed user-facing behavior worth mentioning.
-- [ ] **Verification phase:** Run `git diff --check`.
-- [ ] **Commit:** `docs: refresh python graphify v4 drift audit`
+- [x] **Spec phase:** Extend `spec/SPEC_UPSTREAM_TRACEABILITY.md` with a Python v4 audit section.
+- [x] **Spec phase:** Define the allowed result types: docs-only, parity-needed, intentional-delta, obsolete-upstream.
+- [x] **Implementation phase:** Update `UPSTREAM_GAP.md` with latest Python v4 refs and drift summary.
+- [x] **Implementation phase:** Update README only if Python v4 changed user-facing behavior worth mentioning.
+- [x] **Verification phase:** Run `git diff --check`.
+- [x] **Commit:** `docs: refresh python graphify v4 drift audit`
 
 ### F3 - ReviewGraphStoreLike Adapter
 
