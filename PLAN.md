@@ -1309,3 +1309,20 @@ Source spec: `spec/SPEC_UPSTREAM_DUAL_CATCHUP_2026_04.md`. This is a research ba
 - [ ] Triage notebook/language additions one input at a time with synthetic fixtures.
 - [ ] Triage additional assistant installer targets only when config contracts are stable.
 - [ ] Keep SQLite, embeddings, multi-repo registry, and VS Code extension work behind separate opt-in specs.
+
+---
+
+## Research Backlog - LLM Wiki Benchmark
+
+Source spec: `spec/SPEC_LLM_WIKI_BENCHMARK_2026_04.md`. This is a research backlog, not implemented behavior.
+
+- [x] Merge the April 2026 LLM wiki benchmark study branch into main as docs-only material.
+- [ ] Review the retained benchmark set before turning recommendations into product roadmap items.
+- [ ] Decide whether to specify a `.graphify/wiki/` v2 contract with article manifests, stable IDs, citations, stale metadata, and reading paths.
+- [ ] Decide whether to expose agent/MCP wiki tools for index, read, search, graph path explain, and wiki lint.
+- [ ] Decide whether to add token-aware context packs for wiki articles, communities, paths, and review impact.
+- [ ] Decide whether to add reviewable wiki rebuild bundles with manual-edit protection.
+- [ ] Decide whether to add provenance/lifecycle labels for observed, documented, inferred, reviewed, edited, stale, and retired wiki facts.
+- [ ] Decide whether to add Mermaid validation/repair and click-to-source metadata.
+- [ ] Keep optional semantic search adapters deferred until wiki/MCP/token contracts are accepted.
+- [ ] Re-check stars, releases, package versions, and downloads before citing benchmark numbers externally.
