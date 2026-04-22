@@ -1295,20 +1295,559 @@ non-profile tests pass
 
 ---
 
-## Research Backlog - Dual Upstream Catch-up
+## Code Review Graph Alignment Roadmap
 
-Source spec: `spec/SPEC_UPSTREAM_DUAL_CATCHUP_2026_04.md`. This is a research backlog, not implemented behavior.
+Orientation specs:
 
-- [x] Merge the dual upstream catch-up study branch into main as docs-only material.
-- [ ] Lock exact upstream refs in the long-lived upstream traceability docs before product work.
-- [ ] Review Safi Python Graphify v4 drift and keep TypeScript deltas intentional.
-- [ ] Decide whether to implement minimal review context over existing `graph.json`.
-- [ ] Decide whether to implement changed-range mapping and graph risk scoring.
-- [ ] Decide whether to derive flow snapshots from existing CALLS/import edges.
-- [ ] Decide whether to enrich report/wiki/HTML with optional review-flow sections.
-- [ ] Triage notebook/language additions one input at a time with synthetic fixtures.
-- [ ] Triage additional assistant installer targets only when config contracts are stable.
-- [ ] Keep SQLite, embeddings, multi-repo registry, and VS Code extension work behind separate opt-in specs.
+```text
+spec/SPEC_UPSTREAM_DUAL_CATCHUP_2026_04.md
+spec/SPEC_CODE_REVIEW_GRAPH_OPPORUNITY.md
+```
+
+Primary reference implementation:
+
+```text
+tirth8205/code-review-graph v2.3.2
+commit db2d2df789c25a101e33477b898c1840fb4c7bc7
+package version 2.3.2
+local inspection clone: /tmp/code-review-graph-v2.3.2
+```
+
+Product decision:
+
+```text
+Clone code-review-graph review algorithms conceptually.
+Keep Graphify generic and TypeScript-first.
+Keep .graphify/graph.json as the source of truth.
+Use a Graphify adapter instead of adopting SQLite as default storage.
+Only deviate from code-review-graph when the deviation preserves Graphify's existing architecture.
+```
+
+### Accepted Decisions
+
+- [x] F1A: maintain durable upstream traceability in `UPSTREAM_GAP.md` rather than only branch-local specs.
+- [x] F2A: audit Safi Python Graphify v4 periodically as conceptual lineage, not strict commit-by-commit parity.
+- [x] CRG alignment principle: each review feature starts with a spec phase that cites the exact CRG source files, functions, tests, and intentional Graphify deviations.
+- [x] CRG alignment principle: implementation phases port CRG tests or equivalent Vitest fixtures before production code.
+- [x] CRG alignment principle: F11 report/wiki enrichment is included in this roadmap, but implemented after F7 flows exist.
+
+### Preparation Completed
+
+- [x] Merged the two research branches into `main` before extending this roadmap.
+- [x] Removed obsolete research worktrees after confirming their branches were contained in `main`.
+- [x] Refreshed local graph context with `graphify update .`.
+- [x] Treat refreshed `.graphify` output as working context only until input-scope excludes generated `dist/` artifacts from graph rebuilds.
+- [x] Used Codex 5.4 xhigh agents for parallel CRG plan refinement.
+
+### Execution Sequence
+
+This is the required implementation order even though F4 is the user-facing first-call tool:
+
+- [ ] F1 source lock and durable traceability.
+- [ ] F2 Python Graphify v4 drift audit.
+- [ ] F3 review graph store adapter.
+- [ ] F7 execution flows.
+- [ ] F8 affected flows.
+- [ ] F5 review context and blast radius.
+- [ ] F6 risk-scored detect changes.
+- [ ] F4 minimal context first-call tool.
+- [ ] F10 skills and LLM review workflow.
+- [ ] F11 report, wiki, and HTML enrichment after F7/F8 flow artifacts exist.
+- [ ] F12 benchmarks, honesty metrics, and known limits.
+
+F9 is a gate, not only a standalone feature: every algorithmic feature below must port the relevant CRG behavior tests before runtime code is accepted.
+
+### F1 - Source Lock And Durable Traceability
+
+CRG source basis:
+
+```text
+code-review-graph docs/architecture.md
+code-review-graph docs/COMMANDS.md
+code-review-graph CHANGELOG.md
+```
+
+Graphify target:
+
+```text
+UPSTREAM_GAP.md becomes the durable source-lock and decision table.
+spec/SPEC_UPSTREAM_DUAL_CATCHUP_2026_04.md remains the dated research snapshot.
+```
+
+- [ ] **Spec phase:** Write `spec/SPEC_UPSTREAM_TRACEABILITY.md` using `SPEC_UPSTREAM_DUAL_CATCHUP_2026_04.md` as the initial source-lock table.
+- [ ] **Spec phase:** Record exact refs for Safi Python Graphify v4, Safi Python `v0.4.23`, and CRG `v2.3.2`.
+- [ ] **Spec phase:** Define row states `covered`, `intentional-delta`, `deferred`, `rejected`, `needs-review`.
+- [ ] **Spec phase:** Define a rule that local tags are never trusted when `git fetch --tags` reports clobber risk.
+- [ ] **Implementation phase:** Update `UPSTREAM_GAP.md` with the durable source-lock table.
+- [ ] **Implementation phase:** Add an upstream refresh checklist to `PLAN.md`.
+- [ ] **Verification phase:** Run `git diff --check`.
+- [ ] **Commit:** `docs: lock upstream traceability refs`
+
+### F2 - Safi Python Graphify v4 Drift Audit
+
+CRG source basis:
+
+```text
+Not a CRG feature.
+This preserves the original Python Graphify lineage while CRG informs review features.
+```
+
+Graphify target:
+
+```text
+Python v4 is audited for conceptual drift.
+TypeScript deltas remain intentional: .graphify, npm, faster-whisper-ts, OCR/PDF, lifecycle, review commands.
+```
+
+- [ ] **Spec phase:** Extend `spec/SPEC_UPSTREAM_TRACEABILITY.md` with a Python v4 audit section.
+- [ ] **Spec phase:** Define the allowed result types: docs-only, parity-needed, intentional-delta, obsolete-upstream.
+- [ ] **Implementation phase:** Update `UPSTREAM_GAP.md` with latest Python v4 refs and drift summary.
+- [ ] **Implementation phase:** Update README only if Python v4 changed user-facing behavior worth mentioning.
+- [ ] **Verification phase:** Run `git diff --check`.
+- [ ] **Commit:** `docs: refresh python graphify v4 drift audit`
+
+### F3 - ReviewGraphStoreLike Adapter
+
+CRG source basis:
+
+```text
+code_review_graph/graph.py: GraphStore
+code_review_graph/tools/review.py: get_review_context(), detect_changes_func()
+code_review_graph/tools/context.py: get_minimal_context()
+code_review_graph/changes.py: analyze_changes(), map_changes_to_nodes(), compute_risk_score()
+code_review_graph/flows.py: trace_flows(), get_affected_flows()
+```
+
+What CRG does:
+
+```text
+All review tools query SQLite-backed GraphStore primitives:
+nodes by file, node by qualified name, edges by source/target, communities, flow memberships, transitive tests.
+```
+
+Graphify target:
+
+```text
+Implement the same review-facing interface over .graphify/graph.json and Graphology.
+Do not introduce SQLite as default storage.
+Keep an optional index/cache sidecar deferred unless performance forces it.
+```
+
+- [ ] **Spec phase:** Write `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md` as the umbrella spec for F3-F12.
+- [ ] **Spec phase:** Define `ReviewGraphStoreLike` methods matching CRG review needs.
+- [ ] **Spec phase:** Map CRG `GraphNode` fields to Graphify nodes, including `id`, `name`, `qualified_name`, `kind`, `file_path`, `line_start`, `line_end`, `is_test`, `community_id`, and `extra`.
+- [ ] **Spec phase:** Record deviations where Graphify lacks line ranges or TESTED_BY edges and define fallback behavior.
+- [ ] **Implementation phase:** Create `src/review-store.ts`.
+- [ ] **Implementation phase:** Create `tests/review-store.test.ts`.
+- [ ] **Implementation phase:** Load from `graph.json`, normalize paths, expose node/edge query helpers, and preserve current graph JSON schema.
+- [ ] **Verification phase:** Run `npm test -- tests/review-store.test.ts`.
+- [ ] **Verification phase:** Run `npm run lint`, `npm run build`, `npm test`, `git diff --check`.
+- [ ] **Commit:** `feat(review): add graph review store adapter`
+
+### F4 - Minimal Context First Tool
+
+CRG source basis:
+
+```text
+code_review_graph/tools/context.py: get_minimal_context()
+code-review-graph CLAUDE.md: first call must be get_minimal_context()
+code-review-graph docs/LLM-OPTIMIZED-REFERENCE.md: target <=5 tool calls and <=800 context tokens
+```
+
+What CRG does:
+
+```text
+Returns ultra-compact task orientation:
+graph stats, risk if git changes exist, top communities, top critical flows, key affected entities, and next tool suggestions.
+Task keywords choose suggestions for review, debug, refactor, onboard, or architecture.
+```
+
+Graphify target:
+
+```text
+Add `graphify minimal-context` and skill-runtime equivalent.
+Output stays compact and machine-readable.
+Use Graphify's existing summary/community data plus F3 adapter and F7 flows when available.
+Implement after F7, F8, F5, and F6 even though this is the recommended first assistant call.
+```
+
+- [ ] **Spec phase:** Add F4 details to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
+- [ ] **Spec phase:** Copy CRG output contract conceptually: `summary`, `risk`, `key_entities`, `communities`, `flows_affected`, `next_tool_suggestions`.
+- [ ] **Spec phase:** Define behavior before flows exist: omit `flows_affected` or return empty list with `flows_available=false`.
+- [ ] **Spec phase:** Define compactness budget based on CRG `<=800` context-token guidance and Graphify's existing `summary` output.
+- [ ] **Implementation phase:** Create `src/minimal-context.ts`.
+- [ ] **Implementation phase:** Create `tests/minimal-context.test.ts`.
+- [ ] **Implementation phase:** Add CLI command `minimal-context --task <task> --base <ref> --graph <path>`.
+- [ ] **Implementation phase:** Add skill-runtime command for assistant workflows.
+- [ ] **Implementation phase:** Add MCP/serve surface only if it reuses the same implementation and does not become a parallel API contract.
+- [ ] **Verification phase:** Port CRG behavior tests for review/debug/refactor/onboard suggestion routing.
+- [ ] **Verification phase:** Assert compact output does not require reading raw source files wholesale.
+- [ ] **Verification phase:** Run targeted tests, lint, build, full tests, `git diff --check`.
+- [ ] **Commit:** `feat(review): add minimal context entrypoint`
+
+### F5 - Review Context And Blast Radius
+
+CRG source basis:
+
+```text
+code_review_graph/tools/review.py: get_review_context()
+code_review_graph/tools/review.py: _extract_relevant_lines()
+code_review_graph/tools/review.py: _generate_review_guidance()
+code-review-graph skills/review-delta/SKILL.md
+code-review-graph skills/review-pr/SKILL.md
+```
+
+What CRG does:
+
+```text
+Auto-detects changed files from git.
+Computes impact radius at max_depth=2.
+Returns changed files, impacted files, changed nodes, impacted nodes, edges, optional source snippets, and review guidance.
+Minimal mode returns only counts, risk, key entities, test gap count, and next tools.
+```
+
+Graphify target:
+
+```text
+Add `graphify review-context` rather than hiding this under existing `review-delta`.
+Keep compatibility by letting `review-delta` call or reference the same implementation later.
+Use F3 adapter and existing Graphify review blast-radius helpers where equivalent.
+```
+
+- [ ] **Spec phase:** Add F5 details to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
+- [ ] **Spec phase:** Define `detail_level=minimal|standard` and `include_source` behavior aligned with CRG.
+- [ ] **Spec phase:** Define source-snippet safety caps and sensitive-file exclusions.
+- [ ] **Spec phase:** Decide where existing `review-delta` and `review-analysis` delegate to the new CRG-aligned implementation without breaking current outputs.
+- [ ] **Implementation phase:** Create `src/review-context.ts`.
+- [ ] **Implementation phase:** Create `tests/review-context.test.ts`.
+- [ ] **Implementation phase:** Add CLI and skill-runtime commands.
+- [ ] **Implementation phase:** Generate review guidance for test gaps, wide blast radius, inheritance edges, and cross-file impact.
+- [ ] **Verification phase:** Port CRG review context tests using synthetic TypeScript/Python fixtures.
+- [ ] **Verification phase:** Run targeted tests, lint, build, full tests, `git diff --check`.
+- [ ] **Commit:** `feat(review): add focused review context`
+
+### F6 - Risk-Scored Detect Changes
+
+CRG source basis:
+
+```text
+code_review_graph/changes.py: parse_git_diff_ranges()
+code_review_graph/changes.py: _parse_unified_diff()
+code_review_graph/changes.py: map_changes_to_nodes()
+code_review_graph/changes.py: compute_risk_score()
+code_review_graph/changes.py: analyze_changes()
+code_review_graph/tools/review.py: detect_changes_func()
+tests/test_changes.py
+```
+
+What CRG does:
+
+```text
+Runs `git diff --unified=0`.
+Parses file hunks to changed line ranges.
+Maps ranges to function/class/test nodes by line overlap.
+Falls back to file-level nodes when line ranges are absent.
+Scores each changed node with flow participation, cross-community callers, test coverage, security keywords, and caller count.
+Returns risk score, changed functions, affected flows, test gaps, and top review priorities.
+```
+
+Graphify target:
+
+```text
+Add `graphify detect-changes` aligned with CRG.
+Use F3 adapter, F7 flows, and existing Graphify edge/community data.
+Keep `review-analysis` as existing API, but allow it to reuse detect-changes later.
+```
+
+- [ ] **Spec phase:** Add F6 details to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
+- [ ] **Spec phase:** Copy CRG risk factors and weights as initial defaults.
+- [ ] **Spec phase:** Define fallback when Graphify nodes lack `line_start` and `line_end`.
+- [ ] **Spec phase:** Define safe git ref validation based on CRG `_SAFE_GIT_REF`.
+- [ ] **Spec phase:** Define dirty-worktree behavior: warn permanently, analyze explicitly requested refs/files, and never mutate git state.
+- [ ] **Implementation phase:** Create `src/detect-changes.ts`.
+- [ ] **Implementation phase:** Create `tests/detect-changes.test.ts`.
+- [ ] **Implementation phase:** Port CRG unified-diff parser tests.
+- [ ] **Implementation phase:** Port CRG risk scoring tests for untested functions, security keywords, caller count, and flow participation.
+- [ ] **Implementation phase:** Add CLI and skill-runtime commands.
+- [ ] **Verification phase:** Run targeted tests, lint, build, full tests, `git diff --check`.
+- [ ] **Commit:** `feat(review): add risk-scored detect changes`
+
+### F7 - Execution Flows
+
+CRG source basis:
+
+```text
+code_review_graph/flows.py: detect_entry_points()
+code_review_graph/flows.py: trace_flows()
+code_review_graph/flows.py: compute_criticality()
+code_review_graph/flows.py: store_flows()
+code_review_graph/flows.py: incremental_trace_flows()
+tests/test_flows.py
+```
+
+What CRG does:
+
+```text
+Detects entry points through no incoming CALLS, framework decorators, and conventional names.
+Traces forward BFS through CALLS edges with max_depth=15 and cycle detection.
+Skips trivial single-node flows.
+Scores criticality with file spread 0.30, external calls 0.20, security sensitivity 0.25, test gap 0.15, depth 0.10.
+Persists flows and flow memberships in SQLite.
+```
+
+Graphify target:
+
+```text
+Port CRG heuristics and weights to TypeScript with minimal changes.
+Persist derived flow artifacts under `.graphify/flows.json` or embed as optional generated output.
+Do not require a database.
+```
+
+- [ ] **Spec phase:** Add F7 details to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
+- [ ] **Spec phase:** Copy CRG entrypoint decorator/name patterns into a TypeScript constants section.
+- [ ] **Spec phase:** Define Graphify flow artifact schema: `name`, `entry_point`, `path`, `depth`, `node_count`, `file_count`, `files`, `criticality`.
+- [ ] **Spec phase:** Define whether `tests` are excluded by default and how `include_tests` works.
+- [ ] **Implementation phase:** Create `src/flows.ts`.
+- [ ] **Implementation phase:** Create `tests/flows.test.ts`.
+- [ ] **Implementation phase:** Port CRG tests for roots, decorators, name patterns, test exclusion, cycles, max depth, multi-file flows, and criticality.
+- [ ] **Implementation phase:** Add CLI commands `flows build`, `flows list`, and `flows get`.
+- [ ] **Implementation phase:** Add skill-runtime commands for list/get.
+- [ ] **Verification phase:** Run targeted flow tests, lint, build, full tests, `git diff --check`.
+- [ ] **Commit:** `feat(review): derive execution flows`
+
+### F8 - Affected Flows
+
+CRG source basis:
+
+```text
+code_review_graph/flows.py: get_affected_flows()
+code_review_graph/tools/review.py: get_affected_flows_func()
+code_review_graph/main.py: get_affected_flows_tool()
+```
+
+What CRG does:
+
+```text
+Finds nodes belonging to changed files.
+Finds flows containing those node IDs.
+Returns affected flows sorted by criticality with step details.
+Works as a separate tool so agents expand only when needed.
+```
+
+Graphify target:
+
+```text
+Add `graphify affected-flows`.
+Use F7 flow artifacts and F3 adapter.
+Expose as a separate skill-runtime command and reference it from minimal-context and detect-changes suggestions.
+```
+
+- [ ] **Spec phase:** Add F8 details to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
+- [ ] **Spec phase:** Define changed-file discovery from explicit `--files` or `--base`.
+- [ ] **Implementation phase:** Add affected-flow query to `src/flows.ts` or create `src/affected-flows.ts`.
+- [ ] **Implementation phase:** Add `tests/affected-flows.test.ts`.
+- [ ] **Implementation phase:** Add CLI and skill-runtime commands.
+- [ ] **Verification phase:** Test affected flows are sorted by criticality and include step details.
+- [ ] **Verification phase:** Run targeted tests, lint, build, full tests, `git diff --check`.
+- [ ] **Commit:** `feat(review): add affected flow analysis`
+
+### F9 - Port CRG Tests Before Runtime Changes
+
+CRG source basis:
+
+```text
+tests/test_changes.py
+tests/test_flows.py
+tests/test_tools.py
+tests/test_integration_v2.py
+tests/test_prompts.py
+tests/test_skills.py
+tests/test_wiki.py
+tests/test_eval.py
+```
+
+What CRG does:
+
+```text
+Validates algorithm behavior with synthetic fixtures before MCP usage.
+Tests diff parsing, line overlap, dedupe, risk scoring, entrypoint detection, BFS tracing, cycles, depth limits, and multi-file flow metadata.
+Also tests prompt/skill workflow, wiki generation, evaluation metrics, and full-pipeline integration.
+```
+
+Graphify target:
+
+```text
+Every CRG-aligned feature starts RED by porting the relevant CRG test semantics to Vitest.
+Fixtures remain synthetic and generic.
+```
+
+- [ ] **Spec phase:** Add a CRG test-porting matrix to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
+- [ ] **Spec phase:** For every CRG test copied conceptually, record source test path and Graphify target test path.
+- [ ] **Spec phase:** Define fixture fields required for functions, classes, tests, CALLS edges, TESTED_BY-style edges, communities, flows, changed ranges, and line metadata.
+- [ ] **Implementation phase:** Create fixture helpers for review graph nodes, calls, TESTED_BY edges, communities, and flows.
+- [ ] **Implementation phase:** Port flow tests before prompt/report/benchmark tests because later features depend on reliable flow artifacts.
+- [ ] **Implementation phase:** Port change/risk tests before minimal-context and review-context tests because those outputs depend on changed-node accuracy.
+- [ ] **Implementation phase:** Keep each feature's tests in its feature file rather than one giant test file.
+- [ ] **Verification phase:** Require RED/GREEN evidence in every feature commit.
+- [ ] **Verification phase:** Include one integration fixture that exercises changed files, affected flows, test gaps, report/wiki enrichment, and benchmark metrics together.
+- [ ] **Commit:** Fold test-port commits into each feature lot rather than one separate commit unless shared test helpers are needed.
+
+### F10 - Skills And LLM Review Workflow
+
+CRG source basis:
+
+```text
+code-review-graph CLAUDE.md
+code-review-graph docs/LLM-OPTIMIZED-REFERENCE.md
+code-review-graph skills/review-delta/SKILL.md
+code-review-graph skills/review-pr/SKILL.md
+code_review_graph/main.py: MCP tool registration
+code_review_graph/prompts.py
+code_review_graph/skills.py
+```
+
+What CRG does:
+
+```text
+For agent workflows, always starts with get_minimal_context.
+Uses detail_level=minimal unless more detail is needed.
+Targets <=5 graph tool calls and <=800 tokens of graph context.
+Escalates from minimal context to detect_changes, affected_flows, and review_context based on risk.
+Provides prompt/workflow templates for review, architecture mapping, debugging, onboarding, and pre-merge checks.
+```
+
+Graphify target:
+
+```text
+Update Graphify skills to make `$graphify minimal-context` the first review call.
+Keep Codex syntax `$graphify`, not Claude slash syntax.
+Preserve existing Graphify commands for non-review graph usage.
+Expose CLI/skill workflow first; add MCP prompt/tool parity only after the CLI contract is stable.
+```
+
+- [ ] **Spec phase:** Add F10 skill workflow to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
+- [ ] **Spec phase:** Define review workflow states: orient, detect, expand flows, expand snippets, final review.
+- [ ] **Spec phase:** Map CRG tool names to Graphify commands: `get_minimal_context`, `detect_changes`, `get_affected_flows`, and `get_review_context`.
+- [ ] **Spec phase:** Define dirty worktree warning interaction with input-scope once that branch lands.
+- [ ] **Spec phase:** Define stale graph behavior: warn first, rebuild when appropriate, and do not trust stale semantic review output.
+- [ ] **Implementation phase:** Update `src/skills/skill-codex.md`, `src/skills/skill.md`, `src/skills/skill-gemini.toml`, and other distributed skills.
+- [ ] **Implementation phase:** Add or extend MCP prompts/tools only if they reuse the tested CLI implementation and do not create a second behavior contract.
+- [ ] **Implementation phase:** Add `tests/skills.test.ts` assertions for minimal-context first-call guidance.
+- [ ] **Implementation phase:** Preserve existing workflows for build, update, query, summary, review-delta, review-analysis, review-eval, and recommend-commits.
+- [ ] **Verification phase:** Run `npm test -- tests/skills.test.ts tests/codex-integration.test.ts`.
+- [ ] **Verification phase:** Run lint, build, full tests, `git diff --check`.
+- [ ] **Commit:** `docs(skills): align review workflow with code-review-graph`
+
+### F11 - Report, Wiki, And HTML Enrichment After Flows
+
+CRG source basis:
+
+```text
+code_review_graph/wiki.py: community pages include execution flows through the community
+code_review_graph/visualization.py: flow highlighting support
+code-review-graph README.md: blast radius and flow visualization narrative
+code_review_graph/tools/build.py: precomputed summaries
+tests/test_wiki.py
+tests/test_visualization.py
+```
+
+What CRG does:
+
+```text
+Once flows exist, wiki pages list execution flows through each community.
+Visualization can highlight an active flow by dimming unrelated nodes and edges.
+This is downstream of flow detection, not a prerequisite for review analysis.
+Build tooling precomputes summaries so report/wiki/tooling do not repeatedly traverse the whole graph.
+```
+
+Graphify target:
+
+```text
+Implement after F7 and F8, in the same roadmap.
+Add optional sections to GRAPH_REPORT.md and .graphify/wiki.
+Add HTML flow highlighting only if current exporter can support it without a full rewrite.
+Keep existing Graphify god nodes, surprises, hyperedges, communities, ambiguous nodes, knowledge gaps, suggested questions, and audit sections intact.
+```
+
+- [ ] **Spec phase:** Add F11 report/wiki/html section to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
+- [ ] **Spec phase:** Define report sections: top critical flows, affected flows for current diff, high-risk nodes, test gaps.
+- [ ] **Spec phase:** Define wiki sections: flows through community and flow membership links.
+- [ ] **Spec phase:** Define slug-collision behavior compatible with CRG's unique slug suffixing while preserving current Graphify wiki links.
+- [ ] **Spec phase:** Define HTML behavior as optional and non-blocking if graph is too large.
+- [ ] **Implementation phase:** Modify `src/report.ts`, `src/wiki.ts`, and possibly `src/html-export.ts`.
+- [ ] **Implementation phase:** Render flow/review sections only when grounded data exists; no placeholder sections that look authoritative.
+- [ ] **Implementation phase:** Add `tests/report.test.ts`, `tests/wiki.test.ts`, and focused HTML tests only if HTML changes.
+- [ ] **Verification phase:** Generate a synthetic graph with flows and verify report/wiki include CRG-style flow sections.
+- [ ] **Verification phase:** Port wiki tests for expected sections, generated index links, idempotent generation, empty graph handling, and slug collisions.
+- [ ] **Verification phase:** Run report/wiki/export tests, lint, build, full tests, `git diff --check`.
+- [ ] **Commit:** `feat(output): add flow-aware report and wiki sections`
+
+### F12 - Benchmarks, Honesty Metrics, And Known Limits
+
+CRG source basis:
+
+```text
+code_review_graph/eval/benchmarks/impact_accuracy.py
+code_review_graph/eval/benchmarks/flow_completeness.py
+code_review_graph/eval/benchmarks/token_efficiency.py
+code_review_graph/eval/token_benchmark.py
+code_review_graph/eval/scorer.py
+code_review_graph/eval/runner.py
+code_review_graph/eval/reporter.py
+code-review-graph README.md benchmark and limitations sections
+tests/test_eval.py
+```
+
+What CRG does:
+
+```text
+Documents that impact analysis favors recall over precision.
+Reports impact accuracy as conservative.
+Measures token efficiency and flow completeness.
+Admits flow detection is weaker on some language/framework combinations.
+Simulates review, architecture, debug, onboarding, and pre-merge workflows against expected outputs.
+```
+
+Graphify target:
+
+```text
+Add review benchmark/UAT fixtures before claiming CRG-equivalent behavior.
+Report false positives honestly.
+Do not overclaim flow quality in languages where parser metadata is weak.
+Use deterministic local fixtures by default; do not import CRG's network clone runner into the default test path.
+```
+
+- [ ] **Spec phase:** Add F12 benchmark section to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
+- [ ] **Spec phase:** Define benchmark case schema: graph input, changed files or diff ranges, expected impacted nodes/files/flows, expected tests, and expected review summary facts.
+- [ ] **Spec phase:** Define metrics: changed-node recall, impacted-file precision, impacted-file recall, impacted-file F1, token budget, flow completeness, test-gap recall, false-positive count.
+- [ ] **Spec phase:** Define output format for both Markdown and machine-readable JSON benchmark results.
+- [ ] **Implementation phase:** Add `tests/review-benchmark.test.ts` or `tests/review-uat.test.ts` with synthetic repositories.
+- [ ] **Implementation phase:** Add a CLI/internal command only if it is useful for maintainers; otherwise keep benchmarks as tests.
+- [ ] **Documentation phase:** Document known limits in README after implementation.
+- [ ] **Documentation phase:** Label token measurements as estimates unless measured from actual model calls.
+- [ ] **Verification phase:** Run benchmark tests and full suite.
+- [ ] **Commit:** `test(review): add code review graph alignment benchmarks`
+
+### Deferred CRG Features
+
+- [ ] Keep SQLite storage deferred behind a separate storage/index spec.
+- [ ] Keep embeddings and semantic search deferred behind a separate privacy and provider spec.
+- [ ] Keep VS Code extension work deferred behind a separate package spec.
+- [ ] Keep multi-repo registry and cross-repo search deferred behind a separate multi-repo spec.
+- [ ] Keep notebook/language additions outside this CRG review roadmap unless selected in a dedicated input-surface spec.
+
+### Release Gate For CRG-Aligned Review Features
+
+- [ ] `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md` exists and cites CRG source files/functions/tests.
+- [ ] Every accepted feature has a spec phase completed before implementation.
+- [ ] Every algorithmic feature ports CRG tests or equivalent Vitest fixtures before implementation.
+- [ ] `npm run lint` passes.
+- [ ] `npm run build` passes.
+- [ ] `npm test` passes.
+- [ ] `git diff --check` passes.
+- [ ] `npx graphify hook-rebuild` or `graphify update .` runs after code changes.
+- [ ] `.graphify` output does not include transient worktree paths.
+- [ ] README and skills describe only implemented review behavior.
 
 ---
 
