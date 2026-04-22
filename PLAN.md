@@ -1559,11 +1559,11 @@ Use F3 adapter, F7 flows, and existing Graphify edge/community data.
 Keep `review-analysis` as existing API, but allow it to reuse detect-changes later.
 ```
 
-- [ ] **Spec phase:** Add F6 details to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
-- [ ] **Spec phase:** Copy CRG risk factors and weights as initial defaults.
-- [ ] **Spec phase:** Define fallback when Graphify nodes lack `line_start` and `line_end`.
-- [ ] **Spec phase:** Define safe git ref validation based on CRG `_SAFE_GIT_REF`.
-- [ ] **Spec phase:** Define dirty-worktree behavior: warn permanently, analyze explicitly requested refs/files, and never mutate git state.
+- [x] **Spec phase:** Add F6 details to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
+- [x] **Spec phase:** Copy CRG risk factors and weights as initial defaults.
+- [x] **Spec phase:** Define fallback when Graphify nodes lack `line_start` and `line_end`.
+- [x] **Spec phase:** Define safe git ref validation based on CRG `_SAFE_GIT_REF`.
+- [x] **Spec phase:** Define dirty-worktree behavior: warn permanently, analyze explicitly requested refs/files, and never mutate git state.
 - [ ] **Implementation phase:** Create `src/detect-changes.ts`.
 - [ ] **Implementation phase:** Create `tests/detect-changes.test.ts`.
 - [ ] **Implementation phase:** Port CRG unified-diff parser tests.

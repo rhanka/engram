@@ -755,6 +755,136 @@ Port or synthesize CRG behaviors:
 - guidance flags cross-file impact when impacted file count is greater than three.
 - CLI and skill-runtime commands emit text and JSON from the same implementation.
 
+## F6 Risk-Scored Detect Changes
+
+### CRG Source Contract
+
+F6 ports `code_review_graph/changes.py` conceptually:
+
+- `parse_git_diff_ranges(repo_root, base="HEAD~1")`
+- `_parse_unified_diff(diff_text)`
+- `map_changes_to_nodes(store, changed_ranges)`
+- `compute_risk_score(store, node)`
+- `analyze_changes(store, changed_files, changed_ranges?, repo_root?, base?)`
+- `tools/review.py:detect_changes_func()`
+
+### Git Diff Parsing
+
+Graphify must parse unified diffs without shell interpretation:
+
+- run `git diff --unified=0 <base> --` through existing safe git helpers or `spawn`/`execFile` style APIs.
+- reject unsafe refs using CRG `_SAFE_GIT_REF`: `^[A-Za-z0-9_.~^/@{}\-]+$`.
+- hunk headers map `@@ ... +start,count @@` to inclusive `[start, end]` ranges.
+- omitted count means one changed line.
+- `count=0` deletion hunks map to `[start, start]`.
+- files are read from `+++ b/<path>` lines.
+- command failure or unsafe ref returns empty ranges and a warning, not a thrown exception from public CLI.
+
+### Changed Range Mapping
+
+`mapChangesToNodes(store, changedRanges)` must:
+
+- use `store.getNodesByFile(file)` first.
+- fall back to `store.getFilesMatching(file)` for suffix/absolute path differences.
+- require node line metadata for line-overlap mapping.
+- dedupe by qualified name.
+- overlap when `node.lineStart <= rangeEnd && node.lineEnd >= rangeStart`.
+- if no ranges are available, `analyzeChanges()` falls back to all nodes in changed files.
+
+### Risk Score
+
+Port CRG weights:
+
+- flow participation: sum flow criticalities for flows containing the node, capped `0.25`; if no criticality data, `0.05` per flow membership capped `0.25`.
+- community crossing: `0.05` per caller from a different community, capped `0.15`.
+- test coverage: `0.30 - min(testCount / 5, 1) * 0.25`; this means untested = `0.30`, 5+ tests = `0.05`.
+- security sensitivity: `0.20` if node name or qualified name contains a CRG security keyword.
+- caller count: caller count / 20 capped `0.10`.
+- clamp and round to four decimals.
+
+Security keywords are the same set as F7.
+
+### Output Contract
+
+```ts
+export interface DetectChangesResult {
+  status: "ok";
+  summary: string;
+  riskScore: number;
+  changedFiles: string[];
+  changedFunctions: DetectChangesNodeRisk[];
+  affectedFlows: ReviewFlowDetail[];
+  testGaps: DetectChangesTestGap[];
+  reviewPriorities: DetectChangesNodeRisk[];
+  warnings: string[];
+}
+```
+
+Minimal output returns:
+
+- `status`
+- `summary`
+- `riskScore`
+- `changedFileCount`
+- `testGapCount`
+- top three `reviewPriorities` names.
+
+### Flow Integration
+
+F6 may accept an optional F7 `ReviewFlowArtifact`:
+
+- CLI option `--flows .graphify/flows.json`.
+- if missing, risk score still works with flow factor `0`.
+- if provided, affected flows are computed with F8 `getAffectedFlows()`.
+- no implicit `flows build`.
+
+### CLI And Runtime
+
+Public CLI:
+
+```text
+graphify detect-changes [files...] --graph .graphify/graph.json
+graphify detect-changes --files src/a.ts,src/b.ts
+graphify detect-changes --base main --head HEAD
+graphify detect-changes --staged
+graphify detect-changes --flows .graphify/flows.json
+graphify detect-changes --detail-level minimal|standard
+graphify detect-changes --json
+```
+
+Skill-runtime requires explicit files and optional precomputed ranges/flows:
+
+```text
+graphify-skill-runtime detect-changes --graph <path> --files <csv> [--flows <path>]
+```
+
+### Dirty Worktree Behavior
+
+Graphify must not mutate git state. If worktree diff is used implicitly, the text output must be framed as current working tree analysis. If explicit files or refs are provided, analyze those and do not warn about unrelated dirty state unless a later skill layer decides to.
+
+### F6 Test Matrix
+
+Port CRG tests:
+
+- parse basic unified diff.
+- parse multiple hunks.
+- parse single-line hunk.
+- parse deletion-only hunk.
+- parse multiple files.
+- reject unsafe git refs.
+- map changed ranges to overlapping nodes.
+- no overlap returns empty.
+- dedupe nodes across ranges.
+- changed ranges across files.
+- risk score is `[0, 1]`.
+- untested function scores higher than tested function.
+- security keyword boosts risk.
+- caller count boosts risk.
+- flow membership/criticality boosts risk when artifact is provided.
+- `analyzeChanges()` returns summary, risk score, changed functions, affected flows, test gaps, priorities.
+- fallback with no ranges maps all nodes in changed files.
+- CLI/runtime minimal and standard outputs use the same implementation.
+
 ## F4-F12 Spec Skeleton
 
 F4 minimal context must be implemented after F7, F8, F5, and F6. It will combine graph stats, changed-risk summary, top communities, affected flows, and next tool suggestions.
