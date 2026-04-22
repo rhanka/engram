@@ -296,6 +296,227 @@ Additional current Graphify test gaps to close in F3:
 - structured line range attrs plus `source_location` parsing.
 - CRG-style `qualified_name`, `kind`, `is_test`, `TESTED_BY`, transitive tests, and future flow fields.
 
+## F7 Execution Flows
+
+### CRG Source Contract
+
+F7 ports `code_review_graph/flows.py` conceptually:
+
+- `detect_entry_points(store, include_tests=False)`
+- `_trace_single_flow(store, ep, max_depth=15)`
+- `trace_flows(store, max_depth=15, include_tests=False)`
+- `compute_criticality(flow, store)`
+- `store_flows(store, flows)`
+- `get_flows(store, sort_by="criticality", limit=50)`
+- `get_flow_by_id(store, flow_id)`
+- `incremental_trace_flows(store, changed_files, max_depth=15)`
+
+The initial Graphify implementation must cover full build/list/get behavior. Incremental retracing may be deferred until F8 if the artifact schema preserves stable flow IDs and node memberships.
+
+### Entrypoint Detection
+
+Graphify must preserve CRG's entrypoint rules with TypeScript constants:
+
+- true root: `Function` or `Test` node whose `qualifiedName` is not in `store.getAllCallTargets()`.
+- framework entrypoint: node `extra.decorators` contains one of CRG's decorator patterns.
+- conventional name: node name matches one of CRG's entry-name patterns.
+- tests excluded by default unless `includeTests` is true.
+- file-level test exclusion applies to `__tests__`, `.spec.ts`, `.spec.tsx`, `.test.ts`, `.test.tsx`, and Python `test_*.py` paths.
+
+Decorator patterns copied conceptually from CRG:
+
+```text
+app.(get|post|put|delete|patch|route|websocket|on_event)
+router.(get|post|put|delete|patch|route)
+blueprint.(route|before_request|after_request)
+(before|after)_(request|response)
+click.(command|group)
+\w+.(command|group)
+(field|model)_(serializer|validator)
+(celery.)?(task|shared_task|periodic_task)
+receiver
+api_view
+\baction\b
+pytest.(fixture|mark)
+(override_settings|modify_settings)
+(event.)?listens_for
+(Get|Post|Put|Delete|Patch|RequestMapping)Mapping
+(Scheduled|EventListener|Bean|Configuration)
+(Component|Injectable|Controller|Module|Guard|Pipe)
+(Subscribe|Mutation|Query|Resolver)
+(app|router).(get|post|put|delete|patch|use|all)
+@(Override|OnLifecycleEvent|Composable)
+(HiltViewModel|AndroidEntryPoint|Inject)
+\w+.(tool|tool_plain|system_prompt|result_validator)
+^tool\b
+\w+.(middleware|exception_handler|on_exception)
+\w+.route\b
+```
+
+Name patterns copied conceptually from CRG:
+
+```text
+^main$
+^__main__$
+^test_
+^Test[A-Z]
+^on_
+^handle_
+^handler$
+^handle$
+^lambda_handler$
+^upgrade$
+^downgrade$
+^lifespan$
+^get_db$
+^on(Create|Start|Resume|Pause|Stop|Destroy|Bind|Receive)
+^do(Get|Post|Put|Delete)$
+^do_(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)$
+^log_message$
+^(middleware|errorHandler)$
+^ng(OnInit|OnChanges|OnDestroy|DoCheck|AfterContentInit|AfterContentChecked|AfterViewInit|AfterViewChecked)$
+^(transform|writeValue|registerOnChange|registerOnTouched|setDisabledState)$
+^(canActivate|canDeactivate|canActivateChild|canLoad|canMatch|resolve)$
+^(componentDidMount|componentDidUpdate|componentWillUnmount|shouldComponentUpdate|render)$
+```
+
+### Flow Tracing
+
+Graphify must trace flows with forward BFS over directed `CALLS` edges exposed by `ReviewGraphStoreLike`:
+
+- seed queue with the entrypoint node.
+- follow only `CALLS` edges from `getEdgesBySource()`.
+- never traverse `TESTED_BY`, semantic, conceptual, import-only, or multimodal edges.
+- use a visited qualified-name set for cycle safety.
+- default `maxDepth` is `15`.
+- `depth` is the maximum BFS depth reached.
+- skip trivial single-node flows.
+- sort final flows by descending `criticality`.
+
+On undirected Graphify graphs, only edges with preserved `_src` and `_tgt` from the F3 adapter may participate in forward flows. If skipped edges exist because direction is unavailable, the flow result must include a warning so downstream review features do not overclaim precision.
+
+### Criticality
+
+Graphify must port CRG weights with no product-specific taxonomy:
+
+- file spread: weight `0.30`; one file is `0.0`, five or more files is `1.0`.
+- external calls: weight `0.20`; unresolved `CALLS` targets are external, five or more is `1.0`.
+- security sensitivity: weight `0.25`; count nodes whose name or qualified name contains a CRG security keyword.
+- test coverage gap: weight `0.15`; node is covered if it has an incoming `TESTED_BY` edge.
+- depth: weight `0.10`; depth ten or more is `1.0`.
+
+Security keywords copied from CRG:
+
+```text
+auth, login, password, token, session, crypt, secret, credential,
+permission, sql, query, execute, connect, socket, request, http,
+sanitize, validate, encrypt, decrypt, hash, sign, verify, admin,
+privilege
+```
+
+The final score is rounded to four decimals and clamped to `[0, 1]`.
+
+### Graphify Flow Artifact
+
+Graphify persists derived flows to `.graphify/flows.json` by default. This artifact is generated state, not a new source of truth and not required for ordinary graph build/update commands.
+
+Schema:
+
+```ts
+export interface ReviewFlowArtifact {
+  version: 1;
+  generatedAt: string;
+  graphPath: string | null;
+  maxDepth: number;
+  includeTests: boolean;
+  warnings: string[];
+  flows: ReviewFlow[];
+}
+
+export interface ReviewFlow {
+  id: string;
+  name: string;
+  entryPoint: string;
+  entryPointId: string;
+  path: string[];
+  qualifiedPath: string[];
+  depth: number;
+  nodeCount: number;
+  fileCount: number;
+  files: string[];
+  criticality: number;
+  warnings: string[];
+}
+
+export interface ReviewFlowStep {
+  nodeId: string;
+  name: string;
+  kind: ReviewGraphNodeKind;
+  file: string | null;
+  lineStart: number | null;
+  lineEnd: number | null;
+  qualifiedName: string;
+}
+```
+
+Flow IDs must be deterministic for a graph: `flow:<entryPointId>` sanitized for filesystem and JSON stability. If duplicate entrypoint IDs ever collide after sanitization, suffix with a deterministic counter.
+
+### API Surface
+
+Create `src/flows.ts` with:
+
+- `detectEntryPoints(store, options?)`
+- `traceFlows(store, options?)`
+- `computeFlowCriticality(flow, store)`
+- `flowToSteps(flow, store)`
+- `buildFlowArtifact(store, options?)`
+- `writeFlowArtifact(artifact, path)`
+- `readFlowArtifact(path)`
+- `listFlows(artifact, options?)`
+- `getFlowById(artifact, flowId, store?)`
+
+The functions consume `ReviewGraphStoreLike`; they must not import Graphology directly except optional convenience helpers that wrap `createReviewGraphStore()`.
+
+### CLI And Runtime
+
+Add public CLI commands:
+
+```text
+graphify flows build --graph .graphify/graph.json --out .graphify/flows.json [--max-depth 15] [--include-tests]
+graphify flows list --flows .graphify/flows.json [--sort criticality|depth|node-count|file-count|name] [--limit 50] [--json]
+graphify flows get <flow-id> --flows .graphify/flows.json --graph .graphify/graph.json [--json]
+```
+
+Add skill-runtime equivalents:
+
+```text
+graphify-skill-runtime flows-build --graph <path> --out <path>
+graphify-skill-runtime flows-list --flows <path>
+graphify-skill-runtime flows-get --flows <path> --graph <path> --id <flow-id>
+```
+
+F7 does not change existing `summary`, `review-delta`, `review-analysis`, or `recommend-commits` behavior. Later lots may consume `.graphify/flows.json` only when it exists.
+
+### F7 Test Matrix
+
+Port CRG `tests/test_flows.py` behaviors into Vitest:
+
+- no-incoming `CALLS` functions become entrypoints.
+- framework decorators mark entrypoints even when called.
+- conventional names `main`, `test_*`, `on_*`, `handle_*`, `upgrade`, `downgrade`, `lifespan` become entrypoints.
+- test nodes and test files are excluded by default and included with `includeTests`.
+- linear flow `A -> B -> C` traces all nodes.
+- cycles do not loop forever.
+- `maxDepth` limits traversal.
+- trivial single-node flows are skipped.
+- multi-file flows report all files and `fileCount`.
+- criticality is bounded `[0, 1]`.
+- security-sensitive flow scores at least as high as a comparable non-security flow.
+- file-spread boosts multi-file flows.
+- store/list/get roundtrip works through `.graphify/flows.json`.
+- sort modes match CRG intent.
+- directed-edge degradation warning is emitted for undirected edges that lack preserved direction.
+
 ## F4-F12 Spec Skeleton
 
 F4 minimal context must be implemented after F7, F8, F5, and F6. It will combine graph stats, changed-risk summary, top communities, affected flows, and next tool suggestions.

@@ -1603,10 +1603,10 @@ Persist derived flow artifacts under `.graphify/flows.json` or embed as optional
 Do not require a database.
 ```
 
-- [ ] **Spec phase:** Add F7 details to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
-- [ ] **Spec phase:** Copy CRG entrypoint decorator/name patterns into a TypeScript constants section.
-- [ ] **Spec phase:** Define Graphify flow artifact schema: `name`, `entry_point`, `path`, `depth`, `node_count`, `file_count`, `files`, `criticality`.
-- [ ] **Spec phase:** Define whether `tests` are excluded by default and how `include_tests` works.
+- [x] **Spec phase:** Add F7 details to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
+- [x] **Spec phase:** Copy CRG entrypoint decorator/name patterns into a TypeScript constants section.
+- [x] **Spec phase:** Define Graphify flow artifact schema: `name`, `entry_point`, `path`, `depth`, `node_count`, `file_count`, `files`, `criticality`.
+- [x] **Spec phase:** Define whether `tests` are excluded by default and how `include_tests` works.
 - [ ] **Implementation phase:** Create `src/flows.ts`.
 - [ ] **Implementation phase:** Create `tests/flows.test.ts`.
 - [ ] **Implementation phase:** Port CRG tests for roots, decorators, name patterns, test exclusion, cycles, max depth, multi-file flows, and criticality.
