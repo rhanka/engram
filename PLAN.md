@@ -1345,7 +1345,7 @@ This is the required implementation order even though F4 is the user-facing firs
 
 - [x] F1 source lock and durable traceability.
 - [x] F2 Python Graphify v4 drift audit.
-- [ ] F3 review graph store adapter.
+- [x] F3 review graph store adapter.
 - [ ] F7 execution flows.
 - [ ] F8 affected flows.
 - [ ] F5 review context and blast radius.
@@ -1437,12 +1437,12 @@ Keep an optional index/cache sidecar deferred unless performance forces it.
 - [x] **Spec phase:** Define `ReviewGraphStoreLike` methods matching CRG review needs.
 - [x] **Spec phase:** Map CRG `GraphNode` fields to Graphify nodes, including `id`, `name`, `qualified_name`, `kind`, `file_path`, `line_start`, `line_end`, `is_test`, `community_id`, and `extra`.
 - [x] **Spec phase:** Record deviations where Graphify lacks line ranges or TESTED_BY edges and define fallback behavior.
-- [ ] **Implementation phase:** Create `src/review-store.ts`.
-- [ ] **Implementation phase:** Create `tests/review-store.test.ts`.
-- [ ] **Implementation phase:** Load from `graph.json`, normalize paths, expose node/edge query helpers, and preserve current graph JSON schema.
-- [ ] **Verification phase:** Run `npm test -- tests/review-store.test.ts`.
-- [ ] **Verification phase:** Run `npm run lint`, `npm run build`, `npm test`, `git diff --check`.
-- [ ] **Commit:** `feat(review): add graph review store adapter`
+- [x] **Implementation phase:** Create `src/review-store.ts`.
+- [x] **Implementation phase:** Create `tests/review-store.test.ts`.
+- [x] **Implementation phase:** Load from `graph.json`, normalize paths, expose node/edge query helpers, and preserve current graph JSON schema.
+- [x] **Verification phase:** Run `npm test -- tests/review-store.test.ts`.
+- [x] **Verification phase:** Run `npm run lint`, `npm run build`, `npm test`, `git diff --check`.
+- [x] **Commit:** `feat(review): add graph review store adapter`
 
 ### F4 - Minimal Context First Tool
 

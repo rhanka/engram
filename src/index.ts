@@ -211,6 +211,8 @@ export { buildReviewDelta, reviewDeltaToText } from "./review.js";
 export type { ReviewDelta, ReviewNode, ReviewChain, ReviewDeltaOptions } from "./review.js";
 export { buildReviewAnalysis, reviewAnalysisToText, evaluateReviewAnalysis, reviewEvaluationToText } from "./review-analysis.js";
 export type { ReviewAnalysis, ReviewAnalysisOptions, ReviewBlastRadius, ReviewImpactedCommunity, ReviewMultimodalSafety, ReviewEvaluationCase, ReviewEvaluationCaseResult, ReviewEvaluationResult, ReviewEvaluationOptions, ReviewRiskLevel } from "./review-analysis.js";
+export { createReviewGraphStore } from "./review-store.js";
+export type { ReviewGraphEdge, ReviewGraphNode, ReviewGraphNodeKind, ReviewGraphStats, ReviewGraphStoreLike, ReviewImpactRadius } from "./review-store.js";
 export { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
 export type { CommitRecommendation, CommitRecommendationGroup, CommitRecommendationStaleness, CommitRecommendationConfidence, CommitRecommendationOptions } from "./recommend.js";
 export { planGraphifyOutMigration, migrateGraphifyOut, migrationResultToText } from "./migrate-state.js";
