@@ -33,6 +33,7 @@ Turn any folder of files into a navigable knowledge graph with community detecti
 /graphify query "<question>" --dfs                    # DFS - trace a specific path
 /graphify query "<question>" --budget 1500            # cap answer at N tokens
 /graphify summary --graph .graphify/graph.json        # compact first-hop orientation before deep traversal
+/graphify minimal-context --task "review PR" --graph .graphify/graph.json  # first review call
 /graphify review-delta --files src/auth.ts --graph .graphify/graph.json  # review impact for changed files
 /graphify review-analysis --files src/auth.ts --graph .graphify/graph.json  # blast radius + review views
 /graphify recommend-commits --files src/auth.ts,src/session.ts --graph .graphify/graph.json  # advisory commit grouping
@@ -880,5 +881,7 @@ Do not add MCP, embeddings, databases, direct provider SDKs, a resident LLM back
 - Git hooks may mark stale state after branch switches, merges, and rewrites. Never delete `.graphify/` automatically; use `graphify state prune` only as a non-destructive cleanup preview.
 
 Commit recommendation workflow: `graphify recommend-commits` is advisory-only. It may suggest groups and commit messages, but the user remains the actor; do not auto-stage, auto-commit, or mutate branches.
+
+CRG review workflow: `graphify minimal-context` is the first review call. Keep graph review context within `<=5 graph tool calls` and `<=800` graph-context tokens. If `.graphify/needs_update` exists or `.graphify/branch.json` has `stale=true`, warn and update before trusting semantic review output. Then follow only the compact route: `graphify detect-changes` for risk, `graphify affected-flows` for flow impact, and `graphify review-context` for snippets or radius detail. If `.graphify/flows.json` is missing and flows are needed, run `graphify flows build` first. Explicit `--files`, `--base`, `--head`, or `--staged` inputs override unrelated dirty worktree noise; mention dirty worktrees as a warning and never mutate git state.
 
 Review analysis workflow: `graphify review-analysis` adds blast radius, bridge nodes, test-gap hints, impacted communities, and multimodal/doc safety. `graphify review-eval` is the deterministic evaluation harness for token savings, impacted-file recall, review summary precision, and multimodal regression safety.

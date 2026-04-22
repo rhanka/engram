@@ -1351,7 +1351,7 @@ This is the required implementation order even though F4 is the user-facing firs
 - [x] F5 review context and blast radius.
 - [x] F6 risk-scored detect changes.
 - [x] F4 minimal context first-call tool.
-- [ ] F10 skills and LLM review workflow.
+- [x] F10 skills and LLM review workflow.
 - [ ] F11 report, wiki, and HTML enrichment after F7/F8 flow artifacts exist.
 - [ ] F12 benchmarks, honesty metrics, and known limits.
 
@@ -1725,18 +1725,18 @@ Preserve existing Graphify commands for non-review graph usage.
 Expose CLI/skill workflow first; add MCP prompt/tool parity only after the CLI contract is stable.
 ```
 
-- [ ] **Spec phase:** Add F10 skill workflow to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
-- [ ] **Spec phase:** Define review workflow states: orient, detect, expand flows, expand snippets, final review.
-- [ ] **Spec phase:** Map CRG tool names to Graphify commands: `get_minimal_context`, `detect_changes`, `get_affected_flows`, and `get_review_context`.
-- [ ] **Spec phase:** Define dirty worktree warning interaction with input-scope once that branch lands.
-- [ ] **Spec phase:** Define stale graph behavior: warn first, rebuild when appropriate, and do not trust stale semantic review output.
-- [ ] **Implementation phase:** Update `src/skills/skill-codex.md`, `src/skills/skill.md`, `src/skills/skill-gemini.toml`, and other distributed skills.
-- [ ] **Implementation phase:** Add or extend MCP prompts/tools only if they reuse the tested CLI implementation and do not create a second behavior contract.
-- [ ] **Implementation phase:** Add `tests/skills.test.ts` assertions for minimal-context first-call guidance.
-- [ ] **Implementation phase:** Preserve existing workflows for build, update, query, summary, review-delta, review-analysis, review-eval, and recommend-commits.
-- [ ] **Verification phase:** Run `npm test -- tests/skills.test.ts tests/codex-integration.test.ts`.
-- [ ] **Verification phase:** Run lint, build, full tests, `git diff --check`.
-- [ ] **Commit:** `docs(skills): align review workflow with code-review-graph`
+- [x] **Spec phase:** Add F10 skill workflow to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
+- [x] **Spec phase:** Define review workflow states: orient, detect, expand flows, expand snippets, final review.
+- [x] **Spec phase:** Map CRG tool names to Graphify commands: `get_minimal_context`, `detect_changes`, `get_affected_flows`, and `get_review_context`.
+- [x] **Spec phase:** Define dirty worktree warning interaction with input-scope once that branch lands.
+- [x] **Spec phase:** Define stale graph behavior: warn first, rebuild when appropriate, and do not trust stale semantic review output.
+- [x] **Implementation phase:** Update `src/skills/skill-codex.md`, `src/skills/skill.md`, `src/skills/skill-gemini.toml`, and other distributed skills.
+- [x] **Implementation phase:** Keep MCP prompts/tools deferred; no second behavior contract added.
+- [x] **Implementation phase:** Add `tests/skills.test.ts` assertions for minimal-context first-call guidance.
+- [x] **Implementation phase:** Preserve existing workflows for build, update, query, summary, review-delta, review-analysis, review-eval, and recommend-commits.
+- [x] **Verification phase:** Run `npm test -- tests/skills.test.ts tests/codex-integration.test.ts`.
+- [x] **Verification phase:** Run lint, build, full tests, `git diff --check`.
+- [x] **Commit:** `docs(skills): align review workflow with code-review-graph`
 
 ### F11 - Report, Wiki, And HTML Enrichment After Flows
 

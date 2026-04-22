@@ -11,6 +11,7 @@ Use the installed TypeScript runtime only. Do not fall back to Python.
 - `/graphify` with no path means the current directory `.`
 - `/graphify <path> [flags]` means build or update the graph for that path
 - `/graphify summary` means return compact first-hop orientation from `.graphify/graph.json`
+- `/graphify minimal-context [files...]` means return the first review call context and next graph tool route
 - `/graphify review-delta [files...]` means return review-oriented impact for changed files
 - `/graphify review-analysis [files...]` means return blast radius, impacted communities, bridges, test gaps, and multimodal safety
 - `/graphify recommend-commits [files...]` means return advisory-only commit groups; never stage, commit, or mutate branches
@@ -258,3 +259,6 @@ The user's raw `/graphify ...` arguments are appended below this prompt.
 
 # Review analysis workflow
 # `graphify review-analysis` adds blast radius, bridge nodes, test-gap hints, impacted communities, and multimodal/doc safety. `graphify review-eval` measures token savings, impacted-file recall, review summary precision, and multimodal regression safety.
+
+# CRG review workflow
+# `graphify minimal-context` is the first review call. Keep graph review context within `<=5 graph tool calls` and `<=800` graph-context tokens. If `.graphify/needs_update` exists or `.graphify/branch.json` has `stale=true`, warn and update before trusting semantic review output. Then follow only the compact route: `graphify detect-changes` for risk, `graphify affected-flows` for flow impact, and `graphify review-context` for snippets or radius detail. If `.graphify/flows.json` is missing and flows are needed, run `graphify flows build` first. Explicit `--files`, `--base`, `--head`, or `--staged` inputs override unrelated dirty worktree noise; mention dirty worktrees as a warning and never mutate git state.

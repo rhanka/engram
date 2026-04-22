@@ -994,6 +994,67 @@ Port/synthesize:
 - serialized JSON length stays below 800 words in fixture tests.
 - CLI/runtime emit the same implementation.
 
+## F10 Skills And LLM Review Workflow
+
+### CRG Source Contract
+
+F10 ports the agent workflow guidance from CRG rather than a storage primitive:
+
+- `code-review-graph CLAUDE.md` requires the first tool call to be `get_minimal_context`.
+- `docs/LLM-OPTIMIZED-REFERENCE.md` targets `<=5` graph tool calls and `<=800` graph-context tokens.
+- `skills/review-delta/SKILL.md` and `skills/review-pr/SKILL.md` expand only after the minimal context indicates risk or impact.
+- `code_review_graph/prompts.py` and `code_review_graph/skills.py` separate orientation, detection, expansion, and final review steps.
+
+### Graphify Target
+
+Distributed Graphify skills must keep existing build/update/query behavior intact, but review-oriented workflows start with:
+
+```text
+graphify minimal-context --task "review PR" --graph .graphify/graph.json
+```
+
+Codex-specific skills must spell the user-facing trigger as `$graphify`, not `/graphify`, while shell examples can still use `graphify`.
+
+### Workflow States
+
+The review workflow has five states:
+
+- orient: run `minimal-context` first, confirm graph freshness, and read the compact route.
+- detect: run `detect-changes` when files, refs, or a diff need risk scoring.
+- expand flows: run `flows build` if `.graphify/flows.json` is missing and flow expansion is needed, then `affected-flows`.
+- expand snippets: run `review-context` only for risky or impacted files that need source snippets or radius detail.
+- final review: produce findings from graph evidence plus source diff, explicitly noting gaps when graph data is stale or incomplete.
+
+### CRG Tool Mapping
+
+```text
+get_minimal_context -> graphify minimal-context
+detect_changes      -> graphify detect-changes
+get_affected_flows  -> graphify affected-flows
+get_review_context  -> graphify review-context
+```
+
+### Stale And Dirty State
+
+Skills must warn before relying on review output when `.graphify/needs_update` exists or `.graphify/branch.json` has `stale=true`.
+
+Dirty worktree handling stays advisory: the skill may warn when the worktree is dirty, but Graphify commands must not mutate git state. Explicit `--files`, `--base`, `--head`, or `--staged` inputs take precedence over unrelated dirty files.
+
+### MCP/Serve Boundary
+
+Do not add MCP prompt/tool parity for F10 until CLI and skill-runtime behavior is stable. If MCP parity is added later, it must call the same implementation and preserve the same workflow states.
+
+### F10 Test Matrix
+
+Port/synthesize:
+
+- every distributed skill mentions `minimal-context`.
+- every distributed skill states it is the first review call.
+- every distributed skill maps the follow-up chain to `detect-changes`, `affected-flows`, and `review-context`.
+- skills preserve existing review-analysis, review-eval, review-delta, recommend-commits, build, update, query, summary, path, and explain workflows.
+- skills keep stale graph warnings and dirty worktree behavior explicit.
+- skills mention the CRG budgets: `<=5 graph tool calls` and `<=800` graph-context tokens.
+
 ## F4-F12 Spec Skeleton
 
 F4 minimal context must be implemented after F7, F8, F5, and F6. It will combine graph stats, changed-risk summary, top communities, affected flows, and next tool suggestions.
