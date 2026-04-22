@@ -1514,10 +1514,10 @@ Keep compatibility by letting `review-delta` call or reference the same implemen
 Use F3 adapter and existing Graphify review blast-radius helpers where equivalent.
 ```
 
-- [ ] **Spec phase:** Add F5 details to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
-- [ ] **Spec phase:** Define `detail_level=minimal|standard` and `include_source` behavior aligned with CRG.
-- [ ] **Spec phase:** Define source-snippet safety caps and sensitive-file exclusions.
-- [ ] **Spec phase:** Decide where existing `review-delta` and `review-analysis` delegate to the new CRG-aligned implementation without breaking current outputs.
+- [x] **Spec phase:** Add F5 details to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
+- [x] **Spec phase:** Define `detail_level=minimal|standard` and `include_source` behavior aligned with CRG.
+- [x] **Spec phase:** Define source-snippet safety caps and sensitive-file exclusions.
+- [x] **Spec phase:** Decide where existing `review-delta` and `review-analysis` delegate to the new CRG-aligned implementation without breaking current outputs.
 - [ ] **Implementation phase:** Create `src/review-context.ts`.
 - [ ] **Implementation phase:** Create `tests/review-context.test.ts`.
 - [ ] **Implementation phase:** Add CLI and skill-runtime commands.

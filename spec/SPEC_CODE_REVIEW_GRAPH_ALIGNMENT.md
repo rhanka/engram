@@ -607,6 +607,154 @@ JSON output is exactly `AffectedFlowsResult`.
 
 F8 must not trigger a graph rebuild or flow rebuild implicitly. Agents may suggest `graphify flows build` when artifacts are missing or stale, but the command itself stays a read-only query.
 
+## F5 Review Context And Blast Radius
+
+### CRG Source Contract
+
+F5 ports `code_review_graph/tools/review.py:get_review_context()` conceptually:
+
+- auto-detect changed files when omitted.
+- compute impact radius at `max_depth=2`.
+- support `detail_level="minimal" | "standard"`.
+- support `include_source=true` with capped source snippets.
+- return changed files, impacted files, changed nodes, impacted nodes, edges, source snippets, and review guidance.
+
+CRG helper behavior to preserve:
+
+- `_extract_relevant_lines()` includes changed node line ranges with small context and merges overlapping ranges.
+- when no node range matches a long file, fallback returns the first 50 numbered lines.
+- `_generate_review_guidance()` flags test gaps, wide blast radius, inheritance/implementation edges, and cross-file impact.
+- minimal mode returns counts, risk, key entities, test gap count, and next tool suggestions.
+
+### Graphify Target
+
+Create `src/review-context.ts` on top of F3 `ReviewGraphStoreLike`. Do not change existing `review-delta` or `review-analysis` output in this lot.
+
+The new command is additive:
+
+```text
+graphify review-context [files...] --graph .graphify/graph.json
+```
+
+Later lots may let existing `review-delta`/`review-analysis` delegate internally, but their public output must remain backward compatible until a separate compatibility spec changes it.
+
+### API Surface
+
+```ts
+export type ReviewContextDetailLevel = "minimal" | "standard";
+
+export interface BuildReviewContextOptions {
+  maxDepth?: number;
+  detailLevel?: ReviewContextDetailLevel;
+  includeSource?: boolean;
+  maxLinesPerFile?: number;
+  repoRoot?: string;
+}
+
+export interface ReviewContextResult {
+  status: "ok";
+  summary: string;
+  risk?: "low" | "medium" | "high";
+  changedFileCount?: number;
+  impactedFileCount?: number;
+  keyEntities?: string[];
+  testGaps?: number;
+  nextToolSuggestions?: string[];
+  context?: ReviewContextPayload;
+}
+
+export interface ReviewContextPayload {
+  changedFiles: string[];
+  impactedFiles: string[];
+  graph: {
+    changedNodes: ReviewGraphNode[];
+    impactedNodes: ReviewGraphNode[];
+    edges: ReviewGraphEdge[];
+  };
+  sourceSnippets?: Record<string, string>;
+  reviewGuidance: string;
+}
+```
+
+When no changed files are provided or detected, return:
+
+```json
+{
+  "status": "ok",
+  "summary": "No changes detected. Nothing to review.",
+  "context": {}
+}
+```
+
+### Detail Levels
+
+`minimal`:
+
+- risk is `high` when impacted nodes > 20, `medium` when > 5, otherwise `low`.
+- `keyEntities` is the first five changed node names.
+- `testGaps` counts changed non-test functions with no incoming `TESTED_BY` edge.
+- `nextToolSuggestions` is `["detect-changes", "affected-flows", "review-context"]`.
+- no source snippets are emitted.
+
+`standard`:
+
+- includes full impact result from `store.getImpactRadius(changedFiles, { maxDepth })`.
+- includes source snippets only when `includeSource` is true.
+- includes generated guidance.
+
+### Source Snippet Safety
+
+Source snippets are opt-in for runtime callers and default-on for public CLI parity with CRG only when `--include-source` is passed or when the default command chooses it explicitly.
+
+Rules:
+
+- read only files under `repoRoot` after resolving real paths.
+- never read files larger than `maxLinesPerFile` into output wholesale.
+- default `maxLinesPerFile` is `200`.
+- for long files, include changed node ranges with two lines before and one line after, matching CRG intent.
+- fallback for long files with no matching line metadata is first 50 numbered lines.
+- skip binary-looking files and return `(could not read file)` on read errors.
+- exclude obvious secret files by default: `.env`, `.npmrc`, private keys, certificate/key files, and paths containing `secret`, `credential`, or `token`.
+
+### CLI And Runtime
+
+Public CLI:
+
+```text
+graphify review-context [files...] --graph .graphify/graph.json
+graphify review-context --files src/a.ts,src/b.ts
+graphify review-context --base main --head HEAD
+graphify review-context --staged
+graphify review-context --detail-level minimal|standard
+graphify review-context --include-source --max-lines-per-file 200
+graphify review-context --json
+```
+
+File discovery follows F8: explicit files first, then git ref/staged/worktree discovery.
+
+Skill runtime:
+
+```text
+graphify-skill-runtime review-context --graph <path> --files <csv>
+```
+
+Runtime requires explicit files for deterministic assistant orchestration.
+
+### F5 Test Matrix
+
+Port or synthesize CRG behaviors:
+
+- minimal mode returns low/medium/high risk based on impacted node count.
+- standard mode returns changed files, impacted files, changed nodes, impacted nodes and edges.
+- source snippets include numbered relevant lines for changed node ranges.
+- long files use relevant ranges and fallback first 50 lines.
+- sensitive files are not read into snippets.
+- guidance flags untested changed functions.
+- guidance flags wide blast radius.
+- guidance flags inheritance or implementation edges.
+- guidance flags cross-file impact when impacted file count is greater than three.
+- CLI and skill-runtime commands emit text and JSON from the same implementation.
+
 ## F4-F12 Spec Skeleton
 
 F4 minimal context must be implemented after F7, F8, F5, and F6. It will combine graph stats, changed-risk summary, top communities, affected flows, and next tool suggestions.
