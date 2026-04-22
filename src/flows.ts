@@ -59,6 +59,14 @@ export interface ReviewFlowArtifact {
   flows: ReviewFlow[];
 }
 
+export interface AffectedFlowsResult {
+  changedFiles: string[];
+  matchedNodeIds: string[];
+  unmatchedFiles: string[];
+  affectedFlows: ReviewFlowDetail[];
+  total: number;
+}
+
 export interface ListFlowsOptions {
   sortBy?: "criticality" | "depth" | "node-count" | "file-count" | "name";
   limit?: number;
@@ -415,6 +423,60 @@ export function getFlowById(
   };
 }
 
+export function getAffectedFlows(
+  artifact: ReviewFlowArtifact,
+  changedFiles: string[],
+  store: ReviewGraphStoreLike,
+): AffectedFlowsResult {
+  const normalizedFiles = [...new Set(changedFiles.map((file) => file.trim()).filter(Boolean))].sort(compareStrings);
+  if (normalizedFiles.length === 0) {
+    return {
+      changedFiles: [],
+      matchedNodeIds: [],
+      unmatchedFiles: [],
+      affectedFlows: [],
+      total: 0,
+    };
+  }
+
+  const matchedNodeIds = new Set<string>();
+  const unmatchedFiles: string[] = [];
+  for (const file of normalizedFiles) {
+    const nodes = store.getNodesByFile(file);
+    if (nodes.length === 0) {
+      unmatchedFiles.push(file);
+      continue;
+    }
+    for (const node of nodes) matchedNodeIds.add(node.id);
+  }
+
+  const matched = [...matchedNodeIds].sort(compareStrings);
+  if (matched.length === 0) {
+    return {
+      changedFiles: normalizedFiles,
+      matchedNodeIds: [],
+      unmatchedFiles,
+      affectedFlows: [],
+      total: 0,
+    };
+  }
+
+  const matchedSet = new Set(matched);
+  const affectedFlows = artifact.flows
+    .filter((flow) => flow.path.some((nodeId) => matchedSet.has(nodeId)))
+    .map((flow) => getFlowById(artifact, flow.id, store))
+    .filter((flow): flow is ReviewFlowDetail => !!flow && "steps" in flow)
+    .sort((a, b) => b.criticality - a.criticality || compareStrings(a.name, b.name));
+
+  return {
+    changedFiles: normalizedFiles,
+    matchedNodeIds: matched,
+    unmatchedFiles,
+    affectedFlows,
+    total: affectedFlows.length,
+  };
+}
+
 export function flowListToText(artifact: ReviewFlowArtifact, options: ListFlowsOptions = {}): string {
   const flows = listFlows(artifact, options);
   const lines = [
@@ -429,6 +491,25 @@ export function flowListToText(artifact: ReviewFlowArtifact, options: ListFlowsO
       `- ${flow.id} entry=${flow.entryPoint} criticality=${flow.criticality.toFixed(4)} ` +
       `depth=${flow.depth} nodes=${flow.nodeCount} files=${flow.fileCount}`,
     );
+  }
+  return lines.join("\n");
+}
+
+export function affectedFlowsToText(result: AffectedFlowsResult): string {
+  const lines = [
+    `Affected flows: ${result.total}`,
+    `Changed files: ${result.changedFiles.length}`,
+    `Matched nodes: ${result.matchedNodeIds.length}`,
+  ];
+  if (result.unmatchedFiles.length > 0) {
+    lines.push(`Unmatched files: ${result.unmatchedFiles.join(", ")}`);
+  }
+  for (const flow of result.affectedFlows) {
+    lines.push(
+      `- ${flow.id} entry=${flow.entryPoint} criticality=${flow.criticality.toFixed(4)} ` +
+      `depth=${flow.depth} nodes=${flow.nodeCount} files=${flow.fileCount}`,
+    );
+    for (const step of flow.steps) lines.push(`  - ${step.qualifiedName}`);
   }
   return lines.join("\n");
 }

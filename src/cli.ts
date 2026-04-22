@@ -1862,6 +1862,44 @@ export async function main(): Promise<void> {
     });
 
   program
+    .command("affected-flows [files...]")
+    .description("Find execution flows affected by changed files")
+    .option("--flows <path>", "Path to flows.json", resolveGraphifyPaths().flows)
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--files <csv>", "Comma or newline separated changed files")
+    .option("--base <ref>", "Git base ref; when omitted, compare working tree to HEAD")
+    .option("--head <ref>", "Git head ref to compare with --base", "HEAD")
+    .option("--staged", "Use staged changes only")
+    .option("--json", "Print JSON")
+    .action(async (files, opts) => {
+      const changedFiles = [
+        ...files,
+        ...splitFiles(opts.files),
+      ];
+      const resolvedChangedFiles = changedFiles.length > 0
+        ? [...new Set(changedFiles)].sort()
+        : changedFilesFromGit({ base: opts.base, head: opts.head, staged: opts.staged });
+      const gp = resolveGraphInputPath(opts.graph);
+      if (!existsSync(gp)) {
+        console.error(`error: graph file not found: ${gp}`);
+        process.exit(1);
+      }
+      if (!existsSync(opts.flows)) {
+        console.error(`error: flow artifact not found: ${opts.flows}. Run graphify flows build first.`);
+        process.exit(1);
+      }
+      const G = loadGraphFromData(JSON.parse(readFileSync(gp, "utf-8")));
+      const { createReviewGraphStore } = await import("./review-store.js");
+      const { affectedFlowsToText, getAffectedFlows, readFlowArtifact } = await import("./flows.js");
+      const result = getAffectedFlows(readFlowArtifact(opts.flows), resolvedChangedFiles, createReviewGraphStore(G));
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      console.log(affectedFlowsToText(result));
+    });
+
+  program
     .command("review-delta [files...]")
     .description("Review-oriented graph impact for changed files")
     .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())

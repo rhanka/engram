@@ -214,19 +214,21 @@ export type { ReviewAnalysis, ReviewAnalysisOptions, ReviewBlastRadius, ReviewIm
 export { createReviewGraphStore } from "./review-store.js";
 export type { ReviewGraphEdge, ReviewGraphNode, ReviewGraphNodeKind, ReviewGraphStats, ReviewGraphStoreLike, ReviewImpactRadius } from "./review-store.js";
 export {
+  affectedFlowsToText,
   buildFlowArtifact,
   computeFlowCriticality,
   detectEntryPoints,
   flowDetailToText,
   flowListToText,
   flowToSteps,
+  getAffectedFlows,
   getFlowById,
   listFlows,
   readFlowArtifact,
   traceFlows,
   writeFlowArtifact,
 } from "./flows.js";
-export type { BuildFlowArtifactOptions, DetectEntryPointsOptions, ListFlowsOptions, ReviewFlow, ReviewFlowArtifact, ReviewFlowDetail, ReviewFlowStep, TraceFlowsOptions } from "./flows.js";
+export type { AffectedFlowsResult, BuildFlowArtifactOptions, DetectEntryPointsOptions, ListFlowsOptions, ReviewFlow, ReviewFlowArtifact, ReviewFlowDetail, ReviewFlowStep, TraceFlowsOptions } from "./flows.js";
 export { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
 export type { CommitRecommendation, CommitRecommendationGroup, CommitRecommendationStaleness, CommitRecommendationConfidence, CommitRecommendationOptions } from "./recommend.js";
 export { planGraphifyOutMigration, migrateGraphifyOut, migrationResultToText } from "./migrate-state.js";

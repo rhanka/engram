@@ -202,12 +202,16 @@ describe("public CLI runtime command parity", () => {
     const list = await runCli(["flows", "list", "--flows", flowsPath], dir);
     const get = await runCli(["flows", "get", artifact.flows[0]!.id, "--flows", flowsPath, "--graph", graphPath], dir);
     const runtimeList = await runSkillRuntime(["flows-list", "--flows", flowsPath], dir);
+    const affected = await runCli(["affected-flows", "--flows", flowsPath, "--graph", graphPath, "--files", "src/service.ts"], dir);
+    const runtimeAffected = await runSkillRuntime(["affected-flows", "--flows", flowsPath, "--graph", graphPath, "--files", "src/service.ts"], dir);
 
     expect(build.exitCode).toBe(0);
     expect(build.logs.join("\n")).toContain("Execution flows: 1");
     expect(list.logs.join("\n")).toContain("src/app.ts::main");
     expect(get.logs.join("\n")).toContain("src/service.ts::run");
     expect(runtimeList.logs.join("\n")).toContain("src/app.ts::main");
+    expect(affected.logs.join("\n")).toContain("Affected flows: 1");
+    expect(runtimeAffected.logs.join("\n")).toContain("src/service.ts::run");
   });
 });
 

@@ -35,9 +35,11 @@ import { buildReviewAnalysis, reviewAnalysisToText, evaluateReviewAnalysis, revi
 import { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
 import { createReviewGraphStore } from "./review-store.js";
 import {
+  affectedFlowsToText,
   buildFlowArtifact,
   flowDetailToText,
   flowListToText,
+  getAffectedFlows,
   getFlowById,
   listFlows,
   readFlowArtifact,
@@ -1335,6 +1337,29 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         return;
       }
       console.log(flowDetailToText(detail));
+    });
+
+  program
+    .command("affected-flows")
+    .requiredOption("--flows <path>")
+    .requiredOption("--graph <path>")
+    .requiredOption("--files <csv>", "Comma or newline separated changed files")
+    .option("--json", "Print JSON")
+    .action((opts) => {
+      const files = String(opts.files)
+        .split(/[\n,]/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const result = getAffectedFlows(
+        readFlowArtifact(opts.flows),
+        files,
+        createReviewGraphStore(loadGraph(opts.graph)),
+      );
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      console.log(affectedFlowsToText(result));
     });
 
   program

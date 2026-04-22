@@ -1347,7 +1347,7 @@ This is the required implementation order even though F4 is the user-facing firs
 - [x] F2 Python Graphify v4 drift audit.
 - [x] F3 review graph store adapter.
 - [ ] F7 execution flows.
-- [ ] F8 affected flows.
+- [x] F8 affected flows.
 - [ ] F5 review context and blast radius.
 - [ ] F6 risk-scored detect changes.
 - [ ] F4 minimal context first-call tool.
@@ -1644,12 +1644,12 @@ Expose as a separate skill-runtime command and reference it from minimal-context
 
 - [x] **Spec phase:** Add F8 details to `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
 - [x] **Spec phase:** Define changed-file discovery from explicit `--files` or `--base`.
-- [ ] **Implementation phase:** Add affected-flow query to `src/flows.ts` or create `src/affected-flows.ts`.
-- [ ] **Implementation phase:** Add `tests/affected-flows.test.ts`.
-- [ ] **Implementation phase:** Add CLI and skill-runtime commands.
-- [ ] **Verification phase:** Test affected flows are sorted by criticality and include step details.
-- [ ] **Verification phase:** Run targeted tests, lint, build, full tests, `git diff --check`.
-- [ ] **Commit:** `feat(review): add affected flow analysis`
+- [x] **Implementation phase:** Add affected-flow query to `src/flows.ts` or create `src/affected-flows.ts`.
+- [x] **Implementation phase:** Add `tests/affected-flows.test.ts`.
+- [x] **Implementation phase:** Add CLI and skill-runtime commands.
+- [x] **Verification phase:** Test affected flows are sorted by criticality and include step details.
+- [x] **Verification phase:** Run targeted tests, lint, build, full tests, `git diff --check`.
+- [x] **Commit:** `feat(review): add affected flow analysis`
 
 ### F9 - Port CRG Tests Before Runtime Changes
 
