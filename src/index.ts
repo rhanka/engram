@@ -235,6 +235,16 @@ export {
   reviewContextToText,
 } from "./review-context.js";
 export type { BuildReviewContextOptions, ReviewContextDetailLevel, ReviewContextPayload, ReviewContextResult, ReviewContextRisk } from "./review-context.js";
+export {
+  analyzeChanges,
+  computeRiskScore,
+  detectChangesToMinimal,
+  detectChangesToText,
+  isSafeGitRef,
+  mapChangesToNodes,
+  parseUnifiedDiff,
+} from "./detect-changes.js";
+export type { AnalyzeChangesOptions, ChangedRange, ChangedRangesByFile, ComputeRiskScoreOptions, DetectChangesMinimalResult, DetectChangesNodeRisk, DetectChangesResult, DetectChangesTestGap } from "./detect-changes.js";
 export { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
 export type { CommitRecommendation, CommitRecommendationGroup, CommitRecommendationStaleness, CommitRecommendationConfidence, CommitRecommendationOptions } from "./recommend.js";
 export { planGraphifyOutMigration, migrateGraphifyOut, migrationResultToText } from "./migrate-state.js";

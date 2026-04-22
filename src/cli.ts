@@ -1943,6 +1943,46 @@ export async function main(): Promise<void> {
     });
 
   program
+    .command("detect-changes [files...]")
+    .description("CRG-style line-aware risk scoring for changed files")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--flows <path>", "Optional path to flows.json")
+    .option("--files <csv>", "Comma or newline separated changed files")
+    .option("--base <ref>", "Git base ref; when omitted, compare working tree to HEAD")
+    .option("--head <ref>", "Git head ref to compare with --base", "HEAD")
+    .option("--staged", "Use staged changes only")
+    .option("--detail-level <level>", "minimal|standard", "standard")
+    .option("--json", "Print JSON")
+    .action(async (files, opts) => {
+      const changedFiles = [
+        ...files,
+        ...splitFiles(opts.files),
+      ];
+      const resolvedChangedFiles = changedFiles.length > 0
+        ? [...new Set(changedFiles)].sort()
+        : changedFilesFromGit({ base: opts.base, head: opts.head, staged: opts.staged });
+      const gp = resolveGraphInputPath(opts.graph);
+      if (!existsSync(gp)) {
+        console.error(`error: graph file not found: ${gp}`);
+        process.exit(1);
+      }
+      const G = loadGraphFromData(JSON.parse(readFileSync(gp, "utf-8")));
+      const { createReviewGraphStore } = await import("./review-store.js");
+      const { readFlowArtifact } = await import("./flows.js");
+      const { analyzeChanges, detectChangesToMinimal, detectChangesToText } = await import("./detect-changes.js");
+      const flowsArtifact = opts.flows && existsSync(opts.flows) ? readFlowArtifact(opts.flows) : null;
+      const result = analyzeChanges(createReviewGraphStore(G), resolvedChangedFiles, {
+        flows: flowsArtifact,
+      });
+      const output = opts.detailLevel === "minimal" ? detectChangesToMinimal(result) : result;
+      if (opts.json) {
+        console.log(JSON.stringify(output, null, 2));
+        return;
+      }
+      console.log(detectChangesToText(output));
+    });
+
+  program
     .command("review-delta [files...]")
     .description("Review-oriented graph impact for changed files")
     .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())

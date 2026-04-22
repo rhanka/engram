@@ -235,6 +235,32 @@ describe("public CLI runtime command parity", () => {
     expect(cli.logs.join("\n")).toContain("Review context for 1 changed file(s)");
     expect(runtime.logs.join("\n")).toContain("Next tools: detect-changes, affected-flows, review-context");
   });
+
+  it("supports risk-scored detect changes commands", async () => {
+    const dir = tempProject();
+    const graphPath = writeFlowGraph(dir);
+    const flowsPath = join(dir, ".graphify", "flows.json");
+    await runCli(["flows", "build", "--graph", graphPath, "--out", flowsPath], dir);
+
+    const cli = await runCli([
+      "detect-changes",
+      "--graph", graphPath,
+      "--flows", flowsPath,
+      "--files", "src/service.ts",
+      "--detail-level", "minimal",
+    ], dir);
+    const runtime = await runSkillRuntime([
+      "detect-changes",
+      "--graph", graphPath,
+      "--flows", flowsPath,
+      "--files", "src/service.ts",
+      "--detail-level", "minimal",
+    ], dir);
+
+    expect(cli.exitCode).toBe(0);
+    expect(cli.logs.join("\n")).toContain("Risk score:");
+    expect(runtime.logs.join("\n")).toContain("Review priorities:");
+  });
 });
 
 describe("skill runtime artifact parity", () => {

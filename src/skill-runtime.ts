@@ -33,6 +33,7 @@ import { buildFirstHopSummary, firstHopSummaryToText } from "./summary.js";
 import { buildReviewDelta, reviewDeltaToText } from "./review.js";
 import { buildReviewAnalysis, reviewAnalysisToText, evaluateReviewAnalysis, reviewEvaluationToText } from "./review-analysis.js";
 import { buildReviewContext, reviewContextToText } from "./review-context.js";
+import { analyzeChanges, detectChangesToMinimal, detectChangesToText } from "./detect-changes.js";
 import { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
 import { createReviewGraphStore } from "./review-store.js";
 import {
@@ -1390,6 +1391,30 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         return;
       }
       console.log(reviewContextToText(result));
+    });
+
+  program
+    .command("detect-changes")
+    .requiredOption("--graph <path>")
+    .requiredOption("--files <csv>", "Comma or newline separated changed files")
+    .option("--flows <path>", "Optional path to flows.json")
+    .option("--detail-level <level>", "minimal|standard", "standard")
+    .option("--json", "Print JSON")
+    .action((opts) => {
+      const files = String(opts.files)
+        .split(/[\n,]/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const flowsArtifact = opts.flows ? readFlowArtifact(opts.flows) : null;
+      const result = analyzeChanges(createReviewGraphStore(loadGraph(opts.graph)), files, {
+        flows: flowsArtifact,
+      });
+      const output = opts.detailLevel === "minimal" ? detectChangesToMinimal(result) : result;
+      if (opts.json) {
+        console.log(JSON.stringify(output, null, 2));
+        return;
+      }
+      console.log(detectChangesToText(output));
     });
 
   program

@@ -1349,7 +1349,7 @@ This is the required implementation order even though F4 is the user-facing firs
 - [ ] F7 execution flows.
 - [x] F8 affected flows.
 - [x] F5 review context and blast radius.
-- [ ] F6 risk-scored detect changes.
+- [x] F6 risk-scored detect changes.
 - [ ] F4 minimal context first-call tool.
 - [ ] F10 skills and LLM review workflow.
 - [ ] F11 report, wiki, and HTML enrichment after F7/F8 flow artifacts exist.
@@ -1564,13 +1564,13 @@ Keep `review-analysis` as existing API, but allow it to reuse detect-changes lat
 - [x] **Spec phase:** Define fallback when Graphify nodes lack `line_start` and `line_end`.
 - [x] **Spec phase:** Define safe git ref validation based on CRG `_SAFE_GIT_REF`.
 - [x] **Spec phase:** Define dirty-worktree behavior: warn permanently, analyze explicitly requested refs/files, and never mutate git state.
-- [ ] **Implementation phase:** Create `src/detect-changes.ts`.
-- [ ] **Implementation phase:** Create `tests/detect-changes.test.ts`.
-- [ ] **Implementation phase:** Port CRG unified-diff parser tests.
-- [ ] **Implementation phase:** Port CRG risk scoring tests for untested functions, security keywords, caller count, and flow participation.
-- [ ] **Implementation phase:** Add CLI and skill-runtime commands.
-- [ ] **Verification phase:** Run targeted tests, lint, build, full tests, `git diff --check`.
-- [ ] **Commit:** `feat(review): add risk-scored detect changes`
+- [x] **Implementation phase:** Create `src/detect-changes.ts`.
+- [x] **Implementation phase:** Create `tests/detect-changes.test.ts`.
+- [x] **Implementation phase:** Port CRG unified-diff parser tests.
+- [x] **Implementation phase:** Port CRG risk scoring tests for untested functions, security keywords, caller count, and flow participation.
+- [x] **Implementation phase:** Add CLI and skill-runtime commands.
+- [x] **Verification phase:** Run targeted tests, lint, build, full tests, `git diff --check`.
+- [x] **Commit:** `feat(review): add risk-scored detect changes`
 
 ### F7 - Execution Flows
 
