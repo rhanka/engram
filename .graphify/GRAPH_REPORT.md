@@ -1,12 +1,12 @@
-# Graph Report - .  (2026-04-20)
+# Graph Report - .  (2026-04-23)
 
 ## Corpus Check
-- 132 files · ~0 words
+- 158 files · ~0 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 2297 nodes · 4476 edges · 99 communities detected
-- Extraction: 95% EXTRACTED · 5% INFERRED · 0% AMBIGUOUS · INFERRED: 233 edges (avg confidence: 0.5)
+- 2977 nodes · 5632 edges · 126 communities detected
+- Extraction: 96% EXTRACTED · 4% INFERRED · 0% AMBIGUOUS · INFERRED: 233 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
 
 ## God Nodes (most connected - your core abstractions)
@@ -22,30 +22,30 @@
 10. `TransportError` - 22 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `API module - exposes the document pipeline over HTTP. Thin layer over parser, va` --uses--> `ValidationError`  [INFERRED]
-  /home/antoinefa/src/graphify/worked/example/raw/api.py → /home/antoinefa/src/graphify/worked/example/raw/validator.py
-- `Accept a list of file paths, run the full pipeline on each,     and return a sum` --uses--> `ValidationError`  [INFERRED]
-  /home/antoinefa/src/graphify/worked/example/raw/api.py → /home/antoinefa/src/graphify/worked/example/raw/validator.py
-- `Fetch a document by ID and return it.` --uses--> `ValidationError`  [INFERRED]
-  /home/antoinefa/src/graphify/worked/example/raw/api.py → /home/antoinefa/src/graphify/worked/example/raw/validator.py
-- `Delete a document by ID.` --uses--> `ValidationError`  [INFERRED]
-  /home/antoinefa/src/graphify/worked/example/raw/api.py → /home/antoinefa/src/graphify/worked/example/raw/validator.py
-- `List all document IDs in storage.` --uses--> `ValidationError`  [INFERRED]
-  /home/antoinefa/src/graphify/worked/example/raw/api.py → /home/antoinefa/src/graphify/worked/example/raw/validator.py
+- `refreshLifecycleMetadata()` --calls--> `writeJson()`  [EXTRACTED]
+  dist/cli.js → src/cli.ts
+- `serve()` --calls--> `getVersion()`  [EXTRACTED]
+  dist/cli.js → src/cli.ts
+- `findBestMatchingNode()` --calls--> `normalizeSearchText()`  [EXTRACTED]
+  src/cli.ts → dist/cli.js
+- `shouldBuildDirected()` --calls--> `isDirectedGraph()`  [EXTRACTED]
+  src/skill-runtime.ts → dist/skill-runtime.js
+- `analyzeGraph()` --calls--> `makeGraphPortable()`  [EXTRACTED]
+  src/skill-runtime.ts → dist/skill-runtime.js
 
 ## Communities
 
 ### Community 0 - "Community 0"
 Cohesion: 0.01
-Nodes (430): addIssue(), agentsInstall(), agentsUninstall(), antigravityInstall(), antigravityUninstall(), applyConfiguredExcludes(), applyEntry(), asBoolean() (+422 more)
+Nodes (509): agentsInstall(), agentsUninstall(), analyzeChanges(), antigravityInstall(), antigravityUninstall(), appendReviewSections(), applyConfiguredExcludes(), applyEntry() (+501 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.01
-Nodes (377): addIssue(), applyEntry(), asBoolean(), asRecord(), asRecord2(), assertValid(), asStringArray(), asStringArray2() (+369 more)
+Nodes (515): addIssue(), analyzeChanges(), appendReviewSections(), applyEntry(), artifactHasDeepRoute(), artifactId(), asBoolean(), asNumber() (+507 more)
 
 ### Community 2 - "Community 2"
 Cohesion: 0.01
-Nodes (352): addIssue(), analyzeGraph(), applyConfiguredExcludes(), applyEntry(), asBoolean(), asRecord(), asRecord2(), asStringArray() (+344 more)
+Nodes (455): addIssue(), analyzeChanges(), analyzeGraph(), appendReviewSections(), applyConfiguredExcludes(), applyEntry(), artifactHasDeepRoute(), asBoolean() (+447 more)
 
 ### Community 3 - "Community 3"
 Cohesion: 0.03
@@ -73,278 +73,278 @@ Nodes (24): augmentDetectionWithTranscripts(), buildWhisperPrompt(), cloneDetect
 
 ### Community 9 - "Community 9"
 Cohesion: 0.13
-Nodes (14): buildCommitRecommendation(), commitPrefixForArea(), communityLabel(), dominantCommunity(), groupConfidence(), groupDraftForFile(), isGraphifyStatePath(), mergeDrafts() (+6 more)
+Nodes (17): buildFlowArtifact(), computeFlowCriticality(), decoratorsOf(), detectEntryPoints(), flowIdFor(), flowListToText(), flowToSteps(), getFlowById() (+9 more)
 
 ### Community 10 - "Community 10"
 Cohesion: 0.13
-Nodes (16): buildReviewDelta(), changedNodeIds(), compareNodes(), compareStrings(), highRiskChains(), impactedNodeIds(), isTestPath(), likelyTestGaps() (+8 more)
+Nodes (14): buildCommitRecommendation(), commitPrefixForArea(), communityLabel(), dominantCommunity(), groupConfidence(), groupDraftForFile(), isGraphifyStatePath(), mergeDrafts() (+6 more)
 
 ### Community 11 - "Community 11"
-Cohesion: 0.14
-Nodes (15): bfs(), communitiesFromGraph(), communityName(), dfs(), findNode(), getVersion(), loadGraph(), scoreNodes() (+7 more)
+Cohesion: 0.13
+Nodes (16): buildReviewDelta(), changedNodeIds(), compareNodes(), compareStrings(), highRiskChains(), impactedNodeIds(), isTestPath(), likelyTestGaps() (+8 more)
 
 ### Community 12 - "Community 12"
 Cohesion: 0.14
-Nodes (12): average(), buildBlastRadius(), buildReviewAnalysis(), communityRisk(), evaluateReviewAnalysis(), formatMetric(), impactedCommunities(), multimodalSafety() (+4 more)
+Nodes (15): bfs(), communitiesFromGraph(), communityName(), dfs(), findNode(), getVersion(), loadGraph(), scoreNodes() (+7 more)
 
 ### Community 13 - "Community 13"
 Cohesion: 0.19
-Nodes (17): htmlScript(), htmlStyles(), hyperedgeScript(), isCanvasOptions(), isCommunityLabelOptions(), isSvgOptions(), neo4jLabel(), neo4jRelation() (+9 more)
+Nodes (18): collectJsonIssues(), collectStringIssues(), collectTextIssues(), hasSchemePrefix(), isHomePath(), isIgnoredLocalArtifact(), isWindowsAbsolutePath(), makeDetectionPortable() (+10 more)
 
 ### Community 14 - "Community 14"
+Cohesion: 0.14
+Nodes (12): average(), buildBlastRadius(), buildReviewAnalysis(), communityRisk(), evaluateReviewAnalysis(), formatMetric(), impactedCommunities(), multimodalSafety() (+4 more)
+
+### Community 15 - "Community 15"
+Cohesion: 0.19
+Nodes (17): htmlScript(), htmlStyles(), hyperedgeScript(), isCanvasOptions(), isCommunityLabelOptions(), isSvgOptions(), neo4jLabel(), neo4jRelation() (+9 more)
+
+### Community 16 - "Community 16"
 Cohesion: 0.23
 Nodes (15): applyConfiguredExcludes(), buildConfiguredDetectionInputs(), buildProfileState(), dataprepReport(), emptyDetection(), fullPageScreenshotExcludes(), mergeDetections(), recomputeDetection() (+7 more)
 
-### Community 15 - "Community 15"
+### Community 17 - "Community 17"
 Cohesion: 0.2
 Nodes (15): classifyFile(), convertOfficeFile(), countWords(), detect(), detectIncremental(), docxToMarkdown(), isIgnored(), isNoiseDir() (+7 more)
 
-### Community 16 - "Community 16"
-Cohesion: 0.28
-Nodes (15): asRecord(), asStringArray(), bindOntologyProfile(), hashOntologyProfile(), loadOntologyProfile(), normalizeCitationPolicy(), normalizeHardeningPolicy(), normalizeOntologyProfile() (+7 more)
+### Community 18 - "Community 18"
+Cohesion: 0.26
+Nodes (17): asRecord(), asStringArray(), bindOntologyProfile(), hashOntologyProfile(), loadOntologyProfile(), normalizeCitationPolicy(), normalizeHardeningPolicy(), normalizeOntologyProfile() (+9 more)
 
-### Community 17 - "Community 17"
+### Community 19 - "Community 19"
+Cohesion: 0.23
+Nodes (16): asBoolean(), asNumber(), asRecord(), asString(), asStringArray(), buildRegistrySources(), loadProjectConfig(), normalizeProjectConfig() (+8 more)
+
+### Community 20 - "Community 20"
+Cohesion: 0.16
+Nodes (5): analyzeChanges(), changedNodesFromFiles(), mapChangesToNodes(), sortNodesByLocation(), uniqueSorted()
+
+### Community 21 - "Community 21"
+Cohesion: 0.23
+Nodes (13): asRecord(), bucketMatches(), calibrateImageRouting(), countArray(), imageRoutingSampleFromCaption(), loadImageRoutingLabels(), loadImageRoutingRules(), normalizeBucket() (+5 more)
+
+### Community 22 - "Community 22"
+Cohesion: 0.25
+Nodes (13): buildReviewContext(), buildReviewGuidance(), buildSourceSnippets(), changedFunctionsWithoutTests(), extractRelevantLines(), formatLines(), isInside(), isSensitivePath() (+5 more)
+
+### Community 23 - "Community 23"
 Cohesion: 0.19
 Nodes (14): build_graph(), cluster(), cohesion_score(), cohesionScore(), partition(), Leiden community detection on NetworkX graphs. Splits oversized communities. Ret, Run Leiden community detection. Returns {community_id: [node_ids]}.      Communi, Build a NetworkX graph from graphify node/edge dicts.      Preserves original ed (+6 more)
 
-### Community 18 - "Community 18"
+### Community 24 - "Community 24"
 Cohesion: 0.25
 Nodes (13): buildProfileChunkPrompt(), buildProfileExtractionPrompt(), buildProfileValidationPrompt(), chunkGuidance(), citationSection(), genericSafetySection(), hardeningSection(), inputHintsSection() (+5 more)
 
-### Community 19 - "Community 19"
+### Community 25 - "Community 25"
+Cohesion: 0.23
+Nodes (9): compileNodes(), compileOntologyOutputs(), compileRelations(), ontologyNodeType(), safeFilename(), sha256(), stringValue(), writeJson() (+1 more)
+
+### Community 26 - "Community 26"
 Cohesion: 0.34
 Nodes (13): buildProfileReport(), graphLinks(), graphNodes(), highDegreeSection(), humanReviewSection(), invalidRelationsSection(), lowEvidenceSection(), pdfOcrSection() (+5 more)
 
-### Community 20 - "Community 20"
+### Community 27 - "Community 27"
 Cohesion: 0.33
 Nodes (9): addIssue(), citations(), isProfileEdge(), isRegistrySeed(), stringValue(), validateCitations(), validateEdge(), validateNode() (+1 more)
 
-### Community 21 - "Community 21"
-Cohesion: 0.3
-Nodes (12): asBoolean(), asRecord(), asStringArray(), buildRegistrySources(), loadProjectConfig(), normalizeProjectConfig(), parseCitationMinimum(), parsePdfOcrMode() (+4 more)
+### Community 28 - "Community 28"
+Cohesion: 0.21
+Nodes (10): average(), countHits(), evaluateReviewBenchmarks(), flowIdentifiers(), formatMetric(), identifiers(), normalize(), ratio() (+2 more)
 
-### Community 22 - "Community 22"
+### Community 29 - "Community 29"
+Cohesion: 0.22
+Nodes (9): asNumber(), asString(), createReviewGraphStore(), isTestPath(), normalizeKind(), normalizePath(), parseLineRange(), pathMatches() (+1 more)
+
+### Community 30 - "Community 30"
 Cohesion: 0.24
 Nodes (11): buildFirstHopSummary(), buildNextBestAction(), communityLabels(), communityMembership(), compareHubs(), compareStrings(), graphDensity(), internalEdgeCounts() (+3 more)
 
-### Community 23 - "Community 23"
+### Community 31 - "Community 31"
 Cohesion: 0.31
 Nodes (12): currentBranch(), currentHead(), lifecyclePaths(), markLifecycleAnalyzed(), markLifecycleStale(), mergeBase(), planLifecyclePrune(), readJson() (+4 more)
 
-### Community 24 - "Community 24"
+### Community 32 - "Community 32"
 Cohesion: 0.33
 Nodes (11): bodyContent(), cachedFiles(), cacheDir(), cacheNamespace(), checkSemanticCache(), clearCache(), fileHash(), loadCached() (+3 more)
 
-### Community 25 - "Community 25"
-Cohesion: 0.36
-Nodes (11): detectUrlType(), downloadBinary(), fetchArxiv(), fetchTweet(), fetchWebpage(), htmlToMarkdown(), ingest(), normalizeIngestOptions() (+3 more)
-
-### Community 26 - "Community 26"
-Cohesion: 0.32
-Nodes (11): augmentDetectionWithPdfPreflight(), cloneDetection(), countWords(), dedupe(), listImageArtifacts(), loadMistralOcrModule(), metadataPath(), preparePdf() (+3 more)
-
-### Community 27 - "Community 27"
-Cohesion: 0.35
-Nodes (8): countImageMarkers(), countWords(), extractPdfTextLayer(), extractWithPdfParse(), extractWithPdftotext(), normalizeText(), preflightPdf(), sha256()
-
-### Community 28 - "Community 28"
-Cohesion: 0.42
-Nodes (7): applyEntry(), collectEntries(), gitAdvice(), migrateGraphifyOut(), normalizeGitPath(), planGraphifyOutMigration(), shellQuote()
-
-### Community 29 - "Community 29"
-Cohesion: 0.31
-Nodes (4): isPrivateIp(), safeFetch(), safeFetchText(), validateUrl()
-
-### Community 30 - "Community 30"
-Cohesion: 0.39
-Nodes (5): Analyzer, compute_score(), normalize(), Fixture: functions and methods that call each other - for call-graph extraction, run_analysis()
-
-### Community 31 - "Community 31"
-Cohesion: 0.36
-Nodes (6): build(), build_from_json(), buildFromJson(), Merge multiple extraction results into one graph., assertValid(), validateExtraction()
-
-### Community 32 - "Community 32"
-Cohesion: 0.36
-Nodes (4): escapeRegExp(), hookBlockRegex(), installHook(), uninstallHook()
-
 ### Community 33 - "Community 33"
-Cohesion: 0.5
-Nodes (7): defaultGraphPath(), defaultManifestPath(), defaultTranscriptsDir(), legacyGraphPath(), resolveGraphifyPaths(), resolveGraphInputPath(), statePath()
+Cohesion: 0.33
+Nodes (10): artifactId(), buildImageDataprepManifest(), existingImages(), fileHash(), mimeType(), pdfArtifactByImage(), runImageDataprep(), sha256() (+2 more)
 
 ### Community 34 - "Community 34"
 Cohesion: 0.36
-Nodes (6): field(), loadProfileRegistry(), normalizeRegistryRecord(), readRegistryRows(), registryRecordsToExtraction(), safeIdPart()
+Nodes (11): detectUrlType(), downloadBinary(), fetchArxiv(), fetchTweet(), fetchWebpage(), htmlToMarkdown(), ingest(), normalizeIngestOptions() (+3 more)
 
 ### Community 35 - "Community 35"
+Cohesion: 0.32
+Nodes (11): augmentDetectionWithPdfPreflight(), cloneDetection(), countWords(), dedupe(), listImageArtifacts(), loadMistralOcrModule(), metadataPath(), preparePdf() (+3 more)
+
+### Community 36 - "Community 36"
+Cohesion: 0.32
+Nodes (10): communityArticle(), crossCommunityLinks(), flowArticle(), flowsThroughNodes(), godNodeArticle(), indexMd(), normalizeFlows(), safeFilename() (+2 more)
+
+### Community 37 - "Community 37"
+Cohesion: 0.35
+Nodes (8): countImageMarkers(), countWords(), extractPdfTextLayer(), extractWithPdfParse(), extractWithPdftotext(), normalizeText(), preflightPdf(), sha256()
+
+### Community 38 - "Community 38"
+Cohesion: 0.47
+Nodes (9): addIssue(), citations(), isProfileEdge(), isRegistrySeed(), stringValue(), validateCitations(), validateEdge(), validateNode() (+1 more)
+
+### Community 39 - "Community 39"
+Cohesion: 0.36
+Nodes (6): artifactHasDeepRoute(), asRecord(), existingValidSidecarErrors(), importImageDataprepBatchResults(), readCaption(), readJsonl()
+
+### Community 40 - "Community 40"
+Cohesion: 0.42
+Nodes (7): applyEntry(), collectEntries(), gitAdvice(), migrateGraphifyOut(), normalizeGitPath(), planGraphifyOutMigration(), shellQuote()
+
+### Community 41 - "Community 41"
+Cohesion: 0.36
+Nodes (6): buildMinimalContext(), riskFromScore(), suggestionsForTask(), topCommunities(), topFlowNames(), uniqueSorted()
+
+### Community 42 - "Community 42"
+Cohesion: 0.31
+Nodes (4): isPrivateIp(), safeFetch(), safeFetchText(), validateUrl()
+
+### Community 43 - "Community 43"
+Cohesion: 0.39
+Nodes (5): Analyzer, compute_score(), normalize(), Fixture: functions and methods that call each other - for call-graph extraction, run_analysis()
+
+### Community 44 - "Community 44"
+Cohesion: 0.36
+Nodes (6): build(), build_from_json(), buildFromJson(), Merge multiple extraction results into one graph., assertValid(), validateExtraction()
+
+### Community 45 - "Community 45"
+Cohesion: 0.36
+Nodes (4): escapeRegExp(), hookBlockRegex(), installHook(), uninstallHook()
+
+### Community 46 - "Community 46"
+Cohesion: 0.5
+Nodes (7): defaultGraphPath(), defaultManifestPath(), defaultTranscriptsDir(), legacyGraphPath(), resolveGraphifyPaths(), resolveGraphInputPath(), statePath()
+
+### Community 47 - "Community 47"
+Cohesion: 0.36
+Nodes (6): field(), loadProfileRegistry(), normalizeRegistryRecord(), readRegistryRows(), registryRecordsToExtraction(), safeIdPart()
+
+### Community 48 - "Community 48"
+Cohesion: 0.36
+Nodes (5): runCli(), runMain(), runSkillRuntime(), tempProfileProject(), tempProject()
+
+### Community 49 - "Community 49"
 Cohesion: 0.52
 Nodes (6): execGit(), gitRevParse(), resolveFromGitCwd(), resolveGitContext(), safeExecGit(), safeGitRevParse()
 
-### Community 36 - "Community 36"
+### Community 50 - "Community 50"
 Cohesion: 0.52
 Nodes (6): createGraph(), forEachTraversalNeighbor(), isDirectedGraph(), loadGraphFromData(), toUndirectedGraph(), traversalNeighbors()
 
-### Community 37 - "Community 37"
-Cohesion: 0.52
-Nodes (6): communityArticle(), crossCommunityLinks(), godNodeArticle(), indexMd(), safeFilename(), toWiki()
-
-### Community 38 - "Community 38"
-Cohesion: 0.43
-Nodes (5): runCli(), runMain(), runSkillRuntime(), tempProfileProject(), tempProject()
-
-### Community 39 - "Community 39"
-Cohesion: 0.53
-Nodes (4): estimateTokens(), loadGraph(), querySubgraphTokens(), runBenchmark()
-
-### Community 40 - "Community 40"
-Cohesion: 0.67
-Nodes (5): buildProject(), countNonCodeFiles(), defaultLabels(), fileList(), formatDiagnosticSummary()
-
-### Community 41 - "Community 41"
-Cohesion: 0.4
-Nodes (0):
-
-### Community 42 - "Community 42"
-Cohesion: 0.4
-Nodes (0):
-
-### Community 43 - "Community 43"
-Cohesion: 0.83
-Nodes (3): normalizeSearchText(), scoreSearchText(), textMatchesQuery()
-
-### Community 44 - "Community 44"
-Cohesion: 0.5
-Nodes (0):
-
-### Community 45 - "Community 45"
-Cohesion: 0.5
-Nodes (0):
-
-### Community 46 - "Community 46"
-Cohesion: 0.67
-Nodes (0):
-
-### Community 47 - "Community 47"
-Cohesion: 0.67
-Nodes (0):
-
-### Community 48 - "Community 48"
-Cohesion: 1
-Nodes (2): git(), hookPath()
-
-### Community 49 - "Community 49"
-Cohesion: 0.67
-Nodes (0):
-
-### Community 50 - "Community 50"
-Cohesion: 0.67
-Nodes (0):
-
 ### Community 51 - "Community 51"
-Cohesion: 0.67
+Cohesion: 0.29
 Nodes (0):
 
 ### Community 52 - "Community 52"
-Cohesion: 0.67
-Nodes (0):
+Cohesion: 0.48
+Nodes (5): appendReviewSections(), formatFlow(), generate(), normalizeAffectedFlows(), normalizeFlows()
 
 ### Community 53 - "Community 53"
-Cohesion: 0.67
-Nodes (0):
+Cohesion: 0.53
+Nodes (4): estimateTokens(), loadGraph(), querySubgraphTokens(), runBenchmark()
 
 ### Community 54 - "Community 54"
 Cohesion: 0.67
-Nodes (0):
+Nodes (5): buildProject(), countNonCodeFiles(), defaultLabels(), fileList(), formatDiagnosticSummary()
 
 ### Community 55 - "Community 55"
-Cohesion: 1
-Nodes (0):
+Cohesion: 0.53
+Nodes (4): addEdge(), addFunction(), makeReviewGraph(), qn()
 
 ### Community 56 - "Community 56"
-Cohesion: 1
-Nodes (0):
+Cohesion: 0.8
+Nodes (4): isRecord(), isStringArray(), validateImageCaption(), validateImageRouting()
 
 ### Community 57 - "Community 57"
-Cohesion: 1
+Cohesion: 0.4
 Nodes (0):
 
 ### Community 58 - "Community 58"
-Cohesion: 1
-Nodes (0):
+Cohesion: 0.7
+Nodes (4): addCall(), addFunction(), makeFlowStore(), qn()
 
 ### Community 59 - "Community 59"
-Cohesion: 1
-Nodes (0):
+Cohesion: 0.5
+Nodes (2): addFunction(), qn()
 
 ### Community 60 - "Community 60"
-Cohesion: 1
-Nodes (0):
+Cohesion: 0.7
+Nodes (4): addCall(), addFunction(), makeStore(), qn()
 
 ### Community 61 - "Community 61"
-Cohesion: 1
-Nodes (0):
+Cohesion: 0.7
+Nodes (4): addCall(), addFunction(), makeBenchmarkStore(), qn()
 
 ### Community 62 - "Community 62"
-Cohesion: 1
+Cohesion: 0.4
 Nodes (0):
 
 ### Community 63 - "Community 63"
-Cohesion: 1
-Nodes (0):
+Cohesion: 0.83
+Nodes (3): normalizeSearchText(), scoreSearchText(), textMatchesQuery()
 
 ### Community 64 - "Community 64"
-Cohesion: 1
+Cohesion: 0.5
 Nodes (0):
 
 ### Community 65 - "Community 65"
-Cohesion: 1
-Nodes (0):
+Cohesion: 0.67
+Nodes (2): addNode(), qn()
 
 ### Community 66 - "Community 66"
-Cohesion: 1
+Cohesion: 0.5
 Nodes (0):
 
 ### Community 67 - "Community 67"
-Cohesion: 1
+Cohesion: 0.67
 Nodes (0):
 
 ### Community 68 - "Community 68"
-Cohesion: 1
+Cohesion: 0.67
 Nodes (0):
 
 ### Community 69 - "Community 69"
 Cohesion: 1
-Nodes (0):
+Nodes (2): git(), hookPath()
 
 ### Community 70 - "Community 70"
-Cohesion: 1
+Cohesion: 0.67
 Nodes (0):
 
 ### Community 71 - "Community 71"
-Cohesion: 1
+Cohesion: 0.67
 Nodes (0):
 
 ### Community 72 - "Community 72"
-Cohesion: 1
+Cohesion: 0.67
 Nodes (0):
 
 ### Community 73 - "Community 73"
-Cohesion: 1
+Cohesion: 0.67
 Nodes (0):
 
 ### Community 74 - "Community 74"
-Cohesion: 1
+Cohesion: 0.67
 Nodes (0):
 
 ### Community 75 - "Community 75"
-Cohesion: 1
+Cohesion: 0.67
 Nodes (0):
 
 ### Community 76 - "Community 76"
-Cohesion: 1
+Cohesion: 0.67
 Nodes (0):
 
 ### Community 77 - "Community 77"
-Cohesion: 1
+Cohesion: 0.67
 Nodes (0):
 
 ### Community 78 - "Community 78"
@@ -431,103 +431,219 @@ Nodes (0):
 Cohesion: 1
 Nodes (0):
 
+### Community 99 - "Community 99"
+Cohesion: 1
+Nodes (0):
+
+### Community 100 - "Community 100"
+Cohesion: 1
+Nodes (0):
+
+### Community 101 - "Community 101"
+Cohesion: 1
+Nodes (0):
+
+### Community 102 - "Community 102"
+Cohesion: 1
+Nodes (0):
+
+### Community 103 - "Community 103"
+Cohesion: 1
+Nodes (0):
+
+### Community 104 - "Community 104"
+Cohesion: 1
+Nodes (0):
+
+### Community 105 - "Community 105"
+Cohesion: 1
+Nodes (0):
+
+### Community 106 - "Community 106"
+Cohesion: 1
+Nodes (0):
+
+### Community 107 - "Community 107"
+Cohesion: 1
+Nodes (0):
+
+### Community 108 - "Community 108"
+Cohesion: 1
+Nodes (0):
+
+### Community 109 - "Community 109"
+Cohesion: 1
+Nodes (0):
+
+### Community 110 - "Community 110"
+Cohesion: 1
+Nodes (0):
+
+### Community 111 - "Community 111"
+Cohesion: 1
+Nodes (0):
+
+### Community 112 - "Community 112"
+Cohesion: 1
+Nodes (0):
+
+### Community 113 - "Community 113"
+Cohesion: 1
+Nodes (0):
+
+### Community 114 - "Community 114"
+Cohesion: 1
+Nodes (0):
+
+### Community 115 - "Community 115"
+Cohesion: 1
+Nodes (0):
+
+### Community 116 - "Community 116"
+Cohesion: 1
+Nodes (0):
+
+### Community 117 - "Community 117"
+Cohesion: 1
+Nodes (0):
+
+### Community 118 - "Community 118"
+Cohesion: 1
+Nodes (0):
+
+### Community 119 - "Community 119"
+Cohesion: 1
+Nodes (0):
+
+### Community 120 - "Community 120"
+Cohesion: 1
+Nodes (0):
+
+### Community 121 - "Community 121"
+Cohesion: 1
+Nodes (0):
+
+### Community 122 - "Community 122"
+Cohesion: 1
+Nodes (0):
+
+### Community 123 - "Community 123"
+Cohesion: 1
+Nodes (0):
+
+### Community 124 - "Community 124"
+Cohesion: 1
+Nodes (0):
+
+### Community 125 - "Community 125"
+Cohesion: 1
+Nodes (0):
+
 ## Knowledge Gaps
 - **72 isolated node(s):** `GraphifyDemo`, `LinearAlgebra`, `Base`, `-initWithName`, `-speak` (+67 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **Thin community `Community 55`** (2 nodes): `html-export.ts`, `safeToHtml()`
+- **Thin community `Community 78`** (2 nodes): `html-export.ts`, `safeToHtml()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 56`** (2 nodes): `report.ts`, `generate()`
+- **Thin community `Community 79`** (2 nodes): `semantic-prepare.ts`, `prepareSemanticDetection()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 57`** (2 nodes): `semantic-prepare.ts`, `prepareSemanticDetection()`
+- **Thin community `Community 80`** (2 nodes): `analyze.test.ts`, `buildTestGraph()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 58`** (2 nodes): `analyze.test.ts`, `buildTestGraph()`
+- **Thin community `Community 81`** (2 nodes): `build-project.test.ts`, `makeProjectDir()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 59`** (2 nodes): `build-project.test.ts`, `makeProjectDir()`
+- **Thin community `Community 82`** (2 nodes): `cluster.test.ts`, `makeGraph()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 60`** (2 nodes): `cluster.test.ts`, `makeGraph()`
+- **Thin community `Community 83`** (2 nodes): `image-routing-calibration.test.ts`, `makeTempDir()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 61`** (2 nodes): `platform-v4-integration.test.ts`, `runCliInTemp()`
+- **Thin community `Community 84`** (2 nodes): `llm-execution.test.ts`, `makeTempDir()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 62`** (2 nodes): `profile-pipeline.test.ts`, `makeProject()`
+- **Thin community `Community 85`** (2 nodes): `ontology-output.test.ts`, `makeTempDir()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 63`** (2 nodes): `profile-prompts.test.ts`, `promptState()`
+- **Thin community `Community 86`** (2 nodes): `platform-v4-integration.test.ts`, `runCliInTemp()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 64`** (2 nodes): `profile-registry.test.ts`, `makeTempDir()`
+- **Thin community `Community 87`** (2 nodes): `portable-artifacts.test.ts`, `tempProject()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 65`** (2 nodes): `review-analysis.test.ts`, `makeGraph()`
+- **Thin community `Community 88`** (2 nodes): `profile-pipeline.test.ts`, `makeProject()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 66`** (2 nodes): `review.test.ts`, `makeGraph()`
+- **Thin community `Community 89`** (2 nodes): `profile-prompts.test.ts`, `promptState()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 67`** (2 nodes): `summary.test.ts`, `makeGraph()`
+- **Thin community `Community 90`** (2 nodes): `profile-registry.test.ts`, `makeTempDir()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 68`** (2 nodes): `transcribe.test.ts`, `mockYtDlpDownload()`
+- **Thin community `Community 91`** (2 nodes): `review-analysis.test.ts`, `makeGraph()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 69`** (1 nodes): `index.d.ts`
+- **Thin community `Community 92`** (2 nodes): `review-store.test.ts`, `makeReviewGraph()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 70`** (1 nodes): `types.ts`
+- **Thin community `Community 93`** (2 nodes): `review.test.ts`, `makeGraph()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 71`** (1 nodes): `aider-integration.test.ts`
+- **Thin community `Community 94`** (2 nodes): `summary.test.ts`, `makeGraph()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 72`** (1 nodes): `build.test.ts`
+- **Thin community `Community 95`** (2 nodes): `transcribe.test.ts`, `mockYtDlpDownload()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 73`** (1 nodes): `cache.test.ts`
+- **Thin community `Community 96`** (1 nodes): `index.d.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 74`** (1 nodes): `claude-integration.test.ts`
+- **Thin community `Community 97`** (1 nodes): `types.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 75`** (1 nodes): `codex-integration.test.ts`
+- **Thin community `Community 98`** (1 nodes): `aider-integration.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 76`** (1 nodes): `copilot-integration.test.ts`
+- **Thin community `Community 99`** (1 nodes): `build.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 77`** (1 nodes): `cursor-integration.test.ts`
+- **Thin community `Community 100`** (1 nodes): `cache.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 78`** (1 nodes): `detect.test.ts`
+- **Thin community `Community 101`** (1 nodes): `claude-integration.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 79`** (1 nodes): `extract-call-confidence.test.ts`
+- **Thin community `Community 102`** (1 nodes): `codex-integration.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 80`** (1 nodes): `gemini-integration.test.ts`
+- **Thin community `Community 103`** (1 nodes): `copilot-integration.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 81`** (1 nodes): `html-export.test.ts`
+- **Thin community `Community 104`** (1 nodes): `cursor-integration.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 82`** (1 nodes): `ingest.test.ts`
+- **Thin community `Community 105`** (1 nodes): `detect.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 83`** (1 nodes): `install-preview.test.ts`
+- **Thin community `Community 106`** (1 nodes): `extract-call-confidence.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 84`** (1 nodes): `language-surface.test.ts`
+- **Thin community `Community 107`** (1 nodes): `gemini-integration.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 85`** (1 nodes): `lifecycle.test.ts`
+- **Thin community `Community 108`** (1 nodes): `html-export.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 86`** (1 nodes): `mistral-ocr.integration.test.ts`
+- **Thin community `Community 109`** (1 nodes): `ingest.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 87`** (1 nodes): `opencode-integration.test.ts`
+- **Thin community `Community 110`** (1 nodes): `install-preview.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 88`** (1 nodes): `paths.test.ts`
+- **Thin community `Community 111`** (1 nodes): `language-surface.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 89`** (1 nodes): `pdf-preflight.test.ts`
+- **Thin community `Community 112`** (1 nodes): `lifecycle.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 90`** (1 nodes): `pipeline.test.ts`
+- **Thin community `Community 113`** (1 nodes): `mistral-ocr.integration.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 91`** (1 nodes): `report.test.ts`
+- **Thin community `Community 114`** (1 nodes): `opencode-integration.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 92`** (1 nodes): `search.test.ts`
+- **Thin community `Community 115`** (1 nodes): `paths.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 93`** (1 nodes): `security.test.ts`
+- **Thin community `Community 116`** (1 nodes): `pdf-preflight.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 94`** (1 nodes): `skills.test.ts`
+- **Thin community `Community 117`** (1 nodes): `pipeline.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 95`** (1 nodes): `validate.test.ts`
+- **Thin community `Community 118`** (1 nodes): `report.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 96`** (1 nodes): `wiki.test.ts`
+- **Thin community `Community 119`** (1 nodes): `search.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 97`** (1 nodes): `tsup.config.ts`
+- **Thin community `Community 120`** (1 nodes): `security.test.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 98`** (1 nodes): `vitest.config.ts`
+- **Thin community `Community 121`** (1 nodes): `skills.test.ts`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 122`** (1 nodes): `validate.test.ts`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 123`** (1 nodes): `wiki.test.ts`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 124`** (1 nodes): `tsup.config.ts`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 125`** (1 nodes): `vitest.config.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `ValidationError` connect `Community 4` to `Community 3`?**
-  _High betweenness centrality (0.007) - this node is a cross-community bridge._
+  _High betweenness centrality (0.004) - this node is a cross-community bridge._
 - **Are the 39 inferred relationships involving `Response` (e.g. with `Auth` and `BasicAuth`) actually correct?**
   _`Response` has 39 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 39 inferred relationships involving `Request` (e.g. with `Auth` and `BasicAuth`) actually correct?**
