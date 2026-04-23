@@ -23,6 +23,8 @@ afterEach(() => {
 
 describe("buildProject", () => {
   it("writes standalone graph outputs for a code project", async () => {
+    const dir = makeProjectDir();
+
     vi.doMock("../src/extract.js", async () => {
       const actual = await vi.importActual<typeof import("../src/extract.js")>("../src/extract.js");
       return {
@@ -34,13 +36,13 @@ describe("buildProject", () => {
                 id: "alpha_service",
                 label: "AlphaService",
                 file_type: "code",
-                source_file: "src/sample.ts",
+                source_file: join(dir, "src", "sample.ts"),
               },
               {
                 id: "beta_repo",
                 label: "BetaRepo",
                 file_type: "code",
-                source_file: "src/sample.ts",
+                source_file: join(dir, "src", "sample.ts"),
               },
             ],
             edges: [
@@ -49,7 +51,7 @@ describe("buildProject", () => {
                 target: "beta_repo",
                 relation: "uses",
                 confidence: "EXTRACTED",
-                source_file: "src/sample.ts",
+                source_file: join(dir, "src", "sample.ts"),
               },
             ],
             input_tokens: 0,
@@ -61,15 +63,19 @@ describe("buildProject", () => {
     });
 
     const { buildProject } = await import("../src/pipeline.js");
-    const dir = makeProjectDir();
     const result = await buildProject(dir, { wiki: true });
+    const graphText = readFileSync(join(dir, ".graphify", "graph.json"), "utf-8");
+    const reportText = readFileSync(join(dir, ".graphify", "GRAPH_REPORT.md"), "utf-8");
 
     expect(result.graph.order).toBe(2);
     expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
     expect(existsSync(join(dir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
     expect(existsSync(join(dir, ".graphify", "graph.html"))).toBe(true);
     expect(existsSync(join(dir, ".graphify", "wiki", "index.md"))).toBe(true);
-    expect(readFileSync(join(dir, ".graphify", "GRAPH_REPORT.md"), "utf-8")).toContain("## Summary");
+    expect(JSON.parse(graphText).nodes[0].source_file).toBe("src/sample.ts");
+    expect(graphText).not.toContain(dir);
+    expect(reportText).not.toContain(dir);
+    expect(reportText).toContain("## Summary");
     expect(readFileSync(join(dir, ".graphify", ".graphify_detect.json"), "utf-8")).toContain("\"total_files\"");
   });
 

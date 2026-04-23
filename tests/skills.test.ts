@@ -62,6 +62,16 @@ describe("skill cache examples", () => {
     }
   });
 
+  it("documents portable committed graph artifacts and local lifecycle files", () => {
+    for (const relativePath of ALL_SKILL_DOCS) {
+      const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
+      expect(content).toContain("graphify portable-check .graphify");
+      expect(content).toContain("never commit .graphify/branch.json");
+      expect(content).toContain("never commit .graphify/worktree.json");
+      expect(content).toContain("repo-relative paths");
+    }
+  });
+
   it("prefers the compact first-hop summary before deep traversal", () => {
     for (const relativePath of ALL_SKILL_DOCS) {
       const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");

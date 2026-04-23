@@ -180,6 +180,40 @@ describe("public CLI runtime command parity", () => {
     expect(reportText).toContain("# Graph Report - .");
   });
 
+  it("checks portable .graphify artifacts while ignoring local lifecycle metadata", async () => {
+    const dir = tempProject();
+    const graphifyDir = join(dir, ".graphify");
+    mkdirSync(graphifyDir, { recursive: true });
+    writeFileSync(join(graphifyDir, "graph.json"), JSON.stringify({ nodes: [], links: [] }), "utf-8");
+    writeFileSync(
+      join(graphifyDir, "branch.json"),
+      JSON.stringify({ branch: "feature", worktreePath: dir }, null, 2),
+      "utf-8",
+    );
+    writeFileSync(
+      join(graphifyDir, "worktree.json"),
+      JSON.stringify({ gitDir: join(dir, ".git", "worktrees", "feature") }, null, 2),
+      "utf-8",
+    );
+
+    const ok = await runCli(["portable-check", ".graphify"], dir, { interceptExit: true });
+
+    expect(ok.exitCode).toBe(0);
+    expect(ok.logs.join("\n")).toContain("Portable artifacts OK");
+
+    writeFileSync(
+      join(graphifyDir, "GRAPH_REPORT.md"),
+      `Leaked absolute source: ${join(dir, "src", "alpha.ts")}\n`,
+      "utf-8",
+    );
+
+    const failed = await runCli(["portable-check", ".graphify"], dir, { interceptExit: true });
+
+    expect(failed.exitCode).toBe(1);
+    expect(failed.errors.join("\n")).toContain("absolute_path");
+    expect(failed.errors.join("\n")).toContain("GRAPH_REPORT.md");
+  });
+
   it("supports cluster-only and refreshes graph.html", async () => {
     const dir = tempProject();
     writeGraph(dir);

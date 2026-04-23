@@ -259,5 +259,18 @@ export { buildCommitRecommendation, commitRecommendationToText } from "./recomme
 export type { CommitRecommendation, CommitRecommendationGroup, CommitRecommendationStaleness, CommitRecommendationConfidence, CommitRecommendationOptions } from "./recommend.js";
 export { planGraphifyOutMigration, migrateGraphifyOut, migrationResultToText } from "./migrate-state.js";
 export type { MigrationAction, MigrationEntryType, MigrationEntry, MigrationGitAdvice, GraphifyOutMigrationPlan, GraphifyOutMigrationResult, MigrationOptions } from "./migrate-state.js";
+export {
+  makeDetectionPortable,
+  makeExtractionPortable,
+  makeGraphPortable,
+  projectRootLabel,
+  scanPortableGraphifyArtifacts,
+  toProjectRelativePath,
+} from "./portable-artifacts.js";
+export type {
+  PortableCheckResult,
+  PortablePathIssue,
+  PortablePathIssueKind,
+} from "./portable-artifacts.js";
 export { serve } from "./serve.js";
 export { watch, rebuildCode } from "./watch.js";

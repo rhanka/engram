@@ -39,10 +39,20 @@ In Codex, `$graphify` is a skill trigger, not a Bash subcommand like `graphify .
 ├── graph.html       interactive graph - click nodes, search, filter by community
 ├── GRAPH_REPORT.md  god nodes, surprising connections, suggested questions
 ├── graph.json       persistent graph - query weeks later without re-reading
-└── cache/           SHA256 cache - re-runs only process changed files
+├── wiki/            optional LLM-readable wiki pages
+├── flows.json       optional execution-flow artifact
+├── branch.json      local branch lifecycle state - ignored
+├── worktree.json    local worktree lifecycle state - ignored
+└── cache/           local SHA256 cache - ignored
 ```
 
-`.graphify/` is local runtime state. It is gitignored by default and should not be committed unless you intentionally publish worked examples or exported artifacts elsewhere.
+`.graphify/` is split between commit-safe graph artifacts and local lifecycle state. `graph.json`, `GRAPH_REPORT.md`, `graph.html`, `flows.json`, and `wiki/` are written with repo-relative paths so they can be committed when a project wants graph context to follow branches and worktrees. Before proposing or committing those artifacts, run:
+
+```bash
+graphify portable-check .graphify
+```
+
+Never commit `.graphify/branch.json`, `.graphify/worktree.json`, `.graphify/needs_update`, caches, transcripts, converted PDF/OCR sidecars, or profile runtime scratch. Those files are local to the current worktree and may contain absolute paths by design.
 
 If an older repo still has `graphify-out/`, run `graphify migrate-state --dry-run` first. The migration copies local state into `.graphify/` without deleting the legacy folder; when `graphify-out` is tracked, the command prints the `git mv -f graphify-out .graphify` + commit message to review before you mutate Git history.
 

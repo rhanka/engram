@@ -19,6 +19,11 @@ import { extractWithDiagnostics, type ExtractionDiagnostic } from "./extract.js"
 import { resolveGraphifyPaths } from "./paths.js";
 import { markLifecycleAnalyzed } from "./lifecycle.js";
 import { toWiki } from "./wiki.js";
+import {
+  makeDetectionPortable,
+  makeExtractionPortable,
+  projectRootLabel,
+} from "./portable-artifacts.js";
 import type {
   DetectionResult,
   Extraction,
@@ -109,14 +114,15 @@ export async function buildProject(
 
   mkdirSync(outputDir, { recursive: true });
 
-  const detection = detect(rootResolved, { followSymlinks: options?.followSymlinks });
+  const rawDetection = detect(rootResolved, { followSymlinks: options?.followSymlinks });
+  const detection = makeDetectionPortable(rawDetection, rootResolved);
   writeFileSync(detectionPath, JSON.stringify(detection, null, 2), "utf-8");
   saveManifest(detection.files, manifestPath);
 
-  const codeFiles = fileList(detection, "code");
+  const codeFiles = fileList(rawDetection, "code");
 
   if (codeFiles.length === 0) {
-    const nonCode = countNonCodeFiles(detection);
+    const nonCode = countNonCodeFiles(rawDetection);
     if (nonCode > 0) {
       throw new Error(
         "No supported code files found. The standalone CLI currently builds the AST graph " +
@@ -127,18 +133,19 @@ export async function buildProject(
     throw new Error(`No supported code files found under ${rootResolved}.`);
   }
 
-  const nonCode = countNonCodeFiles(detection);
+  const nonCode = countNonCodeFiles(rawDetection);
   if (nonCode > 0) {
     warnings.push({
       code: "non_code_skipped",
       message:
         `Skipped ${nonCode} non-code file(s) in standalone AST mode ` +
-        `(docs=${fileList(detection, "document").length}, papers=${fileList(detection, "paper").length}, images=${fileList(detection, "image").length}, video=${fileList(detection, "video").length}). ` +
+        `(docs=${fileList(rawDetection, "document").length}, papers=${fileList(rawDetection, "paper").length}, images=${fileList(rawDetection, "image").length}, video=${fileList(rawDetection, "video").length}). ` +
         "Use the graphify assistant skill for semantic extraction of those inputs.",
     });
   }
 
-  const { extraction, diagnostics } = await extractWithDiagnostics(codeFiles);
+  const extracted = await extractWithDiagnostics(codeFiles);
+  const diagnostics = extracted.diagnostics;
 
   if (diagnostics.length > 0) {
     warnings.push({
@@ -149,7 +156,7 @@ export async function buildProject(
     });
   }
 
-  if (extraction.nodes.length === 0) {
+  if (extracted.extraction.nodes.length === 0) {
     const detail = diagnostics.length > 0
       ? ` ${formatDiagnosticSummary(diagnostics)}`
       : "";
@@ -160,6 +167,7 @@ export async function buildProject(
     );
   }
 
+  const extraction = makeExtractionPortable(extracted.extraction, rootResolved);
   const G = buildFromJson(extraction, { directed: options?.directed === true });
   if (G.order === 0) {
     throw new Error("Graph is empty after buildFromJson().");
@@ -181,7 +189,7 @@ export async function buildProject(
     surprises,
     detection,
     { input: extraction.input_tokens ?? 0, output: extraction.output_tokens ?? 0 },
-    rootResolved,
+    projectRootLabel(rootResolved),
     questions,
   );
 
