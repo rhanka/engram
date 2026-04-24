@@ -13,6 +13,9 @@ Turn any folder of files into a navigable knowledge graph with community detecti
 ```
 /graphify                                             # full pipeline on current directory → Obsidian vault
 /graphify <path>                                      # full pipeline on specific path
+/graphify <path> --scope auto                         # safe default for code/review repos
+/graphify <path> --scope tracked                      # include newly staged files too
+/graphify <path> --all                                # full recursive folder walk for knowledge bases
 /graphify <path> --directed                           # build directed graph (preserves source→target)
 /graphify <path> --mode deep                          # thorough extraction, richer INFERRED edges
 /graphify <path> --pdf-ocr auto                       # preflight PDFs; OCR scanned/low-text PDFs with mistral-ocr when needed
@@ -40,9 +43,17 @@ Turn any folder of files into a navigable knowledge graph with community detecti
 /graphify review-delta --files src/auth.ts --graph .graphify/graph.json  # review impact for changed files
 /graphify review-analysis --files src/auth.ts --graph .graphify/graph.json  # blast radius + review views
 /graphify recommend-commits --files src/auth.ts,src/session.ts --graph .graphify/graph.json  # advisory commit grouping
+/graphify scope inspect <path> --scope auto           # inspect the resolved file inventory first
 /graphify path "AuthModule" "Database"                # shortest path between two concepts
 /graphify explain "SwinTransformer"                   # plain-language explanation of a node
 ```
+
+## Input scope policy
+
+- Default to `--scope auto` for codebase and review work. In Git repos this means committed files plus `.graphify/memory/*`.
+- Use `--scope tracked` when newly staged files must influence the graph before commit.
+- Use `--all` only when the user clearly wants a knowledge-base style crawl of docs, notes, papers, screenshots, audio, or video.
+- If the repo is dirty or the right scope is unclear, run `graphify scope inspect <path> --scope auto` first and summarize what will be included or excluded.
 
 ## What graphify is for
 
@@ -77,11 +88,7 @@ If the install succeeds, print nothing and move straight to Step 2.
 ### Step 2 - Detect files
 
 ```bash
-node -e "
-const { detect } = require('graphifyy');
-const result = detect('INPUT_PATH');
-console.log(JSON.stringify(result));
-" > .graphify/.graphify_detect.json
+graphify detect "INPUT_PATH" --scope auto --out .graphify/.graphify_detect.json
 ```
 
 Replace INPUT_PATH with the actual path the user provided. Do NOT cat or print the JSON - read it silently and present a clean summary instead:
@@ -98,6 +105,8 @@ Corpus: X files · ~Y words
 Then act on it:
 - If `total_files` is 0: stop with "No supported files found in [path]."
 - If `skipped_sensitive` is non-empty: mention file count skipped, not the file names.
+- If the user asked for a knowledge-base style crawl, rerun detection with `--all`.
+- If newly staged files should count, rerun with `--scope tracked`.
 - If `total_words` > 2,000,000 OR `total_files` > 200: show the warning and the top 5 subdirectories by file count, then ask which subfolder to run on. Wait for the user's answer before proceeding.
 - Otherwise: proceed to Step 2.5. It is a safe no-op if no video or PDF files need preprocessing.
 

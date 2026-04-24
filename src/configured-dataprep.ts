@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
 import { detect } from "./detect.js";
+import { inspectInputScope } from "./input-scope.js";
 import { discoverProjectConfig, loadProjectConfig } from "./project-config.js";
 import { loadOntologyProfile } from "./ontology-profile.js";
 import { loadProfileRegistries, registryRecordsToExtraction } from "./profile-registry.js";
@@ -10,6 +11,9 @@ import { prepareSemanticDetection } from "./semantic-prepare.js";
 import type {
   DetectionResult,
   Extraction,
+  GraphifyInputScopeMode,
+  InputScopeInspection,
+  InputScopeSource,
   NormalizedOntologyProfile,
   NormalizedProjectConfig,
   RegistryRecord,
@@ -51,6 +55,8 @@ export interface ConfiguredDataprepOptions {
   stateDir?: string;
   followSymlinks?: boolean;
   incremental?: boolean;
+  scope?: GraphifyInputScopeMode;
+  scopeSource?: InputScopeSource;
   semanticPrepare?: (
     detection: DetectionResult,
     options: SemanticPreparationOptions,
@@ -142,12 +148,40 @@ function recomputeDetection(detection: DetectionResult): DetectionResult {
     total_words: totalWords,
     needs_graph: totalWords >= CORPUS_WARN_THRESHOLD,
     warning: warningFor(totalFiles, totalWords),
+    ...(detection.scope
+      ? {
+        scope: {
+          ...detection.scope,
+          included_count: totalFiles,
+        },
+      }
+      : {}),
   };
 }
 
-function mergeDetections(detections: DetectionResult[]): DetectionResult {
+function mergeScopeInspections(scopes: InputScopeInspection[], root: string): InputScopeInspection | undefined {
+  if (scopes.length === 0) return undefined;
+  const first = scopes[0]!;
+  const anyNullCounts = scopes.some((scope) => scope.candidate_count === null || scope.included_count === null);
+  return {
+    ...first,
+    root,
+    git_root: scopes.every((scope) => scope.git_root === first.git_root) ? first.git_root : undefined,
+    head: scopes.every((scope) => scope.head === first.head) ? first.head : undefined,
+    candidate_count: anyNullCounts ? null : scopes.reduce((sum, scope) => sum + (scope.candidate_count ?? 0), 0),
+    included_count: anyNullCounts ? null : scopes.reduce((sum, scope) => sum + (scope.included_count ?? 0), 0),
+    excluded_untracked_count: scopes.reduce((sum, scope) => sum + scope.excluded_untracked_count, 0),
+    excluded_ignored_count: scopes.reduce((sum, scope) => sum + scope.excluded_ignored_count, 0),
+    excluded_sensitive_count: scopes.reduce((sum, scope) => sum + scope.excluded_sensitive_count, 0),
+    missing_committed_count: scopes.reduce((sum, scope) => sum + scope.missing_committed_count, 0),
+    warnings: [...new Set(scopes.flatMap((scope) => scope.warnings))],
+  };
+}
+
+function mergeDetections(detections: DetectionResult[], root: string): DetectionResult {
   const merged = emptyDetection();
   const seen = new Set<string>();
+  const scopes = detections.map((detection) => detection.scope).filter(Boolean) as InputScopeInspection[];
   for (const detection of detections) {
     for (const fileType of DETECTION_FILE_TYPES) {
       for (const filePath of detection.files[fileType] ?? []) {
@@ -160,7 +194,10 @@ function mergeDetections(detections: DetectionResult[]): DetectionResult {
     merged.skipped_sensitive.push(...detection.skipped_sensitive);
     merged.graphifyignore_patterns += detection.graphifyignore_patterns;
   }
-  return recomputeDetection(merged);
+  return recomputeDetection({
+    ...merged,
+    ...(scopes.length > 0 ? { scope: mergeScopeInspections(scopes, root) } : {}),
+  });
 }
 
 function isInside(path: string, root: string): boolean {
@@ -288,10 +325,25 @@ export async function runConfiguredDataprep(
   });
   const paths = resolveGraphifyPaths({ root: resolvedRoot, stateDir: projectConfig.outputs.state_dir });
   const inputs = buildConfiguredDetectionInputs(projectConfig);
+  const scopeMode = options.scope ?? projectConfig.inputs.scope;
+  const scopeSource = options.scope
+    ? (options.scopeSource ?? "cli")
+    : (options.scopeSource ?? projectConfig.inputs.scope_source);
   const rootDetections = inputs.detectRoots
     .filter((detectRoot) => existsSync(detectRoot))
-    .map((detectRoot) => detect(detectRoot, { followSymlinks: options.followSymlinks }));
-  const detection = applyConfiguredExcludes(mergeDetections(rootDetections), projectConfig);
+    .map((detectRoot) => {
+      const inventory = inspectInputScope(detectRoot, {
+        mode: scopeMode,
+        source: scopeSource,
+      });
+      return detect(detectRoot, {
+        followSymlinks: options.followSymlinks,
+        candidateFiles: inventory.candidateFiles,
+        candidateRoot: inventory.scope.git_root ?? detectRoot,
+        scope: inventory.scope,
+      });
+    });
+  const detection = applyConfiguredExcludes(mergeDetections(rootDetections, resolvedRoot), projectConfig);
   const semanticPrepare = options.semanticPrepare ?? prepareSemanticDetection;
   const semanticPreparation = await semanticPrepare(detection, {
     transcriptOutputDir: paths.transcriptsDir,

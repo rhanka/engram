@@ -64,6 +64,24 @@ dist/
 
 構文は `.gitignore` と同じです。パターンは graphify を実行したフォルダからの相対パスに対してマッチします。
 
+## 入力スコープの選び方
+
+Graphify は、コード/レビュー向けの安全なスキャンと、ナレッジベース全体の再帰クロールを分けて扱います。
+
+- スコープ対応コマンドの既定値は `--scope auto` です。
+- `HEAD` のある Git リポジトリでは、`auto` はコミット済みファイルと `.graphify/memory/*` に解決されます。
+- `--scope tracked` は、まだコミットされていない新規 staged ファイルも含めます。
+- `--all` は `--scope all` の別名で、再帰フォルダ走査に戻します。論文、ノート、スクリーンショット、音声/動画、非 Git フォルダではこれを使ってください。
+- `graphify scope inspect . --scope auto` で、再構築前に実際の対象ファイルを確認できます。
+- 設定付きプロジェクトでは `graphify.yaml` で既定値を固定できます：
+
+```yaml
+inputs:
+  scope: all
+```
+
+現在この入力スコープは `detect`、`detect-incremental`、`update`、`watch`、`hook-rebuild`、および設定ベースの profile dataprep に適用されます。検出メタデータは `.graphify/scope.json` に保存され、`GRAPH_REPORT.md` に要約されます。
+
 ## 仕組み
 
 graphify は決定論的な構造抽出とモデル駆動の意味抽出を組み合わせ、必要に応じてその間にローカル前処理を挟みます。コードは LLM を使わない AST パスでクラス、関数、インポート、コールグラフ、docstring、根拠コメントを抽出します。ドキュメント、論文、Office 文書、画像はテキストまたはマルチモーダル入力に正規化したうえで、プラットフォーム側モデルのサブエージェントが概念、関係、設計意図を抽出します。PDF はローカル preflight を通り、テキスト層が使える場合は `pdf-parse` またはローカル `pdftotext` で Markdown sidecar を作成し、スキャン/低テキスト PDF は `auto` または `always` モードで `mistral-ocr` により Markdown + 画像へ変換できます。PDF から抽出された画像も、図表、表、ダイアグラム、埋め込みテキストが意味を持つ場合は意味入力として扱います。既定ではアシスタントの vision モデルで解釈し、設定済みなら外部 OCR/vision モデルへ委譲できます。いずれも PDF provenance を保持します。音声/動画もローカルで検出でき、TypeScript ランタイムから `yt-dlp` で音声を取得し、`ffmpeg` で正規化し、`faster-whisper-ts` で文字起こしします。その transcript も他のドキュメントと同じ意味抽出パスに流し込みます。結果は Graphology グラフにマージされ、Louvain コミュニティ検出でクラスタリングされ、インタラクティブ HTML、クエリ可能な JSON、平易な監査レポートとしてエクスポートされます。

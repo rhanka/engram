@@ -15,6 +15,9 @@ This Codex skill is **TypeScript-backed**. Before calling the run successful, co
 ```bash
 $graphify                                             # full pipeline on current directory
 $graphify <path>                                      # full pipeline on specific path
+$graphify <path> --scope auto                         # safe default for code/review repos
+$graphify <path> --scope tracked                      # include newly staged files too
+$graphify <path> --all                                # full recursive folder walk for knowledge bases
 $graphify <path> --directed                           # build directed graph (preserves source->target)
 $graphify <path> --mode deep                          # richer INFERRED edges during semantic extraction
 $graphify <path> --pdf-ocr auto                       # preflight PDFs; OCR scanned/low-text PDFs with mistral-ocr when needed
@@ -40,9 +43,17 @@ $graphify minimal-context --task "review PR" --graph .graphify/graph.json  # fir
 $graphify review-delta --files src/auth.ts --graph .graphify/graph.json  # review impact for changed files
 $graphify review-analysis --files src/auth.ts --graph .graphify/graph.json  # blast radius + review views
 $graphify recommend-commits --files src/auth.ts,src/session.ts --graph .graphify/graph.json  # advisory commit grouping
+$graphify scope inspect <path> --scope auto           # inspect the resolved file inventory first
 $graphify path "AuthModule" "Database"                # shortest path between concepts
 $graphify explain "SwinTransformer"                   # explain one node and its neighbors
 ```
+
+## Input scope policy
+
+- Default to `--scope auto` for codebase and review work. In Git repos this resolves to committed files plus `.graphify/memory/*`.
+- Use `--scope tracked` when newly staged files must be included before commit.
+- Use `--all` only when the user clearly wants a knowledge-base crawl across docs, notes, papers, screenshots, audio, or video.
+- If the repo is dirty or the right scope is unclear, run `graphify scope inspect <path> --scope auto` first and summarize the included and excluded counts.
 
 In Codex, prefer `$graphify ...` as the explicit invocation. Do not rely on `/graphify ...`, which is Claude syntax. `$graphify` is a Codex skill trigger, not a Bash command like `graphify .`.
 
@@ -109,7 +120,11 @@ That keeps the run pinned to the resolved TypeScript runtime.
 ### Step 2 - Detect files
 
 ```bash
-$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" detect "INPUT_PATH" --out .graphify/.graphify_detect.json
+GRAPHIFY_SCOPE_FLAG="--scope auto"
+if the original invocation included --all, set GRAPHIFY_SCOPE_FLAG="--all"
+if the original invocation included --scope <mode>, set GRAPHIFY_SCOPE_FLAG="--scope <mode>"
+
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" detect "INPUT_PATH" $GRAPHIFY_SCOPE_FLAG --out .graphify/.graphify_detect.json
 ```
 
 Replace `INPUT_PATH` with the actual path the user provided. Do not print the raw JSON. Read it silently and present a clean summary:
@@ -133,6 +148,8 @@ The detection JSON shape is:
 Then act on it:
 - If `total_files` is `0`: stop with `No supported files found in [path].`
 - If `skipped_sensitive` is non-empty: mention the number skipped, not the names.
+- If the user clearly asked for a knowledge-base crawl and the current run used `--scope auto`, switch to `--all`.
+- If newly staged files should count, switch to `--scope tracked`.
 - If `total_words > 2_000_000` or `total_files > 200`: show the warning and the top 5 subdirectories by file count, then ask which subfolder to run on.
 - Otherwise: proceed to Step 2.5. It is a safe no-op if no video or PDF files need preprocessing.
 

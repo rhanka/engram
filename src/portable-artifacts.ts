@@ -91,6 +91,12 @@ function normalizeMaybePath(root: string, value: string | undefined): string | u
   return toProjectRelativePath(root, value);
 }
 
+function normalizeScopePath(root: string, value: string | undefined): string | undefined {
+  if (!value) return value;
+  const relativePath = toProjectRelativePath(root, value);
+  return relativePath.length > 0 ? relativePath : ".";
+}
+
 export function makeExtractionPortable(extraction: Extraction, root: string): Extraction {
   return {
     ...extraction,
@@ -125,6 +131,17 @@ export function makeDetectionPortable(detection: DetectionResult, root: string):
     ...(detection.new_files ? { new_files: normalizeFileMap(root, detection.new_files) } : {}),
     ...(detection.unchanged_files ? { unchanged_files: normalizeFileMap(root, detection.unchanged_files) } : {}),
     ...(detection.deleted_files ? { deleted_files: detection.deleted_files.map((value) => toProjectRelativePath(root, value)) } : {}),
+    ...(detection.scope
+      ? {
+        scope: {
+          ...detection.scope,
+          root: normalizeScopePath(root, detection.scope.root) ?? detection.scope.root,
+          ...(detection.scope.git_root
+            ? { git_root: normalizeScopePath(root, detection.scope.git_root) }
+            : {}),
+        },
+      }
+      : {}),
   };
 }
 

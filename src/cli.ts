@@ -16,11 +16,22 @@ import { homedir, platform } from "node:os";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import type Graph from "graphology";
-import type { NormalizedOntologyProfile, NormalizedProjectConfig } from "./types.js";
+import type {
+  GraphifyInputScopeMode,
+  InputScopeSource,
+  NormalizedOntologyProfile,
+  NormalizedProjectConfig,
+} from "./types.js";
 import type { ProfileState } from "./configured-dataprep.js";
+import {
+  inspectInputScope,
+  resolveCliInputScopeSelection,
+  resolveConfiguredInputScopeSelection,
+} from "./input-scope.js";
 import { forEachTraversalNeighbor, loadGraphFromData } from "./graph.js";
 import { safeExecGit } from "./git.js";
-import { resolveGraphInputPath, resolveGraphifyPaths } from "./paths.js";
+import { discoverProjectConfig, loadProjectConfig } from "./project-config.js";
+import { defaultManifestPath, resolveGraphInputPath, resolveGraphifyPaths } from "./paths.js";
 import { normalizeSearchText } from "./search.js";
 import { makeGraphPortable, projectRootLabel, scanPortableGraphifyArtifacts } from "./portable-artifacts.js";
 
@@ -85,6 +96,37 @@ function writeJson(path: string, value: unknown): void {
   const resolved = resolve(path);
   mkdirSync(dirname(resolved), { recursive: true });
   writeFileSync(resolved, JSON.stringify(value, null, 2), "utf-8");
+}
+
+function scopeOptionDescription(): string {
+  return "Input scope: auto, committed, tracked, all";
+}
+
+function resolveCliScopeSelection(
+  opts: { scope?: string; all?: boolean },
+  fallback: GraphifyInputScopeMode = "auto",
+): { mode: GraphifyInputScopeMode; source: InputScopeSource } {
+  return resolveCliInputScopeSelection(opts, fallback);
+}
+
+function printScopeInspection(
+  inventory: ReturnType<typeof inspectInputScope>,
+  options: { json?: boolean } = {},
+): void {
+  if (options.json) {
+    console.log(JSON.stringify(inventory, null, 2));
+    return;
+  }
+  const scope = inventory.scope;
+  console.log([
+    `Input scope for ${scope.root}`,
+    `- requested: ${scope.requested_mode}`,
+    `- resolved: ${scope.resolved_mode} (${scope.source})`,
+    `- included: ${scope.included_count ?? "n/a"} / candidates: ${scope.candidate_count ?? "recursive"}`,
+    `- excluded: ${scope.excluded_untracked_count} untracked, ${scope.excluded_ignored_count} ignored, ${scope.excluded_sensitive_count} sensitive, ${scope.missing_committed_count} missing committed`,
+    ...scope.warnings.map((warning) => `- warning: ${warning}`),
+    ...(scope.recommendation ? [`- recommendation: ${scope.recommendation}`] : []),
+  ].join("\n"));
 }
 
 function loadCliProfileContext(profileStatePath: string): {
@@ -1493,11 +1535,25 @@ export async function main(): Promise<void> {
     .description("Run deterministic local dataprep for a configured ontology profile")
     .option("--config <path>", "Explicit graphify.yaml path")
     .option("--out-dir <path>", "State output directory relative to root or absolute")
+    .option("--scope <mode>", scopeOptionDescription())
+    .option("--all", "Alias for --scope all")
     .action(async (profilePath = ".", opts) => {
       const { runConfiguredDataprep } = await import("./configured-dataprep.js");
-      const result = await runConfiguredDataprep(resolve(profilePath), {
+      const root = resolve(profilePath);
+      const configPath = opts.config
+        ? resolve(opts.config)
+        : discoverProjectConfig(root).path;
+      if (!configPath) {
+        console.error(`error: no graphify project config found under ${root}`);
+        process.exit(1);
+      }
+      const config = loadProjectConfig(configPath);
+      const scopeSelection = resolveConfiguredInputScopeSelection(config, opts);
+      const result = await runConfiguredDataprep(root, {
         ...(opts.config ? { configPath: resolve(opts.config) } : {}),
         ...(opts.outDir ? { stateDir: opts.outDir } : {}),
+        scope: scopeSelection.mode,
+        scopeSource: scopeSelection.source,
       });
       console.log(
         `Profile dataprep: ${result.semanticDetection.total_files} semantic file(s), ` +
@@ -1569,6 +1625,67 @@ export async function main(): Promise<void> {
       );
     });
 
+  program
+    .command("detect")
+    .argument("<inputPath>")
+    .option("--out <path>")
+    .option("--scope <mode>", scopeOptionDescription())
+    .option("--all", "Alias for --scope all")
+    .action(async (inputPath, opts) => {
+      const { detect } = await import("./detect.js");
+      const root = resolve(inputPath);
+      const scopeSelection = resolveCliScopeSelection(opts);
+      const inventory = inspectInputScope(root, scopeSelection);
+      const result = detect(root, {
+        candidateFiles: inventory.candidateFiles,
+        candidateRoot: inventory.scope.git_root ?? root,
+        scope: inventory.scope,
+      });
+      if (opts.out) {
+        writeJson(opts.out, result);
+        console.log(`Detected ${result.total_files} files in ${root}`);
+      } else {
+        console.log(JSON.stringify(result, null, 2));
+      }
+    });
+
+  program
+    .command("detect-incremental")
+    .argument("<inputPath>")
+    .option("--manifest <path>", "Path to manifest.json", defaultManifestPath())
+    .option("--out <path>")
+    .option("--scope <mode>", scopeOptionDescription())
+    .option("--all", "Alias for --scope all")
+    .action(async (inputPath, opts) => {
+      const { detectIncremental } = await import("./detect.js");
+      const root = resolve(inputPath);
+      const scopeSelection = resolveCliScopeSelection(opts);
+      const inventory = inspectInputScope(root, scopeSelection);
+      const result = detectIncremental(root, resolve(opts.manifest), {
+        candidateFiles: inventory.candidateFiles,
+        candidateRoot: inventory.scope.git_root ?? root,
+        scope: inventory.scope,
+      });
+      if (opts.out) {
+        writeJson(opts.out, result);
+        console.log(`${result.new_total ?? 0} new/changed file(s) under ${root}`);
+      } else {
+        console.log(JSON.stringify(result, null, 2));
+      }
+    });
+
+  const scopeProgram = program.command("scope").description("Inspect resolved Graphify input scope");
+  scopeProgram
+    .command("inspect [path]")
+    .option("--scope <mode>", scopeOptionDescription())
+    .option("--all", "Alias for --scope all")
+    .option("--json", "Print JSON output")
+    .action((scopePath = ".", opts) => {
+      const root = resolve(scopePath);
+      const inventory = inspectInputScope(root, resolveCliScopeSelection(opts));
+      printScopeInspection(inventory, { json: opts.json });
+    });
+
   // MCP server
   program
     .command("serve [graph]")
@@ -1583,23 +1700,35 @@ export async function main(): Promise<void> {
     .command("watch [path]")
     .description("Watch a folder and auto-rebuild graph outputs on code changes")
     .option("--debounce <seconds>", "Wait time before rebuild", "3")
+    .option("--scope <mode>", scopeOptionDescription())
+    .option("--all", "Alias for --scope all")
     .action(async (watchPath, opts) => {
       const { watch } = await import("./watch.js");
       const debounce = Number.parseFloat(opts.debounce);
-      await watch(watchPath ?? ".", Number.isFinite(debounce) ? debounce : 3);
+      const scopeSelection = resolveCliScopeSelection(opts);
+      await watch(watchPath ?? ".", Number.isFinite(debounce) ? debounce : 3, {
+        scope: scopeSelection.mode,
+        scopeSource: scopeSelection.source,
+      });
     });
 
   program
     .command("update [path]")
     .description("One-shot code-only graph rebuild")
-    .action(async (updatePath = ".") => {
+    .option("--scope <mode>", scopeOptionDescription())
+    .option("--all", "Alias for --scope all")
+    .action(async (updatePath = ".", opts) => {
       if (!existsSync(updatePath)) {
         console.error(`error: path not found: ${updatePath}`);
         process.exit(1);
       }
       const { rebuildCode } = await import("./watch.js");
+      const scopeSelection = resolveCliScopeSelection(opts);
       console.log(`Re-extracting code files in ${updatePath} (no LLM needed)...`);
-      const ok = await rebuildCode(updatePath);
+      const ok = await rebuildCode(updatePath, false, {
+        scope: scopeSelection.mode,
+        scopeSource: scopeSelection.source,
+      });
       if (!ok) {
         console.error("Nothing to update or rebuild failed - check output above.");
         process.exit(1);
@@ -2363,7 +2492,9 @@ export async function main(): Promise<void> {
   program
     .command("hook-rebuild", { hidden: true })
     .description("Internal: rebuild graph from code files (called by git hooks)")
-    .action(async () => {
+    .option("--scope <mode>", scopeOptionDescription())
+    .option("--all", "Alias for --scope all")
+    .action(async (opts) => {
       const { rebuildCode } = await import("./watch.js");
       const changedFiles = (process.env.GRAPHIFY_CHANGED ?? "")
         .split(/\r?\n/)
@@ -2378,7 +2509,12 @@ export async function main(): Promise<void> {
         }
         clearStale = changedFiles.every((p) => CODE_EXTENSIONS.has(extname(p).toLowerCase()));
       }
-      await rebuildCode(".", false, { clearStale });
+      const scopeSelection = resolveCliScopeSelection(opts);
+      await rebuildCode(".", false, {
+        clearStale,
+        scope: scopeSelection.mode,
+        scopeSource: scopeSelection.source,
+      });
     });
 
   program

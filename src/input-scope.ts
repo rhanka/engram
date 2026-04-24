@@ -8,6 +8,7 @@ import type {
   GraphifyResolvedInputScopeMode,
   InputScopeInspection,
   InputScopeSource,
+  NormalizedProjectConfig,
 } from "./types.js";
 
 export interface InspectInputScopeOptions {
@@ -20,6 +21,11 @@ export interface InputScopeInventory {
   scope: InputScopeInspection;
 }
 
+export interface InputScopeSelection {
+  mode: GraphifyInputScopeMode;
+  source: InputScopeSource;
+}
+
 interface GitScopeContext {
   gitRoot: string;
   prefix: string;
@@ -27,6 +33,7 @@ interface GitScopeContext {
 }
 
 const DEFAULT_RECOMMENDATION = "Use --scope all or graphify.yaml inputs.corpus for a knowledge-base folder.";
+const VALID_SCOPE_MODES = new Set<GraphifyInputScopeMode>(["auto", "committed", "tracked", "all"]);
 
 function splitGitLines(output: string | null): string[] {
   if (!output) return [];
@@ -135,11 +142,11 @@ function gitInventory(context: GitScopeContext, mode: "committed" | "tracked"): 
   return splitGitLines(execGit(context.gitRoot, ["ls-files", "--cached", "--", target]));
 }
 
-function appendMemoryFiles(root: string, candidateFiles: string[]): string[] {
+function appendMemoryFiles(root: string, candidateRoot: string, candidateFiles: string[]): string[] {
   const paths = resolveGraphifyPaths({ root });
   const seen = new Set(candidateFiles);
   const result = [...candidateFiles];
-  for (const file of walkFiles(paths.memoryDir, root)) {
+  for (const file of walkFiles(paths.memoryDir, candidateRoot)) {
     if (seen.has(file)) continue;
     seen.add(file);
     result.push(file);
@@ -167,7 +174,7 @@ function buildGitInventory(
     }
   }
 
-  const candidateFiles = appendMemoryFiles(root, existingFiles);
+  const candidateFiles = appendMemoryFiles(root, context.gitRoot, existingFiles);
   const target = pathspecForPrefix(context.prefix);
   const excludedUntrackedCount = countGitPaths(context, ["ls-files", "--others", "--exclude-standard", "--", target]);
   const excludedIgnoredCount = countGitPaths(context, ["ls-files", "--others", "-i", "--exclude-standard", "--", target]);
@@ -259,4 +266,43 @@ export function inspectInputScope(root: string, options: InspectInputScopeOption
   }
 
   return buildGitInventory(rootResolved, requestedMode, "committed", source, context);
+}
+
+export function isInputScopeMode(value: unknown): value is GraphifyInputScopeMode {
+  return typeof value === "string" && VALID_SCOPE_MODES.has(value as GraphifyInputScopeMode);
+}
+
+export function parseInputScopeMode(
+  value: unknown,
+  fallback: GraphifyInputScopeMode = "auto",
+): GraphifyInputScopeMode {
+  return isInputScopeMode(value) ? value : fallback;
+}
+
+export function resolveCliInputScopeSelection(
+  options: { scope?: string; all?: boolean },
+  fallback: GraphifyInputScopeMode = "auto",
+): InputScopeSelection {
+  if (options.all) return { mode: "all", source: "cli" };
+  if (options.scope !== undefined) {
+    return { mode: parseInputScopeMode(options.scope, fallback), source: "cli" };
+  }
+  return {
+    mode: fallback,
+    source: fallback === "all" ? "configured-default" : "default-auto",
+  };
+}
+
+export function resolveConfiguredInputScopeSelection(
+  config: Pick<NormalizedProjectConfig, "inputs">,
+  options: { scope?: string; all?: boolean },
+): InputScopeSelection {
+  if (options.all) return { mode: "all", source: "cli" };
+  if (options.scope !== undefined) {
+    return { mode: parseInputScopeMode(options.scope, config.inputs.scope), source: "cli" };
+  }
+  return {
+    mode: config.inputs.scope,
+    source: config.inputs.scope_source,
+  };
 }

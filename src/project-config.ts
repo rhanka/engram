@@ -5,6 +5,7 @@ import { parse as parseYaml } from "yaml";
 import type {
   GraphifyDataprepPolicy,
   GraphifyImageAnalysisPolicy,
+  GraphifyInputScopeMode,
   GraphifyLlmExecutionPolicy,
   GraphifyOutputPolicy,
   GraphifyProjectConfig,
@@ -25,6 +26,7 @@ const VALID_PDF_OCR_MODES = new Set(["off", "auto", "always", "dry-run"]);
 const VALID_CITATION_MINIMUMS = new Set(["file", "page", "section", "paragraph"]);
 const VALID_LLM_EXECUTION_MODES = new Set(["assistant", "batch", "mesh", "off"]);
 const VALID_IMAGE_ARTIFACT_SOURCES = new Set(["ocr_crops", "images", "all"]);
+const VALID_INPUT_SCOPE_MODES = new Set(["auto", "committed", "tracked", "all"]);
 
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -96,6 +98,13 @@ function parseImageArtifactSource(value: unknown): "ocr_crops" | "images" | "all
     : "ocr_crops";
 }
 
+function parseInputScopeMode(value: unknown, fallback: GraphifyInputScopeMode): GraphifyInputScopeMode {
+  const normalized = String(value ?? fallback).trim().toLowerCase();
+  return VALID_INPUT_SCOPE_MODES.has(normalized)
+    ? normalized as GraphifyInputScopeMode
+    : fallback;
+}
+
 export function discoverProjectConfig(root: string = "."): ProjectConfigDiscoveryResult {
   const resolvedRoot = resolve(root);
   const searched = CONFIG_CANDIDATES.map((candidate) => join(resolvedRoot, candidate));
@@ -142,6 +151,9 @@ export function validateProjectConfig(config: GraphifyProjectConfig): string[] {
     if (value !== undefined && !Array.isArray(value)) {
       errors.push(`${key} must be a list of paths`);
     }
+  }
+  if (inputs.scope !== undefined && !VALID_INPUT_SCOPE_MODES.has(String(inputs.scope))) {
+    errors.push("inputs.scope must be one of auto, committed, tracked, all");
   }
   if (dataprep.pdf_ocr !== undefined && !VALID_PDF_OCR_MODES.has(String(dataprep.pdf_ocr))) {
     errors.push("dataprep.pdf_ocr must be one of off, auto, always, dry-run");
@@ -214,6 +226,8 @@ export function normalizeProjectConfig(
     },
     inputs: {
       corpus: asStringArray(inputs.corpus).map((item) => resolvePath(configDir, item)),
+      scope: parseInputScopeMode(inputs.scope, "all"),
+      scope_source: inputs.scope === undefined ? "configured-default" : "config",
       registries,
       registrySources: buildRegistrySources(registries),
       generated: asStringArray(inputs.generated).map((item) => resolvePath(configDir, item)),

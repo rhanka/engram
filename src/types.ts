@@ -166,6 +166,7 @@ export interface GraphifyProjectConfigProfile {
 
 export interface GraphifyProjectInputs {
   corpus?: string[];
+  scope?: GraphifyInputScopeMode;
   registries?: string[];
   generated?: string[];
   exclude?: string[];
@@ -254,6 +255,8 @@ export interface NormalizedProjectProfile {
 
 export interface NormalizedProjectInputs {
   corpus: string[];
+  scope: GraphifyInputScopeMode;
+  scope_source: Extract<InputScopeSource, "config" | "configured-default">;
   registries: string[];
   registrySources: Record<string, string>;
   generated: string[];

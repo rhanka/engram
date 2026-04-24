@@ -52,6 +52,24 @@ $graphify .                        # Codex
 
 `graphify review-analysis` 增加面向 review 的 blast radius、bridge nodes、test-gap hints、impacted communities 和 multimodal/doc regression safety 视图。`graphify review-eval` 可用 JSON cases 衡量 token savings、impacted-file recall、review summary precision 和 multimodal regression safety。
 
+## 选择输入范围
+
+Graphify 现在区分代码/评审场景下的安全扫描，以及知识库场景下的全量递归扫描。
+
+- 支持范围控制的命令默认使用 `--scope auto`。
+- 在存在 `HEAD` 的 Git 仓库里，`auto` 会解析为已提交文件加上 `.graphify/memory/*`。
+- `--scope tracked` 还会包含尚未提交但已经 staged 的新文件。
+- `--all` 是 `--scope all` 的别名，会恢复完整的递归目录遍历。论文、笔记、截图、音视频语料或非 Git 目录应当使用它。
+- `graphify scope inspect . --scope auto` 可以在真正重建前先看清楚会纳入哪些文件。
+- 对于配置化项目，可以在 `graphify.yaml` 中固定默认范围：
+
+```yaml
+inputs:
+  scope: all
+```
+
+当前输入范围会作用于 `detect`、`detect-incremental`、`update`、`watch`、`hook-rebuild` 以及配置化 profile dataprep。检测元数据会写入 `.graphify/scope.json`，并在 `GRAPH_REPORT.md` 中摘要展示。
+
 ## 工作原理
 
 graphify 把确定性的结构提取和模型驱动的语义提取组合在一起，中间按需做本地预处理。代码文件先走无 LLM 的 AST 流水线，提取类、函数、导入、调用图、docstring 和 rationale 注释。文档、论文、Office 文件和图片会先被规范化成文本或多模态输入，再交给平台模型驱动的子代理抽取概念、关系和设计动机。PDF 会先经过本地 preflight；可读文本层用 `pdf-parse` 转成 Markdown，并在可用时回退到本地 `pdftotext`；扫描件或低文本 PDF 可在 `auto` 或 `always` 模式下调用 `mistral-ocr` 生成 Markdown + 图片。PDF 中抽出的图片如果承载图表、表格、示意图或嵌入文字，也会作为语义输入：默认由助手的视觉模型解读，或在配置时交给外部 OCR/视觉模型，同时保留 PDF provenance。本地音频/视频通过 TypeScript runtime 调用 `yt-dlp` + `ffmpeg` + `faster-whisper-ts` 做转录；生成出的 transcript 会和其他文档一起进入同一条语义抽取流水线。最终结果会合并到 Graphology 图里，用 Louvain 社区发现做聚类，并导出成可交互 HTML、可查询 JSON 和人类可读的审计报告。

@@ -56,7 +56,8 @@
 - [x] Write `spec/SPEC_INPUT_SCOPE_MODES.md`.
 - [x] Commit initial scope spec and baseline inventory prototype.
 - [x] Rebase the branch on current `main` before continuing implementation.
-- [ ] Finish CLI/runtime exposure (`--scope`, `scope inspect`, report summary, skill guidance) before proposing merge.
+- [x] Finish core inventory + CLI/runtime exposure (`detect`, `detect-incremental`, `update`, `watch`, `hook-rebuild`, `configured-dataprep`, `scope inspect`, `.graphify/scope.json`, report summary).
+- [x] Finish README + distributed skill guidance before proposing merge.
 
 ## Next Evolution Plan - Image Dataprep, LLM Ports, Ontology Outputs
 

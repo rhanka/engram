@@ -74,6 +74,24 @@ dist/
 
 Same syntax as `.gitignore`. Patterns are discovered from the folder you run graphify on and its ancestors up to the git root, then matched against paths relative to the folder being scanned.
 
+## Choosing input scope
+
+Graphify now distinguishes safe code/review scans from full knowledge-base crawls.
+
+- Scope-aware commands default to `--scope auto`.
+- In a Git repo with `HEAD`, `auto` resolves to committed files plus `.graphify/memory/*`.
+- `--scope tracked` also includes newly staged files that are not committed yet.
+- `--all` is an alias for `--scope all` and restores the recursive folder walk. Use it for papers, notes, screenshots, media corpora, or non-Git folders.
+- `graphify scope inspect . --scope auto` shows the resolved inventory before you rebuild anything.
+- Configured projects can pin the default inventory with `graphify.yaml`:
+
+```yaml
+inputs:
+  scope: all
+```
+
+The scope inventory currently applies to `detect`, `detect-incremental`, `update`, `watch`, `hook-rebuild`, and configured profile dataprep. Detection metadata is written to `.graphify/scope.json` and summarized in `GRAPH_REPORT.md`.
+
 ## How it works
 
 graphify combines a deterministic structural pass with a model-backed semantic pass, with local preprocessing in between when needed. Code goes through a no-LLM AST pass that extracts classes, functions, imports, call graphs, docstrings, and rationale comments. Docs, papers, Office files, and images are normalized into text or multimodal inputs, then platform-backed subagents extract concepts, relationships, and design rationale. PDFs first pass a local preflight: if a usable text layer exists, `pdf-parse` or the local `pdftotext` CLI creates a Markdown sidecar; if the text layer is missing or too sparse, `mistral-ocr` can be called in `auto` or `always` mode to produce Markdown plus extracted images. PDF-extracted images are still semantic inputs when they carry meaning: the assistant vision model can decode them directly, or a configured delegated OCR/vision model can be used while preserving PDF provenance. Audio/video files are also detected locally, normalized through `ffmpeg`, transcribed through the TypeScript runtime with `faster-whisper-ts`, and fed into the same semantic extraction path as any other document. The results are merged into a Graphology graph, clustered with Louvain community detection, and exported as interactive HTML, queryable JSON, and a plain-language audit report.
