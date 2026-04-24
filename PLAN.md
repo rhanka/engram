@@ -55,7 +55,7 @@
 - [x] Create isolated worktree `spec/input-scope-modes`.
 - [x] Write `spec/SPEC_INPUT_SCOPE_MODES.md`.
 - [x] Commit initial scope spec and baseline inventory prototype.
-- [ ] Rebase the branch on current `main` before continuing implementation.
+- [x] Rebase the branch on current `main` before continuing implementation.
 - [ ] Finish CLI/runtime exposure (`--scope`, `scope inspect`, report summary, skill guidance) before proposing merge.
 
 ## Next Evolution Plan - Image Dataprep, LLM Ports, Ontology Outputs
