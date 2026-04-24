@@ -38,6 +38,12 @@ import { buildMinimalContext, minimalContextToText } from "./minimal-context.js"
 import { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
 import { createReviewGraphStore } from "./review-store.js";
 import {
+  makeDetectionPortable,
+  makeExtractionPortable,
+  makeGraphPortable,
+  projectRootLabel,
+} from "./portable-artifacts.js";
+import {
   affectedFlowsToText,
   buildFlowArtifact,
   flowDetailToText,
@@ -254,6 +260,8 @@ function analyzeGraph(
   report: string;
   analysis: AnalysisFile;
 } {
+  makeGraphPortable(G, root);
+  const portableDetection = makeDetectionPortable(detection, root);
   const communities = cluster(G);
   const cohesion = scoreAll(G, communities);
   const labels = labelsOverride && labelsOverride.size > 0 ? labelsOverride : defaultLabels(communities);
@@ -267,9 +275,9 @@ function analyzeGraph(
     labels,
     gods,
     surprises,
-    detection,
+    portableDetection,
     tokenCost,
-    root,
+    projectRootLabel(root),
     questions,
   );
   return {
@@ -848,6 +856,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .option("--semantic-new <path>", "Optional fresh semantic JSON")
     .option("--html-out <path>", "Optional graph.html output path")
     .action((opts) => {
+      const root = resolve(opts.root);
       const detection = readJson<DetectionResult>(opts.detect);
       const ast = ensureExtractionShape(readJson<Partial<Extraction>>(opts.ast));
       const cached = opts.cached && existsSync(resolve(opts.cached))
@@ -862,12 +871,13 @@ export async function main(argv: string[] = process.argv): Promise<void> {
           semanticNew.nodes as Array<Record<string, unknown>>,
           semanticNew.edges as Array<Record<string, unknown>>,
           (semanticNew.hyperedges ?? []) as Array<Record<string, unknown>>,
-          ".",
+          root,
         );
       }
 
       const semantic = mergeSemanticArtifacts(cached, semanticNew);
-      const extraction = mergeAstAndSemantic(ast, semantic);
+      const extraction = makeExtractionPortable(mergeAstAndSemantic(ast, semantic), root);
+      const portableDetection = makeDetectionPortable(detection, root);
       const G = buildFromJson(extraction, { directed: shouldBuildDirected(opts) });
       if (G.order === 0) {
         throw new Error("Graph is empty - extraction produced no nodes.");
@@ -875,8 +885,8 @@ export async function main(argv: string[] = process.argv): Promise<void> {
 
       const analyzed = analyzeGraph(
         G,
-        detection,
-        resolve(opts.root),
+        portableDetection,
+        root,
         { input: extraction.input_tokens ?? 0, output: extraction.output_tokens ?? 0 },
       );
 
@@ -892,8 +902,8 @@ export async function main(argv: string[] = process.argv): Promise<void> {
           onWarning: (message) => console.warn(message),
         });
       }
-      saveManifest(detection.files, join(dirname(resolve(opts.graphOut)), "manifest.json"));
-      const cost = updateCostFile(extraction, detection, opts.costOut);
+      saveManifest(portableDetection.files, join(dirname(resolve(opts.graphOut)), "manifest.json"));
+      const cost = updateCostFile(extraction, portableDetection, opts.costOut);
 
       console.log(`Graph: ${G.order} nodes, ${G.size} edges, ${analyzed.communities.size} communities`);
       console.log(`This run: ${(extraction.input_tokens ?? 0).toLocaleString()} input tokens, ${(extraction.output_tokens ?? 0).toLocaleString()} output tokens`);
@@ -915,6 +925,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .option("--semantic-new <path>", "Optional fresh semantic JSON")
     .option("--html-out <path>", "Optional graph.html output path")
     .action((opts) => {
+      const root = resolve(opts.root);
       const detection = readJson<DetectionResult>(opts.detect);
       const ast = ensureExtractionShape(readJson<Partial<Extraction>>(opts.ast));
       const cached = opts.cached && existsSync(resolve(opts.cached))
@@ -929,15 +940,16 @@ export async function main(argv: string[] = process.argv): Promise<void> {
           semanticNew.nodes as Array<Record<string, unknown>>,
           semanticNew.edges as Array<Record<string, unknown>>,
           (semanticNew.hyperedges ?? []) as Array<Record<string, unknown>>,
-          ".",
+          root,
         );
       }
 
       const semantic = mergeSemanticArtifacts(cached, semanticNew);
-      const extraction = mergeAstAndSemantic(ast, semantic);
+      const extraction = makeExtractionPortable(mergeAstAndSemantic(ast, semantic), root);
+      const portableDetection = makeDetectionPortable(detection, root);
 
-      const oldGraph = loadGraph(opts.existingGraph);
-      const mergedGraph = loadGraph(opts.existingGraph);
+      const oldGraph = makeGraphPortable(loadGraph(opts.existingGraph), root);
+      const mergedGraph = makeGraphPortable(loadGraph(opts.existingGraph), root);
       const newGraph = buildFromJson(extraction, {
         directed: shouldBuildDirected(opts, oldGraph),
       });
@@ -945,8 +957,8 @@ export async function main(argv: string[] = process.argv): Promise<void> {
 
       const analyzed = analyzeGraph(
         mergedGraph,
-        detection,
-        resolve(opts.root),
+        portableDetection,
+        root,
         { input: extraction.input_tokens ?? 0, output: extraction.output_tokens ?? 0 },
       );
       analyzed.analysis.diff = graphDiff(oldGraph, mergedGraph);
@@ -963,8 +975,8 @@ export async function main(argv: string[] = process.argv): Promise<void> {
           onWarning: (message) => console.warn(message),
         });
       }
-      saveManifest(detection.files, join(dirname(resolve(opts.graphOut)), "manifest.json"));
-      const cost = updateCostFile(extraction, detection, opts.costOut);
+      saveManifest(portableDetection.files, join(dirname(resolve(opts.graphOut)), "manifest.json"));
+      const cost = updateCostFile(extraction, portableDetection, opts.costOut);
 
       console.log(`Merged: ${mergedGraph.order} nodes, ${mergedGraph.size} edges`);
       console.log(analyzed.analysis.diff.summary);
@@ -982,9 +994,9 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .requiredOption("--analysis-out <path>")
     .option("--directed", "Build a directed graph (preserves source->target)")
     .action((opts) => {
-      const extraction = ensureExtractionShape(readJson<Partial<Extraction>>(opts.extract));
-      const detection = readJson<DetectionResult>(opts.detect);
       const root = resolve(opts.root);
+      const extraction = makeExtractionPortable(ensureExtractionShape(readJson<Partial<Extraction>>(opts.extract)), root);
+      const detection = makeDetectionPortable(readJson<DetectionResult>(opts.detect), root);
       const G = buildFromJson(extraction, { directed: shouldBuildDirected(opts) });
 
       if (G.order === 0) {
@@ -1020,8 +1032,9 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .option("--graph-out <path>")
     .option("--html-out <path>")
     .action((opts) => {
-      const extraction = ensureExtractionShape(readJson<Partial<Extraction>>(opts.extract));
-      const detection = readJson<DetectionResult>(opts.detect);
+      const root = resolve(opts.root);
+      const extraction = makeExtractionPortable(ensureExtractionShape(readJson<Partial<Extraction>>(opts.extract)), root);
+      const detection = makeDetectionPortable(readJson<DetectionResult>(opts.detect), root);
       const analysis = readJson<AnalysisFile>(opts.analysis);
       const labelObject = readJson<Record<string, string>>(opts.labels);
       const labels = objectToStringMap(labelObject);
@@ -1042,7 +1055,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         analysis.surprises,
         detection,
         { input: extraction.input_tokens ?? 0, output: extraction.output_tokens ?? 0 },
-        resolve(opts.root),
+        projectRootLabel(root),
         questions,
       );
 
@@ -1210,10 +1223,11 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .requiredOption("--analysis-out <path>")
     .option("--directed", "Build a directed graph (preserves source->target)")
     .action((opts) => {
-      const oldGraph = loadGraph(opts.existingGraph);
-      const mergedGraph = loadGraph(opts.existingGraph);
-      const extraction = ensureExtractionShape(readJson<Partial<Extraction>>(opts.extract));
-      const detection = readJson<DetectionResult>(opts.detect);
+      const root = resolve(opts.root);
+      const oldGraph = makeGraphPortable(loadGraph(opts.existingGraph), root);
+      const mergedGraph = makeGraphPortable(loadGraph(opts.existingGraph), root);
+      const extraction = makeExtractionPortable(ensureExtractionShape(readJson<Partial<Extraction>>(opts.extract)), root);
+      const detection = makeDetectionPortable(readJson<DetectionResult>(opts.detect), root);
       const newGraph = buildFromJson(extraction, {
         directed: shouldBuildDirected(opts, oldGraph),
       });
@@ -1223,7 +1237,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       const analyzed = analyzeGraph(
         mergedGraph,
         detection,
-        resolve(opts.root),
+        root,
         { input: extraction.input_tokens ?? 0, output: extraction.output_tokens ?? 0 },
       );
       analyzed.analysis.diff = graphDiff(oldGraph, mergedGraph);
@@ -1248,11 +1262,12 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .requiredOption("--analysis-out <path>")
     .option("--html-out <path>")
     .action((opts) => {
-      const G = loadGraph(opts.graph);
+      const root = resolve(opts.root);
+      const G = makeGraphPortable(loadGraph(opts.graph), root);
       const analyzed = analyzeGraph(
         G,
         placeholderDetection(opts.root),
-        resolve(opts.root),
+        root,
         { input: 0, output: 0 },
       );
       toJson(G, analyzed.communities, resolve(opts.graphOut), {

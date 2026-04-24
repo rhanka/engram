@@ -11,7 +11,7 @@ import {
   unlinkSync,
   rmdirSync,
 } from "node:fs";
-import { join, resolve, dirname, extname } from "node:path";
+import { join, resolve, dirname, extname, basename } from "node:path";
 import { homedir, platform } from "node:os";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
@@ -22,6 +22,7 @@ import { forEachTraversalNeighbor, loadGraphFromData } from "./graph.js";
 import { safeExecGit } from "./git.js";
 import { resolveGraphInputPath, resolveGraphifyPaths } from "./paths.js";
 import { normalizeSearchText } from "./search.js";
+import { makeGraphPortable, projectRootLabel, scanPortableGraphifyArtifacts } from "./portable-artifacts.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -62,6 +63,18 @@ function loadCliGraph(graphPath: string): Graph {
     throw new Error(`graph file not found: ${gp}`);
   }
   return loadGraphFromData(JSON.parse(readFileSync(gp, "utf-8")));
+}
+
+function resolvePortableCheckDir(inputPath: string = ".graphify"): string {
+  const resolved = resolve(inputPath);
+  if (existsSync(resolved) && statSync(resolved).isDirectory()) {
+    if (basename(resolved) === ".graphify") return resolved;
+    const nested = join(resolved, ".graphify");
+    if (existsSync(nested) && statSync(nested).isDirectory()) return nested;
+    return resolved;
+  }
+  if (existsSync(resolved) && statSync(resolved).isFile()) return dirname(resolved);
+  return resolved;
 }
 
 function readJson<T>(path: string): T {
@@ -235,6 +248,7 @@ Rules:
 - If .graphify/wiki/index.md exists, navigate it instead of reading raw files
 - If .graphify/graph.json is missing but graphify-out/graph.json exists, run \`graphify migrate-state --dry-run\` first; if tracked legacy artifacts are reported, ask before using the recommended \`git mv -f graphify-out .graphify\` and commit message
 - If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run /graphify . --update when appropriate
+- Before proposing or committing .graphify artifacts, run \`graphify portable-check .graphify\`; commit-safe graph artifacts must use repo-relative paths, and never commit .graphify/branch.json, .graphify/worktree.json, or .graphify/needs_update
 - Before deep graph traversal, prefer \`graphify summary --graph .graphify/graph.json\` for compact first-hop orientation
 - For review impact on changed files, use \`graphify review-delta --graph .graphify/graph.json\` instead of generic traversal
 - After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
@@ -251,6 +265,7 @@ Rules:
 - If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run /graphify . --update when appropriate
 - In Gemini CLI, the reliable explicit custom command is \`/graphify ...\`
 - If the user asks to build, update, query, path, or explain the graph, use the installed \`/graphify\` custom command or the configured \`graphify\` MCP server instead of ad-hoc file traversal
+- Before proposing or committing .graphify artifacts, run \`graphify portable-check .graphify\`; commit-safe graph artifacts must use repo-relative paths, and never commit .graphify/branch.json, .graphify/worktree.json, or .graphify/needs_update
 - Before deep graph traversal, prefer \`graphify summary --graph .graphify/graph.json\` or MCP \`first_hop_summary\` for compact first-hop orientation
 - For review impact on changed files, use \`graphify review-delta --graph .graphify/graph.json\` or MCP \`review_delta\` instead of generic traversal
 - After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
@@ -1593,6 +1608,40 @@ export async function main(): Promise<void> {
     });
 
   program
+    .command("portable-check [path]")
+    .description("Fail if commit-safe .graphify artifacts contain absolute or escaped paths")
+    .option("--json", "Print machine-readable JSON")
+    .action((checkPath = ".graphify", opts) => {
+      const graphifyDir = resolvePortableCheckDir(checkPath);
+      if (!existsSync(graphifyDir)) {
+        console.error(`error: path not found: ${graphifyDir}`);
+        process.exit(1);
+      }
+      const result = scanPortableGraphifyArtifacts(graphifyDir);
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+      }
+      if (!result.ok) {
+        if (!opts.json) {
+          console.error(
+            `Portable artifact check failed: ${result.issues.length} issue(s) in ${graphifyDir}`,
+          );
+          for (const issue of result.issues) {
+            const location = issue.jsonPath ? `${issue.path}:${issue.jsonPath}` : issue.path;
+            console.error(`- ${location}: ${issue.kind}: ${issue.value}`);
+          }
+        }
+        process.exit(1);
+      }
+      if (!opts.json) {
+        const ignored = result.ignoredLocalFiles.length > 0
+          ? `; ignored ${result.ignoredLocalFiles.length} local lifecycle file(s)`
+          : "";
+        console.log(`Portable artifacts OK: ${result.checkedFiles.length} file(s) checked${ignored}`);
+      }
+    });
+
+  program
     .command("cluster-only [path]")
     .description("Rerun clustering/report/HTML on an existing .graphify/graph.json")
     .action(async (clusterPath = ".") => {
@@ -1603,7 +1652,7 @@ export async function main(): Promise<void> {
         process.exit(1);
       }
 
-      const G = loadGraphFromData(JSON.parse(readFileSync(paths.graph, "utf-8")));
+      const G = makeGraphPortable(loadGraphFromData(JSON.parse(readFileSync(paths.graph, "utf-8"))), root);
       const { cluster, scoreAll } = await import("./cluster.js");
       const { godNodes, surprisingConnections, suggestQuestions } = await import("./analyze.js");
       const { generate } = await import("./report.js");
@@ -1626,7 +1675,7 @@ export async function main(): Promise<void> {
         skipped_sensitive: [],
         graphifyignore_patterns: 0,
       };
-      const report = generate(G, communities, cohesion, labels, gods, surprises, detection, { input: 0, output: 0 }, root, questions);
+      const report = generate(G, communities, cohesion, labels, gods, surprises, detection, { input: 0, output: 0 }, projectRootLabel(root), questions);
       writeFileSync(paths.report, report, "utf-8");
       toJson(G, communities, paths.graph, { communityLabels: labels });
       safeToHtml(G, communities, paths.html, { communityLabels: labels }, {

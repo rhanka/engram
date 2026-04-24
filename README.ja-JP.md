@@ -37,10 +37,14 @@ $graphify .                        # Codex
 ├── graph.html       インタラクティブなグラフ - ノードをクリック、検索、コミュニティでフィルタ
 ├── GRAPH_REPORT.md  ゴッドノード、意外なつながり、推奨される質問
 ├── graph.json       永続化されたグラフ - 数週間後でも再読み込みなしでクエリ可能
-└── cache/           SHA256 キャッシュ - 再実行時は変更されたファイルのみ処理
+├── wiki/            任意の LLM-readable wiki ページ
+├── flows.json       任意の execution-flow artifact
+├── branch.json      ローカル branch lifecycle state - ignored
+├── worktree.json    ローカル worktree lifecycle state - ignored
+└── cache/           ローカル SHA256 キャッシュ - ignored
 ```
 
-`.graphify/` はローカルの runtime state です。デフォルトで gitignore され、worked examples やエクスポート済み artifact として意図的に公開する場合を除き、コミットしないでください。
+`.graphify/` は commit-safe な graph artifact とローカル lifecycle state に分かれます。`graph.json`、`GRAPH_REPORT.md`、`graph.html`、`flows.json`、`wiki/` は repo-relative paths で書き出されるため、プロジェクトが branch/worktree 間で graph context を共有したい場合はコミットできます。コミット前には `graphify portable-check .graphify` を実行してください。`.graphify/branch.json`、`.graphify/worktree.json`、`.graphify/needs_update`、cache、transcript、変換済み PDF/OCR sidecar、profile runtime scratch はコミットしないでください。これらは現在の worktree にローカルで、設計上 absolute path を含むことがあります。
 
 古いリポジトリに `graphify-out/` が残っている場合は、まず `graphify migrate-state --dry-run` を実行してください。移行はローカル state を `.graphify/` にコピーし、旧ディレクトリは削除しません。`graphify-out` が Git で追跡されている場合は、確認用に `git mv -f graphify-out .graphify` と commit message を表示します。
 

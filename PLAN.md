@@ -34,6 +34,20 @@
 - [x] Lot F profile-report/CLI integration committed as `4f4c409` (`feat: integrate advanced dataprep runtime workflows`).
 - [x] Lot G README, skills and UAT prepared in the docs tranche.
 
+## Active Evolution - Portable `.graphify` Artifacts
+
+**Decision:** Option A. Commit-safe graph artifacts are portable and can follow branches/worktrees. Local lifecycle state remains ignored and may keep absolute worktree paths.
+
+- [x] Add failing tests for portable extraction/detection paths, `buildProject`, CLI `portable-check`, and skill instructions.
+- [x] Implement shared path normalization for `Extraction`, `DetectionResult`, and Graphology graph attributes.
+- [x] Apply portability normalization to standalone builds, code-only rebuilds, skill-runtime finalization, update, labeled report, merge, and cluster paths.
+- [x] Add `graphify portable-check .graphify` to scan commit-safe artifacts and ignore lifecycle-local files.
+- [x] Update `.gitignore` so `branch.json`, `worktree.json`, `needs_update`, caches, transcripts, converted sidecars, and profile scratch stay local.
+- [x] Update README and distributed skills to require `portable-check` before proposing or committing `.graphify` artifacts.
+- [x] Remove tracked local lifecycle files from the Git index with `git rm --cached .graphify/branch.json .graphify/worktree.json`.
+- [x] Run full verification: targeted Vitest, `npm run lint`, `npm run build`, `npm test`, `git diff --check`.
+- [ ] After merge, delete/regenerate `.graphify` in the main worktree and run `graphify portable-check .graphify` before committing generated graph artifacts.
+
 ## Next Evolution Plan - Image Dataprep, LLM Ports, Ontology Outputs
 
 **Goal:** Implement the three new specs as strictly opt-in capabilities without changing default `$graphify` behavior.
@@ -1846,10 +1860,10 @@ Use deterministic local fixtures by default; do not import CRG's network clone r
 - [x] `npm test` passes.
 - [x] `git diff --check` passes.
 - [x] `npx graphify hook-rebuild` or `graphify update .` runs after code changes.
-- [ ] `.graphify` output does not include transient worktree paths.
+- [x] `.graphify` output does not include transient worktree paths.
 - [x] README and skills describe only implemented review behavior.
 
-Current branch note: `.graphify/branch.json` and `.graphify/worktree.json` record the absolute worktree path after local rebuild, so `.graphify` is intentionally left unstaged for this branch.
+Current branch note: `.graphify/branch.json` and `.graphify/worktree.json` remain local lifecycle files ignored by Git. Commit-safe `.graphify/GRAPH_REPORT.md` and `.graphify/graph.json` were rebuilt and passed `graphify portable-check .graphify`.
 
 ---
 
