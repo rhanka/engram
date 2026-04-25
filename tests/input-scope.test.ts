@@ -165,4 +165,36 @@ describe("input scope inventory", () => {
       warnings: [],
     });
   });
+
+  it("counts large ignored inventories without overflowing the git stdout buffer", () => {
+    initRepo();
+    write(".gitignore", ".graphify/\n");
+    commit(".gitignore");
+    write("src/a.ts", "export const a = 1;\n");
+    commit("src/a.ts");
+
+    const ignoredDir = join(tmpDir, ".graphify", "cache", "a".repeat(100), "b".repeat(100));
+    mkdirSync(ignoredDir, { recursive: true });
+    for (let index = 0; index < 5000; index += 1) {
+      writeFileSync(join(ignoredDir, `file-${String(index).padStart(4, "0")}.json`), "{}\n", "utf-8");
+    }
+
+    const inventory = inspectInputScope(tmpDir, {
+      mode: "auto",
+      source: "default-auto",
+    });
+
+    expect(inventory.candidateFiles).toEqual([
+      ".gitignore",
+      "src/a.ts",
+    ]);
+    expect(inventory.scope).toMatchObject({
+      requested_mode: "auto",
+      resolved_mode: "committed",
+      candidate_count: 2,
+      included_count: 2,
+      excluded_untracked_count: 0,
+      excluded_ignored_count: 5000,
+    });
+  });
 });

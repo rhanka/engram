@@ -13,6 +13,7 @@ export function execGit(cwd: string, args: string[]): string {
   try {
     return execFileSync("git", ["-C", cwd, ...args], {
       encoding: "utf-8",
+      maxBuffer: 64 * 1024 * 1024,
       stdio: ["ignore", "pipe", "pipe"],
     }).trim();
   } catch (err) {
