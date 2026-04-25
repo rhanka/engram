@@ -187,7 +187,7 @@ export type {
   ProfileReportPdfArtifact,
 } from "./profile-report.js";
 export { validateExtraction, assertValid } from "./validate.js";
-export { buildFromJson, build } from "./build.js";
+export { buildFromJson, build, buildMerge, deduplicateByLabel } from "./build.js";
 export { cloneRepo, defaultCloneDestination } from "./repo-clone.js";
 export type { CloneRepoOptions, CloneRepoResult } from "./repo-clone.js";
 export { mergeGraphsFromFiles } from "./merge-graphs.js";

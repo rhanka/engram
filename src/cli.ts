@@ -261,6 +261,20 @@ function platformNamesForError(): string {
   return [...Object.keys(PLATFORM_CONFIG), ...Object.keys(PLATFORM_ALIASES)].join(", ");
 }
 
+function resolveGlobalSkillDestination(platformName: string): string {
+  const canonical = canonicalPlatformName(platformName);
+  const cfg = PLATFORM_CONFIG[canonical];
+  if (!cfg) {
+    console.error(`error: unknown platform '${platformName}'. Choose from: ${platformNamesForError()}`);
+    process.exit(1);
+  }
+  const claudeConfigDir = process.env.CLAUDE_CONFIG_DIR;
+  if ((canonical === "claude" || canonical === "windows") && claudeConfigDir) {
+    return resolve(claudeConfigDir, "skills", "graphify", "SKILL.md");
+  }
+  return join(homedir(), cfg.skill_dst);
+}
+
 const SETTINGS_HOOK = {
   matcher: "Glob|Grep",
   hooks: [
@@ -449,7 +463,7 @@ export function globalSkillInstallPreview(platformName: string): InstallMutation
   const cfg = PLATFORM_CONFIG[platformName];
   const preview = emptyPreview(platformName, "install");
   if (!cfg) return preview;
-  const skillDst = join(homedir(), cfg.skill_dst);
+  const skillDst = resolveGlobalSkillDestination(platformName);
   preview.writes.push(skillDst, join(dirname(skillDst), ".graphify_version"));
   if (cfg.claude_md) {
     preview.writes.push(join(homedir(), ".claude", "CLAUDE.md"));
@@ -1047,7 +1061,7 @@ function writeGlobalSkill(platformName: string): string {
     process.exit(1);
   }
 
-  const skillDst = join(homedir(), cfg.skill_dst);
+  const skillDst = resolveGlobalSkillDestination(platformName);
   mkdirSync(dirname(skillDst), { recursive: true });
   writeFileSync(skillDst, loadSkillContent(platformName), "utf-8");
   writeFileSync(join(dirname(skillDst), ".graphify_version"), VERSION, "utf-8");
@@ -1410,7 +1424,7 @@ export async function main(): Promise<void> {
   for (const platformName of getPlatformsToCheck(process.argv.slice(2))) {
     const cfg = PLATFORM_CONFIG[platformName];
     if (!cfg) continue;
-    checkSkillVersion(join(homedir(), cfg.skill_dst));
+    checkSkillVersion(resolveGlobalSkillDestination(platformName));
   }
 
   const program = new Command();
