@@ -123,4 +123,56 @@ class PaymentService extends BaseService implements Billable {}
     expect(relations).toContain("paymentservice_paymentservice:implements:paymentservice_billable");
     expect(relations).toContain("paymentservice_billable:inherits:paymentservice_auditable");
   });
+
+  it("uses project-relative file node IDs and stable relative import targets", async () => {
+    mkdirSync(join(dir, "src"), { recursive: true });
+    mkdirSync(join(dir, "tests"), { recursive: true });
+
+    writeFileSync(
+      join(dir, "src", "index.ts"),
+      [
+        "import { helper } from './utils.js';",
+        "export function alpha() {",
+        "  return helper();",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(dir, "src", "utils.ts"),
+      [
+        "export function helper() {",
+        "  return 1;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(dir, "tests", "index.ts"),
+      [
+        "export function beta() {",
+        "  return 2;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await extract([
+      join(dir, "src", "index.ts"),
+      join(dir, "src", "utils.ts"),
+      join(dir, "tests", "index.ts"),
+    ]);
+
+    const fileNodes = result.nodes
+      .filter((node) => node.label.endsWith(".ts"))
+      .map((node) => node.id)
+      .sort();
+    const importEdge = result.edges.find(
+      (edge) => edge.source === "src_index_ts" && edge.relation === "imports_from",
+    );
+
+    expect(fileNodes).toEqual(["src_index_ts", "src_utils_ts", "tests_index_ts"]);
+    expect(new Set(fileNodes).size).toBe(3);
+    expect(importEdge?.target).toBe("src_utils_ts");
+  });
 });
