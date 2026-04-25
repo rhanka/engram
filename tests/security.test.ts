@@ -43,6 +43,11 @@ describe("sanitizeLabel", () => {
   it("preserves normal text", () => {
     expect(sanitizeLabel("MyClass")).toBe("MyClass");
   });
+
+  it("returns an empty string for nullish labels", () => {
+    expect(sanitizeLabel(null)).toBe("");
+    expect(sanitizeLabel(undefined)).toBe("");
+  });
 });
 
 describe("validateGraphPath", () => {

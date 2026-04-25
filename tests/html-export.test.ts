@@ -49,4 +49,18 @@ describe("safeToHtml", () => {
 
     rmSync(dir, { recursive: true, force: true });
   });
+
+  it("does not crash when source_file is nullish", () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-html-export-"));
+    const htmlPath = join(dir, "graph.html");
+
+    const G = new Graph();
+    G.addNode("a", { label: "A", source_file: null, file_type: "code" });
+    const communities = new Map([[0, ["a"]]]);
+
+    expect(() => toHtml(G, communities, htmlPath)).not.toThrow();
+    expect(readFileSync(htmlPath, "utf-8")).toContain("\"source_file\":\"\"");
+
+    rmSync(dir, { recursive: true, force: true });
+  });
 });
