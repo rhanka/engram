@@ -6,7 +6,7 @@ This document tracks the delta between this TypeScript port and upstream Python 
 
 - Current TypeScript product branch: `main`
 - Current TypeScript baseline: `703b0aed69e3cbc3c0b5acddfeee23f7a931b8fc`
-- Current TypeScript npm release: `graphifyy@0.4.32`
+- Current TypeScript npm release: `graphifyy@0.4.33`
 - Durable traceability spec: `spec/SPEC_UPSTREAM_TRACEABILITY.md`
 - Closed upstream `v3` baseline: `upstream/v3` at `699e996`
 - Closed Python parity target: remote tag `v0.4.23` at `8d908c5d43d079579604a82873fd7cff33a1b343`
@@ -102,7 +102,7 @@ The TypeScript port has already shipped the original direct `0.4.23` parity targ
 | `v0.4.23` / `42599a7`, `8d908c5`, `baa4474` | refresh all version stamps, `.html` documents, safe large-graph HTML export, Go import node ID collision, pipx docs | `covered` | Lot 1, Lot 2, Lot 3, Lot 8 | `.html` document detection is covered by Lot 1. Go import prefixing is covered by Lot 2. Safe HTML export is covered by Lot 3. npm/global install docs are covered by Lot 7. Package and MCP server version stamps now read `0.4.23` from `package.json`. |
 | post-`v0.4.23` / `04790e2`, `dc1158b`, `7a0a5ac` | README download badge changes only | `n/a` | Lot 8 | Not part of TypeScript runtime parity; optionally ignore or adapt docs without copying Python download badges. |
 
-## Closed Python v4 Drift After TypeScript `0.4.32`
+## Closed Python v4 Drift After TypeScript `0.4.33`
 
 This table is retained as closed history. The TypeScript product line has already absorbed the runtime-relevant `upstream/v4` drift through commit `5843ffc`.
 

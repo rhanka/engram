@@ -8,13 +8,13 @@
 
 このリポジトリは元の Graphify プロジェクトの保守中 TypeScript ポートです。製品の方向性、ワークフロー、初期実装は [Safi Shamsi](https://github.com/safishamsi/graphify) による原典プロジェクトに依拠しています。
 
-graphify はマルチモーダルであり、この TypeScript ポートは upstream Python Graphify `v4` 系を `graphifyy@0.4.32` まで閉じたうえで、小さめの `v5` リポジトリ指向ワークフローも差分を明示しながら追随しています。現在の TS ランタイムはコード、Markdown、MDX、HTML、PDF、Office 文書、スクリーンショット、図表、その他の画像を処理できます。PDF はまずローカル preflight を通り、テキスト層が読める場合は `pdf-parse` で Markdown 化し、利用可能なら `pdftotext` にフォールバックします。スキャン/低テキスト PDF は `mistral-ocr` で Markdown + 画像に変換できます。ローカル音声/動画検出は `yt-dlp` + `ffmpeg` + `faster-whisper-ts` を使い、生成された transcript と PDF sidecar も同じ意味抽出パスに流し込まれます。tree-sitter AST により 20 言語をサポートし（Python、JS、TS、Go、Rust、Java、C、C++、Ruby、C#、Kotlin、Scala、PHP、Swift、Lua、Zig、PowerShell、Elixir、Objective-C、Julia）、Vue、Svelte、Blade、Dart、Verilog/SystemVerilog、MJS、EJS には upstream に合わせた fallback 対応があります。
+graphify はマルチモーダルであり、この TypeScript ポートは upstream Python Graphify `v4` 系を `graphifyy@0.4.33` まで閉じたうえで、小さめの `v5` リポジトリ指向ワークフローも差分を明示しながら追随しています。現在の TS ランタイムはコード、Markdown、MDX、HTML、PDF、Office 文書、スクリーンショット、図表、その他の画像を処理できます。PDF はまずローカル preflight を通り、テキスト層が読める場合は `pdf-parse` で Markdown 化し、利用可能なら `pdftotext` にフォールバックします。スキャン/低テキスト PDF は `mistral-ocr` で Markdown + 画像に変換できます。ローカル音声/動画検出は `yt-dlp` + `ffmpeg` + `faster-whisper-ts` を使い、生成された transcript と PDF sidecar も同じ意味抽出パスに流し込まれます。tree-sitter AST により 20 言語をサポートし（Python、JS、TS、Go、Rust、Java、C、C++、Ruby、C#、Kotlin、Scala、PHP、Swift、Lua、Zig、PowerShell、Elixir、Objective-C、Julia）、Vue、Svelte、Blade、Dart、Verilog/SystemVerilog、MJS、EJS には upstream に合わせた fallback 対応があります。
 
 ## ブランチモデル
 
 - `main` は現在のデフォルトで、保守対象の TypeScript 製品ブランチです。
 - `v3` は元の Python Graphify 系譜を追跡する upstream mirror / alignment ブランチです。
-- TypeScript 製品としての `v4` parity は `graphifyy@0.4.32` で閉じており、以後の upstream 作業や `v5` 差分は `UPSTREAM_GAP.md` に明示します。
+- TypeScript 製品としての `v4` parity は `graphifyy@0.4.33` で閉じており、以後の upstream 作業や `v5` 差分は `UPSTREAM_GAP.md` に明示します。
 - npm 公開は GitHub Actions trusted publishing で保護されます。release tag は、タグ対象コミットが既にデフォルトブランチに含まれ、タグのバージョンが `package.json` と一致する場合のみ有効です。
 
 ## 系譜とアラインメント
