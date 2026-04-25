@@ -10,6 +10,8 @@ Use the installed TypeScript runtime only. Do not fall back to Python.
 
 - `/graphify` with no path means the current directory `.`
 - `/graphify <path> [flags]` means build or update the graph for that path
+- `/graphify https://github.com/<owner>/<repo> [--branch <branch>]` means clone the repo first, then run the graph flow on the local clone
+- `/graphify <url1> <url2> ...` with GitHub URLs means clone each repo, build each graph, then merge them with `graphify merge-graphs`
 - `/graphify summary` means return compact first-hop orientation from `.graphify/graph.json`
 - `/graphify minimal-context [files...]` means return the first review call context and next graph tool route
 - `/graphify review-delta [files...]` means return review-oriented impact for changed files
@@ -73,6 +75,17 @@ $(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" ...
 ## Build and update flow
 
 For a build or update request:
+
+0. If the target path is a GitHub URL, clone first:
+
+```bash
+GRAPHIFY_BRANCH_FLAG=""
+if the original invocation included --branch <name>, set GRAPHIFY_BRANCH_FLAG="--branch <name>"
+
+LOCAL_PATH=$(graphify clone "INPUT_GITHUB_URL" $GRAPHIFY_BRANCH_FLAG)
+```
+
+Use `LOCAL_PATH` as `INPUT_PATH` in the rest of the flow. If the user passed multiple GitHub URLs, clone each one, run the same build flow per local clone, then merge the resulting `.graphify/graph.json` files with `graphify merge-graphs`.
 
 1. Detect files:
 
@@ -145,6 +158,7 @@ Rules:
 - `EXTRACTED`: explicit in source
 - `INFERRED`: reasonable inference
 - `AMBIGUOUS`: uncertain, flag it rather than omitting it
+- Node IDs must stay stable across chunks and reruns. Base them on the entity label or file-relative identity only. Never append chunk counters like `_c1`, `_c2`, `_chunk3`, or similar suffixes.
 - for code files, only add semantic edges AST would miss
 - for image files, use vision if available; for images extracted from PDFs, decode figures, tables, diagrams, captions, and embedded text when they carry meaning, or use a delegated OCR/vision model when configured, while preserving provenance to the source PDF and sidecar
 - if a file has YAML frontmatter, copy `source_url`, `captured_at`, `author`, `contributor` onto every node from that file

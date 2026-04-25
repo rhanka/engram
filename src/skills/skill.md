@@ -13,6 +13,8 @@ Turn any folder of files into a navigable knowledge graph with community detecti
 ```
 /graphify                                             # full pipeline on current directory → Obsidian vault
 /graphify <path>                                      # full pipeline on specific path
+/graphify https://github.com/<owner>/<repo>           # clone repo locally, then run the full pipeline
+/graphify https://github.com/<owner>/<repo> --branch <branch>  # clone a specific branch before graphing
 /graphify <path> --scope auto                         # safe default for code/review repos
 /graphify <path> --scope tracked                      # include newly staged files too
 /graphify <path> --all                                # full recursive folder walk for knowledge bases
@@ -74,7 +76,20 @@ Use it for:
 
 If no path was given, use `.` (current directory). Do not ask the user for a path.
 
+If the path argument starts with `https://github.com/` or `http://github.com/`, treat it as a GitHub URL and run Step 0 before anything else. Replace the target path for all later steps with the resolved local clone path.
+
 Follow these steps in order. Do not skip steps.
+
+### Step 0 - Clone GitHub repos when the input is a GitHub URL
+
+```bash
+GRAPHIFY_BRANCH_FLAG=""
+if the original invocation included --branch <name>, set GRAPHIFY_BRANCH_FLAG="--branch <name>"
+
+LOCAL_PATH=$(graphify clone "INPUT_GITHUB_URL" $GRAPHIFY_BRANCH_FLAG)
+```
+
+Use `LOCAL_PATH` as the input path for all subsequent commands.
 
 ### Step 1 - Ensure graphify is installed
 
@@ -251,6 +266,7 @@ Rules:
 - EXTRACTED: relationship explicit in source (import, call, citation, "see §3.2")
 - INFERRED: reasonable inference (shared data structure, implied dependency)
 - AMBIGUOUS: uncertain - flag for review, do not omit
+- Node IDs must stay stable across chunks and reruns. Base them on the entity label or file-relative identity only. Never append chunk counters like `_c1`, `_c2`, `_chunk3`, or similar suffixes.
 
 Code files: focus on semantic edges AST cannot find (call relationships, shared data, arch patterns).
   Do not re-extract imports - AST already has those.

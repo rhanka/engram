@@ -8,20 +8,20 @@
 
 这个仓库是原始 Graphify 项目的受维护 TypeScript 版本。产品方向、工作流和最初实现来自 [Safi Shamsi](https://github.com/safishamsi/graphify) 的原始项目，这里保留了同样的知识图谱与 assistant-skill 交互模型。
 
-graphify 是多模态的，而且这个 TypeScript 端口正按 upstream Python Graphify `v4` 的发布节奏逐版追平，当前目标是 `v0.4.23` parity。当前 TS runtime 覆盖代码、Markdown、MDX、HTML、PDF、Office 文档、截图、图表和其他图片。PDF 会先走本地 preflight：有可读文本层时用 `pdf-parse` 转成 Markdown，并在可用时回退到 `pdftotext`；扫描件或低文本 PDF 可通过 `mistral-ocr` 转成 Markdown + 图片。本地音频/视频检测使用 `yt-dlp` + `ffmpeg` + `faster-whisper-ts`；这些 transcript 和 PDF sidecar 都会并入同一条语义抽取流水线。代码 AST 侧通过 tree-sitter 支持 20 种语言（Python、JS、TS、Go、Rust、Java、C、C++、Ruby、C#、Kotlin、Scala、PHP、Swift、Lua、Zig、PowerShell、Elixir、Objective-C、Julia），并为 Vue、Svelte、Blade、Dart、Verilog/SystemVerilog、MJS 和 EJS 提供 upstream v4 对齐的 fallback 支持。
+graphify 是多模态的，而且这个 TypeScript 端口已经把 upstream Python Graphify `v4` 线闭合到了 `graphifyy@0.4.32`，同时也在以显式差异跟踪的方式继续吸收较小的 `v5` 仓库工作流能力。当前 TS runtime 覆盖代码、Markdown、MDX、HTML、PDF、Office 文档、截图、图表和其他图片。PDF 会先走本地 preflight：有可读文本层时用 `pdf-parse` 转成 Markdown，并在可用时回退到 `pdftotext`；扫描件或低文本 PDF 可通过 `mistral-ocr` 转成 Markdown + 图片。本地音频/视频检测使用 `yt-dlp` + `ffmpeg` + `faster-whisper-ts`；这些 transcript 和 PDF sidecar 都会并入同一条语义抽取流水线。代码 AST 侧通过 tree-sitter 支持 20 种语言（Python、JS、TS、Go、Rust、Java、C、C++、Ruby、C#、Kotlin、Scala、PHP、Swift、Lua、Zig、PowerShell、Elixir、Objective-C、Julia），并为 Vue、Svelte、Blade、Dart、Verilog/SystemVerilog、MJS 和 EJS 提供与 upstream 对齐的 fallback 支持。
 
 ## 分支模型
 
 - `main` 是当前默认分支和受维护的 TypeScript 产品分支。
 - `v3` 保留为原始 Python Graphify 的 upstream mirror / 对齐分支。
-- 当前追平工作覆盖 upstream Python Graphify `v4` 到 `v0.4.23`；差异通过 `UPSTREAM_GAP.md` 显式记录。
+- TypeScript 产品线里的 `v4` parity 已在 `graphifyy@0.4.32` 收口；后续 upstream 变化以及 `v5` 差异通过 `UPSTREAM_GAP.md` 显式记录。
 - npm 发布使用 GitHub Actions trusted publishing 保护。release tag 只有在 tag commit 已经进入默认分支且 tag 版本匹配 `package.json` 时才允许发布。
 
 ## 血统与对齐
 
 | 来源 | 本仓库保留或改造的内容 | 对齐约定 |
 |---|---|---|
-| [Safi Shamsi](https://github.com/safishamsi/graphify) 的原始 Graphify | 核心产品思路：文件夹 -> 知识图谱、assistant-skill 工作流、graph/report/html 输出、provenance 标签、社区发现、多模态语料工作流。 | `v3` 镜像 upstream Python Graphify；`UPSTREAM_GAP.md` 跟踪到 `v0.4.23` 的 v4 parity。 |
+| [Safi Shamsi](https://github.com/safishamsi/graphify) 的原始 Graphify | 核心产品思路：文件夹 -> 知识图谱、assistant-skill 工作流、graph/report/html 输出、provenance 标签、社区发现、多模态语料工作流。 | `v3` 保留 upstream Python Graphify 的历史镜像；`UPSTREAM_GAP.md` 跟踪已经闭合的 `v4` 线和正在进行的 `v5` 追平。 |
 | 当前 TypeScript 端口 | npm 包、仓库根目录的 TypeScript runtime、`.graphify/` 状态、多助手安装器、MCP surface、git/worktree 生命周期，以及通过 TS 工具链完成的本地音频/视频转录。 | `main` 是受维护的默认分支；TS 特有行为会作为有意分叉记录，而不是伪装成 upstream parity。 |
 | `code-review-graph` 参考项目 | 面向 review 的图投影：first-hop summary、review delta、review analysis、review evaluation、install preview，以及 advisory commit grouping 术语。 | 作为 Graphify 图上的增量 review surface 采用；Graphify 不转向 review-only，不默认采用 SQLite/embeddings，并继续保留多模态支持。 |
 
@@ -283,7 +283,7 @@ graphify profile report \
 
 | 类型 | 扩展名 | 提取方式 |
 |------|--------|----------|
-| 代码 | `.py .ts .js .jsx .tsx .mjs .vue .svelte .ejs .go .rs .java .c .cpp .rb .cs .kt .scala .php .blade.php .swift .lua .zig .ps1 .ex .exs .m .mm .jl .dart .v .sv` | tree-sitter AST（可用时）+ upstream v4 surface 语言 fallback + 调用图 + docstring / 注释中的 rationale |
+| 代码 | `.py .ts .js .jsx .tsx .mjs .vue .svelte .ejs .go .rs .java .c .cpp .rb .cs .kt .scala .php .blade.php .swift .lua .zig .ps1 .ex .exs .m .mm .jl .dart .v .sv` | tree-sitter AST（可用时）+ upstream Python surface 语言 fallback + 调用图 + docstring / 注释中的 rationale |
 | 文档 | `.md .mdx .txt .rst .html` | 通过当前平台模型提取概念、关系和设计动机 |
 | Office | `.docx .xlsx` | 先转换成 markdown，再交给当前平台模型做抽取 |
 | 论文 | `.pdf` | 本地 PDF preflight；文本层 PDF 用 `pdf-parse`/`pdftotext` 转 Markdown；扫描件/低文本 PDF 可用 `mistral-ocr` 生成 Markdown + 图片后再抽取 |

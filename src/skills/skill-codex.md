@@ -15,6 +15,8 @@ This Codex skill is **TypeScript-backed**. Before calling the run successful, co
 ```bash
 $graphify                                             # full pipeline on current directory
 $graphify <path>                                      # full pipeline on specific path
+$graphify https://github.com/<owner>/<repo>           # clone repo locally, then run the full pipeline
+$graphify https://github.com/<owner>/<repo> --branch <branch>  # clone a specific branch before graphing
 $graphify <path> --scope auto                         # safe default for code/review repos
 $graphify <path> --scope tracked                      # include newly staged files too
 $graphify <path> --all                                # full recursive folder walk for knowledge bases
@@ -69,7 +71,20 @@ graphify codex install
 
 If no path was given, use `.`. Do not ask the user for a path.
 
+If the path argument starts with `https://github.com/` or `http://github.com/`, treat it as a GitHub URL and run Step 0 before anything else. Use the resolved local clone path for all later steps.
+
 Follow these steps in order. Do not skip the runtime proof step.
+
+### Step 0 - Clone GitHub repos when the input is a GitHub URL
+
+```bash
+GRAPHIFY_BRANCH_FLAG=""
+if the original invocation included --branch <name>, set GRAPHIFY_BRANCH_FLAG="--branch <name>"
+
+LOCAL_PATH=$(graphify clone "INPUT_GITHUB_URL" $GRAPHIFY_BRANCH_FLAG)
+```
+
+Replace `INPUT_PATH` with `LOCAL_PATH` for all subsequent commands.
 
 ### Step 1 - Resolve the installed TypeScript runtime
 
@@ -252,6 +267,7 @@ Rules:
 - EXTRACTED: relationship explicit in source
 - INFERRED: reasonable inference
 - AMBIGUOUS: uncertain - flag it, do not omit it
+- Node IDs must stay stable across chunks and reruns. Base them on the entity label or file-relative identity only. Never append chunk counters like `_c1`, `_c2`, `_chunk3`, or similar suffixes.
 
 Code files: focus on semantic edges AST cannot find. Do not re-extract imports.
 Doc/paper files: extract named concepts, entities, citations, and rationale.
