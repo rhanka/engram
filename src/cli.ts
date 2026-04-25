@@ -1657,6 +1657,42 @@ export async function main(): Promise<void> {
     });
 
   program
+    .command("clone <url>")
+    .description("Clone a repository locally and print its resolved path")
+    .option("--branch <branch>", "Checkout a specific branch")
+    .option("--out <dir>", "Clone into a custom directory")
+    .action(async (url, opts) => {
+      try {
+        const { cloneRepo } = await import("./repo-clone.js");
+        const result = cloneRepo({
+          url,
+          ...(opts.branch ? { branch: opts.branch } : {}),
+          ...(opts.out ? { outDir: opts.out } : {}),
+        });
+        console.log(result.path);
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    });
+
+  program
+    .command("merge-graphs <graphs...>")
+    .description("Merge two or more graph.json files into one cross-repo graph")
+    .option("--out <path>", "Merged graph output path", ".graphify/merged-graph.json")
+    .action(async (graphs: string[], opts) => {
+      try {
+        const { mergeGraphsFromFiles } = await import("./merge-graphs.js");
+        const result = mergeGraphsFromFiles({ inputs: graphs, out: opts.out });
+        console.log(`Merged ${result.graphCount} graphs -> ${result.nodeCount} nodes, ${result.edgeCount} edges`);
+        console.log(`Written to: ${result.out}`);
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    });
+
+  program
     .command("detect")
     .argument("<inputPath>")
     .option("--out <path>")

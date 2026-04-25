@@ -157,6 +157,69 @@ describe("public CLI runtime command parity", () => {
     expect(result.errors.join("\n")).not.toContain("unknown command");
   });
 
+  it("supports clone with an explicit output directory", async () => {
+    const source = tempProject();
+    initGitRepo(source);
+    writeFileSync(join(source, "README.md"), "# source\n", "utf-8");
+    execGit(source, ["add", "README.md"]);
+    execGit(source, ["commit", "-q", "-m", "init"]);
+
+    const destRoot = tempProject();
+    const dest = join(destRoot, "cloned");
+    const result = await runCli(["clone", source, "--out", dest], tempProject());
+
+    expect(result.exitCode).toBe(0);
+    expect(result.logs.join("\n")).toContain(dest);
+    expect(existsSync(join(dest, ".git"))).toBe(true);
+    expect(readFileSync(join(dest, "README.md"), "utf-8")).toContain("source");
+  });
+
+  it("supports merge-graphs and annotates nodes with their repo of origin", async () => {
+    const root = tempProject();
+    const repoA = join(root, "repo-a");
+    const repoB = join(root, "repo-b");
+    mkdirSync(join(repoA, ".graphify"), { recursive: true });
+    mkdirSync(join(repoB, ".graphify"), { recursive: true });
+
+    const graphA = join(repoA, ".graphify", "graph.json");
+    writeFileSync(
+      graphA,
+      JSON.stringify({
+        directed: false,
+        graph: {},
+        nodes: [{ id: "alpha", label: "Alpha", source_file: "src/a.ts", file_type: "code" }],
+        links: [],
+      }, null, 2),
+      "utf-8",
+    );
+    const graphB = join(repoB, ".graphify", "graph.json");
+    writeFileSync(
+      graphB,
+      JSON.stringify({
+        directed: false,
+        graph: {},
+        nodes: [{ id: "beta", label: "Beta", source_file: "src/b.ts", file_type: "code" }],
+        links: [{ source: "beta", target: "beta", relation: "self", confidence: "EXTRACTED" }],
+      }, null, 2),
+      "utf-8",
+    );
+
+    const mergedPath = join(root, ".graphify", "merged-graph.json");
+    const result = await runCli(["merge-graphs", graphA, graphB, "--out", mergedPath], root);
+    const merged = JSON.parse(readFileSync(mergedPath, "utf-8")) as {
+      nodes: Array<{ id: string; repo?: string }>;
+    };
+
+    expect(result.exitCode).toBe(0);
+    expect(result.logs.join("\n")).toContain("Merged 2 graphs");
+    expect(merged.nodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "alpha", repo: "repo-a" }),
+        expect.objectContaining({ id: "beta", repo: "repo-b" }),
+      ]),
+    );
+  });
+
   it("supports one-shot update rebuilds for code-only projects", async () => {
     const dir = tempProject();
     mkdirSync(join(dir, "src"), { recursive: true });

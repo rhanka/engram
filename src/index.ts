@@ -188,6 +188,10 @@ export type {
 } from "./profile-report.js";
 export { validateExtraction, assertValid } from "./validate.js";
 export { buildFromJson, build } from "./build.js";
+export { cloneRepo, defaultCloneDestination } from "./repo-clone.js";
+export type { CloneRepoOptions, CloneRepoResult } from "./repo-clone.js";
+export { mergeGraphsFromFiles } from "./merge-graphs.js";
+export type { MergeGraphsOptions, MergeGraphsResult } from "./merge-graphs.js";
 export { cluster, cohesionScore, scoreAll } from "./cluster.js";
 export { godNodes, surprisingConnections, suggestQuestions, graphDiff } from "./analyze.js";
 export { generate as generateReport } from "./report.js";
@@ -198,6 +202,7 @@ export { extract, collectFiles } from "./extract.js";
 export { fileHash, loadCached, saveCached, checkSemanticCache, saveSemanticCache } from "./cache.js";
 export { validateUrl, safeFetch, safeFetchText, validateGraphPath, sanitizeLabel } from "./security.js";
 export { DEFAULT_GRAPHIFY_STATE_DIR, LEGACY_GRAPHIFY_STATE_DIR, NEXT_GRAPHIFY_STATE_DIR, resolveGraphifyPaths, defaultGraphPath, legacyGraphPath, resolveGraphInputPath, defaultManifestPath, defaultTranscriptsDir } from "./paths.js";
+export { createGraph, isDirectedGraph, loadGraphFromData, serializeGraph } from "./graph.js";
 export { resolveGitContext, safeExecGit, safeGitRevParse } from "./git.js";
 export { lifecyclePaths, readLifecycleMetadata, refreshLifecycleMetadata, markLifecycleStale, markLifecycleAnalyzed, planLifecyclePrune } from "./lifecycle.js";
 export type { GitContext } from "./git.js";

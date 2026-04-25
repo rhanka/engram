@@ -47,6 +47,30 @@ export function loadGraphFromData(raw: SerializedGraphData): Graph {
   return G;
 }
 
+export function serializeGraph(G: Graph): SerializedGraphData {
+  const nodes: Array<Record<string, unknown> & { id: string }> = [];
+  G.forEachNode((nodeId, attrs) => {
+    nodes.push({ id: nodeId, ...attrs });
+  });
+
+  const links: Array<Record<string, unknown> & { source: string; target: string }> = [];
+  G.forEachEdge((_edge, attrs, source, target) => {
+    links.push({ source, target, ...attrs });
+  });
+
+  const graph = G.getAttributes();
+  const hyperedges = G.getAttribute("hyperedges") as Array<Record<string, unknown>> | undefined;
+
+  return {
+    directed: isDirectedGraph(G),
+    multigraph: false,
+    graph,
+    nodes,
+    links,
+    ...(hyperedges && hyperedges.length > 0 ? { hyperedges } : {}),
+  };
+}
+
 export function toUndirectedGraph(G: Graph): Graph {
   if (!isDirectedGraph(G)) return G.copy();
 
