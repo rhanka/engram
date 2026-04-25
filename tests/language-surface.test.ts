@@ -107,4 +107,20 @@ endmodule
     expect(labels).toContain("runScript()");
     expect(labels).toContain("renderTemplate()");
   });
+
+  it("extracts Java inheritance and interface implementation edges", async () => {
+    writeFileSync(join(dir, "PaymentService.java"), `
+interface Auditable {}
+interface Billable extends Auditable {}
+class BaseService {}
+class PaymentService extends BaseService implements Billable {}
+`);
+
+    const result = await extract([join(dir, "PaymentService.java")]);
+    const relations = result.edges.map((edge) => `${edge.source}:${edge.relation}:${edge.target}`);
+
+    expect(relations).toContain("paymentservice_paymentservice:inherits:paymentservice_baseservice");
+    expect(relations).toContain("paymentservice_paymentservice:implements:paymentservice_billable");
+    expect(relations).toContain("paymentservice_billable:inherits:paymentservice_auditable");
+  });
 });

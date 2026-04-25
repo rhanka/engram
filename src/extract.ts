@@ -977,6 +977,61 @@ async function _extractGeneric(filePath: string, config: LanguageConfig): Promis
         }
       }
 
+      // Java-specific: superclass / interface inheritance and implementation.
+      if (config.tsModule === "tree_sitter_java") {
+        const emitJavaParent = (baseName: string, relation: string): void => {
+          if (!baseName) return;
+          let baseNid = _makeId(stem, baseName);
+          if (!seenIds.has(baseNid)) {
+            baseNid = _makeId(baseName);
+            if (!seenIds.has(baseNid)) {
+              nodes.push({
+                id: baseNid, label: baseName, file_type: "code",
+                source_file: "", source_location: "",
+              });
+              seenIds.add(baseNid);
+            }
+          }
+          addEdge(classNid, baseNid, relation, line);
+        };
+
+        const collectJavaTypeNames = (node: SyntaxNode, out: Set<string>): void => {
+          if (node.type === "type_identifier" || node.type === "identifier") {
+            out.add(_readText(node, source));
+            return;
+          }
+          for (const child of node.children) {
+            collectJavaTypeNames(child, out);
+          }
+        };
+
+        const superclass = node.childForFieldName("superclass");
+        if (superclass) {
+          const names = new Set<string>();
+          collectJavaTypeNames(superclass, names);
+          for (const baseName of names) {
+            emitJavaParent(baseName, "inherits");
+            break;
+          }
+        }
+
+        const interfaces = node.childForFieldName("interfaces");
+        if (interfaces) {
+          const names = new Set<string>();
+          collectJavaTypeNames(interfaces, names);
+          for (const baseName of names) emitJavaParent(baseName, "implements");
+        }
+
+        if (t === "interface_declaration") {
+          for (const child of node.children) {
+            if (child.type !== "extends_interfaces" && child.type !== "super_interfaces") continue;
+            const names = new Set<string>();
+            collectJavaTypeNames(child, names);
+            for (const baseName of names) emitJavaParent(baseName, "inherits");
+          }
+        }
+      }
+
       // Find body and recurse
       const body = _findBody(node, config);
       if (body) {
