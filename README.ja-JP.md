@@ -124,7 +124,7 @@ graphify install
 | Kiro | `graphify install --platform kiro` |
 | Google Antigravity | `graphify install --platform antigravity` |
 
-Codex ユーザーは並列抽出のために `~/.codex/config.toml` の `[features]` の下に `multi_agent = true` も必要です。Gemini CLI は `/graphify` を `~/.gemini/commands/graphify.toml` のカスタムコマンドとして登録し、プロジェクトインストール時には `.gemini/settings.json` に `graphify serve` 用の MCP 設定も書き込みます。GitHub Copilot CLI はグローバルな `~/.copilot/skills/graphify/SKILL.md` を使います。VS Code Copilot Chat は同じグローバル skill に加えて `.github/copilot-instructions.md` を書き込みます。Aider は `~/.aider/graphify/SKILL.md` を使いますが、このプラットフォームでは意味抽出はまだ逐次実行です。OpenCode は `.opencode/plugins/graphify.js` と `opencode.json` で `tool.execute.before` plugin を登録します。Factory Droid は並列サブエージェントディスパッチに `Task` ツールを使用します。OpenClaw と Hermes は逐次抽出を使用します。Kiro は `.kiro/skills/graphify/SKILL.md` と常時有効の `.kiro/steering/graphify.md` を書き込みます。Google Antigravity は `.agent/rules/graphify.md`、`.agent/workflows/graphify.md`、グローバル `~/.agent/skills/graphify/SKILL.md` を書き込みます。Trae は `Agent` ツールを使いますが、Claude/Codex 型の PreToolUse フックは持たないため `AGENTS.md` が常時有効の仕組みです。
+Codex ユーザーは並列抽出のために `~/.codex/config.toml` の `[features]` の下に `multi_agent = true` も必要です。Gemini CLI は `/graphify` を `~/.gemini/commands/graphify.toml` のカスタムコマンドとして登録し、プロジェクトインストール時には `.gemini/settings.json` に `graphify serve` 用の MCP 設定も書き込みます。GitHub Copilot CLI はグローバルな `~/.copilot/skills/graphify/SKILL.md` を使います。VS Code Copilot Chat は同じグローバル skill に加えて `.github/copilot-instructions.md` を書き込みます。Aider は `~/.aider/graphify/SKILL.md` を使いますが、このプラットフォームでは意味抽出はまだ逐次実行です。OpenCode は `.opencode/plugins/graphify.js` と `.opencode/opencode.json` で `tool.execute.before` plugin を登録します。Factory Droid は並列サブエージェントディスパッチに `Task` ツールを使用します。OpenClaw と Hermes は逐次抽出を使用します。Kiro は `.kiro/skills/graphify/SKILL.md` と常時有効の `.kiro/steering/graphify.md` を書き込みます。Google Antigravity は `.agent/rules/graphify.md`、`.agent/workflows/graphify.md`、グローバル `~/.agent/skills/graphify/SKILL.md` を書き込みます。Trae は `Agent` ツールを使いますが、Claude/Codex 型の PreToolUse フックは持たないため `AGENTS.md` が常時有効の仕組みです。
 
 次に、AI コーディングアシスタントを開いて入力します：
 
@@ -165,7 +165,7 @@ $graphify .                        # Codex
 **VS Code Copilot Chat** はグローバル `graphify` skill をインストールし、`.github/copilot-instructions.md` を書き込むため、リポジトリ内の Copilot Chat が graphify ルールを自動的に読みます。
 **Aider** はプロジェクトルートの `AGENTS.md` とグローバル `~/.aider/graphify/SKILL.md` を使いますが、意味抽出はまだ逐次です。
 **Cursor** は `.cursor/rules/graphify.mdc` を `alwaysApply: true` で書き込みます。
-**OpenCode** は `AGENTS.md` に加え、`.opencode/plugins/graphify.js` と `opencode.json` でプロジェクトローカルプラグインを登録します。
+**OpenCode** は `AGENTS.md` に加え、`.opencode/plugins/graphify.js` と `.opencode/opencode.json` でプロジェクトローカルプラグインを登録します。
 **Hermes** はグローバル `~/.hermes/skills/graphify/SKILL.md` をインストールし、同じ `/graphify` の明示 skill 契約を使います。
 **Kiro** は `.kiro/skills/graphify/SKILL.md`、`.graphify_version`、`inclusion: always` 付きの `.kiro/steering/graphify.md` を書き込みます。
 **Google Antigravity** は `.agent/rules/graphify.md`、`.agent/workflows/graphify.md`、グローバル `~/.agent/skills/graphify/SKILL.md` を書き込みます。
@@ -240,6 +240,7 @@ When the user types `/graphify`, invoke the Skill tool with `skill: "graphify"` 
 graphify hook install
 graphify hook uninstall
 graphify hook status
+graphify check-update .          # .graphify の semantic / lifecycle 更新シグナルを確認
 graphify state status            # .graphify/worktree.json + branch.json を確認
 graphify recommend-commits          # 現在の Git 変更から advisory-only のコミット分割を提案
 graphify state prune             # 非破壊の stale-state クリーンアップ計画を表示
@@ -258,7 +259,7 @@ graphify aider install             # AGENTS.md（Aider）
 graphify aider uninstall
 graphify cursor install            # .cursor/rules/graphify.mdc（Cursor）
 graphify cursor uninstall
-graphify opencode install          # AGENTS.md（OpenCode）
+graphify opencode install          # AGENTS.md + .opencode/opencode.json（OpenCode）
 graphify opencode uninstall
 graphify claw install              # AGENTS.md（OpenClaw）
 graphify claw uninstall

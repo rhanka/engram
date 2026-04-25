@@ -112,7 +112,7 @@ graphify install
 | Kiro | `graphify install --platform kiro` |
 | Google Antigravity | `graphify install --platform antigravity` |
 
-Codex 用户还需要在 `~/.codex/config.toml` 的 `[features]` 下打开 `multi_agent = true`，这样才能并行提取。Gemini CLI 会把 `/graphify` 作为自定义命令安装到 `~/.gemini/commands/graphify.toml`，项目级安装还会写入 `.gemini/settings.json`，让 Gemini 通过 `graphify serve` 访问 MCP。GitHub Copilot CLI 会安装全局 `~/.copilot/skills/graphify/SKILL.md`；VS Code Copilot Chat 会安装同一个全局 skill，并写入项目 `.github/copilot-instructions.md`。Aider 会安装全局 `~/.aider/graphify/SKILL.md`，但该平台上的语义抽取仍然是串行的。OpenCode 会写入 `.opencode/plugins/graphify.js` 和 `opencode.json` 的 `tool.execute.before` 插件。OpenClaw 和 Hermes 使用顺序提取。Kiro 会写入 `.kiro/skills/graphify/SKILL.md` 和常驻 `.kiro/steering/graphify.md`。Google Antigravity 会写入 `.agent/rules/graphify.md`、`.agent/workflows/graphify.md` 和全局 `~/.agent/skills/graphify/SKILL.md`。Trae 使用 Agent 工具进行并行子代理调度，**不支持** PreToolUse hook，因此 AGENTS.md 是其常驻机制。
+Codex 用户还需要在 `~/.codex/config.toml` 的 `[features]` 下打开 `multi_agent = true`，这样才能并行提取。Gemini CLI 会把 `/graphify` 作为自定义命令安装到 `~/.gemini/commands/graphify.toml`，项目级安装还会写入 `.gemini/settings.json`，让 Gemini 通过 `graphify serve` 访问 MCP。GitHub Copilot CLI 会安装全局 `~/.copilot/skills/graphify/SKILL.md`；VS Code Copilot Chat 会安装同一个全局 skill，并写入项目 `.github/copilot-instructions.md`。Aider 会安装全局 `~/.aider/graphify/SKILL.md`，但该平台上的语义抽取仍然是串行的。OpenCode 会写入 `.opencode/plugins/graphify.js`，并通过 `.opencode/opencode.json` 注册 `tool.execute.before` 插件。OpenClaw 和 Hermes 使用顺序提取。Kiro 会写入 `.kiro/skills/graphify/SKILL.md` 和常驻 `.kiro/steering/graphify.md`。Google Antigravity 会写入 `.agent/rules/graphify.md`、`.agent/workflows/graphify.md` 和全局 `~/.agent/skills/graphify/SKILL.md`。Trae 使用 Agent 工具进行并行子代理调度，**不支持** PreToolUse hook，因此 AGENTS.md 是其常驻机制。
 
 然后打开你的 AI 编码助手，输入：
 
@@ -154,7 +154,7 @@ $graphify .                        # Codex
 **GitHub Copilot CLI** 依赖全局 `~/.copilot/skills/graphify/SKILL.md`，这个端口里没有单独的项目级 hook。
 **VS Code Copilot Chat** 会安装全局 `graphify` skill，并写入 `.github/copilot-instructions.md`，因此仓库里的 Copilot Chat 会自动看到 graphify 规则。
 **Aider** 会写入项目根目录的 `AGENTS.md`，并依赖全局 `~/.aider/graphify/SKILL.md`，但目前语义抽取仍是串行。
-**OpenCode** 会写入 `AGENTS.md`，并在 `.opencode/plugins/graphify.js` 里安装项目级 `tool.execute.before` 插件，再通过 `opencode.json` 注册。
+**OpenCode** 会写入 `AGENTS.md`，并在 `.opencode/plugins/graphify.js` 里安装项目级 `tool.execute.before` 插件，再通过 `.opencode/opencode.json` 注册。
 **Cursor** 会写入 `.cursor/rules/graphify.mdc`，并设置 `alwaysApply: true`。
 **Hermes** 会安装全局 `~/.hermes/skills/graphify/SKILL.md`，并使用同样的 `/graphify` 显式 skill 约定。
 **Kiro** 会写入 `.kiro/skills/graphify/SKILL.md`、`.graphify_version` 和带 `inclusion: always` 的 `.kiro/steering/graphify.md`。
@@ -229,6 +229,7 @@ When the user types `/graphify`, invoke the Skill tool with `skill: "graphify"` 
 graphify hook install
 graphify hook uninstall
 graphify hook status
+graphify check-update .          # 检查 .graphify 的 semantic / lifecycle 更新信号
 graphify state status            # 查看 .graphify/worktree.json + branch.json
 graphify recommend-commits          # 基于当前 Git 变更给出 advisory-only 提交分组
 graphify state prune             # 打印非破坏性的 stale-state 清理计划
@@ -247,7 +248,7 @@ graphify aider install             # AGENTS.md（Aider）
 graphify aider uninstall
 graphify cursor install            # .cursor/rules/graphify.mdc（Cursor）
 graphify cursor uninstall
-graphify opencode install          # AGENTS.md（OpenCode）
+graphify opencode install          # AGENTS.md + .opencode/opencode.json（OpenCode）
 graphify opencode uninstall
 graphify claw install              # AGENTS.md（OpenClaw）
 graphify claw uninstall
