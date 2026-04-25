@@ -182,4 +182,46 @@ describe("generate report", () => {
     expect(report).toContain("## Test Gaps");
     expect(report).toContain("No TESTED_BY edge");
   });
+
+  it("ignores empty file-only communities in summary and gap reporting", () => {
+    const G = new Graph({ type: "undirected" });
+    G.mergeNode("file_a", { label: "alpha.ts", source_file: "alpha.ts", file_type: "code" });
+    G.mergeNode("entity_a", { label: "AlphaService", source_file: "alpha.ts", file_type: "code" });
+    G.mergeEdge("file_a", "entity_a", { relation: "contains", confidence: "EXTRACTED", source_file: "alpha.ts" });
+    G.mergeNode("file_only", { label: "empty.ts", source_file: "empty.ts", file_type: "code" });
+
+    const report = generate(
+      G,
+      new Map([
+        [0, ["file_a", "entity_a"]],
+        [1, ["file_only"]],
+      ]),
+      new Map([
+        [0, 0.7],
+        [1, 0.1],
+      ]),
+      new Map([
+        [0, "Core"],
+        [1, "Empty"],
+      ]),
+      [{ id: "entity_a", label: "AlphaService", edges: 1 }],
+      [],
+      {
+        files: { code: ["alpha.ts", "empty.ts"], document: [], paper: [], image: [] },
+        total_files: 2,
+        total_words: 1000,
+        needs_graph: true,
+        warning: null,
+        skipped_sensitive: [],
+        graphifyignore_patterns: 0,
+      },
+      { input: 0, output: 0 },
+      ".",
+    );
+
+    expect(report).toContain("1 communities detected");
+    expect(report).toContain("### Community 0 - \"Core\"");
+    expect(report).not.toContain("### Community 1 - \"Empty\"");
+    expect(report).not.toContain("Thin community `Empty`");
+  });
 });

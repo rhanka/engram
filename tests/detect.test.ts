@@ -121,6 +121,16 @@ describe("detect", () => {
     expect(result.skipped_sensitive.length).toBeGreaterThan(0);
   });
 
+  it("does not flag ordinary files under directories named like secrets", () => {
+    mkdirSync(join(tmpDir, "token-service"), { recursive: true });
+    writeFileSync(join(tmpDir, "token-service", "README.md"), "# public docs\n");
+
+    const result = detect(tmpDir);
+
+    expect(result.files.document).toContain(join(tmpDir, "token-service", "README.md"));
+    expect(result.skipped_sensitive).toEqual([]);
+  });
+
   it("respects .graphifyignore", () => {
     writeFileSync(join(tmpDir, ".graphifyignore"), "ignored.py\n");
     writeFileSync(join(tmpDir, "ignored.py"), "# should be ignored");

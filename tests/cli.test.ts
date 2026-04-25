@@ -185,3 +185,29 @@ describe("profile CLI commands", () => {
     expect(existsSync(join(dir, ".graphify", "profile", "profile-state.json"))).toBe(false);
   });
 });
+
+describe("check-update CLI", () => {
+  it("reports pending semantic updates from .graphify/needs_update", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-cli-check-update-"));
+    tempDirs.push(dir);
+    mkdirSync(join(dir, ".graphify"), { recursive: true });
+    writeFileSync(join(dir, ".graphify", "needs_update"), "1\n", "utf-8");
+
+    const result = await runCli(["check-update", "."], dir);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.logs.join("\n")).toContain("Pending semantic updates");
+    expect(result.logs.join("\n")).toContain("graphify skill with --update");
+  });
+
+  it("reports when graph state is current", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-cli-check-update-clean-"));
+    tempDirs.push(dir);
+    mkdirSync(join(dir, ".graphify"), { recursive: true });
+
+    const result = await runCli(["check-update", "."], dir);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.logs.join("\n")).toContain("Graph state looks current");
+  });
+});

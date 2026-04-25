@@ -85,6 +85,28 @@ describe("surprisingConnections", () => {
     expect(surprises).toHaveLength(1);
     expect(surprises[0]?.why).not.toContain("crosses file types");
   });
+
+  it("is deterministic for large single-source graphs", () => {
+    const G = new Graph({ type: "undirected" });
+    for (let i = 0; i < 1100; i++) {
+      G.mergeNode(`node_${i}`, {
+        label: `Node${i}`,
+        source_file: "single.py",
+        file_type: "code",
+      });
+      if (i > 0) {
+        G.mergeEdge(`node_${i - 1}`, `node_${i}`, {
+          relation: "uses",
+          confidence: "EXTRACTED",
+        });
+      }
+    }
+
+    const first = surprisingConnections(G, new Map(), 5);
+    const second = surprisingConnections(G, new Map(), 5);
+
+    expect(second).toEqual(first);
+  });
 });
 
 describe("suggestQuestions", () => {
@@ -104,6 +126,28 @@ describe("suggestQuestions", () => {
     const G = new Graph({ type: "undirected" });
     const questions = suggestQuestions(G, new Map(), new Map());
     expect(questions[0]!.type).toBe("no_signal");
+  });
+
+  it("keeps bridge questions deterministic on large graphs", () => {
+    const G = new Graph({ type: "undirected" });
+    for (let i = 0; i < 1100; i++) {
+      G.mergeNode(`node_${i}`, {
+        label: `Node${i}`,
+        source_file: "single.py",
+        file_type: "code",
+      });
+      if (i > 0) {
+        G.mergeEdge(`node_${i - 1}`, `node_${i}`, {
+          relation: "uses",
+          confidence: "EXTRACTED",
+        });
+      }
+    }
+
+    const first = suggestQuestions(G, new Map(), new Map(), 7);
+    const second = suggestQuestions(G, new Map(), new Map(), 7);
+
+    expect(second).toEqual(first);
   });
 });
 

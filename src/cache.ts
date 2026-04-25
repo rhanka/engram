@@ -2,7 +2,16 @@
  * Per-file extraction cache - skip unchanged files on re-run.
  */
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync, renameSync, existsSync } from "node:fs";
+import {
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  readdirSync,
+  unlinkSync,
+  renameSync,
+  existsSync,
+  statSync,
+} from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { resolveGraphifyPaths } from "./paths.js";
 
@@ -30,6 +39,15 @@ function bodyContent(content: Buffer): Buffer {
  * changes do not invalidate semantic extraction cache entries.
  */
 export function fileHash(filePath: string): string {
+  let stat;
+  try {
+    stat = statSync(filePath);
+  } catch (error) {
+    throw error;
+  }
+  if (!stat.isFile()) {
+    throw new Error(`fileHash requires a file, got: ${filePath}`);
+  }
   const raw = readFileSync(filePath);
   const content = extname(filePath).toLowerCase() === ".md" ? bodyContent(raw) : raw;
   const resolved = resolve(filePath);
@@ -95,6 +113,13 @@ export function saveCached(
   root: string = ".",
   options: CacheOptions = {},
 ): void {
+  try {
+    if (!statSync(filePath).isFile()) {
+      return;
+    }
+  } catch {
+    return;
+  }
   const h = fileHash(filePath);
   const entry = join(cacheDir(root, options), `${h}.json`);
   const tmp = entry + ".tmp";
@@ -203,9 +228,13 @@ export function saveSemanticCache(
   let saved = 0;
   for (const [fpath, result] of byFile) {
     const p = resolve(root, fpath);
-    if (existsSync(p)) {
-      saveCached(p, result as unknown as Record<string, unknown>, root, options);
-      saved++;
+    try {
+      if (statSync(p).isFile()) {
+        saveCached(p, result as unknown as Record<string, unknown>, root, options);
+        saved++;
+      }
+    } catch {
+      continue;
     }
   }
   return saved;

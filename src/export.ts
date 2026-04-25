@@ -36,6 +36,7 @@ const CONFIDENCE_SCORE_DEFAULTS: Record<string, number> = {
 
 type CommunityLabelsInput = NumericMapLike<string>;
 type CommunityLabelOptions = { communityLabels?: CommunityLabelsInput };
+type HtmlOptions = CommunityLabelOptions & { memberCounts?: NumericMapLike<number> };
 type JsonOptions = CommunityLabelOptions;
 type SvgOptions = CommunityLabelOptions & { figsize?: [number, number] };
 type CanvasOptions = CommunityLabelOptions & { nodeFilenames?: StringMapLike<string> };
@@ -60,9 +61,12 @@ function cypherEscape(s: string): string {
 }
 
 function isCommunityLabelOptions(
-  value: CommunityLabelsInput | CommunityLabelOptions,
+  value: CommunityLabelsInput | CommunityLabelOptions | HtmlOptions,
 ): value is CommunityLabelOptions {
-  return !(value instanceof Map) && Object.prototype.hasOwnProperty.call(value, "communityLabels");
+  return !(value instanceof Map) && (
+    Object.prototype.hasOwnProperty.call(value, "communityLabels") ||
+    Object.prototype.hasOwnProperty.call(value, "memberCounts")
+  );
 }
 
 function isCanvasOptions(
@@ -84,13 +88,21 @@ function isSvgOptions(
 }
 
 function normalizeCommunityLabels(
-  labelsOrOptions?: CommunityLabelsInput | CommunityLabelOptions,
+  labelsOrOptions?: CommunityLabelsInput | CommunityLabelOptions | HtmlOptions,
 ): Map<number, string> | undefined {
   if (!labelsOrOptions) return undefined;
   if (!isCommunityLabelOptions(labelsOrOptions)) {
     return toNumericMap(labelsOrOptions as CommunityLabelsInput);
   }
-  return toNumericMap(labelsOrOptions.communityLabels);
+  return labelsOrOptions.communityLabels ? toNumericMap(labelsOrOptions.communityLabels) : undefined;
+}
+
+function normalizeMemberCounts(
+  labelsOrOptions?: CommunityLabelsInput | HtmlOptions,
+): Map<number, number> | undefined {
+  if (!labelsOrOptions || !isCommunityLabelOptions(labelsOrOptions)) return undefined;
+  if (!("memberCounts" in labelsOrOptions) || !labelsOrOptions.memberCounts) return undefined;
+  return toNumericMap(labelsOrOptions.memberCounts);
 }
 
 // ---------------------------------------------------------------------------
@@ -549,10 +561,11 @@ export function toHtml(
   G: Graph,
   communities: NumericMapLike<string[]>,
   outputPath: string,
-  communityLabelsOrOptions?: CommunityLabelsInput | CommunityLabelOptions,
+  communityLabelsOrOptions?: CommunityLabelsInput | HtmlOptions,
 ): void {
   const communityMap = toNumericMap(communities);
   const communityLabels = normalizeCommunityLabels(communityLabelsOrOptions);
+  const memberCounts = normalizeMemberCounts(communityLabelsOrOptions);
   if (G.order > MAX_NODES_FOR_VIZ) {
     throw new Error(
       `Graph has ${G.order} nodes - too large for HTML viz. ` +
@@ -564,6 +577,9 @@ export function toHtml(
   const degree = new Map<string, number>();
   G.forEachNode((n) => degree.set(n, G.degree(n)));
   const maxDeg = Math.max(1, ...degree.values());
+  const maxMemberCount = memberCounts && memberCounts.size > 0
+    ? Math.max(1, ...memberCounts.values())
+    : 1;
 
   // Build nodes list for vis.js
   interface VisNode {
@@ -585,8 +601,11 @@ export function toHtml(
     const color = COMMUNITY_COLORS[cid % COMMUNITY_COLORS.length]!;
     const label = sanitizeLabel((data.label as string) ?? nodeId);
     const deg = degree.get(nodeId) ?? 1;
-    const size = 10 + 30 * (deg / maxDeg);
-    const fontSize = deg >= maxDeg * 0.15 ? 12 : 0;
+    const memberCount = memberCounts?.get(cid) ?? 1;
+    const size = memberCounts
+      ? 10 + 30 * (memberCount / maxMemberCount)
+      : 10 + 30 * (deg / maxDeg);
+    const fontSize = memberCounts ? 12 : (deg >= maxDeg * 0.15 ? 12 : 0);
     visNodes.push({
       id: nodeId,
       label,
@@ -645,7 +664,7 @@ export function toHtml(
   for (const cid of labelKeys) {
     const color = COMMUNITY_COLORS[cid % COMMUNITY_COLORS.length]!;
     const lbl = escapeHtml(sanitizeLabel(communityLabels?.get(cid) ?? `Community ${cid}`));
-    const n = communityMap.get(cid)?.length ?? 0;
+    const n = memberCounts?.get(cid) ?? communityMap.get(cid)?.length ?? 0;
     legendData.push({ cid, color, label: lbl, count: n });
   }
 

@@ -26,6 +26,16 @@ interface HookDefinition {
 
 const HOOK_HELPERS = `
 # Shared graphify hook helpers. Hooks are advisory and must not block git.
+graphify_should_skip() {
+    GIT_DIR=$(git rev-parse --git-dir 2>/dev/null)
+    [ -z "$GIT_DIR" ] && return 1
+    [ -d "$GIT_DIR/rebase-merge" ] && return 0
+    [ -d "$GIT_DIR/rebase-apply" ] && return 0
+    [ -f "$GIT_DIR/MERGE_HEAD" ] && return 0
+    [ -f "$GIT_DIR/CHERRY_PICK_HEAD" ] && return 0
+    return 1
+}
+
 graphify_has_state() {
     [ -f ".graphify/graph.json" ] || [ -f "graphify-out/graph.json" ] || [ -d ".graphify" ] || [ -d "graphify-out" ]
 }
@@ -62,12 +72,14 @@ const POST_COMMIT_SCRIPT = `${POST_COMMIT_MARKER}
 # Marks graph state stale and rebuilds code-only graph after each commit.
 # Installed by: graphify hook install
 
+${HOOK_HELPERS}
+graphify_should_skip && exit 0
+
 CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git diff --name-only HEAD 2>/dev/null || true)
 if [ -z "$CHANGED" ]; then
     exit 0
 fi
 
-${HOOK_HELPERS}
 graphify_mark_stale "post-commit"
 export GRAPHIFY_CHANGED="$CHANGED"
 graphify_rebuild_code
@@ -88,6 +100,7 @@ if [ "$BRANCH_SWITCH" != "1" ]; then
 fi
 
 ${HOOK_HELPERS}
+graphify_should_skip && exit 0
 graphify_has_state || exit 0
 graphify_mark_stale "post-checkout"
 if [ -n "$PREV_HEAD" ] && [ -n "$NEW_HEAD" ]; then
@@ -103,6 +116,7 @@ const POST_MERGE_SCRIPT = `${POST_MERGE_MARKER}
 # Installed by: graphify hook install
 
 ${HOOK_HELPERS}
+graphify_should_skip && exit 0
 graphify_has_state || exit 0
 graphify_mark_stale "post-merge"
 GRAPHIFY_CHANGED=$(git diff --name-only ORIG_HEAD HEAD 2>/dev/null || true)
@@ -116,6 +130,7 @@ const POST_REWRITE_SCRIPT = `${POST_REWRITE_MARKER}
 # Installed by: graphify hook install
 
 ${HOOK_HELPERS}
+graphify_should_skip && exit 0
 graphify_has_state || exit 0
 graphify_mark_stale "post-rewrite"
 unset GRAPHIFY_CHANGED

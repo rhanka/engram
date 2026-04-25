@@ -115,6 +115,95 @@ function _makeId(...parts: string[]): string {
   return cleaned.replace(/^_+|_+$/g, "").toLowerCase();
 }
 
+function toPortablePath(path: string): string {
+  return path.replace(/\\/g, "/");
+}
+
+function inferCommonRoot(paths: string[]): string {
+  try {
+    if (paths.length === 0) {
+      return resolve(".");
+    }
+    if (paths.length === 1) {
+      return resolve(dirname(paths[0]!));
+    }
+    const parts = paths.map((p) => resolve(p).split(sep));
+    const minLen = Math.min(...parts.map((p) => p.length));
+    let commonLen = 0;
+    for (let i = 0; i < minLen; i++) {
+      const uniqueAtLevel = new Set(parts.map((p) => p[i]));
+      if (uniqueAtLevel.size === 1) {
+        commonLen++;
+      } else {
+        break;
+      }
+    }
+    return commonLen > 0
+      ? resolve(parts[0]!.slice(0, commonLen).join(sep))
+      : resolve(".");
+  } catch {
+    return resolve(".");
+  }
+}
+
+function projectRelativeFilePath(filePath: string, root: string): string {
+  const resolvedPath = resolve(filePath);
+  const rel = relative(root, resolvedPath);
+  if (!rel || rel.startsWith("..")) {
+    return toPortablePath(resolvedPath);
+  }
+  return toPortablePath(rel);
+}
+
+function remapFileNodeIds(nodes: GraphNode[], edges: GraphEdge[], paths: string[], root: string): void {
+  const byPath = new Map<string, { legacyId: string; absoluteId: string; portableId: string; label: string }>();
+  const absoluteToPortable = new Map<string, string>();
+
+  for (const filePath of paths) {
+    const resolvedPath = resolve(filePath);
+    const portableId = _makeId(projectRelativeFilePath(resolvedPath, root));
+    const absoluteId = _makeId(toPortablePath(resolvedPath));
+    byPath.set(resolvedPath, {
+      legacyId: _makeId(basename(resolvedPath, extname(resolvedPath))),
+      absoluteId,
+      portableId,
+      label: basename(resolvedPath),
+    });
+    absoluteToPortable.set(absoluteId, portableId);
+  }
+
+  for (const node of nodes) {
+    const info = byPath.get(resolve(node.source_file ?? ""));
+    if (!info || node.label !== info.label) continue;
+    if (node.id === info.legacyId || node.id === info.absoluteId) {
+      node.id = info.portableId;
+    }
+  }
+
+  for (const edge of edges) {
+    const sourceInfo = byPath.get(resolve(edge.source_file ?? ""));
+    if (sourceInfo && (edge.source === sourceInfo.legacyId || edge.source === sourceInfo.absoluteId)) {
+      edge.source = sourceInfo.portableId;
+    }
+
+    const remappedSource = absoluteToPortable.get(edge.source);
+    if (remappedSource) {
+      edge.source = remappedSource;
+    }
+
+    const remappedTarget = absoluteToPortable.get(edge.target);
+    if (remappedTarget) {
+      edge.target = remappedTarget;
+    } else if (
+      sourceInfo &&
+      edge.relation === "rationale_for" &&
+      (edge.target === sourceInfo.legacyId || edge.target === sourceInfo.absoluteId)
+    ) {
+      edge.target = sourceInfo.portableId;
+    }
+  }
+}
+
 function _readText(node: SyntaxNode, source: string): string {
   return source.slice(node.startIndex, node.endIndex);
 }
@@ -273,9 +362,23 @@ function _importJs(
   for (const child of node.children) {
     if (child.type === "string") {
       const raw = _readText(child, source).replace(/^['"`\s]+|['"`\s]+$/g, "");
-      const moduleName = raw.replace(/^\.\/|^\.\.\//, "").split("/").pop() ?? "";
-      if (moduleName) {
-        const tgtNid = _makeId(moduleName);
+      let tgtNid: string | null = null;
+      if (raw.startsWith(".")) {
+        let resolvedImport = resolve(dirname(strPath), raw);
+        const ext = extname(resolvedImport).toLowerCase();
+        if (ext === ".js") {
+          resolvedImport = resolvedImport.slice(0, -3) + ".ts";
+        } else if (ext === ".jsx") {
+          resolvedImport = resolvedImport.slice(0, -4) + ".tsx";
+        }
+        tgtNid = _makeId(toPortablePath(resolvedImport));
+      } else {
+        const moduleName = raw.split("/").pop() ?? "";
+        if (moduleName) {
+          tgtNid = _makeId(moduleName);
+        }
+      }
+      if (tgtNid) {
         edges.push({
           source: fileNid, target: tgtNid, relation: "imports_from",
           confidence: "EXTRACTED", source_file: strPath,
@@ -973,6 +1076,61 @@ async function _extractGeneric(filePath: string, config: LanguageConfig): Promis
                 addEdge(classNid, baseNid, "inherits", line);
               }
             }
+          }
+        }
+      }
+
+      // Java-specific: superclass / interface inheritance and implementation.
+      if (config.tsModule === "tree_sitter_java") {
+        const emitJavaParent = (baseName: string, relation: string): void => {
+          if (!baseName) return;
+          let baseNid = _makeId(stem, baseName);
+          if (!seenIds.has(baseNid)) {
+            baseNid = _makeId(baseName);
+            if (!seenIds.has(baseNid)) {
+              nodes.push({
+                id: baseNid, label: baseName, file_type: "code",
+                source_file: "", source_location: "",
+              });
+              seenIds.add(baseNid);
+            }
+          }
+          addEdge(classNid, baseNid, relation, line);
+        };
+
+        const collectJavaTypeNames = (node: SyntaxNode, out: Set<string>): void => {
+          if (node.type === "type_identifier" || node.type === "identifier") {
+            out.add(_readText(node, source));
+            return;
+          }
+          for (const child of node.children) {
+            collectJavaTypeNames(child, out);
+          }
+        };
+
+        const superclass = node.childForFieldName("superclass");
+        if (superclass) {
+          const names = new Set<string>();
+          collectJavaTypeNames(superclass, names);
+          for (const baseName of names) {
+            emitJavaParent(baseName, "inherits");
+            break;
+          }
+        }
+
+        const interfaces = node.childForFieldName("interfaces");
+        if (interfaces) {
+          const names = new Set<string>();
+          collectJavaTypeNames(interfaces, names);
+          for (const baseName of names) emitJavaParent(baseName, "implements");
+        }
+
+        if (t === "interface_declaration") {
+          for (const child of node.children) {
+            if (child.type !== "extends_interfaces" && child.type !== "super_interfaces") continue;
+            const names = new Set<string>();
+            collectJavaTypeNames(child, names);
+            for (const baseName of names) emitJavaParent(baseName, "inherits");
           }
         }
       }
@@ -3093,40 +3251,19 @@ export interface ExtractWithDiagnosticsResult {
 }
 
 export async function extractWithDiagnostics(paths: string[]): Promise<ExtractWithDiagnosticsResult> {
+  const normalizedPaths = paths.map((filePath) => resolve(filePath));
   const perFile: ExtractionResult[] = [];
   const diagnostics: ExtractionDiagnostic[] = [];
+  const root = inferCommonRoot(normalizedPaths);
 
-  // Infer a common root for cache keys
-  let root = ".";
-  try {
-    if (paths.length === 0) {
-      root = ".";
-    } else if (paths.length === 1) {
-      root = dirname(paths[0]!);
-    } else {
-      // Find common prefix directory
-      const parts = paths.map((p) => p.split(sep));
-      const minLen = Math.min(...parts.map((p) => p.length));
-      let commonLen = 0;
-      for (let i = 0; i < minLen; i++) {
-        const uniqueAtLevel = new Set(parts.map((p) => p[i]));
-        if (uniqueAtLevel.size === 1) commonLen++;
-        else break;
-      }
-      root = commonLen > 0 ? parts[0]!.slice(0, commonLen).join(sep) : ".";
-    }
-  } catch {
-    root = ".";
-  }
-
-  const total = paths.length;
+  const total = normalizedPaths.length;
   const _PROGRESS_INTERVAL = 100;
 
-  for (let i = 0; i < paths.length; i++) {
+  for (let i = 0; i < normalizedPaths.length; i++) {
     if (total >= _PROGRESS_INTERVAL && i % _PROGRESS_INTERVAL === 0 && i > 0) {
       process.stderr.write(`  AST extraction: ${i}/${total} files (${Math.floor(i * 100 / total)}%)\n`);
     }
-    const filePath = paths[i]!;
+    const filePath = normalizedPaths[i]!;
     const ext = extname(filePath);
     const extractor = basename(filePath).endsWith(".blade.php")
       ? extractRegexBackedCode
@@ -3160,9 +3297,11 @@ export async function extractWithDiagnostics(paths: string[]): Promise<ExtractWi
   }
 
   // Add cross-file class-level edges (Python only)
-  const pyPaths = paths.filter((p) => extname(p) === ".py");
+  remapFileNodeIds(allNodes, allEdges, normalizedPaths, root);
+
+  const pyPaths = normalizedPaths.filter((p) => extname(p) === ".py");
   if (pyPaths.length > 0) {
-    const pyResults = perFile.filter((_r, i) => extname(paths[i]!) === ".py");
+    const pyResults = perFile.filter((_r, i) => extname(normalizedPaths[i]!) === ".py");
     try {
       const crossFileEdges = await _resolveCrossFileImports(pyResults, pyPaths);
       allEdges.push(...crossFileEdges);

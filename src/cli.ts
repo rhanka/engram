@@ -321,6 +321,7 @@ const GEMINI_MCP_SERVER = {
 };
 
 const OPENCODE_PLUGIN_ENTRY = ".opencode/plugins/graphify.js";
+const OPENCODE_CONFIG_ENTRY = ".opencode/opencode.json";
 const OPENCODE_PLUGIN_JS = `// graphify OpenCode plugin
 // Injects a knowledge graph reminder before bash tool calls when the graph exists.
 import { existsSync } from "fs";
@@ -352,6 +353,34 @@ export interface InstallMutationPreview {
   hooks: string[];
   removes: string[];
   notes: string[];
+}
+
+function opencodeConfigPath(projectDir: string): string {
+  return join(projectDir, ".opencode", "opencode.json");
+}
+
+function legacyOpencodeConfigPath(projectDir: string): string {
+  return join(projectDir, "opencode.json");
+}
+
+function loadOpenCodeConfig(projectDir: string): {
+  config: Record<string, unknown>;
+  sourcePath: string | null;
+} {
+  const primaryPath = opencodeConfigPath(projectDir);
+  const legacyPath = legacyOpencodeConfigPath(projectDir);
+  for (const candidate of [primaryPath, legacyPath]) {
+    if (!existsSync(candidate)) continue;
+    try {
+      return {
+        config: JSON.parse(readFileSync(candidate, "utf-8")) as Record<string, unknown>,
+        sourcePath: candidate,
+      };
+    } catch {
+      return { config: {}, sourcePath: candidate };
+    }
+  }
+  return { config: {}, sourcePath: null };
 }
 
 function previewPath(base: string, relativePath: string): string {
@@ -407,8 +436,8 @@ export function platformInstallPreview(projectDir: string = ".", platformName: s
     preview.writes.push(previewPath(projectDir, ".codex/hooks.json"));
     preview.hooks.push(".codex/hooks.json: PreToolUse Bash graphify reminder");
   } else if (platformName === "opencode") {
-    preview.writes.push(previewPath(projectDir, OPENCODE_PLUGIN_ENTRY), previewPath(projectDir, "opencode.json"));
-    preview.hooks.push("opencode.json: tool.execute.before graphify plugin");
+    preview.writes.push(previewPath(projectDir, OPENCODE_PLUGIN_ENTRY), previewPath(projectDir, OPENCODE_CONFIG_ENTRY));
+    preview.hooks.push(".opencode/opencode.json: tool.execute.before graphify plugin");
   } else {
     preview.notes.push("No platform hook equivalent; AGENTS.md is the always-on mechanism.");
   }
@@ -951,37 +980,36 @@ function installOpenCodePlugin(projectDir: string): void {
   writeFileSync(pluginPath, OPENCODE_PLUGIN_JS, "utf-8");
   console.log(`  ${OPENCODE_PLUGIN_ENTRY}  ->  tool.execute.before hook written`);
 
-  const configPath = join(projectDir, "opencode.json");
-  let config: Record<string, unknown> = {};
-  if (existsSync(configPath)) {
-    try {
-      config = JSON.parse(readFileSync(configPath, "utf-8"));
-    } catch {
-      config = {};
-    }
-  }
-
+  const { config, sourcePath } = loadOpenCodeConfig(projectDir);
   const plugins = Array.isArray(config.plugin) ? [...config.plugin] : [];
-  if (plugins.includes(OPENCODE_PLUGIN_ENTRY)) {
-    console.log("  opencode.json  ->  plugin already registered (no change)");
-    return;
+  const alreadyRegistered = plugins.includes(OPENCODE_PLUGIN_ENTRY);
+  if (!alreadyRegistered) {
+    plugins.push(OPENCODE_PLUGIN_ENTRY);
   }
-
-  plugins.push(OPENCODE_PLUGIN_ENTRY);
   config.plugin = plugins;
+  const configPath = opencodeConfigPath(projectDir);
+  mkdirSync(dirname(configPath), { recursive: true });
   writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
-  console.log("  opencode.json  ->  plugin registered");
+  if (sourcePath && sourcePath !== configPath && existsSync(sourcePath)) {
+    console.log(`  ${OPENCODE_CONFIG_ENTRY}  ->  migrated from legacy root config`);
+  }
+  if (alreadyRegistered) {
+    console.log(`  ${OPENCODE_CONFIG_ENTRY}  ->  plugin already registered (no change)`);
+  } else {
+    console.log(`  ${OPENCODE_CONFIG_ENTRY}  ->  plugin registered`);
+  }
 }
 
 function uninstallOpenCodePlugin(projectDir: string): void {
   const pluginPath = join(projectDir, ".opencode", "plugins", "graphify.js");
   if (existsSync(pluginPath)) {
-    const { unlinkSync } = require("node:fs");
     unlinkSync(pluginPath);
     console.log(`  ${OPENCODE_PLUGIN_ENTRY}  ->  removed`);
   }
 
-  const configPath = join(projectDir, "opencode.json");
+  const configPath = existsSync(opencodeConfigPath(projectDir))
+    ? opencodeConfigPath(projectDir)
+    : legacyOpencodeConfigPath(projectDir);
   if (!existsSync(configPath)) return;
 
   let config: Record<string, unknown>;
@@ -1001,7 +1029,10 @@ function uninstallOpenCodePlugin(projectDir: string): void {
     config.plugin = filtered;
   }
   writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
-  console.log("  opencode.json  ->  plugin deregistered");
+  const entry = configPath === opencodeConfigPath(projectDir)
+    ? OPENCODE_CONFIG_ENTRY
+    : "opencode.json";
+  console.log(`  ${entry}  ->  plugin deregistered`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1710,6 +1741,23 @@ export async function main(): Promise<void> {
         scope: scopeSelection.mode,
         scopeSource: scopeSelection.source,
       });
+    });
+
+  program
+    .command("check-update [path]")
+    .description("Report whether .graphify has pending semantic or lifecycle refresh signals")
+    .action(async (checkPath = ".") => {
+      const { checkUpdate } = await import("./watch.js");
+      const result = checkUpdate(checkPath);
+      if (result.current) {
+        console.log(`[graphify check-update] Graph state looks current for ${resolve(checkPath)}.`);
+        return;
+      }
+      console.log(`[graphify check-update] Pending semantic updates in ${resolve(checkPath)}.`);
+      for (const reason of result.reasons) {
+        console.log(`[graphify check-update] ${reason}`);
+      }
+      console.log(`[graphify check-update] ${result.recommendedCommand}`);
     });
 
   program

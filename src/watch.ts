@@ -21,7 +21,7 @@ import {
   saveManifest,
 } from "./detect.js";
 import { inspectInputScope } from "./input-scope.js";
-import { markLifecycleAnalyzed, markLifecycleStale } from "./lifecycle.js";
+import { markLifecycleAnalyzed, markLifecycleStale, readLifecycleMetadata } from "./lifecycle.js";
 import {
   makeDetectionPortable,
   makeExtractionPortable,
@@ -165,6 +165,32 @@ export async function rebuildCode(
     );
     return false;
   }
+}
+
+export interface CheckUpdateResult {
+  current: boolean;
+  reasons: string[];
+  recommendedCommand: string;
+}
+
+export function checkUpdate(root: string): CheckUpdateResult {
+  const paths = resolveGraphifyPaths({ root });
+  const metadata = readLifecycleMetadata(root);
+  const reasons: string[] = [];
+
+  if (existsSync(paths.needsUpdate)) {
+    reasons.push(".graphify/needs_update exists");
+  }
+  if (metadata?.branch.stale) {
+    const reason = metadata.branch.staleReason?.trim();
+    reasons.push(reason ? `branch metadata is stale: ${reason}` : "branch metadata is stale");
+  }
+
+  return {
+    current: reasons.length === 0,
+    reasons,
+    recommendedCommand: "Run the graphify skill with --update to refresh semantic data.",
+  };
 }
 
 // ---------------------------------------------------------------------------

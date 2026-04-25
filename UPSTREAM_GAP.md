@@ -5,20 +5,23 @@ This document tracks the delta between this TypeScript port and upstream Python 
 ## Scope
 
 - Current TypeScript product branch: `main`
-- Current TypeScript baseline: `b1e2e5a2728167f483a0ec52a3221cc7249a50d2`
+- Current TypeScript baseline: `660e3836a165f815e3f31c925784ff4db97e7762`
 - Current TypeScript npm release: `graphifyy@0.4.25`
 - Durable traceability spec: `spec/SPEC_UPSTREAM_TRACEABILITY.md`
 - Closed upstream `v3` baseline: `upstream/v3` at `699e996`
 - Closed Python parity target: remote tag `v0.4.23` at `8d908c5d43d079579604a82873fd7cff33a1b343`
-- Active Python drift target: remote tag `v0.4.27` / `upstream/v4` at `64e4c64d7bec574e5a56c1f0b9219e543ddbb5f3`
+- Active Python drift target: `upstream/v4` at `5843ffc277c54766854f9201286c9647da095390`
+- Deferred major-version source lock: `upstream/v5` at `770d7f54c40d7301a0166a6b7782cb03827897e5`
 - Active CRG review reference: `tirth8205/code-review-graph` tag `v2.3.2` at `db2d2df789c25a101e33477b898c1840fb4c7bc7`
-- Current implementation branch for traceability work: `feat/upstream-traceability-crg`
+- Current implementation branch for traceability work: `chore/upstream-v4-0.4.32-catchup`
 
 ## Source Lock Notes
 
 - `git ls-remote` is the authority for Safi Python tags while local tag clobber risk exists.
 - Local `refs/tags/v0.4.23` is not trusted for parity claims because it differs from the remote tag observed by `git ls-remote`.
-- Python `upstream/v4` was fetched on 2026-04-22 and now points to `64e4c64d7bec574e5a56c1f0b9219e543ddbb5f3`.
+- Python `upstream/v4` was fetched on 2026-04-25 and now points to `5843ffc277c54766854f9201286c9647da095390`.
+- Python `upstream/v5` now exists and is locked separately as deferred major-version work.
+- Local `v0.4.28`..`v0.4.32` tags are not trusted for parity claims while tag clobber risk exists; use branch commits and `git ls-remote` instead.
 - CRG `v2.3.2` remains the stable review-feature source. CRG `main` has advanced and is intentionally deferred until a new spec updates the source lock.
 
 ## Fork Guardrail
@@ -55,7 +58,7 @@ This table is retained for history. It should stay closed unless upstream rewrit
 | Upstream ref | Upstream scope | TS status | Catch-up action |
 | --- | --- | --- | --- |
 | `v0.3.18` | skill coverage, Windows skill fixes, click detection, `.graphify_python` persistence | `covered` | Covered in TS via installable skill coverage, Windows skill audit, HTML hover/click fallback, and synchronized extension sets in `detect`/`analyze`/`watch`; `.graphify_python` is `n/a` |
-| `v0.3.19` | OpenCode `tool.execute.before` plugin install | `covered` | Covered in TS via `.opencode/plugins/graphify.js`, `opencode.json` registration, install/uninstall idempotency, and README parity |
+| `v0.3.19` | OpenCode `tool.execute.before` plugin install | `covered` | Covered in TS via `.opencode/plugins/graphify.js`, `.opencode/opencode.json` registration with legacy-root migration, install/uninstall idempotency, and README parity |
 | `v0.3.20` | AST call edges forced to `EXTRACTED`, tree-sitter version guard | `covered` | Covered in TS by fixing remaining AST `calls` edges to `EXTRACTED`/`1.0`; the upstream version guard is Python-binding-specific and maps to pinned `web-tree-sitter` deps plus existing missing-grammar diagnostics in TS |
 | `v0.3.21` | Codex hook JSON schema fix, `#!/bin/sh` for Windows git hooks | `covered` | Covered in TS via the corrected Codex hook JSON payload and `/bin/sh` git hook installation/removal parity |
 | `v0.3.22` | Cursor support, Python watcher/export crash fixes | `covered` | Covered in TS by adding project-scoped Cursor rules; the upstream watcher/export crashes are Python-specific and `n/a` for the current TS runtime |
@@ -101,19 +104,21 @@ The TypeScript port has already shipped the original direct `0.4.23` parity targ
 
 ## Active Python v4 Drift After TypeScript `0.4.25`
 
-This table starts from the remote Python `v0.4.23` source lock and tracks current `upstream/v4` through remote tag `v0.4.27`.
+This table starts from the remote Python `v0.4.23` source lock and tracks current `upstream/v4` through commit `5843ffc`.
 
 | Upstream ref | Upstream scope | TS status | Plan lot | Catch-up action |
 | --- | --- | --- | --- | --- |
-| `v0.4.24` / `2b8c08f` | version bump after fixes; later release-line commits include cache hashing, hook handling, watch output, semantic cache directory handling, sensitive directory false-positive fix, label crash guards, and packaging/interpreter docs | `needs-review` | F2 drift audit | Audit against TS cache, hook, watch, security, export, and packaging tests before marking covered. |
+| `v0.4.24` / `2b8c08f` plus follow-ups `4738e88`, `81b6e7d`, `f0ebd07` | hook/output/security/docs release-line fixes, including sensitive-directory false positives and absolute-path artifact regressions | `covered` / `n/a` | F2 drift audit | Sensitive-directory false positives, relative artifact rebuilds, directory-safe semantic cache writes, and null-safe label sanitization are covered by `tests/detect.test.ts`, `tests/cache.test.ts`, `tests/security.test.ts`, `tests/html-export.test.ts`, and existing portable/runtime coverage. Python interpreter and packaging notes are `n/a` for the TypeScript runtime. |
 | docs/translations commits / `53d516f`..`5a0c167` | multilingual README expansion and move to `docs/translations/` | `deferred` | separate docs lot | Do not mix translation relocation into runtime parity. Decide separately whether the TS README translation strategy should follow upstream. |
-| `v0.4.25` / `cc917a7` | empty-community report fixes; graph-query CLI rules in installed instructions | `needs-review` | F2 drift audit | Audit TS `report.ts` empty-community behavior and skill/query guidance. |
-| `v0.4.26` / `7891fa8` | wiki encoding and slug collision fixes; hook rebase guard; detect path resolution; README `.gitignore` docs | `needs-review` | F2 drift audit | Audit TS wiki slug/encoding behavior, hook branch safety, detect path resolution, and README guidance. |
-| `v0.4.27` / `64e4c64` | deterministic large-graph `GRAPH_REPORT`, stable edge node IDs, corrected common-root inference | `needs-review` | F2 drift audit | Create parity implementation lots if TS lacks deterministic report ordering, stable extracted edge IDs, or matching common-root inference. |
+| `v0.4.25` / `cc917a7` | empty-community report fixes; graph-query CLI rules in installed instructions | `covered` | F2 drift audit | Covered by `tests/report.test.ts`; installed guidance already points users to graph query/path/explain flows. |
+| `v0.4.26` / `f8fd8f8` | wiki encoding and slug collision fixes; hook rebase guard; detect path resolution; README `.gitignore` docs | `covered` | F2 drift audit | Hook guard now has regression coverage in `tests/hooks.test.ts`; wiki collision coverage already exists in `tests/wiki.test.ts`; detect resolves root up front; README and `.gitignore` are updated in this branch. |
+| post-`v0.4.27` / `86d6d93`, `52ad45b`, `4bc2052`, `e4bdcc2`, `64f38ac`, `e915a87`, `b326aa8`, `5843ffc` | OpenCode config relocation, `check-update`, Java inheritance, Windows Python docs, canvas/docs polish, aggregated HTML viz, local benchmark-script ignores | `covered` / `n/a` | F2 drift audit | `.opencode/opencode.json`, `check-update`, Java inheritance, aggregated HTML member counts, canvas-relative exports, and benchmark-script ignores are covered by runtime/tests. Remaining Windows Python packaging/docs polish is `n/a` for the TypeScript runtime. |
+| `v0.4.27` / `d9b2928` | deterministic large-graph `GRAPH_REPORT`, stable edge node IDs, corrected common-root inference | `covered` | F2 drift audit | Covered by project-relative file-node remap plus stable relative-import targets in `tests/language-surface.test.ts`, and deterministic large-graph analysis coverage in `tests/analyze.test.ts`. |
+| `v0.5.0` / `upstream/v5` | major-version line and enterprise-oriented design work | `deferred` | separate major-version spec | Track separately from the current v4 catch-up branch. |
 
 ## Release Gate
 
-Before claiming catch-up through Python `v0.4.27` or publishing a TypeScript parity release:
+Before claiming catch-up through Python `upstream/v4` at `5843ffc` or publishing a TypeScript parity release:
 
 - all active Python drift rows must be `covered`, `n/a`, `deferred`, `rejected`, or `intentional-delta`
 - no row may remain `missing`, `partial`, `needs-audit`, or `needs-review`

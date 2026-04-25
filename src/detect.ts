@@ -54,7 +54,7 @@ const PAPER_SIGNAL_THRESHOLD = 3;
 
 function isSensitive(filePath: string): boolean {
   const name = basename(filePath);
-  return SENSITIVE_PATTERNS.some((p) => p.test(name) || p.test(filePath));
+  return SENSITIVE_PATTERNS.some((p) => p.test(name));
 }
 
 function looksLikePaper(filePath: string): boolean {

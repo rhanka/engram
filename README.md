@@ -134,7 +134,7 @@ Install commands print a mutation preview before writing files, including the ex
 | Kiro | `graphify install --platform kiro` |
 | Google Antigravity | `graphify install --platform antigravity` |
 
-Codex users also need `multi_agent = true` under `[features]` in `~/.codex/config.toml` for parallel extraction. Gemini CLI exposes `/graphify` through a custom command installed into `~/.gemini/commands/graphify.toml`, and the project install writes `.gemini/settings.json` so Gemini can use `graphify serve` as an MCP server. GitHub Copilot CLI installs a global `~/.copilot/skills/graphify/SKILL.md`; VS Code Copilot Chat installs the same global skill plus project `.github/copilot-instructions.md`. Aider uses a global `~/.aider/graphify/SKILL.md`, but semantic extraction stays sequential there because multi-agent dispatch is still early on that platform. OpenCode installs a project-local `tool.execute.before` plugin in `.opencode/plugins/graphify.js` and registers it in `opencode.json`, so OpenCode gets the same graph reminder before bash tool calls. Factory Droid uses the `Task` tool for parallel subagent dispatch. OpenClaw and Hermes use sequential extraction. Kiro writes a project `.kiro/skills/graphify/SKILL.md` plus always-on `.kiro/steering/graphify.md`. Google Antigravity writes `.agent/rules/graphify.md`, `.agent/workflows/graphify.md`, and a global `~/.agent/skills/graphify/SKILL.md`. Trae uses the Agent tool for parallel subagent dispatch and does **not** support PreToolUse hooks — AGENTS.md is the always-on mechanism.
+Codex users also need `multi_agent = true` under `[features]` in `~/.codex/config.toml` for parallel extraction. Gemini CLI exposes `/graphify` through a custom command installed into `~/.gemini/commands/graphify.toml`, and the project install writes `.gemini/settings.json` so Gemini can use `graphify serve` as an MCP server. GitHub Copilot CLI installs a global `~/.copilot/skills/graphify/SKILL.md`; VS Code Copilot Chat installs the same global skill plus project `.github/copilot-instructions.md`. Aider uses a global `~/.aider/graphify/SKILL.md`, but semantic extraction stays sequential there because multi-agent dispatch is still early on that platform. OpenCode installs a project-local `tool.execute.before` plugin in `.opencode/plugins/graphify.js` and registers it in `.opencode/opencode.json`, so OpenCode gets the same graph reminder before bash tool calls. Factory Droid uses the `Task` tool for parallel subagent dispatch. OpenClaw and Hermes use sequential extraction. Kiro writes a project `.kiro/skills/graphify/SKILL.md` plus always-on `.kiro/steering/graphify.md`. Google Antigravity writes `.agent/rules/graphify.md`, `.agent/workflows/graphify.md`, and a global `~/.agent/skills/graphify/SKILL.md`. Trae uses the Agent tool for parallel subagent dispatch and does **not** support PreToolUse hooks — AGENTS.md is the always-on mechanism.
 
 Then open your AI coding assistant and invoke the skill:
 
@@ -177,7 +177,7 @@ After building a graph, run this once in your project:
 
 **Aider** writes `AGENTS.md` in your project root and relies on the installed global skill in `~/.aider/graphify/SKILL.md`. Semantic extraction is sequential there, so expect it to be slower than Codex/OpenCode on large doc-heavy corpora.
 
-**OpenCode** writes to `AGENTS.md` and installs a project-local `tool.execute.before` plugin in `.opencode/plugins/graphify.js`, registered via `opencode.json`, so bash tool calls get the same graph reminder before raw-file traversal.
+**OpenCode** writes to `AGENTS.md` and installs a project-local `tool.execute.before` plugin in `.opencode/plugins/graphify.js`, registered via `.opencode/opencode.json`, so bash tool calls get the same graph reminder before raw-file traversal.
 
 **Cursor** writes `.cursor/rules/graphify.mdc` with `alwaysApply: true`, so Cursor always sees the graph context before it starts crawling raw files.
 
@@ -303,6 +303,7 @@ In Codex, replace the leading `/` in the examples below with `$`. Gemini CLI, Gi
 graphify hook install
 graphify hook uninstall
 graphify hook status
+graphify check-update .          # report pending .graphify semantic/lifecycle refresh signals
 graphify state status            # inspect .graphify/worktree.json + branch.json
 graphify state prune             # print a non-destructive stale-state cleanup plan
 graphify migrate-state --dry-run # plan graphify-out -> .graphify migration and git mv advice
@@ -322,7 +323,7 @@ graphify aider install             # AGENTS.md (Aider)
 graphify aider uninstall
 graphify cursor install            # .cursor/rules/graphify.mdc (Cursor)
 graphify cursor uninstall
-graphify opencode install          # AGENTS.md + opencode.json plugin (OpenCode)
+graphify opencode install          # AGENTS.md + .opencode/opencode.json plugin (OpenCode)
 graphify opencode uninstall
 graphify claw install              # AGENTS.md (OpenClaw)
 graphify claw uninstall

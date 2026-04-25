@@ -43,6 +43,10 @@ describe("hooks", () => {
       const content = readFileSync(hookPath(tmpDir, name), "utf-8");
       expect(content.startsWith("#!/bin/sh\n")).toBe(true);
       expect(content).toContain("graphify_mark_stale");
+      expect(content).toContain("rebase-merge");
+      expect(content).toContain("rebase-apply");
+      expect(content).toContain("MERGE_HEAD");
+      expect(content).toContain("CHERRY_PICK_HEAD");
     }
   });
 

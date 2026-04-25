@@ -143,4 +143,30 @@ describe("cache", () => {
     const h2 = fileHash(f);
     expect(h1).not.toBe(h2);
   });
+
+  it("rejects directory paths in fileHash with a clear error", () => {
+    const dirPath = join(tmpDir, "docs");
+    mkdirSync(dirPath, { recursive: true });
+
+    expect(() => fileHash(dirPath)).toThrow("fileHash requires a file");
+  });
+
+  it("skips directory source_file entries when saving semantic cache", () => {
+    const dirPath = join(tmpDir, "docs");
+    mkdirSync(dirPath, { recursive: true });
+
+    const saved = saveSemanticCache(
+      [{ id: "dir-node", label: "DirNode", source_file: dirPath }],
+      [{ source: "dir-node", target: "other", relation: "uses", confidence: "EXTRACTED", source_file: dirPath }],
+      [],
+      tmpDir,
+    );
+
+    expect(saved).toBe(0);
+    const [nodes, edges, hyperedges, uncached] = checkSemanticCache([dirPath], tmpDir);
+    expect(nodes).toEqual([]);
+    expect(edges).toEqual([]);
+    expect(hyperedges).toEqual([]);
+    expect(uncached).toEqual([dirPath]);
+  });
 });

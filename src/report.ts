@@ -162,6 +162,11 @@ export function generate(
   const infAvg = infEdges.length > 0
     ? Math.round((infEdges.reduce((s, e) => s + e.score, 0) / infEdges.length) * 100) / 100
     : null;
+  const nonEmptyCommunities = new Map<number, string[]>();
+  for (const [cid, nodes] of communityMap) {
+    const realNodes = nodes.filter((n) => !isFileNode(G, n));
+    if (realNodes.length > 0) nonEmptyCommunities.set(cid, realNodes);
+  }
 
   const lines: string[] = [
     `# Graph Report - ${root}  (${today})`,
@@ -181,7 +186,7 @@ export function generate(
   lines.push(
     "",
     "## Summary",
-    `- ${G.order} nodes · ${G.size} edges · ${communityMap.size} communities detected`,
+    `- ${G.order} nodes · ${G.size} edges · ${nonEmptyCommunities.size} communities detected`,
     `- Extraction: ${extPct}% EXTRACTED · ${infPct}% INFERRED · ${ambPct}% AMBIGUOUS` +
       (infAvg !== null ? ` · INFERRED: ${infEdges.length} edges (avg confidence: ${infAvg})` : ""),
     `- Token cost: ${tokenCost.input.toLocaleString()} input · ${tokenCost.output.toLocaleString()} output`,
@@ -234,7 +239,8 @@ export function generate(
   for (const [cid, nodes] of communityMap) {
     const label = labelMap.get(cid) ?? `Community ${cid}`;
     const score = cohesionMap.get(cid) ?? 0.0;
-    const realNodes = nodes.filter((n) => !isFileNode(G, n));
+    const realNodes = nonEmptyCommunities.get(cid) ?? [];
+    if (realNodes.length === 0) continue;
     const display = realNodes.slice(0, 8).map((n) => (G.getNodeAttribute(n, "label") as string | undefined) ?? n);
     const suffix = realNodes.length > 8 ? ` (+${realNodes.length - 8} more)` : "";
     lines.push(
@@ -266,7 +272,7 @@ export function generate(
     (n) => G.degree(n) <= 1 && !isFileNode(G, n) && !isConceptNode(G, n),
   );
   const thinCommunities = new Map<number, string[]>();
-  for (const [cid, nodes] of communityMap) {
+  for (const [cid, nodes] of nonEmptyCommunities) {
     if (nodes.length < 3) thinCommunities.set(cid, nodes);
   }
   const gapCount = isolated.length + thinCommunities.size;
