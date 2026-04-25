@@ -9,6 +9,7 @@ import { resolve } from "node:path";
 import type Graph from "graphology";
 
 import { detect, saveManifest } from "./detect.js";
+import { inspectInputScope } from "./input-scope.js";
 import { buildFromJson } from "./build.js";
 import { cluster, scoreAll } from "./cluster.js";
 import { godNodes, surprisingConnections, suggestQuestions } from "./analyze.js";
@@ -27,7 +28,9 @@ import {
 import type {
   DetectionResult,
   Extraction,
+  GraphifyInputScopeMode,
   GodNodeEntry,
+  InputScopeSource,
   SuggestedQuestion,
   SurpriseEntry,
 } from "./types.js";
@@ -38,6 +41,8 @@ export interface BuildProjectOptions {
   html?: boolean;
   wiki?: boolean;
   directed?: boolean;
+  scope?: GraphifyInputScopeMode;
+  scopeSource?: InputScopeSource;
 }
 
 export interface BuildProjectWarning {
@@ -114,10 +119,22 @@ export async function buildProject(
 
   mkdirSync(outputDir, { recursive: true });
 
-  const rawDetection = detect(rootResolved, { followSymlinks: options?.followSymlinks });
+  const scopeInventory = inspectInputScope(rootResolved, {
+    mode: options?.scope ?? "auto",
+    source: options?.scopeSource ?? (options?.scope ? "cli" : "default-auto"),
+  });
+  const rawDetection = detect(rootResolved, {
+    followSymlinks: options?.followSymlinks,
+    candidateFiles: scopeInventory.candidateFiles,
+    candidateRoot: scopeInventory.scope.git_root ?? rootResolved,
+    scope: scopeInventory.scope,
+  });
   const detection = makeDetectionPortable(rawDetection, rootResolved);
   writeFileSync(detectionPath, JSON.stringify(detection, null, 2), "utf-8");
-  saveManifest(detection.files, manifestPath);
+  if (detection.scope) {
+    writeFileSync(paths.scope, JSON.stringify(detection.scope, null, 2), "utf-8");
+  }
+  saveManifest(rawDetection.files, manifestPath);
 
   const codeFiles = fileList(rawDetection, "code");
 

@@ -76,6 +76,22 @@ describe("portable graphify artifacts", () => {
       warning: null,
       skipped_sensitive: [join(root, ".env")],
       graphifyignore_patterns: 0,
+      scope: {
+        requested_mode: "auto",
+        resolved_mode: "committed",
+        source: "cli",
+        root,
+        git_root: root,
+        head: "abc123",
+        candidate_count: 2,
+        included_count: 2,
+        excluded_untracked_count: 0,
+        excluded_ignored_count: 0,
+        excluded_sensitive_count: 0,
+        missing_committed_count: 0,
+        warnings: [],
+        recommendation: null,
+      },
     };
 
     const portable = makeDetectionPortable(detection, root);
@@ -83,6 +99,8 @@ describe("portable graphify artifacts", () => {
     expect(portable.files.code).toEqual(["src/a.ts"]);
     expect(portable.files.documents).toEqual(["docs/readme.md"]);
     expect(portable.skipped_sensitive).toEqual([".env"]);
+    expect(portable.scope?.root).toBe(".");
+    expect(portable.scope?.git_root).toBe(".");
     expect(JSON.stringify(portable)).not.toContain(root);
   });
 

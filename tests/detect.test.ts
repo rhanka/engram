@@ -3,6 +3,8 @@ import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { detect, classifyFile } from "../src/detect.js";
+import { inspectInputScope } from "../src/input-scope.js";
+import { execGit } from "../src/git.js";
 import { FileType } from "../src/types.js";
 
 describe("classifyFile", () => {
@@ -202,5 +204,38 @@ describe("detect", () => {
     writeFileSync(join(tmpDir, "clip.mp4"), Buffer.alloc(100));
     const result = detect(tmpDir);
     expect(result.total_words).toBe(0);
+  });
+
+  it("filters explicit scope inventory through detect and preserves scope diagnostics", () => {
+    execGit(tmpDir, ["init", "-q"]);
+    execGit(tmpDir, ["config", "user.email", "graphify@example.test"]);
+    execGit(tmpDir, ["config", "user.name", "Graphify Test"]);
+    mkdirSync(join(tmpDir, "src"), { recursive: true });
+    writeFileSync(join(tmpDir, "src", "main.ts"), "export const main = true;\n");
+    writeFileSync(join(tmpDir, "src", "staged.ts"), "export const staged = true;\n");
+    writeFileSync(join(tmpDir, "notes.md"), "# untracked\n");
+    execGit(tmpDir, ["add", "src/main.ts"]);
+    execGit(tmpDir, ["commit", "-q", "-m", "init"]);
+    execGit(tmpDir, ["add", "src/staged.ts"]);
+
+    const inventory = inspectInputScope(tmpDir, { mode: "tracked", source: "cli" });
+    const result = detect(tmpDir, {
+      candidateFiles: inventory.candidateFiles,
+      candidateRoot: inventory.scope.git_root ?? tmpDir,
+      scope: inventory.scope,
+    });
+
+    expect(result.files.code).toEqual([
+      join(tmpDir, "src", "main.ts"),
+      join(tmpDir, "src", "staged.ts"),
+    ]);
+    expect(result.files.document).toEqual([]);
+    expect(result.scope).toMatchObject({
+      requested_mode: "tracked",
+      resolved_mode: "tracked",
+      included_count: 2,
+      excluded_untracked_count: 1,
+      excluded_sensitive_count: 0,
+    });
   });
 });

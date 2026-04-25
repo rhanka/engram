@@ -2,6 +2,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
+import { execGit } from "../src/git.js";
 
 const tempDirs: string[] = [];
 
@@ -67,6 +68,12 @@ function writeFlowGraph(dir: string): string {
     "utf-8",
   );
   return graphPath;
+}
+
+function initGitRepo(dir: string): void {
+  execGit(dir, ["init", "-q"]);
+  execGit(dir, ["config", "user.email", "graphify@example.test"]);
+  execGit(dir, ["config", "user.name", "Graphify Test"]);
 }
 
 async function runCli(args: string[], cwd: string, options: { interceptExit?: boolean } = {}) {
@@ -161,6 +168,80 @@ describe("public CLI runtime command parity", () => {
     expect(result.logs.join("\n")).toContain("Code graph updated");
     expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
     expect(existsSync(join(dir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
+  });
+
+  it("supports scope inspect via CLI and skill runtime", async () => {
+    const dir = tempProject();
+    initGitRepo(dir);
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "main.ts"), "export const main = true;\n", "utf-8");
+    execGit(dir, ["add", "src/main.ts"]);
+    execGit(dir, ["commit", "-q", "-m", "init"]);
+    writeFileSync(join(dir, "src", "staged.ts"), "export const staged = true;\n", "utf-8");
+    execGit(dir, ["add", "src/staged.ts"]);
+    writeFileSync(join(dir, "notes.md"), "# untracked\n", "utf-8");
+
+    const cli = await runCli(["scope", "inspect", dir, "--scope", "tracked", "--json"], dir);
+    const runtime = await runSkillRuntime(["scope-inspect", "--root", dir, "--scope", "tracked", "--json"], dir);
+
+    expect(cli.exitCode).toBe(0);
+    expect(runtime.exitCode).toBe(0);
+    expect(JSON.parse(cli.logs.join("\n"))).toMatchObject({
+      scope: {
+        requested_mode: "tracked",
+        resolved_mode: "tracked",
+      },
+    });
+    expect(JSON.parse(runtime.logs.join("\n"))).toMatchObject({
+      scope: {
+        requested_mode: "tracked",
+        resolved_mode: "tracked",
+      },
+    });
+  });
+
+  it("writes scope diagnostics for scope-aware update rebuilds", async () => {
+    const dir = tempProject();
+    initGitRepo(dir);
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "main.ts"), "export function main() { return 1; }\n", "utf-8");
+    execGit(dir, ["add", "src/main.ts"]);
+    execGit(dir, ["commit", "-q", "-m", "init"]);
+    writeFileSync(join(dir, "scratch.ts"), "export const scratch = true;\n", "utf-8");
+
+    const result = await runCli(["update", ".", "--scope", "committed"], dir);
+    const scopeJson = JSON.parse(readFileSync(join(dir, ".graphify", "scope.json"), "utf-8")) as Record<string, unknown>;
+    const reportText = readFileSync(join(dir, ".graphify", "GRAPH_REPORT.md"), "utf-8");
+
+    expect(result.exitCode).toBe(0);
+    expect(scopeJson).toMatchObject({
+      requested_mode: "committed",
+      resolved_mode: "committed",
+      source: "cli",
+    });
+    expect(reportText).toContain("## Input Scope");
+    expect(reportText).toContain("committed");
+  });
+
+  it("accepts --all as an alias for --scope all", async () => {
+    const dir = tempProject();
+    initGitRepo(dir);
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "main.ts"), "export function main() { return 1; }\n", "utf-8");
+    execGit(dir, ["add", "src/main.ts"]);
+    execGit(dir, ["commit", "-q", "-m", "init"]);
+    writeFileSync(join(dir, "scratch.ts"), "export const scratch = true;\n", "utf-8");
+
+    const result = await runCli(["detect", dir, "--all"], dir);
+    const detection = JSON.parse(result.logs.join("\n")) as { files: { code: string[] }, scope: Record<string, unknown> };
+
+    expect(result.exitCode).toBe(0);
+    expect(detection.files.code).toContain(join(dir, "src", "main.ts"));
+    expect(detection.files.code).toContain(join(dir, "scratch.ts"));
+    expect(detection.scope).toMatchObject({
+      requested_mode: "all",
+      resolved_mode: "all",
+    });
   });
 
   it("keeps one-shot update artifacts project-relative", async () => {

@@ -77,7 +77,11 @@ For a build or update request:
 1. Detect files:
 
 ```bash
-$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" detect "INPUT_PATH" --out .graphify/.graphify_detect.json
+GRAPHIFY_SCOPE_FLAG="--scope auto"
+if the original invocation included --all, set GRAPHIFY_SCOPE_FLAG="--all"
+if the original invocation included --scope <mode>, set GRAPHIFY_SCOPE_FLAG="--scope <mode>"
+
+$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" detect "INPUT_PATH" $GRAPHIFY_SCOPE_FLAG --out .graphify/.graphify_detect.json
 ```
 
 2. Summarize the corpus cleanly from the detection JSON:
@@ -86,6 +90,12 @@ $(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" dete
 - `files.paper`
 - `files.image`
 - `files.video`
+
+Scope policy:
+- default to `--scope auto` for code and review repos
+- switch to `--scope tracked` when newly staged files must count
+- switch to `--all` only for explicit knowledge-base style crawls
+- if unsure, run `graphify scope inspect <path> --scope auto` first and explain the included/excluded counts
 
 Always prepare the semantic detection file before semantic extraction. If there is no video/audio and no PDF requiring preparation, this simply copies the detection shape forward. It transcribes video/audio when present. For PDFs, it runs local preflight, converts text-layer PDFs locally, and keeps two OCR paths explicit: Gemini vision may interpret the original PDF or extracted image chunks during semantic extraction, while `mistral-ocr` may be used only when OCR is explicitly requested or when a configured `MISTRAL_API_KEY` is available and preflight detects a scanned/low-text PDF. In `auto` mode, if no key/provider is available, leave the source PDF in semantic inputs.
 

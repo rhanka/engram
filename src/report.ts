@@ -96,6 +96,28 @@ function appendReviewSections(lines: string[], review?: ReportReviewOptions | nu
   }
 }
 
+function appendInputScopeSection(lines: string[], detectionResult: DetectionResult): void {
+  const scope = detectionResult.scope;
+  if (!scope) return;
+
+  const included = scope.included_count ?? "n/a";
+  const candidate = scope.candidate_count ?? "recursive";
+  lines.push(
+    "",
+    "## Input Scope",
+    `- Requested: ${scope.requested_mode}`,
+    `- Resolved: ${scope.resolved_mode} (source: ${scope.source})`,
+    `- Included files: ${included} · Candidates: ${candidate}`,
+    `- Excluded: ${scope.excluded_untracked_count} untracked · ${scope.excluded_ignored_count} ignored · ${scope.excluded_sensitive_count} sensitive · ${scope.missing_committed_count} missing committed`,
+  );
+  for (const warning of scope.warnings) {
+    lines.push(`- Warning: ${warning}`);
+  }
+  if (scope.recommendation) {
+    lines.push(`- Recommendation: ${scope.recommendation}`);
+  }
+}
+
 export function generate(
   G: Graph,
   communities: NumericMapLike<string[]>,
@@ -166,6 +188,8 @@ export function generate(
     "",
   );
 
+  appendInputScopeSection(lines, detectionResult);
+
   appendReviewSections(lines, reviewOptions);
 
   lines.push("## God Nodes (most connected - your core abstractions)");
@@ -217,7 +241,7 @@ export function generate(
       "",
       `### Community ${cid} - "${label}"`,
       `Cohesion: ${score}`,
-      `Nodes (${realNodes.length}): ${display.join(", ")}${suffix}`,
+      `Nodes (${realNodes.length}): ${display.join(", ")}${suffix}`.trimEnd(),
     );
   }
 

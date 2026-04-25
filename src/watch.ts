@@ -17,13 +17,18 @@ import {
   DOC_EXTENSIONS,
   PAPER_EXTENSIONS,
   IMAGE_EXTENSIONS,
+  detect,
+  saveManifest,
 } from "./detect.js";
+import { inspectInputScope } from "./input-scope.js";
 import { markLifecycleAnalyzed, markLifecycleStale } from "./lifecycle.js";
 import {
+  makeDetectionPortable,
   makeExtractionPortable,
   projectRootLabel,
   toProjectRelativePath,
 } from "./portable-artifacts.js";
+import type { GraphifyInputScopeMode, InputScopeSource } from "./types.js";
 
 const WATCHED_EXTENSIONS = new Set([
   ...CODE_EXTENSIONS,
@@ -39,20 +44,43 @@ const WATCHED_EXTENSIONS = new Set([
 export async function rebuildCode(
   watchPath: string,
   followSymlinks: boolean = false,
-  options: { clearStale?: boolean } = {},
+  options: {
+    clearStale?: boolean;
+    scope?: GraphifyInputScopeMode;
+    scopeSource?: InputScopeSource;
+  } = {},
 ): Promise<boolean> {
   try {
     const paths = resolveGraphifyPaths({ root: watchPath });
+    const outDir = paths.stateDir;
+    mkdirSync(outDir, { recursive: true });
     // Dynamic imports - these modules are in the same package
-    const { collectFiles, extractWithDiagnostics } = await import("./extract.js");
+    const { extractWithDiagnostics } = await import("./extract.js");
     const { buildFromJson } = await import("./build.js");
     const { cluster, scoreAll } = await import("./cluster.js");
     const { godNodes, surprisingConnections, suggestQuestions } = await import("./analyze.js");
     const { generate } = await import("./report.js");
     const { toJson } = await import("./export.js");
 
-    let codeFiles = await collectFiles(watchPath, { followSymlinks });
-    codeFiles = codeFiles.filter(
+    const root = pathResolve(watchPath);
+    const scopeInventory = inspectInputScope(root, {
+      mode: options.scope ?? "auto",
+      source: options.scopeSource ?? (options.scope ? "cli" : "default-auto"),
+    });
+    const rawDetection = detect(root, {
+      followSymlinks,
+      candidateFiles: scopeInventory.candidateFiles,
+      candidateRoot: scopeInventory.scope.git_root ?? root,
+      scope: scopeInventory.scope,
+    });
+    const portableDetection = makeDetectionPortable(rawDetection, root);
+    writeFileSync(paths.scratch.detect, JSON.stringify(portableDetection, null, 2), "utf-8");
+    if (portableDetection.scope) {
+      writeFileSync(paths.scope, JSON.stringify(portableDetection.scope, null, 2), "utf-8");
+    }
+    saveManifest(rawDetection.files, paths.manifest);
+
+    let codeFiles = (rawDetection.files.code ?? []).filter(
       (f: string) =>
         !f.includes(DEFAULT_GRAPHIFY_STATE_DIR) &&
         !f.includes(LEGACY_GRAPHIFY_STATE_DIR) &&
@@ -77,23 +105,16 @@ export async function rebuildCode(
       return false;
     }
 
-    const root = pathResolve(watchPath);
     const relativeResult = makeExtractionPortable(result, root);
     const relativeCodeFiles = codeFiles.map((file) => toProjectRelativePath(root, file));
 
     const detection = {
+      ...portableDetection,
       files: {
+        ...portableDetection.files,
         code: relativeCodeFiles,
-        document: [] as string[],
-        paper: [] as string[],
-        image: [] as string[],
       },
-      total_files: relativeCodeFiles.length,
-      total_words: 0,
-      needs_graph: true,
-      warning: null,
-      skipped_sensitive: [] as string[],
-      graphifyignore_patterns: 0,
+      total_files: Object.values(portableDetection.files).reduce((sum, files) => sum + files.length, 0),
     };
 
     const G = buildFromJson(relativeResult);
@@ -106,9 +127,6 @@ export async function rebuildCode(
       labels.set(cid, `Community ${cid}`);
     }
     const questions = suggestQuestions(G, communities, labels);
-
-    const outDir = paths.stateDir;
-    mkdirSync(outDir, { recursive: true });
 
     const report = generate(
       G,
@@ -181,6 +199,10 @@ function hasNonCode(changedPaths: string[]): boolean {
 export async function watch(
   watchPath: string,
   debounce: number = 3.0,
+  options: {
+    scope?: GraphifyInputScopeMode;
+    scopeSource?: InputScopeSource;
+  } = {},
 ): Promise<void> {
   let chokidar: typeof import("chokidar");
   try {
@@ -238,7 +260,7 @@ export async function watch(
       if (hasNonCode(batch)) {
         notifyOnly(watchPath);
       } else {
-        await rebuildCode(watchPath);
+        await rebuildCode(watchPath, false, options);
       }
     }
   }, 500);

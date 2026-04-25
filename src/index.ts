@@ -4,6 +4,7 @@
 
 export { type GraphNode, type GraphEdge, type Extraction, type Hyperedge, type DetectionResult, FileType } from "./types.js";
 export type {
+  GraphifyInputScopeMode,
   GraphifyDataprepPolicy,
   GraphifyImageAnalysisBatchPolicy,
   GraphifyImageAnalysisCalibrationPolicy,
@@ -20,6 +21,9 @@ export type {
   GraphifyProjectConfig,
   GraphifyProjectConfigProfile,
   GraphifyProjectInputs,
+  GraphifyResolvedInputScopeMode,
+  InputScopeInspection,
+  InputScopeSource,
   NormalizedDataprepPolicy,
   NormalizedImageAnalysisBatchPolicy,
   NormalizedImageAnalysisCalibrationPolicy,
@@ -50,6 +54,8 @@ export type {
   ProfileBinding,
   RegistryRecord,
 } from "./types.js";
+export { inspectInputScope } from "./input-scope.js";
+export type { InputScopeInventory, InspectInputScopeOptions } from "./input-scope.js";
 export {
   discoverProjectConfig,
   loadProjectConfig,

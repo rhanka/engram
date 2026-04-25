@@ -10,6 +10,29 @@ export enum FileType {
 /** Confidence level for extracted relationships. */
 export type Confidence = "EXTRACTED" | "INFERRED" | "AMBIGUOUS";
 
+export type GraphifyInputScopeMode = "auto" | "committed" | "tracked" | "all";
+
+export type GraphifyResolvedInputScopeMode = Exclude<GraphifyInputScopeMode, "auto">;
+
+export type InputScopeSource = "cli" | "config" | "configured-default" | "default-auto";
+
+export interface InputScopeInspection {
+  requested_mode: GraphifyInputScopeMode;
+  resolved_mode: GraphifyResolvedInputScopeMode;
+  source: InputScopeSource;
+  root: string;
+  git_root?: string;
+  head?: string;
+  candidate_count: number | null;
+  included_count: number | null;
+  excluded_untracked_count: number;
+  excluded_ignored_count: number;
+  excluded_sensitive_count: number;
+  missing_committed_count: number;
+  warnings: string[];
+  recommendation: string | null;
+}
+
 /** A node in the knowledge graph. */
 export interface GraphNode {
   id: string;
@@ -75,6 +98,7 @@ export interface DetectionResult {
   unchanged_files?: Record<string, string[]>;
   new_total?: number;
   deleted_files?: string[];
+  scope?: InputScopeInspection;
 }
 
 /** A god node (most connected entity). */
@@ -142,6 +166,7 @@ export interface GraphifyProjectConfigProfile {
 
 export interface GraphifyProjectInputs {
   corpus?: string[];
+  scope?: GraphifyInputScopeMode;
   registries?: string[];
   generated?: string[];
   exclude?: string[];
@@ -230,6 +255,8 @@ export interface NormalizedProjectProfile {
 
 export interface NormalizedProjectInputs {
   corpus: string[];
+  scope: GraphifyInputScopeMode;
+  scope_source: Extract<InputScopeSource, "config" | "configured-default">;
   registries: string[];
   registrySources: Record<string, string>;
   generated: string[];

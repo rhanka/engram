@@ -13,7 +13,7 @@ import {
   resolveGraphifyPaths,
 } from "./paths.js";
 import { FileType } from "./types.js";
-import type { DetectionResult } from "./types.js";
+import type { DetectionResult, InputScopeInspection } from "./types.js";
 
 export const CODE_EXTENSIONS = new Set([
   ".py", ".ts", ".js", ".jsx", ".tsx", ".go", ".rs", ".java", ".cpp", ".cc", ".cxx",
@@ -284,7 +284,41 @@ function walkDir(
   return result;
 }
 
-export function detect(root: string, options?: { followSymlinks?: boolean }): DetectionResult {
+export interface DetectOptions {
+  followSymlinks?: boolean;
+  candidateFiles?: string[] | null;
+  candidateRoot?: string;
+  scope?: InputScopeInspection;
+}
+
+function resolveCandidateFiles(
+  rootResolved: string,
+  candidateRoot: string,
+  candidateFiles: string[],
+  followSymlinks: boolean,
+): string[] {
+  const resolved: string[] = [];
+  const seen = new Set<string>();
+  for (const file of candidateFiles) {
+    const fullPath = resolve(candidateRoot, file);
+    if (seen.has(fullPath)) continue;
+    seen.add(fullPath);
+    resolved.push(fullPath);
+  }
+  // Ensure .graphify/memory under the requested root remains a possible input even when
+  // the candidate inventory was built against a broader Git root.
+  const memoryDir = resolveGraphifyPaths({ root: rootResolved }).memoryDir;
+  if (existsSync(memoryDir)) {
+    for (const file of walkDir(memoryDir, rootResolved, [], followSymlinks, true)) {
+      if (seen.has(file)) continue;
+      seen.add(file);
+      resolved.push(file);
+    }
+  }
+  return resolved;
+}
+
+export function detect(root: string, options?: DetectOptions): DetectionResult {
   const followSymlinks = options?.followSymlinks ?? false;
   const rootResolved = resolve(root);
   const paths = resolveGraphifyPaths({ root: rootResolved });
@@ -297,14 +331,17 @@ export function detect(root: string, options?: { followSymlinks?: boolean }): De
   };
   let totalWords = 0;
   const skippedSensitive: string[] = [];
+  let excludedIgnoredCount = options?.scope?.excluded_ignored_count ?? 0;
+  let excludedSensitiveCount = 0;
 
-  // Walk main tree
-  const allFiles = walkDir(rootResolved, rootResolved, ignorePatterns, followSymlinks, false);
-
-  // Also walk memory dir if it exists
-  if (existsSync(memoryDir)) {
-    allFiles.push(...walkDir(memoryDir, rootResolved, ignorePatterns, followSymlinks, true));
-  }
+  const allFiles = options?.candidateFiles !== undefined && options.candidateFiles !== null
+    ? resolveCandidateFiles(rootResolved, options.candidateRoot ?? rootResolved, options.candidateFiles, followSymlinks)
+    : [
+      ...walkDir(rootResolved, rootResolved, ignorePatterns, followSymlinks, false),
+      ...(existsSync(memoryDir)
+        ? walkDir(memoryDir, rootResolved, ignorePatterns, followSymlinks, true)
+        : []),
+    ];
 
   const seen = new Set<string>();
 
@@ -317,9 +354,13 @@ export function detect(root: string, options?: { followSymlinks?: boolean }): De
       if (basename(p).startsWith(".")) continue;
       if (p.startsWith(convertedDir)) continue;
     }
-    if (isIgnored(p, rootResolved, ignorePatterns)) continue;
+    if (isIgnored(p, rootResolved, ignorePatterns)) {
+      excludedIgnoredCount += 1;
+      continue;
+    }
     if (isSensitive(p)) {
       skippedSensitive.push(p);
+      excludedSensitiveCount += 1;
       continue;
     }
 
@@ -361,6 +402,16 @@ export function detect(root: string, options?: { followSymlinks?: boolean }): De
     warning,
     skipped_sensitive: skippedSensitive,
     graphifyignore_patterns: ignorePatterns.length,
+    ...(options?.scope
+      ? {
+        scope: {
+          ...options.scope,
+          included_count: totalFiles,
+          excluded_ignored_count: excludedIgnoredCount,
+          excluded_sensitive_count: excludedSensitiveCount,
+        },
+      }
+      : {}),
   };
 }
 
@@ -386,8 +437,18 @@ export function saveManifest(files: Record<string, string[]>, manifestPath: stri
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
 }
 
-export function detectIncremental(root: string, manifestPath: string = defaultManifestPath(root)): DetectionResult {
-  const full = detect(root);
+export function detectIncremental(
+  root: string,
+  manifestPathOrOptions: string | DetectOptions = defaultManifestPath(root),
+  maybeOptions?: DetectOptions,
+): DetectionResult {
+  const manifestPath = typeof manifestPathOrOptions === "string"
+    ? manifestPathOrOptions
+    : defaultManifestPath(root);
+  const options = typeof manifestPathOrOptions === "string"
+    ? maybeOptions
+    : manifestPathOrOptions;
+  const full = detect(root, options);
   const manifest = loadManifest(manifestPath);
 
   if (Object.keys(manifest).length === 0) {

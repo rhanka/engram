@@ -45,6 +45,7 @@ describe("configured ontology dataprep", () => {
     const inputs = buildConfiguredDetectionInputs(config);
 
     expect(inputs.corpusRoots).toEqual([join(root, "raw", "manuals")]);
+    expect(config.inputs.scope).toBe("all");
     expect(inputs.generatedRoots).toEqual([
       join(root, "derived", "ocr"),
       join(root, "derived", "extracted-images"),
@@ -120,6 +121,11 @@ describe("configured ontology dataprep", () => {
     expect(allFiles(result.semanticDetection)).not.toContain(
       join(root, "derived", "full-page-screenshots", "page-001.png"),
     );
+    expect(result.detection.scope).toMatchObject({
+      requested_mode: "all",
+      resolved_mode: "all",
+      source: "configured-default",
+    });
     expect(result.registryExtraction.nodes).toHaveLength(4);
     expect(existsSync(paths.profile.projectConfig)).toBe(true);
     expect(existsSync(paths.profile.ontologyProfile)).toBe(true);

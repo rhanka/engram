@@ -17,6 +17,11 @@ import { saveSemanticCache, checkSemanticCache, type CacheOptions } from "./cach
 import { buildFromJson } from "./build.js";
 import { cluster, scoreAll } from "./cluster.js";
 import { detect, detectIncremental, saveManifest } from "./detect.js";
+import {
+  inspectInputScope,
+  resolveCliInputScopeSelection,
+  resolveConfiguredInputScopeSelection,
+} from "./input-scope.js";
 import { toCypher, toGraphml, toHtml, toJson, toSvg, pushToNeo4j } from "./export.js";
 import { safeToHtml } from "./html-export.js";
 import { extractWithDiagnostics } from "./extract.js";
@@ -79,8 +84,10 @@ import { normalizeSearchText } from "./search.js";
 import type {
   DetectionResult,
   Extraction,
+  GraphifyInputScopeMode,
   GodNodeEntry,
   GraphDiffResult,
+  InputScopeSource,
   SuggestedQuestion,
   SurpriseEntry,
   NormalizedOntologyProfile,
@@ -109,6 +116,17 @@ function writeJson(path: string, value: unknown): void {
   const resolved = resolve(path);
   mkdirSync(dirname(resolved), { recursive: true });
   writeFileSync(resolved, JSON.stringify(value, null, 2), "utf-8");
+}
+
+function scopeOptionDescription(): string {
+  return "Input scope: auto, committed, tracked, all";
+}
+
+function resolveCliScopeSelection(
+  opts: { scope?: string; all?: boolean },
+  fallback: GraphifyInputScopeMode = "auto",
+): { mode: GraphifyInputScopeMode; source: InputScopeSource } {
+  return resolveCliInputScopeSelection(opts, fallback);
 }
 
 function cacheOptionsFromRuntime(opts: { cacheNamespace?: string; profileState?: string }): CacheOptions {
@@ -467,10 +485,23 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .option("--root <path>", "Workspace root", ".")
     .option("--config <path>", "Explicit graphify.yaml path")
     .option("--out-dir <path>", "State output directory relative to root or absolute")
+    .option("--scope <mode>", scopeOptionDescription())
+    .option("--all", "Alias for --scope all")
     .action(async (opts) => {
-      const result = await runConfiguredDataprep(resolve(opts.root), {
+      const root = resolve(opts.root);
+      const configPath = opts.config
+        ? resolve(opts.config)
+        : discoverProjectConfig(root).path;
+      if (!configPath) {
+        throw new Error(`No graphify project config found under ${root}`);
+      }
+      const config = loadProjectConfig(configPath);
+      const scopeSelection = resolveConfiguredInputScopeSelection(config, opts);
+      const result = await runConfiguredDataprep(root, {
         ...(opts.config ? { configPath: resolve(opts.config) } : {}),
         ...(opts.outDir ? { stateDir: opts.outDir } : {}),
+        scope: scopeSelection.mode,
+        scopeSource: scopeSelection.source,
       });
       console.log(
         `Configured dataprep: ${result.semanticDetection.total_files} semantic file(s), ` +
@@ -643,11 +674,20 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .command("detect")
     .argument("<inputPath>")
     .option("--out <path>")
+    .option("--scope <mode>", scopeOptionDescription())
+    .option("--all", "Alias for --scope all")
     .action((inputPath, opts) => {
-      const result = detect(resolve(inputPath));
+      const root = resolve(inputPath);
+      const scopeSelection = resolveCliScopeSelection(opts);
+      const inventory = inspectInputScope(root, scopeSelection);
+      const result = detect(root, {
+        candidateFiles: inventory.candidateFiles,
+        candidateRoot: inventory.scope.git_root ?? root,
+        scope: inventory.scope,
+      });
       if (opts.out) {
         writeJson(opts.out, result);
-        console.log(`Detected ${result.total_files} files in ${resolve(inputPath)}`);
+        console.log(`Detected ${result.total_files} files in ${root}`);
       } else {
         console.log(JSON.stringify(result, null, 2));
       }
@@ -658,14 +698,35 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .argument("<inputPath>")
     .option("--manifest <path>", "Path to manifest.json", defaultManifestPath())
     .option("--out <path>")
+    .option("--scope <mode>", scopeOptionDescription())
+    .option("--all", "Alias for --scope all")
     .action((inputPath, opts) => {
-      const result = detectIncremental(resolve(inputPath), resolve(opts.manifest));
+      const root = resolve(inputPath);
+      const scopeSelection = resolveCliScopeSelection(opts);
+      const inventory = inspectInputScope(root, scopeSelection);
+      const result = detectIncremental(root, resolve(opts.manifest), {
+        candidateFiles: inventory.candidateFiles,
+        candidateRoot: inventory.scope.git_root ?? root,
+        scope: inventory.scope,
+      });
       if (opts.out) {
         writeJson(opts.out, result);
-        console.log(`${result.new_total ?? 0} new/changed file(s) under ${resolve(inputPath)}`);
+        console.log(`${result.new_total ?? 0} new/changed file(s) under ${root}`);
       } else {
         console.log(JSON.stringify(result, null, 2));
       }
+    });
+
+  program
+    .command("scope-inspect")
+    .description("Inspect resolved Graphify input scope")
+    .option("--root <path>", "Workspace root", ".")
+    .option("--scope <mode>", scopeOptionDescription())
+    .option("--all", "Alias for --scope all")
+    .option("--json", "Print JSON output")
+    .action((opts) => {
+      const inventory = inspectInputScope(resolve(opts.root), resolveCliScopeSelection(opts));
+      console.log(JSON.stringify(inventory, null, 2));
     });
 
   program

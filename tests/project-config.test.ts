@@ -73,6 +73,7 @@ describe("project config loader", () => {
         "inputs:",
         "  corpus:",
         "    - ../raw/manuals",
+        "  scope: tracked",
         "  registries:",
         "    - ../references/components.csv",
         "  generated:",
@@ -104,6 +105,7 @@ describe("project config loader", () => {
     expect(loaded.configDir).toBe(configDir);
     expect(loaded.profile.resolvedPath).toBe(join(configDir, "graphify", "ontology-profile.yaml"));
     expect(loaded.inputs.corpus).toEqual([join(root, "raw", "manuals")]);
+    expect(loaded.inputs.scope).toBe("tracked");
     expect(loaded.inputs.registries).toEqual([join(root, "references", "components.csv")]);
     expect(loaded.inputs.registrySources).toMatchObject({
       components: join(root, "references", "components.csv"),
@@ -152,6 +154,7 @@ describe("project config loader", () => {
 
     expect(loaded.profile.resolvedPath).toBe(join(root, "graphify", "profile.json"));
     expect(loaded.inputs.corpus).toEqual([join(root, "raw")]);
+    expect(loaded.inputs.scope).toBe("all");
     expect(loaded.dataprep.pdf_ocr).toBe("auto");
     expect(loaded.outputs.state_dir).toBe(join(root, ".graphify"));
     expect(loaded.outputs.write_html).toBe(true);
@@ -170,6 +173,25 @@ describe("project config loader", () => {
 
     expect(errors).toContain("profile.path is required");
     expect(errors).toContain("inputs.corpus must contain at least one path");
+  });
+
+  it("validates inputs.scope enum", () => {
+    const raw = parseProjectConfig(
+      [
+        "version: 1",
+        "profile:",
+        "  path: graphify/ontology-profile.yaml",
+        "inputs:",
+        "  corpus: [raw]",
+        "  scope: staged",
+        "",
+      ].join("\n"),
+      "graphify.yaml",
+    );
+
+    const errors = validateProjectConfig(raw);
+
+    expect(errors).toContain("inputs.scope must be one of auto, committed, tracked, all");
   });
 
   it("validates advanced dataprep and LLM mode enums", () => {
@@ -206,12 +228,13 @@ describe("project config loader", () => {
       {
         version: 1,
         profile: { path: "graphify/ontology-profile.yaml" },
-        inputs: { corpus: ["raw"], registries: ["references/components.csv"] },
+        inputs: { corpus: ["raw"], scope: "committed", registries: ["references/components.csv"] },
       },
       configPath,
     );
 
     expect(normalized.profile.resolvedPath).toBe(join(root, "graphify", "ontology-profile.yaml"));
+    expect(normalized.inputs.scope).toBe("committed");
     expect(normalized.inputs.registrySources.components).toBe(join(root, "references", "components.csv"));
     expect(existsSync(normalized.outputs.state_dir)).toBe(false);
   });
