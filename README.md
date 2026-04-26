@@ -8,20 +8,20 @@
 
 This repository is the maintained TypeScript port of the original Graphify project. Thanks to the original work by [Safi Shamsi](https://github.com/safishamsi/graphify) for the product direction, workflow, and initial implementation.
 
-Multimodal, with the TypeScript port tracked release-by-release against upstream Python Graphify `v4` and targeted at `v0.4.23` parity. Code, Markdown, MDX, HTML, PDFs, Office docs, screenshots, diagrams, and other images flow through the current TS runtime. PDFs go through a local preflight: text-layer PDFs are converted with `pdf-parse` and a `pdftotext` fallback when available, while scanned/low-text PDFs can be converted to Markdown + images through `mistral-ocr`. Local audio/video detection uses `yt-dlp` + `ffmpeg` + `faster-whisper-ts`, and generated transcripts/PDF sidecars feed the same assistant-driven semantic pass as docs and papers. 20 languages are supported via tree-sitter AST (Python, JS, TS, Go, Rust, Java, C, C++, Ruby, C#, Kotlin, Scala, PHP, Swift, Lua, Zig, PowerShell, Elixir, Objective-C, Julia), with upstream-aligned fallback support for Vue, Svelte, Blade, Dart, Verilog/SystemVerilog, MJS, and EJS.
+Multimodal, with the TypeScript port now closed through the upstream Python Graphify `v4` line and prepared as `graphifyy@0.4.33`, while smaller `v5` repo-oriented workflows are tracked explicitly in this fork instead of being hidden. Code, Markdown, MDX, HTML, PDFs, Office docs, screenshots, diagrams, and other images flow through the current TS runtime. PDFs go through a local preflight: text-layer PDFs are converted with `pdf-parse` and a `pdftotext` fallback when available, while scanned/low-text PDFs can be converted to Markdown + images through `mistral-ocr`. Local audio/video detection uses `yt-dlp` + `ffmpeg` + `faster-whisper-ts`, and generated transcripts/PDF sidecars feed the same assistant-driven semantic pass as docs and papers. 20 languages are supported via tree-sitter AST (Python, JS, TS, Go, Rust, Java, C, C++, Ruby, C#, Kotlin, Scala, PHP, Swift, Lua, Zig, PowerShell, Elixir, Objective-C, Julia), with upstream-aligned fallback support for Vue, Svelte, Blade, Dart, Verilog/SystemVerilog, MJS, and EJS.
 
 ## Branch Model
 
 - `main` is the maintained TypeScript product branch and the default branch for this repository.
 - `v3` is kept as an upstream mirror / alignment branch for the original Python Graphify lineage.
-- Current catch-up work tracks upstream Python Graphify `v4` through `v0.4.23`; parity gaps stay explicit instead of being hidden in the fork.
+- The `v4` parity line is closed in the TypeScript product through `graphifyy@0.4.33`; ongoing upstream work, including the smaller `v5` repo-oriented additions, stays explicit in `UPSTREAM_GAP.md`.
 - npm publication is guarded by GitHub Actions trusted publishing. Release tags are only valid when the tagged commit is already contained in the default branch and the tag version matches `package.json`.
 
 ## Lineage And Alignment
 
 | Source | What this repo keeps or adapts | Alignment contract |
 |---|---|---|
-| Original Graphify by [Safi Shamsi](https://github.com/safishamsi/graphify) | Core product idea: folder -> knowledge graph, assistant skill workflow, graph/report/html outputs, provenance labels, community detection, and multimodal corpus workflow. | `v3` mirrors upstream Python Graphify; `UPSTREAM_GAP.md` tracks `v4` parity through `v0.4.23`. |
+| Original Graphify by [Safi Shamsi](https://github.com/safishamsi/graphify) | Core product idea: folder -> knowledge graph, assistant skill workflow, graph/report/html outputs, provenance labels, community detection, and multimodal corpus workflow. | `v3` mirrors upstream Python Graphify history; `UPSTREAM_GAP.md` tracks the closed `v4` line and the active `v5` catch-up work. |
 | This TypeScript port | npm package, TypeScript runtime at repo root, `.graphify/` state, multi-assistant installers, MCP surfaces, git/worktree lifecycle, and local audio/video transcription through the TS toolchain. | `main` is the maintained default branch; TS-specific behavior is documented as deliberate divergence, not upstream parity. |
 | `code-review-graph` reference | Review-oriented graph projections: first-hop summary, review delta, review analysis, review evaluation, install previews, and advisory commit grouping vocabulary. | Adopted as additive review surfaces over Graphify's graph; Graphify does not become review-only, does not adopt SQLite/embeddings as default, and keeps multimodal support. |
 
@@ -30,6 +30,8 @@ Multimodal, with the TypeScript port tracked release-by-release against upstream
 ```bash
 $graphify .                        # Codex
 /graphify .                        # Claude Code / Gemini CLI / Copilot / Aider / OpenCode / OpenClaw / Droid / Trae / Kiro / Antigravity
+graphify clone https://github.com/<owner>/<repo>
+graphify merge-graphs repo-a/.graphify/graph.json repo-b/.graphify/graph.json --out .graphify/cross-repo-graph.json
 ```
 
 In Codex, `$graphify` is a skill trigger, not a Bash subcommand like `graphify .`. A successful TypeScript-backed Codex run should leave `.graphify/.graphify_runtime.json` with `runtime: "typescript"`.
@@ -250,6 +252,8 @@ curl -fsSL https://raw.githubusercontent.com/rhanka/graphify/main/src/skills/ski
   > ~/.claude/skills/graphify/SKILL.md
 ```
 
+If `CLAUDE_CONFIG_DIR` is set in your environment, substitute that directory for `~/.claude` when placing the global Claude skill.
+
 Add to `~/.claude/CLAUDE.md`:
 
 ```
@@ -266,6 +270,7 @@ In Codex, replace the leading `/` in the examples below with `$`. Gemini CLI, Gi
 ```
 /graphify                          # run on current directory
 /graphify ./raw                    # run on a specific folder
+/graphify https://github.com/<owner>/<repo>   # clone a repo locally, then graph it
 /graphify ./raw --directed         # build directed graph (preserves source->target)
 /graphify ./raw --mode deep        # more aggressive INFERRED edge extraction
 /graphify ./raw --pdf-ocr auto     # preflight PDFs; OCR scanned/low-text PDFs with mistral-ocr when needed
@@ -300,6 +305,9 @@ In Codex, replace the leading `/` in the examples below with `$`. Gemini CLI, Gi
 /graphify ./raw --mcp              # start MCP stdio server
 
 # git hooks - platform-agnostic, mark stale and rebuild code graph on git lifecycle events
+graphify clone https://github.com/<owner>/<repo>
+graphify clone https://github.com/<owner>/<repo> --branch main
+graphify merge-graphs repo-a/.graphify/graph.json repo-b/.graphify/graph.json --out .graphify/cross-repo-graph.json
 graphify hook install
 graphify hook uninstall
 graphify hook status
@@ -373,7 +381,7 @@ Works with any mix of file types:
 
 | Type | Extensions | Extraction |
 |------|-----------|------------|
-| Code | `.py .ts .js .jsx .tsx .mjs .vue .svelte .ejs .go .rs .java .c .cpp .rb .cs .kt .scala .php .blade.php .swift .lua .zig .ps1 .ex .exs .m .mm .jl .dart .v .sv` | AST via tree-sitter when available, plus fallback extraction for upstream v4 surface languages, call-graph, and docstring/comment rationale |
+| Code | `.py .ts .js .jsx .tsx .mjs .vue .svelte .ejs .go .rs .java .c .cpp .rb .cs .kt .scala .php .blade.php .swift .lua .zig .ps1 .ex .exs .m .mm .jl .dart .v .sv` | AST via tree-sitter when available, plus fallback extraction for upstream Python surface languages, call-graph, and docstring/comment rationale |
 | Docs | `.md .mdx .txt .rst .html` | Concepts + relationships + design rationale via the platform model |
 | Office | `.docx .xlsx` | Converted to markdown then extracted via the platform model |
 | Papers | `.pdf` | Local PDF preflight; text-layer PDFs become Markdown via `pdf-parse`/`pdftotext`; scanned/low-text PDFs can use `mistral-ocr` for Markdown + images before semantic extraction |

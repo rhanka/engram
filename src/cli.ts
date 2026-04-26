@@ -261,6 +261,20 @@ function platformNamesForError(): string {
   return [...Object.keys(PLATFORM_CONFIG), ...Object.keys(PLATFORM_ALIASES)].join(", ");
 }
 
+function resolveGlobalSkillDestination(platformName: string): string {
+  const canonical = canonicalPlatformName(platformName);
+  const cfg = PLATFORM_CONFIG[canonical];
+  if (!cfg) {
+    console.error(`error: unknown platform '${platformName}'. Choose from: ${platformNamesForError()}`);
+    process.exit(1);
+  }
+  const claudeConfigDir = process.env.CLAUDE_CONFIG_DIR;
+  if ((canonical === "claude" || canonical === "windows") && claudeConfigDir) {
+    return resolve(claudeConfigDir, "skills", "graphify", "SKILL.md");
+  }
+  return join(homedir(), cfg.skill_dst);
+}
+
 const SETTINGS_HOOK = {
   matcher: "Glob|Grep",
   hooks: [
@@ -449,7 +463,7 @@ export function globalSkillInstallPreview(platformName: string): InstallMutation
   const cfg = PLATFORM_CONFIG[platformName];
   const preview = emptyPreview(platformName, "install");
   if (!cfg) return preview;
-  const skillDst = join(homedir(), cfg.skill_dst);
+  const skillDst = resolveGlobalSkillDestination(platformName);
   preview.writes.push(skillDst, join(dirname(skillDst), ".graphify_version"));
   if (cfg.claude_md) {
     preview.writes.push(join(homedir(), ".claude", "CLAUDE.md"));
@@ -1047,7 +1061,7 @@ function writeGlobalSkill(platformName: string): string {
     process.exit(1);
   }
 
-  const skillDst = join(homedir(), cfg.skill_dst);
+  const skillDst = resolveGlobalSkillDestination(platformName);
   mkdirSync(dirname(skillDst), { recursive: true });
   writeFileSync(skillDst, loadSkillContent(platformName), "utf-8");
   writeFileSync(join(dirname(skillDst), ".graphify_version"), VERSION, "utf-8");
@@ -1410,7 +1424,7 @@ export async function main(): Promise<void> {
   for (const platformName of getPlatformsToCheck(process.argv.slice(2))) {
     const cfg = PLATFORM_CONFIG[platformName];
     if (!cfg) continue;
-    checkSkillVersion(join(homedir(), cfg.skill_dst));
+    checkSkillVersion(resolveGlobalSkillDestination(platformName));
   }
 
   const program = new Command();
@@ -1654,6 +1668,42 @@ export async function main(): Promise<void> {
         `Ontology outputs: ${result.nodeCount} node(s), ${result.relationCount} relation(s), ` +
         `${result.wikiPageCount} wiki page(s)`,
       );
+    });
+
+  program
+    .command("clone <url>")
+    .description("Clone a repository locally and print its resolved path")
+    .option("--branch <branch>", "Checkout a specific branch")
+    .option("--out <dir>", "Clone into a custom directory")
+    .action(async (url, opts) => {
+      try {
+        const { cloneRepo } = await import("./repo-clone.js");
+        const result = cloneRepo({
+          url,
+          ...(opts.branch ? { branch: opts.branch } : {}),
+          ...(opts.out ? { outDir: opts.out } : {}),
+        });
+        console.log(result.path);
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    });
+
+  program
+    .command("merge-graphs <graphs...>")
+    .description("Merge two or more graph.json files into one cross-repo graph")
+    .option("--out <path>", "Merged graph output path", ".graphify/merged-graph.json")
+    .action(async (graphs: string[], opts) => {
+      try {
+        const { mergeGraphsFromFiles } = await import("./merge-graphs.js");
+        const result = mergeGraphsFromFiles({ inputs: graphs, out: opts.out });
+        console.log(`Merged ${result.graphCount} graphs -> ${result.nodeCount} nodes, ${result.edgeCount} edges`);
+        console.log(`Written to: ${result.out}`);
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
     });
 
   program

@@ -46,6 +46,26 @@ describe("install mutation previews", () => {
     expect(preview.writes.some((path) => path.endsWith(".agents/skills/graphify/.graphify_version"))).toBe(true);
   });
 
+  it("uses CLAUDE_CONFIG_DIR for the Claude global skill destination when set", () => {
+    const previous = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = "/tmp/claude-config";
+    try {
+      const preview = globalSkillInstallPreview("claude");
+      expect(preview.writes).toEqual(
+        expect.arrayContaining([
+          resolve("/tmp/claude-config/skills/graphify/SKILL.md"),
+          resolve("/tmp/claude-config/skills/graphify/.graphify_version"),
+        ]),
+      );
+    } finally {
+      if (previous === undefined) {
+        delete process.env.CLAUDE_CONFIG_DIR;
+      } else {
+        process.env.CLAUDE_CONFIG_DIR = previous;
+      }
+    }
+  });
+
   it("lists upstream v4 platform project files", () => {
     expect(platformInstallPreview("/repo", "antigravity").writes).toEqual([
       resolve("/repo/.agent/rules/graphify.md"),

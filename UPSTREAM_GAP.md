@@ -5,22 +5,22 @@ This document tracks the delta between this TypeScript port and upstream Python 
 ## Scope
 
 - Current TypeScript product branch: `main`
-- Current TypeScript baseline: `660e3836a165f815e3f31c925784ff4db97e7762`
-- Current TypeScript npm release: `graphifyy@0.4.25`
+- Current TypeScript baseline: `703b0aed69e3cbc3c0b5acddfeee23f7a931b8fc`
+- Current TypeScript npm release: `graphifyy@0.4.33`
 - Durable traceability spec: `spec/SPEC_UPSTREAM_TRACEABILITY.md`
 - Closed upstream `v3` baseline: `upstream/v3` at `699e996`
 - Closed Python parity target: remote tag `v0.4.23` at `8d908c5d43d079579604a82873fd7cff33a1b343`
-- Active Python drift target: `upstream/v4` at `5843ffc277c54766854f9201286c9647da095390`
-- Deferred major-version source lock: `upstream/v5` at `770d7f54c40d7301a0166a6b7782cb03827897e5`
+- Closed Python drift target: `upstream/v4` at `5843ffc277c54766854f9201286c9647da095390`
+- Active major-version source lock: `upstream/v5` at `770d7f54c40d7301a0166a6b7782cb03827897e5`
 - Active CRG review reference: `tirth8205/code-review-graph` tag `v2.3.2` at `db2d2df789c25a101e33477b898c1840fb4c7bc7`
-- Current implementation branch for traceability work: `chore/upstream-v4-0.4.32-catchup`
+- Current implementation branch for traceability work: `chore/upstream-v5-0.5.0-catchup`
 
 ## Source Lock Notes
 
 - `git ls-remote` is the authority for Safi Python tags while local tag clobber risk exists.
 - Local `refs/tags/v0.4.23` is not trusted for parity claims because it differs from the remote tag observed by `git ls-remote`.
-- Python `upstream/v4` was fetched on 2026-04-25 and now points to `5843ffc277c54766854f9201286c9647da095390`.
-- Python `upstream/v5` now exists and is locked separately as deferred major-version work.
+- Python `upstream/v4` was fetched on 2026-04-25 and remains locked as a closed parity line at `5843ffc277c54766854f9201286c9647da095390`.
+- Python `upstream/v5` was fetched on 2026-04-25 and is the active upstream source lock for this branch at `770d7f54c40d7301a0166a6b7782cb03827897e5`.
 - Local `v0.4.28`..`v0.4.32` tags are not trusted for parity claims while tag clobber risk exists; use branch commits and `git ls-remote` instead.
 - CRG `v2.3.2` remains the stable review-feature source. CRG `main` has advanced and is intentionally deferred until a new spec updates the source lock.
 
@@ -102,9 +102,9 @@ The TypeScript port has already shipped the original direct `0.4.23` parity targ
 | `v0.4.23` / `42599a7`, `8d908c5`, `baa4474` | refresh all version stamps, `.html` documents, safe large-graph HTML export, Go import node ID collision, pipx docs | `covered` | Lot 1, Lot 2, Lot 3, Lot 8 | `.html` document detection is covered by Lot 1. Go import prefixing is covered by Lot 2. Safe HTML export is covered by Lot 3. npm/global install docs are covered by Lot 7. Package and MCP server version stamps now read `0.4.23` from `package.json`. |
 | post-`v0.4.23` / `04790e2`, `dc1158b`, `7a0a5ac` | README download badge changes only | `n/a` | Lot 8 | Not part of TypeScript runtime parity; optionally ignore or adapt docs without copying Python download badges. |
 
-## Active Python v4 Drift After TypeScript `0.4.25`
+## Closed Python v4 Drift After TypeScript `0.4.33`
 
-This table starts from the remote Python `v0.4.23` source lock and tracks current `upstream/v4` through commit `5843ffc`.
+This table is retained as closed history. The TypeScript product line has already absorbed the runtime-relevant `upstream/v4` drift through commit `5843ffc`.
 
 | Upstream ref | Upstream scope | TS status | Plan lot | Catch-up action |
 | --- | --- | --- | --- | --- |
@@ -114,11 +114,21 @@ This table starts from the remote Python `v0.4.23` source lock and tracks curren
 | `v0.4.26` / `f8fd8f8` | wiki encoding and slug collision fixes; hook rebase guard; detect path resolution; README `.gitignore` docs | `covered` | F2 drift audit | Hook guard now has regression coverage in `tests/hooks.test.ts`; wiki collision coverage already exists in `tests/wiki.test.ts`; detect resolves root up front; README and `.gitignore` are updated in this branch. |
 | post-`v0.4.27` / `86d6d93`, `52ad45b`, `4bc2052`, `e4bdcc2`, `64f38ac`, `e915a87`, `b326aa8`, `5843ffc` | OpenCode config relocation, `check-update`, Java inheritance, Windows Python docs, canvas/docs polish, aggregated HTML viz, local benchmark-script ignores | `covered` / `n/a` | F2 drift audit | `.opencode/opencode.json`, `check-update`, Java inheritance, aggregated HTML member counts, canvas-relative exports, and benchmark-script ignores are covered by runtime/tests. Remaining Windows Python packaging/docs polish is `n/a` for the TypeScript runtime. |
 | `v0.4.27` / `d9b2928` | deterministic large-graph `GRAPH_REPORT`, stable edge node IDs, corrected common-root inference | `covered` | F2 drift audit | Covered by project-relative file-node remap plus stable relative-import targets in `tests/language-surface.test.ts`, and deterministic large-graph analysis coverage in `tests/analyze.test.ts`. |
-| `v0.5.0` / `upstream/v5` | major-version line and enterprise-oriented design work | `deferred` | separate major-version spec | Track separately from the current v4 catch-up branch. |
+## Active Python v5 Catch-up
+
+This table tracks the repo-oriented upstream `v5` line at `770d7f5`. The TypeScript fork keeps its own runtime and `.graphify/` state model while adopting the user-facing workflow changes that map cleanly.
+
+| Upstream ref | Upstream scope | TS status | Plan lot | Catch-up action |
+| --- | --- | --- | --- | --- |
+| `2c49da2` | repo clone command and GitHub URL workflow | `covered` | V5 lot 1 | Covered by `src/repo-clone.ts`, `src/cli.ts`, `src/index.ts`, and `tests/repo-clone.test.ts`. |
+| `2faeed9` | `merge-graphs`, `CLAUDE_CONFIG_DIR` skill install destination, legacy `graphify-out` skip during detection | `covered` | V5 lot 1 | `merge-graphs` is covered by `src/merge-graphs.ts`, CLI wiring, and `tests/cli-runtime.test.ts`; `CLAUDE_CONFIG_DIR` install preview/write path is covered by `tests/install-preview.test.ts`; legacy `graphify-out` skipping was already covered in `src/detect.ts`. |
+| `df9b7ec` | `build_merge`, pre-write shrink guard, label dedup, chunk-suffix prompt hardening | `covered` / `intentional-delta` | V5 lot 2 | `buildMerge`, conservative label dedup, and JSON shrink guard are covered by `tests/build-merge.test.ts` and `tests/export-json.test.ts`. Dedup is intentionally conservative in TS to avoid collapsing same-label entities across distinct files. Skill prompts now forbid chunk-suffix node IDs. |
+| `8bed332` | upstream version bump to `0.5.0` | `n/a` | release lot | Do not mirror Python version bumps mechanically; TypeScript versioning remains release-driven. |
+| `770d7f5` | README badge refresh | `n/a` | docs lot | Python download badges do not map to npm-first TypeScript distribution. |
 
 ## Release Gate
 
-Before claiming catch-up through Python `upstream/v4` at `5843ffc` or publishing a TypeScript parity release:
+Before claiming catch-up through Python `upstream/v5` at `770d7f5` or publishing the next TypeScript release from this branch:
 
 - all active Python drift rows must be `covered`, `n/a`, `deferred`, `rejected`, or `intentional-delta`
 - no row may remain `missing`, `partial`, `needs-audit`, or `needs-review`

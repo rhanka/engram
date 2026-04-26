@@ -8,20 +8,20 @@
 
 このリポジトリは元の Graphify プロジェクトの保守中 TypeScript ポートです。製品の方向性、ワークフロー、初期実装は [Safi Shamsi](https://github.com/safishamsi/graphify) による原典プロジェクトに依拠しています。
 
-graphify はマルチモーダルであり、この TypeScript ポートは upstream Python Graphify `v4` に対してリリース単位でキャッチアップしており、現在の目標は `v0.4.23` parity です。現在の TS ランタイムはコード、Markdown、MDX、HTML、PDF、Office 文書、スクリーンショット、図表、その他の画像を処理できます。PDF はまずローカル preflight を通り、テキスト層が読める場合は `pdf-parse` で Markdown 化し、利用可能なら `pdftotext` にフォールバックします。スキャン/低テキスト PDF は `mistral-ocr` で Markdown + 画像に変換できます。ローカル音声/動画検出は `yt-dlp` + `ffmpeg` + `faster-whisper-ts` を使い、生成された transcript と PDF sidecar も同じ意味抽出パスに流し込まれます。tree-sitter AST により 20 言語をサポートし（Python、JS、TS、Go、Rust、Java、C、C++、Ruby、C#、Kotlin、Scala、PHP、Swift、Lua、Zig、PowerShell、Elixir、Objective-C、Julia）、Vue、Svelte、Blade、Dart、Verilog/SystemVerilog、MJS、EJS には upstream v4 に合わせた fallback 対応があります。
+graphify はマルチモーダルであり、この TypeScript ポートは upstream Python Graphify `v4` 系を `graphifyy@0.4.33` まで閉じたうえで、小さめの `v5` リポジトリ指向ワークフローも差分を明示しながら追随しています。現在の TS ランタイムはコード、Markdown、MDX、HTML、PDF、Office 文書、スクリーンショット、図表、その他の画像を処理できます。PDF はまずローカル preflight を通り、テキスト層が読める場合は `pdf-parse` で Markdown 化し、利用可能なら `pdftotext` にフォールバックします。スキャン/低テキスト PDF は `mistral-ocr` で Markdown + 画像に変換できます。ローカル音声/動画検出は `yt-dlp` + `ffmpeg` + `faster-whisper-ts` を使い、生成された transcript と PDF sidecar も同じ意味抽出パスに流し込まれます。tree-sitter AST により 20 言語をサポートし（Python、JS、TS、Go、Rust、Java、C、C++、Ruby、C#、Kotlin、Scala、PHP、Swift、Lua、Zig、PowerShell、Elixir、Objective-C、Julia）、Vue、Svelte、Blade、Dart、Verilog/SystemVerilog、MJS、EJS には upstream に合わせた fallback 対応があります。
 
 ## ブランチモデル
 
 - `main` は現在のデフォルトで、保守対象の TypeScript 製品ブランチです。
 - `v3` は元の Python Graphify 系譜を追跡する upstream mirror / alignment ブランチです。
-- 現在のキャッチアップ作業は upstream Python Graphify `v4` の `v0.4.23` までを対象とし、差分は `UPSTREAM_GAP.md` に明示します。
+- TypeScript 製品としての `v4` parity は `graphifyy@0.4.33` で閉じており、以後の upstream 作業や `v5` 差分は `UPSTREAM_GAP.md` に明示します。
 - npm 公開は GitHub Actions trusted publishing で保護されます。release tag は、タグ対象コミットが既にデフォルトブランチに含まれ、タグのバージョンが `package.json` と一致する場合のみ有効です。
 
 ## 系譜とアラインメント
 
 | 出典 | このリポジトリで維持または適応するもの | アラインメント契約 |
 |---|---|---|
-| [Safi Shamsi](https://github.com/safishamsi/graphify) による元の Graphify | 中核となる製品アイデア：フォルダ -> ナレッジグラフ、assistant-skill ワークフロー、graph/report/html 出力、provenance ラベル、コミュニティ検出、マルチモーダルなコーパス運用。 | `v3` は upstream Python Graphify をミラーし、`UPSTREAM_GAP.md` が `v0.4.23` までの v4 parity を追跡します。 |
+| [Safi Shamsi](https://github.com/safishamsi/graphify) による元の Graphify | 中核となる製品アイデア：フォルダ -> ナレッジグラフ、assistant-skill ワークフロー、graph/report/html 出力、provenance ラベル、コミュニティ検出、マルチモーダルなコーパス運用。 | `v3` は upstream Python Graphify の履歴ミラーであり、`UPSTREAM_GAP.md` が閉じた `v4` 系と進行中の `v5` キャッチアップを追跡します。 |
 | この TypeScript ポート | npm パッケージ、リポジトリルートの TypeScript runtime、`.graphify/` state、複数アシスタント向け installer、MCP surface、git/worktree lifecycle、TS ツールチェーンによるローカル音声/動画文字起こし。 | `main` が保守対象のデフォルトブランチです。TS 固有の挙動は upstream parity ではなく、意図的な分岐として文書化します。 |
 | `code-review-graph` 参照プロジェクト | review 向けのグラフ投影：first-hop summary、review delta、review analysis、review evaluation、install preview、advisory commit grouping の語彙。 | Graphify のグラフ上に追加される review surface として採用します。Graphify は review-only にはならず、SQLite/embeddings をデフォルト採用せず、マルチモーダル対応を維持します。 |
 
@@ -305,7 +305,7 @@ graphify profile report \
 
 | タイプ | 拡張子 | 抽出方法 |
 |------|-----------|------------|
-| コード | `.py .ts .js .jsx .tsx .mjs .vue .svelte .ejs .go .rs .java .c .cpp .rb .cs .kt .scala .php .blade.php .swift .lua .zig .ps1 .ex .exs .m .mm .jl .dart .v .sv` | tree-sitter AST（利用可能な場合）+ upstream v4 surface language fallback + コールグラフ + docstring / コメントの根拠 |
+| コード | `.py .ts .js .jsx .tsx .mjs .vue .svelte .ejs .go .rs .java .c .cpp .rb .cs .kt .scala .php .blade.php .swift .lua .zig .ps1 .ex .exs .m .mm .jl .dart .v .sv` | tree-sitter AST（利用可能な場合）+ upstream Python surface language fallback + コールグラフ + docstring / コメントの根拠 |
 | ドキュメント | `.md .mdx .txt .rst .html` | 現在のプラットフォームモデルによる概念 + 関係性 + 設計根拠 |
 | Office | `.docx .xlsx` | Markdown に変換した後、現在のプラットフォームモデルで抽出 |
 | 論文 | `.pdf` | ローカル PDF preflight。テキスト層 PDF は `pdf-parse`/`pdftotext` で Markdown 化し、スキャン/低テキスト PDF は `mistral-ocr` で Markdown + 画像にしてから意味抽出 |

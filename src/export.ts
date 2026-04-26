@@ -1,7 +1,7 @@
 /**
  * Export graph to HTML, JSON, SVG, GraphML, Obsidian Canvas, and Neo4j Cypher.
  */
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import Graph from "graphology";
 import { sanitizeLabel, escapeHtml } from "./security.js";
 import { isDirectedGraph } from "./graph.js";
@@ -37,7 +37,7 @@ const CONFIDENCE_SCORE_DEFAULTS: Record<string, number> = {
 type CommunityLabelsInput = NumericMapLike<string>;
 type CommunityLabelOptions = { communityLabels?: CommunityLabelsInput };
 type HtmlOptions = CommunityLabelOptions & { memberCounts?: NumericMapLike<number> };
-type JsonOptions = CommunityLabelOptions;
+type JsonOptions = CommunityLabelOptions & { force?: boolean };
 type SvgOptions = CommunityLabelOptions & { figsize?: [number, number] };
 type CanvasOptions = CommunityLabelOptions & { nodeFilenames?: StringMapLike<string> };
 type Neo4jPushOptions = {
@@ -65,7 +65,8 @@ function isCommunityLabelOptions(
 ): value is CommunityLabelOptions {
   return !(value instanceof Map) && (
     Object.prototype.hasOwnProperty.call(value, "communityLabels") ||
-    Object.prototype.hasOwnProperty.call(value, "memberCounts")
+    Object.prototype.hasOwnProperty.call(value, "memberCounts") ||
+    Object.prototype.hasOwnProperty.call(value, "force")
   );
 }
 
@@ -117,6 +118,12 @@ export function toJson(
 ): void {
   const nodeComm = nodeCommunityMap(communities);
   const communityLabels = normalizeCommunityLabels(communityLabelsOrOptions);
+  const forceWrite = Boolean(
+    communityLabelsOrOptions &&
+    !(communityLabelsOrOptions instanceof Map) &&
+    Object.prototype.hasOwnProperty.call(communityLabelsOrOptions, "force") &&
+    (communityLabelsOrOptions as { force?: boolean }).force,
+  );
 
   const nodes: Record<string, unknown>[] = [];
   G.forEachNode((nodeId, attrs) => {
@@ -165,6 +172,22 @@ export function toJson(
     links,
     hyperedges,
   };
+
+  if (!forceWrite) {
+    try {
+      const existing = JSON.parse(readFileSync(outputPath, "utf-8")) as { nodes?: unknown[] };
+      const existingNodeCount = existing.nodes?.length ?? 0;
+      if (existingNodeCount > nodes.length) {
+        console.warn(
+          `[graphify] WARNING: new graph has ${nodes.length} nodes but existing graph.json has ` +
+          `${existingNodeCount}. Refusing to overwrite; pass force=true to override.`,
+        );
+        return;
+      }
+    } catch {
+      // No previous graph or unreadable payload - continue with the write.
+    }
+  }
 
   writeFileSync(outputPath, JSON.stringify(output, null, 2), "utf-8");
 }

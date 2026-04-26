@@ -92,6 +92,10 @@ describe("public API compatibility", () => {
     expect(typeof api.writeImageRoutingCalibrationSamples).toBe("function");
     expect(typeof api.imageRoutingSampleFromCaption).toBe("function");
     expect(typeof api.compileOntologyOutputs).toBe("function");
+    expect(typeof api.cloneRepo).toBe("function");
+    expect(typeof api.defaultCloneDestination).toBe("function");
+    expect(typeof api.mergeGraphsFromFiles).toBe("function");
+    expect(typeof api.serializeGraph).toBe("function");
   });
 
   it("accepts object-style map inputs and option objects", () => {
