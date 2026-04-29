@@ -109,26 +109,33 @@ describe("transcribe helpers", () => {
     ])).toContain("neural networks");
   });
 
-  it("returns a cached downloaded audio file without calling yt-dlp", () => {
+  it("returns a cached downloaded audio file without calling yt-dlp", async () => {
     const url = "https://www.youtube.com/watch?v=abc";
     const hash = createHash("sha1").update(url).digest("hex").slice(0, 12);
     const cached = join(tmpDir, "yt_" + hash + ".m4a");
     writeFileSync(cached, "cached");
 
-    const result = downloadAudio(url, tmpDir);
+    const result = await downloadAudio(url, tmpDir);
 
     expect(result).toBe(cached);
     expect(spawnSyncMock).not.toHaveBeenCalled();
   });
 
-  it("downloads audio with yt-dlp and returns the downloaded path", () => {
+  it("downloads audio with yt-dlp and returns the downloaded path", async () => {
     const url = "https://www.youtube.com/watch?v=abc";
     const hash = createHash("sha1").update(url).digest("hex").slice(0, 12);
     mockYtDlpDownload();
 
-    const result = downloadAudio(url, tmpDir);
+    const result = await downloadAudio(url, tmpDir);
 
     expect(result).toBe(join(tmpDir, "yt_" + hash + ".m4a"));
+  });
+
+  it("validates URL targets before invoking yt-dlp", async () => {
+    await expect(downloadAudio("http://127.0.0.1/private", tmpDir)).rejects.toThrow(
+      "Blocked private/internal IP",
+    );
+    expect(spawnSyncMock).not.toHaveBeenCalled();
   });
 
   it("returns a cached transcript without rerunning local transcription", async () => {

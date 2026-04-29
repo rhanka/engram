@@ -28,7 +28,7 @@ describe("Claude integration contract", () => {
               hooks: [{ type: "command", command: "echo stale graphify hook" }],
             },
             {
-              matcher: "Glob|Grep",
+              matcher: "Bash",
               hooks: [{ type: "command", command: "echo unrelated hook" }],
             },
           ],
@@ -40,14 +40,17 @@ describe("Claude integration contract", () => {
     installClaudeHook(dir);
 
     const settings = JSON.parse(readFileSync(join(dir, ".claude", "settings.json"), "utf-8")) as {
-      hooks?: { PreToolUse?: Array<{ hooks?: Array<{ command?: string }> }> };
+      hooks?: { PreToolUse?: Array<{ matcher?: string; hooks?: Array<{ command?: string }> }> };
     };
     const commands = (settings.hooks?.PreToolUse ?? []).flatMap((entry) =>
       (entry.hooks ?? []).map((hook) => hook.command ?? "")
     );
+    const matchers = (settings.hooks?.PreToolUse ?? []).map((entry) => entry.matcher ?? "");
 
     expect(commands.filter((command) => command.includes("graphify"))).toHaveLength(1);
     expect(commands.some((command) => command.includes("stale graphify hook"))).toBe(false);
     expect(commands.some((command) => command.includes("unrelated hook"))).toBe(true);
+    expect(matchers).toContain("Bash");
+    expect(matchers).not.toContain("Glob|Grep");
   });
 });

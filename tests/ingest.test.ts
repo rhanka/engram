@@ -27,7 +27,7 @@ describe("ingest", () => {
     cleanupDirs.push(dir);
     const expected = join(dir, "yt_audio.m4a");
 
-    downloadAudioMock.mockImplementation((url, outputDir) => {
+    downloadAudioMock.mockImplementation(async (url, outputDir) => {
       expect(url).toBe("https://www.youtube.com/watch?v=abc");
       expect(outputDir).toBe(dir);
       writeFileSync(expected, "audio");

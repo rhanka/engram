@@ -275,8 +275,16 @@ function resolveGlobalSkillDestination(platformName: string): string {
   return join(homedir(), cfg.skill_dst);
 }
 
+function isGraphifyClaudeHook(hook: Record<string, unknown>): boolean {
+  const matcher = typeof hook.matcher === "string" ? hook.matcher : "";
+  if (matcher !== "Glob|Grep" && matcher !== "Bash") {
+    return false;
+  }
+  return JSON.stringify(hook).includes("graphify");
+}
+
 const SETTINGS_HOOK = {
-  matcher: "Glob|Grep",
+  matcher: "Bash",
   hooks: [
     {
       type: "command",
@@ -410,7 +418,7 @@ export function platformInstallPreview(projectDir: string = ".", platformName: s
   const preview = emptyPreview(platformName, "install");
   if (platformName === "claude" || platformName === "windows") {
     preview.writes.push(previewPath(projectDir, "CLAUDE.md"), previewPath(projectDir, ".claude/settings.json"));
-    preview.hooks.push(".claude/settings.json: PreToolUse Glob|Grep graphify reminder");
+    preview.hooks.push(".claude/settings.json: PreToolUse Bash graphify reminder");
     return preview;
   }
   if (platformName === "gemini") {
@@ -1119,9 +1127,7 @@ export function installClaudeHook(projectDir: string): void {
 
   const hooks = (settings.hooks ?? {}) as Record<string, unknown>;
   const preTool = (hooks.PreToolUse ?? []) as Array<Record<string, unknown>>;
-  const filtered = preTool.filter(
-    (h) => !(h.matcher === "Glob|Grep" && JSON.stringify(h).includes("graphify")),
-  );
+  const filtered = preTool.filter((h) => !isGraphifyClaudeHook(h));
 
   filtered.push(SETTINGS_HOOK);
   hooks.PreToolUse = filtered;
@@ -1139,9 +1145,7 @@ function uninstallClaudeHook(projectDir: string): void {
   } catch { return; }
   const hooks = (settings.hooks ?? {}) as Record<string, unknown>;
   const preTool = (hooks.PreToolUse ?? []) as Array<Record<string, unknown>>;
-  const filtered = preTool.filter(
-    (h) => !(h.matcher === "Glob|Grep" && JSON.stringify(h).includes("graphify")),
-  );
+  const filtered = preTool.filter((h) => !isGraphifyClaudeHook(h));
   if (filtered.length === preTool.length) return;
   (hooks as Record<string, unknown>).PreToolUse = filtered;
   settings.hooks = hooks;

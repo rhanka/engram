@@ -81,6 +81,35 @@ describe("cache", () => {
     expect(loadCached(f, tmpDir, { profileHash: "profile-b-hash" })).toBeNull();
   });
 
+  it("keeps AST and semantic cache entries isolated for the same file", () => {
+    const f = join(tmpDir, "doc.md");
+    writeFileSync(f, "# Synthetic manual\n");
+
+    saveCached(f, { nodes: [{ id: "ast" }], edges: [] }, tmpDir);
+    saveSemanticCache(
+      [{ id: "semantic", label: "Semantic", source_file: f }],
+      [],
+      [],
+      tmpDir,
+    );
+
+    expect(loadCached(f, tmpDir)).toEqual({ nodes: [{ id: "ast" }], edges: [] });
+    const [semanticNodes, , , uncached] = checkSemanticCache([f], tmpDir);
+    expect(semanticNodes).toEqual([{ id: "semantic", label: "Semantic", source_file: f }]);
+    expect(uncached).toEqual([]);
+  });
+
+  it("falls back to legacy flat AST cache entries after the namespace split", () => {
+    const f = join(tmpDir, "legacy.ts");
+    writeFileSync(f, "export const legacy = true;\n");
+    const legacyHash = fileHash(f);
+    const legacyCachePath = join(tmpDir, ".graphify", "cache", `${legacyHash}.json`);
+    mkdirSync(join(tmpDir, ".graphify", "cache"), { recursive: true });
+    writeFileSync(legacyCachePath, JSON.stringify({ nodes: [{ id: "legacy" }], edges: [] }), "utf-8");
+
+    expect(loadCached(f, tmpDir)).toEqual({ nodes: [{ id: "legacy" }], edges: [] });
+  });
+
   it("does not satisfy profile semantic cache from generic cache hits", () => {
     const f = join(tmpDir, "doc.md");
     writeFileSync(f, "# Synthetic manual\n");

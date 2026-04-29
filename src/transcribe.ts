@@ -15,6 +15,7 @@ import { basename, extname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { defaultTranscriptsDir } from "./paths.js";
+import { validateUrl } from "./security.js";
 import type { DetectionResult } from "./types.js";
 
 const URL_PREFIXES = ["http://", "https://", "www."];
@@ -321,7 +322,7 @@ export function isUrl(pathLike: string): boolean {
   return URL_PREFIXES.some((prefix) => pathLike.startsWith(prefix));
 }
 
-export function downloadAudio(url: string, outputDir: string): string {
+export async function downloadAudio(url: string, outputDir: string): Promise<string> {
   mkdirSync(outputDir, { recursive: true });
 
   const urlHash = createHash("sha1").update(url).digest("hex").slice(0, 12);
@@ -332,6 +333,8 @@ export function downloadAudio(url: string, outputDir: string): string {
       return candidate;
     }
   }
+
+  await validateUrl(url);
 
   const outTemplate = join(outputDir, "yt_" + urlHash + ".%(ext)s");
   try {
@@ -388,7 +391,7 @@ export async function transcribe(
   mkdirSync(outDir, { recursive: true });
 
   const audioPath = isUrl(videoPath)
-    ? downloadAudio(videoPath, join(outDir, "downloads"))
+    ? await downloadAudio(videoPath, join(outDir, "downloads"))
     : resolve(videoPath);
   const transcriptPath = join(outDir, basename(audioPath, extname(audioPath)) + ".txt");
 

@@ -1,8 +1,12 @@
-import { describe, it, expect } from "vitest";
-import { validateUrlSync, sanitizeLabel, validateGraphPath } from "../src/security.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { safeFetch, sanitizeLabel, validateGraphPath, validateUrl, validateUrlSync } from "../src/security.js";
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("validateUrlSync", () => {
   it("accepts http URLs", () => {
@@ -27,6 +31,25 @@ describe("validateUrlSync", () => {
 
   it("blocks cloud metadata endpoints", () => {
     expect(() => validateUrlSync("http://metadata.google.internal/computeMetadata")).toThrow("Blocked cloud metadata");
+  });
+});
+
+describe("validateUrl", () => {
+  it("blocks direct private IP URLs", async () => {
+    await expect(validateUrl("http://127.0.0.1/private")).rejects.toThrow("Blocked private/internal IP");
+  });
+});
+
+describe("safeFetch", () => {
+  it("blocks redirects to private IP targets before following them", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () =>
+      new Response(null, {
+        status: 302,
+        headers: { location: "http://127.0.0.1/private" },
+      })
+    ));
+
+    await expect(safeFetch("https://example.com/public")).rejects.toThrow("Blocked private/internal IP");
   });
 });
 

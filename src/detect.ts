@@ -194,7 +194,7 @@ function loadGraphifyignore(root: string): string[] {
     const ignoreFile = join(current, ".graphifyignore");
     if (existsSync(ignoreFile)) {
       for (let line of readFileSync(ignoreFile, "utf-8").split("\n")) {
-        line = line.trim();
+        line = line.replace(/\s+#.*$/, "").trim();
         if (line && !line.startsWith("#")) {
           patterns.push(line);
         }
