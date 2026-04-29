@@ -154,6 +154,7 @@ function normalizeKind(attrs: Record<string, unknown>, filePath: string | null):
       return "Function";
     case "document":
     case "paper":
+    case "concept":
     case "rationale":
       return "Document";
     case "image":

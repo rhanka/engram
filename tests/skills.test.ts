@@ -72,6 +72,14 @@ describe("skill cache examples", () => {
     }
   });
 
+  it("preserves community labels during cleanup guidance", () => {
+    for (const relativePath of ALL_SKILL_DOCS) {
+      const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
+      expect(content).not.toMatch(/rm -f[^\n]*\.graphify\/\.graphify_labels\.json/);
+      expect(content).not.toMatch(/Remove-Item[^\n]*\.graphify\/\.graphify_labels\.json/);
+    }
+  });
+
   it("prefers the compact first-hop summary before deep traversal", () => {
     for (const relativePath of ALL_SKILL_DOCS) {
       const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");

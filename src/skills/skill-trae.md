@@ -299,7 +299,7 @@ fs.writeFileSync(costPath, JSON.stringify(cost, null, 2));
 console.log(\`This run: \${inputTok.toLocaleString()} input tokens, \${outputTok.toLocaleString()} output tokens\`);
 console.log(\`All time: \${cost.total_input_tokens.toLocaleString()} input, \${cost.total_output_tokens.toLocaleString()} output (\${cost.runs.length} runs)\`);
 "
-rm -f .graphify/.graphify_detect.json .graphify/.graphify_extract.json .graphify/.graphify_ast.json .graphify/.graphify_semantic.json .graphify/.graphify_analysis.json .graphify/.graphify_labels.json
+rm -f .graphify/.graphify_detect.json .graphify/.graphify_extract.json .graphify/.graphify_ast.json .graphify/.graphify_semantic.json .graphify/.graphify_analysis.json
 rm -f .graphify/needs_update 2>/dev/null || true
 ```
 

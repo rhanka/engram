@@ -422,7 +422,7 @@ $(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" benc
 Clean up temp files:
 
 ```bash
-rm -f .graphify/.graphify_detect.json .graphify/.graphify_detect_semantic.json .graphify/.graphify_transcripts.json .graphify/.graphify_pdf_ocr.json .graphify/.graphify_ast.json .graphify/.graphify_cached.json .graphify/.graphify_uncached.txt .graphify/.graphify_semantic_new.json .graphify/.graphify_analysis.json .graphify/.graphify_labels.json
+rm -f .graphify/.graphify_detect.json .graphify/.graphify_detect_semantic.json .graphify/.graphify_transcripts.json .graphify/.graphify_pdf_ocr.json .graphify/.graphify_ast.json .graphify/.graphify_cached.json .graphify/.graphify_uncached.txt .graphify/.graphify_semantic_new.json .graphify/.graphify_analysis.json
 rm -f .graphify/needs_update 2>/dev/null || true
 ```
 

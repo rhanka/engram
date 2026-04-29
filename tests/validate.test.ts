@@ -32,6 +32,14 @@ describe("validateExtraction", () => {
     expect(errors.some((e) => e.includes("invalid file_type"))).toBe(true);
   });
 
+  it("accepts concept file_type values", () => {
+    const errors = validateExtraction({
+      nodes: [{ id: "a", label: "A", file_type: "concept", source_file: "notes.md" }],
+      edges: [],
+    });
+    expect(errors).toEqual([]);
+  });
+
   it("validates edge confidence values", () => {
     const errors = validateExtraction({
       nodes: [{ id: "a", label: "A", file_type: "code", source_file: "f.py" }],

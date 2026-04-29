@@ -37,7 +37,7 @@ export interface InputScopeInspection {
 export interface GraphNode {
   id: string;
   label: string;
-  file_type: "code" | "document" | "paper" | "image" | "rationale";
+  file_type: "code" | "document" | "paper" | "image" | "concept" | "rationale";
   source_file: string;
   source_location?: string;
   confidence?: Confidence;
