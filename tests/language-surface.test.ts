@@ -175,4 +175,65 @@ class PaymentService extends BaseService implements Billable {}
     expect(new Set(fileNodes).size).toBe(3);
     expect(importEdge?.target).toBe("src_utils_ts");
   });
+
+  it("resolves tsconfig path aliases before treating JS imports as external", async () => {
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(
+      join(dir, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: {
+          paths: {
+            "@/*": ["src/*"],
+          },
+        },
+      }, null, 2),
+      "utf-8",
+    );
+    writeFileSync(
+      join(dir, "src", "entry.ts"),
+      [
+        "import { helper } from '@/utils';",
+        "export function alpha() {",
+        "  return helper();",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(dir, "src", "utils.ts"),
+      [
+        "export function helper() {",
+        "  return 1;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await extract([
+      join(dir, "src", "entry.ts"),
+      join(dir, "src", "utils.ts"),
+    ]);
+
+    const importEdge = result.edges.find(
+      (edge) => edge.source === "entry_ts" && edge.relation === "imports_from",
+    );
+
+    expect(importEdge?.target).toBe("utils_ts");
+  });
+
+  it("keeps symbol node IDs distinct for same-named files in different directories", async () => {
+    mkdirSync(join(dir, "src"), { recursive: true });
+    mkdirSync(join(dir, "tests"), { recursive: true });
+    writeFileSync(join(dir, "src", "index.ts"), "export function setup() { return 1; }\n");
+    writeFileSync(join(dir, "tests", "index.ts"), "export function setup() { return 2; }\n");
+
+    const result = await extract([
+      join(dir, "src", "index.ts"),
+      join(dir, "tests", "index.ts"),
+    ]);
+
+    const setupNodes = result.nodes.filter((node) => node.label === "setup()");
+    expect(setupNodes).toHaveLength(2);
+    expect(new Set(setupNodes.map((node) => node.id)).size).toBe(2);
+  });
 });

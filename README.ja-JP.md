@@ -157,7 +157,7 @@ $graphify .                        # Codex
 | Kiro | `graphify kiro install` |
 | Google Antigravity | `graphify antigravity install` |
 
-**Claude Code** は 2 つのことを行います：Claude にアーキテクチャの質問に答える前に `.graphify/GRAPH_REPORT.md` を読むように指示する `CLAUDE.md` セクションを書き込み、すべての Glob と Grep 呼び出しの前に発火する **PreToolUse フック**（`settings.json`）をインストールします。ナレッジグラフが存在する場合、Claude は次のメッセージを見ます：_"graphify: Knowledge graph exists. Read GRAPH_REPORT.md for god nodes and community structure before searching raw files."_ ――これにより Claude はすべてのファイルを grep するのではなく、グラフを介してナビゲートします。
+**Claude Code** は 2 つのことを行います：Claude にアーキテクチャの質問に答える前に `.graphify/GRAPH_REPORT.md` を読むように指示する `CLAUDE.md` セクションを書き込み、すべての Bash ツール呼び出しの前に発火する **PreToolUse フック**（`settings.json`）をインストールします。ナレッジグラフが存在する場合、Claude は次のメッセージを見ます：_"graphify: Knowledge graph exists. Read GRAPH_REPORT.md for god nodes and community structure before searching raw files."_ ――これにより Claude はすべてのファイルを grep するのではなく、グラフを介してナビゲートします。
 
 **Codex** は `AGENTS.md` にルールを書き込み、`.codex/hooks.json` に PreToolUse フックも追加します。
 **Gemini CLI** は `GEMINI.md` を書き込み、`.gemini/settings.json` でプロジェクトスコープの `graphify` MCP サーバーを登録します。

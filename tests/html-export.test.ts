@@ -46,6 +46,9 @@ describe("safeToHtml", () => {
 
     const html = readFileSync(htmlPath, "utf-8");
     expect(html).toContain("\"count\":7");
+    expect(html).toContain("Show All");
+    expect(html).toContain("Hide All");
+    expect(html).toContain("toggleAllCommunities");
 
     rmSync(dir, { recursive: true, force: true });
   });

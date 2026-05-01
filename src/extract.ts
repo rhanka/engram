@@ -155,8 +155,108 @@ function projectRelativeFilePath(filePath: string, root: string): string {
   return toPortablePath(rel);
 }
 
+function qualifiedFileStem(filePath: string, rootDir: string = dirname(resolve(filePath))): string {
+  const stem = basename(filePath, extname(filePath));
+  const parentDir = dirname(resolve(filePath));
+  if (resolve(parentDir) === resolve(rootDir)) {
+    return stem;
+  }
+  const parent = basename(parentDir);
+  if (!parent || parent === ".") {
+    return stem;
+  }
+  return `${parent}.${stem}`;
+}
+
+type TsconfigAliasEntry = {
+  aliasPrefix: string;
+  targetBase: string;
+};
+
+const tsconfigAliasCache = new Map<string, TsconfigAliasEntry[]>();
+
+function loadTsconfigAliases(startDir: string): TsconfigAliasEntry[] {
+  let current = resolve(startDir);
+  while (true) {
+    const tsconfigPath = join(current, "tsconfig.json");
+    if (existsSync(tsconfigPath)) {
+      const cached = tsconfigAliasCache.get(tsconfigPath);
+      if (cached) {
+        return cached;
+      }
+      try {
+        const parsed = JSON.parse(readFileSync(tsconfigPath, "utf-8")) as {
+          compilerOptions?: { paths?: Record<string, string[]> };
+        };
+        const aliases = Object.entries(parsed.compilerOptions?.paths ?? {})
+          .map(([alias, targets]) => {
+            const firstTarget = targets[0];
+            if (!firstTarget) {
+              return null;
+            }
+            return {
+              aliasPrefix: alias.replace(/\/\*$/, ""),
+              targetBase: resolve(current, firstTarget.replace(/\/\*$/, "")),
+            } satisfies TsconfigAliasEntry;
+          })
+          .filter((entry): entry is TsconfigAliasEntry => entry !== null);
+        tsconfigAliasCache.set(tsconfigPath, aliases);
+        return aliases;
+      } catch {
+        tsconfigAliasCache.set(tsconfigPath, []);
+        return [];
+      }
+    }
+
+    const parent = dirname(current);
+    if (parent === current) {
+      return [];
+    }
+    current = parent;
+  }
+}
+
+function normalizeJsImportTarget(resolvedImport: string): string {
+  const ext = extname(resolvedImport).toLowerCase();
+  if (ext === ".js") {
+    return resolvedImport.slice(0, -3) + ".ts";
+  }
+  if (ext === ".jsx") {
+    return resolvedImport.slice(0, -4) + ".tsx";
+  }
+  if (ext) {
+    return resolvedImport;
+  }
+
+  const candidates = [
+    `${resolvedImport}.ts`,
+    `${resolvedImport}.tsx`,
+    `${resolvedImport}.js`,
+    `${resolvedImport}.jsx`,
+    `${resolvedImport}.mjs`,
+    `${resolvedImport}.ejs`,
+    join(resolvedImport, "index.ts"),
+    join(resolvedImport, "index.tsx"),
+    join(resolvedImport, "index.js"),
+    join(resolvedImport, "index.jsx"),
+    join(resolvedImport, "index.mjs"),
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return resolvedImport;
+}
+
 function remapFileNodeIds(nodes: GraphNode[], edges: GraphEdge[], paths: string[], root: string): void {
-  const byPath = new Map<string, { legacyId: string; absoluteId: string; portableId: string; label: string }>();
+  const byPath = new Map<string, {
+    legacyId: string;
+    qualifiedLegacyId: string;
+    absoluteId: string;
+    portableId: string;
+    label: string;
+  }>();
   const absoluteToPortable = new Map<string, string>();
 
   for (const filePath of paths) {
@@ -165,6 +265,7 @@ function remapFileNodeIds(nodes: GraphNode[], edges: GraphEdge[], paths: string[
     const absoluteId = _makeId(toPortablePath(resolvedPath));
     byPath.set(resolvedPath, {
       legacyId: _makeId(basename(resolvedPath, extname(resolvedPath))),
+      qualifiedLegacyId: _makeId(qualifiedFileStem(resolvedPath, root)),
       absoluteId,
       portableId,
       label: basename(resolvedPath),
@@ -175,14 +276,19 @@ function remapFileNodeIds(nodes: GraphNode[], edges: GraphEdge[], paths: string[
   for (const node of nodes) {
     const info = byPath.get(resolve(node.source_file ?? ""));
     if (!info || node.label !== info.label) continue;
-    if (node.id === info.legacyId || node.id === info.absoluteId) {
+    if (node.id === info.legacyId || node.id === info.qualifiedLegacyId || node.id === info.absoluteId) {
       node.id = info.portableId;
     }
   }
 
   for (const edge of edges) {
     const sourceInfo = byPath.get(resolve(edge.source_file ?? ""));
-    if (sourceInfo && (edge.source === sourceInfo.legacyId || edge.source === sourceInfo.absoluteId)) {
+    if (
+      sourceInfo &&
+      (edge.source === sourceInfo.legacyId ||
+        edge.source === sourceInfo.qualifiedLegacyId ||
+        edge.source === sourceInfo.absoluteId)
+    ) {
       edge.source = sourceInfo.portableId;
     }
 
@@ -197,7 +303,11 @@ function remapFileNodeIds(nodes: GraphNode[], edges: GraphEdge[], paths: string[
     } else if (
       sourceInfo &&
       edge.relation === "rationale_for" &&
-      (edge.target === sourceInfo.legacyId || edge.target === sourceInfo.absoluteId)
+      (
+        edge.target === sourceInfo.legacyId ||
+        edge.target === sourceInfo.qualifiedLegacyId ||
+        edge.target === sourceInfo.absoluteId
+      )
     ) {
       edge.target = sourceInfo.portableId;
     }
@@ -364,18 +474,24 @@ function _importJs(
       const raw = _readText(child, source).replace(/^['"`\s]+|['"`\s]+$/g, "");
       let tgtNid: string | null = null;
       if (raw.startsWith(".")) {
-        let resolvedImport = resolve(dirname(strPath), raw);
-        const ext = extname(resolvedImport).toLowerCase();
-        if (ext === ".js") {
-          resolvedImport = resolvedImport.slice(0, -3) + ".ts";
-        } else if (ext === ".jsx") {
-          resolvedImport = resolvedImport.slice(0, -4) + ".tsx";
-        }
+        const resolvedImport = normalizeJsImportTarget(resolve(dirname(strPath), raw));
         tgtNid = _makeId(toPortablePath(resolvedImport));
       } else {
-        const moduleName = raw.split("/").pop() ?? "";
-        if (moduleName) {
-          tgtNid = _makeId(moduleName);
+        let resolvedAlias: string | null = null;
+        for (const alias of loadTsconfigAliases(dirname(strPath))) {
+          if (raw === alias.aliasPrefix || raw.startsWith(`${alias.aliasPrefix}/`)) {
+            const suffix = raw.slice(alias.aliasPrefix.length).replace(/^\/+/, "");
+            resolvedAlias = normalizeJsImportTarget(resolve(alias.targetBase, suffix));
+            break;
+          }
+        }
+        if (resolvedAlias) {
+          tgtNid = _makeId(toPortablePath(resolvedAlias));
+        } else {
+          const moduleName = raw.split("/").pop() ?? "";
+          if (moduleName) {
+            tgtNid = _makeId(moduleName);
+          }
         }
       }
       if (tgtNid) {
@@ -921,7 +1037,11 @@ export interface ExtractionResult {
   error?: string;
 }
 
-async function _extractGeneric(filePath: string, config: LanguageConfig): Promise<ExtractionResult> {
+async function _extractGeneric(
+  filePath: string,
+  config: LanguageConfig,
+  rootDir: string = dirname(resolve(filePath)),
+): Promise<ExtractionResult> {
   await ensureParserInit();
   const lang = await loadLanguage(config.tsGrammarName);
   if (!lang) {
@@ -940,7 +1060,7 @@ async function _extractGeneric(filePath: string, config: LanguageConfig): Promis
   }
 
   const root = tree.rootNode;
-  const stem = basename(filePath, extname(filePath));
+  const stem = qualifiedFileStem(filePath, rootDir);
   const strPath = filePath;
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
@@ -1395,7 +1515,11 @@ const _RATIONALE_PREFIXES = [
   "# RATIONALE:", "# TODO:", "# FIXME:",
 ];
 
-async function _extractPythonRationale(filePath: string, result: ExtractionResult): Promise<void> {
+async function _extractPythonRationale(
+  filePath: string,
+  result: ExtractionResult,
+  rootDir: string = dirname(resolve(filePath)),
+): Promise<void> {
   await ensureParserInit();
   const lang = await loadLanguage("python");
   if (!lang) return;
@@ -1412,7 +1536,7 @@ async function _extractPythonRationale(filePath: string, result: ExtractionResul
     return;
   }
 
-  const stem = basename(filePath, extname(filePath));
+  const stem = qualifiedFileStem(filePath, rootDir);
   const strPath = filePath;
   const { nodes, edges } = result;
   const seenIds = new Set(nodes.map((n) => n.id));
@@ -1507,65 +1631,65 @@ async function _extractPythonRationale(filePath: string, result: ExtractionResul
 // Public API: per-language extractors
 // ---------------------------------------------------------------------------
 
-export async function extractPython(filePath: string): Promise<ExtractionResult> {
-  const result = await _extractGeneric(filePath, _PYTHON_CONFIG);
+export async function extractPython(filePath: string, rootDir?: string): Promise<ExtractionResult> {
+  const result = await _extractGeneric(filePath, _PYTHON_CONFIG, rootDir);
   if (!result.error) {
-    await _extractPythonRationale(filePath, result);
+    await _extractPythonRationale(filePath, result, rootDir);
   }
   return result;
 }
 
-export async function extractJs(filePath: string): Promise<ExtractionResult> {
+export async function extractJs(filePath: string, rootDir?: string): Promise<ExtractionResult> {
   const ext = extname(filePath);
   const config = (ext === ".ts" || ext === ".tsx") ? _TS_CONFIG : _JS_CONFIG;
-  return _extractGeneric(filePath, config);
+  return _extractGeneric(filePath, config, rootDir);
 }
 
-export async function extractJava(filePath: string): Promise<ExtractionResult> {
-  return _extractGeneric(filePath, _JAVA_CONFIG);
+export async function extractJava(filePath: string, rootDir?: string): Promise<ExtractionResult> {
+  return _extractGeneric(filePath, _JAVA_CONFIG, rootDir);
 }
 
-export async function extractC(filePath: string): Promise<ExtractionResult> {
-  return _extractGeneric(filePath, _C_CONFIG);
+export async function extractC(filePath: string, rootDir?: string): Promise<ExtractionResult> {
+  return _extractGeneric(filePath, _C_CONFIG, rootDir);
 }
 
-export async function extractCpp(filePath: string): Promise<ExtractionResult> {
-  return _extractGeneric(filePath, _CPP_CONFIG);
+export async function extractCpp(filePath: string, rootDir?: string): Promise<ExtractionResult> {
+  return _extractGeneric(filePath, _CPP_CONFIG, rootDir);
 }
 
-export async function extractRuby(filePath: string): Promise<ExtractionResult> {
-  return _extractGeneric(filePath, _RUBY_CONFIG);
+export async function extractRuby(filePath: string, rootDir?: string): Promise<ExtractionResult> {
+  return _extractGeneric(filePath, _RUBY_CONFIG, rootDir);
 }
 
-export async function extractCsharp(filePath: string): Promise<ExtractionResult> {
-  return _extractGeneric(filePath, _CSHARP_CONFIG);
+export async function extractCsharp(filePath: string, rootDir?: string): Promise<ExtractionResult> {
+  return _extractGeneric(filePath, _CSHARP_CONFIG, rootDir);
 }
 
-export async function extractKotlin(filePath: string): Promise<ExtractionResult> {
-  return _extractGeneric(filePath, _KOTLIN_CONFIG);
+export async function extractKotlin(filePath: string, rootDir?: string): Promise<ExtractionResult> {
+  return _extractGeneric(filePath, _KOTLIN_CONFIG, rootDir);
 }
 
-export async function extractScala(filePath: string): Promise<ExtractionResult> {
-  return _extractGeneric(filePath, _SCALA_CONFIG);
+export async function extractScala(filePath: string, rootDir?: string): Promise<ExtractionResult> {
+  return _extractGeneric(filePath, _SCALA_CONFIG, rootDir);
 }
 
-export async function extractPhp(filePath: string): Promise<ExtractionResult> {
-  return _extractGeneric(filePath, _PHP_CONFIG);
+export async function extractPhp(filePath: string, rootDir?: string): Promise<ExtractionResult> {
+  return _extractGeneric(filePath, _PHP_CONFIG, rootDir);
 }
 
-export async function extractLua(filePath: string): Promise<ExtractionResult> {
-  return _extractGeneric(filePath, _LUA_CONFIG);
+export async function extractLua(filePath: string, rootDir?: string): Promise<ExtractionResult> {
+  return _extractGeneric(filePath, _LUA_CONFIG, rootDir);
 }
 
-export async function extractSwift(filePath: string): Promise<ExtractionResult> {
-  return _extractGeneric(filePath, _SWIFT_CONFIG);
+export async function extractSwift(filePath: string, rootDir?: string): Promise<ExtractionResult> {
+  return _extractGeneric(filePath, _SWIFT_CONFIG, rootDir);
 }
 
 // ---------------------------------------------------------------------------
 // Julia extractor (custom walk)
 // ---------------------------------------------------------------------------
 
-export async function extractJulia(filePath: string): Promise<ExtractionResult> {
+export async function extractJulia(filePath: string, rootDir?: string): Promise<ExtractionResult> {
   await ensureParserInit();
   const lang = await loadLanguage("julia");
   if (!lang) {
@@ -1584,7 +1708,7 @@ export async function extractJulia(filePath: string): Promise<ExtractionResult> 
   }
 
   const root = tree.rootNode;
-  const stem = basename(filePath, extname(filePath));
+  const stem = qualifiedFileStem(filePath, rootDir);
   const strPath = filePath;
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
@@ -1793,7 +1917,7 @@ function lineForIndex(source: string, index: number): number {
   return source.slice(0, index).split("\n").length;
 }
 
-async function extractRegexBackedCode(filePath: string): Promise<ExtractionResult> {
+async function extractRegexBackedCode(filePath: string, rootDir?: string): Promise<ExtractionResult> {
   let source: string;
   try {
     source = readFileSync(filePath, "utf-8");
@@ -1801,7 +1925,7 @@ async function extractRegexBackedCode(filePath: string): Promise<ExtractionResul
     return { nodes: [], edges: [], error: String(e) };
   }
 
-  const stem = basename(filePath, extname(filePath));
+  const stem = qualifiedFileStem(filePath, rootDir);
   const fileNid = _makeId(stem);
   const nodes: GraphNode[] = [{
     id: fileNid,
@@ -1863,7 +1987,7 @@ async function extractRegexBackedCode(filePath: string): Promise<ExtractionResul
 // Go extractor (custom walk)
 // ---------------------------------------------------------------------------
 
-export async function extractGo(filePath: string): Promise<ExtractionResult> {
+export async function extractGo(filePath: string, rootDir?: string): Promise<ExtractionResult> {
   await ensureParserInit();
   const lang = await loadLanguage("go");
   if (!lang) {
@@ -1882,7 +2006,7 @@ export async function extractGo(filePath: string): Promise<ExtractionResult> {
   }
 
   const root = tree.rootNode;
-  const stem = basename(filePath, extname(filePath));
+  const stem = qualifiedFileStem(filePath, rootDir);
   const pkgScope = dirname(filePath).split(sep).pop() || stem;
   const strPath = filePath;
   const nodes: GraphNode[] = [];
@@ -2070,7 +2194,7 @@ export async function extractGo(filePath: string): Promise<ExtractionResult> {
 // Rust extractor (custom walk)
 // ---------------------------------------------------------------------------
 
-export async function extractRust(filePath: string): Promise<ExtractionResult> {
+export async function extractRust(filePath: string, rootDir?: string): Promise<ExtractionResult> {
   await ensureParserInit();
   const lang = await loadLanguage("rust");
   if (!lang) {
@@ -2089,7 +2213,7 @@ export async function extractRust(filePath: string): Promise<ExtractionResult> {
   }
 
   const root = tree.rootNode;
-  const stem = basename(filePath, extname(filePath));
+  const stem = qualifiedFileStem(filePath, rootDir);
   const strPath = filePath;
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
@@ -2248,7 +2372,7 @@ export async function extractRust(filePath: string): Promise<ExtractionResult> {
 // Zig extractor (custom walk)
 // ---------------------------------------------------------------------------
 
-export async function extractZig(filePath: string): Promise<ExtractionResult> {
+export async function extractZig(filePath: string, rootDir?: string): Promise<ExtractionResult> {
   await ensureParserInit();
   const lang = await loadLanguage("zig");
   if (!lang) {
@@ -2267,7 +2391,7 @@ export async function extractZig(filePath: string): Promise<ExtractionResult> {
   }
 
   const root = tree.rootNode;
-  const stem = basename(filePath, extname(filePath));
+  const stem = qualifiedFileStem(filePath, rootDir);
   const strPath = filePath;
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
@@ -2434,7 +2558,7 @@ export async function extractZig(filePath: string): Promise<ExtractionResult> {
 // PowerShell extractor (custom walk)
 // ---------------------------------------------------------------------------
 
-export async function extractPowershell(filePath: string): Promise<ExtractionResult> {
+export async function extractPowershell(filePath: string, rootDir?: string): Promise<ExtractionResult> {
   await ensureParserInit();
   const lang = await loadLanguage("powershell");
   if (!lang) {
@@ -2453,7 +2577,7 @@ export async function extractPowershell(filePath: string): Promise<ExtractionRes
   }
 
   const root = tree.rootNode;
-  const stem = basename(filePath, extname(filePath));
+  const stem = qualifiedFileStem(filePath, rootDir);
   const strPath = filePath;
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
@@ -2629,7 +2753,7 @@ export async function extractPowershell(filePath: string): Promise<ExtractionRes
 // Objective-C extractor (custom walk)
 // ---------------------------------------------------------------------------
 
-export async function extractObjc(filePath: string): Promise<ExtractionResult> {
+export async function extractObjc(filePath: string, rootDir?: string): Promise<ExtractionResult> {
   await ensureParserInit();
   const lang = await loadLanguage("objc");
   if (!lang) {
@@ -2648,7 +2772,7 @@ export async function extractObjc(filePath: string): Promise<ExtractionResult> {
   }
 
   const root = tree.rootNode;
-  const stem = basename(filePath, extname(filePath));
+  const stem = qualifiedFileStem(filePath, rootDir);
   const strPath = filePath;
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
@@ -2853,7 +2977,7 @@ export async function extractObjc(filePath: string): Promise<ExtractionResult> {
 // Elixir extractor (custom walk)
 // ---------------------------------------------------------------------------
 
-export async function extractElixir(filePath: string): Promise<ExtractionResult> {
+export async function extractElixir(filePath: string, rootDir?: string): Promise<ExtractionResult> {
   await ensureParserInit();
   const lang = await loadLanguage("elixir");
   if (!lang) {
@@ -2872,7 +2996,7 @@ export async function extractElixir(filePath: string): Promise<ExtractionResult>
   }
 
   const root = tree.rootNode;
-  const stem = basename(filePath, extname(filePath));
+  const stem = qualifiedFileStem(filePath, rootDir);
   const strPath = filePath;
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
@@ -3071,6 +3195,7 @@ async function _resolveCrossFileImports(
 
   const parser = new Parser();
   parser.setLanguage(lang);
+  const rootDir = inferCommonRoot(paths);
 
   // Pass 1: name -> node_id across all files
   const stemToEntities = new Map<string, Map<string, string>>();
@@ -3098,7 +3223,7 @@ async function _resolveCrossFileImports(
   for (let idx = 0; idx < perFile.length; idx++) {
     const fileResult = perFile[idx]!;
     const filePath = paths[idx]!;
-    const fileStem = basename(filePath, extname(filePath));
+      const fileStem = qualifiedFileStem(filePath, rootDir);
     const strPath = filePath;
 
     const localClasses = fileResult.nodes
@@ -3190,7 +3315,7 @@ async function _resolveCrossFileImports(
 // Main extract() and collectFiles()
 // ---------------------------------------------------------------------------
 
-type ExtractorFn = (filePath: string) => Promise<ExtractionResult>;
+type ExtractorFn = (filePath: string, rootDir?: string) => Promise<ExtractionResult>;
 
 const _DISPATCH: Record<string, ExtractorFn> = {
   ".py": extractPython,
@@ -3276,7 +3401,7 @@ export async function extractWithDiagnostics(paths: string[]): Promise<ExtractWi
       continue;
     }
 
-    const result = await extractor(filePath);
+    const result = await extractor(filePath, root);
     if (!result.error) {
       saveCached(filePath, result as unknown as Record<string, unknown>, root);
     } else {

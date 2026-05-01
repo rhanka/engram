@@ -270,7 +270,8 @@ Rules:
 
 Code files: focus on semantic edges AST cannot find (call relationships, shared data, arch patterns).
   Do not re-extract imports - AST already has those.
-Doc/paper files: extract named concepts, entities, citations. Also extract rationale — sections that explain WHY a decision was made, trade-offs chosen, or design intent. These become nodes with `rationale_for` edges pointing to the concept they explain.
+Doc/paper files: extract named concepts, entities, citations. For rationale (WHY decisions were made, trade-offs, design intent): store it as a `rationale` attribute on the relevant concept node. Do not create a separate rationale node or fragment node unless it is itself a named concept.
+Code files: when adding `calls` edges, source MUST be the caller and target MUST be the callee. Never reverse the direction.
 Image files: use vision to understand what the image IS - do not just OCR. For images extracted from PDFs, decode figures, tables, diagrams, captions, and embedded text when they carry meaning; use the assistant vision model by default, or a delegated OCR/vision model when configured, and keep provenance to the source PDF and sidecar.
   UI screenshot: layout patterns, design decisions, key elements, purpose.
   Chart: metric, trend/insight, data source.
@@ -306,7 +307,7 @@ confidence_score is REQUIRED on every edge - never omit it, never use 0.5 as a d
 - AMBIGUOUS edges: 0.1-0.3
 
 Output exactly this JSON (no other text):
-{"nodes":[{"id":"filestem_entityname","label":"Human Readable Name","file_type":"code|document|paper|image","source_file":"relative/path","source_location":null,"source_url":null,"captured_at":null,"author":null,"contributor":null}],"edges":[{"source":"node_id","target":"node_id","relation":"calls|implements|references|cites|conceptually_related_to|shares_data_with|semantically_similar_to|rationale_for","confidence":"EXTRACTED|INFERRED|AMBIGUOUS","confidence_score":1.0,"source_file":"relative/path","source_location":null,"weight":1.0}],"hyperedges":[{"id":"snake_case_id","label":"Human Readable Label","nodes":["node_id1","node_id2","node_id3"],"relation":"participate_in|implement|form","confidence":"EXTRACTED|INFERRED","confidence_score":0.75,"source_file":"relative/path"}],"input_tokens":0,"output_tokens":0}
+{"nodes":[{"id":"filestem_entityname","label":"Human Readable Name","file_type":"code|document|paper|image|concept|rationale","source_file":"relative/path","source_location":null,"source_url":null,"captured_at":null,"author":null,"contributor":null,"rationale":null}],"edges":[{"source":"node_id","target":"node_id","relation":"calls|implements|references|cites|conceptually_related_to|shares_data_with|semantically_similar_to|rationale_for","confidence":"EXTRACTED|INFERRED|AMBIGUOUS","confidence_score":1.0,"source_file":"relative/path","source_location":null,"weight":1.0}],"hyperedges":[{"id":"snake_case_id","label":"Human Readable Label","nodes":["node_id1","node_id2","node_id3"],"relation":"participate_in|implement|form","confidence":"EXTRACTED|INFERRED","confidence_score":0.75,"source_file":"relative/path"}],"input_tokens":0,"output_tokens":0}
 ```
 
 **Step B3 - Collect, cache, and merge**

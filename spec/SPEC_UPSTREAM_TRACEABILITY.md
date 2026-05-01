@@ -5,7 +5,7 @@
 This document is the durable upstream traceability contract for the TypeScript Graphify fork.
 
 - Created: 2026-04-22
-- TypeScript baseline: `main` at `703b0aed69e3cbc3c0b5acddfeee23f7a931b8fc`
+- TypeScript baseline: `main` at `107854a5ad3538462d7985b5bb00bc472bafe34a`
 - TypeScript package: `graphifyy@0.4.33`
 - Source orientation: `spec/SPEC_UPSTREAM_DUAL_CATCHUP_2026_04.md`
 - Review inspiration orientation: `spec/SPEC_CODE_REVIEW_GRAPH_OPPORUNITY.md`
@@ -23,14 +23,14 @@ The TypeScript fork must stay generic, npm-first, `.graphify/`-based, and TypeSc
 
 | Source | Ref | Remote observed commit | Local tracking commit | Package/version | Status | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| TypeScript Graphify | `main` | `703b0aed69e3cbc3c0b5acddfeee23f7a931b8fc` | `703b0aed69e3cbc3c0b5acddfeee23f7a931b8fc` | `graphifyy@0.4.33` | `covered` | Current implementation baseline for this traceability pass. |
+| TypeScript Graphify | `main` | `107854a5ad3538462d7985b5bb00bc472bafe34a` | `107854a5ad3538462d7985b5bb00bc472bafe34a` | `graphifyy@0.4.33` | `covered` | Current implementation baseline for this traceability pass. |
 | Safi Python Graphify | remote `v4` branch | `5843ffc277c54766854f9201286c9647da095390` | `5843ffc277c54766854f9201286c9647da095390` | `0.4.31` line | `covered` / `deferred` / `n/a` | Current runtime drift is covered in this branch; translation relocation is deferred and Python packaging/interpreter notes are `n/a` for the TypeScript runtime. |
 | Safi Python Graphify | remote tag `v0.4.23` | `8d908c5d43d079579604a82873fd7cff33a1b343` | local tag is not trusted | `0.4.23` | `covered` | Verified by `git ls-remote`; local `refs/tags/v0.4.23` is clobber-risk and must not be used as proof. |
 | Safi Python Graphify | remote tag `v0.4.24` | `2b8c08fcb66c288b22a2dfbadfe457fb8fea7c85` | reachable from `upstream/v4` | `0.4.24` | `covered` / `n/a` | Release-line runtime fixes are covered locally; Python packaging/interpreter notes are `n/a` for the TypeScript runtime. |
 | Safi Python Graphify | remote tag `v0.4.25` | `cc917a7bc7c9afd67c59823abcfb49cd943844c0` | reachable from `upstream/v4` | `0.4.25` | `covered` | Empty-community report fixes and graph-query install guidance are covered. |
 | Safi Python Graphify | remote tag `v0.4.26` | `7891fa8854367782425f75b12fee7980580473db` | reachable from `upstream/v4` | `0.4.26` | `covered` | Wiki encoding/collisions, hook rebase guard, detect path resolve, and gitignore docs are covered. |
 | Safi Python Graphify | post-`v0.4.27` `upstream/v4` | `5843ffc277c54766854f9201286c9647da095390` | `upstream/v4` | `0.4.28`..`0.4.31` line | `covered` / `n/a` | Runtime drift for this line is covered in this branch; only Python-specific packaging/docs polish remains `n/a` for the TypeScript runtime. |
-| Safi Python Graphify | remote `v5` branch | `770d7f54c40d7301a0166a6b7782cb03827897e5` | `770d7f54c40d7301a0166a6b7782cb03827897e5` | `0.5.0` | `covered` / `n/a` | Repo-oriented `v5` workflow changes that map cleanly to the TS fork are implemented on this branch; Python-specific version/badge deltas remain `n/a`. |
+| Safi Python Graphify | remote `v5` branch | `f755aca58f36771923cebcc8f85f2eef6178a105` | `f755aca58f36771923cebcc8f85f2eef6178a105` | `0.5.5` line | `covered` / `intentional-delta` / `n/a` | Runtime-relevant v5.1-v5.5 changes that map to the TS fork are implemented here; Python backend/site/version deltas remain `n/a`, and `graphify update .` remains an intentional TS contract. |
 | code-review-graph | remote tag `v2.3.2` | `db2d2df789c25a101e33477b898c1840fb4c7bc7` | `/tmp/code-review-graph-v2.3.2` at same commit | `2.3.2` | `covered` | Stable CRG implementation reference for review features. |
 | code-review-graph | remote `main` | `0919071a9ba353e604981059e99ee2ed98768092` | not fetched into reference clone | unknown | `deferred` | Main is intentionally not the implementation target for the current CRG roadmap. |
 
@@ -74,15 +74,20 @@ Compared against the previous local Python `v4` baseline `6c8f21272c2343c4c044e3
 
 ## Python v5 Catch-up Audit
 
-Compared against the locked `upstream/v5` branch at `770d7f54c40d7301a0166a6b7782cb03827897e5`, the TypeScript fork adopts the workflow-level changes that map cleanly while keeping `.graphify/`, the TypeScript runtime, and npm-first distribution intact.
+Compared against the locked `upstream/v5` branch at `f755aca58f36771923cebcc8f85f2eef6178a105`, the TypeScript fork adopts the workflow-level changes that map cleanly while keeping `.graphify/`, the TypeScript runtime, and npm-first distribution intact.
 
 | Ref | Commit | Upstream change | TypeScript status | Required follow-up |
 | --- | --- | --- | --- | --- |
 | `v5` repo workflow | `2c49da2` | GitHub repo clone command and URL-driven build flow. | `covered` | Covered by `src/repo-clone.ts`, public CLI wiring, and `tests/repo-clone.test.ts`. |
 | `v5` merge/install delta | `2faeed9` | `merge-graphs`, `CLAUDE_CONFIG_DIR` install support, explicit legacy output skip. | `covered` | Covered by `src/merge-graphs.ts`, CLI wiring, `tests/cli-runtime.test.ts`, and `tests/install-preview.test.ts`. Legacy `graphify-out` skipping already existed in `src/detect.ts`. |
 | `v5` safer merge/export | `df9b7ec` | `build_merge`, shrink guard before overwrite, label dedup, chunk-suffix prompt hardening. | `covered` / `intentional-delta` | `buildMerge`, conservative dedup, and JSON shrink guard are covered by `tests/build-merge.test.ts` and `tests/export-json.test.ts`. Dedup remains conservative to avoid collapsing distinct same-label entities across files. |
-| `v5` version bump | `8bed332` | Upstream Python version bump to `0.5.0`. | `n/a` | TS release version stays independent and release-driven. |
-| `v5` README badge | `770d7f5` | Python README badge refresh. | `n/a` | npm-first TypeScript distribution does not reuse Python download badges. |
+| `v5` version bump | `8bed332`, `a566bfb` | Upstream Python version bumps to `0.5.0` and `0.5.1`. | `n/a` | TS release version stays independent and release-driven. |
+| `v5` README badge | `770d7f5`, `a4ad901`, `eceaaad` | Python README badges and release notes. | `n/a` | npm-first TypeScript distribution does not reuse Python download badges or release-note-only churn. |
+| `v5.2` Claude hook change | `ee1df22` | Claude Code PreToolUse matcher switches from `Glob|Grep` to `Bash`. | `covered` | Covered by CLI hook install/uninstall behavior, `tests/claude-integration.test.ts`, and README updates. |
+| `v5.3` cache split | `7359cda` | AST and semantic caches must not collide during update/rebuild. | `covered` | Covered by `tests/cache.test.ts`, with AST/semantic namespace isolation and legacy AST fallback compatibility. |
+| `v5.4` URL hardening | `dd86271` | Revalidate redirects and block private/internal URLs before `yt-dlp`. | `covered` | Covered by `tests/security.test.ts` and `tests/transcribe.test.ts`. |
+| `v5.4` portability/runtime polish | `6175e0a`, `4563b04` | Inline `.graphifyignore` comments, symbol ID collisions, JS/TS alias resolution, HTML controls, rationale prompt guidance. | `covered` / `intentional-delta` / `n/a` | `.graphifyignore` comments, symbol ID stability, `tsconfig.paths` alias resolution, and HTML community controls are covered by tests. Prompt-level rationale handling is enforced in installed skills. Python write-sink annotations remain `n/a`. |
+| `v5.5` concept + labels + Go/Kimi follow-ups | `5904081`, `59cbad3`, `f9c344b`, `71d1b39`, `c750582`, `44fc32e`, `326c03e`, `28b17d3`, `f755aca` | `concept` file_type, preserve community labels, Go package import handling, optional Kimi/product-site/Python follow-ups, and Python-style remembered scan root. | `covered` / `intentional-delta` / `n/a` | `concept` support and label preservation are covered by tests; Go import handling is already covered; Kimi/product-site/Python packaging follow-ups are `n/a`; `graphify update .` remains the documented TS contract instead of remembered scan-root state. |
 
 ## Intentional TypeScript Deltas To Preserve
 
