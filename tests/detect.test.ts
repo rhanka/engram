@@ -140,6 +140,17 @@ describe("detect", () => {
     expect(result.files.code[0]).toContain("kept.py");
   });
 
+  it("ignores inline comments in .graphifyignore patterns", () => {
+    writeFileSync(join(tmpDir, ".graphifyignore"), "ignored.py # comment\n");
+    writeFileSync(join(tmpDir, "ignored.py"), "# should be ignored");
+    writeFileSync(join(tmpDir, "kept.py"), "# should be kept");
+
+    const result = detect(tmpDir);
+
+    expect(result.files.code).toHaveLength(1);
+    expect(result.files.code[0]).toContain("kept.py");
+  });
+
   it("discovers .graphifyignore patterns from parent directories", () => {
     writeFileSync(join(tmpDir, ".graphifyignore"), "vendor/\n");
     const subDir = join(tmpDir, "packages", "mylib");

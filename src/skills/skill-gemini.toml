@@ -151,7 +151,7 @@ $(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" chec
 5. If `.graphify/.graphify_uncached.txt` is non-empty, read those docs, papers, images, generated transcripts, PDF sidecars, and relevant PDF-extracted image artifacts yourself in manageable batches and write `.graphify/.graphify_semantic_new.json` matching exactly:
 
 ```json
-{"nodes":[{"id":"filestem_entityname","label":"Human Readable Name","file_type":"code|document|paper|image","source_file":"relative/path","source_location":null,"source_url":null,"captured_at":null,"author":null,"contributor":null}],"edges":[{"source":"node_id","target":"node_id","relation":"calls|implements|references|cites|conceptually_related_to|shares_data_with|semantically_similar_to|rationale_for","confidence":"EXTRACTED|INFERRED|AMBIGUOUS","confidence_score":1.0,"source_file":"relative/path","source_location":null,"weight":1.0}],"hyperedges":[{"id":"snake_case_id","label":"Human Readable Label","nodes":["node_id1","node_id2","node_id3"],"relation":"participate_in|implement|form","confidence":"EXTRACTED|INFERRED","confidence_score":0.75,"source_file":"relative/path"}],"input_tokens":0,"output_tokens":0}
+{"nodes":[{"id":"filestem_entityname","label":"Human Readable Name","file_type":"code|document|paper|image|concept|rationale","source_file":"relative/path","source_location":null,"source_url":null,"captured_at":null,"author":null,"contributor":null,"rationale":null}],"edges":[{"source":"node_id","target":"node_id","relation":"calls|implements|references|cites|conceptually_related_to|shares_data_with|semantically_similar_to|rationale_for","confidence":"EXTRACTED|INFERRED|AMBIGUOUS","confidence_score":1.0,"source_file":"relative/path","source_location":null,"weight":1.0}],"hyperedges":[{"id":"snake_case_id","label":"Human Readable Label","nodes":["node_id1","node_id2","node_id3"],"relation":"participate_in|implement|form","confidence":"EXTRACTED|INFERRED","confidence_score":0.75,"source_file":"relative/path"}],"input_tokens":0,"output_tokens":0}
 ```
 
 Rules:
@@ -160,6 +160,8 @@ Rules:
 - `AMBIGUOUS`: uncertain, flag it rather than omitting it
 - Node IDs must stay stable across chunks and reruns. Base them on the entity label or file-relative identity only. Never append chunk counters like `_c1`, `_c2`, `_chunk3`, or similar suffixes.
 - for code files, only add semantic edges AST would miss
+- for doc/paper files, store rationale as a `rationale` attribute on the relevant concept node; Do not create a separate rationale node or fragment node unless it is itself a named concept
+- when adding `calls` edges for code, source MUST be the caller and target MUST be the callee
 - for image files, use vision if available; for images extracted from PDFs, decode figures, tables, diagrams, captions, and embedded text when they carry meaning, or use a delegated OCR/vision model when configured, while preserving provenance to the source PDF and sidecar
 - if a file has YAML frontmatter, copy `source_url`, `captured_at`, `author`, `contributor` onto every node from that file
 

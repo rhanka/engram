@@ -2,7 +2,7 @@
  * Validate extraction JSON against the graphify schema before graph assembly.
  */
 
-export const VALID_FILE_TYPES = new Set(["code", "document", "paper", "image", "rationale"]);
+export const VALID_FILE_TYPES = new Set(["code", "document", "paper", "image", "concept", "rationale"]);
 export const VALID_CONFIDENCES = new Set(["EXTRACTED", "INFERRED", "AMBIGUOUS"]);
 export const REQUIRED_NODE_FIELDS = ["id", "label", "file_type", "source_file"] as const;
 export const REQUIRED_EDGE_FIELDS = ["source", "target", "relation", "confidence", "source_file"] as const;

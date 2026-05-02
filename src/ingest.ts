@@ -298,7 +298,7 @@ export async function ingest(
   }
 
   if (urlType === "youtube") {
-    const out = downloadAudio(url, targetDir);
+    const out = await downloadAudio(url, targetDir);
     console.log(`Downloaded audio: ${basename(out)}`);
     return out;
   }

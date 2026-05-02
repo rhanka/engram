@@ -5,22 +5,22 @@ This document tracks the delta between this TypeScript port and upstream Python 
 ## Scope
 
 - Current TypeScript product branch: `main`
-- Current TypeScript baseline: `703b0aed69e3cbc3c0b5acddfeee23f7a931b8fc`
+- Current TypeScript baseline: `107854a5ad3538462d7985b5bb00bc472bafe34a`
 - Current TypeScript npm release: `graphifyy@0.4.33`
 - Durable traceability spec: `spec/SPEC_UPSTREAM_TRACEABILITY.md`
 - Closed upstream `v3` baseline: `upstream/v3` at `699e996`
 - Closed Python parity target: remote tag `v0.4.23` at `8d908c5d43d079579604a82873fd7cff33a1b343`
 - Closed Python drift target: `upstream/v4` at `5843ffc277c54766854f9201286c9647da095390`
-- Active major-version source lock: `upstream/v5` at `770d7f54c40d7301a0166a6b7782cb03827897e5`
+- Active major-version source lock: `upstream/v5` at `f755aca58f36771923cebcc8f85f2eef6178a105`
 - Active CRG review reference: `tirth8205/code-review-graph` tag `v2.3.2` at `db2d2df789c25a101e33477b898c1840fb4c7bc7`
-- Current implementation branch for traceability work: `chore/upstream-v5-0.5.0-catchup`
+- Current implementation branch for traceability work: `chore/upstream-v5-0.5.5-catchup`
 
 ## Source Lock Notes
 
 - `git ls-remote` is the authority for Safi Python tags while local tag clobber risk exists.
 - Local `refs/tags/v0.4.23` is not trusted for parity claims because it differs from the remote tag observed by `git ls-remote`.
 - Python `upstream/v4` was fetched on 2026-04-25 and remains locked as a closed parity line at `5843ffc277c54766854f9201286c9647da095390`.
-- Python `upstream/v5` was fetched on 2026-04-25 and is the active upstream source lock for this branch at `770d7f54c40d7301a0166a6b7782cb03827897e5`.
+- Python `upstream/v5` was fetched on 2026-04-29 and is the active upstream source lock for this branch at `f755aca58f36771923cebcc8f85f2eef6178a105`.
 - Local `v0.4.28`..`v0.4.32` tags are not trusted for parity claims while tag clobber risk exists; use branch commits and `git ls-remote` instead.
 - CRG `v2.3.2` remains the stable review-feature source. CRG `main` has advanced and is intentionally deferred until a new spec updates the source lock.
 
@@ -116,7 +116,7 @@ This table is retained as closed history. The TypeScript product line has alread
 | `v0.4.27` / `d9b2928` | deterministic large-graph `GRAPH_REPORT`, stable edge node IDs, corrected common-root inference | `covered` | F2 drift audit | Covered by project-relative file-node remap plus stable relative-import targets in `tests/language-surface.test.ts`, and deterministic large-graph analysis coverage in `tests/analyze.test.ts`. |
 ## Active Python v5 Catch-up
 
-This table tracks the repo-oriented upstream `v5` line at `770d7f5`. The TypeScript fork keeps its own runtime and `.graphify/` state model while adopting the user-facing workflow changes that map cleanly.
+This table tracks the repo-oriented upstream `v5` line at `f755aca`. The TypeScript fork keeps its own runtime and `.graphify/` state model while adopting the user-facing workflow changes that map cleanly.
 
 | Upstream ref | Upstream scope | TS status | Plan lot | Catch-up action |
 | --- | --- | --- | --- | --- |
@@ -125,10 +125,22 @@ This table tracks the repo-oriented upstream `v5` line at `770d7f5`. The TypeScr
 | `df9b7ec` | `build_merge`, pre-write shrink guard, label dedup, chunk-suffix prompt hardening | `covered` / `intentional-delta` | V5 lot 2 | `buildMerge`, conservative label dedup, and JSON shrink guard are covered by `tests/build-merge.test.ts` and `tests/export-json.test.ts`. Dedup is intentionally conservative in TS to avoid collapsing same-label entities across distinct files. Skill prompts now forbid chunk-suffix node IDs. |
 | `8bed332` | upstream version bump to `0.5.0` | `n/a` | release lot | Do not mirror Python version bumps mechanically; TypeScript versioning remains release-driven. |
 | `770d7f5` | README badge refresh | `n/a` | docs lot | Python download badges do not map to npm-first TypeScript distribution. |
+| `6175e0a` | `hooksPath` expansion, `.graphifyignore` inline comments, Python write-sink annotations | `covered` / `n/a` | V5 lot 3 | `.graphifyignore` inline comments are covered by `tests/detect.test.ts`; `hooksPath`/nosec annotations are Python-specific or already handled by the TS hook installer. |
+| `4563b04` | ID collisions, path portability, JS/TS alias resolution, HTML controls, desync guard, rationale prompt | `covered` / `intentional-delta` | V5 lot 3 | Symbol ID collisions and `tsconfig.paths` alias resolution are covered by `tests/language-surface.test.ts`; HTML Show/Hide controls are covered by `tests/html-export.test.ts`; skill prompts now store rationale as node metadata and keep caller/callee direction explicit. The TS export/build pipeline already uses shrink guards with its own implementation shape. |
+| `a566bfb` | upstream version bump to `0.5.1` | `n/a` | release lot | Do not mirror Python version bumps mechanically. |
+| `ee1df22` | Claude Code PreToolUse matcher changes from `Glob|Grep` to `Bash` | `covered` | V5 lot 1 | Covered by `tests/claude-integration.test.ts`, CLI hook install/uninstall behavior, and README install guidance. |
+| `7359cda` | AST/semantic cache namespace split fixes `graphify update` collisions | `covered` | V5 lot 1 | Covered by `tests/cache.test.ts`, which separates AST and semantic caches while preserving legacy AST fallback compatibility. |
+| `dd86271` | SSRF DNS rebinding hardening and pre-`yt-dlp` URL validation | `covered` | V5 lot 1 | Covered by `tests/security.test.ts` and `tests/transcribe.test.ts`; redirects are revalidated and private/internal targets are rejected before download. |
+| `5904081` | Kimi backend, phantom god-node fix, `concept` file_type | `covered` / `n/a` / `intentional-delta` | V5 lot 2 | `concept` file_type is covered by `tests/validate.test.ts`. Kimi backend and Python-specific phantom-node behavior do not map directly to the TypeScript runtime/assistant contract, so they remain `n/a` or are absorbed by the TS node-ID model. |
+| `59cbad3` | Go package-call false-negative and `llm.py` robustness | `covered` / `n/a` | V5 lot 3 | Go package import handling is already covered by `tests/extract-call-confidence.test.ts`; `llm.py` robustness is Python-only and `n/a` for the TypeScript runtime. |
+| `f9c344b` | remember scan root so `graphify update` works without a path argument | `intentional-delta` | V5 lot 3 | The TypeScript fork keeps `.graphify/` project-local and documents `graphify update .` in installed guidance rather than storing a Python-style scan-root state. |
+| `a4ad901`, `eceaaad` | release notes only | `n/a` | docs lot | Release notes are not runtime parity work. |
+| `71d1b39`, `c750582`, `44fc32e`, `326c03e`, `28b17d3` | Kimi follow-up, raw-string warning, product-site churn, Python 3.14+ range | `n/a` | docs lot | These changes are Python packaging/site concerns or backend-specific follow-ups that do not map to the npm-first TypeScript runtime. |
+| `f755aca` | Kimi temperature fix and preserve community labels during cleanup | `covered` / `n/a` | V5 lot 2 | Community-label preservation is covered by `tests/skills.test.ts`; Kimi backend tuning remains `n/a` for the current TypeScript product line. |
 
 ## Release Gate
 
-Before claiming catch-up through Python `upstream/v5` at `770d7f5` or publishing the next TypeScript release from this branch:
+Before claiming catch-up through Python `upstream/v5` at `f755aca` or publishing the next TypeScript release from this branch:
 
 - all active Python drift rows must be `covered`, `n/a`, `deferred`, `rejected`, or `intentional-delta`
 - no row may remain `missing`, `partial`, `needs-audit`, or `needs-review`

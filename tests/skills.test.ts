@@ -17,6 +17,15 @@ const ALL_SKILL_DOCS = [
   "../src/skills/skill-trae.md",
 ];
 
+const EXTRACTION_PROMPT_DOCS = [
+  "../src/skills/skill.md",
+  "../src/skills/skill-codex.md",
+  "../src/skills/skill-droid.md",
+  "../src/skills/skill-opencode.md",
+  "../src/skills/skill-windows.md",
+  "../src/skills/skill-gemini.toml",
+];
+
 const DISTRIBUTED_SKILL_DOCS = [
   ...ALL_SKILL_DOCS,
   "../src/skills/skill-vscode.md",
@@ -69,6 +78,32 @@ describe("skill cache examples", () => {
       expect(content).toContain("never commit .graphify/branch.json");
       expect(content).toContain("never commit .graphify/worktree.json");
       expect(content).toContain("repo-relative paths");
+    }
+  });
+
+  it("preserves community labels during cleanup guidance", () => {
+    for (const relativePath of ALL_SKILL_DOCS) {
+      const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
+      expect(content).not.toMatch(/rm -f[^\n]*\.graphify\/\.graphify_labels\.json/);
+      expect(content).not.toMatch(/Remove-Item[^\n]*\.graphify\/\.graphify_labels\.json/);
+    }
+  });
+
+  it("documents rationale as node metadata and keeps call direction explicit", () => {
+    for (const relativePath of EXTRACTION_PROMPT_DOCS) {
+      const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
+      expect(content).toContain("rationale");
+      expect(content).toContain("Do not create a separate rationale node");
+      expect(content).toContain("source MUST be the caller");
+      expect(content).toContain("target MUST be the callee");
+    }
+  });
+
+  it("keeps extraction schema file_type examples aligned with concept support", () => {
+    for (const relativePath of EXTRACTION_PROMPT_DOCS) {
+      const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
+      expect(content).toContain("file_type\":\"code|document|paper|image|concept|rationale");
+      expect(content).toContain("\"rationale\":null");
     }
   });
 

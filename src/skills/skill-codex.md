@@ -270,7 +270,8 @@ Rules:
 - Node IDs must stay stable across chunks and reruns. Base them on the entity label or file-relative identity only. Never append chunk counters like `_c1`, `_c2`, `_chunk3`, or similar suffixes.
 
 Code files: focus on semantic edges AST cannot find. Do not re-extract imports.
-Doc/paper files: extract named concepts, entities, citations, and rationale.
+Doc/paper files: extract named concepts, entities, citations. For rationale (WHY decisions were made, trade-offs, design intent): store it as a `rationale` attribute on the relevant concept node. Do not create a separate rationale node or fragment node unless it is itself a named concept.
+Code files: when adding `calls` edges, source MUST be the caller and target MUST be the callee. Never reverse the direction.
 Image files: use vision to understand what the image is, not just OCR. For images extracted from PDFs, decode figures, tables, diagrams, captions, and embedded text when they carry meaning; use Codex vision by default, or a delegated OCR/vision model when configured, and keep provenance to the source PDF and sidecar.
 
 DEEP_MODE=true means: be aggressive with INFERRED edges, but mark uncertain ones AMBIGUOUS.
@@ -281,7 +282,7 @@ Hyperedges: add sparingly, only when a group relationship carries meaning beyond
 If a file has YAML frontmatter, copy source_url, captured_at, author, contributor onto every node from that file.
 
 Output exactly:
-{"nodes":[{"id":"filestem_entityname","label":"Human Readable Name","file_type":"code|document|paper|image","source_file":"relative/path","source_location":null,"source_url":null,"captured_at":null,"author":null,"contributor":null}],"edges":[{"source":"node_id","target":"node_id","relation":"calls|implements|references|cites|conceptually_related_to|shares_data_with|semantically_similar_to|rationale_for","confidence":"EXTRACTED|INFERRED|AMBIGUOUS","confidence_score":1.0,"source_file":"relative/path","source_location":null,"weight":1.0}],"hyperedges":[{"id":"snake_case_id","label":"Human Readable Label","nodes":["node_id1","node_id2","node_id3"],"relation":"participate_in|implement|form","confidence":"EXTRACTED|INFERRED","confidence_score":0.75,"source_file":"relative/path"}],"input_tokens":0,"output_tokens":0}
+{"nodes":[{"id":"filestem_entityname","label":"Human Readable Name","file_type":"code|document|paper|image|concept|rationale","source_file":"relative/path","source_location":null,"source_url":null,"captured_at":null,"author":null,"contributor":null,"rationale":null}],"edges":[{"source":"node_id","target":"node_id","relation":"calls|implements|references|cites|conceptually_related_to|shares_data_with|semantically_similar_to|rationale_for","confidence":"EXTRACTED|INFERRED|AMBIGUOUS","confidence_score":1.0,"source_file":"relative/path","source_location":null,"weight":1.0}],"hyperedges":[{"id":"snake_case_id","label":"Human Readable Label","nodes":["node_id1","node_id2","node_id3"],"relation":"participate_in|implement|form","confidence":"EXTRACTED|INFERRED","confidence_score":0.75,"source_file":"relative/path"}],"input_tokens":0,"output_tokens":0}
 ```
 
 ##### Step B3 - Finalize the build
@@ -422,7 +423,7 @@ $(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" benc
 Clean up temp files:
 
 ```bash
-rm -f .graphify/.graphify_detect.json .graphify/.graphify_detect_semantic.json .graphify/.graphify_transcripts.json .graphify/.graphify_pdf_ocr.json .graphify/.graphify_ast.json .graphify/.graphify_cached.json .graphify/.graphify_uncached.txt .graphify/.graphify_semantic_new.json .graphify/.graphify_analysis.json .graphify/.graphify_labels.json
+rm -f .graphify/.graphify_detect.json .graphify/.graphify_detect_semantic.json .graphify/.graphify_transcripts.json .graphify/.graphify_pdf_ocr.json .graphify/.graphify_ast.json .graphify/.graphify_cached.json .graphify/.graphify_uncached.txt .graphify/.graphify_semantic_new.json .graphify/.graphify_analysis.json
 rm -f .graphify/needs_update 2>/dev/null || true
 ```
 

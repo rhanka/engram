@@ -145,7 +145,7 @@ $graphify .                        # Codex
 
 **Claude Code** 会做两件事：
 1. 在 `CLAUDE.md` 中写入一段规则，告诉 Claude 在回答架构问题前先读 `.graphify/GRAPH_REPORT.md`
-2. 安装一个 **PreToolUse hook**（写入 `settings.json`），在每次 `Glob` 和 `Grep` 前触发
+2. 安装一个 **PreToolUse hook**（写入 `settings.json`），在每次 Bash 工具调用前触发
 
 如果知识图谱存在，Claude 会先看到：_"graphify: Knowledge graph exists. Read .graphify/GRAPH_REPORT.md for god nodes and community structure before searching raw files."_ —— 这样 Claude 会优先按图谱导航，而不是一上来就 grep 整个项目。
 

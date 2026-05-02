@@ -12,6 +12,7 @@ const ALLOWED_SCHEMES = new Set(["http:", "https:"]);
 const MAX_FETCH_BYTES = 52_428_800; // 50 MB
 const MAX_TEXT_BYTES = 10_485_760; // 10 MB
 const BLOCKED_HOSTS = new Set(["metadata.google.internal", "metadata.google.com"]);
+const MAX_REDIRECTS = 5;
 
 // ---------------------------------------------------------------------------
 // URL validation
@@ -37,25 +38,7 @@ export async function validateUrl(url: string): Promise<string> {
 
   const hostname = parsed.hostname;
   if (hostname) {
-    if (BLOCKED_HOSTS.has(hostname.toLowerCase())) {
-      throw new Error(`Blocked cloud metadata endpoint '${hostname}'. Got: ${url}`);
-    }
-
-    // Resolve hostname and block private/reserved IP ranges
-    try {
-      const addrs = await dns.resolve4(hostname).catch(() => [] as string[]);
-      const addrs6 = await dns.resolve6(hostname).catch(() => [] as string[]);
-      for (const addr of [...addrs, ...addrs6]) {
-        if (isPrivateIp(addr)) {
-          throw new Error(
-            `Blocked private/internal IP ${addr} (resolved from '${hostname}'). Got: ${url}`,
-          );
-        }
-      }
-    } catch (e) {
-      if (e instanceof Error && e.message.startsWith("Blocked")) throw e;
-      // DNS failure will surface later during fetch
-    }
+    await validateHostname(hostname, url);
   }
 
   return url;
@@ -105,6 +88,40 @@ function isPrivateIp(addr: string): boolean {
   return false;
 }
 
+async function validateHostname(hostname: string, url: string): Promise<void> {
+  const normalized = hostname.toLowerCase();
+  if (BLOCKED_HOSTS.has(normalized)) {
+    throw new Error(`Blocked cloud metadata endpoint '${hostname}'. Got: ${url}`);
+  }
+
+  if (net.isIP(hostname)) {
+    if (isPrivateIp(hostname)) {
+      throw new Error(`Blocked private/internal IP ${hostname} (resolved from '${hostname}'). Got: ${url}`);
+    }
+    return;
+  }
+
+  try {
+    const results = await dns.lookup(hostname, { all: true, verbatim: true });
+    for (const result of results) {
+      if (isPrivateIp(result.address)) {
+        throw new Error(
+          `Blocked private/internal IP ${result.address} (resolved from '${hostname}'). Got: ${url}`,
+        );
+      }
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Blocked")) {
+      throw error;
+    }
+    // DNS resolution failures surface later during fetch.
+  }
+}
+
+function isRedirectStatus(status: number): boolean {
+  return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
+}
+
 // ---------------------------------------------------------------------------
 // Safe fetch
 // ---------------------------------------------------------------------------
@@ -118,47 +135,57 @@ export async function safeFetch(
   maxBytes: number = MAX_FETCH_BYTES,
   timeout: number = 30_000,
 ): Promise<Buffer> {
-  await validateUrl(url);
+  let currentUrl = await validateUrl(url);
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
 
   try {
-    const resp = await fetch(url, {
-      signal: controller.signal,
-      headers: { "User-Agent": "Mozilla/5.0 graphify/1.0" },
-      redirect: "follow",
-    });
+    for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
+      const resp = await fetch(currentUrl, {
+        signal: controller.signal,
+        headers: { "User-Agent": "Mozilla/5.0 graphify/1.0" },
+        redirect: "manual",
+      });
 
-    if (!resp.ok) {
-      throw new Error(`HTTP ${resp.status} fetching ${url}`);
-    }
-
-    // Validate final URL after redirects
-    if (resp.url !== url) {
-      await validateUrl(resp.url);
-    }
-
-    const reader = resp.body?.getReader();
-    if (!reader) throw new Error("No response body");
-
-    const chunks: Uint8Array[] = [];
-    let total = 0;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.length;
-      if (total > maxBytes) {
-        reader.cancel();
-        throw new Error(
-          `Response from ${url} exceeds size limit (${Math.floor(maxBytes / 1_048_576)} MB). Aborting download.`,
-        );
+      if (isRedirectStatus(resp.status)) {
+        const location = resp.headers.get("location");
+        if (!location) {
+          throw new Error(`HTTP ${resp.status} redirect from ${currentUrl} without a Location header`);
+        }
+        if (redirects === MAX_REDIRECTS) {
+          throw new Error(`Too many redirects while fetching ${url}`);
+        }
+        currentUrl = await validateUrl(new URL(location, currentUrl).toString());
+        continue;
       }
-      chunks.push(value);
-    }
 
-    return Buffer.concat(chunks);
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status} fetching ${currentUrl}`);
+      }
+
+      const reader = resp.body?.getReader();
+      if (!reader) throw new Error("No response body");
+
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.length;
+        if (total > maxBytes) {
+          reader.cancel();
+          throw new Error(
+            `Response from ${currentUrl} exceeds size limit (${Math.floor(maxBytes / 1_048_576)} MB). Aborting download.`,
+          );
+        }
+        chunks.push(value);
+      }
+
+      return Buffer.concat(chunks);
+    }
+    throw new Error(`Too many redirects while fetching ${url}`);
   } finally {
     clearTimeout(timer);
   }
