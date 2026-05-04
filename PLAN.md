@@ -156,23 +156,23 @@ Progress note:
 - Modify: `spec/SPEC_UPSTREAM_TRACEABILITY.md`
 - Modify as needed: `package.json`, `package-lock.json`, release docs, generated `.graphify` artifacts
 
-- [ ] Verify every active `0.6.x` and `0.7.x` row in `UPSTREAM_GAP.md` is closed with `covered`, `intentional-delta`, `deferred`, `rejected`, or `n/a`.
-- [ ] Confirm `spec/SPEC_UPSTREAM_TRACEABILITY.md` matches the final state exactly.
-- [ ] Run the release verification commands listed below on the implementation branch.
+- [x] Verify every active `0.6.x` and `0.7.x` row in `UPSTREAM_GAP.md` is closed with `covered`, `intentional-delta`, `deferred`, `rejected`, or `n/a`.
+- [x] Confirm `spec/SPEC_UPSTREAM_TRACEABILITY.md` matches the final state exactly.
+- [x] Run the release verification commands listed below on the implementation branch.
 - [ ] Bump the package version to `0.7.4` only after the release gate passes.
 - [ ] Regenerate `.graphify` and commit only the portable, tracked artifacts.
 - [ ] Publish `graphifyy@0.7.4`, update local installs, and record the release in both traceability documents.
 
 ## Release Gate
 
-- [ ] `git diff --check`
-- [ ] `npm run lint`
-- [ ] `npm run build`
-- [ ] `npm test`
-- [ ] `npm run test:smoke` whenever runtime/package behavior changes
-- [ ] `npx graphify hook-rebuild`
-- [ ] `node dist/cli.js portable-check .graphify`
-- [ ] package-level UAT from a tarball install
+- [x] `git diff --check`
+- [x] `npm run lint`
+- [x] `npm run build`
+- [x] `npm test`
+- [x] `npm run test:smoke` whenever runtime/package behavior changes
+- [x] `npx graphify hook-rebuild`
+- [x] `node dist/cli.js portable-check .graphify`
+- [x] package-level UAT from a tarball install
 - [ ] GitHub Actions release and post-publish install checks pass
 
 ## Branching And Commit Rules
