@@ -357,6 +357,13 @@ export interface DetectOptions {
   scope?: InputScopeInspection;
 }
 
+interface ManifestEntry {
+  mtime: number;
+  hash: string;
+}
+
+type ManifestRecord = Record<string, number | ManifestEntry>;
+
 function resolveCandidateFiles(
   rootResolved: string,
   candidateRoot: string,
@@ -481,20 +488,33 @@ export function detect(root: string, options?: DetectOptions): DetectionResult {
   };
 }
 
-export function loadManifest(manifestPath: string = defaultManifestPath()): Record<string, number> {
+function md5File(filePath: string): string {
+  const hash = createHash("md5");
   try {
-    return JSON.parse(readFileSync(manifestPath, "utf-8")) as Record<string, number>;
+    hash.update(readFileSync(filePath));
+  } catch {
+    return "";
+  }
+  return hash.digest("hex");
+}
+
+export function loadManifest(manifestPath: string = defaultManifestPath()): ManifestRecord {
+  try {
+    return JSON.parse(readFileSync(manifestPath, "utf-8")) as ManifestRecord;
   } catch {
     return {};
   }
 }
 
 export function saveManifest(files: Record<string, string[]>, manifestPath: string = defaultManifestPath()): void {
-  const manifest: Record<string, number> = {};
+  const manifest: Record<string, ManifestEntry> = {};
   for (const fileList of Object.values(files)) {
     for (const f of fileList) {
       try {
-        manifest[f] = statSync(f).mtimeMs;
+        manifest[f] = {
+          mtime: statSync(f).mtimeMs,
+          hash: md5File(f),
+        };
       } catch { /* deleted between detect and save */ }
     }
   }
@@ -539,7 +559,17 @@ export function detectIncremental(
       const storedMtime = manifest[f];
       let currentMtime = 0;
       try { currentMtime = statSync(f).mtimeMs; } catch { /* ignore */ }
-      if (storedMtime === undefined || currentMtime > storedMtime) {
+      let changed = false;
+      if (storedMtime === undefined) {
+        changed = true;
+      } else if (typeof storedMtime === "number") {
+        changed = currentMtime > storedMtime;
+      } else {
+        if (storedMtime.mtime === undefined || currentMtime !== storedMtime.mtime) {
+          changed = md5File(f) !== storedMtime.hash;
+        }
+      }
+      if (changed) {
         newFiles[ftype]!.push(f);
       } else {
         unchangedFiles[ftype]!.push(f);

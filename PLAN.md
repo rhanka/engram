@@ -49,11 +49,11 @@
 - Modify: `spec/SPEC_UPSTREAM_TRACEABILITY.md`
 - Modify as needed: parser, detect, query, update, language-surface files/tests
 
-- [ ] Audit `v0.6.0` SQL AST extraction and YAML indexing against the current TypeScript parser surface.
-- [ ] Decide whether SQL extraction is in-scope for this parity target or an explicit `deferred` delta.
+- [x] Audit `v0.6.0` SQL AST extraction and YAML indexing against the current TypeScript parser surface.
+- [x] Decide whether SQL extraction is in-scope for this parity target or an explicit `deferred` delta.
 - [x] Audit `v0.6.1` `.graphifyignore` semantics, anchored pattern handling, and hermetic non-VCS scan behavior against the current TypeScript ignore engine.
-- [ ] Audit `v0.6.2` exact-match query ranking, content-hash-aware `update`, R support, and shebang-based shell detection.
-- [ ] Mark each audited row in `UPSTREAM_GAP.md` with evidence: test name, verification command, or explicit intentional delta note.
+- [x] Audit `v0.6.2` exact-match query ranking, content-hash-aware `update`, R support, and shebang-based shell detection.
+- [x] Mark each audited row in `UPSTREAM_GAP.md` with evidence: test name, verification command, or explicit intentional delta note.
 - [ ] Commit this lot with only `0.6.0` to `0.6.2` traceability closures.
 
 ## Task 2: Incremental Rebuild Reliability, Hooks, And Platform Surface (`0.6.3` to `0.6.6`)

@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, rmSync, statSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { detect, classifyFile } from "../src/detect.js";
+import { detect, classifyFile, detectIncremental, saveManifest } from "../src/detect.js";
 import { inspectInputScope } from "../src/input-scope.js";
 import { execGit } from "../src/git.js";
 import { FileType } from "../src/types.js";
@@ -323,5 +323,59 @@ describe("detect", () => {
       excluded_untracked_count: 1,
       excluded_sensitive_count: 0,
     });
+  });
+
+  it("treats mtime-only file touches as unchanged during incremental detection", () => {
+    const filePath = join(tmpDir, "main.py");
+    const manifestPath = join(tmpDir, ".graphify", "manifest.json");
+    writeFileSync(filePath, "print('hello')\n");
+
+    const initial = detect(tmpDir);
+    saveManifest(initial.files, manifestPath);
+
+    writeFileSync(filePath, "print('hello')\n");
+    const bumped = new Date(Date.now() + 5_000);
+    utimesSync(filePath, bumped, bumped);
+
+    const result = detectIncremental(tmpDir, manifestPath);
+
+    expect(result.new_total).toBe(0);
+    expect(result.new_files?.code).toEqual([]);
+    expect(result.unchanged_files?.code).toEqual([filePath]);
+  });
+
+  it("writes manifest entries with mtime and content hash", () => {
+    const filePath = join(tmpDir, "main.py");
+    const manifestPath = join(tmpDir, ".graphify", "manifest.json");
+    writeFileSync(filePath, "print('hello')\n");
+
+    const initial = detect(tmpDir);
+    saveManifest(initial.files, manifestPath);
+
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf-8")) as Record<string, {
+      mtime?: number;
+      hash?: string;
+    }>;
+
+    expect(manifest[filePath]?.mtime).toBeTypeOf("number");
+    expect(manifest[filePath]?.hash).toMatch(/^[a-f0-9]{32}$/);
+  });
+
+  it("keeps legacy numeric manifests compatible during incremental detection", () => {
+    const filePath = join(tmpDir, "main.py");
+    const manifestPath = join(tmpDir, ".graphify", "manifest.json");
+    writeFileSync(filePath, "print('hello')\n");
+    const previousMtime = statSync(filePath).mtimeMs;
+    mkdirSync(join(tmpDir, ".graphify"), { recursive: true });
+    writeFileSync(manifestPath, JSON.stringify({ [filePath]: previousMtime }), "utf-8");
+
+    writeFileSync(filePath, "print('updated')\n");
+    const bumped = new Date(Date.now() + 5_000);
+    utimesSync(filePath, bumped, bumped);
+
+    const result = detectIncremental(tmpDir, manifestPath);
+
+    expect(result.new_total).toBe(1);
+    expect(result.new_files?.code).toEqual([filePath]);
   });
 });
