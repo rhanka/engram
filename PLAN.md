@@ -68,12 +68,12 @@ Progress note:
 - covered/deferred in this lot so far: wiki stale clearing, Windows-safe wiki filenames, Pi-agent install decision (`deferred`)
 - covered in this lot so far: community checkbox multi-select HTML controls
 - covered in this lot so far: ambiguous short-name call suppression
-- still open in this lot: Kotlin call-edge parity
+- covered/deferred in this lot so far: Kotlin call-edge parity decision (`deferred` until a wasm-compatible Kotlin grammar strategy exists in the TS runtime)
 
 - [x] Audit `v0.6.3` semantic-node preservation during `update`, async detached hooks, common-name suppression in god nodes, and `cluster-only` large-graph guard.
-- [ ] Audit `v0.6.4` and `v0.6.5` Codex/Windows hook portability and `graphify update --force`.
+- [x] Audit `v0.6.4` and `v0.6.5` Codex/Windows hook portability and `graphify update --force`.
 - [x] Audit `v0.6.6` Pi-agent installer support and decide whether it is `covered`, `deferred`, or `rejected` for the TypeScript product line.
-- [ ] Record every installer/platform decision as either parity, intentional delta, or explicit deferment.
+- [x] Record every installer/platform decision as either parity, intentional delta, or explicit deferment.
 - [ ] Commit this lot with only `0.6.3` to `0.6.6` closures and associated tests.
 
 ## Task 3: Visualization, Ignore Semantics, And Portable Output Routing (`0.6.7` to `0.6.9`)
