@@ -76,6 +76,56 @@ function loadCliGraph(graphPath: string): Graph {
   return loadGraphFromData(JSON.parse(readFileSync(gp, "utf-8")));
 }
 
+function communitiesFromCliGraph(G: Graph): Map<number, string[]> {
+  const communities = new Map<number, string[]>();
+  G.forEachNode((nodeId, data) => {
+    const rawCommunity = data.community;
+    const community = typeof rawCommunity === "number"
+      ? rawCommunity
+      : typeof rawCommunity === "string" && rawCommunity.trim().length > 0
+        ? Number.parseInt(rawCommunity, 10)
+        : null;
+    if (community === null || Number.isNaN(community)) return;
+    const members = communities.get(community) ?? [];
+    members.push(nodeId);
+    communities.set(community, members);
+  });
+  return communities;
+}
+
+function communityLabelsFromCliGraph(
+  G: Graph,
+  communities: Map<number, string[]>,
+): Map<number, string> {
+  const labels = new Map<number, string>();
+  const graphLabels = G.getAttribute("community_labels") as Record<string, unknown> | undefined;
+  if (graphLabels && typeof graphLabels === "object") {
+    for (const [key, value] of Object.entries(graphLabels)) {
+      const community = Number.parseInt(key, 10);
+      if (Number.isNaN(community)) continue;
+      if (typeof value === "string" && value.trim().length > 0) {
+        labels.set(community, value.trim());
+      }
+    }
+  }
+  G.forEachNode((_nodeId, data) => {
+    const rawCommunity = data.community;
+    const community = typeof rawCommunity === "number"
+      ? rawCommunity
+      : typeof rawCommunity === "string" && rawCommunity.trim().length > 0
+        ? Number.parseInt(rawCommunity, 10)
+        : null;
+    if (community === null || Number.isNaN(community) || labels.has(community)) return;
+    if (typeof data.community_name === "string" && data.community_name.trim().length > 0) {
+      labels.set(community, data.community_name.trim());
+    }
+  });
+  for (const community of communities.keys()) {
+    if (!labels.has(community)) labels.set(community, `Community ${community}`);
+  }
+  return labels;
+}
+
 function resolvePortableCheckDir(inputPath: string = ".graphify"): string {
   const resolved = resolve(inputPath);
   if (existsSync(resolved) && statSync(resolved).isDirectory()) {
@@ -1932,6 +1982,143 @@ export async function main(): Promise<void> {
       };
       writeFileSync(paths.scratch.analysis, JSON.stringify(analysis, null, 2), "utf-8");
       console.log(`Done - ${communities.size} communities. GRAPH_REPORT.md, graph.json and graph.html updated.`);
+    });
+
+  const exportCommand = program
+    .command("export")
+    .description("Export an existing graph into HTML, wiki, Obsidian, SVG, GraphML, or Neo4j Cypher artifacts");
+
+  exportCommand
+    .command("html")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--out <path>", "Path to write graph.html")
+    .option("--no-viz", "Skip HTML export and remove any stale output")
+    .action(async (opts) => {
+      try {
+        const graphPath = resolveGraphInputPath(opts.graph);
+        const outPath = resolve(opts.out ?? join(dirname(graphPath), "graph.html"));
+        if (opts.viz === false) {
+          if (existsSync(outPath)) unlinkSync(outPath);
+          console.log(`HTML export skipped (--no-viz): ${outPath}`);
+          return;
+        }
+        const G = loadCliGraph(graphPath);
+        const communities = communitiesFromCliGraph(G);
+        const labels = communityLabelsFromCliGraph(G, communities);
+        const { safeToHtml } = await import("./html-export.js");
+        const written = safeToHtml(G, communities, outPath, { communityLabels: labels }, {
+          onWarning: (message) => console.warn(message),
+        });
+        if (!written) {
+          process.exit(1);
+        }
+        console.log(`graph.html written - open in any browser: ${outPath}`);
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    });
+
+  exportCommand
+    .command("wiki")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--dir <path>", "Directory to write wiki pages")
+    .action(async (opts) => {
+      try {
+        const graphPath = resolveGraphInputPath(opts.graph);
+        const outDir = resolve(opts.dir ?? join(dirname(graphPath), "wiki"));
+        const G = loadCliGraph(graphPath);
+        const communities = communitiesFromCliGraph(G);
+        const labels = communityLabelsFromCliGraph(G, communities);
+        const { toWiki } = await import("./wiki.js");
+        const count = toWiki(G, communities, outDir, { communityLabels: labels });
+        console.log(`Wiki export: ${count} page(s) written to ${outDir}`);
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    });
+
+  exportCommand
+    .command("obsidian")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--dir <path>", "Directory to write the Obsidian vault")
+    .action(async (opts) => {
+      try {
+        const graphPath = resolveGraphInputPath(opts.graph);
+        const outDir = resolve(opts.dir ?? join(dirname(graphPath), "obsidian"));
+        const G = loadCliGraph(graphPath);
+        const communities = communitiesFromCliGraph(G);
+        const labels = communityLabelsFromCliGraph(G, communities);
+        const [{ toCanvas }, { toWiki }] = await Promise.all([
+          import("./export.js"),
+          import("./wiki.js"),
+        ]);
+        const count = toWiki(G, communities, outDir, { communityLabels: labels });
+        toCanvas(G, communities, join(outDir, "graph.canvas"), { communityLabels: labels });
+        console.log(`Obsidian vault: ${count} note(s) written to ${outDir}`);
+        console.log(`Canvas: ${join(outDir, "graph.canvas")} - open in Obsidian for structured community layout`);
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    });
+
+  exportCommand
+    .command("svg")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--out <path>", "Path to write graph.svg")
+    .action(async (opts) => {
+      try {
+        const graphPath = resolveGraphInputPath(opts.graph);
+        const outPath = resolve(opts.out ?? join(dirname(graphPath), "graph.svg"));
+        const G = loadCliGraph(graphPath);
+        const communities = communitiesFromCliGraph(G);
+        const labels = communityLabelsFromCliGraph(G, communities);
+        const { toSvg } = await import("./export.js");
+        toSvg(G, communities, outPath, labels);
+        console.log(`graph.svg written - embeds in Obsidian, Notion, GitHub READMEs: ${outPath}`);
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    });
+
+  exportCommand
+    .command("graphml")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--out <path>", "Path to write graph.graphml")
+    .action(async (opts) => {
+      try {
+        const graphPath = resolveGraphInputPath(opts.graph);
+        const outPath = resolve(opts.out ?? join(dirname(graphPath), "graph.graphml"));
+        const G = loadCliGraph(graphPath);
+        const communities = communitiesFromCliGraph(G);
+        const { toGraphml } = await import("./export.js");
+        toGraphml(G, communities, outPath);
+        console.log(`graph.graphml written - open in Gephi, yEd, or any GraphML tool: ${outPath}`);
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    });
+
+  exportCommand
+    .command("neo4j")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--out <path>", "Path to write cypher.txt")
+    .action(async (opts) => {
+      try {
+        const graphPath = resolveGraphInputPath(opts.graph);
+        const outPath = resolve(opts.out ?? join(dirname(graphPath), "cypher.txt"));
+        const G = loadCliGraph(graphPath);
+        const { toCypher } = await import("./export.js");
+        toCypher(G, outPath);
+        console.log(`cypher.txt written - import with: cypher-shell < ${outPath}`);
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
     });
 
   program

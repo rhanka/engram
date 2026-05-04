@@ -32,11 +32,37 @@ function writeGraph(dir: string): string {
     graphPath,
     JSON.stringify({
       directed: false,
-      graph: {},
+      graph: {
+        community_labels: {
+          "0": "Community 0",
+          "1": "Community 1",
+        },
+      },
       nodes: [
-        { id: "alpha", label: "AlphaService", source_file: "src/alpha.ts", file_type: "code" },
-        { id: "beta", label: "BetaRepository", source_file: "src/beta.ts", file_type: "code" },
-        { id: "gamma", label: "GammaDocs", source_file: "docs/gamma.md", file_type: "document" },
+        {
+          id: "alpha",
+          label: "AlphaService",
+          source_file: "src/alpha.ts",
+          file_type: "code",
+          community: 0,
+          community_name: "Community 0",
+        },
+        {
+          id: "beta",
+          label: "BetaRepository",
+          source_file: "src/beta.ts",
+          file_type: "code",
+          community: 0,
+          community_name: "Community 0",
+        },
+        {
+          id: "gamma",
+          label: "GammaDocs",
+          source_file: "docs/gamma.md",
+          file_type: "document",
+          community: 1,
+          community_name: "Community 1",
+        },
       ],
       links: [
         { source: "alpha", target: "beta", relation: "uses", confidence: "EXTRACTED" },
@@ -221,6 +247,58 @@ describe("public CLI runtime command parity", () => {
     expect(result.logs.join("\n")).toContain(dest);
     expect(existsSync(join(dest, ".git"))).toBe(true);
     expect(readFileSync(join(dest, "README.md"), "utf-8")).toContain("source");
+  });
+
+  it("supports export html and --no-viz cleanup", async () => {
+    const dir = tempProject();
+    const graphPath = writeGraph(dir);
+    const htmlPath = join(dir, ".graphify", "graph.html");
+
+    const html = await runCli(["export", "html", "--graph", graphPath], dir);
+    expect(html.exitCode).toBe(0);
+    expect(html.logs.join("\n")).toContain("graph.html");
+    expect(existsSync(htmlPath)).toBe(true);
+
+    const noViz = await runCli(["export", "html", "--graph", graphPath, "--no-viz"], dir);
+    expect(noViz.exitCode).toBe(0);
+    expect(noViz.logs.join("\n")).toContain("HTML export skipped");
+    expect(existsSync(htmlPath)).toBe(false);
+  });
+
+  it("supports export wiki and obsidian vault generation", async () => {
+    const dir = tempProject();
+    const graphPath = writeGraph(dir);
+    const obsidianDir = join(dir, "vault");
+
+    const wiki = await runCli(["export", "wiki", "--graph", graphPath], dir);
+    const obsidian = await runCli(["export", "obsidian", "--graph", graphPath, "--dir", obsidianDir], dir);
+
+    expect(wiki.exitCode).toBe(0);
+    expect(wiki.logs.join("\n")).toContain("wiki");
+    expect(existsSync(join(dir, ".graphify", "wiki", "index.md"))).toBe(true);
+
+    expect(obsidian.exitCode).toBe(0);
+    expect(obsidian.logs.join("\n")).toContain("graph.canvas");
+    expect(existsSync(join(obsidianDir, "index.md"))).toBe(true);
+    expect(existsSync(join(obsidianDir, "graph.canvas"))).toBe(true);
+  });
+
+  it("supports export svg, graphml, and neo4j cypher", async () => {
+    const dir = tempProject();
+    const graphPath = writeGraph(dir);
+
+    const svg = await runCli(["export", "svg", "--graph", graphPath], dir);
+    const graphml = await runCli(["export", "graphml", "--graph", graphPath], dir);
+    const neo4j = await runCli(["export", "neo4j", "--graph", graphPath], dir);
+
+    expect(svg.exitCode).toBe(0);
+    expect(readFileSync(join(dir, ".graphify", "graph.svg"), "utf-8")).toContain("<svg");
+
+    expect(graphml.exitCode).toBe(0);
+    expect(readFileSync(join(dir, ".graphify", "graph.graphml"), "utf-8")).toContain("<graphml");
+
+    expect(neo4j.exitCode).toBe(0);
+    expect(readFileSync(join(dir, ".graphify", "cypher.txt"), "utf-8")).toContain("MERGE");
   });
 
   it("supports merge-graphs and annotates nodes with their repo of origin", async () => {
