@@ -6,18 +6,18 @@ This document tracks the delta between this TypeScript port and upstream Python 
 
 - Current TypeScript product branch: `main`
 - Current TypeScript baseline: `1f30efa7afaf5c98f06fcaebbb727fd4f2fb3f8a`
-- Current TypeScript npm release: `graphifyy@0.5.6`
+- Current TypeScript npm release: `graphifyy@0.7.4`
 - Durable traceability spec: `spec/SPEC_UPSTREAM_TRACEABILITY.md`
 - Closed upstream `v3` baseline: `upstream/v3` at `699e996`
 - Closed Python parity target: remote tag `v0.4.23` at `8d908c5d43d079579604a82873fd7cff33a1b343`
 - Closed Python drift target: `upstream/v4` at `5843ffc277c54766854f9201286c9647da095390`
 - Closed Python `v5` parity line: remote `upstream/v5` at `f755aca58f36771923cebcc8f85f2eef6178a105`
 - Closed Python `v6` parity line: remote `upstream/v6` at `f81e3bc2154d21062f56f9e4ec9f923dfe7d128e`
-- Active continuation source lock: remote `upstream/v7` at `ee85bbf80cc6fedff0a17d5ea1da77f20da0729b`
-- Effective parity target commit for `0.7.4`: `26a5a35200dda6207bf6fc16afed83c71238bb65` on `upstream/v7`, with feature commit `741ac3655bd33314e1aaca51e6fd30271c74c61b`
+- Closed continuation source lock for the `0.7.x` parity cycle: remote `upstream/v7` at `ee85bbf80cc6fedff0a17d5ea1da77f20da0729b`
+- Closed parity target commit for `0.7.4`: `26a5a35200dda6207bf6fc16afed83c71238bb65` on `upstream/v7`, with feature commit `741ac3655bd33314e1aaca51e6fd30271c74c61b`
 - Active CRG stable review reference: `tirth8205/code-review-graph` tag `v2.3.2` at `db2d2df789c25a101e33477b898c1840fb4c7bc7`
 - Exploratory CRG head: remote `main` at `0919071a9ba353e604981059e99ee2ed98768092`
-- Current implementation branch for traceability work: `upstream-0.7.4-traceability`
+- Current implementation branch for traceability work: `main` (`graphifyy@0.7.4` released)
 
 ## Source Lock Notes
 
@@ -34,6 +34,7 @@ This document tracks the delta between this TypeScript port and upstream Python 
 - No CRG `main` feature has been adopted in this `0.7.4` catch-up without being recorded as an additive TypeScript delta.
 - Package version alignment is driven by Python Graphify parity targets, not by `code-review-graph` tags or `main`.
 - The active `0.7.4` catch-up must stay TypeScript-only; no new Python dependency may be introduced to claim parity.
+- The `0.7.4` parity cycle is closed in the TypeScript release line; any newer upstream drift must start a new traceability pass.
 
 ## Fork Guardrail
 

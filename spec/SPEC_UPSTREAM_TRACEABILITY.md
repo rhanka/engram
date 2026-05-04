@@ -6,7 +6,7 @@ This document is the durable upstream traceability contract for the TypeScript G
 
 - Created: 2026-04-22
 - TypeScript baseline: `main` at `1f30efa7afaf5c98f06fcaebbb727fd4f2fb3f8a`
-- TypeScript package: `graphifyy@0.5.6`
+- TypeScript package: `graphifyy@0.7.4`
 - Source orientation: `spec/SPEC_UPSTREAM_DUAL_CATCHUP_2026_04.md`
 - Review inspiration orientation: `spec/SPEC_CODE_REVIEW_GRAPH_OPPORUNITY.md`
 
@@ -31,7 +31,7 @@ The TypeScript fork must stay generic, npm-first, `.graphify/`-based, and TypeSc
 
 | Source | Ref | Remote observed commit | Local tracking commit | Package/version | Status | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| TypeScript Graphify | `main` | `1f30efa7afaf5c98f06fcaebbb727fd4f2fb3f8a` | `1f30efa7afaf5c98f06fcaebbb727fd4f2fb3f8a` | `graphifyy@0.5.6` | `covered` | Current implementation baseline for this traceability pass. |
+| TypeScript Graphify | `main` at traceability start | `1f30efa7afaf5c98f06fcaebbb727fd4f2fb3f8a` | `1f30efa7afaf5c98f06fcaebbb727fd4f2fb3f8a` | `graphifyy@0.5.6` | `covered` | Starting implementation baseline for this traceability pass; the released result of the pass is `graphifyy@0.7.4`. |
 | Safi Python Graphify | remote `v4` branch | `5843ffc277c54766854f9201286c9647da095390` | `5843ffc277c54766854f9201286c9647da095390` | `0.4.31` line | `covered` / `deferred` / `n/a` | Current runtime drift is covered in this branch; translation relocation is deferred and Python packaging/interpreter notes are `n/a` for the TypeScript runtime. |
 | Safi Python Graphify | remote tag `v0.4.23` | `8d908c5d43d079579604a82873fd7cff33a1b343` | local tag is not trusted | `0.4.23` | `covered` | Verified by `git ls-remote`; local `refs/tags/v0.4.23` is clobber-risk and must not be used as proof. |
 | Safi Python Graphify | remote tag `v0.4.24` | `2b8c08fcb66c288b22a2dfbadfe457fb8fea7c85` | reachable from `upstream/v4` | `0.4.24` | `covered` / `n/a` | Release-line runtime fixes are covered locally; Python packaging/interpreter notes are `n/a` for the TypeScript runtime. |
