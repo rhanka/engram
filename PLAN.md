@@ -86,14 +86,15 @@ Progress note:
 Progress note:
 - covered in this lot so far: `graphify tree` CLI, local JS/TS `import()` extraction, directory-safe semantic-cache file guards
 - covered in this lot so far: `.graphifyignore` negation semantics, Antigravity workflow frontmatter, and default omission of thin communities from `GRAPH_REPORT.md`
+- covered in this lot so far: two-phase low-cohesion community re-splitting
 - covered/intentional-delta in this lot so far: token-aware semantic chunking guidance, MCP graph query surface, slash-normalized `source_file`, VS Code Copilot instructions, Antigravity reinstall idempotency, and the `GRAPHIFY_OUT` decision to keep `.graphify/` canonical by default
-- still open in this lot: community cohesion re-splitting parity
+- Task 3 is now functionally closed; only `GRAPHIFY_OUT` remains an intentional product delta rather than a parity gap.
 
 - [x] Audit `v0.6.7` tree view, token-aware chunking, MCP context filters, dynamic `import()` extraction, and directory-safe semantic cache writes.
 - [x] Audit `v0.6.8` `.graphifyignore` negation handling, Antigravity workflow frontmatter, Gemini/Codex hook fixes, and thin-community omission in reports.
-- [ ] Audit `v0.6.9` slash-normalized `source_file`, two-phase community re-splitting, VS Code Copilot instruction changes, `GRAPHIFY_OUT`, and Antigravity reinstall behavior.
+- [x] Audit `v0.6.9` slash-normalized `source_file`, two-phase community re-splitting, VS Code Copilot instruction changes, `GRAPHIFY_OUT`, and Antigravity reinstall behavior.
 - [x] Decide whether `GRAPHIFY_OUT` is compatible with the TypeScript `.graphify/` contract or should remain an `intentional-delta` / `rejected` feature.
-- [ ] Commit this lot with only `0.6.7` to `0.6.9` closures and associated tests.
+- [x] Commit this lot with only `0.6.7` to `0.6.9` closures and associated tests.
 
 ## Task 4: Multi-Developer Graph Lifecycle (`0.7.0`)
 

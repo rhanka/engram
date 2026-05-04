@@ -10,6 +10,8 @@ import { toUndirectedGraph } from "./graph.js";
 
 const MAX_COMMUNITY_FRACTION = 0.25;
 const MIN_SPLIT_SIZE = 10;
+const COHESION_SPLIT_THRESHOLD = 0.05;
+const COHESION_SPLIT_MIN_SIZE = 50;
 
 function partition(G: Graph): Map<string, number> {
   // louvain assigns community attribute to each node, returns mapping
@@ -103,10 +105,20 @@ export function cluster(G: Graph): Map<number, string[]> {
     }
   }
 
+  const secondPass: string[][] = [];
+  for (const nodes of finalCommunities) {
+    if (nodes.length >= COHESION_SPLIT_MIN_SIZE && cohesionScore(G, nodes) < COHESION_SPLIT_THRESHOLD) {
+      const splits = splitCommunity(G, nodes);
+      secondPass.push(...(splits.length > 1 ? splits : [nodes]));
+    } else {
+      secondPass.push(nodes);
+    }
+  }
+
   // Re-index by size descending for deterministic ordering
-  finalCommunities.sort((a, b) => b.length - a.length);
+  secondPass.sort((a, b) => b.length - a.length);
   const result = new Map<number, string[]>();
-  finalCommunities.forEach((nodes, i) => {
+  secondPass.forEach((nodes, i) => {
     result.set(i, [...nodes].sort());
   });
   return result;

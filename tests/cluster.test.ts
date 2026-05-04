@@ -74,6 +74,56 @@ describe("cluster", () => {
 
     expect(allNodes).toEqual(["a", "b", "c", "d"]);
   });
+
+  it("re-splits low-cohesion large communities on a second pass", async () => {
+    const { vi } = await import("vitest");
+    vi.resetModules();
+
+    const louvainMock = vi.fn();
+    vi.doMock("graphology-communities-louvain", () => ({ default: louvainMock }));
+    const { cluster: isolatedCluster } = await import("../src/cluster.js");
+
+    const G = new Graph({ type: "undirected" });
+    for (let index = 1; index <= 25; index += 1) {
+      G.mergeNode(`alpha-${index}`);
+      G.mergeNode(`beta-${index}`);
+      if (index > 1) {
+        G.mergeEdge(`alpha-${index - 1}`, `alpha-${index}`);
+        G.mergeEdge(`beta-${index - 1}`, `beta-${index}`);
+      }
+    }
+    G.mergeEdge("alpha-25", "beta-1");
+    for (let index = 1; index <= 150; index += 1) {
+      G.mergeNode(`iso-${index}`);
+    }
+
+    louvainMock.mockImplementationOnce((graph: Graph) => {
+      const partition: Record<string, number> = {};
+      graph.forEachNode((node) => {
+        partition[node] = 0;
+      });
+      return partition;
+    });
+    louvainMock.mockImplementationOnce((graph: Graph) => {
+      const partition: Record<string, number> = {};
+      graph.forEachNode((node) => {
+        partition[node] = node.startsWith("alpha-") ? 0 : 1;
+      });
+      return partition;
+    });
+
+    const result = isolatedCluster(G);
+    const multiNodeCommunities = [...result.values()].filter((nodes) => nodes.length > 1);
+
+    expect(louvainMock).toHaveBeenCalledTimes(2);
+    expect(multiNodeCommunities).toHaveLength(2);
+    expect(multiNodeCommunities.map((nodes) => nodes.length).sort((a, b) => a - b)).toEqual([25, 25]);
+    expect(multiNodeCommunities.some((nodes) => nodes.every((node) => node.startsWith("alpha-")))).toBe(true);
+    expect(multiNodeCommunities.some((nodes) => nodes.every((node) => node.startsWith("beta-")))).toBe(true);
+
+    vi.doUnmock("graphology-communities-louvain");
+    vi.resetModules();
+  });
 });
 
 describe("cohesionScore", () => {
