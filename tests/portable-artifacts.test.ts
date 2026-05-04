@@ -63,6 +63,32 @@ describe("portable graphify artifacts", () => {
     expect(JSON.stringify(portable)).not.toContain(root);
   });
 
+  it("normalizes relative Windows-style source_file separators", () => {
+    const root = tempProject();
+    const extraction: Extraction = {
+      nodes: [
+        { id: "a", label: "A", file_type: "code", source_file: "src\\nested\\a.ts" },
+      ],
+      edges: [
+        {
+          source: "a",
+          target: "b",
+          relation: "uses",
+          confidence: "EXTRACTED",
+          source_file: "src\\nested\\a.ts",
+        },
+      ],
+      hyperedges: [],
+      input_tokens: 0,
+      output_tokens: 0,
+    };
+
+    const portable = makeExtractionPortable(extraction, root);
+
+    expect(portable.nodes[0]?.source_file).toBe("src/nested/a.ts");
+    expect(portable.edges[0]?.source_file).toBe("src/nested/a.ts");
+  });
+
   it("normalizes detection file lists to repo-relative paths", () => {
     const root = tempProject();
     const detection: DetectionResult = {

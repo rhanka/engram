@@ -16,6 +16,12 @@ async function runCliInTemp(command: string[]): Promise<{ home: string; project:
   const project = mkdtempSync(join(tmpdir(), "graphify-v4-project-"));
   tempDirs.push(home, project);
 
+  await runCliWithEnvironment(command, home, project);
+
+  return { home, project };
+}
+
+async function runCliWithEnvironment(command: string[], home: string, project: string): Promise<void> {
   const previousHome = process.env.HOME;
   const previousArgv = process.argv;
   const previousCwd = process.cwd();
@@ -35,8 +41,6 @@ async function runCliInTemp(command: string[]): Promise<{ home: string; project:
       process.env.HOME = previousHome;
     }
   }
-
-  return { home, project };
 }
 
 describe("upstream v4 assistant platform installs", () => {
@@ -51,6 +55,20 @@ describe("upstream v4 assistant platform installs", () => {
     expect(readFileSync(join(project, ".agent", "rules", "graphify.md"), "utf-8")).toContain("description: graphify knowledge graph context");
     expect(readFileSync(join(project, ".agent", "workflows", "graphify.md"), "utf-8")).toContain("---");
     expect(readFileSync(join(project, ".agent", "workflows", "graphify.md"), "utf-8")).toContain("command: /graphify");
+  });
+
+  it("reinstalls Google Antigravity without duplicating frontmatter", async () => {
+    const { home, project } = await runCliInTemp(["antigravity", "install"]);
+
+    await runCliWithEnvironment(["antigravity", "install"], home, project);
+
+    const rule = readFileSync(join(project, ".agent", "rules", "graphify.md"), "utf-8");
+    const workflow = readFileSync(join(project, ".agent", "workflows", "graphify.md"), "utf-8");
+
+    expect(rule.match(/^---$/gm)).toHaveLength(2);
+    expect(workflow.match(/^---$/gm)).toHaveLength(2);
+    expect(rule.match(/description: graphify knowledge graph context/g)).toHaveLength(1);
+    expect(workflow.match(/command: \/graphify/g)).toHaveLength(1);
   });
 
   it("installs Kiro skill and always-on steering file in the project", async () => {
