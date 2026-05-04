@@ -85,8 +85,8 @@ Progress note:
 
 Progress note:
 - covered in this lot so far: `graphify tree` CLI, local JS/TS `import()` extraction, directory-safe semantic-cache file guards
-- covered in this lot so far: `.graphifyignore` negation semantics and default omission of thin communities from `GRAPH_REPORT.md`
-- still open in this lot: token-aware semantic chunking policy, MCP context-filter parity, Antigravity workflow frontmatter/install polish, and the final `GRAPHIFY_OUT` decision against the `.graphify/` contract
+- covered in this lot so far: `.graphifyignore` negation semantics, Antigravity workflow frontmatter, and default omission of thin communities from `GRAPH_REPORT.md`
+- still open in this lot: token-aware semantic chunking policy, MCP context-filter parity, and the final `GRAPHIFY_OUT` decision against the `.graphify/` contract
 
 - [ ] Audit `v0.6.7` tree view, token-aware chunking, MCP context filters, dynamic `import()` extraction, and directory-safe semantic cache writes.
 - [ ] Audit `v0.6.8` `.graphifyignore` negation handling, Antigravity workflow frontmatter, Gemini/Codex hook fixes, and thin-community omission in reports.

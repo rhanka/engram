@@ -520,7 +520,11 @@ This project has a graphify knowledge graph at .graphify/.
 
 const ANTIGRAVITY_RULE_PATH = join(".agent", "rules", "graphify.md");
 const ANTIGRAVITY_WORKFLOW_PATH = join(".agent", "workflows", "graphify.md");
-const ANTIGRAVITY_RULE = `## graphify
+const ANTIGRAVITY_RULE = `---
+description: graphify knowledge graph context
+---
+
+## graphify
 
 This project has a graphify knowledge graph at .graphify/.
 
@@ -533,9 +537,12 @@ Rules:
 - After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
 `;
 
-const ANTIGRAVITY_WORKFLOW = `# Workflow: graphify
-**Command:** /graphify
-**Description:** Turn any folder of files into a navigable knowledge graph
+const ANTIGRAVITY_WORKFLOW = `---
+command: /graphify
+description: Turn any folder of files into a navigable knowledge graph
+---
+
+# Workflow: graphify
 
 ## Steps
 Follow the graphify skill installed at ~/.agent/skills/graphify/SKILL.md to run the full TypeScript-backed pipeline.

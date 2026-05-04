@@ -47,6 +47,10 @@ describe("upstream v4 assistant platform installs", () => {
     expect(existsSync(join(project, ".agent", "workflows", "graphify.md"))).toBe(true);
     expect(existsSync(join(home, ".agent", "skills", "graphify", "SKILL.md"))).toBe(true);
     expect(existsSync(join(home, ".agent", "skills", "graphify", ".graphify_version"))).toBe(true);
+    expect(readFileSync(join(project, ".agent", "rules", "graphify.md"), "utf-8")).toContain("---");
+    expect(readFileSync(join(project, ".agent", "rules", "graphify.md"), "utf-8")).toContain("description: graphify knowledge graph context");
+    expect(readFileSync(join(project, ".agent", "workflows", "graphify.md"), "utf-8")).toContain("---");
+    expect(readFileSync(join(project, ".agent", "workflows", "graphify.md"), "utf-8")).toContain("command: /graphify");
   });
 
   it("installs Kiro skill and always-on steering file in the project", async () => {
