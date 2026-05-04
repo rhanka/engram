@@ -360,6 +360,80 @@ describe("public CLI runtime command parity", () => {
     expect(existsSync(join(dir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
   });
 
+  it("supports code-only headless extract via the public CLI", async () => {
+    const dir = tempProject();
+    const outDir = join(dir, "artifacts");
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+
+    const result = await runCli(["extract", ".", "--out", outDir], dir);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.logs.join("\n")).toContain("[graphify extract] wrote");
+    expect(existsSync(join(outDir, ".graphify", "graph.json"))).toBe(true);
+    expect(existsSync(join(outDir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
+    expect(existsSync(join(outDir, ".graphify", ".graphify_analysis.json"))).toBe(true);
+  });
+
+  it("supports extract --no-cluster for raw merged extraction output", async () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+
+    const result = await runCli(["extract", ".", "--no-cluster"], dir);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.logs.join("\n")).toContain("no clustering");
+    expect(existsSync(join(dir, ".graphify", ".graphify_extract.json"))).toBe(true);
+    expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(false);
+  });
+
+  it("requires provided semantic extraction for non-code headless corpora", async () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, "docs"), { recursive: true });
+    writeFileSync(join(dir, "docs", "guide.md"), "# Guide\n", "utf-8");
+
+    const result = await runCli(["extract", "."], dir, { interceptExit: true });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.errors.join("\n")).toContain("provide --semantic");
+  });
+
+  it("supports docs-only headless extract when semantic JSON is provided", async () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, "docs"), { recursive: true });
+    writeFileSync(join(dir, "docs", "guide.md"), "# Guide\n", "utf-8");
+    const semanticPath = join(dir, "semantic.json");
+    writeFileSync(
+      semanticPath,
+      JSON.stringify({
+        nodes: [
+          {
+            id: "guide_doc",
+            label: "Guide",
+            file_type: "document",
+            source_file: "docs/guide.md",
+            source_location: null,
+          },
+        ],
+        edges: [],
+        hyperedges: [],
+        input_tokens: 10,
+        output_tokens: 5,
+      }, null, 2),
+      "utf-8",
+    );
+
+    const result = await runCli(["extract", ".", "--semantic", semanticPath], dir);
+    const graph = JSON.parse(readFileSync(join(dir, ".graphify", "graph.json"), "utf-8")) as {
+      nodes: Array<{ label?: string }>;
+    };
+
+    expect(result.exitCode).toBe(0);
+    expect(result.logs.join("\n")).toContain("[graphify extract] wrote");
+    expect(graph.nodes.some((node) => node.label === "Guide")).toBe(true);
+  });
+
   it("preserves existing semantic nodes during code-only update rebuilds", async () => {
     const dir = tempProject();
     mkdirSync(join(dir, "src"), { recursive: true });

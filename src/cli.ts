@@ -17,6 +17,8 @@ import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import type Graph from "graphology";
 import type {
+  DetectionResult,
+  Extraction,
   GraphifyInputScopeMode,
   InputScopeSource,
   NormalizedOntologyProfile,
@@ -190,6 +192,38 @@ function loadCliProfileContext(profileStatePath: string): {
     profileState: readJson<ProfileState>(profileStatePath),
     profile: readJson<NormalizedOntologyProfile>(join(profileDir, "ontology-profile.normalized.json")),
     ...(existsSync(projectConfigPath) ? { projectConfig: readJson<NormalizedProjectConfig>(projectConfigPath) } : {}),
+  };
+}
+
+function ensureCliExtractionShape(value?: Partial<Extraction> | null): Extraction {
+  return {
+    nodes: value?.nodes ?? [],
+    edges: value?.edges ?? [],
+    hyperedges: value?.hyperedges ?? [],
+    input_tokens: value?.input_tokens ?? 0,
+    output_tokens: value?.output_tokens ?? 0,
+  };
+}
+
+function mergeCliAstAndSemantic(
+  astInput: Partial<Extraction> | null | undefined,
+  semanticInput: Partial<Extraction> | null | undefined,
+): Extraction {
+  const ast = ensureCliExtractionShape(astInput);
+  const semantic = ensureCliExtractionShape(semanticInput);
+  const mergedNodes: Extraction["nodes"] = [...ast.nodes];
+  const seen = new Set(ast.nodes.map((node) => node.id));
+  for (const node of semantic.nodes) {
+    if (seen.has(node.id)) continue;
+    seen.add(node.id);
+    mergedNodes.push(node);
+  }
+  return {
+    nodes: mergedNodes,
+    edges: [...ast.edges, ...semantic.edges],
+    hyperedges: semantic.hyperedges ?? [],
+    input_tokens: (ast.input_tokens ?? 0) + (semantic.input_tokens ?? 0),
+    output_tokens: (ast.output_tokens ?? 0) + (semantic.output_tokens ?? 0),
   };
 }
 
@@ -1814,6 +1848,167 @@ export async function main(): Promise<void> {
         console.log(`${result.new_total ?? 0} new/changed file(s) under ${root}`);
       } else {
         console.log(JSON.stringify(result, null, 2));
+      }
+    });
+
+  program
+    .command("extract")
+    .description("Headless extraction for CI/scripts using AST plus optional provided semantic JSON")
+    .argument("<inputPath>")
+    .option("--semantic <path>", "Path to a provided semantic extraction JSON to merge")
+    .option("--out <path>", "Output workspace root for the generated .graphify state")
+    .option("--backend <name>", "Compatibility flag from upstream Python CLI (not supported here)")
+    .option("--no-cluster", "Write the raw merged extraction and skip graph clustering/reporting")
+    .option("--scope <mode>", scopeOptionDescription())
+    .option("--all", "Alias for --scope all")
+    .action(async (inputPath, opts) => {
+      try {
+        if (opts.backend) {
+          console.error(
+            "error: graphifyy does not run headless semantic backends directly. " +
+            "Provide --semantic <path> with a compatible extraction JSON, or use the graphify assistant skill/runtime pipeline.",
+          );
+          process.exit(1);
+        }
+
+        const root = resolve(inputPath);
+        if (!existsSync(root)) {
+          console.error(`error: path not found: ${root}`);
+          process.exit(1);
+        }
+
+        const outputRoot = resolve(opts.out ?? root);
+        const paths = resolveGraphifyPaths({ root: outputRoot });
+        mkdirSync(paths.stateDir, { recursive: true });
+
+        const scopeSelection = resolveCliScopeSelection(opts, "all");
+        const inventory = inspectInputScope(root, scopeSelection);
+        const [{ detect, saveManifest }, { extractWithDiagnostics }, { makeDetectionPortable, makeExtractionPortable }] = await Promise.all([
+          import("./detect.js"),
+          import("./extract.js"),
+          import("./portable-artifacts.js"),
+        ]);
+
+        console.log(`[graphify extract] scanning ${root}`);
+        const rawDetection = detect(root, {
+          candidateFiles: inventory.candidateFiles,
+          candidateRoot: inventory.scope.git_root ?? root,
+          scope: inventory.scope,
+        });
+        const detection = makeDetectionPortable(rawDetection as DetectionResult, root);
+        writeJson(paths.scratch.detect, detection);
+        if (detection.scope) writeJson(paths.scope, detection.scope);
+        saveManifest(rawDetection.files, paths.manifest);
+
+        const codeFiles = rawDetection.files.code ?? [];
+        const semanticFileCount =
+          (rawDetection.files.document?.length ?? 0) +
+          (rawDetection.files.paper?.length ?? 0) +
+          (rawDetection.files.image?.length ?? 0) +
+          (rawDetection.files.video?.length ?? 0);
+
+        let astExtraction = ensureCliExtractionShape();
+        let diagnostics: Array<{ filePath: string; error: string }> = [];
+        if (codeFiles.length > 0) {
+          console.log(`[graphify extract] AST extraction on ${codeFiles.length} code file(s)...`);
+          const astResult = await extractWithDiagnostics(codeFiles);
+          diagnostics = astResult.diagnostics;
+          astExtraction = makeExtractionPortable(astResult.extraction, root);
+          writeJson(paths.scratch.ast, astExtraction);
+          if (diagnostics.length > 0) {
+            console.warn(
+              `[graphify extract] AST extraction diagnostics for ${diagnostics.length}/${codeFiles.length} file(s): ` +
+              diagnostics.slice(0, 3).map((entry) => `${entry.filePath}: ${entry.error}`).join(" | "),
+            );
+          }
+        }
+
+        const semanticExtraction = opts.semantic
+          ? makeExtractionPortable(ensureCliExtractionShape(readJson<Partial<Extraction>>(opts.semantic)), root)
+          : ensureCliExtractionShape();
+        if (opts.semantic) {
+          writeJson(paths.scratch.semantic, semanticExtraction);
+        }
+
+        if (semanticFileCount > 0 && !opts.semantic) {
+          console.error(
+            "error: detected non-code corpus files that require semantic extraction; " +
+            "provide --semantic <path> with a compatible extraction JSON, or use the graphify assistant skill/runtime pipeline.",
+          );
+          process.exit(1);
+        }
+
+        const merged = makeExtractionPortable(mergeCliAstAndSemantic(astExtraction, semanticExtraction), root);
+        if (opts.cluster === false) {
+          writeJson(paths.scratch.extract, merged);
+          console.log(
+            `[graphify extract] wrote ${paths.scratch.extract} — ` +
+            `${merged.nodes.length} nodes, ${merged.edges.length} edges (no clustering)`,
+          );
+          return;
+        }
+
+        const [{ buildFromJson }, { cluster, scoreAll }, { godNodes, surprisingConnections, suggestQuestions }, { generate }, { toJson }, { safeToHtml }] = await Promise.all([
+          import("./build.js"),
+          import("./cluster.js"),
+          import("./analyze.js"),
+          import("./report.js"),
+          import("./export.js"),
+          import("./html-export.js"),
+        ]);
+
+        const G = buildFromJson(merged);
+        if (G.order === 0) {
+          console.error(
+            "[graphify extract] graph is empty — extraction produced no nodes. " +
+            "Possible causes: all files were skipped or the provided semantic extraction was empty.",
+          );
+          process.exit(1);
+        }
+
+        const communities = cluster(G);
+        const cohesion = scoreAll(G, communities);
+        const gods = godNodes(G);
+        const surprises = surprisingConnections(G, communities);
+        const labels = new Map<number, string>();
+        for (const cid of communities.keys()) labels.set(cid, `Community ${cid}`);
+        const questions = suggestQuestions(G, communities, labels);
+        const tokenCost = { input: merged.input_tokens ?? 0, output: merged.output_tokens ?? 0 };
+        const report = generate(
+          G,
+          communities,
+          cohesion,
+          labels,
+          gods,
+          surprises,
+          detection,
+          tokenCost,
+          projectRootLabel(root),
+          questions,
+        );
+
+        writeFileSync(paths.report, report, "utf-8");
+        toJson(G, communities, paths.graph, { communityLabels: labels, force: true });
+        safeToHtml(G, communities, paths.html, { communityLabels: labels }, {
+          onWarning: (message) => console.warn(message),
+        });
+        writeJson(paths.scratch.analysis, {
+          communities: Object.fromEntries([...communities.entries()].map(([key, value]) => [String(key), value])),
+          cohesion: Object.fromEntries([...cohesion.entries()].map(([key, value]) => [String(key), value])),
+          gods,
+          surprises,
+          questions,
+          labels: Object.fromEntries([...labels.entries()].map(([key, value]) => [String(key), value])),
+          tokens: tokenCost,
+        });
+
+        console.log(
+          `[graphify extract] wrote ${paths.graph}: ${G.order} nodes, ${G.size} edges, ${communities.size} communities`,
+        );
+        console.log(`[graphify extract] wrote ${paths.scratch.analysis}`);
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
       }
     });
 

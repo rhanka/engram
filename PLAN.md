@@ -123,13 +123,14 @@ Progress note:
 - covered in this lot so far: JSONC `tsconfig` parsing and aliased Svelte dynamic-import resolution
 - covered/n-a in this lot so far: `tsconfig extends` alias resolution, Svelte template-layer dynamic imports, and per-file recursion-overflow diagnostics
 - covered/deferred/intentional-delta in this lot so far: public `graphify export {html,wiki,obsidian,svg,graphml,neo4j}` parity, explicit `--no-viz`, Fortran parser deferral, and large-graph HTML aggregation as a TypeScript product delta
-- still open in this lot: the headless `graphify extract` product decision
+- covered/intentional-delta in this lot so far: public `graphify extract`, `--out`, `--no-cluster`, and docs-only headless rebuilds when a compatible semantic JSON is provided
+- Task 5 is now functionally closed; the remaining active upstream work shifts back to `v0.7.0` lifecycle parity.
 
 - [x] Audit `v0.7.1` Obsidian tag sanitization, extended `tsconfig` alias resolution, Svelte template-layer dynamic imports, and recursion safety on deep ASTs.
 - [x] Audit `v0.7.2` Fortran support, export CLI subcommands, skill size reduction, and large-graph aggregation.
-- [ ] Audit `v0.7.3` `graphify extract` and decide whether it maps to the TypeScript assistant/runtime model as `covered`, `intentional-delta`, or `deferred`, without introducing any Python dependency.
+- [x] Audit `v0.7.3` `graphify extract` and decide whether it maps to the TypeScript assistant/runtime model as `covered`, `intentional-delta`, or `deferred`, without introducing any Python dependency.
 - [x] Audit `v0.7.4` JSONC `tsconfig` parsing and aliased Svelte dynamic-import resolution.
-- [ ] Commit this lot with only `0.7.1` to `0.7.4` closures and associated tests.
+- [x] Commit this lot with only `0.7.1` to `0.7.4` closures and associated tests.
 
 ## Task 6: CRG Guardrail During The `0.7.4` Catch-up
 
