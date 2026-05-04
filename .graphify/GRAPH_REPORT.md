@@ -1,7 +1,7 @@
 # Graph Report - .  (2026-05-04)
 
 ## Corpus Check
-- Large corpus: 208 files · ~228,443 words. Semantic extraction will be expensive (many Claude tokens). Consider running on a subfolder, or use --no-semantic to run AST-only.
+- Large corpus: 208 files · ~228,663 words. Semantic extraction will be expensive (many Claude tokens). Consider running on a subfolder, or use --no-semantic to run AST-only.
 
 ## Summary
 - 1380 nodes · 2631 edges · 43 communities detected
@@ -13,7 +13,7 @@
 - Requested: auto
 - Resolved: committed (source: default-auto)
 - Included files: 208 · Candidates: 228
-- Excluded: 0 untracked · 174 ignored · 0 sensitive · 0 missing committed
+- Excluded: 0 untracked · 176 ignored · 0 sensitive · 0 missing committed
 - Recommendation: Use --scope all or graphify.yaml inputs.corpus for a knowledge-base folder.
 ## God Nodes (most connected - your core abstractions)
 1. `Response` - 45 edges
@@ -47,63 +47,63 @@ Nodes (84): Exception, Auth, BasicAuth, BearerAuth, DigestAuth, NetRCAuth, Authe
 
 ### Community 1 - "Community 1"
 Cohesion: 0.03
-Nodes (77): analyzeChanges(), changedNodesFromFiles(), mapChangesToNodes(), sortNodesByLocation(), uniqueSorted(), buildFlowArtifact(), computeFlowCriticality(), decoratorsOf() (+69 more)
+Nodes (73): analyzeChanges(), changedNodesFromFiles(), mapChangesToNodes(), sortNodesByLocation(), uniqueSorted(), buildFlowArtifact(), computeFlowCriticality(), decoratorsOf() (+65 more)
 
 ### Community 2 - "Community 2"
-Cohesion: 0.05
-Nodes (48): execGit(), gitRevParse(), resolveFromGitCwd(), resolveGitContext(), safeExecGit(), safeGitRevParse(), escapeRegExp(), hookBlockRegex() (+40 more)
+Cohesion: 0.06
+Nodes (45): build(), buildFromJson(), buildMerge(), deduplicateByLabel(), normalizedLabel(), applyConfiguredExcludes(), buildConfiguredDetectionInputs(), buildProfileState() (+37 more)
 
 ### Community 3 - "Community 3"
+Cohesion: 0.05
+Nodes (49): execGit(), gitRevParse(), resolveFromGitCwd(), resolveGitContext(), safeExecGit(), safeGitRevParse(), appendMemoryFiles(), buildGitInventory() (+41 more)
+
+### Community 4 - "Community 4"
 Cohesion: 0.06
 Nodes (47): agentsInstall(), agentsUninstall(), antigravityInstall(), antigravityUninstall(), canonicalPlatformName(), changedFilesFromGit(), checkSkillVersion(), claudeInstall() (+39 more)
 
-### Community 4 - "Community 4"
+### Community 5 - "Community 5"
 Cohesion: 0.05
 Nodes (40): asRecord(), asStringArray(), bindOntologyProfile(), hashOntologyProfile(), loadOntologyProfile(), normalizeCitationPolicy(), normalizeHardeningPolicy(), normalizeOntologyProfile() (+32 more)
 
-### Community 5 - "Community 5"
+### Community 6 - "Community 6"
 Cohesion: 0.09
 Nodes (54): _csharpExtraWalk(), ensureParserInit(), extract(), extractC(), extractCpp(), extractCsharp(), extractElixir(), _extractGeneric() (+46 more)
 
-### Community 6 - "Community 6"
-Cohesion: 0.05
-Nodes (43): estimateTokens(), loadGraph(), querySubgraphTokens(), runBenchmark(), createGraph(), forEachTraversalNeighbor(), isDirectedGraph(), loadGraphFromData() (+35 more)
-
 ### Community 7 - "Community 7"
-Cohesion: 0.06
-Nodes (35): crossCommunitySurprises(), crossFileSurprises(), edgeBetweennessSurprises(), fileCategory(), godNodes(), isConceptNode(), isFileNode(), nodeCommunityMap() (+27 more)
+Cohesion: 0.05
+Nodes (34): average(), buildBlastRadius(), buildReviewAnalysis(), communityRisk(), evaluateReviewAnalysis(), formatMetric(), impactedCommunities(), multimodalSafety() (+26 more)
 
 ### Community 8 - "Community 8"
-Cohesion: 0.07
-Nodes (41): detectUrlType(), downloadBinary(), fetchArxiv(), fetchTweet(), fetchWebpage(), htmlToMarkdown(), ingest(), normalizeIngestOptions() (+33 more)
+Cohesion: 0.06
+Nodes (41): crossCommunitySurprises(), crossFileSurprises(), edgeBetweennessSurprises(), fileCategory(), godNodes(), isConceptNode(), isFileNode(), nodeCommunityMap() (+33 more)
 
 ### Community 9 - "Community 9"
 Cohesion: 0.07
 Nodes (33): isRecord(), isStringArray(), validateImageCaption(), validateImageRouting(), artifactId(), artifactHasDeepRoute(), asRecord(), existingValidSidecarErrors() (+25 more)
 
 ### Community 10 - "Community 10"
-Cohesion: 0.08
-Nodes (35): applyConfiguredExcludes(), buildConfiguredDetectionInputs(), buildProfileState(), dataprepReport(), emptyDetection(), fullPageScreenshotExcludes(), mergeDetections(), mergeScopeInspections() (+27 more)
+Cohesion: 0.1
+Nodes (35): detectUrlType(), downloadBinary(), fetchArxiv(), fetchTweet(), fetchWebpage(), htmlToMarkdown(), ingest(), normalizeIngestOptions() (+27 more)
 
 ### Community 11 - "Community 11"
 Cohesion: 0.12
-Nodes (22): buildProfileReport(), graphLinks(), graphNodes(), highDegreeSection(), humanReviewSection(), invalidRelationsSection(), lowEvidenceSection(), pdfOcrSection() (+14 more)
+Nodes (23): htmlScript(), htmlStyles(), hyperedgeScript(), isCanvasOptions(), isCommunityLabelOptions(), isSvgOptions(), neo4jLabel(), neo4jRelation() (+15 more)
 
 ### Community 12 - "Community 12"
 Cohesion: 0.09
 Nodes (18): normalizeSearchText(), scoreSearchText(), textMatchesQuery(), bfs(), communitiesFromGraph(), communityName(), dfs(), findNode() (+10 more)
 
 ### Community 13 - "Community 13"
-Cohesion: 0.11
-Nodes (14): buildCommitRecommendation(), commitPrefixForArea(), communityLabel(), dominantCommunity(), groupConfidence(), groupDraftForFile(), isGraphifyStatePath(), mergeDrafts() (+6 more)
+Cohesion: 0.14
+Nodes (19): augmentDetectionWithPdfPreflight(), cloneDetection(), countWords(), dedupe(), listImageArtifacts(), loadMistralOcrModule(), metadataPath(), preparePdf() (+11 more)
 
 ### Community 14 - "Community 14"
 Cohesion: 0.11
-Nodes (25): handle_delete(), handle_enrich(), handle_get(), handle_list(), handle_search(), handle_upload(), API module - exposes the document pipeline over HTTP. Thin layer over parser, va, Accept a list of file paths, run the full pipeline on each,     and return a sum (+17 more)
+Nodes (14): buildCommitRecommendation(), commitPrefixForArea(), communityLabel(), dominantCommunity(), groupConfidence(), groupDraftForFile(), isGraphifyStatePath(), mergeDrafts() (+6 more)
 
 ### Community 15 - "Community 15"
-Cohesion: 0.14
-Nodes (18): htmlScript(), htmlStyles(), hyperedgeScript(), isCanvasOptions(), isCommunityLabelOptions(), isSvgOptions(), neo4jLabel(), neo4jRelation() (+10 more)
+Cohesion: 0.11
+Nodes (25): handle_delete(), handle_enrich(), handle_get(), handle_list(), handle_search(), handle_upload(), API module - exposes the document pipeline over HTTP. Thin layer over parser, va, Accept a list of file paths, run the full pipeline on each,     and return a sum (+17 more)
 
 ### Community 16 - "Community 16"
 Cohesion: 0.16
@@ -111,7 +111,7 @@ Nodes (23): classifyFile(), convertOfficeFile(), countWords(), detect(), detectI
 
 ### Community 17 - "Community 17"
 Cohesion: 0.12
-Nodes (16): buildReviewDelta(), changedNodeIds(), compareNodes(), compareStrings(), highRiskChains(), impactedNodeIds(), isTestPath(), likelyTestGaps() (+8 more)
+Nodes (18): analyzeGraph(), cacheOptionsFromRuntime(), defaultLabels(), ensureExtractionShape(), getVersion(), loadGraph(), loadProfileRuntimeContext(), main() (+10 more)
 
 ### Community 18 - "Community 18"
 Cohesion: 0.13
@@ -122,36 +122,36 @@ Cohesion: 0.17
 Nodes (18): collectJsonIssues(), collectStringIssues(), collectTextIssues(), hasSchemePrefix(), isIgnoredLocalArtifact(), isWindowsAbsolutePath(), makeDetectionPortable(), normalizeFileMap() (+10 more)
 
 ### Community 20 - "Community 20"
-Cohesion: 0.12
-Nodes (12): average(), buildBlastRadius(), buildReviewAnalysis(), communityRisk(), evaluateReviewAnalysis(), formatMetric(), impactedCommunities(), multimodalSafety() (+4 more)
-
-### Community 21 - "Community 21"
 Cohesion: 0.13
 Nodes (8): Config, HttpClient, HttpClientFactory, main(), NewServer(), process(), validate(), Server
 
-### Community 22 - "Community 22"
+### Community 21 - "Community 21"
 Cohesion: 0.24
 Nodes (16): bodyContent(), cachedFiles(), cacheDir(), cacheKind(), cacheNamespace(), checkSemanticCache(), clearCache(), collectJsonStems() (+8 more)
 
-### Community 23 - "Community 23"
+### Community 22 - "Community 22"
 Cohesion: 0.12
 Nodes (17): build_url_with_params(), flatten_queryparams(), is_known_encoding(), normalize_header_key(), obfuscate_sensitive_headers(), parse_content_type(), primitive_value_to_str(), Utility functions shared across the library. Small helpers that don't belong in (+9 more)
 
-### Community 24 - "Community 24"
+### Community 23 - "Community 23"
 Cohesion: 0.14
 Nodes (6): DataProcessor, Get-Data(), GraphifyDemo, IProcessor, Process-Items(), Processor
 
-### Community 25 - "Community 25"
+### Community 24 - "Community 24"
 Cohesion: 0.21
 Nodes (16): delete_record(), _ensure_storage(), list_records(), load_index(), load_record(), Storage module - persists documents to disk and maintains the search index. All, Load the full document index from disk., Persist the index to disk. (+8 more)
 
-### Community 26 - "Community 26"
+### Community 25 - "Community 25"
 Cohesion: 0.19
 Nodes (9): compileNodes(), compileOntologyOutputs(), compileRelations(), ontologyNodeType(), safeFilename(), sha256(), stringValue(), writeJson() (+1 more)
 
-### Community 27 - "Community 27"
+### Community 26 - "Community 26"
 Cohesion: 0.25
 Nodes (13): buildReviewContext(), buildReviewGuidance(), buildSourceSnippets(), changedFunctionsWithoutTests(), extractRelevantLines(), formatLines(), isInside(), isSensitivePath() (+5 more)
+
+### Community 27 - "Community 27"
+Cohesion: 0.2
+Nodes (11): buildFirstHopSummary(), buildNextBestAction(), communityLabels(), communityMembership(), compareHubs(), compareStrings(), graphDensity(), internalEdgeCounts() (+3 more)
 
 ### Community 28 - "Community 28"
 Cohesion: 0.25
@@ -166,8 +166,8 @@ Cohesion: 0.2
 Nodes (13): enrich_document(), extract_keywords(), find_cross_references(), normalize_text(), process_and_save(), Processor module - transforms validated documents into enriched records ready fo, Lowercase, strip extra whitespace, remove control characters., Pull non-stopword tokens from text, deduplicated. (+5 more)
 
 ### Community 31 - "Community 31"
-Cohesion: 0.27
-Nodes (7): applyEntry(), collectEntries(), gitAdvice(), migrateGraphifyOut(), normalizeGitPath(), planGraphifyOutMigration(), shellQuote()
+Cohesion: 0.25
+Nodes (6): escapeRegExp(), hookBlockRegex(), installHook(), uninstallHook(), git(), hookPath()
 
 ### Community 32 - "Community 32"
 Cohesion: 0.24
@@ -226,9 +226,9 @@ Nodes (3): build(), build_from_json(), Merge multiple extraction results into on
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `ValidationError` connect `Community 14` to `Community 0`?**
+- **Why does `ValidationError` connect `Community 15` to `Community 0`?**
   _High betweenness centrality (0.006) - this node is a cross-community bridge._
-- **Why does `Cookies` connect `Community 0` to `Community 23`?**
+- **Why does `Cookies` connect `Community 0` to `Community 22`?**
   _High betweenness centrality (0.005) - this node is a cross-community bridge._
 - **Are the 39 inferred relationships involving `Response` (e.g. with `Auth` and `BasicAuth`) actually correct?**
   _`Response` has 39 INFERRED edges - model-reasoned connections that need verification._
