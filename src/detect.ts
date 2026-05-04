@@ -19,10 +19,10 @@ export const CODE_EXTENSIONS = new Set([
   ".py", ".ts", ".js", ".jsx", ".tsx", ".go", ".rs", ".java", ".cpp", ".cc", ".cxx",
   ".c", ".h", ".hpp", ".rb", ".swift", ".kt", ".kts", ".cs", ".scala", ".php",
   ".lua", ".toc", ".zig", ".ps1", ".ex", ".exs", ".m", ".mm", ".jl", ".vue",
-  ".svelte", ".dart", ".v", ".sv", ".mjs", ".ejs",
+  ".svelte", ".dart", ".v", ".sv", ".mjs", ".ejs", ".sql", ".r",
 ]);
 
-export const DOC_EXTENSIONS = new Set([".md", ".mdx", ".txt", ".rst", ".html"]);
+export const DOC_EXTENSIONS = new Set([".md", ".mdx", ".txt", ".rst", ".html", ".yaml", ".yml"]);
 export const PAPER_EXTENSIONS = new Set([".pdf"]);
 export const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"]);
 export const OFFICE_EXTENSIONS = new Set([".docx", ".xlsx"]);
@@ -69,6 +69,15 @@ function looksLikePaper(filePath: string): boolean {
 
 const ASSET_DIR_MARKERS = new Set([".imageset", ".xcassets", ".appiconset", ".colorset", ".launchimage"]);
 
+function hasCodeShebang(filePath: string): boolean {
+  try {
+    const firstLine = readFileSync(filePath, "utf-8").split(/\r?\n/, 1)[0] ?? "";
+    return firstLine.startsWith("#!");
+  } catch {
+    return false;
+  }
+}
+
 export function classifyFile(filePath: string): FileType | null {
   const ext = extname(filePath).toLowerCase();
   if (CODE_EXTENSIONS.has(ext)) return FileType.CODE;
@@ -84,6 +93,7 @@ export function classifyFile(filePath: string): FileType | null {
     if (looksLikePaper(filePath)) return FileType.PAPER;
     return FileType.DOCUMENT;
   }
+  if (!ext && hasCodeShebang(filePath)) return FileType.CODE;
   if (OFFICE_EXTENSIONS.has(ext)) return FileType.DOCUMENT;
   return null;
 }

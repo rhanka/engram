@@ -2472,6 +2472,7 @@ export async function main(): Promise<void> {
     .action(async (question, opts) => {
       const { readFileSync: rf } = await import("node:fs");
       const { resolve: res } = await import("node:path");
+      const { scoreSearchText } = await import("./search.js");
       const gp = res(opts.graph);
       if (!existsSync(gp)) {
         console.error(`error: graph file not found: ${gp}`);
@@ -2489,8 +2490,11 @@ export async function main(): Promise<void> {
         const terms = normalizeSearchText(question).split(/\s+/).filter((t: string) => t.length > 2);
         const scored: [number, string][] = [];
         G.forEachNode((nid: string, data: Record<string, unknown>) => {
-          const label = normalizeSearchText((data.label as string) ?? "");
-          const score = terms.filter((t: string) => label.includes(t)).length;
+          const score = scoreSearchText(
+            (data.label as string) ?? "",
+            (data.source_file as string) ?? "",
+            terms,
+          );
           if (score > 0) scored.push([score, nid]);
         });
         scored.sort((a, b) => b[0] - a[0]);

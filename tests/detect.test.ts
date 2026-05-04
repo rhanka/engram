@@ -20,6 +20,14 @@ describe("classifyFile", () => {
     expect(classifyFile("test.go")).toBe(FileType.CODE);
   });
 
+  it("classifies .sql as CODE", () => {
+    expect(classifyFile("schema.sql")).toBe(FileType.CODE);
+  });
+
+  it("classifies .r as CODE", () => {
+    expect(classifyFile("analysis.R")).toBe(FileType.CODE);
+  });
+
   it("classifies .md as DOCUMENT", () => {
     expect(classifyFile("README.md")).toBe(FileType.DOCUMENT);
   });
@@ -62,6 +70,11 @@ describe("classifyFile", () => {
   it("classifies MDX and HTML as DOCUMENT", () => {
     expect(classifyFile("docs/page.mdx")).toBe(FileType.DOCUMENT);
     expect(classifyFile("docs/page.html")).toBe(FileType.DOCUMENT);
+  });
+
+  it("classifies YAML files as DOCUMENT", () => {
+    expect(classifyFile("k8s/deployment.yaml")).toBe(FileType.DOCUMENT);
+    expect(classifyFile("k8s/service.yml")).toBe(FileType.DOCUMENT);
   });
 });
 
@@ -225,6 +238,14 @@ describe("detect", () => {
     writeFileSync(join(tmpDir, "clip.mp4"), Buffer.alloc(100));
     const result = detect(tmpDir);
     expect(result.total_words).toBe(0);
+  });
+
+  it("detects extensionless shebang scripts as code", () => {
+    writeFileSync(join(tmpDir, "deploy"), "#!/usr/bin/env bash\necho deploy\n", "utf-8");
+
+    const result = detect(tmpDir);
+
+    expect(result.files.code).toEqual([join(tmpDir, "deploy")]);
   });
 
   it("filters explicit scope inventory through detect and preserves scope diagnostics", () => {
