@@ -221,6 +221,55 @@ class PaymentService extends BaseService implements Billable {}
     expect(importEdge?.target).toBe("utils_ts");
   });
 
+  it("parses JSONC tsconfig aliases with comments and trailing commas", async () => {
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(
+      join(dir, "tsconfig.json"),
+      [
+        "{",
+        "  // vite-style alias config",
+        '  "compilerOptions": {',
+        '    "paths": {',
+        '      "@/*": ["src/*"],',
+        "    },",
+        "  },",
+        "}",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    writeFileSync(
+      join(dir, "src", "entry.ts"),
+      [
+        "import { helper } from '@/utils';",
+        "export function alpha() {",
+        "  return helper();",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(dir, "src", "utils.ts"),
+      [
+        "export function helper() {",
+        "  return 1;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await extract([
+      join(dir, "src", "entry.ts"),
+      join(dir, "src", "utils.ts"),
+    ]);
+
+    const importEdge = result.edges.find(
+      (edge) => edge.source === "entry_ts" && edge.relation === "imports_from",
+    );
+
+    expect(importEdge?.target).toBe("utils_ts");
+  });
+
   it("resolves local dynamic imports as imports_from edges", async () => {
     mkdirSync(join(dir, "src"), { recursive: true });
     writeFileSync(
@@ -252,6 +301,61 @@ class PaymentService extends BaseService implements Billable {}
     );
 
     expect(importEdge?.target).toBe("utils_ts");
+  });
+
+  it("resolves aliased Svelte dynamic imports via tsconfig paths", async () => {
+    mkdirSync(join(dir, "src", "routes"), { recursive: true });
+    mkdirSync(join(dir, "src", "lib"), { recursive: true });
+    writeFileSync(
+      join(dir, "tsconfig.json"),
+      [
+        "{",
+        "  /* SvelteKit-style config */",
+        '  "compilerOptions": {',
+        '    "paths": {',
+        '      "$lib/*": ["src/lib/*"],',
+        "    },",
+        "  },",
+        "}",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    writeFileSync(
+      join(dir, "src", "routes", "+page.svelte"),
+      [
+        "<script>",
+        "  export async function loadWidget() {",
+        "    return import('$lib/widget');",
+        "  }",
+        "</script>",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(dir, "src", "lib", "widget.ts"),
+      [
+        "export function renderWidget() {",
+        "  return 1;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await extract([
+      join(dir, "src", "routes", "+page.svelte"),
+      join(dir, "src", "lib", "widget.ts"),
+    ]);
+
+    const pageNode = result.nodes.find((node) => node.label === "+page.svelte");
+    const widgetNode = result.nodes.find((node) => node.label === "widget.ts");
+    const importEdge = result.edges.find(
+      (edge) => edge.source === pageNode?.id && edge.target === widgetNode?.id && edge.relation === "imports_from",
+    );
+
+    expect(pageNode?.id).toBeTruthy();
+    expect(widgetNode?.id).toBeTruthy();
+    expect(importEdge).toBeDefined();
   });
 
   it("keeps symbol node IDs distinct for same-named files in different directories", async () => {

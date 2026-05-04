@@ -14,8 +14,10 @@
 
 - [x] Current TypeScript baseline: `main` at `1f30efa` (`graphifyy@0.5.6`).
 - [x] Closed Python `v5` parity line: `upstream/v5` at `f755aca58f36771923cebcc8f85f2eef6178a105`.
-- [x] Active Python source lock: `upstream/v6` observed at `f81e3bc2154d21062f56f9e4ec9f923dfe7d128e`.
-- [x] Active Python parity target: remote tag `v0.7.4` at `f81e3bc2154d21062f56f9e4ec9f923dfe7d128e`, published `2026-05-04T11:40:44Z`.
+- [x] Closed Python `v6` parity line: `upstream/v6` at `f81e3bc2154d21062f56f9e4ec9f923dfe7d128e` (`v0.6.9`).
+- [x] Active Python continuation lock: `upstream/v7` observed at `ee85bbf80cc6fedff0a17d5ea1da77f20da0729b`.
+- [x] Effective Python `v0.7.4` code target: `26a5a35200dda6207bf6fc16afed83c71238bb65` on `upstream/v7`, with feature commit `741ac3655bd33314e1aaca51e6fd30271c74c61b`.
+- [x] Release-tag anomaly recorded: fetched local tags `v0.7.0` through `v0.7.4` resolve to `f81e3bc`, so `0.7.x` traceability after `0.6.9` follows the `upstream/v7` commit history rather than those tag pointers.
 - [x] Stable CRG reference: remote tag `v2.3.2` at `db2d2df789c25a101e33477b898c1840fb4c7bc7`, published `2026-04-14T13:28:19Z`.
 - [x] Exploratory CRG head: remote `main` at `0919071a9ba353e604981059e99ee2ed98768092`, currently `96` commits ahead of `v2.3.2`.
 - [x] Versioning rule: Python Graphify drives parity version targets; CRG never drives npm package version.
@@ -117,10 +119,14 @@ Progress note:
 - Modify: `spec/SPEC_UPSTREAM_TRACEABILITY.md`
 - Modify as needed: wiki/export sanitization, TS/Svelte import resolution, recursion safety, export subcommands, language parsers, assistant/runtime extraction commands, skills/tests
 
+Progress note:
+- covered in this lot so far: JSONC `tsconfig` parsing and aliased Svelte dynamic-import resolution
+- still open in this lot: Obsidian tag sanitization, deep-AST recursion safety, export CLI parity, Fortran support, and the headless `graphify extract` product decision
+
 - [ ] Audit `v0.7.1` Obsidian tag sanitization, extended `tsconfig` alias resolution, Svelte template-layer dynamic imports, and recursion safety on deep ASTs.
 - [ ] Audit `v0.7.2` Fortran support, export CLI subcommands, skill size reduction, and large-graph aggregation.
 - [ ] Audit `v0.7.3` `graphify extract` and decide whether it maps to the TypeScript assistant/runtime model as `covered`, `intentional-delta`, or `deferred`, without introducing any Python dependency.
-- [ ] Audit `v0.7.4` JSONC `tsconfig` parsing and aliased Svelte dynamic-import resolution.
+- [x] Audit `v0.7.4` JSONC `tsconfig` parsing and aliased Svelte dynamic-import resolution.
 - [ ] Commit this lot with only `0.7.1` to `0.7.4` closures and associated tests.
 
 ## Task 6: CRG Guardrail During The `0.7.4` Catch-up

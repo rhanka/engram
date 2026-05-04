@@ -195,6 +195,12 @@ type TsconfigAliasEntry = {
 
 const tsconfigAliasCache = new Map<string, TsconfigAliasEntry[]>();
 
+function stripJsonc(text: string): string {
+  const pattern = /"(?:\\.|[^"\\])*"|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g;
+  const stripped = text.replace(pattern, (token) => token.startsWith("\"") ? token : "");
+  return stripped.replace(/,(\s*[}\]])/g, "$1");
+}
+
 function loadTsconfigAliases(startDir: string): TsconfigAliasEntry[] {
   let current = resolve(startDir);
   while (true) {
@@ -205,9 +211,19 @@ function loadTsconfigAliases(startDir: string): TsconfigAliasEntry[] {
         return cached;
       }
       try {
-        const parsed = JSON.parse(readFileSync(tsconfigPath, "utf-8")) as {
+        const raw = readFileSync(tsconfigPath, "utf-8");
+        let parsed: {
           compilerOptions?: { paths?: Record<string, string[]> };
         };
+        try {
+          parsed = JSON.parse(raw) as {
+            compilerOptions?: { paths?: Record<string, string[]> };
+          };
+        } catch {
+          parsed = JSON.parse(stripJsonc(raw)) as {
+            compilerOptions?: { paths?: Record<string, string[]> };
+          };
+        }
         const aliases = Object.entries(parsed.compilerOptions?.paths ?? {})
           .map(([alias, targets]) => {
             const firstTarget = targets[0];
@@ -267,6 +283,28 @@ function normalizeJsImportTarget(resolvedImport: string): string {
     }
   }
   return resolvedImport;
+}
+
+function resolveJsImportTarget(raw: string, importerPath: string): string | null {
+  if (raw.startsWith(".")) {
+    const resolvedImport = normalizeJsImportTarget(resolve(dirname(importerPath), raw));
+    return _makeId(toPortablePath(resolvedImport));
+  }
+
+  let resolvedAlias: string | null = null;
+  for (const alias of loadTsconfigAliases(dirname(importerPath))) {
+    if (raw === alias.aliasPrefix || raw.startsWith(`${alias.aliasPrefix}/`)) {
+      const suffix = raw.slice(alias.aliasPrefix.length).replace(/^\/+/, "");
+      resolvedAlias = normalizeJsImportTarget(resolve(alias.targetBase, suffix));
+      break;
+    }
+  }
+  if (resolvedAlias) {
+    return _makeId(toPortablePath(resolvedAlias));
+  }
+
+  const moduleName = raw.split("/").pop() ?? "";
+  return moduleName ? _makeId(moduleName) : null;
 }
 
 function remapFileNodeIds(nodes: GraphNode[], edges: GraphEdge[], paths: string[], root: string): void {
@@ -508,28 +546,7 @@ function _importJs(
   }
   const raw = readStringSpecifier(node);
   if (!raw) return;
-  let tgtNid: string | null = null;
-  if (raw.startsWith(".")) {
-    const resolvedImport = normalizeJsImportTarget(resolve(dirname(strPath), raw));
-    tgtNid = _makeId(toPortablePath(resolvedImport));
-  } else {
-    let resolvedAlias: string | null = null;
-    for (const alias of loadTsconfigAliases(dirname(strPath))) {
-      if (raw === alias.aliasPrefix || raw.startsWith(`${alias.aliasPrefix}/`)) {
-        const suffix = raw.slice(alias.aliasPrefix.length).replace(/^\/+/, "");
-        resolvedAlias = normalizeJsImportTarget(resolve(alias.targetBase, suffix));
-        break;
-      }
-    }
-    if (resolvedAlias) {
-      tgtNid = _makeId(toPortablePath(resolvedAlias));
-    } else {
-      const moduleName = raw.split("/").pop() ?? "";
-      if (moduleName) {
-        tgtNid = _makeId(moduleName);
-      }
-    }
-  }
+  const tgtNid = resolveJsImportTarget(raw, strPath);
   if (tgtNid) {
     edges.push({
       source: fileNid, target: tgtNid, relation: "imports_from",
@@ -2026,6 +2043,42 @@ async function extractRegexBackedCode(filePath: string, rootDir?: string): Promi
   return { nodes, edges };
 }
 
+async function extractSvelte(filePath: string, rootDir?: string): Promise<ExtractionResult> {
+  const result = await extractRegexBackedCode(filePath, rootDir);
+
+  let source: string;
+  try {
+    source = readFileSync(filePath, "utf-8");
+  } catch {
+    return result;
+  }
+
+  const fileNode = result.nodes.find(
+    (node) => node.label === basename(filePath) && node.source_file === filePath,
+  );
+  if (!fileNode) {
+    return result;
+  }
+
+  for (const match of source.matchAll(/import\(\s*['"]([^'"]+)['"]\s*\)/g)) {
+    const raw = match[1]?.trim();
+    if (!raw) continue;
+    const target = resolveJsImportTarget(raw, filePath);
+    if (!target) continue;
+    result.edges.push({
+      source: fileNode.id,
+      target,
+      relation: "imports_from",
+      confidence: "EXTRACTED",
+      source_file: filePath,
+      source_location: `L${lineForIndex(source, match.index ?? 0)}`,
+      weight: 1.0,
+    });
+  }
+
+  return result;
+}
+
 // ---------------------------------------------------------------------------
 // Go extractor (custom walk)
 // ---------------------------------------------------------------------------
@@ -3352,7 +3405,7 @@ const _DISPATCH: Record<string, ExtractorFn> = {
   ".ts": extractJs,
   ".tsx": extractJs,
   ".vue": extractRegexBackedCode,
-  ".svelte": extractRegexBackedCode,
+  ".svelte": extractSvelte,
   ".dart": extractRegexBackedCode,
   ".v": extractRegexBackedCode,
   ".sv": extractRegexBackedCode,
