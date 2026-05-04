@@ -48,6 +48,10 @@ describe("hooks", () => {
       expect(content).toContain("MERGE_HEAD");
       expect(content).toContain("CHERRY_PICK_HEAD");
     }
+    const postCommit = readFileSync(hookPath(tmpDir, "post-commit"), "utf-8");
+    expect(postCommit).toContain(".cache/graphify-rebuild.log");
+    expect(postCommit).toContain("nohup");
+    expect(postCommit).toContain("disown");
   });
 
   it("detects already installed hooks", () => {

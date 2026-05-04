@@ -459,7 +459,7 @@ export function platformInstallPreview(projectDir: string = ".", platformName: s
   preview.writes.push(previewPath(projectDir, "AGENTS.md"));
   if (platformName === "codex") {
     preview.writes.push(previewPath(projectDir, ".codex/hooks.json"));
-    preview.hooks.push(".codex/hooks.json: PreToolUse Bash graphify reminder");
+    preview.hooks.push(".codex/hooks.json: PreToolUse Bash graphify hook-check");
   } else if (platformName === "opencode") {
     preview.writes.push(previewPath(projectDir, OPENCODE_PLUGIN_ENTRY), previewPath(projectDir, OPENCODE_CONFIG_ENTRY));
     preview.hooks.push(".opencode/opencode.json: tool.execute.before graphify plugin");
@@ -1280,17 +1280,14 @@ export function installCodexHook(projectDir: string): void {
     hooks: [
       {
         type: "command",
-        command:
-          '[ -f .graphify/graph.json ] && ' +
-          "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\"},\"systemMessage\":\"graphify: Knowledge graph exists. Read .graphify/GRAPH_REPORT.md for god nodes and community structure before searching raw files.\"}' " +
-          '|| true',
+        command: "graphify hook-check",
       },
     ],
   });
   hooks.PreToolUse = filtered;
   existing.hooks = hooks;
   writeFileSync(hooksPath, JSON.stringify(existing, null, 2), "utf-8");
-  console.log(`  .codex/hooks.json  ->  PreToolUse hook registered`);
+  console.log(`  .codex/hooks.json  ->  PreToolUse hook registered (graphify hook-check)`);
 }
 
 function uninstallCodexHook(projectDir: string): void {
@@ -2635,6 +2632,13 @@ export async function main(): Promise<void> {
     .action(async (reason) => {
       const { markLifecycleStale } = await import("./lifecycle.js");
       markLifecycleStale(".", reason ?? "hook");
+    });
+
+  program
+    .command("hook-check", { hidden: true })
+    .description("Internal: shell-agnostic no-op for Codex PreToolUse hooks")
+    .action(() => {
+      process.exit(0);
     });
 
   await program.parseAsync();

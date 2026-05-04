@@ -70,6 +70,29 @@ function writeFlowGraph(dir: string): string {
   return graphPath;
 }
 
+function writeLargeGraph(dir: string, nodeCount: number = 5001): string {
+  const graphDir = join(dir, ".graphify");
+  mkdirSync(graphDir, { recursive: true });
+  const graphPath = join(graphDir, "graph.json");
+  const nodes = Array.from({ length: nodeCount }, (_, index) => ({
+    id: `node-${index}`,
+    label: `Node${index}`,
+    source_file: `src/node-${index}.ts`,
+    file_type: "code",
+  }));
+  writeFileSync(
+    graphPath,
+    JSON.stringify({
+      directed: false,
+      graph: {},
+      nodes,
+      links: [],
+    }),
+    "utf-8",
+  );
+  return graphPath;
+}
+
 function initGitRepo(dir: string): void {
   execGit(dir, ["init", "-q"]);
   execGit(dir, ["config", "user.email", "graphify@example.test"]);
@@ -155,6 +178,19 @@ describe("public CLI runtime command parity", () => {
     expect(result.exitCode).toBe(1);
     expect(result.errors.join("\n")).toContain("Invalid URL");
     expect(result.errors.join("\n")).not.toContain("unknown command");
+  });
+
+  it("supports a silent hook-check command for Codex PreToolUse hooks", async () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, ".graphify"), { recursive: true });
+    writeFileSync(join(dir, ".graphify", "graph.json"), "{}", "utf-8");
+
+    const result = await runCli(["hook-check"], dir, { interceptExit: true });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.logs).toEqual([]);
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
   });
 
   it("supports clone with an explicit output directory", async () => {
@@ -425,6 +461,19 @@ describe("public CLI runtime command parity", () => {
     expect(result.logs.join("\n")).toContain("graph.html updated");
     expect(existsSync(join(dir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
     expect(existsSync(join(dir, ".graphify", "graph.html"))).toBe(true);
+  });
+
+  it("supports cluster-only on oversized graphs by skipping HTML export", async () => {
+    const dir = tempProject();
+    writeLargeGraph(dir);
+
+    const result = await runCli(["cluster-only", dir], dir);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.warnings.join("\n")).toContain("HTML export skipped");
+    expect(existsSync(join(dir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
+    expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
+    expect(existsSync(join(dir, ".graphify", "graph.html"))).toBe(false);
   });
 
   it("supports execution flow build, list, and get commands", async () => {

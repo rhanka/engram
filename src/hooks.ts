@@ -64,7 +64,10 @@ graphify_detect_cmd() {
 
 graphify_rebuild_code() {
     graphify_detect_cmd || return 0
-    $GRAPHIFY_CMD hook-rebuild >/dev/null 2>&1 || true
+    GRAPHIFY_LOG="\${HOME}/.cache/graphify-rebuild.log"
+    mkdir -p "$(dirname "$GRAPHIFY_LOG")"
+    nohup sh -c "$GRAPHIFY_CMD hook-rebuild || true" > "$GRAPHIFY_LOG" 2>&1 < /dev/null &
+    disown 2>/dev/null || true
 }
 `;
 

@@ -63,6 +63,10 @@
 - Modify: `spec/SPEC_UPSTREAM_TRACEABILITY.md`
 - Modify as needed: update/watch/hook runtime, installers, wiki/export, platform skills/tests
 
+Progress note:
+- covered in this lot so far: semantic-node preservation during `update`, detached git-hook rebuilds, oversized `cluster-only` HTML guard, Codex `hook-check`, `graphify update --force`
+- still open in this lot: common-name suppression, Kotlin call-edge parity, community checkbox UI, Pi-agent install decision
+
 - [ ] Audit `v0.6.3` semantic-node preservation during `update`, async detached hooks, common-name suppression in god nodes, and `cluster-only` large-graph guard.
 - [ ] Audit `v0.6.4` and `v0.6.5` Codex/Windows hook portability and `graphify update --force`.
 - [ ] Audit `v0.6.6` Pi-agent installer support and decide whether it is `covered`, `deferred`, or `rejected` for the TypeScript product line.
