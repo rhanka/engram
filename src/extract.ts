@@ -194,6 +194,13 @@ type TsconfigAliasEntry = {
 };
 
 const tsconfigAliasCache = new Map<string, TsconfigAliasEntry[]>();
+type TsconfigDocument = {
+  extends?: string;
+  compilerOptions?: {
+    baseUrl?: string;
+    paths?: Record<string, string[]>;
+  };
+};
 
 function stripJsonc(text: string): string {
   const pattern = /"(?:\\.|[^"\\])*"|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g;
@@ -201,49 +208,104 @@ function stripJsonc(text: string): string {
   return stripped.replace(/,(\s*[}\]])/g, "$1");
 }
 
+function readTsconfigDocument(tsconfigPath: string): TsconfigDocument | null {
+  try {
+    const raw = readFileSync(tsconfigPath, "utf-8");
+    try {
+      return JSON.parse(raw) as TsconfigDocument;
+    } catch {
+      return JSON.parse(stripJsonc(raw)) as TsconfigDocument;
+    }
+  } catch {
+    return null;
+  }
+}
+
+function resolveTsconfigExtendsPath(extendsValue: string, fromDir: string): string | null {
+  const candidateRoots: string[] = [];
+  if (extendsValue.startsWith(".") || extendsValue.startsWith("/") || extendsValue.startsWith("..")) {
+    candidateRoots.push(resolve(fromDir, extendsValue));
+  } else {
+    try {
+      candidateRoots.push(moduleRequire.resolve(extendsValue, { paths: [fromDir] }));
+    } catch {
+      // fall through to common package-style candidates
+    }
+    if (!extendsValue.endsWith(".json")) {
+      try {
+        candidateRoots.push(moduleRequire.resolve(`${extendsValue}.json`, { paths: [fromDir] }));
+      } catch {
+        // ignore
+      }
+    }
+    try {
+      candidateRoots.push(moduleRequire.resolve(join(extendsValue, "tsconfig.json"), { paths: [fromDir] }));
+    } catch {
+      // ignore
+    }
+  }
+
+  const candidates = candidateRoots.flatMap((candidate) => {
+    const resolvedCandidate = resolve(candidate);
+    if (extname(resolvedCandidate) === ".json") {
+      return [resolvedCandidate];
+    }
+    return [
+      resolvedCandidate,
+      `${resolvedCandidate}.json`,
+      join(resolvedCandidate, "tsconfig.json"),
+    ];
+  });
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+function loadTsconfigAliasesFromPath(tsconfigPath: string, seen: Set<string> = new Set()): TsconfigAliasEntry[] {
+  const resolvedTsconfigPath = resolve(tsconfigPath);
+  const cached = tsconfigAliasCache.get(resolvedTsconfigPath);
+  if (cached) return cached;
+  if (seen.has(resolvedTsconfigPath)) return [];
+  seen.add(resolvedTsconfigPath);
+
+  const parsed = readTsconfigDocument(resolvedTsconfigPath);
+  if (!parsed) {
+    tsconfigAliasCache.set(resolvedTsconfigPath, []);
+    return [];
+  }
+
+  const configDir = dirname(resolvedTsconfigPath);
+  const extendsPath = typeof parsed.extends === "string"
+    ? resolveTsconfigExtendsPath(parsed.extends, configDir)
+    : null;
+  const inherited = extendsPath ? loadTsconfigAliasesFromPath(extendsPath, seen) : [];
+  const merged = new Map<string, TsconfigAliasEntry>(
+    inherited.map((entry) => [entry.aliasPrefix, entry]),
+  );
+  const baseDir = resolve(configDir, parsed.compilerOptions?.baseUrl ?? ".");
+  for (const [alias, targets] of Object.entries(parsed.compilerOptions?.paths ?? {})) {
+    const firstTarget = targets[0];
+    if (!firstTarget) continue;
+    merged.set(alias.replace(/\/\*$/, ""), {
+      aliasPrefix: alias.replace(/\/\*$/, ""),
+      targetBase: resolve(baseDir, firstTarget.replace(/\/\*$/, "")),
+    });
+  }
+
+  const aliases = [...merged.values()];
+  tsconfigAliasCache.set(resolvedTsconfigPath, aliases);
+  return aliases;
+}
+
 function loadTsconfigAliases(startDir: string): TsconfigAliasEntry[] {
   let current = resolve(startDir);
   while (true) {
     const tsconfigPath = join(current, "tsconfig.json");
     if (existsSync(tsconfigPath)) {
-      const cached = tsconfigAliasCache.get(tsconfigPath);
-      if (cached) {
-        return cached;
-      }
-      try {
-        const raw = readFileSync(tsconfigPath, "utf-8");
-        let parsed: {
-          compilerOptions?: { paths?: Record<string, string[]> };
-        };
-        try {
-          parsed = JSON.parse(raw) as {
-            compilerOptions?: { paths?: Record<string, string[]> };
-          };
-        } catch {
-          parsed = JSON.parse(stripJsonc(raw)) as {
-            compilerOptions?: { paths?: Record<string, string[]> };
-          };
-        }
-        const aliases = Object.entries(parsed.compilerOptions?.paths ?? {})
-          .map(([alias, targets]) => {
-            const firstTarget = targets[0];
-            if (!firstTarget) {
-              return null;
-            }
-            return {
-              aliasPrefix: alias.replace(/\/\*$/, ""),
-              targetBase: resolve(current, firstTarget.replace(/\/\*$/, "")),
-            } satisfies TsconfigAliasEntry;
-          })
-          .filter((entry): entry is TsconfigAliasEntry => entry !== null);
-        tsconfigAliasCache.set(tsconfigPath, aliases);
-        return aliases;
-      } catch {
-        tsconfigAliasCache.set(tsconfigPath, []);
-        return [];
-      }
+      return loadTsconfigAliasesFromPath(tsconfigPath);
     }
-
     const parent = dirname(current);
     if (parent === current) {
       return [];
@@ -3481,7 +3543,15 @@ export async function extractWithDiagnostics(paths: string[]): Promise<ExtractWi
       continue;
     }
 
-    const result = await extractor(filePath, root);
+    let result: ExtractionResult;
+    try {
+      result = await extractor(filePath, root);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      diagnostics.push({ filePath, error: message });
+      perFile.push({ nodes: [], edges: [], error: message });
+      continue;
+    }
     if (!result.error) {
       saveCached(filePath, result as unknown as Record<string, unknown>, root);
     } else {
