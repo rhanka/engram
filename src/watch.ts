@@ -5,7 +5,7 @@
  * Code-only changes rebuild graph automatically (no LLM needed).
  * Doc/paper/image changes write a flag and notify the user.
  */
-import { existsSync, mkdirSync, writeFileSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { resolve as pathResolve, extname, basename } from "node:path";
 import {
   DEFAULT_GRAPHIFY_STATE_DIR,
@@ -25,9 +25,11 @@ import { markLifecycleAnalyzed, markLifecycleStale, readLifecycleMetadata } from
 import {
   makeDetectionPortable,
   makeExtractionPortable,
+  makeGraphPortable,
   projectRootLabel,
   toProjectRelativePath,
 } from "./portable-artifacts.js";
+import { loadGraphFromData } from "./graph.js";
 import type { GraphifyInputScopeMode, InputScopeSource } from "./types.js";
 
 const WATCHED_EXTENSIONS = new Set([
@@ -36,6 +38,22 @@ const WATCHED_EXTENSIONS = new Set([
   ...PAPER_EXTENSIONS,
   ...IMAGE_EXTENSIONS,
 ]);
+
+function mergeHyperedges(
+  existing: Array<Record<string, unknown>> = [],
+  incoming: Array<Record<string, unknown>> = [],
+): Array<Record<string, unknown>> {
+  const seen = new Set<string>();
+  const merged: Array<Record<string, unknown>> = [];
+  for (const hyperedge of [...existing, ...incoming]) {
+    const id = String(hyperedge.id ?? "");
+    const key = id || JSON.stringify(hyperedge);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(hyperedge);
+  }
+  return merged;
+}
 
 // ---------------------------------------------------------------------------
 // Rebuild pipeline (code-only, no LLM)
@@ -119,6 +137,36 @@ export async function rebuildCode(
     };
 
     const G = buildFromJson(relativeResult);
+    if (existsSync(paths.graph)) {
+      try {
+        const existing = makeGraphPortable(
+          loadGraphFromData(JSON.parse(readFileSync(paths.graph, "utf-8")) as Record<string, unknown>),
+          root,
+        );
+        const newAstIds = new Set(G.nodes());
+        existing.forEachNode((nodeId, attrs) => {
+          if (newAstIds.has(nodeId)) return;
+          G.mergeNode(nodeId, attrs);
+        });
+        existing.forEachEdge((_edge, attrs, source, target) => {
+          if (!G.hasNode(source) || !G.hasNode(target)) return;
+          try {
+            G.mergeEdge(source, target, attrs);
+          } catch {
+            /* ignore duplicate merge failures */
+          }
+        });
+        const mergedHyperedges = mergeHyperedges(
+          (existing.getAttribute("hyperedges") as Array<Record<string, unknown>> | undefined) ?? [],
+          (G.getAttribute("hyperedges") as Array<Record<string, unknown>> | undefined) ?? [],
+        );
+        if (mergedHyperedges.length > 0) {
+          G.setAttribute("hyperedges", mergedHyperedges);
+        }
+      } catch {
+        /* ignore unreadable prior graph snapshots */
+      }
+    }
     const communities = cluster(G);
     const cohesion = scoreAll(G, communities);
     const gods = godNodes(G);

@@ -233,37 +233,61 @@ describe("public CLI runtime command parity", () => {
     expect(existsSync(join(dir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
   });
 
-  it("fails update when the shrink guard refuses to overwrite a larger graph", async () => {
+  it("preserves existing semantic nodes during code-only update rebuilds", async () => {
     const dir = tempProject();
     mkdirSync(join(dir, "src"), { recursive: true });
     writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
-    writeGraph(dir);
 
-    const result = await runCli(["update", "."], dir, { interceptExit: true });
-    const persisted = JSON.parse(readFileSync(join(dir, ".graphify", "graph.json"), "utf-8")) as {
+    const initial = await runCli(["update", "."], dir);
+    expect(initial.exitCode).toBe(0);
+
+    const graphPath = join(dir, ".graphify", "graph.json");
+    const graph = JSON.parse(readFileSync(graphPath, "utf-8")) as {
+      nodes: Array<{ id: string; label?: string; source_file?: string; file_type?: string }>;
+      links: Array<Record<string, unknown>>;
+    };
+    const existingCodeNode = graph.nodes.find((node) => node.file_type === "code");
+    expect(existingCodeNode).toBeTruthy();
+
+    graph.nodes.push({
+      id: "semantic_doc",
+      label: "SemanticDoc",
+      source_file: "docs/semantic.md",
+      file_type: "document",
+    });
+    graph.links.push({
+      source: existingCodeNode!.id,
+      target: "semantic_doc",
+      relation: "documents",
+      confidence: "INFERRED",
+      source_file: "docs/semantic.md",
+    });
+    writeFileSync(graphPath, JSON.stringify(graph, null, 2), "utf-8");
+
+    const updated = await runCli(["update", "."], dir, { interceptExit: true });
+    const persisted = JSON.parse(readFileSync(graphPath, "utf-8")) as {
       nodes: Array<{ id: string }>;
+      links: Array<{ source: string; target: string; relation?: string }>;
     };
 
-    expect(result.exitCode).toBe(1);
-    expect(result.warnings.join("\n")).toContain("Refusing to overwrite");
-    expect(result.errors.join("\n")).toContain("Nothing to update or rebuild failed");
-    expect(persisted.nodes).toHaveLength(3);
+    expect(updated.exitCode).toBe(0);
+    expect(persisted.nodes.some((node) => node.id === "semantic_doc")).toBe(true);
+    expect(
+      persisted.links.some((edge) =>
+        edge.target === "semantic_doc" && edge.relation === "documents"),
+    ).toBe(true);
   });
 
-  it("supports update --force to overwrite a larger existing graph", async () => {
+  it("accepts update --force as a valid CLI override", async () => {
     const dir = tempProject();
     mkdirSync(join(dir, "src"), { recursive: true });
     writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
-    writeGraph(dir);
 
     const result = await runCli(["update", ".", "--force"], dir);
-    const persisted = JSON.parse(readFileSync(join(dir, ".graphify", "graph.json"), "utf-8")) as {
-      nodes: Array<{ id: string }>;
-    };
 
     expect(result.exitCode).toBe(0);
     expect(result.logs.join("\n")).toContain("Code graph updated");
-    expect(persisted.nodes.length).toBeLessThan(3);
+    expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
   });
 
   it("supports scope inspect via CLI and skill runtime", async () => {
