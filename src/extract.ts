@@ -168,6 +168,26 @@ function qualifiedFileStem(filePath: string, rootDir: string = dirname(resolve(f
   return `${parent}.${stem}`;
 }
 
+function buildResolvableLabelIndex(nodes: GraphNode[]): Map<string, string> {
+  const candidates = new Map<string, Set<string>>();
+  for (const node of nodes) {
+    const raw = String(node.label ?? "");
+    const normalized = raw.replace(/\(?\)$/g, "").replace(/^\./, "").toLowerCase();
+    if (!normalized) continue;
+    const ids = candidates.get(normalized) ?? new Set<string>();
+    ids.add(node.id);
+    candidates.set(normalized, ids);
+  }
+
+  const resolved = new Map<string, string>();
+  for (const [label, ids] of candidates) {
+    if (ids.size === 1) {
+      resolved.set(label, ids.values().next().value as string);
+    }
+  }
+  return resolved;
+}
+
 type TsconfigAliasEntry = {
   aliasPrefix: string;
   targetBase: string;
@@ -1350,12 +1370,7 @@ async function _extractGeneric(
   walk(root);
 
   // -- Call-graph pass --
-  const labelToNid = new Map<string, string>();
-  for (const n of nodes) {
-    const raw = n.label;
-    const normalised = raw.replace(/\(?\)$/g, "").replace(/^\./, "");
-    labelToNid.set(normalised.toLowerCase(), n.id);
-  }
+  const labelToNid = buildResolvableLabelIndex(nodes);
 
   const seenCallPairs = new Set<string>();
 
@@ -2137,11 +2152,7 @@ export async function extractGo(filePath: string, rootDir?: string): Promise<Ext
   walk(root);
 
   // Call-graph pass
-  const labelToNid = new Map<string, string>();
-  for (const n of nodes) {
-    const normalised = n.label.replace(/\(?\)$/g, "").replace(/^\./, "");
-    labelToNid.set(normalised.toLowerCase(), n.id);
-  }
+  const labelToNid = buildResolvableLabelIndex(nodes);
 
   const seenCallPairs = new Set<string>();
 
@@ -2312,11 +2323,7 @@ export async function extractRust(filePath: string, rootDir?: string): Promise<E
   walk(root);
 
   // Call-graph pass
-  const labelToNid = new Map<string, string>();
-  for (const n of nodes) {
-    const normalised = n.label.replace(/\(?\)$/g, "").replace(/^\./, "");
-    labelToNid.set(normalised.toLowerCase(), n.id);
-  }
+  const labelToNid = buildResolvableLabelIndex(nodes);
 
   const seenCallPairs = new Set<string>();
 
@@ -2707,11 +2714,7 @@ export async function extractPowershell(filePath: string, rootDir?: string): Pro
   walk(root);
 
   // Call-graph pass
-  const labelToNid = new Map<string, string>();
-  for (const n of nodes) {
-    const normalised = n.label.replace(/\(?\)$/g, "").replace(/^\./, "");
-    labelToNid.set(normalised.toLowerCase(), n.id);
-  }
+  const labelToNid = buildResolvableLabelIndex(nodes);
 
   const seenCallPairs = new Set<string>();
 
@@ -3113,11 +3116,7 @@ export async function extractElixir(filePath: string, rootDir?: string): Promise
   walk(root);
 
   // Call-graph pass
-  const labelToNid = new Map<string, string>();
-  for (const n of nodes) {
-    const normalised = n.label.replace(/\(?\)$/g, "").replace(/^\./, "");
-    labelToNid.set(normalised.toLowerCase(), n.id);
-  }
+  const labelToNid = buildResolvableLabelIndex(nodes);
 
   const seenCallPairs = new Set<string>();
   const _SKIP_KEYWORDS = new Set([

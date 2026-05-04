@@ -66,9 +66,11 @@
 Progress note:
 - covered in this lot so far: semantic-node preservation during `update`, detached git-hook rebuilds, oversized `cluster-only` HTML guard, Codex `hook-check`, `graphify update --force`
 - covered/deferred in this lot so far: wiki stale clearing, Windows-safe wiki filenames, Pi-agent install decision (`deferred`)
-- still open in this lot: common-name suppression, Kotlin call-edge parity, community checkbox UI
+- covered in this lot so far: community checkbox multi-select HTML controls
+- covered in this lot so far: ambiguous short-name call suppression
+- still open in this lot: Kotlin call-edge parity
 
-- [ ] Audit `v0.6.3` semantic-node preservation during `update`, async detached hooks, common-name suppression in god nodes, and `cluster-only` large-graph guard.
+- [x] Audit `v0.6.3` semantic-node preservation during `update`, async detached hooks, common-name suppression in god nodes, and `cluster-only` large-graph guard.
 - [ ] Audit `v0.6.4` and `v0.6.5` Codex/Windows hook portability and `graphify update --force`.
 - [x] Audit `v0.6.6` Pi-agent installer support and decide whether it is `covered`, `deferred`, or `rejected` for the TypeScript product line.
 - [ ] Record every installer/platform decision as either parity, intentional delta, or explicit deferment.
