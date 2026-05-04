@@ -5,24 +5,30 @@ This document tracks the delta between this TypeScript port and upstream Python 
 ## Scope
 
 - Current TypeScript product branch: `main`
-- Current TypeScript baseline: `107854a5ad3538462d7985b5bb00bc472bafe34a`
-- Current TypeScript npm release: `graphifyy@0.4.33`
+- Current TypeScript baseline: `1f30efa7afaf5c98f06fcaebbb727fd4f2fb3f8a`
+- Current TypeScript npm release: `graphifyy@0.5.6`
 - Durable traceability spec: `spec/SPEC_UPSTREAM_TRACEABILITY.md`
 - Closed upstream `v3` baseline: `upstream/v3` at `699e996`
 - Closed Python parity target: remote tag `v0.4.23` at `8d908c5d43d079579604a82873fd7cff33a1b343`
 - Closed Python drift target: `upstream/v4` at `5843ffc277c54766854f9201286c9647da095390`
-- Active major-version source lock: `upstream/v5` at `f755aca58f36771923cebcc8f85f2eef6178a105`
-- Active CRG review reference: `tirth8205/code-review-graph` tag `v2.3.2` at `db2d2df789c25a101e33477b898c1840fb4c7bc7`
-- Current implementation branch for traceability work: `chore/upstream-v5-0.5.5-catchup`
+- Closed Python `v5` parity line: remote `upstream/v5` at `f755aca58f36771923cebcc8f85f2eef6178a105`
+- Active major-version source lock: remote `upstream/v6` at `f81e3bc2154d21062f56f9e4ec9f923dfe7d128e`
+- Active parity target: remote tag `v0.7.4` at `f81e3bc2154d21062f56f9e4ec9f923dfe7d128e`
+- Active CRG stable review reference: `tirth8205/code-review-graph` tag `v2.3.2` at `db2d2df789c25a101e33477b898c1840fb4c7bc7`
+- Exploratory CRG head: remote `main` at `0919071a9ba353e604981059e99ee2ed98768092`
+- Current implementation branch for traceability work: `upstream-0.7.4-traceability`
 
 ## Source Lock Notes
 
 - `git ls-remote` is the authority for Safi Python tags while local tag clobber risk exists.
 - Local `refs/tags/v0.4.23` is not trusted for parity claims because it differs from the remote tag observed by `git ls-remote`.
 - Python `upstream/v4` was fetched on 2026-04-25 and remains locked as a closed parity line at `5843ffc277c54766854f9201286c9647da095390`.
-- Python `upstream/v5` was fetched on 2026-04-29 and is the active upstream source lock for this branch at `f755aca58f36771923cebcc8f85f2eef6178a105`.
+- Python `upstream/v5` was fetched on 2026-04-29 and is now a closed parity line at `f755aca58f36771923cebcc8f85f2eef6178a105`.
+- Python `upstream/v6` and remote tag `v0.7.4` were observed on 2026-05-04 and are the active source locks for the next parity cycle.
+- Remote tag `v1.0.0` exists upstream, but the active upstream release train is still `v6` / `0.7.x`; do not target `1.0.0` until a separate traceability pass proves that line is the real parity target.
 - Local `v0.4.28`..`v0.4.32` tags are not trusted for parity claims while tag clobber risk exists; use branch commits and `git ls-remote` instead.
-- CRG `v2.3.2` remains the stable review-feature source. CRG `main` has advanced and is intentionally deferred until a new spec updates the source lock.
+- CRG `v2.3.2` remains the stable review-feature source. CRG `main` is 96 commits ahead and stays exploratory/deferred for the `0.7.4` parity cycle.
+- Package version alignment is driven by Python Graphify parity targets, not by `code-review-graph` tags or `main`.
 
 ## Fork Guardrail
 
@@ -102,7 +108,7 @@ The TypeScript port has already shipped the original direct `0.4.23` parity targ
 | `v0.4.23` / `42599a7`, `8d908c5`, `baa4474` | refresh all version stamps, `.html` documents, safe large-graph HTML export, Go import node ID collision, pipx docs | `covered` | Lot 1, Lot 2, Lot 3, Lot 8 | `.html` document detection is covered by Lot 1. Go import prefixing is covered by Lot 2. Safe HTML export is covered by Lot 3. npm/global install docs are covered by Lot 7. Package and MCP server version stamps now read `0.4.23` from `package.json`. |
 | post-`v0.4.23` / `04790e2`, `dc1158b`, `7a0a5ac` | README download badge changes only | `n/a` | Lot 8 | Not part of TypeScript runtime parity; optionally ignore or adapt docs without copying Python download badges. |
 
-## Closed Python v4 Drift After TypeScript `0.4.33`
+## Closed Python v4 Drift Before The `0.5.x` Line
 
 This table is retained as closed history. The TypeScript product line has already absorbed the runtime-relevant `upstream/v4` drift through commit `5843ffc`.
 
@@ -114,9 +120,9 @@ This table is retained as closed history. The TypeScript product line has alread
 | `v0.4.26` / `f8fd8f8` | wiki encoding and slug collision fixes; hook rebase guard; detect path resolution; README `.gitignore` docs | `covered` | F2 drift audit | Hook guard now has regression coverage in `tests/hooks.test.ts`; wiki collision coverage already exists in `tests/wiki.test.ts`; detect resolves root up front; README and `.gitignore` are updated in this branch. |
 | post-`v0.4.27` / `86d6d93`, `52ad45b`, `4bc2052`, `e4bdcc2`, `64f38ac`, `e915a87`, `b326aa8`, `5843ffc` | OpenCode config relocation, `check-update`, Java inheritance, Windows Python docs, canvas/docs polish, aggregated HTML viz, local benchmark-script ignores | `covered` / `n/a` | F2 drift audit | `.opencode/opencode.json`, `check-update`, Java inheritance, aggregated HTML member counts, canvas-relative exports, and benchmark-script ignores are covered by runtime/tests. Remaining Windows Python packaging/docs polish is `n/a` for the TypeScript runtime. |
 | `v0.4.27` / `d9b2928` | deterministic large-graph `GRAPH_REPORT`, stable edge node IDs, corrected common-root inference | `covered` | F2 drift audit | Covered by project-relative file-node remap plus stable relative-import targets in `tests/language-surface.test.ts`, and deterministic large-graph analysis coverage in `tests/analyze.test.ts`. |
-## Active Python v5 Catch-up
+## Closed Python v5 Catch-up
 
-This table tracks the repo-oriented upstream `v5` line at `f755aca`. The TypeScript fork keeps its own runtime and `.graphify/` state model while adopting the user-facing workflow changes that map cleanly.
+This table is retained as closed history. The TypeScript fork has already absorbed the repo-oriented upstream `v5` line at `f755aca` while preserving its own runtime and `.graphify/` state model.
 
 | Upstream ref | Upstream scope | TS status | Plan lot | Catch-up action |
 | --- | --- | --- | --- | --- |
@@ -138,9 +144,31 @@ This table tracks the repo-oriented upstream `v5` line at `f755aca`. The TypeScr
 | `71d1b39`, `c750582`, `44fc32e`, `326c03e`, `28b17d3` | Kimi follow-up, raw-string warning, product-site churn, Python 3.14+ range | `n/a` | docs lot | These changes are Python packaging/site concerns or backend-specific follow-ups that do not map to the npm-first TypeScript runtime. |
 | `f755aca` | Kimi temperature fix and preserve community labels during cleanup | `covered` / `n/a` | V5 lot 2 | Community-label preservation is covered by `tests/skills.test.ts`; Kimi backend tuning remains `n/a` for the current TypeScript product line. |
 
+## Active Python `v6` / `0.6.x`-`0.7.x` Catch-up
+
+This is the current parity cycle. Be conservative: unless a behavior is already proven locally by a named test or explicit verification command, mark it `needs-review` rather than inferring parity.
+
+| Upstream ref | Upstream scope | TS status | Plan lot | Catch-up action |
+| --- | --- | --- | --- | --- |
+| `v0.6.0` / `17fb524` | SQL AST extraction, YAML indexing, roll-up bug fixes from `0.5.6`/`0.5.7` | `needs-review` | V6 lot 1 | Audit SQL parser scope, YAML semantic indexing, and already-shipped local fixes before claiming parity. |
+| `v0.6.1` / `2dc759a` | exact gitignore semantics, anchored patterns, hermetic non-VCS scan | `needs-review` | V6 lot 1 | Compare upstream ignore semantics with current `.graphifyignore` and input-scope behavior; add regression tests before closure. |
+| `v0.6.2` / `be83a8c` | exact-match query ordering, smarter content-hash `update`, R support, shebang detection, Kimi/license cleanup | `needs-review` / `n/a` | V6 lot 1 | Audit query ranking, content-hash update behavior, and language-surface additions; keep Kimi-specific packaging notes as `n/a` where they do not map. |
+| `v0.6.3` / `a4149df` | preserve semantic nodes on incremental rebuild, detached hooks, common-name suppression, `cluster-only` crash guard | `needs-review` | V6 lot 2 | Compare update/hook/analysis flows and prove behavior with update/watch/runtime tests. |
+| `v0.6.4` / `a61b25c` | cross-platform Codex hook check on Windows | `needs-review` | V6 lot 2 | Audit the current Codex hook installer/runtime against upstream shell-agnostic behavior. |
+| `v0.6.5` / `d40e1c0` | Codex Windows hook, Kotlin call edges, `update --force`, community checkbox UI | `needs-review` | V6 lot 2 | Audit hook portability, Kotlin surface, guarded force-update behavior, and HTML control parity. |
+| `v0.6.6` / `517f3c8` | Pi platform install, wiki stale clearing, Windows-safe wiki filenames | `needs-review` / `deferred` | V6 lot 2 | Decide whether Pi support belongs in the TypeScript platform matrix; audit wiki regeneration and filename sanitization either way. |
+| `v0.6.7` / `e484282` | `graphify tree`, token-aware chunking, MCP context filters, dynamic `import()`, safe semantic-cache file checks | `needs-review` | V6 lot 3 | Audit the tree/export surface, chunking policy, context filtering, JS import extraction, and directory-safe cache handling. |
+| `v0.6.8` / `d753413` | `.graphifyignore` negation patterns, Antigravity frontmatter, Gemini/Codex hook fixes, thin-community omission | `needs-review` | V6 lot 3 | Audit ignore negation semantics, platform hook installers, and report community filtering. |
+| `v0.6.9` / `f81e3bc` | slash-normalized `source_file`, cohesion re-splitting, VS Code Copilot instruction contract, `GRAPHIFY_OUT`, Antigravity reinstall | `needs-review` / `intentional-delta` | V6 lot 4 | Audit portability/report clustering changes; explicitly decide whether `GRAPHIFY_OUT` is compatible with the TypeScript `.graphify/` contract or remains a deliberate delta. |
+| `v0.7.0` / `f81e3bc` | merge driver for `graph.json`, deterministic community IDs, content-only cache on renames, freshness signal, mixed code/doc handling | `needs-review` | V7 lot 1 | Audit multi-dev workflow support against existing `.graphify` lifecycle and portable artifact model before claiming parity. |
+| `v0.7.1` / `f81e3bc` | Obsidian tag sanitization, extended `tsconfig` alias resolution, Svelte template dynamic imports, recursion safety | `needs-review` | V7 lot 2 | Audit wiki/export sanitization, TS config resolution, Svelte import extraction, and deep-AST robustness. |
+| `v0.7.2` / `f81e3bc` | Fortran support, export CLI subcommands, skill-size reduction, large-graph aggregation | `needs-review` / `deferred` | V7 lot 2 | Audit language and export surfaces; treat skill-size reduction as non-blocking unless it changes runtime behavior or install limits. |
+| `v0.7.3` / `f81e3bc` | `graphify extract` headless semantic extraction for CI, backend selection, `--no-cluster`, `--out` | `needs-review` / `intentional-delta` | V7 lot 3 | Compare the upstream headless extraction flow with the current TypeScript assistant/runtime contract before deciding parity or a documented delta. |
+| `v0.7.4` / `f81e3bc` | JSONC `tsconfig` parsing and aliased Svelte dynamic-import fixes | `needs-review` | V7 lot 3 | Close parser/import parity and use this row as the final gate before publishing `0.7.4`. |
+
 ## Release Gate
 
-Before claiming catch-up through Python `upstream/v5` at `f755aca` or publishing the next TypeScript release from this branch:
+Before claiming catch-up through Python `upstream/v6` / remote tag `v0.7.4` at `f81e3bc` or publishing the next TypeScript release from this branch:
 
 - all active Python drift rows must be `covered`, `n/a`, `deferred`, `rejected`, or `intentional-delta`
 - no row may remain `missing`, `partial`, `needs-audit`, or `needs-review`
@@ -150,6 +178,7 @@ Before claiming catch-up through Python `upstream/v5` at `f755aca` or publishing
 - `npm test` must pass
 - `npm run test:smoke` must pass when runtime/package behavior changed
 - `npx graphify hook-rebuild` must pass after code changes
+- package-level tarball UAT must pass for release candidates
 - GitHub Actions release and post-publish npm install checks must pass for release commits
 
 ## Branching Rule
