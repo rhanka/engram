@@ -12,8 +12,9 @@ This document tracks the delta between this TypeScript port and upstream Python 
 - Closed Python parity target: remote tag `v0.4.23` at `8d908c5d43d079579604a82873fd7cff33a1b343`
 - Closed Python drift target: `upstream/v4` at `5843ffc277c54766854f9201286c9647da095390`
 - Closed Python `v5` parity line: remote `upstream/v5` at `f755aca58f36771923cebcc8f85f2eef6178a105`
-- Active major-version source lock: remote `upstream/v6` at `f81e3bc2154d21062f56f9e4ec9f923dfe7d128e`
-- Active parity target: remote tag `v0.7.4` at `f81e3bc2154d21062f56f9e4ec9f923dfe7d128e`
+- Closed Python `v6` parity line: remote `upstream/v6` at `f81e3bc2154d21062f56f9e4ec9f923dfe7d128e`
+- Active continuation source lock: remote `upstream/v7` at `ee85bbf80cc6fedff0a17d5ea1da77f20da0729b`
+- Effective parity target commit for `0.7.4`: `26a5a35200dda6207bf6fc16afed83c71238bb65` on `upstream/v7`, with feature commit `741ac3655bd33314e1aaca51e6fd30271c74c61b`
 - Active CRG stable review reference: `tirth8205/code-review-graph` tag `v2.3.2` at `db2d2df789c25a101e33477b898c1840fb4c7bc7`
 - Exploratory CRG head: remote `main` at `0919071a9ba353e604981059e99ee2ed98768092`
 - Current implementation branch for traceability work: `upstream-0.7.4-traceability`
@@ -24,10 +25,13 @@ This document tracks the delta between this TypeScript port and upstream Python 
 - Local `refs/tags/v0.4.23` is not trusted for parity claims because it differs from the remote tag observed by `git ls-remote`.
 - Python `upstream/v4` was fetched on 2026-04-25 and remains locked as a closed parity line at `5843ffc277c54766854f9201286c9647da095390`.
 - Python `upstream/v5` was fetched on 2026-04-29 and is now a closed parity line at `f755aca58f36771923cebcc8f85f2eef6178a105`.
-- Python `upstream/v6` and remote tag `v0.7.4` were observed on 2026-05-04 and are the active source locks for the next parity cycle.
+- Python `upstream/v6` was observed on 2026-05-04 and is now a closed parity line at `f81e3bc2154d21062f56f9e4ec9f923dfe7d128e`.
+- Python `upstream/v7` was observed on 2026-05-04 and is the active continuation lock for the `0.7.0` to `0.7.4` portion of this parity cycle.
+- Fetched local tags `v0.7.0` through `v0.7.4` all resolve to `f81e3bc2154d21062f56f9e4ec9f923dfe7d128e`; do not use those local tag pointers as proof for `0.7.x` parity. Follow the `upstream/v7` commit history instead.
 - Remote tag `v1.0.0` exists upstream, but the active upstream release train is still `v6` / `0.7.x`; do not target `1.0.0` until a separate traceability pass proves that line is the real parity target.
 - Local `v0.4.28`..`v0.4.32` tags are not trusted for parity claims while tag clobber risk exists; use branch commits and `git ls-remote` instead.
 - CRG `v2.3.2` remains the stable review-feature source. CRG `main` is 96 commits ahead and stays exploratory/deferred for the `0.7.4` parity cycle.
+- No CRG `main` feature has been adopted in this `0.7.4` catch-up without being recorded as an additive TypeScript delta.
 - Package version alignment is driven by Python Graphify parity targets, not by `code-review-graph` tags or `main`.
 - The active `0.7.4` catch-up must stay TypeScript-only; no new Python dependency may be introduced to claim parity.
 

@@ -145,9 +145,9 @@ Progress note:
 - Modify: `UPSTREAM_GAP.md`
 - Modify: `spec/SPEC_UPSTREAM_TRACEABILITY.md`
 
-- [ ] Keep CRG stable source lock at `v2.3.2` throughout the `0.7.4` catch-up.
-- [ ] Record CRG `main` drift only as exploratory backlog input, not as a blocker to releasing `0.7.4`.
-- [ ] If a CRG-main feature is adopted during this catch-up, cite it as an additive TypeScript delta rather than as a parity requirement for the Python line.
+- [x] Keep CRG stable source lock at `v2.3.2` throughout the `0.7.4` catch-up.
+- [x] Record CRG `main` drift only as exploratory backlog input, not as a blocker to releasing `0.7.4`.
+- [x] If a CRG-main feature is adopted during this catch-up, cite it as an additive TypeScript delta rather than as a parity requirement for the Python line.
 
 ## Task 7: Release Preparation For `0.7.4`
 
