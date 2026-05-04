@@ -4,7 +4,7 @@
 
 **Goal:** Bring the TypeScript fork from published `graphifyy@0.5.6` to a verified parity target of upstream Python Graphify `v0.7.4`, while preserving intentional TypeScript deltas and treating `code-review-graph` as an additive review-feature source instead of a version driver.
 
-**Architecture:** Catch-up is traceability-first. Lock live upstream refs, audit each upstream release line conservatively, implement in cohesive release lots, and publish the TypeScript package under the upstream Graphify version only after every active row is either `covered`, `intentional-delta`, `deferred`, `rejected`, or `n/a`. `code-review-graph` stable remains a separate source lock for review features and must not force the npm version.
+**Architecture:** Catch-up is traceability-first. Lock live upstream refs, audit each upstream release line conservatively, implement in cohesive functional lots, and publish the TypeScript package under the upstream Graphify version only after every active row is either `covered`, `intentional-delta`, `deferred`, `rejected`, or `n/a`. `code-review-graph` stable remains a separate source lock for review features and must not force the npm version.
 
 **Tech Stack:** TypeScript, Node.js 20+, Vitest, Graphify CLI/runtime, GitHub Actions, remote GitHub release metadata, `UPSTREAM_GAP.md`, `spec/SPEC_UPSTREAM_TRACEABILITY.md`.
 
@@ -26,6 +26,7 @@
 - [ ] If interim validation is needed, publish prereleases only (`0.7.4-rc.N` preferred) rather than new stable numbers that imply parity we do not yet have.
 - [ ] Promote to stable `0.7.4` only after the final release gate in this file is complete.
 - [ ] Treat upstream Python `v1.0.0` as `deferred` until a separate traceability pass proves that the active upstream release train has actually moved beyond `v6` / `0.7.x`.
+- [ ] Keep this catch-up TypeScript-only: do not add new Python runtime dependencies, Python toolchains, or Python-based feature implementations while closing `0.6.x` / `0.7.x` parity.
 
 ## Task 0: Reset Traceability Baseline
 
@@ -41,7 +42,7 @@
 - [x] State explicitly that CRG is additive and does not drive npm version numbering.
 - [ ] Commit this baseline reset as a standalone docs/plan change before implementation lots begin.
 
-## Task 1: Audit Python `0.6.0` to `0.6.2`
+## Task 1: Structured Inputs, Query Precision, And Inventory Semantics (`0.6.0` to `0.6.2`)
 
 **Files:**
 - Modify: `UPSTREAM_GAP.md`
@@ -55,7 +56,7 @@
 - [ ] Mark each audited row in `UPSTREAM_GAP.md` with evidence: test name, verification command, or explicit intentional delta note.
 - [ ] Commit this lot with only `0.6.0` to `0.6.2` traceability closures.
 
-## Task 2: Audit Python `0.6.3` to `0.6.6`
+## Task 2: Incremental Rebuild Reliability, Hooks, And Platform Surface (`0.6.3` to `0.6.6`)
 
 **Files:**
 - Modify: `UPSTREAM_GAP.md`
@@ -68,7 +69,7 @@
 - [ ] Record every installer/platform decision as either parity, intentional delta, or explicit deferment.
 - [ ] Commit this lot with only `0.6.3` to `0.6.6` closures and associated tests.
 
-## Task 3: Audit Python `0.6.7` to `0.6.9`
+## Task 3: Visualization, Ignore Semantics, And Portable Output Routing (`0.6.7` to `0.6.9`)
 
 **Files:**
 - Modify: `UPSTREAM_GAP.md`
@@ -81,7 +82,7 @@
 - [ ] Decide whether `GRAPHIFY_OUT` is compatible with the TypeScript `.graphify/` contract or should remain an `intentional-delta` / `rejected` feature.
 - [ ] Commit this lot with only `0.6.7` to `0.6.9` closures and associated tests.
 
-## Task 4: Audit Python `0.7.0`
+## Task 4: Multi-Developer Graph Lifecycle (`0.7.0`)
 
 **Files:**
 - Modify: `UPSTREAM_GAP.md`
@@ -95,7 +96,7 @@
 - [ ] Audit mixed code/doc change handling in watch/update flows.
 - [ ] Commit this lot with only `0.7.0` closures and associated tests.
 
-## Task 5: Audit Python `0.7.1` to `0.7.4`
+## Task 5: Parser Robustness, Export Surface, And Headless Extraction (`0.7.1` to `0.7.4`)
 
 **Files:**
 - Modify: `UPSTREAM_GAP.md`
@@ -104,7 +105,7 @@
 
 - [ ] Audit `v0.7.1` Obsidian tag sanitization, extended `tsconfig` alias resolution, Svelte template-layer dynamic imports, and recursion safety on deep ASTs.
 - [ ] Audit `v0.7.2` Fortran support, export CLI subcommands, skill size reduction, and large-graph aggregation.
-- [ ] Audit `v0.7.3` `graphify extract` and decide whether it maps to the TypeScript assistant/runtime model as `covered`, `intentional-delta`, or `deferred`.
+- [ ] Audit `v0.7.3` `graphify extract` and decide whether it maps to the TypeScript assistant/runtime model as `covered`, `intentional-delta`, or `deferred`, without introducing any Python dependency.
 - [ ] Audit `v0.7.4` JSONC `tsconfig` parsing and aliased Svelte dynamic-import resolution.
 - [ ] Commit this lot with only `0.7.1` to `0.7.4` closures and associated tests.
 
