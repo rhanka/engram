@@ -32,11 +32,37 @@ function writeGraph(dir: string): string {
     graphPath,
     JSON.stringify({
       directed: false,
-      graph: {},
+      graph: {
+        community_labels: {
+          "0": "Community 0",
+          "1": "Community 1",
+        },
+      },
       nodes: [
-        { id: "alpha", label: "AlphaService", source_file: "src/alpha.ts", file_type: "code" },
-        { id: "beta", label: "BetaRepository", source_file: "src/beta.ts", file_type: "code" },
-        { id: "gamma", label: "GammaDocs", source_file: "docs/gamma.md", file_type: "document" },
+        {
+          id: "alpha",
+          label: "AlphaService",
+          source_file: "src/alpha.ts",
+          file_type: "code",
+          community: 0,
+          community_name: "Community 0",
+        },
+        {
+          id: "beta",
+          label: "BetaRepository",
+          source_file: "src/beta.ts",
+          file_type: "code",
+          community: 0,
+          community_name: "Community 0",
+        },
+        {
+          id: "gamma",
+          label: "GammaDocs",
+          source_file: "docs/gamma.md",
+          file_type: "document",
+          community: 1,
+          community_name: "Community 1",
+        },
       ],
       links: [
         { source: "alpha", target: "beta", relation: "uses", confidence: "EXTRACTED" },
@@ -65,6 +91,29 @@ function writeFlowGraph(dir: string): string {
         { source: "src/app.ts::main", target: "src/service.ts::run", relation: "calls", confidence: "EXTRACTED", source_file: "src/app.ts" },
       ],
     }, null, 2),
+    "utf-8",
+  );
+  return graphPath;
+}
+
+function writeLargeGraph(dir: string, nodeCount: number = 5001): string {
+  const graphDir = join(dir, ".graphify");
+  mkdirSync(graphDir, { recursive: true });
+  const graphPath = join(graphDir, "graph.json");
+  const nodes = Array.from({ length: nodeCount }, (_, index) => ({
+    id: `node-${index}`,
+    label: `Node${index}`,
+    source_file: `src/node-${index}.ts`,
+    file_type: "code",
+  }));
+  writeFileSync(
+    graphPath,
+    JSON.stringify({
+      directed: false,
+      graph: {},
+      nodes,
+      links: [],
+    }),
     "utf-8",
   );
   return graphPath;
@@ -149,12 +198,38 @@ describe("public CLI runtime command parity", () => {
     expect(explain.logs.join("\n")).toContain("Connections");
   });
 
+  it("supports tree for compact graph traversal output", async () => {
+    const dir = tempProject();
+    const graphPath = writeGraph(dir);
+
+    const result = await runCli(["tree", "AlphaService", "--graph", graphPath, "--depth", "2"], dir);
+
+    expect(result.exitCode).toBe(0);
+    const output = result.logs.join("\n");
+    expect(output).toContain("AlphaService");
+    expect(output).toContain("uses -> BetaRepository");
+    expect(output).toContain("documents -> GammaDocs");
+  });
+
   it("recognizes add as the public URL ingest command", async () => {
     const result = await runCli(["add", "not-a-url"], tempProject(), { interceptExit: true });
 
     expect(result.exitCode).toBe(1);
     expect(result.errors.join("\n")).toContain("Invalid URL");
     expect(result.errors.join("\n")).not.toContain("unknown command");
+  });
+
+  it("supports a silent hook-check command for Codex PreToolUse hooks", async () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, ".graphify"), { recursive: true });
+    writeFileSync(join(dir, ".graphify", "graph.json"), "{}", "utf-8");
+
+    const result = await runCli(["hook-check"], dir, { interceptExit: true });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.logs).toEqual([]);
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
   });
 
   it("supports clone with an explicit output directory", async () => {
@@ -172,6 +247,58 @@ describe("public CLI runtime command parity", () => {
     expect(result.logs.join("\n")).toContain(dest);
     expect(existsSync(join(dest, ".git"))).toBe(true);
     expect(readFileSync(join(dest, "README.md"), "utf-8")).toContain("source");
+  });
+
+  it("supports export html and --no-viz cleanup", async () => {
+    const dir = tempProject();
+    const graphPath = writeGraph(dir);
+    const htmlPath = join(dir, ".graphify", "graph.html");
+
+    const html = await runCli(["export", "html", "--graph", graphPath], dir);
+    expect(html.exitCode).toBe(0);
+    expect(html.logs.join("\n")).toContain("graph.html");
+    expect(existsSync(htmlPath)).toBe(true);
+
+    const noViz = await runCli(["export", "html", "--graph", graphPath, "--no-viz"], dir);
+    expect(noViz.exitCode).toBe(0);
+    expect(noViz.logs.join("\n")).toContain("HTML export skipped");
+    expect(existsSync(htmlPath)).toBe(false);
+  });
+
+  it("supports export wiki and obsidian vault generation", async () => {
+    const dir = tempProject();
+    const graphPath = writeGraph(dir);
+    const obsidianDir = join(dir, "vault");
+
+    const wiki = await runCli(["export", "wiki", "--graph", graphPath], dir);
+    const obsidian = await runCli(["export", "obsidian", "--graph", graphPath, "--dir", obsidianDir], dir);
+
+    expect(wiki.exitCode).toBe(0);
+    expect(wiki.logs.join("\n")).toContain("wiki");
+    expect(existsSync(join(dir, ".graphify", "wiki", "index.md"))).toBe(true);
+
+    expect(obsidian.exitCode).toBe(0);
+    expect(obsidian.logs.join("\n")).toContain("graph.canvas");
+    expect(existsSync(join(obsidianDir, "index.md"))).toBe(true);
+    expect(existsSync(join(obsidianDir, "graph.canvas"))).toBe(true);
+  });
+
+  it("supports export svg, graphml, and neo4j cypher", async () => {
+    const dir = tempProject();
+    const graphPath = writeGraph(dir);
+
+    const svg = await runCli(["export", "svg", "--graph", graphPath], dir);
+    const graphml = await runCli(["export", "graphml", "--graph", graphPath], dir);
+    const neo4j = await runCli(["export", "neo4j", "--graph", graphPath], dir);
+
+    expect(svg.exitCode).toBe(0);
+    expect(readFileSync(join(dir, ".graphify", "graph.svg"), "utf-8")).toContain("<svg");
+
+    expect(graphml.exitCode).toBe(0);
+    expect(readFileSync(join(dir, ".graphify", "graph.graphml"), "utf-8")).toContain("<graphml");
+
+    expect(neo4j.exitCode).toBe(0);
+    expect(readFileSync(join(dir, ".graphify", "cypher.txt"), "utf-8")).toContain("MERGE");
   });
 
   it("supports merge-graphs and annotates nodes with their repo of origin", async () => {
@@ -231,6 +358,194 @@ describe("public CLI runtime command parity", () => {
     expect(result.logs.join("\n")).toContain("Code graph updated");
     expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
     expect(existsSync(join(dir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
+  });
+
+  it("writes graph freshness metadata and detects stale HEAD drift", async () => {
+    const dir = tempProject();
+    initGitRepo(dir);
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+    execGit(dir, ["add", "src/alpha.ts"]);
+    execGit(dir, ["commit", "-q", "-m", "init"]);
+
+    const result = await runCli(["update", "."], dir);
+    const head = execGit(dir, ["rev-parse", "HEAD"]);
+    const graphJson = JSON.parse(readFileSync(join(dir, ".graphify", "graph.json"), "utf-8")) as {
+      graph?: { built_from_commit?: string };
+    };
+    const report = readFileSync(join(dir, ".graphify", "GRAPH_REPORT.md"), "utf-8");
+
+    expect(result.exitCode).toBe(0);
+    expect(graphJson.graph?.built_from_commit).toBe(head);
+    expect(report).toContain(head.slice(0, 7));
+
+    writeFileSync(join(dir, "README.md"), "# drift\n", "utf-8");
+    execGit(dir, ["add", "README.md"]);
+    execGit(dir, ["commit", "-q", "-m", "drift"]);
+
+    const stale = await runCli(["check-update", "."], dir);
+    expect(stale.exitCode).toBe(0);
+    expect(stale.logs.join("\n")).toContain("Pending semantic updates");
+    expect(stale.logs.join("\n")).toContain(head.slice(0, 7));
+  });
+
+  it("supports code-only headless extract via the public CLI", async () => {
+    const dir = tempProject();
+    const outDir = join(dir, "artifacts");
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+
+    const result = await runCli(["extract", ".", "--out", outDir], dir);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.logs.join("\n")).toContain("[graphify extract] wrote");
+    expect(existsSync(join(outDir, ".graphify", "graph.json"))).toBe(true);
+    expect(existsSync(join(outDir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
+    expect(existsSync(join(outDir, ".graphify", ".graphify_analysis.json"))).toBe(true);
+  });
+
+  it("supports extract --no-cluster for raw merged extraction output", async () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+
+    const result = await runCli(["extract", ".", "--no-cluster"], dir);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.logs.join("\n")).toContain("no clustering");
+    expect(existsSync(join(dir, ".graphify", ".graphify_extract.json"))).toBe(true);
+    expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(false);
+  });
+
+  it("requires provided semantic extraction for non-code headless corpora", async () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, "docs"), { recursive: true });
+    writeFileSync(join(dir, "docs", "guide.md"), "# Guide\n", "utf-8");
+
+    const result = await runCli(["extract", "."], dir, { interceptExit: true });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.errors.join("\n")).toContain("provide --semantic");
+  });
+
+  it("supports docs-only headless extract when semantic JSON is provided", async () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, "docs"), { recursive: true });
+    writeFileSync(join(dir, "docs", "guide.md"), "# Guide\n", "utf-8");
+    const semanticPath = join(dir, "semantic.json");
+    writeFileSync(
+      semanticPath,
+      JSON.stringify({
+        nodes: [
+          {
+            id: "guide_doc",
+            label: "Guide",
+            file_type: "document",
+            source_file: "docs/guide.md",
+            source_location: null,
+          },
+        ],
+        edges: [],
+        hyperedges: [],
+        input_tokens: 10,
+        output_tokens: 5,
+      }, null, 2),
+      "utf-8",
+    );
+
+    const result = await runCli(["extract", ".", "--semantic", semanticPath], dir);
+    const graph = JSON.parse(readFileSync(join(dir, ".graphify", "graph.json"), "utf-8")) as {
+      nodes: Array<{ label?: string }>;
+    };
+
+    expect(result.exitCode).toBe(0);
+    expect(result.logs.join("\n")).toContain("[graphify extract] wrote");
+    expect(graph.nodes.some((node) => node.label === "Guide")).toBe(true);
+  });
+
+  it("preserves existing semantic nodes during code-only update rebuilds", async () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+
+    const initial = await runCli(["update", "."], dir);
+    expect(initial.exitCode).toBe(0);
+
+    const graphPath = join(dir, ".graphify", "graph.json");
+    const graph = JSON.parse(readFileSync(graphPath, "utf-8")) as {
+      nodes: Array<{ id: string; label?: string; source_file?: string; file_type?: string }>;
+      links: Array<Record<string, unknown>>;
+    };
+    const existingCodeNode = graph.nodes.find((node) => node.file_type === "code");
+    expect(existingCodeNode).toBeTruthy();
+
+    graph.nodes.push({
+      id: "semantic_doc",
+      label: "SemanticDoc",
+      source_file: "docs/semantic.md",
+      file_type: "document",
+    });
+    graph.links.push({
+      source: existingCodeNode!.id,
+      target: "semantic_doc",
+      relation: "documents",
+      confidence: "INFERRED",
+      source_file: "docs/semantic.md",
+    });
+    writeFileSync(graphPath, JSON.stringify(graph, null, 2), "utf-8");
+
+    const updated = await runCli(["update", "."], dir, { interceptExit: true });
+    const persisted = JSON.parse(readFileSync(graphPath, "utf-8")) as {
+      nodes: Array<{ id: string }>;
+      links: Array<{ source: string; target: string; relation?: string }>;
+    };
+
+    expect(updated.exitCode).toBe(0);
+    expect(persisted.nodes.some((node) => node.id === "semantic_doc")).toBe(true);
+    expect(
+      persisted.links.some((edge) =>
+        edge.target === "semantic_doc" && edge.relation === "documents"),
+    ).toBe(true);
+  });
+
+  it("accepts update --force as a valid CLI override", async () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+
+    const result = await runCli(["update", ".", "--force"], dir);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.logs.join("\n")).toContain("Code graph updated");
+    expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
+  });
+
+  it("rebuilds code but keeps stale semantic state for mixed code and docs hook batches", async () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, "src"), { recursive: true });
+    mkdirSync(join(dir, "docs"), { recursive: true });
+    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+    writeFileSync(join(dir, "docs", "guide.md"), "# Guide\n", "utf-8");
+
+    const initial = await runCli(["update", "."], dir);
+    expect(initial.exitCode).toBe(0);
+
+    writeFileSync(join(dir, ".graphify", "needs_update"), "1\n", "utf-8");
+    const previousChanged = process.env.GRAPHIFY_CHANGED;
+    process.env.GRAPHIFY_CHANGED = ["src/alpha.ts", "docs/guide.md"].join("\n");
+    try {
+      const result = await runCli(["hook-rebuild"], dir, { interceptExit: true });
+      expect(result.exitCode).toBe(0);
+    } finally {
+      if (previousChanged === undefined) {
+        delete process.env.GRAPHIFY_CHANGED;
+      } else {
+        process.env.GRAPHIFY_CHANGED = previousChanged;
+      }
+    }
+
+    expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
+    expect(existsSync(join(dir, ".graphify", "needs_update"))).toBe(true);
   });
 
   it("supports scope inspect via CLI and skill runtime", async () => {
@@ -368,6 +683,19 @@ describe("public CLI runtime command parity", () => {
     expect(result.logs.join("\n")).toContain("graph.html updated");
     expect(existsSync(join(dir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
     expect(existsSync(join(dir, ".graphify", "graph.html"))).toBe(true);
+  });
+
+  it("supports cluster-only on oversized graphs by skipping HTML export", async () => {
+    const dir = tempProject();
+    writeLargeGraph(dir);
+
+    const result = await runCli(["cluster-only", dir], dir);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.warnings.join("\n")).toContain("HTML export skipped");
+    expect(existsSync(join(dir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
+    expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
+    expect(existsSync(join(dir, ".graphify", "graph.html"))).toBe(false);
   });
 
   it("supports execution flow build, list, and get commands", async () => {

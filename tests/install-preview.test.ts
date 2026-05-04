@@ -25,7 +25,7 @@ describe("install mutation previews", () => {
       resolve("/repo/AGENTS.md"),
       resolve("/repo/.codex/hooks.json"),
     ]);
-    expect(preview.hooks).toEqual([".codex/hooks.json: PreToolUse Bash graphify reminder"]);
+    expect(preview.hooks).toEqual([".codex/hooks.json: PreToolUse Bash graphify hook-check"]);
     expect(JSON.stringify(preview)).not.toContain("graphify-out");
   });
 
@@ -105,6 +105,6 @@ describe("install mutation previews", () => {
 
     expect(logs[0]).toContain("Preview: graphify codex install will touch:");
     expect(logs.join("\n")).toContain(resolve(dir, "AGENTS.md"));
-    expect(logs.join("\n")).toContain(".codex/hooks.json: PreToolUse Bash graphify reminder");
+    expect(logs.join("\n")).toContain(".codex/hooks.json: PreToolUse Bash graphify hook-check");
   });
 });

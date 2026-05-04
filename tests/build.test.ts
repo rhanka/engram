@@ -70,6 +70,46 @@ describe("buildFromJson", () => {
     expect(G.outboundNeighbors("a").sort()).toEqual(["b", "c"]);
     expect(G.outboundNeighbors("b")).toEqual([]);
   });
+
+  it("normalizes Windows-style source_file separators during graph ingestion", () => {
+    const ext: Extraction = {
+      nodes: [
+        { id: "a", label: "AuthFile", file_type: "code", source_file: "src\\middleware\\auth.ts" },
+        { id: "b", label: "SessionFile", file_type: "code", source_file: "src\\middleware\\session.ts" },
+      ],
+      edges: [
+        {
+          source: "a",
+          target: "b",
+          relation: "references",
+          confidence: "EXTRACTED",
+          source_file: "src\\middleware\\auth.ts",
+        },
+      ],
+      hyperedges: [
+        {
+          id: "auth_group",
+          label: "Auth Group",
+          nodes: ["a", "b"],
+          relation: "form",
+          confidence: "INFERRED",
+          source_file: "src\\middleware\\auth.ts",
+        },
+      ],
+      input_tokens: 0,
+      output_tokens: 0,
+    };
+
+    const G = buildFromJson(ext);
+    const edge = G.edge("a", "b");
+    const hyperedges = G.getAttribute("hyperedges") as Extraction["hyperedges"];
+
+    expect(G.getNodeAttribute("a", "source_file")).toBe("src/middleware/auth.ts");
+    expect(G.getNodeAttribute("b", "source_file")).toBe("src/middleware/session.ts");
+    expect(edge).toBeDefined();
+    expect(G.getEdgeAttribute(edge!, "source_file")).toBe("src/middleware/auth.ts");
+    expect(hyperedges?.[0]?.source_file).toBe("src/middleware/auth.ts");
+  });
 });
 
 describe("build (merge)", () => {

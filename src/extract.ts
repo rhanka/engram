@@ -168,46 +168,144 @@ function qualifiedFileStem(filePath: string, rootDir: string = dirname(resolve(f
   return `${parent}.${stem}`;
 }
 
+function buildResolvableLabelIndex(nodes: GraphNode[]): Map<string, string> {
+  const candidates = new Map<string, Set<string>>();
+  for (const node of nodes) {
+    const raw = String(node.label ?? "");
+    const normalized = raw.replace(/\(?\)$/g, "").replace(/^\./, "").toLowerCase();
+    if (!normalized) continue;
+    const ids = candidates.get(normalized) ?? new Set<string>();
+    ids.add(node.id);
+    candidates.set(normalized, ids);
+  }
+
+  const resolved = new Map<string, string>();
+  for (const [label, ids] of candidates) {
+    if (ids.size === 1) {
+      resolved.set(label, ids.values().next().value as string);
+    }
+  }
+  return resolved;
+}
+
 type TsconfigAliasEntry = {
   aliasPrefix: string;
   targetBase: string;
 };
 
 const tsconfigAliasCache = new Map<string, TsconfigAliasEntry[]>();
+type TsconfigDocument = {
+  extends?: string;
+  compilerOptions?: {
+    baseUrl?: string;
+    paths?: Record<string, string[]>;
+  };
+};
+
+function stripJsonc(text: string): string {
+  const pattern = /"(?:\\.|[^"\\])*"|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g;
+  const stripped = text.replace(pattern, (token) => token.startsWith("\"") ? token : "");
+  return stripped.replace(/,(\s*[}\]])/g, "$1");
+}
+
+function readTsconfigDocument(tsconfigPath: string): TsconfigDocument | null {
+  try {
+    const raw = readFileSync(tsconfigPath, "utf-8");
+    try {
+      return JSON.parse(raw) as TsconfigDocument;
+    } catch {
+      return JSON.parse(stripJsonc(raw)) as TsconfigDocument;
+    }
+  } catch {
+    return null;
+  }
+}
+
+function resolveTsconfigExtendsPath(extendsValue: string, fromDir: string): string | null {
+  const candidateRoots: string[] = [];
+  if (extendsValue.startsWith(".") || extendsValue.startsWith("/") || extendsValue.startsWith("..")) {
+    candidateRoots.push(resolve(fromDir, extendsValue));
+  } else {
+    try {
+      candidateRoots.push(moduleRequire.resolve(extendsValue, { paths: [fromDir] }));
+    } catch {
+      // fall through to common package-style candidates
+    }
+    if (!extendsValue.endsWith(".json")) {
+      try {
+        candidateRoots.push(moduleRequire.resolve(`${extendsValue}.json`, { paths: [fromDir] }));
+      } catch {
+        // ignore
+      }
+    }
+    try {
+      candidateRoots.push(moduleRequire.resolve(join(extendsValue, "tsconfig.json"), { paths: [fromDir] }));
+    } catch {
+      // ignore
+    }
+  }
+
+  const candidates = candidateRoots.flatMap((candidate) => {
+    const resolvedCandidate = resolve(candidate);
+    if (extname(resolvedCandidate) === ".json") {
+      return [resolvedCandidate];
+    }
+    return [
+      resolvedCandidate,
+      `${resolvedCandidate}.json`,
+      join(resolvedCandidate, "tsconfig.json"),
+    ];
+  });
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+function loadTsconfigAliasesFromPath(tsconfigPath: string, seen: Set<string> = new Set()): TsconfigAliasEntry[] {
+  const resolvedTsconfigPath = resolve(tsconfigPath);
+  const cached = tsconfigAliasCache.get(resolvedTsconfigPath);
+  if (cached) return cached;
+  if (seen.has(resolvedTsconfigPath)) return [];
+  seen.add(resolvedTsconfigPath);
+
+  const parsed = readTsconfigDocument(resolvedTsconfigPath);
+  if (!parsed) {
+    tsconfigAliasCache.set(resolvedTsconfigPath, []);
+    return [];
+  }
+
+  const configDir = dirname(resolvedTsconfigPath);
+  const extendsPath = typeof parsed.extends === "string"
+    ? resolveTsconfigExtendsPath(parsed.extends, configDir)
+    : null;
+  const inherited = extendsPath ? loadTsconfigAliasesFromPath(extendsPath, seen) : [];
+  const merged = new Map<string, TsconfigAliasEntry>(
+    inherited.map((entry) => [entry.aliasPrefix, entry]),
+  );
+  const baseDir = resolve(configDir, parsed.compilerOptions?.baseUrl ?? ".");
+  for (const [alias, targets] of Object.entries(parsed.compilerOptions?.paths ?? {})) {
+    const firstTarget = targets[0];
+    if (!firstTarget) continue;
+    merged.set(alias.replace(/\/\*$/, ""), {
+      aliasPrefix: alias.replace(/\/\*$/, ""),
+      targetBase: resolve(baseDir, firstTarget.replace(/\/\*$/, "")),
+    });
+  }
+
+  const aliases = [...merged.values()];
+  tsconfigAliasCache.set(resolvedTsconfigPath, aliases);
+  return aliases;
+}
 
 function loadTsconfigAliases(startDir: string): TsconfigAliasEntry[] {
   let current = resolve(startDir);
   while (true) {
     const tsconfigPath = join(current, "tsconfig.json");
     if (existsSync(tsconfigPath)) {
-      const cached = tsconfigAliasCache.get(tsconfigPath);
-      if (cached) {
-        return cached;
-      }
-      try {
-        const parsed = JSON.parse(readFileSync(tsconfigPath, "utf-8")) as {
-          compilerOptions?: { paths?: Record<string, string[]> };
-        };
-        const aliases = Object.entries(parsed.compilerOptions?.paths ?? {})
-          .map(([alias, targets]) => {
-            const firstTarget = targets[0];
-            if (!firstTarget) {
-              return null;
-            }
-            return {
-              aliasPrefix: alias.replace(/\/\*$/, ""),
-              targetBase: resolve(current, firstTarget.replace(/\/\*$/, "")),
-            } satisfies TsconfigAliasEntry;
-          })
-          .filter((entry): entry is TsconfigAliasEntry => entry !== null);
-        tsconfigAliasCache.set(tsconfigPath, aliases);
-        return aliases;
-      } catch {
-        tsconfigAliasCache.set(tsconfigPath, []);
-        return [];
-      }
+      return loadTsconfigAliasesFromPath(tsconfigPath);
     }
-
     const parent = dirname(current);
     if (parent === current) {
       return [];
@@ -247,6 +345,28 @@ function normalizeJsImportTarget(resolvedImport: string): string {
     }
   }
   return resolvedImport;
+}
+
+function resolveJsImportTarget(raw: string, importerPath: string): string | null {
+  if (raw.startsWith(".")) {
+    const resolvedImport = normalizeJsImportTarget(resolve(dirname(importerPath), raw));
+    return _makeId(toPortablePath(resolvedImport));
+  }
+
+  let resolvedAlias: string | null = null;
+  for (const alias of loadTsconfigAliases(dirname(importerPath))) {
+    if (raw === alias.aliasPrefix || raw.startsWith(`${alias.aliasPrefix}/`)) {
+      const suffix = raw.slice(alias.aliasPrefix.length).replace(/^\/+/, "");
+      resolvedAlias = normalizeJsImportTarget(resolve(alias.targetBase, suffix));
+      break;
+    }
+  }
+  if (resolvedAlias) {
+    return _makeId(toPortablePath(resolvedAlias));
+  }
+
+  const moduleName = raw.split("/").pop() ?? "";
+  return moduleName ? _makeId(moduleName) : null;
 }
 
 function remapFileNodeIds(nodes: GraphNode[], edges: GraphEdge[], paths: string[], root: string): void {
@@ -469,40 +589,32 @@ function _importJs(
   node: SyntaxNode, source: string, fileNid: string, _stem: string,
   edges: GraphEdge[], strPath: string,
 ): void {
-  for (const child of node.children) {
-    if (child.type === "string") {
-      const raw = _readText(child, source).replace(/^['"`\s]+|['"`\s]+$/g, "");
-      let tgtNid: string | null = null;
-      if (raw.startsWith(".")) {
-        const resolvedImport = normalizeJsImportTarget(resolve(dirname(strPath), raw));
-        tgtNid = _makeId(toPortablePath(resolvedImport));
-      } else {
-        let resolvedAlias: string | null = null;
-        for (const alias of loadTsconfigAliases(dirname(strPath))) {
-          if (raw === alias.aliasPrefix || raw.startsWith(`${alias.aliasPrefix}/`)) {
-            const suffix = raw.slice(alias.aliasPrefix.length).replace(/^\/+/, "");
-            resolvedAlias = normalizeJsImportTarget(resolve(alias.targetBase, suffix));
-            break;
-          }
-        }
-        if (resolvedAlias) {
-          tgtNid = _makeId(toPortablePath(resolvedAlias));
-        } else {
-          const moduleName = raw.split("/").pop() ?? "";
-          if (moduleName) {
-            tgtNid = _makeId(moduleName);
-          }
-        }
-      }
-      if (tgtNid) {
-        edges.push({
-          source: fileNid, target: tgtNid, relation: "imports_from",
-          confidence: "EXTRACTED", source_file: strPath,
-          source_location: `L${node.startPosition.row + 1}`, weight: 1.0,
-        });
-      }
-      break;
+  const readStringSpecifier = (current: SyntaxNode): string | null => {
+    if (current.type === "string") {
+      return _readText(current, source).replace(/^['"`\s]+|['"`\s]+$/g, "");
     }
+    for (const child of current.children) {
+      const value = readStringSpecifier(child);
+      if (value) return value;
+    }
+    return null;
+  };
+
+  if (node.type === "call_expression") {
+    const callee = node.childForFieldName("function") ?? node.children[0] ?? null;
+    if (!callee || _readText(callee, source) !== "import") {
+      return;
+    }
+  }
+  const raw = readStringSpecifier(node);
+  if (!raw) return;
+  const tgtNid = resolveJsImportTarget(raw, strPath);
+  if (tgtNid) {
+    edges.push({
+      source: fileNid, target: tgtNid, relation: "imports_from",
+      confidence: "EXTRACTED", source_file: strPath,
+      source_location: `L${node.startPosition.row + 1}`, weight: 1.0,
+    });
   }
 }
 
@@ -1316,6 +1428,9 @@ async function _extractGeneric(
 
     // JS/TS arrow functions
     if (config.tsModule === "tree_sitter_javascript" || config.tsModule === "tree_sitter_typescript") {
+      if (t === "call_expression" && config.importHandler) {
+        config.importHandler(node, source, fileNid, stem, edges, strPath);
+      }
       if (_jsExtraWalk(node, source, fileNid, stem, strPath,
         nodes, edges, seenIds, functionBodies,
         parentClassNid, addNode, addEdge)) {
@@ -1349,13 +1464,20 @@ async function _extractGeneric(
 
   walk(root);
 
-  // -- Call-graph pass --
-  const labelToNid = new Map<string, string>();
-  for (const n of nodes) {
-    const raw = n.label;
-    const normalised = raw.replace(/\(?\)$/g, "").replace(/^\./, "");
-    labelToNid.set(normalised.toLowerCase(), n.id);
+  if (config.tsModule === "tree_sitter_javascript" || config.tsModule === "tree_sitter_typescript") {
+    function walkDynamicImports(node: SyntaxNode): void {
+      if (node.type === "call_expression" && config.importHandler) {
+        config.importHandler(node, source, fileNid, stem, edges, strPath);
+      }
+      for (const child of node.children) {
+        walkDynamicImports(child);
+      }
+    }
+    walkDynamicImports(root);
   }
+
+  // -- Call-graph pass --
+  const labelToNid = buildResolvableLabelIndex(nodes);
 
   const seenCallPairs = new Set<string>();
 
@@ -1983,6 +2105,42 @@ async function extractRegexBackedCode(filePath: string, rootDir?: string): Promi
   return { nodes, edges };
 }
 
+async function extractSvelte(filePath: string, rootDir?: string): Promise<ExtractionResult> {
+  const result = await extractRegexBackedCode(filePath, rootDir);
+
+  let source: string;
+  try {
+    source = readFileSync(filePath, "utf-8");
+  } catch {
+    return result;
+  }
+
+  const fileNode = result.nodes.find(
+    (node) => node.label === basename(filePath) && node.source_file === filePath,
+  );
+  if (!fileNode) {
+    return result;
+  }
+
+  for (const match of source.matchAll(/import\(\s*['"]([^'"]+)['"]\s*\)/g)) {
+    const raw = match[1]?.trim();
+    if (!raw) continue;
+    const target = resolveJsImportTarget(raw, filePath);
+    if (!target) continue;
+    result.edges.push({
+      source: fileNode.id,
+      target,
+      relation: "imports_from",
+      confidence: "EXTRACTED",
+      source_file: filePath,
+      source_location: `L${lineForIndex(source, match.index ?? 0)}`,
+      weight: 1.0,
+    });
+  }
+
+  return result;
+}
+
 // ---------------------------------------------------------------------------
 // Go extractor (custom walk)
 // ---------------------------------------------------------------------------
@@ -2137,11 +2295,7 @@ export async function extractGo(filePath: string, rootDir?: string): Promise<Ext
   walk(root);
 
   // Call-graph pass
-  const labelToNid = new Map<string, string>();
-  for (const n of nodes) {
-    const normalised = n.label.replace(/\(?\)$/g, "").replace(/^\./, "");
-    labelToNid.set(normalised.toLowerCase(), n.id);
-  }
+  const labelToNid = buildResolvableLabelIndex(nodes);
 
   const seenCallPairs = new Set<string>();
 
@@ -2312,11 +2466,7 @@ export async function extractRust(filePath: string, rootDir?: string): Promise<E
   walk(root);
 
   // Call-graph pass
-  const labelToNid = new Map<string, string>();
-  for (const n of nodes) {
-    const normalised = n.label.replace(/\(?\)$/g, "").replace(/^\./, "");
-    labelToNid.set(normalised.toLowerCase(), n.id);
-  }
+  const labelToNid = buildResolvableLabelIndex(nodes);
 
   const seenCallPairs = new Set<string>();
 
@@ -2707,11 +2857,7 @@ export async function extractPowershell(filePath: string, rootDir?: string): Pro
   walk(root);
 
   // Call-graph pass
-  const labelToNid = new Map<string, string>();
-  for (const n of nodes) {
-    const normalised = n.label.replace(/\(?\)$/g, "").replace(/^\./, "");
-    labelToNid.set(normalised.toLowerCase(), n.id);
-  }
+  const labelToNid = buildResolvableLabelIndex(nodes);
 
   const seenCallPairs = new Set<string>();
 
@@ -3113,11 +3259,7 @@ export async function extractElixir(filePath: string, rootDir?: string): Promise
   walk(root);
 
   // Call-graph pass
-  const labelToNid = new Map<string, string>();
-  for (const n of nodes) {
-    const normalised = n.label.replace(/\(?\)$/g, "").replace(/^\./, "");
-    labelToNid.set(normalised.toLowerCase(), n.id);
-  }
+  const labelToNid = buildResolvableLabelIndex(nodes);
 
   const seenCallPairs = new Set<string>();
   const _SKIP_KEYWORDS = new Set([
@@ -3325,7 +3467,7 @@ const _DISPATCH: Record<string, ExtractorFn> = {
   ".ts": extractJs,
   ".tsx": extractJs,
   ".vue": extractRegexBackedCode,
-  ".svelte": extractRegexBackedCode,
+  ".svelte": extractSvelte,
   ".dart": extractRegexBackedCode,
   ".v": extractRegexBackedCode,
   ".sv": extractRegexBackedCode,
@@ -3401,7 +3543,15 @@ export async function extractWithDiagnostics(paths: string[]): Promise<ExtractWi
       continue;
     }
 
-    const result = await extractor(filePath, root);
+    let result: ExtractionResult;
+    try {
+      result = await extractor(filePath, root);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      diagnostics.push({ filePath, error: message });
+      perFile.push({ nodes: [], edges: [], error: message });
+      continue;
+    }
     if (!result.error) {
       saveCached(filePath, result as unknown as Record<string, unknown>, root);
     } else {

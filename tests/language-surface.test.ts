@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { collectFiles, extract } from "../src/extract.js";
+import { collectFiles, extract, extractWithDiagnostics } from "../src/extract.js";
 
 describe("upstream v4 language surface", () => {
   let dir: string;
@@ -219,6 +219,278 @@ class PaymentService extends BaseService implements Billable {}
     );
 
     expect(importEdge?.target).toBe("utils_ts");
+  });
+
+  it("parses JSONC tsconfig aliases with comments and trailing commas", async () => {
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(
+      join(dir, "tsconfig.json"),
+      [
+        "{",
+        "  // vite-style alias config",
+        '  "compilerOptions": {',
+        '    "paths": {',
+        '      "@/*": ["src/*"],',
+        "    },",
+        "  },",
+        "}",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    writeFileSync(
+      join(dir, "src", "entry.ts"),
+      [
+        "import { helper } from '@/utils';",
+        "export function alpha() {",
+        "  return helper();",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(dir, "src", "utils.ts"),
+      [
+        "export function helper() {",
+        "  return 1;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await extract([
+      join(dir, "src", "entry.ts"),
+      join(dir, "src", "utils.ts"),
+    ]);
+
+    const importEdge = result.edges.find(
+      (edge) => edge.source === "entry_ts" && edge.relation === "imports_from",
+    );
+
+    expect(importEdge?.target).toBe("utils_ts");
+  });
+
+  it("resolves tsconfig path aliases through an extends chain", async () => {
+    mkdirSync(join(dir, "src", "lib"), { recursive: true });
+    writeFileSync(
+      join(dir, "tsconfig.base.json"),
+      [
+        "{",
+        '  "compilerOptions": {',
+        '    "baseUrl": ".",',
+        '    "paths": {',
+        '      "@lib/*": ["src/lib/*"]',
+        "    }",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    writeFileSync(
+      join(dir, "tsconfig.json"),
+      [
+        "{",
+        '  "extends": "./tsconfig.base.json"',
+        "}",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    writeFileSync(
+      join(dir, "src", "entry.ts"),
+      [
+        "import { helper } from '@lib/helper';",
+        "export function alpha() {",
+        "  return helper();",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(dir, "src", "lib", "helper.ts"),
+      [
+        "export function helper() {",
+        "  return 1;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await extract([
+      join(dir, "src", "entry.ts"),
+      join(dir, "src", "lib", "helper.ts"),
+    ]);
+
+    const importEdge = result.edges.find(
+      (edge) => edge.source === "entry_ts" && edge.relation === "imports_from",
+    );
+
+    expect(importEdge?.target).toBe("lib_helper_ts");
+  });
+
+  it("resolves local dynamic imports as imports_from edges", async () => {
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(
+      join(dir, "src", "entry.ts"),
+      [
+        "export async function loadHelper() {",
+        "  return import('./utils');",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(dir, "src", "utils.ts"),
+      [
+        "export function helper() {",
+        "  return 1;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await extract([
+      join(dir, "src", "entry.ts"),
+      join(dir, "src", "utils.ts"),
+    ]);
+
+    const importEdge = result.edges.find(
+      (edge) => edge.source === "entry_ts" && edge.relation === "imports_from",
+    );
+
+    expect(importEdge?.target).toBe("utils_ts");
+  });
+
+  it("resolves aliased Svelte dynamic imports via tsconfig paths", async () => {
+    mkdirSync(join(dir, "src", "routes"), { recursive: true });
+    mkdirSync(join(dir, "src", "lib"), { recursive: true });
+    writeFileSync(
+      join(dir, "tsconfig.json"),
+      [
+        "{",
+        "  /* SvelteKit-style config */",
+        '  "compilerOptions": {',
+        '    "paths": {',
+        '      "$lib/*": ["src/lib/*"],',
+        "    },",
+        "  },",
+        "}",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    writeFileSync(
+      join(dir, "src", "routes", "+page.svelte"),
+      [
+        "<script>",
+        "  export async function loadWidget() {",
+        "    return import('$lib/widget');",
+        "  }",
+        "</script>",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(dir, "src", "lib", "widget.ts"),
+      [
+        "export function renderWidget() {",
+        "  return 1;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await extract([
+      join(dir, "src", "routes", "+page.svelte"),
+      join(dir, "src", "lib", "widget.ts"),
+    ]);
+
+    const pageNode = result.nodes.find((node) => node.label === "+page.svelte");
+    const widgetNode = result.nodes.find((node) => node.label === "widget.ts");
+    const importEdge = result.edges.find(
+      (edge) => edge.source === pageNode?.id && edge.target === widgetNode?.id && edge.relation === "imports_from",
+    );
+
+    expect(pageNode?.id).toBeTruthy();
+    expect(widgetNode?.id).toBeTruthy();
+    expect(importEdge).toBeDefined();
+  });
+
+  it("resolves template-layer Svelte dynamic imports via tsconfig paths", async () => {
+    mkdirSync(join(dir, "src", "routes"), { recursive: true });
+    mkdirSync(join(dir, "src", "lib"), { recursive: true });
+    writeFileSync(
+      join(dir, "tsconfig.json"),
+      [
+        "{",
+        '  "compilerOptions": {',
+        '    "paths": {',
+        '      "$lib/*": ["src/lib/*"]',
+        "    }",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    writeFileSync(
+      join(dir, "src", "routes", "+layout.svelte"),
+      [
+        "<div>",
+        "  {#await import('$lib/widget') then widget}",
+        "    <svelte:component this={widget.default} />",
+        "  {/await}",
+        "</div>",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    writeFileSync(
+      join(dir, "src", "lib", "widget.ts"),
+      [
+        "export default function Widget() {",
+        "  return 1;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await extract([
+      join(dir, "src", "routes", "+layout.svelte"),
+      join(dir, "src", "lib", "widget.ts"),
+    ]);
+
+    const layoutNode = result.nodes.find((node) => node.label === "+layout.svelte");
+    const widgetNode = result.nodes.find((node) => node.label === "widget.ts");
+    const importEdge = result.edges.find(
+      (edge) => edge.source === layoutNode?.id && edge.target === widgetNode?.id && edge.relation === "imports_from",
+    );
+
+    expect(layoutNode?.id).toBeTruthy();
+    expect(widgetNode?.id).toBeTruthy();
+    expect(importEdge).toBeDefined();
+  });
+
+  it("continues extraction when a file overflows recursive AST traversal", async () => {
+    const deepPath = join(dir, "deep.ts");
+    const normalPath = join(dir, "normal.ts");
+    const depth = 12_000;
+    const deepExpression = `${"(".repeat(depth)}1${")".repeat(depth)}`;
+    writeFileSync(deepPath, `export const value = ${deepExpression};\n`, "utf-8");
+    writeFileSync(normalPath, "export function keepMe() { return 1; }\n", "utf-8");
+
+    const result = await extractWithDiagnostics([deepPath, normalPath]);
+
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filePath: deepPath,
+          error: expect.stringMatching(/call stack|recursion/i),
+        }),
+      ]),
+    );
+    expect(result.extraction.nodes.some((node) => node.source_file === normalPath)).toBe(true);
   });
 
   it("keeps symbol node IDs distinct for same-named files in different directories", async () => {

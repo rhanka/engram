@@ -62,4 +62,34 @@ describe("AST call edge confidence", () => {
 
     expect(importEdge?.target).toBe("go_pkg_context");
   });
+
+  it("skips ambiguous call targets when multiple symbols share the same name", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-extract-js-ambiguous-"));
+    cleanupDirs.push(dir);
+
+    const filePath = join(dir, "sample.js");
+    writeFileSync(
+      filePath,
+      [
+        "function log() { return 'global'; }",
+        "class Logger {",
+        "  log() { return 'method'; }",
+        "}",
+        "export function demo() {",
+        "  return log();",
+        "}",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await extractJs(filePath);
+    const demoNode = result.nodes.find((node) => node.label === "demo()");
+    const callTargets = result.edges
+      .filter((edge) => edge.relation === "calls" && edge.source === demoNode?.id)
+      .map((edge) => edge.target);
+
+    expect(demoNode).toBeDefined();
+    expect(callTargets).toEqual([]);
+  });
 });

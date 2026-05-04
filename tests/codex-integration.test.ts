@@ -149,8 +149,9 @@ describe("Codex integration contract", () => {
     };
     const command = hooks.hooks?.PreToolUse?.[0]?.hooks?.[0]?.command ?? "";
 
-    expect(command).toContain("\"permissionDecision\":\"allow\"");
-    expect(command).toContain("\"systemMessage\":\"graphify: Knowledge graph exists.");
-    expect(command).not.toContain("\"additionalContext\"");
+    expect(command).toBe("graphify hook-check");
+    expect(command).not.toContain("permissionDecision");
+    expect(command).not.toContain("systemMessage");
+    expect(command).not.toContain("additionalContext");
   });
 });

@@ -74,6 +74,100 @@ describe("cluster", () => {
 
     expect(allNodes).toEqual(["a", "b", "c", "d"]);
   });
+
+  it("assigns deterministic community IDs across equivalent insertion orders", async () => {
+    const { vi } = await import("vitest");
+    vi.resetModules();
+
+    const louvainMock = vi.fn();
+    vi.doMock("graphology-communities-louvain", () => ({ default: louvainMock }));
+    const { cluster: isolatedCluster } = await import("../src/cluster.js");
+
+    louvainMock.mockImplementation((graph: Graph) => {
+      const partition: Record<string, number> = {};
+      const nodes = graph.nodes();
+      nodes.forEach((node, index) => {
+        partition[node] = index < 2 ? 1 : 0;
+      });
+      return partition;
+    });
+
+    const first = new Graph({ type: "undirected" });
+    for (const node of ["a", "c", "b", "d"]) {
+      first.mergeNode(node);
+    }
+    first.mergeEdge("a", "b");
+    first.mergeEdge("c", "d");
+
+    const second = new Graph({ type: "undirected" });
+    for (const node of ["d", "b", "c", "a"]) {
+      second.mergeNode(node);
+    }
+    second.mergeEdge("a", "b");
+    second.mergeEdge("c", "d");
+
+    expect([...isolatedCluster(first).entries()]).toEqual([
+      [0, ["a", "b"]],
+      [1, ["c", "d"]],
+    ]);
+    expect([...isolatedCluster(second).entries()]).toEqual([
+      [0, ["a", "b"]],
+      [1, ["c", "d"]],
+    ]);
+
+    vi.doUnmock("graphology-communities-louvain");
+    vi.resetModules();
+  });
+
+  it("re-splits low-cohesion large communities on a second pass", async () => {
+    const { vi } = await import("vitest");
+    vi.resetModules();
+
+    const louvainMock = vi.fn();
+    vi.doMock("graphology-communities-louvain", () => ({ default: louvainMock }));
+    const { cluster: isolatedCluster } = await import("../src/cluster.js");
+
+    const G = new Graph({ type: "undirected" });
+    for (let index = 1; index <= 25; index += 1) {
+      G.mergeNode(`alpha-${index}`);
+      G.mergeNode(`beta-${index}`);
+      if (index > 1) {
+        G.mergeEdge(`alpha-${index - 1}`, `alpha-${index}`);
+        G.mergeEdge(`beta-${index - 1}`, `beta-${index}`);
+      }
+    }
+    G.mergeEdge("alpha-25", "beta-1");
+    for (let index = 1; index <= 150; index += 1) {
+      G.mergeNode(`iso-${index}`);
+    }
+
+    louvainMock.mockImplementationOnce((graph: Graph) => {
+      const partition: Record<string, number> = {};
+      graph.forEachNode((node) => {
+        partition[node] = 0;
+      });
+      return partition;
+    });
+    louvainMock.mockImplementationOnce((graph: Graph) => {
+      const partition: Record<string, number> = {};
+      graph.forEachNode((node) => {
+        partition[node] = node.startsWith("alpha-") ? 0 : 1;
+      });
+      return partition;
+    });
+
+    const result = isolatedCluster(G);
+    const multiNodeCommunities = [...result.values()].filter((nodes) => nodes.length > 1);
+
+    expect(louvainMock).toHaveBeenCalledTimes(2);
+    expect(multiNodeCommunities).toHaveLength(2);
+    expect(multiNodeCommunities.map((nodes) => nodes.length).sort((a, b) => a - b)).toEqual([25, 25]);
+    expect(multiNodeCommunities.some((nodes) => nodes.every((node) => node.startsWith("alpha-")))).toBe(true);
+    expect(multiNodeCommunities.some((nodes) => nodes.every((node) => node.startsWith("beta-")))).toBe(true);
+
+    vi.doUnmock("graphology-communities-louvain");
+    vi.resetModules();
+  });
 });
 
 describe("cohesionScore", () => {

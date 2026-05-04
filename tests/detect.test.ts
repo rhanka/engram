@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, rmSync, statSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { detect, classifyFile } from "../src/detect.js";
+import { detect, classifyFile, detectIncremental, saveManifest } from "../src/detect.js";
 import { inspectInputScope } from "../src/input-scope.js";
 import { execGit } from "../src/git.js";
 import { FileType } from "../src/types.js";
@@ -18,6 +18,14 @@ describe("classifyFile", () => {
 
   it("classifies .go as CODE", () => {
     expect(classifyFile("test.go")).toBe(FileType.CODE);
+  });
+
+  it("classifies .sql as CODE", () => {
+    expect(classifyFile("schema.sql")).toBe(FileType.CODE);
+  });
+
+  it("classifies .r as CODE", () => {
+    expect(classifyFile("analysis.R")).toBe(FileType.CODE);
   });
 
   it("classifies .md as DOCUMENT", () => {
@@ -62,6 +70,11 @@ describe("classifyFile", () => {
   it("classifies MDX and HTML as DOCUMENT", () => {
     expect(classifyFile("docs/page.mdx")).toBe(FileType.DOCUMENT);
     expect(classifyFile("docs/page.html")).toBe(FileType.DOCUMENT);
+  });
+
+  it("classifies YAML files as DOCUMENT", () => {
+    expect(classifyFile("k8s/deployment.yaml")).toBe(FileType.DOCUMENT);
+    expect(classifyFile("k8s/service.yml")).toBe(FileType.DOCUMENT);
   });
 });
 
@@ -140,30 +153,42 @@ describe("detect", () => {
     expect(result.files.code[0]).toContain("kept.py");
   });
 
-  it("ignores inline comments in .graphifyignore patterns", () => {
+  it("does not treat inline hashes as .graphifyignore comments", () => {
     writeFileSync(join(tmpDir, ".graphifyignore"), "ignored.py # comment\n");
     writeFileSync(join(tmpDir, "ignored.py"), "# should be ignored");
     writeFileSync(join(tmpDir, "kept.py"), "# should be kept");
 
     const result = detect(tmpDir);
 
-    expect(result.files.code).toHaveLength(1);
-    expect(result.files.code[0]).toContain("kept.py");
+    expect(result.files.code).toEqual(expect.arrayContaining([
+      join(tmpDir, "ignored.py"),
+      join(tmpDir, "kept.py"),
+    ]));
+    expect(result.graphifyignore_patterns).toBe(1);
   });
 
-  it("discovers .graphifyignore patterns from parent directories", () => {
+  it("does not inherit parent .graphifyignore rules outside a repo", () => {
     writeFileSync(join(tmpDir, ".graphifyignore"), "vendor/\n");
     const subDir = join(tmpDir, "packages", "mylib");
     mkdirSync(subDir, { recursive: true });
     writeFileSync(join(subDir, "main.py"), "x = 1");
     mkdirSync(join(subDir, "vendor"), { recursive: true });
     writeFileSync(join(subDir, "vendor", "dep.py"), "y = 2");
+    const previousHome = process.env.HOME;
 
-    const result = detect(subDir);
+    try {
+      process.env.HOME = tmpDir;
+      const result = detect(subDir);
 
-    expect(result.files.code).toHaveLength(1);
-    expect(result.files.code[0]).toContain("main.py");
-    expect(result.graphifyignore_patterns).toBeGreaterThanOrEqual(1);
+      expect(result.files.code).toHaveLength(2);
+      expect(result.files.code).toEqual(expect.arrayContaining([
+        join(subDir, "main.py"),
+        join(subDir, "vendor", "dep.py"),
+      ]));
+      expect(result.graphifyignore_patterns).toBe(0);
+    } finally {
+      process.env.HOME = previousHome;
+    }
   });
 
   it("stops .graphifyignore discovery at the git boundary", () => {
@@ -198,6 +223,57 @@ describe("detect", () => {
     expect(result.graphifyignore_patterns).toBe(1);
   });
 
+  it("includes .graphifyignore from ancestor directories inside a repo", () => {
+    const repoDir = join(tmpDir, "repo");
+    mkdirSync(join(repoDir, ".git"), { recursive: true });
+    const packagesDir = join(repoDir, "packages");
+    mkdirSync(packagesDir, { recursive: true });
+    writeFileSync(join(packagesDir, ".graphifyignore"), "vendor/\n");
+    const subDir = join(packagesDir, "mylib");
+    mkdirSync(join(subDir, "vendor"), { recursive: true });
+    writeFileSync(join(subDir, "main.py"), "x = 1");
+    writeFileSync(join(subDir, "vendor", "dep.py"), "y = 2");
+
+    const result = detect(subDir);
+
+    expect(result.files.code).toEqual([join(subDir, "main.py")]);
+    expect(result.graphifyignore_patterns).toBe(1);
+  });
+
+  it("treats anchored .graphifyignore patterns as relative to the ignore file directory", () => {
+    const repoDir = join(tmpDir, "repo");
+    mkdirSync(join(repoDir, ".git"), { recursive: true });
+    const subDir = join(repoDir, "app");
+    mkdirSync(join(subDir, "nested"), { recursive: true });
+    writeFileSync(join(subDir, ".graphifyignore"), "/generated.py\n");
+    writeFileSync(join(subDir, "generated.py"), "x = 1");
+    writeFileSync(join(subDir, "nested", "generated.py"), "y = 2");
+
+    const result = detect(subDir);
+
+    expect(result.files.code).toEqual([join(subDir, "nested", "generated.py")]);
+    expect(result.graphifyignore_patterns).toBe(1);
+  });
+
+  it("supports .graphifyignore negation patterns", () => {
+    const repoDir = join(tmpDir, "repo");
+    mkdirSync(join(repoDir, ".git"), { recursive: true });
+    writeFileSync(join(repoDir, ".graphifyignore"), "generated/\n!generated/keep.ts\n");
+    mkdirSync(join(repoDir, "generated"), { recursive: true });
+    writeFileSync(join(repoDir, "generated", "drop.ts"), "export const drop = true;\n");
+    writeFileSync(join(repoDir, "generated", "keep.ts"), "export const keep = true;\n");
+    writeFileSync(join(repoDir, "main.ts"), "export const main = true;\n");
+
+    const result = detect(repoDir);
+
+    expect(result.files.code).toEqual(expect.arrayContaining([
+      join(repoDir, "main.ts"),
+      join(repoDir, "generated", "keep.ts"),
+    ]));
+    expect(result.files.code).not.toContain(join(repoDir, "generated", "drop.ts"));
+    expect(result.graphifyignore_patterns).toBe(2);
+  });
+
   it("warns for small corpus", () => {
     writeFileSync(join(tmpDir, "tiny.py"), "x = 1");
     const result = detect(tmpDir);
@@ -225,6 +301,14 @@ describe("detect", () => {
     writeFileSync(join(tmpDir, "clip.mp4"), Buffer.alloc(100));
     const result = detect(tmpDir);
     expect(result.total_words).toBe(0);
+  });
+
+  it("detects extensionless shebang scripts as code", () => {
+    writeFileSync(join(tmpDir, "deploy"), "#!/usr/bin/env bash\necho deploy\n", "utf-8");
+
+    const result = detect(tmpDir);
+
+    expect(result.files.code).toEqual([join(tmpDir, "deploy")]);
   });
 
   it("filters explicit scope inventory through detect and preserves scope diagnostics", () => {
@@ -258,5 +342,59 @@ describe("detect", () => {
       excluded_untracked_count: 1,
       excluded_sensitive_count: 0,
     });
+  });
+
+  it("treats mtime-only file touches as unchanged during incremental detection", () => {
+    const filePath = join(tmpDir, "main.py");
+    const manifestPath = join(tmpDir, ".graphify", "manifest.json");
+    writeFileSync(filePath, "print('hello')\n");
+
+    const initial = detect(tmpDir);
+    saveManifest(initial.files, manifestPath);
+
+    writeFileSync(filePath, "print('hello')\n");
+    const bumped = new Date(Date.now() + 5_000);
+    utimesSync(filePath, bumped, bumped);
+
+    const result = detectIncremental(tmpDir, manifestPath);
+
+    expect(result.new_total).toBe(0);
+    expect(result.new_files?.code).toEqual([]);
+    expect(result.unchanged_files?.code).toEqual([filePath]);
+  });
+
+  it("writes manifest entries with mtime and content hash", () => {
+    const filePath = join(tmpDir, "main.py");
+    const manifestPath = join(tmpDir, ".graphify", "manifest.json");
+    writeFileSync(filePath, "print('hello')\n");
+
+    const initial = detect(tmpDir);
+    saveManifest(initial.files, manifestPath);
+
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf-8")) as Record<string, {
+      mtime?: number;
+      hash?: string;
+    }>;
+
+    expect(manifest[filePath]?.mtime).toBeTypeOf("number");
+    expect(manifest[filePath]?.hash).toMatch(/^[a-f0-9]{32}$/);
+  });
+
+  it("keeps legacy numeric manifests compatible during incremental detection", () => {
+    const filePath = join(tmpDir, "main.py");
+    const manifestPath = join(tmpDir, ".graphify", "manifest.json");
+    writeFileSync(filePath, "print('hello')\n");
+    const previousMtime = statSync(filePath).mtimeMs;
+    mkdirSync(join(tmpDir, ".graphify"), { recursive: true });
+    writeFileSync(manifestPath, JSON.stringify({ [filePath]: previousMtime }), "utf-8");
+
+    writeFileSync(filePath, "print('updated')\n");
+    const bumped = new Date(Date.now() + 5_000);
+    utimesSync(filePath, bumped, bumped);
+
+    const result = detectIncremental(tmpDir, manifestPath);
+
+    expect(result.new_total).toBe(1);
+    expect(result.new_files?.code).toEqual([filePath]);
   });
 });

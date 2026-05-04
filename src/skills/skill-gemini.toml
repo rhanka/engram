@@ -148,7 +148,7 @@ $(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" chec
   --uncached-out .graphify/.graphify_uncached.txt
 ```
 
-5. If `.graphify/.graphify_uncached.txt` is non-empty, read those docs, papers, images, generated transcripts, PDF sidecars, and relevant PDF-extracted image artifacts yourself in manageable batches and write `.graphify/.graphify_semantic_new.json` matching exactly:
+5. If `.graphify/.graphify_uncached.txt` is non-empty, read those docs, papers, images, generated transcripts, PDF sidecars, and relevant PDF-extracted image artifacts yourself in deterministic batches of 20-25 files and write `.graphify/.graphify_semantic_new.json` matching exactly. Put each image in its own batch, and keep files from the same directory together when possible so related artifacts stay in the same extraction pass:
 
 ```json
 {"nodes":[{"id":"filestem_entityname","label":"Human Readable Name","file_type":"code|document|paper|image|concept|rationale","source_file":"relative/path","source_location":null,"source_url":null,"captured_at":null,"author":null,"contributor":null,"rationale":null}],"edges":[{"source":"node_id","target":"node_id","relation":"calls|implements|references|cites|conceptually_related_to|shares_data_with|semantically_similar_to|rationale_for","confidence":"EXTRACTED|INFERRED|AMBIGUOUS","confidence_score":1.0,"source_file":"relative/path","source_location":null,"weight":1.0}],"hyperedges":[{"id":"snake_case_id","label":"Human Readable Label","nodes":["node_id1","node_id2","node_id3"],"relation":"participate_in|implement|form","confidence":"EXTRACTED|INFERRED","confidence_score":0.75,"source_file":"relative/path"}],"input_tokens":0,"output_tokens":0}

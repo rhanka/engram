@@ -19,10 +19,10 @@ export const CODE_EXTENSIONS = new Set([
   ".py", ".ts", ".js", ".jsx", ".tsx", ".go", ".rs", ".java", ".cpp", ".cc", ".cxx",
   ".c", ".h", ".hpp", ".rb", ".swift", ".kt", ".kts", ".cs", ".scala", ".php",
   ".lua", ".toc", ".zig", ".ps1", ".ex", ".exs", ".m", ".mm", ".jl", ".vue",
-  ".svelte", ".dart", ".v", ".sv", ".mjs", ".ejs",
+  ".svelte", ".dart", ".v", ".sv", ".mjs", ".ejs", ".sql", ".r",
 ]);
 
-export const DOC_EXTENSIONS = new Set([".md", ".mdx", ".txt", ".rst", ".html"]);
+export const DOC_EXTENSIONS = new Set([".md", ".mdx", ".txt", ".rst", ".html", ".yaml", ".yml"]);
 export const PAPER_EXTENSIONS = new Set([".pdf"]);
 export const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"]);
 export const OFFICE_EXTENSIONS = new Set([".docx", ".xlsx"]);
@@ -69,6 +69,15 @@ function looksLikePaper(filePath: string): boolean {
 
 const ASSET_DIR_MARKERS = new Set([".imageset", ".xcassets", ".appiconset", ".colorset", ".launchimage"]);
 
+function hasCodeShebang(filePath: string): boolean {
+  try {
+    const firstLine = readFileSync(filePath, "utf-8").split(/\r?\n/, 1)[0] ?? "";
+    return firstLine.startsWith("#!");
+  } catch {
+    return false;
+  }
+}
+
 export function classifyFile(filePath: string): FileType | null {
   const ext = extname(filePath).toLowerCase();
   if (CODE_EXTENSIONS.has(ext)) return FileType.CODE;
@@ -84,6 +93,7 @@ export function classifyFile(filePath: string): FileType | null {
     if (looksLikePaper(filePath)) return FileType.PAPER;
     return FileType.DOCUMENT;
   }
+  if (!ext && hasCodeShebang(filePath)) return FileType.CODE;
   if (OFFICE_EXTENSIONS.has(ext)) return FileType.DOCUMENT;
   return null;
 }
@@ -179,6 +189,8 @@ const SKIP_DIRS = new Set([
   DEFAULT_GRAPHIFY_STATE_DIR, LEGACY_GRAPHIFY_STATE_DIR,
 ]);
 
+const VCS_MARKERS = [".git", ".hg", ".svn", "_darcs", ".fossil"];
+
 function isNoiseDir(part: string): boolean {
   if (SKIP_DIRS.has(part)) return true;
   if (part.endsWith("_venv") || part.endsWith("_env")) return true;
@@ -186,30 +198,70 @@ function isNoiseDir(part: string): boolean {
   return false;
 }
 
-function loadGraphifyignore(root: string): string[] {
-  const patterns: string[] = [];
-  let current = resolve(root);
+interface GraphifyIgnoreRule {
+  anchor: string;
+  pattern: string;
+  negated: boolean;
+}
 
+function parseGraphifyignoreLine(raw: string): { pattern: string; negated: boolean } | null {
+  let line = raw.replace(/[\r\n]+$/g, "");
+  line = line.replace(/(?<!\\) +$/g, "");
+  line = line.replace(/^\s+/, "");
+  if (!line || line.startsWith("#")) {
+    return null;
+  }
+  let negated = false;
+  if (line.startsWith("\\!") || line.startsWith("\\#")) {
+    line = line.slice(1);
+  } else if (line.startsWith("!")) {
+    negated = true;
+    line = line.slice(1);
+  }
+  if (!line) return null;
+  return { pattern: line, negated };
+}
+
+function findVcsRoot(start: string): string | null {
+  let current = resolve(start);
+  const home = resolve(process.env.HOME ?? current);
   while (true) {
-    const ignoreFile = join(current, ".graphifyignore");
-    if (existsSync(ignoreFile)) {
-      for (let line of readFileSync(ignoreFile, "utf-8").split("\n")) {
-        line = line.replace(/\s+#.*$/, "").trim();
-        if (line && !line.startsWith("#")) {
-          patterns.push(line);
-        }
-      }
+    if (VCS_MARKERS.some((marker) => existsSync(join(current, marker)))) {
+      return current;
     }
-
-    if (existsSync(join(current, ".git"))) {
-      break;
-    }
-
     const parent = dirname(current);
-    if (parent === current) {
-      break;
+    if (parent === current || current === home) {
+      return null;
     }
     current = parent;
+  }
+}
+
+function loadGraphifyignore(root: string): GraphifyIgnoreRule[] {
+  const resolvedRoot = resolve(root);
+  const ceiling = findVcsRoot(resolvedRoot) ?? resolvedRoot;
+  const dirs: string[] = [];
+  let current = resolvedRoot;
+
+  while (true) {
+    dirs.push(current);
+    if (current === ceiling) {
+      break;
+    }
+    current = dirname(current);
+  }
+
+  dirs.reverse();
+
+  const patterns: GraphifyIgnoreRule[] = [];
+  for (const dir of dirs) {
+    const ignoreFile = join(dir, ".graphifyignore");
+    if (!existsSync(ignoreFile)) continue;
+    for (const raw of readFileSync(ignoreFile, "utf-8").split(/\r?\n/)) {
+      const parsed = parseGraphifyignoreLine(raw);
+      if (!parsed) continue;
+      patterns.push({ anchor: dir, pattern: parsed.pattern, negated: parsed.negated });
+    }
   }
   return patterns;
 }
@@ -223,36 +275,61 @@ function matchGlob(text: string, pattern: string): boolean {
   return new RegExp(`^${regex}$`).test(text);
 }
 
-function isIgnored(filePath: string, root: string, patterns: string[]): boolean {
-  if (patterns.length === 0) return false;
-  let rel: string;
-  try {
-    rel = relative(root, filePath).replace(/\\/g, "/");
-  } catch {
-    return false;
-  }
+function relativeWithin(base: string, target: string): string | null {
+  const rel = relative(base, target).replace(/\\/g, "/");
+  if (rel === "") return "";
+  if (rel === ".." || rel.startsWith("../")) return null;
+  return rel;
+}
+
+function matchesIgnorePattern(rel: string, name: string, pattern: string, anchored: boolean): boolean {
   const parts = rel.split("/");
-  for (const pattern of patterns) {
-    const p = pattern.replace(/^\/+|\/+$/g, "");
-    if (!p) continue;
-    if (matchGlob(rel, p)) return true;
-    if (matchGlob(basename(filePath), p)) return true;
-    for (let i = 0; i < parts.length; i++) {
-      if (matchGlob(parts[i]!, p)) return true;
-      if (matchGlob(parts.slice(0, i + 1).join("/"), p)) return true;
-    }
+  if (matchGlob(rel, pattern)) return true;
+  if (!anchored && matchGlob(name, pattern)) return true;
+  for (let i = 0; i < parts.length; i++) {
+    if (!anchored && matchGlob(parts[i]!, pattern)) return true;
+    if (matchGlob(parts.slice(0, i + 1).join("/"), pattern)) return true;
   }
   return false;
+}
+
+function isIgnored(filePath: string, root: string, patterns: GraphifyIgnoreRule[]): boolean {
+  if (patterns.length === 0) return false;
+
+  let ignored = false;
+  for (const rule of patterns) {
+    const anchored = rule.pattern.startsWith("/");
+    const p = rule.pattern.replace(/^\/+|\/+$/g, "");
+    if (!p) continue;
+    const relRoot = relativeWithin(root, filePath);
+    const relAnchor = relativeWithin(rule.anchor, filePath);
+
+    if (anchored) {
+      if (relAnchor !== null && matchesIgnorePattern(relAnchor, basename(filePath), p, true)) {
+        ignored = !rule.negated;
+      }
+      continue;
+    }
+
+    if (relRoot !== null && matchesIgnorePattern(relRoot, basename(filePath), p, false)) {
+      ignored = !rule.negated;
+    }
+    if (rule.anchor !== root && relAnchor !== null && matchesIgnorePattern(relAnchor, basename(filePath), p, false)) {
+      ignored = !rule.negated;
+    }
+  }
+  return ignored;
 }
 
 function walkDir(
   dir: string,
   root: string,
-  ignorePatterns: string[],
+  ignorePatterns: GraphifyIgnoreRule[],
   followSymlinks: boolean,
   skipPrune: boolean,
 ): string[] {
   const result: string[] = [];
+  const hasNegationRules = ignorePatterns.some((rule) => rule.negated);
   let entries: string[];
   try {
     entries = readdirSync(dir);
@@ -273,10 +350,11 @@ function walkDir(
       if (!skipPrune) {
         if (entry.startsWith(".")) continue;
         if (isNoiseDir(entry)) continue;
-        if (isIgnored(full, root, ignorePatterns)) continue;
+        if (isIgnored(full, root, ignorePatterns) && !hasNegationRules) continue;
       }
       result.push(...walkDir(full, root, ignorePatterns, followSymlinks, skipPrune));
     } else if (stat.isFile()) {
+      if (!skipPrune && isIgnored(full, root, ignorePatterns)) continue;
       result.push(full);
     }
   }
@@ -290,6 +368,13 @@ export interface DetectOptions {
   candidateRoot?: string;
   scope?: InputScopeInspection;
 }
+
+interface ManifestEntry {
+  mtime: number;
+  hash: string;
+}
+
+type ManifestRecord = Record<string, number | ManifestEntry>;
 
 function resolveCandidateFiles(
   rootResolved: string,
@@ -415,20 +500,33 @@ export function detect(root: string, options?: DetectOptions): DetectionResult {
   };
 }
 
-export function loadManifest(manifestPath: string = defaultManifestPath()): Record<string, number> {
+function md5File(filePath: string): string {
+  const hash = createHash("md5");
   try {
-    return JSON.parse(readFileSync(manifestPath, "utf-8")) as Record<string, number>;
+    hash.update(readFileSync(filePath));
+  } catch {
+    return "";
+  }
+  return hash.digest("hex");
+}
+
+export function loadManifest(manifestPath: string = defaultManifestPath()): ManifestRecord {
+  try {
+    return JSON.parse(readFileSync(manifestPath, "utf-8")) as ManifestRecord;
   } catch {
     return {};
   }
 }
 
 export function saveManifest(files: Record<string, string[]>, manifestPath: string = defaultManifestPath()): void {
-  const manifest: Record<string, number> = {};
+  const manifest: Record<string, ManifestEntry> = {};
   for (const fileList of Object.values(files)) {
     for (const f of fileList) {
       try {
-        manifest[f] = statSync(f).mtimeMs;
+        manifest[f] = {
+          mtime: statSync(f).mtimeMs,
+          hash: md5File(f),
+        };
       } catch { /* deleted between detect and save */ }
     }
   }
@@ -473,7 +571,17 @@ export function detectIncremental(
       const storedMtime = manifest[f];
       let currentMtime = 0;
       try { currentMtime = statSync(f).mtimeMs; } catch { /* ignore */ }
-      if (storedMtime === undefined || currentMtime > storedMtime) {
+      let changed = false;
+      if (storedMtime === undefined) {
+        changed = true;
+      } else if (typeof storedMtime === "number") {
+        changed = currentMtime > storedMtime;
+      } else {
+        if (storedMtime.mtime === undefined || currentMtime !== storedMtime.mtime) {
+          changed = md5File(f) !== storedMtime.hash;
+        }
+      }
+      if (changed) {
         newFiles[ftype]!.push(f);
       } else {
         unchangedFiles[ftype]!.push(f);

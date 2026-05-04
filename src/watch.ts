@@ -5,7 +5,7 @@
  * Code-only changes rebuild graph automatically (no LLM needed).
  * Doc/paper/image changes write a flag and notify the user.
  */
-import { existsSync, mkdirSync, writeFileSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { resolve as pathResolve, extname, basename } from "node:path";
 import {
   DEFAULT_GRAPHIFY_STATE_DIR,
@@ -22,12 +22,15 @@ import {
 } from "./detect.js";
 import { inspectInputScope } from "./input-scope.js";
 import { markLifecycleAnalyzed, markLifecycleStale, readLifecycleMetadata } from "./lifecycle.js";
+import { safeGitRevParse } from "./git.js";
 import {
   makeDetectionPortable,
   makeExtractionPortable,
+  makeGraphPortable,
   projectRootLabel,
   toProjectRelativePath,
 } from "./portable-artifacts.js";
+import { loadGraphFromData } from "./graph.js";
 import type { GraphifyInputScopeMode, InputScopeSource } from "./types.js";
 
 const WATCHED_EXTENSIONS = new Set([
@@ -36,6 +39,35 @@ const WATCHED_EXTENSIONS = new Set([
   ...PAPER_EXTENSIONS,
   ...IMAGE_EXTENSIONS,
 ]);
+
+function mergeHyperedges(
+  existing: Array<Record<string, unknown>> = [],
+  incoming: Array<Record<string, unknown>> = [],
+): Array<Record<string, unknown>> {
+  const seen = new Set<string>();
+  const merged: Array<Record<string, unknown>> = [];
+  for (const hyperedge of [...existing, ...incoming]) {
+    const id = String(hyperedge.id ?? "");
+    const key = id || JSON.stringify(hyperedge);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(hyperedge);
+  }
+  return merged;
+}
+
+function builtFromCommit(root: string, graphPath: string): string | null {
+  if (!existsSync(graphPath)) return null;
+  try {
+    const raw = JSON.parse(readFileSync(graphPath, "utf-8")) as {
+      graph?: { built_from_commit?: unknown };
+    };
+    const built = raw.graph?.built_from_commit;
+    return typeof built === "string" && built.trim().length > 0 ? built : null;
+  } catch {
+    return null;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Rebuild pipeline (code-only, no LLM)
@@ -46,6 +78,7 @@ export async function rebuildCode(
   followSymlinks: boolean = false,
   options: {
     clearStale?: boolean;
+    force?: boolean;
     scope?: GraphifyInputScopeMode;
     scopeSource?: InputScopeSource;
   } = {},
@@ -118,6 +151,36 @@ export async function rebuildCode(
     };
 
     const G = buildFromJson(relativeResult);
+    if (existsSync(paths.graph)) {
+      try {
+        const existing = makeGraphPortable(
+          loadGraphFromData(JSON.parse(readFileSync(paths.graph, "utf-8")) as Record<string, unknown>),
+          root,
+        );
+        const newAstIds = new Set(G.nodes());
+        existing.forEachNode((nodeId, attrs) => {
+          if (newAstIds.has(nodeId)) return;
+          G.mergeNode(nodeId, attrs);
+        });
+        existing.forEachEdge((_edge, attrs, source, target) => {
+          if (!G.hasNode(source) || !G.hasNode(target)) return;
+          try {
+            G.mergeEdge(source, target, attrs);
+          } catch {
+            /* ignore duplicate merge failures */
+          }
+        });
+        const mergedHyperedges = mergeHyperedges(
+          (existing.getAttribute("hyperedges") as Array<Record<string, unknown>> | undefined) ?? [],
+          (G.getAttribute("hyperedges") as Array<Record<string, unknown>> | undefined) ?? [],
+        );
+        if (mergedHyperedges.length > 0) {
+          G.setAttribute("hyperedges", mergedHyperedges);
+        }
+      } catch {
+        /* ignore unreadable prior graph snapshots */
+      }
+    }
     const communities = cluster(G);
     const cohesion = scoreAll(G, communities);
     const gods = godNodes(G);
@@ -138,10 +201,19 @@ export async function rebuildCode(
       detection,
       { input: 0, output: 0 },
       projectRootLabel(root),
-      questions,
+      {
+        suggestedQuestions: questions,
+        freshness: { builtFromCommit: safeGitRevParse(root, ["HEAD"]) },
+      },
     );
+    const jsonWritten = toJson(G, communities, paths.graph, {
+      communityLabels: labels,
+      force: options.force,
+    });
+    if (!jsonWritten) {
+      return false;
+    }
     writeFileSync(paths.report, report, "utf-8");
-    toJson(G, communities, paths.graph, { communityLabels: labels });
 
     if (options.clearStale !== false) {
       // Clear stale needs_update flag if present
@@ -184,6 +256,11 @@ export function checkUpdate(root: string): CheckUpdateResult {
   if (metadata?.branch.stale) {
     const reason = metadata.branch.staleReason?.trim();
     reasons.push(reason ? `branch metadata is stale: ${reason}` : "branch metadata is stale");
+  }
+  const currentHead = safeGitRevParse(root, ["HEAD"]);
+  const graphHead = builtFromCommit(root, paths.graph);
+  if (currentHead && graphHead && currentHead !== graphHead) {
+    reasons.push(`graph.json built from ${graphHead.slice(0, 7)} but HEAD is ${currentHead.slice(0, 7)}`);
   }
 
   return {

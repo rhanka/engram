@@ -211,3 +211,31 @@ describe("check-update CLI", () => {
     expect(result.logs.join("\n")).toContain("Graph state looks current");
   });
 });
+
+describe("query CLI", () => {
+  it("prefers exact node label matches over longer substring matches", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-cli-query-"));
+    tempDirs.push(dir);
+    const graphDir = join(dir, ".graphify");
+    mkdirSync(graphDir, { recursive: true });
+    const graphPath = join(graphDir, "graph.json");
+    writeFileSync(
+      graphPath,
+      JSON.stringify({
+        directed: false,
+        graph: {},
+        nodes: [
+          { id: "helper", label: "MyFunctionHelpers", source_file: "helpers.ts", file_type: "code" },
+          { id: "exact", label: "MyFunction", source_file: "exact.ts", file_type: "code" },
+        ],
+        links: [],
+      }),
+      "utf-8",
+    );
+
+    const result = await runCli(["query", "MyFunction", "--graph", graphPath], dir);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.logs[0]).toContain("NODE MyFunction [");
+  });
+});

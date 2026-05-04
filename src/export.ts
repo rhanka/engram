@@ -2,9 +2,11 @@
  * Export graph to HTML, JSON, SVG, GraphML, Obsidian Canvas, and Neo4j Cypher.
  */
 import { readFileSync, writeFileSync } from "node:fs";
+import { basename, dirname, resolve } from "node:path";
 import Graph from "graphology";
 import { sanitizeLabel, escapeHtml } from "./security.js";
 import { isDirectedGraph } from "./graph.js";
+import { safeGitRevParse } from "./git.js";
 import type { Hyperedge } from "./types.js";
 import {
   type NumericMapLike,
@@ -106,6 +108,16 @@ function normalizeMemberCounts(
   return toNumericMap(labelsOrOptions.memberCounts);
 }
 
+function buildFreshnessMetadata(outputPath: string): { built_from_commit?: string } {
+  const resolved = resolve(outputPath);
+  if (basename(resolved) !== "graph.json") return {};
+  const stateDir = basename(dirname(resolved));
+  if (stateDir !== ".graphify" && stateDir !== "graphify-out") return {};
+  const root = dirname(dirname(resolved));
+  const head = safeGitRevParse(root, ["HEAD"]);
+  return head ? { built_from_commit: head } : {};
+}
+
 // ---------------------------------------------------------------------------
 // toJson
 // ---------------------------------------------------------------------------
@@ -115,7 +127,7 @@ export function toJson(
   communities: NumericMapLike<string[]>,
   outputPath: string,
   communityLabelsOrOptions?: CommunityLabelsInput | JsonOptions,
-): void {
+): boolean {
   const nodeComm = nodeCommunityMap(communities);
   const communityLabels = normalizeCommunityLabels(communityLabelsOrOptions);
   const forceWrite = Boolean(
@@ -167,6 +179,7 @@ export function toJson(
     multigraph: false,
     graph: {
       community_labels: communityLabelsObject,
+      ...buildFreshnessMetadata(outputPath),
     },
     nodes,
     links,
@@ -182,7 +195,7 @@ export function toJson(
           `[graphify] WARNING: new graph has ${nodes.length} nodes but existing graph.json has ` +
           `${existingNodeCount}. Refusing to overwrite; pass force=true to override.`,
         );
-        return;
+        return false;
       }
     } catch {
       // No previous graph or unreadable payload - continue with the write.
@@ -190,6 +203,7 @@ export function toJson(
   }
 
   writeFileSync(outputPath, JSON.stringify(output, null, 2), "utf-8");
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -364,11 +378,11 @@ function htmlStyles(): string {
   .legend-item:hover { background: #2a2a4e; padding-left: 4px; }
   .legend-item.dimmed { opacity: 0.35; }
   .legend-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+  .legend-cb { accent-color: #4E79A7; cursor: pointer; flex-shrink: 0; }
   .legend-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .legend-count { color: #666; font-size: 11px; }
-  #legend-controls { display: flex; gap: 6px; margin-bottom: 8px; }
-  #legend-controls button { flex: 1; background: #0f0f1a; border: 1px solid #3a3a5e; color: #aaa; padding: 4px 0; border-radius: 4px; font-size: 11px; cursor: pointer; }
-  #legend-controls button:hover { border-color: #4E79A7; color: #e0e0e0; }
+  #legend-controls { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 11px; color: #aaa; }
+  #legend-controls label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
   #stats { padding: 10px 14px; border-top: 1px solid #2a2a4e; font-size: 11px; color: #555; }
 </style>`;
 }
@@ -558,25 +572,38 @@ document.addEventListener('click', e => {
 });
 
 const hiddenCommunities = new Set();
+const selectAllCb = document.getElementById('select-all-cb');
+function updateSelectAllState() {
+  const total = LEGEND.length;
+  const hidden = hiddenCommunities.size;
+  selectAllCb.checked = hidden === 0;
+  selectAllCb.indeterminate = hidden > 0 && hidden < total;
+}
 function toggleAllCommunities(hide) {
   document.querySelectorAll('.legend-item').forEach(item => {
     hide ? item.classList.add('dimmed') : item.classList.remove('dimmed');
+  });
+  document.querySelectorAll('.legend-cb').forEach(cb => {
+    cb.checked = !hide;
   });
   LEGEND.forEach(c => {
     if (hide) hiddenCommunities.add(c.cid); else hiddenCommunities.delete(c.cid);
   });
   const updates = RAW_NODES.map(n => ({ id: n.id, hidden: hide }));
   nodesDS.update(updates);
+  updateSelectAllState();
 }
 const legendEl = document.getElementById('legend');
 LEGEND.forEach(c => {
   const item = document.createElement('div');
   item.className = 'legend-item';
-  item.innerHTML = \`<div class="legend-dot" style="background:\${c.color}"></div>
-    <span class="legend-label">\${c.label}</span>
-    <span class="legend-count">\${c.count}</span>\`;
-  item.onclick = () => {
-    if (hiddenCommunities.has(c.cid)) {
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.className = 'legend-cb';
+  cb.checked = true;
+  cb.addEventListener('change', e => {
+    e.stopPropagation();
+    if (cb.checked) {
       hiddenCommunities.delete(c.cid);
       item.classList.remove('dimmed');
     } else {
@@ -585,11 +612,25 @@ LEGEND.forEach(c => {
     }
     const updates = RAW_NODES
       .filter(n => n.community === c.cid)
-      .map(n => ({ id: n.id, hidden: hiddenCommunities.has(c.cid) }));
+      .map(n => ({ id: n.id, hidden: !cb.checked }));
     nodesDS.update(updates);
+    updateSelectAllState();
+  });
+  item.innerHTML = \`<div class="legend-dot" style="background:\${c.color}"></div>
+    <span class="legend-label">\${c.label}</span>
+    <span class="legend-count">\${c.count}</span>\`;
+  item.prepend(cb);
+  item.onclick = e => {
+    if (e.target === cb) return;
+    cb.checked = !cb.checked;
+    cb.dispatchEvent(new Event('change'));
   };
   legendEl.appendChild(item);
 });
+selectAllCb.addEventListener('change', () => {
+  toggleAllCommunities(!selectAllCb.checked);
+});
+updateSelectAllState();
 </script>`;
 }
 
@@ -735,8 +776,7 @@ ${htmlStyles()}
   <div id="legend-wrap">
     <h3>Communities</h3>
     <div id="legend-controls">
-      <button onclick="toggleAllCommunities(false)">Show All</button>
-      <button onclick="toggleAllCommunities(true)">Hide All</button>
+      <label><input id="select-all-cb" type="checkbox" checked> <span>Select all</span></label>
     </div>
     <div id="legend"></div>
   </div>

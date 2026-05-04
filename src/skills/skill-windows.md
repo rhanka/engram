@@ -212,7 +212,7 @@ Only dispatch subagents for files listed in `.graphify/.graphify_uncached.txt`. 
 
 **Step B1 - Split into chunks**
 
-Load files from `.graphify/.graphify_uncached.txt`. Split into chunks of 20-25 files each. Each image gets its own chunk (vision needs separate context). PDF sidecar Markdown can reference extracted image artifacts under `.graphify/converted/pdf/*_images/`; when those images contain diagrams, tables, captions, or embedded text that carry meaning, include them as image chunks or describe the delegated OCR/vision output with provenance back to the source PDF.
+Load files from `.graphify/.graphify_uncached.txt`. Split into chunks of 20-25 files each. Each image gets its own chunk (vision needs separate context). PDF sidecar Markdown can reference extracted image artifacts under `.graphify/converted/pdf/*_images/`; when those images contain diagrams, tables, captions, or embedded text that carry meaning, include them as image chunks or describe the delegated OCR/vision output with provenance back to the source PDF. Keep files from the same directory together when possible so related artifacts land in the same chunk.
 
 **Step B2 - Dispatch ALL subagents in a single message**
 

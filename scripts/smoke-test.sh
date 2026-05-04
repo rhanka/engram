@@ -10,6 +10,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 TMP_DIR=$(mktemp -d)
 TARBALL=""
+export npm_config_cache="$TMP_DIR/npm-cache"
+mkdir -p "$npm_config_cache"
 
 cleanup() {
     echo ""

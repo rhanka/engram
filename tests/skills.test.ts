@@ -60,6 +60,14 @@ describe("skill cache examples", () => {
     }
   });
 
+  it("documents deterministic semantic chunk sizing and directory grouping", () => {
+    for (const relativePath of EXTRACTION_PROMPT_DOCS) {
+      const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
+      expect(content).toContain("20-25");
+      expect(content).toContain("same directory");
+    }
+  });
+
   it("uses the .graphify state contract and lifecycle guidance", () => {
     for (const relativePath of ALL_SKILL_DOCS) {
       const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
@@ -159,6 +167,15 @@ describe("skill cache examples", () => {
       expect(content).toContain("<=5 graph tool calls");
       expect(content).toContain("<=800");
       expect(content).toContain("stale=true");
+    }
+  });
+
+  it("documents the MCP graph tool surface for live graph queries", () => {
+    for (const relativePath of SKILLS) {
+      const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
+      expect(content).toContain("query_graph");
+      expect(content).toContain("get_node");
+      expect(content).toContain("shortest_path");
     }
   });
 

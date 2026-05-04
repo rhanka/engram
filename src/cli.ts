@@ -17,6 +17,8 @@ import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import type Graph from "graphology";
 import type {
+  DetectionResult,
+  Extraction,
   GraphifyInputScopeMode,
   InputScopeSource,
   NormalizedOntologyProfile,
@@ -30,6 +32,7 @@ import {
 } from "./input-scope.js";
 import { forEachTraversalNeighbor, loadGraphFromData } from "./graph.js";
 import { safeExecGit } from "./git.js";
+import { safeGitRevParse } from "./git.js";
 import { discoverProjectConfig, loadProjectConfig } from "./project-config.js";
 import { defaultManifestPath, resolveGraphInputPath, resolveGraphifyPaths } from "./paths.js";
 import { normalizeSearchText } from "./search.js";
@@ -74,6 +77,56 @@ function loadCliGraph(graphPath: string): Graph {
     throw new Error(`graph file not found: ${gp}`);
   }
   return loadGraphFromData(JSON.parse(readFileSync(gp, "utf-8")));
+}
+
+function communitiesFromCliGraph(G: Graph): Map<number, string[]> {
+  const communities = new Map<number, string[]>();
+  G.forEachNode((nodeId, data) => {
+    const rawCommunity = data.community;
+    const community = typeof rawCommunity === "number"
+      ? rawCommunity
+      : typeof rawCommunity === "string" && rawCommunity.trim().length > 0
+        ? Number.parseInt(rawCommunity, 10)
+        : null;
+    if (community === null || Number.isNaN(community)) return;
+    const members = communities.get(community) ?? [];
+    members.push(nodeId);
+    communities.set(community, members);
+  });
+  return communities;
+}
+
+function communityLabelsFromCliGraph(
+  G: Graph,
+  communities: Map<number, string[]>,
+): Map<number, string> {
+  const labels = new Map<number, string>();
+  const graphLabels = G.getAttribute("community_labels") as Record<string, unknown> | undefined;
+  if (graphLabels && typeof graphLabels === "object") {
+    for (const [key, value] of Object.entries(graphLabels)) {
+      const community = Number.parseInt(key, 10);
+      if (Number.isNaN(community)) continue;
+      if (typeof value === "string" && value.trim().length > 0) {
+        labels.set(community, value.trim());
+      }
+    }
+  }
+  G.forEachNode((_nodeId, data) => {
+    const rawCommunity = data.community;
+    const community = typeof rawCommunity === "number"
+      ? rawCommunity
+      : typeof rawCommunity === "string" && rawCommunity.trim().length > 0
+        ? Number.parseInt(rawCommunity, 10)
+        : null;
+    if (community === null || Number.isNaN(community) || labels.has(community)) return;
+    if (typeof data.community_name === "string" && data.community_name.trim().length > 0) {
+      labels.set(community, data.community_name.trim());
+    }
+  });
+  for (const community of communities.keys()) {
+    if (!labels.has(community)) labels.set(community, `Community ${community}`);
+  }
+  return labels;
 }
 
 function resolvePortableCheckDir(inputPath: string = ".graphify"): string {
@@ -140,6 +193,38 @@ function loadCliProfileContext(profileStatePath: string): {
     profileState: readJson<ProfileState>(profileStatePath),
     profile: readJson<NormalizedOntologyProfile>(join(profileDir, "ontology-profile.normalized.json")),
     ...(existsSync(projectConfigPath) ? { projectConfig: readJson<NormalizedProjectConfig>(projectConfigPath) } : {}),
+  };
+}
+
+function ensureCliExtractionShape(value?: Partial<Extraction> | null): Extraction {
+  return {
+    nodes: value?.nodes ?? [],
+    edges: value?.edges ?? [],
+    hyperedges: value?.hyperedges ?? [],
+    input_tokens: value?.input_tokens ?? 0,
+    output_tokens: value?.output_tokens ?? 0,
+  };
+}
+
+function mergeCliAstAndSemantic(
+  astInput: Partial<Extraction> | null | undefined,
+  semanticInput: Partial<Extraction> | null | undefined,
+): Extraction {
+  const ast = ensureCliExtractionShape(astInput);
+  const semantic = ensureCliExtractionShape(semanticInput);
+  const mergedNodes: Extraction["nodes"] = [...ast.nodes];
+  const seen = new Set(ast.nodes.map((node) => node.id));
+  for (const node of semantic.nodes) {
+    if (seen.has(node.id)) continue;
+    seen.add(node.id);
+    mergedNodes.push(node);
+  }
+  return {
+    nodes: mergedNodes,
+    edges: [...ast.edges, ...semantic.edges],
+    hyperedges: semantic.hyperedges ?? [],
+    input_tokens: (ast.input_tokens ?? 0) + (semantic.input_tokens ?? 0),
+    output_tokens: (ast.output_tokens ?? 0) + (semantic.output_tokens ?? 0),
   };
 }
 
@@ -459,7 +544,7 @@ export function platformInstallPreview(projectDir: string = ".", platformName: s
   preview.writes.push(previewPath(projectDir, "AGENTS.md"));
   if (platformName === "codex") {
     preview.writes.push(previewPath(projectDir, ".codex/hooks.json"));
-    preview.hooks.push(".codex/hooks.json: PreToolUse Bash graphify reminder");
+    preview.hooks.push(".codex/hooks.json: PreToolUse Bash graphify hook-check");
   } else if (platformName === "opencode") {
     preview.writes.push(previewPath(projectDir, OPENCODE_PLUGIN_ENTRY), previewPath(projectDir, OPENCODE_CONFIG_ENTRY));
     preview.hooks.push(".opencode/opencode.json: tool.execute.before graphify plugin");
@@ -520,7 +605,11 @@ This project has a graphify knowledge graph at .graphify/.
 
 const ANTIGRAVITY_RULE_PATH = join(".agent", "rules", "graphify.md");
 const ANTIGRAVITY_WORKFLOW_PATH = join(".agent", "workflows", "graphify.md");
-const ANTIGRAVITY_RULE = `## graphify
+const ANTIGRAVITY_RULE = `---
+description: graphify knowledge graph context
+---
+
+## graphify
 
 This project has a graphify knowledge graph at .graphify/.
 
@@ -533,9 +622,12 @@ Rules:
 - After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
 `;
 
-const ANTIGRAVITY_WORKFLOW = `# Workflow: graphify
-**Command:** /graphify
-**Description:** Turn any folder of files into a navigable knowledge graph
+const ANTIGRAVITY_WORKFLOW = `---
+command: /graphify
+description: Turn any folder of files into a navigable knowledge graph
+---
+
+# Workflow: graphify
 
 ## Steps
 Follow the graphify skill installed at ~/.agent/skills/graphify/SKILL.md to run the full TypeScript-backed pipeline.
@@ -1280,17 +1372,14 @@ export function installCodexHook(projectDir: string): void {
     hooks: [
       {
         type: "command",
-        command:
-          '[ -f .graphify/graph.json ] && ' +
-          "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\"},\"systemMessage\":\"graphify: Knowledge graph exists. Read .graphify/GRAPH_REPORT.md for god nodes and community structure before searching raw files.\"}' " +
-          '|| true',
+        command: "graphify hook-check",
       },
     ],
   });
   hooks.PreToolUse = filtered;
   existing.hooks = hooks;
   writeFileSync(hooksPath, JSON.stringify(existing, null, 2), "utf-8");
-  console.log(`  .codex/hooks.json  ->  PreToolUse hook registered`);
+  console.log(`  .codex/hooks.json  ->  PreToolUse hook registered (graphify hook-check)`);
 }
 
 function uninstallCodexHook(projectDir: string): void {
@@ -1763,6 +1852,170 @@ export async function main(): Promise<void> {
       }
     });
 
+  program
+    .command("extract")
+    .description("Headless extraction for CI/scripts using AST plus optional provided semantic JSON")
+    .argument("<inputPath>")
+    .option("--semantic <path>", "Path to a provided semantic extraction JSON to merge")
+    .option("--out <path>", "Output workspace root for the generated .graphify state")
+    .option("--backend <name>", "Compatibility flag from upstream Python CLI (not supported here)")
+    .option("--no-cluster", "Write the raw merged extraction and skip graph clustering/reporting")
+    .option("--scope <mode>", scopeOptionDescription())
+    .option("--all", "Alias for --scope all")
+    .action(async (inputPath, opts) => {
+      try {
+        if (opts.backend) {
+          console.error(
+            "error: graphifyy does not run headless semantic backends directly. " +
+            "Provide --semantic <path> with a compatible extraction JSON, or use the graphify assistant skill/runtime pipeline.",
+          );
+          process.exit(1);
+        }
+
+        const root = resolve(inputPath);
+        if (!existsSync(root)) {
+          console.error(`error: path not found: ${root}`);
+          process.exit(1);
+        }
+
+        const outputRoot = resolve(opts.out ?? root);
+        const paths = resolveGraphifyPaths({ root: outputRoot });
+        mkdirSync(paths.stateDir, { recursive: true });
+
+        const scopeSelection = resolveCliScopeSelection(opts, "all");
+        const inventory = inspectInputScope(root, scopeSelection);
+        const [{ detect, saveManifest }, { extractWithDiagnostics }, { makeDetectionPortable, makeExtractionPortable }] = await Promise.all([
+          import("./detect.js"),
+          import("./extract.js"),
+          import("./portable-artifacts.js"),
+        ]);
+
+        console.log(`[graphify extract] scanning ${root}`);
+        const rawDetection = detect(root, {
+          candidateFiles: inventory.candidateFiles,
+          candidateRoot: inventory.scope.git_root ?? root,
+          scope: inventory.scope,
+        });
+        const detection = makeDetectionPortable(rawDetection as DetectionResult, root);
+        writeJson(paths.scratch.detect, detection);
+        if (detection.scope) writeJson(paths.scope, detection.scope);
+        saveManifest(rawDetection.files, paths.manifest);
+
+        const codeFiles = rawDetection.files.code ?? [];
+        const semanticFileCount =
+          (rawDetection.files.document?.length ?? 0) +
+          (rawDetection.files.paper?.length ?? 0) +
+          (rawDetection.files.image?.length ?? 0) +
+          (rawDetection.files.video?.length ?? 0);
+
+        let astExtraction = ensureCliExtractionShape();
+        let diagnostics: Array<{ filePath: string; error: string }> = [];
+        if (codeFiles.length > 0) {
+          console.log(`[graphify extract] AST extraction on ${codeFiles.length} code file(s)...`);
+          const astResult = await extractWithDiagnostics(codeFiles);
+          diagnostics = astResult.diagnostics;
+          astExtraction = makeExtractionPortable(astResult.extraction, root);
+          writeJson(paths.scratch.ast, astExtraction);
+          if (diagnostics.length > 0) {
+            console.warn(
+              `[graphify extract] AST extraction diagnostics for ${diagnostics.length}/${codeFiles.length} file(s): ` +
+              diagnostics.slice(0, 3).map((entry) => `${entry.filePath}: ${entry.error}`).join(" | "),
+            );
+          }
+        }
+
+        const semanticExtraction = opts.semantic
+          ? makeExtractionPortable(ensureCliExtractionShape(readJson<Partial<Extraction>>(opts.semantic)), root)
+          : ensureCliExtractionShape();
+        if (opts.semantic) {
+          writeJson(paths.scratch.semantic, semanticExtraction);
+        }
+
+        if (semanticFileCount > 0 && !opts.semantic) {
+          console.error(
+            "error: detected non-code corpus files that require semantic extraction; " +
+            "provide --semantic <path> with a compatible extraction JSON, or use the graphify assistant skill/runtime pipeline.",
+          );
+          process.exit(1);
+        }
+
+        const merged = makeExtractionPortable(mergeCliAstAndSemantic(astExtraction, semanticExtraction), root);
+        if (opts.cluster === false) {
+          writeJson(paths.scratch.extract, merged);
+          console.log(
+            `[graphify extract] wrote ${paths.scratch.extract} — ` +
+            `${merged.nodes.length} nodes, ${merged.edges.length} edges (no clustering)`,
+          );
+          return;
+        }
+
+        const [{ buildFromJson }, { cluster, scoreAll }, { godNodes, surprisingConnections, suggestQuestions }, { generate }, { toJson }, { safeToHtml }] = await Promise.all([
+          import("./build.js"),
+          import("./cluster.js"),
+          import("./analyze.js"),
+          import("./report.js"),
+          import("./export.js"),
+          import("./html-export.js"),
+        ]);
+
+        const G = buildFromJson(merged);
+        if (G.order === 0) {
+          console.error(
+            "[graphify extract] graph is empty — extraction produced no nodes. " +
+            "Possible causes: all files were skipped or the provided semantic extraction was empty.",
+          );
+          process.exit(1);
+        }
+
+        const communities = cluster(G);
+        const cohesion = scoreAll(G, communities);
+        const gods = godNodes(G);
+        const surprises = surprisingConnections(G, communities);
+        const labels = new Map<number, string>();
+        for (const cid of communities.keys()) labels.set(cid, `Community ${cid}`);
+        const questions = suggestQuestions(G, communities, labels);
+        const tokenCost = { input: merged.input_tokens ?? 0, output: merged.output_tokens ?? 0 };
+        const report = generate(
+          G,
+          communities,
+          cohesion,
+          labels,
+          gods,
+          surprises,
+          detection,
+          tokenCost,
+          projectRootLabel(root),
+          {
+            suggestedQuestions: questions,
+            freshness: { builtFromCommit: safeGitRevParse(root, ["HEAD"]) },
+          },
+        );
+
+        writeFileSync(paths.report, report, "utf-8");
+        toJson(G, communities, paths.graph, { communityLabels: labels, force: true });
+        safeToHtml(G, communities, paths.html, { communityLabels: labels }, {
+          onWarning: (message) => console.warn(message),
+        });
+        writeJson(paths.scratch.analysis, {
+          communities: Object.fromEntries([...communities.entries()].map(([key, value]) => [String(key), value])),
+          cohesion: Object.fromEntries([...cohesion.entries()].map(([key, value]) => [String(key), value])),
+          gods,
+          surprises,
+          questions,
+          labels: Object.fromEntries([...labels.entries()].map(([key, value]) => [String(key), value])),
+          tokens: tokenCost,
+        });
+
+        console.log(
+          `[graphify extract] wrote ${paths.graph}: ${G.order} nodes, ${G.size} edges, ${communities.size} communities`,
+        );
+        console.log(`[graphify extract] wrote ${paths.scratch.analysis}`);
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    });
+
   const scopeProgram = program.command("scope").description("Inspect resolved Graphify input scope");
   scopeProgram
     .command("inspect [path]")
@@ -1821,6 +2074,7 @@ export async function main(): Promise<void> {
   program
     .command("update [path]")
     .description("One-shot code-only graph rebuild")
+    .option("--force", "Overwrite graph.json even when the rebuild has fewer nodes")
     .option("--scope <mode>", scopeOptionDescription())
     .option("--all", "Alias for --scope all")
     .action(async (updatePath = ".", opts) => {
@@ -1832,6 +2086,7 @@ export async function main(): Promise<void> {
       const scopeSelection = resolveCliScopeSelection(opts);
       console.log(`Re-extracting code files in ${updatePath} (no LLM needed)...`);
       const ok = await rebuildCode(updatePath, false, {
+        force: Boolean(opts.force),
         scope: scopeSelection.mode,
         scopeSource: scopeSelection.source,
       });
@@ -1910,7 +2165,21 @@ export async function main(): Promise<void> {
         skipped_sensitive: [],
         graphifyignore_patterns: 0,
       };
-      const report = generate(G, communities, cohesion, labels, gods, surprises, detection, { input: 0, output: 0 }, projectRootLabel(root), questions);
+      const report = generate(
+        G,
+        communities,
+        cohesion,
+        labels,
+        gods,
+        surprises,
+        detection,
+        { input: 0, output: 0 },
+        projectRootLabel(root),
+        {
+          suggestedQuestions: questions,
+          freshness: { builtFromCommit: safeGitRevParse(root, ["HEAD"]) },
+        },
+      );
       writeFileSync(paths.report, report, "utf-8");
       toJson(G, communities, paths.graph, { communityLabels: labels });
       safeToHtml(G, communities, paths.html, { communityLabels: labels }, {
@@ -1926,6 +2195,143 @@ export async function main(): Promise<void> {
       };
       writeFileSync(paths.scratch.analysis, JSON.stringify(analysis, null, 2), "utf-8");
       console.log(`Done - ${communities.size} communities. GRAPH_REPORT.md, graph.json and graph.html updated.`);
+    });
+
+  const exportCommand = program
+    .command("export")
+    .description("Export an existing graph into HTML, wiki, Obsidian, SVG, GraphML, or Neo4j Cypher artifacts");
+
+  exportCommand
+    .command("html")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--out <path>", "Path to write graph.html")
+    .option("--no-viz", "Skip HTML export and remove any stale output")
+    .action(async (opts) => {
+      try {
+        const graphPath = resolveGraphInputPath(opts.graph);
+        const outPath = resolve(opts.out ?? join(dirname(graphPath), "graph.html"));
+        if (opts.viz === false) {
+          if (existsSync(outPath)) unlinkSync(outPath);
+          console.log(`HTML export skipped (--no-viz): ${outPath}`);
+          return;
+        }
+        const G = loadCliGraph(graphPath);
+        const communities = communitiesFromCliGraph(G);
+        const labels = communityLabelsFromCliGraph(G, communities);
+        const { safeToHtml } = await import("./html-export.js");
+        const written = safeToHtml(G, communities, outPath, { communityLabels: labels }, {
+          onWarning: (message) => console.warn(message),
+        });
+        if (!written) {
+          process.exit(1);
+        }
+        console.log(`graph.html written - open in any browser: ${outPath}`);
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    });
+
+  exportCommand
+    .command("wiki")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--dir <path>", "Directory to write wiki pages")
+    .action(async (opts) => {
+      try {
+        const graphPath = resolveGraphInputPath(opts.graph);
+        const outDir = resolve(opts.dir ?? join(dirname(graphPath), "wiki"));
+        const G = loadCliGraph(graphPath);
+        const communities = communitiesFromCliGraph(G);
+        const labels = communityLabelsFromCliGraph(G, communities);
+        const { toWiki } = await import("./wiki.js");
+        const count = toWiki(G, communities, outDir, { communityLabels: labels });
+        console.log(`Wiki export: ${count} page(s) written to ${outDir}`);
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    });
+
+  exportCommand
+    .command("obsidian")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--dir <path>", "Directory to write the Obsidian vault")
+    .action(async (opts) => {
+      try {
+        const graphPath = resolveGraphInputPath(opts.graph);
+        const outDir = resolve(opts.dir ?? join(dirname(graphPath), "obsidian"));
+        const G = loadCliGraph(graphPath);
+        const communities = communitiesFromCliGraph(G);
+        const labels = communityLabelsFromCliGraph(G, communities);
+        const [{ toCanvas }, { toWiki }] = await Promise.all([
+          import("./export.js"),
+          import("./wiki.js"),
+        ]);
+        const count = toWiki(G, communities, outDir, { communityLabels: labels });
+        toCanvas(G, communities, join(outDir, "graph.canvas"), { communityLabels: labels });
+        console.log(`Obsidian vault: ${count} note(s) written to ${outDir}`);
+        console.log(`Canvas: ${join(outDir, "graph.canvas")} - open in Obsidian for structured community layout`);
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    });
+
+  exportCommand
+    .command("svg")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--out <path>", "Path to write graph.svg")
+    .action(async (opts) => {
+      try {
+        const graphPath = resolveGraphInputPath(opts.graph);
+        const outPath = resolve(opts.out ?? join(dirname(graphPath), "graph.svg"));
+        const G = loadCliGraph(graphPath);
+        const communities = communitiesFromCliGraph(G);
+        const labels = communityLabelsFromCliGraph(G, communities);
+        const { toSvg } = await import("./export.js");
+        toSvg(G, communities, outPath, labels);
+        console.log(`graph.svg written - embeds in Obsidian, Notion, GitHub READMEs: ${outPath}`);
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    });
+
+  exportCommand
+    .command("graphml")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--out <path>", "Path to write graph.graphml")
+    .action(async (opts) => {
+      try {
+        const graphPath = resolveGraphInputPath(opts.graph);
+        const outPath = resolve(opts.out ?? join(dirname(graphPath), "graph.graphml"));
+        const G = loadCliGraph(graphPath);
+        const communities = communitiesFromCliGraph(G);
+        const { toGraphml } = await import("./export.js");
+        toGraphml(G, communities, outPath);
+        console.log(`graph.graphml written - open in Gephi, yEd, or any GraphML tool: ${outPath}`);
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    });
+
+  exportCommand
+    .command("neo4j")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--out <path>", "Path to write cypher.txt")
+    .action(async (opts) => {
+      try {
+        const graphPath = resolveGraphInputPath(opts.graph);
+        const outPath = resolve(opts.out ?? join(dirname(graphPath), "cypher.txt"));
+        const G = loadCliGraph(graphPath);
+        const { toCypher } = await import("./export.js");
+        toCypher(G, outPath);
+        console.log(`cypher.txt written - import with: cypher-shell < ${outPath}`);
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
     });
 
   program
@@ -2003,6 +2409,32 @@ export async function main(): Promise<void> {
           }
           if (neighbors.length > 20) console.log(`  ... and ${neighbors.length - 20} more`);
         }
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    });
+
+  program
+    .command("tree")
+    .description("Compact tree view from one graph node")
+    .argument("<node>")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--depth <n>", "Traversal depth", "2")
+    .option("--max-children <n>", "Maximum children per node", "12")
+    .action(async (nodeLabel, opts) => {
+      try {
+        const G = loadCliGraph(opts.graph);
+        const nodeId = findBestMatchingNode(G, nodeLabel);
+        if (!nodeId) {
+          console.log(`No node matching '${nodeLabel}' found.`);
+          return;
+        }
+        const { renderTree } = await import("./tree.js");
+        console.log(renderTree(G, nodeId, {
+          depth: Number(opts.depth),
+          maxChildren: Number(opts.maxChildren),
+        }));
       } catch (err) {
         console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
         process.exit(1);
@@ -2472,6 +2904,7 @@ export async function main(): Promise<void> {
     .action(async (question, opts) => {
       const { readFileSync: rf } = await import("node:fs");
       const { resolve: res } = await import("node:path");
+      const { scoreSearchText } = await import("./search.js");
       const gp = res(opts.graph);
       if (!existsSync(gp)) {
         console.error(`error: graph file not found: ${gp}`);
@@ -2489,8 +2922,11 @@ export async function main(): Promise<void> {
         const terms = normalizeSearchText(question).split(/\s+/).filter((t: string) => t.length > 2);
         const scored: [number, string][] = [];
         G.forEachNode((nid: string, data: Record<string, unknown>) => {
-          const label = normalizeSearchText((data.label as string) ?? "");
-          const score = terms.filter((t: string) => label.includes(t)).length;
+          const score = scoreSearchText(
+            (data.label as string) ?? "",
+            (data.source_file as string) ?? "",
+            terms,
+          );
           if (score > 0) scored.push([score, nid]);
         });
         scored.sort((a, b) => b[0] - a[0]);
@@ -2629,6 +3065,21 @@ export async function main(): Promise<void> {
     .action(async (reason) => {
       const { markLifecycleStale } = await import("./lifecycle.js");
       markLifecycleStale(".", reason ?? "hook");
+    });
+
+  program
+    .command("merge-driver <ancestor> <current> <other>", { hidden: true })
+    .description("Internal: merge graph.json files for Git merge-driver support")
+    .action(async (ancestor, current, other) => {
+      const { mergeGraphJsonFiles } = await import("./merge-driver.js");
+      mergeGraphJsonFiles(ancestor, current, other);
+    });
+
+  program
+    .command("hook-check", { hidden: true })
+    .description("Internal: shell-agnostic no-op for Codex PreToolUse hooks")
+    .action(() => {
+      process.exit(0);
     });
 
   await program.parseAsync();

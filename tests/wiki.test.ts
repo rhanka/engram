@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdirSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import Graph from "graphology";
@@ -140,5 +140,39 @@ describe("toWiki", () => {
     const index = readFileSync(join(tmpDir, "index.md"), "utf-8");
     expect(index).toContain("[[Core]]");
     expect(index).toContain("[[Core_2|Core]]");
+  });
+
+  it("clears stale wiki articles before regenerating", () => {
+    const G = new Graph({ type: "undirected" });
+    G.mergeNode("a", { label: "ClassA", source_file: "a.py", community: 0 });
+    let communities = new Map([[0, ["a"]]]);
+    let labels = new Map([[0, "Legacy Community"]]);
+
+    toWiki(G, communities, tmpDir, { communityLabels: labels });
+    expect(existsSync(join(tmpDir, "Legacy_Community.md"))).toBe(true);
+
+    communities = new Map([[1, ["a"]]]);
+    labels = new Map([[1, "Fresh Community"]]);
+    toWiki(G, communities, tmpDir, { communityLabels: labels });
+
+    expect(existsSync(join(tmpDir, "Fresh_Community.md"))).toBe(true);
+    expect(existsSync(join(tmpDir, "Legacy_Community.md"))).toBe(false);
+  });
+
+  it("strips Windows-reserved characters and caps wiki filenames", () => {
+    const G = new Graph({ type: "undirected" });
+    G.mergeNode("a", { label: "ClassA", source_file: "a.py", community: 0 });
+    const communities = new Map([[0, ["a"]]]);
+    const labels = new Map([
+      [0, `Core<>:\"/\\\\|?* ${"VeryLongName".repeat(30)}`],
+    ]);
+
+    toWiki(G, communities, tmpDir, { communityLabels: labels });
+
+    const files = readdirSync(tmpDir).filter((entry) => entry.endsWith(".md") && entry !== "index.md");
+    expect(files).toHaveLength(1);
+    const [filename] = files;
+    expect(filename).not.toMatch(/[<>:"/\\|?*]/);
+    expect(filename!.length).toBeLessThanOrEqual(203);
   });
 });

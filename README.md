@@ -8,13 +8,13 @@
 
 This repository is the maintained TypeScript port of the original Graphify project. Thanks to the original work by [Safi Shamsi](https://github.com/safishamsi/graphify) for the product direction, workflow, and initial implementation.
 
-Multimodal, with the TypeScript port now closed through the upstream Python Graphify `v4` line and prepared as `graphifyy@0.4.33`, while smaller `v5` repo-oriented workflows are tracked explicitly in this fork instead of being hidden. Code, Markdown, MDX, HTML, PDFs, Office docs, screenshots, diagrams, and other images flow through the current TS runtime. PDFs go through a local preflight: text-layer PDFs are converted with `pdf-parse` and a `pdftotext` fallback when available, while scanned/low-text PDFs can be converted to Markdown + images through `mistral-ocr`. Local audio/video detection uses `yt-dlp` + `ffmpeg` + `faster-whisper-ts`, and generated transcripts/PDF sidecars feed the same assistant-driven semantic pass as docs and papers. 20 languages are supported via tree-sitter AST (Python, JS, TS, Go, Rust, Java, C, C++, Ruby, C#, Kotlin, Scala, PHP, Swift, Lua, Zig, PowerShell, Elixir, Objective-C, Julia), with upstream-aligned fallback support for Vue, Svelte, Blade, Dart, Verilog/SystemVerilog, MJS, and EJS.
+Multimodal, with the TypeScript port now published as `graphifyy@0.5.6` and closed through the upstream Python Graphify `v5` line while the active `v6` / `v7` catch-up stays explicit in `UPSTREAM_GAP.md`. Code, Markdown, MDX, HTML, PDFs, Office docs, screenshots, diagrams, and other images flow through the current TS runtime. PDFs go through a local preflight: text-layer PDFs are converted with `pdf-parse` and a `pdftotext` fallback when available, while scanned/low-text PDFs can be converted to Markdown + images through `mistral-ocr`. Local audio/video detection uses `yt-dlp` + `ffmpeg` + `faster-whisper-ts`, and generated transcripts/PDF sidecars feed the same assistant-driven semantic pass as docs and papers. 20 languages are supported via tree-sitter AST (Python, JS, TS, Go, Rust, Java, C, C++, Ruby, C#, Kotlin, Scala, PHP, Swift, Lua, Zig, PowerShell, Elixir, Objective-C, Julia), with upstream-aligned fallback support for Vue, Svelte, Blade, Dart, Verilog/SystemVerilog, MJS, and EJS.
 
 ## Branch Model
 
 - `main` is the maintained TypeScript product branch and the default branch for this repository.
 - `v3` is kept as an upstream mirror / alignment branch for the original Python Graphify lineage.
-- The `v4` parity line is closed in the TypeScript product through `graphifyy@0.4.33`; ongoing upstream work, including the smaller `v5` repo-oriented additions, stays explicit in `UPSTREAM_GAP.md`.
+- The `v5` parity line is closed in the TypeScript product through `graphifyy@0.5.6`; ongoing upstream `v6` / `v7` work stays explicit in `UPSTREAM_GAP.md`.
 - npm publication is guarded by GitHub Actions trusted publishing. Release tags are only valid when the tagged commit is already contained in the default branch and the tag version matches `package.json`.
 
 ## Lineage And Alignment
@@ -451,7 +451,7 @@ Profile artifacts live under `.graphify/profile/`, image dataprep artifacts unde
 
 **Auto-sync** (`--watch`) - run in a background terminal and the graph updates itself as your codebase changes. Code file saves trigger an instant rebuild (AST only, no LLM). Doc/image changes notify you to run `--update` for the LLM re-pass.
 
-**Git hooks** (`graphify hook install`) - installs worktree-compatible `post-commit`, `post-checkout`, `post-merge`, and `post-rewrite` hooks. Hooks mark `.graphify/` stale first, update branch/worktree metadata, then try a non-blocking code-only rebuild when it is safe and cheap. No background process needed, and hook failures do not block Git operations. Use `graphify state status` to inspect lifecycle metadata and `graphify state prune` to preview stale cleanup without deleting files.
+**Git hooks** (`graphify hook install`) - installs worktree-compatible `post-commit`, `post-checkout`, `post-merge`, and `post-rewrite` hooks, writes `.gitattributes` entries for `.graphify/graph.json`, and registers a `graphify-json` merge-driver so concurrent branch edits union-merge graph nodes/edges instead of producing raw JSON conflicts. Hooks mark `.graphify/` stale first, update branch/worktree metadata, then try a non-blocking code-only rebuild when it is safe and cheap. No background process needed, and hook failures do not block Git operations. Use `graphify state status` to inspect lifecycle metadata, `graphify check-update .` to compare `graph.json` freshness against `HEAD`, and `graphify state prune` to preview stale cleanup without deleting files.
 
 **Wiki** (`--wiki`) - Wikipedia-style markdown articles per community and god node, with an `index.md` entry point. Point any agent at `index.md` and it can navigate the knowledge base by reading files instead of parsing JSON.
 

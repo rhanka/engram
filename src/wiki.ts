@@ -2,7 +2,7 @@
  * Wiki export - Wikipedia-style markdown articles from the knowledge graph.
  * Generates an agent-crawlable wiki: index.md + one article per community + god node articles.
  */
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import Graph from "graphology";
 import type { GodNodeEntry } from "./types.js";
@@ -22,9 +22,12 @@ function safeFilename(name: string): string {
     .replace(/\r\n/g, " ")
     .replace(/\r/g, " ")
     .replace(/\n/g, " ")
-    .replace(/\//g, "-")
-    .replace(/ /g, "_")
-    .replace(/:/g, "-");
+    .replace(/[<>:"/\\|?*]/g, "-")
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/-+/g, "-")
+    .replace(/^[-_]+|[-_]+$/g, "")
+    .slice(0, 200);
 }
 
 function uniquePageRefs(pages: Array<{ key: string; title: string }>): Map<string, WikiPageRef> {
@@ -312,6 +315,11 @@ export function toWiki(
 ): number {
   const communityMap = toNumericMap(communities);
   mkdirSync(outputDir, { recursive: true });
+  for (const entry of readdirSync(outputDir, { withFileTypes: true })) {
+    if (entry.isFile() && entry.name.endsWith(".md")) {
+      unlinkSync(join(outputDir, entry.name));
+    }
+  }
 
   const labels = options?.communityLabels
     ? toNumericMap(options.communityLabels)

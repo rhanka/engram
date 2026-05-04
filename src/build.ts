@@ -21,6 +21,11 @@ export interface BuildOptions {
 
 const CHUNK_SUFFIX = /_c\d+$/;
 
+function normalizeSourceFilePath(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return value.replace(/\\/g, "/");
+}
+
 function normalizedLabel(value: string): string {
   return value
     .toLowerCase()
@@ -107,7 +112,7 @@ export function buildFromJson(extraction: Extraction, options?: BuildOptions): G
         `'source_file' - ${affectedEdges} edge(s) may be misrouted. Rename the field to ` +
         "'source_file' to silence this warning.",
       );
-      node.source_file = String(legacySource);
+      node.source_file = normalizeSourceFilePath(String(legacySource)) ?? String(legacySource);
       delete node.source;
     }
   }
@@ -125,7 +130,11 @@ export function buildFromJson(extraction: Extraction, options?: BuildOptions): G
 
   for (const node of extraction.nodes ?? []) {
     const { id, ...attrs } = node;
-    G.mergeNode(id, attrs);
+    const normalizedAttrs = { ...attrs };
+    if ("source_file" in normalizedAttrs) {
+      normalizedAttrs.source_file = normalizeSourceFilePath(normalizedAttrs.source_file) ?? normalizedAttrs.source_file;
+    }
+    G.mergeNode(id, normalizedAttrs);
   }
 
   const nodeSet = new Set(G.nodes());
@@ -133,6 +142,9 @@ export function buildFromJson(extraction: Extraction, options?: BuildOptions): G
   for (const edge of extraction.edges ?? []) {
     const { source, target, ...attrs } = edge;
     if (!nodeSet.has(source) || !nodeSet.has(target)) continue;
+    if ("source_file" in attrs) {
+      attrs.source_file = normalizeSourceFilePath(attrs.source_file) ?? attrs.source_file;
+    }
     // Preserve original edge direction
     attrs._src = source;
     attrs._tgt = target;
@@ -146,7 +158,13 @@ export function buildFromJson(extraction: Extraction, options?: BuildOptions): G
 
   const hyperedges = extraction.hyperedges ?? [];
   if (hyperedges.length > 0) {
-    G.setAttribute("hyperedges", hyperedges);
+    G.setAttribute(
+      "hyperedges",
+      hyperedges.map((hyperedge) => ({
+        ...hyperedge,
+        source_file: normalizeSourceFilePath(hyperedge.source_file) ?? hyperedge.source_file,
+      })),
+    );
   }
 
   return G;
