@@ -19,6 +19,7 @@ import { safeToHtml } from "./html-export.js";
 import { extractWithDiagnostics, type ExtractionDiagnostic } from "./extract.js";
 import { resolveGraphifyPaths } from "./paths.js";
 import { markLifecycleAnalyzed } from "./lifecycle.js";
+import { safeGitRevParse } from "./git.js";
 import { toWiki } from "./wiki.js";
 import {
   makeDetectionPortable,
@@ -207,7 +208,10 @@ export async function buildProject(
     detection,
     { input: extraction.input_tokens ?? 0, output: extraction.output_tokens ?? 0 },
     projectRootLabel(rootResolved),
-    questions,
+    {
+      suggestedQuestions: questions,
+      freshness: { builtFromCommit: safeGitRevParse(rootResolved, ["HEAD"]) },
+    },
   );
 
   writeFileSync(reportPath, report, "utf-8");

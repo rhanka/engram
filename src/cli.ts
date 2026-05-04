@@ -32,6 +32,7 @@ import {
 } from "./input-scope.js";
 import { forEachTraversalNeighbor, loadGraphFromData } from "./graph.js";
 import { safeExecGit } from "./git.js";
+import { safeGitRevParse } from "./git.js";
 import { discoverProjectConfig, loadProjectConfig } from "./project-config.js";
 import { defaultManifestPath, resolveGraphInputPath, resolveGraphifyPaths } from "./paths.js";
 import { normalizeSearchText } from "./search.js";
@@ -1984,7 +1985,10 @@ export async function main(): Promise<void> {
           detection,
           tokenCost,
           projectRootLabel(root),
-          questions,
+          {
+            suggestedQuestions: questions,
+            freshness: { builtFromCommit: safeGitRevParse(root, ["HEAD"]) },
+          },
         );
 
         writeFileSync(paths.report, report, "utf-8");
@@ -2161,7 +2165,21 @@ export async function main(): Promise<void> {
         skipped_sensitive: [],
         graphifyignore_patterns: 0,
       };
-      const report = generate(G, communities, cohesion, labels, gods, surprises, detection, { input: 0, output: 0 }, projectRootLabel(root), questions);
+      const report = generate(
+        G,
+        communities,
+        cohesion,
+        labels,
+        gods,
+        surprises,
+        detection,
+        { input: 0, output: 0 },
+        projectRootLabel(root),
+        {
+          suggestedQuestions: questions,
+          freshness: { builtFromCommit: safeGitRevParse(root, ["HEAD"]) },
+        },
+      );
       writeFileSync(paths.report, report, "utf-8");
       toJson(G, communities, paths.graph, { communityLabels: labels });
       safeToHtml(G, communities, paths.html, { communityLabels: labels }, {
@@ -3047,6 +3065,14 @@ export async function main(): Promise<void> {
     .action(async (reason) => {
       const { markLifecycleStale } = await import("./lifecycle.js");
       markLifecycleStale(".", reason ?? "hook");
+    });
+
+  program
+    .command("merge-driver <ancestor> <current> <other>", { hidden: true })
+    .description("Internal: merge graph.json files for Git merge-driver support")
+    .action(async (ancestor, current, other) => {
+      const { mergeGraphJsonFiles } = await import("./merge-driver.js");
+      mergeGraphJsonFiles(ancestor, current, other);
     });
 
   program

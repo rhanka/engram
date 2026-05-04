@@ -30,6 +30,9 @@ export interface ReportReviewOptions {
 export interface GenerateReportOptions {
   suggestedQuestions?: SuggestedQuestion[] | null;
   review?: ReportReviewOptions | null;
+  freshness?: {
+    builtFromCommit?: string | null;
+  } | null;
 }
 
 function compareFlowCriticality(a: ReviewFlow, b: ReviewFlow): number {
@@ -118,6 +121,21 @@ function appendInputScopeSection(lines: string[], detectionResult: DetectionResu
   }
 }
 
+function appendFreshnessSection(
+  lines: string[],
+  freshness?: GenerateReportOptions["freshness"],
+): void {
+  const builtFromCommit = freshness?.builtFromCommit?.trim();
+  if (!builtFromCommit) return;
+  const shortCommit = builtFromCommit.slice(0, 7);
+  lines.push(
+    "",
+    "## Graph Freshness",
+    `- Built from Git commit: \`${shortCommit}\``,
+    "- Compare this hash to `git rev-parse HEAD` before trusting freshness-sensitive graph output.",
+  );
+}
+
 export function generate(
   G: Graph,
   communities: NumericMapLike<string[]>,
@@ -142,6 +160,9 @@ export function generate(
   const reviewOptions = Array.isArray(suggestedQuestions)
     ? null
     : (suggestedQuestions?.review ?? null);
+  const freshnessOptions = Array.isArray(suggestedQuestions)
+    ? null
+    : (suggestedQuestions?.freshness ?? null);
   const today = new Date().toISOString().slice(0, 10);
 
   const confidences: string[] = [];
@@ -194,6 +215,7 @@ export function generate(
   );
 
   appendInputScopeSection(lines, detectionResult);
+  appendFreshnessSection(lines, freshnessOptions);
 
   appendReviewSections(lines, reviewOptions);
 

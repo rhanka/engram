@@ -2,9 +2,11 @@
  * Export graph to HTML, JSON, SVG, GraphML, Obsidian Canvas, and Neo4j Cypher.
  */
 import { readFileSync, writeFileSync } from "node:fs";
+import { basename, dirname, resolve } from "node:path";
 import Graph from "graphology";
 import { sanitizeLabel, escapeHtml } from "./security.js";
 import { isDirectedGraph } from "./graph.js";
+import { safeGitRevParse } from "./git.js";
 import type { Hyperedge } from "./types.js";
 import {
   type NumericMapLike,
@@ -106,6 +108,16 @@ function normalizeMemberCounts(
   return toNumericMap(labelsOrOptions.memberCounts);
 }
 
+function buildFreshnessMetadata(outputPath: string): { built_from_commit?: string } {
+  const resolved = resolve(outputPath);
+  if (basename(resolved) !== "graph.json") return {};
+  const stateDir = basename(dirname(resolved));
+  if (stateDir !== ".graphify" && stateDir !== "graphify-out") return {};
+  const root = dirname(dirname(resolved));
+  const head = safeGitRevParse(root, ["HEAD"]);
+  return head ? { built_from_commit: head } : {};
+}
+
 // ---------------------------------------------------------------------------
 // toJson
 // ---------------------------------------------------------------------------
@@ -167,6 +179,7 @@ export function toJson(
     multigraph: false,
     graph: {
       community_labels: communityLabelsObject,
+      ...buildFreshnessMetadata(outputPath),
     },
     nodes,
     links,

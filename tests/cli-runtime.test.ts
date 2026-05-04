@@ -360,6 +360,35 @@ describe("public CLI runtime command parity", () => {
     expect(existsSync(join(dir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
   });
 
+  it("writes graph freshness metadata and detects stale HEAD drift", async () => {
+    const dir = tempProject();
+    initGitRepo(dir);
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+    execGit(dir, ["add", "src/alpha.ts"]);
+    execGit(dir, ["commit", "-q", "-m", "init"]);
+
+    const result = await runCli(["update", "."], dir);
+    const head = execGit(dir, ["rev-parse", "HEAD"]);
+    const graphJson = JSON.parse(readFileSync(join(dir, ".graphify", "graph.json"), "utf-8")) as {
+      graph?: { built_from_commit?: string };
+    };
+    const report = readFileSync(join(dir, ".graphify", "GRAPH_REPORT.md"), "utf-8");
+
+    expect(result.exitCode).toBe(0);
+    expect(graphJson.graph?.built_from_commit).toBe(head);
+    expect(report).toContain(head.slice(0, 7));
+
+    writeFileSync(join(dir, "README.md"), "# drift\n", "utf-8");
+    execGit(dir, ["add", "README.md"]);
+    execGit(dir, ["commit", "-q", "-m", "drift"]);
+
+    const stale = await runCli(["check-update", "."], dir);
+    expect(stale.exitCode).toBe(0);
+    expect(stale.logs.join("\n")).toContain("Pending semantic updates");
+    expect(stale.logs.join("\n")).toContain(head.slice(0, 7));
+  });
+
   it("supports code-only headless extract via the public CLI", async () => {
     const dir = tempProject();
     const outDir = join(dir, "artifacts");
@@ -489,6 +518,34 @@ describe("public CLI runtime command parity", () => {
     expect(result.exitCode).toBe(0);
     expect(result.logs.join("\n")).toContain("Code graph updated");
     expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
+  });
+
+  it("rebuilds code but keeps stale semantic state for mixed code and docs hook batches", async () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, "src"), { recursive: true });
+    mkdirSync(join(dir, "docs"), { recursive: true });
+    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+    writeFileSync(join(dir, "docs", "guide.md"), "# Guide\n", "utf-8");
+
+    const initial = await runCli(["update", "."], dir);
+    expect(initial.exitCode).toBe(0);
+
+    writeFileSync(join(dir, ".graphify", "needs_update"), "1\n", "utf-8");
+    const previousChanged = process.env.GRAPHIFY_CHANGED;
+    process.env.GRAPHIFY_CHANGED = ["src/alpha.ts", "docs/guide.md"].join("\n");
+    try {
+      const result = await runCli(["hook-rebuild"], dir, { interceptExit: true });
+      expect(result.exitCode).toBe(0);
+    } finally {
+      if (previousChanged === undefined) {
+        delete process.env.GRAPHIFY_CHANGED;
+      } else {
+        process.env.GRAPHIFY_CHANGED = previousChanged;
+      }
+    }
+
+    expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
+    expect(existsSync(join(dir, ".graphify", "needs_update"))).toBe(true);
   });
 
   it("supports scope inspect via CLI and skill runtime", async () => {

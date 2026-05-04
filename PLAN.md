@@ -105,12 +105,19 @@ Progress note:
 - Modify: `spec/SPEC_UPSTREAM_TRACEABILITY.md`
 - Modify as needed: hook installer, merge-driver handling, cache hashing, freshness metadata, watch/update/runtime/tests
 
-- [ ] Audit merge-driver support for `graph.json` and decide how it maps to the TypeScript `.graphify/graph.json` lifecycle.
-- [ ] Audit deterministic community IDs against the current TypeScript clustering implementation and output stability.
-- [ ] Audit content-only cache hashing for rename resilience.
-- [ ] Audit graph freshness signaling against the current `.graphify` metadata and report contract.
-- [ ] Audit mixed code/doc change handling in watch/update flows.
-- [ ] Commit this lot with only `0.7.0` closures and associated tests.
+Progress note:
+- covered in this lot: `graphify hook install` now configures `.gitattributes` plus a `graphify-json` merge-driver, and the merge-driver union-merges `graph.json` nodes/edges/hyperedges/labels
+- covered in this lot: deterministic community IDs via canonicalized Louvain input plus lexical tie-breaks for equal-size communities
+- covered in this lot: `graph.json` now records `built_from_commit`, `GRAPH_REPORT.md` surfaces the short hash, and `graphify check-update` detects HEAD drift from the last built graph
+- covered in this lot: mixed code/doc hook batches keep semantic staleness while still rebuilding code-only structure
+- intentional delta in this lot: content-only cache reuse on rename is not adopted in the TS line because AST and semantic node IDs remain path/stem-derived; blind cache reuse across renames would replay stale IDs and `source_file` provenance
+
+- [x] Audit merge-driver support for `graph.json` and decide how it maps to the TypeScript `.graphify/graph.json` lifecycle.
+- [x] Audit deterministic community IDs against the current TypeScript clustering implementation and output stability.
+- [x] Audit content-only cache hashing for rename resilience.
+- [x] Audit graph freshness signaling against the current `.graphify` metadata and report contract.
+- [x] Audit mixed code/doc change handling in watch/update flows.
+- [x] Commit this lot with only `0.7.0` closures and associated tests.
 
 ## Task 5: Parser Robustness, Export Surface, And Headless Extraction (`0.7.1` to `0.7.4`)
 
@@ -124,7 +131,7 @@ Progress note:
 - covered/n-a in this lot so far: `tsconfig extends` alias resolution, Svelte template-layer dynamic imports, and per-file recursion-overflow diagnostics
 - covered/deferred/intentional-delta in this lot so far: public `graphify export {html,wiki,obsidian,svg,graphml,neo4j}` parity, explicit `--no-viz`, Fortran parser deferral, and large-graph HTML aggregation as a TypeScript product delta
 - covered/intentional-delta in this lot so far: public `graphify extract`, `--out`, `--no-cluster`, and docs-only headless rebuilds when a compatible semantic JSON is provided
-- Task 5 is now functionally closed; the remaining active upstream work shifts back to `v0.7.0` lifecycle parity.
+- Task 5 is now functionally closed; the remaining active work is CRG guardrail bookkeeping plus the final `0.7.4` release gate.
 
 - [x] Audit `v0.7.1` Obsidian tag sanitization, extended `tsconfig` alias resolution, Svelte template-layer dynamic imports, and recursion safety on deep ASTs.
 - [x] Audit `v0.7.2` Fortran support, export CLI subcommands, skill size reduction, and large-graph aggregation.

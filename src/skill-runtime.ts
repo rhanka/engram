@@ -42,6 +42,7 @@ import { analyzeChanges, detectChangesToMinimal, detectChangesToText } from "./d
 import { buildMinimalContext, minimalContextToText } from "./minimal-context.js";
 import { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
 import { createReviewGraphStore } from "./review-store.js";
+import { safeGitRevParse } from "./git.js";
 import {
   makeDetectionPortable,
   makeExtractionPortable,
@@ -296,7 +297,10 @@ function analyzeGraph(
     portableDetection,
     tokenCost,
     projectRootLabel(root),
-    questions,
+    {
+      suggestedQuestions: questions,
+      freshness: { builtFromCommit: safeGitRevParse(root, ["HEAD"]) },
+    },
   );
   return {
     communities,
@@ -1117,7 +1121,10 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         detection,
         { input: extraction.input_tokens ?? 0, output: extraction.output_tokens ?? 0 },
         projectRootLabel(root),
-        questions,
+        {
+          suggestedQuestions: questions,
+          freshness: { builtFromCommit: safeGitRevParse(root, ["HEAD"]) },
+        },
       );
 
       analysis.questions = questions;

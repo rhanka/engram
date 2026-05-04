@@ -6,7 +6,7 @@
  */
 import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { resolveGitContext } from "./git.js";
+import { execGit, resolveGitContext, safeExecGit } from "./git.js";
 
 const POST_COMMIT_MARKER = "# graphify-hook-start";
 const POST_COMMIT_MARKER_END = "# graphify-hook-end";
@@ -168,6 +168,14 @@ const HOOKS: HookDefinition[] = [
   },
 ];
 
+const GRAPH_GITATTR_LINES = [
+  ".graphify/graph.json merge=graphify-json",
+  "graphify-out/graph.json merge=graphify-json",
+];
+const MERGE_DRIVER_NAME = "graphify-json";
+const MERGE_DRIVER_COMMAND = "graphify merge-driver %O %A %B";
+const MERGE_DRIVER_LABEL = "graphify graph.json merge driver";
+
 function installHook(hooksDir: string, definition: HookDefinition): string {
   const hookPath = join(hooksDir, definition.name);
   const script = definition.script.trimEnd() + "\n";
@@ -220,6 +228,70 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function readTextFile(path: string): string {
+  return existsSync(path) ? readFileSync(path, "utf-8") : "";
+}
+
+function installGraphAttributes(worktreeRoot: string): string {
+  const attrPath = join(worktreeRoot, ".gitattributes");
+  const existing = readTextFile(attrPath);
+  const normalized = existing.replace(/\r\n/g, "\n");
+  const lines = normalized.length > 0 ? normalized.trimEnd().split("\n") : [];
+  const missing = GRAPH_GITATTR_LINES.filter((line) => !lines.includes(line));
+  if (missing.length === 0) {
+    return "already installed";
+  }
+  const updatedLines = [...lines, ...missing];
+  writeFileSync(attrPath, updatedLines.join("\n") + "\n", "utf-8");
+  return existing.length > 0 ? "updated" : "installed";
+}
+
+function uninstallGraphAttributes(worktreeRoot: string): string {
+  const attrPath = join(worktreeRoot, ".gitattributes");
+  if (!existsSync(attrPath)) {
+    return "not installed";
+  }
+  const existing = readTextFile(attrPath).replace(/\r\n/g, "\n");
+  const lines = existing.trimEnd().split("\n");
+  const filtered = lines.filter((line) => !GRAPH_GITATTR_LINES.includes(line));
+  if (filtered.length === lines.length) {
+    return "not installed";
+  }
+  if (filtered.length === 0) {
+    unlinkSync(attrPath);
+  } else {
+    writeFileSync(attrPath, filtered.join("\n") + "\n", "utf-8");
+  }
+  return "removed";
+}
+
+function mergeDriverConfigStatus(path: string): "installed" | "not installed" {
+  const driver = safeExecGit(path, ["config", "--local", "--get", `merge.${MERGE_DRIVER_NAME}.driver`]);
+  return driver === MERGE_DRIVER_COMMAND ? "installed" : "not installed";
+}
+
+function installMergeDriverConfig(path: string): string {
+  const currentDriver = safeExecGit(path, ["config", "--local", "--get", `merge.${MERGE_DRIVER_NAME}.driver`]);
+  const currentName = safeExecGit(path, ["config", "--local", "--get", `merge.${MERGE_DRIVER_NAME}.name`]);
+  if (currentDriver === MERGE_DRIVER_COMMAND && currentName === MERGE_DRIVER_LABEL) {
+    return "already installed";
+  }
+  execGit(path, ["config", "--local", `merge.${MERGE_DRIVER_NAME}.name`, MERGE_DRIVER_LABEL]);
+  execGit(path, ["config", "--local", `merge.${MERGE_DRIVER_NAME}.driver`, MERGE_DRIVER_COMMAND]);
+  return currentDriver || currentName ? "updated" : "installed";
+}
+
+function uninstallMergeDriverConfig(path: string): string {
+  const currentDriver = safeExecGit(path, ["config", "--local", "--get", `merge.${MERGE_DRIVER_NAME}.driver`]);
+  const currentName = safeExecGit(path, ["config", "--local", "--get", `merge.${MERGE_DRIVER_NAME}.name`]);
+  if (!currentDriver && !currentName) {
+    return "not installed";
+  }
+  safeExecGit(path, ["config", "--local", "--unset-all", `merge.${MERGE_DRIVER_NAME}.driver`]);
+  safeExecGit(path, ["config", "--local", "--unset-all", `merge.${MERGE_DRIVER_NAME}.name`]);
+  return "removed";
+}
+
 export function install(path: string = "."): string {
   const context = resolveGitContext(path);
   if (context === null) {
@@ -227,9 +299,12 @@ export function install(path: string = "."): string {
   }
 
   mkdirSync(context.hooksDir, { recursive: true });
-  return HOOKS.map((definition) => (
+  const hookLines = HOOKS.map((definition) => (
     `${definition.name}: ${installHook(context.hooksDir, definition)}`
-  )).join("\n");
+  ));
+  hookLines.push(`.gitattributes: ${installGraphAttributes(context.worktreeRoot)}`);
+  hookLines.push(`merge.${MERGE_DRIVER_NAME}.driver: ${installMergeDriverConfig(context.worktreeRoot)}`);
+  return hookLines.join("\n");
 }
 
 export function uninstall(path: string = "."): string {
@@ -238,16 +313,19 @@ export function uninstall(path: string = "."): string {
     throw new Error(`No git repository found at or above ${resolve(path)}`);
   }
 
-  return HOOKS.map((definition) => (
+  const hookLines = HOOKS.map((definition) => (
     `${definition.name}: ${uninstallHook(context.hooksDir, definition)}`
-  )).join("\n");
+  ));
+  hookLines.push(`.gitattributes: ${uninstallGraphAttributes(context.worktreeRoot)}`);
+  hookLines.push(`merge.${MERGE_DRIVER_NAME}.driver: ${uninstallMergeDriverConfig(context.worktreeRoot)}`);
+  return hookLines.join("\n");
 }
 
 export function status(path: string = "."): string {
   const context = resolveGitContext(path);
   if (context === null) return "Not in a git repository.";
 
-  return HOOKS.map((definition) => {
+  const statuses = HOOKS.map((definition) => {
     const hookPath = join(context.hooksDir, definition.name);
     if (!existsSync(hookPath)) return `${definition.name}: not installed`;
     const content = readFileSync(hookPath, "utf-8");
@@ -255,5 +333,10 @@ export function status(path: string = "."): string {
       ? "installed"
       : "not installed (hook exists but graphify not found)";
     return `${definition.name}: ${hookStatus}`;
-  }).join("\n");
+  });
+  const attrContent = readTextFile(join(context.worktreeRoot, ".gitattributes"));
+  const attrInstalled = GRAPH_GITATTR_LINES.every((line) => attrContent.includes(line));
+  statuses.push(`.gitattributes: ${attrInstalled ? "installed" : "not installed"}`);
+  statuses.push(`merge.${MERGE_DRIVER_NAME}.driver: ${mergeDriverConfigStatus(context.worktreeRoot)}`);
+  return statuses.join("\n");
 }

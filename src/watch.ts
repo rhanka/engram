@@ -22,6 +22,7 @@ import {
 } from "./detect.js";
 import { inspectInputScope } from "./input-scope.js";
 import { markLifecycleAnalyzed, markLifecycleStale, readLifecycleMetadata } from "./lifecycle.js";
+import { safeGitRevParse } from "./git.js";
 import {
   makeDetectionPortable,
   makeExtractionPortable,
@@ -53,6 +54,19 @@ function mergeHyperedges(
     merged.push(hyperedge);
   }
   return merged;
+}
+
+function builtFromCommit(root: string, graphPath: string): string | null {
+  if (!existsSync(graphPath)) return null;
+  try {
+    const raw = JSON.parse(readFileSync(graphPath, "utf-8")) as {
+      graph?: { built_from_commit?: unknown };
+    };
+    const built = raw.graph?.built_from_commit;
+    return typeof built === "string" && built.trim().length > 0 ? built : null;
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -187,7 +201,10 @@ export async function rebuildCode(
       detection,
       { input: 0, output: 0 },
       projectRootLabel(root),
-      questions,
+      {
+        suggestedQuestions: questions,
+        freshness: { builtFromCommit: safeGitRevParse(root, ["HEAD"]) },
+      },
     );
     const jsonWritten = toJson(G, communities, paths.graph, {
       communityLabels: labels,
@@ -239,6 +256,11 @@ export function checkUpdate(root: string): CheckUpdateResult {
   if (metadata?.branch.stale) {
     const reason = metadata.branch.staleReason?.trim();
     reasons.push(reason ? `branch metadata is stale: ${reason}` : "branch metadata is stale");
+  }
+  const currentHead = safeGitRevParse(root, ["HEAD"]);
+  const graphHead = builtFromCommit(root, paths.graph);
+  if (currentHead && graphHead && currentHead !== graphHead) {
+    reasons.push(`graph.json built from ${graphHead.slice(0, 7)} but HEAD is ${currentHead.slice(0, 7)}`);
   }
 
   return {

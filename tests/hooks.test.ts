@@ -39,6 +39,8 @@ describe("hooks", () => {
     expect(result).toContain("post-checkout: installed");
     expect(result).toContain("post-merge: installed");
     expect(result).toContain("post-rewrite: installed");
+    expect(result).toContain(".gitattributes:");
+    expect(result).toContain("merge.graphify-json.driver:");
     for (const name of ["post-commit", "post-checkout", "post-merge", "post-rewrite"]) {
       const content = readFileSync(hookPath(tmpDir, name), "utf-8");
       expect(content.startsWith("#!/bin/sh\n")).toBe(true);
@@ -52,6 +54,9 @@ describe("hooks", () => {
     expect(postCommit).toContain(".cache/graphify-rebuild.log");
     expect(postCommit).toContain("nohup");
     expect(postCommit).toContain("disown");
+    expect(readFileSync(join(tmpDir, ".gitattributes"), "utf-8")).toContain(".graphify/graph.json merge=graphify-json");
+    expect(readFileSync(join(tmpDir, ".gitattributes"), "utf-8")).toContain("graphify-out/graph.json merge=graphify-json");
+    expect(git(tmpDir, ["config", "--local", "--get", "merge.graphify-json.driver"])).toContain("graphify merge-driver %O %A %B");
   });
 
   it("detects already installed hooks", () => {
@@ -81,17 +86,23 @@ describe("hooks", () => {
     const result = uninstall(tmpDir);
     expect(result).toContain("post-commit: removed");
     expect(result).toContain("post-rewrite: removed");
+    expect(result).toContain(".gitattributes:");
+    expect(result).toContain("merge.graphify-json.driver:");
   });
 
   it("reports status correctly", () => {
     const before = status(tmpDir);
     expect(before).toContain("post-commit: not installed");
     expect(before).toContain("post-rewrite: not installed");
+    expect(before).toContain(".gitattributes: not installed");
+    expect(before).toContain("merge.graphify-json.driver: not installed");
 
     install(tmpDir);
     const after = status(tmpDir);
     expect(after).toContain("post-commit: installed");
     expect(after).toContain("post-rewrite: installed");
+    expect(after).toContain(".gitattributes: installed");
+    expect(after).toContain("merge.graphify-json.driver: installed");
   });
 
   it("appends to existing hook without overwriting", () => {
