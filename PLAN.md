@@ -40,7 +40,7 @@
 - [x] Update both traceability docs to lock `upstream/v6` and remote tag `v0.7.4`.
 - [x] Update both traceability docs to keep CRG stable on `v2.3.2` and mark CRG `main` as exploratory/deferred.
 - [x] State explicitly that CRG is additive and does not drive npm version numbering.
-- [ ] Commit this baseline reset as a standalone docs/plan change before implementation lots begin.
+- [x] Commit this baseline reset as a standalone docs/plan change before implementation lots begin.
 
 ## Task 1: Structured Inputs, Query Precision, And Inventory Semantics (`0.6.0` to `0.6.2`)
 
@@ -54,7 +54,7 @@
 - [x] Audit `v0.6.1` `.graphifyignore` semantics, anchored pattern handling, and hermetic non-VCS scan behavior against the current TypeScript ignore engine.
 - [x] Audit `v0.6.2` exact-match query ranking, content-hash-aware `update`, R support, and shebang-based shell detection.
 - [x] Mark each audited row in `UPSTREAM_GAP.md` with evidence: test name, verification command, or explicit intentional delta note.
-- [ ] Commit this lot with only `0.6.0` to `0.6.2` traceability closures.
+- [x] Commit this lot with only `0.6.0` to `0.6.2` traceability closures.
 
 ## Task 2: Incremental Rebuild Reliability, Hooks, And Platform Surface (`0.6.3` to `0.6.6`)
 
