@@ -1,10 +1,10 @@
 # Graph Report - .  (2026-05-04)
 
 ## Corpus Check
-- Large corpus: 209 files · ~232,692 words. Semantic extraction will be expensive (many Claude tokens). Consider running on a subfolder, or use --no-semantic to run AST-only.
+- Large corpus: 209 files · ~233,863 words. Semantic extraction will be expensive (many Claude tokens). Consider running on a subfolder, or use --no-semantic to run AST-only.
 
 ## Summary
-- 1393 nodes · 2661 edges · 45 communities detected
+- 1395 nodes · 2663 edges · 45 communities detected
 - Extraction: 91% EXTRACTED · 9% INFERRED · 0% AMBIGUOUS · INFERRED: 233 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
 
@@ -13,7 +13,7 @@
 - Requested: auto
 - Resolved: committed (source: default-auto)
 - Included files: 209 · Candidates: 229
-- Excluded: 0 untracked · 210 ignored · 0 sensitive · 0 missing committed
+- Excluded: 0 untracked · 212 ignored · 0 sensitive · 0 missing committed
 - Recommendation: Use --scope all or graphify.yaml inputs.corpus for a knowledge-base folder.
 ## God Nodes (most connected - your core abstractions)
 1. `Response` - 45 edges
@@ -50,7 +50,7 @@ Cohesion: 0.03
 Nodes (69): analyzeChanges(), changedNodesFromFiles(), mapChangesToNodes(), sortNodesByLocation(), uniqueSorted(), buildFlowArtifact(), computeFlowCriticality(), decoratorsOf() (+61 more)
 
 ### Community 2 - "Community 2"
-Cohesion: 0.06
+Cohesion: 0.05
 Nodes (47): agentsInstall(), agentsUninstall(), antigravityInstall(), antigravityUninstall(), canonicalPlatformName(), changedFilesFromGit(), checkSkillVersion(), claudeInstall() (+39 more)
 
 ### Community 3 - "Community 3"
