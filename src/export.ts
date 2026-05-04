@@ -115,7 +115,7 @@ export function toJson(
   communities: NumericMapLike<string[]>,
   outputPath: string,
   communityLabelsOrOptions?: CommunityLabelsInput | JsonOptions,
-): void {
+): boolean {
   const nodeComm = nodeCommunityMap(communities);
   const communityLabels = normalizeCommunityLabels(communityLabelsOrOptions);
   const forceWrite = Boolean(
@@ -182,7 +182,7 @@ export function toJson(
           `[graphify] WARNING: new graph has ${nodes.length} nodes but existing graph.json has ` +
           `${existingNodeCount}. Refusing to overwrite; pass force=true to override.`,
         );
-        return;
+        return false;
       }
     } catch {
       // No previous graph or unreadable payload - continue with the write.
@@ -190,6 +190,7 @@ export function toJson(
   }
 
   writeFileSync(outputPath, JSON.stringify(output, null, 2), "utf-8");
+  return true;
 }
 
 // ---------------------------------------------------------------------------

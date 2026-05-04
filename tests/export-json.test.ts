@@ -43,7 +43,8 @@ describe("toJson shrink guard", () => {
     try {
       const graph = new Graph();
       graph.addNode("alpha", { label: "Alpha", source_file: "src/a.ts", file_type: "code" });
-      toJson(graph, new Map([[0, ["alpha"]]]), graphPath);
+      const written = toJson(graph, new Map([[0, ["alpha"]]]), graphPath);
+      expect(written).toBe(false);
     } finally {
       console.warn = originalWarn;
     }
@@ -72,8 +73,9 @@ describe("toJson shrink guard", () => {
 
     const graph = new Graph();
     graph.addNode("alpha", { label: "Alpha", source_file: "src/a.ts", file_type: "code" });
-    toJson(graph, new Map([[0, ["alpha"]]]), graphPath, { force: true });
+    const written = toJson(graph, new Map([[0, ["alpha"]]]), graphPath, { force: true });
 
+    expect(written).toBe(true);
     const persisted = JSON.parse(readFileSync(graphPath, "utf-8")) as { nodes: Array<{ id: string }> };
     expect(persisted.nodes).toHaveLength(1);
     expect(persisted.nodes[0]?.id).toBe("alpha");

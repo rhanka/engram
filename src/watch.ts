@@ -46,6 +46,7 @@ export async function rebuildCode(
   followSymlinks: boolean = false,
   options: {
     clearStale?: boolean;
+    force?: boolean;
     scope?: GraphifyInputScopeMode;
     scopeSource?: InputScopeSource;
   } = {},
@@ -140,8 +141,14 @@ export async function rebuildCode(
       projectRootLabel(root),
       questions,
     );
+    const jsonWritten = toJson(G, communities, paths.graph, {
+      communityLabels: labels,
+      force: options.force,
+    });
+    if (!jsonWritten) {
+      return false;
+    }
     writeFileSync(paths.report, report, "utf-8");
-    toJson(G, communities, paths.graph, { communityLabels: labels });
 
     if (options.clearStale !== false) {
       // Clear stale needs_update flag if present

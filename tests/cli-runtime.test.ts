@@ -233,6 +233,39 @@ describe("public CLI runtime command parity", () => {
     expect(existsSync(join(dir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
   });
 
+  it("fails update when the shrink guard refuses to overwrite a larger graph", async () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+    writeGraph(dir);
+
+    const result = await runCli(["update", "."], dir, { interceptExit: true });
+    const persisted = JSON.parse(readFileSync(join(dir, ".graphify", "graph.json"), "utf-8")) as {
+      nodes: Array<{ id: string }>;
+    };
+
+    expect(result.exitCode).toBe(1);
+    expect(result.warnings.join("\n")).toContain("Refusing to overwrite");
+    expect(result.errors.join("\n")).toContain("Nothing to update or rebuild failed");
+    expect(persisted.nodes).toHaveLength(3);
+  });
+
+  it("supports update --force to overwrite a larger existing graph", async () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+    writeGraph(dir);
+
+    const result = await runCli(["update", ".", "--force"], dir);
+    const persisted = JSON.parse(readFileSync(join(dir, ".graphify", "graph.json"), "utf-8")) as {
+      nodes: Array<{ id: string }>;
+    };
+
+    expect(result.exitCode).toBe(0);
+    expect(result.logs.join("\n")).toContain("Code graph updated");
+    expect(persisted.nodes.length).toBeLessThan(3);
+  });
+
   it("supports scope inspect via CLI and skill runtime", async () => {
     const dir = tempProject();
     initGitRepo(dir);

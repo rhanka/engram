@@ -1821,6 +1821,7 @@ export async function main(): Promise<void> {
   program
     .command("update [path]")
     .description("One-shot code-only graph rebuild")
+    .option("--force", "Overwrite graph.json even when the rebuild has fewer nodes")
     .option("--scope <mode>", scopeOptionDescription())
     .option("--all", "Alias for --scope all")
     .action(async (updatePath = ".", opts) => {
@@ -1832,6 +1833,7 @@ export async function main(): Promise<void> {
       const scopeSelection = resolveCliScopeSelection(opts);
       console.log(`Re-extracting code files in ${updatePath} (no LLM needed)...`);
       const ok = await rebuildCode(updatePath, false, {
+        force: Boolean(opts.force),
         scope: scopeSelection.mode,
         scopeSource: scopeSelection.source,
       });
