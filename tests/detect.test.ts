@@ -153,30 +153,42 @@ describe("detect", () => {
     expect(result.files.code[0]).toContain("kept.py");
   });
 
-  it("ignores inline comments in .graphifyignore patterns", () => {
+  it("does not treat inline hashes as .graphifyignore comments", () => {
     writeFileSync(join(tmpDir, ".graphifyignore"), "ignored.py # comment\n");
     writeFileSync(join(tmpDir, "ignored.py"), "# should be ignored");
     writeFileSync(join(tmpDir, "kept.py"), "# should be kept");
 
     const result = detect(tmpDir);
 
-    expect(result.files.code).toHaveLength(1);
-    expect(result.files.code[0]).toContain("kept.py");
+    expect(result.files.code).toEqual(expect.arrayContaining([
+      join(tmpDir, "ignored.py"),
+      join(tmpDir, "kept.py"),
+    ]));
+    expect(result.graphifyignore_patterns).toBe(1);
   });
 
-  it("discovers .graphifyignore patterns from parent directories", () => {
+  it("does not inherit parent .graphifyignore rules outside a repo", () => {
     writeFileSync(join(tmpDir, ".graphifyignore"), "vendor/\n");
     const subDir = join(tmpDir, "packages", "mylib");
     mkdirSync(subDir, { recursive: true });
     writeFileSync(join(subDir, "main.py"), "x = 1");
     mkdirSync(join(subDir, "vendor"), { recursive: true });
     writeFileSync(join(subDir, "vendor", "dep.py"), "y = 2");
+    const previousHome = process.env.HOME;
 
-    const result = detect(subDir);
+    try {
+      process.env.HOME = tmpDir;
+      const result = detect(subDir);
 
-    expect(result.files.code).toHaveLength(1);
-    expect(result.files.code[0]).toContain("main.py");
-    expect(result.graphifyignore_patterns).toBeGreaterThanOrEqual(1);
+      expect(result.files.code).toHaveLength(2);
+      expect(result.files.code).toEqual(expect.arrayContaining([
+        join(subDir, "main.py"),
+        join(subDir, "vendor", "dep.py"),
+      ]));
+      expect(result.graphifyignore_patterns).toBe(0);
+    } finally {
+      process.env.HOME = previousHome;
+    }
   });
 
   it("stops .graphifyignore discovery at the git boundary", () => {
@@ -208,6 +220,38 @@ describe("detect", () => {
 
     expect(result.files.code).toHaveLength(1);
     expect(result.files.code[0]).toContain("main.py");
+    expect(result.graphifyignore_patterns).toBe(1);
+  });
+
+  it("includes .graphifyignore from ancestor directories inside a repo", () => {
+    const repoDir = join(tmpDir, "repo");
+    mkdirSync(join(repoDir, ".git"), { recursive: true });
+    const packagesDir = join(repoDir, "packages");
+    mkdirSync(packagesDir, { recursive: true });
+    writeFileSync(join(packagesDir, ".graphifyignore"), "vendor/\n");
+    const subDir = join(packagesDir, "mylib");
+    mkdirSync(join(subDir, "vendor"), { recursive: true });
+    writeFileSync(join(subDir, "main.py"), "x = 1");
+    writeFileSync(join(subDir, "vendor", "dep.py"), "y = 2");
+
+    const result = detect(subDir);
+
+    expect(result.files.code).toEqual([join(subDir, "main.py")]);
+    expect(result.graphifyignore_patterns).toBe(1);
+  });
+
+  it("treats anchored .graphifyignore patterns as relative to the ignore file directory", () => {
+    const repoDir = join(tmpDir, "repo");
+    mkdirSync(join(repoDir, ".git"), { recursive: true });
+    const subDir = join(repoDir, "app");
+    mkdirSync(join(subDir, "nested"), { recursive: true });
+    writeFileSync(join(subDir, ".graphifyignore"), "/generated.py\n");
+    writeFileSync(join(subDir, "generated.py"), "x = 1");
+    writeFileSync(join(subDir, "nested", "generated.py"), "y = 2");
+
+    const result = detect(subDir);
+
+    expect(result.files.code).toEqual([join(subDir, "nested", "generated.py")]);
     expect(result.graphifyignore_patterns).toBe(1);
   });
 
