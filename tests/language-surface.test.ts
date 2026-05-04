@@ -221,6 +221,39 @@ class PaymentService extends BaseService implements Billable {}
     expect(importEdge?.target).toBe("utils_ts");
   });
 
+  it("resolves local dynamic imports as imports_from edges", async () => {
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(
+      join(dir, "src", "entry.ts"),
+      [
+        "export async function loadHelper() {",
+        "  return import('./utils');",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(dir, "src", "utils.ts"),
+      [
+        "export function helper() {",
+        "  return 1;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await extract([
+      join(dir, "src", "entry.ts"),
+      join(dir, "src", "utils.ts"),
+    ]);
+
+    const importEdge = result.edges.find(
+      (edge) => edge.source === "entry_ts" && edge.relation === "imports_from",
+    );
+
+    expect(importEdge?.target).toBe("utils_ts");
+  });
+
   it("keeps symbol node IDs distinct for same-named files in different directories", async () => {
     mkdirSync(join(dir, "src"), { recursive: true });
     mkdirSync(join(dir, "tests"), { recursive: true });

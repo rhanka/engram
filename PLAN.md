@@ -74,7 +74,7 @@ Progress note:
 - [x] Audit `v0.6.4` and `v0.6.5` Codex/Windows hook portability and `graphify update --force`.
 - [x] Audit `v0.6.6` Pi-agent installer support and decide whether it is `covered`, `deferred`, or `rejected` for the TypeScript product line.
 - [x] Record every installer/platform decision as either parity, intentional delta, or explicit deferment.
-- [ ] Commit this lot with only `0.6.3` to `0.6.6` closures and associated tests.
+- [x] Commit this lot with only `0.6.3` to `0.6.6` closures and associated tests.
 
 ## Task 3: Visualization, Ignore Semantics, And Portable Output Routing (`0.6.7` to `0.6.9`)
 
@@ -82,6 +82,11 @@ Progress note:
 - Modify: `UPSTREAM_GAP.md`
 - Modify: `spec/SPEC_UPSTREAM_TRACEABILITY.md`
 - Modify as needed: HTML/tree/export surfaces, chunking/runtime, ignore handling, installers, report logic, portable artifact paths/tests
+
+Progress note:
+- covered in this lot so far: `graphify tree` CLI, local JS/TS `import()` extraction, directory-safe semantic-cache file guards
+- covered in this lot so far: `.graphifyignore` negation semantics and default omission of thin communities from `GRAPH_REPORT.md`
+- still open in this lot: token-aware semantic chunking policy, MCP context-filter parity, Antigravity workflow frontmatter/install polish, and the final `GRAPHIFY_OUT` decision against the `.graphify/` contract
 
 - [ ] Audit `v0.6.7` tree view, token-aware chunking, MCP context filters, dynamic `import()` extraction, and directory-safe semantic cache writes.
 - [ ] Audit `v0.6.8` `.graphifyignore` negation handling, Antigravity workflow frontmatter, Gemini/Codex hook fixes, and thin-community omission in reports.

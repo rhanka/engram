@@ -255,6 +255,25 @@ describe("detect", () => {
     expect(result.graphifyignore_patterns).toBe(1);
   });
 
+  it("supports .graphifyignore negation patterns", () => {
+    const repoDir = join(tmpDir, "repo");
+    mkdirSync(join(repoDir, ".git"), { recursive: true });
+    writeFileSync(join(repoDir, ".graphifyignore"), "generated/\n!generated/keep.ts\n");
+    mkdirSync(join(repoDir, "generated"), { recursive: true });
+    writeFileSync(join(repoDir, "generated", "drop.ts"), "export const drop = true;\n");
+    writeFileSync(join(repoDir, "generated", "keep.ts"), "export const keep = true;\n");
+    writeFileSync(join(repoDir, "main.ts"), "export const main = true;\n");
+
+    const result = detect(repoDir);
+
+    expect(result.files.code).toEqual(expect.arrayContaining([
+      join(repoDir, "main.ts"),
+      join(repoDir, "generated", "keep.ts"),
+    ]));
+    expect(result.files.code).not.toContain(join(repoDir, "generated", "drop.ts"));
+    expect(result.graphifyignore_patterns).toBe(2);
+  });
+
   it("warns for small corpus", () => {
     writeFileSync(join(tmpDir, "tiny.py"), "x = 1");
     const result = detect(tmpDir);

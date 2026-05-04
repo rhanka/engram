@@ -2009,6 +2009,32 @@ export async function main(): Promise<void> {
     });
 
   program
+    .command("tree")
+    .description("Compact tree view from one graph node")
+    .argument("<node>")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--depth <n>", "Traversal depth", "2")
+    .option("--max-children <n>", "Maximum children per node", "12")
+    .action(async (nodeLabel, opts) => {
+      try {
+        const G = loadCliGraph(opts.graph);
+        const nodeId = findBestMatchingNode(G, nodeLabel);
+        if (!nodeId) {
+          console.log(`No node matching '${nodeLabel}' found.`);
+          return;
+        }
+        const { renderTree } = await import("./tree.js");
+        console.log(renderTree(G, nodeId, {
+          depth: Number(opts.depth),
+          maxChildren: Number(opts.maxChildren),
+        }));
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    });
+
+  program
     .command("add")
     .description("Fetch a URL into ./raw for the next graph update")
     .argument("<url>")

@@ -201,16 +201,25 @@ function isNoiseDir(part: string): boolean {
 interface GraphifyIgnoreRule {
   anchor: string;
   pattern: string;
+  negated: boolean;
 }
 
-function parseGraphifyignoreLine(raw: string): string {
+function parseGraphifyignoreLine(raw: string): { pattern: string; negated: boolean } | null {
   let line = raw.replace(/[\r\n]+$/g, "");
   line = line.replace(/(?<!\\) +$/g, "");
   line = line.replace(/^\s+/, "");
   if (!line || line.startsWith("#")) {
-    return "";
+    return null;
   }
-  return line;
+  let negated = false;
+  if (line.startsWith("\\!") || line.startsWith("\\#")) {
+    line = line.slice(1);
+  } else if (line.startsWith("!")) {
+    negated = true;
+    line = line.slice(1);
+  }
+  if (!line) return null;
+  return { pattern: line, negated };
 }
 
 function findVcsRoot(start: string): string | null {
@@ -249,9 +258,9 @@ function loadGraphifyignore(root: string): GraphifyIgnoreRule[] {
     const ignoreFile = join(dir, ".graphifyignore");
     if (!existsSync(ignoreFile)) continue;
     for (const raw of readFileSync(ignoreFile, "utf-8").split(/\r?\n/)) {
-      const line = parseGraphifyignoreLine(raw);
-      if (!line) continue;
-      patterns.push({ anchor: dir, pattern: line });
+      const parsed = parseGraphifyignoreLine(raw);
+      if (!parsed) continue;
+      patterns.push({ anchor: dir, pattern: parsed.pattern, negated: parsed.negated });
     }
   }
   return patterns;
@@ -287,6 +296,7 @@ function matchesIgnorePattern(rel: string, name: string, pattern: string, anchor
 function isIgnored(filePath: string, root: string, patterns: GraphifyIgnoreRule[]): boolean {
   if (patterns.length === 0) return false;
 
+  let ignored = false;
   for (const rule of patterns) {
     const anchored = rule.pattern.startsWith("/");
     const p = rule.pattern.replace(/^\/+|\/+$/g, "");
@@ -296,19 +306,19 @@ function isIgnored(filePath: string, root: string, patterns: GraphifyIgnoreRule[
 
     if (anchored) {
       if (relAnchor !== null && matchesIgnorePattern(relAnchor, basename(filePath), p, true)) {
-        return true;
+        ignored = !rule.negated;
       }
       continue;
     }
 
     if (relRoot !== null && matchesIgnorePattern(relRoot, basename(filePath), p, false)) {
-      return true;
+      ignored = !rule.negated;
     }
     if (rule.anchor !== root && relAnchor !== null && matchesIgnorePattern(relAnchor, basename(filePath), p, false)) {
-      return true;
+      ignored = !rule.negated;
     }
   }
-  return false;
+  return ignored;
 }
 
 function walkDir(
@@ -319,6 +329,7 @@ function walkDir(
   skipPrune: boolean,
 ): string[] {
   const result: string[] = [];
+  const hasNegationRules = ignorePatterns.some((rule) => rule.negated);
   let entries: string[];
   try {
     entries = readdirSync(dir);
@@ -339,10 +350,11 @@ function walkDir(
       if (!skipPrune) {
         if (entry.startsWith(".")) continue;
         if (isNoiseDir(entry)) continue;
-        if (isIgnored(full, root, ignorePatterns)) continue;
+        if (isIgnored(full, root, ignorePatterns) && !hasNegationRules) continue;
       }
       result.push(...walkDir(full, root, ignorePatterns, followSymlinks, skipPrune));
     } else if (stat.isFile()) {
+      if (!skipPrune && isIgnored(full, root, ignorePatterns)) continue;
       result.push(full);
     }
   }

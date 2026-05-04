@@ -489,40 +489,53 @@ function _importJs(
   node: SyntaxNode, source: string, fileNid: string, _stem: string,
   edges: GraphEdge[], strPath: string,
 ): void {
-  for (const child of node.children) {
-    if (child.type === "string") {
-      const raw = _readText(child, source).replace(/^['"`\s]+|['"`\s]+$/g, "");
-      let tgtNid: string | null = null;
-      if (raw.startsWith(".")) {
-        const resolvedImport = normalizeJsImportTarget(resolve(dirname(strPath), raw));
-        tgtNid = _makeId(toPortablePath(resolvedImport));
-      } else {
-        let resolvedAlias: string | null = null;
-        for (const alias of loadTsconfigAliases(dirname(strPath))) {
-          if (raw === alias.aliasPrefix || raw.startsWith(`${alias.aliasPrefix}/`)) {
-            const suffix = raw.slice(alias.aliasPrefix.length).replace(/^\/+/, "");
-            resolvedAlias = normalizeJsImportTarget(resolve(alias.targetBase, suffix));
-            break;
-          }
-        }
-        if (resolvedAlias) {
-          tgtNid = _makeId(toPortablePath(resolvedAlias));
-        } else {
-          const moduleName = raw.split("/").pop() ?? "";
-          if (moduleName) {
-            tgtNid = _makeId(moduleName);
-          }
-        }
-      }
-      if (tgtNid) {
-        edges.push({
-          source: fileNid, target: tgtNid, relation: "imports_from",
-          confidence: "EXTRACTED", source_file: strPath,
-          source_location: `L${node.startPosition.row + 1}`, weight: 1.0,
-        });
-      }
-      break;
+  const readStringSpecifier = (current: SyntaxNode): string | null => {
+    if (current.type === "string") {
+      return _readText(current, source).replace(/^['"`\s]+|['"`\s]+$/g, "");
     }
+    for (const child of current.children) {
+      const value = readStringSpecifier(child);
+      if (value) return value;
+    }
+    return null;
+  };
+
+  if (node.type === "call_expression") {
+    const callee = node.childForFieldName("function") ?? node.children[0] ?? null;
+    if (!callee || _readText(callee, source) !== "import") {
+      return;
+    }
+  }
+  const raw = readStringSpecifier(node);
+  if (!raw) return;
+  let tgtNid: string | null = null;
+  if (raw.startsWith(".")) {
+    const resolvedImport = normalizeJsImportTarget(resolve(dirname(strPath), raw));
+    tgtNid = _makeId(toPortablePath(resolvedImport));
+  } else {
+    let resolvedAlias: string | null = null;
+    for (const alias of loadTsconfigAliases(dirname(strPath))) {
+      if (raw === alias.aliasPrefix || raw.startsWith(`${alias.aliasPrefix}/`)) {
+        const suffix = raw.slice(alias.aliasPrefix.length).replace(/^\/+/, "");
+        resolvedAlias = normalizeJsImportTarget(resolve(alias.targetBase, suffix));
+        break;
+      }
+    }
+    if (resolvedAlias) {
+      tgtNid = _makeId(toPortablePath(resolvedAlias));
+    } else {
+      const moduleName = raw.split("/").pop() ?? "";
+      if (moduleName) {
+        tgtNid = _makeId(moduleName);
+      }
+    }
+  }
+  if (tgtNid) {
+    edges.push({
+      source: fileNid, target: tgtNid, relation: "imports_from",
+      confidence: "EXTRACTED", source_file: strPath,
+      source_location: `L${node.startPosition.row + 1}`, weight: 1.0,
+    });
   }
 }
 
@@ -1336,6 +1349,9 @@ async function _extractGeneric(
 
     // JS/TS arrow functions
     if (config.tsModule === "tree_sitter_javascript" || config.tsModule === "tree_sitter_typescript") {
+      if (t === "call_expression" && config.importHandler) {
+        config.importHandler(node, source, fileNid, stem, edges, strPath);
+      }
       if (_jsExtraWalk(node, source, fileNid, stem, strPath,
         nodes, edges, seenIds, functionBodies,
         parentClassNid, addNode, addEdge)) {
@@ -1368,6 +1384,18 @@ async function _extractGeneric(
   }
 
   walk(root);
+
+  if (config.tsModule === "tree_sitter_javascript" || config.tsModule === "tree_sitter_typescript") {
+    function walkDynamicImports(node: SyntaxNode): void {
+      if (node.type === "call_expression" && config.importHandler) {
+        config.importHandler(node, source, fileNid, stem, edges, strPath);
+      }
+      for (const child of node.children) {
+        walkDynamicImports(child);
+      }
+    }
+    walkDynamicImports(root);
+  }
 
   // -- Call-graph pass --
   const labelToNid = buildResolvableLabelIndex(nodes);

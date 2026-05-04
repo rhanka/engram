@@ -172,6 +172,19 @@ describe("public CLI runtime command parity", () => {
     expect(explain.logs.join("\n")).toContain("Connections");
   });
 
+  it("supports tree for compact graph traversal output", async () => {
+    const dir = tempProject();
+    const graphPath = writeGraph(dir);
+
+    const result = await runCli(["tree", "AlphaService", "--graph", graphPath, "--depth", "2"], dir);
+
+    expect(result.exitCode).toBe(0);
+    const output = result.logs.join("\n");
+    expect(output).toContain("AlphaService");
+    expect(output).toContain("uses -> BetaRepository");
+    expect(output).toContain("documents -> GammaDocs");
+  });
+
   it("recognizes add as the public URL ingest command", async () => {
     const result = await runCli(["add", "not-a-url"], tempProject(), { interceptExit: true });
 
