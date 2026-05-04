@@ -22,6 +22,10 @@ describe("Aider integration contract", () => {
     const section = getAgentsMdSection("aider");
 
     expect(section).toContain("use the installed `graphify` skill");
+    expect(section).toContain(".graphify/cache/");
+    expect(section).toContain(
+      "git rm --cached .graphify/branch.json .graphify/worktree.json .graphify/needs_update",
+    );
     expect(section).not.toContain("$graphify");
     expect(section).not.toContain(".codex/hooks.json");
     expect(section).not.toContain(".opencode/plugins");

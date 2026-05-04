@@ -54,7 +54,16 @@ In Codex, `$graphify` is a skill trigger, not a Bash subcommand like `graphify .
 graphify portable-check .graphify
 ```
 
-Never commit `.graphify/branch.json`, `.graphify/worktree.json`, `.graphify/needs_update`, caches, transcripts, converted PDF/OCR sidecars, or profile runtime scratch. Those files are local to the current worktree and may contain absolute paths by design.
+Never commit `.graphify/branch.json`, `.graphify/worktree.json`, `.graphify/needs_update`, `.graphify/cache/`, transcripts, converted PDF/OCR sidecars, or profile runtime scratch. Those files are local to the current worktree and may contain absolute paths by design.
+
+If a repo already tracks any of those local lifecycle files, add them to `.gitignore` and untrack them without deleting the working copy:
+
+```bash
+git rm --cached .graphify/branch.json .graphify/worktree.json .graphify/needs_update
+git rm -r --cached .graphify/cache
+```
+
+In assistant workflows, ask before mutating Git state. The fix is to stop tracking local lifecycle files, not to delete `.graphify/`.
 
 If an older repo still has `graphify-out/`, run `graphify migrate-state --dry-run` first. The migration copies local state into `.graphify/` without deleting the legacy folder; when `graphify-out` is tracked, the command prints the `git mv -f graphify-out .graphify` + commit message to review before you mutate Git history.
 

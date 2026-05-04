@@ -44,7 +44,16 @@ $graphify .                        # Codex
 └── cache/           ローカル SHA256 キャッシュ - ignored
 ```
 
-`.graphify/` は commit-safe な graph artifact とローカル lifecycle state に分かれます。`graph.json`、`GRAPH_REPORT.md`、`graph.html`、`flows.json`、`wiki/` は repo-relative paths で書き出されるため、プロジェクトが branch/worktree 間で graph context を共有したい場合はコミットできます。コミット前には `graphify portable-check .graphify` を実行してください。`.graphify/branch.json`、`.graphify/worktree.json`、`.graphify/needs_update`、cache、transcript、変換済み PDF/OCR sidecar、profile runtime scratch はコミットしないでください。これらは現在の worktree にローカルで、設計上 absolute path を含むことがあります。
+`.graphify/` は commit-safe な graph artifact とローカル lifecycle state に分かれます。`graph.json`、`GRAPH_REPORT.md`、`graph.html`、`flows.json`、`wiki/` は repo-relative paths で書き出されるため、プロジェクトが branch/worktree 間で graph context を共有したい場合はコミットできます。コミット前には `graphify portable-check .graphify` を実行してください。`.graphify/branch.json`、`.graphify/worktree.json`、`.graphify/needs_update`、`.graphify/cache/`、transcript、変換済み PDF/OCR sidecar、profile runtime scratch はコミットしないでください。これらは現在の worktree にローカルで、設計上 absolute path を含むことがあります。
+
+すでにそれらのローカル lifecycle file を追跡している repo では、まず `.gitignore` に追加し、作業ツリーのファイルは消さずに追跡だけ外してください。
+
+```bash
+git rm --cached .graphify/branch.json .graphify/worktree.json .graphify/needs_update
+git rm -r --cached .graphify/cache
+```
+
+assistant workflow では、Git state を変更する前に必ず確認してください。対処は `.graphify/` の削除ではなく、ローカル lifecycle file の追跡を止めることです。
 
 古いリポジトリに `graphify-out/` が残っている場合は、まず `graphify migrate-state --dry-run` を実行してください。移行はローカル state を `.graphify/` にコピーし、旧ディレクトリは削除しません。`graphify-out` が Git で追跡されている場合は、確認用に `git mv -f graphify-out .graphify` と commit message を表示します。
 

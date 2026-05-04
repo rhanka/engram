@@ -75,8 +75,14 @@ describe("skill cache examples", () => {
     for (const relativePath of ALL_SKILL_DOCS) {
       const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
       expect(content).toContain("graphify portable-check .graphify");
-      expect(content).toContain("never commit .graphify/branch.json");
-      expect(content).toContain("never commit .graphify/worktree.json");
+      expect(content).toMatch(/never commit [`"]?\.graphify\/branch\.json[`"]?/);
+      expect(content).toContain(".graphify/worktree.json");
+      expect(content).toContain(".graphify/cache/");
+      expect(content).toContain(
+        "git rm --cached .graphify/branch.json .graphify/worktree.json .graphify/needs_update",
+      );
+      expect(content).toContain("git rm -r --cached .graphify/cache");
+      expect(content).toContain("never mutate git state without asking");
       expect(content).toContain("repo-relative paths");
     }
   });

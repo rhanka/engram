@@ -1,10 +1,10 @@
-# Graph Report - .  (2026-05-02)
+# Graph Report - .  (2026-05-03)
 
 ## Corpus Check
-- Large corpus: 208 files · ~232,418 words. Semantic extraction will be expensive (many Claude tokens). Consider running on a subfolder, or use --no-semantic to run AST-only.
+- Large corpus: 208 files · ~233,562 words. Semantic extraction will be expensive (many Claude tokens). Consider running on a subfolder, or use --no-semantic to run AST-only.
 
 ## Summary
-- 1373 nodes · 2379 edges · 66 communities detected
+- 1373 nodes · 2381 edges · 66 communities detected
 - Extraction: 90% EXTRACTED · 10% INFERRED · 0% AMBIGUOUS · INFERRED: 233 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
 
@@ -13,7 +13,7 @@
 - Requested: auto
 - Resolved: committed (source: default-auto)
 - Included files: 208 · Candidates: 228
-- Excluded: 0 untracked · 18299 ignored · 0 sensitive · 0 missing committed
+- Excluded: 0 untracked · 18339 ignored · 0 sensitive · 0 missing committed
 - Recommendation: Use --scope all or graphify.yaml inputs.corpus for a knowledge-base folder.
 ## God Nodes (most connected - your core abstractions)
 1. `Response` - 45 edges
@@ -46,7 +46,7 @@ Cohesion: 0.03
 Nodes (84): Auth, BasicAuth, BearerAuth, DigestAuth, NetRCAuth, Authentication handlers. Auth objects are callables that modify a request before, Load credentials from ~/.netrc based on the request host., Base class for all authentication handlers. (+76 more)
 
 ### Community 1 - "Community 1"
-Cohesion: 0.06
+Cohesion: 0.05
 Nodes (50): normalizeSearchText(), scoreSearchText(), textMatchesQuery(), agentsInstall(), agentsUninstall(), antigravityInstall(), antigravityUninstall(), canonicalPlatformName() (+42 more)
 
 ### Community 2 - "Community 2"

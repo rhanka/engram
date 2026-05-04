@@ -44,7 +44,16 @@ $graphify .                        # Codex
 └── cache/           本地 SHA256 缓存 - ignored
 ```
 
-`.graphify/` 分为可提交的 graph artifact 和本地 lifecycle state。`graph.json`、`GRAPH_REPORT.md`、`graph.html`、`flows.json`、`wiki/` 会用 repo-relative paths 写出，因此当项目希望 graph context 跟随 branch/worktree 时可以提交。提交前运行 `graphify portable-check .graphify`。不要提交 `.graphify/branch.json`、`.graphify/worktree.json`、`.graphify/needs_update`、cache、transcript、转换后的 PDF/OCR sidecar 或 profile runtime scratch；这些文件属于当前 worktree，本来就可能包含 absolute paths。
+`.graphify/` 分为可提交的 graph artifact 和本地 lifecycle state。`graph.json`、`GRAPH_REPORT.md`、`graph.html`、`flows.json`、`wiki/` 会用 repo-relative paths 写出，因此当项目希望 graph context 跟随 branch/worktree 时可以提交。提交前运行 `graphify portable-check .graphify`。不要提交 `.graphify/branch.json`、`.graphify/worktree.json`、`.graphify/needs_update`、`.graphify/cache/`、transcript、转换后的 PDF/OCR sidecar 或 profile runtime scratch；这些文件属于当前 worktree，本来就可能包含 absolute paths。
+
+如果某个 repo 已经跟踪了这些本地 lifecycle 文件，先把它们加入 `.gitignore`，再在不删除工作副本的前提下取消跟踪：
+
+```bash
+git rm --cached .graphify/branch.json .graphify/worktree.json .graphify/needs_update
+git rm -r --cached .graphify/cache
+```
+
+在 assistant workflow 里，修改 Git state 之前必须先征求确认。正确修复方式是停止跟踪这些本地 lifecycle 文件，而不是删除 `.graphify/`。
 
 如果旧仓库里还有 `graphify-out/`，先运行 `graphify migrate-state --dry-run`。迁移会把本地状态复制到 `.graphify/`，不会删除旧目录；如果 `graphify-out` 已被 Git 跟踪，命令会打印建议的 `git mv -f graphify-out .graphify` 和 commit message，供你确认后再执行。
 

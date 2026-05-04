@@ -26,6 +26,10 @@ describe("Codex integration contract", () => {
     expect(section).toContain("`$graphify ...`");
     expect(section).toContain("not a Bash subcommand");
     expect(section).toContain(".graphify_runtime.json");
+    expect(section).toContain(".graphify/cache/");
+    expect(section).toContain(
+      "git rm --cached .graphify/branch.json .graphify/worktree.json .graphify/needs_update",
+    );
     expect(section).not.toContain("CLAUDE.md");
   });
 
