@@ -160,7 +160,7 @@ Progress note:
 - [x] Confirm `spec/SPEC_UPSTREAM_TRACEABILITY.md` matches the final state exactly.
 - [x] Run the release verification commands listed below on the implementation branch.
 - [ ] Bump the package version to `0.7.4` only after the release gate passes.
-- [ ] Regenerate `.graphify` and commit only the portable, tracked artifacts.
+- [x] Regenerate `.graphify` and commit only the portable, tracked artifacts.
 - [ ] Publish `graphifyy@0.7.4`, update local installs, and record the release in both traceability documents.
 
 ## Release Gate
