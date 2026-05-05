@@ -1,0 +1,323 @@
+# SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION
+
+## Status
+
+- Product: Graphify TypeScript port
+- Scope: ontology lifecycle, reconciliation, patching, optional write surfaces
+- State root: `.graphify/`
+- Activation: explicit ontology profile workflow only
+- Default behavior: unchanged and read-only
+
+This spec complements `SPEC_ONTOLOGY_DATAPREP_PROFILES.md` and `SPEC_ONTOLOGY_OUTPUT_ARTIFACTS.md`.
+It defines how Graphify should support reviewable ontology changes without turning `graph.json` into the source of truth.
+
+This spec must remain generic. It must not introduce real customer, partner, project, regulated-domain, or proprietary ontology examples.
+
+## Problem
+
+Graphify can already load project ontology profiles, validate profile-aware extraction, compile ontology artifacts, and expose a read-only MCP graph server.
+
+That is not enough for serious ontology lifecycle work. Users need to:
+
+- review ambiguous extracted mentions
+- reconcile mentions to canonical entities
+- accept or reject registry matches
+- propose aliases and mappings
+- promote candidates through review statuses
+- inspect evidence before hardening facts
+- persist decisions in a way that survives graph rebuilds
+- keep every mutation auditable and reversible
+
+A static viewer cannot safely do this by itself. A browser page loaded from disk cannot be the authority for project writes, and `graph.json` must not be edited directly because it is a derived artifact.
+
+## Core Contract
+
+Graphify ontology writes follow this flow:
+
+```text
+viewer or agent -> propose patch -> validate patch -> apply to authoritative project state -> rebuild derived graph and ontology artifacts
+```
+
+Rules:
+
+- `.graphify/graph.json` is derived output and is never the direct write target.
+- `.graphify/ontology/*.json` artifacts are derived output unless a consuming project explicitly promotes selected artifacts.
+- Write targets are project-owned sources: ontology profile files, registry files, reconciliation decision logs, or reviewed patch files.
+- Applying a patch must be deterministic and must not call an LLM.
+- LLMs and assistants may propose patches, but deterministic validation decides whether a patch is structurally acceptable.
+- Human review is required before promotion to hardened or validated status unless the project config explicitly allows deterministic auto-acceptance for a narrow rule.
+- Every applied patch records author, timestamp, reason, input graph hash, profile hash, source evidence references, and before/after summary.
+
+## Authoritative State
+
+Graphify should distinguish generated state from authoritative state.
+
+Generated state under `.graphify/`:
+
+- profile state
+- extraction candidates
+- ontology output artifacts
+- reconciliation candidates
+- validation reports
+- temporary patch previews
+- local audit scratch
+
+Project-owned state outside `.graphify/`:
+
+- ontology profile YAML/JSON
+- registry CSV/JSON/YAML files
+- optional committed reconciliation decision logs
+- optional committed reviewed patch logs
+- optional project-specific mapping files
+
+Default generated paths:
+
+```text
+.graphify/ontology/
+  reconciliation/
+    candidates.json
+    validation.json
+    pending-patches.jsonl
+    applied-patches.jsonl
+    rejected-patches.jsonl
+```
+
+When a project wants decisions to be versioned, Graphify should support explicit export paths such as:
+
+```yaml
+outputs:
+  ontology:
+    reconciliation:
+      decisions_path: graphify/reconciliation/decisions.jsonl
+      patches_path: graphify/reconciliation/patches.jsonl
+```
+
+Graphify must not assume those paths by default.
+
+## Patch Model
+
+Patch records are append-only instructions. They are not direct graph mutations.
+
+Synthetic shape:
+
+```json
+{
+  "schema": "graphify_ontology_patch_v1",
+  "id": "patch-20260505-0001",
+  "operation": "accept_match",
+  "status": "proposed",
+  "profile_hash": "sha256",
+  "graph_hash": "sha256",
+  "target": {
+    "candidate_id": "candidate-node-id",
+    "canonical_id": "canonical-node-id"
+  },
+  "evidence_refs": ["source-ref-id"],
+  "reason": "Synthetic evidence confirms the match.",
+  "author": "local-user",
+  "created_at": "ISO-8601"
+}
+```
+
+Required operation families:
+
+- `accept_match`: attach a candidate mention to a canonical entity.
+- `reject_match`: reject a candidate mapping.
+- `create_canonical`: create a new canonical entity from reviewed evidence.
+- `merge_alias`: attach an alias to a canonical entity.
+- `set_status`: change review status within profile policy.
+- `add_relation`: add a typed relation with evidence.
+- `reject_relation`: reject a candidate relation.
+- `deprecate_entity`: mark a canonical entity as deprecated.
+- `supersede_entity`: link a deprecated entity to its replacement.
+
+Patch validation checks:
+
+- patch schema is valid
+- profile hash matches the active profile unless explicitly rebased
+- graph hash matches the candidate generation graph unless explicitly rebased
+- operation is allowed by the active profile policy
+- target nodes, relations, registry records and evidence refs exist
+- relation endpoints satisfy profile constraints
+- status transitions satisfy hardening rules
+- no patch writes outside the configured repository path jail
+
+## CLI Surface
+
+Proposed deterministic commands:
+
+```bash
+graphify ontology candidates --profile-state .graphify/profile/profile-state.json --out .graphify/ontology/reconciliation/candidates.json
+graphify ontology patch validate --profile-state .graphify/profile/profile-state.json --patch patch.json
+graphify ontology patch apply --profile-state .graphify/profile/profile-state.json --patch patch.json --dry-run
+graphify ontology patch apply --profile-state .graphify/profile/profile-state.json --patch patch.json --write
+graphify ontology patch export --profile-state .graphify/profile/profile-state.json --out graphify/reconciliation/patches.jsonl
+graphify ontology rebuild --config graphify.yaml
+```
+
+Rules:
+
+- `validate` never mutates files.
+- `apply --dry-run` is the default in assistant workflows.
+- `apply --write` requires an explicit flag.
+- Commands must warn if the Git worktree is dirty before applying patches.
+- Commands must never stage, commit, or push.
+- After any write, Graphify should mark derived artifacts stale or run an explicit rebuild when requested.
+
+## MCP Write Surface
+
+The existing `graphify serve` MCP server remains read-only by default.
+
+Mutation tools are exposed only through an explicit write mode:
+
+```bash
+graphify ontology serve --write --config graphify.yaml
+```
+
+Proposed MCP tools:
+
+- `list_reconciliation_candidates`
+- `get_reconciliation_candidate`
+- `propose_ontology_patch`
+- `validate_ontology_patch`
+- `apply_ontology_patch`
+- `export_ontology_patches`
+- `ontology_rebuild_status`
+
+Guardrails:
+
+- write mode is disabled by default
+- write mode binds only to local stdio or localhost transports
+- every apply tool supports `dry_run: true`
+- non-dry-run apply requires an explicit confirmation field
+- tool responses include changed files, stale artifacts, and next rebuild command
+- tools must not expose secrets, absolute home paths, or ignored artifact contents
+
+## Local Studio Surface
+
+A browser UI needs a local HTTP API. A static `graph.html` cannot write safely.
+
+Proposed command:
+
+```bash
+graphify ontology studio --config graphify.yaml
+```
+
+Read-only studio mode:
+
+- serves static ontology/reconciliation assets
+- visualizes candidates, evidence, aliases and relation proposals
+- exports patch JSON for manual application
+
+Write-enabled studio mode:
+
+```bash
+graphify ontology studio --config graphify.yaml --write
+```
+
+Write mode:
+
+- binds to `127.0.0.1`
+- uses a random local token printed to the terminal
+- writes only through the same patch core used by CLI and MCP
+- defaults every apply action to preview/dry-run
+- records append-only audit events
+- warns when the worktree is dirty
+
+## UI Direction
+
+The current HTML graph viewer should not be stretched into an ontology reconciliation product.
+
+If Graphify adds a professional reconciliation UI, it should be a separate Svelte application or package that consumes Graphify ontology artifacts and patch APIs.
+
+Design constraints:
+
+- use Svelte for the UI implementation
+- consume `../sent-tech-design-system` once it exists
+- keep a small adapter layer so Graphify can build without that design system during open-source development
+- make required design tokens explicit before implementation
+- avoid hardcoding domain colors, labels, icons, or taxonomy names
+- keep the static-export fallback: users can still export a patch JSON without a live write server
+
+Required token categories before implementation:
+
+- typography scale and font families
+- spacing scale
+- radius scale
+- elevation/shadow scale
+- surface, border and text colors
+- interactive focus and hover colors
+- status colors for `candidate`, `needs_review`, `validated`, `rejected`, `superseded`
+- confidence and evidence-strength colors
+- graph node, edge, selection and highlight colors
+- density settings for table-heavy review screens
+
+## Design Research Phase
+
+Before implementing the Svelte studio, run a design research pass over powerful open-source ontology or mapping tools.
+
+The goal is not to clone their stack. The goal is to capture interaction patterns that are easy to use while still supporting ontology concepts.
+
+Initial references to evaluate:
+
+- WebProtege: collaborative web ontology editing, change tracking and review patterns.
+- VocBench: collaborative SKOS/OWL vocabulary and ontology management.
+- OpenRefine reconciliation: candidate matching, scoring, faceting, bulk accept/reject, and human-in-the-loop cleanup.
+- WebVOWL: ontology visualization and graph readability patterns.
+- Karma or equivalent semantic mapping tools: source-to-ontology mapping and provenance review patterns.
+
+Research outputs:
+
+- screen pattern inventory
+- core user journeys
+- component inventory
+- token requirements
+- accessibility risks
+- scalability risks for large ontologies
+- write-safety model review
+- recommendation for MVP vs later features
+
+## Skill Contract
+
+Assistant skills should treat ontology lifecycle work as reviewable changes.
+
+Rules:
+
+- assistants may propose patches
+- assistants must validate patches before suggesting application
+- assistants must not apply non-dry-run patches without explicit user approval
+- assistants must warn on dirty worktrees
+- assistants must describe which authoritative files would change
+- assistants must not edit generated `graph.json` directly
+- assistants must rebuild or mark derived artifacts stale after an approved write
+- assistants must keep examples synthetic and product-generic
+
+## Tests
+
+Future tests should cover:
+
+- patch schema validation
+- invalid profile hash rejection
+- invalid graph hash warning or rebase path
+- endpoint validation for `add_relation`
+- status transition validation
+- dry-run apply with no filesystem changes
+- write apply updates only configured authoritative files
+- append-only audit log creation
+- read-only MCP server exposes no mutation tools
+- write MCP server exposes mutation tools only with explicit write flag
+- studio API rejects writes without token
+- path jail blocks writes outside the repo
+- dirty worktree warning is emitted before apply
+
+## UAT
+
+- Run ontology output generation on a synthetic profile and produce reconciliation candidates.
+- Validate a patch that accepts a candidate match.
+- Dry-run apply the patch and verify changed-file preview.
+- Apply the patch in a disposable repo and verify only authoritative project-owned files change.
+- Rebuild Graphify and verify derived ontology artifacts reflect the applied decision.
+- Start read-only MCP and verify mutation tools are absent.
+- Start write-enabled MCP and verify mutation tools require dry-run or confirmation.
+- Start read-only studio and export a patch JSON.
+- Start write-enabled studio and verify token-gated local apply.

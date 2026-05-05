@@ -108,6 +108,10 @@ Optional image dataprep artifacts live under `.graphify/image-dataprep/` and cal
 
 The LLM Wiki remains `.graphify/wiki/index.md`. This feature does not add MCP-specific profile tools, embeddings, databases, remote registry fetching, or a resident LLM backend.
 
+Ontology lifecycle and reconciliation are specified separately in `SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md`. The product rule is that `graph.json` and compiled ontology JSON remain derived artifacts. Review decisions must be expressed as validated patches against project-owned sources such as profiles, registries or reconciliation decision logs, then Graphify rebuilds the graph and ontology outputs. The existing MCP server stays read-only by default; any mutation surface must be explicit, local, dry-run first and audit-backed.
+
+The current HTML graph viewer is not the target for professional ontology reconciliation. A future UI should be a separate Svelte-based local studio that consumes Graphify ontology artifacts and patch APIs. It should consume `../sent-tech-design-system` once available through a token adapter, with explicit token requirements before implementation.
+
 ## PDF Preflight And OCR
 
 PDF handling is normalized before semantic extraction. The preparation step reads every paper/PDF in the semantic detection copy and applies the contract in [SPEC_PDF_OCR_PREPROCESSING.md](SPEC_PDF_OCR_PREPROCESSING.md).
@@ -213,6 +217,8 @@ The MCP server exposes graph traversal and review-oriented tools:
 - shortest_path
 
 The MCP review tools are projections over the same graph, not a separate backend.
+
+MCP mutation tools are not part of the default server contract. Future ontology write tools must live behind an explicit write-enabled ontology command, use the same deterministic patch core as the CLI and local studio, and never edit `graph.json` directly.
 
 ## Review And Commit Recommendation Features
 

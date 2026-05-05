@@ -10,6 +10,8 @@
 
 This spec defines optional compiled ontology artifacts and profile-aware LLM Wiki pages. It complements the existing graph, report and community wiki without replacing them.
 
+Ontology lifecycle, reconciliation and write surfaces are specified in `SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md`. This output spec treats compiled ontology artifacts as derived outputs, not as the authoritative write target.
+
 ## Problem
 
 Graphify can already build a graph and validate profile-aware extraction. Some downstream dataprep workflows need a second output shape:
@@ -66,6 +68,7 @@ Rules:
 - Ambiguous records must not appear in hardened exports as accepted facts.
 - Ambiguities are written to `validation.json`, profile reports and affected wiki pages.
 - Human or assistant review can resolve ambiguity by updating project-owned registries, labels or profile rules.
+- Human or assistant review should be represented as validated patches or decision logs; generated `graph.json` and compiled ontology artifacts must not be edited directly.
 
 ## Profile Output Config
 

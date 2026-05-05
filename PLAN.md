@@ -181,3 +181,135 @@ Progress note:
 - [ ] Update `UPSTREAM_GAP.md` and `spec/SPEC_UPSTREAM_TRACEABILITY.md` first or in the same commit as the implementation they justify.
 - [ ] Never mark a row `covered` without a test name, verification command, or an explicit intentional-delta rationale in the docs.
 - [ ] Never use CRG version numbers to rename the npm package release line.
+
+---
+
+# Next Product Evolution: Ontology Lifecycle And Reconciliation
+
+> This section is a forward implementation plan. It is independent from the closed upstream `0.7.4` catch-up and must preserve the normal non-profile Graphify behavior.
+
+**Goal:** Move ontology profiles from extraction constraints to a reviewable ontology lifecycle: profile v2, discovery workflow, validated patches, optional write-enabled MCP, and a professional local reconciliation studio.
+
+**Architecture:** `graph.json` and compiled ontology outputs remain derived artifacts. All ontology writes are represented as validated patches against project-owned sources such as profile files, registries and reconciliation decision logs, followed by rebuild. Mutation surfaces are opt-in, local, dry-run first and audit-backed.
+
+## Task A: Freeze Specs And Product Boundary
+
+**Files:**
+- Add: `spec/SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md`
+- Modify: `spec/SPEC_ONTOLOGY_DATAPREP_PROFILES.md`
+- Modify: `spec/SPEC_ONTOLOGY_OUTPUT_ARTIFACTS.md`
+- Modify: `spec/SPEC_GRAPHIFY.md`
+- Modify: `PLAN.md`
+
+- [x] Specify that derived `graph.json` and `.graphify/ontology/*.json` must not be edited directly.
+- [x] Specify the patch lifecycle: propose, validate, dry-run, apply to authoritative state, rebuild.
+- [x] Specify explicit write surfaces: CLI patch commands, write-enabled ontology MCP, local studio.
+- [x] Specify UI direction: future Svelte studio, not an extension of the current hand-written HTML graph viewer.
+- [x] Specify design-system dependency boundary for future `../sent-tech-design-system` integration.
+- [x] Specify the design research phase over open-source ontology mapping/reconciliation tools before UI implementation.
+
+## Task B: Ontology Profile v2
+
+**Files:**
+- Modify: `src/types.ts`
+- Modify: `src/ontology-profile.ts`
+- Modify: `src/profile-prompts.ts`
+- Modify: `src/profile-validate.ts` or equivalent validation module
+- Modify/Add: synthetic fixtures under `tests/fixtures/`
+- Modify/Add: Vitest coverage
+
+- [ ] Add first-class canonical entity, mention, occurrence, evidence and mapping concepts without domain-specific built-ins.
+- [ ] Add richer relation metadata: `review_status`, `assertion_basis`, `derivation_method`, `evidence_refs`, confidence and provenance handles.
+- [ ] Add profile constraints for allowed status transitions, inferred relation policy and evidence requirements.
+- [ ] Add optional hierarchy declarations for registry-backed parent/child materialization.
+- [ ] Add deterministic validation for relation endpoints, status transitions, evidence refs and registry refs.
+- [ ] Keep profile mode strictly opt-in and unchanged without `graphify.yaml`, `--config` or `--profile`.
+
+## Task C: Ontology Discovery Workflow
+
+**Files:**
+- Modify/Add: CLI/runtime profile commands
+- Modify/Add: skill runtime commands
+- Modify: platform skills
+- Modify/Add: tests for synthetic discovery proposals
+
+- [ ] Add a discovery command that samples configured corpus and registries without mutating profile files.
+- [ ] Generate candidate node types, relation types, registry bindings and hardening rules as reviewable proposals.
+- [ ] Emit profile diffs rather than overwriting ontology profiles.
+- [ ] Teach skills to run discovery, present proposals and wait for user approval before applying changes.
+- [ ] Ensure assistants never invent project-specific ontology content in Graphify package docs, fixtures or tests.
+
+## Task D: Patch Core And Deterministic Apply
+
+**Files:**
+- Add: `src/ontology-patch.ts`
+- Add: `src/ontology-reconciliation.ts`
+- Modify: `src/cli.ts`
+- Modify: `src/skill-runtime.ts`
+- Modify/Add: tests
+
+- [ ] Define `graphify_ontology_patch_v1`.
+- [ ] Implement patch validation with profile hash, graph hash, operation, evidence and path-jail checks.
+- [ ] Implement dry-run previews with changed-file summaries.
+- [ ] Implement write apply to configured authoritative files only.
+- [ ] Implement append-only audit logs for applied and rejected patches.
+- [ ] Mark derived ontology artifacts stale or trigger explicit rebuild after apply.
+- [ ] Warn before apply when the Git worktree is dirty; never stage, commit or push.
+
+## Task E: MCP Write Tools
+
+**Files:**
+- Modify/Add: MCP server modules
+- Modify: `src/cli.ts`
+- Modify: README and skills
+- Modify/Add: tests
+
+- [ ] Keep `graphify serve` read-only by default.
+- [ ] Add explicit `graphify ontology serve --write --config graphify.yaml`.
+- [ ] Expose mutation tools only in write mode.
+- [ ] Require dry-run or explicit confirmation for non-dry-run apply.
+- [ ] Reuse the same patch core as CLI and future studio.
+- [ ] Test that read-only MCP exposes no mutation tools.
+
+## Task F: Local Reconciliation Studio Design
+
+**Files:**
+- Add: design spec after research
+- Modify: `spec/SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md` if research changes requirements
+- No implementation until design is approved
+
+- [ ] Research open-source ontology/mapping/reconciliation tools: WebProtege, VocBench, OpenRefine reconciliation, WebVOWL and semantic mapping tools such as Karma.
+- [ ] Produce screen pattern inventory, user journeys, component inventory, token requirements, accessibility risks and scalability risks.
+- [ ] Decide MVP UI scope: candidate queue, evidence panel, canonical entity panel, graph context, patch preview and audit trail.
+- [ ] Define exact `../sent-tech-design-system` token dependencies before implementation.
+- [ ] Define Svelte package boundaries and fallback token adapter for open-source development before the design system exists.
+- [ ] Confirm static export fallback: read-only viewer can export patch JSON without running a write server.
+
+## Task G: Local Reconciliation Studio Implementation
+
+**Files:**
+- Add: Svelte studio package or module after Task F approval
+- Modify/Add: CLI server command
+- Modify/Add: tests and UAT docs
+
+- [ ] Implement read-only studio served by `graphify ontology studio --config graphify.yaml`.
+- [ ] Implement write-enabled studio only with `--write`, localhost binding and local token.
+- [ ] Route every write through patch validate/dry-run/apply APIs.
+- [ ] Add UI for accept/reject/create/merge/status/relation patch operations.
+- [ ] Add audit log, changed-file preview and rebuild guidance.
+- [ ] Add UAT on synthetic profile only.
+
+## Task H: Documentation, Skills And Release Gate
+
+**Files:**
+- Modify: `README.md`
+- Modify: translated READMEs when present
+- Modify: `src/skills/*`
+- Modify: `spec/SPEC_GRAPHIFY.md`
+- Modify: `PLAN.md`
+
+- [ ] Update README with generic ontology lifecycle explanation and clear opt-in behavior.
+- [ ] Update skills to propose patches, validate first, ask before write apply, warn on dirty worktrees and never edit `graph.json`.
+- [ ] Add UAT instructions for CLI patch workflow, MCP read-only/write modes and studio static/write modes.
+- [ ] Run `npm run lint`, `npm run build`, `npm test`, `npm run test:smoke` when runtime behavior changes.
+- [ ] Run `npx graphify hook-rebuild` after code changes and `graphify portable-check .graphify` before committing graph artifacts.

@@ -17,6 +17,8 @@ The consuming project should define what to parse, which ontology profile to app
 
 This spec must not include customer-specific, partner-specific, project-specific, or proprietary ontology examples. Examples use a synthetic equipment-maintenance domain only.
 
+Ontology lifecycle, reconciliation, patching, MCP write tools and local studio behavior are covered by `SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md`. This dataprep profile spec only defines how configured projects prepare and constrain extraction.
+
 ## Problem
 
 Graphify already performs substantial dataprep:
@@ -80,6 +82,7 @@ Compatibility clarification:
 - Do not fork the existing PDF/OCR/transcript preparation pipeline.
 - Do not change existing Graphify behavior when no config or profile is supplied.
 - Do not force users to pass `--profile` for the normal configured-project workflow.
+- Do not edit derived graph or ontology artifacts directly as part of profile dataprep.
 
 ## Project Config
 
