@@ -233,11 +233,11 @@ Progress note:
 - Modify: platform skills
 - Modify/Add: tests for synthetic discovery proposals
 
-- [ ] Add a discovery command that samples configured corpus and registries without mutating profile files.
-- [ ] Generate candidate node types, relation types, registry bindings and hardening rules as reviewable proposals.
-- [ ] Emit profile diffs rather than overwriting ontology profiles.
-- [ ] Teach skills to run discovery, present proposals and wait for user approval before applying changes.
-- [ ] Ensure assistants never invent project-specific ontology content in Graphify package docs, fixtures or tests.
+- [x] Add a discovery command that samples configured corpus and registries without mutating profile files.
+- [x] Generate candidate node types, relation types, registry bindings and hardening rules as reviewable proposals.
+- [x] Emit profile diffs rather than overwriting ontology profiles.
+- [x] Teach skills to run discovery, present proposals and wait for user approval before applying changes.
+- [x] Ensure assistants never invent project-specific ontology content in Graphify package docs, fixtures or tests.
 
 ## Task D: Patch Core And Deterministic Apply
 

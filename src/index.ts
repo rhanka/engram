@@ -172,6 +172,7 @@ export type {
 } from "./profile-validate.js";
 export {
   buildProfileChunkPrompt,
+  buildProfileDiscoveryPrompt,
   buildProfileExtractionPrompt,
   buildProfileValidationPrompt,
 } from "./profile-prompts.js";
@@ -180,6 +181,26 @@ export type {
   ProfilePromptOptions,
   ProfilePromptState,
 } from "./profile-prompts.js";
+export {
+  buildOntologyDiscoveryDiff,
+  buildOntologyDiscoverySample,
+  loadOntologyDiscoveryContext,
+  ontologyDiscoveryDiffToMarkdown,
+  writeOntologyDiscoveryDiff,
+  writeOntologyDiscoverySample,
+} from "./ontology-discovery.js";
+export type {
+  OntologyDiscoveryContext,
+  OntologyDiscoveryProposal,
+  OntologyDiscoveryProposalsFile,
+  OntologyDiscoverySample,
+  OntologyDiscoverySampleFile,
+  OntologyDiscoverySampleOptions,
+  OntologyDiscoverySampleRegistryRecord,
+  OntologyProfileDiff,
+  OntologyProfileDiffIssue,
+  OntologyProfileDiffOperation,
+} from "./ontology-discovery.js";
 export { buildProfileReport } from "./profile-report.js";
 export type {
   ProfileReportContext,

@@ -1723,6 +1723,72 @@ export async function main(): Promise<void> {
     });
 
   profile
+    .command("discover")
+    .description("Sample profile inputs and write assistant discovery proposals instructions")
+    .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
+    .requiredOption("--out <path>", "Discovery sample JSON output path")
+    .requiredOption("--prompt-out <path>", "Discovery prompt markdown output path")
+    .option("--max-files <n>", "Maximum semantic files to sample")
+    .option("--max-chars-per-file <n>", "Maximum excerpt characters per sampled file")
+    .option("--max-registry-records <n>", "Maximum records sampled per registry")
+    .option("--json", "Print JSON summary")
+    .action(async (opts) => {
+      const { buildProfileDiscoveryPrompt } = await import("./profile-prompts.js");
+      const {
+        buildOntologyDiscoverySample,
+        loadOntologyDiscoveryContext,
+        writeOntologyDiscoverySample,
+      } = await import("./ontology-discovery.js");
+      const context = loadOntologyDiscoveryContext(opts.profileState);
+      const sample = buildOntologyDiscoverySample(context, {
+        ...(opts.maxFiles ? { maxFiles: Number.parseInt(opts.maxFiles, 10) } : {}),
+        ...(opts.maxCharsPerFile ? { maxCharsPerFile: Number.parseInt(opts.maxCharsPerFile, 10) } : {}),
+        ...(opts.maxRegistryRecords ? { maxRegistryRecords: Number.parseInt(opts.maxRegistryRecords, 10) } : {}),
+      });
+      writeOntologyDiscoverySample(opts.out, sample);
+      mkdirSync(dirname(resolve(opts.promptOut)), { recursive: true });
+      writeFileSync(resolve(opts.promptOut), buildProfileDiscoveryPrompt(context, sample), "utf-8");
+      if (opts.json) {
+        console.log(JSON.stringify({ sample: resolve(opts.out), prompt: resolve(opts.promptOut), sample_hash: sample.sample_hash }, null, 2));
+      } else {
+        console.log(`Profile discovery sample written to ${resolve(opts.out)}`);
+        console.log(`Profile discovery prompt written to ${resolve(opts.promptOut)}`);
+      }
+    });
+
+  profile
+    .command("discovery-diff")
+    .description("Validate assistant discovery proposals and emit a reviewable profile diff")
+    .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
+    .requiredOption("--proposals <path>", "Discovery proposals JSON")
+    .requiredOption("--out <path>", "Profile diff JSON output path")
+    .requiredOption("--report <path>", "Profile diff markdown report path")
+    .option("--sample <path>", "Discovery sample JSON for evidence_ref validation")
+    .option("--json", "Print JSON diff")
+    .action(async (opts) => {
+      const {
+        buildOntologyDiscoveryDiff,
+        loadOntologyDiscoveryContext,
+        ontologyDiscoveryDiffToMarkdown,
+        writeOntologyDiscoveryDiff,
+      } = await import("./ontology-discovery.js");
+      const context = loadOntologyDiscoveryContext(opts.profileState);
+      const proposals = readJson(opts.proposals);
+      const sample = opts.sample ? readJson(opts.sample) : undefined;
+      const diff = buildOntologyDiscoveryDiff(context.profile, proposals, sample);
+      writeOntologyDiscoveryDiff(opts.out, diff);
+      mkdirSync(dirname(resolve(opts.report)), { recursive: true });
+      writeFileSync(resolve(opts.report), ontologyDiscoveryDiffToMarkdown(diff), "utf-8");
+      if (opts.json) {
+        console.log(JSON.stringify(diff, null, 2));
+      } else {
+        console.log(`Profile discovery diff written to ${resolve(opts.out)}`);
+        console.log(`Profile discovery report written to ${resolve(opts.report)}`);
+      }
+      if (!diff.valid) process.exit(1);
+    });
+
+  profile
     .command("report")
     .description("Write an additive profile report")
     .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")

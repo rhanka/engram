@@ -6,9 +6,11 @@ import { loadProjectConfig } from "../src/project-config.js";
 import { loadProfileRegistries } from "../src/profile-registry.js";
 import {
   buildProfileChunkPrompt,
+  buildProfileDiscoveryPrompt,
   buildProfileExtractionPrompt,
   buildProfileValidationPrompt,
 } from "../src/profile-prompts.js";
+import type { OntologyDiscoverySample } from "../src/ontology-discovery.js";
 import type { Extraction } from "../src/types.js";
 
 const fixtureRoot = join(process.cwd(), "tests", "fixtures", "profile-demo");
@@ -81,6 +83,41 @@ describe("profile prompt builder", () => {
     expect(prompt).toContain("Then apply profile-aware node_type, relation, citation, status, and registry rules");
     expect(prompt).toContain("\"nodes\"");
     expect(prompt).toContain("\"edges\"");
+  });
+
+  it("builds a discovery prompt that requires reviewable proposals", () => {
+    const state = promptState();
+    const sample: OntologyDiscoverySample = {
+      schema: "graphify_ontology_discovery_sample_v1",
+      profile_id: state.profile.id,
+      profile_version: state.profile.version,
+      profile_hash: state.profile.profile_hash,
+      sample_hash: "sample-hash",
+      limits: { maxFiles: 1, maxCharsPerFile: 100, maxRegistryRecords: 1 },
+      existing_profile: {
+        node_types: Object.keys(state.profile.node_types),
+        relation_types: Object.keys(state.profile.relation_types),
+        registries: Object.keys(state.profile.registries),
+        statuses: state.profile.hardening.statuses,
+      },
+      files: [{
+        id: "sample-file-001",
+        path: "raw/manuals/manual.md",
+        file_type: "document",
+        words: 10,
+        excerpt: "Synthetic document.",
+      }],
+      registry_records: [],
+      instructions: ["Do not mutate profile files from discovery."],
+    };
+
+    const prompt = buildProfileDiscoveryPrompt(state, sample);
+
+    expect(prompt).toContain("Graphify Ontology Discovery Prompt");
+    expect(prompt).toContain("graphify_ontology_discovery_proposals_v1");
+    expect(prompt).toContain("Every proposal stays reviewable");
+    expect(prompt).toContain("\"sample_hash\": \"sample-hash\"");
+    expect(prompt).toContain("Do not invent customer, partner, project, proprietary ontology, or private domain examples");
   });
 
   it("describes generic profile v2 relation metadata and lifecycle policies", () => {

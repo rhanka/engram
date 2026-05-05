@@ -987,6 +987,11 @@ describe("skill runtime artifact parity", () => {
     const dir = tempProfileProject();
     const statePath = join(dir, ".graphify", "profile", "profile-state.json");
     const promptPath = join(dir, ".graphify", "profile", "prompt.md");
+    const discoverySamplePath = join(dir, ".graphify", "ontology", "discovery", "sample.json");
+    const discoveryPromptPath = join(dir, ".graphify", "ontology", "discovery", "prompt.md");
+    const discoveryProposalsPath = join(dir, ".graphify", "ontology", "discovery", "proposals.json");
+    const discoveryDiffPath = join(dir, ".graphify", "ontology", "discovery", "profile-diff.json");
+    const discoveryReportPath = join(dir, ".graphify", "ontology", "discovery", "report.md");
     const validationInput = join(dir, ".graphify", "profile", "registry-extraction.json");
     const reportPath = join(dir, ".graphify", "profile", "profile-report.md");
     const ontologyDir = join(dir, ".graphify", "ontology");
@@ -1002,6 +1007,37 @@ describe("skill runtime artifact parity", () => {
       "profile-prompt",
       "--profile-state", statePath,
       "--out", promptPath,
+    ], dir);
+    const discovery = await runSkillRuntime([
+      "profile-discovery-sample",
+      "--profile-state", statePath,
+      "--out", discoverySamplePath,
+      "--prompt-out", discoveryPromptPath,
+      "--max-files", "1",
+    ], dir);
+    const discoverySample = JSON.parse(readFileSync(discoverySamplePath, "utf-8"));
+    writeFileSync(discoveryProposalsPath, JSON.stringify({
+      schema: "graphify_ontology_discovery_proposals_v1",
+      profile_hash: discoverySample.profile_hash,
+      sample_hash: discoverySample.sample_hash,
+      proposals: [{
+        id: "proposal-node-type-001",
+        kind: "node_type",
+        action: "add",
+        path: "/node_types/SyntheticDiscoveryEntity",
+        value: { source_backed: true },
+        evidence_refs: ["sample-file-001"],
+        confidence: 0.7,
+        rationale: "Synthetic fixture evidence.",
+      }],
+    }, null, 2), "utf-8");
+    const discoveryDiff = await runSkillRuntime([
+      "profile-discovery-diff",
+      "--profile-state", statePath,
+      "--proposals", discoveryProposalsPath,
+      "--sample", discoverySamplePath,
+      "--out", discoveryDiffPath,
+      "--report", discoveryReportPath,
     ], dir);
     const validation = await runSkillRuntime([
       "profile-validate-extraction",
@@ -1027,6 +1063,11 @@ describe("skill runtime artifact parity", () => {
     expect(existsSync(statePath)).toBe(true);
     expect(prompt.exitCode).toBe(0);
     expect(readFileSync(promptPath, "utf-8")).toContain("Allowed node types");
+    expect(discovery.exitCode).toBe(0);
+    expect(readFileSync(discoveryPromptPath, "utf-8")).toContain("Graphify Ontology Discovery Prompt");
+    expect(discoveryDiff.exitCode).toBe(0);
+    expect(JSON.parse(readFileSync(discoveryDiffPath, "utf-8")).mutates_profile).toBe(false);
+    expect(readFileSync(discoveryReportPath, "utf-8")).toContain("Requires user approval: true");
     expect(validation.exitCode).toBe(0);
     expect(JSON.parse(validation.logs.join("\n")).valid).toBe(true);
     expect(report.exitCode).toBe(0);

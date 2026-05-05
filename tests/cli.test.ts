@@ -138,6 +138,12 @@ describe("profile CLI commands", () => {
     const extractionPath = join(dir, ".graphify", "profile", "registry-extraction.json");
     const reportPath = join(dir, ".graphify", "profile", "profile-report.md");
     const ontologyDir = join(dir, ".graphify", "ontology");
+    const discoveryDir = join(dir, ".graphify", "ontology", "discovery");
+    const discoverySamplePath = join(discoveryDir, "sample.json");
+    const discoveryPromptPath = join(discoveryDir, "prompt.md");
+    const discoveryProposalsPath = join(discoveryDir, "proposals.json");
+    const discoveryDiffPath = join(discoveryDir, "profile-diff.json");
+    const discoveryReportPath = join(discoveryDir, "report.md");
     const graphPath = writeGraph(dir);
 
     const dataprep = await runCli([
@@ -149,6 +155,35 @@ describe("profile CLI commands", () => {
       "profile", "validate-extraction",
       "--profile-state", statePath,
       "--input", extractionPath,
+    ], dir);
+    const discovery = await runCli([
+      "profile", "discover",
+      "--profile-state", statePath,
+      "--out", discoverySamplePath,
+      "--prompt-out", discoveryPromptPath,
+      "--max-files", "1",
+    ], dir);
+    const discoverySample = JSON.parse(readFileSync(discoverySamplePath, "utf-8"));
+    writeFileSync(discoveryProposalsPath, JSON.stringify({
+      schema: "graphify_ontology_discovery_proposals_v1",
+      profile_hash: discoverySample.profile_hash,
+      sample_hash: discoverySample.sample_hash,
+      proposals: [{
+        id: "proposal-relation-001",
+        kind: "relation_type",
+        action: "add",
+        path: "/relation_types/synthetic_related_to",
+        value: { source: "MaintenanceProcess", target: "Component", requires_evidence: true },
+        evidence_refs: ["sample-file-001"],
+      }],
+    }, null, 2), "utf-8");
+    const discoveryDiff = await runCli([
+      "profile", "discovery-diff",
+      "--profile-state", statePath,
+      "--proposals", discoveryProposalsPath,
+      "--sample", discoverySamplePath,
+      "--out", discoveryDiffPath,
+      "--report", discoveryReportPath,
     ], dir);
     const report = await runCli([
       "profile", "report",
@@ -168,6 +203,10 @@ describe("profile CLI commands", () => {
     expect(existsSync(statePath)).toBe(true);
     expect(validation.exitCode).toBe(0);
     expect(validation.logs.join("\n")).toContain("Valid: yes");
+    expect(discovery.exitCode).toBe(0);
+    expect(readFileSync(discoveryPromptPath, "utf-8")).toContain("Graphify Ontology Discovery Prompt");
+    expect(discoveryDiff.exitCode).toBe(0);
+    expect(JSON.parse(readFileSync(discoveryDiffPath, "utf-8")).requires_user_approval).toBe(true);
     expect(report.exitCode).toBe(0);
     expect(readFileSync(reportPath, "utf-8")).toContain("# Graphify Profile Report");
     expect(ontology.exitCode).toBe(0);
