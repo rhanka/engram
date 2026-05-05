@@ -26,7 +26,7 @@
 
 - [ ] Do not publish `0.6.x` or `0.7.x` from this branch until the corresponding rows in `UPSTREAM_GAP.md` are closed with evidence.
 - [ ] If interim validation is needed, publish prereleases only (`0.7.4-rc.N` preferred) rather than new stable numbers that imply parity we do not yet have.
-- [ ] Promote to stable `0.7.4` only after the final release gate in this file is complete.
+- [x] Promote to stable `0.7.4` only after the final release gate in this file is complete.
 - [ ] Treat upstream Python `v1.0.0` as `deferred` until a separate traceability pass proves that the active upstream release train has actually moved beyond `v6` / `0.7.x`.
 - [ ] Keep this catch-up TypeScript-only: do not add new Python runtime dependencies, Python toolchains, or Python-based feature implementations while closing `0.6.x` / `0.7.x` parity.
 
@@ -161,7 +161,7 @@ Progress note:
 - [x] Run the release verification commands listed below on the implementation branch.
 - [x] Bump the package version to `0.7.4` only after the release gate passes.
 - [x] Regenerate `.graphify` and commit only the portable, tracked artifacts.
-- [ ] Publish `graphifyy@0.7.4`, update local installs, and record the release in both traceability documents.
+- [x] Publish `graphifyy@0.7.4`, update local installs, and record the release in both traceability documents.
 
 ## Release Gate
 
@@ -173,7 +173,7 @@ Progress note:
 - [x] `npx graphify hook-rebuild`
 - [x] `node dist/cli.js portable-check .graphify`
 - [x] package-level UAT from a tarball install
-- [ ] GitHub Actions release and post-publish install checks pass
+- [x] GitHub Actions release and post-publish install checks pass
 
 ## Branching And Commit Rules
 
