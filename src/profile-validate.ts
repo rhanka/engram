@@ -30,6 +30,13 @@ function stringValue(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function stringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  }
+  return typeof value === "string" && value.trim() ? [value.trim()] : [];
+}
+
 function citations(value: Record<string, unknown>): Array<Record<string, unknown>> {
   return Array.isArray(value.citations)
     ? value.citations.filter((item): item is Record<string, unknown> =>
@@ -95,6 +102,118 @@ function validateStatus(
       ...where,
     });
   }
+
+  const previousStatus = stringValue(entity.previous_status);
+  const transitions = profile.hardening.status_transitions ?? [];
+  if (!previousStatus || previousStatus === status || transitions.length === 0) return;
+  if (!profile.hardening.statuses.includes(previousStatus)) {
+    addIssue(issues, {
+      severity: "error",
+      code: "unknown_previous_status",
+      message: `${where.path} has unknown previous_status ${previousStatus}`,
+      ...where,
+    });
+    return;
+  }
+
+  const allowed = transitions.some((transition) =>
+    transition.from_statuses.includes(previousStatus) && transition.to_statuses.includes(status)
+  );
+  if (!allowed) {
+    addIssue(issues, {
+      severity: "error",
+      code: "invalid_status_transition",
+      message: `${where.path} cannot transition from ${previousStatus} to ${status}`,
+      ...where,
+    });
+  }
+}
+
+function buildEvidenceIds(extraction: Extraction): Set<string> {
+  const ids = new Set<string>();
+  for (const evidence of extraction.evidence ?? []) {
+    if (typeof evidence.id === "string" && evidence.id.trim()) ids.add(evidence.id.trim());
+  }
+  return ids;
+}
+
+function buildRegistryRecords(registryExtraction?: Extraction): Map<string, Set<string>> {
+  const records = new Map<string, Set<string>>();
+  for (const node of registryExtraction?.nodes ?? []) {
+    const registryId = stringValue(node.registry_id);
+    const recordId = stringValue(node.registry_record_id);
+    if (!registryId || !recordId) continue;
+    const set = records.get(registryId) ?? new Set<string>();
+    set.add(recordId);
+    records.set(registryId, set);
+  }
+  return records;
+}
+
+function validateEvidenceRefs(
+  entity: Record<string, unknown>,
+  profile: NormalizedOntologyProfile,
+  evidenceIds: Set<string>,
+  issues: ProfileValidationIssue[],
+  where: { nodeId?: string; edgeIndex?: number; path: string },
+  options: { required?: boolean; minRefs?: number } = {},
+): void {
+  const refs = stringArray(entity.evidence_refs);
+  const required = options.required === true;
+  const minRefs = Math.max(options.minRefs ?? 0, required ? 1 : 0);
+  if (refs.length < minRefs) {
+    addIssue(issues, {
+      severity: "error",
+      code: "missing_evidence_ref",
+      message: `${where.path} must include at least ${minRefs} evidence_refs`,
+      ...where,
+    });
+  }
+
+  if (evidenceIds.size === 0) return;
+  for (const ref of refs) {
+    if (!evidenceIds.has(ref)) {
+      addIssue(issues, {
+        severity: "error",
+        code: "unknown_evidence_ref",
+        message: `${where.path} references unknown evidence ${ref}`,
+        ...where,
+      });
+    }
+  }
+}
+
+function validateRegistryRefs(
+  node: GraphNode,
+  profile: NormalizedOntologyProfile,
+  registryRecords: Map<string, Set<string>>,
+  issues: ProfileValidationIssue[],
+  index: number,
+): void {
+  const registryId = stringValue(node.registry_id);
+  const recordId = stringValue(node.registry_record_id);
+  if (!registryId && !recordId) return;
+  const nodePath = `nodes[${index}]`;
+  if (!profile.registries[registryId]) {
+    addIssue(issues, {
+      severity: "error",
+      code: "unknown_registry_ref",
+      message: `${nodePath} references unknown registry ${registryId || "(missing)"}`,
+      path: nodePath,
+      nodeId: node.id,
+    });
+    return;
+  }
+  if (registryRecords.size === 0 || !recordId) return;
+  if (!registryRecords.get(registryId)?.has(recordId)) {
+    addIssue(issues, {
+      severity: "error",
+      code: "unknown_registry_record_ref",
+      message: `${nodePath} references unknown registry record ${registryId}:${recordId}`,
+      path: nodePath,
+      nodeId: node.id,
+    });
+  }
 }
 
 function isRegistrySeed(node: GraphNode): boolean {
@@ -104,6 +223,8 @@ function isRegistrySeed(node: GraphNode): boolean {
 function validateNode(
   node: GraphNode,
   profile: NormalizedOntologyProfile,
+  evidenceIds: Set<string>,
+  registryRecords: Map<string, Set<string>>,
   issues: ProfileValidationIssue[],
   index: number,
 ): void {
@@ -124,6 +245,19 @@ function validateNode(
   }
 
   validateStatus(node, profile, issues, { nodeId: node.id, path: nodePath });
+  validateRegistryRefs(node, profile, registryRecords, issues, index);
+  const evidencePolicy = profile.evidence_policy ?? {
+    require_evidence_refs: false,
+    min_refs: 0,
+    node_types: [],
+    relation_types: [],
+  };
+  const evidenceRequired = evidencePolicy.require_evidence_refs
+    && (evidencePolicy.node_types.length === 0 || evidencePolicy.node_types.includes(nodeType));
+  validateEvidenceRefs(node, profile, evidenceIds, issues, { nodeId: node.id, path: nodePath }, {
+    required: evidenceRequired,
+    minRefs: evidenceRequired ? evidencePolicy.min_refs : 0,
+  });
   if (!isRegistrySeed(node)) {
     validateCitations(node, profile, issues, { nodeId: node.id, path: nodePath });
   }
@@ -159,6 +293,7 @@ function validateEdge(
   edge: GraphEdge,
   profile: NormalizedOntologyProfile,
   nodesById: Map<string, GraphNode>,
+  evidenceIds: Set<string>,
   issues: ProfileValidationIssue[],
   index: number,
 ): void {
@@ -182,6 +317,43 @@ function validateEdge(
     });
     return;
   }
+
+  const inferencePolicy = profile.inference_policy ?? {
+    allow_inferred_relations: true,
+    allowed_relation_types: [],
+    require_evidence_refs: false,
+  };
+  const evidencePolicy = profile.evidence_policy ?? {
+    require_evidence_refs: false,
+    min_refs: 0,
+    node_types: [],
+    relation_types: [],
+  };
+  const inferenceAllowed = inferencePolicy.allow_inferred_relations
+    || inferencePolicy.allowed_relation_types.includes(relation);
+  if (edge.confidence === "INFERRED" && !inferenceAllowed) {
+    addIssue(issues, {
+      severity: "error",
+      code: "inferred_relation_disallowed",
+      message: `${edgePath} relation ${relation} is INFERRED but inferred relations are disallowed`,
+      path: edgePath,
+      edgeIndex: index,
+    });
+  }
+
+  const evidenceRequired = relationSpec.requires_evidence === true
+    || inferencePolicy.require_evidence_refs
+    || (
+      evidencePolicy.require_evidence_refs
+      && (
+        evidencePolicy.relation_types.length === 0
+        || evidencePolicy.relation_types.includes(relation)
+      )
+    );
+  validateEvidenceRefs(edge, profile, evidenceIds, issues, { edgeIndex: index, path: edgePath }, {
+    required: evidenceRequired,
+    minRefs: evidenceRequired ? evidencePolicy.min_refs : 0,
+  });
 
   const sourceType = stringValue(sourceNode?.node_type);
   if (sourceType && !relationSpec.source_types.includes(sourceType)) {
@@ -221,12 +393,14 @@ export function validateProfileExtraction(
   if (baseErrors.length === 0) {
     const typed = extraction as Extraction;
     const nodesById = new Map<string, GraphNode>();
+    const evidenceIds = buildEvidenceIds(typed);
+    const registryRecords = buildRegistryRecords(profileState.registryExtraction);
     typed.nodes.forEach((node, index) => {
       nodesById.set(node.id, node);
-      validateNode(node, profile, issues, index);
+      validateNode(node, profile, evidenceIds, registryRecords, issues, index);
     });
     typed.edges.forEach((edge, index) => {
-      validateEdge(edge, profile, nodesById, issues, index);
+      validateEdge(edge, profile, nodesById, evidenceIds, issues, index);
     });
   }
 

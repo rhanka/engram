@@ -42,6 +42,18 @@ export interface GraphNode {
   source_location?: string;
   confidence?: Confidence;
   community?: number;
+  node_type?: string;
+  registry_id?: string;
+  registry_record_id?: string;
+  registry_refs?: string[];
+  aliases?: string[];
+  status?: OntologyStatus;
+  previous_status?: OntologyStatus;
+  review_status?: OntologyStatus;
+  citations?: OntologyCitation[];
+  evidence_refs?: string[];
+  confidence_handle?: string;
+  provenance_handle?: string;
   [key: string]: unknown;
 }
 
@@ -55,6 +67,15 @@ export interface GraphEdge {
   source_location?: string;
   confidence_score?: number;
   weight?: number;
+  status?: OntologyStatus;
+  review_status?: OntologyStatus;
+  assertion_basis?: string | string[];
+  derivation_method?: string;
+  evidence_refs?: string[];
+  citations?: OntologyCitation[];
+  evidence_text?: string;
+  confidence_handle?: string;
+  provenance_handle?: string;
   /** Original source direction (preserved for display). */
   _src?: string;
   /** Original target direction (preserved for display). */
@@ -79,6 +100,11 @@ export interface Extraction {
   nodes: GraphNode[];
   edges: GraphEdge[];
   hyperedges?: Hyperedge[];
+  canonical_entities?: OntologyCanonicalEntity[];
+  mentions?: OntologyMention[];
+  occurrences?: OntologyOccurrence[];
+  evidence?: OntologyEvidenceRecord[];
+  mappings?: OntologyMapping[];
   input_tokens: number;
   output_tokens: number;
 }
@@ -345,6 +371,87 @@ export type OntologyStatus =
   | "superseded"
   | string;
 
+export interface OntologyCitation {
+  source_file: string;
+  source_url?: string;
+  page?: number | string;
+  section?: string;
+  paragraph_id?: string;
+  figure_id?: string;
+  bbox?: [number, number, number, number];
+}
+
+export interface OntologyEvidenceRecord {
+  id: string;
+  source_file?: string;
+  source_url?: string;
+  citations?: OntologyCitation[];
+  quote?: string;
+  page?: number | string;
+  section?: string;
+  paragraph_id?: string;
+  figure_id?: string;
+  bbox?: [number, number, number, number];
+  confidence?: number;
+  provenance_handle?: string;
+  [key: string]: unknown;
+}
+
+export interface OntologyCanonicalEntity {
+  id: string;
+  type?: string;
+  label: string;
+  aliases?: string[];
+  status?: OntologyStatus;
+  review_status?: OntologyStatus;
+  registry_refs?: string[];
+  evidence_refs?: string[];
+  confidence?: number;
+  confidence_handle?: string;
+  provenance_handle?: string;
+  [key: string]: unknown;
+}
+
+export interface OntologyMention {
+  id: string;
+  label: string;
+  canonical_id?: string;
+  node_id?: string;
+  evidence_refs?: string[];
+  confidence?: number;
+  confidence_handle?: string;
+  provenance_handle?: string;
+  [key: string]: unknown;
+}
+
+export interface OntologyOccurrence {
+  id: string;
+  type?: string;
+  summary?: string;
+  linked_entity_ids?: string[];
+  source_refs?: string[];
+  evidence_refs?: string[];
+  confidence?: number;
+  confidence_handle?: string;
+  provenance_handle?: string;
+  [key: string]: unknown;
+}
+
+export interface OntologyMapping {
+  id: string;
+  source_id: string;
+  target_id: string;
+  mapping_type?: string;
+  review_status?: OntologyStatus;
+  assertion_basis?: string | string[];
+  derivation_method?: string;
+  evidence_refs?: string[];
+  confidence?: number;
+  confidence_handle?: string;
+  provenance_handle?: string;
+  [key: string]: unknown;
+}
+
 export interface OntologyNodeType {
   aliases?: string[];
   registry?: string;
@@ -357,6 +464,10 @@ export interface OntologyRelationType {
   target?: string | string[];
   source_types?: string[];
   target_types?: string[];
+  requires_evidence?: boolean;
+  assertion_basis?: string | string[];
+  derivation_method?: string | string[];
+  derivation_methods?: string[];
 }
 
 export interface OntologyRegistrySpec {
@@ -378,6 +489,65 @@ export interface OntologyHardeningPolicy {
   statuses?: OntologyStatus[];
   default_status?: OntologyStatus;
   promotion_requires?: string[];
+  status_transitions?: OntologyStatusTransition[];
+}
+
+export interface OntologyStatusTransition {
+  from?: OntologyStatus | OntologyStatus[];
+  to?: OntologyStatus | OntologyStatus[];
+  from_statuses?: OntologyStatus[];
+  to_statuses?: OntologyStatus[];
+  requires?: string[];
+}
+
+export interface NormalizedOntologyStatusTransition {
+  from_statuses: OntologyStatus[];
+  to_statuses: OntologyStatus[];
+  requires: string[];
+}
+
+export interface OntologyInferencePolicy {
+  allow_inferred_relations?: boolean;
+  allowed_relation_types?: string[];
+  require_evidence_refs?: boolean;
+}
+
+export interface NormalizedOntologyInferencePolicy {
+  allow_inferred_relations: boolean;
+  allowed_relation_types: string[];
+  require_evidence_refs: boolean;
+}
+
+export interface OntologyEvidencePolicy {
+  require_evidence_refs?: boolean;
+  min_refs?: number;
+  node_types?: string[];
+  relation_types?: string[];
+}
+
+export interface NormalizedOntologyEvidencePolicy {
+  require_evidence_refs: boolean;
+  min_refs: number;
+  node_types: string[];
+  relation_types: string[];
+}
+
+export interface OntologyHierarchySpec {
+  registry?: string;
+  parent_column?: string;
+  child_column?: string;
+  relation_type?: string;
+  parent_node_type?: string;
+  child_node_type?: string;
+}
+
+export interface NormalizedOntologyHierarchySpec {
+  registry: string;
+  parent_column: string;
+  child_column: string;
+  relation_type: string;
+  parent_node_type: string;
+  child_node_type: string;
 }
 
 export type OntologyRelationExport = string | { relation_type?: string };
@@ -415,12 +585,18 @@ export interface OntologyProfile {
   registries?: Record<string, OntologyRegistrySpec>;
   citation_policy?: OntologyCitationPolicy;
   hardening?: OntologyHardeningPolicy;
+  inference_policy?: OntologyInferencePolicy;
+  evidence_policy?: OntologyEvidencePolicy;
+  hierarchies?: Record<string, OntologyHierarchySpec>;
   outputs?: OntologyProfileOutputs;
 }
 
 export interface NormalizedOntologyRelationType {
   source_types: string[];
   target_types: string[];
+  requires_evidence: boolean;
+  assertion_basis: string[];
+  derivation_methods: string[];
 }
 
 export interface NormalizedOntologyRegistrySpec {
@@ -462,7 +638,12 @@ export interface NormalizedOntologyProfile {
   relation_types: Record<string, NormalizedOntologyRelationType>;
   registries: Record<string, NormalizedOntologyRegistrySpec>;
   citation_policy: Required<OntologyCitationPolicy>;
-  hardening: Required<OntologyHardeningPolicy>;
+  hardening: Required<Omit<OntologyHardeningPolicy, "status_transitions">> & {
+    status_transitions: NormalizedOntologyStatusTransition[];
+  };
+  inference_policy: NormalizedOntologyInferencePolicy;
+  evidence_policy: NormalizedOntologyEvidencePolicy;
+  hierarchies: Record<string, NormalizedOntologyHierarchySpec>;
   outputs: NormalizedOntologyProfileOutputs;
 }
 

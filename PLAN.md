@@ -218,12 +218,12 @@ Progress note:
 - Modify/Add: synthetic fixtures under `tests/fixtures/`
 - Modify/Add: Vitest coverage
 
-- [ ] Add first-class canonical entity, mention, occurrence, evidence and mapping concepts without domain-specific built-ins.
-- [ ] Add richer relation metadata: `review_status`, `assertion_basis`, `derivation_method`, `evidence_refs`, confidence and provenance handles.
-- [ ] Add profile constraints for allowed status transitions, inferred relation policy and evidence requirements.
-- [ ] Add optional hierarchy declarations for registry-backed parent/child materialization.
-- [ ] Add deterministic validation for relation endpoints, status transitions, evidence refs and registry refs.
-- [ ] Keep profile mode strictly opt-in and unchanged without `graphify.yaml`, `--config` or `--profile`.
+- [x] Add first-class canonical entity, mention, occurrence, evidence and mapping concepts without domain-specific built-ins.
+- [x] Add richer relation metadata: `review_status`, `assertion_basis`, `derivation_method`, `evidence_refs`, confidence and provenance handles.
+- [x] Add profile constraints for allowed status transitions, inferred relation policy and evidence requirements.
+- [x] Add optional hierarchy declarations for registry-backed parent/child materialization.
+- [x] Add deterministic validation for relation endpoints, status transitions, evidence refs and registry refs.
+- [x] Keep profile mode strictly opt-in and unchanged without `graphify.yaml`, `--config` or `--profile`.
 
 ## Task C: Ontology Discovery Workflow
 

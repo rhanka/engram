@@ -93,10 +93,46 @@ describe("validateExtraction", () => {
           confidence: "EXTRACTED",
           source_file: "manual.md",
           status: "candidate",
+          review_status: "candidate",
+          assertion_basis: "source_citation",
+          derivation_method: "direct_extraction",
+          evidence_refs: ["evidence-1"],
+          confidence_handle: "confidence:manual:1",
+          provenance_handle: "provenance:manual:1",
           citations: [{ source_file: "manual.md", page: 2 }],
           evidence_text: "Synthetic evidence text.",
         },
       ],
+      canonical_entities: [{
+        id: "canonical-1",
+        type: "Component",
+        label: "Synthetic canonical entity",
+        evidence_refs: ["evidence-1"],
+      }],
+      mentions: [{
+        id: "mention-1",
+        label: "Synthetic mention",
+        canonical_id: "canonical-1",
+        evidence_refs: ["evidence-1"],
+      }],
+      occurrences: [{
+        id: "occurrence-1",
+        type: "Observation",
+        linked_entity_ids: ["canonical-1"],
+        evidence_refs: ["evidence-1"],
+      }],
+      evidence: [{
+        id: "evidence-1",
+        source_file: "manual.md",
+        citations: [{ source_file: "manual.md", page: 2 }],
+      }],
+      mappings: [{
+        id: "mapping-1",
+        source_id: "mention-1",
+        target_id: "canonical-1",
+        mapping_type: "mention_to_canonical",
+        evidence_refs: ["evidence-1"],
+      }],
     });
     expect(errors).toEqual([]);
   });

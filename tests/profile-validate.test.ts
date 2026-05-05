@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { join } from "node:path";
 
-import { loadOntologyProfile } from "../src/ontology-profile.js";
+import { loadOntologyProfile, normalizeOntologyProfile, parseOntologyProfile } from "../src/ontology-profile.js";
 import {
   profileValidationResultToJson,
   profileValidationResultToMarkdown,
@@ -13,6 +13,41 @@ const fixtureRoot = join(process.cwd(), "tests", "fixtures", "profile-demo");
 
 function profile(): NormalizedOntologyProfile {
   return loadOntologyProfile(join(fixtureRoot, "graphify", "ontology-profile.yaml"));
+}
+
+function lifecycleProfile(): NormalizedOntologyProfile {
+  return normalizeOntologyProfile(parseOntologyProfile([
+    "id: synthetic-lifecycle",
+    "version: 2",
+    "node_types:",
+    "  Subject: {}",
+    "  Object: {}",
+    "relation_types:",
+    "  relates:",
+    "    source: Subject",
+    "    target: Object",
+    "    requires_evidence: true",
+    "citation_policy:",
+    "  minimum_granularity: file",
+    "  require_source_file: false",
+    "hardening:",
+    "  statuses: [candidate, needs_review, validated, rejected]",
+    "  default_status: candidate",
+    "  status_transitions:",
+    "    - from: candidate",
+    "      to: needs_review",
+    "    - from: needs_review",
+    "      to: validated",
+    "      requires: [evidence_ref]",
+    "inference_policy:",
+    "  allow_inferred_relations: false",
+    "  require_evidence_refs: true",
+    "evidence_policy:",
+    "  require_evidence_refs: true",
+    "  min_refs: 1",
+    "  relation_types: [relates]",
+    "",
+  ].join("\n"), "ontology-profile.yaml"));
 }
 
 function baseExtraction(overrides: Partial<Extraction> = {}): Extraction {
@@ -256,6 +291,209 @@ describe("profile-aware extraction validation", () => {
         severity: "warning",
         code: "missing_registry_link",
         nodeId: "component",
+      }),
+    );
+  });
+
+  it("rejects status transitions outside the profile lifecycle policy", () => {
+    const extraction: Extraction = {
+      nodes: [
+        {
+          id: "subject",
+          label: "Synthetic subject",
+          file_type: "document",
+          source_file: "synthetic.md",
+          node_type: "Subject",
+          previous_status: "candidate",
+          status: "validated",
+        },
+        {
+          id: "object",
+          label: "Synthetic object",
+          file_type: "document",
+          source_file: "synthetic.md",
+          node_type: "Object",
+          status: "candidate",
+        },
+      ],
+      edges: [],
+      evidence: [],
+      input_tokens: 0,
+      output_tokens: 0,
+    };
+
+    const result = validateProfileExtraction(extraction, { profile: lifecycleProfile() });
+
+    expect(result.valid).toBe(false);
+    expect(result.issues).toContainEqual(
+      expect.objectContaining({
+        severity: "error",
+        code: "invalid_status_transition",
+        nodeId: "subject",
+      }),
+    );
+  });
+
+  it("enforces inferred relation policy and relation evidence requirements", () => {
+    const extraction: Extraction = {
+      nodes: [
+        {
+          id: "subject",
+          label: "Synthetic subject",
+          file_type: "document",
+          source_file: "synthetic.md",
+          node_type: "Subject",
+          status: "candidate",
+        },
+        {
+          id: "object",
+          label: "Synthetic object",
+          file_type: "document",
+          source_file: "synthetic.md",
+          node_type: "Object",
+          status: "candidate",
+        },
+      ],
+      edges: [
+        {
+          source: "subject",
+          target: "object",
+          relation: "relates",
+          confidence: "INFERRED",
+          source_file: "synthetic.md",
+          status: "candidate",
+        },
+      ],
+      evidence: [{ id: "ev-1", source_file: "synthetic.md" }],
+      input_tokens: 0,
+      output_tokens: 0,
+    };
+
+    const result = validateProfileExtraction(extraction, { profile: lifecycleProfile() });
+
+    expect(result.valid).toBe(false);
+    expect(result.issues).toContainEqual(
+      expect.objectContaining({
+        severity: "error",
+        code: "inferred_relation_disallowed",
+        edgeIndex: 0,
+      }),
+    );
+    expect(result.issues).toContainEqual(
+      expect.objectContaining({
+        severity: "error",
+        code: "missing_evidence_ref",
+        edgeIndex: 0,
+      }),
+    );
+  });
+
+  it("rejects evidence refs that do not resolve to extraction evidence records", () => {
+    const extraction: Extraction = {
+      nodes: [
+        {
+          id: "subject",
+          label: "Synthetic subject",
+          file_type: "document",
+          source_file: "synthetic.md",
+          node_type: "Subject",
+          status: "candidate",
+        },
+        {
+          id: "object",
+          label: "Synthetic object",
+          file_type: "document",
+          source_file: "synthetic.md",
+          node_type: "Object",
+          status: "candidate",
+        },
+      ],
+      edges: [
+        {
+          source: "subject",
+          target: "object",
+          relation: "relates",
+          confidence: "EXTRACTED",
+          source_file: "synthetic.md",
+          status: "candidate",
+          evidence_refs: ["missing-evidence"],
+        },
+      ],
+      evidence: [{ id: "ev-1", source_file: "synthetic.md" }],
+      input_tokens: 0,
+      output_tokens: 0,
+    };
+
+    const result = validateProfileExtraction(extraction, { profile: lifecycleProfile() });
+
+    expect(result.valid).toBe(false);
+    expect(result.issues).toContainEqual(
+      expect.objectContaining({
+        severity: "error",
+        code: "unknown_evidence_ref",
+        edgeIndex: 0,
+      }),
+    );
+  });
+
+  it("rejects registry refs that do not resolve to profile registries or loaded registry records", () => {
+    const extraction = baseExtraction({
+      nodes: [
+        {
+          id: "component",
+          label: "Synthetic component",
+          file_type: "document",
+          source_file: "manual.md",
+          node_type: "Component",
+          registry_id: "components",
+          registry_record_id: "CMP-404",
+          citations: [{ source_file: "manual.md", page: 1 }],
+        },
+        {
+          id: "unknown-registry",
+          label: "Synthetic registry miss",
+          file_type: "document",
+          source_file: "manual.md",
+          node_type: "Tool",
+          registry_id: "unknown_registry",
+          registry_record_id: "TOOL-001",
+          citations: [{ source_file: "manual.md", page: 1 }],
+        },
+      ],
+      edges: [],
+    });
+    const registryExtraction: Extraction = {
+      nodes: [
+        {
+          id: "registry_components_CMP_001",
+          label: "Synthetic registered component",
+          file_type: "document",
+          source_file: "references/components.csv",
+          node_type: "Component",
+          registry_id: "components",
+          registry_record_id: "CMP-001",
+        },
+      ],
+      edges: [],
+      input_tokens: 0,
+      output_tokens: 0,
+    };
+
+    const result = validateProfileExtraction(extraction, { profile: profile(), registryExtraction });
+
+    expect(result.valid).toBe(false);
+    expect(result.issues).toContainEqual(
+      expect.objectContaining({
+        severity: "error",
+        code: "unknown_registry_record_ref",
+        nodeId: "component",
+      }),
+    );
+    expect(result.issues).toContainEqual(
+      expect.objectContaining({
+        severity: "error",
+        code: "unknown_registry_ref",
+        nodeId: "unknown-registry",
       }),
     );
   });

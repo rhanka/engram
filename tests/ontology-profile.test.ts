@@ -123,6 +123,92 @@ describe("ontology profile loader", () => {
     expect(profile.hardening.statuses).toContain("candidate");
   });
 
+  it("normalizes generic profile v2 lifecycle, evidence, inference, and hierarchy constraints", () => {
+    const raw = parseOntologyProfile(
+      [
+        "id: synthetic-lifecycle",
+        "version: 2",
+        "node_types:",
+        "  CanonicalEntity: {}",
+        "  Mention:",
+        "    source_backed: true",
+        "  EvidenceRecord:",
+        "    source_backed: true",
+        "relation_types:",
+        "  maps_to:",
+        "    source: Mention",
+        "    target: CanonicalEntity",
+        "    requires_evidence: true",
+        "    assertion_basis: [source_citation]",
+        "    derivation_method: direct_extraction",
+        "  parent_of:",
+        "    source: CanonicalEntity",
+        "    target: CanonicalEntity",
+        "registries:",
+        "  synthetic_entities:",
+        "    source: synthetic_entities",
+        "    id_column: entity_id",
+        "    label_column: entity_label",
+        "    node_type: CanonicalEntity",
+        "hardening:",
+        "  statuses: [candidate, needs_review, validated, rejected, superseded]",
+        "  default_status: candidate",
+        "  status_transitions:",
+        "    - from: candidate",
+        "      to: needs_review",
+        "    - from: needs_review",
+        "      to: validated",
+        "      requires: [evidence_ref]",
+        "inference_policy:",
+        "  allow_inferred_relations: false",
+        "  allowed_relation_types: [parent_of]",
+        "  require_evidence_refs: true",
+        "evidence_policy:",
+        "  require_evidence_refs: true",
+        "  min_refs: 1",
+        "  relation_types: [maps_to]",
+        "hierarchies:",
+        "  canonical_tree:",
+        "    registry: synthetic_entities",
+        "    parent_column: parent_id",
+        "    child_column: entity_id",
+        "    relation_type: parent_of",
+        "    parent_node_type: CanonicalEntity",
+        "    child_node_type: CanonicalEntity",
+        "",
+      ].join("\n"),
+      "ontology-profile.yaml",
+    );
+
+    const profile = normalizeOntologyProfile(raw);
+
+    expect(profile.relation_types.maps_to.requires_evidence).toBe(true);
+    expect(profile.relation_types.maps_to.assertion_basis).toEqual(["source_citation"]);
+    expect(profile.relation_types.maps_to.derivation_methods).toEqual(["direct_extraction"]);
+    expect(profile.hardening.status_transitions).toEqual([
+      { from_statuses: ["candidate"], to_statuses: ["needs_review"], requires: [] },
+      { from_statuses: ["needs_review"], to_statuses: ["validated"], requires: ["evidence_ref"] },
+    ]);
+    expect(profile.inference_policy).toMatchObject({
+      allow_inferred_relations: false,
+      allowed_relation_types: ["parent_of"],
+      require_evidence_refs: true,
+    });
+    expect(profile.evidence_policy).toMatchObject({
+      require_evidence_refs: true,
+      min_refs: 1,
+      relation_types: ["maps_to"],
+    });
+    expect(profile.hierarchies.canonical_tree).toMatchObject({
+      registry: "synthetic_entities",
+      parent_column: "parent_id",
+      child_column: "entity_id",
+      relation_type: "parent_of",
+      parent_node_type: "CanonicalEntity",
+      child_node_type: "CanonicalEntity",
+    });
+  });
+
   it("rejects missing id and invalid relation type references", () => {
     const raw = parseOntologyProfile(
       [
@@ -188,6 +274,58 @@ describe("ontology profile loader", () => {
     expect(validateOntologyProfile(raw)).toContain(
       "outputs.ontology.canonical_node_types references unknown node type MissingType",
     );
+  });
+
+  it("rejects invalid profile v2 lifecycle, registry, and hierarchy references", () => {
+    const raw = parseOntologyProfile(
+      [
+        "id: synthetic-lifecycle",
+        "version: 2",
+        "node_types:",
+        "  Entity: {}",
+        "relation_types:",
+        "  relates:",
+        "    source: Entity",
+        "    target: Entity",
+        "registries:",
+        "  entities:",
+        "    source: entities",
+        "    id_column: entity_id",
+        "    label_column: entity_label",
+        "    node_type: Entity",
+        "hardening:",
+        "  statuses: [candidate]",
+        "  status_transitions:",
+        "    - from: draft",
+        "      to: archived",
+        "inference_policy:",
+        "  allowed_relation_types: [missing_relation]",
+        "evidence_policy:",
+        "  node_types: [MissingNode]",
+        "  relation_types: [missing_relation]",
+        "hierarchies:",
+        "  invalid_tree:",
+        "    registry: missing_registry",
+        "    parent_column: parent_id",
+        "    child_column: entity_id",
+        "    relation_type: missing_relation",
+        "    parent_node_type: MissingNode",
+        "    child_node_type: Entity",
+        "",
+      ].join("\n"),
+      "ontology-profile.yaml",
+    );
+
+    const errors = validateOntologyProfile(raw);
+
+    expect(errors).toContain("hardening.status_transitions[0].from references unknown status draft");
+    expect(errors).toContain("hardening.status_transitions[0].to references unknown status archived");
+    expect(errors).toContain("inference_policy.allowed_relation_types references unknown relation type missing_relation");
+    expect(errors).toContain("evidence_policy.node_types references unknown node type MissingNode");
+    expect(errors).toContain("evidence_policy.relation_types references unknown relation type missing_relation");
+    expect(errors).toContain("hierarchies.invalid_tree.registry references unknown registry missing_registry");
+    expect(errors).toContain("hierarchies.invalid_tree.relation_type references unknown relation type missing_relation");
+    expect(errors).toContain("hierarchies.invalid_tree.parent_node_type references unknown node type MissingNode");
   });
 
   it("binds profile registry declarations to project config registry sources", () => {

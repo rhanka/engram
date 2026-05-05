@@ -5,17 +5,25 @@ import { parse as parseYaml } from "yaml";
 
 import type {
   NormalizedOntologyProfile,
+  NormalizedOntologyEvidencePolicy,
+  NormalizedOntologyHierarchySpec,
+  NormalizedOntologyInferencePolicy,
   NormalizedOntologyProfileOutputs,
   NormalizedOntologyRegistrySpec,
   NormalizedOntologyRelationType,
+  NormalizedOntologyStatusTransition,
   NormalizedProjectConfig,
   OntologyCitationPolicy,
+  OntologyEvidencePolicy,
   OntologyHardeningPolicy,
+  OntologyHierarchySpec,
+  OntologyInferencePolicy,
   OntologyNodeType,
   OntologyOutputPolicy,
   OntologyProfile,
   OntologyRegistrySpec,
   OntologyRelationType,
+  OntologyStatusTransition,
 } from "./types.js";
 
 const DEFAULT_STATUSES = ["candidate", "attached", "needs_review", "validated", "rejected", "superseded"];
@@ -66,6 +74,9 @@ function normalizeRelation(relation: OntologyRelationType): NormalizedOntologyRe
   return {
     source_types: relationEndpoints(relation, "source"),
     target_types: relationEndpoints(relation, "target"),
+    requires_evidence: relation.requires_evidence === true,
+    assertion_basis: asStringArray(relation.assertion_basis),
+    derivation_methods: asStringArray(relation.derivation_methods ?? relation.derivation_method),
   };
 }
 
@@ -91,13 +102,73 @@ function normalizeCitationPolicy(policy: OntologyCitationPolicy | undefined): Re
   };
 }
 
-function normalizeHardeningPolicy(policy: OntologyHardeningPolicy | undefined): Required<OntologyHardeningPolicy> {
+function normalizeStatusTransition(transition: OntologyStatusTransition): NormalizedOntologyStatusTransition {
+  return {
+    from_statuses: asStringArray(transition.from_statuses ?? transition.from),
+    to_statuses: asStringArray(transition.to_statuses ?? transition.to),
+    requires: asStringArray(transition.requires),
+  };
+}
+
+function normalizeStatusTransitions(value: unknown): NormalizedOntologyStatusTransition[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => normalizeStatusTransition(asRecord(item) as OntologyStatusTransition))
+    .filter((transition) => transition.from_statuses.length > 0 && transition.to_statuses.length > 0);
+}
+
+function normalizeHardeningPolicy(
+  policy: OntologyHardeningPolicy | undefined,
+): Required<Omit<OntologyHardeningPolicy, "status_transitions">> & {
+  status_transitions: NormalizedOntologyStatusTransition[];
+} {
   const statuses = asStringArray(policy?.statuses);
   return {
     statuses: statuses.length > 0 ? statuses : DEFAULT_STATUSES,
     default_status: String(policy?.default_status ?? "candidate"),
     promotion_requires: asStringArray(policy?.promotion_requires),
+    status_transitions: normalizeStatusTransitions(policy?.status_transitions),
   };
+}
+
+function normalizeInferencePolicy(policy: OntologyInferencePolicy | undefined): NormalizedOntologyInferencePolicy {
+  return {
+    allow_inferred_relations: policy?.allow_inferred_relations ?? true,
+    allowed_relation_types: asStringArray(policy?.allowed_relation_types),
+    require_evidence_refs: policy?.require_evidence_refs === true,
+  };
+}
+
+function normalizeEvidencePolicy(policy: OntologyEvidencePolicy | undefined): NormalizedOntologyEvidencePolicy {
+  const minRefs = typeof policy?.min_refs === "number" && Number.isFinite(policy.min_refs)
+    ? Math.max(0, Math.floor(policy.min_refs))
+    : 0;
+  return {
+    require_evidence_refs: policy?.require_evidence_refs === true,
+    min_refs: minRefs,
+    node_types: asStringArray(policy?.node_types),
+    relation_types: asStringArray(policy?.relation_types),
+  };
+}
+
+function normalizeHierarchy(hierarchy: OntologyHierarchySpec): NormalizedOntologyHierarchySpec {
+  return {
+    registry: String(hierarchy.registry ?? ""),
+    parent_column: String(hierarchy.parent_column ?? ""),
+    child_column: String(hierarchy.child_column ?? ""),
+    relation_type: String(hierarchy.relation_type ?? ""),
+    parent_node_type: String(hierarchy.parent_node_type ?? ""),
+    child_node_type: String(hierarchy.child_node_type ?? ""),
+  };
+}
+
+function normalizeHierarchies(value: unknown): Record<string, NormalizedOntologyHierarchySpec> {
+  return Object.fromEntries(
+    Object.entries(normalizeStringMap<OntologyHierarchySpec>(value)).map(([id, hierarchy]) => [
+      id,
+      normalizeHierarchy(hierarchy),
+    ]),
+  );
 }
 
 function relationExports(value: unknown): string[] {
@@ -151,8 +222,14 @@ export function validateOntologyProfile(profile: OntologyProfile): string[] {
   const relationTypes = normalizeStringMap<OntologyRelationType>(profile.relation_types);
   const registries = normalizeStringMap<OntologyRegistrySpec>(profile.registries);
   const outputs = normalizeOutputs(profile.outputs);
+  const hardening = normalizeHardeningPolicy(profile.hardening);
+  const inferencePolicy = normalizeInferencePolicy(profile.inference_policy);
+  const evidencePolicy = normalizeEvidencePolicy(profile.evidence_policy);
+  const hierarchies = normalizeHierarchies(profile.hierarchies);
   const knownNodeTypes = new Set(Object.keys(nodeTypes));
   const knownRelationTypes = new Set(Object.keys(relationTypes));
+  const knownRegistries = new Set(Object.keys(registries));
+  const knownStatuses = new Set(hardening.statuses);
 
   if (typeof profile.id !== "string" || profile.id.trim().length === 0) {
     errors.push("id is required");
@@ -162,6 +239,9 @@ export function validateOntologyProfile(profile: OntologyProfile): string[] {
   }
   if (knownNodeTypes.size === 0) {
     errors.push("node_types must contain at least one node type");
+  }
+  if (!knownStatuses.has(hardening.default_status)) {
+    errors.push(`hardening.default_status references unknown status ${hardening.default_status}`);
   }
 
   for (const [relationId, relation] of Object.entries(relationTypes)) {
@@ -182,6 +262,65 @@ export function validateOntologyProfile(profile: OntologyProfile): string[] {
       if (!knownNodeTypes.has(target)) {
         errors.push(`relation_types.${relationId}.target references unknown node type ${target}`);
       }
+    }
+  }
+
+  hardening.status_transitions.forEach((transition, index) => {
+    for (const status of transition.from_statuses) {
+      if (!knownStatuses.has(status)) {
+        errors.push(`hardening.status_transitions[${index}].from references unknown status ${status}`);
+      }
+    }
+    for (const status of transition.to_statuses) {
+      if (!knownStatuses.has(status)) {
+        errors.push(`hardening.status_transitions[${index}].to references unknown status ${status}`);
+      }
+    }
+  });
+
+  for (const relationType of inferencePolicy.allowed_relation_types) {
+    if (!knownRelationTypes.has(relationType)) {
+      errors.push(`inference_policy.allowed_relation_types references unknown relation type ${relationType}`);
+    }
+  }
+
+  for (const nodeType of evidencePolicy.node_types) {
+    if (!knownNodeTypes.has(nodeType)) {
+      errors.push(`evidence_policy.node_types references unknown node type ${nodeType}`);
+    }
+  }
+  for (const relationType of evidencePolicy.relation_types) {
+    if (!knownRelationTypes.has(relationType)) {
+      errors.push(`evidence_policy.relation_types references unknown relation type ${relationType}`);
+    }
+  }
+
+  for (const [hierarchyId, hierarchy] of Object.entries(hierarchies)) {
+    if (!hierarchy.registry) {
+      errors.push(`hierarchies.${hierarchyId}.registry is required`);
+    } else if (!knownRegistries.has(hierarchy.registry)) {
+      errors.push(`hierarchies.${hierarchyId}.registry references unknown registry ${hierarchy.registry}`);
+    }
+    if (!hierarchy.parent_column) {
+      errors.push(`hierarchies.${hierarchyId}.parent_column is required`);
+    }
+    if (!hierarchy.child_column) {
+      errors.push(`hierarchies.${hierarchyId}.child_column is required`);
+    }
+    if (!hierarchy.relation_type) {
+      errors.push(`hierarchies.${hierarchyId}.relation_type is required`);
+    } else if (!knownRelationTypes.has(hierarchy.relation_type)) {
+      errors.push(`hierarchies.${hierarchyId}.relation_type references unknown relation type ${hierarchy.relation_type}`);
+    }
+    if (!hierarchy.parent_node_type) {
+      errors.push(`hierarchies.${hierarchyId}.parent_node_type is required`);
+    } else if (!knownNodeTypes.has(hierarchy.parent_node_type)) {
+      errors.push(`hierarchies.${hierarchyId}.parent_node_type references unknown node type ${hierarchy.parent_node_type}`);
+    }
+    if (!hierarchy.child_node_type) {
+      errors.push(`hierarchies.${hierarchyId}.child_node_type is required`);
+    } else if (!knownNodeTypes.has(hierarchy.child_node_type)) {
+      errors.push(`hierarchies.${hierarchyId}.child_node_type references unknown node type ${hierarchy.child_node_type}`);
     }
   }
 
@@ -246,6 +385,7 @@ export function normalizeOntologyProfile(profile: OntologyProfile, sourcePath?: 
   const nodeTypes = normalizeStringMap<OntologyNodeType>(profile.node_types);
   const relationTypes = normalizeStringMap<OntologyRelationType>(profile.relation_types);
   const registries = normalizeStringMap<OntologyRegistrySpec>(profile.registries);
+  const hardening = normalizeHardeningPolicy(profile.hardening);
   const normalized: Omit<NormalizedOntologyProfile, "profile_hash"> = {
     id: profile.id!,
     version: String(profile.version),
@@ -259,7 +399,10 @@ export function normalizeOntologyProfile(profile: OntologyProfile, sourcePath?: 
       Object.entries(registries).map(([id, registry]) => [id, normalizeRegistry(registry)]),
     ),
     citation_policy: normalizeCitationPolicy(profile.citation_policy),
-    hardening: normalizeHardeningPolicy(profile.hardening),
+    hardening,
+    inference_policy: normalizeInferencePolicy(profile.inference_policy),
+    evidence_policy: normalizeEvidencePolicy(profile.evidence_policy),
+    hierarchies: normalizeHierarchies(profile.hierarchies),
     outputs: normalizeOutputs(profile.outputs),
   };
 

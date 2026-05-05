@@ -51,6 +51,24 @@ function relationTypeSection(profile: NormalizedOntologyProfile): string {
   return ["## Allowed relation types", ...lines].join("\n");
 }
 
+function relationMetadataSection(profile: NormalizedOntologyProfile): string {
+  const lines = [
+    "## Relation metadata",
+    "- Profile edges may include generic metadata: review_status, assertion_basis, derivation_method, evidence_refs, confidence_handle, provenance_handle.",
+  ];
+  for (const [relation, spec] of Object.entries(profile.relation_types)) {
+    const details = [
+      spec.requires_evidence ? "requires_evidence=true" : "",
+      spec.assertion_basis.length > 0 ? `assertion_basis=${spec.assertion_basis.join(", ")}` : "",
+      spec.derivation_methods.length > 0 ? `derivation_methods=${spec.derivation_methods.join(", ")}` : "",
+    ].filter(Boolean);
+    if (details.length > 0) {
+      lines.push(`- ${relation}: ${details.join(", ")}`);
+    }
+  }
+  return lines.join("\n");
+}
+
 function registrySection(state: ProfilePromptState, options: ProfilePromptOptions): string {
   const limit = sampleLimit(options);
   const lines = ["## Registry matching rules"];
@@ -77,11 +95,38 @@ function citationSection(profile: NormalizedOntologyProfile): string {
 }
 
 function hardeningSection(profile: NormalizedOntologyProfile): string {
-  return [
+  const lines = [
     "## Status and hardening rules",
     `- allowed_statuses: ${profile.hardening.statuses.join(", ")}`,
     `- default_status: ${profile.hardening.default_status}`,
     `- promotion_requires: ${profile.hardening.promotion_requires.join(", ") || "none"}`,
+  ];
+  if (profile.hardening.status_transitions.length > 0) {
+    lines.push("- Status transitions:");
+    for (const transition of profile.hardening.status_transitions) {
+      const requires = transition.requires.length > 0 ? ` requires=${transition.requires.join(", ")}` : "";
+      lines.push(`  - ${transition.from_statuses.join(" | ")} -> ${transition.to_statuses.join(" | ")}${requires}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+function inferencePolicySection(profile: NormalizedOntologyProfile): string {
+  return [
+    "## Inferred relation policy",
+    `- allow_inferred_relations: ${profile.inference_policy.allow_inferred_relations}`,
+    `- allowed_relation_types: ${profile.inference_policy.allowed_relation_types.join(", ") || "none"}`,
+    `- require_evidence_refs: ${profile.inference_policy.require_evidence_refs}`,
+  ].join("\n");
+}
+
+function evidenceRequirementsSection(profile: NormalizedOntologyProfile): string {
+  return [
+    "## Evidence requirements",
+    `- require_evidence_refs: ${profile.evidence_policy.require_evidence_refs}`,
+    `- min_refs: ${profile.evidence_policy.min_refs}`,
+    `- node_types: ${profile.evidence_policy.node_types.join(", ") || "all profile nodes when required by policy"}`,
+    `- relation_types: ${profile.evidence_policy.relation_types.join(", ") || "all profile relations when required by policy"}`,
   ].join("\n");
 }
 
@@ -101,9 +146,10 @@ function schemaSection(): string {
     "## JSON Extraction output schema",
     "- Return one JSON object with keys: nodes, edges, hyperedges, input_tokens, output_tokens.",
     "- nodes require: id, label, file_type, source_file.",
-    "- profile nodes should include: node_type, status, citations, and registry identifiers when matched.",
+    "- profile nodes should include: node_type, status, review_status, citations, evidence_refs, and registry identifiers when matched.",
     "- edges require: source, target, relation, confidence, source_file.",
-    "- profile edges should include citations and status.",
+    "- profile edges should include citations, status, review_status, assertion_basis, derivation_method, and evidence_refs.",
+    "- Optional profile v2 records: canonical_entities, mentions, occurrences, evidence, mappings.",
   ].join("\n");
 }
 
@@ -152,11 +198,17 @@ export function buildProfileExtractionPrompt(
     ``,
     relationTypeSection(state.profile),
     ``,
+    relationMetadataSection(state.profile),
+    ``,
     registrySection(state, options),
     ``,
     citationSection(state.profile),
     ``,
     hardeningSection(state.profile),
+    ``,
+    inferencePolicySection(state.profile),
+    ``,
+    evidenceRequirementsSection(state.profile),
     ``,
     inputHintsSection(state),
     ``,
