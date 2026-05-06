@@ -196,6 +196,84 @@ function loadCliProfileContext(profileStatePath: string): {
   };
 }
 
+function optionalJson<T>(path: string, fallback: T): T {
+  return existsSync(path) ? readJson<T>(path) : fallback;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function extractEvidenceRefsFromSources(value: unknown): Set<string> {
+  const refs = new Set<string>();
+  if (!Array.isArray(value)) return refs;
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const record = item as Record<string, unknown>;
+    const id = stringValue(record.id);
+    const sourceFile = stringValue(record.source_file);
+    if (id) refs.add(id);
+    if (sourceFile) refs.add(sourceFile);
+  }
+  return refs;
+}
+
+function loadCliOntologyPatchContext(profileStatePath: string): import("./ontology-patch.js").OntologyPatchContext {
+  const context = loadCliProfileContext(profileStatePath);
+  const stateDir = resolve(context.profileState.state_dir);
+  const ontologyDir = join(stateDir, "ontology");
+  const manifest = optionalJson<Record<string, unknown>>(join(ontologyDir, "manifest.json"), {});
+  const graphHash = stringValue(manifest.graph_hash) ?? "";
+  const nodes = optionalJson<Array<Record<string, unknown>>>(join(ontologyDir, "nodes.json"), []).map((node) => ({
+    id: stringValue(node.id) ?? "",
+    type: stringValue(node.type) ?? undefined,
+    status: stringValue(node.status) ?? undefined,
+    source_refs: stringArray(node.source_refs),
+  })).filter((node) => node.id.length > 0);
+  const relations = optionalJson<Array<Record<string, unknown>>>(join(ontologyDir, "relations.json"), []).map((relation) => ({
+    id: stringValue(relation.id) ?? undefined,
+    type: stringValue(relation.type) ?? undefined,
+    source_id: stringValue(relation.source_id) ?? undefined,
+    target_id: stringValue(relation.target_id) ?? undefined,
+    evidence_refs: stringArray(relation.evidence_refs),
+  }));
+  const rootDir = context.projectConfig?.configDir ?? dirname(resolve(context.profileState.project_config_path));
+  return {
+    rootDir,
+    stateDir,
+    graphHash,
+    profile: context.profile,
+    profileState: context.profileState,
+    nodes,
+    relations,
+    evidenceRefs: extractEvidenceRefsFromSources(optionalJson(join(ontologyDir, "sources.json"), [])),
+    decisionsPath: context.projectConfig?.outputs.ontology.reconciliation.decisions_path ?? undefined,
+    dirtyWorktree: safeExecGit(rootDir, ["status", "--porcelain"]) !== null,
+  };
+}
+
+function printOntologyPatchResult(result: {
+  valid: boolean;
+  issues: Array<{ severity: string; message: string }>;
+  changed_files?: Array<{ kind: string; path: string; action: string }>;
+  dry_run?: boolean;
+}): void {
+  console.log(`Ontology patch ${result.valid ? "valid" : "invalid"}`);
+  if (result.dry_run !== undefined) console.log(`Dry run: ${result.dry_run}`);
+  for (const issue of result.issues) {
+    const line = `${issue.severity}: ${issue.message}`;
+    if (issue.severity === "warning") console.warn(line);
+    else console.log(line);
+  }
+  for (const file of result.changed_files ?? []) {
+    console.log(`${file.action}: ${file.kind} ${file.path}`);
+  }
+}
+
 function ensureCliExtractionShape(value?: Partial<Extraction> | null): Extraction {
   return {
     nodes: value?.nodes ?? [],
@@ -1831,6 +1909,43 @@ export async function main(): Promise<void> {
         `Ontology outputs: ${result.nodeCount} node(s), ${result.relationCount} relation(s), ` +
         `${result.wikiPageCount} wiki page(s)`,
       );
+    });
+
+  const ontology = program.command("ontology").description("Ontology lifecycle and reconciliation commands");
+  const ontologyPatch = ontology.command("patch").description("Validate and apply ontology reconciliation patches");
+  ontologyPatch
+    .command("validate")
+    .description("Validate an ontology patch without mutating files")
+    .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
+    .requiredOption("--patch <path>", "Ontology patch JSON")
+    .option("--json", "Print JSON result")
+    .action(async (opts) => {
+      const { validateOntologyPatch } = await import("./ontology-patch.js");
+      const context = loadCliOntologyPatchContext(opts.profileState);
+      const result = validateOntologyPatch(readJson(opts.patch), context);
+      if (opts.json) console.log(JSON.stringify(result, null, 2));
+      else printOntologyPatchResult(result);
+      if (!result.valid) process.exit(1);
+    });
+
+  ontologyPatch
+    .command("apply")
+    .description("Dry-run or write-apply an ontology patch through configured authoritative paths")
+    .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
+    .requiredOption("--patch <path>", "Ontology patch JSON")
+    .option("--dry-run", "Preview changed files without mutating them")
+    .option("--write", "Append to configured authoritative decision logs and local audit logs")
+    .option("--json", "Print JSON result")
+    .action(async (opts) => {
+      const { applyOntologyPatch } = await import("./ontology-patch.js");
+      const context = loadCliOntologyPatchContext(opts.profileState);
+      const result = applyOntologyPatch(readJson(opts.patch), context, {
+        dryRun: opts.dryRun === true,
+        write: opts.write === true,
+      });
+      if (opts.json) console.log(JSON.stringify(result, null, 2));
+      else printOntologyPatchResult(result);
+      if (!result.valid) process.exit(1);
     });
 
   program

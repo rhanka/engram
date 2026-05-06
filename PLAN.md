@@ -248,13 +248,13 @@ Progress note:
 - Modify: `src/skill-runtime.ts`
 - Modify/Add: tests
 
-- [ ] Define `graphify_ontology_patch_v1`.
-- [ ] Implement patch validation with profile hash, graph hash, operation, evidence and path-jail checks.
-- [ ] Implement dry-run previews with changed-file summaries.
-- [ ] Implement write apply to configured authoritative files only.
-- [ ] Implement append-only audit logs for applied and rejected patches.
-- [ ] Mark derived ontology artifacts stale or trigger explicit rebuild after apply.
-- [ ] Warn before apply when the Git worktree is dirty; never stage, commit or push.
+- [x] Define `graphify_ontology_patch_v1`.
+- [x] Implement patch validation with profile hash, graph hash, operation, evidence and path-jail checks.
+- [x] Implement dry-run previews with changed-file summaries.
+- [x] Implement write apply to configured authoritative files only.
+- [x] Implement append-only audit logs for applied and rejected patches.
+- [x] Mark derived ontology artifacts stale or trigger explicit rebuild after apply.
+- [x] Warn before apply when the Git worktree is dirty; never stage, commit or push.
 
 ## Task E: MCP Write Tools
 

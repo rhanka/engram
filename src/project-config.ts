@@ -8,6 +8,8 @@ import type {
   GraphifyInputScopeMode,
   GraphifyLlmExecutionPolicy,
   GraphifyOutputPolicy,
+  GraphifyProjectOntologyOutputPolicy,
+  GraphifyProjectOntologyReconciliationPolicy,
   GraphifyProjectConfig,
   GraphifyProjectInputs,
   GraphifyProjectConfigProfile,
@@ -135,6 +137,8 @@ export function validateProjectConfig(config: GraphifyProjectConfig): string[] {
   const imageAnalysis = asRecord(dataprep.image_analysis) as GraphifyImageAnalysisPolicy;
   const llmExecution = asRecord(config.llm_execution) as GraphifyLlmExecutionPolicy;
   const outputs = asRecord(config.outputs) as GraphifyOutputPolicy;
+  const ontologyOutput = asRecord(outputs.ontology) as GraphifyProjectOntologyOutputPolicy;
+  const reconciliation = asRecord(ontologyOutput.reconciliation) as GraphifyProjectOntologyReconciliationPolicy;
 
   if (config.version !== undefined && config.version !== 1) {
     errors.push("version must be 1");
@@ -188,6 +192,12 @@ export function validateProjectConfig(config: GraphifyProjectConfig): string[] {
   if (outputs.state_dir !== undefined && typeof outputs.state_dir !== "string") {
     errors.push("outputs.state_dir must be a path string");
   }
+  if (reconciliation.decisions_path !== undefined && typeof reconciliation.decisions_path !== "string") {
+    errors.push("outputs.ontology.reconciliation.decisions_path must be a path string");
+  }
+  if (reconciliation.patches_path !== undefined && typeof reconciliation.patches_path !== "string") {
+    errors.push("outputs.ontology.reconciliation.patches_path must be a path string");
+  }
   return errors;
 }
 
@@ -214,6 +224,8 @@ export function normalizeProjectConfig(
   const llmBatch = asRecord(llmExecution.batch);
   const llmMesh = asRecord(llmExecution.mesh);
   const outputs = asRecord(config.outputs) as GraphifyOutputPolicy;
+  const ontologyOutput = asRecord(outputs.ontology) as GraphifyProjectOntologyOutputPolicy;
+  const reconciliation = asRecord(ontologyOutput.reconciliation) as GraphifyProjectOntologyReconciliationPolicy;
 
   const registries = asStringArray(inputs.registries).map((item) => resolvePath(configDir, item));
   const imageRulesPath = asString(imageCalibration.rules_path);
@@ -287,6 +299,16 @@ export function normalizeProjectConfig(
       write_html: asBoolean(outputs.write_html, true),
       write_wiki: asBoolean(outputs.write_wiki, false),
       write_profile_report: asBoolean(outputs.write_profile_report, true),
+      ontology: {
+        reconciliation: {
+          decisions_path: asString(reconciliation.decisions_path)
+            ? resolvePath(configDir, asString(reconciliation.decisions_path)!)
+            : null,
+          patches_path: asString(reconciliation.patches_path)
+            ? resolvePath(configDir, asString(reconciliation.patches_path)!)
+            : null,
+        },
+      },
     },
   };
 }
