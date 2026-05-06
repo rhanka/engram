@@ -1,10 +1,10 @@
 # Graph Report - .  (2026-05-06)
 
 ## Corpus Check
-- Large corpus: 220 files · ~251,684 words. Semantic extraction will be expensive (many Claude tokens). Consider running on a subfolder, or use --no-semantic to run AST-only.
+- Large corpus: 221 files · ~251,963 words. Semantic extraction will be expensive (many Claude tokens). Consider running on a subfolder, or use --no-semantic to run AST-only.
 
 ## Summary
-- 2343 nodes · 4490 edges · 84 communities detected
+- 2345 nodes · 4493 edges · 84 communities detected
 - Extraction: 90% EXTRACTED · 10% INFERRED · 0% AMBIGUOUS · INFERRED: 466 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
 
@@ -12,12 +12,12 @@
 ## Input Scope
 - Requested: auto
 - Resolved: committed (source: default-auto)
-- Included files: 220 · Candidates: 236
-- Excluded: 1 untracked · 19464 ignored · 0 sensitive · 0 missing committed
+- Included files: 221 · Candidates: 237
+- Excluded: 0 untracked · 20128 ignored · 0 sensitive · 0 missing committed
 - Recommendation: Use --scope all or graphify.yaml inputs.corpus for a knowledge-base folder.
 
 ## Graph Freshness
-- Built from Git commit: `520db6b`
+- Built from Git commit: `4f45a41`
 - Compare this hash to `git rev-parse HEAD` before trusting freshness-sensitive graph output.
 ## God Nodes (most connected - your core abstractions)
 1. `Response` - 45 edges
@@ -32,6 +32,8 @@
 10. `AsyncClient` - 26 edges
 
 ## Surprising Connections (you probably didn't know these)
+- `Core data models: URL, Headers, Cookies, Request, Response. These are the centra` --uses--> `HTTPStatusError`  [INFERRED]
+  worked/httpx/raw/models.py → worked/httpx/raw/exceptions.py
 - `Utility functions shared across the library. Small helpers that don't belong in` --uses--> `Cookies`  [INFERRED]
   worked/httpx/raw/utils.py → worked/httpx/raw/models.py
 - `Convert a primitive value to its string representation.` --uses--> `Cookies`  [INFERRED]
@@ -39,8 +41,6 @@
 - `Convert a header key to its canonical Title-Case form.` --uses--> `Cookies`  [INFERRED]
   worked/httpx/raw/utils.py → worked/httpx/raw/models.py
 - `Expand a params dict into a flat list of (key, value) pairs.     List values bec` --uses--> `Cookies`  [INFERRED]
-  worked/httpx/raw/utils.py → worked/httpx/raw/models.py
-- `Parse a Content-Type header value.     Returns (media_type, params_dict).     Ex` --uses--> `Cookies`  [INFERRED]
   worked/httpx/raw/utils.py → worked/httpx/raw/models.py
 
 ## Communities
@@ -134,16 +134,16 @@ Cohesion: 0.11
 Nodes (34): appendMemoryFiles(), buildGitInventory(), countGitPaths(), fallbackAllScope(), gitInventory(), inspectInputScope(), isInputScopeMode(), makeScope() (+26 more)
 
 ### Community 22 - "Community 22"
+Cohesion: 0.07
+Nodes (15): estimateFileTokens(), extractionShape(), extractSemanticFilesDirectParallel(), mergeExtractions(), packSemanticFilesByTokenBudget(), readSemanticFile(), toPortableRelative(), createDirectTextJsonClient() (+7 more)
+
+### Community 23 - "Community 23"
 Cohesion: 0.09
 Nodes (15): Config, HttpClient, HttpClientFactory, main(), NewServer(), process(), validate(), Server (+7 more)
 
-### Community 23 - "Community 23"
-Cohesion: 0.08
-Nodes (28): average(), countHits(), evaluateReviewBenchmarks(), flowIdentifiers(), formatMetric(), identifiers(), normalize(), ratio() (+20 more)
-
 ### Community 24 - "Community 24"
 Cohesion: 0.08
-Nodes (15): estimateFileTokens(), extractionShape(), extractSemanticFilesDirectParallel(), mergeExtractions(), packSemanticFilesByTokenBudget(), readSemanticFile(), toPortableRelative(), createDirectTextJsonClient() (+7 more)
+Nodes (28): average(), countHits(), evaluateReviewBenchmarks(), flowIdentifiers(), formatMetric(), identifiers(), normalize(), ratio() (+20 more)
 
 ### Community 25 - "Community 25"
 Cohesion: 0.06

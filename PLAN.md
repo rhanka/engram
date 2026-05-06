@@ -344,6 +344,7 @@ Progress note:
 - [x] Add optional local UAT instructions for `../matchID/deces-ui/` and a small synthetic text corpus using keys from local `.env`.
 - [x] Update README translations for the new direct-backend contract; skills remain assistant-orchestration-first and do not need a command-flow change in this lot.
 - [x] Run `npm run build`, targeted Vitest tests, full `npm test`, `npx graphify hook-rebuild`, and `portable-check` before final commit.
+- [ ] Publish direct-backend release as `graphifyy@0.7.5` after merge to `main` and tag CI pass.
 
 **Optional local UAT after build:**
 
