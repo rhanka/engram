@@ -277,6 +277,8 @@ Research outputs:
 - write-safety model review
 - recommendation for MVP vs later features
 
+The initial research baseline is recorded in `SPEC_ONTOLOGY_STUDIO_DESIGN_RESEARCH.md`.
+
 ## Skill Contract
 
 Assistant skills should treat ontology lifecycle work as reviewable changes.

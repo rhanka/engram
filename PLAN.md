@@ -278,12 +278,12 @@ Progress note:
 - Modify: `spec/SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md` if research changes requirements
 - No implementation until design is approved
 
-- [ ] Research open-source ontology/mapping/reconciliation tools: WebProtege, VocBench, OpenRefine reconciliation, WebVOWL and semantic mapping tools such as Karma.
-- [ ] Produce screen pattern inventory, user journeys, component inventory, token requirements, accessibility risks and scalability risks.
-- [ ] Decide MVP UI scope: candidate queue, evidence panel, canonical entity panel, graph context, patch preview and audit trail.
-- [ ] Define exact `../sent-tech-design-system` token dependencies before implementation.
-- [ ] Define Svelte package boundaries and fallback token adapter for open-source development before the design system exists.
-- [ ] Confirm static export fallback: read-only viewer can export patch JSON without running a write server.
+- [x] Research open-source ontology/mapping/reconciliation tools: WebProtege, VocBench, OpenRefine reconciliation, WebVOWL and semantic mapping tools such as Karma.
+- [x] Produce screen pattern inventory, user journeys, component inventory, token requirements, accessibility risks and scalability risks.
+- [x] Decide MVP UI scope: candidate queue, evidence panel, canonical entity panel, graph context, patch preview and audit trail.
+- [x] Define exact `../sent-tech-design-system` token dependencies before implementation.
+- [x] Define Svelte package boundaries and fallback token adapter for open-source development before the design system exists.
+- [x] Confirm static export fallback: read-only viewer can export patch JSON without running a write server.
 
 ## Task G: Local Reconciliation Studio Implementation
 
