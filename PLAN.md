@@ -264,12 +264,12 @@ Progress note:
 - Modify: README and skills
 - Modify/Add: tests
 
-- [ ] Keep `graphify serve` read-only by default.
-- [ ] Add explicit `graphify ontology serve --write --config graphify.yaml`.
-- [ ] Expose mutation tools only in write mode.
-- [ ] Require dry-run or explicit confirmation for non-dry-run apply.
-- [ ] Reuse the same patch core as CLI and future studio.
-- [ ] Test that read-only MCP exposes no mutation tools.
+- [x] Keep `graphify serve` read-only by default.
+- [x] Add explicit `graphify ontology serve --write --config graphify.yaml`.
+- [x] Expose mutation tools only in write mode.
+- [x] Require dry-run or explicit confirmation for non-dry-run apply.
+- [x] Reuse the same patch core as CLI and future studio.
+- [x] Test that read-only MCP exposes no mutation tools.
 
 ## Task F: Local Reconciliation Studio Design
 

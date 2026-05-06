@@ -37,6 +37,7 @@ import { discoverProjectConfig, loadProjectConfig } from "./project-config.js";
 import { defaultManifestPath, resolveGraphInputPath, resolveGraphifyPaths } from "./paths.js";
 import { normalizeSearchText } from "./search.js";
 import { makeGraphPortable, projectRootLabel, scanPortableGraphifyArtifacts } from "./portable-artifacts.js";
+import { loadOntologyPatchContext } from "./ontology-patch-context.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -193,66 +194,6 @@ function loadCliProfileContext(profileStatePath: string): {
     profileState: readJson<ProfileState>(profileStatePath),
     profile: readJson<NormalizedOntologyProfile>(join(profileDir, "ontology-profile.normalized.json")),
     ...(existsSync(projectConfigPath) ? { projectConfig: readJson<NormalizedProjectConfig>(projectConfigPath) } : {}),
-  };
-}
-
-function optionalJson<T>(path: string, fallback: T): T {
-  return existsSync(path) ? readJson<T>(path) : fallback;
-}
-
-function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-}
-
-function stringValue(value: unknown): string | null {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
-}
-
-function extractEvidenceRefsFromSources(value: unknown): Set<string> {
-  const refs = new Set<string>();
-  if (!Array.isArray(value)) return refs;
-  for (const item of value) {
-    if (!item || typeof item !== "object") continue;
-    const record = item as Record<string, unknown>;
-    const id = stringValue(record.id);
-    const sourceFile = stringValue(record.source_file);
-    if (id) refs.add(id);
-    if (sourceFile) refs.add(sourceFile);
-  }
-  return refs;
-}
-
-function loadCliOntologyPatchContext(profileStatePath: string): import("./ontology-patch.js").OntologyPatchContext {
-  const context = loadCliProfileContext(profileStatePath);
-  const stateDir = resolve(context.profileState.state_dir);
-  const ontologyDir = join(stateDir, "ontology");
-  const manifest = optionalJson<Record<string, unknown>>(join(ontologyDir, "manifest.json"), {});
-  const graphHash = stringValue(manifest.graph_hash) ?? "";
-  const nodes = optionalJson<Array<Record<string, unknown>>>(join(ontologyDir, "nodes.json"), []).map((node) => ({
-    id: stringValue(node.id) ?? "",
-    type: stringValue(node.type) ?? undefined,
-    status: stringValue(node.status) ?? undefined,
-    source_refs: stringArray(node.source_refs),
-  })).filter((node) => node.id.length > 0);
-  const relations = optionalJson<Array<Record<string, unknown>>>(join(ontologyDir, "relations.json"), []).map((relation) => ({
-    id: stringValue(relation.id) ?? undefined,
-    type: stringValue(relation.type) ?? undefined,
-    source_id: stringValue(relation.source_id) ?? undefined,
-    target_id: stringValue(relation.target_id) ?? undefined,
-    evidence_refs: stringArray(relation.evidence_refs),
-  }));
-  const rootDir = context.projectConfig?.configDir ?? dirname(resolve(context.profileState.project_config_path));
-  return {
-    rootDir,
-    stateDir,
-    graphHash,
-    profile: context.profile,
-    profileState: context.profileState,
-    nodes,
-    relations,
-    evidenceRefs: extractEvidenceRefsFromSources(optionalJson(join(ontologyDir, "sources.json"), [])),
-    decisionsPath: context.projectConfig?.outputs.ontology.reconciliation.decisions_path ?? undefined,
-    dirtyWorktree: safeExecGit(rootDir, ["status", "--porcelain"]) !== null,
   };
 }
 
@@ -1921,7 +1862,7 @@ export async function main(): Promise<void> {
     .option("--json", "Print JSON result")
     .action(async (opts) => {
       const { validateOntologyPatch } = await import("./ontology-patch.js");
-      const context = loadCliOntologyPatchContext(opts.profileState);
+      const context = loadOntologyPatchContext(opts.profileState);
       const result = validateOntologyPatch(readJson(opts.patch), context);
       if (opts.json) console.log(JSON.stringify(result, null, 2));
       else printOntologyPatchResult(result);
@@ -1938,7 +1879,7 @@ export async function main(): Promise<void> {
     .option("--json", "Print JSON result")
     .action(async (opts) => {
       const { applyOntologyPatch } = await import("./ontology-patch.js");
-      const context = loadCliOntologyPatchContext(opts.profileState);
+      const context = loadOntologyPatchContext(opts.profileState);
       const result = applyOntologyPatch(readJson(opts.patch), context, {
         dryRun: opts.dryRun === true,
         write: opts.write === true,
@@ -1946,6 +1887,33 @@ export async function main(): Promise<void> {
       if (opts.json) console.log(JSON.stringify(result, null, 2));
       else printOntologyPatchResult(result);
       if (!result.valid) process.exit(1);
+    });
+
+  ontology
+    .command("serve")
+    .description("Start an explicit write-enabled ontology MCP server")
+    .requiredOption("--config <path>", "Graphify project config path")
+    .option("--write", "Enable ontology mutation tools")
+    .option("--graph <path>", "Graph JSON path; defaults to <state_dir>/graph.json")
+    .action(async (opts) => {
+      if (opts.write !== true) {
+        console.error("error: ontology serve exposes write tools only with explicit --write");
+        process.exit(1);
+      }
+      const projectConfig = loadProjectConfig(resolve(opts.config));
+      const profileStatePath = join(projectConfig.outputs.state_dir, "profile", "profile-state.json");
+      const graphPath = opts.graph ? resolve(opts.graph) : join(projectConfig.outputs.state_dir, "graph.json");
+      if (!existsSync(profileStatePath)) {
+        console.error(`error: profile state not found: ${profileStatePath}. Run graphify profile dataprep first.`);
+        process.exit(1);
+      }
+      const { serve } = await import("./serve.js");
+      await serve(graphPath, undefined, {
+        ontology: {
+          write: true,
+          profileStatePath,
+        },
+      });
     });
 
   program
