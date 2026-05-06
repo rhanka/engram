@@ -326,6 +326,7 @@ Progress note:
 - Modify: `README.md`, `README.zh-CN.md`, `README.ja-JP.md`
 - Modify: `package.json`, `package-lock.json`
 - Modify/Add: Vitest coverage
+- Modify: `.github/workflows/typescript-ci.yml`
 - Modify: `spec/SPEC_LLM_EXECUTION_PORTS.md`
 - Modify: `PLAN.md`
 
@@ -338,6 +339,8 @@ Progress note:
 - [x] Implement upstream-style token-aware chunking, bounded parallelism and merge for direct semantic extraction.
 - [x] Wire `graphify extract --backend <provider>` to direct semantic extraction when no `--semantic` file is provided.
 - [x] Keep CI on mocked provider calls by default, with real-provider UAT gated by explicit environment flags.
+- [x] Add CI real-provider direct LLM UAT on `main` pushes and same-repository PRs only; no `workflow_dispatch`, no fork PR secret exposure.
+- [x] Provision GitHub secrets: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, `COHERE_API_KEY`.
 - [x] Add optional local UAT instructions for `../matchID/deces-ui/` and a small synthetic text corpus using keys from local `.env`.
 - [x] Update README translations for the new direct-backend contract; skills remain assistant-orchestration-first and do not need a command-flow change in this lot.
 - [x] Run `npm run build`, targeted Vitest tests, full `npm test`, `npx graphify hook-rebuild`, and `portable-check` before final commit.
@@ -354,6 +357,7 @@ graphify extract ./tmp/direct-uat-corpus --backend openai --model gpt-5.5 --no-c
 
 **Executed UAT:**
 - [x] Real Anthropic direct backend on synthetic `/tmp` Markdown corpus: `5` nodes, `4` edges, `198` input tokens, `312` output tokens; no API key printed or persisted.
+- [x] Real direct provider integration test on all providers from local `../entropic/.env`: Anthropic, OpenAI, Gemini, Mistral and Cohere all returned valid Graphify JSON.
 
 **Current temporary backend table:**
 
