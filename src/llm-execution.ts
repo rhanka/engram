@@ -4,7 +4,10 @@ import { dirname, join } from "node:path";
 import type { NormalizedLlmExecutionPolicy } from "./types.js";
 
 export type LlmExecutionCapability = "text_json" | "vision_json" | "batch_vision_json";
-export type LlmExecutionMode = "assistant" | "batch" | "mesh";
+export type LlmExecutionMode = "assistant" | "direct" | "batch" | "mesh";
+export type DirectLlmProvider = "anthropic" | "openai" | "gemini" | "mistral" | "cohere";
+
+export const DIRECT_LLM_PROVIDERS = ["anthropic", "openai", "gemini", "mistral", "cohere"] as const;
 
 export interface TextJsonGenerationInput {
   schema: string;
@@ -36,7 +39,7 @@ export interface LlmExecutionResult {
   mode: LlmExecutionMode;
   model?: string;
   outputPath?: string;
-  instructionPath: string;
+  instructionPath?: string;
   audit: Record<string, unknown>;
 }
 
@@ -89,6 +92,12 @@ export interface AssistantLlmClientOptions {
   instructionDir: string;
 }
 
+export interface DirectTextJsonClientOptions {
+  provider: DirectLlmProvider;
+  model?: string;
+  temperature?: number;
+}
+
 function safeName(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]+/gu, "-").replace(/^-+|-+$/gu, "") || "schema";
 }
@@ -96,6 +105,99 @@ function safeName(value: string): string {
 function writeInstruction(path: string, lines: string[]): void {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, lines.join("\n") + "\n", "utf-8");
+}
+
+export function isDirectLlmProvider(value: unknown): value is DirectLlmProvider {
+  return typeof value === "string" && (DIRECT_LLM_PROVIDERS as readonly string[]).includes(value);
+}
+
+export function defaultDirectLlmModel(provider: DirectLlmProvider): string {
+  switch (provider) {
+    case "anthropic":
+      return "claude-sonnet-4-6";
+    case "openai":
+      return "gpt-5.5";
+    case "gemini":
+      return "gemini-3.1-pro-preview-customtools";
+    case "mistral":
+      return "mistral-small-2603";
+    case "cohere":
+      return "command-a-03-2025";
+  }
+}
+
+export function directProviderCredentialEnv(provider: DirectLlmProvider): string[] {
+  switch (provider) {
+    case "anthropic":
+      return ["ANTHROPIC_API_KEY"];
+    case "openai":
+      return ["OPENAI_API_KEY"];
+    case "gemini":
+      return ["GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"];
+    case "mistral":
+      return ["MISTRAL_API_KEY"];
+    case "cohere":
+      return ["COHERE_API_KEY"];
+  }
+}
+
+function resolveProviderCredential(provider: DirectLlmProvider): string | null {
+  for (const envName of directProviderCredentialEnv(provider)) {
+    const value = process.env[envName]?.trim();
+    if (value) return value;
+  }
+  return null;
+}
+
+function ensureProviderCredential(provider: DirectLlmProvider): void {
+  const credential = resolveProviderCredential(provider);
+  if (!credential) {
+    throw new Error(
+      `Missing provider credential for ${provider}; set one of ${directProviderCredentialEnv(provider).join(", ")}`,
+    );
+  }
+  if (provider === "gemini" && !process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim()) {
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY = credential;
+  }
+}
+
+function parseJsonFromLlmText(text: string): unknown {
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/iu);
+  const candidate = fenced ? fenced[1]!.trim() : trimmed;
+  try {
+    return JSON.parse(candidate);
+  } catch (err) {
+    throw new Error(
+      `Direct LLM response was not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
+async function resolveDirectModel(provider: DirectLlmProvider, model: string): Promise<unknown> {
+  ensureProviderCredential(provider);
+  switch (provider) {
+    case "anthropic": {
+      const { anthropic } = await import("@ai-sdk/anthropic");
+      return anthropic(model);
+    }
+    case "openai": {
+      const { openai } = await import("@ai-sdk/openai");
+      return openai(model);
+    }
+    case "gemini": {
+      const { google } = await import("@ai-sdk/google");
+      return google(model);
+    }
+    case "mistral": {
+      const { mistral } = await import("@ai-sdk/mistral");
+      return mistral(model);
+    }
+    case "cohere": {
+      const { cohere } = await import("@ai-sdk/cohere");
+      return cohere(model);
+    }
+  }
 }
 
 export function preflightLlmExecution(
@@ -109,6 +211,18 @@ export function preflightLlmExecution(
     return;
   }
   if (policy.mode === "assistant") return;
+  if (policy.mode === "direct") {
+    if (!policy.provider) {
+      throw new Error("llm_execution.provider is required for direct mode");
+    }
+    if (!isDirectLlmProvider(policy.provider)) {
+      throw new Error(
+        `llm_execution.provider must be one of ${DIRECT_LLM_PROVIDERS.join(", ")} for direct mode`,
+      );
+    }
+    ensureProviderCredential(policy.provider);
+    return;
+  }
   if (policy.mode === "batch") {
     if (!policy.batch.provider) {
       throw new Error("llm_execution.batch.provider is required for batch mode");
@@ -184,6 +298,57 @@ export function createAssistantVisionJsonClient(options: AssistantLlmClientOptio
         outputPath: input.outputPath,
         instructionPath,
         audit: { provider: "assistant", schema: input.schema, image_count: input.imagePaths.length },
+      };
+    },
+  };
+}
+
+export function createDirectTextJsonClient(options: DirectTextJsonClientOptions): TextJsonGenerationClient {
+  const provider = options.provider;
+  const model = options.model?.trim() || defaultDirectLlmModel(provider);
+  const temperature = options.temperature ?? 0;
+  return {
+    mode: "direct",
+    provider,
+    model,
+    async generateJson(input: TextJsonGenerationInput): Promise<TextJsonGenerationResult> {
+      const [{ generateText }, resolvedModel] = await Promise.all([
+        import("ai"),
+        resolveDirectModel(provider, model),
+      ]);
+      const result = await generateText({
+        model: resolvedModel as never,
+        temperature,
+        system: [
+          "You are Graphify's JSON extraction backend.",
+          "Return only valid JSON matching the requested schema.",
+          "Do not include Markdown prose outside the JSON object.",
+        ].join("\n"),
+        prompt: [
+          `Schema: ${input.schema}`,
+          "",
+          input.prompt,
+        ].join("\n"),
+      });
+      const parsed = parseJsonFromLlmText(result.text);
+      if (input.outputPath) {
+        mkdirSync(dirname(input.outputPath), { recursive: true });
+        writeFileSync(input.outputPath, JSON.stringify(parsed, null, 2), "utf-8");
+      }
+      return {
+        status: "completed",
+        provider,
+        mode: "direct",
+        model,
+        outputPath: input.outputPath,
+        audit: redactSecrets({
+          provider,
+          mode: "direct",
+          model,
+          schema: input.schema,
+          finishReason: result.finishReason,
+          usage: result.usage,
+        }),
       };
     },
   };

@@ -313,3 +313,58 @@ Progress note:
 - [ ] Add UAT instructions for CLI patch workflow, MCP read-only/write modes and studio static/write modes.
 - [ ] Run `npm run lint`, `npm run build`, `npm test`, `npm run test:smoke` when runtime behavior changes.
 - [ ] Run `npx graphify hook-rebuild` after code changes and `graphify portable-check .graphify` before committing graph artifacts.
+
+## Task I: Direct LLM Backends Through Vercel AI SDK
+
+**Files:**
+- Modify: `src/types.ts`
+- Modify: `src/project-config.ts`
+- Modify: `src/llm-execution.ts`
+- Add: `src/direct-llm-extract.ts`
+- Modify: `src/cli.ts`
+- Modify: `src/index.ts`
+- Modify: `README.md`, `README.zh-CN.md`, `README.ja-JP.md`
+- Modify: `package.json`, `package-lock.json`
+- Modify/Add: Vitest coverage
+- Modify: `spec/SPEC_LLM_EXECUTION_PORTS.md`
+- Modify: `PLAN.md`
+
+**Boundary:** This is a temporary provider abstraction. Keep the Graphify contract narrow so it can be replaced by the future Entropic SDK without rewriting extraction, validation or reporting.
+
+- [x] Extend `llm_execution.mode` with explicit opt-in `direct`; default behavior remains assistant mode.
+- [x] Use Vercel AI SDK packages for direct providers: OpenAI, Anthropic, Google Gemini, Mistral and Cohere.
+- [x] Keep upstream-aligned defaults: `claude-sonnet-4-6`, `gpt-5.5`, `gemini-3.1-pro-preview-customtools`, `mistral-small-2603`, and a configurable Cohere default.
+- [x] Implement credential preflight through environment variables only; never persist API keys in config, `.graphify`, logs or reports.
+- [x] Implement upstream-style token-aware chunking, bounded parallelism and merge for direct semantic extraction.
+- [x] Wire `graphify extract --backend <provider>` to direct semantic extraction when no `--semantic` file is provided.
+- [x] Keep CI on mocked provider calls by default, with real-provider UAT gated by explicit environment flags.
+- [x] Add optional local UAT instructions for `../matchID/deces-ui/` and a small synthetic text corpus using keys from local `.env`.
+- [x] Update README translations for the new direct-backend contract; skills remain assistant-orchestration-first and do not need a command-flow change in this lot.
+- [x] Run `npm run build`, targeted Vitest tests, full `npm test`, `npx graphify hook-rebuild`, and `portable-check` before final commit.
+
+**Optional local UAT after build:**
+
+```bash
+set -a
+. ../entropic/.env
+set +a
+graphify extract ../matchID/deces-ui --backend anthropic --model claude-sonnet-4-6 --no-cluster --out /tmp/graphify-direct-anthropic
+graphify extract ./tmp/direct-uat-corpus --backend openai --model gpt-5.5 --no-cluster --out /tmp/graphify-direct-openai
+```
+
+**Executed UAT:**
+- [x] Real Anthropic direct backend on synthetic `/tmp` Markdown corpus: `5` nodes, `4` edges, `198` input tokens, `312` output tokens; no API key printed or persisted.
+
+**Current temporary backend table:**
+
+```text
++-----------+-----------------------------------+-------------------------------+
+| Provider  | Default model                     | Credential env                |
++-----------+-----------------------------------+-------------------------------+
+| anthropic | claude-sonnet-4-6                 | ANTHROPIC_API_KEY             |
+| openai    | gpt-5.5                           | OPENAI_API_KEY                |
+| gemini    | gemini-3.1-pro-preview-customtools| GEMINI_API_KEY or GOOGLE_*    |
+| mistral   | mistral-small-2603                | MISTRAL_API_KEY               |
+| cohere    | command-a-03-2025                 | COHERE_API_KEY                |
++-----------+-----------------------------------+-------------------------------+
+```

@@ -71,6 +71,12 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.75",
+    "@ai-sdk/cohere": "^3.0.34",
+    "@ai-sdk/google": "^3.0.67",
+    "@ai-sdk/mistral": "^3.0.35",
+    "@ai-sdk/openai": "^3.0.61",
+    "ai": "^6.0.175",
     "commander": "^12.1.0",
     "csv-parse": "^6.2.1",
     "graphology": "^0.25.4",

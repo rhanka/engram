@@ -1773,8 +1773,8 @@ export async function main(): Promise<void> {
         writeOntologyDiscoveryDiff,
       } = await import("./ontology-discovery.js");
       const context = loadOntologyDiscoveryContext(opts.profileState);
-      const proposals = readJson(opts.proposals);
-      const sample = opts.sample ? readJson(opts.sample) : undefined;
+      const proposals = readJson<import("./ontology-discovery.js").OntologyDiscoveryProposalsFile>(opts.proposals);
+      const sample = opts.sample ? readJson<import("./ontology-discovery.js").OntologyDiscoverySample>(opts.sample) : undefined;
       const diff = buildOntologyDiscoveryDiff(context.profile, proposals, sample);
       writeOntologyDiscoveryDiff(opts.out, diff);
       mkdirSync(dirname(resolve(opts.report)), { recursive: true });
@@ -1920,24 +1920,19 @@ export async function main(): Promise<void> {
 
   program
     .command("extract")
-    .description("Headless extraction for CI/scripts using AST plus optional provided semantic JSON")
+    .description("Headless extraction for CI/scripts using AST plus optional semantic JSON or direct LLM backend")
     .argument("<inputPath>")
     .option("--semantic <path>", "Path to a provided semantic extraction JSON to merge")
     .option("--out <path>", "Output workspace root for the generated .graphify state")
-    .option("--backend <name>", "Compatibility flag from upstream Python CLI (not supported here)")
+    .option("--backend <name>", "Direct semantic backend: anthropic, openai, gemini, mistral, cohere")
+    .option("--model <id>", "Direct backend model override")
+    .option("--concurrency <n>", "Direct backend semantic chunk concurrency", "4")
+    .option("--token-budget <n>", "Approximate direct backend token budget per semantic chunk", "60000")
     .option("--no-cluster", "Write the raw merged extraction and skip graph clustering/reporting")
     .option("--scope <mode>", scopeOptionDescription())
     .option("--all", "Alias for --scope all")
     .action(async (inputPath, opts) => {
       try {
-        if (opts.backend) {
-          console.error(
-            "error: graphifyy does not run headless semantic backends directly. " +
-            "Provide --semantic <path> with a compatible extraction JSON, or use the graphify assistant skill/runtime pipeline.",
-          );
-          process.exit(1);
-        }
-
         const root = resolve(inputPath);
         if (!existsSync(root)) {
           console.error(`error: path not found: ${root}`);
@@ -1990,17 +1985,61 @@ export async function main(): Promise<void> {
           }
         }
 
-        const semanticExtraction = opts.semantic
-          ? makeExtractionPortable(ensureCliExtractionShape(readJson<Partial<Extraction>>(opts.semantic)), root)
-          : ensureCliExtractionShape();
+        let semanticExtraction = ensureCliExtractionShape();
         if (opts.semantic) {
+          semanticExtraction = makeExtractionPortable(ensureCliExtractionShape(readJson<Partial<Extraction>>(opts.semantic)), root);
           writeJson(paths.scratch.semantic, semanticExtraction);
+        } else if (opts.backend) {
+          const backend = String(opts.backend).trim().toLowerCase();
+          const [{ isDirectLlmProvider }, { createDirectSemanticExtractionClient, extractSemanticFilesDirectParallel }] = await Promise.all([
+            import("./llm-execution.js"),
+            import("./direct-llm-extract.js"),
+          ]);
+          if (!isDirectLlmProvider(backend)) {
+            console.error("error: --backend must be one of anthropic, openai, gemini, mistral, cohere");
+            process.exit(1);
+          }
+          const textSemanticFiles = [
+            ...(rawDetection.files.document ?? []),
+            ...(rawDetection.files.paper ?? []),
+          ];
+          const unsupportedSemanticFiles = [
+            ...(rawDetection.files.image ?? []),
+            ...(rawDetection.files.video ?? []),
+          ];
+          if (unsupportedSemanticFiles.length > 0) {
+            console.error(
+              "error: direct --backend currently extracts text semantic files only. " +
+              "Run the assistant/runtime PDF/OCR/transcription pipeline first, or provide --semantic for image/video extraction.",
+            );
+            process.exit(1);
+          }
+          if (textSemanticFiles.length > 0) {
+            const tokenBudget = Number.parseInt(String(opts.tokenBudget), 10);
+            const maxConcurrency = Number.parseInt(String(opts.concurrency), 10);
+            console.log(
+              `[graphify extract] direct semantic extraction on ${textSemanticFiles.length} file(s) with ${backend}...`,
+            );
+            semanticExtraction = makeExtractionPortable(
+              await extractSemanticFilesDirectParallel(textSemanticFiles, {
+                root,
+                client: createDirectSemanticExtractionClient({
+                  provider: backend,
+                  model: typeof opts.model === "string" ? opts.model : undefined,
+                }),
+                tokenBudget: Number.isFinite(tokenBudget) && tokenBudget > 0 ? tokenBudget : 60_000,
+                maxConcurrency: Number.isFinite(maxConcurrency) && maxConcurrency > 0 ? maxConcurrency : 4,
+              }),
+              root,
+            );
+            writeJson(paths.scratch.semantic, semanticExtraction);
+          }
         }
 
-        if (semanticFileCount > 0 && !opts.semantic) {
+        if (semanticFileCount > 0 && !opts.semantic && !opts.backend) {
           console.error(
             "error: detected non-code corpus files that require semantic extraction; " +
-            "provide --semantic <path> with a compatible extraction JSON, or use the graphify assistant skill/runtime pipeline.",
+            "provide --semantic <path>, pass --backend <provider>, or use the graphify assistant skill/runtime pipeline.",
           );
           process.exit(1);
         }

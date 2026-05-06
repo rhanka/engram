@@ -24,7 +24,7 @@ const CONFIG_CANDIDATES = [
 
 const VALID_PDF_OCR_MODES = new Set(["off", "auto", "always", "dry-run"]);
 const VALID_CITATION_MINIMUMS = new Set(["file", "page", "section", "paragraph"]);
-const VALID_LLM_EXECUTION_MODES = new Set(["assistant", "batch", "mesh", "off"]);
+const VALID_LLM_EXECUTION_MODES = new Set(["assistant", "direct", "batch", "mesh", "off"]);
 const VALID_IMAGE_ARTIFACT_SOURCES = new Set(["ocr_crops", "images", "all"]);
 const VALID_INPUT_SCOPE_MODES = new Set(["auto", "committed", "tracked", "all"]);
 
@@ -84,10 +84,13 @@ function parseCitationMinimum(value: unknown): "file" | "page" | "section" | "pa
     : "page";
 }
 
-function parseLlmExecutionMode(value: unknown, fallback: "assistant" | "batch" | "mesh" | "off"): "assistant" | "batch" | "mesh" | "off" {
+function parseLlmExecutionMode(
+  value: unknown,
+  fallback: "assistant" | "direct" | "batch" | "mesh" | "off",
+): "assistant" | "direct" | "batch" | "mesh" | "off" {
   const normalized = String(value ?? fallback).trim().toLowerCase();
   return VALID_LLM_EXECUTION_MODES.has(normalized)
-    ? normalized as "assistant" | "batch" | "mesh" | "off"
+    ? normalized as "assistant" | "direct" | "batch" | "mesh" | "off"
     : fallback;
 }
 
@@ -168,7 +171,7 @@ export function validateProjectConfig(config: GraphifyProjectConfig): string[] {
     imageAnalysis.mode !== undefined &&
     !VALID_LLM_EXECUTION_MODES.has(String(imageAnalysis.mode))
   ) {
-    errors.push("dataprep.image_analysis.mode must be one of assistant, batch, mesh, off");
+    errors.push("dataprep.image_analysis.mode must be one of assistant, direct, batch, mesh, off");
   }
   if (
     imageAnalysis.artifact_source !== undefined &&
@@ -180,7 +183,7 @@ export function validateProjectConfig(config: GraphifyProjectConfig): string[] {
     llmExecution.mode !== undefined &&
     !VALID_LLM_EXECUTION_MODES.has(String(llmExecution.mode))
   ) {
-    errors.push("llm_execution.mode must be one of assistant, batch, mesh, off");
+    errors.push("llm_execution.mode must be one of assistant, direct, batch, mesh, off");
   }
   if (outputs.state_dir !== undefined && typeof outputs.state_dir !== "string") {
     errors.push("outputs.state_dir must be a path string");

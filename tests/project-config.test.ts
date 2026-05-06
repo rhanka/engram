@@ -208,7 +208,7 @@ describe("project config loader", () => {
         "    mode: provider",
         "    artifact_source: full_page",
         "llm_execution:",
-        "  mode: direct",
+        "  mode: provider",
         "",
       ].join("\n"),
       "graphify.yaml",
@@ -216,9 +216,9 @@ describe("project config loader", () => {
 
     const errors = validateProjectConfig(raw);
 
-    expect(errors).toContain("dataprep.image_analysis.mode must be one of assistant, batch, mesh, off");
+    expect(errors).toContain("dataprep.image_analysis.mode must be one of assistant, direct, batch, mesh, off");
     expect(errors).toContain("dataprep.image_analysis.artifact_source must be one of ocr_crops, images, all");
-    expect(errors).toContain("llm_execution.mode must be one of assistant, batch, mesh, off");
+    expect(errors).toContain("llm_execution.mode must be one of assistant, direct, batch, mesh, off");
   });
 
   it("normalizes an already parsed object without reading files", () => {

@@ -78,6 +78,8 @@ import {
   ontologyDiscoveryDiffToMarkdown,
   writeOntologyDiscoveryDiff,
   writeOntologyDiscoverySample,
+  type OntologyDiscoveryProposalsFile,
+  type OntologyDiscoverySample,
 } from "./ontology-discovery.js";
 import {
   calibrateImageRouting,
@@ -590,8 +592,8 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .option("--json", "Print JSON diff")
     .action((opts) => {
       const context = loadOntologyDiscoveryContext(opts.profileState);
-      const proposals = readJson(opts.proposals);
-      const sample = opts.sample ? readJson(opts.sample) : undefined;
+      const proposals = readJson<OntologyDiscoveryProposalsFile>(opts.proposals);
+      const sample = opts.sample ? readJson<OntologyDiscoverySample>(opts.sample) : undefined;
       const diff = buildOntologyDiscoveryDiff(context.profile, proposals, sample);
       writeOntologyDiscoveryDiff(opts.out, diff);
       mkdirSync(dirname(resolve(opts.report)), { recursive: true });

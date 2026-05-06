@@ -3,11 +3,11 @@
 ## Status
 
 - Product: Graphify TypeScript port
-- Scope: provider-neutral LLM execution boundaries for optional advanced dataprep
+- Scope: provider-neutral LLM execution boundaries for optional advanced dataprep and explicit headless extraction
 - Activation: explicit config or assistant skill flow only
 - Default behavior: no direct LLM provider calls
 
-This spec defines narrow execution ports for optional Graphify features that need text or vision reasoning. It separates Graphify core from provider SDKs, API keys, batch APIs and external LLM mesh runtimes.
+This spec defines narrow execution ports for optional Graphify features that need text or vision reasoning. It separates Graphify core from provider SDKs, API keys, batch APIs and external LLM mesh runtimes. The current direct-provider implementation uses Vercel AI SDK as a temporary adapter layer; the port is intentionally narrow so it can be replaced by the future Entropic SDK.
 
 ## Problem
 
@@ -29,7 +29,7 @@ Without explicit ports, provider logic will leak into PDF/OCR preparation, image
 
 - Keep Graphify core provider-neutral.
 - Make direct LLM execution opt-in.
-- Support assistant, batch and mesh/custom modes with the same logical contracts.
+- Support assistant, direct, batch and mesh/custom modes with the same logical contracts.
 - Keep secrets outside committed config and generated artifacts.
 - Make model and provider selection explicit.
 - Allow future adapters without changing core dataprep logic.
@@ -37,7 +37,7 @@ Without explicit ports, provider logic will leak into PDF/OCR preparation, image
 ## Non-Goals
 
 - Do not add a resident Graphify backend.
-- Do not require Vercel AI SDK, OpenAI SDK, Anthropic SDK or any other provider SDK in core.
+- Do not make Vercel AI SDK a permanent product abstraction. It is allowed as a temporary direct-provider adapter until the Entropic SDK replaces it.
 - Do not make Graphify responsible for organization-wide model governance.
 - Do not add embeddings or vector stores.
 - Do not make provider calls during default `$graphify`.
@@ -70,6 +70,15 @@ Existing commands that use assistant skills remain valid. Optional LLM ports onl
 - A provider adapter handles upload/submission/status/download/import.
 - Batch outputs are normalized into Graphify sidecars.
 - Provider credentials are required through environment variables or local uncommitted config.
+
+`direct`
+
+- Graphify calls a configured provider directly through the temporary Vercel AI SDK adapter.
+- Supported providers are OpenAI, Anthropic, Google Gemini, Mistral and Cohere.
+- This mode is explicit only: command flag or `llm_execution.mode: direct`.
+- Provider credentials are read from environment variables only.
+- The implementation keeps upstream-style token-aware chunking, bounded parallelism and retry/merge outside the provider SDK.
+- This mode must be removable without changing Graphify extraction, validation, build, report or export contracts.
 
 `mesh`
 
@@ -117,6 +126,7 @@ llm_execution:
 Rules:
 
 - `mode: assistant` is valid without provider credentials.
+- `mode: direct` requires a supported provider and provider credential environment variable.
 - `mode: batch` requires a provider adapter and credentials.
 - `mode: mesh` requires an adapter package or local module.
 - `env:NAME` references are resolved at runtime and never written back with secret values.
@@ -128,7 +138,7 @@ The TypeScript implementation should expose narrow interfaces.
 
 ```ts
 export interface TextJsonGenerationClient {
-  readonly mode: "assistant" | "batch" | "mesh";
+  readonly mode: "assistant" | "direct" | "batch" | "mesh";
   readonly provider: string;
   readonly model?: string;
   generateJson(input: TextJsonGenerationInput): Promise<TextJsonGenerationResult>;
@@ -137,7 +147,7 @@ export interface TextJsonGenerationClient {
 
 ```ts
 export interface VisionJsonAnalysisClient {
-  readonly mode: "assistant" | "batch" | "mesh";
+  readonly mode: "assistant" | "direct" | "batch" | "mesh";
   readonly provider: string;
   readonly primaryModel?: string;
   readonly deepModel?: string;

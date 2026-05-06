@@ -66,6 +66,10 @@ export {
 export {
   createAssistantTextJsonClient,
   createAssistantVisionJsonClient,
+  createDirectTextJsonClient,
+  defaultDirectLlmModel,
+  directProviderCredentialEnv,
+  isDirectLlmProvider,
   preflightLlmExecution,
   redactSecrets,
 } from "./llm-execution.js";
@@ -100,6 +104,8 @@ export type {
   BatchVisionImportInput,
   BatchVisionImportResult,
   BatchVisionJsonClient,
+  DirectLlmProvider,
+  DirectTextJsonClientOptions,
   LlmExecutionCapability,
   LlmExecutionResult,
   LlmMeshAdapter,
@@ -237,6 +243,20 @@ export { augmentDetectionWithPdfPreflight } from "./pdf-ocr.js";
 export type { PdfPreparationArtifact, PdfPreparationOptions } from "./pdf-ocr.js";
 export { prepareSemanticDetection } from "./semantic-prepare.js";
 export type { SemanticPreparationOptions, SemanticPreparationResult } from "./semantic-prepare.js";
+export {
+  createDirectSemanticExtractionClient,
+  extractSemanticFilesDirectParallel,
+  packSemanticFilesByTokenBudget,
+} from "./direct-llm-extract.js";
+export type {
+  DirectSemanticChunk,
+  DirectSemanticClientOptions,
+  DirectSemanticExtractionClient,
+  DirectSemanticExtractionOptions,
+  DirectSemanticFile,
+  PackSemanticFilesOptions,
+} from "./direct-llm-extract.js";
+export type { LlmExecutionMode } from "./llm-execution.js";
 export { buildFirstHopSummary, firstHopSummaryToText } from "./summary.js";
 export type { FirstHopSummary, FirstHopHub, FirstHopCommunity, FirstHopSummaryOptions } from "./summary.js";
 export { buildReviewDelta, reviewDeltaToText } from "./review.js";

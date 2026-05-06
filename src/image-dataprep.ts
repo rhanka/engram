@@ -21,7 +21,7 @@ export interface ImageDataprepArtifact {
 export interface ImageDataprepManifest {
   schema: "graphify_image_dataprep_manifest_v1";
   source_state_hash: string;
-  mode: "assistant" | "batch" | "mesh" | "off";
+  mode: "assistant" | "direct" | "batch" | "mesh" | "off";
   artifact_count: number;
   generated_at: string;
   artifacts: ImageDataprepArtifact[];
@@ -29,7 +29,7 @@ export interface ImageDataprepManifest {
 
 export interface BuildImageDataprepManifestOptions {
   root: string;
-  mode: "assistant" | "batch" | "mesh" | "off";
+  mode: "assistant" | "direct" | "batch" | "mesh" | "off";
   detection: DetectionResult;
   pdfArtifacts: PdfPreparationArtifact[];
   includeFullPageScreenshots?: boolean;

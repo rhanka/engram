@@ -183,7 +183,7 @@ export interface PlatformConfig {
 }
 
 export type GraphifyPdfOcrMode = "off" | "auto" | "always" | "dry-run";
-export type GraphifyLlmExecutionMode = "assistant" | "batch" | "mesh" | "off";
+export type GraphifyLlmExecutionMode = "assistant" | "direct" | "batch" | "mesh" | "off";
 export type GraphifyImageArtifactSource = "ocr_crops" | "images" | "all";
 
 export interface GraphifyProjectConfigProfile {
