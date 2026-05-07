@@ -313,8 +313,8 @@ Progress note:
 - [x] Update README with generic ontology lifecycle explanation and clear opt-in behavior.
 - [x] Update skills to propose patches, validate first, ask before write apply, warn on dirty worktrees and never edit `graph.json`.
 - [x] Add UAT instructions for CLI patch workflow, MCP read-only/write modes and public-domain mystery studio mock scenarios.
-- [ ] Run `npm run lint`, `npm run build`, `npm test`, `npm run test:smoke` when runtime behavior changes.
-- [ ] Run `npx graphify hook-rebuild` after code changes and `graphify portable-check .graphify` before committing graph artifacts.
+- [x] Run `npm run lint`, `npm run build`, `npm test`, `npm run test:smoke` when runtime behavior changes.
+- [x] Run `npx graphify hook-rebuild` after code changes and `graphify portable-check .graphify` before committing graph artifacts.
 
 ## Task I: Direct LLM Backends Through Vercel AI SDK
 
