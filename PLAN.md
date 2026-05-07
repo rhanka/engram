@@ -248,13 +248,13 @@ Progress note:
 - Modify: `src/skill-runtime.ts`
 - Modify/Add: tests
 
-- [ ] Define `graphify_ontology_patch_v1`.
-- [ ] Implement patch validation with profile hash, graph hash, operation, evidence and path-jail checks.
-- [ ] Implement dry-run previews with changed-file summaries.
-- [ ] Implement write apply to configured authoritative files only.
-- [ ] Implement append-only audit logs for applied and rejected patches.
-- [ ] Mark derived ontology artifacts stale or trigger explicit rebuild after apply.
-- [ ] Warn before apply when the Git worktree is dirty; never stage, commit or push.
+- [x] Define `graphify_ontology_patch_v1`.
+- [x] Implement patch validation with profile hash, graph hash, operation, evidence and path-jail checks.
+- [x] Implement dry-run previews with changed-file summaries.
+- [x] Implement write apply to configured authoritative files only.
+- [x] Implement append-only audit logs for applied and rejected patches.
+- [x] Mark derived ontology artifacts stale or trigger explicit rebuild after apply.
+- [x] Warn before apply when the Git worktree is dirty; never stage, commit or push.
 
 ## Task E: MCP Write Tools
 
@@ -264,12 +264,12 @@ Progress note:
 - Modify: README and skills
 - Modify/Add: tests
 
-- [ ] Keep `graphify serve` read-only by default.
-- [ ] Add explicit `graphify ontology serve --write --config graphify.yaml`.
-- [ ] Expose mutation tools only in write mode.
-- [ ] Require dry-run or explicit confirmation for non-dry-run apply.
-- [ ] Reuse the same patch core as CLI and future studio.
-- [ ] Test that read-only MCP exposes no mutation tools.
+- [x] Keep `graphify serve` read-only by default.
+- [x] Add explicit `graphify ontology serve --write --config graphify.yaml`.
+- [x] Expose mutation tools only in write mode.
+- [x] Require dry-run or explicit confirmation for non-dry-run apply.
+- [x] Reuse the same patch core as CLI and future studio.
+- [x] Test that read-only MCP exposes no mutation tools.
 
 ## Task F: Local Reconciliation Studio Design
 
@@ -278,12 +278,12 @@ Progress note:
 - Modify: `spec/SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md` if research changes requirements
 - No implementation until design is approved
 
-- [ ] Research open-source ontology/mapping/reconciliation tools: WebProtege, VocBench, OpenRefine reconciliation, WebVOWL and semantic mapping tools such as Karma.
-- [ ] Produce screen pattern inventory, user journeys, component inventory, token requirements, accessibility risks and scalability risks.
-- [ ] Decide MVP UI scope: candidate queue, evidence panel, canonical entity panel, graph context, patch preview and audit trail.
-- [ ] Define exact `../sent-tech-design-system` token dependencies before implementation.
-- [ ] Define Svelte package boundaries and fallback token adapter for open-source development before the design system exists.
-- [ ] Confirm static export fallback: read-only viewer can export patch JSON without running a write server.
+- [x] Research open-source ontology/mapping/reconciliation tools: WebProtege, VocBench, OpenRefine reconciliation, WebVOWL and semantic mapping tools such as Karma.
+- [x] Produce screen pattern inventory, user journeys, component inventory, token requirements, accessibility risks and scalability risks.
+- [x] Decide MVP UI scope: candidate queue, evidence panel, canonical entity panel, graph context, patch preview and audit trail.
+- [x] Define exact `../sent-tech-design-system` token dependencies before implementation.
+- [x] Define Svelte package boundaries and fallback token adapter for open-source development before the design system exists.
+- [x] Confirm static export fallback: read-only viewer can export patch JSON without running a write server.
 
 ## Task G: Local Reconciliation Studio Implementation
 
@@ -291,6 +291,8 @@ Progress note:
 - Add: Svelte studio package or module after Task F approval
 - Modify/Add: CLI server command
 - Modify/Add: tests and UAT docs
+
+**Status:** Deferred to the next UI lot. This branch intentionally merges the ontology patch/MCP infrastructure and UAT framing first, then uses the public-domain mystery corpus to mock and validate the studio before implementation.
 
 - [ ] Implement read-only studio served by `graphify ontology studio --config graphify.yaml`.
 - [ ] Implement write-enabled studio only with `--write`, localhost binding and local token.
@@ -308,11 +310,11 @@ Progress note:
 - Modify: `spec/SPEC_GRAPHIFY.md`
 - Modify: `PLAN.md`
 
-- [ ] Update README with generic ontology lifecycle explanation and clear opt-in behavior.
-- [ ] Update skills to propose patches, validate first, ask before write apply, warn on dirty worktrees and never edit `graph.json`.
-- [ ] Add UAT instructions for CLI patch workflow, MCP read-only/write modes and studio static/write modes.
-- [ ] Run `npm run lint`, `npm run build`, `npm test`, `npm run test:smoke` when runtime behavior changes.
-- [ ] Run `npx graphify hook-rebuild` after code changes and `graphify portable-check .graphify` before committing graph artifacts.
+- [x] Update README with generic ontology lifecycle explanation and clear opt-in behavior.
+- [x] Update skills to propose patches, validate first, ask before write apply, warn on dirty worktrees and never edit `graph.json`.
+- [x] Add UAT instructions for CLI patch workflow, MCP read-only/write modes and public-domain mystery studio mock scenarios.
+- [x] Run `npm run lint`, `npm run build`, `npm test`, `npm run test:smoke` when runtime behavior changes.
+- [x] Run `npx graphify hook-rebuild` after code changes and `graphify portable-check .graphify` before committing graph artifacts.
 
 ## Task I: Direct LLM Backends Through Vercel AI SDK
 
@@ -344,7 +346,7 @@ Progress note:
 - [x] Add optional local UAT instructions for `../matchID/deces-ui/` and a small synthetic text corpus using keys from local `.env`.
 - [x] Update README translations for the new direct-backend contract; skills remain assistant-orchestration-first and do not need a command-flow change in this lot.
 - [x] Run `npm run build`, targeted Vitest tests, full `npm test`, `npx graphify hook-rebuild`, and `portable-check` before final commit.
-- [ ] Publish direct-backend release as `graphifyy@0.7.5` after merge to `main` and tag CI pass.
+- [x] Publish direct-backend release as `graphifyy@0.7.5` after merge to `main` and tag CI pass.
 
 **Optional local UAT after build:**
 

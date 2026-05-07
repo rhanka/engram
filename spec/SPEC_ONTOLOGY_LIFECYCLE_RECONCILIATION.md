@@ -239,6 +239,8 @@ Design constraints:
 - avoid hardcoding domain colors, labels, icons, or taxonomy names
 - keep the static-export fallback: users can still export a patch JSON without a live write server
 
+The public-domain mystery saga corpus is the preferred real UAT for this design phase. It stays external to Graphify under `public-domaine-mystery-sagas-pack`; Graphify must not vendor the real corpus. Use it to mock concrete UI flows for character canonicalization, aliases, narrator/person splits, relations, evidence review, patch preview and audit trail. See `spec/SPEC_PUBLIC_DOMAIN_MYSTERY_UAT.md`.
+
 Required token categories before implementation:
 
 - typography scale and font families
@@ -276,6 +278,8 @@ Research outputs:
 - scalability risks for large ontologies
 - write-safety model review
 - recommendation for MVP vs later features
+
+The initial research baseline is recorded in `SPEC_ONTOLOGY_STUDIO_DESIGN_RESEARCH.md`.
 
 ## Skill Contract
 

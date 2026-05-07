@@ -208,6 +208,24 @@ describe("skill cache examples", () => {
     }
   });
 
+  it("documents ontology lifecycle patch safeguards in every distributed skill", () => {
+    for (const relativePath of [
+      ...ALL_SKILL_DOCS,
+      "../src/skills/skill-vscode.md",
+      "../src/skills/skill-kiro.md",
+    ]) {
+      const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
+      expect(content).toContain("Ontology Lifecycle Patches");
+      expect(content).toContain("ontology-patch-validate");
+      expect(content).toContain("ontology-patch-apply");
+      expect(content).toContain("validate before dry-run");
+      expect(content).toContain("dry-run before write");
+      expect(content).toContain("warn if the Git worktree is dirty");
+      expect(content).toContain("must not edit `.graphify/graph.json`");
+      expect(content).toContain("Public Domain Mystery Sagas");
+    }
+  });
+
   it("keeps the Windows skill usage lines aligned with upstream v0.3.28", () => {
     const content = readFileSync(new URL("../src/skills/skill-windows.md", import.meta.url), "utf-8");
 

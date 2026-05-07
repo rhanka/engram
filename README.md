@@ -384,6 +384,20 @@ graphify profile ontology-output \
   --profile-state .graphify/profile/profile-state.json \
   --input extraction.json \
   --out-dir .graphify/ontology
+
+# ontology lifecycle patches - validate first, dry-run before write
+graphify ontology patch validate \
+  --profile-state .graphify/profile/profile-state.json \
+  --patch patch.json
+graphify ontology patch apply \
+  --profile-state .graphify/profile/profile-state.json \
+  --patch patch.json \
+  --dry-run
+graphify ontology patch apply \
+  --profile-state .graphify/profile/profile-state.json \
+  --patch patch.json \
+  --write
+graphify ontology serve --config graphify.yaml --write
 ```
 
 Works with any mix of file types:
@@ -429,7 +443,17 @@ Assistant skills use the same runtime via `project-config`, `configured-dataprep
 
 Advanced image dataprep is also opt-in through `dataprep.image_analysis.enabled`. In assistant mode, Graphify writes manifests and instructions only; Codex, Claude, Gemini, or another assistant can caption crops and propose calibration labels, but TypeScript replay owns deterministic acceptance. In batch mode, the runtime can export provider-neutral primary JSONL requests, import normalized caption/routing sidecars, and export a deep-pass JSONL only when project-owned routing rules declare `decision: accept_matrix`. Existing valid sidecars are not overwritten unless `--force` is explicitly used.
 
-Profile artifacts live under `.graphify/profile/`, image dataprep artifacts under `.graphify/image-dataprep/`, calibration proposals under `.graphify/calibration/`, and optional profile-declared ontology artifacts under `.graphify/ontology/`. Semantic cache entries are isolated by profile hash, and the normal LLM Wiki remains `.graphify/wiki/index.md`. Graphify ships only synthetic profile examples and fixtures; real project configs, registries, labels, routing rules, and proprietary ontologies belong in consuming repositories. MCP-specific profile tools, embeddings, databases, remote registries, and a resident LLM backend are deferred.
+Profile artifacts live under `.graphify/profile/`, image dataprep artifacts under `.graphify/image-dataprep/`, calibration proposals under `.graphify/calibration/`, and optional profile-declared ontology artifacts under `.graphify/ontology/`. Semantic cache entries are isolated by profile hash, and the normal LLM Wiki remains `.graphify/wiki/index.md`. Graphify ships only synthetic profile examples and fixtures; real project configs, registries, labels, routing rules, and proprietary ontologies belong in consuming repositories. Embeddings, databases, remote registries, and a resident LLM backend are deferred.
+
+### Ontology lifecycle and reconciliation
+
+Ontology lifecycle work uses reviewable patches instead of editing derived graph files. `.graphify/graph.json` and `.graphify/ontology/*.json` are generated artifacts; assistants and UI surfaces must not edit them directly. A reconciliation decision is represented as `graphify_ontology_patch_v1`, validated against the active profile hash, graph hash, evidence refs, relation endpoint rules, status transition policy and configured repository path jail.
+
+The default MCP graph server remains read-only. Mutation tools are exposed only by `graphify ontology serve --config graphify.yaml --write`, and every write path reuses the same deterministic patch core as the CLI. The safe workflow is validate first, dry-run before write, warn when the Git worktree is dirty, then write only after explicit user approval.
+
+The future reconciliation studio is intentionally separate from the current HTML graph viewer. It should be a Svelte local studio backed by these patch APIs, with read-only export as a fallback and write mode guarded by localhost binding and token-gated apply.
+
+The public-domain mystery corpus is the recommended real UAT for this workflow. Keep it in the external `public-domaine-mystery-sagas-pack` repository and use it to mock candidate queues, aliases, character reconciliation, relation evidence, patch preview and audit trail screens. Do not vendor the real corpus into Graphify fixtures.
 
 ## What you get
 

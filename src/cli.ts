@@ -37,6 +37,7 @@ import { discoverProjectConfig, loadProjectConfig } from "./project-config.js";
 import { defaultManifestPath, resolveGraphInputPath, resolveGraphifyPaths } from "./paths.js";
 import { normalizeSearchText } from "./search.js";
 import { makeGraphPortable, projectRootLabel, scanPortableGraphifyArtifacts } from "./portable-artifacts.js";
+import { loadOntologyPatchContext } from "./ontology-patch-context.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -194,6 +195,24 @@ function loadCliProfileContext(profileStatePath: string): {
     profile: readJson<NormalizedOntologyProfile>(join(profileDir, "ontology-profile.normalized.json")),
     ...(existsSync(projectConfigPath) ? { projectConfig: readJson<NormalizedProjectConfig>(projectConfigPath) } : {}),
   };
+}
+
+function printOntologyPatchResult(result: {
+  valid: boolean;
+  issues: Array<{ severity: string; message: string }>;
+  changed_files?: Array<{ kind: string; path: string; action: string }>;
+  dry_run?: boolean;
+}): void {
+  console.log(`Ontology patch ${result.valid ? "valid" : "invalid"}`);
+  if (result.dry_run !== undefined) console.log(`Dry run: ${result.dry_run}`);
+  for (const issue of result.issues) {
+    const line = `${issue.severity}: ${issue.message}`;
+    if (issue.severity === "warning") console.warn(line);
+    else console.log(line);
+  }
+  for (const file of result.changed_files ?? []) {
+    console.log(`${file.action}: ${file.kind} ${file.path}`);
+  }
 }
 
 function ensureCliExtractionShape(value?: Partial<Extraction> | null): Extraction {
@@ -1831,6 +1850,70 @@ export async function main(): Promise<void> {
         `Ontology outputs: ${result.nodeCount} node(s), ${result.relationCount} relation(s), ` +
         `${result.wikiPageCount} wiki page(s)`,
       );
+    });
+
+  const ontology = program.command("ontology").description("Ontology lifecycle and reconciliation commands");
+  const ontologyPatch = ontology.command("patch").description("Validate and apply ontology reconciliation patches");
+  ontologyPatch
+    .command("validate")
+    .description("Validate an ontology patch without mutating files")
+    .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
+    .requiredOption("--patch <path>", "Ontology patch JSON")
+    .option("--json", "Print JSON result")
+    .action(async (opts) => {
+      const { validateOntologyPatch } = await import("./ontology-patch.js");
+      const context = loadOntologyPatchContext(opts.profileState);
+      const result = validateOntologyPatch(readJson(opts.patch), context);
+      if (opts.json) console.log(JSON.stringify(result, null, 2));
+      else printOntologyPatchResult(result);
+      if (!result.valid) process.exit(1);
+    });
+
+  ontologyPatch
+    .command("apply")
+    .description("Dry-run or write-apply an ontology patch through configured authoritative paths")
+    .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
+    .requiredOption("--patch <path>", "Ontology patch JSON")
+    .option("--dry-run", "Preview changed files without mutating them")
+    .option("--write", "Append to configured authoritative decision logs and local audit logs")
+    .option("--json", "Print JSON result")
+    .action(async (opts) => {
+      const { applyOntologyPatch } = await import("./ontology-patch.js");
+      const context = loadOntologyPatchContext(opts.profileState);
+      const result = applyOntologyPatch(readJson(opts.patch), context, {
+        dryRun: opts.dryRun === true,
+        write: opts.write === true,
+      });
+      if (opts.json) console.log(JSON.stringify(result, null, 2));
+      else printOntologyPatchResult(result);
+      if (!result.valid) process.exit(1);
+    });
+
+  ontology
+    .command("serve")
+    .description("Start an explicit write-enabled ontology MCP server")
+    .requiredOption("--config <path>", "Graphify project config path")
+    .option("--write", "Enable ontology mutation tools")
+    .option("--graph <path>", "Graph JSON path; defaults to <state_dir>/graph.json")
+    .action(async (opts) => {
+      if (opts.write !== true) {
+        console.error("error: ontology serve exposes write tools only with explicit --write");
+        process.exit(1);
+      }
+      const projectConfig = loadProjectConfig(resolve(opts.config));
+      const profileStatePath = join(projectConfig.outputs.state_dir, "profile", "profile-state.json");
+      const graphPath = opts.graph ? resolve(opts.graph) : join(projectConfig.outputs.state_dir, "graph.json");
+      if (!existsSync(profileStatePath)) {
+        console.error(`error: profile state not found: ${profileStatePath}. Run graphify profile dataprep first.`);
+        process.exit(1);
+      }
+      const { serve } = await import("./serve.js");
+      await serve(graphPath, undefined, {
+        ontology: {
+          write: true,
+          profileStatePath,
+        },
+      });
     });
 
   program

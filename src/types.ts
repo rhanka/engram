@@ -263,6 +263,16 @@ export interface GraphifyOutputPolicy {
   write_html?: boolean;
   write_wiki?: boolean;
   write_profile_report?: boolean;
+  ontology?: GraphifyProjectOntologyOutputPolicy;
+}
+
+export interface GraphifyProjectOntologyOutputPolicy {
+  reconciliation?: GraphifyProjectOntologyReconciliationPolicy;
+}
+
+export interface GraphifyProjectOntologyReconciliationPolicy {
+  decisions_path?: string;
+  patches_path?: string;
 }
 
 export interface GraphifyProjectConfig {
@@ -338,6 +348,16 @@ export interface NormalizedOutputPolicy {
   write_html: boolean;
   write_wiki: boolean;
   write_profile_report: boolean;
+  ontology: NormalizedProjectOntologyOutputPolicy;
+}
+
+export interface NormalizedProjectOntologyOutputPolicy {
+  reconciliation: NormalizedProjectOntologyReconciliationPolicy;
+}
+
+export interface NormalizedProjectOntologyReconciliationPolicy {
+  decisions_path: string | null;
+  patches_path: string | null;
 }
 
 export interface NormalizedProjectConfig {

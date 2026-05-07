@@ -21,7 +21,22 @@ import { buildFirstHopSummary, firstHopSummaryToText } from "./summary.js";
 import { buildReviewDelta, reviewDeltaToText } from "./review.js";
 import { buildReviewAnalysis, reviewAnalysisToText } from "./review-analysis.js";
 import { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
+import { applyOntologyPatch, validateOntologyPatch } from "./ontology-patch.js";
+import { loadOntologyPatchContext } from "./ontology-patch-context.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+
+export interface ServeOptions {
+  ontology?: {
+    write?: boolean;
+    profileStatePath?: string;
+  };
+}
+
+interface McpToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
 
 // ---------------------------------------------------------------------------
 // Graph loading
@@ -409,6 +424,7 @@ function toolShortestPath(G: Graph, args: Record<string, unknown>): string {
 export async function serve(
   graphPath: string = resolveGraphInputPath(),
   transport?: Transport,
+  options: ServeOptions = {},
 ): Promise<void> {
   let Server: typeof import("@modelcontextprotocol/sdk/server/index.js").Server;
   let StdioServerTransport: typeof import("@modelcontextprotocol/sdk/server/stdio.js").StdioServerTransport;
@@ -431,14 +447,20 @@ export async function serve(
 
   const G = loadGraph(graphPath);
   const communities = communitiesFromGraph(G);
+  const ontologyWrite = options.ontology?.write === true;
+  if (ontologyWrite && !options.ontology?.profileStatePath) {
+    throw new Error("ontology write mode requires profileStatePath");
+  }
+  const ontologyPatchContext = ontologyWrite
+    ? loadOntologyPatchContext(options.ontology!.profileStatePath!)
+    : null;
 
   const server = new Server(
     { name: "graphify", version: getVersion() },
     { capabilities: { tools: {} } },
   );
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [
+  const tools: McpToolDefinition[] = [
       {
         name: "first_hop_summary",
         description:
@@ -617,8 +639,54 @@ export async function serve(
           required: ["source", "target"],
         },
       },
-    ],
-  }));
+    ];
+
+  if (ontologyWrite) {
+    tools.push(
+      {
+        name: "validate_ontology_patch",
+        description:
+          "Validate a graphify_ontology_patch_v1 object against the active ontology profile and generated ontology artifacts. Does not mutate files.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            patch: {
+              type: "object",
+              description: "graphify_ontology_patch_v1 object",
+            },
+          },
+          required: ["patch"],
+        },
+      },
+      {
+        name: "apply_ontology_patch",
+        description:
+          "Dry-run by default, or write-apply a graphify_ontology_patch_v1 object through configured authoritative decision logs and local audit logs.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            patch: {
+              type: "object",
+              description: "graphify_ontology_patch_v1 object",
+            },
+            dry_run: {
+              type: "boolean",
+              default: true,
+              description: "Preview changed files without mutating them.",
+            },
+            write: {
+              type: "boolean",
+              default: false,
+              description: "Must be true for non-dry-run apply.",
+            },
+          },
+          required: ["patch"],
+        },
+      },
+    );
+  }
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
 
   const handlers: Record<
     string,
@@ -636,6 +704,19 @@ export async function serve(
     graph_stats: () => toolGraphStats(G, communities),
     shortest_path: (a) => toolShortestPath(G, a),
   };
+  if (ontologyPatchContext) {
+    handlers.validate_ontology_patch = (a) =>
+      JSON.stringify(validateOntologyPatch(a.patch, ontologyPatchContext), null, 2);
+    handlers.apply_ontology_patch = (a) =>
+      JSON.stringify(
+        applyOntologyPatch(a.patch, ontologyPatchContext, {
+          dryRun: a.write === true ? false : true,
+          write: a.write === true,
+        }),
+        null,
+        2,
+      );
+  }
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;

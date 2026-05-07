@@ -82,6 +82,11 @@ import {
   type OntologyDiscoverySample,
 } from "./ontology-discovery.js";
 import {
+  applyOntologyPatch,
+  validateOntologyPatch,
+} from "./ontology-patch.js";
+import { loadOntologyPatchContext } from "./ontology-patch-context.js";
+import {
   calibrateImageRouting,
   loadImageRoutingLabels,
   loadImageRoutingRules,
@@ -644,6 +649,35 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         `Ontology outputs: ${result.nodeCount} node(s), ${result.relationCount} relation(s), ` +
         `${result.wikiPageCount} wiki page(s)`,
       );
+    });
+
+  program
+    .command("ontology-patch-validate")
+    .description("Validate a graphify_ontology_patch_v1 JSON file without mutation")
+    .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
+    .requiredOption("--patch <path>", "Ontology patch JSON")
+    .action((opts) => {
+      const context = loadOntologyPatchContext(opts.profileState);
+      const result = validateOntologyPatch(readJson(opts.patch), context);
+      console.log(JSON.stringify(result, null, 2));
+      if (!result.valid) process.exit(1);
+    });
+
+  program
+    .command("ontology-patch-apply")
+    .description("Dry-run or write-apply a graphify_ontology_patch_v1 JSON file")
+    .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
+    .requiredOption("--patch <path>", "Ontology patch JSON")
+    .option("--dry-run", "Preview changed files without mutation")
+    .option("--write", "Append to configured authoritative decision logs and local audit logs")
+    .action((opts) => {
+      const context = loadOntologyPatchContext(opts.profileState);
+      const result = applyOntologyPatch(readJson(opts.patch), context, {
+        dryRun: opts.dryRun === true,
+        write: opts.write === true,
+      });
+      console.log(JSON.stringify(result, null, 2));
+      if (!result.valid) process.exit(1);
     });
 
   program

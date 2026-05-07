@@ -9,6 +9,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
 import { serve } from "../src/serve.js";
+import { ONTOLOGY_PATCH_SCHEMA, type OntologyPatch } from "../src/ontology-patch.js";
 
 const tempDirs: string[] = [];
 const tsRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -100,6 +101,141 @@ function toolText(result: { content?: Array<{ type?: string; text?: string }> })
     .join("\n");
 }
 
+function writeOntologyPatchFixture(root: string): {
+  graphPath: string;
+  profileStatePath: string;
+  decisionsPath: string;
+  patch: OntologyPatch;
+} {
+  const stateDir = join(root, ".graphify");
+  const profileDir = join(stateDir, "profile");
+  const ontologyDir = join(stateDir, "ontology");
+  const decisionsPath = join(root, "graphify", "reconciliation", "decisions.jsonl");
+  mkdirSync(profileDir, { recursive: true });
+  mkdirSync(ontologyDir, { recursive: true });
+  const graphPath = writeFixtureGraph(stateDir);
+  const profileHash = "profile-hash";
+  const graphHash = "graph-hash";
+  const profileStatePath = join(profileDir, "profile-state.json");
+  writeFileSync(
+    profileStatePath,
+    JSON.stringify({
+      profile_id: "synthetic",
+      profile_version: "1",
+      profile_hash: profileHash,
+      project_config_path: join(root, "graphify.yaml"),
+      ontology_profile_path: join(root, "graphify", "ontology-profile.yaml"),
+      state_dir: stateDir,
+      detect_roots: [join(root, "docs")],
+      exclude_roots: [],
+      registry_counts: {},
+      registry_node_count: 0,
+      semantic_file_count: 1,
+      transcript_count: 0,
+      pdf_artifact_count: 0,
+    }, null, 2),
+    "utf-8",
+  );
+  writeFileSync(
+    join(profileDir, "ontology-profile.normalized.json"),
+    JSON.stringify({
+      id: "synthetic",
+      version: "1",
+      default_language: "en",
+      profile_hash: profileHash,
+      node_types: { Component: {} },
+      relation_types: {},
+      registries: {},
+      citation_policy: { minimum_granularity: "page", require_source_file: true, allow_bbox: "when_available" },
+      hardening: { statuses: ["candidate", "validated"], default_status: "candidate", promotion_requires: [], status_transitions: [] },
+      inference_policy: { allow_inferred_relations: true, allowed_relation_types: [], require_evidence_refs: false },
+      evidence_policy: { require_evidence_refs: false, min_refs: 0, node_types: [], relation_types: [] },
+      hierarchies: {},
+      outputs: {
+        ontology: {
+          enabled: true,
+          artifact_schema: "graphify_ontology_outputs_v1",
+          canonical_node_types: ["Component"],
+          source_node_types: [],
+          occurrence_node_types: [],
+          alias_fields: [],
+          relation_exports: [],
+          wiki: { enabled: false, page_node_types: [], include_backlinks: false, include_source_snippets: false },
+        },
+      },
+    }, null, 2),
+    "utf-8",
+  );
+  writeFileSync(
+    join(profileDir, "project-config.normalized.json"),
+    JSON.stringify({
+      version: 1,
+      sourcePath: join(root, "graphify.yaml"),
+      configDir: root,
+      profile: { path: "graphify/ontology-profile.yaml", resolvedPath: join(root, "graphify", "ontology-profile.yaml") },
+      inputs: { corpus: [join(root, "docs")], scope: "all", scope_source: "configured-default", registries: [], registrySources: {}, generated: [], exclude: [] },
+      dataprep: {
+        pdf_ocr: "auto",
+        prefer_ocr_markdown: true,
+        use_extracted_pdf_images: true,
+        full_page_screenshot_vision: false,
+        citation_minimum: "page",
+        preserve_source_structure: true,
+        image_analysis: {
+          enabled: false,
+          mode: "off",
+          artifact_source: "ocr_crops",
+          caption_schema: "generic_image_caption_v1",
+          routing_profile: "generic_image_routing_v1",
+          primary_model: null,
+          deep_model: null,
+          calibration: { rules_path: null, resolvedRulesPath: null, labels_path: null, resolvedLabelsPath: null },
+          max_markdown_context_chars: 8000,
+          batch: { completion_window: "24h", output_dir: join(stateDir, "image-dataprep", "batch") },
+        },
+      },
+      llm_execution: { mode: "assistant", provider: null, text_json: { model: "" }, vision_json: { primary_model: "", deep_model: "" }, batch: { provider: "", completion_window: "24h" }, mesh: { adapter: "" } },
+      outputs: {
+        state_dir: stateDir,
+        write_html: true,
+        write_wiki: false,
+        write_profile_report: true,
+        ontology: { reconciliation: { decisions_path: decisionsPath, patches_path: null } },
+      },
+    }, null, 2),
+    "utf-8",
+  );
+  writeFileSync(join(ontologyDir, "manifest.json"), JSON.stringify({ graph_hash: graphHash, profile_hash: profileHash }, null, 2), "utf-8");
+  writeFileSync(
+    join(ontologyDir, "nodes.json"),
+    JSON.stringify([
+      { id: "candidate-component", type: "Component", status: "candidate", source_refs: ["manual.md#p1"] },
+      { id: "component-a", type: "Component", status: "validated", source_refs: ["manual.md#p1"] },
+    ], null, 2),
+    "utf-8",
+  );
+  writeFileSync(join(ontologyDir, "relations.json"), "[]", "utf-8");
+  writeFileSync(join(ontologyDir, "sources.json"), JSON.stringify([{ id: "manual.md#p1" }], null, 2), "utf-8");
+  return {
+    graphPath,
+    profileStatePath,
+    decisionsPath,
+    patch: {
+      schema: ONTOLOGY_PATCH_SCHEMA,
+      id: "patch-mcp-001",
+      operation: "accept_match",
+      status: "proposed",
+      profile_hash: profileHash,
+      graph_hash: graphHash,
+      target: { candidate_id: "candidate-component", canonical_id: "component-a" },
+      evidence_refs: ["manual.md#p1"],
+      reason: "Synthetic MCP patch.",
+      author: "tester",
+      created_at: "2026-05-05T00:00:00.000Z",
+    },
+  };
+}
+
 afterEach(() => {
   while (tempDirs.length > 0) {
     rmSync(tempDirs.pop()!, { recursive: true, force: true });
@@ -151,6 +287,46 @@ describe("MCP stdio server", () => {
           "shortest_path",
         ].sort(),
       );
+      expect(names).not.toContain("validate_ontology_patch");
+      expect(names).not.toContain("apply_ontology_patch");
+    } finally {
+      await client.close().catch(() => undefined);
+      await clientTransport.close().catch(() => undefined);
+      await serverPromise.catch(() => undefined);
+    }
+  });
+
+  it("exposes ontology mutation tools only in explicit write mode", async () => {
+    const dir = makeExternalTempDir();
+    const { graphPath, profileStatePath, decisionsPath, patch } = writeOntologyPatchFixture(dir);
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const serverPromise = serve(graphPath, serverTransport, {
+      ontology: { write: true, profileStatePath },
+    });
+    const client = new Client({ name: "graphify-serve-test", version: "0.0.0" });
+
+    try {
+      await client.connect(clientTransport);
+      const names = (await client.listTools()).tools.map((tool) => tool.name);
+      expect(names).toEqual(expect.arrayContaining(["validate_ontology_patch", "apply_ontology_patch"]));
+
+      const validate = JSON.parse(toolText(await client.callTool({
+        name: "validate_ontology_patch",
+        arguments: { patch },
+      })));
+      const dryRun = JSON.parse(toolText(await client.callTool({
+        name: "apply_ontology_patch",
+        arguments: { patch, dry_run: true },
+      })));
+      const write = JSON.parse(toolText(await client.callTool({
+        name: "apply_ontology_patch",
+        arguments: { patch, write: true },
+      })));
+
+      expect(validate.valid).toBe(true);
+      expect(dryRun.dry_run).toBe(true);
+      expect(write.valid).toBe(true);
+      expect(readFileSync(decisionsPath, "utf-8")).toContain("patch-mcp-001");
     } finally {
       await client.close().catch(() => undefined);
       await clientTransport.close().catch(() => undefined);
