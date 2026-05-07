@@ -375,3 +375,32 @@ graphify extract ./tmp/direct-uat-corpus --backend openai --model gpt-5.5 --no-c
 | cohere    | command-a-03-2025                 | COHERE_API_KEY                |
 +-----------+-----------------------------------+-------------------------------+
 ```
+
+## Task J: Public Mystery Ontology UAT And Policy Calibration
+
+**Files:**
+- Modify: `spec/SPEC_PUBLIC_DOMAIN_MYSTERY_UAT.md`
+- Modify: `spec/SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md`
+- Modify: `PLAN.md`
+- Later modify: platform skills and skill runtime profile commands
+- Later modify/add: UAT profile files in `../public-domaine-mystery-sagas-pack`
+
+**Boundary:** The public mystery corpus is an external UAT and UI mockup dataset. Graphify must not vendor the corpus and must not hard-code mystery-specific ontology concepts. The product feature is generic configurable evidence/reconciliation policy plus assistant-guided calibration.
+
+- [x] Move the public UAT illustration to the standard pack state at `../public-domaine-mystery-sagas-pack/.graphify/`.
+- [x] Keep source selection and regeneration notes in `../public-domaine-mystery-sagas-pack/examples/graphify-three-works/`.
+- [x] Define the UAT ontology as project profile content, not Graphify built-ins.
+- [x] Expand the public UAT to the richer MVP scope: `Character`, `Alias`, `Work`, `ChapterOrStory`, `Case`, `Event`, `Location`, `Object`, `Evidence`, `Organization`, `NarrativeRole`.
+- [x] Specify source-grounded evidence policy with required source ref, required snippet, required confidence, recommended section ref and optional offsets.
+- [x] Specify that evidence/reconciliation policy must be profile-configurable and deterministically validated.
+- [x] Specify that skills may propose policy changes from sampled candidates but must emit dry-run profile patches/diffs and wait for approval.
+- [ ] Add a committed `graphify.yaml` and ontology profile to the public pack for the three-work UAT.
+- [ ] Add project-owned reconciliation decision/audit log paths to the pack without committing generated cache/runtime-local files.
+- [ ] Add `configure-reconciliation-policy` skill guidance: sample candidates, explain rule impact, propose deterministic profile patch, wait for user approval.
+- [ ] Add CLI or skill-runtime support for policy-calibration dry-runs if the existing discovery commands are insufficient.
+- [ ] Generate candidate reconciliation queue from the public pack and validate it against the profile policy.
+- [ ] Demonstrate at least one accepted relation, one rejected candidate, one alias merge proposal and one weak-evidence review item.
+- [ ] Ensure every accepted UAT decision cites source evidence and does not require exact offsets yet.
+- [ ] Update README and skills to point to the public pack as the ontology studio/mockup UAT.
+- [ ] Run `npm run lint`, `npm run build`, `npm test`, `npm run test:smoke` after runtime/skill changes.
+- [ ] Regenerate Graphify state and run `node dist/cli.js portable-check .graphify` before committing any Graphify repo `.graphify` artifacts.

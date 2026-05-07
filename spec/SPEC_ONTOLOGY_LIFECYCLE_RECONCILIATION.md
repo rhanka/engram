@@ -48,6 +48,56 @@ Rules:
 - Human review is required before promotion to hardened or validated status unless the project config explicitly allows deterministic auto-acceptance for a narrow rule.
 - Every applied patch records author, timestamp, reason, input graph hash, profile hash, source evidence references, and before/after summary.
 
+## Configurable Evidence And Reconciliation Policy
+
+Ontology lifecycle behavior must be driven by project profile policy, not by hard-coded domain heuristics.
+
+Profiles may define:
+
+- required evidence fields, such as source reference, section reference, snippet, confidence and optional offsets
+- status transition rules
+- relation promotion rules
+- alias merge rules
+- candidate sorting rules
+- auto-acceptance rules, when a project chooses to allow narrow deterministic promotion
+
+LLMs and assistant skills may help users calibrate those rules by sampling candidates and proposing profile diffs. They must not be part of deterministic validation or patch apply.
+
+Minimum generic behavior:
+
+- candidate generation can attach evidence snippets and confidence/provenance handles
+- validation can reject patches that do not satisfy the active profile policy
+- policy changes are explicit profile patches or diffs
+- no product docs, fixtures or defaults encode a project-specific ontology
+
+Example policy categories, intentionally domain-neutral:
+
+```yaml
+evidence_policy:
+  minimum:
+    source_ref: required
+    section_ref: recommended
+    snippet: required
+    confidence: required
+    offsets: optional
+  snippet:
+    max_chars: 800
+
+reconciliation_policy:
+  status_transitions:
+    candidate: [needs_review, validated, rejected]
+    needs_review: [validated, rejected]
+    validated: [deprecated]
+    rejected: []
+  acceptance_rules:
+    promote_relation:
+      require_source_grounding: true
+      require_direct_mention: true
+    merge_alias:
+      require_shared_entity_context: true
+      require_human_review: true
+```
+
 ## Authoritative State
 
 Graphify should distinguish generated state from authoritative state.
