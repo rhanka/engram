@@ -1250,7 +1250,19 @@ Configured profile workflow:
 10. For batch image analysis, use `image-batch-export` and `image-batch-import`. A deep-pass export is allowed only when project-owned routing rules declare `decision: accept_matrix`; do not make production route decisions in the assistant.
 11. If the profile declares `outputs.ontology.enabled: true`, run `ontology-output` to compile `.graphify/ontology/` after validated extraction exists.
 
-Do not add MCP, embeddings, databases, direct provider SDKs, a resident LLM backend, or a forked OCR/PDF pipeline for this branch.
+## Ontology Lifecycle Patches
+
+Use ontology lifecycle commands only when profile artifacts and `.graphify/ontology/` outputs already exist. Review decisions are patches against project-owned sources, not direct graph mutations. Assistants may propose patches, but must validate before dry-run and dry-run before write.
+
+- Validate with `ontology-patch-validate --profile-state .graphify/profile/profile-state.json --patch patch.json`.
+- Preview with `ontology-patch-apply --profile-state .graphify/profile/profile-state.json --patch patch.json --dry-run`.
+- Write with `ontology-patch-apply --profile-state .graphify/profile/profile-state.json --patch patch.json --write` only after explicit user approval.
+- Always warn if the Git worktree is dirty before proposing a write apply.
+- Agents must not edit `.graphify/graph.json` or derived `.graphify/ontology/*.json` directly.
+- The default MCP server stays read-only; mutation tools require explicit `graphify ontology serve --config graphify.yaml --write`.
+- Use the Public Domain Mystery Sagas repo as an external UAT and UI-mock corpus only; do not add its real corpus as Graphify package fixtures.
+
+Do not add embeddings, databases, a resident LLM backend, or a forked OCR/PDF pipeline for this branch.
 
 ## Lifecycle State
 

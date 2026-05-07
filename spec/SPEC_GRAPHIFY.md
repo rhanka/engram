@@ -106,11 +106,11 @@ Optional profile-declared ontology outputs compile under `.graphify/ontology/` t
 
 Optional image dataprep artifacts live under `.graphify/image-dataprep/` and calibration proposals under `.graphify/calibration/`. Runtime commands cover deterministic sample writing, calibration replay, provider-neutral batch export/import, and accepted-matrix deep-pass export. Production cascade routing is blocked unless project-owned rules declare `decision: accept_matrix`.
 
-The LLM Wiki remains `.graphify/wiki/index.md`. This feature does not add MCP-specific profile tools, embeddings, databases, remote registry fetching, or a resident LLM backend.
+The LLM Wiki remains `.graphify/wiki/index.md`. Profile mode does not add embeddings, databases, remote registry fetching, or a resident LLM backend.
 
 Ontology lifecycle and reconciliation are specified separately in `SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md`. The product rule is that `graph.json` and compiled ontology JSON remain derived artifacts. Review decisions must be expressed as validated patches against project-owned sources such as profiles, registries or reconciliation decision logs, then Graphify rebuilds the graph and ontology outputs. The existing MCP server stays read-only by default; any mutation surface must be explicit, local, dry-run first and audit-backed.
 
-The current HTML graph viewer is not the target for professional ontology reconciliation. A future UI should be a separate Svelte-based local studio that consumes Graphify ontology artifacts and patch APIs. It should consume `../sent-tech-design-system` once available through a token adapter, with explicit token requirements before implementation.
+The current HTML graph viewer is not the target for professional ontology reconciliation. A future UI should be a separate Svelte-based local studio that consumes Graphify ontology artifacts and patch APIs. It should consume `../sent-tech-design-system` once available through a token adapter, with explicit token requirements before implementation. The external `public-domaine-mystery-sagas-pack` corpus is the preferred real UAT for studio mockups because it exercises canonical characters, aliases, narrator/person splits, relations, evidence and audit flows without adding proprietary examples to Graphify.
 
 ## PDF Preflight And OCR
 

@@ -292,6 +292,8 @@ Progress note:
 - Modify/Add: CLI server command
 - Modify/Add: tests and UAT docs
 
+**Status:** Deferred to the next UI lot. This branch intentionally merges the ontology patch/MCP infrastructure and UAT framing first, then uses the public-domain mystery corpus to mock and validate the studio before implementation.
+
 - [ ] Implement read-only studio served by `graphify ontology studio --config graphify.yaml`.
 - [ ] Implement write-enabled studio only with `--write`, localhost binding and local token.
 - [ ] Route every write through patch validate/dry-run/apply APIs.
@@ -308,9 +310,9 @@ Progress note:
 - Modify: `spec/SPEC_GRAPHIFY.md`
 - Modify: `PLAN.md`
 
-- [ ] Update README with generic ontology lifecycle explanation and clear opt-in behavior.
-- [ ] Update skills to propose patches, validate first, ask before write apply, warn on dirty worktrees and never edit `graph.json`.
-- [ ] Add UAT instructions for CLI patch workflow, MCP read-only/write modes and studio static/write modes.
+- [x] Update README with generic ontology lifecycle explanation and clear opt-in behavior.
+- [x] Update skills to propose patches, validate first, ask before write apply, warn on dirty worktrees and never edit `graph.json`.
+- [x] Add UAT instructions for CLI patch workflow, MCP read-only/write modes and public-domain mystery studio mock scenarios.
 - [ ] Run `npm run lint`, `npm run build`, `npm test`, `npm run test:smoke` when runtime behavior changes.
 - [ ] Run `npx graphify hook-rebuild` after code changes and `graphify portable-check .graphify` before committing graph artifacts.
 
