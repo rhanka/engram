@@ -6,7 +6,7 @@ This document is the durable upstream traceability contract for the TypeScript G
 
 - Created: 2026-04-22
 - TypeScript baseline: `main` at `1f30efa7afaf5c98f06fcaebbb727fd4f2fb3f8a`
-- TypeScript package: `graphifyy@0.7.4`
+- TypeScript package: `graphifyy@0.7.5`
 - Source orientation: `spec/SPEC_UPSTREAM_DUAL_CATCHUP_2026_04.md`
 - Review inspiration orientation: `spec/SPEC_CODE_REVIEW_GRAPH_OPPORUNITY.md`
 
@@ -24,8 +24,8 @@ The TypeScript fork must stay generic, npm-first, `.graphify/`-based, and TypeSc
 - Python Graphify is the only upstream that may drive npm parity version numbers.
 - `code-review-graph` is an additive feature source and must never determine the published npm version.
 - Local patch releases between parity milestones are allowed, but the next parity target must be named after the upstream Python Graphify line it actually covers.
-- Upstream Python `v1.0.0` must remain `deferred` until a dedicated traceability pass confirms that the active release train has moved beyond `v6` / `0.7.x`.
-- The `0.7.4` catch-up must stay TypeScript-only; do not introduce new Python runtime dependencies to claim parity.
+- Upstream Python `v1.0.0` must remain `deferred` until a dedicated traceability pass confirms that the active release train has moved beyond `v7` / `0.7.x`.
+- Every catch-up must stay TypeScript-only; do not introduce new Python runtime dependencies to claim parity.
 
 ## Source Locks
 
@@ -42,9 +42,10 @@ The TypeScript fork must stay generic, npm-first, `.graphify/`-based, and TypeSc
 | Safi Python Graphify | remote `v6` branch | `f81e3bc2154d21062f56f9e4ec9f923dfe7d128e` | `f81e3bc2154d21062f56f9e4ec9f923dfe7d128e` | `0.6.0`..`0.6.9` line | `covered` / `intentional-delta` / `deferred` | Closed parity line through `0.6.9`; row-level traceability below records the intentional deltas and deferrals that remain part of the TypeScript contract. |
 | Safi Python Graphify | remote `v7` branch | `ee85bbf80cc6fedff0a17d5ea1da77f20da0729b` | `ee85bbf80cc6fedff0a17d5ea1da77f20da0729b` | `0.7.0`..`0.7.4` continuation | `covered` / `intentional-delta` / `deferred` | Active continuation lock for the `0.7.x` parity rows. Fetched local tags `v0.7.0` through `v0.7.4` are clobbered to `f81e3bc`, so the branch history is the trusted source of truth. |
 | Safi Python Graphify | effective `0.7.4` target on `upstream/v7` | `26a5a35200dda6207bf6fc16afed83c71238bb65` | local tag not trusted as proof | `0.7.4` | `covered` | Effective parity target for this TypeScript catch-up, with feature commit `741ac3655bd33314e1aaca51e6fd30271c74c61b` covering the public `0.7.4` runtime fix set. |
+| Safi Python Graphify | remote `v7` branch | `0c29b2cb88c6274d889ca7c33a684ce103808715` | `0c29b2cb88c6274d889ca7c33a684ce103808715` | `0.7.5`..`0.7.10` plus post-tag fixes | `needs-review` | New drift observed on 2026-05-08. Remote tag `v0.7.10` is `ef1050b0e4134df0bd59956b0f900dc3c83e8184`; `upstream/v7` contains four additional commits after that tag. |
 | Safi Python Graphify | remote tag `v1.0.0` | `0a31c0862b600d0755b0b8da41d6cdf99df135df` | not tracked locally | `1.0.0` | `deferred` | Exists upstream, but not the active parity target while releases are still landing on `v6` / `0.7.x`. |
 | code-review-graph | remote tag `v2.3.2` | `db2d2df789c25a101e33477b898c1840fb4c7bc7` | `/tmp/code-review-graph-v2.3.2` at same commit | `2.3.2` | `covered` | Stable CRG implementation reference for review features. |
-| code-review-graph | remote `main` | `0919071a9ba353e604981059e99ee2ed98768092` | not fetched into reference clone | unknown | `deferred` | `main` is 96 commits ahead of `v2.3.2` and remains exploratory only for the `0.7.4` parity cycle. |
+| code-review-graph | remote tag `v2.3.3` / `main` | `52cf3bc63ee77c8b204fb809791a5f212e83a2de` | `/tmp/code-review-graph-upstream` at same commit | `2.3.3` | `needs-review` | New stable CRG reference observed on 2026-05-08. It is additive input only and does not drive Graphify npm versioning. |
 
 No CRG `main` feature has been adopted in this `0.7.4` catch-up without being recorded as an additive TypeScript delta.
 
@@ -64,10 +65,10 @@ Use primary remote checks instead:
 
 ```bash
 git ls-remote --heads --tags https://github.com/safishamsi/graphify \
-  v4 v5 v6 refs/tags/v0.4.23 refs/tags/v0.4.24 refs/tags/v0.4.25 refs/tags/v0.4.26 refs/tags/v0.4.27 refs/tags/v0.5.5 refs/tags/v0.7.4 refs/tags/v1.0.0
+  v4 v5 v6 v7 refs/tags/v0.4.23 refs/tags/v0.4.24 refs/tags/v0.4.25 refs/tags/v0.4.26 refs/tags/v0.4.27 refs/tags/v0.5.5 refs/tags/v0.7.4 refs/tags/v0.7.10 refs/tags/v1.0.0
 
 git ls-remote --heads --tags https://github.com/tirth8205/code-review-graph \
-  main refs/tags/v2.3.2
+  main refs/tags/v2.3.2 refs/tags/v2.3.3
 ```
 
 If a local tag differs from the remote tag, record the remote commit in this document and avoid using the local tag in parity claims.

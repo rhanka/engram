@@ -6,18 +6,18 @@ This document tracks the delta between this TypeScript port and upstream Python 
 
 - Current TypeScript product branch: `main`
 - Current TypeScript baseline: `1f30efa7afaf5c98f06fcaebbb727fd4f2fb3f8a`
-- Current TypeScript npm release: `graphifyy@0.7.4`
+- Current TypeScript npm release: `graphifyy@0.7.5`
 - Durable traceability spec: `spec/SPEC_UPSTREAM_TRACEABILITY.md`
 - Closed upstream `v3` baseline: `upstream/v3` at `699e996`
 - Closed Python parity target: remote tag `v0.4.23` at `8d908c5d43d079579604a82873fd7cff33a1b343`
 - Closed Python drift target: `upstream/v4` at `5843ffc277c54766854f9201286c9647da095390`
 - Closed Python `v5` parity line: remote `upstream/v5` at `f755aca58f36771923cebcc8f85f2eef6178a105`
 - Closed Python `v6` parity line: remote `upstream/v6` at `f81e3bc2154d21062f56f9e4ec9f923dfe7d128e`
-- Closed continuation source lock for the `0.7.x` parity cycle: remote `upstream/v7` at `ee85bbf80cc6fedff0a17d5ea1da77f20da0729b`
+- Closed parity source lock for the `0.7.4` cycle: effective `upstream/v7` target `26a5a35200dda6207bf6fc16afed83c71238bb65`
 - Closed parity target commit for `0.7.4`: `26a5a35200dda6207bf6fc16afed83c71238bb65` on `upstream/v7`, with feature commit `741ac3655bd33314e1aaca51e6fd30271c74c61b`
-- Active CRG stable review reference: `tirth8205/code-review-graph` tag `v2.3.2` at `db2d2df789c25a101e33477b898c1840fb4c7bc7`
-- Exploratory CRG head: remote `main` at `0919071a9ba353e604981059e99ee2ed98768092`
-- Current implementation branch for traceability work: `main` (`graphifyy@0.7.4` released)
+- Active Python drift lock: remote `upstream/v7` observed on 2026-05-08 at `0c29b2cb88c6274d889ca7c33a684ce103808715`, with remote tag `v0.7.10` at `ef1050b0e4134df0bd59956b0f900dc3c83e8184`
+- Active CRG stable review reference: `tirth8205/code-review-graph` tag `v2.3.3` at `52cf3bc63ee77c8b204fb809791a5f212e83a2de`
+- Current implementation branch for traceability work: `main` (`graphifyy@0.7.5` released)
 
 ## Source Lock Notes
 
@@ -26,15 +26,37 @@ This document tracks the delta between this TypeScript port and upstream Python 
 - Python `upstream/v4` was fetched on 2026-04-25 and remains locked as a closed parity line at `5843ffc277c54766854f9201286c9647da095390`.
 - Python `upstream/v5` was fetched on 2026-04-29 and is now a closed parity line at `f755aca58f36771923cebcc8f85f2eef6178a105`.
 - Python `upstream/v6` was observed on 2026-05-04 and is now a closed parity line at `f81e3bc2154d21062f56f9e4ec9f923dfe7d128e`.
-- Python `upstream/v7` was observed on 2026-05-04 and is the active continuation lock for the `0.7.0` to `0.7.4` portion of this parity cycle.
+- Python `upstream/v7` was observed on 2026-05-04 for the closed `0.7.0` to `0.7.4` parity cycle.
+- Python `upstream/v7` was re-fetched on 2026-05-08 and advanced to `0c29b2cb88c6274d889ca7c33a684ce103808715`; this opens a new `0.7.5` to `0.7.10` plus post-tag realignment cycle.
 - Fetched local tags `v0.7.0` through `v0.7.4` all resolve to `f81e3bc2154d21062f56f9e4ec9f923dfe7d128e`; do not use those local tag pointers as proof for `0.7.x` parity. Follow the `upstream/v7` commit history instead.
 - Remote tag `v1.0.0` exists upstream, but the active upstream release train is still `v6` / `0.7.x`; do not target `1.0.0` until a separate traceability pass proves that line is the real parity target.
 - Local `v0.4.28`..`v0.4.32` tags are not trusted for parity claims while tag clobber risk exists; use branch commits and `git ls-remote` instead.
-- CRG `v2.3.2` remains the stable review-feature source. CRG `main` is 96 commits ahead and stays exploratory/deferred for the `0.7.4` parity cycle.
+- CRG `v2.3.3` is now the stable review-feature source and points at `main` (`52cf3bc63ee77c8b204fb809791a5f212e83a2de`).
 - No CRG `main` feature has been adopted in this `0.7.4` catch-up without being recorded as an additive TypeScript delta.
 - Package version alignment is driven by Python Graphify parity targets, not by `code-review-graph` tags or `main`.
 - The active `0.7.4` catch-up must stay TypeScript-only; no new Python dependency may be introduced to claim parity.
 - The `0.7.4` parity cycle is closed in the TypeScript release line; any newer upstream drift must start a new traceability pass.
+
+## Active `0.7.10` And CRG `v2.3.3` Realignment Intake
+
+Observed on 2026-05-08:
+
+- Safi Python Graphify: `upstream/v7` at `0c29b2cb88c6274d889ca7c33a684ce103808715`, remote tag `v0.7.10` at `ef1050b0e4134df0bd59956b0f900dc3c83e8184`.
+- code-review-graph: `v2.3.3` / `main` at `52cf3bc63ee77c8b204fb809791a5f212e83a2de`.
+- Local tag conflicts still exist for multiple Python tags; use `git ls-remote` and branch commits as authority.
+
+Functional intake buckets for the next realignment:
+
+| Source | Bucket | Examples | Initial TS status | Initial action |
+| --- | --- | --- | --- | --- |
+| Python `v0.7.5`..`v0.7.10` | Incremental update and dedup | semantic cache/build-merge/manifest, entity dedup design, MinHash/Jaro-Winkler strategy, reversed call-edge update fix, community label persistence | `partial` / `needs-audit` | Reconcile with current `buildMerge`, semantic cache, deterministic IDs, and conservative label dedup before porting anything heavier. |
+| Python `v0.7.5`..`v0.7.10` | Parser and language surface | Markdown structural extraction, `.md/.mdx` update path, TS interface/enum/type-alias/const/new_expression, TSX JSX parser, CommonJS require, Groovy/Spock, Luau, Quarto `.qmd`, SQL ALTER FK and schema-qualified names | `partial` / `missing` / `needs-audit` | Prioritize broadly useful parser fixes with no Python dependency; defer languages until Node/WASM/fallback coverage is clear. |
+| Python `v0.7.5`..`v0.7.10` | Direct LLM/backends | Gemini/OpenAI/Ollama/AWS Bedrock, accessible backend priority, configurable Gemini model, output token cap | `partial` / `intentional-delta` | Map to existing Vercel AI SDK direct ports; decide explicitly on Ollama and Bedrock as optional providers. |
+| Python `v0.7.5`..`v0.7.10` | External document sources | Google Workspace shortcuts and hardened export sidecars | `missing` / `deferred` | Spec first; do not add Google account coupling without privacy and credential boundary review. |
+| Python `v0.7.5`..`v0.7.10` | MCP/query/install/security | MCP resources, edges/links loader fix, Kimi platform, positional install platforms, uninstall-all command, skill YAML descriptions, subprocess hardening | `partial` / `needs-audit` | Prefer low-risk command/install/security parity early. |
+| CRG `v2.3.3` | Review UI/accessibility | keyboard navigation, ARIA, node shapes, edge differentiation, help overlay, VS Code webview patterns | `partial` / `opportunity` | Reuse patterns for Graphify HTML/studio without adopting CRG's VS Code stack. |
+| CRG `v2.3.3` | Review precision and parsers | changed range mapping, Java/PHP/C++ fixes, Spring/Temporal/Kafka semantics, test runner detection, GDScript/ReScript/Nix/SystemVerilog | `partial` / `needs-triage` | Triage by generic value; implement over `.graphify/graph.json`, not SQLite. |
+| CRG `v2.3.3` | Daemon, embeddings, FTS, SQLite | multi-repo daemon, OpenAI-compatible embeddings, FTS sync, SQLite transactions | `deferred` / `intentional-delta` | Do not adopt by default; separate spec required before any optional index/daemon work. |
 
 ## Fork Guardrail
 

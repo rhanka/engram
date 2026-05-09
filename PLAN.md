@@ -435,3 +435,29 @@ graphify extract ./tmp/direct-uat-corpus --backend openai --model gpt-5.5 --no-c
 - [ ] Add cache/invalidation tests.
 - [ ] Add no-provider-call CI tests plus mocked direct backend tests.
 - [ ] Run UAT on a small code fixture and on `../public-domaine-mystery-sagas-pack`.
+
+## Task L: Upstream Python `0.7.10` And CRG `v2.3.3` Realignment
+
+**Files:**
+- Modify: `UPSTREAM_GAP.md`
+- Modify: `spec/SPEC_UPSTREAM_TRACEABILITY.md`
+- Modify: `PLAN.md`
+- Later modify as needed: parser, detect/update, LLM providers, MCP server, installers, skills, tests
+
+**Boundary:** Python Graphify remains the only source that can drive the next parity version number. `code-review-graph` remains an additive review/UX feature source. This realignment must stay TypeScript-only and must not add Python runtime dependencies.
+
+- [x] Fetch/check live Python Graphify refs and record `upstream/v7` at `0c29b2cb88c6274d889ca7c33a684ce103808715`.
+- [x] Record remote Python `v0.7.10` at `ef1050b0e4134df0bd59956b0f900dc3c83e8184`.
+- [x] Fetch/check live CRG refs and record `v2.3.3` / `main` at `52cf3bc63ee77c8b204fb809791a5f212e83a2de`.
+- [x] Record local tag clobber risk and use `git ls-remote` / branch commits as authority.
+- [x] Create the initial functional intake buckets in traceability docs.
+- [ ] Audit Python `0.7.5` to `0.7.10` row-by-row and classify each item as `covered`, `partial`, `missing`, `intentional-delta`, `deferred`, `rejected`, or `n/a`.
+- [ ] Audit CRG `v2.3.3` feature buckets and classify additive opportunities separately from Python parity.
+- [ ] Lot 1: low-risk parity fixes: query/edges-loader mismatch, uninstall-all, skill/install YAML descriptions, missing skill install regressions, security hardening, positional install arguments.
+- [ ] Lot 2: parser/language surface: Markdown structural extraction, TS/TSX advanced constructs, CommonJS require, SQL ALTER/schema-qualified names, Quarto `.qmd`, and selected no-Python language fallbacks.
+- [ ] Lot 3: incremental/dedup/update reliability: semantic cache/build-merge/manifest changes, community label persistence, reversed call-edge update fix, conservative entity dedup.
+- [ ] Lot 4: optional provider/source integrations: decide on Ollama, AWS Bedrock and Google Workspace as explicit opt-in features before implementation.
+- [ ] Lot 5: MCP resources and review UX: MCP report/stats/god-nodes resources plus CRG-inspired HTML accessibility patterns.
+- [ ] Keep embeddings, SQLite/FTS and daemon features deferred unless a separate spec is approved.
+- [ ] Update README and skills only for user-facing behavior actually adopted.
+- [ ] Run full release gate before any parity publish and align npm version to the chosen Python parity target.
