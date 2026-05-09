@@ -82,9 +82,13 @@ export function loadOntologyPatchContext(profileStatePath: string): OntologyPatc
     nodes: optionalJson<Array<Record<string, unknown>>>(join(ontologyDir, "nodes.json"), [])
       .map((node) => ({
         id: stringValue(node.id) ?? "",
+        label: stringValue(node.label) ?? undefined,
         type: stringValue(node.type) ?? undefined,
         status: stringValue(node.status) ?? undefined,
+        aliases: stringArray(node.aliases),
+        normalized_terms: stringArray(node.normalized_terms),
         source_refs: stringArray(node.source_refs),
+        registry_refs: stringArray(node.registry_refs),
       }))
       .filter((node) => node.id.length > 0),
     relations: optionalJson<Array<Record<string, unknown>>>(join(ontologyDir, "relations.json"), [])

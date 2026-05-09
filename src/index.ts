@@ -97,6 +97,11 @@ export {
 export {
   compileOntologyOutputs,
 } from "./ontology-output.js";
+export {
+  generateOntologyReconciliationCandidates,
+  ONTOLOGY_RECONCILIATION_CANDIDATES_SCHEMA,
+  writeOntologyReconciliationCandidates,
+} from "./ontology-reconciliation.js";
 export type {
   AssistantLlmClientOptions,
   BatchVisionExportInput,
@@ -151,6 +156,11 @@ export type {
   CompileOntologyOutputsResult,
   OntologyOutputConfig,
 } from "./ontology-output.js";
+export type {
+  GenerateOntologyReconciliationCandidatesOptions,
+  OntologyReconciliationCandidate,
+  OntologyReconciliationCandidateQueue,
+} from "./ontology-reconciliation.js";
 export {
   bindOntologyProfile,
   hashOntologyProfile,

@@ -36,9 +36,13 @@ export interface OntologyPatch {
 
 export interface OntologyPatchNode {
   id: string;
+  label?: string;
   type?: string;
   status?: OntologyStatus;
+  aliases?: string[];
+  normalized_terms?: string[];
   source_refs?: string[];
+  registry_refs?: string[];
 }
 
 export interface OntologyPatchRelation {

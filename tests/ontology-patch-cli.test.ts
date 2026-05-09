@@ -101,8 +101,23 @@ async function prepareProject(): Promise<{ root: string; profileStatePath: strin
   writeFileSync(
     join(ontologyDir, "nodes.json"),
     JSON.stringify([
-      { id: "candidate-component", type: "Component", status: "candidate", source_refs: ["manual.md#p1"] },
-      { id: "component-a", type: "Component", status: "validated", source_refs: ["manual.md#p1"] },
+      {
+        id: "candidate-component",
+        label: "Component A",
+        type: "Component",
+        status: "candidate",
+        normalized_terms: ["component a"],
+        source_refs: ["manual.md#p1"],
+      },
+      {
+        id: "component-a",
+        label: "Component A",
+        type: "Component",
+        status: "validated",
+        aliases: ["A Component"],
+        normalized_terms: ["component a", "a component"],
+        source_refs: ["manual.md#p1"],
+      },
     ], null, 2),
     "utf-8",
   );
@@ -132,6 +147,45 @@ async function prepareProject(): Promise<{ root: string; profileStatePath: strin
 }
 
 describe("ontology patch CLI", () => {
+  it("generates reconciliation candidates through CLI and skill runtime", async () => {
+    const { root, profileStatePath } = await prepareProject();
+    const cliOut = join(root, ".graphify", "ontology", "reconciliation", "candidates.json");
+    const runtimeOut = join(root, ".graphify", "ontology", "reconciliation", "runtime-candidates.json");
+
+    const cli = await runCli([
+      "ontology",
+      "candidates",
+      "--profile-state",
+      profileStatePath,
+      "--out",
+      cliOut,
+      "--json",
+    ], root);
+    const runtime = await runSkillRuntime([
+      "ontology-candidates",
+      "--profile-state",
+      profileStatePath,
+      "--out",
+      runtimeOut,
+    ], root);
+
+    expect(cli.exitCode, JSON.stringify(cli, null, 2)).toBe(0);
+    expect(runtime.exitCode, JSON.stringify(runtime, null, 2)).toBe(0);
+    const queue = JSON.parse(readFileSync(cliOut, "utf-8")) as {
+      schema: string;
+      candidate_count: number;
+      candidates: Array<{ candidate_id: string; canonical_id: string; proposed_patch_operation: string }>;
+    };
+    expect(queue.schema).toBe("graphify_ontology_reconciliation_candidates_v1");
+    expect(queue.candidate_count).toBe(1);
+    expect(queue.candidates[0]).toMatchObject({
+      candidate_id: "candidate-component",
+      canonical_id: "component-a",
+      proposed_patch_operation: "accept_match",
+    });
+    expect(existsSync(runtimeOut)).toBe(true);
+  });
+
   it("validates, dry-runs and writes ontology patches through configured authoritative paths", async () => {
     const { root, profileStatePath, patchPath, decisionsPath } = await prepareProject();
 

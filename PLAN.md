@@ -285,15 +285,21 @@ Progress note:
 - [x] Define Svelte package boundaries and fallback token adapter for open-source development before the design system exists.
 - [x] Confirm static export fallback: read-only viewer can export patch JSON without running a write server.
 
-## Task G: Local Reconciliation Studio Implementation
+## Task G: Reconciliation Candidate Queue And Local Studio Implementation
 
 **Files:**
-- Add: Svelte studio package or module after Task F approval
+- Add: `src/ontology-reconciliation.ts`
+- Add: reconciliation candidate tests
+- Add later: Svelte studio package or module after candidate queue/API approval
 - Modify/Add: CLI server command
 - Modify/Add: tests and UAT docs
 
-**Status:** Deferred to the next UI lot. This branch intentionally merges the ontology patch/MCP infrastructure and UAT framing first, then uses the public-domain mystery corpus to mock and validate the studio before implementation.
+**Status:** Candidate queue first. The studio must consume a deterministic reconciliation queue and emit patch JSON or patch API calls; it must not infer write behavior directly from graph visualization state.
 
+- [x] Define stable `graphify_ontology_reconciliation_candidates_v1` queue schema.
+- [x] Generate deterministic entity-match candidates from ontology output nodes and evidence refs.
+- [x] Expose candidate generation through CLI and skill runtime.
+- [ ] Expose read-only candidate APIs before any browser write UI.
 - [ ] Implement read-only studio served by `graphify ontology studio --config graphify.yaml`.
 - [ ] Implement write-enabled studio only with `--write`, localhost binding and local token.
 - [ ] Route every write through patch validate/dry-run/apply APIs.
@@ -427,7 +433,7 @@ graphify extract ./tmp/direct-uat-corpus --backend openai --model gpt-5.5 --no-c
 - [x] Decide evidence policy: no rendered description without source evidence refs.
 - [x] Decide insufficient-evidence behavior: record `insufficient_evidence` in sidecar, omit Markdown paragraph.
 - [x] Create the initial feature spec.
-- [ ] Add description sidecar schema and validation.
+- [x] Add description sidecar schema and validation.
 - [ ] Add wiki description generation command or runtime path for assistant/direct/batch/mesh.
 - [ ] Add `--wiki-descriptions` and `--wiki-community-descriptions` or equivalent config options.
 - [ ] Render validated descriptions in community wiki pages and ontology entity pages.
