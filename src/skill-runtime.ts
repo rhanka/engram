@@ -652,6 +652,22 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     });
 
   program
+    .command("ontology-candidates")
+    .description("Generate a deterministic ontology reconciliation candidate queue")
+    .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
+    .requiredOption("--out <path>", "Candidate queue JSON output path")
+    .action(async (opts) => {
+      const {
+        generateOntologyReconciliationCandidates,
+        writeOntologyReconciliationCandidates,
+      } = await import("./ontology-reconciliation.js");
+      const context = loadOntologyPatchContext(opts.profileState);
+      const queue = generateOntologyReconciliationCandidates(context);
+      writeOntologyReconciliationCandidates(resolve(opts.out), queue);
+      console.log(`Ontology reconciliation candidates: ${queue.candidate_count} written to ${resolve(opts.out)}`);
+    });
+
+  program
     .command("ontology-patch-validate")
     .description("Validate a graphify_ontology_patch_v1 JSON file without mutation")
     .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")

@@ -1914,6 +1914,27 @@ export async function main(): Promise<void> {
     });
 
   const ontology = program.command("ontology").description("Ontology lifecycle and reconciliation commands");
+  ontology
+    .command("candidates")
+    .description("Generate a deterministic ontology reconciliation candidate queue")
+    .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
+    .requiredOption("--out <path>", "Candidate queue JSON output path")
+    .option("--json", "Print JSON result")
+    .action(async (opts) => {
+      const {
+        generateOntologyReconciliationCandidates,
+        writeOntologyReconciliationCandidates,
+      } = await import("./ontology-reconciliation.js");
+      const context = loadOntologyPatchContext(opts.profileState);
+      const queue = generateOntologyReconciliationCandidates(context);
+      writeOntologyReconciliationCandidates(opts.out, queue);
+      if (opts.json) {
+        console.log(JSON.stringify(queue, null, 2));
+      } else {
+        console.log(`Ontology reconciliation candidates: ${queue.candidate_count} written to ${resolve(opts.out)}`);
+      }
+    });
+
   const ontologyPatch = ontology.command("patch").description("Validate and apply ontology reconciliation patches");
   ontologyPatch
     .command("validate")
