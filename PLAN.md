@@ -404,3 +404,34 @@ graphify extract ./tmp/direct-uat-corpus --backend openai --model gpt-5.5 --no-c
 - [ ] Update README and skills to point to the public pack as the ontology studio/mockup UAT.
 - [ ] Run `npm run lint`, `npm run build`, `npm test`, `npm run test:smoke` after runtime/skill changes.
 - [ ] Regenerate Graphify state and run `node dist/cli.js portable-check .graphify` before committing any Graphify repo `.graphify` artifacts.
+
+## Task K: Source-Grounded Wiki Entity Descriptions
+
+**Files:**
+- Add: `spec/SPEC_WIKI_ENTITY_DESCRIPTIONS.md`
+- Modify later: `src/wiki.ts`
+- Modify later: `src/ontology-output.ts`
+- Modify later: LLM execution orchestration for wiki description generation
+- Modify later: `src/cli.ts`, `src/skill-runtime.ts`, `src/skills/*`
+- Modify later: README and translated READMEs
+- Add/modify later: Vitest coverage
+
+**Boundary:** Wiki descriptions are optional derived artifacts. They render as Markdown paragraphs in generated wiki pages, but their machine-readable source is a sidecar with provenance/cache metadata. They must not become authoritative ontology state and must not be written into `graph.json`.
+
+- [x] Decide the first description style: short factual 3-6 sentence descriptions, not long article generation.
+- [x] Decide activation policy: explicit opt-in only through CLI/config/skill.
+- [x] Decide target scope: node/entity descriptions by default, community descriptions as a separate sub-option.
+- [x] Decide execution model: reuse existing `assistant`, `direct`, `batch` and `mesh` LLM ports.
+- [x] Decide storage model: render the paragraph in Markdown and keep sidecar JSON for provenance/cache.
+- [x] Decide cache key: `target_id + graph_hash + prompt_version + mode/model`.
+- [x] Decide evidence policy: no rendered description without source evidence refs.
+- [x] Decide insufficient-evidence behavior: record `insufficient_evidence` in sidecar, omit Markdown paragraph.
+- [x] Create the initial feature spec.
+- [ ] Add description sidecar schema and validation.
+- [ ] Add wiki description generation command or runtime path for assistant/direct/batch/mesh.
+- [ ] Add `--wiki-descriptions` and `--wiki-community-descriptions` or equivalent config options.
+- [ ] Render validated descriptions in community wiki pages and ontology entity pages.
+- [ ] Add assistant-skill guidance for generating sidecars before wiki rendering.
+- [ ] Add cache/invalidation tests.
+- [ ] Add no-provider-call CI tests plus mocked direct backend tests.
+- [ ] Run UAT on a small code fixture and on `../public-domaine-mystery-sagas-pack`.
