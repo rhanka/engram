@@ -2105,6 +2105,102 @@ async function extractRegexBackedCode(filePath: string, rootDir?: string): Promi
   return { nodes, edges };
 }
 
+const SQL_IDENT = String.raw`(?:"[^"]+"|\[[^\]]+\]|` + "`[^`]+`" + String.raw`|[A-Za-z_][\w$]*)(?:\s*\.\s*(?:"[^"]+"|\[[^\]]+\]|` + "`[^`]+`" + String.raw`|[A-Za-z_][\w$]*))*`;
+
+function normalizeSqlObjectName(value: string): string {
+  return value
+    .split(".")
+    .map((part) => part.trim().replace(/^["`\[]|["`\]]$/gu, ""))
+    .filter(Boolean)
+    .join(".");
+}
+
+export async function extractSql(filePath: string, rootDir?: string): Promise<ExtractionResult> {
+  let source: string;
+  try {
+    source = readFileSync(filePath, "utf-8");
+  } catch (e: unknown) {
+    return { nodes: [], edges: [], error: String(e) };
+  }
+
+  const stem = qualifiedFileStem(filePath, rootDir);
+  const fileNid = _makeId(stem);
+  const nodes: GraphNode[] = [{
+    id: fileNid,
+    label: basename(filePath),
+    file_type: "code",
+    source_file: filePath,
+    source_location: "L1",
+  }];
+  const edges: GraphEdge[] = [];
+  const tableIds = new Map<string, string>();
+
+  function addTable(rawName: string, index: number): string {
+    const name = normalizeSqlObjectName(rawName);
+    const key = name.toLowerCase();
+    const existing = tableIds.get(key);
+    if (existing) return existing;
+    const nid = _makeId(stem, name);
+    tableIds.set(key, nid);
+    nodes.push({
+      id: nid,
+      label: name,
+      file_type: "code",
+      source_file: filePath,
+      source_location: `L${lineForIndex(source, index)}`,
+    });
+    edges.push({
+      source: fileNid,
+      target: nid,
+      relation: "contains",
+      confidence: "EXTRACTED",
+      source_file: filePath,
+      source_location: `L${lineForIndex(source, index)}`,
+      weight: 1.0,
+    });
+    return nid;
+  }
+
+  function addReference(sourceName: string, targetName: string, index: number): void {
+    const sourceId = addTable(sourceName, index);
+    const targetId = addTable(targetName, index);
+    edges.push({
+      source: sourceId,
+      target: targetId,
+      relation: "references",
+      confidence: "EXTRACTED",
+      source_file: filePath,
+      source_location: `L${lineForIndex(source, index)}`,
+      weight: 1.0,
+    });
+  }
+
+  const createTablePattern = new RegExp(
+    String.raw`\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?(${SQL_IDENT})\s*\(([\s\S]*?)\)\s*;`,
+    "giu",
+  );
+  for (const match of source.matchAll(createTablePattern)) {
+    const tableName = match[1]!;
+    addTable(tableName, match.index ?? 0);
+    const body = match[2] ?? "";
+    const bodyOffset = (match.index ?? 0) + match[0].indexOf(body);
+    const referencePattern = new RegExp(String.raw`\breferences\s+(${SQL_IDENT})`, "giu");
+    for (const ref of body.matchAll(referencePattern)) {
+      addReference(tableName, ref[1]!, bodyOffset + (ref.index ?? 0));
+    }
+  }
+
+  const alterFkPattern = new RegExp(
+    String.raw`\balter\s+table\s+(${SQL_IDENT})[\s\S]*?\bforeign\s+key\s*\([^)]*\)\s*references\s+(${SQL_IDENT})`,
+    "giu",
+  );
+  for (const match of source.matchAll(alterFkPattern)) {
+    addReference(match[1]!, match[2]!, match.index ?? 0);
+  }
+
+  return { nodes, edges };
+}
+
 async function extractSvelte(filePath: string, rootDir?: string): Promise<ExtractionResult> {
   const result = await extractRegexBackedCode(filePath, rootDir);
 
@@ -3471,6 +3567,7 @@ const _DISPATCH: Record<string, ExtractorFn> = {
   ".dart": extractRegexBackedCode,
   ".v": extractRegexBackedCode,
   ".sv": extractRegexBackedCode,
+  ".sql": extractSql,
   ".ejs": extractRegexBackedCode,
   ".go": extractGo,
   ".rs": extractRust,
