@@ -224,6 +224,8 @@ export { godNodes, surprisingConnections, suggestQuestions, graphDiff } from "./
 export { generate as generateReport } from "./report.js";
 export { toJson, toHtml, toSvg, toGraphml, toCypher, toCanvas, pushToNeo4j } from "./export.js";
 export { toWiki } from "./wiki.js";
+export { WIKI_DESCRIPTION_PROMPT_VERSION, WIKI_DESCRIPTION_SCHEMA, buildWikiDescriptionCacheKey, createInsufficientEvidenceRecord, validateWikiDescriptionSidecar } from "./wiki-descriptions.js";
+export type { CreateInsufficientEvidenceRecordInput, WikiCommunityDescriptionSidecar, WikiDescriptionCacheKeyInput, WikiDescriptionEvidenceRef, WikiDescriptionExecutionMode, WikiDescriptionGenerator, WikiDescriptionSidecar, WikiDescriptionSidecarIndex, WikiDescriptionStatus, WikiDescriptionTargetKind, WikiGeneratedDescriptionSidecar, WikiInsufficientEvidenceSidecar, WikiNodeDescriptionSidecar } from "./wiki-descriptions.js";
 export { detect, classifyFile, detectIncremental, saveManifest } from "./detect.js";
 export { extract, collectFiles } from "./extract.js";
 export { fileHash, loadCached, saveCached, checkSemanticCache, saveSemanticCache } from "./cache.js";
