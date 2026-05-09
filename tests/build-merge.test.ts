@@ -48,6 +48,74 @@ describe("buildMerge", () => {
     expect(graph.hasNode("beta")).toBe(true);
   });
 
+  it("preserves existing edge direction from graph.json links during merge", () => {
+    const dir = tempDir();
+    const graphPath = join(dir, "graph.json");
+    writeFileSync(
+      graphPath,
+      JSON.stringify({
+        directed: false,
+        graph: {},
+        nodes: [
+          { id: "callee", label: "Callee", source_file: "src/callee.ts", file_type: "code" },
+          { id: "caller", label: "Caller", source_file: "src/caller.ts", file_type: "code" },
+        ],
+        links: [
+          {
+            source: "caller",
+            target: "callee",
+            relation: "calls",
+            confidence: "EXTRACTED",
+            source_file: "src/caller.ts",
+          },
+        ],
+      }, null, 2),
+      "utf-8",
+    );
+
+    const graph = buildMerge([], { graphPath });
+    const edge = graph.edge("callee", "caller");
+    expect(edge).toBeDefined();
+    const attrs = graph.getEdgeAttributes(edge!);
+    expect(attrs._src).toBe("caller");
+    expect(attrs._tgt).toBe("callee");
+  });
+
+  it("prefers preserved _src/_tgt direction when existing graph links are undirected", () => {
+    const dir = tempDir();
+    const graphPath = join(dir, "graph.json");
+    writeFileSync(
+      graphPath,
+      JSON.stringify({
+        directed: false,
+        graph: {},
+        nodes: [
+          { id: "callee", label: "Callee", source_file: "src/callee.ts", file_type: "code" },
+          { id: "caller", label: "Caller", source_file: "src/caller.ts", file_type: "code" },
+        ],
+        links: [
+          {
+            source: "callee",
+            target: "caller",
+            _src: "caller",
+            _tgt: "callee",
+            relation: "calls",
+            confidence: "EXTRACTED",
+            source_file: "src/caller.ts",
+          },
+        ],
+      }, null, 2),
+      "utf-8",
+    );
+
+    const graph = buildMerge([], { graphPath });
+    const edge = graph.edge("callee", "caller");
+    expect(edge).toBeDefined();
+    const attrs = graph.getEdgeAttributes(edge!);
+    expect(attrs._src).toBe("caller");
+    expect(attrs._tgt).toBe("callee");
+  });
+
   it("refuses to silently shrink an existing graph without pruneSources", () => {
     const dir = tempDir();
     const graphPath = join(dir, "graph.json");

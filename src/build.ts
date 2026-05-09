@@ -12,7 +12,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import Graph from "graphology";
 import type { Extraction } from "./types.js";
-import { createGraph, loadGraphFromData } from "./graph.js";
+import { createGraph } from "./graph.js";
 import { validateExtraction } from "./validate.js";
 
 export interface BuildOptions {
@@ -32,6 +32,78 @@ function normalizedLabel(value: string): string {
     .replace(/[^a-z0-9 ]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function readExistingGraphExtraction(graphPath: string): { extraction: Extraction; nodeCount: number } {
+  const raw = asRecord(JSON.parse(readFileSync(graphPath, "utf-8"))) ?? {};
+  const rawNodes = Array.isArray(raw.nodes) ? raw.nodes : [];
+  const rawEdges = Array.isArray(raw.links) ? raw.links : Array.isArray(raw.edges) ? raw.edges : [];
+  const rawGraphAttrs = asRecord(raw.graph) ?? {};
+  const rawHyperedges = Array.isArray(raw.hyperedges)
+    ? raw.hyperedges
+    : Array.isArray(rawGraphAttrs.hyperedges)
+      ? rawGraphAttrs.hyperedges
+      : [];
+
+  const nodes: Extraction["nodes"] = [];
+  for (const item of rawNodes) {
+    const node = asRecord(item);
+    if (!node) continue;
+    const id = asString(node.id);
+    if (!id) continue;
+    const { id: _id, ...attrs } = node;
+    nodes.push({
+      id,
+      label: String(attrs.label ?? id),
+      file_type: String(attrs.file_type ?? "code") as Extraction["nodes"][number]["file_type"],
+      source_file: String(attrs.source_file ?? ""),
+      ...attrs,
+    });
+  }
+
+  const edges: Extraction["edges"] = [];
+  for (const item of rawEdges) {
+    const edge = asRecord(item);
+    if (!edge) continue;
+    const source = asString(edge._src) ?? asString(edge.source);
+    const target = asString(edge._tgt) ?? asString(edge.target);
+    if (!source || !target) continue;
+    const {
+      source: _source,
+      target: _target,
+      _src,
+      _tgt,
+      ...attrs
+    } = edge;
+    edges.push({
+      source,
+      target,
+      relation: String(attrs.relation ?? "related_to"),
+      confidence: String(attrs.confidence ?? "EXTRACTED") as Extraction["edges"][number]["confidence"],
+      source_file: String(attrs.source_file ?? ""),
+      ...attrs,
+    });
+  }
+
+  return {
+    extraction: {
+      nodes,
+      edges,
+      hyperedges: rawHyperedges as Extraction["hyperedges"],
+      input_tokens: 0,
+      output_tokens: 0,
+    },
+    nodeCount: nodes.length,
+  };
 }
 
 export function deduplicateByLabel(extraction: Extraction): Extraction {
@@ -203,36 +275,9 @@ export function buildMerge(newChunks: Extraction[], options?: BuildMergeOptions)
   let existingNodeCount = 0;
 
   if (existsSync(graphPath)) {
-    const existingGraph = loadGraphFromData(JSON.parse(readFileSync(graphPath, "utf-8")) as Record<string, unknown>);
-    const existingNodes: Extraction["nodes"] = [];
-    existingGraph.forEachNode((nodeId, attrs) => {
-      existingNodes.push({
-        id: nodeId,
-        label: String(attrs.label ?? nodeId),
-        file_type: String(attrs.file_type ?? "code") as Extraction["nodes"][number]["file_type"],
-        source_file: String(attrs.source_file ?? ""),
-        ...attrs,
-      });
-    });
-    const existingEdges: Extraction["edges"] = [];
-    existingGraph.forEachEdge((_edge, attrs, source, target) => {
-      existingEdges.push({
-        source,
-        target,
-        relation: String(attrs.relation ?? "related_to"),
-        confidence: String(attrs.confidence ?? "EXTRACTED") as Extraction["edges"][number]["confidence"],
-        source_file: String(attrs.source_file ?? ""),
-        ...attrs,
-      });
-    });
-    base.push({
-      nodes: existingNodes,
-      edges: existingEdges,
-      hyperedges: (existingGraph.getAttribute("hyperedges") as Extraction["hyperedges"]) ?? [],
-      input_tokens: 0,
-      output_tokens: 0,
-    });
-    existingNodeCount = existingGraph.order;
+    const existing = readExistingGraphExtraction(graphPath);
+    base.push(existing.extraction);
+    existingNodeCount = existing.nodeCount;
   }
 
   const mergedExtraction: Extraction = {
