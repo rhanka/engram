@@ -200,7 +200,7 @@ After building a graph, run this once in your project:
 
 **OpenClaw, Factory Droid, Trae** write the same rules to `AGENTS.md` in your project root. These platforms don't support PreToolUse hooks, so AGENTS.md is the always-on mechanism.
 
-Uninstall with the matching uninstall command (e.g. `graphify claude uninstall`).
+Uninstall with the matching uninstall command (e.g. `graphify claude uninstall`), or run `graphify uninstall` to remove all detected assistant integrations in one pass. Add `--purge` only when you also want to delete local `.graphify/` and legacy `graphify-out/` state.
 
 **Always-on vs explicit trigger — what's the difference?**
 
@@ -356,6 +356,8 @@ graphify kiro install              # .kiro/skills/graphify/SKILL.md + .kiro/stee
 graphify kiro uninstall
 graphify antigravity install       # .agent/rules + .agent/workflows + ~/.agent/skills (Google Antigravity)
 graphify antigravity uninstall
+graphify uninstall                 # remove all detected assistant integrations
+graphify uninstall --purge         # also delete .graphify/ and graphify-out/
 
 # query the graph directly from the terminal (no AI assistant needed)
 graphify query "what connects attention to the optimizer?"

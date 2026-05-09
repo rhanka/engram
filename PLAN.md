@@ -454,8 +454,14 @@ graphify extract ./tmp/direct-uat-corpus --backend openai --model gpt-5.5 --no-c
 - [ ] Audit Python `0.7.5` to `0.7.10` row-by-row and classify each item as `covered`, `partial`, `missing`, `intentional-delta`, `deferred`, `rejected`, or `n/a`.
 - [ ] Audit CRG `v2.3.3` feature buckets and classify additive opportunities separately from Python parity.
 - [ ] Lot 1: low-risk parity fixes: query/edges-loader mismatch, uninstall-all, skill/install YAML descriptions, missing skill install regressions, security hardening, positional install arguments.
+  - [x] Port top-level `graphify uninstall` with optional purge of `.graphify/` and legacy `graphify-out/`.
+  - [x] Warn and repair when `.graphify_version` exists but the global `SKILL.md` is missing.
+  - [x] Write global skill files atomically to avoid half-written `SKILL.md` installs.
+  - [ ] Finish query/edges-loader mismatch audit, skill YAML description parity, positional install arguments, and subprocess/security hardening.
 - [ ] Lot 2: parser/language surface: Markdown structural extraction, TS/TSX advanced constructs, CommonJS require, SQL ALTER/schema-qualified names, Quarto `.qmd`, and selected no-Python language fallbacks.
 - [ ] Lot 3: incremental/dedup/update reliability: semantic cache/build-merge/manifest changes, community label persistence, reversed call-edge update fix, conservative entity dedup.
+  - [x] Preserve `_src`/`_tgt` from existing `graph.json` links during `buildMerge` so non-directed graph snapshots do not reverse call semantics after update.
+  - [ ] Finish remaining semantic cache/build-merge/manifest and community-label audit items.
 - [ ] Lot 4: optional provider/source integrations: decide on Ollama, AWS Bedrock and Google Workspace as explicit opt-in features before implementation.
 - [ ] Lot 5: MCP resources and review UX: MCP report/stats/god-nodes resources plus CRG-inspired HTML accessibility patterns.
 - [ ] Keep embeddings, SQLite/FTS and daemon features deferred unless a separate spec is approved.

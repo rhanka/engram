@@ -6,7 +6,9 @@ import {
   writeFileSync,
   existsSync,
   mkdirSync,
+  renameSync,
   realpathSync,
+  rmSync,
   statSync,
   unlinkSync,
   rmdirSync,
@@ -150,6 +152,21 @@ function writeJson(path: string, value: unknown): void {
   const resolved = resolve(path);
   mkdirSync(dirname(resolved), { recursive: true });
   writeFileSync(resolved, JSON.stringify(value, null, 2), "utf-8");
+}
+
+function writeFileAtomic(path: string, content: string): void {
+  const tmpPath = `${path}.tmp`;
+  try {
+    writeFileSync(tmpPath, content, "utf-8");
+    renameSync(tmpPath, path);
+  } catch (error) {
+    try {
+      if (existsSync(tmpPath)) unlinkSync(tmpPath);
+    } catch {
+      // Best effort cleanup; preserve the original write failure.
+    }
+    throw error;
+  }
 }
 
 function scopeOptionDescription(): string {
@@ -840,7 +857,7 @@ function uninstallSkill(platformName: string): void {
     process.exit(1);
   }
 
-  const skillDst = join(homedir(), cfg.skill_dst);
+  const skillDst = resolveGlobalSkillDestination(platformName);
   const removed: string[] = [];
   if (existsSync(skillDst)) {
     unlinkSync(skillDst);
@@ -858,6 +875,38 @@ function uninstallSkill(platformName: string): void {
     }
   }
   console.log(removed.length > 0 ? removed.join("; ") : "nothing to remove");
+}
+
+export function uninstallAll(projectDir: string = ".", options: { purge?: boolean } = {}): void {
+  console.log("Uninstalling graphify from all detected platforms...");
+
+  claudeUninstall(projectDir);
+  uninstallClaudeHook(projectDir);
+  geminiUninstall(projectDir);
+  vscodeUninstall(projectDir);
+  cursorUninstall(projectDir);
+  kiroUninstall(projectDir);
+  antigravityUninstall(projectDir);
+
+  agentsUninstall(projectDir, "codex");
+  agentsUninstall(projectDir, "opencode");
+  for (const platformName of Object.keys(PLATFORM_CONFIG)) {
+    uninstallSkill(platformName);
+  }
+
+  if (options.purge === true) {
+    for (const relativePath of [".graphify", "graphify-out"]) {
+      const target = join(projectDir, relativePath);
+      if (existsSync(target)) {
+        rmSync(target, { recursive: true, force: true });
+        console.log(`  ${relativePath}/  ->  deleted (--purge)`);
+      } else {
+        console.log(`  ${relativePath}/  ->  not found (nothing to purge)`);
+      }
+    }
+  }
+
+  console.log("Done. Run `npm uninstall -g graphifyy` to remove the package itself.");
 }
 
 export function getInvocationExample(platformName: string): string {
@@ -1186,7 +1235,7 @@ function writeGlobalSkill(platformName: string): string {
 
   const skillDst = resolveGlobalSkillDestination(platformName);
   mkdirSync(dirname(skillDst), { recursive: true });
-  writeFileSync(skillDst, loadSkillContent(platformName), "utf-8");
+  writeFileAtomic(skillDst, loadSkillContent(platformName));
   writeFileSync(join(dirname(skillDst), ".graphify_version"), VERSION, "utf-8");
   console.log(`  skill installed  ->  ${skillDst}`);
 
@@ -1486,6 +1535,10 @@ function agentsUninstall(projectDir: string, platformName: string): void {
 function checkSkillVersion(skillDst: string): void {
   const versionFile = join(dirname(skillDst), ".graphify_version");
   if (!existsSync(versionFile)) return;
+  if (!existsSync(skillDst)) {
+    console.log("  warning: skill dir exists but SKILL.md is missing. Run 'graphify install' to repair.");
+    return;
+  }
   const installed = readFileSync(versionFile, "utf-8").trim();
   if (installed !== VERSION) {
     console.log(
@@ -1555,6 +1608,14 @@ export async function main(): Promise<void> {
     .option("--platform <platform>", "Target platform", platform() === "win32" ? "windows" : "claude")
     .action((opts) => {
       installSkill(opts.platform);
+    });
+
+  program
+    .command("uninstall")
+    .description("Remove graphify from all detected platform integrations")
+    .option("--purge", "Also delete .graphify/ and graphify-out/")
+    .action((opts) => {
+      uninstallAll(".", { purge: opts.purge === true });
     });
 
   // Platform-specific install/uninstall commands

@@ -112,6 +112,71 @@ describe("CLI platform-scoped version checks", () => {
     expect(getPlatformsToCheck(["hook", "status"])).toEqual([]);
     expect(getPlatformsToCheck(["query", "--graph", "graphify-out/graph.json", "install flow"])).toEqual([]);
   });
+
+  it("warns and repairs when a version marker exists but SKILL.md is missing", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-cli-missing-skill-"));
+    tempDirs.push(dir);
+    const previousHome = process.env.HOME;
+    process.env.HOME = dir;
+    try {
+      const skillDir = join(dir, ".agents", "skills", "graphify");
+      mkdirSync(skillDir, { recursive: true });
+      writeFileSync(join(skillDir, ".graphify_version"), "0.0.1", "utf-8");
+
+      const result = await runCli(["install", "--platform", "codex"], dir);
+
+      expect(result.logs.join("\n")).toContain("SKILL.md is missing");
+      expect(existsSync(join(skillDir, "SKILL.md"))).toBe(true);
+    } finally {
+      if (previousHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = previousHome;
+      }
+    }
+  });
+
+  it("removes project integrations and graph state with top-level uninstall --purge", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-cli-uninstall-all-"));
+    tempDirs.push(dir);
+    const previousHome = process.env.HOME;
+    const previousClaudeConfigDir = process.env.CLAUDE_CONFIG_DIR;
+    process.env.HOME = join(dir, "home");
+    process.env.CLAUDE_CONFIG_DIR = join(dir, "claude-config");
+    try {
+      await runCli(["codex", "install"], dir);
+      await runCli(["gemini", "install"], dir);
+      mkdirSync(join(dir, ".graphify"), { recursive: true });
+      writeFileSync(join(dir, ".graphify", "graph.json"), "{\"nodes\":[],\"links\":[]}", "utf-8");
+      mkdirSync(join(dir, "graphify-out"), { recursive: true });
+      writeFileSync(join(dir, "graphify-out", "graph.json"), "{\"nodes\":[],\"links\":[]}", "utf-8");
+
+      const result = await runCli(["uninstall", "--purge"], dir);
+
+      expect(result.exitCode).toBe(0);
+      expect(existsSync(join(dir, ".graphify"))).toBe(false);
+      expect(existsSync(join(dir, "graphify-out"))).toBe(false);
+      expect(existsSync(join(dir, "AGENTS.md"))).toBe(false);
+      expect(existsSync(join(dir, "GEMINI.md"))).toBe(false);
+      if (existsSync(join(dir, ".codex", "hooks.json"))) {
+        expect(readFileSync(join(dir, ".codex", "hooks.json"), "utf-8")).not.toContain("graphify");
+      }
+      if (existsSync(join(dir, ".gemini", "settings.json"))) {
+        expect(readFileSync(join(dir, ".gemini", "settings.json"), "utf-8")).not.toContain("graphify");
+      }
+    } finally {
+      if (previousHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = previousHome;
+      }
+      if (previousClaudeConfigDir === undefined) {
+        delete process.env.CLAUDE_CONFIG_DIR;
+      } else {
+        process.env.CLAUDE_CONFIG_DIR = previousClaudeConfigDir;
+      }
+    }
+  });
 });
 
 describe("profile CLI commands", () => {
