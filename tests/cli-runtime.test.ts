@@ -698,6 +698,39 @@ describe("public CLI runtime command parity", () => {
     expect(existsSync(join(dir, ".graphify", "graph.html"))).toBe(false);
   });
 
+  it("preserves renamed community labels across hook-rebuild update", async () => {
+    const dir = tempProject();
+    // Seed a minimal git-tracked code fixture so rebuildCode has something to extract.
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+    writeFileSync(join(dir, "src", "beta.ts"), "export function beta() { return 2; }\n", "utf-8");
+    await execGit(dir, ["init", "-q"]);
+    await execGit(dir, ["add", "."]);
+    await execGit(dir, ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "seed"]);
+
+    // First update to materialize the graph + manifest.
+    const first = await runCli(["update", dir], dir);
+    expect(first.exitCode).toBe(0);
+
+    // Rename a community label and assert it survives the next rebuild.
+    const labelsPath = join(dir, ".graphify", ".graphify_labels.json");
+    expect(existsSync(labelsPath)).toBe(true);
+    const initial = JSON.parse(readFileSync(labelsPath, "utf-8")) as Record<string, string>;
+    const firstCid = Object.keys(initial)[0]!;
+    initial[firstCid] = "CoreServices";
+    writeFileSync(labelsPath, JSON.stringify(initial, null, 2), "utf-8");
+
+    const second = await runCli(["update", dir], dir);
+    expect(second.exitCode).toBe(0);
+
+    const persisted = JSON.parse(readFileSync(labelsPath, "utf-8")) as Record<string, string>;
+    expect(Object.values(persisted)).toContain("CoreServices");
+    const rebuiltGraph = JSON.parse(
+      readFileSync(join(dir, ".graphify", "graph.json"), "utf-8"),
+    ) as { graph?: { community_labels?: Record<string, string> } };
+    expect(Object.values(rebuiltGraph.graph?.community_labels ?? {})).toContain("CoreServices");
+  });
+
   it("preserves renamed community labels across cluster-only rebuilds", async () => {
     const dir = tempProject();
     const graphDir = join(dir, ".graphify");
