@@ -508,4 +508,39 @@ class PaymentService extends BaseService implements Billable {}
     expect(setupNodes).toHaveLength(2);
     expect(new Set(setupNodes.map((node) => node.id)).size).toBe(2);
   });
+
+  it("extracts SQL ALTER TABLE foreign keys and schema-qualified table names", async () => {
+    const schemaPath = join(dir, "schema.sql");
+    writeFileSync(schemaPath, [
+      "CREATE TABLE Sales.Customer (",
+      "  CustomerID SERIAL PRIMARY KEY,",
+      "  Name TEXT NOT NULL",
+      ");",
+      "",
+      "CREATE TABLE Sales.SalesOrder (",
+      "  OrderID SERIAL PRIMARY KEY,",
+      "  CustomerID INT REFERENCES Sales.Customer(CustomerID)",
+      ");",
+      "",
+      "ALTER TABLE Sales.SalesOrder ADD CONSTRAINT fk_cust FOREIGN KEY (CustomerID) REFERENCES Sales.Customer(CustomerID);",
+      "",
+    ].join("\n"));
+
+    const result = await extract([schemaPath]);
+    const labels = result.nodes.map((node) => node.label);
+    const references = result.edges.filter((edge) => edge.relation === "references");
+    const nodeIds = new Set(result.nodes.map((node) => node.id));
+
+    expect(labels).toContain("Sales.Customer");
+    expect(labels).toContain("Sales.SalesOrder");
+    expect(references.length).toBeGreaterThanOrEqual(2);
+    for (const edge of references) {
+      expect(nodeIds.has(edge.source)).toBe(true);
+      expect(nodeIds.has(edge.target)).toBe(true);
+    }
+    expect(references.some((edge) =>
+      result.nodes.find((node) => node.id === edge.source)?.label === "Sales.SalesOrder" &&
+      result.nodes.find((node) => node.id === edge.target)?.label === "Sales.Customer"
+    )).toBe(true);
+  });
 });
