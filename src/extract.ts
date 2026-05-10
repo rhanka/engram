@@ -347,10 +347,18 @@ function normalizeJsImportTarget(resolvedImport: string): string {
   return resolvedImport;
 }
 
-function resolveJsImportTarget(raw: string, importerPath: string): string | null {
+interface JsImportTargetInfo {
+  targetId: string;
+  resolvedPath?: string;
+}
+
+function resolveJsImportTargetInfo(raw: string, importerPath: string): JsImportTargetInfo | null {
   if (raw.startsWith(".")) {
     const resolvedImport = normalizeJsImportTarget(resolve(dirname(importerPath), raw));
-    return _makeId(toPortablePath(resolvedImport));
+    return {
+      targetId: _makeId(toPortablePath(resolvedImport)),
+      resolvedPath: resolvedImport,
+    };
   }
 
   let resolvedAlias: string | null = null;
@@ -362,11 +370,18 @@ function resolveJsImportTarget(raw: string, importerPath: string): string | null
     }
   }
   if (resolvedAlias) {
-    return _makeId(toPortablePath(resolvedAlias));
+    return {
+      targetId: _makeId(toPortablePath(resolvedAlias)),
+      resolvedPath: resolvedAlias,
+    };
   }
 
   const moduleName = raw.split("/").pop() ?? "";
-  return moduleName ? _makeId(moduleName) : null;
+  return moduleName ? { targetId: _makeId(moduleName) } : null;
+}
+
+function resolveJsImportTarget(raw: string, importerPath: string): string | null {
+  return resolveJsImportTargetInfo(raw, importerPath)?.targetId ?? null;
 }
 
 function remapFileNodeIds(nodes: GraphNode[], edges: GraphEdge[], paths: string[], root: string): void {
@@ -845,18 +860,123 @@ function _getCppFuncName(node: SyntaxNode, source: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// JS/TS extra walk for arrow functions
+// JS/TS extra walk for arrow functions and CommonJS requires
 // ---------------------------------------------------------------------------
 
+function _findRequireCall(valueNode: SyntaxNode | null, source: string): SyntaxNode | null {
+  if (!valueNode) return null;
+  if (valueNode.type === "call_expression") {
+    const fn = valueNode.childForFieldName("function");
+    if (fn && fn.type === "identifier" && _readText(fn, source) === "require") {
+      return valueNode;
+    }
+  }
+  if (valueNode.type === "member_expression") {
+    return _findRequireCall(valueNode.childForFieldName("object"), source);
+  }
+  return null;
+}
+
+function _readStringArgument(node: SyntaxNode, source: string): string | null {
+  const args = node.childForFieldName("arguments");
+  if (!args) return null;
+  for (const child of args.children) {
+    if (child.type === "string") {
+      return _readText(child, source).replace(/^['"`\s]+|['"`\s]+$/g, "");
+    }
+  }
+  return null;
+}
+
+function _requireImportsJs(
+  node: SyntaxNode,
+  source: string,
+  fileNid: string,
+  edges: GraphEdge[],
+  strPath: string,
+  rootDir: string,
+): boolean {
+  if (node.type !== "lexical_declaration" && node.type !== "variable_declaration") {
+    return false;
+  }
+
+  let found = false;
+  for (const child of node.children) {
+    if (child.type !== "variable_declarator") continue;
+
+    const value = child.childForFieldName("value");
+    const call = _findRequireCall(value, source);
+    if (!call) continue;
+
+    const raw = _readStringArgument(call, source);
+    if (!raw) continue;
+
+    const target = resolveJsImportTargetInfo(raw, strPath);
+    if (!target) continue;
+
+    const line = node.startPosition.row + 1;
+    edges.push({
+      source: fileNid,
+      target: target.targetId,
+      relation: "imports_from",
+      confidence: "EXTRACTED",
+      source_file: strPath,
+      source_location: `L${line}`,
+      weight: 1.0,
+    });
+    found = true;
+
+    if (!target.resolvedPath) continue;
+
+    const targetStem = qualifiedFileStem(target.resolvedPath, rootDir);
+    const nameNode = child.childForFieldName("name");
+    const symNames: string[] = [];
+    if (nameNode?.type === "object_pattern") {
+      for (const prop of nameNode.children) {
+        if (prop.type === "shorthand_property_identifier_pattern") {
+          symNames.push(_readText(prop, source));
+        } else if (prop.type === "pair_pattern") {
+          const key = prop.childForFieldName("key");
+          if (key) {
+            symNames.push(_readText(key, source).replace(/^['"`\s]+|['"`\s]+$/g, ""));
+          }
+        }
+      }
+    } else if (value?.type === "member_expression") {
+      const prop = value.childForFieldName("property");
+      if (prop) {
+        symNames.push(_readText(prop, source));
+      }
+    }
+
+    for (const sym of symNames.filter(Boolean)) {
+      edges.push({
+        source: fileNid,
+        target: _makeId(targetStem, sym),
+        relation: "imports",
+        confidence: "EXTRACTED",
+        source_file: strPath,
+        source_location: `L${line}`,
+        weight: 1.0,
+      });
+    }
+  }
+  return found;
+}
+
 function _jsExtraWalk(
-  node: SyntaxNode, source: string, fileNid: string, stem: string, _strPath: string,
-  _nodes: GraphNode[], _edges: GraphEdge[], _seenIds: Set<string>,
+  node: SyntaxNode, source: string, fileNid: string, stem: string, strPath: string,
+  _nodes: GraphNode[], edges: GraphEdge[], _seenIds: Set<string>,
   functionBodies: Array<[string, SyntaxNode]>,
   _parentClassNid: string | null,
   addNodeFn: (nid: string, label: string, line: number) => void,
   addEdgeFn: (src: string, tgt: string, relation: string, line: number) => void,
+  rootDir: string,
 ): boolean {
-  if (node.type === "lexical_declaration") {
+  if (node.type === "lexical_declaration" || node.type === "variable_declaration") {
+    const requireFound = _requireImportsJs(node, source, fileNid, edges, strPath, rootDir);
+    let arrowFound = false;
+
     for (const child of node.children) {
       if (child.type === "variable_declarator") {
         const value = child.childForFieldName("value");
@@ -872,11 +992,12 @@ function _jsExtraWalk(
             if (body) {
               functionBodies.push([funcNid, body]);
             }
+            arrowFound = true;
           }
         }
       }
     }
-    return true;
+    return node.type === "lexical_declaration" || requireFound || arrowFound;
   }
   return false;
 }
@@ -1433,7 +1554,7 @@ async function _extractGeneric(
       }
       if (_jsExtraWalk(node, source, fileNid, stem, strPath,
         nodes, edges, seenIds, functionBodies,
-        parentClassNid, addNode, addEdge)) {
+        parentClassNid, addNode, addEdge, rootDir)) {
         return;
       }
     }

@@ -509,6 +509,56 @@ class PaymentService extends BaseService implements Billable {}
     expect(new Set(setupNodes.map((node) => node.id)).size).toBe(2);
   });
 
+  it("extracts CommonJS require imports and local required symbols", async () => {
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(
+      join(dir, "src", "entry.js"),
+      [
+        "const utils = require('./utils');",
+        "const { helper, renamed: localRenamed } = require('./utils');",
+        "const pick = require('./utils').renamed;",
+        "var legacy = require('./utils');",
+        "function run() {",
+        "  return helper() + pick() + legacy.renamed();",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(dir, "src", "utils.js"),
+      [
+        "function helper() { return 1; }",
+        "function renamed() { return 2; }",
+        "module.exports = { helper, renamed };",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await extract([
+      join(dir, "src", "entry.js"),
+      join(dir, "src", "utils.js"),
+    ]);
+
+    const entryNode = result.nodes.find((node) => node.label === "entry.js");
+    const utilsNode = result.nodes.find((node) => node.label === "utils.js");
+    const helperNode = result.nodes.find((node) => node.label === "helper()");
+    const renamedNode = result.nodes.find((node) => node.label === "renamed()");
+    const importEdges = result.edges.filter(
+      (edge) => edge.source === entryNode?.id && edge.target === utilsNode?.id && edge.relation === "imports_from",
+    );
+    const symbolTargets = result.edges
+      .filter((edge) => edge.source === entryNode?.id && edge.relation === "imports")
+      .map((edge) => edge.target);
+
+    expect(entryNode?.id).toBeTruthy();
+    expect(utilsNode?.id).toBeTruthy();
+    expect(helperNode?.id).toBeTruthy();
+    expect(renamedNode?.id).toBeTruthy();
+    expect(importEdges.length).toBeGreaterThanOrEqual(4);
+    expect(symbolTargets).toContain(helperNode?.id);
+    expect(symbolTargets).toContain(renamedNode?.id);
+  });
+
   it("extracts SQL ALTER TABLE foreign keys and schema-qualified table names", async () => {
     const schemaPath = join(dir, "schema.sql");
     writeFileSync(schemaPath, [
