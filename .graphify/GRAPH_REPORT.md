@@ -13,11 +13,11 @@
 - Requested: auto
 - Resolved: committed (source: default-auto)
 - Included files: 232 · Candidates: 248
-- Excluded: 0 untracked · 190 ignored · 0 sensitive · 0 missing committed
+- Excluded: 0 untracked · 20178 ignored · 0 sensitive · 0 missing committed
 - Recommendation: Use --scope all or graphify.yaml inputs.corpus for a knowledge-base folder.
 
 ## Graph Freshness
-- Built from Git commit: `0509dea`
+- Built from Git commit: `0f8e258`
 - Compare this hash to `git rev-parse HEAD` before trusting freshness-sensitive graph output.
 ## God Nodes (most connected - your core abstractions)
 1. `Response` - 45 edges
@@ -32,6 +32,8 @@
 10. `AsyncClient` - 26 edges
 
 ## Surprising Connections (you probably didn't know these)
+- `Core data models: URL, Headers, Cookies, Request, Response. These are the centra` --uses--> `HTTPStatusError`  [INFERRED]
+  worked/httpx/raw/models.py → worked/httpx/raw/exceptions.py
 - `Utility functions shared across the library. Small helpers that don't belong in` --uses--> `Cookies`  [INFERRED]
   worked/httpx/raw/utils.py → worked/httpx/raw/models.py
 - `Convert a primitive value to its string representation.` --uses--> `Cookies`  [INFERRED]
@@ -39,8 +41,6 @@
 - `Convert a header key to its canonical Title-Case form.` --uses--> `Cookies`  [INFERRED]
   worked/httpx/raw/utils.py → worked/httpx/raw/models.py
 - `Expand a params dict into a flat list of (key, value) pairs.     List values bec` --uses--> `Cookies`  [INFERRED]
-  worked/httpx/raw/utils.py → worked/httpx/raw/models.py
-- `Parse a Content-Type header value.     Returns (media_type, params_dict).     Ex` --uses--> `Cookies`  [INFERRED]
   worked/httpx/raw/utils.py → worked/httpx/raw/models.py
 
 ## Communities
