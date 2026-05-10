@@ -59,6 +59,7 @@ function parseText(parser: InstanceType<typeof Parser>, source: string): Tree {
 function resolveGrammarWasm(langName: string): string | null {
   const packageName = new Map<string, string>([
     ["c_sharp", "c-sharp"],
+    ["tsx", "typescript"],
   ]).get(langName) ?? langName;
   // Try common npm package conventions
   const candidates = [
@@ -888,6 +889,23 @@ function _readStringArgument(node: SyntaxNode, source: string): string | null {
   return null;
 }
 
+function _readJsCalleeName(node: SyntaxNode | null, source: string): string | null {
+  if (!node) return null;
+  if (["identifier", "type_identifier", "property_identifier"].includes(node.type)) {
+    return _readText(node, source);
+  }
+  if (node.type === "member_expression") {
+    const prop = node.childForFieldName("property");
+    if (prop) return _readJsCalleeName(prop, source);
+  }
+  for (let i = node.children.length - 1; i >= 0; i--) {
+    const child = node.children[i]!;
+    const name = _readJsCalleeName(child, source);
+    if (name) return name;
+  }
+  return null;
+}
+
 function _requireImportsJs(
   node: SyntaxNode,
   source: string,
@@ -977,27 +995,43 @@ function _jsExtraWalk(
     const requireFound = _requireImportsJs(node, source, fileNid, edges, strPath, rootDir);
     let arrowFound = false;
 
-    for (const child of node.children) {
-      if (child.type === "variable_declarator") {
-        const value = child.childForFieldName("value");
-        if (value && value.type === "arrow_function") {
+    let constFound = false;
+
+    if (node.type === "lexical_declaration") {
+      for (const child of node.children) {
+        if (child.type === "variable_declarator") {
+          const value = child.childForFieldName("value");
           const nameNode = child.childForFieldName("name");
-          if (nameNode) {
-            const funcName = _readText(nameNode, source);
-            const line = child.startPosition.row + 1;
-            const funcNid = _makeId(stem, funcName);
-            addNodeFn(funcNid, `${funcName}()`, line);
-            addEdgeFn(fileNid, funcNid, "contains", line);
-            const body = value.childForFieldName("body");
-            if (body) {
-              functionBodies.push([funcNid, body]);
+          if (value && value.type === "arrow_function") {
+            if (nameNode) {
+              const funcName = _readText(nameNode, source);
+              const line = child.startPosition.row + 1;
+              const funcNid = _makeId(stem, funcName);
+              addNodeFn(funcNid, `${funcName}()`, line);
+              addEdgeFn(fileNid, funcNid, "contains", line);
+              const body = value.childForFieldName("body");
+              if (body) {
+                functionBodies.push([funcNid, body]);
+              }
+              arrowFound = true;
             }
-            arrowFound = true;
+          } else if (
+            value &&
+            ["object", "array", "as_expression", "call_expression", "new_expression"].includes(value.type)
+          ) {
+            if (nameNode) {
+              const constName = _readText(nameNode, source);
+              const line = child.startPosition.row + 1;
+              const constNid = _makeId(stem, constName);
+              addNodeFn(constNid, constName, line);
+              addEdgeFn(fileNid, constNid, "contains", line);
+              constFound = true;
+            }
           }
         }
       }
     }
-    return node.type === "lexical_declaration" || requireFound || arrowFound;
+    return node.type === "lexical_declaration" || requireFound || arrowFound || constFound;
   }
   return false;
 }
@@ -1086,7 +1120,7 @@ const _JS_CONFIG: LanguageConfig = defaultConfig({
   classTypes: new Set(["class_declaration"]),
   functionTypes: new Set(["function_declaration", "method_definition"]),
   importTypes: new Set(["import_statement"]),
-  callTypes: new Set(["call_expression"]),
+  callTypes: new Set(["call_expression", "new_expression"]),
   callFunctionField: "function",
   callAccessorNodeTypes: new Set(["member_expression"]),
   callAccessorField: "property",
@@ -1097,15 +1131,21 @@ const _JS_CONFIG: LanguageConfig = defaultConfig({
 const _TS_CONFIG: LanguageConfig = defaultConfig({
   tsGrammarName: "typescript",
   tsModule: "tree_sitter_typescript",
-  classTypes: new Set(["class_declaration"]),
+  classTypes: new Set(["class_declaration", "interface_declaration", "enum_declaration", "type_alias_declaration"]),
   functionTypes: new Set(["function_declaration", "method_definition"]),
   importTypes: new Set(["import_statement"]),
-  callTypes: new Set(["call_expression"]),
+  callTypes: new Set(["call_expression", "new_expression"]),
   callFunctionField: "function",
   callAccessorNodeTypes: new Set(["member_expression"]),
   callAccessorField: "property",
   functionBoundaryTypes: new Set(["function_declaration", "arrow_function", "method_definition"]),
   importHandler: _importJs,
+});
+
+const _TSX_CONFIG: LanguageConfig = defaultConfig({
+  ..._TS_CONFIG,
+  tsGrammarName: "tsx",
+  tsModule: "tree_sitter_typescript",
 });
 
 const _JAVA_CONFIG: LanguageConfig = defaultConfig({
@@ -1602,6 +1642,23 @@ async function _extractGeneric(
 
   const seenCallPairs = new Set<string>();
 
+  function emitCallByName(calleeName: string | null, node: SyntaxNode, callerNid: string): void {
+    if (!calleeName) return;
+    const tgtNid = labelToNid.get(calleeName.toLowerCase());
+    if (tgtNid && tgtNid !== callerNid) {
+      const pair = `${callerNid}|${tgtNid}`;
+      if (!seenCallPairs.has(pair)) {
+        seenCallPairs.add(pair);
+        const line = node.startPosition.row + 1;
+        edges.push({
+          source: callerNid, target: tgtNid, relation: "calls",
+          confidence: "EXTRACTED", source_file: strPath,
+          source_location: `L${line}`, weight: 1.0,
+        });
+      }
+    }
+  }
+
   function walkCalls(node: SyntaxNode, callerNid: string): void {
     if (config.functionBoundaryTypes.has(node.type)) return;
 
@@ -1659,6 +1716,9 @@ async function _extractGeneric(
             }
           }
         }
+      } else if (config.tsModule === "tree_sitter_javascript" || config.tsModule === "tree_sitter_typescript") {
+        const calleeField = node.type === "new_expression" ? "constructor" : config.callFunctionField;
+        calleeName = _readJsCalleeName(calleeField ? node.childForFieldName(calleeField) : null, source);
       } else if (config.tsModule === "tree_sitter_c_sharp" && node.type === "invocation_expression") {
         const nameNode = node.childForFieldName("name");
         if (nameNode) {
@@ -1712,21 +1772,7 @@ async function _extractGeneric(
         }
       }
 
-      if (calleeName) {
-        const tgtNid = labelToNid.get(calleeName.toLowerCase());
-        if (tgtNid && tgtNid !== callerNid) {
-          const pair = `${callerNid}|${tgtNid}`;
-          if (!seenCallPairs.has(pair)) {
-            seenCallPairs.add(pair);
-            const line = node.startPosition.row + 1;
-            edges.push({
-              source: callerNid, target: tgtNid, relation: "calls",
-              confidence: "EXTRACTED", source_file: strPath,
-              source_location: `L${line}`, weight: 1.0,
-            });
-          }
-        }
-      }
+      emitCallByName(calleeName, node, callerNid);
     }
 
     for (const child of node.children) {
@@ -1734,8 +1780,29 @@ async function _extractGeneric(
     }
   }
 
+  function walkJsTsDescendantCalls(bodyNode: SyntaxNode, callerNid: string): void {
+    const callNodes = bodyNode.descendantsOfType(["call_expression", "new_expression"]) as SyntaxNode[];
+    for (const callNode of callNodes) {
+      let nested = false;
+      let cur = callNode.parent;
+      while (cur && !(cur.startIndex === bodyNode.startIndex && cur.endIndex === bodyNode.endIndex)) {
+        if (config.functionBoundaryTypes.has(cur.type)) {
+          nested = true;
+          break;
+        }
+        cur = cur.parent;
+      }
+      if (nested) continue;
+      const calleeField = callNode.type === "new_expression" ? "constructor" : config.callFunctionField;
+      emitCallByName(_readJsCalleeName(calleeField ? callNode.childForFieldName(calleeField) : null, source), callNode, callerNid);
+    }
+  }
+
   for (const [callerNid, bodyNode] of functionBodies) {
     walkCalls(bodyNode, callerNid);
+    if (config.tsModule === "tree_sitter_javascript" || config.tsModule === "tree_sitter_typescript") {
+      walkJsTsDescendantCalls(bodyNode, callerNid);
+    }
   }
 
   // -- Clean edges --
@@ -1884,7 +1951,7 @@ export async function extractPython(filePath: string, rootDir?: string): Promise
 
 export async function extractJs(filePath: string, rootDir?: string): Promise<ExtractionResult> {
   const ext = extname(filePath);
-  const config = (ext === ".ts" || ext === ".tsx") ? _TS_CONFIG : _JS_CONFIG;
+  const config = ext === ".tsx" ? _TSX_CONFIG : ext === ".ts" ? _TS_CONFIG : _JS_CONFIG;
   return _extractGeneric(filePath, config, rootDir);
 }
 

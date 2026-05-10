@@ -559,6 +559,67 @@ class PaymentService extends BaseService implements Billable {}
     expect(symbolTargets).toContain(renamedNode?.id);
   });
 
+  it("extracts TypeScript declarations, module constants, and constructor calls", async () => {
+    const servicePath = join(dir, "service.ts");
+    writeFileSync(
+      servicePath,
+      [
+        "interface Service { run(): number }",
+        "type ServiceFactory = () => Service;",
+        "enum Status { Ready }",
+        "class Worker implements Service {",
+        "  run() { return 1; }",
+        "}",
+        "export const registry = new Worker();",
+        "export function buildWorker() {",
+        "  return new Worker();",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await extract([servicePath]);
+    const labels = result.nodes.map((node) => node.label);
+    const workerNode = result.nodes.find((node) => node.label === "Worker");
+    const buildNode = result.nodes.find((node) => node.label === "buildWorker()");
+    const constructorCall = result.edges.find(
+      (edge) => edge.source === buildNode?.id && edge.target === workerNode?.id && edge.relation === "calls",
+    );
+
+    expect(labels).toContain("Service");
+    expect(labels).toContain("ServiceFactory");
+    expect(labels).toContain("Status");
+    expect(labels).toContain("registry");
+    expect(constructorCall).toBeDefined();
+  });
+
+  it("uses TSX grammar for JSX call expressions", async () => {
+    const viewPath = join(dir, "View.tsx");
+    writeFileSync(
+      viewPath,
+      [
+        "function formatName(name: string) {",
+        "  return name.toUpperCase();",
+        "}",
+        "export function Card() {",
+        "  return <section>{formatName('Ada')}</section>;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await extract([viewPath]);
+    const formatNode = result.nodes.find((node) => node.label === "formatName()");
+    const cardNode = result.nodes.find((node) => node.label === "Card()");
+    const jsxCall = result.edges.find(
+      (edge) => edge.source === cardNode?.id && edge.target === formatNode?.id && edge.relation === "calls",
+    );
+
+    expect(formatNode?.id).toBeTruthy();
+    expect(cardNode?.id).toBeTruthy();
+    expect(jsxCall).toBeDefined();
+  });
+
   it("extracts SQL ALTER TABLE foreign keys and schema-qualified table names", async () => {
     const schemaPath = join(dir, "schema.sql");
     writeFileSync(schemaPath, [

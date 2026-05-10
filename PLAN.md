@@ -467,7 +467,8 @@ graphify extract ./tmp/direct-uat-corpus --backend openai --model gpt-5.5 --no-c
 - [ ] Lot 2: parser/language surface: Markdown structural extraction, TS/TSX advanced constructs, CommonJS require, SQL ALTER/schema-qualified names, Quarto `.qmd`, and selected no-Python language fallbacks.
   - [x] Add TypeScript SQL extraction for schema-qualified table names and `ALTER TABLE ... FOREIGN KEY ... REFERENCES` edges.
   - [x] Add TypeScript CommonJS `require()` extraction for local module edges and required symbols.
-  - [ ] Finish Markdown structural extraction, TS/TSX advanced constructs, Quarto `.qmd`, and selected no-Python language fallback audit.
+  - [x] Add TypeScript/TSX extraction for interface/type/enum nodes, module constants, constructor calls and JSX call expressions.
+  - [ ] Finish Markdown structural extraction, Quarto `.qmd`, and selected no-Python language fallback audit.
 - [ ] Lot 3: incremental/dedup/update reliability: semantic cache/build-merge/manifest changes, community label persistence, reversed call-edge update fix, conservative entity dedup.
   - [x] Preserve `_src`/`_tgt` from existing `graph.json` links during `buildMerge` so non-directed graph snapshots do not reverse call semantics after update.
   - [ ] Finish remaining semantic cache/build-merge/manifest and community-label audit items.
