@@ -77,6 +77,10 @@ describe("buildProject", () => {
     expect(reportText).not.toContain(dir);
     expect(reportText).toContain("## Summary");
     expect(readFileSync(join(dir, ".graphify", ".graphify_detect.json"), "utf-8")).toContain("\"total_files\"");
+    const labelsPath = join(dir, ".graphify", ".graphify_labels.json");
+    expect(existsSync(labelsPath)).toBe(true);
+    const labels = JSON.parse(readFileSync(labelsPath, "utf-8")) as Record<string, string>;
+    expect(Object.keys(labels).length).toBeGreaterThan(0);
   });
 
   it("fails loudly when AST extraction produces no nodes", async () => {

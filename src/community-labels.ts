@@ -22,9 +22,12 @@ import type Graph from "graphology";
 function readLabelsJson(filePath: string): Map<number, string> {
   if (!existsSync(filePath)) return new Map();
   try {
-    const raw = JSON.parse(readFileSync(filePath, "utf-8")) as Record<string, unknown>;
+    const raw = JSON.parse(readFileSync(filePath, "utf-8")) as unknown;
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+      return new Map();
+    }
     const out = new Map<number, string>();
-    for (const [key, value] of Object.entries(raw)) {
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
       const cid = Number(key);
       if (!Number.isFinite(cid) || Number.isNaN(cid)) continue;
       if (typeof value !== "string") continue;

@@ -402,6 +402,7 @@ describe("public CLI runtime command parity", () => {
     expect(existsSync(join(outDir, ".graphify", "graph.json"))).toBe(true);
     expect(existsSync(join(outDir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
     expect(existsSync(join(outDir, ".graphify", ".graphify_analysis.json"))).toBe(true);
+    expect(existsSync(join(outDir, ".graphify", ".graphify_labels.json"))).toBe(true);
   });
 
   it("supports extract --no-cluster for raw merged extraction output", async () => {
