@@ -470,9 +470,11 @@ graphify extract ./tmp/direct-uat-corpus --backend openai --model gpt-5.5 --no-c
   - [x] Add TypeScript/TSX extraction for interface/type/enum nodes, module constants, constructor calls and JSX call expressions.
   - [x] Add Markdown/MDX/Quarto structural extraction for headings, hierarchy and fenced code blocks.
   - [x] Finish selected no-Python language fallback audit with Groovy/Gradle, Luau, R and Fortran extension coverage.
-- [ ] Lot 3: incremental/dedup/update reliability: semantic cache/build-merge/manifest changes, community label persistence, reversed call-edge update fix, conservative entity dedup.
+- [x] Lot 3: incremental/dedup/update reliability: semantic cache/build-merge/manifest changes, community label persistence, reversed call-edge update fix, conservative entity dedup.
   - [x] Preserve `_src`/`_tgt` from existing `graph.json` links during `buildMerge` so non-directed graph snapshots do not reverse call semantics after update.
-  - [ ] Finish remaining semantic cache/build-merge/manifest and community-label audit items.
+  - [x] Persist community labels across `cluster-only`, `update`/`hook-rebuild`, `extract`, and the skill-runtime assemble/finalize/merge/cluster-only flows so user-renamed labels survive every rebuild (parity with upstream `b3c99ec` and `e22a189`).
+  - [x] Confirm semantic cache + manifest reuse is already implemented in the TypeScript assistant/runtime `update` path; document the headless `graphify extract` choice as an intentional delta rather than back-porting upstream's monolithic incremental `extract` command.
+  - [x] Confirm entity dedup remains conservative (`deduplicateByLabel` in `buildMerge`) in the TypeScript line; the upstream MinHash/LSH/Jaro-Winkler `--dedup-llm` path is recorded as `intentional-delta` because it requires Python-only dependencies and an aggressive cross-file merge contract the TS port deliberately avoids.
 - [ ] Lot 4: optional provider/source integrations: decide on Ollama, AWS Bedrock and Google Workspace as explicit opt-in features before implementation.
 - [ ] Lot 5: MCP resources and review UX: MCP report/stats/god-nodes resources plus CRG-inspired HTML accessibility patterns.
 - [ ] Keep embeddings, SQLite/FTS and daemon features deferred unless a separate spec is approved.
