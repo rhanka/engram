@@ -101,7 +101,7 @@
       "95": "Community 95",
       "96": "Community 96"
     },
-    "built_from_commit": "fc4927184b2fc8dec5ea5cc72521256c10cd75b3"
+    "built_from_commit": "f12d39b0ff1ea08d7cb9963f00402a984a06b9e8"
   },
   "nodes": [
     {
@@ -1243,7 +1243,7 @@
       "label": "readGraphAttributeLabels()",
       "file_type": "code",
       "source_file": "src/community-labels.ts",
-      "source_location": "L41",
+      "source_location": "L44",
       "community": 61,
       "community_name": "Community 61"
     },
@@ -1252,7 +1252,7 @@
       "label": "resolveCommunityLabels()",
       "file_type": "code",
       "source_file": "src/community-labels.ts",
-      "source_location": "L62",
+      "source_location": "L65",
       "community": 61,
       "community_name": "Community 61"
     },
@@ -1261,7 +1261,7 @@
       "label": "persistCommunityLabels()",
       "file_type": "code",
       "source_file": "src/community-labels.ts",
-      "source_location": "L97",
+      "source_location": "L100",
       "community": 61,
       "community_name": "Community 61"
     },
@@ -9096,7 +9096,7 @@
       "community_name": "Community 72"
     },
     {
-      "id": "build_project_test_makeprojectdir",
+      "id": "tests_build_project_test_makeprojectdir",
       "label": "makeProjectDir()",
       "file_type": "code",
       "source_file": "tests/build-project.test.ts",
@@ -14163,6 +14163,15 @@
       "community_name": "Community 50"
     },
     {
+      "id": "build_project_test_makeprojectdir",
+      "label": "makeProjectDir()",
+      "file_type": "code",
+      "source_file": "tests/build-project.test.ts",
+      "source_location": "L8",
+      "community": 72,
+      "community_name": "Community 72"
+    },
+    {
       "id": "src_pipeline_defaultlabels",
       "label": "defaultLabels()",
       "file_type": "code",
@@ -17320,15 +17329,6 @@
       "source_location": "L32",
       "community": 71,
       "community_name": "Community 71"
-    },
-    {
-      "id": "tests_build_project_test_makeprojectdir",
-      "label": "makeProjectDir()",
-      "file_type": "code",
-      "source_file": "tests/build-project.test.ts",
-      "source_location": "L8",
-      "community": 72,
-      "community_name": "Community 72"
     },
     {
       "id": "tests_configured_dataprep_test_makeproject",
@@ -45978,14 +45978,38 @@
     },
     {
       "source": "tests_build_project_test_ts",
-      "target": "build_project_test_makeprojectdir",
+      "target": "tests_build_project_test_makeprojectdir",
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "tests/build-project.test.ts",
       "source_location": "L8",
       "weight": 1,
       "_src": "tests_build_project_test_ts",
-      "_tgt": "build_project_test_makeprojectdir",
+      "_tgt": "tests_build_project_test_makeprojectdir",
+      "confidence_score": 1
+    },
+    {
+      "source": "tests_build_project_test_ts",
+      "target": "src_extract_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/build-project.test.ts",
+      "source_location": "L84",
+      "weight": 1,
+      "_src": "tests_build_project_test_ts",
+      "_tgt": "src_extract_ts",
+      "confidence_score": 1
+    },
+    {
+      "source": "tests_build_project_test_ts",
+      "target": "src_pipeline_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/build-project.test.ts",
+      "source_location": "L104",
+      "weight": 1,
+      "_src": "tests_build_project_test_ts",
+      "_tgt": "src_pipeline_ts",
       "confidence_score": 1
     },
     {
@@ -57281,6 +57305,18 @@
       "confidence_score": 0.5
     },
     {
+      "source": "tests_build_project_test_ts",
+      "target": "build_project_test_makeprojectdir",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/build-project.test.ts",
+      "source_location": "L8",
+      "weight": 1,
+      "_src": "tests_build_project_test_ts",
+      "_tgt": "build_project_test_makeprojectdir",
+      "confidence_score": 1
+    },
+    {
       "source": "src_pipeline_ts",
       "target": "src_pipeline_defaultlabels",
       "relation": "contains",
@@ -65498,42 +65534,6 @@
       "weight": 1,
       "_src": "tests_affected_flows_test_makeflowstore",
       "_tgt": "tests_affected_flows_test_addcall",
-      "confidence_score": 1
-    },
-    {
-      "source": "tests_build_project_test_ts",
-      "target": "tests_build_project_test_makeprojectdir",
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "tests/build-project.test.ts",
-      "source_location": "L8",
-      "weight": 1,
-      "_src": "tests_build_project_test_ts",
-      "_tgt": "tests_build_project_test_makeprojectdir",
-      "confidence_score": 1
-    },
-    {
-      "source": "tests_build_project_test_ts",
-      "target": "src_extract_ts",
-      "relation": "imports_from",
-      "confidence": "EXTRACTED",
-      "source_file": "tests/build-project.test.ts",
-      "source_location": "L84",
-      "weight": 1,
-      "_src": "tests_build_project_test_ts",
-      "_tgt": "src_extract_ts",
-      "confidence_score": 1
-    },
-    {
-      "source": "tests_build_project_test_ts",
-      "target": "src_pipeline_ts",
-      "relation": "imports_from",
-      "confidence": "EXTRACTED",
-      "source_file": "tests/build-project.test.ts",
-      "source_location": "L104",
-      "weight": 1,
-      "_src": "tests_build_project_test_ts",
-      "_tgt": "src_pipeline_ts",
       "confidence_score": 1
     },
     {
