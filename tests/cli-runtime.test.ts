@@ -698,6 +698,54 @@ describe("public CLI runtime command parity", () => {
     expect(existsSync(join(dir, ".graphify", "graph.html"))).toBe(false);
   });
 
+  it("preserves renamed community labels across cluster-only rebuilds", async () => {
+    const dir = tempProject();
+    const graphDir = join(dir, ".graphify");
+    mkdirSync(graphDir, { recursive: true });
+    const graphPath = join(graphDir, "graph.json");
+    writeFileSync(
+      graphPath,
+      JSON.stringify({
+        directed: false,
+        graph: { community_labels: { "0": "Community 0", "1": "Community 1" } },
+        nodes: [
+          { id: "alpha", label: "AlphaService", source_file: "src/alpha.ts", file_type: "code", community: 0, community_name: "Community 0" },
+          { id: "beta", label: "BetaRepository", source_file: "src/beta.ts", file_type: "code", community: 0, community_name: "Community 0" },
+          { id: "gamma", label: "GammaDocs", source_file: "docs/gamma.md", file_type: "document", community: 1, community_name: "Community 1" },
+          { id: "delta", label: "DeltaWiki", source_file: "docs/delta.md", file_type: "document", community: 1, community_name: "Community 1" },
+        ],
+        links: [
+          { source: "alpha", target: "beta", relation: "uses", confidence: "EXTRACTED" },
+          { source: "gamma", target: "delta", relation: "links", confidence: "EXTRACTED" },
+        ],
+      }, null, 2),
+      "utf-8",
+    );
+    const labelsPath = join(graphDir, ".graphify_labels.json");
+    writeFileSync(labelsPath, JSON.stringify({ "0": "AuthCore", "1": "DocsLayer" }, null, 2), "utf-8");
+
+    const result = await runCli(["cluster-only", dir], dir);
+    expect(result.exitCode).toBe(0);
+
+    const persistedLabels = JSON.parse(readFileSync(labelsPath, "utf-8")) as Record<string, string>;
+    const rebuiltGraph = JSON.parse(
+      readFileSync(graphPath, "utf-8"),
+    ) as { graph?: { community_labels?: Record<string, string> } };
+    const persistedValues = Object.values(persistedLabels);
+    expect(persistedValues).toContain("AuthCore");
+    expect(persistedValues).toContain("DocsLayer");
+    const graphValues = Object.values(rebuiltGraph.graph?.community_labels ?? {});
+    expect(graphValues).toContain("AuthCore");
+    expect(graphValues).toContain("DocsLayer");
+
+    const analysis = JSON.parse(
+      readFileSync(join(graphDir, ".graphify_analysis.json"), "utf-8"),
+    ) as { labels?: Record<string, string> };
+    const analysisValues = Object.values(analysis.labels ?? {});
+    expect(analysisValues).toContain("AuthCore");
+    expect(analysisValues).toContain("DocsLayer");
+  });
+
   it("supports execution flow build, list, and get commands", async () => {
     const dir = tempProject();
     const graphPath = writeFlowGraph(dir);

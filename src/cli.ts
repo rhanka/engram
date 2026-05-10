@@ -40,6 +40,7 @@ import { defaultManifestPath, resolveGraphInputPath, resolveGraphifyPaths } from
 import { normalizeSearchText } from "./search.js";
 import { makeGraphPortable, projectRootLabel, scanPortableGraphifyArtifacts } from "./portable-artifacts.js";
 import { loadOntologyPatchContext } from "./ontology-patch-context.js";
+import { persistCommunityLabels, resolveCommunityLabels } from "./community-labels.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -2241,8 +2242,10 @@ export async function main(): Promise<void> {
         const cohesion = scoreAll(G, communities);
         const gods = godNodes(G);
         const surprises = surprisingConnections(G, communities);
-        const labels = new Map<number, string>();
-        for (const cid of communities.keys()) labels.set(cid, `Community ${cid}`);
+        const labels = resolveCommunityLabels(communities, {
+          labelsPath: paths.scratch.labels,
+          graph: G,
+        });
         const questions = suggestQuestions(G, communities, labels);
         const tokenCost = { input: merged.input_tokens ?? 0, output: merged.output_tokens ?? 0 };
         const report = generate(
@@ -2266,6 +2269,7 @@ export async function main(): Promise<void> {
         safeToHtml(G, communities, paths.html, { communityLabels: labels }, {
           onWarning: (message) => console.warn(message),
         });
+        persistCommunityLabels(labels, paths.scratch.labels);
         writeJson(paths.scratch.analysis, {
           communities: Object.fromEntries([...communities.entries()].map(([key, value]) => [String(key), value])),
           cohesion: Object.fromEntries([...cohesion.entries()].map(([key, value]) => [String(key), value])),
@@ -2423,8 +2427,10 @@ export async function main(): Promise<void> {
       const cohesion = scoreAll(G, communities);
       const gods = godNodes(G);
       const surprises = surprisingConnections(G, communities);
-      const labels = new Map<number, string>();
-      for (const cid of communities.keys()) labels.set(cid, `Community ${cid}`);
+      const labels = resolveCommunityLabels(communities, {
+        labelsPath: paths.scratch.labels,
+        graph: G,
+      });
       const questions = suggestQuestions(G, communities, labels);
       const detection = {
         files: { code: [], document: [], paper: [], image: [], video: [] },
@@ -2455,6 +2461,7 @@ export async function main(): Promise<void> {
       safeToHtml(G, communities, paths.html, { communityLabels: labels }, {
         onWarning: (message) => console.warn(message),
       });
+      persistCommunityLabels(labels, paths.scratch.labels);
       const analysis = {
         communities: Object.fromEntries([...communities.entries()].map(([key, value]) => [String(key), value])),
         cohesion: Object.fromEntries([...cohesion.entries()].map(([key, value]) => [String(key), value])),

@@ -19,6 +19,7 @@ import { safeToHtml } from "./html-export.js";
 import { extractWithDiagnostics, type ExtractionDiagnostic } from "./extract.js";
 import { resolveGraphifyPaths } from "./paths.js";
 import { markLifecycleAnalyzed } from "./lifecycle.js";
+import { persistCommunityLabels, resolveCommunityLabels } from "./community-labels.js";
 import { safeGitRevParse } from "./git.js";
 import { toWiki } from "./wiki.js";
 import {
@@ -75,14 +76,6 @@ export interface BuildProjectResult {
   questions: SuggestedQuestion[];
   warnings: BuildProjectWarning[];
   artifacts: BuildProjectArtifacts;
-}
-
-function defaultLabels(communities: Map<number, string[]>): Map<number, string> {
-  const labels = new Map<number, string>();
-  for (const cid of communities.keys()) {
-    labels.set(cid, `Community ${cid}`);
-  }
-  return labels;
 }
 
 function countNonCodeFiles(detection: DetectionResult): number {
@@ -195,7 +188,10 @@ export async function buildProject(
   const cohesion = scoreAll(G, communities);
   const gods = godNodes(G);
   const surprises = surprisingConnections(G, communities);
-  const labels = defaultLabels(communities);
+  const labels = resolveCommunityLabels(communities, {
+    labelsPath: paths.scratch.labels,
+    graph: G,
+  });
   const questions = suggestQuestions(G, communities, labels);
 
   const report = generate(
@@ -216,6 +212,7 @@ export async function buildProject(
 
   writeFileSync(reportPath, report, "utf-8");
   toJson(G, communities, graphPath, { communityLabels: labels });
+  persistCommunityLabels(labels, paths.scratch.labels);
 
   let htmlPath: string | undefined;
   if (options?.html !== false) {

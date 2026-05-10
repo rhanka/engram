@@ -98,6 +98,7 @@ import {
   importImageDataprepBatchResults,
 } from "./image-dataprep-batch.js";
 import { normalizeSearchText } from "./search.js";
+import { persistCommunityLabels, resolveCommunityLabels } from "./community-labels.js";
 import type {
   DetectionResult,
   Extraction,
@@ -198,12 +199,8 @@ function getVersion(): string {
   }
 }
 
-function defaultLabels(communities: Map<number, string[]>): Map<number, string> {
-  const labels = new Map<number, string>();
-  for (const cid of communities.keys()) {
-    labels.set(cid, `Community ${cid}`);
-  }
-  return labels;
+function labelsPathForGraphOut(graphOut: string): string {
+  return join(dirname(resolve(graphOut)), ".graphify_labels.json");
 }
 
 function mapToObject<V>(map: Map<number, V>): Record<string, V> {
@@ -284,7 +281,7 @@ function analyzeGraph(
   detection: DetectionResult,
   root: string,
   tokenCost: { input: number; output: number },
-  labelsOverride?: Map<number, string>,
+  options: { labelsPath?: string } = {},
 ): {
   communities: Map<number, string[]>;
   cohesion: Map<number, number>;
@@ -299,7 +296,10 @@ function analyzeGraph(
   const portableDetection = makeDetectionPortable(detection, root);
   const communities = cluster(G);
   const cohesion = scoreAll(G, communities);
-  const labels = labelsOverride && labelsOverride.size > 0 ? labelsOverride : defaultLabels(communities);
+  const labels = resolveCommunityLabels(communities, {
+    graph: G,
+    labelsPath: options.labelsPath,
+  });
   const gods = godNodes(G);
   const surprises = surprisingConnections(G, communities);
   const questions = suggestQuestions(G, communities, labels);
@@ -1063,11 +1063,13 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         throw new Error("Graph is empty - extraction produced no nodes.");
       }
 
+      const labelsPath = labelsPathForGraphOut(opts.graphOut);
       const analyzed = analyzeGraph(
         G,
         portableDetection,
         root,
         { input: extraction.input_tokens ?? 0, output: extraction.output_tokens ?? 0 },
+        { labelsPath },
       );
 
       toJson(G, analyzed.communities, resolve(opts.graphOut), {
@@ -1075,6 +1077,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       });
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
       writeJson(opts.analysisOut, analyzed.analysis);
+      persistCommunityLabels(analyzed.labels, labelsPath);
       if (opts.htmlOut) {
         safeToHtml(G, analyzed.communities, resolve(opts.htmlOut), {
           communityLabels: analyzed.labels,
@@ -1135,11 +1138,13 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       });
       mergeGraphs(mergedGraph, newGraph);
 
+      const labelsPath = labelsPathForGraphOut(opts.graphOut);
       const analyzed = analyzeGraph(
         mergedGraph,
         portableDetection,
         root,
         { input: extraction.input_tokens ?? 0, output: extraction.output_tokens ?? 0 },
+        { labelsPath },
       );
       analyzed.analysis.diff = graphDiff(oldGraph, mergedGraph);
 
@@ -1148,6 +1153,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       });
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
       writeJson(opts.analysisOut, analyzed.analysis);
+      persistCommunityLabels(analyzed.labels, labelsPath);
       if (opts.htmlOut) {
         safeToHtml(mergedGraph, analyzed.communities, resolve(opts.htmlOut), {
           communityLabels: analyzed.labels,
@@ -1183,11 +1189,13 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         throw new Error("Graph is empty - extraction produced no nodes.");
       }
 
+      const labelsPath = labelsPathForGraphOut(opts.graphOut);
       const analyzed = analyzeGraph(
         G,
         detection,
         root,
         { input: extraction.input_tokens ?? 0, output: extraction.output_tokens ?? 0 },
+        { labelsPath },
       );
 
       mkdirSync(dirname(resolve(opts.graphOut)), { recursive: true });
@@ -1196,6 +1204,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       });
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
       writeJson(opts.analysisOut, analyzed.analysis);
+      persistCommunityLabels(analyzed.labels, labelsPath);
       saveManifest(detection.files, join(dirname(resolve(opts.graphOut)), "manifest.json"));
       console.log(`Graph: ${G.order} nodes, ${G.size} edges, ${analyzed.communities.size} communities`);
     });
@@ -1417,11 +1426,13 @@ export async function main(argv: string[] = process.argv): Promise<void> {
 
       mergeGraphs(mergedGraph, newGraph);
 
+      const labelsPath = labelsPathForGraphOut(opts.graphOut);
       const analyzed = analyzeGraph(
         mergedGraph,
         detection,
         root,
         { input: extraction.input_tokens ?? 0, output: extraction.output_tokens ?? 0 },
+        { labelsPath },
       );
       analyzed.analysis.diff = graphDiff(oldGraph, mergedGraph);
 
@@ -1430,6 +1441,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       });
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
       writeJson(opts.analysisOut, analyzed.analysis);
+      persistCommunityLabels(analyzed.labels, labelsPath);
       saveManifest(detection.files, join(dirname(resolve(opts.graphOut)), "manifest.json"));
 
       console.log(`Merged: ${mergedGraph.order} nodes, ${mergedGraph.size} edges`);
@@ -1447,17 +1459,20 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .action((opts) => {
       const root = resolve(opts.root);
       const G = makeGraphPortable(loadGraph(opts.graph), root);
+      const labelsPath = labelsPathForGraphOut(opts.graphOut);
       const analyzed = analyzeGraph(
         G,
         placeholderDetection(opts.root),
         root,
         { input: 0, output: 0 },
+        { labelsPath },
       );
       toJson(G, analyzed.communities, resolve(opts.graphOut), {
         communityLabels: analyzed.labels,
       });
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
       writeJson(opts.analysisOut, analyzed.analysis);
+      persistCommunityLabels(analyzed.labels, labelsPath);
       if (opts.htmlOut) {
         safeToHtml(G, analyzed.communities, resolve(opts.htmlOut), {
           communityLabels: analyzed.labels,
