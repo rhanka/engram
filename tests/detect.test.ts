@@ -57,7 +57,7 @@ describe("classifyFile", () => {
     const codeExts = [".py", ".ts", ".js", ".jsx", ".tsx", ".go", ".rs", ".java",
       ".cpp", ".c", ".h", ".rb", ".swift", ".kt", ".cs", ".scala", ".php",
       ".lua", ".zig", ".ps1", ".ex", ".m", ".jl", ".vue", ".svelte", ".dart",
-      ".v", ".sv", ".mjs", ".ejs"];
+      ".v", ".sv", ".mjs", ".ejs", ".groovy", ".gradle", ".luau", ".r", ".f90"];
     for (const ext of codeExts) {
       expect(classifyFile(`test${ext}`)).toBe(FileType.CODE);
     }

@@ -44,6 +44,16 @@ describe("upstream v4 language surface", () => {
     expect(collectFiles(dir).map((p) => p.split("/").pop()).sort()).toEqual(files.sort());
   });
 
+  it("collects selected no-Python upstream fallback language extensions", () => {
+    const files = ["Spec.groovy", "build.gradle", "module.luau", "analysis.R", "solver.F90"];
+
+    for (const file of files) {
+      writeFileSync(join(dir, file), "function fallbackFixture() { return 1; }\n");
+    }
+
+    expect(collectFiles(dir).map((p) => p.split("/").pop()).sort()).toEqual(files.sort());
+  });
+
   it("collects files when the explicit project root is inside a hidden parent", () => {
     const worktreeRoot = join(dir, ".worktrees", "feature-branch");
     mkdirSync(join(worktreeRoot, "src"), { recursive: true });
@@ -668,6 +678,44 @@ class PaymentService extends BaseService implements Billable {}
       expect.objectContaining({ source: installNode?.id, target: verifyNode?.id, relation: "contains" }),
       expect.objectContaining({ source: installNode?.id, target: codeNode?.id, relation: "contains" }),
     ]));
+  });
+
+  it("extracts portable fallback nodes for Groovy, R and Fortran without Python dependencies", async () => {
+    const specPath = join(dir, "DemoSpec.groovy");
+    const rPath = join(dir, "analysis.R");
+    const fortranPath = join(dir, "solver.F90");
+    writeFileSync(
+      specPath,
+      [
+        "class DemoSpec {",
+        "  def \"does useful work\"() {",
+        "    expect: true",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(rPath, "score_value <- function(x) x + 1\n");
+    writeFileSync(
+      fortranPath,
+      [
+        "module MathMod",
+        "contains",
+        "subroutine solve_case()",
+        "end subroutine solve_case",
+        "end module MathMod",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await extract([specPath, rPath, fortranPath]);
+    const labels = result.nodes.map((node) => node.label);
+
+    expect(labels).toContain("DemoSpec");
+    expect(labels).toContain("does useful work()");
+    expect(labels).toContain("score_value()");
+    expect(labels).toContain("MathMod");
+    expect(labels).toContain("solve_case()");
   });
 
   it("extracts SQL ALTER TABLE foreign keys and schema-qualified table names", async () => {

@@ -19,7 +19,8 @@ export const CODE_EXTENSIONS = new Set([
   ".py", ".ts", ".js", ".jsx", ".tsx", ".go", ".rs", ".java", ".cpp", ".cc", ".cxx",
   ".c", ".h", ".hpp", ".rb", ".swift", ".kt", ".kts", ".cs", ".scala", ".php",
   ".lua", ".toc", ".zig", ".ps1", ".ex", ".exs", ".m", ".mm", ".jl", ".vue",
-  ".svelte", ".dart", ".v", ".sv", ".mjs", ".ejs", ".sql", ".r",
+  ".svelte", ".dart", ".v", ".sv", ".mjs", ".ejs", ".sql", ".r", ".groovy",
+  ".gradle", ".luau", ".f", ".f90", ".f95", ".f03", ".f08",
 ]);
 
 export const DOC_EXTENSIONS = new Set([".md", ".mdx", ".qmd", ".txt", ".rst", ".html", ".yaml", ".yml"]);

@@ -469,7 +469,7 @@ graphify extract ./tmp/direct-uat-corpus --backend openai --model gpt-5.5 --no-c
   - [x] Add TypeScript CommonJS `require()` extraction for local module edges and required symbols.
   - [x] Add TypeScript/TSX extraction for interface/type/enum nodes, module constants, constructor calls and JSX call expressions.
   - [x] Add Markdown/MDX/Quarto structural extraction for headings, hierarchy and fenced code blocks.
-  - [ ] Finish selected no-Python language fallback audit.
+  - [x] Finish selected no-Python language fallback audit with Groovy/Gradle, Luau, R and Fortran extension coverage.
 - [ ] Lot 3: incremental/dedup/update reliability: semantic cache/build-merge/manifest changes, community label persistence, reversed call-edge update fix, conservative entity dedup.
   - [x] Preserve `_src`/`_tgt` from existing `graph.json` links during `buildMerge` so non-directed graph snapshots do not reverse call semantics after update.
   - [ ] Finish remaining semantic cache/build-merge/manifest and community-label audit items.

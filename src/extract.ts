@@ -2277,12 +2277,34 @@ async function extractRegexBackedCode(filePath: string, rootDir?: string): Promi
 
   const functionPatterns = [
     /\bfunction\s+([A-Za-z_$][\w$]*)\s*\(/g,
+    /\bdef\s+([A-Za-z_$][\w$]*)\s*\(/g,
     /\b(?:void|int|double|num|String|bool|dynamic|Future(?:<[^>]+>)?)\s+([A-Za-z_$][\w$]*)\s*\(/g,
   ];
   for (const pattern of functionPatterns) {
     for (const match of source.matchAll(pattern)) {
       addNode(match[1]!, `${match[1]!}()`, "contains", match.index ?? 0);
     }
+  }
+
+  const quotedFunctionPattern = /\bdef\s+["']([^"']+)["']\s*\(/g;
+  for (const match of source.matchAll(quotedFunctionPattern)) {
+    addNode(match[1]!, `${match[1]!}()`, "contains", match.index ?? 0);
+  }
+
+  const rFunctionPattern = /(?:^|\n)\s*([A-Za-z_.][\w.]*)\s*(?:<-|=)\s*function\s*\(/g;
+  for (const match of source.matchAll(rFunctionPattern)) {
+    addNode(match[1]!, `${match[1]!}()`, "contains", match.index ?? 0);
+  }
+
+  const fortranPattern = /^\s*(program|module|subroutine|function)\s+([A-Za-z_]\w*)/gim;
+  for (const match of source.matchAll(fortranPattern)) {
+    const kind = match[1]!.toLowerCase();
+    if (kind === "module" && source.slice(match.index ?? 0, (match.index ?? 0) + match[0].length).toLowerCase().includes("procedure")) {
+      continue;
+    }
+    const name = match[2]!;
+    const label = kind === "subroutine" || kind === "function" ? `${name}()` : name;
+    addNode(name, label, "contains", match.index ?? 0);
   }
 
   const modulePattern = /\bmodule\s+([A-Za-z_$][\w$]*)\b/g;
@@ -3855,6 +3877,8 @@ const _DISPATCH: Record<string, ExtractorFn> = {
   ".vue": extractRegexBackedCode,
   ".svelte": extractSvelte,
   ".dart": extractRegexBackedCode,
+  ".groovy": extractRegexBackedCode,
+  ".gradle": extractRegexBackedCode,
   ".v": extractRegexBackedCode,
   ".sv": extractRegexBackedCode,
   ".sql": extractSql,
@@ -3879,6 +3903,7 @@ const _DISPATCH: Record<string, ExtractorFn> = {
   ".php": extractPhp,
   ".swift": extractSwift,
   ".lua": extractLua,
+  ".luau": extractLua,
   ".toc": extractLua,
   ".zig": extractZig,
   ".ps1": extractPowershell,
@@ -3887,6 +3912,12 @@ const _DISPATCH: Record<string, ExtractorFn> = {
   ".m": extractObjc,
   ".mm": extractObjc,
   ".jl": extractJulia,
+  ".r": extractRegexBackedCode,
+  ".f": extractRegexBackedCode,
+  ".f90": extractRegexBackedCode,
+  ".f95": extractRegexBackedCode,
+  ".f03": extractRegexBackedCode,
+  ".f08": extractRegexBackedCode,
 };
 
 /**
@@ -3921,7 +3952,7 @@ export async function extractWithDiagnostics(paths: string[]): Promise<ExtractWi
       process.stderr.write(`  AST extraction: ${i}/${total} files (${Math.floor(i * 100 / total)}%)\n`);
     }
     const filePath = normalizedPaths[i]!;
-    const ext = extname(filePath);
+    const ext = extname(filePath).toLowerCase();
     const extractor = basename(filePath).endsWith(".blade.php")
       ? extractRegexBackedCode
       : _DISPATCH[ext];
@@ -4002,8 +4033,9 @@ const _EXTENSIONS = new Set([
   ".lua", ".toc", ".zig", ".ps1",
   ".m", ".mm",
   ".jl", ".ex", ".exs",
-  ".vue", ".svelte", ".dart", ".v", ".sv", ".ejs",
+  ".vue", ".svelte", ".dart", ".groovy", ".gradle", ".v", ".sv", ".ejs",
   ".md", ".mdx", ".qmd",
+  ".luau", ".r", ".R", ".f", ".F", ".f90", ".F90", ".f95", ".F95", ".f03", ".F03", ".f08", ".F08",
 ]);
 
 /**
