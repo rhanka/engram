@@ -31,6 +31,7 @@ import {
   toProjectRelativePath,
 } from "./portable-artifacts.js";
 import { loadGraphFromData } from "./graph.js";
+import { persistCommunityLabels, resolveCommunityLabels } from "./community-labels.js";
 import type { GraphifyInputScopeMode, InputScopeSource } from "./types.js";
 
 const WATCHED_EXTENSIONS = new Set([
@@ -185,10 +186,10 @@ export async function rebuildCode(
     const cohesion = scoreAll(G, communities);
     const gods = godNodes(G);
     const surprises = surprisingConnections(G, communities);
-    const labels = new Map<number, string>();
-    for (const cid of communities.keys()) {
-      labels.set(cid, `Community ${cid}`);
-    }
+    const labels = resolveCommunityLabels(communities, {
+      labelsPath: paths.scratch.labels,
+      graph: G,
+    });
     const questions = suggestQuestions(G, communities, labels);
 
     const report = generate(
@@ -213,6 +214,7 @@ export async function rebuildCode(
     if (!jsonWritten) {
       return false;
     }
+    persistCommunityLabels(labels, paths.scratch.labels);
     writeFileSync(paths.report, report, "utf-8");
 
     if (options.clearStale !== false) {

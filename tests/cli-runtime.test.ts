@@ -402,6 +402,7 @@ describe("public CLI runtime command parity", () => {
     expect(existsSync(join(outDir, ".graphify", "graph.json"))).toBe(true);
     expect(existsSync(join(outDir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
     expect(existsSync(join(outDir, ".graphify", ".graphify_analysis.json"))).toBe(true);
+    expect(existsSync(join(outDir, ".graphify", ".graphify_labels.json"))).toBe(true);
   });
 
   it("supports extract --no-cluster for raw merged extraction output", async () => {
@@ -696,6 +697,87 @@ describe("public CLI runtime command parity", () => {
     expect(existsSync(join(dir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
     expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
     expect(existsSync(join(dir, ".graphify", "graph.html"))).toBe(false);
+  });
+
+  it("preserves renamed community labels across hook-rebuild update", async () => {
+    const dir = tempProject();
+    // Seed a minimal git-tracked code fixture so rebuildCode has something to extract.
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+    writeFileSync(join(dir, "src", "beta.ts"), "export function beta() { return 2; }\n", "utf-8");
+    await execGit(dir, ["init", "-q"]);
+    await execGit(dir, ["add", "."]);
+    await execGit(dir, ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "seed"]);
+
+    // First update to materialize the graph + manifest.
+    const first = await runCli(["update", dir], dir);
+    expect(first.exitCode).toBe(0);
+
+    // Rename a community label and assert it survives the next rebuild.
+    const labelsPath = join(dir, ".graphify", ".graphify_labels.json");
+    expect(existsSync(labelsPath)).toBe(true);
+    const initial = JSON.parse(readFileSync(labelsPath, "utf-8")) as Record<string, string>;
+    const firstCid = Object.keys(initial)[0]!;
+    initial[firstCid] = "CoreServices";
+    writeFileSync(labelsPath, JSON.stringify(initial, null, 2), "utf-8");
+
+    const second = await runCli(["update", dir], dir);
+    expect(second.exitCode).toBe(0);
+
+    const persisted = JSON.parse(readFileSync(labelsPath, "utf-8")) as Record<string, string>;
+    expect(Object.values(persisted)).toContain("CoreServices");
+    const rebuiltGraph = JSON.parse(
+      readFileSync(join(dir, ".graphify", "graph.json"), "utf-8"),
+    ) as { graph?: { community_labels?: Record<string, string> } };
+    expect(Object.values(rebuiltGraph.graph?.community_labels ?? {})).toContain("CoreServices");
+  });
+
+  it("preserves renamed community labels across cluster-only rebuilds", async () => {
+    const dir = tempProject();
+    const graphDir = join(dir, ".graphify");
+    mkdirSync(graphDir, { recursive: true });
+    const graphPath = join(graphDir, "graph.json");
+    writeFileSync(
+      graphPath,
+      JSON.stringify({
+        directed: false,
+        graph: { community_labels: { "0": "Community 0", "1": "Community 1" } },
+        nodes: [
+          { id: "alpha", label: "AlphaService", source_file: "src/alpha.ts", file_type: "code", community: 0, community_name: "Community 0" },
+          { id: "beta", label: "BetaRepository", source_file: "src/beta.ts", file_type: "code", community: 0, community_name: "Community 0" },
+          { id: "gamma", label: "GammaDocs", source_file: "docs/gamma.md", file_type: "document", community: 1, community_name: "Community 1" },
+          { id: "delta", label: "DeltaWiki", source_file: "docs/delta.md", file_type: "document", community: 1, community_name: "Community 1" },
+        ],
+        links: [
+          { source: "alpha", target: "beta", relation: "uses", confidence: "EXTRACTED" },
+          { source: "gamma", target: "delta", relation: "links", confidence: "EXTRACTED" },
+        ],
+      }, null, 2),
+      "utf-8",
+    );
+    const labelsPath = join(graphDir, ".graphify_labels.json");
+    writeFileSync(labelsPath, JSON.stringify({ "0": "AuthCore", "1": "DocsLayer" }, null, 2), "utf-8");
+
+    const result = await runCli(["cluster-only", dir], dir);
+    expect(result.exitCode).toBe(0);
+
+    const persistedLabels = JSON.parse(readFileSync(labelsPath, "utf-8")) as Record<string, string>;
+    const rebuiltGraph = JSON.parse(
+      readFileSync(graphPath, "utf-8"),
+    ) as { graph?: { community_labels?: Record<string, string> } };
+    const persistedValues = Object.values(persistedLabels);
+    expect(persistedValues).toContain("AuthCore");
+    expect(persistedValues).toContain("DocsLayer");
+    const graphValues = Object.values(rebuiltGraph.graph?.community_labels ?? {});
+    expect(graphValues).toContain("AuthCore");
+    expect(graphValues).toContain("DocsLayer");
+
+    const analysis = JSON.parse(
+      readFileSync(join(graphDir, ".graphify_analysis.json"), "utf-8"),
+    ) as { labels?: Record<string, string> };
+    const analysisValues = Object.values(analysis.labels ?? {});
+    expect(analysisValues).toContain("AuthCore");
+    expect(analysisValues).toContain("DocsLayer");
   });
 
   it("supports execution flow build, list, and get commands", async () => {
