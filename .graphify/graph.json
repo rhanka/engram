@@ -97,7 +97,7 @@
       "91": "Community 91",
       "92": "Community 92"
     },
-    "built_from_commit": "1f253e7dea6b6dcc8ee3e2d69fd46e52ee379d61"
+    "built_from_commit": "0509dea41ff78c8e0c9fd9fcc351efe01eb51955"
   },
   "nodes": [
     {
@@ -1554,7 +1554,7 @@
       "label": "isSensitive()",
       "file_type": "code",
       "source_file": "src/detect.ts",
-      "source_location": "L55",
+      "source_location": "L56",
       "community": 45,
       "community_name": "Community 45"
     },
@@ -1563,7 +1563,7 @@
       "label": "looksLikePaper()",
       "file_type": "code",
       "source_file": "src/detect.ts",
-      "source_location": "L60",
+      "source_location": "L61",
       "community": 45,
       "community_name": "Community 45"
     },
@@ -1572,7 +1572,7 @@
       "label": "hasCodeShebang()",
       "file_type": "code",
       "source_file": "src/detect.ts",
-      "source_location": "L72",
+      "source_location": "L73",
       "community": 45,
       "community_name": "Community 45"
     },
@@ -1581,7 +1581,7 @@
       "label": "classifyFile()",
       "file_type": "code",
       "source_file": "src/detect.ts",
-      "source_location": "L81",
+      "source_location": "L82",
       "community": 45,
       "community_name": "Community 45"
     },
@@ -1590,7 +1590,7 @@
       "label": "extractPdfText()",
       "file_type": "code",
       "source_file": "src/detect.ts",
-      "source_location": "L102",
+      "source_location": "L103",
       "community": 45,
       "community_name": "Community 45"
     },
@@ -1599,7 +1599,7 @@
       "label": "docxToMarkdown()",
       "file_type": "code",
       "source_file": "src/detect.ts",
-      "source_location": "L114",
+      "source_location": "L115",
       "community": 45,
       "community_name": "Community 45"
     },
@@ -1608,7 +1608,7 @@
       "label": "xlsxToMarkdown()",
       "file_type": "code",
       "source_file": "src/detect.ts",
-      "source_location": "L126",
+      "source_location": "L127",
       "community": 45,
       "community_name": "Community 45"
     },
@@ -1617,7 +1617,7 @@
       "label": "convertOfficeFile()",
       "file_type": "code",
       "source_file": "src/detect.ts",
-      "source_location": "L154",
+      "source_location": "L155",
       "community": 45,
       "community_name": "Community 45"
     },
@@ -1626,7 +1626,7 @@
       "label": "countWords()",
       "file_type": "code",
       "source_file": "src/detect.ts",
-      "source_location": "L175",
+      "source_location": "L176",
       "community": 45,
       "community_name": "Community 45"
     },
@@ -1635,7 +1635,7 @@
       "label": "isNoiseDir()",
       "file_type": "code",
       "source_file": "src/detect.ts",
-      "source_location": "L194",
+      "source_location": "L195",
       "community": 45,
       "community_name": "Community 45"
     },
@@ -1644,7 +1644,7 @@
       "label": "parseGraphifyignoreLine()",
       "file_type": "code",
       "source_file": "src/detect.ts",
-      "source_location": "L207",
+      "source_location": "L208",
       "community": 45,
       "community_name": "Community 45"
     },
@@ -1653,7 +1653,7 @@
       "label": "findVcsRoot()",
       "file_type": "code",
       "source_file": "src/detect.ts",
-      "source_location": "L225",
+      "source_location": "L226",
       "community": 45,
       "community_name": "Community 45"
     },
@@ -1662,7 +1662,7 @@
       "label": "loadGraphifyignore()",
       "file_type": "code",
       "source_file": "src/detect.ts",
-      "source_location": "L240",
+      "source_location": "L241",
       "community": 45,
       "community_name": "Community 45"
     },
@@ -1671,7 +1671,7 @@
       "label": "matchGlob()",
       "file_type": "code",
       "source_file": "src/detect.ts",
-      "source_location": "L269",
+      "source_location": "L270",
       "community": 45,
       "community_name": "Community 45"
     },
@@ -1680,7 +1680,7 @@
       "label": "relativeWithin()",
       "file_type": "code",
       "source_file": "src/detect.ts",
-      "source_location": "L278",
+      "source_location": "L279",
       "community": 45,
       "community_name": "Community 45"
     },
@@ -1689,7 +1689,7 @@
       "label": "matchesIgnorePattern()",
       "file_type": "code",
       "source_file": "src/detect.ts",
-      "source_location": "L285",
+      "source_location": "L286",
       "community": 45,
       "community_name": "Community 45"
     },
@@ -1698,7 +1698,7 @@
       "label": "isIgnored()",
       "file_type": "code",
       "source_file": "src/detect.ts",
-      "source_location": "L296",
+      "source_location": "L297",
       "community": 45,
       "community_name": "Community 45"
     },
@@ -1707,7 +1707,7 @@
       "label": "walkDir()",
       "file_type": "code",
       "source_file": "src/detect.ts",
-      "source_location": "L324",
+      "source_location": "L325",
       "community": 45,
       "community_name": "Community 45"
     },
@@ -1716,7 +1716,7 @@
       "label": "resolveCandidateFiles()",
       "file_type": "code",
       "source_file": "src/detect.ts",
-      "source_location": "L379",
+      "source_location": "L380",
       "community": 45,
       "community_name": "Community 45"
     },
@@ -1725,7 +1725,7 @@
       "label": "detect()",
       "file_type": "code",
       "source_file": "src/detect.ts",
-      "source_location": "L406",
+      "source_location": "L407",
       "community": 45,
       "community_name": "Community 45"
     },
@@ -1734,7 +1734,7 @@
       "label": "md5File()",
       "file_type": "code",
       "source_file": "src/detect.ts",
-      "source_location": "L503",
+      "source_location": "L504",
       "community": 45,
       "community_name": "Community 45"
     },
@@ -1743,7 +1743,7 @@
       "label": "loadManifest()",
       "file_type": "code",
       "source_file": "src/detect.ts",
-      "source_location": "L513",
+      "source_location": "L514",
       "community": 45,
       "community_name": "Community 45"
     },
@@ -1752,7 +1752,7 @@
       "label": "saveManifest()",
       "file_type": "code",
       "source_file": "src/detect.ts",
-      "source_location": "L521",
+      "source_location": "L522",
       "community": 45,
       "community_name": "Community 45"
     },
@@ -1761,7 +1761,7 @@
       "label": "detectIncremental()",
       "file_type": "code",
       "source_file": "src/detect.ts",
-      "source_location": "L538",
+      "source_location": "L539",
       "community": 45,
       "community_name": "Community 45"
     },
@@ -2103,7 +2103,7 @@
       "label": "loadLanguage()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L95",
+      "source_location": "L96",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2112,7 +2112,7 @@
       "label": "_makeId()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L109",
+      "source_location": "L110",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2121,7 +2121,7 @@
       "label": "toPortablePath()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L118",
+      "source_location": "L119",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2130,7 +2130,7 @@
       "label": "inferCommonRoot()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L122",
+      "source_location": "L123",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2139,7 +2139,7 @@
       "label": "projectRelativeFilePath()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L149",
+      "source_location": "L150",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2148,7 +2148,7 @@
       "label": "qualifiedFileStem()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L158",
+      "source_location": "L159",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2157,7 +2157,7 @@
       "label": "buildResolvableLabelIndex()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L171",
+      "source_location": "L172",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2166,7 +2166,7 @@
       "label": "stripJsonc()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L205",
+      "source_location": "L206",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2175,7 +2175,7 @@
       "label": "readTsconfigDocument()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L211",
+      "source_location": "L212",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2184,7 +2184,7 @@
       "label": "resolveTsconfigExtendsPath()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L224",
+      "source_location": "L225",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2193,7 +2193,7 @@
       "label": "loadTsconfigAliasesFromPath()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L266",
+      "source_location": "L267",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2202,7 +2202,7 @@
       "label": "loadTsconfigAliases()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L302",
+      "source_location": "L303",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2211,7 +2211,7 @@
       "label": "normalizeJsImportTarget()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L317",
+      "source_location": "L318",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2220,7 +2220,7 @@
       "label": "resolveJsImportTargetInfo()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L355",
+      "source_location": "L356",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2229,7 +2229,7 @@
       "label": "resolveJsImportTarget()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L383",
+      "source_location": "L384",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2238,7 +2238,7 @@
       "label": "remapFileNodeIds()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L387",
+      "source_location": "L388",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2247,7 +2247,7 @@
       "label": "_readText()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L452",
+      "source_location": "L453",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2256,7 +2256,7 @@
       "label": "defaultConfig()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L516",
+      "source_location": "L517",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2265,7 +2265,7 @@
       "label": "_resolveName()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L542",
+      "source_location": "L543",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2274,7 +2274,7 @@
       "label": "_findBody()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L556",
+      "source_location": "L557",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2283,7 +2283,7 @@
       "label": "_importPython()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L571",
+      "source_location": "L572",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2292,7 +2292,7 @@
       "label": "_importJs()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L603",
+      "source_location": "L604",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2301,7 +2301,7 @@
       "label": "_importJava()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L636",
+      "source_location": "L637",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2310,7 +2310,7 @@
       "label": "_importC()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L681",
+      "source_location": "L682",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2319,7 +2319,7 @@
       "label": "_importCsharp()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L702",
+      "source_location": "L703",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2328,7 +2328,7 @@
       "label": "_importKotlin()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L723",
+      "source_location": "L724",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2337,7 +2337,7 @@
       "label": "_importScala()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L756",
+      "source_location": "L757",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2346,7 +2346,7 @@
       "label": "_importPhp()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L777",
+      "source_location": "L778",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2355,7 +2355,7 @@
       "label": "_importLua()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L798",
+      "source_location": "L799",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2364,7 +2364,7 @@
       "label": "_importSwift()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L816",
+      "source_location": "L817",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2373,7 +2373,7 @@
       "label": "_getCFuncName()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L838",
+      "source_location": "L839",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2382,7 +2382,7 @@
       "label": "_getCppFuncName()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L848",
+      "source_location": "L849",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2391,7 +2391,7 @@
       "label": "_findRequireCall()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L866",
+      "source_location": "L867",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2400,7 +2400,16 @@
       "label": "_readStringArgument()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L880",
+      "source_location": "L881",
+      "community": 0,
+      "community_name": "Community 0"
+    },
+    {
+      "id": "src_extract_readjscalleename",
+      "label": "_readJsCalleeName()",
+      "file_type": "code",
+      "source_file": "src/extract.ts",
+      "source_location": "L892",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2409,7 +2418,7 @@
       "label": "_requireImportsJs()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L891",
+      "source_location": "L909",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2418,7 +2427,7 @@
       "label": "_jsExtraWalk()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L967",
+      "source_location": "L985",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2427,7 +2436,7 @@
       "label": "_csharpExtraWalk()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L1009",
+      "source_location": "L1043",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2436,7 +2445,7 @@
       "label": "_swiftExtraWalk()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L1042",
+      "source_location": "L1076",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2445,7 +2454,7 @@
       "label": "_extractGeneric()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L1273",
+      "source_location": "L1313",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2454,7 +2463,7 @@
       "label": "_extractPythonRationale()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L1761",
+      "source_location": "L1828",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2463,7 +2472,7 @@
       "label": "extractPython()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L1877",
+      "source_location": "L1944",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2472,7 +2481,7 @@
       "label": "extractJs()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L1885",
+      "source_location": "L1952",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2481,7 +2490,7 @@
       "label": "extractJava()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L1891",
+      "source_location": "L1958",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2490,7 +2499,7 @@
       "label": "extractC()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L1895",
+      "source_location": "L1962",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2499,7 +2508,7 @@
       "label": "extractCpp()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L1899",
+      "source_location": "L1966",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2508,7 +2517,7 @@
       "label": "extractRuby()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L1903",
+      "source_location": "L1970",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2517,7 +2526,7 @@
       "label": "extractCsharp()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L1907",
+      "source_location": "L1974",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2526,7 +2535,7 @@
       "label": "extractKotlin()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L1911",
+      "source_location": "L1978",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2535,7 +2544,7 @@
       "label": "extractScala()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L1915",
+      "source_location": "L1982",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2544,7 +2553,7 @@
       "label": "extractPhp()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L1919",
+      "source_location": "L1986",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2553,7 +2562,7 @@
       "label": "extractLua()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L1923",
+      "source_location": "L1990",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2562,7 +2571,7 @@
       "label": "extractSwift()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L1927",
+      "source_location": "L1994",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2571,7 +2580,7 @@
       "label": "extractJulia()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L1935",
+      "source_location": "L2002",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2580,7 +2589,7 @@
       "label": "lineForIndex()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L2159",
+      "source_location": "L2226",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2589,7 +2598,7 @@
       "label": "extractRegexBackedCode()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L2163",
+      "source_location": "L2230",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2598,7 +2607,7 @@
       "label": "normalizeSqlObjectName()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L2231",
+      "source_location": "L2320",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2607,7 +2616,16 @@
       "label": "extractSql()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L2239",
+      "source_location": "L2328",
+      "community": 0,
+      "community_name": "Community 0"
+    },
+    {
+      "id": "src_extract_extractmarkdown",
+      "label": "extractMarkdown()",
+      "file_type": "code",
+      "source_file": "src/extract.ts",
+      "source_location": "L2414",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2616,7 +2634,7 @@
       "label": "extractSvelte()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L2325",
+      "source_location": "L2516",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2625,7 +2643,7 @@
       "label": "extractGo()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L2365",
+      "source_location": "L2556",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2634,7 +2652,7 @@
       "label": "extractRust()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L2568",
+      "source_location": "L2759",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2643,7 +2661,7 @@
       "label": "extractZig()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L2742",
+      "source_location": "L2933",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2652,7 +2670,7 @@
       "label": "extractPowershell()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L2928",
+      "source_location": "L3119",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2661,7 +2679,7 @@
       "label": "extractObjc()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L3119",
+      "source_location": "L3310",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2670,7 +2688,7 @@
       "label": "extractElixir()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L3343",
+      "source_location": "L3534",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2679,7 +2697,7 @@
       "label": "_resolveCrossFileImports()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L3547",
+      "source_location": "L3738",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2688,7 +2706,7 @@
       "label": "extractWithDiagnostics()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L3738",
+      "source_location": "L3941",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2697,7 +2715,7 @@
       "label": "extract()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L3817",
+      "source_location": "L4020",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -2706,7 +2724,7 @@
       "label": "collectFiles()",
       "file_type": "code",
       "source_file": "src/extract.ts",
-      "source_location": "L3840",
+      "source_location": "L4045",
       "community": 0,
       "community_name": "Community 0"
     },
@@ -28238,6 +28256,18 @@
     },
     {
       "source": "src_extract_ts",
+      "target": "src_extract_readjscalleename",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/extract.ts",
+      "source_location": "L892",
+      "weight": 1,
+      "_src": "src_extract_ts",
+      "_tgt": "src_extract_readjscalleename",
+      "confidence_score": 1
+    },
+    {
+      "source": "src_extract_ts",
       "target": "src_extract_requireimportsjs",
       "relation": "contains",
       "confidence": "EXTRACTED",
@@ -28510,6 +28540,18 @@
       "weight": 1,
       "_src": "src_extract_ts",
       "_tgt": "src_extract_extractsql",
+      "confidence_score": 1
+    },
+    {
+      "source": "src_extract_ts",
+      "target": "src_extract_extractmarkdown",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/extract.ts",
+      "source_location": "L2414",
+      "weight": 1,
+      "_src": "src_extract_ts",
+      "_tgt": "src_extract_extractmarkdown",
       "confidence_score": 1
     },
     {
@@ -29101,6 +29143,18 @@
       "confidence_score": 1
     },
     {
+      "source": "src_extract_readjscalleename",
+      "target": "src_extract_readtext",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "src/extract.ts",
+      "source_location": "L895",
+      "weight": 1,
+      "_src": "src_extract_readjscalleename",
+      "_tgt": "src_extract_readtext",
+      "confidence_score": 1
+    },
+    {
       "source": "src_extract_requireimportsjs",
       "target": "src_extract_findrequirecall",
       "relation": "calls",
@@ -29649,6 +29703,30 @@
       "source_location": "L2127",
       "weight": 1,
       "_src": "src_extract_extractsql",
+      "_tgt": "src_extract_makeid",
+      "confidence_score": 1
+    },
+    {
+      "source": "src_extract_extractmarkdown",
+      "target": "src_extract_qualifiedfilestem",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "src/extract.ts",
+      "source_location": "L2422",
+      "weight": 1,
+      "_src": "src_extract_extractmarkdown",
+      "_tgt": "src_extract_qualifiedfilestem",
+      "confidence_score": 1
+    },
+    {
+      "source": "src_extract_extractmarkdown",
+      "target": "src_extract_makeid",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "src/extract.ts",
+      "source_location": "L2423",
+      "weight": 1,
+      "_src": "src_extract_extractmarkdown",
       "_tgt": "src_extract_makeid",
       "confidence_score": 1
     },

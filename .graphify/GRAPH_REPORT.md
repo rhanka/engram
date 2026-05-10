@@ -1,10 +1,10 @@
 # Graph Report - .  (2026-05-10)
 
 ## Corpus Check
-- Large corpus: 232 files · ~267,038 words. Semantic extraction will be expensive (many Claude tokens). Consider running on a subfolder, or use --no-semantic to run AST-only.
+- Large corpus: 232 files · ~268,315 words. Semantic extraction will be expensive (many Claude tokens). Consider running on a subfolder, or use --no-semantic to run AST-only.
 
 ## Summary
-- 2422 nodes · 4684 edges · 85 communities detected
+- 2424 nodes · 4689 edges · 85 communities detected
 - Extraction: 90% EXTRACTED · 10% INFERRED · 0% AMBIGUOUS · INFERRED: 466 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
 
@@ -13,18 +13,18 @@
 - Requested: auto
 - Resolved: committed (source: default-auto)
 - Included files: 232 · Candidates: 248
-- Excluded: 0 untracked · 11 ignored · 0 sensitive · 0 missing committed
+- Excluded: 0 untracked · 190 ignored · 0 sensitive · 0 missing committed
 - Recommendation: Use --scope all or graphify.yaml inputs.corpus for a knowledge-base folder.
 
 ## Graph Freshness
-- Built from Git commit: `1f253e7`
+- Built from Git commit: `0509dea`
 - Compare this hash to `git rev-parse HEAD` before trusting freshness-sensitive graph output.
 ## God Nodes (most connected - your core abstractions)
 1. `Response` - 45 edges
 2. `Response` - 45 edges
 3. `Request` - 42 edges
 4. `Request` - 42 edges
-5. `_makeId()` - 27 edges
+5. `_makeId()` - 28 edges
 6. `Client` - 27 edges
 7. `Cookies` - 27 edges
 8. `Client` - 27 edges
@@ -47,7 +47,7 @@
 
 ### Community 0 - "Community 0"
 Cohesion: 0.07
-Nodes (67): buildResolvableLabelIndex(), _csharpExtraWalk(), ensureParserInit(), extract(), extractC(), extractCpp(), extractCsharp(), extractElixir() (+59 more)
+Nodes (69): buildResolvableLabelIndex(), _csharpExtraWalk(), ensureParserInit(), extract(), extractC(), extractCpp(), extractCsharp(), extractElixir() (+61 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.05
