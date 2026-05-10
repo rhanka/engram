@@ -67,8 +67,9 @@ describe("classifyFile", () => {
     expect(classifyFile("resources/views/welcome.blade.php")).toBe(FileType.CODE);
   });
 
-  it("classifies MDX and HTML as DOCUMENT", () => {
+  it("classifies MDX, Quarto and HTML as DOCUMENT", () => {
     expect(classifyFile("docs/page.mdx")).toBe(FileType.DOCUMENT);
+    expect(classifyFile("docs/notebook.qmd")).toBe(FileType.DOCUMENT);
     expect(classifyFile("docs/page.html")).toBe(FileType.DOCUMENT);
   });
 

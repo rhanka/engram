@@ -34,6 +34,16 @@ describe("upstream v4 language surface", () => {
     expect(collectFiles(dir).map((p) => p.split("/").pop()).sort()).toEqual(files.sort());
   });
 
+  it("collects Markdown, MDX and Quarto structural documents", () => {
+    const files = ["guide.md", "component.mdx", "notebook.qmd"];
+
+    for (const file of files) {
+      writeFileSync(join(dir, file), "# Title\n\n```ts\nconst value = 1;\n```\n");
+    }
+
+    expect(collectFiles(dir).map((p) => p.split("/").pop()).sort()).toEqual(files.sort());
+  });
+
   it("collects files when the explicit project root is inside a hidden parent", () => {
     const worktreeRoot = join(dir, ".worktrees", "feature-branch");
     mkdirSync(join(worktreeRoot, "src"), { recursive: true });
@@ -618,6 +628,46 @@ class PaymentService extends BaseService implements Billable {}
     expect(formatNode?.id).toBeTruthy();
     expect(cardNode?.id).toBeTruthy();
     expect(jsxCall).toBeDefined();
+  });
+
+  it("extracts Markdown heading hierarchy and fenced code blocks", async () => {
+    const guidePath = join(dir, "guide.md");
+    writeFileSync(
+      guidePath,
+      [
+        "# Guide",
+        "",
+        "Intro text.",
+        "",
+        "## Install",
+        "",
+        "```ts",
+        "const value = 1;",
+        "```",
+        "",
+        "### Verify",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await extract([guidePath]);
+    const fileNode = result.nodes.find((node) => node.label === "guide.md");
+    const guideNode = result.nodes.find((node) => node.label === "Guide");
+    const installNode = result.nodes.find((node) => node.label === "Install");
+    const verifyNode = result.nodes.find((node) => node.label === "Verify");
+    const codeNode = result.nodes.find((node) => node.label.startsWith("code:ts"));
+
+    expect(fileNode?.id).toBeTruthy();
+    expect(guideNode?.id).toBeTruthy();
+    expect(installNode?.id).toBeTruthy();
+    expect(verifyNode?.id).toBeTruthy();
+    expect(codeNode?.id).toBeTruthy();
+    expect(result.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: fileNode?.id, target: guideNode?.id, relation: "contains" }),
+      expect.objectContaining({ source: guideNode?.id, target: installNode?.id, relation: "contains" }),
+      expect.objectContaining({ source: installNode?.id, target: verifyNode?.id, relation: "contains" }),
+      expect.objectContaining({ source: installNode?.id, target: codeNode?.id, relation: "contains" }),
+    ]));
   });
 
   it("extracts SQL ALTER TABLE foreign keys and schema-qualified table names", async () => {

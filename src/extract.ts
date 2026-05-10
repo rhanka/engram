@@ -2389,6 +2389,108 @@ export async function extractSql(filePath: string, rootDir?: string): Promise<Ex
   return { nodes, edges };
 }
 
+export async function extractMarkdown(filePath: string, rootDir?: string): Promise<ExtractionResult> {
+  let source: string;
+  try {
+    source = readFileSync(filePath, "utf-8");
+  } catch (e: unknown) {
+    return { nodes: [], edges: [], error: String(e) };
+  }
+
+  const stem = qualifiedFileStem(filePath, rootDir);
+  const fileNid = _makeId(stem);
+  const nodes: GraphNode[] = [];
+  const edges: GraphEdge[] = [];
+  const seenIds = new Set<string>();
+
+  function addNode(nid: string, label: string, line: number, fileType: GraphNode["file_type"] = "document"): void {
+    if (!seenIds.has(nid)) {
+      seenIds.add(nid);
+      nodes.push({
+        id: nid,
+        label,
+        file_type: fileType,
+        source_file: filePath,
+        source_location: `L${line}`,
+      });
+    }
+  }
+
+  function addEdge(sourceId: string, targetId: string, relation: string, line: number): void {
+    edges.push({
+      source: sourceId,
+      target: targetId,
+      relation,
+      confidence: "EXTRACTED",
+      source_file: filePath,
+      source_location: `L${line}`,
+      weight: 1.0,
+    });
+  }
+
+  addNode(fileNid, basename(filePath), 1);
+
+  const headingStack: Array<{ level: number; id: string }> = [];
+  let inCodeBlock = false;
+  let codeBlockLang: string | null = null;
+  let codeBlockStart = 0;
+  let codeBlockCount = 0;
+  const codeBlockLines: string[] = [];
+
+  const lines = source.split(/\r?\n/u);
+  for (let index = 0; index < lines.length; index++) {
+    const lineNumber = index + 1;
+    const lineText = lines[index]!;
+    const stripped = lineText.trim();
+
+    if (stripped.startsWith("```")) {
+      if (!inCodeBlock) {
+        inCodeBlock = true;
+        codeBlockLang = stripped.slice(3).trim().split(/\s+/u)[0] || null;
+        codeBlockStart = lineNumber;
+        codeBlockLines.length = 0;
+        continue;
+      }
+
+      inCodeBlock = false;
+      codeBlockCount += 1;
+      const firstLine = codeBlockLines.find((line) => line.trim())?.trim().slice(0, 60);
+      const baseLabel = codeBlockLang ? `code:${codeBlockLang}` : `code:block${codeBlockCount}`;
+      const label = firstLine ? `${baseLabel} (${firstLine})` : baseLabel;
+      const codeNid = _makeId(stem, `codeblock_${codeBlockCount}`);
+      addNode(codeNid, label, codeBlockStart, "document");
+      const parent = headingStack.at(-1)?.id ?? fileNid;
+      addEdge(parent, codeNid, "contains", codeBlockStart);
+      continue;
+    }
+
+    if (inCodeBlock) {
+      codeBlockLines.push(lineText);
+      continue;
+    }
+
+    const headingMatch = /^(#{1,6})\s+(.+)$/u.exec(lineText);
+    if (!headingMatch) continue;
+
+    const level = headingMatch[1]!.length;
+    const title = headingMatch[2]!.trim();
+    let headingNid = _makeId(stem, title);
+    if (seenIds.has(headingNid)) {
+      headingNid = _makeId(stem, title, String(lineNumber));
+    }
+    addNode(headingNid, title, lineNumber);
+
+    while (headingStack.length > 0 && headingStack.at(-1)!.level >= level) {
+      headingStack.pop();
+    }
+    const parent = headingStack.at(-1)?.id ?? fileNid;
+    addEdge(parent, headingNid, "contains", lineNumber);
+    headingStack.push({ level, id: headingNid });
+  }
+
+  return { nodes, edges };
+}
+
 async function extractSvelte(filePath: string, rootDir?: string): Promise<ExtractionResult> {
   const result = await extractRegexBackedCode(filePath, rootDir);
 
@@ -3756,6 +3858,9 @@ const _DISPATCH: Record<string, ExtractorFn> = {
   ".v": extractRegexBackedCode,
   ".sv": extractRegexBackedCode,
   ".sql": extractSql,
+  ".md": extractMarkdown,
+  ".mdx": extractMarkdown,
+  ".qmd": extractMarkdown,
   ".ejs": extractRegexBackedCode,
   ".go": extractGo,
   ".rs": extractRust,
@@ -3898,6 +4003,7 @@ const _EXTENSIONS = new Set([
   ".m", ".mm",
   ".jl", ".ex", ".exs",
   ".vue", ".svelte", ".dart", ".v", ".sv", ".ejs",
+  ".md", ".mdx", ".qmd",
 ]);
 
 /**

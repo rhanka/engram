@@ -22,7 +22,7 @@ export const CODE_EXTENSIONS = new Set([
   ".svelte", ".dart", ".v", ".sv", ".mjs", ".ejs", ".sql", ".r",
 ]);
 
-export const DOC_EXTENSIONS = new Set([".md", ".mdx", ".txt", ".rst", ".html", ".yaml", ".yml"]);
+export const DOC_EXTENSIONS = new Set([".md", ".mdx", ".qmd", ".txt", ".rst", ".html", ".yaml", ".yml"]);
 export const PAPER_EXTENSIONS = new Set([".pdf"]);
 export const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"]);
 export const OFFICE_EXTENSIONS = new Set([".docx", ".xlsx"]);
