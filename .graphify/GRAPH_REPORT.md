@@ -1,10 +1,10 @@
 # Graph Report - .  (2026-05-10)
 
 ## Corpus Check
-- Large corpus: 232 files · ~266,492 words. Semantic extraction will be expensive (many Claude tokens). Consider running on a subfolder, or use --no-semantic to run AST-only.
+- Large corpus: 232 files · ~268,315 words. Semantic extraction will be expensive (many Claude tokens). Consider running on a subfolder, or use --no-semantic to run AST-only.
 
 ## Summary
-- 2418 nodes · 4666 edges · 85 communities detected
+- 2424 nodes · 4689 edges · 85 communities detected
 - Extraction: 90% EXTRACTED · 10% INFERRED · 0% AMBIGUOUS · INFERRED: 466 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
 
@@ -13,27 +13,25 @@
 - Requested: auto
 - Resolved: committed (source: default-auto)
 - Included files: 232 · Candidates: 248
-- Excluded: 0 untracked · 20175 ignored · 0 sensitive · 0 missing committed
+- Excluded: 0 untracked · 190 ignored · 0 sensitive · 0 missing committed
 - Recommendation: Use --scope all or graphify.yaml inputs.corpus for a knowledge-base folder.
 
 ## Graph Freshness
-- Built from Git commit: `0b10704`
+- Built from Git commit: `0509dea`
 - Compare this hash to `git rev-parse HEAD` before trusting freshness-sensitive graph output.
 ## God Nodes (most connected - your core abstractions)
 1. `Response` - 45 edges
 2. `Response` - 45 edges
 3. `Request` - 42 edges
 4. `Request` - 42 edges
-5. `Client` - 27 edges
-6. `Cookies` - 27 edges
-7. `Client` - 27 edges
-8. `Cookies` - 27 edges
-9. `AsyncClient` - 26 edges
+5. `_makeId()` - 28 edges
+6. `Client` - 27 edges
+7. `Cookies` - 27 edges
+8. `Client` - 27 edges
+9. `Cookies` - 27 edges
 10. `AsyncClient` - 26 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `Core data models: URL, Headers, Cookies, Request, Response. These are the centra` --uses--> `HTTPStatusError`  [INFERRED]
-  worked/httpx/raw/models.py → worked/httpx/raw/exceptions.py
 - `Utility functions shared across the library. Small helpers that don't belong in` --uses--> `Cookies`  [INFERRED]
   worked/httpx/raw/utils.py → worked/httpx/raw/models.py
 - `Convert a primitive value to its string representation.` --uses--> `Cookies`  [INFERRED]
@@ -42,20 +40,22 @@
   worked/httpx/raw/utils.py → worked/httpx/raw/models.py
 - `Expand a params dict into a flat list of (key, value) pairs.     List values bec` --uses--> `Cookies`  [INFERRED]
   worked/httpx/raw/utils.py → worked/httpx/raw/models.py
+- `Parse a Content-Type header value.     Returns (media_type, params_dict).     Ex` --uses--> `Cookies`  [INFERRED]
+  worked/httpx/raw/utils.py → worked/httpx/raw/models.py
 
 ## Communities
 
 ### Community 0 - "Community 0"
-Cohesion: 0.05
-Nodes (60): addError(), addWarning(), appendJsonLine(), applyOntologyPatch(), auditPath(), changedFiles(), evidenceRefsFromSources(), loadOntologyPatchContext() (+52 more)
+Cohesion: 0.07
+Nodes (69): buildResolvableLabelIndex(), _csharpExtraWalk(), ensureParserInit(), extract(), extractC(), extractCpp(), extractCsharp(), extractElixir() (+61 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.05
-Nodes (48): field(), loadProfileRegistry(), normalizeRegistryRecord(), readRegistryRows(), registryRecordsToExtraction(), safeIdPart(), asBoolean(), asNumber() (+40 more)
+Nodes (60): addError(), addWarning(), appendJsonLine(), applyOntologyPatch(), auditPath(), changedFiles(), evidenceRefsFromSources(), loadOntologyPatchContext() (+52 more)
 
 ### Community 2 - "Community 2"
-Cohesion: 0.08
-Nodes (63): buildResolvableLabelIndex(), _csharpExtraWalk(), ensureParserInit(), extract(), extractC(), extractCpp(), extractCsharp(), extractElixir() (+55 more)
+Cohesion: 0.05
+Nodes (48): field(), loadProfileRegistry(), normalizeRegistryRecord(), readRegistryRows(), registryRecordsToExtraction(), safeIdPart(), asBoolean(), asNumber() (+40 more)
 
 ### Community 3 - "Community 3"
 Cohesion: 0.05

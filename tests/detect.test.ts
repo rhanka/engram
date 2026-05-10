@@ -57,7 +57,7 @@ describe("classifyFile", () => {
     const codeExts = [".py", ".ts", ".js", ".jsx", ".tsx", ".go", ".rs", ".java",
       ".cpp", ".c", ".h", ".rb", ".swift", ".kt", ".cs", ".scala", ".php",
       ".lua", ".zig", ".ps1", ".ex", ".m", ".jl", ".vue", ".svelte", ".dart",
-      ".v", ".sv", ".mjs", ".ejs"];
+      ".v", ".sv", ".mjs", ".ejs", ".groovy", ".gradle", ".luau", ".r", ".f90"];
     for (const ext of codeExts) {
       expect(classifyFile(`test${ext}`)).toBe(FileType.CODE);
     }
@@ -67,8 +67,9 @@ describe("classifyFile", () => {
     expect(classifyFile("resources/views/welcome.blade.php")).toBe(FileType.CODE);
   });
 
-  it("classifies MDX and HTML as DOCUMENT", () => {
+  it("classifies MDX, Quarto and HTML as DOCUMENT", () => {
     expect(classifyFile("docs/page.mdx")).toBe(FileType.DOCUMENT);
+    expect(classifyFile("docs/notebook.qmd")).toBe(FileType.DOCUMENT);
     expect(classifyFile("docs/page.html")).toBe(FileType.DOCUMENT);
   });
 

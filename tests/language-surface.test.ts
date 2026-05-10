@@ -34,6 +34,26 @@ describe("upstream v4 language surface", () => {
     expect(collectFiles(dir).map((p) => p.split("/").pop()).sort()).toEqual(files.sort());
   });
 
+  it("collects Markdown, MDX and Quarto structural documents", () => {
+    const files = ["guide.md", "component.mdx", "notebook.qmd"];
+
+    for (const file of files) {
+      writeFileSync(join(dir, file), "# Title\n\n```ts\nconst value = 1;\n```\n");
+    }
+
+    expect(collectFiles(dir).map((p) => p.split("/").pop()).sort()).toEqual(files.sort());
+  });
+
+  it("collects selected no-Python upstream fallback language extensions", () => {
+    const files = ["Spec.groovy", "build.gradle", "module.luau", "analysis.R", "solver.F90"];
+
+    for (const file of files) {
+      writeFileSync(join(dir, file), "function fallbackFixture() { return 1; }\n");
+    }
+
+    expect(collectFiles(dir).map((p) => p.split("/").pop()).sort()).toEqual(files.sort());
+  });
+
   it("collects files when the explicit project root is inside a hidden parent", () => {
     const worktreeRoot = join(dir, ".worktrees", "feature-branch");
     mkdirSync(join(worktreeRoot, "src"), { recursive: true });
@@ -507,6 +527,195 @@ class PaymentService extends BaseService implements Billable {}
     const setupNodes = result.nodes.filter((node) => node.label === "setup()");
     expect(setupNodes).toHaveLength(2);
     expect(new Set(setupNodes.map((node) => node.id)).size).toBe(2);
+  });
+
+  it("extracts CommonJS require imports and local required symbols", async () => {
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(
+      join(dir, "src", "entry.js"),
+      [
+        "const utils = require('./utils');",
+        "const { helper, renamed: localRenamed } = require('./utils');",
+        "const pick = require('./utils').renamed;",
+        "var legacy = require('./utils');",
+        "function run() {",
+        "  return helper() + pick() + legacy.renamed();",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(dir, "src", "utils.js"),
+      [
+        "function helper() { return 1; }",
+        "function renamed() { return 2; }",
+        "module.exports = { helper, renamed };",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await extract([
+      join(dir, "src", "entry.js"),
+      join(dir, "src", "utils.js"),
+    ]);
+
+    const entryNode = result.nodes.find((node) => node.label === "entry.js");
+    const utilsNode = result.nodes.find((node) => node.label === "utils.js");
+    const helperNode = result.nodes.find((node) => node.label === "helper()");
+    const renamedNode = result.nodes.find((node) => node.label === "renamed()");
+    const importEdges = result.edges.filter(
+      (edge) => edge.source === entryNode?.id && edge.target === utilsNode?.id && edge.relation === "imports_from",
+    );
+    const symbolTargets = result.edges
+      .filter((edge) => edge.source === entryNode?.id && edge.relation === "imports")
+      .map((edge) => edge.target);
+
+    expect(entryNode?.id).toBeTruthy();
+    expect(utilsNode?.id).toBeTruthy();
+    expect(helperNode?.id).toBeTruthy();
+    expect(renamedNode?.id).toBeTruthy();
+    expect(importEdges.length).toBeGreaterThanOrEqual(4);
+    expect(symbolTargets).toContain(helperNode?.id);
+    expect(symbolTargets).toContain(renamedNode?.id);
+  });
+
+  it("extracts TypeScript declarations, module constants, and constructor calls", async () => {
+    const servicePath = join(dir, "service.ts");
+    writeFileSync(
+      servicePath,
+      [
+        "interface Service { run(): number }",
+        "type ServiceFactory = () => Service;",
+        "enum Status { Ready }",
+        "class Worker implements Service {",
+        "  run() { return 1; }",
+        "}",
+        "export const registry = new Worker();",
+        "export function buildWorker() {",
+        "  return new Worker();",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await extract([servicePath]);
+    const labels = result.nodes.map((node) => node.label);
+    const workerNode = result.nodes.find((node) => node.label === "Worker");
+    const buildNode = result.nodes.find((node) => node.label === "buildWorker()");
+    const constructorCall = result.edges.find(
+      (edge) => edge.source === buildNode?.id && edge.target === workerNode?.id && edge.relation === "calls",
+    );
+
+    expect(labels).toContain("Service");
+    expect(labels).toContain("ServiceFactory");
+    expect(labels).toContain("Status");
+    expect(labels).toContain("registry");
+    expect(constructorCall).toBeDefined();
+  });
+
+  it("uses TSX grammar for JSX call expressions", async () => {
+    const viewPath = join(dir, "View.tsx");
+    writeFileSync(
+      viewPath,
+      [
+        "function formatName(name: string) {",
+        "  return name.toUpperCase();",
+        "}",
+        "export function Card() {",
+        "  return <section>{formatName('Ada')}</section>;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await extract([viewPath]);
+    const formatNode = result.nodes.find((node) => node.label === "formatName()");
+    const cardNode = result.nodes.find((node) => node.label === "Card()");
+    const jsxCall = result.edges.find(
+      (edge) => edge.source === cardNode?.id && edge.target === formatNode?.id && edge.relation === "calls",
+    );
+
+    expect(formatNode?.id).toBeTruthy();
+    expect(cardNode?.id).toBeTruthy();
+    expect(jsxCall).toBeDefined();
+  });
+
+  it("extracts Markdown heading hierarchy and fenced code blocks", async () => {
+    const guidePath = join(dir, "guide.md");
+    writeFileSync(
+      guidePath,
+      [
+        "# Guide",
+        "",
+        "Intro text.",
+        "",
+        "## Install",
+        "",
+        "```ts",
+        "const value = 1;",
+        "```",
+        "",
+        "### Verify",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await extract([guidePath]);
+    const fileNode = result.nodes.find((node) => node.label === "guide.md");
+    const guideNode = result.nodes.find((node) => node.label === "Guide");
+    const installNode = result.nodes.find((node) => node.label === "Install");
+    const verifyNode = result.nodes.find((node) => node.label === "Verify");
+    const codeNode = result.nodes.find((node) => node.label.startsWith("code:ts"));
+
+    expect(fileNode?.id).toBeTruthy();
+    expect(guideNode?.id).toBeTruthy();
+    expect(installNode?.id).toBeTruthy();
+    expect(verifyNode?.id).toBeTruthy();
+    expect(codeNode?.id).toBeTruthy();
+    expect(result.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: fileNode?.id, target: guideNode?.id, relation: "contains" }),
+      expect.objectContaining({ source: guideNode?.id, target: installNode?.id, relation: "contains" }),
+      expect.objectContaining({ source: installNode?.id, target: verifyNode?.id, relation: "contains" }),
+      expect.objectContaining({ source: installNode?.id, target: codeNode?.id, relation: "contains" }),
+    ]));
+  });
+
+  it("extracts portable fallback nodes for Groovy, R and Fortran without Python dependencies", async () => {
+    const specPath = join(dir, "DemoSpec.groovy");
+    const rPath = join(dir, "analysis.R");
+    const fortranPath = join(dir, "solver.F90");
+    writeFileSync(
+      specPath,
+      [
+        "class DemoSpec {",
+        "  def \"does useful work\"() {",
+        "    expect: true",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(rPath, "score_value <- function(x) x + 1\n");
+    writeFileSync(
+      fortranPath,
+      [
+        "module MathMod",
+        "contains",
+        "subroutine solve_case()",
+        "end subroutine solve_case",
+        "end module MathMod",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await extract([specPath, rPath, fortranPath]);
+    const labels = result.nodes.map((node) => node.label);
+
+    expect(labels).toContain("DemoSpec");
+    expect(labels).toContain("does useful work()");
+    expect(labels).toContain("score_value()");
+    expect(labels).toContain("MathMod");
+    expect(labels).toContain("solve_case()");
   });
 
   it("extracts SQL ALTER TABLE foreign keys and schema-qualified table names", async () => {

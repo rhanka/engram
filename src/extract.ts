@@ -59,6 +59,7 @@ function parseText(parser: InstanceType<typeof Parser>, source: string): Tree {
 function resolveGrammarWasm(langName: string): string | null {
   const packageName = new Map<string, string>([
     ["c_sharp", "c-sharp"],
+    ["tsx", "typescript"],
   ]).get(langName) ?? langName;
   // Try common npm package conventions
   const candidates = [
@@ -347,10 +348,18 @@ function normalizeJsImportTarget(resolvedImport: string): string {
   return resolvedImport;
 }
 
-function resolveJsImportTarget(raw: string, importerPath: string): string | null {
+interface JsImportTargetInfo {
+  targetId: string;
+  resolvedPath?: string;
+}
+
+function resolveJsImportTargetInfo(raw: string, importerPath: string): JsImportTargetInfo | null {
   if (raw.startsWith(".")) {
     const resolvedImport = normalizeJsImportTarget(resolve(dirname(importerPath), raw));
-    return _makeId(toPortablePath(resolvedImport));
+    return {
+      targetId: _makeId(toPortablePath(resolvedImport)),
+      resolvedPath: resolvedImport,
+    };
   }
 
   let resolvedAlias: string | null = null;
@@ -362,11 +371,18 @@ function resolveJsImportTarget(raw: string, importerPath: string): string | null
     }
   }
   if (resolvedAlias) {
-    return _makeId(toPortablePath(resolvedAlias));
+    return {
+      targetId: _makeId(toPortablePath(resolvedAlias)),
+      resolvedPath: resolvedAlias,
+    };
   }
 
   const moduleName = raw.split("/").pop() ?? "";
-  return moduleName ? _makeId(moduleName) : null;
+  return moduleName ? { targetId: _makeId(moduleName) } : null;
+}
+
+function resolveJsImportTarget(raw: string, importerPath: string): string | null {
+  return resolveJsImportTargetInfo(raw, importerPath)?.targetId ?? null;
 }
 
 function remapFileNodeIds(nodes: GraphNode[], edges: GraphEdge[], paths: string[], root: string): void {
@@ -845,38 +861,177 @@ function _getCppFuncName(node: SyntaxNode, source: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// JS/TS extra walk for arrow functions
+// JS/TS extra walk for arrow functions and CommonJS requires
 // ---------------------------------------------------------------------------
 
+function _findRequireCall(valueNode: SyntaxNode | null, source: string): SyntaxNode | null {
+  if (!valueNode) return null;
+  if (valueNode.type === "call_expression") {
+    const fn = valueNode.childForFieldName("function");
+    if (fn && fn.type === "identifier" && _readText(fn, source) === "require") {
+      return valueNode;
+    }
+  }
+  if (valueNode.type === "member_expression") {
+    return _findRequireCall(valueNode.childForFieldName("object"), source);
+  }
+  return null;
+}
+
+function _readStringArgument(node: SyntaxNode, source: string): string | null {
+  const args = node.childForFieldName("arguments");
+  if (!args) return null;
+  for (const child of args.children) {
+    if (child.type === "string") {
+      return _readText(child, source).replace(/^['"`\s]+|['"`\s]+$/g, "");
+    }
+  }
+  return null;
+}
+
+function _readJsCalleeName(node: SyntaxNode | null, source: string): string | null {
+  if (!node) return null;
+  if (["identifier", "type_identifier", "property_identifier"].includes(node.type)) {
+    return _readText(node, source);
+  }
+  if (node.type === "member_expression") {
+    const prop = node.childForFieldName("property");
+    if (prop) return _readJsCalleeName(prop, source);
+  }
+  for (let i = node.children.length - 1; i >= 0; i--) {
+    const child = node.children[i]!;
+    const name = _readJsCalleeName(child, source);
+    if (name) return name;
+  }
+  return null;
+}
+
+function _requireImportsJs(
+  node: SyntaxNode,
+  source: string,
+  fileNid: string,
+  edges: GraphEdge[],
+  strPath: string,
+  rootDir: string,
+): boolean {
+  if (node.type !== "lexical_declaration" && node.type !== "variable_declaration") {
+    return false;
+  }
+
+  let found = false;
+  for (const child of node.children) {
+    if (child.type !== "variable_declarator") continue;
+
+    const value = child.childForFieldName("value");
+    const call = _findRequireCall(value, source);
+    if (!call) continue;
+
+    const raw = _readStringArgument(call, source);
+    if (!raw) continue;
+
+    const target = resolveJsImportTargetInfo(raw, strPath);
+    if (!target) continue;
+
+    const line = node.startPosition.row + 1;
+    edges.push({
+      source: fileNid,
+      target: target.targetId,
+      relation: "imports_from",
+      confidence: "EXTRACTED",
+      source_file: strPath,
+      source_location: `L${line}`,
+      weight: 1.0,
+    });
+    found = true;
+
+    if (!target.resolvedPath) continue;
+
+    const targetStem = qualifiedFileStem(target.resolvedPath, rootDir);
+    const nameNode = child.childForFieldName("name");
+    const symNames: string[] = [];
+    if (nameNode?.type === "object_pattern") {
+      for (const prop of nameNode.children) {
+        if (prop.type === "shorthand_property_identifier_pattern") {
+          symNames.push(_readText(prop, source));
+        } else if (prop.type === "pair_pattern") {
+          const key = prop.childForFieldName("key");
+          if (key) {
+            symNames.push(_readText(key, source).replace(/^['"`\s]+|['"`\s]+$/g, ""));
+          }
+        }
+      }
+    } else if (value?.type === "member_expression") {
+      const prop = value.childForFieldName("property");
+      if (prop) {
+        symNames.push(_readText(prop, source));
+      }
+    }
+
+    for (const sym of symNames.filter(Boolean)) {
+      edges.push({
+        source: fileNid,
+        target: _makeId(targetStem, sym),
+        relation: "imports",
+        confidence: "EXTRACTED",
+        source_file: strPath,
+        source_location: `L${line}`,
+        weight: 1.0,
+      });
+    }
+  }
+  return found;
+}
+
 function _jsExtraWalk(
-  node: SyntaxNode, source: string, fileNid: string, stem: string, _strPath: string,
-  _nodes: GraphNode[], _edges: GraphEdge[], _seenIds: Set<string>,
+  node: SyntaxNode, source: string, fileNid: string, stem: string, strPath: string,
+  _nodes: GraphNode[], edges: GraphEdge[], _seenIds: Set<string>,
   functionBodies: Array<[string, SyntaxNode]>,
   _parentClassNid: string | null,
   addNodeFn: (nid: string, label: string, line: number) => void,
   addEdgeFn: (src: string, tgt: string, relation: string, line: number) => void,
+  rootDir: string,
 ): boolean {
-  if (node.type === "lexical_declaration") {
-    for (const child of node.children) {
-      if (child.type === "variable_declarator") {
-        const value = child.childForFieldName("value");
-        if (value && value.type === "arrow_function") {
+  if (node.type === "lexical_declaration" || node.type === "variable_declaration") {
+    const requireFound = _requireImportsJs(node, source, fileNid, edges, strPath, rootDir);
+    let arrowFound = false;
+
+    let constFound = false;
+
+    if (node.type === "lexical_declaration") {
+      for (const child of node.children) {
+        if (child.type === "variable_declarator") {
+          const value = child.childForFieldName("value");
           const nameNode = child.childForFieldName("name");
-          if (nameNode) {
-            const funcName = _readText(nameNode, source);
-            const line = child.startPosition.row + 1;
-            const funcNid = _makeId(stem, funcName);
-            addNodeFn(funcNid, `${funcName}()`, line);
-            addEdgeFn(fileNid, funcNid, "contains", line);
-            const body = value.childForFieldName("body");
-            if (body) {
-              functionBodies.push([funcNid, body]);
+          if (value && value.type === "arrow_function") {
+            if (nameNode) {
+              const funcName = _readText(nameNode, source);
+              const line = child.startPosition.row + 1;
+              const funcNid = _makeId(stem, funcName);
+              addNodeFn(funcNid, `${funcName}()`, line);
+              addEdgeFn(fileNid, funcNid, "contains", line);
+              const body = value.childForFieldName("body");
+              if (body) {
+                functionBodies.push([funcNid, body]);
+              }
+              arrowFound = true;
+            }
+          } else if (
+            value &&
+            ["object", "array", "as_expression", "call_expression", "new_expression"].includes(value.type)
+          ) {
+            if (nameNode) {
+              const constName = _readText(nameNode, source);
+              const line = child.startPosition.row + 1;
+              const constNid = _makeId(stem, constName);
+              addNodeFn(constNid, constName, line);
+              addEdgeFn(fileNid, constNid, "contains", line);
+              constFound = true;
             }
           }
         }
       }
     }
-    return true;
+    return node.type === "lexical_declaration" || requireFound || arrowFound || constFound;
   }
   return false;
 }
@@ -965,7 +1120,7 @@ const _JS_CONFIG: LanguageConfig = defaultConfig({
   classTypes: new Set(["class_declaration"]),
   functionTypes: new Set(["function_declaration", "method_definition"]),
   importTypes: new Set(["import_statement"]),
-  callTypes: new Set(["call_expression"]),
+  callTypes: new Set(["call_expression", "new_expression"]),
   callFunctionField: "function",
   callAccessorNodeTypes: new Set(["member_expression"]),
   callAccessorField: "property",
@@ -976,15 +1131,21 @@ const _JS_CONFIG: LanguageConfig = defaultConfig({
 const _TS_CONFIG: LanguageConfig = defaultConfig({
   tsGrammarName: "typescript",
   tsModule: "tree_sitter_typescript",
-  classTypes: new Set(["class_declaration"]),
+  classTypes: new Set(["class_declaration", "interface_declaration", "enum_declaration", "type_alias_declaration"]),
   functionTypes: new Set(["function_declaration", "method_definition"]),
   importTypes: new Set(["import_statement"]),
-  callTypes: new Set(["call_expression"]),
+  callTypes: new Set(["call_expression", "new_expression"]),
   callFunctionField: "function",
   callAccessorNodeTypes: new Set(["member_expression"]),
   callAccessorField: "property",
   functionBoundaryTypes: new Set(["function_declaration", "arrow_function", "method_definition"]),
   importHandler: _importJs,
+});
+
+const _TSX_CONFIG: LanguageConfig = defaultConfig({
+  ..._TS_CONFIG,
+  tsGrammarName: "tsx",
+  tsModule: "tree_sitter_typescript",
 });
 
 const _JAVA_CONFIG: LanguageConfig = defaultConfig({
@@ -1433,7 +1594,7 @@ async function _extractGeneric(
       }
       if (_jsExtraWalk(node, source, fileNid, stem, strPath,
         nodes, edges, seenIds, functionBodies,
-        parentClassNid, addNode, addEdge)) {
+        parentClassNid, addNode, addEdge, rootDir)) {
         return;
       }
     }
@@ -1480,6 +1641,23 @@ async function _extractGeneric(
   const labelToNid = buildResolvableLabelIndex(nodes);
 
   const seenCallPairs = new Set<string>();
+
+  function emitCallByName(calleeName: string | null, node: SyntaxNode, callerNid: string): void {
+    if (!calleeName) return;
+    const tgtNid = labelToNid.get(calleeName.toLowerCase());
+    if (tgtNid && tgtNid !== callerNid) {
+      const pair = `${callerNid}|${tgtNid}`;
+      if (!seenCallPairs.has(pair)) {
+        seenCallPairs.add(pair);
+        const line = node.startPosition.row + 1;
+        edges.push({
+          source: callerNid, target: tgtNid, relation: "calls",
+          confidence: "EXTRACTED", source_file: strPath,
+          source_location: `L${line}`, weight: 1.0,
+        });
+      }
+    }
+  }
 
   function walkCalls(node: SyntaxNode, callerNid: string): void {
     if (config.functionBoundaryTypes.has(node.type)) return;
@@ -1538,6 +1716,9 @@ async function _extractGeneric(
             }
           }
         }
+      } else if (config.tsModule === "tree_sitter_javascript" || config.tsModule === "tree_sitter_typescript") {
+        const calleeField = node.type === "new_expression" ? "constructor" : config.callFunctionField;
+        calleeName = _readJsCalleeName(calleeField ? node.childForFieldName(calleeField) : null, source);
       } else if (config.tsModule === "tree_sitter_c_sharp" && node.type === "invocation_expression") {
         const nameNode = node.childForFieldName("name");
         if (nameNode) {
@@ -1591,21 +1772,7 @@ async function _extractGeneric(
         }
       }
 
-      if (calleeName) {
-        const tgtNid = labelToNid.get(calleeName.toLowerCase());
-        if (tgtNid && tgtNid !== callerNid) {
-          const pair = `${callerNid}|${tgtNid}`;
-          if (!seenCallPairs.has(pair)) {
-            seenCallPairs.add(pair);
-            const line = node.startPosition.row + 1;
-            edges.push({
-              source: callerNid, target: tgtNid, relation: "calls",
-              confidence: "EXTRACTED", source_file: strPath,
-              source_location: `L${line}`, weight: 1.0,
-            });
-          }
-        }
-      }
+      emitCallByName(calleeName, node, callerNid);
     }
 
     for (const child of node.children) {
@@ -1613,8 +1780,29 @@ async function _extractGeneric(
     }
   }
 
+  function walkJsTsDescendantCalls(bodyNode: SyntaxNode, callerNid: string): void {
+    const callNodes = bodyNode.descendantsOfType(["call_expression", "new_expression"]) as SyntaxNode[];
+    for (const callNode of callNodes) {
+      let nested = false;
+      let cur = callNode.parent;
+      while (cur && !(cur.startIndex === bodyNode.startIndex && cur.endIndex === bodyNode.endIndex)) {
+        if (config.functionBoundaryTypes.has(cur.type)) {
+          nested = true;
+          break;
+        }
+        cur = cur.parent;
+      }
+      if (nested) continue;
+      const calleeField = callNode.type === "new_expression" ? "constructor" : config.callFunctionField;
+      emitCallByName(_readJsCalleeName(calleeField ? callNode.childForFieldName(calleeField) : null, source), callNode, callerNid);
+    }
+  }
+
   for (const [callerNid, bodyNode] of functionBodies) {
     walkCalls(bodyNode, callerNid);
+    if (config.tsModule === "tree_sitter_javascript" || config.tsModule === "tree_sitter_typescript") {
+      walkJsTsDescendantCalls(bodyNode, callerNid);
+    }
   }
 
   // -- Clean edges --
@@ -1763,7 +1951,7 @@ export async function extractPython(filePath: string, rootDir?: string): Promise
 
 export async function extractJs(filePath: string, rootDir?: string): Promise<ExtractionResult> {
   const ext = extname(filePath);
-  const config = (ext === ".ts" || ext === ".tsx") ? _TS_CONFIG : _JS_CONFIG;
+  const config = ext === ".tsx" ? _TSX_CONFIG : ext === ".ts" ? _TS_CONFIG : _JS_CONFIG;
   return _extractGeneric(filePath, config, rootDir);
 }
 
@@ -2089,12 +2277,34 @@ async function extractRegexBackedCode(filePath: string, rootDir?: string): Promi
 
   const functionPatterns = [
     /\bfunction\s+([A-Za-z_$][\w$]*)\s*\(/g,
+    /\bdef\s+([A-Za-z_$][\w$]*)\s*\(/g,
     /\b(?:void|int|double|num|String|bool|dynamic|Future(?:<[^>]+>)?)\s+([A-Za-z_$][\w$]*)\s*\(/g,
   ];
   for (const pattern of functionPatterns) {
     for (const match of source.matchAll(pattern)) {
       addNode(match[1]!, `${match[1]!}()`, "contains", match.index ?? 0);
     }
+  }
+
+  const quotedFunctionPattern = /\bdef\s+["']([^"']+)["']\s*\(/g;
+  for (const match of source.matchAll(quotedFunctionPattern)) {
+    addNode(match[1]!, `${match[1]!}()`, "contains", match.index ?? 0);
+  }
+
+  const rFunctionPattern = /(?:^|\n)\s*([A-Za-z_.][\w.]*)\s*(?:<-|=)\s*function\s*\(/g;
+  for (const match of source.matchAll(rFunctionPattern)) {
+    addNode(match[1]!, `${match[1]!}()`, "contains", match.index ?? 0);
+  }
+
+  const fortranPattern = /^\s*(program|module|subroutine|function)\s+([A-Za-z_]\w*)/gim;
+  for (const match of source.matchAll(fortranPattern)) {
+    const kind = match[1]!.toLowerCase();
+    if (kind === "module" && source.slice(match.index ?? 0, (match.index ?? 0) + match[0].length).toLowerCase().includes("procedure")) {
+      continue;
+    }
+    const name = match[2]!;
+    const label = kind === "subroutine" || kind === "function" ? `${name}()` : name;
+    addNode(name, label, "contains", match.index ?? 0);
   }
 
   const modulePattern = /\bmodule\s+([A-Za-z_$][\w$]*)\b/g;
@@ -2196,6 +2406,108 @@ export async function extractSql(filePath: string, rootDir?: string): Promise<Ex
   );
   for (const match of source.matchAll(alterFkPattern)) {
     addReference(match[1]!, match[2]!, match.index ?? 0);
+  }
+
+  return { nodes, edges };
+}
+
+export async function extractMarkdown(filePath: string, rootDir?: string): Promise<ExtractionResult> {
+  let source: string;
+  try {
+    source = readFileSync(filePath, "utf-8");
+  } catch (e: unknown) {
+    return { nodes: [], edges: [], error: String(e) };
+  }
+
+  const stem = qualifiedFileStem(filePath, rootDir);
+  const fileNid = _makeId(stem);
+  const nodes: GraphNode[] = [];
+  const edges: GraphEdge[] = [];
+  const seenIds = new Set<string>();
+
+  function addNode(nid: string, label: string, line: number, fileType: GraphNode["file_type"] = "document"): void {
+    if (!seenIds.has(nid)) {
+      seenIds.add(nid);
+      nodes.push({
+        id: nid,
+        label,
+        file_type: fileType,
+        source_file: filePath,
+        source_location: `L${line}`,
+      });
+    }
+  }
+
+  function addEdge(sourceId: string, targetId: string, relation: string, line: number): void {
+    edges.push({
+      source: sourceId,
+      target: targetId,
+      relation,
+      confidence: "EXTRACTED",
+      source_file: filePath,
+      source_location: `L${line}`,
+      weight: 1.0,
+    });
+  }
+
+  addNode(fileNid, basename(filePath), 1);
+
+  const headingStack: Array<{ level: number; id: string }> = [];
+  let inCodeBlock = false;
+  let codeBlockLang: string | null = null;
+  let codeBlockStart = 0;
+  let codeBlockCount = 0;
+  const codeBlockLines: string[] = [];
+
+  const lines = source.split(/\r?\n/u);
+  for (let index = 0; index < lines.length; index++) {
+    const lineNumber = index + 1;
+    const lineText = lines[index]!;
+    const stripped = lineText.trim();
+
+    if (stripped.startsWith("```")) {
+      if (!inCodeBlock) {
+        inCodeBlock = true;
+        codeBlockLang = stripped.slice(3).trim().split(/\s+/u)[0] || null;
+        codeBlockStart = lineNumber;
+        codeBlockLines.length = 0;
+        continue;
+      }
+
+      inCodeBlock = false;
+      codeBlockCount += 1;
+      const firstLine = codeBlockLines.find((line) => line.trim())?.trim().slice(0, 60);
+      const baseLabel = codeBlockLang ? `code:${codeBlockLang}` : `code:block${codeBlockCount}`;
+      const label = firstLine ? `${baseLabel} (${firstLine})` : baseLabel;
+      const codeNid = _makeId(stem, `codeblock_${codeBlockCount}`);
+      addNode(codeNid, label, codeBlockStart, "document");
+      const parent = headingStack.at(-1)?.id ?? fileNid;
+      addEdge(parent, codeNid, "contains", codeBlockStart);
+      continue;
+    }
+
+    if (inCodeBlock) {
+      codeBlockLines.push(lineText);
+      continue;
+    }
+
+    const headingMatch = /^(#{1,6})\s+(.+)$/u.exec(lineText);
+    if (!headingMatch) continue;
+
+    const level = headingMatch[1]!.length;
+    const title = headingMatch[2]!.trim();
+    let headingNid = _makeId(stem, title);
+    if (seenIds.has(headingNid)) {
+      headingNid = _makeId(stem, title, String(lineNumber));
+    }
+    addNode(headingNid, title, lineNumber);
+
+    while (headingStack.length > 0 && headingStack.at(-1)!.level >= level) {
+      headingStack.pop();
+    }
+    const parent = headingStack.at(-1)?.id ?? fileNid;
+    addEdge(parent, headingNid, "contains", lineNumber);
+    headingStack.push({ level, id: headingNid });
   }
 
   return { nodes, edges };
@@ -3565,9 +3877,14 @@ const _DISPATCH: Record<string, ExtractorFn> = {
   ".vue": extractRegexBackedCode,
   ".svelte": extractSvelte,
   ".dart": extractRegexBackedCode,
+  ".groovy": extractRegexBackedCode,
+  ".gradle": extractRegexBackedCode,
   ".v": extractRegexBackedCode,
   ".sv": extractRegexBackedCode,
   ".sql": extractSql,
+  ".md": extractMarkdown,
+  ".mdx": extractMarkdown,
+  ".qmd": extractMarkdown,
   ".ejs": extractRegexBackedCode,
   ".go": extractGo,
   ".rs": extractRust,
@@ -3586,6 +3903,7 @@ const _DISPATCH: Record<string, ExtractorFn> = {
   ".php": extractPhp,
   ".swift": extractSwift,
   ".lua": extractLua,
+  ".luau": extractLua,
   ".toc": extractLua,
   ".zig": extractZig,
   ".ps1": extractPowershell,
@@ -3594,6 +3912,12 @@ const _DISPATCH: Record<string, ExtractorFn> = {
   ".m": extractObjc,
   ".mm": extractObjc,
   ".jl": extractJulia,
+  ".r": extractRegexBackedCode,
+  ".f": extractRegexBackedCode,
+  ".f90": extractRegexBackedCode,
+  ".f95": extractRegexBackedCode,
+  ".f03": extractRegexBackedCode,
+  ".f08": extractRegexBackedCode,
 };
 
 /**
@@ -3628,7 +3952,7 @@ export async function extractWithDiagnostics(paths: string[]): Promise<ExtractWi
       process.stderr.write(`  AST extraction: ${i}/${total} files (${Math.floor(i * 100 / total)}%)\n`);
     }
     const filePath = normalizedPaths[i]!;
-    const ext = extname(filePath);
+    const ext = extname(filePath).toLowerCase();
     const extractor = basename(filePath).endsWith(".blade.php")
       ? extractRegexBackedCode
       : _DISPATCH[ext];
@@ -3709,7 +4033,9 @@ const _EXTENSIONS = new Set([
   ".lua", ".toc", ".zig", ".ps1",
   ".m", ".mm",
   ".jl", ".ex", ".exs",
-  ".vue", ".svelte", ".dart", ".v", ".sv", ".ejs",
+  ".vue", ".svelte", ".dart", ".groovy", ".gradle", ".v", ".sv", ".ejs",
+  ".md", ".mdx", ".qmd",
+  ".luau", ".r", ".R", ".f", ".F", ".f90", ".F90", ".f95", ".F95", ".f03", ".F03", ".f08", ".F08",
 ]);
 
 /**
