@@ -149,6 +149,23 @@ describe("LLM execution ports", () => {
     expect(directProviderCredentialEnv("gemini")).toEqual(["GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"]);
   });
 
+  it("accepts ollama as a credential-free local direct provider", () => {
+    const root = makeTempDir();
+    const config = normalizeProjectConfig(
+      {
+        version: 1,
+        profile: { path: "graphify/profile.yaml" },
+        inputs: { corpus: ["raw"] },
+        llm_execution: { mode: "direct", provider: "ollama" },
+      },
+      join(root, "graphify.yaml"),
+    );
+
+    expect(() => preflightLlmExecution(config.llm_execution, "text_json")).not.toThrow();
+    expect(defaultDirectLlmModel("ollama")).toBe("llama3.1");
+    expect(directProviderCredentialEnv("ollama")).toEqual([]);
+  });
+
   it("writes assistant text JSON instructions without calling a provider", async () => {
     const root = makeTempDir();
     const client = createAssistantTextJsonClient({ instructionDir: root });

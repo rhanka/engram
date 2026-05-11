@@ -85,6 +85,7 @@
     "graphology-shortest-path": "^2.1.0",
     "graphology-types": "^0.24.7",
     "mistral-ocr": "^0.1.0",
+    "ollama-ai-provider": "^1.2.0",
     "web-tree-sitter": "^0.26.8",
     "yaml": "^2.8.3"
   },

@@ -2090,7 +2090,7 @@ export async function main(): Promise<void> {
     .argument("<inputPath>")
     .option("--semantic <path>", "Path to a provided semantic extraction JSON to merge")
     .option("--out <path>", "Output workspace root for the generated .graphify state")
-    .option("--backend <name>", "Direct semantic backend: anthropic, openai, gemini, mistral, cohere")
+    .option("--backend <name>", "Direct semantic backend: anthropic, openai, gemini, mistral, cohere, ollama")
     .option("--model <id>", "Direct backend model override")
     .option("--concurrency <n>", "Direct backend semantic chunk concurrency", "4")
     .option("--token-budget <n>", "Approximate direct backend token budget per semantic chunk", "60000")
@@ -2162,7 +2162,7 @@ export async function main(): Promise<void> {
             import("./direct-llm-extract.js"),
           ]);
           if (!isDirectLlmProvider(backend)) {
-            console.error("error: --backend must be one of anthropic, openai, gemini, mistral, cohere");
+            console.error("error: --backend must be one of anthropic, openai, gemini, mistral, cohere, ollama");
             process.exit(1);
           }
           const textSemanticFiles = [
