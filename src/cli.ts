@@ -2123,6 +2123,33 @@ export async function main(): Promise<void> {
           candidateRoot: inventory.scope.git_root ?? root,
           scope: inventory.scope,
         });
+
+        const { GOOGLE_WORKSPACE_EXTENSIONS: GWS_EXTENSIONS, googleWorkspaceEnabled, convertGoogleWorkspaceFile } = await import("./google-workspace.js");
+        if (googleWorkspaceEnabled()) {
+          const stubs = (rawDetection.files.document ?? []).filter((file: string) =>
+            GWS_EXTENSIONS.has(extname(file).toLowerCase()),
+          );
+          if (stubs.length > 0) {
+            console.log(`[graphify extract] converting ${stubs.length} Google Workspace shortcut(s)...`);
+            const replacements = new Map<string, string>();
+            for (const stub of stubs) {
+              try {
+                const sidecar = await convertGoogleWorkspaceFile(stub, paths.convertedDir);
+                if (sidecar) replacements.set(stub, sidecar);
+              } catch (err) {
+                console.warn(
+                  `[graphify extract] Google Workspace conversion skipped for ${stub}: ${err instanceof Error ? err.message : String(err)}`,
+                );
+              }
+            }
+            if (replacements.size > 0) {
+              rawDetection.files.document = (rawDetection.files.document ?? []).map((file: string) =>
+                replacements.get(file) ?? file,
+              );
+            }
+          }
+        }
+
         const detection = makeDetectionPortable(rawDetection as DetectionResult, root);
         writeJson(paths.scratch.detect, detection);
         if (detection.scope) writeJson(paths.scope, detection.scope);

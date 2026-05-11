@@ -13,6 +13,7 @@ import {
   resolveGraphifyPaths,
 } from "./paths.js";
 import { FileType } from "./types.js";
+import { googleWorkspaceEnabled } from "./google-workspace.js";
 import type { DetectionResult, InputScopeInspection } from "./types.js";
 
 export const CODE_EXTENSIONS = new Set([
@@ -27,6 +28,7 @@ export const DOC_EXTENSIONS = new Set([".md", ".mdx", ".qmd", ".txt", ".rst", ".
 export const PAPER_EXTENSIONS = new Set([".pdf"]);
 export const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"]);
 export const OFFICE_EXTENSIONS = new Set([".docx", ".xlsx"]);
+export const GOOGLE_WORKSPACE_EXTENSIONS = new Set([".gdoc", ".gsheet", ".gslides"]);
 export const VIDEO_EXTENSIONS = new Set([
   ".mp4", ".mov", ".webm", ".mkv", ".avi", ".m4v", ".mp3", ".wav", ".m4a", ".ogg",
 ]);
@@ -96,6 +98,9 @@ export function classifyFile(filePath: string): FileType | null {
   }
   if (!ext && hasCodeShebang(filePath)) return FileType.CODE;
   if (OFFICE_EXTENSIONS.has(ext)) return FileType.DOCUMENT;
+  if (GOOGLE_WORKSPACE_EXTENSIONS.has(ext)) {
+    return googleWorkspaceEnabled() ? FileType.DOCUMENT : null;
+  }
   return null;
 }
 
