@@ -209,8 +209,8 @@ Progress note:
 
 | Track | Current state | Next concrete action | UAT / Decision |
 | --- | --- | --- | --- |
-| Descriptions | Sidecar schema, cache key, validation and no-provider wiki rendering exist; generation is missing. | Add CLI/runtime flags for explicit opt-in, then mocked/direct generation. | UAT on a small code fixture and `../public-domaine-mystery-sagas-pack`. |
-| Reconciliation | Patch core, candidate queue, CLI/runtime candidate generation and write-mode MCP exist; browser/studio APIs are missing. | Add read-only candidate API surface and decision-log preview path before UI writes. | UAT with one accepted, one rejected, one alias merge and one weak-evidence review item in the public pack. |
+| Descriptions | Sidecar schema, cache key, validation, no-provider wiki rendering, assistant CLI generation and direct-client wiring exist. | Add docs/skill workflow, cache invalidation behavior and UAT fixtures; decide batch/mesh follow-up. | UAT on a small code fixture and `../public-domaine-mystery-sagas-pack`. |
+| Reconciliation | Patch core, candidate queue, CLI/runtime candidate generation, write-mode MCP, read-only ontology serve and MCP candidate/log/status tools exist; browser/studio HTTP APIs are missing. | Add CLI/skill decision-log preview and the read-only studio/API shell before UI writes. | UAT with one accepted, one rejected, one alias merge and one weak-evidence review item in the public pack. |
 | CRG | `v2.3.3` is recorded as additive; UX/accessibility and review precision remain unported opportunities. | Triage keyboard/ARIA/node-shape/help-overlay and review-precision changes into Graphify-native lots. | Decide whether CRG accessibility should land in HTML export, reconciliation studio, or both. |
 | Upstream Python | `0.7.10` merged; `0.7.16` observed after rescan. | Add a `0.7.11`..`0.7.16` row-level matrix before porting. | Decide whether any upstream feature beyond hotfixes should preempt descriptions/reconciliation. |
 
@@ -222,13 +222,13 @@ Progress below is calculated from the checked milestone boxes in the detailed tr
 | --- | ---: | --- | --- | --- | --- |
 | Python `0.7.10` parity checkpoint | 100% closed | `SPEC_UPSTREAM_TRACEABILITY.md` records the closed checkpoint. | Task L lots are closed except additive CRG work. | PR #22 merged to `main`. | No action unless a regression appears. |
 | Upstream Python `0.7.11`..`0.7.16` drift | 40% (`4/10`) | Source lock and row-level drift matrix are recorded. | Task M exists with lots M1..M5; M1 has started with the path-scoring/same-node guard port. | First post-`0.7.10` runtime fix is implemented locally; broader M1/M2/M3/M4/M5 remain open. | Finish M1 runtime fixes before starting Pascal or Ollama tuning. |
-| Descriptions | 50% (`6/12`) | `SPEC_WIKI_ENTITY_DESCRIPTIONS.md` exists, keeps render-only CLI separate from generation, and now specifies the first `wiki describe` generation contract. | Task K exists; generation implementation lots are split: assistant/direct first, batch/mesh later. | Sidecar schema, validation, wiki rendering, render CLI, and assistant-first generation core are implemented locally. | Wire `graphify wiki describe` CLI and direct-client creation after the core tests stay green. |
-| Reconciliation | 42% (`5/12`) | `SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md` exists and now specifies the read-only candidate API contract; studio/write contracts remain implementation work. | Tasks A..H/J exist; active MVP plan starts at read-only APIs and decision-log preview. | Patch core, write-mode MCP, deterministic candidate queue, read-only candidate query helpers and decision-log preview parser exist; browser/API surfaces are missing. | Wire read-only HTTP/MCP endpoints before UI writes. |
+| Descriptions | 58% (`7/12`) | `SPEC_WIKI_ENTITY_DESCRIPTIONS.md` exists, keeps render-only CLI separate from generation, and specifies the first `wiki describe` generation contract. | Task K exists; generation implementation lots are split: assistant/direct first, batch/mesh later. | Sidecar schema, validation, wiki rendering, render CLI, assistant CLI generation and direct-client wiring are implemented locally. | Add README/skill workflow, cache invalidation and UAT fixtures before broad rollout. |
+| Reconciliation | 46% (`6/13`) | `SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md` exists and specifies the read-only candidate API contract; studio/write contracts remain implementation work. | Tasks A..H/J exist; active MVP plan starts at read-only APIs and decision-log preview. | Patch core, write-mode MCP, deterministic candidate queue, read-only query helpers, decision-log preview parser, read-only ontology serve and MCP read-only tools exist; browser/API surfaces are missing. | Add CLI/skill decision-log preview and the read-only HTTP/studio shell before UI writes. |
 | CRG additive UX/review work | 30% (`3/10`) | CRG source locks and prior alignment specs exist; read-only audit confirms `v2.3.3` accessibility opportunities are not yet row-level. | Task L Lot 5b and CRG rows exist but need a concrete lot split. | Existing review commands cover earlier CRG-style review context; HTML export still has canvas accessibility, node-shape and help-overlay gaps. | Classify `v2.3.3` buckets into HTML UX, reconciliation studio, review precision, or defer. |
 
 ## Detailed Track Plans
 
-### Track A: Descriptions (`6/12`, 50%)
+### Track A: Descriptions (`7/12`, 58%)
 
 - [x] Spec exists: `spec/SPEC_WIKI_ENTITY_DESCRIPTIONS.md`.
 - [x] Sidecar schema, cache key and validation exist in `src/wiki-descriptions.ts`.
@@ -236,20 +236,21 @@ Progress below is calculated from the checked milestone boxes in the detailed tr
 - [x] CLI render opt-in exists: `graphify export wiki|obsidian --descriptions <path>`.
 - [x] Define the generation command/API contract: target selection, node/community switches, output path, overwrite policy and graph hash validation.
 - [x] Implement assistant-mode sidecar generation core with deterministic prompt inputs and no direct provider dependency.
-- [ ] Implement direct-backend sidecar generation through existing LLM execution ports with mocked CI tests.
+- [x] Implement direct-backend sidecar generation through existing LLM execution ports with mocked CI tests.
 - [ ] Decide whether batch/mesh generation is a first implementation lot or a documented follow-up.
 - [ ] Add cache/invalidation behavior for changed graph hash, prompt version, provider and model.
 - [ ] Update README and assistant skills with a two-step workflow: generate sidecars, then render wiki/Obsidian with `--descriptions`.
 - [ ] Extend rendering to ontology entity pages only after the entity-page export has a stable sidecar lookup.
 - [ ] Run UAT on a tiny fixture and on `../public-domaine-mystery-sagas-pack`, including at least one `insufficient_evidence` omission.
 
-### Track B: Reconciliation (`5/12`, 42%)
+### Track B: Reconciliation (`6/13`, 46%)
 
 - [x] Lifecycle spec exists: `spec/SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md`.
 - [x] Patch validation, dry-run/apply and write-mode MCP foundations exist.
 - [x] Deterministic reconciliation candidate queue schema and generation exist.
 - [x] Specify the read-only candidate API contract: route names, response schema, paging, filtering, sorting and graph/profile hash checks.
-- [ ] Implement read-only API endpoints before any browser write UI.
+- [x] Implement read-only MCP API endpoints for candidate list/get, decision-log preview and rebuild status before any browser write UI.
+- [ ] Implement read-only HTTP/studio API endpoints before any browser write UI.
 - [x] Specify and implement decision-log preview core records/parser; endpoint filters and accept/reject/alias/weak-evidence UAT remain below.
 - [ ] Expose decision-log preview through CLI and skill runtime without mutating project files.
 - [ ] Implement the read-only studio shell served by `graphify ontology studio --config graphify.yaml`.
@@ -539,7 +540,7 @@ graphify extract ./tmp/direct-uat-corpus --backend openai --model gpt-5.5 --no-c
 - [x] Render existing validated sidecars in wiki pages without calling any provider.
 - [x] Add deterministic no-provider-call tests for node and community description rendering.
 - [x] Add CLI render opt-in through `graphify export wiki|obsidian --descriptions` for existing sidecar indexes.
-- [ ] Add wiki description generation command or runtime path for assistant/direct/batch/mesh.
+- [x] Add wiki description generation command/runtime path for assistant/direct, with batch/mesh kept as an explicit follow-up.
 - [ ] Add generation-time `--wiki-descriptions` and `--wiki-community-descriptions` or equivalent config options.
 - [x] Render validated descriptions in community wiki pages and god-node wiki pages.
 - [ ] Extend validated description rendering to ontology entity pages once the entity-page export is wired to sidecars.
