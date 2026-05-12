@@ -32,7 +32,21 @@ const DISTRIBUTED_SKILL_DOCS = [
   "../src/skills/skill-kiro.md",
 ];
 
+const TRIGGER_DESCRIPTION_DOCS = [
+  ...DISTRIBUTED_SKILL_DOCS,
+  "../src/skills/skill-gemini.toml",
+];
+
 describe("skill cache examples", () => {
+  it("uses trigger-oriented skill descriptions", () => {
+    for (const relativePath of TRIGGER_DESCRIPTION_DOCS) {
+      const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
+      expect(content).toContain("Use when user asks any question about a codebase");
+      expect(content).toContain("project content, architecture, or file relationships");
+      expect(content).toContain(".graphify/");
+    }
+  });
+
   it("use tuple destructuring for checkSemanticCache", () => {
     for (const relativePath of SKILLS) {
       const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");

@@ -77,6 +77,23 @@ describe("classifyFile", () => {
     expect(classifyFile("k8s/deployment.yaml")).toBe(FileType.DOCUMENT);
     expect(classifyFile("k8s/service.yml")).toBe(FileType.DOCUMENT);
   });
+
+  it("ignores Google Workspace shortcuts unless GRAPHIFY_GOOGLE_WORKSPACE is set", () => {
+    const previous = process.env.GRAPHIFY_GOOGLE_WORKSPACE;
+    try {
+      delete process.env.GRAPHIFY_GOOGLE_WORKSPACE;
+      expect(classifyFile("notes.gdoc")).toBeNull();
+      expect(classifyFile("data.gsheet")).toBeNull();
+      expect(classifyFile("deck.gslides")).toBeNull();
+      process.env.GRAPHIFY_GOOGLE_WORKSPACE = "1";
+      expect(classifyFile("notes.gdoc")).toBe(FileType.DOCUMENT);
+      expect(classifyFile("data.gsheet")).toBe(FileType.DOCUMENT);
+      expect(classifyFile("deck.gslides")).toBe(FileType.DOCUMENT);
+    } finally {
+      if (previous === undefined) delete process.env.GRAPHIFY_GOOGLE_WORKSPACE;
+      else process.env.GRAPHIFY_GOOGLE_WORKSPACE = previous;
+    }
+  });
 });
 
 describe("detect", () => {

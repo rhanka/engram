@@ -5,8 +5,9 @@
  * `git rev-parse` so linked worktrees and gitfiles do not break installation.
  */
 import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { execGit, resolveGitContext, safeExecGit } from "./git.js";
+import type { GitContext } from "./git.js";
 
 const POST_COMMIT_MARKER = "# graphify-hook-start";
 const POST_COMMIT_MARKER_END = "# graphify-hook-end";
@@ -292,11 +293,29 @@ function uninstallMergeDriverConfig(path: string): string {
   return "removed";
 }
 
+function pathIsInside(candidate: string, parent: string): boolean {
+  const rel = relative(parent, candidate);
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function validateHooksDir(context: GitContext): void {
+  if (
+    pathIsInside(context.hooksDir, context.worktreeRoot) ||
+    pathIsInside(context.hooksDir, context.commonGitDir)
+  ) {
+    return;
+  }
+  throw new Error(
+    `Refusing to install graphify hooks outside repository git directories: ${context.hooksDir}`,
+  );
+}
+
 export function install(path: string = "."): string {
   const context = resolveGitContext(path);
   if (context === null) {
     throw new Error(`No git repository found at or above ${resolve(path)}`);
   }
+  validateHooksDir(context);
 
   mkdirSync(context.hooksDir, { recursive: true });
   const hookLines = HOOKS.map((definition) => (
@@ -312,6 +331,7 @@ export function uninstall(path: string = "."): string {
   if (context === null) {
     throw new Error(`No git repository found at or above ${resolve(path)}`);
   }
+  validateHooksDir(context);
 
   const hookLines = HOOKS.map((definition) => (
     `${definition.name}: ${uninstallHook(context.hooksDir, definition)}`

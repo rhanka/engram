@@ -349,6 +349,11 @@ const PLATFORM_CONFIG: Record<string, PlatformConfig> = {
     skill_dst: join(".hermes", "skills", "graphify", "SKILL.md"),
     claude_md: false,
   },
+  kimi: {
+    skill_file: "skill.md",
+    skill_dst: join(".kimi", "skills", "graphify", "SKILL.md"),
+    claude_md: false,
+  },
   kiro: {
     skill_file: "skill-kiro.md",
     skill_dst: join(".kiro", "skills", "graphify", "SKILL.md"),
@@ -1279,6 +1284,26 @@ function installSkill(platformName: string): void {
   console.log();
 }
 
+function resolveInstallCommandPlatform(
+  positionalPlatform: string | undefined,
+  optionPlatform: string | undefined,
+): string {
+  const defaultPlatform = platform() === "win32" ? "windows" : "claude";
+  const positional = positionalPlatform
+    ? canonicalPlatformName(positionalPlatform)
+    : undefined;
+  const option = optionPlatform
+    ? canonicalPlatformName(optionPlatform)
+    : undefined;
+
+  if (positional && option && positional !== option) {
+    console.error("error: specify install platform only once");
+    process.exit(1);
+  }
+
+  return option ?? positional ?? defaultPlatform;
+}
+
 export function installClaudeHook(projectDir: string): void {
   const settingsPath = join(projectDir, ".claude", "settings.json");
   mkdirSync(dirname(settingsPath), { recursive: true });
@@ -1557,29 +1582,34 @@ export function getPlatformsToCheck(argv: string[]): string[] {
     seen.add(canonical);
   };
 
-  for (let i = 0; i < argv.length; i += 1) {
-    const token = argv[i];
-    if (!token) continue;
-    if (token in PLATFORM_CONFIG || token in PLATFORM_ALIASES) {
-      add(token);
-      continue;
-    }
-    if (token === "--platform") {
-      add(argv[i + 1]);
-      i += 1;
-      continue;
-    }
-    if (token.startsWith("--platform=")) {
-      add(token.slice("--platform=".length));
-    }
-  }
-
-  if (seen.size > 0) {
-    return [...seen];
-  }
-
   if (argv[0] === "install") {
+    for (let i = 1; i < argv.length; i += 1) {
+      const token = argv[i];
+      if (!token) continue;
+      if (token in PLATFORM_CONFIG || token in PLATFORM_ALIASES) {
+        add(token);
+        continue;
+      }
+      if (token === "--platform") {
+        add(argv[i + 1]);
+        i += 1;
+        continue;
+      }
+      if (token.startsWith("--platform=")) {
+        add(token.slice("--platform=".length));
+      }
+    }
+    if (seen.size > 0) {
+      return [...seen];
+    }
     return [platform() === "win32" ? "windows" : "claude"];
+  }
+
+  if (argv[1] === "install" || argv[1] === "uninstall") {
+    add(argv[0]);
+    if (seen.size > 0) {
+      return [...seen];
+    }
   }
 
   return [];
@@ -1606,9 +1636,10 @@ export async function main(): Promise<void> {
   program
     .command("install")
     .description("Copy skill to platform config dir")
-    .option("--platform <platform>", "Target platform", platform() === "win32" ? "windows" : "claude")
-    .action((opts) => {
-      installSkill(opts.platform);
+    .argument("[platform]", "Target platform")
+    .option("--platform <platform>", "Target platform")
+    .action((platformArg: string | undefined, opts) => {
+      installSkill(resolveInstallCommandPlatform(platformArg, opts.platform));
     });
 
   program
@@ -2090,7 +2121,7 @@ export async function main(): Promise<void> {
     .argument("<inputPath>")
     .option("--semantic <path>", "Path to a provided semantic extraction JSON to merge")
     .option("--out <path>", "Output workspace root for the generated .graphify state")
-    .option("--backend <name>", "Direct semantic backend: anthropic, openai, gemini, mistral, cohere")
+    .option("--backend <name>", "Direct semantic backend: anthropic, openai, gemini, mistral, cohere, ollama")
     .option("--model <id>", "Direct backend model override")
     .option("--concurrency <n>", "Direct backend semantic chunk concurrency", "4")
     .option("--token-budget <n>", "Approximate direct backend token budget per semantic chunk", "60000")
@@ -2123,10 +2154,38 @@ export async function main(): Promise<void> {
           candidateRoot: inventory.scope.git_root ?? root,
           scope: inventory.scope,
         });
+        const originalDocumentFiles = [...(rawDetection.files.document ?? [])];
+
+        const { GOOGLE_WORKSPACE_EXTENSIONS: GWS_EXTENSIONS, googleWorkspaceEnabled, convertGoogleWorkspaceFile } = await import("./google-workspace.js");
+        if (googleWorkspaceEnabled()) {
+          const stubs = (rawDetection.files.document ?? []).filter((file: string) =>
+            GWS_EXTENSIONS.has(extname(file).toLowerCase()),
+          );
+          if (stubs.length > 0) {
+            console.log(`[graphify extract] converting ${stubs.length} Google Workspace shortcut(s)...`);
+            const replacements = new Map<string, string>();
+            for (const stub of stubs) {
+              try {
+                const sidecar = await convertGoogleWorkspaceFile(stub, paths.convertedDir);
+                if (sidecar) replacements.set(stub, sidecar);
+              } catch (err) {
+                console.warn(
+                  `[graphify extract] Google Workspace conversion skipped for ${stub}: ${err instanceof Error ? err.message : String(err)}`,
+                );
+              }
+            }
+            if (replacements.size > 0) {
+              rawDetection.files.document = (rawDetection.files.document ?? []).map((file: string) =>
+                replacements.get(file) ?? file,
+              );
+            }
+          }
+        }
+
         const detection = makeDetectionPortable(rawDetection as DetectionResult, root);
         writeJson(paths.scratch.detect, detection);
         if (detection.scope) writeJson(paths.scope, detection.scope);
-        saveManifest(rawDetection.files, paths.manifest);
+        saveManifest({ ...rawDetection.files, document: originalDocumentFiles }, paths.manifest);
 
         const codeFiles = rawDetection.files.code ?? [];
         const semanticFileCount =
@@ -2162,7 +2221,7 @@ export async function main(): Promise<void> {
             import("./direct-llm-extract.js"),
           ]);
           if (!isDirectLlmProvider(backend)) {
-            console.error("error: --backend must be one of anthropic, openai, gemini, mistral, cohere");
+            console.error("error: --backend must be one of anthropic, openai, gemini, mistral, cohere, ollama");
             process.exit(1);
           }
           const textSemanticFiles = [

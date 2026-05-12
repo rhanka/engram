@@ -1,7 +1,7 @@
 {
   "name": "graphifyy",
-  "version": "0.7.5",
-  "description": "AI coding assistant skill (Claude Code, Codex, Gemini CLI, GitHub Copilot CLI, Aider, OpenCode, OpenClaw) - turn any folder of code, docs, papers, images, or audio/video transcripts into a queryable knowledge graph",
+  "version": "0.7.10",
+  "description": "AI coding assistant skill (Claude Code, Codex, Gemini CLI, Kimi Code, GitHub Copilot CLI, Aider, OpenCode, OpenClaw) - turn any folder of code, docs, papers, images, or audio/video transcripts into a queryable knowledge graph",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -38,6 +38,7 @@
     "codex",
     "gemini",
     "gemini-cli",
+    "kimi",
     "copilot",
     "copilot-cli",
     "aider",
@@ -85,6 +86,7 @@
     "graphology-shortest-path": "^2.1.0",
     "graphology-types": "^0.24.7",
     "mistral-ocr": "^0.1.0",
+    "ollama-ai-provider": "^1.2.0",
     "web-tree-sitter": "^0.26.8",
     "yaml": "^2.8.3"
   },

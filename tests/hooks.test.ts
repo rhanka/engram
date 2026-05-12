@@ -140,4 +140,15 @@ describe("hooks", () => {
     expect(hookPath(worktreeDir, "post-commit")).toBe(hookPath(tmpDir, "post-commit"));
     expect(status(worktreeDir)).toContain("post-rewrite: installed");
   });
+
+  it("refuses to install hooks outside the repository git directories", () => {
+    const outsideHooksDir = mkdtempSync(join(tmpdir(), "graphify-external-hooks-"));
+    try {
+      git(tmpDir, ["config", "--local", "core.hooksPath", outsideHooksDir]);
+
+      expect(() => install(tmpDir)).toThrow("Refusing to install graphify hooks outside");
+    } finally {
+      rmSync(outsideHooksDir, { recursive: true, force: true });
+    }
+  });
 });

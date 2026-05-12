@@ -1,8 +1,8 @@
-# Upstream `0.7.4` Catch-up Implementation Plan
+# Upstream `0.7.10` Realignment Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Bring the TypeScript fork from published `graphifyy@0.5.6` to a verified parity target of upstream Python Graphify `v0.7.4`, while preserving intentional TypeScript deltas and treating `code-review-graph` as an additive review-feature source instead of a version driver.
+**Goal:** Bring the TypeScript fork from the historical `graphifyy@0.5.6` baseline through a verified parity target of upstream Python Graphify `v0.7.10`, while preserving intentional TypeScript deltas and treating `code-review-graph` as an additive review-feature source instead of a version driver.
 
 **Architecture:** Catch-up is traceability-first. Lock live upstream refs, audit each upstream release line conservatively, implement in cohesive functional lots, and publish the TypeScript package under the upstream Graphify version only after every active row is either `covered`, `intentional-delta`, `deferred`, `rejected`, or `n/a`. `code-review-graph` stable remains a separate source lock for review features and must not force the npm version.
 
@@ -13,10 +13,12 @@
 ## Current Source Locks
 
 - [x] Current TypeScript baseline: `main` at `1f30efa` (`graphifyy@0.5.6`).
+- [x] Current TypeScript package target: `graphifyy@0.7.10`.
 - [x] Closed Python `v5` parity line: `upstream/v5` at `f755aca58f36771923cebcc8f85f2eef6178a105`.
 - [x] Closed Python `v6` parity line: `upstream/v6` at `f81e3bc2154d21062f56f9e4ec9f923dfe7d128e` (`v0.6.9`).
-- [x] Active Python continuation lock: `upstream/v7` observed at `ee85bbf80cc6fedff0a17d5ea1da77f20da0729b`.
+- [x] Closed Python `v7` continuation lock through `0.7.4`: `upstream/v7` observed at `ee85bbf80cc6fedff0a17d5ea1da77f20da0729b`.
 - [x] Effective Python `v0.7.4` code target: `26a5a35200dda6207bf6fc16afed83c71238bb65` on `upstream/v7`, with feature commit `741ac3655bd33314e1aaca51e6fd30271c74c61b`.
+- [x] Effective Python `v0.7.10` realignment target: `upstream/v7` at `0c29b2cb88c6274d889ca7c33a684ce103808715`, with remote tag `v0.7.10` at `ef1050b0e4134df0bd59956b0f900dc3c83e8184`.
 - [x] Release-tag anomaly recorded: fetched local tags `v0.7.0` through `v0.7.4` resolve to `f81e3bc`, so `0.7.x` traceability after `0.6.9` follows the `upstream/v7` commit history rather than those tag pointers.
 - [x] Stable CRG reference: remote tag `v2.3.2` at `db2d2df789c25a101e33477b898c1840fb4c7bc7`, published `2026-04-14T13:28:19Z`.
 - [x] Exploratory CRG head: remote `main` at `0919071a9ba353e604981059e99ee2ed98768092`, currently `96` commits ahead of `v2.3.2`.
@@ -24,9 +26,9 @@
 
 ## Release Policy
 
-- [ ] Do not publish `0.6.x` or `0.7.x` from this branch until the corresponding rows in `UPSTREAM_GAP.md` are closed with evidence.
-- [ ] If interim validation is needed, publish prereleases only (`0.7.4-rc.N` preferred) rather than new stable numbers that imply parity we do not yet have.
-- [x] Promote to stable `0.7.4` only after the final release gate in this file is complete.
+- [ ] Do not publish `0.7.10` from this branch until the corresponding rows in `UPSTREAM_GAP.md` are closed with evidence.
+- [ ] If interim validation is needed, publish prereleases only (`0.7.10-rc.N` preferred) rather than new stable numbers that imply parity we do not yet have.
+- [x] Promote the branch package target to `0.7.10` only after the active parity rows are closed and the final release gate in this file passes.
 - [ ] Treat upstream Python `v1.0.0` as `deferred` until a separate traceability pass proves that the active upstream release train has actually moved beyond `v6` / `0.7.x`.
 - [ ] Keep this catch-up TypeScript-only: do not add new Python runtime dependencies, Python toolchains, or Python-based feature implementations while closing `0.6.x` / `0.7.x` parity.
 
@@ -37,7 +39,7 @@
 - Modify: `UPSTREAM_GAP.md`
 - Modify: `spec/SPEC_UPSTREAM_TRACEABILITY.md`
 
-- [x] Replace the obsolete implementation plan with this `0.7.4` catch-up plan.
+- [x] Replace the obsolete implementation plan with the initial `0.7.4` catch-up plan, then extend it with the `0.7.10` realignment in Task L.
 - [x] Update both traceability docs to record `graphifyy@0.5.6` as the current TypeScript baseline.
 - [x] Update both traceability docs to lock `upstream/v6` and remote tag `v0.7.4`.
 - [x] Update both traceability docs to keep CRG stable on `v2.3.2` and mark CRG `main` as exploratory/deferred.
@@ -131,7 +133,7 @@ Progress note:
 - covered/n-a in this lot so far: `tsconfig extends` alias resolution, Svelte template-layer dynamic imports, and per-file recursion-overflow diagnostics
 - covered/deferred/intentional-delta in this lot so far: public `graphify export {html,wiki,obsidian,svg,graphml,neo4j}` parity, explicit `--no-viz`, Fortran parser deferral, and large-graph HTML aggregation as a TypeScript product delta
 - covered/intentional-delta in this lot so far: public `graphify extract`, `--out`, `--no-cluster`, and docs-only headless rebuilds when a compatible semantic JSON is provided
-- Task 5 is now functionally closed; the remaining active work is CRG guardrail bookkeeping plus the final `0.7.4` release gate.
+- Task 5 is functionally closed as historical `0.7.4` parity work; the active parity closure is tracked in Task L for `0.7.10`.
 
 - [x] Audit `v0.7.1` Obsidian tag sanitization, extended `tsconfig` alias resolution, Svelte template-layer dynamic imports, and recursion safety on deep ASTs.
 - [x] Audit `v0.7.2` Fortran support, export CLI subcommands, skill size reduction, and large-graph aggregation.
@@ -457,14 +459,14 @@ graphify extract ./tmp/direct-uat-corpus --backend openai --model gpt-5.5 --no-c
 - [x] Fetch/check live CRG refs and record `v2.3.3` / `main` at `52cf3bc63ee77c8b204fb809791a5f212e83a2de`.
 - [x] Record local tag clobber risk and use `git ls-remote` / branch commits as authority.
 - [x] Create the initial functional intake buckets in traceability docs.
-- [ ] Audit Python `0.7.5` to `0.7.10` row-by-row and classify each item as `covered`, `partial`, `missing`, `intentional-delta`, `deferred`, `rejected`, or `n/a`.
+- [x] Audit Python `0.7.5` to `0.7.10` row-by-row and classify each item as `covered`, `partial`, `missing`, `intentional-delta`, `deferred`, `rejected`, or `n/a`.
 - [ ] Audit CRG `v2.3.3` feature buckets and classify additive opportunities separately from Python parity.
-- [ ] Lot 1: low-risk parity fixes: query/edges-loader mismatch, uninstall-all, skill/install YAML descriptions, missing skill install regressions, security hardening, positional install arguments.
+- [x] Lot 1: low-risk parity fixes: query/edges-loader mismatch, uninstall-all, skill/install YAML descriptions, missing skill install regressions, security hardening, positional install arguments.
   - [x] Port top-level `graphify uninstall` with optional purge of `.graphify/` and legacy `graphify-out/`.
   - [x] Warn and repair when `.graphify_version` exists but the global `SKILL.md` is missing.
   - [x] Write global skill files atomically to avoid half-written `SKILL.md` installs.
-  - [ ] Finish query/edges-loader mismatch audit, skill YAML description parity, positional install arguments, and subprocess/security hardening.
-- [ ] Lot 2: parser/language surface: Markdown structural extraction, TS/TSX advanced constructs, CommonJS require, SQL ALTER/schema-qualified names, Quarto `.qmd`, and selected no-Python language fallbacks.
+  - [x] Finish query/edges-loader mismatch audit, skill YAML description parity, positional install arguments, Kimi Code install platform, and mapped subprocess/security hardening.
+- [x] Lot 2: parser/language surface: Markdown structural extraction, TS/TSX advanced constructs, CommonJS require, SQL ALTER/schema-qualified names, Quarto `.qmd`, and selected no-Python language fallbacks.
   - [x] Add TypeScript SQL extraction for schema-qualified table names and `ALTER TABLE ... FOREIGN KEY ... REFERENCES` edges.
   - [x] Add TypeScript CommonJS `require()` extraction for local module edges and required symbols.
   - [x] Add TypeScript/TSX extraction for interface/type/enum nodes, module constants, constructor calls and JSX call expressions.
@@ -475,8 +477,12 @@ graphify extract ./tmp/direct-uat-corpus --backend openai --model gpt-5.5 --no-c
   - [x] Persist community labels across `cluster-only`, `update`/`hook-rebuild`, `extract`, and the skill-runtime assemble/finalize/merge/cluster-only flows so user-renamed labels survive every rebuild (parity with upstream `b3c99ec` and `e22a189`).
   - [x] Confirm semantic cache + manifest reuse is already implemented in the TypeScript assistant/runtime `update` path; document the headless `graphify extract` choice as an intentional delta rather than back-porting upstream's monolithic incremental `extract` command.
   - [x] Confirm entity dedup remains conservative (`deduplicateByLabel` in `buildMerge`) in the TypeScript line; the upstream MinHash/LSH/Jaro-Winkler `--dedup-llm` path is recorded as `intentional-delta` because it requires Python-only dependencies and an aggressive cross-file merge contract the TS port deliberately avoids.
-- [ ] Lot 4: optional provider/source integrations: decide on Ollama, AWS Bedrock and Google Workspace as explicit opt-in features before implementation.
-- [ ] Lot 5: MCP resources and review UX: MCP report/stats/god-nodes resources plus CRG-inspired HTML accessibility patterns.
-- [ ] Keep embeddings, SQLite/FTS and daemon features deferred unless a separate spec is approved.
-- [ ] Update README and skills only for user-facing behavior actually adopted.
-- [ ] Run full release gate before any parity publish and align npm version to the chosen Python parity target.
+- [x] Lot 4: optional provider/source integrations: decide on Ollama, AWS Bedrock and Google Workspace as explicit opt-in features before implementation.
+  - [x] Ollama: `covered (opt-in port)`. `ollama` registered in `DIRECT_LLM_PROVIDERS`, default model `llama3.1`, `OLLAMA_BASE_URL` env override, credential-free (no API key). Tests: `tests/llm-execution.test.ts > accepts ollama as a credential-free local direct provider`.
+  - [x] AWS Bedrock: `deferred`. Surface IAM/STS auth complexity and Bedrock model catalog churn are not worth porting before an actual enterprise user requests it. Reopen with a dedicated mini-spec when needed.
+  - [x] Google Workspace: `covered (opt-in port, intentional-delta on implementation)`. Strict opt-in via `GRAPHIFY_GOOGLE_WORKSPACE=1`. `.gdoc`/`.gsheet`/`.gslides` stubs are surfaced by `classifyFile`, converted to Markdown sidecars under `.graphify/converted/` via direct Drive v3 REST (inspired by `entropiq/api/src/services/google-drive-client.ts`) instead of upstream's external `gws` CLI dependency. Auth via `GOOGLE_OAUTH_ACCESS_TOKEN` or refresh-token exchange; never persisted in `.graphify/`. Tests: `tests/google-workspace.test.ts` (11 cases) and `tests/detect.test.ts > ignores Google Workspace shortcuts unless GRAPHIFY_GOOGLE_WORKSPACE is set`.
+- [x] Lot 5a: Python parity MCP resources: `graphify://report`, `graphify://stats`, `graphify://god-nodes`, `graphify://surprises`, `graphify://audit`, and `graphify://questions`.
+- [ ] Lot 5b: CRG-inspired HTML accessibility patterns remain additive review UX work, not a Python `0.7.10` parity blocker.
+- [x] Keep embeddings, SQLite/FTS and daemon features deferred unless a separate spec is approved.
+- [x] Update README and skills only for user-facing behavior actually adopted.
+- [x] Run full release gate before any parity publish and align npm version to the chosen Python parity target.

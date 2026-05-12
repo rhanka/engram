@@ -1,6 +1,6 @@
 ---
 name: graphify
-description: "Turn any folder of files into a TypeScript-backed knowledge graph with HTML, JSON, wiki, and audit report outputs."
+description: "any input (code, docs, papers, images) -> knowledge graph -> clustered communities -> HTML + JSON + audit report. Use when user asks any question about a codebase, project content, architecture, or file relationships, especially if .graphify/ exists. Provides persistent graph with god nodes, community detection, and BFS/DFS query tools."
 trigger: /graphify
 ---
 

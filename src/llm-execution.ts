@@ -5,9 +5,9 @@ import type { NormalizedLlmExecutionPolicy } from "./types.js";
 
 export type LlmExecutionCapability = "text_json" | "vision_json" | "batch_vision_json";
 export type LlmExecutionMode = "assistant" | "direct" | "batch" | "mesh";
-export type DirectLlmProvider = "anthropic" | "openai" | "gemini" | "mistral" | "cohere";
+export type DirectLlmProvider = "anthropic" | "openai" | "gemini" | "mistral" | "cohere" | "ollama";
 
-export const DIRECT_LLM_PROVIDERS = ["anthropic", "openai", "gemini", "mistral", "cohere"] as const;
+export const DIRECT_LLM_PROVIDERS = ["anthropic", "openai", "gemini", "mistral", "cohere", "ollama"] as const;
 
 export interface TextJsonGenerationInput {
   schema: string;
@@ -123,6 +123,8 @@ export function defaultDirectLlmModel(provider: DirectLlmProvider): string {
       return "mistral-small-2603";
     case "cohere":
       return "command-a-03-2025";
+    case "ollama":
+      return "llama3.1";
   }
 }
 
@@ -138,6 +140,8 @@ export function directProviderCredentialEnv(provider: DirectLlmProvider): string
       return ["MISTRAL_API_KEY"];
     case "cohere":
       return ["COHERE_API_KEY"];
+    case "ollama":
+      return [];
   }
 }
 
@@ -150,10 +154,12 @@ function resolveProviderCredential(provider: DirectLlmProvider): string | null {
 }
 
 function ensureProviderCredential(provider: DirectLlmProvider): void {
+  const envNames = directProviderCredentialEnv(provider);
+  if (envNames.length === 0) return;
   const credential = resolveProviderCredential(provider);
   if (!credential) {
     throw new Error(
-      `Missing provider credential for ${provider}; set one of ${directProviderCredentialEnv(provider).join(", ")}`,
+      `Missing provider credential for ${provider}; set one of ${envNames.join(", ")}`,
     );
   }
   if (provider === "gemini" && !process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim()) {
@@ -161,10 +167,18 @@ function ensureProviderCredential(provider: DirectLlmProvider): void {
   }
 }
 
+const MAX_DIRECT_LLM_JSON_BYTES = 10 * 1024 * 1024;
+
 function parseJsonFromLlmText(text: string): unknown {
   const trimmed = text.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/iu);
   const candidate = fenced ? fenced[1]!.trim() : trimmed;
+  const byteLength = Buffer.byteLength(candidate, "utf-8");
+  if (byteLength > MAX_DIRECT_LLM_JSON_BYTES) {
+    throw new Error(
+      `Direct LLM response exceeds ${MAX_DIRECT_LLM_JSON_BYTES} bytes (${byteLength} bytes); refusing to parse JSON`,
+    );
+  }
   try {
     return JSON.parse(candidate);
   } catch (err) {
@@ -196,6 +210,12 @@ async function resolveDirectModel(provider: DirectLlmProvider, model: string): P
     case "cohere": {
       const { cohere } = await import("@ai-sdk/cohere");
       return cohere(model);
+    }
+    case "ollama": {
+      const { createOllama } = await import("ollama-ai-provider");
+      const baseURL = process.env.OLLAMA_BASE_URL?.trim();
+      const factory = baseURL ? createOllama({ baseURL }) : createOllama();
+      return factory(model);
     }
   }
 }

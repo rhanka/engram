@@ -149,6 +149,23 @@ describe("LLM execution ports", () => {
     expect(directProviderCredentialEnv("gemini")).toEqual(["GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"]);
   });
 
+  it("accepts ollama as a credential-free local direct provider", () => {
+    const root = makeTempDir();
+    const config = normalizeProjectConfig(
+      {
+        version: 1,
+        profile: { path: "graphify/profile.yaml" },
+        inputs: { corpus: ["raw"] },
+        llm_execution: { mode: "direct", provider: "ollama" },
+      },
+      join(root, "graphify.yaml"),
+    );
+
+    expect(() => preflightLlmExecution(config.llm_execution, "text_json")).not.toThrow();
+    expect(defaultDirectLlmModel("ollama")).toBe("llama3.1");
+    expect(directProviderCredentialEnv("ollama")).toEqual([]);
+  });
+
   it("writes assistant text JSON instructions without calling a provider", async () => {
     const root = makeTempDir();
     const client = createAssistantTextJsonClient({ instructionDir: root });
@@ -230,6 +247,21 @@ describe("LLM execution ports", () => {
       schema: "graphify_extraction_v1",
       prompt: "Return JSON only.",
     })).rejects.toThrow("Direct LLM response was not valid JSON");
+  });
+
+  it("rejects oversized direct JSON responses before parsing", async () => {
+    generateTextMock.mockResolvedValue({
+      text: `{"nodes":[],"edges":[],"padding":"${"x".repeat(10 * 1024 * 1024)}"}`,
+      finishReason: "stop",
+      usage: {},
+    });
+    process.env.MISTRAL_API_KEY = "test-key";
+    const client = createDirectTextJsonClient({ provider: "mistral" });
+
+    await expect(client.generateJson({
+      schema: "graphify_extraction_v1",
+      prompt: "Return JSON only.",
+    })).rejects.toThrow("Direct LLM response exceeds");
   });
 
   it("redacts likely secrets from audit metadata", () => {

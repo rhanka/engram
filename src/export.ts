@@ -58,8 +58,26 @@ function nodeCommunityMap(communities: NumericMapLike<string[]>): Map<string, nu
   return result;
 }
 
-function cypherEscape(s: string): string {
-  return s.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+function cypherEscape(value: unknown): string {
+  let out = "";
+  for (const ch of String(value ?? "")) {
+    const code = ch.charCodeAt(0);
+    if (ch === "\\") out += "\\\\";
+    else if (ch === "'") out += "\\'";
+    else if (ch === "\n") out += "\\n";
+    else if (ch === "\r") out += "\\r";
+    else if (ch === "\t") out += "\\t";
+    else if (code < 0x20 || code === 0x7f || code === 0x2028 || code === 0x2029) out += " ";
+    else out += ch;
+  }
+  return out;
+}
+
+function cypherIdentifier(value: unknown, fallback: string): string {
+  const cleaned = String(value ?? "")
+    .replace(/[^A-Za-z0-9_]/g, "")
+    .replace(/^_+/, "");
+  return cleaned && /^[A-Za-z]/.test(cleaned) ? cleaned : fallback;
 }
 
 function isCommunityLabelOptions(
@@ -218,17 +236,17 @@ export function toCypher(G: Graph, outputPath: string): void {
     const nodeIdEsc = cypherEscape(nodeId);
     const rawFt = ((data.file_type as string) ?? "unknown")
       .charAt(0).toUpperCase() + ((data.file_type as string) ?? "unknown").slice(1);
-    const cleaned = rawFt.replace(/[^A-Za-z0-9_]/g, "");
-    const ftype = cleaned && /^[A-Za-z]/.test(cleaned) ? cleaned : "Entity";
+    const ftype = cypherIdentifier(rawFt, "Entity");
     lines.push(`MERGE (n:${ftype} {id: '${nodeIdEsc}', label: '${label}'});`);
   });
 
   lines.push("");
 
   G.forEachEdge((_edge, data, u, v) => {
-    const rel = ((data.relation as string) ?? "RELATES_TO")
-      .toUpperCase()
-      .replace(/[^A-Za-z0-9_]/g, "_");
+    const rel = cypherIdentifier(
+      ((data.relation as string) ?? "RELATES_TO").toUpperCase(),
+      "RELATES_TO",
+    );
     const conf = cypherEscape((data.confidence as string) ?? "EXTRACTED");
     const uEsc = cypherEscape(u);
     const vEsc = cypherEscape(v);
@@ -251,7 +269,7 @@ function neo4jRelation(relation: string): string {
     .toUpperCase()
     .replace(/[\s-]+/g, "_")
     .replace(/[^A-Z0-9_]/g, "_");
-  return sanitized || "RELATED_TO";
+  return sanitized && /^[A-Z]/.test(sanitized) ? sanitized : "RELATED_TO";
 }
 
 function scalarProps(data: Record<string, unknown>): Record<string, string | number | boolean> {

@@ -108,9 +108,16 @@ describe("CLI platform-scoped version checks", () => {
     expect(getPlatformsToCheck(["vscode", "install"])).toEqual(["vscode-copilot-chat"]);
   });
 
+  it("checks positional install platforms and Kimi Code", () => {
+    expect(getPlatformsToCheck(["install", "opencode"])).toEqual(["opencode"]);
+    expect(getPlatformsToCheck(["install", "--platform", "kimi"])).toEqual(["kimi"]);
+    expect(getPlatformsToCheck(["install", "kimi"])).toEqual(["kimi"]);
+  });
+
   it("does not warn for unrelated global skills on generic commands", () => {
     expect(getPlatformsToCheck(["hook", "status"])).toEqual([]);
     expect(getPlatformsToCheck(["query", "--graph", "graphify-out/graph.json", "install flow"])).toEqual([]);
+    expect(getPlatformsToCheck(["query", "kimi"])).toEqual([]);
   });
 
   it("warns and repairs when a version marker exists but SKILL.md is missing", async () => {
@@ -127,6 +134,68 @@ describe("CLI platform-scoped version checks", () => {
 
       expect(result.logs.join("\n")).toContain("SKILL.md is missing");
       expect(existsSync(join(skillDir, "SKILL.md"))).toBe(true);
+    } finally {
+      if (previousHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = previousHome;
+      }
+    }
+  });
+
+  it("supports upstream positional install platform syntax", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-cli-install-positional-"));
+    tempDirs.push(dir);
+    const previousHome = process.env.HOME;
+    process.env.HOME = dir;
+    try {
+      const result = await runCli(["install", "opencode"], dir);
+
+      expect(result.exitCode).toBe(0);
+      expect(existsSync(join(dir, ".config", "opencode", "skills", "graphify", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(dir, ".claude", "skills", "graphify", "SKILL.md"))).toBe(false);
+    } finally {
+      if (previousHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = previousHome;
+      }
+    }
+  });
+
+  it("rejects conflicting install platform selectors", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-cli-install-conflict-"));
+    tempDirs.push(dir);
+    const previousHome = process.env.HOME;
+    process.env.HOME = dir;
+    try {
+      const result = await runCli(["install", "opencode", "--platform", "codex"], dir, {
+        interceptExit: true,
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.errors.join("\n")).toContain("specify install platform only once");
+      expect(existsSync(join(dir, ".config", "opencode", "skills", "graphify", "SKILL.md"))).toBe(false);
+      expect(existsSync(join(dir, ".agents", "skills", "graphify", "SKILL.md"))).toBe(false);
+    } finally {
+      if (previousHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = previousHome;
+      }
+    }
+  });
+
+  it("supports Kimi Code as an install platform", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-cli-install-kimi-"));
+    tempDirs.push(dir);
+    const previousHome = process.env.HOME;
+    process.env.HOME = dir;
+    try {
+      const result = await runCli(["install", "--platform", "kimi"], dir);
+
+      expect(result.exitCode).toBe(0);
+      expect(existsSync(join(dir, ".kimi", "skills", "graphify", "SKILL.md"))).toBe(true);
     } finally {
       if (previousHome === undefined) {
         delete process.env.HOME;

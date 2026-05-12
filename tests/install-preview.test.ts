@@ -84,11 +84,22 @@ describe("install mutation previews", () => {
   });
 
   it("lists global skill files for upstream v4 assistant platforms", () => {
-    for (const platformName of ["hermes", "antigravity", "vscode-copilot-chat"]) {
+    for (const platformName of ["hermes", "antigravity", "vscode-copilot-chat", "kimi"]) {
       const preview = globalSkillInstallPreview(platformName);
       expect(preview.writes.some((path) => path.endsWith("skills/graphify/SKILL.md"))).toBe(true);
       expect(preview.writes.some((path) => path.endsWith("skills/graphify/.graphify_version"))).toBe(true);
     }
+  });
+
+  it("lists Kimi Code global skill files", () => {
+    const preview = globalSkillInstallPreview("kimi");
+
+    expect(preview.writes).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(join(".kimi", "skills", "graphify", "SKILL.md")),
+        expect.stringContaining(join(".kimi", "skills", "graphify", ".graphify_version")),
+      ]),
+    );
   });
 
   it("prints the preview before mutating project install files", () => {

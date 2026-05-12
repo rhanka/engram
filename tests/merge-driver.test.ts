@@ -111,4 +111,21 @@ describe("merge graph driver", () => {
     });
     expect(merged.graph?.built_from_commit).toBeNull();
   });
+
+  it("rejects graph inputs above the merge-driver node cap", () => {
+    const dir = tempDir();
+    const ancestor = join(dir, "ancestor.json");
+    const current = join(dir, "current.json");
+    const other = join(dir, "other.json");
+    const tooManyNodes = Array.from({ length: 100_001 }, (_, index) => ({
+      id: `node_${index}`,
+      label: `Node ${index}`,
+    }));
+
+    writeFileSync(ancestor, JSON.stringify({ directed: false, graph: {}, nodes: [], links: [] }), "utf-8");
+    writeFileSync(current, JSON.stringify({ directed: false, graph: {}, nodes: tooManyNodes, links: [] }), "utf-8");
+    writeFileSync(other, JSON.stringify({ directed: false, graph: {}, nodes: [], links: [] }), "utf-8");
+
+    expect(() => mergeGraphJsonFiles(ancestor, current, other)).toThrow("exceeds 100000-node cap");
+  });
 });
