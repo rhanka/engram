@@ -213,6 +213,7 @@ describe("LLM execution ports", () => {
     const client = createDirectTextJsonClient({
       provider: "openai",
       model: "gpt-5.5",
+      maxOutputTokens: 1024,
     });
 
     const result = await client.generateJson({
@@ -229,6 +230,7 @@ describe("LLM execution ports", () => {
     expect(generateTextMock).toHaveBeenCalledWith(expect.objectContaining({
       model: { provider: "openai", model: "gpt-5.5" },
       temperature: 0,
+      maxOutputTokens: 1024,
     }));
     expect(JSON.parse(readFileSync(outputPath, "utf-8"))).toMatchObject({
       nodes: [],

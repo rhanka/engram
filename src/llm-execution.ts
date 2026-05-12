@@ -96,6 +96,7 @@ export interface DirectTextJsonClientOptions {
   provider: DirectLlmProvider;
   model?: string;
   temperature?: number;
+  maxOutputTokens?: number;
 }
 
 function safeName(value: string): string {
@@ -336,6 +337,7 @@ export function createDirectTextJsonClient(options: DirectTextJsonClientOptions)
   const provider = options.provider;
   const model = options.model?.trim() || defaultDirectLlmModel(provider);
   const temperature = options.temperature ?? 0;
+  const maxOutputTokens = options.maxOutputTokens;
   return {
     mode: "direct",
     provider,
@@ -348,6 +350,7 @@ export function createDirectTextJsonClient(options: DirectTextJsonClientOptions)
       const result = await generateText({
         model: resolvedModel as never,
         temperature,
+        ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
         system: [
           "You are Graphify's JSON extraction backend.",
           "Return only valid JSON matching the requested schema.",

@@ -54,6 +54,7 @@ describeIf("Direct LLM real provider integration", () => {
     const client = createDirectTextJsonClient({
       provider,
       model: defaultDirectLlmModel(provider),
+      maxOutputTokens: 1024,
     });
 
     const result = await client.generateJson({
