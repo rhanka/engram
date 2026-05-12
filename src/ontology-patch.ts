@@ -1,10 +1,12 @@
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import type { ProfileState } from "./configured-dataprep.js";
 import type { NormalizedOntologyProfile, OntologyStatus } from "./types.js";
 
 export const ONTOLOGY_PATCH_SCHEMA = "graphify_ontology_patch_v1";
+export const ONTOLOGY_RECONCILIATION_DECISION_LOG_SCHEMA =
+  "graphify_ontology_reconciliation_decision_log_v1" as const;
 
 export type OntologyPatchOperation =
   | "accept_match"
@@ -100,6 +102,32 @@ export interface OntologyPatchApplyResult {
   changed_files: OntologyPatchChangedFile[];
 }
 
+export type OntologyReconciliationDecisionLogSource = "authoritative" | "audit";
+
+export interface OntologyReconciliationDecisionLogItem {
+  source: OntologyReconciliationDecisionLogSource;
+  path: string;
+  recorded_at: string | null;
+  patch: Record<string, unknown>;
+}
+
+export interface OntologyReconciliationDecisionLogResponse {
+  schema: typeof ONTOLOGY_RECONCILIATION_DECISION_LOG_SCHEMA;
+  total: number;
+  limit: number;
+  offset: number;
+  items: OntologyReconciliationDecisionLogItem[];
+  issues: OntologyPatchIssue[];
+}
+
+export interface OntologyReconciliationDecisionLogOptions {
+  authoritativePath?: string;
+  auditPath?: string;
+  rootDir?: string;
+  limit?: number;
+  offset?: number;
+}
+
 const OPERATIONS = new Set<OntologyPatchOperation>([
   "accept_match",
   "reject_match",
@@ -114,6 +142,92 @@ const OPERATIONS = new Set<OntologyPatchOperation>([
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readableLogPath(path: string, rootDir?: string): string {
+  const resolved = resolve(path);
+  if (rootDir) {
+    const fromRoot = relative(resolve(rootDir), resolved);
+    if (fromRoot === "") return ".";
+    if (!fromRoot.startsWith("..") && !fromRoot.startsWith(sep) && !isAbsolute(fromRoot)) {
+      return fromRoot;
+    }
+  }
+  const fromCwd = relative(process.cwd(), resolved);
+  if (fromCwd === "") return ".";
+  if (!fromCwd.startsWith("..") && !fromCwd.startsWith(sep) && !isAbsolute(fromCwd)) {
+    return fromCwd;
+  }
+  const home = process.env.HOME;
+  if (home && resolved.startsWith(home + sep)) {
+    return `~/${relative(home, resolved)}`;
+  }
+  return resolved;
+}
+
+function parseDecisionLogPath(
+  options: OntologyReconciliationDecisionLogOptions,
+  source: OntologyReconciliationDecisionLogSource,
+  issues: OntologyPatchIssue[],
+): OntologyReconciliationDecisionLogItem[] {
+  const path = source === "authoritative" ? options.authoritativePath : options.auditPath;
+  if (!path) return [];
+  const resolvedPath = resolve(path);
+  if (options.rootDir && !isInside(resolvedPath, options.rootDir)) {
+    issues.push({ severity: "warning", message: `${source} path escapes rootDir` });
+    return [];
+  }
+  const readablePath = readableLogPath(resolvedPath, options.rootDir);
+  if (!existsSync(resolvedPath)) {
+    issues.push({ severity: "warning", message: `${source} path not found: ${readablePath}` });
+    return [];
+  }
+
+  const items: OntologyReconciliationDecisionLogItem[] = [];
+  let content: string;
+  try {
+    content = readFileSync(resolvedPath, "utf-8");
+  } catch (error) {
+    issues.push({
+      severity: "warning",
+      message: `${source} could not be read: ${readablePath} (${error instanceof Error ? error.message : String(error)})`,
+    });
+    return [];
+  }
+
+  const lines = content.split(/\r?\n/u);
+  for (let lineNumber = 0; lineNumber < lines.length; lineNumber += 1) {
+    const rawLine = lines[lineNumber];
+    const line = rawLine === undefined ? "" : rawLine.trim();
+    if (!line) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch (error) {
+      issues.push({
+        severity: "warning",
+        message: `${source} has malformed JSON at line ${lineNumber + 1}: ${readablePath}`,
+      });
+      continue;
+    }
+    if (!isRecord(parsed)) {
+      issues.push({
+        severity: "warning",
+        message: `${source} has non-object JSON at line ${lineNumber + 1}: ${readablePath}`,
+      });
+      continue;
+    }
+    const recordedAt = nonEmptyString(parsed.applied_at) ?? nonEmptyString(parsed.recorded_at) ?? nonEmptyString(parsed.created_at);
+    const patchValue = parsed.patch;
+    const patch = isRecord(patchValue) ? patchValue : parsed;
+    items.push({
+      source,
+      path: readablePath,
+      recorded_at: recordedAt ?? null,
+      patch,
+    });
+  }
+  return items;
 }
 
 function nonEmptyString(value: unknown): string | null {
@@ -327,6 +441,29 @@ export function validateOntologyPatch(value: unknown, context: OntologyPatchCont
     schema: "graphify_ontology_patch_validation_v1",
     patch_id: patch.id,
     valid: issues.every((issue) => issue.severity !== "error"),
+    issues,
+  };
+}
+
+export function loadOntologyReconciliationDecisionLog(
+  options: OntologyReconciliationDecisionLogOptions,
+): OntologyReconciliationDecisionLogResponse {
+  const issues: OntologyPatchIssue[] = [];
+  const sourceOrder: OntologyReconciliationDecisionLogSource[] = ["authoritative", "audit"];
+  const allItems = sourceOrder.flatMap((source) => parseDecisionLogPath(options, source, issues));
+
+  const offset = Math.max(0, Math.floor(options.offset ?? 0));
+  const limitValue = options.limit ?? Number.POSITIVE_INFINITY;
+  const limit = Number.isFinite(limitValue) ? Math.max(0, Math.floor(limitValue)) : Number.POSITIVE_INFINITY;
+  const resolvedOffset = Math.min(offset, allItems.length);
+  const end = Number.isFinite(limit) ? resolvedOffset + limit : undefined;
+
+  return {
+    schema: ONTOLOGY_RECONCILIATION_DECISION_LOG_SCHEMA,
+    total: allItems.length,
+    limit: Number.isFinite(limit) ? limit : allItems.length - resolvedOffset,
+    offset,
+    items: allItems.slice(resolvedOffset, end),
     issues,
   };
 }

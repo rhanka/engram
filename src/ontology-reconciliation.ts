@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 import type { OntologyPatchContext, OntologyPatchNode } from "./ontology-patch.js";
 
 export const ONTOLOGY_RECONCILIATION_CANDIDATES_SCHEMA = "graphify_ontology_reconciliation_candidates_v1" as const;
+export const ONTOLOGY_RECONCILIATION_CANDIDATES_RESPONSE_SCHEMA =
+  "graphify_ontology_reconciliation_candidates_response_v1" as const;
 
 export type OntologyReconciliationCandidateKind = "entity_match";
 export type OntologyReconciliationCandidateStatus = "candidate";
@@ -29,6 +31,33 @@ export interface OntologyReconciliationCandidateQueue {
   generated_at: string;
   candidate_count: number;
   candidates: OntologyReconciliationCandidate[];
+}
+
+export interface OntologyReconciliationCandidateFilter {
+  status?: OntologyReconciliationCandidateStatus;
+  kind?: OntologyReconciliationCandidateKind;
+  operation?: OntologyReconciliationCandidate["proposed_patch_operation"];
+  canonical_id?: string;
+  candidate_id?: string;
+  min_score?: number;
+  query?: string;
+  sort?: "score" | "id";
+  order?: "asc" | "desc";
+  limit?: number;
+  offset?: number;
+  stale?: boolean;
+}
+
+export interface OntologyReconciliationCandidatesResponse {
+  schema: typeof ONTOLOGY_RECONCILIATION_CANDIDATES_RESPONSE_SCHEMA;
+  generated_at: string;
+  graph_hash: string;
+  profile_hash: string;
+  stale: boolean;
+  total: number;
+  limit: number;
+  offset: number;
+  items: OntologyReconciliationCandidate[];
 }
 
 export interface GenerateOntologyReconciliationCandidatesOptions {
@@ -97,6 +126,89 @@ function candidateId(canonical: OntologyPatchNode, candidate: OntologyPatchNode,
     candidate.id,
     ...sharedTerms,
   ].join("|")).slice(0, 24)}`;
+}
+
+export function loadOntologyReconciliationCandidates(path: string): OntologyReconciliationCandidateQueue {
+  return JSON.parse(readFileSync(resolve(path), "utf-8")) as OntologyReconciliationCandidateQueue;
+}
+
+export function queryOntologyReconciliationCandidates(
+  queue: OntologyReconciliationCandidateQueue,
+  options: OntologyReconciliationCandidateFilter = {},
+): OntologyReconciliationCandidatesResponse {
+  const sortKey = options.sort ?? "score";
+  const order = options.order ?? "desc";
+  const query = options.query?.trim().toLowerCase();
+  const status = options.status;
+  const kind = options.kind;
+  const operation = options.operation;
+  const canonicalId = options.canonical_id;
+  const candidateIdFilter = options.candidate_id;
+  const minScore = options.min_score;
+  const offset = Math.max(0, Math.floor(options.offset ?? 0));
+  const limitValue = options.limit ?? Number.POSITIVE_INFINITY;
+  const hasExplicitLimit = Number.isFinite(limitValue);
+  const limit = hasExplicitLimit ? Math.max(0, Math.floor(limitValue)) : Number.POSITIVE_INFINITY;
+
+  const filtered = queue.candidates.filter((candidate) => {
+    if (status !== undefined && candidate.status !== status) return false;
+    if (kind !== undefined && candidate.kind !== kind) return false;
+    if (operation !== undefined && candidate.proposed_patch_operation !== operation) return false;
+    if (canonicalId !== undefined && candidate.canonical_id !== canonicalId) return false;
+    if (candidateIdFilter !== undefined && candidate.candidate_id !== candidateIdFilter) return false;
+    if (typeof minScore === "number" && candidate.score < minScore) return false;
+    if (!query) return true;
+
+    const haystack = [
+      candidate.id,
+      candidate.kind,
+      candidate.status,
+      candidate.candidate_id,
+      candidate.canonical_id,
+      candidate.proposed_patch_operation,
+      ...candidate.shared_terms,
+      ...candidate.evidence_refs,
+      ...candidate.reasons,
+    ]
+      .join(" ")
+      .toLowerCase();
+
+    return haystack.includes(query);
+  });
+
+  filtered.sort((left, right) => {
+    if (sortKey === "id") {
+      const orderDelta = left.id.localeCompare(right.id);
+      return order === "asc" ? orderDelta : -orderDelta;
+    }
+    const scoreDelta = left.score - right.score;
+    if (scoreDelta !== 0) return order === "asc" ? scoreDelta : -scoreDelta;
+    return left.id.localeCompare(right.id);
+  });
+
+  const resolvedLimit = Number.isFinite(limit) ? limit : filtered.length;
+  const start = Math.min(offset, filtered.length);
+  const end = Number.isFinite(resolvedLimit) ? start + resolvedLimit : undefined;
+  const items = filtered.slice(start, end);
+
+  return {
+    schema: ONTOLOGY_RECONCILIATION_CANDIDATES_RESPONSE_SCHEMA,
+    generated_at: queue.generated_at,
+    graph_hash: queue.graph_hash,
+    profile_hash: queue.profile_hash,
+    stale: options.stale ?? false,
+    total: filtered.length,
+    limit: Number.isFinite(resolvedLimit) ? resolvedLimit : items.length,
+    offset,
+    items,
+  };
+}
+
+export function filterOntologyReconciliationCandidates(
+  queue: OntologyReconciliationCandidateQueue,
+  options: OntologyReconciliationCandidateFilter = {},
+): OntologyReconciliationCandidatesResponse {
+  return queryOntologyReconciliationCandidates(queue, options);
 }
 
 export function generateOntologyReconciliationCandidates(

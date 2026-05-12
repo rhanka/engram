@@ -98,10 +98,18 @@ export {
   compileOntologyOutputs,
 } from "./ontology-output.js";
 export {
+  filterOntologyReconciliationCandidates,
   generateOntologyReconciliationCandidates,
+  loadOntologyReconciliationCandidates,
   ONTOLOGY_RECONCILIATION_CANDIDATES_SCHEMA,
+  ONTOLOGY_RECONCILIATION_CANDIDATES_RESPONSE_SCHEMA,
+  queryOntologyReconciliationCandidates,
   writeOntologyReconciliationCandidates,
 } from "./ontology-reconciliation.js";
+export {
+  loadOntologyReconciliationDecisionLog,
+  ONTOLOGY_RECONCILIATION_DECISION_LOG_SCHEMA,
+} from "./ontology-patch.js";
 export type {
   AssistantLlmClientOptions,
   BatchVisionExportInput,
@@ -159,8 +167,16 @@ export type {
 export type {
   GenerateOntologyReconciliationCandidatesOptions,
   OntologyReconciliationCandidate,
+  OntologyReconciliationCandidateFilter,
   OntologyReconciliationCandidateQueue,
+  OntologyReconciliationCandidatesResponse,
 } from "./ontology-reconciliation.js";
+export type {
+  OntologyReconciliationDecisionLogItem,
+  OntologyReconciliationDecisionLogOptions,
+  OntologyReconciliationDecisionLogResponse,
+  OntologyReconciliationDecisionLogSource,
+} from "./ontology-patch.js";
 export {
   bindOntologyProfile,
   hashOntologyProfile,
@@ -236,6 +252,8 @@ export { toJson, toHtml, toSvg, toGraphml, toCypher, toCanvas, pushToNeo4j } fro
 export { toWiki } from "./wiki.js";
 export { WIKI_DESCRIPTION_PROMPT_VERSION, WIKI_DESCRIPTION_SCHEMA, buildWikiDescriptionCacheKey, createInsufficientEvidenceRecord, validateWikiDescriptionSidecar } from "./wiki-descriptions.js";
 export type { CreateInsufficientEvidenceRecordInput, WikiCommunityDescriptionSidecar, WikiDescriptionCacheKeyInput, WikiDescriptionEvidenceRef, WikiDescriptionExecutionMode, WikiDescriptionGenerator, WikiDescriptionSidecar, WikiDescriptionSidecarIndex, WikiDescriptionStatus, WikiDescriptionTargetKind, WikiGeneratedDescriptionSidecar, WikiInsufficientEvidenceSidecar, WikiNodeDescriptionSidecar } from "./wiki-descriptions.js";
+export { buildWikiDescriptionPrompt, collectWikiDescriptionTargets, generateWikiDescriptionSidecars } from "./wiki-description-generation.js";
+export type { BuildWikiDescriptionPromptOptions, CollectWikiDescriptionTargetsOptions, GenerateWikiDescriptionSidecarsClients, GenerateWikiDescriptionSidecarsOptions, WikiDescriptionGenerationResult, WikiDescriptionGenerationStatus, WikiDescriptionGenerationTargetResult, WikiDescriptionGenerationTargetStatus, WikiDescriptionNeighbor, WikiDescriptionTargetCollection, WikiDescriptionTargetContext } from "./wiki-description-generation.js";
 export { detect, classifyFile, detectIncremental, saveManifest } from "./detect.js";
 export { extract, collectFiles } from "./extract.js";
 export { fileHash, loadCached, saveCached, checkSemanticCache, saveSemanticCache } from "./cache.js";

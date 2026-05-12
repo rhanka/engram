@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 import {
   generateOntologyReconciliationCandidates,
   ONTOLOGY_RECONCILIATION_CANDIDATES_SCHEMA,
+  ONTOLOGY_RECONCILIATION_CANDIDATES_RESPONSE_SCHEMA,
+  loadOntologyReconciliationCandidates,
+  queryOntologyReconciliationCandidates,
+  type OntologyReconciliationCandidate,
+  type OntologyReconciliationCandidateFilter,
 } from "../src/ontology-reconciliation.js";
 import type { OntologyPatchContext } from "../src/ontology-patch.js";
 import type { NormalizedOntologyProfile } from "../src/types.js";
@@ -94,6 +102,155 @@ function context(): OntologyPatchContext {
 }
 
 describe("ontology reconciliation candidates", () => {
+  it("loads and pages filtered candidate responses deterministically", () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-ontology-candidates-"));
+    const path = join(dir, "candidates.json");
+    const queue = {
+      schema: "graphify_ontology_reconciliation_candidates_v1" as const,
+      graph_hash: "graph-hash",
+      profile_hash: "profile-hash",
+      generated_at: "2026-05-09T00:00:00.000Z",
+      candidate_count: 3,
+      candidates: [
+        {
+          id: "candidate-b",
+          kind: "entity_match",
+          status: "candidate",
+          score: 0.95,
+          candidate_id: "node-b",
+          canonical_id: "canon-2",
+          shared_terms: ["shared"],
+          evidence_refs: ["source.md#b"],
+          reasons: ["same node type: Component", "shared normalized term(s): shared"],
+          proposed_patch_operation: "accept_match",
+        },
+        {
+          id: "candidate-a",
+          kind: "entity_match",
+          status: "candidate",
+          score: 0.85,
+          candidate_id: "node-a",
+          canonical_id: "canon-1",
+          shared_terms: ["shared"],
+          evidence_refs: ["source.md#a"],
+          reasons: ["same node type: Component", "shared normalized term(s): shared"],
+          proposed_patch_operation: "accept_match",
+        },
+        {
+          id: "candidate-c",
+          kind: "entity_match",
+          status: "candidate",
+          score: 0.55,
+          candidate_id: "node-c",
+          canonical_id: "canon-1",
+          shared_terms: ["shared-other"],
+          evidence_refs: ["source.md#c"],
+          reasons: ["same node type: Component", "shared normalized term(s): shared-other"],
+          proposed_patch_operation: "accept_match",
+        },
+      ] satisfies OntologyReconciliationCandidate[],
+    };
+    writeFileSync(path, JSON.stringify(queue, null, 2), "utf-8");
+
+    const loaded = loadOntologyReconciliationCandidates(path);
+    const response = queryOntologyReconciliationCandidates(loaded, {
+      canonical_id: "canon-1",
+      min_score: 0.6,
+      sort: "score",
+      order: "desc",
+      limit: 1,
+      offset: 0,
+      query: "node",
+    });
+
+    expect(loaded.candidate_count).toBe(3);
+    expect(response.schema).toBe(ONTOLOGY_RECONCILIATION_CANDIDATES_RESPONSE_SCHEMA);
+    expect(response.total).toBe(1);
+    expect(response.limit).toBe(1);
+    expect(response.offset).toBe(0);
+    expect(response.items).toMatchObject([
+      {
+        id: "candidate-a",
+        canonical_id: "canon-1",
+        candidate_id: "node-a",
+      },
+    ]);
+  });
+
+  it("supports score/id sort direction and query-based candidate search", () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-ontology-candidates-"));
+    const path = join(dir, "candidates.json");
+    const queue = {
+      schema: "graphify_ontology_reconciliation_candidates_v1" as const,
+      graph_hash: "graph-hash",
+      profile_hash: "profile-hash",
+      generated_at: "2026-05-09T00:00:00.000Z",
+      candidate_count: 3,
+      candidates: [
+        {
+          id: "zz-candidate",
+          kind: "entity_match",
+          status: "candidate",
+          score: 0.75,
+          candidate_id: "node-1",
+          canonical_id: "canon-1",
+          shared_terms: ["shared"],
+          evidence_refs: ["source.md#1"],
+          reasons: ["same node type: Component", "shared normalized term(s): shared"],
+          proposed_patch_operation: "accept_match",
+        },
+        {
+          id: "aa-candidate",
+          kind: "entity_match",
+          status: "candidate",
+          score: 0.99,
+          candidate_id: "node-2",
+          canonical_id: "canon-2",
+          shared_terms: ["shared"],
+          evidence_refs: ["source.md#2"],
+          reasons: ["same node type: Component", "shared normalized term(s): shared"],
+          proposed_patch_operation: "accept_match",
+        },
+        {
+          id: "mm-candidate",
+          kind: "entity_match",
+          status: "candidate",
+          score: 0.88,
+          candidate_id: "node-2",
+          canonical_id: "canon-3",
+          shared_terms: ["other"],
+          evidence_refs: ["source.md#3"],
+          reasons: ["same node type: Component", "shared normalized term(s): other"],
+          proposed_patch_operation: "accept_match",
+        },
+      ] satisfies OntologyReconciliationCandidate[],
+    };
+    writeFileSync(path, JSON.stringify(queue, null, 2), "utf-8");
+    const loaded = loadOntologyReconciliationCandidates(path);
+    const filters: OntologyReconciliationCandidateFilter = {
+      status: "candidate",
+      query: "node-2",
+      sort: "id",
+      order: "asc",
+      operation: "accept_match",
+      limit: 2,
+      offset: 0,
+    };
+    const response = queryOntologyReconciliationCandidates(loaded, filters);
+
+    expect(response.total).toBe(2);
+    expect(response.items).toMatchObject([
+      {
+        id: "aa-candidate",
+        candidate_id: "node-2",
+      },
+      {
+        id: "mm-candidate",
+        candidate_id: "node-2",
+      },
+    ]);
+  });
+
   it("generates deterministic entity-match candidates from shared normalized terms", () => {
     const first = generateOntologyReconciliationCandidates(context(), {
       generatedAt: "2026-05-09T00:00:00.000Z",
