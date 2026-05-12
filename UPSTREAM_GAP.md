@@ -15,7 +15,8 @@ This document tracks the delta between this TypeScript port and upstream Python 
 - Closed Python `v6` parity line: remote `upstream/v6` at `f81e3bc2154d21062f56f9e4ec9f923dfe7d128e`
 - Closed parity source lock for the `0.7.4` cycle: effective `upstream/v7` target `26a5a35200dda6207bf6fc16afed83c71238bb65`
 - Closed parity target commit for `0.7.4`: `26a5a35200dda6207bf6fc16afed83c71238bb65` on `upstream/v7`, with feature commit `741ac3655bd33314e1aaca51e6fd30271c74c61b`
-- Active Python drift lock: remote `upstream/v7` observed on 2026-05-08 at `0c29b2cb88c6274d889ca7c33a684ce103808715`, with remote tag `v0.7.10` at `ef1050b0e4134df0bd59956b0f900dc3c83e8184`
+- Closed Python `0.7.10` drift lock: remote `upstream/v7` observed on 2026-05-08 at `0c29b2cb88c6274d889ca7c33a684ce103808715`, with remote tag `v0.7.10` at `ef1050b0e4134df0bd59956b0f900dc3c83e8184`
+- Observed Python drift lock for the next pass: remote `upstream/v7` observed on 2026-05-12 at `ab32098063adb1ab4d9247747742958ad185db41`, with remote tag `v0.7.16` at the same commit
 - Active CRG stable review reference: `tirth8205/code-review-graph` tag `v2.3.3` at `52cf3bc63ee77c8b204fb809791a5f212e83a2de`
 - Current implementation branch for traceability work: `feat/upstream-0.7.10-lot4-providers` (`graphifyy@0.7.10` package target)
 
@@ -28,6 +29,7 @@ This document tracks the delta between this TypeScript port and upstream Python 
 - Python `upstream/v6` was observed on 2026-05-04 and is now a closed parity line at `f81e3bc2154d21062f56f9e4ec9f923dfe7d128e`.
 - Python `upstream/v7` was observed on 2026-05-04 for the closed `0.7.0` to `0.7.4` parity cycle.
 - Python `upstream/v7` was re-fetched on 2026-05-08 and advanced to `0c29b2cb88c6274d889ca7c33a684ce103808715`; this opened the `0.7.5` to `0.7.10` plus post-tag realignment cycle now closed below.
+- Python `upstream/v7` was re-scanned on 2026-05-12 after the `0.7.10` checkpoint merge and advanced to `ab32098063adb1ab4d9247747742958ad185db41`; remote tags now extend through `v0.7.16`.
 - Fetched local tags `v0.7.0` through `v0.7.4` all resolve to `f81e3bc2154d21062f56f9e4ec9f923dfe7d128e`; do not use those local tag pointers as proof for `0.7.x` parity. Follow the `upstream/v7` commit history instead.
 - Remote tag `v1.0.0` exists upstream, but the active upstream release train is still `v6` / `0.7.x`; do not target `1.0.0` until a separate traceability pass proves that line is the real parity target.
 - Local `v0.4.28`..`v0.4.32` tags are not trusted for parity claims while tag clobber risk exists; use branch commits and `git ls-remote` instead.
@@ -36,6 +38,22 @@ This document tracks the delta between this TypeScript port and upstream Python 
 - Package version alignment is driven by Python Graphify parity targets, not by `code-review-graph` tags or `main`.
 - The active `0.7.10` realignment must stay TypeScript-only; no new Python dependency may be introduced to claim parity.
 - The `0.7.10` parity cycle is closed in the TypeScript release line; any newer upstream drift must start a new traceability pass.
+
+## Active `0.7.16` Drift Intake
+
+Observed on 2026-05-12 after merging the `0.7.10` checkpoint:
+
+- Safi Python Graphify: `upstream/v7` at `ab32098063adb1ab4d9247747742958ad185db41`, remote tag `v0.7.16` at the same commit.
+- New remote tags since the previous pass: `v0.7.11`, `v0.7.12`, `v0.7.13`, `v0.7.14`, `v0.7.15`, `v0.7.16`.
+- The TypeScript product must triage this drift in small lots while keeping descriptions and reconciliation moving.
+
+| Source | Bucket | Examples | Initial TS status | Initial action |
+| --- | --- | --- | --- | --- |
+| Python `v0.7.11`..`v0.7.16` | Runtime and platform hotfixes | context-window retry, Windows console unblock, `__main__` guards, MultiGraph crash, hollow LLM response retry, universal help guard, `--version`, Unicode IDs, edge-key dedup, direction flip, chunk paths, encoding, uv fallback, path scoring, cache, OpenCode trigger | `needs-triage` | Classify each fix as `must-port`, `already-covered`, `intentional-delta`, or `defer`; port urgent runtime fixes before feature work. |
+| Python `v0.7.11`..`v0.7.16` | Ollama runtime tuning | dynamic `num_ctx`, `keep_alive`, serial defaults, `GRAPHIFY_OLLAMA_NUM_CTX`, `GRAPHIFY_OLLAMA_KEEP_ALIVE` docs | `needs-triage` | Compare against TS Ollama provider surface and port only env/runtime controls that matter for local direct extraction. |
+| Python `v0.7.11`..`v0.7.16` | Parser/language surface | Pascal, Delphi, Lazarus IDE files, regex fallback without tree-sitter-pascal | `needs-triage` | Decide whether Pascal/Delphi/Lazarus is a quick regex-backed TS extractor lot or deferred until requested. |
+| Python `v0.7.11`..`v0.7.16` | Visualization/export | callflow HTML export with Mermaid architecture diagrams and watch/hook auto-regeneration | `needs-triage` / `opportunity` | Decide whether this belongs to core export parity, CRG/review UX, or a deferred visualization lot. |
+| Python `v0.7.11`..`v0.7.16` | Skills/watch/hooks | hook OOM worker cap, Antigravity `.agents` path/frontmatter, skill `--help` behavior | `needs-triage` | Audit against existing TS installer/watch contracts and add targeted tests for gaps. |
 
 ## Active `0.7.10` And CRG `v2.3.3` Realignment Intake
 

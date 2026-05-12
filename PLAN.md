@@ -186,6 +186,36 @@ Progress note:
 
 ---
 
+# Post-`0.7.10` Product Acceleration Board
+
+**Status on 2026-05-12:** PR #22 merged the Python `0.7.10` checkpoint into `main`. A same-day upstream rescan found Python Graphify `v0.7.16` on `upstream/v7`, so upstream drift remains active. Product work must not disappear behind another large parity push: source-grounded descriptions and ontology reconciliation are the next product accelerators, with CRG UX as a parallel additive track.
+
+## Operating Rules
+
+- [x] Treat `0.7.10` as the merged checkpoint and use new branches for post-merge work.
+- [x] Rescan Python upstream before any parity/release claim with `git ls-remote upstream 'refs/tags/v0.7.*' refs/heads/v7`.
+- [ ] Keep each upstream drift lot small enough to review in one sitting: scan-only commit, then runtime bugfixes, then feature ports.
+- [ ] Keep each product lot independently shippable: descriptions, reconciliation, CRG, and upstream drift must not block each other unless a shared file contract forces it.
+- [ ] Use `Fait / A faire / Attendu` reporting after every lot, including explicit UAT or decision requests.
+
+## Immediate Execution Order
+
+1. [ ] **Descriptions MVP first:** implement a no-provider-call wiki description render path from existing validated sidecars, then add mocked/direct generation behind explicit opt-in.
+2. [ ] **Reconciliation MVP second:** expose read-only candidate APIs and a deterministic decision-log preview before building any write-enabled studio.
+3. [ ] **Upstream `0.7.11`..`0.7.16` hotfix triage in parallel with product work:** classify new commits as `must-port`, `already-covered`, `intentional-delta`, or `defer`; port urgent runtime fixes first.
+4. [ ] **CRG UX third unless it unblocks reconciliation studio:** harvest accessibility and review-precision patterns without adopting SQLite, daemon, embeddings, or VS Code webview assumptions.
+
+## Active Tracks
+
+| Track | Current state | Next concrete action | UAT / Decision |
+| --- | --- | --- | --- |
+| Descriptions | Sidecar schema, cache key, validation and no-provider wiki rendering exist; generation is missing. | Add CLI/runtime flags for explicit opt-in, then mocked/direct generation. | UAT on a small code fixture and `../public-domaine-mystery-sagas-pack`. |
+| Reconciliation | Patch core, candidate queue, CLI/runtime candidate generation and write-mode MCP exist; browser/studio APIs are missing. | Add read-only candidate API surface and decision-log preview path before UI writes. | UAT with one accepted, one rejected, one alias merge and one weak-evidence review item in the public pack. |
+| CRG | `v2.3.3` is recorded as additive; UX/accessibility and review precision remain unported opportunities. | Triage keyboard/ARIA/node-shape/help-overlay and review-precision changes into Graphify-native lots. | Decide whether CRG accessibility should land in HTML export, reconciliation studio, or both. |
+| Upstream Python | `0.7.10` merged; `0.7.16` observed after rescan. | Add a `0.7.11`..`0.7.16` row-level matrix before porting. | Decide whether any upstream feature beyond hotfixes should preempt descriptions/reconciliation. |
+
+---
+
 # Next Product Evolution: Ontology Lifecycle And Reconciliation
 
 > This section is a forward implementation plan. It is independent from the closed upstream `0.7.4` catch-up and must preserve the normal non-profile Graphify behavior.
@@ -436,6 +466,8 @@ graphify extract ./tmp/direct-uat-corpus --backend openai --model gpt-5.5 --no-c
 - [x] Decide insufficient-evidence behavior: record `insufficient_evidence` in sidecar, omit Markdown paragraph.
 - [x] Create the initial feature spec.
 - [x] Add description sidecar schema and validation.
+- [x] Render existing validated sidecars in wiki pages without calling any provider.
+- [x] Add deterministic no-provider-call tests for node and community description rendering.
 - [ ] Add wiki description generation command or runtime path for assistant/direct/batch/mesh.
 - [ ] Add `--wiki-descriptions` and `--wiki-community-descriptions` or equivalent config options.
 - [ ] Render validated descriptions in community wiki pages and ontology entity pages.
@@ -486,3 +518,21 @@ graphify extract ./tmp/direct-uat-corpus --backend openai --model gpt-5.5 --no-c
 - [x] Keep embeddings, SQLite/FTS and daemon features deferred unless a separate spec is approved.
 - [x] Update README and skills only for user-facing behavior actually adopted.
 - [x] Run full release gate before any parity publish and align npm version to the chosen Python parity target.
+
+## Task M: Upstream Python `0.7.11`..`0.7.16` Drift Scan
+
+**Files:**
+- Modify: `UPSTREAM_GAP.md`
+- Modify: `spec/SPEC_UPSTREAM_TRACEABILITY.md`
+- Modify later as needed: parser, extract/update, LLM/Ollama, HTML export, watch/hooks, installers, skills, tests
+
+**Boundary:** This task is a drift-control task after the merged `0.7.10` checkpoint. It must not pause descriptions or reconciliation unless a post-`0.7.10` upstream commit fixes a bug that affects those tracks directly.
+
+- [x] Rescan upstream Python Graphify after PR #22 merge.
+- [x] Record `upstream/v7` at `ab32098063adb1ab4d9247747742958ad185db41` and remote tag `v0.7.16` at the same commit.
+- [ ] Build a row-level `0.7.11`..`0.7.16` matrix with four statuses: `must-port`, `already-covered`, `intentional-delta`, `defer`.
+- [ ] Lot M1: urgent runtime hotfix audit: context-window retry, Windows/help/version guards, Unicode IDs, edge-key dedup, direction flip, cache/path scoring, OpenCode trigger.
+- [ ] Lot M2: Ollama runtime audit: dynamic `num_ctx`, `keep_alive`, serial defaults, and env docs (`GRAPHIFY_OLLAMA_NUM_CTX`, `GRAPHIFY_OLLAMA_KEEP_ALIVE`).
+- [ ] Lot M3: language support audit: Pascal/Delphi/Lazarus and regex fallback.
+- [ ] Lot M4: callflow HTML audit: decide whether Mermaid callflow export belongs in core Graphify, CRG track, or a deferred visualization lot.
+- [ ] Lot M5: skill/watch/hook audit: Antigravity `.agents` path/frontmatter, hook worker cap/OOM behavior, skill help behavior.
