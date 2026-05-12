@@ -102,7 +102,7 @@
       "96": "Community 96",
       "97": "Community 97"
     },
-    "built_from_commit": "cad902f4b2602eff30ebeb5e3204b677fa56fb6e"
+    "built_from_commit": "0f1129797da612a5e0c13b3c1eec648c56891441"
   },
   "nodes": [
     {
@@ -1145,7 +1145,7 @@
       "label": "isDirectCliExecution()",
       "file_type": "code",
       "source_file": "src/cli.ts",
-      "source_location": "L3451",
+      "source_location": "L3457",
       "community": 30,
       "community_name": "Community 30"
     },
@@ -1299,8 +1299,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L1",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "configured_dataprep_uniqueresolved",
@@ -1308,8 +1308,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L79",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "configured_dataprep_fullpagescreenshotexcludes",
@@ -1317,8 +1317,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L83",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "configured_dataprep_buildconfigureddetectioninputs",
@@ -1326,8 +1326,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L90",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "configured_dataprep_emptydetection",
@@ -1335,8 +1335,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L105",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "configured_dataprep_countwords",
@@ -1344,8 +1344,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L117",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "configured_dataprep_warningfor",
@@ -1353,8 +1353,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L125",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "configured_dataprep_recomputedetection",
@@ -1362,8 +1362,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L139",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "configured_dataprep_mergescopeinspections",
@@ -1371,8 +1371,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L162",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "configured_dataprep_mergedetections",
@@ -1380,8 +1380,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L181",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "configured_dataprep_isinside",
@@ -1389,8 +1389,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L203",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "configured_dataprep_applyconfiguredexcludes",
@@ -1398,8 +1398,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L210",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "configured_dataprep_writejson",
@@ -1407,8 +1407,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L230",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "configured_dataprep_writeregistries",
@@ -1416,8 +1416,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L235",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "configured_dataprep_buildprofilestate",
@@ -1425,8 +1425,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L242",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "configured_dataprep_writeprofilestate",
@@ -1434,8 +1434,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L265",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "configured_dataprep_dataprepreport",
@@ -1443,8 +1443,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L269",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "configured_dataprep_resolveconfigpath",
@@ -1452,8 +1452,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L299",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "configured_dataprep_runconfigureddataprep",
@@ -1461,8 +1461,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L308",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "src_detect_changes_ts",
@@ -1623,8 +1623,8 @@
       "file_type": "code",
       "source_file": "src/detect.ts",
       "source_location": "L1",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_detect_issensitive",
@@ -1632,8 +1632,8 @@
       "file_type": "code",
       "source_file": "src/detect.ts",
       "source_location": "L58",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_detect_lookslikepaper",
@@ -1641,8 +1641,8 @@
       "file_type": "code",
       "source_file": "src/detect.ts",
       "source_location": "L63",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_detect_hascodeshebang",
@@ -1650,8 +1650,8 @@
       "file_type": "code",
       "source_file": "src/detect.ts",
       "source_location": "L75",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_detect_classifyfile",
@@ -1659,8 +1659,8 @@
       "file_type": "code",
       "source_file": "src/detect.ts",
       "source_location": "L84",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_detect_extractpdftext",
@@ -1668,8 +1668,8 @@
       "file_type": "code",
       "source_file": "src/detect.ts",
       "source_location": "L108",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_detect_docxtomarkdown",
@@ -1677,8 +1677,8 @@
       "file_type": "code",
       "source_file": "src/detect.ts",
       "source_location": "L120",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_detect_xlsxtomarkdown",
@@ -1686,8 +1686,8 @@
       "file_type": "code",
       "source_file": "src/detect.ts",
       "source_location": "L132",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_detect_convertofficefile",
@@ -1695,8 +1695,8 @@
       "file_type": "code",
       "source_file": "src/detect.ts",
       "source_location": "L160",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_detect_countwords",
@@ -1704,8 +1704,8 @@
       "file_type": "code",
       "source_file": "src/detect.ts",
       "source_location": "L181",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_detect_isnoisedir",
@@ -1713,8 +1713,8 @@
       "file_type": "code",
       "source_file": "src/detect.ts",
       "source_location": "L200",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_detect_parsegraphifyignoreline",
@@ -1722,8 +1722,8 @@
       "file_type": "code",
       "source_file": "src/detect.ts",
       "source_location": "L213",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_detect_findvcsroot",
@@ -1731,8 +1731,8 @@
       "file_type": "code",
       "source_file": "src/detect.ts",
       "source_location": "L231",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_detect_loadgraphifyignore",
@@ -1740,8 +1740,8 @@
       "file_type": "code",
       "source_file": "src/detect.ts",
       "source_location": "L246",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_detect_matchglob",
@@ -1749,8 +1749,8 @@
       "file_type": "code",
       "source_file": "src/detect.ts",
       "source_location": "L275",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_detect_relativewithin",
@@ -1758,8 +1758,8 @@
       "file_type": "code",
       "source_file": "src/detect.ts",
       "source_location": "L284",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_detect_matchesignorepattern",
@@ -1767,8 +1767,8 @@
       "file_type": "code",
       "source_file": "src/detect.ts",
       "source_location": "L291",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_detect_isignored",
@@ -1776,8 +1776,8 @@
       "file_type": "code",
       "source_file": "src/detect.ts",
       "source_location": "L302",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_detect_walkdir",
@@ -1785,8 +1785,8 @@
       "file_type": "code",
       "source_file": "src/detect.ts",
       "source_location": "L330",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_detect_resolvecandidatefiles",
@@ -1794,8 +1794,8 @@
       "file_type": "code",
       "source_file": "src/detect.ts",
       "source_location": "L385",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_detect_detect",
@@ -1803,8 +1803,8 @@
       "file_type": "code",
       "source_file": "src/detect.ts",
       "source_location": "L412",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_detect_md5file",
@@ -1812,8 +1812,8 @@
       "file_type": "code",
       "source_file": "src/detect.ts",
       "source_location": "L509",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_detect_loadmanifest",
@@ -1821,8 +1821,8 @@
       "file_type": "code",
       "source_file": "src/detect.ts",
       "source_location": "L519",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_detect_savemanifest",
@@ -1830,8 +1830,8 @@
       "file_type": "code",
       "source_file": "src/detect.ts",
       "source_location": "L527",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_detect_detectincremental",
@@ -1839,8 +1839,8 @@
       "file_type": "code",
       "source_file": "src/detect.ts",
       "source_location": "L544",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_direct_llm_extract_ts",
@@ -3099,8 +3099,8 @@
       "file_type": "code",
       "source_file": "src/google-workspace.ts",
       "source_location": "L1",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_google_workspace_googleworkspaceenabled",
@@ -3108,8 +3108,8 @@
       "file_type": "code",
       "source_file": "src/google-workspace.ts",
       "source_location": "L51",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_google_workspace_extractfileidfromurl",
@@ -3117,8 +3117,8 @@
       "file_type": "code",
       "source_file": "src/google-workspace.ts",
       "source_location": "L57",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_google_workspace_extractresourcekey",
@@ -3126,8 +3126,8 @@
       "file_type": "code",
       "source_file": "src/google-workspace.ts",
       "source_location": "L71",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_google_workspace_readgoogleshortcut",
@@ -3135,8 +3135,8 @@
       "file_type": "code",
       "source_file": "src/google-workspace.ts",
       "source_location": "L86",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_google_workspace_resolveaccesstoken",
@@ -3144,8 +3144,8 @@
       "file_type": "code",
       "source_file": "src/google-workspace.ts",
       "source_location": "L127",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_google_workspace_createdefaultgoogleworkspacefetcher",
@@ -3153,8 +3153,8 @@
       "file_type": "code",
       "source_file": "src/google-workspace.ts",
       "source_location": "L163",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_google_workspace_safeyamlstring",
@@ -3162,8 +3162,8 @@
       "file_type": "code",
       "source_file": "src/google-workspace.ts",
       "source_location": "L183",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_google_workspace_sidecarpath",
@@ -3171,8 +3171,8 @@
       "file_type": "code",
       "source_file": "src/google-workspace.ts",
       "source_location": "L190",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_google_workspace_frontmatterwrap",
@@ -3180,8 +3180,8 @@
       "file_type": "code",
       "source_file": "src/google-workspace.ts",
       "source_location": "L197",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_google_workspace_convertgoogleworkspacefile",
@@ -3189,8 +3189,8 @@
       "file_type": "code",
       "source_file": "src/google-workspace.ts",
       "source_location": "L223",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "src_graph_ts",
@@ -4998,206 +4998,233 @@
       "file_type": "code",
       "source_file": "src/ontology-patch.ts",
       "source_location": "L1",
-      "community": 20,
-      "community_name": "Community 20"
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_patch_isrecord",
       "label": "isRecord()",
       "file_type": "code",
       "source_file": "src/ontology-patch.ts",
-      "source_location": "L115",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L143",
+      "community": 13,
+      "community_name": "Community 13"
+    },
+    {
+      "id": "src_ontology_patch_readablelogpath",
+      "label": "readableLogPath()",
+      "file_type": "code",
+      "source_file": "src/ontology-patch.ts",
+      "source_location": "L147",
+      "community": 13,
+      "community_name": "Community 13"
+    },
+    {
+      "id": "src_ontology_patch_parsedecisionlogpath",
+      "label": "parseDecisionLogPath()",
+      "file_type": "code",
+      "source_file": "src/ontology-patch.ts",
+      "source_location": "L168",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_patch_nonemptystring",
       "label": "nonEmptyString()",
       "file_type": "code",
       "source_file": "src/ontology-patch.ts",
-      "source_location": "L119",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L233",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_patch_stringarray",
       "label": "stringArray()",
       "file_type": "code",
       "source_file": "src/ontology-patch.ts",
-      "source_location": "L123",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L237",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_patch_adderror",
       "label": "addError()",
       "file_type": "code",
       "source_file": "src/ontology-patch.ts",
-      "source_location": "L129",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L243",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_patch_addwarning",
       "label": "addWarning()",
       "file_type": "code",
       "source_file": "src/ontology-patch.ts",
-      "source_location": "L133",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L247",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_patch_nodetype",
       "label": "nodeType()",
       "file_type": "code",
       "source_file": "src/ontology-patch.ts",
-      "source_location": "L137",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L251",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_patch_nodebyid",
       "label": "nodeById()",
       "file_type": "code",
       "source_file": "src/ontology-patch.ts",
-      "source_location": "L141",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L255",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_patch_relationbyid",
       "label": "relationById()",
       "file_type": "code",
       "source_file": "src/ontology-patch.ts",
-      "source_location": "L145",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L259",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_patch_knownevidencerefs",
       "label": "knownEvidenceRefs()",
       "file_type": "code",
       "source_file": "src/ontology-patch.ts",
-      "source_location": "L149",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L263",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_patch_validateevidencerefs",
       "label": "validateEvidenceRefs()",
       "file_type": "code",
       "source_file": "src/ontology-patch.ts",
-      "source_location": "L160",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L274",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_patch_statustransitionallowed",
       "label": "statusTransitionAllowed()",
       "file_type": "code",
       "source_file": "src/ontology-patch.ts",
-      "source_location": "L171",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L285",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_patch_validateacceptmatch",
       "label": "validateAcceptMatch()",
       "file_type": "code",
       "source_file": "src/ontology-patch.ts",
-      "source_location": "L183",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L297",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_patch_validatesetstatus",
       "label": "validateSetStatus()",
       "file_type": "code",
       "source_file": "src/ontology-patch.ts",
-      "source_location": "L190",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L304",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_patch_validateaddrelation",
       "label": "validateAddRelation()",
       "file_type": "code",
       "source_file": "src/ontology-patch.ts",
-      "source_location": "L207",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L321",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_patch_validateoperationtargets",
       "label": "validateOperationTargets()",
       "file_type": "code",
       "source_file": "src/ontology-patch.ts",
-      "source_location": "L232",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L346",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_patch_normalizeontologypatch",
       "label": "normalizeOntologyPatch()",
       "file_type": "code",
       "source_file": "src/ontology-patch.ts",
-      "source_location": "L282",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L396",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_patch_validateontologypatch",
       "label": "validateOntologyPatch()",
       "file_type": "code",
       "source_file": "src/ontology-patch.ts",
-      "source_location": "L303",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L417",
+      "community": 13,
+      "community_name": "Community 13"
+    },
+    {
+      "id": "src_ontology_patch_loadontologyreconciliationdecisionlog",
+      "label": "loadOntologyReconciliationDecisionLog()",
+      "file_type": "code",
+      "source_file": "src/ontology-patch.ts",
+      "source_location": "L448",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_patch_isinside",
       "label": "isInside()",
       "file_type": "code",
       "source_file": "src/ontology-patch.ts",
-      "source_location": "L334",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L471",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_patch_appendjsonline",
       "label": "appendJsonLine()",
       "file_type": "code",
       "source_file": "src/ontology-patch.ts",
-      "source_location": "L339",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L476",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_patch_auditpath",
       "label": "auditPath()",
       "file_type": "code",
       "source_file": "src/ontology-patch.ts",
-      "source_location": "L344",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L481",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_patch_changedfiles",
       "label": "changedFiles()",
       "file_type": "code",
       "source_file": "src/ontology-patch.ts",
-      "source_location": "L354",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L491",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_patch_applyontologypatch",
       "label": "applyOntologyPatch()",
       "file_type": "code",
       "source_file": "src/ontology-patch.ts",
-      "source_location": "L374",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L511",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_profile_ts",
@@ -5205,8 +5232,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L1",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "src_ontology_profile_asrecord",
@@ -5214,8 +5241,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L32",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "src_ontology_profile_asstringarray",
@@ -5223,8 +5250,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L38",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "src_ontology_profile_normalizestringmap",
@@ -5232,8 +5259,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L46",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "src_ontology_profile_stableforhash",
@@ -5241,8 +5268,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L53",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "src_ontology_profile_relationendpoints",
@@ -5250,8 +5277,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L66",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "src_ontology_profile_normalizerelation",
@@ -5259,8 +5286,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L73",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "src_ontology_profile_normalizeregistry",
@@ -5268,8 +5295,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L83",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "src_ontology_profile_normalizecitationpolicy",
@@ -5277,8 +5304,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L94",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "src_ontology_profile_normalizestatustransition",
@@ -5286,8 +5313,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L105",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "src_ontology_profile_normalizestatustransitions",
@@ -5295,8 +5322,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L113",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "src_ontology_profile_normalizehardeningpolicy",
@@ -5304,8 +5331,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L120",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "src_ontology_profile_normalizeinferencepolicy",
@@ -5313,8 +5340,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L134",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "src_ontology_profile_normalizeevidencepolicy",
@@ -5322,8 +5349,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L142",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "src_ontology_profile_normalizehierarchy",
@@ -5331,8 +5358,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L154",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "src_ontology_profile_normalizehierarchies",
@@ -5340,8 +5367,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L165",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "src_ontology_profile_relationexports",
@@ -5349,8 +5376,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L174",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "src_ontology_profile_normalizeoutputs",
@@ -5358,8 +5385,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L185",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "src_ontology_profile_parseontologyprofile",
@@ -5367,8 +5394,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L210",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "src_ontology_profile_validateontologyprofile",
@@ -5376,8 +5403,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L219",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "src_ontology_profile_hashontologyprofile",
@@ -5385,8 +5412,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L373",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "src_ontology_profile_normalizeontologyprofile",
@@ -5394,8 +5421,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L379",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "src_ontology_profile_bindontologyprofile",
@@ -5403,8 +5430,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L415",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "src_ontology_profile_loadontologyprofile",
@@ -5412,8 +5439,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L439",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "src_ontology_reconciliation_ts",
@@ -5421,98 +5448,125 @@
       "file_type": "code",
       "source_file": "src/ontology-reconciliation.ts",
       "source_location": "L1",
-      "community": 20,
-      "community_name": "Community 20"
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_reconciliation_sha256",
       "label": "sha256()",
       "file_type": "code",
       "source_file": "src/ontology-reconciliation.ts",
-      "source_location": "L38",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L67",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_reconciliation_normalizeterm",
       "label": "normalizeTerm()",
       "file_type": "code",
       "source_file": "src/ontology-reconciliation.ts",
-      "source_location": "L42",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L71",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_reconciliation_uniquesorted",
       "label": "uniqueSorted()",
       "file_type": "code",
       "source_file": "src/ontology-reconciliation.ts",
-      "source_location": "L46",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L75",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_reconciliation_nodeterms",
       "label": "nodeTerms()",
       "file_type": "code",
       "source_file": "src/ontology-reconciliation.ts",
-      "source_location": "L50",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L79",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_reconciliation_statusrank",
       "label": "statusRank()",
       "file_type": "code",
       "source_file": "src/ontology-reconciliation.ts",
-      "source_location": "L58",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L87",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_reconciliation_choosecanonicalpair",
       "label": "chooseCanonicalPair()",
       "file_type": "code",
       "source_file": "src/ontology-reconciliation.ts",
-      "source_location": "L73",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L102",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_reconciliation_candidatescore",
       "label": "candidateScore()",
       "file_type": "code",
       "source_file": "src/ontology-reconciliation.ts",
-      "source_location": "L85",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L114",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_reconciliation_candidateid",
       "label": "candidateId()",
       "file_type": "code",
       "source_file": "src/ontology-reconciliation.ts",
-      "source_location": "L93",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L122",
+      "community": 13,
+      "community_name": "Community 13"
+    },
+    {
+      "id": "src_ontology_reconciliation_loadontologyreconciliationcandidates",
+      "label": "loadOntologyReconciliationCandidates()",
+      "file_type": "code",
+      "source_file": "src/ontology-reconciliation.ts",
+      "source_location": "L131",
+      "community": 13,
+      "community_name": "Community 13"
+    },
+    {
+      "id": "src_ontology_reconciliation_queryontologyreconciliationcandidates",
+      "label": "queryOntologyReconciliationCandidates()",
+      "file_type": "code",
+      "source_file": "src/ontology-reconciliation.ts",
+      "source_location": "L135",
+      "community": 13,
+      "community_name": "Community 13"
+    },
+    {
+      "id": "src_ontology_reconciliation_filterontologyreconciliationcandidates",
+      "label": "filterOntologyReconciliationCandidates()",
+      "file_type": "code",
+      "source_file": "src/ontology-reconciliation.ts",
+      "source_location": "L207",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_reconciliation_generateontologyreconciliationcandidates",
       "label": "generateOntologyReconciliationCandidates()",
       "file_type": "code",
       "source_file": "src/ontology-reconciliation.ts",
-      "source_location": "L102",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L214",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_ontology_reconciliation_writeontologyreconciliationcandidates",
       "label": "writeOntologyReconciliationCandidates()",
       "file_type": "code",
       "source_file": "src/ontology-reconciliation.ts",
-      "source_location": "L155",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L267",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "src_paths_ts",
@@ -5844,8 +5898,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L1",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "portable_artifacts_iswindowsabsolutepath",
@@ -5853,8 +5907,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L53",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "portable_artifacts_hasschemeprefix",
@@ -5862,8 +5916,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L57",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "portable_artifacts_portablepath",
@@ -5871,8 +5925,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L62",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "portable_artifacts_stripleadingdotslash",
@@ -5880,8 +5934,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L66",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "portable_artifacts_toprojectrelativepath",
@@ -5889,8 +5943,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L70",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "portable_artifacts_projectrootlabel",
@@ -5898,8 +5952,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L82",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "portable_artifacts_normalizemaybepath",
@@ -5907,8 +5961,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L89",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "portable_artifacts_normalizescopepath",
@@ -5916,8 +5970,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L94",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "portable_artifacts_makeextractionportable",
@@ -5925,8 +5979,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L100",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "portable_artifacts_normalizefilemap",
@@ -5934,8 +5988,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L118",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "portable_artifacts_makedetectionportable",
@@ -5943,8 +5997,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L126",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "portable_artifacts_makegraphportable",
@@ -5952,8 +6006,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L148",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "portable_artifacts_isignoredlocalartifact",
@@ -5961,8 +6015,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L177",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "portable_artifacts_shouldscanfile",
@@ -5970,8 +6024,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L184",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "portable_artifacts_pathissuekind",
@@ -5979,8 +6033,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L191",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "portable_artifacts_collectstringissues",
@@ -5988,8 +6042,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L197",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "portable_artifacts_collectjsonissues",
@@ -5997,8 +6051,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L219",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "portable_artifacts_collecttextissues",
@@ -6006,8 +6060,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L240",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "portable_artifacts_walkfiles",
@@ -6015,8 +6069,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L247",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "portable_artifacts_scanportablegraphifyartifacts",
@@ -6024,8 +6078,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L259",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "src_profile_prompts_ts",
@@ -7095,8 +7149,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L1",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "review_analysis_comparestrings",
@@ -7104,8 +7158,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L113",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "review_analysis_uniquesorted",
@@ -7113,8 +7167,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L119",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "review_analysis_maybecommunity",
@@ -7122,8 +7176,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L123",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "review_analysis_communitylabel",
@@ -7131,8 +7185,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L132",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "review_analysis_risklevel",
@@ -7140,8 +7194,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L140",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "review_analysis_communityrisk",
@@ -7149,8 +7203,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L146",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "review_analysis_nodecommunities",
@@ -7158,8 +7212,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L151",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "review_analysis_buildblastradius",
@@ -7167,8 +7221,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L159",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "review_analysis_impactedcommunities",
@@ -7176,8 +7230,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L190",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "review_analysis_ismultimodalpath",
@@ -7185,8 +7239,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L240",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "review_analysis_multimodalsafety",
@@ -7194,8 +7248,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L244",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "review_analysis_buildreviewanalysis",
@@ -7203,8 +7257,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L264",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "review_analysis_nodeline",
@@ -7212,8 +7266,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L292",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "review_analysis_reviewanalysistotext",
@@ -7221,8 +7275,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L298",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "review_analysis_estimatetokens",
@@ -7230,8 +7284,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L340",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "review_analysis_ratio",
@@ -7239,8 +7293,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L344",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "review_analysis_average",
@@ -7248,8 +7302,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L348",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "review_analysis_evaluatereviewanalysis",
@@ -7257,8 +7311,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L354",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "review_analysis_formatmetric",
@@ -7266,8 +7320,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L406",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "review_analysis_reviewevaluationtotext",
@@ -7275,8 +7329,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L410",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "src_review_benchmark_ts",
@@ -7410,8 +7464,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L1",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "review_context_comparestrings",
@@ -7419,8 +7473,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L45",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "review_context_normalizepath",
@@ -7428,8 +7482,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L51",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "review_context_uniquesorted",
@@ -7437,8 +7491,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L55",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "review_context_sourcematches",
@@ -7446,8 +7500,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L59",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "review_context_riskforimpactednodes",
@@ -7455,8 +7509,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L66",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "review_context_changedfunctionswithouttests",
@@ -7464,8 +7518,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L72",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "review_context_issensitivepath",
@@ -7473,8 +7527,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L80",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "review_context_isinside",
@@ -7482,8 +7536,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L91",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "review_context_formatlines",
@@ -7491,8 +7545,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L96",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "review_context_extractrelevantlines",
@@ -7500,8 +7554,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L102",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "review_context_readsourcesnippet",
@@ -7509,8 +7563,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L136",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "review_context_buildsourcesnippets",
@@ -7518,8 +7572,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L158",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "review_context_buildreviewguidance",
@@ -7527,8 +7581,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L168",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "review_context_buildreviewcontext",
@@ -7536,8 +7590,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L198",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "review_context_reviewcontexttotext",
@@ -7545,8 +7599,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L269",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "src_review_store_ts",
@@ -8291,7 +8345,7 @@
       "label": "serve()",
       "file_type": "code",
       "source_file": "src/serve.ts",
-      "source_location": "L589",
+      "source_location": "L596",
       "community": 4,
       "community_name": "Community 4"
     },
@@ -8498,7 +8552,7 @@
       "label": "runtimeInfo()",
       "file_type": "code",
       "source_file": "src/skill-runtime.ts",
-      "source_location": "L449",
+      "source_location": "L450",
       "community": 1,
       "community_name": "Community 1"
     },
@@ -8507,7 +8561,7 @@
       "label": "main()",
       "file_type": "code",
       "source_file": "src/skill-runtime.ts",
-      "source_location": "L461",
+      "source_location": "L462",
       "community": 1,
       "community_name": "Community 1"
     },
@@ -8516,7 +8570,7 @@
       "label": "isDirectRuntimeExecution()",
       "file_type": "code",
       "source_file": "src/skill-runtime.ts",
-      "source_location": "L1837",
+      "source_location": "L1844",
       "community": 1,
       "community_name": "Community 1"
     },
@@ -9606,8 +9660,8 @@
       "file_type": "code",
       "source_file": "tests/detect.test.ts",
       "source_location": "L1",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "tests_direct_llm_extract_test_ts",
@@ -10533,8 +10587,8 @@
       "file_type": "code",
       "source_file": "tests/google-workspace.test.ts",
       "source_location": "L1",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "tests_google_workspace_test_makestub",
@@ -10542,8 +10596,8 @@
       "file_type": "code",
       "source_file": "tests/google-workspace.test.ts",
       "source_location": "L15",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "tests_google_workspace_test_tempdir",
@@ -10551,8 +10605,8 @@
       "file_type": "code",
       "source_file": "tests/google-workspace.test.ts",
       "source_location": "L48",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "tests_google_workspace_test_fetchimpl",
@@ -10560,8 +10614,8 @@
       "file_type": "code",
       "source_file": "tests/google-workspace.test.ts",
       "source_location": "L189",
-      "community": 19,
-      "community_name": "Community 19"
+      "community": 20,
+      "community_name": "Community 20"
     },
     {
       "id": "tests_hooks_test_ts",
@@ -10911,8 +10965,8 @@
       "file_type": "code",
       "source_file": "tests/ontology-patch-cli.test.ts",
       "source_location": "L1",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "tests_ontology_patch_cli_test_tempprofileproject",
@@ -10920,8 +10974,8 @@
       "file_type": "code",
       "source_file": "tests/ontology-patch-cli.test.ts",
       "source_location": "L18",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "tests_ontology_patch_cli_test_runcli",
@@ -10929,8 +10983,8 @@
       "file_type": "code",
       "source_file": "tests/ontology-patch-cli.test.ts",
       "source_location": "L39",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "tests_ontology_patch_cli_test_runskillruntime",
@@ -10938,8 +10992,8 @@
       "file_type": "code",
       "source_file": "tests/ontology-patch-cli.test.ts",
       "source_location": "L44",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "tests_ontology_patch_cli_test_runmain",
@@ -10947,8 +11001,8 @@
       "file_type": "code",
       "source_file": "tests/ontology-patch-cli.test.ts",
       "source_location": "L49",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "tests_ontology_patch_cli_test_prepareproject",
@@ -10956,8 +11010,8 @@
       "file_type": "code",
       "source_file": "tests/ontology-patch-cli.test.ts",
       "source_location": "L89",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "tests_ontology_patch_test_ts",
@@ -10965,35 +11019,35 @@
       "file_type": "code",
       "source_file": "tests/ontology-patch.test.ts",
       "source_location": "L1",
-      "community": 20,
-      "community_name": "Community 20"
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "tests_ontology_patch_test_maketempdir",
       "label": "makeTempDir()",
       "file_type": "code",
       "source_file": "tests/ontology-patch.test.ts",
-      "source_location": "L17",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L19",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "tests_ontology_patch_test_makepatch",
       "label": "makePatch()",
       "file_type": "code",
       "source_file": "tests/ontology-patch.test.ts",
-      "source_location": "L92",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L94",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "tests_ontology_patch_test_makecontext",
       "label": "makeContext()",
       "file_type": "code",
       "source_file": "tests/ontology-patch.test.ts",
-      "source_location": "L112",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L114",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "tests_ontology_profile_test_ts",
@@ -11037,17 +11091,17 @@
       "file_type": "code",
       "source_file": "tests/ontology-reconciliation.test.ts",
       "source_location": "L1",
-      "community": 20,
-      "community_name": "Community 20"
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "tests_ontology_reconciliation_test_context",
       "label": "context()",
       "file_type": "code",
       "source_file": "tests/ontology-reconciliation.test.ts",
-      "source_location": "L50",
-      "community": 20,
-      "community_name": "Community 20"
+      "source_location": "L58",
+      "community": 13,
+      "community_name": "Community 13"
     },
     {
       "id": "tests_opencode_integration_test_ts",
@@ -11118,8 +11172,8 @@
       "file_type": "code",
       "source_file": "tests/portable-artifacts.test.ts",
       "source_location": "L1",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "tests_portable_artifacts_test_tempproject",
@@ -11127,8 +11181,8 @@
       "file_type": "code",
       "source_file": "tests/portable-artifacts.test.ts",
       "source_location": "L22",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "tests_profile_pipeline_test_ts",
@@ -11370,8 +11424,8 @@
       "file_type": "code",
       "source_file": "tests/review-analysis.test.ts",
       "source_location": "L1",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "review_analysis_test_makegraph",
@@ -11379,8 +11433,8 @@
       "file_type": "code",
       "source_file": "tests/review-analysis.test.ts",
       "source_location": "L11",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "tests_review_benchmark_test_ts",
@@ -11433,8 +11487,8 @@
       "file_type": "code",
       "source_file": "tests/review-context.test.ts",
       "source_location": "L1",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "review_context_test_tempproject",
@@ -11442,8 +11496,8 @@
       "file_type": "code",
       "source_file": "tests/review-context.test.ts",
       "source_location": "L18",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "review_context_test_qn",
@@ -11451,8 +11505,8 @@
       "file_type": "code",
       "source_file": "tests/review-context.test.ts",
       "source_location": "L24",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "review_context_test_addfunction",
@@ -11460,8 +11514,8 @@
       "file_type": "code",
       "source_file": "tests/review-context.test.ts",
       "source_location": "L28",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "review_context_test_addedge",
@@ -11469,8 +11523,8 @@
       "file_type": "code",
       "source_file": "tests/review-context.test.ts",
       "source_location": "L47",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "review_context_test_makereviewgraph",
@@ -11478,8 +11532,8 @@
       "file_type": "code",
       "source_file": "tests/review-context.test.ts",
       "source_location": "L54",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "tests_review_store_test_ts",
@@ -13602,8 +13656,8 @@
       "file_type": "code",
       "source_file": "worked/httpx/raw/transport.py",
       "source_location": "L1",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "transport_basetransport",
@@ -14664,8 +14718,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L79",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "src_configured_dataprep_fullpagescreenshotexcludes",
@@ -14673,8 +14727,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L83",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "src_configured_dataprep_buildconfigureddetectioninputs",
@@ -14682,8 +14736,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L90",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "src_configured_dataprep_emptydetection",
@@ -14691,8 +14745,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L105",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "src_configured_dataprep_countwords",
@@ -14700,8 +14754,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L117",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "src_configured_dataprep_warningfor",
@@ -14709,8 +14763,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L125",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "src_configured_dataprep_recomputedetection",
@@ -14718,8 +14772,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L139",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "src_configured_dataprep_mergescopeinspections",
@@ -14727,8 +14781,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L162",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "src_configured_dataprep_mergedetections",
@@ -14736,8 +14790,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L181",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "src_configured_dataprep_isinside",
@@ -14745,8 +14799,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L203",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "src_configured_dataprep_applyconfiguredexcludes",
@@ -14754,8 +14808,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L210",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "src_configured_dataprep_writejson",
@@ -14763,8 +14817,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L230",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "src_configured_dataprep_writeregistries",
@@ -14772,8 +14826,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L235",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "src_configured_dataprep_buildprofilestate",
@@ -14781,8 +14835,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L242",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "src_configured_dataprep_writeprofilestate",
@@ -14790,8 +14844,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L265",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "src_configured_dataprep_dataprepreport",
@@ -14799,8 +14853,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L269",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "src_configured_dataprep_resolveconfigpath",
@@ -14808,8 +14862,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L299",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "src_configured_dataprep_runconfigureddataprep",
@@ -14817,8 +14871,8 @@
       "file_type": "code",
       "source_file": "src/configured-dataprep.ts",
       "source_location": "L308",
-      "community": 14,
-      "community_name": "Community 14"
+      "community": 15,
+      "community_name": "Community 15"
     },
     {
       "id": "src_detect_changes_comparestrings",
@@ -16266,8 +16320,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L53",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "src_portable_artifacts_hasschemeprefix",
@@ -16275,8 +16329,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L57",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "src_portable_artifacts_portablepath",
@@ -16284,8 +16338,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L62",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "src_portable_artifacts_stripleadingdotslash",
@@ -16293,8 +16347,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L66",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "src_portable_artifacts_toprojectrelativepath",
@@ -16302,8 +16356,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L70",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "src_portable_artifacts_projectrootlabel",
@@ -16311,8 +16365,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L82",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "src_portable_artifacts_normalizemaybepath",
@@ -16320,8 +16374,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L89",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "src_portable_artifacts_normalizescopepath",
@@ -16329,8 +16383,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L94",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "src_portable_artifacts_makeextractionportable",
@@ -16338,8 +16392,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L100",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "src_portable_artifacts_normalizefilemap",
@@ -16347,8 +16401,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L118",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "src_portable_artifacts_makedetectionportable",
@@ -16356,8 +16410,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L126",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "src_portable_artifacts_makegraphportable",
@@ -16365,8 +16419,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L148",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "src_portable_artifacts_isignoredlocalartifact",
@@ -16374,8 +16428,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L177",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "src_portable_artifacts_shouldscanfile",
@@ -16383,8 +16437,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L184",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "src_portable_artifacts_pathissuekind",
@@ -16392,8 +16446,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L191",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "src_portable_artifacts_collectstringissues",
@@ -16401,8 +16455,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L197",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "src_portable_artifacts_collectjsonissues",
@@ -16410,8 +16464,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L219",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "src_portable_artifacts_collecttextissues",
@@ -16419,8 +16473,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L240",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "src_portable_artifacts_walkfiles",
@@ -16428,8 +16482,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L247",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "src_portable_artifacts_scanportablegraphifyartifacts",
@@ -16437,8 +16491,8 @@
       "file_type": "code",
       "source_file": "src/portable-artifacts.ts",
       "source_location": "L259",
-      "community": 15,
-      "community_name": "Community 15"
+      "community": 16,
+      "community_name": "Community 16"
     },
     {
       "id": "src_profile_registry_readregistryrows",
@@ -16833,8 +16887,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L113",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "src_review_analysis_uniquesorted",
@@ -16842,8 +16896,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L119",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "src_review_analysis_maybecommunity",
@@ -16851,8 +16905,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L123",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "src_review_analysis_communitylabel",
@@ -16860,8 +16914,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L132",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "src_review_analysis_risklevel",
@@ -16869,8 +16923,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L140",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "src_review_analysis_communityrisk",
@@ -16878,8 +16932,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L146",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "src_review_analysis_nodecommunities",
@@ -16887,8 +16941,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L151",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "src_review_analysis_buildblastradius",
@@ -16896,8 +16950,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L159",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "src_review_analysis_impactedcommunities",
@@ -16905,8 +16959,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L190",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "src_review_analysis_ismultimodalpath",
@@ -16914,8 +16968,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L240",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "src_review_analysis_multimodalsafety",
@@ -16923,8 +16977,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L244",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "src_review_analysis_buildreviewanalysis",
@@ -16932,8 +16986,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L264",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "src_review_analysis_nodeline",
@@ -16941,8 +16995,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L292",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "src_review_analysis_reviewanalysistotext",
@@ -16950,8 +17004,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L298",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "src_review_analysis_estimatetokens",
@@ -16959,8 +17013,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L340",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "src_review_analysis_ratio",
@@ -16968,8 +17022,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L344",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "src_review_analysis_average",
@@ -16977,8 +17031,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L348",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "src_review_analysis_evaluatereviewanalysis",
@@ -16986,8 +17040,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L354",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "src_review_analysis_formatmetric",
@@ -16995,8 +17049,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L406",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "src_review_analysis_reviewevaluationtotext",
@@ -17004,8 +17058,8 @@
       "file_type": "code",
       "source_file": "src/review-analysis.ts",
       "source_location": "L410",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "src_review_benchmark_comparestrings",
@@ -17130,8 +17184,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L45",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "src_review_context_normalizepath",
@@ -17139,8 +17193,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L51",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "src_review_context_uniquesorted",
@@ -17148,8 +17202,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L55",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "src_review_context_sourcematches",
@@ -17157,8 +17211,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L59",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "src_review_context_riskforimpactednodes",
@@ -17166,8 +17220,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L66",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "src_review_context_changedfunctionswithouttests",
@@ -17175,8 +17229,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L72",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "src_review_context_issensitivepath",
@@ -17184,8 +17238,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L80",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "src_review_context_isinside",
@@ -17193,8 +17247,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L91",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "src_review_context_formatlines",
@@ -17202,8 +17256,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L96",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "src_review_context_extractrelevantlines",
@@ -17211,8 +17265,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L102",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "src_review_context_readsourcesnippet",
@@ -17220,8 +17274,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L136",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "src_review_context_buildsourcesnippets",
@@ -17229,8 +17283,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L158",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "src_review_context_buildreviewguidance",
@@ -17238,8 +17292,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L168",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "src_review_context_buildreviewcontext",
@@ -17247,8 +17301,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L198",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "src_review_context_reviewcontexttotext",
@@ -17256,8 +17310,8 @@
       "file_type": "code",
       "source_file": "src/review-context.ts",
       "source_location": "L269",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "src_review_comparestrings",
@@ -18516,8 +18570,8 @@
       "file_type": "code",
       "source_file": "tests/review-analysis.test.ts",
       "source_location": "L11",
-      "community": 13,
-      "community_name": "Community 13"
+      "community": 14,
+      "community_name": "Community 14"
     },
     {
       "id": "tests_review_benchmark_test_qn",
@@ -18561,8 +18615,8 @@
       "file_type": "code",
       "source_file": "tests/review-context.test.ts",
       "source_location": "L18",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "tests_review_context_test_qn",
@@ -18570,8 +18624,8 @@
       "file_type": "code",
       "source_file": "tests/review-context.test.ts",
       "source_location": "L24",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "tests_review_context_test_addfunction",
@@ -18579,8 +18633,8 @@
       "file_type": "code",
       "source_file": "tests/review-context.test.ts",
       "source_location": "L28",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "tests_review_context_test_addedge",
@@ -18588,8 +18642,8 @@
       "file_type": "code",
       "source_file": "tests/review-context.test.ts",
       "source_location": "L47",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "tests_review_context_test_makereviewgraph",
@@ -18597,8 +18651,8 @@
       "file_type": "code",
       "source_file": "tests/review-context.test.ts",
       "source_location": "L54",
-      "community": 17,
-      "community_name": "Community 17"
+      "community": 18,
+      "community_name": "Community 18"
     },
     {
       "id": "tests_review_store_test_makereviewgraph",
@@ -19812,8 +19866,8 @@
       "file_type": "code",
       "source_file": "worked/httpx/raw/exceptions.py",
       "source_location": "L18",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_exceptions_timeoutexception",
@@ -19821,8 +19875,8 @@
       "file_type": "code",
       "source_file": "worked/httpx/raw/exceptions.py",
       "source_location": "L22",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_exceptions_connecttimeout",
@@ -19830,8 +19884,8 @@
       "file_type": "code",
       "source_file": "worked/httpx/raw/exceptions.py",
       "source_location": "L26",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_exceptions_readtimeout",
@@ -19839,8 +19893,8 @@
       "file_type": "code",
       "source_file": "worked/httpx/raw/exceptions.py",
       "source_location": "L30",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_exceptions_writetimeout",
@@ -19848,8 +19902,8 @@
       "file_type": "code",
       "source_file": "worked/httpx/raw/exceptions.py",
       "source_location": "L34",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_exceptions_pooltimeout",
@@ -19857,8 +19911,8 @@
       "file_type": "code",
       "source_file": "worked/httpx/raw/exceptions.py",
       "source_location": "L38",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_exceptions_networkerror",
@@ -19875,8 +19929,8 @@
       "file_type": "code",
       "source_file": "worked/httpx/raw/exceptions.py",
       "source_location": "L46",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_exceptions_readerror",
@@ -19911,8 +19965,8 @@
       "file_type": "code",
       "source_file": "worked/httpx/raw/exceptions.py",
       "source_location": "L62",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_exceptions_protocolerror",
@@ -19920,8 +19974,8 @@
       "file_type": "code",
       "source_file": "worked/httpx/raw/exceptions.py",
       "source_location": "L66",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_exceptions_decodingerror",
@@ -20010,8 +20064,8 @@
       "file_type": "rationale",
       "source_file": "worked/httpx/raw/exceptions.py",
       "source_location": "L19",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_exceptions_rationale_27",
@@ -20019,8 +20073,8 @@
       "file_type": "rationale",
       "source_file": "worked/httpx/raw/exceptions.py",
       "source_location": "L27",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_exceptions_rationale_31",
@@ -20028,8 +20082,8 @@
       "file_type": "rationale",
       "source_file": "worked/httpx/raw/exceptions.py",
       "source_location": "L31",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_exceptions_rationale_35",
@@ -20037,8 +20091,8 @@
       "file_type": "rationale",
       "source_file": "worked/httpx/raw/exceptions.py",
       "source_location": "L35",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_exceptions_rationale_39",
@@ -20046,8 +20100,8 @@
       "file_type": "rationale",
       "source_file": "worked/httpx/raw/exceptions.py",
       "source_location": "L39",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_exceptions_rationale_43",
@@ -20064,8 +20118,8 @@
       "file_type": "rationale",
       "source_file": "worked/httpx/raw/exceptions.py",
       "source_location": "L47",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_exceptions_rationale_51",
@@ -20100,8 +20154,8 @@
       "file_type": "rationale",
       "source_file": "worked/httpx/raw/exceptions.py",
       "source_location": "L63",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_exceptions_rationale_67",
@@ -20109,8 +20163,8 @@
       "file_type": "rationale",
       "source_file": "worked/httpx/raw/exceptions.py",
       "source_location": "L67",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_exceptions_rationale_71",
@@ -20325,8 +20379,8 @@
       "file_type": "code",
       "source_file": "worked/httpx/raw/models.py",
       "source_location": "L68",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_models_request_init",
@@ -20343,8 +20397,8 @@
       "file_type": "code",
       "source_file": "worked/httpx/raw/models.py",
       "source_location": "L76",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_models_response",
@@ -20469,8 +20523,8 @@
       "file_type": "code",
       "source_file": "worked/httpx/raw/transport.py",
       "source_location": "L20",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_transport_asyncbasetransport_handle_async_request",
@@ -20478,8 +20532,8 @@
       "file_type": "code",
       "source_file": "worked/httpx/raw/transport.py",
       "source_location": "L23",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_transport_asyncbasetransport_aclose",
@@ -20487,8 +20541,8 @@
       "file_type": "code",
       "source_file": "worked/httpx/raw/transport.py",
       "source_location": "L26",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_transport_connectionpool",
@@ -20595,8 +20649,8 @@
       "file_type": "code",
       "source_file": "worked/httpx/raw/transport.py",
       "source_location": "L89",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_transport_asynchttptransport_init",
@@ -20604,8 +20658,8 @@
       "file_type": "code",
       "source_file": "worked/httpx/raw/transport.py",
       "source_location": "L92",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_transport_asynchttptransport_handle_async_request",
@@ -20613,8 +20667,8 @@
       "file_type": "code",
       "source_file": "worked/httpx/raw/transport.py",
       "source_location": "L96",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_transport_asynchttptransport_aclose",
@@ -20622,8 +20676,8 @@
       "file_type": "code",
       "source_file": "worked/httpx/raw/transport.py",
       "source_location": "L99",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_transport_mocktransport",
@@ -20631,8 +20685,8 @@
       "file_type": "code",
       "source_file": "worked/httpx/raw/transport.py",
       "source_location": "L103",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_transport_mocktransport_init",
@@ -20640,8 +20694,8 @@
       "file_type": "code",
       "source_file": "worked/httpx/raw/transport.py",
       "source_location": "L109",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_transport_mocktransport_handle_request",
@@ -20649,8 +20703,8 @@
       "file_type": "code",
       "source_file": "worked/httpx/raw/transport.py",
       "source_location": "L112",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_transport_proxytransport",
@@ -20658,8 +20712,8 @@
       "file_type": "code",
       "source_file": "worked/httpx/raw/transport.py",
       "source_location": "L116",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_transport_proxytransport_init",
@@ -20667,8 +20721,8 @@
       "file_type": "code",
       "source_file": "worked/httpx/raw/transport.py",
       "source_location": "L122",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_transport_proxytransport_handle_request",
@@ -20676,8 +20730,8 @@
       "file_type": "code",
       "source_file": "worked/httpx/raw/transport.py",
       "source_location": "L126",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_transport_proxytransport_close",
@@ -20685,8 +20739,8 @@
       "file_type": "code",
       "source_file": "worked/httpx/raw/transport.py",
       "source_location": "L134",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_transport_rationale_1",
@@ -20694,8 +20748,8 @@
       "file_type": "rationale",
       "source_file": "worked/httpx/raw/transport.py",
       "source_location": "L1",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_transport_rationale_11",
@@ -20703,8 +20757,8 @@
       "file_type": "rationale",
       "source_file": "worked/httpx/raw/transport.py",
       "source_location": "L11",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_transport_rationale_21",
@@ -20712,8 +20766,8 @@
       "file_type": "rationale",
       "source_file": "worked/httpx/raw/transport.py",
       "source_location": "L21",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_transport_rationale_31",
@@ -20721,8 +20775,8 @@
       "file_type": "rationale",
       "source_file": "worked/httpx/raw/transport.py",
       "source_location": "L31",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_transport_rationale_60",
@@ -20730,8 +20784,8 @@
       "file_type": "rationale",
       "source_file": "worked/httpx/raw/transport.py",
       "source_location": "L60",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_transport_rationale_90",
@@ -20739,8 +20793,8 @@
       "file_type": "rationale",
       "source_file": "worked/httpx/raw/transport.py",
       "source_location": "L90",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_transport_rationale_104",
@@ -20748,8 +20802,8 @@
       "file_type": "rationale",
       "source_file": "worked/httpx/raw/transport.py",
       "source_location": "L104",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_transport_rationale_117",
@@ -20757,8 +20811,8 @@
       "file_type": "rationale",
       "source_file": "worked/httpx/raw/transport.py",
       "source_location": "L117",
-      "community": 16,
-      "community_name": "Community 16"
+      "community": 17,
+      "community_name": "Community 17"
     },
     {
       "id": "raw_utils_primitive_value_to_str",
@@ -21630,8 +21684,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L24",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "ontology_profile_asstringarray",
@@ -21639,8 +21693,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L30",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "ontology_profile_normalizestringmap",
@@ -21648,8 +21702,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L38",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "ontology_profile_stableforhash",
@@ -21657,8 +21711,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L45",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "ontology_profile_relationendpoints",
@@ -21666,8 +21720,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L58",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "ontology_profile_normalizerelation",
@@ -21675,8 +21729,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L65",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "ontology_profile_normalizeregistry",
@@ -21684,8 +21738,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L72",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "ontology_profile_normalizecitationpolicy",
@@ -21693,8 +21747,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L83",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "ontology_profile_normalizehardeningpolicy",
@@ -21702,8 +21756,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L94",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "ontology_profile_relationexports",
@@ -21711,8 +21765,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L103",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "ontology_profile_normalizeoutputs",
@@ -21720,8 +21774,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L114",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "ontology_profile_parseontologyprofile",
@@ -21729,8 +21783,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L139",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "ontology_profile_validateontologyprofile",
@@ -21738,8 +21792,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L148",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "ontology_profile_hashontologyprofile",
@@ -21747,8 +21801,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L234",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "ontology_profile_normalizeontologyprofile",
@@ -21756,8 +21810,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L240",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "ontology_profile_bindontologyprofile",
@@ -21765,8 +21819,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L272",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "ontology_profile_loadontologyprofile",
@@ -21774,8 +21828,8 @@
       "file_type": "code",
       "source_file": "src/ontology-profile.ts",
       "source_location": "L296",
-      "community": 18,
-      "community_name": "Community 18"
+      "community": 19,
+      "community_name": "Community 19"
     },
     {
       "id": "profile_prompts_samplelimit",
@@ -35587,6 +35641,30 @@
     },
     {
       "source": "src_ontology_patch_ts",
+      "target": "src_ontology_patch_readablelogpath",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/ontology-patch.ts",
+      "source_location": "L147",
+      "weight": 1,
+      "_src": "src_ontology_patch_ts",
+      "_tgt": "src_ontology_patch_readablelogpath",
+      "confidence_score": 1
+    },
+    {
+      "source": "src_ontology_patch_ts",
+      "target": "src_ontology_patch_parsedecisionlogpath",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/ontology-patch.ts",
+      "source_location": "L168",
+      "weight": 1,
+      "_src": "src_ontology_patch_ts",
+      "_tgt": "src_ontology_patch_parsedecisionlogpath",
+      "confidence_score": 1
+    },
+    {
+      "source": "src_ontology_patch_ts",
       "target": "src_ontology_patch_nonemptystring",
       "relation": "contains",
       "confidence": "EXTRACTED",
@@ -35779,6 +35857,18 @@
     },
     {
       "source": "src_ontology_patch_ts",
+      "target": "src_ontology_patch_loadontologyreconciliationdecisionlog",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/ontology-patch.ts",
+      "source_location": "L443",
+      "weight": 1,
+      "_src": "src_ontology_patch_ts",
+      "_tgt": "src_ontology_patch_loadontologyreconciliationdecisionlog",
+      "confidence_score": 1
+    },
+    {
+      "source": "src_ontology_patch_ts",
       "target": "src_ontology_patch_isinside",
       "relation": "contains",
       "confidence": "EXTRACTED",
@@ -35835,6 +35925,54 @@
       "weight": 1,
       "_src": "src_ontology_patch_ts",
       "_tgt": "src_ontology_patch_applyontologypatch",
+      "confidence_score": 1
+    },
+    {
+      "source": "src_ontology_patch_parsedecisionlogpath",
+      "target": "src_ontology_patch_isinside",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "src/ontology-patch.ts",
+      "source_location": "L176",
+      "weight": 1,
+      "_src": "src_ontology_patch_parsedecisionlogpath",
+      "_tgt": "src_ontology_patch_isinside",
+      "confidence_score": 1
+    },
+    {
+      "source": "src_ontology_patch_parsedecisionlogpath",
+      "target": "src_ontology_patch_readablelogpath",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "src/ontology-patch.ts",
+      "source_location": "L175",
+      "weight": 1,
+      "_src": "src_ontology_patch_parsedecisionlogpath",
+      "_tgt": "src_ontology_patch_readablelogpath",
+      "confidence_score": 1
+    },
+    {
+      "source": "src_ontology_patch_parsedecisionlogpath",
+      "target": "src_ontology_patch_isrecord",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "src/ontology-patch.ts",
+      "source_location": "L208",
+      "weight": 1,
+      "_src": "src_ontology_patch_parsedecisionlogpath",
+      "_tgt": "src_ontology_patch_isrecord",
+      "confidence_score": 1
+    },
+    {
+      "source": "src_ontology_patch_parsedecisionlogpath",
+      "target": "src_ontology_patch_nonemptystring",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "src/ontology-patch.ts",
+      "source_location": "L215",
+      "weight": 1,
+      "_src": "src_ontology_patch_parsedecisionlogpath",
+      "_tgt": "src_ontology_patch_nonemptystring",
       "confidence_score": 1
     },
     {
@@ -37111,6 +37249,42 @@
     },
     {
       "source": "src_ontology_reconciliation_ts",
+      "target": "src_ontology_reconciliation_loadontologyreconciliationcandidates",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/ontology-reconciliation.ts",
+      "source_location": "L131",
+      "weight": 1,
+      "_src": "src_ontology_reconciliation_ts",
+      "_tgt": "src_ontology_reconciliation_loadontologyreconciliationcandidates",
+      "confidence_score": 1
+    },
+    {
+      "source": "src_ontology_reconciliation_ts",
+      "target": "src_ontology_reconciliation_queryontologyreconciliationcandidates",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/ontology-reconciliation.ts",
+      "source_location": "L135",
+      "weight": 1,
+      "_src": "src_ontology_reconciliation_ts",
+      "_tgt": "src_ontology_reconciliation_queryontologyreconciliationcandidates",
+      "confidence_score": 1
+    },
+    {
+      "source": "src_ontology_reconciliation_ts",
+      "target": "src_ontology_reconciliation_filterontologyreconciliationcandidates",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/ontology-reconciliation.ts",
+      "source_location": "L207",
+      "weight": 1,
+      "_src": "src_ontology_reconciliation_ts",
+      "_tgt": "src_ontology_reconciliation_filterontologyreconciliationcandidates",
+      "confidence_score": 1
+    },
+    {
+      "source": "src_ontology_reconciliation_ts",
       "target": "src_ontology_reconciliation_generateontologyreconciliationcandidates",
       "relation": "contains",
       "confidence": "EXTRACTED",
@@ -37203,6 +37377,18 @@
       "weight": 1,
       "_src": "src_ontology_reconciliation_candidateid",
       "_tgt": "src_ontology_reconciliation_sha256",
+      "confidence_score": 1
+    },
+    {
+      "source": "src_ontology_reconciliation_filterontologyreconciliationcandidates",
+      "target": "src_ontology_reconciliation_queryontologyreconciliationcandidates",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "src/ontology-reconciliation.ts",
+      "source_location": "L211",
+      "weight": 1,
+      "_src": "src_ontology_reconciliation_filterontologyreconciliationcandidates",
+      "_tgt": "src_ontology_reconciliation_queryontologyreconciliationcandidates",
       "confidence_score": 1
     },
     {
@@ -43999,18 +44185,6 @@
     },
     {
       "source": "src_serve_toolshortestpath",
-      "target": "src_serve_nodedisplaylabel",
-      "relation": "calls",
-      "confidence": "EXTRACTED",
-      "source_file": "src/serve.ts",
-      "source_location": "L560",
-      "weight": 1,
-      "_src": "src_serve_toolshortestpath",
-      "_tgt": "src_serve_nodedisplaylabel",
-      "confidence_score": 1
-    },
-    {
-      "source": "src_serve_toolshortestpath",
       "target": "src_serve_mcpfield",
       "relation": "calls",
       "confidence": "EXTRACTED",
@@ -44019,6 +44193,18 @@
       "weight": 1,
       "_src": "src_serve_toolshortestpath",
       "_tgt": "src_serve_mcpfield",
+      "confidence_score": 1
+    },
+    {
+      "source": "src_serve_toolshortestpath",
+      "target": "src_serve_nodedisplaylabel",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "src/serve.ts",
+      "source_location": "L560",
+      "weight": 1,
+      "_src": "src_serve_toolshortestpath",
+      "_tgt": "src_serve_nodedisplaylabel",
       "confidence_score": 1
     },
     {
