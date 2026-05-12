@@ -1,6 +1,6 @@
 ---
 name: graphify
-description: "Use the TypeScript graphify CLI from VS Code Copilot Chat to build and query a project knowledge graph."
+description: "any input (code, docs, papers, images) -> knowledge graph -> clustered communities -> HTML + JSON + audit report. Use when user asks any question about a codebase, project content, architecture, or file relationships, especially if .graphify/ exists. Provides persistent graph with god nodes, community detection, and BFS/DFS query tools."
 trigger: /graphify
 ---
 

@@ -249,6 +249,21 @@ describe("LLM execution ports", () => {
     })).rejects.toThrow("Direct LLM response was not valid JSON");
   });
 
+  it("rejects oversized direct JSON responses before parsing", async () => {
+    generateTextMock.mockResolvedValue({
+      text: `{"nodes":[],"edges":[],"padding":"${"x".repeat(10 * 1024 * 1024)}"}`,
+      finishReason: "stop",
+      usage: {},
+    });
+    process.env.MISTRAL_API_KEY = "test-key";
+    const client = createDirectTextJsonClient({ provider: "mistral" });
+
+    await expect(client.generateJson({
+      schema: "graphify_extraction_v1",
+      prompt: "Return JSON only.",
+    })).rejects.toThrow("Direct LLM response exceeds");
+  });
+
   it("redacts likely secrets from audit metadata", () => {
     expect(
       redactSecrets({

@@ -349,6 +349,11 @@ const PLATFORM_CONFIG: Record<string, PlatformConfig> = {
     skill_dst: join(".hermes", "skills", "graphify", "SKILL.md"),
     claude_md: false,
   },
+  kimi: {
+    skill_file: "skill.md",
+    skill_dst: join(".kimi", "skills", "graphify", "SKILL.md"),
+    claude_md: false,
+  },
   kiro: {
     skill_file: "skill-kiro.md",
     skill_dst: join(".kiro", "skills", "graphify", "SKILL.md"),
@@ -1279,6 +1284,26 @@ function installSkill(platformName: string): void {
   console.log();
 }
 
+function resolveInstallCommandPlatform(
+  positionalPlatform: string | undefined,
+  optionPlatform: string | undefined,
+): string {
+  const defaultPlatform = platform() === "win32" ? "windows" : "claude";
+  const positional = positionalPlatform
+    ? canonicalPlatformName(positionalPlatform)
+    : undefined;
+  const option = optionPlatform
+    ? canonicalPlatformName(optionPlatform)
+    : undefined;
+
+  if (positional && option && positional !== option) {
+    console.error("error: specify install platform only once");
+    process.exit(1);
+  }
+
+  return option ?? positional ?? defaultPlatform;
+}
+
 export function installClaudeHook(projectDir: string): void {
   const settingsPath = join(projectDir, ".claude", "settings.json");
   mkdirSync(dirname(settingsPath), { recursive: true });
@@ -1557,29 +1582,34 @@ export function getPlatformsToCheck(argv: string[]): string[] {
     seen.add(canonical);
   };
 
-  for (let i = 0; i < argv.length; i += 1) {
-    const token = argv[i];
-    if (!token) continue;
-    if (token in PLATFORM_CONFIG || token in PLATFORM_ALIASES) {
-      add(token);
-      continue;
-    }
-    if (token === "--platform") {
-      add(argv[i + 1]);
-      i += 1;
-      continue;
-    }
-    if (token.startsWith("--platform=")) {
-      add(token.slice("--platform=".length));
-    }
-  }
-
-  if (seen.size > 0) {
-    return [...seen];
-  }
-
   if (argv[0] === "install") {
+    for (let i = 1; i < argv.length; i += 1) {
+      const token = argv[i];
+      if (!token) continue;
+      if (token in PLATFORM_CONFIG || token in PLATFORM_ALIASES) {
+        add(token);
+        continue;
+      }
+      if (token === "--platform") {
+        add(argv[i + 1]);
+        i += 1;
+        continue;
+      }
+      if (token.startsWith("--platform=")) {
+        add(token.slice("--platform=".length));
+      }
+    }
+    if (seen.size > 0) {
+      return [...seen];
+    }
     return [platform() === "win32" ? "windows" : "claude"];
+  }
+
+  if (argv[1] === "install" || argv[1] === "uninstall") {
+    add(argv[0]);
+    if (seen.size > 0) {
+      return [...seen];
+    }
   }
 
   return [];
@@ -1606,9 +1636,10 @@ export async function main(): Promise<void> {
   program
     .command("install")
     .description("Copy skill to platform config dir")
-    .option("--platform <platform>", "Target platform", platform() === "win32" ? "windows" : "claude")
-    .action((opts) => {
-      installSkill(opts.platform);
+    .argument("[platform]", "Target platform")
+    .option("--platform <platform>", "Target platform")
+    .action((platformArg: string | undefined, opts) => {
+      installSkill(resolveInstallCommandPlatform(platformArg, opts.platform));
     });
 
   program

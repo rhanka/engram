@@ -56,6 +56,7 @@ describe("safeFetch", () => {
 describe("sanitizeLabel", () => {
   it("strips control characters", () => {
     expect(sanitizeLabel("hello\x00world\x1f")).toBe("helloworld");
+    expect(sanitizeLabel("hello\u2028world\u2029")).toBe("helloworld");
   });
 
   it("caps length at 256", () => {

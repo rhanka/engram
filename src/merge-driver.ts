@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import type { SerializedGraphData } from "./graph.js";
@@ -10,10 +10,22 @@ export interface MergeGraphJsonResult {
   edgeCount: number;
 }
 
+const MERGE_MAX_GRAPH_BYTES = 50 * 1024 * 1024;
+const MERGE_MAX_GRAPH_NODES = 100_000;
+
 function readGraph(path: string): SerializedGraphData | null {
   const resolved = resolve(path);
   if (!existsSync(resolved)) return null;
-  return JSON.parse(readFileSync(resolved, "utf-8")) as SerializedGraphData;
+  const stat = statSync(resolved);
+  if (stat.size > MERGE_MAX_GRAPH_BYTES) {
+    throw new Error(`graph.json ${resolved} is ${stat.size} bytes, exceeds ${MERGE_MAX_GRAPH_BYTES}-byte cap`);
+  }
+  const raw = JSON.parse(readFileSync(resolved, "utf-8")) as SerializedGraphData;
+  const nodeCount = raw.nodes?.length ?? 0;
+  if (nodeCount > MERGE_MAX_GRAPH_NODES) {
+    throw new Error(`graph.json ${resolved} has ${nodeCount} nodes, exceeds ${MERGE_MAX_GRAPH_NODES}-node cap`);
+  }
+  return raw;
 }
 
 function edgeSortKey(edge: Record<string, unknown> & { source: string; target: string }): string {
@@ -109,6 +121,10 @@ export function mergeGraphJsonFiles(
       const { id, ...attrs } = node;
       merged.mergeNode(id, attrs);
     }
+  }
+
+  if (merged.order > MERGE_MAX_GRAPH_NODES) {
+    throw new Error(`merged graph has ${merged.order} nodes, exceeds ${MERGE_MAX_GRAPH_NODES}-node cap`);
   }
 
   for (const raw of graphs) {

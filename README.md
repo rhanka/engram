@@ -4,24 +4,24 @@
 
 [![TypeScript CI](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=main)](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml)
 
-**An AI coding assistant skill.** Type `/graphify` in Claude Code, Gemini CLI, VS Code Copilot Chat, GitHub Copilot CLI, Aider, OpenCode, OpenClaw, Factory Droid, Trae, Kiro, or Google Antigravity, or `$graphify` in Codex - it reads your files, builds a knowledge graph, and gives you back structure you didn't know was there. Understand a codebase faster. Find the "why" behind architectural decisions.
+**An AI coding assistant skill.** Type `/graphify` in Claude Code, Gemini CLI, Kimi Code, VS Code Copilot Chat, GitHub Copilot CLI, Aider, OpenCode, OpenClaw, Factory Droid, Trae, Kiro, or Google Antigravity, or `$graphify` in Codex - it reads your files, builds a knowledge graph, and gives you back structure you didn't know was there. Understand a codebase faster. Find the "why" behind architectural decisions.
 
 This repository is the maintained TypeScript port of the original Graphify project. Thanks to the original work by [Safi Shamsi](https://github.com/safishamsi/graphify) for the product direction, workflow, and initial implementation.
 
-Multimodal, with the TypeScript port now published as `graphifyy@0.7.5` and closed through the upstream Python Graphify `v0.7.4` line. Code, Markdown, MDX, HTML, PDFs, Office docs, screenshots, diagrams, and other images flow through the current TS runtime. PDFs go through a local preflight: text-layer PDFs are converted with `pdf-parse` and a `pdftotext` fallback when available, while scanned/low-text PDFs can be converted to Markdown + images through `mistral-ocr`. Local audio/video detection uses `yt-dlp` + `ffmpeg` + `faster-whisper-ts`, and generated transcripts/PDF sidecars feed the same assistant-driven semantic pass as docs and papers. 20 languages are supported via tree-sitter AST (Python, JS, TS, Go, Rust, Java, C, C++, Ruby, C#, Kotlin, Scala, PHP, Swift, Lua, Zig, PowerShell, Elixir, Objective-C, Julia), with upstream-aligned fallback support for Vue, Svelte, Blade, Dart, Verilog/SystemVerilog, MJS, and EJS.
+Multimodal, with the TypeScript package line targeting `graphifyy@0.7.10` and closed through the upstream Python Graphify `v0.7.10` release train. Code, Markdown, MDX, HTML, PDFs, Office docs, screenshots, diagrams, and other images flow through the current TS runtime. PDFs go through a local preflight: text-layer PDFs are converted with `pdf-parse` and a `pdftotext` fallback when available, while scanned/low-text PDFs can be converted to Markdown + images through `mistral-ocr`. Local audio/video detection uses `yt-dlp` + `ffmpeg` + `faster-whisper-ts`, and generated transcripts/PDF sidecars feed the same assistant-driven semantic pass as docs and papers. 20 languages are supported via tree-sitter AST (Python, JS, TS, Go, Rust, Java, C, C++, Ruby, C#, Kotlin, Scala, PHP, Swift, Lua, Zig, PowerShell, Elixir, Objective-C, Julia), with upstream-aligned fallback support for Vue, Svelte, Blade, Dart, Verilog/SystemVerilog, MJS, and EJS.
 
 ## Branch Model
 
 - `main` is the maintained TypeScript product branch and the default branch for this repository.
 - `v3` is kept as an upstream mirror / alignment branch for the original Python Graphify lineage.
-- The `v7` parity line is closed in the TypeScript product through `graphifyy@0.7.4`; future upstream drift beyond `0.7.4` should start a new explicit pass in `UPSTREAM_GAP.md`.
+- The `v7` parity line is closed in the TypeScript product through `graphifyy@0.7.10`; future upstream drift beyond the audited `upstream/v7` lock should start a new explicit pass in `UPSTREAM_GAP.md`.
 - npm publication is guarded by GitHub Actions trusted publishing. Release tags are only valid when the tagged commit is already contained in the default branch and the tag version matches `package.json`.
 
 ## Lineage And Alignment
 
 | Source | What this repo keeps or adapts | Alignment contract |
 |---|---|---|
-| Original Graphify by [Safi Shamsi](https://github.com/safishamsi/graphify) | Core product idea: folder -> knowledge graph, assistant skill workflow, graph/report/html outputs, provenance labels, community detection, and multimodal corpus workflow. | `v3` mirrors upstream Python Graphify history; `UPSTREAM_GAP.md` tracks the closed `v4` line and the active `v5` catch-up work. |
+| Original Graphify by [Safi Shamsi](https://github.com/safishamsi/graphify) | Core product idea: folder -> knowledge graph, assistant skill workflow, graph/report/html outputs, provenance labels, community detection, and multimodal corpus workflow. | `v3` mirrors upstream Python Graphify history; `UPSTREAM_GAP.md` tracks closed Python parity lines through the audited `0.7.10` release train. |
 | This TypeScript port | npm package, TypeScript runtime at repo root, `.graphify/` state, multi-assistant installers, MCP surfaces, git/worktree lifecycle, and local audio/video transcription through the TS toolchain. | `main` is the maintained default branch; TS-specific behavior is documented as deliberate divergence, not upstream parity. |
 | `code-review-graph` reference | Review-oriented graph projections: first-hop summary, review delta, review analysis, review evaluation, install previews, and advisory commit grouping vocabulary. | Adopted as additive review surfaces over Graphify's graph; Graphify does not become review-only, does not adopt SQLite/embeddings as default, and keeps multimodal support. |
 
@@ -29,7 +29,7 @@ Multimodal, with the TypeScript port now published as `graphifyy@0.7.5` and clos
 
 ```bash
 $graphify .                        # Codex
-/graphify .                        # Claude Code / Gemini CLI / Copilot / Aider / OpenCode / OpenClaw / Droid / Trae / Kiro / Antigravity
+/graphify .                        # Claude Code / Gemini CLI / Kimi Code / Copilot / Aider / OpenCode / OpenClaw / Droid / Trae / Kiro / Antigravity
 graphify clone https://github.com/<owner>/<repo>
 graphify merge-graphs repo-a/.graphify/graph.json repo-b/.graphify/graph.json --out .graphify/cross-repo-graph.json
 ```
@@ -113,7 +113,7 @@ Every relationship is tagged `EXTRACTED` (found directly in source), `INFERRED` 
 
 ## Install
 
-**Requires:** Node.js 20+ and one of: [Claude Code](https://claude.ai/code), [Codex](https://openai.com/codex), [Gemini CLI](https://github.com/google-gemini/gemini-cli), VS Code Copilot Chat, [GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli), [Aider](https://aider.chat), [OpenCode](https://opencode.ai), [OpenClaw](https://openclaw.ai), [Factory Droid](https://factory.ai), [Trae](https://trae.com), [Cursor](https://cursor.com), Hermes, Kiro, or Google Antigravity.
+**Requires:** Node.js 20+ and one of: [Claude Code](https://claude.ai/code), [Codex](https://openai.com/codex), [Gemini CLI](https://github.com/google-gemini/gemini-cli), Kimi Code, VS Code Copilot Chat, [GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli), [Aider](https://aider.chat), [OpenCode](https://opencode.ai), [OpenClaw](https://openclaw.ai), [Factory Droid](https://factory.ai), [Trae](https://trae.com), [Cursor](https://cursor.com), Hermes, Kiro, or Google Antigravity.
 
 ```bash
 npm install -g graphifyy
@@ -142,16 +142,17 @@ Install commands print a mutation preview before writing files, including the ex
 | Trae CN | `graphify install --platform trae-cn` |
 | Cursor | `graphify install --platform cursor` |
 | Hermes | `graphify install --platform hermes` |
+| Kimi Code | `graphify install --platform kimi` |
 | Kiro | `graphify install --platform kiro` |
 | Google Antigravity | `graphify install --platform antigravity` |
 
-Codex users also need `multi_agent = true` under `[features]` in `~/.codex/config.toml` for parallel extraction. Gemini CLI exposes `/graphify` through a custom command installed into `~/.gemini/commands/graphify.toml`, and the project install writes `.gemini/settings.json` so Gemini can use `graphify serve` as an MCP server. GitHub Copilot CLI installs a global `~/.copilot/skills/graphify/SKILL.md`; VS Code Copilot Chat installs the same global skill plus project `.github/copilot-instructions.md`. Aider uses a global `~/.aider/graphify/SKILL.md`, but semantic extraction stays sequential there because multi-agent dispatch is still early on that platform. OpenCode installs a project-local `tool.execute.before` plugin in `.opencode/plugins/graphify.js` and registers it in `.opencode/opencode.json`, so OpenCode gets the same graph reminder before bash tool calls. Factory Droid uses the `Task` tool for parallel subagent dispatch. OpenClaw and Hermes use sequential extraction. Kiro writes a project `.kiro/skills/graphify/SKILL.md` plus always-on `.kiro/steering/graphify.md`. Google Antigravity writes `.agent/rules/graphify.md`, `.agent/workflows/graphify.md`, and a global `~/.agent/skills/graphify/SKILL.md`. Trae uses the Agent tool for parallel subagent dispatch and does **not** support PreToolUse hooks — AGENTS.md is the always-on mechanism.
+Codex users also need `multi_agent = true` under `[features]` in `~/.codex/config.toml` for parallel extraction. Gemini CLI exposes `/graphify` through a custom command installed into `~/.gemini/commands/graphify.toml`, and the project install writes `.gemini/settings.json` so Gemini can use `graphify serve` as an MCP server. Kimi Code installs a global `~/.kimi/skills/graphify/SKILL.md` and can register the same MCP server manually with `kimi mcp add --transport stdio graphify -- graphify serve .graphify/graph.json`. GitHub Copilot CLI installs a global `~/.copilot/skills/graphify/SKILL.md`; VS Code Copilot Chat installs the same global skill plus project `.github/copilot-instructions.md`. Aider uses a global `~/.aider/graphify/SKILL.md`, but semantic extraction stays sequential there because multi-agent dispatch is still early on that platform. OpenCode installs a project-local `tool.execute.before` plugin in `.opencode/plugins/graphify.js` and registers it in `.opencode/opencode.json`, so OpenCode gets the same graph reminder before bash tool calls. Factory Droid uses the `Task` tool for parallel subagent dispatch. OpenClaw and Hermes use sequential extraction. Kiro writes a project `.kiro/skills/graphify/SKILL.md` plus always-on `.kiro/steering/graphify.md`. Google Antigravity writes `.agent/rules/graphify.md`, `.agent/workflows/graphify.md`, and a global `~/.agent/skills/graphify/SKILL.md`. Trae uses the Agent tool for parallel subagent dispatch and does **not** support PreToolUse hooks - AGENTS.md is the always-on mechanism.
 
 Then open your AI coding assistant and invoke the skill:
 
 ```bash
 $graphify .                        # Codex
-/graphify .                        # Claude Code / Gemini CLI / Copilot / Aider / OpenCode / OpenClaw / Droid / Trae / Kiro / Antigravity
+/graphify .                        # Claude Code / Gemini CLI / Kimi Code / Copilot / Aider / OpenCode / OpenClaw / Droid / Trae / Kiro / Antigravity
 ```
 
 ### Make your assistant always use the graph (recommended)
@@ -197,6 +198,8 @@ After building a graph, run this once in your project:
 **Google Antigravity** writes `.agent/rules/graphify.md`, `.agent/workflows/graphify.md`, and a global `~/.agent/skills/graphify/SKILL.md`; the rules/workflow files are the always-on mechanism.
 
 **Hermes** installs a global `~/.hermes/skills/graphify/SKILL.md` and uses the same explicit `/graphify` skill contract.
+
+**Kimi Code** installs a global `~/.kimi/skills/graphify/SKILL.md` and uses the same explicit `/graphify` skill contract. Register the graph MCP server with `kimi mcp add --transport stdio graphify -- graphify serve .graphify/graph.json` when you want tool-call access to the live graph.
 
 **OpenClaw, Factory Droid, Trae** write the same rules to `AGENTS.md` in your project root. These platforms don't support PreToolUse hooks, so AGENTS.md is the always-on mechanism.
 
@@ -250,7 +253,9 @@ codex mcp add graphify -- graphify serve /absolute/path/to/.graphify/graph.json
 ```
 
 That gives the assistant structured graph access for repeated queries such as
-`query_graph`, `get_node`, `get_neighbors`, and `shortest_path`.
+`query_graph`, `get_node`, `get_neighbors`, and `shortest_path`, plus read-only
+resources at `graphify://report`, `graphify://stats`, `graphify://god-nodes`,
+`graphify://surprises`, `graphify://audit`, and `graphify://questions`.
 
 <details>
 <summary>Manual install (curl)</summary>

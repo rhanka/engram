@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -38,5 +38,29 @@ describe("ingest", () => {
 
     expect(out).toBe(expected);
     expect(downloadAudioMock).toHaveBeenCalledOnce();
+  });
+
+  it("escapes URL ingest frontmatter scalars against YAML injection", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-ingest-frontmatter-"));
+    cleanupDirs.push(dir);
+    vi.stubGlobal("fetch", vi.fn(async () =>
+      new Response(
+        "<html><head><title>Injected\r\nspoof_key: yes</title></head><body>Hello</body></html>",
+        { status: 200 },
+      )
+    ));
+
+    const out = await ingest("https://example.test/page", dir, {
+      contributor: "Eve\u2028google_file_id: injected",
+    });
+    const rendered = readFileSync(out, "utf-8");
+    const frontmatter = rendered.split("---\n")[1] ?? "";
+
+    expect(rendered.includes("\r")).toBe(false);
+    expect(rendered.includes("\u2028")).toBe(false);
+    expect(frontmatter.match(/^source_url:/gmu)?.length ?? 0).toBe(1);
+    expect(frontmatter.match(/^contributor:/gmu)?.length ?? 0).toBe(1);
+    expect(frontmatter.match(/^spoof_key:/gmu)?.length ?? 0).toBe(0);
+    expect(frontmatter.match(/^google_file_id:/gmu)?.length ?? 0).toBe(0);
   });
 });

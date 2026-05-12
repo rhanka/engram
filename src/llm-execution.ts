@@ -167,10 +167,18 @@ function ensureProviderCredential(provider: DirectLlmProvider): void {
   }
 }
 
+const MAX_DIRECT_LLM_JSON_BYTES = 10 * 1024 * 1024;
+
 function parseJsonFromLlmText(text: string): unknown {
   const trimmed = text.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/iu);
   const candidate = fenced ? fenced[1]!.trim() : trimmed;
+  const byteLength = Buffer.byteLength(candidate, "utf-8");
+  if (byteLength > MAX_DIRECT_LLM_JSON_BYTES) {
+    throw new Error(
+      `Direct LLM response exceeds ${MAX_DIRECT_LLM_JSON_BYTES} bytes (${byteLength} bytes); refusing to parse JSON`,
+    );
+  }
   try {
     return JSON.parse(candidate);
   } catch (err) {

@@ -94,9 +94,26 @@ function writeFixtureGraph(dir: string, directed: boolean = false): string {
   return graphPath;
 }
 
+function rewriteFixtureGraphWithEdgesKey(graphPath: string): void {
+  const data = JSON.parse(readFileSync(graphPath, "utf-8")) as {
+    links?: unknown[];
+    edges?: unknown[];
+  };
+  data.edges = data.links;
+  delete data.links;
+  writeFileSync(graphPath, JSON.stringify(data, null, 2), "utf-8");
+}
+
 function toolText(result: { content?: Array<{ type?: string; text?: string }> }): string {
   return (result.content ?? [])
     .map((item) => (item.type === "text" ? item.text ?? "" : ""))
+    .filter(Boolean)
+    .join("\n");
+}
+
+function resourceText(result: { contents?: Array<{ text?: string }> }): string {
+  return (result.contents ?? [])
+    .map((item) => item.text ?? "")
     .filter(Boolean)
     .join("\n");
 }
@@ -289,6 +306,174 @@ describe("MCP stdio server", () => {
       );
       expect(names).not.toContain("validate_ontology_patch");
       expect(names).not.toContain("apply_ontology_patch");
+    } finally {
+      await client.close().catch(() => undefined);
+      await clientTransport.close().catch(() => undefined);
+      await serverPromise.catch(() => undefined);
+    }
+  });
+
+  it("lists upstream-compatible graph resources", async () => {
+    const dir = makeTempDir();
+    const graphPath = writeFixtureGraph(dir);
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const serverPromise = serve(graphPath, serverTransport);
+    const client = new Client({ name: "graphify-serve-test", version: "0.0.0" });
+
+    try {
+      await client.connect(clientTransport);
+      const result = await client.listResources();
+      const resources = result.resources.map((resource) => ({
+        uri: resource.uri,
+        name: resource.name,
+        mimeType: resource.mimeType,
+      }));
+
+      expect(resources).toEqual(
+        expect.arrayContaining([
+          { uri: "graphify://report", name: "Graph Report", mimeType: "text/markdown" },
+          { uri: "graphify://stats", name: "Graph Stats", mimeType: "text/plain" },
+          { uri: "graphify://god-nodes", name: "God Nodes", mimeType: "text/plain" },
+          { uri: "graphify://surprises", name: "Surprising Connections", mimeType: "text/plain" },
+          { uri: "graphify://audit", name: "Confidence Audit", mimeType: "text/plain" },
+          { uri: "graphify://questions", name: "Suggested Questions", mimeType: "text/plain" },
+        ]),
+      );
+    } finally {
+      await client.close().catch(() => undefined);
+      await clientTransport.close().catch(() => undefined);
+      await serverPromise.catch(() => undefined);
+    }
+  });
+
+  it("reads upstream-compatible graph resources", async () => {
+    const dir = makeTempDir();
+    const graphPath = writeFixtureGraph(dir);
+    writeFileSync(join(dir, "GRAPH_REPORT.md"), "# Fixture Graph Report\n\n## Summary\n", "utf-8");
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const serverPromise = serve(graphPath, serverTransport);
+    const client = new Client({ name: "graphify-serve-test", version: "0.0.0" });
+
+    try {
+      await client.connect(clientTransport);
+
+      expect(resourceText(await client.readResource({ uri: "graphify://report" }))).toContain(
+        "# Fixture Graph Report",
+      );
+
+      const stats = resourceText(await client.readResource({ uri: "graphify://stats" }));
+      expect(stats).toContain("Nodes: 4");
+      expect(stats).toContain("Edges: 3");
+      expect(stats).toContain("Communities: 2");
+
+      const godNodes = resourceText(await client.readResource({ uri: "graphify://god-nodes" }));
+      expect(godNodes).toContain("God nodes (most connected):");
+      expect(godNodes).toContain("BetaRepository");
+
+      const surprises = resourceText(await client.readResource({ uri: "graphify://surprises" }));
+      expect(surprises).toContain("Surprising cross-community connections:");
+      expect(surprises).toContain("BetaRepository <-> GammaDocs [documents]");
+
+      const audit = resourceText(await client.readResource({ uri: "graphify://audit" }));
+      expect(audit).toContain("Total edges: 3");
+      expect(audit).toContain("EXTRACTED: 2 (67%)");
+      expect(audit).toContain("INFERRED: 1 (33%)");
+      expect(audit).toContain("AMBIGUOUS: 0 (0%)");
+
+      const questions = resourceText(await client.readResource({ uri: "graphify://questions" }));
+      expect(questions).toContain("Suggested questions:");
+      expect(questions).toContain("`BetaRepository`");
+    } finally {
+      await client.close().catch(() => undefined);
+      await clientTransport.close().catch(() => undefined);
+      await serverPromise.catch(() => undefined);
+    }
+  });
+
+  it("loads graph JSON resources and tools when edges is used instead of links", async () => {
+    const dir = makeTempDir();
+    const graphPath = writeFixtureGraph(dir);
+    rewriteFixtureGraphWithEdgesKey(graphPath);
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const serverPromise = serve(graphPath, serverTransport);
+    const client = new Client({ name: "graphify-serve-test", version: "0.0.0" });
+
+    try {
+      await client.connect(clientTransport);
+
+      const stats = toolText(
+        await client.callTool({
+          name: "graph_stats",
+          arguments: {},
+        }),
+      );
+      expect(stats).toContain("Edges: 3");
+
+      const audit = resourceText(await client.readResource({ uri: "graphify://audit" }));
+      expect(audit).toContain("Total edges: 3");
+    } finally {
+      await client.close().catch(() => undefined);
+      await clientTransport.close().catch(() => undefined);
+      await serverPromise.catch(() => undefined);
+    }
+  });
+
+  it("scrubs control characters from MCP graph text fields", async () => {
+    const dir = makeTempDir();
+    const graphPath = join(dir, "graph.json");
+    writeFileSync(
+      graphPath,
+      JSON.stringify({
+        directed: false,
+        graph: {},
+        nodes: [
+          {
+            id: "alpha",
+            label: "Alpha\rNode",
+            source_file: "src/alpha.ts\r\nInjected: true",
+            source_location: "10\n20",
+            file_type: "code\rmalicious",
+            community: 0,
+          },
+          {
+            id: "beta",
+            label: "Beta\nNode",
+            source_file: "src/beta.ts",
+            file_type: "code",
+            community: 0,
+          },
+        ],
+        links: [
+          { source: "alpha", target: "beta", relation: "uses\nmalicious", confidence: "EXTRACTED\rspoof" },
+        ],
+      }, null, 2),
+      "utf-8",
+    );
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const serverPromise = serve(graphPath, serverTransport);
+    const client = new Client({ name: "graphify-serve-test", version: "0.0.0" });
+
+    try {
+      await client.connect(clientTransport);
+
+      const node = toolText(
+        await client.callTool({
+          name: "get_node",
+          arguments: { label: "alpha" },
+        }),
+      );
+      const neighbors = toolText(
+        await client.callTool({
+          name: "get_neighbors",
+          arguments: { label: "alpha" },
+        }),
+      );
+
+      expect(node.includes("\r")).toBe(false);
+      expect(neighbors.includes("\r")).toBe(false);
+      expect(node).not.toContain("Injected: true\n");
+      expect(neighbors).not.toContain("uses\nmalicious");
+      expect(neighbors).toContain("[usesmalicious] [EXTRACTEDspoof]");
     } finally {
       await client.close().catch(() => undefined);
       await clientTransport.close().catch(() => undefined);

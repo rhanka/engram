@@ -237,7 +237,7 @@ export function validateGraphPath(filePath: string, base?: string): string {
 // Label sanitization
 // ---------------------------------------------------------------------------
 
-const CONTROL_CHAR_RE = /[\x00-\x1f\x7f]/g;
+const CONTROL_CHAR_RE = /[\x00-\x1f\x7f\u2028\u2029]/g;
 const MAX_LABEL_LEN = 256;
 
 /** Strip control characters and cap length. Safe for JSON embedding. */

@@ -13,12 +13,26 @@ import { downloadAudio } from "./transcribe.js";
 // Helpers
 // ---------------------------------------------------------------------------
 
-function yamlStr(s: string): string {
-  return s
-    .replace(/\\/g, "\\\\")
-    .replace(/"/g, '\\"')
-    .replace(/\n/g, " ")
-    .replace(/\r/g, " ");
+function yamlStr(value: string | null | undefined): string {
+  let out = "";
+  for (const ch of String(value ?? "")) {
+    const code = ch.charCodeAt(0);
+    if (ch === "\\") out += "\\\\";
+    else if (ch === "\"") out += "\\\"";
+    else if (ch === "\n") out += "\\n";
+    else if (ch === "\r") out += "\\r";
+    else if (ch === "\t") out += "\\t";
+    else if (ch === "\0") out += "\\0";
+    else if (code === 0x2028) out += "\\L";
+    else if (code === 0x2029) out += "\\P";
+    else if (code < 0x20 || code === 0x7f) out += `\\x${code.toString(16).padStart(2, "0")}`;
+    else out += ch;
+  }
+  return out;
+}
+
+function yamlQuoted(value: string | null | undefined): string {
+  return `"${yamlStr(value)}"`;
 }
 
 function safeFilename(url: string, suffix: string): string {
@@ -104,12 +118,12 @@ async function fetchTweet(
   }
 
   const now = new Date().toISOString();
-  const content = `---
-source_url: ${url}
+const content = `---
+source_url: ${yamlQuoted(url)}
 type: tweet
-author: ${tweetAuthor}
-captured_at: ${now}
-contributor: ${contributor ?? author ?? "unknown"}
+author: ${yamlQuoted(tweetAuthor)}
+captured_at: ${yamlQuoted(now)}
+contributor: ${yamlQuoted(contributor ?? author ?? "unknown")}
 ---
 
 # Tweet by @${tweetAuthor}
@@ -136,12 +150,12 @@ async function fetchWebpage(
 
   const markdown = await htmlToMarkdown(html, url);
   const now = new Date().toISOString();
-  const content = `---
-source_url: ${url}
+const content = `---
+source_url: ${yamlQuoted(url)}
 type: webpage
-title: "${yamlStr(title)}"
-captured_at: ${now}
-contributor: ${contributor ?? author ?? "unknown"}
+title: ${yamlQuoted(title)}
+captured_at: ${yamlQuoted(now)}
+contributor: ${yamlQuoted(contributor ?? author ?? "unknown")}
 ---
 
 # ${title}
@@ -197,14 +211,14 @@ async function fetchArxiv(
   }
 
   const now = new Date().toISOString();
-  const content = `---
-source_url: ${url}
-arxiv_id: ${arxivId}
+const content = `---
+source_url: ${yamlQuoted(url)}
+arxiv_id: ${yamlQuoted(arxivId)}
 type: paper
-title: "${title}"
-paper_authors: "${paperAuthors}"
-captured_at: ${now}
-contributor: ${contributor ?? author ?? "unknown"}
+title: ${yamlQuoted(title)}
+paper_authors: ${yamlQuoted(paperAuthors)}
+captured_at: ${yamlQuoted(now)}
+contributor: ${yamlQuoted(contributor ?? author ?? "unknown")}
 ---
 
 # ${title}

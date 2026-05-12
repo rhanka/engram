@@ -3,10 +3,10 @@
  *
  * Uses @modelcontextprotocol/sdk for the server and graphology for the graph.
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import Graph from "graphology";
 import { bidirectional } from "graphology-shortest-path/unweighted.js";
-import { basename, dirname, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import pkg from "../package.json";
 import {
   forEachTraversalNeighbor,
@@ -16,7 +16,11 @@ import {
 import { resolveGraphInputPath } from "./paths.js";
 import { validateGraphPath, sanitizeLabel } from "./security.js";
 import { normalizeSearchText, scoreSearchText, textMatchesQuery } from "./search.js";
-import { godNodes as computeGodNodes } from "./analyze.js";
+import {
+  godNodes as computeGodNodes,
+  surprisingConnections,
+  suggestQuestions,
+} from "./analyze.js";
 import { buildFirstHopSummary, firstHopSummaryToText } from "./summary.js";
 import { buildReviewDelta, reviewDeltaToText } from "./review.js";
 import { buildReviewAnalysis, reviewAnalysisToText } from "./review-analysis.js";
@@ -37,6 +41,52 @@ interface McpToolDefinition {
   description: string;
   inputSchema: Record<string, unknown>;
 }
+
+interface McpResourceDefinition {
+  uri: string;
+  name: string;
+  description: string;
+  mimeType: string;
+}
+
+const MCP_RESOURCES: McpResourceDefinition[] = [
+  {
+    uri: "graphify://report",
+    name: "Graph Report",
+    description: "Full GRAPH_REPORT.md",
+    mimeType: "text/markdown",
+  },
+  {
+    uri: "graphify://stats",
+    name: "Graph Stats",
+    description: "Node/edge/community counts and confidence breakdown",
+    mimeType: "text/plain",
+  },
+  {
+    uri: "graphify://god-nodes",
+    name: "God Nodes",
+    description: "Top 10 most-connected nodes",
+    mimeType: "text/plain",
+  },
+  {
+    uri: "graphify://surprises",
+    name: "Surprising Connections",
+    description: "Cross-community surprising connections",
+    mimeType: "text/plain",
+  },
+  {
+    uri: "graphify://audit",
+    name: "Confidence Audit",
+    description: "EXTRACTED/INFERRED/AMBIGUOUS edge breakdown",
+    mimeType: "text/plain",
+  },
+  {
+    uri: "graphify://questions",
+    name: "Suggested Questions",
+    description: "Suggested questions for this codebase",
+    mimeType: "text/plain",
+  },
+];
 
 // ---------------------------------------------------------------------------
 // Graph loading
@@ -92,6 +142,14 @@ function communityName(G: Graph, cid: number | string | null | undefined): strin
     return sanitizeLabel(fromGraph);
   }
   return null;
+}
+
+function mcpField(value: unknown): string {
+  return sanitizeLabel(value);
+}
+
+function nodeDisplayLabel(G: Graph, nodeId: string): string {
+  return mcpField((G.getNodeAttribute(nodeId, "label") as string | undefined) ?? nodeId);
 }
 
 function scoreNodes(G: Graph, terms: string[]): Array<[number, string]> {
@@ -165,7 +223,7 @@ function subgraphToText(
   for (const nid of sorted) {
     const d = G.getNodeAttributes(nid);
     lines.push(
-      `NODE ${sanitizeLabel((d.label as string) ?? nid)} [src=${d.source_file ?? ""} loc=${d.source_location ?? ""} community=${d.community ?? ""}]`,
+      `NODE ${mcpField((d.label as string) ?? nid)} [src=${mcpField(d.source_file)} loc=${mcpField(d.source_location)} community=${mcpField(d.community)}]`,
     );
   }
   for (const [u, v] of edges) {
@@ -174,7 +232,7 @@ function subgraphToText(
       if (!edgeKey) continue;
       const d = G.getEdgeAttributes(edgeKey);
       lines.push(
-        `EDGE ${sanitizeLabel((G.getNodeAttribute(u, "label") as string) ?? u)} --${d.relation ?? ""} [${d.confidence ?? ""}]--> ${sanitizeLabel((G.getNodeAttribute(v, "label") as string) ?? v)}`,
+        `EDGE ${nodeDisplayLabel(G, u)} --${mcpField(d.relation)} [${mcpField(d.confidence)}]--> ${nodeDisplayLabel(G, v)}`,
       );
     }
   }
@@ -221,7 +279,7 @@ function toolQueryGraph(G: Graph, args: Record<string, unknown>): string {
     mode === "dfs" ? dfs(G, startNodes, depth) : bfs(G, startNodes, depth);
 
   const startLabels = startNodes.map(
-    (n) => (G.getNodeAttribute(n, "label") as string) ?? n,
+    (n) => nodeDisplayLabel(G, n),
   );
   const header = `Traversal: ${mode.toUpperCase()} depth=${depth} | Start: [${startLabels.join(", ")}] | ${visited.size} nodes found\n\n`;
   return header + subgraphToText(G, visited, edges, budget);
@@ -241,14 +299,14 @@ function toolGetNode(G: Graph, args: Record<string, unknown>): string {
   if (matches.length === 0) return `No node matching '${label}' found.`;
   const [nid, d] = matches[0]!;
   return [
-    `Node: ${d.label ?? nid}`,
-    `  ID: ${nid}`,
-    `  Source: ${d.source_file ?? ""} ${d.source_location ?? ""}`,
-    `  Type: ${d.file_type ?? ""}`,
+    `Node: ${mcpField(d.label ?? nid)}`,
+    `  ID: ${mcpField(nid)}`,
+    `  Source: ${mcpField(d.source_file)} ${mcpField(d.source_location)}`,
+    `  Type: ${mcpField(d.file_type)}`,
     `  Community: ${
       d.community_name
-        ? `${d.community ?? ""} (${d.community_name as string})`
-        : (communityName(G, d.community as number | undefined) ?? String(d.community ?? ""))
+        ? `${mcpField(d.community)} (${mcpField(d.community_name)})`
+        : (communityName(G, d.community as number | undefined) ?? mcpField(d.community))
     }`,
     `  Degree: ${G.degree(nid)}`,
   ].join("\n");
@@ -260,7 +318,7 @@ function toolGetNeighbors(G: Graph, args: Record<string, unknown>): string {
   const matches = findNode(G, label);
   if (matches.length === 0) return `No node matching '${label}' found.`;
   const nid = matches[0]!;
-  const lines = [`Neighbors of ${(G.getNodeAttribute(nid, "label") as string) ?? nid}:`];
+  const lines = [`Neighbors of ${nodeDisplayLabel(G, nid)}:`];
   forEachTraversalNeighbor(G, nid, (neighbor) => {
     const edgeKey = G.edge(nid, neighbor);
     if (!edgeKey) return;
@@ -268,7 +326,7 @@ function toolGetNeighbors(G: Graph, args: Record<string, unknown>): string {
     const rel = (d.relation as string) ?? "";
     if (relFilter && !rel.toLowerCase().includes(relFilter)) return;
     lines.push(
-      `  --> ${(G.getNodeAttribute(neighbor, "label") as string) ?? neighbor} [${rel}] [${d.confidence ?? ""}]`,
+      `  --> ${nodeDisplayLabel(G, neighbor)} [${mcpField(rel)}] [${mcpField(d.confidence)}]`,
     );
   });
   return lines.join("\n");
@@ -288,7 +346,7 @@ function toolGetCommunity(
     : `Community ${cid} (${nodes.length} nodes):`];
   for (const n of nodes) {
     const d = G.getNodeAttributes(n);
-    lines.push(`  ${d.label ?? n} [${d.source_file ?? ""}]`);
+    lines.push(`  ${mcpField(d.label ?? n)} [${mcpField(d.source_file)}]`);
   }
   return lines.join("\n");
 }
@@ -298,7 +356,7 @@ function toolGodNodes(G: Graph, args: Record<string, unknown>): string {
   const nodes = computeGodNodes(G, topN);
   const lines = ["God nodes (most connected):"];
   nodes.forEach((n, i) => {
-    lines.push(`  ${i + 1}. ${n.label} - ${n.edges} edges`);
+    lines.push(`  ${i + 1}. ${mcpField(n.label)} - ${n.edges} edges`);
   });
   return lines.join("\n");
 }
@@ -320,6 +378,113 @@ function toolGraphStats(
     `INFERRED: ${Math.round((confs.filter((c) => c === "INFERRED").length / total) * 100)}%`,
     `AMBIGUOUS: ${Math.round((confs.filter((c) => c === "AMBIGUOUS").length / total) * 100)}%`,
   ].join("\n");
+}
+
+function communityLabelsFromGraph(
+  G: Graph,
+  communities: Map<number, string[]>,
+): Map<number, string> {
+  const labels = new Map<number, string>();
+  const graphLabels = G.getAttribute("community_labels") as
+    | Record<string, unknown>
+    | undefined;
+
+  for (const cid of communities.keys()) {
+    const label = graphLabels?.[String(cid)];
+    labels.set(cid, typeof label === "string" && label.length > 0
+      ? sanitizeLabel(label)
+      : `Community ${cid}`);
+  }
+  return labels;
+}
+
+function resourceConfidenceAudit(G: Graph): string {
+  const counts = {
+    EXTRACTED: 0,
+    INFERRED: 0,
+    AMBIGUOUS: 0,
+  };
+  G.forEachEdge((_, data) => {
+    const confidence = (data.confidence as string | undefined) ?? "EXTRACTED";
+    if (confidence === "EXTRACTED" || confidence === "INFERRED" || confidence === "AMBIGUOUS") {
+      counts[confidence] += 1;
+    }
+  });
+
+  const total = G.size;
+  const denominator = total || 1;
+  return [
+    `Total edges: ${total}`,
+    `EXTRACTED: ${counts.EXTRACTED} (${Math.round((counts.EXTRACTED / denominator) * 100)}%)`,
+    `INFERRED: ${counts.INFERRED} (${Math.round((counts.INFERRED / denominator) * 100)}%)`,
+    `AMBIGUOUS: ${counts.AMBIGUOUS} (${Math.round((counts.AMBIGUOUS / denominator) * 100)}%)`,
+  ].join("\n");
+}
+
+function resourceSurprises(
+  G: Graph,
+  communities: Map<number, string[]>,
+): string {
+  const surprises = surprisingConnections(G, communities, 10);
+  if (surprises.length === 0) {
+    return "No surprising connections found.";
+  }
+  return [
+    "Surprising cross-community connections:",
+    ...surprises.map((surprise) =>
+      `  ${mcpField(surprise.source)} <-> ${mcpField(surprise.target)} [${mcpField(surprise.relation)}]`,
+    ),
+  ].join("\n");
+}
+
+function resourceQuestions(
+  G: Graph,
+  communities: Map<number, string[]>,
+): string {
+  const questions = suggestQuestions(
+    G,
+    communities,
+    communityLabelsFromGraph(G, communities),
+    10,
+  ).filter((question) => typeof question.question === "string" && question.question.length > 0);
+  if (questions.length === 0) {
+    return "No suggested questions available.";
+  }
+  return [
+    "Suggested questions:",
+    ...questions.map((question) => `  - ${mcpField(question.question)}`),
+  ].join("\n");
+}
+
+function readMcpResource(
+  uri: string,
+  graphPath: string,
+  G: Graph,
+  communities: Map<number, string[]>,
+): string {
+  if (uri === "graphify://report") {
+    const reportPath = join(dirname(resolve(graphPath)), "GRAPH_REPORT.md");
+    if (!existsSync(reportPath)) {
+      return "GRAPH_REPORT.md not found. Run graphify extract first.";
+    }
+    return readFileSync(reportPath, "utf-8");
+  }
+  if (uri === "graphify://stats") {
+    return toolGraphStats(G, communities);
+  }
+  if (uri === "graphify://god-nodes") {
+    return toolGodNodes(G, { top_n: 10 });
+  }
+  if (uri === "graphify://surprises") {
+    return resourceSurprises(G, communities);
+  }
+  if (uri === "graphify://audit") {
+    return resourceConfidenceAudit(G);
+  }
+  if (uri === "graphify://questions") {
+    return resourceQuestions(G, communities);
+  }
+  throw new Error(`Unknown resource: ${uri}`);
 }
 
 function toolFirstHopSummary(G: Graph): string {
@@ -392,7 +557,7 @@ function toolShortestPath(G: Graph, args: Record<string, unknown>): string {
 
   const pathNodes = bidirectional(G, srcNid, tgtNid);
   if (!pathNodes) {
-    return `No path found between '${(G.getNodeAttribute(srcNid, "label") as string) ?? srcNid}' and '${(G.getNodeAttribute(tgtNid, "label") as string) ?? tgtNid}'.`;
+    return `No path found between '${nodeDisplayLabel(G, srcNid)}' and '${nodeDisplayLabel(G, tgtNid)}'.`;
   }
 
   const hops = pathNodes.length - 1;
@@ -408,10 +573,10 @@ function toolShortestPath(G: Graph, args: Record<string, unknown>): string {
     const conf = (edata.confidence as string) ?? "";
     const confStr = conf ? ` [${conf}]` : "";
     if (i === 0) {
-      segments.push((G.getNodeAttribute(u, "label") as string) ?? u);
+      segments.push(nodeDisplayLabel(G, u));
     }
     segments.push(
-      `--${rel}${confStr}--> ${(G.getNodeAttribute(v, "label") as string) ?? v}`,
+      `--${mcpField(rel)}${confStr ? ` [${mcpField(conf)}]` : ""}--> ${nodeDisplayLabel(G, v)}`,
     );
   }
   return `Shortest path (${hops} hops):\n  ${segments.join(" ")}`;
@@ -430,6 +595,8 @@ export async function serve(
   let StdioServerTransport: typeof import("@modelcontextprotocol/sdk/server/stdio.js").StdioServerTransport;
   let ListToolsRequestSchema: typeof import("@modelcontextprotocol/sdk/types.js").ListToolsRequestSchema;
   let CallToolRequestSchema: typeof import("@modelcontextprotocol/sdk/types.js").CallToolRequestSchema;
+  let ListResourcesRequestSchema: typeof import("@modelcontextprotocol/sdk/types.js").ListResourcesRequestSchema;
+  let ReadResourceRequestSchema: typeof import("@modelcontextprotocol/sdk/types.js").ReadResourceRequestSchema;
 
   try {
     const serverMod = await import("@modelcontextprotocol/sdk/server/index.js");
@@ -439,6 +606,8 @@ export async function serve(
     StdioServerTransport = stdioMod.StdioServerTransport;
     ListToolsRequestSchema = typesMod.ListToolsRequestSchema;
     CallToolRequestSchema = typesMod.CallToolRequestSchema;
+    ListResourcesRequestSchema = typesMod.ListResourcesRequestSchema;
+    ReadResourceRequestSchema = typesMod.ReadResourceRequestSchema;
   } catch {
     throw new Error(
       "@modelcontextprotocol/sdk not installed. Run: npm install @modelcontextprotocol/sdk",
@@ -457,7 +626,7 @@ export async function serve(
 
   const server = new Server(
     { name: "graphify", version: getVersion() },
-    { capabilities: { tools: {} } },
+    { capabilities: { tools: {}, resources: {} } },
   );
 
   const tools: McpToolDefinition[] = [
@@ -687,6 +856,23 @@ export async function serve(
   }
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
+  server.setRequestHandler(ListResourcesRequestSchema, async () => ({
+    resources: MCP_RESOURCES,
+  }));
+  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    const uri = String(request.params.uri);
+    const resource = MCP_RESOURCES.find((candidate) => candidate.uri === uri);
+    const text = readMcpResource(uri, graphPath, G, communities);
+    return {
+      contents: [
+        {
+          uri,
+          mimeType: resource?.mimeType ?? "text/plain",
+          text,
+        },
+      ],
+    };
+  });
 
   const handlers: Record<
     string,
