@@ -101,7 +101,7 @@
       "95": "Community 95",
       "96": "Community 96"
     },
-    "built_from_commit": "c5b5127fe122da4e348c557b1f09c0fb694c49b2"
+    "built_from_commit": "014aace496ef10cc935da3ddbec7de2d2f2ad1ce"
   },
   "nodes": [
     {
@@ -1117,7 +1117,7 @@
       "label": "isDirectCliExecution()",
       "file_type": "code",
       "source_file": "src/cli.ts",
-      "source_location": "L3392",
+      "source_location": "L3393",
       "community": 33,
       "community_name": "Community 33"
     },
@@ -3133,7 +3133,7 @@
       "label": "sidecarPath()",
       "file_type": "code",
       "source_file": "src/google-workspace.ts",
-      "source_location": "L187",
+      "source_location": "L190",
       "community": 20,
       "community_name": "Community 20"
     },
@@ -3142,7 +3142,7 @@
       "label": "frontmatterWrap()",
       "file_type": "code",
       "source_file": "src/google-workspace.ts",
-      "source_location": "L194",
+      "source_location": "L197",
       "community": 20,
       "community_name": "Community 20"
     },
@@ -3151,7 +3151,7 @@
       "label": "convertGoogleWorkspaceFile()",
       "file_type": "code",
       "source_file": "src/google-workspace.ts",
-      "source_location": "L220",
+      "source_location": "L223",
       "community": 20,
       "community_name": "Community 20"
     },
@@ -10405,7 +10405,7 @@
       "label": "makeStub()",
       "file_type": "code",
       "source_file": "tests/google-workspace.test.ts",
-      "source_location": "L14",
+      "source_location": "L15",
       "community": 20,
       "community_name": "Community 20"
     },
@@ -10414,7 +10414,16 @@
       "label": "tempDir()",
       "file_type": "code",
       "source_file": "tests/google-workspace.test.ts",
-      "source_location": "L34",
+      "source_location": "L48",
+      "community": 20,
+      "community_name": "Community 20"
+    },
+    {
+      "id": "tests_google_workspace_test_fetchimpl",
+      "label": "fetchImpl()",
+      "file_type": "code",
+      "source_file": "tests/google-workspace.test.ts",
+      "source_location": "L189",
       "community": 20,
       "community_name": "Community 20"
     },
@@ -48248,6 +48257,18 @@
       "weight": 1,
       "_src": "tests_google_workspace_test_ts",
       "_tgt": "tests_google_workspace_test_tempdir",
+      "confidence_score": 1
+    },
+    {
+      "source": "tests_google_workspace_test_ts",
+      "target": "tests_google_workspace_test_fetchimpl",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/google-workspace.test.ts",
+      "source_location": "L206",
+      "weight": 1,
+      "_src": "tests_google_workspace_test_ts",
+      "_tgt": "tests_google_workspace_test_fetchimpl",
       "confidence_score": 1
     },
     {
