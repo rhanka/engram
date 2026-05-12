@@ -101,7 +101,7 @@
       "95": "Community 95",
       "96": "Community 96"
     },
-    "built_from_commit": "457bc81227d7e54ce31c15a8226aa1a5b29281d1"
+    "built_from_commit": "d17ff94bcf23b0180511910302b9f90c27e168c0"
   },
   "nodes": [
     {
@@ -4258,7 +4258,7 @@
       "label": "safeName()",
       "file_type": "code",
       "source_file": "src/llm-execution.ts",
-      "source_location": "L101",
+      "source_location": "L102",
       "community": 3,
       "community_name": "Community 3"
     },
@@ -4267,7 +4267,7 @@
       "label": "instructionFileName()",
       "file_type": "code",
       "source_file": "src/llm-execution.ts",
-      "source_location": "L105",
+      "source_location": "L106",
       "community": 3,
       "community_name": "Community 3"
     },
@@ -4276,7 +4276,7 @@
       "label": "writeInstruction()",
       "file_type": "code",
       "source_file": "src/llm-execution.ts",
-      "source_location": "L114",
+      "source_location": "L115",
       "community": 3,
       "community_name": "Community 3"
     },
@@ -4285,7 +4285,7 @@
       "label": "isDirectLlmProvider()",
       "file_type": "code",
       "source_file": "src/llm-execution.ts",
-      "source_location": "L119",
+      "source_location": "L120",
       "community": 3,
       "community_name": "Community 3"
     },
@@ -4294,7 +4294,7 @@
       "label": "defaultDirectLlmModel()",
       "file_type": "code",
       "source_file": "src/llm-execution.ts",
-      "source_location": "L123",
+      "source_location": "L124",
       "community": 3,
       "community_name": "Community 3"
     },
@@ -4303,7 +4303,7 @@
       "label": "directProviderCredentialEnv()",
       "file_type": "code",
       "source_file": "src/llm-execution.ts",
-      "source_location": "L140",
+      "source_location": "L141",
       "community": 3,
       "community_name": "Community 3"
     },
@@ -4312,7 +4312,7 @@
       "label": "resolveProviderCredential()",
       "file_type": "code",
       "source_file": "src/llm-execution.ts",
-      "source_location": "L157",
+      "source_location": "L158",
       "community": 3,
       "community_name": "Community 3"
     },
@@ -4321,7 +4321,7 @@
       "label": "ensureProviderCredential()",
       "file_type": "code",
       "source_file": "src/llm-execution.ts",
-      "source_location": "L165",
+      "source_location": "L166",
       "community": 3,
       "community_name": "Community 3"
     },
@@ -4330,7 +4330,7 @@
       "label": "parseJsonFromLlmText()",
       "file_type": "code",
       "source_file": "src/llm-execution.ts",
-      "source_location": "L181",
+      "source_location": "L182",
       "community": 3,
       "community_name": "Community 3"
     },
@@ -4339,7 +4339,7 @@
       "label": "resolveDirectModel()",
       "file_type": "code",
       "source_file": "src/llm-execution.ts",
-      "source_location": "L200",
+      "source_location": "L201",
       "community": 3,
       "community_name": "Community 3"
     },
@@ -4348,7 +4348,7 @@
       "label": "preflightLlmExecution()",
       "file_type": "code",
       "source_file": "src/llm-execution.ts",
-      "source_location": "L232",
+      "source_location": "L233",
       "community": 3,
       "community_name": "Community 3"
     },
@@ -4357,7 +4357,7 @@
       "label": "createAssistantTextJsonClient()",
       "file_type": "code",
       "source_file": "src/llm-execution.ts",
-      "source_location": "L269",
+      "source_location": "L270",
       "community": 3,
       "community_name": "Community 3"
     },
@@ -4366,7 +4366,7 @@
       "label": "createAssistantVisionJsonClient()",
       "file_type": "code",
       "source_file": "src/llm-execution.ts",
-      "source_location": "L300",
+      "source_location": "L301",
       "community": 3,
       "community_name": "Community 3"
     },
@@ -4375,7 +4375,7 @@
       "label": "createDirectTextJsonClient()",
       "file_type": "code",
       "source_file": "src/llm-execution.ts",
-      "source_location": "L335",
+      "source_location": "L336",
       "community": 3,
       "community_name": "Community 3"
     },
@@ -4384,7 +4384,7 @@
       "label": "redactSecrets()",
       "file_type": "code",
       "source_file": "src/llm-execution.ts",
-      "source_location": "L386",
+      "source_location": "L389",
       "community": 3,
       "community_name": "Community 3"
     },
