@@ -2059,15 +2059,11 @@ export async function main(): Promise<void> {
 
   ontology
     .command("serve")
-    .description("Start an explicit write-enabled ontology MCP server")
+    .description("Start an ontology MCP server; write tools require explicit --write")
     .requiredOption("--config <path>", "Graphify project config path")
     .option("--write", "Enable ontology mutation tools")
     .option("--graph <path>", "Graph JSON path; defaults to <state_dir>/graph.json")
     .action(async (opts) => {
-      if (opts.write !== true) {
-        console.error("error: ontology serve exposes write tools only with explicit --write");
-        process.exit(1);
-      }
       const projectConfig = loadProjectConfig(resolve(opts.config));
       const profileStatePath = join(projectConfig.outputs.state_dir, "profile", "profile-state.json");
       const graphPath = opts.graph ? resolve(opts.graph) : join(projectConfig.outputs.state_dir, "graph.json");
@@ -2078,7 +2074,7 @@ export async function main(): Promise<void> {
       const { serve } = await import("./serve.js");
       await serve(graphPath, undefined, {
         ontology: {
-          write: true,
+          write: opts.write === true,
           profileStatePath,
         },
       });
