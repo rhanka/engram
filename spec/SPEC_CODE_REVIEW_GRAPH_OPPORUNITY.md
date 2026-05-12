@@ -8,6 +8,7 @@ This document records what was adopted, adapted, rejected, and deferred from the
 - Comparison target: code-review-graph clone
 - Outcome: selected review ideas were incorporated without turning Graphify into a code-review-only product
 - Upstream alignment: review additions are TypeScript product deltas and are preserved while the runtime catches up to upstream Python Graphify v0.4.23
+- Current post-0.7.10 state: CRG `v2.3.3` is recorded as additive input; keyboard/ARIA, node-shape, help-overlay and review-precision buckets still need a row-level implementation plan before any port.
 
 ## Product Boundary
 

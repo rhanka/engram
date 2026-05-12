@@ -4,7 +4,9 @@
 
 - Product: Graphify TypeScript port
 - Scope: optional source-grounded descriptions in generated wiki articles
-- Activation: explicit `--wiki-descriptions` CLI/config/skill option only
+- Spec state: baseline accepted; render-only sidecar consumption implemented; generation remains open
+- Implemented activation: explicit `graphify export wiki|obsidian --descriptions <path>` render path
+- Planned activation: explicit generation command/config/skill options only
 - Default behavior: unchanged
 
 This spec defines an optional enrichment layer for Graphify wiki output. It applies to both code graphs and document/knowledge-base graphs, and it must reuse the existing LLM execution ports: assistant, direct, batch and mesh.
@@ -38,7 +40,16 @@ Users need a short description of what an entity is and why it matters in the gr
 
 Default wiki generation stays unchanged.
 
-Initial CLI shape:
+Implemented render-only CLI shape:
+
+```bash
+graphify export wiki --graph .graphify/graph.json --descriptions .graphify/wiki-descriptions.json
+graphify export obsidian --graph .graphify/graph.json --descriptions .graphify/wiki-descriptions.json
+```
+
+The render path consumes an existing sidecar index and must not call a provider.
+
+Planned generation CLI shape:
 
 ```bash
 graphify . --wiki --wiki-descriptions

@@ -4,6 +4,7 @@
 
 - Product: Graphify TypeScript port
 - Scope: ontology lifecycle, reconciliation, patching, optional write surfaces
+- Spec state: baseline accepted; patch/MCP/candidate foundations implemented; read-only API/studio contract remains open
 - State root: `.graphify/`
 - Activation: explicit ontology profile workflow only
 - Default behavior: unchanged and read-only
