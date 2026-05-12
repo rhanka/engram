@@ -124,7 +124,7 @@ export function readGoogleShortcut(path: string): GoogleWorkspaceShortcut {
   };
 }
 
-async function resolveAccessToken(): Promise<string> {
+async function resolveAccessToken(fetchImpl: typeof fetch): Promise<string> {
   const direct = process.env.GOOGLE_OAUTH_ACCESS_TOKEN?.trim();
   if (direct) return direct;
 
@@ -143,7 +143,7 @@ async function resolveAccessToken(): Promise<string> {
     client_secret: clientSecret,
     grant_type: "refresh_token",
   });
-  const response = await fetch(GOOGLE_TOKEN_ENDPOINT, {
+  const response = await fetchImpl(GOOGLE_TOKEN_ENDPOINT, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body,
@@ -163,7 +163,7 @@ async function resolveAccessToken(): Promise<string> {
 export function createDefaultGoogleWorkspaceFetcher(fetchImpl: typeof fetch = fetch): GoogleWorkspaceFetcher {
   return {
     async fetchExport({ fileId, mimeType, resourceKey }) {
-      const accessToken = await resolveAccessToken();
+      const accessToken = await resolveAccessToken(fetchImpl);
       const url = new URL(`${GOOGLE_DRIVE_API_BASE_URL}/files/${encodeURIComponent(fileId)}/export`);
       url.searchParams.set("mimeType", mimeType);
       const headers: Record<string, string> = { Authorization: `Bearer ${accessToken}` };
@@ -181,7 +181,10 @@ export function createDefaultGoogleWorkspaceFetcher(fetchImpl: typeof fetch = fe
 }
 
 function safeYamlString(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\r?\n/g, " ");
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, "\\\"")
+    .replace(/[\x00-\x1f\u2028\u2029]/g, " ");
 }
 
 function sidecarPath(stubPath: string, outDir: string): string {

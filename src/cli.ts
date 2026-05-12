@@ -2123,6 +2123,7 @@ export async function main(): Promise<void> {
           candidateRoot: inventory.scope.git_root ?? root,
           scope: inventory.scope,
         });
+        const originalDocumentFiles = [...(rawDetection.files.document ?? [])];
 
         const { GOOGLE_WORKSPACE_EXTENSIONS: GWS_EXTENSIONS, googleWorkspaceEnabled, convertGoogleWorkspaceFile } = await import("./google-workspace.js");
         if (googleWorkspaceEnabled()) {
@@ -2153,7 +2154,7 @@ export async function main(): Promise<void> {
         const detection = makeDetectionPortable(rawDetection as DetectionResult, root);
         writeJson(paths.scratch.detect, detection);
         if (detection.scope) writeJson(paths.scope, detection.scope);
-        saveManifest(rawDetection.files, paths.manifest);
+        saveManifest({ ...rawDetection.files, document: originalDocumentFiles }, paths.manifest);
 
         const codeFiles = rawDetection.files.code ?? [];
         const semanticFileCount =

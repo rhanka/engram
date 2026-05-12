@@ -464,6 +464,65 @@ describe("public CLI runtime command parity", () => {
     expect(graph.nodes.some((node) => node.label === "Guide")).toBe(true);
   });
 
+  it("keeps Google Workspace shortcut stubs in the manifest after extract conversion", async () => {
+    const dir = tempProject();
+    const previousWorkspace = process.env.GRAPHIFY_GOOGLE_WORKSPACE;
+    const previousAccessToken = process.env.GOOGLE_OAUTH_ACCESS_TOKEN;
+    try {
+      process.env.GRAPHIFY_GOOGLE_WORKSPACE = "1";
+      process.env.GOOGLE_OAUTH_ACCESS_TOKEN = "fake-token";
+      writeFileSync(
+        join(dir, "notes.gdoc"),
+        JSON.stringify({
+          doc_id: "doc-1",
+          url: "https://docs.google.com/document/d/doc-1/edit",
+        }),
+        "utf-8",
+      );
+      const semanticPath = join(dir, "semantic.json");
+      writeFileSync(
+        semanticPath,
+        JSON.stringify({
+          nodes: [
+            {
+              id: "notes_doc",
+              label: "Notes",
+              file_type: "document",
+              source_file: ".graphify/converted/notes_sidecar.md",
+              source_location: null,
+            },
+          ],
+          edges: [],
+          hyperedges: [],
+          input_tokens: 10,
+          output_tokens: 5,
+        }, null, 2),
+        "utf-8",
+      );
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (async (input, init) => {
+        expect(String(input)).toBe("https://www.googleapis.com/drive/v3/files/doc-1/export?mimeType=text%2Fmarkdown");
+        expect(init?.method).toBe("GET");
+        return new Response("# Exported notes\n", { status: 200 });
+      }) as typeof fetch;
+      try {
+        const result = await runCli(["extract", ".", "--semantic", semanticPath, "--no-cluster"], dir);
+
+        expect(result.exitCode).toBe(0);
+        const manifest = JSON.parse(readFileSync(join(dir, ".graphify", "manifest.json"), "utf-8")) as Record<string, unknown>;
+        expect(manifest[join(dir, "notes.gdoc")]).toBeTruthy();
+        expect(Object.keys(manifest).some((file) => file.includes(join(".graphify", "converted")))).toBe(false);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    } finally {
+      if (previousWorkspace === undefined) delete process.env.GRAPHIFY_GOOGLE_WORKSPACE;
+      else process.env.GRAPHIFY_GOOGLE_WORKSPACE = previousWorkspace;
+      if (previousAccessToken === undefined) delete process.env.GOOGLE_OAUTH_ACCESS_TOKEN;
+      else process.env.GOOGLE_OAUTH_ACCESS_TOKEN = previousAccessToken;
+    }
+  });
+
   it("preserves existing semantic nodes during code-only update rebuilds", async () => {
     const dir = tempProject();
     mkdirSync(join(dir, "src"), { recursive: true });

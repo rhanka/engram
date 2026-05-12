@@ -425,13 +425,19 @@ PDFs are never sent to OCR blindly. `GRAPHIFY_PDF_OCR` controls the behavior: `a
 
 Generated PDF sidecars are written under `.graphify/converted/pdf/` with provenance frontmatter pointing back to the original PDF. The sidecars then flow through the normal document semantic extraction path. If OCR produces image artifacts for figures, tables, diagrams, or embedded text, graphify adds those artifacts to semantic image inputs; the skills instruct the assistant to decode them with platform vision by default, or with a configured delegated OCR/vision provider, keeping the link back to the source PDF.
 
+### Optional provider and source variables
+
+The Ollama and Google Workspace integrations are opt-in and read configuration only from environment variables. `OLLAMA_BASE_URL` overrides the local Ollama runtime URL when using `graphify extract --backend ollama`; otherwise the Ollama provider default is used.
+
+Google Workspace shortcut export is enabled only when `GRAPHIFY_GOOGLE_WORKSPACE=1` (or `true`, `yes`, `on`) is set. `.gdoc`, `.gsheet`, and `.gslides` files are exported through the Google Drive API with `GOOGLE_OAUTH_ACCESS_TOKEN`, or by exchanging `GOOGLE_OAUTH_REFRESH_TOKEN` with `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET`. OAuth credentials are never written to `.graphify/`.
+
 ### Configured ontology dataprep profiles
 
 Profile mode is strictly additive. It activates only when graphify discovers `graphify.yaml`, `graphify.yml`, `.graphify/config.yaml`, or `.graphify/config.yml`, or when you pass an explicit `--config`/`--profile` option. Without that activation, normal graphify behavior is unchanged.
 
 A project config describes physical inputs: corpus folders, generated-but-semantic sidecars, registry files, exclusions, PDF/OCR policy, and output state under `.graphify/`. An ontology profile describes semantic constraints: allowed node types, relation types, citation requirements, review statuses, and named registry bindings. Registries can be CSV, JSON, or YAML; they are normalized into ordinary Graphify extraction fragments with stable IDs and profile attributes.
 
-The local CLI/runtime still defaults to deterministic steps and assistant-written instructions. For CI/headless text corpora, semantic extraction can be explicitly delegated to a direct provider with `graphify extract --backend anthropic|openai|gemini|mistral|cohere`; this temporary path uses Vercel AI SDK behind Graphify's narrow execution port, reads credentials only from environment variables, and is intended to be replaced by the Entropic SDK without changing the graph pipeline.
+The local CLI/runtime still defaults to deterministic steps and assistant-written instructions. For CI/headless text corpora, semantic extraction can be explicitly delegated to a direct provider with `graphify extract --backend anthropic|openai|gemini|mistral|cohere|ollama`; this temporary path uses Vercel AI SDK behind Graphify's narrow execution port, reads credentials only from environment variables, and is intended to be replaced by the Entropic SDK without changing the graph pipeline.
 
 ```bash
 graphify profile validate --config graphify.yaml
