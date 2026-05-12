@@ -1,10 +1,10 @@
 # Graph Report - .  (2026-05-12)
 
 ## Corpus Check
-- Large corpus: 235 files · ~278,465 words. Semantic extraction will be expensive (many Claude tokens). Consider running on a subfolder, or use --no-semantic to run AST-only.
+- Large corpus: 235 files · ~278,759 words. Semantic extraction will be expensive (many Claude tokens). Consider running on a subfolder, or use --no-semantic to run AST-only.
 
 ## Summary
-- 2460 nodes · 4764 edges · 89 communities detected
+- 2462 nodes · 4769 edges · 89 communities detected
 - Extraction: 90% EXTRACTED · 10% INFERRED · 0% AMBIGUOUS · INFERRED: 466 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
 
@@ -13,11 +13,11 @@
 - Requested: auto
 - Resolved: committed (source: default-auto)
 - Included files: 235 · Candidates: 251
-- Excluded: 0 untracked · 20190 ignored · 0 sensitive · 0 missing committed
+- Excluded: 0 untracked · 20194 ignored · 0 sensitive · 0 missing committed
 - Recommendation: Use --scope all or graphify.yaml inputs.corpus for a knowledge-base folder.
 
 ## Graph Freshness
-- Built from Git commit: `4d720d0`
+- Built from Git commit: `cd21b4f`
 - Compare this hash to `git rev-parse HEAD` before trusting freshness-sensitive graph output.
 ## God Nodes (most connected - your core abstractions)
 1. `Response` - 45 edges
@@ -166,24 +166,24 @@ Cohesion: 0.11
 Nodes (32): delete_record(), _ensure_storage(), list_records(), load_index(), load_record(), Storage module - persists documents to disk and maintains the search index. All, Load the full document index from disk., Persist the index to disk. (+24 more)
 
 ### Community 30 - "Community 30"
+Cohesion: 0.08
+Nodes (12): changedFilesFromGit(), checkSkillVersion(), ensureCliExtractionShape(), getPlatformsToCheck(), isJsonRecord(), loadCliProfileContext(), loadWikiDescriptionSidecarIndex(), main() (+4 more)
+
+### Community 31 - "Community 31"
 Cohesion: 0.14
 Nodes (26): buildProfileReport(), graphLinks(), graphNodes(), highDegreeSection(), humanReviewSection(), invalidRelationsSection(), lowEvidenceSection(), pdfOcrSection() (+18 more)
 
-### Community 31 - "Community 31"
+### Community 32 - "Community 32"
 Cohesion: 0.17
 Nodes (20): Auth, BasicAuth, NetRCAuth, Load credentials from ~/.netrc based on the request host., Base class for all authentication handlers., Modify the request. May yield to inspect the response., HTTP Basic Authentication., BaseClient (+12 more)
 
-### Community 32 - "Community 32"
+### Community 33 - "Community 33"
 Cohesion: 0.08
 Nodes (12): DataProcessor, Get-Data(), GraphifyDemo, IProcessor, Process-Items(), Processor, DataProcessor, Get-Data() (+4 more)
 
-### Community 33 - "Community 33"
+### Community 34 - "Community 34"
 Cohesion: 0.12
 Nodes (26): asRecord(), bucketMatches(), calibrateImageRouting(), countArray(), imageRoutingSampleFromCaption(), loadImageRoutingLabels(), loadImageRoutingRules(), normalizeBucket() (+18 more)
-
-### Community 34 - "Community 34"
-Cohesion: 0.08
-Nodes (10): changedFilesFromGit(), checkSkillVersion(), ensureCliExtractionShape(), getPlatformsToCheck(), loadCliProfileContext(), main(), mergeCliAstAndSemantic(), readJson() (+2 more)
 
 ### Community 35 - "Community 35"
 Cohesion: 0.1
@@ -424,7 +424,7 @@ Nodes (2): runCliInTemp(), runCliWithEnvironment()
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Cookies` connect `Community 51` to `Community 43`, `Community 31`, `Community 39`, `Community 21`, `Community 26`?**
+- **Why does `Cookies` connect `Community 51` to `Community 43`, `Community 32`, `Community 39`, `Community 21`, `Community 26`?**
   _High betweenness centrality (0.003) - this node is a cross-community bridge._
 - **Why does `Cookies` connect `Community 38` to `Community 43`, `Community 66`, `Community 60`, `Community 26`?**
   _High betweenness centrality (0.003) - this node is a cross-community bridge._
