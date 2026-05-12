@@ -179,7 +179,7 @@ describe("LLM execution ports", () => {
     expect(result.status).toBe("instructions_written");
     expect(result.provider).toBe("assistant");
     expect(result.outputPath).toBe(".graphify/example.json");
-    expect(result.instructionPath).toBe(join(root, "text-json-synthetic_schema_v1.md"));
+    expect(result.instructionPath).toBe(join(root, "text-json-synthetic_schema_v1-example.md"));
     expect(readFileSync(result.instructionPath, "utf-8")).toContain("Return JSON only.");
   });
 

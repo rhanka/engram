@@ -172,6 +172,57 @@ describe("assistant-mode generation behavior", () => {
     expect(persistedIndex.schema).toBe("graphify_wiki_description_index_v1");
   });
 
+  it("preserves an existing generated sidecar when assistant mode only writes instructions", async () => {
+    const graph = mkGraph();
+    const outputDir = makeTempDir();
+    const cacheKey = buildWikiDescriptionCacheKey({
+      target_id: "alpha",
+      target_kind: "node",
+      graph_hash: "graph-hash",
+      prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+      mode: "assistant",
+      provider: "assistant",
+      model: null,
+    });
+    writeFileSync(
+      join(outputDir, "alpha.json"),
+      JSON.stringify({
+        schema: "graphify_wiki_description_v1",
+        target_id: "alpha",
+        target_kind: "node",
+        graph_hash: "graph-hash",
+        status: "generated",
+        description: "Existing assistant-reviewed description.",
+        evidence_refs: ["src/alpha.ts"],
+        confidence: 0.8,
+        cache_key: cacheKey,
+        generator: {
+          mode: "assistant",
+          provider: "assistant",
+          model: null,
+          prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+        },
+      }, null, 2),
+      "utf-8",
+    );
+
+    const result = await generateWikiDescriptionSidecars(graph, {
+      graphHash: "graph-hash",
+      mode: "assistant",
+      clients: assistantClient(outputDir),
+      includeCommunityTargets: false,
+      maxNodeTargets: 1,
+      outputDir,
+    });
+
+    const persisted = JSON.parse(readFileSync(join(outputDir, "alpha.json"), "utf-8")) as Record<string, unknown>;
+    expect(result.status).toBe("instructions_written");
+    expect(result.index.nodes["alpha"]?.status).toBe("generated");
+    expect(result.index.nodes["alpha"]?.description).toBe("Existing assistant-reviewed description.");
+    expect(persisted.status).toBe("generated");
+    expect(persisted.description).toBe("Existing assistant-reviewed description.");
+  });
+
   it("returns explicit not_implemented status when assistant client is missing", async () => {
     const graph = mkGraph();
     const outputDir = makeTempDir();

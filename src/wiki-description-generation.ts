@@ -454,6 +454,21 @@ function writeSidecar(path: string | undefined, sidecar: WikiDescriptionSidecar)
   writeFileSync(path, JSON.stringify(sidecar, null, 2) + "\n", "utf-8");
 }
 
+function readExistingGeneratedSidecar(
+  path: string | undefined,
+  target: WikiDescriptionTargetContext,
+): WikiDescriptionSidecar | null {
+  if (!path || !existsSync(path)) return null;
+  try {
+    const candidate = JSON.parse(readFileSync(path, "utf-8")) as WikiDescriptionSidecar;
+    if (validateWikiDescriptionSidecar(candidate).length > 0) return null;
+    if (candidate.target_id !== target.target_id || candidate.target_kind !== target.target_kind) return null;
+    return candidate.status === "generated" ? candidate : null;
+  } catch {
+    return null;
+  }
+}
+
 function writeIndex(path: string | undefined, index: WikiDescriptionSidecarIndex): void {
   if (!path) return;
   mkdirSync(dirname(path), { recursive: true });
@@ -672,6 +687,7 @@ export async function generateWikiDescriptionSidecars(
       maxNeighbors,
     });
     const outputPath = targetOutputPath(outputDir, target.target_id);
+    const existingGeneratedSidecar = readExistingGeneratedSidecar(outputPath, target);
     if (outputPath) {
       mkdirSync(dirname(outputPath), { recursive: true });
     }
@@ -703,6 +719,8 @@ export async function generateWikiDescriptionSidecars(
     if (parsed) {
       sidecar = parsed;
       status = "completed";
+    } else if (existingGeneratedSidecar && execution.status !== "completed") {
+      sidecar = existingGeneratedSidecar;
     } else if (execution.status === "completed") {
       status = "invalid_output";
     }

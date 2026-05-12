@@ -1,5 +1,5 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import type { NormalizedLlmExecutionPolicy } from "./types.js";
 
@@ -100,6 +100,15 @@ export interface DirectTextJsonClientOptions {
 
 function safeName(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]+/gu, "-").replace(/^-+|-+$/gu, "") || "schema";
+}
+
+function instructionFileName(prefix: string, schema: string, outputPath?: string): string {
+  const outputSlug = outputPath
+    ? safeName(basename(outputPath).replace(/\.[^.]+$/u, ""))
+    : null;
+  return outputSlug
+    ? `${prefix}-${safeName(schema)}-${outputSlug}.md`
+    : `${prefix}-${safeName(schema)}.md`;
 }
 
 function writeInstruction(path: string, lines: string[]): void {
@@ -262,7 +271,7 @@ export function createAssistantTextJsonClient(options: AssistantLlmClientOptions
     mode: "assistant",
     provider: "assistant",
     async generateJson(input: TextJsonGenerationInput): Promise<TextJsonGenerationResult> {
-      const instructionPath = join(options.instructionDir, `text-json-${safeName(input.schema)}.md`);
+      const instructionPath = join(options.instructionDir, instructionFileName("text-json", input.schema, input.outputPath));
       writeInstruction(instructionPath, [
         `# Text JSON Generation: ${input.schema}`,
         "",

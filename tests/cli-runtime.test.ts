@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
@@ -390,6 +390,58 @@ describe("public CLI runtime command parity", () => {
     expect(wiki.exitCode).toBe(0);
     const article = readFileSync(join(dir, ".graphify", "wiki", "Community_0.md"), "utf-8");
     expect(article).toContain("Community 0 contains the source-backed service and repository concepts.");
+  });
+
+  it("generates wiki description sidecars through assistant mode", async () => {
+    const dir = tempProject();
+    const graphPath = writeGraph(dir);
+    const descriptionsDir = join(dir, ".graphify", "wiki", "descriptions");
+    const instructionsDir = join(dir, ".graphify", "wiki", "description-instructions");
+
+    const result = await runCli([
+      "wiki",
+      "describe",
+      "--graph",
+      graphPath,
+      "--mode",
+      "assistant",
+      "--targets",
+      "all",
+      "--max-nodes",
+      "1",
+      "--max-communities",
+      "1",
+      "--out",
+      descriptionsDir,
+      "--instructions-dir",
+      instructionsDir,
+    ], dir);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.logs.join("\n")).toContain("wiki descriptions");
+
+    const indexPath = `${descriptionsDir}.json`;
+    expect(existsSync(indexPath)).toBe(true);
+    expect(existsSync(join(descriptionsDir, "beta.json"))).toBe(true);
+    expect(existsSync(join(descriptionsDir, "community-0.json"))).toBe(true);
+
+    const index = JSON.parse(readFileSync(indexPath, "utf-8")) as {
+      schema: string;
+      nodes: Record<string, unknown>;
+      communities: Record<string, unknown>;
+    };
+    expect(index.schema).toBe("graphify_wiki_description_index_v1");
+    expect(Object.keys(index.nodes)).toEqual(["beta"]);
+    expect(Object.keys(index.communities)).toEqual(["0"]);
+    const instructionFiles = readdirSync(instructionsDir)
+      .filter((name) => name.includes("graphify_wiki_description"))
+      .sort();
+    expect(instructionFiles).toHaveLength(2);
+    const instructions = instructionFiles
+      .map((name) => readFileSync(join(instructionsDir, name), "utf-8"))
+      .join("\n\n");
+    expect(instructions).toContain("target_id: beta");
+    expect(instructions).toContain("target_id: community:0");
   });
 
   it("supports export svg, graphml, and neo4j cypher", async () => {

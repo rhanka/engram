@@ -13,6 +13,7 @@ import {
   unlinkSync,
   rmdirSync,
 } from "node:fs";
+import { createHash } from "node:crypto";
 import { join, resolve, dirname, extname, basename } from "node:path";
 import { homedir, platform } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -176,6 +177,36 @@ function writeJson(path: string, value: unknown): void {
   const resolved = resolve(path);
   mkdirSync(dirname(resolved), { recursive: true });
   writeFileSync(resolved, JSON.stringify(value, null, 2), "utf-8");
+}
+
+function parsePositiveIntegerOption(value: unknown, name: string): number | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const parsed = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0 || String(value).trim() !== String(parsed)) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return parsed;
+}
+
+function graphContentHash(graphPath: string): string {
+  return createHash("sha256").update(readFileSync(graphPath)).digest("hex");
+}
+
+function parseWikiDescriptionTargets(value: unknown): {
+  includeNodeTargets: boolean;
+  includeCommunityTargets: boolean;
+} {
+  const target = String(value ?? "nodes").trim().toLowerCase();
+  if (target === "nodes") {
+    return { includeNodeTargets: true, includeCommunityTargets: false };
+  }
+  if (target === "communities") {
+    return { includeNodeTargets: false, includeCommunityTargets: true };
+  }
+  if (target === "all") {
+    return { includeNodeTargets: true, includeCommunityTargets: true };
+  }
+  throw new Error("--targets must be one of: nodes, communities, all");
 }
 
 function writeFileAtomic(path: string, content: string): void {
@@ -2554,6 +2585,100 @@ export async function main(): Promise<void> {
       };
       writeFileSync(paths.scratch.analysis, JSON.stringify(analysis, null, 2), "utf-8");
       console.log(`Done - ${communities.size} communities. GRAPH_REPORT.md, graph.json and graph.html updated.`);
+    });
+
+  const wikiCommand = program
+    .command("wiki")
+    .description("Generate and maintain Graphify wiki artifacts");
+
+  wikiCommand
+    .command("describe")
+    .description("Generate wiki description sidecars for nodes and communities")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--mode <mode>", "Generation mode: assistant or direct", "assistant")
+    .option("--backend <provider>", "Direct LLM provider for --mode direct")
+    .option("--model <id>", "Direct LLM model override")
+    .option("--targets <scope>", "Targets to describe: nodes, communities, all", "nodes")
+    .option("--out <dir>", "Directory to write sidecar JSON files")
+    .option("--instructions-dir <dir>", "Directory to write assistant instruction files")
+    .option("--max-nodes <count>", "Maximum node targets")
+    .option("--max-communities <count>", "Maximum community targets")
+    .option("--max-neighbors <count>", "Maximum node neighbors in each prompt")
+    .action(async (opts) => {
+      try {
+        const graphPath = resolveGraphInputPath(opts.graph);
+        const mode = String(opts.mode ?? "assistant").trim().toLowerCase();
+        if (!["assistant", "direct", "batch", "mesh"].includes(mode)) {
+          throw new Error("--mode must be one of: assistant, direct, batch, mesh");
+        }
+        if (mode === "batch" || mode === "mesh") {
+          throw new Error(`wiki describe --mode ${mode} is not implemented yet; use assistant or direct`);
+        }
+
+        const outputDir = resolve(opts.out ?? join(dirname(graphPath), "wiki", "descriptions"));
+        const instructionsDir = resolve(opts.instructionsDir ?? join(dirname(graphPath), "wiki", "description-instructions"));
+        const targetOptions = parseWikiDescriptionTargets(opts.targets);
+        const maxNodeTargets = parsePositiveIntegerOption(opts.maxNodes, "--max-nodes");
+        const maxCommunityTargets = parsePositiveIntegerOption(opts.maxCommunities, "--max-communities");
+        const maxNeighbors = parsePositiveIntegerOption(opts.maxNeighbors, "--max-neighbors");
+
+        const G = loadCliGraph(graphPath);
+        const communities = communitiesFromCliGraph(G);
+        const labels = communityLabelsFromCliGraph(G, communities);
+        const [
+          { generateWikiDescriptionSidecars },
+          {
+            createAssistantTextJsonClient,
+            createDirectTextJsonClient,
+            isDirectLlmProvider,
+          },
+        ] = await Promise.all([
+          import("./wiki-description-generation.js"),
+          import("./llm-execution.js"),
+        ]);
+
+        const clients: Parameters<typeof generateWikiDescriptionSidecars>[1]["clients"] = {};
+        if (mode === "assistant") {
+          clients.assistant = createAssistantTextJsonClient({ instructionDir: instructionsDir });
+        } else {
+          const provider = String(opts.backend ?? "").trim();
+          if (!provider) {
+            throw new Error("--backend is required when using wiki describe --mode direct");
+          }
+          if (!isDirectLlmProvider(provider)) {
+            throw new Error(`unsupported direct LLM provider: ${provider}`);
+          }
+          clients.direct = createDirectTextJsonClient({
+            provider,
+            ...(opts.model ? { model: String(opts.model) } : {}),
+          });
+        }
+
+        const result = await generateWikiDescriptionSidecars(G, {
+          graphHash: graphContentHash(graphPath),
+          mode: mode as "assistant" | "direct",
+          clients,
+          communities,
+          communityLabels: labels,
+          outputDir,
+          ...targetOptions,
+          ...(maxNodeTargets !== undefined ? { maxNodeTargets } : {}),
+          ...(maxCommunityTargets !== undefined ? { maxCommunityTargets } : {}),
+          ...(maxNeighbors !== undefined ? { maxNeighbors } : {}),
+        });
+
+        console.log(`wiki descriptions: ${result.targets.length} target(s), status=${result.status}, index=${result.indexPath ?? "not written"}`);
+        const instructionCount = result.targets.filter((target) => target.instructionPath).length;
+        if (instructionCount > 0) {
+          console.log(`assistant instructions: ${instructionCount} file(s) written to ${instructionsDir}`);
+        }
+        if (result.status === "failed") {
+          process.exit(1);
+        }
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
     });
 
   const exportCommand = program
