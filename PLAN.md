@@ -468,9 +468,11 @@ graphify extract ./tmp/direct-uat-corpus --backend openai --model gpt-5.5 --no-c
 - [x] Add description sidecar schema and validation.
 - [x] Render existing validated sidecars in wiki pages without calling any provider.
 - [x] Add deterministic no-provider-call tests for node and community description rendering.
+- [x] Add CLI render opt-in through `graphify export wiki|obsidian --descriptions` for existing sidecar indexes.
 - [ ] Add wiki description generation command or runtime path for assistant/direct/batch/mesh.
-- [ ] Add `--wiki-descriptions` and `--wiki-community-descriptions` or equivalent config options.
-- [ ] Render validated descriptions in community wiki pages and ontology entity pages.
+- [ ] Add generation-time `--wiki-descriptions` and `--wiki-community-descriptions` or equivalent config options.
+- [x] Render validated descriptions in community wiki pages and god-node wiki pages.
+- [ ] Extend validated description rendering to ontology entity pages once the entity-page export is wired to sidecars.
 - [ ] Add assistant-skill guidance for generating sidecars before wiki rendering.
 - [ ] Add cache/invalidation tests.
 - [ ] Add no-provider-call CI tests plus mocked direct backend tests.

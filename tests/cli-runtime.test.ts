@@ -283,6 +283,54 @@ describe("public CLI runtime command parity", () => {
     expect(existsSync(join(obsidianDir, "graph.canvas"))).toBe(true);
   });
 
+  it("supports export wiki with validated description sidecars", async () => {
+    const dir = tempProject();
+    const graphPath = writeGraph(dir);
+    const descriptionsPath = join(dir, ".graphify", "wiki-descriptions.json");
+    writeFileSync(
+      descriptionsPath,
+      JSON.stringify({
+        schema: "graphify_wiki_description_index_v1",
+        graph_hash: "graph-a",
+        prompt_version: "wiki-description-v1",
+        nodes: {},
+        communities: {
+          "0": {
+            schema: "graphify_wiki_description_v1",
+            target_id: "community:0",
+            target_kind: "community",
+            graph_hash: "graph-a",
+            status: "generated",
+            description: "Community 0 contains the source-backed service and repository concepts.",
+            evidence_refs: ["src/alpha.ts#AlphaService"],
+            confidence: 0.8,
+            cache_key: "cache-key",
+            generator: {
+              mode: "assistant",
+              provider: "assistant",
+              model: null,
+              prompt_version: "wiki-description-v1",
+            },
+          },
+        },
+      }),
+      "utf-8",
+    );
+
+    const wiki = await runCli([
+      "export",
+      "wiki",
+      "--graph",
+      graphPath,
+      "--descriptions",
+      descriptionsPath,
+    ], dir);
+
+    expect(wiki.exitCode).toBe(0);
+    const article = readFileSync(join(dir, ".graphify", "wiki", "Community_0.md"), "utf-8");
+    expect(article).toContain("Community 0 contains the source-backed service and repository concepts.");
+  });
+
   it("supports export svg, graphml, and neo4j cypher", async () => {
     const dir = tempProject();
     const graphPath = writeGraph(dir);

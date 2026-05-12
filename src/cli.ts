@@ -41,6 +41,7 @@ import { normalizeSearchText } from "./search.js";
 import { makeGraphPortable, projectRootLabel, scanPortableGraphifyArtifacts } from "./portable-artifacts.js";
 import { loadOntologyPatchContext } from "./ontology-patch-context.js";
 import { persistCommunityLabels, resolveCommunityLabels } from "./community-labels.js";
+import type { WikiDescriptionSidecarIndex } from "./wiki-descriptions.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -147,6 +148,28 @@ function resolvePortableCheckDir(inputPath: string = ".graphify"): string {
 
 function readJson<T>(path: string): T {
   return JSON.parse(readFileSync(resolve(path), "utf-8")) as T;
+}
+
+function isJsonRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function loadWikiDescriptionSidecarIndex(inputPath?: string): WikiDescriptionSidecarIndex | undefined {
+  if (!inputPath) return undefined;
+  const value = readJson<unknown>(inputPath);
+  if (!isJsonRecord(value)) {
+    throw new Error("wiki description sidecar index must be a JSON object");
+  }
+  if (value.schema !== "graphify_wiki_description_index_v1") {
+    throw new Error("wiki description sidecar index schema must be graphify_wiki_description_index_v1");
+  }
+  if (!isJsonRecord(value.nodes)) {
+    throw new Error("wiki description sidecar index nodes must be an object");
+  }
+  if (value.communities !== undefined && !isJsonRecord(value.communities)) {
+    throw new Error("wiki description sidecar index communities must be an object when present");
+  }
+  return value as unknown as WikiDescriptionSidecarIndex;
 }
 
 function writeJson(path: string, value: unknown): void {
@@ -2572,6 +2595,7 @@ export async function main(): Promise<void> {
     .command("wiki")
     .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
     .option("--dir <path>", "Directory to write wiki pages")
+    .option("--descriptions <path>", "Path to wiki description sidecar index JSON")
     .action(async (opts) => {
       try {
         const graphPath = resolveGraphInputPath(opts.graph);
@@ -2579,8 +2603,9 @@ export async function main(): Promise<void> {
         const G = loadCliGraph(graphPath);
         const communities = communitiesFromCliGraph(G);
         const labels = communityLabelsFromCliGraph(G, communities);
+        const descriptions = loadWikiDescriptionSidecarIndex(opts.descriptions);
         const { toWiki } = await import("./wiki.js");
-        const count = toWiki(G, communities, outDir, { communityLabels: labels });
+        const count = toWiki(G, communities, outDir, { communityLabels: labels, descriptions });
         console.log(`Wiki export: ${count} page(s) written to ${outDir}`);
       } catch (err) {
         console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
@@ -2592,6 +2617,7 @@ export async function main(): Promise<void> {
     .command("obsidian")
     .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
     .option("--dir <path>", "Directory to write the Obsidian vault")
+    .option("--descriptions <path>", "Path to wiki description sidecar index JSON")
     .action(async (opts) => {
       try {
         const graphPath = resolveGraphInputPath(opts.graph);
@@ -2599,11 +2625,12 @@ export async function main(): Promise<void> {
         const G = loadCliGraph(graphPath);
         const communities = communitiesFromCliGraph(G);
         const labels = communityLabelsFromCliGraph(G, communities);
+        const descriptions = loadWikiDescriptionSidecarIndex(opts.descriptions);
         const [{ toCanvas }, { toWiki }] = await Promise.all([
           import("./export.js"),
           import("./wiki.js"),
         ]);
-        const count = toWiki(G, communities, outDir, { communityLabels: labels });
+        const count = toWiki(G, communities, outDir, { communityLabels: labels, descriptions });
         toCanvas(G, communities, join(outDir, "graph.canvas"), { communityLabels: labels });
         console.log(`Obsidian vault: ${count} note(s) written to ${outDir}`);
         console.log(`Canvas: ${join(outDir, "graph.canvas")} - open in Obsidian for structured community layout`);
