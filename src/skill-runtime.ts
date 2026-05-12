@@ -97,7 +97,7 @@ import {
   exportImageDataprepBatchRequests,
   importImageDataprepBatchResults,
 } from "./image-dataprep-batch.js";
-import { normalizeSearchText } from "./search.js";
+import { normalizeSearchText, scoreSearchText } from "./search.js";
 import { persistCommunityLabels, resolveCommunityLabels } from "./community-labels.js";
 import type {
   DetectionResult,
@@ -436,9 +436,10 @@ function findBestMatchingNode(G: Graph, term: string): string | null {
   let bestNodeId: string | null = null;
   let bestScore = 0;
   G.forEachNode((nodeId, data) => {
-    const label = normalizeSearchText((data.label as string) ?? "");
-    const score = words.filter((word) => label.includes(word)).length;
-    if (score > bestScore) {
+    const label = (data.label as string) ?? nodeId;
+    const source = (data.source_file as string) ?? "";
+    const score = scoreSearchText(label, source, words);
+    if (score > 0 && (!bestNodeId || score > bestScore || (score === bestScore && G.degree(nodeId) > G.degree(bestNodeId)))) {
       bestScore = score;
       bestNodeId = nodeId;
     }
@@ -1743,6 +1744,12 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       const target = findBestMatchingNode(G, nodeB);
       if (!source || !target) {
         console.log(`Could not find nodes matching: ${JSON.stringify(nodeA)} or ${JSON.stringify(nodeB)}`);
+        return;
+      }
+      if (source === target) {
+        console.log(
+          `${JSON.stringify(nodeA)} and ${JSON.stringify(nodeB)} both resolved to the same node ${JSON.stringify(source)}. Use a more specific label or the exact node ID.`,
+        );
         return;
       }
       let path: string[];

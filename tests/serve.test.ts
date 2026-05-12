@@ -660,6 +660,14 @@ describe("MCP stdio server", () => {
       expect(path).toContain("AlphaService --uses [EXTRACTED]--> BetaRepository");
       expect(path).toContain("BetaRepository --documents [INFERRED]--> GammaDocs");
 
+      const sameNodePath = toolText(
+        await client.callTool({
+          name: "shortest_path",
+          arguments: { source: "AlphaService", target: "AlphaService" },
+        }),
+      );
+      expect(sameNodePath).toContain("both resolved to the same node");
+
       const toolError = toolText(
         await client.callTool({
           name: "get_node",

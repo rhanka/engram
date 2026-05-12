@@ -37,7 +37,7 @@ import { safeExecGit } from "./git.js";
 import { safeGitRevParse } from "./git.js";
 import { discoverProjectConfig, loadProjectConfig } from "./project-config.js";
 import { defaultManifestPath, resolveGraphInputPath, resolveGraphifyPaths } from "./paths.js";
-import { normalizeSearchText } from "./search.js";
+import { normalizeSearchText, scoreSearchText } from "./search.js";
 import { makeGraphPortable, projectRootLabel, scanPortableGraphifyArtifacts } from "./portable-artifacts.js";
 import { loadOntologyPatchContext } from "./ontology-patch-context.js";
 import { persistCommunityLabels, resolveCommunityLabels } from "./community-labels.js";
@@ -295,9 +295,9 @@ function findBestMatchingNode(G: Graph, query: string): string | null {
   let bestScore = 0;
   let bestNodeId: string | null = null;
   G.forEachNode((nodeId, data) => {
-    const label = normalizeSearchText((data.label as string) ?? nodeId);
-    const source = normalizeSearchText((data.source_file as string) ?? "");
-    const score = terms.filter((term) => label.includes(term) || source.includes(term)).length;
+    const label = (data.label as string) ?? nodeId;
+    const source = (data.source_file as string) ?? "";
+    const score = scoreSearchText(label, source, terms);
     if (score > 0 && (!bestNodeId || score > bestScore || (score === bestScore && G.degree(nodeId) > G.degree(bestNodeId)))) {
       bestScore = score;
       bestNodeId = nodeId;
@@ -2714,6 +2714,12 @@ export async function main(): Promise<void> {
         }
         if (!target) {
           console.error(`No node matching '${targetLabel}' found.`);
+          process.exit(1);
+        }
+        if (source === target) {
+          console.error(
+            `'${sourceLabel}' and '${targetLabel}' both resolved to the same node '${source}'. Use a more specific label or the exact node ID.`,
+          );
           process.exit(1);
         }
         const shortestPath = await import("graphology-shortest-path/unweighted.js");

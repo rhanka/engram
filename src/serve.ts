@@ -555,6 +555,13 @@ function toolShortestPath(G: Graph, args: Record<string, unknown>): string {
   const tgtNid = tgtScored[0]![1];
   const maxHops = Number(args.max_hops ?? 8);
 
+  if (srcNid === tgtNid) {
+    return (
+      `'${mcpField(args.source)}' and '${mcpField(args.target)}' both resolved to the same node ` +
+      `'${mcpField(srcNid)}'. Use a more specific label or the exact node ID.`
+    );
+  }
+
   const pathNodes = bidirectional(G, srcNid, tgtNid);
   if (!pathNodes) {
     return `No path found between '${nodeDisplayLabel(G, srcNid)}' and '${nodeDisplayLabel(G, tgtNid)}'.`;

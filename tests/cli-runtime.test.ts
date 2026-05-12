@@ -198,6 +198,67 @@ describe("public CLI runtime command parity", () => {
     expect(explain.logs.join("\n")).toContain("Connections");
   });
 
+  it("prefers exact path and explain matches over higher-degree substring matches", async () => {
+    const dir = tempProject();
+    const graphDir = join(dir, ".graphify");
+    mkdirSync(graphDir, { recursive: true });
+    const graphPath = join(graphDir, "graph.json");
+    writeFileSync(
+      graphPath,
+      JSON.stringify({
+        directed: false,
+        graph: {},
+        nodes: [
+          { id: "helper", label: "MyFunctionHelpers", source_file: "src/helpers.ts", file_type: "code" },
+          { id: "exact", label: "MyFunction", source_file: "src/exact.ts", file_type: "code" },
+          { id: "target", label: "TargetService", source_file: "src/target.ts", file_type: "code" },
+          { id: "noise-a", label: "NoiseA", source_file: "src/noise-a.ts", file_type: "code" },
+          { id: "noise-b", label: "NoiseB", source_file: "src/noise-b.ts", file_type: "code" },
+        ],
+        links: [
+          { source: "exact", target: "target", relation: "calls", confidence: "EXTRACTED" },
+          { source: "helper", target: "noise-a", relation: "uses", confidence: "EXTRACTED" },
+          { source: "helper", target: "noise-b", relation: "uses", confidence: "EXTRACTED" },
+        ],
+      }),
+      "utf-8",
+    );
+
+    const path = await runCli(["path", "MyFunction", "TargetService", "--graph", graphPath], dir);
+    expect(path.exitCode).toBe(0);
+    expect(path.logs.join("\n")).toContain("MyFunction --calls [EXTRACTED]--> TargetService");
+
+    const explain = await runCli(["explain", "MyFunction", "--graph", graphPath], dir);
+    expect(explain.exitCode).toBe(0);
+    expect(explain.logs.join("\n")).toContain("ID:        exact");
+
+    const runtimePath = await runSkillRuntime(["path", "--graph", graphPath, "MyFunction", "TargetService"], dir);
+    expect(runtimePath.exitCode).toBe(0);
+    expect(runtimePath.logs.join("\n")).toContain("MyFunction --calls--> [EXTRACTED]");
+
+    const runtimeExplain = await runSkillRuntime(["explain", "--graph", graphPath, "MyFunction"], dir);
+    expect(runtimeExplain.exitCode).toBe(0);
+    expect(runtimeExplain.logs.join("\n")).toContain("NODE: MyFunction");
+    expect(runtimeExplain.logs.join("\n")).not.toContain("NODE: MyFunctionHelpers");
+  });
+
+  it("rejects shortest path queries when both labels resolve to the same node", async () => {
+    const dir = tempProject();
+    const graphPath = writeGraph(dir);
+
+    const result = await runCli(["path", "AlphaService", "AlphaService", "--graph", graphPath], dir, {
+      interceptExit: true,
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.errors.join("\n")).toContain("both resolved to the same node");
+
+    const runtime = await runSkillRuntime(["path", "--graph", graphPath, "AlphaService", "AlphaService"], dir);
+    expect(runtime.exitCode).toBe(0);
+    expect(runtime.logs.join("\n")).toContain("both resolved to the same node");
+    expect(runtime.logs.join("\n")).not.toContain("Shortest path (0 hops)");
+  });
+
   it("supports tree for compact graph traversal output", async () => {
     const dir = tempProject();
     const graphPath = writeGraph(dir);
