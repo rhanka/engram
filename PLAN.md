@@ -221,21 +221,21 @@ Progress below is calculated from the checked milestone boxes in the detailed tr
 | Track | Calculated progress | Spec status | Plan status | Implementation status | Next gate |
 | --- | ---: | --- | --- | --- | --- |
 | Python `0.7.10` parity checkpoint | 100% closed | `SPEC_UPSTREAM_TRACEABILITY.md` records the closed checkpoint. | Task L lots are closed except additive CRG work. | PR #22 merged to `main`. | No action unless a regression appears. |
-| Upstream Python `0.7.11`..`0.7.16` drift | 30% (`3/10`) | Source lock recorded; row-level drift matrix missing. | Task M exists with lots M1..M5; rows need commit-level classification. | No post-`0.7.10` port started yet. | Build the row-level matrix before implementing ports. |
-| Descriptions | 33% (`4/12`) | `SPEC_WIKI_ENTITY_DESCRIPTIONS.md` exists; render-only CLI needs to stay documented separately from generation. | Task K exists; generation subplan still needs implementation lots. | Sidecar schema, validation, wiki rendering and `export wiki|obsidian --descriptions` are implemented. | Add generation command/API contract and tests. |
-| Reconciliation | 25% (`3/12`) | `SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md` exists; read-only API/studio contract needs a concrete lot plan. | Tasks A..H/J exist; active MVP plan starts at read-only APIs and decision-log preview. | Patch core, write-mode MCP, and deterministic candidate queue exist; browser/API surfaces are missing. | Add read-only candidate API and decision-log preview before UI writes. |
-| CRG additive UX/review work | 30% (`3/10`) | CRG source locks and prior alignment specs exist; `v2.3.3` bucket plan is not yet row-level. | Task L Lot 5b and CRG rows exist but need a concrete lot split. | Existing review commands cover earlier CRG-style review context; accessibility/node-shape/help-overlay work is unported. | Classify `v2.3.3` buckets into HTML UX, reconciliation studio, review precision, or defer. |
+| Upstream Python `0.7.11`..`0.7.16` drift | 40% (`4/10`) | Source lock and row-level drift matrix are recorded. | Task M exists with lots M1..M5; M1 has started with the path-scoring/same-node guard port. | First post-`0.7.10` runtime fix is implemented locally; broader M1/M2/M3/M4/M5 remain open. | Finish M1 runtime fixes before starting Pascal or Ollama tuning. |
+| Descriptions | 50% (`6/12`) | `SPEC_WIKI_ENTITY_DESCRIPTIONS.md` exists, keeps render-only CLI separate from generation, and now specifies the first `wiki describe` generation contract. | Task K exists; generation implementation lots are split: assistant/direct first, batch/mesh later. | Sidecar schema, validation, wiki rendering, render CLI, and assistant-first generation core are implemented locally. | Wire `graphify wiki describe` CLI and direct-client creation after the core tests stay green. |
+| Reconciliation | 42% (`5/12`) | `SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md` exists and now specifies the read-only candidate API contract; studio/write contracts remain implementation work. | Tasks A..H/J exist; active MVP plan starts at read-only APIs and decision-log preview. | Patch core, write-mode MCP, deterministic candidate queue, read-only candidate query helpers and decision-log preview parser exist; browser/API surfaces are missing. | Wire read-only HTTP/MCP endpoints before UI writes. |
+| CRG additive UX/review work | 30% (`3/10`) | CRG source locks and prior alignment specs exist; read-only audit confirms `v2.3.3` accessibility opportunities are not yet row-level. | Task L Lot 5b and CRG rows exist but need a concrete lot split. | Existing review commands cover earlier CRG-style review context; HTML export still has canvas accessibility, node-shape and help-overlay gaps. | Classify `v2.3.3` buckets into HTML UX, reconciliation studio, review precision, or defer. |
 
 ## Detailed Track Plans
 
-### Track A: Descriptions (`4/12`, 33%)
+### Track A: Descriptions (`6/12`, 50%)
 
 - [x] Spec exists: `spec/SPEC_WIKI_ENTITY_DESCRIPTIONS.md`.
 - [x] Sidecar schema, cache key and validation exist in `src/wiki-descriptions.ts`.
 - [x] Existing validated sidecars render in wiki pages without provider calls.
 - [x] CLI render opt-in exists: `graphify export wiki|obsidian --descriptions <path>`.
-- [ ] Define the generation command/API contract: target selection, node/community switches, output path, overwrite policy and graph hash validation.
-- [ ] Implement assistant-mode sidecar generation with deterministic prompt inputs and no direct provider dependency.
+- [x] Define the generation command/API contract: target selection, node/community switches, output path, overwrite policy and graph hash validation.
+- [x] Implement assistant-mode sidecar generation core with deterministic prompt inputs and no direct provider dependency.
 - [ ] Implement direct-backend sidecar generation through existing LLM execution ports with mocked CI tests.
 - [ ] Decide whether batch/mesh generation is a first implementation lot or a documented follow-up.
 - [ ] Add cache/invalidation behavior for changed graph hash, prompt version, provider and model.
@@ -243,14 +243,14 @@ Progress below is calculated from the checked milestone boxes in the detailed tr
 - [ ] Extend rendering to ontology entity pages only after the entity-page export has a stable sidecar lookup.
 - [ ] Run UAT on a tiny fixture and on `../public-domaine-mystery-sagas-pack`, including at least one `insufficient_evidence` omission.
 
-### Track B: Reconciliation (`3/12`, 25%)
+### Track B: Reconciliation (`5/12`, 42%)
 
 - [x] Lifecycle spec exists: `spec/SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md`.
 - [x] Patch validation, dry-run/apply and write-mode MCP foundations exist.
 - [x] Deterministic reconciliation candidate queue schema and generation exist.
-- [ ] Specify the read-only candidate API contract: route names, response schema, paging, filtering, sorting and graph/profile hash checks.
+- [x] Specify the read-only candidate API contract: route names, response schema, paging, filtering, sorting and graph/profile hash checks.
 - [ ] Implement read-only API endpoints before any browser write UI.
-- [ ] Specify and implement decision-log preview records for accept, reject, alias merge and weak-evidence review decisions.
+- [x] Specify and implement decision-log preview core records/parser; endpoint filters and accept/reject/alias/weak-evidence UAT remain below.
 - [ ] Expose decision-log preview through CLI and skill runtime without mutating project files.
 - [ ] Implement the read-only studio shell served by `graphify ontology studio --config graphify.yaml`.
 - [ ] Add write-enabled studio mode only behind `--write`, localhost binding and a local token.
@@ -271,13 +271,13 @@ Progress below is calculated from the checked milestone boxes in the detailed tr
 - [ ] Implement the first selected CRG lot with synthetic Vitest fixtures over `.graphify/graph.json`, not SQLite.
 - [ ] Run UI/review UAT and update CRG traceability rows with exact adopted/deferred decisions.
 
-### Track D: Upstream Python `0.7.11`..`0.7.16` Drift (`3/10`, 30%)
+### Track D: Upstream Python `0.7.11`..`0.7.16` Drift (`4/10`, 40%)
 
 - [x] Rescan completed after the `0.7.10` checkpoint merge.
 - [x] `upstream/v7` and remote tag `v0.7.16` recorded at `ab32098063adb1ab4d9247747742958ad185db41`.
 - [x] Initial intake buckets exist in `UPSTREAM_GAP.md` and Task M.
-- [ ] Build a commit-level matrix for `f88567b..ab32098` with statuses `must-port`, `already-covered`, `intentional-delta`, or `defer`.
-- [ ] Lot M1: audit urgent runtime/platform fixes and port only gaps that affect the TypeScript runtime.
+- [x] Build a commit-level matrix for `f88567b..ab32098` with statuses `must-port`, `already-covered`, `intentional-delta`, or `defer`.
+- [ ] Lot M1: audit urgent runtime/platform fixes and port only gaps that affect the TypeScript runtime. Started: exact/prefix/substring `path` scoring and same-node guards are ported for CLI + MCP; remaining M1 candidates are LLM retry, cache path normalization, Unicode IDs/dedup legacy-edge cleanup, and Antigravity/install trigger parity.
 - [ ] Lot M2: audit Ollama runtime tuning and env docs against the TS direct-provider surface.
 - [ ] Lot M3: decide and, if approved, port Pascal/Delphi/Lazarus regex-backed extraction.
 - [ ] Lot M4: classify callflow Mermaid HTML as core export, CRG/review UX, or deferred visualization.
@@ -602,8 +602,8 @@ graphify extract ./tmp/direct-uat-corpus --backend openai --model gpt-5.5 --no-c
 
 - [x] Rescan upstream Python Graphify after PR #22 merge.
 - [x] Record `upstream/v7` at `ab32098063adb1ab4d9247747742958ad185db41` and remote tag `v0.7.16` at the same commit.
-- [ ] Build a row-level `0.7.11`..`0.7.16` matrix with four statuses: `must-port`, `already-covered`, `intentional-delta`, `defer`.
-- [ ] Lot M1: urgent runtime hotfix audit: context-window retry, Windows/help/version guards, Unicode IDs, edge-key dedup, direction flip, cache/path scoring, OpenCode trigger.
+- [x] Build a row-level `0.7.11`..`0.7.16` matrix with four statuses: `must-port`, `already-covered`, `intentional-delta`, `defer`.
+- [ ] Lot M1: urgent runtime hotfix audit: context-window retry, Windows/help/version guards, Unicode IDs, edge-key dedup, direction flip, cache/path scoring, OpenCode trigger. Started: exact/prefix/substring path scoring and same-node shortest-path guards are ported for CLI and MCP.
 - [ ] Lot M2: Ollama runtime audit: dynamic `num_ctx`, `keep_alive`, serial defaults, and env docs (`GRAPHIFY_OLLAMA_NUM_CTX`, `GRAPHIFY_OLLAMA_KEEP_ALIVE`).
 - [ ] Lot M3: language support audit: Pascal/Delphi/Lazarus and regex fallback.
 - [ ] Lot M4: callflow HTML audit: decide whether Mermaid callflow export belongs in core Graphify, CRG track, or a deferred visualization lot.

@@ -4,7 +4,7 @@
 
 - Product: Graphify TypeScript port
 - Scope: ontology lifecycle, reconciliation, patching, optional write surfaces
-- Spec state: baseline accepted; patch/MCP/candidate foundations implemented; read-only API/studio contract remains open
+- Spec state: baseline accepted; patch/MCP/candidate foundations implemented; read-only candidate API contract specified; candidate query helpers and decision-log preview parser implemented; HTTP/studio surfaces remain open
 - State root: `.graphify/`
 - Activation: explicit ontology profile workflow only
 - Default behavior: unchanged and read-only
@@ -243,6 +243,97 @@ Guardrails:
 - non-dry-run apply requires an explicit confirmation field
 - tool responses include changed files, stale artifacts, and next rebuild command
 - tools must not expose secrets, absolute home paths, or ignored artifact contents
+
+## Read-Only Reconciliation API Contract
+
+Read-only API routes are the first browser/studio surface. They may read generated
+candidate queues, authoritative decision logs, and local audit logs, but they must
+not accept mutation payloads.
+
+Minimal routes:
+
+- `GET /api/ontology/reconciliation/candidates`
+- `GET /api/ontology/reconciliation/candidates/:id`
+- `GET /api/ontology/reconciliation/decision-log`
+- `GET /api/ontology/rebuild-status`
+
+`GET /api/ontology/reconciliation/candidates` accepts these query parameters:
+
+- `status`
+- `kind`
+- `operation`
+- `canonical_id`
+- `candidate_id`
+- `min_score`
+- `query`
+- `sort=score|id`
+- `order=asc|desc`
+- `limit`
+- `offset`
+
+Candidate list responses use this wrapper:
+
+```json
+{
+  "schema": "graphify_ontology_reconciliation_candidates_response_v1",
+  "generated_at": "ISO-8601",
+  "graph_hash": "sha256",
+  "profile_hash": "sha256",
+  "stale": false,
+  "total": 1,
+  "limit": 50,
+  "offset": 0,
+  "items": []
+}
+```
+
+Decision-log preview responses use this wrapper:
+
+```json
+{
+  "schema": "graphify_ontology_reconciliation_decision_log_v1",
+  "total": 1,
+  "limit": 50,
+  "offset": 0,
+  "items": [
+    {
+      "source": "authoritative",
+      "path": "graphify/reconciliation/decisions.jsonl",
+      "recorded_at": "ISO-8601",
+      "patch": {}
+    }
+  ]
+}
+```
+
+Decision-log preview filters:
+
+- `source=authoritative|audit|both`
+- `status=applied|rejected|all`
+- `operation`
+- `node_id`
+- `from`
+- `to`
+- `limit`
+- `offset`
+
+`GET /api/ontology/rebuild-status` returns `graph_hash`, `profile_hash`,
+`needs_update`, `candidates_match`, and `decision_log_available`. It must not
+rebuild, apply, export, or write any file.
+
+Security rules:
+
+- read-only routes never expose absolute local paths
+- file reads stay inside configured project/reconciliation paths
+- missing or stale artifacts are reported as data state, not auto-created
+- write mode, localhost token, and dry-run/apply behavior belong to the later studio write surface
+
+Current implementation slice:
+
+- `src/ontology-reconciliation.ts` can load a generated candidate queue and return the read-only response wrapper with status/kind/operation/id/score/query filters, score/id sorting and pagination
+- `src/ontology-patch.ts` can read authoritative and audit JSONL decision logs as a bounded preview without mutating project files
+- decision-log preview currently implements source aggregation, relative path reporting, malformed-line warnings and pagination; route-level filters such as `status`, `operation`, `node_id`, `from` and `to` remain endpoint work
+- HTTP routes, MCP read-only tools for these helpers, and the browser studio shell are not wired yet
 
 ## Local Studio Surface
 
