@@ -9,6 +9,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
 import { serve } from "../src/serve.js";
+import { handleOntologyStudioRequest } from "../src/ontology-studio.js";
 import { ONTOLOGY_PATCH_SCHEMA, type OntologyPatch } from "../src/ontology-patch.js";
 
 const tempDirs: string[] = [];
@@ -745,6 +746,96 @@ describe("MCP stdio server", () => {
       await clientTransport.close().catch(() => undefined);
       await serverPromise.catch(() => undefined);
     }
+  });
+
+  it("serves read-only ontology reconciliation HTTP API without mutation", async () => {
+    const dir = makeExternalTempDir();
+    const fixture = writeOntologyReconciliationFixture(dir);
+    const beforeDecisions = readFileSync(fixture.decisionsPath, "utf-8");
+    const beforeAudit = readFileSync(fixture.auditPath, "utf-8");
+    const routeOptions = { profileStatePath: fixture.profileStatePath };
+
+    const candidatesResponse = handleOntologyStudioRequest(
+      routeOptions,
+      "GET",
+      "/api/ontology/reconciliation/candidates?canonical_id=component-a&min_score=0.8&limit=1",
+    );
+    const candidates = JSON.parse(candidatesResponse.body) as {
+      schema: string;
+      stale: boolean;
+      total: number;
+      items: Array<{ id: string; candidate_id: string; canonical_id: string }>;
+    };
+    expect(candidatesResponse.status).toBe(200);
+    expect(candidates.schema).toBe("graphify_ontology_reconciliation_candidates_response_v1");
+    expect(candidates.stale).toBe(true);
+    expect(candidates.total).toBe(1);
+    expect(candidates.items).toMatchObject([
+      {
+        id: "candidate-high",
+        candidate_id: "candidate-component",
+        canonical_id: "component-a",
+      },
+    ]);
+
+    const candidateResponse = handleOntologyStudioRequest(
+      routeOptions,
+      "GET",
+      "/api/ontology/reconciliation/candidates/candidate-high",
+    );
+    const candidate = JSON.parse(candidateResponse.body) as { id: string; proposed_patch_operation: string };
+    expect(candidateResponse.status).toBe(200);
+    expect(candidate).toMatchObject({
+      id: "candidate-high",
+      proposed_patch_operation: "accept_match",
+    });
+
+    const missingResponse = handleOntologyStudioRequest(
+      routeOptions,
+      "GET",
+      "/api/ontology/reconciliation/candidates/missing",
+    );
+    const missing = JSON.parse(missingResponse.body) as { error: string };
+    expect(missingResponse.status).toBe(404);
+    expect(missing.error).toContain("reconciliation candidate not found: missing");
+
+    const logResponse = handleOntologyStudioRequest(
+      routeOptions,
+      "GET",
+      "/api/ontology/reconciliation/decision-log?source=audit&operation=accept_match&limit=10",
+    );
+    const log = JSON.parse(logResponse.body) as {
+      schema: string;
+      total: number;
+      items: Array<{ source: string; patch: { id: string; operation: string } }>;
+    };
+    expect(logResponse.status).toBe(200);
+    expect(log.schema).toBe("graphify_ontology_reconciliation_decision_log_v1");
+    expect(log.total).toBe(1);
+    expect(log.items).toMatchObject([
+      {
+        source: "audit",
+        patch: { id: "decision-audit", operation: "accept_match" },
+      },
+    ]);
+
+    const statusResponse = handleOntologyStudioRequest(routeOptions, "GET", "/api/ontology/rebuild-status");
+    const status = JSON.parse(statusResponse.body) as {
+      schema: string;
+      needs_update: boolean;
+      candidates_match: boolean;
+      decision_log_available: boolean;
+    };
+    expect(statusResponse.status).toBe(200);
+    expect(status).toMatchObject({
+      schema: "graphify_ontology_rebuild_status_v1",
+      needs_update: true,
+      candidates_match: true,
+      decision_log_available: true,
+    });
+
+    expect(readFileSync(fixture.decisionsPath, "utf-8")).toBe(beforeDecisions);
+    expect(readFileSync(fixture.auditPath, "utf-8")).toBe(beforeAudit);
   });
 
   it("accepts a graph path outside the local graphify-out directory", async () => {

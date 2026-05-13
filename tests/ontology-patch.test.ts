@@ -267,6 +267,17 @@ describe("ontology patch core", () => {
     writeFileSync(auditPath, [
       JSON.stringify(makePatch({ id: "decision-audit-1", created_at: "2026-05-02T10:00:00.000Z" })),
       JSON.stringify(makePatch({ id: "decision-audit-2", created_at: "2026-05-03T10:00:00.000Z" })),
+      JSON.stringify(makePatch({
+        id: "decision-audit-status",
+        operation: "set_status",
+        status: "applied",
+        target: {
+          node_id: "candidate-component",
+          from_status: "candidate",
+          to_status: "validated",
+        },
+        created_at: "2026-05-04T10:00:00.000Z",
+      })),
     ].join("\n"), "utf-8");
 
     const result = loadOntologyReconciliationDecisionLog({
@@ -278,7 +289,7 @@ describe("ontology patch core", () => {
     });
 
     expect(result.schema).toBe(ONTOLOGY_RECONCILIATION_DECISION_LOG_SCHEMA);
-    expect(result.total).toBe(3);
+    expect(result.total).toBe(4);
     expect(result.limit).toBe(2);
     expect(result.offset).toBe(0);
     expect(result.items.map((item) => item.source)).toEqual([
@@ -304,7 +315,22 @@ describe("ontology patch core", () => {
     expect(paged.items.map((item) => item.patch.id)).toEqual([
       "decision-audit-1",
       "decision-audit-2",
+      "decision-audit-status",
     ]);
+
+    const filtered = loadOntologyReconciliationDecisionLog({
+      authoritativePath,
+      auditPath,
+      rootDir: root,
+      source: "audit",
+      status: "applied",
+      operation: "set_status",
+      node_id: "candidate-component",
+      from: "candidate",
+      to: "validated",
+    });
+    expect(filtered.total).toBe(1);
+    expect(filtered.items[0]?.patch.id).toBe("decision-audit-status");
 
     const outsideRoot = makeTempDir();
     const outsidePath = join(outsideRoot, "outside-decisions.jsonl");

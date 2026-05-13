@@ -2021,6 +2021,44 @@ export async function main(): Promise<void> {
       }
     });
 
+  ontology
+    .command("decision-log")
+    .description("Preview ontology reconciliation decision logs without mutating files")
+    .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
+    .option("--source <source>", "Decision source: authoritative, audit, or both")
+    .option("--status <status>", "Patch status filter: applied, rejected, or all")
+    .option("--operation <operation>", "Patch operation filter")
+    .option("--node-id <id>", "Filter decisions touching a node id")
+    .option("--from <value>", "Filter by from/source id or status")
+    .option("--to <value>", "Filter by to/target id or status")
+    .option("--limit <n>", "Maximum records to return")
+    .option("--offset <n>", "Records to skip")
+    .option("--json", "Print JSON result")
+    .action(async (opts) => {
+      const { previewOntologyDecisionLog } = await import("./ontology-reconciliation-api.js");
+      const context = loadOntologyPatchContext(opts.profileState);
+      const result = previewOntologyDecisionLog(context, {
+        ...(opts.source ? { source: opts.source } : {}),
+        ...(opts.status ? { status: opts.status } : {}),
+        ...(opts.operation ? { operation: opts.operation } : {}),
+        ...(opts.nodeId ? { node_id: opts.nodeId } : {}),
+        ...(opts.from ? { from: opts.from } : {}),
+        ...(opts.to ? { to: opts.to } : {}),
+        ...(opts.limit ? { limit: Number.parseInt(opts.limit, 10) } : {}),
+        ...(opts.offset ? { offset: Number.parseInt(opts.offset, 10) } : {}),
+      });
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(`Ontology decision log: ${result.total} record(s)`);
+        for (const item of result.items) {
+          const patch = item.patch as { id?: unknown; operation?: unknown; status?: unknown };
+          console.log(`- ${item.source}: ${String(patch.id ?? "(no id)")} ${String(patch.operation ?? "")} ${String(patch.status ?? "")}`.trimEnd());
+        }
+        for (const issue of result.issues) console.warn(`${issue.severity}: ${issue.message}`);
+      }
+    });
+
   const ontologyPatch = ontology.command("patch").description("Validate and apply ontology reconciliation patches");
   ontologyPatch
     .command("validate")
@@ -2078,6 +2116,28 @@ export async function main(): Promise<void> {
           profileStatePath,
         },
       });
+    });
+
+  ontology
+    .command("studio")
+    .description("Start a read-only local ontology reconciliation studio API")
+    .requiredOption("--config <path>", "Graphify project config path")
+    .option("--host <host>", "Host to bind", "127.0.0.1")
+    .option("--port <port>", "Port to bind; defaults to an ephemeral port")
+    .action(async (opts) => {
+      const projectConfig = loadProjectConfig(resolve(opts.config));
+      const profileStatePath = join(projectConfig.outputs.state_dir, "profile", "profile-state.json");
+      if (!existsSync(profileStatePath)) {
+        console.error(`error: profile state not found: ${profileStatePath}. Run graphify profile dataprep first.`);
+        process.exit(1);
+      }
+      const { startOntologyStudioServer } = await import("./ontology-studio.js");
+      const started = await startOntologyStudioServer({
+        profileStatePath,
+        host: opts.host,
+        ...(opts.port ? { port: Number.parseInt(opts.port, 10) } : {}),
+      });
+      console.log(`Ontology studio read-only API listening at ${started.url}`);
     });
 
   program

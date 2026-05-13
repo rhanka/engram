@@ -6,7 +6,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import Graph from "graphology";
 import { bidirectional } from "graphology-shortest-path/unweighted.js";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import pkg from "../package.json";
 import {
   forEachTraversalNeighbor,
@@ -27,16 +27,17 @@ import { buildReviewAnalysis, reviewAnalysisToText } from "./review-analysis.js"
 import { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
 import {
   applyOntologyPatch,
-  loadOntologyReconciliationDecisionLog,
   validateOntologyPatch,
   type OntologyPatchContext,
 } from "./ontology-patch.js";
 import { loadOntologyPatchContext } from "./ontology-patch-context.js";
 import {
-  loadOntologyReconciliationCandidates,
-  queryOntologyReconciliationCandidates,
-  type OntologyReconciliationCandidateFilter,
-} from "./ontology-reconciliation.js";
+  getOntologyRebuildStatus,
+  getOntologyReconciliationCandidate,
+  listOntologyReconciliationCandidates,
+  previewOntologyDecisionLog,
+} from "./ontology-reconciliation-api.js";
+import type { OntologyReconciliationCandidateFilter } from "./ontology-reconciliation.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 
 export interface ServeOptions {
@@ -546,29 +547,6 @@ function toolReviewAnalysis(G: Graph, args: Record<string, unknown>): string {
   return reviewAnalysisToText(analysis);
 }
 
-function readableStatePath(context: OntologyPatchContext, path: string): string {
-  const resolvedStateDir = resolve(context.stateDir);
-  const resolvedPath = resolve(path);
-  const fromState = relative(resolvedStateDir, resolvedPath);
-  if (fromState === "") return ".";
-  if (!fromState.startsWith("..") && !fromState.startsWith(sep) && !isAbsolute(fromState)) {
-    return fromState;
-  }
-  return resolvedPath;
-}
-
-function ontologyReconciliationCandidatesPath(context: OntologyPatchContext): string {
-  return join(context.stateDir, "ontology", "reconciliation", "candidates.json");
-}
-
-function ontologyAppliedPatchesPath(context: OntologyPatchContext): string {
-  return join(context.stateDir, "ontology", "reconciliation", "applied-patches.jsonl");
-}
-
-function ontologyNeedsUpdatePath(context: OntologyPatchContext): string {
-  return join(context.stateDir, "needs_update");
-}
-
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 }
@@ -613,32 +591,11 @@ function reconciliationCandidateFilters(args: Record<string, unknown>): Ontology
   return filters;
 }
 
-function loadReadonlyReconciliationCandidates(context: OntologyPatchContext) {
-  const path = ontologyReconciliationCandidatesPath(context);
-  if (!existsSync(path)) {
-    throw new Error(`reconciliation candidates file not found: ${readableStatePath(context, path)}`);
-  }
-  return loadOntologyReconciliationCandidates(path);
-}
-
-function reconciliationQueueIsStale(
-  context: OntologyPatchContext,
-  queue: ReturnType<typeof loadOntologyReconciliationCandidates>,
-): boolean {
-  const graphMismatch = context.graphHash.length > 0 && queue.graph_hash !== context.graphHash;
-  const profileMismatch = context.profile.profile_hash.length > 0 && queue.profile_hash !== context.profile.profile_hash;
-  return existsSync(ontologyNeedsUpdatePath(context)) || graphMismatch || profileMismatch;
-}
-
 function toolListReconciliationCandidates(
   context: OntologyPatchContext,
   args: Record<string, unknown>,
 ): string {
-  const queue = loadReadonlyReconciliationCandidates(context);
-  const response = queryOntologyReconciliationCandidates(queue, {
-    ...reconciliationCandidateFilters(args),
-    stale: reconciliationQueueIsStale(context, queue),
-  });
+  const response = listOntologyReconciliationCandidates(context, reconciliationCandidateFilters(args));
   return JSON.stringify(response, null, 2);
 }
 
@@ -650,11 +607,7 @@ function toolGetReconciliationCandidate(
   if (!id) {
     throw new Error("id is required");
   }
-  const queue = loadReadonlyReconciliationCandidates(context);
-  const candidate = queue.candidates.find((item) => item.id === id);
-  if (!candidate) {
-    throw new Error(`reconciliation candidate not found: ${id}`);
-  }
+  const candidate = getOntologyReconciliationCandidate(context, id);
   return JSON.stringify(candidate, null, 2);
 }
 
@@ -662,67 +615,15 @@ function toolPreviewOntologyDecisionLog(
   context: OntologyPatchContext,
   args: Record<string, unknown>,
 ): string {
-  const response = loadOntologyReconciliationDecisionLog({
-    authoritativePath: context.decisionsPath,
-    auditPath: ontologyAppliedPatchesPath(context),
-    rootDir: context.rootDir,
+  const response = previewOntologyDecisionLog(context, {
     limit: optionalInteger(args.limit),
     offset: optionalInteger(args.offset),
   });
-  if (!context.decisionsPath) {
-    response.issues.unshift({
-      severity: "warning",
-      message: "authoritative decisionsPath is not configured",
-    });
-  }
   return JSON.stringify(response, null, 2);
 }
 
 function toolOntologyRebuildStatus(context: OntologyPatchContext): string {
-  const candidatesPath = ontologyReconciliationCandidatesPath(context);
-  const candidates = {
-    path: readableStatePath(context, candidatesPath),
-    exists: existsSync(candidatesPath),
-    readable: false,
-    candidate_count: null as number | null,
-    generated_at: null as string | null,
-    graph_hash: null as string | null,
-    profile_hash: null as string | null,
-    consistent_with_context: null as boolean | null,
-    issues: [] as string[],
-  };
-
-  if (candidates.exists) {
-    try {
-      const queue = loadOntologyReconciliationCandidates(candidatesPath);
-      const expectedGraphHash = context.graphHash;
-      const expectedProfileHash = context.profile.profile_hash;
-      const graphMatches = expectedGraphHash.length === 0 || queue.graph_hash === expectedGraphHash;
-      const profileMatches = expectedProfileHash.length === 0 || queue.profile_hash === expectedProfileHash;
-      candidates.readable = true;
-      candidates.candidate_count = queue.candidate_count;
-      candidates.generated_at = queue.generated_at;
-      candidates.graph_hash = queue.graph_hash;
-      candidates.profile_hash = queue.profile_hash;
-      candidates.consistent_with_context = graphMatches && profileMatches;
-      if (!graphMatches) {
-        candidates.issues.push("candidates graph_hash does not match active graph");
-      }
-      if (!profileMatches) {
-        candidates.issues.push("candidates profile_hash does not match active profile");
-      }
-    } catch (err) {
-      candidates.issues.push(`candidates file could not be read: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  return JSON.stringify({
-    schema: "graphify_ontology_rebuild_status_v1",
-    needs_update: existsSync(ontologyNeedsUpdatePath(context)),
-    graph_hash: context.graphHash || null,
-    profile_hash: context.profile.profile_hash || null,
-    candidates,
-  }, null, 2);
+  return JSON.stringify(getOntologyRebuildStatus(context), null, 2);
 }
 
 function toolShortestPath(G: Graph, args: Record<string, unknown>): string {

@@ -124,6 +124,12 @@ export interface OntologyReconciliationDecisionLogOptions {
   authoritativePath?: string;
   auditPath?: string;
   rootDir?: string;
+  source?: OntologyReconciliationDecisionLogSource | "both";
+  status?: "applied" | "rejected" | "all";
+  operation?: string;
+  node_id?: string;
+  from?: string;
+  to?: string;
   limit?: number;
   offset?: number;
 }
@@ -228,6 +234,59 @@ function parseDecisionLogPath(
     });
   }
   return items;
+}
+
+function recordString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function decisionLogStatus(item: OntologyReconciliationDecisionLogItem): string | null {
+  return recordString(item.patch.status);
+}
+
+function decisionLogOperation(item: OntologyReconciliationDecisionLogItem): string | null {
+  return recordString(item.patch.operation);
+}
+
+function decisionLogTarget(item: OntologyReconciliationDecisionLogItem): Record<string, unknown> {
+  return isRecord(item.patch.target) ? item.patch.target : {};
+}
+
+function decisionLogTouchesNode(item: OntologyReconciliationDecisionLogItem, nodeId: string): boolean {
+  const target = decisionLogTarget(item);
+  return [
+    target.candidate_id,
+    target.canonical_id,
+    target.node_id,
+    target.source_id,
+    target.target_id,
+    target.deprecated_id,
+    target.replacement_id,
+    target.mapping_id,
+    target.relation_id,
+  ].some((value) => recordString(value) === nodeId);
+}
+
+function filterDecisionLogItems(
+  items: OntologyReconciliationDecisionLogItem[],
+  options: OntologyReconciliationDecisionLogOptions,
+): OntologyReconciliationDecisionLogItem[] {
+  return items.filter((item) => {
+    if (options.status && options.status !== "all" && decisionLogStatus(item) !== options.status) return false;
+    if (options.operation && decisionLogOperation(item) !== options.operation) return false;
+    if (options.node_id && !decisionLogTouchesNode(item, options.node_id)) return false;
+    if (options.from) {
+      const target = decisionLogTarget(item);
+      const from = recordString(target.from_status) ?? recordString(target.source_id);
+      if (from !== options.from) return false;
+    }
+    if (options.to) {
+      const target = decisionLogTarget(item);
+      const to = recordString(target.to_status) ?? recordString(target.target_id);
+      if (to !== options.to) return false;
+    }
+    return true;
+  });
 }
 
 function nonEmptyString(value: unknown): string | null {
@@ -449,8 +508,16 @@ export function loadOntologyReconciliationDecisionLog(
   options: OntologyReconciliationDecisionLogOptions,
 ): OntologyReconciliationDecisionLogResponse {
   const issues: OntologyPatchIssue[] = [];
-  const sourceOrder: OntologyReconciliationDecisionLogSource[] = ["authoritative", "audit"];
-  const allItems = sourceOrder.flatMap((source) => parseDecisionLogPath(options, source, issues));
+  const requestedSource =
+    options.source === "authoritative" || options.source === "audit" || options.source === "both"
+      ? options.source
+      : "both";
+  const sourceOrder: OntologyReconciliationDecisionLogSource[] =
+    requestedSource === "both" ? ["authoritative", "audit"] : [requestedSource];
+  const allItems = filterDecisionLogItems(
+    sourceOrder.flatMap((source) => parseDecisionLogPath(options, source, issues)),
+    options,
+  );
 
   const offset = Math.max(0, Math.floor(options.offset ?? 0));
   const limitValue = options.limit ?? Number.POSITIVE_INFINITY;
