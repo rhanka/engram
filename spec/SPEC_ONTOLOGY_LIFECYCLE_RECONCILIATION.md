@@ -4,7 +4,7 @@
 
 - Product: Graphify TypeScript port
 - Scope: ontology lifecycle, reconciliation, patching, optional write surfaces
-- Spec state: baseline accepted; patch/MCP/candidate foundations implemented; read-only candidate API contract specified; candidate query helpers and decision-log preview parser implemented; HTTP/studio surfaces remain open
+- Spec state: baseline accepted; patch/MCP/candidate foundations implemented; read-only candidate API contract specified; candidate query helpers, decision-log preview parser, CLI/skill preview, MCP tools and HTTP/studio shell are implemented; write-enabled studio remains open
 - State root: `.graphify/`
 - Activation: explicit ontology profile workflow only
 - Default behavior: unchanged and read-only
@@ -332,8 +332,9 @@ Current implementation slice:
 
 - `src/ontology-reconciliation.ts` can load a generated candidate queue and return the read-only response wrapper with status/kind/operation/id/score/query filters, score/id sorting and pagination
 - `src/ontology-patch.ts` can read authoritative and audit JSONL decision logs as a bounded preview without mutating project files
-- decision-log preview currently implements source aggregation, relative path reporting, malformed-line warnings and pagination; route-level filters such as `status`, `operation`, `node_id`, `from` and `to` remain endpoint work
-- HTTP routes, MCP read-only tools for these helpers, and the browser studio shell are not wired yet
+- decision-log preview implements source filtering, status/operation/node/from/to filters, relative path reporting, malformed-line warnings and pagination
+- `src/ontology-reconciliation-api.ts` shares read-only candidate, decision-log and rebuild-status responses across MCP and HTTP
+- `src/ontology-studio.ts` exposes a read-only localhost studio shell and GET-only JSON routes; write APIs and token-gated apply remain later work
 
 ## Local Studio Surface
 

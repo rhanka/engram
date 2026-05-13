@@ -200,8 +200,8 @@ Progress note:
 
 ## Immediate Execution Order
 
-1. [ ] **Descriptions MVP first:** implement a no-provider-call wiki description render path from existing validated sidecars, then add mocked/direct generation behind explicit opt-in.
-2. [ ] **Reconciliation MVP second:** expose read-only candidate APIs and a deterministic decision-log preview before building any write-enabled studio.
+1. [x] **Descriptions MVP first:** implement a no-provider-call wiki description render path from existing validated sidecars, then add mocked/direct generation behind explicit opt-in.
+2. [x] **Reconciliation MVP second:** expose read-only candidate APIs and a deterministic decision-log preview before building any write-enabled studio.
 3. [ ] **Upstream `0.7.11`..`0.7.16` hotfix triage in parallel with product work:** classify new commits as `must-port`, `already-covered`, `intentional-delta`, or `defer`; port urgent runtime fixes first.
 4. [ ] **CRG UX third unless it unblocks reconciliation studio:** harvest accessibility and review-precision patterns without adopting SQLite, daemon, embeddings, or VS Code webview assumptions.
 
@@ -209,8 +209,8 @@ Progress note:
 
 | Track | Current state | Next concrete action | UAT / Decision |
 | --- | --- | --- | --- |
-| Descriptions | Sidecar schema, cache key, validation, no-provider wiki rendering, assistant CLI generation and direct-client wiring exist. | Add docs/skill workflow, cache invalidation behavior and UAT fixtures; decide batch/mesh follow-up. | UAT on a small code fixture and `../public-domaine-mystery-sagas-pack`. |
-| Reconciliation | Patch core, candidate queue, CLI/runtime candidate generation, write-mode MCP, read-only ontology serve and MCP candidate/log/status tools exist; browser/studio HTTP APIs are missing. | Add CLI/skill decision-log preview and the read-only studio/API shell before UI writes. | UAT with one accepted, one rejected, one alias merge and one weak-evidence review item in the public pack. |
+| Descriptions | Sidecar schema, cache key, validation, no-provider wiki rendering, assistant CLI generation, direct-client wiring and README/skill workflow docs exist. | Add cache invalidation behavior and UAT fixtures; decide batch/mesh follow-up. | UAT on a small code fixture and `../public-domaine-mystery-sagas-pack`. |
+| Reconciliation | Patch core, candidate queue, CLI/runtime candidate generation, write-mode MCP, read-only ontology serve, MCP candidate/log/status tools, CLI/skill decision-log preview, and read-only HTTP/studio API shell exist. | Add public-pack config/UAT, then decide the write-enabled studio mode boundary. | UAT with one accepted, one rejected, one alias merge and one weak-evidence review item in the public pack. |
 | CRG | `v2.3.3` is recorded as additive; UX/accessibility and review precision remain unported opportunities. | Triage keyboard/ARIA/node-shape/help-overlay and review-precision changes into Graphify-native lots. | Decide whether CRG accessibility should land in HTML export, reconciliation studio, or both. |
 | Upstream Python | `0.7.10` merged; `0.7.16` observed after rescan. | Add a `0.7.11`..`0.7.16` row-level matrix before porting. | Decide whether any upstream feature beyond hotfixes should preempt descriptions/reconciliation. |
 
@@ -222,13 +222,13 @@ Progress below is calculated from the checked milestone boxes in the detailed tr
 | --- | ---: | --- | --- | --- | --- |
 | Python `0.7.10` parity checkpoint | 100% closed | `SPEC_UPSTREAM_TRACEABILITY.md` records the closed checkpoint. | Task L lots are closed except additive CRG work. | PR #22 merged to `main`. | No action unless a regression appears. |
 | Upstream Python `0.7.11`..`0.7.16` drift | 40% (`4/10`) | Source lock and row-level drift matrix are recorded. | Task M exists with lots M1..M5; M1 has started with the path-scoring/same-node guard port. | First post-`0.7.10` runtime fix is implemented locally; broader M1/M2/M3/M4/M5 remain open. | Finish M1 runtime fixes before starting Pascal or Ollama tuning. |
-| Descriptions | 58% (`7/12`) | `SPEC_WIKI_ENTITY_DESCRIPTIONS.md` exists, keeps render-only CLI separate from generation, and specifies the first `wiki describe` generation contract. | Task K exists; generation implementation lots are split: assistant/direct first, batch/mesh later. | Sidecar schema, validation, wiki rendering, render CLI, assistant CLI generation and direct-client wiring are implemented locally. | Add README/skill workflow, cache invalidation and UAT fixtures before broad rollout. |
-| Reconciliation | 46% (`6/13`) | `SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md` exists and specifies the read-only candidate API contract; studio/write contracts remain implementation work. | Tasks A..H/J exist; active MVP plan starts at read-only APIs and decision-log preview. | Patch core, write-mode MCP, deterministic candidate queue, read-only query helpers, decision-log preview parser, read-only ontology serve and MCP read-only tools exist; browser/API surfaces are missing. | Add CLI/skill decision-log preview and the read-only HTTP/studio shell before UI writes. |
+| Descriptions | 67% (`8/12`) | `SPEC_WIKI_ENTITY_DESCRIPTIONS.md` exists, keeps render-only CLI separate from generation, and specifies the first `wiki describe` generation contract. | Task K exists; generation implementation lots are split: assistant/direct first, batch/mesh later. | Sidecar schema, validation, wiki rendering, render CLI, assistant CLI generation, direct-client wiring and README/skill workflow docs are implemented locally. | Add cache invalidation and UAT fixtures before broad rollout. |
+| Reconciliation | 69% (`9/13`) | `SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md` specifies the read-only candidate API and now records the HTTP/studio shell slice; write contracts remain implementation work. | Tasks A..H/J exist; read-only APIs and decision-log preview are closed for MVP scope. | Patch core, write-mode MCP, deterministic candidate queue, read-only query helpers, decision-log preview filters, read-only ontology serve, MCP tools, CLI/skill preview and HTTP/studio shell exist. | Add public-pack config/UAT, then decide write-enabled studio mode. |
 | CRG additive UX/review work | 30% (`3/10`) | CRG source locks and prior alignment specs exist; read-only audit confirms `v2.3.3` accessibility opportunities are not yet row-level. | Task L Lot 5b and CRG rows exist but need a concrete lot split. | Existing review commands cover earlier CRG-style review context; HTML export still has canvas accessibility, node-shape and help-overlay gaps. | Classify `v2.3.3` buckets into HTML UX, reconciliation studio, review precision, or defer. |
 
 ## Detailed Track Plans
 
-### Track A: Descriptions (`7/12`, 58%)
+### Track A: Descriptions (`8/12`, 67%)
 
 - [x] Spec exists: `spec/SPEC_WIKI_ENTITY_DESCRIPTIONS.md`.
 - [x] Sidecar schema, cache key and validation exist in `src/wiki-descriptions.ts`.
@@ -239,21 +239,21 @@ Progress below is calculated from the checked milestone boxes in the detailed tr
 - [x] Implement direct-backend sidecar generation through existing LLM execution ports with mocked CI tests.
 - [ ] Decide whether batch/mesh generation is a first implementation lot or a documented follow-up.
 - [ ] Add cache/invalidation behavior for changed graph hash, prompt version, provider and model.
-- [ ] Update README and assistant skills with a two-step workflow: generate sidecars, then render wiki/Obsidian with `--descriptions`.
+- [x] Update README and assistant skills with a two-step workflow: generate sidecars, then render wiki/Obsidian with `--descriptions`.
 - [ ] Extend rendering to ontology entity pages only after the entity-page export has a stable sidecar lookup.
 - [ ] Run UAT on a tiny fixture and on `../public-domaine-mystery-sagas-pack`, including at least one `insufficient_evidence` omission.
 
-### Track B: Reconciliation (`6/13`, 46%)
+### Track B: Reconciliation (`9/13`, 69%)
 
 - [x] Lifecycle spec exists: `spec/SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md`.
 - [x] Patch validation, dry-run/apply and write-mode MCP foundations exist.
 - [x] Deterministic reconciliation candidate queue schema and generation exist.
 - [x] Specify the read-only candidate API contract: route names, response schema, paging, filtering, sorting and graph/profile hash checks.
 - [x] Implement read-only MCP API endpoints for candidate list/get, decision-log preview and rebuild status before any browser write UI.
-- [ ] Implement read-only HTTP/studio API endpoints before any browser write UI.
+- [x] Implement read-only HTTP/studio API endpoints before any browser write UI.
 - [x] Specify and implement decision-log preview core records/parser; endpoint filters and accept/reject/alias/weak-evidence UAT remain below.
-- [ ] Expose decision-log preview through CLI and skill runtime without mutating project files.
-- [ ] Implement the read-only studio shell served by `graphify ontology studio --config graphify.yaml`.
+- [x] Expose decision-log preview through CLI and skill runtime without mutating project files.
+- [x] Implement the read-only studio shell served by `graphify ontology studio --config graphify.yaml`.
 - [ ] Add write-enabled studio mode only behind `--write`, localhost binding and a local token.
 - [ ] Add project-owned `graphify.yaml`, ontology profile and decision/audit log paths to `../public-domaine-mystery-sagas-pack`.
 - [ ] Generate a public-pack candidate queue and validate it against the profile policy.
@@ -402,8 +402,8 @@ Progress below is calculated from the checked milestone boxes in the detailed tr
 - [x] Define stable `graphify_ontology_reconciliation_candidates_v1` queue schema.
 - [x] Generate deterministic entity-match candidates from ontology output nodes and evidence refs.
 - [x] Expose candidate generation through CLI and skill runtime.
-- [ ] Expose read-only candidate APIs before any browser write UI.
-- [ ] Implement read-only studio served by `graphify ontology studio --config graphify.yaml`.
+- [x] Expose read-only candidate APIs before any browser write UI.
+- [x] Implement read-only studio served by `graphify ontology studio --config graphify.yaml`.
 - [ ] Implement write-enabled studio only with `--write`, localhost binding and local token.
 - [ ] Route every write through patch validate/dry-run/apply APIs.
 - [ ] Add UI for accept/reject/create/merge/status/relation patch operations.
@@ -544,7 +544,7 @@ graphify extract ./tmp/direct-uat-corpus --backend openai --model gpt-5.5 --no-c
 - [ ] Add generation-time `--wiki-descriptions` and `--wiki-community-descriptions` or equivalent config options.
 - [x] Render validated descriptions in community wiki pages and god-node wiki pages.
 - [ ] Extend validated description rendering to ontology entity pages once the entity-page export is wired to sidecars.
-- [ ] Add assistant-skill guidance for generating sidecars before wiki rendering.
+- [x] Add assistant-skill guidance for generating sidecars before wiki rendering.
 - [ ] Add cache/invalidation tests.
 - [ ] Add no-provider-call CI tests plus mocked direct backend tests.
 - [ ] Run UAT on a small code fixture and on `../public-domaine-mystery-sagas-pack`.

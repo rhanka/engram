@@ -25,6 +25,9 @@ Turn any folder of files into a navigable knowledge graph with community detecti
 /graphify <path> --neo4j-push bolt://localhost:7687   # push directly to Neo4j
 /graphify <path> --mcp                                # start MCP stdio server for agent access
 /graphify <path> --watch                              # watch folder, auto-rebuild on code changes (no LLM needed)
+graphify wiki describe --graph .graphify/graph.json --mode assistant --targets all  # opt-in description sidecars
+graphify export wiki --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
+graphify export obsidian --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
 /graphify add <url>                                   # fetch URL, save to ./raw, update graph
 /graphify add <url> --author "Name"                   # tag who wrote it
 /graphify add <url> --contributor "Name"              # tag who added it to the corpus
@@ -447,6 +450,19 @@ Replace INPUT_PATH with the actual path.
 ### Step 6 - Generate Obsidian vault (opt-in) + HTML
 
 **Generate HTML always** (unless `--no-viz`). **Obsidian vault only if `--obsidian` was explicitly given** — skip it otherwise, it generates one file per node.
+
+Wiki descriptions are opt-in and two-step. First generate sidecars, then pass their index into wiki or Obsidian rendering:
+
+```bash
+graphify wiki describe --graph .graphify/graph.json --mode assistant --targets all
+# or, for direct mode:
+graphify wiki describe --graph .graphify/graph.json --mode direct --backend openai --targets all
+
+graphify export wiki --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
+graphify export obsidian --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
+```
+
+Sidecars live under `.graphify/wiki/descriptions/` with an index at `.graphify/wiki/descriptions.json`. They record graph hash, prompt/generator provenance, evidence refs, and cache keys; existing generated sidecars may be reused when a fresh generation does not complete. `insufficient_evidence` sidecars render no Description section. This never mutates `.graphify/graph.json`.
 
 If `--obsidian` was given:
 
