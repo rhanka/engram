@@ -210,7 +210,7 @@ Progress note:
 | Track | Current state | Next concrete action | UAT / Decision |
 | --- | --- | --- | --- |
 | Descriptions | Sidecar schema, cache key, validation, no-provider wiki rendering, assistant CLI generation, direct-client wiring and README/skill workflow docs exist. | Add cache invalidation behavior and UAT fixtures; decide batch/mesh follow-up. | UAT on a small code fixture and `../public-domaine-mystery-sagas-pack`. |
-| Reconciliation | Patch core, candidate queue, CLI/runtime candidate generation, write-mode MCP, read-only ontology serve, MCP candidate/log/status tools, CLI/skill decision-log preview, and read-only HTTP/studio API shell exist. | Add public-pack config/UAT, then decide the write-enabled studio mode boundary. | UAT with one accepted, one rejected, one alias merge and one weak-evidence review item in the public pack. |
+| Reconciliation | Patch core, candidate queue, CLI/runtime candidate generation, write-mode MCP, read-only ontology serve, MCP candidate/log/status tools, CLI/skill decision-log preview, read-only HTTP/studio API shell, and public-pack-derived isolated UAT exist. | Decide whether to write the standard `graphify.yaml`/ontology profile into the external public pack, then decide the write-enabled studio mode boundary. | Approval needed before editing `../public-domaine-mystery-sagas-pack`; isolated `/tmp/graphify-mystery-uat` already covers accept/reject/alias/weak-evidence scenarios. |
 | CRG | `v2.3.3` is recorded as additive; UX/accessibility and review precision remain unported opportunities. | Triage keyboard/ARIA/node-shape/help-overlay and review-precision changes into Graphify-native lots. | Decide whether CRG accessibility should land in HTML export, reconciliation studio, or both. |
 | Upstream Python | `0.7.10` merged; `0.7.16` observed after rescan. | Add a `0.7.11`..`0.7.16` row-level matrix before porting. | Decide whether any upstream feature beyond hotfixes should preempt descriptions/reconciliation. |
 
@@ -223,7 +223,7 @@ Progress below is calculated from the checked milestone boxes in the detailed tr
 | Python `0.7.10` parity checkpoint | 100% closed | `SPEC_UPSTREAM_TRACEABILITY.md` records the closed checkpoint. | Task L lots are closed except additive CRG work. | PR #22 merged to `main`. | No action unless a regression appears. |
 | Upstream Python `0.7.11`..`0.7.16` drift | 40% (`4/10`) | Source lock and row-level drift matrix are recorded. | Task M exists with lots M1..M5; M1 has started with the path-scoring/same-node guard port. | First post-`0.7.10` runtime fix is implemented locally; broader M1/M2/M3/M4/M5 remain open. | Finish M1 runtime fixes before starting Pascal or Ollama tuning. |
 | Descriptions | 67% (`8/12`) | `SPEC_WIKI_ENTITY_DESCRIPTIONS.md` exists, keeps render-only CLI separate from generation, and specifies the first `wiki describe` generation contract. | Task K exists; generation implementation lots are split: assistant/direct first, batch/mesh later. | Sidecar schema, validation, wiki rendering, render CLI, assistant CLI generation, direct-client wiring and README/skill workflow docs are implemented locally. | Add cache invalidation and UAT fixtures before broad rollout. |
-| Reconciliation | 69% (`9/13`) | `SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md` specifies the read-only candidate API and now records the HTTP/studio shell slice; write contracts remain implementation work. | Tasks A..H/J exist; read-only APIs and decision-log preview are closed for MVP scope. | Patch core, write-mode MCP, deterministic candidate queue, read-only query helpers, decision-log preview filters, read-only ontology serve, MCP tools, CLI/skill preview and HTTP/studio shell exist. | Add public-pack config/UAT, then decide write-enabled studio mode. |
+| Reconciliation | 85% (`11/13`) | `SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md` specifies the read-only candidate API, records the HTTP/studio shell slice, and now records public-pack-derived UAT evidence; write contracts remain implementation work. | Tasks A..H/J exist; read-only APIs, decision-log preview and isolated mystery UAT are closed for MVP scope. | Patch core, write-mode MCP, deterministic candidate queue, read-only query helpers, decision-log preview filters, read-only ontology serve, MCP tools, CLI/skill preview, HTTP/studio shell and `/tmp/graphify-mystery-uat` validation exist. | Decide/approve external public-pack config commit, then decide write-enabled studio mode. |
 | CRG additive UX/review work | 30% (`3/10`) | CRG source locks and prior alignment specs exist; read-only audit confirms `v2.3.3` accessibility opportunities are not yet row-level. | Task L Lot 5b and CRG rows exist but need a concrete lot split. | Existing review commands cover earlier CRG-style review context; HTML export still has canvas accessibility, node-shape and help-overlay gaps. | Classify `v2.3.3` buckets into HTML UX, reconciliation studio, review precision, or defer. |
 
 ## Detailed Track Plans
@@ -243,7 +243,7 @@ Progress below is calculated from the checked milestone boxes in the detailed tr
 - [ ] Extend rendering to ontology entity pages only after the entity-page export has a stable sidecar lookup.
 - [ ] Run UAT on a tiny fixture and on `../public-domaine-mystery-sagas-pack`, including at least one `insufficient_evidence` omission.
 
-### Track B: Reconciliation (`9/13`, 69%)
+### Track B: Reconciliation (`11/13`, 85%)
 
 - [x] Lifecycle spec exists: `spec/SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md`.
 - [x] Patch validation, dry-run/apply and write-mode MCP foundations exist.
@@ -256,8 +256,8 @@ Progress below is calculated from the checked milestone boxes in the detailed tr
 - [x] Implement the read-only studio shell served by `graphify ontology studio --config graphify.yaml`.
 - [ ] Add write-enabled studio mode only behind `--write`, localhost binding and a local token.
 - [ ] Add project-owned `graphify.yaml`, ontology profile and decision/audit log paths to `../public-domaine-mystery-sagas-pack`.
-- [ ] Generate a public-pack candidate queue and validate it against the profile policy.
-- [ ] Complete UAT with one accepted relation, one rejected candidate, one alias merge and one weak-evidence review item, each with source evidence.
+- [x] Generate a public-pack-derived candidate queue in isolated `/tmp/graphify-mystery-uat` and validate it against the profile policy.
+- [x] Complete isolated UAT with one accepted relation, one rejected candidate, one alias merge and one weak-evidence review item, each with source evidence.
 
 ### Track C: CRG Additive UX And Review Precision (`3/10`, 30%)
 
@@ -507,9 +507,9 @@ graphify extract ./tmp/direct-uat-corpus --backend openai --model gpt-5.5 --no-c
 - [ ] Add project-owned reconciliation decision/audit log paths to the pack without committing generated cache/runtime-local files.
 - [ ] Add `configure-reconciliation-policy` skill guidance: sample candidates, explain rule impact, propose deterministic profile patch, wait for user approval.
 - [ ] Add CLI or skill-runtime support for policy-calibration dry-runs if the existing discovery commands are insufficient.
-- [ ] Generate candidate reconciliation queue from the public pack and validate it against the profile policy.
-- [ ] Demonstrate at least one accepted relation, one rejected candidate, one alias merge proposal and one weak-evidence review item.
-- [ ] Ensure every accepted UAT decision cites source evidence and does not require exact offsets yet.
+- [x] Generate candidate reconciliation queue from a public-pack-derived isolated UAT and validate it against the profile policy.
+- [x] Demonstrate at least one accepted relation, one rejected candidate, one alias merge proposal and one weak-evidence review item in isolated UAT.
+- [x] Ensure every accepted UAT decision cites source evidence and does not require exact offsets yet.
 - [ ] Update README and skills to point to the public pack as the ontology studio/mockup UAT.
 - [ ] Run `npm run lint`, `npm run build`, `npm test`, `npm run test:smoke` after runtime/skill changes.
 - [ ] Regenerate Graphify state and run `node dist/cli.js portable-check .graphify` before committing any Graphify repo `.graphify` artifacts.

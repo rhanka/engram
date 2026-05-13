@@ -230,6 +230,82 @@ graphify /tmp/graphify-mystery-uat --all
 
 Then add a project-owned `graphify.yaml`, ontology profile and optional registries in the UAT folder, run configured dataprep, profile extraction, validation, ontology output and patch dry-runs. The exact profile files should live in the UAT repo or temporary folder, not in Graphify package fixtures.
 
+## Executed Isolated UAT On 2026-05-12
+
+The first UAT was run in `/tmp/graphify-mystery-uat` from the three public-pack texts above, without writing into `../public-domaine-mystery-sagas-pack`.
+
+Public pack orientation:
+
+```bash
+node dist/cli.js summary --graph ../public-domaine-mystery-sagas-pack/.graphify/graph.json
+```
+
+Result: `20` nodes, `38` edges, `3` communities; top hubs were `Sherlock Holmes`, `A Study in Scarlet`, `The Adventures of Sherlock Holmes`, `The Extraordinary Adventures of Arsene Lupin, Gentleman-burglar`, and `Detective Fiction Genre`.
+
+Configured profile UAT:
+
+```bash
+node dist/cli.js profile validate --config /tmp/graphify-mystery-uat/graphify.yaml
+node dist/cli.js profile dataprep --config /tmp/graphify-mystery-uat/graphify.yaml --all
+node dist/cli.js profile validate-extraction --profile-state /tmp/graphify-mystery-uat/.graphify/profile/profile-state.json --input /tmp/graphify-mystery-uat/extractions/mystery-profile-extraction.json --json
+node dist/cli.js profile ontology-output --profile-state /tmp/graphify-mystery-uat/.graphify/profile/profile-state.json --input /tmp/graphify-mystery-uat/extractions/mystery-profile-extraction.json --out-dir /tmp/graphify-mystery-uat/.graphify/ontology
+node dist/cli.js ontology candidates --profile-state /tmp/graphify-mystery-uat/.graphify/profile/profile-state.json --out /tmp/graphify-mystery-uat/.graphify/ontology/reconciliation/candidates.json --json
+```
+
+Results:
+
+- profile valid: `public-domain-mystery-uat`
+- dataprep: `3` semantic files, `0` registry nodes
+- profile extraction valid with no issues
+- ontology outputs: `12` nodes, `6` relations, `11` wiki pages
+- candidate queue: `1` deterministic Holmes entity-match candidate, score `0.85`, with source refs from `A Study in Scarlet` and `The Adventures of Sherlock Holmes`
+
+Patch UAT covered these positive scenarios:
+
+- `accept_match`: `character_holmes_adventures_candidate` -> `character_sherlock_holmes`
+- `merge_alias`: `Mr. Sherlock Holmes` -> `character_sherlock_holmes`
+- `add_relation`: `character_irene_adler` `appears_in` `story_a_scandal_in_bohemia`
+- `set_status`: `character_irene_adler` from `candidate` to `needs_review`
+- `reject_match`: `character_arsene_lupin` rejected as a Holmes match
+
+Patch validation also rejected the intended negative scenarios:
+
+- unknown evidence ref: `Unknown evidence_ref missing-evidence-ref`
+- invalid status transition: `status transition validated -> candidate is not allowed by profile policy`
+- invalid relation endpoint: `relation endpoint types Work -> Character are not allowed for appears_in`
+
+Patch apply UAT:
+
+```bash
+node dist/cli.js ontology patch apply --profile-state /tmp/graphify-mystery-uat/.graphify/profile/profile-state.json --patch /tmp/graphify-mystery-uat/patches/001-accept-holmes-match.json --dry-run --json
+node dist/cli.js ontology patch apply --profile-state /tmp/graphify-mystery-uat/.graphify/profile/profile-state.json --patch /tmp/graphify-mystery-uat/patches/001-accept-holmes-match.json --write --json
+node dist/cli.js ontology decision-log --profile-state /tmp/graphify-mystery-uat/.graphify/profile/profile-state.json --json
+```
+
+Results:
+
+- dry-run reported exactly three changed-file previews: authoritative decision log, local audit log, and `.graphify/needs_update`
+- write apply appended the applied patch to `graphify/reconciliation/decisions.jsonl` and `.graphify/ontology/reconciliation/applied-patches.jsonl`
+- `.graphify/needs_update` was marked with `ontology patch applied: mystery-uat-001-accept-holmes-match`
+- decision-log preview returned `2` records: authoritative plus audit
+
+Read-only studio API UAT:
+
+```bash
+node dist/cli.js ontology studio --config /tmp/graphify-mystery-uat/graphify.yaml --port 38917
+curl -sS http://127.0.0.1:38917/api/ontology/reconciliation/candidates
+curl -sS http://127.0.0.1:38917/api/ontology/reconciliation/decision-log
+curl -sS http://127.0.0.1:38917/api/ontology/rebuild-status
+```
+
+Results:
+
+- candidates route returned the Holmes entity-match candidate with `stale: true` after the write apply
+- decision-log route returned authoritative and audit records without absolute paths
+- rebuild-status route returned `needs_update: true`, `candidates_match: true`, and `decision_log_available: true`
+
+Open follow-up: decide whether to commit the standard UAT `graphify.yaml`, ontology profile and project-owned reconciliation paths directly into `../public-domaine-mystery-sagas-pack`.
+
 ## Acceptance Criteria
 
 - The UAT can run without adding proprietary or non-public-domain content.

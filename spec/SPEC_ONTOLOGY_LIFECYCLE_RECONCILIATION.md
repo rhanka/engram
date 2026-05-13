@@ -4,7 +4,7 @@
 
 - Product: Graphify TypeScript port
 - Scope: ontology lifecycle, reconciliation, patching, optional write surfaces
-- Spec state: baseline accepted; patch/MCP/candidate foundations implemented; read-only candidate API contract specified; candidate query helpers, decision-log preview parser, CLI/skill preview, MCP tools and HTTP/studio shell are implemented; write-enabled studio remains open
+- Spec state: baseline accepted; patch/MCP/candidate foundations implemented; read-only candidate API contract specified; candidate query helpers, decision-log preview parser, CLI/skill preview, MCP tools and HTTP/studio shell are implemented; public-pack-derived isolated UAT is executed; write-enabled studio remains open
 - State root: `.graphify/`
 - Activation: explicit ontology profile workflow only
 - Default behavior: unchanged and read-only
@@ -459,6 +459,11 @@ Future tests should cover:
 
 ## UAT
 
+- Public-pack-derived isolated UAT was executed in `/tmp/graphify-mystery-uat` from `../public-domaine-mystery-sagas-pack`.
+- The UAT validated the profile, ran dataprep on `3` semantic files, compiled ontology outputs with `12` nodes, `6` relations and `11` wiki pages, and generated a deterministic Holmes entity-match candidate queue.
+- Patch validation covered valid `accept_match`, `merge_alias`, `add_relation`, `set_status` and `reject_match` scenarios, plus invalid evidence-ref, status-transition and relation-endpoint scenarios.
+- Patch dry-run reported only authoritative decision log, audit log and stale-marker changed files; write apply appended to both configured decision/audit logs and marked `.graphify/needs_update`.
+- Read-only studio API routes were verified for candidates, decision-log and rebuild-status; responses used relative paths and reported `needs_update: true` after write apply.
 - Run ontology output generation on a synthetic profile and produce reconciliation candidates.
 - Validate a patch that accepts a candidate match.
 - Dry-run apply the patch and verify changed-file preview.
