@@ -188,102 +188,153 @@ Progress note:
 
 # Post-`0.7.10` Product Acceleration Board
 
-**Status on 2026-05-12:** PR #22 merged the Python `0.7.10` checkpoint into `main`. A same-day upstream rescan found Python Graphify `v0.7.16` on `upstream/v7`, so upstream drift remains active. Product work must not disappear behind another large parity push: source-grounded descriptions and ontology reconciliation are the next product accelerators, with CRG UX as a parallel additive track.
+**Status on 2026-05-14:** PR #22 merged the Python `0.7.10` checkpoint into `main`. Upstream rescan on this date observed `v0.7.19` at `a9b0ddb` (head of `upstream/v7`), 28 commits ahead of `v0.7.16`. Drift band is now `0.7.11..0.7.19` (extended by 3 versions). Product work runs in parallel with upstream drift via independent lanes.
 
 ## Operating Rules
 
 - [x] Treat `0.7.10` as the merged checkpoint and use new branches for post-merge work.
-- [x] Rescan Python upstream before any parity/release claim with `git ls-remote upstream 'refs/tags/v0.7.*' refs/heads/v7`.
-- [ ] Keep each upstream drift lot small enough to review in one sitting: scan-only commit, then runtime bugfixes, then feature ports.
-- [ ] Keep each product lot independently shippable: descriptions, reconciliation, CRG, and upstream drift must not block each other unless a shared file contract forces it.
-- [ ] Use `Fait / A faire / Attendu` reporting after every lot, including explicit UAT or decision requests.
+- [x] Rescan Python upstream weekly with `git ls-remote upstream 'refs/tags/v0.7.*' refs/heads/v7` before any parity/release claim.
+- [ ] Keep each lot small enough to review in one sitting: spec change, then plan checkboxes, then infra commits, then UI commits, then UAT commits.
+- [ ] Lanes run in parallel; one lane only blocks another when a shared file contract forces it (record the contract path explicitly).
+- [ ] Use `Fait / À faire / Attendu` reporting after every lot, with explicit UAT or decision requests.
+- [ ] Score each lane on six independent dimensions: **Spec / Plan / Infra / UI / UAT / Release**. A lane is shippable when all six are green; partial dimensions never block parallel work on others.
 
-## Immediate Execution Order
+## Lane Scoring Grid
 
-1. [x] **Descriptions MVP first:** implement a no-provider-call wiki description render path from existing validated sidecars, then add mocked/direct generation behind explicit opt-in.
-2. [x] **Reconciliation MVP second:** expose read-only candidate APIs and a deterministic decision-log preview before building any write-enabled studio.
-3. [ ] **Upstream `0.7.11`..`0.7.16` hotfix triage in parallel with product work:** classify new commits as `must-port`, `already-covered`, `intentional-delta`, or `defer`; port urgent runtime fixes first.
-4. [ ] **CRG UX third unless it unblocks reconciliation studio:** harvest accessibility and review-precision patterns without adopting SQLite, daemon, embeddings, or VS Code webview assumptions.
+Each lane carries six independent dimensions. "Infra" = library / CLI / MCP / API surface. "UI" = the final user surface (rendered Markdown for Descriptions, Svelte studio for Reconciliation, HTML export for CRG, n/a for upstream drift). "UAT" = end-to-end user-facing validation on a real or representative corpus. "Release" = README / CHANGELOG / npm version bump / smoke gate.
 
-## Active Tracks
+| Lane | Spec | Plan | Infra | UI utilisateur | UAT réel | Release | Overall |
+| --- | :---: | :---: | :---: | :---: | :---: | :---: | ---: |
+| **A** Descriptions | ✅ 1/1 | ✅ 1/1 | ✅ 6/7 | 🟡 0/1 (ontology entity pages) | ❌ 0/2 (small fixture + public pack) | 🟡 1/2 (README ok, CHANGELOG pending) | **9/14 = 64%** |
+| **B** Reconciliation | ✅ 1/1 | ✅ 1/1 | ✅ 6/6 | ❌ 0/1 (Svelte studio blocked on design system) | ❌ 0/2 (public-pack live walk, decision log replay) | 🟡 1/2 (README ok, CHANGELOG pending) | **9/13 = 69%** |
+| **C** CRG `v2.3.3` | 🟡 1/2 (alignment spec ok, row-level audit missing) | ❌ 0/3 (a11y / shapes / review-precision lots not split) | ❌ 0/3 | ❌ 0/2 (HTML a11y, review surface) | ❌ 0/1 | ❌ 0/1 | **1/12 = 8%** |
+| **D** Drift `0.7.11..0.7.19` | ✅ 1/1 (source locks + initial matrix `f88567b..ab32098`) | 🟡 1/5 (M1 started, M2..M5 + new `0.7.17..0.7.19` lot pending) | 🟡 2/5 (path scoring + same-node guards ported; LLM retry, cache path normalization, Unicode IDs/edge-key dedup, Antigravity, claude-cli backend, manifest shrink etc. pending) | n/a | ❌ 0/2 (regression suite + smoke on real corpora) | ❌ 0/1 (`0.7.x` parity tag pending) | **4/14 = 29%** |
 
-| Track | Current state | Next concrete action | UAT / Decision |
-| --- | --- | --- | --- |
-| Descriptions | Sidecar schema, cache key, validation, no-provider wiki rendering, assistant CLI generation, direct-client wiring and README/skill workflow docs exist. | Add cache invalidation behavior and UAT fixtures; decide batch/mesh follow-up. | UAT on a small code fixture and `../public-domaine-mystery-sagas-pack`. |
-| Reconciliation | Patch core, candidate queue, CLI/runtime candidate generation, write-mode MCP, read-only ontology serve, MCP candidate/log/status tools, CLI/skill decision-log preview, read-only HTTP/studio API shell, public-pack-derived isolated UAT, and committed `graphify.yaml` + ontology profile + decision-log path in `../public-domaine-mystery-sagas-pack` exist. | Decide the write-enabled studio mode boundary (`--write`, localhost binding, local token, audit log shape). | Decision pending on write-enabled studio mode; isolated `/tmp/graphify-mystery-uat` and pack-committed UAT both cover accept/reject/alias/weak-evidence scenarios. |
-| CRG | `v2.3.3` is recorded as additive; UX/accessibility and review precision remain unported opportunities. | Triage keyboard/ARIA/node-shape/help-overlay and review-precision changes into Graphify-native lots. | Decide whether CRG accessibility should land in HTML export, reconciliation studio, or both. |
-| Upstream Python | `0.7.10` merged; `0.7.16` observed after rescan. | Add a `0.7.11`..`0.7.16` row-level matrix before porting. | Decide whether any upstream feature beyond hotfixes should preempt descriptions/reconciliation. |
+## Active Lanes — next concrete action
 
-## Progress Accounting
-
-Progress below is calculated from the checked milestone boxes in the detailed track plans in this section. It is a delivery-completion indicator for the current active deliverable, not an effort estimate.
-
-| Track | Calculated progress | Spec status | Plan status | Implementation status | Next gate |
-| --- | ---: | --- | --- | --- | --- |
-| Python `0.7.10` parity checkpoint | 100% closed | `SPEC_UPSTREAM_TRACEABILITY.md` records the closed checkpoint. | Task L lots are closed except additive CRG work. | PR #22 merged to `main`. | No action unless a regression appears. |
-| Upstream Python `0.7.11`..`0.7.16` drift | 40% (`4/10`) | Source lock and row-level drift matrix are recorded. | Task M exists with lots M1..M5; M1 has started with the path-scoring/same-node guard port. | First post-`0.7.10` runtime fix is implemented locally; broader M1/M2/M3/M4/M5 remain open. | Finish M1 runtime fixes before starting Pascal or Ollama tuning. |
-| Descriptions | 75% (`9/12`) | `SPEC_WIKI_ENTITY_DESCRIPTIONS.md` exists, keeps render-only CLI separate from generation, and specifies the first `wiki describe` generation contract. | Task K exists; generation implementation lots are split: assistant/direct first, batch/mesh later. | Sidecar schema, validation, wiki rendering, render CLI, assistant CLI generation, direct-client wiring, cache invalidation (graph_hash / prompt_version / mode / provider / model) and README/skill workflow docs are implemented locally. | Run UAT fixtures (small + public-pack with `insufficient_evidence`); decide batch/mesh follow-up. |
-| Reconciliation | 100% (`13/13`) | `SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md` specifies the read-only candidate API, the HTTP/studio shell slice, public-pack-derived UAT evidence, and the write-enabled studio contract. | Tasks A..H/J are closed for MVP scope. | Patch core, write-mode MCP, deterministic candidate queue, read-only query helpers, decision-log preview filters, read-only ontology serve, MCP tools, CLI/skill preview, HTTP/studio shell, write-enabled studio (loopback bind, bearer token, validate/dry-run/apply routes, audit log), and committed `graphify.yaml` + ontology profile + decision-log path in `../public-domaine-mystery-sagas-pack` exist. | Track is complete; future work moves to Svelte studio implementation under Task G. |
-| CRG additive UX/review work | 30% (`3/10`) | CRG source locks and prior alignment specs exist; read-only audit confirms `v2.3.3` accessibility opportunities are not yet row-level. | Task L Lot 5b and CRG rows exist but need a concrete lot split. | Existing review commands cover earlier CRG-style review context; HTML export still has canvas accessibility, node-shape and help-overlay gaps. | Classify `v2.3.3` buckets into HTML UX, reconciliation studio, review precision, or defer. |
+| Lane | Next concrete action | UAT / Decision needed |
+| --- | --- | --- |
+| **A** Descriptions | Wire ontology entity pages to sidecar lookup; build mocked vitest UAT (1 generated + 1 `insufficient_evidence`); apply on public-pack. | Decide batch/mesh as a lot or a documented follow-up. |
+| **B** Reconciliation | Public-pack end-to-end walk: regenerate candidates, apply one accept patch through studio `--write`, verify decision log + audit log + needs_update. Hold Svelte studio until design system is ready. | Decide whether to commit a public-pack UAT script as a top-level npm script in the pack. |
+| **C** CRG `v2.3.3` | Run row-by-row audit (deferred to agent), then split into three lots: HTML a11y, node-shape encoding, review-precision parser. First impl lot picks from the smallest. | Confirm a11y target lands in `graphify export html` first (not studio) so it ships even without studio UI. |
+| **D** Drift `0.7.11..0.7.19` | Extend the row-level matrix from `ab32098..a9b0ddb` (28 commits). Port `--backend claude-cli` (#855), MCP arrow direction (#830, #853), watch lock + labels churn fix, deterministic clustering + topology short-circuit (#824), `.astro` extension. | Decide whether to bump npm package to `0.7.19` after M-suite closure or stay on `0.7.10` until UI lands. |
 
 ## Detailed Track Plans
 
-### Track A: Descriptions (`9/12`, 75%)
+### Track A: Descriptions (Overall **9/14 = 64%**)
 
-- [x] Spec exists: `spec/SPEC_WIKI_ENTITY_DESCRIPTIONS.md`.
-- [x] Sidecar schema, cache key and validation exist in `src/wiki-descriptions.ts`.
-- [x] Existing validated sidecars render in wiki pages without provider calls.
-- [x] CLI render opt-in exists: `graphify export wiki|obsidian --descriptions <path>`.
-- [x] Define the generation command/API contract: target selection, node/community switches, output path, overwrite policy and graph hash validation.
-- [x] Implement assistant-mode sidecar generation core with deterministic prompt inputs and no direct provider dependency.
-- [x] Implement direct-backend sidecar generation through existing LLM execution ports with mocked CI tests.
-- [ ] Decide whether batch/mesh generation is a first implementation lot or a documented follow-up.
-- [x] Add cache/invalidation behavior for changed graph hash, prompt version, provider and model (`checkWikiDescriptionFreshness` + `selectFreshWikiDescriptions` in `src/wiki-descriptions.ts`; `loadFreshWikiDescriptionSidecarIndex` filters at `graphify export wiki|obsidian` load time and warns on dropped sidecars).
-- [x] Update README and assistant skills with a two-step workflow: generate sidecars, then render wiki/Obsidian with `--descriptions`.
-- [ ] Extend rendering to ontology entity pages only after the entity-page export has a stable sidecar lookup.
-- [ ] Run UAT on a tiny fixture and on `../public-domaine-mystery-sagas-pack`, including at least one `insufficient_evidence` omission.
+**Spec (1/1)**
+- [x] `spec/SPEC_WIKI_ENTITY_DESCRIPTIONS.md` covers sidecar schema, cache key, evidence policy, two-step CLI workflow.
 
-### Track B: Reconciliation (`13/13`, 100%)
+**Plan (1/1)**
+- [x] Lots split: schema/validation → render → assistant gen → direct gen → cache invalidation → ontology entity pages → UAT (this section).
 
-- [x] Lifecycle spec exists: `spec/SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md`.
-- [x] Patch validation, dry-run/apply and write-mode MCP foundations exist.
-- [x] Deterministic reconciliation candidate queue schema and generation exist.
-- [x] Specify the read-only candidate API contract: route names, response schema, paging, filtering, sorting and graph/profile hash checks.
-- [x] Implement read-only MCP API endpoints for candidate list/get, decision-log preview and rebuild status before any browser write UI.
-- [x] Implement read-only HTTP/studio API endpoints before any browser write UI.
-- [x] Specify and implement decision-log preview core records/parser; endpoint filters and accept/reject/alias/weak-evidence UAT remain below.
-- [x] Expose decision-log preview through CLI and skill runtime without mutating project files.
-- [x] Implement the read-only studio shell served by `graphify ontology studio --config graphify.yaml`.
-- [x] Add write-enabled studio mode only behind `--write`, localhost binding and a local token (`graphify ontology studio --write [--token ...]`: refused if not loopback, random hex24 bearer token printed once, `POST /api/ontology/patch/{validate,dry-run,apply}` reuse the patch core, audit log appended via existing `applyOntologyPatch`, 401 without token, 405 without `--write`, 413 above 256 KB body).
-- [x] Add project-owned `graphify.yaml`, ontology profile and decision/audit log paths to `../public-domaine-mystery-sagas-pack` (committed `1694788`).
-- [x] Generate a public-pack-derived candidate queue in isolated `/tmp/graphify-mystery-uat` and validate it against the profile policy.
-- [x] Complete isolated UAT with one accepted relation, one rejected candidate, one alias merge and one weak-evidence review item, each with source evidence.
+**Infra (6/7)**
+- [x] Sidecar schema, cache key and validation in `src/wiki-descriptions.ts`.
+- [x] Render path (community + node + god-node) without provider calls (`src/wiki.ts:332`).
+- [x] CLI render opt-in: `graphify export wiki|obsidian --descriptions <path>`.
+- [x] Assistant-mode sidecar generation (`src/wiki-description-generation.ts`).
+- [x] Direct-backend sidecar generation through LLM execution ports.
+- [x] Stale-sidecar invalidation at load time (`checkWikiDescriptionFreshness` + `selectFreshWikiDescriptions`; warns on dropped sidecars at `graphify export wiki|obsidian`).
+- [ ] Decide batch/mesh generation as a lot or a documented follow-up.
 
-### Track C: CRG Additive UX And Review Precision (`3/10`, 30%)
+**UI utilisateur (0/1)**
+- [ ] Ontology entity pages render descriptions: extend `CompileOntologyOutputsOptions` with `descriptions?: WikiDescriptionSidecarIndex`, thread into `writeWiki()` in `src/ontology-output.ts:163`, key lookup on canonical `node.id`.
 
-- [x] Stable CRG `v2.3.3` source lock is recorded.
-- [x] Prior CRG alignment/opportunity specs exist.
-- [x] `UPSTREAM_GAP.md` records broad `v2.3.3` CRG buckets.
-- [ ] Audit `v2.3.3` features row-by-row and classify as `adopt-html`, `adopt-studio`, `adopt-review`, `defer`, or `reject`.
-- [ ] Decide whether keyboard/ARIA accessibility lands first in HTML export, reconciliation studio, or both.
-- [ ] Plan HTML accessibility lot: keyboard navigation, focus management, ARIA labels, help overlay and contrast checks.
-- [ ] Plan visual differentiation lot: node shapes, edge direction/type cues and non-color-only encoding.
-- [ ] Plan review-precision lot: changed-range mapping, test runner detection and language/framework parser improvements.
-- [ ] Implement the first selected CRG lot with synthetic Vitest fixtures over `.graphify/graph.json`, not SQLite.
-- [ ] Run UI/review UAT and update CRG traceability rows with exact adopted/deferred decisions.
+**UAT réel (0/2)**
+- [ ] Mocked vitest UAT: 1 `generated` + 1 `insufficient_evidence` sidecar via mock `TextJsonGenerationClient`, then `toWiki()` renders the first paragraph and omits the second.
+- [ ] Live UAT against `../public-domaine-mystery-sagas-pack` (after Track B public-pack walk closes), including `insufficient_evidence` evidence.
 
-### Track D: Upstream Python `0.7.11`..`0.7.16` Drift (`4/10`, 40%)
+**Release / Docs (1/2)**
+- [x] README and assistant skills document the two-step workflow.
+- [ ] CHANGELOG entry + npm version bump pending broader release gate.
 
-- [x] Rescan completed after the `0.7.10` checkpoint merge.
-- [x] `upstream/v7` and remote tag `v0.7.16` recorded at `ab32098063adb1ab4d9247747742958ad185db41`.
-- [x] Initial intake buckets exist in `UPSTREAM_GAP.md` and Task M.
-- [x] Build a commit-level matrix for `f88567b..ab32098` with statuses `must-port`, `already-covered`, `intentional-delta`, or `defer`.
-- [ ] Lot M1: audit urgent runtime/platform fixes and port only gaps that affect the TypeScript runtime. Started: exact/prefix/substring `path` scoring and same-node guards are ported for CLI + MCP; remaining M1 candidates are LLM retry, cache path normalization, Unicode IDs/dedup legacy-edge cleanup, and Antigravity/install trigger parity.
-- [ ] Lot M2: audit Ollama runtime tuning and env docs against the TS direct-provider surface.
-- [ ] Lot M3: decide and, if approved, port Pascal/Delphi/Lazarus regex-backed extraction.
-- [ ] Lot M4: classify callflow Mermaid HTML as core export, CRG/review UX, or deferred visualization.
-- [ ] Lot M5: audit skill/watch/hook fixes, including Antigravity paths, hook worker caps and skill help behavior.
-- [ ] Close the drift pass by updating `UPSTREAM_GAP.md`, `SPEC_UPSTREAM_TRACEABILITY.md`, tests and `.graphify` with exact evidence.
+### Track B: Reconciliation (Overall **9/13 = 69%**)
+
+**Spec (1/1)**
+- [x] `spec/SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md` covers patch lifecycle, candidate queue, read-only API, write-enabled studio contract, Svelte studio direction.
+
+**Plan (1/1)**
+- [x] Lots split: patch core → candidate queue → read-only API (CLI/MCP/HTTP) → write-mode studio → public-pack config → public-pack live UAT → Svelte studio (blocked on design system).
+
+**Infra (6/6)**
+- [x] Patch validation, dry-run/apply, write-mode MCP foundations.
+- [x] Deterministic candidate queue schema and generation.
+- [x] Read-only MCP + HTTP/studio API (candidates, decision-log preview, rebuild status).
+- [x] Decision-log preview through CLI and skill runtime.
+- [x] Read-only studio shell (`graphify ontology studio --config graphify.yaml`).
+- [x] Write-enabled studio (`--write`: loopback bind, hex24 bearer token, `POST /api/ontology/patch/{validate,dry-run,apply}` reusing patch core, 401/405/413 guards). Commit `ab44847`.
+
+**UI utilisateur (0/1)**
+- [ ] Svelte reconciliation studio. **Blocked**: spec line 376 requires `../sent-tech-design-system` tokens; meanwhile static export fallback works (existing HTML viewer).
+
+**UAT réel (0/2)**
+- [ ] Public-pack live walk: regenerate candidates from committed `graphify.yaml`, run `studio --write`, apply one accept patch through `/api/ontology/patch/apply`, verify decision log + audit log + `needs_update`.
+- [ ] Add a top-level `npm run uat:reconciliation` script to `../public-domaine-mystery-sagas-pack` that runs the walk end-to-end (no provider calls).
+
+**Release / Docs (1/2)**
+- [x] README and assistant skills document patch lifecycle + read-only and write-enabled modes.
+- [ ] CHANGELOG entry pending; npm version stays on `0.7.10` until M-suite closure.
+
+**Pre-existing closed items** (kept for traceability):
+- [x] Isolated `/tmp`-based UAT covered accept/reject/alias/weak-evidence on 2026-05-12.
+- [x] Public-pack `graphify.yaml` + ontology profile + decision-log path committed `1694788`.
+
+### Track C: CRG Additive UX And Review Precision (Overall **1/12 = 8%**)
+
+**Spec (1/2)**
+- [x] CRG source locks (`v2.3.3` at `db2d2df`, head `52cf3bc`) and `SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md` / `SPEC_CODE_REVIEW_GRAPH_OPPORUNITY.md` exist.
+- [ ] Row-by-row `v2.3.3` audit committed into `UPSTREAM_GAP.md` (drumbeat agent produced the matrix; pending commit). 15 meaningful features identified: 9 `adopt-review` (F3-F8, F10, F12), 2 deferred (F11 wiki/HTML flow viz), 0 reject. Plus HTML a11y / node-shape / help-overlay buckets that the alignment spec does not yet break down.
+
+**Plan (0/3)**
+- [ ] Lot C1 — Review-precision (changed-range parsing, risk scoring, affected flows, test-gap detection): build on existing `graphify review-*` commands. Source: F3-F8 in `SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
+- [ ] Lot C2 — HTML a11y (keyboard navigation, focus, ARIA, contrast, help overlay): land in `graphify export html` first so it ships independently of studio.
+- [ ] Lot C3 — Node-shape encoding (non-color-only file_type cue, edge direction arrowheads): HTML export only.
+
+**Infra (0/3)**
+- [ ] C1 infra impl.
+- [ ] C2 infra impl.
+- [ ] C3 infra impl.
+
+**UI utilisateur (0/2)**
+- [ ] HTML export a11y verified with axe-core or equivalent CI check.
+- [ ] Node-shape diff visible in `graph.html` regenerated on a small fixture.
+
+**UAT réel (0/1)**
+- [ ] Run review precision UAT against `../code-review-graph` fixtures (or a synthetic Vitest fixture if CRG repo not accessible).
+
+**Release / Docs (0/1)**
+- [ ] README + CHANGELOG entry; no npm version bump tied to CRG (additive only).
+
+### Track D: Upstream Python `0.7.11`..`0.7.19` Drift (Overall **4/14 = 29%**)
+
+**Spec (1/1)**
+- [x] Source locks: `upstream/v7` head at `a9b0ddb` (`2026-05-14`), `v0.7.16` at `ab32098`, `v0.7.17` at `258d260`, `v0.7.18` at `b7e7ae5`, `v0.7.19` at `3baedc5`. Initial drift matrix `f88567b..ab32098` and extended matrix `ab32098..a9b0ddb` (27 commits) recorded.
+
+**Plan (1/5)**
+- [x] M0 — matrix `ab32098..a9b0ddb`: produced (drumbeat agent). Top must-port: `.astro` extraction, watch `.rebuild.lock` lifecycle, deterministic clustering + topology short-circuit + `--no-cluster` for update, `--backend claude-cli`, manifest shrink guard. 6 already-covered, 14 docs/release only.
+- [ ] M1 — runtime hotfixes (path scoring, MCP arrow, hub-transit, manifest shrink, Bedrock guard). Mostly already-covered after drift matrix; finish manifest shrink port.
+- [ ] M2 — watch lifecycle (`.rebuild.lock`: single PID line on acquire, unlink on release; labels-churn fix already done upstream pre-`0.7.16`).
+- [ ] M3 — extract parsers (`.astro` frontmatter + script imports + tsconfig alias; regex-rescue path).
+- [ ] M4 — clustering + update (deterministic community IDs already covered; topology short-circuit + `--no-cluster` flag for `graphify update`).
+- [ ] M5 — providers (`--backend claude-cli` routes through Claude Code, no API key; align with existing assistant mode).
+
+**Infra (2/5)** _(one box per M-lot above)_
+- [x] M1 partially: path scoring + same-node guards + MCP arrow direction + Bedrock guard already covered (per drift matrix).
+- [x] Community ID stability + serialization fallbacks already covered (`28fc71e`, `8e4c803`, `ef0e6ee`).
+- [ ] M2 watch `.rebuild.lock` port.
+- [ ] M3 `.astro` extractor.
+- [ ] M4 `--no-cluster` for `update`, topology short-circuit wiring.
+- [ ] M5 `--backend claude-cli`.
+
+**UI utilisateur** — n/a (parity track).
+
+**UAT réel (0/2)**
+- [ ] Regression vitest suite covers M2..M5 ports.
+- [ ] Smoke on a small real corpus (this repo + `../public-domaine-mystery-sagas-pack`).
+
+**Release / Docs (0/1)**
+- [ ] `UPSTREAM_GAP.md` + `SPEC_UPSTREAM_TRACEABILITY.md` updated with `0.7.11..0.7.19` row-level evidence. Decide whether to bump npm to `0.7.19` after M-suite closure or stay on `0.7.10` until UI lands.
 
 ---
 
