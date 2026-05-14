@@ -640,6 +640,37 @@ describe("public CLI runtime command parity", () => {
     expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(false);
   });
 
+  it("extract --backend claude-cli writes assistant instructions and exits without provider call", async () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, "src"), { recursive: true });
+    mkdirSync(join(dir, "docs"), { recursive: true });
+    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+    writeFileSync(
+      join(dir, "docs", "guide.md"),
+      "# Guide\n\nSome documentation paragraph long enough to count.\n",
+      "utf-8",
+    );
+
+    // ANTHROPIC_API_KEY must NOT be consulted on this code path; intentionally
+    // leave any value in place but assert the run never errors out for missing
+    // credentials and never writes a direct-extract semantic JSON.
+    const result = await runCli(["extract", ".", "--backend", "claude-cli"], dir);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.logs.join("\n")).toContain("--backend claude-cli: no provider API key read");
+    expect(result.logs.join("\n")).toContain("graphify skill");
+
+    const instructionsPath = join(dir, ".graphify", "scratch", "assistant-extract-instructions.md");
+    expect(existsSync(instructionsPath)).toBe(true);
+    const instructions = readFileSync(instructionsPath, "utf-8");
+    expect(instructions).toContain("# Graphify assistant extraction instructions");
+    expect(instructions).toContain("docs/guide.md");
+    expect(instructions).toContain("No provider API key was read or persisted");
+
+    // No direct semantic file should have been produced.
+    expect(existsSync(join(dir, ".graphify", ".graphify_semantic.json"))).toBe(false);
+  });
+
   it("requires provided semantic extraction for non-code headless corpora", async () => {
     const dir = tempProject();
     mkdirSync(join(dir, "docs"), { recursive: true });
