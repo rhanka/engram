@@ -2120,10 +2120,12 @@ export async function main(): Promise<void> {
 
   ontology
     .command("studio")
-    .description("Start a read-only local ontology reconciliation studio API")
+    .description("Start a local ontology reconciliation studio API; --write enables patch mutation routes (loopback only)")
     .requiredOption("--config <path>", "Graphify project config path")
     .option("--host <host>", "Host to bind", "127.0.0.1")
     .option("--port <port>", "Port to bind; defaults to an ephemeral port")
+    .option("--write", "Enable POST /api/ontology/patch/{validate,dry-run,apply} routes (loopback only)")
+    .option("--token <token>", "Bearer token for write routes (default: random hex24 generated at startup)")
     .action(async (opts) => {
       const projectConfig = loadProjectConfig(resolve(opts.config));
       const profileStatePath = join(projectConfig.outputs.state_dir, "profile", "profile-state.json");
@@ -2132,12 +2134,27 @@ export async function main(): Promise<void> {
         process.exit(1);
       }
       const { startOntologyStudioServer } = await import("./ontology-studio.js");
-      const started = await startOntologyStudioServer({
-        profileStatePath,
-        host: opts.host,
-        ...(opts.port ? { port: Number.parseInt(opts.port, 10) } : {}),
-      });
-      console.log(`Ontology studio read-only API listening at ${started.url}`);
+      try {
+        const started = await startOntologyStudioServer({
+          profileStatePath,
+          host: opts.host,
+          ...(opts.port ? { port: Number.parseInt(opts.port, 10) } : {}),
+          ...(opts.write ? { write: true } : {}),
+          ...(opts.token ? { token: String(opts.token) } : {}),
+        });
+        if (started.writeEnabled) {
+          console.log(`Ontology studio (write-enabled) listening at ${started.url}`);
+          console.log(`  Bearer token: ${started.token}`);
+          console.log(`  POST routes: /api/ontology/patch/{validate,dry-run,apply}`);
+          console.log(`  Send: Authorization: Bearer ${started.token}`);
+        } else {
+          console.log(`Ontology studio read-only API listening at ${started.url}`);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`error: ${message}`);
+        process.exit(1);
+      }
     });
 
   program

@@ -1,7 +1,9 @@
+import { randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { URL } from "node:url";
 
+import { applyOntologyPatch, validateOntologyPatch } from "./ontology-patch.js";
 import { loadOntologyPatchContext } from "./ontology-patch-context.js";
 import {
   getOntologyRebuildStatus,
@@ -12,18 +14,31 @@ import {
 import type { OntologyReconciliationCandidateFilter } from "./ontology-reconciliation.js";
 import type { OntologyReconciliationDecisionLogOptions } from "./ontology-patch.js";
 
-export interface OntologyStudioHandlerOptions {
-  profileStatePath: string;
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost", "ip6-loopback"]);
+const POST_BODY_MAX_BYTES = 256 * 1024;
+
+export interface OntologyStudioWriteOptions {
+  token: string;
 }
 
-export interface StartOntologyStudioServerOptions extends OntologyStudioHandlerOptions {
+export interface OntologyStudioHandlerOptions {
+  profileStatePath: string;
+  write?: OntologyStudioWriteOptions;
+}
+
+export interface StartOntologyStudioServerOptions {
+  profileStatePath: string;
   host?: string;
   port?: number;
+  write?: boolean;
+  token?: string;
 }
 
 export interface StartedOntologyStudioServer {
   server: Server;
   url: string;
+  writeEnabled: boolean;
+  token?: string;
 }
 
 export interface OntologyStudioRouteResult {
@@ -109,7 +124,10 @@ function jsonResult(status: number, value: unknown): OntologyStudioRouteResult {
   };
 }
 
-function htmlResult(): OntologyStudioRouteResult {
+function htmlResult(writeEnabled: boolean): OntologyStudioRouteResult {
+  const writeBlock = writeEnabled
+    ? `<p><strong>Write mode is enabled.</strong> Mutation routes under <code>/api/ontology/patch/*</code> require an <code>Authorization: Bearer &lt;token&gt;</code> header.</p>`
+    : `<p>This server is read-only. Start with <code>--write</code> to enable patch mutation routes.</p>`;
   return {
     status: 200,
     contentType: "text/html; charset=utf-8",
@@ -127,6 +145,7 @@ function htmlResult(): OntologyStudioRouteResult {
 <body>
   <h1>Graphify Ontology Studio</h1>
   <p>Read-only reconciliation APIs are available under <code>/api/ontology</code>.</p>
+  ${writeBlock}
 </body>
 </html>`,
   };
@@ -145,10 +164,101 @@ function statusForError(error: Error): number {
   return 500;
 }
 
+function isLoopbackHost(host: string): boolean {
+  return LOOPBACK_HOSTS.has(host.toLowerCase());
+}
+
+export function generateOntologyStudioToken(): string {
+  return randomBytes(24).toString("hex");
+}
+
+function bearerToken(authHeader: string | string[] | undefined): string | undefined {
+  const value = Array.isArray(authHeader) ? authHeader[0] : authHeader;
+  if (!value) return undefined;
+  const match = /^bearer\s+(\S+)$/i.exec(value.trim());
+  return match ? match[1] : undefined;
+}
+
+function readPostBody(request: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let received = 0;
+    let oversized = false;
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => {
+      received += chunk.length;
+      if (received > POST_BODY_MAX_BYTES) {
+        oversized = true;
+        return; // keep draining so the client can read the response cleanly
+      }
+      chunks.push(chunk);
+    });
+    request.on("end", () => {
+      if (oversized) {
+        reject(new Error("request body exceeds 256 KB limit"));
+        return;
+      }
+      resolve(Buffer.concat(chunks).toString("utf-8"));
+    });
+    request.on("error", reject);
+  });
+}
+
+function parseJsonBody(body: string): unknown {
+  if (body.trim().length === 0) return null;
+  return JSON.parse(body);
+}
+
+function patchRouteForMethod(pathname: string): "validate" | "dry-run" | "apply" | null {
+  if (pathname === "/api/ontology/patch/validate") return "validate";
+  if (pathname === "/api/ontology/patch/dry-run") return "dry-run";
+  if (pathname === "/api/ontology/patch/apply") return "apply";
+  return null;
+}
+
 export function createOntologyStudioRequestHandler(options: OntologyStudioHandlerOptions) {
-  return (request: IncomingMessage, response: ServerResponse): void => {
-    const result = handleOntologyStudioRequest(options, request.method ?? "GET", request.url ?? "/");
-    sendResult(response, result);
+  return async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+    const method = request.method ?? "GET";
+    const requestUrl = request.url ?? "/";
+
+    if (method === "POST") {
+      const url = new URL(requestUrl, "http://127.0.0.1");
+      const route = patchRouteForMethod(url.pathname);
+      if (!route) {
+        sendResult(response, jsonResult(404, { error: "not found" }));
+        return;
+      }
+      if (!options.write) {
+        sendResult(response, jsonResult(405, { error: "patch routes require --write mode" }));
+        return;
+      }
+      const token = bearerToken(request.headers.authorization);
+      if (token !== options.write.token) {
+        sendResult(response, jsonResult(401, { error: "missing or invalid bearer token" }));
+        return;
+      }
+      try {
+        const raw = await readPostBody(request);
+        const payload = parseJsonBody(raw);
+        const context = loadOntologyPatchContext(options.profileStatePath);
+        if (route === "validate") {
+          sendResult(response, jsonResult(200, validateOntologyPatch(payload, context)));
+          return;
+        }
+        if (route === "dry-run") {
+          sendResult(response, jsonResult(200, applyOntologyPatch(payload, context, { dryRun: true })));
+          return;
+        }
+        const result = applyOntologyPatch(payload, context, { write: true });
+        sendResult(response, jsonResult(result.valid ? 200 : 400, result));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const status = message.includes("body exceeds") ? 413 : message.includes("JSON") ? 400 : 500;
+        sendResult(response, jsonResult(status, { error: message }));
+      }
+      return;
+    }
+
+    sendResult(response, handleOntologyStudioRequest(options, method, requestUrl));
   };
 }
 
@@ -164,7 +274,7 @@ export function handleOntologyStudioRequest(
     const url = new URL(requestUrl, "http://127.0.0.1");
     const context = loadOntologyPatchContext(options.profileStatePath);
     if (url.pathname === "/" || url.pathname === "/index.html") {
-      return htmlResult();
+      return htmlResult(Boolean(options.write));
     }
     if (url.pathname === "/api/ontology/reconciliation/candidates") {
       return jsonResult(200, listOntologyReconciliationCandidates(context, candidateFilters(url.searchParams)));
@@ -192,7 +302,17 @@ export async function startOntologyStudioServer(
 ): Promise<StartedOntologyStudioServer> {
   const host = options.host ?? "127.0.0.1";
   const port = options.port ?? 0;
-  const server = createServer(createOntologyStudioRequestHandler(options));
+  const writeEnabled = options.write === true;
+  if (writeEnabled && !isLoopbackHost(host)) {
+    throw new Error(
+      `--write requires a loopback bind (127.0.0.1, ::1 or localhost); refused host ${host}`,
+    );
+  }
+  const handlerOptions: OntologyStudioHandlerOptions = { profileStatePath: options.profileStatePath };
+  if (writeEnabled) {
+    handlerOptions.write = { token: options.token ?? generateOntologyStudioToken() };
+  }
+  const server = createServer(createOntologyStudioRequestHandler(handlerOptions));
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(port, host, () => {
@@ -204,5 +324,7 @@ export async function startOntologyStudioServer(
   return {
     server,
     url: `http://${address.address}:${address.port}`,
+    writeEnabled,
+    ...(writeEnabled && handlerOptions.write ? { token: handlerOptions.write.token } : {}),
   };
 }
