@@ -284,6 +284,93 @@ describe("assistant-mode generation behavior", () => {
     expect(result.index.communities?.["0"]?.cache_key).toBe(communityKey);
   });
 
+  it("UAT: mocked client emits 1 generated + 1 insufficient_evidence and toWiki renders accordingly", async () => {
+    // End-to-end UAT for the Track A descriptions flow:
+    //   1. generateWikiDescriptionSidecars() drives a mock TextJsonGenerationClient
+    //      that returns "generated" for one target and "insufficient_evidence"
+    //      for the other (based on the target_id surfaced in the prompt).
+    //   2. The resulting WikiDescriptionSidecarIndex is fed into toWiki() to
+    //      assert the wiki page for the generated target contains the
+    //      paragraph and the insufficient-evidence target's page does not.
+    const { toWiki } = await import("../src/wiki.js");
+
+    const graph = mkGraph();
+    const outputDir = makeTempDir();
+
+    const mixedClient: GenerateWikiDescriptionSidecarsClients = {
+      direct: {
+        mode: "direct",
+        provider: "openai",
+        model: "uat-mock",
+        async generateJson(input) {
+          const targetId = /target_id:\s*(\S+)/.exec(input.prompt)?.[1];
+          if (input.outputPath) {
+            if (targetId === "alpha") {
+              writeFileSync(input.outputPath, JSON.stringify({
+                status: "generated",
+                description: "AlphaService coordinates downstream services with source-backed evidence.",
+                evidence_refs: ["src/alpha.ts#1"],
+                confidence: 0.85,
+              }), "utf-8");
+            } else {
+              writeFileSync(input.outputPath, JSON.stringify({
+                status: "insufficient_evidence",
+                description: null,
+                evidence_refs: [],
+                confidence: null,
+              }), "utf-8");
+            }
+          }
+          return {
+            status: "completed",
+            provider: "openai",
+            mode: "direct",
+            model: "uat-mock",
+            outputPath: input.outputPath,
+            audit: {},
+          };
+        },
+      },
+    };
+
+    const result = await generateWikiDescriptionSidecars(graph, {
+      graphHash: "graph-hash",
+      mode: "direct",
+      clients: mixedClient,
+      includeCommunityTargets: false,
+      maxNodeTargets: 2,
+      outputDir,
+    });
+
+    expect(result.index.nodes["alpha"]?.status).toBe("generated");
+    expect(result.index.nodes["alpha"]?.description).toContain("AlphaService coordinates");
+    expect(result.index.nodes["beta"]?.status).toBe("insufficient_evidence");
+    expect(result.index.nodes["beta"]?.description).toBeNull();
+
+    // Render through the standard wiki pipeline (no provider call here).
+    const renderDir = makeTempDir();
+    const communities = new Map<number, string[]>([[0, ["alpha", "beta"]], [1, ["gamma", "delta"]]]);
+    const labels = new Map<number, string>([[0, "Core Services"], [1, "Worker Pool"]]);
+    const godNodesData = [
+      { id: "alpha", label: "AlphaService", community: 0, in_degree: 1, out_degree: 3, score: 0.9 },
+      { id: "beta", label: "BetaRepository", community: 0, in_degree: 1, out_degree: 1, score: 0.5 },
+    ];
+    toWiki(graph, communities, renderDir, {
+      communityLabels: labels,
+      descriptions: result.index,
+      godNodesData,
+    });
+
+    const renderedAlpha = readFileSync(join(renderDir, "AlphaService.md"), "utf-8");
+    const renderedBeta = readFileSync(join(renderDir, "BetaRepository.md"), "utf-8");
+    expect(renderedAlpha).toContain("AlphaService coordinates downstream services with source-backed evidence.");
+    expect(renderedBeta).not.toContain("AlphaService coordinates");
+    // Insufficient-evidence sidecar must not surface as a rendered paragraph
+    // on BetaRepository's page. Detect it by checking the per-page contents
+    // do not contain any rendered description paragraph block.
+    expect(renderedBeta).not.toMatch(/^\s*[A-Z].*evidence-backed/m);
+  });
+
   it("wraps completed client output with Graphify sidecar metadata", async () => {
     const graph = mkGraph();
     const outputDir = makeTempDir();
