@@ -207,7 +207,7 @@ Each lane carries six independent dimensions. "Infra" = library / CLI / MCP / AP
 | --- | :---: | :---: | :---: | :---: | :---: | :---: | ---: |
 | **A** Descriptions | ✅ 1/1 | ✅ 1/1 | ✅ 6/7 | 🟡 0/1 (ontology entity pages) | ❌ 0/2 (small fixture + public pack) | 🟡 1/2 (README ok, CHANGELOG pending) | **9/14 = 64%** |
 | **B** Reconciliation | ✅ 1/1 | ✅ 1/1 | ✅ 6/6 | ❌ 0/1 (Svelte studio blocked on design system) | ❌ 0/2 (public-pack live walk, decision log replay) | 🟡 1/2 (README ok, CHANGELOG pending) | **9/13 = 69%** |
-| **C** CRG `v2.3.3` | 🟡 1/2 (alignment spec ok, row-level audit missing) | ❌ 0/3 (a11y / shapes / review-precision lots not split) | ❌ 0/3 | ❌ 0/2 (HTML a11y, review surface) | ❌ 0/1 | ❌ 0/1 | **1/12 = 8%** |
+| **C** CRG `v2.3.3` | ✅ 2/2 (alignment spec + row-level audit committed) | ❌ 0/3 (a11y / shapes / review-precision lots not split) | ❌ 0/3 | ❌ 0/2 (HTML a11y, review surface) | ❌ 0/1 | ❌ 0/1 | **2/12 = 17%** |
 | **D** Drift `0.7.11..0.7.19` | ✅ 1/1 (source locks + initial matrix `f88567b..ab32098`) | 🟡 1/5 (M1 started, M2..M5 + new `0.7.17..0.7.19` lot pending) | 🟡 2/5 (path scoring + same-node guards ported; LLM retry, cache path normalization, Unicode IDs/edge-key dedup, Antigravity, claude-cli backend, manifest shrink etc. pending) | n/a | ❌ 0/2 (regression suite + smoke on real corpora) | ❌ 0/1 (`0.7.x` parity tag pending) | **4/14 = 29%** |
 
 ## Active Lanes — next concrete action
@@ -282,9 +282,9 @@ Each lane carries six independent dimensions. "Infra" = library / CLI / MCP / AP
 
 ### Track C: CRG Additive UX And Review Precision (Overall **1/12 = 8%**)
 
-**Spec (1/2)**
+**Spec (2/2)**
 - [x] CRG source locks (`v2.3.3` at `db2d2df`, head `52cf3bc`) and `SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md` / `SPEC_CODE_REVIEW_GRAPH_OPPORUNITY.md` exist.
-- [ ] Row-by-row `v2.3.3` audit committed into `UPSTREAM_GAP.md` (drumbeat agent produced the matrix; pending commit). 15 meaningful features identified: 9 `adopt-review` (F3-F8, F10, F12), 2 deferred (F11 wiki/HTML flow viz), 0 reject. Plus HTML a11y / node-shape / help-overlay buckets that the alignment spec does not yet break down.
+- [x] Row-by-row `v2.3.3` audit committed into `UPSTREAM_GAP.md` (15 features classified, 9 `adopt-review` F3-F8/F10/F12, 2 deferred F11, 0 reject). HTML a11y / node-shape / help-overlay still need a separate VS Code/CRG webview audit before adoption (tracked in `C2` and `C3` lots below).
 
 **Plan (0/3)**
 - [ ] Lot C1 — Review-precision (changed-range parsing, risk scoring, affected flows, test-gap detection): build on existing `graphify review-*` commands. Source: F3-F8 in `SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.

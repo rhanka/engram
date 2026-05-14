@@ -103,6 +103,33 @@ Functional intake buckets for the next realignment:
 | CRG `v2.3.3` | Review precision and parsers | changed range mapping, Java/PHP/C++ fixes, Spring/Temporal/Kafka semantics, test runner detection, GDScript/ReScript/Nix/SystemVerilog | `partial` / `needs-triage` | Triage by generic value; implement over `.graphify/graph.json`, not SQLite. |
 | CRG `v2.3.3` | Daemon, embeddings, FTS, SQLite | multi-repo daemon, OpenAI-compatible embeddings, FTS sync, SQLite transactions | `deferred` / `intentional-delta` | Do not adopt by default; separate spec required before any optional index/daemon work. |
 
+## CRG `v2.3.3` Row-Level Audit (Track C audit, 2026-05-14)
+
+Audit produced by drumbeat agent against `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md` and `spec/SPEC_CODE_REVIEW_GRAPH_OPPORUNITY.md`. 15 meaningful CRG features, no rejection. Nine map to `adopt-review`, two are deferred pending earlier closure.
+
+| # | Feature | CRG source | Category | Bucket | TS landing | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | GraphStore adapter and node lookup | `code_review_graph/graph.py` | review-precision | `adopt-review` | `src/review-*.ts` | F3: `ReviewGraphStoreLike` reads `.graphify/graph.json`; enables all downstream review features. |
+| 2 | Execution flow tracing (BFS/CALLS) | `code_review_graph/flows.py:trace_flows` | review-precision | `adopt-review` | `src/flows.ts` | F7: forward traversal over `CALLS` edges, cycle safety, criticality weights. |
+| 3 | Affected flows mapping | `code_review_graph/flows.py:get_affected_flows` | review-precision | `adopt-review` | `src/affected-flows.ts` | F8: maps changed files to nodes, finds impacted flows. Already partly covered by `review-delta`. |
+| 4 | Review context and snippets | `code_review_graph/tools/review.py:get_review_context` | review-precision | `adopt-review` | `src/review-context.ts` | F5: minimal/standard detail levels, blast radius, source snippet caps. |
+| 5 | Unified diff parsing and risk scoring | `code_review_graph/changes.py` | changed-range | `adopt-review` | `src/changes.ts` | F6: git diff parsing, line-range node mapping, multi-factor risk (flow/test/security). |
+| 6 | Minimal first-hop context | `code_review_graph/tools/context.py:get_minimal_context` | review-precision | `adopt-review` | `src/minimal-context.ts` | F4: ~100 token budget. Already mostly covered by `graphify minimal-context`. |
+| 7 | Entrypoint/decorator detection | `code_review_graph/flows.py:detect_entry_points` | parser | `adopt-review` | `src/extract.ts` | Decorator patterns, conventional names (main, test_*, on_*, handle_*); embedded in F7. |
+| 8 | Skill/LLM review state machine | `code_review_graph/CLAUDE.md` | review-precision | `adopt-review` | `src/skills/*.md` | F10: minimal-context-first five-state flow. |
+| 9 | Flow artifact persistence | `code_review_graph/flows.py:store_flows` | review-precision | `adopt-review` | `.graphify/flows.json` | F7: schema with stable deterministic IDs. |
+| 10 | Report/wiki flow enrichment | `code_review_graph/wiki.py` | node-shape | `defer` | `src/wiki.ts` | F11: flow pages, community-flow links; defer until F7 stable in TS. |
+| 11 | Flow visualization HTML highlight | `code_review_graph/visualization.py` | node-shape | `defer` | `src/export.ts` | F11: interactive flow graphs; blocked on HTML renderer refactor. |
+| 12 | Benchmark / eval scoring | `code_review_graph/eval/scorer.py` | review-precision | `adopt-review` | `src/review-eval.ts` | F12: deterministic local fixtures, token-efficiency metrics, no network cloner. |
+| 13 | Security keyword classification | CRG security keyword set | changed-range | `adopt-review` | `src/changes.ts` | Boost risk for `auth`, `crypt`, `sql`, `encrypt`. Embedded in F6/F7. |
+| 14 | Test coverage gap detection | `code_review_graph/flows.py:compute_criticality` | review-precision | `adopt-review` | `src/criticality.ts` | Flag nodes without `TESTED_BY` edges. |
+| 15 | Flow criticality weights | `code_review_graph/flows.py:compute_criticality` | review-precision | `adopt-review` | `src/criticality.ts` | File spread 0.30, external calls 0.20, security 0.25, test gaps 0.15, depth 0.10. |
+
+Coverage notes:
+- `adopt-html` and `adopt-studio` HTML accessibility patterns (keyboard, focus, ARIA, contrast, help overlay, non-color-only file_type encoding) are explicitly OUT of this matrix because the CRG alignment specs do not break them down row-by-row; they live in the Track C `C2` and `C3` lots of `PLAN.md` and need a separate VS Code/CRG webview audit before adoption.
+- `defer` rows (10, 11) reopen automatically once F7 flow artifacts are stable in the TS line.
+- No `reject`: every classified row could be reopened without product-line risk.
+
 ## Fork Guardrail
 
 Parity means conceptual product parity, not deleting TypeScript-specific improvements.
