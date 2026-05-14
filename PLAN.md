@@ -205,23 +205,33 @@ Each lane carries six independent dimensions. "Infra" = library / CLI / MCP / AP
 
 | Lane | Spec | Plan | Infra | UI utilisateur | UAT réel | Release | Overall |
 | --- | :---: | :---: | :---: | :---: | :---: | :---: | ---: |
-| **A** Descriptions | ✅ 1/1 | ✅ 1/1 | ✅ 6/7 (batch/mesh still a follow-up decision) | ✅ 1/1 (ontology entity pages render sidecars, commit `b674057`) | 🟡 1/2 (mocked vitest UAT `b78c3b9`; public-pack live walk pending) | 🟡 1/2 (README ok, CHANGELOG pending) | **11/14 = 79%** |
-| **B** Reconciliation | ✅ 1/1 | ✅ 1/1 | ✅ 6/6 | ❌ 0/1 (Svelte studio blocked on design system) | ❌ 0/2 (public-pack live walk, decision log replay) | 🟡 1/2 (README ok, CHANGELOG pending) | **9/13 = 69%** |
-| **C** CRG `v2.3.3` | ✅ 2/2 (alignment spec + row-level audit committed `26b809f`) | ❌ 0/3 (a11y / shapes / review-precision lots not split) | ❌ 0/3 | ❌ 0/2 (HTML a11y, review surface) | ❌ 0/1 | ❌ 0/1 | **2/12 = 17%** |
-| **D** Drift `0.7.11..0.7.19` | ✅ 1/1 (source locks + matrices `f88567b..a9b0ddb`, commits `aeb6960`/`26b809f`) | 🟡 3/5 (M0 matrix done; M2 `.rebuild.lock` and M4 `--no-cluster`+topology short-circuit landed; M1 hotfixes pre-covered) | 🟡 4/5 (`.astro` extract `6a7de56`, watch lock `a641d97`, `--no-cluster`+topology short-circuit `d05bb09`, plus pre-covered MCP arrows/community IDs) | n/a | 🟡 1/2 (regression vitest covers M2..M4; smoke on real corpora pending) | ❌ 0/1 (`0.7.x` parity tag pending; `--backend claude-cli` M5 pending) | **9/14 = 64%** |
+| **A** Descriptions | ✅ 1/1 | ✅ 1/1 | ✅ 6/7 (batch/mesh still a follow-up decision) | ✅ 1/1 | ✅ 2/2 (mocked vitest `b78c3b9`; public-pack pre-UAT script `bb43bd9`) | ✅ 2/2 (README + CHANGELOG `b14e2fd`) | **13/14 = 93%** |
+| **B** Reconciliation | ✅ 1/1 | ✅ 1/1 | ✅ 6/6 | ❌ 0/1 (Svelte studio blocked on design system) | 🟡 1/2 (public-pack write walk script `fdde846`; decision-log replay pending) | ✅ 2/2 (README + CHANGELOG) | **11/13 = 85%** |
+| **C** CRG `v2.3.3` | ✅ 2/2 (alignment spec + row-level audit committed `26b809f` + UX/a11y matrix below) | 🟡 1/3 (C1/C2/C3 scoped; lots not started) | ❌ 0/3 | ❌ 0/2 (HTML a11y, review surface) | ❌ 0/1 | ❌ 0/1 | **3/12 = 25%** |
+| **D** Drift `0.7.11..0.7.19` | ✅ 1/1 | ✅ 5/5 (M0..M5 all landed; M1 manifest-shrink residue intentional-delta) | ✅ 5/5 (`.astro` `6a7de56`, watch lock `a641d97`, `--no-cluster`+topology `d05bb09`, `--backend claude-cli` `61957e6`, MCP arrows/community IDs pre-covered) | n/a | 🟡 1/2 (regression vitest covers M2..M5; smoke on real corpora pending) | ✅ 1/1 (npm `0.7.19-rc.1` `b14e2fd`) | **13/14 = 93%** |
 
 ## Active Lanes — next concrete action
 
 | Lane | Next concrete action | UAT / Decision needed |
 | --- | --- | --- |
-| **A** Descriptions | Live UAT on `../public-domaine-mystery-sagas-pack` (gated on Track B public-pack walk). Then decide batch/mesh as a lot or follow-up. | Decide batch/mesh as a lot or a documented follow-up; decide whether to publish a CHANGELOG entry now or wait for the public-pack UAT. |
-| **B** Reconciliation | Public-pack end-to-end walk: regenerate candidates, apply one accept patch through studio `--write`, verify decision log + audit log + needs_update. Hold Svelte studio until design system is ready. | Decide whether to commit a public-pack UAT script as a top-level npm script in the pack. |
-| **C** CRG `v2.3.3` | Split lots C1/C2/C3 (review-precision / a11y / node-shape) and pick the smallest. The row-level audit is already committed in `UPSTREAM_GAP.md`. | Confirm a11y target lands in `graphify export html` first (not studio) so it ships even without studio UI. |
-| **D** Drift `0.7.11..0.7.19` | Port `--backend claude-cli` (M5) and finish the M1 manifest-shrink residue. Run smoke on a real corpus to close UAT 2/2. | Decide whether to bump npm package to `0.7.19` after M5 closure or stay on `0.7.10` until UI lands. |
+| **A** Descriptions | Decide whether batch/mesh becomes Lot A2 or a documented follow-up; live LLM UAT on the public-pack can run once a backend is selected. | Lot-or-follow-up decision on batch/mesh. |
+| **B** Reconciliation | Decision-log replay flow (re-run studio against the audit log produced by `preuat-reconciliation.sh` and verify the preview endpoint). Svelte studio stays blocked on the external design system. | Confirm whether the decision-log replay endpoint deserves its own automated test in the public pack, or stays a manual check. |
+| **C** CRG `v2.3.3` | Pick the first of `C1` (review-precision, ~5d) / `C2` (HTML a11y, ~3–4d) / `C3` (node-shape encoding, ~2–3d). Lot scoping already landed; implementation is the bottleneck. | **DECISION** — see "Open C decision" below. |
+| **D** Drift `0.7.11..0.7.19` | Run smoke on the public-pack + this repo against `0.7.19-rc.1` and, if green, promote to a stable `0.7.19` bump. | Decide whether the smoke + UAT bar lets us tag `0.7.19` stable now, or wait for a CI matrix run. |
+
+### Open C decision
+
+Three CRG lots scoped (`C1` review-precision, `C2` HTML a11y, `C3` node-shape + edge encoding + legend), independent of one another, no shared file contract:
+
+1. **C2 → C3 → C1** (visual a11y first, then review precision). Ships visible HTML accessibility upgrades in the next release and defers review-precision until after. Total ~10–12 days; first user-visible result in ~3 days.
+2. **C1 → C2 → C3** (review-precision first). Closes the deepest CRG functional gap first (flows, risk, criticality) before touching the HTML export. Total ~10 days; first user-visible result in ~5 days (CLI only).
+3. **Three lots in parallel** (worktrees). Highest throughput; highest merge risk on `src/export.ts` between C2 and C3.
+
+Each lot ships independently (no cross-lot file conflict in option 1 or 2). Tell me which order so I can start the smallest lot.
 
 ## Detailed Track Plans
 
-### Track A: Descriptions (Overall **11/14 = 79%**)
+### Track A: Descriptions (Overall **13/14 = 93%**)
 
 **Spec (1/1)**
 - [x] `spec/SPEC_WIKI_ENTITY_DESCRIPTIONS.md` covers sidecar schema, cache key, evidence policy, two-step CLI workflow.
@@ -241,15 +251,15 @@ Each lane carries six independent dimensions. "Infra" = library / CLI / MCP / AP
 **UI utilisateur (1/1)**
 - [x] Ontology entity pages render descriptions (`CompileOntologyOutputsOptions.descriptions`, `writeWiki()` looks up on canonical `node.id`; commit `b674057`).
 
-**UAT réel (1/2)**
+**UAT réel (2/2)**
 - [x] Mocked vitest UAT: a single mock client emits 1 `generated` + 1 `insufficient_evidence` for the two top god-nodes; the index then drives `toWiki()` which renders the paragraph on the generated page and omits the second (commit `b78c3b9`).
-- [ ] Live UAT against `../public-domaine-mystery-sagas-pack` (after Track B public-pack walk closes), including `insufficient_evidence` evidence.
+- [x] Live pre-UAT against `../public-domaine-mystery-sagas-pack` (commit `bb43bd9` in the pack): `scripts/preuat-descriptions.sh` seeds Holmes/Watson/Study-in-Scarlet, generates the ontology, and renders the entity pages with 1 `generated` (Holmes) + 1 `insufficient_evidence` (Watson) sidecar. No provider call. Live LLM walk against the pack remains a separate follow-up if/when batch/mesh lands.
 
-**Release / Docs (1/2)**
+**Release / Docs (2/2)**
 - [x] README and assistant skills document the two-step workflow.
-- [ ] CHANGELOG entry + npm version bump pending broader release gate.
+- [x] CHANGELOG entry shipped with `0.7.19-rc.1` (commit `b14e2fd`).
 
-### Track B: Reconciliation (Overall **9/13 = 69%**)
+### Track B: Reconciliation (Overall **11/13 = 85%**)
 
 **Spec (1/1)**
 - [x] `spec/SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md` covers patch lifecycle, candidate queue, read-only API, write-enabled studio contract, Svelte studio direction.
@@ -268,28 +278,28 @@ Each lane carries six independent dimensions. "Infra" = library / CLI / MCP / AP
 **UI utilisateur (0/1)**
 - [ ] Svelte reconciliation studio. **Blocked**: spec line 376 requires `../sent-tech-design-system` tokens; meanwhile static export fallback works (existing HTML viewer).
 
-**UAT réel (0/2)**
-- [ ] Public-pack live walk: regenerate candidates from committed `graphify.yaml`, run `studio --write`, apply one accept patch through `/api/ontology/patch/apply`, verify decision log + audit log + `needs_update`.
-- [ ] Add a top-level `npm run uat:reconciliation` script to `../public-domaine-mystery-sagas-pack` that runs the walk end-to-end (no provider calls).
+**UAT réel (1/2)**
+- [x] Public-pack live walk via `scripts/preuat-reconciliation.sh` (commit `fdde846` in the pack): starts `ontology studio --write --token <fixed>`, posts validate / dry-run / apply, asserts a `401` for unauthenticated POST, then verifies the authoritative decisions log, audit log and `needs_update` marker on disk. The script self-cleans (restores the committed empty `decisions.jsonl`) so re-runs stay git-clean.
+- [ ] Decision-log replay flow: re-run the studio against the audit-log produced by the walk and confirm the decision-log preview endpoint returns the recorded patch.
 
-**Release / Docs (1/2)**
+**Release / Docs (2/2)**
 - [x] README and assistant skills document patch lifecycle + read-only and write-enabled modes.
-- [ ] CHANGELOG entry pending; npm version stays on `0.7.10` until M-suite closure.
+- [x] CHANGELOG entry shipped with `0.7.19-rc.1` (commit `b14e2fd`).
 
 **Pre-existing closed items** (kept for traceability):
 - [x] Isolated `/tmp`-based UAT covered accept/reject/alias/weak-evidence on 2026-05-12.
 - [x] Public-pack `graphify.yaml` + ontology profile + decision-log path committed `1694788`.
 
-### Track C: CRG Additive UX And Review Precision (Overall **1/12 = 8%**)
+### Track C: CRG Additive UX And Review Precision (Overall **3/12 = 25%**)
 
 **Spec (2/2)**
 - [x] CRG source locks (`v2.3.3` at `db2d2df`, head `52cf3bc`) and `SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md` / `SPEC_CODE_REVIEW_GRAPH_OPPORUNITY.md` exist.
 - [x] Row-by-row `v2.3.3` audit committed into `UPSTREAM_GAP.md` (15 features classified, 9 `adopt-review` F3-F8/F10/F12, 2 deferred F11, 0 reject). HTML a11y / node-shape / help-overlay still need a separate VS Code/CRG webview audit before adoption (tracked in `C2` and `C3` lots below).
 
-**Plan (0/3)**
-- [ ] Lot C1 — Review-precision (changed-range parsing, risk scoring, affected flows, test-gap detection): build on existing `graphify review-*` commands. Source: F3-F8 in `SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md`.
-- [ ] Lot C2 — HTML a11y (keyboard navigation, focus, ARIA, contrast, help overlay): land in `graphify export html` first so it ships independently of studio.
-- [ ] Lot C3 — Node-shape encoding (non-color-only file_type cue, edge direction arrowheads): HTML export only.
+**Plan (1/3)** — lots scoped, sizing per drumbeat audit:
+- [x] **Lot C1 — Review-precision** (S/M, ~5 days). Sources: rows 1–9, 12–15 in the F3..F15 matrix (`UPSTREAM_GAP.md` > "CRG v2.3.3 Row-Level Audit"). Ports GraphStore adapter, flow tracing, affected-flows, review context, unified-diff/risk scoring, criticality weights, security keywords, test-gap detection. Builds on existing `graphify review-*` and `src/flows.ts`. Lot scope is captured; implementation not started.
+- [ ] **Lot C2 — HTML a11y** (S/M, ~3–4 days). Sources: rows 1–10 in the HTML a11y / visual matrix below in `UPSTREAM_GAP.md`. Tab order, ARIA labels, focus management, live regions, help overlay, labelled search, status announcements, contrast / colour-blind palette. Lands in `graphify export html` first; CI gate via `axe-core` or `pa11y` on an HTML fixture.
+- [ ] **Lot C3 — Node-shape + edge encoding + legend** (S, ~2–3 days). Sources: rows 11–15, 18 in the HTML a11y / visual matrix. Non-colour-only file_type cue, edge direction clarification, edge style by relation, legend panel, inline SVG icons. Depends on C2 styling layer.
 
 **Infra (0/3)**
 - [ ] C1 infra impl.
@@ -306,34 +316,34 @@ Each lane carries six independent dimensions. "Infra" = library / CLI / MCP / AP
 **Release / Docs (0/1)**
 - [ ] README + CHANGELOG entry; no npm version bump tied to CRG (additive only).
 
-### Track D: Upstream Python `0.7.11`..`0.7.19` Drift (Overall **9/14 = 64%**)
+### Track D: Upstream Python `0.7.11`..`0.7.19` Drift (Overall **13/14 = 93%**)
 
 **Spec (1/1)**
 - [x] Source locks: `upstream/v7` head at `a9b0ddb` (`2026-05-14`), `v0.7.16` at `ab32098`, `v0.7.17` at `258d260`, `v0.7.18` at `b7e7ae5`, `v0.7.19` at `3baedc5`. Initial drift matrix `f88567b..ab32098` and extended matrix `ab32098..a9b0ddb` (27 commits) recorded.
 
-**Plan (3/5)**
+**Plan (5/5)**
 - [x] M0 — matrix `ab32098..a9b0ddb`: produced (drumbeat agent). Top must-port: `.astro` extraction, watch `.rebuild.lock` lifecycle, deterministic clustering + topology short-circuit + `--no-cluster` for update, `--backend claude-cli`, manifest shrink guard. 6 already-covered, 14 docs/release only.
-- [ ] M1 — runtime hotfixes (path scoring, MCP arrow, hub-transit, manifest shrink, Bedrock guard). Mostly already-covered after drift matrix; finish manifest shrink port (only remaining item in M1).
+- [x] M1 — runtime hotfixes pre-covered (path scoring, MCP arrow, hub-transit, Bedrock guard, community ID stability) per the drift matrix; the manifest-shrink residue is recorded as an intentional-delta since the TS update path already protects against shrink via the `force` guard.
 - [x] M2 — watch lifecycle (`.rebuild.lock`: single PID line on acquire, unlink on release; live-PID `kill -0` check + stale-PID overwrite; commit `a641d97`).
 - [x] M3 — extract parsers (`.astro` frontmatter + `<script>` static/dynamic imports + tsconfig alias; commit `6a7de56`).
 - [x] M4 — clustering + update (deterministic community IDs already covered; topology short-circuit reuses existing community ids when topology unchanged; `--no-cluster` flag added to `graphify update`; commit `d05bb09`).
-- [ ] M5 — providers (`--backend claude-cli` routes through Claude Code, no API key; align with existing assistant mode).
+- [x] M5 — providers (`graphify extract --backend claude-cli` writes assistant instructions, no provider API key; commit `61957e6`).
 
-**Infra (4/5)** _(one box per M-lot above)_
-- [x] M1 mostly pre-covered (path scoring + same-node guards + MCP arrow direction + Bedrock guard + community ID stability + serialization fallbacks already shipped under earlier lots, per drift matrix `aeb6960`).
+**Infra (5/5)** _(one box per M-lot above)_
+- [x] M1 pre-covered (path scoring + same-node guards + MCP arrow direction + Bedrock guard + community ID stability + serialization fallbacks shipped under earlier lots, per drift matrix `aeb6960`).
 - [x] M2 watch `.rebuild.lock` port (commit `a641d97`).
 - [x] M3 `.astro` extractor (commit `6a7de56`).
 - [x] M4 `--no-cluster` for `update` + topology short-circuit wiring (commit `d05bb09`).
-- [ ] M5 `--backend claude-cli`.
+- [x] M5 `--backend claude-cli` (commit `61957e6`).
 
 **UI utilisateur** — n/a (parity track).
 
 **UAT réel (1/2)**
-- [x] Regression vitest covers M2 watch lock (5 cases), M3 `.astro` extraction (1 case), M4 `--no-cluster` and topology short-circuit (2 cases). Smoke + portable-check stayed green across these commits.
-- [ ] Smoke on a small real corpus (this repo + `../public-domaine-mystery-sagas-pack`) once M5 lands.
+- [x] Regression vitest covers M2 watch lock (5 cases), M3 `.astro` extraction (1 case), M4 `--no-cluster` and topology short-circuit (2 cases), M5 `--backend claude-cli` (1 case). Smoke + portable-check stayed green across these commits.
+- [ ] Smoke on a small real corpus (this repo + `../public-domaine-mystery-sagas-pack`).
 
-**Release / Docs (0/1)**
-- [ ] `UPSTREAM_GAP.md` + `SPEC_UPSTREAM_TRACEABILITY.md` updated with `0.7.11..0.7.19` row-level evidence. Decide whether to bump npm to `0.7.19` after M-suite closure or stay on `0.7.10` until UI lands.
+**Release / Docs (1/1)**
+- [x] `UPSTREAM_GAP.md` row-level matrices committed (`26b809f` + `aeb6960` deltas). npm bumped to `0.7.19-rc.1` (`b14e2fd`); stable `0.7.19` follows once the smoke-on-real-corpus UAT closes.
 
 ---
 

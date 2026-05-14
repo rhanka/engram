@@ -126,9 +126,38 @@ Audit produced by drumbeat agent against `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.
 | 15 | Flow criticality weights | `code_review_graph/flows.py:compute_criticality` | review-precision | `adopt-review` | `src/criticality.ts` | File spread 0.30, external calls 0.20, security 0.25, test gaps 0.15, depth 0.10. |
 
 Coverage notes:
-- `adopt-html` and `adopt-studio` HTML accessibility patterns (keyboard, focus, ARIA, contrast, help overlay, non-color-only file_type encoding) are explicitly OUT of this matrix because the CRG alignment specs do not break them down row-by-row; they live in the Track C `C2` and `C3` lots of `PLAN.md` and need a separate VS Code/CRG webview audit before adoption.
+- `adopt-html` and `adopt-studio` HTML accessibility patterns (keyboard, focus, ARIA, contrast, help overlay, non-color-only file_type encoding) live in the second matrix below; the alignment specs do not break them down row-by-row, so they were audited separately and grouped into `C2` / `C3` lots in `PLAN.md`.
 - `defer` rows (10, 11) reopen automatically once F7 flow artifacts are stable in the TS line.
 - No `reject`: every classified row could be reopened without product-line risk.
+
+### CRG `v2.3.3` Row-Level Audit — HTML UX, a11y and visual encoding
+
+| # | Feature | Surface | Bucket | Notes |
+| --- | --- | --- | --- | --- |
+| 1 | Tab order + keyboard focus ring | `graphify export html` (`src/export.ts`, vis.js config ~L545) | `adopt-html` | vis.js currently `keyboard: false`; need tab cycle, visible focus ring, Escape to deselect. |
+| 2 | ARIA labels on nodes / edges / legend | `graphify export html` | `adopt-html` | Zero `aria-label`/`role`/`aria-describedby` today. |
+| 3 | Focus management + screen-reader announce | `graphify export html` | `adopt-html` | `network.focus()` is silent; needs `aria-live="polite"` announcements. |
+| 4 | Colour contrast (WCAG AA) | export.ts styles ~L419 | `adopt-html` | CI check via axe-core or Pa11y on an HTML fixture. |
+| 5 | High-contrast mode toggle | export.ts | `adopt-html` | Optional CSS class + export flag. |
+| 6 | Colour-blind safe encoding | export.ts | `adopt-html` | Community currently encoded by colour only; add shape + pattern + label. |
+| 7 | Hover tooltip (descriptions) | export.ts vis.js config (~L542) | `adopt-html` | Add `data-help` on nodes/edges that have a description. |
+| 8 | Help overlay modal (F1 / ?) | export.ts | `adopt-html` | Keyboard-shortcut glossary + introspection of controls. |
+| 9 | Labeled search input + ARIA results list | export.ts | `adopt-html` | `<label for=...>` + `aria-live` for filter result counts. |
+| 10 | `aria-live` status region | export.ts | `adopt-html` | "Loaded N nodes" / "Filtered to M results". |
+| 11 | Node shape by `file_type` (non-colour-only) | export.ts vis.js shape config (~L547) | `adopt-html` | All nodes are `dot` today; map test→square, config→triangle, doc→house, type→diamond. |
+| 12 | Edge arrow direction cue clarified | export.ts vis.js arrows (~L522) | `adopt-html` | Solid = directed `calls`, dashed = inferred / undirected. |
+| 13 | Edge colour/width by relation | export.ts | `adopt-html` | `calls` solid blue, `imports_from` dashed grey, `tested_by` dotted green, etc. |
+| 14 | Legend panel (a11y-friendly) | export.ts | `adopt-html` | Scrollable list: shapes = file_types, colours = communities, line styles = relations. |
+| 15 | Inline SVG file-type icons | export.ts | `adopt-html` | Small icon per file_type in node decoration or legend. |
+| 16 | Mobile / touch responsiveness | export.ts | `adopt-review` | Audit button hit-targets ≥ 44px, touch pinch-zoom, no hover-only affordances. |
+| 17 | Risk badge / highlight on changed nodes | `graphify export html` + `src/changes.ts` (future) | `adopt-review` | Couples to Lot C1 review-precision. |
+| 18 | Community link-density visual cue | export.ts | `adopt-html` | Optional: size nodes by degree, communities by edge count. |
+| 19 | VS Code webview command-palette pattern | n/a (CRG only) | `defer` | TS fork has no VS Code extension yet; reopen with a dedicated spec. |
+
+Coverage notes:
+- 18 of 19 rows could land in `graphify export html` first, independent of the future Svelte studio.
+- Lot scope proposed (see Track C in `PLAN.md`): **C1** review-precision (matrix 1, F3..F12 rows above), **C2** HTML a11y (rows 1–10 here), **C3** node-shape + edge encoding + legend (rows 11–15, 18).
+- Row 19 (VS Code) stays `defer` until a TypeScript VS Code extension is in scope.
 
 ## Fork Guardrail
 
