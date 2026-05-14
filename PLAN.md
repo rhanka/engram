@@ -296,10 +296,19 @@ Each lot ships independently (no cross-lot file conflict in option 1 or 2). Tell
 - [x] CRG source locks (`v2.3.3` at `db2d2df`, head `52cf3bc`) and `SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md` / `SPEC_CODE_REVIEW_GRAPH_OPPORUNITY.md` exist.
 - [x] Row-by-row `v2.3.3` audit committed into `UPSTREAM_GAP.md` (15 features classified, 9 `adopt-review` F3-F8/F10/F12, 2 deferred F11, 0 reject). HTML a11y / node-shape / help-overlay still need a separate VS Code/CRG webview audit before adoption (tracked in `C2` and `C3` lots below).
 
+**Ordering constraint**: Track C MUST land before Track B's Svelte reconciliation studio. The studio inherits the HTML accessibility + visual encoding patterns shipped by C2/C3, otherwise it ships with the same gaps and we re-do them in the studio layer.
+
 **Plan (1/3)** — lots scoped, sizing per drumbeat audit:
 - [x] **Lot C1 — Review-precision** (S/M, ~5 days). Sources: rows 1–9, 12–15 in the F3..F15 matrix (`UPSTREAM_GAP.md` > "CRG v2.3.3 Row-Level Audit"). Ports GraphStore adapter, flow tracing, affected-flows, review context, unified-diff/risk scoring, criticality weights, security keywords, test-gap detection. Builds on existing `graphify review-*` and `src/flows.ts`. Lot scope is captured; implementation not started.
 - [ ] **Lot C2 — HTML a11y** (S/M, ~3–4 days). Sources: rows 1–10 in the HTML a11y / visual matrix below in `UPSTREAM_GAP.md`. Tab order, ARIA labels, focus management, live regions, help overlay, labelled search, status announcements, contrast / colour-blind palette. Lands in `graphify export html` first; CI gate via `axe-core` or `pa11y` on an HTML fixture.
 - [ ] **Lot C3 — Node-shape + edge encoding + legend** (S, ~2–3 days). Sources: rows 11–15, 18 in the HTML a11y / visual matrix. Non-colour-only file_type cue, edge direction clarification, edge style by relation, legend panel, inline SVG icons. Depends on C2 styling layer.
+
+**Mapping policy (C3 prerequisite)** — Domain mappings MUST be configurable, NOT hard-coded:
+
+- File-type → shape mapping (e.g. `code → dot`, `test → square`, `config → triangle`, `doc → house`) defaults to a code-corpus profile, but the configured-profile mode (`graphify.yaml`) can override it per ontology node type so non-code corpora (papers, mystery characters, ontology entities) get domain-appropriate shapes.
+- Relation → edge style mapping (e.g. `calls → solid`, `imports_from → dashed`, `tested_by → dotted`) defaults to common code relations, but profiles can declare their own relation styles. The mystery profile, for example, could map `alias_of → dashed`, `appears_in → solid`, `same_as → double-line`.
+- Skills must propose mappings from sampled candidates (e.g. for a fresh corpus, run a calibration that suggests reasonable defaults) and emit them as profile patches — never silently inject mystery- or code-specific defaults into Graphify built-ins.
+- Open question to resolve before C3 starts: where the mapping lives in the profile schema (`outputs.html.shape_map` and `outputs.html.edge_style_map`? `ontology.node_types.<Type>.html_shape`? a new `visualization` block?). Decide and lock in the spec before any vis.js rewrite.
 
 **Infra (0/3)**
 - [ ] C1 infra impl.
