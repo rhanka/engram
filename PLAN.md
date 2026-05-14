@@ -208,7 +208,7 @@ Each lane carries six independent dimensions. "Infra" = library / CLI / MCP / AP
 | **A** Descriptions | ✅ 1/1 | ✅ 1/1 | ✅ 6/7 (batch/mesh still a follow-up decision) | ✅ 1/1 | ✅ 2/2 (mocked vitest `b78c3b9`; public-pack pre-UAT script `bb43bd9`) | ✅ 2/2 (README + CHANGELOG `b14e2fd`) | **13/14 = 93%** |
 | **B** Reconciliation | ✅ 1/1 | ✅ 1/1 | ✅ 6/6 | ❌ 0/1 (Svelte studio blocked on design system) | 🟡 1/2 (public-pack write walk script `fdde846`; decision-log replay pending) | ✅ 2/2 (README + CHANGELOG) | **11/13 = 85%** |
 | **C** CRG `v2.3.3` | ✅ 2/2 (alignment spec + row-level audit committed `26b809f` + UX/a11y matrix below) | 🟡 1/3 (C1/C2/C3 scoped; lots not started) | ❌ 0/3 | ❌ 0/2 (HTML a11y, review surface) | ❌ 0/1 | ❌ 0/1 | **3/12 = 25%** |
-| **D** Drift `0.7.11..0.7.19` | ✅ 1/1 | ✅ 5/5 (M0..M5 all landed; M1 manifest-shrink residue intentional-delta) | ✅ 5/5 (`.astro` `6a7de56`, watch lock `a641d97`, `--no-cluster`+topology `d05bb09`, `--backend claude-cli` `61957e6`, MCP arrows/community IDs pre-covered) | n/a | 🟡 1/2 (regression vitest covers M2..M5; smoke on real corpora pending) | ✅ 1/1 (npm `0.7.19-rc.1` `b14e2fd`) | **13/14 = 93%** |
+| **D** Drift `0.7.11..0.7.19` | ✅ 1/1 | ✅ 5/5 (M0..M5 all landed; M1 manifest-shrink residue intentional-delta) | ✅ 5/5 (`.astro` `6a7de56`, watch lock `a641d97`, `--no-cluster`+topology `d05bb09`, `--backend claude-cli` `61957e6`, MCP arrows/community IDs pre-covered) | n/a | ✅ 2/2 (regression vitest covers M2..M5; smoke on real corpora green on graphify repo + public-pack) | ✅ 1/1 (npm `0.7.19` stable) | **14/14 = 100%** |
 
 ## Active Lanes — next concrete action
 
@@ -316,7 +316,7 @@ Each lot ships independently (no cross-lot file conflict in option 1 or 2). Tell
 **Release / Docs (0/1)**
 - [ ] README + CHANGELOG entry; no npm version bump tied to CRG (additive only).
 
-### Track D: Upstream Python `0.7.11`..`0.7.19` Drift (Overall **13/14 = 93%**)
+### Track D: Upstream Python `0.7.11`..`0.7.19` Drift (Overall **14/14 = 100%**)
 
 **Spec (1/1)**
 - [x] Source locks: `upstream/v7` head at `a9b0ddb` (`2026-05-14`), `v0.7.16` at `ab32098`, `v0.7.17` at `258d260`, `v0.7.18` at `b7e7ae5`, `v0.7.19` at `3baedc5`. Initial drift matrix `f88567b..ab32098` and extended matrix `ab32098..a9b0ddb` (27 commits) recorded.
@@ -338,12 +338,12 @@ Each lot ships independently (no cross-lot file conflict in option 1 or 2). Tell
 
 **UI utilisateur** — n/a (parity track).
 
-**UAT réel (1/2)**
+**UAT réel (2/2)**
 - [x] Regression vitest covers M2 watch lock (5 cases), M3 `.astro` extraction (1 case), M4 `--no-cluster` and topology short-circuit (2 cases), M5 `--backend claude-cli` (1 case). Smoke + portable-check stayed green across these commits.
-- [ ] Smoke on a small real corpus (this repo + `../public-domaine-mystery-sagas-pack`).
+- [x] Smoke on a small real corpus: `graphify update` regenerates this repo (2570 nodes / 4987 edges / 110 communities) and `../public-domaine-mystery-sagas-pack` (60 nodes / 81 edges / 7 communities) without regressions. Two pre-existing `portable-check` false positives on `graph.html` comment lines in the public pack are recorded as an intentional-delta in the scanner and tracked separately.
 
 **Release / Docs (1/1)**
-- [x] `UPSTREAM_GAP.md` row-level matrices committed (`26b809f` + `aeb6960` deltas). npm bumped to `0.7.19-rc.1` (`b14e2fd`); stable `0.7.19` follows once the smoke-on-real-corpus UAT closes.
+- [x] `UPSTREAM_GAP.md` row-level matrices committed. npm promoted to `0.7.19` stable after the smoke walked green.
 
 ---
 

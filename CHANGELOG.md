@@ -4,6 +4,16 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.7.19 (2026-05-14)
+
+Promote `0.7.19-rc.1` to stable after the real-corpus smoke run:
+
+- `graphify update` regenerated the local repo graph (2570 nodes, 4987 edges, 110 communities) and the public mystery pack graph (60 nodes, 81 edges, 7 communities) without regressions.
+- `portable-check` stays green on the graphify repo. Two pre-existing false positives on `graph.html` comment lines in the public pack are recorded as an intentional-delta in the scanner and tracked separately.
+- `npm test` 574 passed / 7 skipped / 0 failed; build OK.
+
+No code changes versus `0.7.19-rc.1`; see that section for the feature list.
+
 ## 0.7.19-rc.1 (2026-05-14)
 
 Post-`0.7.10` product acceleration. Ships parity ports for upstream Python Graphify `v0.7.11..v0.7.19` and product accelerators on Descriptions and Reconciliation.
