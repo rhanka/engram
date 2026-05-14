@@ -222,13 +222,13 @@ Progress below is calculated from the checked milestone boxes in the detailed tr
 | --- | ---: | --- | --- | --- | --- |
 | Python `0.7.10` parity checkpoint | 100% closed | `SPEC_UPSTREAM_TRACEABILITY.md` records the closed checkpoint. | Task L lots are closed except additive CRG work. | PR #22 merged to `main`. | No action unless a regression appears. |
 | Upstream Python `0.7.11`..`0.7.16` drift | 40% (`4/10`) | Source lock and row-level drift matrix are recorded. | Task M exists with lots M1..M5; M1 has started with the path-scoring/same-node guard port. | First post-`0.7.10` runtime fix is implemented locally; broader M1/M2/M3/M4/M5 remain open. | Finish M1 runtime fixes before starting Pascal or Ollama tuning. |
-| Descriptions | 67% (`8/12`) | `SPEC_WIKI_ENTITY_DESCRIPTIONS.md` exists, keeps render-only CLI separate from generation, and specifies the first `wiki describe` generation contract. | Task K exists; generation implementation lots are split: assistant/direct first, batch/mesh later. | Sidecar schema, validation, wiki rendering, render CLI, assistant CLI generation, direct-client wiring and README/skill workflow docs are implemented locally. | Add cache invalidation and UAT fixtures before broad rollout. |
-| Reconciliation | 92% (`12/13`) | `SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md` specifies the read-only candidate API, records the HTTP/studio shell slice, and now records public-pack-derived UAT evidence (isolated and committed); write contracts remain implementation work. | Tasks A..H/J exist; read-only APIs, decision-log preview, isolated mystery UAT and committed public-pack UAT config are closed for MVP scope. | Patch core, write-mode MCP, deterministic candidate queue, read-only query helpers, decision-log preview filters, read-only ontology serve, MCP tools, CLI/skill preview, HTTP/studio shell, `/tmp/graphify-mystery-uat` validation, and committed `graphify.yaml` + ontology profile + decision-log path in `../public-domaine-mystery-sagas-pack` exist. | Decide write-enabled studio mode (`--write`, localhost binding, local token). |
+| Descriptions | 75% (`9/12`) | `SPEC_WIKI_ENTITY_DESCRIPTIONS.md` exists, keeps render-only CLI separate from generation, and specifies the first `wiki describe` generation contract. | Task K exists; generation implementation lots are split: assistant/direct first, batch/mesh later. | Sidecar schema, validation, wiki rendering, render CLI, assistant CLI generation, direct-client wiring, cache invalidation (graph_hash / prompt_version / mode / provider / model) and README/skill workflow docs are implemented locally. | Run UAT fixtures (small + public-pack with `insufficient_evidence`); decide batch/mesh follow-up. |
+| Reconciliation | 100% (`13/13`) | `SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md` specifies the read-only candidate API, the HTTP/studio shell slice, public-pack-derived UAT evidence, and the write-enabled studio contract. | Tasks A..H/J are closed for MVP scope. | Patch core, write-mode MCP, deterministic candidate queue, read-only query helpers, decision-log preview filters, read-only ontology serve, MCP tools, CLI/skill preview, HTTP/studio shell, write-enabled studio (loopback bind, bearer token, validate/dry-run/apply routes, audit log), and committed `graphify.yaml` + ontology profile + decision-log path in `../public-domaine-mystery-sagas-pack` exist. | Track is complete; future work moves to Svelte studio implementation under Task G. |
 | CRG additive UX/review work | 30% (`3/10`) | CRG source locks and prior alignment specs exist; read-only audit confirms `v2.3.3` accessibility opportunities are not yet row-level. | Task L Lot 5b and CRG rows exist but need a concrete lot split. | Existing review commands cover earlier CRG-style review context; HTML export still has canvas accessibility, node-shape and help-overlay gaps. | Classify `v2.3.3` buckets into HTML UX, reconciliation studio, review precision, or defer. |
 
 ## Detailed Track Plans
 
-### Track A: Descriptions (`8/12`, 67%)
+### Track A: Descriptions (`9/12`, 75%)
 
 - [x] Spec exists: `spec/SPEC_WIKI_ENTITY_DESCRIPTIONS.md`.
 - [x] Sidecar schema, cache key and validation exist in `src/wiki-descriptions.ts`.
@@ -238,12 +238,12 @@ Progress below is calculated from the checked milestone boxes in the detailed tr
 - [x] Implement assistant-mode sidecar generation core with deterministic prompt inputs and no direct provider dependency.
 - [x] Implement direct-backend sidecar generation through existing LLM execution ports with mocked CI tests.
 - [ ] Decide whether batch/mesh generation is a first implementation lot or a documented follow-up.
-- [ ] Add cache/invalidation behavior for changed graph hash, prompt version, provider and model.
+- [x] Add cache/invalidation behavior for changed graph hash, prompt version, provider and model (`checkWikiDescriptionFreshness` + `selectFreshWikiDescriptions` in `src/wiki-descriptions.ts`; `loadFreshWikiDescriptionSidecarIndex` filters at `graphify export wiki|obsidian` load time and warns on dropped sidecars).
 - [x] Update README and assistant skills with a two-step workflow: generate sidecars, then render wiki/Obsidian with `--descriptions`.
 - [ ] Extend rendering to ontology entity pages only after the entity-page export has a stable sidecar lookup.
 - [ ] Run UAT on a tiny fixture and on `../public-domaine-mystery-sagas-pack`, including at least one `insufficient_evidence` omission.
 
-### Track B: Reconciliation (`12/13`, 92%)
+### Track B: Reconciliation (`13/13`, 100%)
 
 - [x] Lifecycle spec exists: `spec/SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md`.
 - [x] Patch validation, dry-run/apply and write-mode MCP foundations exist.
@@ -254,7 +254,7 @@ Progress below is calculated from the checked milestone boxes in the detailed tr
 - [x] Specify and implement decision-log preview core records/parser; endpoint filters and accept/reject/alias/weak-evidence UAT remain below.
 - [x] Expose decision-log preview through CLI and skill runtime without mutating project files.
 - [x] Implement the read-only studio shell served by `graphify ontology studio --config graphify.yaml`.
-- [ ] Add write-enabled studio mode only behind `--write`, localhost binding and a local token.
+- [x] Add write-enabled studio mode only behind `--write`, localhost binding and a local token (`graphify ontology studio --write [--token ...]`: refused if not loopback, random hex24 bearer token printed once, `POST /api/ontology/patch/{validate,dry-run,apply}` reuse the patch core, audit log appended via existing `applyOntologyPatch`, 401 without token, 405 without `--write`, 413 above 256 KB body).
 - [x] Add project-owned `graphify.yaml`, ontology profile and decision/audit log paths to `../public-domaine-mystery-sagas-pack` (committed `1694788`).
 - [x] Generate a public-pack-derived candidate queue in isolated `/tmp/graphify-mystery-uat` and validate it against the profile policy.
 - [x] Complete isolated UAT with one accepted relation, one rejected candidate, one alias merge and one weak-evidence review item, each with source evidence.
