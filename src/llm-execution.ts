@@ -33,6 +33,24 @@ export interface BatchVisionImportInput {
   outputDir: string;
 }
 
+/**
+ * Text-JSON equivalent of BatchVisionExportInput. Used by the wiki
+ * description generator and any other text-JSON consumer that wants to
+ * submit many prompts as a single batch (OpenAI Batch, Anthropic Batch,
+ * etc.) instead of paying per-call latency. Mirrors the upstream
+ * `batch` mode in WikiDescriptionGenerator.
+ */
+export interface BatchTextJsonExportInput {
+  schema: string;
+  requests: Array<TextJsonGenerationInput & { id: string }>;
+  outputPath: string;
+}
+
+export interface BatchTextJsonImportInput {
+  inputPath: string;
+  outputDir: string;
+}
+
 export interface LlmExecutionResult {
   status: "instructions_written" | "completed";
   provider: string;
@@ -60,6 +78,20 @@ export interface BatchVisionImportResult {
   audit: Record<string, unknown>;
 }
 
+export interface BatchTextJsonExportResult {
+  provider: string;
+  outputPath: string;
+  requestCount: number;
+  audit: Record<string, unknown>;
+}
+
+export interface BatchTextJsonImportResult {
+  provider: string;
+  importedCount: number;
+  failedCount: number;
+  audit: Record<string, unknown>;
+}
+
 export interface TextJsonGenerationClient {
   readonly mode: LlmExecutionMode;
   readonly provider: string;
@@ -79,6 +111,12 @@ export interface BatchVisionJsonClient {
   readonly provider: string;
   exportRequests(input: BatchVisionExportInput): Promise<BatchVisionExportResult>;
   importResults(input: BatchVisionImportInput): Promise<BatchVisionImportResult>;
+}
+
+export interface BatchTextJsonClient {
+  readonly provider: string;
+  exportRequests(input: BatchTextJsonExportInput): Promise<BatchTextJsonExportResult>;
+  importResults(input: BatchTextJsonImportInput): Promise<BatchTextJsonImportResult>;
 }
 
 export interface LlmMeshAdapter {
