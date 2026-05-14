@@ -6,7 +6,7 @@
  * Doc/paper/image changes write a flag and notify the user.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
-import { resolve as pathResolve, extname, basename } from "node:path";
+import { resolve as pathResolve, extname, basename, dirname, join } from "node:path";
 import {
   DEFAULT_GRAPHIFY_STATE_DIR,
   LEGACY_GRAPHIFY_STATE_DIR,
@@ -301,6 +301,50 @@ function hasNonCode(changedPaths: string[]): boolean {
 // Main watcher
 // ---------------------------------------------------------------------------
 
+function rebuildLockPath(watchPath: string): string {
+  return join(resolveGraphifyPaths({ root: pathResolve(watchPath) }).stateDir, ".rebuild.lock");
+}
+
+/**
+ * Acquire the watch rebuild lock by writing a single PID line. Returns true
+ * when the caller holds the lock, false when another rebuild is already in
+ * flight. The lock file is intentionally short (one line, current PID + LF)
+ * so downstream tooling can `kill -0` the recorded PID for liveness checks.
+ *
+ * Ported from upstream Python Graphify v0.7.18/0.7.19 watch fix (#858 / PR
+ * #859): rewrite a single PID line on acquire and unlink on release so a
+ * stale lock from a crashed run does not deadlock subsequent rebuilds.
+ */
+export function acquireRebuildLock(watchPath: string): boolean {
+  const lockPath = rebuildLockPath(watchPath);
+  mkdirSync(dirname(lockPath), { recursive: true });
+  if (existsSync(lockPath)) {
+    const recorded = readFileSync(lockPath, "utf-8").trim().split(/\s+/)[0];
+    const pid = recorded ? Number.parseInt(recorded, 10) : NaN;
+    if (Number.isFinite(pid) && pid > 0) {
+      try {
+        process.kill(pid, 0);
+        return false;
+      } catch {
+        // Stale lock - the PID is no longer alive, fall through to overwrite.
+      }
+    }
+  }
+  writeFileSync(lockPath, `${process.pid}\n`, "utf-8");
+  return true;
+}
+
+export function releaseRebuildLock(watchPath: string): void {
+  const lockPath = rebuildLockPath(watchPath);
+  if (existsSync(lockPath)) {
+    try {
+      unlinkSync(lockPath);
+    } catch {
+      // Best effort: a concurrent watcher may have already released it.
+    }
+  }
+}
+
 export async function watch(
   watchPath: string,
   debounce: number = 3.0,
@@ -319,6 +363,7 @@ export async function watch(
   const resolvedPath = pathResolve(watchPath);
   let lastTrigger = 0;
   let pending = false;
+  let rebuilding = false;
   const changed = new Set<string>();
 
   const watcher = chokidar.watch(resolvedPath, {
@@ -357,16 +402,29 @@ export async function watch(
   const debounceMs = debounce * 1000;
 
   const poll = setInterval(async () => {
-    if (pending && Date.now() - lastTrigger >= debounceMs) {
-      pending = false;
-      const batch = [...changed];
-      changed.clear();
+    if (!pending) return;
+    if (Date.now() - lastTrigger < debounceMs) return;
+    if (rebuilding) return; // already running; wait for the next tick
+
+    if (!acquireRebuildLock(watchPath)) {
+      // Another graphify watch process holds the lock; check again next tick.
+      return;
+    }
+
+    pending = false;
+    rebuilding = true;
+    const batch = [...changed];
+    changed.clear();
+    try {
       console.log(`\n[graphify watch] ${batch.length} file(s) changed`);
       if (hasNonCode(batch)) {
         notifyOnly(watchPath);
       } else {
         await rebuildCode(watchPath, false, options);
       }
+    } finally {
+      rebuilding = false;
+      releaseRebuildLock(watchPath);
     }
   }, 500);
 
@@ -375,6 +433,7 @@ export async function watch(
     console.log("\n[graphify watch] Stopped.");
     clearInterval(poll);
     watcher.close();
+    releaseRebuildLock(watchPath);
     process.exit(0);
   };
 
