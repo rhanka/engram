@@ -114,7 +114,7 @@
       "108": "Community 108",
       "109": "Community 109"
     },
-    "built_from_commit": "1ef6676467a6a9ed76d31aca5249519ff98e7f47"
+    "built_from_commit": "cd7b6b46832d37b2eca2cfbf98c32f1953f9d3ed"
   },
   "nodes": [
     {
@@ -1193,7 +1193,7 @@
       "label": "isDirectCliExecution()",
       "file_type": "code",
       "source_file": "src/cli.ts",
-      "source_location": "L3682",
+      "source_location": "L3751",
       "community": 23,
       "community_name": "Community 23"
     },
