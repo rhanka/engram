@@ -206,7 +206,7 @@ Each lane carries six independent dimensions. "Infra" = library / CLI / MCP / AP
 | Lane | Spec | Plan | Infra | UI utilisateur | UAT réel | Release | Overall |
 | --- | :---: | :---: | :---: | :---: | :---: | :---: | ---: |
 | **A** Descriptions | ✅ 1/1 | ✅ 1/1 | ✅ 6/7 (batch/mesh still a follow-up decision) | ✅ 1/1 | ✅ 2/2 (mocked vitest `b78c3b9`; public-pack pre-UAT script `bb43bd9`) | ✅ 2/2 (README + CHANGELOG `b14e2fd`) | **13/14 = 93%** |
-| **B** Reconciliation | ✅ 1/1 | ✅ 1/1 | ✅ 6/6 | ❌ 0/1 (Svelte studio blocked on design system) | 🟡 1/2 (public-pack write walk script `fdde846`; decision-log replay pending) | ✅ 2/2 (README + CHANGELOG) | **11/13 = 85%** |
+| **B** Reconciliation | ✅ 1/1 | ✅ 1/1 | ✅ 6/6 | ❌ 0/1 (Svelte studio blocked on design system + C ordering) | ✅ 2/2 (vitest decision-log replay covers apply→GET cycle; public-pack pre-UAT script complements it as a manual reproducer) | ✅ 2/2 (README + CHANGELOG) | **12/13 = 92%** |
 | **C** CRG `v2.3.3` | ✅ 2/2 (alignment spec + row-level audit committed `26b809f` + UX/a11y matrix below) | 🟡 1/3 (C1/C2/C3 scoped; lots not started) | ❌ 0/3 | ❌ 0/2 (HTML a11y, review surface) | ❌ 0/1 | ❌ 0/1 | **3/12 = 25%** |
 | **D** Drift `0.7.11..0.7.19` | ✅ 1/1 | ✅ 5/5 (M0..M5 all landed; M1 manifest-shrink residue intentional-delta) | ✅ 5/5 (`.astro` `6a7de56`, watch lock `a641d97`, `--no-cluster`+topology `d05bb09`, `--backend claude-cli` `61957e6`, MCP arrows/community IDs pre-covered) | n/a | ✅ 2/2 (regression vitest covers M2..M5; smoke on real corpora green on graphify repo + public-pack) | ✅ 1/1 (npm `0.7.19` stable) | **14/14 = 100%** |
 
@@ -259,7 +259,7 @@ Each lot ships independently (no cross-lot file conflict in option 1 or 2). Tell
 - [x] README and assistant skills document the two-step workflow.
 - [x] CHANGELOG entry shipped with `0.7.19-rc.1` (commit `b14e2fd`).
 
-### Track B: Reconciliation (Overall **11/13 = 85%**)
+### Track B: Reconciliation (Overall **12/13 = 92%**)
 
 **Spec (1/1)**
 - [x] `spec/SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md` covers patch lifecycle, candidate queue, read-only API, write-enabled studio contract, Svelte studio direction.
@@ -278,9 +278,9 @@ Each lot ships independently (no cross-lot file conflict in option 1 or 2). Tell
 **UI utilisateur (0/1)**
 - [ ] Svelte reconciliation studio. **Blocked**: spec line 376 requires `../sent-tech-design-system` tokens; meanwhile static export fallback works (existing HTML viewer).
 
-**UAT réel (1/2)**
-- [x] Public-pack live walk via `scripts/preuat-reconciliation.sh` (commit `fdde846` in the pack): starts `ontology studio --write --token <fixed>`, posts validate / dry-run / apply, asserts a `401` for unauthenticated POST, then verifies the authoritative decisions log, audit log and `needs_update` marker on disk. The script self-cleans (restores the committed empty `decisions.jsonl`) so re-runs stay git-clean.
-- [ ] Decision-log replay flow: re-run the studio against the audit-log produced by the walk and confirm the decision-log preview endpoint returns the recorded patch.
+**UAT réel (2/2)**
+- [x] Vitest `tests/ontology-studio-write.test.ts > decision-log replay`: runs the apply → GET decision-log cycle in-process and asserts both authoritative + audit records surface with the right id/operation, plus `rebuild-status` flips `needs_update` to `true`. Closes the previous UAT gap in CI (no public-pack shell dependency).
+- [x] Public-pack live walk via `scripts/preuat-reconciliation.sh` (commit `fdde846` in the pack): kept as a manual reproducer to exercise the same flow against a "real" pack-shaped `graphify.yaml` + ontology profile. Re-runs are git-clean.
 
 **Release / Docs (2/2)**
 - [x] README and assistant skills document patch lifecycle + read-only and write-enabled modes.

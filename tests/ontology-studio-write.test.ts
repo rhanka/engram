@@ -188,6 +188,66 @@ describe("graphify ontology studio --write", () => {
     }
   });
 
+  it("decision-log replay: GET decision-log returns the applied patch", async () => {
+    // End-to-end walk equivalent to scripts/preuat-reconciliation.sh in the
+    // public mystery pack, but executed in-process so it runs in CI:
+    //   1. apply a patch through POST /api/ontology/patch/apply
+    //   2. read it back through GET /api/ontology/reconciliation/decision-log
+    //   3. assert both the authoritative and audit log records surface
+    //      with the right id, status and operation.
+    const dir = makeTempDir();
+    const fixture = writeOntologyWriteFixture(dir);
+    const fixedToken = "feedface".repeat(6);
+    const started = await startOntologyStudioServer({
+      profileStatePath: fixture.profileStatePath,
+      write: true,
+      token: fixedToken,
+    });
+    try {
+      const auth = `Bearer ${fixedToken}`;
+      const { body, headers } = postBody(fixture.patch);
+
+      const applyResponse = await fetch(`${started.url}/api/ontology/patch/apply`, {
+        method: "POST",
+        headers: { ...headers, authorization: auth },
+        body,
+      });
+      expect(applyResponse.status).toBe(200);
+      expect(((await applyResponse.json()) as { valid: boolean }).valid).toBe(true);
+
+      const replayResponse = await fetch(
+        `${started.url}/api/ontology/reconciliation/decision-log?source=both&status=applied`,
+      );
+      expect(replayResponse.status).toBe(200);
+      const replay = (await replayResponse.json()) as {
+        schema: string;
+        total: number;
+        items: Array<{ source: string; patch: { id: string; operation: string; status?: string } }>;
+      };
+      expect(replay.schema).toBe("graphify_ontology_reconciliation_decision_log_v1");
+      expect(replay.total).toBeGreaterThanOrEqual(1);
+      const authoritative = replay.items.find((item) => item.source === "authoritative");
+      const audit = replay.items.find((item) => item.source === "audit");
+      expect(authoritative).toBeDefined();
+      expect(audit).toBeDefined();
+      expect(authoritative?.patch.id).toBe(fixture.patch.id);
+      expect(authoritative?.patch.operation).toBe(fixture.patch.operation);
+      expect(audit?.patch.id).toBe(fixture.patch.id);
+
+      // rebuild-status must flip to needs_update=true after the apply.
+      const statusResponse = await fetch(`${started.url}/api/ontology/rebuild-status`);
+      expect(statusResponse.status).toBe(200);
+      const status = (await statusResponse.json()) as {
+        needs_update: boolean;
+        decision_log_available: boolean;
+      };
+      expect(status.needs_update).toBe(true);
+      expect(status.decision_log_available).toBe(true);
+    } finally {
+      started.server.close();
+    }
+  });
+
   it("returns 400 on invalid JSON and 413 when the body exceeds 256 KB", async () => {
     const dir = makeTempDir();
     const fixture = writeOntologyWriteFixture(dir);
