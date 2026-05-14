@@ -492,6 +492,81 @@ class PaymentService extends BaseService implements Billable {}
     expect(importEdge).toBeDefined();
   });
 
+  it("extracts static and dynamic imports from .astro frontmatter and script blocks", async () => {
+    mkdirSync(join(dir, "src", "pages"), { recursive: true });
+    mkdirSync(join(dir, "src", "lib"), { recursive: true });
+    writeFileSync(
+      join(dir, "tsconfig.json"),
+      [
+        "{",
+        '  "compilerOptions": {',
+        '    "paths": {',
+        '      "$lib/*": ["src/lib/*"]',
+        "    }",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    writeFileSync(
+      join(dir, "src", "lib", "header.ts"),
+      "export function renderHeader() {\n  return 'h';\n}\n",
+      "utf-8",
+    );
+    writeFileSync(
+      join(dir, "src", "lib", "footer.ts"),
+      "export function renderFooter() {\n  return 'f';\n}\n",
+      "utf-8",
+    );
+    writeFileSync(
+      join(dir, "src", "pages", "index.astro"),
+      [
+        "---",
+        "import { renderHeader } from '$lib/header';",
+        "const lazy = () => import('$lib/footer');",
+        "---",
+        "<html>",
+        "  <body>{renderHeader()}</body>",
+        "</html>",
+        "<script>",
+        "  import { renderHeader as alt } from '$lib/header';",
+        "  void alt;",
+        "</script>",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await extract([
+      join(dir, "src", "pages", "index.astro"),
+      join(dir, "src", "lib", "header.ts"),
+      join(dir, "src", "lib", "footer.ts"),
+    ]);
+
+    const astroNode = result.nodes.find((node) => node.label === "index.astro");
+    const headerNode = result.nodes.find((node) => node.label === "header.ts");
+    const footerNode = result.nodes.find((node) => node.label === "footer.ts");
+    expect(astroNode?.id).toBeTruthy();
+    expect(headerNode?.id).toBeTruthy();
+    expect(footerNode?.id).toBeTruthy();
+
+    const headerImport = result.edges.find(
+      (edge) =>
+        edge.source === astroNode?.id
+        && edge.target === headerNode?.id
+        && edge.relation === "imports_from",
+    );
+    const footerImport = result.edges.find(
+      (edge) =>
+        edge.source === astroNode?.id
+        && edge.target === footerNode?.id
+        && edge.relation === "imports_from",
+    );
+    expect(headerImport).toBeDefined();
+    expect(footerImport).toBeDefined();
+  });
+
   it("continues extraction when a file overflows recursive AST traversal", async () => {
     const deepPath = join(dir, "deep.ts");
     const normalPath = join(dir, "normal.ts");

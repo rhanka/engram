@@ -9,6 +9,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
 import { serve } from "../src/serve.js";
+import { handleOntologyStudioRequest } from "../src/ontology-studio.js";
 import { ONTOLOGY_PATCH_SCHEMA, type OntologyPatch } from "../src/ontology-patch.js";
 
 const tempDirs: string[] = [];
@@ -122,12 +123,18 @@ function writeOntologyPatchFixture(root: string): {
   graphPath: string;
   profileStatePath: string;
   decisionsPath: string;
+  stateDir: string;
+  candidatesPath: string;
+  auditPath: string;
   patch: OntologyPatch;
 } {
   const stateDir = join(root, ".graphify");
   const profileDir = join(stateDir, "profile");
   const ontologyDir = join(stateDir, "ontology");
+  const reconciliationDir = join(ontologyDir, "reconciliation");
   const decisionsPath = join(root, "graphify", "reconciliation", "decisions.jsonl");
+  const candidatesPath = join(reconciliationDir, "candidates.json");
+  const auditPath = join(reconciliationDir, "applied-patches.jsonl");
   mkdirSync(profileDir, { recursive: true });
   mkdirSync(ontologyDir, { recursive: true });
   const graphPath = writeFixtureGraph(stateDir);
@@ -237,6 +244,9 @@ function writeOntologyPatchFixture(root: string): {
     graphPath,
     profileStatePath,
     decisionsPath,
+    stateDir,
+    candidatesPath,
+    auditPath,
     patch: {
       schema: ONTOLOGY_PATCH_SCHEMA,
       id: "patch-mcp-001",
@@ -251,6 +261,64 @@ function writeOntologyPatchFixture(root: string): {
       created_at: "2026-05-05T00:00:00.000Z",
     },
   };
+}
+
+function writeOntologyReconciliationFixture(root: string): ReturnType<typeof writeOntologyPatchFixture> {
+  const fixture = writeOntologyPatchFixture(root);
+  mkdirSync(join(root, "graphify", "reconciliation"), { recursive: true });
+  mkdirSync(join(fixture.stateDir, "ontology", "reconciliation"), { recursive: true });
+  writeFileSync(
+    fixture.candidatesPath,
+    JSON.stringify({
+      schema: "graphify_ontology_reconciliation_candidates_v1",
+      graph_hash: "graph-hash",
+      profile_hash: "profile-hash",
+      generated_at: "2026-05-09T00:00:00.000Z",
+      candidate_count: 2,
+      candidates: [
+        {
+          id: "candidate-high",
+          kind: "entity_match",
+          status: "candidate",
+          score: 0.91,
+          candidate_id: "candidate-component",
+          canonical_id: "component-a",
+          shared_terms: ["component"],
+          evidence_refs: ["manual.md#p1"],
+          reasons: ["same node type: Component"],
+          proposed_patch_operation: "accept_match",
+        },
+        {
+          id: "candidate-low",
+          kind: "entity_match",
+          status: "candidate",
+          score: 0.52,
+          candidate_id: "other-component",
+          canonical_id: "component-a",
+          shared_terms: ["other"],
+          evidence_refs: ["manual.md#p2"],
+          reasons: ["shared normalized term(s): other"],
+          proposed_patch_operation: "accept_match",
+        },
+      ],
+    }, null, 2),
+    "utf-8",
+  );
+  writeFileSync(
+    fixture.decisionsPath,
+    JSON.stringify({ ...fixture.patch, id: "decision-authoritative", created_at: "2026-05-10T00:00:00.000Z" }) + "\n",
+    "utf-8",
+  );
+  writeFileSync(
+    fixture.auditPath,
+    JSON.stringify({
+      patch: { ...fixture.patch, id: "decision-audit", created_at: "2026-05-11T00:00:00.000Z" },
+      applied_at: "2026-05-11T01:00:00.000Z",
+    }) + "\n",
+    "utf-8",
+  );
+  writeFileSync(join(fixture.stateDir, "needs_update"), "ontology patch applied: fixture\n", "utf-8");
+  return fixture;
 }
 
 afterEach(() => {
@@ -519,6 +587,257 @@ describe("MCP stdio server", () => {
     }
   });
 
+  it("exposes read-only ontology reconciliation tools when profile state is configured", async () => {
+    const dir = makeExternalTempDir();
+    const { graphPath, profileStatePath } = writeOntologyReconciliationFixture(dir);
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const serverPromise = serve(graphPath, serverTransport, {
+      ontology: { profileStatePath },
+    });
+    const client = new Client({ name: "graphify-serve-test", version: "0.0.0" });
+
+    try {
+      await client.connect(clientTransport);
+      const names = (await client.listTools()).tools.map((tool) => tool.name);
+      expect(names).toEqual(expect.arrayContaining([
+        "list_reconciliation_candidates",
+        "get_reconciliation_candidate",
+        "preview_ontology_decision_log",
+        "ontology_rebuild_status",
+      ]));
+      expect(names).not.toContain("validate_ontology_patch");
+      expect(names).not.toContain("apply_ontology_patch");
+
+      const candidates = JSON.parse(toolText(await client.callTool({
+        name: "list_reconciliation_candidates",
+        arguments: {
+          canonical_id: "component-a",
+          min_score: 0.8,
+          query: "component",
+          sort: "score",
+          order: "desc",
+          limit: 1,
+          offset: 0,
+        },
+      })));
+      expect(candidates.schema).toBe("graphify_ontology_reconciliation_candidates_response_v1");
+      expect(candidates.total).toBe(1);
+      expect(candidates.items).toMatchObject([
+        {
+          id: "candidate-high",
+          canonical_id: "component-a",
+          candidate_id: "candidate-component",
+        },
+      ]);
+
+      const candidate = JSON.parse(toolText(await client.callTool({
+        name: "get_reconciliation_candidate",
+        arguments: { id: "candidate-high" },
+      })));
+      expect(candidate).toMatchObject({
+        id: "candidate-high",
+        proposed_patch_operation: "accept_match",
+      });
+
+      const missing = toolText(await client.callTool({
+        name: "get_reconciliation_candidate",
+        arguments: { id: "does-not-exist" },
+      }));
+      expect(missing).toContain("Error executing get_reconciliation_candidate");
+      expect(missing).toContain("reconciliation candidate not found: does-not-exist");
+
+      const logPreview = JSON.parse(toolText(await client.callTool({
+        name: "preview_ontology_decision_log",
+        arguments: { limit: 10, offset: 0 },
+      })));
+      expect(logPreview.schema).toBe("graphify_ontology_reconciliation_decision_log_v1");
+      expect(logPreview.total).toBe(2);
+      expect(logPreview.items.map((item: { source: string }) => item.source)).toEqual([
+        "authoritative",
+        "audit",
+      ]);
+      expect(logPreview.items.map((item: { patch: { id: string } }) => item.patch.id)).toEqual([
+        "decision-authoritative",
+        "decision-audit",
+      ]);
+
+      const status = JSON.parse(toolText(await client.callTool({
+        name: "ontology_rebuild_status",
+        arguments: {},
+      })));
+      expect(status).toMatchObject({
+        schema: "graphify_ontology_rebuild_status_v1",
+        needs_update: true,
+        graph_hash: "graph-hash",
+        profile_hash: "profile-hash",
+        candidates: {
+          path: "ontology/reconciliation/candidates.json",
+          exists: true,
+          readable: true,
+          candidate_count: 2,
+          graph_hash: "graph-hash",
+          profile_hash: "profile-hash",
+          consistent_with_context: true,
+        },
+      });
+    } finally {
+      await client.close().catch(() => undefined);
+      await clientTransport.close().catch(() => undefined);
+      await serverPromise.catch(() => undefined);
+    }
+  });
+
+  it("reports a clear read-only ontology error when reconciliation candidates are missing", async () => {
+    const dir = makeExternalTempDir();
+    const { graphPath, profileStatePath } = writeOntologyPatchFixture(dir);
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const serverPromise = serve(graphPath, serverTransport, {
+      ontology: { profileStatePath },
+    });
+    const client = new Client({ name: "graphify-serve-test", version: "0.0.0" });
+
+    try {
+      await client.connect(clientTransport);
+      const result = toolText(await client.callTool({
+        name: "list_reconciliation_candidates",
+        arguments: {},
+      }));
+      expect(result).toContain("Error executing list_reconciliation_candidates");
+      expect(result).toContain("reconciliation candidates file not found: ontology/reconciliation/candidates.json");
+    } finally {
+      await client.close().catch(() => undefined);
+      await clientTransport.close().catch(() => undefined);
+      await serverPromise.catch(() => undefined);
+    }
+  });
+
+  it("marks reconciliation candidate responses stale when hashes no longer match", async () => {
+    const dir = makeExternalTempDir();
+    const fixture = writeOntologyReconciliationFixture(dir);
+    rmSync(join(fixture.stateDir, "needs_update"), { force: true });
+    const queue = JSON.parse(readFileSync(fixture.candidatesPath, "utf-8")) as Record<string, unknown>;
+    writeFileSync(
+      fixture.candidatesPath,
+      JSON.stringify({ ...queue, graph_hash: "stale-graph-hash" }, null, 2),
+      "utf-8",
+    );
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const serverPromise = serve(fixture.graphPath, serverTransport, {
+      ontology: { profileStatePath: fixture.profileStatePath },
+    });
+    const client = new Client({ name: "graphify-serve-test", version: "0.0.0" });
+
+    try {
+      await client.connect(clientTransport);
+      const candidates = JSON.parse(toolText(await client.callTool({
+        name: "list_reconciliation_candidates",
+        arguments: {},
+      })));
+      expect(candidates.stale).toBe(true);
+
+      const status = JSON.parse(toolText(await client.callTool({
+        name: "ontology_rebuild_status",
+        arguments: {},
+      })));
+      expect(status.candidates.consistent_with_context).toBe(false);
+      expect(status.candidates.issues).toContain("candidates graph_hash does not match active graph");
+    } finally {
+      await client.close().catch(() => undefined);
+      await clientTransport.close().catch(() => undefined);
+      await serverPromise.catch(() => undefined);
+    }
+  });
+
+  it("serves read-only ontology reconciliation HTTP API without mutation", async () => {
+    const dir = makeExternalTempDir();
+    const fixture = writeOntologyReconciliationFixture(dir);
+    const beforeDecisions = readFileSync(fixture.decisionsPath, "utf-8");
+    const beforeAudit = readFileSync(fixture.auditPath, "utf-8");
+    const routeOptions = { profileStatePath: fixture.profileStatePath };
+
+    const candidatesResponse = handleOntologyStudioRequest(
+      routeOptions,
+      "GET",
+      "/api/ontology/reconciliation/candidates?canonical_id=component-a&min_score=0.8&limit=1",
+    );
+    const candidates = JSON.parse(candidatesResponse.body) as {
+      schema: string;
+      stale: boolean;
+      total: number;
+      items: Array<{ id: string; candidate_id: string; canonical_id: string }>;
+    };
+    expect(candidatesResponse.status).toBe(200);
+    expect(candidates.schema).toBe("graphify_ontology_reconciliation_candidates_response_v1");
+    expect(candidates.stale).toBe(true);
+    expect(candidates.total).toBe(1);
+    expect(candidates.items).toMatchObject([
+      {
+        id: "candidate-high",
+        candidate_id: "candidate-component",
+        canonical_id: "component-a",
+      },
+    ]);
+
+    const candidateResponse = handleOntologyStudioRequest(
+      routeOptions,
+      "GET",
+      "/api/ontology/reconciliation/candidates/candidate-high",
+    );
+    const candidate = JSON.parse(candidateResponse.body) as { id: string; proposed_patch_operation: string };
+    expect(candidateResponse.status).toBe(200);
+    expect(candidate).toMatchObject({
+      id: "candidate-high",
+      proposed_patch_operation: "accept_match",
+    });
+
+    const missingResponse = handleOntologyStudioRequest(
+      routeOptions,
+      "GET",
+      "/api/ontology/reconciliation/candidates/missing",
+    );
+    const missing = JSON.parse(missingResponse.body) as { error: string };
+    expect(missingResponse.status).toBe(404);
+    expect(missing.error).toContain("reconciliation candidate not found: missing");
+
+    const logResponse = handleOntologyStudioRequest(
+      routeOptions,
+      "GET",
+      "/api/ontology/reconciliation/decision-log?source=audit&operation=accept_match&limit=10",
+    );
+    const log = JSON.parse(logResponse.body) as {
+      schema: string;
+      total: number;
+      items: Array<{ source: string; patch: { id: string; operation: string } }>;
+    };
+    expect(logResponse.status).toBe(200);
+    expect(log.schema).toBe("graphify_ontology_reconciliation_decision_log_v1");
+    expect(log.total).toBe(1);
+    expect(log.items).toMatchObject([
+      {
+        source: "audit",
+        patch: { id: "decision-audit", operation: "accept_match" },
+      },
+    ]);
+
+    const statusResponse = handleOntologyStudioRequest(routeOptions, "GET", "/api/ontology/rebuild-status");
+    const status = JSON.parse(statusResponse.body) as {
+      schema: string;
+      needs_update: boolean;
+      candidates_match: boolean;
+      decision_log_available: boolean;
+    };
+    expect(statusResponse.status).toBe(200);
+    expect(status).toMatchObject({
+      schema: "graphify_ontology_rebuild_status_v1",
+      needs_update: true,
+      candidates_match: true,
+      decision_log_available: true,
+    });
+
+    expect(readFileSync(fixture.decisionsPath, "utf-8")).toBe(beforeDecisions);
+    expect(readFileSync(fixture.auditPath, "utf-8")).toBe(beforeAudit);
+  });
+
   it("accepts a graph path outside the local graphify-out directory", async () => {
     const dir = makeExternalTempDir();
     const graphPath = writeFixtureGraph(dir);
@@ -660,6 +979,14 @@ describe("MCP stdio server", () => {
       expect(path).toContain("AlphaService --uses [EXTRACTED]--> BetaRepository");
       expect(path).toContain("BetaRepository --documents [INFERRED]--> GammaDocs");
 
+      const sameNodePath = toolText(
+        await client.callTool({
+          name: "shortest_path",
+          arguments: { source: "AlphaService", target: "AlphaService" },
+        }),
+      );
+      expect(sameNodePath).toContain("both resolved to the same node");
+
       const toolError = toolText(
         await client.callTool({
           name: "get_node",
@@ -723,6 +1050,49 @@ cliSmoke("keeps the public graphify serve CLI alive until terminated", async () 
   try {
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(child.exitCode).toBeNull();
+  } finally {
+    child.kill("SIGTERM");
+    await Promise.race([
+      once(child, "exit"),
+      new Promise((resolve) => setTimeout(resolve, 2000)),
+    ]);
+  }
+});
+
+cliSmoke("starts ontology serve in read-only mode without --write", async () => {
+  const dir = makeExternalTempDir();
+  const { graphPath } = writeOntologyReconciliationFixture(dir);
+  const configPath = join(dir, "graphify.yaml");
+  writeFileSync(
+    configPath,
+    [
+      "version: 1",
+      "profile:",
+      "  path: graphify/profile.yaml",
+      "inputs:",
+      "  corpus:",
+      "    - .",
+      "outputs:",
+      "  state_dir: .graphify",
+      "  ontology:",
+      "    reconciliation:",
+      "      decisions_path: graphify/reconciliation/decisions.jsonl",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+
+  const child = spawn("node", [cliPath, "ontology", "serve", "--config", configPath, "--graph", graphPath], {
+    cwd: dir,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  const stderr: string[] = [];
+  child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk.toString("utf-8")));
+
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(child.exitCode, stderr.join("")).toBeNull();
+    expect(stderr.join("")).not.toContain("write tools only");
   } finally {
     child.kill("SIGTERM");
     await Promise.race([

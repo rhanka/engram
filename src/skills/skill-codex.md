@@ -33,6 +33,9 @@ $graphify <path> --neo4j                              # export .graphify/cypher.
 $graphify <path> --neo4j-push bolt://localhost:7687   # push directly to Neo4j
 $graphify <path> --mcp                                # start MCP stdio server for agent access
 $graphify <path> --watch                              # watch folder, auto-rebuild on code changes
+graphify wiki describe --graph .graphify/graph.json --mode assistant --targets all  # opt-in description sidecars
+graphify export wiki --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
+graphify export obsidian --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
 $graphify add <url>                                   # fetch URL, save to ./raw, update graph
 $graphify add <url> --author "Name"                   # tag who wrote it
 $graphify add <url> --contributor "Name"              # tag who added it
@@ -338,6 +341,19 @@ $(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" writ
 ### Step 6 - Export extras
 
 If `--no-viz` was given, skip HTML generation during finalization and omit `--html-out` from Step 5.
+
+Wiki descriptions are opt-in and two-step. First generate sidecars, then pass their index into wiki or Obsidian rendering:
+
+```bash
+graphify wiki describe --graph .graphify/graph.json --mode assistant --targets all
+# or, for direct mode:
+graphify wiki describe --graph .graphify/graph.json --mode direct --backend openai --targets all
+
+graphify export wiki --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
+graphify export obsidian --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
+```
+
+Sidecars live under `.graphify/wiki/descriptions/` with an index at `.graphify/wiki/descriptions.json`. They record graph hash, prompt/generator provenance, evidence refs, and cache keys; existing generated sidecars may be reused when a fresh generation does not complete. `insufficient_evidence` sidecars render no Description section. This never mutates `.graphify/graph.json`.
 
 If you intentionally skipped `--html-out` in finalization and still want HTML afterwards, run:
 

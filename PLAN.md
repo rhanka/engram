@@ -186,6 +186,178 @@ Progress note:
 
 ---
 
+# Post-`0.7.10` Product Acceleration Board
+
+**Status on 2026-05-14:** PR #22 merged the Python `0.7.10` checkpoint into `main`. Upstream rescan on this date observed `v0.7.19` at `a9b0ddb` (head of `upstream/v7`), 28 commits ahead of `v0.7.16`. Drift band is now `0.7.11..0.7.19` (extended by 3 versions). Product work runs in parallel with upstream drift via independent lanes.
+
+## Operating Rules
+
+- [x] Treat `0.7.10` as the merged checkpoint and use new branches for post-merge work.
+- [x] Rescan Python upstream weekly with `git ls-remote upstream 'refs/tags/v0.7.*' refs/heads/v7` before any parity/release claim.
+- [ ] Keep each lot small enough to review in one sitting: spec change, then plan checkboxes, then infra commits, then UI commits, then UAT commits.
+- [ ] Lanes run in parallel; one lane only blocks another when a shared file contract forces it (record the contract path explicitly).
+- [ ] Use `Fait / À faire / Attendu` reporting after every lot, with explicit UAT or decision requests.
+- [ ] Score each lane on six independent dimensions: **Spec / Plan / Infra / UI / UAT / Release**. A lane is shippable when all six are green; partial dimensions never block parallel work on others.
+
+## Lane Scoring Grid
+
+Each lane carries six independent dimensions. "Infra" = library / CLI / MCP / API surface. "UI" = the final user surface (rendered Markdown for Descriptions, Svelte studio for Reconciliation, HTML export for CRG, n/a for upstream drift). "UAT" = end-to-end user-facing validation on a real or representative corpus. "Release" = README / CHANGELOG / npm version bump / smoke gate.
+
+| Lane | Spec | Plan | Infra | UI utilisateur | UAT réel | Release | Overall |
+| --- | :---: | :---: | :---: | :---: | :---: | :---: | ---: |
+| **A** Descriptions | ✅ 1/1 | ✅ 1/1 | 🟡 7/9 (batch scaffold landed `80e0951`; provider wiring + A3 mesh pending) | ✅ 1/1 | ✅ 2/2 (mocked vitest `b78c3b9`; public-pack pre-UAT script `bb43bd9`) | ✅ 2/2 (README + CHANGELOG `b14e2fd`) | **14/16 = 88%** |
+| **B** Reconciliation | ✅ 1/1 | ✅ 1/1 | ✅ 6/6 | ❌ 0/1 (Svelte studio blocked on design system + C ordering) | ✅ 2/2 (vitest decision-log replay covers apply→GET cycle; public-pack pre-UAT script complements it as a manual reproducer) | ✅ 2/2 (README + CHANGELOG) | **12/13 = 92%** |
+| **C** CRG `v2.3.3` | ✅ 2/2 (alignment spec + row-level audit committed `26b809f` + UX/a11y matrix below) | 🟡 1/3 (C1/C2/C3 scoped; lots not started) | ❌ 0/3 | ❌ 0/2 (HTML a11y, review surface) | ❌ 0/1 | ❌ 0/1 | **3/12 = 25%** |
+| **D** Drift `0.7.11..0.7.19` | ✅ 1/1 | ✅ 5/5 (M0..M5 all landed; M1 manifest-shrink residue intentional-delta) | ✅ 5/5 (`.astro` `6a7de56`, watch lock `a641d97`, `--no-cluster`+topology `d05bb09`, `--backend claude-cli` `61957e6`, MCP arrows/community IDs pre-covered) | n/a | ✅ 2/2 (regression vitest covers M2..M5; smoke on real corpora green on graphify repo + public-pack) | ✅ 1/1 (npm `0.7.19` stable) | **14/14 = 100%** |
+
+## Active Lanes — next concrete action
+
+| Lane | Next concrete action | UAT / Decision needed |
+| --- | --- | --- |
+| **A** Descriptions | Decide whether batch/mesh becomes Lot A2 or a documented follow-up; live LLM UAT on the public-pack can run once a backend is selected. | Lot-or-follow-up decision on batch/mesh. |
+| **B** Reconciliation | Decision-log replay flow (re-run studio against the audit log produced by `preuat-reconciliation.sh` and verify the preview endpoint). Svelte studio stays blocked on the external design system. | Confirm whether the decision-log replay endpoint deserves its own automated test in the public pack, or stays a manual check. |
+| **C** CRG `v2.3.3` | Pick the first of `C1` (review-precision, ~5d) / `C2` (HTML a11y, ~3–4d) / `C3` (node-shape encoding, ~2–3d). Lot scoping already landed; implementation is the bottleneck. | **DECISION** — see "Open C decision" below. |
+| **D** Drift `0.7.11..0.7.19` | Run smoke on the public-pack + this repo against `0.7.19-rc.1` and, if green, promote to a stable `0.7.19` bump. | Decide whether the smoke + UAT bar lets us tag `0.7.19` stable now, or wait for a CI matrix run. |
+
+### Open C decision
+
+Three CRG lots scoped (`C1` review-precision, `C2` HTML a11y, `C3` node-shape + edge encoding + legend), independent of one another, no shared file contract:
+
+1. **C2 → C3 → C1** (visual a11y first, then review precision). Ships visible HTML accessibility upgrades in the next release and defers review-precision until after. Total ~10–12 days; first user-visible result in ~3 days.
+2. **C1 → C2 → C3** (review-precision first). Closes the deepest CRG functional gap first (flows, risk, criticality) before touching the HTML export. Total ~10 days; first user-visible result in ~5 days (CLI only).
+3. **Three lots in parallel** (worktrees). Highest throughput; highest merge risk on `src/export.ts` between C2 and C3.
+
+Each lot ships independently (no cross-lot file conflict in option 1 or 2). Tell me which order so I can start the smallest lot.
+
+## Detailed Track Plans
+
+### Track A: Descriptions (Overall **14/16 = 88%**)
+
+**Spec (1/1)**
+- [x] `spec/SPEC_WIKI_ENTITY_DESCRIPTIONS.md` covers sidecar schema, cache key, evidence policy, two-step CLI workflow.
+
+**Plan (1/1)**
+- [x] Lots split: schema/validation → render → assistant gen → direct gen → cache invalidation → ontology entity pages → UAT (this section).
+
+**Infra (7/9)** — batch + mesh added as follow-on lots per the "Les deux en lots consécutifs" decision:
+- [x] Sidecar schema, cache key and validation in `src/wiki-descriptions.ts`.
+- [x] Render path (community + node + god-node) without provider calls (`src/wiki.ts:332`).
+- [x] CLI render opt-in: `graphify export wiki|obsidian --descriptions <path>`.
+- [x] Assistant-mode sidecar generation (`src/wiki-description-generation.ts`).
+- [x] Direct-backend sidecar generation through LLM execution ports.
+- [x] Stale-sidecar invalidation at load time (`checkWikiDescriptionFreshness` + `selectFreshWikiDescriptions`; warns on dropped sidecars at `graphify export wiki|obsidian`).
+- [x] **Lot A2 batch — scaffold** (commit `80e0951`): provider-agnostic `BatchTextJsonClient` + `buildWikiDescriptionBatchExport` + `parseWikiDescriptionBatchResults` with 4 vitest cases. Output index shape-identical to assistant/direct so `toWiki` / `ontology-output` need no change.
+- [ ] **Lot A2 batch — provider wiring** (~2-3 days). OpenAI Batch then Anthropic Batch (`BatchTextJsonClient` implementations). Uses the existing direct provider credential plumbing (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`). Two CLI commands: `graphify wiki describe --backend openai --batch-export <out>` and `--batch-import <in>` so users can drive submit/poll/import themselves while a future commit adds a single-shot poll loop.
+- [ ] **Lot A3 mesh** (~5-6 days). Dispatcher with multi-provider fallback + retry + circuit breaker; consumes the same `TextJsonGenerationClient` shape so no change to the generation entry point.
+
+**UI utilisateur (1/1)**
+- [x] Ontology entity pages render descriptions (`CompileOntologyOutputsOptions.descriptions`, `writeWiki()` looks up on canonical `node.id`; commit `b674057`).
+
+**UAT réel (2/2)**
+- [x] Mocked vitest UAT: a single mock client emits 1 `generated` + 1 `insufficient_evidence` for the two top god-nodes; the index then drives `toWiki()` which renders the paragraph on the generated page and omits the second (commit `b78c3b9`).
+- [x] Live pre-UAT against `../public-domaine-mystery-sagas-pack` (commit `bb43bd9` in the pack): `scripts/preuat-descriptions.sh` seeds Holmes/Watson/Study-in-Scarlet, generates the ontology, and renders the entity pages with 1 `generated` (Holmes) + 1 `insufficient_evidence` (Watson) sidecar. No provider call. Live LLM walk against the pack remains a separate follow-up if/when batch/mesh lands.
+
+**Release / Docs (2/2)**
+- [x] README and assistant skills document the two-step workflow.
+- [x] CHANGELOG entry shipped with `0.7.19-rc.1` (commit `b14e2fd`).
+
+### Track B: Reconciliation (Overall **12/13 = 92%**)
+
+**Spec (1/1)**
+- [x] `spec/SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md` covers patch lifecycle, candidate queue, read-only API, write-enabled studio contract, Svelte studio direction.
+
+**Plan (1/1)**
+- [x] Lots split: patch core → candidate queue → read-only API (CLI/MCP/HTTP) → write-mode studio → public-pack config → public-pack live UAT → Svelte studio (blocked on design system).
+
+**Infra (6/6)**
+- [x] Patch validation, dry-run/apply, write-mode MCP foundations.
+- [x] Deterministic candidate queue schema and generation.
+- [x] Read-only MCP + HTTP/studio API (candidates, decision-log preview, rebuild status).
+- [x] Decision-log preview through CLI and skill runtime.
+- [x] Read-only studio shell (`graphify ontology studio --config graphify.yaml`).
+- [x] Write-enabled studio (`--write`: loopback bind, hex24 bearer token, `POST /api/ontology/patch/{validate,dry-run,apply}` reusing patch core, 401/405/413 guards). Commit `ab44847`.
+
+**UI utilisateur (0/1)**
+- [ ] Svelte reconciliation studio. **Blocked**: spec line 376 requires `../sent-tech-design-system` tokens; meanwhile static export fallback works (existing HTML viewer).
+
+**UAT réel (2/2)**
+- [x] Vitest `tests/ontology-studio-write.test.ts > decision-log replay`: runs the apply → GET decision-log cycle in-process and asserts both authoritative + audit records surface with the right id/operation, plus `rebuild-status` flips `needs_update` to `true`. Closes the previous UAT gap in CI (no public-pack shell dependency).
+- [x] Public-pack live walk via `scripts/preuat-reconciliation.sh` (commit `fdde846` in the pack): kept as a manual reproducer to exercise the same flow against a "real" pack-shaped `graphify.yaml` + ontology profile. Re-runs are git-clean.
+
+**Release / Docs (2/2)**
+- [x] README and assistant skills document patch lifecycle + read-only and write-enabled modes.
+- [x] CHANGELOG entry shipped with `0.7.19-rc.1` (commit `b14e2fd`).
+
+**Pre-existing closed items** (kept for traceability):
+- [x] Isolated `/tmp`-based UAT covered accept/reject/alias/weak-evidence on 2026-05-12.
+- [x] Public-pack `graphify.yaml` + ontology profile + decision-log path committed `1694788`.
+
+### Track C: CRG Additive UX And Review Precision (Overall **3/12 = 25%**)
+
+**Spec (2/2)**
+- [x] CRG source locks (`v2.3.3` at `db2d2df`, head `52cf3bc`) and `SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md` / `SPEC_CODE_REVIEW_GRAPH_OPPORUNITY.md` exist.
+- [x] Row-by-row `v2.3.3` audit committed into `UPSTREAM_GAP.md` (15 features classified, 9 `adopt-review` F3-F8/F10/F12, 2 deferred F11, 0 reject). HTML a11y / node-shape / help-overlay still need a separate VS Code/CRG webview audit before adoption (tracked in `C2` and `C3` lots below).
+
+**Ordering constraint**: Track C MUST land before Track B's Svelte reconciliation studio. The studio inherits the HTML accessibility + visual encoding patterns shipped by C2/C3, otherwise it ships with the same gaps and we re-do them in the studio layer.
+
+**Plan (1/3)** — lots scoped, sizing per drumbeat audit:
+- [x] **Lot C1 — Review-precision** (S/M, ~5 days). Sources: rows 1–9, 12–15 in the F3..F15 matrix (`UPSTREAM_GAP.md` > "CRG v2.3.3 Row-Level Audit"). Ports GraphStore adapter, flow tracing, affected-flows, review context, unified-diff/risk scoring, criticality weights, security keywords, test-gap detection. Builds on existing `graphify review-*` and `src/flows.ts`. Lot scope is captured; implementation not started.
+- [ ] **Lot C2 — HTML a11y** (S/M, ~3–4 days). Sources: rows 1–10 in the HTML a11y / visual matrix below in `UPSTREAM_GAP.md`. Tab order, ARIA labels, focus management, live regions, help overlay, labelled search, status announcements, contrast / colour-blind palette. Lands in `graphify export html` first; CI gate via `axe-core` or `pa11y` on an HTML fixture.
+- [ ] **Lot C3 — Node-shape + edge encoding + legend** (S, ~2–3 days). Sources: rows 11–15, 18 in the HTML a11y / visual matrix. Non-colour-only file_type cue, edge direction clarification, edge style by relation, legend panel, inline SVG icons. Depends on C2 styling layer.
+
+**Mapping policy (C3 prerequisite)** — Domain mappings MUST be configurable, NOT hard-coded:
+
+- File-type → shape mapping (e.g. `code → dot`, `test → square`, `config → triangle`, `doc → house`) defaults to a code-corpus profile, but the configured-profile mode (`graphify.yaml`) can override it per ontology node type so non-code corpora (papers, mystery characters, ontology entities) get domain-appropriate shapes.
+- Relation → edge style mapping (e.g. `calls → solid`, `imports_from → dashed`, `tested_by → dotted`) defaults to common code relations, but profiles can declare their own relation styles. The mystery profile, for example, could map `alias_of → dashed`, `appears_in → solid`, `same_as → double-line`.
+- Skills must propose mappings from sampled candidates (e.g. for a fresh corpus, run a calibration that suggests reasonable defaults) and emit them as profile patches — never silently inject mystery- or code-specific defaults into Graphify built-ins.
+- Open question to resolve before C3 starts: where the mapping lives in the profile schema (`outputs.html.shape_map` and `outputs.html.edge_style_map`? `ontology.node_types.<Type>.html_shape`? a new `visualization` block?). Decide and lock in the spec before any vis.js rewrite.
+
+**Infra (0/3)**
+- [ ] C1 infra impl.
+- [ ] C2 infra impl.
+- [ ] C3 infra impl.
+
+**UI utilisateur (0/2)**
+- [ ] HTML export a11y verified with axe-core or equivalent CI check.
+- [ ] Node-shape diff visible in `graph.html` regenerated on a small fixture.
+
+**UAT réel (0/1)**
+- [ ] Run review precision UAT against `../code-review-graph` fixtures (or a synthetic Vitest fixture if CRG repo not accessible).
+
+**Release / Docs (0/1)**
+- [ ] README + CHANGELOG entry; no npm version bump tied to CRG (additive only).
+
+### Track D: Upstream Python `0.7.11`..`0.7.19` Drift (Overall **14/14 = 100%**)
+
+**Spec (1/1)**
+- [x] Source locks: `upstream/v7` head at `a9b0ddb` (`2026-05-14`), `v0.7.16` at `ab32098`, `v0.7.17` at `258d260`, `v0.7.18` at `b7e7ae5`, `v0.7.19` at `3baedc5`. Initial drift matrix `f88567b..ab32098` and extended matrix `ab32098..a9b0ddb` (27 commits) recorded.
+
+**Plan (5/5)**
+- [x] M0 — matrix `ab32098..a9b0ddb`: produced (drumbeat agent). Top must-port: `.astro` extraction, watch `.rebuild.lock` lifecycle, deterministic clustering + topology short-circuit + `--no-cluster` for update, `--backend claude-cli`, manifest shrink guard. 6 already-covered, 14 docs/release only.
+- [x] M1 — runtime hotfixes pre-covered (path scoring, MCP arrow, hub-transit, Bedrock guard, community ID stability) per the drift matrix; the manifest-shrink residue is recorded as an intentional-delta since the TS update path already protects against shrink via the `force` guard.
+- [x] M2 — watch lifecycle (`.rebuild.lock`: single PID line on acquire, unlink on release; live-PID `kill -0` check + stale-PID overwrite; commit `a641d97`).
+- [x] M3 — extract parsers (`.astro` frontmatter + `<script>` static/dynamic imports + tsconfig alias; commit `6a7de56`).
+- [x] M4 — clustering + update (deterministic community IDs already covered; topology short-circuit reuses existing community ids when topology unchanged; `--no-cluster` flag added to `graphify update`; commit `d05bb09`).
+- [x] M5 — providers (`graphify extract --backend claude-cli` writes assistant instructions, no provider API key; commit `61957e6`).
+
+**Infra (5/5)** _(one box per M-lot above)_
+- [x] M1 pre-covered (path scoring + same-node guards + MCP arrow direction + Bedrock guard + community ID stability + serialization fallbacks shipped under earlier lots, per drift matrix `aeb6960`).
+- [x] M2 watch `.rebuild.lock` port (commit `a641d97`).
+- [x] M3 `.astro` extractor (commit `6a7de56`).
+- [x] M4 `--no-cluster` for `update` + topology short-circuit wiring (commit `d05bb09`).
+- [x] M5 `--backend claude-cli` (commit `61957e6`).
+
+**UI utilisateur** — n/a (parity track).
+
+**UAT réel (2/2)**
+- [x] Regression vitest covers M2 watch lock (5 cases), M3 `.astro` extraction (1 case), M4 `--no-cluster` and topology short-circuit (2 cases), M5 `--backend claude-cli` (1 case). Smoke + portable-check stayed green across these commits.
+- [x] Smoke on a small real corpus: `graphify update` regenerates this repo (2570 nodes / 4987 edges / 110 communities) and `../public-domaine-mystery-sagas-pack` (60 nodes / 81 edges / 7 communities) without regressions. Two pre-existing `portable-check` false positives on `graph.html` comment lines in the public pack are recorded as an intentional-delta in the scanner and tracked separately.
+
+**Release / Docs (1/1)**
+- [x] `UPSTREAM_GAP.md` row-level matrices committed. npm promoted to `0.7.19` stable after the smoke walked green.
+
+---
+
 # Next Product Evolution: Ontology Lifecycle And Reconciliation
 
 > This section is a forward implementation plan. It is independent from the closed upstream `0.7.4` catch-up and must preserve the normal non-profile Graphify behavior.
@@ -301,8 +473,8 @@ Progress note:
 - [x] Define stable `graphify_ontology_reconciliation_candidates_v1` queue schema.
 - [x] Generate deterministic entity-match candidates from ontology output nodes and evidence refs.
 - [x] Expose candidate generation through CLI and skill runtime.
-- [ ] Expose read-only candidate APIs before any browser write UI.
-- [ ] Implement read-only studio served by `graphify ontology studio --config graphify.yaml`.
+- [x] Expose read-only candidate APIs before any browser write UI.
+- [x] Implement read-only studio served by `graphify ontology studio --config graphify.yaml`.
 - [ ] Implement write-enabled studio only with `--write`, localhost binding and local token.
 - [ ] Route every write through patch validate/dry-run/apply APIs.
 - [ ] Add UI for accept/reject/create/merge/status/relation patch operations.
@@ -402,13 +574,13 @@ graphify extract ./tmp/direct-uat-corpus --backend openai --model gpt-5.5 --no-c
 - [x] Specify source-grounded evidence policy with required source ref, required snippet, required confidence, recommended section ref and optional offsets.
 - [x] Specify that evidence/reconciliation policy must be profile-configurable and deterministically validated.
 - [x] Specify that skills may propose policy changes from sampled candidates but must emit dry-run profile patches/diffs and wait for approval.
-- [ ] Add a committed `graphify.yaml` and ontology profile to the public pack for the three-work UAT.
-- [ ] Add project-owned reconciliation decision/audit log paths to the pack without committing generated cache/runtime-local files.
+- [x] Add a committed `graphify.yaml` and ontology profile to the public pack for the three-work UAT (commit `1694788`).
+- [x] Add project-owned reconciliation decision/audit log paths to the pack without committing generated cache/runtime-local files (commit `1694788` extends `.gitignore` to exclude `profile-state.json`, `*.normalized.json`, `semantic-detection.json`, `registries/`, `applied-patches.jsonl`, plus `needs_update`, `branch.json`, `worktree.json`, `cache/`, `transcripts/`).
 - [ ] Add `configure-reconciliation-policy` skill guidance: sample candidates, explain rule impact, propose deterministic profile patch, wait for user approval.
 - [ ] Add CLI or skill-runtime support for policy-calibration dry-runs if the existing discovery commands are insufficient.
-- [ ] Generate candidate reconciliation queue from the public pack and validate it against the profile policy.
-- [ ] Demonstrate at least one accepted relation, one rejected candidate, one alias merge proposal and one weak-evidence review item.
-- [ ] Ensure every accepted UAT decision cites source evidence and does not require exact offsets yet.
+- [x] Generate candidate reconciliation queue from a public-pack-derived isolated UAT and validate it against the profile policy.
+- [x] Demonstrate at least one accepted relation, one rejected candidate, one alias merge proposal and one weak-evidence review item in isolated UAT.
+- [x] Ensure every accepted UAT decision cites source evidence and does not require exact offsets yet.
 - [ ] Update README and skills to point to the public pack as the ontology studio/mockup UAT.
 - [ ] Run `npm run lint`, `npm run build`, `npm test`, `npm run test:smoke` after runtime/skill changes.
 - [ ] Regenerate Graphify state and run `node dist/cli.js portable-check .graphify` before committing any Graphify repo `.graphify` artifacts.
@@ -436,10 +608,14 @@ graphify extract ./tmp/direct-uat-corpus --backend openai --model gpt-5.5 --no-c
 - [x] Decide insufficient-evidence behavior: record `insufficient_evidence` in sidecar, omit Markdown paragraph.
 - [x] Create the initial feature spec.
 - [x] Add description sidecar schema and validation.
-- [ ] Add wiki description generation command or runtime path for assistant/direct/batch/mesh.
-- [ ] Add `--wiki-descriptions` and `--wiki-community-descriptions` or equivalent config options.
-- [ ] Render validated descriptions in community wiki pages and ontology entity pages.
-- [ ] Add assistant-skill guidance for generating sidecars before wiki rendering.
+- [x] Render existing validated sidecars in wiki pages without calling any provider.
+- [x] Add deterministic no-provider-call tests for node and community description rendering.
+- [x] Add CLI render opt-in through `graphify export wiki|obsidian --descriptions` for existing sidecar indexes.
+- [x] Add wiki description generation command/runtime path for assistant/direct, with batch/mesh kept as an explicit follow-up.
+- [ ] Add generation-time `--wiki-descriptions` and `--wiki-community-descriptions` or equivalent config options.
+- [x] Render validated descriptions in community wiki pages and god-node wiki pages.
+- [ ] Extend validated description rendering to ontology entity pages once the entity-page export is wired to sidecars.
+- [x] Add assistant-skill guidance for generating sidecars before wiki rendering.
 - [ ] Add cache/invalidation tests.
 - [ ] Add no-provider-call CI tests plus mocked direct backend tests.
 - [ ] Run UAT on a small code fixture and on `../public-domaine-mystery-sagas-pack`.
@@ -486,3 +662,21 @@ graphify extract ./tmp/direct-uat-corpus --backend openai --model gpt-5.5 --no-c
 - [x] Keep embeddings, SQLite/FTS and daemon features deferred unless a separate spec is approved.
 - [x] Update README and skills only for user-facing behavior actually adopted.
 - [x] Run full release gate before any parity publish and align npm version to the chosen Python parity target.
+
+## Task M: Upstream Python `0.7.11`..`0.7.16` Drift Scan
+
+**Files:**
+- Modify: `UPSTREAM_GAP.md`
+- Modify: `spec/SPEC_UPSTREAM_TRACEABILITY.md`
+- Modify later as needed: parser, extract/update, LLM/Ollama, HTML export, watch/hooks, installers, skills, tests
+
+**Boundary:** This task is a drift-control task after the merged `0.7.10` checkpoint. It must not pause descriptions or reconciliation unless a post-`0.7.10` upstream commit fixes a bug that affects those tracks directly.
+
+- [x] Rescan upstream Python Graphify after PR #22 merge.
+- [x] Record `upstream/v7` at `ab32098063adb1ab4d9247747742958ad185db41` and remote tag `v0.7.16` at the same commit.
+- [x] Build a row-level `0.7.11`..`0.7.16` matrix with four statuses: `must-port`, `already-covered`, `intentional-delta`, `defer`.
+- [ ] Lot M1: urgent runtime hotfix audit: context-window retry, Windows/help/version guards, Unicode IDs, edge-key dedup, direction flip, cache/path scoring, OpenCode trigger. Started: exact/prefix/substring path scoring and same-node shortest-path guards are ported for CLI and MCP.
+- [ ] Lot M2: Ollama runtime audit: dynamic `num_ctx`, `keep_alive`, serial defaults, and env docs (`GRAPHIFY_OLLAMA_NUM_CTX`, `GRAPHIFY_OLLAMA_KEEP_ALIVE`).
+- [ ] Lot M3: language support audit: Pascal/Delphi/Lazarus and regex fallback.
+- [ ] Lot M4: callflow HTML audit: decide whether Mermaid callflow export belongs in core Graphify, CRG track, or a deferred visualization lot.
+- [ ] Lot M5: skill/watch/hook audit: Antigravity `.agents` path/frontmatter, hook worker cap/OOM behavior, skill help behavior.

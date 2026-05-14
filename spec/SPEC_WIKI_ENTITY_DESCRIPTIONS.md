@@ -4,7 +4,9 @@
 
 - Product: Graphify TypeScript port
 - Scope: optional source-grounded descriptions in generated wiki articles
-- Activation: explicit `--wiki-descriptions` CLI/config/skill option only
+- Spec state: baseline accepted; render-only sidecar consumption implemented; generation command/API contract specified; assistant-first generation core implemented; CLI wiring and direct provider creation remain open
+- Implemented activation: explicit `graphify export wiki|obsidian --descriptions <path>` render path
+- Planned activation: explicit generation command/config/skill options only
 - Default behavior: unchanged
 
 This spec defines an optional enrichment layer for Graphify wiki output. It applies to both code graphs and document/knowledge-base graphs, and it must reuse the existing LLM execution ports: assistant, direct, batch and mesh.
@@ -38,7 +40,16 @@ Users need a short description of what an entity is and why it matters in the gr
 
 Default wiki generation stays unchanged.
 
-Initial CLI shape:
+Implemented render-only CLI shape:
+
+```bash
+graphify export wiki --graph .graphify/graph.json --descriptions .graphify/wiki-descriptions.json
+graphify export obsidian --graph .graphify/graph.json --descriptions .graphify/wiki-descriptions.json
+```
+
+The render path consumes an existing sidecar index and must not call a provider.
+
+Planned generation CLI shape:
 
 ```bash
 graphify . --wiki --wiki-descriptions
@@ -60,6 +71,61 @@ wiki:
 ```
 
 The exact CLI names may be adjusted during implementation, but the feature must remain explicit and opt-in.
+
+## Generation Command And API Contract
+
+The first generation implementation should ship `graphify wiki describe` before
+retrofitting the root `/graphify . --wiki` workflow. That keeps generation
+separate from rendering and makes provider boundaries explicit.
+
+Initial command shape:
+
+```bash
+graphify wiki describe --graph .graphify/graph.json --mode assistant
+graphify wiki describe --graph .graphify/graph.json --mode direct --backend openai
+graphify wiki describe --graph .graphify/graph.json --targets nodes --out .graphify/wiki/descriptions
+graphify wiki describe --graph .graphify/graph.json --targets all --overwrite
+```
+
+Initial options:
+
+- `--graph <path>`: source graph, default `.graphify/graph.json`
+- `--mode <assistant|direct|batch|mesh>`: `assistant` and `direct` are first-class in the first implementation; `batch` and `mesh` may fail fast with clear follow-up guidance
+- `--backend <provider>`: direct mode only, using the existing `DirectLlmProvider` list
+- `--model <id>`: optional direct-mode model override
+- `--targets <nodes|communities|all>`: node targets first, community generation optional but planned
+- `--out <dir>`: default `.graphify/wiki/descriptions`
+- `--overwrite` / `--force`: regenerate records even when graph hash, prompt version, provider/model and cache key still match
+
+Generation API responsibilities:
+
+- collect target nodes and optional target communities from the graph
+- build deterministic, source-grounded prompt inputs from labels, types, source files, confidence/provenance and local graph neighborhood
+- dispatch through the existing LLM execution port; assistant mode writes instructions only and does not call any provider
+- write one per-target sidecar plus an index, then let `graphify export wiki|obsidian --descriptions` render them
+- preserve `graph_hash`, `prompt_version`, `cache_key`, mode/provider/model and evidence metadata for invalidation
+- skip or mark records as `insufficient_evidence` when source support is too weak
+
+Current implementation slice:
+
+- `src/wiki-description-generation.ts` collects deterministic node/community targets
+- it builds source-grounded prompts from graph metadata, source refs and local neighborhoods
+- assistant mode writes instructions through an injected `TextJsonGenerationClient` and records `insufficient_evidence` until an assistant writes valid output
+- completed injected clients may return partial generated fields; Graphify wraps them with schema, target, graph hash, generator and cache metadata before persistence
+- when `outputDir` is provided, per-target sidecars are written under that directory and the renderable index is written at `${outputDir}.json`
+- CLI command wiring, provider/client construction, batch/mesh export/import and root workflow integration remain follow-up work
+
+Cache and invalidation:
+
+- reuse a record only when graph hash, prompt version, provider/model, target id/kind and cache key match
+- treat records whose target no longer exists as stale and omit them from rendering
+- never call a provider during render-only exports
+
+Canonical target keys:
+
+- node records are keyed by raw Graphify node id
+- community index records are keyed by the numeric community id string while each sidecar keeps `target_id: "community:<id>"`
+- per-target sidecar filenames must be sanitized and collision-safe
 
 ## Description Style
 

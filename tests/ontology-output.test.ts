@@ -183,6 +183,100 @@ describe("ontology output artifacts", () => {
     );
   });
 
+  it("renders wiki entity descriptions when a sidecar index is provided", () => {
+    const root = makeTempDir();
+    const outputDir = join(root, ".graphify", "ontology");
+
+    const result = compileOntologyOutputs({
+      outputDir,
+      extraction,
+      profile,
+      config: {
+        enabled: true,
+        canonical_node_types: ["Component", "Tool"],
+        relation_exports: ["requires_tool"],
+        wiki: { enabled: true, page_node_types: ["Component"] },
+      },
+      descriptions: {
+        schema: "graphify_wiki_description_index_v1",
+        graph_hash: "graph-hash",
+        prompt_version: "wiki-description-v1",
+        nodes: {
+          "component-a": {
+            schema: "graphify_wiki_description_v1",
+            target_id: "component-a",
+            target_kind: "node",
+            graph_hash: "graph-hash",
+            status: "generated",
+            description: "Synthetic Component is the source-backed canonical entity for this UAT.",
+            evidence_refs: ["manual.md#p1"],
+            confidence: 0.82,
+            cache_key: "cache-key",
+            generator: {
+              mode: "assistant",
+              provider: "assistant",
+              model: null,
+              prompt_version: "wiki-description-v1",
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.wikiPageCount).toBe(1);
+    const page = readFileSync(join(outputDir, "wiki", "entities", "component-a.md"), "utf-8");
+    expect(page).toContain("## Description");
+    expect(page).toContain("Synthetic Component is the source-backed canonical entity for this UAT.");
+    expect(page.indexOf("## Description")).toBeLessThan(page.indexOf("## Aliases"));
+  });
+
+  it("omits insufficient_evidence sidecars from ontology entity pages", () => {
+    const root = makeTempDir();
+    const outputDir = join(root, ".graphify", "ontology");
+
+    const result = compileOntologyOutputs({
+      outputDir,
+      extraction,
+      profile,
+      config: {
+        enabled: true,
+        canonical_node_types: ["Component", "Tool"],
+        relation_exports: ["requires_tool"],
+        wiki: { enabled: true, page_node_types: ["Component"] },
+      },
+      descriptions: {
+        schema: "graphify_wiki_description_index_v1",
+        graph_hash: "graph-hash",
+        prompt_version: "wiki-description-v1",
+        nodes: {
+          "component-a": {
+            schema: "graphify_wiki_description_v1",
+            target_id: "component-a",
+            target_kind: "node",
+            graph_hash: "graph-hash",
+            status: "insufficient_evidence",
+            description: null,
+            evidence_refs: [],
+            confidence: null,
+            cache_key: "cache-key",
+            generator: {
+              mode: "assistant",
+              provider: "assistant",
+              model: null,
+              prompt_version: "wiki-description-v1",
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.wikiPageCount).toBe(1);
+    const page = readFileSync(join(outputDir, "wiki", "entities", "component-a.md"), "utf-8");
+    expect(page).not.toContain("## Description");
+    expect(page).toContain("Type: Component");
+    expect(page).toContain("## Aliases");
+  });
+
   it("marks ambiguous aliases as needs_review and reports validation issues", () => {
     const root = makeTempDir();
     const outputDir = join(root, ".graphify", "ontology");

@@ -4,6 +4,7 @@
 
 - Product: Graphify TypeScript port
 - Scope: ontology lifecycle, reconciliation, patching, optional write surfaces
+- Spec state: baseline accepted; patch/MCP/candidate foundations implemented; read-only candidate API contract specified; candidate query helpers, decision-log preview parser, CLI/skill preview, MCP tools and HTTP/studio shell are implemented; public-pack-derived isolated UAT is executed; write-enabled studio remains open
 - State root: `.graphify/`
 - Activation: explicit ontology profile workflow only
 - Default behavior: unchanged and read-only
@@ -243,6 +244,98 @@ Guardrails:
 - tool responses include changed files, stale artifacts, and next rebuild command
 - tools must not expose secrets, absolute home paths, or ignored artifact contents
 
+## Read-Only Reconciliation API Contract
+
+Read-only API routes are the first browser/studio surface. They may read generated
+candidate queues, authoritative decision logs, and local audit logs, but they must
+not accept mutation payloads.
+
+Minimal routes:
+
+- `GET /api/ontology/reconciliation/candidates`
+- `GET /api/ontology/reconciliation/candidates/:id`
+- `GET /api/ontology/reconciliation/decision-log`
+- `GET /api/ontology/rebuild-status`
+
+`GET /api/ontology/reconciliation/candidates` accepts these query parameters:
+
+- `status`
+- `kind`
+- `operation`
+- `canonical_id`
+- `candidate_id`
+- `min_score`
+- `query`
+- `sort=score|id`
+- `order=asc|desc`
+- `limit`
+- `offset`
+
+Candidate list responses use this wrapper:
+
+```json
+{
+  "schema": "graphify_ontology_reconciliation_candidates_response_v1",
+  "generated_at": "ISO-8601",
+  "graph_hash": "sha256",
+  "profile_hash": "sha256",
+  "stale": false,
+  "total": 1,
+  "limit": 50,
+  "offset": 0,
+  "items": []
+}
+```
+
+Decision-log preview responses use this wrapper:
+
+```json
+{
+  "schema": "graphify_ontology_reconciliation_decision_log_v1",
+  "total": 1,
+  "limit": 50,
+  "offset": 0,
+  "items": [
+    {
+      "source": "authoritative",
+      "path": "graphify/reconciliation/decisions.jsonl",
+      "recorded_at": "ISO-8601",
+      "patch": {}
+    }
+  ]
+}
+```
+
+Decision-log preview filters:
+
+- `source=authoritative|audit|both`
+- `status=applied|rejected|all`
+- `operation`
+- `node_id`
+- `from`
+- `to`
+- `limit`
+- `offset`
+
+`GET /api/ontology/rebuild-status` returns `graph_hash`, `profile_hash`,
+`needs_update`, `candidates_match`, and `decision_log_available`. It must not
+rebuild, apply, export, or write any file.
+
+Security rules:
+
+- read-only routes never expose absolute local paths
+- file reads stay inside configured project/reconciliation paths
+- missing or stale artifacts are reported as data state, not auto-created
+- write mode, localhost token, and dry-run/apply behavior belong to the later studio write surface
+
+Current implementation slice:
+
+- `src/ontology-reconciliation.ts` can load a generated candidate queue and return the read-only response wrapper with status/kind/operation/id/score/query filters, score/id sorting and pagination
+- `src/ontology-patch.ts` can read authoritative and audit JSONL decision logs as a bounded preview without mutating project files
+- decision-log preview implements source filtering, status/operation/node/from/to filters, relative path reporting, malformed-line warnings and pagination
+- `src/ontology-reconciliation-api.ts` shares read-only candidate, decision-log and rebuild-status responses across MCP and HTTP
+- `src/ontology-studio.ts` exposes a read-only localhost studio shell and GET-only JSON routes; write APIs and token-gated apply remain later work
+
 ## Local Studio Surface
 
 A browser UI needs a local HTTP API. A static `graph.html` cannot write safely.
@@ -366,6 +459,11 @@ Future tests should cover:
 
 ## UAT
 
+- Public-pack-derived isolated UAT was executed in `/tmp/graphify-mystery-uat` from `../public-domaine-mystery-sagas-pack`.
+- The UAT validated the profile, ran dataprep on `3` semantic files, compiled ontology outputs with `12` nodes, `6` relations and `11` wiki pages, and generated a deterministic Holmes entity-match candidate queue.
+- Patch validation covered valid `accept_match`, `merge_alias`, `add_relation`, `set_status` and `reject_match` scenarios, plus invalid evidence-ref, status-transition and relation-endpoint scenarios.
+- Patch dry-run reported only authoritative decision log, audit log and stale-marker changed files; write apply appended to both configured decision/audit logs and marked `.graphify/needs_update`.
+- Read-only studio API routes were verified for candidates, decision-log and rebuild-status; responses used relative paths and reported `needs_update: true` after write apply.
 - Run ontology output generation on a synthetic profile and produce reconciliation candidates.
 - Validate a patch that accepts a candidate match.
 - Dry-run apply the patch and verify changed-file preview.

@@ -25,8 +25,19 @@ import { buildFirstHopSummary, firstHopSummaryToText } from "./summary.js";
 import { buildReviewDelta, reviewDeltaToText } from "./review.js";
 import { buildReviewAnalysis, reviewAnalysisToText } from "./review-analysis.js";
 import { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
-import { applyOntologyPatch, validateOntologyPatch } from "./ontology-patch.js";
+import {
+  applyOntologyPatch,
+  validateOntologyPatch,
+  type OntologyPatchContext,
+} from "./ontology-patch.js";
 import { loadOntologyPatchContext } from "./ontology-patch-context.js";
+import {
+  getOntologyRebuildStatus,
+  getOntologyReconciliationCandidate,
+  listOntologyReconciliationCandidates,
+  previewOntologyDecisionLog,
+} from "./ontology-reconciliation-api.js";
+import type { OntologyReconciliationCandidateFilter } from "./ontology-reconciliation.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 
 export interface ServeOptions {
@@ -536,6 +547,85 @@ function toolReviewAnalysis(G: Graph, args: Record<string, unknown>): string {
   return reviewAnalysisToText(analysis);
 }
 
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function optionalNumber(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
+}
+
+function optionalInteger(value: unknown): number | undefined {
+  const number = optionalNumber(value);
+  return number === undefined ? undefined : Math.floor(number);
+}
+
+function reconciliationCandidateFilters(args: Record<string, unknown>): OntologyReconciliationCandidateFilter {
+  const filters: OntologyReconciliationCandidateFilter = {};
+  const status = optionalString(args.status);
+  const kind = optionalString(args.kind);
+  const operation = optionalString(args.operation);
+  const canonicalId = optionalString(args.canonical_id);
+  const candidateId = optionalString(args.candidate_id);
+  const query = optionalString(args.query);
+  const sort = optionalString(args.sort);
+  const order = optionalString(args.order);
+  const minScore = optionalNumber(args.min_score);
+  const limit = optionalInteger(args.limit);
+  const offset = optionalInteger(args.offset);
+
+  if (status) filters.status = status as OntologyReconciliationCandidateFilter["status"];
+  if (kind) filters.kind = kind as OntologyReconciliationCandidateFilter["kind"];
+  if (operation) filters.operation = operation as OntologyReconciliationCandidateFilter["operation"];
+  if (canonicalId) filters.canonical_id = canonicalId;
+  if (candidateId) filters.candidate_id = candidateId;
+  if (query) filters.query = query;
+  if (sort === "score" || sort === "id") filters.sort = sort;
+  if (order === "asc" || order === "desc") filters.order = order;
+  if (minScore !== undefined) filters.min_score = minScore;
+  if (limit !== undefined) filters.limit = limit;
+  if (offset !== undefined) filters.offset = offset;
+
+  return filters;
+}
+
+function toolListReconciliationCandidates(
+  context: OntologyPatchContext,
+  args: Record<string, unknown>,
+): string {
+  const response = listOntologyReconciliationCandidates(context, reconciliationCandidateFilters(args));
+  return JSON.stringify(response, null, 2);
+}
+
+function toolGetReconciliationCandidate(
+  context: OntologyPatchContext,
+  args: Record<string, unknown>,
+): string {
+  const id = optionalString(args.id);
+  if (!id) {
+    throw new Error("id is required");
+  }
+  const candidate = getOntologyReconciliationCandidate(context, id);
+  return JSON.stringify(candidate, null, 2);
+}
+
+function toolPreviewOntologyDecisionLog(
+  context: OntologyPatchContext,
+  args: Record<string, unknown>,
+): string {
+  const response = previewOntologyDecisionLog(context, {
+    limit: optionalInteger(args.limit),
+    offset: optionalInteger(args.offset),
+  });
+  return JSON.stringify(response, null, 2);
+}
+
+function toolOntologyRebuildStatus(context: OntologyPatchContext): string {
+  return JSON.stringify(getOntologyRebuildStatus(context), null, 2);
+}
+
 function toolShortestPath(G: Graph, args: Record<string, unknown>): string {
   const srcTerms = (args.source as string)
     .split(/\s+/)
@@ -554,6 +644,13 @@ function toolShortestPath(G: Graph, args: Record<string, unknown>): string {
   const srcNid = srcScored[0]![1];
   const tgtNid = tgtScored[0]![1];
   const maxHops = Number(args.max_hops ?? 8);
+
+  if (srcNid === tgtNid) {
+    return (
+      `'${mcpField(args.source)}' and '${mcpField(args.target)}' both resolved to the same node ` +
+      `'${mcpField(srcNid)}'. Use a more specific label or the exact node ID.`
+    );
+  }
 
   const pathNodes = bidirectional(G, srcNid, tgtNid);
   if (!pathNodes) {
@@ -620,8 +717,8 @@ export async function serve(
   if (ontologyWrite && !options.ontology?.profileStatePath) {
     throw new Error("ontology write mode requires profileStatePath");
   }
-  const ontologyPatchContext = ontologyWrite
-    ? loadOntologyPatchContext(options.ontology!.profileStatePath!)
+  const ontologyPatchContext = options.ontology?.profileStatePath
+    ? loadOntologyPatchContext(options.ontology.profileStatePath)
     : null;
 
   const server = new Server(
@@ -810,6 +907,62 @@ export async function serve(
       },
     ];
 
+  if (ontologyPatchContext) {
+    tools.push(
+      {
+        name: "list_reconciliation_candidates",
+        description:
+          "List read-only ontology reconciliation candidates from the active profile state, with filtering and pagination.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            limit: { type: "integer", default: 50 },
+            offset: { type: "integer", default: 0 },
+            status: { type: "string", enum: ["candidate"] },
+            kind: { type: "string", enum: ["entity_match"] },
+            operation: { type: "string", enum: ["accept_match"] },
+            canonical_id: { type: "string" },
+            candidate_id: { type: "string" },
+            min_score: { type: "number" },
+            query: { type: "string" },
+            sort: { type: "string", enum: ["score", "id"], default: "score" },
+            order: { type: "string", enum: ["asc", "desc"], default: "desc" },
+          },
+        },
+      },
+      {
+        name: "get_reconciliation_candidate",
+        description:
+          "Return a single read-only ontology reconciliation candidate by candidate queue id.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            id: { type: "string", description: "Reconciliation candidate id" },
+          },
+          required: ["id"],
+        },
+      },
+      {
+        name: "preview_ontology_decision_log",
+        description:
+          "Preview authoritative ontology reconciliation decisions and local applied-patch audit records without mutating files.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            limit: { type: "integer", default: 50 },
+            offset: { type: "integer", default: 0 },
+          },
+        },
+      },
+      {
+        name: "ontology_rebuild_status",
+        description:
+          "Return read-only ontology rebuild status: stale marker, active hashes, and reconciliation candidate file consistency.",
+        inputSchema: { type: "object" as const, properties: {} },
+      },
+    );
+  }
+
   if (ontologyWrite) {
     tools.push(
       {
@@ -891,6 +1044,16 @@ export async function serve(
     shortest_path: (a) => toolShortestPath(G, a),
   };
   if (ontologyPatchContext) {
+    handlers.list_reconciliation_candidates = (a) =>
+      toolListReconciliationCandidates(ontologyPatchContext, a);
+    handlers.get_reconciliation_candidate = (a) =>
+      toolGetReconciliationCandidate(ontologyPatchContext, a);
+    handlers.preview_ontology_decision_log = (a) =>
+      toolPreviewOntologyDecisionLog(ontologyPatchContext, a);
+    handlers.ontology_rebuild_status = () =>
+      toolOntologyRebuildStatus(ontologyPatchContext);
+  }
+  if (ontologyPatchContext && ontologyWrite) {
     handlers.validate_ontology_patch = (a) =>
       JSON.stringify(validateOntologyPatch(a.patch, ontologyPatchContext), null, 2);
     handlers.apply_ontology_patch = (a) =>

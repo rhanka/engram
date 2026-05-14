@@ -312,6 +312,9 @@ In Codex, replace the leading `/` in the examples below with `$`. Gemini CLI, Gi
 
 /graphify ./raw --watch            # auto-sync graph as files change (code: instant, docs: notifies you)
 /graphify ./raw --wiki             # build agent-crawlable wiki (index.md + article per community)
+graphify wiki describe --graph .graphify/graph.json --mode assistant --targets all  # opt-in description sidecars
+graphify export wiki --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
+graphify export obsidian --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
 /graphify ./raw --svg              # export graph.svg
 /graphify ./raw --graphml          # export graph.graphml (Gephi, yEd)
 /graphify ./raw --neo4j            # generate cypher.txt for Neo4j
@@ -490,7 +493,7 @@ The public-domain mystery corpus is the recommended real UAT for this workflow. 
 
 **Git hooks** (`graphify hook install`) - installs worktree-compatible `post-commit`, `post-checkout`, `post-merge`, and `post-rewrite` hooks, writes `.gitattributes` entries for `.graphify/graph.json`, and registers a `graphify-json` merge-driver so concurrent branch edits union-merge graph nodes/edges instead of producing raw JSON conflicts. Hooks mark `.graphify/` stale first, update branch/worktree metadata, then try a non-blocking code-only rebuild when it is safe and cheap. No background process needed, and hook failures do not block Git operations. Use `graphify state status` to inspect lifecycle metadata, `graphify check-update .` to compare `graph.json` freshness against `HEAD`, and `graphify state prune` to preview stale cleanup without deleting files.
 
-**Wiki** (`--wiki`) - Wikipedia-style markdown articles per community and god node, with an `index.md` entry point. Point any agent at `index.md` and it can navigate the knowledge base by reading files instead of parsing JSON.
+**Wiki** (`--wiki`) - Wikipedia-style markdown articles per community and god node, with an `index.md` entry point. Point any agent at `index.md` and it can navigate the knowledge base by reading files instead of parsing JSON. Descriptions are explicit opt-in and use a two-step workflow: first run `graphify wiki describe --graph .graphify/graph.json --mode assistant --targets all` or `--mode direct --backend <provider>` to create source-grounded sidecars, then render wiki or Obsidian with `graphify export wiki --descriptions .graphify/wiki/descriptions.json` or `graphify export obsidian --descriptions .graphify/wiki/descriptions.json`. Sidecars record target, graph hash, prompt/generator provenance, evidence refs, and a cache key; existing generated sidecars may be reused when a fresh run cannot complete. `insufficient_evidence` sidecars render no description section, and the workflow never mutates `.graphify/graph.json`.
 
 ## Worked examples
 

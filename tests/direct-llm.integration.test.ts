@@ -22,6 +22,7 @@ const providersToRun = providerSelection === "all"
   : isDirectLlmProvider(providerSelection)
     ? [providerSelection]
     : [];
+const directLlmUatTimeout = providersToRun.includes("gemini") ? 90_000 : 45_000;
 
 const tempDirs: string[] = [];
 
@@ -53,6 +54,7 @@ describeIf("Direct LLM real provider integration", () => {
     const client = createDirectTextJsonClient({
       provider,
       model: defaultDirectLlmModel(provider),
+      maxOutputTokens: 1024,
     });
 
     const result = await client.generateJson({
@@ -78,5 +80,5 @@ describeIf("Direct LLM real provider integration", () => {
       const credential = process.env[envName]?.trim();
       if (credential) expect(audit.includes(credential)).toBe(false);
     }
-  }, 45_000);
+  }, directLlmUatTimeout);
 });

@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 
 import {
   ONTOLOGY_PATCH_SCHEMA,
+  ONTOLOGY_RECONCILIATION_DECISION_LOG_SCHEMA,
   applyOntologyPatch,
+  loadOntologyReconciliationDecisionLog,
   validateOntologyPatch,
   type OntologyPatch,
   type OntologyPatchContext,
@@ -249,5 +251,97 @@ describe("ontology patch core", () => {
     expect(escaped.issues.map((issue) => issue.message)).toContain(
       "configured decisionsPath escapes the repository path jail",
     );
+  });
+
+  it("reads authoritative and audit decision logs as a bounded read-only preview", () => {
+    const root = makeTempDir();
+    const authoritativePath = join(root, "graphify", "reconciliation", "decisions.jsonl");
+    const auditPath = join(root, ".graphify", "ontology", "reconciliation", "applied-patches.jsonl");
+    mkdirSync(dirname(authoritativePath), { recursive: true });
+    mkdirSync(dirname(auditPath), { recursive: true });
+    writeFileSync(authoritativePath, [
+      JSON.stringify(makePatch({ id: "decision-auth-1", created_at: "2026-05-01T10:00:00.000Z" })),
+      "",
+      "malformed line",
+    ].join("\n"), "utf-8");
+    writeFileSync(auditPath, [
+      JSON.stringify(makePatch({ id: "decision-audit-1", created_at: "2026-05-02T10:00:00.000Z" })),
+      JSON.stringify(makePatch({ id: "decision-audit-2", created_at: "2026-05-03T10:00:00.000Z" })),
+      JSON.stringify(makePatch({
+        id: "decision-audit-status",
+        operation: "set_status",
+        status: "applied",
+        target: {
+          node_id: "candidate-component",
+          from_status: "candidate",
+          to_status: "validated",
+        },
+        created_at: "2026-05-04T10:00:00.000Z",
+      })),
+    ].join("\n"), "utf-8");
+
+    const result = loadOntologyReconciliationDecisionLog({
+      authoritativePath,
+      auditPath,
+      rootDir: root,
+      limit: 2,
+      offset: 0,
+    });
+
+    expect(result.schema).toBe(ONTOLOGY_RECONCILIATION_DECISION_LOG_SCHEMA);
+    expect(result.total).toBe(4);
+    expect(result.limit).toBe(2);
+    expect(result.offset).toBe(0);
+    expect(result.items.map((item) => item.source)).toEqual([
+      "authoritative",
+      "audit",
+    ]);
+    expect(result.items[0].path).toBe("graphify/reconciliation/decisions.jsonl");
+    expect(result.items[0].recorded_at).toBe("2026-05-01T10:00:00.000Z");
+    expect(result.items[1].path).toBe(".graphify/ontology/reconciliation/applied-patches.jsonl");
+    expect(result.issues.map((issue) => issue.message)).toEqual(
+      expect.arrayContaining([
+        "authoritative has malformed JSON at line 3: graphify/reconciliation/decisions.jsonl",
+      ]),
+    );
+    expect(result.issues.map((issue) => issue.message).join("\n")).not.toContain("blank line");
+
+    const paged = loadOntologyReconciliationDecisionLog({
+      authoritativePath,
+      auditPath,
+      rootDir: root,
+      offset: 1,
+    });
+    expect(paged.items.map((item) => item.patch.id)).toEqual([
+      "decision-audit-1",
+      "decision-audit-2",
+      "decision-audit-status",
+    ]);
+
+    const filtered = loadOntologyReconciliationDecisionLog({
+      authoritativePath,
+      auditPath,
+      rootDir: root,
+      source: "audit",
+      status: "applied",
+      operation: "set_status",
+      node_id: "candidate-component",
+      from: "candidate",
+      to: "validated",
+    });
+    expect(filtered.total).toBe(1);
+    expect(filtered.items[0]?.patch.id).toBe("decision-audit-status");
+
+    const outsideRoot = makeTempDir();
+    const outsidePath = join(outsideRoot, "outside-decisions.jsonl");
+    writeFileSync(outsidePath, JSON.stringify(makePatch({ id: "outside-decision" })), "utf-8");
+    const escaped = loadOntologyReconciliationDecisionLog({
+      authoritativePath: outsidePath,
+      rootDir: root,
+    });
+    expect(escaped.total).toBe(0);
+    expect(escaped.items).toEqual([]);
+    expect(escaped.issues.map((issue) => issue.message)).toContain("authoritative path escapes rootDir");
+    expect(JSON.stringify(escaped)).not.toContain("outside-decision");
   });
 });

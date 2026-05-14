@@ -255,4 +255,73 @@ describe("ontology patch CLI", () => {
     expect(JSON.parse(dryRun.logs.join("\n")).dry_run).toBe(true);
     expect(existsSync(decisionsPath)).toBe(false);
   });
+
+  it("previews ontology decision logs through CLI and skill runtime without mutation", async () => {
+    const { root, profileStatePath, patchPath, decisionsPath } = await prepareProject();
+    const auditPath = join(root, ".graphify", "ontology", "reconciliation", "applied-patches.jsonl");
+
+    const write = await runCli([
+      "ontology",
+      "patch",
+      "apply",
+      "--profile-state",
+      profileStatePath,
+      "--patch",
+      patchPath,
+      "--write",
+      "--json",
+    ], root);
+    expect(write.exitCode, JSON.stringify(write, null, 2)).toBe(0);
+
+    const beforeDecisions = readFileSync(decisionsPath, "utf-8");
+    const beforeAudit = readFileSync(auditPath, "utf-8");
+
+    const cli = await runCli([
+      "ontology",
+      "decision-log",
+      "--profile-state",
+      profileStatePath,
+      "--source",
+      "authoritative",
+      "--operation",
+      "accept_match",
+      "--json",
+    ], root);
+    const runtime = await runSkillRuntime([
+      "ontology-decision-log",
+      "--profile-state",
+      profileStatePath,
+      "--source",
+      "audit",
+      "--operation",
+      "accept_match",
+    ], root);
+
+    expect(cli.exitCode, JSON.stringify(cli, null, 2)).toBe(0);
+    expect(runtime.exitCode, JSON.stringify(runtime, null, 2)).toBe(0);
+    const cliPreview = JSON.parse(cli.logs.join("\n")) as {
+      schema: string;
+      total: number;
+      items: Array<{ source: string; patch: { id: string; operation: string } }>;
+    };
+    const runtimePreview = JSON.parse(runtime.logs.join("\n")) as {
+      schema: string;
+      total: number;
+      items: Array<{ source: string; patch: { id: string; operation: string } }>;
+    };
+    expect(cliPreview.schema).toBe("graphify_ontology_reconciliation_decision_log_v1");
+    expect(cliPreview.total).toBe(1);
+    expect(cliPreview.items[0]).toMatchObject({
+      source: "authoritative",
+      patch: { id: "patch-synthetic-cli-001", operation: "accept_match" },
+    });
+    expect(runtimePreview.schema).toBe("graphify_ontology_reconciliation_decision_log_v1");
+    expect(runtimePreview.total).toBe(1);
+    expect(runtimePreview.items[0]).toMatchObject({
+      source: "audit",
+      patch: { id: "patch-synthetic-cli-001", operation: "accept_match" },
+    });
+    expect(readFileSync(decisionsPath, "utf-8")).toBe(beforeDecisions);
+    expect(readFileSync(auditPath, "utf-8")).toBe(beforeAudit);
+  });
 });

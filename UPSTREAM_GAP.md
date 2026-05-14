@@ -15,7 +15,8 @@ This document tracks the delta between this TypeScript port and upstream Python 
 - Closed Python `v6` parity line: remote `upstream/v6` at `f81e3bc2154d21062f56f9e4ec9f923dfe7d128e`
 - Closed parity source lock for the `0.7.4` cycle: effective `upstream/v7` target `26a5a35200dda6207bf6fc16afed83c71238bb65`
 - Closed parity target commit for `0.7.4`: `26a5a35200dda6207bf6fc16afed83c71238bb65` on `upstream/v7`, with feature commit `741ac3655bd33314e1aaca51e6fd30271c74c61b`
-- Active Python drift lock: remote `upstream/v7` observed on 2026-05-08 at `0c29b2cb88c6274d889ca7c33a684ce103808715`, with remote tag `v0.7.10` at `ef1050b0e4134df0bd59956b0f900dc3c83e8184`
+- Closed Python `0.7.10` drift lock: remote `upstream/v7` observed on 2026-05-08 at `0c29b2cb88c6274d889ca7c33a684ce103808715`, with remote tag `v0.7.10` at `ef1050b0e4134df0bd59956b0f900dc3c83e8184`
+- Observed Python drift lock for the next pass: remote `upstream/v7` observed on 2026-05-12 at `ab32098063adb1ab4d9247747742958ad185db41`, with remote tag `v0.7.16` at the same commit
 - Active CRG stable review reference: `tirth8205/code-review-graph` tag `v2.3.3` at `52cf3bc63ee77c8b204fb809791a5f212e83a2de`
 - Current implementation branch for traceability work: `feat/upstream-0.7.10-lot4-providers` (`graphifyy@0.7.10` package target)
 
@@ -28,6 +29,7 @@ This document tracks the delta between this TypeScript port and upstream Python 
 - Python `upstream/v6` was observed on 2026-05-04 and is now a closed parity line at `f81e3bc2154d21062f56f9e4ec9f923dfe7d128e`.
 - Python `upstream/v7` was observed on 2026-05-04 for the closed `0.7.0` to `0.7.4` parity cycle.
 - Python `upstream/v7` was re-fetched on 2026-05-08 and advanced to `0c29b2cb88c6274d889ca7c33a684ce103808715`; this opened the `0.7.5` to `0.7.10` plus post-tag realignment cycle now closed below.
+- Python `upstream/v7` was re-scanned on 2026-05-12 after the `0.7.10` checkpoint merge and advanced to `ab32098063adb1ab4d9247747742958ad185db41`; remote tags now extend through `v0.7.16`.
 - Fetched local tags `v0.7.0` through `v0.7.4` all resolve to `f81e3bc2154d21062f56f9e4ec9f923dfe7d128e`; do not use those local tag pointers as proof for `0.7.x` parity. Follow the `upstream/v7` commit history instead.
 - Remote tag `v1.0.0` exists upstream, but the active upstream release train is still `v6` / `0.7.x`; do not target `1.0.0` until a separate traceability pass proves that line is the real parity target.
 - Local `v0.4.28`..`v0.4.32` tags are not trusted for parity claims while tag clobber risk exists; use branch commits and `git ls-remote` instead.
@@ -36,6 +38,49 @@ This document tracks the delta between this TypeScript port and upstream Python 
 - Package version alignment is driven by Python Graphify parity targets, not by `code-review-graph` tags or `main`.
 - The active `0.7.10` realignment must stay TypeScript-only; no new Python dependency may be introduced to claim parity.
 - The `0.7.10` parity cycle is closed in the TypeScript release line; any newer upstream drift must start a new traceability pass.
+
+## Active `0.7.16` Drift Intake
+
+Observed on 2026-05-12 after merging the `0.7.10` checkpoint:
+
+- Safi Python Graphify: `upstream/v7` at `ab32098063adb1ab4d9247747742958ad185db41`, remote tag `v0.7.16` at the same commit.
+- New remote tags since the previous pass: `v0.7.11`, `v0.7.12`, `v0.7.13`, `v0.7.14`, `v0.7.15`, `v0.7.16`.
+- The TypeScript product must triage this drift in small lots while keeping descriptions and reconciliation moving.
+
+| Source | Bucket | Examples | Initial TS status | Initial action |
+| --- | --- | --- | --- | --- |
+| Python `v0.7.11`..`v0.7.16` | Runtime and platform hotfixes | context-window retry, Windows console unblock, `__main__` guards, MultiGraph crash, hollow LLM response retry, universal help guard, `--version`, Unicode IDs, edge-key dedup, direction flip, chunk paths, encoding, uv fallback, path scoring, cache, OpenCode trigger | `needs-triage` | Classify each fix as `must-port`, `already-covered`, `intentional-delta`, or `defer`; port urgent runtime fixes before feature work. |
+| Python `v0.7.11`..`v0.7.16` | Ollama runtime tuning | dynamic `num_ctx`, `keep_alive`, serial defaults, `GRAPHIFY_OLLAMA_NUM_CTX`, `GRAPHIFY_OLLAMA_KEEP_ALIVE` docs | `needs-triage` | Compare against TS Ollama provider surface and port only env/runtime controls that matter for local direct extraction. |
+| Python `v0.7.11`..`v0.7.16` | Parser/language surface | Pascal, Delphi, Lazarus IDE files, regex fallback without tree-sitter-pascal | `needs-triage` | Decide whether Pascal/Delphi/Lazarus is a quick regex-backed TS extractor lot or deferred until requested. |
+| Python `v0.7.11`..`v0.7.16` | Visualization/export | callflow HTML export with Mermaid architecture diagrams and watch/hook auto-regeneration | `needs-triage` / `opportunity` | Decide whether this belongs to core export parity, CRG/review UX, or a deferred visualization lot. |
+| Python `v0.7.11`..`v0.7.16` | Skills/watch/hooks | hook OOM worker cap, Antigravity `.agents` path/frontmatter, skill `--help` behavior | `needs-triage` | Audit against existing TS installer/watch contracts and add targeted tests for gaps. |
+
+Row-level audit for the post-`0.7.10` drift observed at `ab32098063adb1ab4d9247747742958ad185db41`:
+
+| Ref | Commit | Upstream change | TypeScript status | Required follow-up |
+| --- | --- | --- | --- | --- |
+| `0.7.11` runtime retry | `f88567b` | Recover from context-window-exceeded API errors in adaptive LLM retry. | `must-port` | Add direct-mode retry behavior around context-window/length-like failures and hollow JSON responses, with mocked `generateText` tests. |
+| `0.7.11` Windows/Python entry guards | `e5f263b` | Unblock Python pipeline on Windows consoles and add missing Python `__main__` guards. | `intentional-delta` | Node/Commander entrypoints do not use Python module guards; keep Windows CI coverage and UTF-8 file writes, but no Python entrypoint port is needed. |
+| `0.7.11` Pascal/Lazarus parser | `32bf8b4` | Add Pascal, Delphi and Lazarus IDE extraction support. | `defer` | Treat as Lot M3. Port as a regex-backed TS extractor only if language expansion is approved for this acceleration branch. |
+| `0.7.11` Pascal regex fallback | `8e64835` | Keep Pascal extraction working without `tree-sitter-pascal`. | `defer` | Same Lot M3 decision; if accepted, use regex fallback first and avoid adding a Python runtime dependency. |
+| `0.7.12` hook/watch resilience | `dc50979` | Prevent concurrent hook rebuild OOM, add timeout/resource controls, lift worker cap, and fix Antigravity `.agents` path/frontmatter. | `must-port` | Audit TS `hook-rebuild` concurrency and Antigravity install paths; add targeted tests before changing installer paths. |
+| `0.7.12` MultiGraph compatibility | `23f598f` | Avoid crashes when graph edge data is nested by multigraph semantics. | `already-covered` | Graphology edge access and prior links/edges loader coverage avoid the Python NetworkX failure mode; keep `tests/serve.test.ts` and `tests/review-store.test.ts` coverage. |
+| `0.7.12` hollow LLM response retry | `23f598f` | Retry or surface empty/hollow LLM responses instead of silently parsing `{}`. | `must-port` | Fold into the direct-mode retry lot with invalid/empty response regression tests. |
+| `0.7.12` skill help behavior | `23f598f` | Make skill `--help` useful instead of triggering stale-version noise. | `already-covered` | Commander help/version behavior is covered by existing CLI tests; keep hook-check silent behavior under installer tests. |
+| `0.7.13` Ollama context saturation | `8c00287` | Set large `num_ctx`, `keep_alive`, and serial local extraction defaults for Ollama. | `must-port` | Add `GRAPHIFY_OLLAMA_NUM_CTX` / `GRAPHIFY_OLLAMA_KEEP_ALIVE` handling through `ollama-ai-provider` model settings and tests. |
+| `0.7.13` callflow HTML export | `db66b87` | Add Mermaid-based callflow HTML architecture export. | `defer` | Classify under CRG/visualization after the first product tracks; TS already has `.graphify/flows.json`, wiki flow pages, and review-flow CLI surfaces. |
+| `0.7.13` callflow hook/watch regeneration | `5ead190` | Regenerate callflow HTML automatically when the artifact already exists. | `defer` | Depends on the callflow HTML decision; do not add watch churn until the export surface is accepted. |
+| `0.7.13` dynamic Ollama `num_ctx` | `8c4c67f` | Derive Ollama context size from actual chunk size instead of hardcoding. | `must-port` | In Lot M2, decide whether the TS direct-extract chunker should compute per-call context or expose only explicit env overrides first. |
+| `0.7.13` Ollama env docs | `4cec58e` | Document `GRAPHIFY_OLLAMA_NUM_CTX` and `GRAPHIFY_OLLAMA_KEEP_ALIVE`. | `must-port` | Update README once the envs are implemented in `src/llm-execution.ts`. |
+| `0.7.14` Unicode IDs | `95e2c5e` | Normalize IDs with Unicode-aware NFKC/casefold semantics. | `must-port` | Update `_makeId` and build endpoint normalization so non-ASCII identifiers do not collapse; add extraction/build regression tests. |
+| `0.7.14` legacy edge-key cleanup | `95e2c5e` | Handle LLM `from`/`to` edge keys during dedup and avoid leaking stale keys. | `must-port` | Add validation/build normalization for legacy edge aliases before graph construction, with tests. |
+| `0.7.14` direction flip and chunk paths | `95e2c5e` | Avoid update direction flip and make skill chunks addressable by absolute paths. | `already-covered` | Direction preservation is already covered by `tests/build-merge.test.ts`; TS skill-runtime writes explicit scratch paths rather than Python subagent chunk files. |
+| `0.7.15` help/version/Ollama fallback | `094d8ba` | Universal help guard, `--version`, and Ollama `num_ctx` fallback. | `must-port` | `--version` is already handled by Commander; carry the Ollama fallback into Lot M2 and add one CLI/help regression if stale-version noise reappears. |
+| `0.7.16` encoding and install fallback | `994b17b` | Force UTF-8 file I/O in skills and prefer `uv tool install` fallback over `pip`. | `intentional-delta` | TS uses Node UTF-8 writes and npm/npx install paths; no Python/uv fallback applies to the npm-first runtime. |
+| `0.7.16` path scoring | `994b17b` | Prefer exact, then prefix, then substring node matches; reject shortest path when source and target resolve to the same node. | `already-covered` | Ported in this branch for CLI `path`/`explain` and MCP `shortest_path`; tests: `tests/cli-runtime.test.ts`, `tests/serve.test.ts`. |
+| `0.7.16` semantic-cache path normalization | `994b17b` | Normalize path keys and check/save cache relative path handling. | `must-port` | Audit `src/cache.ts` for Windows case/junction equivalence and relative `source_file` parity; add cache tests before modifying. |
+| `0.7.16` OpenCode trigger line | `994b17b` | Add explicit `/graphify` trigger guidance to installed agent docs. | `must-port` | Audit installed AGENTS/OpenCode/Codex docs against current `$graphify`/`/graphify` trigger rules and update tests if needed. |
+| `0.7.11`..`0.7.16` release bumps | `adf96da`, `e926079`, `9caaa17`, `dd465af`, `ab32098` | Python package version and changelog updates. | `intentional-delta` | Do not bump `graphifyy` solely for Python release tags; versioning remains tied to the next TS release gate. |
 
 ## Active `0.7.10` And CRG `v2.3.3` Realignment Intake
 
@@ -57,6 +102,62 @@ Functional intake buckets for the next realignment:
 | CRG `v2.3.3` | Review UI/accessibility | keyboard navigation, ARIA, node shapes, edge differentiation, help overlay, VS Code webview patterns | `partial` / `opportunity` | Reuse patterns for Graphify HTML/studio without adopting CRG's VS Code stack. |
 | CRG `v2.3.3` | Review precision and parsers | changed range mapping, Java/PHP/C++ fixes, Spring/Temporal/Kafka semantics, test runner detection, GDScript/ReScript/Nix/SystemVerilog | `partial` / `needs-triage` | Triage by generic value; implement over `.graphify/graph.json`, not SQLite. |
 | CRG `v2.3.3` | Daemon, embeddings, FTS, SQLite | multi-repo daemon, OpenAI-compatible embeddings, FTS sync, SQLite transactions | `deferred` / `intentional-delta` | Do not adopt by default; separate spec required before any optional index/daemon work. |
+
+## CRG `v2.3.3` Row-Level Audit (Track C audit, 2026-05-14)
+
+Audit produced by drumbeat agent against `spec/SPEC_CODE_REVIEW_GRAPH_ALIGNMENT.md` and `spec/SPEC_CODE_REVIEW_GRAPH_OPPORUNITY.md`. 15 meaningful CRG features, no rejection. Nine map to `adopt-review`, two are deferred pending earlier closure.
+
+| # | Feature | CRG source | Category | Bucket | TS landing | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | GraphStore adapter and node lookup | `code_review_graph/graph.py` | review-precision | `adopt-review` | `src/review-*.ts` | F3: `ReviewGraphStoreLike` reads `.graphify/graph.json`; enables all downstream review features. |
+| 2 | Execution flow tracing (BFS/CALLS) | `code_review_graph/flows.py:trace_flows` | review-precision | `adopt-review` | `src/flows.ts` | F7: forward traversal over `CALLS` edges, cycle safety, criticality weights. |
+| 3 | Affected flows mapping | `code_review_graph/flows.py:get_affected_flows` | review-precision | `adopt-review` | `src/affected-flows.ts` | F8: maps changed files to nodes, finds impacted flows. Already partly covered by `review-delta`. |
+| 4 | Review context and snippets | `code_review_graph/tools/review.py:get_review_context` | review-precision | `adopt-review` | `src/review-context.ts` | F5: minimal/standard detail levels, blast radius, source snippet caps. |
+| 5 | Unified diff parsing and risk scoring | `code_review_graph/changes.py` | changed-range | `adopt-review` | `src/changes.ts` | F6: git diff parsing, line-range node mapping, multi-factor risk (flow/test/security). |
+| 6 | Minimal first-hop context | `code_review_graph/tools/context.py:get_minimal_context` | review-precision | `adopt-review` | `src/minimal-context.ts` | F4: ~100 token budget. Already mostly covered by `graphify minimal-context`. |
+| 7 | Entrypoint/decorator detection | `code_review_graph/flows.py:detect_entry_points` | parser | `adopt-review` | `src/extract.ts` | Decorator patterns, conventional names (main, test_*, on_*, handle_*); embedded in F7. |
+| 8 | Skill/LLM review state machine | `code_review_graph/CLAUDE.md` | review-precision | `adopt-review` | `src/skills/*.md` | F10: minimal-context-first five-state flow. |
+| 9 | Flow artifact persistence | `code_review_graph/flows.py:store_flows` | review-precision | `adopt-review` | `.graphify/flows.json` | F7: schema with stable deterministic IDs. |
+| 10 | Report/wiki flow enrichment | `code_review_graph/wiki.py` | node-shape | `defer` | `src/wiki.ts` | F11: flow pages, community-flow links; defer until F7 stable in TS. |
+| 11 | Flow visualization HTML highlight | `code_review_graph/visualization.py` | node-shape | `defer` | `src/export.ts` | F11: interactive flow graphs; blocked on HTML renderer refactor. |
+| 12 | Benchmark / eval scoring | `code_review_graph/eval/scorer.py` | review-precision | `adopt-review` | `src/review-eval.ts` | F12: deterministic local fixtures, token-efficiency metrics, no network cloner. |
+| 13 | Security keyword classification | CRG security keyword set | changed-range | `adopt-review` | `src/changes.ts` | Boost risk for `auth`, `crypt`, `sql`, `encrypt`. Embedded in F6/F7. |
+| 14 | Test coverage gap detection | `code_review_graph/flows.py:compute_criticality` | review-precision | `adopt-review` | `src/criticality.ts` | Flag nodes without `TESTED_BY` edges. |
+| 15 | Flow criticality weights | `code_review_graph/flows.py:compute_criticality` | review-precision | `adopt-review` | `src/criticality.ts` | File spread 0.30, external calls 0.20, security 0.25, test gaps 0.15, depth 0.10. |
+
+Coverage notes:
+- `adopt-html` and `adopt-studio` HTML accessibility patterns (keyboard, focus, ARIA, contrast, help overlay, non-color-only file_type encoding) live in the second matrix below; the alignment specs do not break them down row-by-row, so they were audited separately and grouped into `C2` / `C3` lots in `PLAN.md`.
+- `defer` rows (10, 11) reopen automatically once F7 flow artifacts are stable in the TS line.
+- No `reject`: every classified row could be reopened without product-line risk.
+
+### CRG `v2.3.3` Row-Level Audit — HTML UX, a11y and visual encoding
+
+| # | Feature | Surface | Bucket | Notes |
+| --- | --- | --- | --- | --- |
+| 1 | Tab order + keyboard focus ring | `graphify export html` (`src/export.ts`, vis.js config ~L545) | `adopt-html` | vis.js currently `keyboard: false`; need tab cycle, visible focus ring, Escape to deselect. |
+| 2 | ARIA labels on nodes / edges / legend | `graphify export html` | `adopt-html` | Zero `aria-label`/`role`/`aria-describedby` today. |
+| 3 | Focus management + screen-reader announce | `graphify export html` | `adopt-html` | `network.focus()` is silent; needs `aria-live="polite"` announcements. |
+| 4 | Colour contrast (WCAG AA) | export.ts styles ~L419 | `adopt-html` | CI check via axe-core or Pa11y on an HTML fixture. |
+| 5 | High-contrast mode toggle | export.ts | `adopt-html` | Optional CSS class + export flag. |
+| 6 | Colour-blind safe encoding | export.ts | `adopt-html` | Community currently encoded by colour only; add shape + pattern + label. |
+| 7 | Hover tooltip (descriptions) | export.ts vis.js config (~L542) | `adopt-html` | Add `data-help` on nodes/edges that have a description. |
+| 8 | Help overlay modal (F1 / ?) | export.ts | `adopt-html` | Keyboard-shortcut glossary + introspection of controls. |
+| 9 | Labeled search input + ARIA results list | export.ts | `adopt-html` | `<label for=...>` + `aria-live` for filter result counts. |
+| 10 | `aria-live` status region | export.ts | `adopt-html` | "Loaded N nodes" / "Filtered to M results". |
+| 11 | Node shape by `file_type` (non-colour-only) | export.ts vis.js shape config (~L547) | `adopt-html` | All nodes are `dot` today; map test→square, config→triangle, doc→house, type→diamond. |
+| 12 | Edge arrow direction cue clarified | export.ts vis.js arrows (~L522) | `adopt-html` | Solid = directed `calls`, dashed = inferred / undirected. |
+| 13 | Edge colour/width by relation | export.ts | `adopt-html` | `calls` solid blue, `imports_from` dashed grey, `tested_by` dotted green, etc. |
+| 14 | Legend panel (a11y-friendly) | export.ts | `adopt-html` | Scrollable list: shapes = file_types, colours = communities, line styles = relations. |
+| 15 | Inline SVG file-type icons | export.ts | `adopt-html` | Small icon per file_type in node decoration or legend. |
+| 16 | Mobile / touch responsiveness | export.ts | `adopt-review` | Audit button hit-targets ≥ 44px, touch pinch-zoom, no hover-only affordances. |
+| 17 | Risk badge / highlight on changed nodes | `graphify export html` + `src/changes.ts` (future) | `adopt-review` | Couples to Lot C1 review-precision. |
+| 18 | Community link-density visual cue | export.ts | `adopt-html` | Optional: size nodes by degree, communities by edge count. |
+| 19 | VS Code webview command-palette pattern | n/a (CRG only) | `defer` | TS fork has no VS Code extension yet; reopen with a dedicated spec. |
+
+Coverage notes:
+- 18 of 19 rows could land in `graphify export html` first, independent of the future Svelte studio.
+- Lot scope proposed (see Track C in `PLAN.md`): **C1** review-precision (matrix 1, F3..F12 rows above), **C2** HTML a11y (rows 1–10 here), **C3** node-shape + edge encoding + legend (rows 11–15, 18).
+- Row 19 (VS Code) stays `defer` until a TypeScript VS Code extension is in scope.
 
 ## Fork Guardrail
 

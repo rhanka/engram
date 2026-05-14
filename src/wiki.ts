@@ -9,6 +9,11 @@ import type { GodNodeEntry } from "./types.js";
 import { type NumericMapLike, toNumericMap } from "./collections.js";
 import { traversalNeighbors } from "./graph.js";
 import type { ReviewFlow, ReviewFlowArtifact } from "./flows.js";
+import {
+  validateWikiDescriptionSidecar,
+  type WikiDescriptionSidecar,
+  type WikiDescriptionSidecarIndex,
+} from "./wiki-descriptions.js";
 
 interface WikiPageRef {
   key: string;
@@ -85,6 +90,19 @@ function crossCommunityLinks(
   return [...counts.entries()].sort((a, b) => b[1] - a[1]);
 }
 
+function renderDescription(sidecar: WikiDescriptionSidecar | undefined): string[] {
+  if (!sidecar || sidecar.status !== "generated") return [];
+  if (validateWikiDescriptionSidecar(sidecar).length > 0) return [];
+  return [
+    "## Description",
+    "",
+    sidecar.description,
+    "",
+    `Evidence: ${sidecar.evidence_refs.map((ref) => `\`${ref}\``).join(", ")}`,
+    "",
+  ];
+}
+
 function communityArticle(
   G: Graph,
   cid: number,
@@ -95,6 +113,7 @@ function communityArticle(
   communityLinks: Map<number, string>,
   flows: ReviewFlow[],
   flowLinks: Map<string, string>,
+  description?: WikiDescriptionSidecar<"community">,
 ): string {
   const topNodes = [...nodes].sort((a, b) => G.degree(b) - G.degree(a)).slice(0, 25);
   const cross = crossCommunityLinks(G, nodes, cid);
@@ -117,6 +136,7 @@ function communityArticle(
   const metaParts = [`${nodes.length} nodes`];
   if (cohesion !== undefined) metaParts.push(`cohesion ${cohesion.toFixed(2)}`);
   lines.push(`> ${metaParts.join(" · ")}`, "");
+  lines.push(...renderDescription(description));
 
   lines.push("## Key Concepts", "");
   for (const nid of topNodes) {
@@ -170,7 +190,13 @@ function communityArticle(
   return lines.join("\n");
 }
 
-function godNodeArticle(G: Graph, nid: string, labels: Map<number, string>, communityLinks: Map<number, string>): string {
+function godNodeArticle(
+  G: Graph,
+  nid: string,
+  labels: Map<number, string>,
+  communityLinks: Map<number, string>,
+  description?: WikiDescriptionSidecar<"node">,
+): string {
   const d = G.getNodeAttributes(nid);
   const nodeLabel = (d.label as string) ?? nid;
   const src = (d.source_file as string) ?? "";
@@ -184,6 +210,7 @@ function godNodeArticle(G: Graph, nid: string, labels: Map<number, string>, comm
   if (communityName) {
     lines.push(`**Community:** ${communityLinks.get(cid!) ?? `[[${communityName}]]`}`, "");
   }
+  lines.push(...renderDescription(description));
 
   const byRelation = new Map<string, string[]>();
   const neighbors = traversalNeighbors(G, nid).sort((a, b) => G.degree(b) - G.degree(a));
@@ -311,6 +338,7 @@ export function toWiki(
     cohesion?: NumericMapLike<number>;
     godNodesData?: GodNodeEntry[];
     flows?: ReviewFlowArtifact | ReviewFlow[] | null;
+    descriptions?: WikiDescriptionSidecarIndex;
   },
 ): number {
   const communityMap = toNumericMap(communities);
@@ -348,7 +376,18 @@ export function toWiki(
   // Community articles
   for (const [cid, nodes] of communityMap) {
     const label = labels.get(cid) ?? `Community ${cid}`;
-    const article = communityArticle(G, cid, nodes, label, labels, cohesion.get(cid), communityLinks, flows, flowLinks);
+    const article = communityArticle(
+      G,
+      cid,
+      nodes,
+      label,
+      labels,
+      cohesion.get(cid),
+      communityLinks,
+      flows,
+      flowLinks,
+      options?.descriptions?.communities?.[String(cid)],
+    );
     const page = pageRefs.get(`community:${cid}`);
     writeFileSync(join(outputDir, page?.filename ?? `${safeFilename(label)}.md`), article);
     count++;
@@ -358,7 +397,7 @@ export function toWiki(
   for (const nodeData of godNodesData) {
     const nid = nodeData.id;
     if (nid && G.hasNode(nid)) {
-      const article = godNodeArticle(G, nid, labels, communityLinks);
+      const article = godNodeArticle(G, nid, labels, communityLinks, options?.descriptions?.nodes[nid]);
       const page = pageRefs.get(`god:${nodeData.id}`);
       writeFileSync(join(outputDir, page?.filename ?? `${safeFilename(nodeData.label)}.md`), article);
       count++;

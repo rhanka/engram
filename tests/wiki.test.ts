@@ -5,6 +5,13 @@ import { tmpdir } from "node:os";
 import Graph from "graphology";
 import { toWiki } from "../src/wiki.js";
 import type { ReviewFlowArtifact } from "../src/flows.js";
+import {
+  WIKI_DESCRIPTION_PROMPT_VERSION,
+  WIKI_DESCRIPTION_SCHEMA,
+  buildWikiDescriptionCacheKey,
+  createInsufficientEvidenceRecord,
+  type WikiDescriptionSidecarIndex,
+} from "../src/wiki-descriptions.js";
 
 describe("toWiki", () => {
   let tmpDir: string;
@@ -118,6 +125,85 @@ describe("toWiki", () => {
     expect(readFileSync(join(tmpDir, "API.md"), "utf-8")).toContain("[[Flow handler]]");
     expect(readFileSync(join(tmpDir, "Flow_handler.md"), "utf-8")).toContain("routes.ts::handler");
     expect(readFileSync(join(tmpDir, "index.md"), "utf-8")).toContain("## Execution Flows");
+  });
+
+  it("renders generated wiki description sidecars and omits insufficient-evidence records", () => {
+    const G = new Graph({ type: "undirected" });
+    G.mergeNode("a", { label: "ClassA", source_file: "a.py", community: 0 });
+    G.mergeNode("b", { label: "ClassB", source_file: "b.py", community: 0 });
+    G.mergeEdge("a", "b", { relation: "calls", confidence: "EXTRACTED" });
+    const communities = new Map([[0, ["a", "b"]]]);
+    const labels = new Map([[0, "Core Module"]]);
+    const generator = {
+      mode: "assistant" as const,
+      provider: "assistant",
+      model: null,
+      prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+    };
+    const descriptions: WikiDescriptionSidecarIndex = {
+      schema: "graphify_wiki_description_index_v1",
+      graph_hash: "graph-a",
+      prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+      communities: {
+        "0": {
+          schema: WIKI_DESCRIPTION_SCHEMA,
+          target_id: "community:0",
+          target_kind: "community",
+          graph_hash: "graph-a",
+          status: "generated",
+          description: "Core Module coordinates the primary source-backed concepts in this graph.",
+          evidence_refs: ["a.py#ClassA"],
+          confidence: 0.82,
+          cache_key: buildWikiDescriptionCacheKey({
+            target_id: "community:0",
+            target_kind: "community",
+            graph_hash: "graph-a",
+            ...generator,
+          }),
+          generator,
+        },
+      },
+      nodes: {
+        a: {
+          schema: WIKI_DESCRIPTION_SCHEMA,
+          target_id: "a",
+          target_kind: "node",
+          graph_hash: "graph-a",
+          status: "generated",
+          description: "ClassA is the source-backed god node used by the generated wiki.",
+          evidence_refs: ["a.py#ClassA"],
+          confidence: 0.91,
+          cache_key: buildWikiDescriptionCacheKey({
+            target_id: "a",
+            target_kind: "node",
+            graph_hash: "graph-a",
+            ...generator,
+          }),
+          generator,
+        },
+        b: createInsufficientEvidenceRecord({
+          target_id: "b",
+          target_kind: "node",
+          graph_hash: "graph-a",
+          ...generator,
+        }),
+      },
+    };
+
+    toWiki(G, communities, tmpDir, {
+      communityLabels: labels,
+      godNodesData: [{ id: "a", label: "ClassA", edges: 1 }],
+      descriptions,
+    });
+
+    const communityArticle = readFileSync(join(tmpDir, "Core_Module.md"), "utf-8");
+    expect(communityArticle).toContain("## Description");
+    expect(communityArticle).toContain("Core Module coordinates the primary source-backed concepts in this graph.");
+    expect(communityArticle).toContain("Evidence: `a.py#ClassA`");
+
+    const nodeArticle = readFileSync(join(tmpDir, "ClassA.md"), "utf-8");
+    expect(nodeArticle).toContain("ClassA is the source-backed god node used by the generated wiki.");
+    expect(nodeArticle).not.toContain("insufficient_evidence");
   });
 
   it("uses suffixed filenames and alias links for duplicate normalized wiki titles", () => {

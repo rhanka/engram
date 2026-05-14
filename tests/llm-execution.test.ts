@@ -179,7 +179,7 @@ describe("LLM execution ports", () => {
     expect(result.status).toBe("instructions_written");
     expect(result.provider).toBe("assistant");
     expect(result.outputPath).toBe(".graphify/example.json");
-    expect(result.instructionPath).toBe(join(root, "text-json-synthetic_schema_v1.md"));
+    expect(result.instructionPath).toBe(join(root, "text-json-synthetic_schema_v1-example.md"));
     expect(readFileSync(result.instructionPath, "utf-8")).toContain("Return JSON only.");
   });
 
@@ -213,6 +213,7 @@ describe("LLM execution ports", () => {
     const client = createDirectTextJsonClient({
       provider: "openai",
       model: "gpt-5.5",
+      maxOutputTokens: 1024,
     });
 
     const result = await client.generateJson({
@@ -229,6 +230,7 @@ describe("LLM execution ports", () => {
     expect(generateTextMock).toHaveBeenCalledWith(expect.objectContaining({
       model: { provider: "openai", model: "gpt-5.5" },
       temperature: 0,
+      maxOutputTokens: 1024,
     }));
     expect(JSON.parse(readFileSync(outputPath, "utf-8"))).toMatchObject({
       nodes: [],

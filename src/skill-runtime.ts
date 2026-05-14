@@ -97,7 +97,7 @@ import {
   exportImageDataprepBatchRequests,
   importImageDataprepBatchResults,
 } from "./image-dataprep-batch.js";
-import { normalizeSearchText } from "./search.js";
+import { normalizeSearchText, scoreSearchText } from "./search.js";
 import { persistCommunityLabels, resolveCommunityLabels } from "./community-labels.js";
 import type {
   DetectionResult,
@@ -436,9 +436,10 @@ function findBestMatchingNode(G: Graph, term: string): string | null {
   let bestNodeId: string | null = null;
   let bestScore = 0;
   G.forEachNode((nodeId, data) => {
-    const label = normalizeSearchText((data.label as string) ?? "");
-    const score = words.filter((word) => label.includes(word)).length;
-    if (score > bestScore) {
+    const label = (data.label as string) ?? nodeId;
+    const source = (data.source_file as string) ?? "";
+    const score = scoreSearchText(label, source, words);
+    if (score > 0 && (!bestNodeId || score > bestScore || (score === bestScore && G.degree(nodeId) > G.degree(bestNodeId)))) {
       bestScore = score;
       bestNodeId = nodeId;
     }
@@ -665,6 +666,34 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       const queue = generateOntologyReconciliationCandidates(context);
       writeOntologyReconciliationCandidates(resolve(opts.out), queue);
       console.log(`Ontology reconciliation candidates: ${queue.candidate_count} written to ${resolve(opts.out)}`);
+    });
+
+  program
+    .command("ontology-decision-log")
+    .description("Preview ontology reconciliation decision logs without mutation")
+    .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
+    .option("--source <source>", "Decision source: authoritative, audit, or both")
+    .option("--status <status>", "Patch status filter: applied, rejected, or all")
+    .option("--operation <operation>", "Patch operation filter")
+    .option("--node-id <id>", "Filter decisions touching a node id")
+    .option("--from <value>", "Filter by from/source id or status")
+    .option("--to <value>", "Filter by to/target id or status")
+    .option("--limit <n>", "Maximum records to return")
+    .option("--offset <n>", "Records to skip")
+    .action(async (opts) => {
+      const { previewOntologyDecisionLog } = await import("./ontology-reconciliation-api.js");
+      const context = loadOntologyPatchContext(opts.profileState);
+      const result = previewOntologyDecisionLog(context, {
+        ...(opts.source ? { source: opts.source } : {}),
+        ...(opts.status ? { status: opts.status } : {}),
+        ...(opts.operation ? { operation: opts.operation } : {}),
+        ...(opts.nodeId ? { node_id: opts.nodeId } : {}),
+        ...(opts.from ? { from: opts.from } : {}),
+        ...(opts.to ? { to: opts.to } : {}),
+        ...(opts.limit ? { limit: Number.parseInt(opts.limit, 10) } : {}),
+        ...(opts.offset ? { offset: Number.parseInt(opts.offset, 10) } : {}),
+      });
+      console.log(JSON.stringify(result, null, 2));
     });
 
   program
@@ -1743,6 +1772,12 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       const target = findBestMatchingNode(G, nodeB);
       if (!source || !target) {
         console.log(`Could not find nodes matching: ${JSON.stringify(nodeA)} or ${JSON.stringify(nodeB)}`);
+        return;
+      }
+      if (source === target) {
+        console.log(
+          `${JSON.stringify(nodeA)} and ${JSON.stringify(nodeB)} both resolved to the same node ${JSON.stringify(source)}. Use a more specific label or the exact node ID.`,
+        );
         return;
       }
       let path: string[];

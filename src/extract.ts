@@ -2549,6 +2549,63 @@ async function extractSvelte(filePath: string, rootDir?: string): Promise<Extrac
   return result;
 }
 
+/**
+ * Astro single-file components mix Markdown/HTML with a TypeScript frontmatter
+ * (between leading `---` markers) plus optional `<script>` blocks. The regex-
+ * backed base extractor catches typed declarations; this wrapper scans the
+ * whole file source for static `import ... from "x"` and dynamic `import("x")`
+ * calls so module edges land in the graph. Resolution reuses the JS/TS
+ * resolver, which already handles relative paths and tsconfig path aliases.
+ */
+async function extractAstro(filePath: string, rootDir?: string): Promise<ExtractionResult> {
+  const result = await extractRegexBackedCode(filePath, rootDir);
+
+  let source: string;
+  try {
+    source = readFileSync(filePath, "utf-8");
+  } catch {
+    return result;
+  }
+
+  const fileNode = result.nodes.find(
+    (node) => node.label === basename(filePath) && node.source_file === filePath,
+  );
+  if (!fileNode) {
+    return result;
+  }
+
+  const seen = new Set<string>();
+  const sourceText = source;
+  const fileNodeId = fileNode.id;
+  function pushImport(raw: string, index: number): void {
+    const target = resolveJsImportTarget(raw, filePath);
+    if (!target) return;
+    const key = `${target}@${index}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    result.edges.push({
+      source: fileNodeId,
+      target,
+      relation: "imports_from",
+      confidence: "EXTRACTED",
+      source_file: filePath,
+      source_location: `L${lineForIndex(sourceText, index)}`,
+      weight: 1.0,
+    });
+  }
+
+  for (const match of source.matchAll(/\bimport\s+(?:[^"';]+?\s+from\s+)?['"]([^'"]+)['"]/g)) {
+    const raw = match[1]?.trim();
+    if (raw) pushImport(raw, match.index ?? 0);
+  }
+  for (const match of source.matchAll(/import\(\s*['"]([^'"]+)['"]\s*\)/g)) {
+    const raw = match[1]?.trim();
+    if (raw) pushImport(raw, match.index ?? 0);
+  }
+
+  return result;
+}
+
 // ---------------------------------------------------------------------------
 // Go extractor (custom walk)
 // ---------------------------------------------------------------------------
@@ -3876,6 +3933,7 @@ const _DISPATCH: Record<string, ExtractorFn> = {
   ".tsx": extractJs,
   ".vue": extractRegexBackedCode,
   ".svelte": extractSvelte,
+  ".astro": extractAstro,
   ".dart": extractRegexBackedCode,
   ".groovy": extractRegexBackedCode,
   ".gradle": extractRegexBackedCode,
@@ -4033,7 +4091,7 @@ const _EXTENSIONS = new Set([
   ".lua", ".toc", ".zig", ".ps1",
   ".m", ".mm",
   ".jl", ".ex", ".exs",
-  ".vue", ".svelte", ".dart", ".groovy", ".gradle", ".v", ".sv", ".ejs",
+  ".vue", ".svelte", ".astro", ".dart", ".groovy", ".gradle", ".v", ".sv", ".ejs",
   ".md", ".mdx", ".qmd",
   ".luau", ".r", ".R", ".f", ".F", ".f90", ".F90", ".f95", ".F95", ".f03", ".F03", ".f08", ".F08",
 ]);

@@ -6,7 +6,7 @@
  * Doc/paper/image changes write a flag and notify the user.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
-import { resolve as pathResolve, extname, basename } from "node:path";
+import { resolve as pathResolve, extname, basename, dirname, join } from "node:path";
 import {
   DEFAULT_GRAPHIFY_STATE_DIR,
   LEGACY_GRAPHIFY_STATE_DIR,
@@ -74,6 +74,9 @@ function builtFromCommit(root: string, graphPath: string): string | null {
 // Rebuild pipeline (code-only, no LLM)
 // ---------------------------------------------------------------------------
 
+// topology signature now lives in src/export.ts so watch + toJson agree on
+// the exact same string. Imported lazily inside rebuildCode().
+
 export async function rebuildCode(
   watchPath: string,
   followSymlinks: boolean = false,
@@ -82,6 +85,12 @@ export async function rebuildCode(
     force?: boolean;
     scope?: GraphifyInputScopeMode;
     scopeSource?: InputScopeSource;
+    /**
+     * Skip Louvain clustering and report regeneration. graph.json is still
+     * written with the merged AST extraction but without community labels.
+     * Mirrors upstream Python Graphify v0.7.18 `--no-cluster` (PR #824).
+     */
+    noCluster?: boolean;
   } = {},
 ): Promise<boolean> {
   try {
@@ -94,7 +103,7 @@ export async function rebuildCode(
     const { cluster, scoreAll } = await import("./cluster.js");
     const { godNodes, surprisingConnections, suggestQuestions } = await import("./analyze.js");
     const { generate } = await import("./report.js");
-    const { toJson } = await import("./export.js");
+    const { toJson, computeTopologySignature } = await import("./export.js");
 
     const root = pathResolve(watchPath);
     const scopeInventory = inspectInputScope(root, {
@@ -182,15 +191,68 @@ export async function rebuildCode(
         /* ignore unreadable prior graph snapshots */
       }
     }
-    const communities = cluster(G);
-    const cohesion = scoreAll(G, communities);
-    const gods = godNodes(G);
-    const surprises = surprisingConnections(G, communities);
-    const labels = resolveCommunityLabels(communities, {
-      labelsPath: paths.scratch.labels,
-      graph: G,
-    });
-    const questions = suggestQuestions(G, communities, labels);
+    // Topology short-circuit (upstream PR #824): if the new merged AST graph
+    // has the exact same nodes + edges + relations as the previously
+    // committed graph.json, reuse the existing community assignment instead
+    // of re-running Louvain. This keeps community IDs deterministic across
+    // no-op rebuilds and avoids unnecessary churn in graph.json diffs.
+    let communities: Map<number, string[]> | undefined;
+    if (!options.noCluster && existsSync(paths.graph)) {
+      try {
+        const existingData = JSON.parse(readFileSync(paths.graph, "utf-8")) as {
+          topology_signature?: string;
+          nodes?: Array<{ id?: string; community?: number | null }>;
+        };
+        const previousSig = typeof existingData.topology_signature === "string"
+          ? existingData.topology_signature
+          : null;
+        const currentSig = computeTopologySignature(G);
+        if (previousSig && previousSig === currentSig) {
+          // The merged AST graph matches the prior topology exactly. Pull
+          // community ids straight from the persisted graph.json: mergeNode
+          // will not overwrite a node already present in G, so the in-memory
+          // graphology instance still lacks community attrs at this point.
+          const reused: Map<number, string[]> = new Map();
+          for (const node of existingData.nodes ?? []) {
+            const cid = typeof node.community === "number" && Number.isFinite(node.community)
+              ? node.community
+              : null;
+            if (cid === null || !node.id || !G.hasNode(node.id)) continue;
+            const list = reused.get(cid) ?? [];
+            list.push(node.id);
+            reused.set(cid, list);
+            // Stamp the attribute on G so downstream consumers (toJson,
+            // resolveCommunityLabels) see the reused community id.
+            G.setNodeAttribute(node.id, "community", cid);
+          }
+          if (reused.size > 0) {
+            communities = reused;
+            console.log(
+              `[graphify watch] Topology unchanged - reusing ${reused.size} existing community assignment(s).`,
+            );
+          }
+        }
+      } catch {
+        /* ignore unreadable prior graph, fall through to full clustering */
+      }
+    }
+    if (options.noCluster) {
+      communities = new Map();
+      console.log("[graphify watch] --no-cluster: skipping Louvain clustering.");
+    }
+    if (!communities) {
+      communities = cluster(G);
+    }
+    const cohesion = options.noCluster ? new Map<number, number>() : scoreAll(G, communities);
+    const gods = options.noCluster ? [] : godNodes(G);
+    const surprises = options.noCluster ? [] : surprisingConnections(G, communities);
+    const labels = options.noCluster
+      ? new Map<number, string>()
+      : resolveCommunityLabels(communities, {
+        labelsPath: paths.scratch.labels,
+        graph: G,
+      });
+    const questions = options.noCluster ? [] : suggestQuestions(G, communities, labels);
 
     const report = generate(
       G,
@@ -301,6 +363,50 @@ function hasNonCode(changedPaths: string[]): boolean {
 // Main watcher
 // ---------------------------------------------------------------------------
 
+function rebuildLockPath(watchPath: string): string {
+  return join(resolveGraphifyPaths({ root: pathResolve(watchPath) }).stateDir, ".rebuild.lock");
+}
+
+/**
+ * Acquire the watch rebuild lock by writing a single PID line. Returns true
+ * when the caller holds the lock, false when another rebuild is already in
+ * flight. The lock file is intentionally short (one line, current PID + LF)
+ * so downstream tooling can `kill -0` the recorded PID for liveness checks.
+ *
+ * Ported from upstream Python Graphify v0.7.18/0.7.19 watch fix (#858 / PR
+ * #859): rewrite a single PID line on acquire and unlink on release so a
+ * stale lock from a crashed run does not deadlock subsequent rebuilds.
+ */
+export function acquireRebuildLock(watchPath: string): boolean {
+  const lockPath = rebuildLockPath(watchPath);
+  mkdirSync(dirname(lockPath), { recursive: true });
+  if (existsSync(lockPath)) {
+    const recorded = readFileSync(lockPath, "utf-8").trim().split(/\s+/)[0];
+    const pid = recorded ? Number.parseInt(recorded, 10) : NaN;
+    if (Number.isFinite(pid) && pid > 0) {
+      try {
+        process.kill(pid, 0);
+        return false;
+      } catch {
+        // Stale lock - the PID is no longer alive, fall through to overwrite.
+      }
+    }
+  }
+  writeFileSync(lockPath, `${process.pid}\n`, "utf-8");
+  return true;
+}
+
+export function releaseRebuildLock(watchPath: string): void {
+  const lockPath = rebuildLockPath(watchPath);
+  if (existsSync(lockPath)) {
+    try {
+      unlinkSync(lockPath);
+    } catch {
+      // Best effort: a concurrent watcher may have already released it.
+    }
+  }
+}
+
 export async function watch(
   watchPath: string,
   debounce: number = 3.0,
@@ -319,6 +425,7 @@ export async function watch(
   const resolvedPath = pathResolve(watchPath);
   let lastTrigger = 0;
   let pending = false;
+  let rebuilding = false;
   const changed = new Set<string>();
 
   const watcher = chokidar.watch(resolvedPath, {
@@ -357,16 +464,29 @@ export async function watch(
   const debounceMs = debounce * 1000;
 
   const poll = setInterval(async () => {
-    if (pending && Date.now() - lastTrigger >= debounceMs) {
-      pending = false;
-      const batch = [...changed];
-      changed.clear();
+    if (!pending) return;
+    if (Date.now() - lastTrigger < debounceMs) return;
+    if (rebuilding) return; // already running; wait for the next tick
+
+    if (!acquireRebuildLock(watchPath)) {
+      // Another graphify watch process holds the lock; check again next tick.
+      return;
+    }
+
+    pending = false;
+    rebuilding = true;
+    const batch = [...changed];
+    changed.clear();
+    try {
       console.log(`\n[graphify watch] ${batch.length} file(s) changed`);
       if (hasNonCode(batch)) {
         notifyOnly(watchPath);
       } else {
         await rebuildCode(watchPath, false, options);
       }
+    } finally {
+      rebuilding = false;
+      releaseRebuildLock(watchPath);
     }
   }, 500);
 
@@ -375,6 +495,7 @@ export async function watch(
     console.log("\n[graphify watch] Stopped.");
     clearInterval(poll);
     watcher.close();
+    releaseRebuildLock(watchPath);
     process.exit(0);
   };
 

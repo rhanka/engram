@@ -1,5 +1,5 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import type { NormalizedLlmExecutionPolicy } from "./types.js";
 
@@ -33,6 +33,24 @@ export interface BatchVisionImportInput {
   outputDir: string;
 }
 
+/**
+ * Text-JSON equivalent of BatchVisionExportInput. Used by the wiki
+ * description generator and any other text-JSON consumer that wants to
+ * submit many prompts as a single batch (OpenAI Batch, Anthropic Batch,
+ * etc.) instead of paying per-call latency. Mirrors the upstream
+ * `batch` mode in WikiDescriptionGenerator.
+ */
+export interface BatchTextJsonExportInput {
+  schema: string;
+  requests: Array<TextJsonGenerationInput & { id: string }>;
+  outputPath: string;
+}
+
+export interface BatchTextJsonImportInput {
+  inputPath: string;
+  outputDir: string;
+}
+
 export interface LlmExecutionResult {
   status: "instructions_written" | "completed";
   provider: string;
@@ -60,6 +78,20 @@ export interface BatchVisionImportResult {
   audit: Record<string, unknown>;
 }
 
+export interface BatchTextJsonExportResult {
+  provider: string;
+  outputPath: string;
+  requestCount: number;
+  audit: Record<string, unknown>;
+}
+
+export interface BatchTextJsonImportResult {
+  provider: string;
+  importedCount: number;
+  failedCount: number;
+  audit: Record<string, unknown>;
+}
+
 export interface TextJsonGenerationClient {
   readonly mode: LlmExecutionMode;
   readonly provider: string;
@@ -81,6 +113,12 @@ export interface BatchVisionJsonClient {
   importResults(input: BatchVisionImportInput): Promise<BatchVisionImportResult>;
 }
 
+export interface BatchTextJsonClient {
+  readonly provider: string;
+  exportRequests(input: BatchTextJsonExportInput): Promise<BatchTextJsonExportResult>;
+  importResults(input: BatchTextJsonImportInput): Promise<BatchTextJsonImportResult>;
+}
+
 export interface LlmMeshAdapter {
   generateTextJson(input: TextJsonGenerationInput): Promise<TextJsonGenerationResult>;
   analyzeVisionJson(input: VisionJsonAnalysisInput): Promise<VisionJsonAnalysisResult>;
@@ -96,10 +134,20 @@ export interface DirectTextJsonClientOptions {
   provider: DirectLlmProvider;
   model?: string;
   temperature?: number;
+  maxOutputTokens?: number;
 }
 
 function safeName(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]+/gu, "-").replace(/^-+|-+$/gu, "") || "schema";
+}
+
+function instructionFileName(prefix: string, schema: string, outputPath?: string): string {
+  const outputSlug = outputPath
+    ? safeName(basename(outputPath).replace(/\.[^.]+$/u, ""))
+    : null;
+  return outputSlug
+    ? `${prefix}-${safeName(schema)}-${outputSlug}.md`
+    : `${prefix}-${safeName(schema)}.md`;
 }
 
 function writeInstruction(path: string, lines: string[]): void {
@@ -262,7 +310,7 @@ export function createAssistantTextJsonClient(options: AssistantLlmClientOptions
     mode: "assistant",
     provider: "assistant",
     async generateJson(input: TextJsonGenerationInput): Promise<TextJsonGenerationResult> {
-      const instructionPath = join(options.instructionDir, `text-json-${safeName(input.schema)}.md`);
+      const instructionPath = join(options.instructionDir, instructionFileName("text-json", input.schema, input.outputPath));
       writeInstruction(instructionPath, [
         `# Text JSON Generation: ${input.schema}`,
         "",
@@ -327,6 +375,7 @@ export function createDirectTextJsonClient(options: DirectTextJsonClientOptions)
   const provider = options.provider;
   const model = options.model?.trim() || defaultDirectLlmModel(provider);
   const temperature = options.temperature ?? 0;
+  const maxOutputTokens = options.maxOutputTokens;
   return {
     mode: "direct",
     provider,
@@ -339,6 +388,7 @@ export function createDirectTextJsonClient(options: DirectTextJsonClientOptions)
       const result = await generateText({
         model: resolvedModel as never,
         temperature,
+        ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
         system: [
           "You are Graphify's JSON extraction backend.",
           "Return only valid JSON matching the requested schema.",

@@ -10,14 +10,20 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 TMP_DIR=$(mktemp -d)
 TARBALL=""
+TARBALL_PATH=""
 export npm_config_cache="$TMP_DIR/npm-cache"
+export HOME="$TMP_DIR/home"
+PACK_DIR="$TMP_DIR/pack"
+INSTALL_DIR="$TMP_DIR/install"
 mkdir -p "$npm_config_cache"
+mkdir -p "$HOME"
+mkdir -p "$PACK_DIR"
+mkdir -p "$INSTALL_DIR"
 
 cleanup() {
     echo ""
     echo "Cleaning up..."
     rm -rf "$TMP_DIR"
-    [ -n "$TARBALL" ] && rm -f "$PROJECT_DIR/$TARBALL"
 }
 trap cleanup EXIT
 
@@ -39,14 +45,19 @@ echo "  ✓ Tests passed"
 
 # ── Step 3: Pack ──────────────────────────────────────
 echo "Step 3: npm pack..."
-TARBALL=$(npm pack 2>/dev/null | tail -1)
+TARBALL=$(npm pack --pack-destination "$PACK_DIR" 2>/dev/null | tail -1)
+TARBALL_PATH="$PACK_DIR/$TARBALL"
 echo "  ✓ Packed: $TARBALL"
 
 # ── Step 4: Install from tarball in clean dir ─────────
 echo "Step 4: Install from tarball..."
-cd "$TMP_DIR"
+cd "$INSTALL_DIR"
 npm init -y --silent > /dev/null 2>&1
-npm install "$PROJECT_DIR/$TARBALL" --silent > /dev/null 2>&1
+if ! npm install "$TARBALL_PATH" > "$TMP_DIR/npm-install.log" 2>&1; then
+    echo "  ✗ Install from tarball failed"
+    sed -n '1,160p' "$TMP_DIR/npm-install.log"
+    exit 1
+fi
 echo "  ✓ Installed from tarball"
 
 # ── Step 5: Verify CLI ───────────────────────────────

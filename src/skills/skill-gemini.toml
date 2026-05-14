@@ -21,6 +21,7 @@ Use the installed TypeScript runtime only. Do not fall back to Python.
 - `/graphify path "A" "B"` means show the shortest path between two nodes
 - `/graphify explain "Node"` means explain one node and its neighbors
 - `/graphify add <url>` means ingest the URL into `./raw` and then update the graph
+- `/graphify wiki describe` means generate opt-in wiki description sidecars before rendering with `--descriptions`
 - `/graphify migrate-state` means run `graphify migrate-state --dry-run` first, then ask before applying migration or git mv advice
 
 Always prefer graphify outputs and graphify runtime commands over ad-hoc file traversal:
@@ -197,6 +198,19 @@ $(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" clus
 ```
 
 For `--svg`, `--graphml`, `--neo4j`, `--neo4j-push`, call the matching `export-*` or `push-neo4j` runtime command after the build.
+
+Wiki descriptions are opt-in and two-step. First generate sidecars, then pass their index into wiki or Obsidian rendering:
+
+```bash
+graphify wiki describe --graph .graphify/graph.json --mode assistant --targets all
+# or, for direct mode:
+graphify wiki describe --graph .graphify/graph.json --mode direct --backend openai --targets all
+
+graphify export wiki --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
+graphify export obsidian --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
+```
+
+Sidecars live under `.graphify/wiki/descriptions/` with an index at `.graphify/wiki/descriptions.json`. They record graph hash, prompt/generator provenance, evidence refs, and cache keys; existing generated sidecars may be reused when a fresh generation does not complete. `insufficient_evidence` sidecars render no Description section. This never mutates `.graphify/graph.json`.
 
 For `--mcp`, use the configured `graphify` MCP server from `.gemini/settings.json` if present, otherwise tell the user to run `graphify gemini install`.
 

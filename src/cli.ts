@@ -13,6 +13,7 @@ import {
   unlinkSync,
   rmdirSync,
 } from "node:fs";
+import { createHash } from "node:crypto";
 import { join, resolve, dirname, extname, basename } from "node:path";
 import { homedir, platform } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -37,10 +38,11 @@ import { safeExecGit } from "./git.js";
 import { safeGitRevParse } from "./git.js";
 import { discoverProjectConfig, loadProjectConfig } from "./project-config.js";
 import { defaultManifestPath, resolveGraphInputPath, resolveGraphifyPaths } from "./paths.js";
-import { normalizeSearchText } from "./search.js";
+import { normalizeSearchText, scoreSearchText } from "./search.js";
 import { makeGraphPortable, projectRootLabel, scanPortableGraphifyArtifacts } from "./portable-artifacts.js";
 import { loadOntologyPatchContext } from "./ontology-patch-context.js";
 import { persistCommunityLabels, resolveCommunityLabels } from "./community-labels.js";
+import type { WikiDescriptionSidecarIndex } from "./wiki-descriptions.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -149,10 +151,84 @@ function readJson<T>(path: string): T {
   return JSON.parse(readFileSync(resolve(path), "utf-8")) as T;
 }
 
+function isJsonRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function loadWikiDescriptionSidecarIndex(inputPath?: string): WikiDescriptionSidecarIndex | undefined {
+  if (!inputPath) return undefined;
+  const value = readJson<unknown>(inputPath);
+  if (!isJsonRecord(value)) {
+    throw new Error("wiki description sidecar index must be a JSON object");
+  }
+  if (value.schema !== "graphify_wiki_description_index_v1") {
+    throw new Error("wiki description sidecar index schema must be graphify_wiki_description_index_v1");
+  }
+  if (!isJsonRecord(value.nodes)) {
+    throw new Error("wiki description sidecar index nodes must be an object");
+  }
+  if (value.communities !== undefined && !isJsonRecord(value.communities)) {
+    throw new Error("wiki description sidecar index communities must be an object when present");
+  }
+  return value as unknown as WikiDescriptionSidecarIndex;
+}
+
+async function loadFreshWikiDescriptionSidecarIndex(
+  inputPath: string | undefined,
+  graphPath: string,
+): Promise<WikiDescriptionSidecarIndex | undefined> {
+  const index = loadWikiDescriptionSidecarIndex(inputPath);
+  if (!index) return undefined;
+  const { selectFreshWikiDescriptions, WIKI_DESCRIPTION_PROMPT_VERSION } = await import("./wiki-descriptions.js");
+  const currentGraphHash = graphContentHash(graphPath);
+  const { fresh, stale } = selectFreshWikiDescriptions(index, {
+    graph_hash: currentGraphHash,
+    prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+  });
+  if (stale.nodes.length > 0 || stale.communities.length > 0) {
+    console.warn(
+      `Skipping ${stale.nodes.length} node and ${stale.communities.length} community description(s) ` +
+      `that are stale under graph_hash=${currentGraphHash.slice(0, 12)} ` +
+      `prompt_version=${WIKI_DESCRIPTION_PROMPT_VERSION}. Re-generate with graphify wiki describe.`,
+    );
+  }
+  return fresh;
+}
+
 function writeJson(path: string, value: unknown): void {
   const resolved = resolve(path);
   mkdirSync(dirname(resolved), { recursive: true });
   writeFileSync(resolved, JSON.stringify(value, null, 2), "utf-8");
+}
+
+function parsePositiveIntegerOption(value: unknown, name: string): number | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const parsed = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0 || String(value).trim() !== String(parsed)) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return parsed;
+}
+
+function graphContentHash(graphPath: string): string {
+  return createHash("sha256").update(readFileSync(graphPath)).digest("hex");
+}
+
+function parseWikiDescriptionTargets(value: unknown): {
+  includeNodeTargets: boolean;
+  includeCommunityTargets: boolean;
+} {
+  const target = String(value ?? "nodes").trim().toLowerCase();
+  if (target === "nodes") {
+    return { includeNodeTargets: true, includeCommunityTargets: false };
+  }
+  if (target === "communities") {
+    return { includeNodeTargets: false, includeCommunityTargets: true };
+  }
+  if (target === "all") {
+    return { includeNodeTargets: true, includeCommunityTargets: true };
+  }
+  throw new Error("--targets must be one of: nodes, communities, all");
 }
 
 function writeFileAtomic(path: string, content: string): void {
@@ -272,9 +348,9 @@ function findBestMatchingNode(G: Graph, query: string): string | null {
   let bestScore = 0;
   let bestNodeId: string | null = null;
   G.forEachNode((nodeId, data) => {
-    const label = normalizeSearchText((data.label as string) ?? nodeId);
-    const source = normalizeSearchText((data.source_file as string) ?? "");
-    const score = terms.filter((term) => label.includes(term) || source.includes(term)).length;
+    const label = (data.label as string) ?? nodeId;
+    const source = (data.source_file as string) ?? "";
+    const score = scoreSearchText(label, source, terms);
     if (score > 0 && (!bestNodeId || score > bestScore || (score === bestScore && G.degree(nodeId) > G.degree(bestNodeId)))) {
       bestScore = score;
       bestNodeId = nodeId;
@@ -1926,14 +2002,17 @@ export async function main(): Promise<void> {
     .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
     .requiredOption("--input <path>", "Extraction JSON to compile")
     .requiredOption("--out-dir <path>", "Ontology output directory")
+    .option("--descriptions <path>", "Path to wiki description sidecar index JSON")
     .action(async (opts) => {
       const { compileOntologyOutputs } = await import("./ontology-output.js");
       const context = loadCliProfileContext(opts.profileState);
+      const descriptions = loadWikiDescriptionSidecarIndex(opts.descriptions);
       const result = compileOntologyOutputs({
         outputDir: resolve(opts.outDir),
         extraction: readJson(opts.input),
         profile: context.profile,
         config: context.profile.outputs.ontology,
+        ...(descriptions ? { descriptions } : {}),
       });
       if (!result.enabled) {
         console.log("Ontology outputs disabled by profile config");
@@ -1964,6 +2043,44 @@ export async function main(): Promise<void> {
         console.log(JSON.stringify(queue, null, 2));
       } else {
         console.log(`Ontology reconciliation candidates: ${queue.candidate_count} written to ${resolve(opts.out)}`);
+      }
+    });
+
+  ontology
+    .command("decision-log")
+    .description("Preview ontology reconciliation decision logs without mutating files")
+    .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
+    .option("--source <source>", "Decision source: authoritative, audit, or both")
+    .option("--status <status>", "Patch status filter: applied, rejected, or all")
+    .option("--operation <operation>", "Patch operation filter")
+    .option("--node-id <id>", "Filter decisions touching a node id")
+    .option("--from <value>", "Filter by from/source id or status")
+    .option("--to <value>", "Filter by to/target id or status")
+    .option("--limit <n>", "Maximum records to return")
+    .option("--offset <n>", "Records to skip")
+    .option("--json", "Print JSON result")
+    .action(async (opts) => {
+      const { previewOntologyDecisionLog } = await import("./ontology-reconciliation-api.js");
+      const context = loadOntologyPatchContext(opts.profileState);
+      const result = previewOntologyDecisionLog(context, {
+        ...(opts.source ? { source: opts.source } : {}),
+        ...(opts.status ? { status: opts.status } : {}),
+        ...(opts.operation ? { operation: opts.operation } : {}),
+        ...(opts.nodeId ? { node_id: opts.nodeId } : {}),
+        ...(opts.from ? { from: opts.from } : {}),
+        ...(opts.to ? { to: opts.to } : {}),
+        ...(opts.limit ? { limit: Number.parseInt(opts.limit, 10) } : {}),
+        ...(opts.offset ? { offset: Number.parseInt(opts.offset, 10) } : {}),
+      });
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(`Ontology decision log: ${result.total} record(s)`);
+        for (const item of result.items) {
+          const patch = item.patch as { id?: unknown; operation?: unknown; status?: unknown };
+          console.log(`- ${item.source}: ${String(patch.id ?? "(no id)")} ${String(patch.operation ?? "")} ${String(patch.status ?? "")}`.trimEnd());
+        }
+        for (const issue of result.issues) console.warn(`${issue.severity}: ${issue.message}`);
       }
     });
 
@@ -2005,15 +2122,11 @@ export async function main(): Promise<void> {
 
   ontology
     .command("serve")
-    .description("Start an explicit write-enabled ontology MCP server")
+    .description("Start an ontology MCP server; write tools require explicit --write")
     .requiredOption("--config <path>", "Graphify project config path")
     .option("--write", "Enable ontology mutation tools")
     .option("--graph <path>", "Graph JSON path; defaults to <state_dir>/graph.json")
     .action(async (opts) => {
-      if (opts.write !== true) {
-        console.error("error: ontology serve exposes write tools only with explicit --write");
-        process.exit(1);
-      }
       const projectConfig = loadProjectConfig(resolve(opts.config));
       const profileStatePath = join(projectConfig.outputs.state_dir, "profile", "profile-state.json");
       const graphPath = opts.graph ? resolve(opts.graph) : join(projectConfig.outputs.state_dir, "graph.json");
@@ -2024,10 +2137,49 @@ export async function main(): Promise<void> {
       const { serve } = await import("./serve.js");
       await serve(graphPath, undefined, {
         ontology: {
-          write: true,
+          write: opts.write === true,
           profileStatePath,
         },
       });
+    });
+
+  ontology
+    .command("studio")
+    .description("Start a local ontology reconciliation studio API; --write enables patch mutation routes (loopback only)")
+    .requiredOption("--config <path>", "Graphify project config path")
+    .option("--host <host>", "Host to bind", "127.0.0.1")
+    .option("--port <port>", "Port to bind; defaults to an ephemeral port")
+    .option("--write", "Enable POST /api/ontology/patch/{validate,dry-run,apply} routes (loopback only)")
+    .option("--token <token>", "Bearer token for write routes (default: random hex24 generated at startup)")
+    .action(async (opts) => {
+      const projectConfig = loadProjectConfig(resolve(opts.config));
+      const profileStatePath = join(projectConfig.outputs.state_dir, "profile", "profile-state.json");
+      if (!existsSync(profileStatePath)) {
+        console.error(`error: profile state not found: ${profileStatePath}. Run graphify profile dataprep first.`);
+        process.exit(1);
+      }
+      const { startOntologyStudioServer } = await import("./ontology-studio.js");
+      try {
+        const started = await startOntologyStudioServer({
+          profileStatePath,
+          host: opts.host,
+          ...(opts.port ? { port: Number.parseInt(opts.port, 10) } : {}),
+          ...(opts.write ? { write: true } : {}),
+          ...(opts.token ? { token: String(opts.token) } : {}),
+        });
+        if (started.writeEnabled) {
+          console.log(`Ontology studio (write-enabled) listening at ${started.url}`);
+          console.log(`  Bearer token: ${started.token}`);
+          console.log(`  POST routes: /api/ontology/patch/{validate,dry-run,apply}`);
+          console.log(`  Send: Authorization: Bearer ${started.token}`);
+        } else {
+          console.log(`Ontology studio read-only API listening at ${started.url}`);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`error: ${message}`);
+        process.exit(1);
+      }
     });
 
   program
@@ -2121,7 +2273,7 @@ export async function main(): Promise<void> {
     .argument("<inputPath>")
     .option("--semantic <path>", "Path to a provided semantic extraction JSON to merge")
     .option("--out <path>", "Output workspace root for the generated .graphify state")
-    .option("--backend <name>", "Direct semantic backend: anthropic, openai, gemini, mistral, cohere, ollama")
+    .option("--backend <name>", "Direct semantic backend: anthropic, openai, gemini, mistral, cohere, ollama, or claude-cli (no API key; writes instructions for the assistant skill)")
     .option("--model <id>", "Direct backend model override")
     .option("--concurrency <n>", "Direct backend semantic chunk concurrency", "4")
     .option("--token-budget <n>", "Approximate direct backend token budget per semantic chunk", "60000")
@@ -2220,8 +2372,77 @@ export async function main(): Promise<void> {
             import("./llm-execution.js"),
             import("./direct-llm-extract.js"),
           ]);
+
+          // claude-cli backend (upstream Python Graphify v0.7.17, #855):
+          // routes semantic extraction through Claude Code itself rather than
+          // a direct provider API key. In the TypeScript fork this is exactly
+          // what the assistant skill already does, so the --backend alias
+          // writes a standard instructions file under .graphify/scratch/ and
+          // exits cleanly so the calling Claude Code session (or any other
+          // assistant harness) can complete the semantic step without
+          // mixing API key paths.
+          if (backend === "claude-cli") {
+            const textSemanticFiles = [
+              ...(rawDetection.files.document ?? []),
+              ...(rawDetection.files.paper ?? []),
+            ];
+            const unsupportedSemanticFiles = [
+              ...(rawDetection.files.image ?? []),
+              ...(rawDetection.files.video ?? []),
+            ];
+            const instructionsPath = join(paths.stateDir, "scratch", "assistant-extract-instructions.md");
+            mkdirSync(dirname(instructionsPath), { recursive: true });
+            const lines = [
+              `# Graphify assistant extraction instructions`,
+              ``,
+              `Generated by \`graphify extract --backend claude-cli\` for ${root}.`,
+              ``,
+              `No provider API key was read or persisted: this backend defers semantic`,
+              `extraction to the calling Claude Code session (or any other graphify`,
+              `assistant skill harness) so the same security boundary as the assistant`,
+              `mode applies.`,
+              ``,
+              `## Next step`,
+              ``,
+              `Run the graphify skill so it can read the detection roots below, write`,
+              `the merged extraction JSON to \`${paths.scratch.semantic}\`, then call`,
+              `\`graphify extract --semantic <that path>\` (or finish the assemble /`,
+              `cluster steps directly).`,
+              ``,
+              `## Text semantic files (${textSemanticFiles.length})`,
+              ``,
+              ...(textSemanticFiles.length > 0
+                ? textSemanticFiles.map((file) => `- ${file}`)
+                : ["- none"]),
+              ``,
+              ...(unsupportedSemanticFiles.length > 0
+                ? [
+                  `## Non-text semantic files (${unsupportedSemanticFiles.length})`,
+                  ``,
+                  `These require the PDF/OCR/transcription pipeline before the assistant skill consumes them:`,
+                  ``,
+                  ...unsupportedSemanticFiles.map((file) => `- ${file}`),
+                  ``,
+                ]
+                : []),
+            ];
+            writeFileSync(instructionsPath, lines.join("\n"), "utf-8");
+            console.log(
+              `[graphify extract] --backend claude-cli: no provider API key read; ` +
+              `wrote assistant instructions to ${instructionsPath}.`,
+            );
+            console.log(
+              `[graphify extract] Run the graphify skill to complete semantic extraction, ` +
+              `then re-run extract with --semantic <output>.`,
+            );
+            // Return cleanly rather than process.exit so the surrounding
+            // try/catch and the test harness's interceptExit see a normal
+            // success exit.
+            return;
+          }
+
           if (!isDirectLlmProvider(backend)) {
-            console.error("error: --backend must be one of anthropic, openai, gemini, mistral, cohere, ollama");
+            console.error("error: --backend must be one of anthropic, openai, gemini, mistral, cohere, ollama, claude-cli");
             process.exit(1);
           }
           const textSemanticFiles = [
@@ -2408,6 +2629,7 @@ export async function main(): Promise<void> {
     .command("update [path]")
     .description("One-shot code-only graph rebuild")
     .option("--force", "Overwrite graph.json even when the rebuild has fewer nodes")
+    .option("--no-cluster", "Skip Louvain clustering and report regeneration (writes graph.json without community labels)")
     .option("--scope <mode>", scopeOptionDescription())
     .option("--all", "Alias for --scope all")
     .action(async (updatePath = ".", opts) => {
@@ -2420,6 +2642,7 @@ export async function main(): Promise<void> {
       console.log(`Re-extracting code files in ${updatePath} (no LLM needed)...`);
       const ok = await rebuildCode(updatePath, false, {
         force: Boolean(opts.force),
+        noCluster: opts.cluster === false,
         scope: scopeSelection.mode,
         scopeSource: scopeSelection.source,
       });
@@ -2533,6 +2756,100 @@ export async function main(): Promise<void> {
       console.log(`Done - ${communities.size} communities. GRAPH_REPORT.md, graph.json and graph.html updated.`);
     });
 
+  const wikiCommand = program
+    .command("wiki")
+    .description("Generate and maintain Graphify wiki artifacts");
+
+  wikiCommand
+    .command("describe")
+    .description("Generate wiki description sidecars for nodes and communities")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--mode <mode>", "Generation mode: assistant or direct", "assistant")
+    .option("--backend <provider>", "Direct LLM provider for --mode direct")
+    .option("--model <id>", "Direct LLM model override")
+    .option("--targets <scope>", "Targets to describe: nodes, communities, all", "nodes")
+    .option("--out <dir>", "Directory to write sidecar JSON files")
+    .option("--instructions-dir <dir>", "Directory to write assistant instruction files")
+    .option("--max-nodes <count>", "Maximum node targets")
+    .option("--max-communities <count>", "Maximum community targets")
+    .option("--max-neighbors <count>", "Maximum node neighbors in each prompt")
+    .action(async (opts) => {
+      try {
+        const graphPath = resolveGraphInputPath(opts.graph);
+        const mode = String(opts.mode ?? "assistant").trim().toLowerCase();
+        if (!["assistant", "direct", "batch", "mesh"].includes(mode)) {
+          throw new Error("--mode must be one of: assistant, direct, batch, mesh");
+        }
+        if (mode === "batch" || mode === "mesh") {
+          throw new Error(`wiki describe --mode ${mode} is not implemented yet; use assistant or direct`);
+        }
+
+        const outputDir = resolve(opts.out ?? join(dirname(graphPath), "wiki", "descriptions"));
+        const instructionsDir = resolve(opts.instructionsDir ?? join(dirname(graphPath), "wiki", "description-instructions"));
+        const targetOptions = parseWikiDescriptionTargets(opts.targets);
+        const maxNodeTargets = parsePositiveIntegerOption(opts.maxNodes, "--max-nodes");
+        const maxCommunityTargets = parsePositiveIntegerOption(opts.maxCommunities, "--max-communities");
+        const maxNeighbors = parsePositiveIntegerOption(opts.maxNeighbors, "--max-neighbors");
+
+        const G = loadCliGraph(graphPath);
+        const communities = communitiesFromCliGraph(G);
+        const labels = communityLabelsFromCliGraph(G, communities);
+        const [
+          { generateWikiDescriptionSidecars },
+          {
+            createAssistantTextJsonClient,
+            createDirectTextJsonClient,
+            isDirectLlmProvider,
+          },
+        ] = await Promise.all([
+          import("./wiki-description-generation.js"),
+          import("./llm-execution.js"),
+        ]);
+
+        const clients: Parameters<typeof generateWikiDescriptionSidecars>[1]["clients"] = {};
+        if (mode === "assistant") {
+          clients.assistant = createAssistantTextJsonClient({ instructionDir: instructionsDir });
+        } else {
+          const provider = String(opts.backend ?? "").trim();
+          if (!provider) {
+            throw new Error("--backend is required when using wiki describe --mode direct");
+          }
+          if (!isDirectLlmProvider(provider)) {
+            throw new Error(`unsupported direct LLM provider: ${provider}`);
+          }
+          clients.direct = createDirectTextJsonClient({
+            provider,
+            ...(opts.model ? { model: String(opts.model) } : {}),
+          });
+        }
+
+        const result = await generateWikiDescriptionSidecars(G, {
+          graphHash: graphContentHash(graphPath),
+          mode: mode as "assistant" | "direct",
+          clients,
+          communities,
+          communityLabels: labels,
+          outputDir,
+          ...targetOptions,
+          ...(maxNodeTargets !== undefined ? { maxNodeTargets } : {}),
+          ...(maxCommunityTargets !== undefined ? { maxCommunityTargets } : {}),
+          ...(maxNeighbors !== undefined ? { maxNeighbors } : {}),
+        });
+
+        console.log(`wiki descriptions: ${result.targets.length} target(s), status=${result.status}, index=${result.indexPath ?? "not written"}`);
+        const instructionCount = result.targets.filter((target) => target.instructionPath).length;
+        if (instructionCount > 0) {
+          console.log(`assistant instructions: ${instructionCount} file(s) written to ${instructionsDir}`);
+        }
+        if (result.status === "failed") {
+          process.exit(1);
+        }
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    });
+
   const exportCommand = program
     .command("export")
     .description("Export an existing graph into HTML, wiki, Obsidian, SVG, GraphML, or Neo4j Cypher artifacts");
@@ -2572,6 +2889,7 @@ export async function main(): Promise<void> {
     .command("wiki")
     .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
     .option("--dir <path>", "Directory to write wiki pages")
+    .option("--descriptions <path>", "Path to wiki description sidecar index JSON")
     .action(async (opts) => {
       try {
         const graphPath = resolveGraphInputPath(opts.graph);
@@ -2579,8 +2897,9 @@ export async function main(): Promise<void> {
         const G = loadCliGraph(graphPath);
         const communities = communitiesFromCliGraph(G);
         const labels = communityLabelsFromCliGraph(G, communities);
+        const descriptions = await loadFreshWikiDescriptionSidecarIndex(opts.descriptions, graphPath);
         const { toWiki } = await import("./wiki.js");
-        const count = toWiki(G, communities, outDir, { communityLabels: labels });
+        const count = toWiki(G, communities, outDir, { communityLabels: labels, descriptions });
         console.log(`Wiki export: ${count} page(s) written to ${outDir}`);
       } catch (err) {
         console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
@@ -2592,6 +2911,7 @@ export async function main(): Promise<void> {
     .command("obsidian")
     .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
     .option("--dir <path>", "Directory to write the Obsidian vault")
+    .option("--descriptions <path>", "Path to wiki description sidecar index JSON")
     .action(async (opts) => {
       try {
         const graphPath = resolveGraphInputPath(opts.graph);
@@ -2599,11 +2919,12 @@ export async function main(): Promise<void> {
         const G = loadCliGraph(graphPath);
         const communities = communitiesFromCliGraph(G);
         const labels = communityLabelsFromCliGraph(G, communities);
+        const descriptions = await loadFreshWikiDescriptionSidecarIndex(opts.descriptions, graphPath);
         const [{ toCanvas }, { toWiki }] = await Promise.all([
           import("./export.js"),
           import("./wiki.js"),
         ]);
-        const count = toWiki(G, communities, outDir, { communityLabels: labels });
+        const count = toWiki(G, communities, outDir, { communityLabels: labels, descriptions });
         toCanvas(G, communities, join(outDir, "graph.canvas"), { communityLabels: labels });
         console.log(`Obsidian vault: ${count} note(s) written to ${outDir}`);
         console.log(`Canvas: ${join(outDir, "graph.canvas")} - open in Obsidian for structured community layout`);
@@ -2687,6 +3008,12 @@ export async function main(): Promise<void> {
         }
         if (!target) {
           console.error(`No node matching '${targetLabel}' found.`);
+          process.exit(1);
+        }
+        if (source === target) {
+          console.error(
+            `'${sourceLabel}' and '${targetLabel}' both resolved to the same node '${source}'. Use a more specific label or the exact node ID.`,
+          );
           process.exit(1);
         }
         const shortestPath = await import("graphology-shortest-path/unweighted.js");

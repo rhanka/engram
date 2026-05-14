@@ -92,6 +92,11 @@ describe("public API compatibility", () => {
     expect(typeof api.writeImageRoutingCalibrationSamples).toBe("function");
     expect(typeof api.imageRoutingSampleFromCaption).toBe("function");
     expect(typeof api.compileOntologyOutputs).toBe("function");
+    expect(typeof api.generateOntologyReconciliationCandidates).toBe("function");
+    expect(typeof api.queryOntologyReconciliationCandidates).toBe("function");
+    expect(typeof api.loadOntologyReconciliationDecisionLog).toBe("function");
+    expect(typeof api.collectWikiDescriptionTargets).toBe("function");
+    expect(typeof api.generateWikiDescriptionSidecars).toBe("function");
     expect(typeof api.cloneRepo).toBe("function");
     expect(typeof api.defaultCloneDestination).toBe("function");
     expect(typeof api.mergeGraphsFromFiles).toBe("function");

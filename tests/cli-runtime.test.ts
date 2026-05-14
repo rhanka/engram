@@ -1,8 +1,10 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import { execGit } from "../src/git.js";
+import { WIKI_DESCRIPTION_PROMPT_VERSION, buildWikiDescriptionCacheKey } from "../src/wiki-descriptions.js";
 
 const tempDirs: string[] = [];
 
@@ -198,6 +200,67 @@ describe("public CLI runtime command parity", () => {
     expect(explain.logs.join("\n")).toContain("Connections");
   });
 
+  it("prefers exact path and explain matches over higher-degree substring matches", async () => {
+    const dir = tempProject();
+    const graphDir = join(dir, ".graphify");
+    mkdirSync(graphDir, { recursive: true });
+    const graphPath = join(graphDir, "graph.json");
+    writeFileSync(
+      graphPath,
+      JSON.stringify({
+        directed: false,
+        graph: {},
+        nodes: [
+          { id: "helper", label: "MyFunctionHelpers", source_file: "src/helpers.ts", file_type: "code" },
+          { id: "exact", label: "MyFunction", source_file: "src/exact.ts", file_type: "code" },
+          { id: "target", label: "TargetService", source_file: "src/target.ts", file_type: "code" },
+          { id: "noise-a", label: "NoiseA", source_file: "src/noise-a.ts", file_type: "code" },
+          { id: "noise-b", label: "NoiseB", source_file: "src/noise-b.ts", file_type: "code" },
+        ],
+        links: [
+          { source: "exact", target: "target", relation: "calls", confidence: "EXTRACTED" },
+          { source: "helper", target: "noise-a", relation: "uses", confidence: "EXTRACTED" },
+          { source: "helper", target: "noise-b", relation: "uses", confidence: "EXTRACTED" },
+        ],
+      }),
+      "utf-8",
+    );
+
+    const path = await runCli(["path", "MyFunction", "TargetService", "--graph", graphPath], dir);
+    expect(path.exitCode).toBe(0);
+    expect(path.logs.join("\n")).toContain("MyFunction --calls [EXTRACTED]--> TargetService");
+
+    const explain = await runCli(["explain", "MyFunction", "--graph", graphPath], dir);
+    expect(explain.exitCode).toBe(0);
+    expect(explain.logs.join("\n")).toContain("ID:        exact");
+
+    const runtimePath = await runSkillRuntime(["path", "--graph", graphPath, "MyFunction", "TargetService"], dir);
+    expect(runtimePath.exitCode).toBe(0);
+    expect(runtimePath.logs.join("\n")).toContain("MyFunction --calls--> [EXTRACTED]");
+
+    const runtimeExplain = await runSkillRuntime(["explain", "--graph", graphPath, "MyFunction"], dir);
+    expect(runtimeExplain.exitCode).toBe(0);
+    expect(runtimeExplain.logs.join("\n")).toContain("NODE: MyFunction");
+    expect(runtimeExplain.logs.join("\n")).not.toContain("NODE: MyFunctionHelpers");
+  });
+
+  it("rejects shortest path queries when both labels resolve to the same node", async () => {
+    const dir = tempProject();
+    const graphPath = writeGraph(dir);
+
+    const result = await runCli(["path", "AlphaService", "AlphaService", "--graph", graphPath], dir, {
+      interceptExit: true,
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.errors.join("\n")).toContain("both resolved to the same node");
+
+    const runtime = await runSkillRuntime(["path", "--graph", graphPath, "AlphaService", "AlphaService"], dir);
+    expect(runtime.exitCode).toBe(0);
+    expect(runtime.logs.join("\n")).toContain("both resolved to the same node");
+    expect(runtime.logs.join("\n")).not.toContain("Shortest path (0 hops)");
+  });
+
   it("supports tree for compact graph traversal output", async () => {
     const dir = tempProject();
     const graphPath = writeGraph(dir);
@@ -281,6 +344,165 @@ describe("public CLI runtime command parity", () => {
     expect(obsidian.logs.join("\n")).toContain("graph.canvas");
     expect(existsSync(join(obsidianDir, "index.md"))).toBe(true);
     expect(existsSync(join(obsidianDir, "graph.canvas"))).toBe(true);
+  });
+
+  it("supports export wiki with validated description sidecars", async () => {
+    const dir = tempProject();
+    const graphPath = writeGraph(dir);
+    const descriptionsPath = join(dir, ".graphify", "wiki-descriptions.json");
+    const graphHash = createHash("sha256").update(readFileSync(graphPath)).digest("hex");
+    const cacheKey = buildWikiDescriptionCacheKey({
+      target_id: "community:0",
+      target_kind: "community",
+      graph_hash: graphHash,
+      prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+      mode: "assistant",
+      provider: "assistant",
+      model: null,
+    });
+    writeFileSync(
+      descriptionsPath,
+      JSON.stringify({
+        schema: "graphify_wiki_description_index_v1",
+        graph_hash: graphHash,
+        prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+        nodes: {},
+        communities: {
+          "0": {
+            schema: "graphify_wiki_description_v1",
+            target_id: "community:0",
+            target_kind: "community",
+            graph_hash: graphHash,
+            status: "generated",
+            description: "Community 0 contains the source-backed service and repository concepts.",
+            evidence_refs: ["src/alpha.ts#AlphaService"],
+            confidence: 0.8,
+            cache_key: cacheKey,
+            generator: {
+              mode: "assistant",
+              provider: "assistant",
+              model: null,
+              prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+            },
+          },
+        },
+      }),
+      "utf-8",
+    );
+
+    const wiki = await runCli([
+      "export",
+      "wiki",
+      "--graph",
+      graphPath,
+      "--descriptions",
+      descriptionsPath,
+    ], dir);
+
+    expect(wiki.exitCode).toBe(0);
+    const article = readFileSync(join(dir, ".graphify", "wiki", "Community_0.md"), "utf-8");
+    expect(article).toContain("Community 0 contains the source-backed service and repository concepts.");
+  });
+
+  it("skips stale wiki description sidecars when graph_hash diverges", async () => {
+    const dir = tempProject();
+    const graphPath = writeGraph(dir);
+    const descriptionsPath = join(dir, ".graphify", "wiki-descriptions.json");
+    writeFileSync(
+      descriptionsPath,
+      JSON.stringify({
+        schema: "graphify_wiki_description_index_v1",
+        graph_hash: "stale-graph",
+        prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+        nodes: {},
+        communities: {
+          "0": {
+            schema: "graphify_wiki_description_v1",
+            target_id: "community:0",
+            target_kind: "community",
+            graph_hash: "stale-graph",
+            status: "generated",
+            description: "STALE description should be skipped.",
+            evidence_refs: ["src/alpha.ts#AlphaService"],
+            confidence: 0.8,
+            cache_key: "stale-cache-key",
+            generator: {
+              mode: "assistant",
+              provider: "assistant",
+              model: null,
+              prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+            },
+          },
+        },
+      }),
+      "utf-8",
+    );
+
+    const wiki = await runCli([
+      "export",
+      "wiki",
+      "--graph",
+      graphPath,
+      "--descriptions",
+      descriptionsPath,
+    ], dir);
+
+    expect(wiki.exitCode).toBe(0);
+    expect(wiki.warnings.join("\n")).toContain("Skipping 0 node and 1 community description");
+    const article = readFileSync(join(dir, ".graphify", "wiki", "Community_0.md"), "utf-8");
+    expect(article).not.toContain("STALE description should be skipped.");
+  });
+
+  it("generates wiki description sidecars through assistant mode", async () => {
+    const dir = tempProject();
+    const graphPath = writeGraph(dir);
+    const descriptionsDir = join(dir, ".graphify", "wiki", "descriptions");
+    const instructionsDir = join(dir, ".graphify", "wiki", "description-instructions");
+
+    const result = await runCli([
+      "wiki",
+      "describe",
+      "--graph",
+      graphPath,
+      "--mode",
+      "assistant",
+      "--targets",
+      "all",
+      "--max-nodes",
+      "1",
+      "--max-communities",
+      "1",
+      "--out",
+      descriptionsDir,
+      "--instructions-dir",
+      instructionsDir,
+    ], dir);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.logs.join("\n")).toContain("wiki descriptions");
+
+    const indexPath = `${descriptionsDir}.json`;
+    expect(existsSync(indexPath)).toBe(true);
+    expect(existsSync(join(descriptionsDir, "beta.json"))).toBe(true);
+    expect(existsSync(join(descriptionsDir, "community-0.json"))).toBe(true);
+
+    const index = JSON.parse(readFileSync(indexPath, "utf-8")) as {
+      schema: string;
+      nodes: Record<string, unknown>;
+      communities: Record<string, unknown>;
+    };
+    expect(index.schema).toBe("graphify_wiki_description_index_v1");
+    expect(Object.keys(index.nodes)).toEqual(["beta"]);
+    expect(Object.keys(index.communities)).toEqual(["0"]);
+    const instructionFiles = readdirSync(instructionsDir)
+      .filter((name) => name.includes("graphify_wiki_description"))
+      .sort();
+    expect(instructionFiles).toHaveLength(2);
+    const instructions = instructionFiles
+      .map((name) => readFileSync(join(instructionsDir, name), "utf-8"))
+      .join("\n\n");
+    expect(instructions).toContain("target_id: beta");
+    expect(instructions).toContain("target_id: community:0");
   });
 
   it("supports export svg, graphml, and neo4j cypher", async () => {
@@ -416,6 +638,37 @@ describe("public CLI runtime command parity", () => {
     expect(result.logs.join("\n")).toContain("no clustering");
     expect(existsSync(join(dir, ".graphify", ".graphify_extract.json"))).toBe(true);
     expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(false);
+  });
+
+  it("extract --backend claude-cli writes assistant instructions and exits without provider call", async () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, "src"), { recursive: true });
+    mkdirSync(join(dir, "docs"), { recursive: true });
+    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+    writeFileSync(
+      join(dir, "docs", "guide.md"),
+      "# Guide\n\nSome documentation paragraph long enough to count.\n",
+      "utf-8",
+    );
+
+    // ANTHROPIC_API_KEY must NOT be consulted on this code path; intentionally
+    // leave any value in place but assert the run never errors out for missing
+    // credentials and never writes a direct-extract semantic JSON.
+    const result = await runCli(["extract", ".", "--backend", "claude-cli"], dir);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.logs.join("\n")).toContain("--backend claude-cli: no provider API key read");
+    expect(result.logs.join("\n")).toContain("graphify skill");
+
+    const instructionsPath = join(dir, ".graphify", "scratch", "assistant-extract-instructions.md");
+    expect(existsSync(instructionsPath)).toBe(true);
+    const instructions = readFileSync(instructionsPath, "utf-8");
+    expect(instructions).toContain("# Graphify assistant extraction instructions");
+    expect(instructions).toContain("docs/guide.md");
+    expect(instructions).toContain("No provider API key was read or persisted");
+
+    // No direct semantic file should have been produced.
+    expect(existsSync(join(dir, ".graphify", ".graphify_semantic.json"))).toBe(false);
   });
 
   it("requires provided semantic extraction for non-code headless corpora", async () => {
@@ -756,6 +1009,54 @@ describe("public CLI runtime command parity", () => {
     expect(existsSync(join(dir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
     expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
     expect(existsSync(join(dir, ".graphify", "graph.html"))).toBe(false);
+  });
+
+  it("update --no-cluster skips Louvain and writes graph.json without communities", async () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+    writeFileSync(join(dir, "src", "beta.ts"), "export function beta() { return 2; }\n", "utf-8");
+    await execGit(dir, ["init", "-q"]);
+    await execGit(dir, ["add", "."]);
+    await execGit(dir, ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "seed"]);
+
+    const result = await runCli(["update", dir, "--no-cluster"], dir);
+    expect(result.exitCode).toBe(0);
+    expect(result.logs.join("\n")).toContain("--no-cluster");
+
+    const graph = JSON.parse(
+      readFileSync(join(dir, ".graphify", "graph.json"), "utf-8"),
+    ) as { graph?: { community_labels?: Record<string, string> }; nodes?: Array<{ community: number | null }> };
+    // graph still contains nodes/edges but no community assignment.
+    expect((graph.nodes ?? []).length).toBeGreaterThan(0);
+    expect(graph.graph?.community_labels ?? {}).toEqual({});
+    expect((graph.nodes ?? []).every((node) => node.community === null)).toBe(true);
+  });
+
+  it("update short-circuits Louvain when topology is unchanged", async () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+    writeFileSync(join(dir, "src", "beta.ts"), "export function beta() { return 2; }\n", "utf-8");
+    await execGit(dir, ["init", "-q"]);
+    await execGit(dir, ["add", "."]);
+    await execGit(dir, ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "seed"]);
+
+    const first = await runCli(["update", dir], dir);
+    expect(first.exitCode).toBe(0);
+    const firstParsed = JSON.parse(
+      readFileSync(join(dir, ".graphify", "graph.json"), "utf-8"),
+    ) as { topology_signature?: string; nodes?: Array<{ community: number | null }> };
+    expect(firstParsed.topology_signature).toBeDefined();
+    expect((firstParsed.nodes ?? []).length).toBeGreaterThan(0);
+
+    const second = await runCli(["update", dir], dir);
+    expect(second.exitCode).toBe(0);
+    expect(second.logs.join("\n")).toContain("Topology unchanged");
+    const secondParsed = JSON.parse(
+      readFileSync(join(dir, ".graphify", "graph.json"), "utf-8"),
+    ) as { topology_signature?: string };
+    expect(secondParsed.topology_signature).toBe(firstParsed.topology_signature);
   });
 
   it("preserves renamed community labels across hook-rebuild update", async () => {
