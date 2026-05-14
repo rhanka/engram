@@ -980,6 +980,54 @@ describe("public CLI runtime command parity", () => {
     expect(existsSync(join(dir, ".graphify", "graph.html"))).toBe(false);
   });
 
+  it("update --no-cluster skips Louvain and writes graph.json without communities", async () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+    writeFileSync(join(dir, "src", "beta.ts"), "export function beta() { return 2; }\n", "utf-8");
+    await execGit(dir, ["init", "-q"]);
+    await execGit(dir, ["add", "."]);
+    await execGit(dir, ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "seed"]);
+
+    const result = await runCli(["update", dir, "--no-cluster"], dir);
+    expect(result.exitCode).toBe(0);
+    expect(result.logs.join("\n")).toContain("--no-cluster");
+
+    const graph = JSON.parse(
+      readFileSync(join(dir, ".graphify", "graph.json"), "utf-8"),
+    ) as { graph?: { community_labels?: Record<string, string> }; nodes?: Array<{ community: number | null }> };
+    // graph still contains nodes/edges but no community assignment.
+    expect((graph.nodes ?? []).length).toBeGreaterThan(0);
+    expect(graph.graph?.community_labels ?? {}).toEqual({});
+    expect((graph.nodes ?? []).every((node) => node.community === null)).toBe(true);
+  });
+
+  it("update short-circuits Louvain when topology is unchanged", async () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+    writeFileSync(join(dir, "src", "beta.ts"), "export function beta() { return 2; }\n", "utf-8");
+    await execGit(dir, ["init", "-q"]);
+    await execGit(dir, ["add", "."]);
+    await execGit(dir, ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "seed"]);
+
+    const first = await runCli(["update", dir], dir);
+    expect(first.exitCode).toBe(0);
+    const firstParsed = JSON.parse(
+      readFileSync(join(dir, ".graphify", "graph.json"), "utf-8"),
+    ) as { topology_signature?: string; nodes?: Array<{ community: number | null }> };
+    expect(firstParsed.topology_signature).toBeDefined();
+    expect((firstParsed.nodes ?? []).length).toBeGreaterThan(0);
+
+    const second = await runCli(["update", dir], dir);
+    expect(second.exitCode).toBe(0);
+    expect(second.logs.join("\n")).toContain("Topology unchanged");
+    const secondParsed = JSON.parse(
+      readFileSync(join(dir, ".graphify", "graph.json"), "utf-8"),
+    ) as { topology_signature?: string };
+    expect(secondParsed.topology_signature).toBe(firstParsed.topology_signature);
+  });
+
   it("preserves renamed community labels across hook-rebuild update", async () => {
     const dir = tempProject();
     // Seed a minimal git-tracked code fixture so rebuildCode has something to extract.

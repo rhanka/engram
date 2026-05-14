@@ -74,6 +74,9 @@ function builtFromCommit(root: string, graphPath: string): string | null {
 // Rebuild pipeline (code-only, no LLM)
 // ---------------------------------------------------------------------------
 
+// topology signature now lives in src/export.ts so watch + toJson agree on
+// the exact same string. Imported lazily inside rebuildCode().
+
 export async function rebuildCode(
   watchPath: string,
   followSymlinks: boolean = false,
@@ -82,6 +85,12 @@ export async function rebuildCode(
     force?: boolean;
     scope?: GraphifyInputScopeMode;
     scopeSource?: InputScopeSource;
+    /**
+     * Skip Louvain clustering and report regeneration. graph.json is still
+     * written with the merged AST extraction but without community labels.
+     * Mirrors upstream Python Graphify v0.7.18 `--no-cluster` (PR #824).
+     */
+    noCluster?: boolean;
   } = {},
 ): Promise<boolean> {
   try {
@@ -94,7 +103,7 @@ export async function rebuildCode(
     const { cluster, scoreAll } = await import("./cluster.js");
     const { godNodes, surprisingConnections, suggestQuestions } = await import("./analyze.js");
     const { generate } = await import("./report.js");
-    const { toJson } = await import("./export.js");
+    const { toJson, computeTopologySignature } = await import("./export.js");
 
     const root = pathResolve(watchPath);
     const scopeInventory = inspectInputScope(root, {
@@ -182,15 +191,68 @@ export async function rebuildCode(
         /* ignore unreadable prior graph snapshots */
       }
     }
-    const communities = cluster(G);
-    const cohesion = scoreAll(G, communities);
-    const gods = godNodes(G);
-    const surprises = surprisingConnections(G, communities);
-    const labels = resolveCommunityLabels(communities, {
-      labelsPath: paths.scratch.labels,
-      graph: G,
-    });
-    const questions = suggestQuestions(G, communities, labels);
+    // Topology short-circuit (upstream PR #824): if the new merged AST graph
+    // has the exact same nodes + edges + relations as the previously
+    // committed graph.json, reuse the existing community assignment instead
+    // of re-running Louvain. This keeps community IDs deterministic across
+    // no-op rebuilds and avoids unnecessary churn in graph.json diffs.
+    let communities: Map<number, string[]> | undefined;
+    if (!options.noCluster && existsSync(paths.graph)) {
+      try {
+        const existingData = JSON.parse(readFileSync(paths.graph, "utf-8")) as {
+          topology_signature?: string;
+          nodes?: Array<{ id?: string; community?: number | null }>;
+        };
+        const previousSig = typeof existingData.topology_signature === "string"
+          ? existingData.topology_signature
+          : null;
+        const currentSig = computeTopologySignature(G);
+        if (previousSig && previousSig === currentSig) {
+          // The merged AST graph matches the prior topology exactly. Pull
+          // community ids straight from the persisted graph.json: mergeNode
+          // will not overwrite a node already present in G, so the in-memory
+          // graphology instance still lacks community attrs at this point.
+          const reused: Map<number, string[]> = new Map();
+          for (const node of existingData.nodes ?? []) {
+            const cid = typeof node.community === "number" && Number.isFinite(node.community)
+              ? node.community
+              : null;
+            if (cid === null || !node.id || !G.hasNode(node.id)) continue;
+            const list = reused.get(cid) ?? [];
+            list.push(node.id);
+            reused.set(cid, list);
+            // Stamp the attribute on G so downstream consumers (toJson,
+            // resolveCommunityLabels) see the reused community id.
+            G.setNodeAttribute(node.id, "community", cid);
+          }
+          if (reused.size > 0) {
+            communities = reused;
+            console.log(
+              `[graphify watch] Topology unchanged - reusing ${reused.size} existing community assignment(s).`,
+            );
+          }
+        }
+      } catch {
+        /* ignore unreadable prior graph, fall through to full clustering */
+      }
+    }
+    if (options.noCluster) {
+      communities = new Map();
+      console.log("[graphify watch] --no-cluster: skipping Louvain clustering.");
+    }
+    if (!communities) {
+      communities = cluster(G);
+    }
+    const cohesion = options.noCluster ? new Map<number, number>() : scoreAll(G, communities);
+    const gods = options.noCluster ? [] : godNodes(G);
+    const surprises = options.noCluster ? [] : surprisingConnections(G, communities);
+    const labels = options.noCluster
+      ? new Map<number, string>()
+      : resolveCommunityLabels(communities, {
+        labelsPath: paths.scratch.labels,
+        graph: G,
+      });
+    const questions = options.noCluster ? [] : suggestQuestions(G, communities, labels);
 
     const report = generate(
       G,

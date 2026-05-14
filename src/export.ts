@@ -140,6 +140,39 @@ function buildFreshnessMetadata(outputPath: string): { built_from_commit?: strin
 // toJson
 // ---------------------------------------------------------------------------
 
+/**
+ * Compute the topology signature from already-serialized node and link
+ * dictionaries. Shared with watch.ts so the watcher's "topology unchanged"
+ * short-circuit uses the exact same recipe as the persisted signature in
+ * graph.json.
+ */
+export function computeTopologySignatureFromLinks(
+  nodes: ReadonlyArray<{ id: unknown }>,
+  links: ReadonlyArray<{ source: unknown; target: unknown; relation?: unknown }>,
+): string {
+  const sortedNodeIds = nodes.map((node) => String(node.id)).sort();
+  const sortedEdges = links.map((link) => {
+    const [src, tgt] = [String(link.source), String(link.target)].sort();
+    return `${src}\t${tgt}\t${String(link.relation ?? "")}`;
+  }).sort();
+  return `n=${sortedNodeIds.length};e=${sortedEdges.length};${sortedNodeIds.join(",")}|${sortedEdges.join(";")}`;
+}
+
+/**
+ * Compute the topology signature directly from a graphology graph instance,
+ * matching what toJson() would emit. Used by the watcher to decide whether
+ * to skip reclustering on a rebuild.
+ */
+export function computeTopologySignature(G: Graph): string {
+  const nodes: { id: string }[] = [];
+  G.forEachNode((nodeId) => nodes.push({ id: nodeId }));
+  const links: { source: string; target: string; relation?: unknown }[] = [];
+  G.forEachEdge((_edgeKey, data, source, target) => {
+    links.push({ source, target, relation: (data as { relation?: unknown }).relation });
+  });
+  return computeTopologySignatureFromLinks(nodes, links);
+}
+
 export function toJson(
   G: Graph,
   communities: NumericMapLike<string[]>,
@@ -192,6 +225,11 @@ export function toJson(
       )
     : {};
 
+  const topology_signature = computeTopologySignatureFromLinks(
+    nodes as unknown as ReadonlyArray<{ id: unknown }>,
+    links as unknown as ReadonlyArray<{ source: unknown; target: unknown; relation?: unknown }>,
+  );
+
   const output = {
     directed: isDirectedGraph(G),
     multigraph: false,
@@ -199,6 +237,7 @@ export function toJson(
       community_labels: communityLabelsObject,
       ...buildFreshnessMetadata(outputPath),
     },
+    topology_signature,
     nodes,
     links,
     hyperedges,

@@ -2557,6 +2557,7 @@ export async function main(): Promise<void> {
     .command("update [path]")
     .description("One-shot code-only graph rebuild")
     .option("--force", "Overwrite graph.json even when the rebuild has fewer nodes")
+    .option("--no-cluster", "Skip Louvain clustering and report regeneration (writes graph.json without community labels)")
     .option("--scope <mode>", scopeOptionDescription())
     .option("--all", "Alias for --scope all")
     .action(async (updatePath = ".", opts) => {
@@ -2569,6 +2570,7 @@ export async function main(): Promise<void> {
       console.log(`Re-extracting code files in ${updatePath} (no LLM needed)...`);
       const ok = await rebuildCode(updatePath, false, {
         force: Boolean(opts.force),
+        noCluster: opts.cluster === false,
         scope: scopeSelection.mode,
         scopeSource: scopeSelection.source,
       });
