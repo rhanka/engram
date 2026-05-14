@@ -2,6 +2,38 @@
 
 Full release notes with details on each version: [GitHub Releases](https://github.com/safishamsi/graphify/releases)
 
+This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
+
+## 0.7.19-rc.1 (2026-05-14)
+
+Post-`0.7.10` product acceleration. Ships parity ports for upstream Python Graphify `v0.7.11..v0.7.19` and product accelerators on Descriptions and Reconciliation.
+
+### Drift parity (`0.7.11..0.7.19`)
+
+- Port `.astro` extraction with regex-rescue for frontmatter + `<script>` block static and dynamic imports, tsconfig path aliases resolved (upstream `#850`, `#852`).
+- Port watch `.rebuild.lock` lifecycle: single PID line on acquire, unlink on release, live-PID `kill -0` check, stale-PID overwrite (upstream `#858`, `#859`).
+- Port `--no-cluster` flag for `graphify update` plus topology short-circuit that reuses existing community ids when the merged AST topology is unchanged (upstream `#824`).
+- Port `graphify extract --backend claude-cli` (writes assistant instructions, no provider API key read or persisted; upstream `#855`).
+- `graph.json` now embeds `topology_signature` so writers and the watcher agree on the same recipe.
+
+### Reconciliation (Track B infra)
+
+- `graphify ontology studio --write` exposes `POST /api/ontology/patch/{validate,dry-run,apply}` behind a loopback bind and a random hex24 bearer token (or `--token <value>`). All routes reuse the patch core; 401 without token, 405 without `--write`, 413 above 256 KB.
+- Public-pack ontology UAT config (`graphify.yaml`, ontology profile, decision log path) committed to the external `public-domaine-mystery-sagas-pack` repository.
+
+### Descriptions (Track A infra + UI)
+
+- Cache invalidation: `checkWikiDescriptionFreshness` / `selectFreshWikiDescriptions` detect `graph_hash`, `prompt_version`, `mode`, `provider` and `model` divergence; the export pipeline filters stale sidecars at load time with a `console.warn` listing how many were dropped.
+- Ontology entity wiki pages now render validated description sidecars when `compileOntologyOutputs({ descriptions })` (or `graphify profile ontology-output --descriptions`) is invoked. `insufficient_evidence` sidecars are silently omitted.
+
+### CRG (Track C spec only, no implementation in this release)
+
+- Row-level audit of CRG `v2.3.3` features committed to `UPSTREAM_GAP.md`: 15 review-precision features classified (9 `adopt-review`, 2 defer, 0 reject) plus a separate audit pass that catalogs HTML a11y / node-shape / help-overlay opportunities for future C1/C2/C3 lots.
+
+### Internals
+
+- `PLAN.md` now scores each lane on six dimensions (spec / plan / infra / UI / UAT / release) instead of a single percentage.
+
 ## 0.3.17 (2026-04-08)
 
 - Add: Julia (.jl) support — modules, structs, abstract types, functions, short functions, using/import, call edges, inherits edges via tree-sitter-julia (#98)
