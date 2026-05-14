@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import type { Extraction, GraphEdge, GraphNode, NormalizedOntologyProfile } from "./types.js";
+import type { WikiDescriptionSidecarIndex } from "./wiki-descriptions.js";
 
 export interface OntologyOutputConfig {
   enabled: boolean;
@@ -19,6 +20,15 @@ export interface CompileOntologyOutputsOptions {
   extraction: Extraction;
   profile: NormalizedOntologyProfile;
   config: OntologyOutputConfig;
+  /**
+   * Optional sidecar index loaded from `.graphify/wiki-descriptions.json`.
+   * When provided, ontology entity wiki pages render the validated
+   * `generated` description for the canonical entity id. Stale or
+   * `insufficient_evidence` sidecars are silently skipped, matching the
+   * behaviour of `graphify export wiki --descriptions`. Look-up keys on
+   * the canonical `node.id` (not the source graph node ids).
+   */
+  descriptions?: WikiDescriptionSidecarIndex;
 }
 
 export interface CompileOntologyOutputsResult {
@@ -160,7 +170,13 @@ function compileRelations(extraction: Extraction, nodes: CompiledNode[], config:
     }));
 }
 
-function writeWiki(outputDir: string, nodes: CompiledNode[], relations: CompiledRelation[], config: OntologyOutputConfig): number {
+function writeWiki(
+  outputDir: string,
+  nodes: CompiledNode[],
+  relations: CompiledRelation[],
+  config: OntologyOutputConfig,
+  descriptions?: WikiDescriptionSidecarIndex,
+): number {
   if (!config.wiki?.enabled) return 0;
   const pageTypes = new Set(config.wiki.page_node_types ?? nodes.map((node) => node.type));
   const wikiDir = join(outputDir, "wiki");
@@ -169,12 +185,18 @@ function writeWiki(outputDir: string, nodes: CompiledNode[], relations: Compiled
   let count = 0;
   for (const node of nodes.filter((item) => pageTypes.has(item.type))) {
     const outgoing = relations.filter((relation) => relation.source_id === node.id);
+    const sidecar = descriptions?.nodes[node.id];
+    const descriptionBlock: string[] = [];
+    if (sidecar && sidecar.status === "generated" && sidecar.description.trim().length > 0) {
+      descriptionBlock.push("## Description", "", sidecar.description.trim(), "");
+    }
     const lines = [
       `# ${node.label}`,
       "",
       `Type: ${node.type}`,
       `Status: ${node.status}`,
       "",
+      ...descriptionBlock,
       "## Aliases",
       "",
       ...(node.aliases.length > 0 ? node.aliases.map((alias) => `- ${alias}`) : ["- none"]),
@@ -203,7 +225,7 @@ export function compileOntologyOutputs(options: CompileOntologyOutputsOptions): 
   const { nodes, aliasIssues } = compileNodes(options.extraction, options.profile, options.config);
   const relations = compileRelations(options.extraction, nodes, options.config);
   const validationIssues = [...aliasIssues];
-  const wikiPageCount = writeWiki(options.outputDir, nodes, relations, options.config);
+  const wikiPageCount = writeWiki(options.outputDir, nodes, relations, options.config, options.descriptions);
   const manifest = {
     schema: "graphify_ontology_outputs_v1",
     graph_hash: sha256(JSON.stringify(options.extraction)),

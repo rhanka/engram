@@ -2002,14 +2002,17 @@ export async function main(): Promise<void> {
     .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
     .requiredOption("--input <path>", "Extraction JSON to compile")
     .requiredOption("--out-dir <path>", "Ontology output directory")
+    .option("--descriptions <path>", "Path to wiki description sidecar index JSON")
     .action(async (opts) => {
       const { compileOntologyOutputs } = await import("./ontology-output.js");
       const context = loadCliProfileContext(opts.profileState);
+      const descriptions = loadWikiDescriptionSidecarIndex(opts.descriptions);
       const result = compileOntologyOutputs({
         outputDir: resolve(opts.outDir),
         extraction: readJson(opts.input),
         profile: context.profile,
         config: context.profile.outputs.ontology,
+        ...(descriptions ? { descriptions } : {}),
       });
       if (!result.enabled) {
         console.log("Ontology outputs disabled by profile config");
