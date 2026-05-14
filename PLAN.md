@@ -205,7 +205,7 @@ Each lane carries six independent dimensions. "Infra" = library / CLI / MCP / AP
 
 | Lane | Spec | Plan | Infra | UI utilisateur | UAT réel | Release | Overall |
 | --- | :---: | :---: | :---: | :---: | :---: | :---: | ---: |
-| **A** Descriptions | ✅ 1/1 | ✅ 1/1 | ✅ 6/7 (batch/mesh still a follow-up decision) | ✅ 1/1 | ✅ 2/2 (mocked vitest `b78c3b9`; public-pack pre-UAT script `bb43bd9`) | ✅ 2/2 (README + CHANGELOG `b14e2fd`) | **13/14 = 93%** |
+| **A** Descriptions | ✅ 1/1 | ✅ 1/1 | 🟡 7/9 (batch scaffold landed `80e0951`; provider wiring + A3 mesh pending) | ✅ 1/1 | ✅ 2/2 (mocked vitest `b78c3b9`; public-pack pre-UAT script `bb43bd9`) | ✅ 2/2 (README + CHANGELOG `b14e2fd`) | **14/16 = 88%** |
 | **B** Reconciliation | ✅ 1/1 | ✅ 1/1 | ✅ 6/6 | ❌ 0/1 (Svelte studio blocked on design system + C ordering) | ✅ 2/2 (vitest decision-log replay covers apply→GET cycle; public-pack pre-UAT script complements it as a manual reproducer) | ✅ 2/2 (README + CHANGELOG) | **12/13 = 92%** |
 | **C** CRG `v2.3.3` | ✅ 2/2 (alignment spec + row-level audit committed `26b809f` + UX/a11y matrix below) | 🟡 1/3 (C1/C2/C3 scoped; lots not started) | ❌ 0/3 | ❌ 0/2 (HTML a11y, review surface) | ❌ 0/1 | ❌ 0/1 | **3/12 = 25%** |
 | **D** Drift `0.7.11..0.7.19` | ✅ 1/1 | ✅ 5/5 (M0..M5 all landed; M1 manifest-shrink residue intentional-delta) | ✅ 5/5 (`.astro` `6a7de56`, watch lock `a641d97`, `--no-cluster`+topology `d05bb09`, `--backend claude-cli` `61957e6`, MCP arrows/community IDs pre-covered) | n/a | ✅ 2/2 (regression vitest covers M2..M5; smoke on real corpora green on graphify repo + public-pack) | ✅ 1/1 (npm `0.7.19` stable) | **14/14 = 100%** |
@@ -231,7 +231,7 @@ Each lot ships independently (no cross-lot file conflict in option 1 or 2). Tell
 
 ## Detailed Track Plans
 
-### Track A: Descriptions (Overall **13/14 = 93%**)
+### Track A: Descriptions (Overall **14/16 = 88%**)
 
 **Spec (1/1)**
 - [x] `spec/SPEC_WIKI_ENTITY_DESCRIPTIONS.md` covers sidecar schema, cache key, evidence policy, two-step CLI workflow.
@@ -239,14 +239,16 @@ Each lot ships independently (no cross-lot file conflict in option 1 or 2). Tell
 **Plan (1/1)**
 - [x] Lots split: schema/validation → render → assistant gen → direct gen → cache invalidation → ontology entity pages → UAT (this section).
 
-**Infra (6/7)**
+**Infra (7/9)** — batch + mesh added as follow-on lots per the "Les deux en lots consécutifs" decision:
 - [x] Sidecar schema, cache key and validation in `src/wiki-descriptions.ts`.
 - [x] Render path (community + node + god-node) without provider calls (`src/wiki.ts:332`).
 - [x] CLI render opt-in: `graphify export wiki|obsidian --descriptions <path>`.
 - [x] Assistant-mode sidecar generation (`src/wiki-description-generation.ts`).
 - [x] Direct-backend sidecar generation through LLM execution ports.
 - [x] Stale-sidecar invalidation at load time (`checkWikiDescriptionFreshness` + `selectFreshWikiDescriptions`; warns on dropped sidecars at `graphify export wiki|obsidian`).
-- [ ] Decide batch/mesh generation as a lot or a documented follow-up.
+- [x] **Lot A2 batch — scaffold** (commit `80e0951`): provider-agnostic `BatchTextJsonClient` + `buildWikiDescriptionBatchExport` + `parseWikiDescriptionBatchResults` with 4 vitest cases. Output index shape-identical to assistant/direct so `toWiki` / `ontology-output` need no change.
+- [ ] **Lot A2 batch — provider wiring** (~2-3 days). OpenAI Batch then Anthropic Batch (`BatchTextJsonClient` implementations). Uses the existing direct provider credential plumbing (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`). Two CLI commands: `graphify wiki describe --backend openai --batch-export <out>` and `--batch-import <in>` so users can drive submit/poll/import themselves while a future commit adds a single-shot poll loop.
+- [ ] **Lot A3 mesh** (~5-6 days). Dispatcher with multi-provider fallback + retry + circuit breaker; consumes the same `TextJsonGenerationClient` shape so no change to the generation entry point.
 
 **UI utilisateur (1/1)**
 - [x] Ontology entity pages render descriptions (`CompileOntologyOutputsOptions.descriptions`, `writeWiki()` looks up on canonical `node.id`; commit `b674057`).
