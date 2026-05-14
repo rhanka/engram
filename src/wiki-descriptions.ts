@@ -178,6 +178,102 @@ export function createInsufficientEvidenceRecord<
   return record;
 }
 
+export interface WikiDescriptionFreshnessInputs {
+  graph_hash: string;
+  prompt_version: string;
+  mode?: WikiDescriptionExecutionMode | null;
+  provider?: string | null;
+  model?: string | null;
+}
+
+export type WikiDescriptionStaleReason =
+  | "graph_hash_mismatch"
+  | "prompt_version_mismatch"
+  | "mode_mismatch"
+  | "provider_mismatch"
+  | "model_mismatch"
+  | "cache_key_mismatch";
+
+export interface WikiDescriptionFreshnessResult {
+  fresh: boolean;
+  reasons: WikiDescriptionStaleReason[];
+  expected_cache_key: string;
+}
+
+/**
+ * Decide whether a previously stored sidecar is still valid for the current
+ * generation inputs. Any divergence in graph_hash, prompt_version, mode,
+ * provider or model invalidates the sidecar so the next render or generation
+ * pass treats it as missing.
+ */
+export function checkWikiDescriptionFreshness(
+  sidecar: Pick<
+    WikiDescriptionSidecar,
+    "target_id" | "target_kind" | "graph_hash" | "cache_key" | "generator"
+  >,
+  inputs: WikiDescriptionFreshnessInputs,
+): WikiDescriptionFreshnessResult {
+  const reasons: WikiDescriptionStaleReason[] = [];
+  if (sidecar.graph_hash !== inputs.graph_hash) reasons.push("graph_hash_mismatch");
+  if (sidecar.generator.prompt_version !== inputs.prompt_version) reasons.push("prompt_version_mismatch");
+  if (inputs.mode !== undefined && inputs.mode !== null && sidecar.generator.mode !== inputs.mode) {
+    reasons.push("mode_mismatch");
+  }
+  if (inputs.provider !== undefined && (sidecar.generator.provider ?? null) !== (inputs.provider ?? null)) {
+    reasons.push("provider_mismatch");
+  }
+  if (inputs.model !== undefined && (sidecar.generator.model ?? null) !== (inputs.model ?? null)) {
+    reasons.push("model_mismatch");
+  }
+  const expected_cache_key = buildWikiDescriptionCacheKey({
+    target_id: sidecar.target_id,
+    target_kind: sidecar.target_kind,
+    graph_hash: inputs.graph_hash,
+    prompt_version: inputs.prompt_version,
+    mode: inputs.mode ?? sidecar.generator.mode,
+    provider: inputs.provider ?? sidecar.generator.provider,
+    model: inputs.model ?? sidecar.generator.model,
+  });
+  if (expected_cache_key !== sidecar.cache_key) reasons.push("cache_key_mismatch");
+  return { fresh: reasons.length === 0, reasons, expected_cache_key };
+}
+
+/**
+ * Drop sidecars that are no longer fresh under the current inputs. Designed for
+ * render-time use: callers load the on-disk index, call this, and only emit
+ * Markdown for the entries that survive.
+ */
+export function selectFreshWikiDescriptions<TIndex extends WikiDescriptionSidecarIndex>(
+  index: TIndex,
+  inputs: WikiDescriptionFreshnessInputs,
+): { fresh: TIndex; stale: { nodes: string[]; communities: string[] } } {
+  const stale = { nodes: [] as string[], communities: [] as string[] };
+  const freshNodes: typeof index.nodes = {};
+  for (const [id, sidecar] of Object.entries(index.nodes)) {
+    if (checkWikiDescriptionFreshness(sidecar, inputs).fresh) {
+      freshNodes[id] = sidecar;
+    } else {
+      stale.nodes.push(id);
+    }
+  }
+  const freshCommunities = index.communities ? ({} as NonNullable<typeof index.communities>) : undefined;
+  if (index.communities && freshCommunities) {
+    for (const [id, sidecar] of Object.entries(index.communities)) {
+      if (checkWikiDescriptionFreshness(sidecar, inputs).fresh) {
+        freshCommunities[id] = sidecar;
+      } else {
+        stale.communities.push(id);
+      }
+    }
+  }
+  const fresh = {
+    ...index,
+    nodes: freshNodes,
+    ...(freshCommunities ? { communities: freshCommunities } : {}),
+  } as TIndex;
+  return { fresh, stale };
+}
+
 export function validateWikiDescriptionSidecar(value: unknown): string[] {
   const issues: string[] = [];
   if (!isRecord(value)) return ["wiki description sidecar must be a JSON object"];

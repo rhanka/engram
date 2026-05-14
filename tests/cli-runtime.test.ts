@@ -1,8 +1,10 @@
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import { execGit } from "../src/git.js";
+import { WIKI_DESCRIPTION_PROMPT_VERSION, buildWikiDescriptionCacheKey } from "../src/wiki-descriptions.js";
 
 const tempDirs: string[] = [];
 
@@ -348,29 +350,39 @@ describe("public CLI runtime command parity", () => {
     const dir = tempProject();
     const graphPath = writeGraph(dir);
     const descriptionsPath = join(dir, ".graphify", "wiki-descriptions.json");
+    const graphHash = createHash("sha256").update(readFileSync(graphPath)).digest("hex");
+    const cacheKey = buildWikiDescriptionCacheKey({
+      target_id: "community:0",
+      target_kind: "community",
+      graph_hash: graphHash,
+      prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+      mode: "assistant",
+      provider: "assistant",
+      model: null,
+    });
     writeFileSync(
       descriptionsPath,
       JSON.stringify({
         schema: "graphify_wiki_description_index_v1",
-        graph_hash: "graph-a",
-        prompt_version: "wiki-description-v1",
+        graph_hash: graphHash,
+        prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
         nodes: {},
         communities: {
           "0": {
             schema: "graphify_wiki_description_v1",
             target_id: "community:0",
             target_kind: "community",
-            graph_hash: "graph-a",
+            graph_hash: graphHash,
             status: "generated",
             description: "Community 0 contains the source-backed service and repository concepts.",
             evidence_refs: ["src/alpha.ts#AlphaService"],
             confidence: 0.8,
-            cache_key: "cache-key",
+            cache_key: cacheKey,
             generator: {
               mode: "assistant",
               provider: "assistant",
               model: null,
-              prompt_version: "wiki-description-v1",
+              prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
             },
           },
         },
@@ -390,6 +402,55 @@ describe("public CLI runtime command parity", () => {
     expect(wiki.exitCode).toBe(0);
     const article = readFileSync(join(dir, ".graphify", "wiki", "Community_0.md"), "utf-8");
     expect(article).toContain("Community 0 contains the source-backed service and repository concepts.");
+  });
+
+  it("skips stale wiki description sidecars when graph_hash diverges", async () => {
+    const dir = tempProject();
+    const graphPath = writeGraph(dir);
+    const descriptionsPath = join(dir, ".graphify", "wiki-descriptions.json");
+    writeFileSync(
+      descriptionsPath,
+      JSON.stringify({
+        schema: "graphify_wiki_description_index_v1",
+        graph_hash: "stale-graph",
+        prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+        nodes: {},
+        communities: {
+          "0": {
+            schema: "graphify_wiki_description_v1",
+            target_id: "community:0",
+            target_kind: "community",
+            graph_hash: "stale-graph",
+            status: "generated",
+            description: "STALE description should be skipped.",
+            evidence_refs: ["src/alpha.ts#AlphaService"],
+            confidence: 0.8,
+            cache_key: "stale-cache-key",
+            generator: {
+              mode: "assistant",
+              provider: "assistant",
+              model: null,
+              prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+            },
+          },
+        },
+      }),
+      "utf-8",
+    );
+
+    const wiki = await runCli([
+      "export",
+      "wiki",
+      "--graph",
+      graphPath,
+      "--descriptions",
+      descriptionsPath,
+    ], dir);
+
+    expect(wiki.exitCode).toBe(0);
+    expect(wiki.warnings.join("\n")).toContain("Skipping 0 node and 1 community description");
+    const article = readFileSync(join(dir, ".graphify", "wiki", "Community_0.md"), "utf-8");
+    expect(article).not.toContain("STALE description should be skipped.");
   });
 
   it("generates wiki description sidecars through assistant mode", async () => {

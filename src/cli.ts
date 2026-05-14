@@ -173,6 +173,28 @@ function loadWikiDescriptionSidecarIndex(inputPath?: string): WikiDescriptionSid
   return value as unknown as WikiDescriptionSidecarIndex;
 }
 
+async function loadFreshWikiDescriptionSidecarIndex(
+  inputPath: string | undefined,
+  graphPath: string,
+): Promise<WikiDescriptionSidecarIndex | undefined> {
+  const index = loadWikiDescriptionSidecarIndex(inputPath);
+  if (!index) return undefined;
+  const { selectFreshWikiDescriptions, WIKI_DESCRIPTION_PROMPT_VERSION } = await import("./wiki-descriptions.js");
+  const currentGraphHash = graphContentHash(graphPath);
+  const { fresh, stale } = selectFreshWikiDescriptions(index, {
+    graph_hash: currentGraphHash,
+    prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+  });
+  if (stale.nodes.length > 0 || stale.communities.length > 0) {
+    console.warn(
+      `Skipping ${stale.nodes.length} node and ${stale.communities.length} community description(s) ` +
+      `that are stale under graph_hash=${currentGraphHash.slice(0, 12)} ` +
+      `prompt_version=${WIKI_DESCRIPTION_PROMPT_VERSION}. Re-generate with graphify wiki describe.`,
+    );
+  }
+  return fresh;
+}
+
 function writeJson(path: string, value: unknown): void {
   const resolved = resolve(path);
   mkdirSync(dirname(resolved), { recursive: true });
@@ -2801,7 +2823,7 @@ export async function main(): Promise<void> {
         const G = loadCliGraph(graphPath);
         const communities = communitiesFromCliGraph(G);
         const labels = communityLabelsFromCliGraph(G, communities);
-        const descriptions = loadWikiDescriptionSidecarIndex(opts.descriptions);
+        const descriptions = await loadFreshWikiDescriptionSidecarIndex(opts.descriptions, graphPath);
         const { toWiki } = await import("./wiki.js");
         const count = toWiki(G, communities, outDir, { communityLabels: labels, descriptions });
         console.log(`Wiki export: ${count} page(s) written to ${outDir}`);
@@ -2823,7 +2845,7 @@ export async function main(): Promise<void> {
         const G = loadCliGraph(graphPath);
         const communities = communitiesFromCliGraph(G);
         const labels = communityLabelsFromCliGraph(G, communities);
-        const descriptions = loadWikiDescriptionSidecarIndex(opts.descriptions);
+        const descriptions = await loadFreshWikiDescriptionSidecarIndex(opts.descriptions, graphPath);
         const [{ toCanvas }, { toWiki }] = await Promise.all([
           import("./export.js"),
           import("./wiki.js"),
