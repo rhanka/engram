@@ -205,23 +205,23 @@ Each lane carries six independent dimensions. "Infra" = library / CLI / MCP / AP
 
 | Lane | Spec | Plan | Infra | UI utilisateur | UAT réel | Release | Overall |
 | --- | :---: | :---: | :---: | :---: | :---: | :---: | ---: |
-| **A** Descriptions | ✅ 1/1 | ✅ 1/1 | ✅ 6/7 | 🟡 0/1 (ontology entity pages) | ❌ 0/2 (small fixture + public pack) | 🟡 1/2 (README ok, CHANGELOG pending) | **9/14 = 64%** |
+| **A** Descriptions | ✅ 1/1 | ✅ 1/1 | ✅ 6/7 (batch/mesh still a follow-up decision) | ✅ 1/1 (ontology entity pages render sidecars, commit `b674057`) | 🟡 1/2 (mocked vitest UAT `b78c3b9`; public-pack live walk pending) | 🟡 1/2 (README ok, CHANGELOG pending) | **11/14 = 79%** |
 | **B** Reconciliation | ✅ 1/1 | ✅ 1/1 | ✅ 6/6 | ❌ 0/1 (Svelte studio blocked on design system) | ❌ 0/2 (public-pack live walk, decision log replay) | 🟡 1/2 (README ok, CHANGELOG pending) | **9/13 = 69%** |
-| **C** CRG `v2.3.3` | ✅ 2/2 (alignment spec + row-level audit committed) | ❌ 0/3 (a11y / shapes / review-precision lots not split) | ❌ 0/3 | ❌ 0/2 (HTML a11y, review surface) | ❌ 0/1 | ❌ 0/1 | **2/12 = 17%** |
-| **D** Drift `0.7.11..0.7.19` | ✅ 1/1 (source locks + initial matrix `f88567b..ab32098`) | 🟡 1/5 (M1 started, M2..M5 + new `0.7.17..0.7.19` lot pending) | 🟡 2/5 (path scoring + same-node guards ported; LLM retry, cache path normalization, Unicode IDs/edge-key dedup, Antigravity, claude-cli backend, manifest shrink etc. pending) | n/a | ❌ 0/2 (regression suite + smoke on real corpora) | ❌ 0/1 (`0.7.x` parity tag pending) | **4/14 = 29%** |
+| **C** CRG `v2.3.3` | ✅ 2/2 (alignment spec + row-level audit committed `26b809f`) | ❌ 0/3 (a11y / shapes / review-precision lots not split) | ❌ 0/3 | ❌ 0/2 (HTML a11y, review surface) | ❌ 0/1 | ❌ 0/1 | **2/12 = 17%** |
+| **D** Drift `0.7.11..0.7.19` | ✅ 1/1 (source locks + matrices `f88567b..a9b0ddb`, commits `aeb6960`/`26b809f`) | 🟡 3/5 (M0 matrix done; M2 `.rebuild.lock` and M4 `--no-cluster`+topology short-circuit landed; M1 hotfixes pre-covered) | 🟡 4/5 (`.astro` extract `6a7de56`, watch lock `a641d97`, `--no-cluster`+topology short-circuit `d05bb09`, plus pre-covered MCP arrows/community IDs) | n/a | 🟡 1/2 (regression vitest covers M2..M4; smoke on real corpora pending) | ❌ 0/1 (`0.7.x` parity tag pending; `--backend claude-cli` M5 pending) | **9/14 = 64%** |
 
 ## Active Lanes — next concrete action
 
 | Lane | Next concrete action | UAT / Decision needed |
 | --- | --- | --- |
-| **A** Descriptions | Wire ontology entity pages to sidecar lookup; build mocked vitest UAT (1 generated + 1 `insufficient_evidence`); apply on public-pack. | Decide batch/mesh as a lot or a documented follow-up. |
+| **A** Descriptions | Live UAT on `../public-domaine-mystery-sagas-pack` (gated on Track B public-pack walk). Then decide batch/mesh as a lot or follow-up. | Decide batch/mesh as a lot or a documented follow-up; decide whether to publish a CHANGELOG entry now or wait for the public-pack UAT. |
 | **B** Reconciliation | Public-pack end-to-end walk: regenerate candidates, apply one accept patch through studio `--write`, verify decision log + audit log + needs_update. Hold Svelte studio until design system is ready. | Decide whether to commit a public-pack UAT script as a top-level npm script in the pack. |
-| **C** CRG `v2.3.3` | Run row-by-row audit (deferred to agent), then split into three lots: HTML a11y, node-shape encoding, review-precision parser. First impl lot picks from the smallest. | Confirm a11y target lands in `graphify export html` first (not studio) so it ships even without studio UI. |
-| **D** Drift `0.7.11..0.7.19` | Extend the row-level matrix from `ab32098..a9b0ddb` (28 commits). Port `--backend claude-cli` (#855), MCP arrow direction (#830, #853), watch lock + labels churn fix, deterministic clustering + topology short-circuit (#824), `.astro` extension. | Decide whether to bump npm package to `0.7.19` after M-suite closure or stay on `0.7.10` until UI lands. |
+| **C** CRG `v2.3.3` | Split lots C1/C2/C3 (review-precision / a11y / node-shape) and pick the smallest. The row-level audit is already committed in `UPSTREAM_GAP.md`. | Confirm a11y target lands in `graphify export html` first (not studio) so it ships even without studio UI. |
+| **D** Drift `0.7.11..0.7.19` | Port `--backend claude-cli` (M5) and finish the M1 manifest-shrink residue. Run smoke on a real corpus to close UAT 2/2. | Decide whether to bump npm package to `0.7.19` after M5 closure or stay on `0.7.10` until UI lands. |
 
 ## Detailed Track Plans
 
-### Track A: Descriptions (Overall **9/14 = 64%**)
+### Track A: Descriptions (Overall **11/14 = 79%**)
 
 **Spec (1/1)**
 - [x] `spec/SPEC_WIKI_ENTITY_DESCRIPTIONS.md` covers sidecar schema, cache key, evidence policy, two-step CLI workflow.
@@ -238,11 +238,11 @@ Each lane carries six independent dimensions. "Infra" = library / CLI / MCP / AP
 - [x] Stale-sidecar invalidation at load time (`checkWikiDescriptionFreshness` + `selectFreshWikiDescriptions`; warns on dropped sidecars at `graphify export wiki|obsidian`).
 - [ ] Decide batch/mesh generation as a lot or a documented follow-up.
 
-**UI utilisateur (0/1)**
-- [ ] Ontology entity pages render descriptions: extend `CompileOntologyOutputsOptions` with `descriptions?: WikiDescriptionSidecarIndex`, thread into `writeWiki()` in `src/ontology-output.ts:163`, key lookup on canonical `node.id`.
+**UI utilisateur (1/1)**
+- [x] Ontology entity pages render descriptions (`CompileOntologyOutputsOptions.descriptions`, `writeWiki()` looks up on canonical `node.id`; commit `b674057`).
 
-**UAT réel (0/2)**
-- [ ] Mocked vitest UAT: 1 `generated` + 1 `insufficient_evidence` sidecar via mock `TextJsonGenerationClient`, then `toWiki()` renders the first paragraph and omits the second.
+**UAT réel (1/2)**
+- [x] Mocked vitest UAT: a single mock client emits 1 `generated` + 1 `insufficient_evidence` for the two top god-nodes; the index then drives `toWiki()` which renders the paragraph on the generated page and omits the second (commit `b78c3b9`).
 - [ ] Live UAT against `../public-domaine-mystery-sagas-pack` (after Track B public-pack walk closes), including `insufficient_evidence` evidence.
 
 **Release / Docs (1/2)**
@@ -306,32 +306,31 @@ Each lane carries six independent dimensions. "Infra" = library / CLI / MCP / AP
 **Release / Docs (0/1)**
 - [ ] README + CHANGELOG entry; no npm version bump tied to CRG (additive only).
 
-### Track D: Upstream Python `0.7.11`..`0.7.19` Drift (Overall **4/14 = 29%**)
+### Track D: Upstream Python `0.7.11`..`0.7.19` Drift (Overall **9/14 = 64%**)
 
 **Spec (1/1)**
 - [x] Source locks: `upstream/v7` head at `a9b0ddb` (`2026-05-14`), `v0.7.16` at `ab32098`, `v0.7.17` at `258d260`, `v0.7.18` at `b7e7ae5`, `v0.7.19` at `3baedc5`. Initial drift matrix `f88567b..ab32098` and extended matrix `ab32098..a9b0ddb` (27 commits) recorded.
 
-**Plan (1/5)**
+**Plan (3/5)**
 - [x] M0 — matrix `ab32098..a9b0ddb`: produced (drumbeat agent). Top must-port: `.astro` extraction, watch `.rebuild.lock` lifecycle, deterministic clustering + topology short-circuit + `--no-cluster` for update, `--backend claude-cli`, manifest shrink guard. 6 already-covered, 14 docs/release only.
-- [ ] M1 — runtime hotfixes (path scoring, MCP arrow, hub-transit, manifest shrink, Bedrock guard). Mostly already-covered after drift matrix; finish manifest shrink port.
-- [ ] M2 — watch lifecycle (`.rebuild.lock`: single PID line on acquire, unlink on release; labels-churn fix already done upstream pre-`0.7.16`).
-- [ ] M3 — extract parsers (`.astro` frontmatter + script imports + tsconfig alias; regex-rescue path).
-- [ ] M4 — clustering + update (deterministic community IDs already covered; topology short-circuit + `--no-cluster` flag for `graphify update`).
+- [ ] M1 — runtime hotfixes (path scoring, MCP arrow, hub-transit, manifest shrink, Bedrock guard). Mostly already-covered after drift matrix; finish manifest shrink port (only remaining item in M1).
+- [x] M2 — watch lifecycle (`.rebuild.lock`: single PID line on acquire, unlink on release; live-PID `kill -0` check + stale-PID overwrite; commit `a641d97`).
+- [x] M3 — extract parsers (`.astro` frontmatter + `<script>` static/dynamic imports + tsconfig alias; commit `6a7de56`).
+- [x] M4 — clustering + update (deterministic community IDs already covered; topology short-circuit reuses existing community ids when topology unchanged; `--no-cluster` flag added to `graphify update`; commit `d05bb09`).
 - [ ] M5 — providers (`--backend claude-cli` routes through Claude Code, no API key; align with existing assistant mode).
 
-**Infra (2/5)** _(one box per M-lot above)_
-- [x] M1 partially: path scoring + same-node guards + MCP arrow direction + Bedrock guard already covered (per drift matrix).
-- [x] Community ID stability + serialization fallbacks already covered (`28fc71e`, `8e4c803`, `ef0e6ee`).
-- [ ] M2 watch `.rebuild.lock` port.
-- [ ] M3 `.astro` extractor.
-- [ ] M4 `--no-cluster` for `update`, topology short-circuit wiring.
+**Infra (4/5)** _(one box per M-lot above)_
+- [x] M1 mostly pre-covered (path scoring + same-node guards + MCP arrow direction + Bedrock guard + community ID stability + serialization fallbacks already shipped under earlier lots, per drift matrix `aeb6960`).
+- [x] M2 watch `.rebuild.lock` port (commit `a641d97`).
+- [x] M3 `.astro` extractor (commit `6a7de56`).
+- [x] M4 `--no-cluster` for `update` + topology short-circuit wiring (commit `d05bb09`).
 - [ ] M5 `--backend claude-cli`.
 
 **UI utilisateur** — n/a (parity track).
 
-**UAT réel (0/2)**
-- [ ] Regression vitest suite covers M2..M5 ports.
-- [ ] Smoke on a small real corpus (this repo + `../public-domaine-mystery-sagas-pack`).
+**UAT réel (1/2)**
+- [x] Regression vitest covers M2 watch lock (5 cases), M3 `.astro` extraction (1 case), M4 `--no-cluster` and topology short-circuit (2 cases). Smoke + portable-check stayed green across these commits.
+- [ ] Smoke on a small real corpus (this repo + `../public-domaine-mystery-sagas-pack`) once M5 lands.
 
 **Release / Docs (0/1)**
 - [ ] `UPSTREAM_GAP.md` + `SPEC_UPSTREAM_TRACEABILITY.md` updated with `0.7.11..0.7.19` row-level evidence. Decide whether to bump npm to `0.7.19` after M-suite closure or stay on `0.7.10` until UI lands.
