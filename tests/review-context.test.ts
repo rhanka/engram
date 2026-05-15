@@ -112,6 +112,82 @@ describe("review context", () => {
     expect(context.context?.reviewGuidance).toContain("lack test coverage");
   });
 
+  it("flags wide blast radius when impacted nodes exceed the high threshold", () => {
+    const G = new Graph({ type: "directed" });
+    const changed = addFunction(G, "core", "src/core.ts");
+    // Connect 25 downstream nodes -> wide blast.
+    for (let i = 0; i < 25; i += 1) {
+      const downstream = addFunction(G, `dep${i}`, `src/dep${i}.ts`);
+      addEdge(G, changed, downstream, "calls");
+    }
+    const store = createReviewGraphStore(G);
+
+    const context = buildReviewContext(store, ["src/core.ts"], { detailLevel: "minimal" });
+    expect(context.risk).toBe("high");
+
+    const standard = buildReviewContext(store, ["src/core.ts"], { detailLevel: "standard" });
+    expect(standard.context?.reviewGuidance).toContain("Wide blast radius");
+  });
+
+  it("flags cross-file impact when more than three files downstream", () => {
+    const G = new Graph({ type: "directed" });
+    const changed = addFunction(G, "src", "src/source.ts");
+    // 4 distinct downstream files (cross-file impact threshold > 3).
+    for (let i = 0; i < 4; i += 1) {
+      const downstream = addFunction(G, `dep${i}`, `src/file${i}.ts`);
+      addEdge(G, changed, downstream, "calls");
+    }
+    const store = createReviewGraphStore(G);
+
+    const context = buildReviewContext(store, ["src/source.ts"], { detailLevel: "standard" });
+    expect(context.context?.reviewGuidance).toContain("impact");
+    expect(context.context?.reviewGuidance).toMatch(/other files|impact .* other/);
+  });
+
+  it("flags inheritance/implementation edges in guidance", () => {
+    const G = new Graph({ type: "directed" });
+    const child = addFunction(G, "ChildClass", "src/child.ts");
+    const parent = addFunction(G, "ParentClass", "src/parent.ts");
+    addEdge(G, child, parent, "extends");
+    // Force the relation to canonicalize as INHERITS via the relation name path
+    // used in F3 (extends -> INHERITS).
+    const store = createReviewGraphStore(G);
+    const allEdges = store.getAllEdges();
+    expect(allEdges.some((e) => e.kind === "INHERITS")).toBe(true);
+
+    const context = buildReviewContext(store, ["src/child.ts"], { detailLevel: "standard" });
+    expect(context.context?.reviewGuidance).toContain("inheritance");
+  });
+
+  it("falls back to first 50 lines for long files without matching node ranges", () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, "src"), { recursive: true });
+    const longLines = Array.from({ length: 120 }, (_, i) => `// line ${i + 1}`);
+    writeFileSync(join(dir, "src", "big.ts"), longLines.join("\n"), "utf-8");
+    const G = new Graph({ type: "directed" });
+    // Node has source_file but no line_start/line_end -> no relevant range.
+    G.addNode("src/big.ts::ghost", {
+      label: "ghost",
+      kind: "Function",
+      qualified_name: "src/big.ts::ghost",
+      source_file: "src/big.ts",
+      language: "ts",
+    });
+    const store = createReviewGraphStore(G);
+
+    const context = buildReviewContext(store, ["src/big.ts"], {
+      repoRoot: dir,
+      includeSource: true,
+      maxLinesPerFile: 50,
+    });
+    const snippet = context.context?.sourceSnippets?.["src/big.ts"] ?? "";
+    // Either the relevant-range branch returns at most maxLinesPerFile lines,
+    // or the fallback returns the first 50 numbered lines. Both must include
+    // line 1 and stop at or before line 50.
+    expect(snippet).toContain("1: // line 1");
+    expect(snippet).not.toContain("// line 60");
+  });
+
   it("does not read sensitive files into source snippets", () => {
     const dir = tempProject();
     writeFileSync(join(dir, ".env"), "TOKEN=secret\n", "utf-8");

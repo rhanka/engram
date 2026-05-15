@@ -192,4 +192,106 @@ describe("review graph store adapter", () => {
       filesCount: 5,
     });
   });
+
+  it("filters nodes by kind for function/class/test entry-point queries", () => {
+    const store = createReviewGraphStore(makeReviewGraph());
+
+    expect(store.getNodesByKind(["Function"]).map((n) => n.name).sort()).toEqual([
+      "helper",
+      "processPayment",
+      "savePayment",
+    ]);
+    expect(store.getNodesByKind(["Class"]).map((n) => n.name)).toEqual(["PaymentService"]);
+    expect(store.getNodesByKind(["Test"]).map((n) => n.name).sort()).toEqual([
+      "testProcessPayment",
+      "testSavePayment",
+    ]);
+    expect(store.getNodesByKind(["Class", "Test"]).length).toBe(3);
+  });
+
+  it("collects all CALLS edge targets as canonical call sinks", () => {
+    const store = createReviewGraphStore(makeReviewGraph());
+    const targets = store.getAllCallTargets();
+
+    // Only CALLS edges count; TESTED_BY is excluded.
+    // The canonical CALLS in the fixture is processPayment -> savePayment
+    // (preserved direction via _src/_tgt).
+    expect(targets.has("src/repo.ts::savePayment")).toBe(true);
+    // processPayment is the source of CALLS but not a target -> excluded.
+    expect(targets.has("src/service.ts::processPayment")).toBe(false);
+    // Test nodes are connected via TESTED_BY (not CALLS) -> excluded.
+    expect(targets.has("tests/service.test.ts::testProcessPayment")).toBe(false);
+  });
+
+  it("respects directed Graphology source/target without _src/_tgt", () => {
+    const G = new Graph({ type: "directed" });
+    G.addNode("src/a.ts::main", { label: "main", kind: "Function", source_file: "src/a.ts" });
+    G.addNode("src/a.ts::worker", { label: "worker", kind: "Function", source_file: "src/a.ts" });
+    G.addDirectedEdge("src/a.ts::main", "src/a.ts::worker", {
+      relation: "calls",
+      confidence: "EXTRACTED",
+    });
+    const store = createReviewGraphStore(G);
+
+    const out = store.getEdgesBySource("src/a.ts::main");
+    expect(out).toHaveLength(1);
+    expect(out[0]?.kind).toBe("CALLS");
+    expect(out[0]?.targetId).toBe("src/a.ts::worker");
+
+    // Reverse query must NOT return the edge as outgoing-from-worker.
+    expect(store.getEdgesBySource("src/a.ts::worker")).toHaveLength(0);
+    expect(store.getEdgesByTarget("src/a.ts::worker")).toHaveLength(1);
+
+    expect(store.getAllCallTargets().has("src/a.ts::worker")).toBe(true);
+    expect(store.getAllCallTargets().has("src/a.ts::main")).toBe(false);
+  });
+
+  it("parses community attrs as both numeric and string and looks up in batch", () => {
+    const store = createReviewGraphStore(makeReviewGraph());
+
+    // PaymentService has community: "1" (string), processPayment has community: 1 (number).
+    expect(store.getNodeCommunityId("src/service.ts::PaymentService")).toBe(1);
+    expect(store.getNodeCommunityId("src/service.ts::processPayment")).toBe(1);
+    // helper has no community attr.
+    expect(store.getNodeCommunityId("src/service.ts::helper")).toBeNull();
+
+    const batch = store.getCommunityIdsByQualifiedNames([
+      "src/service.ts::PaymentService",
+      "src/service.ts::helper",
+      "src/repo.ts::savePayment",
+      "tests/service.test.ts::testProcessPayment",
+      "src/missing.ts::ghost",
+    ]);
+    expect(batch.get("src/service.ts::PaymentService")).toBe(1);
+    expect(batch.get("src/service.ts::helper")).toBeNull();
+    expect(batch.get("src/repo.ts::savePayment")).toBe(2);
+    expect(batch.get("tests/service.test.ts::testProcessPayment")).toBe(1);
+    expect(batch.get("src/missing.ts::ghost")).toBeNull();
+  });
+
+  it("normalizes Windows backslashes and leading ./ in path lookups", () => {
+    const G = new Graph({ type: "undirected" });
+    G.addNode("src/auth.ts::login", {
+      label: "login",
+      kind: "Function",
+      source_file: "src/auth.ts",
+    });
+    G.addNode("src/auth.ts::logout", {
+      label: "logout",
+      kind: "Function",
+      source_file: "src/auth.ts",
+    });
+    const store = createReviewGraphStore(G);
+
+    // Windows-style backslashes in the query.
+    expect(store.getNodesByFile("src\\auth.ts").map((n) => n.name).sort()).toEqual(["login", "logout"]);
+    // Leading ./ in the query.
+    expect(store.getNodesByFile("./src/auth.ts").map((n) => n.name).sort()).toEqual(["login", "logout"]);
+    // Suffix matching (the file is stored relative; query with absolute prefix).
+    expect(store.getNodesByFile("/repo/work/src/auth.ts").map((n) => n.name).sort()).toEqual(["login", "logout"]);
+
+    // getFilesMatching also handles backslash + leading ./.
+    expect(store.getFilesMatching("src\\auth.ts")).toEqual(["src/auth.ts"]);
+    expect(store.getFilesMatching("./src/auth.ts")).toEqual(["src/auth.ts"]);
+  });
 });
