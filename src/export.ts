@@ -24,6 +24,51 @@ const COMMUNITY_COLORS = [
   "#EDC948", "#B07AA1", "#FF9DA7", "#9C755F", "#BAB0AC",
 ];
 
+/**
+ * Track C3 — file_type → vis.js shape mapping. Defaults target a code
+ * corpus and intentionally do NOT touch domain-specific node types
+ * (Character, Work, etc. for the mystery profile). Profile-aware
+ * mapping override is a follow-up lot (C3.5) once the per-profile
+ * schema is locked.
+ *
+ * vis.js shapes used: dot, square, triangle, box, diamond, star,
+ * hexagon. All non-color-only so accessibility (color-blind, B&W
+ * print) is preserved.
+ */
+export function inferNodeShape(fileType: string, sourceFile: string): string {
+  const path = (sourceFile || "").toLowerCase();
+  const type = (fileType || "").toLowerCase();
+  // Test files first (most specific path match).
+  if (/(?:^|[/\\])(?:tests?|__tests__)[/\\]/.test(path) || /[._-](?:test|spec)\.[a-z0-9]+$/.test(path)) {
+    return "square";
+  }
+  // TypeScript declaration files (type-only modules).
+  if (/\.d\.ts$/.test(path)) return "diamond";
+  // Config-ish files by extension.
+  if (/\.(?:ya?ml|toml|cfg|ini|properties|env|conf)$/.test(path)) return "triangle";
+  // Doc / paper / concept nodes.
+  if (type === "document" || type === "paper" || type === "concept" || type === "rationale") return "box";
+  if (type === "image") return "star";
+  if (type === "video") return "hexagon";
+  // Default code dot.
+  return "dot";
+}
+
+/**
+ * Track C3 — relation → vis.js dashes pattern. Solid by default for
+ * direct dependencies; dashed for inferred / loose links so the user
+ * can tell strong vs weak connections at a glance without hovering.
+ * Profile-aware override is C3.5.
+ */
+export function inferEdgeDashes(relation: string, confidenceTier: string): boolean | number[] {
+  const r = (relation || "").toLowerCase();
+  if (r === "imports_from" || r === "imports") return [6, 4];
+  if (r === "tested_by" || r === "validated_by") return [2, 4];
+  if (r === "inherits" || r === "extends" || r === "implements") return [10, 4];
+  // Confidence fallback: solid for EXTRACTED, dashed for INFERRED/AMBIGUOUS.
+  return confidenceTier !== "EXTRACTED";
+}
+
 const MAX_NODES_FOR_VIZ = 5_000;
 
 const CONFIDENCE_SCORE_DEFAULTS: Record<string, number> = {
@@ -537,9 +582,11 @@ const LEGEND = ${legendJson};
 // Build vis datasets
 const nodesDS = new vis.DataSet(RAW_NODES.map(n => ({
   id: n.id, label: n.label, color: n.color, size: n.size,
+  shape: n.shape || 'dot',
   font: n.font, title: n.title,
   _community: n.community, _community_name: n.community_name,
   _source_file: n.source_file, _file_type: n.file_type, _degree: n.degree,
+  _shape: n.shape || 'dot',
 })));
 
 const edgesDS = new vis.DataSet(RAW_EDGES.map((e, i) => ({
@@ -581,7 +628,7 @@ const network = new vis.Network(container, { nodes: nodesDS, edges: edgesDS }, {
     navigationButtons: false,
     keyboard: { enabled: true, speed: { x: 10, y: 10, zoom: 0.05 }, bindToWindow: false },
   },
-  nodes: { shape: 'dot', borderWidth: 1.5 },
+  nodes: { borderWidth: 1.5 },  /* shape comes from per-node n.shape */
   edges: { smooth: { type: 'continuous', roundness: 0.2 }, selectionWidth: 3 },
 });
 
@@ -600,7 +647,7 @@ function showInfo(nodeId) {
   }).join('');
   document.getElementById('info-content').innerHTML = \`
     <div class="field"><b>\${n.label}</b></div>
-    <div class="field">Type: \${n._file_type || 'unknown'}</div>
+    <div class="field">Type: \${n._file_type || 'unknown'} <span style="color:#888;font-size:11px">(shape: \${n._shape})</span></div>
     <div class="field">Community: \${n._community_name}</div>
     <div class="field">Source: \${n._source_file || '-'}</div>
     <div class="field">Degree: \${n._degree}</div>
@@ -830,6 +877,7 @@ export function toHtml(
     community_name: string;
     source_file: string;
     file_type: string;
+    shape: string;
     degree: number;
   }
   const visNodes: VisNode[] = [];
@@ -843,6 +891,8 @@ export function toHtml(
       ? 10 + 30 * (memberCount / maxMemberCount)
       : 10 + 30 * (deg / maxDeg);
     const fontSize = memberCounts ? 12 : (deg >= maxDeg * 0.15 ? 12 : 0);
+    const sourceFile = (data.source_file as string) ?? "";
+    const fileType = (data.file_type as string) ?? "";
     visNodes.push({
       id: nodeId,
       label,
@@ -856,8 +906,9 @@ export function toHtml(
       title: label,
       community: cid,
       community_name: sanitizeLabel(communityLabels?.get(cid) ?? `Community ${cid}`),
-      source_file: sanitizeLabel((data.source_file as string) ?? ""),
-      file_type: (data.file_type as string) ?? "",
+      source_file: sanitizeLabel(sourceFile),
+      file_type: fileType,
+      shape: inferNodeShape(fileType, sourceFile),
       degree: deg,
     });
   });
@@ -868,10 +919,11 @@ export function toHtml(
     to: string;
     label: string;
     title: string;
-    dashes: boolean;
+    dashes: boolean | number[];
     width: number;
     color: { opacity: number };
     confidence: string;
+    relation: string;
   }
   const visEdges: VisEdge[] = [];
   G.forEachEdge((_edge, data, u, v) => {
@@ -882,10 +934,11 @@ export function toHtml(
       to: v,
       label: relation,
       title: `${relation} [${confidence}]`,
-      dashes: confidence !== "EXTRACTED",
+      dashes: inferEdgeDashes(relation, confidence),
       width: confidence === "EXTRACTED" ? 2 : 1,
       color: { opacity: confidence === "EXTRACTED" ? 0.7 : 0.35 },
       confidence,
+      relation,
     });
   });
 
@@ -945,6 +998,24 @@ ${htmlStyles()}
       <button id="contrast-toggle" type="button" aria-pressed="false" aria-label="Toggle high contrast">HC</button>
     </div>
     <div id="legend" role="group" aria-label="Community filters"></div>
+    <h3 id="shapes-heading" style="margin-top:14px">Shapes</h3>
+    <ul id="shape-legend" aria-labelledby="shapes-heading" style="list-style:none;padding:0;margin:0;font-size:12px;color:#bbb">
+      <li>● dot &mdash; code</li>
+      <li>■ square &mdash; test</li>
+      <li>▲ triangle &mdash; config (yaml/toml/...)</li>
+      <li>◆ diamond &mdash; type definition (.d.ts)</li>
+      <li>▢ box &mdash; document / paper / concept</li>
+      <li>★ star &mdash; image</li>
+      <li>⬢ hexagon &mdash; video</li>
+    </ul>
+    <h3 id="relations-heading" style="margin-top:14px">Edges</h3>
+    <ul id="relation-legend" aria-labelledby="relations-heading" style="list-style:none;padding:0;margin:0;font-size:12px;color:#bbb">
+      <li>━━━━ solid &mdash; calls / strong (EXTRACTED)</li>
+      <li>┄┄┄┄ dashed &mdash; imports_from</li>
+      <li>┈┈┈┈ dotted &mdash; tested_by / validated_by</li>
+      <li>━ ━ ━ long-dash &mdash; inherits / implements</li>
+      <li style="opacity:0.6">··· faded &mdash; INFERRED / AMBIGUOUS</li>
+    </ul>
   </section>
   <div id="stats" role="status">${stats}</div>
 </aside>
