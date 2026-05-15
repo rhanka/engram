@@ -3,14 +3,16 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { pdfParseMock, convertPdfMock, spawnSyncMock } = vi.hoisted(() => ({
-  pdfParseMock: vi.fn(),
+const { unpdfExtractTextMock, unpdfGetDocMock, convertPdfMock, spawnSyncMock } = vi.hoisted(() => ({
+  unpdfExtractTextMock: vi.fn(),
+  unpdfGetDocMock: vi.fn(),
   convertPdfMock: vi.fn(),
   spawnSyncMock: vi.fn(),
 }));
 
-vi.mock("pdf-parse", () => ({
-  default: pdfParseMock,
+vi.mock("unpdf", () => ({
+  extractText: unpdfExtractTextMock,
+  getDocumentProxy: unpdfGetDocMock,
 }));
 
 vi.mock("mistral-ocr", () => ({
@@ -36,7 +38,8 @@ describe("PDF preflight and OCR preparation", () => {
     tempDirs.push(tmpDir);
     pdfPath = join(tmpDir, "scan.pdf");
     writeFileSync(pdfPath, Buffer.from("%PDF-1.7\n/Image /XObject\n"));
-    pdfParseMock.mockResolvedValue({ text: "", numpages: 1 });
+    unpdfGetDocMock.mockResolvedValue({});
+    unpdfExtractTextMock.mockResolvedValue({ text: "", totalPages: 1 });
     spawnSyncMock.mockReturnValue({ output: [], pid: 0, signal: null, status: 1, stderr: "", stdout: "" });
     convertPdfMock.mockImplementation(async (_input, options) => {
       writeFileSync(options.markdownPath, "# OCR markdown\n\nDetected text", "utf-8");
@@ -49,7 +52,8 @@ describe("PDF preflight and OCR preparation", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    pdfParseMock.mockReset();
+    unpdfExtractTextMock.mockReset();
+    unpdfGetDocMock.mockReset();
     convertPdfMock.mockReset();
     spawnSyncMock.mockReset();
     delete process.env.GRAPHIFY_PDF_OCR;
@@ -83,7 +87,7 @@ describe("PDF preflight and OCR preparation", () => {
   });
 
   it("marks low-text PDFs as needing OCR in auto mode", async () => {
-    pdfParseMock.mockResolvedValueOnce({ text: "tiny", numpages: 3 });
+    unpdfExtractTextMock.mockResolvedValueOnce({ text: "tiny", totalPages: 3 });
 
     const result = await preflightPdf(pdfPath, "auto");
 
@@ -92,8 +96,8 @@ describe("PDF preflight and OCR preparation", () => {
     expect(result.imageMarkerCount).toBeGreaterThan(0);
   });
 
-  it("falls back to pdftotext when pdf-parse cannot read a text layer", async () => {
-    pdfParseMock.mockRejectedValueOnce(new Error("parse failed"));
+  it("falls back to pdftotext when unpdf cannot read a text layer", async () => {
+    unpdfExtractTextMock.mockRejectedValueOnce(new Error("parse failed"));
     spawnSyncMock.mockImplementation((command) => {
       if (command === "pdftotext") {
         return {
@@ -128,7 +132,7 @@ describe("PDF preflight and OCR preparation", () => {
   });
 
   it("converts text-layer PDFs locally without calling Mistral OCR", async () => {
-    pdfParseMock.mockResolvedValue({ text: Array(100).fill("word").join(" "), numpages: 1 });
+    unpdfExtractTextMock.mockResolvedValue({ text: Array(100).fill("word").join(" "), totalPages: 1 });
     const outputDir = join(tmpDir, "converted");
 
     const result = await augmentDetectionWithPdfPreflight({
@@ -145,7 +149,7 @@ describe("PDF preflight and OCR preparation", () => {
     expect(result.detection.files.paper).toEqual([]);
     expect(result.detection.files.document).toHaveLength(1);
     expect(convertPdfMock).not.toHaveBeenCalled();
-    expect(readFileSync(result.detection.files.document[0]!, "utf-8")).toContain("graphify_conversion: pdf-parse");
+    expect(readFileSync(result.detection.files.document[0]!, "utf-8")).toContain("graphify_conversion: unpdf");
   });
 
   it("uses mistral-ocr for scanned PDFs when preflight detects low text", async () => {
@@ -228,7 +232,7 @@ describe("PDF preflight and OCR preparation", () => {
   });
 
   it("prepares transcripts and PDF sidecars through the unified semantic preparation step", async () => {
-    pdfParseMock.mockResolvedValue({ text: Array(80).fill("text").join(" "), numpages: 1 });
+    unpdfExtractTextMock.mockResolvedValue({ text: Array(80).fill("text").join(" "), totalPages: 1 });
     mkdirSync(join(tmpDir, "semantic"), { recursive: true });
 
     const result = await prepareSemanticDetection({

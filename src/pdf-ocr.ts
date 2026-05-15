@@ -11,7 +11,7 @@ export interface PdfPreparationArtifact {
   sourceFile: string;
   markdownPath?: string;
   imagePaths?: string[];
-  provider: "pdf-parse" | "pdftotext" | "mistral-ocr" | "none";
+  provider: "unpdf" | "pdftotext" | "mistral-ocr" | "none";
   mode: PdfOcrMode;
   status: "converted" | "cached" | "skipped" | "failed";
   reason: string;
@@ -67,7 +67,7 @@ function listImageArtifacts(imageOutputDir: string): string[] {
     .sort();
 }
 
-function textMarkdown(sourceFile: string, text: string, provider: "pdf-parse" | "pdftotext"): string {
+function textMarkdown(sourceFile: string, text: string, provider: "unpdf" | "pdftotext"): string {
   return [
     "---",
     "graphify_source_file: " + JSON.stringify(sourceFile),
@@ -133,7 +133,7 @@ async function preparePdf(
   const ocrMetadataPath = metadataPath(markdownPath);
 
   if (existsSync(markdownPath)) {
-    const provider = preflight.shouldOcr ? "mistral-ocr" : preflight.textLayerProvider === "pdftotext" ? "pdftotext" : "pdf-parse";
+    const provider = preflight.shouldOcr ? "mistral-ocr" : preflight.textLayerProvider === "pdftotext" ? "pdftotext" : "unpdf";
     const artifact: PdfPreparationArtifact = {
       sourceFile: resolve(filePath),
       markdownPath,

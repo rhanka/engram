@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { basename, extname, resolve } from "node:path";
 
 export type PdfOcrMode = "off" | "auto" | "always" | "dry-run";
-export type PdfTextLayerProvider = "pdf-parse" | "pdftotext" | "none";
+export type PdfTextLayerProvider = "unpdf" | "pdftotext" | "none";
 
 export interface PdfPreflightOptions {
   minWordsPerPage?: number;
@@ -29,9 +29,9 @@ export interface PdfTextLayerResult {
   provider: PdfTextLayerProvider;
 }
 
-interface PdfParseResult {
-  text?: string;
-  numpages?: number;
+interface UnpdfTextResult {
+  text: string | string[];
+  totalPages: number;
 }
 
 const DEFAULT_MIN_WORDS_PER_PAGE = 25;
@@ -66,14 +66,16 @@ function sha256(buffer: Buffer): string {
   return createHash("sha256").update(buffer).digest("hex");
 }
 
-async function extractWithPdfParse(buffer: Buffer): Promise<PdfTextLayerResult | null> {
+async function extractWithUnpdf(buffer: Buffer): Promise<PdfTextLayerResult | null> {
   try {
-    const pdfParse = (await import("pdf-parse")).default as (input: Buffer) => Promise<PdfParseResult>;
-    const parsed = await pdfParse(buffer);
+    const { extractText, getDocumentProxy } = await import("unpdf");
+    const doc = await getDocumentProxy(new Uint8Array(buffer));
+    const parsed = (await extractText(doc, { mergePages: true })) as UnpdfTextResult;
+    const text = Array.isArray(parsed.text) ? parsed.text.join("\n") : String(parsed.text ?? "");
     return {
-      text: normalizeText(String(parsed.text ?? "")),
-      pageCount: Math.max(1, Number(parsed.numpages ?? 1)),
-      provider: "pdf-parse",
+      text: normalizeText(text),
+      pageCount: Math.max(1, Number(parsed.totalPages ?? 1)),
+      provider: "unpdf",
     };
   } catch {
     return null;
@@ -120,8 +122,8 @@ export async function extractPdfTextLayer(
     if (fallback) return fallback;
   }
 
-  const parsed = await extractWithPdfParse(buffer);
-  if (preferredProvider === "pdf-parse" && parsed) return parsed;
+  const parsed = await extractWithUnpdf(buffer);
+  if (preferredProvider === "unpdf" && parsed) return parsed;
 
   const fallback = !parsed || countWords(parsed.text) < DEFAULT_MIN_TOTAL_WORDS
     ? extractWithPdftotext(filePath)
