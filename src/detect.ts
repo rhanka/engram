@@ -104,56 +104,49 @@ export function classifyFile(filePath: string): FileType | null {
   return null;
 }
 
-/** Extract plain text from a PDF file using pdf-parse. */
+/**
+ * Extract plain text from a PDF file using unpdf (modern pdfjs wrapper,
+ * bundles its own pdfjs runtime; no peer pdfjs-dist install required).
+ */
 export async function extractPdfText(filePath: string): Promise<string> {
   try {
-    const pdfParse = (await import("pdf-parse")).default;
+    const { extractText, getDocumentProxy } = await import("unpdf");
     const buf = readFileSync(filePath);
-    const data = await pdfParse(buf);
-    return data.text;
+    const doc = await getDocumentProxy(new Uint8Array(buf));
+    const { text } = await extractText(doc, { mergePages: true });
+    return Array.isArray(text) ? text.join("\n") : String(text ?? "");
   } catch {
     return "";
   }
 }
 
-/** Convert a .docx file to markdown text using mammoth. */
+/**
+ * Convert .docx, .xlsx, .pptx, .odt, .ods, .odp and .rtf files to plain
+ * text using officeparser. The host package keeps officeparser as an
+ * optional dep with `pdfjs-dist` and `tesseract.js` overridden to
+ * `empty-npm-package` (see package.json `overrides`); we always pass
+ * `{ ocr: false }` so tesseract is never imported, and we route .pdf
+ * separately through unpdf so the pdfjs stub is never hit either.
+ */
+async function officeParseToText(filePath: string): Promise<string> {
+  try {
+    const { parseOfficeAsync } = (await import("officeparser")) as unknown as {
+      parseOfficeAsync: (file: string, opts?: { ocr?: boolean }) => Promise<string>;
+    };
+    return await parseOfficeAsync(filePath, { ocr: false });
+  } catch {
+    return "";
+  }
+}
+
+/** Convert a .docx file to plain text via officeparser. */
 export async function docxToMarkdown(filePath: string): Promise<string> {
-  try {
-    const mammoth = await import("mammoth");
-    const result = await mammoth.convertToHtml({ path: filePath });
-    // mammoth produces HTML; strip tags for a simple text fallback
-    return result.value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-  } catch {
-    return "";
-  }
+  return (await officeParseToText(filePath)).trim();
 }
 
-/** Convert an .xlsx file to markdown text using exceljs. */
+/** Convert an .xlsx file to plain text via officeparser. */
 export async function xlsxToMarkdown(filePath: string): Promise<string> {
-  try {
-    const ExcelJS = await import("exceljs");
-    const wb = new ExcelJS.Workbook();
-    await wb.xlsx.readFile(filePath);
-    const sections: string[] = [];
-    wb.eachSheet((ws) => {
-      const rows: string[][] = [];
-      ws.eachRow((row) => {
-        const cells = (row.values as unknown[]).slice(1).map((v) => (v != null ? String(v) : ""));
-        rows.push(cells);
-      });
-      if (rows.length === 0) return;
-      sections.push(`## Sheet: ${ws.name}`);
-      const header = "| " + rows[0]!.join(" | ") + " |";
-      const sep = "| " + rows[0]!.map(() => "---").join(" | ") + " |";
-      sections.push(header, sep);
-      for (const row of rows.slice(1)) {
-        sections.push("| " + row.join(" | ") + " |");
-      }
-    });
-    return sections.join("\n");
-  } catch {
-    return "";
-  }
+  return (await officeParseToText(filePath)).trim();
 }
 
 /** Convert .docx/.xlsx to a markdown sidecar file. */
