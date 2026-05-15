@@ -4,6 +4,38 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.8.0 (2026-05-15)
+
+Post-`0.7.19` minor: review-precision CLI, mesh bridge scaffold, office libs swap with `npm overrides`, and HTML accessibility pass.
+
+### Track C1 — review-precision CLI
+
+- New module `src/review-store.ts` exposes `ReviewGraphStoreLike` (read-only Graphology adapter modelled after the CRG `GraphStore`): node/edge lookup, kind filtering, impact radius, transitive tests, community lookup, graph stats, path normalisation (Windows backslashes + leading `./`), dedupe on multi-range hits.
+- New CLI commands: `graphify review-context`, `graphify detect-changes`, `graphify minimal-context`, `graphify affected-flows`, `graphify flows build`, `graphify review-eval`.
+- New review pipeline modules: `review-context`, `detect-changes`, `minimal-context`, `flows`, `review-benchmark`. 34 vitest cases cover F3..F12 of the CRG alignment matrix.
+- Edge-relation canonicalisation: `extends` → `INHERITS`, `implements_interface` → `IMPLEMENTS`, etc.
+
+### Track A3 — `@sentropic/llm-mesh` bridge (scaffold)
+
+- New dep `@sentropic/llm-mesh@0.1.0`.
+- New module `src/llm-mesh-bridge.ts`: `createGraphifyMesh()` builds a mesh from default provider adapters, `meshTextJsonClient(mesh)` wraps it as a graphify `TextJsonGenerationClient` for the wiki-description-generation `mesh` mode. Wiring of wiki-description-generation against the bridge follows in a future commit.
+
+### Track E Lot 2 — office libs swap
+
+- Removed: `exceljs@4.4.0` (27 MB, 6 transitive deprecations), `mammoth@1.8.0` (3.4 MB), `pdf-parse@1.1.1` (36 MB, unmaintained since 2018).
+- Added: `officeparser@7.0.2` (3.4 MB), `unpdf@1.6.2` (3.1 MB).
+- npm `overrides` stub officeparser's `pdfjs-dist` (45 MB) and `tesseract.js` (~70 MB) hard deps to `empty-npm-package@1.0.0`, shrinking officeparser's footprint to ~6.5 MB while keeping ODT/PPTX/RTF/DOCX/XLSX support. PDF parsing always routes through unpdf so the pdfjs stub is never reached.
+- Net default install: **−59 MB** on office libs, +scope (PPTX, ODT, ODS, ODP, RTF, CSV, MD, HTML extraction).
+- `src/types/optional-deps.d.ts` declares minimal types for `officeparser` and `unpdf` so the DTS build still passes when CI installs without optional deps.
+
+### Track C2 — HTML accessibility
+
+- `graphify export html` (`toHtml` in `src/export.ts`) ships WCAG-AA-friendly accessibility patterns: skip link to controls, ARIA live region announcing graph state and selection, graph container with `role=application` and descriptive `aria-label`, search as ARIA combobox with labelled input and `role=listbox` results, vis.js keyboard navigation (arrows pan, +/- zoom, Enter selects, Esc deselects), F1/`?` help dialog (`role=dialog`, `aria-modal=true`), high-contrast toggle (`aria-pressed`) + `body.high-contrast` overrides + `@media (prefers-contrast: more)` pickup, `:focus-visible` outline rings, WCAG-AA contrast bumps.
+
+### Tests
+
+`npm test`: **597 passed**, 7 skipped, 0 failed (vs 579 in 0.7.19).
+
 ## 0.7.19 (2026-05-14)
 
 Promote `0.7.19-rc.1` to stable after the real-corpus smoke run:
