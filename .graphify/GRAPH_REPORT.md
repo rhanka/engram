@@ -1,10 +1,10 @@
 # Graph Report - .  (2026-05-15)
 
 ## Corpus Check
-- Large corpus: 246 files · ~304 547 words. Semantic extraction will be expensive (many Claude tokens). Consider running on a subfolder, or use --no-semantic to run AST-only.
+- Large corpus: 246 files · ~305 597 words. Semantic extraction will be expensive (many Claude tokens). Consider running on a subfolder, or use --no-semantic to run AST-only.
 
 ## Summary
-- 2584 nodes · 5006 edges · 100 communities detected
+- 2585 nodes · 5007 edges · 99 communities detected
 - Extraction: 91% EXTRACTED · 9% INFERRED · 0% AMBIGUOUS · INFERRED: 466 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
 
@@ -13,11 +13,11 @@
 - Requested: auto
 - Resolved: committed (source: default-auto)
 - Included files: 246 · Candidates: 262
-- Excluded: 0 untracked · 37244 ignored · 0 sensitive · 0 missing committed
+- Excluded: 0 untracked · 20337 ignored · 0 sensitive · 0 missing committed
 - Recommendation: Use --scope all or graphify.yaml inputs.corpus for a knowledge-base folder.
 
 ## Graph Freshness
-- Built from Git commit: `dd38f77`
+- Built from Git commit: `4056554`
 - Compare this hash to `git rev-parse HEAD` before trusting freshness-sensitive graph output.
 ## God Nodes (most connected - your core abstractions)
 1. `Response` - 45 edges
@@ -314,12 +314,12 @@ Cohesion: 0.15
 Nodes (1): AsyncClient
 
 ### Community 67 - "Community 67"
-Cohesion: 0.23
-Nodes (10): buildWikiDescriptionCacheKey(), checkWikiDescriptionFreshness(), createInsufficientEvidenceRecord(), isNonEmptyString(), isRecord(), isStringArray(), isStringOrNull(), selectFreshWikiDescriptions() (+2 more)
+Cohesion: 0.22
+Nodes (8): readGraphAttributeLabels(), readLabelsJson(), resolveCommunityLabels(), buildProject(), countNonCodeFiles(), defaultLabels(), fileList(), formatDiagnosticSummary()
 
 ### Community 68 - "Community 68"
-Cohesion: 0.22
-Nodes (5): buildProject(), countNonCodeFiles(), defaultLabels(), fileList(), formatDiagnosticSummary()
+Cohesion: 0.23
+Nodes (10): buildWikiDescriptionCacheKey(), checkWikiDescriptionFreshness(), createInsufficientEvidenceRecord(), isNonEmptyString(), isRecord(), isStringArray(), isStringOrNull(), selectFreshWikiDescriptions() (+2 more)
 
 ### Community 69 - "Community 69"
 Cohesion: 0.18
@@ -432,10 +432,6 @@ Nodes (6): DecodingError, HTTPError, An error occurred while issuing a request.,
 ### Community 98 - "Community 98"
 Cohesion: 0.38
 Nodes (7): agentsUninstall(), installOpenCodePlugin(), legacyOpencodeConfigPath(), loadOpenCodeConfig(), opencodeConfigPath(), uninstallCodexHook(), uninstallOpenCodePlugin()
-
-### Community 104 - "Community 104"
-Cohesion: 0.6
-Nodes (3): readGraphAttributeLabels(), readLabelsJson(), resolveCommunityLabels()
 
 ### Community 111 - "Community 111"
 Cohesion: 1

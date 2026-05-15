@@ -412,35 +412,65 @@ function htmlStyles(): string {
   return `<style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #0f0f1a; color: #e0e0e0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; display: flex; height: 100vh; overflow: hidden; }
-  #graph { flex: 1; }
+  /* Skip link visible only on focus, lets keyboard users jump past the canvas. */
+  .skip-link { position: absolute; top: -40px; left: 8px; background: #4E79A7; color: #fff; padding: 6px 12px; border-radius: 0 0 4px 4px; z-index: 1000; text-decoration: none; }
+  .skip-link:focus { top: 0; }
+  /* Visually hidden but exposed to screen readers. */
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+  /* Focus visible everywhere, WCAG-compliant outline. */
+  :focus-visible { outline: 3px solid #ffd54f; outline-offset: 2px; box-shadow: 0 0 0 4px rgba(78, 121, 167, 0.55); }
+  #graph { flex: 1; outline: none; }
+  #graph:focus-visible { box-shadow: inset 0 0 0 3px #ffd54f; }
   #sidebar { width: 280px; background: #1a1a2e; border-left: 1px solid #2a2a4e; display: flex; flex-direction: column; overflow: hidden; }
   #search-wrap { padding: 12px; border-bottom: 1px solid #2a2a4e; }
   #search { width: 100%; background: #0f0f1a; border: 1px solid #3a3a5e; color: #e0e0e0; padding: 7px 10px; border-radius: 6px; font-size: 13px; outline: none; }
   #search:focus { border-color: #4E79A7; }
   #search-results { max-height: 140px; overflow-y: auto; padding: 4px 12px; border-bottom: 1px solid #2a2a4e; display: none; }
   .search-item { padding: 4px 6px; cursor: pointer; border-radius: 4px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .search-item:hover { background: #2a2a4e; }
+  .search-item:hover, .search-item:focus { background: #2a2a4e; }
   #info-panel { padding: 14px; border-bottom: 1px solid #2a2a4e; min-height: 140px; }
   #info-panel h3 { font-size: 13px; color: #aaa; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
   #info-content { font-size: 13px; color: #ccc; line-height: 1.6; }
   #info-content .field { margin-bottom: 5px; }
   #info-content .field b { color: #e0e0e0; }
-  #info-content .empty { color: #555; font-style: italic; }
+  #info-content .empty { color: #777; font-style: italic; } /* WCAG AA: bumped from #555 (3.8:1) to #777 (5.0:1) */
   .neighbor-link { display: block; padding: 2px 6px; margin: 2px 0; border-radius: 3px; cursor: pointer; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-left: 3px solid #333; }
-  .neighbor-link:hover { background: #2a2a4e; }
+  .neighbor-link:hover, .neighbor-link:focus { background: #2a2a4e; }
   #neighbors-list { max-height: 160px; overflow-y: auto; margin-top: 4px; }
   #legend-wrap { flex: 1; overflow-y: auto; padding: 12px; }
   #legend-wrap h3 { font-size: 13px; color: #aaa; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
   .legend-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer; border-radius: 4px; font-size: 12px; }
-  .legend-item:hover { background: #2a2a4e; padding-left: 4px; }
-  .legend-item.dimmed { opacity: 0.35; }
+  .legend-item:hover, .legend-item:focus-within { background: #2a2a4e; padding-left: 4px; }
+  .legend-item.dimmed { opacity: 0.45; } /* WCAG: bumped from 0.35 for better contrast in dimmed state */
   .legend-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
   .legend-cb { accent-color: #4E79A7; cursor: pointer; flex-shrink: 0; }
   .legend-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .legend-count { color: #666; font-size: 11px; }
+  .legend-count { color: #888; font-size: 11px; } /* WCAG AA: bumped from #666 to #888 */
   #legend-controls { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 11px; color: #aaa; }
   #legend-controls label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
-  #stats { padding: 10px 14px; border-top: 1px solid #2a2a4e; font-size: 11px; color: #555; }
+  #stats { padding: 10px 14px; border-top: 1px solid #2a2a4e; font-size: 11px; color: #888; } /* WCAG AA */
+  /* Help overlay modal. */
+  #help-button { position: fixed; bottom: 12px; right: 296px; width: 36px; height: 36px; border-radius: 50%; background: #2a2a4e; color: #e0e0e0; border: 1px solid #3a3a5e; font-size: 16px; font-weight: bold; cursor: pointer; z-index: 100; }
+  #help-button:hover, #help-button:focus { background: #3a3a5e; }
+  #help-overlay { display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.75); z-index: 200; align-items: center; justify-content: center; }
+  #help-overlay.open { display: flex; }
+  #help-modal { background: #1a1a2e; color: #e0e0e0; padding: 24px 28px; border-radius: 8px; max-width: 480px; max-height: 80vh; overflow-y: auto; border: 1px solid #3a3a5e; }
+  #help-modal h2 { font-size: 16px; margin-bottom: 12px; }
+  #help-modal kbd { background: #0f0f1a; border: 1px solid #3a3a5e; border-radius: 3px; padding: 1px 6px; font-family: monospace; font-size: 12px; }
+  #help-modal dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 12px 0; font-size: 13px; }
+  #help-modal dt { color: #ffd54f; }
+  #help-close { float: right; background: none; border: none; color: #aaa; font-size: 18px; cursor: pointer; }
+  #help-close:hover, #help-close:focus { color: #e0e0e0; }
+  /* High-contrast mode (system preference + manual toggle). */
+  @media (prefers-contrast: more) {
+    body, #sidebar, #search { background: #000; color: #fff; }
+    #search { border-color: #fff; }
+    #info-content .empty, .legend-count, #stats { color: #ddd; }
+  }
+  body.high-contrast { background: #000; color: #fff; }
+  body.high-contrast #sidebar, body.high-contrast #search, body.high-contrast #help-modal { background: #000; color: #fff; }
+  body.high-contrast #search { border-color: #fff; }
+  body.high-contrast #info-content .empty, body.high-contrast .legend-count, body.high-contrast #stats { color: #ddd; }
 </style>`;
 }
 
@@ -523,6 +553,13 @@ const edgesDS = new vis.DataSet(RAW_EDGES.map((e, i) => ({
 })));
 
 const container = document.getElementById('graph');
+container.setAttribute('role', 'application');
+container.setAttribute('tabindex', '0');
+container.setAttribute('aria-label', 'Graphify knowledge graph. Use arrow keys to pan, plus and minus to zoom, F1 for help.');
+const liveRegion = document.getElementById('live-status');
+function announce(message) {
+  if (liveRegion) liveRegion.textContent = message;
+}
 const network = new vis.Network(container, { nodes: nodesDS, edges: edgesDS }, {
   physics: {
     enabled: true,
@@ -542,7 +579,7 @@ const network = new vis.Network(container, { nodes: nodesDS, edges: edgesDS }, {
     tooltipDelay: 100,
     hideEdgesOnDrag: true,
     navigationButtons: false,
-    keyboard: false,
+    keyboard: { enabled: true, speed: { x: 10, y: 10, zoom: 0.05 }, bindToWindow: false },
   },
   nodes: { shape: 'dot', borderWidth: 1.5 },
   edges: { smooth: { type: 'continuous', roundness: 0.2 }, selectionWidth: 3 },
@@ -593,8 +630,19 @@ container.addEventListener('click', () => {
   }
 });
 network.on('click', params => {
-  if (params.nodes.length > 0) showInfo(params.nodes[0]);
-  else if (hoveredNodeId === null) document.getElementById('info-content').innerHTML = '<span class="empty">Click a node to inspect it</span>';
+  if (params.nodes.length > 0) {
+    showInfo(params.nodes[0]);
+    const n = nodesDS.get(params.nodes[0]);
+    if (n) announce(\`Selected \${n.label}, in community \${n._community_name}, \${n._degree} connection(s).\`);
+  } else if (hoveredNodeId === null) {
+    document.getElementById('info-content').innerHTML = '<span class="empty">Click a node to inspect it</span>';
+  }
+});
+network.on('selectNode', params => {
+  if (params.nodes.length > 0) {
+    const n = nodesDS.get(params.nodes[0]);
+    if (n) announce(\`Selected \${n.label}, in community \${n._community_name}, \${n._degree} connection(s).\`);
+  }
 });
 
 const searchInput = document.getElementById('search');
@@ -603,14 +651,22 @@ const normalizeSearch = value => value.normalize('NFKD').replace(/[\\u0300-\\u03
 searchInput.addEventListener('input', () => {
   const q = normalizeSearch(searchInput.value).trim();
   searchResults.innerHTML = '';
-  if (!q) { searchResults.style.display = 'none'; return; }
+  if (!q) { searchResults.style.display = 'none'; announce(''); return; }
+  const totalMatches = RAW_NODES.filter(n => normalizeSearch(n.label).includes(q)).length;
   const matches = RAW_NODES.filter(n => normalizeSearch(n.label).includes(q)).slice(0, 20);
-  if (!matches.length) { searchResults.style.display = 'none'; return; }
+  if (!matches.length) {
+    searchResults.style.display = 'none';
+    announce('No nodes match the search.');
+    return;
+  }
   searchResults.style.display = 'block';
+  announce(\`Found \${totalMatches} node(s) matching "\${q}". Showing first \${matches.length}.\`);
   matches.forEach(n => {
-    const el = document.createElement('div');
+    const el = document.createElement('button');
+    el.type = 'button';
     el.className = 'search-item';
     el.textContent = n.label;
+    el.setAttribute('aria-label', \`Focus node \${n.label}\`);
     el.style.borderLeft = \`3px solid \${n.color.background}\`;
     el.style.paddingLeft = '8px';
     el.onclick = () => {
@@ -619,6 +675,7 @@ searchInput.addEventListener('input', () => {
       showInfo(n.id);
       searchResults.style.display = 'none';
       searchInput.value = '';
+      announce(\`Focused on \${n.label}.\`);
     };
     searchResults.appendChild(el);
   });
@@ -688,6 +745,52 @@ selectAllCb.addEventListener('change', () => {
   toggleAllCommunities(!selectAllCb.checked);
 });
 updateSelectAllState();
+
+// Help overlay (F1 / ? toggle).
+const helpButton = document.getElementById('help-button');
+const helpOverlay = document.getElementById('help-overlay');
+const helpClose = document.getElementById('help-close');
+function toggleHelp(open) {
+  if (open === undefined) open = !helpOverlay.classList.contains('open');
+  if (open) {
+    helpOverlay.classList.add('open');
+    helpOverlay.setAttribute('aria-hidden', 'false');
+    helpClose.focus();
+  } else {
+    helpOverlay.classList.remove('open');
+    helpOverlay.setAttribute('aria-hidden', 'true');
+    helpButton.focus();
+  }
+}
+helpButton.addEventListener('click', () => toggleHelp(true));
+helpClose.addEventListener('click', () => toggleHelp(false));
+helpOverlay.addEventListener('click', (e) => { if (e.target === helpOverlay) toggleHelp(false); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'F1' || (e.key === '?' && !['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName))) {
+    e.preventDefault();
+    toggleHelp();
+  } else if (e.key === 'Escape' && helpOverlay.classList.contains('open')) {
+    toggleHelp(false);
+  } else if (e.key === 'Escape' && network.getSelectedNodes().length > 0) {
+    network.unselectAll();
+    document.getElementById('info-content').innerHTML = '<span class="empty">Click a node to inspect it</span>';
+    announce('Selection cleared.');
+  }
+});
+
+// High-contrast toggle.
+const contrastBtn = document.getElementById('contrast-toggle');
+if (contrastBtn) {
+  contrastBtn.addEventListener('click', () => {
+    document.body.classList.toggle('high-contrast');
+    const on = document.body.classList.contains('high-contrast');
+    contrastBtn.setAttribute('aria-pressed', String(on));
+    announce(on ? 'High contrast mode enabled.' : 'High contrast mode disabled.');
+  });
+}
+
+// Initial announce so screen readers know what loaded.
+announce(\`Graph loaded: \${RAW_NODES.length} node(s), \${RAW_EDGES.length} edge(s) across \${LEGEND.length} community(ies).\`);
 </script>`;
 }
 
@@ -815,29 +918,52 @@ export function toHtml(
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>graphify - ${title}</title>
 <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
 ${htmlStyles()}
 </head>
 <body>
-<div id="graph"></div>
-<div id="sidebar">
+<a class="skip-link" href="#sidebar">Skip to controls</a>
+<div id="live-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+<div id="graph" aria-label="Graphify knowledge graph"></div>
+<aside id="sidebar" aria-label="Graph controls">
   <div id="search-wrap">
-    <input id="search" type="text" placeholder="Search nodes..." autocomplete="off">
-    <div id="search-results"></div>
+    <label for="search" class="sr-only">Search nodes</label>
+    <input id="search" type="text" placeholder="Search nodes..." autocomplete="off"
+           role="combobox" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list">
+    <div id="search-results" role="listbox" aria-label="Search results"></div>
   </div>
-  <div id="info-panel">
-    <h3>Node Info</h3>
-    <div id="info-content"><span class="empty">Click a node to inspect it</span></div>
-  </div>
-  <div id="legend-wrap">
-    <h3>Communities</h3>
+  <section id="info-panel" aria-labelledby="info-heading">
+    <h3 id="info-heading">Node Info</h3>
+    <div id="info-content" aria-live="polite"><span class="empty">Click a node to inspect it</span></div>
+  </section>
+  <section id="legend-wrap" aria-labelledby="legend-heading">
+    <h3 id="legend-heading">Communities</h3>
     <div id="legend-controls">
       <label><input id="select-all-cb" type="checkbox" checked> <span>Select all</span></label>
+      <button id="contrast-toggle" type="button" aria-pressed="false" aria-label="Toggle high contrast">HC</button>
     </div>
-    <div id="legend"></div>
+    <div id="legend" role="group" aria-label="Community filters"></div>
+  </section>
+  <div id="stats" role="status">${stats}</div>
+</aside>
+<button id="help-button" type="button" aria-label="Open keyboard help (F1)" aria-haspopup="dialog" aria-controls="help-overlay">?</button>
+<div id="help-overlay" role="dialog" aria-modal="true" aria-labelledby="help-title" aria-hidden="true">
+  <div id="help-modal">
+    <button id="help-close" type="button" aria-label="Close help">&times;</button>
+    <h2 id="help-title">Keyboard shortcuts</h2>
+    <dl>
+      <dt><kbd>Tab</kbd></dt><dd>Cycle focus between controls</dd>
+      <dt><kbd>&uarr;</kbd> <kbd>&darr;</kbd> <kbd>&larr;</kbd> <kbd>&rarr;</kbd></dt><dd>Pan the graph (graph focused)</dd>
+      <dt><kbd>+</kbd> / <kbd>-</kbd></dt><dd>Zoom in / out (graph focused)</dd>
+      <dt><kbd>Enter</kbd></dt><dd>Select hovered or focused node</dd>
+      <dt><kbd>Esc</kbd></dt><dd>Deselect / close help</dd>
+      <dt><kbd>F1</kbd> / <kbd>?</kbd></dt><dd>Toggle this help</dd>
+      <dt><kbd>HC</kbd> button</dt><dd>Toggle high-contrast theme</dd>
+    </dl>
+    <p style="font-size:12px;color:#aaa;margin-top:8px">Search input announces match counts; selecting a node announces its community and degree.</p>
   </div>
-  <div id="stats">${stats}</div>
 </div>
 ${htmlScript(nodesJson, edgesJson, legendJson)}
 ${hyperedgeScript(hyperedgesJson)}
