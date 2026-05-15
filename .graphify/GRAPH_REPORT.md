@@ -1,10 +1,10 @@
-# Graph Report - .  (2026-05-14)
+# Graph Report - .  (2026-05-15)
 
 ## Corpus Check
-- Large corpus: 244 files · ~302 796 words. Semantic extraction will be expensive (many Claude tokens). Consider running on a subfolder, or use --no-semantic to run AST-only.
+- Large corpus: 246 files · ~304 547 words. Semantic extraction will be expensive (many Claude tokens). Consider running on a subfolder, or use --no-semantic to run AST-only.
 
 ## Summary
-- 2578 nodes · 5000 edges · 100 communities detected
+- 2584 nodes · 5006 edges · 100 communities detected
 - Extraction: 91% EXTRACTED · 9% INFERRED · 0% AMBIGUOUS · INFERRED: 466 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
 
@@ -12,12 +12,12 @@
 ## Input Scope
 - Requested: auto
 - Resolved: committed (source: default-auto)
-- Included files: 244 · Candidates: 260
-- Excluded: 0 untracked · 20265 ignored · 0 sensitive · 0 missing committed
+- Included files: 246 · Candidates: 262
+- Excluded: 0 untracked · 37244 ignored · 0 sensitive · 0 missing committed
 - Recommendation: Use --scope all or graphify.yaml inputs.corpus for a knowledge-base folder.
 
 ## Graph Freshness
-- Built from Git commit: `80e0951`
+- Built from Git commit: `dd38f77`
 - Compare this hash to `git rev-parse HEAD` before trusting freshness-sensitive graph output.
 ## God Nodes (most connected - your core abstractions)
 1. `Response` - 45 edges
@@ -433,15 +433,15 @@ Nodes (6): DecodingError, HTTPError, An error occurred while issuing a request.,
 Cohesion: 0.38
 Nodes (7): agentsUninstall(), installOpenCodePlugin(), legacyOpencodeConfigPath(), loadOpenCodeConfig(), opencodeConfigPath(), uninstallCodexHook(), uninstallOpenCodePlugin()
 
-### Community 103 - "Community 103"
+### Community 104 - "Community 104"
 Cohesion: 0.6
 Nodes (3): readGraphAttributeLabels(), readLabelsJson(), resolveCommunityLabels()
 
-### Community 110 - "Community 110"
+### Community 111 - "Community 111"
 Cohesion: 1
 Nodes (2): discoveryContext(), semanticDetection()
 
-### Community 111 - "Community 111"
+### Community 112 - "Community 112"
 Cohesion: 1
 Nodes (2): runCliInTemp(), runCliWithEnvironment()
 
@@ -462,9 +462,9 @@ Nodes (2): runCliInTemp(), runCliWithEnvironment()
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 95`** (2 nodes): `Transformer`, `Transformer`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 110`** (2 nodes): `discoveryContext()`, `semanticDetection()`
+- **Thin community `Community 111`** (2 nodes): `discoveryContext()`, `semanticDetection()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 111`** (2 nodes): `runCliInTemp()`, `runCliWithEnvironment()`
+- **Thin community `Community 112`** (2 nodes): `runCliInTemp()`, `runCliWithEnvironment()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 
 ## Suggested Questions

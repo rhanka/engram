@@ -117,9 +117,10 @@
       "111": "Community 111",
       "112": "Community 112",
       "113": "Community 113",
-      "114": "Community 114"
+      "114": "Community 114",
+      "115": "Community 115"
     },
-    "built_from_commit": "80e095187539ad695b59299b76ed920428c58c24"
+    "built_from_commit": "dd38f77242f157167f33b208b6147ecc6873a1c0"
   },
   "nodes": [
     {
@@ -1307,8 +1308,8 @@
       "file_type": "code",
       "source_file": "src/community-labels.ts",
       "source_location": "L1",
-      "community": 103,
-      "community_name": "Community 103"
+      "community": 104,
+      "community_name": "Community 104"
     },
     {
       "id": "src_community_labels_readlabelsjson",
@@ -1316,8 +1317,8 @@
       "file_type": "code",
       "source_file": "src/community-labels.ts",
       "source_location": "L22",
-      "community": 103,
-      "community_name": "Community 103"
+      "community": 104,
+      "community_name": "Community 104"
     },
     {
       "id": "src_community_labels_readgraphattributelabels",
@@ -1325,8 +1326,8 @@
       "file_type": "code",
       "source_file": "src/community-labels.ts",
       "source_location": "L44",
-      "community": 103,
-      "community_name": "Community 103"
+      "community": 104,
+      "community_name": "Community 104"
     },
     {
       "id": "src_community_labels_resolvecommunitylabels",
@@ -1334,8 +1335,8 @@
       "file_type": "code",
       "source_file": "src/community-labels.ts",
       "source_location": "L65",
-      "community": 103,
-      "community_name": "Community 103"
+      "community": 104,
+      "community_name": "Community 104"
     },
     {
       "id": "src_community_labels_persistcommunitylabels",
@@ -1343,8 +1344,8 @@
       "file_type": "code",
       "source_file": "src/community-labels.ts",
       "source_location": "L100",
-      "community": 103,
-      "community_name": "Community 103"
+      "community": 104,
+      "community_name": "Community 104"
     },
     {
       "id": "src_configured_dataprep_ts",
@@ -3890,8 +3891,8 @@
       "file_type": "code",
       "source_file": "src/index.ts",
       "source_location": "L1",
-      "community": 105,
-      "community_name": "Community 105"
+      "community": 106,
+      "community_name": "Community 106"
     },
     {
       "id": "src_ingest_ts",
@@ -4441,6 +4442,42 @@
       "source_location": "L427",
       "community": 38,
       "community_name": "Community 38"
+    },
+    {
+      "id": "src_llm_mesh_bridge_ts",
+      "label": "llm-mesh-bridge.ts",
+      "file_type": "code",
+      "source_file": "src/llm-mesh-bridge.ts",
+      "source_location": "L1",
+      "community": 99,
+      "community_name": "Community 99"
+    },
+    {
+      "id": "src_llm_mesh_bridge_requireauthresolver",
+      "label": "requireAuthResolver()",
+      "file_type": "code",
+      "source_file": "src/llm-mesh-bridge.ts",
+      "source_location": "L66",
+      "community": 99,
+      "community_name": "Community 99"
+    },
+    {
+      "id": "src_llm_mesh_bridge_creategraphifymesh",
+      "label": "createGraphifyMesh()",
+      "file_type": "code",
+      "source_file": "src/llm-mesh-bridge.ts",
+      "source_location": "L73",
+      "community": 99,
+      "community_name": "Community 99"
+    },
+    {
+      "id": "src_llm_mesh_bridge_meshtextjsonclient",
+      "label": "meshTextJsonClient()",
+      "file_type": "code",
+      "source_file": "src/llm-mesh-bridge.ts",
+      "source_location": "L122",
+      "community": 99,
+      "community_name": "Community 99"
     },
     {
       "id": "src_merge_driver_ts",
@@ -8110,7 +8147,7 @@
       "label": "confidenceValue()",
       "file_type": "code",
       "source_file": "src/review-store.ts",
-      "source_location": "L192",
+      "source_location": "L195",
       "community": 61,
       "community_name": "Community 61"
     },
@@ -8119,7 +8156,7 @@
       "label": "sortNodes()",
       "file_type": "code",
       "source_file": "src/review-store.ts",
-      "source_location": "L204",
+      "source_location": "L207",
       "community": 61,
       "community_name": "Community 61"
     },
@@ -8128,7 +8165,7 @@
       "label": "sortEdges()",
       "file_type": "code",
       "source_file": "src/review-store.ts",
-      "source_location": "L212",
+      "source_location": "L215",
       "community": 61,
       "community_name": "Community 61"
     },
@@ -8137,7 +8174,7 @@
       "label": "createReviewGraphStore()",
       "file_type": "code",
       "source_file": "src/review-store.ts",
-      "source_location": "L221",
+      "source_location": "L224",
       "community": 61,
       "community_name": "Community 61"
     },
@@ -10316,8 +10353,8 @@
       "file_type": "code",
       "source_file": "tests/cli.test.ts",
       "source_location": "L1",
-      "community": 106,
-      "community_name": "Community 106"
+      "community": 107,
+      "community_name": "Community 107"
     },
     {
       "id": "tests_cli_test_tempprofileproject",
@@ -10325,8 +10362,8 @@
       "file_type": "code",
       "source_file": "tests/cli.test.ts",
       "source_location": "L16",
-      "community": 106,
-      "community_name": "Community 106"
+      "community": 107,
+      "community_name": "Community 107"
     },
     {
       "id": "tests_cli_test_writegraph",
@@ -10334,8 +10371,8 @@
       "file_type": "code",
       "source_file": "tests/cli.test.ts",
       "source_location": "L23",
-      "community": 106,
-      "community_name": "Community 106"
+      "community": 107,
+      "community_name": "Community 107"
     },
     {
       "id": "tests_cli_test_runcli",
@@ -10343,8 +10380,8 @@
       "file_type": "code",
       "source_file": "tests/cli.test.ts",
       "source_location": "L40",
-      "community": 106,
-      "community_name": "Community 106"
+      "community": 107,
+      "community_name": "Community 107"
     },
     {
       "id": "tests_cluster_test_ts",
@@ -11423,8 +11460,8 @@
       "file_type": "code",
       "source_file": "tests/helpers/ontology-write-fixture.ts",
       "source_location": "L1",
-      "community": 99,
-      "community_name": "Community 99"
+      "community": 100,
+      "community_name": "Community 100"
     },
     {
       "id": "helpers_ontology_write_fixture_writeontologywritefixture",
@@ -11432,8 +11469,8 @@
       "file_type": "code",
       "source_file": "tests/helpers/ontology-write-fixture.ts",
       "source_location": "L24",
-      "community": 99,
-      "community_name": "Community 99"
+      "community": 100,
+      "community_name": "Community 100"
     },
     {
       "id": "tests_hooks_test_ts",
@@ -11477,8 +11514,8 @@
       "file_type": "code",
       "source_file": "tests/image-dataprep-batch.test.ts",
       "source_location": "L1",
-      "community": 100,
-      "community_name": "Community 100"
+      "community": 101,
+      "community_name": "Community 101"
     },
     {
       "id": "image_dataprep_batch_test_maketempdir",
@@ -11486,8 +11523,8 @@
       "file_type": "code",
       "source_file": "tests/image-dataprep-batch.test.ts",
       "source_location": "L15",
-      "community": 100,
-      "community_name": "Community 100"
+      "community": 101,
+      "community_name": "Community 101"
     },
     {
       "id": "image_dataprep_batch_test_manifest",
@@ -11495,8 +11532,8 @@
       "file_type": "code",
       "source_file": "tests/image-dataprep-batch.test.ts",
       "source_location": "L27",
-      "community": 100,
-      "community_name": "Community 100"
+      "community": 101,
+      "community_name": "Community 101"
     },
     {
       "id": "tests_image_dataprep_test_ts",
@@ -11504,8 +11541,8 @@
       "file_type": "code",
       "source_file": "tests/image-dataprep.test.ts",
       "source_location": "L1",
-      "community": 101,
-      "community_name": "Community 101"
+      "community": 102,
+      "community_name": "Community 102"
     },
     {
       "id": "image_dataprep_test_maketempdir",
@@ -11513,8 +11550,8 @@
       "file_type": "code",
       "source_file": "tests/image-dataprep.test.ts",
       "source_location": "L13",
-      "community": 101,
-      "community_name": "Community 101"
+      "community": 102,
+      "community_name": "Community 102"
     },
     {
       "id": "image_dataprep_test_detection",
@@ -11522,8 +11559,8 @@
       "file_type": "code",
       "source_file": "tests/image-dataprep.test.ts",
       "source_location": "L19",
-      "community": 101,
-      "community_name": "Community 101"
+      "community": 102,
+      "community_name": "Community 102"
     },
     {
       "id": "tests_image_routing_calibration_test_ts",
@@ -11531,8 +11568,8 @@
       "file_type": "code",
       "source_file": "tests/image-routing-calibration.test.ts",
       "source_location": "L1",
-      "community": 108,
-      "community_name": "Community 108"
+      "community": 109,
+      "community_name": "Community 109"
     },
     {
       "id": "image_routing_calibration_test_maketempdir",
@@ -11540,8 +11577,8 @@
       "file_type": "code",
       "source_file": "tests/image-routing-calibration.test.ts",
       "source_location": "L18",
-      "community": 108,
-      "community_name": "Community 108"
+      "community": 109,
+      "community_name": "Community 109"
     },
     {
       "id": "tests_ingest_test_ts",
@@ -11632,6 +11669,24 @@
       "source_location": "L33",
       "community": 38,
       "community_name": "Community 38"
+    },
+    {
+      "id": "tests_llm_mesh_bridge_test_ts",
+      "label": "llm-mesh-bridge.test.ts",
+      "file_type": "code",
+      "source_file": "tests/llm-mesh-bridge.test.ts",
+      "source_location": "L1",
+      "community": 99,
+      "community_name": "Community 99"
+    },
+    {
+      "id": "tests_llm_mesh_bridge_test_maketempdir",
+      "label": "makeTempDir()",
+      "file_type": "code",
+      "source_file": "tests/llm-mesh-bridge.test.ts",
+      "source_location": "L13",
+      "community": 99,
+      "community_name": "Community 99"
     },
     {
       "id": "tests_merge_driver_test_ts",
@@ -11738,8 +11793,8 @@
       "file_type": "code",
       "source_file": "tests/ontology-discovery.test.ts",
       "source_location": "L1",
-      "community": 110,
-      "community_name": "Community 110"
+      "community": 111,
+      "community_name": "Community 111"
     },
     {
       "id": "tests_ontology_discovery_test_semanticdetection",
@@ -11747,8 +11802,8 @@
       "file_type": "code",
       "source_file": "tests/ontology-discovery.test.ts",
       "source_location": "L22",
-      "community": 110,
-      "community_name": "Community 110"
+      "community": 111,
+      "community_name": "Community 111"
     },
     {
       "id": "tests_ontology_discovery_test_discoverycontext",
@@ -11756,8 +11811,8 @@
       "file_type": "code",
       "source_file": "tests/ontology-discovery.test.ts",
       "source_location": "L40",
-      "community": 110,
-      "community_name": "Community 110"
+      "community": 111,
+      "community_name": "Community 111"
     },
     {
       "id": "tests_ontology_output_test_ts",
@@ -11837,8 +11892,8 @@
       "file_type": "code",
       "source_file": "tests/ontology-patch.test.ts",
       "source_location": "L1",
-      "community": 107,
-      "community_name": "Community 107"
+      "community": 108,
+      "community_name": "Community 108"
     },
     {
       "id": "tests_ontology_patch_test_maketempdir",
@@ -11846,8 +11901,8 @@
       "file_type": "code",
       "source_file": "tests/ontology-patch.test.ts",
       "source_location": "L19",
-      "community": 107,
-      "community_name": "Community 107"
+      "community": 108,
+      "community_name": "Community 108"
     },
     {
       "id": "tests_ontology_patch_test_makepatch",
@@ -11855,8 +11910,8 @@
       "file_type": "code",
       "source_file": "tests/ontology-patch.test.ts",
       "source_location": "L94",
-      "community": 107,
-      "community_name": "Community 107"
+      "community": 108,
+      "community_name": "Community 108"
     },
     {
       "id": "tests_ontology_patch_test_makecontext",
@@ -11864,8 +11919,8 @@
       "file_type": "code",
       "source_file": "tests/ontology-patch.test.ts",
       "source_location": "L114",
-      "community": 107,
-      "community_name": "Community 107"
+      "community": 108,
+      "community_name": "Community 108"
     },
     {
       "id": "tests_ontology_profile_test_ts",
@@ -11927,8 +11982,8 @@
       "file_type": "code",
       "source_file": "tests/ontology-studio-write.test.ts",
       "source_location": "L1",
-      "community": 99,
-      "community_name": "Community 99"
+      "community": 100,
+      "community_name": "Community 100"
     },
     {
       "id": "tests_ontology_studio_write_test_maketempdir",
@@ -11936,8 +11991,8 @@
       "file_type": "code",
       "source_file": "tests/ontology-studio-write.test.ts",
       "source_location": "L16",
-      "community": 99,
-      "community_name": "Community 99"
+      "community": 100,
+      "community_name": "Community 100"
     },
     {
       "id": "tests_ontology_studio_write_test_postbody",
@@ -11945,8 +12000,8 @@
       "file_type": "code",
       "source_file": "tests/ontology-studio-write.test.ts",
       "source_location": "L22",
-      "community": 99,
-      "community_name": "Community 99"
+      "community": 100,
+      "community_name": "Community 100"
     },
     {
       "id": "tests_opencode_integration_test_ts",
@@ -11990,8 +12045,8 @@
       "file_type": "code",
       "source_file": "tests/platform-v4-integration.test.ts",
       "source_location": "L1",
-      "community": 111,
-      "community_name": "Community 111"
+      "community": 112,
+      "community_name": "Community 112"
     },
     {
       "id": "tests_platform_v4_integration_test_runcliintemp",
@@ -11999,8 +12054,8 @@
       "file_type": "code",
       "source_file": "tests/platform-v4-integration.test.ts",
       "source_location": "L14",
-      "community": 111,
-      "community_name": "Community 111"
+      "community": 112,
+      "community_name": "Community 112"
     },
     {
       "id": "tests_platform_v4_integration_test_runcliwithenvironment",
@@ -12008,8 +12063,8 @@
       "file_type": "code",
       "source_file": "tests/platform-v4-integration.test.ts",
       "source_location": "L24",
-      "community": 111,
-      "community_name": "Community 111"
+      "community": 112,
+      "community_name": "Community 112"
     },
     {
       "id": "tests_portable_artifacts_test_ts",
@@ -12053,8 +12108,8 @@
       "file_type": "code",
       "source_file": "tests/profile-prompts.test.ts",
       "source_location": "L1",
-      "community": 109,
-      "community_name": "Community 109"
+      "community": 110,
+      "community_name": "Community 110"
     },
     {
       "id": "tests_profile_prompts_test_promptstate",
@@ -12062,8 +12117,8 @@
       "file_type": "code",
       "source_file": "tests/profile-prompts.test.ts",
       "source_location": "L18",
-      "community": 109,
-      "community_name": "Community 109"
+      "community": 110,
+      "community_name": "Community 110"
     },
     {
       "id": "tests_profile_registry_test_ts",
@@ -12152,8 +12207,8 @@
       "file_type": "code",
       "source_file": "tests/project-config.test.ts",
       "source_location": "L1",
-      "community": 102,
-      "community_name": "Community 102"
+      "community": 103,
+      "community_name": "Community 103"
     },
     {
       "id": "tests_project_config_test_maketempdir",
@@ -12161,8 +12216,8 @@
       "file_type": "code",
       "source_file": "tests/project-config.test.ts",
       "source_location": "L16",
-      "community": 102,
-      "community_name": "Community 102"
+      "community": 103,
+      "community_name": "Community 103"
     },
     {
       "id": "tests_project_config_test_write",
@@ -12170,8 +12225,8 @@
       "file_type": "code",
       "source_file": "tests/project-config.test.ts",
       "source_location": "L22",
-      "community": 102,
-      "community_name": "Community 102"
+      "community": 103,
+      "community_name": "Community 103"
     },
     {
       "id": "tests_public_api_test_ts",
@@ -12179,8 +12234,8 @@
       "file_type": "code",
       "source_file": "tests/public-api.test.ts",
       "source_location": "L1",
-      "community": 105,
-      "community_name": "Community 105"
+      "community": 106,
+      "community_name": "Community 106"
     },
     {
       "id": "tests_public_api_test_maketempdir",
@@ -12188,8 +12243,8 @@
       "file_type": "code",
       "source_file": "tests/public-api.test.ts",
       "source_location": "L11",
-      "community": 105,
-      "community_name": "Community 105"
+      "community": 106,
+      "community_name": "Community 106"
     },
     {
       "id": "tests_public_api_test_makegraph",
@@ -12197,8 +12252,8 @@
       "file_type": "code",
       "source_file": "tests/public-api.test.ts",
       "source_location": "L17",
-      "community": 105,
-      "community_name": "Community 105"
+      "community": 106,
+      "community_name": "Community 106"
     },
     {
       "id": "tests_recommend_test_ts",
@@ -12336,7 +12391,7 @@
       "community_name": "Community 16"
     },
     {
-      "id": "review_context_test_tempproject",
+      "id": "tests_review_context_test_tempproject",
       "label": "tempProject()",
       "file_type": "code",
       "source_file": "tests/review-context.test.ts",
@@ -12345,7 +12400,7 @@
       "community_name": "Community 16"
     },
     {
-      "id": "review_context_test_qn",
+      "id": "tests_review_context_test_qn",
       "label": "qn()",
       "file_type": "code",
       "source_file": "tests/review-context.test.ts",
@@ -12354,7 +12409,7 @@
       "community_name": "Community 16"
     },
     {
-      "id": "review_context_test_addfunction",
+      "id": "tests_review_context_test_addfunction",
       "label": "addFunction()",
       "file_type": "code",
       "source_file": "tests/review-context.test.ts",
@@ -12363,7 +12418,7 @@
       "community_name": "Community 16"
     },
     {
-      "id": "review_context_test_addedge",
+      "id": "tests_review_context_test_addedge",
       "label": "addEdge()",
       "file_type": "code",
       "source_file": "tests/review-context.test.ts",
@@ -12372,7 +12427,7 @@
       "community_name": "Community 16"
     },
     {
-      "id": "review_context_test_makereviewgraph",
+      "id": "tests_review_context_test_makereviewgraph",
       "label": "makeReviewGraph()",
       "file_type": "code",
       "source_file": "tests/review-context.test.ts",
@@ -12390,7 +12445,7 @@
       "community_name": "Community 61"
     },
     {
-      "id": "review_store_test_makereviewgraph",
+      "id": "tests_review_store_test_makereviewgraph",
       "label": "makeReviewGraph()",
       "file_type": "code",
       "source_file": "tests/review-store.test.ts",
@@ -12521,8 +12576,8 @@
       "file_type": "code",
       "source_file": "tests/skills.test.ts",
       "source_location": "L1",
-      "community": 112,
-      "community_name": "Community 112"
+      "community": 113,
+      "community_name": "Community 113"
     },
     {
       "id": "tests_summary_test_ts",
@@ -12620,8 +12675,8 @@
       "file_type": "code",
       "source_file": "tests/wiki-description-generation.test.ts",
       "source_location": "L1",
-      "community": 104,
-      "community_name": "Community 104"
+      "community": 105,
+      "community_name": "Community 105"
     },
     {
       "id": "tests_wiki_description_generation_test_maketempdir",
@@ -12629,8 +12684,8 @@
       "file_type": "code",
       "source_file": "tests/wiki-description-generation.test.ts",
       "source_location": "L20",
-      "community": 104,
-      "community_name": "Community 104"
+      "community": 105,
+      "community_name": "Community 105"
     },
     {
       "id": "tests_wiki_description_generation_test_mkgraph",
@@ -12638,8 +12693,8 @@
       "file_type": "code",
       "source_file": "tests/wiki-description-generation.test.ts",
       "source_location": "L38",
-      "community": 104,
-      "community_name": "Community 104"
+      "community": 105,
+      "community_name": "Community 105"
     },
     {
       "id": "tests_wiki_description_generation_test_assistantclient",
@@ -12647,8 +12702,8 @@
       "file_type": "code",
       "source_file": "tests/wiki-description-generation.test.ts",
       "source_location": "L53",
-      "community": 104,
-      "community_name": "Community 104"
+      "community": 105,
+      "community_name": "Community 105"
     },
     {
       "id": "tests_wiki_description_generation_test_completedclient",
@@ -12656,8 +12711,8 @@
       "file_type": "code",
       "source_file": "tests/wiki-description-generation.test.ts",
       "source_location": "L75",
-      "community": 104,
-      "community_name": "Community 104"
+      "community": 105,
+      "community_name": "Community 105"
     },
     {
       "id": "tests_wiki_descriptions_test_ts",
@@ -12692,8 +12747,8 @@
       "file_type": "code",
       "source_file": "tsup.config.ts",
       "source_location": "L1",
-      "community": 113,
-      "community_name": "Community 113"
+      "community": 114,
+      "community_name": "Community 114"
     },
     {
       "id": "vitest_config_ts",
@@ -12701,8 +12756,8 @@
       "file_type": "code",
       "source_file": "vitest.config.ts",
       "source_location": "L1",
-      "community": 114,
-      "community_name": "Community 114"
+      "community": 115,
+      "community_name": "Community 115"
     },
     {
       "id": "worked_example_raw_api_py",
@@ -15457,6 +15512,60 @@
       "source_location": "L93",
       "community": 49,
       "community_name": "Community 49"
+    },
+    {
+      "id": "review_context_test_tempproject",
+      "label": "tempProject()",
+      "file_type": "code",
+      "source_file": "tests/review-context.test.ts",
+      "source_location": "L18",
+      "community": 16,
+      "community_name": "Community 16"
+    },
+    {
+      "id": "review_context_test_qn",
+      "label": "qn()",
+      "file_type": "code",
+      "source_file": "tests/review-context.test.ts",
+      "source_location": "L24",
+      "community": 16,
+      "community_name": "Community 16"
+    },
+    {
+      "id": "review_context_test_addfunction",
+      "label": "addFunction()",
+      "file_type": "code",
+      "source_file": "tests/review-context.test.ts",
+      "source_location": "L28",
+      "community": 16,
+      "community_name": "Community 16"
+    },
+    {
+      "id": "review_context_test_addedge",
+      "label": "addEdge()",
+      "file_type": "code",
+      "source_file": "tests/review-context.test.ts",
+      "source_location": "L47",
+      "community": 16,
+      "community_name": "Community 16"
+    },
+    {
+      "id": "review_context_test_makereviewgraph",
+      "label": "makeReviewGraph()",
+      "file_type": "code",
+      "source_file": "tests/review-context.test.ts",
+      "source_location": "L54",
+      "community": 16,
+      "community_name": "Community 16"
+    },
+    {
+      "id": "review_store_test_makereviewgraph",
+      "label": "makeReviewGraph()",
+      "file_type": "code",
+      "source_file": "tests/review-store.test.ts",
+      "source_location": "L6",
+      "community": 61,
+      "community_name": "Community 61"
     },
     {
       "id": "ontology_output_sha256",
@@ -19397,8 +19506,8 @@
       "file_type": "code",
       "source_file": "tests/image-dataprep-batch.test.ts",
       "source_location": "L15",
-      "community": 100,
-      "community_name": "Community 100"
+      "community": 101,
+      "community_name": "Community 101"
     },
     {
       "id": "tests_image_dataprep_batch_test_manifest",
@@ -19406,8 +19515,8 @@
       "file_type": "code",
       "source_file": "tests/image-dataprep-batch.test.ts",
       "source_location": "L27",
-      "community": 100,
-      "community_name": "Community 100"
+      "community": 101,
+      "community_name": "Community 101"
     },
     {
       "id": "tests_image_dataprep_test_maketempdir",
@@ -19415,8 +19524,8 @@
       "file_type": "code",
       "source_file": "tests/image-dataprep.test.ts",
       "source_location": "L13",
-      "community": 101,
-      "community_name": "Community 101"
+      "community": 102,
+      "community_name": "Community 102"
     },
     {
       "id": "tests_image_dataprep_test_detection",
@@ -19424,8 +19533,8 @@
       "file_type": "code",
       "source_file": "tests/image-dataprep.test.ts",
       "source_location": "L19",
-      "community": 101,
-      "community_name": "Community 101"
+      "community": 102,
+      "community_name": "Community 102"
     },
     {
       "id": "tests_image_routing_calibration_test_maketempdir",
@@ -19433,8 +19542,8 @@
       "file_type": "code",
       "source_file": "tests/image-routing-calibration.test.ts",
       "source_location": "L18",
-      "community": 108,
-      "community_name": "Community 108"
+      "community": 109,
+      "community_name": "Community 109"
     },
     {
       "id": "tests_input_scope_test_initrepo",
@@ -19615,60 +19724,6 @@
       "source_location": "L42",
       "community": 87,
       "community_name": "Community 87"
-    },
-    {
-      "id": "tests_review_context_test_tempproject",
-      "label": "tempProject()",
-      "file_type": "code",
-      "source_file": "tests/review-context.test.ts",
-      "source_location": "L18",
-      "community": 16,
-      "community_name": "Community 16"
-    },
-    {
-      "id": "tests_review_context_test_qn",
-      "label": "qn()",
-      "file_type": "code",
-      "source_file": "tests/review-context.test.ts",
-      "source_location": "L24",
-      "community": 16,
-      "community_name": "Community 16"
-    },
-    {
-      "id": "tests_review_context_test_addfunction",
-      "label": "addFunction()",
-      "file_type": "code",
-      "source_file": "tests/review-context.test.ts",
-      "source_location": "L28",
-      "community": 16,
-      "community_name": "Community 16"
-    },
-    {
-      "id": "tests_review_context_test_addedge",
-      "label": "addEdge()",
-      "file_type": "code",
-      "source_file": "tests/review-context.test.ts",
-      "source_location": "L47",
-      "community": 16,
-      "community_name": "Community 16"
-    },
-    {
-      "id": "tests_review_context_test_makereviewgraph",
-      "label": "makeReviewGraph()",
-      "file_type": "code",
-      "source_file": "tests/review-context.test.ts",
-      "source_location": "L54",
-      "community": 16,
-      "community_name": "Community 16"
-    },
-    {
-      "id": "tests_review_store_test_makereviewgraph",
-      "label": "makeReviewGraph()",
-      "file_type": "code",
-      "source_file": "tests/review-store.test.ts",
-      "source_location": "L6",
-      "community": 61,
-      "community_name": "Community 61"
     },
     {
       "id": "tests_review_test_makegraph",
@@ -23285,8 +23340,8 @@
       "file_type": "code",
       "source_file": "tests/profile-prompts.test.ts",
       "source_location": "L16",
-      "community": 109,
-      "community_name": "Community 109"
+      "community": 110,
+      "community_name": "Community 110"
     },
     {
       "id": "profile_validate_test_profile",
@@ -23312,8 +23367,8 @@
       "file_type": "code",
       "source_file": "tests/project-config.test.ts",
       "source_location": "L16",
-      "community": 102,
-      "community_name": "Community 102"
+      "community": 103,
+      "community_name": "Community 103"
     },
     {
       "id": "project_config_test_write",
@@ -23321,8 +23376,8 @@
       "file_type": "code",
       "source_file": "tests/project-config.test.ts",
       "source_location": "L22",
-      "community": 102,
-      "community_name": "Community 102"
+      "community": 103,
+      "community_name": "Community 103"
     }
   ],
   "links": [
@@ -35396,6 +35451,54 @@
       "weight": 1,
       "_src": "src_llm_execution_createdirecttextjsonclient",
       "_tgt": "src_llm_execution_defaultdirectllmmodel",
+      "confidence_score": 1
+    },
+    {
+      "source": "src_llm_mesh_bridge_ts",
+      "target": "src_llm_execution_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "source_file": "src/llm-mesh-bridge.ts",
+      "source_location": "L36",
+      "weight": 1,
+      "_src": "src_llm_mesh_bridge_ts",
+      "_tgt": "src_llm_execution_ts",
+      "confidence_score": 1
+    },
+    {
+      "source": "src_llm_mesh_bridge_ts",
+      "target": "src_llm_mesh_bridge_requireauthresolver",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/llm-mesh-bridge.ts",
+      "source_location": "L66",
+      "weight": 1,
+      "_src": "src_llm_mesh_bridge_ts",
+      "_tgt": "src_llm_mesh_bridge_requireauthresolver",
+      "confidence_score": 1
+    },
+    {
+      "source": "src_llm_mesh_bridge_ts",
+      "target": "src_llm_mesh_bridge_creategraphifymesh",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/llm-mesh-bridge.ts",
+      "source_location": "L73",
+      "weight": 1,
+      "_src": "src_llm_mesh_bridge_ts",
+      "_tgt": "src_llm_mesh_bridge_creategraphifymesh",
+      "confidence_score": 1
+    },
+    {
+      "source": "src_llm_mesh_bridge_ts",
+      "target": "src_llm_mesh_bridge_meshtextjsonclient",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/llm-mesh-bridge.ts",
+      "source_location": "L122",
+      "weight": 1,
+      "_src": "src_llm_mesh_bridge_ts",
+      "_tgt": "src_llm_mesh_bridge_meshtextjsonclient",
       "confidence_score": 1
     },
     {
@@ -52547,6 +52650,30 @@
       "confidence_score": 1
     },
     {
+      "source": "tests_llm_mesh_bridge_test_ts",
+      "target": "src_llm_mesh_bridge_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/llm-mesh-bridge.test.ts",
+      "source_location": "L6",
+      "weight": 1,
+      "_src": "tests_llm_mesh_bridge_test_ts",
+      "_tgt": "src_llm_mesh_bridge_ts",
+      "confidence_score": 1
+    },
+    {
+      "source": "tests_llm_mesh_bridge_test_ts",
+      "target": "tests_llm_mesh_bridge_test_maketempdir",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/llm-mesh-bridge.test.ts",
+      "source_location": "L13",
+      "weight": 1,
+      "_src": "tests_llm_mesh_bridge_test_ts",
+      "_tgt": "tests_llm_mesh_bridge_test_maketempdir",
+      "confidence_score": 1
+    },
+    {
       "source": "tests_merge_driver_test_ts",
       "target": "src_merge_driver_ts",
       "relation": "imports_from",
@@ -53748,110 +53875,146 @@
     },
     {
       "source": "tests_review_context_test_ts",
-      "target": "review_context_test_tempproject",
+      "target": "src_review_store_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/review-context.test.ts",
+      "source_location": "L7",
+      "weight": 1,
+      "_src": "tests_review_context_test_ts",
+      "_tgt": "src_review_store_ts",
+      "confidence_score": 1
+    },
+    {
+      "source": "tests_review_context_test_ts",
+      "target": "src_review_context_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/review-context.test.ts",
+      "source_location": "L8",
+      "weight": 1,
+      "_src": "tests_review_context_test_ts",
+      "_tgt": "src_review_context_ts",
+      "confidence_score": 1
+    },
+    {
+      "source": "tests_review_context_test_ts",
+      "target": "tests_review_context_test_tempproject",
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "tests/review-context.test.ts",
       "source_location": "L18",
       "weight": 1,
       "_src": "tests_review_context_test_ts",
-      "_tgt": "review_context_test_tempproject",
+      "_tgt": "tests_review_context_test_tempproject",
       "confidence_score": 1
     },
     {
       "source": "tests_review_context_test_ts",
-      "target": "review_context_test_qn",
+      "target": "tests_review_context_test_qn",
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "tests/review-context.test.ts",
       "source_location": "L24",
       "weight": 1,
       "_src": "tests_review_context_test_ts",
-      "_tgt": "review_context_test_qn",
+      "_tgt": "tests_review_context_test_qn",
       "confidence_score": 1
     },
     {
       "source": "tests_review_context_test_ts",
-      "target": "review_context_test_addfunction",
+      "target": "tests_review_context_test_addfunction",
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "tests/review-context.test.ts",
       "source_location": "L28",
       "weight": 1,
       "_src": "tests_review_context_test_ts",
-      "_tgt": "review_context_test_addfunction",
+      "_tgt": "tests_review_context_test_addfunction",
       "confidence_score": 1
     },
     {
       "source": "tests_review_context_test_ts",
-      "target": "review_context_test_addedge",
+      "target": "tests_review_context_test_addedge",
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "tests/review-context.test.ts",
       "source_location": "L47",
       "weight": 1,
       "_src": "tests_review_context_test_ts",
-      "_tgt": "review_context_test_addedge",
+      "_tgt": "tests_review_context_test_addedge",
       "confidence_score": 1
     },
     {
       "source": "tests_review_context_test_ts",
-      "target": "review_context_test_makereviewgraph",
+      "target": "tests_review_context_test_makereviewgraph",
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "tests/review-context.test.ts",
       "source_location": "L54",
       "weight": 1,
       "_src": "tests_review_context_test_ts",
-      "_tgt": "review_context_test_makereviewgraph",
+      "_tgt": "tests_review_context_test_makereviewgraph",
       "confidence_score": 1
     },
     {
-      "source": "review_context_test_addfunction",
-      "target": "review_context_test_qn",
+      "source": "tests_review_context_test_addfunction",
+      "target": "tests_review_context_test_qn",
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "tests/review-context.test.ts",
       "source_location": "L34",
       "weight": 1,
-      "_src": "review_context_test_addfunction",
-      "_tgt": "review_context_test_qn",
+      "_src": "tests_review_context_test_addfunction",
+      "_tgt": "tests_review_context_test_qn",
       "confidence_score": 1
     },
     {
-      "source": "review_context_test_makereviewgraph",
-      "target": "review_context_test_addfunction",
+      "source": "tests_review_context_test_makereviewgraph",
+      "target": "tests_review_context_test_addfunction",
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "tests/review-context.test.ts",
       "source_location": "L56",
       "weight": 1,
-      "_src": "review_context_test_makereviewgraph",
-      "_tgt": "review_context_test_addfunction",
+      "_src": "tests_review_context_test_makereviewgraph",
+      "_tgt": "tests_review_context_test_addfunction",
       "confidence_score": 1
     },
     {
-      "source": "review_context_test_makereviewgraph",
-      "target": "review_context_test_addedge",
+      "source": "tests_review_context_test_makereviewgraph",
+      "target": "tests_review_context_test_addedge",
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "tests/review-context.test.ts",
       "source_location": "L58",
       "weight": 1,
-      "_src": "review_context_test_makereviewgraph",
-      "_tgt": "review_context_test_addedge",
+      "_src": "tests_review_context_test_makereviewgraph",
+      "_tgt": "tests_review_context_test_addedge",
       "confidence_score": 1
     },
     {
       "source": "tests_review_store_test_ts",
-      "target": "review_store_test_makereviewgraph",
+      "target": "src_review_store_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/review-store.test.ts",
+      "source_location": "L4",
+      "weight": 1,
+      "_src": "tests_review_store_test_ts",
+      "_tgt": "src_review_store_ts",
+      "confidence_score": 1
+    },
+    {
+      "source": "tests_review_store_test_ts",
+      "target": "tests_review_store_test_makereviewgraph",
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "tests/review-store.test.ts",
       "source_location": "L6",
       "weight": 1,
       "_src": "tests_review_store_test_ts",
-      "_tgt": "review_store_test_makereviewgraph",
+      "_tgt": "tests_review_store_test_makereviewgraph",
       "confidence_score": 1
     },
     {
@@ -62085,6 +62248,114 @@
       "_src": "utils_rationale_79",
       "_tgt": "models_cookies",
       "confidence_score": 0.5
+    },
+    {
+      "source": "tests_review_context_test_ts",
+      "target": "review_context_test_tempproject",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/review-context.test.ts",
+      "source_location": "L18",
+      "weight": 1,
+      "_src": "tests_review_context_test_ts",
+      "_tgt": "review_context_test_tempproject",
+      "confidence_score": 1
+    },
+    {
+      "source": "tests_review_context_test_ts",
+      "target": "review_context_test_qn",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/review-context.test.ts",
+      "source_location": "L24",
+      "weight": 1,
+      "_src": "tests_review_context_test_ts",
+      "_tgt": "review_context_test_qn",
+      "confidence_score": 1
+    },
+    {
+      "source": "tests_review_context_test_ts",
+      "target": "review_context_test_addfunction",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/review-context.test.ts",
+      "source_location": "L28",
+      "weight": 1,
+      "_src": "tests_review_context_test_ts",
+      "_tgt": "review_context_test_addfunction",
+      "confidence_score": 1
+    },
+    {
+      "source": "tests_review_context_test_ts",
+      "target": "review_context_test_addedge",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/review-context.test.ts",
+      "source_location": "L47",
+      "weight": 1,
+      "_src": "tests_review_context_test_ts",
+      "_tgt": "review_context_test_addedge",
+      "confidence_score": 1
+    },
+    {
+      "source": "tests_review_context_test_ts",
+      "target": "review_context_test_makereviewgraph",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/review-context.test.ts",
+      "source_location": "L54",
+      "weight": 1,
+      "_src": "tests_review_context_test_ts",
+      "_tgt": "review_context_test_makereviewgraph",
+      "confidence_score": 1
+    },
+    {
+      "source": "review_context_test_addfunction",
+      "target": "review_context_test_qn",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/review-context.test.ts",
+      "source_location": "L34",
+      "weight": 1,
+      "_src": "review_context_test_addfunction",
+      "_tgt": "review_context_test_qn",
+      "confidence_score": 1
+    },
+    {
+      "source": "review_context_test_makereviewgraph",
+      "target": "review_context_test_addfunction",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/review-context.test.ts",
+      "source_location": "L56",
+      "weight": 1,
+      "_src": "review_context_test_makereviewgraph",
+      "_tgt": "review_context_test_addfunction",
+      "confidence_score": 1
+    },
+    {
+      "source": "review_context_test_makereviewgraph",
+      "target": "review_context_test_addedge",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/review-context.test.ts",
+      "source_location": "L58",
+      "weight": 1,
+      "_src": "review_context_test_makereviewgraph",
+      "_tgt": "review_context_test_addedge",
+      "confidence_score": 1
+    },
+    {
+      "source": "tests_review_store_test_ts",
+      "target": "review_store_test_makereviewgraph",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/review-store.test.ts",
+      "source_location": "L6",
+      "weight": 1,
+      "_src": "tests_review_store_test_ts",
+      "_tgt": "review_store_test_makereviewgraph",
+      "confidence_score": 1
     },
     {
       "source": "src_ontology_output_ts",
@@ -73112,150 +73383,6 @@
       "weight": 1,
       "_src": "tests_review_benchmark_test_makebenchmarkstore",
       "_tgt": "tests_review_benchmark_test_addcall",
-      "confidence_score": 1
-    },
-    {
-      "source": "tests_review_context_test_ts",
-      "target": "src_review_store_ts",
-      "relation": "imports_from",
-      "confidence": "EXTRACTED",
-      "source_file": "tests/review-context.test.ts",
-      "source_location": "L7",
-      "weight": 1,
-      "_src": "tests_review_context_test_ts",
-      "_tgt": "src_review_store_ts",
-      "confidence_score": 1
-    },
-    {
-      "source": "tests_review_context_test_ts",
-      "target": "src_review_context_ts",
-      "relation": "imports_from",
-      "confidence": "EXTRACTED",
-      "source_file": "tests/review-context.test.ts",
-      "source_location": "L8",
-      "weight": 1,
-      "_src": "tests_review_context_test_ts",
-      "_tgt": "src_review_context_ts",
-      "confidence_score": 1
-    },
-    {
-      "source": "tests_review_context_test_ts",
-      "target": "tests_review_context_test_tempproject",
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "tests/review-context.test.ts",
-      "source_location": "L18",
-      "weight": 1,
-      "_src": "tests_review_context_test_ts",
-      "_tgt": "tests_review_context_test_tempproject",
-      "confidence_score": 1
-    },
-    {
-      "source": "tests_review_context_test_ts",
-      "target": "tests_review_context_test_qn",
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "tests/review-context.test.ts",
-      "source_location": "L24",
-      "weight": 1,
-      "_src": "tests_review_context_test_ts",
-      "_tgt": "tests_review_context_test_qn",
-      "confidence_score": 1
-    },
-    {
-      "source": "tests_review_context_test_ts",
-      "target": "tests_review_context_test_addfunction",
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "tests/review-context.test.ts",
-      "source_location": "L28",
-      "weight": 1,
-      "_src": "tests_review_context_test_ts",
-      "_tgt": "tests_review_context_test_addfunction",
-      "confidence_score": 1
-    },
-    {
-      "source": "tests_review_context_test_ts",
-      "target": "tests_review_context_test_addedge",
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "tests/review-context.test.ts",
-      "source_location": "L47",
-      "weight": 1,
-      "_src": "tests_review_context_test_ts",
-      "_tgt": "tests_review_context_test_addedge",
-      "confidence_score": 1
-    },
-    {
-      "source": "tests_review_context_test_ts",
-      "target": "tests_review_context_test_makereviewgraph",
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "tests/review-context.test.ts",
-      "source_location": "L54",
-      "weight": 1,
-      "_src": "tests_review_context_test_ts",
-      "_tgt": "tests_review_context_test_makereviewgraph",
-      "confidence_score": 1
-    },
-    {
-      "source": "tests_review_context_test_addfunction",
-      "target": "tests_review_context_test_qn",
-      "relation": "calls",
-      "confidence": "EXTRACTED",
-      "source_file": "tests/review-context.test.ts",
-      "source_location": "L34",
-      "weight": 1,
-      "_src": "tests_review_context_test_addfunction",
-      "_tgt": "tests_review_context_test_qn",
-      "confidence_score": 1
-    },
-    {
-      "source": "tests_review_context_test_makereviewgraph",
-      "target": "tests_review_context_test_addfunction",
-      "relation": "calls",
-      "confidence": "EXTRACTED",
-      "source_file": "tests/review-context.test.ts",
-      "source_location": "L56",
-      "weight": 1,
-      "_src": "tests_review_context_test_makereviewgraph",
-      "_tgt": "tests_review_context_test_addfunction",
-      "confidence_score": 1
-    },
-    {
-      "source": "tests_review_context_test_makereviewgraph",
-      "target": "tests_review_context_test_addedge",
-      "relation": "calls",
-      "confidence": "EXTRACTED",
-      "source_file": "tests/review-context.test.ts",
-      "source_location": "L58",
-      "weight": 1,
-      "_src": "tests_review_context_test_makereviewgraph",
-      "_tgt": "tests_review_context_test_addedge",
-      "confidence_score": 1
-    },
-    {
-      "source": "tests_review_store_test_ts",
-      "target": "src_review_store_ts",
-      "relation": "imports_from",
-      "confidence": "EXTRACTED",
-      "source_file": "tests/review-store.test.ts",
-      "source_location": "L4",
-      "weight": 1,
-      "_src": "tests_review_store_test_ts",
-      "_tgt": "src_review_store_ts",
-      "confidence_score": 1
-    },
-    {
-      "source": "tests_review_store_test_ts",
-      "target": "tests_review_store_test_makereviewgraph",
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "tests/review-store.test.ts",
-      "source_location": "L6",
-      "weight": 1,
-      "_src": "tests_review_store_test_ts",
-      "_tgt": "tests_review_store_test_makereviewgraph",
       "confidence_score": 1
     },
     {
