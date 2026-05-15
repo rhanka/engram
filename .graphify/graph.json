@@ -120,7 +120,7 @@
       "114": "Community 114",
       "115": "Community 115"
     },
-    "built_from_commit": "dd38f77242f157167f33b208b6147ecc6873a1c0"
+    "built_from_commit": "405655419de6ced63e476ddfff82f94592db19bd"
   },
   "nodes": [
     {
@@ -1308,8 +1308,8 @@
       "file_type": "code",
       "source_file": "src/community-labels.ts",
       "source_location": "L1",
-      "community": 104,
-      "community_name": "Community 104"
+      "community": 67,
+      "community_name": "Community 67"
     },
     {
       "id": "src_community_labels_readlabelsjson",
@@ -1317,8 +1317,8 @@
       "file_type": "code",
       "source_file": "src/community-labels.ts",
       "source_location": "L22",
-      "community": 104,
-      "community_name": "Community 104"
+      "community": 67,
+      "community_name": "Community 67"
     },
     {
       "id": "src_community_labels_readgraphattributelabels",
@@ -1326,8 +1326,8 @@
       "file_type": "code",
       "source_file": "src/community-labels.ts",
       "source_location": "L44",
-      "community": 104,
-      "community_name": "Community 104"
+      "community": 67,
+      "community_name": "Community 67"
     },
     {
       "id": "src_community_labels_resolvecommunitylabels",
@@ -1335,8 +1335,8 @@
       "file_type": "code",
       "source_file": "src/community-labels.ts",
       "source_location": "L65",
-      "community": 104,
-      "community_name": "Community 104"
+      "community": 67,
+      "community_name": "Community 67"
     },
     {
       "id": "src_community_labels_persistcommunitylabels",
@@ -1344,8 +1344,8 @@
       "file_type": "code",
       "source_file": "src/community-labels.ts",
       "source_location": "L100",
-      "community": 104,
-      "community_name": "Community 104"
+      "community": 67,
+      "community_name": "Community 67"
     },
     {
       "id": "src_configured_dataprep_ts",
@@ -2162,7 +2162,7 @@
       "label": "hyperedgeScript()",
       "file_type": "code",
       "source_file": "src/export.ts",
-      "source_location": "L447",
+      "source_location": "L477",
       "community": 41,
       "community_name": "Community 41"
     },
@@ -2171,7 +2171,7 @@
       "label": "htmlScript()",
       "file_type": "code",
       "source_file": "src/export.ts",
-      "source_location": "L501",
+      "source_location": "L531",
       "community": 41,
       "community_name": "Community 41"
     },
@@ -2180,7 +2180,7 @@
       "label": "toHtml()",
       "file_type": "code",
       "source_file": "src/export.ts",
-      "source_location": "L694",
+      "source_location": "L797",
       "community": 41,
       "community_name": "Community 41"
     },
@@ -2189,7 +2189,7 @@
       "label": "toGraphml()",
       "file_type": "code",
       "source_file": "src/export.ts",
-      "source_location": "L854",
+      "source_location": "L980",
       "community": 41,
       "community_name": "Community 41"
     },
@@ -2198,7 +2198,7 @@
       "label": "toSvg()",
       "file_type": "code",
       "source_file": "src/export.ts",
-      "source_location": "L914",
+      "source_location": "L1040",
       "community": 41,
       "community_name": "Community 41"
     },
@@ -2207,7 +2207,7 @@
       "label": "toCanvas()",
       "file_type": "code",
       "source_file": "src/export.ts",
-      "source_location": "L1022",
+      "source_location": "L1148",
       "community": 41,
       "community_name": "Community 41"
     },
@@ -3495,8 +3495,8 @@
       "file_type": "code",
       "source_file": "src/html-export.ts",
       "source_location": "L1",
-      "community": 68,
-      "community_name": "Community 68"
+      "community": 101,
+      "community_name": "Community 101"
     },
     {
       "id": "html_export_safetohtml",
@@ -3504,8 +3504,8 @@
       "file_type": "code",
       "source_file": "src/html-export.ts",
       "source_location": "L13",
-      "community": 68,
-      "community_name": "Community 68"
+      "community": 101,
+      "community_name": "Community 101"
     },
     {
       "id": "src_image_caption_schema_ts",
@@ -6303,8 +6303,8 @@
       "file_type": "code",
       "source_file": "src/pipeline.ts",
       "source_location": "L1",
-      "community": 68,
-      "community_name": "Community 68"
+      "community": 67,
+      "community_name": "Community 67"
     },
     {
       "id": "src_pipeline_countnoncodefiles",
@@ -6312,8 +6312,8 @@
       "file_type": "code",
       "source_file": "src/pipeline.ts",
       "source_location": "L81",
-      "community": 68,
-      "community_name": "Community 68"
+      "community": 67,
+      "community_name": "Community 67"
     },
     {
       "id": "src_pipeline_formatdiagnosticsummary",
@@ -6321,8 +6321,8 @@
       "file_type": "code",
       "source_file": "src/pipeline.ts",
       "source_location": "L90",
-      "community": 68,
-      "community_name": "Community 68"
+      "community": 67,
+      "community_name": "Community 67"
     },
     {
       "id": "src_pipeline_filelist",
@@ -6330,8 +6330,8 @@
       "file_type": "code",
       "source_file": "src/pipeline.ts",
       "source_location": "L97",
-      "community": 68,
-      "community_name": "Community 68"
+      "community": 67,
+      "community_name": "Community 67"
     },
     {
       "id": "src_pipeline_buildproject",
@@ -6339,8 +6339,8 @@
       "file_type": "code",
       "source_file": "src/pipeline.ts",
       "source_location": "L101",
-      "community": 68,
-      "community_name": "Community 68"
+      "community": 67,
+      "community_name": "Community 67"
     },
     {
       "id": "src_portable_artifacts_ts",
@@ -9912,8 +9912,8 @@
       "file_type": "code",
       "source_file": "src/wiki-descriptions.ts",
       "source_location": "L1",
-      "community": 67,
-      "community_name": "Community 67"
+      "community": 68,
+      "community_name": "Community 68"
     },
     {
       "id": "src_wiki_descriptions_isrecord",
@@ -9921,8 +9921,8 @@
       "file_type": "code",
       "source_file": "src/wiki-descriptions.ts",
       "source_location": "L118",
-      "community": 67,
-      "community_name": "Community 67"
+      "community": 68,
+      "community_name": "Community 68"
     },
     {
       "id": "src_wiki_descriptions_isnonemptystring",
@@ -9930,8 +9930,8 @@
       "file_type": "code",
       "source_file": "src/wiki-descriptions.ts",
       "source_location": "L122",
-      "community": 67,
-      "community_name": "Community 67"
+      "community": 68,
+      "community_name": "Community 68"
     },
     {
       "id": "src_wiki_descriptions_isstringornull",
@@ -9939,8 +9939,8 @@
       "file_type": "code",
       "source_file": "src/wiki-descriptions.ts",
       "source_location": "L126",
-      "community": 67,
-      "community_name": "Community 67"
+      "community": 68,
+      "community_name": "Community 68"
     },
     {
       "id": "src_wiki_descriptions_isstringarray",
@@ -9948,8 +9948,8 @@
       "file_type": "code",
       "source_file": "src/wiki-descriptions.ts",
       "source_location": "L130",
-      "community": 67,
-      "community_name": "Community 67"
+      "community": 68,
+      "community_name": "Community 68"
     },
     {
       "id": "src_wiki_descriptions_sha256",
@@ -9957,8 +9957,8 @@
       "file_type": "code",
       "source_file": "src/wiki-descriptions.ts",
       "source_location": "L134",
-      "community": 67,
-      "community_name": "Community 67"
+      "community": 68,
+      "community_name": "Community 68"
     },
     {
       "id": "src_wiki_descriptions_buildwikidescriptioncachekey",
@@ -9966,8 +9966,8 @@
       "file_type": "code",
       "source_file": "src/wiki-descriptions.ts",
       "source_location": "L138",
-      "community": 67,
-      "community_name": "Community 67"
+      "community": 68,
+      "community_name": "Community 68"
     },
     {
       "id": "src_wiki_descriptions_createinsufficientevidencerecord",
@@ -9975,8 +9975,8 @@
       "file_type": "code",
       "source_file": "src/wiki-descriptions.ts",
       "source_location": "L151",
-      "community": 67,
-      "community_name": "Community 67"
+      "community": 68,
+      "community_name": "Community 68"
     },
     {
       "id": "src_wiki_descriptions_checkwikidescriptionfreshness",
@@ -9984,8 +9984,8 @@
       "file_type": "code",
       "source_file": "src/wiki-descriptions.ts",
       "source_location": "L209",
-      "community": 67,
-      "community_name": "Community 67"
+      "community": 68,
+      "community_name": "Community 68"
     },
     {
       "id": "src_wiki_descriptions_selectfreshwikidescriptions",
@@ -9993,8 +9993,8 @@
       "file_type": "code",
       "source_file": "src/wiki-descriptions.ts",
       "source_location": "L246",
-      "community": 67,
-      "community_name": "Community 67"
+      "community": 68,
+      "community_name": "Community 68"
     },
     {
       "id": "src_wiki_descriptions_validatewikidescriptionsidecar",
@@ -10002,8 +10002,8 @@
       "file_type": "code",
       "source_file": "src/wiki-descriptions.ts",
       "source_location": "L277",
-      "community": 67,
-      "community_name": "Community 67"
+      "community": 68,
+      "community_name": "Community 68"
     },
     {
       "id": "src_wiki_ts",
@@ -10218,8 +10218,8 @@
       "file_type": "code",
       "source_file": "tests/build-project.test.ts",
       "source_location": "L1",
-      "community": 68,
-      "community_name": "Community 68"
+      "community": 67,
+      "community_name": "Community 67"
     },
     {
       "id": "tests_build_project_test_makeprojectdir",
@@ -10227,8 +10227,8 @@
       "file_type": "code",
       "source_file": "tests/build-project.test.ts",
       "source_location": "L8",
-      "community": 68,
-      "community_name": "Community 68"
+      "community": 67,
+      "community_name": "Community 67"
     },
     {
       "id": "tests_build_test_ts",
@@ -11505,8 +11505,17 @@
       "file_type": "code",
       "source_file": "tests/html-export.test.ts",
       "source_location": "L1",
-      "community": 68,
-      "community_name": "Community 68"
+      "community": 101,
+      "community_name": "Community 101"
+    },
+    {
+      "id": "tests_html_export_test_renderhtml",
+      "label": "renderHtml()",
+      "file_type": "code",
+      "source_file": "tests/html-export.test.ts",
+      "source_location": "L75",
+      "community": 101,
+      "community_name": "Community 101"
     },
     {
       "id": "tests_image_dataprep_batch_test_ts",
@@ -11514,8 +11523,8 @@
       "file_type": "code",
       "source_file": "tests/image-dataprep-batch.test.ts",
       "source_location": "L1",
-      "community": 101,
-      "community_name": "Community 101"
+      "community": 102,
+      "community_name": "Community 102"
     },
     {
       "id": "image_dataprep_batch_test_maketempdir",
@@ -11523,8 +11532,8 @@
       "file_type": "code",
       "source_file": "tests/image-dataprep-batch.test.ts",
       "source_location": "L15",
-      "community": 101,
-      "community_name": "Community 101"
+      "community": 102,
+      "community_name": "Community 102"
     },
     {
       "id": "image_dataprep_batch_test_manifest",
@@ -11532,8 +11541,8 @@
       "file_type": "code",
       "source_file": "tests/image-dataprep-batch.test.ts",
       "source_location": "L27",
-      "community": 101,
-      "community_name": "Community 101"
+      "community": 102,
+      "community_name": "Community 102"
     },
     {
       "id": "tests_image_dataprep_test_ts",
@@ -11541,8 +11550,8 @@
       "file_type": "code",
       "source_file": "tests/image-dataprep.test.ts",
       "source_location": "L1",
-      "community": 102,
-      "community_name": "Community 102"
+      "community": 103,
+      "community_name": "Community 103"
     },
     {
       "id": "image_dataprep_test_maketempdir",
@@ -11550,8 +11559,8 @@
       "file_type": "code",
       "source_file": "tests/image-dataprep.test.ts",
       "source_location": "L13",
-      "community": 102,
-      "community_name": "Community 102"
+      "community": 103,
+      "community_name": "Community 103"
     },
     {
       "id": "image_dataprep_test_detection",
@@ -11559,8 +11568,8 @@
       "file_type": "code",
       "source_file": "tests/image-dataprep.test.ts",
       "source_location": "L19",
-      "community": 102,
-      "community_name": "Community 102"
+      "community": 103,
+      "community_name": "Community 103"
     },
     {
       "id": "tests_image_routing_calibration_test_ts",
@@ -12207,8 +12216,8 @@
       "file_type": "code",
       "source_file": "tests/project-config.test.ts",
       "source_location": "L1",
-      "community": 103,
-      "community_name": "Community 103"
+      "community": 104,
+      "community_name": "Community 104"
     },
     {
       "id": "tests_project_config_test_maketempdir",
@@ -12216,8 +12225,8 @@
       "file_type": "code",
       "source_file": "tests/project-config.test.ts",
       "source_location": "L16",
-      "community": 103,
-      "community_name": "Community 103"
+      "community": 104,
+      "community_name": "Community 104"
     },
     {
       "id": "tests_project_config_test_write",
@@ -12225,8 +12234,8 @@
       "file_type": "code",
       "source_file": "tests/project-config.test.ts",
       "source_location": "L22",
-      "community": 103,
-      "community_name": "Community 103"
+      "community": 104,
+      "community_name": "Community 104"
     },
     {
       "id": "tests_public_api_test_ts",
@@ -12720,8 +12729,8 @@
       "file_type": "code",
       "source_file": "tests/wiki-descriptions.test.ts",
       "source_location": "L1",
-      "community": 67,
-      "community_name": "Community 67"
+      "community": 68,
+      "community_name": "Community 68"
     },
     {
       "id": "tests_wiki_descriptions_test_makenodesidecar",
@@ -12729,8 +12738,8 @@
       "file_type": "code",
       "source_file": "tests/wiki-descriptions.test.ts",
       "source_location": "L108",
-      "community": 67,
-      "community_name": "Community 67"
+      "community": 68,
+      "community_name": "Community 68"
     },
     {
       "id": "tests_wiki_test_ts",
@@ -12738,8 +12747,8 @@
       "file_type": "code",
       "source_file": "tests/wiki.test.ts",
       "source_location": "L1",
-      "community": 67,
-      "community_name": "Community 67"
+      "community": 68,
+      "community_name": "Community 68"
     },
     {
       "id": "tsup_config_ts",
@@ -15753,8 +15762,8 @@
       "file_type": "code",
       "source_file": "tests/build-project.test.ts",
       "source_location": "L8",
-      "community": 68,
-      "community_name": "Community 68"
+      "community": 67,
+      "community_name": "Community 67"
     },
     {
       "id": "src_pipeline_defaultlabels",
@@ -15762,8 +15771,8 @@
       "file_type": "code",
       "source_file": "src/pipeline.ts",
       "source_location": "L80",
-      "community": 68,
-      "community_name": "Community 68"
+      "community": 67,
+      "community_name": "Community 67"
     },
     {
       "id": "src_skill_runtime_defaultlabels",
@@ -16527,8 +16536,8 @@
       "file_type": "code",
       "source_file": "src/html-export.ts",
       "source_location": "L13",
-      "community": 68,
-      "community_name": "Community 68"
+      "community": 101,
+      "community_name": "Community 101"
     },
     {
       "id": "src_image_caption_schema_isrecord",
@@ -19506,8 +19515,8 @@
       "file_type": "code",
       "source_file": "tests/image-dataprep-batch.test.ts",
       "source_location": "L15",
-      "community": 101,
-      "community_name": "Community 101"
+      "community": 102,
+      "community_name": "Community 102"
     },
     {
       "id": "tests_image_dataprep_batch_test_manifest",
@@ -19515,8 +19524,8 @@
       "file_type": "code",
       "source_file": "tests/image-dataprep-batch.test.ts",
       "source_location": "L27",
-      "community": 101,
-      "community_name": "Community 101"
+      "community": 102,
+      "community_name": "Community 102"
     },
     {
       "id": "tests_image_dataprep_test_maketempdir",
@@ -19524,8 +19533,8 @@
       "file_type": "code",
       "source_file": "tests/image-dataprep.test.ts",
       "source_location": "L13",
-      "community": 102,
-      "community_name": "Community 102"
+      "community": 103,
+      "community_name": "Community 103"
     },
     {
       "id": "tests_image_dataprep_test_detection",
@@ -19533,8 +19542,8 @@
       "file_type": "code",
       "source_file": "tests/image-dataprep.test.ts",
       "source_location": "L19",
-      "community": 102,
-      "community_name": "Community 102"
+      "community": 103,
+      "community_name": "Community 103"
     },
     {
       "id": "tests_image_routing_calibration_test_maketempdir",
@@ -23367,8 +23376,8 @@
       "file_type": "code",
       "source_file": "tests/project-config.test.ts",
       "source_location": "L16",
-      "community": 103,
-      "community_name": "Community 103"
+      "community": 104,
+      "community_name": "Community 104"
     },
     {
       "id": "project_config_test_write",
@@ -23376,8 +23385,8 @@
       "file_type": "code",
       "source_file": "tests/project-config.test.ts",
       "source_location": "L22",
-      "community": 103,
-      "community_name": "Community 103"
+      "community": 104,
+      "community_name": "Community 104"
     }
   ],
   "links": [
@@ -52467,6 +52476,18 @@
       "weight": 1,
       "_src": "tests_html_export_test_ts",
       "_tgt": "src_html_export_ts",
+      "confidence_score": 1
+    },
+    {
+      "source": "tests_html_export_test_ts",
+      "target": "tests_html_export_test_renderhtml",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/html-export.test.ts",
+      "source_location": "L75",
+      "weight": 1,
+      "_src": "tests_html_export_test_ts",
+      "_tgt": "tests_html_export_test_renderhtml",
       "confidence_score": 1
     },
     {
