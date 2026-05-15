@@ -4,6 +4,18 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.8.1 (2026-05-15)
+
+Track C3 — non-color-only visual encoding for `graphify export html`.
+
+- `inferNodeShape(fileType, sourceFile)` maps file_type and path to vis.js shape: tests → `square`, `.d.ts` → `diamond`, `.yaml/.toml/...` → `triangle`, document/paper → `box`, image → `star`, video → `hexagon`, default code → `dot`. Hardcoded code-corpus defaults; profile-aware override is the C3.5 follow-up.
+- `inferEdgeDashes(relation, confidenceTier)` maps relation to dash pattern: `imports_from` → `[6, 4]`, `tested_by`/`validated_by` → `[2, 4]`, `inherits`/`extends`/`implements` → `[10, 4]`. Falls back to confidence (solid for EXTRACTED, dashed otherwise) for unknown relations.
+- VisNode now carries per-node `shape`; vis.js global `nodes: { shape: 'dot' }` removed. VisEdge carries per-edge `dashes` + `relation`.
+- Sidebar adds two static legends: **Shapes** (file_type → glyph + word) and **Edges** (relation → dash + word), both `aria-labelledby`.
+- Node info panel surfaces the resolved shape next to the file_type so users can map shape → meaning.
+
+`npm test`: 600 passed, 7 skipped, 0 failed (vs 597 in 0.8.0).
+
 ## 0.8.0 (2026-05-15)
 
 Post-`0.7.19` minor: review-precision CLI, mesh bridge scaffold, office libs swap with `npm overrides`, and HTML accessibility pass.
