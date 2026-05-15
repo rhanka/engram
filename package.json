@@ -124,7 +124,8 @@
     "officeparser": {
       "pdfjs-dist": "npm:empty-npm-package@1.0.0",
       "tesseract.js": "npm:empty-npm-package@1.0.0"
-    }
+    },
+    "tree-sitter": "^0.26.8"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
