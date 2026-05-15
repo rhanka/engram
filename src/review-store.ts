@@ -186,6 +186,9 @@ function canonicalRelation(value: unknown): string {
   const normalized = raw.replace(/([a-z0-9])([A-Z])/g, "$1_$2").replace(/[\s-]+/g, "_").toUpperCase();
   if (normalized === "VALIDATED_BY" || normalized === "VALIDATES" || normalized === "TESTS") return "TESTED_BY";
   if (normalized === "IMPORTS") return "IMPORTS_FROM";
+  // CRG-style canonical inheritance/implementation kinds (used by F5 guidance).
+  if (normalized === "EXTENDS" || normalized === "INHERITS_FROM" || normalized === "SUBCLASS_OF") return "INHERITS";
+  if (normalized === "IMPLEMENTS_INTERFACE" || normalized === "REALIZES") return "IMPLEMENTS";
   return normalized;
 }
 
