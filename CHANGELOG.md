@@ -4,6 +4,15 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.8.2 (2026-05-16)
+
+Track E hygiene — install ergonomy and dep-bump pass.
+
+- **Lot 5 — tree-sitter peer override**: single root `overrides: { "tree-sitter": "^0.26.8" }` collapses the ~15 ERESOLVE peer-conflict warnings emitted by `npm install` (without `--legacy-peer-deps`) down to 1 `peer overridden` warning. The 18 optional `tree-sitter-*` grammars span peer ranges `^0.21.x` / `^0.22.x` / `^0.25.x`; the root pins `^0.26.8`. No source change.
+- **Lot 4-safe — three current-stable major bumps**: `graphology 0.25 → 0.26`, `@types/node 22 → 25`, `commander 12 → 14`. Each is low-blast-radius (Set/Map iteration tightening, dev-dep type ergonomics, stable parser builder pattern). The four risky bumps (chokidar, neo4j-driver, typescript, vitest) stay as a separate Lot 4-risky.
+
+`npm test`: 600 passed, 7 skipped, 0 failed (no behaviour change vs 0.8.1).
+
 ## 0.8.1 (2026-05-15)
 
 Track C3 — non-color-only visual encoding for `graphify export html`.
