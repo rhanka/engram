@@ -93,7 +93,7 @@
   },
   "optionalDependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "chokidar": "^4.0.0",
+    "chokidar": "^5.0.0",
     "neo4j-driver": "^5.27.0",
     "officeparser": "^7.0.2",
     "tree-sitter-c": "^0.24.1",
@@ -164,7 +164,7 @@
   "devDependencies": {
     "@types/node": "^25.8.0",
     "tsup": "^8.3.0",
-    "typescript": "^5.7.0",
-    "vitest": "^2.1.0"
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
   }
 }
