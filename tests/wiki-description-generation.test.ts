@@ -371,6 +371,88 @@ describe("assistant-mode generation behavior", () => {
     expect(renderedBeta).not.toMatch(/^\s*[A-Z].*evidence-backed/m);
   });
 
+  it("A-final: drives generation via the @sentropic/llm-mesh bridge in mode mesh", async () => {
+    // End-to-end proof that the A3 scaffold (src/llm-mesh-bridge.ts) wires
+    // into generateWikiDescriptionSidecars without source changes: a host
+    // builds a mesh with a stub adapter, wraps it as a TextJsonGenerationClient
+    // via meshTextJsonClient(), injects it as clients.mesh, and the
+    // generator produces a validated sidecar identical in shape to the
+    // direct/assistant paths.
+    const { createGraphifyMesh, meshTextJsonClient } = await import("../src/llm-mesh-bridge.js");
+    const { AnthropicAdapter } = await import("@sentropic/llm-mesh");
+
+    // Stub client implementing the ProviderAdapterClient contract; injected
+    // into AnthropicAdapter so we reuse the real adapter glue (listModels,
+    // validateAuth, normalizeError) and only replace network calls.
+    const stubClient = {
+      generate: async () => ({
+        id: "stub-response",
+        providerId: "anthropic" as const,
+        modelId: "claude-sonnet-4-6",
+        message: {
+          role: "assistant" as const,
+          content: [{
+            type: "text" as const,
+            text: '{"status":"generated","description":"AlphaService wired through the @sentropic/llm-mesh bridge.","evidence_refs":["src/alpha.ts"],"confidence":0.91}',
+          }],
+        },
+        text: '{"status":"generated","description":"AlphaService wired through the @sentropic/llm-mesh bridge.","evidence_refs":["src/alpha.ts"],"confidence":0.91}',
+        usage: { inputTokens: 0, outputTokens: 0 },
+        finishReason: "stop" as const,
+      }),
+      stream: async () => {
+        throw new Error("stream not used in this test");
+      },
+    };
+    const stubAdapter = new AnthropicAdapter({ client: stubClient as never });
+
+    const mesh = createGraphifyMesh({
+      adapters: { anthropic: stubAdapter },
+      authResolver: async () => ({
+        material: { type: "direct-token" as const, token: "stub-token" },
+        descriptor: { sourceType: "direct-token" as const },
+      }),
+    });
+
+    const meshClient = meshTextJsonClient(mesh, {
+      defaultProvider: "anthropic",
+      defaultModel: "claude-sonnet-4-6",
+    });
+
+    const graph = mkGraph();
+    const outputDir = makeTempDir();
+    const result = await generateWikiDescriptionSidecars(graph, {
+      graphHash: "graph-mesh-wiring",
+      mode: "mesh",
+      clients: { mesh: meshClient },
+      includeCommunityTargets: false,
+      maxNodeTargets: 1,
+      outputDir,
+      createdAt: "2026-05-16T00:00:00.000Z",
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.targets[0]?.status).toBe("completed");
+    expect(result.targets[0]?.sidecar).toMatchObject({
+      schema: "graphify_wiki_description_v1",
+      target_id: "alpha",
+      target_kind: "node",
+      graph_hash: "graph-mesh-wiring",
+      status: "generated",
+      generator: {
+        mode: "mesh",
+        provider: "anthropic",
+        model: "claude-sonnet-4-6",
+      },
+    });
+    expect(result.index.nodes["alpha"]?.status).toBe("generated");
+    expect(result.index.nodes["alpha"]?.description).toContain("@sentropic/llm-mesh bridge");
+
+    const persisted = JSON.parse(readFileSync(join(outputDir, "alpha.json"), "utf-8")) as Record<string, unknown>;
+    expect(persisted.schema).toBe("graphify_wiki_description_v1");
+    expect((persisted.generator as { mode: string }).mode).toBe("mesh");
+  });
+
   it("wraps completed client output with Graphify sidecar metadata", async () => {
     const graph = mkGraph();
     const outputDir = makeTempDir();
