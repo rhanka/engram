@@ -1,6 +1,6 @@
 {
   "name": "graphifyy",
-  "version": "0.8.2",
+  "version": "0.9.0",
   "description": "AI coding assistant skill (Claude Code, Codex, Gemini CLI, Kimi Code, GitHub Copilot CLI, Aider, OpenCode, OpenClaw) - turn any folder of code, docs, papers, images, or audio/video transcripts into a queryable knowledge graph",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -123,16 +123,36 @@
     "tree-sitter-zig": "^0.2.0"
   },
   "peerDependenciesMeta": {
-    "faster-whisper-ts": { "optional": true },
-    "tree-sitter-c-sharp": { "optional": true },
-    "tree-sitter-elixir": { "optional": true },
-    "tree-sitter-julia": { "optional": true },
-    "tree-sitter-kotlin": { "optional": true },
-    "tree-sitter-objc": { "optional": true },
-    "tree-sitter-powershell": { "optional": true },
-    "tree-sitter-scala": { "optional": true },
-    "tree-sitter-swift": { "optional": true },
-    "tree-sitter-zig": { "optional": true }
+    "faster-whisper-ts": {
+      "optional": true
+    },
+    "tree-sitter-c-sharp": {
+      "optional": true
+    },
+    "tree-sitter-elixir": {
+      "optional": true
+    },
+    "tree-sitter-julia": {
+      "optional": true
+    },
+    "tree-sitter-kotlin": {
+      "optional": true
+    },
+    "tree-sitter-objc": {
+      "optional": true
+    },
+    "tree-sitter-powershell": {
+      "optional": true
+    },
+    "tree-sitter-scala": {
+      "optional": true
+    },
+    "tree-sitter-swift": {
+      "optional": true
+    },
+    "tree-sitter-zig": {
+      "optional": true
+    }
   },
   "overrides": {
     "officeparser": {

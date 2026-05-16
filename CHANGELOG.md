@@ -4,6 +4,43 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.9.0 (2026-05-16)
+
+Track E Lot 1 — install footprint cut.
+
+**Default `npm install graphifyy` footprint: 1.7 GB → 512 MB (−1.2 GB / −71%).** Users who actually need rare languages or audio transcription opt in with one explicit `npm install`. The user-facing surface changes (some grammars now require explicit install) is the reason for the minor bump.
+
+### Moved from `optionalDependencies` → `peerDependencies` + `peerDependenciesMeta { optional: true }`
+
+| Package | Size (with transitives) |
+|---|---:|
+| `faster-whisper-ts` + `onnxruntime-node` transitive | 668 MB |
+| `tree-sitter-julia` | 95 MB |
+| `tree-sitter-swift` | 73 MB |
+| `tree-sitter-objc` | 73 MB |
+| `tree-sitter-c-sharp` | 66 MB |
+| `tree-sitter-scala` | 53 MB |
+| `tree-sitter-zig` | 34 MB |
+| `tree-sitter-kotlin` | 32 MB |
+| `tree-sitter-elixir` | 8 MB |
+| `tree-sitter-powershell` | small |
+
+### Kept in `optionalDependencies` (still installed by default)
+
+`tree-sitter-typescript`, `tree-sitter-javascript`, `tree-sitter-python`, `tree-sitter-go`, `tree-sitter-rust`, `tree-sitter-java`, `tree-sitter-c`, `tree-sitter-cpp`, `tree-sitter-php`, `tree-sitter-ruby`, `tree-sitter-lua`. These cover the bulk of real-world corpora.
+
+### User opt-in pattern
+
+```bash
+npm install graphifyy                                          # core, ~512 MB
+npm install graphifyy tree-sitter-julia                        # + Julia
+npm install graphifyy tree-sitter-julia faster-whisper-ts      # + audio/video
+```
+
+Existing `src/extract.ts` `await import(...)` + try/catch path already degrades gracefully when a grammar package is missing, so no source change is needed for the runtime fallback.
+
+`npm test`: 600 passed, 7 skipped, 0 failed (no behaviour change vs 0.8.2).
+
 ## 0.8.2 (2026-05-16)
 
 Track E hygiene — install ergonomy and dep-bump pass.
