@@ -356,6 +356,55 @@ Each lot ships independently (no cross-lot file conflict in option 1 or 2). Tell
 **Release / Docs (1/1)**
 - [x] `UPSTREAM_GAP.md` row-level matrices committed. npm promoted to `0.7.19` stable after the smoke walked green.
 
+### Track F: Upstream parity weekly (Overall **2/12 = 17%**)
+
+**Spec (1/1)**
+- [x] `spec/SPEC_TRACK_F_UPSTREAM_BILAN.md` defines cadence, buckets (`must-port` / `already-covered` / `intentional-delta` / `defer`), outputs, and decision rules. Bilan #1 snapshot recorded in that spec on 2026-05-15.
+
+**Plan (1/5)** — lots scoped against bilan #1; only the F-Doc section is implementation-trivial:
+- [ ] **Lot F-P1 — Windows / hook stability** (~3-4 days). Target upstream commits:
+  - `1b3296a` — *Fix Windows skill temp files polluting project root* (`upstream/v7`-line).
+  - `ac9587b` — *Fix antigravity Windows skill and Python detection for uv/pipx* (PR #831 in upstream).
+  - `5f2c55b` — *Bump 0.8.3* (carrier commit; verify no extra payload).
+  Cleans up the Windows test-run footprint and prevents `.graphify_temp/` style leakage into the working tree. Adds regression coverage in `tests/cli-runtime.test.ts` and `tests/install-preview.test.ts`.
+- [ ] **Lot F-P2 — Graph correctness + MCP watch** (~2-3 days). Target upstream commits:
+  - `6f8e6c5` — *Fix gitignore parent-exclusion rule (#882) and dedup false merges on short labels (#878)* (`upstream/v7`).
+  - `d14e8a7` — *Suppress cross-language INFERRED calls/uses edges in surprising connections* (`upstream/v7`).
+  Plus MCP hot-reload of `.graphify/graph.json` if upstream now publishes a fs-watcher hook; otherwise downgrade to MCP file-mtime check. Adds coverage in `tests/detect.test.ts`, `tests/build-merge.test.ts`, `tests/serve.test.ts`.
+- [ ] **Lot F-M1 — SQL/Groovy parser depth** (~2 days, decision pending). Target upstream commit:
+  - `299b6ba` — *v0.8.4: SQL FK/trigger extraction, deletion pruning fixes, community label normalization* (`upstream/v7`).
+  Plus upstream Groovy edge-fidelity follow-ups on the `v8` branch. Only mandatory if a parity claim against `v8` / `v0.8.5` is required; otherwise downgrade to `defer`.
+- [ ] **Lot F-Opt — v1/v2 hypergraph + wiki rewrite** (deferred). Target upstream refs: `main` / `v2` branch (36 commits as of bilan #1), `v1.0.0` pre-release tag. Hypergraph generation and wiki-export rewrite. Not adopted until upstream stabilises and a separate spec authorises adoption. See `Open F decisions` below.
+- [ ] **Lot F-Doc — Version Alignment section** (~0.5 day). Add a "Version Alignment" section to `UPSTREAM_GAP.md` that maps `graphifyy X.Y.Z` to the closest upstream Python parity reference, including the explicit TS-only delta description. Tracks current state `graphifyy@0.9.0 ≈ graphify@0.7.19 + TS-only Track E dep cleanup + Track C visual encoding`, with bilan #1 must-port rows explicitly listed as the outstanding gap against `graphify@0.8.5`.
+
+**Infra (0/3)**
+- [ ] F-P1 infra impl (Windows hook portability fixes ported, with tests).
+- [ ] F-P2 infra impl (gitignore parent-exclusion + short-label dedup + cross-language INFERRED suppression + MCP watch).
+- [ ] F-M1 infra impl (SQL FK/trigger extraction + community label normalisation; pending decision).
+
+**UI utilisateur** — n/a (parity track).
+
+**UAT réel (0/2)**
+- [ ] Smoke after each must-port port: `graphify update` on this repo + on `../public-domaine-mystery-sagas-pack` + `portable-check`.
+- [ ] Vitest regression coverage per lot (added inside the relevant lot, not as a separate UAT lot).
+
+**Release / Docs (0/1)**
+- [ ] `UPSTREAM_GAP.md` bilan #1 snapshot recorded as a dedicated section; Version Alignment section published; CHANGELOG entry tied to the next minor/major bump that absorbs F-P1/F-P2.
+
+### Open F decisions
+
+Two pending decisions surfaced by bilan #1:
+
+1. **F-M1 — claim parity against `v8` / `v0.8.5` or not?**
+   - Pro: closes the obvious "version number ahead, functionally behind" perception; lets the next bump announce parity with upstream stable.
+   - Con: SQL FK/trigger extraction adds parser surface to maintain; Groovy depth requires a wasm grammar audit similar to Kotlin (currently deferred).
+   - Default if no decision: keep as `must-port` for two consecutive bilans, then auto-downgrade to `defer` per `SPEC_TRACK_F_UPSTREAM_BILAN.md` rules.
+
+2. **F-Opt — adopt upstream v1.x hypergraph + wiki rewrite, defer, or reject?**
+   - Pro: hypergraph generation aligns the TS line with the `code-review-graph` / hypergraph community direction; wiki rewrite could unify the wiki/Obsidian/canvas surfaces.
+   - Con: hypergraph touches the `.graphify/graph.json` contract (intentional delta on TS side); wiki rewrite would conflict with the existing TS wiki surface that ships with descriptions sidecars (Track A) and ontology entity pages (Track J).
+   - Default if no decision: stay `defer` until upstream `main` / `v2` branch reaches a stable tag (`v2.0.0` non-prerelease) and a dedicated spec authorises adoption.
+
 ---
 
 # Next Product Evolution: Ontology Lifecycle And Reconciliation

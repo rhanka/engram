@@ -319,6 +319,37 @@ Row-level audit for the new drift observed at `0c29b2cb88c6274d889ca7c33a684ce10
 | `0.7.10` MCP resources | `13947c3` | Add MCP resources for report, stats, god nodes, surprises, confidence audit, and suggested questions. | `covered` | Ported as read-only MCP resources in `src/serve.ts`: `graphify://report`, `graphify://stats`, `graphify://god-nodes`, `graphify://surprises`, `graphify://audit`, and `graphify://questions`. Covered by `tests/serve.test.ts > lists upstream-compatible graph resources` and `tests/serve.test.ts > reads upstream-compatible graph resources`. |
 | `0.7.10` edges/links loader mismatch | `aa2bd13` | Accept graph JSON that uses `edges` instead of `links` in query/path/explain and MCP loading. | `covered` | `src/graph.ts` already normalizes `raw.links ?? raw.edges ?? []`, and all public CLI/MCP graph loaders route through `loadGraphFromData`. Covered by `tests/serve.test.ts > loads graph JSON resources and tools when edges is used instead of links`. |
 
+## Version Alignment
+
+Owned by Track F (`spec/SPEC_TRACK_F_UPSTREAM_BILAN.md`). This section maps `graphifyy X.Y.Z` to the closest upstream Python Graphify parity reference plus the explicit TS-only delta. It is the single source of truth for the question "what does the TypeScript version number mean versus upstream Python?".
+
+The mapping is intentionally allowed to drift in **both** directions:
+
+- TypeScript may be numerically *ahead* of upstream when TS-only deltas justify a bump (Track A descriptions, Track B reconciliation, Track C HTML a11y / visual encoding, Track E dependency hygiene + bloat opt-in, ontology lifecycle).
+- TypeScript may *lag* upstream on numerically-newer features when those features are deferred by Track F (e.g. upstream v1.x hypergraph, v2.x wiki rewrite).
+
+Mechanically mirroring upstream Python version bumps is forbidden; see `spec/SPEC_TRACK_F_UPSTREAM_BILAN.md > Version Alignment Policy`.
+
+### Current mapping
+
+| TypeScript ref | Closest upstream Python parity | TS-only delta vs upstream | Outstanding upstream gap | Source |
+| --- | --- | --- | --- | --- |
+| `graphifyy@0.9.0` (`main` at `a8eb232`, 2026-05-15) | `graphify@0.7.19` (closed by Track D at `a9b0ddb`) | Track A descriptions infra + render; Track B reconciliation patch core + read-only API + write-enabled studio; Track C2 HTML a11y; Track C3 visual encoding (per-file_type shapes, per-relation edge dashes, legend); Track E setup + Lot 1 (officeparser + unpdf swap-in, 9 rare grammars + `faster-whisper-ts` moved to `peerDependenciesMeta`); Track E Lot 4-safe (graphology + commander + @types/node major bumps); Track E Lot 5 (tree-sitter override). Plus the durable intentional deltas listed under `Fork Guardrail`. | bilan #1 must-port rows from `v7` post-`a9b0ddb` line (`F-P1` Windows/hook stability, `F-P2` graph correctness + MCP watch, `F-M1` SQL/Groovy parser depth — see Track F in `PLAN.md`). Upstream stable tag at bilan #1 is `graphify@0.8.5`. v1.x hypergraph + v2.x wiki rewrite explicitly deferred under `F-Opt`. | Track F bilan #1 (2026-05-15). |
+
+### Numerical interpretation note
+
+`graphifyy@0.9.0` is numerically ahead of upstream stable `graphify@0.8.5`, but the version number is **not** a parity claim against `v8` / `v0.8.x`. The `0.9.0` bump was driven by Track E dependency hygiene (`E Setup F` and `E Lot 1` are user-visible: `peerDependenciesMeta` changes the npm install footprint), and by Track C3 visual encoding shipping in `0.8.1`. Track F bilan #1 explicitly records the must-port gap against `v0.8.5`; until F-P1/F-P2 land, the TS line is "ahead numerically, behind functionally" on the Windows/hook + graph-correctness fixes listed above.
+
+### Update rule
+
+This section must be updated:
+
+- on every weekly Track F bilan that changes the bilan-#N row,
+- on every TypeScript minor (`0.X.0`) or major (`X.0.0`) bump as part of the release gate,
+- when an `Open F decision` resolves and changes the mapping (e.g. `F-Opt` moves from `defer` to `must-port`, or `F-M1` is parity-claimed against `v0.8.5`).
+
+Bilan snapshots may not be deleted; older mapping rows are appended above with their bilan date so the historical drift trace stays auditable.
+
 ## Release Gate
 
 Before claiming catch-up through the effective Python `0.7.10` release train (`upstream/v7` through `0c29b2c`, plus audited post-tag fixes) or publishing the next TypeScript release from this branch:
