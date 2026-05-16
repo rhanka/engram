@@ -4,6 +4,13 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.9.1 (2026-05-16)
+
+Track A finalisation — additive proof.
+
+- Adds an end-to-end test wiring `@sentropic/llm-mesh` into `generateWikiDescriptionSidecars` mode `mesh` via `meshTextJsonClient(createGraphifyMesh(...))`. The A3 scaffold shipped in `0.8.x` was plug-compatible; this release makes the bridge provably exercised in CI (PR #33).
+- No source change, no public surface change. Pure confidence release.
+
 ## 0.9.0 (2026-05-16)
 
 Track E Lot 1 — install footprint cut.
