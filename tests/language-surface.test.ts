@@ -793,6 +793,67 @@ class PaymentService extends BaseService implements Billable {}
     expect(labels).toContain("solve_case()");
   });
 
+  it("extracts Groovy imports, inheritance and local call edges", async () => {
+    const groovyPath = join(dir, "SampleService.groovy");
+    writeFileSync(
+      groovyPath,
+      [
+        "package com.nicklastrange.example",
+        "",
+        "import com.nicklastrange.logistics.Processor",
+        "import java.lang.Runnable",
+        "",
+        "class SampleService extends BaseService implements Runnable {",
+        "  Processor processor",
+        "",
+        "  SampleService(Processor processor) {",
+        "    this.processor = processor",
+        "  }",
+        "",
+        "  String process(String input) {",
+        "    def result = clean(input)",
+        "    reset()",
+        "    return result",
+        "  }",
+        "",
+        "  private String clean(String input) {",
+        "    return input.trim()",
+        "  }",
+        "",
+        "  private void reset() {",
+        "    processor.reset()",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await extract([groovyPath]);
+    const fileNode = result.nodes.find((node) => node.label === "SampleService.groovy");
+    const classNode = result.nodes.find((node) => node.label === "SampleService");
+    const baseNode = result.nodes.find((node) => node.label === "BaseService");
+    const runnableNode = result.nodes.find((node) => node.label === "Runnable");
+    const processNode = result.nodes.find((node) => node.label.includes("process()"));
+    const cleanNode = result.nodes.find((node) => node.label.includes("clean()"));
+    const resetNode = result.nodes.find((node) => node.label.includes("reset()"));
+
+    expect(fileNode?.id).toBeTruthy();
+    expect(classNode?.id).toBeTruthy();
+    expect(baseNode?.id).toBeTruthy();
+    expect(runnableNode?.id).toBeTruthy();
+    expect(processNode?.id).toBeTruthy();
+    expect(cleanNode?.id).toBeTruthy();
+    expect(resetNode?.id).toBeTruthy();
+    expect(result.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: fileNode?.id, target: classNode?.id, relation: "contains" }),
+      expect.objectContaining({ source: classNode?.id, target: baseNode?.id, relation: "inherits" }),
+      expect.objectContaining({ source: classNode?.id, target: runnableNode?.id, relation: "implements" }),
+      expect.objectContaining({ source: processNode?.id, target: cleanNode?.id, relation: "calls" }),
+      expect.objectContaining({ source: processNode?.id, target: resetNode?.id, relation: "calls" }),
+      expect.objectContaining({ source: fileNode?.id, target: "processor", relation: "imports" }),
+    ]));
+  });
+
   it("extracts SQL ALTER TABLE foreign keys and schema-qualified table names", async () => {
     const schemaPath = join(dir, "schema.sql");
     writeFileSync(schemaPath, [
@@ -826,5 +887,63 @@ class PaymentService extends BaseService implements Billable {}
       result.nodes.find((node) => node.id === edge.source)?.label === "Sales.SalesOrder" &&
       result.nodes.find((node) => node.id === edge.target)?.label === "Sales.Customer"
     )).toBe(true);
+  });
+
+  it("extracts SQL trigger relationships and procedure table references", async () => {
+    const schemaPath = join(dir, "triggers.sql");
+    writeFileSync(schemaPath, [
+      "CREATE TABLE sales.customer (",
+      "  id INT PRIMARY KEY",
+      ");",
+      "",
+      "CREATE TABLE audit.customer_log (",
+      "  customer_id INT",
+      ");",
+      "",
+      "CREATE TRIGGER audit_customer",
+      "AFTER INSERT ON sales.customer",
+      "FOR EACH ROW EXECUTE FUNCTION audit.log_customer();",
+      "",
+      "SET TERM ^ ;",
+      "CREATE TRIGGER bi_customer FOR sales.customer",
+      "ACTIVE BEFORE INSERT AS",
+      "BEGIN",
+      "  INSERT INTO audit.customer_log(customer_id) VALUES (NEW.id);",
+      "  UPDATE sales.customer_summary SET total = total + 1;",
+      "END^",
+      "SET TERM ; ^",
+      "",
+    ].join("\n"));
+
+    const result = await extract([schemaPath]);
+    const nodeByLabel = new Map(result.nodes.map((node) => [node.label, node.id]));
+
+    expect(nodeByLabel.get("audit_customer")).toBeTruthy();
+    expect(nodeByLabel.get("bi_customer")).toBeTruthy();
+    expect(nodeByLabel.get("sales.customer")).toBeTruthy();
+    expect(nodeByLabel.get("audit.customer_log")).toBeTruthy();
+    expect(nodeByLabel.get("sales.customer_summary")).toBeTruthy();
+    expect(result.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source: nodeByLabel.get("audit_customer"),
+        target: nodeByLabel.get("sales.customer"),
+        relation: "triggers",
+      }),
+      expect.objectContaining({
+        source: nodeByLabel.get("bi_customer"),
+        target: nodeByLabel.get("sales.customer"),
+        relation: "triggers",
+      }),
+      expect.objectContaining({
+        source: nodeByLabel.get("bi_customer"),
+        target: nodeByLabel.get("audit.customer_log"),
+        relation: "reads_from",
+      }),
+      expect.objectContaining({
+        source: nodeByLabel.get("bi_customer"),
+        target: nodeByLabel.get("sales.customer_summary"),
+        relation: "reads_from",
+      }),
+    ]));
   });
 });

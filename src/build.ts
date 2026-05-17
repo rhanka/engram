@@ -20,6 +20,7 @@ export interface BuildOptions {
 }
 
 const CHUNK_SUFFIX = /_c\d+$/;
+const SKU_LIKE_LABEL = /^[A-Z0-9][A-Z0-9._/-]{1,11}$/;
 
 function normalizeSourceFilePath(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -34,6 +35,15 @@ function normalizedLabel(value: string): string {
     .trim();
 }
 
+function dedupLabelKey(node: Extraction["nodes"][number]): string | null {
+  const rawLabel = String(node.label ?? node.id ?? "").trim();
+  const label = normalizedLabel(rawLabel);
+  if (!label) return null;
+  const compactLabel = label.replace(/ /g, "");
+  if (compactLabel.length <= 3 || SKU_LIKE_LABEL.test(rawLabel)) return null;
+  return label;
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
@@ -41,6 +51,29 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function sourceKey(value: unknown): string {
+  return normalizeSourceFilePath(value) ?? "";
+}
+
+function resolveRemap(remap: Map<string, string>, id: string): string {
+  const seen = new Set<string>();
+  let current = id;
+  while (remap.has(current) && !seen.has(current)) {
+    seen.add(current);
+    current = remap.get(current)!;
+  }
+  return current;
+}
+
+function preferNode(current: Extraction["nodes"][number], existing: Extraction["nodes"][number]): boolean {
+  const existingChunk = CHUNK_SUFFIX.test(existing.id);
+  const currentChunk = CHUNK_SUFFIX.test(current.id);
+  return (
+    (existingChunk && !currentChunk) ||
+    (existingChunk === currentChunk && current.id.length < existing.id.length)
+  );
 }
 
 function readExistingGraphExtraction(graphPath: string): { extraction: Extraction; nodeCount: number } {
@@ -107,38 +140,42 @@ function readExistingGraphExtraction(graphPath: string): { extraction: Extractio
 }
 
 export function deduplicateByLabel(extraction: Extraction): Extraction {
-  const canonicalByLabel = new Map<string, Extraction["nodes"][number]>();
   const remap = new Map<string, string>();
+  const nodes = extraction.nodes ?? [];
 
-  for (const node of extraction.nodes ?? []) {
-    const label = normalizedLabel(String(node.label ?? node.id ?? ""));
-    if (!label) continue;
+  const applyLabelPass = (partitionBySource: boolean): void => {
+    const canonicalByLabel = new Map<string, Extraction["nodes"][number]>();
 
-    const existing = canonicalByLabel.get(label);
-    if (!existing) {
-      canonicalByLabel.set(label, node);
-      continue;
+    for (const node of nodes) {
+      if (resolveRemap(remap, node.id) !== node.id) continue;
+
+      const label = dedupLabelKey(node);
+      if (!label) continue;
+
+      const key = partitionBySource ? `${sourceKey(node.source_file)}\0${label}` : label;
+      const existing = canonicalByLabel.get(key);
+      if (!existing) {
+        canonicalByLabel.set(key, node);
+        continue;
+      }
+
+      const sameSource = sourceKey(existing.source_file) === sourceKey(node.source_file);
+      const chunkCandidate = CHUNK_SUFFIX.test(existing.id) || CHUNK_SUFFIX.test(node.id);
+      if (partitionBySource ? !sameSource : !chunkCandidate) {
+        continue;
+      }
+
+      if (preferNode(node, existing)) {
+        remap.set(existing.id, node.id);
+        canonicalByLabel.set(key, node);
+      } else {
+        remap.set(node.id, existing.id);
+      }
     }
+  };
 
-    const sameSource = existing.source_file === node.source_file;
-    const chunkCandidate = CHUNK_SUFFIX.test(existing.id) || CHUNK_SUFFIX.test(node.id);
-    if (!sameSource && !chunkCandidate) {
-      continue;
-    }
-
-    const existingChunk = CHUNK_SUFFIX.test(existing.id);
-    const currentChunk = CHUNK_SUFFIX.test(node.id);
-    const preferCurrent =
-      (existingChunk && !currentChunk) ||
-      (existingChunk === currentChunk && node.id.length < existing.id.length);
-
-    if (preferCurrent) {
-      remap.set(existing.id, node.id);
-      canonicalByLabel.set(label, node);
-    } else {
-      remap.set(node.id, existing.id);
-    }
-  }
+  applyLabelPass(true);
+  applyLabelPass(false);
 
   if (remap.size === 0) {
     return extraction;
@@ -146,27 +183,22 @@ export function deduplicateByLabel(extraction: Extraction): Extraction {
 
   console.error(`[graphify] Deduplicated ${remap.size} duplicate node(s) by label.`);
 
-  const nodes = Array.from(
-    new Map(
-      [...canonicalByLabel.values(), ...(extraction.nodes ?? []).filter((node) => !remap.has(node.id))]
-        .map((node) => [node.id, node]),
-    ).values(),
-  );
+  const deduplicatedNodes = nodes.filter((node) => resolveRemap(remap, node.id) === node.id);
   const edges = (extraction.edges ?? [])
     .map((edge) => ({
       ...edge,
-      source: remap.get(edge.source) ?? edge.source,
-      target: remap.get(edge.target) ?? edge.target,
+      source: resolveRemap(remap, edge.source),
+      target: resolveRemap(remap, edge.target),
     }))
     .filter((edge) => edge.source !== edge.target);
   const hyperedges = (extraction.hyperedges ?? []).map((hyperedge) => ({
     ...hyperedge,
-    nodes: hyperedge.nodes.map((nodeId) => remap.get(nodeId) ?? nodeId),
+    nodes: hyperedge.nodes.map((nodeId) => resolveRemap(remap, nodeId)),
   }));
 
   return {
     ...extraction,
-    nodes,
+    nodes: deduplicatedNodes,
     edges,
     hyperedges,
   };
@@ -299,12 +331,16 @@ export function buildMerge(newChunks: Extraction[], options?: BuildMergeOptions)
   const graph = buildFromJson(deduplicated, options);
 
   if ((options?.pruneSources?.length ?? 0) > 0) {
-    const pruneSet = new Set(options?.pruneSources);
+    const pruneSet = new Set((options?.pruneSources ?? []).map(sourceKey).filter(Boolean));
+    const nodesToDrop: string[] = [];
     graph.forEachNode((nodeId, attrs) => {
-      if (pruneSet.has(String(attrs.source_file ?? ""))) {
-        graph.dropNode(nodeId);
+      if (pruneSet.has(sourceKey(attrs.source_file))) {
+        nodesToDrop.push(nodeId);
       }
     });
+    for (const nodeId of nodesToDrop) {
+      graph.dropNode(nodeId);
+    }
   }
 
   if (existingNodeCount > 0 && graph.order < existingNodeCount && (options?.pruneSources?.length ?? 0) === 0) {

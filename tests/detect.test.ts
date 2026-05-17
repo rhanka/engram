@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdirSync, readFileSync, writeFileSync, rmSync, statSync, utimesSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, rmSync, statSync, symlinkSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { detect, classifyFile, detectIncremental, saveManifest } from "../src/detect.js";
@@ -169,6 +169,18 @@ describe("detect", () => {
     const result = detect(tmpDir);
     expect(result.files.code).toHaveLength(1);
     expect(result.files.code[0]).toContain("kept.py");
+  });
+
+  it("deduplicates symlinked files by real path when following symlinks", () => {
+    const sourceDir = join(tmpDir, "source");
+    mkdirSync(sourceDir, { recursive: true });
+    writeFileSync(join(sourceDir, "main.ts"), "export const main = true;\n");
+    symlinkSync(sourceDir, join(tmpDir, "alias"), "dir");
+
+    const result = detect(tmpDir, { followSymlinks: true });
+
+    expect(result.files.code).toEqual([join(tmpDir, "source", "main.ts")]);
+    expect(result.total_files).toBe(1);
   });
 
   it("does not treat inline hashes as .graphifyignore comments", () => {

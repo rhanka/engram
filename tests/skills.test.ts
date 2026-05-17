@@ -247,4 +247,21 @@ describe("skill cache examples", () => {
     expect(content).toContain("/graphify <path> --wiki");
     expect(content).toContain("/graphify <path> --obsidian --obsidian-dir ~/vaults/my-project");
   });
+
+  it("keeps Windows skill scratch artifacts under .graphify with UTF-8 PowerShell writes", () => {
+    const content = readFileSync(new URL("../src/skills/skill-windows.md", import.meta.url), "utf-8");
+
+    expect(content).toContain("Out-File -FilePath .graphify/.graphify_detect.json -Encoding utf8");
+    expect(content).not.toContain("> .graphify/.graphify_detect.json");
+    expect(content).not.toMatch(/(^|[\s"'`(,>])\.graphify_(detect|ast|extract|semantic|analysis|labels|incremental|old)\.json/);
+    expect(content).not.toContain(".graphify_step_");
+  });
+
+  it("marks uv and pipx Python detection as not applicable for the TypeScript Windows skill", () => {
+    const content = readFileSync(new URL("../src/skills/skill-windows.md", import.meta.url), "utf-8");
+
+    expect(content).toContain("npm install -g graphifyy");
+    expect(content).toContain("require('graphifyy')");
+    expect(content).not.toMatch(/\bFind-GraphifyPython\b|\buv tool\b|\bpipx\b|\.graphify_python|python\.exe|pip install graphifyy/);
+  });
 });

@@ -19,6 +19,18 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type Graph from "graphology";
 
+const CONTROL_CHAR_RE = /[\x00-\x1f\x7f\u2028\u2029]/g;
+const MAX_LABEL_LENGTH = 256;
+
+function normalizeCommunityLabel(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value
+    .replace(CONTROL_CHAR_RE, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, MAX_LABEL_LENGTH);
+}
+
 function readLabelsJson(filePath: string): Map<number, string> {
   if (!existsSync(filePath)) return new Map();
   try {
@@ -30,8 +42,7 @@ function readLabelsJson(filePath: string): Map<number, string> {
     for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
       const cid = Number(key);
       if (!Number.isFinite(cid) || Number.isNaN(cid)) continue;
-      if (typeof value !== "string") continue;
-      const trimmed = value.trim();
+      const trimmed = normalizeCommunityLabel(value);
       if (trimmed.length === 0) continue;
       out.set(cid, trimmed);
     }
@@ -49,8 +60,7 @@ function readGraphAttributeLabels(G: Graph | undefined): Map<number, string> {
   for (const [key, value] of Object.entries(attr)) {
     const cid = Number(key);
     if (!Number.isFinite(cid) || Number.isNaN(cid)) continue;
-    if (typeof value !== "string") continue;
-    const trimmed = value.trim();
+    const trimmed = normalizeCommunityLabel(value);
     if (trimmed.length === 0) continue;
     out.set(cid, trimmed);
   }
@@ -104,7 +114,9 @@ export function persistCommunityLabels(
   mkdirSync(dirname(labelsPath), { recursive: true });
   const payload: Record<string, string> = {};
   for (const [cid, label] of [...labels.entries()].sort((a, b) => a[0] - b[0])) {
-    payload[String(cid)] = label;
+    const normalized = normalizeCommunityLabel(label);
+    if (normalized.length === 0) continue;
+    payload[String(cid)] = normalized;
   }
   writeFileSync(labelsPath, JSON.stringify(payload, null, 2), "utf-8");
 }

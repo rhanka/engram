@@ -43,18 +43,28 @@ async function runCliWithEnvironment(command: string[], home: string, project: s
   }
 }
 
+async function withProcessPlatform<T>(value: string, callback: () => Promise<T>): Promise<T> {
+  const descriptor = Object.getOwnPropertyDescriptor(process, "platform");
+  Object.defineProperty(process, "platform", { value });
+  try {
+    return await callback();
+  } finally {
+    if (descriptor) Object.defineProperty(process, "platform", descriptor);
+  }
+}
+
 describe("upstream v4 assistant platform installs", () => {
   it("installs Google Antigravity rules, workflow, and global skill", async () => {
     const { home, project } = await runCliInTemp(["antigravity", "install"]);
 
-    expect(existsSync(join(project, ".agent", "rules", "graphify.md"))).toBe(true);
-    expect(existsSync(join(project, ".agent", "workflows", "graphify.md"))).toBe(true);
-    expect(existsSync(join(home, ".agent", "skills", "graphify", "SKILL.md"))).toBe(true);
-    expect(existsSync(join(home, ".agent", "skills", "graphify", ".graphify_version"))).toBe(true);
-    expect(readFileSync(join(project, ".agent", "rules", "graphify.md"), "utf-8")).toContain("---");
-    expect(readFileSync(join(project, ".agent", "rules", "graphify.md"), "utf-8")).toContain("description: graphify knowledge graph context");
-    expect(readFileSync(join(project, ".agent", "workflows", "graphify.md"), "utf-8")).toContain("---");
-    expect(readFileSync(join(project, ".agent", "workflows", "graphify.md"), "utf-8")).toContain("command: /graphify");
+    expect(existsSync(join(project, ".agents", "rules", "graphify.md"))).toBe(true);
+    expect(existsSync(join(project, ".agents", "workflows", "graphify.md"))).toBe(true);
+    expect(existsSync(join(home, ".agents", "skills", "graphify", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(home, ".agents", "skills", "graphify", ".graphify_version"))).toBe(true);
+    expect(readFileSync(join(project, ".agents", "rules", "graphify.md"), "utf-8")).toContain("---");
+    expect(readFileSync(join(project, ".agents", "rules", "graphify.md"), "utf-8")).toContain("description: graphify knowledge graph context");
+    expect(readFileSync(join(project, ".agents", "workflows", "graphify.md"), "utf-8")).toContain("---");
+    expect(readFileSync(join(project, ".agents", "workflows", "graphify.md"), "utf-8")).toContain("command: /graphify");
   });
 
   it("reinstalls Google Antigravity without duplicating frontmatter", async () => {
@@ -62,13 +72,26 @@ describe("upstream v4 assistant platform installs", () => {
 
     await runCliWithEnvironment(["antigravity", "install"], home, project);
 
-    const rule = readFileSync(join(project, ".agent", "rules", "graphify.md"), "utf-8");
-    const workflow = readFileSync(join(project, ".agent", "workflows", "graphify.md"), "utf-8");
+    const rule = readFileSync(join(project, ".agents", "rules", "graphify.md"), "utf-8");
+    const workflow = readFileSync(join(project, ".agents", "workflows", "graphify.md"), "utf-8");
 
     expect(rule.match(/^---$/gm)).toHaveLength(2);
     expect(workflow.match(/^---$/gm)).toHaveLength(2);
     expect(rule.match(/description: graphify knowledge graph context/g)).toHaveLength(1);
     expect(workflow.match(/command: \/graphify/g)).toHaveLength(1);
+  });
+
+  it("installs the PowerShell Antigravity skill on Windows", async () => {
+    const home = mkdtempSync(join(tmpdir(), "graphify-v4-home-"));
+    const project = mkdtempSync(join(tmpdir(), "graphify-v4-project-"));
+    tempDirs.push(home, project);
+
+    await withProcessPlatform("win32", () => runCliWithEnvironment(["antigravity", "install"], home, project));
+
+    const skill = readFileSync(join(home, ".agents", "skills", "graphify", "SKILL.md"), "utf-8");
+    expect(skill).toContain("```powershell");
+    expect(skill).toContain("Out-File -FilePath .graphify/.graphify_detect.json -Encoding utf8");
+    expect(skill).not.toContain("$(cat .graphify/.graphify_node)");
   });
 
   it("installs Kiro skill and always-on steering file in the project", async () => {

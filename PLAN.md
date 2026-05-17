@@ -273,28 +273,28 @@ M0..M5 lots all landed. `.astro` extractor (`6a7de56`), watch `.rebuild.lock` (`
 **Spec (1/1)**
 - [x] `spec/SPEC_TRACK_F_UPSTREAM_BILAN.md` defines cadence, buckets (`must-port` / `already-covered` / `intentional-delta` / `defer`), outputs, and decision rules. Bilan #1 snapshot recorded in that spec on 2026-05-15.
 
-**Plan (2/6)** — lots scoped against the weekly bilans; F-Doc and F-Install are implementation-trivial:
+**Plan (5/6)** — lots scoped against the weekly bilans; F-Doc and F-Install are implementation-trivial:
 - [x] **Lot F-Install — Query-first install guidance / `GRAPH_REPORT.md` demotion** (~0.5 day). Port upstream PR #891 / v0.8.6 across installer constants, assistant skills, README, and project meta files. Existing installs refresh in place instead of preserving stale report-first text. Release vehicle: `graphifyy@0.9.2`.
-- [ ] **Lot F-P1 — Windows / hook stability** (~3-4 days). Target upstream commits:
+- [x] **Lot F-P1 — Windows / hook stability** (~3-4 days). Target upstream commits:
   - `1b3296a` — *Fix Windows skill temp files polluting project root* (`upstream/v7`-line).
   - `ac9587b` — *Fix antigravity Windows skill and Python detection for uv/pipx* (PR #831 in upstream).
   - `5f2c55b` — *Bump 0.8.3* (carrier commit; verify no extra payload).
-  Cleans up the Windows test-run footprint and prevents `.graphify_temp/` style leakage into the working tree. Adds regression coverage in `tests/cli-runtime.test.ts` and `tests/install-preview.test.ts`.
-- [ ] **Lot F-P2 — Graph correctness + MCP watch** (~2-3 days). Target upstream commits:
+  Cleans up the Windows test-run footprint and prevents `.graphify_temp/` style leakage into the working tree. Covered by `tests/hooks.test.ts`, `tests/install-preview.test.ts`, `tests/platform-v4-integration.test.ts`, `tests/skills.test.ts`, and `tests/cli-runtime.test.ts`.
+- [x] **Lot F-P2 — Graph correctness + MCP watch** (~2-3 days). Target upstream commits:
   - `6f8e6c5` — *Fix gitignore parent-exclusion rule (#882) and dedup false merges on short labels (#878)* (`upstream/v7`).
   - `d14e8a7` — *Suppress cross-language INFERRED calls/uses edges in surprising connections* (`upstream/v7`).
-  Plus MCP hot-reload of `.graphify/graph.json` if upstream now publishes a fs-watcher hook; otherwise downgrade to MCP file-mtime check. Adds coverage in `tests/detect.test.ts`, `tests/build-merge.test.ts`, `tests/serve.test.ts`.
-- [ ] **Lot F-M1 — SQL/Groovy parser depth** (~2 days, decision pending). Target upstream commit:
+  Plus MCP hot-reload of `.graphify/graph.json` if upstream now publishes a fs-watcher hook; otherwise downgrade to MCP file-mtime check. Covered by `tests/detect.test.ts`, `tests/build-merge.test.ts`, `tests/analyze.test.ts`, and `tests/serve.test.ts`.
+- [x] **Lot F-M1 — SQL/Groovy parser depth** (~2 days). Target upstream commit:
   - `299b6ba` — *v0.8.4: SQL FK/trigger extraction, deletion pruning fixes, community label normalization* (`upstream/v7`).
-  Plus upstream Groovy edge-fidelity follow-ups on the `v8` branch. Only mandatory if a parity claim against `v8` / `v0.8.5` is required; otherwise downgrade to `defer`.
+  Plus upstream Groovy edge-fidelity follow-ups on the `v8` branch. Covered with SQL FK/trigger/procedure extraction, Windows-normalized deletion pruning, community label normalization, and regex-backed Groovy/Gradle import/class/method/call extraction. Full `tree-sitter-groovy` and Gradle DSL dependency modeling remain deferred.
 - [ ] **Lot F-Opt — v1/v2 hypergraph + wiki rewrite** (deferred). Target upstream refs: `main` / `v2` branch (36 commits as of bilan #1), `v1.0.0` pre-release tag. Hypergraph generation and wiki-export rewrite. Not adopted until upstream stabilises and a separate spec authorises adoption. See `Open F decisions` below.
 - [x] **Lot F-Doc — Version Alignment section** (~0.5 day). `UPSTREAM_GAP.md` maps `graphifyy@0.9.2` to `graphify@0.7.19` plus TS-only deltas and the closed upstream #891 install-contract gap, while keeping the remaining `v0.8.x` rows explicit.
 
-**Infra (1/4)**
+**Infra (4/4)**
 - [x] F-Install infra impl (query-first installer/skills/docs, refresh-in-place tests).
-- [ ] F-P1 infra impl (Windows hook portability fixes ported, with tests).
-- [ ] F-P2 infra impl (gitignore parent-exclusion + short-label dedup + cross-language INFERRED suppression + MCP watch).
-- [ ] F-M1 infra impl (SQL FK/trigger extraction + community label normalisation; pending decision).
+- [x] F-P1 infra impl (Windows hook portability fixes ported, with tests).
+- [x] F-P2 infra impl (gitignore parent-exclusion + short-label dedup + cross-language INFERRED suppression + MCP watch).
+- [x] F-M1 infra impl (SQL FK/trigger extraction + community label normalisation).
 
 **UI utilisateur** — n/a (parity track).
 

@@ -65,9 +65,22 @@ graphify_detect_cmd() {
 
 graphify_rebuild_code() {
     graphify_detect_cmd || return 0
-    GRAPHIFY_LOG="\${HOME}/.cache/graphify-rebuild.log"
-    mkdir -p "$(dirname "$GRAPHIFY_LOG")"
-    nohup sh -c "$GRAPHIFY_CMD hook-rebuild || true" > "$GRAPHIFY_LOG" 2>&1 < /dev/null &
+    if [ -n "\${XDG_CACHE_HOME:-}" ]; then
+        GRAPHIFY_CACHE_DIR="$XDG_CACHE_HOME/graphify"
+    elif [ -n "\${LOCALAPPDATA:-}" ]; then
+        GRAPHIFY_CACHE_DIR="$LOCALAPPDATA/graphify"
+    elif [ -n "\${HOME:-}" ]; then
+        GRAPHIFY_CACHE_DIR="$HOME/.cache/graphify"
+    else
+        GRAPHIFY_CACHE_DIR=".graphify"
+    fi
+    GRAPHIFY_LOG="$GRAPHIFY_CACHE_DIR/rebuild.log"
+    mkdir -p "$GRAPHIFY_CACHE_DIR"
+    if command -v nohup >/dev/null 2>&1; then
+        nohup sh -c "$GRAPHIFY_CMD hook-rebuild || true" > "$GRAPHIFY_LOG" 2>&1 < /dev/null &
+    else
+        sh -c "$GRAPHIFY_CMD hook-rebuild || true" > "$GRAPHIFY_LOG" 2>&1 < /dev/null &
+    fi
     disown 2>/dev/null || true
 }
 `;

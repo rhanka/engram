@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { once } from "node:events";
@@ -103,6 +103,50 @@ function rewriteFixtureGraphWithEdgesKey(graphPath: string): void {
   data.edges = data.links;
   delete data.links;
   writeFileSync(graphPath, JSON.stringify(data, null, 2), "utf-8");
+}
+
+function rewriteFixtureGraphForHotReload(graphPath: string): void {
+  writeFileSync(
+    graphPath,
+    JSON.stringify(
+      {
+        directed: false,
+        graph: {
+          community_labels: {
+            "2": "Reloaded Services",
+          },
+        },
+        nodes: [
+          {
+            id: "omega",
+            label: "OmegaService",
+            source_file: "src/omega.ts",
+            source_location: "42",
+            file_type: "code",
+            community: 2,
+            community_name: "Reloaded Services",
+          },
+          {
+            id: "theta",
+            label: "ThetaDocs",
+            source_file: "docs/theta.md",
+            source_location: "7",
+            file_type: "document",
+            community: 2,
+            community_name: "Reloaded Services",
+          },
+        ],
+        links: [
+          { source: "omega", target: "theta", relation: "documents", confidence: "EXTRACTED" },
+        ],
+      },
+      null,
+      2,
+    ),
+    "utf-8",
+  );
+  const bumped = new Date(Date.now() + 5000);
+  utimesSync(graphPath, bumped, bumped);
 }
 
 function toolText(result: { content?: Array<{ type?: string; text?: string }> }): string {
@@ -479,6 +523,65 @@ describe("MCP stdio server", () => {
 
       const audit = resourceText(await client.readResource({ uri: "graphify://audit" }));
       expect(audit).toContain("Total edges: 3");
+    } finally {
+      await client.close().catch(() => undefined);
+      await clientTransport.close().catch(() => undefined);
+      await serverPromise.catch(() => undefined);
+    }
+  });
+
+  it("reloads graph JSON from disk for later MCP tools and resources", async () => {
+    const dir = makeTempDir();
+    const graphPath = writeFixtureGraph(dir);
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const serverPromise = serve(graphPath, serverTransport);
+    const client = new Client({ name: "graphify-serve-test", version: "0.0.0" });
+
+    try {
+      await client.connect(clientTransport);
+
+      const initialStats = toolText(
+        await client.callTool({
+          name: "graph_stats",
+          arguments: {},
+        }),
+      );
+      expect(initialStats).toContain("Nodes: 4");
+      expect(initialStats).toContain("Edges: 3");
+
+      rewriteFixtureGraphForHotReload(graphPath);
+
+      const reloadedStats = toolText(
+        await client.callTool({
+          name: "graph_stats",
+          arguments: {},
+        }),
+      );
+      expect(reloadedStats).toContain("Nodes: 2");
+      expect(reloadedStats).toContain("Edges: 1");
+      expect(reloadedStats).toContain("Communities: 1");
+
+      const node = toolText(
+        await client.callTool({
+          name: "get_node",
+          arguments: { label: "OmegaService" },
+        }),
+      );
+      expect(node).toContain("Node: OmegaService");
+      expect(node).toContain("Community: 2 (Reloaded Services)");
+
+      const query = toolText(
+        await client.callTool({
+          name: "query_graph",
+          arguments: { question: "OmegaService ThetaDocs", depth: 1 },
+        }),
+      );
+      expect(query).toContain("OmegaService");
+      expect(query).toContain("ThetaDocs");
+
+      const resourceStats = resourceText(await client.readResource({ uri: "graphify://stats" }));
+      expect(resourceStats).toContain("Nodes: 2");
+      expect(resourceStats).toContain("Edges: 1");
     } finally {
       await client.close().catch(() => undefined);
       await clientTransport.close().catch(() => undefined);

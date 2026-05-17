@@ -66,6 +66,37 @@ function topLevelDir(path: string): string {
   return path.includes("/") ? path.split("/")[0]! : path;
 }
 
+function sourceExtension(path: string): string {
+  const fileName = path.split(/[\\/]/).pop() ?? path;
+  const dot = fileName.lastIndexOf(".");
+  if (dot <= 0 || dot === fileName.length - 1) return "";
+  return fileName.slice(dot + 1).toLowerCase();
+}
+
+function codeLanguage(path: string): string | null {
+  if (fileCategory(path) !== "code") return null;
+  const ext = sourceExtension(path);
+  if (!ext) return null;
+  if (["cjs", "js", "jsx", "mjs"].includes(ext)) return "javascript";
+  if (["cts", "mts", "ts", "tsx"].includes(ext)) return "typescript";
+  if (["py", "pyw"].includes(ext)) return "python";
+  return ext;
+}
+
+function shouldSuppressCrossLanguageStructuralBonuses(
+  data: Record<string, unknown>,
+  uSource: string,
+  vSource: string,
+): boolean {
+  if (data.confidence !== "INFERRED") return false;
+  const relation = ((data.relation as string) ?? "").toLowerCase();
+  if (relation !== "calls" && relation !== "uses") return false;
+
+  const uLanguage = codeLanguage(uSource);
+  const vLanguage = codeLanguage(vSource);
+  return uLanguage !== null && vLanguage !== null && uLanguage !== vLanguage;
+}
+
 function surpriseScore(
   G: Graph,
   u: string,
@@ -79,8 +110,9 @@ function surpriseScore(
   const reasons: string[] = [];
 
   const conf = (data.confidence as string) ?? "EXTRACTED";
+  const suppressStructuralBonuses = shouldSuppressCrossLanguageStructuralBonuses(data, uSource, vSource);
   const confBonus: Record<string, number> = { AMBIGUOUS: 3, INFERRED: 2, EXTRACTED: 1 };
-  score += confBonus[conf] ?? 1;
+  score += suppressStructuralBonuses ? 0 : (confBonus[conf] ?? 1);
   if (conf === "AMBIGUOUS" || conf === "INFERRED") {
     reasons.push(`${conf.toLowerCase()} connection - not explicitly stated in source`);
   }
@@ -92,14 +124,14 @@ function surpriseScore(
     reasons.push(`crosses file types (${catU} ↔ ${catV})`);
   }
 
-  if (topLevelDir(uSource) !== topLevelDir(vSource)) {
+  if (topLevelDir(uSource) !== topLevelDir(vSource) && !suppressStructuralBonuses) {
     score += 2;
     reasons.push("connects across different repos/directories");
   }
 
   const cidU = nodeCommunity.get(u);
   const cidV = nodeCommunity.get(v);
-  if (cidU !== undefined && cidV !== undefined && cidU !== cidV) {
+  if (cidU !== undefined && cidV !== undefined && cidU !== cidV && !suppressStructuralBonuses) {
     score += 1;
     reasons.push("bridges separate communities");
   }

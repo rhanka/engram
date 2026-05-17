@@ -84,7 +84,7 @@ node -e "
 const { detect } = require('graphifyy');
 const result = detect('INPUT_PATH');
 console.log(JSON.stringify(result));
-" > .graphify/.graphify_detect.json
+" | Out-File -FilePath .graphify/.graphify_detect.json -Encoding utf8
 ```
 
 Replace INPUT_PATH with the actual path the user provided. Do NOT cat or print the JSON - read it silently and present a clean summary instead:

@@ -4,6 +4,15 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.9.4 (2026-05-17)
+
+Track F upstream parity follow-up.
+
+- Port Windows/hook stability fixes for Antigravity `.agents`, Windows PowerShell skill output, and hook rebuild logging.
+- Port graph correctness fixes for short-label dedup guards, symlink realpath discovery, cross-language inferred structural scoring, MCP graph hot-reload, deletion pruning, and community label normalization.
+- Add SQL trigger/procedure extraction and a dependency-free Groovy/Gradle regex extractor for imports, inheritance/interfaces, methods, Spock features, and local call edges.
+- Patch bump only; no graph schema change.
+
 ## 0.9.3 (2026-05-17)
 
 Track E major-upgrade follow-up.

@@ -136,6 +136,33 @@ describe("buildMerge", () => {
     expect(() => buildMerge([], { graphPath })).toThrow("buildMerge would shrink graph");
   });
 
+  it("prunes deleted sources with normalized Windows-style source paths", () => {
+    const dir = tempDir();
+    const graphPath = join(dir, "graph.json");
+    writeFileSync(
+      graphPath,
+      JSON.stringify({
+        directed: false,
+        graph: {},
+        nodes: [
+          { id: "old", label: "OldFile", source_file: "src/old.ts", file_type: "code" },
+          { id: "keep", label: "KeepFile", source_file: "src/keep.ts", file_type: "code" },
+        ],
+        links: [
+          { source: "old", target: "keep", relation: "uses", confidence: "EXTRACTED", source_file: "src/old.ts" },
+        ],
+      }, null, 2),
+      "utf-8",
+    );
+
+    const graph = buildMerge([], { graphPath, pruneSources: ["src\\old.ts"] });
+
+    expect(graph.hasNode("old")).toBe(false);
+    expect(graph.hasNode("keep")).toBe(true);
+    expect(graph.order).toBe(1);
+    expect(graph.size).toBe(0);
+  });
+
   it("deduplicates chunk-suffixed labels during explicit merge flows", () => {
     const dir = tempDir();
     const graphPath = join(dir, "graph.json");
@@ -156,5 +183,53 @@ describe("buildMerge", () => {
     expect(graph.hasNode("auth_session")).toBe(true);
     expect(graph.hasNode("auth_session_c1")).toBe(false);
     expect(graph.size).toBe(0);
+  });
+
+  it("does not merge short SKU-like labels within one source", () => {
+    const dir = tempDir();
+    const graphPath = join(dir, "graph.json");
+    const graph = buildMerge([
+      {
+        nodes: [
+          { id: "sku_ab_small", label: "AB", source_file: "inventory/products.csv", file_type: "document" },
+          { id: "sku_ab_large", label: "AB", source_file: "inventory/products.csv", file_type: "document" },
+        ],
+        edges: [
+          { source: "sku_ab_small", target: "sku_ab_large", relation: "variant_of", confidence: "EXTRACTED", source_file: "inventory/products.csv" },
+        ],
+        input_tokens: 0,
+        output_tokens: 0,
+      },
+    ], { graphPath });
+
+    expect(graph.hasNode("sku_ab_small")).toBe(true);
+    expect(graph.hasNode("sku_ab_large")).toBe(true);
+    expect(graph.size).toBe(1);
+  });
+
+  it("deduplicates first pass labels within each source before global label collisions", () => {
+    const dir = tempDir();
+    const graphPath = join(dir, "graph.json");
+    const graph = buildMerge([
+      {
+        nodes: [
+          { id: "auth_from_docs", label: "Auth Session", source_file: "docs/auth.md", file_type: "document" },
+          { id: "auth_session_c1", label: "Auth Session", source_file: "src/auth.ts", file_type: "code" },
+          { id: "auth_session", label: "Auth Session", source_file: "src/auth.ts", file_type: "code" },
+        ],
+        edges: [
+          { source: "auth_session_c1", target: "auth_from_docs", relation: "relates_to", confidence: "INFERRED", source_file: "src/auth.ts" },
+        ],
+        input_tokens: 0,
+        output_tokens: 0,
+      },
+    ], { graphPath });
+
+    expect(graph.hasNode("auth_from_docs")).toBe(true);
+    expect(graph.hasNode("auth_session")).toBe(true);
+    expect(graph.hasNode("auth_session_c1")).toBe(false);
+    expect(graph.size).toBe(1);
+    const edge = graph.edge("auth_session", "auth_from_docs");
+    expect(edge).toBeDefined();
   });
 });
