@@ -893,11 +893,18 @@ export function toHtml(
     const fontSize = memberCounts ? 12 : (deg >= maxDeg * 0.15 ? 12 : 0);
     const sourceFile = (data.source_file as string) ?? "";
     const fileType = (data.file_type as string) ?? "";
+    const shape = inferNodeShape(fileType, sourceFile);
+    // C-final-1: shape "box" (document/paper/concept) renders as outline-only
+    // so it is visually distinct from "square" (test) which stays solid-filled.
+    // vis.js draws a filled rectangle when color.background is a color; setting
+    // background to a transparent value keeps the border (color) and shows the
+    // label cleanly without the fill blob.
+    const isOutlinedShape = shape === "box";
     visNodes.push({
       id: nodeId,
       label,
       color: {
-        background: color,
+        background: isOutlinedShape ? "rgba(0,0,0,0)" : color,
         border: color,
         highlight: { background: "#ffffff", border: color },
       },
@@ -908,7 +915,7 @@ export function toHtml(
       community_name: sanitizeLabel(communityLabels?.get(cid) ?? `Community ${cid}`),
       source_file: sanitizeLabel(sourceFile),
       file_type: fileType,
-      shape: inferNodeShape(fileType, sourceFile),
+      shape,
       degree: deg,
     });
   });
@@ -1001,10 +1008,10 @@ ${htmlStyles()}
     <h3 id="shapes-heading" style="margin-top:14px">Shapes</h3>
     <ul id="shape-legend" aria-labelledby="shapes-heading" style="list-style:none;padding:0;margin:0;font-size:12px;color:#bbb">
       <li>● dot &mdash; code</li>
-      <li>■ square &mdash; test</li>
+      <li><span style="display:inline-block;width:10px;height:10px;background:#bbb;vertical-align:middle"></span> square (filled) &mdash; test</li>
       <li>▲ triangle &mdash; config (yaml/toml/...)</li>
       <li>◆ diamond &mdash; type definition (.d.ts)</li>
-      <li>▢ box &mdash; document / paper / concept</li>
+      <li><span style="display:inline-block;width:10px;height:10px;border:1px solid #bbb;background:transparent;vertical-align:middle"></span> box (outline) &mdash; document / paper / concept</li>
       <li>★ star &mdash; image</li>
       <li>⬢ hexagon &mdash; video</li>
     </ul>

@@ -196,10 +196,33 @@ describe("toHtml visual encoding (Track C3)", () => {
     // Static shape and edge legends are present in the sidebar.
     expect(html).toContain('id="shape-legend"');
     expect(html).toContain("triangle &mdash; config");
+    expect(html).toContain("box (outline) &mdash; document");
+    expect(html).toContain("square (filled) &mdash; test");
     expect(html).toContain('id="relation-legend"');
     expect(html).toContain("dotted &mdash; tested_by");
     // The vis.js options no longer force shape: 'dot' globally.
     expect(html).toContain("/* shape comes from per-node n.shape */");
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("C-final-1: shape 'box' (document/paper/concept) is outlined (transparent background)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-html-c-final-1-"));
+    const htmlPath = join(dir, "graph.html");
+    const G = new Graph();
+    G.addNode("code_a", { label: "AlphaService", source_file: "src/alpha.ts", file_type: "code" });
+    G.addNode("doc_a", { label: "DesignNote", source_file: "docs/design.md", file_type: "document" });
+    G.addUndirectedEdge("code_a", "doc_a", { relation: "documented_by", confidence: "EXTRACTED" });
+    const communities = new Map([[0, ["code_a", "doc_a"]]]);
+    toHtml(G, communities, htmlPath, { communityLabels: new Map([[0, "Core"]]) });
+    const html = readFileSync(htmlPath, "utf-8");
+
+    // Box (document) carries the transparent background so the border-only
+    // rendering is visually distinct from the solid square (test).
+    expect(html).toMatch(/"id":"doc_a"[^{]*\{[^}]*"background":"rgba\(0,0,0,0\)"/);
+    expect(html).toMatch(/"id":"doc_a"[\s\S]*?"shape":"box"/);
+    // Sanity: a code node keeps a coloured (non-transparent) background.
+    expect(html).toMatch(/"id":"code_a"[^{]*\{[^}]*"background":"#[0-9A-Fa-f]{6}"/);
 
     rmSync(dir, { recursive: true, force: true });
   });
