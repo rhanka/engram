@@ -29,7 +29,7 @@ graphify export obsidian --graph .graphify/graph.json --descriptions .graphify/w
 
 - If no path is provided, use `.`.
 - Run the installed TypeScript CLI with `graphify`, not Python.
-- Before answering architecture questions, read `.graphify/GRAPH_REPORT.md` when it exists.
+- For architecture or codebase questions, when `.graphify/graph.json` exists, first run `graphify query "<question>"` (or `graphify path "<A>" "<B>"` / `graphify explain "<concept>"`); read `.graphify/GRAPH_REPORT.md` only for broad architecture review or when those commands don't surface enough context.
 - If `.graphify/wiki/index.md` exists, navigate the wiki for deep questions.
 - If `.graphify/graph.json` is missing but `graphify-out/graph.json` exists, run `graphify migrate-state --dry-run` before relying on legacy state.
 - If `.graphify/needs_update` exists or `.graphify/branch.json` has `stale=true`, warn before relying on semantic results and run `/graphify . --update` when appropriate.

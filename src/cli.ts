@@ -43,6 +43,7 @@ import { makeGraphPortable, projectRootLabel, scanPortableGraphifyArtifacts } fr
 import { loadOntologyPatchContext } from "./ontology-patch-context.js";
 import { persistCommunityLabels, resolveCommunityLabels } from "./community-labels.js";
 import type { WikiDescriptionSidecarIndex } from "./wiki-descriptions.js";
+import { replaceOrAppendSection } from "./skill-install.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -493,7 +494,7 @@ const SETTINGS_HOOK = {
       type: "command",
       command:
         '[ -f .graphify/graph.json ] && ' +
-        "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"graphify: Knowledge graph exists. Read .graphify/GRAPH_REPORT.md for god nodes and community structure before searching raw files.\"}}' " +
+        "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"graphify: knowledge graph at .graphify/. For focused questions, run `graphify query \\\"<question>\\\"` (scoped subgraph, usually much smaller than GRAPH_REPORT.md) instead of grepping raw files. Read GRAPH_REPORT.md only for broad architecture context.\"}}' " +
         '|| true',
     },
   ],
@@ -514,13 +515,14 @@ const CLAUDE_MD_SECTION = `## graphify
 This project has a graphify knowledge graph at .graphify/.
 
 Rules:
-- Before answering architecture or codebase questions, read .graphify/GRAPH_REPORT.md for god nodes and community structure
+- For codebase or architecture questions, when \`.graphify/graph.json\` exists, first run \`graphify query "<question>"\` (or \`graphify path "<A>" "<B>"\` / \`graphify explain "<concept>"\`); these return a scoped subgraph, usually much smaller than \`GRAPH_REPORT.md\` or raw grep output
 - If .graphify/wiki/index.md exists, navigate it instead of reading raw files
 - If .graphify/graph.json is missing but graphify-out/graph.json exists, run \`graphify migrate-state --dry-run\` first; if tracked legacy artifacts are reported, ask before using the recommended \`git mv -f graphify-out .graphify\` and commit message
 - If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run /graphify . --update when appropriate
 - Before proposing or committing .graphify artifacts, run \`graphify portable-check .graphify\`; commit-safe graph artifacts must use repo-relative paths, and never commit .graphify/branch.json, .graphify/worktree.json, .graphify/needs_update, or .graphify/cache/. If a repo already tracks any of them, first add them to .gitignore, then propose \`git rm --cached .graphify/branch.json .graphify/worktree.json .graphify/needs_update\` and \`git rm -r --cached .graphify/cache\`; never mutate git state without asking
 - Before deep graph traversal, prefer \`graphify summary --graph .graphify/graph.json\` for compact first-hop orientation
 - For review impact on changed files, use \`graphify review-delta --graph .graphify/graph.json\` instead of generic traversal
+- Read \`.graphify/GRAPH_REPORT.md\` only for broad architecture review or when \`query\` / \`path\` / \`explain\` do not surface enough context
 - After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
 `;
 
@@ -529,7 +531,7 @@ const GEMINI_MD_SECTION = `## graphify
 This project has a graphify knowledge graph at .graphify/.
 
 Rules:
-- Before answering architecture or codebase questions, read .graphify/GRAPH_REPORT.md for god nodes and community structure
+- For codebase or architecture questions, when \`.graphify/graph.json\` exists, first run \`graphify query "<question>"\` (or \`graphify path "<A>" "<B>"\` / \`graphify explain "<concept>"\`); these return a scoped subgraph, usually much smaller than \`GRAPH_REPORT.md\` or raw grep output
 - If .graphify/wiki/index.md exists, navigate it instead of reading raw files
 - If .graphify/graph.json is missing but graphify-out/graph.json exists, run \`graphify migrate-state --dry-run\` first; if tracked legacy artifacts are reported, ask before using the recommended \`git mv -f graphify-out .graphify\` and commit message
 - If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run /graphify . --update when appropriate
@@ -538,6 +540,7 @@ Rules:
 - Before proposing or committing .graphify artifacts, run \`graphify portable-check .graphify\`; commit-safe graph artifacts must use repo-relative paths, and never commit .graphify/branch.json, .graphify/worktree.json, .graphify/needs_update, or .graphify/cache/. If a repo already tracks any of them, first add them to .gitignore, then propose \`git rm --cached .graphify/branch.json .graphify/worktree.json .graphify/needs_update\` and \`git rm -r --cached .graphify/cache\`; never mutate git state without asking
 - Before deep graph traversal, prefer \`graphify summary --graph .graphify/graph.json\` or MCP \`first_hop_summary\` for compact first-hop orientation
 - For review impact on changed files, use \`graphify review-delta --graph .graphify/graph.json\` or MCP \`review_delta\` instead of generic traversal
+- Read \`.graphify/GRAPH_REPORT.md\` only for broad architecture review or when \`query\` / \`path\` / \`explain\` do not surface enough context
 - After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
 `;
 
@@ -565,7 +568,7 @@ export const GraphifyPlugin = async ({ directory }) => {
 
       if (input.tool === "bash") {
         output.args.command =
-          'echo "[graphify] Knowledge graph available. Read .graphify/GRAPH_REPORT.md for god nodes and architecture context before searching files." && ' +
+          'echo "[graphify] Knowledge graph at .graphify/. For focused questions, run graphify query \\"<question>\\" (scoped subgraph, usually much smaller than GRAPH_REPORT.md) instead of grepping raw files. Read GRAPH_REPORT.md only for broad architecture context." && ' +
           output.args.command;
         reminded = true;
       }
@@ -714,10 +717,11 @@ alwaysApply: true
 
 This project has a graphify knowledge graph at .graphify/.
 
-- Before answering architecture or codebase questions, read .graphify/GRAPH_REPORT.md for god nodes and community structure
+- For codebase or architecture questions, when \`.graphify/graph.json\` exists, first run \`graphify query "<question>"\` (or \`graphify path "<A>" "<B>"\` / \`graphify explain "<concept>"\`); these return a scoped subgraph, usually much smaller than \`GRAPH_REPORT.md\` or raw grep output
 - If .graphify/wiki/index.md exists, navigate it instead of reading raw files
 - If .graphify/graph.json is missing but graphify-out/graph.json exists, run \`graphify migrate-state --dry-run\` first; if tracked legacy artifacts are reported, ask before using the recommended \`git mv -f graphify-out .graphify\` and commit message
 - If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run /graphify . --update when appropriate
+- Read \`.graphify/GRAPH_REPORT.md\` only for broad architecture review or when \`query\` / \`path\` / \`explain\` do not surface enough context
 - After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
 `;
 
@@ -732,11 +736,12 @@ description: graphify knowledge graph context
 This project has a graphify knowledge graph at .graphify/.
 
 Rules:
-- Before answering architecture or codebase questions, read .graphify/GRAPH_REPORT.md for god nodes and community structure
+- For codebase or architecture questions, when \`.graphify/graph.json\` exists, first run \`graphify query "<question>"\` (or \`graphify path "<A>" "<B>"\` / \`graphify explain "<concept>"\`); these return a scoped subgraph, usually much smaller than \`GRAPH_REPORT.md\` or raw grep output
 - If .graphify/wiki/index.md exists, navigate it instead of reading raw files
 - If .graphify/graph.json is missing but graphify-out/graph.json exists, run \`graphify migrate-state --dry-run\` before relying on legacy state
 - If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run /graphify . --update when appropriate
 - If the graphify MCP server is active, prefer graph tools like \`query_graph\`, \`get_node\`, and \`shortest_path\` for architecture navigation
+- Read \`.graphify/GRAPH_REPORT.md\` only for broad architecture review or when \`query\` / \`path\` / \`explain\` do not surface enough context
 - After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
 `;
 
@@ -757,16 +762,17 @@ const KIRO_STEERING = `---
 inclusion: always
 ---
 
-graphify: A knowledge graph of this project lives in \`.graphify/\`. If \`.graphify/GRAPH_REPORT.md\` exists, read it before answering architecture questions, tracing dependencies, or searching files. If \`.graphify/wiki/index.md\` exists, navigate it for deep questions. Prefer graph structure over raw grep when graph context is current.
+graphify: A knowledge graph of this project lives in \`.graphify/\`. For codebase or architecture questions, when \`.graphify/graph.json\` exists, first run \`graphify query "<question>"\` (or \`graphify path "<A>" "<B>"\` / \`graphify explain "<concept>"\`); these return a scoped subgraph, usually much smaller than \`GRAPH_REPORT.md\` or raw grep output. If \`.graphify/wiki/index.md\` exists, navigate it for deep questions. Read \`.graphify/GRAPH_REPORT.md\` only for broad architecture review or when \`query\` / \`path\` / \`explain\` do not surface enough context. Prefer graph structure over raw grep when graph context is current.
 `;
 
 const KIRO_STEERING_MARKER = "graphify: A knowledge graph of this project";
 
 const VSCODE_INSTRUCTIONS_SECTION = `## graphify
 
-Before answering architecture or codebase questions, read \`.graphify/GRAPH_REPORT.md\` if it exists.
+For codebase or architecture questions, when \`.graphify/graph.json\` exists, first run \`graphify query "<question>"\` (or \`graphify path "<A>" "<B>"\` / \`graphify explain "<concept>"\`); these return a scoped subgraph, usually much smaller than \`GRAPH_REPORT.md\` or raw grep output.
 If \`.graphify/wiki/index.md\` exists, navigate it for deep questions.
 If \`.graphify/graph.json\` is missing but \`graphify-out/graph.json\` exists, run \`graphify migrate-state --dry-run\` before relying on legacy state.
+Read \`.graphify/GRAPH_REPORT.md\` only for broad architecture review or when \`query\` / \`path\` / \`explain\` do not surface enough context.
 Type \`/graphify\` in Copilot Chat to build or update the knowledge graph.
 `;
 
@@ -1002,7 +1008,7 @@ export function getAgentsMdSection(platformName: string): string {
     "This project has a graphify knowledge graph at .graphify/.",
     "",
     "Rules:",
-    "- Before answering architecture or codebase questions, read .graphify/GRAPH_REPORT.md for god nodes and community structure",
+    "- For codebase or architecture questions, when `.graphify/graph.json` exists, first run `graphify query \"<question>\"` (or `graphify path \"<A>\" \"<B>\"` / `graphify explain \"<concept>\"`); these return a scoped subgraph, usually much smaller than `GRAPH_REPORT.md` or raw grep output",
     "- If .graphify/wiki/index.md exists, navigate it instead of reading raw files",
     "- If .graphify/graph.json is missing but graphify-out/graph.json exists, run `graphify migrate-state --dry-run` first; if tracked legacy artifacts are reported, ask before using the recommended `git mv -f graphify-out .graphify` and commit message",
     "- If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run the graphify skill with --update when appropriate",
@@ -1010,6 +1016,7 @@ export function getAgentsMdSection(platformName: string): string {
     PORTABLE_GRAPHIFY_RULE,
     "- Before deep graph traversal, prefer `graphify summary --graph .graphify/graph.json` for compact first-hop orientation",
     "- For review impact on changed files, use `graphify review-delta --graph .graphify/graph.json` instead of generic traversal",
+    "- Read `.graphify/GRAPH_REPORT.md` only for broad architecture review or when `query` / `path` / `explain` do not surface enough context",
     "- After modifying code files in this session, run `npx graphify hook-rebuild` to keep the graph current",
   ];
   if (platformName === "codex") {
@@ -1083,7 +1090,13 @@ export function cursorInstall(projectDir: string = "."): void {
   const rulePath = join(projectDir, ".cursor", "rules", "graphify.mdc");
   mkdirSync(dirname(rulePath), { recursive: true });
   if (existsSync(rulePath)) {
-    console.log(`graphify rule already exists at ${resolve(rulePath)} (no change)`);
+    const content = readFileSync(rulePath, "utf-8");
+    if (content === CURSOR_RULE) {
+      console.log(`graphify rule already current at ${resolve(rulePath)} (no change)`);
+    } else {
+      writeFileSync(rulePath, CURSOR_RULE, "utf-8");
+      console.log(`graphify rule refreshed at ${resolve(rulePath)}`);
+    }
   } else {
     writeFileSync(rulePath, CURSOR_RULE, "utf-8");
     console.log(`graphify rule written to ${resolve(rulePath)}`);
@@ -1112,7 +1125,13 @@ export function antigravityInstall(projectDir: string = "."): void {
   const rulePath = join(projectDir, ANTIGRAVITY_RULE_PATH);
   mkdirSync(dirname(rulePath), { recursive: true });
   if (existsSync(rulePath)) {
-    console.log(`graphify Antigravity rule already exists at ${resolve(rulePath)} (no change)`);
+    const content = readFileSync(rulePath, "utf-8");
+    if (content === ANTIGRAVITY_RULE) {
+      console.log(`graphify Antigravity rule already current at ${resolve(rulePath)} (no change)`);
+    } else {
+      writeFileSync(rulePath, ANTIGRAVITY_RULE, "utf-8");
+      console.log(`graphify Antigravity rule refreshed at ${resolve(rulePath)}`);
+    }
   } else {
     writeFileSync(rulePath, ANTIGRAVITY_RULE, "utf-8");
     console.log(`graphify Antigravity rule written to ${resolve(rulePath)}`);
@@ -1121,7 +1140,13 @@ export function antigravityInstall(projectDir: string = "."): void {
   const workflowPath = join(projectDir, ANTIGRAVITY_WORKFLOW_PATH);
   mkdirSync(dirname(workflowPath), { recursive: true });
   if (existsSync(workflowPath)) {
-    console.log(`graphify Antigravity workflow already exists at ${resolve(workflowPath)} (no change)`);
+    const content = readFileSync(workflowPath, "utf-8");
+    if (content === ANTIGRAVITY_WORKFLOW) {
+      console.log(`graphify Antigravity workflow already current at ${resolve(workflowPath)} (no change)`);
+    } else {
+      writeFileSync(workflowPath, ANTIGRAVITY_WORKFLOW, "utf-8");
+      console.log(`graphify Antigravity workflow refreshed at ${resolve(workflowPath)}`);
+    }
   } else {
     writeFileSync(workflowPath, ANTIGRAVITY_WORKFLOW, "utf-8");
     console.log(`graphify Antigravity workflow written to ${resolve(workflowPath)}`);
@@ -1154,8 +1179,17 @@ export function kiroInstall(projectDir: string = "."): void {
 
   const steeringPath = join(projectDir, ".kiro", "steering", "graphify.md");
   mkdirSync(dirname(steeringPath), { recursive: true });
-  if (existsSync(steeringPath) && readFileSync(steeringPath, "utf-8").includes(KIRO_STEERING_MARKER)) {
-    console.log("  .kiro/steering/graphify.md  ->  already configured");
+  if (existsSync(steeringPath)) {
+    const content = readFileSync(steeringPath, "utf-8");
+    if (content === KIRO_STEERING) {
+      console.log("  .kiro/steering/graphify.md  ->  already current");
+    } else if (content.includes(KIRO_STEERING_MARKER)) {
+      writeFileSync(steeringPath, KIRO_STEERING, "utf-8");
+      console.log("  .kiro/steering/graphify.md  ->  graphify steering refreshed");
+    } else {
+      writeFileSync(steeringPath, KIRO_STEERING, "utf-8");
+      console.log("  .kiro/steering/graphify.md  ->  always-on steering written");
+    }
   } else {
     writeFileSync(steeringPath, KIRO_STEERING, "utf-8");
     console.log("  .kiro/steering/graphify.md  ->  always-on steering written");
@@ -1204,10 +1238,13 @@ export function vscodeInstall(projectDir: string = "."): void {
   mkdirSync(dirname(instructionsPath), { recursive: true });
   if (existsSync(instructionsPath)) {
     const content = readFileSync(instructionsPath, "utf-8");
-    if (content.includes(MD_MARKER)) {
-      console.log(`  .github/copilot-instructions.md  ->  already configured (no change)`);
+    const updated = replaceOrAppendSection(content, MD_MARKER, VSCODE_INSTRUCTIONS_SECTION);
+    writeFileSync(instructionsPath, updated, "utf-8");
+    if (updated === content) {
+      console.log(`  .github/copilot-instructions.md  ->  already current (no change)`);
+    } else if (content.includes(MD_MARKER)) {
+      console.log(`  .github/copilot-instructions.md  ->  graphify section refreshed`);
     } else {
-      writeFileSync(instructionsPath, content.trimEnd() + "\n\n" + VSCODE_INSTRUCTIONS_SECTION, "utf-8");
       console.log(`  .github/copilot-instructions.md  ->  graphify section added`);
     }
   } else {
@@ -1421,21 +1458,20 @@ function uninstallClaudeHook(projectDir: string): void {
 
 function claudeInstall(projectDir: string = "."): void {
   printMutationPreview(platformInstallPreview(projectDir, "claude"));
-  let alreadyConfigured = false;
   const target = join(projectDir, "CLAUDE.md");
   if (existsSync(target)) {
     const content = readFileSync(target, "utf-8");
-    if (content.includes(MD_MARKER)) {
-      alreadyConfigured = true;
-      console.log("graphify already configured in CLAUDE.md");
+    const updated = replaceOrAppendSection(content, MD_MARKER, CLAUDE_MD_SECTION);
+    writeFileSync(target, updated, "utf-8");
+    if (updated === content) {
+      console.log(`graphify section already current in ${resolve(target)}`);
+    } else if (content.includes(MD_MARKER)) {
+      console.log(`graphify section refreshed in ${resolve(target)}`);
     } else {
-      writeFileSync(target, content.trimEnd() + "\n\n" + CLAUDE_MD_SECTION, "utf-8");
+      console.log(`graphify section written to ${resolve(target)}`);
     }
   } else {
     writeFileSync(target, CLAUDE_MD_SECTION, "utf-8");
-  }
-
-  if (!alreadyConfigured) {
     console.log(`graphify section written to ${resolve(target)}`);
   }
   installClaudeHook(projectDir);
@@ -1469,21 +1505,20 @@ function claudeUninstall(projectDir: string = "."): void {
 
 export function geminiInstall(projectDir: string = "."): void {
   printMutationPreview(platformInstallPreview(projectDir, "gemini"));
-  let alreadyConfigured = false;
   const target = join(projectDir, "GEMINI.md");
   if (existsSync(target)) {
     const content = readFileSync(target, "utf-8");
-    if (content.includes(MD_MARKER)) {
-      alreadyConfigured = true;
-      console.log("graphify already configured in GEMINI.md");
+    const updated = replaceOrAppendSection(content, MD_MARKER, GEMINI_MD_SECTION);
+    writeFileSync(target, updated, "utf-8");
+    if (updated === content) {
+      console.log(`graphify section already current in ${resolve(target)}`);
+    } else if (content.includes(MD_MARKER)) {
+      console.log(`graphify section refreshed in ${resolve(target)}`);
     } else {
-      writeFileSync(target, content.trimEnd() + "\n\n" + GEMINI_MD_SECTION, "utf-8");
+      console.log(`graphify section written to ${resolve(target)}`);
     }
   } else {
     writeFileSync(target, GEMINI_MD_SECTION, "utf-8");
-  }
-
-  if (!alreadyConfigured) {
     console.log(`graphify section written to ${resolve(target)}`);
   }
   installGeminiMcp(projectDir);
@@ -1568,22 +1603,21 @@ function uninstallCodexHook(projectDir: string): void {
 
 export function agentsInstall(projectDir: string, platformName: string): void {
   printMutationPreview(platformInstallPreview(projectDir, platformName));
-  let alreadyConfigured = false;
   const target = join(projectDir, "AGENTS.md");
   const section = getAgentsMdSection(platformName);
   if (existsSync(target)) {
     const content = readFileSync(target, "utf-8");
-    if (content.includes(MD_MARKER)) {
-      alreadyConfigured = true;
-      console.log(`graphify already configured in AGENTS.md`);
+    const updated = replaceOrAppendSection(content, MD_MARKER, section);
+    writeFileSync(target, updated, "utf-8");
+    if (updated === content) {
+      console.log(`graphify section already current in ${resolve(target)}`);
+    } else if (content.includes(MD_MARKER)) {
+      console.log(`graphify section refreshed in ${resolve(target)}`);
     } else {
-      writeFileSync(target, content.trimEnd() + "\n\n" + section, "utf-8");
+      console.log(`graphify section written to ${resolve(target)}`);
     }
   } else {
     writeFileSync(target, section, "utf-8");
-  }
-
-  if (!alreadyConfigured) {
     console.log(`graphify section written to ${resolve(target)}`);
   }
 
@@ -2022,6 +2056,108 @@ export async function main(): Promise<void> {
         `Ontology outputs: ${result.nodeCount} node(s), ${result.relationCount} relation(s), ` +
         `${result.wikiPageCount} wiki page(s)`,
       );
+    });
+
+  profile
+    .command("build [path]")
+    .description(
+      "Chain non-LLM profile steps: validate -> dataprep -> ontology-output (only if an extraction JSON already exists). " +
+      "Never runs semantic extraction (LLM-backed); prints the exact next command to run for that step.",
+    )
+    .option("--config <path>", "Explicit graphify.yaml path")
+    .option("--out-dir <path>", "State output directory relative to root or absolute")
+    .option("--extraction <path>", "Override extraction JSON path used by the ontology-output step")
+    .option("--scope <mode>", scopeOptionDescription())
+    .option("--all", "Alias for --scope all")
+    .action(async (profilePath = ".", opts) => {
+      const root = resolve(profilePath);
+      if (!existsSync(root)) {
+        console.error(`error: path not found: ${root}`);
+        process.exit(1);
+      }
+      const configPath = opts.config
+        ? resolve(opts.config)
+        : discoverProjectConfig(root).path;
+      if (!configPath) {
+        console.error(
+          `error: no graphify project config found under ${root}. ` +
+          `Create graphify.yaml (or .graphify/config.yaml) first, or pass --config <path>.`,
+        );
+        process.exit(1);
+      }
+
+      const { loadOntologyProfile } = await import("./ontology-profile.js");
+      const { runConfiguredDataprep } = await import("./configured-dataprep.js");
+      const { compileOntologyOutputs } = await import("./ontology-output.js");
+
+      // Step 1 - validate / normalize project config + ontology profile (no LLM)
+      const projectConfig = loadProjectConfig(configPath);
+      const ontologyProfile = loadOntologyProfile(projectConfig.profile.resolvedPath, { projectConfig });
+      console.log(`[profile build] validate: profile ${ontologyProfile.id} (v${ontologyProfile.version})`);
+
+      // Step 2 - dataprep (deterministic: detection + PDF/transcript prep + registries)
+      const scopeSelection = resolveConfiguredInputScopeSelection(projectConfig, opts);
+      const dataprepResult = await runConfiguredDataprep(root, {
+        ...(opts.config ? { configPath: resolve(opts.config) } : {}),
+        ...(opts.outDir ? { stateDir: opts.outDir } : {}),
+        scope: scopeSelection.mode,
+        scopeSource: scopeSelection.source,
+      });
+      console.log(
+        `[profile build] dataprep: ${dataprepResult.semanticDetection.total_files} semantic file(s), ` +
+        `${dataprepResult.registryExtraction.nodes.length} registry node(s)`,
+      );
+
+      // Step 3 - ontology-output (only if an extraction already exists; semantic extraction is LLM-backed and stays explicit)
+      const ontologyConfig = ontologyProfile.outputs.ontology;
+      const extractionCandidate = opts.extraction
+        ? resolve(opts.extraction)
+        : dataprepResult.paths.profile.registryExtraction;
+      const usingRegistryFallback = !opts.extraction;
+      const ontologyOutputDir = dataprepResult.paths.ontologyOutput.dir;
+      let ontologyRan = false;
+      if (ontologyConfig.enabled && existsSync(extractionCandidate)) {
+        const extraction = JSON.parse(readFileSync(extractionCandidate, "utf-8"));
+        const result = compileOntologyOutputs({
+          outputDir: ontologyOutputDir,
+          extraction,
+          profile: ontologyProfile,
+          config: ontologyConfig,
+        });
+        if (result.enabled) {
+          ontologyRan = true;
+          const sourceLabel = usingRegistryFallback ? "registry-only extraction" : extractionCandidate;
+          console.log(
+            `[profile build] ontology-output: ${result.nodeCount} node(s), ${result.relationCount} relation(s), ` +
+            `${result.wikiPageCount} wiki page(s) (source: ${sourceLabel})`,
+          );
+        }
+      } else if (ontologyConfig.enabled) {
+        console.log(
+          `[profile build] ontology-output: skipped (no extraction JSON at ${extractionCandidate})`,
+        );
+      } else {
+        console.log(`[profile build] ontology-output: disabled by profile config`);
+      }
+
+      // Final hint - never silently chain into semantic extraction (LLM cost)
+      const semanticFiles = dataprepResult.semanticDetection.total_files;
+      console.log("");
+      console.log("[profile build] Done (non-LLM steps only).");
+      if (semanticFiles > 0) {
+        const relRoot = profilePath === "." ? "." : profilePath;
+        console.log(
+          `Next step (LLM, opt-in): run semantic extraction explicitly, for example:\n` +
+          `  graphify extract ${relRoot} --semantic <extraction.json>\n` +
+          `or, for a direct backend (costs tokens):\n` +
+          `  graphify extract ${relRoot} --backend anthropic|openai|gemini|mistral|cohere|ollama\n` +
+          `Then rerun: graphify profile ontology-output --profile-state ${dataprepResult.paths.profile.state} --input <extraction.json> --out-dir ${ontologyOutputDir}`,
+        );
+      } else if (!ontologyRan && ontologyConfig.enabled) {
+        console.log(
+          `No corpus files detected for semantic extraction. Review inputs.corpus in ${configPath}.`,
+        );
+      }
     });
 
   const ontology = program.command("ontology").description("Ontology lifecycle and reconciliation commands");
@@ -2639,6 +2775,13 @@ export async function main(): Promise<void> {
       }
       const { rebuildCode } = await import("./watch.js");
       const scopeSelection = resolveCliScopeSelection(opts);
+      const projectConfigDiscovery = discoverProjectConfig(updatePath);
+      if (projectConfigDiscovery.found) {
+        console.warn(
+          `WARNING: ${projectConfigDiscovery.path} detected — \`graphify update\` only rebuilds the code-mode graph and ignores profile inputs (corpus, registries, ontology). ` +
+          `For profile mode run \`graphify profile build ${updatePath}\` (deterministic, no LLM), then \`graphify extract --semantic <path> --backend …\` for semantic extraction. Continuing in code-only mode.`,
+        );
+      }
       console.log(`Re-extracting code files in ${updatePath} (no LLM needed)...`);
       const ok = await rebuildCode(updatePath, false, {
         force: Boolean(opts.force),

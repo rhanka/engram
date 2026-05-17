@@ -32,7 +32,7 @@ import {
 } from "./portable-artifacts.js";
 import { loadGraphFromData } from "./graph.js";
 import { persistCommunityLabels, resolveCommunityLabels } from "./community-labels.js";
-import type { GraphifyInputScopeMode, InputScopeSource } from "./types.js";
+import type { Extraction, GraphifyInputScopeMode, InputScopeSource } from "./types.js";
 
 const WATCHED_EXTENSIONS = new Set([
   ...CODE_EXTENSIONS,
@@ -131,21 +131,29 @@ export async function rebuildCode(
         !f.includes("node_modules"),
     );
 
+    let result: Extraction;
     if (codeFiles.length === 0) {
-      console.log("[graphify watch] No code files found - nothing to rebuild.");
-      return false;
-    }
-
-    const { extraction: result, diagnostics } = await extractWithDiagnostics(codeFiles);
-    if (diagnostics.length > 0) {
-      console.log(
-        `[graphify watch] AST extraction failed for ${diagnostics.length} file(s): ` +
-        `${diagnostics.slice(0, 3).map((d) => `${d.filePath}: ${d.error}`).join(" | ")}`,
-      );
-    }
-    if (result.nodes.length === 0) {
-      console.log("[graphify watch] Rebuild failed: AST extraction produced no graph nodes.");
-      return false;
+      console.log("[graphify watch] No code files found - writing empty graph index.");
+      result = {
+        nodes: [],
+        edges: [],
+        hyperedges: [],
+        input_tokens: 0,
+        output_tokens: 0,
+      };
+    } else {
+      const extracted = await extractWithDiagnostics(codeFiles);
+      result = extracted.extraction;
+      if (extracted.diagnostics.length > 0) {
+        console.log(
+          `[graphify watch] AST extraction failed for ${extracted.diagnostics.length} file(s): ` +
+          `${extracted.diagnostics.slice(0, 3).map((d) => `${d.filePath}: ${d.error}`).join(" | ")}`,
+        );
+      }
+      if (result.nodes.length === 0) {
+        console.log("[graphify watch] Rebuild failed: AST extraction produced no graph nodes.");
+        return false;
+      }
     }
 
     const relativeResult = makeExtractionPortable(result, root);
