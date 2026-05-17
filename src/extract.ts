@@ -2315,6 +2315,202 @@ async function extractRegexBackedCode(filePath: string, rootDir?: string): Promi
   return { nodes, edges };
 }
 
+const GROOVY_KEYWORDS = new Set([
+  "if", "for", "while", "switch", "catch", "return", "new", "throw", "assert",
+  "def", "class", "interface", "trait", "enum", "super", "this",
+]);
+
+function simpleGroovyTypeName(raw: string): string {
+  return raw
+    .replace(/<[^<>]*>/gu, "")
+    .replace(/\[\s*\]/gu, "")
+    .trim()
+    .split(".")
+    .filter(Boolean)
+    .pop()
+    ?.replace(/[^\w$].*$/u, "")
+    .trim() ?? "";
+}
+
+function braceDelta(text: string): number {
+  let delta = 0;
+  for (const char of text) {
+    if (char === "{") delta += 1;
+    if (char === "}") delta -= 1;
+  }
+  return delta;
+}
+
+async function extractGroovy(filePath: string, rootDir?: string): Promise<ExtractionResult> {
+  let source: string;
+  try {
+    source = readFileSync(filePath, "utf-8");
+  } catch (e: unknown) {
+    return { nodes: [], edges: [], error: String(e) };
+  }
+
+  const stem = qualifiedFileStem(filePath, rootDir);
+  const fileNid = _makeId(stem);
+  const nodes: GraphNode[] = [];
+  const edges: GraphEdge[] = [];
+  const seenIds = new Set<string>();
+  const classIdsByName = new Map<string, string>();
+  const methodsByClass = new Map<string, Map<string, string>>();
+  const pendingCalls: Array<{ source: string; classId: string; callee: string; line: number }> = [];
+
+  function addNode(nid: string, label: string, line: number, sourceFile: string = filePath): void {
+    if (!seenIds.has(nid)) {
+      seenIds.add(nid);
+      nodes.push({
+        id: nid,
+        label,
+        file_type: "code",
+        source_file: sourceFile,
+        source_location: sourceFile ? `L${line}` : "",
+      });
+    }
+  }
+
+  function addEdge(src: string, tgt: string, relation: string, line: number, extra: Record<string, unknown> = {}): void {
+    edges.push({
+      source: src,
+      target: tgt,
+      relation,
+      confidence: "EXTRACTED",
+      source_file: filePath,
+      source_location: `L${line}`,
+      weight: 1.0,
+      ...extra,
+    });
+  }
+
+  function addExternalType(rawName: string): string | null {
+    const name = simpleGroovyTypeName(rawName);
+    if (!name) return null;
+    const existing = classIdsByName.get(name.toLowerCase());
+    if (existing) return existing;
+    const nid = _makeId(name);
+    addNode(nid, name, 1, "");
+    return nid;
+  }
+
+  function addMethod(classId: string, name: string, label: string, line: number): string {
+    const nid = _makeId(classId, name);
+    addNode(nid, label, line);
+    addEdge(classId, nid, "method", line);
+    const classMethods = methodsByClass.get(classId) ?? new Map<string, string>();
+    classMethods.set(name.toLowerCase(), nid);
+    methodsByClass.set(classId, classMethods);
+    return nid;
+  }
+
+  function scanCalls(lineText: string, callerId: string, classId: string, line: number): void {
+    const callPattern = /\b([A-Za-z_$][\w$]*)\s*\(/gu;
+    for (const match of lineText.matchAll(callPattern)) {
+      const callee = match[1]!;
+      const index = match.index ?? 0;
+      const previous = index > 0 ? lineText[index - 1] ?? "" : "";
+      if (previous === "." || previous === "$" || /[A-Za-z0-9_]/u.test(previous)) continue;
+      if (GROOVY_KEYWORDS.has(callee)) continue;
+      pendingCalls.push({ source: callerId, classId, callee, line });
+    }
+  }
+
+  addNode(fileNid, basename(filePath), 1);
+
+  for (const match of source.matchAll(/^\s*import\s+(?:static\s+)?([A-Za-z_$][\w$]*(?:\.[A-Za-z_$*][\w$*]*)*)/gmu)) {
+    const imported = match[1]!;
+    const targetName = simpleGroovyTypeName(imported.replace(/\.\*$/u, ""));
+    if (!targetName) continue;
+    addEdge(fileNid, _makeId(targetName), "imports", lineForIndex(source, match.index ?? 0), { context: "import" });
+  }
+
+  const lines = source.split(/\r?\n/u);
+  let currentClass: { id: string; name: string; depth: number } | null = null;
+  let currentMethod: { id: string; classId: string; depth: number } | null = null;
+
+  const classPattern = /^\s*(?:(?:@\w+(?:\([^)]*\))?|public|private|protected|abstract|final|static)\s+)*(class|interface|trait|enum)\s+([A-Za-z_$][\w$]*)([^{]*)/u;
+  const quotedFeaturePattern = /^\s*def\s+(?:"([^"]+)"|'([^']+)')\s*\([^)]*\)\s*\{?/u;
+  const methodPattern = /^\s*(?:(?:public|private|protected|static|final|abstract|synchronized)\s+)*(?:(?:def|[A-Za-z_$][\w$]*(?:\s*<[^>{};]+>)?(?:\s*\[\])?(?:\s*\.\s*[A-Za-z_$][\w$]*)*)\s+)?([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*\{?/u;
+
+  for (let index = 0; index < lines.length; index++) {
+    const lineNumber = index + 1;
+    const lineText = lines[index]!;
+
+    if (!currentClass) {
+      const classMatch = classPattern.exec(lineText);
+      if (!classMatch) continue;
+
+      const className = classMatch[2]!;
+      const classId = _makeId(stem, className);
+      addNode(classId, className, lineNumber);
+      addEdge(fileNid, classId, "contains", lineNumber);
+      classIdsByName.set(className.toLowerCase(), classId);
+
+      const suffix = classMatch[3] ?? "";
+      const extendsMatch = /\bextends\s+([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)/u.exec(suffix);
+      if (extendsMatch) {
+        const parentId = addExternalType(extendsMatch[1]!);
+        if (parentId) addEdge(classId, parentId, "inherits", lineNumber);
+      }
+      const implementsMatch = /\bimplements\s+([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*(?:\s*,\s*[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)*)/u.exec(suffix);
+      if (implementsMatch) {
+        for (const implemented of implementsMatch[1]!.split(",")) {
+          const targetId = addExternalType(implemented);
+          if (targetId) addEdge(classId, targetId, "implements", lineNumber);
+        }
+      }
+
+      currentClass = { id: classId, name: className, depth: braceDelta(lineText) };
+      if (currentClass.depth <= 0) currentClass.depth = 1;
+      continue;
+    }
+
+    if (!currentMethod) {
+      const featureMatch = quotedFeaturePattern.exec(lineText);
+      const methodMatch = featureMatch ? null : methodPattern.exec(lineText);
+      const methodName = featureMatch?.[1] ?? featureMatch?.[2] ?? methodMatch?.[1] ?? null;
+      if (methodName && !GROOVY_KEYWORDS.has(methodName)) {
+        const label = `${methodName}()`;
+        const methodId = addMethod(currentClass.id, methodName, label, lineNumber);
+        const openBraceIndex = lineText.indexOf("{");
+        currentMethod = {
+          id: methodId,
+          classId: currentClass.id,
+          depth: openBraceIndex >= 0 ? braceDelta(lineText.slice(openBraceIndex)) : 0,
+        };
+        if (openBraceIndex >= 0) {
+          scanCalls(lineText.slice(openBraceIndex + 1), methodId, currentClass.id, lineNumber);
+        }
+        if (currentMethod.depth <= 0) {
+          currentMethod = null;
+        }
+      }
+    } else {
+      scanCalls(lineText, currentMethod.id, currentMethod.classId, lineNumber);
+      currentMethod.depth += braceDelta(lineText);
+      if (currentMethod.depth <= 0) {
+        currentMethod = null;
+      }
+    }
+
+    currentClass.depth += braceDelta(lineText);
+    if (currentClass.depth <= 0) {
+      currentClass = null;
+      currentMethod = null;
+    }
+  }
+
+  for (const call of pendingCalls) {
+    const target = methodsByClass.get(call.classId)?.get(call.callee.toLowerCase());
+    if (target && target !== call.source) {
+      addEdge(call.source, target, "calls", call.line);
+    }
+  }
+
+  return { nodes, edges };
+}
+
 const SQL_IDENT = String.raw`(?:"[^"]+"|\[[^\]]+\]|` + "`[^`]+`" + String.raw`|[A-Za-z_][\w$]*)(?:\s*\.\s*(?:"[^"]+"|\[[^\]]+\]|` + "`[^`]+`" + String.raw`|[A-Za-z_][\w$]*))*`;
 
 function normalizeSqlObjectName(value: string): string {
@@ -2323,6 +2519,15 @@ function normalizeSqlObjectName(value: string): string {
     .map((part) => part.trim().replace(/^["`\[]|["`\]]$/gu, ""))
     .filter(Boolean)
     .join(".");
+}
+
+function sqlStatementBlock(source: string, startIndex: number): string {
+  const tail = source.slice(startIndex);
+  const nextStatement = /(?:^|\n)\s*(?:create|alter|set\s+term|declare\s+external)\b/giu;
+  nextStatement.lastIndex = 1;
+  const next = nextStatement.exec(tail);
+  if (!next) return tail;
+  return tail.slice(0, next.index);
 }
 
 export async function extractSql(filePath: string, rootDir?: string): Promise<ExtractionResult> {
@@ -2344,6 +2549,7 @@ export async function extractSql(filePath: string, rootDir?: string): Promise<Ex
   }];
   const edges: GraphEdge[] = [];
   const tableIds = new Map<string, string>();
+  const sqlObjectIds = new Map<string, string>();
 
   function addTable(rawName: string, index: number): string {
     const name = normalizeSqlObjectName(rawName);
@@ -2355,6 +2561,32 @@ export async function extractSql(filePath: string, rootDir?: string): Promise<Ex
     nodes.push({
       id: nid,
       label: name,
+      file_type: "code",
+      source_file: filePath,
+      source_location: `L${lineForIndex(source, index)}`,
+    });
+    edges.push({
+      source: fileNid,
+      target: nid,
+      relation: "contains",
+      confidence: "EXTRACTED",
+      source_file: filePath,
+      source_location: `L${lineForIndex(source, index)}`,
+      weight: 1.0,
+    });
+    return nid;
+  }
+
+  function addSqlObject(rawName: string, label: string, index: number): string {
+    const name = normalizeSqlObjectName(rawName);
+    const key = name.toLowerCase();
+    const existing = sqlObjectIds.get(key);
+    if (existing) return existing;
+    const nid = _makeId(stem, name);
+    sqlObjectIds.set(key, nid);
+    nodes.push({
+      id: nid,
+      label,
       file_type: "code",
       source_file: filePath,
       source_location: `L${lineForIndex(source, index)}`,
@@ -2401,11 +2633,108 @@ export async function extractSql(filePath: string, rootDir?: string): Promise<Ex
   }
 
   const alterFkPattern = new RegExp(
-    String.raw`\balter\s+table\s+(${SQL_IDENT})[\s\S]*?\bforeign\s+key\s*\([^)]*\)\s*references\s+(${SQL_IDENT})`,
+    String.raw`\balter\s+table\s+(?:only\s+)?(${SQL_IDENT})[\s\S]*?\bforeign\s+key\s*\([^)]*\)\s*references\s+(${SQL_IDENT})`,
     "giu",
   );
   for (const match of source.matchAll(alterFkPattern)) {
     addReference(match[1]!, match[2]!, match.index ?? 0);
+  }
+
+  const emittedReferences = new Set(
+    edges
+      .filter((edge) => edge.relation === "references")
+      .map((edge) => `${edge.source}\0${edge.target}`),
+  );
+  const createTableStartPattern = new RegExp(String.raw`\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?(${SQL_IDENT})\s*\(`, "giu");
+  for (const match of source.matchAll(createTableStartPattern)) {
+    const tableName = match[1]!;
+    const tableId = addTable(tableName, match.index ?? 0);
+    const block = sqlStatementBlock(source, match.index ?? 0);
+    const referencePattern = new RegExp(String.raw`\breferences\s+(${SQL_IDENT})`, "giu");
+    for (const ref of block.matchAll(referencePattern)) {
+      const targetId = addTable(ref[1]!, (match.index ?? 0) + (ref.index ?? 0));
+      const key = `${tableId}\0${targetId}`;
+      if (emittedReferences.has(key)) continue;
+      emittedReferences.add(key);
+      edges.push({
+        source: tableId,
+        target: targetId,
+        relation: "references",
+        confidence: "EXTRACTED",
+        source_file: filePath,
+        source_location: `L${lineForIndex(source, (match.index ?? 0) + (ref.index ?? 0))}`,
+        weight: 1.0,
+      });
+    }
+  }
+
+  const nonTableSqlWords = new Set([
+    "select", "where", "set", "dual", "null", "true", "false", "first", "skip",
+    "rows", "next", "only", "lateral", "values", "new", "old",
+  ]);
+
+  function addSqlBodyTableEdges(sourceId: string, block: string, blockOffset: number): void {
+    const bodyMatch = /\bbegin\b/i.exec(block);
+    if (!bodyMatch) return;
+    const body = block.slice(bodyMatch.index);
+    const bodyOffset = blockOffset + bodyMatch.index;
+    const seen = new Set<string>();
+    const accessPattern = new RegExp(String.raw`\b(?:from|join|into|update)\s+(?:only\s+)?(${SQL_IDENT})`, "giu");
+    for (const match of body.matchAll(accessPattern)) {
+      const tableName = normalizeSqlObjectName(match[1]!);
+      const simpleName = tableName.split(".").pop()?.toLowerCase() ?? "";
+      if (!tableName || nonTableSqlWords.has(tableName.toLowerCase()) || nonTableSqlWords.has(simpleName)) continue;
+      const tableId = addTable(tableName, bodyOffset + (match.index ?? 0));
+      if (seen.has(tableId)) continue;
+      seen.add(tableId);
+      edges.push({
+        source: sourceId,
+        target: tableId,
+        relation: "reads_from",
+        confidence: "EXTRACTED",
+        source_file: filePath,
+        source_location: `L${lineForIndex(source, bodyOffset + (match.index ?? 0))}`,
+        weight: 1.0,
+      });
+    }
+  }
+
+  const createTriggerPattern = new RegExp(
+    String.raw`\bcreate\s+(?:or\s+(?:replace|alter)\s+)?(?:constraint\s+)?trigger\s+(${SQL_IDENT})\b`,
+    "giu",
+  );
+  for (const match of source.matchAll(createTriggerPattern)) {
+    const triggerName = normalizeSqlObjectName(match[1]!);
+    const triggerId = addSqlObject(triggerName, triggerName, match.index ?? 0);
+    const block = sqlStatementBlock(source, match.index ?? 0);
+    const blockOffset = match.index ?? 0;
+    const triggerTablePattern = new RegExp(String.raw`\b(?:on|for)\s+(?:only\s+)?(${SQL_IDENT})`, "giu");
+    for (const tableMatch of block.matchAll(triggerTablePattern)) {
+      const tableName = normalizeSqlObjectName(tableMatch[1]!);
+      if (!tableName || tableName.toLowerCase() === "each") continue;
+      const tableId = addTable(tableName, blockOffset + (tableMatch.index ?? 0));
+      edges.push({
+        source: triggerId,
+        target: tableId,
+        relation: "triggers",
+        confidence: "EXTRACTED",
+        source_file: filePath,
+        source_location: `L${lineForIndex(source, blockOffset + (tableMatch.index ?? 0))}`,
+        weight: 1.0,
+      });
+      break;
+    }
+    addSqlBodyTableEdges(triggerId, block, blockOffset);
+  }
+
+  const createRoutinePattern = new RegExp(
+    String.raw`\bcreate\s+(?:or\s+(?:replace|alter)\s+)?(?:procedure|function)\s+(${SQL_IDENT})\b`,
+    "giu",
+  );
+  for (const match of source.matchAll(createRoutinePattern)) {
+    const routineName = normalizeSqlObjectName(match[1]!);
+    const routineId = addSqlObject(routineName, `${routineName}()`, match.index ?? 0);
+    addSqlBodyTableEdges(routineId, sqlStatementBlock(source, match.index ?? 0), match.index ?? 0);
   }
 
   return { nodes, edges };
@@ -3935,8 +4264,8 @@ const _DISPATCH: Record<string, ExtractorFn> = {
   ".svelte": extractSvelte,
   ".astro": extractAstro,
   ".dart": extractRegexBackedCode,
-  ".groovy": extractRegexBackedCode,
-  ".gradle": extractRegexBackedCode,
+  ".groovy": extractGroovy,
+  ".gradle": extractGroovy,
   ".v": extractRegexBackedCode,
   ".sv": extractRegexBackedCode,
   ".sql": extractSql,

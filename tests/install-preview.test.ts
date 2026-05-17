@@ -17,6 +17,16 @@ afterEach(() => {
   }
 });
 
+function withProcessPlatform<T>(value: string, callback: () => T): T {
+  const descriptor = Object.getOwnPropertyDescriptor(process, "platform");
+  Object.defineProperty(process, "platform", { value });
+  try {
+    return callback();
+  } finally {
+    if (descriptor) Object.defineProperty(process, "platform", descriptor);
+  }
+}
+
 describe("install mutation previews", () => {
   it("lists Codex project files and hooks before install", () => {
     const preview = platformInstallPreview("/repo", "codex");
@@ -68,8 +78,8 @@ describe("install mutation previews", () => {
 
   it("lists upstream v4 platform project files", () => {
     expect(platformInstallPreview("/repo", "antigravity").writes).toEqual([
-      resolve("/repo/.agent/rules/graphify.md"),
-      resolve("/repo/.agent/workflows/graphify.md"),
+      resolve("/repo/.agents/rules/graphify.md"),
+      resolve("/repo/.agents/workflows/graphify.md"),
     ]);
 
     expect(platformInstallPreview("/repo", "kiro").writes).toEqual([
@@ -89,6 +99,13 @@ describe("install mutation previews", () => {
       expect(preview.writes.some((path) => path.endsWith("skills/graphify/SKILL.md"))).toBe(true);
       expect(preview.writes.some((path) => path.endsWith("skills/graphify/.graphify_version"))).toBe(true);
     }
+  });
+
+  it("previews the Antigravity Windows skill destination without using the project root", () => {
+    const preview = withProcessPlatform("win32", () => globalSkillInstallPreview("antigravity"));
+
+    expect(preview.writes.some((path) => path.includes(`${join(".agents", "skills", "graphify")}`))).toBe(true);
+    expect(preview.writes.some((path) => path.includes(`${join(".agent", "skills", "graphify")}`))).toBe(false);
   });
 
   it("lists Kimi Code global skill files", () => {

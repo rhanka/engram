@@ -438,7 +438,12 @@ const PLATFORM_CONFIG: Record<string, PlatformConfig> = {
   },
   antigravity: {
     skill_file: "skill.md",
-    skill_dst: join(".agent", "skills", "graphify", "SKILL.md"),
+    skill_dst: join(".agents", "skills", "graphify", "SKILL.md"),
+    claude_md: false,
+  },
+  "antigravity-windows": {
+    skill_file: "skill-windows.md",
+    skill_dst: join(".agents", "skills", "graphify", "SKILL.md"),
     claude_md: false,
   },
   "vscode-copilot-chat": {
@@ -461,12 +466,20 @@ function canonicalPlatformName(platformName: string): string {
   return PLATFORM_ALIASES[platformName] ?? platformName;
 }
 
+function runtimeGlobalSkillPlatformName(platformName: string): string {
+  const canonical = canonicalPlatformName(platformName);
+  if (canonical === "antigravity" && process.platform === "win32") {
+    return "antigravity-windows";
+  }
+  return canonical;
+}
+
 function platformNamesForError(): string {
   return [...Object.keys(PLATFORM_CONFIG), ...Object.keys(PLATFORM_ALIASES)].join(", ");
 }
 
 function resolveGlobalSkillDestination(platformName: string): string {
-  const canonical = canonicalPlatformName(platformName);
+  const canonical = runtimeGlobalSkillPlatformName(platformName);
   const cfg = PLATFORM_CONFIG[canonical];
   if (!cfg) {
     console.error(`error: unknown platform '${platformName}'. Choose from: ${platformNamesForError()}`);
@@ -641,8 +654,8 @@ export function platformInstallPreview(projectDir: string = ".", platformName: s
   }
   if (platformName === "antigravity") {
     preview.writes.push(
-      previewPath(projectDir, ".agent/rules/graphify.md"),
-      previewPath(projectDir, ".agent/workflows/graphify.md"),
+      previewPath(projectDir, ".agents/rules/graphify.md"),
+      previewPath(projectDir, ".agents/workflows/graphify.md"),
     );
     preview.notes.push("No platform hook equivalent; Antigravity rules are the always-on mechanism.");
     return preview;
@@ -676,11 +689,12 @@ export function platformInstallPreview(projectDir: string = ".", platformName: s
 }
 
 export function globalSkillInstallPreview(platformName: string): InstallMutationPreview {
-  platformName = canonicalPlatformName(platformName);
-  const cfg = PLATFORM_CONFIG[platformName];
-  const preview = emptyPreview(platformName, "install");
+  const requestedPlatformName = canonicalPlatformName(platformName);
+  const runtimePlatformName = runtimeGlobalSkillPlatformName(platformName);
+  const cfg = PLATFORM_CONFIG[runtimePlatformName];
+  const preview = emptyPreview(requestedPlatformName, "install");
   if (!cfg) return preview;
-  const skillDst = resolveGlobalSkillDestination(platformName);
+  const skillDst = resolveGlobalSkillDestination(runtimePlatformName);
   preview.writes.push(skillDst, join(dirname(skillDst), ".graphify_version"));
   if (cfg.claude_md) {
     preview.writes.push(join(homedir(), ".claude", "CLAUDE.md"));
@@ -725,8 +739,8 @@ This project has a graphify knowledge graph at .graphify/.
 - After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
 `;
 
-const ANTIGRAVITY_RULE_PATH = join(".agent", "rules", "graphify.md");
-const ANTIGRAVITY_WORKFLOW_PATH = join(".agent", "workflows", "graphify.md");
+const ANTIGRAVITY_RULE_PATH = join(".agents", "rules", "graphify.md");
+const ANTIGRAVITY_WORKFLOW_PATH = join(".agents", "workflows", "graphify.md");
 const ANTIGRAVITY_RULE = `---
 description: graphify knowledge graph context
 ---
@@ -753,7 +767,7 @@ description: Turn any folder of files into a navigable knowledge graph
 # Workflow: graphify
 
 ## Steps
-Follow the graphify skill installed at ~/.agent/skills/graphify/SKILL.md to run the full TypeScript-backed pipeline.
+Follow the graphify skill installed at ~/.agents/skills/graphify/SKILL.md to run the full TypeScript-backed pipeline.
 
 If no path argument is given, use \`.\` (current directory).
 `;
@@ -913,7 +927,7 @@ function renderAiderSkill(baseSkill: string): string {
 }
 
 function loadSkillContent(platformName: string): string {
-  platformName = canonicalPlatformName(platformName);
+  platformName = runtimeGlobalSkillPlatformName(platformName);
   const cfg = PLATFORM_CONFIG[platformName];
   if (!cfg) {
     console.error(`error: unknown platform '${platformName}'. Choose from: ${platformNamesForError()}`);
@@ -938,7 +952,7 @@ function loadSkillContent(platformName: string): string {
 }
 
 function uninstallSkill(platformName: string): void {
-  platformName = canonicalPlatformName(platformName);
+  platformName = runtimeGlobalSkillPlatformName(platformName);
   const cfg = PLATFORM_CONFIG[platformName];
   if (!cfg) {
     console.error(`error: unknown platform '${platformName}'. Choose from: ${platformNamesForError()}`);
@@ -1345,7 +1359,7 @@ function uninstallOpenCodePlugin(projectDir: string): void {
 // ---------------------------------------------------------------------------
 
 function writeGlobalSkill(platformName: string): string {
-  platformName = canonicalPlatformName(platformName);
+  platformName = runtimeGlobalSkillPlatformName(platformName);
   const cfg = PLATFORM_CONFIG[platformName];
   if (!cfg) {
     console.error(`error: unknown platform '${platformName}'. Choose from: ${platformNamesForError()}`);
@@ -1799,8 +1813,8 @@ export async function main(): Promise<void> {
 
   {
     const sub = program.command("antigravity").description("Google Antigravity skill management");
-    sub.command("install").description("Write .agent rules/workflow + global skill").action(() => antigravityInstall());
-    sub.command("uninstall").description("Remove .agent rules/workflow + global skill").action(() => antigravityUninstall());
+    sub.command("install").description("Write .agents rules/workflow + global skill").action(() => antigravityInstall());
+    sub.command("uninstall").description("Remove .agents rules/workflow + global skill").action(() => antigravityUninstall());
   }
 
   for (const cmd of ["aider", "codex", "opencode", "claw", "droid", "trae", "trae-cn", "hermes"]) {

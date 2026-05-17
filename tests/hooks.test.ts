@@ -51,8 +51,11 @@ describe("hooks", () => {
       expect(content).toContain("CHERRY_PICK_HEAD");
     }
     const postCommit = readFileSync(hookPath(tmpDir, "post-commit"), "utf-8");
-    expect(postCommit).toContain(".cache/graphify-rebuild.log");
+    expect(postCommit).toContain("LOCALAPPDATA");
+    expect(postCommit).toContain("XDG_CACHE_HOME");
+    expect(postCommit).toContain("GRAPHIFY_LOG=\"$GRAPHIFY_CACHE_DIR/rebuild.log\"");
     expect(postCommit).toContain("nohup");
+    expect(postCommit).toContain("command -v nohup");
     expect(postCommit).toContain("disown");
     expect(readFileSync(join(tmpDir, ".gitattributes"), "utf-8")).toContain(".graphify/graph.json merge=graphify-json");
     expect(readFileSync(join(tmpDir, ".gitattributes"), "utf-8")).toContain("graphify-out/graph.json merge=graphify-json");

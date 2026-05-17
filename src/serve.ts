@@ -3,7 +3,7 @@
  *
  * Uses @modelcontextprotocol/sdk for the server and graphology for the graph.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import Graph from "graphology";
 import { bidirectional } from "graphology-shortest-path/unweighted.js";
 import { basename, dirname, join, resolve } from "node:path";
@@ -60,6 +60,22 @@ interface McpResourceDefinition {
   mimeType: string;
 }
 
+interface GraphFileSignature {
+  mtimeMs: number;
+  size: number;
+}
+
+interface GraphSnapshot {
+  graph: Graph;
+  communities: Map<number, string[]>;
+  signature: GraphFileSignature;
+}
+
+interface ReloadingGraphStore {
+  graphPath: string;
+  get(): GraphSnapshot;
+}
+
 const MCP_RESOURCES: McpResourceDefinition[] = [
   {
     uri: "graphify://report",
@@ -103,26 +119,68 @@ const MCP_RESOURCES: McpResourceDefinition[] = [
 // Graph loading
 // ---------------------------------------------------------------------------
 
-function loadGraph(graphPath: string): Graph {
-  let safePath: string;
+function validateGraphFilePath(graphPath: string): string {
   try {
-    safePath = validateGraphPath(graphPath, dirname(resolve(graphPath)));
+    return validateGraphPath(graphPath, dirname(resolve(graphPath)));
+  } catch (err) {
+    console.error(`error: ${err instanceof Error ? err.message : err}`);
+    process.exit(1);
+  }
+}
+
+function readGraphData(safePath: string): SerializedGraphData {
+  let data: SerializedGraphData;
+  try {
+    data = JSON.parse(readFileSync(safePath, "utf-8")) as SerializedGraphData;
+  } catch (err) {
+    throw new Error(
+      `graph.json is corrupted (${err instanceof Error ? err.message : err}). Re-run the graphify skill to rebuild it (for Codex: $graphify .).`,
+    );
+  }
+  return data;
+}
+
+function graphFileSignature(safePath: string): GraphFileSignature {
+  const stat = statSync(safePath);
+  return {
+    mtimeMs: stat.mtimeMs,
+    size: stat.size,
+  };
+}
+
+function sameGraphFileSignature(a: GraphFileSignature, b: GraphFileSignature): boolean {
+  return a.mtimeMs === b.mtimeMs && a.size === b.size;
+}
+
+function loadGraphSnapshot(safePath: string): GraphSnapshot {
+  const graph = loadGraphFromData(readGraphData(safePath));
+  return {
+    graph,
+    communities: communitiesFromGraph(graph),
+    signature: graphFileSignature(safePath),
+  };
+}
+
+function createReloadingGraphStore(graphPath: string): ReloadingGraphStore {
+  const safePath = validateGraphFilePath(graphPath);
+  let snapshot: GraphSnapshot;
+  try {
+    snapshot = loadGraphSnapshot(safePath);
   } catch (err) {
     console.error(`error: ${err instanceof Error ? err.message : err}`);
     process.exit(1);
   }
 
-  let data: SerializedGraphData;
-  try {
-    data = JSON.parse(readFileSync(safePath, "utf-8")) as SerializedGraphData;
-  } catch (err) {
-    console.error(
-      `error: graph.json is corrupted (${err instanceof Error ? err.message : err}). Re-run the graphify skill to rebuild it (for Codex: $graphify .).`,
-    );
-    process.exit(1);
-  }
-
-  return loadGraphFromData(data);
+  return {
+    graphPath: safePath,
+    get(): GraphSnapshot {
+      const latest = graphFileSignature(safePath);
+      if (!sameGraphFileSignature(snapshot.signature, latest)) {
+        snapshot = loadGraphSnapshot(safePath);
+      }
+      return snapshot;
+    },
+  };
 }
 
 function getVersion(): string {
@@ -711,8 +769,7 @@ export async function serve(
     );
   }
 
-  const G = loadGraph(graphPath);
-  const communities = communitiesFromGraph(G);
+  const graphStore = createReloadingGraphStore(graphPath);
   const ontologyWrite = options.ontology?.write === true;
   if (ontologyWrite && !options.ontology?.profileStatePath) {
     throw new Error("ontology write mode requires profileStatePath");
@@ -1015,7 +1072,8 @@ export async function serve(
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     const uri = String(request.params.uri);
     const resource = MCP_RESOURCES.find((candidate) => candidate.uri === uri);
-    const text = readMcpResource(uri, graphPath, G, communities);
+    const { graph, communities } = graphStore.get();
+    const text = readMcpResource(uri, graphStore.graphPath, graph, communities);
     return {
       contents: [
         {
@@ -1031,17 +1089,23 @@ export async function serve(
     string,
     (args: Record<string, unknown>) => string
   > = {
-    first_hop_summary: () => toolFirstHopSummary(G),
-    review_delta: (a) => toolReviewDelta(G, a),
-    review_analysis: (a) => toolReviewAnalysis(G, a),
-    recommend_commits: (a) => toolRecommendCommits(G, a),
-    query_graph: (a) => toolQueryGraph(G, a),
-    get_node: (a) => toolGetNode(G, a),
-    get_neighbors: (a) => toolGetNeighbors(G, a),
-    get_community: (a) => toolGetCommunity(communities, G, a),
-    god_nodes: (a) => toolGodNodes(G, a),
-    graph_stats: () => toolGraphStats(G, communities),
-    shortest_path: (a) => toolShortestPath(G, a),
+    first_hop_summary: () => toolFirstHopSummary(graphStore.get().graph),
+    review_delta: (a) => toolReviewDelta(graphStore.get().graph, a),
+    review_analysis: (a) => toolReviewAnalysis(graphStore.get().graph, a),
+    recommend_commits: (a) => toolRecommendCommits(graphStore.get().graph, a),
+    query_graph: (a) => toolQueryGraph(graphStore.get().graph, a),
+    get_node: (a) => toolGetNode(graphStore.get().graph, a),
+    get_neighbors: (a) => toolGetNeighbors(graphStore.get().graph, a),
+    get_community: (a) => {
+      const { graph, communities } = graphStore.get();
+      return toolGetCommunity(communities, graph, a);
+    },
+    god_nodes: (a) => toolGodNodes(graphStore.get().graph, a),
+    graph_stats: () => {
+      const { graph, communities } = graphStore.get();
+      return toolGraphStats(graph, communities);
+    },
+    shortest_path: (a) => toolShortestPath(graphStore.get().graph, a),
   };
   if (ontologyPatchContext) {
     handlers.list_reconciliation_candidates = (a) =>

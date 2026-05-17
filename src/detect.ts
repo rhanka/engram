@@ -2,7 +2,7 @@
  * File discovery, type classification, and corpus health checks.
  */
 import {
-  readdirSync, readFileSync, writeFileSync, statSync, existsSync, mkdirSync, lstatSync,
+  readdirSync, readFileSync, writeFileSync, statSync, existsSync, mkdirSync, lstatSync, realpathSync,
 } from "node:fs";
 import { join, resolve, extname, basename, relative, sep, dirname } from "node:path";
 import { createHash } from "node:crypto";
@@ -326,9 +326,19 @@ function walkDir(
   ignorePatterns: GraphifyIgnoreRule[],
   followSymlinks: boolean,
   skipPrune: boolean,
+  visitedDirs: Set<string> = new Set(),
 ): string[] {
   const result: string[] = [];
   const hasNegationRules = ignorePatterns.some((rule) => rule.negated);
+  if (followSymlinks) {
+    try {
+      const realDir = realpathSync(dir);
+      if (visitedDirs.has(realDir)) return result;
+      visitedDirs.add(realDir);
+    } catch {
+      return result;
+    }
+  }
   let entries: string[];
   try {
     entries = readdirSync(dir);
@@ -351,14 +361,22 @@ function walkDir(
         if (isNoiseDir(entry)) continue;
         if (isIgnored(full, root, ignorePatterns) && !hasNegationRules) continue;
       }
-      result.push(...walkDir(full, root, ignorePatterns, followSymlinks, skipPrune));
+      result.push(...walkDir(full, root, ignorePatterns, followSymlinks, skipPrune, visitedDirs));
     } else if (stat.isFile()) {
       if (!skipPrune && isIgnored(full, root, ignorePatterns)) continue;
-      result.push(full);
+      result.push(canonicalFilePath(full));
     }
   }
 
   return result;
+}
+
+function canonicalFilePath(filePath: string): string {
+  try {
+    return realpathSync(filePath);
+  } catch {
+    return filePath;
+  }
 }
 
 export interface DetectOptions {

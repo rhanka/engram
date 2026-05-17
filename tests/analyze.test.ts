@@ -86,6 +86,51 @@ describe("surprisingConnections", () => {
     expect(surprises[0]?.why).not.toContain("crosses file types");
   });
 
+  it("demotes inferred calls and uses between different code languages", () => {
+    for (const relation of ["calls", "uses"] as const) {
+      const G = new Graph({ type: "undirected" });
+      G.mergeNode("ts_service", {
+        label: "TypeScriptService",
+        source_file: "frontend/service.ts",
+        file_type: "code",
+      });
+      G.mergeNode("py_worker", {
+        label: "PythonWorker",
+        source_file: "backend/job.py",
+        file_type: "code",
+      });
+      G.mergeNode("py_service", {
+        label: "PythonService",
+        source_file: "backend/service.py",
+        file_type: "code",
+      });
+      G.mergeNode("py_helper", {
+        label: "PythonHelper",
+        source_file: "backend/helper.py",
+        file_type: "code",
+      });
+      G.mergeEdge("ts_service", "py_worker", {
+        relation,
+        confidence: "INFERRED",
+      });
+      G.mergeEdge("py_service", "py_helper", {
+        relation: "calls",
+        confidence: "EXTRACTED",
+      });
+
+      const surprises = surprisingConnections(G, new Map([
+        [0, ["ts_service", "py_service", "py_helper"]],
+        [1, ["py_worker"]],
+      ]), 2);
+
+      expect(surprises).toHaveLength(2);
+      expect(surprises[0]?.source_files).toEqual(["backend/service.py", "backend/helper.py"]);
+      expect(surprises[1]?.source_files).toEqual(["frontend/service.ts", "backend/job.py"]);
+      expect(surprises[1]?.why).not.toContain("connects across different repos/directories");
+      expect(surprises[1]?.why).not.toContain("bridges separate communities");
+    }
+  });
+
   it("is deterministic for large single-source graphs", () => {
     const G = new Graph({ type: "undirected" });
     for (let i = 0; i < 1100; i++) {

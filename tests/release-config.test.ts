@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 describe("release configuration", () => {
-  it("tracks the 0.9.3 patch release across package metadata and changelog", () => {
+  it("tracks the 0.9.4 patch release across package metadata and changelog", () => {
     const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8")) as { version?: string };
     const lock = JSON.parse(readFileSync(new URL("../package-lock.json", import.meta.url), "utf-8")) as {
       version?: string;
@@ -10,10 +10,10 @@ describe("release configuration", () => {
     };
     const changelog = readFileSync(new URL("../CHANGELOG.md", import.meta.url), "utf-8");
 
-    expect(pkg.version).toBe("0.9.3");
-    expect(lock.version).toBe("0.9.3");
-    expect(lock.packages?.[""]?.version).toBe("0.9.3");
-    expect(changelog).toContain("## 0.9.3 (2026-05-17)");
+    expect(pkg.version).toBe("0.9.4");
+    expect(lock.version).toBe("0.9.4");
+    expect(lock.packages?.[""]?.version).toBe("0.9.4");
+    expect(changelog).toContain("## 0.9.4 (2026-05-17)");
   });
 
   it("runs the main TypeScript CI test matrix on Node 20, 22, and 24", () => {
