@@ -10,6 +10,11 @@ const { WhisperModelMock, freeMock, transcribeMock } = vi.hoisted(() => ({
   transcribeMock: vi.fn(),
 }));
 
+function createMockWhisperModel(this: { transcribe: typeof transcribeMock; free: typeof freeMock }): void {
+  this.transcribe = transcribeMock;
+  this.free = freeMock;
+}
+
 vi.mock("node:child_process", () => ({
   spawnSync: vi.fn(),
 }));
@@ -48,10 +53,7 @@ describe("transcribe helpers", () => {
       [{ text: "decoded speech" }],
       { language: "en", language_probability: 1, duration: 1, duration_after_vad: 1 },
     ]);
-    WhisperModelMock.mockImplementation(() => ({
-      transcribe: transcribeMock,
-      free: freeMock,
-    }));
+    WhisperModelMock.mockImplementation(createMockWhisperModel);
   });
 
   afterEach(() => {

@@ -4,6 +4,14 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.9.3 (2026-05-17)
+
+Track E major-upgrade follow-up.
+
+- Bump `neo4j-driver` to 6.0.1, `typescript` to 6.0.3, and `vitest` to 4.1.6.
+- Keeps optional install-footprint dependencies opt-in; `npm outdated --depth 0` only reports intentionally missing optional peers after this pass.
+- Patch bump only; no graph schema change.
+
 ## 0.9.2 (2026-05-16)
 
 Track F / E patch release.
