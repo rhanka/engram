@@ -952,6 +952,24 @@ describe("public CLI runtime command parity", () => {
     expect(reportText).toContain("# Graph Report - .");
   });
 
+  it("treats one-shot update on an empty project as a successful empty index", async () => {
+    const dir = tempProject();
+
+    const result = await runCli(["update", ".", "--force", "--scope", "all"], dir);
+    const graphText = readFileSync(join(dir, ".graphify", "graph.json"), "utf-8");
+    const reportText = readFileSync(join(dir, ".graphify", "GRAPH_REPORT.md"), "utf-8");
+    const graph = JSON.parse(graphText) as { nodes?: unknown[]; links?: unknown[] };
+    const portable = await runCli(["portable-check", ".graphify"], dir, { interceptExit: true });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.logs.join("\n")).toContain("No code files found");
+    expect(graph.nodes).toEqual([]);
+    expect(graph.links).toEqual([]);
+    expect(reportText).toContain("0 nodes");
+    expect(reportText).toContain("Included files: 0");
+    expect(portable.exitCode).toBe(0);
+  });
+
   it("checks portable .graphify artifacts while ignoring local lifecycle metadata", async () => {
     const dir = tempProject();
     const graphifyDir = join(dir, ".graphify");

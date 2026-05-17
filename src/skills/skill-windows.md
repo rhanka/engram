@@ -1301,7 +1301,8 @@ Do not add embeddings, databases, a resident LLM backend, or a forked OCR/PDF pi
 
 - Runtime state lives under `.graphify/`; do not create legacy visible state directories.
 - If `.graphify/graph.json` is missing but legacy `graphify-out/graph.json` exists, run `graphify migrate-state --dry-run` first. If it reports tracked legacy artifacts, ask before using the recommended `git mv -f graphify-out .graphify` and commit message; do not auto-stage or auto-commit.
-- Use `.graphify/wiki/index.md` first when present, then `.graphify/GRAPH_REPORT.md`, before searching raw files.
+- For architecture or codebase questions, when `.graphify/graph.json` exists, first run `graphify query "<question>"` (or `graphify path "<A>" "<B>"` / `graphify explain "<concept>"`); these return a scoped subgraph, usually much smaller than `GRAPH_REPORT.md` or raw grep output.
+- Use `.graphify/wiki/index.md` first when present; read `.graphify/GRAPH_REPORT.md` only for broad architecture review or when `query` / `path` / `explain` do not surface enough context.
 - If `.graphify/needs_update` exists or `.graphify/branch.json` has `"stale": true`, tell the user the graph is stale and run the platform graphify command with `--update` before relying on semantic results.
 - Before proposing or committing `.graphify` artifacts, run `graphify portable-check .graphify`; commit-safe graph artifacts must use repo-relative paths, and never commit `.graphify/branch.json`, `.graphify/worktree.json`, `.graphify/needs_update`, or `.graphify/cache/`. If a repo already tracks any of them, first add them to `.gitignore`, then propose `git rm --cached .graphify/branch.json .graphify/worktree.json .graphify/needs_update` and `git rm -r --cached .graphify/cache`; never mutate git state without asking.
 - Git hooks may mark stale state after branch switches, merges, and rewrites. Never delete `.graphify/` automatically; use `graphify state prune` only as a non-destructive cleanup preview.

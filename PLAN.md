@@ -273,7 +273,8 @@ M0..M5 lots all landed. `.astro` extractor (`6a7de56`), watch `.rebuild.lock` (`
 **Spec (1/1)**
 - [x] `spec/SPEC_TRACK_F_UPSTREAM_BILAN.md` defines cadence, buckets (`must-port` / `already-covered` / `intentional-delta` / `defer`), outputs, and decision rules. Bilan #1 snapshot recorded in that spec on 2026-05-15.
 
-**Plan (1/5)** — lots scoped against bilan #1; only the F-Doc section is implementation-trivial:
+**Plan (2/6)** — lots scoped against the weekly bilans; F-Doc and F-Install are implementation-trivial:
+- [x] **Lot F-Install — Query-first install guidance / `GRAPH_REPORT.md` demotion** (~0.5 day). Port upstream PR #891 / v0.8.6 across installer constants, assistant skills, README, and project meta files. Existing installs refresh in place instead of preserving stale report-first text. Release vehicle: `graphifyy@0.9.2`.
 - [ ] **Lot F-P1 — Windows / hook stability** (~3-4 days). Target upstream commits:
   - `1b3296a` — *Fix Windows skill temp files polluting project root* (`upstream/v7`-line).
   - `ac9587b` — *Fix antigravity Windows skill and Python detection for uv/pipx* (PR #831 in upstream).
@@ -287,9 +288,10 @@ M0..M5 lots all landed. `.astro` extractor (`6a7de56`), watch `.rebuild.lock` (`
   - `299b6ba` — *v0.8.4: SQL FK/trigger extraction, deletion pruning fixes, community label normalization* (`upstream/v7`).
   Plus upstream Groovy edge-fidelity follow-ups on the `v8` branch. Only mandatory if a parity claim against `v8` / `v0.8.5` is required; otherwise downgrade to `defer`.
 - [ ] **Lot F-Opt — v1/v2 hypergraph + wiki rewrite** (deferred). Target upstream refs: `main` / `v2` branch (36 commits as of bilan #1), `v1.0.0` pre-release tag. Hypergraph generation and wiki-export rewrite. Not adopted until upstream stabilises and a separate spec authorises adoption. See `Open F decisions` below.
-- [ ] **Lot F-Doc — Version Alignment section** (~0.5 day). Add a "Version Alignment" section to `UPSTREAM_GAP.md` that maps `graphifyy X.Y.Z` to the closest upstream Python parity reference, including the explicit TS-only delta description. Tracks current state `graphifyy@0.9.0 ≈ graphify@0.7.19 + TS-only Track E dep cleanup + Track C visual encoding`, with bilan #1 must-port rows explicitly listed as the outstanding gap against `graphify@0.8.5`.
+- [x] **Lot F-Doc — Version Alignment section** (~0.5 day). `UPSTREAM_GAP.md` maps `graphifyy@0.9.2` to `graphify@0.7.19` plus TS-only deltas and the closed upstream #891 install-contract gap, while keeping the remaining `v0.8.x` rows explicit.
 
-**Infra (0/3)**
+**Infra (1/4)**
+- [x] F-Install infra impl (query-first installer/skills/docs, refresh-in-place tests).
 - [ ] F-P1 infra impl (Windows hook portability fixes ported, with tests).
 - [ ] F-P2 infra impl (gitignore parent-exclusion + short-label dedup + cross-language INFERRED suppression + MCP watch).
 - [ ] F-M1 infra impl (SQL FK/trigger extraction + community label normalisation; pending decision).
@@ -300,8 +302,8 @@ M0..M5 lots all landed. `.astro` extractor (`6a7de56`), watch `.rebuild.lock` (`
 - [ ] Smoke after each must-port port: `graphify update` on this repo + on `../public-domaine-mystery-sagas-pack` + `portable-check`.
 - [ ] Vitest regression coverage per lot (added inside the relevant lot, not as a separate UAT lot).
 
-**Release / Docs (0/1)**
-- [ ] `UPSTREAM_GAP.md` bilan #1 snapshot recorded as a dedicated section; Version Alignment section published; CHANGELOG entry tied to the next minor/major bump that absorbs F-P1/F-P2.
+**Release / Docs (1/1)**
+- [x] `UPSTREAM_GAP.md` Version Alignment row published for `graphifyy@0.9.2`; CHANGELOG entry documents F-Install and E Node 24.
 
 ### Open F decisions
 

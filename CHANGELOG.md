@@ -4,6 +4,15 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.9.2 (2026-05-16)
+
+Track F / E patch release.
+
+- Port upstream PR #891's query-first assistant guidance to the TypeScript installer surfaces. Installed project files, hooks, OpenCode plugin text, bundled skills, README, `CLAUDE.md`, and `AGENTS.md` now prefer `graphify query` / `graphify path` / `graphify explain` and keep `GRAPH_REPORT.md` as broad-context fallback.
+- Existing installs are refreshed in place instead of keeping stale report-first sections for Claude, Gemini, AGENTS-based platforms, VS Code Copilot instructions, Cursor, Kiro, and Antigravity.
+- Add Node 24 to the main TypeScript CI matrix and move direct-LLM/smoke release validation to Node 24.
+- Patch bump only; no graph schema change.
+
 ## 0.9.1 (2026-05-16)
 
 Track A finalisation — additive proof.

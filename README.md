@@ -177,7 +177,7 @@ After building a graph, run this once in your project:
 | Kiro | `graphify kiro install` |
 | Google Antigravity | `graphify antigravity install` |
 
-**Claude Code** does two things: writes a `CLAUDE.md` section telling Claude to read `.graphify/GRAPH_REPORT.md` before answering architecture questions, and installs a **PreToolUse hook** (`settings.json`) that fires before every Bash tool call. If a knowledge graph exists, Claude sees: _"graphify: Knowledge graph exists. Read GRAPH_REPORT.md for god nodes and community structure before searching raw files."_ — so Claude navigates via the graph instead of grepping through every file.
+**Claude Code** does two things: writes a `CLAUDE.md` section telling Claude to prefer scoped graph commands such as `graphify query`, `graphify path`, and `graphify explain`, and installs a **PreToolUse hook** (`settings.json`) that fires before every Bash tool call. If a knowledge graph exists, Claude sees a compact reminder to query `.graphify/graph.json` first and use `GRAPH_REPORT.md` only for broad architecture context.
 
 **Codex** writes to `AGENTS.md`, teaches Codex to use the installed `graphify` skill for graph build/update/query tasks, and also installs a **PreToolUse hook** in `.codex/hooks.json` that fires before every Bash tool call.
 
@@ -207,20 +207,19 @@ Uninstall with the matching uninstall command (e.g. `graphify claude uninstall`)
 
 **Always-on vs explicit trigger — what's the difference?**
 
-The always-on hook surfaces `GRAPH_REPORT.md` — a one-page summary of god nodes, communities, and surprising connections. Your assistant reads this before searching files, so it navigates by structure instead of keyword matching. That covers most everyday questions.
+The always-on hook surfaces the graph location and points your assistant at scoped commands such as `graphify query`, `graphify path`, and `graphify explain`. Those commands return a focused subgraph, while `GRAPH_REPORT.md` remains available for broad architecture orientation when a compact query is not enough.
 
 The explicit skill commands (`$graphify ...` in Codex, `/graphify ...` in Claude-style clients) go deeper: they traverse the raw `graph.json` hop by hop, trace exact paths between nodes, and surface edge-level detail (relation type, confidence score, source location). Use them when you want a specific question answered from the graph rather than a general orientation.
 
-Think of it this way: the always-on hook gives your assistant a map. The explicit graphify skill commands let it navigate the map precisely.
+Think of it this way: the always-on hook points your assistant at the map. The explicit graphify skill commands let it navigate the map precisely.
 
 ## Using `graph.json` with an LLM
 
 `graph.json` is not meant to be pasted into a prompt all at once. The useful
 workflow is:
 
-1. Start with `.graphify/GRAPH_REPORT.md` for the high-level overview.
-2. Use `graphify query` to pull a smaller subgraph for the specific question
-   you want to answer.
+1. Start with `graphify query`, `graphify path`, or `graphify explain` for the specific question.
+2. Use `.graphify/GRAPH_REPORT.md` only when you need a broad architecture overview or the scoped commands do not surface enough context.
 3. Give that focused output to your assistant instead of dumping the full raw
    corpus.
 

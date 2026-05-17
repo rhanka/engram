@@ -26,7 +26,8 @@ describe("OpenCode integration contract", () => {
     };
 
     expect(plugin).toContain("tool.execute.before");
-    expect(plugin).toContain(".graphify/GRAPH_REPORT.md");
+    expect(plugin).toContain("graphify query");
+    expect(plugin).toContain("Read GRAPH_REPORT.md only for broad architecture context");
     expect(config.plugin).toEqual([".opencode/plugins/graphify.js"]);
   });
 
