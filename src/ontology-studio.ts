@@ -242,6 +242,7 @@ function studioStyles(): string {
     .studio__intro,
     .studio__mode,
     .panel {
+      min-width: 0;
       background: var(--surface-raised);
       border: 1px solid var(--border);
       border-radius: 8px;
@@ -521,9 +522,12 @@ function studioStyles(): string {
     }
 
     .route-list code {
+      max-width: 100%;
       padding: 0.2rem 0.35rem;
       border-radius: 6px;
       background: #f4f6f8;
+      overflow-wrap: anywhere;
+      white-space: normal;
     }
 
     .empty {

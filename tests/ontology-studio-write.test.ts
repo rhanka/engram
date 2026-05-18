@@ -100,6 +100,8 @@ describe("graphify ontology studio --write", () => {
     expect(response.body).toContain("/api/ontology/rebuild-status");
     expect(response.body).toContain("Read-only studio");
     expect(response.body).toContain("disabled");
+    expect(response.body).toContain("min-width: 0;");
+    expect(response.body).toContain("overflow-wrap: anywhere;");
   });
 
   it("write-enabled shell advertises protected patch routes without leaking the bearer token", () => {
