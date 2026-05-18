@@ -314,7 +314,7 @@ M0..M5 lots all landed. `.astro` extractor (`6a7de56`), watch `.rebuild.lock` (`
 - [ ] Vitest regression coverage per lot (added inside the relevant lot, not as a separate UAT lot).
 
 **Release / Docs (1/1)**
-- [x] `UPSTREAM_GAP.md` Version Alignment row published for `graphifyy@0.9.2`; CHANGELOG entry documents F-Install and E Node 24.
+- [x] `UPSTREAM_GAP.md` Version Alignment row refreshed for `graphifyy@0.9.4`, advancing the closest audited parity point to upstream `v0.8.9` while keeping the remaining `v0.8.11` follow-ups explicit.
 
 ### Open F decisions
 
