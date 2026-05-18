@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   createOntologyStudioRequestHandler,
   generateOntologyStudioToken,
+  handleOntologyStudioRequest,
   startOntologyStudioServer,
 } from "../src/ontology-studio.js";
 
@@ -76,6 +77,48 @@ describe("graphify ontology studio --write", () => {
     } finally {
       started.server.close();
     }
+  });
+
+  it("serves a reconciliation studio shell that bootstraps the existing read-only APIs", () => {
+    const dir = makeTempDir();
+    const fixture = writeOntologyWriteFixture(dir);
+
+    const response = handleOntologyStudioRequest({ profileStatePath: fixture.profileStatePath }, "GET", "/");
+
+    expect(response.status).toBe(200);
+    expect(response.contentType).toBe("text/html; charset=utf-8");
+    expect(response.body).toContain("Graphify Ontology Studio");
+    expect(response.body).toContain("Candidate Queue");
+    expect(response.body).toContain("Evidence");
+    expect(response.body).toContain("Canonical Entity");
+    expect(response.body).toContain("Graph Context");
+    expect(response.body).toContain("Patch Preview");
+    expect(response.body).toContain("Audit Trail");
+    expect(response.body).toContain("window.__ONTOLOGY_STUDIO_BOOTSTRAP__");
+    expect(response.body).toContain("/api/ontology/reconciliation/candidates");
+    expect(response.body).toContain("/api/ontology/reconciliation/decision-log");
+    expect(response.body).toContain("/api/ontology/rebuild-status");
+    expect(response.body).toContain("Read-only studio");
+    expect(response.body).toContain("disabled");
+  });
+
+  it("write-enabled shell advertises protected patch routes without leaking the bearer token", () => {
+    const dir = makeTempDir();
+    const fixture = writeOntologyWriteFixture(dir);
+    const token = "super-secret-token";
+
+    const response = handleOntologyStudioRequest(
+      { profileStatePath: fixture.profileStatePath, write: { token } },
+      "GET",
+      "/",
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toContain("/api/ontology/patch/validate");
+    expect(response.body).toContain("/api/ontology/patch/dry-run");
+    expect(response.body).toContain("/api/ontology/patch/apply");
+    expect(response.body).toContain("Write API available");
+    expect(response.body).not.toContain(token);
   });
 
   it("requires a bearer token for write routes and never mutates without it", async () => {
