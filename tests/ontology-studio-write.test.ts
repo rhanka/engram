@@ -153,6 +153,13 @@ function registerStudioShellDom(document: MockDocument): Record<string, MockElem
     auditBody: document.register("audit-panel-body"),
     patchPreview: document.register("patch-preview", "pre"),
     patchHint: document.register("patch-mode-copy"),
+    patchToken: document.register("patch-token", "input"),
+    patchOperation: document.register("patch-operation", "select"),
+    patchNote: document.register("patch-note", "input"),
+    patchValidate: document.register("patch-validate", "button"),
+    patchDryRun: document.register("patch-dry-run", "button"),
+    patchApply: document.register("patch-apply", "button"),
+    patchResult: document.register("patch-result"),
   };
 }
 
@@ -226,8 +233,8 @@ describe("graphify ontology studio --write", () => {
     expect(response.body).toContain("Graphify Ontology Studio");
     expect(response.body).toContain("Candidate Queue");
     expect(response.body).toContain("Evidence");
-    expect(response.body).toContain("Canonical Entity");
-    expect(response.body).toContain("Graph Context");
+    expect(response.body).toContain("Candidate vs Canonical");
+    expect(response.body).toContain("Decision Context");
     expect(response.body).toContain("Patch Preview");
     expect(response.body).toContain("Audit Trail");
     expect(response.body).toContain("window.__ONTOLOGY_STUDIO_BOOTSTRAP__");
@@ -240,7 +247,7 @@ describe("graphify ontology studio --write", () => {
     expect(response.body).toContain("queue-sort");
     expect(response.body).toContain("queue-order");
     expect(response.body).toContain("Read-only studio");
-    expect(response.body).toContain("disabled");
+    expect(response.body).toContain("Inspection-first browser session");
     expect(response.body).toContain("min-width: 0;");
     expect(response.body).toContain("overflow-wrap: anywhere;");
   });
@@ -493,7 +500,7 @@ describe("graphify ontology studio --write", () => {
     expect(elements.canonicalBody.textContent).toContain("Herlock Sholmes");
     expect(elements.canonicalBody.textContent).toContain("Sherlock Holmes");
     expect(elements.canonicalBody.textContent).toContain("validated");
-    expect(elements.graphBody.textContent).toContain("Related decisions");
+    expect(elements.graphBody.textContent).toContain("Recent related decisions");
     expect(elements.graphBody.textContent).toContain("candidates graph_hash does not match active graph");
     expect(occurrences(elements.auditBody.textContent, "patch-001")).toBe(1);
     expect(elements.auditBody.textContent).toContain("authoritative");
@@ -530,6 +537,246 @@ describe("graphify ontology studio --write", () => {
       && path.includes("sort=id")
       && path.includes("order=asc"),
     )).toBe(true);
+  });
+
+  it("supports validate, dry-run, and apply from the write-enabled browser shell with a pasted token", async () => {
+    const dir = makeTempDir();
+    const fixture = writeOntologyWriteFixture(dir);
+    const token = "deadbeef".repeat(6);
+    const html = handleOntologyStudioRequest(
+      { profileStatePath: fixture.profileStatePath, write: { token } },
+      "GET",
+      "/",
+    ).body;
+    const { bootstrapScript, clientScript } = extractInlineScripts(html);
+    const document = new MockDocument();
+    const elements = registerStudioShellDom(document);
+    const postRequests: Array<{ path: string; authorization?: string; body: Record<string, unknown> }> = [];
+
+    const fetchStub = async (path: string, options?: { method?: string; headers?: Record<string, string>; body?: string }) => {
+      if (!options || !options.method || options.method === "GET") {
+        if (path.startsWith("/api/ontology/reconciliation/candidates?")) {
+          return {
+            ok: true,
+            status: 200,
+            statusText: "OK",
+            async json() {
+              return {
+                schema: "graphify_ontology_reconciliation_candidates_response_v1",
+                generated_at: "2026-05-18T13:00:00.000Z",
+                graph_hash: "graph-hash",
+                profile_hash: "profile-hash",
+                stale: false,
+                total: 1,
+                limit: 50,
+                offset: 0,
+                items: [
+                  {
+                    id: "candidate-high",
+                    kind: "entity_match",
+                    status: "candidate",
+                    score: 0.97,
+                    candidate_id: "character_herlock_sholmes",
+                    canonical_id: "character_sherlock_holmes",
+                    shared_terms: ["sherlock holmes"],
+                    evidence_refs: ["corpus/arsene-lupin/story#1"],
+                    reasons: ["same normalized term"],
+                    proposed_patch_operation: "accept_match",
+                  },
+                ],
+              };
+            },
+          };
+        }
+        if (path === "/api/ontology/rebuild-status") {
+          return {
+            ok: true,
+            status: 200,
+            statusText: "OK",
+            async json() {
+              return {
+                schema: "graphify_ontology_rebuild_status_v1",
+                needs_update: false,
+                candidates_match: true,
+                decision_log_available: true,
+                candidates: {
+                  path: "ontology/reconciliation/candidates.json",
+                  generated_at: "2026-05-18T13:00:00.000Z",
+                  issues: [],
+                },
+              };
+            },
+          };
+        }
+        if (path.startsWith("/api/ontology/reconciliation/decision-log")) {
+          return {
+            ok: true,
+            status: 200,
+            statusText: "OK",
+            async json() {
+              return {
+                schema: "graphify_ontology_reconciliation_decision_log_v1",
+                total: 0,
+                limit: 24,
+                offset: 0,
+                items: [],
+                issues: [],
+              };
+            },
+          };
+        }
+        if (path === "/api/ontology/reconciliation/candidates/candidate-high") {
+          return {
+            ok: true,
+            status: 200,
+            statusText: "OK",
+            async json() {
+              return {
+                id: "candidate-high",
+                kind: "entity_match",
+                status: "candidate",
+                score: 0.97,
+                candidate_id: "character_herlock_sholmes",
+                canonical_id: "character_sherlock_holmes",
+                shared_terms: ["sherlock holmes"],
+                evidence_refs: ["corpus/arsene-lupin/story#1"],
+                reasons: ["same normalized term"],
+                proposed_patch_operation: "accept_match",
+                candidate_node: {
+                  id: "character_herlock_sholmes",
+                  label: "Herlock Sholmes",
+                  type: "Character",
+                  status: "candidate",
+                  aliases: [],
+                  normalized_terms: ["herlock sholmes", "sherlock holmes"],
+                  source_refs: ["corpus/arsene-lupin/story#1"],
+                },
+                canonical_node: {
+                  id: "character_sherlock_holmes",
+                  label: "Sherlock Holmes",
+                  type: "Character",
+                  status: "validated",
+                  aliases: [],
+                  normalized_terms: ["sherlock holmes"],
+                  source_refs: ["corpus/sherlock/story#1"],
+                },
+              };
+            },
+          };
+        }
+        throw new Error(`unexpected GET path: ${path}`);
+      }
+
+      const body = JSON.parse(options.body ?? "{}") as Record<string, unknown>;
+      postRequests.push({
+        path,
+        authorization: options.headers?.authorization,
+        body,
+      });
+      if (path === "/api/ontology/patch/validate") {
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          async json() {
+            return {
+              schema: "graphify_ontology_patch_validation_v1",
+              patch_id: String(body.id),
+              valid: true,
+              issues: [],
+            };
+          },
+        };
+      }
+      if (path === "/api/ontology/patch/dry-run") {
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          async json() {
+            return {
+              schema: "graphify_ontology_patch_apply_v1",
+              patch_id: String(body.id),
+              valid: true,
+              dry_run: true,
+              issues: [],
+              changed_files: [{ path: ".graphify/ontology/reconciliation/applied-patches.jsonl" }],
+            };
+          },
+        };
+      }
+      if (path === "/api/ontology/patch/apply") {
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          async json() {
+            return {
+              schema: "graphify_ontology_patch_apply_v1",
+              patch_id: String(body.id),
+              valid: true,
+              dry_run: false,
+              issues: [],
+              changed_files: [{ path: "graphify/reconciliation/decisions.jsonl" }],
+            };
+          },
+        };
+      }
+      throw new Error(`unexpected POST path: ${path}`);
+    };
+
+    const context = createContext({
+      console,
+      Node: MockNode,
+      URLSearchParams,
+      encodeURIComponent,
+      fetch: fetchStub,
+      document,
+      window: {
+        document,
+        fetch: fetchStub,
+        setTimeout(callback: () => void) {
+          callback();
+          return 1;
+        },
+        clearTimeout() {},
+      },
+    });
+
+    new Script(bootstrapScript).runInContext(context);
+    new Script(clientScript).runInContext(context);
+    await flushMicrotasks();
+
+    elements.patchToken.value = token;
+    elements.patchToken.dispatch("input");
+    elements.patchOperation.value = "reject_match";
+    elements.patchOperation.dispatch("change");
+    elements.patchNote.value = "Analyst rejected this merge";
+    elements.patchNote.dispatch("input");
+    await flushMicrotasks();
+    expect(elements.patchPreview.textContent).toContain("\"operation\": \"reject_match\"");
+
+    elements.patchValidate.click();
+    await flushMicrotasks();
+    elements.patchDryRun.click();
+    await flushMicrotasks();
+    elements.patchApply.click();
+    await flushMicrotasks();
+
+    expect(postRequests.map((request) => request.path)).toEqual([
+      "/api/ontology/patch/validate",
+      "/api/ontology/patch/dry-run",
+      "/api/ontology/patch/apply",
+    ]);
+    expect(postRequests.every((request) => request.authorization === `Bearer ${token}`)).toBe(true);
+    expect(postRequests.every((request) => request.body.operation === "reject_match")).toBe(true);
+    expect(postRequests.every((request) => request.body.reason === "Analyst rejected this merge")).toBe(true);
+    expect(postRequests[2]?.body.target).toMatchObject({
+      candidate_id: "character_herlock_sholmes",
+      canonical_id: "character_sherlock_holmes",
+    });
+    expect(elements.patchResult.textContent).toContain("apply succeeded");
+    expect(elements.patchResult.textContent).toContain("graphify/reconciliation/decisions.jsonl");
   });
 
   it("write-enabled shell advertises protected patch routes without leaking the bearer token", () => {
