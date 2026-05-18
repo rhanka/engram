@@ -43,6 +43,60 @@ describe("godNodes", () => {
     const gods = godNodes(G, 2);
     expect(gods.length).toBeLessThanOrEqual(2);
   });
+
+  it.each([
+    "dependencies",
+    "devDependencies",
+    "peerDependencies",
+    "optionalDependencies",
+    "bundledDependencies",
+    "bundleDependencies",
+  ])("excludes npm dep-block key %s from god nodes", (depKey) => {
+    const G = new Graph({ type: "undirected" });
+    G.mergeNode("real_node", {
+      label: "AuthService",
+      source_file: "src/auth.ts",
+      file_type: "code",
+    });
+    G.mergeNode("dep_node", {
+      label: depKey,
+      source_file: "frontend/package.json",
+      file_type: "code",
+    });
+
+    for (let i = 0; i < 20; i++) {
+      const peer = `pkg_${i}`;
+      G.mergeNode(peer, {
+        label: `package-${i}`,
+        source_file: "frontend/package.json",
+        file_type: "code",
+      });
+      G.mergeEdge("dep_node", peer, {
+        relation: "contains",
+        confidence: "EXTRACTED",
+      });
+    }
+
+    G.mergeNode("auth_helper", {
+      label: "AuthHelper",
+      source_file: "src/auth-helper.ts",
+      file_type: "code",
+    });
+    G.mergeEdge("real_node", "auth_helper", {
+      relation: "uses",
+      confidence: "EXTRACTED",
+    });
+    G.mergeEdge("real_node", "dep_node", {
+      relation: "imports",
+      confidence: "EXTRACTED",
+    });
+
+    const gods = godNodes(G, 10);
+    const godIds = gods.map((god) => god.id);
+
+    expect(godIds).not.toContain("dep_node");
+    expect(godIds).toContain("real_node");
+  });
 });
 
 describe("surprisingConnections", () => {

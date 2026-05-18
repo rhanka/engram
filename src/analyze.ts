@@ -17,6 +17,28 @@ import {
 
 type GraphInstance = InstanceType<typeof Graph>;
 
+const JSON_NOISE_LABELS = new Set([
+  "start",
+  "end",
+  "name",
+  "id",
+  "type",
+  "properties",
+  "value",
+  "key",
+  "data",
+  "items",
+  "title",
+  "description",
+  "version",
+  "dependencies",
+  "devdependencies",
+  "peerdependencies",
+  "optionaldependencies",
+  "bundleddependencies",
+  "bundledependencies",
+]);
+
 function nodeCommunityMap(communities: NumericMapLike<string[]>): Map<string, number> {
   const communityMap = toNumericMap(communities);
   const result = new Map<string, number>();
@@ -49,6 +71,14 @@ export function isConceptNode(G: Graph, nodeId: string): boolean {
   const lastPart = source.split("/").pop() ?? "";
   if (!lastPart.includes(".")) return true;
   return false;
+}
+
+export function isJsonKeyNode(G: Graph, nodeId: string): boolean {
+  const attrs = G.getNodeAttributes(nodeId);
+  const sourceFile = ((attrs.source_file as string) ?? "").toLowerCase();
+  if (!sourceFile.endsWith(".json")) return false;
+  const label = ((attrs.label as string) ?? "").trim().toLowerCase();
+  return JSON_NOISE_LABELS.has(label);
 }
 
 function fileCategory(path: string): string {
@@ -160,7 +190,7 @@ export function godNodes(G: Graph, topN: number = 10): GodNodeEntry[] {
 
   const result: GodNodeEntry[] = [];
   for (const [nodeId, deg] of degree) {
-    if (isFileNode(G, nodeId) || isConceptNode(G, nodeId)) continue;
+    if (isFileNode(G, nodeId) || isConceptNode(G, nodeId) || isJsonKeyNode(G, nodeId)) continue;
     result.push({
       id: nodeId,
       label: (G.getNodeAttribute(nodeId, "label") as string) ?? nodeId,
