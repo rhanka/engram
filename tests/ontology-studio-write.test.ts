@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createContext, Script } from "node:vm";
 
 import {
   createOntologyStudioRequestHandler,
@@ -29,6 +30,141 @@ function postBody(payload: unknown): { body: string; headers: Record<string, str
       "content-length": String(Buffer.byteLength(body)),
     },
   };
+}
+
+class MockNode {
+  protected _textContent = "";
+
+  get textContent(): string {
+    return this._textContent;
+  }
+
+  set textContent(value: string) {
+    this._textContent = value;
+  }
+}
+
+class MockElement extends MockNode {
+  id = "";
+  className = "";
+  type = "";
+  value = "";
+  children: MockNode[] = [];
+  attributes = new Map<string, string>();
+  listeners = new Map<string, Array<(event: { type: string; target: MockElement; currentTarget: MockElement }) => void>>();
+
+  constructor(readonly tagName: string) {
+    super();
+  }
+
+  override get textContent(): string {
+    return this._textContent + this.children.map((child) => child.textContent).join("");
+  }
+
+  override set textContent(value: string) {
+    this._textContent = value;
+    this.children = [];
+  }
+
+  appendChild<T extends MockNode>(child: T): T {
+    this.children.push(child);
+    return child;
+  }
+
+  replaceChildren(...nodes: MockNode[]): void {
+    this._textContent = "";
+    this.children = [...nodes];
+  }
+
+  setAttribute(name: string, value: string): void {
+    this.attributes.set(name, value);
+    if (name === "id") this.id = value;
+  }
+
+  addEventListener(
+    type: string,
+    handler: (event: { type: string; target: MockElement; currentTarget: MockElement }) => void,
+  ): void {
+    const handlers = this.listeners.get(type) ?? [];
+    handlers.push(handler);
+    this.listeners.set(type, handlers);
+  }
+
+  dispatch(type: string): void {
+    for (const handler of this.listeners.get(type) ?? []) {
+      handler({ type, target: this, currentTarget: this });
+    }
+  }
+
+  click(): void {
+    this.dispatch("click");
+  }
+}
+
+class MockDocument {
+  private readonly elements = new Map<string, MockElement>();
+
+  register(id: string, tagName = "div"): MockElement {
+    const element = new MockElement(tagName);
+    element.id = id;
+    this.elements.set(id, element);
+    return element;
+  }
+
+  getElementById(id: string): MockElement | null {
+    return this.elements.get(id) ?? null;
+  }
+
+  createElement(tagName: string): MockElement {
+    return new MockElement(tagName);
+  }
+}
+
+function extractInlineScripts(html: string): { bootstrapScript: string; clientScript: string } {
+  const scripts = Array.from(html.matchAll(/<script>\s*([\s\S]*?)\s*<\/script>/g), (match) => match[1] ?? "");
+  const bootstrapScript = scripts.find((script) => script.includes("window.__ONTOLOGY_STUDIO_BOOTSTRAP__"));
+  const clientScript = scripts.find((script) => script.includes("const bootstrap = window.__ONTOLOGY_STUDIO_BOOTSTRAP__"));
+  if (!bootstrapScript || !clientScript) {
+    throw new Error("expected bootstrap and client inline scripts in ontology studio shell");
+  }
+  return { bootstrapScript, clientScript };
+}
+
+function registerStudioShellDom(document: MockDocument): Record<string, MockElement> {
+  return {
+    queue: document.register("candidate-queue"),
+    queueStatus: document.register("queue-status"),
+    queueCount: document.register("queue-count", "span"),
+    queueQuery: document.register("queue-query", "input"),
+    queueMinScore: document.register("queue-min-score", "select"),
+    queueStatusFilter: document.register("queue-status-filter", "select"),
+    queueKindFilter: document.register("queue-kind-filter", "select"),
+    queueOperationFilter: document.register("queue-operation-filter", "select"),
+    queueSort: document.register("queue-sort", "select"),
+    queueOrder: document.register("queue-order", "select"),
+    refresh: document.register("refresh-button", "button"),
+    selectedTitle: document.register("selected-title"),
+    selectedMeta: document.register("selected-meta"),
+    selectedSummary: document.register("selected-summary"),
+    evidenceBody: document.register("evidence-panel-body"),
+    canonicalBody: document.register("canonical-panel-body"),
+    graphBody: document.register("graph-panel-body"),
+    rebuildBody: document.register("rebuild-panel-body"),
+    auditBody: document.register("audit-panel-body"),
+    patchPreview: document.register("patch-preview", "pre"),
+    patchHint: document.register("patch-mode-copy"),
+  };
+}
+
+function occurrences(haystack: string, needle: string): number {
+  if (!needle) return 0;
+  return haystack.split(needle).length - 1;
+}
+
+async function flushMicrotasks(rounds = 20): Promise<void> {
+  for (let index = 0; index < rounds; index += 1) {
+    await Promise.resolve();
+  }
 }
 
 afterEach(() => {
@@ -98,10 +234,302 @@ describe("graphify ontology studio --write", () => {
     expect(response.body).toContain("/api/ontology/reconciliation/candidates");
     expect(response.body).toContain("/api/ontology/reconciliation/decision-log");
     expect(response.body).toContain("/api/ontology/rebuild-status");
+    expect(response.body).toContain("queue-status-filter");
+    expect(response.body).toContain("queue-kind-filter");
+    expect(response.body).toContain("queue-operation-filter");
+    expect(response.body).toContain("queue-sort");
+    expect(response.body).toContain("queue-order");
     expect(response.body).toContain("Read-only studio");
     expect(response.body).toContain("disabled");
     expect(response.body).toContain("min-width: 0;");
     expect(response.body).toContain("overflow-wrap: anywhere;");
+  });
+
+  it("executes the inline bootstrap script with a minimal DOM and renders reconciliation details", async () => {
+    const dir = makeTempDir();
+    const fixture = writeOntologyWriteFixture(dir);
+    const html = handleOntologyStudioRequest({ profileStatePath: fixture.profileStatePath }, "GET", "/").body;
+    const { bootstrapScript, clientScript } = extractInlineScripts(html);
+    const document = new MockDocument();
+    const elements = registerStudioShellDom(document);
+    const timers = new Map<number, () => void>();
+    let nextTimerId = 1;
+    const fetchCalls: string[] = [];
+    const candidateDetails = {
+      "candidate-high": {
+        id: "candidate-high",
+        kind: "entity_match",
+        status: "candidate",
+        score: 0.97,
+        candidate_id: "character_herlock_sholmes",
+        canonical_id: "character_sherlock_holmes",
+        shared_terms: ["sherlock holmes"],
+        evidence_refs: [
+          "corpus/arsene-lupin/the-extraordinary-adventures-of-arsene-lupin-gentleman-burglar/text.txt#Sherlock Holmes Arrives Too Late",
+          "corpus/sherlock-holmes/a-study-in-scarlet/text.txt#part 1",
+        ],
+        reasons: [
+          "same node type: Character",
+          "shared normalized term(s): sherlock holmes",
+        ],
+        proposed_patch_operation: "accept_match",
+        candidate_node: {
+          id: "character_herlock_sholmes",
+          label: "Herlock Sholmes",
+          type: "Character",
+          status: "candidate",
+          aliases: ["Sherlock Holmes parody figure"],
+          normalized_terms: ["herlock sholmes", "sherlock holmes parody figure"],
+          source_refs: [
+            "corpus/arsene-lupin/the-extraordinary-adventures-of-arsene-lupin-gentleman-burglar/text.txt#Sherlock Holmes Arrives Too Late",
+          ],
+        },
+        canonical_node: {
+          id: "character_sherlock_holmes",
+          label: "Sherlock Holmes",
+          type: "Character",
+          status: "validated",
+          aliases: ["Mr. Holmes"],
+          normalized_terms: ["sherlock holmes", "mr. holmes"],
+          source_refs: ["corpus/sherlock-holmes/a-study-in-scarlet/text.txt#part 1"],
+        },
+      },
+      "candidate-low": {
+        id: "candidate-low",
+        kind: "entity_match",
+        status: "candidate",
+        score: 0.64,
+        candidate_id: "story_sherlock_holmes_too_late",
+        canonical_id: "story_scandal_bohemia",
+        shared_terms: ["story"],
+        evidence_refs: ["corpus/arsene-lupin/the-extraordinary-adventures-of-arsene-lupin-gentleman-burglar/text.txt#story"],
+        reasons: ["story-level review sample"],
+        proposed_patch_operation: "accept_match",
+        candidate_node: {
+          id: "story_sherlock_holmes_too_late",
+          label: "Sherlock Holmes Arrives Too Late",
+          type: "ChapterOrStory",
+          status: "candidate",
+          aliases: [],
+          normalized_terms: ["sherlock holmes arrives too late"],
+          source_refs: ["corpus/arsene-lupin/the-extraordinary-adventures-of-arsene-lupin-gentleman-burglar/text.txt#story"],
+        },
+        canonical_node: {
+          id: "story_scandal_bohemia",
+          label: "A Scandal in Bohemia",
+          type: "ChapterOrStory",
+          status: "validated",
+          aliases: [],
+          normalized_terms: ["a scandal in bohemia"],
+          source_refs: ["corpus/sherlock-holmes/the-adventures-of-sherlock-holmes/text.txt#story"],
+        },
+      },
+    } as const;
+
+    const fetchStub = async (path: string) => {
+      fetchCalls.push(path);
+      if (path.startsWith("/api/ontology/reconciliation/candidates?")) {
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          async json() {
+            return {
+              schema: "graphify_ontology_reconciliation_candidates_response_v1",
+              generated_at: "2026-05-18T13:00:00.000Z",
+              graph_hash: "graph-hash",
+              profile_hash: "profile-hash",
+              stale: false,
+              total: 2,
+              limit: 50,
+              offset: 0,
+              items: [
+                {
+                  id: "candidate-high",
+                  kind: "entity_match",
+                  status: "candidate",
+                  score: 0.97,
+                  candidate_id: "character_herlock_sholmes",
+                  canonical_id: "character_sherlock_holmes",
+                  shared_terms: ["sherlock holmes"],
+                  evidence_refs: [
+                    "corpus/arsene-lupin/the-extraordinary-adventures-of-arsene-lupin-gentleman-burglar/text.txt#Sherlock Holmes Arrives Too Late",
+                  ],
+                  reasons: ["same node type: Character"],
+                  proposed_patch_operation: "accept_match",
+                },
+                {
+                  id: "candidate-low",
+                  kind: "entity_match",
+                  status: "candidate",
+                  score: 0.64,
+                  candidate_id: "story_sherlock_holmes_too_late",
+                  canonical_id: "story_scandal_bohemia",
+                  shared_terms: ["story"],
+                  evidence_refs: ["corpus/arsene-lupin/the-extraordinary-adventures-of-arsene-lupin-gentleman-burglar/text.txt#story"],
+                  reasons: ["story-level review sample"],
+                  proposed_patch_operation: "accept_match",
+                },
+              ],
+            };
+          },
+        };
+      }
+
+      if (path === "/api/ontology/rebuild-status") {
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          async json() {
+            return {
+              schema: "graphify_ontology_rebuild_status_v1",
+              needs_update: true,
+              candidates_match: false,
+              decision_log_available: true,
+              graph_hash: "graph-hash",
+              profile_hash: "profile-hash",
+              candidates: {
+                path: "ontology/reconciliation/candidates.json",
+                generated_at: "2026-05-18T13:00:00.000Z",
+                issues: ["candidates graph_hash does not match active graph"],
+              },
+            };
+          },
+        };
+      }
+
+      if (path.startsWith("/api/ontology/reconciliation/decision-log")) {
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          async json() {
+            return {
+              schema: "graphify_ontology_reconciliation_decision_log_v1",
+              total: 2,
+              limit: 12,
+              offset: 0,
+              items: [
+                {
+                  source: "authoritative",
+                  path: "graphify/reconciliation/decisions.jsonl",
+                  recorded_at: "2026-05-18T13:05:00.000Z",
+                  patch: {
+                    id: "patch-001",
+                    operation: "accept_match",
+                    status: "applied",
+                    target: {
+                      candidate_id: "character_herlock_sholmes",
+                      canonical_id: "character_sherlock_holmes",
+                    },
+                  },
+                },
+                {
+                  source: "audit",
+                  path: ".graphify/ontology/reconciliation/applied-patches.jsonl",
+                  recorded_at: "2026-05-18T13:06:00.000Z",
+                  patch: {
+                    id: "patch-001",
+                    operation: "accept_match",
+                    status: "applied",
+                    target: {
+                      candidate_id: "character_herlock_sholmes",
+                      canonical_id: "character_sherlock_holmes",
+                    },
+                  },
+                },
+              ],
+              issues: [],
+            };
+          },
+        };
+      }
+
+      const detailId = decodeURIComponent(path.slice(path.lastIndexOf("/") + 1));
+      if (path.startsWith("/api/ontology/reconciliation/candidates/") && detailId in candidateDetails) {
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          async json() {
+            return candidateDetails[detailId as keyof typeof candidateDetails];
+          },
+        };
+      }
+
+      throw new Error(`unexpected fetch path: ${path}`);
+    };
+
+    const context = createContext({
+      console,
+      Node: MockNode,
+      URLSearchParams,
+      encodeURIComponent,
+      fetch: fetchStub,
+      document,
+      window: {
+        document,
+        fetch: fetchStub,
+        setTimeout(callback: () => void) {
+          const timerId = nextTimerId++;
+          timers.set(timerId, callback);
+          return timerId;
+        },
+        clearTimeout(timerId: number) {
+          timers.delete(timerId);
+        },
+      },
+    });
+
+    new Script(bootstrapScript).runInContext(context);
+    new Script(clientScript).runInContext(context);
+    await flushMicrotasks();
+
+    expect(elements.queue.children).toHaveLength(2);
+    expect(elements.selectedTitle.textContent).toContain("Herlock Sholmes -> Sherlock Holmes");
+    expect(elements.selectedSummary.textContent).toContain("character_herlock_sholmes");
+    expect(elements.selectedSummary.textContent).toContain("character_sherlock_holmes");
+    expect(elements.canonicalBody.textContent).toContain("Herlock Sholmes");
+    expect(elements.canonicalBody.textContent).toContain("Sherlock Holmes");
+    expect(elements.canonicalBody.textContent).toContain("validated");
+    expect(elements.graphBody.textContent).toContain("Related decisions");
+    expect(elements.graphBody.textContent).toContain("candidates graph_hash does not match active graph");
+    expect(occurrences(elements.auditBody.textContent, "patch-001")).toBe(1);
+    expect(elements.auditBody.textContent).toContain("authoritative");
+    expect(elements.auditBody.textContent).toContain("audit");
+
+    (elements.queue.children[1] as MockElement).click();
+    await flushMicrotasks();
+    expect(elements.selectedTitle.textContent).toContain("Sherlock Holmes Arrives Too Late -> A Scandal in Bohemia");
+    expect(elements.patchPreview.textContent).toContain("\"candidate_id\": \"story_sherlock_holmes_too_late\"");
+
+    elements.queueQuery.value = "sherlock";
+    elements.queueMinScore.value = "0.75";
+    elements.queueStatusFilter.value = "candidate";
+    elements.queueKindFilter.value = "entity_match";
+    elements.queueOperationFilter.value = "accept_match";
+    elements.queueSort.value = "id";
+    elements.queueOrder.value = "asc";
+    elements.queueStatusFilter.dispatch("change");
+    elements.queueKindFilter.dispatch("change");
+    elements.queueOperationFilter.dispatch("change");
+    elements.queueSort.dispatch("change");
+    elements.queueOrder.dispatch("change");
+    elements.queueQuery.dispatch("input");
+    for (const callback of timers.values()) callback();
+    timers.clear();
+    await flushMicrotasks();
+
+    expect(fetchCalls.some((path) =>
+      path.includes("query=sherlock")
+      && path.includes("min_score=0.75")
+      && path.includes("status=candidate")
+      && path.includes("kind=entity_match")
+      && path.includes("operation=accept_match")
+      && path.includes("sort=id")
+      && path.includes("order=asc"),
+    )).toBe(true);
   });
 
   it("write-enabled shell advertises protected patch routes without leaking the bearer token", () => {

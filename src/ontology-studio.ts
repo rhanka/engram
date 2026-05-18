@@ -11,8 +11,8 @@ import {
   listOntologyReconciliationCandidates,
   previewOntologyDecisionLog,
 } from "./ontology-reconciliation-api.js";
-import type { OntologyReconciliationCandidateFilter } from "./ontology-reconciliation.js";
-import type { OntologyReconciliationDecisionLogOptions } from "./ontology-patch.js";
+import type { OntologyPatchNode, OntologyReconciliationDecisionLogOptions } from "./ontology-patch.js";
+import type { OntologyReconciliationCandidate, OntologyReconciliationCandidateFilter } from "./ontology-reconciliation.js";
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost", "ip6-loopback"]);
 const POST_BODY_MAX_BYTES = 256 * 1024;
@@ -121,6 +121,43 @@ function jsonResult(status: number, value: unknown): OntologyStudioRouteResult {
     status,
     contentType: "application/json; charset=utf-8",
     body: `${JSON.stringify(value, null, 2)}\n`,
+  };
+}
+
+interface OntologyStudioNodeSummary {
+  id: string;
+  label?: string;
+  type?: string;
+  status?: string;
+  aliases?: string[];
+  normalized_terms?: string[];
+  source_refs?: string[];
+  registry_refs?: string[];
+}
+
+function studioNodeSummary(node: OntologyPatchNode | undefined): OntologyStudioNodeSummary | null {
+  if (!node) return null;
+  return {
+    id: node.id,
+    ...(node.label ? { label: node.label } : {}),
+    ...(node.type ? { type: node.type } : {}),
+    ...(node.status ? { status: node.status } : {}),
+    ...(node.aliases?.length ? { aliases: node.aliases } : {}),
+    ...(node.normalized_terms?.length ? { normalized_terms: node.normalized_terms } : {}),
+    ...(node.source_refs?.length ? { source_refs: node.source_refs } : {}),
+    ...(node.registry_refs?.length ? { registry_refs: node.registry_refs } : {}),
+  };
+}
+
+function studioCandidateDetail(
+  candidate: OntologyReconciliationCandidate,
+  candidateNode: OntologyPatchNode | undefined,
+  canonicalNode: OntologyPatchNode | undefined,
+): Record<string, unknown> {
+  return {
+    ...candidate,
+    candidate_node: studioNodeSummary(candidateNode),
+    canonical_node: studioNodeSummary(canonicalNode),
   };
 }
 
@@ -361,11 +398,15 @@ function studioStyles(): string {
 
     .queue-toolbar {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 140px auto;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
       gap: 0.75rem;
       align-items: end;
       padding: 0.95rem 1.1rem 0.85rem;
       border-bottom: 1px solid var(--border);
+    }
+
+    .field--search {
+      grid-column: span 2;
     }
 
     .field {
@@ -446,6 +487,64 @@ function studioStyles(): string {
       font-size: 0.82rem;
     }
 
+    .compare-grid,
+    .metric-grid {
+      display: grid;
+      gap: 0.75rem;
+    }
+
+    .compare-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .metric-grid {
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    }
+
+    .compare-card,
+    .metric {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+
+    .compare-card {
+      padding: 0.9rem;
+      display: grid;
+      gap: 0.75rem;
+    }
+
+    .compare-card__title {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+
+    .compare-card__heading {
+      margin: 0;
+      font-size: 0.93rem;
+      line-height: 1.3;
+    }
+
+    .metric {
+      padding: 0.75rem 0.85rem;
+    }
+
+    .metric__label {
+      color: var(--text-muted);
+      font-size: 0.76rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .metric__value {
+      margin-top: 0.25rem;
+      font-size: 1rem;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
     .details-grid {
       display: grid;
       gap: 1rem;
@@ -508,6 +607,10 @@ function studioStyles(): string {
       background: var(--surface);
     }
 
+    .list--compact .list__item {
+      padding: 0.55rem 0.7rem;
+    }
+
     .mono-block {
       min-height: 18rem;
       margin: 0;
@@ -556,6 +659,10 @@ function studioStyles(): string {
       .details-grid > .panel--span-4 {
         grid-column: span 12;
       }
+
+      .compare-grid {
+        grid-template-columns: 1fr;
+      }
     }
 
     @media (max-width: 640px) {
@@ -565,6 +672,10 @@ function studioStyles(): string {
 
       .queue-toolbar {
         grid-template-columns: 1fr;
+      }
+
+      .field--search {
+        grid-column: span 1;
       }
 
       .queue-list {
@@ -598,6 +709,11 @@ function studioClientScript(): string {
         queueCount: document.getElementById("queue-count"),
         queueQuery: document.getElementById("queue-query"),
         queueMinScore: document.getElementById("queue-min-score"),
+        queueStatusFilter: document.getElementById("queue-status-filter"),
+        queueKindFilter: document.getElementById("queue-kind-filter"),
+        queueOperationFilter: document.getElementById("queue-operation-filter"),
+        queueSort: document.getElementById("queue-sort"),
+        queueOrder: document.getElementById("queue-order"),
         refresh: document.getElementById("refresh-button"),
         selectedTitle: document.getElementById("selected-title"),
         selectedMeta: document.getElementById("selected-meta"),
@@ -659,6 +775,32 @@ function studioClientScript(): string {
         return parsed.toLocaleString();
       }
 
+      function uniqueValues(values) {
+        return Array.from(new Set((Array.isArray(values) ? values : []).filter(function (value) {
+          return typeof value === "string" && value.trim().length > 0;
+        })));
+      }
+
+      function recordString(value) {
+        return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+      }
+
+      function statusTone(value) {
+        switch (value) {
+          case "validated":
+          case "applied":
+            return "success";
+          case "candidate":
+          case "needs_review":
+          case "proposed":
+            return "warning";
+          case "rejected":
+            return "danger";
+          default:
+            return "accent";
+        }
+      }
+
       function keyValue(rows) {
         const wrapper = create("div", "key-value");
         rows.forEach(function (row) {
@@ -691,6 +833,135 @@ function studioClientScript(): string {
       function chip(text, tone) {
         const toneSuffix = tone ? " chip--" + tone : "";
         return create("span", "chip" + toneSuffix, text);
+      }
+
+      function listNode(values, emptyMessage) {
+        const items = uniqueValues(values);
+        const list = create("ul", "list list--compact");
+        if (items.length === 0) {
+          list.appendChild(create("li", "list__item", emptyMessage || "None"));
+          return list;
+        }
+        items.forEach(function (value) {
+          const row = create("li", "list__item");
+          row.appendChild(create("div", "key-value__value", value));
+          list.appendChild(row);
+        });
+        return list;
+      }
+
+      function metric(label, value) {
+        const block = create("div", "metric");
+        block.appendChild(create("div", "metric__label", label));
+        block.appendChild(create("div", "metric__value", value));
+        return block;
+      }
+
+      function nodeSummary(candidate, key) {
+        const value = candidate && typeof candidate === "object" ? candidate[key] : null;
+        return value && typeof value === "object" ? value : null;
+      }
+
+      function nodeLabel(node, fallbackId) {
+        return node && typeof node.label === "string" && node.label.trim().length > 0
+          ? node.label.trim()
+          : valueText(fallbackId);
+      }
+
+      function nodeStatus(node, fallbackStatus) {
+        return node && typeof node.status === "string" && node.status.trim().length > 0
+          ? node.status.trim()
+          : valueText(fallbackStatus, "Unknown");
+      }
+
+      function nodeType(node, fallbackType) {
+        return node && typeof node.type === "string" && node.type.trim().length > 0
+          ? node.type.trim()
+          : valueText(fallbackType, "Unavailable");
+      }
+
+      function combinedEvidenceRefs(candidate) {
+        const candidateNode = nodeSummary(candidate, "candidate_node");
+        const canonicalNode = nodeSummary(candidate, "canonical_node");
+        return uniqueValues([
+          ...(candidate && Array.isArray(candidate.evidence_refs) ? candidate.evidence_refs : []),
+          ...(candidateNode && Array.isArray(candidateNode.source_refs) ? candidateNode.source_refs : []),
+          ...(canonicalNode && Array.isArray(canonicalNode.source_refs) ? canonicalNode.source_refs : []),
+        ]);
+      }
+
+      function patchRecord(item) {
+        return item && item.patch && typeof item.patch === "object" ? item.patch : {};
+      }
+
+      function patchTarget(patch) {
+        return patch && patch.target && typeof patch.target === "object" ? patch.target : {};
+      }
+
+      function groupedDecisionLogItems(items) {
+        const groups = new Map();
+        (Array.isArray(items) ? items : []).forEach(function (item) {
+          const patch = patchRecord(item);
+          const key = [valueText(patch.id, "unknown-patch"), valueText(patch.operation, "unknown-operation")].join("::");
+          let group = groups.get(key);
+          if (!group) {
+            group = {
+              id: valueText(patch.id, "unknown-patch"),
+              operation: valueText(patch.operation, "unknown-operation"),
+              status: valueText(patch.status, item && item.source === "audit" ? "applied" : "recorded"),
+              recorded_at: item ? item.recorded_at : null,
+              patch: patch,
+              sources: [],
+              paths: [],
+              targets: [],
+            };
+            groups.set(key, group);
+          }
+          if (item && group.sources.indexOf(item.source) === -1) group.sources.push(item.source);
+          if (item && item.path && group.paths.indexOf(item.path) === -1) group.paths.push(item.path);
+          if (item && typeof item.recorded_at === "string" && item.recorded_at.trim().length > 0) {
+            if (!group.recorded_at || item.recorded_at > group.recorded_at) group.recorded_at = item.recorded_at;
+          }
+          const target = patchTarget(patch);
+          const candidateId = recordString(target.candidate_id);
+          const canonicalId = recordString(target.canonical_id);
+          const pair = candidateId && canonicalId ? candidateId + " -> " + canonicalId : null;
+          if (pair && group.targets.indexOf(pair) === -1) group.targets.push(pair);
+        });
+        return Array.from(groups.values());
+      }
+
+      function relatedDecisionGroups(candidate) {
+        if (!candidate || !state.log || !Array.isArray(state.log.items)) return [];
+        return groupedDecisionLogItems(state.log.items).filter(function (group) {
+          const target = patchTarget(group.patch);
+          return [target.candidate_id, target.canonical_id].some(function (value) {
+            return typeof value === "string"
+              && (value === candidate.candidate_id || value === candidate.canonical_id);
+          });
+        });
+      }
+
+      function nodeCard(title, node, fallbackId, fallbackStatus, fallbackType) {
+        const card = create("section", "compare-card");
+        const heading = create("div", "compare-card__title");
+        const headingText = create("div", "stack");
+        headingText.appendChild(create("h3", "compare-card__heading", title));
+        headingText.appendChild(create("div", "caption", nodeLabel(node, fallbackId)));
+        heading.appendChild(headingText);
+        heading.appendChild(chip(nodeStatus(node, fallbackStatus), statusTone(nodeStatus(node, fallbackStatus))));
+        card.appendChild(heading);
+        card.appendChild(
+          keyValue([
+            { label: "Label", value: nodeLabel(node, fallbackId) },
+            { label: "ID", value: valueText(fallbackId) },
+            { label: "Type", value: nodeType(node, fallbackType) },
+            { label: "Aliases", value: listNode(node && node.aliases, "No aliases recorded") },
+            { label: "Terms", value: listNode(node && node.normalized_terms, "No normalized terms recorded") },
+            { label: "Evidence refs", value: listNode(node && node.source_refs, "No source refs recorded") },
+          ])
+        );
+        return card;
       }
 
       function renderQueue() {
@@ -731,10 +1002,14 @@ function studioClientScript(): string {
           top.appendChild(score);
 
           const meta = create("div", "queue-item__meta");
-          meta.appendChild(create("span", "", candidate.proposed_patch_operation));
-          meta.appendChild(create("span", "", (candidate.evidence_refs || []).length + " evidence"));
+          meta.appendChild(create("span", "", [candidate.kind, candidate.status].join(" · ")));
+          meta.appendChild(create("span", "", [candidate.proposed_patch_operation, (candidate.evidence_refs || []).length + " refs"].join(" · ")));
 
-          const caption = create("div", "caption", (candidate.shared_terms || []).join(", "));
+          const caption = create(
+            "div",
+            "caption",
+            (candidate.shared_terms || []).length > 0 ? (candidate.shared_terms || []).join(", ") : "No shared terms recorded",
+          );
 
           button.appendChild(top);
           button.appendChild(meta);
@@ -758,20 +1033,26 @@ function studioClientScript(): string {
           return;
         }
 
-        elements.selectedTitle.textContent = candidate.candidate_id + " -> " + candidate.canonical_id;
+        const candidateNode = nodeSummary(candidate, "candidate_node");
+        const canonicalNode = nodeSummary(candidate, "canonical_node");
+        elements.selectedTitle.textContent = nodeLabel(candidateNode, candidate.candidate_id) + " -> " + nodeLabel(canonicalNode, candidate.canonical_id);
         elements.selectedMeta.replaceChildren(
           chip(candidate.kind, "accent"),
-          chip(candidate.status, candidate.status === "candidate" ? "warning" : "success"),
+          chip(nodeStatus(candidateNode, candidate.status), statusTone(nodeStatus(candidateNode, candidate.status))),
           chip(candidate.proposed_patch_operation, "accent"),
           chip("Score " + formatScore(candidate.score), "success")
         );
 
         elements.selectedSummary.replaceChildren(
           keyValue([
+            { label: "Candidate label", value: nodeLabel(candidateNode, candidate.candidate_id) },
+            { label: "Canonical label", value: nodeLabel(canonicalNode, candidate.canonical_id) },
             { label: "Candidate ID", value: valueText(candidate.candidate_id) },
             { label: "Canonical ID", value: valueText(candidate.canonical_id) },
+            { label: "Entity type", value: nodeType(candidateNode, candidate.kind) },
             { label: "Operation", value: valueText(candidate.proposed_patch_operation) },
-            { label: "Shared terms", values: (candidate.shared_terms || []).map(function (term) { return term; }), empty: "No shared terms recorded" },
+            { label: "Shared terms", value: listNode(candidate.shared_terms || [], "No shared terms recorded") },
+            { label: "Reasons", value: listNode(candidate.reasons || [], "No reasons supplied") },
           ])
         );
       }
@@ -784,13 +1065,22 @@ function studioClientScript(): string {
           return;
         }
 
+        const evidenceRefs = combinedEvidenceRefs(candidate);
+        const wrapper = create("div", "stack");
+        const metrics = create("div", "metric-grid");
+        metrics.appendChild(metric("Score", formatScore(candidate.score)));
+        metrics.appendChild(metric("Evidence refs", String(evidenceRefs.length)));
+        metrics.appendChild(metric("Reasons", String(uniqueValues(candidate.reasons || []).length)));
+        wrapper.appendChild(metrics);
+        wrapper.appendChild(
+          keyValue([
+            { label: "Evidence refs", value: listNode(evidenceRefs, "No evidence refs supplied") },
+            { label: "Reasons", value: listNode(candidate.reasons || [], "No reasons supplied") },
+          ])
+        );
         replaceBody(
           elements.evidenceBody,
-          keyValue([
-            { label: "Evidence refs", values: (candidate.evidence_refs || []).map(function (ref) { return ref; }), empty: "No evidence refs supplied" },
-            { label: "Review reasons", values: (candidate.reasons || []).map(function (reason) { return reason; }), empty: "No reasons supplied" },
-            { label: "Coverage", value: (candidate.evidence_refs || []).length + " referenced source(s)" },
-          ])
+          wrapper
         );
       }
 
@@ -802,14 +1092,21 @@ function studioClientScript(): string {
           return;
         }
 
+        const candidateNode = nodeSummary(candidate, "candidate_node");
+        const canonicalNode = nodeSummary(candidate, "canonical_node");
+        const wrapper = create("div", "stack");
+        const metrics = create("div", "metric-grid");
+        metrics.appendChild(metric("Score", formatScore(candidate.score)));
+        metrics.appendChild(metric("Operation", valueText(candidate.proposed_patch_operation)));
+        metrics.appendChild(metric("Shared terms", String(uniqueValues(candidate.shared_terms || []).length)));
+        wrapper.appendChild(metrics);
+        const compare = create("div", "compare-grid");
+        compare.appendChild(nodeCard("Candidate node", candidateNode, candidate.candidate_id, candidate.status, candidate.kind));
+        compare.appendChild(nodeCard("Canonical node", canonicalNode, candidate.canonical_id, canonicalNode && canonicalNode.status, candidate.kind));
+        wrapper.appendChild(compare);
         replaceBody(
           elements.canonicalBody,
-          keyValue([
-            { label: "Canonical node", value: valueText(candidate.canonical_id) },
-            { label: "Candidate node", value: valueText(candidate.candidate_id) },
-            { label: "Status", value: valueText(candidate.status) },
-            { label: "Suggested patch", value: valueText(candidate.proposed_patch_operation) },
-          ])
+          wrapper
         );
       }
 
@@ -821,16 +1118,46 @@ function studioClientScript(): string {
           return;
         }
 
+        const candidateNode = nodeSummary(candidate, "candidate_node");
+        const canonicalNode = nodeSummary(candidate, "canonical_node");
+        const evidenceRefs = combinedEvidenceRefs(candidate);
+        const relatedDecisions = relatedDecisionGroups(candidate);
+        const rebuildIssues = state.rebuild && state.rebuild.candidates && Array.isArray(state.rebuild.candidates.issues)
+          ? state.rebuild.candidates.issues
+          : [];
         const wrapper = create("div", "stack");
-        const chips = create("div", "chip-row");
-        chips.appendChild(chip("Candidate " + valueText(candidate.candidate_id, "?"), "accent"));
-        chips.appendChild(chip("Canonical " + valueText(candidate.canonical_id, "?"), "accent"));
-        chips.appendChild(chip((candidate.shared_terms || []).length + " shared terms", "success"));
-        if (state.rebuild && state.rebuild.needs_update) {
-          chips.appendChild(chip("Rebuild pending", "warning"));
-        }
-        wrapper.appendChild(chips);
-        wrapper.appendChild(create("p", "hint", "This read-only shell uses the current candidate IDs, evidence refs, and rebuild metadata as graph context. A dedicated neighborhood API can plug into this panel later without changing the shell structure."));
+        const metrics = create("div", "metric-grid");
+        metrics.appendChild(metric("Related decisions", String(relatedDecisions.length)));
+        metrics.appendChild(metric("Evidence footprint", String(evidenceRefs.length)));
+        metrics.appendChild(metric("Shared terms", String(uniqueValues(candidate.shared_terms || []).length)));
+        metrics.appendChild(metric("Rebuild drift", state.rebuild && state.rebuild.needs_update ? "Pending" : "Clear"));
+        wrapper.appendChild(metrics);
+        wrapper.appendChild(
+          keyValue([
+            {
+              label: "Anchor nodes",
+              value: listNode([
+                nodeLabel(candidateNode, candidate.candidate_id) + " (" + valueText(candidate.candidate_id) + ")",
+                nodeLabel(canonicalNode, candidate.canonical_id) + " (" + valueText(candidate.canonical_id) + ")",
+              ], "No anchor nodes available"),
+            },
+            { label: "Shared terms", value: listNode(candidate.shared_terms || [], "No shared terms recorded") },
+            { label: "Evidence refs", value: listNode(evidenceRefs, "No evidence refs supplied") },
+            {
+              label: "Related decisions",
+              value: listNode(relatedDecisions.map(function (group) {
+                const segments = [
+                  group.id,
+                  "[" + group.sources.join(", ") + "]",
+                  group.operation,
+                ];
+                if (group.targets.length > 0) segments.push(group.targets.join(" ; "));
+                return segments.join(" ");
+              }), "No related decisions in the loaded audit window"),
+            },
+            { label: "Rebuild issues", value: listNode(rebuildIssues, "No candidate consistency issues reported") },
+          ])
+        );
         replaceBody(elements.graphBody, wrapper);
       }
 
@@ -893,22 +1220,21 @@ function studioClientScript(): string {
           replaceBody(elements.auditBody, emptyState("Loading decision log..."));
           return;
         }
-        if (!Array.isArray(state.log.items) || state.log.items.length === 0) {
+        const groups = groupedDecisionLogItems(state.log.items);
+        if (groups.length === 0) {
           replaceBody(elements.auditBody, emptyState("No applied or rejected patches have been recorded yet."));
           return;
         }
 
         const list = create("ul", "list");
-        state.log.items.slice(0, 12).forEach(function (item) {
-          const patch = item && item.patch ? item.patch : {};
-          const patchId = valueText(patch.id, "unknown-patch");
-          const operation = valueText(patch.operation, "unknown-operation");
-          const status = valueText(patch.status, item.source === "audit" ? "applied" : "recorded");
-          const when = formatDate(item.recorded_at);
+        groups.slice(0, 12).forEach(function (group) {
           const row = create("li", "list__item");
-          row.appendChild(create("div", "", patchId));
-          row.appendChild(create("div", "caption", item.source + " · " + operation + " · " + status));
-          row.appendChild(create("div", "hint", when + " · " + valueText(item.path)));
+          row.appendChild(create("div", "", group.id));
+          row.appendChild(create("div", "caption", group.sources.join(", ") + " · " + group.operation + " · " + group.status));
+          const segments = [formatDate(group.recorded_at)];
+          if (group.targets.length > 0) segments.push(group.targets.join(" ; "));
+          if (group.paths.length > 0) segments.push(group.paths.join(", "));
+          row.appendChild(create("div", "hint", segments.join(" · ")));
           list.appendChild(row);
         });
         replaceBody(elements.auditBody, list);
@@ -944,8 +1270,18 @@ function studioClientScript(): string {
         params.set("limit", "50");
         const query = elements.queueQuery && elements.queueQuery.value ? elements.queueQuery.value.trim() : "";
         const minScore = elements.queueMinScore && elements.queueMinScore.value ? elements.queueMinScore.value : "";
+        const status = elements.queueStatusFilter && elements.queueStatusFilter.value ? elements.queueStatusFilter.value : "";
+        const kind = elements.queueKindFilter && elements.queueKindFilter.value ? elements.queueKindFilter.value : "";
+        const operation = elements.queueOperationFilter && elements.queueOperationFilter.value ? elements.queueOperationFilter.value : "";
+        const sort = elements.queueSort && elements.queueSort.value ? elements.queueSort.value : "";
+        const order = elements.queueOrder && elements.queueOrder.value ? elements.queueOrder.value : "";
         if (query) params.set("query", query);
         if (minScore) params.set("min_score", minScore);
+        if (status) params.set("status", status);
+        if (kind) params.set("kind", kind);
+        if (operation) params.set("operation", operation);
+        if (sort) params.set("sort", sort);
+        if (order) params.set("order", order);
         state.queueError = null;
         try {
           state.queue = await fetchJson(bootstrap.routes.candidates + "?" + params.toString());
@@ -987,7 +1323,7 @@ function studioClientScript(): string {
 
       async function loadAuditTrail() {
         try {
-          state.log = await fetchJson(bootstrap.routes.decisionLog + "?source=both&status=all&limit=12");
+          state.log = await fetchJson(bootstrap.routes.decisionLog + "?source=both&status=all&limit=24");
         } catch (error) {
           state.log = {
             items: [],
@@ -1007,6 +1343,11 @@ function studioClientScript(): string {
 
       if (elements.queueQuery) elements.queueQuery.addEventListener("input", scheduleQueueRefresh);
       if (elements.queueMinScore) elements.queueMinScore.addEventListener("change", function () { void loadQueue(); });
+      if (elements.queueStatusFilter) elements.queueStatusFilter.addEventListener("change", function () { void loadQueue(); });
+      if (elements.queueKindFilter) elements.queueKindFilter.addEventListener("change", function () { void loadQueue(); });
+      if (elements.queueOperationFilter) elements.queueOperationFilter.addEventListener("change", function () { void loadQueue(); });
+      if (elements.queueSort) elements.queueSort.addEventListener("change", function () { void loadQueue(); });
+      if (elements.queueOrder) elements.queueOrder.addEventListener("change", function () { void loadQueue(); });
       if (elements.refresh) elements.refresh.addEventListener("click", function () {
         void Promise.all([loadQueue(), loadRebuild(), loadAuditTrail()]);
       });
@@ -1075,7 +1416,7 @@ ${studioStyles()}
           <span class="chip chip--accent"><span id="queue-count">0</span>&nbsp;items</span>
         </div>
         <div class="queue-toolbar">
-          <label class="field">
+          <label class="field field--search">
             <span>Search</span>
             <input id="queue-query" type="search" placeholder="Candidate, canonical, evidence, reason">
           </label>
@@ -1086,6 +1427,41 @@ ${studioStyles()}
               <option value="0.5">0.50+</option>
               <option value="0.75">0.75+</option>
               <option value="0.9">0.90+</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Status</span>
+            <select id="queue-status-filter">
+              <option value="">Any</option>
+              <option value="candidate">Candidate</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Kind</span>
+            <select id="queue-kind-filter">
+              <option value="">Any</option>
+              <option value="entity_match">Entity Match</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Operation</span>
+            <select id="queue-operation-filter">
+              <option value="">Any</option>
+              <option value="accept_match">Accept Match</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Sort</span>
+            <select id="queue-sort">
+              <option value="score">Score</option>
+              <option value="id">ID</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Order</span>
+            <select id="queue-order">
+              <option value="desc">Desc</option>
+              <option value="asc">Asc</option>
             </select>
           </label>
           <button id="refresh-button" type="button">Refresh</button>
@@ -1130,7 +1506,7 @@ ${studioStyles()}
           <div class="panel__header">
             <div>
               <h2 id="canonical-title" class="panel__title">Canonical Entity</h2>
-              <p class="panel__subhead">Current candidate-to-canonical mapping from the read-only queue.</p>
+              <p class="panel__subhead">Side-by-side candidate and canonical details from the selected reconciliation pair.</p>
             </div>
           </div>
           <div id="canonical-panel-body" class="panel__body"></div>
@@ -1140,7 +1516,7 @@ ${studioStyles()}
           <div class="panel__header">
             <div>
               <h2 id="graph-context-title" class="panel__title">Graph Context</h2>
-              <p class="panel__subhead">Selection-scoped context until a dedicated neighborhood endpoint lands.</p>
+              <p class="panel__subhead">Selection anchors, evidence footprint, rebuild drift, and recent related decisions.</p>
             </div>
           </div>
           <div id="graph-panel-body" class="panel__body"></div>
@@ -1168,7 +1544,7 @@ ${studioStyles()}
           <div class="panel__header">
             <div>
               <h2 id="audit-trail-title" class="panel__title">Audit Trail</h2>
-              <p class="panel__subhead">Authoritative and applied patch records read through the decision-log endpoint.</p>
+              <p class="panel__subhead">Authoritative and audit records grouped by patch so duplicate source=both rows stay readable.</p>
             </div>
           </div>
           <div id="audit-panel-body" class="panel__body"></div>
@@ -1318,7 +1694,15 @@ export function handleOntologyStudioRequest(
     const candidatePrefix = "/api/ontology/reconciliation/candidates/";
     if (url.pathname.startsWith(candidatePrefix)) {
       const id = decodeURIComponent(url.pathname.slice(candidatePrefix.length));
-      return jsonResult(200, getOntologyReconciliationCandidate(context, id));
+      const candidate = getOntologyReconciliationCandidate(context, id);
+      return jsonResult(
+        200,
+        studioCandidateDetail(
+          candidate,
+          context.nodes.find((node) => node.id === candidate.candidate_id),
+          context.nodes.find((node) => node.id === candidate.canonical_id),
+        ),
+      );
     }
     if (url.pathname === "/api/ontology/reconciliation/decision-log") {
       return jsonResult(200, previewOntologyDecisionLog(context, decisionLogOptions(url.searchParams)));
