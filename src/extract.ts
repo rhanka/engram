@@ -3167,6 +3167,19 @@ export async function extractRust(filePath: string, rootDir?: string): Promise<E
   const edges: GraphEdge[] = [];
   const seenIds = new Set<string>();
   const functionBodies: Array<[string, SyntaxNode]> = [];
+  const localImplMethodIds = new Map<string, string>();
+
+  function normalizeRustScopedPart(raw: string): string {
+    return raw
+      .trim()
+      .replace(/^&(?:mut\s+)?/, "")
+      .split("::")
+      .pop()!
+      .replace(/<.*$/, "")
+      .replace(/^r#/, "")
+      .trim()
+      .toLowerCase();
+  }
 
   function addNode(nid: string, label: string, line: number): void {
     if (!seenIds.has(nid)) {
@@ -3185,7 +3198,11 @@ export async function extractRust(filePath: string, rootDir?: string): Promise<E
   const fileNid = _makeId(stem);
   addNode(fileNid, basename(filePath), 1);
 
-  function walk(node: SyntaxNode, parentImplNid: string | null = null): void {
+  function walk(
+    node: SyntaxNode,
+    parentImplNid: string | null = null,
+    parentImplTypeName: string | null = null,
+  ): void {
     const t = node.type;
 
     if (t === "function_item") {
@@ -3198,6 +3215,10 @@ export async function extractRust(filePath: string, rootDir?: string): Promise<E
           funcNid = _makeId(parentImplNid, funcName);
           addNode(funcNid, `.${funcName}()`, line);
           addEdge(parentImplNid, funcNid, "method", line);
+          if (parentImplTypeName) {
+            const methodKey = `${normalizeRustScopedPart(parentImplTypeName)}::${normalizeRustScopedPart(funcName)}`;
+            localImplMethodIds.set(methodKey, funcNid);
+          }
         } else {
           funcNid = _makeId(stem, funcName);
           addNode(funcNid, `${funcName}()`, line);
@@ -3224,15 +3245,16 @@ export async function extractRust(filePath: string, rootDir?: string): Promise<E
     if (t === "impl_item") {
       const typeNode = node.childForFieldName("type");
       let implNid: string | null = null;
+      let typeName: string | null = null;
       if (typeNode) {
-        const typeName = _readText(typeNode, source).trim();
+        typeName = _readText(typeNode, source).trim();
         implNid = _makeId(stem, typeName);
         addNode(implNid, typeName, node.startPosition.row + 1);
       }
       const body = node.childForFieldName("body");
       if (body) {
         for (const child of body.children) {
-          walk(child, implNid);
+          walk(child, implNid, typeName);
         }
       }
       return;
@@ -3253,7 +3275,7 @@ export async function extractRust(filePath: string, rootDir?: string): Promise<E
     }
 
     for (const child of node.children) {
-      walk(child, null);
+      walk(child, null, null);
     }
   }
 
@@ -3269,6 +3291,7 @@ export async function extractRust(filePath: string, rootDir?: string): Promise<E
     if (node.type === "call_expression") {
       const funcNode = node.childForFieldName("function");
       let calleeName: string | null = null;
+      let targetNid: string | null = null;
       if (funcNode) {
         if (funcNode.type === "identifier") {
           calleeName = _readText(funcNode, source);
@@ -3277,22 +3300,26 @@ export async function extractRust(filePath: string, rootDir?: string): Promise<E
           if (field) calleeName = _readText(field, source);
         } else if (funcNode.type === "scoped_identifier") {
           const name = funcNode.childForFieldName("name");
-          if (name) calleeName = _readText(name, source);
+          const path = funcNode.childForFieldName("path");
+          if (name && path) {
+            const methodKey = `${normalizeRustScopedPart(_readText(path, source))}::${normalizeRustScopedPart(_readText(name, source))}`;
+            targetNid = localImplMethodIds.get(methodKey) ?? null;
+          }
         }
       }
-      if (calleeName) {
-        const tgtNid = labelToNid.get(calleeName.toLowerCase());
-        if (tgtNid && tgtNid !== callerNid) {
-          const pair = `${callerNid}|${tgtNid}`;
-          if (!seenCallPairs.has(pair)) {
-            seenCallPairs.add(pair);
-            const line = node.startPosition.row + 1;
-            edges.push({
-              source: callerNid, target: tgtNid, relation: "calls",
-              confidence: "EXTRACTED", source_file: strPath,
-              source_location: `L${line}`, weight: 1.0,
-            });
-          }
+      if (!targetNid && calleeName) {
+        targetNid = labelToNid.get(calleeName.toLowerCase()) ?? null;
+      }
+      if (targetNid && targetNid !== callerNid) {
+        const pair = `${callerNid}|${targetNid}`;
+        if (!seenCallPairs.has(pair)) {
+          seenCallPairs.add(pair);
+          const line = node.startPosition.row + 1;
+          edges.push({
+            source: callerNid, target: targetNid, relation: "calls",
+            confidence: "EXTRACTED", source_file: strPath,
+            source_location: `L${line}`, weight: 1.0,
+          });
         }
       }
     }

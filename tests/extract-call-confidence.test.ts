@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { extractGo, extractJs } from "../src/extract.js";
+import { extract, extractGo, extractJs } from "../src/extract.js";
 
 const cleanupDirs: string[] = [];
 
@@ -91,5 +91,49 @@ describe("AST call edge confidence", () => {
 
     expect(demoNode).toBeDefined();
     expect(callTargets).toEqual([]);
+  });
+
+  it("keeps Rust scoped calls tied to the matching local type", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-extract-rust-scoped-"));
+    cleanupDirs.push(dir);
+
+    const filePath = join(dir, "sample.rs");
+    writeFileSync(
+      filePath,
+      [
+        "pub fn parse(input: &str) -> usize {",
+        "  input.len()",
+        "}",
+        "",
+        "pub struct Server;",
+        "",
+        "impl Server {",
+        "  pub fn run(&self) {",
+        "    let _ = Server::start();",
+        "    let _ = Url::parse(\"http://example.com\");",
+        "  }",
+        "",
+        "  fn start() -> bool {",
+        "    false",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await extract([filePath]);
+    const runNode = result.nodes.find((node) => node.label === ".run()");
+    const startNode = result.nodes.find((node) => node.label === ".start()");
+    const parseNode = result.nodes.find((node) => node.label === "parse()");
+    const callTargets = result.edges
+      .filter((edge) => edge.relation === "calls" && edge.source === runNode?.id)
+      .map((edge) => edge.target);
+
+    expect(runNode).toBeDefined();
+    expect(startNode).toBeDefined();
+    expect(parseNode).toBeDefined();
+    expect(callTargets).toContain(startNode?.id);
+    expect(callTargets).not.toContain(parseNode?.id);
   });
 });

@@ -273,7 +273,7 @@ M0..M5 lots all landed. `.astro` extractor (`6a7de56`), watch `.rebuild.lock` (`
 **Spec (1/1)**
 - [x] `spec/SPEC_TRACK_F_UPSTREAM_BILAN.md` defines cadence, buckets (`must-port` / `already-covered` / `intentional-delta` / `defer`), outputs, and decision rules. Bilan #1 snapshot recorded in that spec on 2026-05-15.
 
-**Bilan #2 refresh (2026-05-18).** Current branch ports upstream `2aaa216` (`v0.8.9`) so npm `package.json` dependency-block keys no longer surface as god nodes. The next recommended `upstream/v8` follow-ups stay queued for separate lots: `f7160c8` (Rust cross-crate false `INFERRED` edges) and `2d783e5` (cohesion unrounding audit plus hook/detect follow-ups). `F-Opt` remains deferred until upstream ships a stable `v2.0.0` tag.
+**Bilan #2 refresh (2026-05-18).** Current branch ports upstream `2aaa216` (`v0.8.9`) so npm `package.json` dependency-block keys no longer surface as god nodes. This follow-up branch closes `f7160c8` by making Rust `Type::method()` resolution stay on matching local impl methods instead of bare last-segment matches; the next recommended `upstream/v8` follow-up is now `2d783e5` (cohesion unrounding audit plus hook/detect follow-ups). `F-Opt` remains deferred until upstream ships a stable `v2.0.0` tag.
 
 **Plan** — lots scoped against the weekly bilans; F-Doc and F-Install are implementation-trivial:
 - [x] **Lot F-Install — Query-first install guidance / `GRAPH_REPORT.md` demotion** (~0.5 day). Port upstream PR #891 / v0.8.6 across installer constants, assistant skills, README, and project meta files. Existing installs refresh in place instead of preserving stale report-first text. Release vehicle: `graphifyy@0.9.2`.
@@ -292,9 +292,9 @@ M0..M5 lots all landed. `.astro` extractor (`6a7de56`), watch `.rebuild.lock` (`
 - [x] **Lot F-P2b — npm dep-block god-node suppression** (~0.25 day). Target upstream commit:
   - `2aaa216` — *Fix analyze: exclude npm dep-block keys from god-node selection* (`upstream/v8`, `v0.8.9`).
   Ported in `src/analyze.ts` with targeted regression coverage in `tests/analyze.test.ts`.
-- [ ] **Lot F-Next — Rust cross-crate false `INFERRED` edges** (~0.5-1 day). Target upstream commit:
+- [x] **Lot F-Next — Rust cross-crate false `INFERRED` edges** (~0.5-1 day). Target upstream commit:
   - `f7160c8` — *Fix Rust cross-crate spurious `INFERRED` edges: skip `scoped_identifier` and trait-method blocklist from `raw_calls`* (`upstream/v8`).
-  Keep as the next recommended extractor lot; do not mix it into this analyze-only branch unless a later scan proves it trivial.
+  Closed on this branch by tightening Rust `scoped_identifier` resolution to exact local impl methods and adding a regression in `tests/extract-call-confidence.test.ts`.
 - [ ] **Lot F-Next — cohesion unrounding audit / hook-detect follow-ups** (~1 day). Target upstream commit:
   - `2d783e5` — *Fix hooks phantom dir on git < 2.31, save_manifest incremental data loss, cohesion rounding, C++ inheritance; add `--resolution` and `--exclude-hubs`* (`upstream/v8`).
   Scope this as a separate audit lot; only the cohesion/report angle is currently relevant to Track F, but the full commit spans CLI, detect, hooks, cluster, and report.
