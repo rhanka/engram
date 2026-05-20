@@ -368,6 +368,69 @@ describe("ontology profile loader", () => {
     );
   });
 
+  it("accepts visual_encoding shape + color_hex on node types (Track C-3.5)", () => {
+    const raw = parseOntologyProfile(
+      [
+        "id: visual-encoding-demo",
+        "version: 1",
+        "node_types:",
+        "  Character:",
+        "    visual_encoding:",
+        "      shape: diamond",
+        "      color_hex: '#11AABB'",
+        "  Crime:",
+        "    visual_encoding:",
+        "      shape: star",
+        "      color_hex: '#FF000088'",
+        "relation_types: {}",
+        "",
+      ].join("\n"),
+      "ontology-profile.yaml",
+    );
+    expect(validateOntologyProfile(raw)).toEqual([]);
+    const profile = normalizeOntologyProfile(raw);
+    expect(profile.node_types.Character.visual_encoding).toEqual({ shape: "diamond", color_hex: "#11AABB" });
+    expect(profile.node_types.Crime.visual_encoding).toEqual({ shape: "star", color_hex: "#FF000088" });
+  });
+
+  it("rejects unknown vis.js shapes in visual_encoding (Track C-3.5)", () => {
+    const raw = parseOntologyProfile(
+      [
+        "id: bad-visual",
+        "version: 1",
+        "node_types:",
+        "  Character:",
+        "    visual_encoding:",
+        "      shape: heptagon",
+        "relation_types: {}",
+        "",
+      ].join("\n"),
+      "ontology-profile.yaml",
+    );
+    expect(validateOntologyProfile(raw)).toContain(
+      "node_types.Character.visual_encoding.shape must be one of dot, square, triangle, box, diamond, star, hexagon (got heptagon)",
+    );
+  });
+
+  it("rejects malformed color_hex in visual_encoding (Track C-3.5)", () => {
+    const raw = parseOntologyProfile(
+      [
+        "id: bad-color",
+        "version: 1",
+        "node_types:",
+        "  Character:",
+        "    visual_encoding:",
+        "      color_hex: 'red'",
+        "relation_types: {}",
+        "",
+      ].join("\n"),
+      "ontology-profile.yaml",
+    );
+    expect(validateOntologyProfile(raw)).toContain(
+      "node_types.Character.visual_encoding.color_hex must match /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/ (got red)",
+    );
+  });
+
   it("computes a stable hash independent of object key order", () => {
     const first = normalizeOntologyProfile(parseOntologyProfile(validProfileYaml(), "a.yaml"));
     const second = normalizeOntologyProfile({
