@@ -1,8 +1,8 @@
 /**
  * Export graph to HTML, JSON, SVG, GraphML, Obsidian Canvas, and Neo4j Cypher.
  */
-import { readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import Graph from "graphology";
 import { sanitizeLabel, escapeHtml } from "./security.js";
 import { isDirectedGraph } from "./graph.js";
@@ -14,6 +14,99 @@ import {
   toNumericMap,
   toStringMap,
 } from "./collections.js";
+
+// ---------------------------------------------------------------------------
+// backupIfProtected — upstream 6939494 (#834)
+// Snapshot artifacts to a dated subfolder before overwrite when graph cost
+// real LLM tokens or has been human-curated.
+// ---------------------------------------------------------------------------
+
+const BACKUP_ARTIFACTS = [
+  "graph.json",
+  "GRAPH_REPORT.md",
+  ".graphify_labels.json",
+  ".graphify_analysis.json",
+  "manifest.json",
+  ".graphify_semantic_marker",
+  "cost.json",
+];
+
+function todayIso(): string {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+/**
+ * Snapshot graph artifacts to a dated subfolder before an overwrite.
+ *
+ * Triggers when graph.json exists AND either:
+ * - .graphify_semantic_marker is present (graph cost real LLM tokens), or
+ * - .graphify_labels.json contains at least one non-default community label
+ *   (graph has been curated by a human or skill).
+ *
+ * Returns the backup folder path, or null if no backup was taken.
+ * Never throws — best-effort. Set GRAPHIFY_NO_BACKUP=1 to disable.
+ */
+export function backupIfProtected(outDir: string): string | null {
+  if (process.env.GRAPHIFY_NO_BACKUP) return null;
+  const out = resolve(outDir);
+  if (!existsSync(join(out, "graph.json"))) return null;
+
+  const isSemantic = existsSync(join(out, ".graphify_semantic_marker"));
+  let isCurated = false;
+  const labelsFile = join(out, ".graphify_labels.json");
+  if (existsSync(labelsFile)) {
+    try {
+      const labels = JSON.parse(readFileSync(labelsFile, "utf-8")) as Record<string, string>;
+      isCurated = Object.entries(labels).some(([k, v]) => v !== `Community ${k}`);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (!isSemantic && !isCurated) return null;
+
+  const reason = [
+    isSemantic ? "semantic" : "",
+    isCurated ? "curated" : "",
+  ].filter(Boolean).join("+");
+
+  const today = todayIso();
+  let backupDir = join(out, today);
+  let suffix = 2;
+  while (existsSync(backupDir)) {
+    backupDir = join(out, `${today}_${suffix}`);
+    suffix++;
+  }
+
+  try {
+    mkdirSync(backupDir, { recursive: true });
+    let copied = 0;
+    for (const name of BACKUP_ARTIFACTS) {
+      const src = join(out, name);
+      if (existsSync(src)) {
+        try {
+          copyFileSync(src, join(backupDir, name));
+          copied++;
+        } catch {
+          /* ignore individual file copy failures */
+        }
+      }
+    }
+    if (copied > 0) {
+      console.log(`[graphify] backed up ${reason} graph (${copied} files) → ${basename(backupDir)}/`);
+    }
+    return backupDir;
+  } catch (err) {
+    console.warn(
+      `[graphify] warning: backup failed (${err instanceof Error ? err.message : err}) — continuing with overwrite`,
+    );
+    return null;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Constants

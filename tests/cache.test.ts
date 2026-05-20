@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, writeFileSync, rmSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
+  _resetStatIndexForTesting,
   checkSemanticCache,
   clearCache,
   fileHash,
@@ -17,6 +18,7 @@ describe("cache", () => {
   beforeEach(() => {
     tmpDir = join(tmpdir(), `graphify-test-cache-${Date.now()}`);
     mkdirSync(tmpDir, { recursive: true });
+    _resetStatIndexForTesting();
   });
 
   afterEach(() => {
@@ -178,6 +180,33 @@ describe("cache", () => {
     mkdirSync(dirPath, { recursive: true });
 
     expect(() => fileHash(dirPath)).toThrow("fileHash requires a file");
+  });
+
+  it("returns the cached hash when file size and mtime are unchanged (upstream d84f07c fastpath)", () => {
+    const f = join(tmpDir, "fastpath.py");
+    writeFileSync(f, "print('initial')\n");
+    const first = fileHash(f, tmpDir);
+
+    // Touch with same content; mtime unchanged → must hit the cache and return same hash.
+    const second = fileHash(f, tmpDir);
+    expect(second).toBe(first);
+
+    // Now bump mtime via utimesSync but keep same content. Hash content+rel-path
+    // is identical, so digest must be equal even though the fastpath miss
+    // triggers a re-hash.
+    const future = new Date(Date.now() + 10_000);
+    utimesSync(f, future, future);
+    const third = fileHash(f, tmpDir);
+    expect(third).toBe(first);
+  });
+
+  it("re-hashes when file size changes even if stat index claims otherwise", () => {
+    const f = join(tmpDir, "edit.py");
+    writeFileSync(f, "print('a')\n");
+    const h1 = fileHash(f, tmpDir);
+    writeFileSync(f, "print('a much longer content that changes size')\n");
+    const h2 = fileHash(f, tmpDir);
+    expect(h2).not.toBe(h1);
   });
 
   it("skips directory source_file entries when saving semantic cache", () => {

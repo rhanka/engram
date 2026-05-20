@@ -9,7 +9,7 @@
  *    using an explicit `seen` set keyed on node.id.
  */
 import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { isAbsolute, relative as pathRelative, resolve } from "node:path";
 import Graph from "graphology";
 import type { Extraction } from "./types.js";
 import { createGraph } from "./graph.js";
@@ -17,14 +17,33 @@ import { validateExtraction } from "./validate.js";
 
 export interface BuildOptions {
   directed?: boolean;
+  /**
+   * If given, absolute source_file paths from semantic subagents are made
+   * repo-relative before graph storage. Closes upstream #932 where semantic
+   * chunks produced absolute paths that did not match the AST chunks' relative
+   * paths, splitting nodes across two identities.
+   */
+  root?: string;
 }
 
 const CHUNK_SUFFIX = /_c\d+$/;
 const SKU_LIKE_LABEL = /^[A-Z0-9][A-Z0-9._/-]{1,11}$/;
 
-function normalizeSourceFilePath(value: unknown): string | undefined {
+function normalizeSourceFilePath(value: unknown, root?: string): string | undefined {
   if (typeof value !== "string") return undefined;
-  return value.replace(/\\/g, "/");
+  let normalised = value.replace(/\\/g, "/");
+  if (root && isAbsolute(normalised)) {
+    try {
+      const rel = pathRelative(resolve(root), normalised);
+      // Only strip when the path is actually inside root (no .. prefix).
+      if (rel && !rel.startsWith("..") && !isAbsolute(rel)) {
+        normalised = rel.replace(/\\/g, "/");
+      }
+    } catch {
+      /* ignore — keep original */
+    }
+  }
+  return normalised;
 }
 
 function normalizedLabel(value: string): string {
@@ -55,6 +74,11 @@ function asString(value: unknown): string | undefined {
 
 function sourceKey(value: unknown): string {
   return normalizeSourceFilePath(value) ?? "";
+}
+
+function rootForOptions(options?: BuildOptions): string | undefined {
+  const r = options?.root;
+  return typeof r === "string" && r.length > 0 ? resolve(r) : undefined;
 }
 
 function resolveRemap(remap: Map<string, string>, id: string): string {
@@ -205,6 +229,7 @@ export function deduplicateByLabel(extraction: Extraction): Extraction {
 }
 
 export function buildFromJson(extraction: Extraction, options?: BuildOptions): Graph {
+  const root = rootForOptions(options);
   for (const node of extraction.nodes ?? []) {
     const legacySource = node.source as unknown;
     if (legacySource !== undefined && node.source_file === undefined) {
@@ -216,7 +241,7 @@ export function buildFromJson(extraction: Extraction, options?: BuildOptions): G
         `'source_file' - ${affectedEdges} edge(s) may be misrouted. Rename the field to ` +
         "'source_file' to silence this warning.",
       );
-      node.source_file = normalizeSourceFilePath(String(legacySource)) ?? String(legacySource);
+      node.source_file = normalizeSourceFilePath(String(legacySource), root) ?? String(legacySource);
       delete node.source;
     }
   }
@@ -236,7 +261,7 @@ export function buildFromJson(extraction: Extraction, options?: BuildOptions): G
     const { id, ...attrs } = node;
     const normalizedAttrs = { ...attrs };
     if ("source_file" in normalizedAttrs) {
-      normalizedAttrs.source_file = normalizeSourceFilePath(normalizedAttrs.source_file) ?? normalizedAttrs.source_file;
+      normalizedAttrs.source_file = normalizeSourceFilePath(normalizedAttrs.source_file, root) ?? normalizedAttrs.source_file;
     }
     G.mergeNode(id, normalizedAttrs);
   }
@@ -247,7 +272,7 @@ export function buildFromJson(extraction: Extraction, options?: BuildOptions): G
     const { source, target, ...attrs } = edge;
     if (!nodeSet.has(source) || !nodeSet.has(target)) continue;
     if ("source_file" in attrs) {
-      attrs.source_file = normalizeSourceFilePath(attrs.source_file) ?? attrs.source_file;
+      attrs.source_file = normalizeSourceFilePath(attrs.source_file, root) ?? attrs.source_file;
     }
     // Preserve original edge direction
     attrs._src = source;
@@ -266,7 +291,7 @@ export function buildFromJson(extraction: Extraction, options?: BuildOptions): G
       "hyperedges",
       hyperedges.map((hyperedge) => ({
         ...hyperedge,
-        source_file: normalizeSourceFilePath(hyperedge.source_file) ?? hyperedge.source_file,
+        source_file: normalizeSourceFilePath(hyperedge.source_file, root) ?? hyperedge.source_file,
       })),
     );
   }

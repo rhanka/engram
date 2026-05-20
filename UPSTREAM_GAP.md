@@ -342,7 +342,7 @@ Mechanically mirroring upstream Python version bumps is forbidden; see `spec/SPE
 
 ### Numerical interpretation note
 
-`graphifyy@0.9.5` is numerically ahead of upstream stable `graphify@0.8.13`, but the version number is still **not** a blanket parity claim against `v8` / `v0.8.x`. The `0.9.x` line is driven by TypeScript product deltas plus audited upstream carry-forward. The closest audited parity point now sits at upstream `v0.8.10` after porting `2aaa216` (npm dep-block keys) and `f7160c8` (Rust cross-crate `INFERRED`); only the `2d783e5` row above still defines the functional gap before any stronger `v0.8.11` parity claim. The `0.9.5` patch bump ships the merged `f7160c8` port plus a refresh of `main`'s `.graphify/` artefacts; no graph schema change.
+`graphifyy@0.9.6` aligns the closest audited upstream parity point with stable `graphify@0.8.13`. The `0.9.x` line is still driven by TypeScript product deltas plus audited upstream carry-forward (Track C-3.5 visual encoding is TS-only with no upstream Python counterpart). The remaining `v0.8.x` gap is one explicit intentional-delta (skill `scan_root` subfolder breakdown) plus the deferred `F-Opt` buckets queued as the upcoming Lot F-H1+F-H2 (hypergraph data layer + HTML shading) and the `v2` wiki rewrite. No graph schema change in `0.9.6`; the next bump (`0.10.0`) will ship hypergraph and is the first one to carry a schema delta.
 
 ### Update rule
 
