@@ -164,7 +164,7 @@ export function renderWorkspaceShell(opts: RenderWorkspaceShellOptions): string 
     "</aside>",
     '<main class="ws-center" id="central-display" role="main" aria-label="Central display" tabindex="-1">',
     '<h2 class="ws-region-heading">Central display</h2>',
-    '<p class="ws-empty">Entity / type / candidate description renders here (G4 fills the markdown body, including Track A wiki sidecar inlining).</p>',
+    '<p class="ws-empty">No display item selected.</p>',
     '<section class="ws-graph-panel" id="graph-panel" role="region" aria-label="Graph panel">',
     '<h2 class="ws-region-heading">Graph panel</h2>',
     graphPanelBody,
