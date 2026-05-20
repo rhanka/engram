@@ -427,4 +427,43 @@ describe("detect", () => {
     expect(result.new_total).toBe(1);
     expect(result.new_files?.code).toEqual([filePath]);
   });
+
+  it("preserves entries for untouched files when saveManifest is called with a subset (upstream 2d783e5 #917)", () => {
+    const aPath = join(tmpDir, "a.py");
+    const bPath = join(tmpDir, "b.py");
+    const manifestPath = join(tmpDir, ".graphify", "manifest.json");
+    writeFileSync(aPath, "print('a')\n");
+    writeFileSync(bPath, "print('b')\n");
+
+    // Initial save covers both files
+    const initial = detect(tmpDir);
+    saveManifest(initial.files, manifestPath);
+    const initialManifest = JSON.parse(readFileSync(manifestPath, "utf-8")) as Record<string, unknown>;
+    expect(Object.keys(initialManifest).sort()).toEqual([aPath, bPath].sort());
+
+    // Incremental caller passes only the changed subset (b.py)
+    saveManifest({ code: [bPath] }, manifestPath);
+    const after = JSON.parse(readFileSync(manifestPath, "utf-8")) as Record<string, unknown>;
+
+    // a.py entry must survive — it was untouched on disk but absent from the subset
+    expect(after[aPath]).toBeDefined();
+    expect(after[bPath]).toBeDefined();
+  });
+
+  it("drops manifest entries whose file no longer exists on disk", () => {
+    const aPath = join(tmpDir, "a.py");
+    const bPath = join(tmpDir, "b.py");
+    const manifestPath = join(tmpDir, ".graphify", "manifest.json");
+    writeFileSync(aPath, "print('a')\n");
+    writeFileSync(bPath, "print('b')\n");
+    saveManifest(detect(tmpDir).files, manifestPath);
+
+    // Delete b.py and call saveManifest with a subset that excludes both
+    require("node:fs").unlinkSync(bPath);
+    saveManifest({ code: [] }, manifestPath);
+    const after = JSON.parse(readFileSync(manifestPath, "utf-8")) as Record<string, unknown>;
+
+    expect(after[aPath]).toBeDefined();
+    expect(after[bPath]).toBeUndefined();
+  });
 });

@@ -10,6 +10,7 @@ import {
   createAssistantVisionJsonClient,
   defaultDirectLlmModel,
   directProviderCredentialEnv,
+  parseJsonFromLlmText,
   preflightLlmExecution,
   redactSecrets,
 } from "../src/llm-execution.js";
@@ -278,5 +279,17 @@ describe("LLM execution ports", () => {
       apiKey: "[REDACTED]",
       nested: { token: "[REDACTED]", safe: "visible" },
     });
+  });
+
+  it("raises a clear error on empty / null LLM text (upstream f5fea13 #924)", () => {
+    expect(() => parseJsonFromLlmText("")).toThrow("empty or filtered");
+    expect(() => parseJsonFromLlmText("   ")).toThrow("empty or filtered");
+    expect(() => parseJsonFromLlmText(null)).toThrow("empty or filtered");
+    expect(() => parseJsonFromLlmText(undefined)).toThrow("empty or filtered");
+  });
+
+  it("still parses valid JSON normally", () => {
+    expect(parseJsonFromLlmText('{"a": 1}')).toEqual({ a: 1 });
+    expect(parseJsonFromLlmText('```json\n{"b": 2}\n```')).toEqual({ b: 2 });
   });
 });

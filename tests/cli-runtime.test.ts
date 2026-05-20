@@ -295,6 +295,15 @@ describe("public CLI runtime command parity", () => {
     expect(result.warnings).toEqual([]);
   });
 
+  it("treats bare path argument as `extract <path>` (upstream 2209a9c)", async () => {
+    // Create an empty directory the alias can point at — we expect either a
+    // graceful "no supported files" outcome or a successful extract path,
+    // but NOT a commander "unknown command '.'" error.
+    const dir = tempProject();
+    const result = await runCli(["."], dir, { interceptExit: true });
+    expect(result.errors.join("\n")).not.toContain("unknown command");
+  });
+
   it("supports clone with an explicit output directory", async () => {
     const source = tempProject();
     initGitRepo(source);

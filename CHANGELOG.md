@@ -4,14 +4,27 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
-## Unreleased
+## 0.9.6 (2026-05-20)
 
-Track C-3.5 — profile-aware visual encoding per ontology node type (cosmetic-only).
+Track F-M2 upstream parity follow-up — port the 6 commits between upstream `v0.8.11` and `v0.8.13` worth porting to the TypeScript line. Also rolls in the Track C-3.5 visual encoding feature that landed mid-cycle.
 
-- `ontology-profile.yaml` may now declare a vis.js `shape` and a `color_hex` per `node_types.*.visual_encoding` (validated against the `dot / square / triangle / box / diamond / star / hexagon` enum and `^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$`).
-- `graphify export html` (plus the implicit HTML re-export from `cluster-only` and the main extract run) reads `node_type` on each node and resolves shape + border/background color from the profile in priority over `inferNodeShape(file_type, source_file)`. When no profile is provided or no `visual_encoding` is declared, the HTML output is byte-identical to before.
-- `graphify export html` accepts an explicit `--profile <path>` so an ontology profile can be applied to an existing graph without touching `graphify.yaml`.
-- TS-only delta: no upstream Python parity gap, no graph schema change, no bundled dep change.
+Ports from `upstream/v8`:
+
+- `2d783e5` — cohesion unrounding so `GRAPH_REPORT.md` no longer rounds away near-perfect community cohesion, `save_manifest` no longer seeds with the wrong cache state, and the cluster CLI exposes `--resolution` / `--exclude-hubs`.
+- `d84f07c` — node-ID dedup so two distinct nodes can no longer collide on the same canonical id, `extract` cache fastpath when the semantic cache is byte-identical to the previous run, and absolute `source_file` paths get relativized to the scan root before persistence.
+- `f5fea13` — LLM provider responses with empty / filtered `choices` or `null` `message` no longer crash the extract; a clear warning is logged and the chunk is recorded in the failed-chunk manifest.
+- `6939494` — `backupIfProtected` writes a snapshot of `.graphify/graph.json` before overwriting it whenever the previous graph carried semantic/curated content.
+- `2209a9c` — bare `graphify <path>` is now treated as `graphify extract <path>` instead of failing with "unknown command".
+- `850c545` — large-corpus gate `FILE_COUNT_UPPER` raised from 200 to 500 files so typical 200-500 file codebases no longer hit the warning on a fresh extraction.
+
+Also released in this version (was the `Unreleased` block before):
+
+- **Track C-3.5** — profile-aware visual encoding per ontology node type. `ontology-profile.yaml` may now declare a vis.js `shape` and a `color_hex` per `node_types.*.visual_encoding` (validated against `dot / square / triangle / box / diamond / star / hexagon` and `^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$`). `graphify export html` and the implicit HTML re-export consume the profile in priority over `inferNodeShape(file_type, source_file)`. `--profile <path>` lets a profile be applied ad-hoc. No graph schema change.
+
+Intentional deltas vs upstream (recorded in `UPSTREAM_GAP.md`):
+
+- The skill-level `scan_root` subdirectory breakdown from upstream `a234c52` is not ported: the TypeScript skill runtime does not consume the same dictionary shape as the Python skill, and the fast-path "run `graphify query` when `graph.json` exists" guidance is already shipped here via PR #891 (port to 0.9.2).
+- Numerical: the patch bump advances closest audited parity to upstream `v0.8.13`. The remaining `0.8.x` rows recorded in `UPSTREAM_GAP.md` are intentional-delta (skill subfolder docs) and `F-Opt` deferrals (hypergraph data layer is queued as Lot F-H1+F-H2, separate PR).
 
 ## 0.9.5 (2026-05-19)
 

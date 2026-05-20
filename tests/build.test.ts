@@ -110,6 +110,30 @@ describe("buildFromJson", () => {
     expect(G.getEdgeAttribute(edge!, "source_file")).toBe("src/middleware/auth.ts");
     expect(hyperedges?.[0]?.source_file).toBe("src/middleware/auth.ts");
   });
+
+  it("relativizes absolute source_file paths to root option (upstream d84f07c #932)", () => {
+    const root = "/home/user/project";
+    const ext: Extraction = {
+      nodes: [
+        { id: "a", label: "A", file_type: "code", source_file: "/home/user/project/src/a.py" },
+        { id: "b", label: "B", file_type: "code", source_file: "src/b.py" }, // already relative
+        { id: "c", label: "C", file_type: "code", source_file: "/elsewhere/c.py" }, // outside root
+      ],
+      edges: [
+        { source: "a", target: "b", relation: "calls", confidence: "EXTRACTED", source_file: "/home/user/project/src/a.py" },
+      ],
+      input_tokens: 0,
+      output_tokens: 0,
+    };
+
+    const G = buildFromJson(ext, { root });
+    expect(G.getNodeAttribute("a", "source_file")).toBe("src/a.py");
+    expect(G.getNodeAttribute("b", "source_file")).toBe("src/b.py");
+    // Outside root → keep absolute (relativizing would go outside scope).
+    expect(G.getNodeAttribute("c", "source_file")).toBe("/elsewhere/c.py");
+    const edge = G.edge("a", "b");
+    expect(G.getEdgeAttribute(edge!, "source_file")).toBe("src/a.py");
+  });
 });
 
 describe("build (merge)", () => {
