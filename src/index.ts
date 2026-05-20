@@ -3,6 +3,13 @@
  */
 
 export { type GraphNode, type GraphEdge, type Extraction, type Hyperedge, type DetectionResult, FileType } from "./types.js";
+export {
+  HYPEREDGES_ATTRIBUTE,
+  loadHyperedges,
+  setHyperedges,
+  mergeHyperedges,
+  validateHyperedge,
+} from "./hyperedges.js";
 export type {
   GraphifyInputScopeMode,
   GraphifyDataprepPolicy,
