@@ -25,3 +25,9 @@ declare module "unpdf" {
     options?: { mergePages?: boolean },
   ): Promise<UnpdfTextResult>;
 }
+
+declare module "@sentropic/design-system/tokens" {
+  export const workspaceTokens: unknown;
+  const defaultTokens: unknown;
+  export default defaultTokens;
+}
