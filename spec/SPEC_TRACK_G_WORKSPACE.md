@@ -187,10 +187,9 @@ Until the DS ships these, the workspace runs on the local fallback adapter (`tok
 
 1. **Profile view extensions slot** — locked at `outputs.workspace.view_state` in `ontology-profile.yaml`. Convention parity with the already-shipping `outputs.html.*` and `outputs.wiki.*` blocks. Profile declares its own sub-keys (e.g. `processes`, `evidence_modes`) and a profile adapter under `src/workspace/profile-adapters/` resolves them. Graphify core does not interpret these sub-keys; an unknown adapter falls through to the generic display.
 2. **`displayRef` candidate scheme** — locked at `candidate:<id>` where `<id>` is the reconciliation candidate identifier from `graphify_ontology_reconciliation_candidates_v1`. Stale-fallback policy: when the referenced entity is absent from the current graph (refresh between candidate generation and display), the candidate stays visible with a `entity absente du graphe courant — rebuild requis` banner; queue navigation is not auto-skipped, so drift is loud, not hidden.
+3. **Track A `insufficient_evidence` rendering** — hide the description block entirely, parity with the current wiki rendering (`SPEC_WIKI_ENTITY_DESCRIPTIONS.md > insufficient-evidence behavior`). The rest of the entity central view (graph context, evidence list, audit trail) stays rendered. No placeholder, no status badge: zero visual noise for profiles that have not generated descriptions yet.
 
-## Open questions (still to resolve before Lot 1 PR)
-
-1. **Track A `insufficient_evidence` rendering.** When a wiki description sidecar entry exists but is marked `insufficient_evidence`, what does the central workspace display do? Three options: (a) hide the description block entirely (parity with current wiki rendering, default lean), (b) render a neutral placeholder ("no description available yet — insufficient evidence at last generation"), (c) hide the body but add a small status badge next to the entity title. Decision still owed.
+All Lot 1 open questions are now closed. Implementation may proceed.
 
 ## Source pointers
 
