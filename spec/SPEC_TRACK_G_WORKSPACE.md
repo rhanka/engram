@@ -183,11 +183,14 @@ Until the DS ships these, the workspace runs on the local fallback adapter (`tok
 - It is **not** a Svelte studio in Lot 1. Lot 1 ships the static-HTML shell consumed by `graphify ontology studio` (server-rendered, no client framework). The Svelte studio package is a follow-up lot once the shell + state model + reconciliation rebind have proven the contract.
 - It is **not** a Track A or Track C replacement. Both tracks are dependencies, not subsumed.
 
-## Open questions (to resolve before Lot 1 PR)
+## Resolved decisions (2026-05-19)
 
-1. **Profile view extensions.** Concretely, where does a profile declare additional `viewState` sub-keys (`ontology-profile.yaml > outputs.workspace.view_state`?) and how does the workspace component register the corresponding adapter? Need a 1-page sub-spec before G2 finishes.
-2. **`displayRef` candidate scheme.** Confirm the scheme `candidate:<patch-or-candidate-id>` and the resolver fallback chain when the candidate references an entity that no longer exists in the current graph.
-3. **Track A insufficient-evidence rendering.** When a sidecar entry exists but is marked `insufficient_evidence`, do we show a "no description yet" placeholder or hide the section entirely? Lean toward hide; confirm.
+1. **Profile view extensions slot** — locked at `outputs.workspace.view_state` in `ontology-profile.yaml`. Convention parity with the already-shipping `outputs.html.*` and `outputs.wiki.*` blocks. Profile declares its own sub-keys (e.g. `processes`, `evidence_modes`) and a profile adapter under `src/workspace/profile-adapters/` resolves them. Graphify core does not interpret these sub-keys; an unknown adapter falls through to the generic display.
+2. **`displayRef` candidate scheme** — locked at `candidate:<id>` where `<id>` is the reconciliation candidate identifier from `graphify_ontology_reconciliation_candidates_v1`. Stale-fallback policy: when the referenced entity is absent from the current graph (refresh between candidate generation and display), the candidate stays visible with a `entity absente du graphe courant — rebuild requis` banner; queue navigation is not auto-skipped, so drift is loud, not hidden.
+
+## Open questions (still to resolve before Lot 1 PR)
+
+1. **Track A `insufficient_evidence` rendering.** When a wiki description sidecar entry exists but is marked `insufficient_evidence`, what does the central workspace display do? Three options: (a) hide the description block entirely (parity with current wiki rendering, default lean), (b) render a neutral placeholder ("no description available yet — insufficient evidence at last generation"), (c) hide the body but add a small status badge next to the entity title. Decision still owed.
 
 ## Source pointers
 
