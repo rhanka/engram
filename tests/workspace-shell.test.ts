@@ -20,6 +20,13 @@ describe("Track G G2 — workspace shell scaffold", () => {
     expect(html).toContain('role="application"');
   });
 
+  it("keeps central display copy neutral until item rendering is wired", () => {
+    const html = renderWorkspaceShell({ tokens, title: "Ontology workspace" });
+    expect(html).toContain("No display item selected.");
+    expect(html).not.toContain("G4 fills");
+    expect(html).not.toContain("Track A wiki sidecar");
+  });
+
   it("escapes the title so HTML in user input cannot break the shell", () => {
     const html = renderWorkspaceShell({
       tokens,
