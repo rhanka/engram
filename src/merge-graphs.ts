@@ -2,6 +2,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import type Graph from "graphology";
 import { createGraph, isDirectedGraph, loadGraphFromData, serializeGraph } from "./graph.js";
+import { loadHyperedges, mergeHyperedges, setHyperedges } from "./hyperedges.js";
+import type { Hyperedge } from "./hyperedges.js";
 
 export interface MergeGraphsOptions {
   inputs: string[];
@@ -28,19 +30,11 @@ function mergedGraphType(graphs: Graph[]): boolean {
   return graphs.some((graph) => isDirectedGraph(graph));
 }
 
-function mergeHyperedges(graphs: Graph[]): Array<Record<string, unknown>> {
-  const merged: Array<Record<string, unknown>> = [];
-  const seen = new Set<string>();
-  for (const graph of graphs) {
-    const hyperedges = (graph.getAttribute("hyperedges") as Array<Record<string, unknown>> | undefined) ?? [];
-    for (const hyperedge of hyperedges) {
-      const id = typeof hyperedge.id === "string" ? hyperedge.id : JSON.stringify(hyperedge);
-      if (seen.has(id)) continue;
-      seen.add(id);
-      merged.push(hyperedge);
-    }
-  }
-  return merged;
+function mergeHyperedgesFromGraphs(graphs: Graph[]): Hyperedge[] {
+  return graphs.reduce<Hyperedge[]>(
+    (acc, graph) => mergeHyperedges(acc, loadHyperedges(graph)),
+    [],
+  );
 }
 
 export function mergeGraphsFromFiles(options: MergeGraphsOptions): MergeGraphsResult {
@@ -84,9 +78,9 @@ export function mergeGraphsFromFiles(options: MergeGraphsOptions): MergeGraphsRe
     });
   }
 
-  const hyperedges = mergeHyperedges(graphs);
+  const hyperedges = mergeHyperedgesFromGraphs(graphs);
   if (hyperedges.length > 0) {
-    merged.setAttribute("hyperedges", hyperedges);
+    setHyperedges(merged, hyperedges);
   }
 
   const outPath = resolve(options.out);
