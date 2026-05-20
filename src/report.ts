@@ -268,7 +268,10 @@ export function generate(
     lines.push(
       "",
       `### Community ${cid} - "${label}"`,
-      `Cohesion: ${score}`,
+      // Format cohesion at display time with 2 decimals — upstream 2d783e5
+      // dropped the in-cluster rounding so the split threshold sees the raw
+      // ratio; the rendered report still shows a short value.
+      `Cohesion: ${score.toFixed(2)}`,
       `Nodes (${realNodes.length}): ${display.join(", ")}${suffix}`.trimEnd(),
     );
   }

@@ -4160,18 +4160,27 @@ async function _resolveCrossFileImports(
   parser.setLanguage(lang);
   const rootDir = inferCommonRoot(paths);
 
-  // Pass 1: name -> node_id across all files
+  // Pass 1: name -> node_id across all files.
+  // Upstream d84f07c: key stemToEntities by directory-qualified stem
+  // (e.g. "auth.models") to avoid collisions when multiple files share the
+  // same filename in different directories. Add a bareToQualified secondary
+  // index for absolute imports — first writer wins when bare names collide.
   const stemToEntities = new Map<string, Map<string, string>>();
+  const bareToQualified = new Map<string, string>();
   for (const fileResult of perFile) {
     for (const node of fileResult.nodes ?? []) {
       const src = node.source_file ?? "";
       if (!src) continue;
-      const fileStem = basename(src, extname(src));
+      const fqStem = qualifiedFileStem(src, rootDir);
+      const bareStem = basename(src, extname(src));
       const label = node.label ?? "";
       const nid = node.id ?? "";
       if (label && !label.endsWith(")") && !label.endsWith(".py") && !label.startsWith("_")) {
-        if (!stemToEntities.has(fileStem)) stemToEntities.set(fileStem, new Map());
-        stemToEntities.get(fileStem)!.set(label, nid);
+        if (!stemToEntities.has(fqStem)) stemToEntities.set(fqStem, new Map());
+        stemToEntities.get(fqStem)!.set(label, nid);
+        if (!bareToQualified.has(bareStem)) {
+          bareToQualified.set(bareStem, fqStem);
+        }
       }
     }
   }
@@ -4180,13 +4189,13 @@ async function _resolveCrossFileImports(
   const newEdges: GraphEdge[] = [];
   const stemToPath = new Map<string, string>();
   for (const p of paths) {
-    stemToPath.set(basename(p, extname(p)), p);
+    stemToPath.set(qualifiedFileStem(p, rootDir), p);
   }
 
   for (let idx = 0; idx < perFile.length; idx++) {
     const fileResult = perFile[idx]!;
     const filePath = paths[idx]!;
-      const fileStem = qualifiedFileStem(filePath, rootDir);
+    const fileStem = qualifiedFileStem(filePath, rootDir);
     const strPath = filePath;
 
     const localClasses = fileResult.nodes
@@ -4211,25 +4220,30 @@ async function _resolveCrossFileImports(
 
     function walkImports(node: SyntaxNode): void {
       if (node.type === "import_from_statement") {
-        let targetStem: string | null = null;
+        // Upstream d84f07c: resolve relative imports exactly via the importing
+        // file's directory; absolute imports fall back to the bare-stem index.
+        let targetFq: string | null = null;
         for (const child of node.children) {
           if (child.type === "relative_import") {
             for (const sub of child.children) {
               if (sub.type === "dotted_name") {
                 const raw = source.slice(sub.startIndex, sub.endIndex);
-                targetStem = raw.split(".").pop()!;
+                const bare = raw.split(".").pop()!;
+                const candidate = join(dirname(filePath), `${bare}.py`);
+                targetFq = qualifiedFileStem(candidate, rootDir);
                 break;
               }
             }
             break;
           }
-          if (child.type === "dotted_name" && targetStem === null) {
+          if (child.type === "dotted_name" && targetFq === null) {
             const raw = source.slice(child.startIndex, child.endIndex);
-            targetStem = raw.split(".").pop()!;
+            const bare = raw.split(".").pop()!;
+            targetFq = bareToQualified.get(bare) ?? null;
           }
         }
 
-        if (!targetStem || !stemToEntities.has(targetStem)) return;
+        if (!targetFq || !stemToEntities.has(targetFq)) return;
 
         const importedNames: string[] = [];
         let pastImportKw = false;
@@ -4251,7 +4265,7 @@ async function _resolveCrossFileImports(
 
         const line = node.startPosition.row + 1;
         for (const name of importedNames) {
-          const tgtNid = stemToEntities.get(targetStem)?.get(name);
+          const tgtNid = stemToEntities.get(targetFq)?.get(name);
           if (tgtNid) {
             for (const srcClassNid of localClasses) {
               newEdges.push({

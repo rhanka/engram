@@ -277,6 +277,11 @@ export async function rebuildCode(
         freshness: { builtFromCommit: safeGitRevParse(root, ["HEAD"]) },
       },
     );
+    // Upstream 6939494 (#834): snapshot before overwrite when graph cost
+    // LLM tokens or has been human-curated.
+    const { backupIfProtected } = await import("./export.js");
+    backupIfProtected(paths.stateDir);
+
     const jsonWritten = toJson(G, communities, paths.graph, {
       communityLabels: labels,
       force: options.force,

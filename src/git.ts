@@ -48,13 +48,30 @@ export function safeGitRevParse(cwd: string, args: string[]): string | null {
   return safeExecGit(cwd, ["rev-parse", ...args]);
 }
 
+function isSafeGitPath(value: string): boolean {
+  // Upstream 2d783e5 (#907): a valid hooks/repo path can never contain newlines
+  // or NUL — their presence indicates git echoed an unrecognised flag back
+  // (old git behaviour for unknown options like --path-format=absolute on
+  // git < 2.31). Mirror that defence-in-depth check here even though our
+  // current call sites use only flags supported in older git.
+  return value.length > 0 && !/[\n\r\0]/.test(value);
+}
+
 export function resolveGitContext(path: string = "."): GitContext | null {
   const cwd = resolve(path);
   try {
-    const worktreeRoot = resolve(gitRevParse(cwd, ["--show-toplevel"]));
-    const gitDir = resolve(gitRevParse(cwd, ["--absolute-git-dir"]));
-    const commonGitDir = resolveFromGitCwd(cwd, gitRevParse(cwd, ["--git-common-dir"]));
-    const hooksDir = resolveFromGitCwd(cwd, gitRevParse(cwd, ["--git-path", "hooks"]));
+    const topLevel = gitRevParse(cwd, ["--show-toplevel"]);
+    const absoluteGitDir = gitRevParse(cwd, ["--absolute-git-dir"]);
+    const commonGitDirRaw = gitRevParse(cwd, ["--git-common-dir"]);
+    const hooksDirRaw = gitRevParse(cwd, ["--git-path", "hooks"]);
+    if (!isSafeGitPath(topLevel) || !isSafeGitPath(absoluteGitDir)
+      || !isSafeGitPath(commonGitDirRaw) || !isSafeGitPath(hooksDirRaw)) {
+      return null;
+    }
+    const worktreeRoot = resolve(topLevel);
+    const gitDir = resolve(absoluteGitDir);
+    const commonGitDir = resolveFromGitCwd(cwd, commonGitDirRaw);
+    const hooksDir = resolveFromGitCwd(cwd, hooksDirRaw);
     return { worktreeRoot, gitDir, commonGitDir, hooksDir };
   } catch {
     return null;

@@ -24,7 +24,7 @@ import type { SemanticPreparationOptions, SemanticPreparationResult } from "./se
 const DETECTION_FILE_TYPES = ["code", "document", "paper", "image", "video"] as const;
 const CORPUS_WARN_THRESHOLD = 50_000;
 const CORPUS_UPPER_THRESHOLD = 500_000;
-const FILE_COUNT_UPPER = 200;
+const FILE_COUNT_UPPER = 500;
 
 export interface ConfiguredDetectionInputs {
   corpusRoots: string[];

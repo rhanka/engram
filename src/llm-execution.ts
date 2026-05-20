@@ -217,8 +217,18 @@ function ensureProviderCredential(provider: DirectLlmProvider): void {
 
 const MAX_DIRECT_LLM_JSON_BYTES = 10 * 1024 * 1024;
 
-function parseJsonFromLlmText(text: string): unknown {
+export function parseJsonFromLlmText(text: string | null | undefined): unknown {
+  // Upstream f5fea13 (#924): guard against empty / filtered LLM responses.
+  // OpenAI-compatible providers can return HTTP 200 with empty choices or
+  // message=null on content-filter / Ollama overload — surface a clear error
+  // instead of a cryptic JSON parse failure on the empty string.
+  if (text === null || text === undefined || text === "") {
+    throw new Error("LLM returned empty or filtered response");
+  }
   const trimmed = text.trim();
+  if (!trimmed) {
+    throw new Error("LLM returned empty or filtered response");
+  }
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/iu);
   const candidate = fenced ? fenced[1]!.trim() : trimmed;
   const byteLength = Buffer.byteLength(candidate, "utf-8");

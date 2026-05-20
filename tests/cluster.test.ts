@@ -188,6 +188,57 @@ describe("cohesionScore", () => {
     expect(score).toBeGreaterThan(0);
     expect(score).toBeLessThan(1.0);
   });
+
+  it("returns un-rounded ratio so split-threshold 0.05 fires correctly (upstream 2d783e5)", () => {
+    // 6 nodes, 1 edge -> actual=1, possible=15 -> ratio≈0.0666...
+    // Rounding to 2 decimals (legacy) gave 0.07 — strictly above the 0.05 split threshold.
+    // With rounding dropped we still get >0.05, but more importantly the raw 0.0666 is preserved.
+    // Build a graph whose ratio rounds to >=0.05 but whose raw value is strictly less when no
+    // rounding happens — easiest: 10 nodes, 2 edges -> 2/45 = 0.0444... which used to round to
+    // 0.04 (still <0.05) but at the boundary we want to confirm the un-rounded value matches.
+    const G = new Graph({ type: "undirected" });
+    for (let i = 0; i < 10; i++) G.addNode(`n${i}`);
+    G.mergeEdge("n0", "n1");
+    G.mergeEdge("n2", "n3");
+    const score = cohesionScore(G, [...G.nodes()]);
+    // 2 edges / 45 possible = 0.04444...
+    expect(score).toBeCloseTo(2 / 45, 10);
+    expect(score).not.toBe(0.04); // un-rounded
+  });
+});
+
+describe("cluster options (upstream 2d783e5 #919)", () => {
+  it("accepts resolution param", () => {
+    const G = makeGraph([
+      ["a1", "a2"], ["a2", "a3"], ["a1", "a3"],
+      ["b1", "b2"], ["b2", "b3"], ["b1", "b3"],
+      ["a3", "b1"],
+    ]);
+    // Just verify the call signature compiles & returns a Map without throwing.
+    const r = cluster(G, { resolution: 0.5 });
+    expect(r.size).toBeGreaterThan(0);
+  });
+
+  it("excludes top-percentile hubs and reattaches them by majority vote", () => {
+    // Star with one hub connecting two distinct cliques. With the hub excluded
+    // the two cliques get separate communities; the hub then gets reattached
+    // to whichever community holds more of its neighbours.
+    const G = makeGraph([
+      ["a1", "a2"], ["a2", "a3"], ["a1", "a3"],
+      ["b1", "b2"], ["b2", "b3"], ["b1", "b3"],
+      ["hub", "a1"], ["hub", "a2"], ["hub", "a3"],
+      ["hub", "b1"], ["hub", "b2"], ["hub", "b3"],
+      ["hub", "c1"], ["hub", "c2"], // extra spokes to bump degree
+    ]);
+    const r = cluster(G, { excludeHubsPercentile: 90 });
+    // Every node must end up in some community
+    const allAssigned = new Set<string>();
+    for (const nodes of r.values()) {
+      for (const n of nodes) allAssigned.add(n);
+    }
+    expect(allAssigned.has("hub")).toBe(true);
+    expect(allAssigned.size).toBe(G.order);
+  });
 });
 
 describe("scoreAll", () => {

@@ -11,9 +11,71 @@ import {
   renameSync,
   existsSync,
   statSync,
+  type Stats,
 } from "node:fs";
-import { extname, join, resolve } from "node:path";
+import { dirname, extname, join, resolve } from "node:path";
 import { resolveGraphifyPaths } from "./paths.js";
+
+// ---------------------------------------------------------------------------
+// Stat-based fastpath (upstream d84f07c)
+// Skips full SHA256 when (size, mtime_ns) is unchanged — same trade-off as
+// make(1). Index is flushed atomically at process exit.
+// ---------------------------------------------------------------------------
+
+interface StatIndexEntry {
+  size: number;
+  mtime_ns: number;
+  hash: string;
+}
+
+let statIndex: Record<string, StatIndexEntry> = {};
+let statIndexRoot: string | null = null;
+let statIndexDirty = false;
+let statIndexExitHookRegistered = false;
+
+function statIndexFile(root: string): string {
+  return join(resolveGraphifyPaths({ root }).cacheDir, "stat-index.json");
+}
+
+function ensureStatIndex(root: string): void {
+  if (statIndexRoot !== null) return;
+  statIndexRoot = resolve(root);
+  const p = statIndexFile(statIndexRoot);
+  if (existsSync(p)) {
+    try {
+      statIndex = JSON.parse(readFileSync(p, "utf-8")) as Record<string, StatIndexEntry>;
+    } catch {
+      statIndex = {};
+    }
+  } else {
+    statIndex = {};
+  }
+  if (!statIndexExitHookRegistered) {
+    statIndexExitHookRegistered = true;
+    process.on("exit", flushStatIndex);
+  }
+}
+
+function flushStatIndex(): void {
+  if (!statIndexDirty || statIndexRoot === null) return;
+  const p = statIndexFile(statIndexRoot);
+  try {
+    mkdirSync(dirname(p), { recursive: true });
+    const tmp = `${p}.tmp.${process.pid}`;
+    writeFileSync(tmp, JSON.stringify(statIndex));
+    renameSync(tmp, p);
+  } catch {
+    /* swallow — cache is best-effort */
+  }
+  statIndexDirty = false;
+}
+
+function statMtimeNs(stat: Stats): number {
+  // mtimeNs available on Node 12+; fall back to mtimeMs * 1e6.
+  const ns = (stat as Stats & { mtimeNs?: bigint }).mtimeNs;
+  if (typeof ns === "bigint") return Number(ns);
+  return Math.floor(stat.mtimeMs * 1e6);
+}
 
 export interface CacheOptions {
   kind?: string;
@@ -41,7 +103,7 @@ function bodyContent(content: Buffer): Buffer {
  * changes do not invalidate semantic extraction cache entries.
  */
 export function fileHash(filePath: string, root: string = "."): string {
-  let stat;
+  let stat: Stats;
   try {
     stat = statSync(filePath);
   } catch (error) {
@@ -50,9 +112,21 @@ export function fileHash(filePath: string, root: string = "."): string {
   if (!stat.isFile()) {
     throw new Error(`fileHash requires a file, got: ${filePath}`);
   }
+
+  // Upstream d84f07c: stat fastpath — skip full SHA256 read when size and
+  // mtime are unchanged. `touch` triggers a harmless re-hash; same-size edits
+  // within a 1 ns mtime window are the only blind spot (matches make(1)).
+  ensureStatIndex(root);
+  const absKey = resolve(filePath);
+  const mtimeNs = statMtimeNs(stat);
+  const cached = statIndex[absKey];
+  if (cached && cached.size === stat.size && cached.mtime_ns === mtimeNs) {
+    return cached.hash;
+  }
+
   const raw = readFileSync(filePath);
   const content = extname(filePath).toLowerCase() === ".md" ? bodyContent(raw) : raw;
-  const resolved = resolve(filePath);
+  const resolved = absKey;
   const resolvedRoot = resolve(root);
   const h = createHash("sha256");
   h.update(content);
@@ -61,7 +135,19 @@ export function fileHash(filePath: string, root: string = "."): string {
     ? resolved.slice(resolvedRoot.length).replace(/^\/+/, "") || "."
     : resolved;
   h.update(relativePath);
-  return h.digest("hex");
+  const digest = h.digest("hex");
+
+  statIndex[absKey] = { size: stat.size, mtime_ns: mtimeNs, hash: digest };
+  statIndexDirty = true;
+
+  return digest;
+}
+
+/** Test-only: clear the in-memory stat index. Do not use from production code. */
+export function _resetStatIndexForTesting(): void {
+  statIndex = {};
+  statIndexRoot = null;
+  statIndexDirty = false;
 }
 
 function legacyFileHash(filePath: string): string {

@@ -14,7 +14,7 @@ import { buildFromJson } from "./build.js";
 import { cluster, scoreAll } from "./cluster.js";
 import { godNodes, surprisingConnections, suggestQuestions } from "./analyze.js";
 import { generate } from "./report.js";
-import { toJson } from "./export.js";
+import { backupIfProtected, toJson } from "./export.js";
 import { safeToHtml } from "./html-export.js";
 import { extractWithDiagnostics, type ExtractionDiagnostic } from "./extract.js";
 import { resolveGraphifyPaths } from "./paths.js";
@@ -209,6 +209,10 @@ export async function buildProject(
       freshness: { builtFromCommit: safeGitRevParse(rootResolved, ["HEAD"]) },
     },
   );
+
+  // Upstream 6939494 (#834): snapshot existing artifacts before overwrite if
+  // the previous graph cost real LLM tokens or has been human-curated.
+  backupIfProtected(paths.stateDir);
 
   writeFileSync(reportPath, report, "utf-8");
   toJson(G, communities, graphPath, { communityLabels: labels });

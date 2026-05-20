@@ -3972,6 +3972,29 @@ export async function main(): Promise<void> {
       process.exit(0);
     });
 
+  // Upstream 2209a9c: treat `graphify <path>` (bare path with no subcommand)
+  // as `graphify extract <path>`. Common when following the PowerShell note
+  // in README (`graphify .`) or copy-pasting skill invocations.
+  // Only rewrite when the first positional arg looks like a filesystem path
+  // and is not a registered subcommand — we leave other unknown commands to
+  // commander's normal "unknown command" error.
+  const argv0 = process.argv[2];
+  if (argv0 && !argv0.startsWith("-")) {
+    const looksLikePath = argv0 === "." || argv0 === ".."
+      || argv0.startsWith("./") || argv0.startsWith("../")
+      || argv0.startsWith("/") || argv0.startsWith("~/")
+      || argv0.startsWith("~\\")
+      || /^[A-Za-z]:[\\/]/.test(argv0); // Windows drive letter
+    const registered = program.commands.some((c) => c.name() === argv0);
+    if (looksLikePath && !registered) {
+      // Rewrite argv so commander sees `extract <path> ...rest`.
+      process.argv.splice(2, 0, "extract");
+    } else if (!registered && existsSync(argv0)) {
+      // Fallback for relative paths like `foo/bar` that exist but don't start with .
+      process.argv.splice(2, 0, "extract");
+    }
+  }
+
   await program.parseAsync();
 }
 
