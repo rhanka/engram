@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 
 import type { SerializedGraphData } from "./graph.js";
 import { createGraph, serializeGraph } from "./graph.js";
+import { mergeHyperedges, setHyperedges } from "./hyperedges.js";
+import type { Hyperedge } from "./hyperedges.js";
 
 export interface MergeGraphJsonResult {
   out: string;
@@ -139,18 +141,12 @@ export function mergeGraphJsonFiles(
     }
   }
 
-  const hyperedges: Array<Record<string, unknown>> = [];
-  const seenHyperedges = new Set<string>();
-  for (const raw of graphs) {
-    for (const hyperedge of raw.hyperedges ?? []) {
-      const key = hyperedgeSortKey(hyperedge);
-      if (seenHyperedges.has(key)) continue;
-      seenHyperedges.add(key);
-      hyperedges.push(hyperedge);
-    }
-  }
+  const hyperedges = graphs.reduce<Hyperedge[]>(
+    (acc, raw) => mergeHyperedges(acc, (raw.hyperedges ?? []) as Hyperedge[]),
+    [],
+  );
   if (hyperedges.length > 0) {
-    merged.setAttribute("hyperedges", hyperedges);
+    setHyperedges(merged, hyperedges);
   }
 
   const serialized = serializeGraph(merged);
