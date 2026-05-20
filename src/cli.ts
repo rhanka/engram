@@ -202,6 +202,32 @@ function writeJson(path: string, value: unknown): void {
   writeFileSync(resolved, JSON.stringify(value, null, 2), "utf-8");
 }
 
+/**
+ * Track C-3.5: best-effort loader for the ontology profile used by HTML
+ * export visual encoding overrides. Returns undefined if no graphify.yaml
+ * project config exists, or if the profile cannot be loaded — this is a
+ * cosmetic-only enhancement, so a missing or broken profile must NEVER
+ * fail the surrounding HTML export. If `explicitPath` is provided we honor
+ * --profile; otherwise we auto-discover graphify.yaml under `root`.
+ */
+async function tryLoadHtmlOntologyProfile(
+  root: string,
+  explicitPath?: string,
+): Promise<import("./types.js").NormalizedOntologyProfile | undefined> {
+  try {
+    const { loadOntologyProfile } = await import("./ontology-profile.js");
+    if (explicitPath) {
+      return loadOntologyProfile(resolve(explicitPath));
+    }
+    const discovery = discoverProjectConfig(root);
+    if (!discovery.found || !discovery.path) return undefined;
+    const projectConfig = loadProjectConfig(discovery.path);
+    return loadOntologyProfile(projectConfig.profile.resolvedPath, { projectConfig });
+  } catch {
+    return undefined;
+  }
+}
+
 function parsePositiveIntegerOption(value: unknown, name: string): number | undefined {
   if (value === undefined || value === null || value === "") return undefined;
   const parsed = Number.parseInt(String(value), 10);
@@ -2696,9 +2722,21 @@ export async function main(): Promise<void> {
 
         writeFileSync(paths.report, report, "utf-8");
         toJson(G, communities, paths.graph, { communityLabels: labels, force: true });
-        safeToHtml(G, communities, paths.html, { communityLabels: labels }, {
-          onWarning: (message) => console.warn(message),
-        });
+        // Track C-3.5: pick up ontology profile for visual encoding override
+        // when a graphify.yaml + ontology-profile is present in the project.
+        const ontologyProfileForExtractHtml = await tryLoadHtmlOntologyProfile(root);
+        safeToHtml(
+          G,
+          communities,
+          paths.html,
+          {
+            communityLabels: labels,
+            ...(ontologyProfileForExtractHtml ? { profile: ontologyProfileForExtractHtml } : {}),
+          },
+          {
+            onWarning: (message) => console.warn(message),
+          },
+        );
         persistCommunityLabels(labels, paths.scratch.labels);
         writeJson(paths.scratch.analysis, {
           communities: Object.fromEntries([...communities.entries()].map(([key, value]) => [String(key), value])),
@@ -2897,9 +2935,21 @@ export async function main(): Promise<void> {
       );
       writeFileSync(paths.report, report, "utf-8");
       toJson(G, communities, paths.graph, { communityLabels: labels });
-      safeToHtml(G, communities, paths.html, { communityLabels: labels }, {
-        onWarning: (message) => console.warn(message),
-      });
+      // Track C-3.5: opportunistically load the ontology profile so HTML
+      // export can override shape/color per node_type when declared.
+      const ontologyProfileForHtml = await tryLoadHtmlOntologyProfile(root);
+      safeToHtml(
+        G,
+        communities,
+        paths.html,
+        {
+          communityLabels: labels,
+          ...(ontologyProfileForHtml ? { profile: ontologyProfileForHtml } : {}),
+        },
+        {
+          onWarning: (message) => console.warn(message),
+        },
+      );
       persistCommunityLabels(labels, paths.scratch.labels);
       const analysis = {
         communities: Object.fromEntries([...communities.entries()].map(([key, value]) => [String(key), value])),
@@ -3016,6 +3066,10 @@ export async function main(): Promise<void> {
     .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
     .option("--out <path>", "Path to write graph.html")
     .option("--no-viz", "Skip HTML export and remove any stale output")
+    .option(
+      "--profile <path>",
+      "Optional ontology profile YAML for per-node-type visual encoding (Track C-3.5)",
+    )
     .action(async (opts) => {
       try {
         const graphPath = resolveGraphInputPath(opts.graph);
@@ -3028,10 +3082,26 @@ export async function main(): Promise<void> {
         const G = loadCliGraph(graphPath);
         const communities = communitiesFromCliGraph(G);
         const labels = communityLabelsFromCliGraph(G, communities);
+        // Track C-3.5: --profile wins over graphify.yaml auto-discovery,
+        // but auto-discovery still happens relative to the graph dir when
+        // --profile is omitted, so an existing graphify.yaml is honored.
+        const ontologyProfileForHtml = await tryLoadHtmlOntologyProfile(
+          dirname(graphPath),
+          typeof opts.profile === "string" ? opts.profile : undefined,
+        );
         const { safeToHtml } = await import("./html-export.js");
-        const written = safeToHtml(G, communities, outPath, { communityLabels: labels }, {
-          onWarning: (message) => console.warn(message),
-        });
+        const written = safeToHtml(
+          G,
+          communities,
+          outPath,
+          {
+            communityLabels: labels,
+            ...(ontologyProfileForHtml ? { profile: ontologyProfileForHtml } : {}),
+          },
+          {
+            onWarning: (message) => console.warn(message),
+          },
+        );
         if (!written) {
           process.exit(1);
         }

@@ -4,6 +4,15 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## Unreleased
+
+Track C-3.5 — profile-aware visual encoding per ontology node type (cosmetic-only).
+
+- `ontology-profile.yaml` may now declare a vis.js `shape` and a `color_hex` per `node_types.*.visual_encoding` (validated against the `dot / square / triangle / box / diamond / star / hexagon` enum and `^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$`).
+- `graphify export html` (plus the implicit HTML re-export from `cluster-only` and the main extract run) reads `node_type` on each node and resolves shape + border/background color from the profile in priority over `inferNodeShape(file_type, source_file)`. When no profile is provided or no `visual_encoding` is declared, the HTML output is byte-identical to before.
+- `graphify export html` accepts an explicit `--profile <path>` so an ontology profile can be applied to an existing graph without touching `graphify.yaml`.
+- TS-only delta: no upstream Python parity gap, no graph schema change, no bundled dep change.
+
 ## 0.9.5 (2026-05-19)
 
 Track F upstream parity follow-up — Rust cross-crate `INFERRED` suppression.

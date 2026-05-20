@@ -29,6 +29,12 @@ import type {
 const DEFAULT_STATUSES = ["candidate", "attached", "needs_review", "validated", "rejected", "superseded"];
 const VALID_CITATION_MINIMUMS = new Set(["file", "page", "section", "paragraph"]);
 
+// Track C-3.5: vis.js shapes accepted in OntologyNodeType.visual_encoding.shape.
+// Keep aligned with src/export.ts inferNodeShape and OntologyVisualEncodingShape.
+const VIS_JS_SHAPE_LIST = ["dot", "square", "triangle", "box", "diamond", "star", "hexagon"] as const;
+const VIS_JS_SHAPES = new Set<string>(VIS_JS_SHAPE_LIST);
+const VISUAL_ENCODING_COLOR_HEX_REGEX = /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/;
+
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -242,6 +248,33 @@ export function validateOntologyProfile(profile: OntologyProfile): string[] {
   }
   if (!knownStatuses.has(hardening.default_status)) {
     errors.push(`hardening.default_status references unknown status ${hardening.default_status}`);
+  }
+
+  // Track C-3.5: validate optional visual_encoding (shape + color_hex) per node type.
+  for (const [nodeTypeId, nodeType] of Object.entries(nodeTypes)) {
+    const visual = (nodeType as { visual_encoding?: unknown }).visual_encoding;
+    if (visual === undefined || visual === null) continue;
+    if (typeof visual !== "object" || Array.isArray(visual)) {
+      errors.push(`node_types.${nodeTypeId}.visual_encoding must be an object`);
+      continue;
+    }
+    const ve = visual as { shape?: unknown; color_hex?: unknown };
+    if (ve.shape !== undefined) {
+      const shape = String(ve.shape);
+      if (!VIS_JS_SHAPES.has(shape)) {
+        errors.push(
+          `node_types.${nodeTypeId}.visual_encoding.shape must be one of ${VIS_JS_SHAPE_LIST.join(", ")} (got ${shape})`,
+        );
+      }
+    }
+    if (ve.color_hex !== undefined) {
+      const color = String(ve.color_hex);
+      if (!VISUAL_ENCODING_COLOR_HEX_REGEX.test(color)) {
+        errors.push(
+          `node_types.${nodeTypeId}.visual_encoding.color_hex must match /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/ (got ${color})`,
+        );
+      }
+    }
   }
 
   for (const [relationId, relation] of Object.entries(relationTypes)) {

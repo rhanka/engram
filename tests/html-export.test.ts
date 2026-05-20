@@ -227,3 +227,188 @@ describe("toHtml visual encoding (Track C3)", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 });
+
+describe("toHtml visual encoding (Track C-3.5: profile-aware)", () => {
+  function makeProfile(nodeTypes: Record<string, { visual_encoding?: { shape?: string; color_hex?: string } }>) {
+    return {
+      id: "test-profile",
+      version: "1",
+      default_language: "en",
+      profile_hash: "deadbeef",
+      node_types: nodeTypes as Record<string, { visual_encoding?: { shape?: "diamond" | "star"; color_hex?: string } }>,
+      relation_types: {},
+      registries: {},
+      citation_policy: {
+        minimum_granularity: "page",
+        require_source_file: true,
+        allow_bbox: "when_available",
+      },
+      hardening: {
+        statuses: ["candidate"],
+        default_status: "candidate",
+        promotion_requires: [],
+        status_transitions: [],
+      },
+      inference_policy: {
+        allow_inferred_relations: false,
+        allowed_relation_types: [],
+        require_evidence_refs: false,
+      },
+      evidence_policy: {
+        require_evidence_refs: false,
+        min_refs: 0,
+        node_types: [],
+        relation_types: [],
+      },
+      hierarchies: {},
+      outputs: {
+        ontology: {
+          enabled: false,
+          artifact_schema: "",
+          canonical_node_types: [],
+          source_node_types: [],
+          occurrence_node_types: [],
+          alias_fields: [],
+          relation_exports: [],
+          wiki: {
+            enabled: false,
+            page_node_types: [],
+            include_backlinks: false,
+            include_source_snippets: false,
+          },
+        },
+      },
+    } as unknown as Parameters<typeof toHtml>[3] extends infer T
+      ? T extends { profile?: infer P } ? P : never
+      : never;
+  }
+
+  it("uses profile visual_encoding.shape over inferNodeShape when node_type matches", () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-html-c35-"));
+    const htmlPath = join(dir, "graph.html");
+    const G = new Graph();
+    G.addNode("c1", {
+      label: "Detective",
+      source_file: "corpus/characters/detective.md",
+      file_type: "document",
+      node_type: "Character",
+    });
+    G.addNode("k1", {
+      label: "Murder",
+      source_file: "corpus/crimes/murder.md",
+      file_type: "document",
+      node_type: "Crime",
+    });
+    G.addUndirectedEdge("c1", "k1", { relation: "investigates", confidence: "EXTRACTED" });
+    const communities = new Map([[0, ["c1", "k1"]]]);
+    const profile = makeProfile({
+      Character: { visual_encoding: { shape: "diamond", color_hex: "#11AABB" } },
+      Crime: { visual_encoding: { shape: "star" } },
+    });
+
+    toHtml(G, communities, htmlPath, {
+      communityLabels: new Map([[0, "Core"]]),
+      profile,
+    });
+    const html = readFileSync(htmlPath, "utf-8");
+
+    // Per-node shape overridden by profile.
+    expect(html).toMatch(/"id":"c1"[\s\S]*?"shape":"diamond"/);
+    expect(html).toMatch(/"id":"k1"[\s\S]*?"shape":"star"/);
+    // Profile color_hex used for Character border (and background since shape != box).
+    expect(html).toMatch(/"id":"c1"[^{]*\{[^}]*"border":"#11AABB"/);
+    expect(html).toMatch(/"id":"c1"[^{]*\{[^}]*"background":"#11AABB"/);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("falls back to inferNodeShape when profile does not declare visual_encoding for that type", () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-html-c35-fb-"));
+    const htmlPath = join(dir, "graph.html");
+    const G = new Graph();
+    // Character has visual_encoding -> diamond override.
+    G.addNode("c1", {
+      label: "Detective",
+      source_file: "corpus/c.md",
+      file_type: "document",
+      node_type: "Character",
+    });
+    // UnknownType has NO entry -> falls back to inferNodeShape (document -> box).
+    G.addNode("u1", {
+      label: "Unknown",
+      source_file: "corpus/u.md",
+      file_type: "document",
+      node_type: "UnknownType",
+    });
+    // No node_type at all -> falls back to inferNodeShape (document -> box).
+    G.addNode("d1", {
+      label: "PlainDoc",
+      source_file: "corpus/d.md",
+      file_type: "document",
+    });
+    G.addUndirectedEdge("c1", "u1", { relation: "links_to", confidence: "EXTRACTED" });
+    G.addUndirectedEdge("c1", "d1", { relation: "links_to", confidence: "EXTRACTED" });
+    const communities = new Map([[0, ["c1", "u1", "d1"]]]);
+    const profile = makeProfile({
+      Character: { visual_encoding: { shape: "diamond" } },
+    });
+
+    toHtml(G, communities, htmlPath, {
+      communityLabels: new Map([[0, "Core"]]),
+      profile,
+    });
+    const html = readFileSync(htmlPath, "utf-8");
+
+    expect(html).toMatch(/"id":"c1"[\s\S]*?"shape":"diamond"/);
+    // u1 has a node_type with no visual_encoding -> fallback to file_type=document -> box.
+    expect(html).toMatch(/"id":"u1"[\s\S]*?"shape":"box"/);
+    // d1 has no node_type -> fallback to file_type=document -> box.
+    expect(html).toMatch(/"id":"d1"[\s\S]*?"shape":"box"/);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("box shape resolved via profile still gets transparent background (outlined)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-html-c35-box-"));
+    const htmlPath = join(dir, "graph.html");
+    const G = new Graph();
+    G.addNode("n1", {
+      label: "Concept",
+      source_file: "src/a.ts",
+      file_type: "code",
+      node_type: "Concept",
+    });
+    const communities = new Map([[0, ["n1"]]]);
+    const profile = makeProfile({
+      Concept: { visual_encoding: { shape: "box", color_hex: "#445566" } },
+    });
+
+    toHtml(G, communities, htmlPath, {
+      communityLabels: new Map([[0, "Core"]]),
+      profile,
+    });
+    const html = readFileSync(htmlPath, "utf-8");
+
+    expect(html).toMatch(/"id":"n1"[\s\S]*?"shape":"box"/);
+    expect(html).toMatch(/"id":"n1"[^{]*\{[^}]*"background":"rgba\(0,0,0,0\)"/);
+    expect(html).toMatch(/"id":"n1"[^{]*\{[^}]*"border":"#445566"/);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("output is byte-identical when profile is undefined vs omitted (regression: no breakage)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-html-c35-noop-"));
+    const htmlPath = join(dir, "graph.html");
+    const G = new Graph();
+    G.addNode("a", { label: "A", source_file: "src/a.ts", file_type: "code", node_type: "Character" });
+    G.addNode("b", { label: "B", source_file: "src/b.ts", file_type: "code" });
+    G.addUndirectedEdge("a", "b", { relation: "uses", confidence: "EXTRACTED" });
+    const communities = new Map([[0, ["a", "b"]]]);
+
+    toHtml(G, communities, htmlPath, { communityLabels: new Map([[0, "Core"]]) });
+    const noProfile = readFileSync(htmlPath, "utf-8");
+    toHtml(G, communities, htmlPath, { communityLabels: new Map([[0, "Core"]]), profile: undefined });
+    const undefProfile = readFileSync(htmlPath, "utf-8");
+
+    // Output strictly identical; profile undefined must not change the HTML.
+    expect(undefProfile).toBe(noProfile);
+    rmSync(dir, { recursive: true, force: true });
+  });
+});

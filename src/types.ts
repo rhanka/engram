@@ -472,11 +472,37 @@ export interface OntologyMapping {
   [key: string]: unknown;
 }
 
+/**
+ * Track C-3.5 — vis.js shape names valid for the HTML export visual
+ * encoding override carried by a profile's `node_types.*.visual_encoding`.
+ * Keep this list in sync with {@link src/export.ts}'s inferNodeShape /
+ * resolveNodeShape so the legend, the override, and the inference all
+ * speak the same vocabulary.
+ */
+export type OntologyVisualEncodingShape =
+  | "dot"
+  | "square"
+  | "triangle"
+  | "box"
+  | "diamond"
+  | "star"
+  | "hexagon";
+
+export interface OntologyVisualEncoding {
+  shape?: OntologyVisualEncodingShape;
+  /** "#RRGGBB" or "#RRGGBBAA" hex color used for the node border (and
+   *  background for non-outlined shapes). Validated by
+   *  validateOntologyProfile. */
+  color_hex?: string;
+}
+
 export interface OntologyNodeType {
   aliases?: string[];
   registry?: string;
   source_backed?: boolean;
   status_policy?: string;
+  /** Track C-3.5: per-node-type visual encoding override for HTML export. */
+  visual_encoding?: OntologyVisualEncoding;
 }
 
 export interface OntologyRelationType {

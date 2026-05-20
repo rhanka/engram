@@ -7,7 +7,7 @@ import Graph from "graphology";
 import { sanitizeLabel, escapeHtml } from "./security.js";
 import { isDirectedGraph } from "./graph.js";
 import { safeGitRevParse } from "./git.js";
-import type { Hyperedge } from "./types.js";
+import type { Hyperedge, NormalizedOntologyProfile, OntologyVisualEncoding } from "./types.js";
 import {
   type NumericMapLike,
   type StringMapLike,
@@ -83,7 +83,12 @@ const CONFIDENCE_SCORE_DEFAULTS: Record<string, number> = {
 
 type CommunityLabelsInput = NumericMapLike<string>;
 type CommunityLabelOptions = { communityLabels?: CommunityLabelsInput };
-type HtmlOptions = CommunityLabelOptions & { memberCounts?: NumericMapLike<number> };
+type HtmlOptions = CommunityLabelOptions & {
+  memberCounts?: NumericMapLike<number>;
+  /** Track C-3.5: optional ontology profile carrying per-node-type
+   *  visual_encoding (shape + color_hex) overrides for the HTML export. */
+  profile?: NormalizedOntologyProfile;
+};
 type JsonOptions = CommunityLabelOptions & { force?: boolean };
 type SvgOptions = CommunityLabelOptions & { figsize?: [number, number] };
 type CanvasOptions = CommunityLabelOptions & { nodeFilenames?: StringMapLike<string> };
@@ -131,7 +136,8 @@ function isCommunityLabelOptions(
   return !(value instanceof Map) && (
     Object.prototype.hasOwnProperty.call(value, "communityLabels") ||
     Object.prototype.hasOwnProperty.call(value, "memberCounts") ||
-    Object.prototype.hasOwnProperty.call(value, "force")
+    Object.prototype.hasOwnProperty.call(value, "force") ||
+    Object.prototype.hasOwnProperty.call(value, "profile")
   );
 }
 
@@ -169,6 +175,57 @@ function normalizeMemberCounts(
   if (!labelsOrOptions || !isCommunityLabelOptions(labelsOrOptions)) return undefined;
   if (!("memberCounts" in labelsOrOptions) || !labelsOrOptions.memberCounts) return undefined;
   return toNumericMap(labelsOrOptions.memberCounts);
+}
+
+function normalizeProfile(
+  labelsOrOptions?: CommunityLabelsInput | HtmlOptions,
+): NormalizedOntologyProfile | undefined {
+  if (!labelsOrOptions || !isCommunityLabelOptions(labelsOrOptions)) return undefined;
+  return (labelsOrOptions as HtmlOptions).profile ?? undefined;
+}
+
+/**
+ * Track C-3.5: pick the vis.js node shape with the following precedence:
+ *  1. The matching profile node_type's `visual_encoding.shape` (if any).
+ *  2. The legacy file_type / source_file inference (inferNodeShape).
+ *
+ * Pure function: when `profile` is undefined OR the node has no node_type
+ * OR the type has no visual_encoding.shape, the result is identical to the
+ * legacy code path, so existing HTML outputs remain bit-stable.
+ */
+export function resolveNodeShape(args: {
+  nodeType: string;
+  fileType: string;
+  sourceFile: string;
+  profile?: NormalizedOntologyProfile;
+}): string {
+  const ve = lookupVisualEncoding(args.profile, args.nodeType);
+  if (ve?.shape) return ve.shape;
+  return inferNodeShape(args.fileType, args.sourceFile);
+}
+
+/**
+ * Track C-3.5: pick the per-node color from the profile's
+ * `visual_encoding.color_hex` if declared, else fall back to the legacy
+ * community-palette color.
+ */
+export function resolveNodeColor(args: {
+  nodeType: string;
+  profile?: NormalizedOntologyProfile;
+  fallback: string;
+}): string {
+  const ve = lookupVisualEncoding(args.profile, args.nodeType);
+  if (ve?.color_hex) return ve.color_hex;
+  return args.fallback;
+}
+
+function lookupVisualEncoding(
+  profile: NormalizedOntologyProfile | undefined,
+  nodeType: string,
+): OntologyVisualEncoding | undefined {
+  if (!profile || !nodeType) return undefined;
+  const entry = profile.node_types?.[nodeType];
+  return entry?.visual_encoding;
 }
 
 function buildFreshnessMetadata(outputPath: string): { built_from_commit?: string } {
@@ -850,6 +907,7 @@ export function toHtml(
   const communityMap = toNumericMap(communities);
   const communityLabels = normalizeCommunityLabels(communityLabelsOrOptions);
   const memberCounts = normalizeMemberCounts(communityLabelsOrOptions);
+  const profile = normalizeProfile(communityLabelsOrOptions);
   if (G.order > MAX_NODES_FOR_VIZ) {
     throw new Error(
       `Graph has ${G.order} nodes - too large for HTML viz. ` +
@@ -883,7 +941,7 @@ export function toHtml(
   const visNodes: VisNode[] = [];
   G.forEachNode((nodeId, data) => {
     const cid = nodeComm.get(nodeId) ?? 0;
-    const color = COMMUNITY_COLORS[cid % COMMUNITY_COLORS.length]!;
+    const paletteColor = COMMUNITY_COLORS[cid % COMMUNITY_COLORS.length]!;
     const label = sanitizeLabel((data.label as string) ?? nodeId);
     const deg = degree.get(nodeId) ?? 1;
     const memberCount = memberCounts?.get(cid) ?? 1;
@@ -893,12 +951,18 @@ export function toHtml(
     const fontSize = memberCounts ? 12 : (deg >= maxDeg * 0.15 ? 12 : 0);
     const sourceFile = (data.source_file as string) ?? "";
     const fileType = (data.file_type as string) ?? "";
-    const shape = inferNodeShape(fileType, sourceFile);
+    // Track C-3.5: read node_type (canonical attribute on ontology graphs;
+    // legacy `type` is tolerated as fallback) and resolve shape + color
+    // via the profile first, with file_type/community palette as fallback.
+    const nodeType = (data.node_type as string) ?? (data.type as string) ?? "";
+    const shape = resolveNodeShape({ nodeType, fileType, sourceFile, profile });
+    const color = resolveNodeColor({ nodeType, profile, fallback: paletteColor });
     // C-final-1: shape "box" (document/paper/concept) renders as outline-only
     // so it is visually distinct from "square" (test) which stays solid-filled.
     // vis.js draws a filled rectangle when color.background is a color; setting
     // background to a transparent value keeps the border (color) and shows the
-    // label cleanly without the fill blob.
+    // label cleanly without the fill blob. Stays consistent whether `box`
+    // comes from inferNodeShape or from a profile visual_encoding override.
     const isOutlinedShape = shape === "box";
     visNodes.push({
       id: nodeId,
