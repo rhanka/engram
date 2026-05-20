@@ -26,3 +26,20 @@ export { tryGetDsTokens } from "./tokens-ds.js";
 
 export type { RenderWorkspaceShellOptions } from "./shell.js";
 export { renderWorkspaceShell } from "./shell.js";
+
+export type {
+  WorkspaceSelectionState,
+  WorkspaceGraphPanelState,
+  WorkspaceEvidencePanelState,
+  WorkspaceViewState,
+  WorkspaceViewerState,
+  WorkspaceQuery,
+  WorkspaceAction,
+} from "./viewer-state.js";
+export {
+  createDefaultViewerState,
+  normalizeViewerState,
+  viewerStateToQuery,
+  viewerStateFromQuery,
+  workspaceReducer,
+} from "./viewer-state.js";
