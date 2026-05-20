@@ -4,6 +4,15 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.9.5 (2026-05-19)
+
+Track F upstream parity follow-up — Rust cross-crate `INFERRED` suppression.
+
+- Port upstream `f7160c8` / `v0.8.10`: Rust `scoped_identifier` calls now resolve against an in-file local `Type::method` index, instead of being collapsed onto any same-named symbol in the corpus. Eliminates spurious cross-crate `INFERRED` call edges between sibling impls that share method names.
+- Plain identifier and field-expression call sites keep the label-based fallback; only the over-broad `scoped_identifier` path is narrowed.
+- Advances the closest audited upstream parity point to `graphify@0.8.10`. Only `2d783e5` (cohesion unrounding + hook/detect follow-ups) remains as the next recommended `upstream/v8` parity row before any stronger `v0.8.x` parity claim.
+- Patch bump only; no graph schema change.
+
 ## 0.9.4 (2026-05-17)
 
 Track F upstream parity follow-up.
