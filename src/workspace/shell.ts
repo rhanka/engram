@@ -38,6 +38,8 @@
  */
 
 import type { WorkspaceTokens } from "./tokens.js";
+import type { GraphEdgeLike, GraphLike, GraphNodeLike } from "./graph-selection.js";
+import type { WorkspaceViewerState } from "./viewer-state.js";
 import { serialiseTokensToCss } from "./tokens-fallback.js";
 
 export interface RenderWorkspaceShellOptions {
@@ -68,6 +70,10 @@ export interface RenderWorkspaceShellOptions {
   queueEmpty?: boolean;
   /** Trusted internal HTML fragment rendered inside the graph panel slot. */
   graphPanelHtml?: string;
+  /** Current workspace state. Used to resolve the central display item. */
+  state?: WorkspaceViewerState;
+  /** Graph payload (typically loaded from `.graphify/graph.json`). */
+  graph?: GraphLike;
 }
 
 const HTML_ESCAPE_RE = /[&<>"']/g;
@@ -81,6 +87,142 @@ const HTML_ESCAPE_MAP: Record<string, string> = {
 
 function escapeHtml(value: string): string {
   return value.replace(HTML_ESCAPE_RE, (ch) => HTML_ESCAPE_MAP[ch] ?? ch);
+}
+
+function displayValue(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function nodeType(node: GraphNodeLike): string {
+  return (
+    displayValue(node.node_type) ??
+    displayValue(node.type) ??
+    displayValue(node.kind) ??
+    "node"
+  );
+}
+
+function nodeTitle(node: GraphNodeLike): string {
+  return (
+    displayValue(node.title) ??
+    displayValue(node.label) ??
+    displayValue(node.name) ??
+    node.id
+  );
+}
+
+function nodeSummary(node: GraphNodeLike): string | null {
+  return (
+    displayValue(node.summary) ??
+    displayValue(node.description) ??
+    displayValue(node.body)
+  );
+}
+
+function truncateDisplayText(value: string): string {
+  const max = 1200;
+  return value.length > max ? `${value.slice(0, max - 3)}...` : value;
+}
+
+function graphEdges(graph: GraphLike | undefined): GraphEdgeLike[] {
+  return graph?.edges ?? graph?.links ?? [];
+}
+
+function countEdgeEvidence(edge: GraphEdgeLike): number {
+  if (typeof edge.evidence_count === "number" && Number.isFinite(edge.evidence_count)) {
+    return Math.max(0, Math.round(edge.evidence_count));
+  }
+  const arrays = [edge.evidence, edge.evidence_ids, edge.evidenceIds, edge.sources, edge.source_files];
+  for (const value of arrays) {
+    if (Array.isArray(value)) return value.length;
+  }
+  if (
+    typeof edge.evidence === "string" ||
+    typeof edge.source_file === "string"
+  ) {
+    return 1;
+  }
+  return 0;
+}
+
+function renderDisplayMetrics(metrics: Array<[string, number]>): string {
+  const items = metrics.map(
+    ([label, value]) => `<span><b>${escapeHtml(label)}:</b> ${value}</span>`,
+  );
+  return ['<div class="ws-display-metrics">', ...items, "</div>"].join("");
+}
+
+function renderNodeDisplay(
+  displayRef: string,
+  requestedKind: string,
+  node: GraphNodeLike,
+  edges: GraphEdgeLike[],
+): string {
+  const relatedEdges = edges.filter((edge) => edge.source === node.id || edge.target === node.id);
+  const evidenceCount = relatedEdges.reduce((sum, edge) => sum + countEdgeEvidence(edge), 0);
+  const summary = nodeSummary(node);
+  const kind = requestedKind === "entity" ? nodeType(node) : nodeType(node) || requestedKind;
+  return [
+    `<article class="ws-display-item" data-display-ref="${escapeHtml(displayRef)}">`,
+    '<div class="ws-display-kicker">Selected item</div>',
+    `<h3>${escapeHtml(nodeTitle(node))}</h3>`,
+    `<p class="ws-display-kind">${escapeHtml(kind)}</p>`,
+    summary
+      ? `<p class="ws-display-summary">${escapeHtml(truncateDisplayText(summary))}</p>`
+      : '<p class="ws-empty">No summary available.</p>',
+    renderDisplayMetrics([
+      ["Relations", relatedEdges.length],
+      ["Evidence", evidenceCount],
+    ]),
+    "</article>",
+  ].join("");
+}
+
+function renderTypeDisplay(displayRef: string, typeId: string, graph: GraphLike): string {
+  const nodes = graph.nodes ?? [];
+  const members = nodes.filter((node) => nodeType(node) === typeId);
+  const memberIds = new Set(members.map((node) => node.id));
+  const relatedEdges = graphEdges(graph).filter(
+    (edge) => memberIds.has(edge.source) || memberIds.has(edge.target),
+  );
+  const evidenceCount = relatedEdges.reduce((sum, edge) => sum + countEdgeEvidence(edge), 0);
+  return [
+    `<article class="ws-display-item" data-display-ref="${escapeHtml(displayRef)}">`,
+    '<div class="ws-display-kicker">Selected item</div>',
+    `<h3>${escapeHtml(typeId)}</h3>`,
+    '<p class="ws-display-kind">Type</p>',
+    renderDisplayMetrics([
+      ["Members", members.length],
+      ["Relations", relatedEdges.length],
+      ["Evidence", evidenceCount],
+    ]),
+    "</article>",
+  ].join("");
+}
+
+function renderCentralDisplayBody(
+  state: WorkspaceViewerState | undefined,
+  graph: GraphLike | undefined,
+): string {
+  const displayRef = state?.displayRef?.trim();
+  if (!displayRef) return '<p class="ws-empty">No display item selected.</p>';
+
+  const separator = displayRef.indexOf(":");
+  const requestedKind = separator > 0 ? displayRef.slice(0, separator) : "entity";
+  const id = separator > 0 ? displayRef.slice(separator + 1) : displayRef;
+  if (!id || !graph) {
+    return '<p class="ws-empty">Selected item is unavailable.</p>';
+  }
+
+  if (requestedKind === "type" || requestedKind === "taxonomy") {
+    return renderTypeDisplay(displayRef, id, graph);
+  }
+
+  const node = (graph.nodes ?? []).find((candidate) => candidate.id === id);
+  if (!node) return '<p class="ws-empty">Selected item is unavailable.</p>';
+  return renderNodeDisplay(displayRef, requestedKind, node, graphEdges(graph));
 }
 
 function shellStyles(): string {
@@ -104,6 +246,13 @@ function shellStyles(): string {
     ".ws-right { grid-column: 3; grid-row: 2; border-left: 1px solid var(--ws-border); overflow-y: auto; padding: var(--ws-space-3); background: var(--ws-surface-2); }",
     ".ws-region-heading { font-size: var(--ws-font-size-sm); text-transform: uppercase; letter-spacing: 0.05em; color: var(--ws-text-muted); margin: 0 0 var(--ws-space-2); }",
     ".ws-empty { color: var(--ws-text-muted); font-style: italic; }",
+    ".ws-display-item { display: grid; gap: var(--ws-space-2); max-width: 72ch; }",
+    ".ws-display-kicker { font-size: var(--ws-font-size-sm); color: var(--ws-text-muted); text-transform: uppercase; letter-spacing: 0.05em; }",
+    ".ws-display-item h3 { margin: 0; font-size: var(--ws-font-size-lg); line-height: var(--ws-line-height-tight); }",
+    ".ws-display-kind { margin: 0; color: var(--ws-text-muted); }",
+    ".ws-display-summary { margin: 0; white-space: pre-wrap; }",
+    ".ws-display-metrics { display: flex; flex-wrap: wrap; gap: var(--ws-space-3); font-size: var(--ws-font-size-sm); color: var(--ws-text-muted); }",
+    ".ws-display-metrics b { color: var(--ws-text); font-weight: 600; }",
     "@media (max-width: 768px) {",
     "  .ws-root { grid-template-columns: 1fr; grid-template-rows: auto auto 1fr auto; }",
     "  .ws-left { grid-column: 1; grid-row: 2; border-right: none; border-bottom: 1px solid var(--ws-border); max-height: 40vh; }",
@@ -132,6 +281,7 @@ export function renderWorkspaceShell(opts: RenderWorkspaceShellOptions): string 
   const graphPanelBody =
     opts.graphPanelHtml ??
     '<p class="ws-empty">No graph context available.</p>';
+  const centralDisplayBody = renderCentralDisplayBody(opts.state, opts.graph);
 
   return [
     "<!DOCTYPE html>",
@@ -164,7 +314,7 @@ export function renderWorkspaceShell(opts: RenderWorkspaceShellOptions): string 
     "</aside>",
     '<main class="ws-center" id="central-display" role="main" aria-label="Central display" tabindex="-1">',
     '<h2 class="ws-region-heading">Central display</h2>',
-    '<p class="ws-empty">No display item selected.</p>',
+    centralDisplayBody,
     '<section class="ws-graph-panel" id="graph-panel" role="region" aria-label="Graph panel">',
     '<h2 class="ws-region-heading">Graph panel</h2>',
     graphPanelBody,
