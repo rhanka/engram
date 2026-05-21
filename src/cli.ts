@@ -1911,53 +1911,42 @@ export async function main(): Promise<void> {
   });
 
   function registerPrCommands(name: "pr" | "prs"): void {
-    const pr = program.command(`${name} [number]`).description("Inspect local GitHub pull requests through gh and git worktree data");
-    pr
+    program.command(`${name} [selector]`)
+      .description("Inspect local GitHub pull requests through gh and git worktree data")
       .option("--limit <n>", "Maximum PRs to list", String(30))
       .option("--state <state>", "PR state for list/conflicts/worktrees", "open")
-      .action(async (number: string | undefined, opts) => {
-        const { formatPullRequestDetails, formatPullRequestList, getPullRequest, listPullRequests } = await import("./pr.js");
-        if (number !== undefined) {
-          const parsedNumber = Number.parseInt(number, 10);
-          if (!Number.isFinite(parsedNumber) || String(parsedNumber) !== number || parsedNumber <= 0) {
-            console.error("error: PR number must be a positive integer");
-            process.exit(1);
-          }
-          console.log(formatPullRequestDetails(getPullRequest(parsedNumber)));
+      .action(async (selector: string | undefined, opts) => {
+        const {
+          formatPrWorktrees,
+          formatPullRequestConflicts,
+          formatPullRequestDetails,
+          formatPullRequestList,
+          getPullRequest,
+          listConflictingPullRequests,
+          listPrWorktrees,
+          listPullRequests,
+        } = await import("./pr.js");
+        const limit = parsePositiveIntegerOption(opts.limit, "--limit") ?? 30;
+        const state = opts.state;
+        const command = selector ?? "list";
+        if (command === "list") {
+          console.log(formatPullRequestList(listPullRequests({ limit, state })));
           return;
         }
-        const limit = parsePositiveIntegerOption(opts.limit, "--limit") ?? 30;
-        console.log(formatPullRequestList(listPullRequests({ limit, state: opts.state })));
-      });
-    pr
-      .command("list")
-      .description("List GitHub pull requests")
-      .option("--limit <n>", "Maximum PRs to list", String(30))
-      .option("--state <state>", "PR state", "open")
-      .action(async (opts) => {
-        const { formatPullRequestList, listPullRequests } = await import("./pr.js");
-        const limit = parsePositiveIntegerOption(opts.limit, "--limit") ?? 30;
-        console.log(formatPullRequestList(listPullRequests({ limit, state: opts.state })));
-      });
-    pr
-      .command("conflicts")
-      .description("List open pull requests reported by GitHub as conflicting")
-      .option("--limit <n>", "Maximum PRs to inspect", String(30))
-      .option("--state <state>", "PR state", "open")
-      .action(async (opts) => {
-        const { formatPullRequestConflicts, listConflictingPullRequests } = await import("./pr.js");
-        const limit = parsePositiveIntegerOption(opts.limit, "--limit") ?? 30;
-        console.log(formatPullRequestConflicts(listConflictingPullRequests({ limit, state: opts.state })));
-      });
-    pr
-      .command("worktrees")
-      .description("Correlate git worktrees with open GitHub pull requests")
-      .option("--limit <n>", "Maximum PRs to inspect", String(30))
-      .option("--state <state>", "PR state", "open")
-      .action(async (opts) => {
-        const { formatPrWorktrees, listPrWorktrees } = await import("./pr.js");
-        const limit = parsePositiveIntegerOption(opts.limit, "--limit") ?? 30;
-        console.log(formatPrWorktrees(listPrWorktrees({ limit, state: opts.state })));
+        if (command === "conflicts") {
+          console.log(formatPullRequestConflicts(listConflictingPullRequests({ limit, state })));
+          return;
+        }
+        if (command === "worktrees") {
+          console.log(formatPrWorktrees(listPrWorktrees({ limit, state })));
+          return;
+        }
+        const parsedNumber = Number.parseInt(command, 10);
+        if (!Number.isFinite(parsedNumber) || String(parsedNumber) !== command || parsedNumber <= 0) {
+          console.error("error: PR selector must be one of list, conflicts, worktrees, or a positive PR number");
+          process.exit(1);
+        }
+        console.log(formatPullRequestDetails(getPullRequest(parsedNumber)));
       });
   }
 

@@ -7,6 +7,7 @@ import {
   formatPullRequestDetails,
   formatPullRequestList,
   getPullRequest,
+  githubRepoFromRemote,
   listConflictingPullRequests,
   listPrWorktrees,
   listPullRequests,
@@ -27,6 +28,13 @@ function fakeRunner(responses: Record<string, unknown>): CommandRunner {
 }
 
 describe("pull request inspection", () => {
+  it("parses GitHub origin remotes for gh --repo scoping", () => {
+    expect(githubRepoFromRemote("https://github.com/rhanka/graphify.git")).toBe("rhanka/graphify");
+    expect(githubRepoFromRemote("git@github.com:rhanka/graphify.git")).toBe("rhanka/graphify");
+    expect(githubRepoFromRemote("ssh://git@github.com/rhanka/graphify.git")).toBe("rhanka/graphify");
+    expect(githubRepoFromRemote("https://example.com/rhanka/graphify.git")).toBeUndefined();
+  });
+
   it("lists pull requests from gh JSON", () => {
     const runner = fakeRunner({
       "gh pr list --state open --limit 2 --json number,title,state,isDraft,headRefName,baseRefName,author,url,mergeable,mergeStateStatus,reviewDecision,updatedAt": [
@@ -49,6 +57,24 @@ describe("pull request inspection", () => {
     expect(prs).toHaveLength(1);
     expect(formatPullRequestList(prs)).toContain("#12 Track PR inspection");
     expect(formatPullRequestList(prs)).toContain("feat/prs -> main");
+  });
+
+  it("scopes gh calls to the origin GitHub repository when available", () => {
+    const runner = fakeRunner({
+      "git remote get-url origin": "https://github.com/rhanka/graphify.git",
+      "gh pr list --repo rhanka/graphify --state open --limit 2 --json number,title,state,isDraft,headRefName,baseRefName,author,url,mergeable,mergeStateStatus,reviewDecision,updatedAt": [
+        {
+          number: 52,
+          title: "Track G4.5",
+          state: "OPEN",
+          isDraft: false,
+          headRefName: "feat/track-g-g45-central-display",
+          baseRefName: "main",
+        },
+      ],
+    });
+
+    expect(listPullRequests({ runner, limit: 2 })[0]?.number).toBe(52);
   });
 
   it("formats detailed pull request files, commits, and checks", () => {

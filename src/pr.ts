@@ -75,6 +75,26 @@ function normalizeBoolean(value: unknown): boolean {
   return value === true;
 }
 
+export function githubRepoFromRemote(remoteUrl: string): string | undefined {
+  const trimmed = remoteUrl.trim().replace(/\.git$/i, "");
+  const https = trimmed.match(/^https:\/\/github\.com\/([^/\s]+)\/([^/\s]+)$/i);
+  if (https) return `${https[1]}/${https[2]}`;
+  const ssh = trimmed.match(/^git@github\.com:([^/\s]+)\/([^/\s]+)$/i);
+  if (ssh) return `${ssh[1]}/${ssh[2]}`;
+  const sshUrl = trimmed.match(/^ssh:\/\/git@github\.com\/([^/\s]+)\/([^/\s]+)$/i);
+  if (sshUrl) return `${sshUrl[1]}/${sshUrl[2]}`;
+  return undefined;
+}
+
+function ghRepoArgs(runner: CommandRunner, cwd: string): string[] {
+  try {
+    const repo = githubRepoFromRemote(runner.run("git", ["remote", "get-url", "origin"], cwd));
+    return repo ? ["--repo", repo] : [];
+  } catch {
+    return [];
+  }
+}
+
 function authorLogin(value: unknown): string | undefined {
   if (!value || typeof value !== "object") return undefined;
   const login = (value as { login?: unknown }).login;
@@ -167,9 +187,11 @@ export function listPullRequests(options: PrCommandOptions = {}): PullRequestSum
   const opts = optionsWithDefaults(options);
   const state = opts.state ?? "open";
   const limit = opts.limit ?? DEFAULT_LIMIT;
+  const repoArgs = ghRepoArgs(opts.runner, opts.cwd);
   const data = runGhJson<unknown[]>(opts.runner, opts.cwd, [
     "pr",
     "list",
+    ...repoArgs,
     "--state",
     state,
     "--limit",
@@ -182,10 +204,12 @@ export function listPullRequests(options: PrCommandOptions = {}): PullRequestSum
 
 export function getPullRequest(number: number, options: PrCommandOptions = {}): PullRequestDetails {
   const opts = optionsWithDefaults(options);
+  const repoArgs = ghRepoArgs(opts.runner, opts.cwd);
   const data = runGhJson<unknown>(opts.runner, opts.cwd, [
     "pr",
     "view",
     String(number),
+    ...repoArgs,
     "--json",
     "number,title,state,isDraft,headRefName,baseRefName,author,url,mergeable,mergeStateStatus,reviewDecision,updatedAt,body,files,commits,statusCheckRollup",
   ], "pull request details");
