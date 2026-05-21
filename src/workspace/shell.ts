@@ -100,6 +100,7 @@ function nodeType(node: GraphNodeLike): string {
     displayValue(node.node_type) ??
     displayValue(node.type) ??
     displayValue(node.kind) ??
+    displayValue(node.file_type) ??
     "node"
   );
 }
@@ -114,11 +115,23 @@ function nodeTitle(node: GraphNodeLike): string {
 }
 
 function nodeSummary(node: GraphNodeLike): string | null {
-  return (
+  const directSummary =
     displayValue(node.summary) ??
     displayValue(node.description) ??
-    displayValue(node.body)
-  );
+    displayValue(node.body);
+  if (directSummary) return directSummary;
+
+  const sourceFile = displayValue(node.source_file);
+  const sourceLocation = displayValue(node.source_location);
+  const community =
+    displayValue(node.community_name) ??
+    (typeof node.community === "number" ? `Community ${node.community}` : null);
+  const details: string[] = [];
+  if (sourceFile) {
+    details.push(`Source: ${sourceLocation ? `${sourceFile}:${sourceLocation}` : sourceFile}`);
+  }
+  if (community) details.push(`Community: ${community}`);
+  return details.length > 0 ? details.join("\n") : null;
 }
 
 function truncateDisplayText(value: string): string {

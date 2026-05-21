@@ -142,6 +142,33 @@ describe("Track G G2 — workspace shell scaffold", () => {
     expect(html).not.toContain("Sherlock <Holmes>");
   });
 
+  it("renders useful source context for Graphify code nodes without descriptions", () => {
+    const html = renderWorkspaceShell({
+      tokens,
+      title: "Code graph workspace",
+      state: { ...createDefaultViewerState(), displayRef: "entity:workspace_shell_renderworkspaceshell" },
+      graph: {
+        nodes: [
+          {
+            id: "workspace_shell_renderworkspaceshell",
+            label: "renderWorkspaceShell()",
+            file_type: "code",
+            source_file: "src/workspace/shell.ts",
+            source_location: "L270",
+            community_name: "Workspace rendering",
+          },
+        ],
+        links: [],
+      },
+    });
+
+    expect(html).toContain("renderWorkspaceShell()");
+    expect(html).toContain("code");
+    expect(html).toContain("Source: src/workspace/shell.ts:L270");
+    expect(html).toContain("Community: Workspace rendering");
+    expect(html).not.toContain("No summary available.");
+  });
+
   it("renders selected type and candidate display refs without profile-specific wiring", () => {
     const graph = {
       nodes: [
