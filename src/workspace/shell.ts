@@ -66,6 +66,8 @@ export interface RenderWorkspaceShellOptions {
    * reconciliation queues without crashing the shell render path.
    */
   queueEmpty?: boolean;
+  /** Trusted internal HTML fragment rendered inside the graph panel slot. */
+  graphPanelHtml?: string;
 }
 
 const HTML_ESCAPE_RE = /[&<>"']/g;
@@ -127,6 +129,9 @@ export function renderWorkspaceShell(opts: RenderWorkspaceShellOptions): string 
   const queueBody = queueEmpty
     ? '<p class="ws-empty" id="ws-queue-empty">Reconciliation queue is empty.</p>'
     : '<p class="ws-empty" id="ws-queue-stub">Queue rendering arrives in G5.</p>';
+  const graphPanelBody =
+    opts.graphPanelHtml ??
+    '<p class="ws-empty">No graph context available.</p>';
 
   return [
     "<!DOCTYPE html>",
@@ -159,10 +164,10 @@ export function renderWorkspaceShell(opts: RenderWorkspaceShellOptions): string 
     "</aside>",
     '<main class="ws-center" id="central-display" role="main" aria-label="Central display" tabindex="-1">',
     '<h2 class="ws-region-heading">Central display</h2>',
-    '<p class="ws-empty">Entity / type / candidate description renders here (G4 fills the markdown body, including Track A wiki sidecar inlining).</p>',
+    '<p class="ws-empty">No display item selected.</p>',
     '<section class="ws-graph-panel" id="graph-panel" role="region" aria-label="Graph panel">',
     '<h2 class="ws-region-heading">Graph panel</h2>',
-    '<p class="ws-empty">vis.js graph surface arrives in G4.</p>',
+    graphPanelBody,
     "</section>",
     "</main>",
     '<aside class="ws-right" id="right-drawer" role="complementary" aria-label="Detail drawer">',
