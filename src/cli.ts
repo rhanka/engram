@@ -1910,6 +1910,49 @@ export async function main(): Promise<void> {
     console.log(JSON.stringify(planLifecyclePrune("."), null, 2));
   });
 
+  function registerPrCommands(name: "pr" | "prs"): void {
+    program.command(`${name} [selector]`)
+      .description("Inspect local GitHub pull requests through gh and git worktree data")
+      .option("--limit <n>", "Maximum PRs to list", String(30))
+      .option("--state <state>", "PR state for list/conflicts/worktrees", "open")
+      .action(async (selector: string | undefined, opts) => {
+        const {
+          formatPrWorktrees,
+          formatPullRequestConflicts,
+          formatPullRequestDetails,
+          formatPullRequestList,
+          getPullRequest,
+          listConflictingPullRequests,
+          listPrWorktrees,
+          listPullRequests,
+        } = await import("./pr.js");
+        const limit = parsePositiveIntegerOption(opts.limit, "--limit") ?? 30;
+        const state = opts.state;
+        const command = selector ?? "list";
+        if (command === "list") {
+          console.log(formatPullRequestList(listPullRequests({ limit, state })));
+          return;
+        }
+        if (command === "conflicts") {
+          console.log(formatPullRequestConflicts(listConflictingPullRequests({ limit, state })));
+          return;
+        }
+        if (command === "worktrees") {
+          console.log(formatPrWorktrees(listPrWorktrees({ limit, state })));
+          return;
+        }
+        const parsedNumber = Number.parseInt(command, 10);
+        if (!Number.isFinite(parsedNumber) || String(parsedNumber) !== command || parsedNumber <= 0) {
+          console.error("error: PR selector must be one of list, conflicts, worktrees, or a positive PR number");
+          process.exit(1);
+        }
+        console.log(formatPullRequestDetails(getPullRequest(parsedNumber)));
+      });
+  }
+
+  registerPrCommands("pr");
+  registerPrCommands("prs");
+
   const profile = program.command("profile").description("Configured ontology dataprep profile commands");
   profile
     .command("validate")
