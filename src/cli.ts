@@ -1910,6 +1910,60 @@ export async function main(): Promise<void> {
     console.log(JSON.stringify(planLifecyclePrune("."), null, 2));
   });
 
+  function registerPrCommands(name: "pr" | "prs"): void {
+    const pr = program.command(`${name} [number]`).description("Inspect local GitHub pull requests through gh and git worktree data");
+    pr
+      .option("--limit <n>", "Maximum PRs to list", String(30))
+      .option("--state <state>", "PR state for list/conflicts/worktrees", "open")
+      .action(async (number: string | undefined, opts) => {
+        const { formatPullRequestDetails, formatPullRequestList, getPullRequest, listPullRequests } = await import("./pr.js");
+        if (number !== undefined) {
+          const parsedNumber = Number.parseInt(number, 10);
+          if (!Number.isFinite(parsedNumber) || String(parsedNumber) !== number || parsedNumber <= 0) {
+            console.error("error: PR number must be a positive integer");
+            process.exit(1);
+          }
+          console.log(formatPullRequestDetails(getPullRequest(parsedNumber)));
+          return;
+        }
+        const limit = parsePositiveIntegerOption(opts.limit, "--limit") ?? 30;
+        console.log(formatPullRequestList(listPullRequests({ limit, state: opts.state })));
+      });
+    pr
+      .command("list")
+      .description("List GitHub pull requests")
+      .option("--limit <n>", "Maximum PRs to list", String(30))
+      .option("--state <state>", "PR state", "open")
+      .action(async (opts) => {
+        const { formatPullRequestList, listPullRequests } = await import("./pr.js");
+        const limit = parsePositiveIntegerOption(opts.limit, "--limit") ?? 30;
+        console.log(formatPullRequestList(listPullRequests({ limit, state: opts.state })));
+      });
+    pr
+      .command("conflicts")
+      .description("List open pull requests reported by GitHub as conflicting")
+      .option("--limit <n>", "Maximum PRs to inspect", String(30))
+      .option("--state <state>", "PR state", "open")
+      .action(async (opts) => {
+        const { formatPullRequestConflicts, listConflictingPullRequests } = await import("./pr.js");
+        const limit = parsePositiveIntegerOption(opts.limit, "--limit") ?? 30;
+        console.log(formatPullRequestConflicts(listConflictingPullRequests({ limit, state: opts.state })));
+      });
+    pr
+      .command("worktrees")
+      .description("Correlate git worktrees with open GitHub pull requests")
+      .option("--limit <n>", "Maximum PRs to inspect", String(30))
+      .option("--state <state>", "PR state", "open")
+      .action(async (opts) => {
+        const { formatPrWorktrees, listPrWorktrees } = await import("./pr.js");
+        const limit = parsePositiveIntegerOption(opts.limit, "--limit") ?? 30;
+        console.log(formatPrWorktrees(listPrWorktrees({ limit, state: opts.state })));
+      });
+  }
+
+  registerPrCommands("pr");
+  registerPrCommands("prs");
+
   const profile = program.command("profile").description("Configured ontology dataprep profile commands");
   profile
     .command("validate")
