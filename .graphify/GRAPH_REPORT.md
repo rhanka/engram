@@ -1,11 +1,11 @@
 # Graph Report - .  (2026-05-21)
 
 ## Corpus Check
-- 266 files · ~334,771 words
+- 266 files · ~334,885 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 4203 nodes · 6726 edges · 220 communities detected
+- 4205 nodes · 6731 edges · 220 communities detected
 - Extraction: 93% EXTRACTED · 7% INFERRED · 0% AMBIGUOUS · INFERRED: 466 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
 
@@ -14,11 +14,11 @@
 - Requested: tracked
 - Resolved: tracked (source: cli)
 - Included files: 266 · Candidates: 286
-- Excluded: 0 untracked · 214 ignored · 4 sensitive · 0 missing committed
+- Excluded: 0 untracked · 15716 ignored · 4 sensitive · 0 missing committed
 - Recommendation: Use --scope all or graphify.yaml inputs.corpus for a knowledge-base folder.
 
 ## Graph Freshness
-- Built from Git commit: `a196d97`
+- Built from Git commit: `a6269ff`
 - Compare this hash to `git rev-parse HEAD` before trusting freshness-sensitive graph output.
 ## God Nodes (most connected - your core abstractions)
 1. `Response` - 45 edges
@@ -168,19 +168,19 @@ Nodes (36): buildFallbackSidecar(), buildWikiDescriptionPrompt(), BuildWikiDescr
 
 ### Community 30 - "Community 30"
 Cohesion: 0.09
-Nodes (35): augmentDetectionWithTranscripts(), buildWhisperPrompt(), CACHED_AUDIO_EXTENSIONS, cloneDetection(), defaultWhisperCacheDir(), downloadAudio(), downloadFile(), ensureWhisperArtifacts() (+27 more)
+Nodes (32): authorLogin(), CommandRunner, defaultRunner, formatPullRequestConflicts(), formatPullRequestDetails(), formatPullRequestList(), getPullRequest(), ghRepoArgs() (+24 more)
 
 ### Community 31 - "Community 31"
 Cohesion: 0.09
-Nodes (15): Config, HttpClient, HttpClientFactory, main(), NewServer(), process(), validate(), Server (+7 more)
+Nodes (35): augmentDetectionWithTranscripts(), buildWhisperPrompt(), CACHED_AUDIO_EXTENSIONS, cloneDetection(), defaultWhisperCacheDir(), downloadAudio(), downloadFile(), ensureWhisperArtifacts() (+27 more)
 
 ### Community 32 - "Community 32"
-Cohesion: 0.10
-Nodes (33): buildProfileChunkPrompt(), buildProfileExtractionPrompt(), buildProfileValidationPrompt(), chunkGuidance(), citationSection(), genericSafetySection(), hardeningSection(), inputHintsSection() (+25 more)
+Cohesion: 0.09
+Nodes (15): Config, HttpClient, HttpClientFactory, main(), NewServer(), process(), validate(), Server (+7 more)
 
 ### Community 33 - "Community 33"
-Cohesion: 0.09
-Nodes (30): authorLogin(), CommandRunner, defaultRunner, formatPullRequestConflicts(), formatPullRequestDetails(), formatPullRequestList(), getPullRequest(), listConflictingPullRequests() (+22 more)
+Cohesion: 0.10
+Nodes (33): buildProfileChunkPrompt(), buildProfileExtractionPrompt(), buildProfileValidationPrompt(), chunkGuidance(), citationSection(), genericSafetySection(), hardeningSection(), inputHintsSection() (+25 more)
 
 ### Community 34 - "Community 34"
 Cohesion: 0.11
