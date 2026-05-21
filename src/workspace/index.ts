@@ -43,3 +43,15 @@ export {
   viewerStateFromQuery,
   workspaceReducer,
 } from "./viewer-state.js";
+
+export type {
+  GraphNodeLike,
+  GraphEdgeLike,
+  GraphLike,
+  FocusSubgraphMetrics,
+  FocusSubgraph,
+} from "./graph-selection.js";
+export { computeFocusSubgraph } from "./graph-selection.js";
+
+export type { RenderGraphPanelOptions } from "./graph-panel.js";
+export { renderGraphPanel } from "./graph-panel.js";
