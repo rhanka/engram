@@ -16,16 +16,21 @@ describe("Track G G2 — workspace shell scaffold", () => {
     expect(html).toContain('id="left-workbench"');
     expect(html).toContain('id="central-display"');
     expect(html).toContain('id="graph-panel"');
-    expect(html).toContain('id="right-drawer"');
+    // G6-1: the right drawer migrated to the named reconciliation slot.
+    expect(html).toContain('id="workspace-reconciliation-slot"');
     expect(html).toContain('role="main"');
     expect(html).toContain('role="application"');
   });
 
   it("marks the token source and lets studio routes fill each workspace region", () => {
+    // G6-1: in default "workspace" activeView the reconciliation slot is
+    // hidden. Studio routes use activeView="studio" to surface the drawer.
+    const studioState = { ...createDefaultViewerState(), activeView: "studio" };
     const html = renderWorkspaceShell({
       tokens,
       tokenSource: "fallback",
       title: "Ontology workspace",
+      state: studioState,
       leftWorkbenchHtml: '<nav id="candidate-list">Candidate queue</nav>',
       centralDisplayHtml: '<article id="candidate-detail">Candidate detail</article>',
       rightDrawerHtml: '<aside id="audit-detail">Audit trail</aside>',
@@ -155,8 +160,12 @@ describe("Track G G2 — workspace shell scaffold", () => {
     expect(html).toContain("Sherlock &lt;Holmes&gt;");
     expect(html).toContain("Character");
     expect(html).toContain("Consulting detective &amp; violinist.");
-    expect(html).toContain("<b>Relations:</b> 2");
-    expect(html).toContain("<b>Evidence:</b> 3");
+    // G6-1: relations/evidence are surfaced via the compact sections, not
+    // the legacy ws-display-metrics block.
+    expect(html).toContain('class="ws-compact-section ws-compact-relations"');
+    expect(html).toContain('class="ws-compact-section ws-compact-evidence"');
+    expect(html).toContain("2 relations");
+    expect(html).toContain("3 refs");
     expect(html).not.toContain("Sherlock <Holmes>");
   });
 
@@ -182,8 +191,9 @@ describe("Track G G2 — workspace shell scaffold", () => {
 
     expect(html).toContain("renderWorkspaceShell()");
     expect(html).toContain("code");
-    expect(html).toContain("Source: src/workspace/shell.ts:L270");
-    expect(html).toContain("Community: Workspace rendering");
+    // G6-1: source / community surface as inline facts in the compact block.
+    expect(html).toContain("Source:</span> src/workspace/shell.ts:L270");
+    expect(html).toContain("Community:</span> Workspace rendering");
     expect(html).not.toContain("No summary available.");
   });
 
@@ -205,8 +215,10 @@ describe("Track G G2 — workspace shell scaffold", () => {
     });
     expect(typeHtml).toContain("Character");
     expect(typeHtml).toContain("Type");
-    expect(typeHtml).toContain("<b>Members:</b> 2");
-    expect(typeHtml).toContain("<b>Relations:</b> 1");
+    // G6-1: type display uses the compact prose layout.
+    expect(typeHtml).toContain('data-fact="members"');
+    expect(typeHtml).toContain("Members:</span> 2");
+    expect(typeHtml).toContain("1 relation");
 
     const candidateHtml = renderWorkspaceShell({
       tokens,
