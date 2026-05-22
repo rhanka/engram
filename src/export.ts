@@ -14,6 +14,7 @@ import {
   toNumericMap,
   toStringMap,
 } from "./collections.js";
+import { getWorkspaceTokens, serialiseTokensToCss } from "./workspace/tokens-fallback.js";
 
 // ---------------------------------------------------------------------------
 // backupIfProtected — upstream 6939494 (#834)
@@ -604,58 +605,71 @@ export async function pushToNeo4j(
 // ---------------------------------------------------------------------------
 
 function htmlStyles(): string {
+  const workspaceCss = serialiseTokensToCss(getWorkspaceTokens());
   return `<style>
+  :root {
+${workspaceCss
+    .split("\n")
+    .map((line) => `    ${line}`)
+    .join("\n")}
+    --graph-overlay: rgba(15, 23, 42, 0.45);
+    --graph-focus-shadow: rgba(78, 121, 167, 0.55);
+    --graph-weak-text: var(--ws-text-muted);
+    --graph-muted-strong: var(--ws-text-muted);
+    --graph-node-label: var(--ws-text);
+    --graph-neighbor-border: var(--ws-border);
+  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #0f0f1a; color: #e0e0e0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; display: flex; height: 100vh; overflow: hidden; }
+  body { background: var(--ws-surface); color: var(--ws-text); font-family: var(--ws-font-family-sans); display: flex; height: 100vh; overflow: hidden; }
   /* Skip link visible only on focus, lets keyboard users jump past the canvas. */
-  .skip-link { position: absolute; top: -40px; left: 8px; background: #4E79A7; color: #fff; padding: 6px 12px; border-radius: 0 0 4px 4px; z-index: 1000; text-decoration: none; }
+  .skip-link { position: absolute; top: -40px; left: var(--ws-space-2); background: var(--ws-accent); color: #fff; padding: var(--ws-space-1) var(--ws-space-3); border-radius: 0 0 var(--ws-radius-sm) var(--ws-radius-sm); z-index: 1000; text-decoration: none; }
   .skip-link:focus { top: 0; }
   /* Visually hidden but exposed to screen readers. */
   .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
   /* Focus visible everywhere, WCAG-compliant outline. */
-  :focus-visible { outline: 3px solid #ffd54f; outline-offset: 2px; box-shadow: 0 0 0 4px rgba(78, 121, 167, 0.55); }
-  #graph { flex: 1; outline: none; }
-  #graph:focus-visible { box-shadow: inset 0 0 0 3px #ffd54f; }
-  #sidebar { width: 280px; background: #1a1a2e; border-left: 1px solid #2a2a4e; display: flex; flex-direction: column; overflow: hidden; }
-  #search-wrap { padding: 12px; border-bottom: 1px solid #2a2a4e; }
-  #search { width: 100%; background: #0f0f1a; border: 1px solid #3a3a5e; color: #e0e0e0; padding: 7px 10px; border-radius: 6px; font-size: 13px; outline: none; }
-  #search:focus { border-color: #4E79A7; }
-  #search-results { max-height: 140px; overflow-y: auto; padding: 4px 12px; border-bottom: 1px solid #2a2a4e; display: none; }
-  .search-item { padding: 4px 6px; cursor: pointer; border-radius: 4px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .search-item:hover, .search-item:focus { background: #2a2a4e; }
-  #info-panel { padding: 14px; border-bottom: 1px solid #2a2a4e; min-height: 140px; }
-  #info-panel h3 { font-size: 13px; color: #aaa; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
-  #info-content { font-size: 13px; color: #ccc; line-height: 1.6; }
+  :focus-visible { outline: var(--ws-outline); outline-offset: var(--ws-outline-offset); outline-color: var(--ws-outline-color); box-shadow: 0 0 0 4px var(--graph-focus-shadow); }
+  #graph { flex: 1; outline: none; background: var(--ws-surface); }
+  #graph:focus-visible { box-shadow: inset 0 0 0 3px var(--ws-outline-color); }
+  #sidebar { width: 280px; background: var(--ws-surface-2); border-left: 1px solid var(--ws-border); display: flex; flex-direction: column; overflow: hidden; }
+  #search-wrap { padding: var(--ws-space-3); border-bottom: 1px solid var(--ws-border); }
+  #search { width: 100%; background: var(--ws-surface); border: 1px solid var(--ws-border); color: var(--ws-text); padding: 7px 10px; border-radius: var(--ws-radius-md); font-size: 13px; outline: none; }
+  #search:focus { border-color: var(--ws-accent); }
+  #search-results { max-height: 140px; overflow-y: auto; padding: 4px 12px; border-bottom: 1px solid var(--ws-border); display: none; }
+  .search-item { padding: 4px 6px; cursor: pointer; border-radius: var(--ws-radius-sm); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .search-item:hover, .search-item:focus { background: var(--ws-border); }
+  #info-panel { padding: 14px; border-bottom: 1px solid var(--ws-border); min-height: 140px; }
+  #info-panel h3 { font-size: 13px; color: var(--ws-text-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+  #info-content { font-size: 13px; color: var(--ws-text); line-height: 1.6; }
   #info-content .field { margin-bottom: 5px; }
-  #info-content .field b { color: #e0e0e0; }
-  #info-content .empty { color: #777; font-style: italic; } /* WCAG AA: bumped from #555 (3.8:1) to #777 (5.0:1) */
-  .neighbor-link { display: block; padding: 2px 6px; margin: 2px 0; border-radius: 3px; cursor: pointer; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-left: 3px solid #333; }
-  .neighbor-link:hover, .neighbor-link:focus { background: #2a2a4e; }
+  #info-content .field b { color: var(--ws-text); }
+  #info-content .empty { color: var(--graph-weak-text); font-style: italic; }
+  .neighbor-link { display: block; padding: 2px 6px; margin: 2px 0; border-radius: 3px; cursor: pointer; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-left: 3px solid var(--graph-neighbor-border); }
+  .neighbor-link:hover, .neighbor-link:focus { background: var(--ws-border); }
   #neighbors-list { max-height: 160px; overflow-y: auto; margin-top: 4px; }
-  #legend-wrap { flex: 1; overflow-y: auto; padding: 12px; }
-  #legend-wrap h3 { font-size: 13px; color: #aaa; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
-  .legend-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer; border-radius: 4px; font-size: 12px; }
-  .legend-item:hover, .legend-item:focus-within { background: #2a2a4e; padding-left: 4px; }
+  #legend-wrap { flex: 1; overflow-y: auto; padding: var(--ws-space-3); }
+  #legend-wrap h3 { font-size: 13px; color: var(--ws-text-muted); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .legend-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer; border-radius: var(--ws-radius-sm); font-size: 12px; }
+  .legend-item:hover, .legend-item:focus-within { background: var(--ws-border); padding-left: 4px; }
   .legend-item.dimmed { opacity: 0.45; } /* WCAG: bumped from 0.35 for better contrast in dimmed state */
   .legend-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
-  .legend-cb { accent-color: #4E79A7; cursor: pointer; flex-shrink: 0; }
+  .legend-cb { accent-color: var(--ws-accent); cursor: pointer; flex-shrink: 0; }
   .legend-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .legend-count { color: #888; font-size: 11px; } /* WCAG AA: bumped from #666 to #888 */
-  #legend-controls { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 11px; color: #aaa; }
+  .legend-count { color: var(--graph-muted-strong); font-size: 11px; }
+  #legend-controls { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 11px; color: var(--ws-text-muted); }
   #legend-controls label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
-  #stats { padding: 10px 14px; border-top: 1px solid #2a2a4e; font-size: 11px; color: #888; } /* WCAG AA */
+  #stats { padding: 10px 14px; border-top: 1px solid var(--ws-border); font-size: 11px; color: var(--graph-muted-strong); }
   /* Help overlay modal. */
-  #help-button { position: fixed; bottom: 12px; right: 296px; width: 36px; height: 36px; border-radius: 50%; background: #2a2a4e; color: #e0e0e0; border: 1px solid #3a3a5e; font-size: 16px; font-weight: bold; cursor: pointer; z-index: 100; }
-  #help-button:hover, #help-button:focus { background: #3a3a5e; }
-  #help-overlay { display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.75); z-index: 200; align-items: center; justify-content: center; }
+  #help-button { position: fixed; bottom: 12px; right: 296px; width: 36px; height: 36px; border-radius: 50%; background: var(--ws-border); color: var(--ws-text); border: 1px solid var(--ws-border); font-size: 16px; font-weight: bold; cursor: pointer; z-index: 100; }
+  #help-button:hover, #help-button:focus { background: var(--ws-surface-2); }
+  #help-overlay { display: none; position: fixed; inset: 0; background: var(--graph-overlay); z-index: 200; align-items: center; justify-content: center; }
   #help-overlay.open { display: flex; }
-  #help-modal { background: #1a1a2e; color: #e0e0e0; padding: 24px 28px; border-radius: 8px; max-width: 480px; max-height: 80vh; overflow-y: auto; border: 1px solid #3a3a5e; }
+  #help-modal { background: var(--ws-surface-2); color: var(--ws-text); padding: 24px 28px; border-radius: var(--ws-radius-lg); max-width: 480px; max-height: 80vh; overflow-y: auto; border: 1px solid var(--ws-border); }
   #help-modal h2 { font-size: 16px; margin-bottom: 12px; }
-  #help-modal kbd { background: #0f0f1a; border: 1px solid #3a3a5e; border-radius: 3px; padding: 1px 6px; font-family: monospace; font-size: 12px; }
+  #help-modal kbd { background: var(--ws-surface); border: 1px solid var(--ws-border); border-radius: 3px; padding: 1px 6px; font-family: var(--ws-font-family-mono); font-size: 12px; }
   #help-modal dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 12px 0; font-size: 13px; }
-  #help-modal dt { color: #ffd54f; }
-  #help-close { float: right; background: none; border: none; color: #aaa; font-size: 18px; cursor: pointer; }
-  #help-close:hover, #help-close:focus { color: #e0e0e0; }
+  #help-modal dt { color: var(--ws-outline-color); }
+  #help-close { float: right; background: none; border: none; color: var(--ws-text-muted); font-size: 18px; cursor: pointer; }
+  #help-close:hover, #help-close:focus { color: var(--ws-text); }
   /* High-contrast mode (system preference + manual toggle). */
   @media (prefers-contrast: more) {
     body, #sidebar, #search { background: #000; color: #fff; }
@@ -792,16 +806,16 @@ function showInfo(nodeId) {
   const neighborIds = network.getConnectedNodes(nodeId);
   const neighborItems = neighborIds.map(nid => {
     const nb = nodesDS.get(nid);
-    const color = nb ? nb.color.background : '#555';
+    const color = nb ? nb.color.background : 'var(--ws-border)';
     return \`<span class="neighbor-link" style="border-left-color:\${color}" onclick="focusNode('\${nid}')">\${nb ? nb.label : nid}</span>\`;
   }).join('');
   document.getElementById('info-content').innerHTML = \`
     <div class="field"><b>\${n.label}</b></div>
-    <div class="field">Type: \${n._file_type || 'unknown'} <span style="color:#888;font-size:11px">(shape: \${n._shape})</span></div>
+    <div class="field">Type: \${n._file_type || 'unknown'} <span style="color:var(--ws-text-muted);font-size:11px">(shape: \${n._shape})</span></div>
     <div class="field">Community: \${n._community_name}</div>
     <div class="field">Source: \${n._source_file || '-'}</div>
     <div class="field">Degree: \${n._degree}</div>
-    \${neighborIds.length ? \`<div class="field" style="margin-top:8px;color:#aaa;font-size:11px">Neighbors (\${neighborIds.length})</div><div id="neighbors-list">\${neighborItems}</div>\` : ''}
+    \${neighborIds.length ? \`<div class="field" style="margin-top:8px;color:var(--ws-text-muted);font-size:11px">Neighbors (\${neighborIds.length})</div><div id="neighbors-list">\${neighborItems}</div>\` : ''}
   \`;
 }
 
@@ -1001,6 +1015,7 @@ export function toHtml(
   const communityLabels = normalizeCommunityLabels(communityLabelsOrOptions);
   const memberCounts = normalizeMemberCounts(communityLabelsOrOptions);
   const profile = normalizeProfile(communityLabelsOrOptions);
+  const workspaceTheme = getWorkspaceTokens();
   if (G.order > MAX_NODES_FOR_VIZ) {
     throw new Error(
       `Graph has ${G.order} nodes - too large for HTML viz. ` +
@@ -1063,10 +1078,10 @@ export function toHtml(
       color: {
         background: isOutlinedShape ? "rgba(0,0,0,0)" : color,
         border: color,
-        highlight: { background: "#ffffff", border: color },
+        highlight: { background: workspaceTheme.colour.surface, border: color },
       },
       size: Math.round(size * 10) / 10,
-      font: { size: fontSize, color: "#ffffff" },
+      font: { size: fontSize, color: workspaceTheme.colour.text },
       title: label,
       community: cid,
       community_name: sanitizeLabel(communityLabels?.get(cid) ?? `Community ${cid}`),
@@ -1085,7 +1100,7 @@ export function toHtml(
     title: string;
     dashes: boolean | number[];
     width: number;
-    color: { opacity: number };
+    color: { color: string; highlight: string; hover: string; opacity: number };
     confidence: string;
     relation: string;
   }
@@ -1100,7 +1115,12 @@ export function toHtml(
       title: `${relation} [${confidence}]`,
       dashes: inferEdgeDashes(relation, confidence),
       width: confidence === "EXTRACTED" ? 2 : 1,
-      color: { opacity: confidence === "EXTRACTED" ? 0.7 : 0.35 },
+      color: {
+        color: workspaceTheme.colour["text-muted"],
+        highlight: workspaceTheme.colour.accent,
+        hover: workspaceTheme.colour.accent,
+        opacity: confidence === "EXTRACTED" ? 0.7 : 0.35,
+      },
       confidence,
       relation,
     });
@@ -1163,17 +1183,17 @@ ${htmlStyles()}
     </div>
     <div id="legend" role="group" aria-label="Community filters"></div>
     <h3 id="shapes-heading" style="margin-top:14px">Shapes</h3>
-    <ul id="shape-legend" aria-labelledby="shapes-heading" style="list-style:none;padding:0;margin:0;font-size:12px;color:#bbb">
+    <ul id="shape-legend" aria-labelledby="shapes-heading" style="list-style:none;padding:0;margin:0;font-size:12px;color:var(--ws-text-muted)">
       <li>● dot &mdash; code</li>
-      <li><span style="display:inline-block;width:10px;height:10px;background:#bbb;vertical-align:middle"></span> square (filled) &mdash; test</li>
+      <li><span style="display:inline-block;width:10px;height:10px;background:var(--ws-text-muted);vertical-align:middle"></span> square (filled) &mdash; test</li>
       <li>▲ triangle &mdash; config (yaml/toml/...)</li>
       <li>◆ diamond &mdash; type definition (.d.ts)</li>
-      <li><span style="display:inline-block;width:10px;height:10px;border:1px solid #bbb;background:transparent;vertical-align:middle"></span> box (outline) &mdash; document / paper / concept</li>
+      <li><span style="display:inline-block;width:10px;height:10px;border:1px solid var(--ws-text-muted);background:transparent;vertical-align:middle"></span> box (outline) &mdash; document / paper / concept</li>
       <li>★ star &mdash; image</li>
       <li>⬢ hexagon &mdash; video</li>
     </ul>
     <h3 id="relations-heading" style="margin-top:14px">Edges</h3>
-    <ul id="relation-legend" aria-labelledby="relations-heading" style="list-style:none;padding:0;margin:0;font-size:12px;color:#bbb">
+    <ul id="relation-legend" aria-labelledby="relations-heading" style="list-style:none;padding:0;margin:0;font-size:12px;color:var(--ws-text-muted)">
       <li>━━━━ solid &mdash; calls / strong (EXTRACTED)</li>
       <li>┄┄┄┄ dashed &mdash; imports_from</li>
       <li>┈┈┈┈ dotted &mdash; tested_by / validated_by</li>
@@ -1197,7 +1217,7 @@ ${htmlStyles()}
       <dt><kbd>F1</kbd> / <kbd>?</kbd></dt><dd>Toggle this help</dd>
       <dt><kbd>HC</kbd> button</dt><dd>Toggle high-contrast theme</dd>
     </dl>
-    <p style="font-size:12px;color:#aaa;margin-top:8px">Search input announces match counts; selecting a node announces its community and degree.</p>
+    <p style="font-size:12px;color:var(--ws-text-muted);margin-top:8px">Search input announces match counts; selecting a node announces its community and degree.</p>
   </div>
 </div>
 ${htmlScript(nodesJson, edgesJson, legendJson)}

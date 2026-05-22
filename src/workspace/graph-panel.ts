@@ -36,6 +36,8 @@ export interface RenderGraphPanelOptions {
   tokens: WorkspaceTokens;
   /** Optional URL/path to a `graphify export html` artefact. */
   graphHtmlUrl?: string;
+  /** Optional same-origin URL used when the workspace is served over HTTP. */
+  liveGraphHtmlUrl?: string;
   /**
    * Optional height of the iframe / placeholder, in CSS pixels.
    * Defaults to 480.
@@ -102,12 +104,25 @@ function renderMetricsCard(subgraph: FocusSubgraph, state: WorkspaceViewerState)
 function renderViewerSurface(opts: RenderGraphPanelOptions): string {
   const height = Math.max(120, Math.round(opts.height ?? 480));
   const url = opts.graphHtmlUrl ? escapeUrl(opts.graphHtmlUrl) : "";
+  const liveUrl = opts.liveGraphHtmlUrl ? escapeUrl(opts.liveGraphHtmlUrl) : "";
   if (!url) {
     return [
       '<div class="ws-graph-placeholder" id="ws-graph-network">',
       "<p>Graph surface unavailable.</p>",
       "</div>",
     ].join("");
+  }
+  if (liveUrl) {
+    return [
+      '<iframe',
+      `  srcdoc="${escapeHtml("<p>Loading graph surface...</p>")}"`,
+      `  data-ws-file-graph-src="${url}"`,
+      `  data-ws-live-graph-src="${liveUrl}"`,
+      `  title="Graphify graph surface"`,
+      `  style="width:100%;height:${height}px;border:1px solid var(--ws-border);border-radius:var(--ws-radius-md);background:var(--ws-surface);"`,
+      '  sandbox="allow-scripts"',
+      "></iframe>",
+    ].join("\n");
   }
   return [
     '<iframe',
@@ -116,6 +131,24 @@ function renderViewerSurface(opts: RenderGraphPanelOptions): string {
     `  style="width:100%;height:${height}px;border:1px solid var(--ws-border);border-radius:var(--ws-radius-md);background:var(--ws-surface);"`,
     '  sandbox="allow-scripts"',
     "></iframe>",
+  ].join("\n");
+}
+
+function renderLiveGraphScript(enabled: boolean): string {
+  if (!enabled) return "";
+  return [
+    "<script>",
+    "(() => {",
+    '  const frame = document.querySelector("iframe[data-ws-file-graph-src]");',
+    "  if (!frame) return;",
+    '  const fileSrc = frame.getAttribute("data-ws-file-graph-src");',
+    '  const liveSrc = frame.getAttribute("data-ws-live-graph-src");',
+    '  const src = window.location.protocol === "file:" || !liveSrc ? fileSrc : liveSrc;',
+    '  if (!src) return;',
+    '  frame.removeAttribute("srcdoc");',
+    '  frame.setAttribute("src", src);',
+    "})();",
+    "</script>",
   ].join("\n");
 }
 
@@ -129,5 +162,10 @@ export function renderGraphPanel(opts: RenderGraphPanelOptions): string {
     ".ws-graph-placeholder code { background: var(--ws-surface-2); padding: 0 var(--ws-space-1); border-radius: var(--ws-radius-sm); }",
     "</style>",
   ].join("\n");
-  return [styles, renderMetricsCard(subgraph, opts.state), renderViewerSurface(opts)].join("\n");
+  return [
+    styles,
+    renderMetricsCard(subgraph, opts.state),
+    renderViewerSurface(opts),
+    renderLiveGraphScript(Boolean(opts.liveGraphHtmlUrl)),
+  ].filter(Boolean).join("\n");
 }
