@@ -1,46 +1,68 @@
 /**
- * Track G Lot 1 / G2 — workspace shell static scaffold.
- *
- * Produces the server-rendered HTML scaffold consumed by
- * `graphify ontology studio` (read-only by default; mutation surface
- * is gated behind --write per existing patterns in src/serve.ts and
- * src/ontology-studio.ts and is wired in G5).
+ * Track G G6-1 — workspace shell (three-column scaffolding).
  *
  * Layout — desktop (>= 769 px):
  *
- *   +----- Header ---------------------------------+
- *   | Title · status · profile-id                 |
- *   +----+----------------------------+-----------+
- *   | LW | CentralDisplay             |  Drawer   |
- *   |    |                            |           |
- *   |    |  ----  GraphPanel ----     |           |
- *   |    |                            |           |
- *   +----+----------------------------+-----------+
+ *   +----- Header ----------------------------------------------+
+ *   | Title · status · profile-id                              |
+ *   +----+-----------------------------------+-----------------+
+ *   | LW | CompactDescription                | Reconciliation  |
+ *   |    | Counters                          | slot            |
+ *   |    | GraphControls                     | (empty when     |
+ *   |    | GraphPanel                        |  active view is |
+ *   |    |                                   |  "workspace")   |
+ *   +----+-----------------------------------+-----------------+
  *
  * Layout — mobile (<= 768 px):
  *
- *   +----- Header ---------------------------------+
- *   | LeftWorkbench (collapsible top sheet)        |
- *   +-----------------------------------------------+
- *   | CentralDisplay                                |
- *   | -------------- GraphPanel ------------------- |
- *   +-----------------------------------------------+
- *   | Drawer (sub-page nav, not overlay)            |
+ *   +----- Header ----------------------------------------------+
+ *   | LeftWorkbench (top sheet)                                 |
+ *   +-----------------------------------------------------------+
+ *   | CompactDescription                                        |
+ *   | Counters                                                  |
+ *   | GraphControls                                             |
+ *   | GraphPanel                                                |
+ *   +-----------------------------------------------------------+
+ *   | Reconciliation slot — collapsed to display:none when      |
+ *   | activeView === "workspace"                                |
  *
- * Track C inheritance is mandatory:
- *   - skip-link (first focusable element) jumps to #central-display
- *   - ARIA: each named region declares role + aria-label.
- *   - focus-visible respects the workspace focus-ring tokens.
- *
- * G2 ships the HTML skeleton + token-driven CSS. G3..G5 follow-ups
- * fill the actual content: viewer state model (G3), graph surface
- * inside #graph-panel (G4), reconciliation rebind (G5).
+ * Strictly profile-neutral: no corpus-specific strings. Slot markup is
+ * always emitted so future sub-views (G6-3) can plug Track B evidence/
+ * audit/rebuild into the existing structure.
  */
 
 import type { WorkspaceTokens, WorkspaceTokenSource } from "./tokens.js";
 import type { GraphEdgeLike, GraphLike, GraphNodeLike } from "./graph-selection.js";
+import { computeFocusSubgraph } from "./graph-selection.js";
 import type { WorkspaceViewerState } from "./viewer-state.js";
+import { createDefaultViewerState } from "./viewer-state.js";
 import { serialiseTokensToCss } from "./tokens-fallback.js";
+
+/**
+ * Optional sidecar payload propagated from `.graphify/wiki/descriptions.json`
+ * (schema `graphify_wiki_description_v1`). Only the fields needed by the
+ * compact description block are typed here so the shell stays decoupled
+ * from the full wiki-descriptions API surface.
+ */
+export interface WorkspaceDescriptionSidecar {
+  status: "generated" | "insufficient_evidence";
+  target_id: string;
+  target_kind: "node" | "community";
+  description?: string | null;
+}
+
+/**
+ * Optional profile-driven layout configuration. Mirrors the
+ * `outputs.workspace.entity_layout` slot in `ontology-profile.yaml`.
+ * Any unknown key is preserved verbatim — Graphify core never inspects
+ * it; only profile adapters do.
+ */
+export interface WorkspaceEntityLayout {
+  /** Display order of the inline fact lines under the title. */
+  inline_facts?: string[];
+  /** Sections to render below the inline facts (defaults to aliases / relations / evidence). */
+  sections?: string[];
+}
 
 export interface RenderWorkspaceShellOptions {
   /** Resolved tokens for the active theme. */
@@ -49,26 +71,13 @@ export interface RenderWorkspaceShellOptions {
   tokenSource?: WorkspaceTokenSource;
   /** Workspace title displayed in the header. Sanitised. */
   title: string;
-  /**
-   * Optional profile identifier displayed in the header (e.g.
-   * "public-domain-mystery-uat"). Sanitised.
-   */
+  /** Optional profile identifier displayed in the header. */
   profileId?: string;
-  /**
-   * Optional last-rebuild timestamp (ISO 8601, displayed verbatim if
-   * provided). Sanitised.
-   */
+  /** Optional last-rebuild timestamp displayed verbatim. */
   lastRebuiltAt?: string;
-  /**
-   * Read-only vs write-enabled indicator. The shell renders a clear
-   * banner; actual write gating lives in src/serve.ts / src/ontology-studio.ts.
-   */
+  /** Read-only vs write-enabled indicator. */
   writeEnabled?: boolean;
-  /**
-   * When true the LeftWorkbench rail renders a "queue is empty" hint
-   * instead of a stub list. Used by G5 to surface freshly-empty
-   * reconciliation queues without crashing the shell render path.
-   */
+  /** When true the LeftWorkbench rail renders a "queue is empty" hint. */
   queueEmpty?: boolean;
   /** Trusted internal HTML fragment rendered inside the graph panel slot. */
   graphPanelHtml?: string;
@@ -76,13 +85,25 @@ export interface RenderWorkspaceShellOptions {
   leftWorkbenchHtml?: string;
   /** Trusted internal HTML fragment rendered inside the central display slot. */
   centralDisplayHtml?: string;
-  /** Trusted internal HTML fragment rendered inside the detail drawer slot. */
+  /**
+   * Trusted internal HTML fragment rendered inside the reconciliation
+   * slot. Honoured only when `state.activeView !== "workspace"` (or when
+   * no state is passed — legacy callers without G6 state).
+   */
   rightDrawerHtml?: string;
   /** Current workspace state. Used to resolve the central display item. */
   state?: WorkspaceViewerState;
   /** Graph payload (typically loaded from `.graphify/graph.json`). */
   graph?: GraphLike;
+  /** Optional Track A description sidecar for the focused entity. */
+  descriptionSidecar?: WorkspaceDescriptionSidecar;
+  /** Optional profile-driven entity layout (falls back to a neutral default). */
+  entityLayout?: WorkspaceEntityLayout;
 }
+
+// ---------------------------------------------------------------------------
+// HTML / Markdown helpers
+// ---------------------------------------------------------------------------
 
 const HTML_ESCAPE_RE = /[&<>"']/g;
 const HTML_ESCAPE_MAP: Record<string, string> = {
@@ -122,29 +143,41 @@ function nodeTitle(node: GraphNodeLike): string {
   );
 }
 
-function nodeSummary(node: GraphNodeLike): string | null {
-  const directSummary =
+function nodeDirectSummary(node: GraphNodeLike): string | null {
+  return (
     displayValue(node.summary) ??
     displayValue(node.description) ??
-    displayValue(node.body);
-  if (directSummary) return directSummary;
-
-  const sourceFile = displayValue(node.source_file);
-  const sourceLocation = displayValue(node.source_location);
-  const community =
-    displayValue(node.community_name) ??
-    (typeof node.community === "number" ? `Community ${node.community}` : null);
-  const details: string[] = [];
-  if (sourceFile) {
-    details.push(`Source: ${sourceLocation ? `${sourceFile}:${sourceLocation}` : sourceFile}`);
-  }
-  if (community) details.push(`Community: ${community}`);
-  return details.length > 0 ? details.join("\n") : null;
+    displayValue(node.body)
+  );
 }
 
-function truncateDisplayText(value: string): string {
-  const max = 1200;
-  return value.length > max ? `${value.slice(0, max - 3)}...` : value;
+function nodeSourcePath(node: GraphNodeLike): string | null {
+  const sourceFile = displayValue(node.source_file);
+  const sourceLocation = displayValue(node.source_location);
+  if (!sourceFile) return null;
+  return sourceLocation ? `${sourceFile}:${sourceLocation}` : sourceFile;
+}
+
+function nodeCommunity(node: GraphNodeLike): string | null {
+  return (
+    displayValue(node.community_name) ??
+    (typeof node.community === "number" ? `Community ${node.community}` : null)
+  );
+}
+
+function nodeAliases(node: GraphNodeLike): string[] {
+  const raw = node.aliases;
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of raw) {
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  return out;
 }
 
 function graphEdges(graph: GraphLike | undefined): GraphEdgeLike[] {
@@ -159,49 +192,213 @@ function countEdgeEvidence(edge: GraphEdgeLike): number {
   for (const value of arrays) {
     if (Array.isArray(value)) return value.length;
   }
-  if (
-    typeof edge.evidence === "string" ||
-    typeof edge.source_file === "string"
-  ) {
+  if (typeof edge.evidence === "string" || typeof edge.source_file === "string") {
     return 1;
   }
   return 0;
 }
 
-function renderDisplayMetrics(metrics: Array<[string, number]>): string {
-  const items = metrics.map(
-    ([label, value]) => `<span><b>${escapeHtml(label)}:</b> ${value}</span>`,
-  );
-  return ['<div class="ws-display-metrics">', ...items, "</div>"].join("");
+/**
+ * Render a Track A markdown description as safe inline HTML. Supports
+ * `**bold**` and `*italic*` runs only; anything else stays as escaped
+ * text. The contract intentionally stays minimal to avoid pulling a full
+ * Markdown engine into the shell.
+ */
+function renderInlineMarkdown(markdown: string): string {
+  const escaped = escapeHtml(markdown.trim());
+  return escaped
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^*])\*(?!\s)(.+?)\*(?!\*)/g, "$1<em>$2</em>");
 }
 
-function renderNodeDisplay(
+// ---------------------------------------------------------------------------
+// Compact description rendering
+// ---------------------------------------------------------------------------
+
+const DEFAULT_INLINE_FACTS = ["type", "status", "source", "community"];
+const DEFAULT_SECTIONS = ["aliases", "relations", "evidence"];
+
+interface CompactDescriptionContext {
+  displayRef: string;
+  requestedKind: string;
+  title: string;
+  facts: Array<{ key: string; label: string; value: string }>;
+  description: string | null;
+  aliases: string[];
+  relations: GraphEdgeLike[];
+  evidenceCount: number;
+}
+
+function buildNodeFacts(
+  node: GraphNodeLike,
+  requestedKind: string,
+): Array<{ key: string; label: string; value: string }> {
+  const facts: Array<{ key: string; label: string; value: string }> = [];
+  const type =
+    displayValue(node.node_type) ??
+    displayValue(node.type) ??
+    displayValue(node.kind) ??
+    displayValue(node.file_type);
+  if (type) facts.push({ key: "type", label: "Type", value: type });
+  else if (requestedKind !== "entity") facts.push({ key: "type", label: "Type", value: requestedKind });
+  const status = displayValue(node.status);
+  if (status) facts.push({ key: "status", label: "Status", value: status });
+  const confidence = displayValue(node.confidence);
+  if (confidence) facts.push({ key: "confidence", label: "Confidence", value: confidence });
+  const source = nodeSourcePath(node);
+  if (source) facts.push({ key: "source", label: "Source", value: source });
+  const community = nodeCommunity(node);
+  if (community) facts.push({ key: "community", label: "Community", value: community });
+  return facts;
+}
+
+function orderFacts(
+  facts: Array<{ key: string; label: string; value: string }>,
+  order: string[] | undefined,
+): Array<{ key: string; label: string; value: string }> {
+  const requested = (order && order.length > 0 ? order : DEFAULT_INLINE_FACTS).map((k) => k.toLowerCase());
+  const byKey = new Map(facts.map((f) => [f.key, f]));
+  const out: Array<{ key: string; label: string; value: string }> = [];
+  const seen = new Set<string>();
+  for (const key of requested) {
+    const fact = byKey.get(key);
+    if (fact) {
+      out.push(fact);
+      seen.add(key);
+    }
+  }
+  // Preserve any extra facts that the profile didn't list explicitly.
+  for (const fact of facts) {
+    if (!seen.has(fact.key)) out.push(fact);
+  }
+  return out;
+}
+
+function renderCompactSections(
+  ctx: CompactDescriptionContext,
+  sections: string[] | undefined,
+): string {
+  const requested = (sections && sections.length > 0 ? sections : DEFAULT_SECTIONS).map((s) => s.toLowerCase());
+  const parts: string[] = [];
+  for (const section of requested) {
+    if (section === "aliases") {
+      if (ctx.aliases.length === 0) continue;
+      parts.push(
+        [
+          '<section class="ws-compact-section ws-compact-aliases">',
+          '<h4 class="ws-compact-section-heading">Aliases</h4>',
+          `<p class="ws-compact-section-body">${ctx.aliases.map((a) => escapeHtml(a)).join(" / ")}</p>`,
+          "</section>",
+        ].join(""),
+      );
+    } else if (section === "relations") {
+      const total = ctx.relations.length;
+      const body =
+        total === 0
+          ? '<p class="ws-compact-section-body ws-compact-section-empty">none</p>'
+          : `<p class="ws-compact-section-body">${total} relation${total === 1 ? "" : "s"}</p>`;
+      parts.push(
+        [
+          '<section class="ws-compact-section ws-compact-relations">',
+          '<h4 class="ws-compact-section-heading">Relations</h4>',
+          body,
+          "</section>",
+        ].join(""),
+      );
+    } else if (section === "evidence") {
+      const sources = new Set<string>();
+      for (const edge of ctx.relations) {
+        const sf = displayValue(edge.source_file);
+        if (sf) sources.add(sf);
+      }
+      const body =
+        ctx.evidenceCount === 0 && sources.size === 0
+          ? '<p class="ws-compact-section-body ws-compact-section-empty">none</p>'
+          : `<p class="ws-compact-section-body">${ctx.evidenceCount} ref${ctx.evidenceCount === 1 ? "" : "s"}${sources.size > 0 ? ` · ${[...sources].map((s) => escapeHtml(s)).join(", ")}` : ""}</p>`;
+      parts.push(
+        [
+          '<section class="ws-compact-section ws-compact-evidence">',
+          '<h4 class="ws-compact-section-heading">Evidence</h4>',
+          body,
+          "</section>",
+        ].join(""),
+      );
+    }
+  }
+  return parts.join("");
+}
+
+function renderCompactDescription(
+  ctx: CompactDescriptionContext,
+  layout: WorkspaceEntityLayout | undefined,
+  sidecar: WorkspaceDescriptionSidecar | undefined,
+): string {
+  const facts = orderFacts(ctx.facts, layout?.inline_facts);
+  const factsLine =
+    facts.length === 0
+      ? ""
+      : `<p class="ws-compact-facts">${facts
+          .map(
+            (f) =>
+              `<span class="ws-compact-fact" data-fact="${escapeHtml(f.key)}"><span class="ws-compact-fact-label">${escapeHtml(f.label)}:</span> ${escapeHtml(f.value)}</span>`,
+          )
+          .join(" · ")}</p>`;
+
+  // Track A description rules: when sidecar is "insufficient_evidence",
+  // hide the description silently. When "generated", inline the markdown.
+  // When no sidecar is provided, fall back to the node's own summary.
+  let descriptionBlock = "";
+  if (sidecar) {
+    if (sidecar.status === "generated" && typeof sidecar.description === "string" && sidecar.description.trim()) {
+      descriptionBlock = `<p class="ws-compact-description">${renderInlineMarkdown(sidecar.description)}</p>`;
+    }
+    // insufficient_evidence → silently omit.
+  } else if (ctx.description) {
+    descriptionBlock = `<p class="ws-compact-description">${escapeHtml(ctx.description)}</p>`;
+  }
+
+  return [
+    `<article class="ws-compact" data-display-ref="${escapeHtml(ctx.displayRef)}">`,
+    '<div class="ws-compact-kicker">Selected item</div>',
+    `<h3 class="ws-compact-title">${escapeHtml(ctx.title)}</h3>`,
+    factsLine,
+    descriptionBlock,
+    renderCompactSections(ctx, layout?.sections),
+    "</article>",
+  ]
+    .filter(Boolean)
+    .join("");
+}
+
+function renderEntityDisplay(
   displayRef: string,
   requestedKind: string,
   node: GraphNodeLike,
   edges: GraphEdgeLike[],
+  layout: WorkspaceEntityLayout | undefined,
+  sidecar: WorkspaceDescriptionSidecar | undefined,
 ): string {
   const relatedEdges = edges.filter((edge) => edge.source === node.id || edge.target === node.id);
   const evidenceCount = relatedEdges.reduce((sum, edge) => sum + countEdgeEvidence(edge), 0);
-  const summary = nodeSummary(node);
-  const kind = requestedKind === "entity" ? nodeType(node) : nodeType(node) || requestedKind;
-  return [
-    `<article class="ws-display-item" data-display-ref="${escapeHtml(displayRef)}">`,
-    '<div class="ws-display-kicker">Selected item</div>',
-    `<h3>${escapeHtml(nodeTitle(node))}</h3>`,
-    `<p class="ws-display-kind">${escapeHtml(kind)}</p>`,
-    summary
-      ? `<p class="ws-display-summary">${escapeHtml(truncateDisplayText(summary))}</p>`
-      : '<p class="ws-empty">No summary available.</p>',
-    renderDisplayMetrics([
-      ["Relations", relatedEdges.length],
-      ["Evidence", evidenceCount],
-    ]),
-    "</article>",
-  ].join("");
+  const ctx: CompactDescriptionContext = {
+    displayRef,
+    requestedKind,
+    title: nodeTitle(node),
+    facts: buildNodeFacts(node, requestedKind),
+    description: nodeDirectSummary(node),
+    aliases: nodeAliases(node),
+    relations: relatedEdges,
+    evidenceCount,
+  };
+  return renderCompactDescription(ctx, layout, sidecar);
 }
 
-function renderTypeDisplay(displayRef: string, typeId: string, graph: GraphLike): string {
+function renderTypeDisplay(
+  displayRef: string,
+  typeId: string,
+  graph: GraphLike,
+  layout: WorkspaceEntityLayout | undefined,
+): string {
   const nodes = graph.nodes ?? [];
   const members = nodes.filter((node) => nodeType(node) === typeId);
   const memberIds = new Set(members.map((node) => node.id));
@@ -209,23 +406,27 @@ function renderTypeDisplay(displayRef: string, typeId: string, graph: GraphLike)
     (edge) => memberIds.has(edge.source) || memberIds.has(edge.target),
   );
   const evidenceCount = relatedEdges.reduce((sum, edge) => sum + countEdgeEvidence(edge), 0);
-  return [
-    `<article class="ws-display-item" data-display-ref="${escapeHtml(displayRef)}">`,
-    '<div class="ws-display-kicker">Selected item</div>',
-    `<h3>${escapeHtml(typeId)}</h3>`,
-    '<p class="ws-display-kind">Type</p>',
-    renderDisplayMetrics([
-      ["Members", members.length],
-      ["Relations", relatedEdges.length],
-      ["Evidence", evidenceCount],
-    ]),
-    "</article>",
-  ].join("");
+  const ctx: CompactDescriptionContext = {
+    displayRef,
+    requestedKind: "type",
+    title: typeId,
+    facts: [
+      { key: "type", label: "Type", value: "Type" },
+      { key: "members", label: "Members", value: String(members.length) },
+    ],
+    description: null,
+    aliases: [],
+    relations: relatedEdges,
+    evidenceCount,
+  };
+  return renderCompactDescription(ctx, layout, undefined);
 }
 
 function renderCentralDisplayBody(
   state: WorkspaceViewerState | undefined,
   graph: GraphLike | undefined,
+  layout: WorkspaceEntityLayout | undefined,
+  sidecar: WorkspaceDescriptionSidecar | undefined,
 ): string {
   const displayRef = state?.displayRef?.trim();
   if (!displayRef) return '<p class="ws-empty">No display item selected.</p>';
@@ -238,13 +439,96 @@ function renderCentralDisplayBody(
   }
 
   if (requestedKind === "type" || requestedKind === "taxonomy") {
-    return renderTypeDisplay(displayRef, id, graph);
+    return renderTypeDisplay(displayRef, id, graph, layout);
   }
 
   const node = (graph.nodes ?? []).find((candidate) => candidate.id === id);
   if (!node) return '<p class="ws-empty">Selected item is unavailable.</p>';
-  return renderNodeDisplay(displayRef, requestedKind, node, graphEdges(graph));
+  return renderEntityDisplay(displayRef, requestedKind, node, graphEdges(graph), layout, sidecar);
 }
+
+// ---------------------------------------------------------------------------
+// Counters
+// ---------------------------------------------------------------------------
+
+interface CountersValues {
+  selectedEntities: number;
+  selectedClasses: number;
+  visibleNodes: number;
+  visibleEdges: number;
+}
+
+function computeCounters(
+  state: WorkspaceViewerState | undefined,
+  graph: GraphLike | undefined,
+): CountersValues {
+  const selectedEntities = new Set<string>([
+    ...(state?.selectedEntities ?? []),
+    ...(state?.selectionState.entityIds ?? []),
+  ]).size;
+  const selectedClasses = new Set<string>(state?.selectedTypes ?? []).size;
+
+  if (!graph || !state) {
+    const nodes = graph?.nodes?.length ?? 0;
+    const edges = (graph?.edges ?? graph?.links ?? []).length;
+    return { selectedEntities, selectedClasses, visibleNodes: nodes, visibleEdges: edges };
+  }
+  const sub = computeFocusSubgraph(graph, state);
+  return {
+    selectedEntities,
+    selectedClasses,
+    visibleNodes: sub.metrics.nodes,
+    visibleEdges: sub.metrics.edges,
+  };
+}
+
+function renderCounters(values: CountersValues): string {
+  const items: Array<[keyof CountersValues, string, string]> = [
+    ["selectedEntities", "selected-entities", "Selected entities"],
+    ["selectedClasses", "selected-classes", "Selected classes"],
+    ["visibleNodes", "visible-nodes", "Visible nodes"],
+    ["visibleEdges", "visible-edges", "Visible edges"],
+  ];
+  return [
+    '<div class="ws-counters" role="group" aria-label="Workspace counters">',
+    ...items.map(([key, slug, label]) =>
+      [
+        `<div class="ws-counter" data-counter="${slug}">`,
+        `<span class="ws-counter-value">${values[key]}</span>`,
+        `<span class="ws-counter-label">${label}</span>`,
+        "</div>",
+      ].join(""),
+    ),
+    "</div>",
+  ].join("");
+}
+
+// ---------------------------------------------------------------------------
+// Graph controls (mode toggle + weak links + legend)
+// ---------------------------------------------------------------------------
+
+function renderGraphControls(state: WorkspaceViewerState | undefined): string {
+  const mode = state?.viewState.graph.mode ?? "selection";
+  const weak = state?.viewState.graph.showWeakLinks ?? false;
+  return [
+    '<div class="ws-graph-controls" role="group" aria-label="Graph controls">',
+    '<div class="ws-graph-mode-toggle" data-control="graph-mode-toggle">',
+    `<label><input type="radio" name="ws-graph-mode" value="selection"${mode === "selection" ? " checked" : ""} /> Selection</label>`,
+    `<label><input type="radio" name="ws-graph-mode" value="focus"${mode === "focus" ? " checked" : ""} /> Focus</label>`,
+    "</div>",
+    `<label class="ws-graph-weak-links"><input type="checkbox" data-control="graph-weak-links"${weak ? " checked" : ""} /> Show weak links</label>`,
+    '<ul class="ws-graph-legend" aria-label="Graph legend">',
+    '<li><span class="ws-legend-swatch ws-legend-strong"></span> Strong links</li>',
+    '<li><span class="ws-legend-swatch ws-legend-explicit"></span> Explicit / attested</li>',
+    '<li><span class="ws-legend-swatch ws-legend-weak"></span> Weak links</li>',
+    "</ul>",
+    "</div>",
+  ].join("");
+}
+
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
 
 function shellStyles(): string {
   return [
@@ -263,30 +547,54 @@ function shellStyles(): string {
     ".ws-write-banner[data-write='false'] { color: var(--ws-text-muted); }",
     ".ws-left { grid-column: 1; grid-row: 2; border-right: 1px solid var(--ws-border); overflow-y: auto; padding: var(--ws-space-3); background: var(--ws-surface); }",
     ".ws-center { grid-column: 2; grid-row: 2; overflow-y: auto; padding: var(--ws-space-4); background: var(--ws-surface); }",
-    ".ws-graph-panel { margin-top: var(--ws-space-5); padding-top: var(--ws-space-3); border-top: 1px solid var(--ws-border); }",
-    ".ws-right { grid-column: 3; grid-row: 2; border-left: 1px solid var(--ws-border); overflow-y: auto; padding: var(--ws-space-3); background: var(--ws-surface-2); }",
-    ".ws-region-heading { font-size: var(--ws-font-size-sm); text-transform: uppercase; letter-spacing: 0.05em; color: var(--ws-text-muted); margin: 0 0 var(--ws-space-2); }",
+    // Compact description.
+    ".ws-compact { display: grid; gap: var(--ws-space-2); max-width: 88ch; }",
+    ".ws-compact-kicker { font-size: var(--ws-font-size-sm); color: var(--ws-text-muted); text-transform: uppercase; letter-spacing: 0.05em; }",
+    ".ws-compact-title { margin: 0; font-size: var(--ws-font-size-lg); line-height: var(--ws-line-height-tight); }",
+    ".ws-compact-facts { margin: 0; color: var(--ws-text-muted); font-size: var(--ws-font-size-sm); display: flex; flex-wrap: wrap; gap: var(--ws-space-2); }",
+    ".ws-compact-fact-label { color: var(--ws-text); font-weight: 600; }",
+    ".ws-compact-description { margin: 0; }",
+    ".ws-compact-section { display: grid; gap: 0; }",
+    ".ws-compact-section-heading { margin: 0; font-size: var(--ws-font-size-sm); text-transform: uppercase; letter-spacing: 0.05em; color: var(--ws-text-muted); font-weight: 600; }",
+    ".ws-compact-section-body { margin: 0; color: var(--ws-text); }",
+    ".ws-compact-section-empty { color: var(--ws-text-muted); font-style: italic; }",
+    // Counters.
+    ".ws-counters { display: grid; grid-template-columns: repeat(4, minmax(80px, 1fr)); gap: var(--ws-space-2); margin: var(--ws-space-4) 0 var(--ws-space-3); }",
+    ".ws-counter { display: grid; gap: 2px; padding: var(--ws-space-2); border: 1px solid var(--ws-border); border-radius: var(--ws-radius-md); background: var(--ws-surface-2); text-align: center; }",
+    ".ws-counter-value { font-size: var(--ws-font-size-lg); font-weight: 700; color: var(--ws-text); }",
+    ".ws-counter-label { font-size: var(--ws-font-size-sm); text-transform: uppercase; letter-spacing: 0.05em; color: var(--ws-text-muted); }",
+    // Graph panel + controls.
+    ".ws-graph-panel { margin-top: var(--ws-space-3); padding-top: var(--ws-space-3); border-top: 1px solid var(--ws-border); }",
+    ".ws-graph-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ws-space-3); margin-bottom: var(--ws-space-3); font-size: var(--ws-font-size-sm); color: var(--ws-text-muted); }",
+    ".ws-graph-mode-toggle { display: flex; gap: var(--ws-space-2); }",
+    ".ws-graph-mode-toggle label, .ws-graph-weak-links { display: inline-flex; align-items: center; gap: var(--ws-space-1); cursor: pointer; }",
+    ".ws-graph-legend { display: flex; flex-wrap: wrap; gap: var(--ws-space-3); margin: 0; padding: 0; list-style: none; }",
+    ".ws-graph-legend li { display: inline-flex; align-items: center; gap: var(--ws-space-1); }",
+    ".ws-legend-swatch { width: 12px; height: 4px; border-radius: 2px; display: inline-block; background: var(--ws-text-muted); }",
+    ".ws-legend-strong { background: var(--ws-accent); }",
+    ".ws-legend-explicit { background: var(--ws-text); }",
+    ".ws-legend-weak { background: var(--ws-text-muted); opacity: 0.6; }",
+    // Reconciliation slot.
+    ".workspace-reconciliation-slot { grid-column: 3; grid-row: 2; border-left: 1px solid var(--ws-border); overflow-y: auto; padding: var(--ws-space-3); background: var(--ws-surface-2); }",
+    ".workspace-reconciliation-slot[data-active-view=\"workspace\"] { display: none; }",
     ".ws-empty { color: var(--ws-text-muted); font-style: italic; }",
-    ".ws-display-item { display: grid; gap: var(--ws-space-2); max-width: 72ch; }",
-    ".ws-display-kicker { font-size: var(--ws-font-size-sm); color: var(--ws-text-muted); text-transform: uppercase; letter-spacing: 0.05em; }",
-    ".ws-display-item h3 { margin: 0; font-size: var(--ws-font-size-lg); line-height: var(--ws-line-height-tight); }",
-    ".ws-display-kind { margin: 0; color: var(--ws-text-muted); }",
-    ".ws-display-summary { margin: 0; white-space: pre-wrap; }",
-    ".ws-display-metrics { display: flex; flex-wrap: wrap; gap: var(--ws-space-3); font-size: var(--ws-font-size-sm); color: var(--ws-text-muted); }",
-    ".ws-display-metrics b { color: var(--ws-text); font-weight: 600; }",
     "@media (max-width: 768px) {",
     "  .ws-root { grid-template-columns: 1fr; grid-template-rows: auto auto 1fr auto; }",
     "  .ws-left { grid-column: 1; grid-row: 2; border-right: none; border-bottom: 1px solid var(--ws-border); max-height: 40vh; }",
     "  .ws-center { grid-column: 1; grid-row: 3; }",
-    "  .ws-right { grid-column: 1; grid-row: 4; border-left: none; border-top: 1px solid var(--ws-border); max-height: 40vh; }",
+    "  .workspace-reconciliation-slot { grid-column: 1; grid-row: 4; border-left: none; border-top: 1px solid var(--ws-border); max-height: 40vh; }",
+    "  .workspace-reconciliation-slot[data-active-view=\"workspace\"] { display: none; max-height: 0; padding: 0; }",
+    "  .ws-counters { grid-template-columns: repeat(2, minmax(80px, 1fr)); }",
     "}",
   ].join("\n");
 }
 
+// ---------------------------------------------------------------------------
+// Top-level renderer
+// ---------------------------------------------------------------------------
+
 /**
  * Renders the workspace shell as a self-contained HTML5 document.
- * G3..G5 will refine the inner regions; this baseline guarantees the
- * layout, the accessibility scaffolding, and the token-driven theming.
  */
 export function renderWorkspaceShell(opts: RenderWorkspaceShellOptions): string {
   const tokens = opts.tokens;
@@ -297,16 +605,35 @@ export function renderWorkspaceShell(opts: RenderWorkspaceShellOptions): string 
   const writeFlag = opts.writeEnabled === true;
   const queueEmpty = opts.queueEmpty === true;
   const tokensCss = serialiseTokensToCss(tokens);
-  const queueBody = opts.leftWorkbenchHtml ?? (queueEmpty
-    ? '<p class="ws-empty" id="ws-queue-empty">Reconciliation queue is empty.</p>'
-    : '<p class="ws-empty" id="ws-queue-stub">Queue rendering arrives in G5.</p>');
+
+  // Effective state used by the counters + central display + graph controls.
+  const effectiveState = opts.state ?? createDefaultViewerState();
+  // The reconciliation slot is hidden when the active view is the default
+  // "workspace" tab. The markup is always rendered so G6-3 can plug in.
+  const activeView = opts.state?.activeView ?? null;
+  const slotHidden = activeView === "workspace" || activeView === null;
+  const slotActiveView = activeView ?? "workspace";
+
+  const queueBody =
+    opts.leftWorkbenchHtml ??
+    (queueEmpty
+      ? '<p class="ws-empty" id="ws-queue-empty">Reconciliation queue is empty.</p>'
+      : '<p class="ws-empty" id="ws-queue-stub">Queue rendering arrives in G5.</p>');
+
+  const centralDisplayBody =
+    opts.centralDisplayHtml ??
+    renderCentralDisplayBody(opts.state, opts.graph, opts.entityLayout, opts.descriptionSidecar);
+
+  const counters = renderCounters(computeCounters(effectiveState, opts.graph));
+  const graphControls = renderGraphControls(effectiveState);
+
   const graphPanelBody =
-    opts.graphPanelHtml ??
-    '<p class="ws-empty">No graph context available.</p>';
-  const centralDisplayBody = opts.centralDisplayHtml ?? renderCentralDisplayBody(opts.state, opts.graph);
-  const rightDrawerBody =
-    opts.rightDrawerHtml ??
-    '<p class="ws-empty">Evidence / relations / audit trail accordion arrives with G5.</p>';
+    opts.graphPanelHtml ?? '<p class="ws-empty">No graph context available.</p>';
+
+  const slotBody = slotHidden
+    ? ""
+    : opts.rightDrawerHtml ??
+      '<p class="ws-empty">Evidence / relations / audit trail accordion arrives with G5.</p>';
 
   return [
     "<!DOCTYPE html>",
@@ -338,16 +665,15 @@ export function renderWorkspaceShell(opts: RenderWorkspaceShellOptions): string 
     queueBody,
     "</aside>",
     '<main class="ws-center" id="central-display" role="main" aria-label="Central display" tabindex="-1">',
-    '<h2 class="ws-region-heading">Central display</h2>',
     centralDisplayBody,
+    counters,
+    graphControls,
     '<section class="ws-graph-panel" id="graph-panel" role="region" aria-label="Graph panel">',
-    '<h2 class="ws-region-heading">Graph panel</h2>',
     graphPanelBody,
     "</section>",
     "</main>",
-    '<aside class="ws-right" id="right-drawer" role="complementary" aria-label="Detail drawer">',
-    '<h2 class="ws-region-heading">Detail</h2>',
-    rightDrawerBody,
+    `<aside class="workspace-reconciliation-slot" id="workspace-reconciliation-slot" role="complementary" aria-label="Reconciliation slot" data-active-view="${escapeHtml(slotActiveView)}"${slotHidden ? ' aria-hidden="true"' : ""}>`,
+    slotBody,
     "</aside>",
     "</div>",
     "</body>",
