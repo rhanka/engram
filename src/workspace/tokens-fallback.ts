@@ -10,9 +10,13 @@
  * token contract.
  */
 import type {
+  WorkspaceTheme,
+  ResolvedWorkspaceTokens,
   WorkspaceTokens,
   WorkspaceThemedTokens,
 } from "./tokens.js";
+import { DEFAULT_WORKSPACE_THEME } from "./tokens.js";
+import { tryGetDsTokens } from "./tokens-ds.js";
 
 const SHARED_TYPOGRAPHY = Object.freeze({
   "font-family-sans":
@@ -102,15 +106,33 @@ export function getWorkspaceTokensFallback(): WorkspaceThemedTokens {
 }
 
 /**
- * Convenience: get the fallback tokens for a single theme. `dark` is
- * the default (matches the current graph.html dark palette so the
- * workspace shell and the graph viewer feel cohesive when shown
- * side-by-side during reconciliation).
+ * Convenience: get the fallback tokens for a single theme. The default
+ * follows the design-system default theme instead of forcing a dark
+ * override at each call site.
  */
 export function getWorkspaceTokens(
-  theme: "light" | "dark" = "dark",
+  theme: WorkspaceTheme = DEFAULT_WORKSPACE_THEME,
 ): WorkspaceTokens {
   return theme === "light" ? LIGHT_TOKENS : DARK_TOKENS;
+}
+
+export async function resolveWorkspaceTokens(
+  theme: WorkspaceTheme = DEFAULT_WORKSPACE_THEME,
+): Promise<ResolvedWorkspaceTokens> {
+  const dsTokens = await tryGetDsTokens();
+  if (dsTokens) {
+    return {
+      source: "design-system",
+      themedTokens: dsTokens,
+      tokens: dsTokens[theme],
+    };
+  }
+  const themedTokens = getWorkspaceTokensFallback();
+  return {
+    source: "fallback",
+    themedTokens,
+    tokens: themedTokens[theme],
+  };
 }
 
 /**

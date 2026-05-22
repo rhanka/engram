@@ -103,6 +103,17 @@ export interface WorkspaceThemedTokens {
   dark: WorkspaceTokens;
 }
 
+export type WorkspaceTheme = keyof WorkspaceThemedTokens;
+export const DEFAULT_WORKSPACE_THEME: WorkspaceTheme = "light";
+
+export type WorkspaceTokenSource = "design-system" | "fallback";
+
+export interface ResolvedWorkspaceTokens {
+  source: WorkspaceTokenSource;
+  themedTokens: WorkspaceThemedTokens;
+  tokens: WorkspaceTokens;
+}
+
 /** Top-level roles enumerated for the test suite to assert coverage. */
 export const WORKSPACE_TOKEN_GROUPS = [
   "colour",
