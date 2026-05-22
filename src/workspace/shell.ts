@@ -1,40 +1,36 @@
 /**
- * Track G Lot 1 / G2 — workspace shell static scaffold.
+ * Track G G2 / G6-1 (S0.1) — workspace shell static scaffold.
  *
  * Produces the server-rendered HTML scaffold consumed by
  * `graphify ontology studio` (read-only by default; mutation surface
  * is gated behind --write per existing patterns in src/serve.ts and
  * src/ontology-studio.ts and is wired in G5).
  *
+ * G6-1 (S0.1) absorbs the process-std-AM Workspace tab three-column layout:
+ * left rail · central column (display + graph) · right reconciliation
+ * slot. The right slot is HIDDEN when the active view is "workspace"
+ * (default) but the markup is always present so G6-3 can plug Track B
+ * reconciliation content in without touching the shell shape.
+ *
  * Layout — desktop (>= 769 px):
  *
  *   +----- Header ---------------------------------+
  *   | Title · status · profile-id                 |
  *   +----+----------------------------+-----------+
- *   | LW | CentralDisplay             |  Drawer   |
- *   |    |                            |           |
- *   |    |  ----  GraphPanel ----     |           |
- *   |    |                            |           |
- *   +----+----------------------------+-----------+
+ *   | LW | CentralDisplay             |  Recon.   |
+ *   |    |                            |   slot    |
+ *   |    |  ----  GraphPanel ----     | (hidden   |
+ *   |    |                            |  in       |
+ *   +----+----------------------------+  workspace+
+ *                                       active view)
  *
- * Layout — mobile (<= 768 px):
- *
- *   +----- Header ---------------------------------+
- *   | LeftWorkbench (collapsible top sheet)        |
- *   +-----------------------------------------------+
- *   | CentralDisplay                                |
- *   | -------------- GraphPanel ------------------- |
- *   +-----------------------------------------------+
- *   | Drawer (sub-page nav, not overlay)            |
+ * Layout — mobile (<= 768 px): the slot collapses to display:none in
+ * the default workspace view to keep the 390 px viewport scroll-free.
  *
  * Track C inheritance is mandatory:
  *   - skip-link (first focusable element) jumps to #central-display
  *   - ARIA: each named region declares role + aria-label.
  *   - focus-visible respects the workspace focus-ring tokens.
- *
- * G2 ships the HTML skeleton + token-driven CSS. G3..G5 follow-ups
- * fill the actual content: viewer state model (G3), graph surface
- * inside #graph-panel (G4), reconciliation rebind (G5).
  */
 
 import type { WorkspaceTokens, WorkspaceTokenSource } from "./tokens.js";
@@ -264,7 +260,8 @@ function shellStyles(): string {
     ".ws-left { grid-column: 1; grid-row: 2; border-right: 1px solid var(--ws-border); overflow-y: auto; padding: var(--ws-space-3); background: var(--ws-surface); }",
     ".ws-center { grid-column: 2; grid-row: 2; overflow-y: auto; padding: var(--ws-space-4); background: var(--ws-surface); }",
     ".ws-graph-panel { margin-top: var(--ws-space-5); padding-top: var(--ws-space-3); border-top: 1px solid var(--ws-border); }",
-    ".ws-right { grid-column: 3; grid-row: 2; border-left: 1px solid var(--ws-border); overflow-y: auto; padding: var(--ws-space-3); background: var(--ws-surface-2); }",
+    ".workspace-reconciliation-slot { grid-column: 3; grid-row: 2; border-left: 1px solid var(--ws-border); overflow-y: auto; padding: var(--ws-space-3); background: var(--ws-surface-2); }",
+    ".workspace-reconciliation-slot[data-active-view=\"workspace\"] { display: none; }",
     ".ws-region-heading { font-size: var(--ws-font-size-sm); text-transform: uppercase; letter-spacing: 0.05em; color: var(--ws-text-muted); margin: 0 0 var(--ws-space-2); }",
     ".ws-empty { color: var(--ws-text-muted); font-style: italic; }",
     ".ws-display-item { display: grid; gap: var(--ws-space-2); max-width: 72ch; }",
@@ -278,7 +275,8 @@ function shellStyles(): string {
     "  .ws-root { grid-template-columns: 1fr; grid-template-rows: auto auto 1fr auto; }",
     "  .ws-left { grid-column: 1; grid-row: 2; border-right: none; border-bottom: 1px solid var(--ws-border); max-height: 40vh; }",
     "  .ws-center { grid-column: 1; grid-row: 3; }",
-    "  .ws-right { grid-column: 1; grid-row: 4; border-left: none; border-top: 1px solid var(--ws-border); max-height: 40vh; }",
+    "  .workspace-reconciliation-slot { grid-column: 1; grid-row: 4; border-left: none; border-top: 1px solid var(--ws-border); max-height: 40vh; }",
+    "  .workspace-reconciliation-slot[data-active-view=\"workspace\"] { display: none; max-height: 0; padding: 0; }",
     "}",
   ].join("\n");
 }
@@ -304,9 +302,17 @@ export function renderWorkspaceShell(opts: RenderWorkspaceShellOptions): string 
     opts.graphPanelHtml ??
     '<p class="ws-empty">No graph context available.</p>';
   const centralDisplayBody = opts.centralDisplayHtml ?? renderCentralDisplayBody(opts.state, opts.graph);
-  const rightDrawerBody =
-    opts.rightDrawerHtml ??
-    '<p class="ws-empty">Evidence / relations / audit trail accordion arrives with G5.</p>';
+  // G6-1 (S0.1): the right column is now a named reconciliation slot. It
+  // is HIDDEN (empty markup + aria-hidden) when the active view is the
+  // default "workspace" tab — only a future reconciliation sub-view
+  // (G6-3) opens it.
+  const activeView = opts.state?.activeView ?? null;
+  const slotHidden = activeView === "workspace" || activeView === null;
+  const slotActiveView = activeView ?? "workspace";
+  const slotBody = slotHidden
+    ? ""
+    : opts.rightDrawerHtml ??
+      '<p class="ws-empty">Evidence / relations / audit trail accordion arrives with G5.</p>';
 
   return [
     "<!DOCTYPE html>",
@@ -345,9 +351,9 @@ export function renderWorkspaceShell(opts: RenderWorkspaceShellOptions): string 
     graphPanelBody,
     "</section>",
     "</main>",
-    '<aside class="ws-right" id="right-drawer" role="complementary" aria-label="Detail drawer">',
-    '<h2 class="ws-region-heading">Detail</h2>',
-    rightDrawerBody,
+    `<aside class="workspace-reconciliation-slot" id="workspace-reconciliation-slot" role="complementary" aria-label="Reconciliation slot" data-active-view="${escapeHtml(slotActiveView)}"${slotHidden ? ' aria-hidden="true"' : ""}>`,
+    slotHidden ? "" : '<h2 class="ws-region-heading">Detail</h2>',
+    slotBody,
     "</aside>",
     "</div>",
     "</body>",

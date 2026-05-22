@@ -16,16 +16,22 @@ describe("Track G G2 — workspace shell scaffold", () => {
     expect(html).toContain('id="left-workbench"');
     expect(html).toContain('id="central-display"');
     expect(html).toContain('id="graph-panel"');
-    expect(html).toContain('id="right-drawer"');
+    // G6-1 (S0.1): the right drawer migrated to the named reconciliation slot.
+    expect(html).toContain('id="workspace-reconciliation-slot"');
     expect(html).toContain('role="main"');
     expect(html).toContain('role="application"');
   });
 
   it("marks the token source and lets studio routes fill each workspace region", () => {
+    // G6-1 (S0.1): in the default "workspace" activeView the reconciliation
+    // slot is hidden. Studio routes use activeView="studio" to surface the
+    // reconciliation/audit content.
+    const studioState = { ...createDefaultViewerState(), activeView: "studio" };
     const html = renderWorkspaceShell({
       tokens,
       tokenSource: "fallback",
       title: "Ontology workspace",
+      state: studioState,
       leftWorkbenchHtml: '<nav id="candidate-list">Candidate queue</nav>',
       centralDisplayHtml: '<article id="candidate-detail">Candidate detail</article>',
       rightDrawerHtml: '<aside id="audit-detail">Audit trail</aside>',
