@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  createDefaultViewerState,
   getWorkspaceTokens,
   renderWorkspaceShell,
 } from "../src/workspace/index.js";
@@ -103,5 +104,100 @@ describe("Track G G2 — workspace shell scaffold", () => {
     });
     expect(without).not.toContain("last rebuilt");
     expect(withTs).toContain("last rebuilt: 2026-05-20T08:58:00Z");
+  });
+
+  it("renders selected entity content with safe graph-derived counts", () => {
+    const state = {
+      ...createDefaultViewerState(),
+      displayRef: "entity:holmes",
+    };
+    const html = renderWorkspaceShell({
+      tokens,
+      title: "Ontology workspace",
+      state,
+      graph: {
+        nodes: [
+          {
+            id: "holmes",
+            label: "Sherlock <Holmes>",
+            node_type: "Character",
+            summary: "Consulting detective & violinist.",
+          },
+          { id: "watson", label: "Dr Watson", node_type: "Character" },
+          { id: "ring", label: "Wedding ring", node_type: "Evidence" },
+        ],
+        edges: [
+          { source: "holmes", target: "watson", relation: "works_with", evidence: ["chapter-1"] },
+          { source: "ring", target: "holmes", relation: "points_to", evidence_count: 2 },
+        ],
+      },
+    });
+
+    expect(html).toContain('data-display-ref="entity:holmes"');
+    expect(html).toContain("Sherlock &lt;Holmes&gt;");
+    expect(html).toContain("Character");
+    expect(html).toContain("Consulting detective &amp; violinist.");
+    expect(html).toContain("<b>Relations:</b> 2");
+    expect(html).toContain("<b>Evidence:</b> 3");
+    expect(html).not.toContain("Sherlock <Holmes>");
+  });
+
+  it("renders useful source context for Graphify code nodes without descriptions", () => {
+    const html = renderWorkspaceShell({
+      tokens,
+      title: "Code graph workspace",
+      state: { ...createDefaultViewerState(), displayRef: "entity:workspace_shell_renderworkspaceshell" },
+      graph: {
+        nodes: [
+          {
+            id: "workspace_shell_renderworkspaceshell",
+            label: "renderWorkspaceShell()",
+            file_type: "code",
+            source_file: "src/workspace/shell.ts",
+            source_location: "L270",
+            community_name: "Workspace rendering",
+          },
+        ],
+        links: [],
+      },
+    });
+
+    expect(html).toContain("renderWorkspaceShell()");
+    expect(html).toContain("code");
+    expect(html).toContain("Source: src/workspace/shell.ts:L270");
+    expect(html).toContain("Community: Workspace rendering");
+    expect(html).not.toContain("No summary available.");
+  });
+
+  it("renders selected type and candidate display refs without profile-specific wiring", () => {
+    const graph = {
+      nodes: [
+        { id: "holmes", label: "Sherlock Holmes", node_type: "Character" },
+        { id: "watson", label: "Dr Watson", node_type: "Character" },
+        { id: "motive", label: "Motive candidate", kind: "candidate", description: "Needs review." },
+      ],
+      links: [{ source: "holmes", target: "watson", relation: "works_with" }],
+    };
+
+    const typeHtml = renderWorkspaceShell({
+      tokens,
+      title: "Ontology workspace",
+      state: { ...createDefaultViewerState(), displayRef: "type:Character" },
+      graph,
+    });
+    expect(typeHtml).toContain("Character");
+    expect(typeHtml).toContain("Type");
+    expect(typeHtml).toContain("<b>Members:</b> 2");
+    expect(typeHtml).toContain("<b>Relations:</b> 1");
+
+    const candidateHtml = renderWorkspaceShell({
+      tokens,
+      title: "Ontology workspace",
+      state: { ...createDefaultViewerState(), displayRef: "candidate:motive" },
+      graph,
+    });
+    expect(candidateHtml).toContain("Motive candidate");
+    expect(candidateHtml).toContain("candidate");
+    expect(candidateHtml).toContain("Needs review.");
   });
 });
