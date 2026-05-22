@@ -28,7 +28,11 @@ export {
 } from "./tokens-fallback.js";
 export { normaliseDesignSystemTokens, tryGetDsTokens } from "./tokens-ds.js";
 
-export type { RenderWorkspaceShellOptions } from "./shell.js";
+export type {
+  RenderWorkspaceShellOptions,
+  WorkspaceDescriptionSidecar,
+  WorkspaceEntityLayout,
+} from "./shell.js";
 export { renderWorkspaceShell } from "./shell.js";
 
 export type {
