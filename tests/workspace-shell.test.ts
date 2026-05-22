@@ -21,6 +21,24 @@ describe("Track G G2 — workspace shell scaffold", () => {
     expect(html).toContain('role="application"');
   });
 
+  it("marks the token source and lets studio routes fill each workspace region", () => {
+    const html = renderWorkspaceShell({
+      tokens,
+      tokenSource: "fallback",
+      title: "Ontology workspace",
+      leftWorkbenchHtml: '<nav id="candidate-list">Candidate queue</nav>',
+      centralDisplayHtml: '<article id="candidate-detail">Candidate detail</article>',
+      rightDrawerHtml: '<aside id="audit-detail">Audit trail</aside>',
+    });
+
+    expect(html).toContain('data-token-source="fallback"');
+    expect(html).toContain('<nav id="candidate-list">Candidate queue</nav>');
+    expect(html).toContain('<article id="candidate-detail">Candidate detail</article>');
+    expect(html).toContain('<aside id="audit-detail">Audit trail</aside>');
+    expect(html).not.toContain("Queue rendering arrives in G5.");
+    expect(html).not.toContain("Evidence / relations / audit trail accordion arrives with G5.");
+  });
+
   it("keeps central display copy neutral until item rendering is wired", () => {
     const html = renderWorkspaceShell({ tokens, title: "Ontology workspace" });
     expect(html).toContain("No display item selected.");

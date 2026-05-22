@@ -56,6 +56,33 @@ describe("safeToHtml", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it("aligns standalone graph HTML with the workspace token contract", () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-html-token-theme-"));
+    const htmlPath = join(dir, "graph.html");
+
+    const G = new Graph();
+    G.addNode("a", { label: "A", source_file: "src/a.ts", file_type: "code" });
+    const communities = new Map([[0, ["a"]]]);
+
+    toHtml(G, communities, htmlPath, { communityLabels: new Map([[0, "Core"]]) });
+
+    const html = readFileSync(htmlPath, "utf-8");
+    expect(html).toContain("--ws-surface: #ffffff;");
+    expect(html).toContain("--ws-surface-2: #f5f6f8;");
+    expect(html).toContain("body { background: var(--ws-surface); color: var(--ws-text);");
+    expect(html).toContain("#graph { flex: 1; outline: none; background: var(--ws-surface);");
+    expect(html).toContain("#sidebar { width: 280px; background: var(--ws-surface-2); border-left: 1px solid var(--ws-border);");
+    expect(html).toContain("--graph-weak-text: var(--ws-text-muted);");
+    expect(html).toContain("--graph-muted-strong: var(--ws-text-muted);");
+    expect(html).toContain("--graph-node-label: var(--ws-text);");
+    expect(html).toContain("--graph-neighbor-border: var(--ws-border);");
+    expect(html).not.toContain("body { background: #0f0f1a;");
+    expect(html).not.toContain("color:#aaa");
+    expect(html).not.toContain("color:#bbb");
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it("does not crash when source_file is nullish", () => {
     const dir = mkdtempSync(join(tmpdir(), "graphify-html-export-"));
     const htmlPath = join(dir, "graph.html");

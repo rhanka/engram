@@ -1,10 +1,13 @@
 import { randomBytes } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { URL } from "node:url";
 
 import { applyOntologyPatch, validateOntologyPatch } from "./ontology-patch.js";
 import { loadOntologyPatchContext } from "./ontology-patch-context.js";
+import { renderOntologyStudioWorkspace } from "./ontology-studio-workspace.js";
 import {
   getOntologyRebuildStatus,
   getOntologyReconciliationCandidate,
@@ -124,30 +127,27 @@ function jsonResult(status: number, value: unknown): OntologyStudioRouteResult {
   };
 }
 
-function htmlResult(writeEnabled: boolean): OntologyStudioRouteResult {
-  const writeBlock = writeEnabled
-    ? `<p><strong>Write mode is enabled.</strong> Mutation routes under <code>/api/ontology/patch/*</code> require an <code>Authorization: Bearer &lt;token&gt;</code> header.</p>`
-    : `<p>This server is read-only. Start with <code>--write</code> to enable patch mutation routes.</p>`;
+function htmlResult(
+  context: ReturnType<typeof loadOntologyPatchContext>,
+  writeEnabled: boolean,
+  selectedCandidateId?: string,
+): OntologyStudioRouteResult {
   return {
     status: 200,
     contentType: "text/html; charset=utf-8",
-    body: `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Graphify Ontology Studio</title>
-  <style>
-    body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.45; }
-    code { background: #f2f4f7; padding: 0.1rem 0.25rem; border-radius: 4px; }
-  </style>
-</head>
-<body>
-  <h1>Graphify Ontology Studio</h1>
-  <p>Read-only reconciliation APIs are available under <code>/api/ontology</code>.</p>
-  ${writeBlock}
-</body>
-</html>`,
+    body: renderOntologyStudioWorkspace(context, { writeEnabled, selectedCandidateId }),
+  };
+}
+
+function graphHtmlArtifactResult(context: ReturnType<typeof loadOntologyPatchContext>): OntologyStudioRouteResult {
+  const graphHtmlPath = join(context.stateDir, "graph.html");
+  if (!existsSync(graphHtmlPath)) {
+    return jsonResult(404, { error: "graph.html not found" });
+  }
+  return {
+    status: 200,
+    contentType: "text/html; charset=utf-8",
+    body: readFileSync(graphHtmlPath, "utf-8"),
   };
 }
 
@@ -274,7 +274,10 @@ export function handleOntologyStudioRequest(
     const url = new URL(requestUrl, "http://127.0.0.1");
     const context = loadOntologyPatchContext(options.profileStatePath);
     if (url.pathname === "/" || url.pathname === "/index.html") {
-      return htmlResult(Boolean(options.write));
+      return htmlResult(context, Boolean(options.write), optionalString(url.searchParams.get("candidate")));
+    }
+    if (url.pathname === "/api/ontology/artifacts/graph.html") {
+      return graphHtmlArtifactResult(context);
     }
     if (url.pathname === "/api/ontology/reconciliation/candidates") {
       return jsonResult(200, listOntologyReconciliationCandidates(context, candidateFilters(url.searchParams)));

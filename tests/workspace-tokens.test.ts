@@ -4,6 +4,8 @@ import {
   WORKSPACE_TOKEN_GROUPS,
   getWorkspaceTokens,
   getWorkspaceTokensFallback,
+  normaliseDesignSystemTokens,
+  resolveWorkspaceTokens,
   serialiseTokensToCss,
   tryGetDsTokens,
   type WorkspaceTokens,
@@ -17,10 +19,10 @@ describe("Track G G1 — workspace token fallback", () => {
     expect(themed.light).not.toBe(themed.dark);
   });
 
-  it("defaults getWorkspaceTokens() to the dark theme", () => {
-    const dark = getWorkspaceTokens();
-    const explicit = getWorkspaceTokens("dark");
-    expect(dark).toBe(explicit);
+  it("defaults getWorkspaceTokens() to the design-system default theme", () => {
+    const defaultTheme = getWorkspaceTokens();
+    const explicit = getWorkspaceTokens("light");
+    expect(defaultTheme).toBe(explicit);
   });
 
   it("exposes every required token group on every theme", () => {
@@ -91,5 +93,25 @@ describe("Track G G1 — workspace token fallback", () => {
   it("returns null from tryGetDsTokens when @sentropic/design-system is absent", async () => {
     const ds = await tryGetDsTokens();
     expect(ds).toBeNull();
+  });
+
+  it("validates the full design-system token shape before accepting it", () => {
+    const fallback = getWorkspaceTokensFallback();
+    expect(normaliseDesignSystemTokens(fallback)).toBe(fallback);
+    expect(normaliseDesignSystemTokens({
+      light: { ...fallback.light, colour: { ...fallback.light.colour, accent: 42 } },
+      dark: fallback.dark,
+    })).toBeNull();
+    expect(normaliseDesignSystemTokens({
+      light: fallback.light,
+      dark: { ...fallback.dark, focusRing: undefined },
+    })).toBeNull();
+  });
+
+  it("resolves the active tokens with an explicit source label", async () => {
+    const resolved = await resolveWorkspaceTokens();
+    expect(resolved.source).toBe("fallback");
+    expect(resolved.tokens).toBe(getWorkspaceTokens());
+    expect(resolved.themedTokens.light).toBe(getWorkspaceTokens());
   });
 });
