@@ -37,7 +37,7 @@
  * inside #graph-panel (G4), reconciliation rebind (G5).
  */
 
-import type { WorkspaceTokens } from "./tokens.js";
+import type { WorkspaceTokens, WorkspaceTokenSource } from "./tokens.js";
 import type { GraphEdgeLike, GraphLike, GraphNodeLike } from "./graph-selection.js";
 import type { WorkspaceViewerState } from "./viewer-state.js";
 import { serialiseTokensToCss } from "./tokens-fallback.js";
@@ -45,6 +45,8 @@ import { serialiseTokensToCss } from "./tokens-fallback.js";
 export interface RenderWorkspaceShellOptions {
   /** Resolved tokens for the active theme. */
   tokens: WorkspaceTokens;
+  /** Whether tokens came from @sentropic/design-system or the local fallback. */
+  tokenSource?: WorkspaceTokenSource;
   /** Workspace title displayed in the header. Sanitised. */
   title: string;
   /**
@@ -70,6 +72,12 @@ export interface RenderWorkspaceShellOptions {
   queueEmpty?: boolean;
   /** Trusted internal HTML fragment rendered inside the graph panel slot. */
   graphPanelHtml?: string;
+  /** Trusted internal HTML fragment rendered inside the left workbench slot. */
+  leftWorkbenchHtml?: string;
+  /** Trusted internal HTML fragment rendered inside the central display slot. */
+  centralDisplayHtml?: string;
+  /** Trusted internal HTML fragment rendered inside the detail drawer slot. */
+  rightDrawerHtml?: string;
   /** Current workspace state. Used to resolve the central display item. */
   state?: WorkspaceViewerState;
   /** Graph payload (typically loaded from `.graphify/graph.json`). */
@@ -282,19 +290,23 @@ function shellStyles(): string {
  */
 export function renderWorkspaceShell(opts: RenderWorkspaceShellOptions): string {
   const tokens = opts.tokens;
+  const tokenSource = escapeHtml(opts.tokenSource ?? "fallback");
   const title = escapeHtml(opts.title);
   const profileId = opts.profileId ? escapeHtml(opts.profileId) : "—";
   const lastRebuiltAt = opts.lastRebuiltAt ? escapeHtml(opts.lastRebuiltAt) : "";
   const writeFlag = opts.writeEnabled === true;
   const queueEmpty = opts.queueEmpty === true;
   const tokensCss = serialiseTokensToCss(tokens);
-  const queueBody = queueEmpty
+  const queueBody = opts.leftWorkbenchHtml ?? (queueEmpty
     ? '<p class="ws-empty" id="ws-queue-empty">Reconciliation queue is empty.</p>'
-    : '<p class="ws-empty" id="ws-queue-stub">Queue rendering arrives in G5.</p>';
+    : '<p class="ws-empty" id="ws-queue-stub">Queue rendering arrives in G5.</p>');
   const graphPanelBody =
     opts.graphPanelHtml ??
     '<p class="ws-empty">No graph context available.</p>';
-  const centralDisplayBody = renderCentralDisplayBody(opts.state, opts.graph);
+  const centralDisplayBody = opts.centralDisplayHtml ?? renderCentralDisplayBody(opts.state, opts.graph);
+  const rightDrawerBody =
+    opts.rightDrawerHtml ??
+    '<p class="ws-empty">Evidence / relations / audit trail accordion arrives with G5.</p>';
 
   return [
     "<!DOCTYPE html>",
@@ -310,7 +322,7 @@ export function renderWorkspaceShell(opts: RenderWorkspaceShellOptions): string 
     "</head>",
     "<body>",
     '<a class="ws-skip-link" href="#central-display">Skip to central display</a>',
-    '<div class="ws-root" role="application" aria-label="Graphify ontology workspace">',
+    `<div class="ws-root" role="application" aria-label="Graphify ontology workspace" data-token-source="${tokenSource}">`,
     '<header class="ws-header" role="banner">',
     `<h1>${title}</h1>`,
     '<div class="ws-header-meta">',
@@ -335,7 +347,7 @@ export function renderWorkspaceShell(opts: RenderWorkspaceShellOptions): string 
     "</main>",
     '<aside class="ws-right" id="right-drawer" role="complementary" aria-label="Detail drawer">',
     '<h2 class="ws-region-heading">Detail</h2>',
-    '<p class="ws-empty">Evidence / relations / audit trail accordion arrives with G5.</p>',
+    rightDrawerBody,
     "</aside>",
     "</div>",
     "</body>",

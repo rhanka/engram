@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
   createOntologyStudioRequestHandler,
   generateOntologyStudioToken,
+  handleOntologyStudioRequest,
   startOntologyStudioServer,
 } from "../src/ontology-studio.js";
 
@@ -30,6 +31,79 @@ function postBody(payload: unknown): { body: string; headers: Record<string, str
   };
 }
 
+function writeCandidateQueue(fixture: ReturnType<typeof writeOntologyWriteFixture>): void {
+  const reconciliationDir = join(fixture.stateDir, "ontology", "reconciliation");
+  mkdirSync(reconciliationDir, { recursive: true });
+  writeFileSync(
+    join(reconciliationDir, "candidates.json"),
+    JSON.stringify({
+      schema: "graphify_ontology_reconciliation_candidates_v1",
+      graph_hash: "graph-hash",
+      profile_hash: "profile-hash",
+      generated_at: "2026-05-21T00:00:00.000Z",
+      candidate_count: 1,
+      candidates: [
+        {
+          id: "candidate-high",
+          kind: "entity_match",
+          status: "candidate",
+          score: 0.91,
+          candidate_id: "candidate-component",
+          canonical_id: "component-a",
+          shared_terms: ["component"],
+          evidence_refs: ["manual.md#p1"],
+          reasons: ["same node type: Component"],
+          proposed_patch_operation: "accept_match",
+        },
+      ],
+    }, null, 2),
+    "utf-8",
+  );
+  writeFileSync(
+    fixture.auditPath,
+    JSON.stringify({
+      patch: { ...fixture.patch, id: "decision-audit", created_at: "2026-05-21T01:00:00.000Z" },
+      applied_at: "2026-05-21T02:00:00.000Z",
+    }) + "\n",
+    "utf-8",
+  );
+}
+
+function writeGraphPreview(fixture: ReturnType<typeof writeOntologyWriteFixture>): void {
+  writeFileSync(
+    join(fixture.stateDir, "graph.json"),
+    JSON.stringify({
+      nodes: [
+        {
+          id: "candidate-component",
+          label: "Candidate component",
+          node_type: "Component",
+          status: "candidate",
+          confidence: "EXTRACTED",
+          source_file: "manual.md",
+          source_location: "p1",
+          community: 1,
+        },
+        {
+          id: "component-a",
+          label: "Component A",
+          node_type: "Component",
+          status: "validated",
+          confidence: "EXTRACTED",
+          source_file: "manual.md",
+          source_location: "p1",
+          community: 1,
+        },
+      ],
+      links: [
+        { source: "candidate-component", target: "component-a", relation: "candidate_match", confidence: "EXTRACTED" },
+      ],
+    }, null, 2),
+    "utf-8",
+  );
+  writeFileSync(join(fixture.stateDir, "graph.html"), "<!doctype html><title>graph</title>", "utf-8");
+}
+
 afterEach(() => {
   while (tempDirs.length) {
     const dir = tempDirs.pop();
@@ -42,6 +116,49 @@ describe("graphify ontology studio --write", () => {
     const token = generateOntologyStudioToken();
     expect(token).toMatch(/^[0-9a-f]{48}$/);
     expect(generateOntologyStudioToken()).not.toBe(token);
+  });
+
+  it("renders the G5 workspace shell on the studio root route", () => {
+    const dir = makeTempDir();
+    const fixture = writeOntologyWriteFixture(dir);
+    writeCandidateQueue(fixture);
+    writeGraphPreview(fixture);
+
+    const result = handleOntologyStudioRequest(
+      { profileStatePath: fixture.profileStatePath, write: { token: "unused" } },
+      "GET",
+      "/?candidate=candidate-high",
+    );
+
+    expect(result.status).toBe(200);
+    expect(result.contentType).toBe("text/html; charset=utf-8");
+    expect(result.body).toContain('data-token-source="fallback"');
+    expect(result.body).toContain('id="candidate-list"');
+    expect(result.body).toContain('data-candidate-id="candidate-high"');
+    expect(result.body).toContain("candidate-component");
+    expect(result.body).toContain("Candidate component");
+    expect(result.body).toContain("component-a");
+    expect(result.body).toContain("Component A");
+    expect(result.body).toContain("<dt>Type</dt>");
+    expect(result.body).toContain("<dd>Component</dd>");
+    expect(result.body).toContain("manual.md#p1");
+    expect(result.body).toContain("decision-audit");
+    expect(result.body).toContain("Decision basis");
+    expect(result.body).not.toContain("Patch preview");
+    expect(result.body).not.toContain("&quot;operation&quot;");
+    expect(result.body).toContain("<b>Mode:</b> Overview");
+    expect(result.body).toContain('title="Graphify graph surface"');
+    expect(result.body).toContain(encodeURI(`file://${fixture.stateDir}/graph.html`));
+    expect(result.body).toContain('data-ws-live-graph-src="/api/ontology/artifacts/graph.html"');
+    expect(result.body).not.toContain("Read-only reconciliation APIs are available");
+
+    const graphArtifact = handleOntologyStudioRequest(
+      { profileStatePath: fixture.profileStatePath, write: { token: "unused" } },
+      "GET",
+      "/api/ontology/artifacts/graph.html",
+    );
+    expect(graphArtifact.status).toBe(200);
+    expect(graphArtifact.body).toContain("<title>graph</title>");
   });
 
   it("refuses --write when host is not loopback", async () => {
