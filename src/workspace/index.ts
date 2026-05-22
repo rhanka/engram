@@ -14,15 +14,19 @@ export type {
   WorkspaceFocusRingTokens,
   WorkspaceTokens,
   WorkspaceThemedTokens,
+  WorkspaceTokenSource,
+  WorkspaceTheme,
+  ResolvedWorkspaceTokens,
   WorkspaceTokenGroup,
 } from "./tokens.js";
-export { WORKSPACE_TOKEN_GROUPS } from "./tokens.js";
+export { DEFAULT_WORKSPACE_THEME, WORKSPACE_TOKEN_GROUPS } from "./tokens.js";
 export {
   getWorkspaceTokens,
   getWorkspaceTokensFallback,
+  resolveWorkspaceTokens,
   serialiseTokensToCss,
 } from "./tokens-fallback.js";
-export { tryGetDsTokens } from "./tokens-ds.js";
+export { normaliseDesignSystemTokens, tryGetDsTokens } from "./tokens-ds.js";
 
 export type { RenderWorkspaceShellOptions } from "./shell.js";
 export { renderWorkspaceShell } from "./shell.js";

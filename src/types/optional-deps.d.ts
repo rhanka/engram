@@ -27,7 +27,8 @@ declare module "unpdf" {
 }
 
 declare module "@sentropic/design-system/tokens" {
-  export const workspaceTokens: unknown;
-  const defaultTokens: unknown;
+  import type { WorkspaceThemedTokens } from "../workspace/tokens.js";
+  export const workspaceTokens: WorkspaceThemedTokens;
+  const defaultTokens: WorkspaceThemedTokens;
   export default defaultTokens;
 }
