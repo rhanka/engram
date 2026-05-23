@@ -122,4 +122,45 @@ describe("Track G G6-2 — workspace search index", () => {
     const index = buildWorkspaceSearchIndex(minimal);
     expect(searchWorkspaceIndex(index, "x").map((h) => h.id)).toContain("x");
   });
+
+  // Track F F-0816-P2 row 12 (port safishamsi 020cca2 / #964): verify that
+  // non-English query terms are still searchable via the workspace rail
+  // index. The G6-2 index already tokenises on Unicode `\p{L}\p{N}`, so
+  // CJK / French / Arabic labels must round-trip cleanly. This belt-and-
+  // -braces test pins the contract Track G consumes against the row 12
+  // fix in src/serve.ts.
+  describe("Track F F-0816-P2 row 12 — non-English query terms remain searchable", () => {
+    const i18nRecords: WorkspaceSearchRecord[] = [
+      { id: "frontend_cn", label: "前端开发", node_type: "Concept", source_file: "docs/cn/前端.md" },
+      { id: "backend_cn", label: "后端开发", node_type: "Concept", source_file: "docs/cn/后端.md" },
+      { id: "tokyo_jp", label: "東京", node_type: "Location", source_file: "docs/jp/tokyo.md" },
+      { id: "cafe_fr", label: "Café Société", node_type: "Place", source_file: "docs/fr/cafe.md" },
+      { id: "salam_ar", label: "السلام", node_type: "Greeting", source_file: "docs/ar/salam.md" },
+    ];
+
+    it("hits on a two-character CJK token (前端)", () => {
+      const index = buildWorkspaceSearchIndex(i18nRecords);
+      const ids = searchWorkspaceIndex(index, "前端").map((h) => h.id);
+      expect(ids).toContain("frontend_cn");
+      expect(ids).not.toContain("backend_cn");
+    });
+
+    it("hits on a two-character Japanese label (東京)", () => {
+      const index = buildWorkspaceSearchIndex(i18nRecords);
+      const ids = searchWorkspaceIndex(index, "東京").map((h) => h.id);
+      expect(ids).toContain("tokyo_jp");
+    });
+
+    it("hits on an accented French token (Société)", () => {
+      const index = buildWorkspaceSearchIndex(i18nRecords);
+      const ids = searchWorkspaceIndex(index, "Société").map((h) => h.id);
+      expect(ids).toContain("cafe_fr");
+    });
+
+    it("hits on an Arabic label (السلام)", () => {
+      const index = buildWorkspaceSearchIndex(i18nRecords);
+      const ids = searchWorkspaceIndex(index, "السلام").map((h) => h.id);
+      expect(ids).toContain("salam_ar");
+    });
+  });
 });

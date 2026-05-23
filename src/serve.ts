@@ -15,7 +15,7 @@ import {
 } from "./graph.js";
 import { resolveGraphInputPath } from "./paths.js";
 import { validateGraphPath, sanitizeLabel } from "./security.js";
-import { normalizeSearchText, scoreSearchText, textMatchesQuery } from "./search.js";
+import { normalizeSearchText, queryTerms, scoreSearchText, textMatchesQuery } from "./search.js";
 import {
   godNodes as computeGodNodes,
   surprisingConnections,
@@ -335,10 +335,10 @@ function toolQueryGraph(G: Graph, args: Record<string, unknown>): string {
   const mode = (args.mode as string) ?? "bfs";
   const depth = Math.min(Number(args.depth ?? 3), 6);
   const budget = Number(args.token_budget ?? 2000);
-  const terms = question
-    .split(/\s+/)
-    .filter((t) => t.length > 2)
-    .map(normalizeSearchText);
+  // Track F F-0816-P2 row 12 (port safishamsi 020cca2 / #964):
+  // queryTerms() centralises the "filter short English noise only" rule
+  // so two-character non-English query tokens (e.g. 前端) remain searchable.
+  const terms = queryTerms(question).map(normalizeSearchText);
 
   const scored = scoreNodes(G, terms);
   const startNodes = scored.slice(0, 3).map(([, nid]) => nid);
