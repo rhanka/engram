@@ -130,6 +130,7 @@ describe("project-scoped skill installs (upstream b347492 / #931)", () => {
   });
 
   it("supports every skill-based platform with a project-scoped install", () => {
+    // `pi` is not in the TS PLATFORM_CONFIG (upstream-only); we ship the rest.
     const platforms = [
       "claude",
       "windows",
@@ -143,7 +144,6 @@ describe("project-scoped skill installs (upstream b347492 / #931)", () => {
       "hermes",
       "kimi",
       "copilot",
-      "pi",
       "antigravity",
     ];
     for (const platformName of platforms) {
@@ -167,7 +167,6 @@ describe("project-scoped skill installs (upstream b347492 / #931)", () => {
         join(project, ".hermes"),
         join(project, ".kimi"),
         join(project, ".copilot"),
-        join(project, ".pi"),
         join(project, "AGENTS.md"),
         join(project, "CLAUDE.md"),
       ].some((p) => existsSync(p));
