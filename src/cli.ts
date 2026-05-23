@@ -3333,6 +3333,13 @@ export async function main(): Promise<void> {
         process.exit(1);
       }
 
+      // Track F F-0816-P2 row 15 (port safishamsi 076e6b7 / #934):
+      // Re-clustering must survive the case where the output directory
+      // around graph.json was partially archived. Recreating the state
+      // dir (idempotent on the happy path) keeps writeFileSync(...)
+      // from blowing up with ENOENT before any side-effect.
+      mkdirSync(paths.stateDir, { recursive: true });
+
       const G = makeGraphPortable(loadGraphFromData(JSON.parse(readFileSync(paths.graph, "utf-8"))), root);
       const { cluster, scoreAll } = await import("./cluster.js");
       const { godNodes, surprisingConnections, suggestQuestions } = await import("./analyze.js");
