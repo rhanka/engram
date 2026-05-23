@@ -209,6 +209,35 @@ export function createDirectSemanticExtractionClient(
   };
 }
 
+/**
+ * Track F F-0816-P2 row 3 (port safishamsi 3238b32 / #889): typed error
+ * raised when every semantic chunk in a fresh extraction errored. The
+ * CLI catches this and exits non-zero with the backend name in the
+ * stderr message so CI checking exit status no longer silently passes.
+ */
+export class AllChunksFailedError extends Error {
+  override readonly name = "AllChunksFailedError";
+  readonly backend: string;
+  readonly totalChunks: number;
+  readonly totalFiles: number;
+  readonly chunkErrors: ReadonlyArray<{ chunkIndex: number; error: Error }>;
+  constructor(input: {
+    backend: string;
+    totalChunks: number;
+    totalFiles: number;
+    chunkErrors: Array<{ chunkIndex: number; error: Error }>;
+  }) {
+    const hint = "If you see 'requires the X package', run `npm install X` and retry.";
+    super(
+      `all semantic chunks failed for backend '${input.backend}' (${input.totalChunks} chunk(s), ${input.totalFiles} file(s)) - see per-chunk errors above. ${hint}`,
+    );
+    this.backend = input.backend;
+    this.totalChunks = input.totalChunks;
+    this.totalFiles = input.totalFiles;
+    this.chunkErrors = input.chunkErrors;
+  }
+}
+
 export async function extractSemanticFilesDirectParallel(
   files: string[],
   options: DirectSemanticExtractionOptions,
@@ -216,6 +245,12 @@ export async function extractSemanticFilesDirectParallel(
   const chunks = packSemanticFilesByTokenBudget(files, { tokenBudget: options.tokenBudget });
   const maxConcurrency = Math.max(1, Math.floor(options.maxConcurrency ?? 4));
   const results: Partial<Extraction>[] = new Array(chunks.length);
+  // Track per-chunk success so we can surface a clear non-zero exit when
+  // every chunk errored (e.g. backend SDK missing, invalid API key,
+  // network outage). Per-chunk failures are otherwise non-fatal: we
+  // print to stderr and let the remaining chunks try.
+  const chunkErrors: Array<{ chunkIndex: number; error: Error }> = [];
+  let succeeded = 0;
   let nextIndex = 0;
 
   async function worker(): Promise<void> {
@@ -223,15 +258,38 @@ export async function extractSemanticFilesDirectParallel(
       const index = nextIndex++;
       const chunk = chunks[index]!;
       const semanticFiles = chunk.files.map((file) => readSemanticFile(options.root, file));
-      results[index] = await options.client.extractChunk({
-        chunkIndex: index,
-        chunkCount: chunks.length,
-        files: semanticFiles,
-      });
+      try {
+        results[index] = await options.client.extractChunk({
+          chunkIndex: index,
+          chunkCount: chunks.length,
+          files: semanticFiles,
+        });
+        succeeded += 1;
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        chunkErrors.push({ chunkIndex: index, error });
+        // eslint-disable-next-line no-console
+        console.error(
+          `[graphify extract] chunk ${index + 1}/${chunks.length} failed: ${error.message}`,
+        );
+      }
     }
   }
 
   const workerCount = Math.min(maxConcurrency, chunks.length);
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
-  return mergeExtractions(results);
+
+  // Mirror upstream `__main__.py` guard: if a fresh extraction was
+  // requested (chunks.length > 0) and zero chunks completed, abort
+  // before the merge / cluster / write phase.
+  if (chunks.length > 0 && succeeded === 0) {
+    throw new AllChunksFailedError({
+      backend: options.client.provider,
+      totalChunks: chunks.length,
+      totalFiles: files.length,
+      chunkErrors,
+    });
+  }
+
+  return mergeExtractions(results.filter((entry) => entry !== undefined) as Partial<Extraction>[]);
 }

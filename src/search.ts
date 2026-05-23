@@ -5,6 +5,43 @@ export function normalizeSearchText(value: string): string {
     .toLowerCase();
 }
 
+/**
+ * Split a query into searchable terms, filtering only short pure-English
+ * tokens (length <= 2 ASCII chars). Centralised here so the MCP CLI,
+ * `query_graph`, and any future benchmark/scoring code share the same
+ * tokenisation rule. Mirrors upstream `graphify.serve._query_terms`
+ * (safishamsi 020cca2 / #964): two-character CJK / Cyrillic / Greek
+ * terms must remain searchable, English stopwords like "to"/"of" stay
+ * filtered.
+ *
+ * Behaviour:
+ * - splits on whitespace
+ * - lowercases each raw token
+ * - drops the token if it is composed entirely of ASCII a-z and shorter
+ *   than 3 chars; non-ASCII (or mixed) tokens of any length are kept
+ */
+export function queryTerms(question: string): string[] {
+  if (typeof question !== "string") return [];
+  const out: string[] = [];
+  for (const raw of question.split(/\s+/)) {
+    const term = raw.toLowerCase().trim();
+    if (!term) continue;
+    let englishOnly = true;
+    for (let i = 0; i < term.length; i++) {
+      const ch = term.charCodeAt(i);
+      // 0x61..0x7A is "a".."z"; anything else (digits, punctuation, CJK,
+      // accented letters) breaks the "pure English" classification.
+      if (ch < 0x61 || ch > 0x7a) {
+        englishOnly = false;
+        break;
+      }
+    }
+    if (englishOnly && term.length <= 2) continue;
+    out.push(term);
+  }
+  return out;
+}
+
 export function textMatchesQuery(text: string, query: string): boolean {
   const normalizedText = normalizeSearchText(text);
   const terms = normalizeSearchText(query).split(/\s+/).filter(Boolean);
