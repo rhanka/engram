@@ -37,6 +37,7 @@ import { computeFocusSubgraph } from "./graph-selection.js";
 import type { WorkspaceViewerState } from "./viewer-state.js";
 import { createDefaultViewerState } from "./viewer-state.js";
 import { serialiseTokensToCss } from "./tokens-fallback.js";
+import { renderWorkspaceRail, workspaceRailStyles, type WorkspaceRailLayout } from "./rail.js";
 
 /**
  * Optional sidecar payload propagated from `.graphify/wiki/descriptions.json`
@@ -99,6 +100,12 @@ export interface RenderWorkspaceShellOptions {
   descriptionSidecar?: WorkspaceDescriptionSidecar;
   /** Optional profile-driven entity layout (falls back to a neutral default). */
   entityLayout?: WorkspaceEntityLayout;
+  /**
+   * Optional profile-driven rail layout (`outputs.workspace.facets` /
+   * `outputs.workspace.result_groups`). Both fields are optional — the
+   * rail auto-discovers what it can from the dataset.
+   */
+  railLayout?: WorkspaceRailLayout;
 }
 
 // ---------------------------------------------------------------------------
@@ -586,6 +593,7 @@ function shellStyles(): string {
     "  .workspace-reconciliation-slot[data-active-view=\"workspace\"] { display: none; max-height: 0; padding: 0; }",
     "  .ws-counters { grid-template-columns: repeat(2, minmax(80px, 1fr)); }",
     "}",
+    workspaceRailStyles(),
   ].join("\n");
 }
 
@@ -614,11 +622,25 @@ export function renderWorkspaceShell(opts: RenderWorkspaceShellOptions): string 
   const slotHidden = activeView === "workspace" || activeView === null;
   const slotActiveView = activeView ?? "workspace";
 
+  // G6-2: render the rich left rail (search / types / selected / facets /
+  // results) when a graph is available and the caller did not override
+  // `leftWorkbenchHtml`. Otherwise fall back to the legacy stubs so the
+  // pre-G6-2 tests (queueEmpty hint) still pass.
+  let railBody = "";
+  if (!opts.leftWorkbenchHtml && opts.graph) {
+    railBody = renderWorkspaceRail({
+      state: effectiveState,
+      graph: opts.graph,
+      layout: opts.railLayout,
+    });
+  }
   const queueBody =
     opts.leftWorkbenchHtml ??
-    (queueEmpty
-      ? '<p class="ws-empty" id="ws-queue-empty">Reconciliation queue is empty.</p>'
-      : '<p class="ws-empty" id="ws-queue-stub">Queue rendering arrives in G5.</p>');
+    (railBody !== ""
+      ? railBody
+      : queueEmpty
+        ? '<p class="ws-empty" id="ws-queue-empty">Reconciliation queue is empty.</p>'
+        : '<p class="ws-empty" id="ws-queue-stub">Queue rendering arrives in G5.</p>');
 
   const centralDisplayBody =
     opts.centralDisplayHtml ??
