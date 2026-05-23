@@ -43,6 +43,12 @@ interface ReconciliationWorkspaceModel {
 export interface RenderOntologyStudioWorkspaceOptions {
   writeEnabled: boolean;
   selectedCandidateId?: string;
+  /**
+   * Active view requested by the live HTTP route. One of
+   * "workspace" | "reconciliation" | "evidence". Defaults to "workspace"
+   * (G6-3 S2.1bis: Workspace is the default tab).
+   */
+  activeView?: "workspace" | "reconciliation" | "evidence";
 }
 
 const HTML_ESCAPE_RE = /[&<>"']/g;
@@ -426,19 +432,63 @@ export function renderOntologyStudioWorkspace(
   context: OntologyPatchContext,
   opts: RenderOntologyStudioWorkspaceOptions,
 ): string {
+  const activeView = opts.activeView ?? "workspace";
   const model = buildModel(context, opts);
   const state = createDefaultViewerState();
-  state.activeView = "studio";
-  state.selectionState = {
-    kind: "candidate-queue",
-    ref: "queue:reconciliation",
-    entityIds: model.candidates?.items.map((candidate) => candidate.candidate_id) ?? [],
-  };
-  state.displayRef = model.selectedCandidate ? `candidate:${model.selectedCandidate.id}` : null;
-  state.focusEntityId = model.selectedCandidate?.candidate_id ?? null;
-  state.drawerOpen = Boolean(model.selectedCandidate);
-  state.viewState.graph.mode = "overview";
+  state.activeView = activeView;
   const tokens = getWorkspaceTokens();
+
+  if (activeView === "reconciliation") {
+    // G6-3 S2.2: candidate workbench in the left rail, compact
+    // candidate/canonical comparison in central, evidence/audit/rebuild
+    // drawer in the right slot.
+    state.selectionState = {
+      kind: "candidate-queue",
+      ref: "queue:reconciliation",
+      entityIds: model.candidates?.items.map((candidate) => candidate.candidate_id) ?? [],
+    };
+    state.displayRef = model.selectedCandidate
+      ? `candidate:${model.selectedCandidate.id}`
+      : null;
+    state.focusEntityId = model.selectedCandidate?.candidate_id ?? null;
+    state.drawerOpen = Boolean(model.selectedCandidate);
+    state.viewState.graph.mode = "overview";
+
+    return renderWorkspaceShell({
+      tokens,
+      tokenSource: "fallback",
+      title: "Graphify Ontology Studio",
+      profileId: context.profile.id,
+      writeEnabled: opts.writeEnabled,
+      queueEmpty: (model.candidates?.items.length ?? 0) === 0,
+      state,
+      leftWorkbenchHtml: renderWorkbench(model),
+      centralDisplayHtml: renderCentralDisplay(model),
+      rightDrawerHtml: renderDrawer(model),
+      graphPanelHtml: renderGraphContext(model),
+    });
+  }
+
+  if (activeView === "evidence") {
+    // The shell renders the placeholder body for `activeView ===
+    // "evidence"`. We pass nothing else through so the central area is
+    // the placeholder unambiguously.
+    return renderWorkspaceShell({
+      tokens,
+      tokenSource: "fallback",
+      title: "Graphify Ontology Studio",
+      profileId: context.profile.id,
+      writeEnabled: opts.writeEnabled,
+      state,
+    });
+  }
+
+  // Default: workspace tab. The G6-2 left rail (search/types/selected/
+  // facets/results) renders naturally — no `leftWorkbenchHtml`
+  // override. The right slot stays hidden via the shell's slot
+  // visibility rules. The central column shows the compact prose for
+  // the currently selected entity (or the empty hint).
+  state.viewState.graph.mode = "selection";
 
   return renderWorkspaceShell({
     tokens,
@@ -448,9 +498,7 @@ export function renderOntologyStudioWorkspace(
     writeEnabled: opts.writeEnabled,
     queueEmpty: (model.candidates?.items.length ?? 0) === 0,
     state,
-    leftWorkbenchHtml: renderWorkbench(model),
-    centralDisplayHtml: renderCentralDisplay(model),
-    rightDrawerHtml: renderDrawer(model),
+    ...(model.graph ? { graph: model.graph } : {}),
     graphPanelHtml: renderGraphContext(model),
   });
 }

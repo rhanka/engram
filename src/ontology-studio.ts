@@ -127,15 +127,28 @@ function jsonResult(status: number, value: unknown): OntologyStudioRouteResult {
   };
 }
 
+function activeViewFromQuery(
+  searchParams: URLSearchParams,
+): "workspace" | "reconciliation" | "evidence" {
+  const raw = optionalString(searchParams.get("view"));
+  if (raw === "reconciliation" || raw === "evidence" || raw === "workspace") return raw;
+  return "workspace";
+}
+
 function htmlResult(
   context: ReturnType<typeof loadOntologyPatchContext>,
   writeEnabled: boolean,
-  selectedCandidateId?: string,
+  selectedCandidateId: string | undefined,
+  activeView: "workspace" | "reconciliation" | "evidence",
 ): OntologyStudioRouteResult {
   return {
     status: 200,
     contentType: "text/html; charset=utf-8",
-    body: renderOntologyStudioWorkspace(context, { writeEnabled, selectedCandidateId }),
+    body: renderOntologyStudioWorkspace(context, {
+      writeEnabled,
+      ...(selectedCandidateId ? { selectedCandidateId } : {}),
+      activeView,
+    }),
   };
 }
 
@@ -274,7 +287,14 @@ export function handleOntologyStudioRequest(
     const url = new URL(requestUrl, "http://127.0.0.1");
     const context = loadOntologyPatchContext(options.profileStatePath);
     if (url.pathname === "/" || url.pathname === "/index.html") {
-      return htmlResult(context, Boolean(options.write), optionalString(url.searchParams.get("candidate")));
+      const activeView = activeViewFromQuery(url.searchParams);
+      // Backwards-compat: when ?candidate=<id> is present without a
+      // ?view= override, route into the Reconciliation sub-view so the
+      // legacy deep links still surface the candidate workbench.
+      const rawCandidate = optionalString(url.searchParams.get("candidate"));
+      const resolvedView =
+        activeView === "workspace" && rawCandidate ? "reconciliation" : activeView;
+      return htmlResult(context, Boolean(options.write), rawCandidate, resolvedView);
     }
     if (url.pathname === "/api/ontology/artifacts/graph.html") {
       return graphHtmlArtifactResult(context);
