@@ -46,10 +46,25 @@ function normalizeSourceFilePath(value: unknown, root?: string): string | undefi
   return normalised;
 }
 
+// Unicode word characters (letters + digits across scripts) plus underscore.
+// Ports safishamsi 86109e9 (#937) to TypeScript: Python's
+// `re.sub(r"[\W_]+", " ", label.casefold(), flags=re.UNICODE)` becomes
+// `replace(/[^\p{L}\p{N}]+/gu, " ")` in JS (since `\W` is ASCII-only
+// without `u`, we spell the inverted Unicode class explicitly).
+const UNICODE_NON_WORD = /[^\p{L}\p{N}]+/gu;
+// ASCII-only labels still go through the legacy 3-char noise gate
+// (intentional TS delta documented in tests/build-merge.test.ts).
+// Non-ASCII labels carry meaningful semantic weight at 2 characters
+// (e.g. 前端, 東京) and must not be silently skipped.
+const ASCII_ONLY = /^[\x20-\x7E]*$/;
+
 function normalizedLabel(value: string): string {
+  // NFKC canonicalises width/compatibility variants (e.g. fullwidth digits
+  // １２３ → 123) so labels that differ only in glyph form dedup together.
   return value
+    .normalize("NFKC")
     .toLowerCase()
-    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(UNICODE_NON_WORD, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -59,7 +74,9 @@ function dedupLabelKey(node: Extraction["nodes"][number]): string | null {
   const label = normalizedLabel(rawLabel);
   if (!label) return null;
   const compactLabel = label.replace(/ /g, "");
-  if (compactLabel.length <= 3 || SKU_LIKE_LABEL.test(rawLabel)) return null;
+  const isAsciiOnly = ASCII_ONLY.test(rawLabel);
+  if (isAsciiOnly && compactLabel.length <= 3) return null;
+  if (SKU_LIKE_LABEL.test(rawLabel)) return null;
   return label;
 }
 
