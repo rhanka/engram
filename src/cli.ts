@@ -1437,6 +1437,289 @@ function installSkill(platformName: string): void {
   console.log();
 }
 
+// ---------------------------------------------------------------------------
+// Project-scoped install (`graphify install --project`).
+//
+// Ported from upstream PR #931 (safishamsi/graphify commit b347492):
+// instead of installing the skill into the user's home directory, write it
+// into the *current project* (e.g. `<repo>/.claude/skills/graphify/SKILL.md`
+// or `<repo>/.agents/skills/graphify/SKILL.md`) so the install travels with
+// the repo for all collaborators.
+//
+// Notes on the TS port:
+// - `--project` is the upstream flag name; do not rename.
+// - The `windows` platform shares its config with `claude` (per CLAUDE_CONFIG
+//   already in PLATFORM_CONFIG); both use `.claude/skills/...` project-scoped.
+// - Path collapsing on uninstall is bounded by `projectDir` so we never rmdir
+//   anything above the project root.
+// ---------------------------------------------------------------------------
+
+const PROJECT_SCOPE_SKILL_PLATFORMS = new Set<string>([
+  "claude",
+  "windows",
+  "codex",
+  "opencode",
+  "aider",
+  "claw",
+  "droid",
+  "trae",
+  "trae-cn",
+  "hermes",
+  "kimi",
+  "copilot",
+  "pi",
+  "antigravity",
+]);
+
+function resolveProjectSkillDestination(platformName: string, projectDir: string): string {
+  const canonical = canonicalPlatformName(platformName);
+  const cfg = PLATFORM_CONFIG[canonical];
+  if (!cfg) {
+    console.error(`error: unknown platform '${platformName}'. Choose from: ${platformNamesForError()}`);
+    process.exit(1);
+  }
+  return join(projectDir, cfg.skill_dst);
+}
+
+function projectScopeRoot(skillPath: string, projectDir: string): string {
+  const absoluteProject = resolve(projectDir);
+  const absoluteSkill = resolve(skillPath);
+  if (!absoluteSkill.startsWith(absoluteProject + "/") && absoluteSkill !== absoluteProject) {
+    return absoluteSkill;
+  }
+  const relative = absoluteSkill.slice(absoluteProject.length + 1);
+  if (!relative) return absoluteSkill;
+  const firstSegment = relative.split("/")[0] ?? "";
+  return firstSegment ? join(projectDir, firstSegment) : absoluteSkill;
+}
+
+function printProjectGitAddHint(paths: string[]): void {
+  const unique: string[] = [];
+  for (const p of paths) {
+    let text = p.replace(/\/+$/, "");
+    if (existsSync(p) && statSync(p).isDirectory()) {
+      text += "/";
+    }
+    if (!unique.includes(text)) unique.push(text);
+  }
+  if (unique.length === 0) return;
+  console.log();
+  console.log("Project-scoped install. Add to version control:");
+  console.log(`  git add ${unique.join(" ")}`);
+}
+
+function writeProjectSkill(platformName: string, projectDir: string): string {
+  const canonical = canonicalPlatformName(platformName);
+  const cfg = PLATFORM_CONFIG[canonical];
+  if (!cfg) {
+    console.error(`error: unknown platform '${platformName}'. Choose from: ${platformNamesForError()}`);
+    process.exit(1);
+  }
+  const skillDst = resolveProjectSkillDestination(canonical, projectDir);
+  mkdirSync(dirname(skillDst), { recursive: true });
+  writeFileAtomic(skillDst, loadSkillContent(canonical));
+  writeFileSync(join(dirname(skillDst), ".graphify_version"), VERSION, "utf-8");
+  console.log(`  skill installed  ->  ${skillDst}`);
+  return skillDst;
+}
+
+function removeProjectSkill(platformName: string, projectDir: string): boolean {
+  const canonical = canonicalPlatformName(platformName);
+  const cfg = PLATFORM_CONFIG[canonical];
+  if (!cfg) return false;
+  const skillDst = resolveProjectSkillDestination(canonical, projectDir);
+  let removed = false;
+  if (existsSync(skillDst)) {
+    unlinkSync(skillDst);
+    console.log(`  skill removed    ->  ${skillDst}`);
+    removed = true;
+  }
+  const versionFile = join(dirname(skillDst), ".graphify_version");
+  if (existsSync(versionFile)) {
+    unlinkSync(versionFile);
+    removed = true;
+  }
+  // Collapse empty parent dirs, bounded by projectDir.
+  const stopAt = resolve(projectDir);
+  for (let dir = dirname(skillDst); resolve(dir).startsWith(stopAt) && resolve(dir) !== stopAt; dir = dirname(dir)) {
+    try {
+      rmdirSync(dir);
+    } catch {
+      break;
+    }
+  }
+  return removed;
+}
+
+function removeProjectClaudeMdRegistration(projectDir: string): void {
+  const claudeMd = join(projectDir, ".claude", "CLAUDE.md");
+  if (!existsSync(claudeMd)) return;
+  const content = readFileSync(claudeMd, "utf-8");
+  if (!content.includes("# graphify")) return;
+  const cleaned = content.replace(/\n*# graphify\n[\s\S]*?(?=\n# |\s*$)/, "").trimEnd();
+  if (cleaned) {
+    writeFileSync(claudeMd, cleaned + "\n", "utf-8");
+    console.log(`  CLAUDE.md        ->  graphify skill registration removed from ${claudeMd}`);
+  } else {
+    unlinkSync(claudeMd);
+    console.log(`  CLAUDE.md        ->  deleted ${claudeMd}`);
+  }
+}
+
+function writeProjectClaudeSkillRegistration(projectDir: string): void {
+  // Mirrors upstream `_skill_registration(".claude/skills/graphify/SKILL.md")`.
+  const projectRegistration =
+    "\n# graphify\n" +
+    "- **graphify** (`.claude/skills/graphify/SKILL.md`) " +
+    "- any input to knowledge graph. Trigger: `/graphify`\n" +
+    "When the user types `/graphify`, invoke the Skill tool " +
+    'with `skill: "graphify"` before doing anything else.\n';
+
+  const claudeMd = join(projectDir, ".claude", "CLAUDE.md");
+  if (existsSync(claudeMd)) {
+    const content = readFileSync(claudeMd, "utf-8");
+    if (content.includes("graphify")) {
+      console.log(`  CLAUDE.md        ->  already registered (no change)`);
+    } else {
+      writeFileSync(claudeMd, content.trimEnd() + projectRegistration, "utf-8");
+      console.log(`  CLAUDE.md        ->  skill registered in ${claudeMd}`);
+    }
+  } else {
+    mkdirSync(dirname(claudeMd), { recursive: true });
+    writeFileSync(claudeMd, projectRegistration.trimStart(), "utf-8");
+    console.log(`  CLAUDE.md        ->  created at ${claudeMd}`);
+  }
+}
+
+export function projectInstall(platformName: string, projectDir: string = "."): void {
+  const canonical = canonicalPlatformName(platformName);
+  if (canonical === "claude" || canonical === "windows") {
+    writeProjectSkill(canonical, projectDir);
+    writeProjectClaudeSkillRegistration(projectDir);
+    claudeInstall(projectDir);
+    printProjectGitAddHint([
+      projectScopeRoot(resolveProjectSkillDestination(canonical, projectDir), projectDir),
+      join(projectDir, "CLAUDE.md"),
+    ]);
+    return;
+  }
+  if (canonical === "gemini") {
+    // Gemini's "skill" file is a TOML command, not a global SKILL.md. Reuse
+    // the project Gemini install path (writes GEMINI.md + .gemini/ MCP config)
+    // and additionally drop the project-scoped TOML command into .gemini/.
+    const skillDst = writeProjectSkill(canonical, projectDir);
+    geminiInstall(projectDir);
+    printProjectGitAddHint([
+      projectScopeRoot(skillDst, projectDir),
+      join(projectDir, "GEMINI.md"),
+      join(projectDir, ".gemini"),
+    ]);
+    return;
+  }
+  if (canonical === "cursor") {
+    cursorInstall(projectDir);
+    printProjectGitAddHint([join(projectDir, ".cursor")]);
+    return;
+  }
+  if (canonical === "kiro") {
+    kiroInstall(projectDir);
+    printProjectGitAddHint([join(projectDir, ".kiro")]);
+    return;
+  }
+  if (canonical === "vscode-copilot-chat") {
+    vscodeInstall(projectDir);
+    printProjectGitAddHint([join(projectDir, ".github")]);
+    return;
+  }
+  if (["aider", "codex", "opencode", "claw", "droid", "trae", "trae-cn", "hermes"].includes(canonical)) {
+    const skillDst = writeProjectSkill(canonical, projectDir);
+    agentsInstall(projectDir, canonical);
+    const hintPaths = [
+      projectScopeRoot(skillDst, projectDir),
+      join(projectDir, "AGENTS.md"),
+    ];
+    if (canonical === "opencode") hintPaths.push(join(projectDir, ".opencode"));
+    else if (canonical === "codex") hintPaths.push(join(projectDir, ".codex"));
+    printProjectGitAddHint(hintPaths);
+    return;
+  }
+  if (["copilot", "pi", "antigravity", "kimi"].includes(canonical)) {
+    const skillDst = writeProjectSkill(canonical, projectDir);
+    printProjectGitAddHint([projectScopeRoot(skillDst, projectDir)]);
+    return;
+  }
+  // Fallback: skill-only platforms not enumerated above.
+  if (PLATFORM_CONFIG[canonical]) {
+    const skillDst = writeProjectSkill(canonical, projectDir);
+    printProjectGitAddHint([projectScopeRoot(skillDst, projectDir)]);
+    return;
+  }
+  console.error(`error: unknown platform '${platformName}'. Choose from: ${platformNamesForError()}`);
+  process.exit(1);
+}
+
+export function projectUninstall(platformName: string, projectDir: string = "."): void {
+  const canonical = canonicalPlatformName(platformName);
+  if (canonical === "claude" || canonical === "windows") {
+    removeProjectSkill(canonical, projectDir);
+    removeProjectClaudeMdRegistration(projectDir);
+    claudeUninstall(projectDir);
+    return;
+  }
+  if (canonical === "gemini") {
+    removeProjectSkill(canonical, projectDir);
+    geminiUninstall(projectDir);
+    return;
+  }
+  if (canonical === "cursor") {
+    cursorUninstall(projectDir);
+    return;
+  }
+  if (canonical === "kiro") {
+    kiroUninstall(projectDir);
+    return;
+  }
+  if (canonical === "vscode-copilot-chat") {
+    vscodeUninstall(projectDir);
+    return;
+  }
+  if (["aider", "codex", "opencode", "claw", "droid", "trae", "trae-cn", "hermes"].includes(canonical)) {
+    removeProjectSkill(canonical, projectDir);
+    agentsUninstall(projectDir, canonical);
+    return;
+  }
+  if (canonical === "antigravity") {
+    removeProjectSkill(canonical, projectDir);
+    antigravityUninstall(projectDir);
+    return;
+  }
+  if (["copilot", "pi", "kimi"].includes(canonical)) {
+    const removed = removeProjectSkill(canonical, projectDir);
+    if (!removed) console.log("nothing to remove");
+    return;
+  }
+  if (PLATFORM_CONFIG[canonical]) {
+    removeProjectSkill(canonical, projectDir);
+    return;
+  }
+  console.error(`error: unknown platform '${platformName}'. Choose from: ${platformNamesForError()}`);
+  process.exit(1);
+}
+
+export function projectUninstallAll(projectDir: string = "."): void {
+  console.log("Uninstalling project-scoped graphify files...\n");
+  for (const platformName of Object.keys(PLATFORM_CONFIG)) {
+    projectUninstall(platformName, projectDir);
+  }
+  for (const platformName of ["gemini", "cursor", "kiro", "vscode-copilot-chat"]) {
+    projectUninstall(platformName, projectDir);
+  }
+  console.log("\nDone.");
+}
+
+// Suppress unused-var warning during incremental implementation.
+void PROJECT_SCOPE_SKILL_PLATFORMS;
+
 function resolveInstallCommandPlatform(
   positionalPlatform: string | undefined,
   optionPlatform: string | undefined,
@@ -1788,83 +2071,197 @@ export async function main(): Promise<void> {
     .description("Copy skill to platform config dir")
     .argument("[platform]", "Target platform")
     .option("--platform <platform>", "Target platform")
+    .option("--project", "Install into the current project (.claude/, .agents/, ...) instead of the user home")
     .action((platformArg: string | undefined, opts) => {
-      installSkill(resolveInstallCommandPlatform(platformArg, opts.platform));
+      const chosen = resolveInstallCommandPlatform(platformArg, opts.platform);
+      if (opts.project === true) {
+        projectInstall(chosen, ".");
+      } else {
+        installSkill(chosen);
+      }
     });
 
   program
     .command("uninstall")
     .description("Remove graphify from all detected platform integrations")
     .option("--purge", "Also delete .graphify/ and graphify-out/")
+    .option("--project", "Remove only project-scoped install files")
+    .option("--platform <platform>", "Target platform (project-scoped uninstall)")
     .action((opts) => {
+      if (opts.project === true) {
+        if (opts.platform) {
+          projectUninstall(opts.platform, ".");
+        } else {
+          projectUninstallAll(".");
+        }
+        return;
+      }
       uninstallAll(".", { purge: opts.purge === true });
     });
 
   // Platform-specific install/uninstall commands
   for (const cmd of ["claude"]) {
     const sub = program.command(cmd).description(`${cmd} skill management`);
-    sub.command("install").description(`Write graphify section to CLAUDE.md + PreToolUse hook`).action(() => claudeInstall());
-    sub.command("uninstall").description(`Remove graphify section from CLAUDE.md + PreToolUse hook`).action(() => claudeUninstall());
+    sub.command("install")
+      .description(`Write graphify section to CLAUDE.md + PreToolUse hook`)
+      .option("--project", "Install into the current project")
+      .action((opts) => {
+        if (opts.project === true) projectInstall("claude", ".");
+        else claudeInstall();
+      });
+    sub.command("uninstall")
+      .description(`Remove graphify section from CLAUDE.md + PreToolUse hook`)
+      .option("--project", "Remove only project-scoped install files")
+      .action((opts) => {
+        if (opts.project === true) projectUninstall("claude", ".");
+        else claudeUninstall();
+      });
   }
 
   for (const cmd of ["gemini"]) {
     const sub = program.command(cmd).description(`${cmd} skill management`);
-    sub.command("install").description("Write graphify section to GEMINI.md + project MCP config").action(() => geminiInstall());
-    sub.command("uninstall").description("Remove graphify section from GEMINI.md + project MCP config").action(() => geminiUninstall());
+    sub.command("install")
+      .description("Write graphify section to GEMINI.md + project MCP config")
+      .option("--project", "Install into the current project")
+      .action((opts) => {
+        if (opts.project === true) projectInstall("gemini", ".");
+        else geminiInstall();
+      });
+    sub.command("uninstall")
+      .description("Remove graphify section from GEMINI.md + project MCP config")
+      .option("--project", "Remove only project-scoped install files")
+      .action((opts) => {
+        if (opts.project === true) projectUninstall("gemini", ".");
+        else geminiUninstall();
+      });
   }
 
   {
     const sub = program.command("cursor").description("cursor skill management");
-    sub.command("install").description("Write .cursor/rules/graphify.mdc").action(() => cursorInstall());
-    sub.command("uninstall").description("Remove .cursor/rules/graphify.mdc").action(() => cursorUninstall());
+    sub.command("install")
+      .description("Write .cursor/rules/graphify.mdc")
+      .option("--project", "Install into the current project")
+      .action((opts) => {
+        if (opts.project === true) projectInstall("cursor", ".");
+        else cursorInstall();
+      });
+    sub.command("uninstall")
+      .description("Remove .cursor/rules/graphify.mdc")
+      .option("--project", "Remove only project-scoped install files")
+      .action((opts) => {
+        if (opts.project === true) projectUninstall("cursor", ".");
+        else cursorUninstall();
+      });
   }
 
   {
     const sub = program.command("copilot").description("copilot skill management");
-    sub.command("install").description("Copy graphify skill to ~/.copilot/skills").action(() => installSkill("copilot"));
-    sub.command("uninstall").description("Remove graphify skill from ~/.copilot/skills").action(() => uninstallSkill("copilot"));
+    sub.command("install")
+      .description("Copy graphify skill to ~/.copilot/skills")
+      .option("--project", "Install into the current project")
+      .action((opts) => {
+        if (opts.project === true) projectInstall("copilot", ".");
+        else installSkill("copilot");
+      });
+    sub.command("uninstall")
+      .description("Remove graphify skill from ~/.copilot/skills")
+      .option("--project", "Remove only project-scoped install files")
+      .action((opts) => {
+        if (opts.project === true) projectUninstall("copilot", ".");
+        else uninstallSkill("copilot");
+      });
   }
 
   {
     const sub = program.command("vscode").description("VS Code Copilot Chat skill management");
-    sub.command("install").description("Configure VS Code Copilot Chat skill + instructions").action(() => vscodeInstall());
-    sub.command("uninstall").description("Remove VS Code Copilot Chat configuration").action(() => vscodeUninstall());
+    sub.command("install")
+      .description("Configure VS Code Copilot Chat skill + instructions")
+      .option("--project", "Install into the current project")
+      .action((opts) => {
+        if (opts.project === true) projectInstall("vscode-copilot-chat", ".");
+        else vscodeInstall();
+      });
+    sub.command("uninstall")
+      .description("Remove VS Code Copilot Chat configuration")
+      .option("--project", "Remove only project-scoped install files")
+      .action((opts) => {
+        if (opts.project === true) projectUninstall("vscode-copilot-chat", ".");
+        else vscodeUninstall();
+      });
   }
 
   {
     const sub = program.command("kiro").description("Kiro skill management");
-    sub.command("install").description("Write .kiro skill + always-on steering file").action(() => kiroInstall());
-    sub.command("uninstall").description("Remove .kiro skill + steering file").action(() => kiroUninstall());
+    sub.command("install")
+      .description("Write .kiro skill + always-on steering file")
+      .option("--project", "Install into the current project")
+      .action((opts) => {
+        if (opts.project === true) projectInstall("kiro", ".");
+        else kiroInstall();
+      });
+    sub.command("uninstall")
+      .description("Remove .kiro skill + steering file")
+      .option("--project", "Remove only project-scoped install files")
+      .action((opts) => {
+        if (opts.project === true) projectUninstall("kiro", ".");
+        else kiroUninstall();
+      });
   }
 
   {
     const sub = program.command("antigravity").description("Google Antigravity skill management");
-    sub.command("install").description("Write .agents rules/workflow + global skill").action(() => antigravityInstall());
-    sub.command("uninstall").description("Remove .agents rules/workflow + global skill").action(() => antigravityUninstall());
+    sub.command("install")
+      .description("Write .agents rules/workflow + global skill")
+      .option("--project", "Install into the current project")
+      .action((opts) => {
+        if (opts.project === true) projectInstall("antigravity", ".");
+        else antigravityInstall();
+      });
+    sub.command("uninstall")
+      .description("Remove .agents rules/workflow + global skill")
+      .option("--project", "Remove only project-scoped install files")
+      .action((opts) => {
+        if (opts.project === true) projectUninstall("antigravity", ".");
+        else antigravityUninstall();
+      });
   }
 
   for (const cmd of ["aider", "codex", "opencode", "claw", "droid", "trae", "trae-cn", "hermes"]) {
     const sub = program.command(cmd).description(`${cmd} skill management`);
-    sub.command("install").description(
-      cmd === "codex"
-        ? "Write graphify section to AGENTS.md + PreToolUse hook"
-        : cmd === "opencode"
-          ? "Write graphify section to AGENTS.md + tool.execute.before plugin"
-          : "Write graphify section to AGENTS.md",
-    ).action(() => {
-      if (cmd === "hermes") installSkill("hermes");
-      agentsInstall(".", cmd);
-    });
-    sub.command("uninstall").description(
-      cmd === "codex"
-        ? "Remove graphify section from AGENTS.md + PreToolUse hook"
-        : cmd === "opencode"
-          ? "Remove graphify section from AGENTS.md + plugin"
-          : "Remove graphify section from AGENTS.md",
-    ).action(() => {
-      agentsUninstall(".", cmd);
-      if (cmd === "hermes") uninstallSkill("hermes");
-    });
+    sub.command("install")
+      .description(
+        cmd === "codex"
+          ? "Write graphify section to AGENTS.md + PreToolUse hook"
+          : cmd === "opencode"
+            ? "Write graphify section to AGENTS.md + tool.execute.before plugin"
+            : "Write graphify section to AGENTS.md",
+      )
+      .option("--project", "Install into the current project")
+      .action((opts) => {
+        if (opts.project === true) {
+          projectInstall(cmd, ".");
+          return;
+        }
+        if (cmd === "hermes") installSkill("hermes");
+        agentsInstall(".", cmd);
+      });
+    sub.command("uninstall")
+      .description(
+        cmd === "codex"
+          ? "Remove graphify section from AGENTS.md + PreToolUse hook"
+          : cmd === "opencode"
+            ? "Remove graphify section from AGENTS.md + plugin"
+            : "Remove graphify section from AGENTS.md",
+      )
+      .option("--project", "Remove only project-scoped install files")
+      .action((opts) => {
+        if (opts.project === true) {
+          projectUninstall(cmd, ".");
+          return;
+        }
+        agentsUninstall(".", cmd);
+        if (cmd === "hermes") uninstallSkill("hermes");
+      });
   }
 
   program
