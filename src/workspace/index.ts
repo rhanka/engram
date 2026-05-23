@@ -35,6 +35,9 @@ export type {
 } from "./shell.js";
 export { renderWorkspaceShell } from "./shell.js";
 
+export type { RenderRailOptions, WorkspaceRailLayout } from "./rail.js";
+export { renderWorkspaceRail, workspaceRailStyles } from "./rail.js";
+
 export type {
   WorkspaceSelectionState,
   WorkspaceGraphPanelState,
@@ -63,3 +66,29 @@ export { computeFocusSubgraph } from "./graph-selection.js";
 
 export type { RenderGraphPanelOptions } from "./graph-panel.js";
 export { renderGraphPanel } from "./graph-panel.js";
+
+export type {
+  WorkspaceSearchRecord,
+  WorkspaceSearchIndex,
+} from "./search-index.js";
+export {
+  buildWorkspaceSearchIndex,
+  searchWorkspaceIndex,
+  searchWorkspace,
+} from "./search-index.js";
+
+export type {
+  WorkspaceFacet,
+  WorkspaceFacetRecord,
+  WorkspaceFacetValue,
+  DiscoverFacetsOptions,
+} from "./facet-panel.js";
+export { discoverWorkspaceFacets, recordMatchesFacets } from "./facet-panel.js";
+
+export type {
+  WorkspaceResultRecord,
+  WorkspaceResultEntry,
+  WorkspaceResultGroup,
+  GroupRecordsOptions,
+} from "./result-groups.js";
+export { groupRecordsByType, countMatchingRecords } from "./result-groups.js";
