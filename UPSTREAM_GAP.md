@@ -38,6 +38,33 @@ This document tracks the delta between this TypeScript port and upstream Python 
 - Package version alignment is driven by Python Graphify parity targets, not by `code-review-graph` tags or `main`.
 - The active `0.7.10` realignment must stay TypeScript-only; no new Python dependency may be introduced to claim parity.
 - The `0.7.10` parity cycle is closed in the TypeScript release line; any newer upstream drift must start a new traceability pass.
+- Python `upstream/v8` was re-fetched on 2026-05-23 (Track F bilan #2) and advanced from the previous cadrage lock `4c95d02` (`v0.8.13`, bilan #1 baseline) to `990ac70` (`v0.8.16`); intermediate tag `v0.8.14` at `f4da176` was published, intermediate tag `v0.8.15` was **skipped upstream** (commit `ff14ad5` landed in-tree but no remote tag was pushed — do not record `v0.8.15` as a published Python release).
+- Local TS baseline for the `0.8.16` drift bilan is `main` at `751ddce935ba8baec26fe5225da12a7525da428b`, package `graphifyy@0.9.1`.
+
+## Active `0.8.16` Drift Intake
+
+Observed on 2026-05-23 after merging PRs #33 (A-final), #34 (F cadrage bilan #1), #35 (E Lot 4-risky), #48 (F-H1 hyperedges), #53 (F-Opt-PR), and Track G G6-1/G6-2 workspace lots:
+
+- Safi Python Graphify: `upstream/v8` at `990ac706d823bf92275333433fde4ef4782a9139` (`bump version to 0.8.16`).
+- New remote tags since the previous bilan (`v0.8.13` at `4c95d02cbb3901956491e81695f32ae56bd851d6`): `v0.8.14` at `f4da176851220d0a41105253a9a6688a03dfa873`, `v0.8.16` at `990ac706d823bf92275333433fde4ef4782a9139`. **`v0.8.15` was skipped upstream** (commit `ff14ad5245ae47b5a4c2ec8c217373440a6a8e38` landed but no tag was pushed; only the in-tree version bump exists).
+- Drift commit range `v0.8.13..upstream/v8` is **18 commits**. Companion bilan: `spec/SPEC_TRACK_F_0816_BILAN.md`. Companion lot plan: `PLAN.md > Lot F-0816 drift (2026-05-23)`.
+- Local TS baseline: `main` at `751ddce935ba8baec26fe5225da12a7525da428b`, package `graphifyy@0.9.1`. Track G G6-3 routing refactor in-flight on `feat/track-g-g6-3-routing` (not merged at this lock).
+
+| Source | Bucket | Examples | Initial TS status | Initial action |
+| --- | --- | --- | --- | --- |
+| Python `v0.8.14`..`v0.8.16` | Security hardening | graph.json 512 MiB load cap, sanitize_metadata at export boundaries, vis-network CDN SRI pin (`#956` cluster `b6127aa`), NAT64 SSRF false-positive fix (`9e6192a`) | `must-port` | F-0816-P3 / part of F-0816-P4. Verify partial G overlap on vis-network pin (Track G `workspace/graph-panel.ts`). |
+| Python `v0.8.14`..`v0.8.16` | Wiki / detect correctness | stale wiki node filter (`#936` in `9e6192a`), gitignore fallback + `--exclude` flag (`#945`/`#947`), cluster-only crash when `graphify-out/` absent (`#934` in `076e6b7c`) | `must-port` | F-0816-P4. Wiki portion is G-adjacent (Track G `workspace/display-model.ts` reads wiki sidecars) — port strengthens contract, no conflict expected. |
+| Python `v0.8.14`..`v0.8.16` | Unicode / query | CJK/Unicode dedup in `_norm`/`_norm_label` (`#937` in `86109e9`), non-English query terms searchable (`#964` in `020cca2`) | `must-port` | F-0816-P2 + lineage from the still-open `0.7.14` Unicode-IDs row (`_makeId` in `src/extract.ts` strips non-ASCII). |
+| Python `v0.8.14`..`v0.8.16` | LLM / CLI hygiene | exit non-zero on all-chunk extract failure (`#889` in `3238b32`), honor `GRAPHIFY_MAX_OUTPUT_TOKENS` for OpenAI-compatible backends (`#973` in `06a9b72`) | `must-port` | F-0816-P2. Trivial line-level ports. |
+| Python `v0.8.14`..`v0.8.16` | Install surface | project-scoped skill installs (`#931` in `b347492`) | `must-port` | F-0816-P1. Audit `src/skill-install.ts` for `--scope project` + per-platform target dirs. Soft G overlap on workspace bootstrap. |
+| Python `v0.8.14`..`v0.8.16` | Language / parser | `.ets` (ArkTS) extension (`#926` in `52d75bd`), Swift cross-file extension dedup (`#969` in `406bea4`), JS/TS barrel re-exports as explicit graph edges (`1494874`), bash extractor hardening (part of `#956`) | `must-port (M)` | F-0816-M1 (extensions + Swift), F-0816-M2 (barrel re-exports), F-0816-M3 (bash hardening — pairs with still-open F-P3 bash extractor port from bilan #1). |
+| Python `v0.8.14`..`v0.8.16` | Opt-in feature surface | `graphify affected` + import-resolution depth (`e44e6e9`), semantic_cleanup stale-node module (part of `#956`) | `opt-in port` | F-0816-Opt-Affected (route into `review-delta` extension, not new verb); F-0816-M5 (semantic_cleanup, pairs with wiki stale-node fix). |
+| Python `v0.8.14`..`v0.8.16` | Defer | SCIP JSON ingester (part of `#956`), Python+bash symbol-resolution helpers (part of `#956`), LLM-triage backend (out of scope per F-Opt-PR deepdive § 6) | `defer (F-Opt)` | Reopen only on user request: SCIP ingestion, symbol-resolution false positives, `graphify pr --triage` request. |
+| Python `v0.8.14`..`v0.8.16` | Already covered | `backup_if_protected` graph snapshot before overwrite (`#834` in `6939494`) | `already-covered` | `src/export.ts > backupIfProtected` (line 54), wired into `src/pipeline.ts:215` and `src/watch.ts:282`. |
+| Python `v0.8.14`..`v0.8.16` | Intentional delta | multigraph runtime compat probe (part of `#956`) | `intentional-delta` | TS uses Graphology single-graph by contract; NetworkX MultiGraph compat surface does not map. Already recorded in `0.7.12` row. |
+| Python `v0.8.14`..`v0.8.16` | Release-only | `0.8.14`/`0.8.15`/`0.8.16` version bumps, YC S26 badge, Uzbek README translation | `release-only` | Do not mirror per `MEMORY.md > Cautious semver bumps`. |
+
+Row-level table is in `spec/SPEC_TRACK_F_0816_BILAN.md > Drift table`. The 18-row matrix splits omnibus PR `#956` (`b6127aa`) into 8 sub-rows (11a..11h) to keep one-row-per-feature traceability.
 
 ## Active `0.7.16` Drift Intake
 

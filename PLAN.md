@@ -298,7 +298,7 @@ M0..M5 lots all landed. `.astro` extractor (`6a7de56`), watch `.rebuild.lock` (`
 - [ ] **Lot F-Next — cohesion unrounding audit / hook-detect follow-ups** (~1 day). Target upstream commit:
   - `2d783e5` — *Fix hooks phantom dir on git < 2.31, save_manifest incremental data loss, cohesion rounding, C++ inheritance; add `--resolution` and `--exclude-hubs`* (`upstream/v8`).
   Scope this as a separate audit lot; only the cohesion/report angle is currently relevant to Track F, but the full commit spans CLI, detect, hooks, cluster, and report.
-- [ ] **Lot F-Opt — v1/v2 hypergraph + wiki rewrite** (deferred). Target upstream refs: `main` / `v2` branch (36 commits as of bilan #1), `v1.0.0` pre-release tag. Hypergraph generation and wiki-export rewrite. Not adopted until upstream stabilises and a separate spec authorises adoption. See `Open F decisions` below.
+- [x] **Lot F-Opt — v1/v2 hypergraph + wiki rewrite** (superseded by `Lot F-0816 drift (2026-05-23)` below). Original framing invalidated by `.graphify/scratch/F-deepdive-hypergraph-status.md`: upstream `v1.0.0` tag is a lightweight tag on a "git commit hook" commit (not a hypergraph rewrite); hyperedges shipped via PR #48 (`F-H1`); `graphify pr` shipped via PR #53 (`F-Opt-PR`). Wiki "rewrite" framing is no longer accurate — what remains is per-commit drift triage handled in regular F-Pn lots (e.g. `9e6192a` row 17 of bilan #2 → `F-0816-P4`). LLM-triage piece of `graphify pr` deferred under `F-Opt-LLM-Triage`; upstream `affected` verb evaluated under `F-Opt-Affected` in `Lot F-0816 drift (2026-05-23)`.
 - [x] **Lot F-Doc — Version Alignment section** (~0.5 day). `UPSTREAM_GAP.md` now carries the `graphifyy@0.9.4` refresh, advancing the closest audited parity point to upstream `v0.8.9` while keeping the remaining `v0.8.11` follow-ups explicit.
 
 **Infra**
@@ -316,19 +316,85 @@ M0..M5 lots all landed. `.astro` extractor (`6a7de56`), watch `.rebuild.lock` (`
 **Release / Docs (1/1)**
 - [x] `UPSTREAM_GAP.md` Version Alignment row refreshed for `graphifyy@0.9.4`, advancing the closest audited parity point to upstream `v0.8.9` while keeping the remaining `v0.8.11` follow-ups explicit.
 
+## Lot F-0816 drift (2026-05-23)
+
+**Source lock:** `upstream/v8` at `990ac706d823bf92275333433fde4ef4782a9139` (`bump version to 0.8.16`); new tags `v0.8.14` (`f4da176`) and `v0.8.16` (`990ac70`) since previous bilan baseline `v0.8.13` (`4c95d02`); `v0.8.15` was **skipped upstream** (commit landed, no remote tag). Local TS baseline: `main` at `751ddce` (`graphifyy@0.9.1`). Drift range `v0.8.13..upstream/v8` = **18 commits**. Companion bilan: `spec/SPEC_TRACK_F_0816_BILAN.md`. Companion intake: `UPSTREAM_GAP.md > Active 0.8.16 Drift Intake`.
+
+**Sub-lots in priority order** (P1 → P2 → M → Opt). Each lot one cohesive PR. G-overlap items must coordinate with the G6-3 routing refactor in-flight on `feat/track-g-g6-3-routing`.
+
+- [ ] **Lot F-0816-P1 — Project-scoped skill installs** (~1-1.5 days). Target upstream commit:
+  - `b347492` — *feat(install): add project-scoped skill installs (#931)* (`upstream/v8`).
+  Adds `graphify install <platform> --scope project` writing to `.claude/skills/`, `.codex/skills/`, etc. instead of `~/`-global. Soft G overlap on workspace bootstrap reading install state. Touches `src/skill-install.ts`, `src/cli.ts`, `tests/install-preview.test.ts`. **Proposed PR title:** `Track F-0816-P1: project-scoped skill installs (--scope project)`.
+- [ ] **Lot F-0816-P2 — Unicode + LLM/CLI hygiene** (~1-1.5 days). Target upstream commits:
+  - `86109e9` — *fix: CJK/Unicode labels silently skipped in `_norm`/`_norm_label` dedup (#937)* (`upstream/v8`).
+  - `020cca2` — *Keep non-English query terms searchable (#964)* (`upstream/v8`).
+  - `3238b32` — *Exit non-zero when all semantic-extraction chunks fail (#889)* (`upstream/v8`).
+  - `06a9b72` — *fix(llm): honor `GRAPHIFY_MAX_OUTPUT_TOKENS` for OpenAI-compatible backends (#973)* (`upstream/v8`).
+  - `076e6b7` — *fix cluster-only crash when `graphify-out/` absent (#934)* (`upstream/v8`).
+  Bundles the small Unicode + LLM + CLI hygiene fixes. Pairs with the still-open `0.7.14` Unicode-IDs row (`_makeId` in `src/extract.ts` strips non-ASCII). Touches `src/extract.ts` (`_makeId`), `src/build.ts`, `src/serve.ts` (query tokenizer), `src/search.ts`, `src/llm-execution.ts` (`GRAPHIFY_MAX_OUTPUT_TOKENS` env), `src/cli.ts` (extract exit code, cluster-only guard), `tests/cli-runtime.test.ts`, `tests/serve.test.ts`, `tests/language-surface.test.ts`. **Proposed PR title:** `Track F-0816-P2: Unicode dedup + LLM/CLI hygiene (5 upstream fixes)`.
+- [ ] **Lot F-0816-P3 — Security hardening cluster** (~1 day). Target upstream commit:
+  - `b6127aa` (subset: 11f sub-row in bilan #2) — *graph.json 512 MiB loader cap + sanitize_metadata at export boundaries + vis-network CDN SRI pin* (part of `#956` omnibus).
+  **G overlap:** vis-network CDN pin must also flow into `src/workspace/graph-panel.ts` if Track G uses the same CDN reference. Coordinate with G6-3 routing refactor. Touches `src/security.ts`, `src/export.ts`, `src/html-export.ts`, possibly `src/workspace/graph-panel.ts`, `tests/security.test.ts`, `tests/html-export.test.ts`. **Proposed PR title:** `Track F-0816-P3: security hardening (loader cap + export sanitize + vis-network SRI)`.
+- [ ] **Lot F-0816-P4 — Wiki stale-node filter + detect/security fixes** (~1-1.5 days). Target upstream commit:
+  - `9e6192a` — *fix stale wiki nodes (#936), gitignore fallback and --exclude flag (#945/#947), NAT64 SSRF false-positive* (`upstream/v8`).
+  Three independent fixes in one commit. **G overlap (wiki only):** Track G `workspace/display-model.ts` consumes wiki sidecars; this port *strengthens* the contract (no conflict expected, verify on G6-2 workspace tab via regenerated `.graphify/wiki/`). Touches `src/wiki.ts`, `src/detect.ts`, `src/security.ts` (NAT64), `src/cli.ts` (`--exclude` flag), `tests/wiki.test.ts`, `tests/detect.test.ts`, `tests/security.test.ts`. Depends on P3 (uses the sanitize_metadata helper). **Proposed PR title:** `Track F-0816-P4: wiki stale-node filter + detect --exclude + NAT64 SSRF fix`.
+- [ ] **Lot F-0816-M1 — Language extension + Swift cross-file fix** (~0.5 day). Target upstream commits:
+  - `52d75bd` — *fix: add `.ets` (ArkTS) extension to `CODE_EXTENSIONS` (#926)* (`upstream/v8`).
+  - `406bea4` — *fix swift extension nodes duplicating across files (#969)* (`upstream/v8`).
+  - `b6127aa` (subset: 11b sub-row) — *env(1) shebang option-form parsing*.
+  Trivial additions / shebang audit. Touches `src/detect.ts` (CODE_EXTENSIONS + shebang), `src/extract.ts > _importSwift` (line 817+), `tests/detect.test.ts`, `tests/language-surface.test.ts`. **Proposed PR title:** `Track F-0816-M1: .ets extension + Swift cross-file dedup + env shebang parsing`.
+- [ ] **Lot F-0816-M2 — JS/TS barrel re-export edges** (~1 day). Target upstream commit:
+  - `1494874` — *feat: track JS/TS barrel re-exports as explicit graph edges* (`upstream/v8`).
+  Adds `re_exports` edge type — small additive graph schema delta. Touches `src/extract.ts > _importJs` (JS/TS/TSX configs), `src/types.ts` if edge enum is constrained, `tests/language-surface.test.ts`. **Proposed PR title:** `Track F-0816-M2: JS/TS barrel re-export edges`.
+- [ ] **Lot F-0816-M3 — Bash extractor hardening** (~1-1.5 days). Target upstream commit:
+  - `b6127aa` (subset: 11a sub-row) — *bash extractor hardening (literal filtering, entrypoint nodes, AST-ancestry-aware command detection)* — depends on F-P3 bash extractor port still open from bilan #1 (`v0.8.1` Bash + JSON tree-sitter extractors).
+  **Blocker:** bash extractor port is not yet on `main`. Schedule M3 *only* after the bash extractor itself lands. If bash extractor stays deferred, M3 stays deferred too. Touches `src/extract.ts` (bash language config), bash fixtures, `tests/language-surface.test.ts`. **Proposed PR title:** `Track F-0816-M3: bash extractor hardening (literal filter + entrypoint nodes)`.
+- [ ] **Lot F-0816-M4 — OpenCode + Codex semantic-fragment validation** (~0.5 day). Target upstream commit:
+  - `b6127aa` (subset: 11c sub-row) — *fix(skills): enforce semantic fragment validation in OpenCode + Codex merges (#825)*.
+  Skill install hygiene — fragment-merge correctness. Touches `src/skills/`, `src/skill-install.ts`, `tests/install-preview.test.ts`, `tests/opencode-integration.test.ts`. **Proposed PR title:** `Track F-0816-M4: enforce semantic fragment validation in OpenCode + Codex skill merges`.
+- [ ] **Lot F-0816-M5 — Semantic cleanup stale-node pruning** (~1 day). Target upstream commit:
+  - `b6127aa` (subset: 11h sub-row) — *semantic_cleanup module* (delete-stale nodes after rebuild).
+  Pairs naturally with P4 (`#936` wiki stale-node filter). Audit existing TS update/finalize stale-node pruning. Touches `src/build.ts` or new `src/semantic-cleanup.ts`, `src/skill-runtime.ts` (finalize/update path), `tests/cli-runtime.test.ts`, `tests/build-merge.test.ts`. **Proposed PR title:** `Track F-0816-M5: semantic cleanup stale-node pruning post-rebuild`.
+- [ ] **Lot F-0816-Opt-Affected — `graphify affected` + deeper import-resolution** (decision-pending, ~2-3 days if accepted). Target upstream commit:
+  - `e44e6e9` — *feat: add v8 affected and import-resolution support* (`upstream/v8`, +1279 LOC in `extract.py` and new `affected.py`).
+  **Decision needed before scope:** adopt upstream `graphify affected` verb, or extend existing `review-delta` / `affected-flows.ts` with the deeper import-resolution? Recommendation: **extend `review-delta`** (preserves user muscle memory on the review-* surface, avoids two parallel verbs). If accepted as extension: touches `src/review-analysis.ts`, `src/affected-flows.ts`, `src/extract.ts` (import-resolution depth), `tests/review-analysis.test.ts`. **Proposed PR title (if extension):** `Track F-0816-Opt-Affected: extend review-delta with deeper import-resolution (v8 affected port)`.
+- [ ] **Lot F-Opt-LLM-Triage — `graphify pr --triage` multi-backend LLM resolution** (deferred). Target upstream commits:
+  - Already shipped in upstream as part of `cc9e581` (covered by our `graphify pr` port via PR #53, **minus** `--triage`).
+  Out of scope per F-Opt-PR deepdive § 6 (`.graphify/scratch/F-deepdive-graphify-prs.md`). Reopen with a dedicated spec covering the LLM-dep posture (`MEMORY.md > Cautious semver bumps` constraint applies).
+
+**Bucket counts** (cf. `spec/SPEC_TRACK_F_0816_BILAN.md > Bucket counts`): must-port-P = 7, must-port-M = 7, opt-in = 1, defer = 2, already-covered = 1, intentional-delta = 1, release-only = 5.
+
+**Rolled-up effort estimate** (P + M, excludes Opt-Affected and deferred): ~9 days serialized, ~6 days if P1/P2/M1/M2 ship in parallel.
+
 ### Open F decisions
 
-Two pending decisions surfaced by bilan #1:
+Decisions from bilan #1 (2026-05-15) — both **resolved by bilan #2 (2026-05-23)**:
 
 1. **F-M1 — claim parity against `v8` / `v0.8.5` or not?**
-   - Pro: closes the obvious "version number ahead, functionally behind" perception; lets the next bump announce parity with upstream stable.
-   - Con: SQL FK/trigger extraction adds parser surface to maintain; Groovy depth requires a wasm grammar audit similar to Kotlin (currently deferred).
-   - Default if no decision: keep as `must-port` for two consecutive bilans, then auto-downgrade to `defer` per `SPEC_TRACK_F_UPSTREAM_BILAN.md` rules.
+   - Resolved: shipped via Lot F-M1 (`299b6ba` ported with SQL FK/trigger/procedure extraction, Windows-normalized deletion pruning, community label normalization, regex-backed Groovy/Gradle; full `tree-sitter-groovy` deferred).
 
 2. **F-Opt — adopt upstream v1.x hypergraph + wiki rewrite, defer, or reject?**
-   - Pro: hypergraph generation aligns the TS line with the `code-review-graph` / hypergraph community direction; wiki rewrite could unify the wiki/Obsidian/canvas surfaces.
-   - Con: hypergraph touches the `.graphify/graph.json` contract (intentional delta on TS side); wiki rewrite would conflict with the existing TS wiki surface that ships with descriptions sidecars (Track A) and ontology entity pages (Track J).
-   - Default if no decision: stay `defer` until upstream `main` / `v2` branch reaches a stable tag (`v2.0.0` non-prerelease) and a dedicated spec authorises adoption.
+   - Resolved: original framing invalidated by `.graphify/scratch/F-deepdive-hypergraph-status.md` (v1.0.0 tag is a lightweight tag on a "git commit hook" commit, not a hypergraph rewrite). Hyperedges shipped via PR #48 (`F-H1`); `graphify pr` shipped via PR #53 (`F-Opt-PR`). Wiki "rewrite" framing absorbed into regular F-Pn drift triage (e.g. `9e6192a` row 17 of bilan #2 → `F-0816-P4`). Original `Lot F-Opt` marked superseded above.
+
+Decisions from bilan #2 (2026-05-23) — **awaiting owner ack**:
+
+3. **F-Opt-2026Q2 scope (user directive 2026-05-23: include F-Opt in this catch-up cycle)** — what concretely remains of F-Opt?
+   - Pro / proposed resolution: close the "wiki rewrite" residual as superseded by F-0816-P4 (`9e6192a`) + existing Track A descriptions + Task K source-grounded wiki descriptions. Keep `F-Opt-LLM-Triage` deferred (no TS requester; multi-backend LLM resolution is the bulk of upstream's `graphify pr` maintenance cost). Route row 10 (`e44e6e9` `graphify affected`) into `F-0816-Opt-Affected` as a `review-delta` *extension*, not as a new `affected` verb.
+   - Con: keeping `F-Opt-Affected` open one more cycle delays closing the F-Opt umbrella.
+   - Default if no decision: adopt the proposed resolution at the next bilan (2026-05-30).
+
+4. **F-0816-Opt-Affected — adopt upstream `graphify affected` verb or extend `review-delta`?** (see row 10 of bilan #2)
+   - Pro for new verb: matches upstream user muscle memory; same name across Python/TS.
+   - Pro for extension: avoids two parallel "which files are impacted" verbs on the TS surface; preserves the CRG-aligned `review-*` brand consistency.
+   - Con for new verb: maintenance cost of an alias surface; risk of drift from upstream's exact semantics.
+   - Recommended default: **extend `review-delta`** + `affected-flows.ts` with the deeper import-resolution. Owner ack needed before lot starts.
+
+5. **F-0816 lot ordering — P4 before or after P3?**
+   - Both touch security boundaries. P4 (wiki + detect + NAT64 SSRF) uses the sanitize_metadata helper from P3.
+   - Recommendation: ship P3 first (smaller, three-line CDN pin + cap + sanitize helper), then P4. Owner ack on ordering.
+
+6. **`v0.8.15` ghost tag — record explicitly or ignore?**
+   - Recommendation: recorded explicitly in `UPSTREAM_GAP.md > Source Lock Notes` as "skipped upstream" to avoid future bilan confusion. Already applied in this branch's commit.
 
 ---
 
