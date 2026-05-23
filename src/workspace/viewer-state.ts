@@ -293,6 +293,10 @@ export type WorkspaceAction =
   | { type: "SET_EVIDENCE_MODE"; mode: WorkspaceEvidencePanelState["mode"] }
   | { type: "SET_FACET"; key: string; value: string }
   | { type: "CLEAR_FACET"; key: string }
+  | { type: "PIN_ENTITY"; entityId: string }
+  | { type: "UNPIN_ENTITY"; entityId: string }
+  | { type: "PIN_TYPE"; typeId: string }
+  | { type: "UNPIN_TYPE"; typeId: string }
   | { type: "RESET" };
 
 export function workspaceReducer(
@@ -372,6 +376,30 @@ export function workspaceReducer(
       const next = { ...state.facetState };
       delete next[action.key];
       return { ...state, facetState: next };
+    }
+    case "PIN_ENTITY": {
+      const id = typeof action.entityId === "string" ? action.entityId.trim() : "";
+      if (!id || state.selectedEntities.includes(id)) return state;
+      return { ...state, selectedEntities: [...state.selectedEntities, id] };
+    }
+    case "UNPIN_ENTITY": {
+      const id = typeof action.entityId === "string" ? action.entityId.trim() : "";
+      if (!id) return state;
+      const next = state.selectedEntities.filter((existing) => existing !== id);
+      if (next.length === state.selectedEntities.length) return state;
+      return { ...state, selectedEntities: next };
+    }
+    case "PIN_TYPE": {
+      const id = typeof action.typeId === "string" ? action.typeId.trim() : "";
+      if (!id || state.selectedTypes.includes(id)) return state;
+      return { ...state, selectedTypes: [...state.selectedTypes, id] };
+    }
+    case "UNPIN_TYPE": {
+      const id = typeof action.typeId === "string" ? action.typeId.trim() : "";
+      if (!id) return state;
+      const next = state.selectedTypes.filter((existing) => existing !== id);
+      if (next.length === state.selectedTypes.length) return state;
+      return { ...state, selectedTypes: next };
     }
     case "RESET":
       return createDefaultViewerState();
