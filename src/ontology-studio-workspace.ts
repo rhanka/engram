@@ -82,24 +82,28 @@ function renderStudioStyles(): string {
     ".ws-recon-row { display: grid; gap: 2px; padding: var(--ws-space-2); border: 1px solid var(--ws-border); border-radius: var(--ws-radius-md); color: var(--ws-text); text-decoration: none; background: var(--ws-surface-2); }",
     ".ws-recon-row[data-selected='true'] { border-color: var(--ws-accent); box-shadow: inset 3px 0 0 var(--ws-accent); }",
     ".ws-recon-row small, .ws-recon-muted { color: var(--ws-text-muted); }",
-    ".ws-recon-candidate { display: grid; gap: var(--ws-space-3); max-width: 88ch; }",
+    // G6-4 — compact candidate / canonical descriptive block.
+    ".ws-recon-candidate { display: grid; gap: var(--ws-space-2); max-width: 88ch; }",
     ".ws-recon-candidate h3 { margin: 0; font-size: var(--ws-font-size-lg); line-height: var(--ws-line-height-tight); }",
-    ".ws-recon-compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--ws-space-3); }",
-    ".ws-recon-box { border: 1px solid var(--ws-border); border-radius: var(--ws-radius-md); padding: var(--ws-space-3); background: var(--ws-surface-2); overflow-wrap: anywhere; }",
-    ".ws-recon-box h4 { margin: 0 0 var(--ws-space-1); font-size: var(--ws-font-size-sm); color: var(--ws-text-muted); text-transform: uppercase; letter-spacing: 0.05em; }",
-    ".ws-recon-entity { display: grid; gap: var(--ws-space-2); }",
-    ".ws-recon-entity-title { margin: 0; font-weight: 650; line-height: var(--ws-line-height-tight); }",
-    ".ws-recon-entity-id { margin: 0; color: var(--ws-text-muted); font-family: var(--ws-font-family-mono); font-size: var(--ws-font-size-sm); }",
-    ".ws-recon-entity-summary { margin: 0; color: var(--ws-text); }",
-    ".ws-recon-meta { display: grid; gap: var(--ws-space-1); margin: 0; font-size: var(--ws-font-size-sm); }",
-    ".ws-recon-meta div { display: grid; grid-template-columns: minmax(7rem, 35%) 1fr; gap: var(--ws-space-2); }",
-    ".ws-recon-meta dt { color: var(--ws-text-muted); }",
-    ".ws-recon-meta dd { margin: 0; color: var(--ws-text); }",
+    ".ws-display-kicker { font-size: var(--ws-font-size-sm); color: var(--ws-text-muted); text-transform: uppercase; letter-spacing: 0.05em; }",
+    ".ws-recon-compare { display: grid; gap: var(--ws-space-1); }",
+    ".ws-recon-mapping { margin: 0; font-weight: 600; line-height: var(--ws-line-height-tight); overflow-wrap: anywhere; }",
+    ".ws-recon-mapping .ws-recon-arrow { color: var(--ws-text-muted); margin: 0 var(--ws-space-1); }",
+    ".ws-recon-ids { margin: 0; color: var(--ws-text-muted); font-family: var(--ws-font-family-mono); font-size: var(--ws-font-size-sm); overflow-wrap: anywhere; }",
+    ".ws-recon-meta-inline { margin: 0; color: var(--ws-text); font-size: var(--ws-font-size-sm); }",
+    ".ws-recon-meta-inline .ws-recon-sep { color: var(--ws-text-muted); margin: 0 var(--ws-space-1); }",
+    ".ws-recon-line { margin: 0; font-size: var(--ws-font-size-sm); color: var(--ws-text); overflow-wrap: anywhere; }",
+    ".ws-recon-line-key { color: var(--ws-text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; margin-right: var(--ws-space-1); }",
+    ".ws-recon-summary { margin: var(--ws-space-1) 0 0; display: grid; gap: var(--ws-space-1); font-size: var(--ws-font-size-sm); }",
+    ".ws-recon-summary > div { display: grid; grid-template-columns: minmax(8rem, 22%) 1fr; gap: var(--ws-space-2); align-items: baseline; }",
+    ".ws-recon-summary dt { margin: 0; color: var(--ws-text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-size: var(--ws-font-size-sm); font-weight: 600; }",
+    ".ws-recon-summary dd { margin: 0; color: var(--ws-text); overflow-wrap: anywhere; }",
+    ".ws-recon-summary-empty { color: var(--ws-text-muted); font-style: italic; }",
     ".ws-recon-list-inline { margin: 0; padding-left: var(--ws-space-4); }",
     ".ws-recon-warning { border: 1px solid var(--ws-warning); color: var(--ws-warning); border-radius: var(--ws-radius-md); padding: var(--ws-space-2); background: var(--ws-surface-2); }",
     ".ws-recon-accordion { border: 1px solid var(--ws-border); border-radius: var(--ws-radius-md); padding: var(--ws-space-2); background: var(--ws-surface); }",
     ".ws-recon-accordion summary { cursor: pointer; font-weight: 600; }",
-    "@media (max-width: 768px) { .ws-recon-compare { grid-template-columns: 1fr; } }",
+    "@media (max-width: 768px) { .ws-recon-summary > div { grid-template-columns: 1fr; gap: 2px; } }",
     "</style>",
   ].join("\n");
 }
@@ -156,48 +160,126 @@ function graphNodeCommunity(node: GraphNodeLike | null): string | null {
   );
 }
 
-function graphNodeMetaRows(node: GraphNodeLike | null): Array<[string, string]> {
-  if (!node) return [];
-  const rows: Array<[string, string | null]> = [
-    ["Type", graphNodeType(node)],
-    ["Status", displayText(node.status)],
-    ["Confidence", displayText(node.confidence)],
-    ["Source", displayText(node.source_location)
-      ? `${displayText(node.source_file) ?? "source"}:${displayText(node.source_location)}`
-      : displayText(node.source_file)],
-    ["Community", graphNodeCommunity(node)],
-  ];
-  return rows.filter((row): row is [string, string] => typeof row[1] === "string");
+function graphNodeStatus(node: GraphNodeLike | null): string | null {
+  return displayText(node?.status);
 }
 
-function renderMetaRows(rows: Array<[string, string]>): string {
-  if (rows.length === 0) return "";
+function graphNodeConfidence(node: GraphNodeLike | null): string | null {
+  return displayText(node?.confidence);
+}
+
+function graphNodeSourcePath(node: GraphNodeLike | null): string | null {
+  const file = displayText(node?.source_file);
+  const loc = displayText(node?.source_location);
+  if (!file) return null;
+  return loc ? `${file}:${loc}` : file;
+}
+
+function pickFirst<T>(values: ReadonlyArray<T | null | undefined>): T | null {
+  for (const v of values) {
+    if (v !== null && v !== undefined && v !== "") return v as T;
+  }
+  return null;
+}
+
+interface CompactMetaInline {
+  type: string | null;
+  status: string | null;
+  confidence: string | null;
+}
+
+function compactMetaInline(
+  candidateNode: GraphNodeLike | null,
+  canonicalNode: GraphNodeLike | null,
+): CompactMetaInline {
+  // Prefer the canonical's authoritative facts; fall back to the
+  // candidate's when canonical is missing. This matches the PROCESS_STD
+  // workspace's "one line of meta" pattern — a single authoritative
+  // pair, not two diverging stacks.
+  return {
+    type: pickFirst([graphNodeType(canonicalNode), graphNodeType(candidateNode)]),
+    status: pickFirst([graphNodeStatus(canonicalNode), graphNodeStatus(candidateNode)]),
+    confidence: pickFirst([
+      graphNodeConfidence(canonicalNode),
+      graphNodeConfidence(candidateNode),
+    ]),
+  };
+}
+
+function renderInlineMetaRow(meta: CompactMetaInline): string {
+  const parts: string[] = [];
+  if (meta.type) parts.push(escapeHtml(meta.type));
+  if (meta.status) parts.push(escapeHtml(meta.status));
+  if (meta.confidence) parts.push(escapeHtml(meta.confidence));
+  if (parts.length === 0) return "";
   return [
-    '<dl class="ws-recon-meta">',
-    ...rows.map(([label, value]) => [
-      "<div>",
-      `<dt>${escapeHtml(label)}</dt>`,
-      `<dd>${escapeHtml(value)}</dd>`,
-      "</div>",
-    ].join("")),
-    "</dl>",
+    '<p class="ws-recon-meta-inline">',
+    parts.join('<span class="ws-recon-sep">·</span>'),
+    "</p>",
   ].join("");
 }
 
-function renderEntityCard(role: string, entityId: string, node: GraphNodeLike | null): string {
-  const summary = graphNodeSummary(node);
-  const title = graphNodeTitle(node, entityId);
+function renderKeyValueLine(slug: string, key: string, value: string | null): string {
+  if (!value) return "";
   return [
-    '<section class="ws-recon-box">',
-    `<h4>${escapeHtml(role)}</h4>`,
-    '<div class="ws-recon-entity">',
-    `<p class="ws-recon-entity-title">${escapeHtml(title)}</p>`,
-    `<p class="ws-recon-entity-id">${escapeHtml(entityId)}</p>`,
-    summary ? `<p class="ws-recon-entity-summary">${escapeHtml(summary)}</p>` : "",
-    renderMetaRows(graphNodeMetaRows(node)),
+    `<p class="ws-recon-line" data-line="${escapeHtml(slug)}">`,
+    `<span class="ws-recon-line-key">${escapeHtml(key)}</span>`,
+    escapeHtml(value),
+    "</p>",
+  ].join("");
+}
+
+function renderSummaryRow(
+  slug: string,
+  label: string,
+  items: readonly string[],
+  empty: string,
+): string {
+  const safeItems = items.filter((item) => typeof item === "string" && item.trim().length > 0);
+  const body =
+    safeItems.length === 0
+      ? `<span class="ws-recon-summary-empty">${escapeHtml(empty)}</span>`
+      : safeItems.map((item) => escapeHtml(item)).join("; ");
+  return [
+    "<div>",
+    `<dt data-term="${escapeHtml(slug)}">${escapeHtml(label)}</dt>`,
+    `<dd data-term="${escapeHtml(slug)}">${body}</dd>`,
     "</div>",
+  ].join("");
+}
+
+function renderCompactMapping(
+  candidateId: string,
+  canonicalId: string,
+  candidateNode: GraphNodeLike | null,
+  canonicalNode: GraphNodeLike | null,
+): string {
+  const candidateLabel = graphNodeTitle(candidateNode, candidateId);
+  const canonicalLabel = graphNodeTitle(canonicalNode, canonicalId);
+  const meta = compactMetaInline(candidateNode, canonicalNode);
+  const summary = graphNodeSummary(canonicalNode) ?? graphNodeSummary(candidateNode);
+  return [
+    '<section class="ws-recon-compare" data-recon-compare="candidate-canonical">',
+    [
+      '<p class="ws-recon-mapping">',
+      escapeHtml(candidateLabel),
+      '<span class="ws-recon-arrow" aria-hidden="true">→</span>',
+      escapeHtml(canonicalLabel),
+      "</p>",
+    ].join(""),
+    [
+      '<p class="ws-recon-ids">',
+      escapeHtml(candidateId),
+      '<span class="ws-recon-arrow" aria-hidden="true">→</span>',
+      escapeHtml(canonicalId),
+      "</p>",
+    ].join(""),
+    renderInlineMetaRow(meta),
+    summary ? `<p class="ws-recon-line" data-line="summary">${escapeHtml(summary)}</p>` : "",
     "</section>",
-  ].filter(Boolean).join("");
+  ]
+    .filter(Boolean)
+    .join("");
 }
 
 function renderWorkbench(model: ReconciliationWorkspaceModel): string {
@@ -245,6 +327,22 @@ function renderCentralDisplay(model: ReconciliationWorkspaceModel): string {
   }
   const candidateNode = graphNodeById(model.graph, candidate.candidate_id);
   const canonicalNode = graphNodeById(model.graph, candidate.canonical_id);
+  // G6-4 (closes G6-1 S0.2 debt) — compact prose layout.
+  //  - One <h3> for the reconcile id (kicker above it).
+  //  - One toolbar row with the 4 pill chips.
+  //  - One compact compare block: label mapping + id mapping + inline
+  //    Type · Status · Confidence row.
+  //  - Source / Community as single-line Key: value prose.
+  //  - Shared terms / Reasons / Decision basis collapse to ONE compact
+  //    <dl> with small-caps headings (no framed Card boxes).
+  const sourcePath = graphNodeSourcePath(canonicalNode) ?? graphNodeSourcePath(candidateNode);
+  const community = graphNodeCommunity(canonicalNode) ?? graphNodeCommunity(candidateNode);
+  const decisionBasis: string[] = [
+    `Operation: ${candidate.proposed_patch_operation}`,
+    `Candidate: ${candidate.candidate_id}`,
+    `Canonical: ${candidate.canonical_id}`,
+    ...candidate.evidence_refs.map((ref) => `Evidence: ${ref}`),
+  ];
   return [
     renderStudioStyles(),
     `<article class="ws-recon-candidate" data-candidate-id="${escapeHtml(candidate.id)}">`,
@@ -259,29 +357,33 @@ function renderCentralDisplay(model: ReconciliationWorkspaceModel): string {
     model.candidates?.stale || model.rebuildStatus?.needs_update
       ? '<p class="ws-recon-warning">Queue may be stale. Rebuild before applying this patch.</p>'
       : "",
-    '<div class="ws-recon-compare">',
-    renderEntityCard("Candidate", candidate.candidate_id, candidateNode),
-    renderEntityCard("Canonical", candidate.canonical_id, canonicalNode),
-    "</div>",
-    '<section class="ws-recon-box">',
-    "<h4>Shared terms</h4>",
-    renderList(candidate.shared_terms, "No shared terms."),
-    "</section>",
-    '<section class="ws-recon-box">',
-    "<h4>Reasons</h4>",
-    renderList(candidate.reasons, "No reasons."),
-    "</section>",
-    '<section class="ws-recon-box">',
-    "<h4>Decision basis</h4>",
-    renderList([
-      `Operation: ${candidate.proposed_patch_operation}`,
-      `Candidate: ${candidate.candidate_id}`,
-      `Canonical: ${candidate.canonical_id}`,
-      ...candidate.evidence_refs.map((ref) => `Evidence: ${ref}`),
-    ], "No decision basis."),
-    "</section>",
+    renderCompactMapping(
+      candidate.candidate_id,
+      candidate.canonical_id,
+      candidateNode,
+      canonicalNode,
+    ),
+    renderKeyValueLine("source", "Source:", sourcePath),
+    renderKeyValueLine("community", "Community:", community),
+    '<dl class="ws-recon-summary" data-recon-summary="true">',
+    renderSummaryRow(
+      "shared-terms",
+      "SHARED TERMS",
+      candidate.shared_terms,
+      "No shared terms.",
+    ),
+    renderSummaryRow("reasons", "REASONS", candidate.reasons, "No reasons."),
+    renderSummaryRow(
+      "decision-basis",
+      "DECISION BASIS",
+      decisionBasis,
+      "No decision basis.",
+    ),
+    "</dl>",
     "</article>",
-  ].filter(Boolean).join("");
+  ]
+    .filter(Boolean)
+    .join("");
 }
 
 function renderDrawer(model: ReconciliationWorkspaceModel): string {

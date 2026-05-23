@@ -193,6 +193,17 @@ describe("Track G G6-3 — reconciliation sub-view (HTTP)", () => {
     expect(result.body).not.toMatch(
       /<aside[^>]*class="workspace-reconciliation-slot"[^>]*\shidden\b/,
     );
+    // G6-4: the candidate central column uses the compact prose layout
+    // (single H3 + 4 pills + inline mapping + Source/Community lines +
+    // summary <dl>), not the legacy 5-row Card boxes.
+    expect(result.body).toContain('class="ws-recon-mapping"');
+    expect(result.body).toContain('class="ws-recon-summary"');
+    expect(result.body).not.toMatch(
+      /<section class="ws-recon-box">\s*<h4>Candidate<\/h4>/,
+    );
+    expect(result.body).not.toMatch(
+      /<section class="ws-recon-box">\s*<h4>Shared terms<\/h4>/,
+    );
   });
 
   it("declares a mobile breakpoint that collapses the right slot to a bottom sheet at 390 px", () => {
