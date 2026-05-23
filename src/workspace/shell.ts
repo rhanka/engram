@@ -548,7 +548,13 @@ function shellStyles(): string {
     ".ws-root { display: grid; grid-template-columns: 280px 1fr 320px; grid-template-rows: auto 1fr; min-height: 100vh; column-gap: 0; row-gap: 0; }",
     ".ws-header { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: var(--ws-space-3); padding: var(--ws-space-3) var(--ws-space-4); border-bottom: 1px solid var(--ws-border); background: var(--ws-surface-2); }",
     ".ws-header h1 { font-size: var(--ws-font-size-lg); margin: 0; }",
-    ".ws-header-meta { font-size: var(--ws-font-size-sm); color: var(--ws-text-muted); display: flex; gap: var(--ws-space-3); }",
+    ".ws-header-meta { font-size: var(--ws-font-size-sm); color: var(--ws-text-muted); display: flex; gap: var(--ws-space-3); align-items: center; }",
+    // Top tabs (G6-3 S2.1).
+    ".ws-tabs { display: inline-flex; gap: var(--ws-space-1); margin: 0; padding: 0; list-style: none; }",
+    ".ws-tab { display: inline-block; padding: var(--ws-space-1) var(--ws-space-3); border: 1px solid var(--ws-border); border-radius: var(--ws-radius-sm); color: var(--ws-text-muted); background: var(--ws-surface); text-decoration: none; font-size: var(--ws-font-size-sm); }",
+    ".ws-tab[aria-selected='true'] { color: var(--ws-text); background: var(--ws-surface-2); border-color: var(--ws-accent); font-weight: 600; }",
+    ".ws-evidence-placeholder { padding: var(--ws-space-4); color: var(--ws-text-muted); }",
+    ".ws-evidence-placeholder h2 { margin: 0 0 var(--ws-space-2); font-size: var(--ws-font-size-lg); }",
     ".ws-write-banner { font-size: var(--ws-font-size-sm); padding: var(--ws-space-1) var(--ws-space-2); border-radius: var(--ws-radius-sm); border: 1px solid var(--ws-border); background: var(--ws-surface); }",
     ".ws-write-banner[data-write='true'] { color: var(--ws-warning); border-color: var(--ws-warning); }",
     ".ws-write-banner[data-write='false'] { color: var(--ws-text-muted); }",
@@ -584,6 +590,8 @@ function shellStyles(): string {
     // Reconciliation slot.
     ".workspace-reconciliation-slot { grid-column: 3; grid-row: 2; border-left: 1px solid var(--ws-border); overflow-y: auto; padding: var(--ws-space-3); background: var(--ws-surface-2); }",
     ".workspace-reconciliation-slot[data-active-view=\"workspace\"] { display: none; }",
+    ".workspace-reconciliation-slot[data-active-view=\"evidence\"] { display: none; }",
+    ".workspace-reconciliation-slot[hidden] { display: none !important; }",
     ".ws-empty { color: var(--ws-text-muted); font-style: italic; }",
     "@media (max-width: 768px) {",
     "  .ws-root { grid-template-columns: 1fr; grid-template-rows: auto auto 1fr auto; }",
@@ -591,10 +599,70 @@ function shellStyles(): string {
     "  .ws-center { grid-column: 1; grid-row: 3; }",
     "  .workspace-reconciliation-slot { grid-column: 1; grid-row: 4; border-left: none; border-top: 1px solid var(--ws-border); max-height: 40vh; }",
     "  .workspace-reconciliation-slot[data-active-view=\"workspace\"] { display: none; max-height: 0; padding: 0; }",
+    "  .workspace-reconciliation-slot[data-active-view=\"evidence\"] { display: none; max-height: 0; padding: 0; }",
+    "  .workspace-reconciliation-slot[hidden] { display: none !important; max-height: 0; padding: 0; }",
     "  .ws-counters { grid-template-columns: repeat(2, minmax(80px, 1fr)); }",
+    "  .ws-tabs { font-size: var(--ws-font-size-sm); }",
     "}",
     workspaceRailStyles(),
   ].join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Top tabs (G6-3 S2.1)
+// ---------------------------------------------------------------------------
+
+interface TabSpec {
+  id: string;
+  label: string;
+  href: string;
+}
+
+const TOP_TABS: readonly TabSpec[] = [
+  { id: "workspace", label: "Workspace", href: "/" },
+  { id: "reconciliation", label: "Reconciliation", href: "/?view=reconciliation" },
+  { id: "evidence", label: "Evidence", href: "/?view=evidence" },
+];
+
+/**
+ * The set of `activeView` values that the shell knows how to render
+ * specially. Any other value (e.g. legacy "studio") falls back to the
+ * default workspace surface but with `state.activeView` still surfaced
+ * to the reconciliation slot via `data-active-view` for backward compat.
+ */
+const RECONCILIATION_VIEWS = new Set(["reconciliation", "studio"]);
+
+function isReconciliationView(activeView: string | null | undefined): boolean {
+  return typeof activeView === "string" && RECONCILIATION_VIEWS.has(activeView);
+}
+
+function renderTopTabs(activeView: string | null | undefined): string {
+  const effective = typeof activeView === "string" && activeView ? activeView : "workspace";
+  // Map legacy "studio" onto the "reconciliation" tab so the navigation
+  // surface stays coherent during the G6-3 transition.
+  const selectedTab = effective === "studio" ? "reconciliation" : effective;
+  return [
+    '<nav class="ws-tabs" role="tablist" aria-label="Workspace views">',
+    ...TOP_TABS.map((tab) => {
+      const selected = tab.id === selectedTab;
+      return [
+        `<a class="ws-tab" role="tab" data-tab="${escapeHtml(tab.id)}" href="${escapeHtml(tab.href)}" aria-selected="${selected ? "true" : "false"}">`,
+        escapeHtml(tab.label),
+        "</a>",
+      ].join("");
+    }),
+    "</nav>",
+  ].join("");
+}
+
+function renderEvidencePlaceholderBody(): string {
+  return [
+    '<section class="ws-evidence-placeholder" data-view="evidence" role="region" aria-label="Evidence view placeholder">',
+    "<h2>Evidence</h2>",
+    "<p>Evidence view coming soon (G7).</p>",
+    "<p>This tab is a routing placeholder. The Evidence surface lands in Track G G7 with cross-corpus evidence aggregation, search and filters.</p>",
+    "</section>",
+  ].join("");
 }
 
 // ---------------------------------------------------------------------------
@@ -616,11 +684,16 @@ export function renderWorkspaceShell(opts: RenderWorkspaceShellOptions): string 
 
   // Effective state used by the counters + central display + graph controls.
   const effectiveState = opts.state ?? createDefaultViewerState();
-  // The reconciliation slot is hidden when the active view is the default
-  // "workspace" tab. The markup is always rendered so G6-3 can plug in.
+  // The reconciliation slot is visible only under the Reconciliation
+  // sub-view (G6-3 S2.3). Legacy "studio" activeView is still recognised
+  // as a reconciliation context so pre-G6-3 callers keep working. The
+  // markup is always rendered so callers can swap states without forcing
+  // a re-mount.
   const activeView = opts.state?.activeView ?? null;
-  const slotHidden = activeView === "workspace" || activeView === null;
+  const slotVisible = isReconciliationView(activeView);
+  const slotHidden = !slotVisible;
   const slotActiveView = activeView ?? "workspace";
+  const isEvidenceView = activeView === "evidence";
 
   // G6-2: render the rich left rail (search / types / selected / facets /
   // results) when a graph is available and the caller did not override
@@ -642,15 +715,30 @@ export function renderWorkspaceShell(opts: RenderWorkspaceShellOptions): string 
         ? '<p class="ws-empty" id="ws-queue-empty">Reconciliation queue is empty.</p>'
         : '<p class="ws-empty" id="ws-queue-stub">Queue rendering arrives in G5.</p>');
 
-  const centralDisplayBody =
-    opts.centralDisplayHtml ??
-    renderCentralDisplayBody(opts.state, opts.graph, opts.entityLayout, opts.descriptionSidecar);
+  // Evidence sub-view ships as a minimal placeholder for G6-3; G7 will
+  // populate it. We override the central body in that branch and drop
+  // counters + graph controls + graph panel since there is nothing to
+  // count against an empty view yet.
+  const centralDisplayBody = isEvidenceView
+    ? renderEvidencePlaceholderBody()
+    : opts.centralDisplayHtml ??
+      renderCentralDisplayBody(opts.state, opts.graph, opts.entityLayout, opts.descriptionSidecar);
 
-  const counters = renderCounters(computeCounters(effectiveState, opts.graph));
-  const graphControls = renderGraphControls(effectiveState);
+  const counters = isEvidenceView
+    ? ""
+    : renderCounters(computeCounters(effectiveState, opts.graph));
+  const graphControls = isEvidenceView ? "" : renderGraphControls(effectiveState);
 
-  const graphPanelBody =
-    opts.graphPanelHtml ?? '<p class="ws-empty">No graph context available.</p>';
+  const graphPanelBody = isEvidenceView
+    ? ""
+    : opts.graphPanelHtml ?? '<p class="ws-empty">No graph context available.</p>';
+  const graphPanelSection = isEvidenceView
+    ? ""
+    : [
+        '<section class="ws-graph-panel" id="graph-panel" role="region" aria-label="Graph panel">',
+        graphPanelBody,
+        "</section>",
+      ].join("");
 
   const slotBody = slotHidden
     ? ""
@@ -675,6 +763,7 @@ export function renderWorkspaceShell(opts: RenderWorkspaceShellOptions): string 
     '<header class="ws-header" role="banner">',
     `<h1>${title}</h1>`,
     '<div class="ws-header-meta">',
+    renderTopTabs(activeView),
     `<span aria-label="profile id">profile: ${profileId}</span>`,
     lastRebuiltAt
       ? `<span aria-label="last rebuilt at">last rebuilt: ${lastRebuiltAt}</span>`
@@ -690,11 +779,9 @@ export function renderWorkspaceShell(opts: RenderWorkspaceShellOptions): string 
     centralDisplayBody,
     counters,
     graphControls,
-    '<section class="ws-graph-panel" id="graph-panel" role="region" aria-label="Graph panel">',
-    graphPanelBody,
-    "</section>",
+    graphPanelSection,
     "</main>",
-    `<aside class="workspace-reconciliation-slot" id="workspace-reconciliation-slot" role="complementary" aria-label="Reconciliation slot" data-active-view="${escapeHtml(slotActiveView)}"${slotHidden ? ' aria-hidden="true"' : ""}>`,
+    `<aside class="workspace-reconciliation-slot" id="workspace-reconciliation-slot" role="complementary" aria-label="Reconciliation slot" data-active-view="${escapeHtml(slotActiveView)}"${slotHidden ? ' hidden aria-hidden="true"' : ""}>`,
     slotBody,
     "</aside>",
     "</div>",
