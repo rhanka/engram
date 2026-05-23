@@ -139,11 +139,17 @@ describe("graphify ontology studio --write", () => {
     expect(result.body).toContain("Candidate component");
     expect(result.body).toContain("component-a");
     expect(result.body).toContain("Component A");
-    expect(result.body).toContain("<dt>Type</dt>");
-    expect(result.body).toContain("<dd>Component</dd>");
+    // G6-4: Type / Status / Confidence collapsed into the inline meta
+    // line. The semantic content stays reachable but the legacy
+    // <dt>Type</dt><dd>Component</dd> markup is replaced by the compact
+    // prose row.
+    expect(result.body).toContain('class="ws-recon-meta-inline"');
+    expect(result.body).toContain("Component");
     expect(result.body).toContain("manual.md#p1");
     expect(result.body).toContain("decision-audit");
-    expect(result.body).toContain("Decision basis");
+    // G6-4: "Decision basis" becomes the small-caps DT in the compact
+    // summary <dl>.
+    expect(result.body).toContain("DECISION BASIS");
     expect(result.body).not.toContain("Patch preview");
     expect(result.body).not.toContain("&quot;operation&quot;");
     expect(result.body).toContain("<b>Mode:</b> Overview");
