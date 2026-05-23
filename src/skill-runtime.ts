@@ -1496,6 +1496,22 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         { input: 0, output: 0 },
         { labelsPath },
       );
+      // Track F F-0816-P2 row 15 (port safishamsi 076e6b7 / #934):
+      // cluster-only crashed when the output directory had been archived
+      // and only --graph pointed at a surviving backup. Recreate the
+      // parent directories of every output artifact before any write so
+      // the command stays idempotent across archive/restore workflows.
+      // (Upstream applies the same `mkdir(parents=True, exist_ok=True)`
+      // contract.)
+      for (const target of [
+        resolve(opts.graphOut),
+        resolve(opts.reportOut),
+        resolve(opts.analysisOut),
+        labelsPath,
+        ...(opts.htmlOut ? [resolve(opts.htmlOut)] : []),
+      ]) {
+        mkdirSync(dirname(target), { recursive: true });
+      }
       toJson(G, analyzed.communities, resolve(opts.graphOut), {
         communityLabels: analyzed.labels,
       });

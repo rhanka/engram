@@ -381,11 +381,37 @@ export function createAssistantVisionJsonClient(options: AssistantLlmClientOptio
   };
 }
 
+/**
+ * Track F F-0816-P2 row 14 (port safishamsi 06a9b72 / #973): honor the
+ * `GRAPHIFY_MAX_OUTPUT_TOKENS` environment override when the caller did
+ * not pass an explicit value. Upstream Python `_resolve_max_tokens` does
+ * the same for all OpenAI-compatible backends (gemini, openai, kimi,
+ * deepseek, ollama) plus Claude / Bedrock; in this TS fork the equivalent
+ * routing point is `createDirectTextJsonClient`.
+ *
+ * Precedence — explicit > env > undefined — matches the upstream cfg
+ * precedence (caller cfg dict wins over env, env wins over default).
+ * Invalid / non-positive env values are silently ignored so a typo in
+ * the shell does not surprise a long-running CI job.
+ */
+export function resolveMaxOutputTokens(explicit?: number): number | undefined {
+  if (typeof explicit === "number" && Number.isFinite(explicit) && explicit > 0) {
+    return explicit;
+  }
+  const raw = process.env.GRAPHIFY_MAX_OUTPUT_TOKENS;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+  return parsed;
+}
+
 export function createDirectTextJsonClient(options: DirectTextJsonClientOptions): TextJsonGenerationClient {
   const provider = options.provider;
   const model = options.model?.trim() || defaultDirectLlmModel(provider);
   const temperature = options.temperature ?? 0;
-  const maxOutputTokens = options.maxOutputTokens;
+  const maxOutputTokens = resolveMaxOutputTokens(options.maxOutputTokens);
   return {
     mode: "direct",
     provider,
