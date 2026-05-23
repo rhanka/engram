@@ -283,6 +283,7 @@ export type { PdfPreparationArtifact, PdfPreparationOptions } from "./pdf-ocr.js
 export { prepareSemanticDetection } from "./semantic-prepare.js";
 export type { SemanticPreparationOptions, SemanticPreparationResult } from "./semantic-prepare.js";
 export {
+  AllChunksFailedError,
   createDirectSemanticExtractionClient,
   extractSemanticFilesDirectParallel,
   packSemanticFilesByTokenBudget,
