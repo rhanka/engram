@@ -224,4 +224,60 @@ describe("generate report", () => {
     expect(report).not.toContain("### Community 1 - \"Empty\"");
     expect(report).not.toContain("Thin community `Empty`");
   });
+
+  it("reports a re_exports edge-kind count line when re_exports edges exist (port safishamsi 1494874)", () => {
+    const G = new Graph({ type: "directed" });
+    G.mergeNode("barrel", { label: "barrel", source_file: "src/index.ts", file_type: "code" });
+    G.mergeNode("foo", { label: "foo", source_file: "src/foo.ts", file_type: "code" });
+    G.mergeNode("bar", { label: "bar", source_file: "src/bar.ts", file_type: "code" });
+    G.mergeNode("baz", { label: "baz", source_file: "src/baz.ts", file_type: "code" });
+    G.mergeEdge("barrel", "foo", {
+      relation: "re_exports",
+      confidence: "EXTRACTED",
+      source_file: "src/index.ts",
+    });
+    G.mergeEdge("barrel", "bar", {
+      relation: "re_exports",
+      confidence: "EXTRACTED",
+      source_file: "src/index.ts",
+    });
+    G.mergeEdge("barrel", "baz", {
+      relation: "imports_from",
+      confidence: "EXTRACTED",
+      source_file: "src/index.ts",
+    });
+
+    const report = generate(
+      G,
+      new Map([[0, ["barrel", "foo", "bar", "baz"]]]),
+      new Map([[0, 1.0]]),
+      new Map([[0, "Core"]]),
+      [{ id: "barrel", label: "barrel", edges: 3 }],
+      [],
+      {
+        files: {
+          code: ["src/index.ts", "src/foo.ts", "src/bar.ts", "src/baz.ts"],
+          document: [],
+          paper: [],
+          image: [],
+        },
+        total_files: 4,
+        total_words: 1000,
+        needs_graph: true,
+        warning: null,
+        skipped_sensitive: [],
+        graphifyignore_patterns: 0,
+      },
+      { input: 0, output: 0 },
+      ".",
+    );
+
+    // 2 re_exports + 1 imports_from = the new line must record the
+    // re_exports count so audit-trail consumers can compare to upstream's
+    // 162-edges signal on a Next.js codebase. Sorted by count desc, ties by
+    // relation name asc.
+    expect(report).toContain("Edge kinds:");
+    expect(report).toMatch(/re_exports: 2/);
+    expect(report).toMatch(/imports_from: 1/);
+  });
 });
