@@ -66,6 +66,75 @@ export function validateUrlSync(url: string): string {
   return url;
 }
 
+/**
+ * Expand an IPv6 string to its canonical 8-group form so prefix checks can
+ * inspect the high bits without parsing every shorthand.
+ */
+function expandIPv6(addr: string): number[] | null {
+  if (!net.isIPv6(addr)) return null;
+
+  // Embedded IPv4 dotted form (e.g. `::ffff:1.2.3.4`): translate the dotted
+  // tail into two 16-bit groups before expansion.
+  let work = addr;
+  const lastColon = work.lastIndexOf(":");
+  if (lastColon >= 0 && work.slice(lastColon + 1).includes(".")) {
+    const tail = work.slice(lastColon + 1);
+    if (!net.isIPv4(tail)) return null;
+    const [a, b, c, d] = tail.split(".").map(Number) as [number, number, number, number];
+    work = `${work.slice(0, lastColon)}:${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+
+  const [head, tail] = work.split("::") as [string, string | undefined];
+  const headGroups = head ? head.split(":").filter(Boolean) : [];
+  const tailGroups = tail !== undefined ? tail.split(":").filter(Boolean) : [];
+  if (tail === undefined && headGroups.length !== 8) return null;
+
+  const missing = 8 - headGroups.length - tailGroups.length;
+  if (missing < 0) return null;
+  const groups = [
+    ...headGroups,
+    ...Array(missing).fill("0"),
+    ...tailGroups,
+  ].map((g) => parseInt(g, 16));
+  if (groups.length !== 8 || groups.some((g) => Number.isNaN(g))) return null;
+  return groups;
+}
+
+/**
+ * Unwrap an IPv6 that carries an embedded IPv4 in the low 32 bits to its
+ * dotted-decimal form. Recognises:
+ *   - RFC 4291 IPv4-mapped IPv6 (`::ffff:0:0/96`)
+ *   - RFC 6052 NAT64 Well-Known Prefix (`64:ff9b::/96`)
+ *
+ * Python's `ipaddress.is_reserved` returns True for the NAT64 prefix so the
+ * upstream Python guard (`safishamsi/graphify` commit `9e6192a`) had a
+ * false-positive on legitimate public IPv4 traffic routed via NAT64. The TS
+ * port mirrors that fix by unwrapping the embedded IPv4 first and running
+ * the private-IP test against the embedded address instead of the wrapper.
+ */
+function embeddedIPv4(addr: string): string | null {
+  const groups = expandIPv6(addr);
+  if (!groups) return null;
+
+  const isIPv4Mapped =
+    groups[0] === 0 && groups[1] === 0 && groups[2] === 0 &&
+    groups[3] === 0 && groups[4] === 0 && groups[5] === 0xffff;
+  const isNat64WellKnown =
+    groups[0] === 0x64 && groups[1] === 0xff9b &&
+    groups[2] === 0 && groups[3] === 0 && groups[4] === 0 && groups[5] === 0;
+
+  if (!isIPv4Mapped && !isNat64WellKnown) return null;
+
+  const high = groups[6] ?? 0;
+  const low = groups[7] ?? 0;
+  return [
+    (high >> 8) & 0xff,
+    high & 0xff,
+    (low >> 8) & 0xff,
+    low & 0xff,
+  ].join(".");
+}
+
 function isPrivateIp(addr: string): boolean {
   if (net.isIPv4(addr)) {
     const parts = addr.split(".").map(Number);
@@ -80,6 +149,13 @@ function isPrivateIp(addr: string): boolean {
     return false;
   }
   if (net.isIPv6(addr)) {
+    // RFC 4291 / RFC 6052: defer the verdict to the embedded IPv4 when the
+    // wrapper is an IPv4-mapped IPv6 or a NAT64 Well-Known Prefix address.
+    // Port of upstream safishamsi/graphify commit `9e6192a`.
+    const embedded = embeddedIPv4(addr);
+    if (embedded !== null) {
+      return isPrivateIp(embedded);
+    }
     const lower = addr.toLowerCase();
     if (lower === "::1" || lower.startsWith("fe80:") || lower.startsWith("fc") || lower.startsWith("fd")) {
       return true;
@@ -94,9 +170,16 @@ async function validateHostname(hostname: string, url: string): Promise<void> {
     throw new Error(`Blocked cloud metadata endpoint '${hostname}'. Got: ${url}`);
   }
 
-  if (net.isIP(hostname)) {
-    if (isPrivateIp(hostname)) {
-      throw new Error(`Blocked private/internal IP ${hostname} (resolved from '${hostname}'). Got: ${url}`);
+  // Node's URL parser keeps the `[...]` brackets around IPv6 hostnames; strip
+  // them so `net.isIP` and `isPrivateIp` see the literal address (port of
+  // upstream NAT64 fix; precondition for the embedded IPv4 unwrap).
+  const literal = hostname.startsWith("[") && hostname.endsWith("]")
+    ? hostname.slice(1, -1)
+    : hostname;
+
+  if (net.isIP(literal)) {
+    if (isPrivateIp(literal)) {
+      throw new Error(`Blocked private/internal IP ${literal} (resolved from '${hostname}'). Got: ${url}`);
     }
     return;
   }
