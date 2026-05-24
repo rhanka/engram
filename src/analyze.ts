@@ -227,7 +227,7 @@ function crossFileSurprises(G: Graph, communities: Map<number, string[]>, topN: 
 
   G.forEachEdge((edge, data, source, target) => {
     const relation = (data.relation as string) ?? "";
-    if (["imports", "imports_from", "contains", "method"].includes(relation)) return;
+    if (["imports", "imports_from", "re_exports", "contains", "method"].includes(relation)) return;
     if (isConceptNode(G, source) || isConceptNode(G, target)) return;
     if (isFileNode(G, source) || isFileNode(G, target)) return;
 
@@ -280,7 +280,7 @@ function crossCommunitySurprises(
     if (cidU === undefined || cidV === undefined || cidU === cidV) return;
     if (isFileNode(G, u) || isFileNode(G, v)) return;
     const relation = (data.relation as string) ?? "";
-    if (["imports", "imports_from", "contains", "method"].includes(relation)) return;
+    if (["imports", "imports_from", "re_exports", "contains", "method"].includes(relation)) return;
 
     const srcId = (data._src as string) ?? u;
     const tgtId = (data._tgt as string) ?? v;
