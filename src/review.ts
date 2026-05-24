@@ -37,6 +37,23 @@ export interface ReviewDeltaOptions {
   maxNodes?: number;
   maxHubs?: number;
   maxChains?: number;
+  /**
+   * BFS traversal depth on the import graph when computing impacted nodes.
+   * Default 1 preserves prior behavior (direct neighbors only). Clamped to [1, 5].
+   * Higher values let cross-language import chains contribute to the
+   * impacted set (port of safishamsi e44e6e9 `graphify affected --depth`).
+   */
+  depth?: number;
+}
+
+const MAX_AFFECTED_DEPTH = 5;
+const DEFAULT_AFFECTED_DEPTH = 1;
+
+function clampDepth(value: number | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_AFFECTED_DEPTH;
+  if (value < 1) return DEFAULT_AFFECTED_DEPTH;
+  if (value > MAX_AFFECTED_DEPTH) return MAX_AFFECTED_DEPTH;
+  return Math.floor(value);
 }
 
 function compareStrings(a: string, b: string): number {
@@ -97,12 +114,28 @@ function changedNodeIds(G: Graph, changedFiles: string[]): string[] {
   return result.sort(compareStrings);
 }
 
-function impactedNodeIds(G: Graph, starts: string[], maxNodes: number): string[] {
+function impactedNodeIds(
+  G: Graph,
+  starts: string[],
+  maxNodes: number,
+  depth: number = DEFAULT_AFFECTED_DEPTH,
+): string[] {
+  const safeDepth = clampDepth(depth);
   const impacted = new Set(starts);
-  for (const nodeId of starts) {
-    forEachTraversalNeighbor(G, nodeId, (neighbor) => {
-      if (impacted.size < maxNodes) impacted.add(neighbor);
-    });
+  let frontier: string[] = [...starts];
+  for (let hop = 0; hop < safeDepth; hop += 1) {
+    if (frontier.length === 0 || impacted.size >= maxNodes) break;
+    const nextFrontier: string[] = [];
+    for (const nodeId of frontier) {
+      if (impacted.size >= maxNodes) break;
+      forEachTraversalNeighbor(G, nodeId, (neighbor) => {
+        if (impacted.size >= maxNodes) return;
+        if (impacted.has(neighbor)) return;
+        impacted.add(neighbor);
+        nextFrontier.push(neighbor);
+      });
+    }
+    frontier = nextFrontier;
   }
   return [...impacted].sort((a, b) => G.degree(b) - G.degree(a) || compareStrings(a, b));
 }
@@ -228,9 +261,10 @@ export function buildReviewDelta(
   const maxNodes = Math.max(1, options.maxNodes ?? 80);
   const maxHubs = Math.max(0, options.maxHubs ?? 8);
   const maxChains = Math.max(0, options.maxChains ?? 8);
+  const depth = clampDepth(options.depth);
   const changedFiles = uniqueSorted(changedFilesInput);
   const changedIds = changedNodeIds(G, changedFiles);
-  const impactedIds = impactedNodeIds(G, changedIds, maxNodes);
+  const impactedIds = impactedNodeIds(G, changedIds, maxNodes, depth);
   const impactedSet = new Set(impactedIds);
   const changedNodes = changedIds.map((nodeId) => nodeInfo(G, nodeId)).sort(compareNodes);
   const impactedNodes = impactedIds.map((nodeId) => nodeInfo(G, nodeId)).sort(compareNodes);
