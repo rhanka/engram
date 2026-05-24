@@ -66,6 +66,17 @@ function splitFiles(value?: string): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Commander.js accumulator callback for repeatable `--exclude <glob>` flags.
+ * Used by `detect`, `detect-incremental`, and `extract` to forward CLI-supplied
+ * ignore patterns into `DetectOptions.extraExcludes` (port of upstream PR #947,
+ * commit 9e6192a).
+ */
+function collectExclude(value: string, previous: string[] = []): string[] {
+  if (!value) return previous;
+  return [...previous, value];
+}
+
 function changedFilesFromGit(options: { base?: string; head?: string; staged?: boolean }): string[] {
   if (options.staged) {
     return splitFiles(safeExecGit(".", ["diff", "--name-only", "--cached", "--"]) ?? "");
@@ -2840,6 +2851,12 @@ export async function main(): Promise<void> {
     .option("--out <path>")
     .option("--scope <mode>", scopeOptionDescription())
     .option("--all", "Alias for --scope all")
+    .option(
+      "--exclude <pattern>",
+      "Extra .graphifyignore-style pattern to skip (repeatable; port of upstream PR #947)",
+      collectExclude,
+      [] as string[],
+    )
     .action(async (inputPath, opts) => {
       const { detect } = await import("./detect.js");
       const root = resolve(inputPath);
@@ -2849,6 +2866,7 @@ export async function main(): Promise<void> {
         candidateFiles: inventory.candidateFiles,
         candidateRoot: inventory.scope.git_root ?? root,
         scope: inventory.scope,
+        extraExcludes: Array.isArray(opts.exclude) ? opts.exclude : [],
       });
       if (opts.out) {
         writeJson(opts.out, result);
@@ -2865,6 +2883,12 @@ export async function main(): Promise<void> {
     .option("--out <path>")
     .option("--scope <mode>", scopeOptionDescription())
     .option("--all", "Alias for --scope all")
+    .option(
+      "--exclude <pattern>",
+      "Extra .graphifyignore-style pattern to skip (repeatable; port of upstream PR #947)",
+      collectExclude,
+      [] as string[],
+    )
     .action(async (inputPath, opts) => {
       const { detectIncremental } = await import("./detect.js");
       const root = resolve(inputPath);
@@ -2874,6 +2898,7 @@ export async function main(): Promise<void> {
         candidateFiles: inventory.candidateFiles,
         candidateRoot: inventory.scope.git_root ?? root,
         scope: inventory.scope,
+        extraExcludes: Array.isArray(opts.exclude) ? opts.exclude : [],
       });
       if (opts.out) {
         writeJson(opts.out, result);
@@ -2896,6 +2921,12 @@ export async function main(): Promise<void> {
     .option("--no-cluster", "Write the raw merged extraction and skip graph clustering/reporting")
     .option("--scope <mode>", scopeOptionDescription())
     .option("--all", "Alias for --scope all")
+    .option(
+      "--exclude <pattern>",
+      "Extra .graphifyignore-style pattern to skip (repeatable; port of upstream PR #947)",
+      collectExclude,
+      [] as string[],
+    )
     .action(async (inputPath, opts) => {
       try {
         const root = resolve(inputPath);
@@ -2921,6 +2952,7 @@ export async function main(): Promise<void> {
           candidateFiles: inventory.candidateFiles,
           candidateRoot: inventory.scope.git_root ?? root,
           scope: inventory.scope,
+          extraExcludes: Array.isArray(opts.exclude) ? opts.exclude : [],
         });
         const originalDocumentFiles = [...(rawDetection.files.document ?? [])];
 
