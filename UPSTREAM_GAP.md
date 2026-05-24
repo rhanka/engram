@@ -66,6 +66,8 @@ Observed on 2026-05-23 after merging PRs #33 (A-final), #34 (F cadrage bilan #1)
 
 Row-level table is in `spec/SPEC_TRACK_F_0816_BILAN.md > Drift table`. The 18-row matrix splits omnibus PR `#956` (`b6127aa`) into 8 sub-rows (11a..11h) to keep one-row-per-feature traceability.
 
+**F-Opt-LLM-Triage closure (2026-05-23):** F-Opt-LLM-Triage is closed as already-covered by `src/llm-mesh.ts`, which provides multi-provider routing generically across the entire CLI surface (not just `graphify pr`). Per user decision 2026-05-23, no separate triage code path is ported. The upstream multi-backend resolution (`anthropic` + `openai` + `gemini` + `ollama` + `claude-cli` + `ollama-fallback`) maps onto our existing llm-mesh provider abstraction; any future TS user request for `graphify pr --triage` becomes a thin wiring of `src/pr.ts` into the mesh rather than a new provider stack. Reopen condition is unchanged in spirit but redirected: a TS user asks for explicit `pr --triage` UX, not a new backend surface.
+
 ## Active `0.7.16` Drift Intake
 
 Observed on 2026-05-12 after merging the `0.7.10` checkpoint:

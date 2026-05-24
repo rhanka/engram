@@ -13,6 +13,7 @@ import { isAbsolute, relative as pathRelative, resolve } from "node:path";
 import Graph from "graphology";
 import type { Extraction } from "./types.js";
 import { createGraph } from "./graph.js";
+import { assertGraphJsonFileSize } from "./graph-size-guard.js";
 import { validateExtraction } from "./validate.js";
 
 export interface BuildOptions {
@@ -118,6 +119,7 @@ function preferNode(current: Extraction["nodes"][number], existing: Extraction["
 }
 
 function readExistingGraphExtraction(graphPath: string): { extraction: Extraction; nodeCount: number } {
+  assertGraphJsonFileSize(graphPath, "read");
   const raw = asRecord(JSON.parse(readFileSync(graphPath, "utf-8"))) ?? {};
   const rawNodes = Array.isArray(raw.nodes) ? raw.nodes : [];
   const rawEdges = Array.isArray(raw.links) ? raw.links : Array.isArray(raw.edges) ? raw.edges : [];
