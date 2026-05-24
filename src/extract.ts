@@ -465,6 +465,7 @@ type ImportHandler = (
   stem: string,
   edges: GraphEdge[],
   strPath: string,
+  rootDir?: string,
 ) => void;
 
 type ResolveFunctionNameFn = (node: SyntaxNode, source: string) => string | null;
@@ -603,7 +604,7 @@ function _importPython(
 
 function _importJs(
   node: SyntaxNode, source: string, fileNid: string, _stem: string,
-  edges: GraphEdge[], strPath: string,
+  edges: GraphEdge[], strPath: string, rootDir?: string,
 ): void {
   const readStringSpecifier = (current: SyntaxNode): string | null => {
     if (current.type === "string") {
@@ -622,16 +623,39 @@ function _importJs(
       return;
     }
   }
+
+  // Port of upstream safishamsi 1494874 — barrel re-exports as explicit
+  // graph edges. tree-sitter parses `export { X } from './mod'` as an
+  // `export_statement` carrying a `string` child (the source module). Pure
+  // exports without a `from` clause (`export const x = 1`, `export { local }`)
+  // have no string child and must be ignored here so the walker keeps walking
+  // children for the local declarations / specifiers.
+  const isReExport = node.type === "export_statement";
+  if (isReExport) {
+    const hasStringChild = node.children.some((c) => c.type === "string");
+    if (!hasStringChild) return;
+  }
+
   const raw = readStringSpecifier(node);
   if (!raw) return;
   const tgtNid = resolveJsImportTarget(raw, strPath);
   if (tgtNid) {
-    edges.push({
+    const importEdge: GraphEdge = {
       source: fileNid, target: tgtNid, relation: "imports_from",
       confidence: "EXTRACTED", source_file: strPath,
       source_location: `L${node.startPosition.row + 1}`, weight: 1.0,
-    });
+    };
+    if (isReExport) {
+      // Tag the file-level edge so consumers (review-delta barrel detection,
+      // wiki audit, etc.) can distinguish a regular `import` from an
+      // `export { X } from './m'` re-export. Symbol-level `re_exports` edges
+      // are introduced in S-2.
+      (importEdge as GraphEdge & { context?: string }).context = "re-export";
+    }
+    edges.push(importEdge);
   }
+  // rootDir is reserved for symbol-level edge resolution (introduced in S-2).
+  void rootDir;
 }
 
 function _importJava(
@@ -1119,7 +1143,11 @@ const _JS_CONFIG: LanguageConfig = defaultConfig({
   tsModule: "tree_sitter_javascript",
   classTypes: new Set(["class_declaration"]),
   functionTypes: new Set(["function_declaration", "method_definition"]),
-  importTypes: new Set(["import_statement"]),
+  // export_statement is included so the walker hands re-exports
+  // (`export { X } from './m'`) to _importJs. Pure exports (no `from`)
+  // fall through to walk children in _extract_generic. Port of upstream
+  // safishamsi 1494874.
+  importTypes: new Set(["import_statement", "export_statement"]),
   callTypes: new Set(["call_expression", "new_expression"]),
   callFunctionField: "function",
   callAccessorNodeTypes: new Set(["member_expression"]),
@@ -1133,7 +1161,11 @@ const _TS_CONFIG: LanguageConfig = defaultConfig({
   tsModule: "tree_sitter_typescript",
   classTypes: new Set(["class_declaration", "interface_declaration", "enum_declaration", "type_alias_declaration"]),
   functionTypes: new Set(["function_declaration", "method_definition"]),
-  importTypes: new Set(["import_statement"]),
+  // export_statement is included so the walker hands re-exports
+  // (`export { X } from './m'`) to _importJs. Pure exports (no `from`)
+  // fall through to walk children in _extract_generic. Port of upstream
+  // safishamsi 1494874.
+  importTypes: new Set(["import_statement", "export_statement"]),
   callTypes: new Set(["call_expression", "new_expression"]),
   callFunctionField: "function",
   callAccessorNodeTypes: new Set(["member_expression"]),
@@ -1384,7 +1416,19 @@ async function _extractGeneric(
     // Import types
     if (config.importTypes.has(t)) {
       if (config.importHandler) {
-        config.importHandler(node, source, fileNid, stem, edges, strPath);
+        config.importHandler(node, source, fileNid, stem, edges, strPath, rootDir);
+      }
+      // Port of upstream safishamsi 1494874: an `export_statement` without a
+      // `from` clause (`export const x = 1`, `export function foo() {}`,
+      // `export { localVar }`) is NOT a re-export — fall through and walk
+      // children so the local declaration / specifier still becomes a node.
+      if (t === "export_statement") {
+        const hasSource = node.children.some((c) => c.type === "string");
+        if (!hasSource) {
+          for (const child of node.children) {
+            walk(child, parentClassNid);
+          }
+        }
       }
       return;
     }
@@ -1834,7 +1878,16 @@ async function _extractGeneric(
   const cleanEdges = edges.filter((edge) => {
     const src = edge.source;
     const tgt = edge.target;
-    return validIds.has(src) && (validIds.has(tgt) || edge.relation === "imports" || edge.relation === "imports_from");
+    // `re_exports` is allow-listed alongside `imports`/`imports_from` so a
+    // barrel re-export edge can land on a symbol that lives in another file
+    // (i.e. the target id won't be in this file's seenIds). Port of upstream
+    // safishamsi 1494874.
+    return validIds.has(src) && (
+      validIds.has(tgt)
+      || edge.relation === "imports"
+      || edge.relation === "imports_from"
+      || edge.relation === "re_exports"
+    );
   });
 
   const result: ExtractionResult = { nodes, edges: cleanEdges };
