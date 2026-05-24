@@ -63,6 +63,13 @@ describe("classifyFile", () => {
     }
   });
 
+  it("classifies .ets (ArkTS / HarmonyOS) as CODE", () => {
+    // Port of upstream safishamsi 52d75bd / #926: .ets is the primary language
+    // for HarmonyOS/OpenHarmony app development. Without this, detect()
+    // silently skips all .ets source files.
+    expect(classifyFile("Sources/index.ets")).toBe(FileType.CODE);
+  });
+
   it("classifies Blade templates as CODE", () => {
     expect(classifyFile("resources/views/welcome.blade.php")).toBe(FileType.CODE);
   });
