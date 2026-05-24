@@ -6,6 +6,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import Graph from "graphology";
 import { sanitizeLabel, escapeHtml } from "./security.js";
 import { isDirectedGraph } from "./graph.js";
+import { assertGraphJsonFileSize, assertGraphJsonSize } from "./graph-size-guard.js";
 import { safeGitRevParse } from "./git.js";
 import type { Hyperedge, NormalizedOntologyProfile, OntologyVisualEncoding } from "./types.js";
 import {
@@ -441,6 +442,7 @@ export function toJson(
 
   if (!forceWrite) {
     try {
+      assertGraphJsonFileSize(outputPath, "read");
       const existing = JSON.parse(readFileSync(outputPath, "utf-8")) as { nodes?: unknown[] };
       const existingNodeCount = existing.nodes?.length ?? 0;
       if (existingNodeCount > nodes.length) {
@@ -455,7 +457,9 @@ export function toJson(
     }
   }
 
-  writeFileSync(outputPath, JSON.stringify(output, null, 2), "utf-8");
+  const serialized = JSON.stringify(output, null, 2);
+  assertGraphJsonSize(Buffer.byteLength(serialized, "utf-8"), "write", outputPath);
+  writeFileSync(outputPath, serialized, "utf-8");
   return true;
 }
 
