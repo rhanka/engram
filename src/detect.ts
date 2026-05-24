@@ -186,6 +186,9 @@ const SKIP_DIRS = new Set([
   "dist", "build", "target", "out", "site-packages", "lib64",
   ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox", ".eggs",
   DEFAULT_GRAPHIFY_STATE_DIR, LEGACY_GRAPHIFY_STATE_DIR,
+  // git worktree convention (port of upstream PR #947) -- sibling checkouts
+  // are always redundant relative to the primary worktree at the scan root.
+  ".worktrees",
 ]);
 
 const VCS_MARKERS = [".git", ".hg", ".svn", "_darcs", ".fossil"];
@@ -254,7 +257,17 @@ function loadGraphifyignore(root: string): GraphifyIgnoreRule[] {
 
   const patterns: GraphifyIgnoreRule[] = [];
   for (const dir of dirs) {
-    const ignoreFile = join(dir, ".graphifyignore");
+    // Prefer .graphifyignore; fall back to .gitignore so projects that
+    // already maintain a .gitignore get sensible defaults without
+    // duplicating it. Port of upstream PR #945 / commit 9e6192a.
+    //
+    // Note: an explicit empty .graphifyignore wins over any .gitignore in
+    // the same directory (existsSync() is true), so users keep a way to
+    // opt out of the fallback by `touch .graphifyignore`.
+    let ignoreFile = join(dir, ".graphifyignore");
+    if (!existsSync(ignoreFile)) {
+      ignoreFile = join(dir, ".gitignore");
+    }
     if (!existsSync(ignoreFile)) continue;
     for (const raw of readFileSync(ignoreFile, "utf-8").split(/\r?\n/)) {
       const parsed = parseGraphifyignoreLine(raw);
@@ -384,6 +397,15 @@ export interface DetectOptions {
   candidateFiles?: string[] | null;
   candidateRoot?: string;
   scope?: InputScopeInspection;
+  /**
+   * Additional ignore patterns appended to the loaded
+   * `.graphifyignore` / `.gitignore` rules. Each pattern uses
+   * gitignore syntax and is anchored at the scan root. Patterns are
+   * applied *after* the loaded rules so they override negations.
+   *
+   * Port of upstream `--exclude` flag (PR #947, commit 9e6192a).
+   */
+  extraExcludes?: string[] | null;
 }
 
 interface ManifestEntry {
@@ -425,6 +447,17 @@ export function detect(root: string, options?: DetectOptions): DetectionResult {
   const rootResolved = resolve(root);
   const paths = resolveGraphifyPaths({ root: rootResolved });
   const ignorePatterns = loadGraphifyignore(rootResolved);
+  // CLI --exclude patterns are anchored at the scan root and appended last
+  // so they win over any .graphifyignore / .gitignore rules (port of
+  // upstream PR #947 / commit 9e6192a). Empty/whitespace-only entries are
+  // dropped via parseGraphifyignoreLine().
+  if (options?.extraExcludes && options.extraExcludes.length > 0) {
+    for (const raw of options.extraExcludes) {
+      const parsed = parseGraphifyignoreLine(raw);
+      if (!parsed) continue;
+      ignorePatterns.push({ anchor: rootResolved, pattern: parsed.pattern, negated: parsed.negated });
+    }
+  }
   const convertedDir = paths.convertedDir;
   const memoryDir = paths.memoryDir;
 
