@@ -14,6 +14,12 @@ import { fileURLToPath } from "node:url";
 import { graphDiff, godNodes, surprisingConnections, suggestQuestions } from "./analyze.js";
 import { runBenchmark, printBenchmark } from "./benchmark.js";
 import { saveSemanticCache, checkSemanticCache, type CacheOptions } from "./cache.js";
+import {
+  loadValidatedSemanticFragment,
+  sanitizeSemanticFragment,
+  validateSemanticFragment,
+  type SemanticFragment,
+} from "./semantic-fragment-validation.js";
 import { buildFromJson } from "./build.js";
 import { cluster, scoreAll } from "./cluster.js";
 import { detect, detectIncremental, saveManifest } from "./detect.js";
@@ -225,6 +231,60 @@ function ensureExtractionShape(value?: Partial<Extraction> | null): Extraction {
     input_tokens: value?.input_tokens ?? 0,
     output_tokens: value?.output_tokens ?? 0,
   };
+}
+
+/**
+ * Load + validate + sanitize an untrusted semantic-fragment file.
+ *
+ * Ported from upstream `safishamsi/graphify` PR #825 (commit `b6127aa`) —
+ * the upstream skill markdown templates inline `load_validated_semantic_fragment`
+ * + `sanitize_semantic_fragment` around every chunk + cached + merge JSON read.
+ * In the TS fork the skill markdown templates call into `skill-runtime.ts`
+ * subcommands, so the validation lives here at the merge boundary.
+ *
+ * Behaviour:
+ *   - File missing -> `{ extraction: empty, skipped: false, errors: [...] }`
+ *     (the caller decides whether missing is fatal — `merge-semantic`
+ *     treats it as empty cached, `save-semantic-cache` treats it as fatal).
+ *   - File present + valid -> sanitized fragment wrapped in `Extraction` shape.
+ *   - File present + invalid -> empty extraction, `skipped=true`, errors set.
+ */
+function loadAndSanitizeFragment(
+  path: string,
+  label: string,
+): { extraction: Extraction; skipped: boolean; errors: string[] } {
+  const resolved = resolve(path);
+  if (!existsSync(resolved)) {
+    return { extraction: ensureExtractionShape(null), skipped: false, errors: [] };
+  }
+  const { fragment, errors } = loadValidatedSemanticFragment(resolved);
+  if (!fragment) {
+    console.warn(
+      `Skipping invalid ${label} fragment ${resolved}: ${errors.slice(0, 3).join("; ")}`,
+    );
+    return { extraction: ensureExtractionShape(null), skipped: true, errors };
+  }
+  const sanitized = sanitizeSemanticFragment(fragment) as SemanticFragment;
+  return {
+    extraction: ensureExtractionShape(sanitized as unknown as Partial<Extraction>),
+    skipped: false,
+    errors: [],
+  };
+}
+
+/**
+ * Validate (without sanitizing) an in-memory extraction object. Throws when
+ * the payload is structurally unsound — used by `save-semantic-cache` where
+ * the caller has only one input and a failure mode that loudly halts is
+ * the safer default.
+ */
+function assertValidSemanticFragment(value: unknown, label: string): void {
+  const errors = validateSemanticFragment(value);
+  if (errors.length > 0) {
+    throw new Error(
+      `${label} is not a valid semantic fragment: ${errors.slice(0, 3).join("; ")}`,
+    );
+  }
 }
 
 function loadGraph(graphPath: string): Graph {
@@ -980,7 +1040,13 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .option("--cache-namespace <value>", "Optional semantic cache namespace")
     .option("--profile-state <path>", "Optional profile-state.json used to derive a profile cache namespace")
     .action((opts) => {
-      const extraction = ensureExtractionShape(readJson<Partial<Extraction>>(opts.input));
+      // Validate before caching — a malformed agent response should not be
+      // persisted into the per-file semantic cache (ported from upstream
+      // PR #825 semantic-fragment validation).
+      const raw = readJson<Partial<Extraction>>(opts.input);
+      assertValidSemanticFragment(raw, `save-semantic-cache --input ${resolve(opts.input)}`);
+      const sanitized = sanitizeSemanticFragment(raw as unknown as SemanticFragment);
+      const extraction = ensureExtractionShape(sanitized as unknown as Partial<Extraction>);
       const saved = saveSemanticCache(
         extraction.nodes as Array<Record<string, unknown>>,
         extraction.edges as Array<Record<string, unknown>>,
@@ -997,8 +1063,13 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .requiredOption("--new <path>")
     .requiredOption("--out <path>")
     .action((opts) => {
-      const cached = ensureExtractionShape(readJson<Partial<Extraction>>(opts.cached));
-      const fresh = ensureExtractionShape(readJson<Partial<Extraction>>(opts.new));
+      // Validate + sanitize each fragment independently. A malformed cached
+      // or fresh fragment is skipped with a warning so a single bad chunk
+      // cannot crash the whole pipeline (ported from upstream PR #825).
+      const cachedLoad = loadAndSanitizeFragment(opts.cached, "cached");
+      const freshLoad = loadAndSanitizeFragment(opts.new, "new");
+      const cached = cachedLoad.extraction;
+      const fresh = freshLoad.extraction;
 
       const dedupedNodes: Extraction["nodes"] = [];
       const seen = new Set<string>();
@@ -1028,7 +1099,10 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .requiredOption("--out <path>")
     .action((opts) => {
       const ast = ensureExtractionShape(readJson<Partial<Extraction>>(opts.ast));
-      const semantic = ensureExtractionShape(readJson<Partial<Extraction>>(opts.semantic));
+      // The AST side is produced by Tree-sitter and trusted as-is. The
+      // semantic side is LLM-generated and must be validated + sanitized
+      // (ported from upstream PR #825).
+      const semantic = loadAndSanitizeFragment(opts.semantic, "semantic").extraction;
 
       const mergedNodes: Extraction["nodes"] = [...ast.nodes];
       const seen = new Set(ast.nodes.map((node) => node.id));
@@ -1068,11 +1142,14 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       const root = resolve(opts.root);
       const detection = readJson<DetectionResult>(opts.detect);
       const ast = ensureExtractionShape(readJson<Partial<Extraction>>(opts.ast));
-      const cached = opts.cached && existsSync(resolve(opts.cached))
-        ? readJson<Partial<Extraction>>(opts.cached)
+      // Validate + sanitize untrusted semantic fragments (port of upstream
+      // PR #825). Invalid chunks are dropped with a warning rather than
+      // crashing the whole finalize-build pipeline.
+      const cached = opts.cached
+        ? (loadAndSanitizeFragment(opts.cached, "cached").extraction as Partial<Extraction>)
         : null;
-      const semanticNew = opts.semanticNew && existsSync(resolve(opts.semanticNew))
-        ? readJson<Partial<Extraction>>(opts.semanticNew)
+      const semanticNew = opts.semanticNew
+        ? (loadAndSanitizeFragment(opts.semanticNew, "semantic-new").extraction as Partial<Extraction>)
         : null;
 
       if (semanticNew) {
@@ -1140,11 +1217,14 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       const root = resolve(opts.root);
       const detection = readJson<DetectionResult>(opts.detect);
       const ast = ensureExtractionShape(readJson<Partial<Extraction>>(opts.ast));
-      const cached = opts.cached && existsSync(resolve(opts.cached))
-        ? readJson<Partial<Extraction>>(opts.cached)
+      // Validate + sanitize untrusted semantic fragments (port of upstream
+      // PR #825). Invalid chunks are dropped with a warning rather than
+      // crashing the whole finalize-update pipeline.
+      const cached = opts.cached
+        ? (loadAndSanitizeFragment(opts.cached, "cached").extraction as Partial<Extraction>)
         : null;
-      const semanticNew = opts.semanticNew && existsSync(resolve(opts.semanticNew))
-        ? readJson<Partial<Extraction>>(opts.semanticNew)
+      const semanticNew = opts.semanticNew
+        ? (loadAndSanitizeFragment(opts.semanticNew, "semantic-new").extraction as Partial<Extraction>)
         : null;
 
       if (semanticNew) {
