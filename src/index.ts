@@ -299,8 +299,8 @@ export type {
 export type { LlmExecutionMode } from "./llm-execution.js";
 export { buildFirstHopSummary, firstHopSummaryToText } from "./summary.js";
 export type { FirstHopSummary, FirstHopHub, FirstHopCommunity, FirstHopSummaryOptions } from "./summary.js";
-export { buildReviewDelta, reviewDeltaToText } from "./review.js";
-export type { ReviewDelta, ReviewNode, ReviewChain, ReviewDeltaOptions } from "./review.js";
+export { buildReviewDelta, reviewDeltaToText, computeAffectedFiles, affectedFilesToText } from "./review.js";
+export type { ReviewDelta, ReviewNode, ReviewChain, ReviewDeltaOptions, ComputeAffectedFilesOptions } from "./review.js";
 export { buildReviewAnalysis, reviewAnalysisToText, evaluateReviewAnalysis, reviewEvaluationToText } from "./review-analysis.js";
 export type { ReviewAnalysis, ReviewAnalysisOptions, ReviewBlastRadius, ReviewImpactedCommunity, ReviewMultimodalSafety, ReviewEvaluationCase, ReviewEvaluationCaseResult, ReviewEvaluationResult, ReviewEvaluationOptions, ReviewRiskLevel } from "./review-analysis.js";
 export { createReviewGraphStore } from "./review-store.js";

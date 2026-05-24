@@ -4119,6 +4119,7 @@ export async function main(): Promise<void> {
     .option("--max-nodes <n>", "Maximum impacted nodes", "80")
     .option("--max-chains <n>", "Maximum high-risk chains", "8")
     .option("--depth <n>", "BFS depth on the import graph (1..5, default 1)", "1")
+    .option("--affected", "Emit only the affected-files list (one path per line); equivalent to upstream `graphify affected` on the review-delta surface")
     .action(async (files, opts) => {
       const changedFiles = [
         ...files,
@@ -4141,6 +4142,15 @@ export async function main(): Promise<void> {
       const raw = JSON.parse(rf(gp, "utf-8"));
       const G = loadGraphFromData(raw);
       const depth = Number.parseInt(String(opts.depth ?? "1"), 10);
+      if (opts.affected) {
+        const { computeAffectedFiles, affectedFilesToText } = await import("./review.js");
+        const affected = computeAffectedFiles(G, resolvedChangedFiles, {
+          depth,
+          maxNodes: Number(opts.maxNodes),
+        });
+        console.log(affectedFilesToText(affected));
+        return;
+      }
       const { buildReviewDelta, reviewDeltaToText } = await import("./review.js");
       const delta = buildReviewDelta(G, resolvedChangedFiles, {
         maxNodes: Number(opts.maxNodes),
