@@ -261,3 +261,66 @@ export function escapeHtml(text: string): string {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
+
+// ---------------------------------------------------------------------------
+// Metadata sanitisation (recursive, bounded, HTML-safe)
+// Port of `graphify.security.sanitize_metadata` from upstream
+// safishamsi/graphify commit `b6127aa` (PR #956).
+// ---------------------------------------------------------------------------
+
+const METADATA_MAX_VALUE_LEN = 512;
+const METADATA_MAX_LIST_ITEMS = 50;
+
+function sanitizeMetadataString(value: unknown): string {
+  // String coercion first (matches Python `str(value)` for non-string inputs).
+  let text = String(value).replace(CONTROL_CHAR_RE, "");
+  text = escapeHtml(text);
+  if (text.length > METADATA_MAX_VALUE_LEN) {
+    text = text.slice(0, METADATA_MAX_VALUE_LEN);
+  }
+  return text;
+}
+
+function sanitizeMetadataValue(value: unknown): unknown {
+  // Order matters: bool is a subclass of int in Python; we mirror by
+  // testing booleans first, then numbers, then strings, then collections.
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string") return sanitizeMetadataString(value);
+  if (Array.isArray(value)) {
+    return value.slice(0, METADATA_MAX_LIST_ITEMS).map(sanitizeMetadataValue);
+  }
+  if (typeof value === "object") {
+    return sanitizeMetadata(value as Record<string, unknown>);
+  }
+  return sanitizeMetadataString(value);
+}
+
+/**
+ * Sanitise a metadata object before export.
+ *
+ * Metadata is less constrained than node labels: it can contain nested
+ * dicts, lists, source snippets, external index symbols, and docstring
+ * text. This helper keeps the data JSON-compatible, strips control
+ * characters, escapes HTML-sensitive characters in strings, caps long
+ * strings (512) and lists (50), and drops entries whose key becomes empty
+ * after sanitisation.
+ *
+ * Defence in depth at the JSON / HTML boundary so future extractors or
+ * viewers cannot leak control chars or markup from external indexer output.
+ */
+export function sanitizeMetadata(
+  metadata: Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
+  if (metadata === null || metadata === undefined) return {};
+  const result: Record<string, unknown> = {};
+  for (const [rawKey, rawValue] of Object.entries(metadata)) {
+    const cleanKey = sanitizeMetadataString(rawKey);
+    if (!cleanKey) continue;
+    result[cleanKey] = sanitizeMetadataValue(rawValue);
+  }
+  return result;
+}
