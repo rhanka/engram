@@ -76,13 +76,249 @@ function looksLikePaper(filePath: string): boolean {
 
 const ASSET_DIR_MARKERS = new Set([".imageset", ".xcassets", ".appiconset", ".colorset", ".launchimage"]);
 
-function hasCodeShebang(filePath: string): boolean {
-  try {
-    const firstLine = readFileSync(filePath, "utf-8").split(/\r?\n/, 1)[0] ?? "";
-    return firstLine.startsWith("#!");
-  } catch {
-    return false;
+// Interpreter names that mark a shebang-only file as CODE. Mirrors upstream
+// `_SHEBANG_CODE_INTERPRETERS` (port of safishamsi b6127aa sub).
+const SHEBANG_CODE_INTERPRETERS = new Set([
+  "python", "python3", "python2",
+  "ruby", "perl", "node", "nodejs",
+  "bash", "sh", "dash", "zsh", "fish", "ksh", "tcsh",
+  "lua", "php", "julia", "Rscript",
+]);
+
+/**
+ * POSIX-style shell tokenizer covering the subset of `shlex.split` that
+ * shebang lines actually exercise: single/double quotes, backslash escapes
+ * outside single quotes, whitespace-separated tokens. Throws on unbalanced
+ * quotes (matches shlex behavior) so the caller can fall back to None.
+ */
+function shellSplit(input: string): string[] {
+  const tokens: string[] = [];
+  let current = "";
+  let inSingle = false;
+  let inDouble = false;
+  let hasToken = false;
+  for (let i = 0; i < input.length; i++) {
+    const c = input[i]!;
+    if (inSingle) {
+      if (c === "'") { inSingle = false; continue; }
+      current += c;
+      continue;
+    }
+    if (inDouble) {
+      if (c === "\\" && i + 1 < input.length) {
+        const next = input[i + 1]!;
+        if (next === "\"" || next === "\\" || next === "$" || next === "`" || next === "\n") {
+          current += next;
+          i++;
+          continue;
+        }
+        current += c;
+        continue;
+      }
+      if (c === "\"") { inDouble = false; continue; }
+      current += c;
+      continue;
+    }
+    if (c === "'") { inSingle = true; hasToken = true; continue; }
+    if (c === "\"") { inDouble = true; hasToken = true; continue; }
+    if (c === "\\" && i + 1 < input.length) {
+      current += input[i + 1]!;
+      i++;
+      hasToken = true;
+      continue;
+    }
+    if (c === " " || c === "\t" || c === "\n" || c === "\r") {
+      if (hasToken) {
+        tokens.push(current);
+        current = "";
+        hasToken = false;
+      }
+      continue;
+    }
+    current += c;
+    hasToken = true;
   }
+  if (inSingle || inDouble) {
+    throw new Error("unbalanced quote");
+  }
+  if (hasToken) tokens.push(current);
+  return tokens;
+}
+
+function splitEnvS(value: string, rest: string[]): string[] {
+  const packed = [value, ...rest].join(" ").trim();
+  return shellSplit(packed);
+}
+
+/**
+ * Strip leading env(1) options and var assignments, return the trailing
+ * command argv. Covers macOS/BSD and GNU coreutils env documented spellings.
+ *
+ * POSIX/macOS short forms:
+ *     env [-0iv] [-C workdir] [-P utilpath] [-S string]
+ *         [-u name] [name=value ...] [utility [argument ...]]
+ *
+ * GNU coreutils long/compact forms additionally supported:
+ *     --argv0=ARG / -a ARG / -aARG
+ *     --unset=NAME / --unset NAME / -u NAME / -uNAME
+ *     --chdir=DIR / --chdir DIR / -C DIR / -CDIR
+ *     --split-string=STRING / --split-string STRING
+ *     -S STRING / -SSTRING / -vS STRING / -vSSTRING
+ *     --ignore-environment / --null / --debug / --list-signal-handling
+ *     --default-signal[=SIG] / --ignore-signal[=SIG] / --block-signal[=SIG]
+ *
+ * `-S` / `--split-string` payloads are themselves env-style argument lists
+ * per the GNU shebang synopsis:
+ *     #!/usr/bin/env -[v]S[option]... [name=value]... command [args]...
+ * so after splitting the payload we recursively re-parse it with
+ * `allowSplit=false` (a nested -S inside a split payload is rejected to
+ * bound recursion).
+ *
+ * Unknown hyphen-prefixed args yield [] (we refuse to guess whether their
+ * next token is an interpreter or an operand).
+ *
+ * Port of upstream safishamsi b6127aa sub (`_env_command_args`).
+ */
+function envCommandArgs(args: string[], allowSplit: boolean = true): string[] {
+  let i = 0;
+  while (i < args.length) {
+    const arg = args[i]!;
+
+    if (arg === "--") {
+      return args.slice(i + 1);
+    }
+
+    // Split-string forms: tokenize the packed payload, then re-parse it as
+    // env args (so leading assignments/flags inside the payload are skipped
+    // before the interpreter is identified).
+    if (allowSplit) {
+      if (arg === "-S") {
+        if (i + 1 >= args.length) return [];
+        return envCommandArgs(splitEnvS(args.slice(i + 1).join(" "), []), false);
+      }
+      if (arg.startsWith("-S") && arg.length > 2) {
+        return envCommandArgs(splitEnvS(arg.slice(2), args.slice(i + 1)), false);
+      }
+      if (arg === "-vS") {
+        if (i + 1 >= args.length) return [];
+        return envCommandArgs(splitEnvS(args.slice(i + 1).join(" "), []), false);
+      }
+      if (arg.startsWith("-vS") && arg.length > 3) {
+        return envCommandArgs(splitEnvS(arg.slice(3), args.slice(i + 1)), false);
+      }
+      if (arg.startsWith("--split-string=")) {
+        return envCommandArgs(splitEnvS(arg.slice("--split-string=".length), args.slice(i + 1)), false);
+      }
+      if (arg === "--split-string") {
+        if (i + 1 >= args.length) return [];
+        return envCommandArgs(splitEnvS(args[i + 1]!, args.slice(i + 2)), false);
+      }
+    }
+
+    // Options with separate required operand
+    if (arg === "-u" || arg === "-C" || arg === "-P" || arg === "-a" ||
+        arg === "--unset" || arg === "--chdir" || arg === "--argv0") {
+      if (i + 2 > args.length) return [];
+      i += 2;
+      continue;
+    }
+
+    // Clumped short option + operand (e.g. `-uPYTHONPATH`)
+    if (
+      (arg.startsWith("-u") || arg.startsWith("-C") || arg.startsWith("-P") || arg.startsWith("-a"))
+      && arg.length > 2 && !arg.startsWith("--")
+    ) {
+      i += 1;
+      continue;
+    }
+
+    // Long option with `=` operand
+    if (arg.startsWith("--unset=") || arg.startsWith("--chdir=") || arg.startsWith("--argv0=")) {
+      i += 1;
+      continue;
+    }
+
+    // No-operand flags
+    if (arg === "-" || arg === "-i" || arg === "-0" || arg === "-v" ||
+        arg === "--ignore-environment" || arg === "--null" ||
+        arg === "--debug" || arg === "--list-signal-handling") {
+      i += 1;
+      continue;
+    }
+
+    // Signal-handling long flags (with or without =SIG operand — treated as
+    // no-effect for interpreter-resolution purposes)
+    if (arg.startsWith("--default-signal") || arg.startsWith("--ignore-signal") ||
+        arg.startsWith("--block-signal")) {
+      i += 1;
+      continue;
+    }
+
+    // Unknown hyphen-prefixed: refuse to guess
+    if (arg.startsWith("-")) return [];
+
+    // Inline NAME=value assignment
+    if (arg.includes("=")) {
+      i += 1;
+      continue;
+    }
+
+    // First non-option, non-assignment token starts the command argv
+    return args.slice(i);
+  }
+
+  return [];
+}
+
+/**
+ * Return the interpreter basename from a shebang line, or null if there is
+ * no shebang / the file is unreadable / parsing fails.
+ *
+ * Handles forms that a naive parser misses:
+ *   - `#!/usr/bin/env -S python3 -u`     (env -S split-args form)
+ *   - `#!/usr/bin/env -i bash`           (no-operand env flags)
+ *   - `#!/usr/bin/env -u VAR python3`    (env options with operands)
+ *   - `#!/usr/bin/env -C /tmp python3`   (env -C workdir)
+ *   - `#!/usr/bin/env -P /bin python3`   (env -P utilpath)
+ *   - `#!/usr/bin/env DEBUG=1 python3`   (inline var assignment)
+ *   - `#!"/usr/local/bin/python with spaces"`  (shellSplit handles quotes)
+ *
+ * Port of upstream safishamsi b6127aa sub (`_shebang_interpreter`).
+ */
+export function shebangInterpreter(filePath: string): string | null {
+  let first: Buffer;
+  try {
+    const fd = readFileSync(filePath);
+    first = fd.subarray(0, 256);
+  } catch {
+    return null;
+  }
+  if (first.length < 2 || first[0] !== 0x23 /* # */ || first[1] !== 0x21 /* ! */) {
+    return null;
+  }
+  const nl = first.indexOf(0x0a);
+  const lineBuf = nl >= 0 ? first.subarray(0, nl) : first;
+  // Decode as UTF-8 with replacement on errors (Buffer toString default).
+  const line = lineBuf.toString("utf-8").slice(2).trim();
+  let parts: string[];
+  try {
+    parts = shellSplit(line);
+  } catch {
+    return null;
+  }
+  if (parts.length === 0) return null;
+  let interp = basename(parts[0]!);
+  if (interp === "env") {
+    const envArgs = envCommandArgs(parts.slice(1));
+    if (envArgs.length === 0) return null;
+    interp = basename(envArgs[0]!);
+  }
+  return interp;
+}
+
+function hasCodeShebang(filePath: string): boolean {
+  const interp = shebangInterpreter(filePath);
+  return interp !== null && SHEBANG_CODE_INTERPRETERS.has(interp);
 }
 
 export function classifyFile(filePath: string): FileType | null {
