@@ -31,6 +31,7 @@ import {
   toProjectRelativePath,
 } from "./portable-artifacts.js";
 import { loadGraphFromData } from "./graph.js";
+import { assertGraphJsonFileSize } from "./graph-size-guard.js";
 import { persistCommunityLabels, resolveCommunityLabels } from "./community-labels.js";
 import type { Extraction, GraphifyInputScopeMode, InputScopeSource } from "./types.js";
 
@@ -60,6 +61,7 @@ function mergeHyperedges(
 function builtFromCommit(root: string, graphPath: string): string | null {
   if (!existsSync(graphPath)) return null;
   try {
+    assertGraphJsonFileSize(graphPath, "read");
     const raw = JSON.parse(readFileSync(graphPath, "utf-8")) as {
       graph?: { built_from_commit?: unknown };
     };
@@ -171,6 +173,7 @@ export async function rebuildCode(
     const G = buildFromJson(relativeResult);
     if (existsSync(paths.graph)) {
       try {
+        assertGraphJsonFileSize(paths.graph, "read");
         const existing = makeGraphPortable(
           loadGraphFromData(JSON.parse(readFileSync(paths.graph, "utf-8")) as Record<string, unknown>),
           root,
@@ -207,6 +210,7 @@ export async function rebuildCode(
     let communities: Map<number, string[]> | undefined;
     if (!options.noCluster && existsSync(paths.graph)) {
       try {
+        assertGraphJsonFileSize(paths.graph, "read");
         const existingData = JSON.parse(readFileSync(paths.graph, "utf-8")) as {
           topology_signature?: string;
           nodes?: Array<{ id?: string; community?: number | null }>;
