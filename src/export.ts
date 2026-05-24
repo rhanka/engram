@@ -4,7 +4,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import Graph from "graphology";
-import { sanitizeLabel, escapeHtml } from "./security.js";
+import { sanitizeLabel, escapeHtml, sanitizeMetadata } from "./security.js";
 import { isDirectedGraph } from "./graph.js";
 import { assertGraphJsonFileSize, assertGraphJsonSize } from "./graph-size-guard.js";
 import { safeGitRevParse } from "./git.js";
@@ -427,13 +427,23 @@ export function toJson(
     links as unknown as ReadonlyArray<{ source: unknown; target: unknown; relation?: unknown }>,
   );
 
+  // F-0816-P3 (S3.2): sanitise the free-form `graph` metadata block at the
+  // export boundary. Defence in depth so external indexer or future-extractor
+  // output cannot leak control chars or HTML markup through graph.json.
+  // Only the metadata block is sanitised here — node / edge / hyperedge rows
+  // are round-tripped through graph.json and would double-escape if their
+  // canonical fields (label, source_file, relation) were HTML-escaped on
+  // every write. Untrusted node / edge metadata sites must apply the helper
+  // at the assignment site instead.
+  const sanitisedGraphBlock = sanitizeMetadata({
+    community_labels: communityLabelsObject,
+    ...buildFreshnessMetadata(outputPath),
+  });
+
   const output = {
     directed: isDirectedGraph(G),
     multigraph: false,
-    graph: {
-      community_labels: communityLabelsObject,
-      ...buildFreshnessMetadata(outputPath),
-    },
+    graph: sanitisedGraphBlock,
     topology_signature,
     nodes,
     links,
