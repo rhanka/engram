@@ -166,8 +166,15 @@ export function generate(
   const today = new Date().toISOString().slice(0, 10);
 
   const confidences: string[] = [];
+  // Track edge-kind counts (port of upstream safishamsi 1494874 — a new
+  // `re_exports` edge kind warrants surface counts so audit-trail consumers
+  // can read the barrel-aware delta). Generic: every relation seen on the
+  // graph gets a row, not just re_exports.
+  const edgeKindCounts = new Map<string, number>();
   G.forEachEdge((_, data) => {
     confidences.push((data.confidence as string) ?? "EXTRACTED");
+    const relation = (data.relation as string) ?? "related_to";
+    edgeKindCounts.set(relation, (edgeKindCounts.get(relation) ?? 0) + 1);
   });
   const total = confidences.length || 1;
   const extPct = Math.round((confidences.filter((c) => c === "EXTRACTED").length / total) * 100);
@@ -211,8 +218,20 @@ export function generate(
     `- Extraction: ${extPct}% EXTRACTED · ${infPct}% INFERRED · ${ambPct}% AMBIGUOUS` +
       (infAvg !== null ? ` · INFERRED: ${infEdges.length} edges (avg confidence: ${infAvg})` : ""),
     `- Token cost: ${tokenCost.input.toLocaleString()} input · ${tokenCost.output.toLocaleString()} output`,
-    "",
   );
+
+  // Per-kind edge breakdown: sorted by count desc, ties by relation name asc.
+  // Surfaces the new `re_exports` edge kind (port of upstream safishamsi
+  // 1494874) without singling it out — every relation is listed so the
+  // report stays generic.
+  if (edgeKindCounts.size > 0) {
+    const breakdown = [...edgeKindCounts.entries()]
+      .sort(([ra, ca], [rb, cb]) => (cb - ca) || ra.localeCompare(rb))
+      .map(([rel, count]) => `${rel}: ${count}`)
+      .join(" · ");
+    lines.push(`- Edge kinds: ${breakdown}`);
+  }
+  lines.push("");
 
   appendInputScopeSection(lines, detectionResult);
   appendFreshnessSection(lines, freshnessOptions);
