@@ -638,24 +638,83 @@ function _importJs(
 
   const raw = readStringSpecifier(node);
   if (!raw) return;
-  const tgtNid = resolveJsImportTarget(raw, strPath);
-  if (tgtNid) {
-    const importEdge: GraphEdge = {
-      source: fileNid, target: tgtNid, relation: "imports_from",
-      confidence: "EXTRACTED", source_file: strPath,
-      source_location: `L${node.startPosition.row + 1}`, weight: 1.0,
-    };
-    if (isReExport) {
-      // Tag the file-level edge so consumers (review-delta barrel detection,
-      // wiki audit, etc.) can distinguish a regular `import` from an
-      // `export { X } from './m'` re-export. Symbol-level `re_exports` edges
-      // are introduced in S-2.
-      (importEdge as GraphEdge & { context?: string }).context = "re-export";
-    }
-    edges.push(importEdge);
+  const targetInfo = resolveJsImportTargetInfo(raw, strPath);
+  if (!targetInfo) return;
+  const line = node.startPosition.row + 1;
+
+  const importEdge: GraphEdge = {
+    source: fileNid, target: targetInfo.targetId, relation: "imports_from",
+    confidence: "EXTRACTED", source_file: strPath,
+    source_location: `L${line}`, weight: 1.0,
+  };
+  if (isReExport) {
+    // Tag the file-level edge so consumers (review-delta barrel detection,
+    // wiki audit, etc.) can distinguish a regular `import` from an
+    // `export { X } from './m'` re-export.
+    (importEdge as GraphEdge & { context?: string }).context = "re-export";
   }
-  // rootDir is reserved for symbol-level edge resolution (introduced in S-2).
-  void rootDir;
+  edges.push(importEdge);
+
+  // Symbol-level edges: each named specifier becomes a file→symbol edge.
+  //   `import { Foo } from './bar'`         → file -imports->        bar.Foo
+  //   `export { Foo } from './bar'`         → file -re_exports->     bar.Foo
+  //   `export { default as Alias } from .`  → skipped (matches upstream)
+  //   `export * from './bar'`               → no symbol-level edge (no clause)
+  // The target id reuses _makeId(targetStem, sym) so it resolves to the same
+  // node _extract_generic emits when defining the symbol in `./bar`. The
+  // re_exports edge target lives in another file's seenIds — the cleanEdges
+  // allowlist below permits this cross-file landing.
+  if (!targetInfo.resolvedPath) return;
+  const targetStem = qualifiedFileStem(
+    targetInfo.resolvedPath,
+    rootDir ?? dirname(resolve(strPath)),
+  );
+
+  const pushSymbolEdge = (sym: string, relation: "imports" | "re_exports"): void => {
+    if (!sym || sym === "default") return;
+    const edge: GraphEdge = {
+      source: fileNid,
+      target: _makeId(targetStem, sym),
+      relation,
+      confidence: "EXTRACTED",
+      source_file: strPath,
+      source_location: `L${line}`,
+      weight: 1.0,
+    };
+    if (relation === "re_exports") {
+      (edge as GraphEdge & { context?: string }).context = "re-export";
+    }
+    edges.push(edge);
+  };
+
+  if (isReExport) {
+    // tree-sitter `export_statement` carries an `export_clause` listing the
+    // re-exported specifiers. `export * from './m'` has no `export_clause`
+    // (only a wildcard `*`), so it produces no symbol-level edges — only the
+    // file-level imports_from already pushed above.
+    for (const child of node.children) {
+      if (child.type !== "export_clause") continue;
+      for (const spec of child.children) {
+        if (spec.type !== "export_specifier") continue;
+        const nameNode = spec.childForFieldName("name");
+        if (!nameNode) continue;
+        pushSymbolEdge(_readText(nameNode, source), "re_exports");
+      }
+    }
+  } else if (node.type === "import_statement") {
+    for (const child of node.children) {
+      if (child.type !== "import_clause") continue;
+      for (const sub of child.children) {
+        if (sub.type !== "named_imports") continue;
+        for (const spec of sub.children) {
+          if (spec.type !== "import_specifier") continue;
+          const nameNode = spec.childForFieldName("name");
+          if (!nameNode) continue;
+          pushSymbolEdge(_readText(nameNode, source), "imports");
+        }
+      }
+    }
+  }
 }
 
 function _importJava(
