@@ -1308,6 +1308,14 @@ export interface ExtractionResult {
   nodes: GraphNode[];
   edges: GraphEdge[];
   error?: string;
+  /**
+   * Swift `extension Foo` class_declarations found in this file. tree-sitter-swift
+   * parses both `class Foo` and `extension Foo` as `class_declaration`; same-file
+   * duplicates collapse via seen_ids (the per-file id carries the file stem) but
+   * cross-file extensions don't — they're collected here for a corpus-level
+   * merge after every file has been parsed. Port of upstream safishamsi 406bea4 / #969.
+   */
+  swift_extensions?: Array<{ nid: string; label: string }>;
 }
 
 async function _extractGeneric(
@@ -1339,6 +1347,12 @@ async function _extractGeneric(
   const edges: GraphEdge[] = [];
   const seenIds = new Set<string>();
   const functionBodies: Array<[string, SyntaxNode]> = [];
+  // tree-sitter-swift parses both `class Foo` and `extension Foo` as
+  // `class_declaration`. Same-file pairs collapse via seenIds, but cross-file
+  // extensions don't (the per-file id carries the file stem), so they're
+  // collected here for a corpus-level merge after every file has been parsed.
+  // Port of upstream safishamsi 406bea4 / #969.
+  const swiftExtensions: Array<{ nid: string; label: string }> = [];
 
   function addNode(nid: string, label: string, line: number): void {
     if (!seenIds.has(nid)) {
@@ -1392,6 +1406,16 @@ async function _extractGeneric(
       const line = node.startPosition.row + 1;
       addNode(classNid, className, line);
       addEdge(fileNid, classNid, "contains", line);
+
+      // Swift extension dedup: tree-sitter-swift parses both `class Foo` and
+      // `extension Foo` as `class_declaration`, with `extension Foo` carrying
+      // an "extension" child node. Collect these so a corpus-level merge can
+      // collapse cross-file extension nodes onto their canonical type. Port
+      // of upstream safishamsi 406bea4 / #969.
+      if (config.tsModule === "tree_sitter_swift" &&
+          node.children.some((c) => c.type === "extension")) {
+        swiftExtensions.push({ nid: classNid, label: className });
+      }
 
       // Python-specific: inheritance
       if (config.tsModule === "tree_sitter_python") {
@@ -1813,7 +1837,11 @@ async function _extractGeneric(
     return validIds.has(src) && (validIds.has(tgt) || edge.relation === "imports" || edge.relation === "imports_from");
   });
 
-  return { nodes, edges: cleanEdges };
+  const result: ExtractionResult = { nodes, edges: cleanEdges };
+  if (swiftExtensions.length > 0) {
+    result.swift_extensions = swiftExtensions;
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -4349,6 +4377,85 @@ const _DISPATCH: Record<string, ExtractorFn> = {
 };
 
 /**
+ * Collapse cross-file Swift `extension Foo` nodes into the canonical `Foo`.
+ *
+ * tree-sitter-swift reuses `class_declaration` for both `class Foo` and
+ * `extension Foo`, and per-file node ids carry the file stem, so each file
+ * that extends `Foo` produces its own `Foo` node. The match is done by label:
+ * when exactly one non-extension declaration shares the label, extension
+ * nodes redirect onto it. Extensions of types outside the corpus (no match)
+ * and ambiguous labels (more than one match) are left untouched — picking
+ * arbitrarily would invent edges.
+ *
+ * Port of upstream safishamsi 406bea4 / #969 (`_merge_swift_extensions`).
+ */
+export function _mergeSwiftExtensions(
+  perFile: ExtractionResult[],
+  allNodes: GraphNode[],
+  allEdges: GraphEdge[],
+): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  const extensionNids = new Set<string>();
+  const extensionLabels = new Map<string, string>();
+  for (const result of perFile) {
+    for (const ext of result.swift_extensions ?? []) {
+      extensionNids.add(ext.nid);
+      extensionLabels.set(ext.nid, ext.label);
+    }
+  }
+
+  if (extensionNids.size === 0) {
+    return { nodes: allNodes, edges: allEdges };
+  }
+
+  const labelToCanonical = new Map<string, string[]>();
+  for (const n of allNodes) {
+    if (extensionNids.has(n.id)) continue;
+    const label = n.label;
+    if (!label) continue;
+    const existing = labelToCanonical.get(label);
+    if (existing) existing.push(n.id);
+    else labelToCanonical.set(label, [n.id]);
+  }
+
+  const remap = new Map<string, string>();
+  for (const extNid of extensionNids) {
+    const label = extensionLabels.get(extNid)!;
+    const candidates = labelToCanonical.get(label) ?? [];
+    if (candidates.length !== 1) continue;
+    const canonicalNid = candidates[0]!;
+    if (canonicalNid !== extNid) {
+      remap.set(extNid, canonicalNid);
+    }
+  }
+
+  if (remap.size === 0) {
+    return { nodes: allNodes, edges: allEdges };
+  }
+
+  const remappedNodes = allNodes.filter((n) => !remap.has(n.id));
+
+  // Each extension file's `contains` edge ends up pointing at the canonical
+  // type — multiple files containing the same node is the intended shape:
+  // the type owns the methods, the files own their slice. Self-loops are
+  // dropped (e.g. an in-file extension method whose call already pointed at
+  // the canonical type).
+  const rewritten: GraphEdge[] = [];
+  const seenKeys = new Set<string>();
+  for (const e of allEdges) {
+    const src = remap.get(e.source) ?? e.source;
+    const tgt = remap.get(e.target) ?? e.target;
+    if (src === tgt) continue;
+    const remapped: GraphEdge = { ...e, source: src, target: tgt };
+    const key = `${src}\0${tgt}\0${remapped.relation}\0${remapped.source_file ?? ""}\0${remapped.source_location ?? ""}`;
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    rewritten.push(remapped);
+  }
+
+  return { nodes: remappedNodes, edges: rewritten };
+}
+
+/**
  * Extract AST nodes and edges from a list of code files.
  *
  * Two-pass process:
@@ -4413,8 +4520,8 @@ export async function extractWithDiagnostics(paths: string[]): Promise<ExtractWi
     process.stderr.write(`  AST extraction: ${total}/${total} files (100%)\n`);
   }
 
-  const allNodes: GraphNode[] = [];
-  const allEdges: GraphEdge[] = [];
+  let allNodes: GraphNode[] = [];
+  let allEdges: GraphEdge[] = [];
   for (const result of perFile) {
     allNodes.push(...(result.nodes ?? []));
     allEdges.push(...(result.edges ?? []));
@@ -4422,6 +4529,14 @@ export async function extractWithDiagnostics(paths: string[]): Promise<ExtractWi
 
   // Add cross-file class-level edges (Python only)
   remapFileNodeIds(allNodes, allEdges, normalizedPaths, root);
+
+  // Collapse cross-file Swift `extension Foo` nodes onto the canonical `Foo`.
+  // Port of upstream safishamsi 406bea4 / #969. Runs after remapFileNodeIds
+  // and before Python cross-file import resolution so the canonical Swift
+  // nodes are in place for any downstream edge resolution.
+  const swiftMerged = _mergeSwiftExtensions(perFile, allNodes, allEdges);
+  allNodes = swiftMerged.nodes;
+  allEdges = swiftMerged.edges;
 
   const pyPaths = normalizedPaths.filter((p) => extname(p) === ".py");
   if (pyPaths.length > 0) {
