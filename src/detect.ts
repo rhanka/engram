@@ -397,6 +397,15 @@ export interface DetectOptions {
   candidateFiles?: string[] | null;
   candidateRoot?: string;
   scope?: InputScopeInspection;
+  /**
+   * Additional ignore patterns appended to the loaded
+   * `.graphifyignore` / `.gitignore` rules. Each pattern uses
+   * gitignore syntax and is anchored at the scan root. Patterns are
+   * applied *after* the loaded rules so they override negations.
+   *
+   * Port of upstream `--exclude` flag (PR #947, commit 9e6192a).
+   */
+  extraExcludes?: string[] | null;
 }
 
 interface ManifestEntry {
@@ -438,6 +447,17 @@ export function detect(root: string, options?: DetectOptions): DetectionResult {
   const rootResolved = resolve(root);
   const paths = resolveGraphifyPaths({ root: rootResolved });
   const ignorePatterns = loadGraphifyignore(rootResolved);
+  // CLI --exclude patterns are anchored at the scan root and appended last
+  // so they win over any .graphifyignore / .gitignore rules (port of
+  // upstream PR #947 / commit 9e6192a). Empty/whitespace-only entries are
+  // dropped via parseGraphifyignoreLine().
+  if (options?.extraExcludes && options.extraExcludes.length > 0) {
+    for (const raw of options.extraExcludes) {
+      const parsed = parseGraphifyignoreLine(raw);
+      if (!parsed) continue;
+      ignorePatterns.push({ anchor: rootResolved, pattern: parsed.pattern, negated: parsed.negated });
+    }
+  }
   const convertedDir = paths.convertedDir;
   const memoryDir = paths.memoryDir;
 
