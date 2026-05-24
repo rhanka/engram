@@ -128,6 +128,27 @@ describe("cleanupStaleNodes (F-0816-M5, build-time pair of wiki P4 stale-node fi
     expect(result.droppedNodes).toEqual([]);
   });
 
+  it("only prunes file_type=code nodes; document/paper/image/concept nodes survive missing source files", () => {
+    // Semantic / curated nodes often reference synthetic paths (draft docs,
+    // semantic chunks, external papers). The existing graph.json merge
+    // contract treats them as user-curated until an explicit pruneSources
+    // removes them — semantic_cleanup must respect that.
+    const root = tempDir("graphify-cleanup-root-");
+    const G = new Graph({ type: "undirected" });
+    G.mergeNode("code_dead", { label: "dead", source_file: "missing.ts", file_type: "code" });
+    G.mergeNode("doc_dead", { label: "doc", source_file: "missing.md", file_type: "document" });
+    G.mergeNode("paper_dead", { label: "paper", source_file: "missing.pdf", file_type: "paper" });
+    G.mergeNode("image_dead", { label: "image", source_file: "missing.png", file_type: "image" });
+
+    const result = cleanupStaleNodes(G, { root });
+
+    expect(G.hasNode("code_dead")).toBe(false);
+    expect(G.hasNode("doc_dead")).toBe(true);
+    expect(G.hasNode("paper_dead")).toBe(true);
+    expect(G.hasNode("image_dead")).toBe(true);
+    expect(result.droppedNodes).toEqual(["code_dead"]);
+  });
+
   it("emits a single log line with the dropped-node count when nodes were pruned", () => {
     const root = tempDir("graphify-cleanup-root-");
     const G = new Graph({ type: "undirected" });

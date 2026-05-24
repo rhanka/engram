@@ -14,6 +14,7 @@ import Graph from "graphology";
 import type { Extraction } from "./types.js";
 import { createGraph } from "./graph.js";
 import { assertGraphJsonFileSize } from "./graph-size-guard.js";
+import { cleanupStaleNodes } from "./semantic-cleanup.js";
 import { validateExtraction } from "./validate.js";
 
 export interface BuildOptions {
@@ -343,6 +344,23 @@ export function build(extractions: Extraction[], options?: BuildOptions): Graph 
 export interface BuildMergeOptions extends BuildOptions {
   graphPath?: string;
   pruneSources?: string[];
+  /**
+   * Automatic stale-node prune at finalize (F-0816-M5). When set, any
+   * node whose `source_file` no longer exists on disk under `root` (or
+   * is missing from `aliveSourceFiles` when provided) is dropped along
+   * with its adjacent edges before the shrink-guard fires.
+   *
+   * The wiki-level equivalent for the render path is the F-0816-P4
+   * stale-node filter in `src/wiki.ts > toWiki`. The two layers are
+   * deliberately overlapping (defence-in-depth): this pre-render cleanup
+   * keeps `.graphify/graph.json` itself dangling-reference-free; the
+   * wiki filter still defends the render path against any drift between
+   * graph.json and the analysis JSON.
+   */
+  pruneMissingSources?: {
+    root: string;
+    aliveSourceFiles?: Set<string>;
+  };
 }
 
 export function buildMerge(newChunks: Extraction[], options?: BuildMergeOptions): Graph {
@@ -387,7 +405,20 @@ export function buildMerge(newChunks: Extraction[], options?: BuildMergeOptions)
     }
   }
 
-  if (existingNodeCount > 0 && graph.order < existingNodeCount && (options?.pruneSources?.length ?? 0) === 0) {
+  // F-0816-M5: automatic stale-node prune. Ordered AFTER pruneSources so
+  // explicit caller intent always wins; the auto-prune catches whatever
+  // remains where source_file no longer exists on disk.
+  let autoPruned = 0;
+  if (options?.pruneMissingSources) {
+    const before = graph.order;
+    cleanupStaleNodes(graph, options.pruneMissingSources);
+    autoPruned = before - graph.order;
+  }
+
+  const explicitPruneRequested =
+    (options?.pruneSources?.length ?? 0) > 0 ||
+    (options?.pruneMissingSources !== undefined && autoPruned > 0);
+  if (existingNodeCount > 0 && graph.order < existingNodeCount && !explicitPruneRequested) {
     throw new Error(
       `graphify: buildMerge would shrink graph from ${existingNodeCount} to ${graph.order} nodes. ` +
       "Pass pruneSources explicitly if you intend to remove nodes.",
