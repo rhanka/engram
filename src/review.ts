@@ -3,8 +3,43 @@ import Graph from "graphology";
 
 import { isFileNode } from "./analyze.js";
 import { CODE_EXTENSIONS } from "./detect.js";
-import { forEachTraversalNeighbor } from "./graph.js";
+import { forEachTraversalNeighbor, isDirectedGraph } from "./graph.js";
 import { sanitizeLabel } from "./security.js";
+
+const IMPORT_RELATIONS = new Set(["imports", "imports_from", "re_exports", "re-exports"]);
+const BARREL_BASENAMES = new Set([
+  "index.ts",
+  "index.tsx",
+  "index.js",
+  "index.jsx",
+  "index.mjs",
+  "index.cjs",
+  "__init__.py",
+  "mod.rs",
+  "lib.rs",
+]);
+
+function basename(path: string): string {
+  const normalized = normalizePath(path);
+  const idx = normalized.lastIndexOf("/");
+  return idx >= 0 ? normalized.slice(idx + 1) : normalized;
+}
+
+function dirname(path: string): string {
+  const normalized = normalizePath(path);
+  const idx = normalized.lastIndexOf("/");
+  return idx >= 0 ? normalized.slice(0, idx) : "";
+}
+
+function isBarrelPath(path: string | null | undefined): boolean {
+  if (!path) return false;
+  return BARREL_BASENAMES.has(basename(path).toLowerCase());
+}
+
+function sourceFileOf(G: Graph, nodeId: string): string | null {
+  const value = G.getNodeAttribute(nodeId, "source_file");
+  return typeof value === "string" && value.length > 0 ? normalizePath(value) : null;
+}
 
 export interface ReviewNode {
   id: string;
@@ -37,6 +72,23 @@ export interface ReviewDeltaOptions {
   maxNodes?: number;
   maxHubs?: number;
   maxChains?: number;
+  /**
+   * BFS traversal depth on the import graph when computing impacted nodes.
+   * Default 1 preserves prior behavior (direct neighbors only). Clamped to [1, 5].
+   * Higher values let cross-language import chains contribute to the
+   * impacted set (port of safishamsi e44e6e9 `graphify affected --depth`).
+   */
+  depth?: number;
+}
+
+const MAX_AFFECTED_DEPTH = 5;
+const DEFAULT_AFFECTED_DEPTH = 1;
+
+function clampDepth(value: number | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_AFFECTED_DEPTH;
+  if (value < 1) return DEFAULT_AFFECTED_DEPTH;
+  if (value > MAX_AFFECTED_DEPTH) return MAX_AFFECTED_DEPTH;
+  return Math.floor(value);
 }
 
 function compareStrings(a: string, b: string): number {
@@ -97,12 +149,107 @@ function changedNodeIds(G: Graph, changedFiles: string[]): string[] {
   return result.sort(compareStrings);
 }
 
-function impactedNodeIds(G: Graph, starts: string[], maxNodes: number): string[] {
+/**
+ * For each changed node whose source file is in a directory that contains
+ * a barrel / re-export file (index.ts, __init__.py, mod.rs, lib.rs, ...),
+ * also include the barrel file's nodes and the barrel's inbound consumers
+ * as "changed" if the barrel imports from the changed file (i.e. is acting
+ * as a re-export). This makes consumers of the barrel surface as affected
+ * at depth 1, matching upstream safishamsi e44e6e9 `re_exports` edge
+ * semantics without requiring a new edge kind in the TS extractor.
+ */
+function expandChangedIdsViaBarrels(G: Graph, changedIds: string[]): string[] {
+  if (changedIds.length === 0) return changedIds;
+  const expanded = new Set(changedIds);
+  const directed = isDirectedGraph(G);
+
+  const changedFileSet = new Set<string>();
+  for (const id of changedIds) {
+    const file = sourceFileOf(G, id);
+    if (file) changedFileSet.add(file);
+  }
+  if (changedFileSet.size === 0) return [...expanded].sort(compareStrings);
+
+  const candidateDirs = new Set<string>();
+  for (const file of changedFileSet) candidateDirs.add(dirname(file));
+
+  // Identify barrels in the same directory as any changed file that re-export
+  // (import_from) the changed file.
+  const barrelNodes: string[] = [];
+  G.forEachNode((nodeId, attrs) => {
+    const source = typeof attrs.source_file === "string" ? attrs.source_file : null;
+    if (!isBarrelPath(source)) return;
+    const normalized = source ? normalizePath(source) : "";
+    if (!normalized) return;
+    if (!candidateDirs.has(dirname(normalized))) return;
+    let importsChanged = false;
+    if (directed) {
+      G.forEachOutboundEdge(nodeId, (_edge, edgeAttrs, _src, target) => {
+        if (importsChanged) return;
+        const relation = typeof edgeAttrs.relation === "string" ? edgeAttrs.relation : "";
+        if (!IMPORT_RELATIONS.has(relation)) return;
+        const targetFile = sourceFileOf(G, target);
+        if (targetFile && changedFileSet.has(targetFile)) importsChanged = true;
+      });
+    } else {
+      G.forEachEdge(nodeId, (_edge, edgeAttrs, source2, target) => {
+        if (importsChanged) return;
+        const relation = typeof edgeAttrs.relation === "string" ? edgeAttrs.relation : "";
+        if (!IMPORT_RELATIONS.has(relation)) return;
+        const other = target === nodeId ? source2 : target;
+        const otherFile = sourceFileOf(G, other);
+        if (otherFile && changedFileSet.has(otherFile)) importsChanged = true;
+      });
+    }
+    if (importsChanged) barrelNodes.push(nodeId);
+  });
+
+  // Add barrels and their inbound consumers (re-export propagation) to the
+  // changed set. On directed graphs we follow inbound import edges from the
+  // barrel; on undirected graphs we use the generic neighbor iterator.
+  for (const barrelId of barrelNodes) {
+    if (!expanded.has(barrelId)) expanded.add(barrelId);
+    if (directed) {
+      G.forEachInboundEdge(barrelId, (_edge, edgeAttrs, source) => {
+        const relation = typeof edgeAttrs.relation === "string" ? edgeAttrs.relation : "";
+        if (!IMPORT_RELATIONS.has(relation)) return;
+        if (!expanded.has(source)) expanded.add(source);
+      });
+    } else {
+      G.forEachEdge(barrelId, (_edge, edgeAttrs, source, target) => {
+        const relation = typeof edgeAttrs.relation === "string" ? edgeAttrs.relation : "";
+        if (!IMPORT_RELATIONS.has(relation)) return;
+        const other = source === barrelId ? target : source;
+        if (!expanded.has(other)) expanded.add(other);
+      });
+    }
+  }
+
+  return [...expanded].sort(compareStrings);
+}
+
+function impactedNodeIds(
+  G: Graph,
+  starts: string[],
+  maxNodes: number,
+  depth: number = DEFAULT_AFFECTED_DEPTH,
+): string[] {
+  const safeDepth = clampDepth(depth);
   const impacted = new Set(starts);
-  for (const nodeId of starts) {
-    forEachTraversalNeighbor(G, nodeId, (neighbor) => {
-      if (impacted.size < maxNodes) impacted.add(neighbor);
-    });
+  let frontier: string[] = [...starts];
+  for (let hop = 0; hop < safeDepth; hop += 1) {
+    if (frontier.length === 0 || impacted.size >= maxNodes) break;
+    const nextFrontier: string[] = [];
+    for (const nodeId of frontier) {
+      if (impacted.size >= maxNodes) break;
+      forEachTraversalNeighbor(G, nodeId, (neighbor) => {
+        if (impacted.size >= maxNodes) return;
+        if (impacted.has(neighbor)) return;
+        impacted.add(neighbor);
+        nextFrontier.push(neighbor);
+      });
+    }
+    frontier = nextFrontier;
   }
   return [...impacted].sort((a, b) => G.degree(b) - G.degree(a) || compareStrings(a, b));
 }
@@ -228,9 +375,11 @@ export function buildReviewDelta(
   const maxNodes = Math.max(1, options.maxNodes ?? 80);
   const maxHubs = Math.max(0, options.maxHubs ?? 8);
   const maxChains = Math.max(0, options.maxChains ?? 8);
+  const depth = clampDepth(options.depth);
   const changedFiles = uniqueSorted(changedFilesInput);
-  const changedIds = changedNodeIds(G, changedFiles);
-  const impactedIds = impactedNodeIds(G, changedIds, maxNodes);
+  const initialChangedIds = changedNodeIds(G, changedFiles);
+  const changedIds = expandChangedIdsViaBarrels(G, initialChangedIds);
+  const impactedIds = impactedNodeIds(G, changedIds, maxNodes, depth);
   const impactedSet = new Set(impactedIds);
   const changedNodes = changedIds.map((nodeId) => nodeInfo(G, nodeId)).sort(compareNodes);
   const impactedNodes = impactedIds.map((nodeId) => nodeInfo(G, nodeId)).sort(compareNodes);
@@ -310,4 +459,44 @@ export function reviewDeltaToText(delta: ReviewDelta): string {
 
   lines.push("", `Next best action: ${delta.next_best_action}`);
   return lines.join("\n");
+}
+
+export interface ComputeAffectedFilesOptions {
+  /** BFS depth on the import graph (default 1, clamped to [1, 5]). */
+  depth?: number;
+  /** Cap on impacted node set during traversal (default 1024). */
+  maxNodes?: number;
+}
+
+/**
+ * Return the sorted list of files affected by a diff, computed by BFS over
+ * the import graph (with barrel re-export expansion). Convenience surface
+ * for `graphify review-delta --affected` — equivalent to upstream's
+ * `graphify affected` but hosted on the existing review-delta extension
+ * point (per user decision 2026-05-23: do not ship a new top-level verb).
+ */
+export function computeAffectedFiles(
+  G: Graph,
+  changedFilesInput: string[],
+  options: ComputeAffectedFilesOptions = {},
+): string[] {
+  const depth = clampDepth(options.depth);
+  const maxNodes = Math.max(1, options.maxNodes ?? 1024);
+  const changedFiles = uniqueSorted(changedFilesInput);
+  if (changedFiles.length === 0) return [];
+  const initialChangedIds = changedNodeIds(G, changedFiles);
+  if (initialChangedIds.length === 0) return [];
+  const changedIds = expandChangedIdsViaBarrels(G, initialChangedIds);
+  const impactedIds = impactedNodeIds(G, changedIds, maxNodes, depth);
+  const files = new Set<string>();
+  for (const id of impactedIds) {
+    const file = sourceFileOf(G, id);
+    if (file) files.add(file);
+  }
+  return [...files].sort(compareStrings);
+}
+
+/** Newline-separated rendering of an affected-files list (no header). */
+export function affectedFilesToText(files: string[]): string {
+  return files.join("\n");
 }
