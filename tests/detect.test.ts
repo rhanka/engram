@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdirSync, readFileSync, writeFileSync, rmSync, statSync, symlinkSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { detect, classifyFile, detectIncremental, saveManifest } from "../src/detect.js";
+import { detect, classifyFile, detectIncremental, saveManifest, shebangInterpreter } from "../src/detect.js";
 import { inspectInputScope } from "../src/input-scope.js";
 import { execGit } from "../src/git.js";
 import { FileType } from "../src/types.js";
@@ -61,6 +61,13 @@ describe("classifyFile", () => {
     for (const ext of codeExts) {
       expect(classifyFile(`test${ext}`)).toBe(FileType.CODE);
     }
+  });
+
+  it("classifies .ets (ArkTS / HarmonyOS) as CODE", () => {
+    // Port of upstream safishamsi 52d75bd / #926: .ets is the primary language
+    // for HarmonyOS/OpenHarmony app development. Without this, detect()
+    // silently skips all .ets source files.
+    expect(classifyFile("Sources/index.ets")).toBe(FileType.CODE);
   });
 
   it("classifies Blade templates as CODE", () => {
@@ -339,6 +346,206 @@ describe("detect", () => {
     const result = detect(tmpDir);
 
     expect(result.files.code).toEqual([join(tmpDir, "deploy")]);
+  });
+
+  // -------------------------------------------------------------------------
+  // env(1) shebang option-form parsing (port of upstream safishamsi b6127aa sub)
+  //
+  // Upstream `_shebang_file_type` historically only parsed `#!/usr/bin/env
+  // <interp>`. The full coreutils / BSD env synopsis is much richer:
+  //     #!/usr/bin/env [-vi0] [-S string] [-u name] [-C dir] [-P path]
+  //                    [name=value...] command [args]...
+  // The new parser strips env options + assignments before resolving the
+  // interpreter, and refuses to guess on unknown options.
+  // -------------------------------------------------------------------------
+
+  it("shebang: plain absolute interpreter path returns the basename", () => {
+    const script = join(tmpDir, "plain");
+    writeFileSync(script, "#!/usr/bin/python3\nprint('x')\n", "utf-8");
+    expect(shebangInterpreter(script)).toBe("python3");
+  });
+
+  it("shebang: env single-arg form resolves to the interpreter, not 'env'", () => {
+    const script = join(tmpDir, "env_single");
+    writeFileSync(script, "#!/usr/bin/env python3\nprint('x')\n", "utf-8");
+    expect(shebangInterpreter(script)).toBe("python3");
+  });
+
+  it("shebang: env -S split-args form recovers the interpreter", () => {
+    const script = join(tmpDir, "env_dashs");
+    writeFileSync(script, "#!/usr/bin/env -S python3 -u\nprint('x')\n", "utf-8");
+    expect(shebangInterpreter(script)).toBe("python3");
+    expect(classifyFile(script)).toBe(FileType.CODE);
+  });
+
+  it("shebang: env -i bash skips env flags and resolves the interpreter", () => {
+    const script = join(tmpDir, "env_flags");
+    writeFileSync(script, "#!/usr/bin/env -i bash\necho hi\n", "utf-8");
+    expect(shebangInterpreter(script)).toBe("bash");
+    expect(classifyFile(script)).toBe(FileType.CODE);
+  });
+
+  it("shebang: env DEBUG=1 python3 skips var=value assignments", () => {
+    const script = join(tmpDir, "env_assign");
+    writeFileSync(script, "#!/usr/bin/env DEBUG=1 python3\nprint('x')\n", "utf-8");
+    expect(shebangInterpreter(script)).toBe("python3");
+    expect(classifyFile(script)).toBe(FileType.CODE);
+  });
+
+  it("shebang: file without shebang returns null", () => {
+    const script = join(tmpDir, "no_shebang");
+    writeFileSync(script, "print('x')\n", "utf-8");
+    expect(shebangInterpreter(script)).toBeNull();
+  });
+
+  it("shebang: env -u VAR python3 skips -u and its operand", () => {
+    const script = join(tmpDir, "env_unset");
+    writeFileSync(script, "#!/usr/bin/env -u PYTHONPATH python3\nprint('x')\n", "utf-8");
+    expect(shebangInterpreter(script)).toBe("python3");
+    expect(classifyFile(script)).toBe(FileType.CODE);
+  });
+
+  it("shebang: env -C /tmp python3 skips -C and its workdir operand", () => {
+    const script = join(tmpDir, "env_chdir");
+    writeFileSync(script, "#!/usr/bin/env -C /tmp python3\nprint('x')\n", "utf-8");
+    expect(shebangInterpreter(script)).toBe("python3");
+  });
+
+  it("shebang: env -P /bin python3 skips -P and its utilpath operand", () => {
+    const script = join(tmpDir, "env_path");
+    writeFileSync(script, "#!/usr/bin/env -P /bin python3\nprint('x')\n", "utf-8");
+    expect(shebangInterpreter(script)).toBe("python3");
+  });
+
+  it("shebang: env -i -S \"python3 -u\" handles -S after another env flag", () => {
+    const script = join(tmpDir, "env_flag_dash_s");
+    writeFileSync(script, "#!/usr/bin/env -i -S \"python3 -u\"\nprint('x')\n", "utf-8");
+    expect(shebangInterpreter(script)).toBe("python3");
+  });
+
+  it("shebang: clumped -uPYTHONPATH form (no space between flag and operand)", () => {
+    const script = join(tmpDir, "env_clumped");
+    writeFileSync(script, "#!/usr/bin/env -uPYTHONPATH python3\nprint('x')\n", "utf-8");
+    expect(shebangInterpreter(script)).toBe("python3");
+  });
+
+  it("shebang: env -u with no operand returns null", () => {
+    const script = join(tmpDir, "env_missing_op");
+    writeFileSync(script, "#!/usr/bin/env -u\n", "utf-8");
+    expect(shebangInterpreter(script)).toBeNull();
+  });
+
+  it("shebang: GNU --split-string='python3 -u' (`=` operand form)", () => {
+    const script = join(tmpDir, "env_split_eq");
+    writeFileSync(script, "#!/usr/bin/env --split-string='python3 -u'\nprint('x')\n", "utf-8");
+    expect(shebangInterpreter(script)).toBe("python3");
+  });
+
+  it("shebang: GNU --split-string \"python3 -u\" (separate operand)", () => {
+    const script = join(tmpDir, "env_split_sep");
+    writeFileSync(script, "#!/usr/bin/env --split-string \"python3 -u\"\nprint('x')\n", "utf-8");
+    expect(shebangInterpreter(script)).toBe("python3");
+  });
+
+  it("shebang: GNU -a alias python3 skips both -a and its argv0 operand", () => {
+    const script = join(tmpDir, "env_argv0");
+    writeFileSync(script, "#!/usr/bin/env -a alias python3\nprint('x')\n", "utf-8");
+    expect(shebangInterpreter(script)).toBe("python3");
+  });
+
+  it("shebang: compact -Spython3 -u form (no space between -S and packed string)", () => {
+    const script = join(tmpDir, "env_compact_dash_s");
+    writeFileSync(script, "#!/usr/bin/env -Spython3 -u\nprint('x')\n", "utf-8");
+    expect(shebangInterpreter(script)).toBe("python3");
+  });
+
+  it("shebang: compact -vSpython3 (-v plus compact -S)", () => {
+    const script = join(tmpDir, "env_compact_vs");
+    writeFileSync(script, "#!/usr/bin/env -vSpython3 -u\nprint('x')\n", "utf-8");
+    expect(shebangInterpreter(script)).toBe("python3");
+  });
+
+  it("shebang: GNU --unset PYTHONPATH python3 (separate operand)", () => {
+    const script = join(tmpDir, "env_long_unset");
+    writeFileSync(script, "#!/usr/bin/env --unset PYTHONPATH python3\nprint('x')\n", "utf-8");
+    expect(shebangInterpreter(script)).toBe("python3");
+  });
+
+  it("shebang: GNU --unset=PYTHONPATH python3 (`=` operand form)", () => {
+    const script = join(tmpDir, "env_long_unset_eq");
+    writeFileSync(script, "#!/usr/bin/env --unset=PYTHONPATH python3\nprint('x')\n", "utf-8");
+    expect(shebangInterpreter(script)).toBe("python3");
+  });
+
+  it("shebang: GNU --chdir /tmp python3 (separate operand)", () => {
+    const script = join(tmpDir, "env_long_chdir");
+    writeFileSync(script, "#!/usr/bin/env --chdir /tmp python3\nprint('x')\n", "utf-8");
+    expect(shebangInterpreter(script)).toBe("python3");
+  });
+
+  it("shebang: GNU --chdir=/tmp python3 (`=` operand form)", () => {
+    const script = join(tmpDir, "env_long_chdir_eq");
+    writeFileSync(script, "#!/usr/bin/env --chdir=/tmp python3\nprint('x')\n", "utf-8");
+    expect(shebangInterpreter(script)).toBe("python3");
+  });
+
+  it("shebang: GNU signal-handling flags skip transparently", () => {
+    const script = join(tmpDir, "env_signal");
+    writeFileSync(script, "#!/usr/bin/env --default-signal=TERM --ignore-signal=PIPE python3\n", "utf-8");
+    expect(shebangInterpreter(script)).toBe("python3");
+  });
+
+  it("shebang: unknown hyphen-prefixed env option returns null (refuse to guess)", () => {
+    const script = join(tmpDir, "env_unknown");
+    writeFileSync(script, "#!/usr/bin/env --no-such-flag python3\n", "utf-8");
+    expect(shebangInterpreter(script)).toBeNull();
+  });
+
+  it("shebang: -S payload carries NAME=value assignments before the interpreter", () => {
+    const script = join(tmpDir, "env_s_assignment");
+    writeFileSync(
+      script,
+      "#!/usr/bin/env -S PYTHONPATH=/opt/custom:${PYTHONPATH} python3\nprint('x')\n",
+      "utf-8",
+    );
+    expect(shebangInterpreter(script)).toBe("python3");
+  });
+
+  it("shebang: -S payload carries env flags before the interpreter", () => {
+    const script = join(tmpDir, "env_s_flag");
+    writeFileSync(script, "#!/usr/bin/env -S -i OLDUSER=${USER} python3\nprint('x')\n", "utf-8");
+    expect(shebangInterpreter(script)).toBe("python3");
+  });
+
+  it("shebang: --split-string= payload carries assignments before the interpreter", () => {
+    const script = join(tmpDir, "env_long_split_assignment");
+    writeFileSync(
+      script,
+      "#!/usr/bin/env --split-string='PYTHONPATH=/opt/custom:${PYTHONPATH} python3 -u'\nprint('x')\n",
+      "utf-8",
+    );
+    expect(shebangInterpreter(script)).toBe("python3");
+  });
+
+  it("shebang: nested -S inside a -S payload is rejected (recursion-bounded)", () => {
+    const script = join(tmpDir, "env_nested_split");
+    writeFileSync(script, "#!/usr/bin/env -S -S python3 -u\nprint('x')\n", "utf-8");
+    expect(shebangInterpreter(script)).toBeNull();
+  });
+
+  it("shebang: -vS packed payload also re-parses for leading assignments", () => {
+    const script = join(tmpDir, "env_vs_assignment");
+    writeFileSync(script, "#!/usr/bin/env -vS DEBUG=1 python3 -u\nprint('x')\n", "utf-8");
+    expect(shebangInterpreter(script)).toBe("python3");
+  });
+
+  it("shebang: file with unknown interpreter is not classified as CODE", () => {
+    // Upstream's whitelist refuses to classify e.g. `awk` shebangs as CODE
+    // (we have no extractor for them). Mirrors the conservative upstream
+    // _shebang_file_type behavior.
+    const script = join(tmpDir, "report");
+    writeFileSync(script, "#!/usr/bin/awk -f\n", "utf-8");
+    expect(classifyFile(script)).toBeNull();
   });
 
   it("filters explicit scope inventory through detect and preserves scope diagnostics", () => {
