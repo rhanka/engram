@@ -240,6 +240,26 @@ describe("skill cache examples", () => {
     }
   });
 
+  it("guards inline semantic merges with validateSemanticFragment + sanitizeSemanticFragment (port of upstream PR #825)", () => {
+    // Skill templates that inline a `node -e "..."` saveSemanticCache / merge
+    // block must validate the untrusted agent JSON before merging. Codex and
+    // Gemini route through the central `skill-runtime` (which already
+    // validates), so they're exempt from this regex check.
+    const INLINE_MERGE_SKILLS = [
+      "../src/skills/skill.md",
+      "../src/skills/skill-droid.md",
+      "../src/skills/skill-opencode.md",
+      "../src/skills/skill-windows.md",
+    ];
+    for (const relativePath of INLINE_MERGE_SKILLS) {
+      const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
+      expect(content).toContain("validateSemanticFragment");
+      expect(content).toContain("sanitizeSemanticFragment");
+      // saveSemanticCache must not be called on a raw, unvalidated fragment.
+      expect(content).toMatch(/sanitizeSemanticFragment\([\s\S]{0,200}\)[\s\S]{0,200}saveSemanticCache/);
+    }
+  });
+
   it("keeps the Windows skill usage lines aligned with upstream v0.3.28", () => {
     const content = readFileSync(new URL("../src/skills/skill-windows.md", import.meta.url), "utf-8");
 

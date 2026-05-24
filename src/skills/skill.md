@@ -321,28 +321,45 @@ Wait for all subagents. For each result:
 
 If more than half the chunks failed, stop and tell the user.
 
-Save new results to cache:
+Save new results to cache. The `saveSemanticCache` call is wrapped in `validateSemanticFragment` + `sanitizeSemanticFragment` so a malformed agent response cannot poison the per-file semantic cache:
 ```bash
 node -e "
 const fs = require('fs');
-const { saveSemanticCache } = require('graphifyy');
+const { saveSemanticCache, validateSemanticFragment, sanitizeSemanticFragment } = require('graphifyy');
 
 const raw = fs.existsSync('.graphify/.graphify_semantic_new.json') ? JSON.parse(fs.readFileSync('.graphify/.graphify_semantic_new.json', 'utf-8')) : {nodes:[],edges:[],hyperedges:[]};
-const saved = saveSemanticCache(raw.nodes || [], raw.edges || [], raw.hyperedges || []);
+const errors = validateSemanticFragment(raw);
+if (errors.length > 0) {
+  console.error('Refusing to cache invalid semantic fragment: ' + errors.slice(0, 3).join('; '));
+  process.exit(1);
+}
+const clean = sanitizeSemanticFragment(raw);
+const saved = saveSemanticCache(clean.nodes || [], clean.edges || [], clean.hyperedges || []);
 console.log(\`Cached \${saved} files\`);
 "
 ```
 
-Merge cached + new results into `.graphify/.graphify_semantic.json`:
+Merge cached + new results into `.graphify/.graphify_semantic.json`. Each chunk is independently validated; invalid chunks are skipped with a warning rather than crashing the merge (mirrors upstream PR #825):
 ```bash
 node -e "
 const fs = require('fs');
+const { validateSemanticFragment, sanitizeSemanticFragment } = require('graphifyy');
 
-const cached = fs.existsSync('.graphify/.graphify_cached.json') ? JSON.parse(fs.readFileSync('.graphify/.graphify_cached.json', 'utf-8')) : {nodes:[],edges:[],hyperedges:[]};
-const raw = fs.existsSync('.graphify/.graphify_semantic_new.json') ? JSON.parse(fs.readFileSync('.graphify/.graphify_semantic_new.json', 'utf-8')) : {nodes:[],edges:[],hyperedges:[]};
+function loadAndClean(path, label) {
+  if (!fs.existsSync(path)) return {nodes:[],edges:[],hyperedges:[]};
+  let raw;
+  try { raw = JSON.parse(fs.readFileSync(path, 'utf-8')); }
+  catch (e) { console.warn(\`Skipping invalid \${label} fragment \${path}: \${e.message}\`); return {nodes:[],edges:[],hyperedges:[]}; }
+  const errs = validateSemanticFragment(raw);
+  if (errs.length > 0) { console.warn(\`Skipping invalid \${label} fragment \${path}: \` + errs.slice(0, 3).join('; ')); return {nodes:[],edges:[],hyperedges:[]}; }
+  return sanitizeSemanticFragment(raw);
+}
 
-const allNodes = cached.nodes.concat(raw.nodes || []);
-const allEdges = cached.edges.concat(raw.edges || []);
+const cached = loadAndClean('.graphify/.graphify_cached.json', 'cached');
+const raw = loadAndClean('.graphify/.graphify_semantic_new.json', 'new');
+
+const allNodes = (cached.nodes || []).concat(raw.nodes || []);
+const allEdges = (cached.edges || []).concat(raw.edges || []);
 const allHyperedges = (cached.hyperedges || []).concat(raw.hyperedges || []);
 const seen = new Set();
 const deduped = [];
@@ -356,19 +373,21 @@ const merged = {
     output_tokens: raw.output_tokens || 0,
 };
 fs.writeFileSync('.graphify/.graphify_semantic.json', JSON.stringify(merged, null, 2));
-console.log(\`Extraction complete - \${deduped.length} nodes, \${allEdges.length} edges (\${cached.nodes.length} from cache, \${(raw.nodes||[]).length} new)\`);
+console.log(\`Extraction complete - \${deduped.length} nodes, \${allEdges.length} edges (\${(cached.nodes||[]).length} from cache, \${(raw.nodes||[]).length} new)\`);
 "
 ```
 Clean up temp files: `rm -f .graphify/.graphify_cached.json .graphify/.graphify_uncached.txt .graphify/.graphify_semantic_new.json .graphify/.graphify_detect_semantic.json .graphify/.graphify_transcripts.json .graphify/.graphify_pdf_ocr.json`
 
 #### Part C - Merge AST + semantic into final extraction
 
+The AST side comes from Tree-sitter and is trusted as-is. The semantic side is LLM-generated and must be sanitized one more time before the final merge:
 ```bash
 node -e "
 const fs = require('fs');
+const { sanitizeSemanticFragment } = require('graphifyy');
 
 const ast = JSON.parse(fs.readFileSync('.graphify/.graphify_ast.json', 'utf-8'));
-const sem = JSON.parse(fs.readFileSync('.graphify/.graphify_semantic.json', 'utf-8'));
+const sem = sanitizeSemanticFragment(JSON.parse(fs.readFileSync('.graphify/.graphify_semantic.json', 'utf-8')));
 
 const seen = new Set(ast.nodes.map(n => n.id));
 const mergedNodes = [...ast.nodes];
