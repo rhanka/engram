@@ -202,6 +202,19 @@ export async function rebuildCode(
         /* ignore unreadable prior graph snapshots */
       }
     }
+
+    // F-0816-M5: stale-node prune after the existing-graph merge step.
+    // When a code file has been deleted since the last build, its nodes
+    // survived the mergeNode-from-existing loop above because they did
+    // not appear in the new AST extraction. Drop them now — paired with
+    // the wiki-level stale-node filter from F-0816-P4 (defence-in-depth).
+    // Use the relative-code-files list as the explicit alive set so we
+    // don't run an `existsSync` probe per node.
+    const { cleanupStaleNodes } = await import("./semantic-cleanup.js");
+    cleanupStaleNodes(G, {
+      root,
+      aliveSourceFiles: new Set(relativeCodeFiles),
+    });
     // Topology short-circuit (upstream PR #824): if the new merged AST graph
     // has the exact same nodes + edges + relations as the previously
     // committed graph.json, reuse the existing community assignment instead

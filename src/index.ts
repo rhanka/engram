@@ -248,6 +248,8 @@ export type {
 } from "./profile-report.js";
 export { validateExtraction, assertValid } from "./validate.js";
 export { buildFromJson, build, buildMerge, deduplicateByLabel } from "./build.js";
+export { cleanupStaleNodes } from "./semantic-cleanup.js";
+export type { CleanupStaleNodesOptions, CleanupStaleNodesResult } from "./semantic-cleanup.js";
 export { cloneRepo, defaultCloneDestination } from "./repo-clone.js";
 export type { CloneRepoOptions, CloneRepoResult } from "./repo-clone.js";
 export { mergeGraphsFromFiles } from "./merge-graphs.js";
