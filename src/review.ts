@@ -149,14 +149,32 @@ function changedNodeIds(G: Graph, changedFiles: string[]): string[] {
   return result.sort(compareStrings);
 }
 
+const REEXPORT_RELATION = "re_exports";
+
 /**
- * For each changed node whose source file is in a directory that contains
- * a barrel / re-export file (index.ts, __init__.py, mod.rs, lib.rs, ...),
- * also include the barrel file's nodes and the barrel's inbound consumers
- * as "changed" if the barrel imports from the changed file (i.e. is acting
- * as a re-export). This makes consumers of the barrel surface as affected
- * at depth 1, matching upstream safishamsi e44e6e9 `re_exports` edge
- * semantics without requiring a new edge kind in the TS extractor.
+ * For each changed node, include any file that re-exports symbols from it
+ * (the "barrel") and the barrel's inbound consumers in the affected set.
+ *
+ * Two detection paths, in order of preference:
+ *
+ *   1. Explicit edges (Track F F-0816-M2 / port safishamsi 1494874): any
+ *      node that emits a `re_exports` edge pointing at the changed file is
+ *      a barrel, regardless of its basename.
+ *   2. Filename + edge heuristic (Track F F-0816-Opt-Affected S-2): a node
+ *      whose basename matches BARREL_BASENAMES (`index.ts`, `__init__.py`,
+ *      `mod.rs`, `lib.rs`, ...) sitting in the same directory as a changed
+ *      file *and* importing from it. Kept as a fallback for graphs built
+ *      before the M2 port.
+ *
+ * The fallback never overrides explicit edges — when re_exports edges exist
+ * for a barrel they short-circuit the directory/basename gate, so a
+ * deliberately non-conventional barrel name (`entry.ts`, `surface.ts`, ...)
+ * still propagates.
+ *
+ * Once barrel nodes are identified, the barrel itself and its inbound
+ * consumers (anyone importing the barrel) are added to the changed set so
+ * downstream review-delta surfaces them as affected at depth 1, matching
+ * upstream safishamsi e44e6e9 `graphify affected` semantics.
  */
 function expandChangedIdsViaBarrels(G: Graph, changedIds: string[]): string[] {
   if (changedIds.length === 0) return changedIds;
@@ -164,6 +182,7 @@ function expandChangedIdsViaBarrels(G: Graph, changedIds: string[]): string[] {
   const directed = isDirectedGraph(G);
 
   const changedFileSet = new Set<string>();
+  const changedIdSet = new Set(changedIds);
   for (const id of changedIds) {
     const file = sourceFileOf(G, id);
     if (file) changedFileSet.add(file);
@@ -173,10 +192,29 @@ function expandChangedIdsViaBarrels(G: Graph, changedIds: string[]): string[] {
   const candidateDirs = new Set<string>();
   for (const file of changedFileSet) candidateDirs.add(dirname(file));
 
-  // Identify barrels in the same directory as any changed file that re-export
-  // (import_from) the changed file.
-  const barrelNodes: string[] = [];
+  const barrelNodes = new Set<string>();
+
+  // Path 1: explicit re_exports edges. Iterate over every edge once — when
+  // the edge target is a changed node (or its source_file is a changed
+  // file), the edge source is a barrel pointing at the change.
+  G.forEachEdge((_edge, edgeAttrs, source, target) => {
+    const relation = typeof edgeAttrs.relation === "string" ? edgeAttrs.relation : "";
+    if (relation !== REEXPORT_RELATION) return;
+    const barrelId = directed ? source : source;
+    const tgtId = directed ? target : target;
+    // Match either on node id (when the changed entity is a symbol) or on
+    // source_file (when the changed entity is a file node).
+    const targetFile = sourceFileOf(G, tgtId);
+    const targetChanged = changedIdSet.has(tgtId)
+      || (targetFile !== null && changedFileSet.has(targetFile));
+    if (!targetChanged) return;
+    barrelNodes.add(barrelId);
+  });
+
+  // Path 2: filename + edge fallback. Skipped per barrel that the explicit
+  // path already accepted — explicit edges win.
   G.forEachNode((nodeId, attrs) => {
+    if (barrelNodes.has(nodeId)) return;
     const source = typeof attrs.source_file === "string" ? attrs.source_file : null;
     if (!isBarrelPath(source)) return;
     const normalized = source ? normalizePath(source) : "";
@@ -201,7 +239,7 @@ function expandChangedIdsViaBarrels(G: Graph, changedIds: string[]): string[] {
         if (otherFile && changedFileSet.has(otherFile)) importsChanged = true;
       });
     }
-    if (importsChanged) barrelNodes.push(nodeId);
+    if (importsChanged) barrelNodes.add(nodeId);
   });
 
   // Add barrels and their inbound consumers (re-export propagation) to the

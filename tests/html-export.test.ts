@@ -190,6 +190,10 @@ describe("toHtml visual encoding (Track C3)", () => {
     expect(inferEdgeDashes("calls", "EXTRACTED")).toBe(false);
     expect(inferEdgeDashes("imports_from", "EXTRACTED")).toEqual([6, 4]);
     expect(inferEdgeDashes("imports", "EXTRACTED")).toEqual([6, 4]);
+    // Port of upstream safishamsi 1494874 — `re_exports` rides the same
+    // import-family dash style so barrel-aware viewers render barrel
+    // re-exports identically to plain imports.
+    expect(inferEdgeDashes("re_exports", "EXTRACTED")).toEqual([6, 4]);
     expect(inferEdgeDashes("tested_by", "EXTRACTED")).toEqual([2, 4]);
     expect(inferEdgeDashes("validated_by", "EXTRACTED")).toEqual([2, 4]);
     expect(inferEdgeDashes("inherits", "EXTRACTED")).toEqual([10, 4]);
@@ -198,6 +202,31 @@ describe("toHtml visual encoding (Track C3)", () => {
     expect(inferEdgeDashes("uses", "EXTRACTED")).toBe(false);
     expect(inferEdgeDashes("uses", "INFERRED")).toBe(true);
     expect(inferEdgeDashes("", "AMBIGUOUS")).toBe(true);
+  });
+
+  it("HTML legend mentions re_exports alongside imports_from (port safishamsi 1494874)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-html-reexports-"));
+    const htmlPath = join(dir, "graph.html");
+    const G = new Graph();
+    G.addNode("barrel", { label: "barrel", source_file: "src/index.ts", file_type: "code" });
+    G.addNode("foo", { label: "foo", source_file: "src/foo.ts", file_type: "code" });
+    G.addUndirectedEdge("barrel", "foo", {
+      relation: "re_exports",
+      confidence: "EXTRACTED",
+      context: "re-export",
+    });
+    const communities = new Map([[0, ["barrel", "foo"]]]);
+    toHtml(G, communities, htmlPath, { communityLabels: new Map([[0, "Core"]]) });
+    const html = readFileSync(htmlPath, "utf-8");
+    // Edge legend must surface re_exports as a documented relation kind so
+    // the viewer can attribute barrel arrows to the new edge type.
+    expect(html).toContain("re_exports");
+    // The dash pattern for re_exports rides the imports family. Match dashes
+    // and relation on the same JSON-serialised edge entry (line-based).
+    const edgeLine = html.split("\n").find((line) => line.includes('"relation":"re_exports"'));
+    expect(edgeLine).toBeDefined();
+    expect(edgeLine).toMatch(/"dashes":\[6,4\]/);
+    rmSync(dir, { recursive: true, force: true });
   });
 
   it("emits per-node shape, shape legend, and edge legend in the rendered HTML", () => {
