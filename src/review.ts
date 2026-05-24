@@ -460,3 +460,43 @@ export function reviewDeltaToText(delta: ReviewDelta): string {
   lines.push("", `Next best action: ${delta.next_best_action}`);
   return lines.join("\n");
 }
+
+export interface ComputeAffectedFilesOptions {
+  /** BFS depth on the import graph (default 1, clamped to [1, 5]). */
+  depth?: number;
+  /** Cap on impacted node set during traversal (default 1024). */
+  maxNodes?: number;
+}
+
+/**
+ * Return the sorted list of files affected by a diff, computed by BFS over
+ * the import graph (with barrel re-export expansion). Convenience surface
+ * for `graphify review-delta --affected` — equivalent to upstream's
+ * `graphify affected` but hosted on the existing review-delta extension
+ * point (per user decision 2026-05-23: do not ship a new top-level verb).
+ */
+export function computeAffectedFiles(
+  G: Graph,
+  changedFilesInput: string[],
+  options: ComputeAffectedFilesOptions = {},
+): string[] {
+  const depth = clampDepth(options.depth);
+  const maxNodes = Math.max(1, options.maxNodes ?? 1024);
+  const changedFiles = uniqueSorted(changedFilesInput);
+  if (changedFiles.length === 0) return [];
+  const initialChangedIds = changedNodeIds(G, changedFiles);
+  if (initialChangedIds.length === 0) return [];
+  const changedIds = expandChangedIdsViaBarrels(G, initialChangedIds);
+  const impactedIds = impactedNodeIds(G, changedIds, maxNodes, depth);
+  const files = new Set<string>();
+  for (const id of impactedIds) {
+    const file = sourceFileOf(G, id);
+    if (file) files.add(file);
+  }
+  return [...files].sort(compareStrings);
+}
+
+/** Newline-separated rendering of an affected-files list (no header). */
+export function affectedFilesToText(files: string[]): string {
+  return files.join("\n");
+}
