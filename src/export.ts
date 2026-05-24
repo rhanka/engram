@@ -157,7 +157,10 @@ export function inferNodeShape(fileType: string, sourceFile: string): string {
  */
 export function inferEdgeDashes(relation: string, confidenceTier: string): boolean | number[] {
   const r = (relation || "").toLowerCase();
-  if (r === "imports_from" || r === "imports") return [6, 4];
+  // Port of upstream safishamsi 1494874 — `re_exports` rides the same
+  // import-family dash so a barrel re-export edge is visually consistent
+  // with the plain `imports` / `imports_from` arrows that frame it.
+  if (r === "imports_from" || r === "imports" || r === "re_exports") return [6, 4];
   if (r === "tested_by" || r === "validated_by") return [2, 4];
   if (r === "inherits" || r === "extends" || r === "implements") return [10, 4];
   // Confidence fallback: solid for EXTRACTED, dashed for INFERRED/AMBIGUOUS.
@@ -1209,7 +1212,7 @@ ${htmlStyles()}
     <h3 id="relations-heading" style="margin-top:14px">Edges</h3>
     <ul id="relation-legend" aria-labelledby="relations-heading" style="list-style:none;padding:0;margin:0;font-size:12px;color:var(--ws-text-muted)">
       <li>━━━━ solid &mdash; calls / strong (EXTRACTED)</li>
-      <li>┄┄┄┄ dashed &mdash; imports_from</li>
+      <li>┄┄┄┄ dashed &mdash; imports_from / imports / re_exports</li>
       <li>┈┈┈┈ dotted &mdash; tested_by / validated_by</li>
       <li>━ ━ ━ long-dash &mdash; inherits / implements</li>
       <li style="opacity:0.6">··· faded &mdash; INFERRED / AMBIGUOUS</li>
