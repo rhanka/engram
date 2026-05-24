@@ -4,8 +4,9 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import Graph from "graphology";
-import { sanitizeLabel, escapeHtml } from "./security.js";
+import { sanitizeLabel, escapeHtml, sanitizeMetadata } from "./security.js";
 import { isDirectedGraph } from "./graph.js";
+import { assertGraphJsonFileSize, assertGraphJsonSize } from "./graph-size-guard.js";
 import { safeGitRevParse } from "./git.js";
 import type { Hyperedge, NormalizedOntologyProfile, OntologyVisualEncoding } from "./types.js";
 import {
@@ -426,13 +427,23 @@ export function toJson(
     links as unknown as ReadonlyArray<{ source: unknown; target: unknown; relation?: unknown }>,
   );
 
+  // F-0816-P3 (S3.2): sanitise the free-form `graph` metadata block at the
+  // export boundary. Defence in depth so external indexer or future-extractor
+  // output cannot leak control chars or HTML markup through graph.json.
+  // Only the metadata block is sanitised here — node / edge / hyperedge rows
+  // are round-tripped through graph.json and would double-escape if their
+  // canonical fields (label, source_file, relation) were HTML-escaped on
+  // every write. Untrusted node / edge metadata sites must apply the helper
+  // at the assignment site instead.
+  const sanitisedGraphBlock = sanitizeMetadata({
+    community_labels: communityLabelsObject,
+    ...buildFreshnessMetadata(outputPath),
+  });
+
   const output = {
     directed: isDirectedGraph(G),
     multigraph: false,
-    graph: {
-      community_labels: communityLabelsObject,
-      ...buildFreshnessMetadata(outputPath),
-    },
+    graph: sanitisedGraphBlock,
     topology_signature,
     nodes,
     links,
@@ -441,6 +452,7 @@ export function toJson(
 
   if (!forceWrite) {
     try {
+      assertGraphJsonFileSize(outputPath, "read");
       const existing = JSON.parse(readFileSync(outputPath, "utf-8")) as { nodes?: unknown[] };
       const existingNodeCount = existing.nodes?.length ?? 0;
       if (existingNodeCount > nodes.length) {
@@ -455,7 +467,9 @@ export function toJson(
     }
   }
 
-  writeFileSync(outputPath, JSON.stringify(output, null, 2), "utf-8");
+  const serialized = JSON.stringify(output, null, 2);
+  assertGraphJsonSize(Buffer.byteLength(serialized, "utf-8"), "write", outputPath);
+  writeFileSync(outputPath, serialized, "utf-8");
   return true;
 }
 
@@ -1157,7 +1171,7 @@ export function toHtml(
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>graphify - ${title}</title>
-<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<script src="https://unpkg.com/vis-network@9.1.6/standalone/umd/vis-network.min.js" integrity="sha384-Ux6phic9PEHJ38YtrijhkzyJ8yQlH8i/+buBR8s3mAZOJrP1gwyvAcIYl3GWtpX1" crossorigin="anonymous"></script>
 ${htmlStyles()}
 </head>
 <body>

@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import type Graph from "graphology";
 import { createGraph, isDirectedGraph, loadGraphFromData, serializeGraph } from "./graph.js";
+import { assertGraphJsonFileSize, assertGraphJsonSize } from "./graph-size-guard.js";
 import { loadHyperedges, mergeHyperedges, setHyperedges } from "./hyperedges.js";
 import type { Hyperedge } from "./hyperedges.js";
 
@@ -47,6 +48,7 @@ export function mergeGraphsFromFiles(options: MergeGraphsOptions): MergeGraphsRe
     if (!existsSync(resolved)) {
       throw new Error(`graph file not found: ${resolved}`);
     }
+    assertGraphJsonFileSize(resolved, "read");
     const raw = JSON.parse(readFileSync(resolved, "utf-8")) as Record<string, unknown>;
     const graph = loadGraphFromData(raw);
     const repo = repoTagFromGraphPath(resolved);
@@ -85,7 +87,9 @@ export function mergeGraphsFromFiles(options: MergeGraphsOptions): MergeGraphsRe
 
   const outPath = resolve(options.out);
   mkdirSync(dirname(outPath), { recursive: true });
-  writeFileSync(outPath, JSON.stringify(serializeGraph(merged), null, 2), "utf-8");
+  const serialized = JSON.stringify(serializeGraph(merged), null, 2);
+  assertGraphJsonSize(Buffer.byteLength(serialized, "utf-8"), "write", outPath);
+  writeFileSync(outPath, serialized, "utf-8");
 
   return {
     graph: merged,
