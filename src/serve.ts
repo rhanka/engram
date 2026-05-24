@@ -15,6 +15,7 @@ import {
 } from "./graph.js";
 import { resolveGraphInputPath } from "./paths.js";
 import { validateGraphPath, sanitizeLabel } from "./security.js";
+import { assertGraphJsonFileSize } from "./graph-size-guard.js";
 import { normalizeSearchText, queryTerms, scoreSearchText, textMatchesQuery } from "./search.js";
 import {
   godNodes as computeGodNodes,
@@ -129,6 +130,7 @@ function validateGraphFilePath(graphPath: string): string {
 }
 
 function readGraphData(safePath: string): SerializedGraphData {
+  assertGraphJsonFileSize(safePath, "read");
   let data: SerializedGraphData;
   try {
     data = JSON.parse(readFileSync(safePath, "utf-8")) as SerializedGraphData;

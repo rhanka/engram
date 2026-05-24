@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { assertGraphJsonFileSize } from "./graph-size-guard.js";
+
 import type {
   OntologyPatchContext,
   OntologyReconciliationDecisionLogResponse,
@@ -458,6 +460,7 @@ function loadGraph(stateDir: string): GraphLike | null {
   const graphPath = join(stateDir, "graph.json");
   if (!existsSync(graphPath)) return null;
   try {
+    assertGraphJsonFileSize(graphPath, "read");
     return JSON.parse(readFileSync(graphPath, "utf-8")) as GraphLike;
   } catch {
     return null;
