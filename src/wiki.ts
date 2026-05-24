@@ -14,6 +14,7 @@ import {
   type WikiDescriptionSidecar,
   type WikiDescriptionSidecarIndex,
 } from "./wiki-descriptions.js";
+import { sanitizeMetadata } from "./security.js";
 
 interface WikiPageRef {
   key: string;
@@ -93,12 +94,29 @@ function crossCommunityLinks(
 function renderDescription(sidecar: WikiDescriptionSidecar | undefined): string[] {
   if (!sidecar || sidecar.status !== "generated") return [];
   if (validateWikiDescriptionSidecar(sidecar).length > 0) return [];
+  // Free-form fields (LLM-generated description text + evidence refs) flow
+  // from extraction into rendered wiki markdown verbatim. Run them through
+  // `sanitizeMetadata` so control characters are stripped and HTML-special
+  // characters are escaped (port of upstream `sanitize_metadata` helper,
+  // PR #956 / commit b6127aa). Canonical fields (`label`, `source_file`,
+  // `relation`, `confidence`) are deliberately NOT routed through this path
+  // -- they were already sanitised at extract/export boundaries and a
+  // second pass would double-escape legitimate slashes/labels (P3 deviation
+  // note 2). F-0816-P4 / S4.5.
+  const cleaned = sanitizeMetadata({
+    description: sidecar.description,
+    evidence_refs: sidecar.evidence_refs,
+  });
+  const description = String(cleaned.description ?? "");
+  const refs = Array.isArray(cleaned.evidence_refs)
+    ? (cleaned.evidence_refs as unknown[]).map((ref) => String(ref ?? ""))
+    : [];
   return [
     "## Description",
     "",
-    sidecar.description,
+    description,
     "",
-    `Evidence: ${sidecar.evidence_refs.map((ref) => `\`${ref}\``).join(", ")}`,
+    `Evidence: ${refs.map((ref) => `\`${ref}\``).join(", ")}`,
     "",
   ];
 }
