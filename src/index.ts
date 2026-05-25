@@ -268,6 +268,19 @@ export type { BuildWikiDescriptionBatchOptions, ParseWikiDescriptionBatchOptions
 export { detect, classifyFile, detectIncremental, saveManifest } from "./detect.js";
 export { extract, collectFiles } from "./extract.js";
 export { fileHash, loadCached, saveCached, checkSemanticCache, saveSemanticCache } from "./cache.js";
+export {
+  MAX_SEMANTIC_FRAGMENT_BYTES,
+  MAX_SEMANTIC_FRAGMENT_EDGES,
+  MAX_SEMANTIC_FRAGMENT_HYPEREDGES,
+  MAX_SEMANTIC_FRAGMENT_NODES,
+  MAX_SEMANTIC_HYPEREDGE_NODES,
+  MAX_SEMANTIC_ID_LENGTH,
+  VALID_SEMANTIC_FILE_TYPES,
+  loadValidatedSemanticFragment,
+  sanitizeSemanticFragment,
+  validateSemanticFragment,
+} from "./semantic-fragment-validation.js";
+export type { LoadValidatedResult, SemanticFragment } from "./semantic-fragment-validation.js";
 export { validateUrl, safeFetch, safeFetchText, validateGraphPath, sanitizeLabel } from "./security.js";
 export { DEFAULT_GRAPHIFY_STATE_DIR, LEGACY_GRAPHIFY_STATE_DIR, NEXT_GRAPHIFY_STATE_DIR, resolveGraphifyPaths, defaultGraphPath, legacyGraphPath, resolveGraphInputPath, defaultManifestPath, defaultTranscriptsDir } from "./paths.js";
 export { createGraph, isDirectedGraph, loadGraphFromData, serializeGraph } from "./graph.js";
