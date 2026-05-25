@@ -1,5 +1,7 @@
 # Upstream `0.7.10` Realignment Implementation Plan
 
+> **Ledger status (2026-05-25):** `main` is released at **`graphifyy@0.9.7`** (tag `v0.9.7` at `5d38117`, published 2026-05-24). The `0.7.10` realignment plan in this first section is **closed/historical** (kept for audit trail). Live work tracking is in the [Post-0.7.10 Product Acceleration Board](#post-0710-product-acceleration-board) section below; version-to-upstream mapping is in `UPSTREAM_GAP.md > Version Alignment`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Bring the TypeScript fork from the historical `graphifyy@0.5.6` baseline through a verified parity target of upstream Python Graphify `v0.7.10`, while preserving intentional TypeScript deltas and treating `code-review-graph` as an additive review-feature source instead of a version driver.
@@ -188,7 +190,7 @@ Progress note:
 
 # Post-`0.7.10` Product Acceleration Board
 
-**Status on 2026-05-14:** PR #22 merged the Python `0.7.10` checkpoint into `main`. Upstream rescan on this date observed `v0.7.19` at `a9b0ddb` (head of `upstream/v7`), 28 commits ahead of `v0.7.16`. Drift band is now `0.7.11..0.7.19` (extended by 3 versions). Product work runs in parallel with upstream drift via independent lanes.
+**Status on 2026-05-25:** `main` is at `graphifyy@0.9.7` (tag `v0.9.7` at `5d38117`, published 2026-05-24 and post-publish checked). The Track F `0.8.16` drift cycle is **closed and released** — lots F-0816-P1/P2/P3/P4/M1/M2/M4/M5/Opt-Affected merged via PRs #59/#62/#63/#64/#65/#66/#67/#68/#69, plus the earlier F-Next `2d783e5` cohesion-unrounding carry-forward in 0.9.6. No open PRs. Residual Track F items (F-0816-M3 bash hardening, F-Opt-LLM-Triage) are parked/deferred, not release blockers; the next parity number waits on a fresh upstream scan past `upstream/v8` `990ac70` (`v0.8.16`). Earlier history for context: PR #22 merged the Python `0.7.10` checkpoint; Track D closed the `0.7.11..0.7.19` drift band at `0.7.19`. Product work continues to run in parallel with upstream drift via independent lanes.
 
 ## Operating Rules
 
@@ -205,9 +207,9 @@ Each lane carries six independent dimensions. "Infra" = library / CLI / MCP / AP
 
 | Lane | Spec | Plan | Infra | UI utilisateur | UAT réel | Release | Overall |
 | --- | :---: | :---: | :---: | :---: | :---: | :---: | ---: |
-| **C** CRG `v2.3.3` | ✅ 2/2 | ✅ 3/3 (C1/C2/C3 lots landed) | 🟡 3/4 (C1 review-precision, C2 a11y, C3 visual encoding shipped; C4 review UAT outstanding) | 🟡 1/2 (HTML a11y shipped; review surface live-walk pending) | ❌ 0/1 (live user UAT pending) | ❌ 0/1 (no CHANGELOG entry tied to C) | **9/13 = 69%** |
-| **E** Install footprint | ✅ 1/1 | ✅ 5/6 (Lots 1/2/3/4-safe/5 landed; Lot 4-risky + Lot 6 deferred) | ✅ 5/6 | n/a | ✅ 1/1 (smoke + portable-check green at each lot) | ✅ 1/1 (`graphifyy@0.9.0` minor bump for Lot 1; subsequent lots patch-only) | **13/15 = 87 % — partially deferred** |
-| **F** Upstream parity weekly | ✅ 1/1 | 🟡 1/5 (F-Doc partly done via cadrage PR #34; F-P1/P2/M1/Opt scoped, not started) | ❌ 0/3 | n/a | ❌ 0/2 | ❌ 0/1 | **2/12 = 17 %** |
+| **C** CRG `v2.3.3` | ✅ 2/2 | ✅ 3/3 (C1/C2/C3 lots landed) | 🟡 3/4 (C1 review-precision, C2 a11y, C3 visual encoding shipped; C4 review UAT outstanding) | 🟡 1/2 (HTML a11y shipped; review surface live-walk pending) | ❌ 0/1 (live user UAT pending) | ✅ 1/1 (C-3.5 visual encoding released in `graphifyy@0.9.6` CHANGELOG) | **10/13 = 77 %** |
+| **E** Install footprint | ✅ 1/1 | ✅ 6/6 (Lots 1/2/3/4-safe/5 + Lot 4-risky dep majors @0.9.3 + Lot 6 Node 24 CI @0.9.2 all landed) | ✅ 6/6 | n/a | ✅ 1/1 (smoke + portable-check green at each lot) | ✅ 1/1 (`graphifyy@0.9.0` minor for Lot 1; 0.9.2/0.9.3 patch follow-ups) | **15/15 = 100 % — DONE** |
+| **F** Upstream parity weekly | ✅ 1/1 | ✅ (0.8.16 cycle closed; M3 bash hardening parked, F-Opt-LLM-Triage deferred) | ✅ 4/4 (F-Install/P1/P2/M1 + F-0816 P1–P4/M1/M2/M4/M5/Opt-Affected merged via PRs #59/#62/#63/#64/#65/#66/#67/#68/#69) | n/a | ✅ 2/2 (per-lot Vitest regressions + release smoke/portable-check green through 0.9.7) | ✅ 1/1 (released through `graphifyy@0.9.7`; CHANGELOG + Version Alignment refreshed) | **closed @0.9.7 — next bilan on fresh upstream scan past `990ac70`** |
 
 **Tracks A / B / D archived as DONE** — see git log and `CHANGELOG.md` for details (A bridge mesh `graphifyy@0.9.1`, B reconciliation through `0.7.19-rc.1`, D drift `0.7.11..0.7.19` at `0.7.19` stable). Removed from active reporting per user request 2026-05-16.
 
@@ -216,8 +218,8 @@ Each lane carries six independent dimensions. "Infra" = library / CLI / MCP / AP
 | Lane | Next concrete action | UAT / Decision needed |
 | --- | --- | --- |
 | **C** CRG `v2.3.3` | Live user UAT on regenerated `graph.html` (skip-link, F1/?, contrast toggle, keyboard nav, filtres communautés, dashes par relation). | **DECISION user** — verdict UAT live OK/KO. URL UAT : http://127.0.0.1:8765/graph.html. |
-| **E** Install footprint | Optional: Lot 4-risky (chokidar/neo4j-driver/typescript/vitest majors) + Lot 6 (Node 24 in GH Actions). | **DECISION user** — go ou rester `deferred`. |
-| **F** Upstream parity weekly | F-P1 (premier bilan upstream Python `safishamsi/graphify` depuis `v0.7.19`, gap classification, recommandation renumérotation). | F-P1 lancé en agent background 2026-05-16. |
+| **E** Install footprint | Aucune — lane close (15/15). Lot 4-risky dep majors livrés en `0.9.3`, Lot 6 Node 24 CI en `0.9.2`. | Aucune. |
+| **F** Upstream parity weekly | Nouveau bilan : rescan upstream Python `safishamsi/graphify` au-delà de `upstream/v8` `990ac70` (`v0.8.16`), classer le drift, recommander le prochain numéro de version. | **DECISION user** — lancer le prochain bilan F ou laisser parqué jusqu'au prochain `/loop` hebdo. |
 
 ## Detailed Track Plans
 
@@ -295,9 +297,9 @@ M0..M5 lots all landed. `.astro` extractor (`6a7de56`), watch `.rebuild.lock` (`
 - [x] **Lot F-Next — Rust cross-crate false `INFERRED` edges** (~0.5-1 day). Target upstream commit:
   - `f7160c8` — *Fix Rust cross-crate spurious `INFERRED` edges: skip `scoped_identifier` and trait-method blocklist from `raw_calls`* (`upstream/v8`).
   Closed on this branch by tightening Rust `scoped_identifier` resolution to exact local impl methods and adding a regression in `tests/extract-call-confidence.test.ts`.
-- [ ] **Lot F-Next — cohesion unrounding audit / hook-detect follow-ups** (~1 day). Target upstream commit:
+- [x] **Lot F-Next — cohesion unrounding audit / hook-detect follow-ups** (~1 day). Target upstream commit:
   - `2d783e5` — *Fix hooks phantom dir on git < 2.31, save_manifest incremental data loss, cohesion rounding, C++ inheritance; add `--resolution` and `--exclude-hubs`* (`upstream/v8`).
-  Scope this as a separate audit lot; only the cohesion/report angle is currently relevant to Track F, but the full commit spans CLI, detect, hooks, cluster, and report.
+  Shipped in `graphifyy@0.9.6`: cohesion unrounding in `GRAPH_REPORT.md`, `save_manifest` cache-state fix, and `cluster --resolution` / `--exclude-hubs`. The remaining commit angles (C++ inheritance, git < 2.31 phantom hook dir) were not relevant to the TS surface at audit time and stay covered by existing detect/hook tests.
 - [x] **Lot F-Opt — v1/v2 hypergraph + wiki rewrite** (superseded by `Lot F-0816 drift (2026-05-23)` below). Original framing invalidated by `.graphify/scratch/F-deepdive-hypergraph-status.md`: upstream `v1.0.0` tag is a lightweight tag on a "git commit hook" commit (not a hypergraph rewrite); hyperedges shipped via PR #48 (`F-H1`); `graphify pr` shipped via PR #53 (`F-Opt-PR`). Wiki "rewrite" framing is no longer accurate — what remains is per-commit drift triage handled in regular F-Pn lots (e.g. `9e6192a` row 17 of bilan #2 → `F-0816-P4`). LLM-triage piece of `graphify pr` deferred under `F-Opt-LLM-Triage`; upstream `affected` verb evaluated under `F-Opt-Affected` in `Lot F-0816 drift (2026-05-23)`.
 - [x] **Lot F-Doc — Version Alignment section** (~0.5 day). `UPSTREAM_GAP.md` now carries the `graphifyy@0.9.4` refresh, advancing the closest audited parity point to upstream `v0.8.9` while keeping the remaining `v0.8.11` follow-ups explicit.
 
@@ -314,7 +316,7 @@ M0..M5 lots all landed. `.astro` extractor (`6a7de56`), watch `.rebuild.lock` (`
 - [ ] Vitest regression coverage per lot (added inside the relevant lot, not as a separate UAT lot).
 
 **Release / Docs (1/1)**
-- [x] `UPSTREAM_GAP.md` Version Alignment row refreshed for `graphifyy@0.9.4`, advancing the closest audited parity point to upstream `v0.8.9` while keeping the remaining `v0.8.11` follow-ups explicit.
+- [x] `UPSTREAM_GAP.md` Version Alignment refreshed through `graphifyy@0.9.7`, advancing the closest audited parity point to the `0.8.16` drift train and recording the `0.9.5`/`0.9.6`/`0.9.7` rows. CHANGELOG carries the per-release notes through `0.9.7`.
 
 ## Lot F-0816 drift (2026-05-23)
 
@@ -375,22 +377,25 @@ Decisions from bilan #1 (2026-05-15) — both **resolved by bilan #2 (2026-05-23
 2. **F-Opt — adopt upstream v1.x hypergraph + wiki rewrite, defer, or reject?**
    - Resolved: original framing invalidated by `.graphify/scratch/F-deepdive-hypergraph-status.md` (v1.0.0 tag is a lightweight tag on a "git commit hook" commit, not a hypergraph rewrite). Hyperedges shipped via PR #48 (`F-H1`); `graphify pr` shipped via PR #53 (`F-Opt-PR`). Wiki "rewrite" framing absorbed into regular F-Pn drift triage (e.g. `9e6192a` row 17 of bilan #2 → `F-0816-P4`). Original `Lot F-Opt` marked superseded above.
 
-Decisions from bilan #2 (2026-05-23) — **awaiting owner ack**:
+Decisions from bilan #2 (2026-05-23) — **all resolved by the `graphifyy@0.9.7` release (2026-05-24)**:
 
 3. **F-Opt-2026Q2 scope (user directive 2026-05-23: include F-Opt in this catch-up cycle)** — what concretely remains of F-Opt?
    - Pro / proposed resolution: close the "wiki rewrite" residual as superseded by F-0816-P4 (`9e6192a`) + existing Track A descriptions + Task K source-grounded wiki descriptions. Keep `F-Opt-LLM-Triage` deferred (no TS requester; multi-backend LLM resolution is the bulk of upstream's `graphify pr` maintenance cost). Route row 10 (`e44e6e9` `graphify affected`) into `F-0816-Opt-Affected` as a `review-delta` *extension*, not as a new `affected` verb.
    - Con: keeping `F-Opt-Affected` open one more cycle delays closing the F-Opt umbrella.
    - Default if no decision: adopt the proposed resolution at the next bilan (2026-05-30).
+   - **Resolved (released 0.9.7):** proposed resolution adopted — wiki-rewrite residual treated as superseded by F-0816-P4 + Track A / Task K descriptions; `F-Opt-LLM-Triage` closed as already-covered by `src/llm-mesh.ts` (see `UPSTREAM_GAP.md`); `e44e6e9` routed into `review-delta --depth/--affected`.
 
 4. **F-0816-Opt-Affected — adopt upstream `graphify affected` verb or extend `review-delta`?** (see row 10 of bilan #2)
    - Pro for new verb: matches upstream user muscle memory; same name across Python/TS.
    - Pro for extension: avoids two parallel "which files are impacted" verbs on the TS surface; preserves the CRG-aligned `review-*` brand consistency.
    - Con for new verb: maintenance cost of an alias surface; risk of drift from upstream's exact semantics.
    - Recommended default: **extend `review-delta`** + `affected-flows.ts` with the deeper import-resolution. Owner ack needed before lot starts.
+   - **Resolved (PR #66, released 0.9.7):** extended `review-delta` with `--depth` / `--affected` deeper import-resolution; no parallel top-level `affected` verb was added.
 
 5. **F-0816 lot ordering — P4 before or after P3?**
    - Both touch security boundaries. P4 (wiki + detect + NAT64 SSRF) uses the sanitize_metadata helper from P3.
    - Recommendation: ship P3 first (smaller, three-line CDN pin + cap + sanitize helper), then P4. Owner ack on ordering.
+   - **Resolved:** shipped P3 first (PR #63), then P4 (PR #64), as recommended.
 
 6. **`v0.8.15` ghost tag — record explicitly or ignore?**
    - Recommendation: recorded explicitly in `UPSTREAM_GAP.md > Source Lock Notes` as "skipped upstream" to avoid future bilan confusion. Already applied in this branch's commit.
