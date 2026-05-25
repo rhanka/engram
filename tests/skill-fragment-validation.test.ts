@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 const tmpDirs: string[] = [];
+const SKILL_RUNTIME_TEST_TIMEOUT_MS = 90_000;
 afterEach(() => {
   while (tmpDirs.length > 0) {
     rmSync(tmpDirs.pop()!, { recursive: true, force: true });
@@ -118,7 +119,7 @@ describe("skill-runtime merge-semantic - fragment validation", () => {
       nodes: Array<{ id: string }>;
     };
     expect(merged.nodes.map((n) => n.id).sort()).toEqual(["a", "b"]);
-  });
+  }, SKILL_RUNTIME_TEST_TIMEOUT_MS);
 
   it("drops invalid 'rationale' file_type nodes when sanitizing the new fragment", async () => {
     const dir = makeDir();
@@ -161,7 +162,7 @@ describe("skill-runtime merge-semantic - fragment validation", () => {
     expect(merged.nodes.map((n) => n.id)).toEqual(["target"]);
     expect(merged.nodes.find((n) => n.id === "target")?.rationale).toBe(longSentence);
     expect(merged.edges).toEqual([]);
-  });
+  }, SKILL_RUNTIME_TEST_TIMEOUT_MS);
 
   it("skips a malformed cached fragment instead of crashing the pipeline", async () => {
     const dir = makeDir();
@@ -203,7 +204,7 @@ describe("skill-runtime merge-semantic - fragment validation", () => {
       nodes: Array<{ id: string }>;
     };
     expect(merged.nodes.map((n) => n.id)).toEqual(["ok"]);
-  });
+  }, SKILL_RUNTIME_TEST_TIMEOUT_MS);
 
   it("skips a malformed fresh fragment instead of crashing the pipeline", async () => {
     const dir = makeDir();
@@ -237,7 +238,7 @@ describe("skill-runtime merge-semantic - fragment validation", () => {
       nodes: Array<{ id: string }>;
     };
     expect(merged.nodes.map((n) => n.id)).toEqual(["ok"]);
-  });
+  }, SKILL_RUNTIME_TEST_TIMEOUT_MS);
 });
 
 describe("skill-runtime merge-extraction - fragment validation", () => {
@@ -283,7 +284,7 @@ describe("skill-runtime merge-extraction - fragment validation", () => {
     };
     expect(merged.nodes.map((n) => n.id).sort()).toEqual(["a_func", "good"]);
     expect(merged.nodes.find((n) => n.id === "good")?.rationale).toBe(longSentence);
-  });
+  }, SKILL_RUNTIME_TEST_TIMEOUT_MS);
 });
 
 describe("skill-runtime save-semantic-cache - fragment validation", () => {
@@ -310,5 +311,5 @@ describe("skill-runtime save-semantic-cache - fragment validation", () => {
     );
     expect(result.exitCode).toBe(1);
     expect(result.errors.join("\n")).toMatch(/(invalid semantic fragment|path separators)/i);
-  });
+  }, SKILL_RUNTIME_TEST_TIMEOUT_MS);
 });

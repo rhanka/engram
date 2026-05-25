@@ -322,40 +322,39 @@ M0..M5 lots all landed. `.astro` extractor (`6a7de56`), watch `.rebuild.lock` (`
 
 **Sub-lots in priority order** (P1 → P2 → M → Opt). Each lot one cohesive PR. G-overlap items must coordinate with the G6-3 routing refactor in-flight on `feat/track-g-g6-3-routing`.
 
-- [ ] **Lot F-0816-P1 — Project-scoped skill installs** (~1-1.5 days). Target upstream commit:
+- [x] **Lot F-0816-P1 — Project-scoped skill installs** (~1-1.5 days). Target upstream commit:
   - `b347492` — *feat(install): add project-scoped skill installs (#931)* (`upstream/v8`).
   Adds `graphify install <platform> --scope project` writing to `.claude/skills/`, `.codex/skills/`, etc. instead of `~/`-global. Soft G overlap on workspace bootstrap reading install state. Touches `src/skill-install.ts`, `src/cli.ts`, `tests/install-preview.test.ts`. **Proposed PR title:** `Track F-0816-P1: project-scoped skill installs (--scope project)`.
-- [ ] **Lot F-0816-P2 — Unicode + LLM/CLI hygiene** (~1-1.5 days). Target upstream commits:
+- [x] **Lot F-0816-P2 — Unicode + LLM/CLI hygiene** (~1-1.5 days). Target upstream commits:
   - `86109e9` — *fix: CJK/Unicode labels silently skipped in `_norm`/`_norm_label` dedup (#937)* (`upstream/v8`).
   - `020cca2` — *Keep non-English query terms searchable (#964)* (`upstream/v8`).
   - `3238b32` — *Exit non-zero when all semantic-extraction chunks fail (#889)* (`upstream/v8`).
   - `06a9b72` — *fix(llm): honor `GRAPHIFY_MAX_OUTPUT_TOKENS` for OpenAI-compatible backends (#973)* (`upstream/v8`).
   - `076e6b7` — *fix cluster-only crash when `graphify-out/` absent (#934)* (`upstream/v8`).
   Bundles the small Unicode + LLM + CLI hygiene fixes. Pairs with the still-open `0.7.14` Unicode-IDs row (`_makeId` in `src/extract.ts` strips non-ASCII). Touches `src/extract.ts` (`_makeId`), `src/build.ts`, `src/serve.ts` (query tokenizer), `src/search.ts`, `src/llm-execution.ts` (`GRAPHIFY_MAX_OUTPUT_TOKENS` env), `src/cli.ts` (extract exit code, cluster-only guard), `tests/cli-runtime.test.ts`, `tests/serve.test.ts`, `tests/language-surface.test.ts`. **Proposed PR title:** `Track F-0816-P2: Unicode dedup + LLM/CLI hygiene (5 upstream fixes)`.
-- [ ] **Lot F-0816-P3 — Security hardening cluster** (~1 day). Target upstream commit:
+- [x] **Lot F-0816-P3 — Security hardening cluster** (~1 day). Target upstream commit:
   - `b6127aa` (subset: 11f sub-row in bilan #2) — *graph.json 512 MiB loader cap + sanitize_metadata at export boundaries + vis-network CDN SRI pin* (part of `#956` omnibus).
   **G overlap:** vis-network CDN pin must also flow into `src/workspace/graph-panel.ts` if Track G uses the same CDN reference. Coordinate with G6-3 routing refactor. Touches `src/security.ts`, `src/export.ts`, `src/html-export.ts`, possibly `src/workspace/graph-panel.ts`, `tests/security.test.ts`, `tests/html-export.test.ts`. **Proposed PR title:** `Track F-0816-P3: security hardening (loader cap + export sanitize + vis-network SRI)`.
-- [ ] **Lot F-0816-P4 — Wiki stale-node filter + detect/security fixes** (~1-1.5 days). Target upstream commit:
+- [x] **Lot F-0816-P4 — Wiki stale-node filter + detect/security fixes** (~1-1.5 days). Target upstream commit:
   - `9e6192a` — *fix stale wiki nodes (#936), gitignore fallback and --exclude flag (#945/#947), NAT64 SSRF false-positive* (`upstream/v8`).
   Three independent fixes in one commit. **G overlap (wiki only):** Track G `workspace/display-model.ts` consumes wiki sidecars; this port *strengthens* the contract (no conflict expected, verify on G6-2 workspace tab via regenerated `.graphify/wiki/`). Touches `src/wiki.ts`, `src/detect.ts`, `src/security.ts` (NAT64), `src/cli.ts` (`--exclude` flag), `tests/wiki.test.ts`, `tests/detect.test.ts`, `tests/security.test.ts`. Depends on P3 (uses the sanitize_metadata helper). **Proposed PR title:** `Track F-0816-P4: wiki stale-node filter + detect --exclude + NAT64 SSRF fix`.
-- [ ] **Lot F-0816-M1 — Language extension + Swift cross-file fix** (~0.5 day). Target upstream commits:
+- [x] **Lot F-0816-M1 — Language extension + Swift cross-file fix** (~0.5 day). Target upstream commits:
   - `52d75bd` — *fix: add `.ets` (ArkTS) extension to `CODE_EXTENSIONS` (#926)* (`upstream/v8`).
   - `406bea4` — *fix swift extension nodes duplicating across files (#969)* (`upstream/v8`).
   - `b6127aa` (subset: 11b sub-row) — *env(1) shebang option-form parsing*.
   Trivial additions / shebang audit. Touches `src/detect.ts` (CODE_EXTENSIONS + shebang), `src/extract.ts > _importSwift` (line 817+), `tests/detect.test.ts`, `tests/language-surface.test.ts`. **Proposed PR title:** `Track F-0816-M1: .ets extension + Swift cross-file dedup + env shebang parsing`.
-- [ ] **Lot F-0816-M2 — JS/TS barrel re-export edges** (~1 day). Target upstream commit:
+- [x] **Lot F-0816-M2 — JS/TS barrel re-export edges** (~1 day). Target upstream commit:
   - `1494874` — *feat: track JS/TS barrel re-exports as explicit graph edges* (`upstream/v8`).
   Adds `re_exports` edge type — small additive graph schema delta. Touches `src/extract.ts > _importJs` (JS/TS/TSX configs), `src/types.ts` if edge enum is constrained, `tests/language-surface.test.ts`. **Proposed PR title:** `Track F-0816-M2: JS/TS barrel re-export edges`.
 - [ ] **Lot F-0816-M3 — Bash extractor hardening** (~1-1.5 days). Target upstream commit:
   - `b6127aa` (subset: 11a sub-row) — *bash extractor hardening (literal filtering, entrypoint nodes, AST-ancestry-aware command detection)* — depends on F-P3 bash extractor port still open from bilan #1 (`v0.8.1` Bash + JSON tree-sitter extractors).
   **Blocker:** bash extractor port is not yet on `main`. Schedule M3 *only* after the bash extractor itself lands. If bash extractor stays deferred, M3 stays deferred too. Touches `src/extract.ts` (bash language config), bash fixtures, `tests/language-surface.test.ts`. **Proposed PR title:** `Track F-0816-M3: bash extractor hardening (literal filter + entrypoint nodes)`.
-- [ ] **Lot F-0816-M4 — OpenCode + Codex semantic-fragment validation** (~0.5 day). Target upstream commit:
+- [x] **Lot F-0816-M4 — OpenCode + Codex semantic-fragment validation** (~0.5 day). Target upstream commit:
   - `b6127aa` (subset: 11c sub-row) — *fix(skills): enforce semantic fragment validation in OpenCode + Codex merges (#825)*.
   Skill install hygiene — fragment-merge correctness. Touches `src/skills/`, `src/skill-install.ts`, `tests/install-preview.test.ts`, `tests/opencode-integration.test.ts`. **Proposed PR title:** `Track F-0816-M4: enforce semantic fragment validation in OpenCode + Codex skill merges`.
-- [ ] **Lot F-0816-M5 — Semantic cleanup stale-node pruning** (~1 day). Target upstream commit:
-  - `b6127aa` (subset: 11h sub-row) — *semantic_cleanup module* (delete-stale nodes after rebuild).
-  Pairs naturally with P4 (`#936` wiki stale-node filter). Audit existing TS update/finalize stale-node pruning. Touches `src/build.ts` or new `src/semantic-cleanup.ts`, `src/skill-runtime.ts` (finalize/update path), `tests/cli-runtime.test.ts`, `tests/build-merge.test.ts`. **Proposed PR title:** `Track F-0816-M5: semantic cleanup stale-node pruning post-rebuild`.
-- [ ] **Lot F-0816-Opt-Affected — `graphify affected` + deeper import-resolution** (decision-pending, ~2-3 days if accepted). Target upstream commit:
+- [x] **Lot F-0816-M5 — Semantic cleanup stale-node pruning** (~1 day). Target upstream commit:
+  - `b6127aa` (originally framed as subset 11h; corrected in 0.9.7) — local graph stale-node pruning shipped as the TS graph-level pair to P4's stale-wiki-node filter. Upstream `semantic_cleanup.py` itself is the M4 semantic-fragment validator, not this stale-node pruner. **Merged as:** `Track F F-0816-M5: semantic_cleanup stale-node prune`.
+- [x] **Lot F-0816-Opt-Affected — `graphify affected` + deeper import-resolution** (decision-pending, ~2-3 days if accepted). Target upstream commit:
   - `e44e6e9` — *feat: add v8 affected and import-resolution support* (`upstream/v8`, +1279 LOC in `extract.py` and new `affected.py`).
   **Decision needed before scope:** adopt upstream `graphify affected` verb, or extend existing `review-delta` / `affected-flows.ts` with the deeper import-resolution? Recommendation: **extend `review-delta`** (preserves user muscle memory on the review-* surface, avoids two parallel verbs). If accepted as extension: touches `src/review-analysis.ts`, `src/affected-flows.ts`, `src/extract.ts` (import-resolution depth), `tests/review-analysis.test.ts`. **Proposed PR title (if extension):** `Track F-0816-Opt-Affected: extend review-delta with deeper import-resolution (v8 affected port)`.
 - [ ] **Lot F-Opt-LLM-Triage — `graphify pr --triage` multi-backend LLM resolution** (deferred). Target upstream commits:
