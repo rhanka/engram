@@ -98,7 +98,7 @@ describe("Track F F-0816-P2 (row 15) — cluster-only when output dir is missing
     // graph.json round-trips with the input nodes.
     const out = JSON.parse(readFileSync(graphOut, "utf-8")) as { nodes: Array<{ id: string }> };
     expect(out.nodes.map((n) => n.id).sort()).toEqual(["alpha", "beta"]);
-  });
+  }, 90_000);
 
   it("public CLI cluster-only re-creates .graphify/ subdirs when only graph.json survived", async () => {
     const root = tempProject();

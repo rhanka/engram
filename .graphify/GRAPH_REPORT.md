@@ -1,25 +1,25 @@
-# Graph Report - .  (2026-05-24)
+# Graph Report - .  (2026-05-25)
 
 ## Corpus Check
-- 311 files · ~399,330 words
+- 311 files · ~399,684 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 4647 nodes · 8998 edges · 184 communities detected
+- 4647 nodes · 9013 edges · 184 communities detected
 - Extraction: 95% EXTRACTED · 5% INFERRED · 0% AMBIGUOUS · INFERRED: 466 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
-- Edge kinds: contains: 3949 · calls: 1915 · imports: 1021 · imports_from: 607 · re_exports: 516 · uses: 466 · method: 232 · rationale_for: 208 · inherits: 68 · defines: 16
+- Edge kinds: contains: 3949 · calls: 1915 · imports: 1029 · imports_from: 608 · re_exports: 522 · uses: 466 · method: 232 · rationale_for: 208 · inherits: 68 · defines: 16
 
 
 ## Input Scope
 - Requested: auto
 - Resolved: committed (source: default-auto)
 - Included files: 311 · Candidates: 333
-- Excluded: 0 untracked · 15770 ignored · 5 sensitive · 0 missing committed
+- Excluded: 0 untracked · 15520 ignored · 5 sensitive · 0 missing committed
 - Recommendation: Use --scope all or graphify.yaml inputs.corpus for a knowledge-base folder.
 
 ## Graph Freshness
-- Built from Git commit: `6747bde`
+- Built from Git commit: `ea0bc7f`
 - Compare this hash to `git rev-parse HEAD` before trusting freshness-sensitive graph output.
 ## God Nodes (most connected - your core abstractions)
 1. `Response` - 45 edges
@@ -304,7 +304,7 @@ Cohesion: 0.11
 Nodes (27): allowedPathFor(), buildOntologyDiscoveryDiff(), buildOntologyDiscoverySample(), knownEvidenceRefs(), loadOntologyDiscoveryContext(), OntologyDiscoveryProposal, OntologyDiscoveryProposalAction, OntologyDiscoveryProposalKind (+19 more)
 
 ### Community 64 - "Community 64"
-Cohesion: 0.09
+Cohesion: 0.10
 Nodes (25): appendRationaleAttr(), INVALID_FILE_TYPES_FOR_SANITIZE, isPlainObject(), isSentenceLikeRationaleLabel(), LoadValidatedResult, loadValidatedSemanticFragment(), sanitizeSemanticFragment(), SemanticFragment (+17 more)
 
 ### Community 65 - "Community 65"
@@ -784,7 +784,7 @@ Cohesion: 1.00
 Nodes (1): optionalRuntimeDeps
 
 ## Knowledge Gaps
-- **1537 isolated node(s):** `GraphInstance`, `JSON_NOISE_LABELS`, `SAMPLE_QUESTIONS`, `BenchmarkOptions`, `BuildOptions` (+1532 more)
+- **1534 isolated node(s):** `GraphInstance`, `JSON_NOISE_LABELS`, `SAMPLE_QUESTIONS`, `BenchmarkOptions`, `BuildOptions` (+1529 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **Thin community `Community 102`** (2 nodes): `ApiClient`, `ApiClient`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
@@ -808,9 +808,9 @@ _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `OntologyReconciliationCandidate` connect `Community 50` to `Community 2`, `Community 109`, `Community 40`?**
   _High betweenness centrality (0.007) - this node is a cross-community bridge._
-- **Why does `OntologyReconciliationDecisionLogResponse` connect `Community 109` to `Community 27`, `Community 2`, `Community 40`?**
+- **Why does `OntologyReconciliationDecisionLogResponse` connect `Community 109` to `Community 2`, `Community 27`, `Community 40`?**
   _High betweenness centrality (0.007) - this node is a cross-community bridge._
-- **Why does `OntologyReconciliationCandidatesResponse` connect `Community 109` to `Community 50`, `Community 2`, `Community 40`?**
+- **Why does `OntologyReconciliationCandidatesResponse` connect `Community 109` to `Community 2`, `Community 50`, `Community 40`?**
   _High betweenness centrality (0.007) - this node is a cross-community bridge._
 - **Are the 39 inferred relationships involving `Response` (e.g. with `Auth` and `BasicAuth`) actually correct?**
   _`Response` has 39 INFERRED edges - model-reasoned connections that need verification._

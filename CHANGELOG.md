@@ -4,6 +4,25 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.9.7 (2026-05-24)
+
+Track F 0.8.16 drift closure.
+
+Ports / closes the 0.8.16 intake lots that were accepted for the TypeScript line:
+
+- Project-scoped skill installs (`graphify install --project` and per-platform `--project`) so assistants can be installed into the current repo instead of only user-global locations.
+- Unicode / CJK correctness and query hygiene: non-ASCII labels survive dedup, non-English search terms remain searchable, all-chunk semantic extraction failure exits non-zero, `GRAPHIFY_MAX_OUTPUT_TOKENS` is honored, and `cluster-only` creates its missing output dir gracefully.
+- Security hardening: 512 MiB `graph.json` loader/writer guard, bounded `sanitizeMetadata`, vis-network CDN SRI pin, wiki export sanitization, `--exclude` detect/extract flag, `.gitignore` fallback, and NAT64 / IPv4-mapped SSRF handling.
+- Parser / graph-quality fixes: `.ets` extension support, env(1) shebang option parsing, Swift extension dedup, JS/TS barrel `re_exports` graph edges, and stale-code-node pruning during rebuild/finalize.
+- Review impact: `review-delta --depth` and `review-delta --affected` now cover deeper import-resolution flows without adding a parallel top-level `affected` verb.
+- Skill merge hardening: untrusted semantic fragments are validated and sanitized before merge/cache/finalize paths; malformed fragments are skipped with warnings instead of crashing.
+
+Traceability notes:
+
+- The upstream `semantic_cleanup.py` name maps to semantic-fragment validation, not stale-node pruning. The TypeScript port intentionally names that module `semantic-fragment-validation.ts` because `semantic-cleanup.ts` is reserved here for the graph stale-node pruning shipped as the local graph-level pair to the stale-wiki-node fix.
+- F-0816-M3 (bash extractor hardening) remains parked until the bash extractor itself lands. SCIP ingestion and Python/bash symbol-resolution helpers remain deferred until requested.
+- Patch bump only; no breaking CLI contract. Additive graph schema delta: `re_exports` edges.
+
 ## 0.9.6 (2026-05-20)
 
 Track F-M2 upstream parity follow-up — port the 6 commits between upstream `v0.8.11` and `v0.8.13` worth porting to the TypeScript line. Also rolls in the Track C-3.5 visual encoding feature that landed mid-cycle.
