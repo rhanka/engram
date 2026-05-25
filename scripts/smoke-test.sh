@@ -83,7 +83,7 @@ echo "  ✓ graphify hook status works"
 
 # ── Step 6: Verify package contents ──────────────────
 echo "Step 6: Verify package contents..."
-PKG_DIR="$TMP_DIR/node_modules/graphifyy"
+PKG_DIR="$INSTALL_DIR/node_modules/graphifyy"
 
 # dist/ should exist
 [ -f "$PKG_DIR/dist/index.js" ] || { echo "  ✗ dist/index.js missing"; exit 1; }
