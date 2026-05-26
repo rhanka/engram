@@ -104,7 +104,7 @@ const labels = LABELS_DICT;
 
 const questions = suggestQuestions(G, communities, labels);
 
-const report = generateReport(G, communities, cohesion, labels, analysis.gods, analysis.surprises, detection, tokens, 'INPUT_PATH', {suggestedQuestions: questions});
+const report = generateReport(G, communities, cohesion, labels, analysis.gods, analysis.surprises, detection, tokens, '.', {suggestedQuestions: questions});
 fs.writeFileSync('.graphify/GRAPH_REPORT.md', report);
 fs.writeFileSync('.graphify/.graphify_labels.json', JSON.stringify(Object.fromEntries(Object.entries(labels).map(([k, v]) => [String(k), v]))));
 console.log('Report updated with community labels');
