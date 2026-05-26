@@ -40,6 +40,39 @@ This document tracks the delta between this TypeScript port and upstream Python 
 - The `0.7.10` parity cycle is closed in the TypeScript release line; any newer upstream drift must start a new traceability pass.
 - Python `upstream/v8` was re-fetched on 2026-05-23 (Track F bilan #2) and advanced from the previous cadrage lock `4c95d02` (`v0.8.13`, bilan #1 baseline) to `990ac70` (`v0.8.16`); intermediate tag `v0.8.14` at `f4da176` was published, intermediate tag `v0.8.15` was **skipped upstream** (commit `ff14ad5` landed in-tree but no remote tag was pushed — do not record `v0.8.15` as a published Python release).
 - Local TS baseline for the `0.8.16` drift bilan is `main` at `751ddce935ba8baec26fe5225da12a7525da428b`, package `graphifyy@0.9.1`.
+- Python `upstream/v8` was re-fetched on 2026-05-25 (Track F bilan #3) and advanced from `990ac70` (`v0.8.16`) to `3efae38`; new remote tags `v0.8.17` at `73c3c33` and `v0.8.18` at `98100f3` were published. Tag `v1.0.0` at `0a31c08` ("add git commit hook") is **NOT an ancestor of `upstream/v8`** (it is a lightweight tag on a divergent commit, not a v8-line release) — it stays a **non-target**, confirming the bilan #1/#2 finding; the auto-rebuild-after-commit feature it carries is already-covered by our `graphify hook-rebuild` / git-hook install.
+
+## Active `0.8.18` Drift Intake
+
+Observed on 2026-05-25 (Track F bilan #3) after publishing `graphifyy@0.9.7` (closing the `0.8.16` intake):
+
+- Safi Python Graphify: `upstream/v8` at `3efae38` (`Rate-limit backup_if_protected ...`), one commit past tag `v0.8.18` (`98100f3`).
+- New remote tags since `v0.8.16`: `v0.8.17` at `73c3c33`, `v0.8.18` at `98100f3`. Tag `v1.0.0` at `0a31c08` is a non-target (see Source Lock Notes).
+- Drift commit range `990ac70..upstream/v8` is **12 commits**. Companion lot plan: `PLAN.md > Lot F-0818 drift (2026-05-25)`.
+- Local TS baseline: `main` at `2583f33` (`graphifyy@0.9.7`, post-PR #71 ledger).
+
+Grounding checks run against `main` at intake time: `backupIfProtected` already exists (`src/watch.ts:299`, `src/export.ts`); Java `extends`→`inherits` is already canonicalized (`src/extract.ts:1541+`); partial cross-language structural suppression exists (`src/analyze.ts:116`); **no** query-expansion, semantic-contexts, or watch shrink-guard exist yet.
+
+| # | Commit | Subject (issue) | Bucket | Initial TS status / action |
+| --- | --- | --- | --- | --- |
+| 1 | `461e346` | Windows cp1252 crash, `str.parent` crash, MCP error message, god_nodes relative import | `already-covered` / `n-a` | cp1252 + `str.parent` are Python-runtime specific (TS reads UTF-8, no `str.parent`). Audit only the MCP error-message wording + god-node import angle. |
+| 2 | `71b4e57` | Husky 9 hook path, `skill.md` `INPUT_PATH` literal, per-worker exception isolation | `must-port (M)` | F-0818-M1. Audit `src/hooks.ts` (Husky-9 path), `src/skills/*` (`INPUT_PATH` literal), `src/llm-execution.ts` (per-worker isolation). |
+| 3 | `4dce16f` | Case-sensitive call resolution + cross-language phantom calls (#993, #991) | `must-port (P)` | F-0818-P1. We have partial cross-lang suppression (`analyze.ts:116`) but no case-sensitive call resolution. Extend `src/extract.ts` / `src/analyze.ts` + regression. |
+| 4 | `73c3c33` | Bump 0.8.17 | `release-only` | Do not mirror (`MEMORY.md > Cautious semver bumps`). |
+| 5 | `6fba4e4` | watch: bypass shrink-guard on explicit deletions (#1000) | `needs-audit` → likely `n-a` / `intentional-delta` | No shrink-guard in `src/watch.ts`; verify our `.rebuild.lock` + deletion-aware update path is equivalent before porting. |
+| 6 | `d778e2c` | cli: reconstruct communities from per-node attribute when sidecar missing (#1001) | `must-port (M)` | F-0818-M2. Robustness for `src/community-labels.ts` / cluster when the label sidecar is absent. |
+| 7 | `32effb1` | docs: Ukrainian README to v8 (#995) | `intentional-delta` / `release-only` | The TS fork does not carry a Ukrainian README. |
+| 8 | `ab4e542` | feat: cross-language semantic contexts for Python, JS/TS, C#, Java (#996) | `feature — scope decision` | New capability we lack. Needs a mini-spec before a lot is opened; default `defer` pending scope (size unknown). |
+| 9 | `238702b` | Constrained query expansion (#998) | `must-port (M)` | F-0818-M3. No query expansion in `src/serve.ts` / `src/search.ts`; port the constrained-expansion ranking. |
+| 10 | `a4a615d` | Ukrainian typo + Unicode vocab regex + Java `extends`→`inherits` migration note | split | Unicode vocab regex → `must-port (M)` (F-0818-M3, pairs with #9 query hygiene); Java `inherits` → `already-covered` (`extract.ts:1541+`); README typo → `release-only`. |
+| 11 | `98100f3` | Bump 0.8.18 | `release-only` | Do not mirror. |
+| 12 | `3efae38` | Rate-limit `backup_if_protected` to one folder/day via content hash | `must-port (M)` | F-0818-M2. Enhancement to existing `backupIfProtected` (`watch.ts:299`); add the daily content-hash rate-limit. |
+
+**Bucket counts:** must-port-P = 1 (#3), must-port-M = 4 (#2, #6, #9+#10-regex, #12), feature/scope-decision = 1 (#8), needs-audit = 1 (#5), already-covered = 2 (#1, #10-Java), intentional-delta = 1 (#7), release-only = 3 (#4, #11, README bits).
+
+**Rolled-up effort:** ~3-4 days serialized for P1 + M1/M2/M3, excluding the `#8` semantic-contexts feature (scope TBD).
+
+**Version recommendation:** after porting P1 + M1/M2/M3, the next TS release is a **patch bump `graphifyy@0.9.8`** advancing the closest audited parity point to `v0.8.18`. Do **not** jump to `1.0.0`: upstream `v1.0.0` is a lightweight tag on a divergent git-hook commit, not a v8-line major. `#8` semantic-contexts, if accepted, would justify a **minor `0.10.0`** in a later cycle once scoped.
 
 ## Active `0.8.16` Drift Intake
 
