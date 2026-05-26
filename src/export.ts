@@ -2,6 +2,7 @@
  * Export graph to HTML, JSON, SVG, GraphML, Obsidian Canvas, and Neo4j Cypher.
  */
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { basename, dirname, join, resolve } from "node:path";
 import Graph from "graphology";
 import { sanitizeLabel, escapeHtml, sanitizeMetadata } from "./security.js";
@@ -77,11 +78,21 @@ export function backupIfProtected(outDir: string): string | null {
   ].filter(Boolean).join("+");
 
   const today = todayIso();
-  let backupDir = join(out, today);
-  let suffix = 2;
-  while (existsSync(backupDir)) {
-    backupDir = join(out, `${today}_${suffix}`);
-    suffix++;
+  const backupDir = join(out, today);
+
+  // One backup folder per day (port of upstream 3efae38). If today's backup
+  // already holds byte-identical graph.json content, skip the re-copy; if the
+  // graph changed since that backup, overwrite it in place so the dated folder
+  // always holds the latest pre-overwrite state instead of accumulating `_N`.
+  const backupGraph = join(backupDir, "graph.json");
+  if (existsSync(backupDir) && existsSync(backupGraph)) {
+    try {
+      const srcHash = createHash("sha256").update(readFileSync(join(out, "graph.json"))).digest("hex");
+      const bakHash = createHash("sha256").update(readFileSync(backupGraph)).digest("hex");
+      if (srcHash === bakHash) return backupDir;
+    } catch {
+      /* fall through and overwrite the backup */
+    }
   }
 
   try {
