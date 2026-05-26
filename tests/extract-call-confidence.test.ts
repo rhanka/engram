@@ -3,7 +3,11 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { extract, extractGo, extractJs } from "../src/extract.js";
+import { extract, extractGo, extractJs, extractPhp } from "../src/extract.js";
+
+function strip(label: string | undefined): string {
+  return String(label ?? "").replace(/\(?\)$/g, "").replace(/^\./, "");
+}
 
 const cleanupDirs: string[] = [];
 
@@ -35,6 +39,55 @@ describe("AST call edge confidence", () => {
     expect(calls.length).toBeGreaterThan(0);
     expect(calls.every((edge) => edge.confidence === "EXTRACTED")).toBe(true);
     expect(calls.every((edge) => edge.weight === 1.0)).toBe(true);
+  });
+
+  it("does not phantom-link a lowercase call to a different-case definition in case-sensitive languages", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-extract-case-"));
+    cleanupDirs.push(dir);
+
+    const filePath = join(dir, "sample.js");
+    writeFileSync(
+      filePath,
+      [
+        "function Render() { return 1; }",
+        "function caller() { return render(); }",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await extractJs(filePath);
+    const renderNode = result.nodes.find((n) => strip(n.label) === "Render");
+    const calls = result.edges.filter((edge) => edge.relation === "calls");
+
+    // `render()` (lowercase) must NOT resolve to the `Render` definition: JS is case-sensitive.
+    expect(renderNode).toBeDefined();
+    expect(calls.some((edge) => edge.target === renderNode!.id)).toBe(false);
+  });
+
+  it("resolves calls case-insensitively in PHP", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-extract-php-case-"));
+    cleanupDirs.push(dir);
+
+    const filePath = join(dir, "sample.php");
+    writeFileSync(
+      filePath,
+      [
+        "<?php",
+        "function Render() { return 1; }",
+        "function caller() { return render(); }",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await extractPhp(filePath);
+    const renderNode = result.nodes.find((n) => strip(n.label) === "Render");
+    const calls = result.edges.filter((edge) => edge.relation === "calls");
+
+    // PHP function names are case-insensitive: `render()` resolves to `Render`.
+    expect(renderNode).toBeDefined();
+    expect(calls.some((edge) => edge.target === renderNode!.id)).toBe(true);
   });
 
   it("uses namespaced Go package import IDs to avoid local file collisions", async () => {
