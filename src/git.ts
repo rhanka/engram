@@ -1,6 +1,6 @@
 /** Git repository resolution helpers shared by hooks and lifecycle metadata. */
 import { execFileSync } from "node:child_process";
-import { isAbsolute, resolve } from "node:path";
+import { basename, dirname, isAbsolute, resolve } from "node:path";
 
 export interface GitContext {
   worktreeRoot: string;
@@ -57,6 +57,17 @@ function isSafeGitPath(value: string): boolean {
   return value.length > 0 && !/[\n\r\0]/.test(value);
 }
 
+/**
+ * Return the user-editable hooks directory. Husky 9 sets `core.hooksPath` to
+ * `.husky/_` (auto-generated wrapper scripts), while user-editable hooks live
+ * in the parent `.husky/`. Targeting `.husky/_` would put our hooks in the
+ * directory Husky regenerates, so step up to the parent in that case
+ * (port of upstream `_user_hooks_dir`, #987).
+ */
+export function userEditableHooksDir(hooksDir: string): string {
+  return basename(hooksDir) === "_" ? dirname(hooksDir) : hooksDir;
+}
+
 export function resolveGitContext(path: string = "."): GitContext | null {
   const cwd = resolve(path);
   try {
@@ -71,7 +82,7 @@ export function resolveGitContext(path: string = "."): GitContext | null {
     const worktreeRoot = resolve(topLevel);
     const gitDir = resolve(absoluteGitDir);
     const commonGitDir = resolveFromGitCwd(cwd, commonGitDirRaw);
-    const hooksDir = resolveFromGitCwd(cwd, hooksDirRaw);
+    const hooksDir = userEditableHooksDir(resolveFromGitCwd(cwd, hooksDirRaw));
     return { worktreeRoot, gitDir, commonGitDir, hooksDir };
   } catch {
     return null;
