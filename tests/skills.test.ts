@@ -38,6 +38,15 @@ const TRIGGER_DESCRIPTION_DOCS = [
 ];
 
 describe("skill cache examples", () => {
+  it("does not pass the unsubstituted INPUT_PATH literal to generateReport", () => {
+    for (const relativePath of DISTRIBUTED_SKILL_DOCS) {
+      const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
+      // The report path arg must be a real path ('.'), not the unsubstituted
+      // placeholder, otherwise GRAPH_REPORT.md is titled literally "INPUT_PATH".
+      expect(content).not.toContain("'INPUT_PATH', {suggestedQuestions");
+    }
+  });
+
   it("uses trigger-oriented skill descriptions", () => {
     for (const relativePath of TRIGGER_DESCRIPTION_DOCS) {
       const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
