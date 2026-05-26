@@ -32,6 +32,16 @@ describe("hooks", () => {
     return join(isAbsolute(hooksDir) ? hooksDir : resolve(cwd, hooksDir), name);
   }
 
+  it("targets the user-editable .husky dir on Husky 9 repos (core.hooksPath=.husky/_)", () => {
+    git(tmpDir, ["config", "core.hooksPath", ".husky/_"]);
+
+    install(tmpDir);
+
+    // Husky 9 auto-generates wrappers under .husky/_; user hooks live in .husky/.
+    expect(existsSync(join(tmpDir, ".husky", "post-commit"))).toBe(true);
+    expect(existsSync(join(tmpDir, ".husky", "_", "post-commit"))).toBe(false);
+  });
+
   it("installs all lifecycle hooks", () => {
     const result = install(tmpDir);
 
