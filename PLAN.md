@@ -209,7 +209,7 @@ Each lane carries six independent dimensions. "Infra" = library / CLI / MCP / AP
 | --- | :---: | :---: | :---: | :---: | :---: | :---: | ---: |
 | **C** CRG `v2.3.3` | ✅ 2/2 | ✅ 3/3 (C1/C2/C3 lots landed) | 🟡 3/4 (C1 review-precision, C2 a11y, C3 visual encoding shipped; C4 review UAT outstanding) | 🟡 1/2 (HTML a11y shipped; review surface live-walk pending) | ❌ 0/1 (live user UAT pending) | ✅ 1/1 (C-3.5 visual encoding released in `graphifyy@0.9.6` CHANGELOG) | **10/13 = 77 %** |
 | **E** Install footprint | ✅ 1/1 | ✅ 6/6 (Lots 1/2/3/4-safe/5 + Lot 4-risky dep majors @0.9.3 + Lot 6 Node 24 CI @0.9.2 all landed) | ✅ 6/6 | n/a | ✅ 1/1 (smoke + portable-check green at each lot) | ✅ 1/1 (`graphifyy@0.9.0` minor for Lot 1; 0.9.2/0.9.3 patch follow-ups) | **15/15 = 100 % — DONE** |
-| **F** Upstream parity weekly | ✅ 1/1 | ✅ (0.8.16 cycle closed; M3 bash hardening parked, F-Opt-LLM-Triage deferred) | ✅ 4/4 (F-Install/P1/P2/M1 + F-0816 P1–P4/M1/M2/M4/M5/Opt-Affected merged via PRs #59/#62/#63/#64/#65/#66/#67/#68/#69) | n/a | ✅ 2/2 (per-lot Vitest regressions + release smoke/portable-check green through 0.9.7) | ✅ 1/1 (released through `graphifyy@0.9.7`; CHANGELOG + Version Alignment refreshed) | **0.8.16 cycle closed @0.9.7; bilan #3 (2026-05-25) opened a 12-commit `0.8.18` drift → lots F-0818-P1/M1/M2/M3 pending go** |
+| **F** Upstream parity weekly | ✅ 1/1 | ✅ (0.8.16 cycle closed; M3 bash hardening parked, F-Opt-LLM-Triage deferred) | ✅ 4/4 (F-Install/P1/P2/M1 + F-0816 P1–P4/M1/M2/M4/M5/Opt-Affected merged via PRs #59/#62/#63/#64/#65/#66/#67/#68/#69) | n/a | ✅ 2/2 (per-lot Vitest regressions + release smoke/portable-check green through 0.9.7) | ✅ 1/1 (released through `graphifyy@0.9.7`; CHANGELOG + Version Alignment refreshed) | **0.8.16 + 0.8.18 cycles both closed (released @0.9.7 and @0.9.8); F-0818-P1/M1/M2/M3 merged via PRs #74/#75/#76/#77; next bilan past `3efae38` (`v0.8.18`)** |
 
 **Tracks A / B / D archived as DONE** — see git log and `CHANGELOG.md` for details (A bridge mesh `graphifyy@0.9.1`, B reconciliation through `0.7.19-rc.1`, D drift `0.7.11..0.7.19` at `0.7.19` stable). Removed from active reporting per user request 2026-05-16.
 
@@ -219,7 +219,7 @@ Each lane carries six independent dimensions. "Infra" = library / CLI / MCP / AP
 | --- | --- | --- |
 | **C** CRG `v2.3.3` | Live user UAT on regenerated `graph.html` (skip-link, F1/?, contrast toggle, keyboard nav, filtres communautés, dashes par relation). | **DECISION user** — verdict UAT live OK/KO. URL UAT : http://127.0.0.1:8765/graph.html. |
 | **E** Install footprint | Aucune — lane close (15/15). Lot 4-risky dep majors livrés en `0.9.3`, Lot 6 Node 24 CI en `0.9.2`. | Aucune. |
-| **F** Upstream parity weekly | Bilan #3 fait (2026-05-25, drift `0.8.18` = 12 commits, cf. `UPSTREAM_GAP.md > Active 0.8.18 Drift Intake`). Prochaine action : ouvrir les lots F-0818-P1 + M1/M2/M3 puis release patch `0.9.8`. | **DECISION user** — go pour les lots F-0818 (~3-4 j) + scope du `#8` semantic-contexts (defer par défaut). |
+| **F** Upstream parity weekly | F-0818-P1/M1/M2/M3 livrés (PRs #74-#77) et publiés en `graphifyy@0.9.8`. Prochaine action : nouveau bilan hebdo (rescan upstream au-delà de `3efae38` / `v0.8.18`). | **DECISION user** — scope du `#996` semantic-contexts (defer par défaut, mini-spec d'abord). |
 
 ## Detailed Track Plans
 
@@ -324,17 +324,17 @@ M0..M5 lots all landed. `.astro` extractor (`6a7de56`), watch `.rebuild.lock` (`
 
 **Sub-lots in priority order** (P → M). Each lot one cohesive PR. Recommended release vehicle after P1 + M1/M2/M3: patch `graphifyy@0.9.8` advancing the closest audited parity point to `v0.8.18`.
 
-- [ ] **Lot F-0818-P1 — Call-resolution correctness** (~1 day). Target upstream commit:
+- [x] **Lot F-0818-P1 — Call-resolution correctness** (PR #74, released 0.9.8). Target upstream commit:
   - `4dce16f` — *Fix case-sensitive call resolution and cross-language phantom calls (#993, #991)* (`upstream/v8`).
   We already suppress some cross-language structural bonuses (`src/analyze.ts:116 shouldSuppressCrossLanguageStructuralBonuses`) but have no case-sensitive call-resolution guard. Touches `src/extract.ts`, `src/analyze.ts`, `tests/extract-call-confidence.test.ts` / `tests/analyze.test.ts`. **Proposed PR title:** `Track F-0818-P1: case-sensitive call resolution + cross-language phantom-call suppression`.
-- [ ] **Lot F-0818-M1 — Hook/skill/worker hygiene** (~0.5-1 day). Target upstream commit:
+- [x] **Lot F-0818-M1 — Hook/skill/worker hygiene** (PR #75, released 0.9.8; per-worker isolation #943 already-covered). Target upstream commit:
   - `71b4e57` — *Fix Husky 9 hook path, skill.md INPUT_PATH literal, per-worker exception isolation* (`upstream/v8`).
   Touches `src/hooks.ts` (Husky-9 hook path), `src/skills/*` (`INPUT_PATH` literal), `src/llm-execution.ts` (per-worker exception isolation), `tests/hooks.test.ts` / `tests/skills.test.ts`. **Proposed PR title:** `Track F-0818-M1: Husky 9 hook path + skill INPUT_PATH literal + per-worker isolation`.
-- [ ] **Lot F-0818-M2 — Backup rate-limit + community sidecar fallback** (~1 day). Target upstream commits:
+- [x] **Lot F-0818-M2 — Backup rate-limit + community sidecar fallback** (PR #76, released 0.9.8; community reconstruction #1001 already-covered by `communitiesFromCliGraph`). Target upstream commits:
   - `3efae38` — *Rate-limit backup_if_protected to one folder per day via content hash* (`upstream/v8`).
   - `d778e2c` — *reconstruct communities from per-node attribute when sidecar missing (#1001)* (`upstream/v8`).
   Both are robustness fixes on surfaces we already have. `backupIfProtected` exists (`src/export.ts`, wired `src/watch.ts:299`); add the daily content-hash rate-limit. Community-label reconstruction touches `src/community-labels.ts` / cluster load. **Proposed PR title:** `Track F-0818-M2: backup daily rate-limit + community reconstruction fallback`.
-- [ ] **Lot F-0818-M3 — Query expansion + Unicode vocab regex** (~1 day). Target upstream commits:
+- [x] **Lot F-0818-M3 — Query expansion + Unicode vocab regex** (PR #77, released 0.9.8; skill-guidance port). Target upstream commits:
   - `238702b` — *Constrained query expansion (#998)* (`upstream/v8`).
   - `a4a615d` (subset) — *Unicode vocab regex* (`upstream/v8`).
   No query expansion exists in `src/serve.ts` / `src/search.ts` today; port the constrained-expansion ranking + the Unicode vocab regex (pairs with the 0.8.16 Unicode lineage). Touches `src/serve.ts`, `src/search.ts`, `tests/serve.test.ts`. **Proposed PR title:** `Track F-0818-M3: constrained query expansion + Unicode vocab regex`.
