@@ -913,6 +913,35 @@ if (!fs.existsSync('.graphify/graph.json')) {
 ```
 If it fails, stop and tell the user to run `/graphify <path>` first.
 
+### Step 0 - Constrained query expansion (before traversal)
+
+`graphify query` matches nodes by case-folded substring + IDF - **no stemming, no synonyms, no cross-language match**. When the question uses different vocabulary than the graph labels (user says "обработчик" / graph says "handler"; "authentication" / "Guardian"), the literal matcher returns 0 hits. Expand the query against the **actual graph vocabulary** first - never invent tokens:
+
+```bash
+node -e "
+const fs = require('fs');
+const g = JSON.parse(fs.readFileSync('.graphify/graph.json','utf-8'));
+const vocab = new Set();
+for (const n of (g.nodes || [])) {
+  for (const c of String(n.label || '').match(/[^\W\d_]+/gu) || []) {
+    for (const p of (c.match(/[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+/g) || [c])) {
+      if (p.length > 1) vocab.add(p.toLowerCase());
+    }
+  }
+}
+fs.writeFileSync('.graphify/.vocab.txt', [...vocab].sort().join('\n'));
+console.log('vocab: ' + vocab.size + ' tokens');
+"
+```
+
+Read `.graphify/.vocab.txt`, then pick **up to 12 tokens from that exact list** that match the query intent. Hard constraints:
+- Use only tokens present in `.vocab.txt` - do **not** invent tokens.
+- A concept with no plausible vocab token: skip it, no near-synonym from memory.
+- No vocab token matches at all: output an empty list and tell the user the corpus has no relevant vocabulary; do not fabricate a search.
+- Cross-language: e.g. Russian "аутентификация" - look for `auth`, `credential`, `token`, `security` **iff present** in the vocab.
+
+Print the selection before querying (`Query expanded to (from graph vocab, N tokens): [...]`), then run `graphify query` with the joined expanded tokens (keep the original question only for `save-result`).
+
 Before deep traversal, run the compact first-hop summary and use it to choose the right graph action:
 
 ```bash

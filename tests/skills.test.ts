@@ -47,6 +47,25 @@ describe("skill cache examples", () => {
     }
   });
 
+  it("teaches constrained query expansion against the actual graph vocabulary", () => {
+    // The detailed /graphify query workflow (with the first-hop summary step)
+    // lives in these docs; the condensed codex/gemini variants point to it.
+    const QUERY_WORKFLOW_DOCS = [
+      "../src/skills/skill.md",
+      "../src/skills/skill-droid.md",
+      "../src/skills/skill-opencode.md",
+      "../src/skills/skill-windows.md",
+      "../src/skills/skill-claw.md",
+      "../src/skills/skill-trae.md",
+    ];
+    for (const relativePath of QUERY_WORKFLOW_DOCS) {
+      const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
+      // Expand the query against the real graph vocab before traversal; never invent tokens.
+      expect(content).toContain("Constrained query expansion");
+      expect(content).toContain(".vocab.txt");
+    }
+  });
+
   it("uses trigger-oriented skill descriptions", () => {
     for (const relativePath of TRIGGER_DESCRIPTION_DOCS) {
       const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
