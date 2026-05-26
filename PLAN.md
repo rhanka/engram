@@ -209,7 +209,7 @@ Each lane carries six independent dimensions. "Infra" = library / CLI / MCP / AP
 | --- | :---: | :---: | :---: | :---: | :---: | :---: | ---: |
 | **C** CRG `v2.3.3` | ✅ 2/2 | ✅ 3/3 (C1/C2/C3 lots landed) | 🟡 3/4 (C1 review-precision, C2 a11y, C3 visual encoding shipped; C4 review UAT outstanding) | 🟡 1/2 (HTML a11y shipped; review surface live-walk pending) | ❌ 0/1 (live user UAT pending) | ✅ 1/1 (C-3.5 visual encoding released in `graphifyy@0.9.6` CHANGELOG) | **10/13 = 77 %** |
 | **E** Install footprint | ✅ 1/1 | ✅ 6/6 (Lots 1/2/3/4-safe/5 + Lot 4-risky dep majors @0.9.3 + Lot 6 Node 24 CI @0.9.2 all landed) | ✅ 6/6 | n/a | ✅ 1/1 (smoke + portable-check green at each lot) | ✅ 1/1 (`graphifyy@0.9.0` minor for Lot 1; 0.9.2/0.9.3 patch follow-ups) | **15/15 = 100 % — DONE** |
-| **F** Upstream parity weekly | ✅ 1/1 | ✅ (0.8.16 cycle closed; M3 bash hardening parked, F-Opt-LLM-Triage deferred) | ✅ 4/4 (F-Install/P1/P2/M1 + F-0816 P1–P4/M1/M2/M4/M5/Opt-Affected merged via PRs #59/#62/#63/#64/#65/#66/#67/#68/#69) | n/a | ✅ 2/2 (per-lot Vitest regressions + release smoke/portable-check green through 0.9.7) | ✅ 1/1 (released through `graphifyy@0.9.7`; CHANGELOG + Version Alignment refreshed) | **closed @0.9.7 — next bilan on fresh upstream scan past `990ac70`** |
+| **F** Upstream parity weekly | ✅ 1/1 | ✅ (0.8.16 cycle closed; M3 bash hardening parked, F-Opt-LLM-Triage deferred) | ✅ 4/4 (F-Install/P1/P2/M1 + F-0816 P1–P4/M1/M2/M4/M5/Opt-Affected merged via PRs #59/#62/#63/#64/#65/#66/#67/#68/#69) | n/a | ✅ 2/2 (per-lot Vitest regressions + release smoke/portable-check green through 0.9.7) | ✅ 1/1 (released through `graphifyy@0.9.7`; CHANGELOG + Version Alignment refreshed) | **0.8.16 cycle closed @0.9.7; bilan #3 (2026-05-25) opened a 12-commit `0.8.18` drift → lots F-0818-P1/M1/M2/M3 pending go** |
 
 **Tracks A / B / D archived as DONE** — see git log and `CHANGELOG.md` for details (A bridge mesh `graphifyy@0.9.1`, B reconciliation through `0.7.19-rc.1`, D drift `0.7.11..0.7.19` at `0.7.19` stable). Removed from active reporting per user request 2026-05-16.
 
@@ -219,7 +219,7 @@ Each lane carries six independent dimensions. "Infra" = library / CLI / MCP / AP
 | --- | --- | --- |
 | **C** CRG `v2.3.3` | Live user UAT on regenerated `graph.html` (skip-link, F1/?, contrast toggle, keyboard nav, filtres communautés, dashes par relation). | **DECISION user** — verdict UAT live OK/KO. URL UAT : http://127.0.0.1:8765/graph.html. |
 | **E** Install footprint | Aucune — lane close (15/15). Lot 4-risky dep majors livrés en `0.9.3`, Lot 6 Node 24 CI en `0.9.2`. | Aucune. |
-| **F** Upstream parity weekly | Nouveau bilan : rescan upstream Python `safishamsi/graphify` au-delà de `upstream/v8` `990ac70` (`v0.8.16`), classer le drift, recommander le prochain numéro de version. | **DECISION user** — lancer le prochain bilan F ou laisser parqué jusqu'au prochain `/loop` hebdo. |
+| **F** Upstream parity weekly | Bilan #3 fait (2026-05-25, drift `0.8.18` = 12 commits, cf. `UPSTREAM_GAP.md > Active 0.8.18 Drift Intake`). Prochaine action : ouvrir les lots F-0818-P1 + M1/M2/M3 puis release patch `0.9.8`. | **DECISION user** — go pour les lots F-0818 (~3-4 j) + scope du `#8` semantic-contexts (defer par défaut). |
 
 ## Detailed Track Plans
 
@@ -317,6 +317,32 @@ M0..M5 lots all landed. `.astro` extractor (`6a7de56`), watch `.rebuild.lock` (`
 
 **Release / Docs (1/1)**
 - [x] `UPSTREAM_GAP.md` Version Alignment refreshed through `graphifyy@0.9.7`, advancing the closest audited parity point to the `0.8.16` drift train and recording the `0.9.5`/`0.9.6`/`0.9.7` rows. CHANGELOG carries the per-release notes through `0.9.7`.
+
+## Lot F-0818 drift (2026-05-25)
+
+**Source lock:** `upstream/v8` at `3efae38` (one commit past tag `v0.8.18` `98100f3`); new tags `v0.8.17` (`73c3c33`) and `v0.8.18` (`98100f3`) since the `0.8.16` lock (`990ac70`). Tag `v1.0.0` (`0a31c08`, "add git commit hook") is **not on the v8 line** (divergent, lightweight tag) → non-target, already-covered by our `hook-rebuild`. Local TS baseline: `main` at `2583f33` (`graphifyy@0.9.7`). Drift range `990ac70..upstream/v8` = **12 commits**. Companion intake: `UPSTREAM_GAP.md > Active 0.8.18 Drift Intake`.
+
+**Sub-lots in priority order** (P → M). Each lot one cohesive PR. Recommended release vehicle after P1 + M1/M2/M3: patch `graphifyy@0.9.8` advancing the closest audited parity point to `v0.8.18`.
+
+- [ ] **Lot F-0818-P1 — Call-resolution correctness** (~1 day). Target upstream commit:
+  - `4dce16f` — *Fix case-sensitive call resolution and cross-language phantom calls (#993, #991)* (`upstream/v8`).
+  We already suppress some cross-language structural bonuses (`src/analyze.ts:116 shouldSuppressCrossLanguageStructuralBonuses`) but have no case-sensitive call-resolution guard. Touches `src/extract.ts`, `src/analyze.ts`, `tests/extract-call-confidence.test.ts` / `tests/analyze.test.ts`. **Proposed PR title:** `Track F-0818-P1: case-sensitive call resolution + cross-language phantom-call suppression`.
+- [ ] **Lot F-0818-M1 — Hook/skill/worker hygiene** (~0.5-1 day). Target upstream commit:
+  - `71b4e57` — *Fix Husky 9 hook path, skill.md INPUT_PATH literal, per-worker exception isolation* (`upstream/v8`).
+  Touches `src/hooks.ts` (Husky-9 hook path), `src/skills/*` (`INPUT_PATH` literal), `src/llm-execution.ts` (per-worker exception isolation), `tests/hooks.test.ts` / `tests/skills.test.ts`. **Proposed PR title:** `Track F-0818-M1: Husky 9 hook path + skill INPUT_PATH literal + per-worker isolation`.
+- [ ] **Lot F-0818-M2 — Backup rate-limit + community sidecar fallback** (~1 day). Target upstream commits:
+  - `3efae38` — *Rate-limit backup_if_protected to one folder per day via content hash* (`upstream/v8`).
+  - `d778e2c` — *reconstruct communities from per-node attribute when sidecar missing (#1001)* (`upstream/v8`).
+  Both are robustness fixes on surfaces we already have. `backupIfProtected` exists (`src/export.ts`, wired `src/watch.ts:299`); add the daily content-hash rate-limit. Community-label reconstruction touches `src/community-labels.ts` / cluster load. **Proposed PR title:** `Track F-0818-M2: backup daily rate-limit + community reconstruction fallback`.
+- [ ] **Lot F-0818-M3 — Query expansion + Unicode vocab regex** (~1 day). Target upstream commits:
+  - `238702b` — *Constrained query expansion (#998)* (`upstream/v8`).
+  - `a4a615d` (subset) — *Unicode vocab regex* (`upstream/v8`).
+  No query expansion exists in `src/serve.ts` / `src/search.ts` today; port the constrained-expansion ranking + the Unicode vocab regex (pairs with the 0.8.16 Unicode lineage). Touches `src/serve.ts`, `src/search.ts`, `tests/serve.test.ts`. **Proposed PR title:** `Track F-0818-M3: constrained query expansion + Unicode vocab regex`.
+- [ ] **Lot F-0818-Opt — cross-language semantic contexts** (scope-decision, size TBD). Target upstream commit:
+  - `ab4e542` — *feat: add cross-language semantic contexts for Python, JS/TS, C#, and Java (#996)* (`upstream/v8`).
+  New capability with no TS counterpart. **Default `defer`** pending a mini-spec sizing it; reopen as a `must-port` only after owner ack on scope. A `0.10.0` minor would be the release vehicle if accepted.
+
+**Already-covered / non-target at this bilan:** Java `extends`→`inherits` (already canonicalized, `src/extract.ts:1541+`); upstream `v1.0.0` git-commit-hook (our `hook-rebuild`); Windows `cp1252` / `str.parent` crashes (`461e346`, Python-runtime specific, `n-a`). **Needs-audit:** watch shrink-guard bypass (`6fba4e4`) — we have no shrink-guard; verify the `.rebuild.lock` + deletion-aware path is equivalent before deciding port vs `n-a`. **Release-only:** `v0.8.17`/`v0.8.18` bumps, Ukrainian README (`#995` + typo).
 
 ## Lot F-0816 drift (2026-05-23)
 
