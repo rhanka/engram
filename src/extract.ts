@@ -169,17 +169,26 @@ function qualifiedFileStem(filePath: string, rootDir: string = dirname(resolve(f
   return `${parent}.${stem}`;
 }
 
-function buildResolvableLabelIndex(nodes: GraphNode[]): Map<string, string> {
-  const candidates = new Map<string, Set<string>>();
-  for (const node of nodes) {
-    const raw = String(node.label ?? "");
-    const normalized = raw.replace(/\(?\)$/g, "").replace(/^\./, "").toLowerCase();
-    if (!normalized) continue;
-    const ids = candidates.get(normalized) ?? new Set<string>();
-    ids.add(node.id);
-    candidates.set(normalized, ids);
-  }
+interface ResolvableLabelIndex {
+  /** Keyed by the normalised label preserving original case (Ruby, C#, Java, Kotlin, …). */
+  caseSensitive: Map<string, string>;
+  /** Keyed by the lower-cased normalised label (PHP functions/classes). */
+  caseInsensitive: Map<string, string>;
+}
 
+/** Languages whose call/identifier resolution is case-insensitive. Everything
+ *  else resolves case-sensitively so e.g. a `render()` call does not phantom-link
+ *  to a `Render` class/function that merely differs by case (upstream 4dce16f). */
+const CASE_INSENSITIVE_CALL_MODULES = new Set<string>(["tree_sitter_php"]);
+
+function addLabelCandidate(map: Map<string, Set<string>>, key: string, id: string): void {
+  if (!key) return;
+  const ids = map.get(key) ?? new Set<string>();
+  ids.add(id);
+  map.set(key, ids);
+}
+
+function resolveUniqueLabels(candidates: Map<string, Set<string>>): Map<string, string> {
   const resolved = new Map<string, string>();
   for (const [label, ids] of candidates) {
     if (ids.size === 1) {
@@ -187,6 +196,34 @@ function buildResolvableLabelIndex(nodes: GraphNode[]): Map<string, string> {
     }
   }
   return resolved;
+}
+
+function buildResolvableLabelIndex(nodes: GraphNode[]): ResolvableLabelIndex {
+  const csCandidates = new Map<string, Set<string>>();
+  const ciCandidates = new Map<string, Set<string>>();
+  for (const node of nodes) {
+    const raw = String(node.label ?? "");
+    const base = raw.replace(/\(?\)$/g, "").replace(/^\./, "");
+    if (!base) continue;
+    addLabelCandidate(csCandidates, base, node.id);
+    addLabelCandidate(ciCandidates, base.toLowerCase(), node.id);
+  }
+  return {
+    caseSensitive: resolveUniqueLabels(csCandidates),
+    caseInsensitive: resolveUniqueLabels(ciCandidates),
+  };
+}
+
+/** Resolve a callee name to a node id, honouring the language's case sensitivity. */
+function resolveCalleeNid(
+  index: ResolvableLabelIndex,
+  calleeName: string,
+  tsModule: string,
+): string | undefined {
+  if (CASE_INSENSITIVE_CALL_MODULES.has(tsModule)) {
+    return index.caseInsensitive.get(calleeName.toLowerCase());
+  }
+  return index.caseSensitive.get(calleeName);
 }
 
 type TsconfigAliasEntry = {
@@ -1771,7 +1808,7 @@ async function _extractGeneric(
 
   function emitCallByName(calleeName: string | null, node: SyntaxNode, callerNid: string): void {
     if (!calleeName) return;
-    const tgtNid = labelToNid.get(calleeName.toLowerCase());
+    const tgtNid = resolveCalleeNid(labelToNid, calleeName, config.tsModule);
     if (tgtNid && tgtNid !== callerNid) {
       const pair = `${callerNid}|${tgtNid}`;
       if (!seenCallPairs.has(pair)) {
@@ -3247,7 +3284,7 @@ export async function extractGo(filePath: string, rootDir?: string): Promise<Ext
         }
       }
       if (calleeName) {
-        const tgtNid = labelToNid.get(calleeName.toLowerCase());
+        const tgtNid = labelToNid.caseInsensitive.get(calleeName.toLowerCase());
         if (tgtNid && tgtNid !== callerNid) {
           const pair = `${callerNid}|${tgtNid}`;
           if (!seenCallPairs.has(pair)) {
@@ -3448,7 +3485,7 @@ export async function extractRust(filePath: string, rootDir?: string): Promise<E
         }
       }
       if (!targetNid && calleeName) {
-        targetNid = labelToNid.get(calleeName.toLowerCase()) ?? null;
+        targetNid = labelToNid.caseInsensitive.get(calleeName.toLowerCase()) ?? null;
       }
       if (targetNid && targetNid !== callerNid) {
         const pair = `${callerNid}|${targetNid}`;
@@ -3829,7 +3866,7 @@ export async function extractPowershell(filePath: string, rootDir?: string): Pro
       if (cmdNameNode) {
         const cmdText = _readText(cmdNameNode, source);
         if (!_PS_SKIP.has(cmdText.toLowerCase())) {
-          const tgtNid = labelToNid.get(cmdText.toLowerCase());
+          const tgtNid = labelToNid.caseInsensitive.get(cmdText.toLowerCase());
           if (tgtNid && tgtNid !== callerNid) {
             const pair = `${callerNid}|${tgtNid}`;
             if (!seenCallPairs.has(pair)) {
@@ -4259,7 +4296,7 @@ export async function extractElixir(filePath: string, rootDir?: string): Promise
       }
     }
     if (calleeName) {
-      const tgtNid = labelToNid.get(calleeName.toLowerCase());
+      const tgtNid = labelToNid.caseInsensitive.get(calleeName.toLowerCase());
       if (tgtNid && tgtNid !== callerNid) {
         const pair = `${callerNid}|${tgtNid}`;
         if (!seenCallPairs.has(pair)) {
