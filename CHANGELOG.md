@@ -4,6 +4,21 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.9.8 (2026-05-26)
+
+Track F 0.8.18 drift closure. Advances the closest audited upstream parity point to `graphify@0.8.18`. Bilan #3 + cadrage recorded the 12-commit `v0.8.16..v0.8.18` drift; this release ports the lots accepted for the TypeScript line:
+
+- **F-0818-P1** — case-sensitive call resolution (upstream `4dce16f`, `#993`/`#991`): `_extractGeneric` now resolves callee names case-sensitively, keeping case-insensitive resolution only for PHP. A lowercase `render()` call no longer phantom-links to a `Render` class/function that merely differs by case.
+- **F-0818-M1** — hook/skill hygiene (upstream `71b4e57`): `graphify hook install` targets the user-editable `.husky/` instead of Husky 9's auto-generated `.husky/_` wrapper dir (`#987`); the bundled skills no longer pass the unsubstituted `INPUT_PATH` literal to `generateReport` (`#986`), which previously titled `GRAPH_REPORT.md` literally "INPUT_PATH".
+- **F-0818-M2** — `backupIfProtected` is rate-limited to one dated folder per day (upstream `3efae38`): identical `graph.json` skips the re-copy; changed content overwrites the dated folder in place instead of accumulating `_N` suffixes.
+- **F-0818-M3** — constrained query expansion skill guidance (upstream `238702b` + Unicode vocab regex from `a4a615d`, `#998`): the `/graphify query` workflow now expands the question against the actual node-label vocabulary (`.graphify/.vocab.txt`, captured with the Unicode regex so Cyrillic/CJK labels survive) and forbids inventing tokens.
+
+Already-covered upstream fixes (no port needed, verified against `main`): per-worker semantic-extraction exception isolation (`#943`), community reconstruction from per-node attributes when the analysis sidecar is missing (`#1001`), and Java `extends`→`inherits` canonicalization.
+
+Non-target: upstream tag `v1.0.0` is a lightweight tag on a divergent "git commit hook" commit (not a `v8`-line release); its auto-rebuild-after-commit feature is already covered by `graphify hook-rebuild`. Parked: F-0818 bash extractor hardening (no bash extractor yet) and the `#996` cross-language semantic-contexts feature (deferred pending a sizing mini-spec). See `spec/SPEC_TRACK_F_0818_BILAN.md` and `UPSTREAM_GAP.md > Active 0.8.18 Drift Intake`.
+
+Patch bump only; no breaking CLI contract, no graph schema change.
+
 ## 0.9.7 (2026-05-24)
 
 Track F 0.8.16 drift closure.
