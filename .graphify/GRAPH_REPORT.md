@@ -1,25 +1,25 @@
-# Graph Report - .  (2026-05-25)
+# Graph Report - .  (2026-05-26)
 
 ## Corpus Check
-- 311 files · ~399,684 words
+- 312 files · ~405 462 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 4647 nodes · 9013 edges · 184 communities detected
+- 4657 nodes · 9027 edges · 185 communities detected
 - Extraction: 95% EXTRACTED · 5% INFERRED · 0% AMBIGUOUS · INFERRED: 466 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
-- Edge kinds: contains: 3949 · calls: 1915 · imports: 1029 · imports_from: 608 · re_exports: 522 · uses: 466 · method: 232 · rationale_for: 208 · inherits: 68 · defines: 16
+- Edge kinds: contains: 3959 · calls: 1918 · imports: 1030 · imports_from: 608 · re_exports: 522 · uses: 466 · method: 232 · rationale_for: 208 · inherits: 68 · defines: 16
 
 
 ## Input Scope
 - Requested: auto
 - Resolved: committed (source: default-auto)
-- Included files: 311 · Candidates: 333
-- Excluded: 0 untracked · 15520 ignored · 5 sensitive · 0 missing committed
+- Included files: 312 · Candidates: 334
+- Excluded: 0 untracked · 11 ignored · 5 sensitive · 0 missing committed
 - Recommendation: Use --scope all or graphify.yaml inputs.corpus for a knowledge-base folder.
 
 ## Graph Freshness
-- Built from Git commit: `ea0bc7f`
+- Built from Git commit: `cec79df`
 - Compare this hash to `git rev-parse HEAD` before trusting freshness-sensitive graph output.
 ## God Nodes (most connected - your core abstractions)
 1. `Response` - 45 edges
@@ -104,20 +104,20 @@ Cohesion: 0.07
 Nodes (52): asRecord(), asStringArray(), bindOntologyProfile(), hashOntologyProfile(), loadOntologyProfile(), normalizeCitationPolicy(), normalizeHardeningPolicy(), normalizeOntologyProfile() (+44 more)
 
 ### Community 14 - "Community 14"
+Cohesion: 0.05
+Nodes (49): _C_CONFIG, CASE_INSENSITIVE_CALL_MODULES, _CPP_CONFIG, _CSHARP_CONFIG, _DISPATCH, _EXTENSIONS, extractC(), extractCpp() (+41 more)
+
+### Community 15 - "Community 15"
 Cohesion: 0.07
 Nodes (45): buildProfileReport(), graphLinks(), graphNodes(), highDegreeSection(), humanReviewSection(), invalidRelationsSection(), lowEvidenceSection(), pdfOcrSection() (+37 more)
 
-### Community 15 - "Community 15"
+### Community 16 - "Community 16"
 Cohesion: 0.04
 Nodes (52): collectFiles(), astroNode, baseNode, buildNode, cardNode, classNode, cleanNode, codeNode (+44 more)
 
-### Community 16 - "Community 16"
+### Community 17 - "Community 17"
 Cohesion: 0.06
 Nodes (50): handle_delete(), handle_enrich(), handle_get(), handle_list(), handle_search(), handle_upload(), API module - exposes the document pipeline over HTTP. Thin layer over parser, va, Accept a list of file paths, run the full pipeline on each,     and return a sum (+42 more)
-
-### Community 17 - "Community 17"
-Cohesion: 0.05
-Nodes (48): _C_CONFIG, _CPP_CONFIG, _CSHARP_CONFIG, _DISPATCH, _EXTENSIONS, extractC(), extractCpp(), extractCsharp() (+40 more)
 
 ### Community 18 - "Community 18"
 Cohesion: 0.07
@@ -129,31 +129,31 @@ Nodes (33): average(), buildBlastRadius(), buildReviewAnalysis(), communityRisk(
 
 ### Community 20 - "Community 20"
 Cohesion: 0.07
-Nodes (43): BACKUP_ARTIFACTS, backupIfProtected(), buildFreshnessMetadata(), CanvasOptions, COMMUNITY_COLORS, CommunityLabelOptions, CommunityLabelsInput, computeTopologySignature() (+35 more)
-
-### Community 21 - "Community 21"
-Cohesion: 0.07
 Nodes (44): crossCommunitySurprises(), crossFileSurprises(), edgeBetweennessSurprises(), fileCategory(), godNodes(), isConceptNode(), isFileNode(), nodeCommunityMap() (+36 more)
 
-### Community 22 - "Community 22"
+### Community 21 - "Community 21"
 Cohesion: 0.06
 Nodes (40): average(), countHits(), evaluateReviewBenchmarks(), flowIdentifiers(), formatMetric(), identifiers(), normalize(), ratio() (+32 more)
 
-### Community 23 - "Community 23"
+### Community 22 - "Community 22"
 Cohesion: 0.06
 Nodes (31): ANTIGRAVITY_RULE_PATH, ANTIGRAVITY_WORKFLOW_PATH, changedFilesFromGit(), checkSkillVersion(), __dirname, ensureCliExtractionShape(), __filename, GEMINI_MCP_SERVER (+23 more)
 
-### Community 24 - "Community 24"
+### Community 23 - "Community 23"
 Cohesion: 0.06
 Nodes (34): buildReviewDelta(), changedNodeIds(), compareNodes(), compareStrings(), highRiskChains(), impactedNodeIds(), isTestPath(), likelyTestGaps() (+26 more)
 
-### Community 25 - "Community 25"
+### Community 24 - "Community 24"
 Cohesion: 0.07
 Nodes (44): bodyContent(), cachedFiles(), cacheDir(), cacheKind(), cacheNamespace(), CacheOptions, checkSemanticCache(), clearCache() (+36 more)
 
-### Community 26 - "Community 26"
+### Community 25 - "Community 25"
 Cohesion: 0.09
 Nodes (42): collectJsonIssues(), collectStringIssues(), collectTextIssues(), hasSchemePrefix(), isIgnoredLocalArtifact(), isWindowsAbsolutePath(), makeDetectionPortable(), normalizeFileMap() (+34 more)
+
+### Community 26 - "Community 26"
+Cohesion: 0.07
+Nodes (40): BACKUP_ARTIFACTS, backupIfProtected(), buildFreshnessMetadata(), CanvasOptions, COMMUNITY_COLORS, CommunityLabelOptions, CommunityLabelsInput, computeTopologySignature() (+32 more)
 
 ### Community 27 - "Community 27"
 Cohesion: 0.09
@@ -468,112 +468,112 @@ Cohesion: 0.21
 Nodes (10): Analyzer, compute_score(), normalize(), Fixture: functions and methods that call each other - for call-graph extraction, run_analysis(), Analyzer, compute_score(), normalize() (+2 more)
 
 ### Community 105 - "Community 105"
+Cohesion: 0.32
+Nodes (17): addLabelCandidate(), buildResolvableLabelIndex(), ensureParserInit(), extractElixir(), extractGo(), extractJulia(), extractObjc(), extractPowershell() (+9 more)
+
+### Community 106 - "Community 106"
 Cohesion: 0.18
 Nodes (13): cloneRepo(), CloneRepoOptions, CloneRepoResult, defaultCloneDestination(), execGit(), GithubRepoRef, maybeGithubRepo(), repoNameFromUrl() (+5 more)
 
-### Community 106 - "Community 106"
+### Community 107 - "Community 107"
 Cohesion: 0.13
 Nodes (13): cleanupStaleNodes(), CleanupStaleNodesOptions, CleanupStaleNodesResult, cleanupDirs, dir, formatted, G, graph (+5 more)
 
-### Community 107 - "Community 107"
+### Community 108 - "Community 108"
 Cohesion: 0.13
 Nodes (14): augmentDetectionWithTranscripts(), buildWhisperPrompt(), cloneDetection(), transcribeAll(), cached, hash, modelDir, outDir (+6 more)
 
-### Community 108 - "Community 108"
+### Community 109 - "Community 109"
 Cohesion: 0.13
 Nodes (11): SemanticPreparationResult, cleanupDirs, config, detection, filtered, fixtureRoot, inputs, paths (+3 more)
 
-### Community 109 - "Community 109"
+### Community 110 - "Community 110"
 Cohesion: 0.22
 Nodes (15): OntologyReconciliationDecisionLogOptions, OntologyReconciliationDecisionLogResponse, getOntologyRebuildStatus(), getOntologyReconciliationCandidate(), listOntologyReconciliationCandidates(), loadReadonlyReconciliationCandidates(), ontologyAppliedPatchesPath(), ontologyNeedsUpdatePath() (+7 more)
 
-### Community 110 - "Community 110"
+### Community 111 - "Community 111"
 Cohesion: 0.23
 Nodes (15): buildTypeRows(), escapeHtml(), HTML_ESCAPE_MAP, nodeType(), recordsFromGraph(), renderFacets(), RenderRailOptions, renderResults() (+7 more)
 
-### Community 111 - "Community 111"
+### Community 112 - "Community 112"
 Cohesion: 0.15
 Nodes (15): auditPath, beforeAudit, beforeDecisions, cliOut, cliPreview, fixtureRoot, prepareProject(), queue (+7 more)
 
-### Community 112 - "Community 112"
+### Community 113 - "Community 113"
 Cohesion: 0.13
 Nodes (15): candidateHtml, empty, graph, headerIndex, html, populated, readOnlyHtml, skipIndex (+7 more)
 
-### Community 113 - "Community 113"
+### Community 114 - "Community 114"
 Cohesion: 0.13
 Nodes (14): a, after, b, before, cleared, initial, q, query (+6 more)
 
-### Community 114 - "Community 114"
+### Community 115 - "Community 115"
+Cohesion: 0.25
+Nodes (14): execGit(), gitRevParse(), resolveFromGitCwd(), resolveGitContext(), safeExecGit(), safeGitRevParse(), execGit(), gitRevParse() (+6 more)
+
+### Community 116 - "Community 116"
 Cohesion: 0.13
 Nodes (10): discoverProjectConfig(), cleanupDirs, configDir, configPath, errors, loaded, normalized, raw (+2 more)
 
-### Community 115 - "Community 115"
+### Community 117 - "Community 117"
 Cohesion: 0.22
 Nodes (15): agentsUninstall(), antigravityUninstall(), claudeUninstall(), cursorUninstall(), geminiUninstall(), kiroUninstall(), projectUninstall(), removeProjectClaudeMdRegistration() (+7 more)
 
-### Community 116 - "Community 116"
-Cohesion: 0.39
-Nodes (15): buildResolvableLabelIndex(), ensureParserInit(), extractElixir(), extractGo(), extractJulia(), extractObjc(), extractPowershell(), _extractPythonRationale() (+7 more)
+### Community 118 - "Community 118"
+Cohesion: 0.13
+Nodes (13): extractJs(), extractPhp(), calls, callTargets, cleanupDirs, demoNode, dir, filePath (+5 more)
 
-### Community 117 - "Community 117"
+### Community 119 - "Community 119"
 Cohesion: 0.15
 Nodes (11): TextJsonGenerationClient, TextJsonGenerationInput, TextJsonGenerationResult, createGraphifyMesh(), CreateGraphifyMeshOptions, meshTextJsonClient(), MeshTextJsonClientOptions, client (+3 more)
 
-### Community 118 - "Community 118"
+### Community 120 - "Community 120"
 Cohesion: 0.21
 Nodes (12): estimateTokens(), loadGraph(), querySubgraphTokens(), runBenchmark(), BenchmarkOptions, estimateTokens(), loadGraph(), printBenchmark() (+4 more)
 
-### Community 119 - "Community 119"
-Cohesion: 0.26
-Nodes (13): execGit(), gitRevParse(), resolveFromGitCwd(), resolveGitContext(), safeExecGit(), safeGitRevParse(), execGit(), gitRevParse() (+5 more)
-
-### Community 120 - "Community 120"
+### Community 121 - "Community 121"
 Cohesion: 0.14
 Nodes (11): NormalizedOntologyProfile, ambiguous, cleanupDirs, extraction, nodes, outputDir, page, profile (+3 more)
 
-### Community 121 - "Community 121"
+### Community 122 - "Community 122"
 Cohesion: 0.14
 Nodes (11): OntologyDiscoverySample, buildProfileChunkPrompt(), chunkGuidance(), documentPrompt, extraction, fixtureRoot, imagePrompt, profile (+3 more)
 
-### Community 122 - "Community 122"
+### Community 123 - "Community 123"
 Cohesion: 0.16
 Nodes (11): PdfPreparationArtifact, parsePdfOcrMode(), PdfOcrMode, prepareSemanticDetection(), SemanticPreparationOptions, imagePath, outputDir, packageJson (+3 more)
 
-### Community 123 - "Community 123"
+### Community 124 - "Community 124"
 Cohesion: 0.33
 Nodes (13): detectUrlType(), downloadBinary(), fetchArxiv(), fetchTweet(), fetchWebpage(), htmlToMarkdown(), ingest(), IngestOptions (+5 more)
 
-### Community 124 - "Community 124"
+### Community 125 - "Community 125"
 Cohesion: 0.20
 Nodes (14): loadReadonlyReconciliationCandidates(), ontologyAppliedPatchesPath(), ontologyNeedsUpdatePath(), ontologyReconciliationCandidatesPath(), optionalInteger(), optionalNumber(), optionalString(), readableStatePath() (+6 more)
 
-### Community 125 - "Community 125"
+### Community 126 - "Community 126"
 Cohesion: 0.27
 Nodes (12): communityArticle(), crossCommunityLinks(), flowArticle(), flowsThroughNodes(), godNodeArticle(), indexMd(), normalizeFlows(), renderDescription() (+4 more)
 
-### Community 126 - "Community 126"
+### Community 127 - "Community 127"
 Cohesion: 0.17
 Nodes (12): OntologyDiscoveryContext, ontologyDiscoveryDiffToMarkdown(), OntologyDiscoveryProposalsFile, context, diff, discoveryContext(), fixtureRoot, proposals (+4 more)
 
-### Community 127 - "Community 127"
+### Community 128 - "Community 128"
 Cohesion: 0.21
 Nodes (13): bfs(), communityName(), dfs(), findNode(), mcpField(), nodeDisplayLabel(), scoreNodes(), subgraphToText() (+5 more)
 
-### Community 128 - "Community 128"
+### Community 129 - "Community 129"
 Cohesion: 0.17
 Nodes (11): ast, cached, dir, fresh, input, merged, outPath, runMain() (+3 more)
 
-### Community 129 - "Community 129"
+### Community 130 - "Community 130"
 Cohesion: 0.17
 Nodes (6): profileValidationResultToJson(), profileValidationResultToMarkdown(), extraction, fixtureRoot, registryExtraction, result
 
-### Community 130 - "Community 130"
-Cohesion: 0.17
-Nodes (10): toCypher(), cleanupDirs, cypher, dir, graph, graphPath, outputPath, persisted (+2 more)
-
 ### Community 131 - "Community 131"
 Cohesion: 0.17
-Nodes (11): extractJs(), calls, callTargets, cleanupDirs, demoNode, dir, filePath, importEdge (+3 more)
+Nodes (10): toCypher(), cleanupDirs, cypher, dir, graph, graphPath, outputPath, persisted (+2 more)
 
 ### Community 132 - "Community 132"
 Cohesion: 0.18
@@ -648,40 +648,40 @@ Cohesion: 0.25
 Nodes (9): communitiesFromGraph(), createReloadingGraphStore(), getVersion(), GraphFileSignature, loadGraph(), loadGraphSnapshot(), readGraphData(), serve() (+1 more)
 
 ### Community 150 - "Community 150"
-Cohesion: 0.25
-Nodes (8): commitPrefixForArea(), communityLabel(), dominantCommunity(), groupDraftForFile(), isGraphifyStatePath(), normalizePath(), sourceMatches(), topLevelArea()
+Cohesion: 0.22
+Nodes (8): ALL_SKILL_DOCS, content, DISTRIBUTED_SKILL_DOCS, EXTRACTION_PROMPT_DOCS, INLINE_MERGE_SKILLS, QUERY_WORKFLOW_DOCS, SKILLS, TRIGGER_DESCRIPTION_DOCS
 
 ### Community 151 - "Community 151"
 Cohesion: 0.25
-Nodes (3): LifecycleMetadata, commitRecommendationToText(), recommendation
+Nodes (8): commitPrefixForArea(), communityLabel(), dominantCommunity(), groupDraftForFile(), isGraphifyStatePath(), normalizePath(), sourceMatches(), topLevelArea()
 
 ### Community 152 - "Community 152"
+Cohesion: 0.25
+Nodes (3): LifecycleMetadata, commitRecommendationToText(), recommendation
+
+### Community 153 - "Community 153"
 Cohesion: 0.43
 Nodes (8): _importJs(), loadTsconfigAliases(), normalizeJsImportTarget(), projectRelativeFilePath(), remapFileNodeIds(), resolveJsImportTarget(), resolveJsImportTargetInfo(), toPortablePath()
 
-### Community 153 - "Community 153"
+### Community 154 - "Community 154"
 Cohesion: 0.25
 Nodes (8): commitPrefixForArea(), communityLabel(), dominantCommunity(), groupDraftForFile(), isGraphifyStatePath(), normalizePath(), sourceMatches(), topLevelArea()
 
-### Community 154 - "Community 154"
+### Community 155 - "Community 155"
 Cohesion: 0.29
 Nodes (6): firstHopSummaryToText(), graph, makeGraph(), summary, textA, textB
 
-### Community 155 - "Community 155"
+### Community 156 - "Community 156"
 Cohesion: 0.25
 Nodes (7): downloadAudio(), runCommand(), cleanupDirs, dir, downloadAudioMock, expected, rendered
 
-### Community 156 - "Community 156"
+### Community 157 - "Community 157"
 Cohesion: 0.25
 Nodes (6): attrs, cleanupDirs, dir, edge, graph, graphPath
 
-### Community 157 - "Community 157"
-Cohesion: 0.25
-Nodes (6): importsFromBarrel, importsFromTargets, labels, reExports, reExportTagged, targets
-
 ### Community 158 - "Community 158"
 Cohesion: 0.25
-Nodes (7): ALL_SKILL_DOCS, content, DISTRIBUTED_SKILL_DOCS, EXTRACTION_PROMPT_DOCS, INLINE_MERGE_SKILLS, SKILLS, TRIGGER_DESCRIPTION_DOCS
+Nodes (6): importsFromBarrel, importsFromTargets, labels, reExports, reExportTagged, targets
 
 ### Community 159 - "Community 159"
 Cohesion: 0.25
@@ -745,46 +745,50 @@ Nodes (3): affectedFilesToText(), result, text
 
 ### Community 174 - "Community 174"
 Cohesion: 0.40
-Nodes (4): changelog, lock, pkg, workflow
+Nodes (4): b1, b2, backup, dated
 
 ### Community 175 - "Community 175"
 Cohesion: 0.40
-Nodes (4): candidateGraph, graph, html, tokens
+Nodes (4): changelog, lock, pkg, workflow
 
 ### Community 176 - "Community 176"
 Cohesion: 0.40
-Nodes (4): character, dataset, groups, total
+Nodes (4): candidateGraph, graph, html, tokens
 
 ### Community 177 - "Community 177"
-Cohesion: 0.50
-Nodes (2): delta, G
+Cohesion: 0.40
+Nodes (4): character, dataset, groups, total
 
 ### Community 178 - "Community 178"
 Cohesion: 0.50
-Nodes (3): html, state, tokens
+Nodes (2): delta, G
 
 ### Community 179 - "Community 179"
-Cohesion: 0.67
-Nodes (3): runCli(), runMain(), runSkillRuntime()
+Cohesion: 0.50
+Nodes (3): html, state, tokens
 
 ### Community 180 - "Community 180"
 Cohesion: 0.67
-Nodes (3): writeFixtureGraph(), writeOntologyPatchFixture(), writeOntologyReconciliationFixture()
+Nodes (3): runCli(), runMain(), runSkillRuntime()
 
 ### Community 181 - "Community 181"
-Cohesion: 1.00
-Nodes (1): UnpdfTextResult
+Cohesion: 0.67
+Nodes (3): writeFixtureGraph(), writeOntologyPatchFixture(), writeOntologyReconciliationFixture()
 
 ### Community 182 - "Community 182"
 Cohesion: 1.00
-Nodes (2): tempProfileProject(), tempProject()
+Nodes (1): UnpdfTextResult
 
 ### Community 183 - "Community 183"
+Cohesion: 1.00
+Nodes (2): tempProfileProject(), tempProject()
+
+### Community 184 - "Community 184"
 Cohesion: 1.00
 Nodes (1): optionalRuntimeDeps
 
 ## Knowledge Gaps
-- **1534 isolated node(s):** `GraphInstance`, `JSON_NOISE_LABELS`, `SAMPLE_QUESTIONS`, `BenchmarkOptions`, `BuildOptions` (+1529 more)
+- **1539 isolated node(s):** `GraphInstance`, `JSON_NOISE_LABELS`, `SAMPLE_QUESTIONS`, `BenchmarkOptions`, `BuildOptions` (+1534 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **Thin community `Community 102`** (2 nodes): `ApiClient`, `ApiClient`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
@@ -794,23 +798,23 @@ Nodes (1): optionalRuntimeDeps
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 163`** (2 nodes): `Transformer`, `Transformer`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 177`** (2 nodes): `delta`, `G`
+- **Thin community `Community 178`** (2 nodes): `delta`, `G`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 181`** (1 nodes): `UnpdfTextResult`
+- **Thin community `Community 182`** (1 nodes): `UnpdfTextResult`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 182`** (2 nodes): `tempProfileProject()`, `tempProject()`
+- **Thin community `Community 183`** (2 nodes): `tempProfileProject()`, `tempProject()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 183`** (1 nodes): `optionalRuntimeDeps`
+- **Thin community `Community 184`** (1 nodes): `optionalRuntimeDeps`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `OntologyReconciliationCandidate` connect `Community 50` to `Community 2`, `Community 109`, `Community 40`?**
+- **Why does `OntologyReconciliationCandidate` connect `Community 50` to `Community 2`, `Community 110`, `Community 40`?**
   _High betweenness centrality (0.007) - this node is a cross-community bridge._
-- **Why does `OntologyReconciliationDecisionLogResponse` connect `Community 109` to `Community 2`, `Community 27`, `Community 40`?**
+- **Why does `OntologyReconciliationDecisionLogResponse` connect `Community 110` to `Community 2`, `Community 27`, `Community 40`?**
   _High betweenness centrality (0.007) - this node is a cross-community bridge._
-- **Why does `OntologyReconciliationCandidatesResponse` connect `Community 109` to `Community 2`, `Community 50`, `Community 40`?**
+- **Why does `OntologyReconciliationCandidatesResponse` connect `Community 110` to `Community 2`, `Community 50`, `Community 40`?**
   _High betweenness centrality (0.007) - this node is a cross-community bridge._
 - **Are the 39 inferred relationships involving `Response` (e.g. with `Auth` and `BasicAuth`) actually correct?**
   _`Response` has 39 INFERRED edges - model-reasoned connections that need verification._
