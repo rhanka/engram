@@ -48,7 +48,7 @@ Observed on 2026-05-25 (Track F bilan #3) after publishing `graphifyy@0.9.7` (cl
 
 - Safi Python Graphify: `upstream/v8` at `3efae38` (`Rate-limit backup_if_protected ...`), one commit past tag `v0.8.18` (`98100f3`).
 - New remote tags since `v0.8.16`: `v0.8.17` at `73c3c33`, `v0.8.18` at `98100f3`. Tag `v1.0.0` at `0a31c08` is a non-target (see Source Lock Notes).
-- Drift commit range `990ac70..upstream/v8` is **12 commits**. Companion lot plan: `PLAN.md > Lot F-0818 drift (2026-05-25)`.
+- Drift commit range `990ac70..upstream/v8` is **12 commits**. Companion bilan: `spec/SPEC_TRACK_F_0818_BILAN.md`. Companion lot plan: `PLAN.md > Lot F-0818 drift (2026-05-25)`.
 - Local TS baseline: `main` at `2583f33` (`graphifyy@0.9.7`, post-PR #71 ledger).
 
 Grounding checks run against `main` at intake time: `backupIfProtected` already exists (`src/watch.ts:299`, `src/export.ts`); Java `extends`→`inherits` is already canonicalized (`src/extract.ts:1541+`); partial cross-language structural suppression exists (`src/analyze.ts:116`); **no** query-expansion, semantic-contexts, or watch shrink-guard exist yet.
