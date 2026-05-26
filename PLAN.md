@@ -320,7 +320,7 @@ M0..M5 lots all landed. `.astro` extractor (`6a7de56`), watch `.rebuild.lock` (`
 
 ## Lot F-0818 drift (2026-05-25)
 
-**Source lock:** `upstream/v8` at `3efae38` (one commit past tag `v0.8.18` `98100f3`); new tags `v0.8.17` (`73c3c33`) and `v0.8.18` (`98100f3`) since the `0.8.16` lock (`990ac70`). Tag `v1.0.0` (`0a31c08`, "add git commit hook") is **not on the v8 line** (divergent, lightweight tag) → non-target, already-covered by our `hook-rebuild`. Local TS baseline: `main` at `2583f33` (`graphifyy@0.9.7`). Drift range `990ac70..upstream/v8` = **12 commits**. Companion intake: `UPSTREAM_GAP.md > Active 0.8.18 Drift Intake`.
+**Source lock:** `upstream/v8` at `3efae38` (one commit past tag `v0.8.18` `98100f3`); new tags `v0.8.17` (`73c3c33`) and `v0.8.18` (`98100f3`) since the `0.8.16` lock (`990ac70`). Tag `v1.0.0` (`0a31c08`, "add git commit hook") is **not on the v8 line** (divergent, lightweight tag) → non-target, already-covered by our `hook-rebuild`. Local TS baseline: `main` at `2583f33` (`graphifyy@0.9.7`). Drift range `990ac70..upstream/v8` = **12 commits**. Companion bilan: `spec/SPEC_TRACK_F_0818_BILAN.md`. Companion intake: `UPSTREAM_GAP.md > Active 0.8.18 Drift Intake`.
 
 **Sub-lots in priority order** (P → M). Each lot one cohesive PR. Recommended release vehicle after P1 + M1/M2/M3: patch `graphifyy@0.9.8` advancing the closest audited parity point to `v0.8.18`.
 
