@@ -39,7 +39,7 @@ GRAPHIFY_BIN=$(command -v graphify 2>/dev/null || true)
 NODE_BIN=$(command -v node 2>/dev/null || true)
 
 if [ -z "$GRAPHIFY_BIN" ]; then
-  echo "ERROR: graphify is not installed. Run: npm install -g graphifyy"
+  echo "ERROR: graphify is not installed. Run: npm install -g @sentropic/graphify"
   exit 1
 fi
 

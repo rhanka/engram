@@ -59,7 +59,7 @@ graphify_detect_cmd() {
         GRAPHIFY_CMD="npx graphify"
         return 0
     fi
-    echo "[graphify hook] graphify not found. Install with: npm install -g graphifyy"
+    echo "[graphify hook] graphify not found. Install with: npm install -g @sentropic/graphify"
     return 1
 }
 

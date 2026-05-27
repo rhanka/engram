@@ -308,8 +308,8 @@ describe("skill cache examples", () => {
   it("marks uv and pipx Python detection as not applicable for the TypeScript Windows skill", () => {
     const content = readFileSync(new URL("../src/skills/skill-windows.md", import.meta.url), "utf-8");
 
-    expect(content).toContain("npm install -g graphifyy");
-    expect(content).toContain("require('graphifyy')");
+    expect(content).toContain("npm install -g @sentropic/graphify");
+    expect(content).toContain("require('@sentropic/graphify')");
     expect(content).not.toMatch(/\bFind-GraphifyPython\b|\buv tool\b|\bpipx\b|\.graphify_python|python\.exe|pip install graphifyy/);
   });
 });

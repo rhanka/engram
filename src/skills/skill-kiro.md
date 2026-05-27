@@ -75,7 +75,7 @@ Do not add embeddings, databases, a resident LLM backend, or a forked OCR/PDF pi
 ## Minimal Execution
 
 ```bash
-command -v graphify >/dev/null 2>&1 || npm install -g graphifyy
+command -v graphify >/dev/null 2>&1 || npm install -g @sentropic/graphify
 graphify . --wiki
 ```
 

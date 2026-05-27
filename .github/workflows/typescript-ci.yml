@@ -121,7 +121,7 @@ jobs:
         run: |
           cd /tmp/smoke-test
           node -e "
-            const g = require('graphifyy');
+            const g = require('@sentropic/graphify');
             const expected = ['validateExtraction', 'buildFromJson', 'cluster', 'godNodes', 'generateReport', 'toJson', 'toHtml'];
             for (const fn of expected) {
               if (typeof g[fn] !== 'function') {
@@ -134,12 +134,12 @@ jobs:
       - name: Verify skill files are bundled
         run: |
           cd /tmp/smoke-test
-          SKILL_COUNT=$(find node_modules/graphifyy/src/skills -name "*.md" | wc -l)
+          SKILL_COUNT=$(find node_modules/@sentropic/graphify/src/skills -name "*.md" | wc -l)
           if [ "$SKILL_COUNT" -lt 7 ]; then
             echo "Expected 7+ skill files, found $SKILL_COUNT"
             exit 1
           fi
-          test -f node_modules/graphifyy/src/skills/skill-gemini.toml
+          test -f node_modules/@sentropic/graphify/src/skills/skill-gemini.toml
           echo "$SKILL_COUNT skill files bundled"
 
   # Release guard: tags must point to code already merged in the product branch.
@@ -222,7 +222,7 @@ jobs:
         run: |
           mkdir /tmp/post-publish && cd /tmp/post-publish
           npm init -y --silent
-          npm install graphifyy@latest
+          npm install @sentropic/graphify@latest
 
       - name: Verify CLI
         run: |
@@ -235,7 +235,7 @@ jobs:
         run: |
           cd /tmp/post-publish
           node -e "
-            const g = require('graphifyy');
+            const g = require('@sentropic/graphify');
             console.log('Exports:', Object.keys(g).filter(k => typeof g[k] === 'function').join(', '));
             // Quick functional test: build a graph from inline extraction
             const ext = {

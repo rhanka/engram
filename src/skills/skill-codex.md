@@ -65,7 +65,7 @@ In Codex, prefer `$graphify ...` as the explicit invocation. Do not rely on `/gr
 Install flow for Codex:
 
 ```bash
-npm install -g graphifyy
+npm install -g @sentropic/graphify
 graphify install --platform codex
 graphify codex install
 ```
@@ -97,7 +97,7 @@ NODE_BIN=$(command -v node 2>/dev/null || true)
 
 if [ -z "$GRAPHIFY_BIN" ]; then
   echo "ERROR: graphify is not installed. Install the TypeScript package first."
-  echo "Run: npm install -g graphifyy"
+  echo "Run: npm install -g @sentropic/graphify"
   exit 1
 fi
 
