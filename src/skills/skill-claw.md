@@ -68,7 +68,7 @@ Follow these steps in order. Do not skip steps.
 ### Step 1 - Ensure graphify is installed
 
 ```bash
-command -v graphify >/dev/null 2>&1 || npm install -g graphifyy 2>&1 | tail -3
+command -v graphify >/dev/null 2>&1 || npm install -g @sentropic/graphify 2>&1 | tail -3
 mkdir -p .graphify
 ```
 
@@ -85,10 +85,10 @@ Then regenerate the report and save the labels for the visualizer:
 ```bash
 node -e "
 const fs = require('fs');
-const { buildFromJson } = require('graphifyy');
-const { scoreAll } = require('graphifyy');
-const { godNodes, surprisingConnections, suggestQuestions } = require('graphifyy');
-const { generateReport } = require('graphifyy');
+const { buildFromJson } = require('@sentropic/graphify');
+const { scoreAll } = require('@sentropic/graphify');
+const { godNodes, surprisingConnections, suggestQuestions } = require('@sentropic/graphify');
+const { generateReport } = require('@sentropic/graphify');
 
 const extraction = JSON.parse(fs.readFileSync('.graphify/.graphify_extract.json', 'utf-8'));
 const detection = JSON.parse(fs.readFileSync('.graphify/.graphify_detect.json', 'utf-8'));
@@ -136,8 +136,8 @@ If `--obsidian` was given:
 ```bash
 node -e "
 const fs = require('fs');
-const { buildFromJson } = require('graphifyy');
-const { toWiki, toCanvas } = require('graphifyy');
+const { buildFromJson } = require('@sentropic/graphify');
+const { toWiki, toCanvas } = require('@sentropic/graphify');
 
 const extraction = JSON.parse(fs.readFileSync('.graphify/.graphify_extract.json', 'utf-8'));
 const analysis = JSON.parse(fs.readFileSync('.graphify/.graphify_analysis.json', 'utf-8'));
@@ -166,8 +166,8 @@ Generate the HTML graph (always, unless `--no-viz`):
 ```bash
 node -e "
 const fs = require('fs');
-const { buildFromJson } = require('graphifyy');
-const { toHtml } = require('graphifyy');
+const { buildFromJson } = require('@sentropic/graphify');
+const { toHtml } = require('@sentropic/graphify');
 
 const extraction = JSON.parse(fs.readFileSync('.graphify/.graphify_extract.json', 'utf-8'));
 const analysis = JSON.parse(fs.readFileSync('.graphify/.graphify_analysis.json', 'utf-8'));
@@ -193,7 +193,7 @@ if (G.order > 5000) {
 ```bash
 node -e "
 const fs = require('fs');
-const { buildFromJson, toCypher } = require('graphifyy');
+const { buildFromJson, toCypher } = require('@sentropic/graphify');
 
 const G = buildFromJson(JSON.parse(fs.readFileSync('.graphify/.graphify_extract.json', 'utf-8')));
 toCypher(G, '.graphify/cypher.txt');
@@ -206,7 +206,7 @@ console.log('cypher.txt written - import with: cypher-shell < .graphify/cypher.t
 ```bash
 node -e "
 const fs = require('fs');
-const { buildFromJson, pushToNeo4j } = require('graphifyy');
+const { buildFromJson, pushToNeo4j } = require('@sentropic/graphify');
 
 const extraction = JSON.parse(fs.readFileSync('.graphify/.graphify_extract.json', 'utf-8'));
 const analysis = JSON.parse(fs.readFileSync('.graphify/.graphify_analysis.json', 'utf-8'));
@@ -225,7 +225,7 @@ Replace `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD` with actual values. Default 
 ```bash
 node -e "
 const fs = require('fs');
-const { buildFromJson, toSvg } = require('graphifyy');
+const { buildFromJson, toSvg } = require('@sentropic/graphify');
 
 const extraction = JSON.parse(fs.readFileSync('.graphify/.graphify_extract.json', 'utf-8'));
 const analysis = JSON.parse(fs.readFileSync('.graphify/.graphify_analysis.json', 'utf-8'));
@@ -245,7 +245,7 @@ console.log('graph.svg written - embeds in Obsidian, Notion, GitHub READMEs');
 ```bash
 node -e "
 const fs = require('fs');
-const { buildFromJson, toGraphml } = require('graphifyy');
+const { buildFromJson, toGraphml } = require('@sentropic/graphify');
 
 const extraction = JSON.parse(fs.readFileSync('.graphify/.graphify_extract.json', 'utf-8'));
 const analysis = JSON.parse(fs.readFileSync('.graphify/.graphify_analysis.json', 'utf-8'));
@@ -285,7 +285,7 @@ If `total_words` from `.graphify/.graphify_detect.json` is greater than 5,000, r
 ```bash
 node -e "
 const fs = require('fs');
-const { runBenchmark, printBenchmark } = require('graphifyy');
+const { runBenchmark, printBenchmark } = require('@sentropic/graphify');
 
 const detection = JSON.parse(fs.readFileSync('.graphify/.graphify_detect.json', 'utf-8'));
 const result = runBenchmark('.graphify/graph.json', {corpusWords: detection.total_words});
@@ -302,7 +302,7 @@ Print the output directly in chat. If `total_words <= 5000`, skip silently - the
 ```bash
 node -e "
 const fs = require('fs');
-const { saveManifest } = require('graphifyy');
+const { saveManifest } = require('@sentropic/graphify');
 
 const detect = JSON.parse(fs.readFileSync('.graphify/.graphify_detect.json', 'utf-8'));
 saveManifest(detect.files);
@@ -367,7 +367,7 @@ Use when you've added or modified files since the last run. Only re-extracts cha
 ```bash
 node -e "
 const fs = require('fs');
-const { detectIncremental } = require('graphifyy');
+const { detectIncremental } = require('@sentropic/graphify');
 
 const result = detectIncremental('INPUT_PATH');
 const newTotal = result.new_total || 0;
@@ -407,7 +407,7 @@ Then:
 node -e "
 const fs = require('fs');
 const Graph = require('graphology');
-const { buildFromJson } = require('graphifyy');
+const { buildFromJson } = require('@sentropic/graphify');
 
 // Load existing graph
 const existingData = JSON.parse(fs.readFileSync('.graphify/graph.json', 'utf-8'));
@@ -434,7 +434,7 @@ After Step 4, show the graph diff:
 node -e "
 const fs = require('fs');
 const Graph = require('graphology');
-const { graphDiff, buildFromJson } = require('graphifyy');
+const { graphDiff, buildFromJson } = require('@sentropic/graphify');
 
 const oldData = fs.existsSync('.graphify/.graphify_old.json') ? JSON.parse(fs.readFileSync('.graphify/.graphify_old.json', 'utf-8')) : null;
 const newExtract = JSON.parse(fs.readFileSync('.graphify/.graphify_extract.json', 'utf-8'));
@@ -469,10 +469,10 @@ Skip Steps 1–3. Load the existing graph from `.graphify/graph.json` and re-run
 node -e "
 const fs = require('fs');
 const Graph = require('graphology');
-const { cluster, scoreAll } = require('graphifyy');
-const { godNodes, surprisingConnections } = require('graphifyy');
-const { generateReport } = require('graphifyy');
-const { toJson } = require('graphifyy');
+const { cluster, scoreAll } = require('@sentropic/graphify');
+const { godNodes, surprisingConnections } = require('@sentropic/graphify');
+const { generateReport } = require('@sentropic/graphify');
+const { toJson } = require('@sentropic/graphify');
 
 const data = JSON.parse(fs.readFileSync('.graphify/graph.json', 'utf-8'));
 const G = new Graph({type: 'undirected'});
@@ -646,7 +646,7 @@ After writing the answer, save it back into the graph so it improves future quer
 
 ```bash
 node -e "
-const { saveQueryResult } = require('graphifyy');
+const { saveQueryResult } = require('@sentropic/graphify');
 saveQueryResult({
     question: 'QUESTION',
     answer: 'ANSWER',
@@ -738,7 +738,7 @@ After writing the explanation, save it back:
 
 ```bash
 node -e "
-const { saveQueryResult } = require('graphifyy');
+const { saveQueryResult } = require('@sentropic/graphify');
 saveQueryResult({
     question: 'Path from NODE_A to NODE_B',
     answer: 'ANSWER',
@@ -808,7 +808,7 @@ After writing the explanation, save it back:
 
 ```bash
 node -e "
-const { saveQueryResult } = require('graphifyy');
+const { saveQueryResult } = require('@sentropic/graphify');
 saveQueryResult({
     question: 'Explain NODE_NAME',
     answer: 'ANSWER',
@@ -828,7 +828,7 @@ Fetch a URL and add it to the corpus, then update the graph.
 
 ```bash
 node -e "
-const { ingest } = require('graphifyy');
+const { ingest } = require('@sentropic/graphify');
 try {
     const out = ingest('URL', './raw', {author: 'AUTHOR', contributor: 'CONTRIBUTOR'});
     console.log(\`Saved to ${out}\`);

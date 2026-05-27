@@ -116,11 +116,11 @@ Every relationship is tagged `EXTRACTED` (found directly in source), `INFERRED` 
 **Requires:** Node.js 20+ and one of: [Claude Code](https://claude.ai/code), [Codex](https://openai.com/codex), [Gemini CLI](https://github.com/google-gemini/gemini-cli), Kimi Code, VS Code Copilot Chat, [GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli), [Aider](https://aider.chat), [OpenCode](https://opencode.ai), [OpenClaw](https://openclaw.ai), [Factory Droid](https://factory.ai), [Trae](https://trae.com), [Cursor](https://cursor.com), Hermes, Kiro, or Google Antigravity.
 
 ```bash
-npm install -g graphifyy
+npm install -g @sentropic/graphify
 graphify install
 ```
 
-> The npm package is temporarily named `graphifyy` while the `graphify` name is being reclaimed. The CLI and skill command are still `graphify`.
+> The npm package is `@sentropic/graphify` (formerly published as `graphifyy`, now a deprecated forwarding shim). The CLI and skill command are still `graphify`.
 
 Install commands print a mutation preview before writing files, including the exact assistant instruction files and hook/MCP/plugin config they will touch.
 

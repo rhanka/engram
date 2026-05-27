@@ -842,7 +842,7 @@ Before reading any docs, papers, or images, check which files already have cache
 \`\`\`bash
 node -e "
 const fs = require('fs');
-const { checkSemanticCache } = require('graphifyy');
+const { checkSemanticCache } = require('@sentropic/graphify');
 
 const detect = JSON.parse(fs.readFileSync('.graphify/.graphify_detect.json', 'utf-8'));
 const allFiles = Object.values(detect.files).flat();
@@ -896,7 +896,7 @@ Save new results to cache:
 \`\`\`bash
 node -e "
 const fs = require('fs');
-const { saveSemanticCache } = require('graphifyy');
+const { saveSemanticCache } = require('@sentropic/graphify');
 
 const raw = fs.existsSync('.graphify/.graphify_semantic_new.json') ? JSON.parse(fs.readFileSync('.graphify/.graphify_semantic_new.json', 'utf-8')) : {nodes:[],edges:[],hyperedges:[]};
 const saved = saveSemanticCache(raw.nodes || [], raw.edges || [], raw.hyperedges || []);
@@ -1045,7 +1045,7 @@ export function uninstallAll(projectDir: string = ".", options: { purge?: boolea
     }
   }
 
-  console.log("Done. Run `npm uninstall -g graphifyy` to remove the package itself.");
+  console.log("Done. Run `npm uninstall -g @sentropic/graphify` to remove the package itself.");
 }
 
 export function getInvocationExample(platformName: string): string {
