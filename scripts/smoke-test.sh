@@ -83,7 +83,7 @@ echo "  ✓ graphify hook status works"
 
 # ── Step 6: Verify package contents ──────────────────
 echo "Step 6: Verify package contents..."
-PKG_DIR="$INSTALL_DIR/node_modules/graphifyy"
+PKG_DIR="$INSTALL_DIR/node_modules/@sentropic/graphify"
 
 # dist/ should exist
 [ -f "$PKG_DIR/dist/index.js" ] || { echo "  ✗ dist/index.js missing"; exit 1; }
@@ -101,7 +101,7 @@ echo "  ✓ $SKILL_COUNT skill markdown files bundled"
 # ── Step 7: Verify library import ────────────────────
 echo "Step 7: Verify library import..."
 node -e "
-  const g = require('graphifyy');
+  const g = require('@sentropic/graphify');
   const fns = ['validateExtraction', 'buildFromJson', 'cluster', 'godNodes', 'generateReport'];
   for (const fn of fns) {
     if (typeof g[fn] !== 'function') {
