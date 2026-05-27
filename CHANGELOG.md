@@ -4,6 +4,16 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.10.0 (2026-05-26)
+
+Package rename: the npm package is now **`@sentropic/graphify`** (previously `graphifyy`). The CLI and skill command are unchanged — still `graphify`.
+
+- `package.json` name → `@sentropic/graphify` with `publishConfig.access: public` (scoped public package).
+- Install/uninstall guidance, embedded `require(...)` snippets, README (en/zh/ja), and the CI smoke/post-publish checks now reference `@sentropic/graphify`. Historical `graphifyy@x.y.z` version labels in CHANGELOG/PLAN/UPSTREAM_GAP are left as-is (those releases were published under the old name).
+- A forwarding shim is published as `graphifyy` (`forward/graphifyy/`): it depends on `@sentropic/graphify` and re-exports it, so `npm i -g graphifyy` and `require('graphifyy')` keep working. `graphifyy` is then `npm deprecate`d with a "moved to @sentropic/graphify" notice.
+
+Minor bump (rename is a packaging change, not a behavior change). No CLI contract change, no graph schema change.
+
 ## 0.9.8 (2026-05-26)
 
 Track F 0.8.18 drift closure. Advances the closest audited upstream parity point to `graphify@0.8.18`. Bilan #3 + cadrage recorded the 12-commit `v0.8.16..v0.8.18` drift; this release ports the lots accepted for the TypeScript line:

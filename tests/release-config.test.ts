@@ -2,18 +2,21 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 describe("release configuration", () => {
-  it("tracks the 0.9.8 patch release across package metadata and changelog", () => {
-    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8")) as { version?: string };
+  it("tracks the 0.10.0 release across package metadata and changelog", () => {
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8")) as { name?: string; version?: string };
     const lock = JSON.parse(readFileSync(new URL("../package-lock.json", import.meta.url), "utf-8")) as {
+      name?: string;
       version?: string;
-      packages?: Record<string, { version?: string }>;
+      packages?: Record<string, { name?: string; version?: string }>;
     };
     const changelog = readFileSync(new URL("../CHANGELOG.md", import.meta.url), "utf-8");
 
-    expect(pkg.version).toBe("0.9.8");
-    expect(lock.version).toBe("0.9.8");
-    expect(lock.packages?.[""]?.version).toBe("0.9.8");
-    expect(changelog).toContain("## 0.9.8 (2026-05-26)");
+    expect(pkg.name).toBe("@sentropic/graphify");
+    expect(pkg.version).toBe("0.10.0");
+    expect(lock.name).toBe("@sentropic/graphify");
+    expect(lock.version).toBe("0.10.0");
+    expect(lock.packages?.[""]?.version).toBe("0.10.0");
+    expect(changelog).toContain("## 0.10.0 (2026-05-26)");
   });
 
   it("runs the main TypeScript CI test matrix on Node 20, 22, and 24", () => {
