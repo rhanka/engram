@@ -1,0 +1,22 @@
+{
+  "name": "graphifyy",
+  "version": "0.10.0",
+  "description": "Deprecated — moved to @sentropic/graphify. Forwarding shim that re-exports and re-runs @sentropic/graphify.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rhanka/graphify.git"
+  },
+  "main": "index.js",
+  "bin": {
+    "graphify": "bin.js"
+  },
+  "files": [
+    "index.js",
+    "bin.js",
+    "README.md"
+  ],
+  "dependencies": {
+    "@sentropic/graphify": "0.10.0"
+  }
+}
