@@ -646,6 +646,12 @@ ${workspaceCss
     --graph-muted-strong: var(--ws-text-muted);
     --graph-node-label: var(--ws-text);
     --graph-neighbor-border: var(--ws-border);
+    /* G-studio-lot1 #1: the graph canvas keeps a LIGHT background regardless
+       of the app/dark theme — the dark theme is design-system-incompatible
+       for the graph surface. This is a literal light colour, NOT
+       var(--ws-surface), so a host theme that flips --ws-surface dark cannot
+       darken the canvas (which would hide crossing edges + node labels). */
+    --graph-canvas-bg: #ffffff;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--ws-surface); color: var(--ws-text); font-family: var(--ws-font-family-sans); display: flex; height: 100vh; overflow: hidden; }
@@ -656,7 +662,7 @@ ${workspaceCss
   .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
   /* Focus visible everywhere, WCAG-compliant outline. */
   :focus-visible { outline: var(--ws-outline); outline-offset: var(--ws-outline-offset); outline-color: var(--ws-outline-color); box-shadow: 0 0 0 4px var(--graph-focus-shadow); }
-  #graph { flex: 1; outline: none; background: var(--ws-surface); }
+  #graph { flex: 1; outline: none; background: var(--graph-canvas-bg); }
   #graph:focus-visible { box-shadow: inset 0 0 0 3px var(--ws-outline-color); }
   #sidebar { width: 280px; background: var(--ws-surface-2); border-left: 1px solid var(--ws-border); display: flex; flex-direction: column; overflow: hidden; }
   #search-wrap { padding: var(--ws-space-3); border-bottom: 1px solid var(--ws-border); }
@@ -1093,18 +1099,21 @@ export function toHtml(
     const nodeType = (data.node_type as string) ?? (data.type as string) ?? "";
     const shape = resolveNodeShape({ nodeType, fileType, sourceFile, profile });
     const color = resolveNodeColor({ nodeType, profile, fallback: paletteColor });
-    // C-final-1: shape "box" (document/paper/concept) renders as outline-only
-    // so it is visually distinct from "square" (test) which stays solid-filled.
-    // vis.js draws a filled rectangle when color.background is a color; setting
-    // background to a transparent value keeps the border (color) and shows the
-    // label cleanly without the fill blob. Stays consistent whether `box`
-    // comes from inferNodeShape or from a profile visual_encoding override.
+    // C-final-1 / G-studio-lot1 #2: shape "box" (document/paper/concept)
+    // renders "hollow" — coloured border, but a SEMI-OPAQUE WHITE fill
+    // (~50%) rather than a fully transparent one. Arrows leave from the box
+    // centre, so a 0-alpha fill leaves the label unreadable over crossing
+    // edges; a 50% white fill keeps the text legible while still looking
+    // hollow. It stays visually distinct from "square" (test), which is
+    // solid-filled. Consistent whether `box` comes from inferNodeShape or
+    // from a profile visual_encoding override.
     const isOutlinedShape = shape === "box";
+    const outlinedFill = "rgba(255,255,255,0.5)";
     visNodes.push({
       id: nodeId,
       label,
       color: {
-        background: isOutlinedShape ? "rgba(0,0,0,0)" : color,
+        background: isOutlinedShape ? outlinedFill : color,
         border: color,
         highlight: { background: workspaceTheme.colour.surface, border: color },
       },
