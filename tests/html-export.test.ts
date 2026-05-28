@@ -255,7 +255,7 @@ describe("toHtml visual encoding (Track C3)", () => {
     // Static shape and edge legends are present in the sidebar.
     expect(html).toContain('id="shape-legend"');
     expect(html).toContain("triangle &mdash; config");
-    expect(html).toContain("box (outline) &mdash; document");
+    expect(html).toContain("box (hollow) &mdash; document");
     expect(html).toContain("square (filled) &mdash; test");
     expect(html).toContain('id="relation-legend"');
     expect(html).toContain("dotted &mdash; tested_by");

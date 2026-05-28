@@ -155,7 +155,9 @@ describe("graphify ontology studio --write", () => {
     expect(result.body).toContain("<b>Mode:</b> Overview");
     expect(result.body).toContain('title="Graphify graph surface"');
     expect(result.body).toContain(encodeURI(`file://${fixture.stateDir}/graph.html`));
-    expect(result.body).toContain('data-ws-live-graph-src="/api/ontology/artifacts/graph.html"');
+    // G-studio-lot2 (#3, #4): the embedded studio canvas requests the studio
+    // variant of the served artifact (?studio=1 -> full center, legend-only).
+    expect(result.body).toContain('data-ws-live-graph-src="/api/ontology/artifacts/graph.html?studio=1"');
     expect(result.body).not.toContain("Read-only reconciliation APIs are available");
 
     const graphArtifact = handleOntologyStudioRequest(
