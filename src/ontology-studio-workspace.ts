@@ -22,11 +22,15 @@ import type {
 import {
   createDefaultViewerState,
   getWorkspaceTokens,
+  renderEntityPanel,
   renderGraphPanel,
   renderWorkspaceShell,
+  type EntityPanelOccurrences,
   type GraphLike,
   type GraphNodeLike,
+  type WorkspaceDescriptionSidecar,
 } from "./workspace/index.js";
+import type { WikiDescriptionSidecarIndex } from "./wiki-descriptions.js";
 
 interface ReconciliationWorkspaceModel {
   writeEnabled: boolean;
@@ -45,6 +49,11 @@ interface ReconciliationWorkspaceModel {
 export interface RenderOntologyStudioWorkspaceOptions {
   writeEnabled: boolean;
   selectedCandidateId?: string;
+  /**
+   * G-studio-lot4 (#7): the node id selected for the right-column entity
+   * panel (from `?node=<id>`). Only honoured in the default Workspace view.
+   */
+  selectedNodeId?: string;
   /**
    * Active view requested by the live HTTP route. One of
    * "workspace" | "reconciliation" | "evidence". Defaults to "workspace"
@@ -470,6 +479,100 @@ function loadGraph(stateDir: string): GraphLike | null {
   }
 }
 
+/**
+ * G-studio-lot4 (#7): best-effort load of the wiki description sidecar index.
+ * Tries the assistant-merged sidecar first (the curated/merged output), then
+ * the plain index. A missing / malformed file is silently ignored — the
+ * entity panel just omits descriptions.
+ */
+function loadDescriptionIndex(stateDir: string): WikiDescriptionSidecarIndex | null {
+  const candidates = [
+    join(stateDir, "wiki", "descriptions.assistant-merged.json"),
+    join(stateDir, "wiki", "descriptions.json"),
+  ];
+  for (const path of candidates) {
+    if (!existsSync(path)) continue;
+    try {
+      const parsed = JSON.parse(readFileSync(path, "utf-8")) as WikiDescriptionSidecarIndex;
+      if (parsed && typeof parsed === "object" && parsed.nodes) return parsed;
+    } catch {
+      /* try the next candidate */
+    }
+  }
+  return null;
+}
+
+/**
+ * G-studio-lot4 (#7, intent points 5 & 6): best-effort load of the occurrence
+ * / citation sidecar. The schema is profile-driven; this reader tolerates a
+ * few common shapes and returns a node-id -> occurrence map. A missing /
+ * empty file yields an empty map (the panel omits the section).
+ */
+function loadOccurrences(stateDir: string): EntityPanelOccurrences {
+  const path = join(stateDir, "ontology", "occurrences.json");
+  if (!existsSync(path)) return {};
+  try {
+    return normaliseOccurrences(JSON.parse(readFileSync(path, "utf-8")) as unknown);
+  } catch {
+    return {};
+  }
+}
+
+function normaliseOccurrences(raw: unknown): EntityPanelOccurrences {
+  const out: EntityPanelOccurrences = {};
+  if (!raw || typeof raw !== "object") return out;
+  // Accept either a top-level map { nodes: {...} } or a bare map keyed by id.
+  const nodes =
+    (raw as { nodes?: unknown }).nodes && typeof (raw as { nodes?: unknown }).nodes === "object"
+      ? (raw as { nodes: Record<string, unknown> }).nodes
+      : (raw as Record<string, unknown>);
+  for (const [id, value] of Object.entries(nodes)) {
+    if (!value || typeof value !== "object") continue;
+    const entry = value as Record<string, unknown>;
+    const documents: Record<string, number> = {};
+    const rawDocs = entry.documents ?? entry.per_document ?? entry.by_document;
+    if (rawDocs && typeof rawDocs === "object") {
+      for (const [doc, count] of Object.entries(rawDocs as Record<string, unknown>)) {
+        if (typeof count === "number" && Number.isFinite(count)) documents[doc] = count;
+      }
+    }
+    const snippets: string[] = [];
+    const rawSnippets = entry.snippets ?? entry.quotes ?? entry.excerpts;
+    if (Array.isArray(rawSnippets)) {
+      for (const s of rawSnippets) if (typeof s === "string") snippets.push(s);
+    }
+    const total =
+      typeof entry.total === "number"
+        ? entry.total
+        : typeof entry.count === "number"
+          ? entry.count
+          : undefined;
+    out[id] = {
+      ...(total !== undefined ? { total } : {}),
+      ...(Object.keys(documents).length > 0 ? { documents } : {}),
+      ...(snippets.length > 0 ? { snippets } : {}),
+    };
+  }
+  return out;
+}
+
+function descriptionSidecarFor(
+  index: WikiDescriptionSidecarIndex | null,
+  nodeId: string,
+): WorkspaceDescriptionSidecar | undefined {
+  const entry = index?.nodes?.[nodeId];
+  if (!entry) return undefined;
+  if (entry.status === "generated") {
+    return {
+      status: "generated",
+      target_id: nodeId,
+      target_kind: "node",
+      description: entry.description ?? null,
+    };
+  }
+  return { status: "insufficient_evidence", target_id: nodeId, target_kind: "node" };
+}
+
 function graphHtmlUrl(stateDir: string): string | null {
   const graphHtmlPath = join(stateDir, "graph.html");
   return existsSync(graphHtmlPath) ? pathToFileURL(graphHtmlPath).href : null;
@@ -593,12 +696,58 @@ export function renderOntologyStudioWorkspace(
 
   // Default: workspace tab. The G6-2 left rail (search/types/selected/
   // facets/results) renders naturally — no `leftWorkbenchHtml`
-  // override. The right slot stays hidden via the shell's slot
-  // visibility rules. The central column shows the compact prose for
-  // the currently selected entity (or the empty hint).
+  // override. The central column shows the compact prose for the
+  // currently selected entity (or the empty hint).
   state.viewState.graph.mode = "selection";
 
-  return renderWorkspaceShell({
+  // G-studio-lot4 (#7): when a node is selected (?node=<id>), render the
+  // entity panel — wiki description + relations + evidence snippet +
+  // occurrence counts — in the REAL right column.
+  let entityPanelHtml: string | undefined;
+  const selectedNodeId = opts.selectedNodeId;
+  if (selectedNodeId && model.graph) {
+    const node = graphNodeById(model.graph, selectedNodeId);
+    if (node) {
+      state.displayRef = `entity:${selectedNodeId}`;
+      state.focusEntityId = selectedNodeId;
+      const descriptionIndex = loadDescriptionIndex(context.stateDir);
+      const occurrences = loadOccurrences(context.stateDir);
+      const descriptionSidecar = descriptionSidecarFor(descriptionIndex, selectedNodeId);
+      entityPanelHtml = renderEntityPanel({
+        node,
+        graph: model.graph,
+        ...(descriptionSidecar ? { descriptionSidecar } : {}),
+        occurrences,
+      });
+    }
+  }
+
+  // G-studio-lot4 (#7): no-Svelte progressive enhancement — clicking a
+  // result entry (or relation target) navigates to ?node=<id> so the right
+  // column shows that entity. Generic: it reads the rail's data-display-ref /
+  // the entity panel's data-other-id hooks without any corpus coupling.
+  const nodeNavScript = [
+    "<script>",
+    "(() => {",
+    '  document.addEventListener("click", (event) => {',
+    '    const trigger = event.target.closest("[data-display-ref],[data-other-id]");',
+    "    if (!trigger) return;",
+    '    const ref = trigger.getAttribute("data-display-ref") || "";',
+    '    const other = trigger.getAttribute("data-other-id") || "";',
+    "    let nodeId = other;",
+    '    if (!nodeId && ref.indexOf("entity:") === 0) nodeId = ref.slice("entity:".length);',
+    "    if (!nodeId) return;",
+    "    event.preventDefault();",
+    "    const target = new URL(window.location.href);",
+    '    target.searchParams.set("node", nodeId);',
+    '    target.searchParams.set("view", "workspace");',
+    "    window.location.assign(target.toString());",
+    "  });",
+    "})();",
+    "</script>",
+  ].join("\n");
+
+  const shellHtml = renderWorkspaceShell({
     tokens,
     tokenSource: "fallback",
     title: "Graphify Ontology Studio",
@@ -608,5 +757,7 @@ export function renderOntologyStudioWorkspace(
     state,
     ...(model.graph ? { graph: model.graph } : {}),
     graphPanelHtml: renderGraphContext(model),
+    ...(entityPanelHtml ? { entityPanelHtml } : {}),
   });
+  return shellHtml.replace("</body>", `${nodeNavScript}\n</body>`);
 }

@@ -10,6 +10,7 @@ import { isDirectedGraph } from "./graph.js";
 import { assertGraphJsonFileSize, assertGraphJsonSize } from "./graph-size-guard.js";
 import { safeGitRevParse } from "./git.js";
 import type { Hyperedge, NormalizedOntologyProfile, OntologyVisualEncoding } from "./types.js";
+import type { WikiDescriptionSidecarIndex } from "./wiki-descriptions.js";
 import {
   type NumericMapLike,
   type StringMapLike,
@@ -205,6 +206,14 @@ type HtmlOptions = CommunityLabelOptions & {
    * `graphify export html` artefact is byte-stable.
    */
   studioMode?: boolean;
+  /**
+   * Track G G-studio-lot4 (#7, pipeline unblock): wiki description sidecar
+   * index (schema `graphify_wiki_description_index_v1`). When present, each
+   * node's generated description is attached to its payload so the node-info
+   * panel can render it. `insufficient_evidence` entries are omitted (parity
+   * with the wiki rendering — no placeholder).
+   */
+  descriptions?: WikiDescriptionSidecarIndex;
 };
 type JsonOptions = CommunityLabelOptions & { force?: boolean };
 type SvgOptions = CommunityLabelOptions & { figsize?: [number, number] };
@@ -255,7 +264,8 @@ function isCommunityLabelOptions(
     Object.prototype.hasOwnProperty.call(value, "memberCounts") ||
     Object.prototype.hasOwnProperty.call(value, "force") ||
     Object.prototype.hasOwnProperty.call(value, "profile") ||
-    Object.prototype.hasOwnProperty.call(value, "studioMode")
+    Object.prototype.hasOwnProperty.call(value, "studioMode") ||
+    Object.prototype.hasOwnProperty.call(value, "descriptions")
   );
 }
 
@@ -307,6 +317,30 @@ function normalizeStudioMode(
 ): boolean {
   if (!labelsOrOptions || !isCommunityLabelOptions(labelsOrOptions)) return false;
   return (labelsOrOptions as HtmlOptions).studioMode === true;
+}
+
+function normalizeDescriptions(
+  labelsOrOptions?: CommunityLabelsInput | HtmlOptions,
+): WikiDescriptionSidecarIndex | undefined {
+  if (!labelsOrOptions || !isCommunityLabelOptions(labelsOrOptions)) return undefined;
+  return (labelsOrOptions as HtmlOptions).descriptions ?? undefined;
+}
+
+/**
+ * Track G G-studio-lot4 — look up a node's generated wiki description from a
+ * sidecar index. Returns the trimmed description only for `generated`
+ * entries; `insufficient_evidence` (or missing) entries return null so the
+ * caller omits the field entirely (no placeholder, parity with the wiki).
+ */
+function lookupNodeDescription(
+  descriptions: WikiDescriptionSidecarIndex | undefined,
+  nodeId: string,
+): string | null {
+  if (!descriptions?.nodes) return null;
+  const entry = descriptions.nodes[nodeId];
+  if (!entry || entry.status !== "generated") return null;
+  const text = typeof entry.description === "string" ? entry.description.trim() : "";
+  return text ? text : null;
 }
 
 /**
@@ -825,6 +859,7 @@ const nodesDS = new vis.DataSet(RAW_NODES.map(n => ({
   _community: n.community, _community_name: n.community_name,
   _source_file: n.source_file, _file_type: n.file_type, _degree: n.degree,
   _shape: n.shape || 'dot',
+  _description: n.description || '',
 })));
 
 const edgesDS = new vis.DataSet(RAW_EDGES.map((e, i) => ({
@@ -885,6 +920,7 @@ function showInfo(nodeId) {
   }).join('');
   document.getElementById('info-content').innerHTML = \`
     <div class="field"><b>\${n.label}</b></div>
+    \${n._description ? \`<div class="field" style="margin:6px 0">\${n._description}</div>\` : ''}
     <div class="field">Type: \${n._file_type || 'unknown'} <span style="color:var(--ws-text-muted);font-size:11px">(shape: \${n._shape})</span></div>
     <div class="field">Community: \${n._community_name}</div>
     <div class="field">Source: \${n._source_file || '-'}</div>
@@ -1089,6 +1125,8 @@ export function toHtml(
   const communityLabels = normalizeCommunityLabels(communityLabelsOrOptions);
   const memberCounts = normalizeMemberCounts(communityLabelsOrOptions);
   const profile = normalizeProfile(communityLabelsOrOptions);
+  const studioMode = normalizeStudioMode(communityLabelsOrOptions);
+  const descriptions = normalizeDescriptions(communityLabelsOrOptions);
   const workspaceTheme = getWorkspaceTokens();
   if (G.order > MAX_NODES_FOR_VIZ) {
     throw new Error(
@@ -1119,6 +1157,8 @@ export function toHtml(
     file_type: string;
     shape: string;
     degree: number;
+    /** G-studio-lot4 (#7): generated wiki description, omitted when absent. */
+    description?: string;
   }
   const visNodes: VisNode[] = [];
   G.forEachNode((nodeId, data) => {
@@ -1149,7 +1189,8 @@ export function toHtml(
     // from a profile visual_encoding override.
     const isOutlinedShape = shape === "box";
     const outlinedFill = "rgba(255,255,255,0.5)";
-    visNodes.push({
+    const description = lookupNodeDescription(descriptions, nodeId);
+    const visNode: VisNode = {
       id: nodeId,
       label,
       color: {
@@ -1166,7 +1207,11 @@ export function toHtml(
       file_type: fileType,
       shape,
       degree: deg,
-    });
+    };
+    // G-studio-lot4 (#7): attach the generated description only when present;
+    // insufficient_evidence / missing entries leave the field off entirely.
+    if (description) visNode.description = sanitizeLabel(description);
+    visNodes.push(visNode);
   });
 
   // Build edges list
