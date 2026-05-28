@@ -197,6 +197,14 @@ type HtmlOptions = CommunityLabelOptions & {
   /** Track C-3.5: optional ontology profile carrying per-node-type
    *  visual_encoding (shape + color_hex) overrides for the HTML export. */
   profile?: NormalizedOntologyProfile;
+  /**
+   * Track G G-studio-lot2 (#3, #4): when true, render the studio variant —
+   * the graph claims the full center, the community list / node-info panel /
+   * search are removed from the canvas area, and only the shapes + edges
+   * legend stays (floated bottom-right). Defaults to false so the standalone
+   * `graphify export html` artefact is byte-stable.
+   */
+  studioMode?: boolean;
 };
 type JsonOptions = CommunityLabelOptions & { force?: boolean };
 type SvgOptions = CommunityLabelOptions & { figsize?: [number, number] };
@@ -246,7 +254,8 @@ function isCommunityLabelOptions(
     Object.prototype.hasOwnProperty.call(value, "communityLabels") ||
     Object.prototype.hasOwnProperty.call(value, "memberCounts") ||
     Object.prototype.hasOwnProperty.call(value, "force") ||
-    Object.prototype.hasOwnProperty.call(value, "profile")
+    Object.prototype.hasOwnProperty.call(value, "profile") ||
+    Object.prototype.hasOwnProperty.call(value, "studioMode")
   );
 }
 
@@ -291,6 +300,13 @@ function normalizeProfile(
 ): NormalizedOntologyProfile | undefined {
   if (!labelsOrOptions || !isCommunityLabelOptions(labelsOrOptions)) return undefined;
   return (labelsOrOptions as HtmlOptions).profile ?? undefined;
+}
+
+function normalizeStudioMode(
+  labelsOrOptions?: CommunityLabelsInput | HtmlOptions,
+): boolean {
+  if (!labelsOrOptions || !isCommunityLabelOptions(labelsOrOptions)) return false;
+  return (labelsOrOptions as HtmlOptions).studioMode === true;
 }
 
 /**
@@ -714,6 +730,30 @@ ${workspaceCss
   body.high-contrast #sidebar, body.high-contrast #search, body.high-contrast #help-modal { background: #000; color: #fff; }
   body.high-contrast #search { border-color: #fff; }
   body.high-contrast #info-content .empty, body.high-contrast .legend-count, body.high-contrast #stats { color: #ddd; }
+  /* G-studio-lot2 (#3, #4) — studio mode: the graph claims the full center;
+     the community list, node-info panel, search box and bottom stats line are
+     removed from inside the canvas area, and only the shapes + edges legend
+     stays, floated bottom-right over the canvas. */
+  body.studio-mode #sidebar { width: 0; border-left: none; overflow: visible; background: transparent; }
+  body.studio-mode #search-wrap { display: none; }
+  body.studio-mode #info-panel { display: none; }
+  body.studio-mode #legend-wrap { display: none; }
+  body.studio-mode #stats { display: none; }
+  body.studio-mode #help-button { display: none; }
+  body.studio-mode #shapes-legend-card {
+    position: absolute;
+    right: var(--ws-space-3);
+    bottom: var(--ws-space-3);
+    z-index: 50;
+    max-width: 260px;
+    padding: var(--ws-space-3);
+    background: rgba(255, 255, 255, 0.92);
+    color: var(--ws-text);
+    border: 1px solid var(--ws-border);
+    border-radius: var(--ws-radius-md);
+    box-shadow: var(--ws-shadow-card);
+  }
+  body.studio-mode #shapes-legend-card h3 { font-size: 12px; color: var(--ws-text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
 </style>`;
 }
 
@@ -1197,7 +1237,7 @@ export function toHtml(
 <script src="https://unpkg.com/vis-network@9.1.6/standalone/umd/vis-network.min.js" integrity="sha384-Ux6phic9PEHJ38YtrijhkzyJ8yQlH8i/+buBR8s3mAZOJrP1gwyvAcIYl3GWtpX1" crossorigin="anonymous"></script>
 ${htmlStyles()}
 </head>
-<body>
+<body${studioMode ? ' class="studio-mode"' : ""}>
 <a class="skip-link" href="#sidebar">Skip to controls</a>
 <div id="live-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
 <div id="graph" aria-label="Graphify knowledge graph"></div>
@@ -1219,13 +1259,15 @@ ${htmlStyles()}
       <button id="contrast-toggle" type="button" aria-pressed="false" aria-label="Toggle high contrast">HC</button>
     </div>
     <div id="legend" role="group" aria-label="Community filters"></div>
-    <h3 id="shapes-heading" style="margin-top:14px">Shapes</h3>
+  </section>
+  <section id="shapes-legend-card" aria-labelledby="shapes-heading">
+    <h3 id="shapes-heading">Shapes</h3>
     <ul id="shape-legend" aria-labelledby="shapes-heading" style="list-style:none;padding:0;margin:0;font-size:12px;color:var(--ws-text-muted)">
       <li>● dot &mdash; code</li>
       <li><span style="display:inline-block;width:10px;height:10px;background:var(--ws-text-muted);vertical-align:middle"></span> square (filled) &mdash; test</li>
       <li>▲ triangle &mdash; config (yaml/toml/...)</li>
       <li>◆ diamond &mdash; type definition (.d.ts)</li>
-      <li><span style="display:inline-block;width:10px;height:10px;border:1px solid var(--ws-text-muted);background:transparent;vertical-align:middle"></span> box (outline) &mdash; document / paper / concept</li>
+      <li><span style="display:inline-block;width:10px;height:10px;border:1px solid var(--ws-text-muted);background:rgba(255,255,255,0.5);vertical-align:middle"></span> box (hollow) &mdash; document / paper / concept</li>
       <li>★ star &mdash; image</li>
       <li>⬢ hexagon &mdash; video</li>
     </ul>

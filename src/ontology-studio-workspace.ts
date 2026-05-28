@@ -453,6 +453,9 @@ function renderGraphContext(model: ReconciliationWorkspaceModel): string {
     ...(model.graphHtmlUrl ? { graphHtmlUrl: model.graphHtmlUrl } : {}),
     ...(model.liveGraphHtmlUrl ? { liveGraphHtmlUrl: model.liveGraphHtmlUrl } : {}),
     height: 560,
+    // G-studio-lot2 (#3, #4): the embedded canvas runs in studio mode — full
+    // center, shapes/edges legend only, no community list / node-info panel.
+    studioMode: true,
   });
 }
 

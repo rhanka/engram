@@ -43,6 +43,23 @@ export interface RenderGraphPanelOptions {
    * Defaults to 480.
    */
   height?: number;
+  /**
+   * Track G G-studio-lot2 (#3, #4): when true the panel asks the served
+   * graph.html for its studio variant (full-center canvas, legend-only) by
+   * appending `studio=1` to the live (same-origin) URL. The studio CSS ships
+   * in every export already; the server flips the `studio-mode` body class.
+   */
+  studioMode?: boolean;
+}
+
+/**
+ * Append the `studio=1` query flag to a same-origin URL. Kept conservative:
+ * preserves an existing query string and never touches a file: URL (the
+ * server-side class injection only runs over HTTP).
+ */
+function withStudioFlag(url: string): string {
+  if (!url) return url;
+  return url.includes("?") ? `${url}&studio=1` : `${url}?studio=1`;
 }
 
 const HTML_ESCAPE_RE = /[&<>"']/g;
@@ -104,7 +121,12 @@ function renderMetricsCard(subgraph: FocusSubgraph, state: WorkspaceViewerState)
 function renderViewerSurface(opts: RenderGraphPanelOptions): string {
   const height = Math.max(120, Math.round(opts.height ?? 480));
   const url = opts.graphHtmlUrl ? escapeUrl(opts.graphHtmlUrl) : "";
-  const liveUrl = opts.liveGraphHtmlUrl ? escapeUrl(opts.liveGraphHtmlUrl) : "";
+  const rawLiveUrl = opts.liveGraphHtmlUrl
+    ? opts.studioMode
+      ? withStudioFlag(opts.liveGraphHtmlUrl)
+      : opts.liveGraphHtmlUrl
+    : "";
+  const liveUrl = rawLiveUrl ? escapeUrl(rawLiveUrl) : "";
   if (!url) {
     return [
       '<div class="ws-graph-placeholder" id="ws-graph-network">',
