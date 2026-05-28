@@ -38,6 +38,7 @@ import type { WorkspaceViewerState } from "./viewer-state.js";
 import { createDefaultViewerState } from "./viewer-state.js";
 import { serialiseTokensToCss } from "./tokens-fallback.js";
 import { renderWorkspaceRail, workspaceRailStyles, type WorkspaceRailLayout } from "./rail.js";
+import { entityPanelStyles } from "./entity-panel.js";
 
 /**
  * Optional sidecar payload propagated from `.graphify/wiki/descriptions.json`
@@ -92,6 +93,14 @@ export interface RenderWorkspaceShellOptions {
    * no state is passed — legacy callers without G6 state).
    */
   rightDrawerHtml?: string;
+  /**
+   * Track G G-studio-lot4 (#7): trusted entity-panel HTML for the REAL
+   * right column. When provided in the default Workspace view (with an
+   * entity selected), the right slot becomes visible and renders this
+   * panel instead of staying hidden. Ignored in reconciliation / evidence
+   * views (those use `rightDrawerHtml`).
+   */
+  entityPanelHtml?: string;
   /** Current workspace state. Used to resolve the central display item. */
   state?: WorkspaceViewerState;
   /** Graph payload (typically loaded from `.graphify/graph.json`). */
@@ -604,7 +613,11 @@ function shellStyles(): string {
     "  .ws-counters { grid-template-columns: repeat(2, minmax(80px, 1fr)); }",
     "  .ws-tabs { font-size: var(--ws-font-size-sm); }",
     "}",
+    // G-studio-lot4 (#7): the entity slot is the real right column — never
+    // hidden by the workspace/evidence hide rules (it has its own view tag).
+    ".workspace-reconciliation-slot[data-active-view=\"entity\"] { display: block; }",
     workspaceRailStyles(),
+    entityPanelStyles(),
   ].join("\n");
 }
 
@@ -690,10 +703,17 @@ export function renderWorkspaceShell(opts: RenderWorkspaceShellOptions): string 
   // markup is always rendered so callers can swap states without forcing
   // a re-mount.
   const activeView = opts.state?.activeView ?? null;
-  const slotVisible = isReconciliationView(activeView);
-  const slotHidden = !slotVisible;
-  const slotActiveView = activeView ?? "workspace";
   const isEvidenceView = activeView === "evidence";
+  // G-studio-lot4 (#7): in the default Workspace view the right slot stays
+  // hidden UNLESS an entity panel is supplied (a node is selected) — then it
+  // becomes the real right column showing the entity. Reconciliation / studio
+  // views keep their existing drawer behaviour.
+  const isWorkspaceView = !isReconciliationView(activeView) && !isEvidenceView;
+  const hasEntityPanel =
+    isWorkspaceView && typeof opts.entityPanelHtml === "string" && opts.entityPanelHtml.length > 0;
+  const slotVisible = isReconciliationView(activeView) || hasEntityPanel;
+  const slotHidden = !slotVisible;
+  const slotActiveView = hasEntityPanel ? "entity" : activeView ?? "workspace";
 
   // G6-2: render the rich left rail (search / types / selected / facets /
   // results) when a graph is available and the caller did not override
@@ -742,8 +762,10 @@ export function renderWorkspaceShell(opts: RenderWorkspaceShellOptions): string 
 
   const slotBody = slotHidden
     ? ""
-    : opts.rightDrawerHtml ??
-      '<p class="ws-empty">Evidence / relations / audit trail accordion arrives with G5.</p>';
+    : hasEntityPanel
+      ? (opts.entityPanelHtml as string)
+      : opts.rightDrawerHtml ??
+        '<p class="ws-empty">Evidence / relations / audit trail accordion arrives with G5.</p>';
 
   return [
     "<!DOCTYPE html>",

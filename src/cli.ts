@@ -3549,6 +3549,10 @@ export async function main(): Promise<void> {
       "--profile <path>",
       "Optional ontology profile YAML for per-node-type visual encoding (Track C-3.5)",
     )
+    .option(
+      "--descriptions <path>",
+      "Optional wiki description sidecar index JSON; node descriptions render in the node-info panel (Track G G-studio-lot4)",
+    )
     .action(async (opts) => {
       try {
         const graphPath = resolveGraphInputPath(opts.graph);
@@ -3568,6 +3572,13 @@ export async function main(): Promise<void> {
           dirname(graphPath),
           typeof opts.profile === "string" ? opts.profile : undefined,
         );
+        // Track G G-studio-lot4: --descriptions wires the wiki sidecar so node
+        // descriptions render in the node-info panel. Stale entries (graph_hash
+        // / prompt_version mismatch) are dropped with a warning.
+        const descriptions = await loadFreshWikiDescriptionSidecarIndex(
+          typeof opts.descriptions === "string" ? opts.descriptions : undefined,
+          graphPath,
+        );
         const { safeToHtml } = await import("./html-export.js");
         const written = safeToHtml(
           G,
@@ -3576,6 +3587,7 @@ export async function main(): Promise<void> {
           {
             communityLabels: labels,
             ...(ontologyProfileForHtml ? { profile: ontologyProfileForHtml } : {}),
+            ...(descriptions ? { descriptions } : {}),
           },
           {
             onWarning: (message) => console.warn(message),

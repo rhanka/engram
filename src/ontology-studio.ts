@@ -140,6 +140,7 @@ function htmlResult(
   writeEnabled: boolean,
   selectedCandidateId: string | undefined,
   activeView: "workspace" | "reconciliation" | "evidence",
+  selectedNodeId: string | undefined,
 ): OntologyStudioRouteResult {
   return {
     status: 200,
@@ -147,20 +148,42 @@ function htmlResult(
     body: renderOntologyStudioWorkspace(context, {
       writeEnabled,
       ...(selectedCandidateId ? { selectedCandidateId } : {}),
+      ...(selectedNodeId ? { selectedNodeId } : {}),
       activeView,
     }),
   };
 }
 
-function graphHtmlArtifactResult(context: ReturnType<typeof loadOntologyPatchContext>): OntologyStudioRouteResult {
+/**
+ * Track G G-studio-lot2 (#3, #4): flip the served graph.html into its studio
+ * variant by adding the `studio-mode` body class. The studio CSS already
+ * ships in every export, so the class alone makes the canvas claim the full
+ * center and show only the shapes/edges legend. Idempotent: a body that is
+ * already `studio-mode` is returned unchanged.
+ */
+export function injectStudioMode(html: string): string {
+  if (/<body[^>]*class="[^"]*studio-mode/.test(html)) return html;
+  const withClass = html.replace(
+    /<body([^>]*?)\bclass="([^"]*)"/i,
+    (_match, attrs: string, classes: string) => `<body${attrs}class="${classes} studio-mode"`,
+  );
+  if (withClass !== html) return withClass;
+  return html.replace(/<body\b([^>]*)>/i, '<body$1 class="studio-mode">');
+}
+
+function graphHtmlArtifactResult(
+  context: ReturnType<typeof loadOntologyPatchContext>,
+  studioMode = false,
+): OntologyStudioRouteResult {
   const graphHtmlPath = join(context.stateDir, "graph.html");
   if (!existsSync(graphHtmlPath)) {
     return jsonResult(404, { error: "graph.html not found" });
   }
+  const raw = readFileSync(graphHtmlPath, "utf-8");
   return {
     status: 200,
     contentType: "text/html; charset=utf-8",
-    body: readFileSync(graphHtmlPath, "utf-8"),
+    body: studioMode ? injectStudioMode(raw) : raw,
   };
 }
 
@@ -292,12 +315,14 @@ export function handleOntologyStudioRequest(
       // ?view= override, route into the Reconciliation sub-view so the
       // legacy deep links still surface the candidate workbench.
       const rawCandidate = optionalString(url.searchParams.get("candidate"));
+      // G-studio-lot4 (#7): ?node=<id> selects an entity for the right column.
+      const rawNode = optionalString(url.searchParams.get("node"));
       const resolvedView =
         activeView === "workspace" && rawCandidate ? "reconciliation" : activeView;
-      return htmlResult(context, Boolean(options.write), rawCandidate, resolvedView);
+      return htmlResult(context, Boolean(options.write), rawCandidate, resolvedView, rawNode);
     }
     if (url.pathname === "/api/ontology/artifacts/graph.html") {
-      return graphHtmlArtifactResult(context);
+      return graphHtmlArtifactResult(context, url.searchParams.get("studio") === "1");
     }
     if (url.pathname === "/api/ontology/reconciliation/candidates") {
       return jsonResult(200, listOntologyReconciliationCandidates(context, candidateFilters(url.searchParams)));
