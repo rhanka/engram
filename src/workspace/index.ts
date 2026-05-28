@@ -35,6 +35,13 @@ export type {
 } from "./shell.js";
 export { renderWorkspaceShell } from "./shell.js";
 
+export type {
+  RenderEntityPanelOptions,
+  EntityOccurrence,
+  EntityPanelOccurrences,
+} from "./entity-panel.js";
+export { renderEntityPanel, entityPanelStyles } from "./entity-panel.js";
+
 export type { RenderRailOptions, WorkspaceRailLayout } from "./rail.js";
 export { renderWorkspaceRail, workspaceRailStyles } from "./rail.js";
 

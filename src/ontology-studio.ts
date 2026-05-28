@@ -140,6 +140,7 @@ function htmlResult(
   writeEnabled: boolean,
   selectedCandidateId: string | undefined,
   activeView: "workspace" | "reconciliation" | "evidence",
+  selectedNodeId: string | undefined,
 ): OntologyStudioRouteResult {
   return {
     status: 200,
@@ -147,6 +148,7 @@ function htmlResult(
     body: renderOntologyStudioWorkspace(context, {
       writeEnabled,
       ...(selectedCandidateId ? { selectedCandidateId } : {}),
+      ...(selectedNodeId ? { selectedNodeId } : {}),
       activeView,
     }),
   };
@@ -313,9 +315,11 @@ export function handleOntologyStudioRequest(
       // ?view= override, route into the Reconciliation sub-view so the
       // legacy deep links still surface the candidate workbench.
       const rawCandidate = optionalString(url.searchParams.get("candidate"));
+      // G-studio-lot4 (#7): ?node=<id> selects an entity for the right column.
+      const rawNode = optionalString(url.searchParams.get("node"));
       const resolvedView =
         activeView === "workspace" && rawCandidate ? "reconciliation" : activeView;
-      return htmlResult(context, Boolean(options.write), rawCandidate, resolvedView);
+      return htmlResult(context, Boolean(options.write), rawCandidate, resolvedView, rawNode);
     }
     if (url.pathname === "/api/ontology/artifacts/graph.html") {
       return graphHtmlArtifactResult(context, url.searchParams.get("studio") === "1");
