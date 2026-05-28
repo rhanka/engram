@@ -201,3 +201,38 @@ All Lot 1 open questions are now closed. Implementation may proceed.
 - Track C visual encoding: `UPSTREAM_GAP.md > "CRG v2.3.3 Row-Level Audit"` and `spec/SPEC_CODE_REVIEW_GRAPH_OPPORUNITY.md`
 - Reconciliation queue schema: `spec/SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md > graphify_ontology_reconciliation_candidates_v1`
 - Patch core: `src/ontology-patch.ts`, `src/ontology-reconciliation.ts`
+
+## Studio UI target — process-std-AM alignment (recorded 2026-05-27, user UAT on the public pack)
+
+Live references: process-std-am viewer (`cd ~/src/process-std-am/viewer && npm run dev`) ; Graphify studio (`graphify ontology studio --config <project>/graphify.yaml`).
+
+### Architecture principle (binding)
+The studio is the **single, full model**. `graph.html` (`graphify export html`) must become a **lighter sub-view of that same model**, not a separate export. Today the studio merely **iframes** `graph.html` (`src/workspace/graph-panel.ts > renderViewerSurface`) — that crude embedding is exactly what the unification must replace.
+
+### Facets vs Type vs Communities vs Processes (clarified from the process-std-am source)
+- **Type** — filter by entity *type* (Process/Org/Tool in process-std-am ; Character/Work/Case/… in the mystery pack). Ref: `TypeFilterBar.svelte`.
+- **Facets** — filter by entity *attributes*. process-std-am: `framework, hasMedia, hasDocuments, reviewStatus, assertionBasis`. Generic: profile-declared filterable attributes (incl. reconciliation `review_status` / `assertion_basis`). Ref: `FacetPanel.svelte`.
+- **Communities** — Graphify Louvain clustering. **Not an process-std-am concept** — a Graphify-specific addition.
+- **Processes** — process-std-am domain taxonomy tree (`processes.activeTree`); generically a profile-declared view extension (e.g. Work→Chapter), not core.
+
+### Target layout — 8 points (process-std-AM aligned)
+1. **Graph canvas always light** — the dark theme is DS-incompatible for the graph; the canvas keeps a light background regardless of app theme. (`#graph` background must not follow the dark `--ws-surface`.)
+2. **Box nodes = border + transparent fill** (hollow). Renderer already does this (`src/export.ts isOutlinedShape` → `rgba(0,0,0,0)`); the filled boxes seen on the pack were a **stale `graph.html`** (2026-05-22) — a re-export with ≥0.10.0 fixes it.
+3. **Graph takes the full center section** in studio mode — no community list / node-info panel inside the canvas.
+4. **Only the legend** (shapes + edges) stays bottom-right of the canvas.
+5. **Left column = accordion, collapsed by default**: Type, Facets, Results (parity with process-std-am `LeftWorkbench`).
+6. **Communities panel** in the left column **above Facets**, collapsed by default (Graphify-specific).
+7. **Node selection → the real right column** (not inside the canvas, not dark): entity **wiki description** + **relations** (parity with `EntityPanel` + `EntityRelationsAccordion`).
+8. Type vs Facets clarified above (the earlier confusion is resolved).
+
+### Implementation lots (B→G)
+- **G-studio-lot1** — graph rendering: #1 light canvas under dark theme + #2 hollow boxes (verify via re-export; renderer already correct).
+- **G-studio-lot2** — center canvas full + legend-only (#3, #4).
+- **G-studio-lot3** — left accordion Type/Facets/Results collapsed (#5) + Communities panel above Facets (#6).
+- **G-studio-lot4** — right column node selection: wiki description + relations (#7).
+- **G-studio-lot5** — unify: `graph.html` becomes a sub-view of the studio model (architecture principle), retiring the iframe embedding.
+
+### Still-open content bugs surfaced during this UAT (separate from layout)
+- **Classes without labels** — nodes emitted without a `label` (ontology extraction/labelling bug).
+- **Too few entities** — the pack's semantic extraction yields too few entities (extraction/profile issue, in `graph.json`, not the renderer).
+These are `graph.json` content defects (re-extraction / extraction fixes), not studio-shell layout — to be debugged separately.
