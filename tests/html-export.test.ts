@@ -70,7 +70,10 @@ describe("safeToHtml", () => {
     expect(html).toContain("--ws-surface: #ffffff;");
     expect(html).toContain("--ws-surface-2: #f5f6f8;");
     expect(html).toContain("body { background: var(--ws-surface); color: var(--ws-text);");
-    expect(html).toContain("#graph { flex: 1; outline: none; background: var(--ws-surface);");
+    // G-studio-lot1 #1: the canvas keeps an explicit light background that
+    // does NOT follow the (themeable) --ws-surface.
+    expect(html).toContain("--graph-canvas-bg: #ffffff;");
+    expect(html).toContain("#graph { flex: 1; outline: none; background: var(--graph-canvas-bg);");
     expect(html).toContain("#sidebar { width: 280px; background: var(--ws-surface-2); border-left: 1px solid var(--ws-border);");
     expect(html).toContain("--graph-weak-text: var(--ws-text-muted);");
     expect(html).toContain("--graph-muted-strong: var(--ws-text-muted);");
@@ -252,7 +255,7 @@ describe("toHtml visual encoding (Track C3)", () => {
     // Static shape and edge legends are present in the sidebar.
     expect(html).toContain('id="shape-legend"');
     expect(html).toContain("triangle &mdash; config");
-    expect(html).toContain("box (outline) &mdash; document");
+    expect(html).toContain("box (hollow) &mdash; document");
     expect(html).toContain("square (filled) &mdash; test");
     expect(html).toContain('id="relation-legend"');
     expect(html).toContain("dotted &mdash; tested_by");
@@ -262,7 +265,7 @@ describe("toHtml visual encoding (Track C3)", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("C-final-1: shape 'box' (document/paper/concept) is outlined (transparent background)", () => {
+  it("C-final-1 / G-studio-lot1 #2: shape 'box' (document/paper/concept) is hollow (semi-opaque white fill)", () => {
     const dir = mkdtempSync(join(tmpdir(), "graphify-html-c-final-1-"));
     const htmlPath = join(dir, "graph.html");
     const G = new Graph();
@@ -273,10 +276,13 @@ describe("toHtml visual encoding (Track C3)", () => {
     toHtml(G, communities, htmlPath, { communityLabels: new Map([[0, "Core"]]) });
     const html = readFileSync(htmlPath, "utf-8");
 
-    // Box (document) carries the transparent background so the border-only
-    // rendering is visually distinct from the solid square (test).
-    expect(html).toMatch(/"id":"doc_a"[^{]*\{[^}]*"background":"rgba\(0,0,0,0\)"/);
+    // Box (document) carries a semi-opaque white fill so the label stays
+    // legible over crossing edges while still reading as "hollow" — visually
+    // distinct from the solid square (test).
+    expect(html).toMatch(/"id":"doc_a"[^{]*\{[^}]*"background":"rgba\(255,255,255,0\.5\)"/);
     expect(html).toMatch(/"id":"doc_a"[\s\S]*?"shape":"box"/);
+    // The fully-transparent fill is gone.
+    expect(html).not.toContain('"background":"rgba(0,0,0,0)"');
     // Sanity: a code node keeps a coloured (non-transparent) background.
     expect(html).toMatch(/"id":"code_a"[^{]*\{[^}]*"background":"#[0-9A-Fa-f]{6}"/);
 
@@ -444,7 +450,7 @@ describe("toHtml visual encoding (Track C-3.5: profile-aware)", () => {
     const html = readFileSync(htmlPath, "utf-8");
 
     expect(html).toMatch(/"id":"n1"[\s\S]*?"shape":"box"/);
-    expect(html).toMatch(/"id":"n1"[^{]*\{[^}]*"background":"rgba\(0,0,0,0\)"/);
+    expect(html).toMatch(/"id":"n1"[^{]*\{[^}]*"background":"rgba\(255,255,255,0\.5\)"/);
     expect(html).toMatch(/"id":"n1"[^{]*\{[^}]*"border":"#445566"/);
     rmSync(dir, { recursive: true, force: true });
   });

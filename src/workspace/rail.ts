@@ -67,6 +67,56 @@ interface TypeRow {
   count: number;
 }
 
+interface CommunityRow {
+  name: string;
+  count: number;
+}
+
+/**
+ * G-studio-lot3 (#5): wrap a left-rail section in a collapsible accordion,
+ * collapsed by default (no `open`). The heading becomes the <summary>. The
+ * `data-rail-section` slug stays on the <details> so the client controller
+ * keeps the same dispatch hooks.
+ */
+function renderAccordionSection(
+  slug: string,
+  heading: string,
+  counter: string,
+  body: string,
+): string {
+  return [
+    `<details class="ws-rail-accordion" data-rail-section="${escapeHtml(slug)}">`,
+    '<summary class="ws-rail-heading ws-rail-accordion-summary">',
+    escapeHtml(heading),
+    counter ? `<span class="ws-rail-counter">${counter}</span>` : "",
+    "</summary>",
+    `<div class="ws-rail-accordion-body">${body}</div>`,
+    "</details>",
+  ].join("");
+}
+
+/**
+ * G-studio-lot3 (#6): build the Louvain community rows from the dataset.
+ * Communities come from each node's `community` id (Louvain clustering) with
+ * a `community_name` label when present, falling back to "Community N".
+ * Profile-neutral — no corpus-specific strings.
+ */
+function buildCommunityRows(graph: GraphLike | undefined): CommunityRow[] {
+  const counts = new Map<string, number>();
+  if (graph?.nodes) {
+    for (const node of graph.nodes) {
+      const name =
+        (typeof node.community_name === "string" && node.community_name.trim()) ||
+        (typeof node.community === "number" ? `Community ${node.community}` : "");
+      if (!name) continue;
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
+
 function recordsFromGraph(graph: GraphLike | undefined): WorkspaceResultRecord[] {
   const out: WorkspaceResultRecord[] = [];
   if (!graph?.nodes) return out;
@@ -156,16 +206,52 @@ function renderTypes(
     );
   }
 
-  return [
-    '<section class="ws-rail-section" data-rail-section="types">',
-    '<h3 class="ws-rail-heading">Types <span class="ws-rail-counter"><span data-rail-counter="types-shown">' +
-      shown +
-      '</span> shown / <span data-rail-counter="types-total">' +
-      total +
-      "</span> total</span></h3>",
+  const counter =
+    '<span data-rail-counter="types-shown">' +
+    shown +
+    '</span> shown / <span data-rail-counter="types-total">' +
+    total +
+    "</span> total";
+  return renderAccordionSection(
+    "types",
+    "Types",
+    counter,
     `<ul class="ws-rail-type-list">${rowsHtml.join("")}</ul>`,
-    "</section>",
-  ].join("");
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Communities (G-studio-lot3 #6) — Louvain clusters, above Facets.
+// ---------------------------------------------------------------------------
+
+function renderCommunities(graph: GraphLike | undefined): string {
+  const rows = buildCommunityRows(graph);
+  const counter = `<span data-rail-counter="communities-total">${rows.length}</span> total`;
+  if (rows.length === 0) {
+    return renderAccordionSection(
+      "communities",
+      "Communities",
+      counter,
+      '<p class="ws-empty ws-rail-empty">No communities in this dataset.</p>',
+    );
+  }
+  const items = rows
+    .map(
+      (row) =>
+        [
+          '<li class="ws-rail-community" data-community-name="' + escapeHtml(row.name) + '">',
+          '<span class="ws-rail-community-name">' + escapeHtml(row.name) + "</span>",
+          '<span class="ws-rail-community-count">' + row.count + "</span>",
+          "</li>",
+        ].join(""),
+    )
+    .join("");
+  return renderAccordionSection(
+    "communities",
+    "Communities",
+    counter,
+    `<ul class="ws-rail-community-list">${items}</ul>`,
+  );
 }
 
 function renderSelected(state: WorkspaceViewerState, graph: GraphLike | undefined): string {
@@ -246,14 +332,16 @@ function renderFacets(
   }
 
   if (facets.length === 0) {
-    return [
-      '<section class="ws-rail-section" data-rail-section="facets">',
-      '<h3 class="ws-rail-heading">Facets <span class="ws-rail-counter"><span data-rail-counter="facets-active">' +
-        active +
-        '</span> active / <span data-rail-counter="facets-slices">0</span> slices</span></h3>',
+    const emptyCounter =
+      '<span data-rail-counter="facets-active">' +
+      active +
+      '</span> active / <span data-rail-counter="facets-slices">0</span> slices';
+    return renderAccordionSection(
+      "facets",
+      "Facets",
+      emptyCounter,
       '<p class="ws-empty ws-rail-empty">No facetable fields in this dataset.</p>',
-      "</section>",
-    ].join("");
+    );
   }
 
   const slicesTotal = facets.reduce((sum, facet) => sum + Math.max(0, facet.values.length - 1), 0);
@@ -281,16 +369,18 @@ function renderFacets(
     );
   }
 
-  return [
-    '<section class="ws-rail-section" data-rail-section="facets">',
-    '<h3 class="ws-rail-heading">Facets <span class="ws-rail-counter"><span data-rail-counter="facets-active">' +
-      active +
-      '</span> active / <span data-rail-counter="facets-slices">' +
-      slicesTotal +
-      "</span> slices</span></h3>",
+  const counter =
+    '<span data-rail-counter="facets-active">' +
+    active +
+    '</span> active / <span data-rail-counter="facets-slices">' +
+    slicesTotal +
+    "</span> slices";
+  return renderAccordionSection(
+    "facets",
+    "Facets",
+    counter,
     `<div class="ws-rail-facet-list">${facetHtml.join("")}</div>`,
-    "</section>",
-  ].join("");
+  );
 }
 
 function renderResults(
@@ -299,14 +389,14 @@ function renderResults(
 ): string {
   const total = filtered.length;
   if (groups.length === 0) {
-    return [
-      '<section class="ws-rail-section" data-rail-section="results">',
-      '<h3 class="ws-rail-heading">Results <span class="ws-rail-counter"><span data-rail-counter="results-total">' +
-        total +
-        "</span> entities in selection</span></h3>",
+    const emptyCounter =
+      '<span data-rail-counter="results-total">' + total + "</span> entities in selection";
+    return renderAccordionSection(
+      "results",
+      "Results",
+      emptyCounter,
       '<p class="ws-empty ws-rail-empty">No matching entities.</p>',
-      "</section>",
-    ].join("");
+    );
   }
 
   const groupHtml: string[] = [];
@@ -341,14 +431,14 @@ function renderResults(
     );
   }
 
-  return [
-    '<section class="ws-rail-section" data-rail-section="results">',
-    '<h3 class="ws-rail-heading">Results <span class="ws-rail-counter"><span data-rail-counter="results-total">' +
-      total +
-      "</span> entities in selection</span></h3>",
+  const counter =
+    '<span data-rail-counter="results-total">' + total + "</span> entities in selection";
+  return renderAccordionSection(
+    "results",
+    "Results",
+    counter,
     `<div class="ws-rail-result-list">${groupHtml.join("")}</div>`,
-    "</section>",
-  ].join("");
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -408,6 +498,8 @@ export function renderWorkspaceRail(opts: RenderRailOptions): string {
     renderSearch(opts.state),
     renderTypes(opts.state, records, filteredRecords),
     renderSelected(opts.state, opts.graph),
+    // G-studio-lot3 #6: Communities panel ABOVE Facets, collapsed by default.
+    renderCommunities(opts.graph),
     renderFacets(opts.state, records, opts.layout),
     renderResults(filteredRecords, groups),
     "</div>",
@@ -445,5 +537,16 @@ export function workspaceRailStyles(): string {
     ".ws-rail-result-entry button { background: transparent; border: 0; color: var(--ws-accent); cursor: pointer; padding: 0; text-align: left; font: inherit; }",
     ".ws-rail-result-hidden { color: var(--ws-text-muted); font-size: var(--ws-font-size-sm); font-style: italic; }",
     ".ws-rail-empty { margin: 0; }",
+    // G-studio-lot3 (#5, #6) — collapsible accordion sections.
+    ".ws-rail-accordion { border: 1px solid var(--ws-border); border-radius: var(--ws-radius-sm); background: var(--ws-surface); }",
+    ".ws-rail-accordion-summary { cursor: pointer; list-style: none; padding: var(--ws-space-2); display: flex; align-items: baseline; gap: var(--ws-space-2); justify-content: space-between; }",
+    ".ws-rail-accordion-summary::-webkit-details-marker { display: none; }",
+    ".ws-rail-accordion-summary::before { content: '\\25B8'; color: var(--ws-text-muted); margin-right: var(--ws-space-1); font-size: var(--ws-font-size-sm); }",
+    ".ws-rail-accordion[open] > .ws-rail-accordion-summary::before { content: '\\25BE'; }",
+    ".ws-rail-accordion-body { padding: 0 var(--ws-space-2) var(--ws-space-2); }",
+    ".ws-rail-community-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }",
+    ".ws-rail-community { display: flex; align-items: center; justify-content: space-between; gap: var(--ws-space-2); padding: 2px var(--ws-space-2); font-size: var(--ws-font-size-sm); }",
+    ".ws-rail-community-name { color: var(--ws-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }",
+    ".ws-rail-community-count { color: var(--ws-text-muted); font-variant-numeric: tabular-nums; }",
   ].join("\n");
 }
