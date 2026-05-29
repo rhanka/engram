@@ -8,6 +8,9 @@ import { URL } from "node:url";
 import { applyOntologyPatch, validateOntologyPatch } from "./ontology-patch.js";
 import { loadOntologyPatchContext } from "./ontology-patch-context.js";
 import { renderOntologyStudioWorkspace } from "./ontology-studio-workspace.js";
+import { buildGraphHtml } from "./export.js";
+import { loadGraphFromData } from "./graph.js";
+import { communitiesFromGraph, communityLabelsFromGraph } from "./graph-communities.js";
 import {
   getOntologyRebuildStatus,
   getOntologyReconciliationCandidate,
@@ -175,6 +178,27 @@ function graphHtmlArtifactResult(
   context: ReturnType<typeof loadOntologyPatchContext>,
   studioMode = false,
 ): OntologyStudioRouteResult {
+  // Track G D1/D2/D5/D8: render the graph as a generated sub-view of the studio
+  // model — built from graph.json with the project profile (ontology node-type
+  // shapes/colours) and the native studio variant — instead of serving a
+  // possibly-stale, profile-less on-disk graph.html. Falls back to the on-disk
+  // artifact when graph.json is unavailable or rendering fails (e.g. too large).
+  const graphJsonPath = join(context.stateDir, "graph.json");
+  if (existsSync(graphJsonPath)) {
+    try {
+      const graph = loadGraphFromData(JSON.parse(readFileSync(graphJsonPath, "utf-8")));
+      const communities = communitiesFromGraph(graph);
+      const communityLabels = communityLabelsFromGraph(graph, communities);
+      const html = buildGraphHtml(graph, communities, "graph.html", {
+        communityLabels,
+        ...(context.profile ? { profile: context.profile } : {}),
+        studioMode,
+      });
+      return { status: 200, contentType: "text/html; charset=utf-8", body: html };
+    } catch {
+      // Fall through to the pre-built artifact below.
+    }
+  }
   const graphHtmlPath = join(context.stateDir, "graph.html");
   if (!existsSync(graphHtmlPath)) {
     return jsonResult(404, { error: "graph.html not found" });
