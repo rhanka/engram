@@ -689,7 +689,7 @@ export function renderWorkspaceShell(opts: RenderWorkspaceShellOptions): string 
   const tokens = opts.tokens;
   const tokenSource = escapeHtml(opts.tokenSource ?? "fallback");
   const title = escapeHtml(opts.title);
-  const profileId = opts.profileId ? escapeHtml(opts.profileId) : "—";
+  const profileId = opts.profileId ? escapeHtml(opts.profileId) : "n/a";
   const lastRebuiltAt = opts.lastRebuiltAt ? escapeHtml(opts.lastRebuiltAt) : "";
   const writeFlag = opts.writeEnabled === true;
   const queueEmpty = opts.queueEmpty === true;
