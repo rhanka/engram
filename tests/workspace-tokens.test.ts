@@ -53,8 +53,9 @@ describe("Track G G1 — workspace token fallback", () => {
         expect(colour, `${theme}.colour.${role}`).toHaveProperty(role);
         const value = (colour as unknown as Record<string, unknown>)[role];
         expect(typeof value).toBe("string");
-        expect((value as string).startsWith("#")).toBe(true);
-        expect((value as string).length === 7 || (value as string).length === 9).toBe(true);
+        // D11: palette is tokenised as OKLCH (DS alignment), no bare hex.
+        expect((value as string).startsWith("oklch(")).toBe(true);
+        expect((value as string).endsWith(")")).toBe(true);
       }
     }
   });
