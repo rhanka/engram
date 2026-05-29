@@ -556,7 +556,7 @@ function shellStyles(): string {
     "*:focus-visible { outline: var(--ws-outline); outline-offset: var(--ws-outline-offset); outline-color: var(--ws-outline-color); }",
     ".ws-root { display: grid; grid-template-columns: 280px 1fr 320px; grid-template-rows: auto 1fr; min-height: 100vh; column-gap: 0; row-gap: 0; }",
     ".ws-header { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: var(--ws-space-3); padding: var(--ws-space-3) var(--ws-space-4); border-bottom: 1px solid var(--ws-border); background: var(--ws-surface-2); }",
-    ".ws-header h1 { font-size: var(--ws-font-size-lg); margin: 0; }",
+    ".ws-header h1 { font-family: var(--ws-font-family-display); font-size: var(--ws-font-size-lg); margin: 0; }",
     ".ws-header-meta { font-size: var(--ws-font-size-sm); color: var(--ws-text-muted); display: flex; gap: var(--ws-space-3); align-items: center; }",
     // Top tabs (G6-3 S2.1).
     ".ws-tabs { display: inline-flex; gap: var(--ws-space-1); margin: 0; padding: 0; list-style: none; }",

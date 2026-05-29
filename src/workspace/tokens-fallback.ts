@@ -19,6 +19,8 @@ import { DEFAULT_WORKSPACE_THEME } from "./tokens.js";
 import { tryGetDsTokens } from "./tokens-ds.js";
 
 const SHARED_TYPOGRAPHY = Object.freeze({
+  "font-family-display":
+    '"Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif',
   "font-family-sans":
     '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
   "font-family-mono":
