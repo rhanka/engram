@@ -67,8 +67,8 @@ describe("safeToHtml", () => {
     toHtml(G, communities, htmlPath, { communityLabels: new Map([[0, "Core"]]) });
 
     const html = readFileSync(htmlPath, "utf-8");
-    expect(html).toContain("--ws-surface: #ffffff;");
-    expect(html).toContain("--ws-surface-2: #f5f6f8;");
+    expect(html).toContain("--ws-surface: oklch(1 0 0);");
+    expect(html).toContain("--ws-surface-2: oklch(0.9729 0.0029 264.54);");
     expect(html).toContain("body { background: var(--ws-surface); color: var(--ws-text);");
     // G-studio-lot1 #1: the canvas keeps an explicit light background that
     // does NOT follow the (themeable) --ws-surface.
