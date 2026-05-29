@@ -99,7 +99,7 @@ function renderMetricsCard(subgraph: FocusSubgraph, state: WorkspaceViewerState)
   const m = subgraph.metrics;
   const hops = state.viewState.graph.focusHops;
   const weak = state.viewState.graph.showWeakLinks ? "yes" : "no";
-  const focus = state.focusEntityId ? escapeHtml(state.focusEntityId) : "—";
+  const focus = state.focusEntityId ? escapeHtml(state.focusEntityId) : "n/a";
   const fields = [
     `<span><b>Mode:</b> ${modeLabel(subgraph.appliedMode)}</span>`,
     `<span><b>Nodes:</b> ${m.nodes}</span>`,
