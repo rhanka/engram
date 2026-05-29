@@ -955,6 +955,11 @@ network.on('click', params => {
     showInfo(params.nodes[0]);
     const n = nodesDS.get(params.nodes[0]);
     if (n) announce(\`Selected \${n.label}, in community \${n._community_name}, \${n._degree} connection(s).\`);
+    // Track G D4: when embedded in the studio shell, tell the parent which
+    // node was selected so it can open the right-column entity panel.
+    if (window.parent && window.parent !== window) {
+      try { window.parent.postMessage({ type: 'graphify:selectNode', nodeId: params.nodes[0] }, '*'); } catch (err) {}
+    }
   } else if (hoveredNodeId === null) {
     document.getElementById('info-content').innerHTML = '<span class="empty">Click a node to inspect it</span>';
   }

@@ -305,6 +305,15 @@ describe("toHtml visual encoding (Track C3)", () => {
 
     rmSync(dir, { recursive: true, force: true });
   });
+
+  it("graph HTML posts node selection to the embedding studio shell (D4)", () => {
+    const G = new Graph();
+    G.addNode("a", { label: "A", source_file: "src/a.ts", file_type: "code" });
+    const communities = new Map([[0, ["a"]]]);
+    const html = buildGraphHtml(G, communities, "graph.html", {});
+    expect(html).toContain("graphify:selectNode");
+    expect(html).toContain("window.parent.postMessage");
+  });
 });
 
 describe("toHtml visual encoding (Track C-3.5: profile-aware)", () => {

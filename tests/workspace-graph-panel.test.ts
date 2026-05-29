@@ -119,6 +119,10 @@ describe("Track G G4 — graph panel", () => {
     expect(html).not.toContain('" onload="alert(1)');
     expect(html).toContain('sandbox="allow-scripts"');
     expect(html).not.toContain("allow-same-origin");
+    // D4: parent-side bridge opens the right-column entity panel when the
+    // embedded graph posts a node selection.
+    expect(html).toContain("graphify:selectNode");
+    expect(html).toContain('url.searchParams.set("node"');
   });
 
   it("blocks javascript graph URLs and keeps the placeholder bounded", () => {
