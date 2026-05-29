@@ -1115,12 +1115,18 @@ announce(\`Graph loaded: \${RAW_NODES.length} node(s), \${RAW_EDGES.length} edge
 </script>`;
 }
 
-export function toHtml(
+/**
+ * Build the full graph HTML document as a string. Extracted from `toHtml` so
+ * the ontology studio can render a profile-aware, studio-mode graph as a
+ * sub-view of the workspace model (Track G D1/D2/D5/D8) without serving a
+ * stale on-disk `graph.html`. `outputPath` is used only for the page title.
+ */
+export function buildGraphHtml(
   G: Graph,
   communities: NumericMapLike<string[]>,
   outputPath: string,
   communityLabelsOrOptions?: CommunityLabelsInput | HtmlOptions,
-): void {
+): string {
   const communityMap = toNumericMap(communities);
   const communityLabels = normalizeCommunityLabels(communityLabelsOrOptions);
   const memberCounts = normalizeMemberCounts(communityLabelsOrOptions);
@@ -1349,7 +1355,25 @@ ${hyperedgeScript(hyperedgesJson)}
 </body>
 </html>`;
 
-  writeFileSync(outputPath, html, "utf-8");
+  return html;
+}
+
+/**
+ * Write the graph HTML produced by {@link buildGraphHtml} to disk. File-writing
+ * entry point for `graphify export html`; byte-stable with the previous
+ * behaviour.
+ */
+export function toHtml(
+  G: Graph,
+  communities: NumericMapLike<string[]>,
+  outputPath: string,
+  communityLabelsOrOptions?: CommunityLabelsInput | HtmlOptions,
+): void {
+  writeFileSync(
+    outputPath,
+    buildGraphHtml(G, communities, outputPath, communityLabelsOrOptions),
+    "utf-8",
+  );
 }
 
 // ---------------------------------------------------------------------------

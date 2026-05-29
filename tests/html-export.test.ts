@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "no
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import Graph from "graphology";
-import { inferEdgeDashes, inferNodeShape, toHtml } from "../src/export.js";
+import { buildGraphHtml, inferEdgeDashes, inferNodeShape, toHtml } from "../src/export.js";
 import { safeToHtml } from "../src/html-export.js";
 
 describe("safeToHtml", () => {
@@ -285,6 +285,23 @@ describe("toHtml visual encoding (Track C3)", () => {
     expect(html).not.toContain('"background":"rgba(0,0,0,0)"');
     // Sanity: a code node keeps a coloured (non-transparent) background.
     expect(html).toMatch(/"id":"code_a"[^{]*\{[^}]*"background":"#[0-9A-Fa-f]{6}"/);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("buildGraphHtml returns exactly what toHtml writes (D1 refactor parity)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-html-parity-"));
+    const htmlPath = join(dir, "graph.html");
+    const G = new Graph();
+    G.addNode("a", { label: "A", source_file: "src/a.ts", file_type: "code" });
+    G.addNode("b", { label: "B", source_file: "src/b.test.ts", file_type: "code" });
+    G.addUndirectedEdge("a", "b", { relation: "tested_by", confidence: "EXTRACTED" });
+    const communities = new Map([[0, ["a", "b"]]]);
+    const opts = { communityLabels: new Map([[0, "Core"]]) };
+    toHtml(G, communities, htmlPath, opts);
+    const written = readFileSync(htmlPath, "utf-8");
+    // Same outputPath (title is derived from it) and same options -> identical doc.
+    expect(buildGraphHtml(G, communities, htmlPath, opts)).toBe(written);
 
     rmSync(dir, { recursive: true, force: true });
   });
