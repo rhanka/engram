@@ -49,15 +49,15 @@ const SHARED_RADIUS = Object.freeze({
 
 const DARK_TOKENS: WorkspaceTokens = Object.freeze({
   colour: Object.freeze({
-    surface: "#0f111a",
-    "surface-2": "#1a1d2a",
-    border: "#2a2e3e",
-    text: "#e6e8ec",
-    "text-muted": "#9fa6b2",
-    accent: "#4E79A7",
-    danger: "#E15759",
-    success: "#59A14F",
-    warning: "#F28E2B",
+    surface: "oklch(0.18 0.0188 274.65)",
+    "surface-2": "oklch(0.2339 0.0255 274.22)",
+    border: "oklch(0.3044 0.0295 273.63)",
+    text: "oklch(0.9306 0.0058 264.53)",
+    "text-muted": "oklch(0.7233 0.0191 261.33)",
+    accent: "oklch(0.5645 0.0863 251.12)",
+    danger: "oklch(0.6383 0.1726 22.53)",
+    success: "oklch(0.6422 0.1371 141.33)",
+    warning: "oklch(0.7384 0.1595 59.42)",
   }),
   typography: SHARED_TYPOGRAPHY,
   spacing: SHARED_SPACING,
@@ -69,21 +69,21 @@ const DARK_TOKENS: WorkspaceTokens = Object.freeze({
   focusRing: Object.freeze({
     outline: "3px solid",
     "outline-offset": "2px",
-    "outline-color": "#ffd54f",
+    "outline-color": "oklch(0.8859 0.1539 91.23)",
   }),
 }) as WorkspaceTokens;
 
 const LIGHT_TOKENS: WorkspaceTokens = Object.freeze({
   colour: Object.freeze({
-    surface: "#ffffff",
-    "surface-2": "#f5f6f8",
-    border: "#d6d8df",
-    text: "#1a1d2a",
-    "text-muted": "#5b6271",
-    accent: "#2F5A8A",
-    danger: "#B2432D",
-    success: "#3F7A39",
-    warning: "#B9601E",
+    surface: "oklch(1 0 0)",
+    "surface-2": "oklch(0.9729 0.0029 264.54)",
+    border: "oklch(0.8827 0.0098 273.34)",
+    text: "oklch(0.2339 0.0255 274.22)",
+    "text-muted": "oklch(0.4955 0.0255 265.57)",
+    accent: "oklch(0.4601 0.0923 252.7)",
+    danger: "oklch(0.5319 0.1493 33.1)",
+    success: "oklch(0.5232 0.1151 141.93)",
+    warning: "oklch(0.5844 0.1367 51.89)",
   }),
   typography: SHARED_TYPOGRAPHY,
   spacing: SHARED_SPACING,
@@ -96,7 +96,7 @@ const LIGHT_TOKENS: WorkspaceTokens = Object.freeze({
   focusRing: Object.freeze({
     outline: "3px solid",
     "outline-offset": "2px",
-    "outline-color": "#A05E00",
+    "outline-color": "oklch(0.5448 0.1227 64.54)",
   }),
 }) as WorkspaceTokens;
 

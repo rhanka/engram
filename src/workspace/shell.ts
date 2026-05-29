@@ -551,7 +551,7 @@ function shellStyles(): string {
     "*, *::before, *::after { box-sizing: border-box; }",
     "html, body { margin: 0; padding: 0; height: 100%; }",
     "body { background: var(--ws-surface); color: var(--ws-text); font-family: var(--ws-font-family-sans); font-size: var(--ws-font-size-md); line-height: var(--ws-line-height-normal); }",
-    ".ws-skip-link { position: absolute; top: -40px; left: var(--ws-space-2); background: var(--ws-accent); color: #fff; padding: var(--ws-space-1) var(--ws-space-3); border-radius: 0 0 var(--ws-radius-sm) var(--ws-radius-sm); z-index: 1000; text-decoration: none; }",
+    ".ws-skip-link { position: absolute; top: -40px; left: var(--ws-space-2); background: var(--ws-accent); color: oklch(1 0 0); padding: var(--ws-space-1) var(--ws-space-3); border-radius: 0 0 var(--ws-radius-sm) var(--ws-radius-sm); z-index: 1000; text-decoration: none; }",
     ".ws-skip-link:focus-visible { top: var(--ws-space-1); outline: var(--ws-outline); outline-offset: var(--ws-outline-offset); outline-color: var(--ws-outline-color); }",
     "*:focus-visible { outline: var(--ws-outline); outline-offset: var(--ws-outline-offset); outline-color: var(--ws-outline-color); }",
     ".ws-root { display: grid; grid-template-columns: 280px 1fr 320px; grid-template-rows: auto 1fr; min-height: 100vh; column-gap: 0; row-gap: 0; }",
