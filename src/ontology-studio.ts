@@ -8,6 +8,15 @@ import { URL } from "node:url";
 import { applyOntologyPatch, validateOntologyPatch } from "./ontology-patch.js";
 import { loadOntologyPatchContext } from "./ontology-patch-context.js";
 import { renderOntologyStudioWorkspace } from "./ontology-studio-workspace.js";
+import { buildGraphHtml } from "./export.js";
+import { loadGraphFromData } from "./graph.js";
+import { communitiesFromGraph, communityLabelsFromGraph } from "./graph-communities.js";
+import { ST_TOKENS_ROUTE, buildStTokensCss } from "./workspace/tokens-st.js";
+import {
+  buildEntitySidecar,
+  serveStudioAsset,
+  type StudioAssetResult,
+} from "./studio-assets.js";
 import {
   getOntologyRebuildStatus,
   getOntologyReconciliationCandidate,
@@ -46,7 +55,10 @@ export interface StartedOntologyStudioServer {
 
 export interface OntologyStudioRouteResult {
   status: number;
-  contentType: "application/json; charset=utf-8" | "text/html; charset=utf-8";
+  contentType:
+    | "application/json; charset=utf-8"
+    | "text/html; charset=utf-8"
+    | "text/css; charset=utf-8";
   body: string;
 }
 
@@ -171,10 +183,49 @@ export function injectStudioMode(html: string): string {
   return html.replace(/<body\b([^>]*)>/i, '<body$1 class="studio-mode">');
 }
 
+/**
+ * Compiled design-system `--st-*` tokens (light + dark). Static for the
+ * process lifetime, so compile once and reuse. Served from
+ * `ST_TOKENS_ROUTE` and referenced by the workspace shell via <link>.
+ */
+let stTokensCssCache: string | undefined;
+
+function stTokensCssResult(): OntologyStudioRouteResult {
+  if (stTokensCssCache === undefined) {
+    stTokensCssCache = buildStTokensCss();
+  }
+  return {
+    status: 200,
+    contentType: "text/css; charset=utf-8",
+    body: stTokensCssCache,
+  };
+}
+
 function graphHtmlArtifactResult(
   context: ReturnType<typeof loadOntologyPatchContext>,
   studioMode = false,
 ): OntologyStudioRouteResult {
+  // Track G D1/D2/D5/D8: render the graph as a generated sub-view of the studio
+  // model — built from graph.json with the project profile (ontology node-type
+  // shapes/colours) and the native studio variant — instead of serving a
+  // possibly-stale, profile-less on-disk graph.html. Falls back to the on-disk
+  // artifact when graph.json is unavailable or rendering fails (e.g. too large).
+  const graphJsonPath = join(context.stateDir, "graph.json");
+  if (existsSync(graphJsonPath)) {
+    try {
+      const graph = loadGraphFromData(JSON.parse(readFileSync(graphJsonPath, "utf-8")));
+      const communities = communitiesFromGraph(graph);
+      const communityLabels = communityLabelsFromGraph(graph, communities);
+      const html = buildGraphHtml(graph, communities, "graph.html", {
+        communityLabels,
+        ...(context.profile ? { profile: context.profile } : {}),
+        studioMode,
+      });
+      return { status: 200, contentType: "text/html; charset=utf-8", body: html };
+    } catch {
+      // Fall through to the pre-built artifact below.
+    }
+  }
   const graphHtmlPath = join(context.stateDir, "graph.html");
   if (!existsSync(graphHtmlPath)) {
     return jsonResult(404, { error: "graph.html not found" });
@@ -187,12 +238,50 @@ function graphHtmlArtifactResult(
   };
 }
 
+/**
+ * Serve the raw graph.json the SPA renders. Returned verbatim (no re-parse) so
+ * the payload stays byte-identical to the artifact on disk.
+ */
+function graphJsonResult(stateDir: string): OntologyStudioRouteResult {
+  const graphPath = join(stateDir, "graph.json");
+  if (!existsSync(graphPath)) {
+    return jsonResult(404, { error: "graph.json not found" });
+  }
+  return {
+    status: 200,
+    contentType: "application/json; charset=utf-8",
+    body: readFileSync(graphPath, "utf-8"),
+  };
+}
+
 function sendResult(response: ServerResponse, result: OntologyStudioRouteResult): void {
   response.writeHead(result.status, {
     "content-type": result.contentType,
     "cache-control": "no-store",
   });
   response.end(result.body);
+}
+
+function sendAsset(response: ServerResponse, result: StudioAssetResult): void {
+  response.writeHead(result.status, {
+    "content-type": result.contentType,
+    "cache-control": "no-store",
+  });
+  response.end(result.body);
+}
+
+/**
+ * The SPA is mounted under `/studio`. Strip that prefix to get the asset path
+ * relative to the built app (so `/studio/assets/x.js` -> `/assets/x.js`).
+ */
+const STUDIO_SPA_PREFIX = "/studio";
+
+function studioSpaPathname(pathname: string): string | null {
+  if (pathname === STUDIO_SPA_PREFIX) return "/";
+  if (pathname.startsWith(STUDIO_SPA_PREFIX + "/")) {
+    return pathname.slice(STUDIO_SPA_PREFIX.length) || "/";
+  }
+  return null;
 }
 
 function statusForError(error: Error): number {
@@ -294,6 +383,29 @@ export function createOntologyStudioRequestHandler(options: OntologyStudioHandle
       return;
     }
 
+    // The client Svelte SPA + its data routes are served before the legacy
+    // server-rendered HTML so the two studios coexist. SPA assets can be
+    // binary, hence the dedicated `sendAsset` path.
+    if (method === "GET") {
+      const url = new URL(requestUrl, "http://127.0.0.1");
+      // The SPA's asset URLs are relative ("./assets/x.js"); they only resolve
+      // when the document path ends in a slash. Redirect /studio -> /studio/ so
+      // the browser anchors relative requests under the mount.
+      if (url.pathname === STUDIO_SPA_PREFIX) {
+        response.writeHead(308, { location: `${STUDIO_SPA_PREFIX}/${url.search}` });
+        response.end();
+        return;
+      }
+      const spaPath = studioSpaPathname(url.pathname);
+      if (spaPath !== null) {
+        const asset = serveStudioAsset(spaPath);
+        if (asset) {
+          sendAsset(response, asset);
+          return;
+        }
+      }
+    }
+
     sendResult(response, handleOntologyStudioRequest(options, method, requestUrl));
   };
 }
@@ -308,6 +420,11 @@ export function handleOntologyStudioRequest(
       return jsonResult(405, { error: "method not allowed" });
     }
     const url = new URL(requestUrl, "http://127.0.0.1");
+    // Static design-system token stylesheet. Served before the (heavier)
+    // patch-context load since it needs no profile state.
+    if (url.pathname === ST_TOKENS_ROUTE) {
+      return stTokensCssResult();
+    }
     const context = loadOntologyPatchContext(options.profileStatePath);
     if (url.pathname === "/" || url.pathname === "/index.html") {
       const activeView = activeViewFromQuery(url.searchParams);
@@ -323,6 +440,15 @@ export function handleOntologyStudioRequest(
     }
     if (url.pathname === "/api/ontology/artifacts/graph.html") {
       return graphHtmlArtifactResult(context, url.searchParams.get("studio") === "1");
+    }
+    if (url.pathname === "/api/ontology/graph.json") {
+      return graphJsonResult(context.stateDir);
+    }
+    const entityPrefix = "/api/ontology/entity/";
+    if (url.pathname.startsWith(entityPrefix)) {
+      const id = decodeURIComponent(url.pathname.slice(entityPrefix.length));
+      if (!id) return jsonResult(400, { error: "missing entity id" });
+      return jsonResult(200, buildEntitySidecar(context.stateDir, id));
     }
     if (url.pathname === "/api/ontology/reconciliation/candidates") {
       return jsonResult(200, listOntologyReconciliationCandidates(context, candidateFilters(url.searchParams)));

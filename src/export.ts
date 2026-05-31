@@ -18,6 +18,7 @@ import {
   toStringMap,
 } from "./collections.js";
 import { getWorkspaceTokens, serialiseTokensToCss } from "./workspace/tokens-fallback.js";
+import { compileStLightTokensCss } from "./workspace/tokens-st.js";
 
 // ---------------------------------------------------------------------------
 // backupIfProtected — upstream 6939494 (#834)
@@ -684,7 +685,13 @@ export async function pushToNeo4j(
 
 function htmlStyles(): string {
   const workspaceCss = serialiseTokensToCss(getWorkspaceTokens());
+  // The standalone export is self-contained (no server / no <link>), so the
+  // design-system --st-* token definitions are inlined here for the
+  // --ws-* -> var(--st-*) aliases below to resolve. Light theme only: the
+  // graph canvas is intentionally light regardless of host theme.
+  const stTokensCss = compileStLightTokensCss(":root");
   return `<style>
+  ${stTokensCss}
   :root {
 ${workspaceCss
     .split("\n")
@@ -706,7 +713,7 @@ ${workspaceCss
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--ws-surface); color: var(--ws-text); font-family: var(--ws-font-family-sans); display: flex; height: 100vh; overflow: hidden; }
   /* Skip link visible only on focus, lets keyboard users jump past the canvas. */
-  .skip-link { position: absolute; top: -40px; left: var(--ws-space-2); background: var(--ws-accent); color: #fff; padding: var(--ws-space-1) var(--ws-space-3); border-radius: 0 0 var(--ws-radius-sm) var(--ws-radius-sm); z-index: 1000; text-decoration: none; }
+  .skip-link { position: absolute; top: -40px; left: var(--ws-space-2); background: var(--ws-accent); color: var(--ws-accent-text); padding: var(--ws-space-1) var(--ws-space-3); border-radius: 0 0 var(--ws-radius-sm) var(--ws-radius-sm); z-index: 1000; text-decoration: none; }
   .skip-link:focus { top: 0; }
   /* Visually hidden but exposed to screen readers. */
   .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
@@ -955,6 +962,11 @@ network.on('click', params => {
     showInfo(params.nodes[0]);
     const n = nodesDS.get(params.nodes[0]);
     if (n) announce(\`Selected \${n.label}, in community \${n._community_name}, \${n._degree} connection(s).\`);
+    // Track G D4: when embedded in the studio shell, tell the parent which
+    // node was selected so it can open the right-column entity panel.
+    if (window.parent && window.parent !== window) {
+      try { window.parent.postMessage({ type: 'graphify:selectNode', nodeId: params.nodes[0] }, '*'); } catch (err) {}
+    }
   } else if (hoveredNodeId === null) {
     document.getElementById('info-content').innerHTML = '<span class="empty">Click a node to inspect it</span>';
   }
@@ -1115,12 +1127,18 @@ announce(\`Graph loaded: \${RAW_NODES.length} node(s), \${RAW_EDGES.length} edge
 </script>`;
 }
 
-export function toHtml(
+/**
+ * Build the full graph HTML document as a string. Extracted from `toHtml` so
+ * the ontology studio can render a profile-aware, studio-mode graph as a
+ * sub-view of the workspace model (Track G D1/D2/D5/D8) without serving a
+ * stale on-disk `graph.html`. `outputPath` is used only for the page title.
+ */
+export function buildGraphHtml(
   G: Graph,
   communities: NumericMapLike<string[]>,
   outputPath: string,
   communityLabelsOrOptions?: CommunityLabelsInput | HtmlOptions,
-): void {
+): string {
   const communityMap = toNumericMap(communities);
   const communityLabels = normalizeCommunityLabels(communityLabelsOrOptions);
   const memberCounts = normalizeMemberCounts(communityLabelsOrOptions);
@@ -1349,7 +1367,25 @@ ${hyperedgeScript(hyperedgesJson)}
 </body>
 </html>`;
 
-  writeFileSync(outputPath, html, "utf-8");
+  return html;
+}
+
+/**
+ * Write the graph HTML produced by {@link buildGraphHtml} to disk. File-writing
+ * entry point for `graphify export html`; byte-stable with the previous
+ * behaviour.
+ */
+export function toHtml(
+  G: Graph,
+  communities: NumericMapLike<string[]>,
+  outputPath: string,
+  communityLabelsOrOptions?: CommunityLabelsInput | HtmlOptions,
+): void {
+  writeFileSync(
+    outputPath,
+    buildGraphHtml(G, communities, outputPath, communityLabelsOrOptions),
+    "utf-8",
+  );
 }
 
 // ---------------------------------------------------------------------------
