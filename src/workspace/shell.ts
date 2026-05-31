@@ -37,6 +37,7 @@ import { computeFocusSubgraph } from "./graph-selection.js";
 import type { WorkspaceViewerState } from "./viewer-state.js";
 import { createDefaultViewerState } from "./viewer-state.js";
 import { serialiseTokensToCss } from "./tokens-fallback.js";
+import { ST_TOKENS_ROUTE } from "./tokens-st.js";
 import { renderWorkspaceRail, workspaceRailStyles, type WorkspaceRailLayout } from "./rail.js";
 import { entityPanelStyles } from "./entity-panel.js";
 
@@ -551,11 +552,14 @@ function shellStyles(): string {
     "*, *::before, *::after { box-sizing: border-box; }",
     "html, body { margin: 0; padding: 0; height: 100%; }",
     "body { background: var(--ws-surface); color: var(--ws-text); font-family: var(--ws-font-family-sans); font-size: var(--ws-font-size-md); line-height: var(--ws-line-height-normal); }",
-    ".ws-skip-link { position: absolute; top: -40px; left: var(--ws-space-2); background: var(--ws-accent); color: #fff; padding: var(--ws-space-1) var(--ws-space-3); border-radius: 0 0 var(--ws-radius-sm) var(--ws-radius-sm); z-index: 1000; text-decoration: none; }",
+    ".ws-skip-link { position: absolute; top: -40px; left: var(--ws-space-2); background: var(--ws-accent); color: var(--ws-accent-text); padding: var(--ws-space-1) var(--ws-space-3); border-radius: 0 0 var(--ws-radius-sm) var(--ws-radius-sm); z-index: 1000; text-decoration: none; }",
     ".ws-skip-link:focus-visible { top: var(--ws-space-1); outline: var(--ws-outline); outline-offset: var(--ws-outline-offset); outline-color: var(--ws-outline-color); }",
     "*:focus-visible { outline: var(--ws-outline); outline-offset: var(--ws-outline-offset); outline-color: var(--ws-outline-color); }",
     ".ws-root { display: grid; grid-template-columns: 280px 1fr 320px; grid-template-rows: auto 1fr; min-height: 100vh; column-gap: 0; row-gap: 0; }",
     ".ws-header { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: var(--ws-space-3); padding: var(--ws-space-3) var(--ws-space-4); border-bottom: 1px solid var(--ws-border); background: var(--ws-surface-2); }",
+    // Headings use the DS display family (distinct from the body sans family)
+    // so the studio exposes a real type hierarchy.
+    ".ws-header h1, .ws-region-heading, .ws-compact-title, .ws-evidence-placeholder h2 { font-family: var(--ws-font-family-display); }",
     ".ws-header h1 { font-size: var(--ws-font-size-lg); margin: 0; }",
     ".ws-header-meta { font-size: var(--ws-font-size-sm); color: var(--ws-text-muted); display: flex; gap: var(--ws-space-3); align-items: center; }",
     // Top tabs (G6-3 S2.1).
@@ -774,6 +778,11 @@ export function renderWorkspaceShell(opts: RenderWorkspaceShellOptions): string 
     '<meta charset="utf-8" />',
     '<meta name="viewport" content="width=device-width, initial-scale=1" />',
     `<title>${title}</title>`,
+    // Design-system --st-* tokens (foundation -> semantic -> component) are
+    // served from a linked stylesheet so their OKLCH/hex source values stay
+    // out of the inline <style>; the inline block below only references them
+    // through the --ws-* alias layer.
+    `<link rel="stylesheet" href="${ST_TOKENS_ROUTE}" />`,
     "<style>",
     `:root {\n${tokensCss}\n}`,
     shellStyles(),
