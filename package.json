@@ -24,7 +24,9 @@
     "src/skills"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && npm run build:studio",
+    "build:server": "tsup",
+    "build:studio": "npm --prefix studio run build && node scripts/copy-studio-app.mjs",
     "dev": "tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest",
