@@ -80,6 +80,8 @@
     "@ai-sdk/google": "^3.0.67",
     "@ai-sdk/mistral": "^3.0.35",
     "@ai-sdk/openai": "^3.0.61",
+    "@sentropic/design-system-themes": "^0.10.3",
+    "@sentropic/design-system-tokens": "^0.10.3",
     "@sentropic/llm-mesh": "^0.1.0",
     "ai": "^6.0.175",
     "commander": "^14.0.3",
