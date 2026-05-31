@@ -18,6 +18,7 @@ import {
   toStringMap,
 } from "./collections.js";
 import { getWorkspaceTokens, serialiseTokensToCss } from "./workspace/tokens-fallback.js";
+import { compileStLightTokensCss } from "./workspace/tokens-st.js";
 
 // ---------------------------------------------------------------------------
 // backupIfProtected — upstream 6939494 (#834)
@@ -684,7 +685,13 @@ export async function pushToNeo4j(
 
 function htmlStyles(): string {
   const workspaceCss = serialiseTokensToCss(getWorkspaceTokens());
+  // The standalone export is self-contained (no server / no <link>), so the
+  // design-system --st-* token definitions are inlined here for the
+  // --ws-* -> var(--st-*) aliases below to resolve. Light theme only: the
+  // graph canvas is intentionally light regardless of host theme.
+  const stTokensCss = compileStLightTokensCss(":root");
   return `<style>
+  ${stTokensCss}
   :root {
 ${workspaceCss
     .split("\n")
@@ -706,7 +713,7 @@ ${workspaceCss
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--ws-surface); color: var(--ws-text); font-family: var(--ws-font-family-sans); display: flex; height: 100vh; overflow: hidden; }
   /* Skip link visible only on focus, lets keyboard users jump past the canvas. */
-  .skip-link { position: absolute; top: -40px; left: var(--ws-space-2); background: var(--ws-accent); color: #fff; padding: var(--ws-space-1) var(--ws-space-3); border-radius: 0 0 var(--ws-radius-sm) var(--ws-radius-sm); z-index: 1000; text-decoration: none; }
+  .skip-link { position: absolute; top: -40px; left: var(--ws-space-2); background: var(--ws-accent); color: var(--ws-accent-text); padding: var(--ws-space-1) var(--ws-space-3); border-radius: 0 0 var(--ws-radius-sm) var(--ws-radius-sm); z-index: 1000; text-decoration: none; }
   .skip-link:focus { top: 0; }
   /* Visually hidden but exposed to screen readers. */
   .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }

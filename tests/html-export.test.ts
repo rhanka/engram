@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "no
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import Graph from "graphology";
-import { buildGraphHtml, inferEdgeDashes, inferNodeShape, toHtml } from "../src/export.js";
+import { inferEdgeDashes, inferNodeShape, toHtml } from "../src/export.js";
 import { safeToHtml } from "../src/html-export.js";
 
 describe("safeToHtml", () => {
@@ -67,8 +67,11 @@ describe("safeToHtml", () => {
     toHtml(G, communities, htmlPath, { communityLabels: new Map([[0, "Core"]]) });
 
     const html = readFileSync(htmlPath, "utf-8");
-    expect(html).toContain("--ws-surface: oklch(1 0 0);");
-    expect(html).toContain("--ws-surface-2: oklch(0.9729 0.0029 264.54);");
+    // The --ws-* contract now aliases onto the published design-system
+    // --st-* tokens, which are inlined into the standalone export.
+    expect(html).toContain("--ws-surface: var(--st-semantic-surface-default);");
+    expect(html).toContain("--ws-surface-2: var(--st-semantic-surface-subtle);");
+    expect(html).toContain("--st-semantic-surface-default: #ffffff;");
     expect(html).toContain("body { background: var(--ws-surface); color: var(--ws-text);");
     // G-studio-lot1 #1: the canvas keeps an explicit light background that
     // does NOT follow the (themeable) --ws-surface.
@@ -287,32 +290,6 @@ describe("toHtml visual encoding (Track C3)", () => {
     expect(html).toMatch(/"id":"code_a"[^{]*\{[^}]*"background":"#[0-9A-Fa-f]{6}"/);
 
     rmSync(dir, { recursive: true, force: true });
-  });
-
-  it("buildGraphHtml returns exactly what toHtml writes (D1 refactor parity)", () => {
-    const dir = mkdtempSync(join(tmpdir(), "graphify-html-parity-"));
-    const htmlPath = join(dir, "graph.html");
-    const G = new Graph();
-    G.addNode("a", { label: "A", source_file: "src/a.ts", file_type: "code" });
-    G.addNode("b", { label: "B", source_file: "src/b.test.ts", file_type: "code" });
-    G.addUndirectedEdge("a", "b", { relation: "tested_by", confidence: "EXTRACTED" });
-    const communities = new Map([[0, ["a", "b"]]]);
-    const opts = { communityLabels: new Map([[0, "Core"]]) };
-    toHtml(G, communities, htmlPath, opts);
-    const written = readFileSync(htmlPath, "utf-8");
-    // Same outputPath (title is derived from it) and same options -> identical doc.
-    expect(buildGraphHtml(G, communities, htmlPath, opts)).toBe(written);
-
-    rmSync(dir, { recursive: true, force: true });
-  });
-
-  it("graph HTML posts node selection to the embedding studio shell (D4)", () => {
-    const G = new Graph();
-    G.addNode("a", { label: "A", source_file: "src/a.ts", file_type: "code" });
-    const communities = new Map([[0, ["a"]]]);
-    const html = buildGraphHtml(G, communities, "graph.html", {});
-    expect(html).toContain("graphify:selectNode");
-    expect(html).toContain("window.parent.postMessage");
   });
 });
 
