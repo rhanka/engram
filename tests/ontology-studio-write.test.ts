@@ -166,7 +166,11 @@ describe("graphify ontology studio --write", () => {
       "/api/ontology/artifacts/graph.html",
     );
     expect(graphArtifact.status).toBe(200);
-    expect(graphArtifact.body).toContain("<title>graph</title>");
+    // D1/D8: the artifact is now generated from graph.json with the project
+    // profile (a sub-view of the studio model), not the stale on-disk stub.
+    expect(graphArtifact.body).toContain("graphify -");
+    expect(graphArtifact.body).toContain("Component A");
+    expect(graphArtifact.body).not.toBe("<!doctype html><title>graph</title>");
   });
 
   it("refuses --write when host is not loopback", async () => {

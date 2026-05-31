@@ -24,7 +24,9 @@
     "src/skills"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "node scripts/gen-st-tokens.mjs && tsup && npm run build:studio",
+    "build:server": "node scripts/gen-st-tokens.mjs && tsup",
+    "build:studio": "node scripts/build-studio-app.mjs",
     "dev": "tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -168,6 +170,8 @@
     "@types/node": "^25.8.0",
     "tsup": "^8.3.0",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.6"
+    "vitest": "^4.1.6",
+    "@sentropic/design-system-themes": "^0.10.3",
+    "@sentropic/design-system-tokens": "^0.10.3"
   }
 }

@@ -99,7 +99,8 @@ function renderMetricsCard(subgraph: FocusSubgraph, state: WorkspaceViewerState)
   const m = subgraph.metrics;
   const hops = state.viewState.graph.focusHops;
   const weak = state.viewState.graph.showWeakLinks ? "yes" : "no";
-  const focus = state.focusEntityId ? escapeHtml(state.focusEntityId) : "—";
+  // DS UX-writing (no-em-dash): use a word, not an em dash, for the empty state.
+  const focus = state.focusEntityId ? escapeHtml(state.focusEntityId) : "none";
   const fields = [
     `<span><b>Mode:</b> ${modeLabel(subgraph.appliedMode)}</span>`,
     `<span><b>Nodes:</b> ${m.nodes}</span>`,
@@ -174,6 +175,29 @@ function renderLiveGraphScript(enabled: boolean): string {
   ].join("\n");
 }
 
+/**
+ * Track G D4: parent-side bridge. The embedded graph posts
+ * `{ type: "graphify:selectNode", nodeId }` when a node is clicked; navigating
+ * to `?node=<id>` makes the server render the right-column entity panel (wiki
+ * description + relations). Only emitted when a graph surface is present.
+ */
+function renderSelectionBridgeScript(enabled: boolean): string {
+  if (!enabled) return "";
+  return [
+    "<script>",
+    "(() => {",
+    '  window.addEventListener("message", (event) => {',
+    "    const data = event.data;",
+    '    if (!data || data.type !== "graphify:selectNode" || !data.nodeId) return;',
+    "    const url = new URL(window.location.href);",
+    '    url.searchParams.set("node", String(data.nodeId));',
+    "    window.location.assign(url.toString());",
+    "  });",
+    "})();",
+    "</script>",
+  ].join("\n");
+}
+
 export function renderGraphPanel(opts: RenderGraphPanelOptions): string {
   const subgraph = computeFocusSubgraph(opts.graph, opts.state);
   const styles = [
@@ -189,5 +213,6 @@ export function renderGraphPanel(opts: RenderGraphPanelOptions): string {
     renderMetricsCard(subgraph, opts.state),
     renderViewerSurface(opts),
     renderLiveGraphScript(Boolean(opts.liveGraphHtmlUrl)),
+    renderSelectionBridgeScript(Boolean(opts.graphHtmlUrl)),
   ].filter(Boolean).join("\n");
 }

@@ -34,6 +34,7 @@ import {
   resolveConfiguredInputScopeSelection,
 } from "./input-scope.js";
 import { forEachTraversalNeighbor, loadGraphFromData } from "./graph.js";
+import { communitiesFromGraph, communityLabelsFromGraph } from "./graph-communities.js";
 import { safeExecGit } from "./git.js";
 import { safeGitRevParse } from "./git.js";
 import { discoverProjectConfig, loadProjectConfig } from "./project-config.js";
@@ -98,53 +99,14 @@ function loadCliGraph(graphPath: string): Graph {
 }
 
 function communitiesFromCliGraph(G: Graph): Map<number, string[]> {
-  const communities = new Map<number, string[]>();
-  G.forEachNode((nodeId, data) => {
-    const rawCommunity = data.community;
-    const community = typeof rawCommunity === "number"
-      ? rawCommunity
-      : typeof rawCommunity === "string" && rawCommunity.trim().length > 0
-        ? Number.parseInt(rawCommunity, 10)
-        : null;
-    if (community === null || Number.isNaN(community)) return;
-    const members = communities.get(community) ?? [];
-    members.push(nodeId);
-    communities.set(community, members);
-  });
-  return communities;
+  return communitiesFromGraph(G);
 }
 
 function communityLabelsFromCliGraph(
   G: Graph,
   communities: Map<number, string[]>,
 ): Map<number, string> {
-  const labels = new Map<number, string>();
-  const graphLabels = G.getAttribute("community_labels") as Record<string, unknown> | undefined;
-  if (graphLabels && typeof graphLabels === "object") {
-    for (const [key, value] of Object.entries(graphLabels)) {
-      const community = Number.parseInt(key, 10);
-      if (Number.isNaN(community)) continue;
-      if (typeof value === "string" && value.trim().length > 0) {
-        labels.set(community, value.trim());
-      }
-    }
-  }
-  G.forEachNode((_nodeId, data) => {
-    const rawCommunity = data.community;
-    const community = typeof rawCommunity === "number"
-      ? rawCommunity
-      : typeof rawCommunity === "string" && rawCommunity.trim().length > 0
-        ? Number.parseInt(rawCommunity, 10)
-        : null;
-    if (community === null || Number.isNaN(community) || labels.has(community)) return;
-    if (typeof data.community_name === "string" && data.community_name.trim().length > 0) {
-      labels.set(community, data.community_name.trim());
-    }
-  });
-  for (const community of communities.keys()) {
-    if (!labels.has(community)) labels.set(community, `Community ${community}`);
-  }
-  return labels;
+  return communityLabelsFromGraph(G, communities);
 }
 
 function resolvePortableCheckDir(inputPath: string = ".graphify"): string {
@@ -2801,6 +2763,12 @@ export async function main(): Promise<void> {
           console.log(`  Send: Authorization: Bearer ${started.token}`);
         } else {
           console.log(`Ontology studio read-only API listening at ${started.url}`);
+        }
+        const { resolveStudioAppDir } = await import("./studio-assets.js");
+        if (resolveStudioAppDir()) {
+          console.log(`  Svelte studio SPA: ${started.url}/studio/`);
+        } else {
+          console.log(`  Svelte studio SPA: not built (run \`npm --prefix studio run build\`)`);
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

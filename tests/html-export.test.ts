@@ -67,8 +67,11 @@ describe("safeToHtml", () => {
     toHtml(G, communities, htmlPath, { communityLabels: new Map([[0, "Core"]]) });
 
     const html = readFileSync(htmlPath, "utf-8");
-    expect(html).toContain("--ws-surface: #ffffff;");
-    expect(html).toContain("--ws-surface-2: #f5f6f8;");
+    // The --ws-* contract now aliases onto the published design-system
+    // --st-* tokens, which are inlined into the standalone export.
+    expect(html).toContain("--ws-surface: var(--st-semantic-surface-default);");
+    expect(html).toContain("--ws-surface-2: var(--st-semantic-surface-subtle);");
+    expect(html).toContain("--st-semantic-surface-default: #ffffff;");
     expect(html).toContain("body { background: var(--ws-surface); color: var(--ws-text);");
     // G-studio-lot1 #1: the canvas keeps an explicit light background that
     // does NOT follow the (themeable) --ws-surface.
