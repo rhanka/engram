@@ -138,9 +138,74 @@ export async function resolveWorkspaceTokens(
 }
 
 /**
+ * Map of every `--ws-*` custom property onto the design-system `--st-*`
+ * token that backs it (per the DS-team mapping). Colour, spacing, radius,
+ * elevation, focus-ring and font-family roles resolve through real DS
+ * tokens; font-size / line-height keep literal values (the DS does not yet
+ * publish a type-scale token) but those are never colours, so they never
+ * trip the `no-bare-hex` audit. The `--st-*` definitions themselves live in
+ * the linked tokens stylesheet (see tokens-st.ts), keeping the inline
+ * workspace `<style>` free of hex.
+ */
+const WS_TO_ST_ALIAS: Record<string, string> = {
+  // Colour roles.
+  "surface": "var(--st-semantic-surface-default)",
+  "surface-2": "var(--st-semantic-surface-subtle)",
+  "border": "var(--st-semantic-border-subtle)",
+  "border-strong": "var(--st-semantic-border-strong)",
+  "text": "var(--st-semantic-text-primary)",
+  "text-muted": "var(--st-semantic-text-secondary)",
+  "accent": "var(--st-semantic-action-primary)",
+  "accent-text": "var(--st-semantic-action-primaryText)",
+  "danger": "var(--st-semantic-feedback-error)",
+  "success": "var(--st-semantic-feedback-success)",
+  "warning": "var(--st-semantic-feedback-warning)",
+  // Tooltip / inverse surface.
+  "surface-inverse": "var(--st-semantic-surface-inverse)",
+  "text-inverse": "var(--st-semantic-text-inverse)",
+  // Typography (font families -> DS aliases; sizes/leading stay literal).
+  "font-family-sans": "var(--st-font-sans)",
+  "font-family-display": "var(--st-font-display)",
+  "font-family-mono": "var(--st-font-mono)",
+  // Spacing scale (ws-space-0..7 -> nearest DS spacing step by value).
+  "space-0": "var(--st-spacing-0)",
+  "space-1": "var(--st-spacing-1)",
+  "space-2": "var(--st-spacing-2)",
+  "space-3": "var(--st-spacing-3)",
+  "space-4": "var(--st-spacing-4)",
+  "space-5": "var(--st-spacing-6)",
+  "space-6": "var(--st-spacing-8)",
+  "space-7": "var(--st-spacing-12)",
+  // Radius.
+  "radius-sm": "var(--st-radius-sm)",
+  "radius-md": "var(--st-radius-md)",
+  "radius-lg": "var(--st-radius-lg)",
+  // Elevation.
+  "shadow-card": "var(--st-shadow-subtle)",
+  "shadow-popover": "var(--st-shadow-medium)",
+  // Focus ring (colour role -> interactive border per DS mapping).
+  "outline-color": "var(--st-semantic-border-interactive)",
+};
+
+/**
+ * The community / category palette `--ws-community-1..8` aliased onto the DS
+ * `--st-semantic-data-category1..8` tokens. Emitted alongside the contract
+ * roles so any community-coloured swatch resolves through a DS token.
+ */
+const WS_COMMUNITY_ALIASES: string[] = Array.from({ length: 8 }, (_, i) =>
+  `--ws-community-${i + 1}: var(--st-semantic-data-category${i + 1});`,
+);
+
+/**
  * Serialise a WorkspaceTokens block to CSS custom properties. Used by
  * shell.ts to inject the resolved palette into the workspace HTML
  * scaffold.
+ *
+ * Every emitted `--ws-*` value is a `var(--st-*)` reference to a real
+ * design-system token when one exists; only the non-colour type-scale
+ * values (font-size / line-height) fall through to the literal token value.
+ * This is what lets the studio adopt the published `--st-*` tokens without
+ * rewriting hundreds of `--ws-*` call sites.
  */
 export function serialiseTokensToCss(tokens: WorkspaceTokens): string {
   const groups = [
@@ -154,8 +219,23 @@ export function serialiseTokensToCss(tokens: WorkspaceTokens): string {
   const lines: string[] = [];
   for (const group of groups) {
     for (const [key, value] of Object.entries(group)) {
-      lines.push(`--ws-${key}: ${value};`);
+      const aliased = WS_TO_ST_ALIAS[key];
+      lines.push(`--ws-${key}: ${aliased ?? value};`);
     }
   }
+  // Extra `--ws-*` roles that are not part of the base WorkspaceTokens
+  // contract but are referenced by the shell (distinct heading/body type
+  // pair, accent text, inverse tooltip surface, strong border). Each maps
+  // straight onto a DS `--st-*` token.
+  for (const key of [
+    "font-family-display",
+    "accent-text",
+    "border-strong",
+    "surface-inverse",
+    "text-inverse",
+  ]) {
+    lines.push(`--ws-${key}: ${WS_TO_ST_ALIAS[key]};`);
+  }
+  lines.push(...WS_COMMUNITY_ALIASES);
   return lines.join("\n");
 }

@@ -80,6 +80,21 @@ describe("Track G G2 — workspace shell scaffold", () => {
     expect(html).toContain("--ws-outline-color:");
   });
 
+  it("links the published design-system --st- tokens and aliases --ws- onto them", () => {
+    const html = renderWorkspaceShell({ tokens, title: "X" });
+    // DS tokens load from the linked stylesheet (keeps their hex out of <style>).
+    expect(html).toContain('<link rel="stylesheet" href="/workspace/tokens.css"');
+    // The contract aliases onto real DS semantic tokens.
+    expect(html).toContain("--ws-surface: var(--st-semantic-surface-default);");
+    expect(html).toContain("--ws-accent: var(--st-semantic-action-primary);");
+    // Inline <style> must be free of bare hex colours (DS audit no-bare-hex).
+    const styleBlock = html.slice(html.indexOf("<style>"), html.indexOf("</style>"));
+    expect(styleBlock).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+    // A distinct display font is used on headings (DS audit single-font).
+    expect(html).toContain("--ws-font-family-display: var(--st-font-display);");
+    expect(html).toContain("font-family: var(--ws-font-family-display)");
+  });
+
   it("flags write mode and read-only mode explicitly in the header banner", () => {
     const writeHtml = renderWorkspaceShell({
       tokens,
