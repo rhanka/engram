@@ -1,0 +1,25 @@
+{
+  "name": "graphify-ontology-studio-app",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Client Svelte SPA for the Graphify ontology studio. Central graph is the published @sentropic/design-system-svelte ForceGraph (autonomous force sim, no d3).",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
+    "jsdom": "^25.0.0",
+    "svelte": "^5.53.2",
+    "vite": "^7.3.1",
+    "vitest": "^4.0.15"
+  },
+  "dependencies": {
+    "@sentropic/design-system-svelte": "^0.10.3",
+    "@sentropic/design-system-themes": "^0.10.3",
+    "@sentropic/design-system-tokens": "^0.10.3"
+  }
+}
