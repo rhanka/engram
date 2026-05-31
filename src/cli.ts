@@ -2802,6 +2802,12 @@ export async function main(): Promise<void> {
         } else {
           console.log(`Ontology studio read-only API listening at ${started.url}`);
         }
+        const { resolveStudioAppDir } = await import("./studio-assets.js");
+        if (resolveStudioAppDir()) {
+          console.log(`  Svelte studio SPA: ${started.url}/studio/`);
+        } else {
+          console.log(`  Svelte studio SPA: not built (run \`npm --prefix studio run build\`)`);
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error(`error: ${message}`);
