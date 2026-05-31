@@ -1,0 +1,37 @@
+/*
+ * Global styles for the ontology studio SPA.
+ *
+ * The DS theme CSS sets every --st-* token under [data-st-theme="entropic"];
+ * `App.svelte` puts that attribute on the shell root. We alias the handful of
+ * semantic tokens the shell leans on so component CSS stays readable.
+ */
+@import "@sentropic/design-system-themes/css/entropic.css";
+
+:root {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  font-family:
+    "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--st-semantic-surface-subtle, #f8fafc);
+  color: var(--st-semantic-text-primary, #0f172a);
+}
+
+#app {
+  height: 100%;
+}
+
+button {
+  font: inherit;
+}
