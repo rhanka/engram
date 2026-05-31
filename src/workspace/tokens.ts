@@ -41,6 +41,9 @@ export interface WorkspaceColourTokens {
 }
 
 export interface WorkspaceTypographyTokens {
+  /** Display / heading family. Distinct from `font-family-sans` so the shell
+   *  carries a deliberate display + body hierarchy (DS convention). */
+  "font-family-display": string;
   "font-family-sans": string;
   "font-family-mono": string;
   "font-size-sm": string;

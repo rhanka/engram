@@ -53,8 +53,9 @@ describe("Track G G1 — workspace token fallback", () => {
         expect(colour, `${theme}.colour.${role}`).toHaveProperty(role);
         const value = (colour as unknown as Record<string, unknown>)[role];
         expect(typeof value).toBe("string");
-        expect((value as string).startsWith("#")).toBe(true);
-        expect((value as string).length === 7 || (value as string).length === 9).toBe(true);
+        // D11: palette is tokenised as OKLCH (DS alignment), no bare hex.
+        expect((value as string).startsWith("oklch(")).toBe(true);
+        expect((value as string).endsWith(")")).toBe(true);
       }
     }
   });
@@ -81,6 +82,28 @@ describe("Track G G1 — workspace token fallback", () => {
     expect(css).not.toContain("--ws-undefined");
     const lineCount = css.split("\n").length;
     expect(lineCount).toBeGreaterThanOrEqual(9 + 7 + 8 + 3 + 2 + 3);
+  });
+
+  it("aliases the --ws- contract onto published design-system --st- tokens", () => {
+    const css = serialiseTokensToCss(getWorkspaceTokens());
+    // Colour roles resolve through real DS semantic tokens (no bare hex).
+    expect(css).toContain("--ws-surface: var(--st-semantic-surface-default);");
+    expect(css).toContain("--ws-surface-2: var(--st-semantic-surface-subtle);");
+    expect(css).toContain("--ws-text: var(--st-semantic-text-primary);");
+    expect(css).toContain("--ws-text-muted: var(--st-semantic-text-secondary);");
+    expect(css).toContain("--ws-border: var(--st-semantic-border-subtle);");
+    expect(css).toContain("--ws-accent: var(--st-semantic-action-primary);");
+    expect(css).toContain("--ws-outline-color: var(--st-semantic-border-interactive);");
+    // Spacing / radius / font roles resolve through DS aliases too.
+    expect(css).toContain("--ws-space-4: var(--st-spacing-4);");
+    expect(css).toContain("--ws-radius-md: var(--st-radius-md);");
+    expect(css).toContain("--ws-font-family-sans: var(--st-font-sans);");
+    // Distinct display family + community palette are exposed.
+    expect(css).toContain("--ws-font-family-display: var(--st-font-display);");
+    expect(css).toContain("--ws-community-1: var(--st-semantic-data-category1);");
+    expect(css).toContain("--ws-community-8: var(--st-semantic-data-category8);");
+    // The colour palette must no longer emit bare hex through the contract.
+    expect(css).not.toMatch(/--ws-(surface|text|accent|border|danger|success|warning)[^:]*:\s*#/);
   });
 
   it("freezes the fallback tokens to prevent mutation by consumers", () => {

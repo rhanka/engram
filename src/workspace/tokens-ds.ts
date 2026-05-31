@@ -38,6 +38,7 @@ const REQUIRED_KEYS: Record<WorkspaceTokenGroup, readonly string[]> = {
     "warning",
   ],
   typography: [
+    "font-family-display",
     "font-family-sans",
     "font-family-mono",
     "font-size-sm",
