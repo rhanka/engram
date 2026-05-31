@@ -8,6 +8,7 @@ import { URL } from "node:url";
 import { applyOntologyPatch, validateOntologyPatch } from "./ontology-patch.js";
 import { loadOntologyPatchContext } from "./ontology-patch-context.js";
 import { renderOntologyStudioWorkspace } from "./ontology-studio-workspace.js";
+import { ST_TOKENS_ROUTE, buildStTokensCss } from "./workspace/tokens-st.js";
 import {
   getOntologyRebuildStatus,
   getOntologyReconciliationCandidate,
@@ -46,7 +47,10 @@ export interface StartedOntologyStudioServer {
 
 export interface OntologyStudioRouteResult {
   status: number;
-  contentType: "application/json; charset=utf-8" | "text/html; charset=utf-8";
+  contentType:
+    | "application/json; charset=utf-8"
+    | "text/html; charset=utf-8"
+    | "text/css; charset=utf-8";
   body: string;
 }
 
@@ -169,6 +173,24 @@ export function injectStudioMode(html: string): string {
   );
   if (withClass !== html) return withClass;
   return html.replace(/<body\b([^>]*)>/i, '<body$1 class="studio-mode">');
+}
+
+/**
+ * Compiled design-system `--st-*` tokens (light + dark). Static for the
+ * process lifetime, so compile once and reuse. Served from
+ * `ST_TOKENS_ROUTE` and referenced by the workspace shell via <link>.
+ */
+let stTokensCssCache: string | undefined;
+
+function stTokensCssResult(): OntologyStudioRouteResult {
+  if (stTokensCssCache === undefined) {
+    stTokensCssCache = buildStTokensCss();
+  }
+  return {
+    status: 200,
+    contentType: "text/css; charset=utf-8",
+    body: stTokensCssCache,
+  };
 }
 
 function graphHtmlArtifactResult(
@@ -308,6 +330,11 @@ export function handleOntologyStudioRequest(
       return jsonResult(405, { error: "method not allowed" });
     }
     const url = new URL(requestUrl, "http://127.0.0.1");
+    // Static design-system token stylesheet. Served before the (heavier)
+    // patch-context load since it needs no profile state.
+    if (url.pathname === ST_TOKENS_ROUTE) {
+      return stTokensCssResult();
+    }
     const context = loadOntologyPatchContext(options.profileStatePath);
     if (url.pathname === "/" || url.pathname === "/index.html") {
       const activeView = activeViewFromQuery(url.searchParams);
