@@ -24,8 +24,8 @@
     "src/skills"
   ],
   "scripts": {
-    "build": "tsup && npm run build:studio",
-    "build:server": "tsup",
+    "build": "node scripts/gen-st-tokens.mjs && tsup && npm run build:studio",
+    "build:server": "node scripts/gen-st-tokens.mjs && tsup",
     "build:studio": "node scripts/build-studio-app.mjs",
     "dev": "tsup --watch",
     "test": "vitest run",
@@ -82,8 +82,6 @@
     "@ai-sdk/google": "^3.0.67",
     "@ai-sdk/mistral": "^3.0.35",
     "@ai-sdk/openai": "^3.0.61",
-    "@sentropic/design-system-themes": "^0.10.3",
-    "@sentropic/design-system-tokens": "^0.10.3",
     "@sentropic/llm-mesh": "^0.1.0",
     "ai": "^6.0.175",
     "commander": "^14.0.3",
@@ -172,6 +170,8 @@
     "@types/node": "^25.8.0",
     "tsup": "^8.3.0",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.6"
+    "vitest": "^4.1.6",
+    "@sentropic/design-system-themes": "^0.10.3",
+    "@sentropic/design-system-tokens": "^0.10.3"
   }
 }
