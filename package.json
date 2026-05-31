@@ -26,7 +26,7 @@
   "scripts": {
     "build": "tsup && npm run build:studio",
     "build:server": "tsup",
-    "build:studio": "npm --prefix studio run build && node scripts/copy-studio-app.mjs",
+    "build:studio": "node scripts/build-studio-app.mjs",
     "dev": "tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest",
