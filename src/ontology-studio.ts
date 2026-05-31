@@ -9,6 +9,11 @@ import { applyOntologyPatch, validateOntologyPatch } from "./ontology-patch.js";
 import { loadOntologyPatchContext } from "./ontology-patch-context.js";
 import { renderOntologyStudioWorkspace } from "./ontology-studio-workspace.js";
 import {
+  buildEntitySidecar,
+  serveStudioAsset,
+  type StudioAssetResult,
+} from "./studio-assets.js";
+import {
   getOntologyRebuildStatus,
   getOntologyReconciliationCandidate,
   listOntologyReconciliationCandidates,
@@ -187,12 +192,50 @@ function graphHtmlArtifactResult(
   };
 }
 
+/**
+ * Serve the raw graph.json the SPA renders. Returned verbatim (no re-parse) so
+ * the payload stays byte-identical to the artifact on disk.
+ */
+function graphJsonResult(stateDir: string): OntologyStudioRouteResult {
+  const graphPath = join(stateDir, "graph.json");
+  if (!existsSync(graphPath)) {
+    return jsonResult(404, { error: "graph.json not found" });
+  }
+  return {
+    status: 200,
+    contentType: "application/json; charset=utf-8",
+    body: readFileSync(graphPath, "utf-8"),
+  };
+}
+
 function sendResult(response: ServerResponse, result: OntologyStudioRouteResult): void {
   response.writeHead(result.status, {
     "content-type": result.contentType,
     "cache-control": "no-store",
   });
   response.end(result.body);
+}
+
+function sendAsset(response: ServerResponse, result: StudioAssetResult): void {
+  response.writeHead(result.status, {
+    "content-type": result.contentType,
+    "cache-control": "no-store",
+  });
+  response.end(result.body);
+}
+
+/**
+ * The SPA is mounted under `/studio`. Strip that prefix to get the asset path
+ * relative to the built app (so `/studio/assets/x.js` -> `/assets/x.js`).
+ */
+const STUDIO_SPA_PREFIX = "/studio";
+
+function studioSpaPathname(pathname: string): string | null {
+  if (pathname === STUDIO_SPA_PREFIX) return "/";
+  if (pathname.startsWith(STUDIO_SPA_PREFIX + "/")) {
+    return pathname.slice(STUDIO_SPA_PREFIX.length) || "/";
+  }
+  return null;
 }
 
 function statusForError(error: Error): number {
@@ -294,6 +337,29 @@ export function createOntologyStudioRequestHandler(options: OntologyStudioHandle
       return;
     }
 
+    // The client Svelte SPA + its data routes are served before the legacy
+    // server-rendered HTML so the two studios coexist. SPA assets can be
+    // binary, hence the dedicated `sendAsset` path.
+    if (method === "GET") {
+      const url = new URL(requestUrl, "http://127.0.0.1");
+      // The SPA's asset URLs are relative ("./assets/x.js"); they only resolve
+      // when the document path ends in a slash. Redirect /studio -> /studio/ so
+      // the browser anchors relative requests under the mount.
+      if (url.pathname === STUDIO_SPA_PREFIX) {
+        response.writeHead(308, { location: `${STUDIO_SPA_PREFIX}/${url.search}` });
+        response.end();
+        return;
+      }
+      const spaPath = studioSpaPathname(url.pathname);
+      if (spaPath !== null) {
+        const asset = serveStudioAsset(spaPath);
+        if (asset) {
+          sendAsset(response, asset);
+          return;
+        }
+      }
+    }
+
     sendResult(response, handleOntologyStudioRequest(options, method, requestUrl));
   };
 }
@@ -323,6 +389,15 @@ export function handleOntologyStudioRequest(
     }
     if (url.pathname === "/api/ontology/artifacts/graph.html") {
       return graphHtmlArtifactResult(context, url.searchParams.get("studio") === "1");
+    }
+    if (url.pathname === "/api/ontology/graph.json") {
+      return graphJsonResult(context.stateDir);
+    }
+    const entityPrefix = "/api/ontology/entity/";
+    if (url.pathname.startsWith(entityPrefix)) {
+      const id = decodeURIComponent(url.pathname.slice(entityPrefix.length));
+      if (!id) return jsonResult(400, { error: "missing entity id" });
+      return jsonResult(200, buildEntitySidecar(context.stateDir, id));
     }
     if (url.pathname === "/api/ontology/reconciliation/candidates") {
       return jsonResult(200, listOntologyReconciliationCandidates(context, candidateFilters(url.searchParams)));
