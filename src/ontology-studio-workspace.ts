@@ -114,6 +114,19 @@ function renderStudioStyles(): string {
     ".ws-recon-warning { border: 1px solid var(--ws-warning); color: var(--ws-warning); border-radius: var(--ws-radius-md); padding: var(--ws-space-2); background: var(--ws-surface-2); }",
     ".ws-recon-accordion { border: 1px solid var(--ws-border); border-radius: var(--ws-radius-md); padding: var(--ws-space-2); background: var(--ws-surface); }",
     ".ws-recon-accordion summary { cursor: pointer; font-weight: 600; }",
+    ".ws-recon-actions { display: grid; gap: var(--ws-space-2); margin-bottom: var(--ws-space-2); }",
+    ".ws-recon-actions h4 { margin: 0; font-size: var(--ws-font-size-sm); text-transform: uppercase; letter-spacing: 0.05em; color: var(--ws-text-muted); }",
+    ".ws-recon-actions-grid { display: grid; gap: var(--ws-space-2); grid-template-columns: repeat(auto-fit, minmax(94px, 1fr)); }",
+    ".ws-recon-action-btn { border: 1px solid var(--ws-border); border-radius: var(--ws-radius-sm); padding: 0.35rem var(--ws-space-2); background: var(--ws-surface); color: var(--ws-text); font-size: var(--ws-font-size-sm); cursor: pointer; }",
+    ".ws-recon-action-btn:hover { border-color: var(--ws-accent); }",
+    ".ws-recon-action-btn:disabled { opacity: 0.6; cursor: not-allowed; }",
+    ".ws-recon-actions[data-write='false'] { opacity: 0.7; }",
+    ".ws-recon-actions[data-write='false'] .ws-recon-action-btn { pointer-events: none; }",
+    ".ws-recon-actions-result { margin: 0; min-height: 74px; max-height: 220px; overflow: auto; white-space: pre-wrap; font-family: var(--ws-font-family-mono); font-size: var(--ws-font-size-sm); border: 1px solid var(--ws-border); border-radius: var(--ws-radius-md); padding: var(--ws-space-2); background: var(--ws-surface); color: var(--ws-text); }",
+    ".ws-recon-actions-result[data-state='empty'] { color: var(--ws-text-muted); font-style: italic; }",
+    ".ws-recon-actions-meta { margin: 0; color: var(--ws-text-muted); font-size: var(--ws-font-size-sm); }",
+    ".ws-recon-actions-note { margin: 0; color: var(--ws-text-muted); font-size: var(--ws-font-size-sm); }",
+    ".ws-recon-actions-note[data-error='true'] { color: var(--ws-warning); }",
     "@media (max-width: 768px) { .ws-recon-summary > div { grid-template-columns: 1fr; gap: 2px; } }",
     "</style>",
   ].join("\n");
@@ -259,6 +272,198 @@ function renderSummaryRow(
   ].join("");
 }
 
+interface ReconciliationActionPanelModel {
+  candidateId: string;
+  candidateNodeId: string;
+  canonicalNodeId: string;
+  graphHash: string | null;
+  profileHash: string | null;
+  evidenceRefs: string[];
+  writeEnabled: boolean;
+}
+
+function renderScriptTextContent(raw: string): string {
+  return raw.replace(/<\//g, "<\\/").replace(/\\u2028/g, "\\u2028");
+}
+
+function escapeScriptJson(value: unknown): string {
+  return renderScriptTextContent(JSON.stringify(value));
+}
+
+function decisionBasisReason(candidate: OntologyReconciliationCandidate): string[] {
+  return [
+    `Operation: ${candidate.proposed_patch_operation}`,
+    `Candidate: ${candidate.candidate_id}`,
+    `Canonical: ${candidate.canonical_id}`,
+    ...candidate.evidence_refs.map((ref) => `Evidence: ${ref}`),
+  ];
+}
+
+function renderReconciliationActions(model: ReconciliationWorkspaceModel): string {
+  const candidate = model.selectedCandidate;
+  if (!candidate) {
+    return "";
+  }
+  const graphHash = model.candidates?.graph_hash ?? model.rebuildStatus?.graph_hash ?? null;
+  const profileHash = model.candidates?.profile_hash ?? model.rebuildStatus?.profile_hash ?? null;
+  const actionModel: ReconciliationActionPanelModel = {
+    candidateId: candidate.id,
+    candidateNodeId: candidate.candidate_id,
+    canonicalNodeId: candidate.canonical_id,
+    graphHash,
+    profileHash,
+    evidenceRefs: candidate.evidence_refs,
+    writeEnabled: model.writeEnabled,
+  };
+  const readOnlyNote = model.writeEnabled
+    ? ""
+    : `<p class="ws-recon-actions-note" data-error="true">Enable --write mode to validate and apply reconciliation actions.</p>`;
+  const isStale = Boolean(model.candidates?.stale || model.rebuildStatus?.needs_update);
+  const staleRow = isStale
+    ? `<p class="ws-recon-actions-meta">This queue is marked stale. Validate and dry-run before apply.</p>`
+    : "";
+  const operationButtons = [
+    ["accept_match", "validate", "Validate"],
+    ["accept_match", "dry-run", "Dry-run"],
+    ["accept_match", "apply", "Apply"],
+  ];
+  if (candidate.proposed_patch_operation === "accept_match") {
+    operationButtons.push(["reject_match", "apply", "Reject"]);
+  }
+
+  return [
+    '<section class="ws-recon-actions" id="reconciliation-actions" data-write="',
+    model.writeEnabled ? "true" : "false",
+    '">',
+    "<h4>Reconciliation actions</h4>",
+    '<p class="ws-recon-actions-meta">Candidate: ',
+    `<span>${escapeHtml(candidate.id)}</span></p>`,
+    staleRow,
+    '<div class="ws-recon-actions-grid">',
+    ...operationButtons.map(([operation, action, label]) => [
+      `<button class="ws-recon-action-btn" type="button" data-action="${action}" data-operation="${operation}"`,
+      model.writeEnabled ? "" : ' disabled',
+      `>${label}</button>`,
+    ].join("")),
+    "</div>",
+    readOnlyNote,
+    '<pre class="ws-recon-actions-result" id="reconciliation-actions-result" data-state="empty" aria-live="polite">No action run yet.</pre>',
+    `<script type="application/json" id="reconciliation-actions-model">${escapeScriptJson(actionModel)}</script>`,
+    "</section>",
+  ].join("");
+}
+
+function renderReconciliationActionScript(): string {
+  return [
+    "<script>",
+    '"use strict";',
+    "(function () {",
+    "  const actionsRoot = document.getElementById('reconciliation-actions');",
+    "  if (!actionsRoot) return;",
+    "  const modelElement = document.getElementById('reconciliation-actions-model');",
+    "  if (!modelElement || !modelElement.textContent) return;",
+    "  let model;",
+    "  try { model = JSON.parse(modelElement.textContent); } catch { return; }",
+    "  const result = document.getElementById('reconciliation-actions-result');",
+    "  if (!result) return;",
+    "  const buttons = actionsRoot.querySelectorAll('[data-action][data-operation]');",
+    "  const canWrite = actionsRoot.getAttribute('data-write') === 'true';",
+    "  const cacheKey = 'graphify-studio-write-token';",
+    "  function setBusy(state) {",
+    "    buttons.forEach((button) => {",
+    "      if (canWrite) button.disabled = state;",
+    "      button.setAttribute('aria-busy', state ? 'true' : 'false');",
+    "    });",
+    "  }",
+    "  function setResult(text) {",
+    "    result.textContent = text;",
+    "    result.setAttribute('data-state', text ? 'ready' : 'empty');",
+    "  }",
+    "  function readToken() {",
+    "    if (!canWrite) return null;",
+    "    if (typeof window === 'undefined') return null;",
+    "    const directToken = (window.localStorage && window.localStorage.getItem(cacheKey)) || '';",
+    "    if (directToken) return directToken;",
+    "    const entered = window.prompt('Bearer token for ontology patch API:');",
+    "    if (!entered) return null;",
+    "    const token = entered.trim();",
+    "    if (!token) return null;",
+    "    window.localStorage.setItem(cacheKey, token);",
+    "    return token;",
+    "  }",
+    "  function tokenHeaders(token) {",
+    "    const headers = { 'content-type': 'application/json', authorization: `Bearer ${token}` };",
+    "    return headers;",
+    "  }",
+    "  function patchId(action, operation) {",
+    "    return `studio:${action}:${operation}:${Date.now()}`;",
+    "  }",
+    "  function buildPatch(operation, action) {",
+    "    const target = operation === 'reject_match'",
+    "      ? { candidate_id: model.candidateNodeId }",
+    "      : { candidate_id: model.candidateNodeId, canonical_id: model.canonicalNodeId };",
+    "    return {",
+    "      schema: 'graphify_ontology_patch_v1',",
+    "      id: patchId(model.candidateId, action),",
+    "      operation,",
+    "      status: 'proposed',",
+    "      profile_hash: model.profileHash || '',",
+    "      graph_hash: model.graphHash || '',",
+    "      target,",
+    "      evidence_refs: model.evidenceRefs || [],",
+    "      reason: `Reconciliation ${action} for ${model.candidateId}`,",
+    "      author: 'studio-ui',",
+    "      created_at: new Date().toISOString(),",
+    "    };",
+    "  }",
+    "  async function runAction(event) {",
+    "    const button = event.target.closest ? event.target.closest('button[data-action][data-operation]') : null;",
+    "    if (!button || button.disabled) return;",
+    "    const action = button.getAttribute('data-action');",
+    "    const operation = button.getAttribute('data-operation');",
+    "    if (!action || !operation) return;",
+    "    let endpoint = '/api/ontology/patch/validate';",
+    "    if (action === 'dry-run') endpoint = '/api/ontology/patch/dry-run';",
+    "    if (action === 'apply') endpoint = '/api/ontology/patch/apply';",
+    "    const token = readToken();",
+    "    if (!token) {",
+    "      setResult('Missing bearer token. Set one to run this action.');",
+    "      return;",
+    "    }",
+    "    const payload = buildPatch(operation, `${action}:${operation}`);",
+    "    setBusy(true);",
+    "    setResult('Running...');",
+    "    try {",
+    "      const response = await fetch(endpoint, {",
+    "        method: 'POST',",
+    "        headers: tokenHeaders(token),",
+    "        body: JSON.stringify(payload),",
+    "      });",
+    "      const data = await response.json();",
+    "      if (!response.ok) {",
+    "        setResult(`Error ${response.status}: ${JSON.stringify(data)}`);",
+    "        return;",
+    "      }",
+    "      if (action === 'apply' && operation === 'accept_match' && data && data.valid) {",
+    "        setResult(JSON.stringify(data, null, 2) + '\\n\\nTip: a rebuild is required after apply.');",
+    "        return;",
+    "      }",
+    "      setResult(JSON.stringify(data, null, 2));",
+    "    } catch (error) {",
+    "      setResult(`Network or JSON error: ${String(error)}`);",
+    "    } finally {",
+    "      setBusy(false);",
+    "    }",
+    "  }",
+    "  function init() {",
+    "    buttons.forEach((button) => button.addEventListener('click', runAction));",
+    "  }",
+    "  init();",
+    "})();",
+    "</script>",
+  ].join("\n");
+}
+
 function renderCompactMapping(
   candidateId: string,
   canonicalId: string,
@@ -348,12 +553,7 @@ function renderCentralDisplay(model: ReconciliationWorkspaceModel): string {
   //    <dl> with small-caps headings (no framed Card boxes).
   const sourcePath = graphNodeSourcePath(canonicalNode) ?? graphNodeSourcePath(candidateNode);
   const community = graphNodeCommunity(canonicalNode) ?? graphNodeCommunity(candidateNode);
-  const decisionBasis: string[] = [
-    `Operation: ${candidate.proposed_patch_operation}`,
-    `Candidate: ${candidate.candidate_id}`,
-    `Canonical: ${candidate.canonical_id}`,
-    ...candidate.evidence_refs.map((ref) => `Evidence: ${ref}`),
-  ];
+  const decisionBasis = decisionBasisReason(candidate);
   return [
     renderStudioStyles(),
     `<article class="ws-recon-candidate" data-candidate-id="${escapeHtml(candidate.id)}">`,
@@ -409,6 +609,7 @@ function renderDrawer(model: ReconciliationWorkspaceModel): string {
   });
   return [
     '<div class="ws-recon-stack">',
+    renderReconciliationActions(model),
     '<details class="ws-recon-accordion" open>',
     "<summary>Evidence</summary>",
     renderList(evidence, "No evidence refs on the selected candidate."),
@@ -665,7 +866,7 @@ export function renderOntologyStudioWorkspace(
     state.drawerOpen = Boolean(model.selectedCandidate);
     state.viewState.graph.mode = "overview";
 
-    return renderWorkspaceShell({
+    const shellHtml = renderWorkspaceShell({
       tokens,
       tokenSource: "fallback",
       title: "Graphify Ontology Studio",
@@ -678,6 +879,7 @@ export function renderOntologyStudioWorkspace(
       rightDrawerHtml: renderDrawer(model),
       graphPanelHtml: renderGraphContext(model),
     });
+    return shellHtml.replace("</body>", `${renderReconciliationActionScript()}\n</body>`);
   }
 
   if (activeView === "evidence") {
