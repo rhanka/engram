@@ -427,7 +427,22 @@ export function buildMerge(newChunks: Extraction[], options?: BuildMergeOptions)
   const graph = buildFromJson(deduplicated, options);
 
   if ((options?.pruneSources?.length ?? 0) > 0) {
-    const pruneSet = new Set((options?.pruneSources ?? []).map(sourceKey).filter(Boolean));
+    // F-0819-P2 (#1007): a manifest may store absolute paths (e.g.
+    // /home/user/corpus/module_b/utils.ts) while graph nodes store repo-relative
+    // paths (module_b/utils.ts). `sourceKey` normalises slashes but does not
+    // relativize without a root, so absolute prune entries would never match
+    // relative node source_files and stale nodes would persist. Seed the prune
+    // set with both the slash-normalised entry and a root-relative variant.
+    const pruneRoot = rootForOptions(options);
+    const pruneSet = new Set<string>();
+    for (const raw of options?.pruneSources ?? []) {
+      const direct = sourceKey(raw);
+      if (direct) pruneSet.add(direct);
+      if (pruneRoot) {
+        const relative = normalizeSourceFilePath(raw, pruneRoot);
+        if (relative) pruneSet.add(relative);
+      }
+    }
     const nodesToDrop: string[] = [];
     graph.forEachNode((nodeId, attrs) => {
       if (pruneSet.has(sourceKey(attrs.source_file))) {
