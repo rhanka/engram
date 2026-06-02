@@ -297,6 +297,21 @@ export function buildFromJson(extraction: Extraction, options?: BuildOptions): G
     // Preserve original edge direction
     attrs._src = source;
     attrs._tgt = target;
+    // F-0819-P1 (#1061): on an undirected graph a pair emitted in both
+    // directions with the same relation (a calls b AND b calls a) collapses to
+    // one edge; the reverse-direction duplicate would otherwise overwrite the
+    // first edge's _src/_tgt and silently flip caller/callee. First-seen wins:
+    // skip the redundant reverse duplicate.
+    if (!G.type.startsWith("directed") && G.hasEdge(source, target)) {
+      const existing = G.getEdgeAttributes(source, target) as Record<string, unknown>;
+      if (
+        existing.relation === attrs.relation &&
+        existing._src === target &&
+        existing._tgt === source
+      ) {
+        continue;
+      }
+    }
     // graphology mergeEdge prevents duplicates on same src/tgt pair
     try {
       G.mergeEdge(source, target, attrs);
