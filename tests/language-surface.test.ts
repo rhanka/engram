@@ -349,6 +349,45 @@ class PaymentService extends BaseService implements Billable {}
     expect(importEdge?.target).toBe("lib_helper_ts");
   });
 
+  it("resolves tsconfig path aliases through an array extends (TS 5.0, F-0819-P1 #1017)", async () => {
+    mkdirSync(join(dir, "src", "lib"), { recursive: true });
+    // First base defines an unrelated alias; the second (later) base defines
+    // @lib/* — array extends merges left-to-right, so the later base must win.
+    writeFileSync(
+      join(dir, "tsconfig.other.json"),
+      '{ "compilerOptions": { "baseUrl": ".", "paths": { "@other/*": ["vendor/*"] } } }\n',
+      "utf-8",
+    );
+    writeFileSync(
+      join(dir, "tsconfig.base.json"),
+      '{ "compilerOptions": { "baseUrl": ".", "paths": { "@lib/*": ["src/lib/*"] } } }\n',
+      "utf-8",
+    );
+    writeFileSync(
+      join(dir, "tsconfig.json"),
+      '{ "extends": ["./tsconfig.other.json", "./tsconfig.base.json"] }\n',
+      "utf-8",
+    );
+    writeFileSync(
+      join(dir, "src", "entry.ts"),
+      "import { helper } from '@lib/helper';\nexport function alpha() { return helper(); }\n",
+    );
+    writeFileSync(
+      join(dir, "src", "lib", "helper.ts"),
+      "export function helper() { return 1; }\n",
+    );
+
+    const result = await extract([
+      join(dir, "src", "entry.ts"),
+      join(dir, "src", "lib", "helper.ts"),
+    ]);
+
+    const importEdge = result.edges.find(
+      (edge) => edge.source === "entry_ts" && edge.relation === "imports_from",
+    );
+    expect(importEdge?.target).toBe("lib_helper_ts");
+  });
+
   it("resolves local dynamic imports as imports_from edges", async () => {
     mkdirSync(join(dir, "src"), { recursive: true });
     writeFileSync(
@@ -715,7 +754,7 @@ class PaymentService extends BaseService implements Billable {}
     expect(jsxCall).toBeDefined();
   });
 
-  it("extracts Markdown heading hierarchy and fenced code blocks", async () => {
+  it("extracts Markdown heading hierarchy (code blocks skipped, no orphan nodes)", async () => {
     const guidePath = join(dir, "guide.md");
     writeFileSync(
       guidePath,
@@ -740,18 +779,20 @@ class PaymentService extends BaseService implements Billable {}
     const guideNode = result.nodes.find((node) => node.label === "Guide");
     const installNode = result.nodes.find((node) => node.label === "Install");
     const verifyNode = result.nodes.find((node) => node.label === "Verify");
+    // F-0819-P1 (#1077): fenced code blocks no longer emit orphan nodes.
     const codeNode = result.nodes.find((node) => node.label.startsWith("code:ts"));
 
     expect(fileNode?.id).toBeTruthy();
     expect(guideNode?.id).toBeTruthy();
     expect(installNode?.id).toBeTruthy();
     expect(verifyNode?.id).toBeTruthy();
-    expect(codeNode?.id).toBeTruthy();
+    expect(codeNode).toBeUndefined();
+    // The heading hierarchy is preserved; the code block is skipped (not a
+    // heading) but emits no node, so no edge points at it.
     expect(result.edges).toEqual(expect.arrayContaining([
       expect.objectContaining({ source: fileNode?.id, target: guideNode?.id, relation: "contains" }),
       expect.objectContaining({ source: guideNode?.id, target: installNode?.id, relation: "contains" }),
       expect.objectContaining({ source: installNode?.id, target: verifyNode?.id, relation: "contains" }),
-      expect.objectContaining({ source: installNode?.id, target: codeNode?.id, relation: "contains" }),
     ]));
   });
 

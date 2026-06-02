@@ -33,6 +33,19 @@ export function loadGraphFromData(raw: SerializedGraphData): Graph {
   for (const link of raw.links ?? raw.edges ?? []) {
     const { source, target, ...attrs } = link;
     if (!G.hasNode(source) || !G.hasNode(target)) continue;
+    // F-0819-P1 (#1061): same-relation reverse duplicate on an undirected graph
+    // collapses to one edge; don't let it overwrite the first edge's _src/_tgt
+    // (which would flip caller/callee). First-seen direction wins.
+    if (!G.type.startsWith("directed") && G.hasEdge(source, target)) {
+      const existing = G.getEdgeAttributes(source, target) as Record<string, unknown>;
+      if (
+        existing.relation === (attrs as Record<string, unknown>).relation &&
+        existing._src === target &&
+        existing._tgt === source
+      ) {
+        continue;
+      }
+    }
     try {
       G.mergeEdge(source, target, attrs);
     } catch {
