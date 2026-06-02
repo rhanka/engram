@@ -288,7 +288,26 @@ export function buildFromJson(extraction: Extraction, options?: BuildOptions): G
 
   const nodeSet = new Set(G.nodes());
 
-  for (const edge of extraction.edges ?? []) {
+  // F-0819-P2 (#1010): iterate edges in a deterministic order. The graph is
+  // undirected and stores direction in _src/_tgt; when two edges collapse onto
+  // the same node pair the surviving edge depends on iteration order, so an
+  // unstable order (e.g. AST + semantic chunks merged in a different sequence
+  // run-to-run) flips _src/_tgt and makes the serialized graph churn. Sorting
+  // by (source, target, relation) pins the first-seen outcome.
+  const sortedEdges = [...(extraction.edges ?? [])].sort((a, b) => {
+    const as = String(a.source ?? "");
+    const bs = String(b.source ?? "");
+    if (as !== bs) return as < bs ? -1 : 1;
+    const at = String(a.target ?? "");
+    const bt = String(b.target ?? "");
+    if (at !== bt) return at < bt ? -1 : 1;
+    const ar = String(a.relation ?? "");
+    const br = String(b.relation ?? "");
+    if (ar !== br) return ar < br ? -1 : 1;
+    return 0;
+  });
+
+  for (const edge of sortedEdges) {
     const { source, target, ...attrs } = edge;
     if (!nodeSet.has(source) || !nodeSet.has(target)) continue;
     if ("source_file" in attrs) {
