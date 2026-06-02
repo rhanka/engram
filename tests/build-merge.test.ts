@@ -163,6 +163,36 @@ describe("buildMerge", () => {
     expect(graph.size).toBe(0);
   });
 
+  it("prunes deleted sources when pruneSources holds absolute manifest paths (F-0819-P2 / #1007)", () => {
+    // The manifest stores absolute paths (e.g. /home/user/corpus/module_b/utils.ts)
+    // while graph nodes store repo-relative paths (module_b/utils.ts). With a
+    // `root` in scope, an absolute prune entry must still match the relative
+    // node source_file, otherwise stale nodes persist after file deletion.
+    const dir = tempDir();
+    const root = join(dir, "corpus");
+    const graphPath = join(dir, "graph.json");
+    writeFileSync(
+      graphPath,
+      JSON.stringify({
+        directed: false,
+        graph: {},
+        nodes: [
+          { id: "login", label: "login", source_file: "module_a/auth.ts", file_type: "code" },
+          { id: "fmt", label: "format_date", source_file: "module_b/utils.ts", file_type: "code" },
+        ],
+        links: [],
+      }, null, 2),
+      "utf-8",
+    );
+
+    const deletedAbs = [join(root, "module_b", "utils.ts")];
+    const graph = buildMerge([], { graphPath, pruneSources: deletedAbs, root });
+
+    expect(graph.hasNode("fmt")).toBe(false);
+    expect(graph.hasNode("login")).toBe(true);
+    expect(graph.order).toBe(1);
+  });
+
   it("deduplicates chunk-suffixed labels during explicit merge flows", () => {
     const dir = tempDir();
     const graphPath = join(dir, "graph.json");
