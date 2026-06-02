@@ -349,6 +349,45 @@ class PaymentService extends BaseService implements Billable {}
     expect(importEdge?.target).toBe("lib_helper_ts");
   });
 
+  it("resolves tsconfig path aliases through an array extends (TS 5.0, F-0819-P1 #1017)", async () => {
+    mkdirSync(join(dir, "src", "lib"), { recursive: true });
+    // First base defines an unrelated alias; the second (later) base defines
+    // @lib/* — array extends merges left-to-right, so the later base must win.
+    writeFileSync(
+      join(dir, "tsconfig.other.json"),
+      '{ "compilerOptions": { "baseUrl": ".", "paths": { "@other/*": ["vendor/*"] } } }\n',
+      "utf-8",
+    );
+    writeFileSync(
+      join(dir, "tsconfig.base.json"),
+      '{ "compilerOptions": { "baseUrl": ".", "paths": { "@lib/*": ["src/lib/*"] } } }\n',
+      "utf-8",
+    );
+    writeFileSync(
+      join(dir, "tsconfig.json"),
+      '{ "extends": ["./tsconfig.other.json", "./tsconfig.base.json"] }\n',
+      "utf-8",
+    );
+    writeFileSync(
+      join(dir, "src", "entry.ts"),
+      "import { helper } from '@lib/helper';\nexport function alpha() { return helper(); }\n",
+    );
+    writeFileSync(
+      join(dir, "src", "lib", "helper.ts"),
+      "export function helper() { return 1; }\n",
+    );
+
+    const result = await extract([
+      join(dir, "src", "entry.ts"),
+      join(dir, "src", "lib", "helper.ts"),
+    ]);
+
+    const importEdge = result.edges.find(
+      (edge) => edge.source === "entry_ts" && edge.relation === "imports_from",
+    );
+    expect(importEdge?.target).toBe("lib_helper_ts");
+  });
+
   it("resolves local dynamic imports as imports_from edges", async () => {
     mkdirSync(join(dir, "src"), { recursive: true });
     writeFileSync(
