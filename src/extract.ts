@@ -233,7 +233,7 @@ type TsconfigAliasEntry = {
 
 const tsconfigAliasCache = new Map<string, TsconfigAliasEntry[]>();
 type TsconfigDocument = {
-  extends?: string;
+  extends?: string | string[];
   compilerOptions?: {
     baseUrl?: string;
     paths?: Record<string, string[]>;
@@ -315,13 +315,23 @@ function loadTsconfigAliasesFromPath(tsconfigPath: string, seen: Set<string> = n
   }
 
   const configDir = dirname(resolvedTsconfigPath);
-  const extendsPath = typeof parsed.extends === "string"
-    ? resolveTsconfigExtendsPath(parsed.extends, configDir)
-    : null;
-  const inherited = extendsPath ? loadTsconfigAliasesFromPath(extendsPath, seen) : [];
-  const merged = new Map<string, TsconfigAliasEntry>(
-    inherited.map((entry) => [entry.aliasPrefix, entry]),
-  );
+  // F-0819-P1 (#1017): TS 5.0 allows `extends` to be an array of base configs,
+  // merged left-to-right (later bases win). A bare-string check silently
+  // dropped the array form, losing inherited path aliases. Resolve each base in
+  // order and let later ones override earlier ones.
+  const extendsList = typeof parsed.extends === "string"
+    ? [parsed.extends]
+    : Array.isArray(parsed.extends)
+      ? parsed.extends.filter((e): e is string => typeof e === "string")
+      : [];
+  const merged = new Map<string, TsconfigAliasEntry>();
+  for (const ext of extendsList) {
+    const extendsPath = resolveTsconfigExtendsPath(ext, configDir);
+    if (!extendsPath) continue;
+    for (const entry of loadTsconfigAliasesFromPath(extendsPath, seen)) {
+      merged.set(entry.aliasPrefix, entry);
+    }
+  }
   const baseDir = resolve(configDir, parsed.compilerOptions?.baseUrl ?? ".");
   for (const [alias, targets] of Object.entries(parsed.compilerOptions?.paths ?? {})) {
     const firstTarget = targets[0];
