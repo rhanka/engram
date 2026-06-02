@@ -926,6 +926,48 @@ function _importPhp(
   }
 }
 
+/**
+ * Resolve a Lua require() module name to a node id (F-0819-P1 #1075).
+ *
+ * Lua module names use dots as path separators: `require("pkg.b")` looks for
+ * `pkg/b.lua` (or `.luau`) relative to a package root. Probe the importing
+ * file's directory and walk upward; when a matching file is found, return the
+ * id `_makeId(qualifiedFileStem(cand))` matching the file node id the extractor
+ * assigns, so the edge lands on a real node. When nothing matches on disk, fall
+ * back to `_makeId` of the full dotted module so the symbol-resolution pass can
+ * still complete the edge instead of dropping it (previously the bare last
+ * segment was used, which never matched any node id).
+ */
+function _resolveLuaImportTarget(rawModule: string, strPath: string): string {
+  if (!rawModule) return "";
+  const rel = rawModule.replace(/\./g, "/");
+  let probe: string | null = null;
+  try {
+    probe = dirname(resolve(strPath));
+  } catch {
+    probe = null;
+  }
+  // The dotted module name IS the qualified relative path of the target file
+  // (`pkg.b` -> `pkg/b.lua`), so the node id is `_makeId(rawModule)` in every
+  // case. Probing the disk only distinguishes a resolvable local module from an
+  // external one; either way the id is the dotted module (never the bare last
+  // segment, which was the #1075 bug). We keep the probe so future callers can
+  // branch on locality if needed.
+  if (probe) {
+    for (let i = 0; i < 6; i++) {
+      for (const suffix of [".lua", ".luau"]) {
+        if (existsSync(join(probe, `${rel}${suffix}`))) {
+          return _makeId(rawModule);
+        }
+      }
+      const parent = dirname(probe);
+      if (parent === probe) break;
+      probe = parent;
+    }
+  }
+  return _makeId(rawModule);
+}
+
 function _importLua(
   node: SyntaxNode, source: string, fileNid: string, _stem: string,
   edges: GraphEdge[], strPath: string,
@@ -933,10 +975,11 @@ function _importLua(
   const text = _readText(node, source);
   const m = text.match(/require\s*[('"]?\s*['"]?([^'")\s]+)/);
   if (m) {
-    const moduleName = m[1]!.split(".").pop()!;
-    if (moduleName) {
+    const rawModule = m[1]!;
+    const tgtNid = _resolveLuaImportTarget(rawModule, strPath);
+    if (tgtNid) {
       edges.push({
-        source: fileNid, target: moduleName, relation: "imports",
+        source: fileNid, target: tgtNid, relation: "imports",
         confidence: "EXTRACTED", source_file: strPath,
         source_location: String(node.startPosition.row + 1), weight: 1.0,
       });
@@ -4820,3 +4863,11 @@ export function collectFiles(target: string, options?: { followSymlinks?: boolea
   walkDir(resolved, new Set<string>());
   return results.sort();
 }
+
+/**
+ * Internal helpers exposed for unit tests only (F-0819-P1 #1075). Not part of
+ * the public API; do not import from application code.
+ */
+export const __testing = {
+  resolveLuaImportTarget: _resolveLuaImportTarget,
+};
