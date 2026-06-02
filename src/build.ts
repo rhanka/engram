@@ -288,7 +288,26 @@ export function buildFromJson(extraction: Extraction, options?: BuildOptions): G
 
   const nodeSet = new Set(G.nodes());
 
-  for (const edge of extraction.edges ?? []) {
+  // F-0819-P2 (#1010): iterate edges in a deterministic order. The graph is
+  // undirected and stores direction in _src/_tgt; when two edges collapse onto
+  // the same node pair the surviving edge depends on iteration order, so an
+  // unstable order (e.g. AST + semantic chunks merged in a different sequence
+  // run-to-run) flips _src/_tgt and makes the serialized graph churn. Sorting
+  // by (source, target, relation) pins the first-seen outcome.
+  const sortedEdges = [...(extraction.edges ?? [])].sort((a, b) => {
+    const as = String(a.source ?? "");
+    const bs = String(b.source ?? "");
+    if (as !== bs) return as < bs ? -1 : 1;
+    const at = String(a.target ?? "");
+    const bt = String(b.target ?? "");
+    if (at !== bt) return at < bt ? -1 : 1;
+    const ar = String(a.relation ?? "");
+    const br = String(b.relation ?? "");
+    if (ar !== br) return ar < br ? -1 : 1;
+    return 0;
+  });
+
+  for (const edge of sortedEdges) {
     const { source, target, ...attrs } = edge;
     if (!nodeSet.has(source) || !nodeSet.has(target)) continue;
     if ("source_file" in attrs) {
@@ -408,7 +427,22 @@ export function buildMerge(newChunks: Extraction[], options?: BuildMergeOptions)
   const graph = buildFromJson(deduplicated, options);
 
   if ((options?.pruneSources?.length ?? 0) > 0) {
-    const pruneSet = new Set((options?.pruneSources ?? []).map(sourceKey).filter(Boolean));
+    // F-0819-P2 (#1007): a manifest may store absolute paths (e.g.
+    // /home/user/corpus/module_b/utils.ts) while graph nodes store repo-relative
+    // paths (module_b/utils.ts). `sourceKey` normalises slashes but does not
+    // relativize without a root, so absolute prune entries would never match
+    // relative node source_files and stale nodes would persist. Seed the prune
+    // set with both the slash-normalised entry and a root-relative variant.
+    const pruneRoot = rootForOptions(options);
+    const pruneSet = new Set<string>();
+    for (const raw of options?.pruneSources ?? []) {
+      const direct = sourceKey(raw);
+      if (direct) pruneSet.add(direct);
+      if (pruneRoot) {
+        const relative = normalizeSourceFilePath(raw, pruneRoot);
+        if (relative) pruneSet.add(relative);
+      }
+    }
     const nodesToDrop: string[] = [];
     graph.forEachNode((nodeId, attrs) => {
       if (pruneSet.has(sourceKey(attrs.source_file))) {
