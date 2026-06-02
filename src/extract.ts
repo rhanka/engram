@@ -233,7 +233,7 @@ type TsconfigAliasEntry = {
 
 const tsconfigAliasCache = new Map<string, TsconfigAliasEntry[]>();
 type TsconfigDocument = {
-  extends?: string;
+  extends?: string | string[];
   compilerOptions?: {
     baseUrl?: string;
     paths?: Record<string, string[]>;
@@ -315,13 +315,23 @@ function loadTsconfigAliasesFromPath(tsconfigPath: string, seen: Set<string> = n
   }
 
   const configDir = dirname(resolvedTsconfigPath);
-  const extendsPath = typeof parsed.extends === "string"
-    ? resolveTsconfigExtendsPath(parsed.extends, configDir)
-    : null;
-  const inherited = extendsPath ? loadTsconfigAliasesFromPath(extendsPath, seen) : [];
-  const merged = new Map<string, TsconfigAliasEntry>(
-    inherited.map((entry) => [entry.aliasPrefix, entry]),
-  );
+  // F-0819-P1 (#1017): TS 5.0 allows `extends` to be an array of base configs,
+  // merged left-to-right (later bases win). A bare-string check silently
+  // dropped the array form, losing inherited path aliases. Resolve each base in
+  // order and let later ones override earlier ones.
+  const extendsList = typeof parsed.extends === "string"
+    ? [parsed.extends]
+    : Array.isArray(parsed.extends)
+      ? parsed.extends.filter((e): e is string => typeof e === "string")
+      : [];
+  const merged = new Map<string, TsconfigAliasEntry>();
+  for (const ext of extendsList) {
+    const extendsPath = resolveTsconfigExtendsPath(ext, configDir);
+    if (!extendsPath) continue;
+    for (const entry of loadTsconfigAliasesFromPath(extendsPath, seen)) {
+      merged.set(entry.aliasPrefix, entry);
+    }
+  }
   const baseDir = resolve(configDir, parsed.compilerOptions?.baseUrl ?? ".");
   for (const [alias, targets] of Object.entries(parsed.compilerOptions?.paths ?? {})) {
     const firstTarget = targets[0];
@@ -916,6 +926,48 @@ function _importPhp(
   }
 }
 
+/**
+ * Resolve a Lua require() module name to a node id (F-0819-P1 #1075).
+ *
+ * Lua module names use dots as path separators: `require("pkg.b")` looks for
+ * `pkg/b.lua` (or `.luau`) relative to a package root. Probe the importing
+ * file's directory and walk upward; when a matching file is found, return the
+ * id `_makeId(qualifiedFileStem(cand))` matching the file node id the extractor
+ * assigns, so the edge lands on a real node. When nothing matches on disk, fall
+ * back to `_makeId` of the full dotted module so the symbol-resolution pass can
+ * still complete the edge instead of dropping it (previously the bare last
+ * segment was used, which never matched any node id).
+ */
+function _resolveLuaImportTarget(rawModule: string, strPath: string): string {
+  if (!rawModule) return "";
+  const rel = rawModule.replace(/\./g, "/");
+  let probe: string | null = null;
+  try {
+    probe = dirname(resolve(strPath));
+  } catch {
+    probe = null;
+  }
+  // The dotted module name IS the qualified relative path of the target file
+  // (`pkg.b` -> `pkg/b.lua`), so the node id is `_makeId(rawModule)` in every
+  // case. Probing the disk only distinguishes a resolvable local module from an
+  // external one; either way the id is the dotted module (never the bare last
+  // segment, which was the #1075 bug). We keep the probe so future callers can
+  // branch on locality if needed.
+  if (probe) {
+    for (let i = 0; i < 6; i++) {
+      for (const suffix of [".lua", ".luau"]) {
+        if (existsSync(join(probe, `${rel}${suffix}`))) {
+          return _makeId(rawModule);
+        }
+      }
+      const parent = dirname(probe);
+      if (parent === probe) break;
+      probe = parent;
+    }
+  }
+  return _makeId(rawModule);
+}
+
 function _importLua(
   node: SyntaxNode, source: string, fileNid: string, _stem: string,
   edges: GraphEdge[], strPath: string,
@@ -923,10 +975,11 @@ function _importLua(
   const text = _readText(node, source);
   const m = text.match(/require\s*[('"]?\s*['"]?([^'")\s]+)/);
   if (m) {
-    const moduleName = m[1]!.split(".").pop()!;
-    if (moduleName) {
+    const rawModule = m[1]!;
+    const tgtNid = _resolveLuaImportTarget(rawModule, strPath);
+    if (tgtNid) {
       edges.push({
-        source: fileNid, target: moduleName, relation: "imports",
+        source: fileNid, target: tgtNid, relation: "imports",
         confidence: "EXTRACTED", source_file: strPath,
         source_location: String(node.startPosition.row + 1), weight: 1.0,
       });
@@ -1117,7 +1170,21 @@ function _jsExtraWalk(
 
     let constFound = false;
 
-    if (node.type === "lexical_declaration") {
+    // Scope guard (F-0819-P1 #1077): only emit nodes for module-level
+    // declarations. A `const x = ...` inside an arrow callback (e.g. inside
+    // `describe(() => { const set = new Set(...) })`) would otherwise emit a
+    // bare-named node, and the same name colliding across unrelated files
+    // produces phantom god-nodes. Arrow-function bodies are walked separately
+    // via functionBodies, so locals never need a node here.
+    const parent = node.parent;
+    const isModuleLevel =
+      parent !== null &&
+      (parent.type === "program" ||
+        (parent.type === "export_statement" &&
+          parent.parent !== null &&
+          parent.parent.type === "program"));
+
+    if (node.type === "lexical_declaration" && isModuleLevel) {
       for (const child of node.children) {
         if (child.type === "variable_declarator") {
           const value = child.childForFieldName("value");
@@ -2960,9 +3027,6 @@ export async function extractMarkdown(filePath: string, rootDir?: string): Promi
 
   const headingStack: Array<{ level: number; id: string }> = [];
   let inCodeBlock = false;
-  let codeBlockLang: string | null = null;
-  let codeBlockStart = 0;
-  let codeBlockCount = 0;
   const codeBlockLines: string[] = [];
 
   const lines = source.split(/\r?\n/u);
@@ -2974,21 +3038,15 @@ export async function extractMarkdown(filePath: string, rootDir?: string): Promi
     if (stripped.startsWith("```")) {
       if (!inCodeBlock) {
         inCodeBlock = true;
-        codeBlockLang = stripped.slice(3).trim().split(/\s+/u)[0] || null;
-        codeBlockStart = lineNumber;
         codeBlockLines.length = 0;
         continue;
       }
 
+      // F-0819-P1 (#1077): close the fence WITHOUT emitting a node. Fenced
+      // code blocks were always orphans (a single `contains` edge to the
+      // parent doc) and inflated the disconnected-component count. We still
+      // track the block so its contents aren't mistaken for headings.
       inCodeBlock = false;
-      codeBlockCount += 1;
-      const firstLine = codeBlockLines.find((line) => line.trim())?.trim().slice(0, 60);
-      const baseLabel = codeBlockLang ? `code:${codeBlockLang}` : `code:block${codeBlockCount}`;
-      const label = firstLine ? `${baseLabel} (${firstLine})` : baseLabel;
-      const codeNid = _makeId(stem, `codeblock_${codeBlockCount}`);
-      addNode(codeNid, label, codeBlockStart, "document");
-      const parent = headingStack.at(-1)?.id ?? fileNid;
-      addEdge(parent, codeNid, "contains", codeBlockStart);
       continue;
     }
 
@@ -4805,3 +4863,11 @@ export function collectFiles(target: string, options?: { followSymlinks?: boolea
   walkDir(resolved, new Set<string>());
   return results.sort();
 }
+
+/**
+ * Internal helpers exposed for unit tests only (F-0819-P1 #1075). Not part of
+ * the public API; do not import from application code.
+ */
+export const __testing = {
+  resolveLuaImportTarget: _resolveLuaImportTarget,
+};
