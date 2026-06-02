@@ -1127,7 +1127,21 @@ function _jsExtraWalk(
 
     let constFound = false;
 
-    if (node.type === "lexical_declaration") {
+    // Scope guard (F-0819-P1 #1077): only emit nodes for module-level
+    // declarations. A `const x = ...` inside an arrow callback (e.g. inside
+    // `describe(() => { const set = new Set(...) })`) would otherwise emit a
+    // bare-named node, and the same name colliding across unrelated files
+    // produces phantom god-nodes. Arrow-function bodies are walked separately
+    // via functionBodies, so locals never need a node here.
+    const parent = node.parent;
+    const isModuleLevel =
+      parent !== null &&
+      (parent.type === "program" ||
+        (parent.type === "export_statement" &&
+          parent.parent !== null &&
+          parent.parent.type === "program"));
+
+    if (node.type === "lexical_declaration" && isModuleLevel) {
       for (const child of node.children) {
         if (child.type === "variable_declarator") {
           const value = child.childForFieldName("value");
@@ -2970,9 +2984,6 @@ export async function extractMarkdown(filePath: string, rootDir?: string): Promi
 
   const headingStack: Array<{ level: number; id: string }> = [];
   let inCodeBlock = false;
-  let codeBlockLang: string | null = null;
-  let codeBlockStart = 0;
-  let codeBlockCount = 0;
   const codeBlockLines: string[] = [];
 
   const lines = source.split(/\r?\n/u);
@@ -2984,21 +2995,15 @@ export async function extractMarkdown(filePath: string, rootDir?: string): Promi
     if (stripped.startsWith("```")) {
       if (!inCodeBlock) {
         inCodeBlock = true;
-        codeBlockLang = stripped.slice(3).trim().split(/\s+/u)[0] || null;
-        codeBlockStart = lineNumber;
         codeBlockLines.length = 0;
         continue;
       }
 
+      // F-0819-P1 (#1077): close the fence WITHOUT emitting a node. Fenced
+      // code blocks were always orphans (a single `contains` edge to the
+      // parent doc) and inflated the disconnected-component count. We still
+      // track the block so its contents aren't mistaken for headings.
       inCodeBlock = false;
-      codeBlockCount += 1;
-      const firstLine = codeBlockLines.find((line) => line.trim())?.trim().slice(0, 60);
-      const baseLabel = codeBlockLang ? `code:${codeBlockLang}` : `code:block${codeBlockCount}`;
-      const label = firstLine ? `${baseLabel} (${firstLine})` : baseLabel;
-      const codeNid = _makeId(stem, `codeblock_${codeBlockCount}`);
-      addNode(codeNid, label, codeBlockStart, "document");
-      const parent = headingStack.at(-1)?.id ?? fileNid;
-      addEdge(parent, codeNid, "contains", codeBlockStart);
       continue;
     }
 
