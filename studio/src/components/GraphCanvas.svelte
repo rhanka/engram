@@ -9,7 +9,17 @@
    */
   import { ForceGraph } from "@sentropic/design-system-svelte";
 
-  let { scene, selectedIds = [], focusId = null, onSelect, onOpenEntity } = $props();
+  // SVELTE-4/5/6: legend (shape->type, dash->relation), edge hover tooltip, and
+  // zoom/pan all come from ForceGraph 0.10.4. node.shape is set in buildScene.
+  let {
+    scene,
+    selectedIds = [],
+    focusId = null,
+    legend = [],
+    onSelect,
+    onOpenEntity,
+    onEdgeHover,
+  } = $props();
 
   // Measure the container so the sim fills the available center column.
   let host = $state(null);
@@ -42,9 +52,11 @@
       {height}
       {selectedIds}
       {focusId}
+      {legend}
       showLabels={scene.nodes.length <= 80}
       {onSelect}
       {onOpenEntity}
+      {onEdgeHover}
     />
   {/if}
 </div>

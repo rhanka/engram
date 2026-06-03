@@ -66,6 +66,43 @@ export function nodeGroup(node) {
   return nodeType(node) ?? undefined;
 }
 
+/**
+ * SVELTE-4: map an ontology node type to a DS ForceGraph shape, mirroring the
+ * pack profile's visual_encoding (shape signals the entity's ontological
+ * nature; colour stays community-driven). Unknown types fall back to "dot".
+ * @returns {"diamond"|"star"|"hexagon"|"box"|"triangle"|"square"|"dot"}
+ */
+const TYPE_SHAPE = {
+  Character: "diamond",
+  Alias: "diamond",
+  DisguisePersona: "star",
+  NarrativeRole: "star",
+  Location: "triangle",
+  Organization: "hexagon",
+  Evidence: "square",
+  Object: "square",
+  ForensicMethod: "hexagon",
+  Work: "box",
+  Saga: "box",
+  ChapterOrStory: "box",
+  Author: "box",
+  Translator: "box",
+};
+export function shapeForType(node) {
+  const t = nodeType(node);
+  return (t && TYPE_SHAPE[t]) || "dot";
+}
+
+/** Distinct (type -> shape) legend entries present in a graph (SVELTE-4). */
+export function shapeLegend(graph) {
+  const seen = new Map();
+  for (const node of graphNodes(graph)) {
+    const t = nodeType(node);
+    if (t && !seen.has(t)) seen.set(t, shapeForType(node));
+  }
+  return [...seen.entries()].map(([label, shape]) => ({ label, shape }));
+}
+
 /** Strong = EXTRACTED (default). Anything else (INFERRED, …) renders weak. */
 export function isStrongEdge(edge) {
   const conf = String(edge?.confidence ?? "EXTRACTED").toUpperCase();
@@ -120,6 +157,7 @@ export function buildScene(graph, options = {}) {
       id: node.id,
       label: nodeLabel(node),
       weight: weightForDegree(degree.get(node.id) ?? 0),
+      shape: shapeForType(node), // SVELTE-4: ontology type -> DS shape
     };
     if (group !== undefined) out.group = group;
     return out;
