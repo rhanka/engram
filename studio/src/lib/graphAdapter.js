@@ -239,3 +239,33 @@ export function citationsByFile(node) {
     .map(([file, passages]) => ({ file, count: passages.length, passages }))
     .sort((a, b) => b.count - a.count || a.file.localeCompare(b.file));
 }
+
+/**
+ * SVELTE-7: build a focused subgraph around two reconciliation-candidate
+ * entities. Includes both anchors + their neighbours up to `hops` (default 1),
+ * and every edge whose endpoints are both in the kept set. Returns a graph
+ * shaped like the full one ({ nodes, links }) so buildScene can consume it.
+ */
+export function candidateSubgraph(graph, idA, idB, hops = 1) {
+  const idx = indexNodes(graph);
+  const edges = graphEdges(graph);
+  const keep = new Set();
+  for (const a of [idA, idB]) {
+    if (a != null && idx.has(a)) keep.add(a);
+  }
+  let frontier = new Set(keep);
+  for (let h = 0; h < Math.max(0, hops); h++) {
+    const next = new Set();
+    for (const e of edges) {
+      const s = e?.source, t = e?.target;
+      if (frontier.has(s) && t != null && idx.has(t) && !keep.has(t)) next.add(t);
+      if (frontier.has(t) && s != null && idx.has(s) && !keep.has(s)) next.add(s);
+    }
+    for (const n of next) keep.add(n);
+    frontier = next;
+    if (next.size === 0) break;
+  }
+  const nodes = [...keep].map((id) => idx.get(id)).filter(Boolean);
+  const links = edges.filter((e) => keep.has(e?.source) && keep.has(e?.target));
+  return { nodes, links };
+}
