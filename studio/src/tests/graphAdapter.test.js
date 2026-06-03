@@ -187,3 +187,25 @@ describe("citationsByFile (SVELTE-2)", () => {
     expect(g[0].file).toBe("x.txt");
   });
 });
+
+describe("candidateSubgraph (SVELTE-7)", () => {
+  it("keeps both anchors + 1-hop neighbours and their internal edges", async () => {
+    const { candidateSubgraph } = await import("../lib/graphAdapter.js");
+    const graph = {
+      nodes: [{ id: "A" }, { id: "B" }, { id: "n1" }, { id: "n2" }, { id: "far" }],
+      links: [
+        { source: "A", target: "n1", relation: "r" },
+        { source: "B", target: "n2", relation: "r" },
+        { source: "n1", target: "far", relation: "r" },
+      ],
+    };
+    const sub = candidateSubgraph(graph, "A", "B", 1);
+    expect(sub.nodes.map((n) => n.id).sort()).toEqual(["A", "B", "n1", "n2"]);
+    expect(sub.links.length).toBe(2);
+  });
+  it("handles missing anchors gracefully", async () => {
+    const { candidateSubgraph } = await import("../lib/graphAdapter.js");
+    const sub = candidateSubgraph({ nodes: [{ id: "A" }], links: [] }, "A", "ZZZ", 1);
+    expect(sub.nodes.map((n) => n.id)).toEqual(["A"]);
+  });
+});
