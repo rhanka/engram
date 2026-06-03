@@ -16,7 +16,7 @@
   import ReconciliationView from "./components/ReconciliationView.svelte";
   import WorkspaceShell from "./components/WorkspaceShell.svelte";
   import { fetchEntity, fetchGraph } from "./lib/api.js";
-  import { buildScene, graphNodes, nodeType, nodeCommunity } from "./lib/graphAdapter.js";
+  import { buildScene, graphNodes, nodeType, nodeCommunity, shapeLegend } from "./lib/graphAdapter.js";
   import {
     createDefaultViewerState,
     selectNode,
@@ -40,6 +40,8 @@
   const scene = $derived(
     buildScene(graph, { showWeakLinks: viewerState.filters.showWeakLinks }),
   );
+  // SVELTE-4: shape->type legend for the graph canvas.
+  const legend = $derived(shapeLegend(graph));
 
   const focusEntity = $derived(
     viewerState.focusId ? (entityCache[viewerState.focusId] ?? null) : null,
@@ -145,6 +147,7 @@
         <div class="col col-center">
           <GraphCanvas
             {scene}
+            {legend}
             selectedIds={viewerState.selectedIds}
             focusId={viewerState.focusId}
             onSelect={handleSelect}

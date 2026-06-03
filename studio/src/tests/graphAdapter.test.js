@@ -209,3 +209,26 @@ describe("candidateSubgraph (SVELTE-7)", () => {
     expect(sub.nodes.map((n) => n.id)).toEqual(["A"]);
   });
 });
+
+describe("shapeForType / shapeLegend (SVELTE-4)", () => {
+  it("maps ontology types to DS shapes, defaulting to dot", async () => {
+    const { shapeForType } = await import("../lib/graphAdapter.js");
+    expect(shapeForType({ type: "Character" })).toBe("diamond");
+    expect(shapeForType({ node_type: "Location" })).toBe("triangle");
+    expect(shapeForType({ type: "Evidence" })).toBe("square");
+    expect(shapeForType({ type: "Work" })).toBe("box");
+    expect(shapeForType({ type: "Unknownish" })).toBe("dot");
+    expect(shapeForType({})).toBe("dot");
+  });
+  it("buildScene attaches a shape to every node", async () => {
+    const { buildScene } = await import("../lib/graphAdapter.js");
+    const s = buildScene({ nodes: [{ id: "a", type: "Character" }, { id: "b", type: "Location" }], links: [] });
+    expect(s.nodes.find((n) => n.id === "a").shape).toBe("diamond");
+    expect(s.nodes.find((n) => n.id === "b").shape).toBe("triangle");
+  });
+  it("shapeLegend returns distinct type->shape entries", async () => {
+    const { shapeLegend } = await import("../lib/graphAdapter.js");
+    const legend = shapeLegend({ nodes: [{ id: "a", type: "Character" }, { id: "b", type: "Character" }, { id: "c", type: "Evidence" }] });
+    expect(legend).toEqual([{ label: "Character", shape: "diamond" }, { label: "Evidence", shape: "square" }]);
+  });
+});
