@@ -5,6 +5,7 @@
    * + the description sidecar). Clicking a relation target opens that entity
    * (highlight, NO graph reload) via onOpenEntity.
    */
+  import Accordion from "./Accordion.svelte";
   import {
     relationRowsFor,
     indexNodes,
@@ -12,6 +13,7 @@
     nodeType,
     nodeCommunity,
     nodeSourcePath,
+    citationsByFile,
   } from "../lib/graphAdapter.js";
   import { renderInlineMarkdown } from "../lib/markdown.js";
 
@@ -19,6 +21,9 @@
 
   const node = $derived(focusId ? (indexNodes(graph).get(focusId) ?? null) : null);
   const relations = $derived(focusId ? relationRowsFor(focusId, graph) : []);
+  // SVELTE-2: citations grouped by file (file > passages double accordion).
+  const citationFiles = $derived(node ? citationsByFile(node) : []);
+  const citationTotal = $derived(citationFiles.reduce((n, f) => n + f.count, 0));
   const description = $derived.by(() => {
     const sidecar = entity?.description;
     if (sidecar && sidecar.status === "generated" && typeof sidecar.description === "string") {
@@ -69,32 +74,59 @@
       </section>
     {/if}
 
-    <section class="entity-section">
-      <h3 class="entity-section-heading">
-        Relations <span class="entity-counter">{relations.length}</span>
-      </h3>
-      {#if relations.length === 0}
-        <p class="entity-empty-inline">No relations.</p>
-      {:else}
-        <ul class="entity-relations">
-          {#each relations as rel (rel.direction + rel.otherId + rel.relation)}
-            <li>
-              <button
-                class="entity-relation"
-                onclick={() => onOpenEntity?.(rel.otherId)}
-                title={rel.otherId}
-              >
-                <span class="entity-relation-kind">{rel.relation}</span>
-                <span class="entity-relation-arrow" aria-hidden="true">
-                  {rel.direction === "out" ? "→" : "←"}
-                </span>
-                <span class="entity-relation-target">{rel.otherLabel}</span>
-              </button>
-            </li>
-          {/each}
-        </ul>
-      {/if}
-    </section>
+    <!-- SVELTE-1: relations collapsed into an accordion (open when few). -->
+    <div class="entity-acc">
+      <Accordion title="Relations" count={relations.length} open={relations.length > 0 && relations.length <= 8}>
+        {#if relations.length === 0}
+          <p class="entity-empty-inline">No relations.</p>
+        {:else}
+          <ul class="entity-relations">
+            {#each relations as rel (rel.direction + rel.otherId + rel.relation)}
+              <li>
+                <button
+                  class="entity-relation"
+                  onclick={() => onOpenEntity?.(rel.otherId)}
+                  title={rel.otherId}
+                >
+                  <span class="entity-relation-kind">{rel.relation}</span>
+                  <span class="entity-relation-arrow" aria-hidden="true">
+                    {rel.direction === "out" ? "→" : "←"}
+                  </span>
+                  <span class="entity-relation-target">{rel.otherLabel}</span>
+                </button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </Accordion>
+    </div>
+
+    <!-- SVELTE-2: citations as a double accordion (file > passages). -->
+    <div class="entity-acc">
+      <Accordion title="Citations" count={citationTotal} open={false}>
+        {#if citationFiles.length === 0}
+          <p class="entity-empty-inline">No citations recorded.</p>
+        {:else}
+          <ul class="entity-cite-files">
+            {#each citationFiles as cf (cf.file)}
+              <li>
+                <Accordion title={cf.file} count={cf.count} open={false}>
+                  <ul class="entity-cite-passages">
+                    {#each cf.passages as p, i (cf.file + i)}
+                      <li class="entity-cite-passage">
+                        {#if p.section}<span class="entity-cite-section">{p.section}</span>{/if}
+                        {#if p.quote}<blockquote class="entity-cite-quote">{p.quote}</blockquote>{/if}
+                        {#if !p.section && !p.quote}<span class="entity-cite-section">(passage)</span>{/if}
+                      </li>
+                    {/each}
+                  </ul>
+                </Accordion>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </Accordion>
+    </div>
   {/if}
 </aside>
 
@@ -221,5 +253,37 @@
     margin: 0;
     font-style: italic;
     font-size: 0.82rem;
+  }
+  /* SVELTE-1/2: accordions inside the entity panel sit flush. */
+  .entity-acc {
+    margin-top: 1rem;
+    border-top: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
+  }
+  .entity-cite-files,
+  .entity-cite-passages {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.2rem;
+  }
+  .entity-cite-passage {
+    padding: 0.25rem 0;
+    border-bottom: 1px dotted var(--st-semantic-border-subtle, #e2e8f0);
+  }
+  .entity-cite-section {
+    display: block;
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: var(--st-semantic-text-secondary, #475569);
+  }
+  .entity-cite-quote {
+    margin: 0.2rem 0 0;
+    padding: 0.2rem 0.5rem;
+    border-left: 2px solid var(--st-semantic-border-strong, #94a3b8);
+    color: var(--st-semantic-text-primary, #0f172a);
+    font-size: 0.8rem;
+    font-style: italic;
+    line-height: 1.4;
   }
 </style>
