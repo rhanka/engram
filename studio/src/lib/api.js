@@ -47,3 +47,23 @@ export async function fetchReconciliationCandidates() {
     return { items: [], total: 0, error: String(err) };
   }
 }
+
+/**
+ * POST a patch to one of the write routes. On a loopback --write server no
+ * bearer token is required (SVELTE-7); the server applies/validates the patch.
+ * @param {"validate"|"dry-run"|"apply"} route
+ * @param {object} patch  a graphify_ontology_patch_v1 document
+ */
+export async function postPatch(route, patch) {
+  const res = await fetch(`/api/ontology/patch/${route}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(patch),
+  });
+  const data = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, ...data };
+}
+
+export const postPatchValidate = (patch) => postPatch("validate", patch);
+export const postPatchDryRun = (patch) => postPatch("dry-run", patch);
+export const postPatchApply = (patch) => postPatch("apply", patch);
