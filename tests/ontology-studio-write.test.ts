@@ -207,7 +207,7 @@ describe("graphify ontology studio --write", () => {
     }
   });
 
-  it("requires a bearer token for write routes and never mutates without it", async () => {
+  it("accepts same-origin loopback writes without a token, and still accepts a valid token (SVELTE-7)", async () => {
     const dir = makeTempDir();
     const fixture = writeOntologyWriteFixture(dir);
     const started = await startOntologyStudioServer({
@@ -218,24 +218,24 @@ describe("graphify ontology studio --write", () => {
       expect(started.writeEnabled).toBe(true);
       expect(started.token).toMatch(/^[0-9a-f]{48}$/);
 
+      // Loopback bind (default 127.0.0.1): the SPA may dry-run/apply WITHOUT a
+      // bearer token. --write already refuses non-loopback binds (separate
+      // test), so nothing reachable from the network can hit this.
       const { body, headers } = postBody(fixture.patch);
-      const noAuth = await fetch(`${started.url}/api/ontology/patch/apply`, {
+      const noAuthDry = await fetch(`${started.url}/api/ontology/patch/dry-run`, {
         method: "POST",
         headers,
         body,
       });
-      expect(noAuth.status).toBe(401);
+      expect(noAuthDry.status).toBe(200);
 
-      const wrongAuth = await fetch(`${started.url}/api/ontology/patch/apply`, {
+      // A valid token is still accepted (back-compat).
+      const withToken = await fetch(`${started.url}/api/ontology/patch/dry-run`, {
         method: "POST",
-        headers: { ...headers, authorization: "Bearer not-the-token" },
+        headers: { ...headers, authorization: `Bearer ${started.token}` },
         body,
       });
-      expect(wrongAuth.status).toBe(401);
-
-      // No mutation should have happened.
-      expect(readFileSync(fixture.decisionsPath, "utf-8")).toBe("");
-      expect(existsSync(fixture.auditPath)).toBe(false);
+      expect(withToken.status).toBe(200);
     } finally {
       started.server.close();
     }

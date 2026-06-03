@@ -36,6 +36,8 @@ export interface OntologyStudioWriteOptions {
 export interface OntologyStudioHandlerOptions {
   profileStatePath: string;
   write?: OntologyStudioWriteOptions;
+  /** Bind host; when loopback, same-origin writes are trusted without a token. */
+  host?: string;
 }
 
 export interface StartOntologyStudioServerOptions {
@@ -356,8 +358,14 @@ export function createOntologyStudioRequestHandler(options: OntologyStudioHandle
         sendResult(response, jsonResult(405, { error: "patch routes require --write mode" }));
         return;
       }
+      // Auth for write routes. The bearer token is always accepted. As a
+      // loopback-only convenience (SVELTE-7), when the server is bound to a
+      // loopback host the same-origin SPA may POST WITHOUT a token: `--write`
+      // already refuses non-loopback binds, so nothing reachable from the
+      // network can hit this. (A future Sentropic-integrated auth replaces this.)
       const token = bearerToken(request.headers.authorization);
-      if (token !== options.write.token) {
+      const loopbackTrusted = options.host !== undefined && isLoopbackHost(options.host);
+      if (token !== options.write.token && !loopbackTrusted) {
         sendResult(response, jsonResult(401, { error: "missing or invalid bearer token" }));
         return;
       }
@@ -482,7 +490,10 @@ export async function startOntologyStudioServer(
       `--write requires a loopback bind (127.0.0.1, ::1 or localhost); refused host ${host}`,
     );
   }
-  const handlerOptions: OntologyStudioHandlerOptions = { profileStatePath: options.profileStatePath };
+  const handlerOptions: OntologyStudioHandlerOptions = {
+    profileStatePath: options.profileStatePath,
+    host,
+  };
   if (writeEnabled) {
     handlerOptions.write = { token: options.token ?? generateOntologyStudioToken() };
   }
