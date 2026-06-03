@@ -216,3 +216,26 @@ export function groupCounts(graph, keyFn) {
     .map(([key, count]) => ({ key: String(key), count }))
     .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
 }
+
+/**
+ * SVELTE-2: group a node's citations by source file, with their passages.
+ * Each citation is `{ source_file, section?, quote? }`. Returns one entry per
+ * distinct file, with its passages (section + optional verbatim quote). Used by
+ * the entity panel's double accordion (file > passages) for full traceability.
+ * @returns {{ file: string, count: number, passages: { section: string|null, quote: string|null }[] }[]}
+ */
+export function citationsByFile(node) {
+  const cites = Array.isArray(node?.citations) ? node.citations : [];
+  const byFile = new Map();
+  for (const c of cites) {
+    const file = displayValue(c?.source_file) ?? displayValue(node?.source_file) ?? "(unknown source)";
+    if (!byFile.has(file)) byFile.set(file, []);
+    byFile.get(file).push({
+      section: displayValue(c?.section) ?? null,
+      quote: displayValue(c?.quote) ?? null,
+    });
+  }
+  return [...byFile.entries()]
+    .map(([file, passages]) => ({ file, count: passages.length, passages }))
+    .sort((a, b) => b.count - a.count || a.file.localeCompare(b.file));
+}

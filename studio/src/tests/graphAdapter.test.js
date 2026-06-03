@@ -156,3 +156,34 @@ describe("graphAdapter helpers", () => {
     expect(byComm).toContainEqual({ key: "Sherlock Holmes anthology", count: 2 });
   });
 });
+
+describe("citationsByFile (SVELTE-2)", () => {
+  it("groups citations by source file with passages", async () => {
+    const { citationsByFile } = await import("../lib/graphAdapter.js");
+    const node = {
+      id: "n1",
+      source_file: "a.txt",
+      citations: [
+        { source_file: "a.txt", section: "ch1", quote: "alpha" },
+        { source_file: "a.txt", section: "ch2" },
+        { source_file: "b.txt", section: "intro", quote: "beta" },
+      ],
+    };
+    const groups = citationsByFile(node);
+    expect(groups.length).toBe(2);
+    const a = groups.find((g) => g.file === "a.txt");
+    expect(a.count).toBe(2);
+    expect(a.passages[0].quote).toBe("alpha");
+    expect(a.passages[1].section).toBe("ch2");
+    expect(a.passages[1].quote).toBe(null);
+    const b = groups.find((g) => g.file === "b.txt");
+    expect(b.count).toBe(1);
+  });
+
+  it("falls back to node.source_file when a citation has none, and handles empty", async () => {
+    const { citationsByFile } = await import("../lib/graphAdapter.js");
+    expect(citationsByFile({ citations: [] })).toEqual([]);
+    const g = citationsByFile({ source_file: "x.txt", citations: [{ section: "s" }] });
+    expect(g[0].file).toBe("x.txt");
+  });
+});
