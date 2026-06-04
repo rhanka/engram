@@ -24,7 +24,10 @@
   const typeList = $derived(groupCounts(graph, nodeType));
   const communityList = $derived(groupCounts(graph, nodeCommunity));
 
-  const results = $derived.by(() => {
+  // SVELTE-3: results grouped by type (count) -> entities, like the legacy rail.
+  // No cap: every matching entity is reachable (the per-type accordions stay
+  // collapsed, so only an opened type renders its rows).
+  const resultsByType = $derived.by(() => {
     const q = query.trim().toLowerCase();
     let nodes = graphNodes(graph);
     if (activeGroup) {
@@ -38,11 +41,21 @@
           nodeLabel(n).toLowerCase().includes(q) || String(n.id).toLowerCase().includes(q),
       );
     }
-    return nodes
-      .map((n) => ({ id: n.id, label: nodeLabel(n), type: nodeType(n) }))
-      .sort((a, b) => a.label.localeCompare(b.label))
-      .slice(0, 200);
+    const byType = new Map();
+    for (const n of nodes) {
+      const t = nodeType(n) ?? "—";
+      if (!byType.has(t)) byType.set(t, []);
+      byType.get(t).push({ id: n.id, label: nodeLabel(n) });
+    }
+    return [...byType.entries()]
+      .map(([type, items]) => ({
+        type,
+        count: items.length,
+        items: items.sort((a, b) => a.label.localeCompare(b.label)),
+      }))
+      .sort((a, b) => b.count - a.count || a.type.localeCompare(b.type));
   });
+  const resultsTotal = $derived(resultsByType.reduce((n, g) => n + g.count, 0));
 </script>
 
 <aside class="rail" aria-label="Workspace navigation">
@@ -92,23 +105,30 @@
     {/if}
   </Accordion>
 
-  <Accordion title="Results" count={results.length} open={true}>
-    {#if results.length === 0}
+  <Accordion title="Results" count={resultsTotal} open={true}>
+    {#if resultsTotal === 0}
       <p class="rail-empty">No matching entities.</p>
     {:else}
-      <ul class="rail-list">
-        {#each results as r (r.id)}
+      <ul class="rail-type-groups">
+        {#each resultsByType as grp (grp.type)}
           <li>
-            <button
-              class="rail-row"
-              class:active={focusId === r.id}
-              class:selected={selectedIds.includes(r.id)}
-              onclick={() => onSelectEntity?.(r.id)}
-              title={r.id}
-            >
-              <span class="rail-row-label">{r.label}</span>
-              {#if r.type}<span class="rail-row-type">{r.type}</span>{/if}
-            </button>
+            <Accordion title={grp.type} count={grp.count} open={false}>
+              <ul class="rail-list">
+                {#each grp.items as r (r.id)}
+                  <li>
+                    <button
+                      class="rail-row"
+                      class:active={focusId === r.id}
+                      class:selected={selectedIds.includes(r.id)}
+                      onclick={() => onSelectEntity?.(r.id)}
+                      title={r.id}
+                    >
+                      <span class="rail-row-label">{r.label}</span>
+                    </button>
+                  </li>
+                {/each}
+              </ul>
+            </Accordion>
           </li>
         {/each}
       </ul>
@@ -200,11 +220,12 @@
     color: var(--st-semantic-text-muted, #64748b);
     font-size: 0.72rem;
   }
-  .rail-row-type {
-    color: var(--st-semantic-text-muted, #64748b);
-    font-size: 0.68rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+  .rail-type-groups {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.15rem;
   }
   .rail-empty {
     margin: 0.25rem 0;
