@@ -110,7 +110,7 @@
           <ul class="entity-cite-files">
             {#each citationFiles as cf (cf.file)}
               <li>
-                <Accordion title={cf.file} count={cf.count} open={false}>
+                <Accordion title={cf.file} count={cf.count} open={false} compact>
                   <ul class="entity-cite-passages">
                     {#each cf.passages as p, i (cf.file + i)}
                       <li class="entity-cite-passage">

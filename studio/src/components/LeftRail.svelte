@@ -113,14 +113,14 @@
     {/if}
   </Accordion>
 
-  <Accordion title="Results" count={resultsTotal} open={true}>
+  <Accordion title="Results" count={resultsTotal} open={false}>
     {#if resultsTotal === 0}
       <p class="rail-empty">No matching entities.</p>
     {:else}
       <ul class="rail-type-groups">
         {#each resultsByType as grp (grp.type)}
           <li>
-            <Accordion title={grp.type} count={grp.count} open={false}>
+            <Accordion title={grp.type} count={grp.count} open={false} compact>
               <ul class="rail-list">
                 {#each grp.items as r (r.id)}
                   <li>
