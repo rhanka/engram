@@ -17,6 +17,7 @@
   import {
     candidateSubgraph,
     buildScene,
+    withReconcileEdge,
     indexNodes,
     nodeLabel,
     nodeType,
@@ -51,10 +52,21 @@
   });
 
   // Center graph: subgraph around the two candidate entities (focused context).
+  // The twins usually have no direct edge, so we (a) pin them side by side and
+  // (b) add a bold synthetic "reconcile" edge so they read as a pair.
   const scene = $derived.by(() => {
     if (!active) return buildScene({ nodes: [], links: [] });
     const sub = candidateSubgraph(graph, active.candidate_id, active.canonical_id, 1);
-    return buildScene(sub, { showWeakLinks: true });
+    const base = buildScene(sub, { showWeakLinks: true });
+    const linked = withReconcileEdge(base, active.candidate_id, active.canonical_id);
+    // Pin the two twins symmetrically near the centre so both stay in view.
+    const cx = 360, cy = 280, dx = 130;
+    const nodes = linked.nodes.map((n) => {
+      if (n.id === active.candidate_id) return { ...n, fx: cx - dx, fy: cy };
+      if (n.id === active.canonical_id) return { ...n, fx: cx + dx, fy: cy };
+      return n;
+    });
+    return { ...linked, nodes };
   });
   const selectedIds = $derived(active ? [active.candidate_id, active.canonical_id] : []);
 
