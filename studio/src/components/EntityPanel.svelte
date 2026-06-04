@@ -74,9 +74,9 @@
       </section>
     {/if}
 
-    <!-- SVELTE-1: relations collapsed into an accordion (open when few). -->
+    <!-- SVELTE-1: relations in an accordion, collapsed by default (like citations). -->
     <div class="entity-acc">
-      <Accordion title="Relations" count={relations.length} open={relations.length > 0 && relations.length <= 8}>
+      <Accordion title="Relations" count={relations.length} open={false}>
         {#if relations.length === 0}
           <p class="entity-empty-inline">No relations.</p>
         {:else}
