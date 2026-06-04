@@ -26,6 +26,13 @@
   let width = $state(720);
   let height = $state(560);
 
+  // UAT-4: the DS clamps nodes to the full w×h box, so a wide/short column
+  // spreads the graph into a band glued to the edges (clipped, not round).
+  // Feed the sim a SQUARE area (min side); the SVG's preserveAspectRatio="meet"
+  // then scales that square to fit the column and centres it — the graph stays
+  // round and is never cropped. (A true fit-to-content is a DS request.)
+  const side = $derived(Math.max(320, Math.min(width, height)));
+
   $effect(() => {
     if (!host) return;
     const ro = new ResizeObserver((entries) => {
@@ -48,8 +55,8 @@
       nodes={scene.nodes}
       edges={scene.edges}
       label="Ontology knowledge graph"
-      {width}
-      {height}
+      width={side}
+      height={side}
       {selectedIds}
       {focusId}
       {legend}
