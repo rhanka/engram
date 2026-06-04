@@ -181,7 +181,8 @@ export function buildScene(graph, options = {}) {
       nodeCount: nodes.length,
       edgeCount: sceneEdges.length,
       weakEdgeCount: sceneEdges.filter((e) => e.weak).length,
-      communityCount: new Set(nodes.map((n) => n.group).filter((g) => g !== undefined)).size,
+      // Isolated singletons (degree-0) are excluded from the community count.
+      communityCount: communityStats(graph).liveCount,
     },
   };
 }
@@ -256,6 +257,46 @@ export function groupCounts(graph, keyFn) {
   return [...counts.entries()]
     .map(([key, count]) => ({ key: String(key), count }))
     .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+}
+
+/**
+ * Community breakdown that EXCLUDES isolated singletons from the count.
+ * A community is "live" when at least one member has a relation (degree > 0
+ * over ALL links, strong + weak, so the set is stable regardless of the weak
+ * filter). Communities whose members are all degree-0 — the D9 isolated nodes
+ * that each form their own singleton — are not counted; their members fold into
+ * a single `isolatedCount`. This drops the public-pack count 141 -> 100.
+ */
+export function communityStats(graph) {
+  const nodes = graphNodes(graph);
+  const ids = new Set(nodes.map((n) => n.id));
+  const deg = new Map();
+  for (const e of graphEdges(graph)) {
+    if (!ids.has(e.source) || !ids.has(e.target)) continue;
+    deg.set(e.source, (deg.get(e.source) ?? 0) + 1);
+    deg.set(e.target, (deg.get(e.target) ?? 0) + 1);
+  }
+  const byComm = new Map();
+  let isolatedCount = 0;
+  for (const node of nodes) {
+    const key = nodeCommunity(node);
+    const live = (deg.get(node.id) ?? 0) > 0;
+    if (key === undefined || key === null || key === "") {
+      if (!live) isolatedCount += 1;
+      continue;
+    }
+    const rec = byComm.get(key) ?? { count: 0, live: false };
+    rec.count += 1;
+    if (live) rec.live = true;
+    byComm.set(key, rec);
+  }
+  const liveList = [];
+  for (const [key, rec] of byComm) {
+    if (rec.live) liveList.push({ key: String(key), count: rec.count });
+    else isolatedCount += rec.count;
+  }
+  liveList.sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+  return { live: liveList, isolatedCount, liveCount: liveList.length };
 }
 
 /**

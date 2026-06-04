@@ -6,7 +6,14 @@
    * entity (highlight, no graph reload). Clicking a type/community filters.
    */
   import Accordion from "./Accordion.svelte";
-  import { graphNodes, nodeType, nodeLabel, groupCounts, nodeCommunity } from "../lib/graphAdapter.js";
+  import {
+    graphNodes,
+    nodeType,
+    nodeLabel,
+    groupCounts,
+    nodeCommunity,
+    communityStats,
+  } from "../lib/graphAdapter.js";
 
   let {
     graph,
@@ -22,7 +29,8 @@
   let query = $state("");
 
   const typeList = $derived(groupCounts(graph, nodeType));
-  const communityList = $derived(groupCounts(graph, nodeCommunity));
+  // Communities excluding degree-0 singletons (folded into `isolatedCount`).
+  const communityInfo = $derived(communityStats(graph));
 
   // SVELTE-3: results grouped by type (count) -> entities, like the legacy rail.
   // No cap: every matching entity is reachable (the per-type accordions stay
@@ -135,12 +143,12 @@
     {/if}
   </Accordion>
 
-  <Accordion title="Communities" count={communityList.length}>
-    {#if communityList.length === 0}
+  <Accordion title="Communities" count={communityInfo.liveCount}>
+    {#if communityInfo.liveCount === 0}
       <p class="rail-empty">No communities.</p>
     {:else}
       <ul class="rail-list">
-        {#each communityList as c (c.key)}
+        {#each communityInfo.live as c (c.key)}
           <li>
             <button
               class="rail-row"
@@ -153,6 +161,12 @@
           </li>
         {/each}
       </ul>
+      {#if communityInfo.isolatedCount > 0}
+        <p class="rail-isolated">
+          Isolated · {communityInfo.isolatedCount}
+          <span class="rail-isolated-note">degree-0, excluded from the count</span>
+        </p>
+      {/if}
     {/if}
   </Accordion>
 </aside>
@@ -231,6 +245,20 @@
     margin: 0.25rem 0;
     color: var(--st-semantic-text-muted, #64748b);
     font-size: 0.82rem;
+    font-style: italic;
+  }
+  .rail-isolated {
+    margin: 0.35rem 0 0;
+    padding: 0.3rem 0.5rem;
+    border-top: 1px dotted var(--st-semantic-border-subtle, #e2e8f0);
+    color: var(--st-semantic-text-secondary, #475569);
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .rail-isolated-note {
+    display: block;
+    color: var(--st-semantic-text-muted, #64748b);
+    font-size: 0.68rem;
     font-style: italic;
   }
   .rail-facet {
