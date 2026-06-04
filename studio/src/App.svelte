@@ -9,6 +9,7 @@
    * re-laying-out the graph. Mirrors the process-std-am viewer architecture.
    */
   import { onMount } from "svelte";
+  import { Header, Button, Badge } from "@sentropic/design-system-svelte";
 
   import EntityPanel from "./components/EntityPanel.svelte";
   import GraphCanvas from "./components/GraphCanvas.svelte";
@@ -90,31 +91,32 @@
 </script>
 
 <div class="app" data-st-theme="entropic">
-  <header class="app-header">
-    <div class="app-brand">
+  <Header class="app-header" title="Graphify Ontology Studio" label="Graphify Ontology Studio">
+    {#snippet logo()}
       <span class="app-logo" aria-hidden="true">◇</span>
-      <span class="app-name">Graphify Ontology Studio</span>
-    </div>
-    <nav class="app-nav" aria-label="Views">
-      <button
-        class="app-tab"
-        class:active={viewerState.activeView === "workspace"}
-        onclick={() => handleSetView("workspace")}>Workspace</button
+    {/snippet}
+    {#snippet navigation()}
+      <Button
+        size="sm"
+        variant={viewerState.activeView === "workspace" ? "primary" : "ghost"}
+        onclick={() => handleSetView("workspace")}>Workspace</Button
       >
-      <button
-        class="app-tab"
-        class:active={viewerState.activeView === "reconciliation"}
-        onclick={() => handleSetView("reconciliation")}>Reconciliation</button
+      <Button
+        size="sm"
+        variant={viewerState.activeView === "reconciliation" ? "primary" : "ghost"}
+        onclick={() => handleSetView("reconciliation")}>Reconciliation</Button
       >
-    </nav>
-    <div class="app-stats">
+    {/snippet}
+    {#snippet actions()}
       {#if loaded && !loadError}
-        <span>{scene.stats.nodeCount} nodes</span>
-        <span>{scene.stats.edgeCount} edges</span>
-        <span>{scene.stats.communityCount} groups</span>
+        <span class="app-stats">
+          <Badge tone="neutral">{scene.stats.nodeCount} nodes</Badge>
+          <Badge tone="neutral">{scene.stats.edgeCount} edges</Badge>
+          <Badge tone="info">{scene.stats.communityCount} groups</Badge>
+        </span>
       {/if}
-    </div>
-  </header>
+    {/snippet}
+  </Header>
 
   <main class="app-body">
     {#if !loaded}
@@ -174,53 +176,16 @@
     height: 100%;
     min-height: 0;
   }
-  .app-header {
-    display: flex;
-    align-items: center;
-    gap: 1.5rem;
-    padding: 0.55rem 1.1rem;
-    background: var(--st-semantic-surface-default, #fff);
-    border-bottom: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
-  }
-  .app-brand {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-weight: 700;
-  }
+  /* DS Header owns layout/surface/border. We only style the logo glyph it
+     renders via the `logo` snippet and the stats cluster in `actions`. */
   .app-logo {
     color: var(--st-semantic-action-primary, #2563eb);
     font-size: 1.1rem;
   }
-  .app-name {
-    color: var(--st-semantic-text-primary, #0f172a);
-  }
-  .app-nav {
-    display: flex;
-    gap: 0.25rem;
-  }
-  .app-tab {
-    border: 1px solid transparent;
-    background: transparent;
-    border-radius: var(--st-radius-sm, 4px);
-    padding: 0.3rem 0.7rem;
-    cursor: pointer;
-    color: var(--st-semantic-text-secondary, #475569);
-    font-size: 0.85rem;
-  }
-  .app-tab:hover {
-    background: var(--st-semantic-surface-subtle, #f8fafc);
-  }
-  .app-tab.active {
-    color: var(--st-semantic-action-primaryText, #fff);
-    background: var(--st-semantic-action-primary, #2563eb);
-  }
   .app-stats {
-    margin-left: auto;
-    display: flex;
-    gap: 0.85rem;
-    color: var(--st-semantic-text-muted, #64748b);
-    font-size: 0.78rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
     font-variant-numeric: tabular-nums;
   }
   .app-body {
