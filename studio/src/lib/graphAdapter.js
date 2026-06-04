@@ -126,8 +126,10 @@ export function computeDegrees(nodes, edges) {
  */
 function weightForDegree(degree) {
   if (!Number.isFinite(degree) || degree <= 0) return 1;
-  // 0->1, 5->~1.6, 20->~2.3; log keeps the spread readable.
-  return Math.min(2.6, 1 + Math.log1p(degree) / 2.2);
+  // Tightened to match the legacy graph's smaller nodes (base radius 5px in
+  // GraphCanvas): leaf weight 1 -> r=5, 5->~1.75 -> r~6.6, hub capped 2.2 ->
+  // r~7.4. Keeps the degree spread legible without the old 7–11px footprint.
+  return Math.min(2.2, 1 + Math.log1p(degree) / 2.4);
 }
 
 /**
