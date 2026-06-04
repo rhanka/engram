@@ -307,3 +307,27 @@ export function candidateSubgraph(graph, idA, idB, hops = 1) {
   const links = edges.filter((e) => keep.has(e?.source) && keep.has(e?.target));
   return { nodes, links };
 }
+
+/**
+ * SVELTE-7: add a synthetic "reconciliation" edge between the two candidate
+ * entities so the force layout pulls them side by side and the link is visible
+ * (the twins usually have no direct edge). Marked `reconcile: true` and given a
+ * relation label so the DS edge tooltip reads it; consumers render it bold.
+ */
+export function withReconcileEdge(scene, idA, idB) {
+  if (!scene || !idA || !idB) return scene;
+  const ids = new Set((scene.nodes ?? []).map((n) => n.id));
+  if (!ids.has(idA) || !ids.has(idB)) return scene;
+  const exists = (scene.edges ?? []).some(
+    (e) =>
+      (e.source === idA && e.target === idB) || (e.source === idB && e.target === idA),
+  );
+  if (exists) return scene;
+  return {
+    ...scene,
+    edges: [
+      ...(scene.edges ?? []),
+      { source: idA, target: idB, relation: "≈ reconcile", reconcile: true },
+    ],
+  };
+}
