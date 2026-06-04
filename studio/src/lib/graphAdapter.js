@@ -82,25 +82,73 @@ const TYPE_SHAPE = {
   Evidence: "square",
   Object: "square",
   ForensicMethod: "hexagon",
-  Work: "box",
-  Saga: "box",
-  ChapterOrStory: "box",
-  Author: "box",
-  Translator: "box",
+  Work: "roundedbox",
+  Saga: "roundedbox",
+  ChapterOrStory: "roundedbox",
+  Author: "roundedbox",
+  Translator: "roundedbox",
 };
+
+/**
+ * Map an ontology relation to a typed dash style (ForceGraph 0.10.5).
+ * Four families: solid = belonging/structure, dashed = agency/interaction
+ * between characters, dotted = spatial/factual anchoring, long-dash =
+ * method/usage. Unmapped relations fall back to solid.
+ */
+const REL_DASH = {
+  // structure / belonging (the skeleton)
+  appears_in: "solid",
+  part_of: "solid",
+  belongs_to_saga: "solid",
+  contains_evidence: "solid",
+  written_by: "solid",
+  narrates: "solid",
+  alias_of: "solid",
+  same_as: "solid",
+  // agency / interaction
+  commits: "dashed",
+  investigates: "dashed",
+  assists: "dashed",
+  opposes: "dashed",
+  targets: "dashed",
+  suspected_of: "dashed",
+  disguises_as: "dashed",
+  motivates: "dashed",
+  // spatial / factual anchoring
+  occurs_at: "dotted",
+  located_in: "dotted",
+  establishes_fact: "dotted",
+  mentions: "dotted",
+  // method / usage
+  used_in: "long-dash",
+  uses_method: "long-dash",
+  involves: "long-dash",
+};
+export function dashForRelation(relation) {
+  if (!relation) return undefined;
+  return REL_DASH[String(relation)] ?? "solid";
+}
 export function shapeForType(node) {
   const t = nodeType(node);
   return (t && TYPE_SHAPE[t]) || "dot";
 }
 
 /** Distinct (type -> shape) legend entries present in a graph (SVELTE-4). */
+/** Edge legend (dash family -> relation kind), appended after the node shapes. */
+const RELATION_LEGEND = [
+  { label: "belonging / structure", dash: "solid" },
+  { label: "agency / interaction", dash: "dashed" },
+  { label: "spatial / factual", dash: "dotted" },
+  { label: "method / usage", dash: "long-dash" },
+];
 export function shapeLegend(graph) {
   const seen = new Map();
   for (const node of graphNodes(graph)) {
     const t = nodeType(node);
     if (t && !seen.has(t)) seen.set(t, shapeForType(node));
   }
-  return [...seen.entries()].map(([label, shape]) => ({ label, shape }));
+  const shapeEntries = [...seen.entries()].map(([label, shape]) => ({ label, shape }));
+  return [...shapeEntries, ...RELATION_LEGEND];
 }
 
 /** Strong = EXTRACTED (default). Anything else (INFERRED, …) renders weak. */
@@ -169,7 +217,12 @@ export function buildScene(graph, options = {}) {
   const sceneEdges = edges.map((edge) => {
     const out = { source: edge.source, target: edge.target };
     const relation = displayValue(edge.relation);
-    if (relation) out.relation = relation;
+    if (relation) {
+      out.relation = relation;
+      // SVELTE/UAT R3-8: typed dash per relation family (ForceGraph 0.10.5).
+      const dash = dashForRelation(edge.relation);
+      if (dash) out.dash = dash;
+    }
     if (!isStrongEdge(edge)) out.weak = true;
     return out;
   });
@@ -371,7 +424,17 @@ export function withReconcileEdge(scene, idA, idB) {
     ...scene,
     edges: [
       ...(scene.edges ?? []),
-      { source: idA, target: idB, relation: "≈ reconcile", reconcile: true },
+      // UAT R2-7: bold reconcile edge (ForceGraph 0.10.5). `width` takes
+      // precedence over `emphasis` per the DS API, so set both for a clear bold.
+      {
+        source: idA,
+        target: idB,
+        relation: "≈ reconcile",
+        reconcile: true,
+        emphasis: true,
+        width: 3,
+        dash: "solid",
+      },
     ],
   };
 }
