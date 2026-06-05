@@ -329,6 +329,20 @@ export function communityStats(graph) {
     deg.set(e.source, (deg.get(e.source) ?? 0) + 1);
     deg.set(e.target, (deg.get(e.target) ?? 0) + 1);
   }
+  // Reproduce the DS tone assignment: it walks scene nodes and assigns
+  // category1..8 to each new `group` in first-seen order. We mirror that here
+  // (same node order, same nodeGroup key) so the rail swatch matches the graph.
+  const TONES = [
+    "category1", "category2", "category3", "category4",
+    "category5", "category6", "category7", "category8",
+  ];
+  const toneByGroup = new Map();
+  for (const node of nodes) {
+    const g = nodeGroup(node);
+    if (g === undefined || g === null || toneByGroup.has(g)) continue;
+    toneByGroup.set(g, TONES[toneByGroup.size % TONES.length]);
+  }
+
   const byComm = new Map();
   let isolatedCount = 0;
   for (const node of nodes) {
@@ -345,8 +359,11 @@ export function communityStats(graph) {
   }
   const liveList = [];
   for (const [key, rec] of byComm) {
-    if (rec.live) liveList.push({ key: String(key), count: rec.count });
-    else isolatedCount += rec.count;
+    if (rec.live) {
+      liveList.push({ key: String(key), count: rec.count, tone: toneByGroup.get(key) ?? "category1" });
+    } else {
+      isolatedCount += rec.count;
+    }
   }
   liveList.sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
   return { live: liveList, isolatedCount, liveCount: liveList.length };
