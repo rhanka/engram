@@ -17,6 +17,7 @@
   import {
     candidateSubgraph,
     buildScene,
+    withReconcileEdge,
     indexNodes,
     nodeLabel,
     nodeType,
@@ -35,6 +36,9 @@
   let activeId = $state(null);
   let busy = $state(false);
   let actionResult = $state(null);
+  // UAT R8-4: drives the DS ForceGraph merge animation on accept.
+  let mergePair = $state(null);
+  let pendingDecision = $state(null);
 
   const idx = $derived(indexNodes(graph));
   const active = $derived(activeId ? (candidates.find((c) => c.id === activeId) ?? null) : null);
@@ -51,10 +55,21 @@
   });
 
   // Center graph: subgraph around the two candidate entities (focused context).
+  // The twins usually have no direct edge, so we (a) pin them side by side and
+  // (b) add a bold synthetic "reconcile" edge so they read as a pair.
   const scene = $derived.by(() => {
     if (!active) return buildScene({ nodes: [], links: [] });
     const sub = candidateSubgraph(graph, active.candidate_id, active.canonical_id, 1);
-    return buildScene(sub, { showWeakLinks: true });
+    const base = buildScene(sub, { showWeakLinks: true });
+    const linked = withReconcileEdge(base, active.candidate_id, active.canonical_id);
+    // Pin the two twins symmetrically near the centre so both stay in view.
+    const cx = 360, cy = 280, dx = 130;
+    const nodes = linked.nodes.map((n) => {
+      if (n.id === active.candidate_id) return { ...n, fx: cx - dx, fy: cy };
+      if (n.id === active.canonical_id) return { ...n, fx: cx + dx, fy: cy };
+      return n;
+    });
+    return { ...linked, nodes };
   });
   const selectedIds = $derived(active ? [active.candidate_id, active.canonical_id] : []);
 
@@ -83,15 +98,34 @@
 
   async function decide(decision) {
     if (!active || busy) return;
+    // R8-4: on ACCEPT, play the merge animation first (candidate slides into
+    // canonical), then apply the patch in handleMergeComplete. Reject applies now.
+    if (decision === "accept") {
+      pendingDecision = { decision, candidate: active };
+      mergePair = { id: active.id, from: active.candidate_id, into: active.canonical_id };
+      return;
+    }
+    await applyDecision(decision, active);
+  }
+
+  function handleMergeComplete() {
+    const pending = pendingDecision;
+    pendingDecision = null;
+    mergePair = null;
+    if (pending) void applyDecision(pending.decision, pending.candidate);
+  }
+
+  async function applyDecision(decision, cand) {
+    if (!cand || busy) return;
     busy = true;
     actionResult = null;
     try {
-      const patch = buildPatchFromCandidate(active, decision, { graphHash, profileHash });
+      const patch = buildPatchFromCandidate(cand, decision, { graphHash, profileHash });
       const res = await postPatchApply(patch);
       if (res.ok && res.valid !== false) {
         actionResult = { ok: true, msg: `${decision === "accept" ? "Accepted" : "Rejected"} — patch applied.` };
         // Drop the decided candidate from the queue and advance.
-        const decidedId = active.id;
+        const decidedId = cand.id;
         candidates = candidates.filter((c) => c.id !== decidedId);
         total = Math.max(0, total - 1);
         activeId = candidates[0]?.id ?? null;
@@ -155,6 +189,8 @@
         focusId={active.candidate_id}
         onSelect={(id) => onOpenEntity?.(id)}
         onOpenEntity={(id) => onOpenEntity?.(id)}
+        {mergePair}
+        onMergeComplete={handleMergeComplete}
       />
     {:else}
       <p class="recon-center-empty">Select a candidate to see the two entities in context.</p>

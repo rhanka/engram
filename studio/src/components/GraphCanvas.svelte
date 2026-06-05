@@ -19,6 +19,8 @@
     onSelect,
     onOpenEntity,
     onEdgeHover,
+    mergePair = null,
+    onMergeComplete,
   } = $props();
 
   // Measure the container so the sim fills the available center column.
@@ -53,10 +55,14 @@
       {selectedIds}
       {focusId}
       {legend}
+      nodeRadius={3}
+      repulsion={1.6}
       showLabels={scene.nodes.length <= 80}
       {onSelect}
       {onOpenEntity}
       {onEdgeHover}
+      {mergePair}
+      {onMergeComplete}
     />
   {/if}
 </div>

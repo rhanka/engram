@@ -82,25 +82,73 @@ const TYPE_SHAPE = {
   Evidence: "square",
   Object: "square",
   ForensicMethod: "hexagon",
-  Work: "box",
-  Saga: "box",
-  ChapterOrStory: "box",
-  Author: "box",
-  Translator: "box",
+  Work: "roundedbox",
+  Saga: "roundedbox",
+  ChapterOrStory: "roundedbox",
+  Author: "roundedbox",
+  Translator: "roundedbox",
 };
+
+/**
+ * Map an ontology relation to a typed dash style (ForceGraph 0.10.5).
+ * Four families: solid = belonging/structure, dashed = agency/interaction
+ * between characters, dotted = spatial/factual anchoring, long-dash =
+ * method/usage. Unmapped relations fall back to solid.
+ */
+const REL_DASH = {
+  // structure / belonging (the skeleton)
+  appears_in: "solid",
+  part_of: "solid",
+  belongs_to_saga: "solid",
+  contains_evidence: "solid",
+  written_by: "solid",
+  narrates: "solid",
+  alias_of: "solid",
+  same_as: "solid",
+  // agency / interaction
+  commits: "dashed",
+  investigates: "dashed",
+  assists: "dashed",
+  opposes: "dashed",
+  targets: "dashed",
+  suspected_of: "dashed",
+  disguises_as: "dashed",
+  motivates: "dashed",
+  // spatial / factual anchoring
+  occurs_at: "dotted",
+  located_in: "dotted",
+  establishes_fact: "dotted",
+  mentions: "dotted",
+  // method / usage
+  used_in: "long-dash",
+  uses_method: "long-dash",
+  involves: "long-dash",
+};
+export function dashForRelation(relation) {
+  if (!relation) return undefined;
+  return REL_DASH[String(relation)] ?? "solid";
+}
 export function shapeForType(node) {
   const t = nodeType(node);
   return (t && TYPE_SHAPE[t]) || "dot";
 }
 
 /** Distinct (type -> shape) legend entries present in a graph (SVELTE-4). */
+/** Edge legend (dash family -> relation kind), appended after the node shapes. */
+const RELATION_LEGEND = [
+  { label: "belonging / structure", dash: "solid" },
+  { label: "agency / interaction", dash: "dashed" },
+  { label: "spatial / factual", dash: "dotted" },
+  { label: "method / usage", dash: "long-dash" },
+];
 export function shapeLegend(graph) {
   const seen = new Map();
   for (const node of graphNodes(graph)) {
     const t = nodeType(node);
     if (t && !seen.has(t)) seen.set(t, shapeForType(node));
   }
-  return [...seen.entries()].map(([label, shape]) => ({ label, shape }));
+  const shapeEntries = [...seen.entries()].map(([label, shape]) => ({ label, shape }));
+  return [...shapeEntries, ...RELATION_LEGEND];
 }
 
 /** Strong = EXTRACTED (default). Anything else (INFERRED, …) renders weak. */
@@ -124,10 +172,18 @@ export function computeDegrees(nodes, edges) {
  * Map degree -> ForceGraph `weight` (relative node radius multiplier).
  * Clamped to a gentle range so hubs read bigger without dwarfing leaves.
  */
-function weightForDegree(degree) {
-  if (!Number.isFinite(degree) || degree <= 0) return 1;
-  // 0->1, 5->~1.6, 20->~2.3; log keeps the spread readable.
-  return Math.min(2.6, 1 + Math.log1p(degree) / 2.2);
+// Legacy autosizing: node radius is LINEAR in degree, NORMALISED by the graph's
+// max degree — r = rmin + (rmax - rmin) * (deg / maxDeg) (legacy used
+// r = 4 + 12*(deg/maxDeg), i.e. an rmax/rmin ratio of 4). The DS renders
+// r = nodeRadius * sqrt(weight), so to get that linear r we pass
+// weight = (r_target / nodeRadius)^2 with nodeRadius = rmin (3px in GraphCanvas).
+const RADIUS_RATIO = 4; // rmax / rmin, matches the legacy 4->16 spread
+function weightForDegree(degree, maxDegree) {
+  const max = Number.isFinite(maxDegree) && maxDegree > 0 ? maxDegree : 1;
+  const ratio = Math.min(1, Math.max(0, (Number.isFinite(degree) ? degree : 0) / max));
+  // r_target/rmin = 1 + (RADIUS_RATIO - 1) * ratio ; weight = (r_target/rmin)^2.
+  const rOverRmin = 1 + (RADIUS_RATIO - 1) * ratio;
+  return rOverRmin * rOverRmin;
 }
 
 /**
@@ -150,13 +206,16 @@ export function buildScene(graph, options = {}) {
   if (!showWeakLinks) edges = edges.filter(isStrongEdge);
 
   const degree = computeDegrees(rawNodes, edges);
+  // Autosizing is normalised by the graph's max degree (legacy method), so the
+  // largest hub is rmax and a leaf is rmin regardless of the absolute degrees.
+  const maxDegree = degree.size > 0 ? Math.max(...degree.values()) : 1;
 
   const nodes = rawNodes.map((node) => {
     const group = nodeGroup(node);
     const out = {
       id: node.id,
       label: nodeLabel(node),
-      weight: weightForDegree(degree.get(node.id) ?? 0),
+      weight: weightForDegree(degree.get(node.id) ?? 0, maxDegree),
       shape: shapeForType(node), // SVELTE-4: ontology type -> DS shape
     };
     if (group !== undefined) out.group = group;
@@ -166,7 +225,12 @@ export function buildScene(graph, options = {}) {
   const sceneEdges = edges.map((edge) => {
     const out = { source: edge.source, target: edge.target };
     const relation = displayValue(edge.relation);
-    if (relation) out.relation = relation;
+    if (relation) {
+      out.relation = relation;
+      // SVELTE/UAT R3-8: typed dash per relation family (ForceGraph 0.10.5).
+      const dash = dashForRelation(edge.relation);
+      if (dash) out.dash = dash;
+    }
     if (!isStrongEdge(edge)) out.weak = true;
     return out;
   });
@@ -178,7 +242,8 @@ export function buildScene(graph, options = {}) {
       nodeCount: nodes.length,
       edgeCount: sceneEdges.length,
       weakEdgeCount: sceneEdges.filter((e) => e.weak).length,
-      communityCount: new Set(nodes.map((n) => n.group).filter((g) => g !== undefined)).size,
+      // Isolated singletons (degree-0) are excluded from the community count.
+      communityCount: communityStats(graph).liveCount,
     },
   };
 }
@@ -256,6 +321,63 @@ export function groupCounts(graph, keyFn) {
 }
 
 /**
+ * Community breakdown that EXCLUDES isolated singletons from the count.
+ * A community is "live" when at least one member has a relation (degree > 0
+ * over ALL links, strong + weak, so the set is stable regardless of the weak
+ * filter). Communities whose members are all degree-0 — the D9 isolated nodes
+ * that each form their own singleton — are not counted; their members fold into
+ * a single `isolatedCount`. This drops the public-pack count 141 -> 100.
+ */
+export function communityStats(graph) {
+  const nodes = graphNodes(graph);
+  const ids = new Set(nodes.map((n) => n.id));
+  const deg = new Map();
+  for (const e of graphEdges(graph)) {
+    if (!ids.has(e.source) || !ids.has(e.target)) continue;
+    deg.set(e.source, (deg.get(e.source) ?? 0) + 1);
+    deg.set(e.target, (deg.get(e.target) ?? 0) + 1);
+  }
+  // Reproduce the DS tone assignment: it walks scene nodes and assigns
+  // category1..8 to each new `group` in first-seen order. We mirror that here
+  // (same node order, same nodeGroup key) so the rail swatch matches the graph.
+  const TONES = [
+    "category1", "category2", "category3", "category4",
+    "category5", "category6", "category7", "category8",
+  ];
+  const toneByGroup = new Map();
+  for (const node of nodes) {
+    const g = nodeGroup(node);
+    if (g === undefined || g === null || toneByGroup.has(g)) continue;
+    toneByGroup.set(g, TONES[toneByGroup.size % TONES.length]);
+  }
+
+  const byComm = new Map();
+  let isolatedCount = 0;
+  for (const node of nodes) {
+    const key = nodeCommunity(node);
+    const live = (deg.get(node.id) ?? 0) > 0;
+    if (key === undefined || key === null || key === "") {
+      if (!live) isolatedCount += 1;
+      continue;
+    }
+    const rec = byComm.get(key) ?? { count: 0, live: false };
+    rec.count += 1;
+    if (live) rec.live = true;
+    byComm.set(key, rec);
+  }
+  const liveList = [];
+  for (const [key, rec] of byComm) {
+    if (rec.live) {
+      liveList.push({ key: String(key), count: rec.count, tone: toneByGroup.get(key) ?? "category1" });
+    } else {
+      isolatedCount += rec.count;
+    }
+  }
+  liveList.sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+  return { live: liveList, isolatedCount, liveCount: liveList.length };
+}
+
+/**
  * SVELTE-2: group a node's citations by source file, with their passages.
  * Each citation is `{ source_file, section?, quote? }`. Returns one entry per
  * distinct file, with its passages (section + optional verbatim quote). Used by
@@ -306,4 +428,72 @@ export function candidateSubgraph(graph, idA, idB, hops = 1) {
   const nodes = [...keep].map((id) => idx.get(id)).filter(Boolean);
   const links = edges.filter((e) => keep.has(e?.source) && keep.has(e?.target));
   return { nodes, links };
+}
+
+/**
+ * SVELTE-7: add a synthetic "reconciliation" edge between the two candidate
+ * entities so the force layout pulls them side by side and the link is visible
+ * (the twins usually have no direct edge). Marked `reconcile: true` and given a
+ * relation label so the DS edge tooltip reads it; consumers render it bold.
+ */
+export function withReconcileEdge(scene, idA, idB) {
+  if (!scene || !idA || !idB) return scene;
+  const ids = new Set((scene.nodes ?? []).map((n) => n.id));
+  if (!ids.has(idA) || !ids.has(idB)) return scene;
+  const exists = (scene.edges ?? []).some(
+    (e) =>
+      (e.source === idA && e.target === idB) || (e.source === idB && e.target === idA),
+  );
+  if (exists) return scene;
+  return {
+    ...scene,
+    edges: [
+      ...(scene.edges ?? []),
+      // UAT R2-7: bold reconcile edge (ForceGraph 0.10.5). `width` takes
+      // precedence over `emphasis` per the DS API, so set both for a clear bold.
+      {
+        source: idA,
+        target: idB,
+        relation: "≈ reconcile",
+        reconcile: true,
+        emphasis: true,
+        width: 3,
+        dash: "solid",
+      },
+    ],
+  };
+}
+
+// ---- Selection resolution (R8-3) -----------------------------------------
+
+/** Entities of a given ontology type: [{ id, label }], sorted by label. */
+export function entitiesByType(graph, type) {
+  return graphNodes(graph)
+    .filter((n) => nodeType(n) === type)
+    .map((n) => ({ id: n.id, label: nodeLabel(n) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/** Entities of a given community: [{ id, label }], sorted by label. */
+export function entitiesByCommunity(graph, community) {
+  return graphNodes(graph)
+    .filter((n) => nodeCommunity(n) === community)
+    .map((n) => ({ id: n.id, label: nodeLabel(n) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/**
+ * Graph `selectedIds` derived from a selection: every entity of every selected
+ * type/community, plus the directly-selected entities. One pass over the nodes.
+ */
+export function resolveSelectedIds(graph, selection) {
+  const ids = new Set(selection?.entities ?? []);
+  const types = new Set(selection?.types ?? []);
+  const comms = new Set(selection?.communities ?? []);
+  if (types.size > 0 || comms.size > 0) {
+    for (const n of graphNodes(graph)) {
+      if (types.has(nodeType(n)) || comms.has(nodeCommunity(n))) ids.add(n.id);
+    }
+  }
+  return [...ids];
 }
