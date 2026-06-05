@@ -203,10 +203,6 @@
     letter-spacing: 0.05em;
     color: var(--st-semantic-text-secondary, #475569);
   }
-  .entity-counter {
-    color: var(--st-semantic-text-muted, #64748b);
-    font-variant-numeric: tabular-nums;
-  }
   .entity-description {
     line-height: 1.5;
     color: var(--st-semantic-text-primary, #0f172a);
