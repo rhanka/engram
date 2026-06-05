@@ -53,7 +53,7 @@
       {selectedIds}
       {focusId}
       {legend}
-      nodeRadius={4}
+      nodeRadius={3}
       showLabels={scene.nodes.length <= 80}
       {onSelect}
       {onOpenEntity}
