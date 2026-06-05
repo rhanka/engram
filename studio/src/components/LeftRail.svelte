@@ -62,17 +62,10 @@
   const entSet = $derived(new Set(selection.entities));
 </script>
 
-<aside class="rail" aria-label="Workspace navigation">
-  <Accordion title="Options" open={false}>
-    <label class="rail-facet">
-      <input
-        type="checkbox"
-        checked={showWeakLinks}
-        onchange={(e) => onToggleWeak?.(e.currentTarget.checked)}
-      />
-      Show weak (inferred) links
-    </label>
-  </Accordion>
+<aside class="rail" aria-label="Search">
+  <header class="rail-head">
+    <span class="rail-kicker">Search</span>
+  </header>
 
   <div class="rail-search">
     <input
@@ -84,7 +77,7 @@
     />
   </div>
 
-  <Accordion title="Types" count={typeList.length} open={true}>
+  <Accordion title="Types" count={typeList.length} open={false}>
     {#if typeList.length === 0}
       <p class="rail-empty">No types.</p>
     {:else}
@@ -170,6 +163,17 @@
       </ul>
     {/if}
   </Accordion>
+
+  <Accordion title="Options" open={false}>
+    <label class="rail-facet">
+      <input
+        type="checkbox"
+        checked={showWeakLinks}
+        onchange={(e) => onToggleWeak?.(e.currentTarget.checked)}
+      />
+      Show weak (inferred) links
+    </label>
+  </Accordion>
 </aside>
 
 <style>
@@ -180,8 +184,19 @@
     display: flex;
     flex-direction: column;
   }
+  .rail-head {
+    padding: 0.6rem 0.85rem 0;
+  }
+  .rail-kicker {
+    margin: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--st-semantic-text-muted, #64748b);
+  }
   .rail-search {
-    padding: 0.7rem 0.85rem;
+    padding: 0.5rem 0.85rem 0.7rem;
     border-bottom: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
   }
   .rail-search input {

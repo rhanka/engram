@@ -24,6 +24,7 @@
     toggleCommunity,
     toggleEntity,
     focusEntity as focusEntityAction,
+    setFocus,
     clearSelection,
     setActiveView,
     setQuery,
@@ -49,11 +50,6 @@
   // Graph highlight = every entity of every selected type/community + the
   // directly-selected entities (R8-3.B).
   const selectedIds = $derived(resolveSelectedIds(graph, viewerState.selection));
-  // Focused entity detail (the leaf of the right-column drill-down).
-  const focusEntity = $derived(
-    viewerState.focusId ? (entityCache[viewerState.focusId] ?? null) : null,
-  );
-
   function handleToggleType(type) {
     viewerState = toggleType(viewerState, type);
   }
@@ -67,6 +63,11 @@
   function handleFocusEntity(id) {
     viewerState = focusEntityAction(viewerState, id);
     void ensureEntity(id);
+  }
+  function handleSetFocus(id) {
+    // Expand/collapse the right-column entity detail (null = collapse).
+    viewerState = setFocus(viewerState, id);
+    if (id) void ensureEntity(id);
   }
   function handleClear() {
     viewerState = clearSelection(viewerState);
@@ -171,7 +172,8 @@
             {graph}
             selection={viewerState.selection}
             focusId={viewerState.focusId}
-            {focusEntity}
+            {entityCache}
+            onSetFocus={handleSetFocus}
             onFocusEntity={handleFocusEntity}
             onToggleType={handleToggleType}
             onToggleCommunity={handleToggleCommunity}

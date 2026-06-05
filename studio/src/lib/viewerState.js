@@ -105,6 +105,16 @@ export function focusEntity(state, id) {
   });
 }
 
+/**
+ * Set (or clear with null) the focused entity — used to expand/collapse the
+ * entity detail in the right column. A non-null id is also added to the
+ * selection (focusing implies selecting).
+ */
+export function setFocus(state, id) {
+  if (!id) return normalizeViewerState({ ...state, focusId: null });
+  return focusEntity(state, id);
+}
+
 export function clearSelection(state) {
   return normalizeViewerState({
     ...state,
