@@ -33,7 +33,9 @@
 
   const EMPTY_GRAPH = { nodes: [], links: [] };
 
-  let graph = $state(EMPTY_GRAPH);
+  // $state.raw: `graph` (1193 nodes) is only ever REASSIGNED in bulk, never
+  // mutated in place — raw skips deep proxying (perf: less memory + hydration).
+  let graph = $state.raw(EMPTY_GRAPH);
   let loaded = $state(false);
   let loadError = $state(null);
   let viewerState = $state(createDefaultViewerState());
