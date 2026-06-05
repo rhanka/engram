@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
+import { validateOllamaBaseUrl } from "./security.js";
 import type { NormalizedLlmExecutionPolicy } from "./types.js";
 
 export type LlmExecutionCapability = "text_json" | "vision_json" | "batch_vision_json";
@@ -272,6 +273,9 @@ async function resolveDirectModel(provider: DirectLlmProvider, model: string): P
     case "ollama": {
       const { createOllama } = await import("ollama-ai-provider");
       const baseURL = process.env.OLLAMA_BASE_URL?.trim();
+      // F-0831-P1 (F3): block a link-local/metadata OLLAMA_BASE_URL (SSRF)
+      // before the corpus leaves; warn-and-allow a trusted LAN host.
+      if (baseURL) await validateOllamaBaseUrl(baseURL, { warn: true });
       const factory = baseURL ? createOllama({ baseURL }) : createOllama();
       return factory(model);
     }
