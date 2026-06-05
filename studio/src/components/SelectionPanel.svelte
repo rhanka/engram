@@ -85,7 +85,7 @@
       see its detail.
     </p>
   {:else}
-    <Accordion title="Types" count={selection.types.length} open={true}>
+    <Accordion title="Types" count={selection.types.length} open={selection.types.length > 0}>
       {#if selection.types.length === 0}
         <p class="sel-muted">No type selected.</p>
       {:else}
@@ -108,7 +108,7 @@
       {/if}
     </Accordion>
 
-    <Accordion title="Communities" count={selection.communities.length} open={true}>
+    <Accordion title="Communities" count={selection.communities.length} open={selection.communities.length > 0}>
       {#if selection.communities.length === 0}
         <p class="sel-muted">No community selected.</p>
       {:else}
@@ -131,7 +131,7 @@
       {/if}
     </Accordion>
 
-    <Accordion title="Entities" count={selection.entities.length} open={true}>
+    <Accordion title="Entities" count={selection.entities.length} open={selection.entities.length > 0}>
       {#if directEntities.length === 0}
         <p class="sel-muted">No entity selected.</p>
       {:else}
