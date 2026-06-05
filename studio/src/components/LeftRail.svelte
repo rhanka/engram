@@ -1,9 +1,9 @@
 <script>
   /**
-   * Left rail: Types / Facets / Results / Communities accordions (collapsed).
-   * Pure presentational — derives its lists from the loaded graph and reports
-   * intent up via the on* callbacks. Clicking a result row selects+opens the
-   * entity (highlight, no graph reload). Clicking a type/community filters.
+   * Left rail = navigation (R8-3). Order: Options (top) → Search → Types →
+   * Communities → Entities. Each Type/Community/Entity row TOGGLES into/out of
+   * the selection (click = add/remove); selected rows are marked. The selection
+   * itself is shown in the right column (SelectionPanel).
    */
   import Accordion from "./Accordion.svelte";
   import {
@@ -11,38 +11,30 @@
     nodeType,
     nodeLabel,
     groupCounts,
-    nodeCommunity,
     communityStats,
   } from "../lib/graphAdapter.js";
 
   let {
     graph,
-    activeGroup = null,
+    query = "",
+    selection = { types: [], communities: [], entities: [] },
     showWeakLinks = true,
-    selectedIds = [],
-    focusId = null,
-    onSelectEntity,
-    onSetGroup,
+    onToggleType,
+    onToggleCommunity,
+    onToggleEntity,
+    onSetQuery,
     onToggleWeak,
   } = $props();
-
-  let query = $state("");
 
   const typeList = $derived(groupCounts(graph, nodeType));
   // Communities excluding degree-0 singletons (folded into `isolatedCount`).
   const communityInfo = $derived(communityStats(graph));
 
-  // SVELTE-3: results grouped by type (count) -> entities, like the legacy rail.
-  // No cap: every matching entity is reachable (the per-type accordions stay
-  // collapsed, so only an opened type renders its rows).
-  const resultsByType = $derived.by(() => {
+  // Entities grouped by type (count) -> rows, filtered by the search query.
+  // No cap: per-type accordions stay collapsed so all entities are reachable.
+  const entitiesByType = $derived.by(() => {
     const q = query.trim().toLowerCase();
     let nodes = graphNodes(graph);
-    if (activeGroup) {
-      nodes = nodes.filter(
-        (n) => nodeType(n) === activeGroup || nodeCommunity(n) === activeGroup,
-      );
-    }
     if (q) {
       nodes = nodes.filter(
         (n) =>
@@ -63,41 +55,15 @@
       }))
       .sort((a, b) => b.count - a.count || a.type.localeCompare(b.type));
   });
-  const resultsTotal = $derived(resultsByType.reduce((n, g) => n + g.count, 0));
+  const entityTotal = $derived(entitiesByType.reduce((n, g) => n + g.count, 0));
+
+  const typeSet = $derived(new Set(selection.types));
+  const commSet = $derived(new Set(selection.communities));
+  const entSet = $derived(new Set(selection.entities));
 </script>
 
 <aside class="rail" aria-label="Workspace navigation">
-  <div class="rail-search">
-    <input
-      type="search"
-      placeholder="Search entities…"
-      bind:value={query}
-      aria-label="Search entities"
-    />
-  </div>
-
-  <Accordion title="Types" count={typeList.length}>
-    {#if typeList.length === 0}
-      <p class="rail-empty">No types.</p>
-    {:else}
-      <ul class="rail-list">
-        {#each typeList as t (t.key)}
-          <li>
-            <button
-              class="rail-row"
-              class:active={activeGroup === t.key}
-              onclick={() => onSetGroup?.(activeGroup === t.key ? null : t.key)}
-            >
-              <span class="rail-row-label">{t.key}</span>
-              <span class="rail-row-count">{t.count}</span>
-            </button>
-          </li>
-        {/each}
-      </ul>
-    {/if}
-  </Accordion>
-
-  <Accordion title="Facets">
+  <Accordion title="Options" open={false}>
     <label class="rail-facet">
       <input
         type="checkbox"
@@ -106,37 +72,35 @@
       />
       Show weak (inferred) links
     </label>
-    {#if activeGroup}
-      <button class="rail-clear" onclick={() => onSetGroup?.(null)}>
-        Clear group filter: {activeGroup}
-      </button>
-    {/if}
   </Accordion>
 
-  <Accordion title="Results" count={resultsTotal} open={false}>
-    {#if resultsTotal === 0}
-      <p class="rail-empty">No matching entities.</p>
+  <div class="rail-search">
+    <input
+      type="search"
+      placeholder="Search entities…"
+      value={query}
+      oninput={(e) => onSetQuery?.(e.currentTarget.value)}
+      aria-label="Search entities"
+    />
+  </div>
+
+  <Accordion title="Types" count={typeList.length} open={true}>
+    {#if typeList.length === 0}
+      <p class="rail-empty">No types.</p>
     {:else}
-      <ul class="rail-type-groups">
-        {#each resultsByType as grp (grp.type)}
+      <ul class="rail-list">
+        {#each typeList as t (t.key)}
           <li>
-            <Accordion title={grp.type} count={grp.count} open={false} compact>
-              <ul class="rail-list">
-                {#each grp.items as r (r.id)}
-                  <li>
-                    <button
-                      class="rail-row"
-                      class:active={focusId === r.id}
-                      class:selected={selectedIds.includes(r.id)}
-                      onclick={() => onSelectEntity?.(r.id)}
-                      title={r.id}
-                    >
-                      <span class="rail-row-label">{r.label}</span>
-                    </button>
-                  </li>
-                {/each}
-              </ul>
-            </Accordion>
+            <button
+              class="rail-row"
+              class:selected={typeSet.has(t.key)}
+              aria-pressed={typeSet.has(t.key)}
+              onclick={() => onToggleType?.(t.key)}
+            >
+              <span class="rail-check" aria-hidden="true">{typeSet.has(t.key) ? "✓" : ""}</span>
+              <span class="rail-row-label">{t.key}</span>
+              <span class="rail-row-count">{t.count}</span>
+            </button>
           </li>
         {/each}
       </ul>
@@ -152,8 +116,9 @@
           <li>
             <button
               class="rail-row"
-              class:active={activeGroup === c.key}
-              onclick={() => onSetGroup?.(activeGroup === c.key ? null : c.key)}
+              class:selected={commSet.has(c.key)}
+              aria-pressed={commSet.has(c.key)}
+              onclick={() => onToggleCommunity?.(c.key)}
             >
               <span
                 class="rail-swatch"
@@ -172,6 +137,37 @@
           <span class="rail-isolated-note">degree-0, excluded from the count</span>
         </p>
       {/if}
+    {/if}
+  </Accordion>
+
+  <Accordion title="Entities" count={entityTotal} open={false}>
+    {#if entityTotal === 0}
+      <p class="rail-empty">No matching entities.</p>
+    {:else}
+      <ul class="rail-type-groups">
+        {#each entitiesByType as grp (grp.type)}
+          <li>
+            <Accordion title={grp.type} count={grp.count} open={false} compact>
+              <ul class="rail-list">
+                {#each grp.items as r (r.id)}
+                  <li>
+                    <button
+                      class="rail-row"
+                      class:selected={entSet.has(r.id)}
+                      aria-pressed={entSet.has(r.id)}
+                      onclick={() => onToggleEntity?.(r.id)}
+                      title={r.id}
+                    >
+                      <span class="rail-check" aria-hidden="true">{entSet.has(r.id) ? "✓" : ""}</span>
+                      <span class="rail-row-label">{r.label}</span>
+                    </button>
+                  </li>
+                {/each}
+              </ul>
+            </Accordion>
+          </li>
+        {/each}
+      </ul>
     {/if}
   </Accordion>
 </aside>
@@ -206,7 +202,6 @@
   .rail-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 0.5rem;
     width: 100%;
     text-align: left;
@@ -221,12 +216,19 @@
   .rail-row:hover {
     background: var(--st-semantic-surface-subtle, #f8fafc);
   }
-  .rail-row.active {
-    border-color: var(--st-semantic-action-primary, #2563eb);
-    box-shadow: inset 3px 0 0 var(--st-semantic-action-primary, #2563eb);
-  }
-  .rail-row.selected .rail-row-label {
+  /* Selected = a clean themed state (no inset "boudin" bar). Pending the DS
+     selectable-row pattern (R8-5). */
+  .rail-row.selected {
+    background: var(--st-semantic-surface-selected, #eff6ff);
+    color: var(--st-semantic-action-primary, #2563eb);
     font-weight: 600;
+  }
+  .rail-check {
+    flex-shrink: 0;
+    width: 0.8rem;
+    text-align: center;
+    color: var(--st-semantic-action-primary, #2563eb);
+    font-size: 0.75rem;
   }
   .rail-row-label {
     flex: 1;
@@ -288,16 +290,5 @@
     font-size: 0.82rem;
     color: var(--st-semantic-text-secondary, #475569);
     cursor: pointer;
-  }
-  .rail-clear {
-    margin-top: 0.5rem;
-    width: 100%;
-    border: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
-    background: var(--st-semantic-surface-subtle, #f8fafc);
-    border-radius: var(--st-radius-sm, 4px);
-    padding: 0.3rem 0.5rem;
-    cursor: pointer;
-    font-size: 0.78rem;
-    color: var(--st-semantic-text-secondary, #475569);
   }
 </style>
