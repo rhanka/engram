@@ -155,6 +155,11 @@
               class:active={activeGroup === c.key}
               onclick={() => onSetGroup?.(activeGroup === c.key ? null : c.key)}
             >
+              <span
+                class="rail-swatch"
+                style="background: var(--st-semantic-data-{c.tone}, #94a3b8)"
+                aria-hidden="true"
+              ></span>
               <span class="rail-row-label">{c.key}</span>
               <span class="rail-row-count">{c.count}</span>
             </button>
@@ -229,9 +234,21 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .rail-swatch {
+    flex-shrink: 0;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+  }
   .rail-row-count {
+    flex-shrink: 0;
     font-variant-numeric: tabular-nums;
     color: var(--st-semantic-text-muted, #64748b);
+    background: var(--st-semantic-surface-subtle, #f8fafc);
+    border: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
+    border-radius: var(--st-radius-pill, 999px);
+    padding: 0.02rem 0.45rem;
     font-size: 0.72rem;
   }
   .rail-type-groups {
