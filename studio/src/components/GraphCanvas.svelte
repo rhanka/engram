@@ -54,6 +54,7 @@
       {focusId}
       {legend}
       nodeRadius={3}
+      repulsion={1.6}
       showLabels={scene.nodes.length <= 80}
       {onSelect}
       {onOpenEntity}

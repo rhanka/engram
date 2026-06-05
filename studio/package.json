@@ -18,7 +18,7 @@
     "vitest": "^4.0.15"
   },
   "dependencies": {
-    "@sentropic/design-system-svelte": "^0.10.5",
+    "@sentropic/design-system-svelte": "^0.13.0",
     "@sentropic/design-system-themes": "^0.10.3",
     "@sentropic/design-system-tokens": "^0.10.3"
   }
