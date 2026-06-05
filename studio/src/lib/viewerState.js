@@ -1,27 +1,28 @@
 /**
- * Single client viewer state for the ontology studio SPA.
+ * Single client viewer state for the ontology studio SPA (selection rework R8-3).
  *
- * Mirrors the process-std-am viewer pattern: one plain object that App.svelte holds in
- * a single `let viewerState`, mutated only by returning a fresh normalized
- * object. `$:` derived scenes downstream recompute from it. Kept intentionally
- * small for the first vertical slice.
+ * The LEFT column is navigation (search + Types / Communities / Entities lists);
+ * the RIGHT column shows the current SELECTION and drills down to an entity.
  *
- *   selectedIds  : node ids highlighted in the ForceGraph (NO re-layout).
- *   focusId      : node id with the accent ring + open in the entity panel.
- *   activeView   : "workspace" | "reconciliation".
- *   filters      : { group: string|null, showWeakLinks: boolean }.
+ *   selection : { types:[], communities:[], entities:[] } — what the user picked
+ *               on the left. Each list toggles independently (click = add/remove).
+ *   focusId   : the last individually-picked entity → gets the "double" emphasis
+ *               (selection highlight + focus shadow) and opens its detail.
+ *   options   : { showWeakLinks } — graph options (ex-"Facets").
+ *   query     : free-text filter for the Entities list.
+ *   activeView: "workspace" | "reconciliation".
+ *
+ * The graph's `selectedIds` is DERIVED in App from `selection` + the graph
+ * (a selected type/community contributes all its member entity ids).
  */
 
 export function createDefaultViewerState() {
   return {
     activeView: "workspace",
-    selectedIds: [],
+    query: "",
+    selection: { types: [], communities: [], entities: [] },
     focusId: null,
-    filters: {
-      // When set, the rail/scene focus on a single group (community or type).
-      group: null,
-      showWeakLinks: true,
-    },
+    options: { showWeakLinks: true },
   };
 }
 
@@ -31,57 +32,98 @@ function uniqueStrings(values = []) {
 
 export function normalizeViewerState(partial = {}) {
   const base = createDefaultViewerState();
+  const sel = partial.selection ?? {};
   const next = {
     ...base,
     ...partial,
-    filters: { ...base.filters, ...(partial.filters ?? {}) },
+    selection: {
+      types: uniqueStrings(sel.types ?? base.selection.types),
+      communities: uniqueStrings(sel.communities ?? base.selection.communities),
+      entities: uniqueStrings(sel.entities ?? base.selection.entities),
+    },
+    options: { ...base.options, ...(partial.options ?? {}) },
   };
-  next.selectedIds = uniqueStrings(next.selectedIds);
+  next.query = typeof next.query === "string" ? next.query : "";
   next.focusId = typeof next.focusId === "string" && next.focusId ? next.focusId : null;
   if (next.activeView !== "reconciliation") next.activeView = "workspace";
-  next.filters.showWeakLinks = Boolean(next.filters.showWeakLinks);
-  next.filters.group =
-    typeof next.filters.group === "string" && next.filters.group ? next.filters.group : null;
+  next.options.showWeakLinks = Boolean(next.options.showWeakLinks);
+  // The focus must be a selected entity; drop it if it was deselected.
+  if (next.focusId && !next.selection.entities.includes(next.focusId)) next.focusId = null;
   return next;
 }
 
-/** Toggle a node into/out of the highlight set (does NOT change focus). */
-export function toggleSelected(state, id) {
-  const set = new Set(state.selectedIds);
-  if (set.has(id)) set.delete(id);
-  else set.add(id);
-  return normalizeViewerState({ ...state, selectedIds: [...set] });
+function toggleIn(list, value) {
+  const set = new Set(list);
+  if (set.has(value)) set.delete(value);
+  else set.add(value);
+  return [...set];
 }
 
-/** Select a node: highlight it AND make it the focus (entity panel target). */
-export function selectNode(state, id) {
+/** Toggle a TYPE bucket in/out of the selection. */
+export function toggleType(state, type) {
   return normalizeViewerState({
     ...state,
-    selectedIds: state.selectedIds.includes(id) ? state.selectedIds : [...state.selectedIds, id],
+    selection: { ...state.selection, types: toggleIn(state.selection.types, type) },
+  });
+}
+
+/** Toggle a COMMUNITY bucket in/out of the selection. */
+export function toggleCommunity(state, community) {
+  return normalizeViewerState({
+    ...state,
+    selection: { ...state.selection, communities: toggleIn(state.selection.communities, community) },
+  });
+}
+
+/**
+ * Toggle a single ENTITY in/out of the selection. Adding makes it the focus
+ * (double emphasis); removing the focused one clears the focus.
+ */
+export function toggleEntity(state, id) {
+  const has = state.selection.entities.includes(id);
+  const entities = toggleIn(state.selection.entities, id);
+  const focusId = has ? (state.focusId === id ? null : state.focusId) : id;
+  return normalizeViewerState({
+    ...state,
+    selection: { ...state.selection, entities },
+    focusId,
+  });
+}
+
+/**
+ * Focus an entity (right-column drill-down or graph dblclick): ensure it is
+ * selected AND make it the focus, without touching the other buckets.
+ */
+export function focusEntity(state, id) {
+  const entities = state.selection.entities.includes(id)
+    ? state.selection.entities
+    : [...state.selection.entities, id];
+  return normalizeViewerState({
+    ...state,
+    selection: { ...state.selection, entities },
     focusId: id,
   });
 }
 
-/** Open an entity in the panel (focus) without clearing other highlights. */
-export function openEntity(state, id) {
-  return selectNode(state, id);
-}
-
 export function clearSelection(state) {
-  return normalizeViewerState({ ...state, selectedIds: [], focusId: null });
+  return normalizeViewerState({
+    ...state,
+    selection: { types: [], communities: [], entities: [] },
+    focusId: null,
+  });
 }
 
 export function setActiveView(state, view) {
   return normalizeViewerState({ ...state, activeView: view });
 }
 
-export function setGroupFilter(state, group) {
-  return normalizeViewerState({ ...state, filters: { ...state.filters, group } });
+export function setQuery(state, query) {
+  return normalizeViewerState({ ...state, query });
 }
 
 export function setShowWeakLinks(state, value) {
   return normalizeViewerState({
     ...state,
-    filters: { ...state.filters, showWeakLinks: Boolean(value) },
+    options: { ...state.options, showWeakLinks: Boolean(value) },
   });
 }

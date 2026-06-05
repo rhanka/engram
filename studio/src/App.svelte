@@ -11,18 +11,22 @@
   import { onMount } from "svelte";
   import { Header, Button, Badge } from "@sentropic/design-system-svelte";
 
-  import EntityPanel from "./components/EntityPanel.svelte";
   import GraphCanvas from "./components/GraphCanvas.svelte";
   import LeftRail from "./components/LeftRail.svelte";
   import ReconciliationView from "./components/ReconciliationView.svelte";
+  import SelectionPanel from "./components/SelectionPanel.svelte";
   import WorkspaceShell from "./components/WorkspaceShell.svelte";
   import { fetchEntity, fetchGraph } from "./lib/api.js";
-  import { buildScene, graphNodes, nodeType, nodeCommunity, shapeLegend } from "./lib/graphAdapter.js";
+  import { buildScene, shapeLegend, resolveSelectedIds } from "./lib/graphAdapter.js";
   import {
     createDefaultViewerState,
-    selectNode,
+    toggleType,
+    toggleCommunity,
+    toggleEntity,
+    focusEntity as focusEntityAction,
+    clearSelection,
     setActiveView,
-    setGroupFilter,
+    setQuery,
     setShowWeakLinks,
   } from "./lib/viewerState.js";
 
@@ -34,48 +38,53 @@
   let viewerState = $state(createDefaultViewerState());
   let entityCache = $state({});
 
-  // ----- derived scene ------------------------------------------------------
-  // The scene is rebuilt only when the GRAPH or the weak-link filter changes —
+  // ----- derived ------------------------------------------------------------
+  // The scene is rebuilt only when the GRAPH or the weak-link option changes —
   // NOT when selection changes. Selection flows through selectedIds/focusId,
   // which the DS applies without re-layout.
   const scene = $derived(
-    buildScene(graph, { showWeakLinks: viewerState.filters.showWeakLinks }),
+    buildScene(graph, { showWeakLinks: viewerState.options.showWeakLinks }),
   );
-  // SVELTE-4: shape->type legend for the graph canvas.
   const legend = $derived(shapeLegend(graph));
-
+  // Graph highlight = every entity of every selected type/community + the
+  // directly-selected entities (R8-3.B).
+  const selectedIds = $derived(resolveSelectedIds(graph, viewerState.selection));
+  // Focused entity detail (the leaf of the right-column drill-down).
   const focusEntity = $derived(
     viewerState.focusId ? (entityCache[viewerState.focusId] ?? null) : null,
   );
 
-  function handleSelect(id) {
-    // Highlight + focus. No graph reload, no re-layout.
-    viewerState = selectNode(viewerState, id);
+  function handleToggleType(type) {
+    viewerState = toggleType(viewerState, type);
+  }
+  function handleToggleCommunity(community) {
+    viewerState = toggleCommunity(viewerState, community);
+  }
+  function handleToggleEntity(id) {
+    viewerState = toggleEntity(viewerState, id);
+    if (viewerState.focusId) void ensureEntity(viewerState.focusId);
+  }
+  function handleFocusEntity(id) {
+    viewerState = focusEntityAction(viewerState, id);
     void ensureEntity(id);
   }
-
-  function handleOpenEntity(id) {
-    // dblclick / Enter — same target, the panel is already the detail surface.
-    viewerState = selectNode(viewerState, id);
-    void ensureEntity(id);
+  function handleClear() {
+    viewerState = clearSelection(viewerState);
   }
-
-  async function ensureEntity(id) {
-    if (entityCache[id]) return;
-    const data = await fetchEntity(id);
-    if (data) entityCache = { ...entityCache, [id]: data };
+  function handleSetQuery(q) {
+    viewerState = setQuery(viewerState, q);
   }
-
-  function handleSetGroup(group) {
-    viewerState = setGroupFilter(viewerState, group);
-  }
-
   function handleToggleWeak(value) {
     viewerState = setShowWeakLinks(viewerState, value);
   }
-
   function handleSetView(view) {
     viewerState = setActiveView(viewerState, view);
+  }
+
+  async function ensureEntity(id) {
+    if (!id || entityCache[id]) return;
+    const data = await fetchEntity(id);
+    if (data) entityCache = { ...entityCache, [id]: data };
   }
 
   onMount(async () => {
@@ -131,18 +140,19 @@
         <p class="app-error-detail">{loadError}</p>
       </section>
     {:else if viewerState.activeView === "reconciliation"}
-      <ReconciliationView {graph} onOpenEntity={handleOpenEntity} />
+      <ReconciliationView {graph} onOpenEntity={handleFocusEntity} />
     {:else}
       <WorkspaceShell>
         <div class="col col-left">
           <LeftRail
             {graph}
-            activeGroup={viewerState.filters.group}
-            showWeakLinks={viewerState.filters.showWeakLinks}
-            selectedIds={viewerState.selectedIds}
-            focusId={viewerState.focusId}
-            onSelectEntity={handleSelect}
-            onSetGroup={handleSetGroup}
+            query={viewerState.query}
+            selection={viewerState.selection}
+            showWeakLinks={viewerState.options.showWeakLinks}
+            onToggleType={handleToggleType}
+            onToggleCommunity={handleToggleCommunity}
+            onToggleEntity={handleToggleEntity}
+            onSetQuery={handleSetQuery}
             onToggleWeak={handleToggleWeak}
           />
         </div>
@@ -150,18 +160,23 @@
           <GraphCanvas
             {scene}
             {legend}
-            selectedIds={viewerState.selectedIds}
+            {selectedIds}
             focusId={viewerState.focusId}
-            onSelect={handleSelect}
-            onOpenEntity={handleOpenEntity}
+            onSelect={handleToggleEntity}
+            onOpenEntity={handleFocusEntity}
           />
         </div>
         <div class="col col-right">
-          <EntityPanel
+          <SelectionPanel
             {graph}
+            selection={viewerState.selection}
             focusId={viewerState.focusId}
-            entity={focusEntity}
-            onOpenEntity={handleOpenEntity}
+            {focusEntity}
+            onFocusEntity={handleFocusEntity}
+            onToggleType={handleToggleType}
+            onToggleCommunity={handleToggleCommunity}
+            onToggleEntity={handleToggleEntity}
+            onClear={handleClear}
           />
         </div>
       </WorkspaceShell>

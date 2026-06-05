@@ -463,3 +463,37 @@ export function withReconcileEdge(scene, idA, idB) {
     ],
   };
 }
+
+// ---- Selection resolution (R8-3) -----------------------------------------
+
+/** Entities of a given ontology type: [{ id, label }], sorted by label. */
+export function entitiesByType(graph, type) {
+  return graphNodes(graph)
+    .filter((n) => nodeType(n) === type)
+    .map((n) => ({ id: n.id, label: nodeLabel(n) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/** Entities of a given community: [{ id, label }], sorted by label. */
+export function entitiesByCommunity(graph, community) {
+  return graphNodes(graph)
+    .filter((n) => nodeCommunity(n) === community)
+    .map((n) => ({ id: n.id, label: nodeLabel(n) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/**
+ * Graph `selectedIds` derived from a selection: every entity of every selected
+ * type/community, plus the directly-selected entities. One pass over the nodes.
+ */
+export function resolveSelectedIds(graph, selection) {
+  const ids = new Set(selection?.entities ?? []);
+  const types = new Set(selection?.types ?? []);
+  const comms = new Set(selection?.communities ?? []);
+  if (types.size > 0 || comms.size > 0) {
+    for (const n of graphNodes(graph)) {
+      if (types.has(nodeType(n)) || comms.has(nodeCommunity(n))) ids.add(n.id);
+    }
+  }
+  return [...ids];
+}
