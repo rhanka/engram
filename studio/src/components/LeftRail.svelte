@@ -5,6 +5,7 @@
    * the selection (click = add/remove); selected rows are marked. The selection
    * itself is shown in the right column (SelectionPanel).
    */
+  import { SelectableRow } from "@sentropic/design-system-svelte";
   import Accordion from "./Accordion.svelte";
   import {
     graphNodes,
@@ -84,16 +85,12 @@
       <ul class="rail-list">
         {#each typeList as t (t.key)}
           <li>
-            <button
-              class="rail-row"
-              class:selected={typeSet.has(t.key)}
-              aria-pressed={typeSet.has(t.key)}
-              onclick={() => onToggleType?.(t.key)}
-            >
-              <span class="rail-check" aria-hidden="true">{typeSet.has(t.key) ? "✓" : ""}</span>
-              <span class="rail-row-label">{t.key}</span>
-              <span class="rail-row-count">{t.count}</span>
-            </button>
+            <SelectableRow value={t.key} selected={typeSet.has(t.key)} onselect={() => onToggleType?.(t.key)}>
+              <span class="rail-row-content">
+                <span class="rail-row-label">{t.key}</span>
+                <span class="rail-row-count">{t.count}</span>
+              </span>
+            </SelectableRow>
           </li>
         {/each}
       </ul>
@@ -107,20 +104,17 @@
       <ul class="rail-list">
         {#each communityInfo.live as c (c.key)}
           <li>
-            <button
-              class="rail-row"
-              class:selected={commSet.has(c.key)}
-              aria-pressed={commSet.has(c.key)}
-              onclick={() => onToggleCommunity?.(c.key)}
-            >
-              <span
-                class="rail-swatch"
-                style="background: var(--st-semantic-data-{c.tone}, #94a3b8)"
-                aria-hidden="true"
-              ></span>
-              <span class="rail-row-label">{c.key}</span>
-              <span class="rail-row-count">{c.count}</span>
-            </button>
+            <SelectableRow value={c.key} selected={commSet.has(c.key)} onselect={() => onToggleCommunity?.(c.key)}>
+              <span class="rail-row-content">
+                <span
+                  class="rail-swatch"
+                  style="background: var(--st-semantic-data-{c.tone}, #94a3b8)"
+                  aria-hidden="true"
+                ></span>
+                <span class="rail-row-label">{c.key}</span>
+                <span class="rail-row-count">{c.count}</span>
+              </span>
+            </SelectableRow>
           </li>
         {/each}
       </ul>
@@ -144,16 +138,11 @@
               <ul class="rail-list">
                 {#each grp.items as r (r.id)}
                   <li>
-                    <button
-                      class="rail-row"
-                      class:selected={entSet.has(r.id)}
-                      aria-pressed={entSet.has(r.id)}
-                      onclick={() => onToggleEntity?.(r.id)}
-                      title={r.id}
-                    >
-                      <span class="rail-check" aria-hidden="true">{entSet.has(r.id) ? "✓" : ""}</span>
-                      <span class="rail-row-label">{r.label}</span>
-                    </button>
+                    <SelectableRow value={r.id} selected={entSet.has(r.id)} onselect={() => onToggleEntity?.(r.id)}>
+                      <span class="rail-row-content" title={r.id}>
+                        <span class="rail-row-label">{r.label}</span>
+                      </span>
+                    </SelectableRow>
                   </li>
                 {/each}
               </ul>
@@ -214,36 +203,15 @@
     display: grid;
     gap: 1px;
   }
-  .rail-row {
+  /* SelectableRow (DS, R8-5) owns the row wrapper + selected styling; this is
+     just the inner layout (swatch | label | count). */
+  .rail-row-content {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     width: 100%;
-    text-align: left;
-    border: 1px solid transparent;
-    background: transparent;
-    border-radius: var(--st-radius-sm, 4px);
-    padding: 0.35rem 0.5rem;
-    cursor: pointer;
-    color: var(--st-semantic-text-primary, #0f172a);
+    min-width: 0;
     font-size: 0.85rem;
-  }
-  .rail-row:hover {
-    background: var(--st-semantic-surface-subtle, #f8fafc);
-  }
-  /* Selected = a clean themed state (no inset "boudin" bar). Pending the DS
-     selectable-row pattern (R8-5). */
-  .rail-row.selected {
-    background: var(--st-semantic-surface-selected, #eff6ff);
-    color: var(--st-semantic-action-primary, #2563eb);
-    font-weight: 600;
-  }
-  .rail-check {
-    flex-shrink: 0;
-    width: 0.8rem;
-    text-align: center;
-    color: var(--st-semantic-action-primary, #2563eb);
-    font-size: 0.75rem;
   }
   .rail-row-label {
     flex: 1;
