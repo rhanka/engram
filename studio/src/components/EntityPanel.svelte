@@ -17,7 +17,7 @@
   } from "../lib/graphAdapter.js";
   import { renderInlineMarkdown } from "../lib/markdown.js";
 
-  let { graph, focusId = null, entity = null, onOpenEntity } = $props();
+  let { graph, focusId = null, entity = null, onOpenEntity, hideTitle = false } = $props();
 
   const node = $derived(focusId ? (indexNodes(graph).get(focusId) ?? null) : null);
   const relations = $derived(focusId ? relationRowsFor(focusId, graph) : []);
@@ -42,8 +42,10 @@
   {:else}
     <header class="entity-head">
       <p class="entity-kicker">{nodeType(node) ?? "Entity"}</p>
-      <h2 class="entity-title">{nodeLabel(node)}</h2>
-      <p class="entity-id">{node.id}</p>
+      {#if !hideTitle}
+        <h2 class="entity-title">{nodeLabel(node)}</h2>
+        <p class="entity-id">{node.id}</p>
+      {/if}
     </header>
 
     <dl class="entity-meta">
