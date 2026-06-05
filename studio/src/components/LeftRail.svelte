@@ -230,6 +230,9 @@
   }
   .rail-row-label {
     flex: 1;
+    /* min-width:0 lets the flex item shrink below its content so the ellipsis
+       kicks in (and the count to its right stays in view) instead of overflowing. */
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
