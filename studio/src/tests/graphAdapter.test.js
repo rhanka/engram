@@ -232,3 +232,20 @@ describe("shapeForType / shapeLegend (SVELTE-4)", () => {
     expect(legend).toEqual([{ label: "Character", shape: "diamond" }, { label: "Evidence", shape: "square" }]);
   });
 });
+
+describe("withReconcileEdge (SVELTE-7)", () => {
+  it("adds a bold reconcile edge between the two twins", async () => {
+    const { withReconcileEdge } = await import("../lib/graphAdapter.js");
+    const scene = { nodes: [{ id: "A" }, { id: "B" }], edges: [] };
+    const out = withReconcileEdge(scene, "A", "B");
+    expect(out.edges.length).toBe(1);
+    expect(out.edges[0]).toMatchObject({ source: "A", target: "B", relation: "≈ reconcile", reconcile: true });
+  });
+  it("does not duplicate when a direct edge already exists, and no-ops on missing nodes", async () => {
+    const { withReconcileEdge } = await import("../lib/graphAdapter.js");
+    const withEdge = { nodes: [{ id: "A" }, { id: "B" }], edges: [{ source: "B", target: "A", relation: "x" }] };
+    expect(withReconcileEdge(withEdge, "A", "B").edges.length).toBe(1);
+    const missing = { nodes: [{ id: "A" }], edges: [] };
+    expect(withReconcileEdge(missing, "A", "ZZ").edges.length).toBe(0);
+  });
+});

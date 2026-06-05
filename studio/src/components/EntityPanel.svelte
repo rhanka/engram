@@ -17,7 +17,7 @@
   } from "../lib/graphAdapter.js";
   import { renderInlineMarkdown } from "../lib/markdown.js";
 
-  let { graph, focusId = null, entity = null, onOpenEntity } = $props();
+  let { graph, focusId = null, entity = null, onOpenEntity, hideTitle = false } = $props();
 
   const node = $derived(focusId ? (indexNodes(graph).get(focusId) ?? null) : null);
   const relations = $derived(focusId ? relationRowsFor(focusId, graph) : []);
@@ -42,8 +42,10 @@
   {:else}
     <header class="entity-head">
       <p class="entity-kicker">{nodeType(node) ?? "Entity"}</p>
-      <h2 class="entity-title">{nodeLabel(node)}</h2>
-      <p class="entity-id">{node.id}</p>
+      {#if !hideTitle}
+        <h2 class="entity-title">{nodeLabel(node)}</h2>
+        <p class="entity-id">{node.id}</p>
+      {/if}
     </header>
 
     <dl class="entity-meta">
@@ -74,9 +76,9 @@
       </section>
     {/if}
 
-    <!-- SVELTE-1: relations collapsed into an accordion (open when few). -->
+    <!-- SVELTE-1: relations in an accordion, collapsed by default (like citations). -->
     <div class="entity-acc">
-      <Accordion title="Relations" count={relations.length} open={relations.length > 0 && relations.length <= 8}>
+      <Accordion title="Relations" count={relations.length} open={false}>
         {#if relations.length === 0}
           <p class="entity-empty-inline">No relations.</p>
         {:else}
@@ -110,7 +112,7 @@
           <ul class="entity-cite-files">
             {#each citationFiles as cf (cf.file)}
               <li>
-                <Accordion title={cf.file} count={cf.count} open={false}>
+                <Accordion title={cf.file} count={cf.count} open={false} compact>
                   <ul class="entity-cite-passages">
                     {#each cf.passages as p, i (cf.file + i)}
                       <li class="entity-cite-passage">
@@ -200,10 +202,6 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--st-semantic-text-secondary, #475569);
-  }
-  .entity-counter {
-    color: var(--st-semantic-text-muted, #64748b);
-    font-variant-numeric: tabular-nums;
   }
   .entity-description {
     line-height: 1.5;
