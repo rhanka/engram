@@ -172,13 +172,18 @@ export function computeDegrees(nodes, edges) {
  * Map degree -> ForceGraph `weight` (relative node radius multiplier).
  * Clamped to a gentle range so hubs read bigger without dwarfing leaves.
  */
-function weightForDegree(degree) {
-  if (!Number.isFinite(degree) || degree <= 0) return 1;
-  // Sized to the legacy graph: small leaves, clearly bigger hubs. With base
-  // radius 4px (GraphCanvas), r = 4*sqrt(weight): leaf 1 -> r=4, deg5 ->
-  // ~2.4 -> r~6.2, deg20 -> ~3.3 -> r~7.3, hub capped 4 -> r=8. Restores the
-  // 4..8px spread (legacy was r=4+12*(deg/maxDeg)) instead of the flat ~7px.
-  return Math.min(4, 1 + Math.log1p(degree) / 1.3);
+// Legacy autosizing: node radius is LINEAR in degree, NORMALISED by the graph's
+// max degree — r = rmin + (rmax - rmin) * (deg / maxDeg) (legacy used
+// r = 4 + 12*(deg/maxDeg), i.e. an rmax/rmin ratio of 4). The DS renders
+// r = nodeRadius * sqrt(weight), so to get that linear r we pass
+// weight = (r_target / nodeRadius)^2 with nodeRadius = rmin (3px in GraphCanvas).
+const RADIUS_RATIO = 4; // rmax / rmin, matches the legacy 4->16 spread
+function weightForDegree(degree, maxDegree) {
+  const max = Number.isFinite(maxDegree) && maxDegree > 0 ? maxDegree : 1;
+  const ratio = Math.min(1, Math.max(0, (Number.isFinite(degree) ? degree : 0) / max));
+  // r_target/rmin = 1 + (RADIUS_RATIO - 1) * ratio ; weight = (r_target/rmin)^2.
+  const rOverRmin = 1 + (RADIUS_RATIO - 1) * ratio;
+  return rOverRmin * rOverRmin;
 }
 
 /**
@@ -201,13 +206,16 @@ export function buildScene(graph, options = {}) {
   if (!showWeakLinks) edges = edges.filter(isStrongEdge);
 
   const degree = computeDegrees(rawNodes, edges);
+  // Autosizing is normalised by the graph's max degree (legacy method), so the
+  // largest hub is rmax and a leaf is rmin regardless of the absolute degrees.
+  const maxDegree = degree.size > 0 ? Math.max(...degree.values()) : 1;
 
   const nodes = rawNodes.map((node) => {
     const group = nodeGroup(node);
     const out = {
       id: node.id,
       label: nodeLabel(node),
-      weight: weightForDegree(degree.get(node.id) ?? 0),
+      weight: weightForDegree(degree.get(node.id) ?? 0, maxDegree),
       shape: shapeForType(node), // SVELTE-4: ontology type -> DS shape
     };
     if (group !== undefined) out.group = group;
