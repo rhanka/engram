@@ -66,6 +66,106 @@ export function validateUrlSync(url: string): string {
   return url;
 }
 
+// ---------------------------------------------------------------------------
+// Ollama base URL validation (Track F-0831-P1, F3)
+// ---------------------------------------------------------------------------
+
+const OLLAMA_METADATA_HOSTS = new Set([
+  "metadata.google.internal",
+  "metadata.google.com",
+  "0.0.0.0",
+  "::",
+  "[::]",
+]);
+
+/** True if a literal IP is link-local (169.254/16, fe80::/10) — includes the
+ * 169.254.169.254 cloud-metadata address. */
+function isLinkLocalIp(addr: string): boolean {
+  if (net.isIPv4(addr)) {
+    const [a, b] = addr.split(".").map(Number) as [number, number, ...number[]];
+    return a === 169 && b === 254;
+  }
+  if (net.isIPv6(addr)) {
+    const embedded = embeddedIPv4(addr);
+    if (embedded !== null) return isLinkLocalIp(embedded);
+    return addr.toLowerCase().startsWith("fe80:");
+  }
+  return false;
+}
+
+/**
+ * True if `host` is, or resolves to, a link-local / cloud-metadata address.
+ * Resolves the name so an alias pointing at 169.254.169.254 is caught too, not
+ * just a literal IP. General private/LAN addresses are deliberately NOT treated
+ * as metadata: people do run Ollama on trusted LAN boxes, so those only warn.
+ */
+async function ollamaHostIsLinkLocalOrMetadata(host: string): Promise<boolean> {
+  const normalized = host.toLowerCase();
+  if (OLLAMA_METADATA_HOSTS.has(normalized)) return true;
+  if (normalized.startsWith("169.254.")) return true; // link-local literal incl. metadata IP
+  const literal = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
+  if (net.isIP(literal)) return isLinkLocalIp(literal);
+  try {
+    const results = await dns.lookup(host, { all: true, verbatim: true });
+    return results.some((r) => isLinkLocalIp(r.address));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Validate OLLAMA_BASE_URL before the corpus is sent there (F3).
+ *
+ * Sending an entire corpus to a non-loopback http:// endpoint silently leaks
+ * proprietary code, but some users genuinely run Ollama on a LAN host they
+ * trust, so a general non-loopback target only warns. A link-local or cloud
+ * metadata address (169.254.x, metadata.google.*, 0.0.0.0, or any host that
+ * resolves to one) is never a legitimate Ollama host and is a classic SSRF
+ * target, so we throw there regardless of `warn`.
+ *
+ * Pass `warn: false` for an early gate that should hard-block but leave the
+ * single user-facing LAN warning to the later in-flow call.
+ */
+export async function validateOllamaBaseUrl(
+  url: string,
+  { warn = true }: { warn?: boolean } = {},
+): Promise<void> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    if (warn) {
+      console.warn(`[graphify] WARNING: OLLAMA_BASE_URL=${JSON.stringify(url)} is not a parseable URL.`);
+    }
+    return;
+  }
+  if (!ALLOWED_SCHEMES.has(parsed.protocol)) {
+    if (warn) {
+      console.warn(
+        `[graphify] WARNING: OLLAMA_BASE_URL has unexpected scheme '${parsed.protocol}'; expected http or https.`,
+      );
+    }
+    return;
+  }
+  const host = (parsed.hostname || "").toLowerCase();
+  if (await ollamaHostIsLinkLocalOrMetadata(host)) {
+    throw new Error(
+      `OLLAMA_BASE_URL points at a link-local/metadata address (${JSON.stringify(host)}); refusing to ` +
+        "send the corpus there. Set it to a real Ollama host.",
+    );
+  }
+  const literal = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
+  const isLoopback =
+    host === "localhost" || host === "127.0.0.1" || host === "::1" || literal === "::1" || literal.startsWith("127.");
+  if (warn && !isLoopback) {
+    const schemeNote = parsed.protocol === "http:" ? " (UNENCRYPTED)" : "";
+    console.warn(
+      `[graphify] WARNING: OLLAMA_BASE_URL points to non-loopback host ${JSON.stringify(host)}${schemeNote}. ` +
+        "Your corpus will be sent there.",
+    );
+  }
+}
+
 /**
  * Expand an IPv6 string to its canonical 8-group form so prefix checks can
  * inspect the high bits without parsing every shorthand.

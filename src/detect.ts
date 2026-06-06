@@ -14,6 +14,7 @@ import {
 } from "./paths.js";
 import { FileType } from "./types.js";
 import { googleWorkspaceEnabled } from "./google-workspace.js";
+import { fileWithinSizeCap, zipWithinCaps } from "./office-guard.js";
 import type { DetectionResult, InputScopeInspection } from "./types.js";
 
 export const CODE_EXTENSIONS = new Set([
@@ -349,6 +350,9 @@ export function classifyFile(filePath: string): FileType | null {
  * bundles its own pdfjs runtime; no peer pdfjs-dist install required).
  */
 export async function extractPdfText(filePath: string): Promise<string> {
+  // F-0831-P1 (F2): screen the on-disk size before unpdf decompresses the PDF
+  // streams, so an oversized untrusted paper cannot OOM the scan.
+  if (!fileWithinSizeCap(filePath)) return "";
   try {
     const { extractText, getDocumentProxy } = await import("unpdf");
     const buf = readFileSync(filePath);
@@ -381,11 +385,16 @@ async function officeParseToText(filePath: string): Promise<string> {
 
 /** Convert a .docx file to plain text via officeparser. */
 export async function docxToMarkdown(filePath: string): Promise<string> {
+  // F-0831-P1 (F2): .docx is a zip+XML container; cap it before officeparser
+  // decompresses it, treating a zip-bomb as empty rather than parsing it.
+  if (!zipWithinCaps(filePath)) return "";
   return (await officeParseToText(filePath)).trim();
 }
 
 /** Convert an .xlsx file to plain text via officeparser. */
 export async function xlsxToMarkdown(filePath: string): Promise<string> {
+  // F-0831-P1 (F2): same zip-bomb cap as .docx before openpyxl-style parsing.
+  if (!zipWithinCaps(filePath)) return "";
   return (await officeParseToText(filePath)).trim();
 }
 
