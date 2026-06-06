@@ -216,7 +216,7 @@ describe("shapeForType / shapeLegend (SVELTE-4)", () => {
     expect(shapeForType({ type: "Character" })).toBe("diamond");
     expect(shapeForType({ node_type: "Location" })).toBe("triangle");
     expect(shapeForType({ type: "Evidence" })).toBe("square");
-    expect(shapeForType({ type: "Work" })).toBe("box");
+    expect(shapeForType({ type: "Work" })).toBe("roundedbox");
     expect(shapeForType({ type: "Unknownish" })).toBe("dot");
     expect(shapeForType({})).toBe("dot");
   });
@@ -229,7 +229,15 @@ describe("shapeForType / shapeLegend (SVELTE-4)", () => {
   it("shapeLegend returns distinct type->shape entries", async () => {
     const { shapeLegend } = await import("../lib/graphAdapter.js");
     const legend = shapeLegend({ nodes: [{ id: "a", type: "Character" }, { id: "b", type: "Character" }, { id: "c", type: "Evidence" }] });
-    expect(legend).toEqual([{ label: "Character", shape: "diamond" }, { label: "Evidence", shape: "square" }]);
+    // Node-shape entries first, then the fixed relation dash-family legend.
+    expect(legend).toEqual([
+      { label: "Character", shape: "diamond" },
+      { label: "Evidence", shape: "square" },
+      { label: "belonging / structure", dash: "solid" },
+      { label: "agency / interaction", dash: "dashed" },
+      { label: "spatial / factual", dash: "dotted" },
+      { label: "method / usage", dash: "long-dash" },
+    ]);
   });
 });
 
