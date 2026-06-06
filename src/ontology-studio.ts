@@ -18,6 +18,7 @@ import {
   type StudioAssetResult,
 } from "./studio-assets.js";
 import { buildStudioScene } from "./studio-scene.js";
+import { attachLayoutPositions } from "./graph-layout.js";
 import {
   getOntologyRebuildStatus,
   getOntologyReconciliationCandidate,
@@ -269,7 +270,10 @@ function sceneJsonResult(stateDir: string): OntologyStudioRouteResult {
     return jsonResult(404, { error: "graph.json not found" });
   }
   const graph = JSON.parse(readFileSync(graphPath, "utf-8"));
-  return jsonResult(200, buildStudioScene(graph));
+  // Pre-compute and pin node positions (x,y + fx,fy) so the studio renders the
+  // settled layout with iterations=1 instead of running the O(n²) sim at mount.
+  // Deterministic, so the static-export build and this route agree byte-for-byte.
+  return jsonResult(200, attachLayoutPositions(buildStudioScene(graph)));
 }
 
 function sendResult(response: ServerResponse, result: OntologyStudioRouteResult): void {
