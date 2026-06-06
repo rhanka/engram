@@ -17,6 +17,7 @@ import {
   serveStudioAsset,
   type StudioAssetResult,
 } from "./studio-assets.js";
+import { buildStudioScene } from "./studio-scene.js";
 import {
   getOntologyRebuildStatus,
   getOntologyReconciliationCandidate,
@@ -256,6 +257,21 @@ function graphJsonResult(stateDir: string): OntologyStudioRouteResult {
   };
 }
 
+/**
+ * Serve the light ForceGraph `scene.json` (build-time preprocessor output).
+ * Computed from graph.json via `buildStudioScene`, the TS replica of the SPA's
+ * `buildScene`. ÉTAPE 1: additive only — the client still fetches graph.json;
+ * this route is independently testable and unblocks the later client switch.
+ */
+function sceneJsonResult(stateDir: string): OntologyStudioRouteResult {
+  const graphPath = join(stateDir, "graph.json");
+  if (!existsSync(graphPath)) {
+    return jsonResult(404, { error: "graph.json not found" });
+  }
+  const graph = JSON.parse(readFileSync(graphPath, "utf-8"));
+  return jsonResult(200, buildStudioScene(graph));
+}
+
 function sendResult(response: ServerResponse, result: OntologyStudioRouteResult): void {
   response.writeHead(result.status, {
     "content-type": result.contentType,
@@ -451,6 +467,9 @@ export function handleOntologyStudioRequest(
     }
     if (url.pathname === "/api/ontology/graph.json") {
       return graphJsonResult(context.stateDir);
+    }
+    if (url.pathname === "/api/ontology/scene.json") {
+      return sceneJsonResult(context.stateDir);
     }
     const entityPrefix = "/api/ontology/entity/";
     if (url.pathname.startsWith(entityPrefix)) {
