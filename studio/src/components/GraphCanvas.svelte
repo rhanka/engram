@@ -43,6 +43,19 @@
   // simulation. No ResizeObserver, no per-pixel relayout.
   const SIM_WIDTH = 960;
   const SIM_HEIGHT = 600;
+
+  // PERF (P1): when the scene ships PRE-COMPUTED, pinned positions (every node
+  // carries finite fx/fy — built at build/server time by attachLayoutPositions),
+  // the layout is already settled. Render it with a single tick instead of the
+  // DS default 300, so the O(n²) × 300 mount simulation (~213 M ops, a 1-3 s
+  // freeze) collapses to one cheap pass that the pinned nodes don't even move
+  // in. Sub-scenes WITHOUT positions (e.g. the small reconciliation subgraph)
+  // fall back to a full simulation so they still lay themselves out.
+  const allPinned = $derived(
+    scene.nodes.length > 0 &&
+      scene.nodes.every((n) => Number.isFinite(n.fx) && Number.isFinite(n.fy)),
+  );
+  const iterations = $derived(allPinned ? 1 : 300);
 </script>
 
 <div class="canvas">
@@ -55,6 +68,7 @@
       label="Ontology knowledge graph"
       width={SIM_WIDTH}
       height={SIM_HEIGHT}
+      {iterations}
       {selectedIds}
       {focusId}
       {legend}
