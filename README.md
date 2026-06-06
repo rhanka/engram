@@ -2,15 +2,47 @@
 
 [![TypeScript CI](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=main)](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml)
 
-**Turn any source into a reconciled knowledge graph.** Code, docs, papers, datasets — graphify extracts canonical entities and typed relations, deduplicates and reconciles them across sources, and gives you back a queryable knowledge graph your assistant can reason over. Reconciliation is human-in-the-loop: candidate matches are proposed, validated against an ontology, dry-run, and only then applied.
+**graphify turns your sources into a reconciled knowledge graph.** Point it at code, docs, papers, datasets, or images and it extracts canonical entities and typed relations, deduplicates and reconciles them across sources, and gives you back a queryable graph your assistant can reason over. Reconciliation is designed to be human-in-the-loop: candidate matches are proposed, validated against an ontology, dry-run, and only then applied.
 
 ## What makes graphify different
 
 graphify is not just a multimodal code graph. Its differentiating value is the **knowledge layer**: a configurable ontology, canonical entities, cross-source entity reconciliation, and a reviewable patch lifecycle for every decision.
 
+![Knowledge graph of public-domain mystery sagas — entities reconciled across 25 works](docs/mystery-knowledge-graph.svg)
+
+*~1,193 entities (detectives, suspects, locations, devices) reconciled across 25 public-domain mystery works, clustered into communities.* **Explore the interactive version → https://rhanka.github.io/graphify/mystery-knowledge-graph.html**
+
+### Proof
+
+A token benchmark prints after every run. The graph pays off as the corpus grows past a context window — once built, each query reads the compact graph instead of re-reading raw files:
+
+| Corpus | Files | Tokens per query vs raw | Worked example |
+|--------|------:|------------------------:|----------------|
+| Karpathy repos + 5 papers + 4 images | 52 | **~71.5× fewer** | [`worked/karpathy-repos/`](worked/karpathy-repos/) |
+| graphify source + Transformer paper | 4 | **~5.4× fewer** | [`worked/mixed-corpus/`](worked/mixed-corpus/) |
+| httpx (synthetic Python library) | 6 | **~1×** | [`worked/httpx/`](worked/httpx/) |
+
+A tiny corpus already fits in context, so there's little to compress — the value there is structural clarity, not token savings. Each `worked/` folder ships the raw inputs and the actual output so you can reproduce the numbers. Token figures are **estimates unless backed by real model calls.**
+
 ### Configurable ontology (profiles)
 
 A project can pin an **ontology profile** that constrains the graph: allowed node types, relation types, citation requirements, review statuses, and named registry bindings (CSV, JSON, or YAML). Profile mode is strictly additive — it activates only when graphify finds `graphify.yaml`, `graphify.yml`, `.graphify/config.yaml`, or `.graphify/config.yml`, or when you pass `--config`/`--profile`. Without it, normal graphify behavior is unchanged.
+
+A minimal `graphify.yaml`:
+
+```yaml
+version: 1
+profile:
+  path: graphify/ontology-profile.yaml   # node/relation types, citation rules, statuses
+inputs:
+  corpus:
+    - raw/manuals
+  registries:
+    - references/components.csv
+dataprep:
+  pdf_ocr: auto
+  citation_minimum: page
+```
 
 ```bash
 graphify profile validate --config graphify.yaml
@@ -67,13 +99,14 @@ graphify ontology studio --config graphify.yaml --write         # token-gated ap
 
 The same write-guarded core is also exposed over MCP — the default `graphify serve` graph server is read-only, and mutation tools require the explicit `graphify ontology serve --config graphify.yaml --write`.
 
-## Works on code too
+## Code graphs
 
 Code is a first-class case of the same pipeline. Code files go through a deterministic **no-LLM AST pass** (tree-sitter) that extracts classes, functions, imports, call graphs, docstrings, and rationale comments — no file contents leave your machine for code.
 
-- **20 languages** via tree-sitter AST: Python, JS, TS, Go, Rust, Java, C, C++, Ruby, C#, Kotlin, Scala, PHP, Swift, Lua, Zig, PowerShell, Elixir, Objective-C, Julia — plus fallback extraction for Vue, Svelte, Blade, Dart, Verilog/SystemVerilog, MJS, and EJS.
+- **~20 languages** via tree-sitter AST: Python, JS, TS, Go, Rust, Java, C, C++, Ruby, PHP, Lua — plus C#, Kotlin, Scala, Swift, Zig, PowerShell, Elixir, Objective-C, and Julia whose grammars are optional dependencies that degrade gracefully when absent. Vue, Svelte, Blade, Dart, Verilog/SystemVerilog, and EJS use regex fallback extraction.
 - **Call graphs and flows**: build a directed graph and derive execution flows from `CALLS` edges (`graphify flows build`).
-- **Review surfaces**: `graphify review-delta`, `graphify review-analysis`, and `graphify recommend-commits` (advisory-only) give blast radius, bridge nodes, test-gap hints, and impacted communities for changed files.
+- **Review surfaces**: `graphify review-delta`, `graphify review-analysis`, and `graphify recommend-commits` (advisory-only) give blast radius, bridge nodes, test-gap hints, and impacted communities for changed files. Review impact favors **recall over precision — false positives are reported, not hidden.**
+- **Git lifecycle**: `graphify hook install` wires post-commit/checkout/merge/rewrite hooks plus a `graphify-json` merge driver that **union-merges graph nodes** when branches build the graph concurrently, so `.graphify/graph.json` survives merges instead of conflicting.
 
 ## Multimodal ingestion
 
@@ -83,11 +116,20 @@ The same semantic pass handles non-code inputs:
 |------|-----------|------------|
 | Docs | `.md .mdx .txt .rst .html` | Concepts + relationships + design rationale via the platform model |
 | Office | `.docx .xlsx` | Converted to markdown, then extracted |
-| Papers | `.pdf` | Local preflight: text-layer PDFs become Markdown via `pdf-parse`/`pdftotext`; scanned/low-text PDFs can use `mistral-ocr` for Markdown + images |
+| Papers | `.pdf` | Local preflight: text-layer PDFs become Markdown via `unpdf`/`pdftotext`; scanned/low-text PDFs can use `mistral-ocr` for Markdown + images |
 | Images | `.png .jpg .webp .gif` | Multimodal vision — screenshots, diagrams, any language |
 | Audio / Video | `.mp4 .mov .webm .mkv .avi .m4v .mp3 .wav .m4a .ogg` | Detected locally; downloaded with `yt-dlp` when needed, normalized with `ffmpeg`, transcribed via `faster-whisper-ts`, then fed through the same semantic path |
 
 PDF OCR, audio/video transcription, and provider variables are detailed under [Reference](#reference).
+
+## What you get
+
+- **God nodes** — the highest-degree concepts everything connects through.
+- **Confidence scores** — every `INFERRED` edge carries a `confidence_score` from 0 to 1; `EXTRACTED` edges are always 1.0.
+- **Hyperedges** — group relationships connecting 3+ nodes that pairwise edges can't express (all classes implementing a protocol, all functions in an auth flow).
+- **Rationale comments** — docstrings and inline `# WHY:` / `# HACK:` / `# NOTE:` markers extracted as `rationale_for` nodes: not just what the code does, but why.
+- **Surprising / INFERRED connections** — ranked cross-source links (code↔paper rank above code↔code), each with a plain-English why.
+- **Community labels** — Louvain clusters named so you can navigate the graph by topic.
 
 ## Quickstart
 
@@ -120,16 +162,29 @@ Query it directly from the terminal — no assistant needed:
 
 ```bash
 graphify query "what connects attention to the optimizer?" --graph .graphify/graph.json
-graphify path "DigestAuth" "Response"
-graphify explain "SwinTransformer"
+graphify path "DigestAuth" "Response" --graph .graphify/graph.json
+graphify explain "SwinTransformer" --graph .graphify/graph.json
 graphify summary --graph .graphify/graph.json        # compact first-hop orientation
 ```
 
-For an ontology project, add a `graphify.yaml`, run `graphify profile dataprep`, then open the reconciliation studio:
+(`--graph` is optional once `.graphify/graph.json` is the resolved default.)
+
+### Build options
+
+The build is driven from the skill; common flags:
 
 ```bash
-graphify ontology studio --config graphify.yaml --write
+/graphify ./raw --directed         # preserve source→target direction
+/graphify ./raw --mode deep        # more aggressive INFERRED edge extraction
+/graphify ./raw --update           # re-extract only changed files, merge into existing graph
+/graphify ./raw --cluster-only     # rerun clustering only, no re-extraction
+/graphify ./raw --no-viz           # skip HTML, just report + JSON
+/graphify ./raw --svg              # also export graph.svg
+/graphify ./raw --graphml          # also export graph.graphml (Gephi, yEd)
+/graphify ./raw --neo4j-push bolt://localhost:7687   # push directly to a running Neo4j
 ```
+
+`graphify watch [path]` keeps the graph live in a background terminal: code saves trigger an **instant AST rebuild (no LLM)**, while doc/image changes set a flag and **notify** you to run `--update` for the LLM re-pass. For cross-repo work, `graphify clone <url>` builds a graph for a remote repo and `graphify merge-graphs <graphs...>` stitches several graphs together.
 
 ## How it works
 
@@ -150,7 +205,7 @@ graphify builds on the foundational work of Safi Shamsi's [graphify](https://git
 
 `graphify install` writes assistant integrations. Pass `--platform <name>` for non-Claude clients: `codex`, `gemini`, `copilot`, `vscode`, `aider`, `opencode`, `claw`, `droid`, `trae`, `trae-cn`, `cursor`, `hermes`, `kimi`, `kiro`, `antigravity`, `windows`.
 
-To make an assistant always prefer the graph, run the matching `graphify <platform> install` (e.g. `graphify claude install` writes a `CLAUDE.md` section plus a PreToolUse hook; `graphify gemini install` writes `GEMINI.md` and registers the MCP server). Uninstall with the matching `uninstall`, or `graphify uninstall` to remove all detected integrations.
+To make an assistant always prefer the graph, run the matching `graphify <platform> install` (e.g. `graphify claude install` writes a `CLAUDE.md` section plus a PreToolUse hook; `graphify gemini install` writes `GEMINI.md` and registers the MCP server). Platforms without PreToolUse hooks (Gemini, Aider, OpenCode, Trae, Droid, and others) use **`AGENTS.md`** as the always-on mechanism instead. Uninstall with the matching `uninstall`, or `graphify uninstall` to remove all detected integrations.
 
 ### Input scope
 
@@ -172,7 +227,7 @@ graphify serve .graphify/graph.json
 
 ### PDF preflight and Mistral OCR
 
-`GRAPHIFY_PDF_OCR` controls PDF handling: `auto` (default) runs a local `pdf-parse` preflight with `pdftotext` fallback and calls `mistral-ocr` only when a PDF has too little extractable text; `off` keeps the PDF as-is; `always` forces OCR; `dry-run` records the decision without calling the API. Mistral OCR requires `MISTRAL_API_KEY` (override the model with `GRAPHIFY_PDF_OCR_MODEL`); if missing in `auto` mode, graphify warns and leaves the source PDF in the semantic input. Sidecars are written under `.graphify/converted/pdf/` with provenance back to the original.
+`GRAPHIFY_PDF_OCR` controls PDF handling: `auto` (default) runs a local `unpdf` preflight with `pdftotext` fallback and calls `mistral-ocr` only when a PDF has too little extractable text; `off` keeps the PDF as-is; `always` forces OCR; `dry-run` records the decision without calling the API. Mistral OCR requires `MISTRAL_API_KEY` (override the model with `GRAPHIFY_PDF_OCR_MODEL`); if missing in `auto` mode, graphify warns and leaves the source PDF in the semantic input. Sidecars are written under `.graphify/converted/pdf/` with provenance back to the original.
 
 ### Local audio/video transcription
 
@@ -188,7 +243,7 @@ graphify sends file contents to your assistant's underlying model API for semant
 
 ### Tech stack
 
-Graphology + Louvain (`graphology-communities-louvain`) + tree-sitter + vis-network, with regex-backed language fallbacks, `pdf-parse`, optional `pdftotext`, optional `mistral-ocr`, `mammoth`, `exceljs`, `turndown`, the `yt-dlp` + `ffmpeg` + `faster-whisper-ts` transcription path, and optional Vercel AI SDK direct text backends. No Neo4j required; the default HTML output is fully static.
+Graphology + Louvain (`graphology-communities-louvain`) + tree-sitter + vis-network, with regex-backed language fallbacks, `unpdf`, optional `pdftotext`, optional `mistral-ocr`, `officeparser`, `turndown`, the `yt-dlp` + `ffmpeg` + `faster-whisper-ts` transcription path, and optional Vercel AI SDK direct text backends. No Neo4j required; the default HTML output is fully static.
 
 ## License
 
