@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
@@ -264,16 +264,26 @@ function graphJsonResult(stateDir: string): OntologyStudioRouteResult {
  * `buildScene`. ÉTAPE 1: additive only — the client still fetches graph.json;
  * this route is independently testable and unblocks the later client switch.
  */
+let sceneCache: { key: string; scene: ReturnType<typeof buildStudioScene> } | null = null;
+
 function sceneJsonResult(stateDir: string): OntologyStudioRouteResult {
   const graphPath = join(stateDir, "graph.json");
   if (!existsSync(graphPath)) {
     return jsonResult(404, { error: "graph.json not found" });
   }
-  const graph = JSON.parse(readFileSync(graphPath, "utf-8"));
   // Pre-compute and pin node positions (x,y + fx,fy) so the studio renders the
   // settled layout with iterations=1 instead of running the O(n²) sim at mount.
   // Deterministic, so the static-export build and this route agree byte-for-byte.
-  return jsonResult(200, attachLayoutPositions(buildStudioScene(graph)));
+  // The precompute is ~1.3s at ~1.2k nodes, so cache it keyed on graph.json
+  // identity (path + mtime + size): only the first scene fetch pays for it, and
+  // any edit (which rewrites graph.json) invalidates the cache.
+  const stat = statSync(graphPath);
+  const key = `${graphPath} ${stat.mtimeMs} ${stat.size}`;
+  if (!sceneCache || sceneCache.key !== key) {
+    const graph = JSON.parse(readFileSync(graphPath, "utf-8"));
+    sceneCache = { key, scene: attachLayoutPositions(buildStudioScene(graph)) };
+  }
+  return jsonResult(200, sceneCache.scene);
 }
 
 function sendResult(response: ServerResponse, result: OntologyStudioRouteResult): void {
