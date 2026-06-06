@@ -391,3 +391,10 @@ export type {
 } from "./studio-scene.js";
 export { buildEntitySidecar, resolveStudioAppDir } from "./studio-assets.js";
 export type { EntitySidecarResponse } from "./studio-assets.js";
+export { computeLayout, attachLayoutPositions } from "./graph-layout.js";
+export type {
+  ComputeLayoutOptions,
+  LayoutGraphEdge,
+  LayoutGraphNode,
+  LayoutResult,
+} from "./graph-layout.js";
