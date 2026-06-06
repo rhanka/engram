@@ -10,7 +10,7 @@ graphify is not just a multimodal code graph. Its differentiating value is the *
 
 ![Knowledge graph of public-domain mystery sagas — entities reconciled across 25 works](docs/mystery-knowledge-graph.svg)
 
-*~1,193 entities (detectives, suspects, locations, devices) reconciled across 25 public-domain mystery works, clustered into communities.* **Explore the interactive version → https://rhanka.github.io/graphify/mystery-knowledge-graph.html**
+*~1,193 entities (detectives, suspects, locations, devices) reconciled across 25 public-domain mystery works, clustered into communities.* **Explore the interactive studio → https://rhanka.github.io/graphify/studio/**
 
 ### Proof
 
