@@ -16,8 +16,14 @@
   import ReconciliationView from "./components/ReconciliationView.svelte";
   import SelectionPanel from "./components/SelectionPanel.svelte";
   import WorkspaceShell from "./components/WorkspaceShell.svelte";
-  import { fetchEntity, fetchGraph } from "./lib/api.js";
-  import { buildScene, shapeLegend, resolveSelectedIds } from "./lib/graphAdapter.js";
+  import { fetchEntity, fetchGraph, fetchScene } from "./lib/api.js";
+  import {
+    buildScene,
+    applyWeakFilter,
+    shapeLegend,
+    resolveSelectedIds,
+  } from "./lib/graphAdapter.js";
+  import { loadWorkspace } from "./lib/sceneLoader.js";
   import {
     createDefaultViewerState,
     toggleType,
@@ -36,17 +42,24 @@
   // $state.raw: `graph` (1193 nodes) is only ever REASSIGNED in bulk, never
   // mutated in place — raw skips deep proxying (perf: less memory + hydration).
   let graph = $state.raw(EMPTY_GRAPH);
+  // ÉTAPE 1b: the light scene.json (mount payload). When set, the central graph
+  // renders from it directly (no buildScene); null = legacy fallback mode where
+  // the scene is rebuilt from the raw graph.
+  let sceneData = $state.raw(null);
   let loaded = $state(false);
   let loadError = $state(null);
   let viewerState = $state(createDefaultViewerState());
   let entityCache = $state({});
 
   // ----- derived ------------------------------------------------------------
-  // The scene is rebuilt only when the GRAPH or the weak-link option changes —
-  // NOT when selection changes. Selection flows through selectedIds/focusId,
-  // which the DS applies without re-layout.
+  // The scene drives the central graph; selection flows separately through
+  // selectedIds/focusId (no re-layout). The weak-link toggle re-filters the
+  // scene WITHOUT the raw graph (ÉTAPE 1b): on the light scene via
+  // applyWeakFilter, or — in legacy fallback — by rebuilding from the graph.
   const scene = $derived(
-    buildScene(graph, { showWeakLinks: viewerState.options.showWeakLinks }),
+    sceneData
+      ? applyWeakFilter(sceneData, viewerState.options.showWeakLinks)
+      : buildScene(graph, { showWeakLinks: viewerState.options.showWeakLinks }),
   );
   const legend = $derived(shapeLegend(graph));
   // Graph highlight = every entity of every selected type/community + the
@@ -91,14 +104,29 @@
   }
 
   onMount(async () => {
-    try {
-      graph = await fetchGraph();
-    } catch (err) {
-      loadError = err instanceof Error ? err.message : String(err);
+    // ÉTAPE 1b: mount from the light scene.json; the raw graph hydrates lazily
+    // for the side panels. Falls back to fetchGraph()+buildScene() if there is
+    // no scene.json (older server / static export).
+    const result = await loadWorkspace({
+      fetchScene,
+      fetchGraph,
+      buildScene: (g) => buildScene(g, { showWeakLinks: viewerState.options.showWeakLinks }),
+    });
+    if (result.mode === "error") {
+      loadError = result.error;
       graph = EMPTY_GRAPH;
-    } finally {
-      loaded = true;
+      sceneData = null;
+    } else if (result.mode === "scene") {
+      // Render straight from the light scene; graph may still be null if its
+      // lazy load failed (panels degrade, the graph view stays up).
+      sceneData = result.scene;
+      graph = result.graph ?? EMPTY_GRAPH;
+    } else {
+      // Legacy fallback: scene rebuilt from the raw graph each toggle.
+      sceneData = null;
+      graph = result.graph ?? EMPTY_GRAPH;
     }
+    loaded = true;
   });
 </script>
 
