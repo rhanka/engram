@@ -307,6 +307,49 @@ export function indexNodes(graph) {
   return map;
 }
 
+// ---- Memoised per-graph index (quick-win C) ------------------------------
+// LeftRail and SelectionPanel call entitiesByType / entitiesByCommunity /
+// communityStats on every selection toggle and keystroke — each was an O(n)
+// filter + O(n log n) sort over the WHOLE node array, and SelectionPanel loops
+// them per selected type/community (O(types × n log n)). With $state.raw(graph)
+// the graph object reference is stable for a session, so we bucket the nodes
+// ONCE per graph and memoise on a WeakMap (auto-released when the graph object
+// is replaced/reloaded). Buckets are pre-sorted by label, so the output matches
+// the previous per-call result exactly (value parity).
+const INDEX_CACHE = new WeakMap();
+
+function buildGraphIndex(graph) {
+  const byType = new Map();
+  const byCommunity = new Map();
+  for (const n of graphNodes(graph)) {
+    const t = nodeType(n);
+    let tb = byType.get(t);
+    if (!tb) byType.set(t, (tb = []));
+    tb.push({ id: n.id, label: nodeLabel(n) });
+
+    const c = nodeCommunity(n);
+    let cb = byCommunity.get(c);
+    if (!cb) byCommunity.set(c, (cb = []));
+    cb.push({ id: n.id, label: nodeLabel(n) });
+  }
+  const byLabel = (a, b) => a.label.localeCompare(b.label);
+  for (const bucket of byType.values()) bucket.sort(byLabel);
+  for (const bucket of byCommunity.values()) bucket.sort(byLabel);
+  return { byType, byCommunity, communityStats: null };
+}
+
+/**
+ * Memoised bucket index for a graph object: `{ byType, byCommunity }` maps of
+ * pre-sorted `{ id, label }[]`, plus a lazily-filled `communityStats` slot.
+ * Recomputed only when a different graph reference is passed; empty for null.
+ */
+export function graphIndex(graph) {
+  if (!graph) return { byType: new Map(), byCommunity: new Map(), communityStats: null };
+  let idx = INDEX_CACHE.get(graph);
+  if (!idx) INDEX_CACHE.set(graph, (idx = buildGraphIndex(graph)));
+  return idx;
+}
+
 /**
  * Relation rows for an entity, mirroring the server entity-panel shaping:
  * out-edges first then in-edges, each carrying the relation kind + the OTHER
@@ -377,7 +420,7 @@ export function groupCounts(graph, keyFn) {
  * that each form their own singleton — are not counted; their members fold into
  * a single `isolatedCount`. This drops the public-pack count 141 -> 100.
  */
-export function communityStats(graph) {
+function computeCommunityStats(graph) {
   const nodes = graphNodes(graph);
   const ids = new Set(nodes.map((n) => n.id));
   const deg = new Map();
@@ -424,6 +467,18 @@ export function communityStats(graph) {
   }
   liveList.sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
   return { live: liveList, isolatedCount, liveCount: liveList.length };
+}
+
+/**
+ * Community breakdown, memoised per graph object (quick-win C). buildScene,
+ * LeftRail and SelectionPanel each call this; the result is a pure function of
+ * the graph, so compute it once and cache it on the shared graph index.
+ */
+export function communityStats(graph) {
+  if (!graph) return computeCommunityStats(graph);
+  const idx = graphIndex(graph);
+  if (!idx.communityStats) idx.communityStats = computeCommunityStats(graph);
+  return idx.communityStats;
 }
 
 /**
@@ -517,18 +572,12 @@ export function withReconcileEdge(scene, idA, idB) {
 
 /** Entities of a given ontology type: [{ id, label }], sorted by label. */
 export function entitiesByType(graph, type) {
-  return graphNodes(graph)
-    .filter((n) => nodeType(n) === type)
-    .map((n) => ({ id: n.id, label: nodeLabel(n) }))
-    .sort((a, b) => a.label.localeCompare(b.label));
+  return graphIndex(graph).byType.get(type) ?? [];
 }
 
 /** Entities of a given community: [{ id, label }], sorted by label. */
 export function entitiesByCommunity(graph, community) {
-  return graphNodes(graph)
-    .filter((n) => nodeCommunity(n) === community)
-    .map((n) => ({ id: n.id, label: nodeLabel(n) }))
-    .sort((a, b) => a.label.localeCompare(b.label));
+  return graphIndex(graph).byCommunity.get(community) ?? [];
 }
 
 /**

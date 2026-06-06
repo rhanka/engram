@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildScene,
+  communityStats,
+  entitiesByCommunity,
+  entitiesByType,
   graphEdges,
+  graphNodes,
   groupCounts,
   isStrongEdge,
   nodeCommunity,
@@ -309,5 +313,70 @@ describe("withReconcileEdge (SVELTE-7)", () => {
     expect(withReconcileEdge(withEdge, "A", "B").edges.length).toBe(1);
     const missing = { nodes: [{ id: "A" }], edges: [] };
     expect(withReconcileEdge(missing, "A", "ZZ").edges.length).toBe(0);
+  });
+});
+
+describe("memoised graph index (quick-win C) — parity with the old filter+sort", () => {
+  // A graph with several types/communities and out-of-order labels to make the
+  // sort observable. A fresh object per assertion-block so the WeakMap cache is
+  // exercised, not shared with other describe blocks.
+  const G = {
+    nodes: [
+      { id: "c2", label: "Zeta", type: "Character", community_name: "Beta" },
+      { id: "c1", label: "Alpha", type: "Character", community_name: "Beta" },
+      { id: "w1", label: "Mu", type: "Work", community: 3 },
+      { id: "p1", type: "Place" }, // no label -> falls back to id; no community
+      { id: "c3", label: "Mid", type: "Character", community_name: "Beta" },
+    ],
+    links: [
+      { source: "c1", target: "w1", relation: "appears_in", confidence: "EXTRACTED" },
+      { source: "c2", target: "w1", relation: "appears_in", confidence: "EXTRACTED" },
+    ],
+  };
+
+  // Reference = the pre-index implementation, recomputed independently.
+  const refByType = (g, type) =>
+    graphNodes(g)
+      .filter((n) => nodeType(n) === type)
+      .map((n) => ({ id: n.id, label: nodeLabel(n) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  const refByCommunity = (g, community) =>
+    graphNodes(g)
+      .filter((n) => nodeCommunity(n) === community)
+      .map((n) => ({ id: n.id, label: nodeLabel(n) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+
+  it("entitiesByType matches the reference for every present type", () => {
+    for (const type of ["Character", "Work", "Place"]) {
+      expect(entitiesByType(G, type)).toEqual(refByType(G, type));
+    }
+    // Sorted, not document order: Alpha < Mid < Zeta.
+    expect(entitiesByType(G, "Character").map((e) => e.label)).toEqual(["Alpha", "Mid", "Zeta"]);
+  });
+
+  it("entitiesByCommunity matches the reference (named + numeric)", () => {
+    expect(entitiesByCommunity(G, "Beta")).toEqual(refByCommunity(G, "Beta"));
+    expect(entitiesByCommunity(G, "Community 3")).toEqual(refByCommunity(G, "Community 3"));
+  });
+
+  it("returns [] for an unknown type/community and tolerates a null graph", () => {
+    expect(entitiesByType(G, "Nope")).toEqual([]);
+    expect(entitiesByCommunity(G, "Nope")).toEqual([]);
+    expect(entitiesByType(null, "Character")).toEqual([]);
+    expect(entitiesByCommunity(null, "Beta")).toEqual([]);
+  });
+
+  it("memoises: repeated calls for the same graph return the identical array reference", () => {
+    const first = entitiesByType(G, "Character");
+    const second = entitiesByType(G, "Character");
+    expect(second).toBe(first); // cached bucket, not a fresh sort
+  });
+
+  it("communityStats is stable across calls and unchanged by memoisation", () => {
+    const a = communityStats(G);
+    const b = communityStats(G);
+    expect(b).toBe(a); // same memoised object
+    // Beta (3 members, all live via c1/c2 edges) is counted.
+    expect(a.live.find((x) => x.key === "Beta")?.count).toBe(3);
   });
 });
