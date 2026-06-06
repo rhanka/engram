@@ -381,3 +381,13 @@ export type {
 } from "./portable-artifacts.js";
 export { serve } from "./serve.js";
 export { watch, rebuildCode } from "./watch.js";
+export { buildStudioScene } from "./studio-scene.js";
+export type {
+  BuildStudioSceneOptions,
+  StudioScene,
+  StudioSceneEdge,
+  StudioSceneNode,
+  StudioSceneStats,
+} from "./studio-scene.js";
+export { buildEntitySidecar, resolveStudioAppDir } from "./studio-assets.js";
+export type { EntitySidecarResponse } from "./studio-assets.js";
