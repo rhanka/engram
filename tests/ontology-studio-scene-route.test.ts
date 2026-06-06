@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import { handleOntologyStudioRequest } from "../src/ontology-studio.js";
 import { buildStudioScene } from "../src/studio-scene.js";
+import { attachLayoutPositions } from "../src/graph-layout.js";
 import { writeOntologyWriteFixture } from "./helpers/ontology-write-fixture.js";
 
 const tempDirs: string[] = [];
@@ -56,8 +57,15 @@ describe("GET /api/ontology/scene.json", () => {
     expect(result.contentType).toBe("application/json; charset=utf-8");
 
     const payload = JSON.parse(result.body);
-    // The route output is exactly buildStudioScene of the on-disk graph.
-    expect(payload).toEqual(buildStudioScene(GRAPH_FIXTURE));
+    // The route output is buildStudioScene of the on-disk graph, with layout
+    // positions pre-computed and pinned (deterministic, so this matches exactly).
+    expect(payload).toEqual(attachLayoutPositions(buildStudioScene(GRAPH_FIXTURE)));
+    // Every node carries finite, pinned coordinates.
+    for (const node of payload.nodes) {
+      expect(Number.isFinite(node.x)).toBe(true);
+      expect(node.fx).toBe(node.x);
+      expect(node.fy).toBe(node.y);
+    }
     expect(payload.stats.nodeCount).toBe(5);
     expect(payload.stats.edgeCount).toBe(3);
     expect(payload.stats.weakEdgeCount).toBe(1); // the INFERRED edge

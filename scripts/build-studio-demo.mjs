@@ -89,12 +89,14 @@ if (!existsSync(join(spaDir, "index.html"))) {
 
 // Import the SAME builders the live server uses. Requires the server build.
 let buildStudioScene;
+let attachLayoutPositions;
 let buildEntitySidecar;
 let loadOntologyReconciliationCandidates;
 let queryOntologyReconciliationCandidates;
 try {
   ({
     buildStudioScene,
+    attachLayoutPositions,
     buildEntitySidecar,
     loadOntologyReconciliationCandidates,
     queryOntologyReconciliationCandidates,
@@ -122,7 +124,10 @@ const graph = JSON.parse(graphRaw);
 const nodes = Array.isArray(graph.nodes) ? graph.nodes : [];
 
 // --- 3. scene.json: the light ForceGraph scene (server's sceneJsonResult). ---
-const scene = buildStudioScene(graph);
+// Pre-compute and pin node positions (x,y + fx,fy) so the SPA renders the
+// settled layout with iterations=1 — no O(n²) force sim on the main thread at
+// mount. Matches the live server route byte-for-byte (deterministic layout).
+const scene = attachLayoutPositions(buildStudioScene(graph));
 writeFileSync(join(outDir, "scene.json"), JSON.stringify(scene));
 
 // --- 4. reconciliation-candidates.json: mirror the SPA's request. ---
