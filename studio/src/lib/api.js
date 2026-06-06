@@ -10,9 +10,15 @@
  *   GET /api/ontology/entity/<id>         -> { node, description, occurrences }
  *   GET /api/ontology/reconciliation/...  -> existing reconciliation JSON API
  *
- * When opened directly off the filesystem (no server), `fetchScene`/`fetchGraph`
- * fall back to `./scene.json` / `./graph.json` next to the bundle so the static
- * export still renders.
+ * When opened directly off the filesystem (no server), every fetch falls back to
+ * a static file copied next to the bundle so the standalone export still works:
+ *   fetchScene                     -> ./scene.json
+ *   fetchGraph                     -> ./graph.json
+ *   fetchEntity(id)                -> ./entities.json  (a single { id: sidecar }
+ *                                     index, fetched once then served from cache;
+ *                                     1193 per-entity files are avoided because
+ *                                     most sidecars are empty in the demo)
+ *   fetchReconciliationCandidates  -> ./reconciliation-candidates.json
  */
 
 async function getJson(url) {
@@ -48,14 +54,36 @@ export async function fetchGraph() {
 }
 
 /**
- * Fetch the entity sidecar (description + occurrences) for a node id.
- * Returns null on any failure so the panel degrades to graph-only data.
+ * Standalone fallback: a single `./entities.json` index of { id: sidecar }.
+ * Fetched at most once (the in-flight promise is memoised); a missing file or
+ * parse error caches `null` so we never retry on every selection.
+ * @type {Promise<Record<string, object>|null>|undefined}
+ */
+let entitiesIndexPromise;
+
+function loadEntitiesIndex() {
+  if (entitiesIndexPromise === undefined) {
+    entitiesIndexPromise = getJson("./entities.json").catch(() => null);
+  }
+  return entitiesIndexPromise;
+}
+
+/** Test seam: drop the memoised entities index so each test starts clean. */
+export function __resetEntitiesIndexCache() {
+  entitiesIndexPromise = undefined;
+}
+
+/**
+ * Fetch the entity sidecar (description + occurrences) for a node id. Tries the
+ * server route first, then the standalone `./entities.json` index. Returns null
+ * on any failure so the panel degrades to graph-only data.
  */
 export async function fetchEntity(id) {
   try {
     return await getJson(`/api/ontology/entity/${encodeURIComponent(id)}`);
   } catch {
-    return null;
+    const index = await loadEntitiesIndex();
+    return index?.[id] ?? null;
   }
 }
 
@@ -63,7 +91,12 @@ export async function fetchReconciliationCandidates() {
   try {
     return await getJson("/api/ontology/reconciliation/candidates?sort=score&order=desc&limit=50");
   } catch (err) {
-    return { items: [], total: 0, error: String(err) };
+    try {
+      // Standalone fallback: a candidates response copied next to index.html.
+      return await getJson("./reconciliation-candidates.json");
+    } catch {
+      return { items: [], total: 0, error: String(err) };
+    }
   }
 }
 

@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fetchScene } from "../lib/api.js";
+import {
+  __resetEntitiesIndexCache,
+  fetchEntity,
+  fetchReconciliationCandidates,
+  fetchScene,
+} from "../lib/api.js";
 
 function jsonResponse(body, ok = true) {
   return {
@@ -13,6 +18,7 @@ function jsonResponse(body, ok = true) {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  __resetEntitiesIndexCache();
 });
 
 describe("fetchScene (ÉTAPE 1b)", () => {
@@ -49,5 +55,77 @@ describe("fetchScene (ÉTAPE 1b)", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(fetchScene()).rejects.toThrow();
+  });
+});
+
+describe("fetchEntity (standalone fallback)", () => {
+  it("returns the server sidecar from the same-origin route", async () => {
+    const sidecar = { id: "n1", description: { status: "generated", description: "x" }, occurrences: null };
+    const fetchMock = vi.fn(async (url) => {
+      if (url === "/api/ontology/entity/n1") return jsonResponse(sidecar);
+      throw new Error(`unexpected url ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchEntity("n1")).resolves.toEqual(sidecar);
+  });
+
+  it("falls back to ./entities.json and looks up the id (standalone file://)", async () => {
+    const index = {
+      n1: { id: "n1", description: { status: "generated", description: "x" }, occurrences: null },
+    };
+    const fetchMock = vi.fn(async (url) => {
+      if (url.startsWith("/api/ontology/entity/")) return jsonResponse({ error: "nope" }, false);
+      if (url === "./entities.json") return jsonResponse(index);
+      throw new Error(`unexpected url ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchEntity("n1")).resolves.toEqual(index.n1);
+    await expect(fetchEntity("missing")).resolves.toBeNull();
+    // The entities index is fetched once and then served from cache.
+    expect(fetchMock.mock.calls.filter(([u]) => u === "./entities.json")).toHaveLength(1);
+  });
+
+  it("returns null when neither the route nor the index is available", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ error: "nope" }, false));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchEntity("n1")).resolves.toBeNull();
+  });
+});
+
+describe("fetchReconciliationCandidates (standalone fallback)", () => {
+  it("returns the server queue from the same-origin route", async () => {
+    const queue = { items: [{ id: "c1" }], total: 1 };
+    const fetchMock = vi.fn(async (url) => {
+      if (url.startsWith("/api/ontology/reconciliation/candidates")) return jsonResponse(queue);
+      throw new Error(`unexpected url ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchReconciliationCandidates()).resolves.toEqual(queue);
+  });
+
+  it("falls back to ./reconciliation-candidates.json (standalone file://)", async () => {
+    const queue = { items: [{ id: "c1" }], total: 1 };
+    const fetchMock = vi.fn(async (url) => {
+      if (url.startsWith("/api/ontology/reconciliation/candidates")) return jsonResponse({ error: "nope" }, false);
+      if (url === "./reconciliation-candidates.json") return jsonResponse(queue);
+      throw new Error(`unexpected url ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchReconciliationCandidates()).resolves.toEqual(queue);
+  });
+
+  it("returns an empty queue with an error when both fail", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ error: "nope" }, false));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await fetchReconciliationCandidates();
+    expect(res.items).toEqual([]);
+    expect(res.total).toBe(0);
+    expect(res.error).toBeTruthy();
   });
 });
