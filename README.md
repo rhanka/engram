@@ -205,7 +205,9 @@ graphify builds on the foundational work of Safi Shamsi's [graphify](https://git
 
 `graphify install` writes assistant integrations. Pass `--platform <name>` for non-Claude clients: `codex`, `gemini`, `copilot`, `vscode`, `aider`, `opencode`, `claw`, `droid`, `trae`, `trae-cn`, `cursor`, `hermes`, `kimi`, `kiro`, `antigravity`, `windows`.
 
-To make an assistant always prefer the graph, run the matching `graphify <platform> install` (e.g. `graphify claude install` writes a `CLAUDE.md` section plus a PreToolUse hook; `graphify gemini install` writes `GEMINI.md` and registers the MCP server). Platforms without PreToolUse hooks (Gemini, Aider, OpenCode, Trae, Droid, and others) use **`AGENTS.md`** as the always-on mechanism instead. Uninstall with the matching `uninstall`, or `graphify uninstall` to remove all detected integrations.
+To make an assistant always prefer the graph, run the matching `graphify <platform> install` (e.g. `graphify claude install` writes a `CLAUDE.md` section plus a PreToolUse hook; `graphify gemini install` (or `graphify install --platform gemini`) writes `GEMINI.md` and registers the MCP server; `graphify copilot install` (or `graphify install --platform copilot`) installs the global skill for **GitHub Copilot CLI**). Platforms without PreToolUse hooks (Gemini, Aider, OpenCode, Trae, Droid, and others) use **`AGENTS.md`** as the always-on mechanism instead. Uninstall with the matching `uninstall`, or `graphify uninstall` to remove all detected integrations.
+
+Invocation differs per client: `/graphify .` in Claude Code, Gemini CLI, Copilot, and most others, but `$graphify` in Codex. Codex can also register the read-only graph as an MCP server with `codex mcp add graphify -- graphify serve /absolute/path/to/.graphify/graph.json`.
 
 ### Input scope
 
