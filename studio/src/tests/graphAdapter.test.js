@@ -216,7 +216,7 @@ describe("shapeForType / shapeLegend (SVELTE-4)", () => {
     expect(shapeForType({ type: "Character" })).toBe("diamond");
     expect(shapeForType({ node_type: "Location" })).toBe("triangle");
     expect(shapeForType({ type: "Evidence" })).toBe("square");
-    expect(shapeForType({ type: "Work" })).toBe("box");
+    expect(shapeForType({ type: "Work" })).toBe("roundedbox");
     expect(shapeForType({ type: "Unknownish" })).toBe("dot");
     expect(shapeForType({})).toBe("dot");
   });
@@ -229,7 +229,69 @@ describe("shapeForType / shapeLegend (SVELTE-4)", () => {
   it("shapeLegend returns distinct type->shape entries", async () => {
     const { shapeLegend } = await import("../lib/graphAdapter.js");
     const legend = shapeLegend({ nodes: [{ id: "a", type: "Character" }, { id: "b", type: "Character" }, { id: "c", type: "Evidence" }] });
-    expect(legend).toEqual([{ label: "Character", shape: "diamond" }, { label: "Evidence", shape: "square" }]);
+    // Node-shape entries first, then the fixed relation dash-family legend.
+    expect(legend).toEqual([
+      { label: "Character", shape: "diamond" },
+      { label: "Evidence", shape: "square" },
+      { label: "belonging / structure", dash: "solid" },
+      { label: "agency / interaction", dash: "dashed" },
+      { label: "spatial / factual", dash: "dotted" },
+      { label: "method / usage", dash: "long-dash" },
+    ]);
+  });
+});
+
+describe("applyWeakFilter (ÉTAPE 1b — scene.json parity)", () => {
+  // A graph exercising every branch the weak filter touches: a strong-only
+  // node, a node whose ONLY edge is weak (orphaned by the filter), and a hub
+  // whose degree changes (so weight re-normalisation matters).
+  const GRAPH = {
+    nodes: [
+      { id: "hub", type: "Character", community_name: "C1" },
+      { id: "strong", type: "Work", community_name: "C1" },
+      { id: "weakonly", type: "Location", community_name: "C2" },
+      { id: "lonely", type: "Object" }, // no edges at all
+    ],
+    links: [
+      { source: "hub", target: "strong", relation: "appears_in", confidence: "EXTRACTED" },
+      { source: "hub", target: "weakonly", relation: "located_in", confidence: "INFERRED" },
+    ],
+  };
+
+  it("applyWeakFilter(fullScene, false) === buildScene(graph, {showWeakLinks:false})", async () => {
+    const { buildScene, applyWeakFilter } = await import("../lib/graphAdapter.js");
+    const full = buildScene(GRAPH, { showWeakLinks: true });
+    const filtered = applyWeakFilter(full, false);
+    const reference = buildScene(GRAPH, { showWeakLinks: false });
+    expect(filtered).toEqual(reference);
+  });
+
+  it("returns the scene unchanged when showWeak is true", async () => {
+    const { buildScene, applyWeakFilter } = await import("../lib/graphAdapter.js");
+    const full = buildScene(GRAPH, { showWeakLinks: true });
+    expect(applyWeakFilter(full, true)).toEqual(full);
+  });
+
+  it("drops weak edges and zeroes weakEdgeCount", async () => {
+    const { buildScene, applyWeakFilter } = await import("../lib/graphAdapter.js");
+    const full = buildScene(GRAPH, { showWeakLinks: true });
+    expect(full.stats.weakEdgeCount).toBe(1);
+    const filtered = applyWeakFilter(full, false);
+    expect(filtered.edges.some((e) => e.weak)).toBe(false);
+    expect(filtered.stats.weakEdgeCount).toBe(0);
+    expect(filtered.stats.edgeCount).toBe(1);
+    // Node count is stable (buildScene keeps orphaned nodes) and the community
+    // count is computed over all edges, so it does not move with the filter.
+    expect(filtered.stats.nodeCount).toBe(full.stats.nodeCount);
+    expect(filtered.stats.communityCount).toBe(full.stats.communityCount);
+  });
+
+  it("is pure: does not mutate the input scene", async () => {
+    const { buildScene, applyWeakFilter } = await import("../lib/graphAdapter.js");
+    const full = buildScene(GRAPH, { showWeakLinks: true });
+    const snapshot = JSON.parse(JSON.stringify(full));
+    applyWeakFilter(full, false);
+    expect(full).toEqual(snapshot);
   });
 });
 
