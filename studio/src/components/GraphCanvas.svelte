@@ -23,26 +23,29 @@
     onMergeComplete,
   } = $props();
 
-  // Measure the container so the sim fills the available center column.
-  let host = $state(null);
-  let width = $state(720);
-  let height = $state(560);
-
-  $effect(() => {
-    if (!host) return;
-    const ro = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const box = entry.contentRect;
-        width = Math.max(320, Math.floor(box.width));
-        height = Math.max(320, Math.floor(box.height));
-      }
-    });
-    ro.observe(host);
-    return () => ro.disconnect();
-  });
+  // PERF (quick-win A): the DS ForceGraph computes its layout in a `$derived`
+  // that DEPENDS on `width`/`height`, so EVERY change to those props re-runs the
+  // O(n^2) × ~300-tick `runSimulation` (≈213 M ops on the public pack → a 1-3 s
+  // freeze). Previously a ResizeObserver pushed the live container size into
+  // those props, so each pixel of a window/panel resize relaunched the whole
+  // simulation.
+  //
+  // The simulation does NOT need the live size: the DS renders the SVG at
+  // `width="100%" height="100%"` with a fit-to-content `viewBox` recomputed from
+  // the settled node positions. width/height only seed the centre and the ideal
+  // node distance `k = sqrt(width*height / n)`, i.e. the layout's absolute SCALE
+  // — and the fit-to-content viewBox normalises that scale away on render. So
+  // only the ASPECT RATIO matters, not the live pixel size.
+  //
+  // We therefore pass STABLE constants (a reasonable landscape ratio). The graph
+  // is laid out once; resizing the window/panels just re-scales the SVG via
+  // CSS/GPU (the browser refits the 100%×100% viewBox) WITHOUT touching the
+  // simulation. No ResizeObserver, no per-pixel relayout.
+  const SIM_WIDTH = 960;
+  const SIM_HEIGHT = 600;
 </script>
 
-<div class="canvas" bind:this={host}>
+<div class="canvas">
   {#if scene.nodes.length === 0}
     <p class="canvas-empty">No nodes to render. Adjust the filters or load a graph.</p>
   {:else}
@@ -50,8 +53,8 @@
       nodes={scene.nodes}
       edges={scene.edges}
       label="Ontology knowledge graph"
-      {width}
-      {height}
+      width={SIM_WIDTH}
+      height={SIM_HEIGHT}
       {selectedIds}
       {focusId}
       {legend}
