@@ -241,6 +241,60 @@ describe("shapeForType / shapeLegend (SVELTE-4)", () => {
   });
 });
 
+describe("applyWeakFilter (ÉTAPE 1b — scene.json parity)", () => {
+  // A graph exercising every branch the weak filter touches: a strong-only
+  // node, a node whose ONLY edge is weak (orphaned by the filter), and a hub
+  // whose degree changes (so weight re-normalisation matters).
+  const GRAPH = {
+    nodes: [
+      { id: "hub", type: "Character", community_name: "C1" },
+      { id: "strong", type: "Work", community_name: "C1" },
+      { id: "weakonly", type: "Location", community_name: "C2" },
+      { id: "lonely", type: "Object" }, // no edges at all
+    ],
+    links: [
+      { source: "hub", target: "strong", relation: "appears_in", confidence: "EXTRACTED" },
+      { source: "hub", target: "weakonly", relation: "located_in", confidence: "INFERRED" },
+    ],
+  };
+
+  it("applyWeakFilter(fullScene, false) === buildScene(graph, {showWeakLinks:false})", async () => {
+    const { buildScene, applyWeakFilter } = await import("../lib/graphAdapter.js");
+    const full = buildScene(GRAPH, { showWeakLinks: true });
+    const filtered = applyWeakFilter(full, false);
+    const reference = buildScene(GRAPH, { showWeakLinks: false });
+    expect(filtered).toEqual(reference);
+  });
+
+  it("returns the scene unchanged when showWeak is true", async () => {
+    const { buildScene, applyWeakFilter } = await import("../lib/graphAdapter.js");
+    const full = buildScene(GRAPH, { showWeakLinks: true });
+    expect(applyWeakFilter(full, true)).toEqual(full);
+  });
+
+  it("drops weak edges and zeroes weakEdgeCount", async () => {
+    const { buildScene, applyWeakFilter } = await import("../lib/graphAdapter.js");
+    const full = buildScene(GRAPH, { showWeakLinks: true });
+    expect(full.stats.weakEdgeCount).toBe(1);
+    const filtered = applyWeakFilter(full, false);
+    expect(filtered.edges.some((e) => e.weak)).toBe(false);
+    expect(filtered.stats.weakEdgeCount).toBe(0);
+    expect(filtered.stats.edgeCount).toBe(1);
+    // Node count is stable (buildScene keeps orphaned nodes) and the community
+    // count is computed over all edges, so it does not move with the filter.
+    expect(filtered.stats.nodeCount).toBe(full.stats.nodeCount);
+    expect(filtered.stats.communityCount).toBe(full.stats.communityCount);
+  });
+
+  it("is pure: does not mutate the input scene", async () => {
+    const { buildScene, applyWeakFilter } = await import("../lib/graphAdapter.js");
+    const full = buildScene(GRAPH, { showWeakLinks: true });
+    const snapshot = JSON.parse(JSON.stringify(full));
+    applyWeakFilter(full, false);
+    expect(full).toEqual(snapshot);
+  });
+});
+
 describe("withReconcileEdge (SVELTE-7)", () => {
   it("adds a bold reconcile edge between the two twins", async () => {
     const { withReconcileEdge } = await import("../lib/graphAdapter.js");

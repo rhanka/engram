@@ -249,6 +249,55 @@ export function buildScene(graph, options = {}) {
 }
 
 /**
+ * ÉTAPE 1b: re-apply the weak-link filter on an ALREADY-BUILT scene, without the
+ * raw graph. The SPA mounts the light `scene.json` (the full scene, weak links
+ * included), then the Options toggle flips weak links on/off purely on the scene
+ * — no graph re-fetch, no buildScene re-run.
+ *
+ * STRICT PARITY: `applyWeakFilter(buildScene(g, { showWeakLinks: true }), false)`
+ * deep-equals `buildScene(g, { showWeakLinks: false })`. To hold, this mirrors
+ * buildScene's `showWeakLinks:false` path exactly:
+ *   - drop edges flagged `weak` (kept-edge order is preserved);
+ *   - KEEP every node (buildScene never drops orphaned nodes), but RECOMPUTE
+ *     each node's `weight` from the now-filtered degrees, re-normalised by the
+ *     new max degree (a node that loses all its strong neighbours falls to rmin);
+ *   - stats: edgeCount = strong edges, weakEdgeCount = 0; nodeCount and
+ *     communityCount are stable (communityCount is computed over ALL edges, so
+ *     the weak filter never moves it).
+ *
+ * @param {{ nodes: object[], edges: object[], stats: object }} scene  full scene
+ * @param {boolean} showWeak  when true, return the scene unchanged
+ * @returns {{ nodes: object[], edges: object[], stats: object }} a new scene
+ */
+export function applyWeakFilter(scene, showWeak) {
+  if (!scene) return scene;
+  if (showWeak) return scene;
+
+  const rawNodes = scene.nodes ?? [];
+  const edges = (scene.edges ?? []).filter((e) => !e.weak);
+
+  const degree = computeDegrees(rawNodes, edges);
+  const maxDegree = degree.size > 0 ? Math.max(...degree.values()) : 1;
+
+  const nodes = rawNodes.map((node) => ({
+    ...node,
+    weight: weightForDegree(degree.get(node.id) ?? 0, maxDegree),
+  }));
+
+  return {
+    ...scene,
+    nodes,
+    edges,
+    stats: {
+      ...scene.stats,
+      nodeCount: nodes.length,
+      edgeCount: edges.length,
+      weakEdgeCount: 0,
+    },
+  };
+}
+
+/**
  * Index nodes by id for O(1) lookups in the entity panel / relations.
  * @returns {Map<string, object>}
  */
