@@ -5,18 +5,37 @@
  * graph.json and per-entity sidecar data (wiki description + occurrences) from
  * the same origin. These routes are added to `src/ontology-studio.ts`:
  *
+ *   GET /api/ontology/scene.json          -> the light ForceGraph scene payload
  *   GET /api/ontology/graph.json          -> the raw graph.json payload
  *   GET /api/ontology/entity/<id>         -> { node, description, occurrences }
  *   GET /api/ontology/reconciliation/...  -> existing reconciliation JSON API
  *
- * When opened directly off the filesystem (no server), `fetchGraph` falls back
- * to `./graph.json` next to the bundle so the static export still renders.
+ * When opened directly off the filesystem (no server), `fetchScene`/`fetchGraph`
+ * fall back to `./scene.json` / `./graph.json` next to the bundle so the static
+ * export still renders.
  */
 
 async function getJson(url) {
   const res = await fetch(url, { headers: { accept: "application/json" } });
   if (!res.ok) throw new Error(`${url} -> ${res.status} ${res.statusText}`);
   return res.json();
+}
+
+/**
+ * ÉTAPE 1b: fetch the light ForceGraph `scene.json` — the mount payload. It is
+ * the build/server-side `buildStudioScene(graph)` output (a few hundred KB)
+ * rather than the multi-MB raw graph.json, so first paint no longer waits on the
+ * full graph or recomputes the scene client-side. Rejects when neither the API
+ * route nor the static-export copy is reachable; the caller then falls back to
+ * the legacy `fetchGraph()` + `buildScene()` path.
+ */
+export async function fetchScene() {
+  try {
+    return await getJson("/api/ontology/scene.json");
+  } catch (err) {
+    // Static-export fallback: a scene.json copied next to index.html.
+    return getJson("./scene.json");
+  }
 }
 
 export async function fetchGraph() {
