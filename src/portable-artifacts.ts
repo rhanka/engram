@@ -34,7 +34,9 @@ const LOCAL_LIFECYCLE_PREFIXES = [
   "converted/",
   "memory/",
   "profile/",
+  "scratch/",
   "transcripts/",
+  "uat/",
 ];
 
 const TEXT_ARTIFACT_EXTENSIONS = new Set([
@@ -49,6 +51,21 @@ const TEXT_ARTIFACT_EXTENSIONS = new Set([
 
 const EMBEDDED_PATH_PATTERN =
   /(^|[\s("'`:=])((?:\/(?:[A-Za-z0-9._-]+)[^\s"'`<>)\]]*)|(?:[A-Za-z]:[\\/][^\s"'`<>)\]]*)|(?:\.\.\/[^\s"'`<>)\]]*))/g;
+
+const COMMON_POSIX_LOCAL_PATH_PREFIXES = [
+  "/home/",
+  "/Users/",
+  "/tmp/",
+  "/private/",
+  "/var/",
+  "/opt/",
+  "/mnt/",
+  "/Volumes/",
+  "/workspaces/",
+  "/builds/",
+  "/repo/",
+  "/app/",
+];
 
 function isWindowsAbsolutePath(value: string): boolean {
   return /^[A-Za-z]:[\\/]/.test(value);
@@ -188,9 +205,26 @@ function shouldScanFile(relativePath: string): boolean {
   return TEXT_ARTIFACT_EXTENSIONS.has(ext);
 }
 
-function pathIssueKind(value: string): PortablePathIssueKind | null {
+function isLikelyLocalAbsolutePath(value: string): boolean {
+  const normalized = portablePath(value);
+  if (!normalized.startsWith("/") || normalized.startsWith("//")) return false;
+  if (COMMON_POSIX_LOCAL_PATH_PREFIXES.some((prefix) => normalized.startsWith(prefix))) {
+    return true;
+  }
+  return existsSync(value);
+}
+
+function pathIssueKind(
+  value: string,
+  options: { embeddedText?: boolean } = {},
+): PortablePathIssueKind | null {
   if (value.startsWith("../") || value === "..") return "escaped_root_path";
-  if (isAbsolute(value) || isWindowsAbsolutePath(value)) return "absolute_path";
+  if (isAbsolute(value) || isWindowsAbsolutePath(value)) {
+    if (options.embeddedText && !isWindowsAbsolutePath(value) && !isLikelyLocalAbsolutePath(value)) {
+      return null;
+    }
+    return "absolute_path";
+  }
   return null;
 }
 
@@ -199,17 +233,20 @@ function collectStringIssues(
   path: string,
   jsonPath: string | undefined,
   issues: PortablePathIssue[],
+  options: { direct?: boolean; embeddedText?: boolean } = {},
 ): void {
-  const directKind = pathIssueKind(value);
-  if (directKind) {
-    issues.push({ path, jsonPath, value, kind: directKind });
-    return;
+  if (options.direct !== false) {
+    const directKind = pathIssueKind(value);
+    if (directKind) {
+      issues.push({ path, jsonPath, value, kind: directKind });
+      return;
+    }
   }
 
   for (const match of value.matchAll(EMBEDDED_PATH_PATTERN)) {
     const candidate = match[2] ?? "";
     if (!candidate || hasSchemePrefix(value, match.index + (match[1]?.length ?? 0))) continue;
-    const kind = pathIssueKind(candidate);
+    const kind = pathIssueKind(candidate, { embeddedText: options.embeddedText });
     if (kind) {
       issues.push({ path, jsonPath, value: candidate, kind });
     }
@@ -240,7 +277,10 @@ function collectJsonIssues(
 function collectTextIssues(content: string, path: string, issues: PortablePathIssue[]): void {
   const lines = content.split(/\r?\n/);
   for (let index = 0; index < lines.length; index += 1) {
-    collectStringIssues(lines[index] ?? "", path, `line:${index + 1}`, issues);
+    collectStringIssues(lines[index] ?? "", path, `line:${index + 1}`, issues, {
+      direct: false,
+      embeddedText: true,
+    });
   }
 }
 

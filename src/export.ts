@@ -1287,7 +1287,7 @@ export function buildGraphHtml(
   const legendJson = JSON.stringify(legendData);
   const rawHyperedges = (G.getAttribute("hyperedges") as Hyperedge[] | undefined) ?? [];
   const hyperedgesJson = JSON.stringify(rawHyperedges);
-  const title = escapeHtml(sanitizeLabel(outputPath));
+  const title = escapeHtml(sanitizeLabel(basename(outputPath)));
   const stats =
     `${G.order} nodes &middot; ${G.size} edges &middot; ${communityMap.size} communities`;
 
