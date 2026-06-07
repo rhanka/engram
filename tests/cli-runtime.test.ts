@@ -772,7 +772,8 @@ describe("public CLI runtime command parity", () => {
 
         expect(result.exitCode).toBe(0);
         const manifest = JSON.parse(readFileSync(join(dir, ".graphify", "manifest.json"), "utf-8")) as Record<string, unknown>;
-        expect(manifest[join(dir, "notes.gdoc")]).toBeTruthy();
+        expect(manifest["notes.gdoc"]).toBeTruthy();
+        expect(manifest[join(dir, "notes.gdoc")]).toBeUndefined();
         expect(Object.keys(manifest).some((file) => file.includes(join(".graphify", "converted")))).toBe(false);
       } finally {
         globalThis.fetch = originalFetch;

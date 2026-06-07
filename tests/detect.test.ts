@@ -613,8 +613,9 @@ describe("detect", () => {
       hash?: string;
     }>;
 
-    expect(manifest[filePath]?.mtime).toBeTypeOf("number");
-    expect(manifest[filePath]?.hash).toMatch(/^[a-f0-9]{32}$/);
+    expect(manifest["main.py"]?.mtime).toBeTypeOf("number");
+    expect(manifest["main.py"]?.hash).toMatch(/^[a-f0-9]{32}$/);
+    expect(manifest[filePath]).toBeUndefined();
   });
 
   it("keeps legacy numeric manifests compatible during incremental detection", () => {
@@ -646,15 +647,15 @@ describe("detect", () => {
     const initial = detect(tmpDir);
     saveManifest(initial.files, manifestPath);
     const initialManifest = JSON.parse(readFileSync(manifestPath, "utf-8")) as Record<string, unknown>;
-    expect(Object.keys(initialManifest).sort()).toEqual([aPath, bPath].sort());
+    expect(Object.keys(initialManifest).sort()).toEqual(["a.py", "b.py"]);
 
     // Incremental caller passes only the changed subset (b.py)
     saveManifest({ code: [bPath] }, manifestPath);
     const after = JSON.parse(readFileSync(manifestPath, "utf-8")) as Record<string, unknown>;
 
     // a.py entry must survive — it was untouched on disk but absent from the subset
-    expect(after[aPath]).toBeDefined();
-    expect(after[bPath]).toBeDefined();
+    expect(after["a.py"]).toBeDefined();
+    expect(after["b.py"]).toBeDefined();
   });
 
   it("drops manifest entries whose file no longer exists on disk", () => {
@@ -670,7 +671,7 @@ describe("detect", () => {
     saveManifest({ code: [] }, manifestPath);
     const after = JSON.parse(readFileSync(manifestPath, "utf-8")) as Record<string, unknown>;
 
-    expect(after[aPath]).toBeDefined();
-    expect(after[bPath]).toBeUndefined();
+    expect(after["a.py"]).toBeDefined();
+    expect(after["b.py"]).toBeUndefined();
   });
 });

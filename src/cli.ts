@@ -2953,7 +2953,7 @@ export async function main(): Promise<void> {
         const detection = makeDetectionPortable(rawDetection as DetectionResult, root);
         writeJson(paths.scratch.detect, detection);
         if (detection.scope) writeJson(paths.scope, detection.scope);
-        saveManifest({ ...rawDetection.files, document: originalDocumentFiles }, paths.manifest);
+        saveManifest({ ...rawDetection.files, document: originalDocumentFiles }, paths.manifest, { root });
 
         const codeFiles = rawDetection.files.code ?? [];
         const semanticFileCount =

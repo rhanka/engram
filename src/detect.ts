@@ -4,7 +4,7 @@
 import {
   readdirSync, readFileSync, writeFileSync, statSync, existsSync, mkdirSync, lstatSync, realpathSync,
 } from "node:fs";
-import { join, resolve, extname, basename, relative, sep, dirname } from "node:path";
+import { join, resolve, extname, basename, relative, sep, dirname, isAbsolute } from "node:path";
 import { createHash } from "node:crypto";
 import {
   DEFAULT_GRAPHIFY_STATE_DIR,
@@ -664,6 +664,10 @@ interface ManifestEntry {
 
 type ManifestRecord = Record<string, number | ManifestEntry>;
 
+interface SaveManifestOptions {
+  root?: string;
+}
+
 function resolveCandidateFiles(
   rootResolved: string,
   candidateRoot: string,
@@ -829,29 +833,72 @@ function normaliseManifestEntry(entry: number | ManifestEntry | undefined): Mani
   return null;
 }
 
-export function saveManifest(files: Record<string, string[]>, manifestPath: string = defaultManifestPath()): void {
+function portablePath(value: string): string {
+  return value.replace(/\\/g, "/");
+}
+
+function isWindowsAbsolutePath(value: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(value);
+}
+
+function manifestProjectRoot(manifestPath: string, options?: SaveManifestOptions): string {
+  if (options?.root) return resolve(options.root);
+
+  const manifestDir = resolve(dirname(manifestPath));
+  const stateDirName = basename(manifestDir);
+  if (stateDirName === DEFAULT_GRAPHIFY_STATE_DIR || stateDirName === LEGACY_GRAPHIFY_STATE_DIR) {
+    return dirname(manifestDir);
+  }
+  return process.cwd();
+}
+
+function resolveManifestKey(root: string, key: string): string {
+  if (isAbsolute(key) || isWindowsAbsolutePath(key)) return key;
+  return resolve(root, key);
+}
+
+function manifestKeyForFile(root: string, filePath: string): string {
+  if (isWindowsAbsolutePath(filePath)) return portablePath(filePath);
+
+  const absolutePath = isAbsolute(filePath) ? resolve(filePath) : resolve(root, filePath);
+  const relativePath = relative(root, absolutePath);
+  if (!relativePath) return ".";
+  if (!relativePath.startsWith("..") && !isAbsolute(relativePath)) {
+    return portablePath(relativePath);
+  }
+  return portablePath(absolutePath);
+}
+
+export function saveManifest(
+  files: Record<string, string[]>,
+  manifestPath: string = defaultManifestPath(),
+  options?: SaveManifestOptions,
+): void {
   // Upstream 2d783e5 (#917): seed from the existing manifest so incremental
   // callers passing only a subset of files don't silently erase entries for
   // untouched files. Prune entries whose file no longer exists on disk —
   // those are genuine deletions detectIncremental() should treat as gone.
+  const manifestRoot = manifestProjectRoot(manifestPath, options);
   const existing = loadManifest(manifestPath);
   const manifest: Record<string, ManifestEntry> = {};
   for (const [f, raw] of Object.entries(existing)) {
     const normalised = normaliseManifestEntry(raw);
     if (!normalised) continue;
+    const absolutePath = resolveManifestKey(manifestRoot, f);
     try {
-      if (existsSync(f)) {
-        manifest[f] = normalised;
+      if (existsSync(absolutePath)) {
+        manifest[manifestKeyForFile(manifestRoot, absolutePath)] = normalised;
       }
     } catch { /* ignore stat errors */ }
   }
 
   for (const fileList of Object.values(files)) {
     for (const f of fileList) {
+      const absolutePath = resolveManifestKey(manifestRoot, f);
       try {
-        manifest[f] = {
-          mtime: statSync(f).mtimeMs,
-          hash: md5File(f),
+        manifest[manifestKeyForFile(manifestRoot, absolutePath)] = {
+          mtime: statSync(absolutePath).mtimeMs,
+          hash: md5File(absolutePath),
         };
       } catch { /* deleted between detect and save */ }
     }
@@ -866,13 +913,14 @@ export function detectIncremental(
   manifestPathOrOptions: string | DetectOptions = defaultManifestPath(root),
   maybeOptions?: DetectOptions,
 ): DetectionResult {
+  const rootResolved = resolve(root);
   const manifestPath = typeof manifestPathOrOptions === "string"
     ? manifestPathOrOptions
-    : defaultManifestPath(root);
+    : defaultManifestPath(rootResolved);
   const options = typeof manifestPathOrOptions === "string"
     ? maybeOptions
     : manifestPathOrOptions;
-  const full = detect(root, options);
+  const full = detect(rootResolved, options);
   const manifest = loadManifest(manifestPath);
 
   if (Object.keys(manifest).length === 0) {
@@ -894,7 +942,8 @@ export function detectIncremental(
 
   for (const [ftype, fileList] of Object.entries(full.files)) {
     for (const f of fileList) {
-      const storedMtime = manifest[f];
+      const manifestKey = manifestKeyForFile(rootResolved, f);
+      const storedMtime = manifest[f] ?? manifest[manifestKey];
       let currentMtime = 0;
       try { currentMtime = statSync(f).mtimeMs; } catch { /* ignore */ }
       let changed = false;
@@ -915,8 +964,14 @@ export function detectIncremental(
     }
   }
 
-  const currentFiles = new Set(Object.values(full.files).flat());
-  const deletedFiles = Object.keys(manifest).filter((f) => !currentFiles.has(f));
+  const currentFiles = new Set<string>();
+  for (const f of Object.values(full.files).flat()) {
+    currentFiles.add(f);
+    currentFiles.add(manifestKeyForFile(rootResolved, f));
+  }
+  const deletedFiles = Object.keys(manifest)
+    .filter((f) => !currentFiles.has(f))
+    .map((f) => resolveManifestKey(rootResolved, f));
   const newTotal = Object.values(newFiles).reduce((s, v) => s + v.length, 0);
 
   return {
