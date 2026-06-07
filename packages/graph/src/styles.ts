@@ -82,6 +82,7 @@ function finiteOrDefault(value: unknown, fallback: number): number {
 function dashCode(value: EdgeDashMode | undefined): number {
   if (value === "dashed") return 1;
   if (value === "dotted") return 2;
+  if (value === "long-dash") return 3;
   return 0;
 }
 

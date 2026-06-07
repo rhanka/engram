@@ -398,3 +398,15 @@ export type {
   LayoutGraphNode,
   LayoutResult,
 } from "./graph-layout.js";
+export { buildStudioRenderBuffers } from "./studio-render-buffers.js";
+export type {
+  BuildStudioRenderBuffersOptions,
+  StudioRenderBufferPayload,
+  StudioRenderBufferStats,
+  StudioRenderEdgeDash,
+  StudioRenderGraphBuffers,
+  StudioRenderScene,
+  StudioRenderSceneEdge,
+  StudioRenderSceneNode,
+  StudioRenderStyleBuffers,
+} from "./studio-render-buffers.js";
