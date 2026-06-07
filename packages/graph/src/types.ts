@@ -1,6 +1,6 @@
 export type NodeId = string;
 export type ColorInput = string | number | readonly [number, number, number] | readonly [number, number, number, number];
-export type EdgeDashMode = "solid" | "dashed" | "dotted";
+export type EdgeDashMode = "solid" | "dashed" | "dotted" | "long-dash";
 
 export interface HighLevelGraphNode {
   id: NodeId;

@@ -9,7 +9,7 @@ describe("buildStyleBuffers", () => {
         { id: "b", x: 10, y: 0 },
       ],
       edges: [
-        { source: "a", target: "b", width: 2, color: "#00ff00", dash: "dashed", curvature: 0.25 },
+        { source: "a", target: "b", width: 2, color: "#00ff00", dash: "long-dash", curvature: 0.25 },
         { source: "missing", target: "b", width: 9, color: "#000000", dash: "dotted" },
       ],
     };
@@ -24,7 +24,7 @@ describe("buildStyleBuffers", () => {
     expect([...style.nodeColors]).toEqual([255, 0, 0, 255, 0, 0, 255, 255]);
     expect([...style.edgeWidths]).toEqual([2]);
     expect([...style.edgeColors]).toEqual([0, 255, 0, 255]);
-    expect([...style.edgeDash]).toEqual([1]);
+    expect([...style.edgeDash]).toEqual([3]);
     expect([...style.edgeCurvatures]).toEqual([0.25]);
   });
 });
