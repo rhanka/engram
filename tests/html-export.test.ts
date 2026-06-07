@@ -7,6 +7,23 @@ import { inferEdgeDashes, inferNodeShape, toHtml } from "../src/export.js";
 import { safeToHtml } from "../src/html-export.js";
 
 describe("safeToHtml", () => {
+  it("does not leak the absolute output path in the document title", () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-html-export-"));
+    const htmlPath = join(dir, "graph.html");
+
+    const G = new Graph();
+    G.addNode("a", { label: "A", source_file: "src/a.ts", file_type: "code" });
+    const communities = new Map([[0, ["a"]]]);
+
+    toHtml(G, communities, htmlPath);
+
+    const html = readFileSync(htmlPath, "utf-8");
+    expect(html).toContain("<title>graphify - graph.html</title>");
+    expect(html).not.toContain(dir);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it("removes stale HTML and returns a warning when optional export fails", () => {
     const dir = mkdtempSync(join(tmpdir(), "graphify-html-export-"));
     const htmlPath = join(dir, "graph.html");
