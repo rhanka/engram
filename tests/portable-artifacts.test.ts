@@ -175,6 +175,42 @@ describe("portable graphify artifacts", () => {
     expect(result.ignoredLocalFiles).toEqual(["branch.json", "worktree.json"]);
   });
 
+  it("ignores local scratch and UAT notes while checking commit-safe text artifacts", () => {
+    const root = tempProject();
+    const graphifyDir = join(root, ".graphify");
+    mkdirSync(join(graphifyDir, "scratch"), { recursive: true });
+    mkdirSync(join(graphifyDir, "uat"), { recursive: true });
+    writeFileSync(join(graphifyDir, "graph.json"), JSON.stringify({ nodes: [], links: [] }), "utf-8");
+    writeFileSync(
+      join(graphifyDir, "graph.html"),
+      [
+        "<!doctype html>",
+        "<title>graphify - graph.html</title>",
+        "<script>",
+        "// Build vis datasets",
+        "const endpoint = '/api/ontology/graph.json';",
+        "</script>",
+      ].join("\n"),
+      "utf-8",
+    );
+    writeFileSync(
+      join(graphifyDir, "scratch", "notes.md"),
+      `local scratch path: ${join(root, "tmp", "note.md")}\n`,
+      "utf-8",
+    );
+    writeFileSync(
+      join(graphifyDir, "uat", "routes.md"),
+      "Studio route: /studio/ and /api/ontology/scene.json\n",
+      "utf-8",
+    );
+
+    const result = scanPortableGraphifyArtifacts(graphifyDir);
+
+    expect(result.ok).toBe(true);
+    expect(result.checkedFiles).toEqual(["graph.html", "graph.json"]);
+    expect(result.ignoredLocalFiles).toEqual(["scratch/notes.md", "uat/routes.md"]);
+  });
+
   it("fails when commit-safe artifacts escape the repository root", () => {
     const root = tempProject();
     const graphifyDir = join(root, ".graphify");
