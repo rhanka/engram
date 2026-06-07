@@ -128,7 +128,7 @@ export async function buildProject(
   if (detection.scope) {
     writeFileSync(paths.scope, JSON.stringify(detection.scope, null, 2), "utf-8");
   }
-  saveManifest(rawDetection.files, manifestPath);
+  saveManifest(rawDetection.files, manifestPath, { root: rootResolved });
 
   const codeFiles = fileList(rawDetection, "code");
 

@@ -39,6 +39,10 @@ const LOCAL_LIFECYCLE_PREFIXES = [
   "uat/",
 ];
 
+const LOCAL_LIFECYCLE_PATTERNS = [
+  /^\d{4}-\d{2}-\d{2}\//,
+];
+
 const TEXT_ARTIFACT_EXTENSIONS = new Set([
   ".json",
   ".md",
@@ -194,7 +198,8 @@ export function makeGraphPortable<T extends Graph>(graph: T, root: string): T {
 function isIgnoredLocalArtifact(relativePath: string): boolean {
   return (
     LOCAL_LIFECYCLE_FILES.has(relativePath) ||
-    LOCAL_LIFECYCLE_PREFIXES.some((prefix) => relativePath.startsWith(prefix))
+    LOCAL_LIFECYCLE_PREFIXES.some((prefix) => relativePath.startsWith(prefix)) ||
+    LOCAL_LIFECYCLE_PATTERNS.some((pattern) => pattern.test(relativePath))
   );
 }
 
@@ -269,6 +274,7 @@ function collectJsonIssues(
   }
   if (value && typeof value === "object") {
     for (const [key, item] of Object.entries(value)) {
+      collectStringIssues(key, path, jsonPath === "$" ? "$.<key>" : `${jsonPath}.<key>`, issues);
       collectJsonIssues(item, path, jsonPath === "$" ? `$.${key}` : `${jsonPath}.${key}`, issues);
     }
   }

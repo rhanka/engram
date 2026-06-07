@@ -153,6 +153,26 @@ describe("portable graphify artifacts", () => {
     );
   });
 
+  it("fails when commit-safe JSON artifacts contain absolute path keys", () => {
+    const root = tempProject();
+    const graphifyDir = join(root, ".graphify");
+    mkdirSync(graphifyDir, { recursive: true });
+    writeFileSync(
+      join(graphifyDir, "manifest.json"),
+      JSON.stringify({ [join(root, "src", "a.ts")]: { mtime: 1, hash: "abc" } }, null, 2),
+      "utf-8",
+    );
+
+    const result = scanPortableGraphifyArtifacts(graphifyDir);
+
+    expect(result.ok).toBe(false);
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "manifest.json", jsonPath: "$.<key>", kind: "absolute_path" }),
+      ]),
+    );
+  });
+
   it("ignores local lifecycle metadata with absolute worktree paths", () => {
     const root = tempProject();
     const graphifyDir = join(root, ".graphify");
@@ -209,6 +229,24 @@ describe("portable graphify artifacts", () => {
     expect(result.ok).toBe(true);
     expect(result.checkedFiles).toEqual(["graph.html", "graph.json"]);
     expect(result.ignoredLocalFiles).toEqual(["scratch/notes.md", "uat/routes.md"]);
+  });
+
+  it("ignores dated local snapshots with preexisting absolute manifest keys", () => {
+    const root = tempProject();
+    const graphifyDir = join(root, ".graphify");
+    mkdirSync(join(graphifyDir, "2026-06-07"), { recursive: true });
+    writeFileSync(join(graphifyDir, "graph.json"), JSON.stringify({ nodes: [], links: [] }), "utf-8");
+    writeFileSync(
+      join(graphifyDir, "2026-06-07", "manifest.json"),
+      JSON.stringify({ [join(root, "src", "old.ts")]: { mtime: 1, hash: "abc" } }, null, 2),
+      "utf-8",
+    );
+
+    const result = scanPortableGraphifyArtifacts(graphifyDir);
+
+    expect(result.ok).toBe(true);
+    expect(result.checkedFiles).toEqual(["graph.json"]);
+    expect(result.ignoredLocalFiles).toEqual(["2026-06-07/manifest.json"]);
   });
 
   it("fails when commit-safe artifacts escape the repository root", () => {
