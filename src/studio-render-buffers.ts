@@ -1,6 +1,18 @@
+import {
+  buildRenderGraphBuffers,
+  buildStyleBuffers,
+} from "@sentropic/graph";
+
+import type {
+  EdgeDashMode,
+  GraphStyleBuffers,
+  HighLevelGraphInput,
+  RenderGraphBuffers,
+} from "@sentropic/graph";
+
 import type { StudioScene } from "./studio-scene.js";
 
-export type StudioRenderEdgeDash = "solid" | "dashed" | "dotted" | "long-dash";
+export type StudioRenderEdgeDash = EdgeDashMode;
 
 export interface StudioRenderSceneNode {
   id: string;
@@ -33,25 +45,8 @@ export interface StudioRenderScene extends Omit<StudioScene, "nodes" | "edges"> 
   edges: StudioRenderSceneEdge[];
 }
 
-export interface StudioRenderGraphBuffers {
-  nodeIds: string[];
-  idToIndex: Map<string, number>;
-  positions: Float32Array;
-  edges: Uint32Array;
-  edgeInputIndices?: Uint32Array;
-  droppedEdges: number;
-  nodeFlags?: { fixed: Uint8Array };
-  attrs?: Float32Array;
-}
-
-export interface StudioRenderStyleBuffers {
-  nodeSizes: Float32Array;
-  nodeColors: Uint8Array;
-  edgeWidths: Float32Array;
-  edgeColors: Uint8Array;
-  edgeDash: Uint8Array;
-  edgeCurvatures: Float32Array;
-}
+export type StudioRenderGraphBuffers = RenderGraphBuffers;
+export type StudioRenderStyleBuffers = GraphStyleBuffers;
 
 export interface StudioRenderBufferStats {
   nodeCount: number;
@@ -74,11 +69,6 @@ export interface BuildStudioRenderBuffersOptions {
   emphasisEdgeWidth?: number;
   edgeCurvature?: number;
 }
-
-type RGBA = [number, number, number, number];
-
-const DEFAULT_NODE_COLOR: RGBA = [77, 118, 255, 255];
-const DEFAULT_EDGE_COLOR: RGBA = [121, 133, 153, 255];
 
 function finiteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
@@ -114,20 +104,6 @@ function edgeWidth(edge: StudioRenderSceneEdge, options: Required<BuildStudioRen
   return options.edgeWidth;
 }
 
-function dashCode(value: StudioRenderEdgeDash): number {
-  if (value === "dashed") return 1;
-  if (value === "dotted") return 2;
-  if (value === "long-dash") return 3;
-  return 0;
-}
-
-function writeColor(target: Uint8Array, offset: number, color: RGBA): void {
-  target[offset] = color[0];
-  target[offset + 1] = color[1];
-  target[offset + 2] = color[2];
-  target[offset + 3] = color[3];
-}
-
 function normalizeOptions(
   options: BuildStudioRenderBuffersOptions,
 ): Required<BuildStudioRenderBuffersOptions> {
@@ -146,93 +122,46 @@ export function buildStudioRenderBuffers(
 ): StudioRenderBufferPayload {
   const resolved = normalizeOptions(options);
 
-  const nodeIds: string[] = [];
-  const idToIndex = new Map<string, number>();
-  const positions = new Float32Array(scene.nodes.length * 2);
-  const fixed = new Uint8Array(scene.nodes.length);
-  let hasFixed = false;
-  const nodeSizes = new Float32Array(scene.nodes.length);
-  const nodeColors = new Uint8Array(scene.nodes.length * 4);
-
-  scene.nodes.forEach((node, index) => {
+  const nodes: HighLevelGraphInput["nodes"] = scene.nodes.map((node) => {
     assertKnownPosition(node);
 
-    if (idToIndex.has(node.id)) {
-      throw new Error(`duplicate node id: ${node.id}`);
-    }
-
-    nodeIds.push(node.id);
-    idToIndex.set(node.id, index);
-    positions[index * 2] = node.x as number;
-    positions[index * 2 + 1] = node.y as number;
-
-    if (
-      node.fixed === true ||
-      (finiteNumber(node.fx) && finiteNumber(node.fy))
-    ) {
-      fixed[index] = 1;
-      hasFixed = true;
-    }
-
-    nodeSizes[index] = nodeSize(node, resolved.nodeRadius);
-    writeColor(nodeColors, index * 4, DEFAULT_NODE_COLOR);
+    return {
+      id: node.id,
+      label: node.label,
+      x: node.x,
+      y: node.y,
+      fixed: node.fixed === true || (finiteNumber(node.fx) && finiteNumber(node.fy)),
+      size: nodeSize(node, resolved.nodeRadius),
+    };
   });
 
-  const edgeIndices: number[] = [];
-  const edgeInputIndices: number[] = [];
-  let droppedEdges = 0;
+  const edges: HighLevelGraphInput["edges"] = scene.edges.map((edge) => ({
+    source: edge.source,
+    target: edge.target,
+    label: edge.relation,
+    dash: edgeDash(edge),
+    width: edgeWidth(edge, resolved),
+    curvature: finiteNumber(edge.curvature) ? edge.curvature : resolved.edgeCurvature,
+  }));
 
-  for (let inputIndex = 0; inputIndex < scene.edges.length; inputIndex += 1) {
-    const edge = scene.edges[inputIndex];
-    if (!edge) continue;
-    const source = idToIndex.get(edge.source);
-    const target = idToIndex.get(edge.target);
+  const highLevelGraph: HighLevelGraphInput = {
+    nodes,
+    edges,
+  };
+  const renderGraph = buildRenderGraphBuffers(highLevelGraph);
+  const style = buildStyleBuffers(highLevelGraph, renderGraph, {
+    node: { size: resolved.nodeRadius },
+    edge: {
+      width: resolved.edgeWidth,
+      dash: "solid",
+      curvature: resolved.edgeCurvature,
+    },
+  });
 
-    if (source === undefined || target === undefined) {
-      droppedEdges += 1;
-      continue;
-    }
-
-    edgeIndices.push(source, target);
-    edgeInputIndices.push(inputIndex);
-  }
-
-  const edgeCount = edgeInputIndices.length;
-  const edgeWidths = new Float32Array(edgeCount);
-  const edgeColors = new Uint8Array(edgeCount * 4);
-  const edgeDashBuffer = new Uint8Array(edgeCount);
-  const edgeCurvatures = new Float32Array(edgeCount);
   let weakEdgeCount = 0;
-
-  edgeInputIndices.forEach((inputIndex, edgeIndex) => {
-    const edge = scene.edges[inputIndex] as StudioRenderSceneEdge;
-    edgeWidths[edgeIndex] = edgeWidth(edge, resolved);
-    writeColor(edgeColors, edgeIndex * 4, DEFAULT_EDGE_COLOR);
-    edgeDashBuffer[edgeIndex] = dashCode(edgeDash(edge));
-    edgeCurvatures[edgeIndex] = finiteNumber(edge.curvature)
-      ? edge.curvature
-      : resolved.edgeCurvature;
-    if (edge.weak) weakEdgeCount += 1;
-  });
-
-  const renderGraph: StudioRenderGraphBuffers = {
-    nodeIds,
-    idToIndex,
-    positions,
-    edges: new Uint32Array(edgeIndices),
-    edgeInputIndices: new Uint32Array(edgeInputIndices),
-    droppedEdges,
-  };
-  if (hasFixed) renderGraph.nodeFlags = { fixed };
-
-  const style: StudioRenderStyleBuffers = {
-    nodeSizes,
-    nodeColors,
-    edgeWidths,
-    edgeColors,
-    edgeDash: edgeDashBuffer,
-    edgeCurvatures,
-  };
+  for (const inputIndex of renderGraph.edgeInputIndices ?? []) {
+    if (scene.edges[inputIndex]?.weak) weakEdgeCount += 1;
+  }
 
   return {
     renderer: "sentropic-graph",
