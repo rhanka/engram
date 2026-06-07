@@ -1191,7 +1191,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
           onWarning: (message) => console.warn(message),
         });
       }
-      saveManifest(portableDetection.files, join(dirname(resolve(opts.graphOut)), "manifest.json"));
+      saveManifest(portableDetection.files, join(dirname(resolve(opts.graphOut)), "manifest.json"), { root });
       const cost = updateCostFile(extraction, portableDetection, opts.costOut);
 
       console.log(`Graph: ${G.order} nodes, ${G.size} edges, ${analyzed.communities.size} communities`);
@@ -1270,7 +1270,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
           onWarning: (message) => console.warn(message),
         });
       }
-      saveManifest(portableDetection.files, join(dirname(resolve(opts.graphOut)), "manifest.json"));
+      saveManifest(portableDetection.files, join(dirname(resolve(opts.graphOut)), "manifest.json"), { root });
       const cost = updateCostFile(extraction, portableDetection, opts.costOut);
 
       console.log(`Merged: ${mergedGraph.order} nodes, ${mergedGraph.size} edges`);
@@ -1314,7 +1314,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
       writeJson(opts.analysisOut, analyzed.analysis);
       persistCommunityLabels(analyzed.labels, labelsPath);
-      saveManifest(detection.files, join(dirname(resolve(opts.graphOut)), "manifest.json"));
+      saveManifest(detection.files, join(dirname(resolve(opts.graphOut)), "manifest.json"), { root });
       console.log(`Graph: ${G.order} nodes, ${G.size} edges, ${analyzed.communities.size} communities`);
     });
 
@@ -1551,7 +1551,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
       writeJson(opts.analysisOut, analyzed.analysis);
       persistCommunityLabels(analyzed.labels, labelsPath);
-      saveManifest(detection.files, join(dirname(resolve(opts.graphOut)), "manifest.json"));
+      saveManifest(detection.files, join(dirname(resolve(opts.graphOut)), "manifest.json"), { root });
 
       console.log(`Merged: ${mergedGraph.order} nodes, ${mergedGraph.size} edges`);
       console.log(analyzed.analysis.diff.summary);

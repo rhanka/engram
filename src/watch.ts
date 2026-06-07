@@ -123,7 +123,7 @@ export async function rebuildCode(
     if (portableDetection.scope) {
       writeFileSync(paths.scope, JSON.stringify(portableDetection.scope, null, 2), "utf-8");
     }
-    saveManifest(rawDetection.files, paths.manifest);
+    saveManifest(rawDetection.files, paths.manifest, { root });
 
     let codeFiles = (rawDetection.files.code ?? []).filter(
       (f: string) =>
