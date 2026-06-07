@@ -67,6 +67,10 @@ export interface StudioSceneNode {
   weight: number;
   shape: string;
   group?: string;
+  x?: number;
+  y?: number;
+  fx?: number;
+  fy?: number;
 }
 
 export interface StudioSceneEdge {

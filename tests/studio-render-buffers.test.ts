@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { createGraphRenderer } from "@sentropic/graph";
+
 import { buildStudioRenderBuffers } from "../src/studio-render-buffers.js";
 
 describe("buildStudioRenderBuffers", () => {
@@ -44,5 +46,28 @@ describe("buildStudioRenderBuffers", () => {
         stats: { nodeCount: 1, edgeCount: 0, weakEdgeCount: 0, communityCount: 0 },
       }),
     ).toThrow("node a is missing finite x/y positions");
+  });
+
+  it("emits buffers accepted by the published @sentropic/graph renderer contract", () => {
+    const payload = buildStudioRenderBuffers({
+      nodes: [
+        { id: "a", label: "Alpha", x: 0, y: 0, weight: 1 },
+        { id: "b", label: "Beta", x: 10, y: 10, weight: 1 },
+      ],
+      edges: [{ source: "a", target: "b", relation: "appears_in", dash: "solid" }],
+      stats: { nodeCount: 2, edgeCount: 1, weakEdgeCount: 0, communityCount: 1 },
+    });
+
+    const renderer = createGraphRenderer(null);
+    renderer.setGraph(payload.renderGraph);
+    renderer.setStyle(payload.style);
+    renderer.fitView({ viewportWidth: 100, viewportHeight: 50, padding: 5 });
+
+    expect(renderer.snapshot()).toMatchObject({
+      nodeCount: 2,
+      edgeCount: 1,
+      positions: [0, 0, 10, 10],
+      hasStyle: true,
+    });
   });
 });

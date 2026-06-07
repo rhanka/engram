@@ -20,6 +20,8 @@
 
 export interface LayoutGraphNode {
   id: string;
+  x?: number;
+  y?: number;
   /** Pinned x — when both fx and fy are finite the node is held fixed. */
   fx?: number;
   fy?: number;
@@ -198,8 +200,8 @@ function applyRepulsion(
  *          `fx`/`fy` are held fixed at those coordinates (warm-start / pins).
  */
 export function computeLayout(
-  nodes: readonly LayoutGraphNode[],
-  edges: readonly LayoutGraphEdge[],
+  nodes: readonly { id: string; fx?: number; fy?: number }[],
+  edges: readonly { source: string; target: string }[],
   options: ComputeLayoutOptions = {},
 ): LayoutResult[] {
   const n = nodes.length;
@@ -325,7 +327,10 @@ export function computeLayout(
  * Mutates and returns the scene.
  */
 export function attachLayoutPositions<
-  T extends { nodes: LayoutGraphNode[]; edges: LayoutGraphEdge[] },
+  T extends {
+    nodes: Array<{ id: string; x?: number; y?: number; fx?: number; fy?: number }>;
+    edges: Array<{ source: string; target: string }>;
+  },
 >(scene: T, options: ComputeLayoutOptions = {}): T {
   if (!scene || !Array.isArray(scene.nodes) || scene.nodes.length === 0) return scene;
   const positions = computeLayout(scene.nodes, scene.edges ?? [], options);

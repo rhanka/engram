@@ -17,7 +17,7 @@ import {
   serveStudioAsset,
   type StudioAssetResult,
 } from "./studio-assets.js";
-import { buildStudioScene } from "./studio-scene.js";
+import { buildStudioScene, type StudioScene } from "./studio-scene.js";
 import { attachLayoutPositions } from "./graph-layout.js";
 import {
   getOntologyRebuildStatus,
@@ -264,7 +264,7 @@ function graphJsonResult(stateDir: string): OntologyStudioRouteResult {
  * `buildScene`. ÉTAPE 1: additive only — the client still fetches graph.json;
  * this route is independently testable and unblocks the later client switch.
  */
-let sceneCache: { key: string; scene: ReturnType<typeof buildStudioScene> } | null = null;
+let sceneCache: { key: string; scene: StudioScene } | null = null;
 
 function sceneJsonResult(stateDir: string): OntologyStudioRouteResult {
   const graphPath = join(stateDir, "graph.json");
@@ -278,12 +278,14 @@ function sceneJsonResult(stateDir: string): OntologyStudioRouteResult {
   // identity (path + mtime + size): only the first scene fetch pays for it, and
   // any edit (which rewrites graph.json) invalidates the cache.
   const stat = statSync(graphPath);
-  const key = `${graphPath} ${stat.mtimeMs} ${stat.size}`;
-  if (!sceneCache || sceneCache.key !== key) {
+  const key = `${graphPath}\u0000${stat.mtimeMs}\u0000${stat.size}`;
+  let cached = sceneCache;
+  if (!cached || cached.key !== key) {
     const graph = JSON.parse(readFileSync(graphPath, "utf-8"));
-    sceneCache = { key, scene: attachLayoutPositions(buildStudioScene(graph)) };
+    cached = { key, scene: attachLayoutPositions(buildStudioScene(graph)) };
+    sceneCache = cached;
   }
-  return jsonResult(200, sceneCache.scene);
+  return jsonResult(200, cached.scene);
 }
 
 function sendResult(response: ServerResponse, result: OntologyStudioRouteResult): void {
