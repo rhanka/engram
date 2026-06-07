@@ -1,0 +1,32 @@
+{
+  "name": "@sentropic/graph",
+  "version": "0.1.0",
+  "description": "Fast WebGL-oriented graph rendering primitives for known-position graphs.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "FEATURES.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup --config tsup.config.ts",
+    "test": "vitest run --config vitest.config.ts",
+    "bench": "npm run build && node bench/buffers-bench.mjs",
+    "prepublishOnly": "npm run test && npm run build"
+  },
+  "sideEffects": false
+}

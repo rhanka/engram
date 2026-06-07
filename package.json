@@ -25,10 +25,13 @@
   ],
   "scripts": {
     "build": "node scripts/gen-st-tokens.mjs && tsup && npm run build:studio",
+    "build:graph": "npm --prefix packages/graph run build",
     "build:server": "node scripts/gen-st-tokens.mjs && tsup",
     "build:studio": "node scripts/build-studio-app.mjs",
+    "bench:graph": "npm --prefix packages/graph run bench",
     "dev": "tsup --watch",
     "test": "vitest run",
+    "test:graph": "npm --prefix packages/graph run test",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
     "test:serve": "vitest run tests/serve.test.ts",
