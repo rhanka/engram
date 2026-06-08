@@ -164,4 +164,60 @@ describe("hooks", () => {
       rmSync(outsideHooksDir, { recursive: true, force: true });
     }
   });
+
+  // Non-regression for upstream 0fdfded (hook interpreter injection hardening).
+  //
+  // The Python port of graphify embeds sys.executable at install time as a
+  // "_PINNED_PYTHON_" placeholder, which required allowlist sanitisation to
+  // prevent shell metacharacters in the interpreter path from being injected
+  // into the generated hook scripts (upstream fix 0fdfded).
+  //
+  // The TypeScript implementation uses a fundamentally different architecture:
+  // no interpreter path is ever embedded at install time.  The hook scripts
+  // discover the command at *runtime* via `command -v graphify` or `npx
+  // graphify`, both of which are hard-coded literal strings in the template.
+  // There is therefore no filesystem-sourced path injection vector.
+  //
+  // These tests pin that invariant so future refactors cannot accidentally
+  // introduce the pinned-interpreter pattern.
+  describe("hook injection safety (0fdfded non-regression)", () => {
+    it("does not embed any interpreter path placeholder in generated hook scripts", () => {
+      install(tmpDir);
+      for (const name of ["post-commit", "post-checkout", "post-merge", "post-rewrite"]) {
+        const content = readFileSync(hookPath(tmpDir, name), "utf-8");
+        // No Python-style pinned-interpreter placeholder must appear.
+        expect(content).not.toContain("__PINNED_PYTHON__");
+        expect(content).not.toContain("__PINNED_NODE__");
+        expect(content).not.toContain("__PINNED_GRAPHIFY__");
+        // No absolute filesystem path derived from process.execPath is embedded.
+        // The only interpreter references are the two hard-coded literals used
+        // by graphify_detect_cmd(), not a path taken from the environment.
+        expect(content).not.toMatch(/GRAPHIFY_CMD="\/[^"]+"/);
+      }
+    });
+
+    it("hook scripts set GRAPHIFY_CMD only to known safe literal values", () => {
+      install(tmpDir);
+      const content = readFileSync(hookPath(tmpDir, "post-commit"), "utf-8");
+      // The detect function must assign only the two safe, static values.
+      expect(content).toContain('GRAPHIFY_CMD="graphify"');
+      expect(content).toContain('GRAPHIFY_CMD="npx graphify"');
+      // Shell metacharacters must not appear in any GRAPHIFY_CMD assignment.
+      const assignmentLines = content
+        .split("\n")
+        .filter((l) => l.trimStart().startsWith("GRAPHIFY_CMD="));
+      for (const line of assignmentLines) {
+        expect(line).not.toMatch(/[;`$(){}|<>\\]/);
+      }
+    });
+
+    it("nohup exec line properly quotes the log path redirect", () => {
+      install(tmpDir);
+      const content = readFileSync(hookPath(tmpDir, "post-commit"), "utf-8");
+      // The redirect target must be double-quoted so paths with spaces work.
+      expect(content).toContain('> "$GRAPHIFY_LOG"');
+      // nohup must be present for background execution.
+      expect(content).toContain("nohup sh -c");
+    });
+  });
 });
