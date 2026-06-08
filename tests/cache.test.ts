@@ -39,6 +39,11 @@ describe("cache", () => {
     writeFileSync(f, "v1");
     const h1 = fileHash(f);
     writeFileSync(f, "v2");
+    // Same-size rewrite within one kernel timestamp tick is the documented
+    // stat-fastpath blind spot (make(1) trade-off) — step the mtime explicitly
+    // so the test is deterministic on any filesystem, as a real edit would.
+    const later = Date.now() / 1000 + 1;
+    utimesSync(f, later, later);
     const h2 = fileHash(f);
     expect(h1).not.toBe(h2);
   });
