@@ -15,7 +15,9 @@ export function normalizeSearchText(value: string): string {
  * filtered.
  *
  * Behaviour:
- * - splits on whitespace
+ * - tokenises on Unicode word runs (mirrors Python `re.findall(r"\w+")`,
+ *   upstream 80301a0 / #994) so punctuation is stripped: "extract?" matches
+ *   the "extract" node and "ok?" is filtered like "ok"
  * - lowercases each raw token
  * - drops the token if it is composed entirely of ASCII a-z and shorter
  *   than 3 chars; non-ASCII (or mixed) tokens of any length are kept
@@ -23,8 +25,10 @@ export function normalizeSearchText(value: string): string {
 export function queryTerms(question: string): string[] {
   if (typeof question !== "string") return [];
   const out: string[] = [];
-  for (const raw of question.split(/\s+/)) {
-    const term = raw.toLowerCase().trim();
+  // \p{L}\p{N}_ runs ≈ Python's unicode-aware \w+ (upstream 80301a0 / #994):
+  // CJK / Cyrillic / accented tokens survive, punctuation splits and drops.
+  for (const raw of question.toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? []) {
+    const term = raw;
     if (!term) continue;
     let englishOnly = true;
     for (let i = 0; i < term.length; i++) {
