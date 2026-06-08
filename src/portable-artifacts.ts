@@ -26,6 +26,7 @@ const LOCAL_LIFECYCLE_FILES = new Set([
   "branch.json",
   "worktree.json",
   "needs_update",
+  "store-state.json",
 ]);
 
 const LOCAL_LIFECYCLE_PREFIXES = [
