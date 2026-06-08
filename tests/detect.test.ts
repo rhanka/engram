@@ -70,6 +70,13 @@ describe("classifyFile", () => {
     expect(classifyFile("Sources/index.ets")).toBe(FileType.CODE);
   });
 
+  it("classifies .svh (SystemVerilog header) as CODE", () => {
+    // Port of upstream 80301a0 (#1042): .svh is a SystemVerilog header extension.
+    // The Verilog/SystemVerilog extractor already handles .v and .sv; .svh files
+    // (e.g. interface definitions, macros) must be picked up the same way.
+    expect(classifyFile("rtl/axi_types.svh")).toBe(FileType.CODE);
+  });
+
   it("classifies Blade templates as CODE", () => {
     expect(classifyFile("resources/views/welcome.blade.php")).toBe(FileType.CODE);
   });

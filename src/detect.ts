@@ -21,7 +21,7 @@ export const CODE_EXTENSIONS = new Set([
   ".py", ".ts", ".js", ".jsx", ".tsx", ".go", ".rs", ".java", ".cpp", ".cc", ".cxx",
   ".c", ".h", ".hpp", ".rb", ".swift", ".kt", ".kts", ".cs", ".scala", ".php",
   ".lua", ".toc", ".zig", ".ps1", ".ex", ".exs", ".m", ".mm", ".jl", ".vue",
-  ".svelte", ".astro", ".dart", ".v", ".sv", ".mjs", ".ejs", ".sql", ".r", ".groovy",
+  ".svelte", ".astro", ".dart", ".v", ".sv", ".svh", ".mjs", ".ejs", ".sql", ".r", ".groovy",
   ".gradle", ".luau", ".f", ".f90", ".f95", ".f03", ".f08",
   // ArkTS — TypeScript-superset used by HarmonyOS / OpenHarmony app development.
   // Tree-sitter TypeScript already handles .ets AST extraction; detect just
