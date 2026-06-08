@@ -4544,6 +4544,7 @@ const _DISPATCH: Record<string, ExtractorFn> = {
   ".gradle": extractGroovy,
   ".v": extractRegexBackedCode,
   ".sv": extractRegexBackedCode,
+  ".svh": extractRegexBackedCode,
   ".sql": extractSql,
   ".md": extractMarkdown,
   ".mdx": extractMarkdown,
@@ -4783,7 +4784,7 @@ const _EXTENSIONS = new Set([
   ".lua", ".toc", ".zig", ".ps1",
   ".m", ".mm",
   ".jl", ".ex", ".exs",
-  ".vue", ".svelte", ".astro", ".dart", ".groovy", ".gradle", ".v", ".sv", ".ejs",
+  ".vue", ".svelte", ".astro", ".dart", ".groovy", ".gradle", ".v", ".sv", ".svh", ".ejs",
   ".md", ".mdx", ".qmd",
   ".luau", ".r", ".R", ".f", ".F", ".f90", ".F90", ".f95", ".F95", ".f03", ".F03", ".f08", ".F08",
 ]);
