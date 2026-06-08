@@ -1,0 +1,68 @@
+/**
+ * Compatibility Contract guard (SPEC_STORAGE_BACKENDS.md): importing the
+ * public index or any storage module must never evaluate a store driver.
+ * Two complementary checks:
+ * - static: src/storage/*.ts contains no static import/require of a driver
+ *   package (dynamic `import("pkg")` at call time stays allowed);
+ * - runtime: a mocked neo4j-driver records whether it gets evaluated while
+ *   importing src/index.ts and the storage modules, with a positive control
+ *   proving the probe actually trips when the driver is imported.
+ */
+import { readFileSync, readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it, vi } from "vitest";
+import Graph from "graphology";
+
+const driverProbe = vi.hoisted(() => ({ evaluated: false }));
+
+vi.mock("neo4j-driver", () => {
+  driverProbe.evaluated = true;
+  return { default: {} };
+});
+
+const storageDir = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "storage");
+
+const DRIVER_PACKAGES = ["neo4j-driver", "@google-cloud/spanner", "better-sqlite3"];
+
+describe("storage import guard", () => {
+  it("src/storage has no static driver imports", () => {
+    const files = readdirSync(storageDir).filter((file) => file.endsWith(".ts"));
+    expect(files.length).toBeGreaterThan(0);
+
+    for (const file of files) {
+      const content = readFileSync(join(storageDir, file), "utf-8");
+      for (const pkg of DRIVER_PACKAGES) {
+        const escaped = pkg.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+        // `import ... from "pkg"` and `export ... from "pkg"`.
+        expect(content, `${file} must not statically import ${pkg}`).not.toMatch(
+          new RegExp(`(import|export)[^;()]*from\\s*["']${escaped}["']`),
+        );
+        // Bare side-effect `import "pkg"` (dynamic import("pkg") not matched).
+        expect(content, `${file} must not statically import ${pkg}`).not.toMatch(
+          new RegExp(`import\\s+["']${escaped}["']`),
+        );
+        // CJS require("pkg").
+        expect(content, `${file} must not require ${pkg}`).not.toMatch(
+          new RegExp(`require\\(\\s*["']${escaped}["']\\s*\\)`),
+        );
+      }
+    }
+  });
+
+  it("importing the public index and storage modules does not evaluate neo4j-driver", async () => {
+    const api = await import("../src/index.js");
+    await import("../src/storage/types.js");
+    await import("../src/storage/registry.js");
+    await import("../src/storage/file.js");
+    expect(driverProbe.evaluated).toBe(false);
+
+    // Positive control: the probe trips once the driver is really imported
+    // (pushToNeo4j resolves it dynamically), so the assertion above measures
+    // evaluation instead of vacuously passing.
+    await api
+      .pushToNeo4j(new Graph(), "bolt://localhost:7687", "user", "password")
+      .catch(() => {});
+    expect(driverProbe.evaluated).toBe(true);
+  });
+});
