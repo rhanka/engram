@@ -1,18 +1,18 @@
 /**
- * GraphLike -> ForceGraph scene adapter.
+ * GraphLike -> Studio scene adapter.
  *
- * Pure-data mapping from a Graphify `graph.json` payload to the prop shape the
- * published `@sentropic/design-system-svelte` `ForceGraph` consumes. No DOM, no
- * d3 — the DS component owns the force simulation. This module is the single
- * source of truth the workspace state and the vitest suite both build on.
+ * Pure-data mapping from a Graphify `graph.json` payload to the scene shape
+ * consumed by GraphCanvas and then converted to `@sentropic/graph` buffers. No
+ * DOM, no d3. This module is the single source of truth the workspace state and
+ * the vitest suite both build on.
  *
- * Mapping (handed down by the DS contract):
- *   GraphLike node -> ForceGraph node:
+ * Mapping:
+ *   GraphLike node -> Studio scene node:
  *     id    <- node.id
  *     label <- node.label || node.title || node.name || node.id
  *     group <- node.community_name || node.community || node.type  (in that order)
  *     weight<- degree-derived (more relations => bigger node)
- *   GraphLike link -> ForceGraph edge:
+ *   GraphLike link -> Studio scene edge:
  *     source/target <- link.source/target
  *     relation      <- link.relation
  *     weak          <- (link.confidence ?? "EXTRACTED") !== "EXTRACTED"
@@ -55,8 +55,8 @@ export function nodeType(node) {
 /**
  * Grouping key for tone assignment. Community wins (named, then numeric),
  * falling back to the node type so single-community graphs still colour by
- * type. Returns `undefined` when nothing is known so the DS falls back to a
- * per-index tone.
+ * type. Returns `undefined` when nothing is known so the renderer uses its
+ * default group tone.
  */
 export function nodeGroup(node) {
   const community =
@@ -67,7 +67,7 @@ export function nodeGroup(node) {
 }
 
 /**
- * SVELTE-4: map an ontology node type to a DS ForceGraph shape, mirroring the
+ * SVELTE-4: map an ontology node type to a scene shape, mirroring the
  * pack profile's visual_encoding (shape signals the entity's ontological
  * nature; colour stays community-driven). Unknown types fall back to "dot".
  * @returns {"diamond"|"star"|"hexagon"|"box"|"triangle"|"square"|"dot"}
@@ -90,7 +90,7 @@ const TYPE_SHAPE = {
 };
 
 /**
- * Map an ontology relation to a typed dash style (ForceGraph 0.10.5).
+ * Map an ontology relation to a typed dash style.
  * Four families: solid = belonging/structure, dashed = agency/interaction
  * between characters, dotted = spatial/factual anchoring, long-dash =
  * method/usage. Unmapped relations fall back to solid.
@@ -169,14 +169,14 @@ export function computeDegrees(nodes, edges) {
 }
 
 /**
- * Map degree -> ForceGraph `weight` (relative node radius multiplier).
+ * Map degree -> scene `weight` (relative node radius multiplier).
  * Clamped to a gentle range so hubs read bigger without dwarfing leaves.
  */
 // Legacy autosizing: node radius is LINEAR in degree, NORMALISED by the graph's
 // max degree — r = rmin + (rmax - rmin) * (deg / maxDeg) (legacy used
-// r = 4 + 12*(deg/maxDeg), i.e. an rmax/rmin ratio of 4). The DS renders
+// r = 4 + 12*(deg/maxDeg), i.e. an rmax/rmin ratio of 4). GraphCanvas renders
 // r = nodeRadius * sqrt(weight), so to get that linear r we pass
-// weight = (r_target / nodeRadius)^2 with nodeRadius = rmin (3px in GraphCanvas).
+// weight = (r_target / nodeRadius)^2 with nodeRadius = rmin.
 const RADIUS_RATIO = 4; // rmax / rmin, matches the legacy 4->16 spread
 function weightForDegree(degree, maxDegree) {
   const max = Number.isFinite(maxDegree) && maxDegree > 0 ? maxDegree : 1;
@@ -187,7 +187,7 @@ function weightForDegree(degree, maxDegree) {
 }
 
 /**
- * Build the full ForceGraph scene from a GraphLike payload.
+ * Build the full Studio scene from a GraphLike payload.
  *
  * @param {object} graph        graph.json payload ({ nodes, links|edges }).
  * @param {object} [options]
@@ -216,7 +216,7 @@ export function buildScene(graph, options = {}) {
       id: node.id,
       label: nodeLabel(node),
       weight: weightForDegree(degree.get(node.id) ?? 0, maxDegree),
-      shape: shapeForType(node), // SVELTE-4: ontology type -> DS shape
+      shape: shapeForType(node), // SVELTE-4: ontology type -> scene shape
     };
     if (group !== undefined) out.group = group;
     return out;
@@ -227,7 +227,7 @@ export function buildScene(graph, options = {}) {
     const relation = displayValue(edge.relation);
     if (relation) {
       out.relation = relation;
-      // SVELTE/UAT R3-8: typed dash per relation family (ForceGraph 0.10.5).
+      // SVELTE/UAT R3-8: typed dash per relation family.
       const dash = dashForRelation(edge.relation);
       if (dash) out.dash = dash;
     }
@@ -538,7 +538,7 @@ export function candidateSubgraph(graph, idA, idB, hops = 1) {
  * SVELTE-7: add a synthetic "reconciliation" edge between the two candidate
  * entities so the force layout pulls them side by side and the link is visible
  * (the twins usually have no direct edge). Marked `reconcile: true` and given a
- * relation label so the DS edge tooltip reads it; consumers render it bold.
+ * relation label so consumers can render and label it consistently.
  */
 export function withReconcileEdge(scene, idA, idB) {
   if (!scene || !idA || !idB) return scene;
@@ -553,8 +553,8 @@ export function withReconcileEdge(scene, idA, idB) {
     ...scene,
     edges: [
       ...(scene.edges ?? []),
-      // UAT R2-7: bold reconcile edge (ForceGraph 0.10.5). `width` takes
-      // precedence over `emphasis` per the DS API, so set both for a clear bold.
+      // UAT R2-7: bold reconcile edge. Keep both semantic emphasis and an
+      // explicit width so renderers can choose the strongest signal they support.
       {
         source: idA,
         target: idB,

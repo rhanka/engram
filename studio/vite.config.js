@@ -1,5 +1,9 @@
 import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const here = dirname(fileURLToPath(import.meta.url));
 
 // The built SPA is served by `graphify ontology studio` from a static route.
 // `base: "./"` keeps asset URLs relative so the bundle works regardless of the
@@ -7,6 +11,11 @@ import { svelte } from "@sveltejs/vite-plugin-svelte";
 export default defineConfig({
   base: "./",
   plugins: [svelte()],
+  resolve: {
+    alias: {
+      "@sentropic/graph": resolve(here, "../packages/graph/src/index.ts"),
+    },
+  },
   build: {
     outDir: "dist",
     emptyOutDir: true,

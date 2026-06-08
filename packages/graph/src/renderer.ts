@@ -14,6 +14,7 @@ import type {
 
 type GraphCanvasLike = Pick<HTMLCanvasElement, "getContext" | "height" | "width">;
 type GraphContext = WebGL2RenderingContext | WebGLRenderingContext;
+type Graph2DContext = CanvasRenderingContext2D;
 
 interface RendererState {
   nodeIds: NodeId[];
@@ -23,6 +24,93 @@ interface RendererState {
   attrs?: Float32Array;
   style?: GraphStyleBuffers;
 }
+
+interface AttributeLocations {
+  position: number;
+  color: number;
+  size?: number;
+}
+
+interface UniformLocations {
+  camera: WebGLUniformLocation | null;
+  viewport: WebGLUniformLocation | null;
+  zoom: WebGLUniformLocation | null;
+  pixelRatio?: WebGLUniformLocation | null;
+}
+
+interface DrawProgram {
+  program: WebGLProgram;
+  attributes: AttributeLocations;
+  uniforms: UniformLocations;
+}
+
+interface RenderResources {
+  edgeProgram: DrawProgram;
+  nodeProgram: DrawProgram;
+  positionBuffer: WebGLBuffer;
+  colorBuffer: WebGLBuffer;
+  sizeBuffer: WebGLBuffer;
+}
+
+const EDGE_VERTEX_SHADER = `
+attribute vec2 a_position;
+attribute vec4 a_color;
+uniform vec2 u_camera;
+uniform vec2 u_viewport;
+uniform float u_zoom;
+varying vec4 v_color;
+
+void main() {
+  vec2 screen = (a_position - u_camera) * u_zoom;
+  vec2 clip = vec2(screen.x * 2.0 / u_viewport.x, -screen.y * 2.0 / u_viewport.y);
+  gl_Position = vec4(clip, 0.0, 1.0);
+  v_color = a_color;
+}
+`;
+
+const NODE_VERTEX_SHADER = `
+attribute vec2 a_position;
+attribute vec4 a_color;
+attribute float a_size;
+uniform vec2 u_camera;
+uniform vec2 u_viewport;
+uniform float u_zoom;
+uniform float u_pixelRatio;
+varying vec4 v_color;
+
+void main() {
+  vec2 screen = (a_position - u_camera) * u_zoom;
+  vec2 clip = vec2(screen.x * 2.0 / u_viewport.x, -screen.y * 2.0 / u_viewport.y);
+  gl_Position = vec4(clip, 0.0, 1.0);
+  gl_PointSize = max(1.0, a_size * u_pixelRatio);
+  v_color = a_color;
+}
+`;
+
+const COLOR_FRAGMENT_SHADER = `
+precision mediump float;
+varying vec4 v_color;
+
+void main() {
+  gl_FragColor = v_color;
+}
+`;
+
+const NODE_FRAGMENT_SHADER = `
+precision mediump float;
+varying vec4 v_color;
+
+void main() {
+  vec2 point = gl_PointCoord - vec2(0.5, 0.5);
+  if (dot(point, point) > 0.25) {
+    discard;
+  }
+  gl_FragColor = v_color;
+}
+`;
+
+const DEFAULT_NODE_COLOR = [77, 118, 255, 255] as const;
+const DEFAULT_EDGE_COLOR = [121, 133, 153, 180] as const;
 
 function acquireContext(canvas: GraphCanvasLike | null, options: GraphRendererOptions): GraphContext | null {
   if (!canvas) {
@@ -41,6 +129,100 @@ function acquireContext(canvas: GraphCanvasLike | null, options: GraphRendererOp
   } catch {
     return null;
   }
+}
+
+function acquire2DContext(canvas: GraphCanvasLike | null): Graph2DContext | null {
+  if (!canvas) {
+    return null;
+  }
+
+  try {
+    return canvas.getContext("2d") as Graph2DContext | null;
+  } catch {
+    return null;
+  }
+}
+
+function compileShader(context: GraphContext, type: number, source: string): WebGLShader {
+  const shader = context.createShader(type);
+  if (!shader) {
+    throw new Error("failed to create WebGL shader");
+  }
+
+  context.shaderSource(shader, source);
+  context.compileShader(shader);
+
+  if (!context.getShaderParameter(shader, context.COMPILE_STATUS)) {
+    const log = context.getShaderInfoLog(shader) || "unknown shader compile error";
+    throw new Error(log);
+  }
+
+  return shader;
+}
+
+function createProgram(context: GraphContext, vertexSource: string, fragmentSource: string): WebGLProgram {
+  const vertexShader = compileShader(context, context.VERTEX_SHADER, vertexSource);
+  const fragmentShader = compileShader(context, context.FRAGMENT_SHADER, fragmentSource);
+  const program = context.createProgram();
+  if (!program) {
+    throw new Error("failed to create WebGL program");
+  }
+
+  context.attachShader(program, vertexShader);
+  context.attachShader(program, fragmentShader);
+  context.linkProgram(program);
+  context.deleteShader(vertexShader);
+  context.deleteShader(fragmentShader);
+
+  if (!context.getProgramParameter(program, context.LINK_STATUS)) {
+    const log = context.getProgramInfoLog(program) || "unknown WebGL program link error";
+    throw new Error(log);
+  }
+
+  return program;
+}
+
+function createDrawProgram(
+  context: GraphContext,
+  vertexSource: string,
+  fragmentSource: string,
+  includeSize = false,
+): DrawProgram {
+  const program = createProgram(context, vertexSource, fragmentSource);
+  const attributes: AttributeLocations = {
+    position: context.getAttribLocation(program, "a_position"),
+    color: context.getAttribLocation(program, "a_color"),
+  };
+  if (includeSize) attributes.size = context.getAttribLocation(program, "a_size");
+
+  return {
+    program,
+    attributes,
+    uniforms: {
+      camera: context.getUniformLocation(program, "u_camera"),
+      viewport: context.getUniformLocation(program, "u_viewport"),
+      zoom: context.getUniformLocation(program, "u_zoom"),
+      pixelRatio: includeSize ? context.getUniformLocation(program, "u_pixelRatio") : null,
+    },
+  };
+}
+
+function createBuffer(context: GraphContext): WebGLBuffer {
+  const buffer = context.createBuffer();
+  if (!buffer) {
+    throw new Error("failed to create WebGL buffer");
+  }
+  return buffer;
+}
+
+function createRenderResources(context: GraphContext): RenderResources {
+  return {
+    edgeProgram: createDrawProgram(context, EDGE_VERTEX_SHADER, COLOR_FRAGMENT_SHADER),
+    nodeProgram: createDrawProgram(context, NODE_VERTEX_SHADER, NODE_FRAGMENT_SHADER, true),
+    positionBuffer: createBuffer(context),
+    colorBuffer: createBuffer(context),
+    sizeBuffer: createBuffer(context),
+  };
 }
 
 function copyNodeFlags(flags: NodeFlags | undefined): NodeFlags | undefined {
@@ -96,11 +278,204 @@ function copyStyle(style: GraphStyleBuffers, nodeCount: number, edgeCount: numbe
   };
 }
 
+function writeColor(
+  target: Uint8Array,
+  targetOffset: number,
+  source: Uint8Array | undefined,
+  sourceOffset: number,
+  fallback: readonly [number, number, number, number],
+): void {
+  target[targetOffset] = source?.[sourceOffset] ?? fallback[0];
+  target[targetOffset + 1] = source?.[sourceOffset + 1] ?? fallback[1];
+  target[targetOffset + 2] = source?.[sourceOffset + 2] ?? fallback[2];
+  target[targetOffset + 3] = source?.[sourceOffset + 3] ?? fallback[3];
+}
+
+function buildEdgePositions(state: RendererState): Float32Array {
+  const positions = new Float32Array(state.edges.length * 2);
+  let cursor = 0;
+
+  for (let edgeIndex = 0; edgeIndex < state.edges.length; edgeIndex += 2) {
+    const sourceIndex = state.edges[edgeIndex] ?? 0;
+    const targetIndex = state.edges[edgeIndex + 1] ?? 0;
+    const sourceOffset = sourceIndex * 2;
+    const targetOffset = targetIndex * 2;
+
+    positions[cursor++] = state.positions[sourceOffset] ?? 0;
+    positions[cursor++] = state.positions[sourceOffset + 1] ?? 0;
+    positions[cursor++] = state.positions[targetOffset] ?? 0;
+    positions[cursor++] = state.positions[targetOffset + 1] ?? 0;
+  }
+
+  return positions;
+}
+
+function buildEdgeColors(state: RendererState): Uint8Array {
+  const edgeCount = state.edges.length / 2;
+  const colors = new Uint8Array(edgeCount * 2 * 4);
+  let cursor = 0;
+
+  for (let edgeIndex = 0; edgeIndex < edgeCount; edgeIndex += 1) {
+    const sourceOffset = edgeIndex * 4;
+    writeColor(colors, cursor, state.style?.edgeColors, sourceOffset, DEFAULT_EDGE_COLOR);
+    cursor += 4;
+    writeColor(colors, cursor, state.style?.edgeColors, sourceOffset, DEFAULT_EDGE_COLOR);
+    cursor += 4;
+  }
+
+  return colors;
+}
+
+function buildNodeColors(state: RendererState): Uint8Array {
+  const colors = new Uint8Array(state.nodeIds.length * 4);
+  for (let nodeIndex = 0; nodeIndex < state.nodeIds.length; nodeIndex += 1) {
+    const offset = nodeIndex * 4;
+    writeColor(colors, offset, state.style?.nodeColors, offset, DEFAULT_NODE_COLOR);
+  }
+  return colors;
+}
+
+function buildNodeSizes(state: RendererState): Float32Array {
+  const sizes = new Float32Array(state.nodeIds.length);
+  for (let nodeIndex = 0; nodeIndex < state.nodeIds.length; nodeIndex += 1) {
+    sizes[nodeIndex] = Math.max(1, state.style?.nodeSizes[nodeIndex] ?? 4);
+  }
+  return sizes;
+}
+
+function uploadAttribute(
+  context: GraphContext,
+  buffer: WebGLBuffer,
+  location: number | undefined,
+  data: ArrayBufferView,
+  size: number,
+  type: number,
+  normalized: boolean,
+): void {
+  if (location === undefined || location < 0) return;
+  context.bindBuffer(context.ARRAY_BUFFER, buffer);
+  context.bufferData(context.ARRAY_BUFFER, data, context.STATIC_DRAW);
+  context.enableVertexAttribArray(location);
+  context.vertexAttribPointer(location, size, type, normalized, 0, 0);
+}
+
+function bindCameraUniforms(
+  context: GraphContext,
+  uniforms: UniformLocations,
+  camera: CameraState,
+  canvas: GraphCanvasLike | null,
+  pixelRatio: number,
+): void {
+  if (uniforms.camera) context.uniform2f(uniforms.camera, camera.x, camera.y);
+  if (uniforms.viewport) context.uniform2f(uniforms.viewport, canvas?.width ?? 1, canvas?.height ?? 1);
+  if (uniforms.zoom) context.uniform1f(uniforms.zoom, camera.zoom);
+  if (uniforms.pixelRatio) context.uniform1f(uniforms.pixelRatio, pixelRatio);
+}
+
+function cssColor(
+  source: Uint8Array | undefined,
+  offset: number,
+  fallback: readonly [number, number, number, number],
+): string {
+  const r = source?.[offset] ?? fallback[0];
+  const g = source?.[offset + 1] ?? fallback[1];
+  const b = source?.[offset + 2] ?? fallback[2];
+  const a = (source?.[offset + 3] ?? fallback[3]) / 255;
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
+function screenPoint(
+  positions: Float32Array,
+  nodeIndex: number,
+  camera: CameraState,
+  canvas: GraphCanvasLike | null,
+): { x: number; y: number } {
+  const offset = nodeIndex * 2;
+  return {
+    x: ((positions[offset] ?? 0) - camera.x) * camera.zoom + (canvas?.width ?? 1) / 2,
+    y: ((positions[offset + 1] ?? 0) - camera.y) * camera.zoom + (canvas?.height ?? 1) / 2,
+  };
+}
+
+function applyDash(context: Graph2DContext, dash: number, pixelRatio: number): void {
+  if (dash === 1) {
+    context.setLineDash([6 * pixelRatio, 4 * pixelRatio]);
+  } else if (dash === 2) {
+    context.setLineDash([1.5 * pixelRatio, 4 * pixelRatio]);
+  } else if (dash === 3) {
+    context.setLineDash([10 * pixelRatio, 6 * pixelRatio]);
+  } else {
+    context.setLineDash([]);
+  }
+}
+
+function drawFallback2D(
+  context: Graph2DContext | null,
+  state: RendererState,
+  camera: CameraState,
+  canvas: GraphCanvasLike | null,
+  pixelRatio: number,
+): void {
+  if (!context || !canvas) return;
+
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.save();
+  context.lineCap = "round";
+  context.lineJoin = "round";
+
+  const edgeCount = state.edges.length / 2;
+  for (let edgeIndex = 0; edgeIndex < edgeCount; edgeIndex += 1) {
+    const sourceIndex = state.edges[edgeIndex * 2] ?? 0;
+    const targetIndex = state.edges[edgeIndex * 2 + 1] ?? 0;
+    const source = screenPoint(state.positions, sourceIndex, camera, canvas);
+    const target = screenPoint(state.positions, targetIndex, camera, canvas);
+    const curvature = state.style?.edgeCurvatures[edgeIndex] ?? 0;
+    const width = state.style?.edgeWidths[edgeIndex] ?? 1;
+    const colorOffset = edgeIndex * 4;
+
+    context.beginPath();
+    context.strokeStyle = cssColor(state.style?.edgeColors, colorOffset, DEFAULT_EDGE_COLOR);
+    context.lineWidth = Math.max(1, width * pixelRatio);
+    applyDash(context, state.style?.edgeDash[edgeIndex] ?? 0, pixelRatio);
+    context.moveTo(source.x, source.y);
+    if (curvature !== 0) {
+      const midX = (source.x + target.x) / 2;
+      const midY = (source.y + target.y) / 2;
+      const dx = target.x - source.x;
+      const dy = target.y - source.y;
+      const distance = Math.max(1, Math.hypot(dx, dy));
+      const controlX = midX + (-dy / distance) * distance * curvature;
+      const controlY = midY + (dx / distance) * distance * curvature;
+      context.quadraticCurveTo(controlX, controlY, target.x, target.y);
+    } else {
+      context.lineTo(target.x, target.y);
+    }
+    context.stroke();
+  }
+  context.setLineDash([]);
+
+  for (let nodeIndex = 0; nodeIndex < state.nodeIds.length; nodeIndex += 1) {
+    const point = screenPoint(state.positions, nodeIndex, camera, canvas);
+    const colorOffset = nodeIndex * 4;
+    const radius = Math.max(1, (state.style?.nodeSizes[nodeIndex] ?? 4) * pixelRatio);
+
+    context.beginPath();
+    context.fillStyle = cssColor(state.style?.nodeColors, colorOffset, DEFAULT_NODE_COLOR);
+    context.arc(point.x, point.y, radius, 0, Math.PI * 2);
+    context.fill();
+  }
+
+  context.restore();
+}
+
 export function createGraphRenderer(
   canvas: GraphCanvasLike | null,
   options: GraphRendererOptions = {},
 ): GraphRenderer {
   const context = acquireContext(canvas, options);
+  const fallbackContext = context ? null : acquire2DContext(canvas);
+  const resources = context ? createRenderResources(context) : null;
+  const pixelRatio = Math.max(Number.EPSILON, options.pixelRatio ?? 1);
   let state: RendererState = {
     nodeIds: [],
     positions: new Float32Array(),
@@ -167,12 +542,76 @@ export function createGraphRenderer(
     ensureAlive();
 
     if (!context) {
+      drawFallback2D(fallbackContext, state, camera, canvas, pixelRatio);
       return;
     }
 
     context.viewport(0, 0, canvas?.width ?? 0, canvas?.height ?? 0);
     context.clearColor(0, 0, 0, 0);
     context.clear(context.COLOR_BUFFER_BIT);
+    context.enable(context.BLEND);
+    context.blendFunc(context.SRC_ALPHA, context.ONE_MINUS_SRC_ALPHA);
+
+    if (!resources) {
+      return;
+    }
+
+    if (state.edges.length > 0) {
+      context.useProgram(resources.edgeProgram.program);
+      bindCameraUniforms(context, resources.edgeProgram.uniforms, camera, canvas, pixelRatio);
+      uploadAttribute(
+        context,
+        resources.positionBuffer,
+        resources.edgeProgram.attributes.position,
+        buildEdgePositions(state),
+        2,
+        context.FLOAT,
+        false,
+      );
+      uploadAttribute(
+        context,
+        resources.colorBuffer,
+        resources.edgeProgram.attributes.color,
+        buildEdgeColors(state),
+        4,
+        context.UNSIGNED_BYTE,
+        true,
+      );
+      context.drawArrays(context.LINES, 0, state.edges.length);
+    }
+
+    if (state.nodeIds.length > 0) {
+      context.useProgram(resources.nodeProgram.program);
+      bindCameraUniforms(context, resources.nodeProgram.uniforms, camera, canvas, pixelRatio);
+      uploadAttribute(
+        context,
+        resources.positionBuffer,
+        resources.nodeProgram.attributes.position,
+        state.positions,
+        2,
+        context.FLOAT,
+        false,
+      );
+      uploadAttribute(
+        context,
+        resources.colorBuffer,
+        resources.nodeProgram.attributes.color,
+        buildNodeColors(state),
+        4,
+        context.UNSIGNED_BYTE,
+        true,
+      );
+      uploadAttribute(
+        context,
+        resources.sizeBuffer,
+        resources.nodeProgram.attributes.size,
+        buildNodeSizes(state),
+        1,
+        context.FLOAT,
+        false,
+      );
+      context.drawArrays(context.POINTS, 0, state.nodeIds.length);
+    }
   }
 
   return {

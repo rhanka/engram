@@ -175,7 +175,7 @@ function shapeForType(node: StudioSceneGraphNode | undefined): string {
 }
 
 /**
- * Map an ontology relation to a typed dash style (ForceGraph 0.10.5).
+ * Map an ontology relation to a typed dash style.
  * Unmapped relations fall back to "solid".
  */
 const REL_DASH: Record<string, string> = {
@@ -281,7 +281,7 @@ function communityLiveCount(graph: StudioSceneGraphLike): number {
 // ---------------------------------------------------------------------------
 
 /**
- * Build the full ForceGraph scene from a GraphLike payload. Strict parity with
+ * Build the full Studio scene from a GraphLike payload. Strict parity with
  * studio/src/lib/graphAdapter.js → buildScene.
  */
 export function buildStudioScene(

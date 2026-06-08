@@ -36,7 +36,7 @@
   let activeId = $state(null);
   let busy = $state(false);
   let actionResult = $state(null);
-  // UAT R8-4: drives the DS ForceGraph merge animation on accept.
+  // UAT R8-4: drives the GraphCanvas merge animation on accept.
   let mergePair = $state(null);
   let pendingDecision = $state(null);
 
