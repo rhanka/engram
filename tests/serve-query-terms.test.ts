@@ -43,6 +43,14 @@ describe("Track F F-0816-P2 (row 12) — queryTerms", () => {
     expect(queryTerms("a前 café résumé")).toEqual(["a前", "café", "résumé"]);
   });
 
+  it("strips punctuation from terms (upstream 80301a0 / #994)", () => {
+    // Python tokenises with re.findall(r"\w+", raw.lower()): "extract?"
+    // must match the "extract" node, and a trailing "?" must not smuggle
+    // short English stopwords past the length filter ("ok?" -> dropped).
+    expect(queryTerms("what calls extract?")).toEqual(["what", "calls", "extract"]);
+    expect(queryTerms("ok? graph.json!")).toEqual(["graph", "json"]);
+  });
+
   it("filters short Latin-with-diacritic tokens like é but keeps semantic CJK pairs", () => {
     // A single accented letter like "é" alone is still short noise; the
     // upstream helper does not treat single accented chars as semantic.
