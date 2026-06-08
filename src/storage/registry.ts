@@ -8,6 +8,7 @@
  * pattern. PR2 registers only `file`; live backends follow (neo4j in PR3).
  */
 import { createFileGraphStore } from "./file.js";
+import { createNeo4jGraphStore } from "./neo4j.js";
 import type { GraphStore, GraphStoreConfig, StoreTestDeps } from "./types.js";
 
 export interface GraphStoreFactory {
@@ -66,5 +67,19 @@ registerGraphStoreFactory({
   requiredPackage: "",
   async create(config) {
     return createFileGraphStore(config);
+  },
+});
+
+registerGraphStoreFactory({
+  id: "neo4j",
+  requiredPackage: "neo4j-driver",
+  async create(config: GraphStoreConfig, deps?: StoreTestDeps): Promise<GraphStore> {
+    if (!config.target) {
+      throw new Error("neo4j store requires config.target (bolt URI)");
+    }
+    return createNeo4jGraphStore(
+      config as Parameters<typeof createNeo4jGraphStore>[0],
+      deps,
+    );
   },
 });
