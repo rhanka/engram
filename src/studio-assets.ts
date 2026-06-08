@@ -16,9 +16,6 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
 export interface StudioAssetResult {
   status: number;
   contentType: string;
@@ -47,6 +44,11 @@ const MIME_BY_EXT: Record<string, string> = {
 
 const TEXT_EXTS = new Set([".html", ".js", ".mjs", ".css", ".json", ".svg", ".map", ".txt"]);
 
+function moduleDir(): string {
+  if (typeof __dirname === "string") return __dirname;
+  return dirname(fileURLToPath(import.meta.url));
+}
+
 /**
  * Locate the built SPA directory. Two layouts are supported:
  *   - published package: `dist/studio-app/` (a `prepublish` copy of the Vite
@@ -55,12 +57,13 @@ const TEXT_EXTS = new Set([".html", ".js", ".mjs", ".css", ".json", ".svg", ".ma
  * Returns null when neither exists (the SPA has not been built yet).
  */
 export function resolveStudioAppDir(): string | null {
+  const baseDir = moduleDir();
   const candidates = [
     // Compiled server lives at <root>/dist/ontology-studio.js -> sibling copy.
-    join(__dirname, "studio-app"),
+    join(baseDir, "studio-app"),
     // Running from source/tests: <root>/src/.. -> studio/dist.
-    join(__dirname, "..", "studio", "dist"),
-    join(__dirname, "..", "..", "studio", "dist"),
+    join(baseDir, "..", "studio", "dist"),
+    join(baseDir, "..", "..", "studio", "dist"),
   ];
   for (const dir of candidates) {
     if (existsSync(join(dir, "index.html"))) return dir;
