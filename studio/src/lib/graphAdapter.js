@@ -12,10 +12,12 @@
  *     label <- node.label || node.title || node.name || node.id
  *     group <- node.community_name || node.community || node.type  (in that order)
  *     weight<- degree-derived (more relations => bigger node)
+ *     type/status/profile fields are preserved for profile adapters
  *   GraphLike link -> Studio scene edge:
  *     source/target <- link.source/target
- *     relation      <- link.relation
+ *     relation      <- link.relation || link.relation_type
  *     weak          <- (link.confidence ?? "EXTRACTED") !== "EXTRACTED"
+ *     assertion/review/evidence fields are preserved for profile adapters
  */
 
 /** Graphify persists `links`; some adapters/tests pass `edges`. Accept both. */
@@ -33,6 +35,53 @@ function displayValue(value) {
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
 }
+
+function finiteNumber(value) {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function copyOwnFields(source, target, fields) {
+  if (!source || typeof source !== "object") return;
+  for (const field of fields) {
+    if (Object.prototype.hasOwnProperty.call(source, field) && source[field] !== undefined) {
+      target[field] = source[field];
+    }
+  }
+}
+
+const NODE_PROFILE_FIELDS = [
+  "status",
+  "ontology_status",
+  "review_status",
+  "assertion_basis",
+  "derivation_method",
+  "confidence_score",
+  "evidence_refs",
+  "canonical_id",
+  "entity_url",
+  "source_file",
+  "source_location",
+  "parent_id",
+  "child_ids",
+  "level",
+  "code",
+  "hierarchy_id",
+  "hierarchy_ids",
+  "badges",
+  "documents",
+];
+
+const EDGE_PROFILE_FIELDS = [
+  "assertion_basis",
+  "review_status",
+  "status",
+  "ontology_status",
+  "derivation_method",
+  "confidence_score",
+  "evidence_refs",
+  "hierarchy_id",
+  "structural",
+];
 
 export function nodeLabel(node) {
   return (
@@ -153,6 +202,8 @@ export function shapeLegend(graph) {
 
 /** Strong = EXTRACTED (default). Anything else (INFERRED, …) renders weak. */
 export function isStrongEdge(edge) {
+  const basis = displayValue(edge?.assertion_basis)?.toLowerCase();
+  if (basis === "heuristic_guess" || basis === "document_inferred") return false;
   const conf = String(edge?.confidence ?? "EXTRACTED").toUpperCase();
   return conf === "EXTRACTED";
 }
@@ -212,6 +263,9 @@ export function buildScene(graph, options = {}) {
 
   const nodes = rawNodes.map((node) => {
     const group = nodeGroup(node);
+    const type = nodeType(node);
+    const x = finiteNumber(node?.x) ? node.x : finiteNumber(node?.fx) ? node.fx : undefined;
+    const y = finiteNumber(node?.y) ? node.y : finiteNumber(node?.fy) ? node.fy : undefined;
     const out = {
       id: node.id,
       label: nodeLabel(node),
@@ -219,18 +273,28 @@ export function buildScene(graph, options = {}) {
       shape: shapeForType(node), // SVELTE-4: ontology type -> scene shape
     };
     if (group !== undefined) out.group = group;
+    if (type) out.type = type;
+    copyOwnFields(node, out, NODE_PROFILE_FIELDS);
+    if (x !== undefined) out.x = x;
+    if (y !== undefined) out.y = y;
+    if (finiteNumber(node?.fx)) out.fx = node.fx;
+    if (finiteNumber(node?.fy)) out.fy = node.fy;
+    if (typeof node?.fixed === "boolean") out.fixed = node.fixed;
     return out;
   });
 
   const sceneEdges = edges.map((edge) => {
     const out = { source: edge.source, target: edge.target };
-    const relation = displayValue(edge.relation);
+    const relation = displayValue(edge.relation) ?? displayValue(edge.relation_type);
     if (relation) {
       out.relation = relation;
       // SVELTE/UAT R3-8: typed dash per relation family.
-      const dash = dashForRelation(edge.relation);
+      const dash = dashForRelation(relation);
       if (dash) out.dash = dash;
     }
+    const relationType = displayValue(edge.relation_type);
+    if (relationType) out.relation_type = relationType;
+    copyOwnFields(edge, out, EDGE_PROFILE_FIELDS);
     if (!isStrongEdge(edge)) out.weak = true;
     return out;
   });
