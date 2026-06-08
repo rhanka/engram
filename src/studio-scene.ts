@@ -9,8 +9,8 @@
  *
  * PARITY CONTRACT (must match graphAdapter.js byte-for-byte in field set and
  * values):
- *   node  -> { id, label, weight, shape, group? }
- *   edge  -> { source, target, relation?, dash?, weak? }
+ *   node  -> { id, label, weight, shape, group?, type?, profile metadata?, x/y/fx/fy/fixed? }
+ *   edge  -> { source, target, relation?, dash?, profile metadata?, weak? }
  *   stats -> { nodeCount, edgeCount, weakEdgeCount, communityCount }
  *
  * The helpers below are faithful 1:1 ports of the studio helpers
@@ -67,18 +67,23 @@ export interface StudioSceneNode {
   weight: number;
   shape: string;
   group?: string;
+  type?: string;
   x?: number;
   y?: number;
   fx?: number;
   fy?: number;
+  fixed?: boolean;
+  [key: string]: unknown;
 }
 
 export interface StudioSceneEdge {
   source: string;
   target: string;
   relation?: string;
+  relation_type?: string;
   dash?: string;
   weak?: true;
+  [key: string]: unknown;
 }
 
 export interface StudioSceneStats {
@@ -113,6 +118,57 @@ function displayValue(value: unknown): string | null {
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
 }
+
+function finiteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function copyOwnFields(
+  source: Record<string, unknown> | undefined,
+  target: Record<string, unknown>,
+  fields: readonly string[],
+): void {
+  if (!source) return;
+  for (const field of fields) {
+    if (Object.prototype.hasOwnProperty.call(source, field) && source[field] !== undefined) {
+      target[field] = source[field];
+    }
+  }
+}
+
+const NODE_PROFILE_FIELDS = [
+  "status",
+  "ontology_status",
+  "review_status",
+  "assertion_basis",
+  "derivation_method",
+  "confidence_score",
+  "evidence_refs",
+  "canonical_id",
+  "entity_url",
+  "source_file",
+  "source_location",
+  "parent_id",
+  "child_ids",
+  "level",
+  "code",
+  "hierarchy_id",
+  "hierarchy_ids",
+  "badges",
+  "documents",
+] as const;
+
+const EDGE_PROFILE_FIELDS = [
+  "assertion_basis",
+  "review_status",
+  "status",
+  "ontology_status",
+  "derivation_method",
+  "confidence_score",
+  "evidence_refs",
+  "hierarchy_id",
+  "structural",
+] as const;
 
 function nodeLabel(node: StudioSceneGraphNode | undefined): string {
   return (
@@ -215,6 +271,8 @@ function dashForRelation(relation: unknown): string | undefined {
 
 /** Strong = EXTRACTED (default). Anything else (INFERRED, …) renders weak. */
 function isStrongEdge(edge: StudioSceneGraphEdge | undefined): boolean {
+  const basis = displayValue(edge?.assertion_basis)?.toLowerCase();
+  if (basis === "heuristic_guess" || basis === "document_inferred") return false;
   const conf = String(edge?.confidence ?? "EXTRACTED").toUpperCase();
   return conf === "EXTRACTED";
 }
@@ -302,6 +360,9 @@ export function buildStudioScene(
 
   const nodes: StudioSceneNode[] = rawNodes.map((node) => {
     const group = nodeGroup(node);
+    const type = nodeType(node);
+    const x = finiteNumber(node.x) ? node.x : finiteNumber(node.fx) ? node.fx : undefined;
+    const y = finiteNumber(node.y) ? node.y : finiteNumber(node.fy) ? node.fy : undefined;
     const out: StudioSceneNode = {
       id: node.id,
       label: nodeLabel(node),
@@ -309,17 +370,27 @@ export function buildStudioScene(
       shape: shapeForType(node),
     };
     if (group !== undefined) out.group = group;
+    if (type) out.type = type;
+    copyOwnFields(node, out, NODE_PROFILE_FIELDS);
+    if (x !== undefined) out.x = x;
+    if (y !== undefined) out.y = y;
+    if (finiteNumber(node.fx)) out.fx = node.fx;
+    if (finiteNumber(node.fy)) out.fy = node.fy;
+    if (typeof node.fixed === "boolean") out.fixed = node.fixed;
     return out;
   });
 
   const sceneEdges: StudioSceneEdge[] = edges.map((edge) => {
     const out: StudioSceneEdge = { source: edge.source, target: edge.target };
-    const relation = displayValue(edge.relation);
+    const relation = displayValue(edge.relation) ?? displayValue(edge.relation_type);
     if (relation) {
       out.relation = relation;
-      const dash = dashForRelation(edge.relation);
+      const dash = dashForRelation(relation);
       if (dash) out.dash = dash;
     }
+    const relationType = displayValue(edge.relation_type);
+    if (relationType) out.relation_type = relationType;
+    copyOwnFields(edge, out, EDGE_PROFILE_FIELDS);
     if (!isStrongEdge(edge)) out.weak = true;
     return out;
   });

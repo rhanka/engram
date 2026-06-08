@@ -74,10 +74,13 @@ function finiteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-function assertKnownPosition(node: StudioRenderSceneNode): void {
-  if (!finiteNumber(node.x) || !finiteNumber(node.y)) {
-    throw new Error(`node ${node.id} is missing finite x/y positions`);
+function resolvePosition(node: StudioRenderSceneNode): { x: number; y: number } {
+  const x = finiteNumber(node.x) ? node.x : finiteNumber(node.fx) ? node.fx : undefined;
+  const y = finiteNumber(node.y) ? node.y : finiteNumber(node.fy) ? node.fy : undefined;
+  if (!finiteNumber(x) || !finiteNumber(y)) {
+    throw new Error(`node ${node.id} is missing finite x/y positions or fx/fy pins`);
   }
+  return { x, y };
 }
 
 function nodeSize(node: StudioRenderSceneNode, radius: number): number {
@@ -123,13 +126,15 @@ export function buildStudioRenderBuffers(
   const resolved = normalizeOptions(options);
 
   const nodes: HighLevelGraphInput["nodes"] = scene.nodes.map((node) => {
-    assertKnownPosition(node);
+    const position = resolvePosition(node);
 
     return {
       id: node.id,
       label: node.label,
-      x: node.x,
-      y: node.y,
+      x: position.x,
+      y: position.y,
+      fx: finiteNumber(node.fx) ? node.fx : undefined,
+      fy: finiteNumber(node.fy) ? node.fy : undefined,
       fixed: node.fixed === true || (finiteNumber(node.fx) && finiteNumber(node.fy)),
       size: nodeSize(node, resolved.nodeRadius),
     };

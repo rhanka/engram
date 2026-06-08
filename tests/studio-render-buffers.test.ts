@@ -38,14 +38,25 @@ describe("buildStudioRenderBuffers", () => {
     });
   });
 
-  it("requires explicit x/y positions and does not silently fall back to fx/fy", () => {
+  it("uses finite fx/fy pins as renderer positions when x/y are absent", () => {
+    const payload = buildStudioRenderBuffers({
+      nodes: [{ id: "a", label: "Alpha", fx: 10, fy: 20, weight: 1 }],
+      edges: [],
+      stats: { nodeCount: 1, edgeCount: 0, weakEdgeCount: 0, communityCount: 0 },
+    });
+
+    expect([...payload.renderGraph.positions]).toEqual([10, 20]);
+    expect(payload.renderGraph.nodeFlags?.fixed).toEqual(new Uint8Array([1]));
+  });
+
+  it("requires either explicit x/y positions or finite fx/fy pins", () => {
     expect(() =>
       buildStudioRenderBuffers({
-        nodes: [{ id: "a", label: "Alpha", fx: 10, fy: 20, weight: 1 }],
+        nodes: [{ id: "a", label: "Alpha", weight: 1 }],
         edges: [],
         stats: { nodeCount: 1, edgeCount: 0, weakEdgeCount: 0, communityCount: 0 },
       }),
-    ).toThrow("node a is missing finite x/y positions");
+    ).toThrow("node a is missing finite x/y positions or fx/fy pins");
   });
 
   it("emits buffers accepted by the published @sentropic/graph renderer contract", () => {
