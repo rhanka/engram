@@ -4,7 +4,9 @@
 
   import {
     buildGraphRendererPayload,
+    findNearestEdge,
     findNearestNodeId,
+    interpolateMergeStyle,
     interpolateMergePositions,
   } from "../lib/graphRendererPayload.js";
 
@@ -16,6 +18,7 @@
   const NODE_RADIUS = 3;
   const FIT_PADDING = 48;
   const PICK_RADIUS = 16;
+  const EDGE_PICK_RADIUS = 12;
   const MERGE_ANIMATION_DURATION_MS = 520;
 
   let {
@@ -41,6 +44,7 @@
   let resizeFrame = null;
   let mergeFrame = null;
   let completedMergeKey = null;
+  let hoveredEdge = $state(null);
 
   const hasNodes = $derived((scene?.nodes?.length ?? 0) > 0);
   const hasLegend = $derived((legend?.length ?? 0) > 0);
@@ -74,7 +78,7 @@
 
     renderer?.destroy();
     pixelRatio = nextPixelRatio;
-    renderer = createGraphRenderer(canvas, { pixelRatio });
+    renderer = createGraphRenderer(canvas, { backend: "canvas2d", pixelRatio });
   }
 
   function fitAndRender() {
@@ -105,6 +109,7 @@
       focusId,
       nodeRadius: NODE_RADIUS,
     });
+    clearHoveredEdge({ notify: false, render: false });
 
     ensureRenderer();
     resizeCanvas();
@@ -133,15 +138,19 @@
     if (!canvas || !camera.zoom) return null;
 
     const rect = canvas.getBoundingClientRect();
+    const localX = event.clientX - rect.left;
+    const localY = event.clientY - rect.top;
     const scaleX = canvas.width / Math.max(1, rect.width);
     const scaleY = canvas.height / Math.max(1, rect.height);
-    const screenX = (event.clientX - rect.left - rect.width / 2) * scaleX;
-    const screenY = (event.clientY - rect.top - rect.height / 2) * scaleY;
+    const screenX = (localX - rect.width / 2) * scaleX;
+    const screenY = (localY - rect.height / 2) * scaleY;
 
     return {
       x: camera.x + screenX / camera.zoom,
       y: camera.y + screenY / camera.zoom,
       scale: Math.max(scaleX, scaleY),
+      localX,
+      localY,
     };
   }
 
@@ -165,8 +174,75 @@
     if (id) onOpenEntity?.(id);
   }
 
+  function edgeKey(hit) {
+    if (!hit?.edge) return null;
+    return `${hit.index}:${hit.edge.source}:${hit.edge.target}:${hit.edge.relation ?? ""}`;
+  }
+
+  function styleForHoveredEdge(hit) {
+    if (!payload?.style || !hit) return payload?.style ?? null;
+
+    const style = {
+      ...payload.style,
+      edgeWidths: new Float32Array(payload.style.edgeWidths),
+      edgeColors: new Uint8Array(payload.style.edgeColors),
+    };
+    const width = style.edgeWidths[hit.index] ?? 1;
+    style.edgeWidths[hit.index] = Math.max(width, 2.5);
+    style.edgeColors[hit.index * 4 + 3] = 255;
+    return style;
+  }
+
+  function renderHoverStyle(hit) {
+    if (!renderer || !payload) return;
+    const style = styleForHoveredEdge(hit);
+    if (style) renderer.setStyle(style);
+    renderer.render();
+  }
+
+  function setHoveredEdge(hit, localX, localY) {
+    const previousKey = edgeKey(hoveredEdge);
+    const nextKey = edgeKey(hit);
+    hoveredEdge = hit ? { ...hit, localX, localY } : null;
+
+    if (previousKey === nextKey) return;
+    onEdgeHover?.(hit?.edge ?? null);
+    renderHoverStyle(hit);
+  }
+
+  function clearHoveredEdge({ notify = true, render = true } = {}) {
+    const hadHover = hoveredEdge !== null;
+    hoveredEdge = null;
+    if (canvas) canvas.style.cursor = "default";
+    if (hadHover && notify) onEdgeHover?.(null);
+    if (render) renderHoverStyle(null);
+  }
+
+  function handlePointerMove(event) {
+    if (!payload) return;
+
+    const world = eventToWorld(event);
+    if (!world) {
+      clearHoveredEdge();
+      return;
+    }
+
+    const nodeMaxDistance = (PICK_RADIUS * world.scale) / Math.max(Number.EPSILON, camera.zoom);
+    const nodeId = findNearestNodeId(payload, world.x, world.y, nodeMaxDistance);
+    if (nodeId) {
+      clearHoveredEdge();
+      if (canvas) canvas.style.cursor = "pointer";
+      return;
+    }
+
+    const edgeMaxDistance = (EDGE_PICK_RADIUS * world.scale) / Math.max(Number.EPSILON, camera.zoom);
+    const hit = findNearestEdge(payload, world.x, world.y, edgeMaxDistance);
+    if (canvas) canvas.style.cursor = hit ? "crosshair" : "default";
+    setHoveredEdge(hit, world.localX, world.localY);
+  }
+
   function handlePointerLeave() {
-    onEdgeHover?.(null);
+    clearHoveredEdge();
   }
 
   function legendClass(value) {
@@ -193,6 +269,7 @@
   function restoreBasePositions() {
     if (!renderer || !payload) return;
     renderer.setPositions(payload.renderGraph.positions);
+    renderer.setStyle(payload.style);
     renderer.render();
   }
 
@@ -231,6 +308,7 @@
       }
 
       renderer.setPositions(positions);
+      renderer.setStyle(interpolateMergeStyle(payload, pair, easeMergeProgress(progress)));
       renderer.render();
 
       if (progress < 1) {
@@ -241,6 +319,7 @@
     };
 
     renderer.setPositions(firstFrame);
+    renderer.setStyle(interpolateMergeStyle(payload, pair, 0));
     renderer.render();
     mergeFrame = window.requestAnimationFrame(tick);
   }
@@ -305,8 +384,20 @@
     aria-label="Ontology knowledge graph"
     onclick={handleClick}
     ondblclick={handleDoubleClick}
+    onpointermove={handlePointerMove}
     onmouseleave={handlePointerLeave}
   ></canvas>
+
+  {#if hoveredEdge?.edge}
+    <div
+      class="edge-tooltip"
+      style={`left: ${hoveredEdge.localX + 12}px; top: ${hoveredEdge.localY + 12}px;`}
+      role="status"
+    >
+      <strong>{hoveredEdge.edge.relation ?? hoveredEdge.edge.label ?? "edge"}</strong>
+      <span>{hoveredEdge.sourceLabel} -> {hoveredEdge.targetLabel}</span>
+    </div>
+  {/if}
 
   {#if !hasNodes}
     <p class="canvas-empty">No nodes to render. Adjust the filters or load a graph.</p>
@@ -365,6 +456,32 @@
     text-align: center;
   }
 
+  .edge-tooltip {
+    position: absolute;
+    z-index: 2;
+    max-width: min(18rem, calc(100% - 1.5rem));
+    padding: 0.45rem 0.55rem;
+    border-radius: 4px;
+    background: var(--st-semantic-surface-inverse, #0f172a);
+    color: var(--st-semantic-text-inverse, #fff);
+    box-shadow: 0 8px 20px rgb(15 23 42 / 0.18);
+    font-size: 0.75rem;
+    line-height: 1.25;
+    pointer-events: none;
+  }
+
+  .edge-tooltip strong,
+  .edge-tooltip span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .edge-tooltip span {
+    opacity: 0.78;
+  }
+
   .graph-legend {
     position: absolute;
     left: 0.75rem;
@@ -411,12 +528,36 @@
     border-radius: 999px;
   }
 
-  .shape-square {
+  .shape-square,
+  .shape-box {
     border-radius: 2px;
+  }
+
+  .shape-roundedbox {
+    border-radius: 4px;
   }
 
   .shape-diamond {
     transform: rotate(45deg);
+  }
+
+  .shape-hexagon {
+    clip-path: polygon(25% 4%, 75% 4%, 100% 50%, 75% 96%, 25% 96%, 0 50%);
+  }
+
+  .shape-star {
+    clip-path: polygon(
+      50% 0,
+      61% 35%,
+      98% 35%,
+      68% 57%,
+      79% 91%,
+      50% 70%,
+      21% 91%,
+      32% 57%,
+      2% 35%,
+      39% 35%
+    );
   }
 
   .shape-triangle {

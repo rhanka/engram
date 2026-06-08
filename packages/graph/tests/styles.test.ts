@@ -5,7 +5,7 @@ describe("buildStyleBuffers", () => {
   it("compiles rich high-level styling into filtered typed arrays", () => {
     const scene = {
       nodes: [
-        { id: "a", x: 0, y: 0, size: 4, color: "#ff0000" },
+        { id: "a", x: 0, y: 0, size: 4, color: "#ff0000", shape: "diamond" },
         { id: "b", x: 10, y: 0 },
       ],
       edges: [
@@ -21,6 +21,7 @@ describe("buildStyleBuffers", () => {
     });
 
     expect([...style.nodeSizes]).toEqual([4, 1]);
+    expect([...(style.nodeShapes ?? [])]).toEqual([1, 0]);
     expect([...style.nodeColors]).toEqual([255, 0, 0, 255, 0, 0, 255, 255]);
     expect([...style.edgeWidths]).toEqual([2]);
     expect([...style.edgeColors]).toEqual([0, 255, 0, 255]);
