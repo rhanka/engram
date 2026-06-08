@@ -26,7 +26,7 @@ The TypeScript port keeps the original Graphify idea: a folder becomes a graph w
 - Codex explicit invocation is $graphify, not /graphify.
 - The TypeScript skill runtime must prove runtime: typescript in .graphify/.graphify_runtime.json.
 - Review and commit recommendation features are advisory. They do not stage files, create commits, or mutate branches.
-- The graph remains file-based by default. SQLite and embeddings are deferred, not default architecture.
+- The graph remains file-based by default. Optional external graph mirrors are opt-in pushed projections specified in SPEC_STORAGE_BACKENDS.md; they are never the source of truth and never the default. SQLite-as-primary-store and embeddings are deferred, not default architecture.
 
 ## Supported Inputs
 
@@ -106,7 +106,7 @@ Optional profile-declared ontology outputs compile under `.graphify/ontology/` t
 
 Optional image dataprep artifacts live under `.graphify/image-dataprep/` and calibration proposals under `.graphify/calibration/`. Runtime commands cover deterministic sample writing, calibration replay, provider-neutral batch export/import, and accepted-matrix deep-pass export. Production cascade routing is blocked unless project-owned rules declare `decision: accept_matrix`.
 
-The LLM Wiki remains `.graphify/wiki/index.md`. Profile mode does not add embeddings, databases, remote registry fetching, or a resident LLM backend.
+The LLM Wiki remains `.graphify/wiki/index.md`. Profile mode does not add embeddings, databases, remote registry fetching, or a resident LLM backend. The opt-in graph mirrors in SPEC_STORAGE_BACKENDS.md do not change this principle: profile and ontology artifacts remain file-based, and a configured mirror only receives pushed projections of `graph.json`.
 
 Ontology lifecycle and reconciliation are specified separately in `SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md`. The product rule is that `graph.json` and compiled ontology JSON remain derived artifacts. Review decisions must be expressed as validated patches against project-owned sources such as profiles, registries or reconciliation decision logs, then Graphify rebuilds the graph and ontology outputs. The existing MCP server stays read-only by default; any mutation surface must be explicit, local, dry-run first and audit-backed.
 
@@ -173,9 +173,11 @@ Exports and services:
 - graphify <path> --wiki
 - graphify <path> --svg
 - graphify <path> --graphml
-- graphify <path> --neo4j
-- graphify <path> --neo4j-push bolt://localhost:7687
+- graphify export neo4j (Cypher file artifact, src/cli.ts:3663)
+- graphify store push (PROPOSED, SPEC_STORAGE_BACKENDS.md)
 - graphify serve .graphify/graph.json
+
+Doc/code gap resolution: earlier revisions of this spec documented `graphify <path> --neo4j` and `graphify <path> --neo4j-push <uri>` build flags. Those flags were never implemented; only `graphify export neo4j` (src/cli.ts:3663) exists. They are removed in favor of the opt-in `graphify store push` surface specified in SPEC_STORAGE_BACKENDS.md.
 
 ## Assistant And Platform Contracts
 
@@ -303,8 +305,9 @@ Code-review-graph-inspired additions:
 - editor extension parity
 - richer flow model
 - persisted review summary cache
-- remote service or shared backend
 - auto-commit or auto-stage behavior
+
+Remote service or shared backend is no longer deferred: opt-in external graph mirrors are now specified in SPEC_STORAGE_BACKENDS.md as pushed projections of graph.json. SQLite backend (as a primary store) and embeddings remain deferred.
 
 ## Acceptance Criteria
 

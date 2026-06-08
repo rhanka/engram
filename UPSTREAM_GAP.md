@@ -235,6 +235,7 @@ These local additions are intentional deltas and must be preserved:
 - PDF preflight and optional `mistral-ocr`
 - GitHub Actions npm trusted publishing
 - README/spec fork narrative and code-review-graph-inspired review additions
+- opt-in multi-backend graph mirrors (`spec/SPEC_STORAGE_BACKENDS.md`): TypeScript-only, no upstream Python counterpart; strictly opt-in pushed projections (Neo4j first, Spanner Graph staged) while `.graphify/graph.json` remains the source of truth and the default stays file-only
 
 ## Status Legend
 
