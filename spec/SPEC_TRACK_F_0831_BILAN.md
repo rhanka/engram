@@ -107,7 +107,7 @@ Every `must-port`, `already-ported`, `already-covered` and `to-verify` row is pe
 | AC3 | `3f8efae` | — | `graphify update` ghost nodes: `as_posix()` + relativize existing graph before eviction | `6e3b173` (relativized manifest keys, portable `as_posix`-style paths) + `8008dc6` (`src/portable-artifacts.ts:126-190` `source_file` normalization). Spot-check listed in F-0819-M. |
 | AC4 | `d1d5751` | #1007 | watch: evict stale nodes in full re-extraction path when `changed_paths` is None | `src/watch.ts:206-214` wires `cleanupStaleNodes` (F-0816-M5 stale-node prune) after the existing-graph merge, independent of changed-path hints. |
 | AC5 | `690b4e5` | #1094 | Cap obsidian/canvas filenames (ENAMETOOLONG on long labels) | `src/wiki.ts:36` — slug builder caps at `.slice(0, 200)`. |
-| AC6 | `25df580` | #777 | Relativize manifest, `.graphify_root`, and cache `source_file` fields | Manifest keys: `6e3b173` (`saveManifest` writes project-relative keys, `tests/portable-artifacts.test.ts`). Graph `source_file`: `8008dc6` (`src/portable-artifacts.ts`). `.graphify_root`: no TS counterpart (grep empty) → n-a. **Residual to-verify**: semantic-cache payload `source_file` fields (`src/cache.ts`) — closed in F-0831-P2. |
+| AC6 | `25df580` | #777 | Relativize manifest, `.graphify_root`, and cache `source_file` fields | Manifest keys: `6e3b173` (`saveManifest` writes project-relative keys, `tests/portable-artifacts.test.ts`). Graph `source_file`: `8008dc6` (`src/portable-artifacts.ts`). `.graphify_root`: no TS counterpart (grep empty) → n-a. **Cache `source_file` residual ported**: `relativizeSourceFilesIn`/`absolutizeSourceFilesIn` helpers in `src/cache.ts`, `saveCached` writes deep-copy with relative paths, `loadCached` re-anchors on read — F-0831-P2d commit `fix(track-f): relativize cached source_file paths (F-0831-P2d, 25df580 residual)`, 8 new tests in `tests/cache-source-file-relativize.test.ts`. |
 
 ##### to-verify — 1 commit + 2 sub-parts
 
@@ -115,7 +115,7 @@ Every `must-port`, `already-ported`, `already-covered` and `to-verify` row is pe
 |---|---|---|---|---|---|
 | V1 | `c09fbef` | #1006 | Remap hyperedges in community-aggregated meta-graph view | TS has hyperedges end-to-end (`tests/hyperedges.test.ts`) but no community-aggregated meta-graph view was found (grep `meta-graph|aggregat` empty in `src/export.ts`/`src/analyze.ts`). If the view doesn't exist, reclassify `n-a`; if a partial exists, port the remap. | F-0820-0827 |
 | V2 | `80301a0` (part) | #994 | Punctuation search | Compare against the F-0816-P2 Unicode tokenizer lineage (`src/search.ts:32` routes non-`a-z` codepoints — digits, punctuation, CJK — to a separate path). Likely covered; needs a test to prove it. | F-0820-0827 |
-| V3 | `25df580` (part) | #777 | Cache `source_file` relativization | Whether `src/cache.ts` semantic-cache payloads persist absolute `source_file` values (portability leak) — close with a test either way. | F-0831-P2 |
+| V3 | `25df580` (part) | #777 | Cache `source_file` relativization | **Ported** — `relativizeSourceFilesIn`/`absolutizeSourceFilesIn` in `src/cache.ts`; `saveCached` deep-copies and relativizes before write; `loadCached` absolutizes on read. 8 tests in `tests/cache-source-file-relativize.test.ts`. Commit: `fix(track-f): relativize cached source_file paths (F-0831-P2d, 25df580 residual)`. | F-0831-P2d ✓ |
 
 ##### defer — 10 commits / 7 clusters (reopen condition cited)
 
