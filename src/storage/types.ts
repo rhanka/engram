@@ -53,16 +53,31 @@ export interface GraphStore {
 }
 
 /**
- * Minimal store configuration for PR2. The full `storage:` YAML schema and
- * env resolution land in PR4; until then the port only needs a backend
- * target and a default namespace. Credentials are environment-only and never
- * part of this object (SPEC_STORAGE_BACKENDS.md, "Secret Handling").
+ * Resolved store configuration (PR4). Produced by resolveStoreConfig() from
+ * the precedence chain: CLI flags > env vars > YAML config.
+ * Credentials are environment-only and never read from YAML
+ * (SPEC_STORAGE_BACKENDS.md, "Secret Handling").
  */
 export interface GraphStoreConfig {
-  /** Backend-specific target: a file path for `file`, a URI for live backends. */
+  /** Backend-specific target: a file path for `file`, a Bolt URI for neo4j. */
   target?: string;
   /** Default namespace for pushes; derived from the project when omitted. */
   namespace?: string;
+  /** Authentication credentials — populated from env only, never from YAML. */
+  auth?: {
+    user?: string;
+    password?: string;
+  };
+  /** Target database name (neo4j/spanner). */
+  database?: string;
+  /** Spanner project id (ADC-authenticated; no password). */
+  project?: string;
+  /** Spanner instance id. */
+  instance?: string;
+  /** Whether to push automatically after a successful build. Default false. */
+  autoPush?: boolean;
+  /** Resolved push mode for the mirror. */
+  mode?: "merge" | "replace";
 }
 
 /**
