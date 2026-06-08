@@ -118,6 +118,24 @@ describe("project-scoped skill installs (upstream b347492 / #931)", () => {
     expect(hooks).toContain("graphify");
   });
 
+  it("writes OpenCode skill to .opencode/skills/ (not .config/opencode/) in project scope", () => {
+    // Port of upstream 80301a0 (#1040): `graphify install --project --platform opencode`
+    // must write SKILL.md to `.opencode/skills/graphify/SKILL.md` (discoverable by
+    // OpenCode's project-local skill loader), NOT to `.config/opencode/skills/...`
+    // which is the correct *global* (home-dir) path.
+    const project = makeTempDir("graphify-project-opencode-path-");
+    const restore = silenceConsole();
+    try {
+      projectInstall("opencode", project);
+    } finally {
+      restore();
+    }
+    // Correct project-scope path
+    expect(existsSync(join(project, ".opencode", "skills", "graphify", "SKILL.md"))).toBe(true);
+    // Must NOT write to the global path under project dir
+    expect(existsSync(join(project, ".config", "opencode", "skills", "graphify", "SKILL.md"))).toBe(false);
+  });
+
   it("writes Antigravity skill + agents rules into the project", () => {
     const project = makeTempDir("graphify-project-antigravity-");
     const restore = silenceConsole();
