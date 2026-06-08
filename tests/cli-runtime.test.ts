@@ -8,9 +8,23 @@ import { WIKI_DESCRIPTION_PROMPT_VERSION, buildWikiDescriptionCacheKey } from ".
 
 const tempDirs: string[] = [];
 
-afterEach(() => {
+async function removeTempDir(dir: string): Promise<void> {
+  const retryable = new Set(["ENOTEMPTY", "EBUSY", "EPERM"]);
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (!retryable.has(code ?? "") || attempt === 4) throw error;
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 25 * (attempt + 1)));
+    }
+  }
+}
+
+afterEach(async () => {
   while (tempDirs.length > 0) {
-    rmSync(tempDirs.pop()!, { recursive: true, force: true });
+    await removeTempDir(tempDirs.pop()!);
   }
 });
 
