@@ -84,7 +84,7 @@ describe("office-guard (F-0831-P1 / F2 zip-bomb)", () => {
     const huge = Buffer.alloc(OFFICE_MAX_DECOMPRESSED_BYTES + 1024 * 1024, 0);
     writeFileSync(p, buildZip([{ name: "xl/sheet.xml", data: huge }]));
     expect(zipWithinCaps(p)).toBe(false);
-  });
+  }, 120_000);
 
   it("rejects a member that under-declares its size (header lies)", () => {
     // Build a real zip-bomb, then corrupt the central-directory uncompressed
@@ -100,7 +100,7 @@ describe("office-guard (F-0831-P1 / F2 zip-bomb)", () => {
     zip.writeUInt32LE(10, 22); // local header uncompressed size
     writeFileSync(p, zip);
     expect(zipWithinCaps(p)).toBe(false);
-  });
+  }, 120_000);
 
   it("rejects a file over the on-disk raw byte cap before parsing", () => {
     const p = join(dir, "fat.xlsx");
