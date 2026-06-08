@@ -365,7 +365,15 @@ function findBestMatchingNode(G: Graph, query: string): string | null {
 
 interface PlatformConfig {
   skill_file: string;
+  /** Relative path used for the global (home-dir) skill destination. */
   skill_dst: string;
+  /**
+   * Override relative path for the *project-scoped* skill destination.
+   * When absent, `skill_dst` is used for both scopes.
+   * Example: OpenCode uses `.config/opencode/...` globally but
+   * `.opencode/...` at project scope (upstream fix #1040).
+   */
+  project_skill_dst?: string;
   claude_md: boolean;
 }
 
@@ -387,7 +395,12 @@ const PLATFORM_CONFIG: Record<string, PlatformConfig> = {
   },
   opencode: {
     skill_file: "skill-opencode.md",
+    // Global scope: ~/.config/opencode/skills/graphify/SKILL.md (XDG standard path)
     skill_dst: join(".config", "opencode", "skills", "graphify", "SKILL.md"),
+    // Project scope: .opencode/skills/graphify/SKILL.md (discoverable by OpenCode)
+    // Fix for upstream #1040: the project path was incorrectly using .config/opencode/
+    // instead of .opencode/ when --project was passed.
+    project_skill_dst: join(".opencode", "skills", "graphify", "SKILL.md"),
     claude_md: false,
   },
   aider: {
@@ -1451,7 +1464,7 @@ function resolveProjectSkillDestination(platformName: string, projectDir: string
     console.error(`error: unknown platform '${platformName}'. Choose from: ${platformNamesForError()}`);
     process.exit(1);
   }
-  return join(projectDir, cfg.skill_dst);
+  return join(projectDir, cfg.project_skill_dst ?? cfg.skill_dst);
 }
 
 function projectScopeRoot(skillPath: string, projectDir: string): string {
