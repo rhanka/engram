@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "version": "0.1.0",
-  "description": "Client Svelte SPA for the Graphify ontology studio. Central graph is the published @sentropic/design-system-svelte ForceGraph (autonomous force sim, no d3).",
+  "description": "Client Svelte SPA for the Graphify ontology studio. Central graph renders through the local @sentropic/graph canvas renderer.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

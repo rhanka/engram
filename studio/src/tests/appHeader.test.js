@@ -1,0 +1,25 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { describe, expect, it } from "vitest";
+
+const appSource = readFileSync(resolve(process.cwd(), "src/App.svelte"), "utf8");
+
+describe("App header DS structure", () => {
+  it("uses the DS Header slots for sticky segmented navigation and graph stats", () => {
+    expect(appSource).toMatch(/import \{[^}]*Header[^}]*Button[^}]*Badge[^}]*ButtonGroup[^}]*\}/);
+    expect(appSource).toMatch(/<Header[\s\S]*sticky=\{true\}/);
+    expect(appSource).toMatch(
+      /{#snippet navigation\(\)}[\s\S]*<ButtonGroup[\s\S]*attached[\s\S]*label="Studio view"/,
+    );
+    expect(appSource).toMatch(/aria-pressed=\{viewerState\.activeView === "workspace"\}/);
+    expect(appSource).toMatch(/aria-pressed=\{viewerState\.activeView === "reconciliation"\}/);
+    expect(appSource).toMatch(/onclick=\{\(\) => handleSetView\("workspace"\)\}/);
+    expect(appSource).toMatch(/onclick=\{\(\) => handleSetView\("reconciliation"\)\}/);
+    expect(appSource).toMatch(
+      /{#snippet actions\(\)}[\s\S]*class="app-stats"[\s\S]*aria-label="Graph summary"/,
+    );
+    expect(appSource).toContain("<Badge tone=\"neutral\">{scene.stats.nodeCount} nodes</Badge>");
+    expect(appSource).toContain("<Badge tone=\"neutral\">{scene.stats.edgeCount} edges</Badge>");
+    expect(appSource).toContain("<Badge tone=\"info\">{scene.stats.communityCount} groups</Badge>");
+  });
+});

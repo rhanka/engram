@@ -1,18 +1,18 @@
 # Graphify Ontology Studio — client Svelte SPA
 
 A reactive Svelte 5 + Vite single-page app for the ontology studio. The central
-graph is the **published** `@sentropic/design-system-svelte` `ForceGraph`
-component (autonomous force simulation, no d3). Clicking a node highlights it and
-opens the right-hand entity panel **without reloading or re-laying-out the
-graph** — selection flows through the DS `selectedIds` / `focusId` props.
+graph renders through the local `@sentropic/graph` canvas/WebGL renderer.
+Clicking a node highlights it and opens the right-hand entity panel **without
+reloading or re-laying-out the graph** — selection flows through the Studio
+`selectedIds` / `focusId` state.
 
-## ForceGraph import
+## Graph renderer import
 
-The package only exports `.` (its root `dist/index.js`); there is **no**
-`./ForceGraph.svelte` subpath export. Use the documented named export:
+The Studio Vite config aliases `@sentropic/graph` to the local package source so
+the published SPA bundles the renderer being developed in this repo:
 
 ```js
-import { ForceGraph } from "@sentropic/design-system-svelte";
+import { createGraphRenderer } from "@sentropic/graph";
 ```
 
 ## Architecture (mirrors the process-std-am viewer)
@@ -21,23 +21,25 @@ import { ForceGraph } from "@sentropic/design-system-svelte";
   `activeView`, `filters`); `$derived` scene rebuilt from the fetched
   `graph.json`. The scene is recomputed only on graph / weak-link changes, never
   on selection.
-- `src/lib/graphAdapter.js` — pure `GraphLike -> ForceGraph` mapping
+- `src/lib/graphAdapter.js` — pure `GraphLike -> Studio scene` mapping
   (`community_name || community || type -> group`, degree -> `weight`,
   `confidence !== "EXTRACTED" -> weak`). Unit-tested in `src/tests/`.
+- `src/lib/graphRendererPayload.js` — maps the Studio scene to
+  `@sentropic/graph` render/style buffers.
 - `src/lib/viewerState.js` — state factory + transitions.
 - `src/lib/api.js` — fetches `/api/ontology/graph.json` and
   `/api/ontology/entity/<id>` from the studio server.
 - `src/components/` — `WorkspaceShell` (3 columns), `LeftRail`
   (Types/Facets/Results/Communities accordions), `GraphCanvas` (wraps
-  `ForceGraph`), `EntityPanel` (wiki description + relations),
+  `@sentropic/graph`), `EntityPanel` (wiki description + relations),
   `ReconciliationView` (stub).
 
 ## Theme / tokens
 
 `src/app.css` imports `@sentropic/design-system-themes/css/entropic.css`, which
 sets every `--st-*` token under `[data-st-theme="entropic"]`. `App.svelte` puts
-that attribute on the shell root, so both the DS `ForceGraph` and the app shell
-resolve the same token set.
+that attribute on the shell root, so the DS shell components and local canvas
+renderer resolve the same token set.
 
 ## Build & serve
 

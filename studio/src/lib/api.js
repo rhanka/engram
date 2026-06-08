@@ -5,7 +5,7 @@
  * graph.json and per-entity sidecar data (wiki description + occurrences) from
  * the same origin. These routes are added to `src/ontology-studio.ts`:
  *
- *   GET /api/ontology/scene.json          -> the light ForceGraph scene payload
+ *   GET /api/ontology/scene.json          -> the light Studio scene payload
  *   GET /api/ontology/graph.json          -> the raw graph.json payload
  *   GET /api/ontology/entity/<id>         -> { node, description, occurrences }
  *   GET /api/ontology/reconciliation/...  -> existing reconciliation JSON API
@@ -28,7 +28,7 @@ async function getJson(url) {
 }
 
 /**
- * ÉTAPE 1b: fetch the light ForceGraph `scene.json` — the mount payload. It is
+ * ÉTAPE 1b: fetch the light Studio `scene.json` — the mount payload. It is
  * the build/server-side `buildStudioScene(graph)` output (a few hundred KB)
  * rather than the multi-MB raw graph.json, so first paint no longer waits on the
  * full graph or recomputes the scene client-side. Rejects when neither the API
