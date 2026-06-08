@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
+import { listGraphStoreIds } from "./storage/registry.js";
 
 import type {
   GraphifyDataprepPolicy,
@@ -13,9 +14,32 @@ import type {
   GraphifyProjectConfig,
   GraphifyProjectInputs,
   GraphifyProjectConfigProfile,
+  GraphifyStorageMirrorConfig,
   NormalizedProjectConfig,
+  NormalizedStorageConfig,
+  NormalizedStorageMirrorConfig,
   ProjectConfigDiscoveryResult,
 } from "./types.js";
+
+/**
+ * Keys that look like secrets and are forbidden inside the storage: YAML block.
+ * Credentials must be supplied via environment variables only.
+ * (SPEC_STORAGE_BACKENDS.md, "Secret Handling")
+ */
+const SECRET_KEY_PATTERNS = [
+  "password",
+  "pass",
+  "secret",
+  "token",
+  "credential",
+  "credentials",
+  "key",
+  "apikey",
+  "api_key",
+  "private_key",
+];
+
+const VALID_MIRROR_MODES = new Set(["merge", "replace"]);
 
 const CONFIG_CANDIDATES = [
   "graphify.yaml",
@@ -56,6 +80,72 @@ function asNumber(value: unknown, fallback: number): number {
 
 function resolvePath(configDir: string, value: string): string {
   return resolve(configDir, value);
+}
+
+function isSecretKey(key: string): boolean {
+  const lower = key.toLowerCase();
+  return SECRET_KEY_PATTERNS.some((pattern) => lower === pattern || lower.includes(pattern));
+}
+
+function validateStorageMirror(mirror: Record<string, unknown>, index: number): string[] {
+  const errors: string[] = [];
+
+  // Check for secret keys — must use env vars instead
+  for (const key of Object.keys(mirror)) {
+    if (isSecretKey(key)) {
+      errors.push(
+        `storage.mirrors[${index}]: key "${key}" looks like a secret and is not allowed in YAML config. ` +
+          `Use environment variables instead: GRAPHIFY_NEO4J_PASSWORD, GRAPHIFY_NEO4J_USER, ` +
+          `GRAPHIFY_NEO4J_URI, GRAPHIFY_NEO4J_DATABASE, GRAPHIFY_SPANNER_PROJECT, ` +
+          `GRAPHIFY_SPANNER_INSTANCE, GRAPHIFY_SPANNER_DATABASE`,
+      );
+    }
+  }
+
+  // Validate backend id against known registry
+  if (typeof mirror.backend === "string" && mirror.backend.trim().length > 0) {
+    const knownIds = listGraphStoreIds();
+    if (!knownIds.includes(mirror.backend.trim())) {
+      errors.push(
+        `storage.mirrors[${index}]: unknown backend "${mirror.backend}". ` +
+          `Available: ${knownIds.join(", ")}`,
+      );
+    }
+  } else {
+    errors.push(`storage.mirrors[${index}]: backend is required and must be a string`);
+  }
+
+  // Validate mode if present
+  if (mirror.mode !== undefined && !VALID_MIRROR_MODES.has(String(mirror.mode))) {
+    errors.push(`storage.mirrors[${index}]: mode must be "merge" or "replace"`);
+  }
+
+  return errors;
+}
+
+function validateStorage(storage: Record<string, unknown>): string[] {
+  const errors: string[] = [];
+  const mirrors = storage.mirrors;
+
+  if (mirrors === undefined || mirrors === null) {
+    return errors;
+  }
+
+  if (!Array.isArray(mirrors)) {
+    errors.push("storage.mirrors must be a list of mirror entries");
+    return errors;
+  }
+
+  for (let i = 0; i < mirrors.length; i++) {
+    const mirror = mirrors[i];
+    if (typeof mirror !== "object" || mirror === null || Array.isArray(mirror)) {
+      errors.push(`storage.mirrors[${i}] must be an object`);
+      continue;
+    }
+    errors.push(...validateStorageMirror(mirror as Record<string, unknown>, i));
+  }
+
+  return errors;
 }
 
 function registrySourceName(path: string): string {
@@ -198,6 +288,13 @@ export function validateProjectConfig(config: GraphifyProjectConfig): string[] {
   if (reconciliation.patches_path !== undefined && typeof reconciliation.patches_path !== "string") {
     errors.push("outputs.ontology.reconciliation.patches_path must be a path string");
   }
+
+  // Validate storage block if present
+  if (config.storage !== undefined) {
+    const storage = asRecord(config.storage);
+    errors.push(...validateStorage(storage));
+  }
+
   return errors;
 }
 
@@ -310,7 +407,40 @@ export function normalizeProjectConfig(
         },
       },
     },
+    storage: normalizeStorageConfig(config.storage),
   };
+}
+
+function normalizeStorageConfig(
+  storage: GraphifyProjectConfig["storage"],
+): NormalizedStorageConfig | undefined {
+  if (storage === undefined || storage === null) return undefined;
+  const rec = asRecord(storage);
+  const mirrorsRaw = rec.mirrors;
+  if (!Array.isArray(mirrorsRaw) || mirrorsRaw.length === 0) {
+    // Empty mirrors array — no storage block in normalized output
+    if (Array.isArray(mirrorsRaw) && mirrorsRaw.length === 0) {
+      return { mirrors: [] };
+    }
+    return undefined;
+  }
+
+  const mirrors: NormalizedStorageMirrorConfig[] = mirrorsRaw.map((m) => {
+    const mirror = asRecord(m) as unknown as GraphifyStorageMirrorConfig;
+    return {
+      backend: String(mirror.backend ?? ""),
+      uri: typeof mirror.uri === "string" ? mirror.uri : undefined,
+      user: typeof mirror.user === "string" ? mirror.user : undefined,
+      database: typeof mirror.database === "string" ? mirror.database : undefined,
+      project: typeof mirror.project === "string" ? mirror.project : undefined,
+      instance: typeof mirror.instance === "string" ? mirror.instance : undefined,
+      mode: mirror.mode === "replace" ? "replace" : "merge",
+      namespace: typeof mirror.namespace === "string" ? mirror.namespace : undefined,
+      autoPush: typeof mirror.autoPush === "boolean" ? mirror.autoPush : false,
+    };
+  });
+
+  return { mirrors };
 }
 
 export function loadProjectConfig(configPath: string): NormalizedProjectConfig {

@@ -275,6 +275,22 @@ export interface GraphifyProjectOntologyReconciliationPolicy {
   patches_path?: string;
 }
 
+export interface GraphifyStorageMirrorConfig {
+  backend: string;
+  uri?: string;
+  user?: string;
+  database?: string;
+  project?: string;
+  instance?: string;
+  mode?: "merge" | "replace";
+  namespace?: string;
+  autoPush?: boolean;
+}
+
+export interface GraphifyStorageConfig {
+  mirrors?: GraphifyStorageMirrorConfig[];
+}
+
 export interface GraphifyProjectConfig {
   version?: number;
   profile?: GraphifyProjectConfigProfile;
@@ -282,6 +298,23 @@ export interface GraphifyProjectConfig {
   dataprep?: GraphifyDataprepPolicy;
   llm_execution?: GraphifyLlmExecutionPolicy;
   outputs?: GraphifyOutputPolicy;
+  storage?: GraphifyStorageConfig;
+}
+
+export interface NormalizedStorageMirrorConfig {
+  backend: string;
+  uri?: string;
+  user?: string;
+  database?: string;
+  project?: string;
+  instance?: string;
+  mode: "merge" | "replace";
+  namespace?: string;
+  autoPush: boolean;
+}
+
+export interface NormalizedStorageConfig {
+  mirrors: NormalizedStorageMirrorConfig[];
 }
 
 export interface NormalizedProjectProfile {
@@ -369,6 +402,7 @@ export interface NormalizedProjectConfig {
   dataprep: NormalizedDataprepPolicy;
   llm_execution: NormalizedLlmExecutionPolicy;
   outputs: NormalizedOutputPolicy;
+  storage?: NormalizedStorageConfig;
 }
 
 export interface ProjectConfigDiscoveryResult {
