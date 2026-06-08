@@ -23,4 +23,12 @@ describe("GraphCanvas renderer", () => {
     expect(source).toContain("renderer.setPositions");
     expect(source.indexOf("renderer.setPositions")).toBeLessThan(source.indexOf("onMergeComplete?.()"));
   });
+
+  it("forces the rich Canvas2D backend and restores pointer hover hit testing", () => {
+    const source = graphCanvasSource();
+
+    expect(source).toContain('backend: "canvas2d"');
+    expect(source).toContain("findNearestEdge");
+    expect(source).toContain("onpointermove");
+  });
 });

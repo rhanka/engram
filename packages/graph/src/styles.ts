@@ -86,6 +86,17 @@ function dashCode(value: EdgeDashMode | undefined): number {
   return 0;
 }
 
+function shapeCode(value: unknown): number {
+  const shape = String(value ?? "dot").trim().toLowerCase();
+  if (shape === "diamond") return 1;
+  if (shape === "star") return 2;
+  if (shape === "hexagon") return 3;
+  if (shape === "box" || shape === "square") return 4;
+  if (shape === "roundedbox") return 5;
+  if (shape === "triangle") return 6;
+  return 0;
+}
+
 export function buildStyleBuffers(
   input: HighLevelGraphInput,
   graph: RenderGraphBuffers,
@@ -107,11 +118,13 @@ export function buildStyleBuffers(
 
   const nodeSizes = new Float32Array(graph.nodeIds.length);
   const nodeColors = new Uint8Array(graph.nodeIds.length * 4);
+  const nodeShapes = new Uint8Array(graph.nodeIds.length);
 
   graph.nodeIds.forEach((nodeId, index) => {
     const node = nodesById.get(nodeId);
     nodeSizes[index] = finiteOrDefault(node?.size, nodeDefaults.size);
     writeColor(nodeColors, index * 4, parseColor(node?.color, nodeDefaults.color));
+    nodeShapes[index] = shapeCode(node?.shape);
   });
 
   const edgeCount = graph.edges.length / 2;
@@ -133,6 +146,7 @@ export function buildStyleBuffers(
   return {
     nodeSizes,
     nodeColors,
+    nodeShapes,
     edgeWidths,
     edgeColors,
     edgeDash,

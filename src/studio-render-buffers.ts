@@ -136,6 +136,7 @@ export function buildStudioRenderBuffers(
       fx: finiteNumber(node.fx) ? node.fx : undefined,
       fy: finiteNumber(node.fy) ? node.fy : undefined,
       fixed: node.fixed === true || (finiteNumber(node.fx) && finiteNumber(node.fy)),
+      shape: node.shape,
       size: nodeSize(node, resolved.nodeRadius),
     };
   });
