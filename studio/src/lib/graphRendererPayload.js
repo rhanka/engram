@@ -18,7 +18,8 @@ const GROUP_PALETTE = [
 const FOCUS_COLOR = "#ef4444";
 const SELECTED_COLOR = "#2563eb";
 const EDGE_COLOR = "#94a3b8";
-const WEAK_EDGE_COLOR = "#cbd5e1";
+const WEAK_EDGE_COLOR = [203, 213, 225, 128];
+const EDGE_CURVE_FACTOR = 0.5;
 
 function finite(value) {
   return typeof value === "number" && Number.isFinite(value);
@@ -90,6 +91,7 @@ export function buildGraphRendererPayload(scene, options = {}) {
       x: position.x,
       y: position.y,
       fixed: position.fixed,
+      shape: node.shape ?? "dot",
       size: nodeSize(node, nodeRadius, selected, focused),
       color: focused ? FOCUS_COLOR : selected ? SELECTED_COLOR : colorForGroup(node.group),
     };
@@ -98,7 +100,10 @@ export function buildGraphRendererPayload(scene, options = {}) {
   const edges = sceneEdges.map((edge) => ({
     source: edge.source,
     target: edge.target,
+    relation: edge.relation,
     label: edge.relation,
+    weak: edge.weak === true,
+    emphasis: edge.emphasis === true,
     width: edgeWidth(edge),
     color: edge.weak ? WEAK_EDGE_COLOR : EDGE_COLOR,
     dash: edge.dash ?? (edge.weak ? "dotted" : "solid"),
@@ -112,10 +117,12 @@ export function buildGraphRendererPayload(scene, options = {}) {
     edge: { width: 1, color: EDGE_COLOR, dash: "solid", curvature: 0.15 },
   });
   const nodeIndexById = new Map(nodes.map((node, index) => [node.id, index]));
+  const renderedEdges = Array.from(renderGraph.edgeInputIndices ?? [], (inputIndex) => edges[inputIndex]);
 
   return {
     renderGraph,
     style,
+    edges: renderedEdges,
     nodeById: new Map(nodes.map((node) => [node.id, node])),
     nodeIndexById,
     stats: {
@@ -123,6 +130,18 @@ export function buildGraphRendererPayload(scene, options = {}) {
       edgeCount: renderGraph.edges.length / 2,
       droppedEdgeCount: renderGraph.droppedEdges,
     },
+  };
+}
+
+function cloneStyle(style) {
+  return {
+    nodeSizes: new Float32Array(style.nodeSizes),
+    nodeColors: new Uint8Array(style.nodeColors),
+    nodeShapes: new Uint8Array(style.nodeShapes),
+    edgeWidths: new Float32Array(style.edgeWidths),
+    edgeColors: new Uint8Array(style.edgeColors),
+    edgeDash: new Uint8Array(style.edgeDash),
+    edgeCurvatures: new Float32Array(style.edgeCurvatures),
   };
 }
 
@@ -151,6 +170,32 @@ export function interpolateMergePositions(payload, mergePair, progress) {
   return positions;
 }
 
+export function interpolateMergeStyle(payload, mergePair, progress) {
+  const graph = payload?.renderGraph;
+  if (!graph || !payload?.style || !mergePair?.from) return payload?.style ?? null;
+
+  const nodeIndexById =
+    payload.nodeIndexById ?? new Map((graph.nodeIds ?? []).map((id, index) => [id, index]));
+  const fromIndex = nodeIndexById.get(mergePair.from);
+  if (!Number.isInteger(fromIndex)) return payload.style;
+
+  const style = cloneStyle(payload.style);
+  const alphaScale = 1 - clampUnit(progress);
+  const nodeAlphaOffset = fromIndex * 4 + 3;
+  style.nodeColors[nodeAlphaOffset] = Math.round((style.nodeColors[nodeAlphaOffset] ?? 255) * alphaScale);
+
+  const edgeCount = graph.edges.length / 2;
+  for (let edgeIndex = 0; edgeIndex < edgeCount; edgeIndex += 1) {
+    const sourceIndex = graph.edges[edgeIndex * 2];
+    const targetIndex = graph.edges[edgeIndex * 2 + 1];
+    if (sourceIndex !== fromIndex && targetIndex !== fromIndex) continue;
+    const alphaOffset = edgeIndex * 4 + 3;
+    style.edgeColors[alphaOffset] = Math.round((style.edgeColors[alphaOffset] ?? 255) * alphaScale);
+  }
+
+  return style;
+}
+
 export function findNearestNodeId(payload, worldX, worldY, maxDistance = 14) {
   const graph = payload?.renderGraph;
   if (!graph) return null;
@@ -167,6 +212,92 @@ export function findNearestNodeId(payload, worldX, worldY, maxDistance = 14) {
     if (distance <= threshold && distance < bestDistance) {
       best = graph.nodeIds[index];
       bestDistance = distance;
+    }
+  }
+
+  return best;
+}
+
+function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared <= Number.EPSILON) return Math.hypot(px - x1, py - y1);
+
+  const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lengthSquared));
+  const x = x1 + dx * t;
+  const y = y1 + dy * t;
+  return Math.hypot(px - x, py - y);
+}
+
+function quadraticPoint(source, control, target, t) {
+  const inv = 1 - t;
+  return {
+    x: inv * inv * source.x + 2 * inv * t * control.x + t * t * target.x,
+    y: inv * inv * source.y + 2 * inv * t * control.y + t * t * target.y,
+  };
+}
+
+function curveControlPoint(source, target, curvature) {
+  const midX = (source.x + target.x) / 2;
+  const midY = (source.y + target.y) / 2;
+  const dx = target.x - source.x;
+  const dy = target.y - source.y;
+  const distance = Math.max(1, Math.hypot(dx, dy));
+  return {
+    x: midX + (-dy / distance) * distance * curvature * EDGE_CURVE_FACTOR,
+    y: midY + (dx / distance) * distance * curvature * EDGE_CURVE_FACTOR,
+  };
+}
+
+function pointToQuadraticDistance(px, py, source, control, target) {
+  let best = Number.POSITIVE_INFINITY;
+  let previous = source;
+  for (let step = 1; step <= 16; step += 1) {
+    const current = quadraticPoint(source, control, target, step / 16);
+    best = Math.min(best, pointToSegmentDistance(px, py, previous.x, previous.y, current.x, current.y));
+    previous = current;
+  }
+  return best;
+}
+
+export function findNearestEdge(payload, worldX, worldY, maxDistance = 10, positions = null) {
+  const graph = payload?.renderGraph;
+  if (!graph || !payload?.style) return null;
+
+  const currentPositions = positions ?? graph.positions;
+  const edgeCount = graph.edges.length / 2;
+  let best = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+
+  for (let edgeIndex = 0; edgeIndex < edgeCount; edgeIndex += 1) {
+    const sourceIndex = graph.edges[edgeIndex * 2];
+    const targetIndex = graph.edges[edgeIndex * 2 + 1];
+    const source = {
+      x: currentPositions[sourceIndex * 2] ?? 0,
+      y: currentPositions[sourceIndex * 2 + 1] ?? 0,
+    };
+    const target = {
+      x: currentPositions[targetIndex * 2] ?? 0,
+      y: currentPositions[targetIndex * 2 + 1] ?? 0,
+    };
+    const curvature = payload.style.edgeCurvatures[edgeIndex] ?? 0;
+    const distance =
+      curvature === 0
+        ? pointToSegmentDistance(worldX, worldY, source.x, source.y, target.x, target.y)
+        : pointToQuadraticDistance(worldX, worldY, source, curveControlPoint(source, target, curvature), target);
+    const threshold = Math.max(maxDistance, (payload.style.edgeWidths[edgeIndex] ?? 1) * 1.5);
+
+    if (distance <= threshold && distance < bestDistance) {
+      const edge = payload.edges?.[edgeIndex] ?? null;
+      bestDistance = distance;
+      best = {
+        index: edgeIndex,
+        edge,
+        distance,
+        sourceLabel: payload.nodeById?.get(edge?.source)?.label ?? edge?.source ?? "",
+        targetLabel: payload.nodeById?.get(edge?.target)?.label ?? edge?.target ?? "",
+      };
     }
   }
 

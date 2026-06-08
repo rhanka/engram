@@ -68,34 +68,51 @@ function createFakeCanvas2DContext() {
   const calls: {
     arc: Array<{ x: number; y: number; radius: number }>;
     clearRect: number;
+    closePath: number;
+    fillText: Array<{ text: string; x: number; y: number }>;
     lineTo: number;
+    moveTo: number;
     quadraticCurveTo: number;
+    setLineDash: number[][];
     stroke: number;
     fill: number;
   } = {
     arc: [],
     clearRect: 0,
+    closePath: 0,
+    fillText: [],
     lineTo: 0,
+    moveTo: 0,
     quadraticCurveTo: 0,
+    setLineDash: [],
     stroke: 0,
     fill: 0,
   };
 
   return {
     calls,
+    font: "",
     fillStyle: "",
     lineCap: "",
     lineJoin: "",
     lineWidth: 0,
+    textBaseline: "",
     strokeStyle: "",
     beginPath: () => undefined,
     clearRect: () => {
       calls.clearRect += 1;
     },
+    closePath: () => {
+      calls.closePath += 1;
+    },
     save: () => undefined,
     restore: () => undefined,
-    setLineDash: () => undefined,
-    moveTo: () => undefined,
+    setLineDash: (segments: number[]) => {
+      calls.setLineDash.push([...segments]);
+    },
+    moveTo: () => {
+      calls.moveTo += 1;
+    },
     lineTo: () => {
       calls.lineTo += 1;
     },
@@ -110,6 +127,9 @@ function createFakeCanvas2DContext() {
     },
     fill: () => {
       calls.fill += 1;
+    },
+    fillText: (text: string, x: number, y: number) => {
+      calls.fillText.push({ text, x, y });
     },
   };
 }
@@ -157,6 +177,7 @@ describe("createGraphRenderer", () => {
     view.setStyle({
       nodeSizes: new Float32Array([6, 8]),
       nodeColors: new Uint8Array([255, 0, 0, 255, 0, 0, 255, 255]),
+      nodeShapes: new Uint8Array([0, 0]),
       edgeWidths: new Float32Array([1]),
       edgeColors: new Uint8Array([120, 130, 140, 255]),
       edgeDash: new Uint8Array([0]),
@@ -191,6 +212,7 @@ describe("createGraphRenderer", () => {
     view.setStyle({
       nodeSizes: new Float32Array([6, 8]),
       nodeColors: new Uint8Array([255, 0, 0, 255, 0, 0, 255, 255]),
+      nodeShapes: new Uint8Array([0, 0]),
       edgeWidths: new Float32Array([2]),
       edgeColors: new Uint8Array([120, 130, 140, 255]),
       edgeDash: new Uint8Array([0]),
@@ -205,5 +227,52 @@ describe("createGraphRenderer", () => {
     expect(context2d.calls.stroke).toBe(1);
     expect(context2d.calls.fill).toBe(2);
     expect(context2d.calls.arc.map((call) => call.radius)).toEqual([12, 16]);
+  });
+
+  it("can force Canvas2D to preserve rich shapes and edge styles when WebGL exists", () => {
+    const gl = createFakeWebGlContext();
+    const context2d = createFakeCanvas2DContext();
+    const requestedContexts: string[] = [];
+    const canvas = {
+      width: 200,
+      height: 100,
+      getContext: (kind: string) => {
+        requestedContexts.push(kind);
+        if (kind === "2d") return context2d;
+        return gl;
+      },
+    };
+
+    const view = createGraphRenderer(canvas as unknown as HTMLCanvasElement, {
+      backend: "canvas2d",
+      pixelRatio: 1,
+    });
+    view.setGraph({
+      nodeIds: ["diamond", "hex"],
+      positions: new Float32Array([0, 0, 100, 0]),
+      edges: new Uint32Array([0, 1]),
+    });
+    view.setStyle({
+      nodeSizes: new Float32Array([6, 8]),
+      nodeColors: new Uint8Array([255, 0, 0, 255, 0, 0, 255, 255]),
+      nodeShapes: new Uint8Array([1, 3]),
+      edgeWidths: new Float32Array([3]),
+      edgeColors: new Uint8Array([120, 130, 140, 128]),
+      edgeDash: new Uint8Array([3]),
+      edgeCurvatures: new Float32Array([0.25]),
+    });
+
+    view.fitView({ padding: 10, viewportWidth: 200, viewportHeight: 100 });
+    view.render();
+
+    expect(requestedContexts).toEqual(["2d"]);
+    expect(view.snapshot().hasWebGL).toBe(false);
+    expect(view.snapshot().backend).toBe("canvas2d");
+    expect(gl.calls.drawArrays).toHaveLength(0);
+    expect(context2d.calls.quadraticCurveTo).toBe(1);
+    expect(context2d.calls.setLineDash).toContainEqual([10, 6]);
+    expect(context2d.calls.arc).toHaveLength(0);
+    expect(context2d.calls.lineTo).toBeGreaterThanOrEqual(8);
+    expect(context2d.calls.closePath).toBeGreaterThanOrEqual(2);
   });
 });

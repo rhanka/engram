@@ -256,6 +256,10 @@ function copyStyle(style: GraphStyleBuffers, nodeCount: number, edgeCount: numbe
     throw new RangeError(`nodeColors length ${style.nodeColors.length} does not match node count ${nodeCount}`);
   }
 
+  if (style.nodeShapes && style.nodeShapes.length !== nodeCount) {
+    throw new RangeError(`nodeShapes length ${style.nodeShapes.length} does not match node count ${nodeCount}`);
+  }
+
   if (style.edgeWidths.length !== edgeCount) {
     throw new RangeError(`edgeWidths length ${style.edgeWidths.length} does not match edge count ${edgeCount}`);
   }
@@ -271,6 +275,7 @@ function copyStyle(style: GraphStyleBuffers, nodeCount: number, edgeCount: numbe
   return {
     nodeSizes: new Float32Array(style.nodeSizes),
     nodeColors: new Uint8Array(style.nodeColors),
+    nodeShapes: style.nodeShapes ? new Uint8Array(style.nodeShapes) : new Uint8Array(nodeCount),
     edgeWidths: new Float32Array(style.edgeWidths),
     edgeColors: new Uint8Array(style.edgeColors),
     edgeDash: new Uint8Array(style.edgeDash),
@@ -409,6 +414,103 @@ function applyDash(context: Graph2DContext, dash: number, pixelRatio: number): v
   }
 }
 
+const STAR_INNER_RATIO = 0.42;
+const STAR_AREA_FACTOR = 1.5953498885642274;
+const EDGE_CURVE_FACTOR = 0.5;
+
+function pathPolygon(context: Graph2DContext, x: number, y: number, points: Array<[number, number]>): void {
+  if (points.length === 0) return;
+
+  const first = points[0]!;
+  context.moveTo(x + first[0], y + first[1]);
+  for (let index = 1; index < points.length; index += 1) {
+    const point = points[index]!;
+    context.lineTo(x + point[0], y + point[1]);
+  }
+  context.closePath();
+}
+
+function drawRoundedBox(context: Graph2DContext, x: number, y: number, radius: number): void {
+  const half = (Math.sqrt(Math.PI) / 2) * radius;
+  const corner = half * 0.6;
+  context.moveTo(x - half + corner, y - half);
+  context.lineTo(x + half - corner, y - half);
+  context.quadraticCurveTo(x + half, y - half, x + half, y - half + corner);
+  context.lineTo(x + half, y + half - corner);
+  context.quadraticCurveTo(x + half, y + half, x + half - corner, y + half);
+  context.lineTo(x - half + corner, y + half);
+  context.quadraticCurveTo(x - half, y + half, x - half, y + half - corner);
+  context.lineTo(x - half, y - half + corner);
+  context.quadraticCurveTo(x - half, y - half, x - half + corner, y - half);
+  context.closePath();
+}
+
+function drawNodeShapePath(context: Graph2DContext, x: number, y: number, radius: number, shape: number): void {
+  if (shape === 1) {
+    const diagonal = Math.sqrt(Math.PI / 2) * radius;
+    pathPolygon(context, x, y, [
+      [0, -diagonal],
+      [diagonal, 0],
+      [0, diagonal],
+      [-diagonal, 0],
+    ]);
+    return;
+  }
+
+  if (shape === 2) {
+    const outer = STAR_AREA_FACTOR * radius;
+    const inner = outer * STAR_INNER_RATIO;
+    const points: Array<[number, number]> = [];
+    for (let index = 0; index < 10; index += 1) {
+      const angle = (index * Math.PI) / 5 - Math.PI / 2;
+      const r = index % 2 === 0 ? outer : inner;
+      points.push([Math.cos(angle) * r, Math.sin(angle) * r]);
+    }
+    pathPolygon(context, x, y, points);
+    return;
+  }
+
+  if (shape === 3) {
+    const circumradius = Math.sqrt(Math.PI / ((3 * Math.sqrt(3)) / 2)) * radius;
+    const points: Array<[number, number]> = [];
+    for (let index = 0; index < 6; index += 1) {
+      const angle = (index * Math.PI) / 3 - Math.PI / 6;
+      points.push([Math.cos(angle) * circumradius, Math.sin(angle) * circumradius]);
+    }
+    pathPolygon(context, x, y, points);
+    return;
+  }
+
+  if (shape === 4) {
+    const half = (Math.sqrt(Math.PI) / 2) * radius;
+    pathPolygon(context, x, y, [
+      [-half, -half],
+      [half, -half],
+      [half, half],
+      [-half, half],
+    ]);
+    return;
+  }
+
+  if (shape === 5) {
+    drawRoundedBox(context, x, y, radius);
+    return;
+  }
+
+  if (shape === 6) {
+    const circumradius = Math.sqrt(Math.PI / ((3 * Math.sqrt(3)) / 4)) * radius;
+    const points: Array<[number, number]> = [];
+    for (let index = 0; index < 3; index += 1) {
+      const angle = (index * 2 * Math.PI) / 3 - Math.PI / 2;
+      points.push([Math.cos(angle) * circumradius, Math.sin(angle) * circumradius]);
+    }
+    pathPolygon(context, x, y, points);
+    return;
+  }
+
+  context.arc(x, y, radius, 0, Math.PI * 2);
+}
+
 function drawFallback2D(
   context: Graph2DContext | null,
   state: RendererState,
@@ -444,8 +546,8 @@ function drawFallback2D(
       const dx = target.x - source.x;
       const dy = target.y - source.y;
       const distance = Math.max(1, Math.hypot(dx, dy));
-      const controlX = midX + (-dy / distance) * distance * curvature;
-      const controlY = midY + (dx / distance) * distance * curvature;
+      const controlX = midX + (-dy / distance) * distance * curvature * EDGE_CURVE_FACTOR;
+      const controlY = midY + (dx / distance) * distance * curvature * EDGE_CURVE_FACTOR;
       context.quadraticCurveTo(controlX, controlY, target.x, target.y);
     } else {
       context.lineTo(target.x, target.y);
@@ -461,7 +563,7 @@ function drawFallback2D(
 
     context.beginPath();
     context.fillStyle = cssColor(state.style?.nodeColors, colorOffset, DEFAULT_NODE_COLOR);
-    context.arc(point.x, point.y, radius, 0, Math.PI * 2);
+    drawNodeShapePath(context, point.x, point.y, radius, state.style?.nodeShapes[nodeIndex] ?? 0);
     context.fill();
   }
 
@@ -472,10 +574,12 @@ export function createGraphRenderer(
   canvas: GraphCanvasLike | null,
   options: GraphRendererOptions = {},
 ): GraphRenderer {
-  const context = acquireContext(canvas, options);
-  const fallbackContext = context ? null : acquire2DContext(canvas);
+  const requestedBackend = options.backend ?? "auto";
+  const context = requestedBackend === "canvas2d" ? null : acquireContext(canvas, options);
+  const fallbackContext = context || requestedBackend === "webgl" ? null : acquire2DContext(canvas);
   const resources = context ? createRenderResources(context) : null;
   const pixelRatio = Math.max(Number.EPSILON, options.pixelRatio ?? 1);
+  const activeBackend = context ? "webgl" : fallbackContext ? "canvas2d" : "none";
   let state: RendererState = {
     nodeIds: [],
     positions: new Float32Array(),
@@ -635,6 +739,7 @@ export function createGraphRenderer(
         camera: { ...camera },
         destroyed,
         hasWebGL: context !== null,
+        backend: activeBackend,
         hasStyle: state.style !== undefined,
       };
     },

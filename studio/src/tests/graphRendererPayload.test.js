@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildGraphRendererPayload,
+  findNearestEdge,
   findNearestNodeId,
+  interpolateMergeStyle,
   interpolateMergePositions,
 } from "../lib/graphRendererPayload.js";
 
@@ -11,8 +13,8 @@ describe("graphRendererPayload", () => {
     const payload = buildGraphRendererPayload(
       {
         nodes: [
-          { id: "a", label: "Alpha", x: 0, y: 0, weight: 4, group: "Case" },
-          { id: "b", label: "Beta", fx: 10, fy: 0, weight: 1, group: "Evidence" },
+          { id: "a", label: "Alpha", x: 0, y: 0, weight: 4, group: "Case", shape: "diamond" },
+          { id: "b", label: "Beta", fx: 10, fy: 0, weight: 1, group: "Evidence", shape: "triangle" },
           { id: "c", label: "Gamma", weight: 1, group: "Evidence" },
         ],
         edges: [
@@ -29,6 +31,7 @@ describe("graphRendererPayload", () => {
     expect(payload.renderGraph.droppedEdges).toBe(1);
     expect([...payload.renderGraph.positions.slice(0, 4)]).toEqual([0, 0, 10, 0]);
     expect(payload.style.nodeSizes[0]).toBeGreaterThan(payload.style.nodeSizes[1]);
+    expect([...payload.style.nodeShapes]).toEqual([1, 6, 0]);
     expect([...payload.style.nodeColors.slice(0, 4)]).toEqual([239, 68, 68, 255]);
     expect([...payload.style.nodeColors.slice(4, 8)]).toEqual([37, 99, 235, 255]);
   });
@@ -45,6 +48,24 @@ describe("graphRendererPayload", () => {
 
     expect(findNearestNodeId(payload, 102, 1, 12)).toBe("b");
     expect(findNearestNodeId(payload, 50, 0, 12)).toBeNull();
+  });
+
+  it("finds the closest styled edge in world coordinates for hover", () => {
+    const payload = buildGraphRendererPayload({
+      nodes: [
+        { id: "a", label: "Alpha", x: 0, y: 0, weight: 1 },
+        { id: "b", label: "Beta", x: 100, y: 0, weight: 1 },
+      ],
+      edges: [{ source: "a", target: "b", relation: "assists", dash: "dashed", weak: true }],
+      stats: { nodeCount: 2, edgeCount: 1, weakEdgeCount: 1, communityCount: 1 },
+    });
+
+    const hit = findNearestEdge(payload, 50, 4, 12);
+
+    expect(hit.edge.relation).toBe("assists");
+    expect(hit.sourceLabel).toBe("Alpha");
+    expect(hit.targetLabel).toBe("Beta");
+    expect(findNearestEdge(payload, 50, 50, 12)).toBeNull();
   });
 
   it("interpolates merge positions by pulling the source node into the target", () => {
@@ -65,5 +86,27 @@ describe("graphRendererPayload", () => {
 
     expect([...positions]).toEqual([50, 20, 100, 40, -20, 10]);
     expect([...payload.renderGraph.positions]).toEqual([0, 0, 100, 40, -20, 10]);
+  });
+
+  it("fades the merging source node and its incident edges during merge", () => {
+    const payload = buildGraphRendererPayload({
+      nodes: [
+        { id: "candidate", label: "Candidate", x: 0, y: 0, weight: 1 },
+        { id: "canonical", label: "Canonical", x: 100, y: 40, weight: 1 },
+        { id: "neighbor", label: "Neighbor", x: -20, y: 10, weight: 1 },
+      ],
+      edges: [
+        { source: "candidate", target: "neighbor", relation: "mentions" },
+        { source: "canonical", target: "neighbor", relation: "seen_by" },
+      ],
+      stats: { nodeCount: 3, edgeCount: 2, weakEdgeCount: 0, communityCount: 1 },
+    });
+
+    const style = interpolateMergeStyle(payload, { from: "candidate", into: "canonical" }, 0.5);
+
+    expect(style.nodeColors[3]).toBe(128);
+    expect(style.edgeColors[3]).toBe(128);
+    expect(style.edgeColors[7]).toBe(255);
+    expect(payload.style.nodeColors[3]).toBe(255);
   });
 });

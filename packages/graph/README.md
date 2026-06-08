@@ -7,8 +7,9 @@ The package is rendering-first: it accepts canonical node order, `Float32Array` 
 ## MVP Contract
 
 - `buildRenderGraphBuffers(scene)` adapts high-level nodes and edges into stable typed buffers.
-- `buildStyleBuffers(scene, graph)` compiles sizes, colors, dash modes, widths, and curvatures into typed arrays aligned to the filtered graph.
+- `buildStyleBuffers(scene, graph)` compiles sizes, colors, node shapes, dash modes, widths, and curvatures into typed arrays aligned to the filtered graph.
 - `setGraph`, `setPositions`, and `updatePositions(PositionFrame)` are the renderer hot path.
+- `createGraphRenderer(canvas, { backend: "canvas2d" })` selects the rich Canvas2D backend for feature parity while WebGL catches up.
 - `x/y` are y-down world coordinates. `fx/fy` may mark high-level pins but are not renderer state.
 - Curved edge geometry is derived from positions and styling options, not from layout physics.
 

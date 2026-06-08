@@ -1,6 +1,18 @@
 export type NodeId = string;
 export type ColorInput = string | number | readonly [number, number, number] | readonly [number, number, number, number];
 export type EdgeDashMode = "solid" | "dashed" | "dotted" | "long-dash";
+export type GraphNodeShape =
+  | "dot"
+  | "circle"
+  | "diamond"
+  | "star"
+  | "hexagon"
+  | "box"
+  | "square"
+  | "roundedbox"
+  | "triangle";
+export type GraphRendererBackend = "auto" | "webgl" | "canvas2d";
+export type GraphRendererActiveBackend = "webgl" | "canvas2d" | "none";
 
 export interface HighLevelGraphNode {
   id: NodeId;
@@ -11,6 +23,7 @@ export interface HighLevelGraphNode {
   fixed?: boolean;
   size?: number;
   color?: string | number;
+  shape?: GraphNodeShape | string;
   label?: string;
   [key: string]: unknown;
 }
@@ -58,6 +71,7 @@ export interface RenderGraphInput {
 export interface GraphStyleBuffers {
   nodeSizes: Float32Array;
   nodeColors: Uint8Array;
+  nodeShapes: Uint8Array;
   edgeWidths: Float32Array;
   edgeColors: Uint8Array;
   edgeDash: Uint8Array;
@@ -125,6 +139,7 @@ export interface FitViewOptions {
 }
 
 export interface GraphRendererOptions {
+  backend?: GraphRendererBackend;
   antialias?: boolean;
   pixelRatio?: number;
   interaction?: {
@@ -145,6 +160,7 @@ export interface GraphRendererSnapshot {
   camera: CameraState;
   destroyed: boolean;
   hasWebGL: boolean;
+  backend: GraphRendererActiveBackend;
   hasStyle: boolean;
   layoutOptions?: undefined;
 }
