@@ -11,7 +11,7 @@ import {
   renameSync,
   existsSync,
   statSync,
-  type Stats,
+  type BigIntStats,
 } from "node:fs";
 import { dirname, extname, join, resolve } from "node:path";
 import { resolveGraphifyPaths } from "./paths.js";
@@ -70,11 +70,12 @@ function flushStatIndex(): void {
   statIndexDirty = false;
 }
 
-function statMtimeNs(stat: Stats): number {
-  // mtimeNs available on Node 12+; fall back to mtimeMs * 1e6.
-  const ns = (stat as Stats & { mtimeNs?: bigint }).mtimeNs;
-  if (typeof ns === "bigint") return Number(ns);
-  return Math.floor(stat.mtimeMs * 1e6);
+function statMtimeNs(stat: BigIntStats): number {
+  // `mtimeNs` is only populated on BigIntStats (statSync with bigint: true);
+  // a plain Stats never carries it. Number() keeps the existing stat-index
+  // schema (mtime_ns: number) at ~hundreds-of-ns precision, far below kernel
+  // timestamp granularity.
+  return Number(stat.mtimeNs);
 }
 
 export interface CacheOptions {
@@ -103,9 +104,9 @@ function bodyContent(content: Buffer): Buffer {
  * changes do not invalidate semantic extraction cache entries.
  */
 export function fileHash(filePath: string, root: string = "."): string {
-  let stat: Stats;
+  let stat: BigIntStats;
   try {
-    stat = statSync(filePath);
+    stat = statSync(filePath, { bigint: true });
   } catch (error) {
     throw error;
   }
@@ -115,12 +116,15 @@ export function fileHash(filePath: string, root: string = "."): string {
 
   // Upstream d84f07c: stat fastpath — skip full SHA256 read when size and
   // mtime are unchanged. `touch` triggers a harmless re-hash; same-size edits
-  // within a 1 ns mtime window are the only blind spot (matches make(1)).
+  // within the same kernel timestamp tick are the only blind spot (matches
+  // make(1)). bigint stats are required: plain statSync has no mtimeNs and
+  // its mtimeMs*1e6 fallback degraded the window to ~milliseconds.
   ensureStatIndex(root);
   const absKey = resolve(filePath);
   const mtimeNs = statMtimeNs(stat);
+  const size = Number(stat.size);
   const cached = statIndex[absKey];
-  if (cached && cached.size === stat.size && cached.mtime_ns === mtimeNs) {
+  if (cached && cached.size === size && cached.mtime_ns === mtimeNs) {
     return cached.hash;
   }
 
@@ -137,7 +141,7 @@ export function fileHash(filePath: string, root: string = "."): string {
   h.update(relativePath);
   const digest = h.digest("hex");
 
-  statIndex[absKey] = { size: stat.size, mtime_ns: mtimeNs, hash: digest };
+  statIndex[absKey] = { size, mtime_ns: mtimeNs, hash: digest };
   statIndexDirty = true;
 
   return digest;
