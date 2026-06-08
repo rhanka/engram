@@ -13,7 +13,7 @@ import {
   statSync,
   type BigIntStats,
 } from "node:fs";
-import { dirname, extname, join, resolve } from "node:path";
+import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { resolveGraphifyPaths } from "./paths.js";
 
 // ---------------------------------------------------------------------------
@@ -225,6 +225,75 @@ function removeJsonFiles(dir: string): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// source_file relativization helpers (port of upstream 25df580, F-0831-P2d)
+//
+// Caches are content-addressed (SHA256 of file contents + relative path) so
+// the cache *key* is already portable. These helpers make the source_file
+// *payload* portable too: absolute paths are relativized to root before write,
+// re-anchored after read. Already-relative paths and out-of-root paths are
+// passed through unchanged (idempotent). The caller's object is never mutated
+// — saveCached works on a deep copy.
+// ---------------------------------------------------------------------------
+
+const CACHE_BUCKETS = ["nodes", "edges", "hyperedges"] as const;
+
+/**
+ * Return a forward-slash project-relative form of `sourcePath` against
+ * `rootResolved`, or null if the path is already relative, out-of-root, or
+ * cannot be relativized.
+ */
+function tryRelativize(sourcePath: string, rootResolved: string): string | null {
+  if (!isAbsolute(sourcePath)) return null; // already relative — leave as-is
+  const rel = relative(rootResolved, sourcePath);
+  // out-of-root: relative starts with ".." — leave absolute
+  if (rel === ".." || rel.startsWith(".." + "/") || rel.startsWith(".." + "\\")) return null;
+  return rel.replace(/\\/g, "/");
+}
+
+/**
+ * Mutate `payload` in-place to relativize all `source_file` fields in
+ * nodes/edges/hyperedges against `root`.  Already-relative and out-of-root
+ * paths are left unchanged.  Mirror of Python `_relativize_source_files_in`.
+ */
+function relativizeSourceFilesIn(payload: Record<string, unknown>, root: string): void {
+  const rootResolved = resolve(root);
+  for (const bucket of CACHE_BUCKETS) {
+    const items = payload[bucket];
+    if (!Array.isArray(items)) continue;
+    for (const item of items) {
+      if (!item || typeof item !== "object") continue;
+      const rec = item as Record<string, unknown>;
+      const src = rec["source_file"];
+      if (typeof src !== "string" || !src) continue;
+      const rel = tryRelativize(src, rootResolved);
+      if (rel !== null) rec["source_file"] = rel;
+    }
+  }
+}
+
+/**
+ * Mutate `payload` in-place to re-anchor relative `source_file` fields
+ * against `root` so callers see absolute-path shaped data (same as a fresh
+ * in-process extraction).  Already-absolute paths pass through unchanged.
+ * Mirror of Python `_absolutize_source_files_in`.
+ */
+function absolutizeSourceFilesIn(payload: Record<string, unknown>, root: string): void {
+  const rootResolved = resolve(root);
+  for (const bucket of CACHE_BUCKETS) {
+    const items = payload[bucket];
+    if (!Array.isArray(items)) continue;
+    for (const item of items) {
+      if (!item || typeof item !== "object") continue;
+      const rec = item as Record<string, unknown>;
+      const src = rec["source_file"];
+      if (typeof src !== "string" || !src) continue;
+      if (isAbsolute(src)) continue; // legacy absolute — leave as-is
+      rec["source_file"] = resolve(rootResolved, src);
+    }
+  }
+}
+
 /** Returns graphify cache path - creates it if needed. */
 export function cacheDir(root: string = ".", options: CacheOptions = {}): string {
   const namespace = cacheNamespace(options);
@@ -251,7 +320,11 @@ export function loadCached(
   const entry = join(cacheDir(root, options), `${h}.json`);
   if (existsSync(entry)) {
     try {
-      return JSON.parse(readFileSync(entry, "utf-8")) as Record<string, unknown>;
+      const result = JSON.parse(readFileSync(entry, "utf-8")) as Record<string, unknown>;
+      // Re-anchor relative source_file fields so callers see the same absolute-path
+      // shape that a fresh in-process extraction produces (#777 / F-0831-P2d).
+      absolutizeSourceFilesIn(result, root);
+      return result;
     } catch {
       return null;
     }
@@ -261,7 +334,9 @@ export function loadCached(
     const legacyEntry = join(legacyCacheDir(root, options), `${h}.json`);
     if (existsSync(legacyEntry)) {
       try {
-        return JSON.parse(readFileSync(legacyEntry, "utf-8")) as Record<string, unknown>;
+        const result = JSON.parse(readFileSync(legacyEntry, "utf-8")) as Record<string, unknown>;
+        absolutizeSourceFilesIn(result, root);
+        return result;
       } catch {
         return null;
       }
@@ -270,7 +345,9 @@ export function loadCached(
     const legacyHashEntry = join(legacyCacheDir(root, options), `${legacyFileHash(filePath)}.json`);
     if (!existsSync(legacyHashEntry)) return null;
     try {
-      return JSON.parse(readFileSync(legacyHashEntry, "utf-8")) as Record<string, unknown>;
+      const result = JSON.parse(readFileSync(legacyHashEntry, "utf-8")) as Record<string, unknown>;
+      absolutizeSourceFilesIn(result, root);
+      return result;
     } catch {
       return null;
     }
@@ -295,8 +372,20 @@ export function saveCached(
   const h = fileHash(filePath, root);
   const entry = join(cacheDir(root, options), `${h}.json`);
   const tmp = entry + ".tmp";
+
+  // Relativize source_file fields against root before writing to disk so the
+  // cache file is portable across machines and checkout directories (#777 / F-0831-P2d).
+  // We serialize a relativized *copy* rather than mutating the caller's dict —
+  // downstream pipeline steps (e.g. AST prefix remap) depend on the original
+  // absolute form and must not see a silent mutation.
+  const hasBuckets = CACHE_BUCKETS.some((b) => Array.isArray(result[b]) && (result[b] as unknown[]).length > 0);
+  const onDisk: Record<string, unknown> = hasBuckets
+    ? JSON.parse(JSON.stringify(result)) as Record<string, unknown>
+    : result;
+  if (hasBuckets) relativizeSourceFilesIn(onDisk, root);
+
   try {
-    writeFileSync(tmp, JSON.stringify(result));
+    writeFileSync(tmp, JSON.stringify(onDisk));
     renameSync(tmp, entry);
   } catch {
     try { unlinkSync(tmp); } catch { /* ignore */ }
