@@ -3,11 +3,11 @@
  *
  * Pure TypeScript, no DOM. Computes stable (x, y) node positions so they can be
  * PRE-COMPUTED at build time and shipped inside `scene.json`. The studio then
- * pins them (`fx`/`fy`) and renders with `iterations=1`, turning the DS
- * ForceGraph's ~O(n² × 300) mount simulation (a 1-3 s main-thread freeze on the
- * public pack) into an instant paint.
+ * pins them (`fx`/`fy`) and renders them directly, turning the former
+ * ForceGraph-style ~O(n² × 300) mount simulation (a 1-3 s main-thread freeze on
+ * the public pack) into an instant paint.
  *
- * The physics mirror the DS `ForceGraph` `runSimulation` (same constants and the
+ * The physics mirror the legacy `ForceGraph` `runSimulation` (same constants and the
  * same FNV/mulberry32 deterministic seed) so pre-computed positions look like
  * what the live component would settle to — but the O(n²) all-pairs repulsion is
  * replaced by a Barnes-Hut quadtree approximation (`theta`). This scales to large
@@ -15,7 +15,7 @@
  *
  * Determinism: the seed is an FNV-1a hash over the SORTED node ids (not the
  * count), so adding/removing a node keeps the rest of the layout in place — the
- * same property the DS relies on after a reconciliation merge.
+ * same property the Studio relies on after a reconciliation merge.
  */
 
 export interface LayoutGraphNode {
@@ -322,8 +322,7 @@ export function computeLayout(
 
 /**
  * Pre-compute a scene's layout and pin it: writes `x`, `y` AND `fx`, `fy` onto
- * each node (so the DS ForceGraph holds it fixed and the studio can render with
- * `iterations=1`, while a future WebGL renderer reads `x`/`y` directly).
+ * each node so the Studio can render pinned positions directly.
  * Mutates and returns the scene.
  */
 export function attachLayoutPositions<

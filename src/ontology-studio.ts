@@ -259,7 +259,7 @@ function graphJsonResult(stateDir: string): OntologyStudioRouteResult {
 }
 
 /**
- * Serve the light ForceGraph `scene.json` (build-time preprocessor output).
+ * Serve the light Studio `scene.json` (build-time preprocessor output).
  * Computed from graph.json via `buildStudioScene`, the TS replica of the SPA's
  * `buildScene`. ÉTAPE 1: additive only — the client still fetches graph.json;
  * this route is independently testable and unblocks the later client switch.
