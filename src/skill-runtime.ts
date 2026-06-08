@@ -1448,9 +1448,19 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .requiredOption("--analysis <path>")
     .requiredOption("--uri <uri>")
     .requiredOption("--user <user>")
-    .requiredOption("--password <password>")
+    .option(
+      "--password <password>",
+      "Neo4j password (deprecated flag; prefer GRAPHIFY_NEO4J_PASSWORD env var)",
+    )
     .option("--directed", "Build a directed graph (preserves source->target)")
     .action(async (opts) => {
+      const password = opts.password ?? process.env.GRAPHIFY_NEO4J_PASSWORD;
+      if (!password) {
+        console.error(
+          "Error: Neo4j password is required. Provide --password <password> or set GRAPHIFY_NEO4J_PASSWORD",
+        );
+        process.exit(1);
+      }
       const extraction = ensureExtractionShape(readJson<Partial<Extraction>>(opts.extract));
       const analysis = readJson<AnalysisFile>(opts.analysis);
       const G = buildFromJson(extraction, { directed: shouldBuildDirected(opts) });
@@ -1460,7 +1470,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       const result = await pushToNeo4j(G, {
         uri: opts.uri,
         user: opts.user,
-        password: opts.password,
+        password,
         communities,
       });
       console.log(`Pushed to Neo4j: ${result.nodes} nodes, ${result.edges} edges`);

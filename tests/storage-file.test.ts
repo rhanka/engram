@@ -110,13 +110,15 @@ describe("FileGraphStore specifics", () => {
 });
 
 describe("graph store registry", () => {
-  it("lists only the file store in PR2", () => {
-    expect(listGraphStoreIds()).toEqual(["file"]);
+  it("lists file and neo4j stores after PR3", () => {
+    const ids = listGraphStoreIds();
+    expect(ids).toContain("file");
+    expect(ids).toContain("neo4j");
   });
 
   it("fails with an actionable message for an unknown store id", async () => {
     await expect(resolveGraphStore("nope", {})).rejects.toThrow(
-      "unknown store 'nope'. Available: file",
+      /unknown store 'nope'\. Available:/,
     );
   });
 

@@ -573,33 +573,13 @@ export function toCypher(G: Graph, outputPath: string): void {
   writeFileSync(outputPath, lines.join("\n"), "utf-8");
 }
 
-function neo4jLabel(label: string): string {
-  const sanitized = label.replace(/[^A-Za-z0-9_]/g, "");
-  return sanitized || "Entity";
-}
 
-function neo4jRelation(relation: string): string {
-  const sanitized = relation
-    .toUpperCase()
-    .replace(/[\s-]+/g, "_")
-    .replace(/[^A-Z0-9_]/g, "_");
-  return sanitized && /^[A-Z]/.test(sanitized) ? sanitized : "RELATED_TO";
-}
-
-function scalarProps(data: Record<string, unknown>): Record<string, string | number | boolean> {
-  const props: Record<string, string | number | boolean> = {};
-  for (const [key, value] of Object.entries(data)) {
-    if (
-      typeof value === "string" ||
-      typeof value === "number" ||
-      typeof value === "boolean"
-    ) {
-      props[key] = value;
-    }
-  }
-  return props;
-}
-
+/**
+ * @deprecated Legacy one-shot Neo4j push — thin compat wrapper over the
+ * batched Neo4j GraphStore adapter (src/storage/neo4j.ts). Kept for
+ * backwards-compatibility; use `createNeo4jGraphStore` directly for new code.
+ * Signature locked by tests/public-api.test.ts:67.
+ */
 export async function pushToNeo4j(
   G: Graph,
   optionsOrUri: Neo4jPushOptions | string,
@@ -616,67 +596,34 @@ export async function pushToNeo4j(
     }
     : optionsOrUri;
 
-  let neo4jMod: Record<string, any>;
-  try {
-    neo4jMod = await import("neo4j-driver");
-  } catch {
-    throw new Error("neo4j-driver not installed. Run: npm install neo4j-driver");
+  // Dynamic import to avoid a static circular dependency:
+  // export.ts ← neo4j.ts would be circular since neo4j.ts is imported by
+  // registry.ts which could be imported transitively. Dynamic import resolves
+  // at call time, after module evaluation is complete.
+  const { createNeo4jGraphStore } = await import("./storage/neo4j.js");
+
+  const rawCommunities = options.communities;
+  const communityMap = new Map<number, string[]>();
+  if (rawCommunities) {
+    const numeric = toNumericMap(rawCommunities);
+    for (const [cid, nodes] of numeric) {
+      communityMap.set(cid, nodes);
+    }
   }
 
-  const neo4j = neo4jMod.default ?? neo4jMod;
-  const driver = neo4j.driver(
-    options.uri,
-    neo4j.auth.basic(options.user, options.password),
-  );
-  const communityMap = nodeCommunityMap(options.communities ?? new Map<number, string[]>());
-
-  let nodes = 0;
-  let edges = 0;
-  const session = driver.session();
+  const store = await createNeo4jGraphStore({
+    target: options.uri,
+    user: options.user,
+    password: options.password,
+    namespace: undefined, // derive from URI
+  });
 
   try {
-    for (const nodeId of G.nodes()) {
-      const attrs = G.getNodeAttributes(nodeId) as Record<string, unknown>;
-      const props = scalarProps(attrs);
-      props.id = nodeId;
-
-      const communityId = communityMap.get(nodeId);
-      if (communityId !== undefined) {
-        props.community = communityId;
-      }
-
-      const fileType = neo4jLabel(
-        (((attrs.file_type as string) ?? "Entity").charAt(0).toUpperCase()) +
-        (((attrs.file_type as string) ?? "Entity").slice(1)),
-      );
-
-      await session.run(
-        `MERGE (n:${fileType} {id: $id}) SET n += $props`,
-        { id: nodeId, props },
-      );
-      nodes++;
-    }
-
-    for (const edgeKey of G.edges()) {
-      const source = G.source(edgeKey);
-      const target = G.target(edgeKey);
-      const attrs = G.getEdgeAttributes(edgeKey) as Record<string, unknown>;
-      const relation = neo4jRelation((attrs.relation as string) ?? "RELATED_TO");
-      const props = scalarProps(attrs);
-
-      await session.run(
-        `MATCH (a {id: $source}), (b {id: $target}) ` +
-        `MERGE (a)-[r:${relation}]->(b) SET r += $props`,
-        { source, target, props },
-      );
-      edges++;
-    }
+    const result = await store.pushGraph(G, communityMap, { mode: "merge" });
+    return { nodes: result.nodes, edges: result.edges };
   } finally {
-    await session.close();
-    await driver.close();
+    await store.close();
   }
-
-  return { nodes, edges };
 }
 
 // ---------------------------------------------------------------------------
