@@ -139,6 +139,56 @@ describe("buildStudioScene — parity with studio buildScene", () => {
     }
   });
 
+  it("preserves profile metadata and fx/fy pins in the build-time scene", () => {
+    const scene = buildStudioScene({
+      nodes: [
+        {
+          id: "AM0104.01",
+          label: "Manage identity",
+          node_type: "ProcessStdProcess",
+          status: "validated",
+          ontology_status: "validated",
+          parent_id: "AM0104",
+          level: 2,
+          fx: 120,
+          fy: -40,
+        },
+        { id: "DE.AI.01", type: "ABPProcess", x: 10, y: 20, fixed: true },
+      ],
+      links: [
+        {
+          source: "AM0104.01",
+          target: "DE.AI.01",
+          relation_type: "candidate_maps_to",
+          assertion_basis: "heuristic_guess",
+          review_status: "candidate",
+          evidence_refs: ["registry#process_std"],
+        },
+      ],
+    });
+
+    expect(scene.nodes[0]).toMatchObject({
+      type: "ProcessStdProcess",
+      status: "validated",
+      ontology_status: "validated",
+      parent_id: "AM0104",
+      level: 2,
+      x: 120,
+      y: -40,
+      fx: 120,
+      fy: -40,
+    });
+    expect(scene.nodes[1]).toMatchObject({ type: "ABPProcess", fixed: true });
+    expect(scene.edges[0]).toMatchObject({
+      relation: "candidate_maps_to",
+      relation_type: "candidate_maps_to",
+      assertion_basis: "heuristic_guess",
+      review_status: "candidate",
+      evidence_refs: ["registry#process_std"],
+      weak: true,
+    });
+  });
+
   describe("real repo graph (.graphify/graph.json)", () => {
     const graphPath = join(REPO_ROOT, ".graphify", "graph.json");
     const hasRealGraph = existsSync(graphPath);

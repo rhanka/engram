@@ -120,6 +120,78 @@ describe("graphAdapter mapping", () => {
     expect(scene.nodes[0].group).toBe("Sherlock Holmes anthology");
     expect(scene.nodes[2].group).toBe("Place");
   });
+
+  it("preserves profile metadata and fixed hierarchy positions in scene nodes and edges", () => {
+    const scene = buildScene({
+      nodes: [
+        {
+          id: "AM0104.01",
+          label: "Manage identity",
+          type: "ProcessStdProcess",
+          status: "validated",
+          ontology_status: "validated",
+          parent_id: "AM0104",
+          level: 2,
+          code: "AM0104.01",
+          fx: 120,
+          fy: -40,
+        },
+        {
+          id: "DE.AI.01",
+          label: "AI design",
+          node_type: "ABPProcess",
+          review_status: "candidate",
+          x: 10,
+          y: 20,
+          fixed: true,
+        },
+      ],
+      links: [
+        {
+          source: "AM0104.01",
+          target: "DE.AI.01",
+          relation_type: "candidate_maps_to",
+          assertion_basis: "heuristic_guess",
+          review_status: "candidate",
+          derivation_method: "llm_guess",
+          confidence_score: 0.62,
+          evidence_refs: ["registry#process_std"],
+        },
+      ],
+    });
+
+    expect(scene.nodes[0]).toMatchObject({
+      id: "AM0104.01",
+      type: "ProcessStdProcess",
+      status: "validated",
+      ontology_status: "validated",
+      parent_id: "AM0104",
+      level: 2,
+      code: "AM0104.01",
+      x: 120,
+      y: -40,
+      fx: 120,
+      fy: -40,
+    });
+    expect(scene.nodes[1]).toMatchObject({
+      id: "DE.AI.01",
+      type: "ABPProcess",
+      review_status: "candidate",
+      x: 10,
+      y: 20,
+      fixed: true,
+    });
+    expect(scene.edges[0]).toMatchObject({
+      relation: "candidate_maps_to",
+      relation_type: "candidate_maps_to",
+      assertion_basis: "heuristic_guess",
+      review_status: "candidate",
+      derivation_method: "llm_guess",
+      confidence_score: 0.62,
+      evidence_refs: ["registry#process_std"],
+      weak: true,
+    });
+  });
 });
 
 describe("graphAdapter relations", () => {
