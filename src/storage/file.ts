@@ -18,16 +18,20 @@ import type {
   GraphStoreSnapshotMeta,
 } from "./types.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+function moduleDir(): string {
+  if (typeof __dirname === "string") return __dirname;
+  return dirname(fileURLToPath(import.meta.url));
+}
 
 function resolveToolVersion(): string {
   // Source layout: src/storage -> ../../package.json; bundled layout:
   // dist -> ../package.json. The name check guards against picking up an
   // unrelated package.json.
+  const baseDir = moduleDir();
   for (const rel of [join("..", ".."), ".."]) {
     try {
       const pkg = JSON.parse(
-        readFileSync(join(__dirname, rel, "package.json"), "utf-8"),
+        readFileSync(join(baseDir, rel, "package.json"), "utf-8"),
       ) as { name?: string; version?: string };
       if (pkg.name === "@sentropic/graphify" && pkg.version) return pkg.version;
     } catch {
