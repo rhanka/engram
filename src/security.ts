@@ -166,6 +166,65 @@ export async function validateOllamaBaseUrl(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Custom-provider base_url validation (Track F-0831-P2a, upstream e3993e4)
+// ---------------------------------------------------------------------------
+
+/**
+ * Structural safety check for a custom-provider base_url.
+ *
+ * A custom provider receives the full corpus plus the user's API key, so its
+ * base_url is an exfiltration channel. We deliberately do NOT run the ingest
+ * SSRF guard here: that blocks private/internal IPs, which would wrongly reject
+ * legitimate on-prem corporate LLM gateways. Instead we reject non-http(s)
+ * schemes outright and warn loudly when the corpus would leave over plaintext
+ * http to a non-loopback host. The primary control against trusting injected
+ * config is the GRAPHIFY_ALLOW_LOCAL_PROVIDERS gate in loadCustomProviders().
+ *
+ * Port of `graphify.llm.provider_base_url_ok` (upstream e3993e4).
+ */
+export function providerBaseUrlOk(
+  baseUrl: string,
+  name: string,
+  { warn = true }: { warn?: boolean } = {},
+): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(baseUrl);
+  } catch {
+    if (warn) {
+      console.warn(
+        `[graphify] WARNING: provider ${JSON.stringify(name)} has an unparseable base_url; ignoring.`,
+      );
+    }
+    return false;
+  }
+  if (!ALLOWED_SCHEMES.has(parsed.protocol)) {
+    if (warn) {
+      console.warn(
+        `[graphify] WARNING: provider ${JSON.stringify(name)} base_url scheme ${JSON.stringify(parsed.protocol)} is not ` +
+          "http/https; ignoring.",
+      );
+    }
+    return false;
+  }
+  const host = (parsed.hostname || "").toLowerCase();
+  const literal = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
+  const isLoopback =
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "::1" ||
+    literal === "::1" ||
+    literal.startsWith("127.");
+  if (warn && parsed.protocol === "http:" && !isLoopback) {
+    console.warn(
+      `[graphify] WARNING: provider ${JSON.stringify(name)} sends your corpus to ${JSON.stringify(host)} over plaintext ` +
+        "http. Use https unless this is a trusted local endpoint.",
+    );
+  }
+  return true;
+}
+
 /**
  * Expand an IPv6 string to its canonical 8-group form so prefix checks can
  * inspect the high bits without parsing every shorthand.
