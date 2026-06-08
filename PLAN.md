@@ -344,6 +344,17 @@ M0..M5 lots all landed. `.astro` extractor (`6a7de56`), watch `.rebuild.lock` (`
 
 **Already-covered / non-target at this bilan:** Java `extends`→`inherits` (already canonicalized, `src/extract.ts:1541+`); upstream `v1.0.0` git-commit-hook (our `hook-rebuild`); Windows `cp1252` / `str.parent` crashes (`461e346`, Python-runtime specific, `n-a`). **Needs-audit:** watch shrink-guard bypass (`6fba4e4`) — we have no shrink-guard; verify the `.rebuild.lock` + deletion-aware path is equivalent before deciding port vs `n-a`. **Release-only:** `v0.8.17`/`v0.8.18` bumps, Ukrainian README (`#995` + typo).
 
+## Lot F-0831 drift (2026-06-08)
+
+**Source lock:** `upstream/v8` at `fff1c98` **as last fetched locally** (no re-fetch at cadrage; 4 commits past tag `v0.8.31` `7a588fb`); window `3efae38` (`v0.8.18` bilan close) → `fff1c98` = **104 commits**, tags `v0.8.19`..`v0.8.31`. Local TS baseline: `main` at `23ad57f` (`@sentropic/graphify@0.10.0`). Companion bilan: `spec/SPEC_TRACK_F_0831_BILAN.md` (per-commit classification: 4 P, 25 M — 2 conditional `#996`, 10 already-ported, 6 already-covered, 1 to-verify, 10 defer, 25 n-a, 23 release-only). Early ports already merged on `main` and reconciled as already-ported, not re-lotted: F-0819-P1 (PR #87 — `#1017`/`#1061`/`#1075`/`#1077`), F-0819-P2 (PR #88 — `#1007`/`#1010`), F-0831-P1-security (PR #93 — zip-bomb cap, `OLLAMA_BASE_URL` SSRF, Fortran cpp-path), portable manifests (`6e3b173`/`8008dc6` ≈ upstream `25df580`). `UPSTREAM_GAP.md` intake/Version-Alignment updates deferred to lot execution (concurrent docs PR owns the file at cadrage time).
+
+**Sub-lots in priority order** (each one or a few cohesive PRs; details, evidence and effort in the bilan spec):
+
+- [ ] **Lot F-0819-M — .NET project files + early-port closure** (~2–2.5 d). `8bcfffd` .sln/.csproj/... extractors **with** the `ad3f3b2` XML billion-laughs guard in the same PR; `#1007`-lineage regression spot-checks (`eef623a`/`3f8efae`/`d1d5751`).
+- [ ] **Lot F-0820-0827-P+M — core window parity** (~6–9 d, 3–4 PRs; spans `v0.8.20..head` for late M rows). Determinism/IDs (`8db19d6`, `c898dc6`, `ad0c8c0`, `baaab5f`), communities (`9abaa77`, `f5f3a1c`, `c8b329d`), extractors/correctness (`2c01a89`, `c066511`, `88a8e3b`, `ec3cb5e`, `9f73400`, builtin god-node filter), platforms/hooks/LLM (`9985940`+`9a298c5`, `e35b0ac`, `5cc7ec8`, `f0badd9`, `379d35e`, `006e159`, `a9d6be6`, `75c4de7`). Semantic-contexts `32aa053`/`0080fbd` **conditional on the `#996` decision** (F-0818-Opt still open).
+- [ ] **Lot F-0831-P2 — security residuals not covered by PR #93** (~1.5–2 d). `e3993e4` provider `base_url` validation (paired with the `a9d6be6` registry), `0fdfded` hook exec-quoting audit, `80301a0` OpenCode path + `.svh`, `25df580` cache `source_file` residual.
+- [ ] **DECISION user — release vehicle**: patch `0.10.1` (security-only, ships the merged-unreleased PRs #87/#88/#93 now) vs minor `0.11.0` (full window closure). Default in the bilan: `0.10.1` early, `0.11.0` at closure.
+
 ## Lot F-0816 drift (2026-05-23)
 
 **Source lock:** `upstream/v8` at `990ac706d823bf92275333433fde4ef4782a9139` (`bump version to 0.8.16`); new tags `v0.8.14` (`f4da176`) and `v0.8.16` (`990ac70`) since previous bilan baseline `v0.8.13` (`4c95d02`); `v0.8.15` was **skipped upstream** (commit landed, no remote tag). Local TS baseline: `main` at `751ddce` (`graphifyy@0.9.1`). Drift range `v0.8.13..upstream/v8` = **18 commits**. Companion bilan: `spec/SPEC_TRACK_F_0816_BILAN.md`. Companion intake: `UPSTREAM_GAP.md > Active 0.8.16 Drift Intake`.
