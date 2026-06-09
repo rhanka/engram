@@ -8,6 +8,24 @@ import {
   interpolateMergePositions,
 } from "../lib/graphRendererPayload.js";
 
+// --- helpers for connected-dim tests ---
+function makeTriangleScene() {
+  return {
+    nodes: [
+      { id: "a", label: "Alpha", x: 0, y: 0, weight: 1, group: "G1" },
+      { id: "b", label: "Beta", x: 100, y: 0, weight: 1, group: "G1" },
+      { id: "c", label: "Gamma", x: 50, y: 80, weight: 1, group: "G2" },
+      { id: "d", label: "Delta", x: -50, y: 80, weight: 1, group: "G2" },
+    ],
+    edges: [
+      { source: "a", target: "b", relation: "links" },
+      { source: "a", target: "c", relation: "links" },
+      { source: "b", target: "d", relation: "links" },
+    ],
+    stats: { nodeCount: 4, edgeCount: 3, communityCount: 2 },
+  };
+}
+
 describe("graphRendererPayload", () => {
   it("maps a studio scene into @sentropic/graph buffers with selection styling", () => {
     const payload = buildGraphRendererPayload(
@@ -86,6 +104,73 @@ describe("graphRendererPayload", () => {
 
     expect([...positions]).toEqual([50, 20, 100, 40, -20, 10]);
     expect([...payload.renderGraph.positions]).toEqual([0, 0, 100, 40, -20, 10]);
+  });
+
+  // --- connected-dim: hoveredNodeId ---
+  it("dims non-neighbour nodes and their edges when hoveredNodeId is set", () => {
+    const scene = makeTriangleScene();
+    // Hover on "a": neighbours are b and c. d is NOT a neighbour.
+    const payload = buildGraphRendererPayload(scene, { hoveredNodeId: "a", nodeRadius: 3 });
+
+    const nodeIndexById = payload.nodeIndexById;
+    const iA = nodeIndexById.get("a");
+    const iB = nodeIndexById.get("b");
+    const iC = nodeIndexById.get("c");
+    const iD = nodeIndexById.get("d");
+
+    // focused node (a) and its direct neighbours (b, c) stay fully opaque
+    expect(payload.style.nodeColors[iA * 4 + 3]).toBe(255);
+    expect(payload.style.nodeColors[iB * 4 + 3]).toBe(255);
+    expect(payload.style.nodeColors[iC * 4 + 3]).toBe(255);
+
+    // d is NOT a neighbour → dimmed to ≤ 90 (255 * 0.35 ≈ 89)
+    expect(payload.style.nodeColors[iD * 4 + 3]).toBeLessThanOrEqual(90);
+  });
+
+  it("dims non-incident edges when hoveredNodeId is set", () => {
+    const scene = makeTriangleScene();
+    // a → b (index 0), a → c (index 1), b → d (index 2)
+    // Hover "a": edges 0 and 1 are incident → full alpha; edge 2 is not → dimmed
+    const payload = buildGraphRendererPayload(scene, { hoveredNodeId: "a", nodeRadius: 3 });
+    const graph = payload.renderGraph;
+    const iA = payload.nodeIndexById.get("a");
+    const edgeCount = graph.edges.length / 2;
+
+    for (let e = 0; e < edgeCount; e++) {
+      const src = graph.edges[e * 2];
+      const tgt = graph.edges[e * 2 + 1];
+      const isIncident = src === iA || tgt === iA;
+      const alpha = payload.style.edgeColors[e * 4 + 3];
+      if (isIncident) {
+        expect(alpha).toBe(255);
+      } else {
+        expect(alpha).toBeLessThanOrEqual(90);
+      }
+    }
+  });
+
+  it("dims non-neighbour nodes when a node is selected (selectedIds)", () => {
+    const scene = makeTriangleScene();
+    // Select "b": neighbours are a and d. c is NOT a direct neighbour of b.
+    const payload = buildGraphRendererPayload(scene, { selectedIds: ["b"], nodeRadius: 3 });
+    const iA = payload.nodeIndexById.get("a");
+    const iB = payload.nodeIndexById.get("b");
+    const iC = payload.nodeIndexById.get("c");
+    const iD = payload.nodeIndexById.get("d");
+
+    expect(payload.style.nodeColors[iA * 4 + 3]).toBe(255); // neighbour of b
+    expect(payload.style.nodeColors[iB * 4 + 3]).toBe(255); // selected itself
+    expect(payload.style.nodeColors[iD * 4 + 3]).toBe(255); // neighbour of b
+    expect(payload.style.nodeColors[iC * 4 + 3]).toBeLessThanOrEqual(90); // not a neighbour
+  });
+
+  it("does NOT dim anything when neither selectedIds nor hoveredNodeId are provided", () => {
+    const scene = makeTriangleScene();
+    const payload = buildGraphRendererPayload(scene, { nodeRadius: 3 });
+    const nodeCount = payload.renderGraph.nodeIds.length;
+    for (let i = 0; i < nodeCount; i++) {
+      expect(payload.style.nodeColors[i * 4 + 3]).toBe(255);
+    }
   });
 
   it("fades the merging source node and its incident edges during merge", () => {
