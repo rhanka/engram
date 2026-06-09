@@ -433,34 +433,39 @@ function resolveJsImportTarget(raw: string, importerPath: string): string | null
 }
 
 function remapFileNodeIds(nodes: GraphNode[], edges: GraphEdge[], paths: string[], root: string): void {
+  // Port of upstream safishamsi c898dc6 (#1033): file-level node IDs must match
+  // the skill.md spec — ``{parent_dir}_{stem}``, no extension suffix. Using the
+  // full relative path (e.g. "auth/session_py") breaks cross-extractor
+  // resolution because semantic subagents generate the stem-only form.
+  // canonicalId = _makeId(qualifiedFileStem) is the spec-compliant target.
   const byPath = new Map<string, {
     legacyId: string;
     qualifiedLegacyId: string;
     absoluteId: string;
-    portableId: string;
+    canonicalId: string;
     label: string;
   }>();
-  const absoluteToPortable = new Map<string, string>();
+  const absoluteToCanonical = new Map<string, string>();
 
   for (const filePath of paths) {
     const resolvedPath = resolve(filePath);
-    const portableId = _makeId(projectRelativeFilePath(resolvedPath, root));
+    const canonicalId = _makeId(qualifiedFileStem(resolvedPath, root));
     const absoluteId = _makeId(toPortablePath(resolvedPath));
     byPath.set(resolvedPath, {
       legacyId: _makeId(basename(resolvedPath, extname(resolvedPath))),
-      qualifiedLegacyId: _makeId(qualifiedFileStem(resolvedPath, root)),
+      qualifiedLegacyId: canonicalId, // kept for back-compat reference
       absoluteId,
-      portableId,
+      canonicalId,
       label: basename(resolvedPath),
     });
-    absoluteToPortable.set(absoluteId, portableId);
+    absoluteToCanonical.set(absoluteId, canonicalId);
   }
 
   for (const node of nodes) {
     const info = byPath.get(resolve(node.source_file ?? ""));
     if (!info || node.label !== info.label) continue;
     if (node.id === info.legacyId || node.id === info.qualifiedLegacyId || node.id === info.absoluteId) {
-      node.id = info.portableId;
+      node.id = info.canonicalId;
     }
   }
 
@@ -472,15 +477,15 @@ function remapFileNodeIds(nodes: GraphNode[], edges: GraphEdge[], paths: string[
         edge.source === sourceInfo.qualifiedLegacyId ||
         edge.source === sourceInfo.absoluteId)
     ) {
-      edge.source = sourceInfo.portableId;
+      edge.source = sourceInfo.canonicalId;
     }
 
-    const remappedSource = absoluteToPortable.get(edge.source);
+    const remappedSource = absoluteToCanonical.get(edge.source);
     if (remappedSource) {
       edge.source = remappedSource;
     }
 
-    const remappedTarget = absoluteToPortable.get(edge.target);
+    const remappedTarget = absoluteToCanonical.get(edge.target);
     if (remappedTarget) {
       edge.target = remappedTarget;
     } else if (
@@ -492,7 +497,7 @@ function remapFileNodeIds(nodes: GraphNode[], edges: GraphEdge[], paths: string[
         edge.target === sourceInfo.absoluteId
       )
     ) {
-      edge.target = sourceInfo.portableId;
+      edge.target = sourceInfo.canonicalId;
     }
   }
 }
