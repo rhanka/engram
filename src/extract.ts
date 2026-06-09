@@ -1795,6 +1795,84 @@ async function _extractGeneric(
         }
       }
 
+      // TypeScript / JavaScript: emit inherits/implements edges from heritage
+      // clauses.  Two cases (port of upstream 88a8e3b #1095):
+      //
+      //  1. class_heritage / extends_clause — `class Foo extends Bar` and
+      //     `class Foo implements IBar`.  Iterated over the heritage node's
+      //     children looking for extends_clause and implements_clause.
+      //
+      //  2. extends_type_clause — `interface IFoo extends IBar, IBaz`.
+      //     This node is NOT inside class_heritage; it's a sibling of the
+      //     interface body.  Without this branch interface inheritance is
+      //     silently dropped (#1095).
+      //
+      // Resolution: same-file symbols resolve via `labelToNid` (which covers
+      // both same-file and cross-file); cross-file resolution happens in the
+      // post-extract pass.  Emitting a stub node for unknown bases mirrors
+      // the Python/Java approach so downstream analysis can see the edge even
+      // when the base type lives in an unindexed package.
+      if (config.tsModule === "tree_sitter_typescript" ||
+          config.tsModule === "tree_sitter_javascript") {
+        const emitHeritage = (baseName: string, relation: string, lineNum: number): void => {
+          if (!baseName || LANGUAGE_BUILTIN_GLOBALS.has(baseName)) return;
+          // Try same-file stem-qualified id first (the base class is likely in
+          // the same file).  If not found, emit a stub with an empty source_file
+          // so the cross-file post-extract pass and buildFromJson can resolve it.
+          // Note: labelToNid is built AFTER walk() so we resolve against seenIds
+          // directly here (port of upstream 88a8e3b #1095).
+          let baseNid = _makeId(stem, baseName);
+          if (!seenIds.has(baseNid)) {
+            // Try bare global id (class declared with a different stem or in
+            // another file already walked).
+            const globalId = _makeId(baseName);
+            if (seenIds.has(globalId)) {
+              baseNid = globalId;
+            } else {
+              // Emit a stub so the edge target exists; buildFromJson deduplicates
+              // stubs with their authoritative node once cross-file merging runs.
+              nodes.push({
+                id: baseNid, label: baseName, file_type: "code",
+                source_file: "", source_location: "",
+              });
+              seenIds.add(baseNid);
+            }
+          }
+          addEdge(classNid, baseNid, relation, lineNum);
+        };
+
+        // Walk node children for class_heritage / extends_type_clause.
+        for (const child of node.children) {
+          if (child.type === "class_heritage") {
+            // class Foo extends Bar implements IFoo
+            for (const hChild of child.children) {
+              if (hChild.type === "extends_clause") {
+                // `extends X` — single base class
+                for (const sub of hChild.children) {
+                  if (sub.type === "type_identifier" || sub.type === "identifier") {
+                    emitHeritage(_readText(sub, source), "inherits", child.startPosition.row + 1);
+                  }
+                }
+              } else if (hChild.type === "implements_clause") {
+                // `implements X, Y, Z`
+                for (const sub of hChild.children) {
+                  if (sub.type === "type_identifier" || sub.type === "identifier") {
+                    emitHeritage(_readText(sub, source), "implements", child.startPosition.row + 1);
+                  }
+                }
+              }
+            }
+          } else if (child.type === "extends_type_clause") {
+            // interface IFoo extends IBar, IBaz  (interface heritage, NOT class_heritage)
+            for (const sub of child.children) {
+              if (sub.type === "type_identifier" || sub.type === "identifier") {
+                emitHeritage(_readText(sub, source), "inherits", child.startPosition.row + 1);
+              }
+            }
+          }
+        }
+      }
+
       // Find body and recurse
       const body = _findBody(node, config);
       if (body) {
