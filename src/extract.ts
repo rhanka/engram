@@ -1884,6 +1884,20 @@ async function _extractGeneric(
       }
     }
 
+    // Python: decorated_definition is a transparent wrapper around a
+    // function_definition (@property / @staticmethod / @classmethod).
+    // The default recurse below would pass null as parentClassNid, causing the
+    // inner function_definition to be emitted with a class-unqualified node id
+    // (e.g. `file_baz` instead of `file_bar_baz`).  Treat decorated_definition
+    // as transparent so the parentClassNid propagates to the real function node
+    // (port of upstream 9f73400 #1050).
+    if (config.tsModule === "tree_sitter_python" && t === "decorated_definition") {
+      for (const child of node.children) {
+        walk(child, parentClassNid);
+      }
+      return;
+    }
+
     // Default: recurse
     for (const child of node.children) {
       walk(child, null);
