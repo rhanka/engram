@@ -187,13 +187,15 @@ class PaymentService extends BaseService implements Billable {}
       .filter((node) => node.label.endsWith(".ts"))
       .map((node) => node.id)
       .sort();
+    // F-0820-0827 M18: file node IDs are now {parent_dir}_{stem} — no extension
+    // (c898dc6 #1033): "src_index_ts" → "src_index", "src_utils_ts" → "src_utils"
     const importEdge = result.edges.find(
-      (edge) => edge.source === "src_index_ts" && edge.relation === "imports_from",
+      (edge) => edge.source === "src_index" && edge.relation === "imports_from",
     );
 
-    expect(fileNodes).toEqual(["src_index_ts", "src_utils_ts", "tests_index_ts"]);
+    expect(fileNodes).toEqual(["src_index", "src_utils", "tests_index"]);
     expect(new Set(fileNodes).size).toBe(3);
-    expect(importEdge?.target).toBe("src_utils_ts");
+    expect(importEdge?.target).toBe("src_utils");
   });
 
   it("resolves tsconfig path aliases before treating JS imports as external", async () => {
@@ -234,11 +236,12 @@ class PaymentService extends BaseService implements Billable {}
       join(dir, "src", "utils.ts"),
     ]);
 
+    // F-0820-0827 M18: IDs are now stem-only (no extension suffix)
     const importEdge = result.edges.find(
-      (edge) => edge.source === "entry_ts" && edge.relation === "imports_from",
+      (edge) => edge.source === "entry" && edge.relation === "imports_from",
     );
 
-    expect(importEdge?.target).toBe("utils_ts");
+    expect(importEdge?.target).toBe("utils");
   });
 
   it("parses JSONC tsconfig aliases with comments and trailing commas", async () => {
@@ -283,11 +286,12 @@ class PaymentService extends BaseService implements Billable {}
       join(dir, "src", "utils.ts"),
     ]);
 
+    // F-0820-0827 M18: IDs are now stem-only (no extension suffix)
     const importEdge = result.edges.find(
-      (edge) => edge.source === "entry_ts" && edge.relation === "imports_from",
+      (edge) => edge.source === "entry" && edge.relation === "imports_from",
     );
 
-    expect(importEdge?.target).toBe("utils_ts");
+    expect(importEdge?.target).toBe("utils");
   });
 
   it("resolves tsconfig path aliases through an extends chain", async () => {
@@ -342,11 +346,12 @@ class PaymentService extends BaseService implements Billable {}
       join(dir, "src", "lib", "helper.ts"),
     ]);
 
+    // F-0820-0827 M18: IDs are now stem-only (no extension suffix)
     const importEdge = result.edges.find(
-      (edge) => edge.source === "entry_ts" && edge.relation === "imports_from",
+      (edge) => edge.source === "entry" && edge.relation === "imports_from",
     );
 
-    expect(importEdge?.target).toBe("lib_helper_ts");
+    expect(importEdge?.target).toBe("lib_helper");
   });
 
   it("resolves tsconfig path aliases through an array extends (TS 5.0, F-0819-P1 #1017)", async () => {
@@ -382,10 +387,11 @@ class PaymentService extends BaseService implements Billable {}
       join(dir, "src", "lib", "helper.ts"),
     ]);
 
+    // F-0820-0827 M18: IDs are now stem-only (no extension suffix)
     const importEdge = result.edges.find(
-      (edge) => edge.source === "entry_ts" && edge.relation === "imports_from",
+      (edge) => edge.source === "entry" && edge.relation === "imports_from",
     );
-    expect(importEdge?.target).toBe("lib_helper_ts");
+    expect(importEdge?.target).toBe("lib_helper");
   });
 
   it("resolves local dynamic imports as imports_from edges", async () => {
@@ -414,11 +420,12 @@ class PaymentService extends BaseService implements Billable {}
       join(dir, "src", "utils.ts"),
     ]);
 
+    // F-0820-0827 M18: IDs are now stem-only (no extension suffix)
     const importEdge = result.edges.find(
-      (edge) => edge.source === "entry_ts" && edge.relation === "imports_from",
+      (edge) => edge.source === "entry" && edge.relation === "imports_from",
     );
 
-    expect(importEdge?.target).toBe("utils_ts");
+    expect(importEdge?.target).toBe("utils");
   });
 
   it("resolves aliased Svelte dynamic imports via tsconfig paths", async () => {

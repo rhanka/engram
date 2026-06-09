@@ -3353,14 +3353,34 @@ export async function main(): Promise<void> {
       // from blowing up with ENOENT before any side-effect.
       mkdirSync(paths.stateDir, { recursive: true });
 
-      const G = makeGraphPortable(loadGraphFromData(JSON.parse(readFileSync(paths.graph, "utf-8"))), root);
-      const { cluster, scoreAll } = await import("./cluster.js");
+      const rawGraphText = readFileSync(paths.graph, "utf-8");
+      const rawGraphParsed = JSON.parse(rawGraphText) as {
+        nodes?: Array<Record<string, unknown>>;
+      };
+      const G = makeGraphPortable(loadGraphFromData(JSON.parse(rawGraphText)), root);
+      const { cluster, scoreAll, remapCommunitiesToPrevious } = await import("./cluster.js");
       const { godNodes, surprisingConnections, suggestQuestions } = await import("./analyze.js");
       const { generate } = await import("./report.js");
       const { toJson } = await import("./export.js");
       const { safeToHtml } = await import("./html-export.js");
 
-      const communities = cluster(G);
+      let communities = cluster(G);
+      // Mirror the watch/update path (upstream #822): map new cids to prior ones
+      // by node-overlap so the existing .graphify_labels.json keeps attaching to
+      // the same conceptual community after re-clustering. Without this, labels
+      // follow raw cid index and become misaligned whenever the graph has changed
+      // between labeling and cluster-only (#1027, port of 9abaa77).
+      const previousNodeCommunity: Record<string, number> = {};
+      for (const n of (rawGraphParsed.nodes ?? [])) {
+        const nodeId = typeof n["id"] === "string" ? n["id"] : undefined;
+        const nodeCommunity = typeof n["community"] === "number" ? n["community"] : undefined;
+        if (nodeId !== undefined && nodeCommunity !== undefined) {
+          previousNodeCommunity[nodeId] = nodeCommunity;
+        }
+      }
+      if (Object.keys(previousNodeCommunity).length > 0) {
+        communities = remapCommunitiesToPrevious(communities, previousNodeCommunity);
+      }
       const cohesion = scoreAll(G, communities);
       const gods = godNodes(G);
       const surprises = surprisingConnections(G, communities);
