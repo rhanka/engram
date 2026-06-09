@@ -74,9 +74,12 @@ function edgeWidth(edge) {
   return 1;
 }
 
+const DIM_ALPHA = Math.round(255 * 0.35); // 89
+
 export function buildGraphRendererPayload(scene, options = {}) {
   const selectedIds = new Set(options.selectedIds ?? []);
   const focusId = options.focusId ?? null;
+  const hoveredNodeId = options.hoveredNodeId ?? null;
   const nodeRadius = options.nodeRadius ?? 3;
   const sceneNodes = scene?.nodes ?? [];
   const sceneEdges = scene?.edges ?? [];
@@ -88,6 +91,7 @@ export function buildGraphRendererPayload(scene, options = {}) {
     return {
       id: node.id,
       label: node.label ?? node.id,
+      node_type: node.node_type ?? node.type ?? null,
       x: position.x,
       y: position.y,
       fixed: position.fixed,
@@ -118,6 +122,43 @@ export function buildGraphRendererPayload(scene, options = {}) {
   });
   const nodeIndexById = new Map(nodes.map((node, index) => [node.id, index]));
   const renderedEdges = Array.from(renderGraph.edgeInputIndices ?? [], (inputIndex) => edges[inputIndex]);
+
+  // Connected-dim: when a node is selected or hovered, dim non-neighbours
+  const activeFocusIds = new Set([...selectedIds, focusId, hoveredNodeId].filter(Boolean));
+  if (activeFocusIds.size > 0) {
+    // Build neighbour set: all nodes directly connected to any active focus node
+    const neighbourSet = new Set(activeFocusIds);
+    const edgeCount = renderGraph.edges.length / 2;
+    for (let e = 0; e < edgeCount; e++) {
+      const srcIdx = renderGraph.edges[e * 2];
+      const tgtIdx = renderGraph.edges[e * 2 + 1];
+      const srcId = renderGraph.nodeIds[srcIdx];
+      const tgtId = renderGraph.nodeIds[tgtIdx];
+      if (activeFocusIds.has(srcId)) neighbourSet.add(tgtId);
+      if (activeFocusIds.has(tgtId)) neighbourSet.add(srcId);
+    }
+
+    // Dim node alphas for non-neighbours
+    const nodeCount = renderGraph.nodeIds.length;
+    for (let i = 0; i < nodeCount; i++) {
+      const id = renderGraph.nodeIds[i];
+      if (!neighbourSet.has(id)) {
+        style.nodeColors[i * 4 + 3] = DIM_ALPHA;
+      }
+    }
+
+    // Dim edge alphas for non-incident edges
+    for (let e = 0; e < edgeCount; e++) {
+      const srcIdx = renderGraph.edges[e * 2];
+      const tgtIdx = renderGraph.edges[e * 2 + 1];
+      const srcId = renderGraph.nodeIds[srcIdx];
+      const tgtId = renderGraph.nodeIds[tgtIdx];
+      const isIncident = activeFocusIds.has(srcId) || activeFocusIds.has(tgtId);
+      if (!isIncident) {
+        style.edgeColors[e * 4 + 3] = DIM_ALPHA;
+      }
+    }
+  }
 
   return {
     renderGraph,
