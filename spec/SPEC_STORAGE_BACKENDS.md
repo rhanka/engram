@@ -298,7 +298,7 @@ Small PRs, one concern each:
 4. **PR4 — config.** `storage:` YAML block, env resolution, secret-in-YAML validation error, `store-state.json` plus `LOCAL_LIFECYCLE_FILES` entry.
 5. **PR5 — CLI.** `graphify store push|status|clear` (+ capability-gated `query`), `--push-store`. **The CLI and config surface freezes here.**
 6. **PR6 — build integration.** Post-build push wiring, `autoPush` honoring, staleness reporting in build output.
-7. **PR7 — Spanner export.** `graphify export spanner` DDL/DML artifacts, file-only.
+7. **PR7 — Spanner export.** `graphify export spanner` DDL/DML artifacts, file-only. **[DELIVERED]** — `toSpanner()` in `src/export.ts`, CLI `export spanner` in `src/cli.ts`, public export from `src/index.ts`, tests in `tests/export-spanner.test.ts`.
 8. **PR8 — Spanner live adapter.** Decision taken post-PR7 after emulator validation; not committed in advance.
 
 ## Open Decisions (Pending User Ack)
@@ -309,4 +309,4 @@ Five points are PROPOSED, not frozen. The freeze happens at PR5 only; until then
 2. **Mirror positioning.** PROPOSED: push-only mirrors in v1, `store pull` reserved and unpromised for v2. Alternative: commit to a pull surface now. Default rationale: pull contradicts the patch-and-rebuild mutation rule (`SPEC_GRAPHIFY.md:111`) and would need its own reconciliation spec.
 3. **Config schema and secret policy.** PROPOSED: `storage.mirrors[]` YAML block with env-only secrets and a validation error on YAML credentials. Alternative: allow `env:NAME` indirection inside the block, as `llm_execution` does. Default rationale: start stricter; relaxing later is compatible, tightening later is not.
 4. **CI for live Neo4j.** PROPOSED: live Neo4j suites are manual-only (developer-run with `GRAPHIFY_TEST_NEO4J_URI`). Alternative: a GitHub Actions service container running Neo4j on a nightly or labeled workflow. Default rationale: keep CI hermetic until the adapter stabilizes.
-5. **Spanner v1 scope.** PROPOSED: v1 ships `graphify export spanner` artifacts only; the live adapter is a post-PR7 decision. Alternative: build the live adapter immediately behind the emulator. Default rationale: artifact export delivers user value with zero driver/credential surface and validates the schema design first.
+5. **Spanner v1 scope.** DECIDED (PR7): v1 ships `graphify export spanner` artifacts only (DDL + DML files, no driver). Live adapter remains a post-PR7 decision (PR8).
