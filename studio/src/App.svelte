@@ -144,14 +144,22 @@
           size="sm"
           variant={viewerState.activeView === "workspace" ? "primary" : "secondary"}
           aria-pressed={viewerState.activeView === "workspace"}
-          onclick={() => handleSetView("workspace")}>Workspace</Button
+          aria-label="Workspace view"
+          onclick={() => handleSetView("workspace")}
         >
+          <span class="view-label view-label--full">Workspace</span>
+          <span class="view-label view-label--compact" aria-hidden="true">Work</span>
+        </Button>
         <Button
           size="sm"
           variant={viewerState.activeView === "reconciliation" ? "primary" : "secondary"}
           aria-pressed={viewerState.activeView === "reconciliation"}
-          onclick={() => handleSetView("reconciliation")}>Reconciliation</Button
+          aria-label="Reconciliation view"
+          onclick={() => handleSetView("reconciliation")}
         >
+          <span class="view-label view-label--full">Reconciliation</span>
+          <span class="view-label view-label--compact" aria-hidden="true">Recon</span>
+        </Button>
       </ButtonGroup>
     {/snippet}
     {#snippet actions()}
@@ -231,19 +239,11 @@
     min-height: 0;
   }
   /* DS Header owns surface/layout/sticky; local CSS only sizes slot content. */
-  :global(.st-header.app-header),
-  :global(.app-header .st-header__leading),
-  :global(.app-header .st-header__navigation),
-  :global(.app-header .st-header__actions) {
-    min-width: 0;
-  }
-  :global(.app-header .st-header__title) {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
   :global(.app-view-switcher) {
     white-space: nowrap;
+  }
+  .view-label--compact {
+    display: none;
   }
   .app-stats {
     display: inline-flex;
@@ -292,34 +292,17 @@
   }
 
   @media (max-width: 720px) {
-    :global(.st-header.app-header) {
-      flex-wrap: wrap;
-      height: auto;
-      min-height: 4.75rem;
-      row-gap: var(--st-spacing-1, 0.25rem);
-    }
-    :global(.app-header .st-header__leading) {
-      flex: 1 1 8rem;
-    }
-    :global(.app-header .st-header__navigation) {
-      flex: 0 1 auto;
-    }
-    :global(.app-header .st-header__actions) {
-      flex: 1 0 100%;
-      justify-content: flex-start;
-    }
     .app-stats {
-      flex-wrap: wrap;
-      white-space: normal;
+      display: none;
     }
   }
 
   @media (max-width: 460px) {
-    :global(.app-header .st-header__leading) {
-      flex-basis: 7rem;
+    .view-label--full {
+      display: none;
     }
-    :global(.app-view-switcher .st-button) {
-      padding-inline: var(--st-spacing-2, 0.5rem);
+    .view-label--compact {
+      display: inline;
     }
   }
 </style>
