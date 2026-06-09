@@ -232,11 +232,19 @@ export function cluster(G: Graph, options: ClusterOptions = {}): Map<number, str
     }
   }
 
-  // Re-index by size descending for deterministic ordering
+  // Re-index by size descending. The sorted-nodes tiebreak makes this a TOTAL
+  // order so an identical grouping always gets identical community IDs across
+  // runs, regardless of the partitioner's enumeration order (#1090, f5f3a1c).
+  // Without sorting the node list before joining, equal-sized communities would
+  // be ordered by the (non-seed-stable) order nodes appear in the partition map,
+  // producing massive "community churn" in per-node cid diffs even when the
+  // actual grouping is reproducible.
   secondPass.sort((a, b) => {
     const bySize = b.length - a.length;
     if (bySize !== 0) return bySize;
-    return a.join("\0").localeCompare(b.join("\0"));
+    const aKey = [...a].sort().join("\0");
+    const bKey = [...b].sort().join("\0");
+    return aKey.localeCompare(bKey);
   });
   const result = new Map<number, string[]>();
   secondPass.forEach((nodes, i) => {
