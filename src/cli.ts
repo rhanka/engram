@@ -3353,10 +3353,11 @@ export async function main(): Promise<void> {
       // from blowing up with ENOENT before any side-effect.
       mkdirSync(paths.stateDir, { recursive: true });
 
-      const rawGraphData = JSON.parse(readFileSync(paths.graph, "utf-8")) as {
-        nodes?: Array<{ id?: string; community?: number }>;
+      const rawGraphText = readFileSync(paths.graph, "utf-8");
+      const rawGraphParsed = JSON.parse(rawGraphText) as {
+        nodes?: Array<Record<string, unknown>>;
       };
-      const G = makeGraphPortable(loadGraphFromData(rawGraphData), root);
+      const G = makeGraphPortable(loadGraphFromData(JSON.parse(rawGraphText)), root);
       const { cluster, scoreAll, remapCommunitiesToPrevious } = await import("./cluster.js");
       const { godNodes, surprisingConnections, suggestQuestions } = await import("./analyze.js");
       const { generate } = await import("./report.js");
@@ -3370,9 +3371,11 @@ export async function main(): Promise<void> {
       // follow raw cid index and become misaligned whenever the graph has changed
       // between labeling and cluster-only (#1027, port of 9abaa77).
       const previousNodeCommunity: Record<string, number> = {};
-      for (const n of (rawGraphData.nodes ?? [])) {
-        if (n.id !== undefined && n.community !== undefined) {
-          previousNodeCommunity[n.id] = n.community;
+      for (const n of (rawGraphParsed.nodes ?? [])) {
+        const nodeId = typeof n["id"] === "string" ? n["id"] : undefined;
+        const nodeCommunity = typeof n["community"] === "number" ? n["community"] : undefined;
+        if (nodeId !== undefined && nodeCommunity !== undefined) {
+          previousNodeCommunity[nodeId] = nodeCommunity;
         }
       }
       if (Object.keys(previousNodeCommunity).length > 0) {
