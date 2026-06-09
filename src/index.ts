@@ -257,7 +257,7 @@ export type { MergeGraphsOptions, MergeGraphsResult } from "./merge-graphs.js";
 export { cluster, cohesionScore, scoreAll } from "./cluster.js";
 export { godNodes, surprisingConnections, suggestQuestions, graphDiff } from "./analyze.js";
 export { generate as generateReport } from "./report.js";
-export { toJson, toHtml, toSvg, toGraphml, toCypher, toCanvas, pushToNeo4j, backupIfProtected } from "./export.js";
+export { toJson, toHtml, toSvg, toGraphml, toCypher, toCanvas, toSpanner, pushToNeo4j, backupIfProtected } from "./export.js";
 export { toWiki } from "./wiki.js";
 export { WIKI_DESCRIPTION_PROMPT_VERSION, WIKI_DESCRIPTION_SCHEMA, buildWikiDescriptionCacheKey, checkWikiDescriptionFreshness, createInsufficientEvidenceRecord, selectFreshWikiDescriptions, validateWikiDescriptionSidecar } from "./wiki-descriptions.js";
 export type { CreateInsufficientEvidenceRecordInput, WikiCommunityDescriptionSidecar, WikiDescriptionCacheKeyInput, WikiDescriptionEvidenceRef, WikiDescriptionExecutionMode, WikiDescriptionFreshnessInputs, WikiDescriptionFreshnessResult, WikiDescriptionGenerator, WikiDescriptionSidecar, WikiDescriptionSidecarIndex, WikiDescriptionStaleReason, WikiDescriptionStatus, WikiDescriptionTargetKind, WikiGeneratedDescriptionSidecar, WikiInsufficientEvidenceSidecar, WikiNodeDescriptionSidecar } from "./wiki-descriptions.js";
