@@ -3353,14 +3353,31 @@ export async function main(): Promise<void> {
       // from blowing up with ENOENT before any side-effect.
       mkdirSync(paths.stateDir, { recursive: true });
 
-      const G = makeGraphPortable(loadGraphFromData(JSON.parse(readFileSync(paths.graph, "utf-8"))), root);
-      const { cluster, scoreAll } = await import("./cluster.js");
+      const rawGraphData = JSON.parse(readFileSync(paths.graph, "utf-8")) as {
+        nodes?: Array<{ id?: string; community?: number }>;
+      };
+      const G = makeGraphPortable(loadGraphFromData(rawGraphData), root);
+      const { cluster, scoreAll, remapCommunitiesToPrevious } = await import("./cluster.js");
       const { godNodes, surprisingConnections, suggestQuestions } = await import("./analyze.js");
       const { generate } = await import("./report.js");
       const { toJson } = await import("./export.js");
       const { safeToHtml } = await import("./html-export.js");
 
-      const communities = cluster(G);
+      let communities = cluster(G);
+      // Mirror the watch/update path (upstream #822): map new cids to prior ones
+      // by node-overlap so the existing .graphify_labels.json keeps attaching to
+      // the same conceptual community after re-clustering. Without this, labels
+      // follow raw cid index and become misaligned whenever the graph has changed
+      // between labeling and cluster-only (#1027, port of 9abaa77).
+      const previousNodeCommunity: Record<string, number> = {};
+      for (const n of (rawGraphData.nodes ?? [])) {
+        if (n.id !== undefined && n.community !== undefined) {
+          previousNodeCommunity[n.id] = n.community;
+        }
+      }
+      if (Object.keys(previousNodeCommunity).length > 0) {
+        communities = remapCommunitiesToPrevious(communities, previousNodeCommunity);
+      }
       const cohesion = scoreAll(G, communities);
       const gods = godNodes(G);
       const surprises = surprisingConnections(G, communities);
