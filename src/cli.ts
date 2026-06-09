@@ -377,7 +377,7 @@ interface PlatformConfig {
   claude_md: boolean;
 }
 
-const PLATFORM_CONFIG: Record<string, PlatformConfig> = {
+export const PLATFORM_CONFIG: Record<string, PlatformConfig> = {
   claude: {
     skill_file: "skill.md",
     skill_dst: join(".claude", "skills", "graphify", "SKILL.md"),
@@ -450,12 +450,17 @@ const PLATFORM_CONFIG: Record<string, PlatformConfig> = {
   },
   antigravity: {
     skill_file: "skill.md",
-    skill_dst: join(".agents", "skills", "graphify", "SKILL.md"),
+    // Global Antigravity skill dir: ~/.gemini/config/skills/ (port of upstream
+    // 9985940 #1079 — was incorrectly ~/.agents/skills/ before this fix).
+    skill_dst: join(".gemini", "config", "skills", "graphify", "SKILL.md"),
+    // Project-scoped skill stays in .agents/skills/ (the per-project Antigravity dir).
+    project_skill_dst: join(".agents", "skills", "graphify", "SKILL.md"),
     claude_md: false,
   },
   "antigravity-windows": {
     skill_file: "skill-windows.md",
-    skill_dst: join(".agents", "skills", "graphify", "SKILL.md"),
+    skill_dst: join(".gemini", "config", "skills", "graphify", "SKILL.md"),
+    project_skill_dst: join(".agents", "skills", "graphify", "SKILL.md"),
     claude_md: false,
   },
   "vscode-copilot-chat": {
@@ -506,7 +511,7 @@ function resolveGlobalSkillDestination(platformName: string): string {
 
 function isGraphifyClaudeHook(hook: Record<string, unknown>): boolean {
   const matcher = typeof hook.matcher === "string" ? hook.matcher : "";
-  if (matcher !== "Glob|Grep" && matcher !== "Bash") {
+  if (matcher !== "Glob|Grep" && matcher !== "Bash" && matcher !== "Read|Glob") {
     return false;
   }
   return JSON.stringify(hook).includes("graphify");
@@ -521,6 +526,37 @@ const SETTINGS_HOOK = {
         '[ -f .graphify/graph.json ] && ' +
         "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"graphify: knowledge graph at .graphify/. For focused questions, run `graphify query \\\"<question>\\\"` (scoped subgraph, usually much smaller than GRAPH_REPORT.md) instead of grepping raw files. Read GRAPH_REPORT.md only for broad architecture context.\"}}' " +
         '|| true',
+    },
+  ],
+};
+
+// Read/Glob PreToolUse hook: nudges the agent to use the graph instead of
+// reading source files one by one to answer codebase questions (port of
+// upstream 5cc7ec8 #1114).  Fires only when .graphify/graph.json exists and
+// the target path looks like a source/doc file outside .graphify/.  Every
+// branch fails open so legitimate reads always go through.
+const READ_SETTINGS_HOOK = {
+  matcher: "Read|Glob",
+  hooks: [
+    {
+      type: "command",
+      // Uses npx graphify hook-check to stay in the graphify binary; the
+      // real check is a lightweight shell expression: capture stdin, extract
+      // file_path/pattern via node, and emit the additionalContext JSON only
+      // when a graph exists and the target is a source/doc file outside .graphify/.
+      command:
+        "HIT=$(node -e \"" +
+        "var chunks=[];process.stdin.on('data',function(c){chunks.push(c);});process.stdin.on('end',function(){" +
+        "try{" +
+        "var d=JSON.parse(Buffer.concat(chunks).toString());" +
+        "var t=d.tool_input||d;" +
+        "var s=(String(t.file_path||'')+' '+String(t.pattern||'')+String(t.path||'')).toLowerCase().replace(/\\\\\\\\\\\\\\\\/g,'/');" +
+        "var exts=['.py','.js','.ts','.tsx','.jsx','.go','.rs','.java','.rb','.c','.h','.cpp','.hpp','.cs','.kt','.swift','.php','.lua','.sh','.md','.rst','.txt','.mdx'];" +
+        "if(!s.includes('.graphify/')&&!s.includes('graphify-out/')&&exts.some(function(e){return s.includes(e);})){process.stdout.write('1');}" +
+        "}catch(e){}});\" 2>/dev/null || true); " +
+        "if [ \"$HIT\" = 1 ] && [ -f .graphify/graph.json ]; then " +
+        "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"graphify: knowledge graph at .graphify/. For codebase questions, run `graphify query \\\"<question>\\\"` (scoped subgraph) instead of reading source files one by one. Read raw files to modify specific code or debug.\"}}'; " +
+        "fi || true",
     },
   ],
 };
@@ -779,7 +815,7 @@ description: Turn any folder of files into a navigable knowledge graph
 # Workflow: graphify
 
 ## Steps
-Follow the graphify skill installed at ~/.agents/skills/graphify/SKILL.md to run the full TypeScript-backed pipeline.
+Follow the graphify skill installed at ~/.gemini/config/skills/graphify/SKILL.md to run the full TypeScript-backed pipeline.
 
 If no path argument is given, use \`.\` (current directory).
 `;
@@ -994,7 +1030,8 @@ function uninstallSkill(platformName: string): void {
 export function uninstallAll(projectDir: string = ".", options: { purge?: boolean } = {}): void {
   console.log("Uninstalling graphify from all detected platforms...");
 
-  claudeUninstall(projectDir);
+  // skipSkillTree=true: the for-loop below removes all skills including claude.
+  claudeUninstall(projectDir, { skipSkillTree: true });
   uninstallClaudeHook(projectDir);
   geminiUninstall(projectDir);
   vscodeUninstall(projectDir);
@@ -1143,11 +1180,12 @@ export function cursorUninstall(projectDir: string = "."): void {
   console.log(`graphify Cursor rule removed from ${resolve(rulePath)}`);
 }
 
-export function antigravityInstall(projectDir: string = "."): void {
-  printMutationPreview(platformInstallPreview(projectDir, "antigravity"));
-  printMutationPreview(globalSkillInstallPreview("antigravity"));
-  writeGlobalSkill("antigravity");
-
+/**
+ * Write Antigravity rules and workflow files into `projectDir/.agents/`.
+ * Extracted from antigravityInstall so the project-scoped install path can
+ * call it too (port of upstream 9a298c5 — `_antigravity_finalize`).
+ */
+function _antigravityWriteRulesWorkflows(projectDir: string): void {
   const rulePath = join(projectDir, ANTIGRAVITY_RULE_PATH);
   mkdirSync(dirname(rulePath), { recursive: true });
   if (existsSync(rulePath)) {
@@ -1177,6 +1215,13 @@ export function antigravityInstall(projectDir: string = "."): void {
     writeFileSync(workflowPath, ANTIGRAVITY_WORKFLOW, "utf-8");
     console.log(`graphify Antigravity workflow written to ${resolve(workflowPath)}`);
   }
+}
+
+export function antigravityInstall(projectDir: string = "."): void {
+  printMutationPreview(platformInstallPreview(projectDir, "antigravity"));
+  printMutationPreview(globalSkillInstallPreview("antigravity"));
+  writeGlobalSkill("antigravity");
+  _antigravityWriteRulesWorkflows(projectDir);
 
   console.log();
   console.log("Antigravity will now check the knowledge graph before answering codebase questions.");
@@ -1629,7 +1674,18 @@ export function projectInstall(platformName: string, projectDir: string = "."): 
     printProjectGitAddHint(hintPaths);
     return;
   }
-  if (["copilot", "pi", "antigravity", "kimi"].includes(canonical)) {
+  if (canonical === "antigravity") {
+    // Project-scoped Antigravity install: write project SKILL.md + rules +
+    // workflows (port of upstream 9a298c5 — project path was skill-only before).
+    const skillDst = writeProjectSkill(canonical, projectDir);
+    _antigravityWriteRulesWorkflows(projectDir);
+    printProjectGitAddHint([
+      projectScopeRoot(skillDst, projectDir),
+      join(projectDir, ".agents"),
+    ]);
+    return;
+  }
+  if (["copilot", "pi", "kimi"].includes(canonical)) {
     const skillDst = writeProjectSkill(canonical, projectDir);
     printProjectGitAddHint([projectScopeRoot(skillDst, projectDir)]);
     return;
@@ -1741,11 +1797,14 @@ export function installClaudeHook(projectDir: string): void {
   const preTool = (hooks.PreToolUse ?? []) as Array<Record<string, unknown>>;
   const filtered = preTool.filter((h) => !isGraphifyClaudeHook(h));
 
+  // Register both hooks idempotently: Bash (grep/find/rg bypass) and
+  // Read|Glob (direct file-read bypass, port of upstream 5cc7ec8 #1114).
   filtered.push(SETTINGS_HOOK);
+  filtered.push(READ_SETTINGS_HOOK);
   hooks.PreToolUse = filtered;
   settings.hooks = hooks;
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
-  console.log(`  .claude/settings.json  ->  PreToolUse hook registered`);
+  console.log(`  .claude/settings.json  ->  PreToolUse hooks registered (Bash search + Read/Glob)`);
 }
 
 function uninstallClaudeHook(projectDir: string): void {
@@ -1789,27 +1848,35 @@ function claudeInstall(projectDir: string = "."): void {
   console.log("codebase questions and rebuild it after code changes.");
 }
 
-function claudeUninstall(projectDir: string = "."): void {
+function claudeUninstall(projectDir: string = ".", { skipSkillTree = false }: { skipSkillTree?: boolean } = {}): void {
   const target = join(projectDir, "CLAUDE.md");
   if (!existsSync(target)) {
     console.log("No CLAUDE.md found in current directory - nothing to do");
-    return;
-  }
-  const content = readFileSync(target, "utf-8");
-  if (!content.includes(MD_MARKER)) {
-    console.log("graphify section not found in CLAUDE.md - nothing to do");
-    return;
-  }
-  const cleaned = content.replace(/\n*## graphify\n[\s\S]*?(?=\n## |\s*$)/, "").trim();
-  if (cleaned) {
-    writeFileSync(target, cleaned + "\n", "utf-8");
-    console.log(`graphify section removed from ${resolve(target)}`);
   } else {
-    const { unlinkSync } = require("node:fs");
-    unlinkSync(target);
-    console.log(`CLAUDE.md was empty after removal - deleted ${resolve(target)}`);
+    const content = readFileSync(target, "utf-8");
+    if (!content.includes(MD_MARKER)) {
+      console.log("graphify section not found in CLAUDE.md - nothing to do");
+    } else {
+      const cleaned = content.replace(/\n*## graphify\n[\s\S]*?(?=\n## |\s*$)/, "").trim();
+      if (cleaned) {
+        writeFileSync(target, cleaned + "\n", "utf-8");
+        console.log(`graphify section removed from ${resolve(target)}`);
+      } else {
+        const { unlinkSync } = require("node:fs");
+        unlinkSync(target);
+        console.log(`CLAUDE.md was empty after removal - deleted ${resolve(target)}`);
+      }
+    }
   }
   uninstallClaudeHook(projectDir);
+  // Remove the global skill tree (~/.claude/skills/graphify/) so the whole
+  // installed skill is cleaned up, not just the CLAUDE.md section (port of
+  // upstream e35b0ac — claude_uninstall was orphaning the skill tree before).
+  // skipSkillTree=true is used by uninstallAll which removes all skills via
+  // its own loop to avoid double-removal.
+  if (!skipSkillTree) {
+    uninstallSkill("claude");
+  }
 }
 
 export function geminiInstall(projectDir: string = "."): void {
