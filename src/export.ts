@@ -657,8 +657,11 @@ export function toSpanner(G: Graph, outputDir: string): void {
     "  relation STRING(MAX) NOT NULL,",
     "  confidence STRING(MAX),",
     "  props JSON",
-    ") PRIMARY KEY (source_id, target_id, relation),",
-    "  INTERLEAVE IN PARENT graphify_nodes ON DELETE CASCADE;",
+    // Standalone table — NOT interleaved: Spanner requires an interleaved
+    // child's PK to be prefixed by the parent's PK columns by name, but the
+    // edge PK starts with source_id (parent PK is id). The property-graph
+    // SOURCE/DESTINATION KEY references below establish the relationships.
+    ") PRIMARY KEY (source_id, target_id, relation);",
     "",
     "-- Property Graph projection",
     "CREATE PROPERTY GRAPH graphify",
