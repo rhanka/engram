@@ -3690,6 +3690,27 @@ export async function main(): Promise<void> {
       }
     });
 
+  exportCommand
+    .command("spanner")
+    .description("Export graph as Google Cloud Spanner DDL/DML property-graph artifacts (file-only, no driver required)")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--dir <path>", "Directory to write spanner.ddl.sql and spanner.dml.sql")
+    .action(async (opts) => {
+      try {
+        const graphPath = resolveGraphInputPath(opts.graph);
+        const outDir = resolve(opts.dir ?? join(dirname(graphPath), "spanner"));
+        const G = loadCliGraph(graphPath);
+        const { toSpanner } = await import("./export.js");
+        toSpanner(G, outDir);
+        console.log(`Spanner artifacts written to ${outDir}`);
+        console.log(`  DDL: ${join(outDir, "spanner.ddl.sql")}`);
+        console.log(`  DML: ${join(outDir, "spanner.dml.sql")}`);
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    });
+
   program
     .command("path")
     .description("Shortest path between two graph nodes")
