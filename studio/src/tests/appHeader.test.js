@@ -22,4 +22,13 @@ describe("App header DS structure", () => {
     expect(appSource).toContain("<Badge tone=\"neutral\">{scene.stats.edgeCount} edges</Badge>");
     expect(appSource).toContain("<Badge tone=\"info\">{scene.stats.communityCount} groups</Badge>");
   });
+
+  it("keeps responsive header behavior on local slot content instead of DS internals", () => {
+    expect(appSource).not.toMatch(/st-header__/);
+    expect(appSource).not.toMatch(/\.st-header\.app-header/);
+    expect(appSource).not.toMatch(/\.app-view-switcher \.st-button/);
+    expect(appSource).toMatch(/class="view-label view-label--full"[\s\S]*Reconciliation/);
+    expect(appSource).toMatch(/class="view-label view-label--compact" aria-hidden="true"[\s\S]*Recon/);
+    expect(appSource).toMatch(/@media \(max-width: 720px\)[\s\S]*\.app-stats[\s\S]*display: none/);
+  });
 });

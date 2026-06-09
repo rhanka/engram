@@ -27,6 +27,20 @@ Current public demo location:
 - `../public-domaine-mystery-sagas-pack/.graphify/`
 - `../public-domaine-mystery-sagas-pack/examples/graphify-three-works/`
 
+Current public Graphify-hosted studio:
+
+- `https://rhanka.github.io/graphify/studio/`
+- source files in this repository: `docs/studio/index.html`, `docs/studio/assets/`, `docs/studio/scene.json`, `docs/studio/graph.json`, `docs/studio/entities.json`, `docs/studio/reconciliation-candidates.json`
+
+Publication contract:
+
+- `https://rhanka.github.io/graphify/studio/` is the expected public URL for the static mystery knowledge-graph demo.
+- `docs/.nojekyll` must remain present so GitHub Pages serves hashed SPA assets without Jekyll filtering.
+- `docs/studio/index.html` must keep relative asset URLs (`./assets/...`) so the page works under the `/graphify/studio/` project path.
+- `scene.json`, `graph.json`, `entities.json`, and `reconciliation-candidates.json` must sit next to `index.html`; the SPA first tries the live ontology API, then falls back to those static files.
+- `.graphify/graph.html` remains a local standalone export/legacy viewer, not the public demo route.
+- Any custom domain, GitHub Pages toggle, or published `public-domaine-mystery-sagas-pack` state is outside this repository.
+
 ## Mini Corpus
 
 Start with two or three works, not the full pack:

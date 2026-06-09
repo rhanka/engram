@@ -153,7 +153,7 @@ This writes `.graphify/`:
 .graphify/
 ├── graph.json       persistent graph — query weeks later without re-reading
 ├── GRAPH_REPORT.md  god nodes, surprising connections, suggested questions
-├── graph.html       interactive graph — click nodes, search, filter by community
+├── graph.html       local standalone HTML export (legacy viewer)
 ├── wiki/            optional LLM-readable wiki pages
 └── cache/           local SHA256 cache (ignored)
 ```
