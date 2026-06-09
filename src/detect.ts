@@ -736,6 +736,11 @@ export function detect(root: string, options?: DetectOptions): DetectionResult {
         : []),
     ];
 
+  // Sort all_files lexicographically so downstream extraction order is
+  // deterministic regardless of filesystem b-tree / inode order (port of
+  // upstream safishamsi 8db19d6, #1090).
+  allFiles.sort();
+
   const seen = new Set<string>();
 
   for (const p of allFiles) {
@@ -772,6 +777,12 @@ export function detect(root: string, options?: DetectOptions): DetectionResult {
     if (ftype !== FileType.VIDEO) {
       totalWords += countWords(p);
     }
+  }
+
+  // Sort per-FileType lists so each bucket is lexicographically stable
+  // (mirrors the Python per-ftype sort in 8db19d6).
+  for (const list of Object.values(files)) {
+    list.sort();
   }
 
   const totalFiles = Object.values(files).reduce((s, v) => s + v.length, 0);

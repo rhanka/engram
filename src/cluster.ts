@@ -232,17 +232,116 @@ export function cluster(G: Graph, options: ClusterOptions = {}): Map<number, str
     }
   }
 
-  // Re-index by size descending for deterministic ordering
+  // Re-index by size descending. The sorted-nodes tiebreak makes this a TOTAL
+  // order so an identical grouping always gets identical community IDs across
+  // runs, regardless of the partitioner's enumeration order (#1090, f5f3a1c).
+  // Without sorting the node list before joining, equal-sized communities would
+  // be ordered by the (non-seed-stable) order nodes appear in the partition map,
+  // producing massive "community churn" in per-node cid diffs even when the
+  // actual grouping is reproducible.
   secondPass.sort((a, b) => {
     const bySize = b.length - a.length;
     if (bySize !== 0) return bySize;
-    return a.join("\0").localeCompare(b.join("\0"));
+    const aKey = [...a].sort().join("\0");
+    const bKey = [...b].sort().join("\0");
+    return aKey.localeCompare(bKey);
   });
   const result = new Map<number, string[]>();
   secondPass.forEach((nodes, i) => {
     result.set(i, [...nodes].sort());
   });
   return result;
+}
+
+/**
+ * Remap community IDs to maximize overlap with a previous assignment.
+ *
+ * Port of upstream safishamsi 9abaa77 / #1028 `remap_communities_to_previous`.
+ * Uses greedy one-to-one matching by intersection size, then assigns fresh IDs
+ * to unmatched communities in deterministic order (size desc, lexical tie-break).
+ *
+ * This is called in the cluster-only path to ensure that the existing
+ * `.graphify_labels.json` keeps tracking the same conceptual communities after
+ * re-clustering (#1027). Without it, labels follow the raw cid index and silently
+ * misalign with cluster contents whenever the graph changes between labeling and
+ * re-clustering.
+ *
+ * @param communities   New clustering from `cluster()`.
+ * @param previousNodeCommunity  Map of nodeId → previous community ID, built
+ *   from the `community` attribute on each node in the existing `graph.json`.
+ */
+export function remapCommunitiesToPrevious(
+  communities: Map<number, string[]>,
+  previousNodeCommunity: Record<string, number>,
+): Map<number, string[]> {
+  if (communities.size === 0) return new Map();
+
+  const newSets = new Map<number, Set<string>>();
+  for (const [cid, nodes] of communities) {
+    newSets.set(cid, new Set(nodes));
+  }
+
+  // Build old community sets from the previous node→cid map
+  const oldSets = new Map<number, Set<string>>();
+  for (const [node, oldCid] of Object.entries(previousNodeCommunity)) {
+    if (!oldSets.has(oldCid)) oldSets.set(oldCid, new Set());
+    oldSets.get(oldCid)!.add(node);
+  }
+
+  // Compute all (overlap, oldCid, newCid) triples and sort descending by overlap,
+  // then ascending by oldCid, then by newCid for deterministic greedy matching.
+  const overlaps: Array<[overlap: number, oldCid: number, newCid: number]> = [];
+  for (const [oldCid, oldNodes] of oldSets) {
+    for (const [newCid, newNodes] of newSets) {
+      let overlap = 0;
+      for (const n of newNodes) if (oldNodes.has(n)) overlap++;
+      if (overlap > 0) overlaps.push([overlap, oldCid, newCid]);
+    }
+  }
+  overlaps.sort((a, b) => {
+    const byOverlap = b[0] - a[0];
+    if (byOverlap !== 0) return byOverlap;
+    const byOld = a[1] - b[1];
+    if (byOld !== 0) return byOld;
+    return a[2] - b[2];
+  });
+
+  // Greedy one-to-one matching: each old cid and each new cid matched at most once
+  const newToFinal = new Map<number, number>();
+  const usedOldIds = new Set<number>();
+  const matchedNewIds = new Set<number>();
+  for (const [, oldCid, newCid] of overlaps) {
+    if (usedOldIds.has(oldCid) || matchedNewIds.has(newCid)) continue;
+    newToFinal.set(newCid, oldCid);
+    usedOldIds.add(oldCid);
+    matchedNewIds.add(newCid);
+  }
+
+  // Assign fresh IDs to unmatched communities in deterministic order
+  const unmatched = [...communities.keys()]
+    .filter((cid) => !matchedNewIds.has(cid))
+    .sort((a, b) => {
+      const bySize = (communities.get(b) ?? []).length - (communities.get(a) ?? []).length;
+      if (bySize !== 0) return bySize;
+      const aKey = [...(communities.get(a) ?? [])].sort().join("\0");
+      const bKey = [...(communities.get(b) ?? [])].sort().join("\0");
+      return aKey.localeCompare(bKey);
+    });
+  let nextId = 0;
+  for (const newCid of unmatched) {
+    while (usedOldIds.has(nextId)) nextId++;
+    newToFinal.set(newCid, nextId);
+    usedOldIds.add(nextId);
+    nextId++;
+  }
+
+  // Build remapped result with sorted nodes within each community
+  const remapped = new Map<number, string[]>();
+  for (const [newCid, nodes] of communities) {
+    const finalCid = newToFinal.get(newCid)!;
+    remapped.set(finalCid, [...nodes].sort());
+  }
+  return new Map([...remapped.entries()].sort((a, b) => a[0] - b[0]));
 }
 
 /** Ratio of actual intra-community edges to maximum possible. */
