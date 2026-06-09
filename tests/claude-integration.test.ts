@@ -47,10 +47,13 @@ describe("Claude integration contract", () => {
     );
     const matchers = (settings.hooks?.PreToolUse ?? []).map((entry) => entry.matcher ?? "");
 
-    expect(commands.filter((command) => command.includes("graphify"))).toHaveLength(1);
+    // Two graphify hooks: Bash (search bypass) + Read|Glob (direct-read bypass,
+    // port of upstream 5cc7ec8 #1114).
+    expect(commands.filter((command) => command.includes("graphify")).length).toBeGreaterThanOrEqual(2);
     expect(commands.some((command) => command.includes("stale graphify hook"))).toBe(false);
     expect(commands.some((command) => command.includes("unrelated hook"))).toBe(true);
     expect(matchers).toContain("Bash");
+    expect(matchers).toContain("Read|Glob");
     expect(matchers).not.toContain("Glob|Grep");
   });
 });
