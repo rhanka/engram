@@ -60,6 +60,10 @@ export type {
   NormalizedOntologyProfileOutputs,
   ProfileBinding,
   RegistryRecord,
+  OntologyHierarchyArc,
+  OntologyHierarchyIndex,
+  NormalizedOntologyHierarchySpec,
+  OntologyHierarchySpec,
 } from "./types.js";
 export { inspectInputScope } from "./input-scope.js";
 export type { InputScopeInventory, InspectInputScopeOptions } from "./input-scope.js";
@@ -104,6 +108,10 @@ export {
 export {
   compileOntologyOutputs,
 } from "./ontology-output.js";
+export {
+  buildHierarchyIndex,
+  compileHierarchies,
+} from "./ontology-hierarchies.js";
 export {
   filterOntologyReconciliationCandidates,
   generateOntologyReconciliationCandidates,
@@ -171,6 +179,9 @@ export type {
   CompileOntologyOutputsResult,
   OntologyOutputConfig,
 } from "./ontology-output.js";
+export type {
+  CompileHierarchiesOptions,
+} from "./ontology-hierarchies.js";
 export type {
   GenerateOntologyReconciliationCandidatesOptions,
   OntologyReconciliationCandidate,

@@ -630,6 +630,44 @@ export interface NormalizedOntologyHierarchySpec {
   child_node_type: string;
 }
 
+/** One directed arc in a profile-declared hierarchy. */
+export interface OntologyHierarchyArc {
+  /** Identifier of the hierarchy (key in profile.hierarchies). */
+  hierarchy_id: string;
+  /** Registry-native id of the parent node. */
+  parent_id: string;
+  /** Registry-native id of the child node. */
+  child_id: string;
+  /**
+   * Depth of the child relative to the root (0 = root, 1 = child of root, …).
+   * Only populated by buildHierarchyIndex; kept 0 here, filled in by the index.
+   */
+  level: number;
+  /** Relation type declared in the hierarchy spec. */
+  type: string;
+  /** Always "profile" for profile-declared hierarchies. */
+  source: "profile";
+  /** Optional evidence references carried by the registry record. */
+  evidence_refs?: string[];
+}
+
+/** Pre-computed index over a set of OntologyHierarchyArc entries. */
+export interface OntologyHierarchyIndex {
+  schema: "graphify_ontology_hierarchies_v1";
+  /** Ids of nodes that have no parent in any arc. */
+  root_ids: string[];
+  /** Maximum depth across all arcs (0 when arcs is empty). */
+  depth: number;
+  /** Map: node_id → array of ancestor ids from root down to direct parent. */
+  ancestor_paths: Record<string, string[]>;
+  /**
+   * Cycles detected during index construction.  Each entry is an ordered list
+   * of node ids forming the cycle.  Nodes involved in cycles are excluded from
+   * ancestor_paths and root_ids.
+   */
+  cycles: string[][];
+}
+
 export type OntologyRelationExport = string | { relation_type?: string };
 
 export interface OntologyOutputWikiPolicy {

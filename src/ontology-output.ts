@@ -2,8 +2,9 @@ import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import type { Extraction, GraphEdge, GraphNode, NormalizedOntologyProfile } from "./types.js";
+import type { Extraction, GraphEdge, GraphNode, NormalizedOntologyProfile, RegistryRecord } from "./types.js";
 import type { WikiDescriptionSidecarIndex } from "./wiki-descriptions.js";
+import { buildHierarchyIndex, compileHierarchies } from "./ontology-hierarchies.js";
 
 export interface OntologyOutputConfig {
   enabled: boolean;
@@ -29,6 +30,12 @@ export interface CompileOntologyOutputsOptions {
    * the canonical `node.id` (not the source graph node ids).
    */
   descriptions?: WikiDescriptionSidecarIndex;
+  /**
+   * Optional registry records keyed by registry id.  When provided and the
+   * profile declares hierarchies, `compileOntologyOutputs` will generate
+   * `hierarchies.json` and `hierarchy-index.json` in `outputDir`.
+   */
+  registries?: Record<string, RegistryRecord[]>;
 }
 
 export interface CompileOntologyOutputsResult {
@@ -37,6 +44,8 @@ export interface CompileOntologyOutputsResult {
   relationCount: number;
   wikiPageCount: number;
   validationIssues: string[];
+  /** Number of hierarchy arcs written to hierarchies.json (0 when no hierarchies declared). */
+  hierarchyArcCount: number;
 }
 
 interface CompiledNode {
@@ -219,14 +228,33 @@ function writeWiki(
 
 export function compileOntologyOutputs(options: CompileOntologyOutputsOptions): CompileOntologyOutputsResult {
   if (!options.config.enabled) {
-    return { enabled: false, nodeCount: 0, relationCount: 0, wikiPageCount: 0, validationIssues: [] };
+    return { enabled: false, nodeCount: 0, relationCount: 0, wikiPageCount: 0, validationIssues: [], hierarchyArcCount: 0 };
   }
 
   const { nodes, aliasIssues } = compileNodes(options.extraction, options.profile, options.config);
   const relations = compileRelations(options.extraction, nodes, options.config);
   const validationIssues = [...aliasIssues];
   const wikiPageCount = writeWiki(options.outputDir, nodes, relations, options.config, options.descriptions);
-  const manifest = {
+
+  // ---- Hierarchy artefacts (increment A — additive, no-op when no hierarchies) ----
+  let hierarchyArcCount = 0;
+  const hasHierarchies = Object.keys(options.profile.hierarchies ?? {}).length > 0;
+  const hierarchiesPath = join(options.outputDir, "hierarchies.json");
+  const hierarchyIndexPath = join(options.outputDir, "hierarchy-index.json");
+
+  if (hasHierarchies) {
+    const arcs = compileHierarchies({
+      hierarchies: options.profile.hierarchies,
+      registries: options.registries ?? {},
+    });
+    const index = buildHierarchyIndex(arcs);
+    writeJson(hierarchiesPath, arcs);
+    writeJson(hierarchyIndexPath, index);
+    hierarchyArcCount = arcs.length;
+  }
+  // ---- End hierarchy artefacts ----
+
+  const manifest: Record<string, unknown> = {
     schema: "graphify_ontology_outputs_v1",
     graph_hash: sha256(JSON.stringify(options.extraction)),
     profile_hash: options.profile.profile_hash,
@@ -236,6 +264,11 @@ export function compileOntologyOutputs(options: CompileOntologyOutputsOptions): 
     wiki_page_count: wikiPageCount,
     source_graph: ".graphify/graph.json",
   };
+
+  if (hasHierarchies) {
+    manifest.hierarchies_path = hierarchiesPath;
+    manifest.hierarchy_index_path = hierarchyIndexPath;
+  }
 
   writeJson(join(options.outputDir, "manifest.json"), manifest);
   writeJson(join(options.outputDir, "nodes.json"), nodes);
@@ -265,5 +298,5 @@ export function compileOntologyOutputs(options: CompileOntologyOutputsOptions): 
     })),
   });
 
-  return { enabled: true, nodeCount: nodes.length, relationCount: relations.length, wikiPageCount, validationIssues };
+  return { enabled: true, nodeCount: nodes.length, relationCount: relations.length, wikiPageCount, validationIssues, hierarchyArcCount };
 }
