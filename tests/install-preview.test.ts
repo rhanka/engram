@@ -104,7 +104,9 @@ describe("install mutation previews", () => {
   it("previews the Antigravity Windows skill destination without using the project root", () => {
     const preview = withProcessPlatform("win32", () => globalSkillInstallPreview("antigravity"));
 
-    expect(preview.writes.some((path) => path.includes(`${join(".agents", "skills", "graphify")}`))).toBe(true);
+    // M11 (9985940 #1079): global Antigravity skill destination changed from
+    // ~/.agents/skills/graphify to ~/.gemini/config/skills/graphify.
+    expect(preview.writes.some((path) => path.includes(`${join(".gemini", "config", "skills", "graphify")}`))).toBe(true);
     expect(preview.writes.some((path) => path.includes(`${join(".agent", "skills", "graphify")}`))).toBe(false);
   });
 

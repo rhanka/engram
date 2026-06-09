@@ -59,8 +59,9 @@ describe("upstream v4 assistant platform installs", () => {
 
     expect(existsSync(join(project, ".agents", "rules", "graphify.md"))).toBe(true);
     expect(existsSync(join(project, ".agents", "workflows", "graphify.md"))).toBe(true);
-    expect(existsSync(join(home, ".agents", "skills", "graphify", "SKILL.md"))).toBe(true);
-    expect(existsSync(join(home, ".agents", "skills", "graphify", ".graphify_version"))).toBe(true);
+    // M11 (9985940 #1079): global Antigravity skill now lives under ~/.gemini/config/skills/
+    expect(existsSync(join(home, ".gemini", "config", "skills", "graphify", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(home, ".gemini", "config", "skills", "graphify", ".graphify_version"))).toBe(true);
     expect(readFileSync(join(project, ".agents", "rules", "graphify.md"), "utf-8")).toContain("---");
     expect(readFileSync(join(project, ".agents", "rules", "graphify.md"), "utf-8")).toContain("description: graphify knowledge graph context");
     expect(readFileSync(join(project, ".agents", "workflows", "graphify.md"), "utf-8")).toContain("---");
@@ -88,7 +89,8 @@ describe("upstream v4 assistant platform installs", () => {
 
     await withProcessPlatform("win32", () => runCliWithEnvironment(["antigravity", "install"], home, project));
 
-    const skill = readFileSync(join(home, ".agents", "skills", "graphify", "SKILL.md"), "utf-8");
+    // M11 (9985940 #1079): global Antigravity skill now lives under ~/.gemini/config/skills/
+    const skill = readFileSync(join(home, ".gemini", "config", "skills", "graphify", "SKILL.md"), "utf-8");
     expect(skill).toContain("```powershell");
     expect(skill).toContain("Out-File -FilePath .graphify/.graphify_detect.json -Encoding utf8");
     expect(skill).not.toContain("$(cat .graphify/.graphify_node)");
