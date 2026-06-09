@@ -226,6 +226,37 @@ function resolveCalleeNid(
   return index.caseSensitive.get(calleeName);
 }
 
+// ---------------------------------------------------------------------------
+// Builtin god-node filter (port of upstream 80301a0, #916)
+//
+// Language built-in globals that the AST may classify as call targets when
+// used as constructors or coercion functions (e.g. String(x), Number(x)).
+// Without this filter they accumulate spurious "calls" edges from every call
+// site and surface as false god-nodes in the ranking.  The filter is applied
+// at the call-edge emission site (emitCallByName) so no legitimate symbol
+// that happens to share a name with a built-in can be silently dropped.
+// ---------------------------------------------------------------------------
+export const LANGUAGE_BUILTIN_GLOBALS: ReadonlySet<string> = new Set<string>([
+  // JavaScript / TypeScript ECMAScript built-ins
+  "String", "Number", "Boolean", "Object", "Array", "Symbol", "BigInt",
+  "Date", "RegExp", "Error", "TypeError", "RangeError", "SyntaxError",
+  "ReferenceError", "EvalError", "URIError",
+  "Promise", "Map", "Set", "WeakMap", "WeakSet", "JSON", "Math",
+  "Reflect", "Proxy", "Intl",
+  "parseInt", "parseFloat", "isNaN", "isFinite",
+  "encodeURIComponent", "decodeURIComponent", "encodeURI", "decodeURI",
+  // Browser / Node common globals
+  "URL", "URLSearchParams", "FormData", "Blob", "File",
+  "Headers", "Request", "Response", "AbortController", "AbortSignal",
+  "TextEncoder", "TextDecoder", "console",
+  // Python built-in callables
+  "str", "int", "float", "bool", "list", "dict", "set", "tuple", "bytes",
+  "len", "range", "enumerate", "zip", "map", "filter", "sum", "min", "max",
+  "print", "open", "isinstance", "type", "super", "sorted", "reversed",
+  "any", "all", "abs", "round", "next", "iter", "hash", "id", "repr",
+  "callable", "getattr", "setattr", "hasattr", "delattr", "vars", "dir",
+]);
+
 type TsconfigAliasEntry = {
   aliasPrefix: string;
   targetBase: string;
@@ -1880,6 +1911,9 @@ async function _extractGeneric(
 
   function emitCallByName(calleeName: string | null, node: SyntaxNode, callerNid: string): void {
     if (!calleeName) return;
+    // Filter language built-ins so they never become god-nodes (port of upstream
+    // 80301a0 #916: `_LANGUAGE_BUILTIN_GLOBALS` filter on callee resolution).
+    if (LANGUAGE_BUILTIN_GLOBALS.has(calleeName)) return;
     const tgtNid = resolveCalleeNid(labelToNid, calleeName, config.tsModule);
     if (tgtNid && tgtNid !== callerNid) {
       const pair = `${callerNid}|${tgtNid}`;
