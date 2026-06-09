@@ -45,6 +45,15 @@
   let mergeFrame = null;
   let completedMergeKey = null;
   let hoveredEdge = $state(null);
+  let hoveredNode = $state(null);
+  let hoveredNodeId = $state(null);
+
+  // Pan state — not reactive, managed imperatively
+  let isPanning = false;
+  let panStartX = 0;
+  let panStartY = 0;
+  let panStartCameraX = 0;
+  let panStartCameraY = 0;
 
   const hasNodes = $derived((scene?.nodes?.length ?? 0) > 0);
   const hasLegend = $derived((legend?.length ?? 0) > 0);
@@ -93,6 +102,66 @@
     renderer.render();
   }
 
+  function applyCamera() {
+    if (!renderer) return;
+    renderer.setCamera(camera);
+    renderer.render();
+  }
+
+  // --- Zoom centred on cursor ---
+  function handleWheel(event) {
+    if (!renderer || !canvas) return;
+    event.preventDefault();
+
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / Math.max(1, rect.width);
+    const scaleY = canvas.height / Math.max(1, rect.height);
+
+    // Cursor position in screen coords (canvas pixels, centred on canvas)
+    const localX = event.clientX - rect.left;
+    const localY = event.clientY - rect.top;
+    const screenX = (localX - rect.width / 2) * scaleX;
+    const screenY = (localY - rect.height / 2) * scaleY;
+
+    // World point under cursor BEFORE zoom
+    const worldX = camera.x + screenX / camera.zoom;
+    const worldY = camera.y + screenY / camera.zoom;
+
+    const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
+    const nextZoom = Math.max(0.05, Math.min(50, camera.zoom * factor));
+
+    // Shift camera so the world point stays under the cursor AFTER zoom
+    camera = {
+      zoom: nextZoom,
+      x: worldX - screenX / nextZoom,
+      y: worldY - screenY / nextZoom,
+    };
+    applyCamera();
+  }
+
+  // --- Pan on background drag ---
+  function handlePointerDown(event) {
+    const id = pickNode(event);
+    if (id) return; // clicking a node starts selection, not pan
+
+    isPanning = true;
+    panStartX = event.clientX;
+    panStartY = event.clientY;
+    panStartCameraX = camera.x;
+    panStartCameraY = camera.y;
+
+    if (canvas) {
+      canvas.setPointerCapture(event.pointerId);
+      canvas.style.cursor = "grabbing";
+    }
+  }
+
+  function handlePointerUp(event) {
+    if (!isPanning) return;
+    isPanning = false;
+    if (canvas) canvas.style.cursor = "default";
+  }
+
   function applyPayload() {
     if (!renderer || !payload) return;
 
@@ -107,6 +176,7 @@
     payload = buildGraphRendererPayload(scene ?? EMPTY_SCENE, {
       selectedIds: selectedIds ?? [],
       focusId,
+      hoveredNodeId,
       nodeRadius: NODE_RADIUS,
     });
     clearHoveredEdge({ notify: false, render: false });
@@ -219,11 +289,29 @@
   }
 
   function handlePointerMove(event) {
+    // Pan takes priority when dragging
+    if (isPanning) {
+      const rect = canvas?.getBoundingClientRect();
+      if (!rect) return;
+      const scaleX = canvas.width / Math.max(1, rect.width);
+      const scaleY = canvas.height / Math.max(1, rect.height);
+      const dx = (event.clientX - panStartX) * scaleX;
+      const dy = (event.clientY - panStartY) * scaleY;
+      camera = {
+        zoom: camera.zoom,
+        x: panStartCameraX - dx / camera.zoom,
+        y: panStartCameraY - dy / camera.zoom,
+      };
+      applyCamera();
+      return;
+    }
+
     if (!payload) return;
 
     const world = eventToWorld(event);
     if (!world) {
       clearHoveredEdge();
+      setHoveredNode(null);
       return;
     }
 
@@ -232,17 +320,56 @@
     if (nodeId) {
       clearHoveredEdge();
       if (canvas) canvas.style.cursor = "pointer";
+      setHoveredNode(nodeId, world.localX, world.localY);
       return;
     }
 
+    setHoveredNode(null);
     const edgeMaxDistance = (EDGE_PICK_RADIUS * world.scale) / Math.max(Number.EPSILON, camera.zoom);
     const hit = findNearestEdge(payload, world.x, world.y, edgeMaxDistance);
     if (canvas) canvas.style.cursor = hit ? "crosshair" : "default";
     setHoveredEdge(hit, world.localX, world.localY);
   }
 
+  function setHoveredNode(nodeId, localX = 0, localY = 0) {
+    const prevId = hoveredNodeId;
+    if (nodeId === prevId) return;
+
+    hoveredNodeId = nodeId;
+    if (nodeId && payload) {
+      const node = payload.nodeById?.get(nodeId);
+      const graph = payload.renderGraph;
+      const nodeIdx = payload.nodeIndexById?.get(nodeId);
+      // Compute degree: count edges where this node is source or target
+      const edgeCount = graph ? graph.edges.length / 2 : 0;
+      let degree = 0;
+      for (let e = 0; e < edgeCount; e++) {
+        if (graph.edges[e * 2] === nodeIdx || graph.edges[e * 2 + 1] === nodeIdx) degree++;
+      }
+      hoveredNode = node ? { ...node, degree, localX, localY } : null;
+    } else {
+      hoveredNode = null;
+    }
+
+    // Rebuild payload with new hoveredNodeId for connected-dim
+    if (mounted && payload) {
+      payload = buildGraphRendererPayload(scene ?? EMPTY_SCENE, {
+        selectedIds: selectedIds ?? [],
+        focusId,
+        hoveredNodeId,
+        nodeRadius: NODE_RADIUS,
+      });
+      if (renderer) {
+        renderer.setStyle(payload.style);
+        renderer.render();
+      }
+    }
+  }
+
   function handlePointerLeave() {
     clearHoveredEdge();
+    setHoveredNode(null);
+    isPanning = false;
   }
 
   function legendClass(value) {
@@ -378,6 +505,15 @@
 </script>
 
 <div class="canvas" bind:this={container}>
+  <div class="canvas-toolbar" aria-label="Graph controls">
+    <button
+      class="toolbar-btn"
+      type="button"
+      aria-label="Reset view"
+      onclick={fitAndRender}
+    >Reset</button>
+  </div>
+
   <canvas
     class="canvas-element"
     bind:this={canvas}
@@ -385,8 +521,25 @@
     onclick={handleClick}
     ondblclick={handleDoubleClick}
     onpointermove={handlePointerMove}
+    onpointerdown={handlePointerDown}
+    onpointerup={handlePointerUp}
     onmouseleave={handlePointerLeave}
+    onwheel={handleWheel}
   ></canvas>
+
+  {#if hoveredNode}
+    <div
+      class="node-tooltip"
+      style={`left: ${hoveredNode.localX + 14}px; top: ${hoveredNode.localY + 14}px;`}
+      role="status"
+    >
+      <strong>{hoveredNode.label}</strong>
+      {#if hoveredNode.node_type}
+        <span class="node-tooltip-type">{hoveredNode.node_type}</span>
+      {/if}
+      <span class="node-tooltip-degree">Degree: {hoveredNode.degree}</span>
+    </div>
+  {/if}
 
   {#if hoveredEdge?.edge}
     <div
@@ -431,6 +584,32 @@
     overflow: hidden;
   }
 
+  .canvas-toolbar {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    z-index: 3;
+    display: flex;
+    gap: 0.35rem;
+    pointer-events: auto;
+  }
+
+  .toolbar-btn {
+    padding: 0.3rem 0.6rem;
+    border: 1px solid var(--st-semantic-border-muted, #e2e8f0);
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--st-semantic-surface-default, #fff) 90%, transparent);
+    color: var(--st-semantic-text-default, #1e293b);
+    font-size: 0.75rem;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgb(15 23 42 / 0.08);
+  }
+
+  .toolbar-btn:hover {
+    background: var(--st-semantic-surface-hover, #f1f5f9);
+  }
+
   .canvas-element {
     display: block;
     width: 100%;
@@ -454,6 +633,40 @@
     font-style: italic;
     pointer-events: none;
     text-align: center;
+  }
+
+  .node-tooltip {
+    position: absolute;
+    z-index: 2;
+    max-width: min(20rem, calc(100% - 1.5rem));
+    padding: 0.45rem 0.55rem;
+    border-radius: 4px;
+    background: var(--st-semantic-surface-inverse, #0f172a);
+    color: var(--st-semantic-text-inverse, #fff);
+    box-shadow: 0 8px 20px rgb(15 23 42 / 0.18);
+    font-size: 0.75rem;
+    line-height: 1.3;
+    pointer-events: none;
+  }
+
+  .node-tooltip strong,
+  .node-tooltip-type,
+  .node-tooltip-degree {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .node-tooltip-type {
+    opacity: 0.7;
+    font-size: 0.7rem;
+  }
+
+  .node-tooltip-degree {
+    opacity: 0.6;
+    font-size: 0.7rem;
+    margin-top: 0.15rem;
   }
 
   .edge-tooltip {
