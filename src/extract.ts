@@ -4524,6 +4524,254 @@ async function _resolveCrossFileImports(
 }
 
 // ---------------------------------------------------------------------------
+// .NET project files (.sln, .csproj/.fsproj/.vbproj/.props/.targets)
+// Port of upstream safishamsi 8bcfffd (#515) + ad3f3b2 (XML DoS guard).
+// ---------------------------------------------------------------------------
+
+/**
+ * Maximum byte size for XML project files (2 MiB).
+ * Real MSBuild / Lazarus package files are well under this; anything larger
+ * is either malformed or crafted to exhaust resources at parse time.
+ * Port of upstream _PROJECT_XML_MAX_BYTES (ad3f3b2).
+ */
+const _PROJECT_XML_MAX_BYTES = 2 * 1024 * 1024;
+
+/**
+ * Reject XML that declares DTDs or entities (billion-laughs / XXE guard).
+ *
+ * Node's built-in XML parser (via DOMParser-style APIs) does not cap entity
+ * expansion. Pre-screening for `<!DOCTYPE` / `<!ENTITY` is defense-in-depth:
+ * legitimate MSBuild and Lazarus package files never contain either declaration,
+ * so this is a zero-false-positive screen.
+ *
+ * Port of upstream _project_xml_is_safe (ad3f3b2).
+ */
+function _projectXmlIsSafe(src: Buffer | string): boolean {
+  const lowered = (typeof src === "string" ? src : src.toString("latin1")).toLowerCase();
+  return !lowered.includes("<!doctype") && !lowered.includes("<!entity");
+}
+
+// Minimal synchronous XML attribute/element reader backed by regex.
+// We intentionally avoid any XML parser to sidestep the billion-laughs risk:
+// the guard above rejects DOCTYPE/ENTITY, and for the structural data we need
+// (element names, attribute values) regex over clean MSBuild XML is reliable.
+
+const _CSPROJ_PACKAGE_RE =
+  /<PackageReference\s[^>]*Include="([^"]+)"[^>]*(?:Version="([^"]*)")?[^>]*\/?>/gi;
+const _CSPROJ_PACKAGE_VERSION_RE = /Version="([^"]*)"/i;
+const _CSPROJ_PROJREF_RE = /<ProjectReference\s[^>]*Include="([^"]+)"/gi;
+const _CSPROJ_TF_RE = /<TargetFramework[s]?>([^<]+)<\/TargetFramework[s]?>/gi;
+const _CSPROJ_SDK_ATTR_RE = /<Project\s[^>]*Sdk="([^"]+)"/i;
+
+/**
+ * Extract packages, project refs, and target framework from a
+ * .csproj/.fsproj/.vbproj/.props/.targets file.
+ *
+ * XML guard (ad3f3b2): size cap + DOCTYPE/ENTITY rejection before any parse.
+ * Extraction: regex over raw text (no XML parser), safe after the guard.
+ */
+export function extractCsproj(filePath: string, _rootDir?: string): ExtractionResult {
+  let src: Buffer;
+  try {
+    src = readFileSync(filePath) as Buffer;
+  } catch (e: unknown) {
+    return { nodes: [], edges: [], error: String(e) };
+  }
+
+  // --- XML DoS guard (ad3f3b2) ---
+  if (src.length > _PROJECT_XML_MAX_BYTES) {
+    return { nodes: [], edges: [], error: "project file too large (>2 MiB)" };
+  }
+  if (!_projectXmlIsSafe(src)) {
+    return { nodes: [], edges: [], error: "refusing XML with DOCTYPE/ENTITY declaration (billion-laughs guard)" };
+  }
+
+  const text = src.toString("utf-8");
+  const fileNid = _makeId(resolve(filePath));
+  const nodes: GraphNode[] = [{
+    id: fileNid,
+    label: basename(filePath),
+    file_type: "code",
+    source_file: filePath,
+    source_location: "L1",
+  }];
+  const edges: GraphEdge[] = [];
+  const seenIds = new Set([fileNid]);
+
+  function addNode(
+    nid: string,
+    label: string,
+    fileType: "code" | "concept",
+    relation: string,
+  ): void {
+    if (!nid) return;
+    if (!seenIds.has(nid)) {
+      seenIds.add(nid);
+      nodes.push({ id: nid, label, file_type: fileType, source_file: filePath });
+    }
+    edges.push({ source: fileNid, target: nid, relation, confidence: "EXTRACTED", source_file: filePath, weight: 1.0 });
+  }
+
+  // SDK attribute on <Project Sdk="...">
+  const sdkMatch = _CSPROJ_SDK_ATTR_RE.exec(text);
+  if (sdkMatch) {
+    const sdk = sdkMatch[1]!.trim();
+    addNode(_makeId("sdk", sdk), sdk, "concept", "references");
+  }
+
+  // TargetFramework(s) elements
+  _CSPROJ_TF_RE.lastIndex = 0;
+  for (const m of text.matchAll(_CSPROJ_TF_RE)) {
+    const raw = m[1]!.trim();
+    for (const fw of raw.split(";").map((s) => s.trim()).filter(Boolean)) {
+      addNode(_makeId("framework", fw), fw, "concept", "references");
+    }
+  }
+
+  // PackageReference elements
+  _CSPROJ_PACKAGE_RE.lastIndex = 0;
+  for (const m of text.matchAll(_CSPROJ_PACKAGE_RE)) {
+    const name = m[1]!.trim();
+    const version = m[2]?.trim() ?? "";
+    const label = version ? `${name} (${version})` : name;
+    addNode(_makeId("nuget", name), label, "code", "imports");
+  }
+
+  // ProjectReference elements
+  _CSPROJ_PROJREF_RE.lastIndex = 0;
+  for (const m of text.matchAll(_CSPROJ_PROJREF_RE)) {
+    const refPath = m[1]!.replace(/\\/g, "/");
+    let absRef: string;
+    try {
+      absRef = resolve(dirname(filePath), refPath);
+    } catch {
+      absRef = refPath;
+    }
+    const projLabel = basename(refPath);
+    addNode(_makeId(absRef), projLabel, "code", "imports");
+  }
+
+  return { nodes, edges };
+}
+
+const _SLN_PROJECT_RE =
+  /Project\("[^"]*"\)\s*=\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"\{([^}]*)\}"/g;
+const _SLN_DEP_RE = /\{([0-9a-fA-F-]+)\}\s*=\s*\{([0-9a-fA-F-]+)\}/g;
+
+/**
+ * Extract projects and inter-project dependencies from a .sln file.
+ * Port of upstream extract_sln (8bcfffd).
+ */
+export function extractSln(filePath: string, _rootDir?: string): ExtractionResult {
+  let src: string;
+  try {
+    src = readFileSync(filePath, "utf-8");
+  } catch (e: unknown) {
+    return { nodes: [], edges: [], error: String(e) };
+  }
+
+  const fileNid = _makeId(resolve(filePath));
+  const nodes: GraphNode[] = [{
+    id: fileNid,
+    label: basename(filePath),
+    file_type: "code",
+    source_file: filePath,
+    source_location: "L1",
+  }];
+  const edges: GraphEdge[] = [];
+  const seenIds = new Set([fileNid]);
+  const guidToNid = new Map<string, string>();
+
+  _SLN_PROJECT_RE.lastIndex = 0;
+  for (const m of src.matchAll(_SLN_PROJECT_RE)) {
+    const projName = m[1]!;
+    const projPath = m[2]!.replace(/\\/g, "/");
+    const projGuid = m[3]!.toLowerCase();
+
+    let absProj: string;
+    try {
+      absProj = resolve(dirname(filePath), projPath);
+    } catch {
+      absProj = projPath;
+    }
+    const projNid = _makeId(absProj);
+    if (projNid && !seenIds.has(projNid)) {
+      seenIds.add(projNid);
+      nodes.push({
+        id: projNid,
+        label: projName,
+        file_type: "code",
+        source_file: absProj,
+      });
+      edges.push({
+        source: fileNid,
+        target: projNid,
+        relation: "contains",
+        confidence: "EXTRACTED",
+        source_file: filePath,
+        weight: 1.0,
+      });
+    }
+    if (projGuid) guidToNid.set(projGuid, projNid);
+  }
+
+  // ProjectDependencies section → imports edges
+  let inDepSection = false;
+  let currentProjGuid: string | null = null;
+  const _PROJECT_LINE_RE =
+    /Project\("[^"]*"\)\s*=\s*"[^"]+"\s*,\s*"[^"]+"\s*,\s*"\{([^}]+)\}"/;
+
+  for (const line of src.split("\n")) {
+    const projLineMatch = _PROJECT_LINE_RE.exec(line);
+    if (projLineMatch) {
+      currentProjGuid = projLineMatch[1]!.toLowerCase();
+      continue;
+    }
+    if (line.trim() === "EndProject") {
+      currentProjGuid = null;
+      continue;
+    }
+    if (line.includes("ProjectSection(ProjectDependencies)")) {
+      inDepSection = true;
+      continue;
+    }
+    if (inDepSection && line.includes("EndProjectSection")) {
+      inDepSection = false;
+      continue;
+    }
+    if (inDepSection && currentProjGuid) {
+      _SLN_DEP_RE.lastIndex = 0;
+      const depMatch = _SLN_DEP_RE.exec(line);
+      if (depMatch) {
+        const toGuid = depMatch[1]!.toLowerCase();
+        const fromNid = guidToNid.get(currentProjGuid);
+        const toNid = guidToNid.get(toGuid);
+        if (fromNid && toNid && fromNid !== toNid) {
+          edges.push({
+            source: fromNid,
+            target: toNid,
+            relation: "imports",
+            confidence: "EXTRACTED",
+            source_file: filePath,
+            weight: 1.0,
+          });
+        }
+      }
+    }
+  }
+
+  return { nodes, edges };
+}
+
+// Async wrappers so they fit the ExtractorFn signature expected by _DISPATCH.
+async function _extractSlnAsync(filePath: string, rootDir?: string): Promise<ExtractionResult> {
+  return extractSln(filePath, rootDir);
+}
+async function _extractCsprojAsync(filePath: string, rootDir?: string): Promise<ExtractionResult> {
+  return extractCsproj(filePath, rootDir);
+}
+
+// ---------------------------------------------------------------------------
 // Main extract() and collectFiles()
 // ---------------------------------------------------------------------------
 
@@ -4582,6 +4830,13 @@ const _DISPATCH: Record<string, ExtractorFn> = {
   ".f95": extractRegexBackedCode,
   ".f03": extractRegexBackedCode,
   ".f08": extractRegexBackedCode,
+  // .NET project files — port of upstream 8bcfffd / ad3f3b2
+  ".sln": _extractSlnAsync,
+  ".csproj": _extractCsprojAsync,
+  ".fsproj": _extractCsprojAsync,
+  ".vbproj": _extractCsprojAsync,
+  ".props": _extractCsprojAsync,
+  ".targets": _extractCsprojAsync,
 };
 
 /**
@@ -4787,6 +5042,8 @@ const _EXTENSIONS = new Set([
   ".vue", ".svelte", ".astro", ".dart", ".groovy", ".gradle", ".v", ".sv", ".svh", ".ejs",
   ".md", ".mdx", ".qmd",
   ".luau", ".r", ".R", ".f", ".F", ".f90", ".F90", ".f95", ".F95", ".f03", ".F03", ".f08", ".F08",
+  // .NET project files (8bcfffd / ad3f3b2)
+  ".sln", ".csproj", ".fsproj", ".vbproj", ".props", ".targets",
 ]);
 
 /**
@@ -4871,4 +5128,6 @@ export function collectFiles(target: string, options?: { followSymlinks?: boolea
  */
 export const __testing = {
   resolveLuaImportTarget: _resolveLuaImportTarget,
+  /** Return the dispatch-table extractor function for a given file path (by extension). */
+  getExtractor: (filePath: string): ExtractorFn | undefined => _DISPATCH[extname(filePath)],
 };
