@@ -3443,6 +3443,125 @@ export async function main(): Promise<void> {
       console.log(`Done - ${communities.size} communities. GRAPH_REPORT.md, graph.json and graph.html updated.`);
     });
 
+  // ---------------------------------------------------------------------------
+  // graphify label <path>
+  // Force-regenerate community names with the configured LLM backend and
+  // refresh the report/HTML. Mirrors upstream c8b329d `graphify label`.
+  // ---------------------------------------------------------------------------
+  program
+    .command("label [path]")
+    .description("(Re)name communities with the configured LLM backend and regenerate report")
+    .option("--backend <provider>", "LLM provider (default: auto-detect from API keys)")
+    .option("--model <id>", "LLM model override")
+    .action(async (labelPath = ".", opts) => {
+      const root = resolve(labelPath);
+      const paths = resolveGraphifyPaths({ root });
+      if (!existsSync(paths.graph)) {
+        console.error(`error: no graph found at ${paths.graph} - run /graphify first`);
+        process.exit(1);
+      }
+
+      mkdirSync(paths.stateDir, { recursive: true });
+
+      const rawGraphText = readFileSync(paths.graph, "utf-8");
+      const rawGraphParsed = JSON.parse(rawGraphText) as {
+        nodes?: Array<Record<string, unknown>>;
+      };
+      const G = makeGraphPortable(loadGraphFromData(JSON.parse(rawGraphText)), root);
+      const { cluster, scoreAll, remapCommunitiesToPrevious } = await import("./cluster.js");
+      const { godNodes, surprisingConnections, suggestQuestions } = await import("./analyze.js");
+      const { generate } = await import("./report.js");
+      const { toJson } = await import("./export.js");
+      const { safeToHtml } = await import("./html-export.js");
+      const { generateCommunityLabels } = await import("./community-labeling.js");
+
+      let communities = cluster(G);
+      const previousNodeCommunity: Record<string, number> = {};
+      for (const n of (rawGraphParsed.nodes ?? [])) {
+        const nodeId = typeof n["id"] === "string" ? n["id"] : undefined;
+        const nodeCommunity = typeof n["community"] === "number" ? n["community"] : undefined;
+        if (nodeId !== undefined && nodeCommunity !== undefined) {
+          previousNodeCommunity[nodeId] = nodeCommunity;
+        }
+      }
+      if (Object.keys(previousNodeCommunity).length > 0) {
+        communities = remapCommunitiesToPrevious(communities, previousNodeCommunity);
+      }
+
+      const cohesion = scoreAll(G, communities);
+      const gods = godNodes(G);
+      const surprises = surprisingConnections(G, communities);
+
+      const backendArg = typeof opts.backend === "string" ? opts.backend.trim() || undefined : undefined;
+      const modelArg = typeof opts.model === "string" ? opts.model.trim() || undefined : undefined;
+
+      console.log("Labeling communities...");
+      const { labels, source } = await generateCommunityLabels(G, communities, {
+        provider: backendArg ?? null,
+        model: modelArg,
+        gods,
+      });
+
+      if (source === "llm") {
+        persistCommunityLabels(labels, paths.scratch.labels);
+      }
+
+      const questions = suggestQuestions(G, communities, labels);
+      const detection = {
+        files: { code: [], document: [], paper: [], image: [], video: [] },
+        total_files: 0,
+        total_words: 0,
+        needs_graph: true,
+        warning: "label mode - file stats not available",
+        skipped_sensitive: [],
+        graphifyignore_patterns: 0,
+      };
+      const report = generate(
+        G,
+        communities,
+        cohesion,
+        labels,
+        gods,
+        surprises,
+        detection,
+        { input: 0, output: 0 },
+        projectRootLabel(root),
+        {
+          suggestedQuestions: questions,
+          freshness: { builtFromCommit: safeGitRevParse(root, ["HEAD"]) },
+        },
+      );
+      writeFileSync(paths.report, report, "utf-8");
+      toJson(G, communities, paths.graph, { communityLabels: labels });
+      const ontologyProfileForHtml = await tryLoadHtmlOntologyProfile(root);
+      safeToHtml(
+        G,
+        communities,
+        paths.html,
+        {
+          communityLabels: labels,
+          ...(ontologyProfileForHtml ? { profile: ontologyProfileForHtml } : {}),
+        },
+        {
+          onWarning: (message) => console.warn(message),
+        },
+      );
+      const analysis = {
+        communities: Object.fromEntries([...communities.entries()].map(([key, value]) => [String(key), value])),
+        cohesion: Object.fromEntries([...cohesion.entries()].map(([key, value]) => [String(key), value])),
+        gods,
+        surprises,
+        labels: Object.fromEntries([...labels.entries()].map(([key, value]) => [String(key), value])),
+        questions,
+      };
+      writeFileSync(paths.scratch.analysis, JSON.stringify(analysis, null, 2), "utf-8");
+      const sourceMsg = source === "llm" ? "LLM-generated" : "placeholder (no LLM backend)";
+      console.log(
+        `Done - ${communities.size} communities labeled (${sourceMsg}). ` +
+          "GRAPH_REPORT.md, graph.json and graph.html updated.",
+      );
+    });
+
   const wikiCommand = program
     .command("wiki")
     .description("Generate and maintain Graphify wiki artifacts");
