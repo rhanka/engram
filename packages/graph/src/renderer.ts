@@ -517,6 +517,7 @@ function drawFallback2D(
   camera: CameraState,
   canvas: GraphCanvasLike | null,
   pixelRatio: number,
+  skipEdges = false,
 ): void {
   if (!context || !canvas) return;
 
@@ -525,7 +526,7 @@ function drawFallback2D(
   context.lineCap = "round";
   context.lineJoin = "round";
 
-  const edgeCount = state.edges.length / 2;
+  const edgeCount = skipEdges ? 0 : state.edges.length / 2;
   for (let edgeIndex = 0; edgeIndex < edgeCount; edgeIndex += 1) {
     const sourceIndex = state.edges[edgeIndex * 2] ?? 0;
     const targetIndex = state.edges[edgeIndex * 2 + 1] ?? 0;
@@ -643,11 +644,13 @@ export function createGraphRenderer(
     };
   }
 
-  function render(): void {
+  function render(options?: { skipEdges?: boolean }): void {
     ensureAlive();
 
+    const skipEdges = options?.skipEdges ?? false;
+
     if (!context) {
-      drawFallback2D(fallbackContext, state, camera, canvas, pixelRatio);
+      drawFallback2D(fallbackContext, state, camera, canvas, pixelRatio, skipEdges);
       return;
     }
 
@@ -661,7 +664,7 @@ export function createGraphRenderer(
       return;
     }
 
-    if (state.edges.length > 0) {
+    if (!skipEdges && state.edges.length > 0) {
       context.useProgram(resources.edgeProgram.program);
       bindCameraUniforms(context, resources.edgeProgram.uniforms, camera, canvas, pixelRatio);
       uploadAttribute(
