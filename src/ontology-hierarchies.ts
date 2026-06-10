@@ -59,6 +59,13 @@ export function compileHierarchies(options: CompileHierarchiesOptions): Ontology
       // Skip self-loops (id == parent means "this is a root" in some schemas)
       if (parentValue === childValue) continue;
 
+      // Q3-1 — Arc↔scene-node join contract:
+      //   parent_id and child_id are REGISTRY-NATIVE NODE IDS (the value of
+      //   the id_column declared in the profile registry spec, e.g. process_id).
+      //   They match the `id` field on the corresponding scene node in
+      //   scene.json / graph.json.  The `code` field on a scene node is a
+      //   SEPARATE display field (e.g. "AM-01-04" for node id "AM0104") and is
+      //   NOT the join key.  Always join arcs to scene nodes by `id`, not `code`.
       arcs.push({
         hierarchy_id: hierarchyId,
         parent_id: parentValue,

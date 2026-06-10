@@ -140,6 +140,9 @@ describe("buildStudioScene — parity with studio buildScene", () => {
   });
 
   it("preserves profile metadata and fx/fy pins in the build-time scene", () => {
+    // OBJ-2: `ontology_status` is NOT in NODE_PROFILE_FIELDS (removed: never
+    // produced by any pipeline, duplicated `status` semantics). Input nodes
+    // may still carry it as a raw field but it will NOT be copied to the scene.
     const scene = buildStudioScene({
       nodes: [
         {
@@ -147,7 +150,6 @@ describe("buildStudioScene — parity with studio buildScene", () => {
           label: "Manage identity",
           node_type: "ProcessStdProcess",
           status: "validated",
-          ontology_status: "validated",
           parent_id: "AM0104",
           level: 2,
           fx: 120,
@@ -170,7 +172,6 @@ describe("buildStudioScene — parity with studio buildScene", () => {
     expect(scene.nodes[0]).toMatchObject({
       type: "ProcessStdProcess",
       status: "validated",
-      ontology_status: "validated",
       parent_id: "AM0104",
       level: 2,
       x: 120,
@@ -178,6 +179,8 @@ describe("buildStudioScene — parity with studio buildScene", () => {
       fx: 120,
       fy: -40,
     });
+    // ontology_status is not copied to the scene node (not in NODE_PROFILE_FIELDS)
+    expect((scene.nodes[0] as Record<string, unknown>)["ontology_status"]).toBeUndefined();
     expect(scene.nodes[1]).toMatchObject({ type: "ABPProcess", fixed: true });
     expect(scene.edges[0]).toMatchObject({
       relation: "candidate_maps_to",
