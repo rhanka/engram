@@ -172,7 +172,7 @@ export interface GraphRenderer {
   updatePositions(frame: PositionFrame): void;
   fitView(options: FitViewOptions): void;
   setCamera(camera: CameraState): void;
-  render(): void;
+  render(options?: { skipEdges?: boolean }): void;
   snapshot(): GraphRendererSnapshot;
   destroy(): void;
 }

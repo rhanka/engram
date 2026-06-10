@@ -22,6 +22,10 @@
   const EDGE_PICK_RADIUS = 12;
   const HOVER_EDGE_COLOR = [37, 99, 235, 255];
   const MERGE_ANIMATION_DURATION_MS = 520;
+  // Hide edges during pan/zoom when nodes+edges exceed this, for interaction fluidity on large graphs.
+  const EDGE_SKIP_THRESHOLD = 1000;
+  // Delay before restoring edges after the last wheel/zoom event settles.
+  const ZOOM_SETTLE_MS = 150;
 
   let {
     scene = EMPTY_SCENE,
@@ -33,6 +37,7 @@
     onEdgeHover,
     mergePair = null,
     onMergeComplete,
+    edgeSkipThreshold = EDGE_SKIP_THRESHOLD,
   } = $props();
 
   let container;
@@ -49,6 +54,13 @@
   let hoveredEdge = $state(null);
   let hoveredNode = $state(null);
   let hoveredNodeId = $state(null);
+
+  // Scene identity tracking so we only auto-fit on a genuine new graph (not selection/focus).
+  let lastScene = null;
+  // True when the current update path is a real scene/graph-data change (mount/new graph/resize).
+  let skipEdgesOnInteract = false;
+  // Zoom-settle debounce timer: full-edge render after the last wheel event settles.
+  let zoomSettleTimer = null;
 
   // Pan state — not reactive, managed imperatively
   let isPanning = false;
@@ -104,10 +116,10 @@
     renderer.render();
   }
 
-  function applyCamera() {
+  function applyCamera(skipEdges = false) {
     if (!renderer) return;
     renderer.setCamera(camera);
-    renderer.render();
+    renderer.render(skipEdges ? { skipEdges: true } : undefined);
   }
 
   // --- Zoom centred on cursor ---
@@ -138,7 +150,21 @@
       x: worldX - screenX / nextZoom,
       y: worldY - screenY / nextZoom,
     };
-    applyCamera();
+    applyCamera(skipEdgesOnInteract);
+
+    // While zooming on large graphs we skip edges for fluidity; once the wheel
+    // settles (~ZOOM_SETTLE_MS without another event) do a full render with edges.
+    if (skipEdgesOnInteract) {
+      if (zoomSettleTimer !== null && typeof window !== "undefined") {
+        window.clearTimeout(zoomSettleTimer);
+      }
+      if (typeof window !== "undefined") {
+        zoomSettleTimer = window.setTimeout(() => {
+          zoomSettleTimer = null;
+          if (renderer) renderer.render();
+        }, ZOOM_SETTLE_MS);
+      }
+    }
   }
 
   // --- Pan on background drag ---
@@ -162,8 +188,11 @@
     if (!isPanning) return;
     isPanning = false;
     if (canvas) canvas.style.cursor = "default";
+    // Pan ended: restore edges with a full render.
+    if (skipEdgesOnInteract && renderer) renderer.render();
   }
 
+  // "Fit" path: rebuild graph + style and auto-fit the view (mount / new scene / resize).
   function applyPayload() {
     if (!renderer || !payload) return;
 
@@ -172,9 +201,17 @@
     fitAndRender();
   }
 
-  function updateGraph() {
-    if (!mounted) return;
+  // "No-fit" path: rebuild graph + style (so selection highlight + focus styling update)
+  // but PRESERVE the current camera (zoom + pan) instead of re-fitting.
+  function applyPayloadNoFit() {
+    if (!renderer || !payload) return;
 
+    renderer.setGraph(payload.renderGraph);
+    renderer.setStyle(payload.style);
+    applyCamera();
+  }
+
+  function rebuildPayload() {
     payload = buildGraphRendererPayload(scene ?? EMPTY_SCENE, {
       selectedIds: selectedIds ?? [],
       focusId,
@@ -183,9 +220,29 @@
     });
     clearHoveredEdge({ notify: false, render: false });
 
+    // Skip edges during pan/zoom only when the object count is large enough.
+    const objectCount = (scene?.nodes?.length ?? 0) + (scene?.edges?.length ?? 0);
+    skipEdgesOnInteract = objectCount > edgeSkipThreshold;
+  }
+
+  // Full update with auto-fit — used on mount, a genuine new graph, and resize.
+  function updateGraph() {
+    if (!mounted) return;
+
+    rebuildPayload();
     ensureRenderer();
     resizeCanvas();
     applyPayload();
+  }
+
+  // Selection/focus update — preserves the user's current zoom and pan.
+  function updateSelection() {
+    if (!mounted) return;
+
+    rebuildPayload();
+    ensureRenderer();
+    resizeCanvas();
+    applyPayloadNoFit();
   }
 
   function handleResize() {
@@ -310,7 +367,7 @@
         x: panStartCameraX - dx / camera.zoom,
         y: panStartCameraY - dy / camera.zoom,
       };
-      applyCamera();
+      applyCamera(skipEdgesOnInteract);
       return;
     }
 
@@ -466,10 +523,20 @@
   }
 
   $effect(() => {
-    scene;
+    // Graph data (scene) change -> rebuild payload and auto-fit the view.
+    if (scene !== lastScene) {
+      lastScene = scene;
+      updateGraph();
+    }
+  });
+
+  $effect(() => {
+    // Selection / focus change → rebuild styling but PRESERVE the current
+    // camera (no refit), so clicking or opening a node keeps the user's
+    // zoom and pan instead of resetting the view.
     selectedIds;
     focusId;
-    updateGraph();
+    updateSelection();
   });
 
   $effect(() => {
