@@ -584,12 +584,12 @@ describe("public CLI runtime command parity", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.logs.join("\n")).toContain("Merged 2 graphs");
-    expect(merged.nodes).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: "alpha", repo: "repo-a" }),
-        expect.objectContaining({ id: "beta", repo: "repo-b" }),
-      ]),
-    );
+    // repo tags are now stable cross-repo keys derived from remote or local path hash
+    const alphaNode = merged.nodes.find((n) => n.id === "alpha");
+    const betaNode = merged.nodes.find((n) => n.id === "beta");
+    expect(alphaNode?.repo).toMatch(/^repo:(local\/repo-a@[0-9a-f]{8}|github\.com\/.+)$/);
+    expect(betaNode?.repo).toMatch(/^repo:(local\/repo-b@[0-9a-f]{8}|github\.com\/.+)$/);
+    expect(alphaNode?.repo).not.toBe(betaNode?.repo);
   });
 
   it("supports one-shot update rebuilds for code-only projects", async () => {
