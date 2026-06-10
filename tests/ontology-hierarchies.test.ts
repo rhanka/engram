@@ -160,10 +160,33 @@ describe("compileHierarchies", () => {
     expect(arc0.hierarchy_id).toBe("taxonomy");
     expect(arc0.type).toBe("parent_of");
     expect(arc0.source).toBe("profile");
+    // Increment B — profile arcs are authoritative reference facts.
+    expect(arc0.status).toBe("reference");
+    expect(arc0.confidence).toBe(1.0);
 
     const arc1 = arcs.find((a) => a.child_id === "level2")!;
     expect(arc1).toBeDefined();
     expect(arc1.parent_id).toBe("level1");
+  });
+
+  it("tags every profile arc with status:reference and confidence:1.0", () => {
+    const spec: NormalizedOntologyHierarchySpec = {
+      registry: "cats",
+      parent_column: "parent_id",
+      child_column: "id",
+      relation_type: "parent_of",
+      parent_node_type: "Category",
+      child_node_type: "Category",
+    };
+    const records: RegistryRecord[] = [
+      makeRecord("cats", "root", { id: "root", parent_id: "" }),
+      makeRecord("cats", "child1", { id: "child1", parent_id: "root" }),
+      makeRecord("cats", "grandchild", { id: "grandchild", parent_id: "child1" }),
+    ];
+    const arcs = compileHierarchies({ hierarchies: { taxonomy: spec }, registries: { cats: records } });
+    expect(arcs).toHaveLength(2);
+    expect(arcs.every((a) => a.status === "reference")).toBe(true);
+    expect(arcs.every((a) => a.confidence === 1.0)).toBe(true);
   });
 
   it("skips self-loops (parent_id === id)", () => {
@@ -405,6 +428,9 @@ describe("compileOntologyOutputs — hierarchy integration", () => {
     expect(arcs).toHaveLength(3); // root→child1, root→child2, child1→grandchild
     expect(arcs.every((a) => a.source === "profile")).toBe(true);
     expect(arcs.every((a) => a.hierarchy_id === "taxonomy")).toBe(true);
+    // Increment B — serialized arcs carry the lifecycle fields.
+    expect(arcs.every((a) => a.status === "reference")).toBe(true);
+    expect(arcs.every((a) => a.confidence === 1.0)).toBe(true);
 
     // Validate hierarchy-index.json content
     const idx = readJson<{ schema: string; root_ids: string[]; depth: number; ancestor_paths: Record<string, string[]>; cycles: string[][] }>(
