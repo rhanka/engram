@@ -26,6 +26,15 @@
   const EDGE_SKIP_THRESHOLD = 1000;
   // Delay before restoring edges after the last wheel/zoom event settles.
   const ZOOM_SETTLE_MS = 150;
+  // Boxed labels: show a label for nodes whose degree >= this fraction of the max
+  // degree (matches the legacy export.ts font rule: deg >= maxDeg * 0.15 → visible),
+  // plus always for the active (hovered/selected/focused/dragged) node.
+  const LABEL_DEGREE_RATIO = 0.15;
+  // Above this label count we skip rendering labels during an active pan/zoom/drag
+  // and restore them once the interaction settles (perf on very dense graphs).
+  const LABEL_SKIP_THRESHOLD = 80;
+  // Past this many CSS px of pointer movement, a node press becomes a drag (vs a click).
+  const DRAG_MOVE_THRESHOLD = 3;
 
   let {
     scene = EMPTY_SCENE,
@@ -38,6 +47,7 @@
     mergePair = null,
     onMergeComplete,
     edgeSkipThreshold = EDGE_SKIP_THRESHOLD,
+    labelDegreeRatio = LABEL_DEGREE_RATIO,
   } = $props();
 
   let container;
@@ -68,6 +78,26 @@
   let panStartY = 0;
   let panStartCameraX = 0;
   let panStartCameraY = 0;
+
+  // Node-degree cache: degree[nodeIndex] + maxDegree, recomputed on payload rebuild.
+  // Drives both the boxed-label set (item 2) and avoids re-counting per hover.
+  let nodeDegrees = [];
+  let maxNodeDegree = 1;
+  // High-degree node ids (degree >= ratio*max) eligible for a permanent boxed label.
+  let labelEligibleIds = [];
+  // Reactive list of { id, label, x, y } in CSS-pixel screen coords for the overlay.
+  let labels = $state([]);
+  // Suppress label rendering during an active interaction on dense graphs.
+  let labelsHidden = $state(false);
+
+  // Node-drag state — not reactive, managed imperatively.
+  let draggingNodeId = null;
+  let dragNodeIndex = -1;
+  let dragMoved = false;
+  let dragStartX = 0;
+  let dragStartY = 0;
+  // Set true when a drag finishes so the trailing click doesn't also select.
+  let suppressNextClick = false;
 
   const hasNodes = $derived((scene?.nodes?.length ?? 0) > 0);
   const hasLegend = $derived((legend?.length ?? 0) > 0);
@@ -114,12 +144,14 @@
     renderer.fitView({ padding, viewportWidth, viewportHeight });
     camera = renderer.snapshot().camera;
     renderer.render();
+    setLabelsHidden(false);
   }
 
   function applyCamera(skipEdges = false) {
     if (!renderer) return;
     renderer.setCamera(camera);
     renderer.render(skipEdges ? { skipEdges: true } : undefined);
+    updateLabels();
   }
 
   // --- Zoom centred on cursor ---
@@ -150,27 +182,37 @@
       x: worldX - screenX / nextZoom,
       y: worldY - screenY / nextZoom,
     };
+    // Hide many labels mid-zoom on dense graphs (no-op for small label sets).
+    setLabelsHidden(true);
     applyCamera(skipEdgesOnInteract);
 
     // While zooming on large graphs we skip edges for fluidity; once the wheel
     // settles (~ZOOM_SETTLE_MS without another event) do a full render with edges.
-    if (skipEdgesOnInteract) {
-      if (zoomSettleTimer !== null && typeof window !== "undefined") {
-        window.clearTimeout(zoomSettleTimer);
-      }
-      if (typeof window !== "undefined") {
-        zoomSettleTimer = window.setTimeout(() => {
-          zoomSettleTimer = null;
-          if (renderer) renderer.render();
-        }, ZOOM_SETTLE_MS);
-      }
+    if (typeof window !== "undefined") {
+      if (zoomSettleTimer !== null) window.clearTimeout(zoomSettleTimer);
+      zoomSettleTimer = window.setTimeout(() => {
+        zoomSettleTimer = null;
+        if (renderer && skipEdgesOnInteract) renderer.render();
+        setLabelsHidden(false);
+      }, ZOOM_SETTLE_MS);
     }
   }
 
-  // --- Pan on background drag ---
+  // --- Pointer down: node drag (over a node) or pan (over the background) ---
   function handlePointerDown(event) {
     const id = pickNode(event);
-    if (id) return; // clicking a node starts selection, not pan
+
+    if (id) {
+      // Begin a potential node drag. Movement past DRAG_MOVE_THRESHOLD turns this
+      // into a reposition; a release without movement falls through to click/select.
+      draggingNodeId = id;
+      dragNodeIndex = payload?.nodeIndexById?.get(id) ?? -1;
+      dragMoved = false;
+      dragStartX = event.clientX;
+      dragStartY = event.clientY;
+      if (canvas) canvas.setPointerCapture(event.pointerId);
+      return;
+    }
 
     isPanning = true;
     panStartX = event.clientX;
@@ -185,11 +227,28 @@
   }
 
   function handlePointerUp(event) {
+    if (draggingNodeId) {
+      const wasDrag = dragMoved;
+      draggingNodeId = null;
+      dragNodeIndex = -1;
+      dragMoved = false;
+      if (canvas) canvas.style.cursor = "default";
+      if (wasDrag) {
+        // Finalize the moved node: refresh hover hit-testing + labels.
+        if (skipEdgesOnInteract && renderer) renderer.render();
+        setLabelsHidden(false);
+        // Swallow the trailing click so a drag doesn't also select.
+        suppressNextClick = true;
+      }
+      return;
+    }
+
     if (!isPanning) return;
     isPanning = false;
     if (canvas) canvas.style.cursor = "default";
     // Pan ended: restore edges with a full render.
     if (skipEdgesOnInteract && renderer) renderer.render();
+    setLabelsHidden(false);
   }
 
   // "Fit" path: rebuild graph + style and auto-fit the view (mount / new scene / resize).
@@ -219,6 +278,7 @@
       nodeRadius: NODE_RADIUS,
     });
     clearHoveredEdge({ notify: false, render: false });
+    computeNodeDegrees();
 
     // Skip edges during pan/zoom only when the object count is large enough.
     const objectCount = (scene?.nodes?.length ?? 0) + (scene?.edges?.length ?? 0);
@@ -263,6 +323,113 @@
     });
   }
 
+  // Count edges per node from the render-graph buffers and find the max degree.
+  // Cached so hover + the label set don't re-scan all edges repeatedly.
+  function computeNodeDegrees() {
+    nodeDegrees = [];
+    maxNodeDegree = 1;
+    labelEligibleIds = [];
+    const graph = payload?.renderGraph;
+    if (!graph) return;
+
+    const nodeCount = graph.nodeIds.length;
+    const degrees = new Array(nodeCount).fill(0);
+    const edgeCount = graph.edges.length / 2;
+    for (let e = 0; e < edgeCount; e += 1) {
+      degrees[graph.edges[e * 2]] += 1;
+      degrees[graph.edges[e * 2 + 1]] += 1;
+    }
+    let max = 1;
+    for (let i = 0; i < nodeCount; i += 1) {
+      if (degrees[i] > max) max = degrees[i];
+    }
+    nodeDegrees = degrees;
+    maxNodeDegree = max;
+
+    // Item 2: god-node label set — degree >= ratio * maxDegree (legacy export.ts rule).
+    const threshold = labelDegreeRatio * max;
+    const eligible = [];
+    for (let i = 0; i < nodeCount; i += 1) {
+      if (degrees[i] >= threshold && degrees[i] > 0) eligible.push(graph.nodeIds[i]);
+    }
+    labelEligibleIds = eligible;
+  }
+
+  function degreeForNodeId(nodeId) {
+    const idx = payload?.nodeIndexById?.get(nodeId);
+    return Number.isInteger(idx) ? (nodeDegrees[idx] ?? 0) : 0;
+  }
+
+  // World → screen (CSS px from the canvas top-left), inverse of eventToWorld.
+  function worldToScreen(worldX, worldY) {
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / Math.max(1, rect.width);
+    const scaleY = canvas.height / Math.max(1, rect.height);
+    return {
+      x: ((worldX - camera.x) * camera.zoom) / scaleX + rect.width / 2,
+      y: ((worldY - camera.y) * camera.zoom) / scaleY + rect.height / 2,
+    };
+  }
+
+  // Recompute the boxed-label overlay: god-nodes + the active node, positioned
+  // via the current camera. Called on every camera change (pan/zoom/fit/drag).
+  function updateLabels() {
+    const graph = payload?.renderGraph;
+    if (!graph || !canvas) {
+      labels = [];
+      return;
+    }
+    if (labelsHidden) return;
+
+    const activeIds = new Set(
+      [hoveredNodeId, focusId, ...(selectedIds ?? []), draggingNodeId].filter(Boolean),
+    );
+    const ids = new Set(labelEligibleIds);
+    for (const id of activeIds) ids.add(id);
+
+    const next = [];
+    for (const id of ids) {
+      const idx = payload.nodeIndexById?.get(id);
+      if (!Number.isInteger(idx)) continue;
+      const worldX = graph.positions[idx * 2] ?? 0;
+      const worldY = graph.positions[idx * 2 + 1] ?? 0;
+      const screen = worldToScreen(worldX, worldY);
+      if (!screen) continue;
+      const node = payload.nodeById?.get(id);
+      const radius = (payload.style?.nodeSizes?.[idx] ?? NODE_RADIUS) * camera.zoom;
+      next.push({
+        id,
+        label: node?.label ?? id,
+        x: screen.x,
+        y: screen.y - radius - 4,
+        active: activeIds.has(id),
+      });
+    }
+    labels = next;
+  }
+
+  // On large label sets, drop labels during active pan/zoom/drag for fluidity,
+  // then restore them when the interaction settles.
+  function setLabelsHidden(hidden) {
+    if (labelEligibleIds.length <= LABEL_SKIP_THRESHOLD) {
+      // Small graphs: always keep labels live (cheap), just refresh positions.
+      labelsHidden = false;
+      updateLabels();
+      return;
+    }
+    if (labelsHidden === hidden) {
+      if (!hidden) updateLabels();
+      return;
+    }
+    labelsHidden = hidden;
+    if (hidden) {
+      labels = [];
+    } else {
+      updateLabels();
+    }
+  }
+
   function eventToWorld(event) {
     if (!canvas || !camera.zoom) return null;
 
@@ -283,6 +450,19 @@
     };
   }
 
+  // Move only the dragged node to the given world coords, then re-render.
+  // Mutates the canonical payload positions so hover hit-testing + labels follow.
+  function dragNodeTo(worldX, worldY) {
+    if (!renderer || !payload?.renderGraph || dragNodeIndex < 0) return;
+    const positions = payload.renderGraph.positions;
+    positions[dragNodeIndex * 2] = worldX;
+    positions[dragNodeIndex * 2 + 1] = worldY;
+    renderer.setPositions(positions);
+    // Skip edges mid-drag on dense graphs for fluidity (restored on pointerup).
+    renderer.render(skipEdgesOnInteract ? { skipEdges: true } : undefined);
+    updateLabels();
+  }
+
   function pickNode(event) {
     if (!payload) return null;
 
@@ -296,6 +476,11 @@
   }
 
   function handleClick(event) {
+    // A click that concludes a node drag must not also select.
+    if (suppressNextClick) {
+      suppressNextClick = false;
+      return;
+    }
     const id = pickNode(event);
     if (id) onSelect?.(id);
   }
@@ -354,6 +539,21 @@
   }
 
   function handlePointerMove(event) {
+    // Node drag takes priority over everything else.
+    if (draggingNodeId) {
+      if (!dragMoved) {
+        const dx = event.clientX - dragStartX;
+        const dy = event.clientY - dragStartY;
+        if (Math.hypot(dx, dy) < DRAG_MOVE_THRESHOLD) return; // below threshold → still a click
+        dragMoved = true;
+        if (canvas) canvas.style.cursor = "grabbing";
+        setLabelsHidden(true);
+      }
+      const world = eventToWorld(event);
+      if (world) dragNodeTo(world.x, world.y);
+      return;
+    }
+
     // Pan takes priority when dragging
     if (isPanning) {
       const rect = canvas?.getBoundingClientRect();
@@ -367,6 +567,8 @@
         x: panStartCameraX - dx / camera.zoom,
         y: panStartCameraY - dy / camera.zoom,
       };
+      // Hide many labels mid-pan on dense graphs (no-op for small label sets).
+      setLabelsHidden(true);
       applyCamera(skipEdgesOnInteract);
       return;
     }
@@ -410,14 +612,8 @@
     hoveredNodeId = nodeId;
     if (nodeId && payload) {
       const node = payload.nodeById?.get(nodeId);
-      const graph = payload.renderGraph;
-      const nodeIdx = payload.nodeIndexById?.get(nodeId);
-      // Compute degree: count edges where this node is source or target
-      const edgeCount = graph ? graph.edges.length / 2 : 0;
-      let degree = 0;
-      for (let e = 0; e < edgeCount; e++) {
-        if (graph.edges[e * 2] === nodeIdx || graph.edges[e * 2 + 1] === nodeIdx) degree++;
-      }
+      // Degree from the cached per-node counts (computed on payload rebuild).
+      const degree = degreeForNodeId(nodeId);
       hoveredNode = node ? { ...node, degree, localX, localY } : null;
     } else {
       hoveredNode = null;
@@ -435,12 +631,22 @@
         renderer.render();
       }
     }
+
+    // Always-on label for the hovered node (plus the god-node set).
+    updateLabels();
   }
 
   function handlePointerLeave() {
     clearHoveredEdge();
     setHoveredNode(null);
     isPanning = false;
+    if (draggingNodeId) {
+      if (dragMoved && skipEdgesOnInteract && renderer) renderer.render();
+      draggingNodeId = null;
+      dragNodeIndex = -1;
+      dragMoved = false;
+      setLabelsHidden(false);
+    }
   }
 
   function legendClass(value) {
@@ -608,6 +814,17 @@
     onwheel={handleWheel}
   ></canvas>
 
+  {#if labels.length}
+    <div class="node-labels" aria-hidden="true">
+      {#each labels as item (item.id)}
+        <span
+          class={item.active ? "node-label node-label-active" : "node-label"}
+          style={`left: ${item.x}px; top: ${item.y}px;`}
+        >{item.label}</span>
+      {/each}
+    </div>
+  {/if}
+
   {#if hoveredNode}
     <div
       class="node-tooltip"
@@ -715,6 +932,39 @@
     font-style: italic;
     pointer-events: none;
     text-align: center;
+  }
+
+  /* Boxed god-node labels (legacy vis-network style): bordered, opaque, small. */
+  .node-labels {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    overflow: hidden;
+  }
+
+  .node-label {
+    position: absolute;
+    transform: translate(-50%, -100%);
+    max-width: 12rem;
+    padding: 1px 5px;
+    border: 1px solid var(--st-semantic-border-muted, #cbd5e1);
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--st-semantic-surface-default, #fff) 92%, transparent);
+    color: var(--st-semantic-text-default, #1e293b);
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.12);
+    font-size: 0.68rem;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .node-label-active {
+    border-color: var(--st-semantic-action-primary, #2563eb);
+    color: var(--st-semantic-action-primary, #2563eb);
+    font-weight: 600;
+    z-index: 2;
   }
 
   .node-tooltip {

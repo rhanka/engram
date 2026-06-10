@@ -3,11 +3,101 @@ import { describe, expect, it } from "vitest";
 import {
   buildConnectedDimStyle,
   buildGraphRendererPayload,
+  densityScale,
   findNearestEdge,
   findNearestNodeId,
   interpolateMergeStyle,
   interpolateMergePositions,
 } from "../lib/graphRendererPayload.js";
+
+// --- Item 1: density-aware base node size ---
+describe("densityScale", () => {
+  it("is 1 at or below the reference node count (1000 confirmed good)", () => {
+    expect(densityScale(1)).toBe(1);
+    expect(densityScale(500)).toBe(1);
+    expect(densityScale(1000)).toBe(1);
+  });
+
+  it("shrinks the base radius as node count grows beyond the reference", () => {
+    expect(densityScale(2000)).toBeLessThan(1);
+    // sqrt(1000/4000) ~= 0.5
+    expect(densityScale(4000)).toBeCloseTo(0.5, 5);
+    // monotonically decreasing
+    expect(densityScale(5000)).toBeLessThan(densityScale(2000));
+  });
+
+  it("never drops below the MIN floor (0.45)", () => {
+    expect(densityScale(100000)).toBe(0.45);
+    expect(densityScale(1e9)).toBe(0.45);
+  });
+
+  it("scales the effective node sizes in the payload while preserving the degree spread", () => {
+    const dense = Array.from({ length: 4000 }, (_, i) => ({
+      id: `n${i}`,
+      label: `N${i}`,
+      x: i,
+      y: 0,
+      weight: 1,
+    }));
+    const sparse = dense.slice(0, 500);
+    const densePayload = buildGraphRendererPayload({ nodes: dense, edges: [] }, { nodeRadius: 3 });
+    const sparsePayload = buildGraphRendererPayload({ nodes: sparse, edges: [] }, { nodeRadius: 3 });
+
+    // Same weight, but the dense graph renders smaller base nodes.
+    expect(densePayload.style.nodeSizes[0]).toBeLessThan(sparsePayload.style.nodeSizes[0]);
+    // The ratio matches the density curve (sparse=1, dense=0.5).
+    expect(densePayload.style.nodeSizes[0] / sparsePayload.style.nodeSizes[0]).toBeCloseTo(0.5, 5);
+  });
+});
+
+// --- Item 2: boxed-label degree threshold ---
+// Mirrors the degree-count + threshold logic GraphCanvas uses to pick which
+// god-nodes get a permanent boxed label (degree >= ratio * maxDegree).
+function labelSetFromPayload(payload, ratio = 0.15) {
+  const graph = payload.renderGraph;
+  const nodeCount = graph.nodeIds.length;
+  const degrees = new Array(nodeCount).fill(0);
+  const edgeCount = graph.edges.length / 2;
+  for (let e = 0; e < edgeCount; e += 1) {
+    degrees[graph.edges[e * 2]] += 1;
+    degrees[graph.edges[e * 2 + 1]] += 1;
+  }
+  const max = Math.max(1, ...degrees);
+  const threshold = ratio * max;
+  const ids = [];
+  for (let i = 0; i < nodeCount; i += 1) {
+    if (degrees[i] >= threshold && degrees[i] > 0) ids.push(graph.nodeIds[i]);
+  }
+  return ids;
+}
+
+describe("boxed-label degree threshold (item 2)", () => {
+  it("selects only nodes whose degree >= 0.15 * maxDegree", () => {
+    // Hub "h" has degree 10; leaves l0..l9 each degree 1; "m" degree 2.
+    const nodes = [
+      { id: "h", label: "Hub", x: 0, y: 0, weight: 1 },
+      { id: "m", label: "Mid", x: 50, y: 0, weight: 1 },
+    ];
+    const edges = [{ source: "h", target: "m" }];
+    for (let i = 0; i < 9; i += 1) {
+      nodes.push({ id: `l${i}`, label: `Leaf${i}`, x: i, y: 50, weight: 1 });
+      edges.push({ source: "h", target: `l${i}` });
+    }
+    // give "m" a second edge so its degree is 2
+    nodes.push({ id: "x", label: "X", x: 80, y: 50, weight: 1 });
+    edges.push({ source: "m", target: "x" });
+
+    const payload = buildGraphRendererPayload({ nodes, edges }, { nodeRadius: 3 });
+    const labelled = labelSetFromPayload(payload, 0.15);
+
+    // maxDegree = 10 (hub). threshold = 1.5 → only degree >= 2 qualifies: h (10), m (2).
+    expect(labelled).toContain("h");
+    expect(labelled).toContain("m");
+    // leaves (degree 1) and x (degree 1) are below threshold → no label
+    expect(labelled).not.toContain("l0");
+    expect(labelled).not.toContain("x");
+  });
+});
 
 // --- helpers for connected-dim tests ---
 function makeTriangleScene() {
