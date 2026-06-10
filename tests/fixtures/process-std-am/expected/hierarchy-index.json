@@ -1,0 +1,32 @@
+{
+  "schema": "graphify_ontology_hierarchies_v1",
+  "root_ids": [
+    "AM"
+  ],
+  "depth": 2,
+  "ancestor_paths": {
+    "AM": [],
+    "AM01": [
+      "AM"
+    ],
+    "AM02": [
+      "AM"
+    ],
+    "AM03": [
+      "AM"
+    ],
+    "AM0101": [
+      "AM",
+      "AM01"
+    ],
+    "AM0104": [
+      "AM",
+      "AM01"
+    ],
+    "AM0201": [
+      "AM",
+      "AM02"
+    ]
+  },
+  "cycles": []
+}
