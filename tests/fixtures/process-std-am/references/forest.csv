@@ -1,0 +1,14 @@
+process_id,process_name,process_code,parent_id,level
+AM01,Strategy and Planning,AM-01,,0
+AM03,Asset Decommissioning,AM-03,,0
+AM06,Risk Management,AM-06,,0
+AM08,Performance Management,AM-08,,0
+AM0101,Lifecycle Strategy Definition,AM-01-01,AM01,1
+AM0104,Investment Planning,AM-01-04,AM01,1
+AM0301,Decommission Planning,AM-03-01,AM03,1
+AM0601,Risk Identification,AM-06-01,AM06,1
+AM0104.01,Investment Prioritisation,AM-01-04.01,AM0104,2
+AM0104.01.10,Capital Allocation Framework,AM-01-04.01.10,AM0104.01,3
+AM0104.01.10.02,Funding Constraints Review,AM-01-04.01.10.02,AM0104.01.10,4
+AM0801,Performance Reporting,AM-08-01,AM08,1
+ORPHAN01,Orphaned Process,ORPHAN-01,MISSING_PARENT,2
