@@ -457,6 +457,45 @@ Future tests should cover:
 - path jail blocks writes outside the repo
 - dirty worktree warning is emitted before apply
 
+## Arc↔scene-node join contract (Q3-1)
+
+Hierarchy arcs (`hierarchies.json`) carry `parent_id` / `child_id` which are
+**registry-native node ids** — the same value that appears as `id` on the
+corresponding scene node in `scene.json` (or `graph.json`).
+
+The join key is `id`, NOT `code`.
+
+`code` is a separate display field (e.g. `AM-01-04` for the node whose id is
+`AM0104`).  Its format is profile-specific and may be absent.
+
+### Canonical join pattern
+
+```typescript
+// arc:   { parent_id: "AM0101", child_id: "AM0104", … }
+// nodes: [{ id: "AM0104", code: "AM-01-04", label: "Investment Planning", … }]
+
+const nodeById = new Map(sceneNodes.map((n) => [n.id, n]));
+const parentNode = nodeById.get(arc.parent_id); // join on id
+const childNode  = nodeById.get(arc.child_id);  // join on id
+// ✗ NEVER: nodeById.get(arc.parent_id === node.code)  — code ≠ id in general
+```
+
+### Why code ≠ id
+
+| field  | example value | semantics                                       |
+|--------|---------------|-------------------------------------------------|
+| `id`   | `AM0104`      | Registry-native primary key (join anchor).      |
+| `code` | `AM-01-04`    | Human-readable display code (may differ, may be absent). |
+
+A consumer that joins arcs to nodes by `code` will silently miss matches
+whenever the registry uses a different format for its primary key.
+
+### Spec reference
+
+`OntologyHierarchyArc.parent_id` / `.child_id` — see `src/types.ts`.
+Arc generation — see `src/ontology-hierarchies.ts` (`compileHierarchies`).
+Scene node `id` field — see `StudioSceneNode` in `src/studio-scene.ts`.
+
 ## UAT
 
 - Public-pack-derived isolated UAT was executed in `/tmp/graphify-mystery-uat` from `../public-domaine-mystery-sagas-pack`.
