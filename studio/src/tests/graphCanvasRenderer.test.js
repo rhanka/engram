@@ -77,6 +77,23 @@ describe("GraphCanvas renderer", () => {
     expect(source).toContain("buildGraphRendererPayload");
   });
 
+  it("updates node hover dimming through style buffers without rebuilding the full graph payload", () => {
+    const source = graphCanvasSource();
+    const hoverBlock = source.slice(source.indexOf("function setHoveredNode"), source.indexOf("function handlePointerLeave"));
+
+    expect(hoverBlock).toContain("buildConnectedDimStyle");
+    expect(hoverBlock).not.toContain("buildGraphRendererPayload");
+  });
+
+  it("keeps edge hover visible with tooltip, relation callback, and emphasized style", () => {
+    const source = graphCanvasSource();
+
+    expect(source).toContain("edge-tooltip");
+    expect(source).toContain("onEdgeHover");
+    expect(source).toContain("HOVER_EDGE_COLOR");
+    expect(source).toContain("findNearestEdge");
+  });
+
   // --- P1: Node hover tooltip ---
   it("shows a node tooltip on hover with label, type/node_type, and degree", () => {
     const source = graphCanvasSource();
