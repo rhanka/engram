@@ -1,0 +1,14 @@
+version: 1
+
+profile:
+  path: graphify/ontology-profile.yaml
+
+inputs:
+  registries:
+    - references/processes.csv
+
+outputs:
+  state_dir: .graphify
+  write_html: false
+  write_wiki: false
+  write_profile_report: false
