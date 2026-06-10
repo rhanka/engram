@@ -1,14 +1,18 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import type Graph from "graphology";
 import { createGraph, isDirectedGraph, loadGraphFromData, serializeGraph } from "./graph.js";
 import { assertGraphJsonFileSize, assertGraphJsonSize } from "./graph-size-guard.js";
 import { loadHyperedges, mergeHyperedges, setHyperedges } from "./hyperedges.js";
 import type { Hyperedge } from "./hyperedges.js";
+import type { RepoKeyRunner } from "./repo-key.js";
+import { repoKey } from "./repo-key.js";
 
 export interface MergeGraphsOptions {
   inputs: string[];
   out: string;
+  /** Optional runner for git commands, injectable for testing. */
+  runner?: RepoKeyRunner;
 }
 
 export interface MergeGraphsResult {
@@ -19,12 +23,40 @@ export interface MergeGraphsResult {
   edgeCount: number;
 }
 
-function repoTagFromGraphPath(graphPath: string): string {
-  const parentName = basename(dirname(graphPath));
-  if (parentName === ".graphify" || parentName === "graphify-out") {
-    return basename(dirname(dirname(graphPath))) || "unknown";
+/**
+ * Derive a stable repo tag from a graph file path.
+ *
+ * The tag is computed via `repoKey()` which uses the remote origin URL (preferred)
+ * or falls back to a deterministic local key — never just the basename, so two
+ * repos with the same directory name cannot collide.
+ *
+ * If an explicit `tag` override is provided (rétrocompat for callers that build
+ * the tag themselves) it is returned as-is.
+ */
+function repoTagFromGraphPath(
+  graphPath: string,
+  tag?: string,
+  runner?: RepoKeyRunner,
+): string {
+  if (tag !== undefined) return tag;
+
+  // Walk up from the graph file to the repo root:
+  // .graphify/graph.json      → repoRoot = dirname(dirname(graphPath))
+  // graphify-out/graph.json   → repoRoot = dirname(dirname(graphPath))
+  // any-other-dir/graph.json  → repoRoot = dirname(graphPath)  (best-effort)
+  const parent = dirname(graphPath);
+  const grandparent = dirname(parent);
+  const parentName = parent.split("/").at(-1) ?? "";
+  const repoRoot =
+    parentName === ".graphify" || parentName === "graphify-out"
+      ? grandparent
+      : parent;
+
+  try {
+    return repoKey(repoRoot, runner);
+  } catch {
+    return "unknown";
   }
-  return parentName || "unknown";
 }
 
 function mergedGraphType(graphs: Graph[]): boolean {
@@ -51,7 +83,7 @@ export function mergeGraphsFromFiles(options: MergeGraphsOptions): MergeGraphsRe
     assertGraphJsonFileSize(resolved, "read");
     const raw = JSON.parse(readFileSync(resolved, "utf-8")) as Record<string, unknown>;
     const graph = loadGraphFromData(raw);
-    const repo = repoTagFromGraphPath(resolved);
+    const repo = repoTagFromGraphPath(resolved, undefined, options.runner);
     graph.forEachNode((nodeId, attrs) => {
       if (attrs.repo === undefined) {
         graph.setNodeAttribute(nodeId, "repo", repo);
