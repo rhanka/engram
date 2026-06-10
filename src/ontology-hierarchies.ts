@@ -66,6 +66,10 @@ export function compileHierarchies(options: CompileHierarchiesOptions): Ontology
         level: 0, // filled in by buildHierarchyIndex
         type: spec.relation_type,
         source: "profile",
+        // Increment B (D1=1b): registry-bound arcs are deterministic structural
+        // facts, so they are authoritative references with full confidence.
+        status: "reference",
+        confidence: 1.0,
       });
     }
   }

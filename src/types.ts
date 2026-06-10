@@ -416,11 +416,32 @@ export interface ProjectConfigValidationIssue {
   message: string;
 }
 
+/**
+ * Ontology lifecycle status vocabulary.
+ *
+ * Increment B (process-std-AM) introduces the 5-state hierarchy-arc lifecycle:
+ *   reference  — registry-bound authoritative fact (confidence 1.0).
+ *                Produced in v1 for every `source:"profile"` arc under D1=1b.
+ *   validated  — human-accepted (e.g. a reviewer confirmed an extracted arc).
+ *   candidate  — awaiting review.
+ *   proposed   — system-suggested, not yet triaged.
+ *   inferred   — low-confidence derived arc.
+ *
+ * NOTE: candidate / validated / proposed / inferred are RESERVED for the
+ * future `source:"extracted"` lane (LLM-extracted arcs, v2) and are NOT
+ * produced in v1 — only `reference` is emitted by compileHierarchies().
+ *
+ * The legacy values (attached / needs_review / rejected / superseded) remain
+ * for backward compatibility with existing entity/mapping review flows.
+ */
 export type OntologyStatus =
+  | "inferred"
+  | "proposed"
   | "candidate"
+  | "validated"
+  | "reference"
   | "attached"
   | "needs_review"
-  | "validated"
   | "rejected"
   | "superseded"
   | string;
@@ -647,6 +668,18 @@ export interface OntologyHierarchyArc {
   type: string;
   /** Always "profile" for profile-declared hierarchies. */
   source: "profile";
+  /**
+   * Lifecycle status (increment B). Profile-declared arcs are always
+   * `"reference"` — registry-bound authoritative facts under D1=1b. The other
+   * states (candidate/validated/proposed/inferred) are reserved for the future
+   * `source:"extracted"` lane (v2) and are NOT produced in v1.
+   */
+  status?: OntologyStatus;
+  /**
+   * Confidence in [0,1] (increment B). Profile-declared arcs are deterministic
+   * structural facts and always carry `1.0`.
+   */
+  confidence?: number;
   /** Optional evidence references carried by the registry record. */
   evidence_refs?: string[];
 }

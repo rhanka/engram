@@ -160,10 +160,33 @@ describe("compileHierarchies", () => {
     expect(arc0.hierarchy_id).toBe("taxonomy");
     expect(arc0.type).toBe("parent_of");
     expect(arc0.source).toBe("profile");
+    // Increment B — profile arcs are authoritative reference facts.
+    expect(arc0.status).toBe("reference");
+    expect(arc0.confidence).toBe(1.0);
 
     const arc1 = arcs.find((a) => a.child_id === "level2")!;
     expect(arc1).toBeDefined();
     expect(arc1.parent_id).toBe("level1");
+  });
+
+  it("tags every profile arc with status:reference and confidence:1.0", () => {
+    const spec: NormalizedOntologyHierarchySpec = {
+      registry: "cats",
+      parent_column: "parent_id",
+      child_column: "id",
+      relation_type: "parent_of",
+      parent_node_type: "Category",
+      child_node_type: "Category",
+    };
+    const records: RegistryRecord[] = [
+      makeRecord("cats", "root", { id: "root", parent_id: "" }),
+      makeRecord("cats", "child1", { id: "child1", parent_id: "root" }),
+      makeRecord("cats", "grandchild", { id: "grandchild", parent_id: "child1" }),
+    ];
+    const arcs = compileHierarchies({ hierarchies: { taxonomy: spec }, registries: { cats: records } });
+    expect(arcs).toHaveLength(2);
+    expect(arcs.every((a) => a.status === "reference")).toBe(true);
+    expect(arcs.every((a) => a.confidence === 1.0)).toBe(true);
   });
 
   it("skips self-loops (parent_id === id)", () => {
@@ -337,6 +360,85 @@ describe("buildHierarchyIndex", () => {
     const parsed = JSON.parse(json);
     expect(parsed).toEqual(idx);
   });
+
+  // -------------------------------------------------------------------------
+  // DR-1 — Multi-root forest: buildHierarchyIndex must emit N root_ids when
+  // the arcs contain multiple independent trees (no super-root).
+  // -------------------------------------------------------------------------
+
+  it("handles disconnected forest: multiple independent roots", () => {
+    // Two independent trees — should produce two root_ids
+    const arcs: OntologyHierarchyArc[] = [
+      { hierarchy_id: "h", parent_id: "R1", child_id: "A", level: 0, type: "t", source: "profile" },
+      { hierarchy_id: "h", parent_id: "R1", child_id: "B", level: 0, type: "t", source: "profile" },
+      { hierarchy_id: "h", parent_id: "R2", child_id: "C", level: 0, type: "t", source: "profile" },
+    ];
+    const idx = buildHierarchyIndex(arcs);
+
+    expect(idx.root_ids).toHaveLength(2);
+    expect(idx.root_ids).toContain("R1");
+    expect(idx.root_ids).toContain("R2");
+    expect(idx.ancestor_paths["A"]).toEqual(["R1"]);
+    expect(idx.ancestor_paths["B"]).toEqual(["R1"]);
+    expect(idx.ancestor_paths["C"]).toEqual(["R2"]);
+  });
+
+  // -------------------------------------------------------------------------
+  // DR-1 — Orphan tolerance: a node whose parent_id references an absent node
+  // must NOT be dropped.  The absent parent becomes an extra root_id, and the
+  // orphan gets an ancestor_path of [missing_parent].
+  // -------------------------------------------------------------------------
+
+  it("tolerates orphan nodes: missing parent becomes extra root, child not dropped", () => {
+    // "phantom" never appears as child_id but is referenced as parent_id.
+    // This simulates a dangling parent_id (orphan in the registry).
+    const arcs: OntologyHierarchyArc[] = [
+      { hierarchy_id: "h", parent_id: "real_root", child_id: "child1", level: 0, type: "t", source: "profile" },
+      { hierarchy_id: "h", parent_id: "phantom", child_id: "orphan", level: 0, type: "t", source: "profile" },
+    ];
+    const idx = buildHierarchyIndex(arcs);
+
+    // phantom has no parent → it is a root
+    expect(idx.root_ids).toContain("phantom");
+    // real_root is also a root
+    expect(idx.root_ids).toContain("real_root");
+    // orphan is reachable under phantom — it is NOT dropped
+    expect(idx.ancestor_paths["orphan"]).toEqual(["phantom"]);
+    expect(Object.keys(idx.ancestor_paths)).toContain("orphan");
+    // Normal tree still intact
+    expect(idx.ancestor_paths["child1"]).toEqual(["real_root"]);
+    expect(idx.cycles).toHaveLength(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // DR-2 — Pointed-code L4 depth: node level derivable from ancestor_paths
+  // -------------------------------------------------------------------------
+
+  it("computes correct depth and ancestor_paths for a 5-level pointed-code chain", () => {
+    // Simulates AM01 → AM0104 → AM0104.01 → AM0104.01.10 → AM0104.01.10.02
+    const arcs: OntologyHierarchyArc[] = [
+      { hierarchy_id: "h", parent_id: "AM01", child_id: "AM0104", level: 0, type: "t", source: "profile" },
+      { hierarchy_id: "h", parent_id: "AM0104", child_id: "AM0104.01", level: 0, type: "t", source: "profile" },
+      { hierarchy_id: "h", parent_id: "AM0104.01", child_id: "AM0104.01.10", level: 0, type: "t", source: "profile" },
+      { hierarchy_id: "h", parent_id: "AM0104.01.10", child_id: "AM0104.01.10.02", level: 0, type: "t", source: "profile" },
+    ];
+    const idx = buildHierarchyIndex(arcs);
+
+    expect(idx.depth).toBe(4);
+    expect(idx.root_ids).toEqual(["AM01"]);
+
+    // Level contract: node level == ancestor_paths[node].length
+    expect(idx.ancestor_paths["AM01"].length).toBe(0);           // L0
+    expect(idx.ancestor_paths["AM0104"].length).toBe(1);         // L1
+    expect(idx.ancestor_paths["AM0104.01"].length).toBe(2);      // L2
+    expect(idx.ancestor_paths["AM0104.01.10"].length).toBe(3);   // L3
+    expect(idx.ancestor_paths["AM0104.01.10.02"].length).toBe(4); // L4
+
+    // Full chain
+    expect(idx.ancestor_paths["AM0104.01.10.02"]).toEqual([
+      "AM01", "AM0104", "AM0104.01", "AM0104.01.10",
+    ]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -405,6 +507,9 @@ describe("compileOntologyOutputs — hierarchy integration", () => {
     expect(arcs).toHaveLength(3); // root→child1, root→child2, child1→grandchild
     expect(arcs.every((a) => a.source === "profile")).toBe(true);
     expect(arcs.every((a) => a.hierarchy_id === "taxonomy")).toBe(true);
+    // Increment B — serialized arcs carry the lifecycle fields.
+    expect(arcs.every((a) => a.status === "reference")).toBe(true);
+    expect(arcs.every((a) => a.confidence === 1.0)).toBe(true);
 
     // Validate hierarchy-index.json content
     const idx = readJson<{ schema: string; root_ids: string[]; depth: number; ancestor_paths: Record<string, string[]>; cycles: string[][] }>(
