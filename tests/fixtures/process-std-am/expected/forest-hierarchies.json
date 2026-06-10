@@ -1,0 +1,92 @@
+[
+  {
+    "hierarchy_id": "am_process_tree",
+    "parent_id": "AM01",
+    "child_id": "AM0101",
+    "level": 0,
+    "type": "parent_process_of",
+    "source": "profile",
+    "status": "reference",
+    "confidence": 1
+  },
+  {
+    "hierarchy_id": "am_process_tree",
+    "parent_id": "AM01",
+    "child_id": "AM0104",
+    "level": 0,
+    "type": "parent_process_of",
+    "source": "profile",
+    "status": "reference",
+    "confidence": 1
+  },
+  {
+    "hierarchy_id": "am_process_tree",
+    "parent_id": "AM03",
+    "child_id": "AM0301",
+    "level": 0,
+    "type": "parent_process_of",
+    "source": "profile",
+    "status": "reference",
+    "confidence": 1
+  },
+  {
+    "hierarchy_id": "am_process_tree",
+    "parent_id": "AM06",
+    "child_id": "AM0601",
+    "level": 0,
+    "type": "parent_process_of",
+    "source": "profile",
+    "status": "reference",
+    "confidence": 1
+  },
+  {
+    "hierarchy_id": "am_process_tree",
+    "parent_id": "AM0104",
+    "child_id": "AM0104.01",
+    "level": 0,
+    "type": "parent_process_of",
+    "source": "profile",
+    "status": "reference",
+    "confidence": 1
+  },
+  {
+    "hierarchy_id": "am_process_tree",
+    "parent_id": "AM0104.01",
+    "child_id": "AM0104.01.10",
+    "level": 0,
+    "type": "parent_process_of",
+    "source": "profile",
+    "status": "reference",
+    "confidence": 1
+  },
+  {
+    "hierarchy_id": "am_process_tree",
+    "parent_id": "AM0104.01.10",
+    "child_id": "AM0104.01.10.02",
+    "level": 0,
+    "type": "parent_process_of",
+    "source": "profile",
+    "status": "reference",
+    "confidence": 1
+  },
+  {
+    "hierarchy_id": "am_process_tree",
+    "parent_id": "AM08",
+    "child_id": "AM0801",
+    "level": 0,
+    "type": "parent_process_of",
+    "source": "profile",
+    "status": "reference",
+    "confidence": 1
+  },
+  {
+    "hierarchy_id": "am_process_tree",
+    "parent_id": "MISSING_PARENT",
+    "child_id": "ORPHAN01",
+    "level": 0,
+    "type": "parent_process_of",
+    "source": "profile",
+    "status": "reference",
+    "confidence": 1
+  }
+]
