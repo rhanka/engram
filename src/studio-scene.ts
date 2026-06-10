@@ -136,9 +136,16 @@ function copyOwnFields(
   }
 }
 
+// OBJ-2 (process-std-AM review): `ontology_status` was allowlisted here but is
+// NEVER produced by any pipeline code (not emitted by compileHierarchies,
+// profile loading, reconciliation, or any other source). It would be a pure
+// duplicate of `status` (the 5-state lifecycle field: reference / attached /
+// needs_review / rejected / superseded) with no distinct semantics.
+// Decision: REMOVED. Use `status` for the lifecycle state, `review_status`
+// for the human-review axis. Any node/edge carrying `ontology_status` in
+// existing graph.json is a stale artefact; the viewer ignores unknown fields.
 const NODE_PROFILE_FIELDS = [
   "status",
-  "ontology_status",
   "review_status",
   "assertion_basis",
   "derivation_method",
@@ -162,7 +169,6 @@ const EDGE_PROFILE_FIELDS = [
   "assertion_basis",
   "review_status",
   "status",
-  "ontology_status",
   "derivation_method",
   "confidence_score",
   "evidence_refs",
