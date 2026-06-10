@@ -1,0 +1,8 @@
+process_id,process_name,process_code,parent_id,level
+AM,Asset Management,AM,,0
+AM01,Strategy and Planning,AM-01,AM,1
+AM02,Asset Operations,AM-02,AM,1
+AM03,Asset Decommissioning,AM-03,AM,1
+AM0101,Lifecycle Strategy Definition,AM-01-01,AM01,2
+AM0104,Investment Planning,AM-01-04,AM01,2
+AM0201,Condition Monitoring,AM-02-01,AM02,2
