@@ -23,6 +23,19 @@ import type {
 // pipeline (see scripts/regen note in the fixture), so this test is a true
 // round-trip assertion, not a hand-fabricated snapshot.
 //
+// NIT — fixture topology:
+//   processes.csv  = MONO-ROOT demonstration fixture (super-root "AM" owns all
+//                    sub-domains). This is a simplified demo shape — the real
+//                    process-std-AM has 17 independent L0 roots (AM01..AM90) with no
+//                    synthetic super-root.  Do NOT interpret this fixture as
+//                    implying that process-std-AM has a single top-level node in
+//                    production; forest.csv is the representative topology.
+//
+//   forest.csv     = REPRESENTATIVE MULTI-ROOT fixture (4 PROCESS_STD roots AM01/AM03/
+//                    AM06/AM08 + 1 orphan parent).  This is the correct model:
+//                    the real process-std-AM has 17 roots (no super-node).  Any
+//                    consumer that expects a single root is incorrect.
+//
 // DR-1 / DR-2 (WP4-B review): additional forest fixture tests verify:
 //   - Multi-root forest (N root_ids, no synthetic super-root)
 //   - Orphan tolerance: node with missing parent_id → treated as extra root
