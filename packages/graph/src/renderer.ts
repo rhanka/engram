@@ -82,7 +82,8 @@ void main() {
   vec2 screen = (a_position - u_camera) * u_zoom;
   vec2 clip = vec2(screen.x * 2.0 / u_viewport.x, -screen.y * 2.0 / u_viewport.y);
   gl_Position = vec4(clip, 0.0, 1.0);
-  gl_PointSize = max(1.0, a_size * u_pixelRatio);
+  // World-space sizing for legacy ForceGraph parity: glyphs scale with camera zoom.
+  gl_PointSize = max(1.0, a_size * u_pixelRatio * u_zoom);
   v_color = a_color;
 }
 `;
@@ -558,7 +559,8 @@ function drawFallback2D(
   for (let nodeIndex = 0; nodeIndex < state.nodeIds.length; nodeIndex += 1) {
     const point = screenPoint(state.positions, nodeIndex, camera, canvas);
     const colorOffset = nodeIndex * 4;
-    const radius = Math.max(1, (state.style?.nodeSizes[nodeIndex] ?? 4) * pixelRatio);
+    // World-space sizing for legacy ForceGraph parity: glyphs scale with camera zoom.
+    const radius = Math.max(1, (state.style?.nodeSizes[nodeIndex] ?? 4) * pixelRatio * camera.zoom);
 
     context.beginPath();
     context.fillStyle = cssColor(state.style?.nodeColors, colorOffset, DEFAULT_NODE_COLOR);

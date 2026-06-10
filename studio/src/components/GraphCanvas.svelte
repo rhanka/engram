@@ -232,7 +232,9 @@
     const world = eventToWorld(event);
     if (!world) return null;
 
-    const maxDistance = (PICK_RADIUS * world.scale) / Math.max(Number.EPSILON, camera.zoom);
+    // World-space pick radius: stays constant in world units so the on-screen hit zone
+    // scales with camera zoom, matching the now zoom-scaled (world-space sized) node glyphs.
+    const maxDistance = PICK_RADIUS * world.scale;
     return findNearestNodeId(payload, world.x, world.y, maxDistance);
   }
 
@@ -321,7 +323,9 @@
       return;
     }
 
-    const nodeMaxDistance = (PICK_RADIUS * world.scale) / Math.max(Number.EPSILON, camera.zoom);
+    // World-space pick radii (constant in world units) so the on-screen hit zones scale
+    // with camera zoom, matching the now zoom-scaled (world-space sized) node glyphs.
+    const nodeMaxDistance = PICK_RADIUS * world.scale;
     const nodeId = findNearestNodeId(payload, world.x, world.y, nodeMaxDistance);
     if (nodeId) {
       clearHoveredEdge({ render: false });
@@ -331,7 +335,7 @@
     }
 
     setHoveredNode(null);
-    const edgeMaxDistance = (EDGE_PICK_RADIUS * world.scale) / Math.max(Number.EPSILON, camera.zoom);
+    const edgeMaxDistance = EDGE_PICK_RADIUS * world.scale;
     const hit = findNearestEdge(payload, world.x, world.y, edgeMaxDistance);
     if (canvas) canvas.style.cursor = hit ? "crosshair" : "default";
     setHoveredEdge(hit, world.localX, world.localY);
@@ -557,8 +561,9 @@
       style={`left: ${hoveredEdge.localX + 12}px; top: ${hoveredEdge.localY + 12}px;`}
       role="status"
     >
-      <strong>{hoveredEdge.edge.relation ?? hoveredEdge.edge.label ?? "edge"}</strong>
-      <span>{hoveredEdge.sourceLabel} -> {hoveredEdge.targetLabel}</span>
+      <strong>{hoveredEdge.sourceLabel}</strong>
+      <span>{hoveredEdge.edge.relation ?? hoveredEdge.edge.label ?? "edge"}</span>
+      <strong>{hoveredEdge.targetLabel}</strong>
     </div>
   {/if}
 

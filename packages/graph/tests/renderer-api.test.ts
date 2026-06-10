@@ -226,7 +226,9 @@ describe("createGraphRenderer", () => {
     expect(context2d.calls.clearRect).toBe(1);
     expect(context2d.calls.stroke).toBe(1);
     expect(context2d.calls.fill).toBe(2);
-    expect(context2d.calls.arc.map((call) => call.radius)).toEqual([12, 16]);
+    // World-space node sizing: radius = nodeSize * pixelRatio * cameraZoom.
+    // fitView here yields zoom = min(180/100, 80/1) = 1.8, pixelRatio = 2.
+    expect(context2d.calls.arc.map((call) => call.radius)).toEqual([21.6, 28.8]);
   });
 
   it("can force Canvas2D to preserve rich shapes and edge styles when WebGL exists", () => {
