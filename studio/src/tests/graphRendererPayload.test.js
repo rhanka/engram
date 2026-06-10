@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildConnectedDimStyle,
   buildGraphRendererPayload,
   findNearestEdge,
   findNearestNodeId,
@@ -125,6 +126,18 @@ describe("graphRendererPayload", () => {
 
     // d is NOT a neighbour → dimmed to ≤ 90 (255 * 0.35 ≈ 89)
     expect(payload.style.nodeColors[iD * 4 + 3]).toBeLessThanOrEqual(90);
+  });
+
+  it("recomputes connected-dim style from base buffers without rebuilding graph buffers", () => {
+    const scene = makeTriangleScene();
+    const payload = buildGraphRendererPayload(scene, { nodeRadius: 3 });
+
+    const hoverStyle = buildConnectedDimStyle(payload, { hoveredNodeId: "a" });
+
+    expect(hoverStyle).not.toBe(payload.style);
+    expect(payload.renderGraph.nodeIds).toEqual(["a", "b", "c", "d"]);
+    expect(payload.baseStyle.nodeColors[payload.nodeIndexById.get("d") * 4 + 3]).toBe(255);
+    expect(hoverStyle.nodeColors[payload.nodeIndexById.get("d") * 4 + 3]).toBeLessThanOrEqual(90);
   });
 
   it("dims non-incident edges when hoveredNodeId is set", () => {

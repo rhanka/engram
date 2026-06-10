@@ -3,6 +3,7 @@
   import { createGraphRenderer } from "@sentropic/graph";
 
   import {
+    buildConnectedDimStyle,
     buildGraphRendererPayload,
     findNearestEdge,
     findNearestNodeId,
@@ -19,6 +20,7 @@
   const FIT_PADDING = 48;
   const PICK_RADIUS = 16;
   const EDGE_PICK_RADIUS = 12;
+  const HOVER_EDGE_COLOR = [37, 99, 235, 255];
   const MERGE_ANIMATION_DURATION_MS = 520;
 
   let {
@@ -258,8 +260,12 @@
       edgeColors: new Uint8Array(payload.style.edgeColors),
     };
     const width = style.edgeWidths[hit.index] ?? 1;
-    style.edgeWidths[hit.index] = Math.max(width, 2.5);
-    style.edgeColors[hit.index * 4 + 3] = 255;
+    style.edgeWidths[hit.index] = Math.max(width * 1.6, width + 1.5, 3);
+    const colorOffset = hit.index * 4;
+    style.edgeColors[colorOffset] = HOVER_EDGE_COLOR[0];
+    style.edgeColors[colorOffset + 1] = HOVER_EDGE_COLOR[1];
+    style.edgeColors[colorOffset + 2] = HOVER_EDGE_COLOR[2];
+    style.edgeColors[colorOffset + 3] = HOVER_EDGE_COLOR[3];
     return style;
   }
 
@@ -318,7 +324,7 @@
     const nodeMaxDistance = (PICK_RADIUS * world.scale) / Math.max(Number.EPSILON, camera.zoom);
     const nodeId = findNearestNodeId(payload, world.x, world.y, nodeMaxDistance);
     if (nodeId) {
-      clearHoveredEdge();
+      clearHoveredEdge({ render: false });
       if (canvas) canvas.style.cursor = "pointer";
       setHoveredNode(nodeId, world.localX, world.localY);
       return;
@@ -333,7 +339,12 @@
 
   function setHoveredNode(nodeId, localX = 0, localY = 0) {
     const prevId = hoveredNodeId;
-    if (nodeId === prevId) return;
+    if (nodeId === prevId) {
+      if (hoveredNode && nodeId) {
+        hoveredNode = { ...hoveredNode, localX, localY };
+      }
+      return;
+    }
 
     hoveredNodeId = nodeId;
     if (nodeId && payload) {
@@ -351,16 +362,15 @@
       hoveredNode = null;
     }
 
-    // Rebuild payload with new hoveredNodeId for connected-dim
     if (mounted && payload) {
-      payload = buildGraphRendererPayload(scene ?? EMPTY_SCENE, {
+      const style = buildConnectedDimStyle(payload, {
         selectedIds: selectedIds ?? [],
         focusId,
         hoveredNodeId,
-        nodeRadius: NODE_RADIUS,
       });
-      if (renderer) {
-        renderer.setStyle(payload.style);
+      if (renderer && style) {
+        payload = { ...payload, style };
+        renderer.setStyle(style);
         renderer.render();
       }
     }

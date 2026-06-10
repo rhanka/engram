@@ -20,6 +20,7 @@ const SELECTED_COLOR = "#2563eb";
 const EDGE_COLOR = "#94a3b8";
 const WEAK_EDGE_COLOR = [203, 213, 225, 128];
 const EDGE_CURVE_FACTOR = 0.5;
+const DIM_ALPHA = Math.round(255 * 0.35); // 89
 
 function finite(value) {
   return typeof value === "number" && Number.isFinite(value);
@@ -74,7 +75,62 @@ function edgeWidth(edge) {
   return 1;
 }
 
-const DIM_ALPHA = Math.round(255 * 0.35); // 89
+function cloneStyle(style) {
+  return {
+    nodeSizes: new Float32Array(style.nodeSizes),
+    nodeColors: new Uint8Array(style.nodeColors),
+    nodeShapes: new Uint8Array(style.nodeShapes),
+    edgeWidths: new Float32Array(style.edgeWidths),
+    edgeColors: new Uint8Array(style.edgeColors),
+    edgeDash: new Uint8Array(style.edgeDash),
+    edgeCurvatures: new Float32Array(style.edgeCurvatures),
+  };
+}
+
+export function buildConnectedDimStyle(payload, options = {}) {
+  const graph = payload?.renderGraph;
+  const sourceStyle = payload?.baseStyle ?? payload?.style;
+  if (!graph || !sourceStyle) return payload?.style ?? null;
+
+  const style = cloneStyle(sourceStyle);
+  const selectedIds = new Set(options.selectedIds ?? []);
+  const focusId = options.focusId ?? null;
+  const hoveredNodeId = options.hoveredNodeId ?? null;
+  const activeFocusIds = new Set([...selectedIds, focusId, hoveredNodeId].filter(Boolean));
+
+  if (activeFocusIds.size === 0) return style;
+
+  const neighbourSet = new Set(activeFocusIds);
+  const edgeCount = graph.edges.length / 2;
+  for (let e = 0; e < edgeCount; e++) {
+    const srcIdx = graph.edges[e * 2];
+    const tgtIdx = graph.edges[e * 2 + 1];
+    const srcId = graph.nodeIds[srcIdx];
+    const tgtId = graph.nodeIds[tgtIdx];
+    if (activeFocusIds.has(srcId)) neighbourSet.add(tgtId);
+    if (activeFocusIds.has(tgtId)) neighbourSet.add(srcId);
+  }
+
+  for (let i = 0; i < graph.nodeIds.length; i++) {
+    const id = graph.nodeIds[i];
+    if (!neighbourSet.has(id)) {
+      style.nodeColors[i * 4 + 3] = DIM_ALPHA;
+    }
+  }
+
+  for (let e = 0; e < edgeCount; e++) {
+    const srcIdx = graph.edges[e * 2];
+    const tgtIdx = graph.edges[e * 2 + 1];
+    const srcId = graph.nodeIds[srcIdx];
+    const tgtId = graph.nodeIds[tgtIdx];
+    const isIncident = activeFocusIds.has(srcId) || activeFocusIds.has(tgtId);
+    if (!isIncident) {
+      style.edgeColors[e * 4 + 3] = DIM_ALPHA;
+    }
+  }
+
+  return style;
+}
 
 export function buildGraphRendererPayload(scene, options = {}) {
   const selectedIds = new Set(options.selectedIds ?? []);
@@ -116,53 +172,17 @@ export function buildGraphRendererPayload(scene, options = {}) {
 
   const input = { nodes, edges };
   const renderGraph = buildRenderGraphBuffers(input);
-  const style = buildStyleBuffers(input, renderGraph, {
+  const baseStyle = buildStyleBuffers(input, renderGraph, {
     node: { size: nodeRadius },
     edge: { width: 1, color: EDGE_COLOR, dash: "solid", curvature: 0.15 },
   });
   const nodeIndexById = new Map(nodes.map((node, index) => [node.id, index]));
   const renderedEdges = Array.from(renderGraph.edgeInputIndices ?? [], (inputIndex) => edges[inputIndex]);
 
-  // Connected-dim: when a node is selected or hovered, dim non-neighbours
-  const activeFocusIds = new Set([...selectedIds, focusId, hoveredNodeId].filter(Boolean));
-  if (activeFocusIds.size > 0) {
-    // Build neighbour set: all nodes directly connected to any active focus node
-    const neighbourSet = new Set(activeFocusIds);
-    const edgeCount = renderGraph.edges.length / 2;
-    for (let e = 0; e < edgeCount; e++) {
-      const srcIdx = renderGraph.edges[e * 2];
-      const tgtIdx = renderGraph.edges[e * 2 + 1];
-      const srcId = renderGraph.nodeIds[srcIdx];
-      const tgtId = renderGraph.nodeIds[tgtIdx];
-      if (activeFocusIds.has(srcId)) neighbourSet.add(tgtId);
-      if (activeFocusIds.has(tgtId)) neighbourSet.add(srcId);
-    }
-
-    // Dim node alphas for non-neighbours
-    const nodeCount = renderGraph.nodeIds.length;
-    for (let i = 0; i < nodeCount; i++) {
-      const id = renderGraph.nodeIds[i];
-      if (!neighbourSet.has(id)) {
-        style.nodeColors[i * 4 + 3] = DIM_ALPHA;
-      }
-    }
-
-    // Dim edge alphas for non-incident edges
-    for (let e = 0; e < edgeCount; e++) {
-      const srcIdx = renderGraph.edges[e * 2];
-      const tgtIdx = renderGraph.edges[e * 2 + 1];
-      const srcId = renderGraph.nodeIds[srcIdx];
-      const tgtId = renderGraph.nodeIds[tgtIdx];
-      const isIncident = activeFocusIds.has(srcId) || activeFocusIds.has(tgtId);
-      if (!isIncident) {
-        style.edgeColors[e * 4 + 3] = DIM_ALPHA;
-      }
-    }
-  }
-
-  return {
+  const payload = {
     renderGraph,
-    style,
+    baseStyle,
+    style: baseStyle,
     edges: renderedEdges,
     nodeById: new Map(nodes.map((node) => [node.id, node])),
     nodeIndexById,
@@ -172,18 +192,9 @@ export function buildGraphRendererPayload(scene, options = {}) {
       droppedEdgeCount: renderGraph.droppedEdges,
     },
   };
-}
 
-function cloneStyle(style) {
-  return {
-    nodeSizes: new Float32Array(style.nodeSizes),
-    nodeColors: new Uint8Array(style.nodeColors),
-    nodeShapes: new Uint8Array(style.nodeShapes),
-    edgeWidths: new Float32Array(style.edgeWidths),
-    edgeColors: new Uint8Array(style.edgeColors),
-    edgeDash: new Uint8Array(style.edgeDash),
-    edgeCurvatures: new Float32Array(style.edgeCurvatures),
-  };
+  payload.style = buildConnectedDimStyle(payload, { selectedIds, focusId, hoveredNodeId });
+  return payload;
 }
 
 export function interpolateMergePositions(payload, mergePair, progress) {

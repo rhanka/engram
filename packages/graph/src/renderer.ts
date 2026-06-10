@@ -415,7 +415,6 @@ function applyDash(context: Graph2DContext, dash: number, pixelRatio: number): v
 }
 
 const STAR_INNER_RATIO = 0.42;
-const STAR_AREA_FACTOR = 1.5953498885642274;
 const EDGE_CURVE_FACTOR = 0.5;
 
 function pathPolygon(context: Graph2DContext, x: number, y: number, points: Array<[number, number]>): void {
@@ -431,7 +430,7 @@ function pathPolygon(context: Graph2DContext, x: number, y: number, points: Arra
 }
 
 function drawRoundedBox(context: Graph2DContext, x: number, y: number, radius: number): void {
-  const half = (Math.sqrt(Math.PI) / 2) * radius;
+  const half = radius * 0.88;
   const corner = half * 0.6;
   context.moveTo(x - half + corner, y - half);
   context.lineTo(x + half - corner, y - half);
@@ -447,7 +446,7 @@ function drawRoundedBox(context: Graph2DContext, x: number, y: number, radius: n
 
 function drawNodeShapePath(context: Graph2DContext, x: number, y: number, radius: number, shape: number): void {
   if (shape === 1) {
-    const diagonal = Math.sqrt(Math.PI / 2) * radius;
+    const diagonal = radius;
     pathPolygon(context, x, y, [
       [0, -diagonal],
       [diagonal, 0],
@@ -458,7 +457,7 @@ function drawNodeShapePath(context: Graph2DContext, x: number, y: number, radius
   }
 
   if (shape === 2) {
-    const outer = STAR_AREA_FACTOR * radius;
+    const outer = radius;
     const inner = outer * STAR_INNER_RATIO;
     const points: Array<[number, number]> = [];
     for (let index = 0; index < 10; index += 1) {
@@ -471,7 +470,7 @@ function drawNodeShapePath(context: Graph2DContext, x: number, y: number, radius
   }
 
   if (shape === 3) {
-    const circumradius = Math.sqrt(Math.PI / ((3 * Math.sqrt(3)) / 2)) * radius;
+    const circumradius = radius;
     const points: Array<[number, number]> = [];
     for (let index = 0; index < 6; index += 1) {
       const angle = (index * Math.PI) / 3 - Math.PI / 6;
@@ -482,7 +481,7 @@ function drawNodeShapePath(context: Graph2DContext, x: number, y: number, radius
   }
 
   if (shape === 4) {
-    const half = (Math.sqrt(Math.PI) / 2) * radius;
+    const half = radius * 0.88;
     pathPolygon(context, x, y, [
       [-half, -half],
       [half, -half],
@@ -498,7 +497,7 @@ function drawNodeShapePath(context: Graph2DContext, x: number, y: number, radius
   }
 
   if (shape === 6) {
-    const circumradius = Math.sqrt(Math.PI / ((3 * Math.sqrt(3)) / 4)) * radius;
+    const circumradius = radius;
     const points: Array<[number, number]> = [];
     for (let index = 0; index < 3; index += 1) {
       const angle = (index * 2 * Math.PI) / 3 - Math.PI / 2;
