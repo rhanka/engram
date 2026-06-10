@@ -1,0 +1,62 @@
+[
+  {
+    "hierarchy_id": "am_process_tree",
+    "parent_id": "AM",
+    "child_id": "AM01",
+    "level": 0,
+    "type": "parent_process_of",
+    "source": "profile",
+    "status": "reference",
+    "confidence": 1
+  },
+  {
+    "hierarchy_id": "am_process_tree",
+    "parent_id": "AM",
+    "child_id": "AM02",
+    "level": 0,
+    "type": "parent_process_of",
+    "source": "profile",
+    "status": "reference",
+    "confidence": 1
+  },
+  {
+    "hierarchy_id": "am_process_tree",
+    "parent_id": "AM",
+    "child_id": "AM03",
+    "level": 0,
+    "type": "parent_process_of",
+    "source": "profile",
+    "status": "reference",
+    "confidence": 1
+  },
+  {
+    "hierarchy_id": "am_process_tree",
+    "parent_id": "AM01",
+    "child_id": "AM0101",
+    "level": 0,
+    "type": "parent_process_of",
+    "source": "profile",
+    "status": "reference",
+    "confidence": 1
+  },
+  {
+    "hierarchy_id": "am_process_tree",
+    "parent_id": "AM01",
+    "child_id": "AM0104",
+    "level": 0,
+    "type": "parent_process_of",
+    "source": "profile",
+    "status": "reference",
+    "confidence": 1
+  },
+  {
+    "hierarchy_id": "am_process_tree",
+    "parent_id": "AM02",
+    "child_id": "AM0201",
+    "level": 0,
+    "type": "parent_process_of",
+    "source": "profile",
+    "status": "reference",
+    "confidence": 1
+  }
+]
