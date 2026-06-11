@@ -33,17 +33,28 @@ import {
   type RepoScope,
 } from "./normalize.js";
 import { loadH2aInstances, matchInstance, type H2aInstance } from "./registry.js";
-import { aggregate, formatSessionsTable, formatStatsTable } from "./stats.js";
+import { aggregate, costWeightedTokens, formatSessionsTable, formatStatsTable } from "./stats.js";
 import {
+  appendLinks,
   ensureStore,
+  linkKey,
   loadCursors,
   loadFacts,
+  loadLinks,
   resolveStore,
   saveCursors,
   saveFacts,
   type AgentStore,
 } from "./store.js";
-import type { AgentStatsRow, CorrelationLink, FileCursor, SessionFact } from "./types.js";
+import { githubRepoFromRemote } from "../pr.js";
+import { parseWpLabel, prUrlInRepo } from "./git-evidence.js";
+import type {
+  AgentStatsRow,
+  AttributionResidual,
+  CorrelationLink,
+  FileCursor,
+  SessionFact,
+} from "./types.js";
 
 export interface SyncOptions {
   repoRoot: string;
@@ -78,18 +89,35 @@ export function readGitCommits(repoRoot: string): GitCommitMeta[] {
   return commits;
 }
 
-function parseFile(file: TranscriptFile, home: string): { fact: SessionFact; agyHash?: string } | null {
+/** Resolve the origin GitHub repo ("owner/name") for PR-url scoping. */
+export function resolveOriginRepo(repoRoot: string, runner?: CommandRunner): string | undefined {
+  try {
+    const url = runner
+      ? runner.run("git", ["remote", "get-url", "origin"], repoRoot)
+      : safeExecGit(repoRoot, ["remote", "get-url", "origin"]);
+    return url ? githubRepoFromRemote(url) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function parseFile(
+  file: TranscriptFile,
+  home: string,
+  scope?: { repoRoot: string; originRepo?: string },
+): { fact: SessionFact; agyHash?: string } | null {
   let content: string;
   try {
     content = readFileSync(file.path, "utf-8");
   } catch {
     return null;
   }
+  const parseOpts = { scopeRoot: scope?.repoRoot, originRepo: scope?.originRepo };
   if (file.host === "claude") {
-    return { fact: normalizeClaude(parseClaudeTranscript(content, file.sessionId, home)) };
+    return { fact: normalizeClaude(parseClaudeTranscript(content, file.sessionId, home, parseOpts)) };
   }
   if (file.host === "codex") {
-    return { fact: normalizeCodex(parseCodexRollout(content, file.sessionId, home)) };
+    return { fact: normalizeCodex(parseCodexRollout(content, file.sessionId, home, parseOpts)) };
   }
   const raw = parseAgyChat(content, file.sessionId);
   // agy projectHash is on the header; if absent, derive from the dir name.
@@ -156,8 +184,9 @@ export function syncAgentStats(opts: SyncOptions): SyncResult {
   const store = resolveStore(opts.repoRoot);
   ensureStore(store);
   const scope = makeRepoScope(opts.repoRoot);
+  const originRepo = resolveOriginRepo(opts.repoRoot);
   const facts = loadFacts(store);
-  const cursors = loadCursors(store);
+  const cursors = loadCursors(store, home);
 
   const files: TranscriptFile[] = [
     ...discoverClaude(home, repoSlug(opts.repoRoot)),
@@ -187,7 +216,7 @@ export function syncAgentStats(opts: SyncOptions): SyncResult {
       continue;
     }
 
-    const result = parseFile(file, home);
+    const result = parseFile(file, home, { repoRoot: opts.repoRoot, originRepo });
     cursors.set(file.path, cursorCurrent(prev, file.path)!);
     if (!result) continue;
     parsed++;
@@ -198,7 +227,7 @@ export function syncAgentStats(opts: SyncOptions): SyncResult {
   }
 
   saveFacts(store, facts);
-  saveCursors(store, cursors);
+  saveCursors(store, cursors, home);
   return { scanned: files.length, parsed, inRepo, skipped, factsTotal: facts.size };
 }
 
@@ -220,12 +249,17 @@ export function prNumberFromUrl(url: string): number | undefined {
  * `gh` CLI is used; if `gh` is unavailable the whole step is skipped.
  */
 export function collectPrMerges(repoRoot: string, facts: SessionFact[], runner?: CommandRunner): PrMergeMeta[] {
+  // ORIGIN SCOPING: PR urls a session printed are only trusted when they
+  // belong to this repo's origin — a pasted/echoed foreign-repo PR url must
+  // not seed an attribution lookup.
+  const originRepo = resolveOriginRepo(repoRoot, runner);
   // Gather candidate (branch, prNumber) pairs from session evidence.
   const prByBranch = new Map<string, number>();
   const branches = new Set<string>();
   for (const fact of facts) {
     for (const b of fact.branchesObserved) if (b && b !== "HEAD") branches.add(b);
     for (const url of fact.groundTruth.prUrls) {
+      if (!prUrlInRepo(url, originRepo)) continue;
       const n = prNumberFromUrl(url);
       if (n === undefined) continue;
       // The PR url belongs to a branch the session pushed; tie it to the first
@@ -274,6 +308,8 @@ export interface ComputeResult {
   facts: SessionFact[];
   instances: H2aInstance[];
   trackItems: Map<string, TrackItem>;
+  /** Honest coverage: commits in git log NOT attributed to any agent. */
+  residual?: AttributionResidual;
 }
 
 export interface ComputeOptions {
@@ -313,24 +349,62 @@ export function computeAgentStats(
   const prMerges = opts.injectedPrMerges
     ?? (opts.skipPrMerges ? [] : collectPrMerges(repoRoot, facts));
 
-  const links = correlate({ facts, instances, commits, trackIndex, prMerges });
+  const derived = correlate({ facts, instances, commits, trackIndex, prMerges });
+
+  // PERSISTED ATTRIBUTION (append-only, re-derivable): keep every resolved
+  // link in `.graphify/agents/links.jsonl` so attribution does not decay when
+  // a branch is GC'd or a squash hides the original shas from `git log`.
+  const persisted = loadLinks(store);
+  const seen = new Set(derived.map(linkKey));
+  const links = [...derived];
+  for (const link of persisted) {
+    const key = linkKey(link);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    links.push(link);
+  }
+  try {
+    appendLinks(store, derived);
+  } catch {
+    /* read-only store — stats still work, persistence is best-effort */
+  }
+
   const rows = aggregate({ facts, links, instances });
-  return { rows, links, facts, instances, trackItems };
+
+  // Residual coverage: commits nobody claimed (by 7-char sha prefix).
+  const attributed = new Set<string>();
+  for (const link of links) {
+    if (link.target.kind === "commit") attributed.add(link.target.sha.slice(0, 7).toLowerCase());
+  }
+  const unattributedCommits = commits.filter((c) => !attributed.has(c.sha.slice(0, 7).toLowerCase())).length;
+  const residual: AttributionResidual = { totalCommits: commits.length, unattributedCommits };
+
+  return { rows, links, facts, instances, trackItems, residual };
 }
 
 export interface WpAgentStatsResult {
   item?: TrackItem;
   /** Correlation links targeting this track item (Track-WP joins). */
   links: CorrelationLink[];
-  /** Sessions attributed to this WP, with their resolved agent identity. */
+  /** MANDATED sessions (Track-ledger join), with their resolved identity. */
   sessions: { fact: SessionFact; agentId: string; rule: CorrelationLink["rule"] }[];
+  /** EVIDENCED deliverers: sessions with commit-level proof on a WP branch. */
+  evidenced: { fact: SessionFact; agentId: string; via: string }[];
+  /** True when the mandated and evidenced agent sets disagree (both known). */
+  mismatch: boolean;
+  /** Per-WP rollup over the attributed sessions. */
+  rollup: { tokens: number; tokensWeighted: number; commits: number };
   /** All track items (for an "unknown id" error message in the CLI). */
   allItems: TrackItem[];
 }
 
 /**
- * Conductor view: everything attributed to one Track work-package item. Joins
- * sessions to the WP via the Track ledger (Codex thread-id / h2a instance id).
+ * Conductor view: everything attributed to one Track work-package item.
+ * Shows BOTH sides of attribution:
+ *   - mandated   — the ledger said this session/agent owns the WP;
+ *   - evidenced  — a session printed commit-level proof on a WP-labelled
+ *                  branch (rank 1/2), whether or not it was mandated.
+ * The two disagreeing is itself a signal, so it is surfaced, not hidden.
  */
 export function wpAgentStats(
   repoRoot: string,
@@ -354,7 +428,48 @@ export function wpAgentStats(
     })
     .filter((s): s is NonNullable<typeof s> => s !== null);
 
-  return { item, links: wpLinks, sessions, allItems };
+  // Evidenced deliverers: rank-1/2 commit links on a branch carrying this WP
+  // label (e.g. `wp9-…`). Independent of the mandate — that is the point.
+  const evidenced: WpAgentStatsResult["evidenced"] = [];
+  const evidencedSeen = new Set<string>();
+  if (item?.wp) {
+    for (const l of links) {
+      if (l.rank > 2 || l.target.kind !== "commit" || !l.target.branch) continue;
+      if (parseWpLabel(l.target.branch) !== item.wp) continue;
+      if (evidencedSeen.has(l.factId)) continue;
+      evidencedSeen.add(l.factId);
+      const fact = factById.get(l.factId);
+      if (fact) evidenced.push({ fact, agentId: l.agentId, via: `${l.rule} on ${l.target.branch}` });
+    }
+  }
+
+  const mandatedAgents = new Set(sessions.map((s) => s.agentId));
+  const evidencedAgents = new Set(evidenced.map((s) => s.agentId));
+  const mismatch =
+    mandatedAgents.size > 0 &&
+    evidencedAgents.size > 0 &&
+    (Array.from(evidencedAgents).some((a) => !mandatedAgents.has(a)) ||
+      Array.from(mandatedAgents).some((a) => !evidencedAgents.has(a)));
+
+  // Per-WP rollup over the union of attributed sessions.
+  const rollupFacts = new Map<string, SessionFact>();
+  for (const s of sessions) rollupFacts.set(s.fact.factId, s.fact);
+  for (const s of evidenced) rollupFacts.set(s.fact.factId, s.fact);
+  const commitShas = new Set<string>();
+  for (const l of links) {
+    if (l.rank > 2 || l.target.kind !== "commit") continue;
+    if (!rollupFacts.has(l.factId)) continue;
+    commitShas.add(l.target.sha.slice(0, 7));
+  }
+  let tokens = 0;
+  let tokensWeighted = 0;
+  for (const f of rollupFacts.values()) {
+    tokens += f.tokens.total || 0;
+    tokensWeighted += costWeightedTokens(f.tokens, f.host);
+  }
+  const rollup = { tokens, tokensWeighted, commits: commitShas.size };
+
+  return { item, links: wpLinks, sessions, evidenced, mismatch, rollup, allItems };
 }
 
 /** Render the `agent-stats wp <id>` conductor view as a text block. */
@@ -374,7 +489,7 @@ export function formatWpView(result: WpAgentStatsResult, trackItemId: string): s
     `Mandated h2a instances: ${item.h2aInstanceIds.length ? item.h2aInstanceIds.join(", ") : "-"}`,
     "",
   ];
-  if (result.sessions.length === 0) {
+  if (result.sessions.length === 0 && result.evidenced.length === 0) {
     lines.push("No sessions joined to this WP yet (run `agent-stats sync` first, or no transcript matched a mandated id).");
     return lines.join("\n");
   }
@@ -392,10 +507,25 @@ export function formatWpView(result: WpAgentStatsResult, trackItemId: string): s
   for (const [agentId, a] of agents) {
     lines.push(`  ${agentId}  —  ${a.sessions} session(s)  via ${Array.from(a.rules).join(",")}`);
   }
-  lines.push("", `Sessions (${result.sessions.length}):`);
+  lines.push("", `Mandated sessions (${result.sessions.length}):`);
   for (const s of result.sessions) {
     lines.push(`  ${s.fact.host}:${s.fact.sessionId.slice(0, 8)}  ${s.agentId}  (${s.rule})`);
   }
+  lines.push("", `Evidenced deliverers (${result.evidenced.length}):`);
+  if (result.evidenced.length === 0) lines.push("  (no commit-level proof on a WP-labelled branch)");
+  for (const s of result.evidenced) {
+    lines.push(`  ${s.fact.host}:${s.fact.sessionId.slice(0, 8)}  ${s.agentId}  (${s.via})`);
+  }
+  if (result.mismatch) {
+    lines.push(
+      "",
+      "WARNING: mandated and evidenced agents disagree — the ledger mandate and the commit-level evidence point at different sessions.",
+    );
+  }
+  lines.push(
+    "",
+    `Rollup: ${result.rollup.commits} commit(s), ${result.rollup.tokens} tokens (${result.rollup.tokensWeighted} cost-weighted) across ${result.sessions.length + result.evidenced.length} session(s).`,
+  );
   return lines.join("\n");
 }
 

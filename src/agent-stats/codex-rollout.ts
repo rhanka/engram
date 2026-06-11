@@ -18,9 +18,26 @@
  * (string or argv array) and `workdir`.
  */
 
-import { classifyGitVerb, emptyGroundTruth, scrapeGroundTruth } from "./git-evidence.js";
+import { classifyGitVerb, emptyGroundTruth, isGroundTruthVerb, scrapeGroundTruth } from "./git-evidence.js";
 import { redactExcerpt } from "./redact.js";
 import type { EvidenceSnippet, GitAction, GroundTruth, SessionParent, TokenTotals } from "./types.js";
+
+export interface CodexParseOptions {
+  /**
+   * Repo root for cross-repo segmentation. When set, git evidence only
+   * accumulates from calls whose effective workdir is at or under this root.
+   */
+  scopeRoot?: string;
+  /** Origin repo ("owner/name") used to scope scraped PR urls. */
+  originRepo?: string;
+}
+
+interface PendingCall {
+  command: string;
+  verb: GitAction["verb"] | null;
+  inScope: boolean;
+  timestamp?: string;
+}
 
 export interface RawCodexSession {
   host: "codex";
@@ -38,9 +55,6 @@ export interface RawCodexSession {
   filesTouched: string[];
   prUrls: string[];
   evidence: EvidenceSnippet[];
-  /** Transient: last git command seen, to tie the next output to it. */
-  _lastGitCommand?: string;
-  _lastGitTs?: string;
 }
 
 function pushUnique(arr: string[], v: unknown): void {
@@ -91,9 +105,24 @@ function emptySession(sessionId: string): RawCodexSession {
   };
 }
 
+/** True when `cwd` is unknown or sits at/under `scopeRoot` (none → in scope). */
+function cwdInScope(cwd: string | undefined, scopeRoot?: string): boolean {
+  if (!scopeRoot) return true;
+  if (!cwd) return true; // unknown workdir: keep (conservative)
+  return cwd === scopeRoot || cwd.startsWith(scopeRoot + "/");
+}
+
 /** Parse one Codex rollout's JSONL content into a single RawCodexSession. */
-export function parseCodexRollout(content: string, sessionIdHint: string, home = ""): RawCodexSession {
+export function parseCodexRollout(
+  content: string,
+  sessionIdHint: string,
+  home = "",
+  opts: CodexParseOptions = {},
+): RawCodexSession {
   const session = emptySession(sessionIdHint);
+  // call_id -> paired input so a later function_call_output can be verb-gated.
+  const pendingCalls = new Map<string, PendingCall>();
+  let currentCwd: string | undefined;
   for (const rawLine of content.split("\n")) {
     const line = rawLine.trim();
     if (!line) continue;
@@ -113,6 +142,7 @@ export function parseCodexRollout(content: string, sessionIdHint: string, home =
     if (type === "session_meta") {
       if (typeof payload.id === "string") session.sessionId = payload.id;
       pushUnique(session.cwds, payload.cwd);
+      if (typeof payload.cwd === "string") currentCwd = payload.cwd;
       if (typeof payload.cli_version === "string") session.version = payload.cli_version;
       const git = payload.git;
       if (git && typeof git === "object") pushUnique(session.branches, git.branch);
@@ -135,45 +165,51 @@ export function parseCodexRollout(content: string, sessionIdHint: string, home =
     if (type === "turn_context") {
       pushUnique(session.models, payload.model);
       pushUnique(session.cwds, payload.cwd);
+      if (typeof payload.cwd === "string") currentCwd = payload.cwd;
       continue;
     }
 
     if (type === "response_item" && payload.type === "function_call") {
       const command = commandFromArgs(payload.arguments);
-      pushUnique(session.cwds, workdirFromArgs(payload.arguments));
+      const workdir = workdirFromArgs(payload.arguments);
+      pushUnique(session.cwds, workdir);
+      const inScope = cwdInScope(workdir ?? currentCwd, opts.scopeRoot);
       // apply_patch tool — record touched files heuristically.
-      if (payload.name === "apply_patch" || /apply_patch/.test(command)) {
+      if ((payload.name === "apply_patch" || /apply_patch/.test(command)) && inScope) {
         for (const m of command.matchAll(/\*\*\* (?:Add|Update|Delete) File: (.+)/g)) {
           if (m[1]) pushUnique(session.filesTouched, m[1].trim());
         }
       }
       const verb = classifyGitVerb(command);
-      if (verb) {
+      if (typeof payload.call_id === "string") {
+        pendingCalls.set(payload.call_id, { command, verb, inScope, timestamp: r?.timestamp });
+      }
+      if (verb && inScope) {
         session.gitActions.push({ verb, command: redactExcerpt(command, home, 160), timestamp: r?.timestamp });
         if (verb === "checkout-b") {
           session.evidence.push({ kind: "git-checkout", text: redactExcerpt(command, home, 120), timestamp: r?.timestamp });
         } else if (verb === "push") {
           session.evidence.push({ kind: "git-push", text: redactExcerpt(command, home, 120), timestamp: r?.timestamp });
         }
-        // Remember the last git command so the next output can be tied to it.
-        session._lastGitCommand = command;
-        session._lastGitTs = r?.timestamp;
-      } else {
-        session._lastGitCommand = undefined;
       }
       continue;
     }
 
     if (type === "response_item" && payload.type === "function_call_output") {
+      // SPOOF-RESISTANCE: pair the output to its call_id and only scrape when
+      // the PAIRED INPUT classified as a mutating git verb inside the repo
+      // scope. Outputs of `cat`/`grep`/read-only git never feed ground truth.
+      const call = typeof payload.call_id === "string" ? pendingCalls.get(payload.call_id) : undefined;
+      if (!call || !call.inScope || !isGroundTruthVerb(call.verb)) continue;
       const output = typeof payload.output === "string" ? payload.output : JSON.stringify(payload.output ?? "");
       const before = session.groundTruth.commitShas.length + session.groundTruth.prUrls.length;
-      scrapeGroundTruth(output, session.groundTruth);
+      scrapeGroundTruth(output, session.groundTruth, opts.originRepo);
       const after = session.groundTruth.commitShas.length + session.groundTruth.prUrls.length;
       if (after > before) {
         session.evidence.push({
           kind: /pull\//.test(output) ? "pr-url" : "git-commit",
-          text: redactExcerpt(`${session._lastGitCommand ?? "git"} => ${output}`, home),
-          timestamp: session._lastGitTs,
+          text: redactExcerpt(`${call.command} => ${output}`, home),
+          timestamp: call.timestamp,
         });
         for (const u of session.groundTruth.prUrls) pushUnique(session.prUrls, u);
       }

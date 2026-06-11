@@ -39,11 +39,28 @@ function listFilesRec(dir: string, filter: (name: string) => boolean, out: strin
   }
 }
 
-/** Discover Claude Code transcripts for a repo slug (`-home-antoinefa-src-foo`). */
+/**
+ * Discover Claude Code transcripts for a repo slug (`-home-user-src-foo`).
+ *
+ * The host derives one project dir PER CWD, so worktree sessions live in
+ * sibling dirs like `<slug>--claude-worktrees-agent-x` (`.`→`-`), NOT under
+ * `<slug>`. We therefore scan every dir whose name is the slug or extends it
+ * (`<slug>-…`); repo membership is re-checked later from the parsed cwd, so
+ * over-inclusion (e.g. a `<slug>-sibling` repo) is filtered out downstream.
+ */
 export function discoverClaude(home: string, repoSlug: string): TranscriptFile[] {
-  const dir = join(home, ".claude", "projects", repoSlug);
+  const projectsDir = join(home, ".claude", "projects");
+  let entries: string[] = [];
+  try {
+    entries = readdirSync(projectsDir);
+  } catch {
+    return [];
+  }
   const files: string[] = [];
-  listFilesRec(dir, (n) => n.endsWith(".jsonl"), files);
+  for (const name of entries) {
+    if (name !== repoSlug && !name.startsWith(repoSlug + "-")) continue;
+    listFilesRec(join(projectsDir, name), (n) => n.endsWith(".jsonl"), files);
+  }
   return files.map((path) => ({ host: "claude" as const, path, sessionId: basenameNoExt(path) }));
 }
 
@@ -75,7 +92,11 @@ function codexThreadId(p: string): string {
   return m && m[1] ? m[1] : b;
 }
 
-/** Convert a repo root path to the Claude Code project slug. */
+/**
+ * Convert a repo root path to the Claude Code project slug. The host maps
+ * EVERY non-alphanumeric character to `-` (not just `/`): a worktree under
+ * `<root>/.claude/worktrees/x` becomes `<slug>--claude-worktrees-x`.
+ */
 export function repoSlug(repoRoot: string): string {
-  return repoRoot.replace(/\//g, "-");
+  return repoRoot.replace(/[^A-Za-z0-9]/g, "-");
 }
