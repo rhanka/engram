@@ -72,7 +72,7 @@
     // Pin the two twins symmetrically near the centre so both stay in view. We
     // DROP each subgraph node's inherited x/y so only the twins' fx/fy seed the
     // local sim; the neighbours are placed by the layout, not their stale coords.
-    const cx = 360, cy = 280, dx = 130;
+    const cx = 360, cy = 280, dx = 45;
     const nodes = linked.nodes.map((n) => {
       const { x: _x, y: _y, fx: _fx, fy: _fy, ...rest } = n;
       if (n.id === active.candidate_id) return { ...rest, fx: cx - dx, fy: cy };
@@ -197,6 +197,7 @@
       <GraphCanvas
         {scene}
         {selectedIds}
+        centerOnIds={selectedIds}
         focusId={active.candidate_id}
         labelMode="plain"
         onSelect={(id) => onOpenEntity?.(id)}
