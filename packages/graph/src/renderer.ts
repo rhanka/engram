@@ -82,7 +82,8 @@ void main() {
   vec2 screen = (a_position - u_camera) * u_zoom;
   vec2 clip = vec2(screen.x * 2.0 / u_viewport.x, -screen.y * 2.0 / u_viewport.y);
   gl_Position = vec4(clip, 0.0, 1.0);
-  gl_PointSize = max(1.0, a_size * u_pixelRatio);
+  // World-space sizing for legacy ForceGraph parity: glyphs scale with camera zoom.
+  gl_PointSize = max(1.0, a_size * u_pixelRatio * u_zoom);
   v_color = a_color;
 }
 `;
@@ -516,6 +517,7 @@ function drawFallback2D(
   camera: CameraState,
   canvas: GraphCanvasLike | null,
   pixelRatio: number,
+  skipEdges = false,
 ): void {
   if (!context || !canvas) return;
 
@@ -524,7 +526,7 @@ function drawFallback2D(
   context.lineCap = "round";
   context.lineJoin = "round";
 
-  const edgeCount = state.edges.length / 2;
+  const edgeCount = skipEdges ? 0 : state.edges.length / 2;
   for (let edgeIndex = 0; edgeIndex < edgeCount; edgeIndex += 1) {
     const sourceIndex = state.edges[edgeIndex * 2] ?? 0;
     const targetIndex = state.edges[edgeIndex * 2 + 1] ?? 0;
@@ -558,7 +560,8 @@ function drawFallback2D(
   for (let nodeIndex = 0; nodeIndex < state.nodeIds.length; nodeIndex += 1) {
     const point = screenPoint(state.positions, nodeIndex, camera, canvas);
     const colorOffset = nodeIndex * 4;
-    const radius = Math.max(1, (state.style?.nodeSizes[nodeIndex] ?? 4) * pixelRatio);
+    // World-space sizing for legacy ForceGraph parity: glyphs scale with camera zoom.
+    const radius = Math.max(1, (state.style?.nodeSizes[nodeIndex] ?? 4) * pixelRatio * camera.zoom);
 
     context.beginPath();
     context.fillStyle = cssColor(state.style?.nodeColors, colorOffset, DEFAULT_NODE_COLOR);
@@ -641,11 +644,13 @@ export function createGraphRenderer(
     };
   }
 
-  function render(): void {
+  function render(options?: { skipEdges?: boolean }): void {
     ensureAlive();
 
+    const skipEdges = options?.skipEdges ?? false;
+
     if (!context) {
-      drawFallback2D(fallbackContext, state, camera, canvas, pixelRatio);
+      drawFallback2D(fallbackContext, state, camera, canvas, pixelRatio, skipEdges);
       return;
     }
 
@@ -659,7 +664,7 @@ export function createGraphRenderer(
       return;
     }
 
-    if (state.edges.length > 0) {
+    if (!skipEdges && state.edges.length > 0) {
       context.useProgram(resources.edgeProgram.program);
       bindCameraUniforms(context, resources.edgeProgram.uniforms, camera, canvas, pixelRatio);
       uploadAttribute(
