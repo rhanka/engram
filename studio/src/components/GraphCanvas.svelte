@@ -44,6 +44,7 @@
   let {
     scene = EMPTY_SCENE,
     selectedIds = [],
+    centerOnIds = [],
     focusId = null,
     legend = [],
     onSelect,
@@ -162,6 +163,25 @@
 
     renderer.fitView({ padding, viewportWidth, viewportHeight });
     camera = renderer.snapshot().camera;
+    // Recon: centre the view on specific nodes (the twins) rather than the
+    // bbox centre, so the entities-to-reconcile sit at the exact viewport
+    // centre (horizontal + vertical). Keeps the fit zoom.
+    if (centerOnIds?.length && payload) {
+      const positions = payload.renderGraph.positions;
+      let sx = 0, sy = 0, n = 0;
+      for (const id of centerOnIds) {
+        const i = payload.nodeIndexById?.get(id);
+        if (i != null && i >= 0) {
+          sx += positions[i * 2];
+          sy += positions[i * 2 + 1];
+          n += 1;
+        }
+      }
+      if (n > 0) {
+        camera = { ...camera, x: sx / n, y: sy / n };
+        renderer.setCamera(camera);
+      }
+    }
     renderer.render();
     setLabelsHidden(false);
   }
