@@ -277,6 +277,7 @@ function copyStyle(style: GraphStyleBuffers, nodeCount: number, edgeCount: numbe
     nodeSizes: new Float32Array(style.nodeSizes),
     nodeColors: new Uint8Array(style.nodeColors),
     nodeShapes: style.nodeShapes ? new Uint8Array(style.nodeShapes) : new Uint8Array(nodeCount),
+    nodeLabels: style.nodeLabels ? [...style.nodeLabels] : undefined,
     edgeWidths: new Float32Array(style.edgeWidths),
     edgeColors: new Uint8Array(style.edgeColors),
     edgeDash: new Uint8Array(style.edgeDash),
@@ -418,6 +419,19 @@ function applyDash(context: Graph2DContext, dash: number, pixelRatio: number): v
 const STAR_INNER_RATIO = 0.42;
 const EDGE_CURVE_FACTOR = 0.5;
 
+// Legacy vis-network `shape:box` parity. The box IS the node glyph drawn by the
+// Canvas2D fallback: a label-sized rounded rectangle, white-translucent fill,
+// node-coloured border, dark centred text. Dimensions derive from the measured
+// label (NOT from nodeSizes), so box glyphs ignore the selection size multiplier.
+const BOX_SHAPE = 5;
+const BOX_FONT_PX = 12; // base font size, measured once then scaled by zoom*pixelRatio
+const BOX_MARGIN = 5; // padding around the text, in base (pre-scale) px
+const BOX_CORNER = 6; // corner radius, in base (pre-scale) px
+const BOX_FILL: readonly [number, number, number, number] = [255, 255, 255, 0.5 * 255];
+const BOX_TEXT_COLOR = "#0f172a"; // theme-dark label text (slate-900)
+// Pixel size of an empty (low-degree) box: a small rounded rect, no label.
+const BOX_EMPTY_SIZE = (BOX_FONT_PX + 2 * BOX_MARGIN) * 0.6;
+
 function pathPolygon(context: Graph2DContext, x: number, y: number, points: Array<[number, number]>): void {
   if (points.length === 0) return;
 
@@ -430,18 +444,31 @@ function pathPolygon(context: Graph2DContext, x: number, y: number, points: Arra
   context.closePath();
 }
 
-function drawRoundedBox(context: Graph2DContext, x: number, y: number, radius: number): void {
-  const half = radius * 0.88;
-  const corner = half * 0.6;
-  context.moveTo(x - half + corner, y - half);
-  context.lineTo(x + half - corner, y - half);
-  context.quadraticCurveTo(x + half, y - half, x + half, y - half + corner);
-  context.lineTo(x + half, y + half - corner);
-  context.quadraticCurveTo(x + half, y + half, x + half - corner, y + half);
-  context.lineTo(x - half + corner, y + half);
-  context.quadraticCurveTo(x - half, y + half, x - half, y + half - corner);
-  context.lineTo(x - half, y - half + corner);
-  context.quadraticCurveTo(x - half, y - half, x - half + corner, y - half);
+/**
+ * Trace a rounded rectangle of width `w` / height `h` centred on (x, y) with
+ * the given `corner` radius (clamped so it never exceeds half of either side).
+ * Used both for the legacy `shape:box` label glyph and the small empty box.
+ */
+function drawRoundedBox(
+  context: Graph2DContext,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  corner: number,
+): void {
+  const halfW = w / 2;
+  const halfH = h / 2;
+  const r = Math.max(0, Math.min(corner, halfW, halfH));
+  context.moveTo(x - halfW + r, y - halfH);
+  context.lineTo(x + halfW - r, y - halfH);
+  context.quadraticCurveTo(x + halfW, y - halfH, x + halfW, y - halfH + r);
+  context.lineTo(x + halfW, y + halfH - r);
+  context.quadraticCurveTo(x + halfW, y + halfH, x + halfW - r, y + halfH);
+  context.lineTo(x - halfW + r, y + halfH);
+  context.quadraticCurveTo(x - halfW, y + halfH, x - halfW, y + halfH - r);
+  context.lineTo(x - halfW, y - halfH + r);
+  context.quadraticCurveTo(x - halfW, y - halfH, x - halfW + r, y - halfH);
   context.closePath();
 }
 
@@ -493,7 +520,8 @@ function drawNodeShapePath(context: Graph2DContext, x: number, y: number, radius
   }
 
   if (shape === 5) {
-    drawRoundedBox(context, x, y, radius);
+    const side = radius * 0.88 * 2;
+    drawRoundedBox(context, x, y, side, side, radius * 0.88 * 0.6);
     return;
   }
 
@@ -509,6 +537,72 @@ function drawNodeShapePath(context: Graph2DContext, x: number, y: number, radius
   }
 
   context.arc(x, y, radius, 0, Math.PI * 2);
+}
+
+/**
+ * Draw a single legacy `shape:box` glyph (vis-network parity).
+ *
+ * - Eligible (central) box: a label-sized rounded rectangle with a
+ *   white-translucent fill, the node colour as border, and the dark label
+ *   text centred inside. Size derives from the measured text + margin, scaled
+ *   by `camera.zoom * pixelRatio` — so it ignores the selection size multiplier.
+ * - Non-eligible (low-degree / non-labelled) box: a small EMPTY rounded rect.
+ *
+ * Fill / stroke / text alpha are all multiplied by the node's payload alpha
+ * (`nodeColors[i*4+3] / 255`) so the dim / merge styling still applies. The
+ * border colour is the node colour from the payload (which already encodes
+ * selection / hover / focus) — we NEVER add, remove, or resize the label.
+ */
+function drawBoxNode(
+  context: Graph2DContext,
+  x: number,
+  y: number,
+  scale: number,
+  pixelRatio: number,
+  label: string,
+  borderColor: string,
+  alpha: number,
+  measureLabelWidth: (text: string) => number,
+): void {
+  const fillStyle = `rgba(${BOX_FILL[0]}, ${BOX_FILL[1]}, ${BOX_FILL[2]}, ${BOX_FILL[3] / 255})`;
+  const lineWidth = 1.5 * pixelRatio;
+
+  context.save();
+  context.globalAlpha = alpha;
+
+  if (label) {
+    const fontPx = BOX_FONT_PX * scale;
+    const textW = measureLabelWidth(label);
+    const w = (textW + 2 * BOX_MARGIN) * scale;
+    const h = (BOX_FONT_PX + 2 * BOX_MARGIN) * scale;
+    const corner = BOX_CORNER * scale;
+
+    context.beginPath();
+    drawRoundedBox(context, x, y, w, h, corner);
+    context.fillStyle = fillStyle;
+    context.fill();
+    context.strokeStyle = borderColor;
+    context.lineWidth = lineWidth;
+    context.stroke();
+
+    context.fillStyle = BOX_TEXT_COLOR;
+    context.font = `${fontPx}px sans-serif`;
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText(label, x, y);
+  } else {
+    const side = BOX_EMPTY_SIZE * scale;
+    const corner = BOX_CORNER * scale;
+    context.beginPath();
+    drawRoundedBox(context, x, y, side, side, corner);
+    context.fillStyle = fillStyle;
+    context.fill();
+    context.strokeStyle = borderColor;
+    context.lineWidth = lineWidth;
+    context.stroke();
+  }
+
+  context.restore();
 }
 
 function drawFallback2D(
@@ -557,15 +651,43 @@ function drawFallback2D(
   }
   context.setLineDash([]);
 
+  // Legacy `shape:box` parity: measure each distinct label once at the base
+  // font (12px), cache the unscaled width, then multiply by the per-frame
+  // glyph scale (zoom * pixelRatio). The scale is uniform across nodes.
+  const labelWidthCache = new Map<string, number>();
+  const boxScale = pixelRatio * camera.zoom;
+  const measureLabelWidth = (text: string): number => {
+    const cached = labelWidthCache.get(text);
+    if (cached !== undefined) return cached;
+    context.font = `${BOX_FONT_PX}px sans-serif`;
+    const width = context.measureText(text).width;
+    labelWidthCache.set(text, width);
+    return width;
+  };
+
   for (let nodeIndex = 0; nodeIndex < state.nodeIds.length; nodeIndex += 1) {
     const point = screenPoint(state.positions, nodeIndex, camera, canvas);
     const colorOffset = nodeIndex * 4;
+    const shape = state.style?.nodeShapes[nodeIndex] ?? 0;
+    const nodeColor = cssColor(state.style?.nodeColors, colorOffset, DEFAULT_NODE_COLOR);
+
+    if (shape === BOX_SHAPE) {
+      // The box IS the glyph. Size from the label (or a small empty rect for
+      // low-degree boxes), never from nodeSizes — so the selection size
+      // multiplier is ignored. Border = node colour (encodes selection/hover);
+      // alpha follows the node's payload alpha so dim / merge styling applies.
+      const label = state.style?.nodeLabels?.[nodeIndex] ?? "";
+      const alpha = (state.style?.nodeColors[colorOffset + 3] ?? 255) / 255;
+      drawBoxNode(context, point.x, point.y, boxScale, pixelRatio, label, nodeColor, alpha, measureLabelWidth);
+      continue;
+    }
+
     // World-space sizing for legacy ForceGraph parity: glyphs scale with camera zoom.
     const radius = Math.max(1, (state.style?.nodeSizes[nodeIndex] ?? 4) * pixelRatio * camera.zoom);
 
     context.beginPath();
-    context.fillStyle = cssColor(state.style?.nodeColors, colorOffset, DEFAULT_NODE_COLOR);
-    drawNodeShapePath(context, point.x, point.y, radius, state.style?.nodeShapes[nodeIndex] ?? 0);
+    context.fillStyle = nodeColor;
+    drawNodeShapePath(context, point.x, point.y, radius, shape);
     context.fill();
   }
 

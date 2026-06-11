@@ -101,6 +101,9 @@ function cloneStyle(style) {
     nodeSizes: new Float32Array(style.nodeSizes),
     nodeColors: new Uint8Array(style.nodeColors),
     nodeShapes: new Uint8Array(style.nodeShapes),
+    // Carry the legacy box labels through dim / merge re-styling so box glyphs
+    // keep their text when a node is selected, hovered, or focused.
+    nodeLabels: style.nodeLabels ? [...style.nodeLabels] : undefined,
     edgeWidths: new Float32Array(style.edgeWidths),
     edgeColors: new Uint8Array(style.edgeColors),
     edgeDash: new Uint8Array(style.edgeDash),
