@@ -2,19 +2,36 @@
 
 [![TypeScript CI](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=main)](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml)
 
-**graphify turns your sources into a reconciled knowledge graph.** Point it at code, docs, papers, datasets, or images and it extracts canonical entities and typed relations, deduplicates and reconciles them across sources, and gives you back a queryable graph your assistant can reason over. Reconciliation is designed to be human-in-the-loop: candidate matches are proposed, validated against an ontology, dry-run, and only then applied.
+**graphify turns a corpus into a reconciled, ontology-typed knowledge graph.** Most knowledge isn't documentary — it doesn't live as one fact in one file. It's *entities and relations scattered across sources*: the same person under three names in twenty-five books, a component named one way in a CSV registry and another way in a manual, a case that only makes sense once its evidence, motive, and method are linked. Prose and docs flatten that structure; a knowledge graph keeps it. graphify extracts canonical entities and typed relations, deduplicates and reconciles them across sources under a configurable ontology, and gives you back a queryable graph your assistant — or you, from the terminal — can reason over.
 
-## What makes graphify different
+![Graphify Ontology Studio — Sherlock Holmes selected: ontology-typed knowledge graph of 25 public-domain mystery works, with the entity panel showing description, communities, and relations](docs/assets/studio.png)
 
-graphify is not just a multimodal code graph. Its differentiating value is the **knowledge layer**: a configurable ontology, canonical entities, cross-source entity reconciliation, and a reviewable patch lifecycle for every decision.
+*The flagship corpus: **1,193 canonical entities across 19 ontology types** (Work, Saga, Case, Character, Evidence, Motive, ForensicMethod, DisguisePersona, Alias…) reconciled from **25 public-domain mystery works**, clustered into 99 communities — here with the entity panel open on Sherlock Holmes.* **Explore the live studio → https://mystery-saga.sent-tech.ca/studio/**
 
-![Knowledge graph of public-domain mystery sagas — entities reconciled across 25 works](docs/mystery-knowledge-graph.svg)
+## Why a knowledge graph, not more prose
 
-*~1,193 entities (detectives, suspects, locations, devices) reconciled across 25 public-domain mystery works, clustered into communities.* **Explore the interactive studio → https://rhanka.github.io/graphify/studio/**
+Four things a graph gives you that documents can't:
 
-### Proof
+- **Queryable structure** — ask `graphify query "what connects Irene Adler to the Bohemia case?"` and get a path through typed nodes and edges, not a wall of search hits to re-read.
+- **Entity reconciliation** — "Holmes", "Mr. Sherlock Holmes", and a disguised persona collapse into one canonical entity with aliases and evidence refs, instead of staying three scattered mentions.
+- **Cross-source linking** — a character appearing in several works, an author and their translator, a registry row and the extracted mention that matches it: edges across sources are first-class, with provenance.
+- **Ontology-typed nodes** — every node carries a type from a profile you control (`Character`, `Case`, `Evidence`, …), each type can pin a `visual_encoding` (shape + color), and relations are validated against allowed endpoints — so the graph stays a model, not a hairball.
 
-A token benchmark prints after every run. The graph pays off as the corpus grows past a context window — once built, each query reads the compact graph instead of re-reading raw files:
+### From code graphs to ontology graphs
+
+graphify started life as a **code knowledge graph**: parse a repo, extract classes/functions/calls, cluster, report. No ontology, no entity management. The current product line keeps that (see [Code knowledge graphs](#code-knowledge-graphs)) but generalizes it:
+
+| | Initial approach (code graph) | Now (ontology-driven entity graph) |
+|---|---|---|
+| Node types | Fixed (class, function, concept) | **Configurable ontology profile** per project |
+| Same thing, many names | Stays duplicated | **Canonical entities + reconciliation** with a reviewable patch lifecycle |
+| Sources | A codebase | Any corpus: books, manuals, registries (CSV/JSON/YAML), papers, images, transcripts |
+| Rendering | One default style | Per-type **`visual_encoding`** (shape, color) carried by the profile |
+| Review | Read the report | **Reconciliation studio** + audit trail of every accept/reject decision |
+
+### Proof: the graph pays for itself
+
+A token benchmark prints after every run. Once built, each query reads the compact graph instead of re-reading raw files:
 
 | Corpus | Files | Tokens per query vs raw | Worked example |
 |--------|------:|------------------------:|----------------|
@@ -24,9 +41,66 @@ A token benchmark prints after every run. The graph pays off as the corpus grows
 
 A tiny corpus already fits in context, so there's little to compress — the value there is structural clarity, not token savings. Each `worked/` folder ships the raw inputs and the actual output so you can reproduce the numbers. Token figures are **estimates unless backed by real model calls.**
 
+## Quickstart
+
+**Requires:** Node.js 20+ and one supported AI coding assistant (Claude Code, Codex, Gemini CLI, and others — see [Reference](#reference)).
+
+```bash
+npm install -g @sentropic/graphify
+graphify install
+```
+
+Build your first graph from your assistant:
+
+```bash
+/graphify .                        # Claude Code / Gemini CLI / Copilot / Aider / OpenCode / others
+$graphify .                        # Codex
+```
+
+This writes `.graphify/`:
+
+```
+.graphify/
+├── graph.json       persistent graph — query weeks later without re-reading
+├── GRAPH_REPORT.md  god nodes, surprising connections, suggested questions
+├── graph.html       local standalone HTML export (legacy viewer)
+├── wiki/            optional LLM-readable wiki pages
+└── cache/           local SHA256 cache (ignored)
+```
+
+Query it directly from the terminal — no assistant needed:
+
+```bash
+graphify query "what connects attention to the optimizer?" --graph .graphify/graph.json
+graphify path "DigestAuth" "Response" --graph .graphify/graph.json
+graphify explain "SwinTransformer" --graph .graphify/graph.json
+graphify summary --graph .graphify/graph.json        # compact first-hop orientation
+```
+
+(`--graph` is optional once `.graphify/graph.json` is the resolved default.)
+
+### Build options
+
+The build is driven from the skill; common flags:
+
+```bash
+/graphify ./raw --directed         # preserve source→target direction
+/graphify ./raw --mode deep        # more aggressive INFERRED edge extraction
+/graphify ./raw --update           # re-extract only changed files, merge into existing graph
+/graphify ./raw --cluster-only     # rerun clustering only, no re-extraction
+/graphify ./raw --no-viz           # skip HTML, just report + JSON
+/graphify ./raw --svg              # also export graph.svg
+/graphify ./raw --graphml          # also export graph.graphml (Gephi, yEd)
+/graphify ./raw --neo4j-push bolt://localhost:7687   # push directly to a running Neo4j
+```
+
+`graphify watch [path]` keeps the graph live in a background terminal: code saves trigger an **instant AST rebuild (no LLM)**, while doc/image changes set a flag and **notify** you to run `--update` for the LLM re-pass. For cross-repo work, `graphify clone <url>` builds a graph for a remote repo and `graphify merge-graphs <graphs...>` stitches several graphs together.
+
+## The ontology layer
+
 ### Configurable ontology (profiles)
 
-A project can pin an **ontology profile** that constrains the graph: allowed node types, relation types, citation requirements, review statuses, and named registry bindings (CSV, JSON, or YAML). Profile mode is strictly additive — it activates only when graphify finds `graphify.yaml`, `graphify.yml`, `.graphify/config.yaml`, or `.graphify/config.yml`, or when you pass `--config`/`--profile`. Without it, normal graphify behavior is unchanged.
+A project can pin an **ontology profile** that constrains the graph: allowed node types, relation types, citation requirements, review statuses, per-type `visual_encoding` (shape + color), and named registry bindings (CSV, JSON, or YAML). Profile mode is strictly additive — it activates only when graphify finds `graphify.yaml`, `graphify.yml`, `.graphify/config.yaml`, or `.graphify/config.yml`, or when you pass `--config`/`--profile`. Without it, normal graphify behavior is unchanged.
 
 A minimal `graphify.yaml`:
 
@@ -90,7 +164,7 @@ graphify ontology decision-log --profile-state .graphify/profile/profile-state.j
 
 ### Reconciliation studio
 
-`graphify ontology studio` starts a local studio over the same patch core. By default it serves a **read-only** API; `--write` enables the patch mutation routes (`validate`/`dry-run`/`apply`), bound to loopback and guarded by a bearer token. It also serves a Svelte studio SPA for working candidate queues, candidate/canonical comparison, evidence, audit trail, and patch preview.
+`graphify ontology studio` starts a local studio over the same patch core. By default it serves a **read-only** API; `--write` enables the patch mutation routes (`validate`/`dry-run`/`apply`), bound to loopback and guarded by a bearer token. It also serves a Svelte studio SPA for working candidate queues, candidate/canonical comparison, evidence, audit trail, and patch preview — the screenshot at the top of this README is this studio over the mystery-saga corpus.
 
 ```bash
 graphify ontology studio --config graphify.yaml                 # read-only API + SPA
@@ -98,15 +172,6 @@ graphify ontology studio --config graphify.yaml --write         # token-gated ap
 ```
 
 The same write-guarded core is also exposed over MCP — the default `graphify serve` graph server is read-only, and mutation tools require the explicit `graphify ontology serve --config graphify.yaml --write`.
-
-## Code graphs
-
-Code is a first-class case of the same pipeline. Code files go through a deterministic **no-LLM AST pass** (tree-sitter) that extracts classes, functions, imports, call graphs, docstrings, and rationale comments — no file contents leave your machine for code.
-
-- **~20 languages** via tree-sitter AST: Python, JS, TS, Go, Rust, Java, C, C++, Ruby, PHP, Lua — plus C#, Kotlin, Scala, Swift, Zig, PowerShell, Elixir, Objective-C, and Julia whose grammars are optional dependencies that degrade gracefully when absent. Vue, Svelte, Blade, Dart, Verilog/SystemVerilog, and EJS use regex fallback extraction.
-- **Call graphs and flows**: build a directed graph and derive execution flows from `CALLS` edges (`graphify flows build`).
-- **Review surfaces**: `graphify review-delta`, `graphify review-analysis`, and `graphify recommend-commits` (advisory-only) give blast radius, bridge nodes, test-gap hints, and impacted communities for changed files. Review impact rules intentionally **favor recall over precision** — false positives are reported, not hidden. Review benchmarks (`graphify review-eval`) are deterministic local fixtures, not a universal quality guarantee. Token metrics are estimates unless backed by actual model calls.
-- **Git lifecycle**: `graphify hook install` wires post-commit/checkout/merge/rewrite hooks plus a `graphify-json` merge driver that **union-merges graph nodes** when branches build the graph concurrently, so `.graphify/graph.json` survives merges instead of conflicting.
 
 ## Multimodal ingestion
 
@@ -131,60 +196,29 @@ PDF OCR, audio/video transcription, and provider variables are detailed under [R
 - **Surprising / INFERRED connections** — ranked cross-source links (code↔paper rank above code↔code), each with a plain-English why.
 - **Community labels** — Louvain clusters named so you can navigate the graph by topic.
 
-## Quickstart
+## Code knowledge graphs
 
-**Requires:** Node.js 20+ and one supported AI coding assistant (Claude Code, Codex, Gemini CLI, and others — see [Reference](#reference)).
+Code was graphify's **original use case** and remains a first-class one: a codebase is itself a non-documentary corpus, and the graph answers "what calls this?", "what breaks if I change this?" better than grep. Code files go through a deterministic **no-LLM AST pass** (tree-sitter) that extracts classes, functions, imports, call graphs, docstrings, and rationale comments — no file contents leave your machine for code.
 
-```bash
-npm install -g @sentropic/graphify
-graphify install
-```
+- **~20 languages** via tree-sitter AST: Python, JS, TS, Go, Rust, Java, C, C++, Ruby, PHP, Lua — plus C#, Kotlin, Scala, Swift, Zig, PowerShell, Elixir, Objective-C, and Julia whose grammars are optional dependencies that degrade gracefully when absent. Vue, Svelte, Blade, Dart, Verilog/SystemVerilog, and EJS use regex fallback extraction.
+- **Call graphs and flows**: build a directed graph and derive execution flows from `CALLS` edges (`graphify flows build`).
+- **Review surfaces**: `graphify review-delta`, `graphify review-analysis`, and `graphify recommend-commits` (advisory-only) give blast radius, bridge nodes, test-gap hints, and impacted communities for changed files. Review impact rules intentionally **favor recall over precision** — false positives are reported, not hidden. Review benchmarks (`graphify review-eval`) are deterministic local fixtures, not a universal quality guarantee. Token metrics are estimates unless backed by actual model calls.
+- **Git lifecycle**: `graphify hook install` wires post-commit/checkout/merge/rewrite hooks plus a `graphify-json` merge driver that **union-merges graph nodes** when branches build the graph concurrently, so `.graphify/graph.json` survives merges instead of conflicting.
 
-Build your first graph from your assistant:
+## Realization tracking: agent-stats
 
-```bash
-/graphify .                        # Claude Code / Gemini CLI / Copilot / Aider / OpenCode / others
-$graphify .                        # Codex
-```
+When several AI agents (Claude Code, Codex, Antigravity/Gemini) work the same repository, git authorship stops telling you who actually built what. `graphify agent-stats` indexes the **agentic CLI conversation transcripts** already on your machine — Claude Code project transcripts, Codex rollouts, Antigravity/Gemini chats — and attributes branches, commits, and work packages to the agent sessions that produced them.
 
-This writes `.graphify/`:
-
-```
-.graphify/
-├── graph.json       persistent graph — query weeks later without re-reading
-├── GRAPH_REPORT.md  god nodes, surprising connections, suggested questions
-├── graph.html       local standalone HTML export (legacy viewer)
-├── wiki/            optional LLM-readable wiki pages
-└── cache/           local SHA256 cache (ignored)
-```
-
-Query it directly from the terminal — no assistant needed:
+Attribution is **evidence-based, never git authorship**: commit SHAs the session actually printed, h2a registry identity, and worktree×branch×time correlation. Facts are stored locally in `.graphify/agents/facts.jsonl`.
 
 ```bash
-graphify query "what connects attention to the optimizer?" --graph .graphify/graph.json
-graphify path "DigestAuth" "Response" --graph .graphify/graph.json
-graphify explain "SwinTransformer" --graph .graphify/graph.json
-graphify summary --graph .graphify/graph.json        # compact first-hop orientation
+graphify agent-stats                  # per-agent table: sessions, tokens, commits, branches, WPs
+graphify agent-stats sync             # parse/refresh transcripts (incremental; --full to re-parse)
+graphify agent-stats sessions         # parsed sessions with their evidence-based agent identity
+graphify agent-stats wp <WP-id>       # conductor view: agents/sessions joined to a Track work package
 ```
 
-(`--graph` is optional once `.graphify/graph.json` is the resolved default.)
-
-### Build options
-
-The build is driven from the skill; common flags:
-
-```bash
-/graphify ./raw --directed         # preserve source→target direction
-/graphify ./raw --mode deep        # more aggressive INFERRED edge extraction
-/graphify ./raw --update           # re-extract only changed files, merge into existing graph
-/graphify ./raw --cluster-only     # rerun clustering only, no re-extraction
-/graphify ./raw --no-viz           # skip HTML, just report + JSON
-/graphify ./raw --svg              # also export graph.svg
-/graphify ./raw --graphml          # also export graph.graphml (Gephi, yEd)
-/graphify ./raw --neo4j-push bolt://localhost:7687   # push directly to a running Neo4j
-```
-
-`graphify watch [path]` keeps the graph live in a background terminal: code saves trigger an **instant AST rebuild (no LLM)**, while doc/image changes set a flag and **notify** you to run `--update` for the LLM re-pass. For cross-repo work, `graphify clone <url>` builds a graph for a remote repo and `graphify merge-graphs <graphs...>` stitches several graphs together.
+The `wp` view can additionally attribute merged PRs via the `gh` CLI (skip with `--no-pr` when offline).
 
 ## How it works
 
@@ -241,7 +275,7 @@ For CI/headless text corpora, semantic extraction can be delegated to a direct p
 
 ### Privacy
 
-graphify sends file contents to your assistant's underlying model API for semantic extraction of docs, papers, and images. **Code files are processed locally** via tree-sitter AST — no code contents leave your machine. Audio/video transcription and PDF text preflight run locally; Mistral OCR is the only PDF-specific network call, and only when OCR mode requires it. No telemetry, usage tracking, or analytics. The only network calls are to your platform's model API during extraction, explicit direct-backend extraction, optional Mistral OCR, and any URLs you explicitly ask graphify to ingest.
+graphify sends file contents to your assistant's underlying model API for semantic extraction of docs, papers, and images. **Code files are processed locally** via tree-sitter AST — no code contents leave your machine. Audio/video transcription and PDF text preflight run locally; Mistral OCR is the only PDF-specific network call, and only when OCR mode requires it. Agent-stats transcript parsing is **entirely local** — transcripts never leave your machine. No telemetry, usage tracking, or analytics. The only network calls are to your platform's model API during extraction, explicit direct-backend extraction, optional Mistral OCR, the optional `gh` PR lookup in `agent-stats wp`, and any URLs you explicitly ask graphify to ingest.
 
 ### Tech stack
 
