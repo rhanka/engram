@@ -36,8 +36,11 @@ import {
   type DirectLlmProvider,
 } from "./llm-execution.js";
 
-/** Maximum nodes described in one batch (tail is left without a description). */
-const DEFAULT_MAX_NODES = 400;
+/** Cap on the number of nodes described per build. 0 = describe ALL nodes (no
+ * cap) — the default, so every entity and code function gets a description.
+ * Highest-degree nodes are still processed first (matters only if a positive
+ * cap is set via options.maxNodes). */
+const DEFAULT_MAX_NODES = 0;
 
 /** Nodes per LLM call; bounds prompt size and keeps each reply parseable. */
 const DEFAULT_BATCH_SIZE = 40;
