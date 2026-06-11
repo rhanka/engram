@@ -125,7 +125,7 @@ export function serveStudioAsset(pathname: string): StudioAssetResult | null {
 }
 
 // ---------------------------------------------------------------------------
-// Per-entity sidecar (wiki description + occurrences) for the SPA right panel.
+// Per-entity sidecar (node description + occurrences) for the SPA right panel.
 // Mirrors the loaders in ontology-studio-workspace.ts, kept standalone so the
 // SPA route does not depend on the server-rendered workspace model.
 // ---------------------------------------------------------------------------
@@ -160,6 +160,62 @@ function loadDescriptionIndex(stateDir: string): WikiSidecarIndex | null {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// graph.json node-description index (WP11). Each node carries a one-sentence
+// `description`; the sidecar surfaces it as the primary description. graph.json
+// can be multi-MB and the entity route is hit once per selection, so the
+// id -> description map is cached and only rebuilt when the file's mtime moves.
+// ---------------------------------------------------------------------------
+
+interface GraphNodeDescriptionCacheEntry {
+  mtimeMs: number;
+  byId: Map<string, string>;
+}
+
+const graphDescriptionCache = new Map<string, GraphNodeDescriptionCacheEntry>();
+
+interface GraphFileShape {
+  nodes?: Array<{ id?: unknown; description?: unknown }>;
+}
+
+/**
+ * Map of node id -> trimmed non-empty `description` from `<stateDir>/graph.json`.
+ * Returns an empty map when graph.json is missing/unreadable. Cached per state
+ * dir, invalidated on mtime change (so an in-process rebuild is picked up).
+ */
+function loadGraphNodeDescriptions(stateDir: string): Map<string, string> {
+  const graphPath = join(stateDir, "graph.json");
+  let mtimeMs: number;
+  try {
+    mtimeMs = statSync(graphPath).mtimeMs;
+  } catch {
+    graphDescriptionCache.delete(stateDir);
+    return new Map();
+  }
+  const cached = graphDescriptionCache.get(stateDir);
+  if (cached && cached.mtimeMs === mtimeMs) return cached.byId;
+
+  const byId = new Map<string, string>();
+  const graph = loadJsonSafe<GraphFileShape>(graphPath);
+  if (graph && Array.isArray(graph.nodes)) {
+    for (const node of graph.nodes) {
+      const id = node?.id;
+      if (typeof id !== "string" || !id) continue;
+      const desc = node?.description;
+      if (typeof desc !== "string") continue;
+      const trimmed = desc.trim();
+      if (trimmed) byId.set(id, trimmed);
+    }
+  }
+  graphDescriptionCache.set(stateDir, { mtimeMs, byId });
+  return byId;
+}
+
+/** Test seam: drop the cached graph.json node-description index. */
+export function __resetGraphDescriptionCache(): void {
+  graphDescriptionCache.clear();
+}
+
 export interface EntitySidecarResponse {
   id: string;
   description: { status: string; description: string | null } | null;
@@ -167,19 +223,32 @@ export interface EntitySidecarResponse {
 }
 
 /**
- * Build the `/api/ontology/entity/<id>` payload: the wiki description sidecar
- * entry (normalised to { status, description }) plus the occurrence record for
- * this node id, if any. Returns the shape the SPA's EntityPanel expects.
+ * Build the `/api/ontology/entity/<id>` payload: the node description
+ * (normalised to { status, description }) plus the occurrence record for this
+ * node id, if any. Returns the shape the SPA's EntityPanel expects.
+ *
+ * Description precedence (WP11): the node's own `graph.json` description wins;
+ * the opt-in wiki sidecar index is consulted only when the node has none. So a
+ * graph whose nodes all carry descriptions reports them all here even without a
+ * wiki sidecar present.
  */
 export function buildEntitySidecar(stateDir: string, id: string): EntitySidecarResponse {
-  const index = loadDescriptionIndex(stateDir);
-  const entry = index?.nodes?.[id];
   let description: EntitySidecarResponse["description"] = null;
-  if (entry) {
-    description =
-      entry.status === "generated"
-        ? { status: "generated", description: entry.description ?? null }
-        : { status: "insufficient_evidence", description: null };
+
+  // 1. graph.json node.description (the default WP11 source).
+  const nodeDescription = loadGraphNodeDescriptions(stateDir).get(id);
+  if (nodeDescription) {
+    description = { status: "generated", description: nodeDescription };
+  } else {
+    // 2. Fall back to the opt-in wiki description sidecar.
+    const index = loadDescriptionIndex(stateDir);
+    const entry = index?.nodes?.[id];
+    if (entry) {
+      description =
+        entry.status === "generated"
+          ? { status: "generated", description: entry.description ?? null }
+          : { status: "insufficient_evidence", description: null };
+    }
   }
 
   const occRaw = loadJsonSafe<Record<string, unknown>>(join(stateDir, "ontology", "occurrences.json"));
