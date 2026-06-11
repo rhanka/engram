@@ -224,11 +224,14 @@ const TYPE_SHAPE: Record<string, string> = {
   Evidence: "square",
   Object: "square",
   ForensicMethod: "hexagon",
+  // Legacy vis-network parity: only Work + ChapterOrStory are box glyphs
+  // (labelled rounded rect). Saga / Author / Translator carry their own
+  // ontological shapes, matching public-pack ontology-profile.yaml.
   Work: "roundedbox",
-  Saga: "roundedbox",
   ChapterOrStory: "roundedbox",
-  Author: "roundedbox",
-  Translator: "roundedbox",
+  Saga: "hexagon",
+  Author: "star",
+  Translator: "triangle",
 };
 
 function shapeForType(node: StudioSceneGraphNode | undefined): string {

@@ -9,6 +9,7 @@ import {
   findNearestNodeId,
   interpolateMergeStyle,
   interpolateMergePositions,
+  isBoxShape,
 } from "../lib/graphRendererPayload.js";
 
 // --- Item 1: density-aware base node size ---
@@ -97,6 +98,21 @@ describe("boxed-label degree threshold (item 2)", () => {
     // leaves (degree 1) and x (degree 1) are below threshold → no label
     expect(labelled).not.toContain("l0");
     expect(labelled).not.toContain("x");
+  });
+});
+
+// --- legacy box parity: box nodes own their label (single text per box) ---
+describe("isBoxShape", () => {
+  it("recognises the box-category scene shapes (case-insensitive)", () => {
+    expect(isBoxShape("box")).toBe(true);
+    expect(isBoxShape("roundedbox")).toBe(true);
+    expect(isBoxShape("RoundedBox")).toBe(true);
+  });
+
+  it("rejects every non-box shape (their labels may use the DOM overlay)", () => {
+    for (const shape of ["dot", "diamond", "star", "hexagon", "triangle", "square", "", null, undefined]) {
+      expect(isBoxShape(shape)).toBe(false);
+    }
   });
 });
 

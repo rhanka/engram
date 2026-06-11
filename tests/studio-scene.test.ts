@@ -214,4 +214,38 @@ describe("buildStudioScene — parity with studio buildScene", () => {
       expect(hasRealGraph).toBe(false);
     });
   });
+
+  describe("TYPE_SHAPE — legacy box-family mapping", () => {
+    // Only Work + ChapterOrStory are box glyphs; Saga/Author/Translator carry
+    // their canonical ontology shapes (matches public-pack ontology-profile.yaml).
+    const expected: Record<string, string> = {
+      Work: "roundedbox",
+      ChapterOrStory: "roundedbox",
+      Saga: "hexagon",
+      Author: "star",
+      Translator: "triangle",
+    };
+
+    it("buildStudioScene (TS) maps the box-family types", () => {
+      const graph = {
+        nodes: Object.keys(expected).map((type, i) => ({ id: `n${i}`, type })),
+        edges: [],
+      };
+      const scene = buildStudioScene(graph);
+      for (const node of scene.nodes) {
+        expect(node.shape).toBe(expected[node.type as string]);
+      }
+    });
+
+    it("buildScene (SPA) stays in lockstep with the TS port", () => {
+      const graph = {
+        nodes: Object.keys(expected).map((type, i) => ({ id: `n${i}`, type })),
+        edges: [],
+      };
+      const scene = buildScene(graph) as { nodes: Array<{ type?: string; shape: string }> };
+      for (const node of scene.nodes) {
+        expect(node.shape).toBe(expected[node.type as string]);
+      }
+    });
+  });
 });

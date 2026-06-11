@@ -133,11 +133,15 @@ const TYPE_SHAPE = {
   Evidence: "square",
   Object: "square",
   ForensicMethod: "hexagon",
+  // Legacy vis-network parity: only Work + ChapterOrStory are box glyphs
+  // (labelled rounded rect). Saga / Author / Translator carry their own
+  // ontological shapes, matching public-pack ontology-profile.yaml. Kept in
+  // lockstep with src/studio-scene.ts TYPE_SHAPE (parity test enforces this).
   Work: "roundedbox",
-  Saga: "roundedbox",
   ChapterOrStory: "roundedbox",
-  Author: "roundedbox",
-  Translator: "roundedbox",
+  Saga: "hexagon",
+  Author: "star",
+  Translator: "triangle",
 };
 
 /**

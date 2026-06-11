@@ -10,6 +10,7 @@
     findNearestNodeId,
     interpolateMergeStyle,
     interpolateMergePositions,
+    isBoxShape,
   } from "../lib/graphRendererPayload.js";
 
   const EMPTY_SCENE = {
@@ -445,11 +446,15 @@
     for (const id of ids) {
       const idx = payload.nodeIndexById?.get(id);
       if (!Number.isInteger(idx)) continue;
+      const node = payload.nodeById?.get(id);
+      // Legacy box parity: box-category nodes (Work / ChapterOrStory) draw
+      // their label INSIDE the canvas glyph — never duplicate it in the DOM
+      // overlay, not even for the active (hovered/selected/focused) node.
+      if (isBoxShape(node?.shape)) continue;
       const worldX = graph.positions[idx * 2] ?? 0;
       const worldY = graph.positions[idx * 2 + 1] ?? 0;
       const screen = worldToScreen(worldX, worldY);
       if (!screen) continue;
-      const node = payload.nodeById?.get(id);
       const radius = (payload.style?.nodeSizes?.[idx] ?? NODE_RADIUS) * camera.zoom;
       next.push({
         id,
