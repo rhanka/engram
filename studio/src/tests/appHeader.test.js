@@ -27,7 +27,8 @@ describe("App header DS structure", () => {
     expect(appSource).not.toMatch(/st-header__/);
     expect(appSource).not.toMatch(/\.st-header\.app-header/);
     expect(appSource).not.toMatch(/\.app-view-switcher \.st-button/);
-    expect(appSource).toMatch(/class="view-label view-label--full"[\s\S]*Reconciliation/);
+    expect(appSource).toMatch(/class="view-label view-label--full">Knowledge graph</);
+    expect(appSource).toMatch(/class="view-label view-label--full">Entity reconciliation</);
     expect(appSource).toMatch(/class="view-label view-label--compact" aria-hidden="true"[\s\S]*Recon/);
     expect(appSource).toMatch(/@media \(max-width: 720px\)[\s\S]*\.app-stats[\s\S]*display: none/);
   });

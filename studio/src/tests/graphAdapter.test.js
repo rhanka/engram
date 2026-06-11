@@ -388,6 +388,48 @@ describe("withReconcileEdge (SVELTE-7)", () => {
   });
 });
 
+describe("attachReconLayout (#2.2 — local recon layout)", () => {
+  it("keeps pinned twins fixed and centres neighbours around them", async () => {
+    const { attachReconLayout } = await import("../lib/graphAdapter.js");
+    const cx = 360, cy = 280, dx = 130;
+    const scene = {
+      nodes: [
+        { id: "A", fx: cx - dx, fy: cy },
+        { id: "B", fx: cx + dx, fy: cy },
+        { id: "n1", x: 9000, y: -4000 }, // scattered full-graph coords (must be dropped)
+        { id: "n2", x: -2000, y: 7000 },
+      ],
+      edges: [
+        { source: "A", target: "n1" },
+        { source: "B", target: "n2" },
+        { source: "A", target: "B" },
+      ],
+    };
+    const out = attachReconLayout(scene);
+    const byId = Object.fromEntries(out.nodes.map((n) => [n.id, n]));
+    // Twins stay pinned exactly at their fx/fy (held fixed during the sim).
+    expect(byId.A.x).toBeCloseTo(cx - dx, 6);
+    expect(byId.A.y).toBeCloseTo(cy, 6);
+    expect(byId.B.x).toBeCloseTo(cx + dx, 6);
+    expect(byId.B.y).toBeCloseTo(cy, 6);
+    // Every node ends up with both x/y AND fx/fy set (pinned for direct render).
+    for (const n of out.nodes) {
+      expect(Number.isFinite(n.x)).toBe(true);
+      expect(Number.isFinite(n.fx)).toBe(true);
+      expect(n.fx).toBe(n.x);
+      expect(n.fy).toBe(n.y);
+    }
+    // Neighbours settle near the twins' centre, NOT at their scattered coords.
+    expect(Math.hypot(byId.n1.x - cx, byId.n1.y - cy)).toBeLessThan(600);
+    expect(Math.hypot(byId.n2.x - cx, byId.n2.y - cy)).toBeLessThan(600);
+  });
+  it("returns the scene unchanged for an empty node set", async () => {
+    const { attachReconLayout } = await import("../lib/graphAdapter.js");
+    const empty = { nodes: [], edges: [] };
+    expect(attachReconLayout(empty)).toBe(empty);
+  });
+});
+
 describe("memoised graph index (quick-win C) — parity with the old filter+sort", () => {
   // A graph with several types/communities and out-of-order labels to make the
   // sort observable. A fresh object per assertion-block so the WeakMap cache is

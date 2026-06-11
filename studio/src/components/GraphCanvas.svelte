@@ -6,6 +6,7 @@
     buildConnectedDimStyle,
     buildGraphRendererPayload,
     findNearestEdge,
+    findNearestNode,
     findNearestNodeId,
     interpolateMergeStyle,
     interpolateMergePositions,
@@ -20,6 +21,10 @@
   const FIT_PADDING = 48;
   const PICK_RADIUS = 16;
   const EDGE_PICK_RADIUS = 12;
+  // Extra CSS px around a node's drawn radius that still counts as an
+  // unambiguous node-hover (so the cursor doesn't have to be pixel-perfect on
+  // the glyph). Beyond this, node vs edge is decided by normalized distance.
+  const NODE_TIGHT_SLOP = 4;
   const HOVER_EDGE_COLOR = [37, 99, 235, 255];
   const MERGE_ANIMATION_DURATION_MS = 520;
   // Hide edges during pan/zoom when nodes+edges exceed this, for interaction fluidity on large graphs.
@@ -48,6 +53,9 @@
     onMergeComplete,
     edgeSkipThreshold = EDGE_SKIP_THRESHOLD,
     labelDegreeRatio = LABEL_DEGREE_RATIO,
+    // 'none'  → no generic labels (workspace / main graph).
+    // 'plain' → plain-text labels (no box) for high-degree + active nodes (recon).
+    labelMode = "none",
   } = $props();
 
   let container;
@@ -67,6 +75,13 @@
 
   // Scene identity tracking so we only auto-fit on a genuine new graph (not selection/focus).
   let lastScene = null;
+  // Stable content signature of the last scene we built from. A `$derived.by`
+  // scene (e.g. the reconciliation view) returns a NEW object on every recompute,
+  // so comparing by object reference alone would refit/reset on any hover after a
+  // drag (#2.4). We additionally compare a content signature (node ids + positions
+  // + edge endpoints): a recompute that yields the SAME content does NOT refit,
+  // which also preserves a dragged node's position across an incidental rebuild.
+  let lastSceneKey = null;
   // True when the current update path is a real scene/graph-data change (mount/new graph/resize).
   let skipEdgesOnInteract = false;
   // Zoom-settle debounce timer: full-edge render after the last wheel event settles.
@@ -96,6 +111,10 @@
   let dragMoved = false;
   let dragStartX = 0;
   let dragStartY = 0;
+  // Positions the user has dragged nodes to (id -> {x, y}), in world coords.
+  // Re-applied after every payload rebuild so a selection/hover-driven rebuild
+  // (which rebuilds payload from `scene`) preserves the dragged positions (#2.4).
+  let draggedPositions = new Map();
   // Set true when a drag finishes so the trailing click doesn't also select.
   let suppressNextClick = false;
 
@@ -279,10 +298,24 @@
     });
     clearHoveredEdge({ notify: false, render: false });
     computeNodeDegrees();
+    reapplyDraggedPositions();
 
     // Skip edges during pan/zoom only when the object count is large enough.
     const objectCount = (scene?.nodes?.length ?? 0) + (scene?.edges?.length ?? 0);
     skipEdgesOnInteract = objectCount > edgeSkipThreshold;
+  }
+
+  // Re-write any user-dragged node positions onto the freshly-built payload so a
+  // selection/hover-driven rebuild doesn't snap dragged nodes back (#2.4).
+  function reapplyDraggedPositions() {
+    if (draggedPositions.size === 0 || !payload?.renderGraph) return;
+    const positions = payload.renderGraph.positions;
+    for (const [id, pos] of draggedPositions) {
+      const idx = payload.nodeIndexById?.get(id);
+      if (!Number.isInteger(idx)) continue;
+      positions[idx * 2] = pos.x;
+      positions[idx * 2 + 1] = pos.y;
+    }
   }
 
   // Full update with auto-fit — used on mount, a genuine new graph, and resize.
@@ -376,7 +409,7 @@
   // via the current camera. Called on every camera change (pan/zoom/fit/drag).
   function updateLabels() {
     const graph = payload?.renderGraph;
-    if (!graph || !canvas) {
+    if (labelMode === "none" || !graph || !canvas) {
       labels = [];
       return;
     }
@@ -457,6 +490,8 @@
     const positions = payload.renderGraph.positions;
     positions[dragNodeIndex * 2] = worldX;
     positions[dragNodeIndex * 2 + 1] = worldY;
+    // Persist so a later payload rebuild (selection/hover) keeps the new position.
+    if (draggingNodeId) draggedPositions.set(draggingNodeId, { x: worldX, y: worldY });
     renderer.setPositions(positions);
     // Skip edges mid-drag on dense graphs for fluidity (restored on pointerup).
     renderer.render(skipEdgesOnInteract ? { skipEdges: true } : undefined);
@@ -584,20 +619,37 @@
 
     // World-space pick radii (constant in world units) so the on-screen hit zones scale
     // with camera zoom, matching the now zoom-scaled (world-space sized) node glyphs.
+    // Item 1.3: the node hit-test no longer wins unconditionally. We compute BOTH
+    // the nearest node and the nearest edge, then:
+    //   - if the cursor is within the node's TIGHT (drawn-radius + slop) zone, the
+    //     node clearly wins (you're on the glyph);
+    //   - otherwise pick whichever the cursor is proportionally closer to, comparing
+    //     each hit's distance NORMALIZED by its own pick threshold. This stops a
+    //     node from "magnetizing" the hover when the cursor is really over an edge.
     const nodeMaxDistance = PICK_RADIUS * world.scale;
-    const nodeId = findNearestNodeId(payload, world.x, world.y, nodeMaxDistance);
-    if (nodeId) {
+    const edgeMaxDistance = EDGE_PICK_RADIUS * world.scale;
+    const nodeHit = findNearestNode(payload, world.x, world.y, nodeMaxDistance);
+    const edgeHit = findNearestEdge(payload, world.x, world.y, edgeMaxDistance);
+
+    // Tight node zone: on the glyph (radius) plus a few CSS px of slop.
+    const tightNodeRadius = (nodeHit?.radius ?? 0) + NODE_TIGHT_SLOP * world.scale;
+    const onNodeGlyph = nodeHit !== null && nodeHit.distance <= tightNodeRadius;
+
+    // Normalized distances (0 = dead centre of the pick zone, 1 = its edge).
+    const nodeNorm = nodeHit ? nodeHit.distance / Math.max(nodeMaxDistance, nodeHit.radius) : Infinity;
+    const edgeNorm = edgeHit ? edgeHit.distance / edgeMaxDistance : Infinity;
+    const preferNode = nodeHit !== null && (onNodeGlyph || edgeHit === null || nodeNorm <= edgeNorm);
+
+    if (preferNode) {
       clearHoveredEdge({ render: false });
       if (canvas) canvas.style.cursor = "pointer";
-      setHoveredNode(nodeId, world.localX, world.localY);
+      setHoveredNode(nodeHit.id, world.localX, world.localY);
       return;
     }
 
     setHoveredNode(null);
-    const edgeMaxDistance = EDGE_PICK_RADIUS * world.scale;
-    const hit = findNearestEdge(payload, world.x, world.y, edgeMaxDistance);
-    if (canvas) canvas.style.cursor = hit ? "crosshair" : "default";
-    setHoveredEdge(hit, world.localX, world.localY);
+    if (canvas) canvas.style.cursor = edgeHit ? "crosshair" : "default";
+    setHoveredEdge(edgeHit, world.localX, world.localY);
   }
 
   function setHoveredNode(nodeId, localX = 0, localY = 0) {
@@ -728,12 +780,37 @@
     mergeFrame = window.requestAnimationFrame(tick);
   }
 
-  $effect(() => {
-    // Graph data (scene) change -> rebuild payload and auto-fit the view.
-    if (scene !== lastScene) {
-      lastScene = scene;
-      updateGraph();
+  // Stable content signature of a scene: node ids + positions + edge endpoints +
+  // counts. Two structurally-equivalent scenes share a signature even when they
+  // are different object instances (a `$derived.by` recompute), so we don't refit
+  // on a no-op rebuild — and a dragged node's position survives such a rebuild.
+  function sceneSignature(s) {
+    const nodes = s?.nodes ?? [];
+    const edges = s?.edges ?? [];
+    let key = `${nodes.length}|${edges.length}`;
+    for (const n of nodes) {
+      key += `;${n.id}`;
+      if (typeof n.fx === "number" && typeof n.fy === "number") key += `@${n.fx},${n.fy}`;
+      else if (typeof n.x === "number" && typeof n.y === "number") key += `@${n.x},${n.y}`;
     }
+    key += "|";
+    for (const e of edges) key += `;${e.source}>${e.target}`;
+    return key;
+  }
+
+  $effect(() => {
+    // Graph data (scene) change -> rebuild payload and auto-fit the view, but
+    // ONLY when the scene's CONTENT actually changed (not merely its object
+    // identity). This keeps a hover-triggered recompute from refitting the camera
+    // or snapping a dragged node back (#2.4).
+    if (scene === lastScene) return;
+    const key = sceneSignature(scene);
+    lastScene = scene;
+    if (key === lastSceneKey) return;
+    lastSceneKey = key;
+    // Genuine new graph/candidate: drop stale dragged positions before refit.
+    draggedPositions.clear();
+    updateGraph();
   });
 
   $effect(() => {
@@ -815,7 +892,7 @@
   ></canvas>
 
   {#if labels.length}
-    <div class="node-labels" aria-hidden="true">
+    <div class={`node-labels node-labels-${labelMode}`} aria-hidden="true">
       {#each labels as item (item.id)}
         <span
           class={item.active ? "node-label node-label-active" : "node-label"}
@@ -934,7 +1011,7 @@
     text-align: center;
   }
 
-  /* Boxed god-node labels (legacy vis-network style): bordered, opaque, small. */
+  /* Label overlay container (positioning machinery shared by all label modes). */
   .node-labels {
     position: absolute;
     inset: 0;
@@ -943,16 +1020,18 @@
     overflow: hidden;
   }
 
+  /* Plain-text labels (recon view): no border/box — just legible text with a
+     subtle halo/text-shadow so it reads over edges. */
   .node-label {
     position: absolute;
     transform: translate(-50%, -100%);
     max-width: 12rem;
-    padding: 1px 5px;
-    border: 1px solid var(--st-semantic-border-muted, #cbd5e1);
-    border-radius: 3px;
-    background: color-mix(in srgb, var(--st-semantic-surface-default, #fff) 92%, transparent);
+    padding: 0;
     color: var(--st-semantic-text-default, #1e293b);
-    box-shadow: 0 1px 2px rgb(15 23 42 / 0.12);
+    text-shadow:
+      0 0 2px var(--st-semantic-surface-default, #fff),
+      0 0 2px var(--st-semantic-surface-default, #fff),
+      0 0 3px var(--st-semantic-surface-default, #fff);
     font-size: 0.68rem;
     line-height: 1.2;
     white-space: nowrap;
@@ -961,7 +1040,6 @@
   }
 
   .node-label-active {
-    border-color: var(--st-semantic-action-primary, #2563eb);
     color: var(--st-semantic-action-primary, #2563eb);
     font-weight: 600;
     z-index: 2;
