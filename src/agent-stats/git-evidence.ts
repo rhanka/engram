@@ -24,6 +24,32 @@ export function classifyGitVerb(command: string): GitAction["verb"] | null {
 const COMMIT_LINE_RE = /\[([A-Za-z0-9._/\-]+)\s+([0-9a-f]{7,40})\]/g;
 const PR_URL_RE = /https?:\/\/github\.com\/[^\s/]+\/[^\s/]+\/pull\/\d+/g;
 
+/**
+ * SPOOF-RESISTANCE (Phase 1.5): ground truth may only be scraped from the
+ * OUTPUT of a command whose INPUT classified as one of these mutating git
+ * verbs. A session that merely `cat`s/`grep`s another transcript or a CI log
+ * must never acquire the shas / PR urls printed in that text.
+ */
+export const GROUND_TRUTH_VERBS: ReadonlySet<GitAction["verb"]> = new Set([
+  "commit",
+  "checkout-b",
+  "push",
+  "pr-create",
+  "pr-merge",
+]);
+
+/** True when a classified verb is allowed to feed {@link scrapeGroundTruth}. */
+export function isGroundTruthVerb(verb: GitAction["verb"] | null): boolean {
+  return verb !== null && GROUND_TRUTH_VERBS.has(verb);
+}
+
+/** Parse the branch name out of a `git checkout -b X` / `git switch -c X`. */
+export function branchFromCheckoutCommand(command: string): string | null {
+  if (typeof command !== "string") return null;
+  const m = command.match(/\bgit\s+(?:checkout\s+-b|switch\s+-c)\s+(?:--\s+)?([^\s;|&"']+)/);
+  return m && m[1] ? m[1] : null;
+}
+
 /** Empty ground-truth accumulator. */
 export function emptyGroundTruth(): GroundTruth {
   return { commitShas: [], branches: [], shaBranch: {}, prUrls: [] };
@@ -34,8 +60,10 @@ export function emptyGroundTruth(): GroundTruth {
  * Recognizes:
  *   - `[branch abc1234] subject`  → commit sha + branch
  *   - `https://github.com/<repo>/pull/<n>` → PR url
+ * When `originRepo` ("owner/name") is given, PR urls from other repos are
+ * ignored — a session cannot acquire foreign-repo PRs.
  */
-export function scrapeGroundTruth(output: string, acc: GroundTruth): void {
+export function scrapeGroundTruth(output: string, acc: GroundTruth, originRepo?: string): void {
   if (typeof output !== "string" || output.length === 0) return;
   let m: RegExpExecArray | null;
   COMMIT_LINE_RE.lastIndex = 0;
@@ -49,8 +77,14 @@ export function scrapeGroundTruth(output: string, acc: GroundTruth): void {
   PR_URL_RE.lastIndex = 0;
   while ((m = PR_URL_RE.exec(output)) !== null) {
     const url = m[0];
-    if (url && !acc.prUrls.includes(url)) acc.prUrls.push(url);
+    if (url && prUrlInRepo(url, originRepo) && !acc.prUrls.includes(url)) acc.prUrls.push(url);
   }
+}
+
+/** True when a PR url belongs to `originRepo` ("owner/name"); permissive when unknown. */
+export function prUrlInRepo(url: string, originRepo?: string): boolean {
+  if (!originRepo) return true;
+  return url.toLowerCase().startsWith(`https://github.com/${originRepo.toLowerCase()}/pull/`);
 }
 
 /**
