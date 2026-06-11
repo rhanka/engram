@@ -9,21 +9,22 @@
  *   rank 1  commit-sha-output  — a commit sha the session itself printed in a
  *           `git commit` tool OUTPUT, confirmed present in `git log`. This is
  *           the ground truth: the session demonstrably created that commit.
- *   rank 2  h2a-registry       — the session's (host, cwd) maps to a registered
+ *   rank 2  pr-merge           — a PR's merged main commit (squash/rebase erases
+ *           the per-commit shas the session printed). We attribute the merge
+ *           commit to the session that worked the PR's branch.
+ *   rank 3  track-wp-thread-id / track-wp-h2a-id — the Track ledger mandated a
+ *           work-package to this session's Codex thread-id (or its matched h2a
+ *           instance id). Attributes the WP to the agent. (WP identity.)
+ *   rank 4  h2a-registry       — the session's (host, cwd) maps to a registered
  *           h2a instance id; that id IS the agent identity. (Identity, not
  *           commit-level proof.)
- *   rank 3  worktree-branch-window — the session worked on branch B in a
+ *   rank 5  worktree-branch-window — the session worked on branch B in a
  *           worktree whose lifetime overlaps the branch's commits. Weakest.
- *
- * Phase-1 hooks (NOT implemented here, intentionally left as TODOs):
- *   - Codex thread-id ↔ Track-WP join (attribute a sub-agent thread to a WP via
- *     the Track ledger).
- *   - PR-merge join (attribute the squashed/merge commit on main to the branch
- *     author session via the PR number parsed from `gh pr` output).
  */
 
 import { matchInstance, type H2aInstance } from "./registry.js";
 import { resolveIdentity } from "./identity.js";
+import type { TrackIndex, TrackItem } from "./track-join.js";
 import type { CorrelationLink, SessionFact } from "./types.js";
 
 export interface GitCommitMeta {
@@ -32,11 +33,29 @@ export interface GitCommitMeta {
   subject?: string;
 }
 
+/**
+ * Merged-PR attribution input (one per PR a session worked). `branch` ties the
+ * PR to the session that worked that branch; `mergeCommit` is the squashed
+ * commit that actually landed on main.
+ */
+export interface PrMergeMeta {
+  number: number;
+  branch?: string;
+  /** Full sha of the commit that landed on the base branch (if merged). */
+  mergeCommit?: string;
+  /** PR url, when known (for the link target). */
+  url?: string;
+}
+
 export interface CorrelateInput {
   facts: SessionFact[];
   instances: H2aInstance[];
   /** Known commits in the repo (`git log`), keyed for sha-prefix matching. */
   commits: GitCommitMeta[];
+  /** Track-ledger WP join index (thread-id / h2a-id → WP). Optional. */
+  trackIndex?: TrackIndex;
+  /** Merged-PR attribution (PR number → merge commit), keyed for branch join. */
+  prMerges?: PrMergeMeta[];
 }
 
 /** Index commits by their abbreviated (7-char) sha prefix for fast lookup. */
@@ -65,6 +84,7 @@ function shaMatches(observed: string, known: string): boolean {
 export function correlate(input: CorrelateInput): CorrelationLink[] {
   const links: CorrelationLink[] = [];
   const byPrefix = indexCommits(input.commits);
+  const mergeByBranch = indexPrMergesByBranch(input.prMerges ?? []);
 
   for (const fact of input.facts) {
     const inst = matchInstance(input.instances, fact.host, fact.cwds);
@@ -90,48 +110,123 @@ export function correlate(input: CorrelateInput): CorrelationLink[] {
       }
     }
 
-    // ----- rank 2: h2a registry identity -----
+    // ----- rank 2: PR-merge — squash/rebase erases per-commit shas -----
+    // For each branch the session demonstrably worked, if a merged PR for that
+    // branch landed a (squashed) commit on the base, attribute THAT commit to
+    // the session. The merge commit's sha is never one the session printed, so
+    // rank 1 can't catch it; this is the bridge from branch work to main.
+    for (const branch of fact.branchesObserved) {
+      if (isHousekeepingBranch(branch)) continue;
+      const merge = mergeByBranch.get(branch);
+      if (!merge || !merge.mergeCommit) continue;
+      const didWork = fact.gitActions.some((a) => a.verb === "commit" || a.verb === "checkout-b");
+      if (!didWork) continue;
+      links.push({
+        factId: fact.factId,
+        agentId,
+        target: { kind: "commit", sha: merge.mergeCommit, branch },
+        rank: 2,
+        rule: "pr-merge",
+        confidence: "high",
+        evidence: `session worked branch "${branch}"; PR #${merge.number} merged it as commit ${merge.mergeCommit.slice(0, 7)} on the base branch`,
+      });
+    }
+
+    // ----- rank 3: Track-WP join via Codex thread-id / h2a instance id -----
+    // The Track ledger mandated a WP to this session's Codex thread-id (the
+    // session_meta.id / parent_thread_id) or to its matched h2a instance id.
+    if (input.trackIndex) {
+      const seenWp = new Set<string>();
+      const emitWp = (item: TrackItem, rule: "track-wp-thread-id" | "track-wp-h2a-id", evidence: string) => {
+        if (seenWp.has(item.trackItemId)) return;
+        seenWp.add(item.trackItemId);
+        links.push({
+          factId: fact.factId,
+          agentId,
+          target: { kind: "wp", trackItemId: item.trackItemId, wp: item.wp ?? undefined },
+          rank: 3,
+          rule,
+          confidence: "medium",
+          evidence,
+        });
+      };
+      // Codex session_meta.id == sessionId; parent_thread_id is the spawner.
+      const threadCandidates = [fact.sessionId, fact.parent?.parentThreadId].filter(
+        (x): x is string => Boolean(x),
+      );
+      for (const tid of threadCandidates) {
+        const item = input.trackIndex.byThreadId.get(tid.toLowerCase());
+        if (item) {
+          emitWp(
+            item,
+            "track-wp-thread-id",
+            `Track ledger mandated ${item.wp ?? item.trackItemId} to Codex thread-id ${tid.slice(0, 8)}… (session_meta/parent_thread)`,
+          );
+        }
+      }
+      // h2a instance id (registered) appears in delegation envelopes.
+      if (inst) {
+        const item = input.trackIndex.byH2aId.get(inst.id);
+        if (item) {
+          emitWp(
+            item,
+            "track-wp-h2a-id",
+            `Track ledger mandated ${item.wp ?? item.trackItemId} to h2a instance "${inst.id}"`,
+          );
+        }
+      }
+    }
+
+    // ----- rank 4: h2a registry identity -----
     if (inst) {
       links.push({
         factId: fact.factId,
         agentId,
         target: { kind: "branch", branch: fact.branchesObserved[0] ?? "(workspace)" },
-        rank: 2,
+        rank: 4,
         rule: "h2a-registry",
         confidence: "medium",
         evidence: `session cwd is under registered h2a workspace "${inst.label}" (${inst.id})`,
       });
     }
 
-    // ----- rank 3: worktree × branch × time window (weak) -----
+    // ----- rank 5: worktree × branch × time window (weak) -----
     for (const branch of fact.branchesObserved) {
       if (isHousekeepingBranch(branch)) continue;
       // Only emit when the session actually performed a commit/checkout-b on it
-      // and we have NOT already proven it via rank 1.
-      const provenViaRank1 = links.some(
-        (l) => l.factId === fact.factId && l.rank === 1 && l.target.kind === "commit" && l.target.branch === branch,
+      // and we have NOT already proven it via rank 1 or rank 2.
+      const provenStrong = links.some(
+        (l) =>
+          l.factId === fact.factId &&
+          l.rank <= 2 &&
+          l.target.kind === "commit" &&
+          l.target.branch === branch,
       );
-      if (provenViaRank1) continue;
+      if (provenStrong) continue;
       const didWork = fact.gitActions.some((a) => a.verb === "commit" || a.verb === "checkout-b");
       if (!didWork) continue;
       links.push({
         factId: fact.factId,
         agentId,
         target: { kind: "branch", branch },
-        rank: 3,
+        rank: 5,
         rule: "worktree-branch-window",
         confidence: "low",
         evidence: `session worked on branch "${branch}" in cwd window [${fact.startedAt ?? "?"}..${fact.endedAt ?? "?"}]`,
       });
     }
-
-    // TODO(Phase 1): codex thread-id ↔ Track-WP join via .graphify/track ledger.
-    // TODO(Phase 1): PR-merge join — attribute main-branch squash/merge commit to
-    //   the branch session using the PR number parsed from `gh pr` output
-    //   (fact.groundTruth.prUrls) cross-referenced with the merge commit subject.
   }
 
   return links;
+}
+
+/** Index merged-PR attributions by branch (skips entries without a branch). */
+function indexPrMergesByBranch(merges: PrMergeMeta[]): Map<string, PrMergeMeta> {
+  const out = new Map<string, PrMergeMeta>();
+  for (const m of merges) {
+    if (m.branch && m.mergeCommit && !out.has(m.branch)) out.set(m.branch, m);
+  }
+  return out;
 }
 
 function findByScan(observed: string, commits: GitCommitMeta[]): GitCommitMeta | undefined {

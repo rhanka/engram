@@ -95,7 +95,7 @@ export interface EvidenceSnippet {
 /** Confidence band for a correlation link. */
 export type Confidence = "high" | "medium" | "low";
 
-/** A correlation linking a SessionFact to a git artifact (commit/branch/PR). */
+/** A correlation linking a SessionFact to a git artifact (commit/branch/PR/WP). */
 export interface CorrelationLink {
   factId: string;
   agentId: string;
@@ -103,11 +103,18 @@ export interface CorrelationLink {
   target:
     | { kind: "commit"; sha: string; branch?: string }
     | { kind: "branch"; branch: string }
-    | { kind: "pr"; url: string };
+    | { kind: "pr"; url?: string; number?: number }
+    | { kind: "wp"; trackItemId: string; wp?: string };
   /** Ranked evidence rule that produced this link (rank 1 = strongest). */
   rank: number;
   /** Short machine label for the rule. */
-  rule: "commit-sha-output" | "h2a-registry" | "worktree-branch-window";
+  rule:
+    | "commit-sha-output"
+    | "pr-merge"
+    | "track-wp-thread-id"
+    | "track-wp-h2a-id"
+    | "h2a-registry"
+    | "worktree-branch-window";
   confidence: Confidence;
   /** Anonymized human-readable justification. */
   evidence: string;
