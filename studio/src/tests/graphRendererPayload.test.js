@@ -5,6 +5,7 @@ import {
   buildGraphRendererPayload,
   densityScale,
   findNearestEdge,
+  findNearestNode,
   findNearestNodeId,
   interpolateMergeStyle,
   interpolateMergePositions,
@@ -157,6 +158,24 @@ describe("graphRendererPayload", () => {
 
     expect(findNearestNodeId(payload, 102, 1, 12)).toBe("b");
     expect(findNearestNodeId(payload, 50, 0, 12)).toBeNull();
+  });
+
+  it("findNearestNode reports the hit id, distance, and drawn radius (item 1.3)", () => {
+    const payload = buildGraphRendererPayload({
+      nodes: [
+        { id: "a", label: "Alpha", x: 0, y: 0, weight: 1 },
+        { id: "b", label: "Beta", x: 100, y: 0, weight: 1 },
+      ],
+      edges: [],
+      stats: { nodeCount: 2, edgeCount: 0, weakEdgeCount: 0, communityCount: 1 },
+    });
+
+    const hit = findNearestNode(payload, 103, 4, 12);
+    expect(hit.id).toBe("b");
+    expect(hit.distance).toBeCloseTo(5, 6); // hypot(3, 4)
+    expect(hit.radius).toBeGreaterThan(0);
+    // Out of every node's pick zone → null (parity with findNearestNodeId).
+    expect(findNearestNode(payload, 50, 0, 12)).toBeNull();
   });
 
   it("finds the closest styled edge in world coordinates for hover", () => {
