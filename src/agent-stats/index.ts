@@ -13,7 +13,9 @@ import { resolveIdentity } from "./identity.js";
 import { parseAgyChat } from "./agy-chat.js";
 import { parseClaudeTranscript } from "./claude-transcript.js";
 import { parseCodexRollout } from "./codex-rollout.js";
-import { correlate, type GitCommitMeta } from "./correlate.js";
+import { correlate, type GitCommitMeta, type PrMergeMeta } from "./correlate.js";
+import { indexTrackItems, loadTrackItems, type TrackIndex, type TrackItem } from "./track-join.js";
+import { getPullRequestMerge, listPullRequests, type CommandRunner } from "../pr.js";
 import {
   discoverAgy,
   discoverClaude,
@@ -200,26 +202,201 @@ export function syncAgentStats(opts: SyncOptions): SyncResult {
   return { scanned: files.length, parsed, inRepo, skipped, factsTotal: facts.size };
 }
 
+/**
+ * Extract a PR number from a `gh pr` URL (`…/pull/<n>`) the session printed.
+ */
+export function prNumberFromUrl(url: string): number | undefined {
+  const m = url.match(/\/pull\/(\d+)/);
+  return m && m[1] ? Number(m[1]) : undefined;
+}
+
+/**
+ * Build merged-PR attributions for every branch a session worked. A PR number
+ * comes from (a) a `gh pr create`/push URL the session printed, or (b) a
+ * branch → open/merged `gh pr list` lookup. For each, we fetch the merge commit
+ * via `gh pr view`. Network failures degrade gracefully to an empty list.
+ *
+ * `runner` is injectable for tests (no live `gh` needed). When omitted, the real
+ * `gh` CLI is used; if `gh` is unavailable the whole step is skipped.
+ */
+export function collectPrMerges(repoRoot: string, facts: SessionFact[], runner?: CommandRunner): PrMergeMeta[] {
+  // Gather candidate (branch, prNumber) pairs from session evidence.
+  const prByBranch = new Map<string, number>();
+  const branches = new Set<string>();
+  for (const fact of facts) {
+    for (const b of fact.branchesObserved) if (b && b !== "HEAD") branches.add(b);
+    for (const url of fact.groundTruth.prUrls) {
+      const n = prNumberFromUrl(url);
+      if (n === undefined) continue;
+      // The PR url belongs to a branch the session pushed; tie it to the first
+      // non-trivial branch the session observed (best effort).
+      const branch = fact.branchesObserved.find((b) => b && b !== "HEAD");
+      if (branch && !prByBranch.has(branch)) prByBranch.set(branch, n);
+    }
+  }
+  if (branches.size === 0) return [];
+
+  // Resolve remaining branches → PR numbers via a single `gh pr list` (merged).
+  const unresolved = Array.from(branches).filter((b) => !prByBranch.has(b));
+  if (unresolved.length > 0) {
+    try {
+      const merged = listPullRequests({ cwd: repoRoot, runner, state: "merged", limit: 100 });
+      for (const pr of merged) {
+        if (branches.has(pr.headRefName) && !prByBranch.has(pr.headRefName)) {
+          prByBranch.set(pr.headRefName, pr.number);
+        }
+      }
+    } catch {
+      /* gh unavailable / offline — keep only URL-derived PR numbers. */
+    }
+  }
+
+  const merges: PrMergeMeta[] = [];
+  const seen = new Set<number>();
+  for (const [branch, number] of prByBranch) {
+    if (seen.has(number)) continue;
+    seen.add(number);
+    try {
+      const info = getPullRequestMerge(number, { cwd: repoRoot, runner });
+      if (info.mergeCommit) {
+        merges.push({ number, branch: info.headRefName ?? branch, mergeCommit: info.mergeCommit });
+      }
+    } catch {
+      /* PR view failed (deleted/offline) — skip this PR. */
+    }
+  }
+  return merges;
+}
+
 export interface ComputeResult {
   rows: AgentStatsRow[];
   links: CorrelationLink[];
   facts: SessionFact[];
   instances: H2aInstance[];
+  trackItems: Map<string, TrackItem>;
 }
 
-/** Load persisted facts, correlate, and aggregate. `injectedCommits` is for tests. */
+export interface ComputeOptions {
+  /** Injected git log for tests (skips `git log`). */
+  injectedCommits?: GitCommitMeta[];
+  storeOverride?: AgentStore;
+  /** Injected merged-PR attributions for tests (skips `gh`). */
+  injectedPrMerges?: PrMergeMeta[];
+  /** Injected Track items for tests (skips reading `.track/events.jsonl`). */
+  injectedTrackItems?: Map<string, TrackItem>;
+  /** Skip the live `gh` PR-merge collection (default false). */
+  skipPrMerges?: boolean;
+}
+
+/**
+ * Load persisted facts, correlate (commit-sha + PR-merge + Track-WP + h2a +
+ * worktree evidence), and aggregate. All external inputs are injectable for
+ * tests so the suite needs no live `~/.claude`, `gh`, or `git log`.
+ */
 export function computeAgentStats(
   repoRoot: string,
-  injectedCommits?: GitCommitMeta[],
+  injectedCommitsOrOpts?: GitCommitMeta[] | ComputeOptions,
   storeOverride?: AgentStore,
 ): ComputeResult {
-  const store = storeOverride ?? resolveStore(repoRoot);
+  const opts: ComputeOptions = Array.isArray(injectedCommitsOrOpts)
+    ? { injectedCommits: injectedCommitsOrOpts, storeOverride }
+    : { ...injectedCommitsOrOpts, storeOverride: injectedCommitsOrOpts?.storeOverride ?? storeOverride };
+
+  const store = opts.storeOverride ?? resolveStore(repoRoot);
   const facts = Array.from(loadFacts(store).values());
   const instances = loadH2aInstances(repoRoot);
-  const commits = injectedCommits ?? readGitCommits(repoRoot);
-  const links = correlate({ facts, instances, commits });
+  const commits = opts.injectedCommits ?? readGitCommits(repoRoot);
+
+  const trackItems = opts.injectedTrackItems ?? loadTrackItems(repoRoot);
+  const trackIndex: TrackIndex = indexTrackItems(trackItems);
+
+  const prMerges = opts.injectedPrMerges
+    ?? (opts.skipPrMerges ? [] : collectPrMerges(repoRoot, facts));
+
+  const links = correlate({ facts, instances, commits, trackIndex, prMerges });
   const rows = aggregate({ facts, links, instances });
-  return { rows, links, facts, instances };
+  return { rows, links, facts, instances, trackItems };
+}
+
+export interface WpAgentStatsResult {
+  item?: TrackItem;
+  /** Correlation links targeting this track item (Track-WP joins). */
+  links: CorrelationLink[];
+  /** Sessions attributed to this WP, with their resolved agent identity. */
+  sessions: { fact: SessionFact; agentId: string; rule: CorrelationLink["rule"] }[];
+  /** All track items (for an "unknown id" error message in the CLI). */
+  allItems: TrackItem[];
+}
+
+/**
+ * Conductor view: everything attributed to one Track work-package item. Joins
+ * sessions to the WP via the Track ledger (Codex thread-id / h2a instance id).
+ */
+export function wpAgentStats(
+  repoRoot: string,
+  trackItemId: string,
+  opts: ComputeOptions = {},
+): WpAgentStatsResult {
+  const { links, facts, trackItems } = computeAgentStats(repoRoot, opts);
+  const allItems = Array.from(trackItems.values());
+  // Accept the exact id or a WP label (e.g. "WP9") as a convenience.
+  const item = trackItems.get(trackItemId)
+    ?? allItems.find((i) => i.wp && i.wp.toLowerCase() === trackItemId.toLowerCase());
+
+  const factById = new Map(facts.map((f) => [f.factId, f]));
+  const wpLinks = links.filter(
+    (l) => l.target.kind === "wp" && item && l.target.trackItemId === item.trackItemId,
+  );
+  const sessions = wpLinks
+    .map((l) => {
+      const fact = factById.get(l.factId);
+      return fact ? { fact, agentId: l.agentId, rule: l.rule } : null;
+    })
+    .filter((s): s is NonNullable<typeof s> => s !== null);
+
+  return { item, links: wpLinks, sessions, allItems };
+}
+
+/** Render the `agent-stats wp <id>` conductor view as a text block. */
+export function formatWpView(result: WpAgentStatsResult, trackItemId: string): string {
+  if (!result.item) {
+    const known = result.allItems
+      .filter((i) => i.wp)
+      .map((i) => `  ${i.trackItemId}  ${i.wp}  ${i.title.slice(0, 48)}`)
+      .join("\n");
+    return `No Track work-package matches "${trackItemId}".` + (known ? `\nKnown WP items:\n${known}` : "");
+  }
+  const item = result.item;
+  const lines = [
+    `Work-package: ${item.wp ?? "(no WP label)"}  [${item.trackItemId}]`,
+    `Title: ${item.title}`,
+    `Mandated thread-ids: ${item.threadIds.length ? item.threadIds.map((t) => t.slice(0, 8) + "…").join(", ") : "-"}`,
+    `Mandated h2a instances: ${item.h2aInstanceIds.length ? item.h2aInstanceIds.join(", ") : "-"}`,
+    "",
+  ];
+  if (result.sessions.length === 0) {
+    lines.push("No sessions joined to this WP yet (run `agent-stats sync` first, or no transcript matched a mandated id).");
+    return lines.join("\n");
+  }
+  const agents = new Map<string, { sessions: number; rules: Set<string> }>();
+  for (const s of result.sessions) {
+    let a = agents.get(s.agentId);
+    if (!a) {
+      a = { sessions: 0, rules: new Set() };
+      agents.set(s.agentId, a);
+    }
+    a.sessions += 1;
+    a.rules.add(s.rule);
+  }
+  lines.push(`Agents (${agents.size}):`);
+  for (const [agentId, a] of agents) {
+    lines.push(`  ${agentId}  —  ${a.sessions} session(s)  via ${Array.from(a.rules).join(",")}`);
+  }
+  lines.push("", `Sessions (${result.sessions.length}):`);
+  for (const s of result.sessions) {
+    lines.push(`  ${s.fact.host}:${s.fact.sessionId.slice(0, 8)}  ${s.agentId}  (${s.rule})`);
+  }
+  return lines.join("\n");
 }
 
 export interface SessionFilter {
@@ -262,4 +439,5 @@ export {
   agyProjectHash,
   type RepoScope,
   type AgentStore,
+  type TrackItem,
 };
