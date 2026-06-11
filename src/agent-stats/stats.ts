@@ -77,6 +77,11 @@ export function aggregate(input: AggregateInput): AgentStatsRow[] {
         const wp = parseWpLabel(link.target.branch);
         if (wp) a.wps.add(wp);
       }
+    } else if (link.target.kind === "wp") {
+      // Track-ledger WP join: the WP label is authoritative (mandated), so add it
+      // even when no branch carried the label.
+      const wp = link.target.wp ?? parseWpLabel(link.target.trackItemId);
+      if (wp) a.wps.add(wp);
     }
   }
 
