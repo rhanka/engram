@@ -104,4 +104,34 @@ describe("GraphCanvas renderer", () => {
     expect(source).toMatch(/\.label/);
     expect(source).toMatch(/degree|degré/i);
   });
+
+  // --- Item 2: boxed labels for god-nodes ---
+  it("computes the boxed-label set from a degree threshold and renders a label overlay", () => {
+    const source = graphCanvasSource();
+    // exposed factor matching the legacy export.ts font rule (deg >= 0.15 * maxDeg)
+    expect(source).toContain("LABEL_DEGREE_RATIO");
+    expect(source).toContain("labelDegreeRatio");
+    expect(source).toMatch(/0\.15/);
+    // label set computed from degree >= ratio * max
+    expect(source).toMatch(/labelDegreeRatio\s*\*\s*max/);
+    // overlay layer + world->screen positioning reusing the camera transform
+    expect(source).toContain("node-labels");
+    expect(source).toContain("worldToScreen");
+    expect(source).toContain("updateLabels");
+  });
+
+  // --- Item 3: node dragging ---
+  it("starts a node drag on pointerdown over a node and moves it via setPositions", () => {
+    const source = graphCanvasSource();
+    expect(source).toContain("draggingNodeId");
+    expect(source).toContain("DRAG_MOVE_THRESHOLD");
+    // pointerdown over a node begins a drag (no longer an early return)
+    expect(source).toMatch(/handlePointerDown[\s\S]*draggingNodeId\s*=\s*id/);
+    // drag moves only the dragged node through renderer.setPositions
+    expect(source).toMatch(/dragNodeTo[\s\S]*renderer\.setPositions/);
+    // a real drag suppresses the trailing click so it doesn't also select
+    expect(source).toContain("suppressNextClick");
+    // background pointerdown still pans
+    expect(source).toContain("isPanning = true");
+  });
 });

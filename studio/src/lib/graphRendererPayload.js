@@ -22,6 +22,27 @@ const WEAK_EDGE_COLOR = [203, 213, 225, 128];
 const EDGE_CURVE_FACTOR = 0.5;
 const DIM_ALPHA = Math.round(255 * 0.35); // 89
 
+// Density-aware base node sizing. The user confirmed sizes read well at ~1000
+// nodes but are too big at ~5000. We shrink only the BASE radius as the graph
+// grows (the per-node degree spread — sqrt(weight), i.e. the RADIUS_RATIO=4
+// god-node multiplier from graphAdapter — is preserved because it multiplies
+// the already-scaled base). At n <= DENSITY_REF the factor is 1 (unchanged);
+// for larger n it follows 1/sqrt(n) growth and clamps at DENSITY_MIN.
+const DENSITY_REF = 1000; // node count at/below which the base radius is unchanged
+const DENSITY_MIN = 0.45; // floor for the base-radius scale on very dense graphs
+
+/**
+ * Density factor for the base node radius given a node count.
+ * densityScale(n) = clamp(sqrt(DENSITY_REF / n), DENSITY_MIN, 1).
+ * @param {number} nodeCount  number of nodes in the scene
+ * @returns {number} a multiplier in [DENSITY_MIN, 1] applied to the base radius
+ */
+export function densityScale(nodeCount) {
+  const n = Number.isFinite(nodeCount) && nodeCount > 0 ? nodeCount : 1;
+  const raw = Math.sqrt(DENSITY_REF / n);
+  return Math.min(1, Math.max(DENSITY_MIN, raw));
+}
+
 function finite(value) {
   return typeof value === "number" && Number.isFinite(value);
 }
@@ -136,9 +157,14 @@ export function buildGraphRendererPayload(scene, options = {}) {
   const selectedIds = new Set(options.selectedIds ?? []);
   const focusId = options.focusId ?? null;
   const hoveredNodeId = options.hoveredNodeId ?? null;
-  const nodeRadius = options.nodeRadius ?? 3;
+  const requestedRadius = options.nodeRadius ?? 3;
   const sceneNodes = scene?.nodes ?? [];
   const sceneEdges = scene?.edges ?? [];
+
+  // Shrink the BASE radius on dense graphs while keeping the per-node degree
+  // spread (sqrt(weight)) intact. nodeRadius is the effective base used both for
+  // the per-node sizes and the style buffer fallback size.
+  const nodeRadius = requestedRadius * densityScale(sceneNodes.length);
 
   const nodes = sceneNodes.map((node, index) => {
     const position = positionForNode(node, index, sceneNodes.length);
@@ -248,12 +274,20 @@ export function interpolateMergeStyle(payload, mergePair, progress) {
   return style;
 }
 
-export function findNearestNodeId(payload, worldX, worldY, maxDistance = 14) {
+/**
+ * Nearest node to (worldX, worldY) within the pick zone, returning the id, the
+ * world-space distance to its centre, and its drawn world radius. The pick zone
+ * is `max(maxDistance, radius)` so a generous grab still works, while callers
+ * that need a TIGHT (on-glyph) test can compare `distance <= radius` themselves.
+ * @returns {{ id: string, distance: number, radius: number } | null}
+ */
+export function findNearestNode(payload, worldX, worldY, maxDistance = 14) {
   const graph = payload?.renderGraph;
   if (!graph) return null;
 
   let best = null;
   let bestDistance = Number.POSITIVE_INFINITY;
+  let bestRadius = 0;
   for (let index = 0; index < graph.nodeIds.length; index += 1) {
     const offset = index * 2;
     const dx = (graph.positions[offset] ?? 0) - worldX;
@@ -264,10 +298,15 @@ export function findNearestNodeId(payload, worldX, worldY, maxDistance = 14) {
     if (distance <= threshold && distance < bestDistance) {
       best = graph.nodeIds[index];
       bestDistance = distance;
+      bestRadius = radius;
     }
   }
 
-  return best;
+  return best === null ? null : { id: best, distance: bestDistance, radius: bestRadius };
+}
+
+export function findNearestNodeId(payload, worldX, worldY, maxDistance = 14) {
+  return findNearestNode(payload, worldX, worldY, maxDistance)?.id ?? null;
 }
 
 function pointToSegmentDistance(px, py, x1, y1, x2, y2) {

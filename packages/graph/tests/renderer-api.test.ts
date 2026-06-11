@@ -195,6 +195,69 @@ describe("createGraphRenderer", () => {
     expect(gl.calls.bufferData.some((call) => call.length === 8 * Uint8Array.BYTES_PER_ELEMENT)).toBe(true);
   });
 
+  it("skips edge drawing through WebGL when render({ skipEdges: true })", () => {
+    const gl = createFakeWebGlContext();
+    const canvas = {
+      width: 200,
+      height: 100,
+      getContext: () => gl,
+    };
+
+    const view = createGraphRenderer(canvas as unknown as HTMLCanvasElement);
+    view.setGraph({
+      nodeIds: ["a", "b"],
+      positions: new Float32Array([0, 0, 100, 0]),
+      edges: new Uint32Array([0, 1]),
+    });
+    view.setStyle({
+      nodeSizes: new Float32Array([6, 8]),
+      nodeColors: new Uint8Array([255, 0, 0, 255, 0, 0, 255, 255]),
+      nodeShapes: new Uint8Array([0, 0]),
+      edgeWidths: new Float32Array([1]),
+      edgeColors: new Uint8Array([120, 130, 140, 255]),
+      edgeDash: new Uint8Array([0]),
+      edgeCurvatures: new Float32Array([0]),
+    });
+
+    view.fitView({ padding: 10, viewportWidth: 200, viewportHeight: 100 });
+    view.render({ skipEdges: true });
+
+    // Only the POINTS (node) draw call should be issued; the LINES (edge) call is skipped.
+    expect(gl.calls.drawArrays).toEqual([{ mode: gl.POINTS, first: 0, count: 2 }]);
+  });
+
+  it("skips edge drawing through Canvas2D when render({ skipEdges: true })", () => {
+    const context2d = createFakeCanvas2DContext();
+    const canvas = {
+      width: 200,
+      height: 100,
+      getContext: (kind: string) => (kind === "2d" ? context2d : null),
+    };
+
+    const view = createGraphRenderer(canvas as unknown as HTMLCanvasElement, { pixelRatio: 1 });
+    view.setGraph({
+      nodeIds: ["a", "b"],
+      positions: new Float32Array([0, 0, 100, 0]),
+      edges: new Uint32Array([0, 1]),
+    });
+    view.setStyle({
+      nodeSizes: new Float32Array([6, 8]),
+      nodeColors: new Uint8Array([255, 0, 0, 255, 0, 0, 255, 255]),
+      nodeShapes: new Uint8Array([0, 0]),
+      edgeWidths: new Float32Array([2]),
+      edgeColors: new Uint8Array([120, 130, 140, 255]),
+      edgeDash: new Uint8Array([0]),
+      edgeCurvatures: new Float32Array([0]),
+    });
+
+    view.fitView({ padding: 10, viewportWidth: 200, viewportHeight: 100 });
+    view.render({ skipEdges: true });
+
+    // No edge stroke; nodes still filled (2 of them).
+    expect(context2d.calls.stroke).toBe(0);
+    expect(context2d.calls.fill).toBe(2);
+  });
+
   it("falls back to Canvas2D when WebGL is unavailable", () => {
     const context2d = createFakeCanvas2DContext();
     const canvas = {
@@ -226,7 +289,9 @@ describe("createGraphRenderer", () => {
     expect(context2d.calls.clearRect).toBe(1);
     expect(context2d.calls.stroke).toBe(1);
     expect(context2d.calls.fill).toBe(2);
-    expect(context2d.calls.arc.map((call) => call.radius)).toEqual([12, 16]);
+    // World-space node sizing: radius = nodeSize * pixelRatio * cameraZoom.
+    // fitView here yields zoom = min(180/100, 80/1) = 1.8, pixelRatio = 2.
+    expect(context2d.calls.arc.map((call) => call.radius)).toEqual([21.6, 28.8]);
   });
 
   it("can force Canvas2D to preserve rich shapes and edge styles when WebGL exists", () => {
