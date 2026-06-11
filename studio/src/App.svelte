@@ -144,20 +144,20 @@
           size="sm"
           variant={viewerState.activeView === "workspace" ? "primary" : "secondary"}
           aria-pressed={viewerState.activeView === "workspace"}
-          aria-label="Workspace view"
+          aria-label="Knowledge graph view"
           onclick={() => handleSetView("workspace")}
         >
-          <span class="view-label view-label--full">Workspace</span>
-          <span class="view-label view-label--compact" aria-hidden="true">Work</span>
+          <span class="view-label view-label--full">Knowledge graph</span>
+          <span class="view-label view-label--compact" aria-hidden="true">Graph</span>
         </Button>
         <Button
           size="sm"
           variant={viewerState.activeView === "reconciliation" ? "primary" : "secondary"}
           aria-pressed={viewerState.activeView === "reconciliation"}
-          aria-label="Reconciliation view"
+          aria-label="Entity reconciliation view"
           onclick={() => handleSetView("reconciliation")}
         >
-          <span class="view-label view-label--full">Reconciliation</span>
+          <span class="view-label view-label--full">Entity reconciliation</span>
           <span class="view-label view-label--compact" aria-hidden="true">Recon</span>
         </Button>
       </ButtonGroup>
@@ -208,6 +208,7 @@
             {legend}
             {selectedIds}
             focusId={viewerState.focusId}
+            labelMode="none"
             onSelect={handleToggleEntity}
             onOpenEntity={handleFocusEntity}
           />

@@ -18,6 +18,7 @@
     candidateSubgraph,
     buildScene,
     withReconcileEdge,
+    attachReconLayout,
     indexNodes,
     nodeLabel,
     nodeType,
@@ -57,19 +58,29 @@
   // Center graph: subgraph around the two candidate entities (focused context).
   // The twins usually have no direct edge, so we (a) pin them side by side and
   // (b) add a bold synthetic "reconcile" edge so they read as a pair.
+  //
+  // #2.2 fix: the subgraph nodes otherwise keep their scattered full-graph
+  // positions and there is no live sim, so fitView framed a scattered set with
+  // the twins off-centre. We now run a LOCAL deterministic force layout over the
+  // subgraph with the twins HELD FIXED at the centre, so the neighbours settle
+  // AROUND the centred, side-by-side pair (a compact, centred, twinned cluster).
   const scene = $derived.by(() => {
     if (!active) return buildScene({ nodes: [], links: [] });
     const sub = candidateSubgraph(graph, active.candidate_id, active.canonical_id, 1);
     const base = buildScene(sub, { showWeakLinks: true });
     const linked = withReconcileEdge(base, active.candidate_id, active.canonical_id);
-    // Pin the two twins symmetrically near the centre so both stay in view.
+    // Pin the two twins symmetrically near the centre so both stay in view. We
+    // DROP each subgraph node's inherited x/y so only the twins' fx/fy seed the
+    // local sim; the neighbours are placed by the layout, not their stale coords.
     const cx = 360, cy = 280, dx = 130;
     const nodes = linked.nodes.map((n) => {
-      if (n.id === active.candidate_id) return { ...n, fx: cx - dx, fy: cy };
-      if (n.id === active.canonical_id) return { ...n, fx: cx + dx, fy: cy };
-      return n;
+      const { x: _x, y: _y, fx: _fx, fy: _fy, ...rest } = n;
+      if (n.id === active.candidate_id) return { ...rest, fx: cx - dx, fy: cy };
+      if (n.id === active.canonical_id) return { ...rest, fx: cx + dx, fy: cy };
+      return rest;
     });
-    return { ...linked, nodes };
+    // Run the local layout (twins fixed) so neighbours arrange around the pair.
+    return attachReconLayout({ ...linked, nodes });
   });
   const selectedIds = $derived(active ? [active.candidate_id, active.canonical_id] : []);
 
@@ -187,6 +198,7 @@
         {scene}
         {selectedIds}
         focusId={active.candidate_id}
+        labelMode="plain"
         onSelect={(id) => onOpenEntity?.(id)}
         onOpenEntity={(id) => onOpenEntity?.(id)}
         {mergePair}

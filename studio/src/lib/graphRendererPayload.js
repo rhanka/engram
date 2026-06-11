@@ -274,12 +274,20 @@ export function interpolateMergeStyle(payload, mergePair, progress) {
   return style;
 }
 
-export function findNearestNodeId(payload, worldX, worldY, maxDistance = 14) {
+/**
+ * Nearest node to (worldX, worldY) within the pick zone, returning the id, the
+ * world-space distance to its centre, and its drawn world radius. The pick zone
+ * is `max(maxDistance, radius)` so a generous grab still works, while callers
+ * that need a TIGHT (on-glyph) test can compare `distance <= radius` themselves.
+ * @returns {{ id: string, distance: number, radius: number } | null}
+ */
+export function findNearestNode(payload, worldX, worldY, maxDistance = 14) {
   const graph = payload?.renderGraph;
   if (!graph) return null;
 
   let best = null;
   let bestDistance = Number.POSITIVE_INFINITY;
+  let bestRadius = 0;
   for (let index = 0; index < graph.nodeIds.length; index += 1) {
     const offset = index * 2;
     const dx = (graph.positions[offset] ?? 0) - worldX;
@@ -290,10 +298,15 @@ export function findNearestNodeId(payload, worldX, worldY, maxDistance = 14) {
     if (distance <= threshold && distance < bestDistance) {
       best = graph.nodeIds[index];
       bestDistance = distance;
+      bestRadius = radius;
     }
   }
 
-  return best;
+  return best === null ? null : { id: best, distance: bestDistance, radius: bestRadius };
+}
+
+export function findNearestNodeId(payload, worldX, worldY, maxDistance = 14) {
+  return findNearestNode(payload, worldX, worldY, maxDistance)?.id ?? null;
 }
 
 function pointToSegmentDistance(px, py, x1, y1, x2, y2) {

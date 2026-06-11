@@ -14,6 +14,10 @@ export default defineConfig({
   resolve: {
     alias: {
       "@sentropic/graph": resolve(here, "../packages/graph/src/index.ts"),
+      // Pure, DOM-free deterministic force layout (honors fx/fy pins). Reused by
+      // the reconciliation view to arrange the local subgraph around the pinned
+      // twins. Same module the server build/export uses for scene.json.
+      "@graphify/graph-layout": resolve(here, "../src/graph-layout.ts"),
     },
   },
   build: {
