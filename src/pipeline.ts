@@ -20,6 +20,7 @@ import { extractWithDiagnostics, type ExtractionDiagnostic } from "./extract.js"
 import { resolveGraphifyPaths } from "./paths.js";
 import { markLifecycleAnalyzed } from "./lifecycle.js";
 import { persistCommunityLabels, resolveCommunityLabels } from "./community-labels.js";
+import { generateNodeDescriptions, type GenerateNodeDescriptionsOptions } from "./node-descriptions.js";
 import { safeGitRevParse } from "./git.js";
 import { toWiki } from "./wiki.js";
 import {
@@ -45,6 +46,19 @@ export interface BuildProjectOptions {
   directed?: boolean;
   scope?: GraphifyInputScopeMode;
   scopeSource?: InputScopeSource;
+  /**
+   * WP11: generate a short `description` for every graph node (entity + code)
+   * and stamp it onto the node before graph.json is written. ON by default;
+   * the CLI `--no-description` flag sets this to `false`. Degrades gracefully
+   * to a no-op when no LLM backend is configured.
+   */
+  describe?: boolean;
+  /** Explicit description backend; defaults to auto-detect from API keys. */
+  descriptionBackend?: string;
+  descriptionModel?: string;
+  descriptionMaxNodes?: number;
+  /** Injectable LLM caller for tests; bypasses real network calls. */
+  describeCallLlm?: GenerateNodeDescriptionsOptions["callLlm"];
 }
 
 export interface BuildProjectWarning {
@@ -213,6 +227,18 @@ export async function buildProject(
   // Upstream 6939494 (#834): snapshot existing artifacts before overwrite if
   // the previous graph cost real LLM tokens or has been human-curated.
   backupIfProtected(paths.stateDir);
+
+  // WP11: generate node descriptions by default (entity + code symbols) and
+  // stamp them onto G so the next toJson() persists each `description` to
+  // graph.json. Skips gracefully (no throw) when no backend is configured.
+  if (options?.describe !== false) {
+    await generateNodeDescriptions(G, {
+      ...(options?.descriptionBackend ? { provider: options.descriptionBackend } : {}),
+      ...(options?.descriptionModel ? { model: options.descriptionModel } : {}),
+      ...(options?.descriptionMaxNodes !== undefined ? { maxNodes: options.descriptionMaxNodes } : {}),
+      ...(options?.describeCallLlm ? { callLlm: options.describeCallLlm } : {}),
+    });
+  }
 
   writeFileSync(reportPath, report, "utf-8");
   toJson(G, communities, graphPath, { communityLabels: labels });

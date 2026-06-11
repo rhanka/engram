@@ -93,6 +93,15 @@ export async function rebuildCode(
      * Mirrors upstream Python Graphify v0.7.18 `--no-cluster` (PR #824).
      */
     noCluster?: boolean;
+    /**
+     * WP11: generate node descriptions (entity + code) before graph.json is
+     * written. ON by default; CLI `--no-description` sets this false. Degrades
+     * gracefully to a no-op when no LLM backend is configured.
+     */
+    describe?: boolean;
+    descriptionBackend?: string;
+    descriptionModel?: string;
+    descriptionMaxNodes?: number;
   } = {},
 ): Promise<boolean> {
   try {
@@ -298,6 +307,18 @@ export async function rebuildCode(
     // LLM tokens or has been human-curated.
     const { backupIfProtected } = await import("./export.js");
     backupIfProtected(paths.stateDir);
+
+    // WP11: stamp node descriptions onto G before the JSON write so each
+    // `description` is persisted to graph.json. Skips gracefully (no throw)
+    // when no LLM backend is configured.
+    if (options.describe !== false) {
+      const { generateNodeDescriptions } = await import("./node-descriptions.js");
+      await generateNodeDescriptions(G, {
+        ...(options.descriptionBackend ? { provider: options.descriptionBackend } : {}),
+        ...(options.descriptionModel ? { model: options.descriptionModel } : {}),
+        ...(options.descriptionMaxNodes !== undefined ? { maxNodes: options.descriptionMaxNodes } : {}),
+      });
+    }
 
     const jsonWritten = toJson(G, communities, paths.graph, {
       communityLabels: labels,
