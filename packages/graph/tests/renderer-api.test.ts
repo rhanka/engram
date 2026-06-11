@@ -4,7 +4,7 @@ import { createGraphRenderer, createPositionFrame } from "../src/index";
 function createFakeWebGlContext() {
   const calls: {
     drawArrays: Array<{ mode: number; first: number; count: number }>;
-    bufferData: Array<{ target: number; length: number; usage: number }>;
+    bufferData: Array<{ target: number; length: number; usage: number; values: number[] | null }>;
   } = {
     drawArrays: [],
     bufferData: [],
@@ -44,7 +44,12 @@ function createFakeWebGlContext() {
     createBuffer: () => ({ id: nextBuffer++ }),
     bindBuffer: () => undefined,
     bufferData: (target: number, data: ArrayBufferView, usage: number) => {
-      calls.bufferData.push({ target, length: data.byteLength, usage });
+      calls.bufferData.push({
+        target,
+        length: data.byteLength,
+        usage,
+        values: data instanceof Float32Array ? Array.from(data) : null,
+      });
     },
     useProgram: () => undefined,
     getAttribLocation: (_program: unknown, name: string) => (name === "a_position" ? 0 : 1),
@@ -71,9 +76,12 @@ function createFakeCanvas2DContext() {
     closePath: number;
     fillText: Array<{ text: string; x: number; y: number; font: string }>;
     lineTo: number;
+    lineToCoords: Array<{ x: number; y: number }>;
     measureText: Array<{ text: string; font: string }>;
     moveTo: number;
+    moveToCoords: Array<{ x: number; y: number }>;
     quadraticCurveTo: number;
+    quadraticCurveToCoords: Array<{ cx: number; cy: number; x: number; y: number }>;
     setLineDash: number[][];
     stroke: number;
     fill: number;
@@ -83,9 +91,12 @@ function createFakeCanvas2DContext() {
     closePath: 0,
     fillText: [],
     lineTo: 0,
+    lineToCoords: [],
     measureText: [],
     moveTo: 0,
+    moveToCoords: [],
     quadraticCurveTo: 0,
+    quadraticCurveToCoords: [],
     setLineDash: [],
     stroke: 0,
     fill: 0,
@@ -114,14 +125,17 @@ function createFakeCanvas2DContext() {
     setLineDash: (segments: number[]) => {
       calls.setLineDash.push([...segments]);
     },
-    moveTo: () => {
+    moveTo: (x: number, y: number) => {
       calls.moveTo += 1;
+      calls.moveToCoords.push({ x, y });
     },
-    lineTo: () => {
+    lineTo: (x: number, y: number) => {
       calls.lineTo += 1;
+      calls.lineToCoords.push({ x, y });
     },
-    quadraticCurveTo: () => {
+    quadraticCurveTo: (cx: number, cy: number, x: number, y: number) => {
       calls.quadraticCurveTo += 1;
+      calls.quadraticCurveToCoords.push({ cx, cy, x, y });
     },
     stroke: () => {
       calls.stroke += 1;
@@ -300,10 +314,17 @@ describe("createGraphRenderer", () => {
     expect(view.snapshot().hasWebGL).toBe(false);
     expect(context2d.calls.clearRect).toBe(1);
     expect(context2d.calls.stroke).toBe(1);
-    expect(context2d.calls.fill).toBe(2);
+    // 2 node fills + 1 arrowhead fill at the target border.
+    expect(context2d.calls.fill).toBe(3);
     // World-space node sizing: radius = nodeSize * pixelRatio * cameraZoom.
     // fitView here yields zoom = min(180/100, 80/1) = 1.8, pixelRatio = 2.
-    expect(context2d.calls.arc.map((call) => call.radius)).toEqual([21.6, 28.8]);
+    expect(context2d.calls.arc.map((call) => Math.round(call.radius * 10) / 10)).toEqual([21.6, 28.8]);
+    // Edge endpoints are clipped to the node borders (screen points are at
+    // x=10 and x=190): start = 10 + 21.6, end = 190 - 28.8.
+    expect(context2d.calls.moveToCoords[0]!.x).toBeCloseTo(31.6, 5);
+    expect(context2d.calls.moveToCoords[0]!.y).toBeCloseTo(50, 5);
+    expect(context2d.calls.lineToCoords[0]!.x).toBeCloseTo(161.2, 5);
+    expect(context2d.calls.lineToCoords[0]!.y).toBeCloseTo(50, 5);
   });
 
   it("can force Canvas2D to preserve rich shapes and edge styles when WebGL exists", () => {
@@ -371,7 +392,8 @@ describe("createGraphRenderer", () => {
       edges: new Uint32Array([]),
     });
     view.setStyle({
-      nodeSizes: new Float32Array([6, 6]),
+      // Radius 11 -> box height = drawn diameter 22 -> font 22 * 12/22 = 12px.
+      nodeSizes: new Float32Array([11, 11]),
       // shape code 5 = box for both; only the first carries a label.
       nodeShapes: new Uint8Array([5, 5]),
       nodeLabels: ["Central Work", ""],
@@ -387,8 +409,8 @@ describe("createGraphRenderer", () => {
     expect(view.snapshot().backend).toBe("canvas2d");
     // No circle glyphs: both nodes are boxes (rounded rects via quadraticCurveTo).
     expect(context2d.calls.arc).toHaveLength(0);
-    // EXACTLY ONE text per labelled box, centred on the node, at the rendered
-    // font (pixelRatio 1 * zoom 1 -> 12px); the empty box draws none.
+    // EXACTLY ONE text per labelled box, centred on the node, at the font
+    // fitted to the box height (node diameter 22 -> 12px); the empty box draws none.
     expect(context2d.calls.fillText).toEqual([
       { text: "Central Work", x: 100, y: 50, font: "12px sans-serif" },
     ]);
@@ -418,7 +440,7 @@ describe("createGraphRenderer", () => {
       edges: new Uint32Array([]),
     });
     view.setStyle({
-      nodeSizes: new Float32Array([6]),
+      nodeSizes: new Float32Array([11]),
       nodeShapes: new Uint8Array([5]),
       nodeLabels: ["Central Work"],
       nodeColors: new Uint8Array([255, 0, 0, 255]),
@@ -430,8 +452,9 @@ describe("createGraphRenderer", () => {
     view.setCamera({ x: 0, y: 0, zoom: 3 });
     view.render();
 
-    // Rendered font = 12 * pixelRatio(2) * zoom(3) = 72px: BOTH the measurement
-    // (box sizing) and the drawn text use it — the box always hugs its text.
+    // Drawn radius = 11 * pixelRatio(2) * zoom(3) = 66 -> box height 132 ->
+    // font = 132 * 12/22 = 72px: BOTH the measurement (box sizing) and the
+    // drawn text use it — the box always hugs its text.
     expect(context2d.calls.measureText).toEqual([{ text: "Central Work", font: "72px sans-serif" }]);
     expect(context2d.calls.fillText).toEqual([
       { text: "Central Work", x: 200, y: 100, font: "72px sans-serif" },
