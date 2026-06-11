@@ -2360,6 +2360,75 @@ export async function main(): Promise<void> {
     console.log(JSON.stringify(planLifecyclePrune("."), null, 2));
   });
 
+  // WP9 agent-stats: per-agent stats derived from agentic CLI transcripts.
+  // Attribution comes from SESSION EVIDENCE (commit shas the session printed,
+  // h2a registry identity, worktree×branch×time), never from git authorship.
+  function resolveAgentStatsRepoRoot(): string {
+    // Transcripts and the h2a registry key off the MAIN repository checkout, not
+    // a per-worktree path. Derive the main worktree from the common git dir.
+    const commonDir = safeGitRevParse(".", ["--git-common-dir"]);
+    if (commonDir) {
+      const abs = resolve(".", commonDir);
+      // <repo>/.git → <repo>
+      const root = abs.replace(/\/\.git\/?$/, "");
+      if (root && root !== abs) return root;
+      // Bare/linked layouts: fall back to toplevel.
+    }
+    const top = safeGitRevParse(".", ["--show-toplevel"]);
+    return top ?? resolve(".");
+  }
+
+  const agentStats = program
+    .command("agent-stats")
+    .description("Per-agent stats from agentic CLI transcripts (evidence-based attribution, not git authorship)");
+  agentStats
+    .option("--json", "Emit JSON instead of a table")
+    .action(async (opts) => {
+      const { computeAgentStats, formatStatsTable } = await import("./agent-stats/index.js");
+      const repoRoot = resolveAgentStatsRepoRoot();
+      const { rows } = computeAgentStats(repoRoot);
+      if (opts.json) {
+        console.log(JSON.stringify(rows, null, 2));
+        return;
+      }
+      console.log(formatStatsTable(rows));
+    });
+  agentStats
+    .command("sync")
+    .description("Parse/refresh transcripts into .graphify/agents/facts.jsonl (incremental)")
+    .option("--full", "Force a full re-parse, ignoring cursors")
+    .action(async (opts) => {
+      const { syncAgentStats } = await import("./agent-stats/index.js");
+      const repoRoot = resolveAgentStatsRepoRoot();
+      const result = syncAgentStats({ repoRoot, full: Boolean(opts.full) });
+      console.log(
+        `agent-stats sync: scanned ${result.scanned} transcripts, parsed ${result.parsed}, ` +
+          `skipped ${result.skipped} (header pre-filter), ${result.inRepo} in-repo; ` +
+          `${result.factsTotal} facts total.`,
+      );
+    });
+  agentStats
+    .command("sessions")
+    .description("List parsed sessions with their evidence-based agent identity")
+    .option("--agent <id>", "Filter by agent id substring")
+    .option("--branch <branch>", "Filter by observed/ground-truth branch")
+    .option("--since <iso>", "Only sessions on/after this ISO date")
+    .option("--json", "Emit JSON instead of a table")
+    .action(async (opts) => {
+      const { listSessions, formatSessionsTable } = await import("./agent-stats/index.js");
+      const repoRoot = resolveAgentStatsRepoRoot();
+      const { facts, instances } = listSessions(repoRoot, {
+        agent: opts.agent,
+        branch: opts.branch,
+        since: opts.since,
+      });
+      if (opts.json) {
+        console.log(JSON.stringify(facts, null, 2));
+        return;
+      }
+      console.log(formatSessionsTable(facts, instances));
+    });
+
   function registerPrCommands(name: "pr" | "prs"): void {
     program.command(`${name} [selector]`)
       .description("Inspect local GitHub pull requests through gh and git worktree data")
