@@ -65,11 +65,13 @@ describe("agent-stats Track ledger parse (WP-join source)", () => {
     expect(wp2!.threadIds).not.toContain(WP9_THREAD_ID);
   });
 
-  it("builds reverse indexes (thread-id / h2a-id → item)", () => {
+  it("builds reverse indexes (thread-id / h2a-id → items)", () => {
     const items = parseTrackLedger(loadFixture("track-ledger.jsonl"));
     const idx = indexTrackItems(items);
-    expect(idx.byThreadId.get(WP9_THREAD_ID)?.wp).toBe("WP9");
-    expect(idx.byH2aId.get(WP9_H2A_ID)?.wp).toBe("WP9");
+    // Phase 1.5: indexes are multi-valued — an id mandated to several WPs
+    // joins to ALL of them.
+    expect((idx.byThreadId.get(WP9_THREAD_ID) ?? []).map((i) => i.wp)).toEqual(["WP9"]);
+    expect((idx.byH2aId.get(WP9_H2A_ID) ?? []).map((i) => i.wp)).toEqual(["WP9"]);
   });
 
   it("loadTrackItems returns an empty map when no ledger exists", () => {

@@ -22,6 +22,7 @@
  *           worktree whose lifetime overlaps the branch's commits. Weakest.
  */
 
+import { branchFromCheckoutCommand } from "./git-evidence.js";
 import { matchInstance, type H2aInstance } from "./registry.js";
 import { resolveIdentity } from "./identity.js";
 import type { TrackIndex, TrackItem } from "./track-join.js";
@@ -77,6 +78,22 @@ function shaMatches(observed: string, known: string): boolean {
 }
 
 /**
+ * Branches the session DEMONSTRABLY worked: a branch its own `git commit`
+ * output named (`[branch sha]`), or one it created via `checkout -b` /
+ * `switch -c`. Merely OBSERVING a branch (host metadata) is not work — that
+ * is what made rank-2/4/5 spoofable on read-only sessions.
+ */
+export function workedBranches(fact: SessionFact): Set<string> {
+  const out = new Set<string>(fact.groundTruth.branches);
+  for (const action of fact.gitActions) {
+    if (action.verb !== "checkout-b") continue;
+    const branch = branchFromCheckoutCommand(action.command);
+    if (branch) out.add(branch);
+  }
+  return out;
+}
+
+/**
  * Produce ranked, evidence-tagged correlation links for every session.
  * A session may emit multiple links (e.g. one per commit it created, plus its
  * h2a identity link).
@@ -89,6 +106,7 @@ export function correlate(input: CorrelateInput): CorrelationLink[] {
   for (const fact of input.facts) {
     const inst = matchInstance(input.instances, fact.host, fact.cwds);
     const agentId = resolveIdentity(fact, inst).agentId;
+    const worked = workedBranches(fact);
 
     // ----- rank 1: commit-sha from this session's own git commit output -----
     for (const observed of fact.groundTruth.commitShas) {
@@ -115,12 +133,13 @@ export function correlate(input: CorrelateInput): CorrelationLink[] {
     // branch landed a (squashed) commit on the base, attribute THAT commit to
     // the session. The merge commit's sha is never one the session printed, so
     // rank 1 can't catch it; this is the bridge from branch work to main.
-    for (const branch of fact.branchesObserved) {
+    for (const branch of new Set([...fact.branchesObserved, ...worked])) {
       if (isHousekeepingBranch(branch)) continue;
       const merge = mergeByBranch.get(branch);
       if (!merge || !merge.mergeCommit) continue;
-      const didWork = fact.gitActions.some((a) => a.verb === "commit" || a.verb === "checkout-b");
-      if (!didWork) continue;
+      // BRANCH-SCOPED: the session must have committed on / created THAT
+      // branch — committing somewhere else does not earn this squash commit.
+      if (!worked.has(branch)) continue;
       links.push({
         factId: fact.factId,
         agentId,
@@ -155,8 +174,8 @@ export function correlate(input: CorrelateInput): CorrelationLink[] {
         (x): x is string => Boolean(x),
       );
       for (const tid of threadCandidates) {
-        const item = input.trackIndex.byThreadId.get(tid.toLowerCase());
-        if (item) {
+        // MULTI-WP: an id mandated to several WPs links to ALL of them.
+        for (const item of input.trackIndex.byThreadId.get(tid.toLowerCase()) ?? []) {
           emitWp(
             item,
             "track-wp-thread-id",
@@ -166,8 +185,7 @@ export function correlate(input: CorrelateInput): CorrelationLink[] {
       }
       // h2a instance id (registered) appears in delegation envelopes.
       if (inst) {
-        const item = input.trackIndex.byH2aId.get(inst.id);
-        if (item) {
+        for (const item of input.trackIndex.byH2aId.get(inst.id) ?? []) {
           emitWp(
             item,
             "track-wp-h2a-id",
@@ -177,12 +195,16 @@ export function correlate(input: CorrelateInput): CorrelationLink[] {
       }
     }
 
-    // ----- rank 4: h2a registry identity -----
+    // ----- rank 4: h2a registry identity (IDENTITY ONLY) -----
+    // The registry proves WHO the session is, never WHAT it shipped. A branch
+    // label is attached only when the session committed on / created that
+    // exact branch itself; merely sitting on a branch earns nothing.
     if (inst) {
+      const evidencedBranch = Array.from(worked).find((b) => !isHousekeepingBranch(b));
       links.push({
         factId: fact.factId,
         agentId,
-        target: { kind: "branch", branch: fact.branchesObserved[0] ?? "(workspace)" },
+        target: { kind: "branch", branch: evidencedBranch ?? "(workspace)" },
         rank: 4,
         rule: "h2a-registry",
         confidence: "medium",
@@ -193,8 +215,8 @@ export function correlate(input: CorrelateInput): CorrelationLink[] {
     // ----- rank 5: worktree × branch × time window (weak) -----
     for (const branch of fact.branchesObserved) {
       if (isHousekeepingBranch(branch)) continue;
-      // Only emit when the session actually performed a commit/checkout-b on it
-      // and we have NOT already proven it via rank 1 or rank 2.
+      // Only emit when the session actually performed a commit/checkout-b on
+      // THAT branch and we have NOT already proven it via rank 1 or rank 2.
       const provenStrong = links.some(
         (l) =>
           l.factId === fact.factId &&
@@ -203,8 +225,7 @@ export function correlate(input: CorrelateInput): CorrelationLink[] {
           l.target.branch === branch,
       );
       if (provenStrong) continue;
-      const didWork = fact.gitActions.some((a) => a.verb === "commit" || a.verb === "checkout-b");
-      if (!didWork) continue;
+      if (!worked.has(branch)) continue;
       links.push({
         factId: fact.factId,
         agentId,
@@ -233,6 +254,13 @@ function findByScan(observed: string, commits: GitCommitMeta[]): GitCommitMeta |
   return commits.find((c) => shaMatches(observed, c.sha));
 }
 
-function isHousekeepingBranch(branch: string): boolean {
-  return branch === "HEAD" || branch === "" || branch.startsWith("worktree-agent-");
+/** Default/housekeeping branches never earn branch credit (incl. `main`). */
+export function isHousekeepingBranch(branch: string): boolean {
+  return (
+    branch === "HEAD" ||
+    branch === "" ||
+    branch === "main" ||
+    branch === "master" ||
+    branch.startsWith("worktree-agent-")
+  );
 }
