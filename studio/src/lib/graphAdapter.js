@@ -20,6 +20,8 @@
  *     assertion/review/evidence fields are preserved for profile adapters
  */
 
+import { computeLayout } from "@graphify/graph-layout";
+
 /** Graphify persists `links`; some adapters/tests pass `edges`. Accept both. */
 export function graphEdges(graph) {
   if (!graph) return [];
@@ -630,6 +632,55 @@ export function withReconcileEdge(scene, idA, idB) {
       },
     ],
   };
+}
+
+/**
+ * Reconciliation centering (#2.2): run a LOCAL deterministic force layout over a
+ * reconciliation subgraph so the neighbours arrange AROUND the side-by-side twins.
+ *
+ * The two twins are expected to already carry `fx`/`fy` pins (set by the recon
+ * view at the centre of the layout box); `computeLayout` holds any node with
+ * finite fx/fy FIXED, so they stay put while the rest settle around them. After
+ * the sim we WRITE BACK the settled positions onto every node as BOTH `x`/`y`
+ * and `fx`/`fy`, so GraphCanvas renders the pinned, compact, centred cluster
+ * directly (no live sim) and `fitView` frames a tight, twinned group.
+ *
+ * @param {{ nodes: object[], edges: object[] }} scene  subgraph scene (twins pinned)
+ * @param {object} [options]  forwarded to computeLayout (iterations/width/height…)
+ * @returns {{ nodes: object[], edges: object[] }} a NEW scene with positions set
+ */
+export function attachReconLayout(scene, options = {}) {
+  if (!scene || !Array.isArray(scene.nodes) || scene.nodes.length === 0) return scene;
+  // Centre the layout box on the twins' pin centre so the settled cluster (and
+  // the gravity well) sits where the twins are pinned.
+  const pinned = scene.nodes.filter((n) => finiteNumber(n.fx) && finiteNumber(n.fy));
+  const width = finiteNumber(options.width) ? options.width : 720;
+  const height = finiteNumber(options.height) ? options.height : 560;
+  const cx = pinned.length ? pinned.reduce((s, n) => s + n.fx, 0) / pinned.length : width / 2;
+  const cy = pinned.length ? pinned.reduce((s, n) => s + n.fy, 0) / pinned.length : height / 2;
+  // computeLayout pulls free nodes toward (width/2, height/2); offset the box so
+  // that centre lands on the twins' pin centre.
+  const layoutNodes = scene.nodes.map((n) => ({
+    id: n.id,
+    fx: finiteNumber(n.fx) ? n.fx - cx + width / 2 : undefined,
+    fy: finiteNumber(n.fy) ? n.fy - cy + height / 2 : undefined,
+  }));
+  const positions = computeLayout(layoutNodes, scene.edges ?? [], {
+    iterations: 120,
+    width,
+    height,
+    ...options,
+  });
+  const byId = new Map(positions.map((p) => [p.id, p]));
+  const nodes = scene.nodes.map((n) => {
+    const p = byId.get(n.id);
+    if (!p) return n;
+    // Shift the settled box back so the twins' pin centre is honoured.
+    const x = p.x - width / 2 + cx;
+    const y = p.y - height / 2 + cy;
+    return { ...n, x, y, fx: x, fy: y };
+  });
+  return { ...scene, nodes };
 }
 
 // ---- Selection resolution (R8-3) -----------------------------------------
