@@ -298,7 +298,7 @@ function writeColor(
   target[targetOffset + 3] = source?.[sourceOffset + 3] ?? fallback[3];
 }
 
-function buildEdgePositions(state: RendererState): Float32Array {
+function buildEdgePositions(state: RendererState, pixelRatio: number): Float32Array {
   const positions = new Float32Array(state.edges.length * 2);
   let cursor = 0;
 
@@ -308,10 +308,33 @@ function buildEdgePositions(state: RendererState): Float32Array {
     const sourceOffset = sourceIndex * 2;
     const targetOffset = targetIndex * 2;
 
-    positions[cursor++] = state.positions[sourceOffset] ?? 0;
-    positions[cursor++] = state.positions[sourceOffset + 1] ?? 0;
-    positions[cursor++] = state.positions[targetOffset] ?? 0;
-    positions[cursor++] = state.positions[targetOffset + 1] ?? 0;
+    let sourceX = state.positions[sourceOffset] ?? 0;
+    let sourceY = state.positions[sourceOffset + 1] ?? 0;
+    let targetX = state.positions[targetOffset] ?? 0;
+    let targetY = state.positions[targetOffset + 1] ?? 0;
+
+    // Legacy parity: edges stop at the node border instead of piercing the
+    // glyph. WebGL point sprites are gl_PointSize = size * pixelRatio * zoom
+    // px in DIAMETER, so the world-space radius to clip is size * pixelRatio / 2
+    // (zoom cancels because these positions are world coordinates).
+    const dx = targetX - sourceX;
+    const dy = targetY - sourceY;
+    const length = Math.hypot(dx, dy);
+    const sourceRadius = ((state.style?.nodeSizes[sourceIndex] ?? 4) * pixelRatio) / 2;
+    const targetRadius = ((state.style?.nodeSizes[targetIndex] ?? 4) * pixelRatio) / 2;
+    if (length > sourceRadius + targetRadius && length > 1e-6) {
+      const unitX = dx / length;
+      const unitY = dy / length;
+      sourceX += unitX * sourceRadius;
+      sourceY += unitY * sourceRadius;
+      targetX -= unitX * targetRadius;
+      targetY -= unitY * targetRadius;
+    }
+
+    positions[cursor++] = sourceX;
+    positions[cursor++] = sourceY;
+    positions[cursor++] = targetX;
+    positions[cursor++] = targetY;
   }
 
   return positions;
@@ -420,19 +443,30 @@ const STAR_INNER_RATIO = 0.42;
 const EDGE_CURVE_FACTOR = 0.5;
 
 // Legacy vis-network `shape:box` parity. The box IS the node glyph drawn by the
-// Canvas2D fallback: a label-sized rounded rectangle, white-translucent fill,
-// node-coloured border, dark centred text. Dimensions derive from the label
-// measured AT THE RENDERED (zoom-scaled) font — never from nodeSizes — so box
-// glyphs ignore the selection size multiplier and the box always hugs its text.
+// Canvas2D fallback: a rounded rectangle, white-translucent fill, node-coloured
+// border, dark centred text. SCALE parity (measured on the legacy render): the
+// legacy box is 22 world units tall (font 12 + 2 × margin 5) beside nodes whose
+// drawn diameter is ~21 world units — i.e. the box HEIGHT reads as one node
+// glyph, with SMALL text scaled to fit inside, and only the WIDTH grows to fit
+// the text. We therefore anchor the box height to the node's drawn diameter
+// (2 × nodeSizes[i] × pixelRatio × zoom — the same on-screen size every other
+// shape uses) and derive font / margin / corner from the legacy 12 : 5 : 6
+// proportions of that 22-unit height.
 const BOX_SHAPE = 5;
-const BOX_FONT_PX = 12; // base font size, scaled by pixelRatio * camera.zoom
-const BOX_MARGIN = 5; // padding around the text, in base (pre-scale) px
-const BOX_CORNER = 6; // corner radius, in base (pre-scale) px
+const BOX_FONT_RATIO = 12 / 22; // font height as a fraction of the box height
+const BOX_MARGIN_RATIO = 5 / 22; // padding around the text per side
+const BOX_CORNER_RATIO = 6 / 22; // corner radius
 const BOX_FILL: readonly [number, number, number, number] = [255, 255, 255, 0.5 * 255];
 const BOX_TEXT_COLOR = "#0f172a"; // theme-dark label text (slate-900)
-// Side of an empty (low-degree, label hidden) box in base px: legacy boxes
-// collapse to their margins when the font is hidden (fontSize 0), i.e. 2*margin.
-const BOX_EMPTY_SIZE = 2 * BOX_MARGIN;
+
+// Arrowhead length in world units per unit of edge width. Legacy parity: the
+// legacy export enables `arrows: { to: { scaleFactor: 0.5 } }` → ~7.5-unit
+// arrows beside ~10-unit base node radii; our scenes use ~3-unit base radii,
+// so 2.5 keeps the same arrow-to-node proportion. Scales with camera zoom
+// (world-space) like every glyph.
+const ARROW_LENGTH = 2.5;
+// Triangle base width as a fraction of its length.
+const ARROW_WIDTH_RATIO = 0.9;
 
 function pathPolygon(context: Graph2DContext, x: number, y: number, points: Array<[number, number]>): void {
   if (points.length === 0) return;
@@ -542,16 +576,57 @@ function drawNodeShapePath(context: Graph2DContext, x: number, y: number, radius
 }
 
 /**
+ * Per-node drawn geometry in SCREEN pixels, computed once per frame BEFORE the
+ * edge pass so edges can be clipped to the node border (legacy parity: lines
+ * stop AT the glyph border, arrowheads sit ON it) and the node pass can reuse
+ * the exact same dimensions.
+ *
+ * - `radii[i]`     drawn radius of a circle-ish glyph (every non-box shape).
+ * - `boxHalfWidths[i]` / `boxHalfHeights[i]` half-extents of the drawn box
+ *   rectangle (only meaningful when nodeShapes[i] is the box shape).
+ */
+interface NodeGeometry {
+  radii: Float32Array;
+  boxHalfWidths: Float32Array;
+  boxHalfHeights: Float32Array;
+}
+
+/**
+ * Legacy `shape:box` glyph dimensions. The box height equals the node's drawn
+ * DIAMETER (2 × radius — the same on-screen size every other shape occupies);
+ * the font is scaled to fit inside that height (legacy 12/22 proportion) and
+ * the box only grows in WIDTH to fit the (small) text plus margins. A
+ * non-labelled (low-degree) box collapses to its margins, like the legacy
+ * hidden-font (fontSize 0) box: a small 2-margin square.
+ */
+function boxDimensions(
+  radius: number,
+  label: string,
+  measureLabelWidth: (text: string, font: string) => number,
+): { w: number; h: number; fontPx: number; corner: number } {
+  const height = radius * 2;
+  const margin = height * BOX_MARGIN_RATIO;
+  const corner = height * BOX_CORNER_RATIO;
+  const fontPx = height * BOX_FONT_RATIO;
+
+  if (!label) {
+    const side = 2 * margin;
+    return { w: side, h: side, fontPx, corner };
+  }
+
+  const textW = measureLabelWidth(label, `${fontPx}px sans-serif`);
+  return { w: textW + 2 * margin, h: height, fontPx, corner };
+}
+
+/**
  * Draw a single legacy `shape:box` glyph (vis-network parity).
  *
- * - Eligible (central) box: a label-sized rounded rectangle with a
- *   white-translucent fill, the node colour as border, and the dark label
- *   text centred inside. Width comes from `measureText(label)` AT THE RENDERED
- *   font (12 * pixelRatio * camera.zoom) plus a 5px (scaled) margin per side;
- *   height is fontPx + 2 margins. It NEVER reads nodeSizes, so the selection
- *   size multiplier does not inflate the box and the text always fits snugly.
+ * - Eligible (central) box: a rounded rectangle with a white-translucent
+ *   fill, the node colour as border, and the dark label text centred inside.
+ *   Height = the node's drawn diameter (same scale as every other glyph);
+ *   font fits inside that height; width hugs the measured text.
  * - Non-eligible (low-degree / non-labelled) box: a small EMPTY rounded rect
- *   (2 * margin per side — the legacy hidden-font collapse), no text.
+ *   (2 margins per side — the legacy hidden-font collapse), no text.
  *
  * Exactly ONE fillText per labelled box per frame — the box text IS the node
  * label; no other layer may draw it again. Fill / stroke / text alpha follow
@@ -563,54 +638,64 @@ function drawBoxNode(
   context: Graph2DContext,
   x: number,
   y: number,
-  scale: number,
+  w: number,
+  h: number,
+  corner: number,
+  fontPx: number,
   pixelRatio: number,
   label: string,
   borderColor: string,
   alpha: number,
-  measureLabelWidth: (text: string, font: string) => number,
 ): void {
   const fillStyle = `rgba(${BOX_FILL[0]}, ${BOX_FILL[1]}, ${BOX_FILL[2]}, ${BOX_FILL[3] / 255})`;
-  const lineWidth = 1.5 * pixelRatio;
-  const margin = BOX_MARGIN * scale;
-  const corner = BOX_CORNER * scale;
 
   context.save();
   context.globalAlpha = alpha;
 
+  context.beginPath();
+  drawRoundedBox(context, x, y, w, h, corner);
+  context.fillStyle = fillStyle;
+  context.fill();
+  context.strokeStyle = borderColor;
+  context.lineWidth = 1.5 * pixelRatio;
+  context.stroke();
+
   if (label) {
-    const fontPx = BOX_FONT_PX * scale;
-    const font = `${fontPx}px sans-serif`;
-    // Measure at the RENDERED font: the box is sized to the exact text it draws.
-    const textW = measureLabelWidth(label, font);
-    const w = textW + 2 * margin;
-    const h = fontPx + 2 * margin;
-
-    context.beginPath();
-    drawRoundedBox(context, x, y, w, h, corner);
-    context.fillStyle = fillStyle;
-    context.fill();
-    context.strokeStyle = borderColor;
-    context.lineWidth = lineWidth;
-    context.stroke();
-
     context.fillStyle = BOX_TEXT_COLOR;
-    context.font = font;
+    context.font = `${fontPx}px sans-serif`;
     context.textAlign = "center";
     context.textBaseline = "middle";
     context.fillText(label, x, y);
-  } else {
-    const side = BOX_EMPTY_SIZE * scale;
-    context.beginPath();
-    drawRoundedBox(context, x, y, side, side, corner);
-    context.fillStyle = fillStyle;
-    context.fill();
-    context.strokeStyle = borderColor;
-    context.lineWidth = lineWidth;
-    context.stroke();
   }
 
   context.restore();
+}
+
+/**
+ * Filled triangular arrowhead whose TIP sits at (x, y) — the clipped edge
+ * endpoint on the target node's border — pointing along the unit direction
+ * (ux, uy) of the incoming edge.
+ */
+function drawArrowHead(
+  context: Graph2DContext,
+  x: number,
+  y: number,
+  ux: number,
+  uy: number,
+  length: number,
+): void {
+  const baseX = x - ux * length;
+  const baseY = y - uy * length;
+  const half = length * ARROW_WIDTH_RATIO * 0.5;
+  const px = -uy;
+  const py = ux;
+
+  context.beginPath();
+  context.moveTo(x, y);
+  context.lineTo(baseX + px * half, baseY + py * half);
+  context.lineTo(baseX - px * half, baseY - py * half);
+  context.closePath();
+  context.fill();
 }
 
 function drawFallback2D(
@@ -628,43 +713,11 @@ function drawFallback2D(
   context.lineCap = "round";
   context.lineJoin = "round";
 
-  const edgeCount = skipEdges ? 0 : state.edges.length / 2;
-  for (let edgeIndex = 0; edgeIndex < edgeCount; edgeIndex += 1) {
-    const sourceIndex = state.edges[edgeIndex * 2] ?? 0;
-    const targetIndex = state.edges[edgeIndex * 2 + 1] ?? 0;
-    const source = screenPoint(state.positions, sourceIndex, camera, canvas);
-    const target = screenPoint(state.positions, targetIndex, camera, canvas);
-    const curvature = state.style?.edgeCurvatures[edgeIndex] ?? 0;
-    const width = state.style?.edgeWidths[edgeIndex] ?? 1;
-    const colorOffset = edgeIndex * 4;
-
-    context.beginPath();
-    context.strokeStyle = cssColor(state.style?.edgeColors, colorOffset, DEFAULT_EDGE_COLOR);
-    context.lineWidth = Math.max(1, width * pixelRatio);
-    applyDash(context, state.style?.edgeDash[edgeIndex] ?? 0, pixelRatio);
-    context.moveTo(source.x, source.y);
-    if (curvature !== 0) {
-      const midX = (source.x + target.x) / 2;
-      const midY = (source.y + target.y) / 2;
-      const dx = target.x - source.x;
-      const dy = target.y - source.y;
-      const distance = Math.max(1, Math.hypot(dx, dy));
-      const controlX = midX + (-dy / distance) * distance * curvature * EDGE_CURVE_FACTOR;
-      const controlY = midY + (dx / distance) * distance * curvature * EDGE_CURVE_FACTOR;
-      context.quadraticCurveTo(controlX, controlY, target.x, target.y);
-    } else {
-      context.lineTo(target.x, target.y);
-    }
-    context.stroke();
-  }
-  context.setLineDash([]);
-
   // Legacy `shape:box` parity: measure each distinct label AT THE RENDERED
-  // (zoom-scaled) font so the box hugs the exact text it draws. The cache is
-  // per-frame and keyed by font + text (the scale is uniform across nodes, but
-  // keying defensively keeps the cache correct if that ever changes).
+  // (zoom-scaled, node-sized) font so the box hugs the exact text it draws.
+  // The cache is per-frame and keyed by font + text (box fonts vary with the
+  // node size, so the font participates in the key).
   const labelWidthCache = new Map<string, number>();
-  const boxScale = pixelRatio * camera.zoom;
   const measureLabelWidth = (text: string, font: string): number => {
     const key = `${font}|${text}`;
     const cached = labelWidthCache.get(key);
@@ -675,25 +728,151 @@ function drawFallback2D(
     return width;
   };
 
+  // Pre-pass: every node's drawn geometry in screen px. The edge pass clips
+  // each endpoint to this geometry; the node pass reuses the same dimensions.
+  const nodeCount = state.nodeIds.length;
+  const geometry: NodeGeometry = {
+    radii: new Float32Array(nodeCount),
+    boxHalfWidths: new Float32Array(nodeCount),
+    boxHalfHeights: new Float32Array(nodeCount),
+  };
+  for (let nodeIndex = 0; nodeIndex < nodeCount; nodeIndex += 1) {
+    // World-space sizing for legacy ForceGraph parity: glyphs scale with camera zoom.
+    const radius = Math.max(1, (state.style?.nodeSizes[nodeIndex] ?? 4) * pixelRatio * camera.zoom);
+    geometry.radii[nodeIndex] = radius;
+    if ((state.style?.nodeShapes[nodeIndex] ?? 0) !== BOX_SHAPE) continue;
+    const label = state.style?.nodeLabels?.[nodeIndex] ?? "";
+    const dims = boxDimensions(radius, label, measureLabelWidth);
+    geometry.boxHalfWidths[nodeIndex] = dims.w / 2;
+    geometry.boxHalfHeights[nodeIndex] = dims.h / 2;
+  }
+
+  // Distance from a node's centre to its drawn border along the outgoing unit
+  // direction (dirX, dirY): the drawn radius for circle-ish glyphs, the exact
+  // rectangle-border distance for box glyphs.
+  const borderOffset = (nodeIndex: number, dirX: number, dirY: number): number => {
+    if ((state.style?.nodeShapes[nodeIndex] ?? 0) === BOX_SHAPE) {
+      const halfW = geometry.boxHalfWidths[nodeIndex] ?? 0;
+      const halfH = geometry.boxHalfHeights[nodeIndex] ?? 0;
+      const absX = Math.abs(dirX);
+      const absY = Math.abs(dirY);
+      const alongX = absX > 1e-6 ? halfW / absX : Number.POSITIVE_INFINITY;
+      const alongY = absY > 1e-6 ? halfH / absY : Number.POSITIVE_INFINITY;
+      return Math.min(alongX, alongY);
+    }
+    return geometry.radii[nodeIndex] ?? 0;
+  };
+
+  const edgeCount = skipEdges ? 0 : state.edges.length / 2;
+  for (let edgeIndex = 0; edgeIndex < edgeCount; edgeIndex += 1) {
+    const sourceIndex = state.edges[edgeIndex * 2] ?? 0;
+    const targetIndex = state.edges[edgeIndex * 2 + 1] ?? 0;
+    const source = screenPoint(state.positions, sourceIndex, camera, canvas);
+    const target = screenPoint(state.positions, targetIndex, camera, canvas);
+    const curvature = state.style?.edgeCurvatures[edgeIndex] ?? 0;
+    const width = state.style?.edgeWidths[edgeIndex] ?? 1;
+    const colorOffset = edgeIndex * 4;
+
+    const dx = target.x - source.x;
+    const dy = target.y - source.y;
+    const distance = Math.hypot(dx, dy);
+    if (distance < 1e-6) continue;
+
+    // Control point of the curved edge (also defines the endpoint tangents).
+    let controlX = 0;
+    let controlY = 0;
+    if (curvature !== 0) {
+      const midX = (source.x + target.x) / 2;
+      const midY = (source.y + target.y) / 2;
+      controlX = midX + (-dy / distance) * distance * curvature * EDGE_CURVE_FACTOR;
+      controlY = midY + (dx / distance) * distance * curvature * EDGE_CURVE_FACTOR;
+    }
+
+    // Unit directions pointing OUT of each node along the edge: the curve's
+    // endpoint tangents for arcs, the straight direction otherwise.
+    let outSx = dx / distance;
+    let outSy = dy / distance;
+    let inTx = dx / distance;
+    let inTy = dy / distance;
+    if (curvature !== 0) {
+      const sLen = Math.hypot(controlX - source.x, controlY - source.y);
+      const tLen = Math.hypot(target.x - controlX, target.y - controlY);
+      if (sLen > 1e-6) {
+        outSx = (controlX - source.x) / sLen;
+        outSy = (controlY - source.y) / sLen;
+      }
+      if (tLen > 1e-6) {
+        inTx = (target.x - controlX) / tLen;
+        inTy = (target.y - controlY) / tLen;
+      }
+    }
+
+    // Legacy parity: the line STOPS at each node's drawn border and the
+    // arrowhead tip sits ON the target border. Overlapping nodes (combined
+    // border offsets exceed the centre distance) draw the raw segment — the
+    // glyphs cover it anyway — and skip the arrow.
+    const offsetSource = borderOffset(sourceIndex, outSx, outSy);
+    const offsetTarget = borderOffset(targetIndex, -inTx, -inTy);
+    const clipped = distance > offsetSource + offsetTarget + 1e-3;
+    const startX = clipped ? source.x + outSx * offsetSource : source.x;
+    const startY = clipped ? source.y + outSy * offsetSource : source.y;
+    const endX = clipped ? target.x - inTx * offsetTarget : target.x;
+    const endY = clipped ? target.y - inTy * offsetTarget : target.y;
+
+    const edgeColor = cssColor(state.style?.edgeColors, colorOffset, DEFAULT_EDGE_COLOR);
+    context.beginPath();
+    context.strokeStyle = edgeColor;
+    context.lineWidth = Math.max(1, width * pixelRatio);
+    applyDash(context, state.style?.edgeDash[edgeIndex] ?? 0, pixelRatio);
+    context.moveTo(startX, startY);
+    if (curvature !== 0) {
+      context.quadraticCurveTo(controlX, controlY, endX, endY);
+    } else {
+      context.lineTo(endX, endY);
+    }
+    context.stroke();
+
+    if (clipped) {
+      // World-space arrow length (scales with zoom like every glyph), edge
+      // width modulated like the legacy `arrows.to` rendering.
+      const arrowLength = ARROW_LENGTH * width * pixelRatio * camera.zoom;
+      context.setLineDash([]);
+      context.fillStyle = edgeColor;
+      drawArrowHead(context, endX, endY, inTx, inTy, arrowLength);
+    }
+  }
+  context.setLineDash([]);
+
   for (let nodeIndex = 0; nodeIndex < state.nodeIds.length; nodeIndex += 1) {
     const point = screenPoint(state.positions, nodeIndex, camera, canvas);
     const colorOffset = nodeIndex * 4;
     const shape = state.style?.nodeShapes[nodeIndex] ?? 0;
     const nodeColor = cssColor(state.style?.nodeColors, colorOffset, DEFAULT_NODE_COLOR);
+    const radius = geometry.radii[nodeIndex] ?? 1;
 
     if (shape === BOX_SHAPE) {
-      // The box IS the glyph. Size from the label (or a small empty rect for
-      // low-degree boxes), never from nodeSizes — so the selection size
-      // multiplier is ignored. Border = node colour (encodes selection/hover);
+      // The box IS the glyph, at the SAME on-screen scale as the other shapes:
+      // height = the node's drawn diameter, small text fitted inside, width
+      // hugging the text. Border = node colour (encodes selection/hover);
       // alpha follows the node's payload alpha so dim / merge styling applies.
       const label = state.style?.nodeLabels?.[nodeIndex] ?? "";
       const alpha = (state.style?.nodeColors[colorOffset + 3] ?? 255) / 255;
-      drawBoxNode(context, point.x, point.y, boxScale, pixelRatio, label, nodeColor, alpha, measureLabelWidth);
+      const dims = boxDimensions(radius, label, measureLabelWidth);
+      drawBoxNode(
+        context,
+        point.x,
+        point.y,
+        dims.w,
+        dims.h,
+        dims.corner,
+        dims.fontPx,
+        pixelRatio,
+        label,
+        nodeColor,
+        alpha,
+      );
       continue;
     }
-
-    // World-space sizing for legacy ForceGraph parity: glyphs scale with camera zoom.
-    const radius = Math.max(1, (state.style?.nodeSizes[nodeIndex] ?? 4) * pixelRatio * camera.zoom);
 
     context.beginPath();
     context.fillStyle = nodeColor;
@@ -803,7 +982,7 @@ export function createGraphRenderer(
         context,
         resources.positionBuffer,
         resources.edgeProgram.attributes.position,
-        buildEdgePositions(state),
+        buildEdgePositions(state, pixelRatio),
         2,
         context.FLOAT,
         false,
