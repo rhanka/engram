@@ -12,19 +12,27 @@
  * module persists whatever it is handed.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
-import type { FileCursor, SessionFact } from "./types.js";
+import type { CorrelationLink, FileCursor, SessionFact } from "./types.js";
 
 export interface AgentStore {
   dir: string;
   factsPath: string;
   cursorsPath: string;
+  /** Append-only resolved attribution links (re-derivable; survives branch GC). */
+  linksPath: string;
 }
 
 export function resolveStore(repoRoot: string): AgentStore {
   const dir = join(repoRoot, ".graphify", "agents");
-  return { dir, factsPath: join(dir, "facts.jsonl"), cursorsPath: join(dir, "cursors.json") };
+  return {
+    dir,
+    factsPath: join(dir, "facts.jsonl"),
+    cursorsPath: join(dir, "cursors.json"),
+    linksPath: join(dir, "links.jsonl"),
+  };
 }
 
 export function ensureStore(store: AgentStore): void {
@@ -60,20 +68,96 @@ export function saveFacts(store: AgentStore, facts: Map<string, SessionFact>): v
   writeFileSync(store.factsPath, lines.length ? lines.join("\n") + "\n" : "");
 }
 
-export function loadCursors(store: AgentStore): Map<string, FileCursor> {
+/** Exact-home tilde encoding for cursor paths (round-trips losslessly). */
+function encodeCursorPath(p: string, home: string): string {
+  return home && (p === home || p.startsWith(home + "/")) ? "~" + p.slice(home.length) : p;
+}
+
+function decodeCursorPath(p: string, home: string): string {
+  return home && (p === "~" || p.startsWith("~/")) ? home + p.slice(1) : p;
+}
+
+export function loadCursors(store: AgentStore, home = homedir()): Map<string, FileCursor> {
   const out = new Map<string, FileCursor>();
   if (!existsSync(store.cursorsPath)) return out;
   try {
     const arr = JSON.parse(readFileSync(store.cursorsPath, "utf-8"));
-    if (Array.isArray(arr)) for (const c of arr) if (c?.path) out.set(c.path, c);
+    if (Array.isArray(arr)) {
+      for (const c of arr) {
+        if (!c?.path) continue;
+        const abs = decodeCursorPath(c.path, home);
+        out.set(abs, { ...c, path: abs });
+      }
+    }
   } catch {
     /* ignore */
   }
   return out;
 }
 
-export function saveCursors(store: AgentStore, cursors: Map<string, FileCursor>): void {
+/**
+ * Persist cursors. PRIVACY: transcript paths live under the user's home dir;
+ * they are stored `~`-relative so no raw home path lands in cursors.json.
+ */
+export function saveCursors(store: AgentStore, cursors: Map<string, FileCursor>, home = homedir()): void {
   ensureStore(store);
-  const arr = Array.from(cursors.values()).sort((a, b) => a.path.localeCompare(b.path));
+  const arr = Array.from(cursors.values())
+    .map((c) => ({ ...c, path: encodeCursorPath(c.path, home) }))
+    .sort((a, b) => a.path.localeCompare(b.path));
   writeFileSync(store.cursorsPath, JSON.stringify(arr, null, 2) + "\n");
+}
+
+/** Stable identity of a correlation link (factId + rule + target). */
+export function linkKey(link: CorrelationLink): string {
+  const t = link.target;
+  const tail =
+    t.kind === "commit"
+      ? `${t.sha}|${t.branch ?? ""}`
+      : t.kind === "branch"
+        ? t.branch
+        : t.kind === "pr"
+          ? `${t.url ?? ""}|${t.number ?? ""}`
+          : `${t.trackItemId}|${t.wp ?? ""}`;
+  return `${link.factId}|${link.rule}|${t.kind}|${tail}`;
+}
+
+/** Load persisted attribution links (deduped by {@link linkKey}). */
+export function loadLinks(store: AgentStore): CorrelationLink[] {
+  if (!existsSync(store.linksPath)) return [];
+  const seen = new Set<string>();
+  const out: CorrelationLink[] = [];
+  for (const line of readFileSync(store.linksPath, "utf-8").split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    try {
+      const link = JSON.parse(t) as CorrelationLink;
+      if (!link?.factId || !link?.target) continue;
+      const key = linkKey(link);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(link);
+    } catch {
+      /* skip corrupt line */
+    }
+  }
+  return out;
+}
+
+/**
+ * APPEND-ONLY: persist any link not already on disk. Resolved attribution thus
+ * survives branch GC / squash cleanup — the numbers do not decay when the
+ * evidence can no longer be re-derived from `git log`.
+ */
+export function appendLinks(store: AgentStore, links: CorrelationLink[]): number {
+  const existing = new Set(loadLinks(store).map(linkKey));
+  const fresh = links.filter((l) => {
+    const key = linkKey(l);
+    if (existing.has(key)) return false;
+    existing.add(key);
+    return true;
+  });
+  if (fresh.length === 0) return 0;
+  ensureStore(store);
+  appendFileSync(store.linksPath, fresh.map((l) => JSON.stringify(l)).join("\n") + "\n");
+  return fresh.length;
 }
