@@ -69,8 +69,9 @@ function createFakeCanvas2DContext() {
     arc: Array<{ x: number; y: number; radius: number }>;
     clearRect: number;
     closePath: number;
-    fillText: Array<{ text: string; x: number; y: number }>;
+    fillText: Array<{ text: string; x: number; y: number; font: string }>;
     lineTo: number;
+    measureText: Array<{ text: string; font: string }>;
     moveTo: number;
     quadraticCurveTo: number;
     setLineDash: number[][];
@@ -82,6 +83,7 @@ function createFakeCanvas2DContext() {
     closePath: 0,
     fillText: [],
     lineTo: 0,
+    measureText: [],
     moveTo: 0,
     quadraticCurveTo: 0,
     setLineDash: [],
@@ -96,8 +98,10 @@ function createFakeCanvas2DContext() {
     lineCap: "",
     lineJoin: "",
     lineWidth: 0,
+    textAlign: "",
     textBaseline: "",
     strokeStyle: "",
+    globalAlpha: 1,
     beginPath: () => undefined,
     clearRect: () => {
       calls.clearRect += 1;
@@ -128,8 +132,16 @@ function createFakeCanvas2DContext() {
     fill: () => {
       calls.fill += 1;
     },
-    fillText: (text: string, x: number, y: number) => {
-      calls.fillText.push({ text, x, y });
+    fillText(text: string, x: number, y: number) {
+      calls.fillText.push({ text, x, y, font: this.font });
+    },
+    // Deterministic stub: width proportional to character count so the box
+    // sizing path is exercised without a real font metrics engine. Records
+    // the font ACTIVE at measure time so tests can assert the box is sized
+    // at the rendered (zoom-scaled) font, never the base font.
+    measureText(text: string) {
+      calls.measureText.push({ text, font: this.font });
+      return { width: text.length * 7 };
     },
   };
 }
@@ -339,5 +351,130 @@ describe("createGraphRenderer", () => {
     expect(context2d.calls.arc).toHaveLength(0);
     expect(context2d.calls.lineTo).toBeGreaterThanOrEqual(8);
     expect(context2d.calls.closePath).toBeGreaterThanOrEqual(2);
+  });
+
+  it("draws legacy box glyphs in Canvas2D: labelled rounded rect + dark text", () => {
+    const context2d = createFakeCanvas2DContext();
+    const canvas = {
+      width: 200,
+      height: 100,
+      getContext: (kind: string) => (kind === "2d" ? context2d : null),
+    };
+
+    const view = createGraphRenderer(canvas as unknown as HTMLCanvasElement, {
+      backend: "canvas2d",
+      pixelRatio: 1,
+    });
+    view.setGraph({
+      nodeIds: ["labelled", "empty"],
+      positions: new Float32Array([0, 0, 100, 0]),
+      edges: new Uint32Array([]),
+    });
+    view.setStyle({
+      nodeSizes: new Float32Array([6, 6]),
+      // shape code 5 = box for both; only the first carries a label.
+      nodeShapes: new Uint8Array([5, 5]),
+      nodeLabels: ["Central Work", ""],
+      nodeColors: new Uint8Array([255, 0, 0, 255, 0, 0, 255, 255]),
+      edgeWidths: new Float32Array([]),
+      edgeColors: new Uint8Array([]),
+      edgeDash: new Uint8Array([]),
+      edgeCurvatures: new Float32Array([]),
+    });
+    view.setCamera({ x: 0, y: 0, zoom: 1 });
+    view.render();
+
+    expect(view.snapshot().backend).toBe("canvas2d");
+    // No circle glyphs: both nodes are boxes (rounded rects via quadraticCurveTo).
+    expect(context2d.calls.arc).toHaveLength(0);
+    // EXACTLY ONE text per labelled box, centred on the node, at the rendered
+    // font (pixelRatio 1 * zoom 1 -> 12px); the empty box draws none.
+    expect(context2d.calls.fillText).toEqual([
+      { text: "Central Work", x: 100, y: 50, font: "12px sans-serif" },
+    ]);
+    // The box width comes from the label measured AT the rendered font.
+    expect(context2d.calls.measureText).toEqual([{ text: "Central Work", font: "12px sans-serif" }]);
+    // Both boxes fill (translucent) and stroke (node-coloured border).
+    expect(context2d.calls.fill).toBe(2);
+    expect(context2d.calls.stroke).toBe(2);
+    // Rounded rect = 4 quadratic corners per box.
+    expect(context2d.calls.quadraticCurveTo).toBe(8);
+  });
+
+  it("measures and draws the box label at the zoom-scaled font (no base/scaled mismatch)", () => {
+    const context2d = createFakeCanvas2DContext();
+    const canvas = {
+      width: 400,
+      height: 200,
+      getContext: (kind: string) => (kind === "2d" ? context2d : null),
+    };
+    const view = createGraphRenderer(canvas as unknown as HTMLCanvasElement, {
+      backend: "canvas2d",
+      pixelRatio: 2,
+    });
+    view.setGraph({
+      nodeIds: ["work"],
+      positions: new Float32Array([0, 0]),
+      edges: new Uint32Array([]),
+    });
+    view.setStyle({
+      nodeSizes: new Float32Array([6]),
+      nodeShapes: new Uint8Array([5]),
+      nodeLabels: ["Central Work"],
+      nodeColors: new Uint8Array([255, 0, 0, 255]),
+      edgeWidths: new Float32Array([]),
+      edgeColors: new Uint8Array([]),
+      edgeDash: new Uint8Array([]),
+      edgeCurvatures: new Float32Array([]),
+    });
+    view.setCamera({ x: 0, y: 0, zoom: 3 });
+    view.render();
+
+    // Rendered font = 12 * pixelRatio(2) * zoom(3) = 72px: BOTH the measurement
+    // (box sizing) and the drawn text use it — the box always hugs its text.
+    expect(context2d.calls.measureText).toEqual([{ text: "Central Work", font: "72px sans-serif" }]);
+    expect(context2d.calls.fillText).toEqual([
+      { text: "Central Work", x: 200, y: 100, font: "72px sans-serif" },
+    ]);
+  });
+
+  it("box glyphs ignore the selection size multiplier (size derives from the label)", () => {
+    const render = (nodeSize: number) => {
+      const context2d = createFakeCanvas2DContext();
+      const widths: number[] = [];
+      const lineToCounts: number[] = [];
+      const canvas = {
+        width: 200,
+        height: 100,
+        getContext: (kind: string) => (kind === "2d" ? context2d : null),
+      };
+      const view = createGraphRenderer(canvas as unknown as HTMLCanvasElement, {
+        backend: "canvas2d",
+        pixelRatio: 1,
+      });
+      view.setGraph({
+        nodeIds: ["a"],
+        positions: new Float32Array([0, 0]),
+        edges: new Uint32Array([]),
+      });
+      view.setStyle({
+        // A bigger nodeSize would enlarge a normal glyph; a box must ignore it.
+        nodeSizes: new Float32Array([nodeSize]),
+        nodeShapes: new Uint8Array([5]),
+        nodeLabels: ["Work"],
+        nodeColors: new Uint8Array([10, 20, 30, 255]),
+        edgeWidths: new Float32Array([]),
+        edgeColors: new Uint8Array([]),
+        edgeDash: new Uint8Array([]),
+        edgeCurvatures: new Float32Array([]),
+      });
+      view.setCamera({ x: 0, y: 0, zoom: 1 });
+      view.render();
+      widths.push(context2d.calls.fillText.length);
+      lineToCounts.push(context2d.calls.lineTo);
+      return { fillTextCount: widths[0]!, lineTo: lineToCounts[0]! };
+    };
+    // Same label -> identical geometry regardless of the (selection-inflated) size.
+    expect(render(6)).toEqual(render(60));
   });
 });
