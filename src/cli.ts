@@ -2105,7 +2105,40 @@ export function getPlatformsToCheck(argv: string[]): string[] {
 // Main CLI
 // ---------------------------------------------------------------------------
 
+/**
+ * Load a project-local `.env` (current working directory) into process.env so
+ * configured LLM credentials (e.g. MISTRAL_API_KEY, used by community labelling
+ * and WP11 node descriptions) are picked up without the user having to export
+ * them by hand. Non-overriding: an already-set env var (exported shell / CI
+ * secret) always wins. Best-effort: a missing or malformed `.env` never breaks
+ * the CLI.
+ */
+function loadProjectDotEnv(): void {
+  try {
+    if (!existsSync(".env")) return;
+    for (const rawLine of readFileSync(".env", "utf-8").split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith("#")) continue;
+      const eq = line.indexOf("=");
+      if (eq <= 0) continue;
+      const key = line.slice(0, eq).trim();
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || process.env[key] !== undefined) continue;
+      let val = line.slice(eq + 1).trim();
+      if (
+        (val.startsWith('"') && val.endsWith('"')) ||
+        (val.startsWith("'") && val.endsWith("'"))
+      ) {
+        val = val.slice(1, -1);
+      }
+      process.env[key] = val;
+    }
+  } catch {
+    // best-effort: never fail the CLI on a .env read/parse issue
+  }
+}
+
 export async function main(): Promise<void> {
+  loadProjectDotEnv();
   // Only warn for the platform(s) relevant to the current command.
   for (const platformName of getPlatformsToCheck(process.argv.slice(2))) {
     const cfg = PLATFORM_CONFIG[platformName];
