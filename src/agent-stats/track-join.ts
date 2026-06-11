@@ -53,7 +53,8 @@ function wpLabel(text: string): string | null {
 }
 
 interface ParsedSegment {
-  wp: string;
+  /** All WP labels this segment's ids are mandated to (multi-WP mandates). */
+  wps: string[];
   threadIds: string[];
   h2aIds: string[];
 }
@@ -63,17 +64,21 @@ interface ParsedSegment {
  * like `WP2 Header DS -> <id> (Name); WP6 ... -> <id> (Name)`. We split on the
  * WP-label boundaries so each segment's ids are attributed to the WP that opens
  * it; ids that appear before the first WP label are left unattributed.
+ *
+ * MULTI-WP MANDATES: a run of labels with no ids in between ("WP2/WP3/WP5 to
+ * <id>") carries every label forward — the id joins to ALL of those WPs.
  */
 function parseContext(context: string): ParsedSegment[] {
   const segments: ParsedSegment[] = [];
 
   const labelRe = /\b[wW][pP]\s?-?\d{1,3}\b/g;
-  const marks: { wp: string; index: number }[] = [];
+  const marks: { wp: string; index: number; len: number }[] = [];
   let lm: RegExpExecArray | null;
   while ((lm = labelRe.exec(context)) !== null) {
     const label = wpLabel(lm[0]);
-    if (label) marks.push({ wp: label, index: lm.index });
+    if (label) marks.push({ wp: label, index: lm.index, len: lm[0].length });
   }
+  let carried: string[] = [];
   for (let i = 0; i < marks.length; i++) {
     const mark = marks[i]!;
     const end = i + 1 < marks.length ? marks[i + 1]!.index : context.length;
@@ -82,7 +87,18 @@ function parseContext(context: string): ParsedSegment[] {
     // h2a ids contain colons + a host word that is never a WP label, so the
     // segment-bounded scan is safe; a WP that lists several ids keeps them all.
     const h2aIds = Array.from(new Set(Array.from(slice.matchAll(H2A_ID_RE), (m) => m[0])));
-    if (threadIds.length || h2aIds.length) segments.push({ wp: mark.wp, threadIds, h2aIds });
+    if (threadIds.length || h2aIds.length) {
+      segments.push({ wps: [...carried, mark.wp], threadIds, h2aIds });
+      carried = [];
+    } else {
+      // No ids in this label's own slice. Carry the label into the NEXT
+      // segment only when it is a tight run like "WP3/WP5" — i.e. nothing but
+      // a short separator sits between this label and the next one. Prose
+      // mentions ("owner of WP6 publication, WP7 coordination") do not carry.
+      const gap = context.slice(mark.index + mark.len, end);
+      if (i + 1 < marks.length && /^[\s/,&+|-]{0,3}$/.test(gap)) carried.push(mark.wp);
+      else carried = [];
+    }
   }
 
   return segments;
@@ -125,7 +141,10 @@ export function parseTrackLedger(ledger: string): Map<string, TrackItem> {
     const trackItemId = typeof e.aggregateId === "string" ? e.aggregateId : undefined;
     if (!trackItemId) continue;
     const title = typeof e.payload?.title === "string" ? e.payload.title : "";
-    const wp = wpLabel(title);
+    const body = typeof e.payload?.body === "string" ? e.payload.body : "";
+    // WP label from the title, falling back to the body (the real WP9 item's
+    // title carries no "WP9" token; only later decisions/body text do).
+    const wp = wpLabel(title) ?? wpLabel(body);
     const item: TrackItem = { trackItemId, wp, title, threadIds: [], h2aInstanceIds: [] };
     byId.set(trackItemId, item);
     if (wp) {
@@ -148,13 +167,49 @@ export function parseTrackLedger(ledger: string): Map<string, TrackItem> {
     const type = e?.type;
     if (type !== "dossier.revised" && type !== "decision.created" && type !== "decision.outcome") continue;
     const context = dossierContext(e.payload);
+    const title = typeof e.payload?.title === "string" ? e.payload.title : "";
+
+    // STRUCTURED JOIN (preferred): when the event carries `targets` ULIDs that
+    // resolve to known items, every id in its context attaches to exactly
+    // those items — never to items whose WP label merely appears in the prose
+    // (e.g. the conductor's id next to "remains owner of WP6 publication").
+    const targets: TrackItem[] = Array.isArray(e.payload?.targets)
+      ? e.payload.targets
+          .filter((t: unknown): t is string => typeof t === "string")
+          .map((t: string) => byId.get(t))
+          .filter((it: TrackItem | undefined): it is TrackItem => Boolean(it))
+      : [];
+    if (targets.length > 0) {
+      const threadIds = context ? Array.from(new Set(Array.from(context.matchAll(UUID_RE), (m) => m[0]))) : [];
+      const h2aIds = context ? Array.from(new Set(Array.from(context.matchAll(H2A_ID_RE), (m) => m[0]))) : [];
+      for (const item of targets) {
+        for (const tid of threadIds) if (!item.threadIds.includes(tid)) item.threadIds.push(tid);
+        for (const hid of h2aIds) if (!item.h2aInstanceIds.includes(hid)) item.h2aInstanceIds.push(hid);
+      }
+      // A single-target decision titled "WP9 …" names the item's WP even when
+      // the item title itself lacks the token.
+      if (targets.length === 1 && targets[0] && !targets[0].wp) {
+        const inferred = wpLabel(title);
+        if (inferred) {
+          targets[0].wp = inferred;
+          const arr = byWp.get(inferred);
+          if (arr) arr.push(targets[0]);
+          else byWp.set(inferred, [targets[0]]);
+        }
+      }
+      continue;
+    }
+
+    // PROSE FALLBACK: WP-label segmentation over the dossier context.
     if (!context) continue;
     for (const seg of parseContext(context)) {
-      const items = byWp.get(seg.wp);
-      if (!items) continue; // WP label without a matching track item — skip.
-      for (const item of items) {
-        for (const tid of seg.threadIds) if (!item.threadIds.includes(tid)) item.threadIds.push(tid);
-        for (const hid of seg.h2aIds) if (!item.h2aInstanceIds.includes(hid)) item.h2aInstanceIds.push(hid);
+      for (const wp of seg.wps) {
+        const items = byWp.get(wp);
+        if (!items) continue; // WP label without a matching track item — skip.
+        for (const item of items) {
+          for (const tid of seg.threadIds) if (!item.threadIds.includes(tid)) item.threadIds.push(tid);
+          for (const hid of seg.h2aIds) if (!item.h2aInstanceIds.includes(hid)) item.h2aInstanceIds.push(hid);
+        }
       }
     }
   }
@@ -176,20 +231,29 @@ export function loadTrackItems(repoRoot: string): Map<string, TrackItem> {
 }
 
 /**
- * Reverse lookups: thread-id → TrackItem and h2a-instance-id → TrackItem.
- * Used by correlate.ts to join a session to its mandated work-package.
+ * Reverse lookups: thread-id → TrackItem[] and h2a-instance-id → TrackItem[].
+ * MULTI-WP: an id mandated to several work-packages maps to ALL of them; the
+ * correlation step emits one WP link per mandated item.
  */
 export interface TrackIndex {
-  byThreadId: Map<string, TrackItem>;
-  byH2aId: Map<string, TrackItem>;
+  byThreadId: Map<string, TrackItem[]>;
+  byH2aId: Map<string, TrackItem[]>;
 }
 
 export function indexTrackItems(items: Map<string, TrackItem>): TrackIndex {
-  const byThreadId = new Map<string, TrackItem>();
-  const byH2aId = new Map<string, TrackItem>();
+  const byThreadId = new Map<string, TrackItem[]>();
+  const byH2aId = new Map<string, TrackItem[]>();
+  const push = (map: Map<string, TrackItem[]>, key: string, item: TrackItem) => {
+    const arr = map.get(key);
+    if (arr) {
+      if (!arr.includes(item)) arr.push(item);
+    } else {
+      map.set(key, [item]);
+    }
+  };
   for (const item of items.values()) {
-    for (const tid of item.threadIds) byThreadId.set(tid.toLowerCase(), item);
-    for (const hid of item.h2aInstanceIds) byH2aId.set(hid, item);
+    for (const tid of item.threadIds) push(byThreadId, tid.toLowerCase(), item);
+    for (const hid of item.h2aInstanceIds) push(byH2aId, hid, item);
   }
   return { byThreadId, byH2aId };
 }

@@ -2419,12 +2419,12 @@ export async function main(): Promise<void> {
     .action(async (opts) => {
       const { computeAgentStats, formatStatsTable } = await import("./agent-stats/index.js");
       const repoRoot = resolveAgentStatsRepoRoot();
-      const { rows } = computeAgentStats(repoRoot);
+      const { rows, residual } = computeAgentStats(repoRoot);
       if (opts.json) {
-        console.log(JSON.stringify(rows, null, 2));
+        console.log(JSON.stringify({ rows, residual }, null, 2));
         return;
       }
-      console.log(formatStatsTable(rows));
+      console.log(formatStatsTable(rows, residual));
     });
   agentStats
     .command("sync")
@@ -2471,7 +2471,14 @@ export async function main(): Promise<void> {
       const repoRoot = resolveAgentStatsRepoRoot();
       const result = wpAgentStats(repoRoot, trackItemId, { skipPrMerges: opts.pr === false });
       if (opts.json) {
-        console.log(JSON.stringify({ item: result.item, links: result.links, sessions: result.sessions.map((s) => ({ factId: s.fact.factId, agentId: s.agentId, rule: s.rule })) }, null, 2));
+        console.log(JSON.stringify({
+          item: result.item,
+          links: result.links,
+          sessions: result.sessions.map((s) => ({ factId: s.fact.factId, agentId: s.agentId, rule: s.rule })),
+          evidenced: result.evidenced.map((s) => ({ factId: s.fact.factId, agentId: s.agentId, via: s.via })),
+          mismatch: result.mismatch,
+          rollup: result.rollup,
+        }, null, 2));
         return;
       }
       console.log(formatWpView(result, trackItemId));

@@ -137,7 +137,12 @@ export interface AgentStatsRow {
   host: AgentHost;
   registered: boolean;
   sessions: number;
+  /** Raw token total (incl. cache reads/creation at face value). */
   tokens: number;
+  /** Cost-weighted tokens: cache reads discounted to ~10% of an input token. */
+  tokensWeighted: number;
+  /** Best evidence confidence backing this row's attribution links. */
+  confidence: Confidence | "-";
   /** Distinct commit shas attributed by ground-truth correlation. */
   commits: number;
   /** Distinct branches attributed. */
@@ -145,6 +150,12 @@ export interface AgentStatsRow {
   /** Distinct WP labels touched (parsed from branches / commit subjects). */
   wpsTouched: string[];
   lastActive?: string;
+}
+
+/** Coverage residual: commits in `git log` not attributed to any agent. */
+export interface AttributionResidual {
+  totalCommits: number;
+  unattributedCommits: number;
 }
 
 /** Incremental re-parse cursor: byte offset already consumed per file. */
