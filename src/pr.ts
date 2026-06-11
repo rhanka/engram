@@ -216,6 +216,62 @@ export function getPullRequest(number: number, options: PrCommandOptions = {}): 
   return normalizePrDetails(data);
 }
 
+/**
+ * Minimal merge attribution for a PR (WP9 agent-stats Phase 1). Squash/rebase
+ * merges break per-commit-sha attribution: the commits a session printed never
+ * land on main verbatim, only the single squashed merge commit does. This
+ * returns the merge commit sha plus the branch + the original commit shas, so a
+ * caller can attribute the merged main commit to the session that produced the
+ * branch.
+ */
+export interface PrMergeInfo {
+  number: number;
+  headRefName?: string;
+  /** Full sha of the commit that landed on the base branch, if merged. */
+  mergeCommit?: string;
+  /** Abbreviated (12-char) shas of the PR's branch commits. */
+  commits: string[];
+}
+
+function normalizePrMerge(value: unknown): PrMergeInfo {
+  if (!value || typeof value !== "object") throw new Error("gh pr view returned no pull request");
+  const item = value as Record<string, unknown>;
+  const number = normalizeNumber(item.number);
+  if (number === undefined) throw new Error("gh pr view returned no PR number");
+  const mergeCommitOid = item.mergeCommit && typeof item.mergeCommit === "object"
+    ? normalizeString((item.mergeCommit as { oid?: unknown }).oid)
+    : undefined;
+  const commits = Array.isArray(item.commits)
+    ? item.commits
+      .map((commit) => commit && typeof commit === "object"
+        ? normalizeString((commit as { oid?: unknown }).oid)
+        : undefined)
+      .filter((oid): oid is string => Boolean(oid))
+      .map((oid) => oid.slice(0, 12))
+    : [];
+  return {
+    number,
+    headRefName: normalizeString(item.headRefName),
+    mergeCommit: mergeCommitOid,
+    commits,
+  };
+}
+
+/** Fetch merge attribution fields for a PR via `gh pr view <n> --json ...`. */
+export function getPullRequestMerge(number: number, options: PrCommandOptions = {}): PrMergeInfo {
+  const opts = optionsWithDefaults(options);
+  const repoArgs = ghRepoArgs(opts.runner, opts.cwd);
+  const data = runGhJson<unknown>(opts.runner, opts.cwd, [
+    "pr",
+    "view",
+    String(number),
+    ...repoArgs,
+    "--json",
+    "number,mergeCommit,commits,headRefName",
+  ], "pull request merge");
+  return normalizePrMerge(data);
+}
+
 function isConflictPr(pr: PullRequestSummary): boolean {
   return pr.mergeable === "CONFLICTING" || pr.mergeStateStatus === "DIRTY";
 }

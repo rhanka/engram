@@ -2428,6 +2428,21 @@ export async function main(): Promise<void> {
       }
       console.log(formatSessionsTable(facts, instances));
     });
+  agentStats
+    .command("wp <trackItemId>")
+    .description("Conductor view: agents/sessions joined to a Track work-package (by id or WP label)")
+    .option("--no-pr", "Skip the live `gh` PR-merge attribution step (offline)")
+    .option("--json", "Emit JSON instead of a text view")
+    .action(async (trackItemId, opts) => {
+      const { wpAgentStats, formatWpView } = await import("./agent-stats/index.js");
+      const repoRoot = resolveAgentStatsRepoRoot();
+      const result = wpAgentStats(repoRoot, trackItemId, { skipPrMerges: opts.pr === false });
+      if (opts.json) {
+        console.log(JSON.stringify({ item: result.item, links: result.links, sessions: result.sessions.map((s) => ({ factId: s.fact.factId, agentId: s.agentId, rule: s.rule })) }, null, 2));
+        return;
+      }
+      console.log(formatWpView(result, trackItemId));
+    });
 
   function registerPrCommands(name: "pr" | "prs"): void {
     program.command(`${name} [selector]`)
