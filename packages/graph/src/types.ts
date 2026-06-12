@@ -24,6 +24,10 @@ export interface HighLevelGraphNode {
   size?: number;
   color?: string | number;
   shape?: GraphNodeShape | string;
+  /** Glyph fill variant: "solid" (default) or "hollow" (outline only). */
+  fill?: "solid" | "hollow" | string;
+  /** Glyph border weight: "normal" (default) or "bold". */
+  border?: "normal" | "bold" | string;
   label?: string;
   [key: string]: unknown;
 }
@@ -79,6 +83,17 @@ export interface GraphStyleBuffers {
    * box nodes render as empty rounded rectangles.
    */
   nodeLabels?: string[];
+  /**
+   * Optional per-node fill variant: 0 solid (default), 1 hollow (outline-only
+   * glyph: translucent fill + node-coloured border). Drawn by the Canvas2D
+   * backend; the WebGL point-sprite path ignores it.
+   */
+  nodeFills?: Uint8Array;
+  /**
+   * Optional per-node border weight: 0 normal (default), 1 bold (heavier
+   * outline). Drawn by the Canvas2D backend; WebGL ignores it.
+   */
+  nodeBorders?: Uint8Array;
   edgeWidths: Float32Array;
   edgeColors: Uint8Array;
   edgeDash: Uint8Array;

@@ -55,6 +55,19 @@ export interface StudioSceneGraphLike {
 export interface BuildStudioSceneOptions {
   /** Mirror of buildScene's `showWeakLinks` (default true). */
   showWeakLinks?: boolean;
+  /**
+   * Optional ontology profile. When given, each node type's
+   * `node_types.*.visual_encoding` (shape / fill / border) OVERRIDES the
+   * built-in type defaults (TYPE_SHAPE / TYPE_VARIANT), so packs drive their
+   * own visual encoding. Absent (the parity/default path) the built-in maps
+   * apply — identical to the client adapter.
+   */
+  profile?: {
+    node_types?: Record<
+      string,
+      { visual_encoding?: { shape?: unknown; fill?: unknown; border?: unknown } }
+    >;
+  } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -66,6 +79,10 @@ export interface StudioSceneNode {
   label: string;
   weight: number;
   shape: string;
+  /** Glyph fill variant; only emitted when non-default ("hollow"). */
+  fill?: string;
+  /** Glyph border weight; only emitted when non-default ("bold"). */
+  border?: string;
   group?: string;
   type?: string;
   x?: number;
@@ -240,6 +257,30 @@ function shapeForType(node: StudioSceneGraphNode | undefined): string {
 }
 
 /**
+ * Shape VARIANTS (fill: hollow | solid, border: bold | normal) multiplying the
+ * 7 base shapes so the ~19 ontology types stay distinguishable: types sharing
+ * a TYPE_SHAPE entry get a distinct hollow / bold combination. Defaults
+ * (absent = solid + normal) keep every previously-rendered glyph unchanged.
+ * Kept in lockstep with studio/src/lib/graphAdapter.js TYPE_VARIANT (parity
+ * test enforces this); a profile's visual_encoding.fill/border overrides it.
+ */
+const TYPE_VARIANT: Record<string, { fill?: string; border?: string }> = {
+  Alias: { fill: "hollow" }, // vs Character (diamond)
+  DisguisePersona: { fill: "hollow" }, // vs NarrativeRole (star)
+  Author: { border: "bold" }, // vs NarrativeRole / DisguisePersona (star)
+  Translator: { fill: "hollow" }, // vs Location (triangle)
+  ForensicMethod: { fill: "hollow" }, // vs Organization (hexagon)
+  Saga: { border: "bold" }, // vs Organization / ForensicMethod (hexagon)
+  Object: { fill: "hollow" }, // vs Evidence (square)
+  Work: { border: "bold" }, // vs ChapterOrStory (roundedbox)
+};
+
+function variantForType(node: StudioSceneGraphNode | undefined): { fill?: string; border?: string } {
+  const t = nodeType(node);
+  return (t && TYPE_VARIANT[t]) || {};
+}
+
+/**
  * Map an ontology relation to a typed dash style.
  * Unmapped relations fall back to "solid".
  */
@@ -355,7 +396,7 @@ export function buildStudioScene(
   graph: StudioSceneGraphLike | null | undefined,
   options: BuildStudioSceneOptions = {},
 ): StudioScene {
-  const { showWeakLinks = true } = options;
+  const { showWeakLinks = true, profile = null } = options;
   const safeGraph = graph ?? {};
   const rawNodes = graphNodes(safeGraph);
   const rawEdges = graphEdges(safeGraph);
@@ -372,12 +413,20 @@ export function buildStudioScene(
     const type = nodeType(node);
     const x = finiteNumber(node.x) ? node.x : finiteNumber(node.fx) ? node.fx : undefined;
     const y = finiteNumber(node.y) ? node.y : finiteNumber(node.fy) ? node.fy : undefined;
+    // Profile visual_encoding (shape / fill / border) overrides the built-in
+    // type defaults; otherwise TYPE_SHAPE / TYPE_VARIANT apply (client parity).
+    const encoding = type ? profile?.node_types?.[type]?.visual_encoding : undefined;
+    const variant = variantForType(node);
+    const fill = displayValue(encoding?.fill) ?? variant.fill;
+    const border = displayValue(encoding?.border) ?? variant.border;
     const out: StudioSceneNode = {
       id: node.id,
       label: nodeLabel(node),
       weight: weightForDegree(degree.get(node.id) ?? 0, maxDegree),
-      shape: shapeForType(node),
+      shape: displayValue(encoding?.shape) ?? shapeForType(node),
     };
+    if (fill && fill !== "solid") out.fill = fill;
+    if (border && border !== "normal") out.border = border;
     if (group !== undefined) out.group = group;
     if (type) out.type = type;
     copyOwnFields(node, out, NODE_PROFILE_FIELDS);
