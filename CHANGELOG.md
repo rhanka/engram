@@ -4,6 +4,15 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.12.0 (2026-06-12)
+
+Two reliability guarantees for the semantic layer, both on by default.
+
+- **Descriptions on by default, everywhere — reliable and grounded.** Every `graphify update` now generates node descriptions by default (opt out with `--no-description`). Descriptions are entity-aware and citation/evidence-grounded against the source, transient backend errors are retried, and a coverage report tells you exactly how many describable nodes were described. `graphify update --fill-missing` is an idempotent gap-fill that only (re)describes nodes whose `description` is still empty — so a run interrupted by a missing key or a flaky backend can be completed later without re-spending tokens on already-described nodes. The fast git-hook rebuild stays LLM-free and drops a `.graphify_describe_pending` marker that the next default-on `update` consumes (surfaced by `check-update`), so no graph ever ships silently bare.
+- **Salient community labels systematic by default — opt out with `--no-label`.** After Louvain clustering, communities are named with concise salient LLM labels by default instead of generic `Community N` placeholders, persisted to `graph.json` and `GRAPH_REPORT.md`. Degrades gracefully (keeps the generic names plus a one-line stderr note) when no LLM backend is configured, and never re-spends tokens when every community already has a non-generic name.
+
+Minor bump (new default-on describe + label behaviour; `@sentropic/graph` unchanged at 0.1.3).
+
 ## 0.11.1 (2026-06-12)
 
 Studio reconciliation-view rendering fixes (`@sentropic/graph` 0.1.3).
