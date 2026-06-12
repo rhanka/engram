@@ -471,9 +471,11 @@ const EDGE_CURVE_FACTOR = 0.5;
 // neighbours, never as an oversized text card.
 const BOX_SHAPE = 5;
 // Legacy vis-network `shape:box` is sized to its LABEL at a small, degree-INDEPENDENT
-// font — a 22px box with a 12px font and 5px margins. It does NOT inflate with a
-// god-node's degree (only zoom scales it), so a Work box never dwarfs its neighbours.
-const BOX_BASE_HEIGHT_PX = 22; // legacy box height in CSS px (× pixelRatio × zoom)
+// font — the legacy 22-unit box proportions (12-unit font, 5-unit margins) at a
+// base height shrunk ~20% (22 → 18, UAT: the box must read clearly SMALLER than
+// the largest diamond). It does NOT inflate with a god-node's degree (only zoom
+// scales it), so a labelled box never dwarfs its neighbours.
+const BOX_BASE_HEIGHT_PX = 18; // box height in CSS px (× pixelRatio × zoom), legacy 22 − ~20%
 const BOX_MARGIN_RATIO = 5 / 22; // legacy margin per side (5 of a 22 box)
 const BOX_FONT_RATIO = 12 / 22; // legacy font size (12 of a 22 box) — text much smaller than the box
 const BOX_CORNER_RATIO = 1 / 4; // corner radius as a fraction of box height

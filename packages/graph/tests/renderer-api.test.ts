@@ -392,8 +392,8 @@ describe("createGraphRenderer", () => {
       edges: new Uint32Array([]),
     });
     view.setStyle({
-      // Box base height 22 (× pixelRatio 1 × zoom 1), degree-independent -> font
-      // 22 * 12/22 = 12px (legacy: small font, the box hugs the text).
+      // Box base height 18 (× pixelRatio 1 × zoom 1), degree-independent -> font
+      // 18 * 12/22 ≈ 9.82px (legacy proportions at the ~20%-shrunk base).
       nodeSizes: new Float32Array([11, 11]),
       // shape code 5 = box for both; only the first carries a label.
       nodeShapes: new Uint8Array([5, 5]),
@@ -411,23 +411,25 @@ describe("createGraphRenderer", () => {
     // No circle glyphs: both nodes are boxes (rounded rects via quadraticCurveTo).
     expect(context2d.calls.arc).toHaveLength(0);
     // EXACTLY ONE text per labelled box, centred on the node, at the small font
-    // fitted to the fixed legacy box height (base 22 -> 12px); the empty box draws none.
+    // fitted to the fixed box height (base 18 -> 18 * 12/22 px); the empty box draws none.
+    // Same float order as the renderer: height × BOX_FONT_RATIO (12/22).
+    const expectedFont = `${18 * (12 / 22)}px sans-serif`;
     expect(context2d.calls.fillText).toEqual([
-      { text: "Central Work", x: 100, y: 50, font: "12px sans-serif" },
+      { text: "Central Work", x: 100, y: 50, font: expectedFont },
     ]);
     // The box width comes from the label measured AT the rendered font.
-    expect(context2d.calls.measureText).toEqual([{ text: "Central Work", font: "12px sans-serif" }]);
+    expect(context2d.calls.measureText).toEqual([{ text: "Central Work", font: expectedFont }]);
     // Both boxes fill (translucent) and stroke (node-coloured border).
     expect(context2d.calls.fill).toBe(2);
     expect(context2d.calls.stroke).toBe(2);
     // Rounded rect = 4 quadratic corners per box.
     expect(context2d.calls.quadraticCurveTo).toBe(8);
-    // Box HEIGHT = the fixed legacy base (22 × pixelRatio × zoom): the labelled
-    // box's path spans node y ± 11 (height/2 = 50 ± 11), degree-independent so it
+    // Box HEIGHT = the fixed base (18 × pixelRatio × zoom): the labelled box's
+    // path spans node y ± 9 (height/2 = 50 ± 9), degree-independent so it
     // never inflates past its neighbours.
     const labelledBoxCorners = context2d.calls.quadraticCurveToCoords.slice(0, 4);
-    expect(Math.min(...labelledBoxCorners.map((corner) => corner.cy))).toBe(39);
-    expect(Math.max(...labelledBoxCorners.map((corner) => corner.cy))).toBe(61);
+    expect(Math.min(...labelledBoxCorners.map((corner) => corner.cy))).toBe(41);
+    expect(Math.max(...labelledBoxCorners.map((corner) => corner.cy))).toBe(59);
   });
 
   it("measures and draws the box label at the zoom-scaled font (no base/scaled mismatch)", () => {
@@ -459,12 +461,16 @@ describe("createGraphRenderer", () => {
     view.setCamera({ x: 0, y: 0, zoom: 3 });
     view.render();
 
-    // Box base height = 22 * pixelRatio(2) * zoom(3) = 132 -> font = 132 * 12/22
-    // = 72px: BOTH the measurement (box sizing) and the drawn text use it — the
+    // Box base height = 18 * pixelRatio(2) * zoom(3) = 108 -> font = 108 * 12/22
+    // px: BOTH the measurement (box sizing) and the drawn text use it — the
     // box always hugs its text at the zoom-scaled font.
-    expect(context2d.calls.measureText).toEqual([{ text: "Central Work", font: "72px sans-serif" }]);
+    // Same float order as the renderer: height × BOX_FONT_RATIO (12/22).
+    const expectedZoomedFont = `${108 * (12 / 22)}px sans-serif`;
+    expect(context2d.calls.measureText).toEqual([
+      { text: "Central Work", font: expectedZoomedFont },
+    ]);
     expect(context2d.calls.fillText).toEqual([
-      { text: "Central Work", x: 200, y: 100, font: "72px sans-serif" },
+      { text: "Central Work", x: 200, y: 100, font: expectedZoomedFont },
     ]);
   });
 
