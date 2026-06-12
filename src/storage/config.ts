@@ -29,6 +29,8 @@ export interface StorageCliFlags {
   project?: string;
   /** Spanner instance id. */
   instance?: string;
+  /** SQL schema/keyspace (postgres/pgvector; non-secret). */
+  schema?: string;
 }
 
 /**
@@ -109,6 +111,37 @@ export function resolveStoreConfig(
       cliFlags.database ??
       env["GRAPHIFY_SPANNER_DATABASE"] ??
       yamlMirror?.database;
+  } else if (effectiveId === "postgres" || effectiveId === "pgvector") {
+    // Postgres / pgvector. The DSN (connectionString) is a secret — it can
+    // embed user:password — so it is read from the environment ONLY and never
+    // from YAML or a CLI flag object (SPEC_STORAGE_BACKENDS.md, Secret
+    // Handling). Schema and SSL are non-secret and may come from env or YAML.
+    const connectionString = env["GRAPHIFY_POSTGRES_URL"];
+    if (connectionString !== undefined) {
+      config.connectionString = connectionString;
+    }
+
+    config.schema =
+      cliFlags.schema ??
+      env["GRAPHIFY_POSTGRES_SCHEMA"] ??
+      yamlMirror?.schema;
+
+    const sslRaw = env["GRAPHIFY_POSTGRES_SSL"];
+    if (sslRaw !== undefined) {
+      config.ssl = sslRaw === "1" || sslRaw.toLowerCase() === "true";
+    } else if (yamlMirror?.ssl !== undefined) {
+      config.ssl = yamlMirror.ssl;
+    }
+
+    // Non-secret embedding config (provider/model/dimension) may come from
+    // YAML; the provider API key stays env-only and is never modeled here.
+    if (yamlMirror?.embedding !== undefined) {
+      config.embedding = yamlMirror.embedding;
+    }
+
+    if (yamlMirror?.citySlug !== undefined) {
+      config.citySlug = yamlMirror.citySlug;
+    }
   } else if (effectiveId === "file" || effectiveId === undefined) {
     // file store or generic: uri becomes target if provided
     if (cliFlags.uri !== undefined) config.target = cliFlags.uri;
@@ -154,6 +187,10 @@ function findMirror(
   namespace?: string;
   autoPush?: boolean;
   mode?: "merge" | "replace";
+  schema?: string;
+  ssl?: boolean;
+  citySlug?: string;
+  embedding?: { provider?: string; model?: string; dimension?: number };
 } | undefined {
   if (!projectConfig?.storage?.mirrors) return undefined;
   if (backendId === undefined) {

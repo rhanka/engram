@@ -37,6 +37,11 @@ const SECRET_KEY_PATTERNS = [
   "apikey",
   "api_key",
   "private_key",
+  // SQL DSN / connection string may embed user:password — env-only, never YAML.
+  "connectionstring",
+  "connection_string",
+  "dsn",
+  "url",
 ];
 
 const VALID_MIRROR_MODES = new Set(["merge", "replace"]);
@@ -97,7 +102,8 @@ function validateStorageMirror(mirror: Record<string, unknown>, index: number): 
         `storage.mirrors[${index}]: key "${key}" looks like a secret and is not allowed in YAML config. ` +
           `Use environment variables instead: GRAPHIFY_NEO4J_PASSWORD, GRAPHIFY_NEO4J_USER, ` +
           `GRAPHIFY_NEO4J_URI, GRAPHIFY_NEO4J_DATABASE, GRAPHIFY_SPANNER_PROJECT, ` +
-          `GRAPHIFY_SPANNER_INSTANCE, GRAPHIFY_SPANNER_DATABASE`,
+          `GRAPHIFY_SPANNER_INSTANCE, GRAPHIFY_SPANNER_DATABASE, GRAPHIFY_POSTGRES_URL, ` +
+          `GRAPHIFY_POSTGRES_SCHEMA, GRAPHIFY_POSTGRES_SSL`,
       );
     }
   }
@@ -437,10 +443,36 @@ function normalizeStorageConfig(
       mode: mirror.mode === "replace" ? "replace" : "merge",
       namespace: typeof mirror.namespace === "string" ? mirror.namespace : undefined,
       autoPush: typeof mirror.autoPush === "boolean" ? mirror.autoPush : false,
+      schema: typeof mirror.schema === "string" ? mirror.schema : undefined,
+      ssl: typeof mirror.ssl === "boolean" ? mirror.ssl : undefined,
+      citySlug: typeof mirror.citySlug === "string" ? mirror.citySlug : undefined,
+      embedding: normalizeEmbeddingConfig(mirror.embedding),
     };
   });
 
   return { mirrors };
+}
+
+/**
+ * Normalize the non-secret embedding sub-config of a storage mirror. Returns
+ * undefined when nothing meaningful is present so the field stays absent for
+ * non-vector backends. The provider API key is never modeled here (env-only).
+ */
+function normalizeEmbeddingConfig(
+  embedding: GraphifyStorageMirrorConfig["embedding"],
+): NormalizedStorageMirrorConfig["embedding"] {
+  if (embedding === undefined || embedding === null) return undefined;
+  const rec = asRecord(embedding);
+  const provider = typeof rec.provider === "string" ? rec.provider : undefined;
+  const model = typeof rec.model === "string" ? rec.model : undefined;
+  const dimension =
+    typeof rec.dimension === "number" && Number.isFinite(rec.dimension)
+      ? rec.dimension
+      : undefined;
+  if (provider === undefined && model === undefined && dimension === undefined) {
+    return undefined;
+  }
+  return { provider, model, dimension };
 }
 
 export function loadProjectConfig(configPath: string): NormalizedProjectConfig {
