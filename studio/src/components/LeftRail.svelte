@@ -7,6 +7,7 @@
    */
   import { SelectableRow } from "@sentropic/design-system-svelte";
   import Accordion from "./Accordion.svelte";
+  import TypeShapeGlyph from "./TypeShapeGlyph.svelte";
   import {
     graphNodes,
     nodeType,
@@ -87,6 +88,7 @@
           <li>
             <SelectableRow value={t.key} selected={typeSet.has(t.key)} onselect={() => onToggleType?.(t.key)}>
               <span class="rail-row-content">
+                <TypeShapeGlyph type={t.key} />
                 <span class="rail-row-label">{t.key}</span>
                 <span class="rail-row-count">{t.count}</span>
               </span>
@@ -170,6 +172,16 @@
     background: var(--st-semantic-surface-default, #fff);
     overflow-y: auto;
     min-height: 0;
+    /* Contain accordion growth INSIDE the rail: without a height bound,
+       `overflow-y: auto` never engages — an expanded menu grows the rail past
+       the viewport, the DOCUMENT gets a scrollbar, the layout viewport narrows
+       and the graph canvas resizes/shifts. height:100% (of the .col column)
+       makes the rail itself scroll instead. */
+    height: 100%;
+    /* Reserve the scrollbar gutter permanently so the rail's content width is
+       identical whether or not the scrollbar is visible (no reflow, no canvas
+       resize, when a menu expands past the fold). */
+    scrollbar-gutter: stable;
     display: flex;
     flex-direction: column;
   }

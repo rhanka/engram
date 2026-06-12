@@ -133,10 +133,12 @@ const TYPE_SHAPE = {
   Evidence: "square",
   Object: "square",
   ForensicMethod: "hexagon",
-  // Legacy vis-network parity: only Work + ChapterOrStory are box glyphs
-  // (labelled rounded rect). Saga / Author / Translator carry their own
-  // ontological shapes, matching public-pack ontology-profile.yaml. Kept in
-  // lockstep with src/studio-scene.ts TYPE_SHAPE (parity test enforces this).
+  // Legacy vis-network parity: Work + ChapterOrStory keep the box SHAPE, but
+  // the in-box LABEL is reserved to the data-driven god-class hubs (see
+  // computeGodClass) — non-god-class boxes render as small empty rounded
+  // rects. Saga / Author / Translator carry their own ontological shapes,
+  // matching public-pack ontology-profile.yaml. Kept in lockstep with
+  // src/studio-scene.ts TYPE_SHAPE (parity test enforces this).
   Work: "roundedbox",
   ChapterOrStory: "roundedbox",
   Saga: "hexagon",
@@ -188,22 +190,30 @@ export function shapeForType(node) {
   return (t && TYPE_SHAPE[t]) || "dot";
 }
 
-/** Distinct (type -> shape) legend entries present in a graph (SVELTE-4). */
-/** Edge legend (dash family -> relation kind), appended after the node shapes. */
-const RELATION_LEGEND = [
-  { label: "belonging / structure", dash: "solid" },
-  { label: "agency / interaction", dash: "dashed" },
-  { label: "spatial / factual", dash: "dotted" },
-  { label: "method / usage", dash: "long-dash" },
-];
-export function shapeLegend(graph) {
-  const seen = new Map();
-  for (const node of graphNodes(graph)) {
-    const t = nodeType(node);
-    if (t && !seen.has(t)) seen.set(t, shapeForType(node));
-  }
-  const shapeEntries = [...seen.entries()].map(([label, shape]) => ({ label, shape }));
-  return [...shapeEntries, ...RELATION_LEGEND];
+/**
+ * Shape VARIANTS (fill: hollow | solid, border: bold | normal) multiplying the
+ * 7 base shapes so the ~19 ontology types stay distinguishable: types sharing
+ * a TYPE_SHAPE entry get a distinct hollow / bold combination. Defaults
+ * (absent = solid + normal) keep every previously-rendered glyph unchanged.
+ * Kept in lockstep with src/studio-scene.ts TYPE_VARIANT (parity test
+ * enforces this); a pack profile's visual_encoding.fill/border overrides it
+ * in the build-time scene.json.
+ */
+const TYPE_VARIANT = {
+  Alias: { fill: "hollow" }, // vs Character (diamond)
+  DisguisePersona: { fill: "hollow" }, // vs NarrativeRole (star)
+  Author: { border: "bold" }, // vs NarrativeRole / DisguisePersona (star)
+  Translator: { fill: "hollow" }, // vs Location (triangle)
+  ForensicMethod: { fill: "hollow" }, // vs Organization (hexagon)
+  Saga: { border: "bold" }, // vs Organization / ForensicMethod (hexagon)
+  Object: { fill: "hollow" }, // vs Evidence (square)
+  Work: { border: "bold" }, // vs ChapterOrStory (roundedbox)
+};
+
+/** Variant (fill/border) for a node's ontology type; {} when default. */
+export function variantForType(node) {
+  const t = nodeType(node);
+  return (t && TYPE_VARIANT[t]) || {};
 }
 
 /** Strong = EXTRACTED (default). Anything else (INFERRED, …) renders weak. */
@@ -234,13 +244,83 @@ export function computeDegrees(nodes, edges) {
 // r = 4 + 12*(deg/maxDeg), i.e. an rmax/rmin ratio of 4). GraphCanvas renders
 // r = nodeRadius * sqrt(weight), so to get that linear r we pass
 // weight = (r_target / nodeRadius)^2 with nodeRadius = rmin.
+/**
+ * Box-label gate fraction — mirror of @sentropic/graph styles.ts
+ * LABEL_DEGREE_FRACTION. Kept in lockstep so the scene-level god-class box
+ * override and the buffer-level label gate select the same central nodes.
+ */
+const LABEL_DEGREE_FRACTION = 0.15;
+
+/**
+ * Data-driven "god-class" (UAT box-label): the node_type whose nodes carry the
+ * highest degrees. Types are ranked by their MAXIMUM node degree (the class
+ * owning the global highest-degree node — Character/Sherlock in the mystery
+ * corpus), tie-broken by the count of nodes above the label gate
+ * (degree >= LABEL_DEGREE_FRACTION × maxDegree), then by type name for
+ * determinism. Central nodes of this class render as LABELLED boxes (their
+ * glyph is overridden to the box shape). Null when the graph has no edges or
+ * no typed nodes. Kept in lockstep with src/studio-scene.ts computeGodClass
+ * (parity test enforces scene equality).
+ */
+export function computeGodClass(nodes, degree, maxDegree) {
+  if (!(Number.isFinite(maxDegree) && maxDegree > 0)) return null;
+  const threshold = LABEL_DEGREE_FRACTION * maxDegree;
+  const byType = new Map();
+  for (const node of nodes) {
+    const type = nodeType(node);
+    if (!type) continue;
+    const deg = degree.get(node.id) ?? 0;
+    let rec = byType.get(type);
+    if (!rec) byType.set(type, (rec = { maxDeg: 0, gateCount: 0 }));
+    if (deg > rec.maxDeg) rec.maxDeg = deg;
+    if (deg >= threshold) rec.gateCount += 1;
+  }
+  let best = null;
+  let bestRec = null;
+  for (const [type, rec] of byType) {
+    if (
+      bestRec === null ||
+      rec.maxDeg > bestRec.maxDeg ||
+      (rec.maxDeg === bestRec.maxDeg &&
+        (rec.gateCount > bestRec.gateCount ||
+          (rec.gateCount === bestRec.gateCount && best !== null && type < best)))
+    ) {
+      best = type;
+      bestRec = rec;
+    }
+  }
+  return best;
+}
+
 const RADIUS_RATIO = 4; // rmax / rmin, matches the legacy 4->16 spread
-function weightForDegree(degree, maxDegree) {
+// UAT: the LARGEST degree-sized (non-box) glyphs read too small next to the
+// god-class boxes. Hub growth: scale a node's RADIUS by up to +HUB_GROWTH,
+// linear in degree normalised by the LARGEST DEGREE-SIZED (non-box) node. The
+// global max degree always belongs to a god-class box hub whose glyph is
+// degree-INDEPENDENT, so normalising the boost by maxDegree would waste the
+// top of the boost curve on boxes. With this, the biggest diamond/dot/etc
+// grows exactly +20% while leaves barely change (boost ~ +0 at degree ~ 0).
+// MUST stay in lockstep with src/studio-scene.ts weightForDegree.
+const HUB_GROWTH = 0.2;
+function weightForDegree(degree, maxDegree, sizedMaxDegree) {
   const max = Number.isFinite(maxDegree) && maxDegree > 0 ? maxDegree : 1;
-  const ratio = Math.min(1, Math.max(0, (Number.isFinite(degree) ? degree : 0) / max));
+  const deg = Number.isFinite(degree) ? degree : 0;
   // r_target/rmin = 1 + (RADIUS_RATIO - 1) * ratio ; weight = (r_target/rmin)^2.
+  const ratio = Math.min(1, Math.max(0, deg / max));
   const rOverRmin = 1 + (RADIUS_RATIO - 1) * ratio;
-  return rOverRmin * rOverRmin;
+  const sizedMax =
+    typeof sizedMaxDegree === "number" && Number.isFinite(sizedMaxDegree) && sizedMaxDegree > 0
+      ? sizedMaxDegree
+      : max;
+  const hubT = Math.min(1, Math.max(0, deg / sizedMax));
+  const boosted = rOverRmin * (1 + HUB_GROWTH * hubT);
+  return boosted * boosted;
+}
+
+/** Box-category scene shapes (degree-INDEPENDENT glyphs sized to their label). */
+function isBoxSceneShape(shape) {
+  const value = String(shape ?? "").toLowerCase();
+  return value === "box" || value === "roundedbox";
 }
 
 /**
@@ -266,18 +346,45 @@ export function buildScene(graph, options = {}) {
   // Autosizing is normalised by the graph's max degree (legacy method), so the
   // largest hub is rmax and a leaf is rmin regardless of the absolute degrees.
   const maxDegree = degree.size > 0 ? Math.max(...degree.values()) : 1;
+  // God-class hubs (the most-connected class's central nodes) render as
+  // labelled boxes: their glyph is overridden to the box shape so the label
+  // (gated per-type in @sentropic/graph styles.ts) sits inside the box.
+  const godClass = computeGodClass(rawNodes, degree, maxDegree);
+  const hubDegreeThreshold = LABEL_DEGREE_FRACTION * maxDegree;
 
-  const nodes = rawNodes.map((node) => {
+  // Final scene shape per node (god-class hub override > type default),
+  // resolved up front so the hub-growth boost can be normalised by the max
+  // degree among DEGREE-SIZED (non-box) nodes.
+  const finalShapes = rawNodes.map((node) => {
+    const isGodClassHub =
+      godClass !== null &&
+      nodeType(node) === godClass &&
+      (degree.get(node.id) ?? 0) >= hubDegreeThreshold;
+    // SVELTE-4: ontology type -> scene shape; god-class hubs become boxes.
+    return isGodClassHub ? "roundedbox" : shapeForType(node);
+  });
+  let sizedMaxDegree = 0;
+  rawNodes.forEach((node, index) => {
+    if (isBoxSceneShape(finalShapes[index])) return;
+    const deg = degree.get(node.id) ?? 0;
+    if (deg > sizedMaxDegree) sizedMaxDegree = deg;
+  });
+
+  const nodes = rawNodes.map((node, index) => {
     const group = nodeGroup(node);
     const type = nodeType(node);
     const x = finiteNumber(node?.x) ? node.x : finiteNumber(node?.fx) ? node.fx : undefined;
     const y = finiteNumber(node?.y) ? node.y : finiteNumber(node?.fy) ? node.fy : undefined;
+    const variant = variantForType(node);
     const out = {
       id: node.id,
       label: nodeLabel(node),
-      weight: weightForDegree(degree.get(node.id) ?? 0, maxDegree),
-      shape: shapeForType(node), // SVELTE-4: ontology type -> scene shape
+      weight: weightForDegree(degree.get(node.id) ?? 0, maxDegree, sizedMaxDegree),
+      shape: finalShapes[index],
     };
+    // Shape variants (hollow / bold) multiply the base shapes per type.
+    if (variant.fill && variant.fill !== "solid") out.fill = variant.fill;
+    if (variant.border && variant.border !== "normal") out.border = variant.border;
     if (group !== undefined) out.group = group;
     if (type) out.type = type;
     copyOwnFields(node, out, NODE_PROFILE_FIELDS);
@@ -331,6 +438,9 @@ export function buildScene(graph, options = {}) {
  *   - KEEP every node (buildScene never drops orphaned nodes), but RECOMPUTE
  *     each node's `weight` from the now-filtered degrees, re-normalised by the
  *     new max degree (a node that loses all its strong neighbours falls to rmin);
+ *   - RECOMPUTE the god-class box override from the filtered degrees: hubs of
+ *     the (possibly changed) god-class get the box glyph; an ex-hub whose box
+ *     came from the override is restored to its type's base shape;
  *   - stats: edgeCount = strong edges, weakEdgeCount = 0; nodeCount and
  *     communityCount are stable (communityCount is computed over ALL edges, so
  *     the weak filter never moves it).
@@ -348,10 +458,41 @@ export function applyWeakFilter(scene, showWeak) {
 
   const degree = computeDegrees(rawNodes, edges);
   const maxDegree = degree.size > 0 ? Math.max(...degree.values()) : 1;
+  const godClass = computeGodClass(rawNodes, degree, maxDegree);
+  const hubDegreeThreshold = LABEL_DEGREE_FRACTION * maxDegree;
 
-  const nodes = rawNodes.map((node) => ({
+  // Final shape under the filtered degrees, resolved up front (same two-pass
+  // as buildScene) so the hub-growth boost is normalised by the max degree
+  // among DEGREE-SIZED (non-box) nodes of the FILTERED scene.
+  const finalShapes = rawNodes.map((node) => {
+    const isGodClassHub =
+      godClass !== null &&
+      nodeType(node) === godClass &&
+      (degree.get(node.id) ?? 0) >= hubDegreeThreshold;
+    if (isGodClassHub) return "roundedbox";
+    if (
+      (node.shape === "roundedbox" || node.shape === "box") &&
+      nodeType(node) &&
+      shapeForType(node) !== node.shape
+    ) {
+      // The box glyph came from the god-class hub override (the type's own
+      // shape is not a box): restore the base shape now the node is no longer
+      // a hub under the filtered degrees.
+      return shapeForType(node);
+    }
+    return node.shape;
+  });
+  let sizedMaxDegree = 0;
+  rawNodes.forEach((node, index) => {
+    if (isBoxSceneShape(finalShapes[index])) return;
+    const deg = degree.get(node.id) ?? 0;
+    if (deg > sizedMaxDegree) sizedMaxDegree = deg;
+  });
+
+  const nodes = rawNodes.map((node, index) => ({
     ...node,
-    weight: weightForDegree(degree.get(node.id) ?? 0, maxDegree),
+    weight: weightForDegree(degree.get(node.id) ?? 0, maxDegree, sizedMaxDegree),
+    shape: finalShapes[index],
   }));
 
   return {

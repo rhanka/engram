@@ -47,7 +47,6 @@
     selectedIds = [],
     centerOnIds = [],
     focusId = null,
-    legend = [],
     onSelect,
     onOpenEntity,
     onEdgeHover,
@@ -121,7 +120,6 @@
   let suppressNextClick = false;
 
   const hasNodes = $derived((scene?.nodes?.length ?? 0) > 0);
-  const hasLegend = $derived((legend?.length ?? 0) > 0);
 
   function readPixelRatio() {
     if (typeof window === "undefined") return 1;
@@ -144,15 +142,18 @@
     return changed;
   }
 
+  // Returns true when a NEW renderer instance was created (first run or a
+  // devicePixelRatio change) — that renderer has no graph/style yet.
   function ensureRenderer() {
-    if (!canvas) return;
+    if (!canvas) return false;
 
     const nextPixelRatio = readPixelRatio();
-    if (renderer && nextPixelRatio === pixelRatio) return;
+    if (renderer && nextPixelRatio === pixelRatio) return false;
 
     renderer?.destroy();
     pixelRatio = nextPixelRatio;
     renderer = createGraphRenderer(canvas, { backend: "canvas2d", pixelRatio });
+    return true;
   }
 
   function fitAndRender() {
@@ -359,12 +360,25 @@
     applyPayloadNoFit();
   }
 
+  // ResizeObserver / window-resize path. Two guarantees (UAT):
+  //  1. Only act on a REAL canvas-size delta (or a recreated renderer): the
+  //     observer also fires on layout no-ops — those must not touch the view.
+  //  2. PRESERVE the camera (zoom + pan). A container resize (window resize,
+  //     left-rail content change) must NOT re-fit, re-center, or reset the
+  //     user's view — only the auto-fit paths (mount / new graph) fit.
   function handleResize() {
     if (!mounted) return;
 
-    ensureRenderer();
-    resizeCanvas();
-    applyPayload();
+    const recreated = ensureRenderer();
+    const resized = resizeCanvas();
+    if (!recreated && !resized) return;
+    if (!renderer || !payload) return;
+
+    if (recreated) {
+      renderer.setGraph(payload.renderGraph);
+      renderer.setStyle(payload.style);
+    }
+    applyCamera();
   }
 
   function scheduleResize() {
@@ -726,10 +740,6 @@
     }
   }
 
-  function legendClass(value) {
-    return String(value ?? "dot").replace(/[^a-z0-9-]/gi, "-").toLowerCase();
-  }
-
   function mergeKey(pair) {
     if (!pair) return null;
     return `${pair.id ?? ""}:${pair.from ?? ""}:${pair.into ?? ""}`;
@@ -956,23 +966,6 @@
   {#if !hasNodes}
     <p class="canvas-empty">No nodes to render. Adjust the filters or load a graph.</p>
   {/if}
-
-  {#if hasLegend}
-    <aside class="graph-legend" aria-label="Graph legend">
-      {#each legend as item, index (`${item.label ?? "legend"}-${index}`)}
-        <span class="legend-item">
-          {#if item.shape}
-            <span class={`legend-shape shape-${legendClass(item.shape)}`} aria-hidden="true"></span>
-          {:else if item.dash}
-            <span class={`legend-line dash-${legendClass(item.dash)}`} aria-hidden="true"></span>
-          {:else}
-            <span class="legend-shape shape-dot" aria-hidden="true"></span>
-          {/if}
-          <span class="legend-label">{item.label}</span>
-        </span>
-      {/each}
-    </aside>
-  {/if}
 </div>
 
 <style>
@@ -1128,112 +1121,5 @@
 
   .edge-tooltip span {
     opacity: 0.78;
-  }
-
-  .graph-legend {
-    position: absolute;
-    left: 0.75rem;
-    bottom: 0.75rem;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.45rem 0.65rem;
-    max-width: min(38rem, calc(100% - 1.5rem));
-    padding: 0.55rem 0.65rem;
-    border: 1px solid var(--st-semantic-border-muted, #e2e8f0);
-    border-radius: 6px;
-    background: color-mix(in srgb, var(--st-semantic-surface-default, #fff) 92%, transparent);
-    box-shadow: 0 8px 18px rgb(15 23 42 / 0.08);
-    color: var(--st-semantic-text-muted, #475569);
-    font-size: 0.75rem;
-    line-height: 1.2;
-    pointer-events: none;
-  }
-
-  .legend-item {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    min-width: 0;
-  }
-
-  .legend-label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .legend-shape {
-    width: 0.65rem;
-    height: 0.65rem;
-    flex: 0 0 auto;
-    border: 1.5px solid var(--st-semantic-action-primary, #2563eb);
-    background: color-mix(in srgb, var(--st-semantic-action-primary, #2563eb) 18%, transparent);
-  }
-
-  .shape-dot,
-  .shape-circle {
-    border-radius: 999px;
-  }
-
-  .shape-square,
-  .shape-box {
-    border-radius: 2px;
-  }
-
-  .shape-roundedbox {
-    border-radius: 4px;
-  }
-
-  .shape-diamond {
-    transform: rotate(45deg);
-  }
-
-  .shape-hexagon {
-    clip-path: polygon(25% 4%, 75% 4%, 100% 50%, 75% 96%, 25% 96%, 0 50%);
-  }
-
-  .shape-star {
-    clip-path: polygon(
-      50% 0,
-      61% 35%,
-      98% 35%,
-      68% 57%,
-      79% 91%,
-      50% 70%,
-      21% 91%,
-      32% 57%,
-      2% 35%,
-      39% 35%
-    );
-  }
-
-  .shape-triangle {
-    width: 0;
-    height: 0;
-    border-left: 0.38rem solid transparent;
-    border-right: 0.38rem solid transparent;
-    border-bottom: 0.68rem solid var(--st-semantic-action-primary, #2563eb);
-    background: transparent;
-  }
-
-  .legend-line {
-    width: 1.25rem;
-    height: 0;
-    flex: 0 0 auto;
-    border-top: 2px solid var(--st-semantic-text-muted, #64748b);
-  }
-
-  .dash-dashed {
-    border-top-style: dashed;
-  }
-
-  .dash-dotted {
-    border-top-style: dotted;
-  }
-
-  .dash-long-dash {
-    border-top-style: dashed;
-    width: 1.55rem;
   }
 </style>

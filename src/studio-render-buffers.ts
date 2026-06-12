@@ -131,6 +131,14 @@ export function buildStudioRenderBuffers(
     return {
       id: node.id,
       label: node.label,
+      // Node type feeds the god-class label gate in @sentropic/graph
+      // buildStyleBuffers (only the hub class's boxes carry the in-box label).
+      node_type:
+        typeof node.node_type === "string" && node.node_type
+          ? node.node_type
+          : typeof node.type === "string" && node.type
+            ? node.type
+            : undefined,
       x: position.x,
       y: position.y,
       fx: finiteNumber(node.fx) ? node.fx : undefined,

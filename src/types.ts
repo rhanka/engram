@@ -567,12 +567,26 @@ export type OntologyVisualEncodingShape =
   | "star"
   | "hexagon";
 
+/**
+ * Glyph fill variant: "solid" (default) paints the shape in the node colour;
+ * "hollow" draws the outline only (translucent fill + node-coloured border).
+ * Extra encoding dimension so node types sharing a shape stay distinguishable.
+ */
+export type OntologyVisualEncodingFill = "solid" | "hollow";
+
+/** Glyph border weight: "normal" (default) or "bold" (heavier outline). */
+export type OntologyVisualEncodingBorder = "normal" | "bold";
+
 export interface OntologyVisualEncoding {
   shape?: OntologyVisualEncodingShape;
   /** "#RRGGBB" or "#RRGGBBAA" hex color used for the node border (and
    *  background for non-outlined shapes). Validated by
    *  validateOntologyProfile. */
   color_hex?: string;
+  /** Fill variant (default "solid"). Additive: absent keeps today's render. */
+  fill?: OntologyVisualEncodingFill;
+  /** Border weight (default "normal"). Additive: absent keeps today's render. */
+  border?: OntologyVisualEncodingBorder;
 }
 
 export interface OntologyNodeType {

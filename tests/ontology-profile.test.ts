@@ -393,6 +393,59 @@ describe("ontology profile loader", () => {
     expect(profile.node_types.Crime.visual_encoding).toEqual({ shape: "star", color_hex: "#FF000088" });
   });
 
+  it("accepts visual_encoding fill + border shape variants on node types", () => {
+    const raw = parseOntologyProfile(
+      [
+        "id: visual-variant-demo",
+        "version: 1",
+        "node_types:",
+        "  Alias:",
+        "    visual_encoding:",
+        "      shape: diamond",
+        "      fill: hollow",
+        "  Author:",
+        "    visual_encoding:",
+        "      shape: star",
+        "      border: bold",
+        "  Character:",
+        "    visual_encoding:",
+        "      fill: solid",
+        "      border: normal",
+        "relation_types: {}",
+        "",
+      ].join("\n"),
+      "ontology-profile.yaml",
+    );
+    expect(validateOntologyProfile(raw)).toEqual([]);
+    const profile = normalizeOntologyProfile(raw);
+    expect(profile.node_types.Alias.visual_encoding).toEqual({ shape: "diamond", fill: "hollow" });
+    expect(profile.node_types.Author.visual_encoding).toEqual({ shape: "star", border: "bold" });
+  });
+
+  it("rejects unknown visual_encoding fill / border variants", () => {
+    const raw = parseOntologyProfile(
+      [
+        "id: bad-variants",
+        "version: 1",
+        "node_types:",
+        "  Character:",
+        "    visual_encoding:",
+        "      fill: striped",
+        "      border: dashed",
+        "relation_types: {}",
+        "",
+      ].join("\n"),
+      "ontology-profile.yaml",
+    );
+    const errors = validateOntologyProfile(raw);
+    expect(errors).toContain(
+      "node_types.Character.visual_encoding.fill must be one of solid, hollow (got striped)",
+    );
+    expect(errors).toContain(
+      "node_types.Character.visual_encoding.border must be one of normal, bold (got dashed)",
+    );
+  });
+
   it("rejects unknown vis.js shapes in visual_encoding (Track C-3.5)", () => {
     const raw = parseOntologyProfile(
       [
