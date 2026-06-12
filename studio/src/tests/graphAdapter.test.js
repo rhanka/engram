@@ -495,6 +495,59 @@ describe("attachReconLayout (#2.2 — local recon layout)", () => {
   });
 });
 
+describe("reconTwinPinOffset (focal box overlap fix)", () => {
+  // Deterministic measure stub: linear in font size, 0.5 × size per char —
+  // mirrors the linearity the world-width derivation relies on.
+  const measure = (text, font) => text.length * Number.parseFloat(font) * 0.5;
+  const BOX_H = 18; // renderer BOX_BASE_HEIGHT_PX
+
+  it("separates two wide identical labels: 2dx ≥ halfA + halfB + gap", async () => {
+    const { reconTwinPinOffset, reconBoxWorldWidth } = await import("../lib/graphAdapter.js");
+    const label = "Dr. John H. Watson";
+    const opts = { pixelRatio: 2, measure };
+    const w = reconBoxWorldWidth(label, opts);
+    const dx = reconTwinPinOffset(label, label, opts);
+    // Boxes centred at ±dx: edges at dx − w/2 must not cross the centre line,
+    // and the world gap equals 2dx − w (≥ half a box height = 18 × pr × 0.5).
+    expect(2 * dx - w).toBeGreaterThanOrEqual(BOX_H * 2 * 0.5 - 1e-9);
+    // Width formula parity with renderer boxDimensions (world units):
+    // height = 18 × pr; font = h × 12/22; width = textW + 2 × h × 5/22.
+    const h = BOX_H * 2;
+    const expected = measure(label, `${h * (12 / 22)}px sans-serif`) + 2 * h * (5 / 22);
+    expect(w).toBeCloseTo(expected, 9);
+  });
+
+  it("keeps short labels compact (spacing tracks the actual widths)", async () => {
+    const { reconTwinPinOffset } = await import("../lib/graphAdapter.js");
+    const opts = { pixelRatio: 2, measure };
+    const short = reconTwinPinOffset("221B", "221B", opts);
+    const long = reconTwinPinOffset("Dr. John H. Watson", "Dr. John H. Watson", opts);
+    expect(short).toBeLessThan(long);
+    // A 4-char pair needs far less than the legacy hand-tuned 45 × pr scale.
+    expect(short).toBeLessThan(long / 2);
+  });
+
+  it("handles asymmetric and empty labels (empty box collapse)", async () => {
+    const { reconTwinPinOffset, reconBoxWorldWidth } = await import("../lib/graphAdapter.js");
+    const opts = { pixelRatio: 1, measure };
+    // Empty label: legacy hidden-font collapse — width = height × 10/22.
+    expect(reconBoxWorldWidth("", opts)).toBeCloseTo(BOX_H * (10 / 22), 9);
+    const wA = reconBoxWorldWidth("A very long canonical label", opts);
+    const wB = reconBoxWorldWidth("", opts);
+    const dx = reconTwinPinOffset("A very long canonical label", "", opts);
+    expect(2 * dx).toBeGreaterThanOrEqual(wA / 2 + wB / 2 + BOX_H * 0.5 - 1e-9);
+  });
+
+  it("falls back to a glyph-ratio estimate without Canvas2D (jsdom)", async () => {
+    const { reconTwinPinOffset } = await import("../lib/graphAdapter.js");
+    // No `measure` injected: jsdom has no 2d context, so the fallback path
+    // must still return a finite, positive offset.
+    const dx = reconTwinPinOffset("Dr. John H. Watson", "Dr. John H. Watson", { pixelRatio: 2 });
+    expect(Number.isFinite(dx)).toBe(true);
+    expect(dx).toBeGreaterThan(45); // strictly wider than the old constant
+  });
+});
+
 describe("memoised graph index (quick-win C) — parity with the old filter+sort", () => {
   // A graph with several types/communities and out-of-order labels to make the
   // sort observable. A fresh object per assertion-block so the WeakMap cache is
