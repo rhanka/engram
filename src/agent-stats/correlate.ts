@@ -241,6 +241,46 @@ export function correlate(input: CorrelateInput): CorrelationLink[] {
   return links;
 }
 
+/** A commit claimed by more than one agent (spoof / data-quality signal). */
+export interface CommitConflict {
+  /** 7-char lowercase sha prefix identifying the contested commit. */
+  sha: string;
+  branch?: string;
+  /** The competing claims, strongest rank first. */
+  agents: { agentId: string; rule: CorrelationLink["rule"]; confidence: CorrelationLink["confidence"]; rank: number }[];
+}
+
+/**
+ * Detect commits attributed to MORE THAN ONE distinct agent. Two sessions of
+ * the SAME agent claiming a commit is normal (resumed session); two different
+ * agents claiming it is not — it means a spoof slipped through or the evidence
+ * is ambiguous. Surfaced in the report instead of silently picking a winner.
+ */
+export function detectCommitConflicts(links: CorrelationLink[]): CommitConflict[] {
+  const bySha = new Map<string, { branch?: string; claims: Map<string, CommitConflict["agents"][number]> }>();
+  for (const l of links) {
+    if (l.target.kind !== "commit") continue;
+    const key = l.target.sha.slice(0, 7).toLowerCase();
+    let entry = bySha.get(key);
+    if (!entry) bySha.set(key, (entry = { branch: l.target.branch, claims: new Map() }));
+    if (!entry.branch && l.target.branch) entry.branch = l.target.branch;
+    const prev = entry.claims.get(l.agentId);
+    if (!prev || l.rank < prev.rank) {
+      entry.claims.set(l.agentId, { agentId: l.agentId, rule: l.rule, confidence: l.confidence, rank: l.rank });
+    }
+  }
+  const conflicts: CommitConflict[] = [];
+  for (const [sha, entry] of bySha) {
+    if (entry.claims.size < 2) continue;
+    conflicts.push({
+      sha,
+      branch: entry.branch,
+      agents: Array.from(entry.claims.values()).sort((a, b) => a.rank - b.rank || a.agentId.localeCompare(b.agentId)),
+    });
+  }
+  return conflicts.sort((a, b) => a.sha.localeCompare(b.sha));
+}
+
 /** Index merged-PR attributions by branch (skips entries without a branch). */
 function indexPrMergesByBranch(merges: PrMergeMeta[]): Map<string, PrMergeMeta> {
   const out = new Map<string, PrMergeMeta>();
