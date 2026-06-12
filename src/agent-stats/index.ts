@@ -10,7 +10,7 @@ import { closeSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { safeExecGit } from "../git.js";
 import { resolveIdentity } from "./identity.js";
-import { parseAgyChat } from "./agy-chat.js";
+import { parseAgyChats } from "./agy-chat.js";
 import { parseClaudeTranscript } from "./claude-transcript.js";
 import { parseCodexRollout } from "./codex-rollout.js";
 import { correlate, detectCommitConflicts, type CommitConflict, type GitCommitMeta, type PrMergeMeta } from "./correlate.js";
@@ -105,24 +105,27 @@ function parseFile(
   file: TranscriptFile,
   home: string,
   scope?: { repoRoot: string; originRepo?: string },
-): { fact: SessionFact; agyHash?: string } | null {
+): { fact: SessionFact; agyHash?: string }[] {
   let content: string;
   try {
     content = readFileSync(file.path, "utf-8");
   } catch {
-    return null;
+    return [];
   }
   const parseOpts = { scopeRoot: scope?.repoRoot, originRepo: scope?.originRepo };
   if (file.host === "claude") {
-    return { fact: normalizeClaude(parseClaudeTranscript(content, file.sessionId, home, parseOpts)) };
+    return [{ fact: normalizeClaude(parseClaudeTranscript(content, file.sessionId, home, parseOpts)) }];
   }
   if (file.host === "codex") {
-    return { fact: normalizeCodex(parseCodexRollout(content, file.sessionId, home, parseOpts)) };
+    return [{ fact: normalizeCodex(parseCodexRollout(content, file.sessionId, home, parseOpts)) }];
   }
-  const raw = parseAgyChat(content, file.sessionId);
-  // agy projectHash is on the header; if absent, derive from the dir name.
+  // agy: a single chat file may hold several logical sessions.
+  // projectHash is on the header; if absent, derive from the dir name.
   const projectHashFromDir = file.path.match(/\.gemini\/tmp\/([^/]+)\//)?.[1];
-  return { fact: normalizeAgy(raw), agyHash: raw.projectHash ?? projectHashFromDir };
+  return parseAgyChats(content, file.sessionId, home, parseOpts).map((raw) => ({
+    fact: normalizeAgy(raw),
+    agyHash: raw.projectHash ?? projectHashFromDir,
+  }));
 }
 
 /** Read up to `maxBytes` from the start of a file (cheap header peek). */
@@ -216,14 +219,15 @@ export function syncAgentStats(opts: SyncOptions): SyncResult {
       continue;
     }
 
-    const result = parseFile(file, home, { repoRoot: opts.repoRoot, originRepo });
+    const results = parseFile(file, home, { repoRoot: opts.repoRoot, originRepo });
     cursors.set(file.path, cursorCurrent(prev, file.path)!);
-    if (!result) continue;
+    if (results.length === 0) continue;
     parsed++;
-    const { fact, agyHash } = result;
-    if (!factInRepo(fact, scope, agyHash)) continue;
-    inRepo++;
-    facts.set(fact.factId, fact);
+    for (const { fact, agyHash } of results) {
+      if (!factInRepo(fact, scope, agyHash)) continue;
+      inRepo++;
+      facts.set(fact.factId, fact);
+    }
   }
 
   saveFacts(store, facts);
