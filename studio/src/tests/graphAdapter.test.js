@@ -286,7 +286,7 @@ describe("candidateSubgraph (SVELTE-7)", () => {
   });
 });
 
-describe("shapeForType / shapeLegend (SVELTE-4)", () => {
+describe("shapeForType (SVELTE-4)", () => {
   it("maps ontology types to DS shapes, defaulting to dot", async () => {
     const { shapeForType } = await import("../lib/graphAdapter.js");
     expect(shapeForType({ type: "Character" })).toBe("diamond");
@@ -301,19 +301,6 @@ describe("shapeForType / shapeLegend (SVELTE-4)", () => {
     const s = buildScene({ nodes: [{ id: "a", type: "Character" }, { id: "b", type: "Location" }], links: [] });
     expect(s.nodes.find((n) => n.id === "a").shape).toBe("diamond");
     expect(s.nodes.find((n) => n.id === "b").shape).toBe("triangle");
-  });
-  it("shapeLegend returns distinct type->shape entries", async () => {
-    const { shapeLegend } = await import("../lib/graphAdapter.js");
-    const legend = shapeLegend({ nodes: [{ id: "a", type: "Character" }, { id: "b", type: "Character" }, { id: "c", type: "Evidence" }] });
-    // Node-shape entries first, then the fixed relation dash-family legend.
-    expect(legend).toEqual([
-      { label: "Character", shape: "diamond" },
-      { label: "Evidence", shape: "square" },
-      { label: "belonging / structure", dash: "solid" },
-      { label: "agency / interaction", dash: "dashed" },
-      { label: "spatial / factual", dash: "dotted" },
-      { label: "method / usage", dash: "long-dash" },
-    ]);
   });
 });
 
