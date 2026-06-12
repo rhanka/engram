@@ -231,6 +231,27 @@ describe("portable graphify artifacts", () => {
     expect(result.ignoredLocalFiles).toEqual(["scratch/notes.md", "uat/routes.md"]);
   });
 
+  it("nit (e): treats the .graphify_describe_pending marker as an ignored local lifecycle file", () => {
+    // The describe-pending marker is a `.graphify_`-prefixed lifecycle file. It
+    // must never be scanned as a commit-safe artifact nor surface in diffs — it
+    // is local-only state that the next `graphify update` consumes.
+    const root = tempProject();
+    const graphifyDir = join(root, ".graphify");
+    mkdirSync(graphifyDir, { recursive: true });
+    writeFileSync(join(graphifyDir, "graph.json"), JSON.stringify({ nodes: [], links: [] }), "utf-8");
+    writeFileSync(
+      join(graphifyDir, ".graphify_describe_pending"),
+      `Graph rebuilt by the fast git hook without descriptions/labels. (${join(root, "src")})\n`,
+      "utf-8",
+    );
+
+    const result = scanPortableGraphifyArtifacts(graphifyDir);
+
+    expect(result.ok).toBe(true);
+    expect(result.checkedFiles).toEqual(["graph.json"]);
+    expect(result.ignoredLocalFiles).toContain(".graphify_describe_pending");
+  });
+
   it("ignores dated local snapshots with preexisting absolute manifest keys", () => {
     const root = tempProject();
     const graphifyDir = join(root, ".graphify");
