@@ -96,11 +96,26 @@ function edgeWidth(edge) {
   return 1;
 }
 
+/**
+ * Box-category scene shapes (legacy vis-network `shape:box` parity). Box nodes
+ * draw their OWN label inside the canvas glyph, so every other label layer
+ * (the DOM overlay in GraphCanvas) must skip them — one text per box, always.
+ * @param {unknown} shape  the scene node `shape` string
+ * @returns {boolean} true when the node renders as a labelled rounded box
+ */
+export function isBoxShape(shape) {
+  const value = String(shape ?? "").toLowerCase();
+  return value === "box" || value === "roundedbox";
+}
+
 function cloneStyle(style) {
   return {
     nodeSizes: new Float32Array(style.nodeSizes),
     nodeColors: new Uint8Array(style.nodeColors),
     nodeShapes: new Uint8Array(style.nodeShapes),
+    // Carry the legacy box labels through dim / merge re-styling so box glyphs
+    // keep their text when a node is selected, hovered, or focused.
+    nodeLabels: style.nodeLabels ? [...style.nodeLabels] : undefined,
     edgeWidths: new Float32Array(style.edgeWidths),
     edgeColors: new Uint8Array(style.edgeColors),
     edgeDash: new Uint8Array(style.edgeDash),
