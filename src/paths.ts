@@ -99,6 +99,13 @@ export interface GraphifyPaths {
   memoryDir: string;
   wikiDir: string;
   needsUpdate: string;
+  /**
+   * Marker written by the fast git-hook rebuild (`hook-rebuild`, LLM-free) to
+   * signal that the graph still needs descriptions + salient labels filled in.
+   * Cleared by a describe/label-producing run (`update`, default-on). Consumed
+   * as a nudge by `check-update`.
+   */
+  describePending: string;
   profile: GraphifyProfilePaths;
   imageDataprep: GraphifyImageDataprepPaths;
   ontologyOutput: GraphifyOntologyOutputPaths;
@@ -155,6 +162,7 @@ export function resolveGraphifyPaths(options: GraphifyPathOptions = {}): Graphif
     memoryDir: join(stateDir, "memory"),
     wikiDir: join(stateDir, "wiki"),
     needsUpdate: join(stateDir, "needs_update"),
+    describePending: join(stateDir, ".graphify_describe_pending"),
     profile: {
       dir: profileDir,
       projectConfig: join(profileDir, "project-config.normalized.json"),
