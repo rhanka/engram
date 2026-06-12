@@ -73,6 +73,32 @@ describe("buildStyleBuffers", () => {
     expect(labels[indexOf("a")]).toBe(""); // non-box
   });
 
+  it("reserves the box label to the god-class (the type owning the highest-degree node)", () => {
+    // sherlock: Character hub (degree 3, global max) -> god-class box, labelled.
+    // work: Work box, central too (degree 2 >= 15% of max=3) but NOT god-class
+    // -> no label (renders as the small empty box).
+    const scene = {
+      nodes: [
+        { id: "sherlock", x: 0, y: 0, shape: "roundedbox", node_type: "Character", label: "Sherlock Holmes" },
+        { id: "work", x: 10, y: 0, shape: "roundedbox", node_type: "Work", label: "The Memoirs" },
+        { id: "a", x: 0, y: 10, shape: "dot", node_type: "Location" },
+        { id: "b", x: 0, y: 20, shape: "dot", node_type: "Location" },
+      ],
+      edges: [
+        { source: "sherlock", target: "a" },
+        { source: "sherlock", target: "b" },
+        { source: "sherlock", target: "work" },
+        { source: "work", target: "a" },
+      ],
+    };
+    const graph = buildRenderGraphBuffers(scene);
+    const style = buildStyleBuffers(scene, graph);
+    const labels = style.nodeLabels ?? [];
+    const indexOf = (id: string) => graph.nodeIds.indexOf(id);
+    expect(labels[indexOf("sherlock")]).toBe("Sherlock Holmes"); // god-class hub
+    expect(labels[indexOf("work")]).toBe(""); // central box, wrong class
+  });
+
   it("maps fill / border shape variants into nodeFills / nodeBorders (default 0)", () => {
     const scene = {
       nodes: [
