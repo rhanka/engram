@@ -73,10 +73,18 @@
     // DROP each subgraph node's inherited x/y so only the twins' fx/fy seed the
     // local sim; the neighbours are placed by the layout, not their stale coords.
     const cx = 360, cy = 280, dx = 45;
+    // Recon focal-pair parity: the two entities under comparison must ALWAYS
+    // render IDENTICALLY — both as labelled rounded boxes — regardless of the
+    // degree-based god-class box gate in buildScene (which would otherwise box
+    // the high-degree canonical but leave the unmerged candidate twin as its
+    // type glyph). View-scoped override: `forceBoxLabel` tells the renderer
+    // payload to bypass the degree/god-class label gate so BOTH boxes carry
+    // their text in-box. The surrounding neighbours keep their normal shapes.
+    const focal = { shape: "roundedbox", forceBoxLabel: true };
     const nodes = linked.nodes.map((n) => {
       const { x: _x, y: _y, fx: _fx, fy: _fy, ...rest } = n;
-      if (n.id === active.candidate_id) return { ...rest, fx: cx - dx, fy: cy };
-      if (n.id === active.canonical_id) return { ...rest, fx: cx + dx, fy: cy };
+      if (n.id === active.candidate_id) return { ...rest, ...focal, fx: cx - dx, fy: cy };
+      if (n.id === active.canonical_id) return { ...rest, ...focal, fx: cx + dx, fy: cy };
       return rest;
     });
     // Run the local layout (twins fixed) so neighbours arrange around the pair.
