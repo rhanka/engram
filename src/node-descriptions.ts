@@ -71,7 +71,13 @@ function isCodeNode(attrs: Record<string, unknown>): boolean {
   return safeString(attrs.file_type) === "code";
 }
 
-interface NodeContext {
+/** Snippet length cap for an individual citation/evidence string. */
+const CITATION_MAXLEN = 120;
+
+/** Max citation / evidence entries injected per node prompt line. */
+const MAX_CITATIONS = 3;
+
+export interface NodeContext {
   id: string;
   label: string;
   isCode: boolean;
@@ -80,6 +86,69 @@ interface NodeContext {
   nodeType: string | null;
   degree: number;
   neighbors: string[];
+  /**
+   * Short grounding snippets pulled from the node's `citations` /
+   * `evidence_refs` attributes (entity nodes from the mystery / ontology
+   * graph). Empty for code symbols or unsupported nodes. A node WITH grounding
+   * here must be describable (Phase 1 reliability guarantee).
+   */
+  citations: string[];
+}
+
+/**
+ * Collect short citation / evidence snippets from an entity node's attributes.
+ * Reads `citations` (array of OntologyCitation-shaped objects: source_file,
+ * quote, page, section, …) and `evidence_refs` (string[]). Returns a small,
+ * deduped, truncated list suitable for direct injection into a prompt line.
+ */
+function collectCitationContext(attrs: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (value: string): void => {
+    const snippet = truncate(value, CITATION_MAXLEN);
+    const key = snippet.toLowerCase();
+    if (snippet && !seen.has(key) && out.length < MAX_CITATIONS) {
+      seen.add(key);
+      out.push(snippet);
+    }
+  };
+
+  const citations = attrs.citations;
+  if (Array.isArray(citations)) {
+    for (const entry of citations) {
+      if (out.length >= MAX_CITATIONS) break;
+      if (typeof entry === "string") {
+        push(entry);
+        continue;
+      }
+      if (entry && typeof entry === "object") {
+        const rec = entry as Record<string, unknown>;
+        // Prefer a human-readable quote/text; fall back to a source locator.
+        const quote = safeString(rec.quote) ?? safeString(rec.text) ?? safeString(rec.snippet);
+        const locatorParts = [
+          safeString(rec.source_file) ?? safeString(rec.source_url),
+          rec.page != null ? `p.${String(rec.page)}` : null,
+          safeString(rec.section),
+        ].filter((p): p is string => Boolean(p));
+        if (quote) {
+          push(locatorParts.length > 0 ? `${quote} (${locatorParts.join(", ")})` : quote);
+        } else if (locatorParts.length > 0) {
+          push(locatorParts.join(", "));
+        }
+      }
+    }
+  }
+
+  const evidenceRefs = attrs.evidence_refs;
+  if (Array.isArray(evidenceRefs)) {
+    for (const ref of evidenceRefs) {
+      if (out.length >= MAX_CITATIONS) break;
+      const value = safeString(ref);
+      if (value) push(value);
+    }
+  }
+
+  return out;
 }
 
 function collectNeighbors(G: Graph, nodeId: string, limit: number): string[] {
@@ -94,17 +163,20 @@ function collectNeighbors(G: Graph, nodeId: string, limit: number): string[] {
   return out;
 }
 
-function collectNodeContext(G: Graph, nodeId: string): NodeContext {
+export function collectNodeContext(G: Graph, nodeId: string): NodeContext {
   const attrs = G.getNodeAttributes(nodeId) as Record<string, unknown>;
+  const isCode = isCodeNode(attrs);
   return {
     id: nodeId,
     label: truncate(safeString(attrs.label) ?? nodeId),
-    isCode: isCodeNode(attrs),
+    isCode,
     sourceFile: safeString(attrs.source_file),
     sourceLocation: safeString(attrs.source_location),
     nodeType: safeString(attrs.node_type),
     degree: G.degree(nodeId),
     neighbors: collectNeighbors(G, nodeId, 6),
+    // Citation grounding only matters for entity nodes; skip the work for code.
+    citations: isCode ? [] : collectCitationContext(attrs),
   };
 }
 
@@ -121,13 +193,25 @@ function rankNodes(G: Graph): string[] {
   });
 }
 
+/** True when the batch contains at least one non-code (entity) node. */
+function hasEntityNode(contexts: NodeContext[]): boolean {
+  return contexts.some((ctx) => !ctx.isCode);
+}
+
+/** True when the batch contains at least one code-symbol node. */
+function hasCodeNode(contexts: NodeContext[]): boolean {
+  return contexts.some((ctx) => ctx.isCode);
+}
+
 /** Build the JSON-line context for one node inside a batch prompt. */
 function nodePromptLine(ctx: NodeContext): string {
   const parts: string[] = [`"${ctx.id}": ${JSON.stringify(ctx.label)}`];
   if (ctx.isCode) {
     parts.push("kind=code-symbol");
-  } else if (ctx.nodeType) {
-    parts.push(`kind=${ctx.nodeType}`);
+  } else {
+    // Entity nodes: lead with their declared type so the model anchors the
+    // description on what the entity IS, not just its label.
+    parts.push(`kind=${ctx.nodeType ?? "entity"}`);
   }
   if (ctx.sourceFile) {
     parts.push(`source=${ctx.sourceFile}${ctx.sourceLocation ? `:${ctx.sourceLocation}` : ""}`);
@@ -135,22 +219,47 @@ function nodePromptLine(ctx: NodeContext): string {
   if (ctx.neighbors.length > 0) {
     parts.push(`neighbors=[${ctx.neighbors.join(", ")}]`);
   }
+  // Citation / evidence grounding for entity nodes (empty for code symbols).
+  if (ctx.citations.length > 0) {
+    parts.push(`citations=[${ctx.citations.map((c) => JSON.stringify(c)).join(", ")}]`);
+  }
   return `- ${parts.join(" | ")}`;
 }
 
 export function buildNodeDescriptionPrompt(contexts: NodeContext[]): string {
-  return [
-    "You are documenting nodes in a code knowledge graph. For each entry below,",
-    "write ONE concise plain-language sentence describing what it is or does.",
-    "For a code symbol (a function, class, or constant), describe what the",
-    "function/symbol does based on its name, source location and neighbors —",
-    "e.g. \"Resolves the configured ontology profile from graphify.yaml.\".",
-    "Do not speculate beyond the provided context, no marketing language.",
+  // A batch may be all code, all entity, or mixed. We emit guidance for both
+  // kinds and let each prompt line's `kind=` marker steer the model per node.
+  // Keeping a single batched call preserves the on-by-default cost bound.
+  const header = ["You are documenting nodes in a knowledge graph."];
+  header.push(
+    "For each entry below, write ONE concise factual plain-language sentence",
+    "describing what it is or does. Use only the provided context.",
+  );
+  if (hasCodeNode(contexts)) {
+    header.push(
+      "For a code symbol (kind=code-symbol — a function, class, or constant),",
+      "describe what the function/symbol does based on its name, source location",
+      "and neighbors — e.g. \"Resolves the configured ontology profile from graphify.yaml.\".",
+    );
+  }
+  if (hasEntityNode(contexts)) {
+    header.push(
+      "For an entity node (any other kind — e.g. a person, place, event, object),",
+      "describe what the entity is and its role, grounded in its type, its",
+      "relations (neighbors) and the provided citations/evidence — e.g.",
+      "\"Lady Carfax, a wealthy heiress who disappears en route to Lausanne.\".",
+      "Ground entity descriptions in the citations/evidence when present; do not",
+      "speculate beyond the context, so a node with no supporting context may be",
+      "left out of the reply.",
+    );
+  }
+  header.push(
+    "No marketing language.",
     "Respond ONLY with a JSON object mapping each node id (as a string) to its",
     "one-sentence description — no prose, no markdown fences.",
     "",
-    ...contexts.map(nodePromptLine),
-  ].join("\n");
+  );
+  return [...header, ...contexts.map(nodePromptLine)].join("\n");
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
