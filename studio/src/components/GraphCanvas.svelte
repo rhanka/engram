@@ -142,15 +142,18 @@
     return changed;
   }
 
+  // Returns true when a NEW renderer instance was created (first run or a
+  // devicePixelRatio change) — that renderer has no graph/style yet.
   function ensureRenderer() {
-    if (!canvas) return;
+    if (!canvas) return false;
 
     const nextPixelRatio = readPixelRatio();
-    if (renderer && nextPixelRatio === pixelRatio) return;
+    if (renderer && nextPixelRatio === pixelRatio) return false;
 
     renderer?.destroy();
     pixelRatio = nextPixelRatio;
     renderer = createGraphRenderer(canvas, { backend: "canvas2d", pixelRatio });
+    return true;
   }
 
   function fitAndRender() {
@@ -357,12 +360,25 @@
     applyPayloadNoFit();
   }
 
+  // ResizeObserver / window-resize path. Two guarantees (UAT):
+  //  1. Only act on a REAL canvas-size delta (or a recreated renderer): the
+  //     observer also fires on layout no-ops — those must not touch the view.
+  //  2. PRESERVE the camera (zoom + pan). A container resize (window resize,
+  //     left-rail content change) must NOT re-fit, re-center, or reset the
+  //     user's view — only the auto-fit paths (mount / new graph) fit.
   function handleResize() {
     if (!mounted) return;
 
-    ensureRenderer();
-    resizeCanvas();
-    applyPayload();
+    const recreated = ensureRenderer();
+    const resized = resizeCanvas();
+    if (!recreated && !resized) return;
+    if (!renderer || !payload) return;
+
+    if (recreated) {
+      renderer.setGraph(payload.renderGraph);
+      renderer.setStyle(payload.style);
+    }
+    applyCamera();
   }
 
   function scheduleResize() {
