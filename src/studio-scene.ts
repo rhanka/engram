@@ -241,9 +241,11 @@ const TYPE_SHAPE: Record<string, string> = {
   Evidence: "square",
   Object: "square",
   ForensicMethod: "hexagon",
-  // Legacy vis-network parity: only Work + ChapterOrStory are box glyphs
-  // (labelled rounded rect). Saga / Author / Translator carry their own
-  // ontological shapes, matching public-pack ontology-profile.yaml.
+  // Legacy vis-network parity: Work + ChapterOrStory keep the box SHAPE, but
+  // the in-box LABEL is reserved to the data-driven god-class hubs (see
+  // computeGodClass) — non-god-class boxes render as small empty rounded
+  // rects. Saga / Author / Translator carry their own ontological shapes,
+  // matching public-pack ontology-profile.yaml.
   Work: "roundedbox",
   ChapterOrStory: "roundedbox",
   Saga: "hexagon",
@@ -342,6 +344,58 @@ function computeDegrees(
 }
 
 /**
+ * Box-label gate fraction — mirror of @sentropic/graph styles.ts
+ * LABEL_DEGREE_FRACTION. Kept in lockstep so the scene-level god-class box
+ * override and the buffer-level label gate select the same central nodes.
+ */
+const LABEL_DEGREE_FRACTION = 0.15;
+
+/**
+ * Data-driven "god-class" (UAT box-label): the node_type whose nodes carry the
+ * highest degrees. Types are ranked by their MAXIMUM node degree (the class
+ * owning the global highest-degree node — Character/Sherlock in the mystery
+ * corpus), tie-broken by the count of nodes above the label gate
+ * (degree >= LABEL_DEGREE_FRACTION × maxDegree), then by type name for
+ * determinism. Central nodes of this class render as LABELLED boxes (their
+ * glyph is overridden to the box shape). Null when the graph has no edges or
+ * no typed nodes. Kept in lockstep with studio/src/lib/graphAdapter.js
+ * computeGodClass (parity test enforces scene equality).
+ */
+function computeGodClass(
+  nodes: StudioSceneGraphNode[],
+  degree: Map<string, number>,
+  maxDegree: number,
+): string | null {
+  if (!(Number.isFinite(maxDegree) && maxDegree > 0)) return null;
+  const threshold = LABEL_DEGREE_FRACTION * maxDegree;
+  const byType = new Map<string, { maxDeg: number; gateCount: number }>();
+  for (const node of nodes) {
+    const type = nodeType(node);
+    if (!type) continue;
+    const deg = degree.get(node.id) ?? 0;
+    let rec = byType.get(type);
+    if (!rec) byType.set(type, (rec = { maxDeg: 0, gateCount: 0 }));
+    if (deg > rec.maxDeg) rec.maxDeg = deg;
+    if (deg >= threshold) rec.gateCount += 1;
+  }
+  let best: string | null = null;
+  let bestRec: { maxDeg: number; gateCount: number } | null = null;
+  for (const [type, rec] of byType) {
+    if (
+      bestRec === null ||
+      rec.maxDeg > bestRec.maxDeg ||
+      (rec.maxDeg === bestRec.maxDeg &&
+        (rec.gateCount > bestRec.gateCount ||
+          (rec.gateCount === bestRec.gateCount && best !== null && type < best)))
+    ) {
+      best = type;
+      bestRec = rec;
+    }
+  }
+  return best;
+}
+
+/**
  * Legacy autosizing: node radius is LINEAR in degree, NORMALISED by the graph's
  * max degree. weight = (1 + (RADIUS_RATIO - 1) * (deg / maxDeg))^2.
  */
@@ -407,6 +461,11 @@ export function buildStudioScene(
 
   const degree = computeDegrees(rawNodes, edges);
   const maxDegree = degree.size > 0 ? Math.max(...degree.values()) : 1;
+  // God-class hubs (the most-connected class's central nodes) render as
+  // labelled boxes: their glyph is overridden to the box shape so the label
+  // (gated per-type in @sentropic/graph styles.ts) sits inside the box.
+  const godClass = computeGodClass(rawNodes, degree, maxDegree);
+  const hubDegreeThreshold = LABEL_DEGREE_FRACTION * maxDegree;
 
   const nodes: StudioSceneNode[] = rawNodes.map((node) => {
     const group = nodeGroup(node);
@@ -419,11 +478,13 @@ export function buildStudioScene(
     const variant = variantForType(node);
     const fill = displayValue(encoding?.fill) ?? variant.fill;
     const border = displayValue(encoding?.border) ?? variant.border;
+    const isGodClassHub =
+      godClass !== null && type === godClass && (degree.get(node.id) ?? 0) >= hubDegreeThreshold;
     const out: StudioSceneNode = {
       id: node.id,
       label: nodeLabel(node),
       weight: weightForDegree(degree.get(node.id) ?? 0, maxDegree),
-      shape: displayValue(encoding?.shape) ?? shapeForType(node),
+      shape: isGodClassHub ? "roundedbox" : (displayValue(encoding?.shape) ?? shapeForType(node)),
     };
     if (fill && fill !== "solid") out.fill = fill;
     if (border && border !== "normal") out.border = border;

@@ -323,6 +323,65 @@ describe("shapeForType (SVELTE-4)", () => {
   });
 });
 
+describe("computeGodClass — data-driven box-label class", () => {
+  // sherlock (Character) is the global hub (degree 3); works are box-typed but
+  // less connected. The god-class must resolve to Character WITHOUT hardcoding.
+  const GRAPH = {
+    nodes: [
+      { id: "sherlock", label: "Sherlock Holmes", type: "Character" },
+      { id: "watson", label: "John Watson", type: "Character" },
+      { id: "memoirs", label: "The Memoirs", type: "Work" },
+      { id: "baker", label: "221B", type: "Location" },
+    ],
+    links: [
+      { source: "sherlock", target: "watson", relation: "assists" },
+      { source: "sherlock", target: "memoirs", relation: "appears_in" },
+      { source: "sherlock", target: "baker", relation: "located_in" },
+      { source: "watson", target: "memoirs", relation: "appears_in" },
+    ],
+  };
+
+  it("buildScene overrides god-class hubs to the box glyph (others keep base shapes)", async () => {
+    const { buildScene } = await import("../lib/graphAdapter.js");
+    const s = buildScene(GRAPH);
+    const byId = new Map(s.nodes.map((n) => [n.id, n]));
+    // Both Characters pass the gate (deg >= 0.15 * 3) -> labelled boxes.
+    expect(byId.get("sherlock").shape).toBe("roundedbox");
+    expect(byId.get("watson").shape).toBe("roundedbox");
+    // Work keeps its box SHAPE (type default) but is not the god-class.
+    expect(byId.get("memoirs").shape).toBe("roundedbox");
+    expect(byId.get("baker").shape).toBe("triangle");
+  });
+
+  it("resolves the most-connected class for any corpus (not hardcoded Character)", async () => {
+    const { buildScene, computeGodClass, computeDegrees } = await import("../lib/graphAdapter.js");
+    const flipped = {
+      nodes: [
+        { id: "p1", type: "Paper" },
+        { id: "p2", type: "Paper" },
+        { id: "lab", type: "Lab" },
+      ],
+      links: [
+        { source: "lab", target: "p1" },
+        { source: "lab", target: "p2" },
+      ],
+    };
+    const degree = computeDegrees(flipped.nodes, flipped.links);
+    expect(computeGodClass(flipped.nodes, degree, 2)).toBe("Lab");
+    const s = buildScene(flipped);
+    const byId = new Map(s.nodes.map((n) => [n.id, n]));
+    expect(byId.get("lab").shape).toBe("roundedbox"); // hub class -> box
+    expect(byId.get("p1").shape).toBe("dot"); // unmapped type default
+  });
+
+  it("returns null with no edges or no typed nodes (no override applied)", async () => {
+    const { buildScene, computeGodClass } = await import("../lib/graphAdapter.js");
+    expect(computeGodClass([{ id: "a", type: "Character" }], new Map([["a", 0]]), 0)).toBe(null);
+    const s = buildScene({ nodes: [{ id: "a", type: "Character" }], links: [] });
+    expect(s.nodes[0].shape).toBe("diamond");
+  });
+});
+
 describe("applyWeakFilter (ÉTAPE 1b — scene.json parity)", () => {
   // A graph exercising every branch the weak filter touches: a strong-only
   // node, a node whose ONLY edge is weak (orphaned by the filter), and a hub
