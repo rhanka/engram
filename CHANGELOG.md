@@ -4,6 +4,16 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.10.1 (2026-06-11)
+
+Studio renderer parity with the legacy vis-network view (no change to the CLI contract or graph schema).
+
+- `@sentropic/graph` renderer: node-type boxes (`shape: box`/`roundedbox`) are drawn on the canvas sized to the node, with the label scaled to fit and a single centred text; edges are clipped to each node's border for every shape; force-layout spacing tuned toward the legacy look.
+- Studio: box label rendering deduplicated (no overlay duplicate/oversize); the reconciliation view uses the same box rendering.
+- Patch-bump `@sentropic/graph` → 0.1.1 (source renderer changes; the studio builds from source).
+
+Patch bump (rendering-parity fixes, no API or schema change).
+
 ## 0.10.0 (2026-05-26)
 
 Package rename: the npm package is now **`@sentropic/graphify`** (previously `graphifyy`). The CLI and skill command are unchanged — still `graphify`.
