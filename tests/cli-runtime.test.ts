@@ -605,6 +605,55 @@ describe("public CLI runtime command parity", () => {
     expect(existsSync(join(dir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
   });
 
+  it("update keeps generic community names (no fail) when no LLM backend is configured", async () => {
+    const savedKeys: Record<string, string | undefined> = {};
+    for (const key of [
+      "ANTHROPIC_API_KEY",
+      "OPENAI_API_KEY",
+      "GEMINI_API_KEY",
+      "GOOGLE_GENERATIVE_AI_API_KEY",
+      "MISTRAL_API_KEY",
+      "COHERE_API_KEY",
+    ]) {
+      savedKeys[key] = process.env[key];
+      delete process.env[key];
+    }
+    try {
+      const dir = tempProject();
+      mkdirSync(join(dir, "src"), { recursive: true });
+      writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+
+      // Default run: salient labels ON by default but degrade with no backend.
+      const result = await runCli(["update", dir], dir);
+      expect(result.exitCode).toBe(0);
+      const graph = JSON.parse(
+        readFileSync(join(dir, ".graphify", "graph.json"), "utf-8"),
+      ) as { nodes: Array<{ community_name?: string | null }> };
+      // No backend -> generic "Community N" names retained (never crashes).
+      for (const node of graph.nodes) {
+        if (node.community_name != null) {
+          expect(node.community_name).toMatch(/^Community \d+$/);
+        }
+      }
+    } finally {
+      for (const [key, value] of Object.entries(savedKeys)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
+  it("update --no-label skips labeling and still succeeds", async () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+
+    const result = await runCli(["update", dir, "--no-label", "--no-description"], dir);
+    expect(result.exitCode).toBe(0);
+    expect(result.logs.join("\n")).toContain("Code graph updated");
+    expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
+  });
+
   it("writes graph freshness metadata and detects stale HEAD drift", async () => {
     const dir = tempProject();
     initGitRepo(dir);
