@@ -4,6 +4,15 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.11.1 (2026-06-12)
+
+Studio reconciliation-view rendering fixes (`@sentropic/graph` 0.1.3).
+
+- The two entities of a reconciliation candidate now always render as identical labelled boxes — previously the high-degree canonical became a box while the lower-degree candidate twin stayed a diamond (the god-class label gate is degree-based), so same-type twins looked different.
+- The two focal boxes no longer overlap: the side-by-side pin offset is computed from the actual box label widths (zoom-independent) instead of a fixed constant.
+
+Patch bump (studio view-layer fixes; no CLI, schema, or storage change).
+
 ## 0.11.0 (2026-06-12)
 
 Native database storage backends + studio rendering refinements.
