@@ -4820,13 +4820,19 @@ export async function main(): Promise<void> {
         // Phase 4 decision: the automatic git-hook rebuild MUST stay fast and
         // LLM-free — running descriptions + salient labels on every commit means
         // a blocking network round-trip per commit and a hard API-key dependency
-        // in the commit path (egregiously slow). So we keep `describe: false`
-        // here, and rebuildCode writes a `.graphify_describe_pending` marker so
-        // the next describe+label-producing `graphify update` (default-on) fills
-        // them in. `check-update` surfaces the marker as a nudge. This still
-        // honours "descriptions + labels on EVERY graph": the hook-rebuilt graph
-        // is guaranteed a follow-up fill rather than shipping silently bare.
+        // in the commit path (egregiously slow). So we disable BOTH LLM passes
+        // here: `describe: false` AND `label: false`. Without the label opt-out,
+        // `applySalientCommunityLabels` (gated on `options.label !== false`)
+        // would still fire a live label LLM round-trip on every commit whenever
+        // an API key is in env. `markDescribePending: true` then writes a
+        // `.graphify_describe_pending` marker so the next describe+label-producing
+        // `graphify update` (default-on) fills them in, and `check-update`
+        // surfaces the marker as a nudge. This still honours "descriptions +
+        // labels on EVERY graph": the hook-rebuilt graph is guaranteed a
+        // follow-up fill rather than shipping silently bare.
         describe: false,
+        label: false,
+        markDescribePending: true,
         scope: scopeSelection.mode,
         scopeSource: scopeSelection.source,
       });

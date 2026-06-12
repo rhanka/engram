@@ -141,6 +141,38 @@ function initGitRepo(dir: string): void {
   execGit(dir, ["config", "user.name", "Graphify Test"]);
 }
 
+// Every env var that could trigger a live LLM/describe/label round-trip. Tests
+// that assert an LLM-free path (e.g. the git-hook `hook-rebuild`) MUST clear
+// these so `npm test` never makes a real network call on a keyed dev machine.
+const LLM_API_KEY_ENV_VARS = [
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "GEMINI_API_KEY",
+  "GOOGLE_GENERATIVE_AI_API_KEY",
+  "MISTRAL_API_KEY",
+  "COHERE_API_KEY",
+] as const;
+
+/**
+ * Run `fn` with all LLM API keys removed from the process env, restoring the
+ * prior values (set or unset) afterwards even if `fn` throws.
+ */
+async function withApiKeysCleared<T>(fn: () => Promise<T>): Promise<T> {
+  const saved: Record<string, string | undefined> = {};
+  for (const key of LLM_API_KEY_ENV_VARS) {
+    saved[key] = process.env[key];
+    delete process.env[key];
+  }
+  try {
+    return await fn();
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
 async function runCli(args: string[], cwd: string, options: { interceptExit?: boolean } = {}) {
   const { main } = await import("../src/cli.js");
   return runMain(() => main(), ["node", "graphify", ...args], cwd, options);
@@ -934,42 +966,84 @@ describe("public CLI runtime command parity", () => {
     expect(existsSync(join(dir, ".graphify", "needs_update"))).toBe(true);
   });
 
-  it("hook-rebuild leaves a describe-pending marker; check-update nudges the fill", async () => {
-    const dir = tempProject();
-    mkdirSync(join(dir, "src"), { recursive: true });
-    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+  it("hook-rebuild is LLM-free (no describe/label round-trip) and leaves a describe-pending marker; check-update nudges the fill", async () => {
+    // MUST-FIX 1: `hook-rebuild` must make ZERO LLM calls. We clear every real
+    // API key (so an accidental round-trip can never hit the network on a keyed
+    // dev machine) and then re-inject a *fake* ANTHROPIC_API_KEY: with a key in
+    // env, the ONLY thing keeping the hook LLM-free is the `describe: false` +
+    // `label: false` gate. We then prove zero LLM work happened by asserting no
+    // node gained a description and every community kept its generic name.
+    await withApiKeysCleared(async () => {
+      const previousAnthropic = process.env.ANTHROPIC_API_KEY;
+      process.env.ANTHROPIC_API_KEY = "test-key-hook-rebuild-must-be-llm-free";
 
-    const previousChanged = process.env.GRAPHIFY_CHANGED;
-    process.env.GRAPHIFY_CHANGED = ["src/alpha.ts"].join("\n");
-    try {
-      const result = await runCli(["hook-rebuild"], dir, { interceptExit: true });
-      expect(result.exitCode).toBe(0);
-    } finally {
-      if (previousChanged === undefined) delete process.env.GRAPHIFY_CHANGED;
-      else process.env.GRAPHIFY_CHANGED = previousChanged;
-    }
+      const dir = tempProject();
+      mkdirSync(join(dir, "src"), { recursive: true });
+      writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
 
-    // Fast LLM-free hook rebuild: graph written, but descriptions/labels pending.
-    expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
-    const markerPath = join(dir, ".graphify", ".graphify_describe_pending");
-    expect(existsSync(markerPath)).toBe(true);
+      const previousChanged = process.env.GRAPHIFY_CHANGED;
+      process.env.GRAPHIFY_CHANGED = ["src/alpha.ts"].join("\n");
+      try {
+        const result = await runCli(["hook-rebuild"], dir, { interceptExit: true });
+        expect(result.exitCode).toBe(0);
+        // ZERO LLM calls: neither descriptions nor labels were generated, so no
+        // describe/label network round-trip happened despite the key in env.
+        const graph = JSON.parse(
+          readFileSync(join(dir, ".graphify", "graph.json"), "utf-8"),
+        ) as { nodes: Array<{ description?: string | null; community_name?: string | null }> };
+        for (const node of graph.nodes) {
+          expect(node.description == null || node.description === "").toBe(true);
+          if (node.community_name != null) {
+            expect(node.community_name).toMatch(/^Community \d+$/);
+          }
+        }
+      } finally {
+        if (previousChanged === undefined) delete process.env.GRAPHIFY_CHANGED;
+        else process.env.GRAPHIFY_CHANGED = previousChanged;
+        if (previousAnthropic === undefined) delete process.env.ANTHROPIC_API_KEY;
+        else process.env.ANTHROPIC_API_KEY = previousAnthropic;
+      }
 
-    // check-update surfaces the marker and recommends the gap-fill.
-    const check = await runCli(["check-update", "."], dir);
-    expect(check.exitCode).toBe(0);
-    const out = check.logs.join("\n");
-    expect(out).toContain("without descriptions/labels");
-    expect(out).toContain("graphify update --fill-missing");
+      // Fast LLM-free hook rebuild: graph written, but descriptions/labels pending.
+      expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
+      const markerPath = join(dir, ".graphify", ".graphify_describe_pending");
+      expect(existsSync(markerPath)).toBe(true);
+
+      // check-update surfaces the marker and recommends the gap-fill.
+      const check = await runCli(["check-update", "."], dir);
+      expect(check.exitCode).toBe(0);
+      const out = check.logs.join("\n");
+      expect(out).toContain("without descriptions/labels");
+      expect(out).toContain("graphify update --fill-missing");
+    });
   });
 
-  it("update --no-description leaves graph but no crash (preserves opt-out through the hook contract)", async () => {
-    const dir = tempProject();
-    mkdirSync(join(dir, "src"), { recursive: true });
-    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+  it("update --no-description (explicit user opt-out) leaves NO describe-pending marker; check-update stays clean", async () => {
+    // MUST-FIX 2: an explicit `update --no-description` is NOT a fast git-hook
+    // rebuild, so it must never write the "rebuilt by the fast git hook" marker
+    // — otherwise `check-update` nags `--fill-missing` forever. Clear keys so
+    // the run is deterministic and LLM-free regardless of dev-machine env.
+    await withApiKeysCleared(async () => {
+      const dir = tempProject();
+      mkdirSync(join(dir, "src"), { recursive: true });
+      writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
 
-    const result = await runCli(["update", ".", "--no-description", "--no-label"], dir);
-    expect(result.exitCode).toBe(0);
-    expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
+      const result = await runCli(["update", ".", "--no-description", "--no-label"], dir);
+      expect(result.exitCode).toBe(0);
+      expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
+
+      // The marker is reserved for the git-hook path (markDescribePending). An
+      // explicit user opt-out must NOT leave it behind.
+      const markerPath = join(dir, ".graphify", ".graphify_describe_pending");
+      expect(existsSync(markerPath)).toBe(false);
+
+      // check-update must NOT nag about descriptions/labels or --fill-missing.
+      const check = await runCli(["check-update", "."], dir);
+      expect(check.exitCode).toBe(0);
+      const out = check.logs.join("\n");
+      expect(out).not.toContain("without descriptions/labels");
+      expect(out).not.toContain("graphify update --fill-missing");
+    });
   });
 
   it("supports scope inspect via CLI and skill runtime", async () => {
