@@ -109,6 +109,11 @@ export async function rebuildCode(
      */
     descriptionOnlyMissing?: boolean;
     /**
+     * Explicit execution mode for descriptions: "assistant" (default when no
+     * key) or "direct" (requires API key). When omitted, auto-selected.
+     */
+    descriptionMode?: "assistant" | "direct";
+    /**
      * WP12: generate salient community labels (LLM) by DEFAULT after Louvain
      * clustering, replacing generic "Community N" names. ON by default; CLI
      * `--no-label` sets this false. `--no-cluster` implies no labels (there are
@@ -118,6 +123,11 @@ export async function rebuildCode(
     label?: boolean;
     labelBackend?: string;
     labelModel?: string;
+    /**
+     * Explicit execution mode for community labels: "assistant" (default when no
+     * key) or "direct" (requires API key). When omitted, auto-selected.
+     */
+    labelMode?: "assistant" | "direct";
     /**
      * Phase 4: ONLY the fast git-hook rebuild (`hook-rebuild`) sets this true.
      * It runs LLM-free (`describe: false`, `label: false`) to keep commits
@@ -322,7 +332,9 @@ export async function rebuildCode(
       const { source } = await applySalientCommunityLabels(G, communities, labels, {
         provider: options.labelBackend ?? null,
         ...(options.labelModel ? { model: options.labelModel } : {}),
+        ...(options.labelMode ? { mode: options.labelMode } : {}),
         gods,
+        instructionDir: join(paths.stateDir, "label-instructions"),
       });
       if (source === "llm") {
         // Persist so subsequent cluster-only / update / hook runs reuse the
@@ -364,6 +376,8 @@ export async function rebuildCode(
         ...(options.descriptionModel ? { model: options.descriptionModel } : {}),
         ...(options.descriptionMaxNodes !== undefined ? { maxNodes: options.descriptionMaxNodes } : {}),
         ...(options.descriptionOnlyMissing ? { onlyMissing: true } : {}),
+        ...(options.descriptionMode ? { mode: options.descriptionMode } : {}),
+        instructionDir: join(paths.stateDir, "description-instructions"),
       });
       // "Complete" = every describable node now has a description. When a backend
       // is missing this stays false, so the pending marker is kept for a later
