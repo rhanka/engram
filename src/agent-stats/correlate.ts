@@ -103,6 +103,19 @@ export function correlate(input: CorrelateInput): CorrelationLink[] {
   const byPrefix = indexCommits(input.commits);
   const mergeByBranch = indexPrMergesByBranch(input.prMerges ?? []);
 
+  // COMMITTER PRECEDENCE (Phase 2): which facts have COMMIT-level evidence on
+  // each branch (their own `git commit` output named it). Used to keep a
+  // pr-merge squash commit away from a session that merely `checkout -b`'d
+  // the branch when somebody else demonstrably authored the work.
+  const committersByBranch = new Map<string, Set<string>>();
+  for (const fact of input.facts) {
+    for (const branch of fact.groundTruth.branches) {
+      let set = committersByBranch.get(branch);
+      if (!set) committersByBranch.set(branch, (set = new Set()));
+      set.add(fact.factId);
+    }
+  }
+
   for (const fact of input.facts) {
     const inst = matchInstance(input.instances, fact.host, fact.cwds);
     const agentId = resolveIdentity(fact, inst).agentId;
@@ -140,6 +153,12 @@ export function correlate(input: CorrelateInput): CorrelationLink[] {
       // BRANCH-SCOPED: the session must have committed on / created THAT
       // branch — committing somewhere else does not earn this squash commit.
       if (!worked.has(branch)) continue;
+      // COMMITTER PRECEDENCE: when this session only CREATED the branch
+      // (checkout -b) and ANOTHER session demonstrably committed on it, the
+      // squash commit belongs to the committer(s), not the scaffolder.
+      const committers = committersByBranch.get(branch);
+      const isCommitter = fact.groundTruth.branches.includes(branch);
+      if (!isCommitter && committers && committers.size > 0) continue;
       links.push({
         factId: fact.factId,
         agentId,
@@ -147,7 +166,7 @@ export function correlate(input: CorrelateInput): CorrelationLink[] {
         rank: 2,
         rule: "pr-merge",
         confidence: "high",
-        evidence: `session worked branch "${branch}"; PR #${merge.number} merged it as commit ${merge.mergeCommit.slice(0, 7)} on the base branch`,
+        evidence: `session ${isCommitter ? "committed on" : "created"} branch "${branch}"; PR #${merge.number} merged it as commit ${merge.mergeCommit.slice(0, 7)} on the base branch`,
       });
     }
 

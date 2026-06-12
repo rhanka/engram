@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { parseAgyChat, parseAgyChats } from "../src/agent-stats/agy-chat.js";
-import { detectCommitConflicts } from "../src/agent-stats/correlate.js";
+import { correlate, detectCommitConflicts, type PrMergeMeta } from "../src/agent-stats/correlate.js";
 import { emptyGroundTruth } from "../src/agent-stats/git-evidence.js";
 import { agyProjectHash, factInRepo, makeRepoScope, normalizeAgy } from "../src/agent-stats/normalize.js";
 import { computeAgentStats, syncAgentStats } from "../src/agent-stats/index.js";
@@ -27,7 +27,7 @@ import {
   featureFromBranch,
   formatReportMarkdown,
 } from "../src/agent-stats/report.js";
-import { formatStatsTable } from "../src/agent-stats/stats.js";
+import { aggregate, formatStatsTable } from "../src/agent-stats/stats.js";
 import type { H2aInstance } from "../src/agent-stats/registry.js";
 import type { AgentStatsRow, CorrelationLink, SessionFact } from "../src/agent-stats/types.js";
 
@@ -374,5 +374,118 @@ describe("phase2: agy parser robustness", () => {
     const factsRaw = readFileSync(join(repoRoot, ".graphify", "agents", "facts.jsonl"), "utf-8");
     expect(factsRaw).not.toContain("fabien.antoine@example.com");
     expect(factsRaw).not.toMatch(/\/home\/[A-Za-z0-9._-]+\//);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 3. Attribution quality: committer precedence + adversarial cases
+// ---------------------------------------------------------------------------
+
+describe("phase2: attribution quality (adversarial)", () => {
+  const BRANCH = "feat/z";
+  const MERGE_SHA = "f".repeat(40);
+  const prMerges: PrMergeMeta[] = [{ number: 7, branch: BRANCH, mergeCommit: MERGE_SHA }];
+
+  /** A session that only CREATED the branch (checkout -b), never committed. */
+  function creatorFact(): SessionFact {
+    return makeFact({
+      factId: "claude:creator",
+      sessionId: "creator",
+      gitActions: [{ verb: "checkout-b", command: `git checkout -b ${BRANCH}` }],
+      groundTruth: emptyGroundTruth(),
+      branchesObserved: [BRANCH],
+      evidence: [],
+    });
+  }
+
+  /** A session whose own `git commit` output named the branch. */
+  function committerFact(): SessionFact {
+    const gt = emptyGroundTruth();
+    gt.commitShas.push("abc1234");
+    gt.branches.push(BRANCH);
+    gt.shaBranch["abc1234"] = BRANCH;
+    return makeFact({
+      factId: "codex:committer",
+      host: "codex",
+      sessionId: "committer",
+      cwds: ["~/elsewhere"], // unregistered → synthetic id, distinct from creator
+      gitActions: [{ verb: "commit", command: "git commit -m x" }],
+      groundTruth: gt,
+      branchesObserved: [BRANCH],
+      evidence: [],
+    });
+  }
+
+  it("branch creator does NOT steal the squash commit when another session committed", () => {
+    const links = correlate({
+      facts: [creatorFact(), committerFact()],
+      instances: [],
+      commits: [],
+      prMerges,
+    });
+    const prLinks = links.filter((l) => l.rule === "pr-merge");
+    expect(prLinks).toHaveLength(1);
+    expect(prLinks[0]!.factId).toBe("codex:committer");
+    expect(prLinks[0]!.evidence).toContain("committed on");
+  });
+
+  it("creator keeps the squash credit when NOBODY committed on the branch", () => {
+    const links = correlate({ facts: [creatorFact()], instances: [], commits: [], prMerges });
+    const prLinks = links.filter((l) => l.rule === "pr-merge");
+    expect(prLinks).toHaveLength(1);
+    expect(prLinks[0]!.factId).toBe("claude:creator");
+    expect(prLinks[0]!.evidence).toContain("created");
+  });
+
+  it("a merely-OBSERVED branch still earns nothing (spoof resistance preserved)", () => {
+    const observer = makeFact({
+      factId: "claude:observer",
+      sessionId: "observer",
+      gitActions: [],
+      groundTruth: emptyGroundTruth(),
+      branchesObserved: [BRANCH],
+      evidence: [],
+    });
+    const links = correlate({ facts: [observer], instances: [], commits: [], prMerges });
+    expect(links.filter((l) => l.rule === "pr-merge")).toHaveLength(0);
+  });
+
+  it("a printed sha ABSENT from git log earns no rank-1 link", () => {
+    const fact = committerFact();
+    const links = correlate({ facts: [fact], instances: [], commits: [{ sha: "0123456".padEnd(40, "0") }] });
+    expect(links.filter((l) => l.rule === "commit-sha-output")).toHaveLength(0);
+  });
+
+  it("two agents claiming the same commit surface as a conflict (not silently merged)", () => {
+    const a = committerFact();
+    const b = { ...committerFact(), factId: "claude:second", sessionId: "second", host: "claude" as const, cwds: ["~/src/graphify"] };
+    const links = correlate({
+      facts: [a, b],
+      instances: [
+        { id: AGENT, host: "claude", name: "graphify", workspacePath: "~/src/graphify", label: "graphify" },
+      ],
+      commits: [{ sha: "abc1234" + "0".repeat(33), subject: "x" }],
+    });
+    const conflicts = detectCommitConflicts(links);
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0]!.sha).toBe("abc1234");
+    expect(conflicts[0]!.agents.length).toBe(2);
+  });
+
+  it("squash dedupe + committer precedence agree end-to-end: one unit of work, one owner", () => {
+    const committer = committerFact();
+    const links = correlate({
+      facts: [creatorFact(), committer],
+      instances: [],
+      commits: [{ sha: "abc1234" + "0".repeat(33), subject: "x" }],
+      prMerges,
+    });
+    const rows = aggregate({ facts: [creatorFact(), committer], links, instances: [] });
+    const committerRow = rows.find((r) => r.host === "codex");
+    // rank-1 branch commit + its squash dedupe to ONE commit for the committer.
+    expect(committerRow!.commits).toBe(1);
+    // the creator got no commit at all.
+    const creatorRow = rows.find((r) => r.host === "claude");
+    expect(creatorRow?.commits ?? 0).toBe(0);
   });
 });
