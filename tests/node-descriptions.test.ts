@@ -3,6 +3,7 @@ import Graph from "graphology";
 
 import {
   buildNodeDescriptionPrompt,
+  collectNodeContext,
   describeNodes,
   detectDescriptionBackend,
   generateNodeDescriptions,
@@ -79,6 +80,7 @@ describe("node description prompt", () => {
         nodeType: null,
         degree: G.degree("src_a_resolveconfig"),
         neighbors: ["buildGraph()"],
+        citations: [],
       },
     ]);
     expect(prompt).toContain("code symbol");
@@ -86,6 +88,92 @@ describe("node description prompt", () => {
     expect(prompt).toContain("kind=code-symbol");
     expect(prompt).toContain("source=src/a.ts:L42");
     expect(prompt).toContain("neighbors=[buildGraph()]");
+  });
+
+  it("uses an entity-aware prompt branch for non-code nodes", () => {
+    const prompt = buildNodeDescriptionPrompt([
+      {
+        id: "ent_lady_carfax",
+        label: "Lady Frances Carfax",
+        isCode: false,
+        sourceFile: null,
+        sourceLocation: null,
+        nodeType: "Person",
+        degree: 3,
+        neighbors: ["Lausanne", "Hôtel National"],
+        citations: ["a wealthy spinster who travels the continent (p.1)"],
+      },
+    ]);
+    // Entity guidance only appears when a non-code node is present.
+    expect(prompt).toContain("entity");
+    expect(prompt).toContain("citations/evidence");
+    // The entity node carries its declared type, not the code-symbol marker.
+    expect(prompt).toContain("kind=Person");
+    expect(prompt).not.toContain("kind=code-symbol");
+  });
+
+  it("injects citations/evidence grounding into the entity prompt line", () => {
+    const prompt = buildNodeDescriptionPrompt([
+      {
+        id: "ent_lady_carfax",
+        label: "Lady Frances Carfax",
+        isCode: false,
+        sourceFile: null,
+        sourceLocation: null,
+        nodeType: "Person",
+        degree: 2,
+        neighbors: ["Lausanne"],
+        citations: ["a wealthy spinster (p.1)", "src/story.md"],
+      },
+    ]);
+    expect(prompt).toContain("citations=[");
+    expect(prompt).toContain("a wealthy spinster (p.1)");
+    expect(prompt).toContain("src/story.md");
+  });
+
+  it("omits entity guidance for an all-code batch", () => {
+    const prompt = buildNodeDescriptionPrompt([
+      {
+        id: "src_a_resolveconfig",
+        label: "resolveConfig()",
+        isCode: true,
+        sourceFile: "src/a.ts",
+        sourceLocation: "L42",
+        nodeType: null,
+        degree: 1,
+        neighbors: [],
+        citations: [],
+      },
+    ]);
+    expect(prompt).not.toContain("a person, place, event");
+  });
+});
+
+describe("collectNodeContext (citation grounding)", () => {
+  it("pulls citations and evidence_refs from entity node attributes", () => {
+    const G = new Graph({ type: "undirected" });
+    G.addNode("ent_carfax", {
+      label: "Lady Frances Carfax",
+      node_type: "Person",
+      citations: [
+        { source_file: "story.md", quote: "a wealthy spinster", page: 1 },
+      ],
+      evidence_refs: ["registry://characters/carfax"],
+    });
+    G.addNode("ent_lausanne", { label: "Lausanne", node_type: "Place" });
+    G.addUndirectedEdge("ent_carfax", "ent_lausanne", { relation: "travels_to" });
+
+    const prompt = buildNodeDescriptionPrompt([collectNodeContext(G, "ent_carfax")]);
+    expect(prompt).toContain("kind=Person");
+    expect(prompt).toContain("a wealthy spinster");
+    expect(prompt).toContain("registry://characters/carfax");
+  });
+
+  it("leaves code nodes free of citation context", () => {
+    const G = mkCodeGraph();
+    const ctx = collectNodeContext(G, "src_a_resolveconfig");
+    expect(ctx.isCode).toBe(true);
+    expect(ctx.citations).toEqual([]);
   });
 });
 
