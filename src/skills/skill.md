@@ -458,11 +458,39 @@ If this step prints `ERROR: Graph is empty`, stop and tell the user what happene
 
 Replace INPUT_PATH with the actual path.
 
-### Step 5 - Label communities
+### Step 5 - Label communities and node descriptions (no API key needed)
 
-Read `.graphify/.graphify_analysis.json`. For each community key, look at its node labels and write a 2-5 word plain-language name (e.g. "Attention Mechanism", "Training Pipeline", "Data Loading").
+**`graphify update` handles descriptions + labels automatically.** By default (no API key), it runs in assistant/skill mode:
 
-Then regenerate the report and save the labels for the visualizer:
+1. It emits instruction files to `.graphify/description-instructions/` (one per node batch) and `.graphify/label-instructions/communities.md` for the host assistant to fill.
+2. **You (the host assistant) read those files and write JSON answers** (see below).
+3. A second `graphify update` ingests the completed answers and stamps descriptions + labels onto `graph.json`.
+
+**For community labels**, read `.graphify/label-instructions/communities.md` which lists every community with representative node names. Write 2-5 word names to `.graphify/label-instructions/communities.json`:
+```json
+{"0": "Attention Mechanism", "1": "Training Pipeline", "2": "Data Loading"}
+```
+
+**For node descriptions**, each `.graphify/description-instructions/batch-NNN.md` file lists nodes with their context. Write a one-sentence description per node to the corresponding `batch-NNN.json`:
+```json
+{
+  "some_node_id": "Resolves the configured ontology profile from graphify.yaml.",
+  "another_id": "Colonel James Barclay, an antagonist introduced in The Crooked Man."
+}
+```
+
+Then re-run `graphify update` to ingest:
+```bash
+graphify update .
+```
+
+**With an API key** (headless/automation), descriptions and labels are generated directly in the same `graphify update` call — no two-step needed. To force assistant mode even with a key: `--description-mode assistant` / `--label-mode assistant`. To force direct mode: `--description-mode direct` / `--label-mode direct`.
+
+**Opt out of either step**: `--no-description` / `--no-label`.
+
+**Legacy manual label approach** (still works; skip if using the CLI two-step above):
+
+Read `.graphify/.graphify_analysis.json`. For each community key, look at its node labels and write a 2-5 word name. Then regenerate the report:
 
 ```bash
 node -e "
