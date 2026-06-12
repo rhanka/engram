@@ -48,7 +48,15 @@ export interface GraphStore {
   ): Promise<GraphPushResult>;
   readSnapshotMeta(): Promise<GraphStoreSnapshotMeta | undefined>;
   clear?(namespace?: string): Promise<void>;
-  query?(statement: string): Promise<unknown>;
+  /**
+   * Capability-gated read. SQL/GQL backends accept positional (`unknown[]`) or
+   * named (`Record<string, unknown>`) parameter bags; the neo4j adapter already
+   * takes a named bag. Adapters that need no parameters may ignore the argument.
+   */
+  query?(
+    statement: string,
+    params?: unknown[] | Record<string, unknown>,
+  ): Promise<unknown>;
   close(): Promise<void>;
 }
 
@@ -78,6 +86,27 @@ export interface GraphStoreConfig {
   autoPush?: boolean;
   /** Resolved push mode for the mirror. */
   mode?: "merge" | "replace";
+  /**
+   * Full connection string / DSN for SQL backends (e.g. Postgres). Populated
+   * from env only — never from YAML, since a DSN can embed credentials.
+   */
+  connectionString?: string;
+  /** SQL schema/keyspace the mirror writes into (non-secret). */
+  schema?: string;
+  /** Whether to require TLS on the SQL connection (non-secret). */
+  ssl?: boolean;
+  /** Project/tenant slug for multi-tenant deployments (non-secret). */
+  citySlug?: string;
+  /**
+   * Embedding configuration for vector-capable backends. All fields are
+   * non-secret and may be supplied from YAML; the API key for the provider
+   * stays env-only (never modeled here).
+   */
+  embedding?: {
+    provider?: string;
+    model?: string;
+    dimension?: number;
+  };
 }
 
 /**

@@ -285,6 +285,18 @@ export interface GraphifyStorageMirrorConfig {
   mode?: "merge" | "replace";
   namespace?: string;
   autoPush?: boolean;
+  /** SQL schema/keyspace the mirror writes into (non-secret). */
+  schema?: string;
+  /** Whether to require TLS on the SQL connection (non-secret). */
+  ssl?: boolean;
+  /** Project/tenant slug for multi-tenant deployments (non-secret). */
+  citySlug?: string;
+  /** Embedding config for vector-capable backends (non-secret; API key stays env-only). */
+  embedding?: {
+    provider?: string;
+    model?: string;
+    dimension?: number;
+  };
 }
 
 export interface GraphifyStorageConfig {
@@ -311,6 +323,18 @@ export interface NormalizedStorageMirrorConfig {
   mode: "merge" | "replace";
   namespace?: string;
   autoPush: boolean;
+  /** SQL schema/keyspace the mirror writes into (non-secret). */
+  schema?: string;
+  /** Whether to require TLS on the SQL connection (non-secret). */
+  ssl?: boolean;
+  /** Project/tenant slug for multi-tenant deployments (non-secret). */
+  citySlug?: string;
+  /** Embedding config for vector-capable backends (non-secret; API key stays env-only). */
+  embedding?: {
+    provider?: string;
+    model?: string;
+    dimension?: number;
+  };
 }
 
 export interface NormalizedStorageConfig {
