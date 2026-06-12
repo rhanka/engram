@@ -4,12 +4,21 @@
  *   1. Structured output: stable `graphify.agent-stats/v1` JSON report
  *      (agents, branches, commits, features, anonymized citations, confidence,
  *      token cost), sessions report, markdown rendering, conflict surface.
+ *   2. agy/Gemini parser robustness: multi-session files, `$set.messages`
+ *      patches, tolerant tool-call shapes, verb-gated ground truth (parity
+ *      with Claude/Codex), corrupt-line skip, usageMetadata tokens.
  */
 
-import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { afterEach, describe, expect, it } from "vitest";
 
+import { parseAgyChat, parseAgyChats } from "../src/agent-stats/agy-chat.js";
 import { detectCommitConflicts } from "../src/agent-stats/correlate.js";
 import { emptyGroundTruth } from "../src/agent-stats/git-evidence.js";
+import { agyProjectHash, factInRepo, makeRepoScope, normalizeAgy } from "../src/agent-stats/normalize.js";
+import { computeAgentStats, syncAgentStats } from "../src/agent-stats/index.js";
 import {
   AGENT_STATS_SCHEMA,
   SESSIONS_SCHEMA,
@@ -21,6 +30,21 @@ import {
 import { formatStatsTable } from "../src/agent-stats/stats.js";
 import type { H2aInstance } from "../src/agent-stats/registry.js";
 import type { AgentStatsRow, CorrelationLink, SessionFact } from "../src/agent-stats/types.js";
+
+const tempDirs: string[] = [];
+afterEach(() => {
+  while (tempDirs.length > 0) rmSync(tempDirs.pop()!, { recursive: true, force: true });
+});
+
+function tmp(prefix: string): string {
+  const d = mkdtempSync(join(tmpdir(), prefix));
+  tempDirs.push(d);
+  return d;
+}
+
+function loadFixture(name: string): string {
+  return readFileSync(new URL(`./fixtures/agent-stats/${name}`, import.meta.url), "utf-8");
+}
 
 function makeFact(overrides: Partial<SessionFact> = {}): SessionFact {
   return {
@@ -241,5 +265,114 @@ describe("phase2: commit conflicts (same sha claimed by several agents)", () => 
     ]);
     expect(out).toContain("WARNING: 1 commit(s) claimed by more than one agent");
     expect(out).toContain("abc1234 (feat/wp9-agent-stats)");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 2. agy / Gemini parser robustness
+// ---------------------------------------------------------------------------
+
+describe("phase2: agy parser robustness", () => {
+  const REPO = "/tmp/repo";
+  function fixture(hash = "hash-1"): string {
+    return loadFixture("agy-tool-calls.jsonl").split("__REPO__").join(REPO).split("__HASH__").join(hash);
+  }
+  const OPTS = { scopeRoot: REPO, originRepo: "rhanka/graphify" };
+
+  it("splits a multi-session file into one session per header", () => {
+    const sessions = parseAgyChats(fixture(), "file-hint", "", OPTS);
+    expect(sessions.map((s) => s.sessionId)).toEqual(["agy-sess-1", "agy-sess-2"]);
+    expect(sessions[0]!.projectHash).toBe("hash-1");
+  });
+
+  it("extracts git verbs + verb-gated ground truth from tool calls (parity with claude/codex)", () => {
+    const [s1, s2] = parseAgyChats(fixture(), "file-hint", "", OPTS);
+    // checkout -b and commit recorded as git actions:
+    expect(s1!.gitActions.map((a) => a.verb)).toContain("checkout-b");
+    expect(s1!.gitActions.map((a) => a.verb)).toContain("commit");
+    // the commit OUTPUT is scraped (real ground truth):
+    expect(s1!.groundTruth.commitShas).toContain("deadb9a");
+    expect(s1!.groundTruth.shaBranch["deadb9a"]).toBe("feat/agy-parse");
+    // SPOOF: a `cat` of a foreign CI log never acquires its sha / PR url:
+    expect(s1!.groundTruth.commitShas).not.toContain("1234567");
+    expect(s1!.groundTruth.prUrls).toEqual([]);
+    // CROSS-REPO: a commit with a foreign cwd is not credited:
+    expect(s1!.groundTruth.commitShas).not.toContain("beadfee");
+    // second session: `tool_call` shape with input/cmd/workdir variants:
+    expect(s2!.gitActions.map((a) => a.verb)).toContain("push");
+  });
+
+  it("captures cwd/files, sums tokens incl. $set.messages and usageMetadata, skips corrupt lines", () => {
+    const [s1] = parseAgyChats(fixture(), "file-hint", "", OPTS);
+    expect(s1!.cwds).toContain(REPO);
+    expect(s1!.filesTouched).toContain(`${REPO}/src/agy.ts`);
+    // tokens: 1900 (gemini) + 150 (usageMetadata inside $set.messages);
+    // the truncated token line is skipped, not fatal.
+    expect(s1!.tokens.total).toBe(2050);
+    expect(s1!.tokens.input).toBe(1300);
+    expect(s1!.tokens.cached).toBe(420);
+    expect(s1!.models).toContain("gemini-3-pro");
+  });
+
+  it("redacts evidence excerpts (emails, home paths) before storing", () => {
+    const [s1] = parseAgyChats(fixture(), "file-hint", "", OPTS);
+    const all = JSON.stringify(s1!.evidence);
+    expect(s1!.evidence.length).toBeGreaterThan(0);
+    expect(all).not.toContain("fabien.antoine@example.com");
+    expect(all).not.toMatch(/\/home\/antoinefa/);
+  });
+
+  it("parseAgyChat (back-compat) returns the first session", () => {
+    const s = parseAgyChat(fixture(), "file-hint", "", OPTS);
+    expect(s.sessionId).toBe("agy-sess-1");
+  });
+
+  it("never throws on garbage / empty / truncated content", () => {
+    expect(parseAgyChats("", "hint")).toHaveLength(1);
+    expect(parseAgyChats('  not json\n{"half":', "hint")[0]!.sessionId).toBe("hint");
+    expect(parseAgyChats('{"$set":{"messages":"not-an-array"}}\n{"type":"gemini","tokens":null}', "hint")).toHaveLength(1);
+  });
+
+  it("factInRepo accepts an agy fact via projectHash OR captured cwd", () => {
+    const scope = makeRepoScope(REPO);
+    const byHash = normalizeAgy(parseAgyChats(fixture(agyProjectHash(REPO)), "hint", "", OPTS)[0]!);
+    expect(factInRepo(byHash, scope, agyProjectHash(REPO))).toBe(true);
+    // hash unknown, but the session recorded an in-repo cwd:
+    const byCwd = normalizeAgy(parseAgyChats(fixture("other-hash"), "hint", "", OPTS)[0]!);
+    expect(factInRepo(byCwd, scope, "other-hash")).toBe(true);
+    // neither hash nor cwd match:
+    const foreign = normalizeAgy(parseAgyChats('{"sessionId":"x","kind":"main"}', "x")[0]!);
+    expect(factInRepo(foreign, scope, "nope")).toBe(false);
+  });
+
+  it("end-to-end: agy sessions sync from ~/.gemini and earn rank-1 attribution", () => {
+    const repoRoot = tmp("agy-e2e-repo-");
+    const home = tmp("agy-e2e-home-");
+    const hash = agyProjectHash(repoRoot);
+    const chatsDir = join(home, ".gemini", "tmp", hash, "chats");
+    mkdirSync(chatsDir, { recursive: true });
+    writeFileSync(
+      join(chatsDir, "session-20260605-abc.jsonl"),
+      loadFixture("agy-tool-calls.jsonl").split("__REPO__").join(repoRoot).split("__HASH__").join(hash),
+    );
+
+    const sync = syncAgentStats({ repoRoot, home });
+    expect(sync.inRepo).toBe(2); // both logical sessions of the file
+
+    const { rows, links } = computeAgentStats(repoRoot, {
+      injectedCommits: [{ sha: "deadb9a0000000000000000000000000000000aa", subject: "feat: agy parse" }],
+      skipPrMerges: true,
+    });
+    const rank1 = links.find((l) => l.rule === "commit-sha-output" && l.factId === "agy:agy-sess-1");
+    expect(rank1).toBeDefined();
+    expect(rank1!.target).toMatchObject({ kind: "commit", branch: "feat/agy-parse" });
+    const agyRow = rows.find((r) => r.host === "agy" && r.commits >= 1);
+    expect(agyRow).toBeDefined();
+    expect(agyRow!.agentId).not.toBe("antoinefa");
+
+    // persisted facts stay anonymized.
+    const factsRaw = readFileSync(join(repoRoot, ".graphify", "agents", "facts.jsonl"), "utf-8");
+    expect(factsRaw).not.toContain("fabien.antoine@example.com");
+    expect(factsRaw).not.toMatch(/\/home\/[A-Za-z0-9._-]+\//);
   });
 });

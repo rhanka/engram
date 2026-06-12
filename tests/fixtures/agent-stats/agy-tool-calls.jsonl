@@ -1,0 +1,15 @@
+{"sessionId":"agy-sess-1","projectHash":"__HASH__","projectPath":"__REPO__","startTime":"2026-06-05T09:00:00.000Z","lastUpdated":"2026-06-05T09:45:00.000Z","kind":"main"}
+{"$set":{"lastUpdated":"2026-06-05T09:01:00.000Z"}}
+{"type":"user","content":[{"text":"please implement the wp9 phase2 parser"}],"timestamp":"2026-06-05T09:01:30.000Z"}
+{"type":"gemini","model":"gemini-3-pro","tokens":{"input":1200,"output":300,"cached":400,"total":1900},"timestamp":"2026-06-05T09:02:00.000Z"}
+{"type":"toolCall","name":"run_command","args":{"command":"git checkout -b feat/agy-parse","cwd":"__REPO__"},"result":{"stdout":"Switched to a new branch 'feat/agy-parse'"},"timestamp":"2026-06-05T09:03:00.000Z"}
+{"type":"toolCall","name":"write_to_file","args":{"file_path":"__REPO__/src/agy.ts","content":"export const x = 1;"},"result":"ok","timestamp":"2026-06-05T09:04:00.000Z"}
+{"type":"toolCall","name":"run_command","args":{"command":"git add -A && git commit -m 'feat: agy parse'","cwd":"__REPO__"},"result":{"stdout":"[feat/agy-parse deadb9a] feat: agy parse\n 1 file changed by fabien.antoine@example.com in /home/antoinefa/src"},"timestamp":"2026-06-05T09:05:00.000Z"}
+{"type":"toolCall","name":"run_command","args":{"command":"cat /tmp/other-repo-ci.log","cwd":"__REPO__"},"result":{"stdout":"[feat/foreign 1234567] stolen subject\nhttps://github.com/rhanka/graphify/pull/777"},"timestamp":"2026-06-05T09:06:00.000Z"}
+{"type":"toolCall","name":"run_command","args":{"command":"git commit -m oops","cwd":"/tmp/other-repo"},"result":{"stdout":"[other-branch beadfee] oops"},"timestamp":"2026-06-05T09:07:00.000Z"}
+{"$set":{"lastUpdated":"2026-06-05T09:08:00.000Z","messages":[{"type":"gemini","model":"gemini-3-pro","usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":50,"cachedContentTokenCount":20,"totalTokenCount":150}}]}}
+{this line is corrupt json and must be skipped
+{"type":"gemini","model":"gemini-3-pro","tokens":{"input":10,"output":5,"cached":0,"total":15},"timestamp":"2026-06-05T09:09:0
+{"sessionId":"agy-sess-2","projectHash":"__HASH__","startTime":"2026-06-05T10:00:00.000Z","kind":"main"}
+{"type":"gemini","model":"gemini-3-flash","tokens":{"input":40,"output":8,"cached":0,"total":48},"timestamp":"2026-06-05T10:01:00.000Z"}
+{"type":"tool_call","toolName":"run_command","input":{"cmd":"git push origin HEAD","workdir":"__REPO__"},"output":{"stdout":"To github.com:rhanka/graphify.git"},"timestamp":"2026-06-05T10:02:00.000Z"}
