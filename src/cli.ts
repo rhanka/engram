@@ -2436,6 +2436,26 @@ export async function main(): Promise<void> {
       console.log(formatStatsTable(result.rows, result.residual, result.conflicts));
     });
   agentStats
+    .command("report")
+    .description("Per-agent detail: branches, commits, features, token cost, confidence, anonymized citations")
+    .option("--agent <id>", "Filter by agent id substring")
+    .option("--format <fmt>", "Output format: text | json | md", "text")
+    .action(async (opts) => {
+      const { computeAgentStats, buildReport, filterReportAgents, formatReportMarkdown, formatReportText } =
+        await import("./agent-stats/index.js");
+      const repoRoot = resolveAgentStatsRepoRoot();
+      const report = filterReportAgents(buildReport(computeAgentStats(repoRoot)), opts.agent);
+      if (opts.format === "json") {
+        console.log(JSON.stringify(report, null, 2));
+        return;
+      }
+      if (opts.format === "md") {
+        console.log(formatReportMarkdown(report));
+        return;
+      }
+      console.log(formatReportText(report));
+    });
+  agentStats
     .command("sync")
     .description("Parse/refresh transcripts into .graphify/agents/facts.jsonl (incremental)")
     .option("--full", "Force a full re-parse, ignoring cursors")
