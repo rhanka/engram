@@ -25,7 +25,9 @@ import {
   buildReport,
   buildSessionsReport,
   featureFromBranch,
+  filterReportAgents,
   formatReportMarkdown,
+  formatReportText,
 } from "../src/agent-stats/report.js";
 import { aggregate, formatStatsTable } from "../src/agent-stats/stats.js";
 import type { H2aInstance } from "../src/agent-stats/registry.js";
@@ -265,6 +267,49 @@ describe("phase2: commit conflicts (same sha claimed by several agents)", () => 
     ]);
     expect(out).toContain("WARNING: 1 commit(s) claimed by more than one agent");
     expect(out).toContain("abc1234 (feat/wp9-agent-stats)");
+  });
+});
+
+describe("phase2: per-agent insight report (text)", () => {
+  function fullReport() {
+    return buildReport({
+      rows: [makeRow()],
+      links: [commitLink()],
+      facts: [makeFact()],
+      instances,
+      residual: { totalCommits: 10, unattributedCommits: 4 },
+      conflicts: [
+        {
+          sha: "abc1234",
+          branch: "feat/wp9-agent-stats",
+          agents: [
+            { agentId: AGENT, rule: "commit-sha-output", confidence: "high", rank: 1 },
+            { agentId: "codex:x:unregistered", rule: "pr-merge", confidence: "high", rank: 2 },
+          ],
+        },
+      ],
+    });
+  }
+
+  it("renders coverage, per-agent sections, commits, citations, and conflict warning", () => {
+    const text = formatReportText(fullReport());
+    expect(text).toContain("Coverage: 6/10 commits attributed (4 unattributed/human)");
+    expect(text).toContain(`AGENT ${AGENT}  [claude, registered]`);
+    expect(text).toContain("branches: feat/wp9-agent-stats");
+    expect(text).toContain("features: wp9-agent-stats");
+    expect(text).toContain("WPs:      WP9");
+    expect(text).toContain("abc1234  feat/wp9-agent-stats  commit-sha-output (high)");
+    expect(text).toContain("[git-commit]");
+    expect(text).toContain("WARNING: 1 commit(s) claimed by more than one agent");
+    expect(text).not.toContain("antoinefa");
+  });
+
+  it("filters agents by id substring", () => {
+    const filtered = filterReportAgents(fullReport(), "graphify");
+    expect(filtered.agents).toHaveLength(1);
+    expect(filterReportAgents(fullReport(), "nomatch").agents).toHaveLength(0);
+    const text = formatReportText(filterReportAgents(fullReport(), "nomatch"));
+    expect(text).toContain("No agents matched");
   });
 });
 

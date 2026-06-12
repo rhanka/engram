@@ -284,6 +284,62 @@ export function buildSessionsReport(facts: SessionFact[], instances: H2aInstance
   return { schema: SESSIONS_SCHEMA, generatedAt: new Date().toISOString(), sessions };
 }
 
+/** Keep only agents whose id contains `agentFilter` (case-insensitive). */
+export function filterReportAgents(report: AgentStatsReport, agentFilter?: string): AgentStatsReport {
+  if (!agentFilter) return report;
+  const needle = agentFilter.toLowerCase();
+  return { ...report, agents: report.agents.filter((a) => a.agentId.toLowerCase().includes(needle)) };
+}
+
+/* ─────────────────────────── text rendering ─────────────────────────── */
+
+/**
+ * Render the per-agent detail report as plain text — the "which agent did
+ * what" view (`graphify agent-stats report`).
+ */
+export function formatReportText(report: AgentStatsReport): string {
+  const lines: string[] = [`Agent stats report — generated ${report.generatedAt}`];
+  if (report.residual) {
+    const attributed = report.residual.totalCommits - report.residual.unattributedCommits;
+    lines.push(
+      `Coverage: ${attributed}/${report.residual.totalCommits} commits attributed (${report.residual.unattributedCommits} unattributed/human)`,
+    );
+  }
+  if (report.agents.length === 0) {
+    lines.push("", "No agents matched. Run `graphify agent-stats sync` first.");
+    return lines.join("\n");
+  }
+  for (const a of report.agents) {
+    lines.push(
+      "",
+      `AGENT ${a.agentId}  [${a.host}, ${a.registered ? "registered" : "unregistered"}]`,
+      `  sessions: ${a.sessions}   tokens: ${fmtTokens(a.tokens.raw)} raw / ${fmtTokens(a.tokens.weighted)} weighted   confidence: ${a.confidence}   last active: ${a.lastActive?.slice(0, 10) ?? "-"}`,
+    );
+    if (a.branches.length) lines.push(`  branches: ${a.branches.join(", ")}`);
+    if (a.features.length) lines.push(`  features: ${a.features.join(", ")}`);
+    if (a.wps.length) lines.push(`  WPs:      ${a.wps.join(", ")}`);
+    if (a.commits.length) {
+      lines.push(`  commits (${a.commits.length}):`);
+      for (const c of a.commits) {
+        lines.push(`    ${c.sha.slice(0, 7)}  ${c.branch ?? "?"}  ${c.rule} (${c.confidence})`);
+      }
+    }
+    if (a.citations.length) {
+      lines.push("  citations (anonymized):");
+      for (const cit of a.citations) lines.push(`    [${cit.kind}] ${cit.text}`);
+    }
+  }
+  if (report.conflicts.length) {
+    lines.push("", `WARNING: ${report.conflicts.length} commit(s) claimed by more than one agent:`);
+    for (const c of report.conflicts) {
+      lines.push(
+        `  ${c.sha.slice(0, 7)}${c.branch ? ` (${c.branch})` : ""}: ${c.agents.map((x) => `${x.agentId} via ${x.rule}`).join(" AND ")}`,
+      );
+    }
+  }
+  return lines.join("\n");
+}
+
 /* ───────────────────────── markdown rendering ───────────────────────── */
 
 function fmtTokens(n: number): string {
