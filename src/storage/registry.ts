@@ -9,6 +9,7 @@
  */
 import { createFileGraphStore } from "./file.js";
 import { createNeo4jGraphStore } from "./neo4j.js";
+import { createSpannerGraphStore } from "./spanner.js";
 import type { GraphStore, GraphStoreConfig, StoreTestDeps } from "./types.js";
 
 export interface GraphStoreFactory {
@@ -79,6 +80,17 @@ registerGraphStoreFactory({
     }
     return createNeo4jGraphStore(
       config as Parameters<typeof createNeo4jGraphStore>[0],
+      deps,
+    );
+  },
+});
+
+registerGraphStoreFactory({
+  id: "spanner",
+  requiredPackage: "@google-cloud/spanner",
+  async create(config: GraphStoreConfig, deps?: StoreTestDeps): Promise<GraphStore> {
+    return createSpannerGraphStore(
+      config as Parameters<typeof createSpannerGraphStore>[0],
       deps,
     );
   },
