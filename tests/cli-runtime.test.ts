@@ -934,6 +934,44 @@ describe("public CLI runtime command parity", () => {
     expect(existsSync(join(dir, ".graphify", "needs_update"))).toBe(true);
   });
 
+  it("hook-rebuild leaves a describe-pending marker; check-update nudges the fill", async () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+
+    const previousChanged = process.env.GRAPHIFY_CHANGED;
+    process.env.GRAPHIFY_CHANGED = ["src/alpha.ts"].join("\n");
+    try {
+      const result = await runCli(["hook-rebuild"], dir, { interceptExit: true });
+      expect(result.exitCode).toBe(0);
+    } finally {
+      if (previousChanged === undefined) delete process.env.GRAPHIFY_CHANGED;
+      else process.env.GRAPHIFY_CHANGED = previousChanged;
+    }
+
+    // Fast LLM-free hook rebuild: graph written, but descriptions/labels pending.
+    expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
+    const markerPath = join(dir, ".graphify", ".graphify_describe_pending");
+    expect(existsSync(markerPath)).toBe(true);
+
+    // check-update surfaces the marker and recommends the gap-fill.
+    const check = await runCli(["check-update", "."], dir);
+    expect(check.exitCode).toBe(0);
+    const out = check.logs.join("\n");
+    expect(out).toContain("without descriptions/labels");
+    expect(out).toContain("graphify update --fill-missing");
+  });
+
+  it("update --no-description leaves graph but no crash (preserves opt-out through the hook contract)", async () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+
+    const result = await runCli(["update", ".", "--no-description", "--no-label"], dir);
+    expect(result.exitCode).toBe(0);
+    expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
+  });
+
   it("supports scope inspect via CLI and skill runtime", async () => {
     const dir = tempProject();
     initGitRepo(dir);
