@@ -108,6 +108,16 @@ export async function rebuildCode(
      * not re-spend tokens on already-described nodes.
      */
     descriptionOnlyMissing?: boolean;
+    /**
+     * WP12: generate salient community labels (LLM) by DEFAULT after Louvain
+     * clustering, replacing generic "Community N" names. ON by default; CLI
+     * `--no-label` sets this false. `--no-cluster` implies no labels (there are
+     * no communities). Degrades gracefully (keeps generic names + a stderr note)
+     * when no LLM backend is configured.
+     */
+    label?: boolean;
+    labelBackend?: string;
+    labelModel?: string;
   } = {},
 ): Promise<boolean> {
   try {
@@ -292,6 +302,25 @@ export async function rebuildCode(
         labelsPath: paths.scratch.labels,
         graph: G,
       });
+
+    // WP12: salient community labels on by DEFAULT. Run BEFORE the report so
+    // GRAPH_REPORT.md and graph.json both carry the salient names. Skipped when
+    // clustering is off (no communities) or `label === false` (--no-label).
+    // Degrades to generic "Community N" + a stderr note when no LLM backend.
+    if (!options.noCluster && options.label !== false && communities.size > 0) {
+      const { applySalientCommunityLabels } = await import("./community-labeling.js");
+      const { source } = await applySalientCommunityLabels(G, communities, labels, {
+        provider: options.labelBackend ?? null,
+        ...(options.labelModel ? { model: options.labelModel } : {}),
+        gods,
+      });
+      if (source === "llm") {
+        // Persist so subsequent cluster-only / update / hook runs reuse the
+        // salient names instead of regenerating them.
+        persistCommunityLabels(labels, paths.scratch.labels);
+      }
+    }
+
     const questions = options.noCluster ? [] : suggestQuestions(G, communities, labels);
 
     const report = generate(
