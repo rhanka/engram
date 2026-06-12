@@ -470,8 +470,12 @@ const EDGE_CURVE_FACTOR = 0.5;
 // grows to hug the text. So a box always reads as ONE node glyph beside its
 // neighbours, never as an oversized text card.
 const BOX_SHAPE = 5;
-const BOX_MARGIN_RATIO = 1 / 8; // small margin per side, fraction of box height
-const BOX_FONT_RATIO = 1 - 2 * BOX_MARGIN_RATIO; // font fills the rest (3/4)
+// Legacy vis-network `shape:box` is sized to its LABEL at a small, degree-INDEPENDENT
+// font — a 22px box with a 12px font and 5px margins. It does NOT inflate with a
+// god-node's degree (only zoom scales it), so a Work box never dwarfs its neighbours.
+const BOX_BASE_HEIGHT_PX = 22; // legacy box height in CSS px (× pixelRatio × zoom)
+const BOX_MARGIN_RATIO = 5 / 22; // legacy margin per side (5 of a 22 box)
+const BOX_FONT_RATIO = 12 / 22; // legacy font size (12 of a 22 box) — text much smaller than the box
 const BOX_CORNER_RATIO = 1 / 4; // corner radius as a fraction of box height
 // Non-labelled (low-degree) box collapse, as a fraction of the box height:
 // legacy hidden-font boxes shrink to their two 5-unit margins of a 22-unit box.
@@ -570,19 +574,18 @@ interface NodeGeometry {
 }
 
 /**
- * Legacy `shape:box` glyph dimensions. The box height equals the node's drawn
- * DIAMETER (2 × radius — the same on-screen height every other shape occupies);
- * the font is sized to FIT that height minus a small margin per side, and the
- * box only grows in WIDTH to fit the text plus margins. A non-labelled
- * (low-degree) box collapses like the legacy hidden-font (fontSize 0) box: a
- * small square of BOX_EMPTY_RATIO × height.
+ * Legacy `shape:box` glyph dimensions. The box height is a fixed legacy base
+ * (BOX_BASE_HEIGHT_PX, scaled by pixelRatio × zoom) — degree-INDEPENDENT, so a
+ * high-degree Work box never inflates past its neighbours; the small font fits
+ * that height minus a margin per side, and the box only grows in WIDTH to hug
+ * the text plus margins. A non-labelled (low-degree) box collapses like the
+ * legacy hidden-font (fontSize 0) box: a small square of BOX_EMPTY_RATIO × height.
  */
 function boxDimensions(
-  radius: number,
+  height: number,
   label: string,
   measureLabelWidth: (text: string, font: string) => number,
 ): { w: number; h: number; fontPx: number; corner: number } {
-  const height = radius * 2;
   const margin = height * BOX_MARGIN_RATIO;
   const corner = height * BOX_CORNER_RATIO;
   const fontPx = height * BOX_FONT_RATIO;
@@ -719,7 +722,10 @@ function drawFallback2D(
     geometry.radii[nodeIndex] = radius;
     if ((state.style?.nodeShapes[nodeIndex] ?? 0) !== BOX_SHAPE) continue;
     const label = state.style?.nodeLabels?.[nodeIndex] ?? "";
-    const dims = boxDimensions(radius, label, measureLabelWidth);
+    // Box size is degree-INDEPENDENT (legacy): a fixed base height scaled only by
+    // pixelRatio × zoom, so a high-degree Work box never balloons past its neighbours.
+    const boxHeight = BOX_BASE_HEIGHT_PX * pixelRatio * camera.zoom;
+    const dims = boxDimensions(boxHeight, label, measureLabelWidth);
     geometry.boxHalfWidths[nodeIndex] = dims.w / 2;
     geometry.boxHalfHeights[nodeIndex] = dims.h / 2;
   }
@@ -833,14 +839,16 @@ function drawFallback2D(
     const boldBorder = (state.style?.nodeBorders?.[nodeIndex] ?? 0) === 1;
 
     if (shape === BOX_SHAPE) {
-      // The box IS the glyph, at the SAME on-screen scale as the other shapes:
-      // height = the node's drawn diameter, small text fitted inside, width
-      // hugging the text. Border = node colour (encodes selection/hover);
-      // alpha follows the node's payload alpha so dim / merge styling applies.
-      // Boxes are inherently hollow; only the border-weight variant applies.
+      // The box IS the glyph. Its height is a fixed legacy base (degree-INDEPENDENT,
+      // scaled only by pixelRatio × zoom — MUST match the geometry pre-pass above so
+      // edge-clipping and drawing agree), the small text is fitted inside, and the
+      // width hugs the text. Border = node colour (encodes selection/hover); alpha
+      // follows the node's payload alpha so dim / merge styling applies. Boxes are
+      // inherently hollow; only the border-weight variant applies.
       const label = state.style?.nodeLabels?.[nodeIndex] ?? "";
       const alpha = (state.style?.nodeColors[colorOffset + 3] ?? 255) / 255;
-      const dims = boxDimensions(radius, label, measureLabelWidth);
+      const boxHeight = BOX_BASE_HEIGHT_PX * pixelRatio * camera.zoom;
+      const dims = boxDimensions(boxHeight, label, measureLabelWidth);
       drawBoxNode(
         context,
         point.x,
