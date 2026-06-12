@@ -286,7 +286,7 @@ describe("candidateSubgraph (SVELTE-7)", () => {
   });
 });
 
-describe("shapeForType / shapeLegend (SVELTE-4)", () => {
+describe("shapeForType (SVELTE-4)", () => {
   it("maps ontology types to DS shapes, defaulting to dot", async () => {
     const { shapeForType } = await import("../lib/graphAdapter.js");
     expect(shapeForType({ type: "Character" })).toBe("diamond");
@@ -302,18 +302,83 @@ describe("shapeForType / shapeLegend (SVELTE-4)", () => {
     expect(s.nodes.find((n) => n.id === "a").shape).toBe("diamond");
     expect(s.nodes.find((n) => n.id === "b").shape).toBe("triangle");
   });
-  it("shapeLegend returns distinct type->shape entries", async () => {
-    const { shapeLegend } = await import("../lib/graphAdapter.js");
-    const legend = shapeLegend({ nodes: [{ id: "a", type: "Character" }, { id: "b", type: "Character" }, { id: "c", type: "Evidence" }] });
-    // Node-shape entries first, then the fixed relation dash-family legend.
-    expect(legend).toEqual([
-      { label: "Character", shape: "diamond" },
-      { label: "Evidence", shape: "square" },
-      { label: "belonging / structure", dash: "solid" },
-      { label: "agency / interaction", dash: "dashed" },
-      { label: "spatial / factual", dash: "dotted" },
-      { label: "method / usage", dash: "long-dash" },
-    ]);
+  it("buildScene emits fill/border variants only for non-default types", async () => {
+    const { buildScene } = await import("../lib/graphAdapter.js");
+    const s = buildScene({
+      nodes: [
+        { id: "char", type: "Character" }, // diamond, defaults
+        { id: "alias", type: "Alias" }, // diamond, hollow
+        { id: "author", type: "Author" }, // star, bold border
+        { id: "work", type: "Work" }, // roundedbox, bold border
+      ],
+      links: [],
+    });
+    const byId = new Map(s.nodes.map((n) => [n.id, n]));
+    expect(byId.get("char").fill).toBeUndefined();
+    expect(byId.get("char").border).toBeUndefined();
+    expect(byId.get("alias").fill).toBe("hollow");
+    expect(byId.get("alias").border).toBeUndefined();
+    expect(byId.get("author").border).toBe("bold");
+    expect(byId.get("work").border).toBe("bold");
+  });
+});
+
+describe("computeGodClass — data-driven box-label class", () => {
+  // sherlock (Character) is the global hub (degree 3); works are box-typed but
+  // less connected. The god-class must resolve to Character WITHOUT hardcoding.
+  const GRAPH = {
+    nodes: [
+      { id: "sherlock", label: "Sherlock Holmes", type: "Character" },
+      { id: "watson", label: "John Watson", type: "Character" },
+      { id: "memoirs", label: "The Memoirs", type: "Work" },
+      { id: "baker", label: "221B", type: "Location" },
+    ],
+    links: [
+      { source: "sherlock", target: "watson", relation: "assists" },
+      { source: "sherlock", target: "memoirs", relation: "appears_in" },
+      { source: "sherlock", target: "baker", relation: "located_in" },
+      { source: "watson", target: "memoirs", relation: "appears_in" },
+    ],
+  };
+
+  it("buildScene overrides god-class hubs to the box glyph (others keep base shapes)", async () => {
+    const { buildScene } = await import("../lib/graphAdapter.js");
+    const s = buildScene(GRAPH);
+    const byId = new Map(s.nodes.map((n) => [n.id, n]));
+    // Both Characters pass the gate (deg >= 0.15 * 3) -> labelled boxes.
+    expect(byId.get("sherlock").shape).toBe("roundedbox");
+    expect(byId.get("watson").shape).toBe("roundedbox");
+    // Work keeps its box SHAPE (type default) but is not the god-class.
+    expect(byId.get("memoirs").shape).toBe("roundedbox");
+    expect(byId.get("baker").shape).toBe("triangle");
+  });
+
+  it("resolves the most-connected class for any corpus (not hardcoded Character)", async () => {
+    const { buildScene, computeGodClass, computeDegrees } = await import("../lib/graphAdapter.js");
+    const flipped = {
+      nodes: [
+        { id: "p1", type: "Paper" },
+        { id: "p2", type: "Paper" },
+        { id: "lab", type: "Lab" },
+      ],
+      links: [
+        { source: "lab", target: "p1" },
+        { source: "lab", target: "p2" },
+      ],
+    };
+    const degree = computeDegrees(flipped.nodes, flipped.links);
+    expect(computeGodClass(flipped.nodes, degree, 2)).toBe("Lab");
+    const s = buildScene(flipped);
+    const byId = new Map(s.nodes.map((n) => [n.id, n]));
+    expect(byId.get("lab").shape).toBe("roundedbox"); // hub class -> box
+    expect(byId.get("p1").shape).toBe("dot"); // unmapped type default
+  });
+
+  it("returns null with no edges or no typed nodes (no override applied)", async () => {
+    const { buildScene, computeGodClass } = await import("../lib/graphAdapter.js");
+    expect(computeGodClass([{ id: "a", type: "Character" }], new Map([["a", 0]]), 0)).toBe(null);
+    const s = buildScene({ nodes: [{ id: "a", type: "Character" }], links: [] });
+    expect(s.nodes[0].shape).toBe("diamond");
   });
 });
 

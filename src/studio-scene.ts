@@ -55,6 +55,19 @@ export interface StudioSceneGraphLike {
 export interface BuildStudioSceneOptions {
   /** Mirror of buildScene's `showWeakLinks` (default true). */
   showWeakLinks?: boolean;
+  /**
+   * Optional ontology profile. When given, each node type's
+   * `node_types.*.visual_encoding` (shape / fill / border) OVERRIDES the
+   * built-in type defaults (TYPE_SHAPE / TYPE_VARIANT), so packs drive their
+   * own visual encoding. Absent (the parity/default path) the built-in maps
+   * apply — identical to the client adapter.
+   */
+  profile?: {
+    node_types?: Record<
+      string,
+      { visual_encoding?: { shape?: unknown; fill?: unknown; border?: unknown } }
+    >;
+  } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -66,6 +79,10 @@ export interface StudioSceneNode {
   label: string;
   weight: number;
   shape: string;
+  /** Glyph fill variant; only emitted when non-default ("hollow"). */
+  fill?: string;
+  /** Glyph border weight; only emitted when non-default ("bold"). */
+  border?: string;
   group?: string;
   type?: string;
   x?: number;
@@ -224,9 +241,11 @@ const TYPE_SHAPE: Record<string, string> = {
   Evidence: "square",
   Object: "square",
   ForensicMethod: "hexagon",
-  // Legacy vis-network parity: only Work + ChapterOrStory are box glyphs
-  // (labelled rounded rect). Saga / Author / Translator carry their own
-  // ontological shapes, matching public-pack ontology-profile.yaml.
+  // Legacy vis-network parity: Work + ChapterOrStory keep the box SHAPE, but
+  // the in-box LABEL is reserved to the data-driven god-class hubs (see
+  // computeGodClass) — non-god-class boxes render as small empty rounded
+  // rects. Saga / Author / Translator carry their own ontological shapes,
+  // matching public-pack ontology-profile.yaml.
   Work: "roundedbox",
   ChapterOrStory: "roundedbox",
   Saga: "hexagon",
@@ -237,6 +256,30 @@ const TYPE_SHAPE: Record<string, string> = {
 function shapeForType(node: StudioSceneGraphNode | undefined): string {
   const t = nodeType(node);
   return (t && TYPE_SHAPE[t]) || "dot";
+}
+
+/**
+ * Shape VARIANTS (fill: hollow | solid, border: bold | normal) multiplying the
+ * 7 base shapes so the ~19 ontology types stay distinguishable: types sharing
+ * a TYPE_SHAPE entry get a distinct hollow / bold combination. Defaults
+ * (absent = solid + normal) keep every previously-rendered glyph unchanged.
+ * Kept in lockstep with studio/src/lib/graphAdapter.js TYPE_VARIANT (parity
+ * test enforces this); a profile's visual_encoding.fill/border overrides it.
+ */
+const TYPE_VARIANT: Record<string, { fill?: string; border?: string }> = {
+  Alias: { fill: "hollow" }, // vs Character (diamond)
+  DisguisePersona: { fill: "hollow" }, // vs NarrativeRole (star)
+  Author: { border: "bold" }, // vs NarrativeRole / DisguisePersona (star)
+  Translator: { fill: "hollow" }, // vs Location (triangle)
+  ForensicMethod: { fill: "hollow" }, // vs Organization (hexagon)
+  Saga: { border: "bold" }, // vs Organization / ForensicMethod (hexagon)
+  Object: { fill: "hollow" }, // vs Evidence (square)
+  Work: { border: "bold" }, // vs ChapterOrStory (roundedbox)
+};
+
+function variantForType(node: StudioSceneGraphNode | undefined): { fill?: string; border?: string } {
+  const t = nodeType(node);
+  return (t && TYPE_VARIANT[t]) || {};
 }
 
 /**
@@ -301,15 +344,89 @@ function computeDegrees(
 }
 
 /**
+ * Box-label gate fraction — mirror of @sentropic/graph styles.ts
+ * LABEL_DEGREE_FRACTION. Kept in lockstep so the scene-level god-class box
+ * override and the buffer-level label gate select the same central nodes.
+ */
+const LABEL_DEGREE_FRACTION = 0.15;
+
+/**
+ * Data-driven "god-class" (UAT box-label): the node_type whose nodes carry the
+ * highest degrees. Types are ranked by their MAXIMUM node degree (the class
+ * owning the global highest-degree node — Character/Sherlock in the mystery
+ * corpus), tie-broken by the count of nodes above the label gate
+ * (degree >= LABEL_DEGREE_FRACTION × maxDegree), then by type name for
+ * determinism. Central nodes of this class render as LABELLED boxes (their
+ * glyph is overridden to the box shape). Null when the graph has no edges or
+ * no typed nodes. Kept in lockstep with studio/src/lib/graphAdapter.js
+ * computeGodClass (parity test enforces scene equality).
+ */
+function computeGodClass(
+  nodes: StudioSceneGraphNode[],
+  degree: Map<string, number>,
+  maxDegree: number,
+): string | null {
+  if (!(Number.isFinite(maxDegree) && maxDegree > 0)) return null;
+  const threshold = LABEL_DEGREE_FRACTION * maxDegree;
+  const byType = new Map<string, { maxDeg: number; gateCount: number }>();
+  for (const node of nodes) {
+    const type = nodeType(node);
+    if (!type) continue;
+    const deg = degree.get(node.id) ?? 0;
+    let rec = byType.get(type);
+    if (!rec) byType.set(type, (rec = { maxDeg: 0, gateCount: 0 }));
+    if (deg > rec.maxDeg) rec.maxDeg = deg;
+    if (deg >= threshold) rec.gateCount += 1;
+  }
+  let best: string | null = null;
+  let bestRec: { maxDeg: number; gateCount: number } | null = null;
+  for (const [type, rec] of byType) {
+    if (
+      bestRec === null ||
+      rec.maxDeg > bestRec.maxDeg ||
+      (rec.maxDeg === bestRec.maxDeg &&
+        (rec.gateCount > bestRec.gateCount ||
+          (rec.gateCount === bestRec.gateCount && best !== null && type < best)))
+    ) {
+      best = type;
+      bestRec = rec;
+    }
+  }
+  return best;
+}
+
+/**
  * Legacy autosizing: node radius is LINEAR in degree, NORMALISED by the graph's
  * max degree. weight = (1 + (RADIUS_RATIO - 1) * (deg / maxDeg))^2.
  */
 const RADIUS_RATIO = 4; // rmax / rmin, matches the legacy 4->16 spread
-function weightForDegree(degree: number, maxDegree: number): number {
+// UAT: the LARGEST degree-sized (non-box) glyphs read too small next to the
+// god-class boxes. Hub growth: scale a node's RADIUS by up to +HUB_GROWTH,
+// linear in degree normalised by the LARGEST DEGREE-SIZED (non-box) node. The
+// global max degree always belongs to a god-class box hub whose glyph is
+// degree-INDEPENDENT, so normalising the boost by maxDegree would waste the
+// top of the boost curve on boxes. With this, the biggest diamond/dot/etc
+// grows exactly +20% while leaves barely change (boost ~ +0 at degree ~ 0).
+// MUST stay in lockstep with studio/src/lib/graphAdapter.js weightForDegree.
+const HUB_GROWTH = 0.2;
+function weightForDegree(degree: number, maxDegree: number, sizedMaxDegree?: number): number {
   const max = Number.isFinite(maxDegree) && maxDegree > 0 ? maxDegree : 1;
-  const ratio = Math.min(1, Math.max(0, (Number.isFinite(degree) ? degree : 0) / max));
+  const deg = Number.isFinite(degree) ? degree : 0;
+  const ratio = Math.min(1, Math.max(0, deg / max));
   const rOverRmin = 1 + (RADIUS_RATIO - 1) * ratio;
-  return rOverRmin * rOverRmin;
+  const sizedMax =
+    typeof sizedMaxDegree === "number" && Number.isFinite(sizedMaxDegree) && sizedMaxDegree > 0
+      ? sizedMaxDegree
+      : max;
+  const hubT = Math.min(1, Math.max(0, deg / sizedMax));
+  const boosted = rOverRmin * (1 + HUB_GROWTH * hubT);
+  return boosted * boosted;
+}
+
+/** Box-category scene shapes (degree-INDEPENDENT glyphs sized to their label). */
+function isBoxSceneShape(shape: unknown): boolean {
+  const value = String(shape ?? "").toLowerCase();
+  return value === "box" || value === "roundedbox";
 }
 
 /**
@@ -355,7 +472,7 @@ export function buildStudioScene(
   graph: StudioSceneGraphLike | null | undefined,
   options: BuildStudioSceneOptions = {},
 ): StudioScene {
-  const { showWeakLinks = true } = options;
+  const { showWeakLinks = true, profile = null } = options;
   const safeGraph = graph ?? {};
   const rawNodes = graphNodes(safeGraph);
   const rawEdges = graphEdges(safeGraph);
@@ -366,18 +483,50 @@ export function buildStudioScene(
 
   const degree = computeDegrees(rawNodes, edges);
   const maxDegree = degree.size > 0 ? Math.max(...degree.values()) : 1;
+  // God-class hubs (the most-connected class's central nodes) render as
+  // labelled boxes: their glyph is overridden to the box shape so the label
+  // (gated per-type in @sentropic/graph styles.ts) sits inside the box.
+  const godClass = computeGodClass(rawNodes, degree, maxDegree);
+  const hubDegreeThreshold = LABEL_DEGREE_FRACTION * maxDegree;
 
-  const nodes: StudioSceneNode[] = rawNodes.map((node) => {
+  // Final scene shape per node (god-class hub override > profile encoding >
+  // type default), resolved up front so the hub-growth boost can be normalised
+  // by the max degree among DEGREE-SIZED (non-box) nodes.
+  const finalShapes: string[] = rawNodes.map((node) => {
+    const type = nodeType(node);
+    const encoding = type ? profile?.node_types?.[type]?.visual_encoding : undefined;
+    const isGodClassHub =
+      godClass !== null && type === godClass && (degree.get(node.id) ?? 0) >= hubDegreeThreshold;
+    return isGodClassHub ? "roundedbox" : (displayValue(encoding?.shape) ?? shapeForType(node));
+  });
+  let sizedMaxDegree = 0;
+  rawNodes.forEach((node, index) => {
+    if (isBoxSceneShape(finalShapes[index])) return;
+    const deg = degree.get(node.id) ?? 0;
+    if (deg > sizedMaxDegree) sizedMaxDegree = deg;
+  });
+
+  const nodes: StudioSceneNode[] = rawNodes.map((node, index) => {
     const group = nodeGroup(node);
     const type = nodeType(node);
     const x = finiteNumber(node.x) ? node.x : finiteNumber(node.fx) ? node.fx : undefined;
     const y = finiteNumber(node.y) ? node.y : finiteNumber(node.fy) ? node.fy : undefined;
+    // Profile visual_encoding (shape / fill / border) overrides the built-in
+    // type defaults; otherwise TYPE_SHAPE / TYPE_VARIANT apply (client parity).
+    const encoding = type ? profile?.node_types?.[type]?.visual_encoding : undefined;
+    const variant = variantForType(node);
+    const fill = displayValue(encoding?.fill) ?? variant.fill;
+    const border = displayValue(encoding?.border) ?? variant.border;
     const out: StudioSceneNode = {
       id: node.id,
       label: nodeLabel(node),
-      weight: weightForDegree(degree.get(node.id) ?? 0, maxDegree),
-      shape: shapeForType(node),
+      weight: weightForDegree(degree.get(node.id) ?? 0, maxDegree, sizedMaxDegree),
+      // finalShapes is index-aligned with rawNodes; ?? only satisfies
+      // noUncheckedIndexedAccess (shapeForType's own fallback is "dot" too).
+      shape: finalShapes[index] ?? "dot",
     };
+    if (fill && fill !== "solid") out.fill = fill;
+    if (border && border !== "normal") out.border = border;
     if (group !== undefined) out.group = group;
     if (type) out.type = type;
     copyOwnFields(node, out, NODE_PROFILE_FIELDS);
