@@ -192,6 +192,41 @@ describe("buildStudioScene — parity with studio buildScene", () => {
     });
   });
 
+  it("applies built-in shape variants (fill/border) and profile visual_encoding overrides", () => {
+    const graph = {
+      nodes: [
+        { id: "c", type: "Character" }, // defaults: solid + normal (omitted)
+        { id: "al", type: "Alias" }, // built-in variant: hollow
+        { id: "w", type: "Work" }, // built-in variant: bold border
+      ],
+      links: [],
+    };
+
+    // No profile: built-in TYPE_VARIANT defaults.
+    const scene = buildStudioScene(graph);
+    const byId = new Map(scene.nodes.map((n) => [n.id, n]));
+    expect(byId.get("c")!.fill).toBeUndefined();
+    expect(byId.get("c")!.border).toBeUndefined();
+    expect(byId.get("al")!.fill).toBe("hollow");
+    expect(byId.get("w")!.border).toBe("bold");
+
+    // Profile visual_encoding overrides shape AND the variant dimensions.
+    const withProfile = buildStudioScene(graph, {
+      profile: {
+        node_types: {
+          Character: { visual_encoding: { shape: "hexagon", fill: "hollow", border: "bold" } },
+          Alias: { visual_encoding: { fill: "solid" } }, // back to default -> omitted
+        },
+      },
+    });
+    const byId2 = new Map(withProfile.nodes.map((n) => [n.id, n]));
+    expect(byId2.get("c")!.shape).toBe("hexagon");
+    expect(byId2.get("c")!.fill).toBe("hollow");
+    expect(byId2.get("c")!.border).toBe("bold");
+    expect(byId2.get("al")!.fill).toBeUndefined();
+    expect(byId2.get("w")!.border).toBe("bold"); // untouched by the profile
+  });
+
   describe("real repo graph (.graphify/graph.json)", () => {
     const graphPath = join(REPO_ROOT, ".graphify", "graph.json");
     const hasRealGraph = existsSync(graphPath);

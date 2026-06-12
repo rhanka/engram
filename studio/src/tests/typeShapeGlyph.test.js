@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { shapeSvgPath } from "@sentropic/graph";
-import { shapeForType } from "../lib/graphAdapter.js";
+import { shapeForType, variantForType } from "../lib/graphAdapter.js";
 
 const glyphSource = readFileSync(
   resolve(process.cwd(), "src/components/TypeShapeGlyph.svelte"),
@@ -14,7 +14,9 @@ const railSource = readFileSync(resolve(process.cwd(), "src/components/LeftRail.
 describe("TypeShapeGlyph (left-rail type swatches)", () => {
   it("derives the glyph from the renderer pipeline, not a hand-drawn shape", () => {
     // type -> shapeForType (the SAME mapping buildScene puts on scene nodes)
-    expect(glyphSource).toMatch(/import \{ shapeForType \} from "\.\.\/lib\/graphAdapter\.js"/);
+    expect(glyphSource).toMatch(
+      /import \{ shapeForType, variantForType \} from "\.\.\/lib\/graphAdapter\.js"/,
+    );
     expect(glyphSource).toMatch(/shapeForType\(\{ type \}\)/);
     // shape -> shapeSvgPath (the SAME vertex math drawNodeShapePath draws)
     expect(glyphSource).toMatch(/import \{ shapeSvgPath \} from "@sentropic\/graph"/);
@@ -27,6 +29,20 @@ describe("TypeShapeGlyph (left-rail type swatches)", () => {
   it("renders box-category types hollow with a border, like the canvas box glyph", () => {
     expect(glyphSource).toMatch(/isBoxShape\(shape\)/);
     expect(glyphSource).toMatch(/class:hollow/);
+  });
+
+  it("reflects the fill / border variants from the renderer's TYPE_VARIANT map", () => {
+    // Same source as the canvas: variantForType drives hollow + bold classes.
+    expect(glyphSource).toMatch(/variantForType\(\{ type \}\)/);
+    expect(glyphSource).toMatch(/variant\.fill === "hollow"/);
+    expect(glyphSource).toMatch(/variant\.border === "bold"/);
+    expect(glyphSource).toMatch(/class:bold/);
+    // The map disambiguates types sharing a shape.
+    expect(variantForType({ type: "Character" })).toEqual({});
+    expect(variantForType({ type: "Alias" })).toEqual({ fill: "hollow" });
+    expect(variantForType({ type: "Author" })).toEqual({ border: "bold" });
+    expect(variantForType({ type: "Work" })).toEqual({ border: "bold" });
+    expect(variantForType({ type: "Object" })).toEqual({ fill: "hollow" });
   });
 
   it("LeftRail shows the glyph LEFT of each type label in the Types list", () => {
