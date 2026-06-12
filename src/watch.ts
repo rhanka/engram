@@ -346,14 +346,19 @@ export async function rebuildCode(
     // WP11: stamp node descriptions onto G before the JSON write so each
     // `description` is persisted to graph.json. Skips gracefully (no throw)
     // when no LLM backend is configured.
+    let descriptionsComplete = false;
     if (options.describe !== false) {
       const { generateNodeDescriptions } = await import("./node-descriptions.js");
-      await generateNodeDescriptions(G, {
+      const result = await generateNodeDescriptions(G, {
         ...(options.descriptionBackend ? { provider: options.descriptionBackend } : {}),
         ...(options.descriptionModel ? { model: options.descriptionModel } : {}),
         ...(options.descriptionMaxNodes !== undefined ? { maxNodes: options.descriptionMaxNodes } : {}),
         ...(options.descriptionOnlyMissing ? { onlyMissing: true } : {}),
       });
+      // "Complete" = every describable node now has a description. When a backend
+      // is missing this stays false, so the pending marker is kept for a later
+      // `update --fill-missing` once a key is configured.
+      descriptionsComplete = result.coverage.described >= result.coverage.describable;
     }
 
     const jsonWritten = toJson(G, communities, paths.graph, {
@@ -365,6 +370,22 @@ export async function rebuildCode(
     }
     persistCommunityLabels(labels, paths.scratch.labels);
     writeFileSync(paths.report, report, "utf-8");
+
+    // Phase 4: describe-pending marker. The fast git-hook rebuild runs LLM-free
+    // (`describe: false`) to keep commits snappy, so the rebuilt graph is NOT
+    // yet described/labelled. Drop a marker so the next describe-producing run
+    // (`graphify update`, default-on) fills the gap — and `check-update` nudges
+    // the user. A run that actually completes descriptions clears the marker.
+    if (descriptionsComplete) {
+      if (existsSync(paths.describePending)) unlinkSync(paths.describePending);
+    } else if (options.describe === false) {
+      writeFileSync(
+        paths.describePending,
+        "Graph rebuilt by the fast git hook without descriptions/labels. " +
+          "Run `graphify update --fill-missing` to fill them.\n",
+        "utf-8",
+      );
+    }
 
     if (options.clearStale !== false) {
       // Clear stale needs_update flag if present
@@ -404,6 +425,12 @@ export function checkUpdate(root: string): CheckUpdateResult {
   if (existsSync(paths.needsUpdate)) {
     reasons.push(".graphify/needs_update exists");
   }
+  const describePending = existsSync(paths.describePending);
+  if (describePending) {
+    reasons.push(
+      "graph was rebuilt by the fast git hook without descriptions/labels (.graphify_describe_pending)",
+    );
+  }
   if (metadata?.branch.stale) {
     const reason = metadata.branch.staleReason?.trim();
     reasons.push(reason ? `branch metadata is stale: ${reason}` : "branch metadata is stale");
@@ -417,7 +444,12 @@ export function checkUpdate(root: string): CheckUpdateResult {
   return {
     current: reasons.length === 0,
     reasons,
-    recommendedCommand: "Run the graphify skill with --update to refresh semantic data.",
+    // When the only pending signal is missing descriptions/labels, the precise
+    // fix is the idempotent gap-fill; otherwise fall back to a full refresh.
+    recommendedCommand:
+      describePending && reasons.length === 1
+        ? "Run `graphify update --fill-missing` to add descriptions + salient labels."
+        : "Run the graphify skill with --update to refresh semantic data.",
   };
 }
 
