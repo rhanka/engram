@@ -4,6 +4,17 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.13.0 (2026-06-12)
+
+Node descriptions and community labels now work **by default without any API key** — via the assistant/skill (CLI) path — for both code and non-code nodes.
+
+- **No-key default — emit/ingest two-step for descriptions.** When no API key or LLM backend is configured, `graphify update` emits per-batch instruction `.md` files under `.graphify/description-instructions/` (one per ~40-node batch). The host assistant fills each `batch-NNN.json` answer file; the next `graphify update` ingests them and stamps `source: "assistant"`. With a key the direct path is used as before.
+- **No-key default — emit/ingest for community labels.** Same pattern for community naming: `.graphify/label-instructions/communities.md` lists all communities; the assistant fills `communities.json` with 2-5 word names; the next run ingests and applies them (`source: "assistant"`). The `applySalientCommunityLabels` merge now accepts `source === "assistant"` in addition to `"llm"`.
+- **Auto-mode selection.** `DescriptionMode` and `LabelMode` are auto-resolved: "direct" when an API key or injected `callLlm` is present, "assistant" otherwise. Override with `--description-mode direct` / `--label-mode direct` CLI flags.
+- **skill.md updated.** Step 5 in the graphify skill now documents the full emit → fill answer files → ingest cycle, with example JSON formats, so the host assistant knows exactly what to write.
+
+Minor bump (new no-key assistant/skill default; `@sentropic/graph` unchanged at 0.1.3).
+
 ## 0.12.0 (2026-06-12)
 
 Two reliability guarantees for the semantic layer, both on by default.
