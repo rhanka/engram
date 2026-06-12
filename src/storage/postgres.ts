@@ -1,0 +1,733 @@
+/**
+ * Postgres GraphStore adapter (SPEC_STORAGE_BACKENDS.md, "Future Backends").
+ *
+ * Live-push mirror of a Graphify graph into native PostgreSQL via batched
+ * `INSERT ... ON CONFLICT DO UPDATE` upserts (the merge primitive). The driver
+ * (`pg`) is NEVER imported statically: it is always supplied through
+ * `deps.driverModule` (tests) or the registry's dynamic import (production), so
+ * importing this module evaluates no driver and `tsc`/the import-guard never try
+ * to resolve the (uninstalled-by-default) package.
+ *
+ * Multi-project isolation uses a `city_slug` column (the namespace/citySlug),
+ * mirroring the Spanner `namespace` model + `graph_meta` snapshot row. The DDL
+ * is exported from a single source-of-truth function (`postgresDdlStatements()`)
+ * so the schema never drifts.
+ *
+ * `pushGraph` IS the upsert: mode "merge" is a native `ON CONFLICT DO UPDATE`;
+ * mode "replace" runs `DELETE WHERE city_slug=$1` then inserts, inside one
+ * transaction. Every push also re-emits the canonical `graph/{citySlug}/
+ * latest.json` artifact through the shared `toJson()` writer (the same writer
+ * the FileGraphStore uses) so the Postgres write is S3-replayable.
+ */
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { mkdirSync, readFileSync } from "node:fs";
+import type Graph from "graphology";
+import { toJson } from "../export.js";
+import type {
+  GraphPushOptions,
+  GraphPushResult,
+  GraphStore,
+  GraphStoreConfig,
+  GraphStoreSnapshotMeta,
+  StoreTestDeps,
+} from "./types.js";
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const NODE_TABLE = "graph_nodes";
+const EDGE_TABLE = "graph_edges";
+const META_TABLE = "graph_meta";
+
+/** Schema columns lifted into typed node columns; the rest go into props jsonb. */
+const NODE_SCHEMA_COLS = ["id", "label", "type", "node_type", "community"];
+/** Schema columns lifted into typed edge columns; the rest go into props jsonb. */
+const EDGE_SCHEMA_COLS = ["source_id", "target_id", "relation", "confidence"];
+
+/**
+ * Default rows committed per INSERT batch. Postgres caps a parameterized
+ * statement at 65535 bind parameters, so 500 rows × ≤6 columns (≤3000 params)
+ * stays comfortably under the limit.
+ */
+const DEFAULT_BATCH_SIZE = 500;
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+function moduleDir(): string {
+  if (typeof __dirname === "string") return __dirname;
+  return dirname(fileURLToPath(import.meta.url));
+}
+
+function resolveToolVersion(): string {
+  const baseDir = moduleDir();
+  for (const rel of [join("..", ".."), ".."]) {
+    try {
+      const pkg = JSON.parse(
+        readFileSync(join(baseDir, rel, "package.json"), "utf-8"),
+      ) as { name?: string; version?: string };
+      if (pkg.name === "@sentropic/graphify" && pkg.version) return pkg.version;
+    } catch {
+      /* try the next layout */
+    }
+  }
+  return "unknown";
+}
+
+/** Build a node community map: nodeId → community index. */
+function buildNodeCommunityMap(communities: Map<number, string[]>): Map<string, number> {
+  const result = new Map<string, number>();
+  for (const [cid, nodes] of communities) {
+    for (const n of nodes) result.set(n, cid);
+  }
+  return result;
+}
+
+/** Compute a topology signature from a Graphology graph (mirrors export.ts/spanner logic). */
+function computeTopologySignature(G: Graph): string {
+  const nodeIds: string[] = [];
+  G.forEachNode((nodeId) => nodeIds.push(nodeId));
+  nodeIds.sort();
+
+  const edges: string[] = [];
+  G.forEachEdge((_edgeKey, data, source, target) => {
+    const [src, tgt] = [source, target].sort();
+    const rel = (data as Record<string, unknown>).relation ?? "";
+    edges.push(`${src}\t${tgt}\t${String(rel)}`);
+  });
+  edges.sort();
+
+  return `n=${nodeIds.length};e=${edges.length};${nodeIds.join(",")}|${edges.join(";")}`;
+}
+
+/** Derive a backend-safe city_slug from the config (mirrors the spanner namespace model). */
+function deriveCitySlug(config: GraphStoreConfig): string {
+  const raw =
+    config.citySlug ??
+    config.namespace ??
+    config.database ??
+    config.schema ??
+    "graphify";
+  return raw.replace(/[^A-Za-z0-9_-]/g, "_") || "graphify";
+}
+
+/** Validate a schema identifier so it is safe to interpolate into DDL. */
+function safeSchema(schema: string | undefined): string | undefined {
+  if (schema === undefined) return undefined;
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(schema)) {
+    throw new Error(
+      `postgres store: invalid schema name '${schema}' (must match [A-Za-z_][A-Za-z0-9_]*)`,
+    );
+  }
+  return schema;
+}
+
+/** Serialise the non-schema attributes into a JSON-stringifiable props bag. */
+function buildPropsBag(
+  attrs: Record<string, unknown>,
+  omit: string[],
+): Record<string, unknown> {
+  const props: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(attrs)) {
+    if (!omit.includes(k)) props[k] = v;
+  }
+  return props;
+}
+
+/** Chunk an array into subarrays of at most `size` elements. */
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  const safeSize = size > 0 ? size : DEFAULT_BATCH_SIZE;
+  for (let i = 0; i < arr.length; i += safeSize) {
+    out.push(arr.slice(i, i + safeSize));
+  }
+  return out;
+}
+
+/**
+ * The native Postgres schema as individual executable DDL statements. This is
+ * the single source of truth for the live `postgres` GraphStore adapter
+ * (ensure-exists). `city_slug` carries the namespace/citySlug so multiple
+ * projects/branches share one database without collisions.
+ *
+ * Tables:
+ *   - graph_nodes(city_slug, id) PRIMARY KEY (city_slug, id), props jsonb
+ *   - graph_edges(city_slug, source_id, target_id, relation)
+ *       PRIMARY KEY (city_slug, source_id, target_id, relation), props jsonb
+ *   - graph_meta(city_slug) PRIMARY KEY — one snapshot row per city_slug
+ *
+ * Indexes:
+ *   - (city_slug, type) composite, for type-scoped scans
+ *   - GIN to_tsvector('french', label) for full-text label search
+ *   - GIN props jsonb_path_ops for containment queries
+ *   - (city_slug, source_id) and (city_slug, target_id) for neighbor JOINs
+ *
+ * All statements use IF NOT EXISTS so ensure-exists is idempotent.
+ */
+export function postgresDdlStatements(schema?: string): string[] {
+  const validated = safeSchema(schema);
+  const q = (name: string): string => (validated ? `"${validated}".${name}` : name);
+  // Index names are global within a schema; prefix with the schema when present
+  // so two schemas can each carry the same logical index without clashing.
+  const ix = (name: string): string => (validated ? `${validated}_${name}` : name);
+
+  const statements: string[] = [];
+
+  if (validated) {
+    statements.push(`CREATE SCHEMA IF NOT EXISTS "${validated}"`);
+  }
+
+  // graph_nodes — city_slug-scoped primary key (city_slug, id).
+  statements.push(
+    [
+      `CREATE TABLE IF NOT EXISTS ${q(NODE_TABLE)} (`,
+      "  city_slug text NOT NULL,",
+      "  id text NOT NULL,",
+      "  label text,",
+      "  type text,",
+      "  community integer,",
+      "  props jsonb NOT NULL DEFAULT '{}'::jsonb,",
+      "  PRIMARY KEY (city_slug, id)",
+      ")",
+    ].join("\n"),
+  );
+
+  // graph_edges — city_slug-scoped primary key.
+  statements.push(
+    [
+      `CREATE TABLE IF NOT EXISTS ${q(EDGE_TABLE)} (`,
+      "  city_slug text NOT NULL,",
+      "  source_id text NOT NULL,",
+      "  target_id text NOT NULL,",
+      "  relation text NOT NULL,",
+      "  confidence text,",
+      "  props jsonb NOT NULL DEFAULT '{}'::jsonb,",
+      "  PRIMARY KEY (city_slug, source_id, target_id, relation)",
+      ")",
+    ].join("\n"),
+  );
+
+  // graph_meta — one snapshot row per city_slug.
+  statements.push(
+    [
+      `CREATE TABLE IF NOT EXISTS ${q(META_TABLE)} (`,
+      "  city_slug text NOT NULL,",
+      "  topology_signature text,",
+      "  pushed_at text,",
+      "  tool_version text,",
+      "  PRIMARY KEY (city_slug)",
+      ")",
+    ].join("\n"),
+  );
+
+  // Composite (city_slug, type) — type-scoped scans within a city.
+  statements.push(
+    `CREATE INDEX IF NOT EXISTS ${ix("graph_nodes_city_type_idx")} ` +
+      `ON ${q(NODE_TABLE)} (city_slug, type)`,
+  );
+
+  // GIN full-text index on label (french analyzer).
+  statements.push(
+    `CREATE INDEX IF NOT EXISTS ${ix("graph_nodes_label_fts_idx")} ` +
+      `ON ${q(NODE_TABLE)} USING gin (to_tsvector('french', coalesce(label, '')))`,
+  );
+
+  // GIN containment index on props (jsonb_path_ops).
+  statements.push(
+    `CREATE INDEX IF NOT EXISTS ${ix("graph_nodes_props_idx")} ` +
+      `ON ${q(NODE_TABLE)} USING gin (props jsonb_path_ops)`,
+  );
+
+  // Neighbor-JOIN indexes: outgoing and incoming edges per city.
+  statements.push(
+    `CREATE INDEX IF NOT EXISTS ${ix("graph_edges_city_source_idx")} ` +
+      `ON ${q(EDGE_TABLE)} (city_slug, source_id)`,
+  );
+  statements.push(
+    `CREATE INDEX IF NOT EXISTS ${ix("graph_edges_city_target_idx")} ` +
+      `ON ${q(EDGE_TABLE)} (city_slug, target_id)`,
+  );
+
+  return statements;
+}
+
+// ---------------------------------------------------------------------------
+// Config + public types
+// ---------------------------------------------------------------------------
+
+export interface PostgresGraphStoreConfig extends GraphStoreConfig {
+  /**
+   * Full DSN. Populated from env only (GRAPHIFY_POSTGRES_URL) — never YAML,
+   * since a DSN can embed credentials.
+   */
+  connectionString?: string;
+  /** SQL schema the mirror writes into (non-secret). Default: search_path. */
+  schema?: string;
+  /** Require TLS on the connection (non-secret). */
+  ssl?: boolean;
+  /**
+   * Base directory for the S3-replayable artifact. The canonical
+   * `graph/{citySlug}/latest.json` is written under this directory on every
+   * push. Defaults to `.graphify` relative to the current working directory.
+   */
+  target?: string;
+}
+
+export interface PostgresClearOptions {
+  namespace?: string;
+  force?: boolean;
+}
+
+export interface PostgresGraphStore extends GraphStore {
+  clear(options?: string | PostgresClearOptions): Promise<void>;
+  /**
+   * Fetch a node's neighbors with a SINGLE JOIN (graph_edges ⋈ graph_nodes),
+   * not one SELECT per edge (the N+1 fix). Returns the matched neighbor rows.
+   */
+  queryNeighbors(nodeId: string, citySlug?: string): Promise<Array<Record<string, unknown>>>;
+}
+
+// ---------------------------------------------------------------------------
+// Minimal structural types for the `pg` surface we use (no static import —
+// real types come from the injected/imported module).
+// ---------------------------------------------------------------------------
+
+interface PgQueryResult {
+  rows: Array<Record<string, unknown>>;
+  rowCount?: number | null;
+}
+
+interface PgClient {
+  query(text: string, params?: unknown[]): Promise<PgQueryResult>;
+  release(err?: boolean | Error): void;
+}
+
+interface PgPool {
+  query(text: string, params?: unknown[]): Promise<PgQueryResult>;
+  connect(): Promise<PgClient>;
+  end(): Promise<void>;
+}
+
+interface PgModule {
+  Pool: new (config?: Record<string, unknown>) => PgPool;
+}
+
+// ---------------------------------------------------------------------------
+// Factory
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a Postgres GraphStore. The driver module is supplied by the registry's
+ * lazy import (production) or by `deps.driverModule` (tests). The DSN is read
+ * from `config.connectionString` (resolved env-only upstream); credentials are
+ * never read from YAML.
+ */
+export async function createPostgresGraphStore(
+  config: PostgresGraphStoreConfig,
+  deps?: StoreTestDeps,
+): Promise<PostgresGraphStore> {
+  const connectionString =
+    config.connectionString ?? process.env.GRAPHIFY_POSTGRES_URL;
+  if (!connectionString) {
+    throw new Error(
+      "postgres store requires a DSN (config.connectionString or GRAPHIFY_POSTGRES_URL)",
+    );
+  }
+
+  // Resolve the driver from injected deps or a dynamic import (the registry
+  // performs the import in production; this fallback supports direct/live use).
+  let pgMod: Record<string, unknown>;
+  if (deps?.driverModule !== undefined) {
+    pgMod = deps.driverModule as Record<string, unknown>;
+  } else {
+    try {
+      // Optional, uninstalled-by-default driver: build the specifier at runtime
+      // so the compiler does not attempt to resolve the (absent) package.
+      const driverPackage = ["p", "g"].join("");
+      pgMod = (await import(driverPackage)) as Record<string, unknown>;
+    } catch {
+      throw new Error("store 'postgres' requires pg. Run: npm install pg");
+    }
+  }
+
+  const mod = (pgMod.default ?? pgMod) as Partial<PgModule>;
+  const PoolCtor = mod.Pool;
+  if (typeof PoolCtor !== "function") {
+    throw new Error("store 'postgres' requires pg. Run: npm install pg");
+  }
+
+  const schema = safeSchema(config.schema);
+  const pool: PgPool = new PoolCtor({
+    connectionString,
+    ...(config.ssl ? { ssl: { rejectUnauthorized: false } } : {}),
+    ...(schema ? { options: `-c search_path=${schema}` } : {}),
+  });
+
+  const citySlug = deriveCitySlug(config);
+  // Artifact base for the S3-replayable latest.json mirror.
+  const artifactBase = config.target ?? join(process.cwd(), ".graphify");
+  let closed = false;
+  let schemaEnsured = false;
+
+  // Local snapshot cache: the fake driver in unit tests returns empty query
+  // rows, so this is the read-back source there; against a real backend the
+  // meta is also persisted as a graph_meta row and re-read from it.
+  const localMeta = new Map<string, GraphStoreSnapshotMeta>();
+
+  /** Table reference, schema-qualified when a schema is configured. */
+  const q = (name: string): string => (schema ? `"${schema}".${name}` : name);
+
+  // -------------------------------------------------------------------------
+  // Schema (ensure-exists, idempotent)
+  // -------------------------------------------------------------------------
+
+  async function ensureSchema(): Promise<void> {
+    if (schemaEnsured) return;
+    schemaEnsured = true;
+    for (const stmt of postgresDdlStatements(config.schema)) {
+      await pool.query(stmt);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Row builders — one flat value array per row, in column order.
+  // -------------------------------------------------------------------------
+
+  /** Columns written for graph_nodes, in order. */
+  const NODE_COLUMNS = ["city_slug", "id", "label", "type", "community", "props"];
+  /** Columns written for graph_edges, in order. */
+  const EDGE_COLUMNS = [
+    "city_slug",
+    "source_id",
+    "target_id",
+    "relation",
+    "confidence",
+    "props",
+  ];
+
+  function buildNodeRows(
+    G: Graph,
+    communityMap: Map<string, number>,
+  ): unknown[][] {
+    const rows: unknown[][] = [];
+    G.forEachNode((nodeId, attrs) => {
+      const a = attrs as Record<string, unknown>;
+      const community = communityMap.get(nodeId);
+      rows.push([
+        citySlug,
+        nodeId,
+        typeof a.label === "string" ? a.label : nodeId,
+        typeof a.node_type === "string"
+          ? a.node_type
+          : typeof a.type === "string"
+            ? a.type
+            : typeof a.file_type === "string"
+              ? a.file_type
+              : null,
+        community ?? (typeof a.community === "number" ? a.community : null),
+        JSON.stringify(buildPropsBag(a, NODE_SCHEMA_COLS)),
+      ]);
+    });
+    return rows;
+  }
+
+  function buildEdgeRows(G: Graph): unknown[][] {
+    const rows: unknown[][] = [];
+    G.forEachEdge((_edgeKey, attrs, source, target) => {
+      const a = attrs as Record<string, unknown>;
+      rows.push([
+        citySlug,
+        source,
+        target,
+        typeof a.relation === "string" ? a.relation : "RELATES_TO",
+        typeof a.confidence === "string" ? a.confidence : "EXTRACTED",
+        JSON.stringify(buildPropsBag(a, EDGE_SCHEMA_COLS)),
+      ]);
+    });
+    return rows;
+  }
+
+  // -------------------------------------------------------------------------
+  // Upsert: INSERT ... ON CONFLICT DO UPDATE, batched.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Build a multi-row `INSERT ... ON CONFLICT DO UPDATE` for one batch.
+   * `conflictCols` form the conflict target; every non-conflict column is
+   * refreshed from EXCLUDED so a re-push is an idempotent upsert (merge).
+   */
+  function buildUpsert(
+    table: string,
+    columns: string[],
+    conflictCols: string[],
+    rows: unknown[][],
+  ): { text: string; params: unknown[] } {
+    const params: unknown[] = [];
+    const valueTuples = rows.map((row) => {
+      const placeholders = row.map((value) => {
+        params.push(value);
+        return `$${params.length}`;
+      });
+      return `(${placeholders.join(", ")})`;
+    });
+    const updateCols = columns.filter((c) => !conflictCols.includes(c));
+    const setClause = updateCols
+      .map((c) => `${c} = EXCLUDED.${c}`)
+      .join(", ");
+    const text =
+      `INSERT INTO ${table} (${columns.join(", ")}) VALUES ${valueTuples.join(", ")} ` +
+      `ON CONFLICT (${conflictCols.join(", ")}) DO UPDATE SET ${setClause}`;
+    return { text, params };
+  }
+
+  async function upsertBatched(
+    runner: { query(text: string, params?: unknown[]): Promise<PgQueryResult> },
+    table: string,
+    columns: string[],
+    conflictCols: string[],
+    rows: unknown[][],
+    batchSize: number,
+  ): Promise<number> {
+    let count = 0;
+    for (const batch of chunk(rows, batchSize)) {
+      if (batch.length === 0) continue;
+      const { text, params } = buildUpsert(table, columns, conflictCols, batch);
+      await runner.query(text, params);
+      count += batch.length;
+    }
+    return count;
+  }
+
+  async function deleteCityRows(
+    runner: { query(text: string, params?: unknown[]): Promise<PgQueryResult> },
+    table: string,
+    slug: string,
+  ): Promise<void> {
+    await runner.query(`DELETE FROM ${table} WHERE city_slug = $1`, [slug]);
+  }
+
+  async function writeMeta(
+    runner: { query(text: string, params?: unknown[]): Promise<PgQueryResult> },
+    topologySignature: string,
+    toolVersion: string,
+  ): Promise<void> {
+    const pushedAt = new Date().toISOString();
+    await runner.query(
+      `INSERT INTO ${q(META_TABLE)} (city_slug, topology_signature, pushed_at, tool_version) ` +
+        `VALUES ($1, $2, $3, $4) ` +
+        `ON CONFLICT (city_slug) DO UPDATE SET ` +
+        `topology_signature = EXCLUDED.topology_signature, ` +
+        `pushed_at = EXCLUDED.pushed_at, ` +
+        `tool_version = EXCLUDED.tool_version`,
+      [citySlug, topologySignature, pushedAt, toolVersion],
+    );
+    localMeta.set(citySlug, { topologySignature, pushedAt, toolVersion });
+  }
+
+  async function readMetaFromBackend(): Promise<GraphStoreSnapshotMeta | undefined> {
+    const result = await pool.query(
+      `SELECT topology_signature, pushed_at, tool_version FROM ${q(META_TABLE)} ` +
+        `WHERE city_slug = $1 LIMIT 1`,
+      [citySlug],
+    );
+    const row = result.rows?.[0];
+    if (!row) return undefined;
+    const sig = row.topology_signature;
+    if (typeof sig !== "string" || !sig) return undefined;
+    return {
+      topologySignature: sig,
+      pushedAt: typeof row.pushed_at === "string" ? row.pushed_at : new Date().toISOString(),
+      toolVersion: typeof row.tool_version === "string" ? row.tool_version : "unknown",
+    };
+  }
+
+  /**
+   * Re-emit the canonical S3-replayable artifact `graph/{citySlug}/latest.json`
+   * via the shared toJson() writer (the same writer FileGraphStore uses), so the
+   * Postgres write can be replayed from object storage. force bypasses the
+   * shrink guard because a mirror push is an explicit write.
+   */
+  function writeLatestArtifact(G: Graph, communities: Map<number, string[]>): string {
+    const dir = join(artifactBase, "graph", citySlug);
+    mkdirSync(dir, { recursive: true });
+    const path = join(dir, "latest.json");
+    toJson(G, communities, path, { force: true });
+    return path;
+  }
+
+  // -------------------------------------------------------------------------
+  // GraphStore implementation
+  // -------------------------------------------------------------------------
+
+  return {
+    id: "postgres",
+    capabilities: {
+      push: true,
+      query: true,
+      clear: true,
+      snapshotMeta: true,
+    },
+
+    async verifyConnection(): Promise<void> {
+      await pool.query("SELECT 1");
+    },
+
+    async pushGraph(
+      G: Graph,
+      communities: Map<number, string[]>,
+      options: GraphPushOptions = {},
+    ): Promise<GraphPushResult> {
+      const start = Date.now();
+      const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
+      const mode = options.mode ?? "merge";
+      const nodeCount = G.order;
+      const edgeCount = G.size;
+
+      if (options.dryRun) {
+        return {
+          nodes: nodeCount,
+          edges: edgeCount,
+          warnings: [],
+          durationMs: Date.now() - start,
+        };
+      }
+
+      await ensureSchema();
+
+      const communityMap = buildNodeCommunityMap(communities);
+      const nodeRows = buildNodeRows(G, communityMap);
+      const edgeRows = buildEdgeRows(G);
+
+      // All writes for one push run in a single transaction so a backend error
+      // leaves the previous snapshot intact (SPEC: "the push aborts").
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        if (mode === "replace") {
+          await deleteCityRows(client, q(NODE_TABLE), citySlug);
+          await deleteCityRows(client, q(EDGE_TABLE), citySlug);
+        }
+        await upsertBatched(
+          client,
+          q(NODE_TABLE),
+          NODE_COLUMNS,
+          ["city_slug", "id"],
+          nodeRows,
+          batchSize,
+        );
+        await upsertBatched(
+          client,
+          q(EDGE_TABLE),
+          EDGE_COLUMNS,
+          ["city_slug", "source_id", "target_id", "relation"],
+          edgeRows,
+          batchSize,
+        );
+        await writeMeta(client, computeTopologySignature(G), resolveToolVersion());
+        await client.query("COMMIT");
+      } catch (err) {
+        try {
+          await client.query("ROLLBACK");
+        } catch {
+          /* ignore rollback failure; surface the original error */
+        }
+        throw err;
+      } finally {
+        client.release();
+      }
+
+      // S3-replay gap: re-emit the canonical artifact AFTER the DB commit so a
+      // failed push never leaves a latest.json that the backend lacks.
+      writeLatestArtifact(G, communities);
+
+      return {
+        nodes: nodeCount,
+        edges: edgeCount,
+        warnings: [],
+        durationMs: Date.now() - start,
+      };
+    },
+
+    async readSnapshotMeta(): Promise<GraphStoreSnapshotMeta | undefined> {
+      if (localMeta.has(citySlug)) {
+        return localMeta.get(citySlug);
+      }
+      return readMetaFromBackend();
+    },
+
+    async queryNeighbors(
+      nodeId: string,
+      slug?: string,
+    ): Promise<Array<Record<string, unknown>>> {
+      const targetSlug = slug ?? citySlug;
+      // SINGLE JOIN: the edge row that touches nodeId is joined to the node row
+      // on the OTHER endpoint, in one statement (the N+1 fix). Outgoing edges
+      // join target_id; incoming edges join source_id. UNION ALL keeps it one
+      // round-trip.
+      const sql =
+        `SELECT n.id, n.label, n.type, n.community, n.props, ` +
+        `e.relation, e.confidence, 'out' AS direction ` +
+        `FROM ${q(EDGE_TABLE)} e ` +
+        `JOIN ${q(NODE_TABLE)} n ` +
+        `ON n.city_slug = e.city_slug AND n.id = e.target_id ` +
+        `WHERE e.city_slug = $1 AND e.source_id = $2 ` +
+        `UNION ALL ` +
+        `SELECT n.id, n.label, n.type, n.community, n.props, ` +
+        `e.relation, e.confidence, 'in' AS direction ` +
+        `FROM ${q(EDGE_TABLE)} e ` +
+        `JOIN ${q(NODE_TABLE)} n ` +
+        `ON n.city_slug = e.city_slug AND n.id = e.source_id ` +
+        `WHERE e.city_slug = $1 AND e.target_id = $2`;
+      const result = await pool.query(sql, [targetSlug, nodeId]);
+      return result.rows ?? [];
+    },
+
+    async clear(options?: string | PostgresClearOptions): Promise<void> {
+      const opts = typeof options === "string" ? { namespace: options } : options ?? {};
+      if (!opts.force) {
+        throw new Error(
+          `refusing to clear postgres city_slug '${citySlug}'; pass { force: true } to delete`,
+        );
+      }
+      const targetSlug = opts.namespace ?? citySlug;
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await deleteCityRows(client, q(NODE_TABLE), targetSlug);
+        await deleteCityRows(client, q(EDGE_TABLE), targetSlug);
+        await deleteCityRows(client, q(META_TABLE), targetSlug);
+        await client.query("COMMIT");
+      } catch (err) {
+        try {
+          await client.query("ROLLBACK");
+        } catch {
+          /* ignore */
+        }
+        throw err;
+      } finally {
+        client.release();
+      }
+      localMeta.delete(targetSlug);
+    },
+
+    async query(
+      statement: string,
+      params?: unknown[] | Record<string, unknown>,
+    ): Promise<unknown> {
+      // pg uses positional ($1, $2) parameters; pass an array through verbatim.
+      // A named bag is forwarded as a single jsonb-ish parameter only when the
+      // statement opts into it; otherwise positional is the contract.
+      const positional = Array.isArray(params) ? params : undefined;
+      return pool.query(statement, positional);
+    },
+
+    async close(): Promise<void> {
+      if (closed) return;
+      closed = true;
+      await pool.end();
+    },
+  };
+}
