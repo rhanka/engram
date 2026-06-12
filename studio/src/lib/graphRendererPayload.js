@@ -200,6 +200,9 @@ export function buildGraphRendererPayload(scene, options = {}) {
       // to the style buffers; absent = solid / normal (back-compatible).
       fill: node.fill,
       border: node.border,
+      // Recon focal-pair override (ReconciliationView): always draw this box
+      // node's label in-box, bypassing the degree/god-class label gate.
+      forceBoxLabel: node.forceBoxLabel === true,
       size: nodeSize(node, nodeRadius, selected, focused),
       color: focused ? FOCUS_COLOR : selected ? SELECTED_COLOR : colorForGroup(node.group),
     };
@@ -225,6 +228,22 @@ export function buildGraphRendererPayload(scene, options = {}) {
     edge: { width: 1, color: EDGE_COLOR, dash: "solid", curvature: 0.15 },
   });
   const nodeIndexById = new Map(nodes.map((node, index) => [node.id, index]));
+
+  // Recon focal-pair parity: nodes flagged `forceBoxLabel` (the two entities
+  // under comparison in the reconciliation view) ALWAYS carry their in-box
+  // label, overriding the degree/god-class label gate applied inside
+  // buildStyleBuffers — both twins must read as identical labelled rounded
+  // boxes. The renderer sizes a box to its label text, so forcing the same
+  // label path on both yields the same glyph. View-scoped: only the recon
+  // view sets the flag; main-view scenes never do, so the god-class gate is
+  // untouched there. Applied to baseStyle BEFORE buildConnectedDimStyle so
+  // the label survives dim / merge re-styling (cloneStyle copies nodeLabels).
+  for (const node of nodes) {
+    if (node.forceBoxLabel !== true || !isBoxShape(node.shape)) continue;
+    const index = nodeIndexById.get(node.id);
+    if (!Number.isInteger(index)) continue;
+    baseStyle.nodeLabels[index] = node.label || String(node.id);
+  }
   const renderedEdges = Array.from(renderGraph.edgeInputIndices ?? [], (inputIndex) => edges[inputIndex]);
 
   const payload = {
