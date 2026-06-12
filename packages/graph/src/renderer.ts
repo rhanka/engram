@@ -444,18 +444,19 @@ const EDGE_CURVE_FACTOR = 0.5;
 
 // Legacy vis-network `shape:box` parity. The box IS the node glyph drawn by the
 // Canvas2D fallback: a rounded rectangle, white-translucent fill, node-coloured
-// border, dark centred text. SCALE parity (measured on the legacy render): the
-// legacy box is 22 world units tall (font 12 + 2 × margin 5) beside nodes whose
-// drawn diameter is ~21 world units — i.e. the box HEIGHT reads as one node
-// glyph, with SMALL text scaled to fit inside, and only the WIDTH grows to fit
-// the text. We therefore anchor the box height to the node's drawn diameter
-// (2 × nodeSizes[i] × pixelRatio × zoom — the same on-screen size every other
-// shape uses) and derive font / margin / corner from the legacy 12 : 5 : 6
-// proportions of that 22-unit height.
+// border, dark centred text. SCALE rule: the box HEIGHT equals the node's drawn
+// DIAMETER (2 × nodeSizes[i] × pixelRatio × zoom — the exact on-screen height a
+// neighbouring diamond/circle of the same nodeSize occupies), the label font is
+// sized to FIT that height minus a SMALL margin per side, and only the WIDTH
+// grows to hug the text. So a box always reads as ONE node glyph beside its
+// neighbours, never as an oversized text card.
 const BOX_SHAPE = 5;
-const BOX_FONT_RATIO = 12 / 22; // font height as a fraction of the box height
-const BOX_MARGIN_RATIO = 5 / 22; // padding around the text per side
-const BOX_CORNER_RATIO = 6 / 22; // corner radius
+const BOX_MARGIN_RATIO = 1 / 8; // small margin per side, fraction of box height
+const BOX_FONT_RATIO = 1 - 2 * BOX_MARGIN_RATIO; // font fills the rest (3/4)
+const BOX_CORNER_RATIO = 1 / 4; // corner radius as a fraction of box height
+// Non-labelled (low-degree) box collapse, as a fraction of the box height:
+// legacy hidden-font boxes shrink to their two 5-unit margins of a 22-unit box.
+const BOX_EMPTY_RATIO = 10 / 22;
 const BOX_FILL: readonly [number, number, number, number] = [255, 255, 255, 0.5 * 255];
 const BOX_TEXT_COLOR = "#0f172a"; // theme-dark label text (slate-900)
 
@@ -593,11 +594,11 @@ interface NodeGeometry {
 
 /**
  * Legacy `shape:box` glyph dimensions. The box height equals the node's drawn
- * DIAMETER (2 × radius — the same on-screen size every other shape occupies);
- * the font is scaled to fit inside that height (legacy 12/22 proportion) and
- * the box only grows in WIDTH to fit the (small) text plus margins. A
- * non-labelled (low-degree) box collapses to its margins, like the legacy
- * hidden-font (fontSize 0) box: a small 2-margin square.
+ * DIAMETER (2 × radius — the same on-screen height every other shape occupies);
+ * the font is sized to FIT that height minus a small margin per side, and the
+ * box only grows in WIDTH to fit the text plus margins. A non-labelled
+ * (low-degree) box collapses like the legacy hidden-font (fontSize 0) box: a
+ * small square of BOX_EMPTY_RATIO × height.
  */
 function boxDimensions(
   radius: number,
@@ -610,7 +611,7 @@ function boxDimensions(
   const fontPx = height * BOX_FONT_RATIO;
 
   if (!label) {
-    const side = 2 * margin;
+    const side = height * BOX_EMPTY_RATIO;
     return { w: side, h: side, fontPx, corner };
   }
 
@@ -624,9 +625,9 @@ function boxDimensions(
  * - Eligible (central) box: a rounded rectangle with a white-translucent
  *   fill, the node colour as border, and the dark label text centred inside.
  *   Height = the node's drawn diameter (same scale as every other glyph);
- *   font fits inside that height; width hugs the measured text.
+ *   font fits that height minus a small margin; width hugs the measured text.
  * - Non-eligible (low-degree / non-labelled) box: a small EMPTY rounded rect
- *   (2 margins per side — the legacy hidden-font collapse), no text.
+ *   (BOX_EMPTY_RATIO of the height — the legacy hidden-font collapse), no text.
  *
  * Exactly ONE fillText per labelled box per frame — the box text IS the node
  * label; no other layer may draw it again. Fill / stroke / text alpha follow

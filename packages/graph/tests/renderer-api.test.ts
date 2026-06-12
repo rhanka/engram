@@ -392,7 +392,8 @@ describe("createGraphRenderer", () => {
       edges: new Uint32Array([]),
     });
     view.setStyle({
-      // Radius 11 -> box height = drawn diameter 22 -> font 22 * 12/22 = 12px.
+      // Radius 11 -> box height = drawn diameter 22 -> font 22 * 3/4 = 16.5px
+      // (font fits the box height minus a 1/8 margin per side).
       nodeSizes: new Float32Array([11, 11]),
       // shape code 5 = box for both; only the first carries a label.
       nodeShapes: new Uint8Array([5, 5]),
@@ -410,17 +411,23 @@ describe("createGraphRenderer", () => {
     // No circle glyphs: both nodes are boxes (rounded rects via quadraticCurveTo).
     expect(context2d.calls.arc).toHaveLength(0);
     // EXACTLY ONE text per labelled box, centred on the node, at the font
-    // fitted to the box height (node diameter 22 -> 12px); the empty box draws none.
+    // fitted to the box height (node diameter 22 -> 16.5px); the empty box draws none.
     expect(context2d.calls.fillText).toEqual([
-      { text: "Central Work", x: 100, y: 50, font: "12px sans-serif" },
+      { text: "Central Work", x: 100, y: 50, font: "16.5px sans-serif" },
     ]);
     // The box width comes from the label measured AT the rendered font.
-    expect(context2d.calls.measureText).toEqual([{ text: "Central Work", font: "12px sans-serif" }]);
+    expect(context2d.calls.measureText).toEqual([{ text: "Central Work", font: "16.5px sans-serif" }]);
     // Both boxes fill (translucent) and stroke (node-coloured border).
     expect(context2d.calls.fill).toBe(2);
     expect(context2d.calls.stroke).toBe(2);
     // Rounded rect = 4 quadratic corners per box.
     expect(context2d.calls.quadraticCurveTo).toBe(8);
+    // Box HEIGHT = the node's drawn diameter: the labelled box's path spans
+    // exactly node y ± radius (50 ± 11), the same height a neighbouring
+    // diamond/circle of the same nodeSize would occupy.
+    const labelledBoxCorners = context2d.calls.quadraticCurveToCoords.slice(0, 4);
+    expect(Math.min(...labelledBoxCorners.map((corner) => corner.cy))).toBe(39);
+    expect(Math.max(...labelledBoxCorners.map((corner) => corner.cy))).toBe(61);
   });
 
   it("measures and draws the box label at the zoom-scaled font (no base/scaled mismatch)", () => {
@@ -453,11 +460,11 @@ describe("createGraphRenderer", () => {
     view.render();
 
     // Drawn radius = 11 * pixelRatio(2) * zoom(3) = 66 -> box height 132 ->
-    // font = 132 * 12/22 = 72px: BOTH the measurement (box sizing) and the
+    // font = 132 * 3/4 = 99px: BOTH the measurement (box sizing) and the
     // drawn text use it — the box always hugs its text.
-    expect(context2d.calls.measureText).toEqual([{ text: "Central Work", font: "72px sans-serif" }]);
+    expect(context2d.calls.measureText).toEqual([{ text: "Central Work", font: "99px sans-serif" }]);
     expect(context2d.calls.fillText).toEqual([
-      { text: "Central Work", x: 200, y: 100, font: "72px sans-serif" },
+      { text: "Central Work", x: 200, y: 100, font: "99px sans-serif" },
     ]);
   });
 
