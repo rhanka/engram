@@ -23,7 +23,7 @@ vi.mock("neo4j-driver", () => {
 
 const storageDir = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "storage");
 
-const DRIVER_PACKAGES = ["neo4j-driver", "@google-cloud/spanner", "better-sqlite3"];
+const DRIVER_PACKAGES = ["neo4j-driver", "@google-cloud/spanner", "better-sqlite3", "pg"];
 
 describe("storage import guard", () => {
   it("src/storage has no static driver imports", () => {
