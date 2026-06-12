@@ -1,4 +1,5 @@
 import { computePositionBounds, copyPositions } from "./positions";
+import { BOX_GLYPH_CORNER_RATIO, SQUARE_INSET_RATIO, shapePolygonPoints } from "./shape-geometry";
 import type {
   CameraState,
   FitViewOptions,
@@ -439,7 +440,6 @@ function applyDash(context: Graph2DContext, dash: number, pixelRatio: number): v
   }
 }
 
-const STAR_INNER_RATIO = 0.42;
 const EDGE_CURVE_FACTOR = 0.5;
 
 // Legacy vis-network `shape:box` parity. The box IS the node glyph drawn by the
@@ -510,66 +510,16 @@ function drawRoundedBox(
 }
 
 function drawNodeShapePath(context: Graph2DContext, x: number, y: number, radius: number, shape: number): void {
-  if (shape === 1) {
-    const diagonal = radius;
-    pathPolygon(context, x, y, [
-      [0, -diagonal],
-      [diagonal, 0],
-      [0, diagonal],
-      [-diagonal, 0],
-    ]);
-    return;
-  }
-
-  if (shape === 2) {
-    const outer = radius;
-    const inner = outer * STAR_INNER_RATIO;
-    const points: Array<[number, number]> = [];
-    for (let index = 0; index < 10; index += 1) {
-      const angle = (index * Math.PI) / 5 - Math.PI / 2;
-      const r = index % 2 === 0 ? outer : inner;
-      points.push([Math.cos(angle) * r, Math.sin(angle) * r]);
-    }
+  // Shared geometry (shape-geometry.ts) so DOM/SVG glyphs match the canvas.
+  const points = shapePolygonPoints(shape, radius);
+  if (points) {
     pathPolygon(context, x, y, points);
-    return;
-  }
-
-  if (shape === 3) {
-    const circumradius = radius;
-    const points: Array<[number, number]> = [];
-    for (let index = 0; index < 6; index += 1) {
-      const angle = (index * Math.PI) / 3 - Math.PI / 6;
-      points.push([Math.cos(angle) * circumradius, Math.sin(angle) * circumradius]);
-    }
-    pathPolygon(context, x, y, points);
-    return;
-  }
-
-  if (shape === 4) {
-    const half = radius * 0.88;
-    pathPolygon(context, x, y, [
-      [-half, -half],
-      [half, -half],
-      [half, half],
-      [-half, half],
-    ]);
     return;
   }
 
   if (shape === 5) {
-    const side = radius * 0.88 * 2;
-    drawRoundedBox(context, x, y, side, side, radius * 0.88 * 0.6);
-    return;
-  }
-
-  if (shape === 6) {
-    const circumradius = radius;
-    const points: Array<[number, number]> = [];
-    for (let index = 0; index < 3; index += 1) {
-      const angle = (index * 2 * Math.PI) / 3 - Math.PI / 2;
-      points.push([Math.cos(angle) * circumradius, Math.sin(angle) * circumradius]);
-    }
-    pathPolygon(context, x, y, points);
+    const half = radius * SQUARE_INSET_RATIO;
+    drawRoundedBox(context, x, y, half * 2, half * 2, half * BOX_GLYPH_CORNER_RATIO);
     return;
   }
 

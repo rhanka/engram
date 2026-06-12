@@ -7,6 +7,7 @@
    */
   import { SelectableRow } from "@sentropic/design-system-svelte";
   import Accordion from "./Accordion.svelte";
+  import TypeShapeGlyph from "./TypeShapeGlyph.svelte";
   import {
     graphNodes,
     nodeType,
@@ -87,6 +88,7 @@
           <li>
             <SelectableRow value={t.key} selected={typeSet.has(t.key)} onselect={() => onToggleType?.(t.key)}>
               <span class="rail-row-content">
+                <TypeShapeGlyph type={t.key} />
                 <span class="rail-row-label">{t.key}</span>
                 <span class="rail-row-count">{t.count}</span>
               </span>

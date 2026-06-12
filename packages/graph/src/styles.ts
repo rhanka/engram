@@ -1,3 +1,4 @@
+import { BOX_SHAPE_CODE, shapeCode } from "./shape-geometry";
 import type {
   ColorInput,
   EdgeDashMode,
@@ -85,22 +86,6 @@ function dashCode(value: EdgeDashMode | undefined): number {
   if (value === "long-dash") return 3;
   return 0;
 }
-
-function shapeCode(value: unknown): number {
-  const shape = String(value ?? "dot").trim().toLowerCase();
-  if (shape === "diamond") return 1;
-  if (shape === "star") return 2;
-  if (shape === "hexagon") return 3;
-  if (shape === "square") return 4;
-  // Legacy vis-network `shape:box` parity: a labelled rounded rectangle drawn
-  // as the node glyph by the Canvas2D fallback. `box` aliases `roundedbox`.
-  if (shape === "box" || shape === "roundedbox") return 5;
-  if (shape === "triangle") return 6;
-  return 0;
-}
-
-/** Shape codes that render as the legacy box glyph (labelled rounded rect). */
-const BOX_SHAPE_CODE = 5;
 
 /**
  * Fraction of the maximum node degree a box node must reach for its label to be
