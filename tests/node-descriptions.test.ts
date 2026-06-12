@@ -226,15 +226,26 @@ describe("generateNodeDescriptions (default-on entry point)", () => {
     );
   });
 
-  it("skips gracefully (no throw, no descriptions) when no backend is configured", async () => {
+  it("emits assistant instructions (no throw, no descriptions) when no backend is configured", async () => {
     clearProviderKeys();
     const warn = vi.spyOn(process.stderr, "write").mockReturnValue(true);
     const G = mkCodeGraph();
-    const result = await generateNodeDescriptions(G);
-    expect(result.source).toBe("skipped");
+    // Use a temp instructionDir so we don't pollute the working directory.
+    const { mkdtempSync } = await import("node:fs");
+    const { join: pathJoin } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const instructionDir = mkdtempSync(pathJoin(tmpdir(), "graphify-desc-test-"));
+    const result = await generateNodeDescriptions(G, { instructionDir, quiet: false });
+    // New behavior: assistant mode — emits instructions, source="assistant", 0 descriptions.
+    expect(result.source).toBe("assistant");
     expect(result.describedCount).toBe(0);
     expect(G.hasNodeAttribute("src_a_resolveconfig", "description")).toBe(false);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("no LLM backend configured"));
+    // Verify instruction files were written.
+    const { readdirSync } = await import("node:fs");
+    const files = readdirSync(instructionDir);
+    expect(files.some((f) => f.endsWith(".md"))).toBe(true);
+    // Warning mentions assistant mode.
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("assistant"));
   });
 
   it("never throws when the backend errors; degrades to skipped", async () => {
@@ -252,6 +263,71 @@ describe("generateNodeDescriptions (default-on entry point)", () => {
   it("rejects an unknown explicit provider without throwing", async () => {
     const G = mkCodeGraph();
     const result = await generateNodeDescriptions(G, { provider: "not-a-provider", quiet: true });
+    expect(result.source).toBe("skipped");
+    expect(result.describedCount).toBe(0);
+  });
+
+  it("assistant mode: ingest picks up completed answer files on second run", async () => {
+    clearProviderKeys();
+    const { mkdtempSync, writeFileSync: writeFs } = await import("node:fs");
+    const { join: pathJoin } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const instructionDir = mkdtempSync(pathJoin(tmpdir(), "graphify-desc-ingest-"));
+
+    const G = mkCodeGraph();
+    // Write a pre-filled answer file simulating the assistant's response.
+    writeFs(
+      pathJoin(instructionDir, "batch-000.json"),
+      JSON.stringify({
+        src_a_resolveconfig: "Resolves the configuration for the code graph.",
+        src_a_buildgraph: "Builds the code knowledge graph from extracted nodes.",
+        src_b_const: "Maximum node count constant used by the graph builder.",
+      }),
+      "utf-8",
+    );
+
+    const result = await generateNodeDescriptions(G, { instructionDir, quiet: true });
+    expect(result.source).toBe("assistant");
+    expect(result.describedCount).toBe(3);
+    expect(G.getNodeAttribute("src_a_resolveconfig", "description")).toBe(
+      "Resolves the configuration for the code graph.",
+    );
+    expect(G.getNodeAttribute("src_a_buildgraph", "description")).toBe(
+      "Builds the code knowledge graph from extracted nodes.",
+    );
+  });
+
+  it("assistant mode: --description-mode direct with key uses LLM directly", async () => {
+    clearProviderKeys();
+    const G = mkCodeGraph();
+    const callLlm = mockCallLlm((id) => `Direct description for ${id}.`);
+    const result = await generateNodeDescriptions(G, {
+      mode: "direct",
+      callLlm,
+      quiet: true,
+    });
+    expect(result.source).toBe("assistant"); // callLlm with no provider → assistant source fallback
+    expect(result.describedCount).toBeGreaterThan(0);
+  });
+
+  it("no-key, --description-mode assistant: emits instructions even without instructionDir set", async () => {
+    // When mode is explicitly "assistant" and no instructionDir, defaults to CWD-based path.
+    // This just checks no exception is thrown (the dir may or may not be writable in CI).
+    clearProviderKeys();
+    const G = mkCodeGraph();
+    const { mkdtempSync } = await import("node:fs");
+    const { join: pathJoin } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const instructionDir = mkdtempSync(pathJoin(tmpdir(), "graphify-desc-explicit-"));
+    const result = await generateNodeDescriptions(G, { mode: "assistant", instructionDir, quiet: true });
+    expect(result.source).toBe("assistant");
+    expect(result.describedCount).toBe(0);
+  });
+
+  it("no-key, --description-mode direct: reports skip (no key for direct mode)", async () => {
+    clearProviderKeys();
+    const G = mkCodeGraph();
+    const result = await generateNodeDescriptions(G, { mode: "direct", quiet: true });
     expect(result.source).toBe("skipped");
     expect(result.describedCount).toBe(0);
   });
