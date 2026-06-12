@@ -521,7 +521,9 @@ export function buildStudioScene(
       id: node.id,
       label: nodeLabel(node),
       weight: weightForDegree(degree.get(node.id) ?? 0, maxDegree, sizedMaxDegree),
-      shape: finalShapes[index],
+      // finalShapes is index-aligned with rawNodes; ?? only satisfies
+      // noUncheckedIndexedAccess (shapeForType's own fallback is "dot" too).
+      shape: finalShapes[index] ?? "dot",
     };
     if (fill && fill !== "solid") out.fill = fill;
     if (border && border !== "normal") out.border = border;
