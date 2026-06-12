@@ -400,6 +400,24 @@ export type {
   StudioSceneNode,
   StudioSceneStats,
 } from "./studio-scene.js";
+export { SCENE_HIERARCHIES_SCHEMA, buildSceneHierarchySidecar } from "./scene-hierarchies.js";
+export type {
+  BuildSceneHierarchySidecarOptions,
+  SceneHierarchy,
+  SceneHierarchyConflict,
+  SceneHierarchyNodeEntry,
+  SceneHierarchyOverlayArc,
+  SceneHierarchySidecar,
+} from "./scene-hierarchies.js";
+export {
+  SCENE_HIERARCHIES_FILENAME,
+  clearSceneHierarchiesEmitterCache,
+  emitSceneHierarchies,
+} from "./scene-hierarchies-emitter.js";
+export type {
+  EmitSceneHierarchiesOptions,
+  EmitSceneHierarchiesResult,
+} from "./scene-hierarchies-emitter.js";
 export { buildEntitySidecar, resolveStudioAppDir } from "./studio-assets.js";
 export type { EntitySidecarResponse } from "./studio-assets.js";
 export { computeLayout, attachLayoutPositions } from "./graph-layout.js";
