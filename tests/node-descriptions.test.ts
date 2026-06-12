@@ -7,6 +7,7 @@ import {
   describeNodes,
   detectDescriptionBackend,
   generateNodeDescriptions,
+  isTransientBackendError,
   type CallLlmFn,
 } from "../src/node-descriptions.js";
 
@@ -253,6 +254,196 @@ describe("generateNodeDescriptions (default-on entry point)", () => {
     const result = await generateNodeDescriptions(G, { provider: "not-a-provider", quiet: true });
     expect(result.source).toBe("skipped");
     expect(result.describedCount).toBe(0);
+  });
+});
+
+describe("isTransientBackendError", () => {
+  it("matches HTTP 5xx, rate limits, 429, network resets and overload phrases", () => {
+    for (const msg of [
+      "Internal Server Error (status 500)",
+      "503 service unavailable",
+      "rate limit exceeded",
+      "Too many requests: 429",
+      "read ECONNRESET",
+      "connect ETIMEDOUT 1.2.3.4:443",
+      "getaddrinfo ENOTFOUND api.example.com",
+      "getaddrinfo EAI_AGAIN api.example.com",
+      "fetch failed",
+      "the model is overloaded",
+      "Service Unavailable",
+    ]) {
+      expect(isTransientBackendError(new Error(msg))).toBe(true);
+    }
+  });
+
+  it("does not match deterministic/client errors", () => {
+    for (const msg of [
+      "invalid api key",
+      "400 bad request",
+      "model not found",
+      "malformed JSON response",
+      "unexpected token in JSON",
+    ]) {
+      expect(isTransientBackendError(new Error(msg))).toBe(false);
+    }
+  });
+
+  it("inspects error.cause for the transient signal", () => {
+    const err = new Error("request failed");
+    (err as { cause?: unknown }).cause = new Error("ECONNRESET");
+    expect(isTransientBackendError(err)).toBe(true);
+  });
+});
+
+describe("describeNodes retry (transient backend errors)", () => {
+  it("retries a transient failure then succeeds (bounded ≤ 3 attempts)", async () => {
+    const G = mkCodeGraph();
+    let calls = 0;
+    const result = await describeNodes(G, {
+      provider: "anthropic",
+      callLlm: async (prompt) => {
+        calls += 1;
+        if (calls < 3) throw new Error("503 service unavailable");
+        const ids = [...prompt.matchAll(/^- "([^"]+)":/gmu)].map((m) => m[1]!);
+        return JSON.stringify(Object.fromEntries(ids.map((id) => [id, `desc ${id}`])));
+      },
+    });
+    expect(calls).toBe(3);
+    expect(result.get("src_a_resolveconfig")).toBe("desc src_a_resolveconfig");
+  });
+
+  it("gives up after MAX attempts on a persistent transient error", async () => {
+    const G = mkCodeGraph();
+    let calls = 0;
+    await expect(
+      describeNodes(G, {
+        provider: "anthropic",
+        callLlm: async () => {
+          calls += 1;
+          throw new Error("overloaded");
+        },
+      }),
+    ).rejects.toThrow("overloaded");
+    expect(calls).toBe(3);
+  });
+
+  it("does NOT retry a non-transient error", async () => {
+    const G = mkCodeGraph();
+    let calls = 0;
+    await expect(
+      describeNodes(G, {
+        provider: "anthropic",
+        callLlm: async () => {
+          calls += 1;
+          throw new Error("invalid api key");
+        },
+      }),
+    ).rejects.toThrow("invalid api key");
+    expect(calls).toBe(1);
+  });
+});
+
+describe("generateNodeDescriptions coverage report", () => {
+  it("returns a coverage report counting describable/described and reasons", async () => {
+    const G = mkCodeGraph();
+    const result = await generateNodeDescriptions(G, {
+      callLlm: mockCallLlm((id) => `One sentence about ${id}.`),
+      quiet: true,
+    });
+    expect(result.coverage).toEqual({
+      describable: 3,
+      described: 3,
+      skipped: 0,
+      reasons: { noBackend: 0, emptyReply: 0, error: 0, optedOut: 0 },
+    });
+  });
+
+  it("counts noBackend reason and never silently ships 0/N", async () => {
+    clearProviderKeys();
+    vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const G = mkCodeGraph();
+    const result = await generateNodeDescriptions(G);
+    expect(result.coverage.describable).toBe(3);
+    expect(result.coverage.described).toBe(0);
+    expect(result.coverage.skipped).toBe(3);
+    expect(result.coverage.reasons.noBackend).toBe(3);
+  });
+
+  it("emits a LOUD low-coverage warning when a backend ran but covered < 50%", async () => {
+    const G = mkCodeGraph(); // 3 describable code nodes
+    const warn = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    // Only describe one of the three -> 1/3 < 50% -> loud warning.
+    await generateNodeDescriptions(G, {
+      callLlm: async (prompt) => {
+        const ids = [...prompt.matchAll(/^- "([^"]+)":/gmu)].map((m) => m[1]!);
+        const first = ids[0]!;
+        return JSON.stringify({ [first]: "only this one" });
+      },
+    });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("WARNING low coverage"));
+  });
+
+  it("counts emptyReply when the backend returns nothing usable", async () => {
+    const G = mkCodeGraph();
+    const result = await generateNodeDescriptions(G, {
+      callLlm: async () => "{}",
+      quiet: true,
+    });
+    expect(result.coverage.described).toBe(0);
+    expect(result.coverage.reasons.emptyReply).toBe(3);
+  });
+
+  it("counts error reason when the backend throws non-transiently", async () => {
+    const G = mkCodeGraph();
+    const result = await generateNodeDescriptions(G, {
+      callLlm: async () => {
+        throw new Error("boom");
+      },
+      quiet: true,
+    });
+    expect(result.coverage.reasons.error).toBe(3);
+  });
+});
+
+describe("generateNodeDescriptions --fill-missing (onlyMissing)", () => {
+  it("only describes nodes whose description is empty/absent", async () => {
+    const G = mkCodeGraph();
+    // Pre-seed one node with an existing description.
+    G.setNodeAttribute("src_a_resolveconfig", "description", "pre-existing");
+    const described: string[] = [];
+    const result = await generateNodeDescriptions(G, {
+      onlyMissing: true,
+      quiet: true,
+      callLlm: async (prompt) => {
+        const ids = [...prompt.matchAll(/^- "([^"]+)":/gmu)].map((m) => m[1]!);
+        described.push(...ids);
+        return JSON.stringify(Object.fromEntries(ids.map((id) => [id, `desc ${id}`])));
+      },
+    });
+    // The pre-described node was not sent to the backend.
+    expect(described).not.toContain("src_a_resolveconfig");
+    expect(described).toContain("src_a_buildgraph");
+    expect(described).toContain("src_b_const");
+    // Existing description preserved; the other two filled.
+    expect(G.getNodeAttribute("src_a_resolveconfig", "description")).toBe("pre-existing");
+    expect(result.describedCount).toBe(2);
+  });
+
+  it("is a no-op when every node already has a description", async () => {
+    const G = mkCodeGraph();
+    for (const id of G.nodes()) G.setNodeAttribute(id, "description", "already there");
+    let calls = 0;
+    const result = await generateNodeDescriptions(G, {
+      onlyMissing: true,
+      quiet: true,
+      callLlm: async () => {
+        calls += 1;
+        return "{}";
+      },
+    });
+    expect(calls).toBe(0);
+    expect(result.describedCount).toBe(0);
+    expect(result.coverage.described).toBe(3);
   });
 });
 

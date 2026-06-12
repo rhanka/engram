@@ -102,6 +102,12 @@ export async function rebuildCode(
     descriptionBackend?: string;
     descriptionModel?: string;
     descriptionMaxNodes?: number;
+    /**
+     * WP-reliability: only (re)describe nodes whose `description` attr is empty.
+     * Powers `graphify update --fill-missing` — an idempotent gap-fill that does
+     * not re-spend tokens on already-described nodes.
+     */
+    descriptionOnlyMissing?: boolean;
   } = {},
 ): Promise<boolean> {
   try {
@@ -317,6 +323,7 @@ export async function rebuildCode(
         ...(options.descriptionBackend ? { provider: options.descriptionBackend } : {}),
         ...(options.descriptionModel ? { model: options.descriptionModel } : {}),
         ...(options.descriptionMaxNodes !== undefined ? { maxNodes: options.descriptionMaxNodes } : {}),
+        ...(options.descriptionOnlyMissing ? { onlyMissing: true } : {}),
       });
     }
 

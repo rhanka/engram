@@ -3468,6 +3468,7 @@ export async function main(): Promise<void> {
     .option("--no-description", "Skip generating per-node descriptions (entity + code symbols)")
     .option("--description-backend <provider>", "Description LLM provider (default: auto-detect from API keys)")
     .option("--description-model <id>", "Description LLM model override")
+    .option("--fill-missing", "Only describe nodes whose description is empty/absent (idempotent gap-fill)")
     .option("--scope <mode>", scopeOptionDescription())
     .option("--all", "Alias for --scope all")
     .action(async (updatePath = ".", opts) => {
@@ -3499,6 +3500,7 @@ export async function main(): Promise<void> {
         ...(typeof opts.descriptionModel === "string" && opts.descriptionModel.trim()
           ? { descriptionModel: opts.descriptionModel.trim() }
           : {}),
+        ...(opts.fillMissing ? { descriptionOnlyMissing: true } : {}),
         scope: scopeSelection.mode,
         scopeSource: scopeSelection.source,
       });
