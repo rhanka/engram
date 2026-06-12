@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import Graph from "graphology";
 
 import {
+  applySalientCommunityLabels,
   buildLabelingPromptLines,
   detectLabelingBackend,
   generateCommunityLabels,
@@ -401,5 +402,111 @@ describe("generateCommunityLabels", () => {
     expect(result.source).toBe("llm");
     expect(result.labels.get(0)).toBe("Community 0"); // placeholder
     expect(result.labels.get(1)).toBe("Order Management");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applySalientCommunityLabels (shared update/label helper)
+// ---------------------------------------------------------------------------
+
+describe("applySalientCommunityLabels", () => {
+  it("replaces generic placeholders with salient LLM names", async () => {
+    const G = mkGraph();
+    const labels = new Map<number, string>([
+      [0, "Community 0"],
+      [1, "Community 1"],
+    ]);
+    const { source } = await applySalientCommunityLabels(G, communities, labels, {
+      provider: "anthropic",
+      gods,
+      callLlm: happyPathLlm("Auth Services", "Order Management"),
+      quiet: true,
+    });
+    expect(source).toBe("llm");
+    expect(labels.get(0)).toBe("Auth Services");
+    expect(labels.get(1)).toBe("Order Management");
+  });
+
+  it("preserves a user-curated label and only fills generic ones", async () => {
+    const G = mkGraph();
+    const labels = new Map<number, string>([
+      [0, "My Curated Auth Name"], // not generic -> must survive
+      [1, "Community 1"], // generic -> replaced
+    ]);
+    await applySalientCommunityLabels(G, communities, labels, {
+      provider: "anthropic",
+      gods,
+      callLlm: happyPathLlm("Auth Services", "Order Management"),
+      quiet: true,
+    });
+    expect(labels.get(0)).toBe("My Curated Auth Name");
+    expect(labels.get(1)).toBe("Order Management");
+  });
+
+  it("leaves labels unchanged and reports placeholder when no backend", async () => {
+    const G = mkGraph();
+    const labels = new Map<number, string>([
+      [0, "Community 0"],
+      [1, "Community 1"],
+    ]);
+    const { source } = await applySalientCommunityLabels(G, communities, labels, {
+      provider: "not-a-provider",
+      quiet: true,
+    });
+    expect(source).toBe("placeholder");
+    expect(labels.get(0)).toBe("Community 0");
+    expect(labels.get(1)).toBe("Community 1");
+  });
+
+  it("nit (a): short-circuits (no LLM call) when NO generic label remains", async () => {
+    // Every community already has a salient (non-generic) name, so any LLM
+    // result would be folded into nothing. We must skip the round-trip entirely
+    // and not spend tokens — assert callLlm is never invoked and source is
+    // "placeholder" (no LLM ran), with the curated labels untouched.
+    const G = mkGraph();
+    const labels = new Map<number, string>([
+      [0, "Auth Services"],
+      [1, "Order Management"],
+    ]);
+    let calls = 0;
+    const callLlm: CallLlmFn = async () => {
+      calls += 1;
+      return JSON.stringify({ "0": "Should Not Apply", "1": "Should Not Apply" });
+    };
+    const { source } = await applySalientCommunityLabels(G, communities, labels, {
+      provider: "anthropic",
+      gods,
+      callLlm,
+      quiet: true,
+    });
+    expect(calls).toBe(0);
+    expect(source).toBe("placeholder");
+    expect(labels.get(0)).toBe("Auth Services");
+    expect(labels.get(1)).toBe("Order Management");
+  });
+
+  it("nit (a): still calls the LLM when at least one generic label remains", async () => {
+    // Guard against over-eager short-circuiting: a single generic placeholder
+    // must still trigger the LLM so it gets a salient name.
+    const G = mkGraph();
+    const labels = new Map<number, string>([
+      [0, "Auth Services"], // already salient
+      [1, "Community 1"], // generic -> must be filled
+    ]);
+    let calls = 0;
+    const callLlm: CallLlmFn = async (prompt, maxTokens) => {
+      calls += 1;
+      return happyPathLlm("Auth Services", "Order Management")(prompt, maxTokens);
+    };
+    const { source } = await applySalientCommunityLabels(G, communities, labels, {
+      provider: "anthropic",
+      gods,
+      callLlm,
+      quiet: true,
+    });
+    expect(calls).toBe(1);
+    expect(source).toBe("llm");
+    expect(labels.get(0)).toBe("Auth Services");
+    expect(labels.get(1)).toBe("Order Management");
   });
 });

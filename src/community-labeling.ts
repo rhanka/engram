@@ -282,6 +282,49 @@ export async function labelCommunities(
 
 export type LabelSource = "llm" | "placeholder";
 
+/** A label is "generic" when it is still the `Community <id>` placeholder. */
+function isGenericLabel(cid: number, label: string | undefined): boolean {
+  return !label || label.trim() === `Community ${cid}`;
+}
+
+/**
+ * Shared helper for the `update` pipeline and the `label` command: generate
+ * salient community names and fold them into an existing `labels` map,
+ * replacing ONLY generic "Community N" placeholders (so any user-curated /
+ * persisted label survives). Returns the (mutated) map and the label source.
+ *
+ * Degrades gracefully: with no backend / on error, `labels` is returned
+ * unchanged and `source` is "placeholder". Never throws.
+ */
+export async function applySalientCommunityLabels(
+  G: Graph,
+  communities: Map<number, string[]>,
+  labels: Map<number, string>,
+  options: GenerateCommunityLabelsOptions = {},
+): Promise<{ labels: Map<number, string>; source: LabelSource }> {
+  // Nit (a): short-circuit — the LLM result is folded in ONLY for communities
+  // whose current label is still the generic `Community N` placeholder. If
+  // every community already has a salient (non-generic) name, the call would
+  // produce names we'd immediately discard. Skip the LLM round-trip entirely to
+  // avoid spending tokens for nothing, and report "placeholder" (no LLM ran).
+  const hasGenericLabel = [...communities.keys()].some((cid) =>
+    isGenericLabel(cid, labels.get(cid)),
+  );
+  if (!hasGenericLabel) {
+    return { labels, source: "placeholder" };
+  }
+
+  const { labels: generated, source } = await generateCommunityLabels(G, communities, options);
+  if (source === "llm") {
+    for (const [cid, name] of generated) {
+      if (isGenericLabel(cid, labels.get(cid)) && !isGenericLabel(cid, name)) {
+        labels.set(cid, name);
+      }
+    }
+  }
+  return { labels, source };
+}
+
 export interface GenerateCommunityLabelsOptions {
   /** Explicit provider. If omitted, auto-detect from env vars. */
   provider?: DirectLlmProvider | string | null;

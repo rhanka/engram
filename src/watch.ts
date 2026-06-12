@@ -102,6 +102,32 @@ export async function rebuildCode(
     descriptionBackend?: string;
     descriptionModel?: string;
     descriptionMaxNodes?: number;
+    /**
+     * WP-reliability: only (re)describe nodes whose `description` attr is empty.
+     * Powers `graphify update --fill-missing` — an idempotent gap-fill that does
+     * not re-spend tokens on already-described nodes.
+     */
+    descriptionOnlyMissing?: boolean;
+    /**
+     * WP12: generate salient community labels (LLM) by DEFAULT after Louvain
+     * clustering, replacing generic "Community N" names. ON by default; CLI
+     * `--no-label` sets this false. `--no-cluster` implies no labels (there are
+     * no communities). Degrades gracefully (keeps generic names + a stderr note)
+     * when no LLM backend is configured.
+     */
+    label?: boolean;
+    labelBackend?: string;
+    labelModel?: string;
+    /**
+     * Phase 4: ONLY the fast git-hook rebuild (`hook-rebuild`) sets this true.
+     * It runs LLM-free (`describe: false`, `label: false`) to keep commits
+     * snappy, then drops a `.graphify_describe_pending` marker so the next
+     * describe-producing `graphify update` (default-on) fills the gap and
+     * `check-update` nudges the user. An explicit user `update --no-description`
+     * / `--no-label` must NOT leave this stale marker, so the marker is written
+     * only when THIS flag is set — never merely because `describe === false`.
+     */
+    markDescribePending?: boolean;
   } = {},
 ): Promise<boolean> {
   try {
@@ -286,6 +312,25 @@ export async function rebuildCode(
         labelsPath: paths.scratch.labels,
         graph: G,
       });
+
+    // WP12: salient community labels on by DEFAULT. Run BEFORE the report so
+    // GRAPH_REPORT.md and graph.json both carry the salient names. Skipped when
+    // clustering is off (no communities) or `label === false` (--no-label).
+    // Degrades to generic "Community N" + a stderr note when no LLM backend.
+    if (!options.noCluster && options.label !== false && communities.size > 0) {
+      const { applySalientCommunityLabels } = await import("./community-labeling.js");
+      const { source } = await applySalientCommunityLabels(G, communities, labels, {
+        provider: options.labelBackend ?? null,
+        ...(options.labelModel ? { model: options.labelModel } : {}),
+        gods,
+      });
+      if (source === "llm") {
+        // Persist so subsequent cluster-only / update / hook runs reuse the
+        // salient names instead of regenerating them.
+        persistCommunityLabels(labels, paths.scratch.labels);
+      }
+    }
+
     const questions = options.noCluster ? [] : suggestQuestions(G, communities, labels);
 
     const report = generate(
@@ -311,13 +356,19 @@ export async function rebuildCode(
     // WP11: stamp node descriptions onto G before the JSON write so each
     // `description` is persisted to graph.json. Skips gracefully (no throw)
     // when no LLM backend is configured.
+    let descriptionsComplete = false;
     if (options.describe !== false) {
       const { generateNodeDescriptions } = await import("./node-descriptions.js");
-      await generateNodeDescriptions(G, {
+      const result = await generateNodeDescriptions(G, {
         ...(options.descriptionBackend ? { provider: options.descriptionBackend } : {}),
         ...(options.descriptionModel ? { model: options.descriptionModel } : {}),
         ...(options.descriptionMaxNodes !== undefined ? { maxNodes: options.descriptionMaxNodes } : {}),
+        ...(options.descriptionOnlyMissing ? { onlyMissing: true } : {}),
       });
+      // "Complete" = every describable node now has a description. When a backend
+      // is missing this stays false, so the pending marker is kept for a later
+      // `update --fill-missing` once a key is configured.
+      descriptionsComplete = result.coverage.described >= result.coverage.describable;
     }
 
     const jsonWritten = toJson(G, communities, paths.graph, {
@@ -329,6 +380,27 @@ export async function rebuildCode(
     }
     persistCommunityLabels(labels, paths.scratch.labels);
     writeFileSync(paths.report, report, "utf-8");
+
+    // Phase 4: describe-pending marker. The fast git-hook rebuild runs LLM-free
+    // (`describe: false`, `label: false`) to keep commits snappy, so the
+    // rebuilt graph is NOT yet described/labelled. ONLY that path passes
+    // `markDescribePending: true` — so we drop a marker for the next
+    // describe-producing run (`graphify update`, default-on) to fill the gap and
+    // `check-update` to nudge the user. An explicit user `update --no-description`
+    // (or `--no-label`) must NOT poison `check-update` with a false "rebuilt by
+    // the fast git hook" marker, so we gate on `markDescribePending`, NOT merely
+    // on `describe === false`. A run that actually completes descriptions clears
+    // any pre-existing marker.
+    if (descriptionsComplete) {
+      if (existsSync(paths.describePending)) unlinkSync(paths.describePending);
+    } else if (options.markDescribePending === true) {
+      writeFileSync(
+        paths.describePending,
+        "Graph rebuilt by the fast git hook without descriptions/labels. " +
+          "Run `graphify update --fill-missing` to fill them.\n",
+        "utf-8",
+      );
+    }
 
     if (options.clearStale !== false) {
       // Clear stale needs_update flag if present
@@ -368,6 +440,12 @@ export function checkUpdate(root: string): CheckUpdateResult {
   if (existsSync(paths.needsUpdate)) {
     reasons.push(".graphify/needs_update exists");
   }
+  const describePending = existsSync(paths.describePending);
+  if (describePending) {
+    reasons.push(
+      "graph was rebuilt by the fast git hook without descriptions/labels (.graphify_describe_pending)",
+    );
+  }
   if (metadata?.branch.stale) {
     const reason = metadata.branch.staleReason?.trim();
     reasons.push(reason ? `branch metadata is stale: ${reason}` : "branch metadata is stale");
@@ -381,7 +459,12 @@ export function checkUpdate(root: string): CheckUpdateResult {
   return {
     current: reasons.length === 0,
     reasons,
-    recommendedCommand: "Run the graphify skill with --update to refresh semantic data.",
+    // When the only pending signal is missing descriptions/labels, the precise
+    // fix is the idempotent gap-fill; otherwise fall back to a full refresh.
+    recommendedCommand:
+      describePending && reasons.length === 1
+        ? "Run `graphify update --fill-missing` to add descriptions + salient labels."
+        : "Run the graphify skill with --update to refresh semantic data.",
   };
 }
 

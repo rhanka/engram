@@ -51,9 +51,59 @@ const LABEL_MAXLEN = 80;
 /** Strip markdown fences that some models wrap JSON in. */
 const FENCE_RE = /^\s*```(?:json)?\s*|\s*```\s*$/gi;
 
+/** Max attempts (1 try + 2 retries) for a transient per-batch LLM failure. */
+const MAX_LLM_ATTEMPTS = 3;
+
+/** Base backoff (ms) between retries; grows linearly per attempt. */
+const RETRY_BACKOFF_MS = 250;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * True when `err` looks like a transient backend failure worth retrying:
+ * HTTP 5xx, rate limiting / 429, common network resets, "fetch failed",
+ * "overloaded", or "service unavailable". Matches on the error message so it
+ * works across the AI SDK provider error shapes without coupling to any one.
+ */
+const TRANSIENT_ERROR_RE =
+  /\b5\d\d\b|rate.?limit|\b429\b|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed|overloaded|service unavailable/i;
+
+export function isTransientBackendError(err: unknown): boolean {
+  const message =
+    err instanceof Error
+      ? `${err.message}${err.cause ? ` ${String((err.cause as { message?: string })?.message ?? err.cause)}` : ""}`
+      : String(err);
+  return TRANSIENT_ERROR_RE.test(message);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((res) => setTimeout(res, ms));
+}
+
+/**
+ * Call `callLlm`, retrying on transient backend errors with a small bounded
+ * linear backoff (≤ MAX_LLM_ATTEMPTS attempts). Non-transient errors and the
+ * final transient error are rethrown for the caller to handle.
+ */
+async function callLlmWithRetry(
+  callLlm: CallLlmFn,
+  prompt: string,
+  maxTokens: number,
+): Promise<string> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= MAX_LLM_ATTEMPTS; attempt += 1) {
+    try {
+      return await callLlm(prompt, maxTokens);
+    } catch (err) {
+      lastErr = err;
+      if (attempt >= MAX_LLM_ATTEMPTS || !isTransientBackendError(err)) throw err;
+      await sleep(RETRY_BACKOFF_MS * attempt);
+    }
+  }
+  throw lastErr;
+}
 
 function truncate(value: string, max = LABEL_MAXLEN): string {
   const trimmed = value.trim();
@@ -71,7 +121,39 @@ function isCodeNode(attrs: Record<string, unknown>): boolean {
   return safeString(attrs.file_type) === "code";
 }
 
-interface NodeContext {
+/** True when the node already carries a non-empty `description` attribute. */
+function hasDescription(attrs: Record<string, unknown>): boolean {
+  return safeString(attrs.description) !== null;
+}
+
+/**
+ * Quick structural check for whether a node has citation / evidence grounding,
+ * without building the full (truncating/deduping) citation context. Used by the
+ * coverage report to count "describable" entity nodes cheaply.
+ */
+function hasGrounding(attrs: Record<string, unknown>): boolean {
+  const citations = attrs.citations;
+  if (Array.isArray(citations) && citations.length > 0) return true;
+  const evidenceRefs = attrs.evidence_refs;
+  return Array.isArray(evidenceRefs) && evidenceRefs.length > 0;
+}
+
+/**
+ * A node is "describable" when the backend has enough to ground a description:
+ * it is a code symbol, or it is an entity node carrying citations / evidence.
+ * This is the denominator for the coverage report.
+ */
+function isDescribableNode(attrs: Record<string, unknown>): boolean {
+  return isCodeNode(attrs) || hasGrounding(attrs);
+}
+
+/** Snippet length cap for an individual citation/evidence string. */
+const CITATION_MAXLEN = 120;
+
+/** Max citation / evidence entries injected per node prompt line. */
+const MAX_CITATIONS = 3;
+
+export interface NodeContext {
   id: string;
   label: string;
   isCode: boolean;
@@ -80,6 +162,69 @@ interface NodeContext {
   nodeType: string | null;
   degree: number;
   neighbors: string[];
+  /**
+   * Short grounding snippets pulled from the node's `citations` /
+   * `evidence_refs` attributes (entity nodes from the mystery / ontology
+   * graph). Empty for code symbols or unsupported nodes. A node WITH grounding
+   * here must be describable (Phase 1 reliability guarantee).
+   */
+  citations: string[];
+}
+
+/**
+ * Collect short citation / evidence snippets from an entity node's attributes.
+ * Reads `citations` (array of OntologyCitation-shaped objects: source_file,
+ * quote, page, section, …) and `evidence_refs` (string[]). Returns a small,
+ * deduped, truncated list suitable for direct injection into a prompt line.
+ */
+function collectCitationContext(attrs: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (value: string): void => {
+    const snippet = truncate(value, CITATION_MAXLEN);
+    const key = snippet.toLowerCase();
+    if (snippet && !seen.has(key) && out.length < MAX_CITATIONS) {
+      seen.add(key);
+      out.push(snippet);
+    }
+  };
+
+  const citations = attrs.citations;
+  if (Array.isArray(citations)) {
+    for (const entry of citations) {
+      if (out.length >= MAX_CITATIONS) break;
+      if (typeof entry === "string") {
+        push(entry);
+        continue;
+      }
+      if (entry && typeof entry === "object") {
+        const rec = entry as Record<string, unknown>;
+        // Prefer a human-readable quote/text; fall back to a source locator.
+        const quote = safeString(rec.quote) ?? safeString(rec.text) ?? safeString(rec.snippet);
+        const locatorParts = [
+          safeString(rec.source_file) ?? safeString(rec.source_url),
+          rec.page != null ? `p.${String(rec.page)}` : null,
+          safeString(rec.section),
+        ].filter((p): p is string => Boolean(p));
+        if (quote) {
+          push(locatorParts.length > 0 ? `${quote} (${locatorParts.join(", ")})` : quote);
+        } else if (locatorParts.length > 0) {
+          push(locatorParts.join(", "));
+        }
+      }
+    }
+  }
+
+  const evidenceRefs = attrs.evidence_refs;
+  if (Array.isArray(evidenceRefs)) {
+    for (const ref of evidenceRefs) {
+      if (out.length >= MAX_CITATIONS) break;
+      const value = safeString(ref);
+      if (value) push(value);
+    }
+  }
+
+  return out;
 }
 
 function collectNeighbors(G: Graph, nodeId: string, limit: number): string[] {
@@ -94,31 +239,50 @@ function collectNeighbors(G: Graph, nodeId: string, limit: number): string[] {
   return out;
 }
 
-function collectNodeContext(G: Graph, nodeId: string): NodeContext {
+export function collectNodeContext(G: Graph, nodeId: string): NodeContext {
   const attrs = G.getNodeAttributes(nodeId) as Record<string, unknown>;
+  const isCode = isCodeNode(attrs);
   return {
     id: nodeId,
     label: truncate(safeString(attrs.label) ?? nodeId),
-    isCode: isCodeNode(attrs),
+    isCode,
     sourceFile: safeString(attrs.source_file),
     sourceLocation: safeString(attrs.source_location),
     nodeType: safeString(attrs.node_type),
     degree: G.degree(nodeId),
     neighbors: collectNeighbors(G, nodeId, 6),
+    // Citation grounding only matters for entity nodes; skip the work for code.
+    citations: isCode ? [] : collectCitationContext(attrs),
   };
 }
 
 /**
  * Rank nodes for description: highest-degree first (the nodes most worth
  * describing), id as a stable tiebreak. Deterministic so reruns are stable.
+ * When `onlyMissing` is set, nodes that already carry a non-empty `description`
+ * attribute are skipped — this powers `update --fill-missing` (idempotent
+ * re-run that only fills the gaps).
  */
-function rankNodes(G: Graph): string[] {
+function rankNodes(G: Graph, onlyMissing = false): string[] {
   const ids: string[] = [];
-  G.forEachNode((nodeId) => ids.push(nodeId));
+  G.forEachNode((nodeId, attrs) => {
+    if (onlyMissing && hasDescription(attrs as Record<string, unknown>)) return;
+    ids.push(nodeId);
+  });
   return ids.sort((a, b) => {
     const degreeDelta = G.degree(b) - G.degree(a);
     return degreeDelta !== 0 ? degreeDelta : a.localeCompare(b);
   });
+}
+
+/** True when the batch contains at least one non-code (entity) node. */
+function hasEntityNode(contexts: NodeContext[]): boolean {
+  return contexts.some((ctx) => !ctx.isCode);
+}
+
+/** True when the batch contains at least one code-symbol node. */
+function hasCodeNode(contexts: NodeContext[]): boolean {
+  return contexts.some((ctx) => ctx.isCode);
 }
 
 /** Build the JSON-line context for one node inside a batch prompt. */
@@ -126,8 +290,10 @@ function nodePromptLine(ctx: NodeContext): string {
   const parts: string[] = [`"${ctx.id}": ${JSON.stringify(ctx.label)}`];
   if (ctx.isCode) {
     parts.push("kind=code-symbol");
-  } else if (ctx.nodeType) {
-    parts.push(`kind=${ctx.nodeType}`);
+  } else {
+    // Entity nodes: lead with their declared type so the model anchors the
+    // description on what the entity IS, not just its label.
+    parts.push(`kind=${ctx.nodeType ?? "entity"}`);
   }
   if (ctx.sourceFile) {
     parts.push(`source=${ctx.sourceFile}${ctx.sourceLocation ? `:${ctx.sourceLocation}` : ""}`);
@@ -135,22 +301,47 @@ function nodePromptLine(ctx: NodeContext): string {
   if (ctx.neighbors.length > 0) {
     parts.push(`neighbors=[${ctx.neighbors.join(", ")}]`);
   }
+  // Citation / evidence grounding for entity nodes (empty for code symbols).
+  if (ctx.citations.length > 0) {
+    parts.push(`citations=[${ctx.citations.map((c) => JSON.stringify(c)).join(", ")}]`);
+  }
   return `- ${parts.join(" | ")}`;
 }
 
 export function buildNodeDescriptionPrompt(contexts: NodeContext[]): string {
-  return [
-    "You are documenting nodes in a code knowledge graph. For each entry below,",
-    "write ONE concise plain-language sentence describing what it is or does.",
-    "For a code symbol (a function, class, or constant), describe what the",
-    "function/symbol does based on its name, source location and neighbors —",
-    "e.g. \"Resolves the configured ontology profile from graphify.yaml.\".",
-    "Do not speculate beyond the provided context, no marketing language.",
+  // A batch may be all code, all entity, or mixed. We emit guidance for both
+  // kinds and let each prompt line's `kind=` marker steer the model per node.
+  // Keeping a single batched call preserves the on-by-default cost bound.
+  const header = ["You are documenting nodes in a knowledge graph."];
+  header.push(
+    "For each entry below, write ONE concise factual plain-language sentence",
+    "describing what it is or does. Use only the provided context.",
+  );
+  if (hasCodeNode(contexts)) {
+    header.push(
+      "For a code symbol (kind=code-symbol — a function, class, or constant),",
+      "describe what the function/symbol does based on its name, source location",
+      "and neighbors — e.g. \"Resolves the configured ontology profile from graphify.yaml.\".",
+    );
+  }
+  if (hasEntityNode(contexts)) {
+    header.push(
+      "For an entity node (any other kind — e.g. a person, place, event, object),",
+      "describe what the entity is and its role, grounded in its type, its",
+      "relations (neighbors) and the provided citations/evidence — e.g.",
+      "\"Lady Carfax, a wealthy heiress who disappears en route to Lausanne.\".",
+      "Ground entity descriptions in the citations/evidence when present; do not",
+      "speculate beyond the context, so a node with no supporting context may be",
+      "left out of the reply.",
+    );
+  }
+  header.push(
+    "No marketing language.",
     "Respond ONLY with a JSON object mapping each node id (as a string) to its",
     "one-sentence description — no prose, no markdown fences.",
     "",
-    ...contexts.map(nodePromptLine),
-  ].join("\n");
+  );
+  return [...header, ...contexts.map(nodePromptLine)].join("\n");
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -268,12 +459,16 @@ export interface DescribeNodesOptions {
   maxNodes?: number;
   batchSize?: number;
   callLlm?: CallLlmFn;
+  /** Only rank/describe nodes whose `description` attr is empty/absent. */
+  onlyMissing?: boolean;
 }
 
 /**
  * Ask `provider` to describe the highest-degree nodes in batches and return a
- * `Map<nodeId, description>`. Raises on API / parse failure for a batch —
- * callers that want graceful degradation should use `generateNodeDescriptions`.
+ * `Map<nodeId, description>`. Transient backend errors are retried per batch
+ * with a bounded backoff. Raises on a non-transient API / parse failure for a
+ * batch — callers that want graceful degradation should use
+ * `generateNodeDescriptions`.
  */
 export async function describeNodes(
   G: Graph,
@@ -282,7 +477,8 @@ export async function describeNodes(
   const out = new Map<string, string>();
   const maxNodes = options.maxNodes ?? DEFAULT_MAX_NODES;
   const batchSize = Math.max(1, options.batchSize ?? DEFAULT_BATCH_SIZE);
-  const targetIds = rankNodes(G).slice(0, maxNodes > 0 ? maxNodes : G.order);
+  const ranked = rankNodes(G, options.onlyMissing === true);
+  const targetIds = ranked.slice(0, maxNodes > 0 ? maxNodes : ranked.length);
   if (targetIds.length === 0) return out;
 
   const callLlm = options.callLlm ?? (await makeDefaultCallLlm(options.provider, options.model));
@@ -292,7 +488,7 @@ export async function describeNodes(
     const prompt = buildNodeDescriptionPrompt(contexts);
     const validIds = new Set(batch);
     const maxTokens = Math.min(120 + 48 * batch.length, 8192);
-    const text = await callLlm(prompt, maxTokens);
+    const text = await callLlmWithRetry(callLlm, prompt, maxTokens);
     const parsed = parseDescriptionResponse(text, validIds);
     for (const [id, description] of parsed) out.set(id, description);
   }
@@ -315,25 +511,125 @@ export interface GenerateNodeDescriptionsOptions {
   callLlm?: CallLlmFn;
   /** Suppress stderr messages about missing backend / errors. */
   quiet?: boolean;
+  /**
+   * Only (re)describe nodes whose `description` attr is empty/absent. Powers
+   * `graphify update --fill-missing` — an idempotent re-run that fills gaps
+   * without re-spending tokens on already-described nodes.
+   */
+  onlyMissing?: boolean;
+}
+
+/**
+ * Why descriptions were skipped, for a one-line coverage summary. Mutually
+ * informative counters (a single run lands in exactly one terminal reason).
+ */
+export interface DescriptionCoverageReasons {
+  /** No LLM backend configured (and no injected callLlm). */
+  noBackend: number;
+  /** Backend replied but produced no usable description for a describable node. */
+  emptyReply: number;
+  /** Backend call/parse failed (after retries). */
+  error: number;
+  /** Caller opted out (e.g. unknown provider). */
+  optedOut: number;
+}
+
+/**
+ * Coverage report for a description run. `describable` is the count of nodes
+ * worth describing (code symbols OR entity nodes with citations/evidence);
+ * `described` is how many of the whole graph ended up with a `description`;
+ * `skipped` is `describable - described` (never negative).
+ */
+export interface DescriptionCoverage {
+  describable: number;
+  described: number;
+  skipped: number;
+  reasons: DescriptionCoverageReasons;
 }
 
 export interface GenerateNodeDescriptionsResult {
-  /** Number of nodes that received a description attribute. */
+  /** Number of nodes that received a description attribute in THIS run. */
   describedCount: number;
   source: DescriptionSource;
+  /** Coverage report (see `DescriptionCoverage`). */
+  coverage: DescriptionCoverage;
+}
+
+function zeroReasons(): DescriptionCoverageReasons {
+  return { noBackend: 0, emptyReply: 0, error: 0, optedOut: 0 };
+}
+
+/** Count nodes that are describable and, of those, how many now have a description. */
+function countCoverage(G: Graph): { describable: number; describedDescribable: number } {
+  let describable = 0;
+  let describedDescribable = 0;
+  G.forEachNode((_id, attrs) => {
+    const a = attrs as Record<string, unknown>;
+    if (!isDescribableNode(a)) return;
+    describable += 1;
+    if (hasDescription(a)) describedDescribable += 1;
+  });
+  return { describable, describedDescribable };
+}
+
+/**
+ * Emit a one-line coverage summary to stderr, plus a LOUD warning when a
+ * backend IS configured yet coverage is low (< 50% of describable nodes).
+ * Never silently ships 0/N.
+ */
+function reportCoverage(
+  coverage: DescriptionCoverage,
+  backendConfigured: boolean,
+  quiet: boolean | undefined,
+): void {
+  if (quiet) return;
+  const { describable, described, reasons } = coverage;
+  process.stderr.write(
+    `[graphify describe] coverage: ${described}/${describable} describable node(s) described ` +
+      `(skipped ${coverage.skipped}; reasons noBackend=${reasons.noBackend} ` +
+      `emptyReply=${reasons.emptyReply} error=${reasons.error} optedOut=${reasons.optedOut}).\n`,
+  );
+  if (backendConfigured && describable > 0 && described < 0.5 * describable) {
+    process.stderr.write(
+      `[graphify describe] WARNING low coverage: only ${described}/${describable} describable node(s) ` +
+        "got a description with a backend configured. Re-run with `graphify update --fill-missing` " +
+        "or check your LLM backend / rate limits.\n",
+    );
+  }
 }
 
 /**
  * Generate descriptions for the graph's nodes and stamp each onto the node's
  * `description` attribute (so `toJson` persists it to graph.json). Resolves a
  * backend, degrades gracefully to a no-op with a warning when none is
- * configured or a call fails, and never throws.
+ * configured or a call fails, never throws, and always returns a coverage
+ * report (printed to stderr unless `quiet`).
  */
 export async function generateNodeDescriptions(
   G: Graph,
   options: GenerateNodeDescriptionsOptions = {},
 ): Promise<GenerateNodeDescriptionsResult> {
   let provider: DirectLlmProvider | null = null;
+  const backendConfigured = (): boolean => provider !== null || Boolean(options.callLlm);
+
+  const skip = (
+    source: DescriptionSource,
+    reasonKey: keyof DescriptionCoverageReasons,
+  ): GenerateNodeDescriptionsResult => {
+    const { describable, describedDescribable } = countCoverage(G);
+    const reasons = zeroReasons();
+    // Count every describable node that still lacks a description under the
+    // terminal reason for this run.
+    reasons[reasonKey] = Math.max(0, describable - describedDescribable);
+    const coverage: DescriptionCoverage = {
+      describable,
+      described: describedDescribable,
+      skipped: Math.max(0, describable - describedDescribable),
+      reasons,
+    };
+    reportCoverage(coverage, backendConfigured(), options.quiet);
+    return { describedCount: 0, source, coverage };
+  };
 
   if (options.provider != null && options.provider !== "") {
     if (isDirectLlmProvider(options.provider)) {
@@ -345,7 +641,7 @@ export async function generateNodeDescriptions(
             `must be one of ${DIRECT_LLM_PROVIDERS.join(", ")}. Skipping descriptions.\n`,
         );
       }
-      return { describedCount: 0, source: "skipped" };
+      return skip("skipped", "optedOut");
     }
   } else {
     provider = detectDescriptionBackend();
@@ -358,7 +654,7 @@ export async function generateNodeDescriptions(
           "Set an API key (e.g. ANTHROPIC_API_KEY) or pass --no-description to silence this.\n",
       );
     }
-    return { describedCount: 0, source: "skipped" };
+    return skip("skipped", "noBackend");
   }
 
   try {
@@ -371,6 +667,7 @@ export async function generateNodeDescriptions(
       ...(options.maxNodes !== undefined ? { maxNodes: options.maxNodes } : {}),
       ...(options.batchSize !== undefined ? { batchSize: options.batchSize } : {}),
       ...(options.callLlm ? { callLlm: options.callLlm } : {}),
+      ...(options.onlyMissing !== undefined ? { onlyMissing: options.onlyMissing } : {}),
     });
 
     let describedCount = 0;
@@ -379,7 +676,20 @@ export async function generateNodeDescriptions(
       G.setNodeAttribute(id, "description", description);
       describedCount += 1;
     }
-    return { describedCount, source: provider ? "llm" : "assistant" };
+
+    const { describable, describedDescribable } = countCoverage(G);
+    const reasons = zeroReasons();
+    // Any describable node still missing a description after a backend ran got
+    // an empty/unusable reply (parse miss, model left it out, etc.).
+    reasons.emptyReply = Math.max(0, describable - describedDescribable);
+    const coverage: DescriptionCoverage = {
+      describable,
+      described: describedDescribable,
+      skipped: Math.max(0, describable - describedDescribable),
+      reasons,
+    };
+    reportCoverage(coverage, backendConfigured(), options.quiet);
+    return { describedCount, source: provider ? "llm" : "assistant", coverage };
   } catch (err) {
     if (!options.quiet) {
       process.stderr.write(
@@ -388,6 +698,6 @@ export async function generateNodeDescriptions(
         }); continuing without descriptions.\n`,
       );
     }
-    return { describedCount: 0, source: "skipped" };
+    return skip("skipped", "error");
   }
 }
