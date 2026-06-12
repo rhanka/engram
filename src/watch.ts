@@ -118,6 +118,16 @@ export async function rebuildCode(
     label?: boolean;
     labelBackend?: string;
     labelModel?: string;
+    /**
+     * Phase 4: ONLY the fast git-hook rebuild (`hook-rebuild`) sets this true.
+     * It runs LLM-free (`describe: false`, `label: false`) to keep commits
+     * snappy, then drops a `.graphify_describe_pending` marker so the next
+     * describe-producing `graphify update` (default-on) fills the gap and
+     * `check-update` nudges the user. An explicit user `update --no-description`
+     * / `--no-label` must NOT leave this stale marker, so the marker is written
+     * only when THIS flag is set — never merely because `describe === false`.
+     */
+    markDescribePending?: boolean;
   } = {},
 ): Promise<boolean> {
   try {
@@ -372,13 +382,18 @@ export async function rebuildCode(
     writeFileSync(paths.report, report, "utf-8");
 
     // Phase 4: describe-pending marker. The fast git-hook rebuild runs LLM-free
-    // (`describe: false`) to keep commits snappy, so the rebuilt graph is NOT
-    // yet described/labelled. Drop a marker so the next describe-producing run
-    // (`graphify update`, default-on) fills the gap — and `check-update` nudges
-    // the user. A run that actually completes descriptions clears the marker.
+    // (`describe: false`, `label: false`) to keep commits snappy, so the
+    // rebuilt graph is NOT yet described/labelled. ONLY that path passes
+    // `markDescribePending: true` — so we drop a marker for the next
+    // describe-producing run (`graphify update`, default-on) to fill the gap and
+    // `check-update` to nudge the user. An explicit user `update --no-description`
+    // (or `--no-label`) must NOT poison `check-update` with a false "rebuilt by
+    // the fast git hook" marker, so we gate on `markDescribePending`, NOT merely
+    // on `describe === false`. A run that actually completes descriptions clears
+    // any pre-existing marker.
     if (descriptionsComplete) {
       if (existsSync(paths.describePending)) unlinkSync(paths.describePending);
-    } else if (options.describe === false) {
+    } else if (options.markDescribePending === true) {
       writeFileSync(
         paths.describePending,
         "Graph rebuilt by the fast git hook without descriptions/labels. " +

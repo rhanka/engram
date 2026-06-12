@@ -302,6 +302,18 @@ export async function applySalientCommunityLabels(
   labels: Map<number, string>,
   options: GenerateCommunityLabelsOptions = {},
 ): Promise<{ labels: Map<number, string>; source: LabelSource }> {
+  // Nit (a): short-circuit — the LLM result is folded in ONLY for communities
+  // whose current label is still the generic `Community N` placeholder. If
+  // every community already has a salient (non-generic) name, the call would
+  // produce names we'd immediately discard. Skip the LLM round-trip entirely to
+  // avoid spending tokens for nothing, and report "placeholder" (no LLM ran).
+  const hasGenericLabel = [...communities.keys()].some((cid) =>
+    isGenericLabel(cid, labels.get(cid)),
+  );
+  if (!hasGenericLabel) {
+    return { labels, source: "placeholder" };
+  }
+
   const { labels: generated, source } = await generateCommunityLabels(G, communities, options);
   if (source === "llm") {
     for (const [cid, name] of generated) {

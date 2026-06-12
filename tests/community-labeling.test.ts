@@ -457,4 +457,56 @@ describe("applySalientCommunityLabels", () => {
     expect(labels.get(0)).toBe("Community 0");
     expect(labels.get(1)).toBe("Community 1");
   });
+
+  it("nit (a): short-circuits (no LLM call) when NO generic label remains", async () => {
+    // Every community already has a salient (non-generic) name, so any LLM
+    // result would be folded into nothing. We must skip the round-trip entirely
+    // and not spend tokens — assert callLlm is never invoked and source is
+    // "placeholder" (no LLM ran), with the curated labels untouched.
+    const G = mkGraph();
+    const labels = new Map<number, string>([
+      [0, "Auth Services"],
+      [1, "Order Management"],
+    ]);
+    let calls = 0;
+    const callLlm: CallLlmFn = async () => {
+      calls += 1;
+      return JSON.stringify({ "0": "Should Not Apply", "1": "Should Not Apply" });
+    };
+    const { source } = await applySalientCommunityLabels(G, communities, labels, {
+      provider: "anthropic",
+      gods,
+      callLlm,
+      quiet: true,
+    });
+    expect(calls).toBe(0);
+    expect(source).toBe("placeholder");
+    expect(labels.get(0)).toBe("Auth Services");
+    expect(labels.get(1)).toBe("Order Management");
+  });
+
+  it("nit (a): still calls the LLM when at least one generic label remains", async () => {
+    // Guard against over-eager short-circuiting: a single generic placeholder
+    // must still trigger the LLM so it gets a salient name.
+    const G = mkGraph();
+    const labels = new Map<number, string>([
+      [0, "Auth Services"], // already salient
+      [1, "Community 1"], // generic -> must be filled
+    ]);
+    let calls = 0;
+    const callLlm: CallLlmFn = async (prompt, maxTokens) => {
+      calls += 1;
+      return happyPathLlm("Auth Services", "Order Management")(prompt, maxTokens);
+    };
+    const { source } = await applySalientCommunityLabels(G, communities, labels, {
+      provider: "anthropic",
+      gods,
+      callLlm,
+      quiet: true,
+    });
+    expect(calls).toBe(1);
+    expect(source).toBe("llm");
+    expect(labels.get(0)).toBe("Auth Services");
+    expect(labels.get(1)).toBe("Order Management");
+  });
 });
