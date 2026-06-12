@@ -2415,16 +2415,25 @@ export async function main(): Promise<void> {
     .command("agent-stats")
     .description("Per-agent stats from agentic CLI transcripts (evidence-based attribution, not git authorship)");
   agentStats
-    .option("--json", "Emit JSON instead of a table")
+    .option("--json", "Emit JSON (alias for --format json)")
+    .option("--format <fmt>", "Output format: text | json | md", "text")
     .action(async (opts) => {
-      const { computeAgentStats, formatStatsTable } = await import("./agent-stats/index.js");
+      const { computeAgentStats, formatStatsTable, buildReport, formatReportMarkdown } = await import(
+        "./agent-stats/index.js"
+      );
       const repoRoot = resolveAgentStatsRepoRoot();
-      const { rows, residual } = computeAgentStats(repoRoot);
-      if (opts.json) {
-        console.log(JSON.stringify({ rows, residual }, null, 2));
+      const result = computeAgentStats(repoRoot);
+      const format = opts.json ? "json" : opts.format;
+      if (format === "json") {
+        // Stable schema graphify.agent-stats/v1 — see src/agent-stats/report.ts.
+        console.log(JSON.stringify(buildReport(result), null, 2));
         return;
       }
-      console.log(formatStatsTable(rows, residual));
+      if (format === "md") {
+        console.log(formatReportMarkdown(buildReport(result)));
+        return;
+      }
+      console.log(formatStatsTable(result.rows, result.residual, result.conflicts));
     });
   agentStats
     .command("sync")
@@ -2446,17 +2455,19 @@ export async function main(): Promise<void> {
     .option("--agent <id>", "Filter by agent id substring")
     .option("--branch <branch>", "Filter by observed/ground-truth branch")
     .option("--since <iso>", "Only sessions on/after this ISO date")
-    .option("--json", "Emit JSON instead of a table")
+    .option("--json", "Emit JSON (alias for --format json)")
+    .option("--format <fmt>", "Output format: text | json", "text")
     .action(async (opts) => {
-      const { listSessions, formatSessionsTable } = await import("./agent-stats/index.js");
+      const { listSessions, formatSessionsTable, buildSessionsReport } = await import("./agent-stats/index.js");
       const repoRoot = resolveAgentStatsRepoRoot();
       const { facts, instances } = listSessions(repoRoot, {
         agent: opts.agent,
         branch: opts.branch,
         since: opts.since,
       });
-      if (opts.json) {
-        console.log(JSON.stringify(facts, null, 2));
+      if (opts.json || opts.format === "json") {
+        // Stable schema graphify.agent-stats.sessions/v1 — see report.ts.
+        console.log(JSON.stringify(buildSessionsReport(facts, instances), null, 2));
         return;
       }
       console.log(formatSessionsTable(facts, instances));

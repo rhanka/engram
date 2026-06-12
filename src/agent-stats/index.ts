@@ -13,7 +13,7 @@ import { resolveIdentity } from "./identity.js";
 import { parseAgyChat } from "./agy-chat.js";
 import { parseClaudeTranscript } from "./claude-transcript.js";
 import { parseCodexRollout } from "./codex-rollout.js";
-import { correlate, type GitCommitMeta, type PrMergeMeta } from "./correlate.js";
+import { correlate, detectCommitConflicts, type CommitConflict, type GitCommitMeta, type PrMergeMeta } from "./correlate.js";
 import { indexTrackItems, loadTrackItems, type TrackIndex, type TrackItem } from "./track-join.js";
 import { getPullRequestMerge, listPullRequests, type CommandRunner } from "../pr.js";
 import {
@@ -310,6 +310,8 @@ export interface ComputeResult {
   trackItems: Map<string, TrackItem>;
   /** Honest coverage: commits in git log NOT attributed to any agent. */
   residual?: AttributionResidual;
+  /** Commits claimed by more than one agent (spoof / data-quality signal). */
+  conflicts: CommitConflict[];
 }
 
 export interface ComputeOptions {
@@ -379,7 +381,10 @@ export function computeAgentStats(
   const unattributedCommits = commits.filter((c) => !attributed.has(c.sha.slice(0, 7).toLowerCase())).length;
   const residual: AttributionResidual = { totalCommits: commits.length, unattributedCommits };
 
-  return { rows, links, facts, instances, trackItems, residual };
+  // CONFLICTS: a commit claimed by >1 distinct agent is surfaced, not hidden.
+  const conflicts = detectCommitConflicts(links);
+
+  return { rows, links, facts, instances, trackItems, residual, conflicts };
 }
 
 export interface WpAgentStatsResult {
@@ -571,3 +576,14 @@ export {
   type AgentStore,
   type TrackItem,
 };
+export { detectCommitConflicts, type CommitConflict } from "./correlate.js";
+export {
+  AGENT_STATS_SCHEMA,
+  SESSIONS_SCHEMA,
+  buildReport,
+  buildSessionsReport,
+  formatReportMarkdown,
+  type AgentReport,
+  type AgentStatsReport,
+  type SessionsReport,
+} from "./report.js";
