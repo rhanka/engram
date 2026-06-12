@@ -302,6 +302,25 @@ describe("shapeForType (SVELTE-4)", () => {
     expect(s.nodes.find((n) => n.id === "a").shape).toBe("diamond");
     expect(s.nodes.find((n) => n.id === "b").shape).toBe("triangle");
   });
+  it("buildScene emits fill/border variants only for non-default types", async () => {
+    const { buildScene } = await import("../lib/graphAdapter.js");
+    const s = buildScene({
+      nodes: [
+        { id: "char", type: "Character" }, // diamond, defaults
+        { id: "alias", type: "Alias" }, // diamond, hollow
+        { id: "author", type: "Author" }, // star, bold border
+        { id: "work", type: "Work" }, // roundedbox, bold border
+      ],
+      links: [],
+    });
+    const byId = new Map(s.nodes.map((n) => [n.id, n]));
+    expect(byId.get("char").fill).toBeUndefined();
+    expect(byId.get("char").border).toBeUndefined();
+    expect(byId.get("alias").fill).toBe("hollow");
+    expect(byId.get("alias").border).toBeUndefined();
+    expect(byId.get("author").border).toBe("bold");
+    expect(byId.get("work").border).toBe("bold");
+  });
 });
 
 describe("applyWeakFilter (ÉTAPE 1b — scene.json parity)", () => {

@@ -72,4 +72,30 @@ describe("buildStyleBuffers", () => {
     expect(labels[indexOf("star")]).toBe(""); // central but not a box
     expect(labels[indexOf("a")]).toBe(""); // non-box
   });
+
+  it("maps fill / border shape variants into nodeFills / nodeBorders (default 0)", () => {
+    const scene = {
+      nodes: [
+        { id: "solid", x: 0, y: 0, shape: "diamond" }, // defaults
+        { id: "hollow", x: 1, y: 0, shape: "diamond", fill: "hollow" },
+        { id: "bold", x: 2, y: 0, shape: "hexagon", border: "bold" },
+        { id: "both", x: 3, y: 0, shape: "square", fill: "hollow", border: "bold" },
+        { id: "explicit", x: 4, y: 0, shape: "star", fill: "solid", border: "normal" },
+      ],
+      edges: [],
+    };
+    const graph = buildRenderGraphBuffers(scene);
+    const style = buildStyleBuffers(scene, graph);
+    const indexOf = (id: string) => graph.nodeIds.indexOf(id);
+    const fills = style.nodeFills ?? new Uint8Array();
+    const borders = style.nodeBorders ?? new Uint8Array();
+    expect(fills[indexOf("solid")]).toBe(0);
+    expect(fills[indexOf("hollow")]).toBe(1);
+    expect(fills[indexOf("explicit")]).toBe(0);
+    expect(borders[indexOf("solid")]).toBe(0);
+    expect(borders[indexOf("bold")]).toBe(1);
+    expect(borders[indexOf("both")]).toBe(1);
+    expect(fills[indexOf("both")]).toBe(1);
+    expect(borders[indexOf("explicit")]).toBe(0);
+  });
 });

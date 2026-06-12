@@ -87,6 +87,16 @@ function dashCode(value: EdgeDashMode | undefined): number {
   return 0;
 }
 
+/** Fill variant code: 1 hollow, 0 solid (default — back-compatible). */
+function fillCode(value: unknown): number {
+  return String(value ?? "solid").trim().toLowerCase() === "hollow" ? 1 : 0;
+}
+
+/** Border weight code: 1 bold, 0 normal (default — back-compatible). */
+function borderCode(value: unknown): number {
+  return String(value ?? "normal").trim().toLowerCase() === "bold" ? 1 : 0;
+}
+
 /**
  * Fraction of the maximum node degree a box node must reach for its label to be
  * drawn. Mirrors the legacy vis-network behaviour where only the central hubs
@@ -132,6 +142,9 @@ export function buildStyleBuffers(
   const nodeSizes = new Float32Array(graph.nodeIds.length);
   const nodeColors = new Uint8Array(graph.nodeIds.length * 4);
   const nodeShapes = new Uint8Array(graph.nodeIds.length);
+  // Shape variants (additive): hollow-vs-solid fill and bold-vs-normal border.
+  const nodeFills = new Uint8Array(graph.nodeIds.length);
+  const nodeBorders = new Uint8Array(graph.nodeIds.length);
   // Per-node label text, only ever populated for box-category nodes that pass
   // the degree gate (legacy `shape:box` parity); "" for everything else.
   const nodeLabels = new Array<string>(graph.nodeIds.length).fill("");
@@ -145,6 +158,8 @@ export function buildStyleBuffers(
     writeColor(nodeColors, index * 4, parseColor(node?.color, nodeDefaults.color));
     const shape = shapeCode(node?.shape);
     nodeShapes[index] = shape;
+    nodeFills[index] = fillCode(node?.fill);
+    nodeBorders[index] = borderCode(node?.border);
 
     // LEGACY-STRICT label gate: box glyph + central (degree >= 15% of max).
     if (shape === BOX_SHAPE_CODE && (degrees[index] ?? 0) >= labelDegreeThreshold) {
@@ -174,6 +189,8 @@ export function buildStyleBuffers(
     nodeColors,
     nodeShapes,
     nodeLabels,
+    nodeFills,
+    nodeBorders,
     edgeWidths,
     edgeColors,
     edgeDash,

@@ -279,6 +279,8 @@ function copyStyle(style: GraphStyleBuffers, nodeCount: number, edgeCount: numbe
     nodeColors: new Uint8Array(style.nodeColors),
     nodeShapes: style.nodeShapes ? new Uint8Array(style.nodeShapes) : new Uint8Array(nodeCount),
     nodeLabels: style.nodeLabels ? [...style.nodeLabels] : undefined,
+    nodeFills: style.nodeFills ? new Uint8Array(style.nodeFills) : undefined,
+    nodeBorders: style.nodeBorders ? new Uint8Array(style.nodeBorders) : undefined,
     edgeWidths: new Float32Array(style.edgeWidths),
     edgeColors: new Uint8Array(style.edgeColors),
     edgeDash: new Uint8Array(style.edgeDash),
@@ -415,6 +417,23 @@ function cssColor(
   return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 
+/**
+ * Darkened variant of a node colour (same alpha) so a BOLD border stays
+ * visible against the solid fill it outlines.
+ */
+function cssDarkenedColor(
+  source: Uint8Array | undefined,
+  offset: number,
+  fallback: readonly [number, number, number, number],
+  factor = 0.62,
+): string {
+  const r = Math.round((source?.[offset] ?? fallback[0]) * factor);
+  const g = Math.round((source?.[offset + 1] ?? fallback[1]) * factor);
+  const b = Math.round((source?.[offset + 2] ?? fallback[2]) * factor);
+  const a = (source?.[offset + 3] ?? fallback[3]) / 255;
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
 function screenPoint(
   positions: Float32Array,
   nodeIndex: number,
@@ -459,6 +478,14 @@ const BOX_CORNER_RATIO = 1 / 4; // corner radius as a fraction of box height
 const BOX_EMPTY_RATIO = 10 / 22;
 const BOX_FILL: readonly [number, number, number, number] = [255, 255, 255, 0.5 * 255];
 const BOX_TEXT_COLOR = "#0f172a"; // theme-dark label text (slate-900)
+
+// Shape-variant outline widths in CSS px (× pixelRatio, screen-space like the
+// box border): "normal" hollow outlines and the heavier "bold" border variant.
+const BORDER_WIDTH_NORMAL = 1.5;
+const BORDER_WIDTH_BOLD = 3;
+// Hollow glyph interior: same translucent white as the legacy box fill, so a
+// hollow shape reads as an outline without disappearing over edges.
+const HOLLOW_FILL_STYLE = `rgba(${BOX_FILL[0]}, ${BOX_FILL[1]}, ${BOX_FILL[2]}, ${BOX_FILL[3] / 255})`;
 
 // Arrowhead length in world units per unit of edge width. Legacy parity: the
 // legacy export enables `arrows: { to: { scaleFactor: 0.5 } }` → ~7.5-unit
@@ -597,18 +624,17 @@ function drawBoxNode(
   label: string,
   borderColor: string,
   alpha: number,
+  boldBorder = false,
 ): void {
-  const fillStyle = `rgba(${BOX_FILL[0]}, ${BOX_FILL[1]}, ${BOX_FILL[2]}, ${BOX_FILL[3] / 255})`;
-
   context.save();
   context.globalAlpha = alpha;
 
   context.beginPath();
   drawRoundedBox(context, x, y, w, h, corner);
-  context.fillStyle = fillStyle;
+  context.fillStyle = HOLLOW_FILL_STYLE;
   context.fill();
   context.strokeStyle = borderColor;
-  context.lineWidth = 1.5 * pixelRatio;
+  context.lineWidth = (boldBorder ? BORDER_WIDTH_BOLD : BORDER_WIDTH_NORMAL) * pixelRatio;
   context.stroke();
 
   if (label) {
@@ -801,11 +827,17 @@ function drawFallback2D(
     const nodeColor = cssColor(state.style?.nodeColors, colorOffset, DEFAULT_NODE_COLOR);
     const radius = geometry.radii[nodeIndex] ?? 1;
 
+    // Shape variants (additive encodings): hollow-vs-solid fill and
+    // bold-vs-normal border, multiplying the base shapes per node type.
+    const hollow = (state.style?.nodeFills?.[nodeIndex] ?? 0) === 1;
+    const boldBorder = (state.style?.nodeBorders?.[nodeIndex] ?? 0) === 1;
+
     if (shape === BOX_SHAPE) {
       // The box IS the glyph, at the SAME on-screen scale as the other shapes:
       // height = the node's drawn diameter, small text fitted inside, width
       // hugging the text. Border = node colour (encodes selection/hover);
       // alpha follows the node's payload alpha so dim / merge styling applies.
+      // Boxes are inherently hollow; only the border-weight variant applies.
       const label = state.style?.nodeLabels?.[nodeIndex] ?? "";
       const alpha = (state.style?.nodeColors[colorOffset + 3] ?? 255) / 255;
       const dims = boxDimensions(radius, label, measureLabelWidth);
@@ -821,14 +853,31 @@ function drawFallback2D(
         label,
         nodeColor,
         alpha,
+        boldBorder,
       );
       continue;
     }
 
     context.beginPath();
-    context.fillStyle = nodeColor;
     drawNodeShapePath(context, point.x, point.y, radius, shape);
-    context.fill();
+    if (hollow) {
+      // Outline-only glyph: translucent interior + node-coloured border (the
+      // border carries the colour signal, like the legacy box glyph).
+      context.fillStyle = HOLLOW_FILL_STYLE;
+      context.fill();
+      context.strokeStyle = nodeColor;
+      context.lineWidth = (boldBorder ? BORDER_WIDTH_BOLD : BORDER_WIDTH_NORMAL) * pixelRatio;
+      context.stroke();
+    } else {
+      context.fillStyle = nodeColor;
+      context.fill();
+      if (boldBorder) {
+        // Bold border on a solid fill: darkened outline so it stays visible.
+        context.strokeStyle = cssDarkenedColor(state.style?.nodeColors, colorOffset, DEFAULT_NODE_COLOR);
+        context.lineWidth = BORDER_WIDTH_BOLD * pixelRatio;
+        context.stroke();
+      }
+    }
   }
 
   context.restore();

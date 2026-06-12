@@ -116,6 +116,9 @@ function cloneStyle(style) {
     // Carry the legacy box labels through dim / merge re-styling so box glyphs
     // keep their text when a node is selected, hovered, or focused.
     nodeLabels: style.nodeLabels ? [...style.nodeLabels] : undefined,
+    // Shape variants (hollow / bold) survive dim / merge re-styling too.
+    nodeFills: style.nodeFills ? new Uint8Array(style.nodeFills) : undefined,
+    nodeBorders: style.nodeBorders ? new Uint8Array(style.nodeBorders) : undefined,
     edgeWidths: new Float32Array(style.edgeWidths),
     edgeColors: new Uint8Array(style.edgeColors),
     edgeDash: new Uint8Array(style.edgeDash),
@@ -193,6 +196,10 @@ export function buildGraphRendererPayload(scene, options = {}) {
       y: position.y,
       fixed: position.fixed,
       shape: node.shape ?? "dot",
+      // Shape variants (ontology visual_encoding): hollow / bold pass through
+      // to the style buffers; absent = solid / normal (back-compatible).
+      fill: node.fill,
+      border: node.border,
       size: nodeSize(node, nodeRadius, selected, focused),
       color: focused ? FOCUS_COLOR : selected ? SELECTED_COLOR : colorForGroup(node.group),
     };

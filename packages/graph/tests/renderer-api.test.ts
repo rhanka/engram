@@ -468,6 +468,43 @@ describe("createGraphRenderer", () => {
     ]);
   });
 
+  it("draws hollow and bold-border shape variants in Canvas2D", () => {
+    const context2d = createFakeCanvas2DContext();
+    const canvas = {
+      width: 300,
+      height: 100,
+      getContext: (kind: string) => (kind === "2d" ? context2d : null),
+    };
+    const view = createGraphRenderer(canvas as unknown as HTMLCanvasElement, {
+      backend: "canvas2d",
+      pixelRatio: 1,
+    });
+    view.setGraph({
+      nodeIds: ["solid", "hollow", "bold"],
+      positions: new Float32Array([0, 0, 50, 0, 100, 0]),
+      edges: new Uint32Array([]),
+    });
+    view.setStyle({
+      nodeSizes: new Float32Array([6, 6, 6]),
+      nodeShapes: new Uint8Array([1, 1, 3]),
+      // Variant buffers: solid/normal, hollow/normal, solid/bold.
+      nodeFills: new Uint8Array([0, 1, 0]),
+      nodeBorders: new Uint8Array([0, 0, 1]),
+      nodeColors: new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255]),
+      edgeWidths: new Float32Array([]),
+      edgeColors: new Uint8Array([]),
+      edgeDash: new Uint8Array([]),
+      edgeCurvatures: new Float32Array([]),
+    });
+    view.setCamera({ x: 50, y: 0, zoom: 1 });
+    view.render();
+
+    // Every glyph fills (solid colour / translucent hollow interior), and the
+    // hollow + bold variants ALSO stroke an outline (2 strokes, no edge pass).
+    expect(context2d.calls.fill).toBe(3);
+    expect(context2d.calls.stroke).toBe(2);
+  });
+
   it("box glyphs ignore the selection size multiplier (size derives from the label)", () => {
     const render = (nodeSize: number) => {
       const context2d = createFakeCanvas2DContext();

@@ -188,6 +188,32 @@ export function shapeForType(node) {
   return (t && TYPE_SHAPE[t]) || "dot";
 }
 
+/**
+ * Shape VARIANTS (fill: hollow | solid, border: bold | normal) multiplying the
+ * 7 base shapes so the ~19 ontology types stay distinguishable: types sharing
+ * a TYPE_SHAPE entry get a distinct hollow / bold combination. Defaults
+ * (absent = solid + normal) keep every previously-rendered glyph unchanged.
+ * Kept in lockstep with src/studio-scene.ts TYPE_VARIANT (parity test
+ * enforces this); a pack profile's visual_encoding.fill/border overrides it
+ * in the build-time scene.json.
+ */
+const TYPE_VARIANT = {
+  Alias: { fill: "hollow" }, // vs Character (diamond)
+  DisguisePersona: { fill: "hollow" }, // vs NarrativeRole (star)
+  Author: { border: "bold" }, // vs NarrativeRole / DisguisePersona (star)
+  Translator: { fill: "hollow" }, // vs Location (triangle)
+  ForensicMethod: { fill: "hollow" }, // vs Organization (hexagon)
+  Saga: { border: "bold" }, // vs Organization / ForensicMethod (hexagon)
+  Object: { fill: "hollow" }, // vs Evidence (square)
+  Work: { border: "bold" }, // vs ChapterOrStory (roundedbox)
+};
+
+/** Variant (fill/border) for a node's ontology type; {} when default. */
+export function variantForType(node) {
+  const t = nodeType(node);
+  return (t && TYPE_VARIANT[t]) || {};
+}
+
 /** Strong = EXTRACTED (default). Anything else (INFERRED, …) renders weak. */
 export function isStrongEdge(edge) {
   const basis = displayValue(edge?.assertion_basis)?.toLowerCase();
@@ -254,12 +280,16 @@ export function buildScene(graph, options = {}) {
     const type = nodeType(node);
     const x = finiteNumber(node?.x) ? node.x : finiteNumber(node?.fx) ? node.fx : undefined;
     const y = finiteNumber(node?.y) ? node.y : finiteNumber(node?.fy) ? node.fy : undefined;
+    const variant = variantForType(node);
     const out = {
       id: node.id,
       label: nodeLabel(node),
       weight: weightForDegree(degree.get(node.id) ?? 0, maxDegree),
       shape: shapeForType(node), // SVELTE-4: ontology type -> scene shape
     };
+    // Shape variants (hollow / bold) multiply the base shapes per type.
+    if (variant.fill && variant.fill !== "solid") out.fill = variant.fill;
+    if (variant.border && variant.border !== "normal") out.border = variant.border;
     if (group !== undefined) out.group = group;
     if (type) out.type = type;
     copyOwnFields(node, out, NODE_PROFILE_FIELDS);
