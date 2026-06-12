@@ -40,9 +40,9 @@ const DASH_SLUG_HOME_RE = /-(?:home|Users)-[A-Za-z0-9._]+(?=-)/g;
 
 /** Replace the user's home directory prefix with `~`. */
 export function redactHome(text: string, home: string): string {
-  if (!home) return text;
   // Replace both the literal home and any "/home/<user>" pattern generically.
-  let out = text.split(home).join("~");
+  // The generic patterns run even when `home` is unknown (defense in depth).
+  let out = home ? text.split(home).join("~") : text;
   out = out.replace(/\/(?:home|Users)\/[A-Za-z0-9._-]+/g, "~");
   // Dash-slug home form (Claude project dirs), wherever it appears (~/.claude
   // /projects/-home-<user>-…, /tmp/…/-home-<user>-…).
