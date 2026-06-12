@@ -293,12 +293,34 @@ export function computeGodClass(nodes, degree, maxDegree) {
 }
 
 const RADIUS_RATIO = 4; // rmax / rmin, matches the legacy 4->16 spread
-function weightForDegree(degree, maxDegree) {
+// UAT: the LARGEST degree-sized (non-box) glyphs read too small next to the
+// god-class boxes. Hub growth: scale a node's RADIUS by up to +HUB_GROWTH,
+// linear in degree normalised by the LARGEST DEGREE-SIZED (non-box) node. The
+// global max degree always belongs to a god-class box hub whose glyph is
+// degree-INDEPENDENT, so normalising the boost by maxDegree would waste the
+// top of the boost curve on boxes. With this, the biggest diamond/dot/etc
+// grows exactly +20% while leaves barely change (boost ~ +0 at degree ~ 0).
+// MUST stay in lockstep with src/studio-scene.ts weightForDegree.
+const HUB_GROWTH = 0.2;
+function weightForDegree(degree, maxDegree, sizedMaxDegree) {
   const max = Number.isFinite(maxDegree) && maxDegree > 0 ? maxDegree : 1;
-  const ratio = Math.min(1, Math.max(0, (Number.isFinite(degree) ? degree : 0) / max));
+  const deg = Number.isFinite(degree) ? degree : 0;
   // r_target/rmin = 1 + (RADIUS_RATIO - 1) * ratio ; weight = (r_target/rmin)^2.
+  const ratio = Math.min(1, Math.max(0, deg / max));
   const rOverRmin = 1 + (RADIUS_RATIO - 1) * ratio;
-  return rOverRmin * rOverRmin;
+  const sizedMax =
+    typeof sizedMaxDegree === "number" && Number.isFinite(sizedMaxDegree) && sizedMaxDegree > 0
+      ? sizedMaxDegree
+      : max;
+  const hubT = Math.min(1, Math.max(0, deg / sizedMax));
+  const boosted = rOverRmin * (1 + HUB_GROWTH * hubT);
+  return boosted * boosted;
+}
+
+/** Box-category scene shapes (degree-INDEPENDENT glyphs sized to their label). */
+function isBoxSceneShape(shape) {
+  const value = String(shape ?? "").toLowerCase();
+  return value === "box" || value === "roundedbox";
 }
 
 /**
@@ -330,20 +352,35 @@ export function buildScene(graph, options = {}) {
   const godClass = computeGodClass(rawNodes, degree, maxDegree);
   const hubDegreeThreshold = LABEL_DEGREE_FRACTION * maxDegree;
 
-  const nodes = rawNodes.map((node) => {
+  // Final scene shape per node (god-class hub override > type default),
+  // resolved up front so the hub-growth boost can be normalised by the max
+  // degree among DEGREE-SIZED (non-box) nodes.
+  const finalShapes = rawNodes.map((node) => {
+    const isGodClassHub =
+      godClass !== null &&
+      nodeType(node) === godClass &&
+      (degree.get(node.id) ?? 0) >= hubDegreeThreshold;
+    // SVELTE-4: ontology type -> scene shape; god-class hubs become boxes.
+    return isGodClassHub ? "roundedbox" : shapeForType(node);
+  });
+  let sizedMaxDegree = 0;
+  rawNodes.forEach((node, index) => {
+    if (isBoxSceneShape(finalShapes[index])) return;
+    const deg = degree.get(node.id) ?? 0;
+    if (deg > sizedMaxDegree) sizedMaxDegree = deg;
+  });
+
+  const nodes = rawNodes.map((node, index) => {
     const group = nodeGroup(node);
     const type = nodeType(node);
     const x = finiteNumber(node?.x) ? node.x : finiteNumber(node?.fx) ? node.fx : undefined;
     const y = finiteNumber(node?.y) ? node.y : finiteNumber(node?.fy) ? node.fy : undefined;
     const variant = variantForType(node);
-    const isGodClassHub =
-      godClass !== null && type === godClass && (degree.get(node.id) ?? 0) >= hubDegreeThreshold;
     const out = {
       id: node.id,
       label: nodeLabel(node),
-      weight: weightForDegree(degree.get(node.id) ?? 0, maxDegree),
-      // SVELTE-4: ontology type -> scene shape; god-class hubs become boxes.
-      shape: isGodClassHub ? "roundedbox" : shapeForType(node),
+      weight: weightForDegree(degree.get(node.id) ?? 0, maxDegree, sizedMaxDegree),
+      shape: finalShapes[index],
     };
     // Shape variants (hollow / bold) multiply the base shapes per type.
     if (variant.fill && variant.fill !== "solid") out.fill = variant.fill;
@@ -424,18 +461,16 @@ export function applyWeakFilter(scene, showWeak) {
   const godClass = computeGodClass(rawNodes, degree, maxDegree);
   const hubDegreeThreshold = LABEL_DEGREE_FRACTION * maxDegree;
 
-  const nodes = rawNodes.map((node) => {
-    const next = {
-      ...node,
-      weight: weightForDegree(degree.get(node.id) ?? 0, maxDegree),
-    };
+  // Final shape under the filtered degrees, resolved up front (same two-pass
+  // as buildScene) so the hub-growth boost is normalised by the max degree
+  // among DEGREE-SIZED (non-box) nodes of the FILTERED scene.
+  const finalShapes = rawNodes.map((node) => {
     const isGodClassHub =
       godClass !== null &&
       nodeType(node) === godClass &&
       (degree.get(node.id) ?? 0) >= hubDegreeThreshold;
-    if (isGodClassHub) {
-      next.shape = "roundedbox";
-    } else if (
+    if (isGodClassHub) return "roundedbox";
+    if (
       (node.shape === "roundedbox" || node.shape === "box") &&
       nodeType(node) &&
       shapeForType(node) !== node.shape
@@ -443,10 +478,22 @@ export function applyWeakFilter(scene, showWeak) {
       // The box glyph came from the god-class hub override (the type's own
       // shape is not a box): restore the base shape now the node is no longer
       // a hub under the filtered degrees.
-      next.shape = shapeForType(node);
+      return shapeForType(node);
     }
-    return next;
+    return node.shape;
   });
+  let sizedMaxDegree = 0;
+  rawNodes.forEach((node, index) => {
+    if (isBoxSceneShape(finalShapes[index])) return;
+    const deg = degree.get(node.id) ?? 0;
+    if (deg > sizedMaxDegree) sizedMaxDegree = deg;
+  });
+
+  const nodes = rawNodes.map((node, index) => ({
+    ...node,
+    weight: weightForDegree(degree.get(node.id) ?? 0, maxDegree, sizedMaxDegree),
+    shape: finalShapes[index],
+  }));
 
   return {
     ...scene,

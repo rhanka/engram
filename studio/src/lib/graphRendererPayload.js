@@ -24,7 +24,7 @@ const DIM_ALPHA = Math.round(255 * 0.35); // 89
 
 // Density-aware base node sizing. The user confirmed sizes read well at ~1000
 // nodes but are too big at ~5000. We shrink only the BASE radius as the graph
-// grows (the per-node degree spread — sqrt(weight), i.e. the RADIUS_RATIO=4
+// grows (the per-node degree spread — sqrt(weight), i.e. the RADIUS_RATIO
 // god-node multiplier from graphAdapter — is preserved because it multiplies
 // the already-scaled base). At n <= DENSITY_REF the factor is 1 (unchanged);
 // for larger n it follows 1/sqrt(n) growth and clamps at DENSITY_MIN.

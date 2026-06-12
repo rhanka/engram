@@ -400,11 +400,33 @@ function computeGodClass(
  * max degree. weight = (1 + (RADIUS_RATIO - 1) * (deg / maxDeg))^2.
  */
 const RADIUS_RATIO = 4; // rmax / rmin, matches the legacy 4->16 spread
-function weightForDegree(degree: number, maxDegree: number): number {
+// UAT: the LARGEST degree-sized (non-box) glyphs read too small next to the
+// god-class boxes. Hub growth: scale a node's RADIUS by up to +HUB_GROWTH,
+// linear in degree normalised by the LARGEST DEGREE-SIZED (non-box) node. The
+// global max degree always belongs to a god-class box hub whose glyph is
+// degree-INDEPENDENT, so normalising the boost by maxDegree would waste the
+// top of the boost curve on boxes. With this, the biggest diamond/dot/etc
+// grows exactly +20% while leaves barely change (boost ~ +0 at degree ~ 0).
+// MUST stay in lockstep with studio/src/lib/graphAdapter.js weightForDegree.
+const HUB_GROWTH = 0.2;
+function weightForDegree(degree: number, maxDegree: number, sizedMaxDegree?: number): number {
   const max = Number.isFinite(maxDegree) && maxDegree > 0 ? maxDegree : 1;
-  const ratio = Math.min(1, Math.max(0, (Number.isFinite(degree) ? degree : 0) / max));
+  const deg = Number.isFinite(degree) ? degree : 0;
+  const ratio = Math.min(1, Math.max(0, deg / max));
   const rOverRmin = 1 + (RADIUS_RATIO - 1) * ratio;
-  return rOverRmin * rOverRmin;
+  const sizedMax =
+    typeof sizedMaxDegree === "number" && Number.isFinite(sizedMaxDegree) && sizedMaxDegree > 0
+      ? sizedMaxDegree
+      : max;
+  const hubT = Math.min(1, Math.max(0, deg / sizedMax));
+  const boosted = rOverRmin * (1 + HUB_GROWTH * hubT);
+  return boosted * boosted;
+}
+
+/** Box-category scene shapes (degree-INDEPENDENT glyphs sized to their label). */
+function isBoxSceneShape(shape: unknown): boolean {
+  const value = String(shape ?? "").toLowerCase();
+  return value === "box" || value === "roundedbox";
 }
 
 /**
@@ -467,7 +489,24 @@ export function buildStudioScene(
   const godClass = computeGodClass(rawNodes, degree, maxDegree);
   const hubDegreeThreshold = LABEL_DEGREE_FRACTION * maxDegree;
 
-  const nodes: StudioSceneNode[] = rawNodes.map((node) => {
+  // Final scene shape per node (god-class hub override > profile encoding >
+  // type default), resolved up front so the hub-growth boost can be normalised
+  // by the max degree among DEGREE-SIZED (non-box) nodes.
+  const finalShapes: string[] = rawNodes.map((node) => {
+    const type = nodeType(node);
+    const encoding = type ? profile?.node_types?.[type]?.visual_encoding : undefined;
+    const isGodClassHub =
+      godClass !== null && type === godClass && (degree.get(node.id) ?? 0) >= hubDegreeThreshold;
+    return isGodClassHub ? "roundedbox" : (displayValue(encoding?.shape) ?? shapeForType(node));
+  });
+  let sizedMaxDegree = 0;
+  rawNodes.forEach((node, index) => {
+    if (isBoxSceneShape(finalShapes[index])) return;
+    const deg = degree.get(node.id) ?? 0;
+    if (deg > sizedMaxDegree) sizedMaxDegree = deg;
+  });
+
+  const nodes: StudioSceneNode[] = rawNodes.map((node, index) => {
     const group = nodeGroup(node);
     const type = nodeType(node);
     const x = finiteNumber(node.x) ? node.x : finiteNumber(node.fx) ? node.fx : undefined;
@@ -478,13 +517,11 @@ export function buildStudioScene(
     const variant = variantForType(node);
     const fill = displayValue(encoding?.fill) ?? variant.fill;
     const border = displayValue(encoding?.border) ?? variant.border;
-    const isGodClassHub =
-      godClass !== null && type === godClass && (degree.get(node.id) ?? 0) >= hubDegreeThreshold;
     const out: StudioSceneNode = {
       id: node.id,
       label: nodeLabel(node),
-      weight: weightForDegree(degree.get(node.id) ?? 0, maxDegree),
-      shape: isGodClassHub ? "roundedbox" : (displayValue(encoding?.shape) ?? shapeForType(node)),
+      weight: weightForDegree(degree.get(node.id) ?? 0, maxDegree, sizedMaxDegree),
+      shape: finalShapes[index],
     };
     if (fill && fill !== "solid") out.fill = fill;
     if (border && border !== "normal") out.border = border;
