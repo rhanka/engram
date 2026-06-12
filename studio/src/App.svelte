@@ -21,7 +21,6 @@
   import {
     buildScene,
     applyWeakFilter,
-    shapeLegend,
     resolveSelectedIds,
   } from "./lib/graphAdapter.js";
   import { loadWorkspace } from "./lib/sceneLoader.js";
@@ -62,7 +61,6 @@
       ? applyWeakFilter(sceneData, viewerState.options.showWeakLinks)
       : buildScene(graph, { showWeakLinks: viewerState.options.showWeakLinks }),
   );
-  const legend = $derived(shapeLegend(graph));
   // Graph highlight = every entity of every selected type/community + the
   // directly-selected entities (R8-3.B).
   const selectedIds = $derived(resolveSelectedIds(graph, viewerState.selection));
@@ -205,7 +203,6 @@
         <div class="col col-center">
           <GraphCanvas
             {scene}
-            {legend}
             {selectedIds}
             focusId={viewerState.focusId}
             labelMode="none"

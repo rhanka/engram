@@ -188,24 +188,6 @@ export function shapeForType(node) {
   return (t && TYPE_SHAPE[t]) || "dot";
 }
 
-/** Distinct (type -> shape) legend entries present in a graph (SVELTE-4). */
-/** Edge legend (dash family -> relation kind), appended after the node shapes. */
-const RELATION_LEGEND = [
-  { label: "belonging / structure", dash: "solid" },
-  { label: "agency / interaction", dash: "dashed" },
-  { label: "spatial / factual", dash: "dotted" },
-  { label: "method / usage", dash: "long-dash" },
-];
-export function shapeLegend(graph) {
-  const seen = new Map();
-  for (const node of graphNodes(graph)) {
-    const t = nodeType(node);
-    if (t && !seen.has(t)) seen.set(t, shapeForType(node));
-  }
-  const shapeEntries = [...seen.entries()].map(([label, shape]) => ({ label, shape }));
-  return [...shapeEntries, ...RELATION_LEGEND];
-}
-
 /** Strong = EXTRACTED (default). Anything else (INFERRED, …) renders weak. */
 export function isStrongEdge(edge) {
   const basis = displayValue(edge?.assertion_basis)?.toLowerCase();
