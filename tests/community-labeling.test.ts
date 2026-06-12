@@ -304,15 +304,25 @@ describe("labelCommunities", () => {
 // ---------------------------------------------------------------------------
 
 describe("generateCommunityLabels", () => {
-  it("no-backend: returns placeholders + source='placeholder'", async () => {
+  it("no-backend: emits assistant instructions + source='assistant', placeholder labels", async () => {
     const G = mkGraph();
+    const { mkdtempSync } = await import("node:fs");
+    const { join: pathJoin } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const instructionDir = mkdtempSync(pathJoin(tmpdir(), "graphify-label-test-"));
     const result = await generateCommunityLabels(G, communities, {
       provider: null,
       quiet: true,
+      instructionDir,
     });
-    expect(result.source).toBe("placeholder");
+    // New behavior: assistant mode emits instructions, labels remain placeholder.
+    expect(result.source).toBe("assistant");
     expect(result.labels.get(0)).toBe("Community 0");
     expect(result.labels.get(1)).toBe("Community 1");
+    // Verify instruction file was written.
+    const { existsSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    expect(existsSync(join(instructionDir, "communities.md"))).toBe(true);
   });
 
   it("unknown provider: returns placeholders + source='placeholder'", async () => {
@@ -362,19 +372,23 @@ describe("generateCommunityLabels", () => {
     expect(result.source).toBe("placeholder");
   });
 
-  it("does not call LLM when provider is null (no network call)", async () => {
+  it("injected callLlm with null provider: calls the injected function (direct mode)", async () => {
+    // When callLlm is injected, the resolved mode is "direct" regardless of
+    // provider being null — the injected function IS the backend (used in tests).
     const G = mkGraph();
     let called = false;
     const callLlm: CallLlmFn = async () => {
       called = true;
-      return "{}";
+      return JSON.stringify({ "0": "Auth Layer", "1": "Order Flow" });
     };
-    await generateCommunityLabels(G, communities, {
+    const result = await generateCommunityLabels(G, communities, {
       provider: null,
       callLlm,
       quiet: true,
     });
-    expect(called).toBe(false);
+    expect(called).toBe(true);
+    expect(result.source).toBe("llm");
+    expect(result.labels.get(0)).toBe("Auth Layer");
   });
 
   it("fenced JSON reply: parses correctly", async () => {
@@ -402,6 +416,45 @@ describe("generateCommunityLabels", () => {
     expect(result.source).toBe("llm");
     expect(result.labels.get(0)).toBe("Community 0"); // placeholder
     expect(result.labels.get(1)).toBe("Order Management");
+  });
+
+  it("assistant mode: ingest picks up completed answer file on second run", async () => {
+    const G = mkGraph();
+    const { mkdtempSync, writeFileSync: writeFs } = await import("node:fs");
+    const { join: pathJoin } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const instructionDir = mkdtempSync(pathJoin(tmpdir(), "graphify-label-ingest-"));
+
+    // Write a pre-filled answer file simulating the assistant's response.
+    writeFs(
+      pathJoin(instructionDir, "communities.json"),
+      JSON.stringify({ "0": "Auth Services", "1": "Order Flow" }),
+      "utf-8",
+    );
+
+    const result = await generateCommunityLabels(G, communities, {
+      provider: null,
+      quiet: true,
+      instructionDir,
+    });
+    expect(result.source).toBe("assistant");
+    expect(result.labels.get(0)).toBe("Auth Services");
+    expect(result.labels.get(1)).toBe("Order Flow");
+  });
+
+  it("no-key, --label-mode direct: returns placeholders (no direct backend)", async () => {
+    const G = mkGraph();
+    const { mkdtempSync } = await import("node:fs");
+    const { join: pathJoin } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const instructionDir = mkdtempSync(pathJoin(tmpdir(), "graphify-label-direct-"));
+    const result = await generateCommunityLabels(G, communities, {
+      provider: null,
+      mode: "direct",
+      quiet: true,
+      instructionDir,
+    });
+    expect(result.source).toBe("placeholder");
   });
 });
 
