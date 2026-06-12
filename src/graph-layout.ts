@@ -85,6 +85,8 @@ interface SimNode {
   vx: number;
   vy: number;
   fixed: boolean;
+  /** ForceAtlas2-style mass: 1 + degree. Hubs repel harder → legacy-like spacing. */
+  mass: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -129,10 +131,10 @@ function quadrantFor(q: Quad, x: number, y: number): Quad {
 }
 
 function insert(q: Quad, body: SimNode): void {
-  // Update aggregate centre of mass (every body contributes mass 1).
-  const m = q.mass + 1;
-  q.cx = (q.cx * q.mass + body.x) / m;
-  q.cy = (q.cy * q.mass + body.y) / m;
+  // Update aggregate centre of mass (each body contributes its FA2 mass, 1+degree).
+  const m = q.mass + body.mass;
+  q.cx = (q.cx * q.mass + body.x * body.mass) / m;
+  q.cy = (q.cy * q.mass + body.y * body.mass) / m;
   q.mass = m;
 
   if (!q.divided && q.body === null) {
@@ -164,7 +166,7 @@ function applyRepulsion(
   rand: () => number,
   force: { fx: number; fy: number },
 ): void {
-  if (q.mass === 0 || (q.body === body && q.mass === 1)) return;
+  if (q.mass === 0 || (!q.divided && q.body === body)) return;
 
   let dx = body.x - q.cx;
   let dy = body.y - q.cy;
@@ -180,6 +182,9 @@ function applyRepulsion(
       dist2 = dx * dx + dy * dy + 0.01;
     }
     const dist = Math.sqrt(dist2);
+    // FA2-style kernel: the region's aggregate mass (Σ 1+degree) scales the push,
+    // so hubs carve out wide personal space while leaves pack into tight fans —
+    // the legacy vis-network `forceAtlas2Based` hub-and-spoke contrast.
     const f = (repulsion * q.mass) / dist2;
     force.fx += (dx / dist) * f;
     force.fy += (dy / dist) * f;
@@ -230,6 +235,7 @@ export function computeLayout(
       vx: 0,
       vy: 0,
       fixed,
+      mass: 1,
     };
   });
 
@@ -237,12 +243,18 @@ export function computeLayout(
     .map((e) => ({ s: idIndex.get(e.source), t: idIndex.get(e.target) }))
     .filter((l): l is { s: number; t: number } => l.s !== undefined && l.t !== undefined);
 
+  // FA2 mass = 1 + degree (same as vis-network's forceAtlas2Based solver).
+  for (const l of links) {
+    (sim[l.s] as SimNode).mass += 1;
+    (sim[l.t] as SimNode).mass += 1;
+  }
+
   const area = w * h;
   const k = Math.sqrt(area / Math.max(n, 1)); // ideal node distance
-  const repulsion = k * k * 0.9 * repulsionFactor;
-  const restLength = k * 0.8;
-  const springK = 0.04;
-  const gravity = 0.012;
+  const repulsion = k * k * 0.6 * repulsionFactor;
+  const restLength = k * 0.6;
+  const springK = 0.08;
+  const gravity = 0.004;
   const damping = 0.85;
   let temperature = Math.min(w, h) * 0.08;
   const cooling = Math.pow(0.02, 1 / ticks);
@@ -309,8 +321,10 @@ export function computeLayout(
       }
       node.x += node.vx;
       node.y += node.vy;
-      const padX = w * 0.5 + 16;
-      const padY = h * 0.5 + 16;
+      // Loose safety walls only (runaway ejections): the degree-weighted
+      // repulsion needs room to breathe or the spread flattens against the box.
+      const padX = w * 1.5 + 16;
+      const padY = h * 1.5 + 16;
       node.x = Math.max(-padX, Math.min(w + padX, node.x));
       node.y = Math.max(-padY, Math.min(h + padY, node.y));
     }

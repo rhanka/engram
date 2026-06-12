@@ -28,4 +28,48 @@ describe("buildStyleBuffers", () => {
     expect([...style.edgeDash]).toEqual([3]);
     expect([...style.edgeCurvatures]).toEqual([0.25]);
   });
+
+  it("maps box and roundedbox to shape code 5 (square stays 4)", () => {
+    const scene = {
+      nodes: [
+        { id: "box", x: 0, y: 0, shape: "box" },
+        { id: "rounded", x: 1, y: 0, shape: "roundedbox" },
+        { id: "square", x: 2, y: 0, shape: "square" },
+        { id: "dot", x: 3, y: 0 },
+      ],
+      edges: [],
+    };
+    const graph = buildRenderGraphBuffers(scene);
+    const style = buildStyleBuffers(scene, graph);
+    expect([...(style.nodeShapes ?? [])]).toEqual([5, 5, 4, 0]);
+  });
+
+  it("populates nodeLabels for central box nodes only (empty for low-degree/non-box)", () => {
+    // hub: box with high degree (3) -> labelled. leaf: isolated box, degree 0
+    // (< 15% of max=3) -> empty. star: non-box high degree -> empty.
+    const scene = {
+      nodes: [
+        { id: "hub", x: 0, y: 0, shape: "box", label: "Central Work" },
+        { id: "leaf", x: 10, y: 0, shape: "box", label: "Lonely Chapter" },
+        { id: "a", x: 0, y: 10, shape: "dot" },
+        { id: "b", x: 0, y: 20, shape: "dot" },
+        { id: "star", x: 0, y: 30, shape: "star", label: "Famous Author" },
+      ],
+      edges: [
+        { source: "hub", target: "a" },
+        { source: "hub", target: "b" },
+        { source: "hub", target: "star" },
+        { source: "star", target: "a" },
+        { source: "star", target: "b" },
+      ],
+    };
+    const graph = buildRenderGraphBuffers(scene);
+    const style = buildStyleBuffers(scene, graph);
+    const labels = style.nodeLabels ?? [];
+    const indexOf = (id: string) => graph.nodeIds.indexOf(id);
+    expect(labels[indexOf("hub")]).toBe("Central Work");
+    expect(labels[indexOf("leaf")]).toBe(""); // box but low degree
+    expect(labels[indexOf("star")]).toBe(""); // central but not a box
+    expect(labels[indexOf("a")]).toBe(""); // non-box
+  });
 });

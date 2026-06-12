@@ -72,6 +72,13 @@ export interface GraphStyleBuffers {
   nodeSizes: Float32Array;
   nodeColors: Uint8Array;
   nodeShapes: Uint8Array;
+  /**
+   * Optional per-node label text drawn INSIDE the glyph by the Canvas2D
+   * fallback (legacy `shape:box` parity). Populated ONLY for box-category
+   * nodes that pass the degree gate; "" for every other node. When omitted,
+   * box nodes render as empty rounded rectangles.
+   */
+  nodeLabels?: string[];
   edgeWidths: Float32Array;
   edgeColors: Uint8Array;
   edgeDash: Uint8Array;

@@ -91,10 +91,38 @@ function shapeCode(value: unknown): number {
   if (shape === "diamond") return 1;
   if (shape === "star") return 2;
   if (shape === "hexagon") return 3;
-  if (shape === "box" || shape === "square") return 4;
-  if (shape === "roundedbox") return 5;
+  if (shape === "square") return 4;
+  // Legacy vis-network `shape:box` parity: a labelled rounded rectangle drawn
+  // as the node glyph by the Canvas2D fallback. `box` aliases `roundedbox`.
+  if (shape === "box" || shape === "roundedbox") return 5;
   if (shape === "triangle") return 6;
   return 0;
+}
+
+/** Shape codes that render as the legacy box glyph (labelled rounded rect). */
+const BOX_SHAPE_CODE = 5;
+
+/**
+ * Fraction of the maximum node degree a box node must reach for its label to be
+ * drawn. Mirrors the legacy vis-network behaviour where only the central hubs
+ * (high-degree Work / Chapter nodes) show text; low-degree boxes stay empty.
+ */
+const LABEL_DEGREE_FRACTION = 0.15;
+
+/** Undirected degree per node index, computed from the render-graph edges. */
+function computeNodeDegrees(graph: RenderGraphBuffers): { degrees: Uint32Array; maxDegree: number } {
+  const degrees = new Uint32Array(graph.nodeIds.length);
+  for (let i = 0; i < graph.edges.length; i += 1) {
+    const endpoint = graph.edges[i];
+    if (endpoint !== undefined && endpoint < degrees.length) {
+      degrees[endpoint] += 1;
+    }
+  }
+  let maxDegree = 0;
+  for (let i = 0; i < degrees.length; i += 1) {
+    if (degrees[i]! > maxDegree) maxDegree = degrees[i]!;
+  }
+  return { degrees, maxDegree };
 }
 
 export function buildStyleBuffers(
@@ -119,12 +147,25 @@ export function buildStyleBuffers(
   const nodeSizes = new Float32Array(graph.nodeIds.length);
   const nodeColors = new Uint8Array(graph.nodeIds.length * 4);
   const nodeShapes = new Uint8Array(graph.nodeIds.length);
+  // Per-node label text, only ever populated for box-category nodes that pass
+  // the degree gate (legacy `shape:box` parity); "" for everything else.
+  const nodeLabels = new Array<string>(graph.nodeIds.length).fill("");
+
+  const { degrees, maxDegree } = computeNodeDegrees(graph);
+  const labelDegreeThreshold = LABEL_DEGREE_FRACTION * maxDegree;
 
   graph.nodeIds.forEach((nodeId, index) => {
     const node = nodesById.get(nodeId);
     nodeSizes[index] = finiteOrDefault(node?.size, nodeDefaults.size);
     writeColor(nodeColors, index * 4, parseColor(node?.color, nodeDefaults.color));
-    nodeShapes[index] = shapeCode(node?.shape);
+    const shape = shapeCode(node?.shape);
+    nodeShapes[index] = shape;
+
+    // LEGACY-STRICT label gate: box glyph + central (degree >= 15% of max).
+    if (shape === BOX_SHAPE_CODE && (degrees[index] ?? 0) >= labelDegreeThreshold) {
+      const label = typeof node?.label === "string" ? node.label : "";
+      if (label) nodeLabels[index] = label;
+    }
   });
 
   const edgeCount = graph.edges.length / 2;
@@ -147,6 +188,7 @@ export function buildStyleBuffers(
     nodeSizes,
     nodeColors,
     nodeShapes,
+    nodeLabels,
     edgeWidths,
     edgeColors,
     edgeDash,
