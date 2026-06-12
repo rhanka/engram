@@ -9,6 +9,7 @@
  */
 import { createFileGraphStore } from "./file.js";
 import { createNeo4jGraphStore } from "./neo4j.js";
+import { createPostgresGraphStore } from "./postgres.js";
 import { createSpannerGraphStore } from "./spanner.js";
 import type { GraphStore, GraphStoreConfig, StoreTestDeps } from "./types.js";
 
@@ -91,6 +92,22 @@ registerGraphStoreFactory({
   async create(config: GraphStoreConfig, deps?: StoreTestDeps): Promise<GraphStore> {
     return createSpannerGraphStore(
       config as Parameters<typeof createSpannerGraphStore>[0],
+      deps,
+    );
+  },
+});
+
+registerGraphStoreFactory({
+  id: "postgres",
+  requiredPackage: "pg",
+  async create(config: GraphStoreConfig, deps?: StoreTestDeps): Promise<GraphStore> {
+    if (!config.connectionString && !process.env.GRAPHIFY_POSTGRES_URL) {
+      throw new Error(
+        "postgres store requires a DSN (GRAPHIFY_POSTGRES_URL or config.connectionString)",
+      );
+    }
+    return createPostgresGraphStore(
+      config as Parameters<typeof createPostgresGraphStore>[0],
       deps,
     );
   },
