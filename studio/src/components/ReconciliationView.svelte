@@ -19,6 +19,7 @@
     buildScene,
     withReconcileEdge,
     attachReconLayout,
+    reconTwinPinOffset,
     indexNodes,
     nodeLabel,
     nodeType,
@@ -72,11 +73,32 @@
     // Pin the two twins symmetrically near the centre so both stay in view. We
     // DROP each subgraph node's inherited x/y so only the twins' fx/fy seed the
     // local sim; the neighbours are placed by the layout, not their stale coords.
-    const cx = 360, cy = 280, dx = 45;
+    // dx is COMPUTED from the two focal labels' drawn box widths (world units,
+    // zoom-independent — see reconTwinPinOffset): wide labels ("Dr. John H.
+    // Watson" × 2) get exactly the offset they need to clear each other plus a
+    // small gap; short labels stay compact. Never a hand-tuned constant again.
+    const cx = 360, cy = 280;
+    const sceneLabel = (id) => {
+      const n = linked.nodes.find((node) => node.id === id);
+      // Same fallback chain as the renderer payload (label || id).
+      return n ? (n.label || String(n.id)) : String(id);
+    };
+    const dx = reconTwinPinOffset(
+      sceneLabel(active.candidate_id),
+      sceneLabel(active.canonical_id),
+    );
+    // Recon focal-pair parity: the two entities under comparison must ALWAYS
+    // render IDENTICALLY — both as labelled rounded boxes — regardless of the
+    // degree-based god-class box gate in buildScene (which would otherwise box
+    // the high-degree canonical but leave the unmerged candidate twin as its
+    // type glyph). View-scoped override: `forceBoxLabel` tells the renderer
+    // payload to bypass the degree/god-class label gate so BOTH boxes carry
+    // their text in-box. The surrounding neighbours keep their normal shapes.
+    const focal = { shape: "roundedbox", forceBoxLabel: true };
     const nodes = linked.nodes.map((n) => {
       const { x: _x, y: _y, fx: _fx, fy: _fy, ...rest } = n;
-      if (n.id === active.candidate_id) return { ...rest, fx: cx - dx, fy: cy };
-      if (n.id === active.canonical_id) return { ...rest, fx: cx + dx, fy: cy };
+      if (n.id === active.candidate_id) return { ...rest, ...focal, fx: cx - dx, fy: cy };
+      if (n.id === active.canonical_id) return { ...rest, ...focal, fx: cx + dx, fy: cy };
       return rest;
     });
     // Run the local layout (twins fixed) so neighbours arrange around the pair.

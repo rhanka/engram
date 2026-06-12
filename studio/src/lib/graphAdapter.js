@@ -779,6 +779,93 @@ export function withReconcileEdge(scene, idA, idB) {
   };
 }
 
+// ---- Recon twin spacing (focal box overlap fix) ---------------------------
+//
+// Mirror of the renderer's legacy `shape:box` metrics (packages/graph/src/
+// renderer.ts `boxDimensions`): box height = BOX_BASE_HEIGHT_PX × pixelRatio ×
+// zoom DEVICE px, font = height × 12/22, margin = height × 5/22 per side,
+// drawn width = measureText(label, font) + 2 × margin. Positions map world →
+// device px through the camera zoom alone (screen = (world − cam.x) × zoom +
+// w/2), so dividing the screen width by zoom CANCELS the zoom: a box's
+// WORLD-space width depends only on pixelRatio and the label —
+//   worldWidth(label) = BOX_BASE_HEIGHT_PX × pixelRatio
+//                       × ((12/22) × textW(label)@1px + 10/22)
+// — which lets the recon view pick a pin offset that clears the boxes at ANY
+// fit zoom, without knowing the zoom at pin time.
+const RECON_BOX_BASE_HEIGHT_PX = 18; // renderer BOX_BASE_HEIGHT_PX
+const RECON_BOX_FONT_RATIO = 12 / 22; // renderer BOX_FONT_RATIO
+const RECON_BOX_MARGIN_RATIO = 5 / 22; // renderer BOX_MARGIN_RATIO
+const RECON_BOX_EMPTY_RATIO = 10 / 22; // renderer BOX_EMPTY_RATIO (no-label box)
+// Gap between the two focal boxes, as a fraction of the box height (world
+// units, so it scales with zoom exactly like the boxes — the pair reads the
+// same at any fit). Half a box height ≈ 23 CSS px at the typical mystery-pack
+// recon fit zoom (measured), inside the 16–24 px band.
+const RECON_TWIN_GAP_RATIO = 0.5;
+// Approximate average sans-serif glyph advance (fraction of the font size)
+// for headless environments without a Canvas2D `measureText` (vitest/jsdom).
+const RECON_FALLBACK_GLYPH_RATIO = 0.6;
+
+let reconMeasureContext; // lazily created offscreen 2d context (browser only)
+
+function measureLabelWidthPx(text, font) {
+  if (reconMeasureContext === undefined) {
+    try {
+      // jsdom THROWS on getContext (no canvas package) — treat as "no 2d".
+      reconMeasureContext =
+        typeof document !== "undefined" && typeof document.createElement === "function"
+          ? (document.createElement("canvas").getContext?.("2d") ?? null)
+          : null;
+    } catch {
+      reconMeasureContext = null;
+    }
+  }
+  if (reconMeasureContext) {
+    reconMeasureContext.font = font;
+    const width = reconMeasureContext.measureText?.(text)?.width;
+    if (finiteNumber(width)) return width;
+  }
+  const size = Number.parseFloat(font);
+  return text.length * (finiteNumber(size) ? size : 12) * RECON_FALLBACK_GLYPH_RATIO;
+}
+
+/**
+ * WORLD-space drawn width of a labelled recon focal box (zoom-independent, see
+ * the derivation above). `measure(text, font)` is injectable for tests.
+ */
+export function reconBoxWorldWidth(label, { pixelRatio = 1, measure = measureLabelWidthPx } = {}) {
+  const ratio = finiteNumber(pixelRatio) && pixelRatio > 0 ? pixelRatio : 1;
+  const heightWorld = RECON_BOX_BASE_HEIGHT_PX * ratio;
+  const text = label == null ? "" : String(label);
+  if (!text) return heightWorld * RECON_BOX_EMPTY_RATIO;
+  // Measure at the box's WORLD font size (screen font / zoom); measureText is
+  // ~linear in font size, so this is the screen width / zoom we need.
+  const fontWorld = heightWorld * RECON_BOX_FONT_RATIO;
+  const textWidth = measure(text, `${fontWorld}px sans-serif`);
+  return textWidth + 2 * heightWorld * RECON_BOX_MARGIN_RATIO;
+}
+
+/**
+ * Horizontal pin half-offset `dx` for the two recon focal boxes, COMPUTED from
+ * the labels' drawn widths (not a hand-tuned constant): the twins sit at
+ * (cx − dx, cy) / (cx + dx, cy), so non-overlap needs
+ *   2 × dx ≥ worldWidth(A)/2 + worldWidth(B)/2 + gap.
+ * Long labels (e.g. "Dr. John H. Watson" twice) get pushed apart exactly far
+ * enough; short labels stay compact because dx tracks the actual widths.
+ */
+export function reconTwinPinOffset(labelA, labelB, options = {}) {
+  const pixelRatio = finiteNumber(options.pixelRatio)
+    ? options.pixelRatio
+    : (typeof window !== "undefined" && finiteNumber(window.devicePixelRatio)
+        ? window.devicePixelRatio
+        : 1);
+  const opts = { ...options, pixelRatio };
+  const ratio = pixelRatio > 0 ? pixelRatio : 1;
+  const gap = RECON_BOX_BASE_HEIGHT_PX * ratio * RECON_TWIN_GAP_RATIO;
+  const halfA = reconBoxWorldWidth(labelA, opts) / 2;
+  const halfB = reconBoxWorldWidth(labelB, opts) / 2;
+  return (halfA + halfB + gap) / 2;
+}
+
 /**
  * Reconciliation centering (#2.2): run a LOCAL deterministic force layout over a
  * reconciliation subgraph so the neighbours arrange AROUND the side-by-side twins.

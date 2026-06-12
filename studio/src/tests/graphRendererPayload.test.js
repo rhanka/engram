@@ -101,6 +101,52 @@ describe("boxed-label degree threshold (item 2)", () => {
   });
 });
 
+// --- recon focal-pair parity: forceBoxLabel bypasses the label gate ---
+describe("forceBoxLabel (reconciliation focal-pair override)", () => {
+  it("forces the in-box label for flagged box nodes regardless of degree/god-class", () => {
+    // Canonical "twin-a" is the god-class hub (high degree, type Character);
+    // candidate "twin-b" is its low-degree unmerged twin: under the normal
+    // gate it would get NO in-box label. Both are flagged + boxed by the
+    // recon view, so BOTH must carry their label in nodeLabels.
+    const nodes = [
+      { id: "twin-a", label: "Dr. Watson", type: "Character", shape: "roundedbox", forceBoxLabel: true, x: 0, y: 0, weight: 1 },
+      { id: "twin-b", label: "Dr. Watson", type: "Character", shape: "roundedbox", forceBoxLabel: true, x: 30, y: 0, weight: 1 },
+    ];
+    const edges = [{ source: "twin-a", target: "twin-b", relation: "≈ reconcile" }];
+    for (let i = 0; i < 9; i += 1) {
+      nodes.push({ id: `n${i}`, label: `N${i}`, type: "Character", shape: "diamond", x: i, y: 50, weight: 1 });
+      edges.push({ source: "twin-a", target: `n${i}` });
+    }
+
+    const payload = buildGraphRendererPayload({ nodes, edges }, { nodeRadius: 3 });
+    const aIdx = payload.nodeIndexById.get("twin-a");
+    const bIdx = payload.nodeIndexById.get("twin-b");
+    // Both twins: identical box shape code AND identical in-box label text.
+    expect(payload.baseStyle.nodeShapes[aIdx]).toBe(payload.baseStyle.nodeShapes[bIdx]);
+    expect(payload.baseStyle.nodeLabels[aIdx]).toBe("Dr. Watson");
+    expect(payload.baseStyle.nodeLabels[bIdx]).toBe("Dr. Watson");
+    // The label survives the connected-dim re-style (cloneStyle path).
+    const dimmed = buildConnectedDimStyle(payload, { selectedIds: ["twin-a", "twin-b"] });
+    expect(dimmed.nodeLabels[bIdx]).toBe("Dr. Watson");
+  });
+
+  it("does NOT force labels on unflagged nodes (main-view gate untouched)", () => {
+    const nodes = [
+      { id: "hub", label: "Hub", type: "Work", shape: "roundedbox", x: 0, y: 0, weight: 1 },
+      { id: "leafbox", label: "LeafBox", type: "Work", shape: "roundedbox", x: 30, y: 0, weight: 1 },
+    ];
+    const edges = [{ source: "hub", target: "leafbox" }];
+    for (let i = 0; i < 9; i += 1) {
+      nodes.push({ id: `n${i}`, label: `N${i}`, type: "Work", shape: "dot", x: i, y: 50, weight: 1 });
+      edges.push({ source: "hub", target: `n${i}` });
+    }
+    const payload = buildGraphRendererPayload({ nodes, edges }, { nodeRadius: 3 });
+    const leafIdx = payload.nodeIndexById.get("leafbox");
+    // Degree-1 box below the 15% gate: still NO in-box label without the flag.
+    expect(payload.baseStyle.nodeLabels[leafIdx]).toBe("");
+  });
+});
+
 // --- legacy box parity: box nodes own their label (single text per box) ---
 describe("isBoxShape", () => {
   it("recognises the box-category scene shapes (case-insensitive)", () => {
