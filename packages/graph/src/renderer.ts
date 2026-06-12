@@ -1,4 +1,5 @@
 import { computePositionBounds, copyPositions } from "./positions";
+import { BOX_GLYPH_CORNER_RATIO, SQUARE_INSET_RATIO, shapePolygonPoints } from "./shape-geometry";
 import type {
   CameraState,
   FitViewOptions,
@@ -278,6 +279,8 @@ function copyStyle(style: GraphStyleBuffers, nodeCount: number, edgeCount: numbe
     nodeColors: new Uint8Array(style.nodeColors),
     nodeShapes: style.nodeShapes ? new Uint8Array(style.nodeShapes) : new Uint8Array(nodeCount),
     nodeLabels: style.nodeLabels ? [...style.nodeLabels] : undefined,
+    nodeFills: style.nodeFills ? new Uint8Array(style.nodeFills) : undefined,
+    nodeBorders: style.nodeBorders ? new Uint8Array(style.nodeBorders) : undefined,
     edgeWidths: new Float32Array(style.edgeWidths),
     edgeColors: new Uint8Array(style.edgeColors),
     edgeDash: new Uint8Array(style.edgeDash),
@@ -414,6 +417,23 @@ function cssColor(
   return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 
+/**
+ * Darkened variant of a node colour (same alpha) so a BOLD border stays
+ * visible against the solid fill it outlines.
+ */
+function cssDarkenedColor(
+  source: Uint8Array | undefined,
+  offset: number,
+  fallback: readonly [number, number, number, number],
+  factor = 0.62,
+): string {
+  const r = Math.round((source?.[offset] ?? fallback[0]) * factor);
+  const g = Math.round((source?.[offset + 1] ?? fallback[1]) * factor);
+  const b = Math.round((source?.[offset + 2] ?? fallback[2]) * factor);
+  const a = (source?.[offset + 3] ?? fallback[3]) / 255;
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
 function screenPoint(
   positions: Float32Array,
   nodeIndex: number,
@@ -439,25 +459,39 @@ function applyDash(context: Graph2DContext, dash: number, pixelRatio: number): v
   }
 }
 
-const STAR_INNER_RATIO = 0.42;
 const EDGE_CURVE_FACTOR = 0.5;
 
 // Legacy vis-network `shape:box` parity. The box IS the node glyph drawn by the
 // Canvas2D fallback: a rounded rectangle, white-translucent fill, node-coloured
-// border, dark centred text. SCALE parity (measured on the legacy render): the
-// legacy box is 22 world units tall (font 12 + 2 × margin 5) beside nodes whose
-// drawn diameter is ~21 world units — i.e. the box HEIGHT reads as one node
-// glyph, with SMALL text scaled to fit inside, and only the WIDTH grows to fit
-// the text. We therefore anchor the box height to the node's drawn diameter
-// (2 × nodeSizes[i] × pixelRatio × zoom — the same on-screen size every other
-// shape uses) and derive font / margin / corner from the legacy 12 : 5 : 6
-// proportions of that 22-unit height.
+// border, dark centred text. SCALE rule: the box HEIGHT equals the node's drawn
+// DIAMETER (2 × nodeSizes[i] × pixelRatio × zoom — the exact on-screen height a
+// neighbouring diamond/circle of the same nodeSize occupies), the label font is
+// sized to FIT that height minus a SMALL margin per side, and only the WIDTH
+// grows to hug the text. So a box always reads as ONE node glyph beside its
+// neighbours, never as an oversized text card.
 const BOX_SHAPE = 5;
-const BOX_FONT_RATIO = 12 / 22; // font height as a fraction of the box height
-const BOX_MARGIN_RATIO = 5 / 22; // padding around the text per side
-const BOX_CORNER_RATIO = 6 / 22; // corner radius
+// Legacy vis-network `shape:box` is sized to its LABEL at a small, degree-INDEPENDENT
+// font — the legacy 22-unit box proportions (12-unit font, 5-unit margins) at a
+// base height shrunk ~20% (22 → 18, UAT: the box must read clearly SMALLER than
+// the largest diamond). It does NOT inflate with a god-node's degree (only zoom
+// scales it), so a labelled box never dwarfs its neighbours.
+const BOX_BASE_HEIGHT_PX = 18; // box height in CSS px (× pixelRatio × zoom), legacy 22 − ~20%
+const BOX_MARGIN_RATIO = 5 / 22; // legacy margin per side (5 of a 22 box)
+const BOX_FONT_RATIO = 12 / 22; // legacy font size (12 of a 22 box) — text much smaller than the box
+const BOX_CORNER_RATIO = 1 / 4; // corner radius as a fraction of box height
+// Non-labelled (low-degree) box collapse, as a fraction of the box height:
+// legacy hidden-font boxes shrink to their two 5-unit margins of a 22-unit box.
+const BOX_EMPTY_RATIO = 10 / 22;
 const BOX_FILL: readonly [number, number, number, number] = [255, 255, 255, 0.5 * 255];
 const BOX_TEXT_COLOR = "#0f172a"; // theme-dark label text (slate-900)
+
+// Shape-variant outline widths in CSS px (× pixelRatio, screen-space like the
+// box border): "normal" hollow outlines and the heavier "bold" border variant.
+const BORDER_WIDTH_NORMAL = 1.5;
+const BORDER_WIDTH_BOLD = 3;
+// Hollow glyph interior: same translucent white as the legacy box fill, so a
+// hollow shape reads as an outline without disappearing over edges.
+const HOLLOW_FILL_STYLE = `rgba(${BOX_FILL[0]}, ${BOX_FILL[1]}, ${BOX_FILL[2]}, ${BOX_FILL[3] / 255})`;
 
 // Arrowhead length in world units per unit of edge width. Legacy parity: the
 // legacy export enables `arrows: { to: { scaleFactor: 0.5 } }` → ~7.5-unit
@@ -509,66 +543,16 @@ function drawRoundedBox(
 }
 
 function drawNodeShapePath(context: Graph2DContext, x: number, y: number, radius: number, shape: number): void {
-  if (shape === 1) {
-    const diagonal = radius;
-    pathPolygon(context, x, y, [
-      [0, -diagonal],
-      [diagonal, 0],
-      [0, diagonal],
-      [-diagonal, 0],
-    ]);
-    return;
-  }
-
-  if (shape === 2) {
-    const outer = radius;
-    const inner = outer * STAR_INNER_RATIO;
-    const points: Array<[number, number]> = [];
-    for (let index = 0; index < 10; index += 1) {
-      const angle = (index * Math.PI) / 5 - Math.PI / 2;
-      const r = index % 2 === 0 ? outer : inner;
-      points.push([Math.cos(angle) * r, Math.sin(angle) * r]);
-    }
+  // Shared geometry (shape-geometry.ts) so DOM/SVG glyphs match the canvas.
+  const points = shapePolygonPoints(shape, radius);
+  if (points) {
     pathPolygon(context, x, y, points);
-    return;
-  }
-
-  if (shape === 3) {
-    const circumradius = radius;
-    const points: Array<[number, number]> = [];
-    for (let index = 0; index < 6; index += 1) {
-      const angle = (index * Math.PI) / 3 - Math.PI / 6;
-      points.push([Math.cos(angle) * circumradius, Math.sin(angle) * circumradius]);
-    }
-    pathPolygon(context, x, y, points);
-    return;
-  }
-
-  if (shape === 4) {
-    const half = radius * 0.88;
-    pathPolygon(context, x, y, [
-      [-half, -half],
-      [half, -half],
-      [half, half],
-      [-half, half],
-    ]);
     return;
   }
 
   if (shape === 5) {
-    const side = radius * 0.88 * 2;
-    drawRoundedBox(context, x, y, side, side, radius * 0.88 * 0.6);
-    return;
-  }
-
-  if (shape === 6) {
-    const circumradius = radius;
-    const points: Array<[number, number]> = [];
-    for (let index = 0; index < 3; index += 1) {
-      const angle = (index * 2 * Math.PI) / 3 - Math.PI / 2;
-      points.push([Math.cos(angle) * circumradius, Math.sin(angle) * circumradius]);
-    }
-    pathPolygon(context, x, y, points);
+    const half = radius * SQUARE_INSET_RATIO;
+    drawRoundedBox(context, x, y, half * 2, half * 2, half * BOX_GLYPH_CORNER_RATIO);
     return;
   }
 
@@ -592,25 +576,24 @@ interface NodeGeometry {
 }
 
 /**
- * Legacy `shape:box` glyph dimensions. The box height equals the node's drawn
- * DIAMETER (2 × radius — the same on-screen size every other shape occupies);
- * the font is scaled to fit inside that height (legacy 12/22 proportion) and
- * the box only grows in WIDTH to fit the (small) text plus margins. A
- * non-labelled (low-degree) box collapses to its margins, like the legacy
- * hidden-font (fontSize 0) box: a small 2-margin square.
+ * Legacy `shape:box` glyph dimensions. The box height is a fixed legacy base
+ * (BOX_BASE_HEIGHT_PX, scaled by pixelRatio × zoom) — degree-INDEPENDENT, so a
+ * high-degree Work box never inflates past its neighbours; the small font fits
+ * that height minus a margin per side, and the box only grows in WIDTH to hug
+ * the text plus margins. A non-labelled (low-degree) box collapses like the
+ * legacy hidden-font (fontSize 0) box: a small square of BOX_EMPTY_RATIO × height.
  */
 function boxDimensions(
-  radius: number,
+  height: number,
   label: string,
   measureLabelWidth: (text: string, font: string) => number,
 ): { w: number; h: number; fontPx: number; corner: number } {
-  const height = radius * 2;
   const margin = height * BOX_MARGIN_RATIO;
   const corner = height * BOX_CORNER_RATIO;
   const fontPx = height * BOX_FONT_RATIO;
 
   if (!label) {
-    const side = 2 * margin;
+    const side = height * BOX_EMPTY_RATIO;
     return { w: side, h: side, fontPx, corner };
   }
 
@@ -624,9 +607,9 @@ function boxDimensions(
  * - Eligible (central) box: a rounded rectangle with a white-translucent
  *   fill, the node colour as border, and the dark label text centred inside.
  *   Height = the node's drawn diameter (same scale as every other glyph);
- *   font fits inside that height; width hugs the measured text.
+ *   font fits that height minus a small margin; width hugs the measured text.
  * - Non-eligible (low-degree / non-labelled) box: a small EMPTY rounded rect
- *   (2 margins per side — the legacy hidden-font collapse), no text.
+ *   (BOX_EMPTY_RATIO of the height — the legacy hidden-font collapse), no text.
  *
  * Exactly ONE fillText per labelled box per frame — the box text IS the node
  * label; no other layer may draw it again. Fill / stroke / text alpha follow
@@ -646,18 +629,17 @@ function drawBoxNode(
   label: string,
   borderColor: string,
   alpha: number,
+  boldBorder = false,
 ): void {
-  const fillStyle = `rgba(${BOX_FILL[0]}, ${BOX_FILL[1]}, ${BOX_FILL[2]}, ${BOX_FILL[3] / 255})`;
-
   context.save();
   context.globalAlpha = alpha;
 
   context.beginPath();
   drawRoundedBox(context, x, y, w, h, corner);
-  context.fillStyle = fillStyle;
+  context.fillStyle = HOLLOW_FILL_STYLE;
   context.fill();
   context.strokeStyle = borderColor;
-  context.lineWidth = 1.5 * pixelRatio;
+  context.lineWidth = (boldBorder ? BORDER_WIDTH_BOLD : BORDER_WIDTH_NORMAL) * pixelRatio;
   context.stroke();
 
   if (label) {
@@ -742,7 +724,10 @@ function drawFallback2D(
     geometry.radii[nodeIndex] = radius;
     if ((state.style?.nodeShapes[nodeIndex] ?? 0) !== BOX_SHAPE) continue;
     const label = state.style?.nodeLabels?.[nodeIndex] ?? "";
-    const dims = boxDimensions(radius, label, measureLabelWidth);
+    // Box size is degree-INDEPENDENT (legacy): a fixed base height scaled only by
+    // pixelRatio × zoom, so a high-degree Work box never balloons past its neighbours.
+    const boxHeight = BOX_BASE_HEIGHT_PX * pixelRatio * camera.zoom;
+    const dims = boxDimensions(boxHeight, label, measureLabelWidth);
     geometry.boxHalfWidths[nodeIndex] = dims.w / 2;
     geometry.boxHalfHeights[nodeIndex] = dims.h / 2;
   }
@@ -850,14 +835,22 @@ function drawFallback2D(
     const nodeColor = cssColor(state.style?.nodeColors, colorOffset, DEFAULT_NODE_COLOR);
     const radius = geometry.radii[nodeIndex] ?? 1;
 
+    // Shape variants (additive encodings): hollow-vs-solid fill and
+    // bold-vs-normal border, multiplying the base shapes per node type.
+    const hollow = (state.style?.nodeFills?.[nodeIndex] ?? 0) === 1;
+    const boldBorder = (state.style?.nodeBorders?.[nodeIndex] ?? 0) === 1;
+
     if (shape === BOX_SHAPE) {
-      // The box IS the glyph, at the SAME on-screen scale as the other shapes:
-      // height = the node's drawn diameter, small text fitted inside, width
-      // hugging the text. Border = node colour (encodes selection/hover);
-      // alpha follows the node's payload alpha so dim / merge styling applies.
+      // The box IS the glyph. Its height is a fixed legacy base (degree-INDEPENDENT,
+      // scaled only by pixelRatio × zoom — MUST match the geometry pre-pass above so
+      // edge-clipping and drawing agree), the small text is fitted inside, and the
+      // width hugs the text. Border = node colour (encodes selection/hover); alpha
+      // follows the node's payload alpha so dim / merge styling applies. Boxes are
+      // inherently hollow; only the border-weight variant applies.
       const label = state.style?.nodeLabels?.[nodeIndex] ?? "";
       const alpha = (state.style?.nodeColors[colorOffset + 3] ?? 255) / 255;
-      const dims = boxDimensions(radius, label, measureLabelWidth);
+      const boxHeight = BOX_BASE_HEIGHT_PX * pixelRatio * camera.zoom;
+      const dims = boxDimensions(boxHeight, label, measureLabelWidth);
       drawBoxNode(
         context,
         point.x,
@@ -870,14 +863,31 @@ function drawFallback2D(
         label,
         nodeColor,
         alpha,
+        boldBorder,
       );
       continue;
     }
 
     context.beginPath();
-    context.fillStyle = nodeColor;
     drawNodeShapePath(context, point.x, point.y, radius, shape);
-    context.fill();
+    if (hollow) {
+      // Outline-only glyph: translucent interior + node-coloured border (the
+      // border carries the colour signal, like the legacy box glyph).
+      context.fillStyle = HOLLOW_FILL_STYLE;
+      context.fill();
+      context.strokeStyle = nodeColor;
+      context.lineWidth = (boldBorder ? BORDER_WIDTH_BOLD : BORDER_WIDTH_NORMAL) * pixelRatio;
+      context.stroke();
+    } else {
+      context.fillStyle = nodeColor;
+      context.fill();
+      if (boldBorder) {
+        // Bold border on a solid fill: darkened outline so it stays visible.
+        context.strokeStyle = cssDarkenedColor(state.style?.nodeColors, colorOffset, DEFAULT_NODE_COLOR);
+        context.lineWidth = BORDER_WIDTH_BOLD * pixelRatio;
+        context.stroke();
+      }
+    }
   }
 
   context.restore();

@@ -21,7 +21,6 @@
   import {
     buildScene,
     applyWeakFilter,
-    shapeLegend,
     resolveSelectedIds,
   } from "./lib/graphAdapter.js";
   import { loadWorkspace } from "./lib/sceneLoader.js";
@@ -62,7 +61,6 @@
       ? applyWeakFilter(sceneData, viewerState.options.showWeakLinks)
       : buildScene(graph, { showWeakLinks: viewerState.options.showWeakLinks }),
   );
-  const legend = $derived(shapeLegend(graph));
   // Graph highlight = every entity of every selected type/community + the
   // directly-selected entities (R8-3.B).
   const selectedIds = $derived(resolveSelectedIds(graph, viewerState.selection));
@@ -205,7 +203,6 @@
         <div class="col col-center">
           <GraphCanvas
             {scene}
-            {legend}
             {selectedIds}
             focusId={viewerState.focusId}
             labelMode="none"
@@ -261,26 +258,28 @@
     min-height: 0;
     height: 100%;
   }
+  /* DS-token alignment (sent-tech-design audit): 4px spacing grid +
+     12/14px type scale + DS mono stack; values fall back to the same scale. */
   .app-loading,
   .app-error {
     display: grid;
     align-content: center;
-    gap: 0.4rem;
-    padding: 3rem;
+    gap: var(--st-spacing-2, 0.5rem);
+    padding: var(--st-spacing-12, 3rem);
     text-align: center;
   }
   .loading-kicker {
     margin: 0;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    font-size: 0.72rem;
+    font-size: 0.75rem;
     font-weight: 700;
     color: var(--st-semantic-text-muted, #64748b);
   }
   .app-error-detail {
     color: var(--st-semantic-feedback-error, #dc2626);
-    font-family: ui-monospace, monospace;
-    font-size: 0.82rem;
+    font-family: var(--st-font-mono, ui-monospace, monospace);
+    font-size: var(--st-typography-label-size, 0.875rem);
   }
 
   @media (max-width: 1080px) {

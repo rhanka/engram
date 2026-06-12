@@ -1,3 +1,4 @@
+import { BOX_SHAPE_CODE, shapeCode } from "./shape-geometry";
 import type {
   ColorInput,
   EdgeDashMode,
@@ -86,28 +87,74 @@ function dashCode(value: EdgeDashMode | undefined): number {
   return 0;
 }
 
-function shapeCode(value: unknown): number {
-  const shape = String(value ?? "dot").trim().toLowerCase();
-  if (shape === "diamond") return 1;
-  if (shape === "star") return 2;
-  if (shape === "hexagon") return 3;
-  if (shape === "square") return 4;
-  // Legacy vis-network `shape:box` parity: a labelled rounded rectangle drawn
-  // as the node glyph by the Canvas2D fallback. `box` aliases `roundedbox`.
-  if (shape === "box" || shape === "roundedbox") return 5;
-  if (shape === "triangle") return 6;
-  return 0;
+/** Fill variant code: 1 hollow, 0 solid (default — back-compatible). */
+function fillCode(value: unknown): number {
+  return String(value ?? "solid").trim().toLowerCase() === "hollow" ? 1 : 0;
 }
 
-/** Shape codes that render as the legacy box glyph (labelled rounded rect). */
-const BOX_SHAPE_CODE = 5;
+/** Border weight code: 1 bold, 0 normal (default — back-compatible). */
+function borderCode(value: unknown): number {
+  return String(value ?? "normal").trim().toLowerCase() === "bold" ? 1 : 0;
+}
 
 /**
  * Fraction of the maximum node degree a box node must reach for its label to be
  * drawn. Mirrors the legacy vis-network behaviour where only the central hubs
- * (high-degree Work / Chapter nodes) show text; low-degree boxes stay empty.
+ * show text; low-degree boxes stay empty.
  */
 const LABEL_DEGREE_FRACTION = 0.15;
+
+/** Node type for the god-class ranking: `node_type` wins, then `type`. */
+function nodeTypeOf(node: HighLevelGraphNode | undefined): string | null {
+  const raw = node?.node_type ?? node?.type;
+  return typeof raw === "string" && raw ? raw : null;
+}
+
+/**
+ * Data-driven "god-class" (UAT box-label): the node type whose nodes carry the
+ * highest degrees. Types are ranked by their MAXIMUM node degree (the class
+ * owning the global highest-degree node — Character/Sherlock in the mystery
+ * corpus), tie-broken by the count of nodes above the label gate
+ * (degree >= LABEL_DEGREE_FRACTION × maxDegree), then by type name for
+ * determinism. Only god-class boxes get the in-box label; box glyphs of other
+ * types (Work / ChapterOrStory) render as small empty boxes. Returns null when
+ * the graph has no edges or no typed nodes — then the legacy degree-only gate
+ * applies (back-compatible for untyped inputs).
+ */
+function computeGodClassType(
+  nodesById: Map<string, HighLevelGraphNode>,
+  graph: RenderGraphBuffers,
+  degrees: Uint32Array,
+  maxDegree: number,
+): string | null {
+  if (!(maxDegree > 0)) return null;
+  const threshold = LABEL_DEGREE_FRACTION * maxDegree;
+  const byType = new Map<string, { maxDeg: number; gateCount: number }>();
+  graph.nodeIds.forEach((nodeId, index) => {
+    const type = nodeTypeOf(nodesById.get(nodeId));
+    if (!type) return;
+    const deg = degrees[index] ?? 0;
+    let rec = byType.get(type);
+    if (!rec) byType.set(type, (rec = { maxDeg: 0, gateCount: 0 }));
+    if (deg > rec.maxDeg) rec.maxDeg = deg;
+    if (deg >= threshold) rec.gateCount += 1;
+  });
+  let best: string | null = null;
+  let bestRec: { maxDeg: number; gateCount: number } | null = null;
+  for (const [type, rec] of byType) {
+    if (
+      bestRec === null ||
+      rec.maxDeg > bestRec.maxDeg ||
+      (rec.maxDeg === bestRec.maxDeg &&
+        (rec.gateCount > bestRec.gateCount ||
+          (rec.gateCount === bestRec.gateCount && best !== null && type < best)))
+    ) {
+      best = type;
+      bestRec = rec;
+    }
+  }
+  return best;
+}
 
 /** Undirected degree per node index, computed from the render-graph edges. */
 function computeNodeDegrees(graph: RenderGraphBuffers): { degrees: Uint32Array; maxDegree: number } {
@@ -147,12 +194,16 @@ export function buildStyleBuffers(
   const nodeSizes = new Float32Array(graph.nodeIds.length);
   const nodeColors = new Uint8Array(graph.nodeIds.length * 4);
   const nodeShapes = new Uint8Array(graph.nodeIds.length);
+  // Shape variants (additive): hollow-vs-solid fill and bold-vs-normal border.
+  const nodeFills = new Uint8Array(graph.nodeIds.length);
+  const nodeBorders = new Uint8Array(graph.nodeIds.length);
   // Per-node label text, only ever populated for box-category nodes that pass
   // the degree gate (legacy `shape:box` parity); "" for everything else.
   const nodeLabels = new Array<string>(graph.nodeIds.length).fill("");
 
   const { degrees, maxDegree } = computeNodeDegrees(graph);
   const labelDegreeThreshold = LABEL_DEGREE_FRACTION * maxDegree;
+  const godClass = computeGodClassType(nodesById, graph, degrees, maxDegree);
 
   graph.nodeIds.forEach((nodeId, index) => {
     const node = nodesById.get(nodeId);
@@ -160,9 +211,18 @@ export function buildStyleBuffers(
     writeColor(nodeColors, index * 4, parseColor(node?.color, nodeDefaults.color));
     const shape = shapeCode(node?.shape);
     nodeShapes[index] = shape;
+    nodeFills[index] = fillCode(node?.fill);
+    nodeBorders[index] = borderCode(node?.border);
 
-    // LEGACY-STRICT label gate: box glyph + central (degree >= 15% of max).
-    if (shape === BOX_SHAPE_CODE && (degrees[index] ?? 0) >= labelDegreeThreshold) {
+    // Label gate: box glyph + central (degree >= 15% of max) + god-class.
+    // The in-box label is reserved to the hub class (the type owning the
+    // highest-degree node); when no god-class is determinable (untyped input)
+    // the legacy degree-only gate applies.
+    if (
+      shape === BOX_SHAPE_CODE &&
+      (degrees[index] ?? 0) >= labelDegreeThreshold &&
+      (godClass === null || nodeTypeOf(node) === godClass)
+    ) {
       const label = typeof node?.label === "string" ? node.label : "";
       if (label) nodeLabels[index] = label;
     }
@@ -189,6 +249,8 @@ export function buildStyleBuffers(
     nodeColors,
     nodeShapes,
     nodeLabels,
+    nodeFills,
+    nodeBorders,
     edgeWidths,
     edgeColors,
     edgeDash,

@@ -24,7 +24,7 @@ const DIM_ALPHA = Math.round(255 * 0.35); // 89
 
 // Density-aware base node sizing. The user confirmed sizes read well at ~1000
 // nodes but are too big at ~5000. We shrink only the BASE radius as the graph
-// grows (the per-node degree spread — sqrt(weight), i.e. the RADIUS_RATIO=4
+// grows (the per-node degree spread — sqrt(weight), i.e. the RADIUS_RATIO
 // god-node multiplier from graphAdapter — is preserved because it multiplies
 // the already-scaled base). At n <= DENSITY_REF the factor is 1 (unchanged);
 // for larger n it follows 1/sqrt(n) growth and clamps at DENSITY_MIN.
@@ -116,6 +116,9 @@ function cloneStyle(style) {
     // Carry the legacy box labels through dim / merge re-styling so box glyphs
     // keep their text when a node is selected, hovered, or focused.
     nodeLabels: style.nodeLabels ? [...style.nodeLabels] : undefined,
+    // Shape variants (hollow / bold) survive dim / merge re-styling too.
+    nodeFills: style.nodeFills ? new Uint8Array(style.nodeFills) : undefined,
+    nodeBorders: style.nodeBorders ? new Uint8Array(style.nodeBorders) : undefined,
     edgeWidths: new Float32Array(style.edgeWidths),
     edgeColors: new Uint8Array(style.edgeColors),
     edgeDash: new Uint8Array(style.edgeDash),
@@ -193,6 +196,10 @@ export function buildGraphRendererPayload(scene, options = {}) {
       y: position.y,
       fixed: position.fixed,
       shape: node.shape ?? "dot",
+      // Shape variants (ontology visual_encoding): hollow / bold pass through
+      // to the style buffers; absent = solid / normal (back-compatible).
+      fill: node.fill,
+      border: node.border,
       size: nodeSize(node, nodeRadius, selected, focused),
       color: focused ? FOCUS_COLOR : selected ? SELECTED_COLOR : colorForGroup(node.group),
     };

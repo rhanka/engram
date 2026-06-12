@@ -4,6 +4,15 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.11.0 (2026-06-12)
+
+Native database storage backends + studio rendering refinements.
+
+- **Storage:** native `Spanner`, `Postgres`, and `pgvector`/GraphRAG backends on the `GraphStore` port (neo4j/file unchanged). Postgres ships `graph_nodes`/`graph_edges` with a composite + GIN(`french` full-text) + GIN(jsonb) index set, a single-JOIN neighbour query, and writes the S3-replayable `graph/{city}/latest.json` from `pushGraph`. A sibling `VectorStore` port + `pgvector` (HNSW cosine) backs GraphRAG. Drivers are `optionalDependencies`, lazily imported (import-guard enforced).
+- **Studio (`@sentropic/graph` 0.1.2):** box glyph reduced to a fixed, degree-independent legacy size; the labelled rounded-box is now reserved to the data-driven "god-class" (the highest-degree node type) instead of `Work`; the largest non-box glyphs grown ~20%; expanding a left-rail menu no longer re-renders/shifts the graph or resets the camera; the on-canvas legend was replaced by reliable per-type shape glyphs in the rail; hollow/solid + bold/normal shape variants; DS-compliant header.
+
+Minor bump (new storage backends). No breaking change to the CLI contract or graph schema.
+
 ## 0.10.1 (2026-06-11)
 
 Studio renderer parity with the legacy vis-network view (no change to the CLI contract or graph schema).

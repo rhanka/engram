@@ -34,6 +34,10 @@ const VALID_CITATION_MINIMUMS = new Set(["file", "page", "section", "paragraph"]
 const VIS_JS_SHAPE_LIST = ["dot", "square", "triangle", "box", "diamond", "star", "hexagon"] as const;
 const VIS_JS_SHAPES = new Set<string>(VIS_JS_SHAPE_LIST);
 const VISUAL_ENCODING_COLOR_HEX_REGEX = /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/;
+// Shape-variant dimensions (additive): hollow-vs-solid fill and bold-vs-normal
+// border multiply the 7 base shapes so ~19 node types stay distinguishable.
+const VISUAL_ENCODING_FILLS = new Set(["solid", "hollow"]);
+const VISUAL_ENCODING_BORDERS = new Set(["normal", "bold"]);
 
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -250,7 +254,8 @@ export function validateOntologyProfile(profile: OntologyProfile): string[] {
     errors.push(`hardening.default_status references unknown status ${hardening.default_status}`);
   }
 
-  // Track C-3.5: validate optional visual_encoding (shape + color_hex) per node type.
+  // Track C-3.5: validate optional visual_encoding (shape + color_hex, plus the
+  // additive fill / border variant dimensions) per node type.
   for (const [nodeTypeId, nodeType] of Object.entries(nodeTypes)) {
     const visual = (nodeType as { visual_encoding?: unknown }).visual_encoding;
     if (visual === undefined || visual === null) continue;
@@ -258,7 +263,17 @@ export function validateOntologyProfile(profile: OntologyProfile): string[] {
       errors.push(`node_types.${nodeTypeId}.visual_encoding must be an object`);
       continue;
     }
-    const ve = visual as { shape?: unknown; color_hex?: unknown };
+    const ve = visual as { shape?: unknown; color_hex?: unknown; fill?: unknown; border?: unknown };
+    if (ve.fill !== undefined && !VISUAL_ENCODING_FILLS.has(String(ve.fill))) {
+      errors.push(
+        `node_types.${nodeTypeId}.visual_encoding.fill must be one of solid, hollow (got ${String(ve.fill)})`,
+      );
+    }
+    if (ve.border !== undefined && !VISUAL_ENCODING_BORDERS.has(String(ve.border))) {
+      errors.push(
+        `node_types.${nodeTypeId}.visual_encoding.border must be one of normal, bold (got ${String(ve.border)})`,
+      );
+    }
     if (ve.shape !== undefined) {
       const shape = String(ve.shape);
       if (!VIS_JS_SHAPES.has(shape)) {
