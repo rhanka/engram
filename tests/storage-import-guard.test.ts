@@ -23,15 +23,35 @@ vi.mock("neo4j-driver", () => {
 
 const storageDir = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "storage");
 
-const DRIVER_PACKAGES = ["neo4j-driver", "@google-cloud/spanner", "better-sqlite3", "pg"];
+const DRIVER_PACKAGES = [
+  "neo4j-driver",
+  "@google-cloud/spanner",
+  "better-sqlite3",
+  "pg",
+  "pgvector",
+];
+
+/** Recursively collect every .ts file under src/storage (incl. vector/). */
+function collectStorageFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...collectStorageFiles(full));
+    } else if (entry.name.endsWith(".ts")) {
+      out.push(full);
+    }
+  }
+  return out;
+}
 
 describe("storage import guard", () => {
   it("src/storage has no static driver imports", () => {
-    const files = readdirSync(storageDir).filter((file) => file.endsWith(".ts"));
+    const files = collectStorageFiles(storageDir);
     expect(files.length).toBeGreaterThan(0);
 
     for (const file of files) {
-      const content = readFileSync(join(storageDir, file), "utf-8");
+      const content = readFileSync(file, "utf-8");
       for (const pkg of DRIVER_PACKAGES) {
         const escaped = pkg.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
         // `import ... from "pkg"` and `export ... from "pkg"`.
