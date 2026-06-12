@@ -169,6 +169,14 @@ const NODE_PROFILE_FIELDS = [
   "confidence_score",
   "evidence_refs",
   "canonical_id",
+  // workspace-bundle-contract-v1 (D2): lossless registry passthrough. The
+  // scene node keeps its native graphify id (`registry_<reg>_<slug>`), and
+  // ADDITIONALLY carries `registry_record_id` = the id_column value VERBATIM
+  // (e.g. "AM0104.01", "DE.AI.01", "org:CODE", dashed UUIDs — no `.`/`-`→`_`
+  // transformation), so consumers (process-std-am viewer, scene-hierarchies sidecar)
+  // can canonicalise/join on the raw registry id without an id_map.
+  "registry_id",
+  "registry_record_id",
   "entity_url",
   "source_file",
   "source_location",

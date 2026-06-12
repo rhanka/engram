@@ -192,6 +192,46 @@ describe("buildStudioScene — parity with studio buildScene", () => {
     });
   });
 
+  it("exposes registry_record_id / registry_id verbatim (lossless, D2) and stays byte-identical otherwise", () => {
+    // workspace-bundle-contract-v1 (D2): scene nodes carry the raw id_column
+    // value VERBATIM — no `.`/`-`→`_` slugging — alongside the native scene id.
+    const rawIds = ["AM0104.01", "DE.AI.01", "org:CODE", "550e8400-e29b-41d4-a716-446655440000"];
+    const withRegistry = {
+      nodes: rawIds.map((raw, i) => ({
+        id: `registry_process_std_${raw.replace(/[^A-Za-z0-9]+/g, "_")}`,
+        label: `Record ${i}`,
+        node_type: "ProcessStdProcess",
+        registry_id: "process_std",
+        registry_record_id: raw,
+      })),
+      links: [],
+    };
+    const scene = buildStudioScene(withRegistry);
+    scene.nodes.forEach((node, i) => {
+      expect(node.registry_record_id).toBe(rawIds[i]); // verbatim, lossless
+      expect(node.registry_id).toBe("process_std");
+    });
+    // SPA adapter stays in lockstep (parity incl. serialized field order).
+    expectParity(withRegistry);
+    expectGranularParity(withRegistry);
+
+    // Back-compat: a graph WITHOUT registry fields produces a byte-identical
+    // scene before/after the allowlist addition (additive change only).
+    const withoutRegistry = {
+      nodes: withRegistry.nodes.map(({ registry_id, registry_record_id, ...rest }) => rest),
+      links: [],
+    };
+    const plainScene = buildStudioScene(withoutRegistry);
+    for (const node of plainScene.nodes) {
+      expect("registry_id" in node).toBe(false);
+      expect("registry_record_id" in node).toBe(false);
+    }
+    const stripped = scene.nodes.map(({ registry_id, registry_record_id, ...rest }) => rest);
+    expect(JSON.stringify(stripped)).toBe(JSON.stringify(plainScene.nodes));
+    expect(scene.edges).toEqual(plainScene.edges);
+    expect(scene.stats).toEqual(plainScene.stats);
+  });
+
   it("applies built-in shape variants (fill/border) and profile visual_encoding overrides", () => {
     const graph = {
       nodes: [
