@@ -21,11 +21,21 @@
  * - Injectable `callLlm` so tests mock the network with zero real HTTP calls.
  * - Auto-detect walks `DIRECT_LLM_PROVIDERS` and returns the first whose
  *   credential env var is present; mirrors `detectLabelingBackend()`.
+ * - NO-KEY DEFAULT — assistant/skill mode: when no API backend is configured
+ *   and the user has not forced `--description-mode direct`, graphify emits
+ *   per-batch instruction files (`.graphify/description-instructions/`) for the
+ *   host assistant (Claude Code, Codex, Gemini CLI…) to fill in. A subsequent
+ *   `graphify update` call ingests the completed JSON answers and stamps them
+ *   onto graph.json. This is the same two-step pattern as `wiki describe
+ *   --mode assistant` (`createAssistantTextJsonClient`); no parallel mechanism.
  * - Graceful degradation: no backend / API error / malformed reply skips
  *   description generation with a clear stderr warning and never throws from
  *   the public entry point `generateNodeDescriptions`. This is what makes
  *   "on by default" safe in CI / no-API-key environments.
  */
+
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 import Graph from "graphology";
 
@@ -35,6 +45,123 @@ import {
   isDirectLlmProvider,
   type DirectLlmProvider,
 } from "./llm-execution.js";
+
+// ---------------------------------------------------------------------------
+// Assistant-mode instruction files (no API key required)
+// ---------------------------------------------------------------------------
+
+/**
+ * Sub-directory under `.graphify/` where description instruction files are
+ * emitted (one per batch) and where the assistant writes back its JSON answers.
+ */
+export const DESCRIPTION_INSTRUCTIONS_DIR = "description-instructions";
+
+/** Filename for the per-batch instruction file. */
+function descriptionInstructionFile(batchIndex: number): string {
+  return `batch-${String(batchIndex).padStart(3, "0")}.md`;
+}
+
+/** Filename for the per-batch JSON answer file that the assistant writes. */
+function descriptionAnswerFile(batchIndex: number): string {
+  return `batch-${String(batchIndex).padStart(3, "0")}.json`;
+}
+
+/**
+ * Emit one instruction file per batch of node contexts into `instructionDir`.
+ * Each file contains the full prompt the host assistant should answer and the
+ * path where it must write its JSON answer (relative to the project root so
+ * the file is human-readable and relocatable). Returns the list of batch
+ * answer paths that have been requested (not yet written by the assistant).
+ */
+export function emitDescriptionInstructions(
+  batches: NodeContext[][],
+  instructionDir: string,
+): { instructionPaths: string[]; answerPaths: string[] } {
+  mkdirSync(instructionDir, { recursive: true });
+  const instructionPaths: string[] = [];
+  const answerPaths: string[] = [];
+
+  for (const [i, contexts] of batches.entries()) {
+    const prompt = buildNodeDescriptionPrompt(contexts);
+    const answerPath = join(instructionDir, descriptionAnswerFile(i));
+    const instructionPath = join(instructionDir, descriptionInstructionFile(i));
+
+    writeFileSync(
+      instructionPath,
+      [
+        `# Node Description Batch ${i + 1} of ${batches.length}`,
+        "",
+        "Graphify is running in assistant/skill mode (no API key). You are the host",
+        "assistant (Claude Code / Codex / Gemini CLI). Read the prompt below and write",
+        "your JSON answer to the answer file.",
+        "",
+        "## Prompt",
+        "",
+        prompt,
+        "",
+        "## Instructions",
+        "",
+        `Write a single JSON object mapping each node id to a one-sentence description`,
+        `to: ${answerPath}`,
+        "",
+        "Keep each description factual and concise (one sentence). No markdown, no prose",
+        "outside the JSON object. It is acceptable to omit a node if context is",
+        "insufficient — but include every node you can ground confidently.",
+        "",
+        "Example answer format:",
+        "```json",
+        `{`,
+        `  "node_id_1": "Resolves the configured ontology profile from graphify.yaml.",`,
+        `  "node_id_2": "Colonel James Barclay, an antagonist in The Crooked Man."`,
+        `}`,
+        "```",
+      ].join("\n") + "\n",
+      "utf-8",
+    );
+
+    instructionPaths.push(instructionPath);
+    answerPaths.push(answerPath);
+  }
+
+  return { instructionPaths, answerPaths };
+}
+
+/**
+ * Scan `instructionDir` for completed answer files (JSON written by the
+ * assistant) and return a map of node id → description. Silently skips
+ * malformed / unreadable files so a partial fill still makes progress.
+ */
+export function ingestDescriptionAnswers(
+  instructionDir: string,
+  validIds: Set<string>,
+): Map<string, string> {
+  const out = new Map<string, string>();
+  if (!existsSync(instructionDir)) return out;
+
+  const FENCE_RE = /^\s*```(?:json)?\s*|\s*```\s*$/gi;
+  const answerFiles = readdirSync(instructionDir)
+    .filter((f) => f.startsWith("batch-") && f.endsWith(".json"))
+    .sort();
+
+  for (const fileName of answerFiles) {
+    const filePath = join(instructionDir, fileName);
+    try {
+      const raw = readFileSync(filePath, "utf-8").replace(FENCE_RE, "").trim();
+      const parsed = JSON.parse(raw) as unknown;
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) continue;
+      for (const [id, value] of Object.entries(parsed as Record<string, unknown>)) {
+        if (!validIds.has(id)) continue;
+        if (typeof value !== "string") continue;
+        const trimmed = value.trim();
+        if (trimmed) out.set(id, trimmed);
+      }
+    } catch {
+      /* skip malformed files */
+    }
+  }
+
+  return out;
+}
 
 /** Cap on the number of nodes described per build. 0 = describe ALL nodes (no
  * cap) — the default, so every entity and code function gets a description.
@@ -501,6 +628,16 @@ export async function describeNodes(
 
 export type DescriptionSource = "llm" | "assistant" | "skipped";
 
+/**
+ * Execution mode for descriptions:
+ * - "assistant": emit instruction files for the host assistant; ingest on next run.
+ *   This is the DEFAULT when no API backend is configured.
+ * - "direct": call the LLM API directly (requires an API key).
+ * When `mode` is not explicitly set: "direct" if a backend is detected,
+ * "assistant" otherwise.
+ */
+export type DescriptionMode = "assistant" | "direct";
+
 export interface GenerateNodeDescriptionsOptions {
   /** Explicit provider. If omitted, auto-detect from env vars. */
   provider?: DirectLlmProvider | string | null;
@@ -517,6 +654,18 @@ export interface GenerateNodeDescriptionsOptions {
    * without re-spending tokens on already-described nodes.
    */
   onlyMissing?: boolean;
+  /**
+   * Execution mode: "assistant" (default when no key) or "direct" (API key).
+   * When omitted, the mode is auto-selected: "direct" if a backend is detected
+   * or `callLlm` is injected, "assistant" otherwise.
+   */
+  mode?: DescriptionMode;
+  /**
+   * Directory where assistant-mode instruction files are emitted and ingested.
+   * Defaults to `.graphify/description-instructions/` relative to the graph
+   * directory (callers that know the project root pass it here).
+   */
+  instructionDir?: string;
 }
 
 /**
@@ -604,6 +753,17 @@ function reportCoverage(
  * backend, degrades gracefully to a no-op with a warning when none is
  * configured or a call fails, never throws, and always returns a coverage
  * report (printed to stderr unless `quiet`).
+ *
+ * DEFAULT BEHAVIOUR (no API key):
+ *   - Emits per-batch instruction files to `instructionDir` for the host
+ *     assistant (Claude Code, Codex, Gemini CLI…) to fill in.
+ *   - On a subsequent run, ingests completed JSON answer files and stamps
+ *     descriptions directly onto graph.json.
+ *   - Source is reported as "assistant" (not "skipped") in both cases.
+ *
+ * WITH AN API KEY (or injected callLlm):
+ *   - Calls the backend directly (legacy "direct" path, unchanged).
+ *   - Source is "llm".
  */
 export async function generateNodeDescriptions(
   G: Graph,
@@ -647,11 +807,108 @@ export async function generateNodeDescriptions(
     provider = detectDescriptionBackend();
   }
 
-  if (!provider && !options.callLlm) {
+  // ---------------------------------------------------------------------------
+  // Resolve execution mode: direct (API key) or assistant (skill/CLI, no key).
+  // ---------------------------------------------------------------------------
+  const resolvedMode: DescriptionMode =
+    options.mode === "direct"
+      ? "direct"
+      : options.mode === "assistant"
+        ? "assistant"
+        : // Auto: use direct when a backend is available, assistant otherwise.
+          provider !== null || Boolean(options.callLlm)
+          ? "direct"
+          : "assistant";
+
+  // ---------------------------------------------------------------------------
+  // ASSISTANT MODE — no API key, emit instruction files + ingest answers.
+  // ---------------------------------------------------------------------------
+  if (resolvedMode === "assistant" && !options.callLlm) {
+    const instructionDir = options.instructionDir ?? join(".graphify", DESCRIPTION_INSTRUCTIONS_DIR);
+
+    // Step 1: try to ingest already-completed answer files first.
+    const maxNodes = options.maxNodes ?? DEFAULT_MAX_NODES;
+    const batchSize = Math.max(1, options.batchSize ?? DEFAULT_BATCH_SIZE);
+    const ranked = rankNodes(G, options.onlyMissing === true);
+    const targetIds = ranked.slice(0, maxNodes > 0 ? maxNodes : ranked.length);
+    const validIds = new Set(targetIds);
+
+    const ingested = ingestDescriptionAnswers(instructionDir, validIds);
+
+    if (ingested.size > 0) {
+      // Ingest path: apply descriptions from completed answer files.
+      let describedCount = 0;
+      for (const [id, description] of ingested) {
+        if (!G.hasNode(id)) continue;
+        G.setNodeAttribute(id, "description", description);
+        describedCount += 1;
+      }
+
+      const { describable, describedDescribable } = countCoverage(G);
+      const reasons = zeroReasons();
+      reasons.emptyReply = Math.max(0, describable - describedDescribable);
+      const coverage: DescriptionCoverage = {
+        describable,
+        described: describedDescribable,
+        skipped: Math.max(0, describable - describedDescribable),
+        reasons,
+      };
+      if (!options.quiet) {
+        process.stderr.write(
+          `[graphify describe] assistant mode: ingested ${describedCount} description(s) ` +
+            `from ${instructionDir}\n`,
+        );
+      }
+      reportCoverage(coverage, false, options.quiet);
+      return { describedCount, source: "assistant", coverage };
+    }
+
+    // Step 2: No answer files yet — emit instruction files for the assistant.
+    if (targetIds.length === 0) {
+      return skip("assistant", "noBackend");
+    }
+    const batches = chunk(
+      targetIds.map((id) => collectNodeContext(G, id)),
+      batchSize,
+    );
+    const { instructionPaths, answerPaths } = emitDescriptionInstructions(
+      batches,
+      instructionDir,
+    );
+
     if (!options.quiet) {
       process.stderr.write(
-        "[graphify describe] no LLM backend configured; skipping node descriptions. " +
-          "Set an API key (e.g. ANTHROPIC_API_KEY) or pass --no-description to silence this.\n",
+        `[graphify describe] assistant/skill mode: emitted ${instructionPaths.length} instruction file(s) to ${instructionDir}\n` +
+          `  Fill each batch-NNN.json answer file, then re-run \`graphify update\` to ingest.\n` +
+          `  Answer paths:\n` +
+          answerPaths.map((p) => `    ${p}`).join("\n") + "\n",
+      );
+    }
+
+    const { describable, describedDescribable } = countCoverage(G);
+    const reasons = zeroReasons();
+    // All describable nodes are pending assistant answers.
+    reasons.noBackend = Math.max(0, describable - describedDescribable);
+    const coverage: DescriptionCoverage = {
+      describable,
+      described: describedDescribable,
+      skipped: Math.max(0, describable - describedDescribable),
+      reasons,
+    };
+    return { describedCount: 0, source: "assistant", coverage };
+  }
+
+  // ---------------------------------------------------------------------------
+  // DIRECT MODE — API key or injected callLlm.
+  // ---------------------------------------------------------------------------
+  if (!provider && !options.callLlm) {
+    // Should not reach here in normal flow (assistant mode handles the no-key
+    // case), but guard defensively for forced `--description-mode direct`
+    // without a configured backend.
+    if (!options.quiet) {
+      process.stderr.write(
+        "[graphify describe] --description-mode direct requires an API key " +
+          `(e.g. ANTHROPIC_API_KEY). Skipping descriptions.\n`,
       );
     }
     return skip("skipped", "noBackend");
