@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import Graph from "graphology";
 import { godNodes } from "./analyze.js";
 import { type NumericMapLike, toNumericMap } from "./collections.js";
-import { validateWikiDescriptionSidecar, WIKI_DESCRIPTION_PROMPT_VERSION, WIKI_DESCRIPTION_SCHEMA, buildWikiDescriptionCacheKey, createInsufficientEvidenceRecord, type WikiDescriptionGenerator, type WikiDescriptionSidecar, type WikiDescriptionSidecarIndex, type WikiDescriptionTargetKind } from "./wiki-descriptions.js";
+import { validateWikiDescriptionSidecar, WIKI_DESCRIPTION_PROMPT_VERSION, WIKI_DESCRIPTION_SCHEMA, buildWikiDescriptionCacheKey, checkWikiDescriptionFreshness, createInsufficientEvidenceRecord, type WikiDescriptionGenerator, type WikiDescriptionSidecar, type WikiDescriptionSidecarIndex, type WikiDescriptionTargetKind } from "./wiki-descriptions.js";
 import type { LlmExecutionMode, TextJsonGenerationClient } from "./llm-execution.js";
 
 const DEFAULT_NODE_TARGET_LIMIT = 10;
@@ -98,7 +98,7 @@ export interface WikiDescriptionGenerationTargetResult {
   target_kind: WikiDescriptionTargetKind;
   status: WikiDescriptionGenerationTargetStatus;
   prompt: string;
-  sidecar: WikiDescriptionSidecar;
+  sidecar?: WikiDescriptionSidecar;
   outputPath?: string;
   instructionPath?: string;
   reason?: string;
@@ -457,13 +457,27 @@ function writeSidecar(path: string | undefined, sidecar: WikiDescriptionSidecar)
 function readExistingGeneratedSidecar(
   path: string | undefined,
   target: WikiDescriptionTargetContext,
+  freshness: {
+    graph_hash: string;
+    prompt_version: string;
+    mode: LlmExecutionMode;
+    provider: string;
+    model: string | null;
+  },
 ): WikiDescriptionSidecar | null {
   if (!path || !existsSync(path)) return null;
   try {
     const candidate = JSON.parse(readFileSync(path, "utf-8")) as WikiDescriptionSidecar;
     if (validateWikiDescriptionSidecar(candidate).length > 0) return null;
     if (candidate.target_id !== target.target_id || candidate.target_kind !== target.target_kind) return null;
-    return candidate.status === "generated" ? candidate : null;
+    if (candidate.status !== "generated") return null;
+    return checkWikiDescriptionFreshness(candidate, {
+      graph_hash: freshness.graph_hash,
+      prompt_version: freshness.prompt_version,
+      mode: freshness.mode,
+      provider: freshness.provider,
+      model: freshness.model,
+    }).fresh ? candidate : null;
   } catch {
     return null;
   }
@@ -473,6 +487,29 @@ function writeIndex(path: string | undefined, index: WikiDescriptionSidecarIndex
   if (!path) return;
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, JSON.stringify(index, null, 2) + "\n", "utf-8");
+}
+
+function indexHasEntries(index: WikiDescriptionSidecarIndex): boolean {
+  return Object.keys(index.nodes).length > 0 || Object.keys(index.communities ?? {}).length > 0;
+}
+
+function writeIndexWhenNonEmpty(path: string | undefined, index: WikiDescriptionSidecarIndex): string | undefined {
+  if (!indexHasEntries(index)) return undefined;
+  writeIndex(path, index);
+  return path;
+}
+
+function addSidecarToIndex(
+  index: WikiDescriptionSidecarIndex,
+  target: WikiDescriptionTargetContext,
+  sidecar: WikiDescriptionSidecar,
+): void {
+  if (target.target_kind === "node") {
+    index.nodes[target.target_id] = sidecar as never;
+    return;
+  }
+  index.communities ??= {};
+  index.communities[targetIndexKey(target.target_id)] = sidecar as never;
 }
 
 function ensureSidecarGenerator(
@@ -641,33 +678,17 @@ export async function generateWikiDescriptionSidecars(
   if (!client) {
     for (const target of allTargets) {
       const outputPath = targetOutputPath(outputDir, target.target_id);
-      const sidecar = buildFallbackSidecar(target, {
-        graph_hash: graphHash,
-        prompt_version: promptVersion,
-        mode,
-        provider: mode,
-        model: null,
-        createdAt,
-      });
-      if (target.target_kind === "node") {
-        index.nodes[target.target_id] = sidecar as never;
-      } else {
-        index.communities ??= {};
-        index.communities[targetIndexKey(target.target_id)] = sidecar as never;
-      }
-      writeSidecar(outputPath, sidecar);
 
       targetResults.push({
         target_id: target.target_id,
         target_kind: target.target_kind,
         status: "not_implemented",
         prompt: buildWikiDescriptionPrompt(target, { graphHash, promptVersion, maxNeighbors }),
-        sidecar,
         outputPath,
         reason: modeUnavailableReason,
       });
     }
-    writeIndex(indexPath, index);
+    const persistedIndexPath = writeIndexWhenNonEmpty(indexPath, index);
 
     return {
       status: "not_implemented",
@@ -675,7 +696,7 @@ export async function generateWikiDescriptionSidecars(
       graph_hash: graphHash,
       prompt_version: promptVersion,
       index,
-      ...(indexPath ? { indexPath } : {}),
+      ...(persistedIndexPath ? { indexPath: persistedIndexPath } : {}),
       targets: targetResults,
     };
   }
@@ -687,7 +708,13 @@ export async function generateWikiDescriptionSidecars(
       maxNeighbors,
     });
     const outputPath = targetOutputPath(outputDir, target.target_id);
-    const existingGeneratedSidecar = readExistingGeneratedSidecar(outputPath, target);
+    const existingGeneratedSidecar = readExistingGeneratedSidecar(outputPath, target, {
+      graph_hash: graphHash,
+      prompt_version: promptVersion,
+      mode,
+      provider: client.provider,
+      model: client.model ?? null,
+    });
     if (outputPath) {
       mkdirSync(dirname(outputPath), { recursive: true });
     }
@@ -707,7 +734,7 @@ export async function generateWikiDescriptionSidecars(
       createdAt,
     };
 
-    let sidecar: WikiDescriptionSidecar = buildFallbackSidecar(target, generatorMetadata);
+    let sidecar: WikiDescriptionSidecar | undefined;
     let status: WikiDescriptionGenerationTargetStatus = execution.status;
     const parsed = execution.status === "completed"
       ? tryReadGeneratedSidecar(execution.outputPath, target, {
@@ -724,13 +751,12 @@ export async function generateWikiDescriptionSidecars(
     } else if (execution.status === "completed") {
       status = "invalid_output";
     }
-    writeSidecar(execution.outputPath, sidecar);
 
-    if (target.target_kind === "node") {
-      index.nodes[target.target_id] = sidecar as never;
-    } else {
-      index.communities ??= {};
-      index.communities[targetIndexKey(target.target_id)] = sidecar as never;
+    if (sidecar) {
+      if (execution.status === "completed") {
+        writeSidecar(execution.outputPath, sidecar);
+      }
+      addSidecarToIndex(index, target, sidecar);
     }
 
     targetResults.push({
@@ -754,7 +780,7 @@ export async function generateWikiDescriptionSidecars(
         : mode === "assistant" || targetResults.some((item) => item.status === "instructions_written")
           ? "instructions_written"
           : "failed";
-  writeIndex(indexPath, index);
+  const persistedIndexPath = writeIndexWhenNonEmpty(indexPath, index);
 
   return {
     status: finalStatus,
@@ -762,7 +788,7 @@ export async function generateWikiDescriptionSidecars(
     graph_hash: graphHash,
     prompt_version: promptVersion,
     index,
-    ...(indexPath ? { indexPath } : {}),
+    ...(persistedIndexPath ? { indexPath: persistedIndexPath } : {}),
     targets: targetResults,
   };
 }

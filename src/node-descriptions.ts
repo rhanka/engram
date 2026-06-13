@@ -28,6 +28,8 @@
  */
 
 import Graph from "graphology";
+import { createHash } from "node:crypto";
+import { readFileSync, writeFileSync } from "node:fs";
 
 import {
   DIRECT_LLM_PROVIDERS,
@@ -50,6 +52,10 @@ const LABEL_MAXLEN = 80;
 
 /** Strip markdown fences that some models wrap JSON in. */
 const FENCE_RE = /^\s*```(?:json)?\s*|\s*```\s*$/gi;
+
+export const NODE_DESCRIPTION_PROMPT_VERSION = "node-description-v1" as const;
+export const NODE_DESCRIPTION_SCHEMA = "graphify_node_descriptions_v1" as const;
+const NODE_DESCRIPTION_JSON_FIELDS = ["description", "description_status", "description_meta"] as const;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -267,6 +273,7 @@ export interface DescribeNodesOptions {
   model?: string;
   maxNodes?: number;
   batchSize?: number;
+  targetIds?: string[];
   callLlm?: CallLlmFn;
 }
 
@@ -282,7 +289,8 @@ export async function describeNodes(
   const out = new Map<string, string>();
   const maxNodes = options.maxNodes ?? DEFAULT_MAX_NODES;
   const batchSize = Math.max(1, options.batchSize ?? DEFAULT_BATCH_SIZE);
-  const targetIds = rankNodes(G).slice(0, maxNodes > 0 ? maxNodes : G.order);
+  const rankedIds = options.targetIds ?? rankNodes(G);
+  const targetIds = rankedIds.slice(0, maxNodes > 0 ? maxNodes : rankedIds.length);
   if (targetIds.length === 0) return out;
 
   const callLlm = options.callLlm ?? (await makeDefaultCallLlm(options.provider, options.model));
@@ -308,9 +316,13 @@ export type DescriptionSource = "llm" | "assistant" | "skipped";
 export interface GenerateNodeDescriptionsOptions {
   /** Explicit provider. If omitted, auto-detect from env vars. */
   provider?: DirectLlmProvider | string | null;
+  /** Assistant mode writes instructions through an injected caller; never auto-detects a direct backend. */
+  assistant?: boolean;
   model?: string;
   maxNodes?: number;
   batchSize?: number;
+  /** Describe only nodes without a non-empty inline description. */
+  onlyMissing?: boolean;
   /** Injectable LLM caller. Pass a mock in tests to avoid network calls. */
   callLlm?: CallLlmFn;
   /** Suppress stderr messages about missing backend / errors. */
@@ -321,6 +333,62 @@ export interface GenerateNodeDescriptionsResult {
   /** Number of nodes that received a description attribute. */
   describedCount: number;
   source: DescriptionSource;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export interface PersistNodeDescriptionsResult {
+  updatedNodeCount: number;
+}
+
+export function persistNodeDescriptionsToGraphJson(
+  graphPath: string,
+  G: Graph,
+): PersistNodeDescriptionsResult {
+  const graphJson = JSON.parse(readFileSync(graphPath, "utf-8")) as unknown;
+  if (!isRecord(graphJson) || !Array.isArray(graphJson.nodes)) {
+    throw new Error("graph.json must contain a nodes array");
+  }
+
+  let updatedNodeCount = 0;
+  for (const node of graphJson.nodes) {
+    if (!isRecord(node) || typeof node.id !== "string" || !G.hasNode(node.id)) continue;
+    let changed = false;
+    for (const field of NODE_DESCRIPTION_JSON_FIELDS) {
+      if (!G.hasNodeAttribute(node.id, field)) continue;
+      const next = G.getNodeAttribute(node.id, field) as unknown;
+      if (JSON.stringify(node[field]) === JSON.stringify(next)) continue;
+      node[field] = next;
+      changed = true;
+    }
+    if (changed) updatedNodeCount += 1;
+  }
+
+  if (updatedNodeCount > 0) {
+    writeFileSync(graphPath, JSON.stringify(graphJson, null, 2) + "\n", "utf-8");
+  }
+  return { updatedNodeCount };
+}
+
+function nodeHasDescription(G: Graph, nodeId: string): boolean {
+  const attrs = G.getNodeAttributes(nodeId) as Record<string, unknown>;
+  return safeString(attrs.description) !== null;
+}
+
+export function buildNodeDescriptionContextHash(G: Graph, nodeId: string): string {
+  const attrs = G.getNodeAttributes(nodeId) as Record<string, unknown>;
+  const neighbors = collectNeighbors(G, nodeId, 12);
+  return createHash("sha256").update(JSON.stringify({
+    id: nodeId,
+    label: safeString(attrs.label) ?? nodeId,
+    file_type: safeString(attrs.file_type),
+    node_type: safeString(attrs.node_type),
+    source_file: safeString(attrs.source_file),
+    source_location: safeString(attrs.source_location),
+    neighbors,
+  })).digest("hex");
 }
 
 /**
@@ -335,7 +403,9 @@ export async function generateNodeDescriptions(
 ): Promise<GenerateNodeDescriptionsResult> {
   let provider: DirectLlmProvider | null = null;
 
-  if (options.provider != null && options.provider !== "") {
+  if (options.assistant === true) {
+    provider = null;
+  } else if (options.provider != null && options.provider !== "") {
     if (isDirectLlmProvider(options.provider)) {
       provider = options.provider;
     } else {
@@ -362,6 +432,7 @@ export async function generateNodeDescriptions(
   }
 
   try {
+    const targetIds = rankNodes(G).filter((id) => !options.onlyMissing || !nodeHasDescription(G, id));
     const descriptions = await describeNodes(G, {
       // When only a mock callLlm is supplied (tests / assistant runtime), the
       // provider is unused by the injected caller; default to anthropic so the
@@ -370,16 +441,27 @@ export async function generateNodeDescriptions(
       ...(options.model ? { model: options.model } : {}),
       ...(options.maxNodes !== undefined ? { maxNodes: options.maxNodes } : {}),
       ...(options.batchSize !== undefined ? { batchSize: options.batchSize } : {}),
+      targetIds,
       ...(options.callLlm ? { callLlm: options.callLlm } : {}),
     });
 
     let describedCount = 0;
+    const source: DescriptionSource = provider ? "llm" : "assistant";
     for (const [id, description] of descriptions) {
       if (!G.hasNode(id)) continue;
       G.setNodeAttribute(id, "description", description);
+      G.setNodeAttribute(id, "description_status", "generated");
+      G.setNodeAttribute(id, "description_meta", {
+        source,
+        prompt_version: NODE_DESCRIPTION_PROMPT_VERSION,
+        description_context_hash: buildNodeDescriptionContextHash(G, id),
+        provider: provider ?? null,
+        model: options.model ?? null,
+        updated_at: new Date().toISOString(),
+      });
       describedCount += 1;
     }
-    return { describedCount, source: provider ? "llm" : "assistant" };
+    return { describedCount, source };
   } catch (err) {
     if (!options.quiet) {
       process.stderr.write(

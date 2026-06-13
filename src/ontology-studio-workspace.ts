@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -30,7 +31,8 @@ import {
   type GraphNodeLike,
   type WorkspaceDescriptionSidecar,
 } from "./workspace/index.js";
-import type { WikiDescriptionSidecarIndex } from "./wiki-descriptions.js";
+import { selectFreshWikiDescriptions, WIKI_DESCRIPTION_PROMPT_VERSION, type WikiDescriptionSidecarIndex } from "./wiki-descriptions.js";
+import { resolveNodeDescription } from "./description-resolution.js";
 
 interface ReconciliationWorkspaceModel {
   writeEnabled: boolean;
@@ -680,13 +682,57 @@ function loadGraph(stateDir: string): GraphLike | null {
   }
 }
 
+function graphContentHash(stateDir: string): string | null {
+  const graphPath = join(stateDir, "graph.json");
+  if (!existsSync(graphPath)) return null;
+  try {
+    return createHash("sha256").update(readFileSync(graphPath)).digest("hex");
+  } catch {
+    return null;
+  }
+}
+
+function descriptionIndexHasNode(index: WikiDescriptionSidecarIndex, nodeId: string): boolean {
+  return Boolean(index.nodes?.[nodeId]);
+}
+
+function sidecarHasCompleteFreshnessMetadata(sidecar: unknown): boolean {
+  if (!sidecar || typeof sidecar !== "object" || Array.isArray(sidecar)) return false;
+  const record = sidecar as Record<string, unknown>;
+  return typeof record.graph_hash === "string" &&
+    typeof record.cache_key === "string" &&
+    typeof record.generator === "object" &&
+    record.generator !== null;
+}
+
+function nodeOnlyDescriptionIndex(
+  index: WikiDescriptionSidecarIndex,
+  nodeId: string,
+  graphHash: string | null,
+): WikiDescriptionSidecarIndex | null {
+  const sidecar = index.nodes?.[nodeId];
+  if (!sidecar) return null;
+  if (graphHash && index.graph_hash && index.graph_hash !== graphHash) return null;
+  const candidate: WikiDescriptionSidecarIndex = {
+    ...index,
+    nodes: { [nodeId]: sidecar },
+  };
+  if (!graphHash || !sidecarHasCompleteFreshnessMetadata(sidecar)) return candidate;
+  const { fresh } = selectFreshWikiDescriptions(candidate, {
+    graph_hash: graphHash,
+    prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+  });
+  return descriptionIndexHasNode(fresh, nodeId) ? fresh : null;
+}
+
 /**
  * G-studio-lot4 (#7): best-effort load of the wiki description sidecar index.
  * Tries the assistant-merged sidecar first (the curated/merged output), then
  * the plain index. A missing / malformed file is silently ignored — the
  * entity panel just omits descriptions.
  */
-function loadDescriptionIndex(stateDir: string): WikiDescriptionSidecarIndex | null {
+function loadDescriptionIndex(stateDir: string, nodeId: string): WikiDescriptionSidecarIndex | null {
+  const currentGraphHash = graphContentHash(stateDir);
   const candidates = [
     join(stateDir, "wiki", "descriptions.assistant-merged.json"),
     join(stateDir, "wiki", "descriptions.json"),
@@ -695,7 +741,10 @@ function loadDescriptionIndex(stateDir: string): WikiDescriptionSidecarIndex | n
     if (!existsSync(path)) continue;
     try {
       const parsed = JSON.parse(readFileSync(path, "utf-8")) as WikiDescriptionSidecarIndex;
-      if (parsed && typeof parsed === "object" && parsed.nodes) return parsed;
+      if (parsed && typeof parsed === "object" && parsed.nodes) {
+        const nodeIndex = nodeOnlyDescriptionIndex(parsed, nodeId, currentGraphHash);
+        if (nodeIndex) return nodeIndex;
+      }
     } catch {
       /* try the next candidate */
     }
@@ -760,15 +809,20 @@ function normaliseOccurrences(raw: unknown): EntityPanelOccurrences {
 function descriptionSidecarFor(
   index: WikiDescriptionSidecarIndex | null,
   nodeId: string,
+  node: GraphNodeLike | null,
 ): WorkspaceDescriptionSidecar | undefined {
   const entry = index?.nodes?.[nodeId];
-  if (!entry) return undefined;
-  if (entry.status === "generated") {
+  const resolved = resolveNodeDescription({
+    node: node as Record<string, unknown> | null,
+    sidecar: entry as unknown as Record<string, unknown> | undefined,
+  });
+  if (!resolved) return undefined;
+  if (resolved.status === "generated") {
     return {
       status: "generated",
       target_id: nodeId,
       target_kind: "node",
-      description: entry.description ?? null,
+      description: resolved.description,
     };
   }
   return { status: "insufficient_evidence", target_id: nodeId, target_kind: "node" };
@@ -912,9 +966,9 @@ export function renderOntologyStudioWorkspace(
     if (node) {
       state.displayRef = `entity:${selectedNodeId}`;
       state.focusEntityId = selectedNodeId;
-      const descriptionIndex = loadDescriptionIndex(context.stateDir);
+      const descriptionIndex = loadDescriptionIndex(context.stateDir, selectedNodeId);
       const occurrences = loadOccurrences(context.stateDir);
-      const descriptionSidecar = descriptionSidecarFor(descriptionIndex, selectedNodeId);
+      const descriptionSidecar = descriptionSidecarFor(descriptionIndex, selectedNodeId, node);
       entityPanelHtml = renderEntityPanel({
         node,
         graph: model.graph,

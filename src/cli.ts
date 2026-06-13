@@ -28,6 +28,7 @@ import type {
   NormalizedProjectConfig,
 } from "./types.js";
 import type { ProfileState } from "./configured-dataprep.js";
+import type { CallLlmFn } from "./node-descriptions.js";
 import {
   inspectInputScope,
   resolveCliInputScopeSelection,
@@ -2696,14 +2697,23 @@ export async function main(): Promise<void> {
     .option("--descriptions <path>", "Path to wiki description sidecar index JSON")
     .action(async (opts) => {
       const { compileOntologyOutputs } = await import("./ontology-output.js");
+      const { WIKI_DESCRIPTION_PROMPT_VERSION } = await import("./wiki-descriptions.js");
       const context = loadCliProfileContext(opts.profileState);
       const descriptions = loadWikiDescriptionSidecarIndex(opts.descriptions);
+      const graphPath = join(context.profileState.state_dir, "graph.json");
+      const descriptionFreshness = descriptions && existsSync(graphPath)
+        ? {
+          graph_hash: graphContentHash(graphPath),
+          prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+        }
+        : undefined;
       const result = compileOntologyOutputs({
         outputDir: resolve(opts.outDir),
         extraction: readJson(opts.input),
         profile: context.profile,
         config: context.profile.outputs.ontology,
         ...(descriptions ? { descriptions } : {}),
+        ...(descriptionFreshness ? { descriptionFreshness } : {}),
       });
       if (!result.enabled) {
         console.log("Ontology outputs disabled by profile config");
@@ -3458,9 +3468,84 @@ export async function main(): Promise<void> {
     });
 
   program
+    .command("describe")
+    .description("Generate canonical inline node descriptions for an existing graph.json")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--mode <mode>", "Description mode: auto, direct, or assistant", "auto")
+    .option("--backend <provider>", "Direct LLM provider for --mode direct/auto")
+    .option("--model <id>", "Description LLM model override")
+    .option("--instructions-dir <dir>", "Directory to write assistant instruction files")
+    .option("--only-missing", "Only describe nodes that do not already have node.description")
+    .option("--all", "Include nodes that already have descriptions")
+    .option("--max-nodes <count>", "Maximum node descriptions to generate")
+    .option("--batch-size <count>", "Nodes per LLM prompt batch")
+    .action(async (opts) => {
+      try {
+        const graphPath = resolveGraphInputPath(opts.graph);
+        const mode = String(opts.mode ?? "auto").trim().toLowerCase();
+        if (!["auto", "direct", "assistant"].includes(mode)) {
+          throw new Error("--mode must be one of: auto, direct, assistant");
+        }
+        if (mode === "direct" && !String(opts.backend ?? "").trim()) {
+          throw new Error("--backend is required when using graphify describe --mode direct");
+        }
+        const maxNodes = parsePositiveIntegerOption(opts.maxNodes, "--max-nodes");
+        const batchSize = parsePositiveIntegerOption(opts.batchSize, "--batch-size");
+        const G = loadCliGraph(graphPath);
+        const {
+          generateNodeDescriptions,
+          persistNodeDescriptionsToGraphJson,
+          NODE_DESCRIPTION_SCHEMA,
+        } = await import("./node-descriptions.js");
+        const provider =
+          mode === "assistant"
+            ? null
+            : typeof opts.backend === "string" && opts.backend.trim()
+              ? opts.backend.trim()
+              : undefined;
+        let assistantInstructionCount = 0;
+        let callLlm: CallLlmFn | undefined;
+        if (mode === "assistant") {
+          const { createAssistantTextJsonClient } = await import("./llm-execution.js");
+          const instructionsDir = resolve(opts.instructionsDir ?? join(dirname(graphPath), "description-instructions"));
+          const assistantClient = createAssistantTextJsonClient({ instructionDir: instructionsDir });
+          callLlm = async (prompt) => {
+            assistantInstructionCount += 1;
+            await assistantClient.generateJson({
+              schema: NODE_DESCRIPTION_SCHEMA,
+              prompt,
+              outputPath: join(instructionsDir, `node-descriptions-batch-${assistantInstructionCount}.json`),
+            });
+            return "{}";
+          };
+        }
+        const result = await generateNodeDescriptions(G, {
+          assistant: mode === "assistant",
+          ...(provider !== undefined ? { provider } : {}),
+          ...(typeof opts.model === "string" && opts.model.trim() ? { model: opts.model.trim() } : {}),
+          ...(maxNodes !== undefined ? { maxNodes } : {}),
+          ...(batchSize !== undefined ? { batchSize } : {}),
+          onlyMissing: opts.all !== true,
+          ...(callLlm ? { callLlm } : {}),
+        });
+        if (result.describedCount > 0) {
+          persistNodeDescriptionsToGraphJson(graphPath, G);
+        }
+        console.log(
+          `graph descriptions: ${result.describedCount} generated, source=${result.source}, graph=${graphPath}` +
+            (assistantInstructionCount > 0 ? `, instructions=${assistantInstructionCount}` : ""),
+        );
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    });
+
+  program
     .command("update [path]")
     .description("One-shot code-only graph rebuild")
     .option("--force", "Overwrite graph.json even when the rebuild has fewer nodes")
+    .option("--code-only", "Explicitly run the legacy code-only updater even when a graphify project config is present")
     .option("--no-cluster", "Skip Louvain clustering and report regeneration (writes graph.json without community labels)")
     // WP11: node descriptions (entity + code) are generated by DEFAULT.
     // --no-description opts out; when no LLM backend is configured the step
@@ -3479,9 +3564,15 @@ export async function main(): Promise<void> {
       const scopeSelection = resolveCliScopeSelection(opts);
       const projectConfigDiscovery = discoverProjectConfig(updatePath);
       if (projectConfigDiscovery.found) {
+        if (opts.codeOnly !== true) {
+          console.error(
+            `error: ${projectConfigDiscovery.path} detected — graphify update is code-only and would ignore profile inputs (corpus, registries, ontology). ` +
+            "Use the configured profile workflow for project refreshes, or pass --code-only to explicitly run the legacy code-only updater.",
+          );
+          process.exit(1);
+        }
         console.warn(
-          `WARNING: ${projectConfigDiscovery.path} detected — \`graphify update\` only rebuilds the code-mode graph and ignores profile inputs (corpus, registries, ontology). ` +
-          `For profile mode run \`graphify profile build ${updatePath}\` (deterministic, no LLM), then \`graphify extract --semantic <path> --backend …\` for semantic extraction. Continuing in code-only mode.`,
+          `WARNING: ${projectConfigDiscovery.path} detected — running explicit --code-only updater; profile inputs, corpus, registries, and ontology outputs are not refreshed.`,
         );
       }
       const describe = opts.description !== false;

@@ -25,6 +25,7 @@ Turn any folder of files into a navigable knowledge graph with community detecti
 /graphify <path> --neo4j-push bolt://localhost:7687   # push directly to Neo4j
 /graphify <path> --mcp                                # start MCP stdio server for agent access
 /graphify <path> --watch                              # watch folder, auto-rebuild on code changes (no LLM needed)
+graphify describe --graph .graphify/graph.json --mode auto --only-missing  # canonical inline node descriptions in graph.json
 graphify wiki describe --graph .graphify/graph.json --mode assistant --targets all  # opt-in description sidecars
 graphify export wiki --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
 graphify export obsidian --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
@@ -118,7 +119,9 @@ Replace INPUT_PATH with the actual path.
 
 **Generate HTML always** (unless `--no-viz`). **Obsidian vault only if `--obsidian` was explicitly given** — skip it otherwise, it generates one file per node.
 
-Wiki descriptions are opt-in and two-step. First generate sidecars, then pass their index into wiki or Obsidian rendering:
+There are two description layers. Canonical entity descriptions live inline in `.graphify/graph.json` on `node.description`; use `graphify describe --graph .graphify/graph.json --mode auto --only-missing` to fill missing descriptions without overwriting existing human or generated text. Use `--all` only when an explicit overwrite/regeneration was requested.
+
+Wiki descriptions are derived, opt-in, and two-step. First generate sidecars, then pass their index into wiki or Obsidian rendering:
 
 ```bash
 graphify wiki describe --graph .graphify/graph.json --mode assistant --targets all
@@ -129,7 +132,7 @@ graphify export wiki --graph .graphify/graph.json --descriptions .graphify/wiki/
 graphify export obsidian --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
 ```
 
-Sidecars live under `.graphify/wiki/descriptions/` with an index at `.graphify/wiki/descriptions.json`. They record graph hash, prompt/generator provenance, evidence refs, and cache keys; existing generated sidecars may be reused when a fresh generation does not complete. `insufficient_evidence` sidecars render no Description section. This never mutates `.graphify/graph.json`.
+Sidecars live under `.graphify/wiki/descriptions/` with an index at `.graphify/wiki/descriptions.json`. They record graph hash, prompt/generator provenance, evidence refs, and cache keys; existing generated sidecars may be reused when a fresh generation does not complete. Assistant mode that only writes instructions is pending: do not create or trust renderable sidecar/index entries until valid answers are ingested. `insufficient_evidence` sidecars are valid only when returned explicitly by a completed generation path, and render no Description section. Wiki sidecars never mutate `.graphify/graph.json`.
 
 If `--obsidian` was given:
 
@@ -351,6 +354,8 @@ The graph is the map. Your job after the pipeline is to be the guide.
 ## For --update (incremental re-extraction)
 
 Use when you've added or modified files since the last run. Only re-extracts changed files - saves tokens and time.
+
+`graphify update` is the legacy code-only updater. If a configured project (`graphify.yaml` / profile corpus) is present, use the configured refresh/full-profile workflow instead; the CLI hard-stops unless `--code-only` is explicit. Code-only rebuilds must preserve existing `description`, `description_status`, and `description_meta` attributes from `.graphify/graph.json`.
 
 ```bash
 node -e "

@@ -11,6 +11,7 @@ import { assertGraphJsonFileSize, assertGraphJsonSize } from "./graph-size-guard
 import { safeGitRevParse } from "./git.js";
 import type { Hyperedge, NormalizedOntologyProfile, OntologyVisualEncoding } from "./types.js";
 import type { WikiDescriptionSidecarIndex } from "./wiki-descriptions.js";
+import { resolveNodeDescriptionText } from "./description-resolution.js";
 import {
   type NumericMapLike,
   type StringMapLike,
@@ -333,17 +334,6 @@ function normalizeDescriptions(
  * entries; `insufficient_evidence` (or missing) entries return null so the
  * caller omits the field entirely (no placeholder, parity with the wiki).
  */
-function lookupNodeDescription(
-  descriptions: WikiDescriptionSidecarIndex | undefined,
-  nodeId: string,
-): string | null {
-  if (!descriptions?.nodes) return null;
-  const entry = descriptions.nodes[nodeId];
-  if (!entry || entry.status !== "generated") return null;
-  const text = typeof entry.description === "string" ? entry.description.trim() : "";
-  return text ? text : null;
-}
-
 /**
  * Track C-3.5: pick the vis.js node shape with the following precedence:
  *  1. The matching profile node_type's `visual_encoding.shape` (if any).
@@ -1319,7 +1309,10 @@ export function buildGraphHtml(
     // from a profile visual_encoding override.
     const isOutlinedShape = shape === "box";
     const outlinedFill = "rgba(255,255,255,0.5)";
-    const description = lookupNodeDescription(descriptions, nodeId);
+    const description = resolveNodeDescriptionText({
+      node: data as Record<string, unknown>,
+      sidecar: descriptions?.nodes?.[nodeId] as unknown as Record<string, unknown> | undefined,
+    });
     const visNode: VisNode = {
       id: nodeId,
       label,

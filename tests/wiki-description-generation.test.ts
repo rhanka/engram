@@ -56,9 +56,6 @@ function assistantClient(tmpDir: string): GenerateWikiDescriptionSidecarsClients
       mode: "assistant",
       provider: "assistant",
       async generateJson(input) {
-        if (input.outputPath) {
-          writeFileSync(input.outputPath, "{}\n", "utf-8");
-        }
         return {
           status: "instructions_written",
           provider: "assistant",
@@ -158,18 +155,12 @@ describe("assistant-mode generation behavior", () => {
     expect(result.status).toBe("instructions_written");
     expect(result.targets).toHaveLength(1);
     expect(result.targets[0]?.status).toBe("instructions_written");
-    expect(result.targets[0]?.sidecar.status).toBe("insufficient_evidence");
-    expect(result.targets[0]?.sidecar.description).toBeNull();
-    expect(result.targets[0]!.sidecar.generator.provider).toBe("assistant");
-    expect(result.index.nodes["alpha"]?.status).toBe("insufficient_evidence");
-    expect(result.index.nodes["alpha"]?.generator.provider).toBe("assistant");
+    expect(result.targets[0]?.sidecar).toBeUndefined();
+    expect(result.index.nodes["alpha"]).toBeUndefined();
     expect(result.targets[0]?.outputPath).toBe(join(outputDir, "alpha.json"));
-    expect(result.indexPath).toBe(`${outputDir}.json`);
-    const persistedSidecar = JSON.parse(readFileSync(join(outputDir, "alpha.json"), "utf-8")) as Record<string, unknown>;
-    const persistedIndex = JSON.parse(readFileSync(`${outputDir}.json`, "utf-8")) as Record<string, unknown>;
-    expect(persistedSidecar.schema).toBe("graphify_wiki_description_v1");
-    expect(persistedSidecar.status).toBe("insufficient_evidence");
-    expect(persistedIndex.schema).toBe("graphify_wiki_description_index_v1");
+    expect(result.indexPath).toBeUndefined();
+    expect(existsSync(join(outputDir, "alpha.json"))).toBe(false);
+    expect(existsSync(`${outputDir}.json`)).toBe(false);
   });
 
   it("preserves an existing generated sidecar when assistant mode only writes instructions", async () => {
@@ -223,6 +214,57 @@ describe("assistant-mode generation behavior", () => {
     expect(persisted.description).toBe("Existing assistant-reviewed description.");
   });
 
+  it("does not preserve an existing generated sidecar when its graph hash is stale", async () => {
+    const graph = mkGraph();
+    const outputDir = makeTempDir();
+    const cacheKey = buildWikiDescriptionCacheKey({
+      target_id: "alpha",
+      target_kind: "node",
+      graph_hash: "old-graph-hash",
+      prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+      mode: "assistant",
+      provider: "assistant",
+      model: null,
+    });
+    writeFileSync(
+      join(outputDir, "alpha.json"),
+      JSON.stringify({
+        schema: "graphify_wiki_description_v1",
+        target_id: "alpha",
+        target_kind: "node",
+        graph_hash: "old-graph-hash",
+        status: "generated",
+        description: "Stale assistant-reviewed description.",
+        evidence_refs: ["src/alpha.ts"],
+        confidence: 0.8,
+        cache_key: cacheKey,
+        generator: {
+          mode: "assistant",
+          provider: "assistant",
+          model: null,
+          prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+        },
+      }, null, 2),
+      "utf-8",
+    );
+
+    const result = await generateWikiDescriptionSidecars(graph, {
+      graphHash: "graph-hash",
+      mode: "assistant",
+      clients: assistantClient(outputDir),
+      includeCommunityTargets: false,
+      maxNodeTargets: 1,
+      outputDir,
+    });
+
+    expect(result.status).toBe("instructions_written");
+    expect(result.targets[0]?.sidecar).toBeUndefined();
+    expect(result.index.nodes["alpha"]).toBeUndefined();
+    expect(existsSync(`${outputDir}.json`)).toBe(false);
+    const persisted = JSON.parse(readFileSync(join(outputDir, "alpha.json"), "utf-8")) as Record<string, unknown>;
+    expect(persisted.description).toBe("Stale assistant-reviewed description.");
+  });
+
   it("returns explicit not_implemented status when assistant client is missing", async () => {
     const graph = mkGraph();
     const outputDir = makeTempDir();
@@ -238,9 +280,10 @@ describe("assistant-mode generation behavior", () => {
     expect(result.targets).toHaveLength(1);
     expect(result.targets[0]?.status).toBe("not_implemented");
     expect(result.targets[0]?.reason).toContain("No injected assistant client");
-    expect(result.targets[0]?.sidecar.status).toBe("insufficient_evidence");
-    expect(existsSync(join(outputDir, "alpha.json"))).toBe(true);
-    expect(existsSync(`${outputDir}.json`)).toBe(true);
+    expect(result.targets[0]?.sidecar).toBeUndefined();
+    expect(result.index.nodes["alpha"]).toBeUndefined();
+    expect(existsSync(join(outputDir, "alpha.json"))).toBe(false);
+    expect(existsSync(`${outputDir}.json`)).toBe(false);
   });
 
   it("attaches cache metadata for all generated sidecar records", async () => {
@@ -248,8 +291,8 @@ describe("assistant-mode generation behavior", () => {
     const outputDir = makeTempDir();
     const result = await generateWikiDescriptionSidecars(graph, {
       graphHash: "graph-hash",
-      mode: "assistant",
-      clients: assistantClient(outputDir),
+      mode: "direct",
+      clients: completedClient(),
       communities: new Map<number, string[]>([
         [0, ["alpha", "beta"]],
       ]),
@@ -266,18 +309,18 @@ describe("assistant-mode generation behavior", () => {
       target_kind: "node",
       graph_hash: "graph-hash",
       prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
-      mode: "assistant",
-      provider: "assistant",
-      model: null,
+      mode: "direct",
+      provider: "openai",
+      model: "mock-model",
     });
     const communityKey = buildWikiDescriptionCacheKey({
       target_id: "community:0",
       target_kind: "community",
       graph_hash: "graph-hash",
       prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
-      mode: "assistant",
-      provider: "assistant",
-      model: null,
+      mode: "direct",
+      provider: "openai",
+      model: "mock-model",
     });
 
     expect(result.index.nodes["alpha"]?.cache_key).toBe(nodeKey);

@@ -68,6 +68,30 @@ function render(withDescriptions: boolean): string {
 }
 
 describe("Track G G-studio-lot4 — node descriptions in HTML export (part A)", () => {
+  it("prefers graph.json node.description over a wiki sidecar", () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-html-inline-descr-"));
+    const htmlPath = join(dir, "graph.html");
+    const g = new Graph();
+    g.addNode("holmes", {
+      label: "Sherlock Holmes",
+      source_file: "corpus/holmes.txt",
+      file_type: "document",
+      node_type: "Character",
+      description: "Inline graph description wins.",
+    });
+    const communities = new Map([[0, ["holmes"]]]);
+
+    toHtml(g, communities, htmlPath, {
+      communityLabels: new Map([[0, "Detectives"]]),
+      descriptions: sidecar(),
+    });
+
+    const html = readFileSync(htmlPath, "utf-8");
+    rmSync(dir, { recursive: true, force: true });
+    expect(html).toMatch(/"id":"holmes"[\s\S]*?"description":"Inline graph description wins\."/);
+    expect(html).not.toContain("Consulting detective of 221B Baker Street.");
+  });
+
   it("attaches the generated node description to the node payload", () => {
     const html = render(true);
     expect(html).toMatch(/"id":"holmes"[\s\S]*?"description":"Consulting detective of 221B Baker Street\."/);

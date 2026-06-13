@@ -137,6 +137,28 @@ describe("generateNodeDescriptions (default-on entry point)", () => {
     );
   });
 
+  it("only fills missing descriptions and stamps inline metadata", async () => {
+    const G = mkCodeGraph();
+    G.setNodeAttribute("src_a_resolveconfig", "description", "Existing human description.");
+
+    const result = await generateNodeDescriptions(G, {
+      onlyMissing: true,
+      callLlm: mockCallLlm((id) => `Generated description for ${id}.`),
+      quiet: true,
+    });
+
+    expect(result.describedCount).toBe(2);
+    expect(G.getNodeAttribute("src_a_resolveconfig", "description")).toBe("Existing human description.");
+    expect(G.getNodeAttribute("src_a_buildgraph", "description")).toBe(
+      "Generated description for src_a_buildgraph.",
+    );
+    expect(G.getNodeAttribute("src_a_buildgraph", "description_status")).toBe("generated");
+    expect(G.getNodeAttribute("src_a_buildgraph", "description_meta")).toMatchObject({
+      source: "assistant",
+      prompt_version: "node-description-v1",
+    });
+  });
+
   it("skips gracefully (no throw, no descriptions) when no backend is configured", async () => {
     clearProviderKeys();
     const warn = vi.spyOn(process.stderr, "write").mockReturnValue(true);

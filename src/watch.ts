@@ -188,8 +188,16 @@ export async function rebuildCode(
           root,
         );
         const newAstIds = new Set(G.nodes());
+        const preservedNodeAttrs = ["description", "description_status", "description_meta"] as const;
         existing.forEachNode((nodeId, attrs) => {
-          if (newAstIds.has(nodeId)) return;
+          if (newAstIds.has(nodeId)) {
+            for (const attr of preservedNodeAttrs) {
+              if (attrs[attr] !== undefined && !G.hasNodeAttribute(nodeId, attr)) {
+                G.setNodeAttribute(nodeId, attr, attrs[attr]);
+              }
+            }
+            return;
+          }
           G.mergeNode(nodeId, attrs);
         });
         existing.forEachEdge((_edge, attrs, source, target) => {

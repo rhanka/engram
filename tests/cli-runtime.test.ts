@@ -505,18 +505,9 @@ describe("public CLI runtime command parity", () => {
     expect(result.logs.join("\n")).toContain("wiki descriptions");
 
     const indexPath = `${descriptionsDir}.json`;
-    expect(existsSync(indexPath)).toBe(true);
-    expect(existsSync(join(descriptionsDir, "beta.json"))).toBe(true);
-    expect(existsSync(join(descriptionsDir, "community-0.json"))).toBe(true);
-
-    const index = JSON.parse(readFileSync(indexPath, "utf-8")) as {
-      schema: string;
-      nodes: Record<string, unknown>;
-      communities: Record<string, unknown>;
-    };
-    expect(index.schema).toBe("graphify_wiki_description_index_v1");
-    expect(Object.keys(index.nodes)).toEqual(["beta"]);
-    expect(Object.keys(index.communities)).toEqual(["0"]);
+    expect(existsSync(indexPath)).toBe(false);
+    expect(existsSync(join(descriptionsDir, "beta.json"))).toBe(false);
+    expect(existsSync(join(descriptionsDir, "community-0.json"))).toBe(false);
     const instructionFiles = readdirSync(instructionsDir)
       .filter((name) => name.includes("graphify_wiki_description"))
       .sort();
@@ -1053,6 +1044,83 @@ describe("public CLI runtime command parity", () => {
     expect(existsSync(join(dir, ".graphify", "graph.html"))).toBe(false);
   });
 
+  it("supports describe-only on an existing graph without deleting existing descriptions", async () => {
+    const dir = tempProject();
+    const graphPath = writeGraph(dir);
+    const graph = JSON.parse(readFileSync(graphPath, "utf-8")) as {
+      graph: Record<string, unknown>;
+      nodes: Array<{ id: string; description?: string }>;
+      links: Array<Record<string, unknown>>;
+    };
+    graph.graph.custom_metadata = { keep: true };
+    graph.nodes.find((node) => node.id === "alpha")!.description = "Existing inline description.";
+    graph.links[0]!.review_note = "preserve edge metadata";
+    writeFileSync(graphPath, JSON.stringify(graph, null, 2), "utf-8");
+    const before = readFileSync(graphPath, "utf-8");
+    const savedEnv = { ...process.env };
+
+    try {
+      for (const key of [
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+        "GEMINI_API_KEY",
+        "GOOGLE_GENERATIVE_AI_API_KEY",
+        "MISTRAL_API_KEY",
+        "COHERE_API_KEY",
+      ]) {
+        delete process.env[key];
+      }
+
+      const result = await runCli(["describe", "--graph", graphPath, "--mode", "auto"], dir, {
+        interceptExit: true,
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.logs.join("\n")).toContain("graph descriptions");
+      expect(readFileSync(graphPath, "utf-8")).toBe(before);
+    } finally {
+      process.env = savedEnv;
+    }
+  });
+
+  it("describe assistant writes instructions without auto-detecting a direct backend", async () => {
+    const dir = tempProject();
+    const graphPath = writeGraph(dir);
+    const instructionsDir = join(dir, ".graphify", "description-instructions");
+    const before = readFileSync(graphPath, "utf-8");
+    const savedEnv = { ...process.env };
+
+    try {
+      process.env.OPENAI_API_KEY = "sk-test-should-not-be-used";
+      const result = await runCli([
+        "describe",
+        "--graph",
+        graphPath,
+        "--mode",
+        "assistant",
+        "--instructions-dir",
+        instructionsDir,
+        "--max-nodes",
+        "1",
+      ], dir, { interceptExit: true });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.logs.join("\n")).toContain("source=assistant");
+      expect(result.warnings.join("\n")).not.toContain("no LLM backend configured");
+      expect(readFileSync(graphPath, "utf-8")).toBe(before);
+
+      const instructionFiles = readdirSync(instructionsDir)
+        .filter((name) => name.includes("graphify_node_descriptions"))
+        .sort();
+      expect(instructionFiles).toHaveLength(1);
+      const instructions = readFileSync(join(instructionsDir, instructionFiles[0]!), "utf-8");
+      expect(instructions).toContain("AlphaService");
+      expect(instructions).toContain("Expected Output");
+    } finally {
+      process.env = savedEnv;
+    }
+  });
+
   it("update --no-cluster skips Louvain and writes graph.json without communities", async () => {
     const dir = tempProject();
     mkdirSync(join(dir, "src"), { recursive: true });
@@ -1073,6 +1141,22 @@ describe("public CLI runtime command parity", () => {
     expect((graph.nodes ?? []).length).toBeGreaterThan(0);
     expect(graph.graph?.community_labels ?? {}).toEqual({});
     expect((graph.nodes ?? []).every((node) => node.community === null)).toBe(true);
+  });
+
+  it("update refuses configured profile projects unless code-only is explicit", async () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "graphify.yaml"), "profile: demo\n", "utf-8");
+    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+    await execGit(dir, ["init", "-q"]);
+    await execGit(dir, ["add", "."]);
+    await execGit(dir, ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "seed"]);
+
+    const result = await runCli(["update", dir], dir, { interceptExit: true });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.errors.join("\n")).toContain("graphify update is code-only");
+    expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(false);
   });
 
   it("update short-circuits Louvain when topology is unchanged", async () => {
@@ -1099,6 +1183,37 @@ describe("public CLI runtime command parity", () => {
       readFileSync(join(dir, ".graphify", "graph.json"), "utf-8"),
     ) as { topology_signature?: string };
     expect(secondParsed.topology_signature).toBe(firstParsed.topology_signature);
+  });
+
+  it("update --no-description preserves existing inline descriptions", async () => {
+    const dir = tempProject();
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
+    await execGit(dir, ["init", "-q"]);
+    await execGit(dir, ["add", "."]);
+    await execGit(dir, ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "seed"]);
+
+    const first = await runCli(["update", dir, "--no-description"], dir);
+    expect(first.exitCode).toBe(0);
+    const graphPath = join(dir, ".graphify", "graph.json");
+    const graph = JSON.parse(readFileSync(graphPath, "utf-8")) as {
+      nodes: Array<Record<string, unknown> & { id: string }>;
+    };
+    const node = graph.nodes[0]!;
+    node.description = "Existing code description.";
+    node.description_status = "generated";
+    node.description_meta = { source: "manual", prompt_version: "node-description-v1" };
+    writeFileSync(graphPath, JSON.stringify(graph, null, 2), "utf-8");
+
+    const second = await runCli(["update", dir, "--no-description"], dir);
+    expect(second.exitCode).toBe(0);
+    const rebuilt = JSON.parse(readFileSync(graphPath, "utf-8")) as {
+      nodes: Array<Record<string, unknown> & { id: string }>;
+    };
+    const sameNode = rebuilt.nodes.find((item) => item.id === node.id)!;
+    expect(sameNode.description).toBe("Existing code description.");
+    expect(sameNode.description_status).toBe("generated");
+    expect(sameNode.description_meta).toEqual({ source: "manual", prompt_version: "node-description-v1" });
   });
 
   it("preserves renamed community labels across hook-rebuild update", async () => {

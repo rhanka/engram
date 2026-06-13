@@ -3,8 +3,9 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import type { Extraction, GraphEdge, GraphNode, NormalizedOntologyProfile, RegistryRecord } from "./types.js";
-import type { WikiDescriptionSidecarIndex } from "./wiki-descriptions.js";
+import { selectFreshWikiDescriptions, type WikiDescriptionFreshnessInputs, type WikiDescriptionSidecarIndex } from "./wiki-descriptions.js";
 import { buildHierarchyIndex, compileHierarchies } from "./ontology-hierarchies.js";
+import { resolveNodeDescriptionText } from "./description-resolution.js";
 
 export interface OntologyOutputConfig {
   enabled: boolean;
@@ -30,6 +31,7 @@ export interface CompileOntologyOutputsOptions {
    * the canonical `node.id` (not the source graph node ids).
    */
   descriptions?: WikiDescriptionSidecarIndex;
+  descriptionFreshness?: WikiDescriptionFreshnessInputs;
   /**
    * Optional registry records keyed by registry id.  When provided and the
    * profile declares hierarchies, `compileOntologyOutputs` will generate
@@ -59,6 +61,7 @@ interface CompiledNode {
   source_refs: string[];
   registry_refs: string[];
   graph_node_ids: string[];
+  description?: string;
 }
 
 interface CompiledRelation {
@@ -127,6 +130,7 @@ function compileNodes(
       const aliases = stringArray(node.aliases);
       const terms = [node.label, ...aliases].map(normalizedTerm).filter(Boolean);
       const status = typeof node.status === "string" ? node.status : profile.hardening.default_status;
+      const description = stringValue((node as unknown as Record<string, unknown>).description);
       return {
         id: node.id,
         type,
@@ -138,6 +142,7 @@ function compileNodes(
         source_refs: sourceRef(node.source_file, node.source_location),
         registry_refs: stringArray(node.registry_refs),
         graph_node_ids: [node.id],
+        ...(description ? { description } : {}),
       };
     });
 
@@ -195,9 +200,13 @@ function writeWiki(
   for (const node of nodes.filter((item) => pageTypes.has(item.type))) {
     const outgoing = relations.filter((relation) => relation.source_id === node.id);
     const sidecar = descriptions?.nodes[node.id];
+    const resolvedDescription = resolveNodeDescriptionText({
+      node: node as unknown as Record<string, unknown>,
+      sidecar: sidecar as unknown as Record<string, unknown> | undefined,
+    });
     const descriptionBlock: string[] = [];
-    if (sidecar && sidecar.status === "generated" && sidecar.description.trim().length > 0) {
-      descriptionBlock.push("## Description", "", sidecar.description.trim(), "");
+    if (resolvedDescription) {
+      descriptionBlock.push("## Description", "", resolvedDescription, "");
     }
     const lines = [
       `# ${node.label}`,
@@ -234,7 +243,10 @@ export function compileOntologyOutputs(options: CompileOntologyOutputsOptions): 
   const { nodes, aliasIssues } = compileNodes(options.extraction, options.profile, options.config);
   const relations = compileRelations(options.extraction, nodes, options.config);
   const validationIssues = [...aliasIssues];
-  const wikiPageCount = writeWiki(options.outputDir, nodes, relations, options.config, options.descriptions);
+  const descriptions = options.descriptions && options.descriptionFreshness
+    ? selectFreshWikiDescriptions(options.descriptions, options.descriptionFreshness).fresh
+    : options.descriptions;
+  const wikiPageCount = writeWiki(options.outputDir, nodes, relations, options.config, descriptions);
 
   // ---- Hierarchy artefacts (increment A — additive, no-op when no hierarchies) ----
   let hierarchyArcCount = 0;

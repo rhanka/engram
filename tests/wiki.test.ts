@@ -206,6 +206,25 @@ describe("toWiki", () => {
     expect(nodeArticle).not.toContain("insufficient_evidence");
   });
 
+  it("renders a graph.json node.description in god node articles without a sidecar", () => {
+    const G = new Graph({ type: "undirected" });
+    G.mergeNode("a", {
+      label: "ClassA",
+      source_file: "a.py",
+      community: 0,
+      description: "ClassA has an inline canonical graph description.",
+    });
+    const communities = new Map([[0, ["a"]]]);
+
+    toWiki(G, communities, tmpDir, {
+      godNodesData: [{ id: "a", label: "ClassA", edges: 0 }],
+    });
+
+    const nodeArticle = readFileSync(join(tmpDir, "ClassA.md"), "utf-8");
+    expect(nodeArticle).toContain("## Description");
+    expect(nodeArticle).toContain("ClassA has an inline canonical graph description.");
+  });
+
   it("uses suffixed filenames and alias links for duplicate normalized wiki titles", () => {
     const G = new Graph({ type: "undirected" });
     G.mergeNode("a", { label: "ClassA", source_file: "a.py", community: 0 });

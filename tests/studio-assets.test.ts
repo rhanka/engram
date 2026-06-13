@@ -7,7 +7,8 @@
  * the WP11 precedence where each graph.json node's own `description` wins over
  * the opt-in wiki sidecar.
  */
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -18,6 +19,7 @@ import {
   serveStudioAsset,
   __resetGraphDescriptionCache,
 } from "../src/studio-assets.js";
+import { buildWikiDescriptionCacheKey } from "../src/wiki-descriptions.js";
 
 function makeStateDir(): string {
   const dir = mkdtempSync(join(tmpdir(), "graphify-studio-assets-"));
@@ -43,6 +45,10 @@ function makeStateDir(): string {
 /** Write a graph.json carrying WP11 per-node `description` fields. */
 function writeGraph(dir: string, nodes: Array<Record<string, unknown>>): void {
   writeFileSync(join(dir, "graph.json"), JSON.stringify({ nodes, edges: [] }));
+}
+
+function graphHash(dir: string): string {
+  return createHash("sha256").update(readFileSync(join(dir, "graph.json"))).digest("hex");
 }
 
 afterEach(() => {
@@ -77,6 +83,151 @@ describe("buildEntitySidecar", () => {
     writeGraph(dir, [{ id: "work_a" }]);
     const res = buildEntitySidecar(dir, "work_a");
     expect(res.description).toEqual({ status: "generated", description: "A landmark **novel**." });
+  });
+
+  it("ignores stale assistant-merged sidecars when a fresh canonical sidecar exists", () => {
+    const dir = makeStateDir();
+    writeGraph(dir, [{ id: "work_a" }]);
+    writeFileSync(
+      join(dir, "wiki", "descriptions.assistant-merged.json"),
+      JSON.stringify({
+        schema: "graphify_wiki_description_index_v1",
+        graph_hash: "stale-hash",
+        nodes: {
+          work_a: { status: "generated", description: "Stale assistant description." },
+        },
+      }),
+    );
+    writeFileSync(
+      join(dir, "wiki", "descriptions.json"),
+      JSON.stringify({
+        schema: "graphify_wiki_description_index_v1",
+        graph_hash: graphHash(dir),
+        nodes: {
+          work_a: { status: "generated", description: "Fresh canonical description." },
+        },
+      }),
+    );
+
+    const res = buildEntitySidecar(dir, "work_a");
+    expect(res.description).toEqual({ status: "generated", description: "Fresh canonical description." });
+  });
+
+  it("falls back to canonical sidecars when assistant-merged lacks the requested node", () => {
+    const dir = makeStateDir();
+    writeGraph(dir, [{ id: "work_a" }, { id: "other" }]);
+    const currentHash = graphHash(dir);
+    writeFileSync(
+      join(dir, "wiki", "descriptions.assistant-merged.json"),
+      JSON.stringify({
+        schema: "graphify_wiki_description_index_v1",
+        graph_hash: currentHash,
+        nodes: {
+          other: { status: "generated", description: "Fresh description for another node." },
+        },
+      }),
+    );
+    writeFileSync(
+      join(dir, "wiki", "descriptions.json"),
+      JSON.stringify({
+        schema: "graphify_wiki_description_index_v1",
+        graph_hash: currentHash,
+        nodes: {
+          work_a: { status: "generated", description: "Fresh requested-node description." },
+        },
+      }),
+    );
+
+    const res = buildEntitySidecar(dir, "work_a");
+    expect(res.description).toEqual({ status: "generated", description: "Fresh requested-node description." });
+  });
+
+  it("keeps a requested legacy sidecar when another node has complete freshness metadata", () => {
+    const dir = makeStateDir();
+    writeGraph(dir, [{ id: "work_a" }, { id: "other" }]);
+    const currentHash = graphHash(dir);
+    writeFileSync(
+      join(dir, "wiki", "descriptions.json"),
+      JSON.stringify({
+        schema: "graphify_wiki_description_index_v1",
+        graph_hash: currentHash,
+        nodes: {
+          work_a: { status: "generated", description: "Legacy requested-node description." },
+          other: {
+            schema: "graphify_wiki_description_v1",
+            target_id: "other",
+            target_kind: "node",
+            graph_hash: currentHash,
+            status: "generated",
+            description: "Fully stamped other-node description.",
+            evidence_refs: ["source.md"],
+            confidence: 0.8,
+            cache_key: buildWikiDescriptionCacheKey({
+              target_id: "other",
+              target_kind: "node",
+              graph_hash: currentHash,
+              prompt_version: "wiki-description-v1",
+              mode: "assistant",
+              provider: "assistant",
+              model: null,
+            }),
+            generator: {
+              mode: "assistant",
+              provider: "assistant",
+              model: null,
+              prompt_version: "wiki-description-v1",
+            },
+          },
+        },
+      }),
+    );
+
+    const res = buildEntitySidecar(dir, "work_a");
+    expect(res.description).toEqual({ status: "generated", description: "Legacy requested-node description." });
+  });
+
+  it("ignores sidecars with stale prompt metadata even when graph hash matches", () => {
+    const dir = makeStateDir();
+    writeGraph(dir, [{ id: "work_a" }]);
+    const currentHash = graphHash(dir);
+    writeFileSync(
+      join(dir, "wiki", "descriptions.json"),
+      JSON.stringify({
+        schema: "graphify_wiki_description_index_v1",
+        graph_hash: currentHash,
+        prompt_version: "old-prompt",
+        nodes: {
+          work_a: {
+            schema: "graphify_wiki_description_v1",
+            target_id: "work_a",
+            target_kind: "node",
+            graph_hash: currentHash,
+            status: "generated",
+            description: "Stale prompt description.",
+            evidence_refs: ["source.md"],
+            confidence: 0.8,
+            cache_key: buildWikiDescriptionCacheKey({
+              target_id: "work_a",
+              target_kind: "node",
+              graph_hash: currentHash,
+              prompt_version: "old-prompt",
+              mode: "assistant",
+              provider: "assistant",
+              model: null,
+            }),
+            generator: {
+              mode: "assistant",
+              provider: "assistant",
+              model: null,
+              prompt_version: "old-prompt",
+            },
+          },
+        },
+      }),
+    );
+
+    const res = buildEntitySidecar(dir, "work_a");
+    expect(res.description).toBeNull();
   });
 
   it("ignores blank/non-string node descriptions and falls back", () => {

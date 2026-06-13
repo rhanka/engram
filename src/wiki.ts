@@ -14,6 +14,7 @@ import {
   type WikiDescriptionSidecar,
   type WikiDescriptionSidecarIndex,
 } from "./wiki-descriptions.js";
+import { resolveNodeDescription, type ResolvedDescription } from "./description-resolution.js";
 import { sanitizeMetadata } from "./security.js";
 
 interface WikiPageRef {
@@ -91,9 +92,9 @@ function crossCommunityLinks(
   return [...counts.entries()].sort((a, b) => b[1] - a[1]);
 }
 
-function renderDescription(sidecar: WikiDescriptionSidecar | undefined): string[] {
-  if (!sidecar || sidecar.status !== "generated") return [];
-  if (validateWikiDescriptionSidecar(sidecar).length > 0) return [];
+function renderDescription(descriptionInput: WikiDescriptionSidecar | ResolvedDescription | undefined): string[] {
+  if (!descriptionInput || descriptionInput.status !== "generated") return [];
+  if (!("source" in descriptionInput) && validateWikiDescriptionSidecar(descriptionInput).length > 0) return [];
   // Free-form fields (LLM-generated description text + evidence refs) flow
   // from extraction into rendered wiki markdown verbatim. Run them through
   // `sanitizeMetadata` so control characters are stripped and HTML-special
@@ -103,9 +104,10 @@ function renderDescription(sidecar: WikiDescriptionSidecar | undefined): string[
   // -- they were already sanitised at extract/export boundaries and a
   // second pass would double-escape legitimate slashes/labels (P3 deviation
   // note 2). F-0816-P4 / S4.5.
+  const evidenceRefs = "evidence_refs" in descriptionInput ? descriptionInput.evidence_refs : [];
   const cleaned = sanitizeMetadata({
-    description: sidecar.description,
-    evidence_refs: sidecar.evidence_refs,
+    description: descriptionInput.description,
+    evidence_refs: evidenceRefs,
   });
   const description = String(cleaned.description ?? "");
   const refs = Array.isArray(cleaned.evidence_refs)
@@ -213,7 +215,7 @@ function godNodeArticle(
   nid: string,
   labels: Map<number, string>,
   communityLinks: Map<number, string>,
-  description?: WikiDescriptionSidecar<"node">,
+  description?: ResolvedDescription,
 ): string {
   const d = G.getNodeAttributes(nid);
   const nodeLabel = (d.label as string) ?? nid;
@@ -446,7 +448,16 @@ export function toWiki(
   for (const nodeData of godNodesData) {
     const nid = nodeData.id;
     if (nid && G.hasNode(nid)) {
-      const article = godNodeArticle(G, nid, labels, communityLinks, options?.descriptions?.nodes[nid]);
+      const article = godNodeArticle(
+        G,
+        nid,
+        labels,
+        communityLinks,
+        resolveNodeDescription({
+          node: G.getNodeAttributes(nid) as Record<string, unknown>,
+          sidecar: options?.descriptions?.nodes[nid] as unknown as Record<string, unknown> | undefined,
+        }) ?? undefined,
+      );
       const page = pageRefs.get(`god:${nodeData.id}`);
       writeFileSync(join(outputDir, page?.filename ?? `${safeFilename(nodeData.label)}.md`), article);
       count++;

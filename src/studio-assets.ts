@@ -13,8 +13,11 @@
  */
 
 import { existsSync, readFileSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveNodeDescription } from "./description-resolution.js";
+import { selectFreshWikiDescriptions, WIKI_DESCRIPTION_PROMPT_VERSION, type WikiDescriptionSidecarIndex } from "./wiki-descriptions.js";
 
 export interface StudioAssetResult {
   status: number;
@@ -136,7 +139,36 @@ interface WikiNodeSidecar {
 }
 
 interface WikiSidecarIndex {
+  graph_hash?: string;
   nodes?: Record<string, WikiNodeSidecar>;
+}
+
+function sidecarHasCompleteFreshnessMetadata(sidecar: WikiNodeSidecar): boolean {
+  const record = sidecar as Record<string, unknown>;
+  return typeof record.graph_hash === "string" &&
+    typeof record.cache_key === "string" &&
+    typeof record.generator === "object" &&
+    record.generator !== null;
+}
+
+function nodeOnlyDescriptionIndex(
+  index: WikiSidecarIndex,
+  id: string,
+  graphHash?: string | null,
+): WikiSidecarIndex | null {
+  const sidecar = index.nodes?.[id];
+  if (!sidecar) return null;
+  if (graphHash && index.graph_hash && index.graph_hash !== graphHash) return null;
+  const candidate: WikiSidecarIndex = {
+    ...index,
+    nodes: { [id]: sidecar },
+  };
+  if (!graphHash || !sidecarHasCompleteFreshnessMetadata(sidecar)) return candidate;
+  const { fresh } = selectFreshWikiDescriptions(candidate as WikiDescriptionSidecarIndex, {
+    graph_hash: graphHash,
+    prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+  });
+  return fresh.nodes?.[id] ? fresh : null;
 }
 
 function loadJsonSafe<T>(path: string): T | null {
@@ -148,14 +180,16 @@ function loadJsonSafe<T>(path: string): T | null {
   }
 }
 
-function loadDescriptionIndex(stateDir: string): WikiSidecarIndex | null {
+function loadDescriptionIndex(stateDir: string, id: string, graphHash?: string | null): WikiSidecarIndex | null {
   const candidates = [
     join(stateDir, "wiki", "descriptions.assistant-merged.json"),
     join(stateDir, "wiki", "descriptions.json"),
   ];
   for (const path of candidates) {
     const parsed = loadJsonSafe<WikiSidecarIndex>(path);
-    if (parsed && parsed.nodes) return parsed;
+    if (!parsed?.nodes) continue;
+    const nodeIndex = nodeOnlyDescriptionIndex(parsed, id, graphHash);
+    if (nodeIndex) return nodeIndex;
   }
   return null;
 }
@@ -169,13 +203,14 @@ function loadDescriptionIndex(stateDir: string): WikiSidecarIndex | null {
 
 interface GraphNodeDescriptionCacheEntry {
   mtimeMs: number;
-  byId: Map<string, string>;
+  hash: string;
+  byId: Map<string, Record<string, unknown>>;
 }
 
 const graphDescriptionCache = new Map<string, GraphNodeDescriptionCacheEntry>();
 
 interface GraphFileShape {
-  nodes?: Array<{ id?: unknown; description?: unknown }>;
+  nodes?: Array<Record<string, unknown> & { id?: unknown }>;
 }
 
 /**
@@ -183,32 +218,37 @@ interface GraphFileShape {
  * Returns an empty map when graph.json is missing/unreadable. Cached per state
  * dir, invalidated on mtime change (so an in-process rebuild is picked up).
  */
-function loadGraphNodeDescriptions(stateDir: string): Map<string, string> {
+function loadGraphNodeRecords(stateDir: string): GraphNodeDescriptionCacheEntry {
   const graphPath = join(stateDir, "graph.json");
   let mtimeMs: number;
+  let raw: string;
   try {
     mtimeMs = statSync(graphPath).mtimeMs;
+    raw = readFileSync(graphPath, "utf-8");
   } catch {
     graphDescriptionCache.delete(stateDir);
-    return new Map();
+    return { mtimeMs: 0, hash: "", byId: new Map() };
   }
   const cached = graphDescriptionCache.get(stateDir);
-  if (cached && cached.mtimeMs === mtimeMs) return cached.byId;
+  if (cached && cached.mtimeMs === mtimeMs) return cached;
 
-  const byId = new Map<string, string>();
-  const graph = loadJsonSafe<GraphFileShape>(graphPath);
+  const byId = new Map<string, Record<string, unknown>>();
+  let graph: GraphFileShape | null = null;
+  try {
+    graph = JSON.parse(raw) as GraphFileShape;
+  } catch {
+    graph = null;
+  }
   if (graph && Array.isArray(graph.nodes)) {
     for (const node of graph.nodes) {
       const id = node?.id;
       if (typeof id !== "string" || !id) continue;
-      const desc = node?.description;
-      if (typeof desc !== "string") continue;
-      const trimmed = desc.trim();
-      if (trimmed) byId.set(id, trimmed);
+      byId.set(id, node);
     }
   }
-  graphDescriptionCache.set(stateDir, { mtimeMs, byId });
-  return byId;
+  const entry = { mtimeMs, hash: createHash("sha256").update(raw).digest("hex"), byId };
+  graphDescriptionCache.set(stateDir, entry);
+  return entry;
 }
 
 /** Test seam: drop the cached graph.json node-description index. */
@@ -235,20 +275,14 @@ export interface EntitySidecarResponse {
 export function buildEntitySidecar(stateDir: string, id: string): EntitySidecarResponse {
   let description: EntitySidecarResponse["description"] = null;
 
-  // 1. graph.json node.description (the default WP11 source).
-  const nodeDescription = loadGraphNodeDescriptions(stateDir).get(id);
-  if (nodeDescription) {
-    description = { status: "generated", description: nodeDescription };
-  } else {
-    // 2. Fall back to the opt-in wiki description sidecar.
-    const index = loadDescriptionIndex(stateDir);
-    const entry = index?.nodes?.[id];
-    if (entry) {
-      description =
-        entry.status === "generated"
-          ? { status: "generated", description: entry.description ?? null }
-          : { status: "insufficient_evidence", description: null };
-    }
+  const graph = loadGraphNodeRecords(stateDir);
+  const index = loadDescriptionIndex(stateDir, id, graph.hash || null);
+  const resolved = resolveNodeDescription({
+    node: graph.byId.get(id),
+    sidecar: index?.nodes?.[id] as unknown as Record<string, unknown> | undefined,
+  });
+  if (resolved) {
+    description = { status: resolved.status, description: resolved.description };
   }
 
   const occRaw = loadJsonSafe<Record<string, unknown>>(join(stateDir, "ontology", "occurrences.json"));
