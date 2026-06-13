@@ -328,15 +328,26 @@ function normalizeDescriptions(
 }
 
 /**
- * Track G G-studio-lot4 — look up a node's generated wiki description from a
- * sidecar index. Returns the trimmed description only for `generated`
- * entries; `insufficient_evidence` (or missing) entries return null so the
- * caller omits the field entirely (no placeholder, parity with the wiki).
+ * Look up a node's description applying the O1 canonical-precedence contract:
+ *   1. `node.description` graph attribute wins — it is the runtime source of
+ *      truth from graph.json and is shown when present regardless of sidecar.
+ *   2. A `generated` wiki sidecar entry is used ONLY when the node carries no
+ *      `node.description` (gap-fill role).
+ *   3. `insufficient_evidence` / missing sidecar entries with no node.description
+ *      → null, so the caller omits the field entirely (no placeholder).
+ *
+ * Consistent with Studio's buildEntitySidecar precedence in studio-assets.ts.
  */
 function lookupNodeDescription(
   descriptions: WikiDescriptionSidecarIndex | undefined,
   nodeId: string,
+  nodeAttrDescription?: string | undefined,
 ): string | null {
+  // Priority 1: node.description from graph.json (canonical)
+  const nodeDesc = typeof nodeAttrDescription === "string" ? nodeAttrDescription.trim() : "";
+  if (nodeDesc) return nodeDesc;
+
+  // Priority 2: generated sidecar (gap-fill only)
   if (!descriptions?.nodes) return null;
   const entry = descriptions.nodes[nodeId];
   if (!entry || entry.status !== "generated") return null;
@@ -1332,7 +1343,10 @@ export function buildGraphHtml(
     // from a profile visual_encoding override.
     const isOutlinedShape = shape === "box";
     const outlinedFill = "rgba(255,255,255,0.5)";
-    const description = lookupNodeDescription(descriptions, nodeId);
+    // O1 contract: pass node.description attr so lookupNodeDescription prefers
+    // the canonical graph attribute over a sidecar entry (gap-fill only).
+    const nodeAttrDescription = typeof data.description === "string" ? data.description : undefined;
+    const description = lookupNodeDescription(descriptions, nodeId, nodeAttrDescription);
     const visNode: VisNode = {
       id: nodeId,
       label,
