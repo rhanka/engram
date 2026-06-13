@@ -103,8 +103,19 @@ export interface Hyperedge {
   [key: string]: unknown;
 }
 
+/** Origin metadata for an externally produced extraction fragment. */
+export interface ExtractionProvenance {
+  source_owner: string;
+  source_id: string;
+  observed_at: string;
+  source_hash: string;
+  adapter_version: string;
+  ttl?: string;
+}
+
 /** Output of an extraction pass. */
 export interface Extraction {
+  provenance?: ExtractionProvenance;
   nodes: GraphNode[];
   edges: GraphEdge[];
   hyperedges?: Hyperedge[];

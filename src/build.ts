@@ -174,6 +174,7 @@ function readExistingGraphExtraction(graphPath: string): { extraction: Extractio
 
   return {
     extraction: {
+      ...(asRecord(rawGraphAttrs.provenance) ? { provenance: rawGraphAttrs.provenance as Extraction["provenance"] } : {}),
       nodes,
       edges,
       hyperedges: rawHyperedges as Extraction["hyperedges"],
@@ -277,6 +278,9 @@ export function buildFromJson(extraction: Extraction, options?: BuildOptions): G
   }
 
   const G = createGraph(options?.directed === true);
+  if (extraction.provenance) {
+    G.setAttribute("provenance", extraction.provenance);
+  }
 
   for (const node of extraction.nodes ?? []) {
     const { id, ...attrs } = node;
@@ -378,6 +382,7 @@ export function build(extractions: Extraction[], options?: BuildOptions): Graph 
     output_tokens: 0,
   };
   for (const ext of extractions) {
+    if (ext.provenance) combined.provenance = ext.provenance;
     combined.nodes.push(...(ext.nodes ?? []));
     combined.edges.push(...(ext.edges ?? []));
     (combined.hyperedges ??= []).push(...(ext.hyperedges ?? []));
@@ -428,6 +433,7 @@ export function buildMerge(newChunks: Extraction[], options?: BuildMergeOptions)
     output_tokens: 0,
   };
   for (const chunk of [...base, ...newChunks]) {
+    if (chunk.provenance) mergedExtraction.provenance = chunk.provenance;
     mergedExtraction.nodes.push(...(chunk.nodes ?? []));
     mergedExtraction.edges.push(...(chunk.edges ?? []));
     (mergedExtraction.hyperedges ??= []).push(...(chunk.hyperedges ?? []));
