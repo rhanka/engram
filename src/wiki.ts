@@ -91,7 +91,35 @@ function crossCommunityLinks(
   return [...counts.entries()].sort((a, b) => b[1] - a[1]);
 }
 
-function renderDescription(sidecar: WikiDescriptionSidecar | undefined): string[] {
+/**
+ * Render a Description section for a wiki article.
+ *
+ * Precedence (O1 contract — graph.json is canonical):
+ *   1. `node.description` graph attribute (nodeDescription) — rendered when present,
+ *      with no fabricated Evidence line (provenance is the graph node itself).
+ *   2. A `generated` wiki sidecar entry — rendered with its LLM evidence refs
+ *      when there is NO node.description to show (gap-fill only).
+ *   3. Nothing — section omitted entirely when neither source has content.
+ *
+ * The sidecar NEVER masks a valid node.description.
+ */
+function renderDescription(
+  sidecar: WikiDescriptionSidecar | undefined,
+  nodeDescription?: string | undefined,
+): string[] {
+  // Priority 1: node.description from graph.json (canonical source of truth)
+  const nodeDesc = typeof nodeDescription === "string" ? nodeDescription.trim() : "";
+  if (nodeDesc) {
+    const cleaned = sanitizeMetadata({ description: nodeDesc });
+    return [
+      "## Description",
+      "",
+      String(cleaned.description ?? nodeDesc),
+      "",
+    ];
+  }
+
+  // Priority 2: generated sidecar (gap-fill only, used when no node.description)
   if (!sidecar || sidecar.status !== "generated") return [];
   if (validateWikiDescriptionSidecar(sidecar).length > 0) return [];
   // Free-form fields (LLM-generated description text + evidence refs) flow
@@ -220,6 +248,9 @@ function godNodeArticle(
   const src = (d.source_file as string) ?? "";
   const cid = d.community as number | undefined;
   const communityName = cid !== undefined ? (labels.get(cid) ?? `Community ${cid}`) : undefined;
+  // O1 contract: node.description from graph.json is the canonical description source.
+  // The sidecar fills gaps only when no node.description exists.
+  const nodeDescription = typeof d.description === "string" ? d.description : undefined;
 
   const lines: string[] = [];
   lines.push(`# ${nodeLabel}`, "");
@@ -228,7 +259,7 @@ function godNodeArticle(
   if (communityName) {
     lines.push(`**Community:** ${communityLinks.get(cid!) ?? `[[${communityName}]]`}`, "");
   }
-  lines.push(...renderDescription(description));
+  lines.push(...renderDescription(description, nodeDescription));
 
   const byRelation = new Map<string, string[]>();
   const neighbors = traversalNeighbors(G, nid).sort((a, b) => G.degree(b) - G.degree(a));

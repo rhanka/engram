@@ -261,4 +261,160 @@ describe("toWiki", () => {
     expect(filename).not.toMatch(/[<>:"/\\|?*]/);
     expect(filename!.length).toBeLessThanOrEqual(203);
   });
+
+  // T-M1: Phase 1 — node.description fallback tests (O1 canonical-precedence contract)
+
+  it("T-M1a: renders node.description in god node article when no sidecar is provided", () => {
+    const G = new Graph({ type: "undirected" });
+    G.mergeNode("a", { label: "MyNode", source_file: "src/a.ts", community: 0, description: "Primary entry point for the module." });
+    G.mergeNode("b", { label: "OtherNode", source_file: "src/b.ts", community: 0 });
+    G.mergeEdge("a", "b", { relation: "uses", confidence: "EXTRACTED" });
+    const communities = new Map([[0, ["a", "b"]]]);
+
+    toWiki(G, communities, tmpDir, {
+      godNodesData: [{ id: "a", label: "MyNode", edges: 1 }],
+    });
+
+    const article = readFileSync(join(tmpDir, "MyNode.md"), "utf-8");
+    expect(article).toContain("## Description");
+    expect(article).toContain("Primary entry point for the module.");
+    // No sidecar evidence line — provenance is the graph node
+    expect(article).not.toContain("Evidence:");
+  });
+
+  it("T-M1b: node.description wins over a generated sidecar entry — sidecar is ignored", () => {
+    const G = new Graph({ type: "undirected" });
+    G.mergeNode("a", { label: "ClassA", source_file: "a.py", community: 0, description: "Canonical node description from graph.json." });
+    G.mergeNode("b", { label: "ClassB", source_file: "b.py", community: 0 });
+    G.mergeEdge("a", "b", { relation: "calls", confidence: "EXTRACTED" });
+    const communities = new Map([[0, ["a", "b"]]]);
+    const generator = {
+      mode: "assistant" as const,
+      provider: "assistant",
+      model: null,
+      prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+    };
+    const descriptions: WikiDescriptionSidecarIndex = {
+      schema: "graphify_wiki_description_index_v1",
+      graph_hash: "graph-a",
+      prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+      nodes: {
+        a: {
+          schema: WIKI_DESCRIPTION_SCHEMA,
+          target_id: "a",
+          target_kind: "node",
+          graph_hash: "graph-a",
+          status: "generated",
+          description: "Sidecar LLM description that must NOT appear.",
+          evidence_refs: ["a.py#ClassA"],
+          confidence: 0.91,
+          cache_key: buildWikiDescriptionCacheKey({
+            target_id: "a",
+            target_kind: "node",
+            graph_hash: "graph-a",
+            ...generator,
+          }),
+          generator,
+        },
+      },
+    };
+
+    toWiki(G, communities, tmpDir, {
+      godNodesData: [{ id: "a", label: "ClassA", edges: 1 }],
+      descriptions,
+    });
+
+    const article = readFileSync(join(tmpDir, "ClassA.md"), "utf-8");
+    expect(article).toContain("## Description");
+    // Canonical node.description shown
+    expect(article).toContain("Canonical node description from graph.json.");
+    // Sidecar text must NOT appear
+    expect(article).not.toContain("Sidecar LLM description that must NOT appear.");
+    // No evidence line — node.description has no fabricated evidence
+    expect(article).not.toContain("Evidence:");
+  });
+
+  it("T-M1c: sidecar fills gap only when node has no description attribute", () => {
+    const G = new Graph({ type: "undirected" });
+    // Node with NO description attr — sidecar should fill the gap
+    G.mergeNode("a", { label: "ClassA", source_file: "a.py", community: 0 });
+    G.mergeNode("b", { label: "ClassB", source_file: "b.py", community: 0 });
+    G.mergeEdge("a", "b", { relation: "calls", confidence: "EXTRACTED" });
+    const communities = new Map([[0, ["a", "b"]]]);
+    const generator = {
+      mode: "assistant" as const,
+      provider: "assistant",
+      model: null,
+      prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+    };
+    const descriptions: WikiDescriptionSidecarIndex = {
+      schema: "graphify_wiki_description_index_v1",
+      graph_hash: "graph-a",
+      prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+      nodes: {
+        a: {
+          schema: WIKI_DESCRIPTION_SCHEMA,
+          target_id: "a",
+          target_kind: "node",
+          graph_hash: "graph-a",
+          status: "generated",
+          description: "Gap-fill sidecar description for ClassA.",
+          evidence_refs: ["a.py#ClassA"],
+          confidence: 0.91,
+          cache_key: buildWikiDescriptionCacheKey({
+            target_id: "a",
+            target_kind: "node",
+            graph_hash: "graph-a",
+            ...generator,
+          }),
+          generator,
+        },
+      },
+    };
+
+    toWiki(G, communities, tmpDir, {
+      godNodesData: [{ id: "a", label: "ClassA", edges: 1 }],
+      descriptions,
+    });
+
+    const article = readFileSync(join(tmpDir, "ClassA.md"), "utf-8");
+    expect(article).toContain("## Description");
+    expect(article).toContain("Gap-fill sidecar description for ClassA.");
+    // Sidecar has evidence refs — they should appear
+    expect(article).toContain("Evidence: `a.py#ClassA`");
+  });
+
+  it("T-M1d: never blank a node that has node.description — no sidecar must not produce empty Description section", () => {
+    const G = new Graph({ type: "undirected" });
+    G.mergeNode("a", { label: "CoreNode", source_file: "core.ts", community: 0, description: "Core processing node." });
+    G.mergeNode("b", { label: "Dep", source_file: "dep.ts", community: 0 });
+    G.mergeEdge("a", "b", { relation: "uses", confidence: "EXTRACTED" });
+    const communities = new Map([[0, ["a", "b"]]]);
+
+    // No sidecar at all — but node.description is set
+    toWiki(G, communities, tmpDir, {
+      godNodesData: [{ id: "a", label: "CoreNode", edges: 1 }],
+    });
+
+    const article = readFileSync(join(tmpDir, "CoreNode.md"), "utf-8");
+    // Must show the description — never blank when node.description exists
+    expect(article).toContain("## Description");
+    expect(article).toContain("Core processing node.");
+  });
+
+  // T-M3: obsidian path is covered by toWiki (same code path as wiki)
+  it("T-M3: obsidian path uses same toWiki logic — node.description renders without sidecar", () => {
+    const G = new Graph({ type: "undirected" });
+    G.mergeNode("n", { label: "ObsidianNode", source_file: "o.ts", community: 0, description: "Obsidian vault node description." });
+    G.mergeNode("m", { label: "Other", source_file: "m.ts", community: 0 });
+    G.mergeEdge("n", "m", { relation: "links", confidence: "EXTRACTED" });
+    const communities = new Map([[0, ["n", "m"]]]);
+    // Simulate obsidian call: toWiki is the same function used by `export obsidian`
+    toWiki(G, communities, tmpDir, {
+      godNodesData: [{ id: "n", label: "ObsidianNode", edges: 1 }],
+    });
+    const article = readFileSync(join(tmpDir, "ObsidianNode.md"), "utf-8");
+    expect(article).toContain("## Description");
+    expect(article).toContain("Obsidian vault node description.");
+  });
 });

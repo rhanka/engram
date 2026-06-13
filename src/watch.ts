@@ -33,6 +33,17 @@ import {
 import { loadGraphFromData } from "./graph.js";
 import { assertGraphJsonFileSize } from "./graph-size-guard.js";
 import { persistCommunityLabels, resolveCommunityLabels } from "./community-labels.js";
+import {
+  cleanDescriptionInstructionDir,
+  countUnansweredDescriptionBatches,
+  countUndescribedInGraph,
+  DESCRIPTION_INSTRUCTIONS_DIR,
+} from "./node-descriptions.js";
+import {
+  cleanLabelInstructionDir,
+  hasUnansweredLabelInstructions,
+  LABEL_INSTRUCTIONS_DIR,
+} from "./community-labeling.js";
 import type { Extraction, GraphifyInputScopeMode, InputScopeSource } from "./types.js";
 
 const WATCHED_EXTENSIONS = new Set([
@@ -395,25 +406,78 @@ export async function rebuildCode(
     persistCommunityLabels(labels, paths.scratch.labels);
     writeFileSync(paths.report, report, "utf-8");
 
-    // Phase 4: describe-pending marker. The fast git-hook rebuild runs LLM-free
-    // (`describe: false`, `label: false`) to keep commits snappy, so the
-    // rebuilt graph is NOT yet described/labelled. ONLY that path passes
-    // `markDescribePending: true` — so we drop a marker for the next
-    // describe-producing run (`graphify update`, default-on) to fill the gap and
-    // `check-update` to nudge the user. An explicit user `update --no-description`
-    // (or `--no-label`) must NOT poison `check-update` with a false "rebuilt by
-    // the fast git hook" marker, so we gate on `markDescribePending`, NOT merely
-    // on `describe === false`. A run that actually completes descriptions clears
-    // any pre-existing marker.
-    if (descriptionsComplete) {
-      if (existsSync(paths.describePending)) unlinkSync(paths.describePending);
-    } else if (options.markDescribePending === true) {
-      writeFileSync(
-        paths.describePending,
-        "Graph rebuilt by the fast git hook without descriptions/labels. " +
-          "Run `graphify update --fill-missing` to fill them.\n",
-        "utf-8",
-      );
+    // Phase 4: describe-pending marker.
+    //
+    // Two independent signals can create the pending marker:
+    //
+    //   A) Fast git-hook rebuild: ran LLM-free (`describe: false`, `label: false`).
+    //      ONLY that path passes `markDescribePending: true` — we drop a marker
+    //      so `check-update` nudges the user. An explicit `update --no-description`
+    //      must NOT set this marker (0.12.0 fix — keeps "opted out" distinct from
+    //      "instructions emitted but not answered").
+    //
+    //   B) Assistant mode: `update` ran describe/label in assistant mode (no API
+    //      key) and emitted instruction files that have NOT yet been answered.
+    //      This is NEW (C1 fix) — we detect un-answered instruction files directly
+    //      and write the pending marker with an actionable message, independent of
+    //      `markDescribePending`. Clears when a subsequent run ingests the answers.
+    //
+    // Instruction-file lifecycle (C1 stale-orphan fix): when this run completed
+    // all descriptions, purge every batch-*.md/json and communities.md/json from
+    // the instruction dirs so a leftover orphan from a prior run cannot produce a
+    // permanent false-pending signal on the NEXT check-update. The ingest paths
+    // in node-descriptions.ts / community-labeling.ts already delete consumed
+    // files; this is the safety net for the direct-mode completing path.
+    //
+    // A run that completes descriptions (all describable nodes described) clears
+    // any pre-existing marker regardless of which path created it.
+    {
+      const descInstructionDir = join(paths.stateDir, DESCRIPTION_INSTRUCTIONS_DIR);
+      const labelInstructionDir = join(paths.stateDir, LABEL_INSTRUCTIONS_DIR);
+
+      if (descriptionsComplete) {
+        // Completing run: purge any stale orphan instruction files so subsequent
+        // countUnansweredDescriptionBatches / hasUnansweredLabelInstructions calls
+        // return 0/false even if a prior run left leftover .md files.
+        cleanDescriptionInstructionDir(descInstructionDir);
+        cleanLabelInstructionDir(labelInstructionDir);
+      }
+
+      const unansweredBatches = options.describe !== false
+        ? countUnansweredDescriptionBatches(descInstructionDir)
+        : 0;
+      const unansweredLabels = options.label !== false && !options.noCluster
+        ? hasUnansweredLabelInstructions(labelInstructionDir)
+        : false;
+      const hasUnansweredAssistantWork = unansweredBatches > 0 || unansweredLabels;
+
+      if (descriptionsComplete && !hasUnansweredAssistantWork) {
+        // Descriptions are complete and no pending assistant instructions remain.
+        if (existsSync(paths.describePending)) unlinkSync(paths.describePending);
+      } else if (hasUnansweredAssistantWork) {
+        // C1: assistant emitted instruction files but they have not been answered yet.
+        const parts: string[] = [];
+        if (unansweredBatches > 0) parts.push(`${unansweredBatches} description batch(es)`);
+        if (unansweredLabels) parts.push("community label instructions");
+        const pendingMsg = parts.join(" + ");
+        writeFileSync(
+          paths.describePending,
+          `assistant-mode: ${pendingMsg} awaiting answers.\n`,
+          "utf-8",
+        );
+        console.log(
+          `[graphify watch] ${pendingMsg} awaiting assistant answers — ` +
+            `fill the batch-*.json / communities.json files in .graphify/ and re-run \`graphify update\`.`,
+        );
+      } else if (options.markDescribePending === true) {
+        // A) Fast git-hook rebuild: no descriptions/labels were run.
+        writeFileSync(
+          paths.describePending,
+          "Graph rebuilt by the fast git hook without descriptions/labels. " +
+            "Run `graphify update --fill-missing` to fill them.\n",
+          "utf-8",
+        );
+      }
     }
 
     if (options.clearStale !== false) {
@@ -460,6 +524,47 @@ export function checkUpdate(root: string): CheckUpdateResult {
       "graph was rebuilt by the fast git hook without descriptions/labels (.graphify_describe_pending)",
     );
   }
+
+  // C1: independently detect unanswered assistant-mode instruction files.
+  // This catches the case where `update` ran in assistant mode (no API key),
+  // emitted instruction files, but the host assistant has not yet filled them.
+  // We read the marker file content to distinguish "git-hook (no instructions
+  // emitted)" from "assistant work pending"; then also probe the dirs directly
+  // so we catch stale markers and fresh instruction files that pre-date a
+  // marker flush.
+  //
+  // Stale-orphan guard (C1 false-pending fix): an orphan .md without a .json
+  // that was left by a prior run must NOT trigger pending when the graph is
+  // already fully described. We reconcile by reading graph.json: if it has zero
+  // undescribed describable nodes the instruction files are stale and we ignore
+  // them. This handles the case where a completing direct-mode run did not clean
+  // up (e.g. pre-fix binary) or where files arrive via external tooling.
+  const descInstructionDir = join(paths.stateDir, DESCRIPTION_INSTRUCTIONS_DIR);
+  const labelInstructionDir = join(paths.stateDir, LABEL_INSTRUCTIONS_DIR);
+  const unansweredBatches = countUnansweredDescriptionBatches(descInstructionDir);
+  const unansweredLabels = hasUnansweredLabelInstructions(labelInstructionDir);
+  if (!describePending && (unansweredBatches > 0 || unansweredLabels)) {
+    // Before reporting pending, check whether the graph itself still has
+    // undescribed describable nodes. Returns -1 when graph.json is missing or
+    // unreadable (treat as "unknown" — do NOT suppress pending in that case).
+    // Only suppress when we can positively confirm zero undescribed nodes (=0).
+    const undescribedCount = countUndescribedInGraph(paths.graph);
+    if (undescribedCount !== 0) {
+      // undescribedCount > 0: genuine pending (real undescribed nodes exist).
+      // undescribedCount < 0 (−1): graph.json absent/unreadable — state unknown,
+      //   keep the pending signal rather than silently hiding it.
+      const parts: string[] = [];
+      if (unansweredBatches > 0) parts.push(`${unansweredBatches} description batch(es)`);
+      if (unansweredLabels) parts.push("community label instructions");
+      reasons.push(
+        `assistant-mode work pending: ${parts.join(" + ")} awaiting answers ` +
+          `(fill batch-*.json / communities.json and re-run \`graphify update\`)`,
+      );
+    }
+    // When undescribedCount === 0 the orphan files are stale — ignore them.
+    // (They will be cleaned up on the next completing run.)
+  }
+
   if (metadata?.branch.stale) {
     const reason = metadata.branch.staleReason?.trim();
     reasons.push(reason ? `branch metadata is stale: ${reason}` : "branch metadata is stale");
@@ -470,15 +575,19 @@ export function checkUpdate(root: string): CheckUpdateResult {
     reasons.push(`graph.json built from ${graphHead.slice(0, 7)} but HEAD is ${currentHead.slice(0, 7)}`);
   }
 
+  const onlyPendingDescriptions =
+    reasons.length === 1 && (describePending || unansweredBatches > 0 || unansweredLabels);
+
   return {
     current: reasons.length === 0,
     reasons,
     // When the only pending signal is missing descriptions/labels, the precise
-    // fix is the idempotent gap-fill; otherwise fall back to a full refresh.
-    recommendedCommand:
-      describePending && reasons.length === 1
-        ? "Run `graphify update --fill-missing` to add descriptions + salient labels."
-        : "Run the graphify skill with --update to refresh semantic data.",
+    // fix is the idempotent gap-fill or fill+re-run; otherwise full refresh.
+    recommendedCommand: onlyPendingDescriptions
+      ? unansweredBatches > 0 || unansweredLabels
+        ? "Fill the batch-*.json / communities.json files and re-run `graphify update` to ingest."
+        : "Run `graphify update --fill-missing` to add descriptions + salient labels."
+      : "Run the graphify skill with --update to refresh semantic data.",
   };
 }
 

@@ -26,6 +26,10 @@ export interface WikiDescriptionCacheKeyInput<
   target_id: string;
   target_kind: TTargetKind;
   graph_hash: string;
+  /** Per-target content hash (C2). When present, replaces the global graph_hash
+   * for freshness checks so an unrelated graph.json change does not stale this
+   * target's sidecar. When absent, graph_hash is used (legacy / community targets). */
+  node_content_hash?: string | null;
   prompt_version: string;
   mode: TMode;
   provider?: string | null;
@@ -41,6 +45,9 @@ interface WikiDescriptionSidecarBase<
   target_id: TTargetId;
   target_kind: TTargetKind;
   graph_hash: string;
+  /** C2 per-target content hash. Present on sidecars generated after the
+   * per-node freshness upgrade. Absent on legacy sidecars → treated as stale-once. */
+  node_content_hash?: string | null;
   status: WikiDescriptionStatus;
   cache_key: string;
   generator: WikiDescriptionGenerator<TMode>;
@@ -136,15 +143,59 @@ function sha256(value: string): string {
 }
 
 export function buildWikiDescriptionCacheKey(input: WikiDescriptionCacheKeyInput): string {
+  // C2: when node_content_hash is provided it replaces the global graph_hash in
+  // the key so unrelated graph.json byte changes do not stale this target.
   return sha256(JSON.stringify({
     schema: WIKI_DESCRIPTION_SCHEMA,
     target_id: input.target_id,
     target_kind: input.target_kind,
-    graph_hash: input.graph_hash,
+    graph_hash: input.node_content_hash != null ? input.node_content_hash : input.graph_hash,
     prompt_version: input.prompt_version,
     mode: input.mode,
     provider: input.provider ?? null,
     model: input.model ?? null,
+  }));
+}
+
+/**
+ * C2 — Build a per-node content hash covering the describe-relevant attributes:
+ * label, node_type, sorted neighbor (relation, id) pairs, and evidence_refs.
+ * An unrelated node's change in graph.json will not affect this hash.
+ */
+export function buildNodeContentHash(input: {
+  label: string;
+  node_type: string | null;
+  neighbors: Array<{ relation: string; target_id: string }>;
+  evidence_refs: string[];
+}): string {
+  const sortedNeighbors = [...input.neighbors]
+    .sort((a, b) => {
+      const byRelation = a.relation.localeCompare(b.relation);
+      return byRelation !== 0 ? byRelation : a.target_id.localeCompare(b.target_id);
+    })
+    .map((n) => `${n.relation}:${n.target_id}`);
+  const sortedEvidenceRefs = [...input.evidence_refs].sort();
+  return sha256(JSON.stringify({
+    label: input.label,
+    node_type: input.node_type ?? null,
+    neighbors: sortedNeighbors,
+    evidence_refs: sortedEvidenceRefs,
+  }));
+}
+
+/**
+ * C2 — Build a per-community content hash covering label, sorted member ids,
+ * and source refs. Used when community sidecars opt into per-target freshness.
+ */
+export function buildCommunityContentHash(input: {
+  label: string;
+  member_ids: string[];
+  source_refs: string[];
+}): string {
+  return sha256(JSON.stringify({
+    label: input.label,
+    member_ids: [...input.member_ids].sort(),
+    source_refs: [...input.source_refs].sort(),
   }));
 }
 
@@ -174,12 +225,17 @@ export function createInsufficientEvidenceRecord<
       prompt_version: input.prompt_version,
     },
   };
+  if (input.node_content_hash != null) record.node_content_hash = input.node_content_hash;
   if (input.created_at !== undefined) record.created_at = input.created_at;
   return record;
 }
 
 export interface WikiDescriptionFreshnessInputs {
   graph_hash: string;
+  /** C2: per-target content hash. When provided, used for freshness instead of
+   * the global graph_hash. Sidecars without node_content_hash are treated as
+   * stale when the caller supplies one (backward-compat migration: stale-once). */
+  node_content_hash?: string | null;
   prompt_version: string;
   mode?: WikiDescriptionExecutionMode | null;
   provider?: string | null;
@@ -188,6 +244,7 @@ export interface WikiDescriptionFreshnessInputs {
 
 export type WikiDescriptionStaleReason =
   | "graph_hash_mismatch"
+  | "node_content_hash_mismatch"
   | "prompt_version_mismatch"
   | "mode_mismatch"
   | "provider_mismatch"
@@ -202,19 +259,44 @@ export interface WikiDescriptionFreshnessResult {
 
 /**
  * Decide whether a previously stored sidecar is still valid for the current
- * generation inputs. Any divergence in graph_hash, prompt_version, mode,
- * provider or model invalidates the sidecar so the next render or generation
- * pass treats it as missing.
+ * generation inputs.
+ *
+ * C2 per-node freshness: when `inputs.node_content_hash` is provided the check
+ * uses it instead of `graph_hash` for content-change detection, so an
+ * unrelated graph.json byte change does not invalidate this target's sidecar.
+ *
+ * Backward-compat migration rule:
+ * - If `inputs.node_content_hash` is provided but `sidecar.node_content_hash`
+ *   is absent (legacy sidecar), the sidecar is treated as stale-once so it
+ *   gets regenerated with per-node hashing on the next describe pass.
+ * - If neither side has a node_content_hash, falls back to global graph_hash.
  */
 export function checkWikiDescriptionFreshness(
   sidecar: Pick<
     WikiDescriptionSidecar,
-    "target_id" | "target_kind" | "graph_hash" | "cache_key" | "generator"
+    "target_id" | "target_kind" | "graph_hash" | "node_content_hash" | "cache_key" | "generator"
   >,
   inputs: WikiDescriptionFreshnessInputs,
 ): WikiDescriptionFreshnessResult {
   const reasons: WikiDescriptionStaleReason[] = [];
-  if (sidecar.graph_hash !== inputs.graph_hash) reasons.push("graph_hash_mismatch");
+
+  const callerHasPerNodeHash = inputs.node_content_hash != null;
+  const sidecarHasPerNodeHash = sidecar.node_content_hash != null;
+
+  if (callerHasPerNodeHash) {
+    // C2 path: compare per-target content hashes
+    if (!sidecarHasPerNodeHash) {
+      // Legacy sidecar — stale-once to trigger a regen with per-node hashing
+      reasons.push("node_content_hash_mismatch");
+    } else if (sidecar.node_content_hash !== inputs.node_content_hash) {
+      reasons.push("node_content_hash_mismatch");
+    }
+    // graph_hash is still stored but not used for freshness when per-node hash governs
+  } else {
+    // Legacy path: compare global graph_hash
+    if (sidecar.graph_hash !== inputs.graph_hash) reasons.push("graph_hash_mismatch");
+  }
+
   if (sidecar.generator.prompt_version !== inputs.prompt_version) reasons.push("prompt_version_mismatch");
   if (inputs.mode !== undefined && inputs.mode !== null && sidecar.generator.mode !== inputs.mode) {
     reasons.push("mode_mismatch");
@@ -225,10 +307,19 @@ export function checkWikiDescriptionFreshness(
   if (inputs.model !== undefined && (sidecar.generator.model ?? null) !== (inputs.model ?? null)) {
     reasons.push("model_mismatch");
   }
+  // C2 render symmetry: when the caller does not supply node_content_hash (render
+  // path has no freshly-recomputed per-node hash), fall back to the sidecar's own
+  // stored node_content_hash so the expected key is recomputed the same way it was
+  // originally built.  Without this, buildWikiDescriptionCacheKey would use graph_hash
+  // (because node_content_hash is undefined/null) and could never equal the stored key,
+  // producing a spurious cache_key_mismatch on every render of a C2 sidecar.
+  const effectiveNodeContentHash =
+    inputs.node_content_hash != null ? inputs.node_content_hash : sidecar.node_content_hash;
   const expected_cache_key = buildWikiDescriptionCacheKey({
     target_id: sidecar.target_id,
     target_kind: sidecar.target_kind,
     graph_hash: inputs.graph_hash,
+    node_content_hash: effectiveNodeContentHash,
     prompt_version: inputs.prompt_version,
     mode: inputs.mode ?? sidecar.generator.mode,
     provider: inputs.provider ?? sidecar.generator.provider,

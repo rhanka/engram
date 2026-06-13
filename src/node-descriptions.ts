@@ -34,7 +34,7 @@
  *   "on by default" safe in CI / no-API-key environments.
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import Graph from "graphology";
@@ -124,6 +124,101 @@ export function emitDescriptionInstructions(
   }
 
   return { instructionPaths, answerPaths };
+}
+
+/**
+ * Count description instruction batches that have been emitted (`.md` files)
+ * but whose corresponding answer file (`.json`) has not yet been written by
+ * the host assistant. Returns 0 when the directory does not exist or all
+ * instructions are answered.
+ *
+ * Used by `checkUpdate` and the rebuild marker logic to determine whether
+ * assistant mode left un-answered work pending.
+ */
+export function countUnansweredDescriptionBatches(instructionDir: string): number {
+  if (!existsSync(instructionDir)) return 0;
+  let unanswered = 0;
+  let files: string[];
+  try {
+    files = readdirSync(instructionDir);
+  } catch {
+    return 0;
+  }
+  const mdFiles = files.filter((f) => f.startsWith("batch-") && f.endsWith(".md")).sort();
+  for (const md of mdFiles) {
+    const jsonFile = md.replace(/\.md$/, ".json");
+    if (!existsSync(join(instructionDir, jsonFile))) {
+      unanswered += 1;
+    }
+  }
+  return unanswered;
+}
+
+/**
+ * Delete all batch instruction files (`batch-*.md` and `batch-*.json`) from
+ * `instructionDir`. Called after a completing run (all describable nodes
+ * described) or after fully ingesting assistant answers, so stale orphan files
+ * cannot cause false-pending signals on subsequent runs.
+ *
+ * Safe to call when the directory does not exist.
+ */
+export function cleanDescriptionInstructionDir(instructionDir: string): void {
+  if (!existsSync(instructionDir)) return;
+  let files: string[];
+  try {
+    files = readdirSync(instructionDir);
+  } catch {
+    return;
+  }
+  for (const f of files) {
+    if ((f.startsWith("batch-") && f.endsWith(".md")) ||
+        (f.startsWith("batch-") && f.endsWith(".json"))) {
+      try { unlinkSync(join(instructionDir, f)); } catch { /* ignore */ }
+    }
+  }
+}
+
+/**
+ * Read graph.json at `graphPath` and count how many describable nodes still
+ * lack a description. Returns -1 when the file is missing or unreadable
+ * (unknown state — callers must NOT treat this as "fully described").
+ *
+ * A node is describable when it is a code node (has `type === "code"`, or has
+ * a `signature`) OR an entity node that has at least one context alias/mention
+ * (i.e. has grounding). This mirrors the `isDescribableNode` logic used inside
+ * `generateNodeDescriptions`, kept as a lightweight JSON scan to avoid loading
+ * the full Graphology graph in `checkUpdate`.
+ */
+export function countUndescribedInGraph(graphPath: string): number {
+  if (!existsSync(graphPath)) return -1;
+  try {
+    const raw = JSON.parse(readFileSync(graphPath, "utf-8")) as {
+      nodes?: Array<{ attributes?: Record<string, unknown> }>;
+    };
+    const nodes = raw.nodes ?? [];
+    let count = 0;
+    for (const node of nodes) {
+      const a = node.attributes ?? {};
+      // Code node: has `type === "code"` or non-empty `signature`
+      const isCode =
+        a["type"] === "code" ||
+        (typeof a["signature"] === "string" && (a["signature"] as string).length > 0);
+      // Entity node: has grounding (at least one alias or mention)
+      const hasGround =
+        (Array.isArray(a["aliases"]) && (a["aliases"] as unknown[]).length > 0) ||
+        (Array.isArray(a["mentions"]) && (a["mentions"] as unknown[]).length > 0) ||
+        (typeof a["grounding"] === "string" && (a["grounding"] as string).length > 0);
+      const isDescribable = isCode || hasGround;
+      if (!isDescribable) continue;
+      // Has description?
+      const desc = a["description"];
+      const hasDesc = typeof desc === "string" && (desc as string).trim().length > 0;
+      if (!hasDesc) count += 1;
+    }
+    return count;
+  } catch {
+    return -1;
+  }
 }
 
 /**
@@ -687,12 +782,18 @@ export interface DescriptionCoverageReasons {
  * Coverage report for a description run. `describable` is the count of nodes
  * worth describing (code symbols OR entity nodes with citations/evidence);
  * `described` is how many of the whole graph ended up with a `description`;
- * `skipped` is `describable - described` (never negative).
+ * `skipped` is `describable - described` (never negative);
+ * `ungrounded` is entity nodes excluded because they carry no citations/evidence/code
+ * grounding — they are NOT hallucinated and NOT in the describable denominator.
  */
 export interface DescriptionCoverage {
   describable: number;
   described: number;
   skipped: number;
+  /** Entity nodes with no citation/evidence/code grounding (omitted from
+   * description generation per the anti-hallucination policy). Informational
+   * only — no description is ever generated for these nodes. */
+  ungrounded: number;
   reasons: DescriptionCoverageReasons;
 }
 
@@ -708,17 +809,28 @@ function zeroReasons(): DescriptionCoverageReasons {
   return { noBackend: 0, emptyReply: 0, error: 0, optedOut: 0 };
 }
 
-/** Count nodes that are describable and, of those, how many now have a description. */
-function countCoverage(G: Graph): { describable: number; describedDescribable: number } {
+/**
+ * Count nodes that are describable and, of those, how many now have a description.
+ * Also counts entity nodes excluded from generation because they lack grounding
+ * (anti-hallucination policy — these are NOT silently ignored, just ungrounded).
+ */
+function countCoverage(
+  G: Graph,
+): { describable: number; describedDescribable: number; ungrounded: number } {
   let describable = 0;
   let describedDescribable = 0;
+  let ungrounded = 0;
   G.forEachNode((_id, attrs) => {
     const a = attrs as Record<string, unknown>;
-    if (!isDescribableNode(a)) return;
-    describable += 1;
-    if (hasDescription(a)) describedDescribable += 1;
+    if (isDescribableNode(a)) {
+      describable += 1;
+      if (hasDescription(a)) describedDescribable += 1;
+    } else if (!isCodeNode(a)) {
+      // Non-code node (entity) that is NOT describable = has no grounding.
+      ungrounded += 1;
+    }
   });
-  return { describable, describedDescribable };
+  return { describable, describedDescribable, ungrounded };
 }
 
 /**
@@ -732,12 +844,18 @@ function reportCoverage(
   quiet: boolean | undefined,
 ): void {
   if (quiet) return;
-  const { describable, described, reasons } = coverage;
+  const { describable, described, ungrounded, reasons } = coverage;
   process.stderr.write(
     `[graphify describe] coverage: ${described}/${describable} describable node(s) described ` +
       `(skipped ${coverage.skipped}; reasons noBackend=${reasons.noBackend} ` +
       `emptyReply=${reasons.emptyReply} error=${reasons.error} optedOut=${reasons.optedOut}).\n`,
   );
+  if (ungrounded > 0) {
+    process.stderr.write(
+      `[graphify describe] ${ungrounded} entity node(s) have no grounding (no citations/evidence) — ` +
+        "no description generated (anti-hallucination policy).\n",
+    );
+  }
   if (backendConfigured && describable > 0 && described < 0.5 * describable) {
     process.stderr.write(
       `[graphify describe] WARNING low coverage: only ${described}/${describable} describable node(s) ` +
@@ -776,7 +894,7 @@ export async function generateNodeDescriptions(
     source: DescriptionSource,
     reasonKey: keyof DescriptionCoverageReasons,
   ): GenerateNodeDescriptionsResult => {
-    const { describable, describedDescribable } = countCoverage(G);
+    const { describable, describedDescribable, ungrounded } = countCoverage(G);
     const reasons = zeroReasons();
     // Count every describable node that still lacks a description under the
     // terminal reason for this run.
@@ -785,6 +903,7 @@ export async function generateNodeDescriptions(
       describable,
       described: describedDescribable,
       skipped: Math.max(0, describable - describedDescribable),
+      ungrounded,
       reasons,
     };
     reportCoverage(coverage, backendConfigured(), options.quiet);
@@ -844,13 +963,14 @@ export async function generateNodeDescriptions(
         describedCount += 1;
       }
 
-      const { describable, describedDescribable } = countCoverage(G);
+      const { describable, describedDescribable, ungrounded } = countCoverage(G);
       const reasons = zeroReasons();
       reasons.emptyReply = Math.max(0, describable - describedDescribable);
       const coverage: DescriptionCoverage = {
         describable,
         described: describedDescribable,
         skipped: Math.max(0, describable - describedDescribable),
+        ungrounded,
         reasons,
       };
       if (!options.quiet) {
@@ -860,6 +980,9 @@ export async function generateNodeDescriptions(
         );
       }
       reportCoverage(coverage, false, options.quiet);
+      // Lifecycle: delete the consumed instruction+answer files so they cannot
+      // cause a false-pending signal on the next run.
+      cleanDescriptionInstructionDir(instructionDir);
       return { describedCount, source: "assistant", coverage };
     }
 
@@ -885,7 +1008,7 @@ export async function generateNodeDescriptions(
       );
     }
 
-    const { describable, describedDescribable } = countCoverage(G);
+    const { describable, describedDescribable, ungrounded } = countCoverage(G);
     const reasons = zeroReasons();
     // All describable nodes are pending assistant answers.
     reasons.noBackend = Math.max(0, describable - describedDescribable);
@@ -893,6 +1016,7 @@ export async function generateNodeDescriptions(
       describable,
       described: describedDescribable,
       skipped: Math.max(0, describable - describedDescribable),
+      ungrounded,
       reasons,
     };
     return { describedCount: 0, source: "assistant", coverage };
@@ -934,7 +1058,7 @@ export async function generateNodeDescriptions(
       describedCount += 1;
     }
 
-    const { describable, describedDescribable } = countCoverage(G);
+    const { describable, describedDescribable, ungrounded } = countCoverage(G);
     const reasons = zeroReasons();
     // Any describable node still missing a description after a backend ran got
     // an empty/unusable reply (parse miss, model left it out, etc.).
@@ -943,6 +1067,7 @@ export async function generateNodeDescriptions(
       describable,
       described: describedDescribable,
       skipped: Math.max(0, describable - describedDescribable),
+      ungrounded,
       reasons,
     };
     reportCoverage(coverage, backendConfigured(), options.quiet);
