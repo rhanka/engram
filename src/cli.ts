@@ -33,6 +33,7 @@ import {
   resolveCliInputScopeSelection,
   resolveConfiguredInputScopeSelection,
 } from "./input-scope.js";
+import { foldCitationsInto } from "./citations.js";
 import { forEachTraversalNeighbor, loadGraphFromData } from "./graph.js";
 import { communitiesFromGraph, communityLabelsFromGraph } from "./graph-communities.js";
 import { safeExecGit } from "./git.js";
@@ -319,17 +320,23 @@ function ensureCliExtractionShape(value?: Partial<Extraction> | null): Extractio
   };
 }
 
-function mergeCliAstAndSemantic(
+export function mergeCliAstAndSemantic(
   astInput: Partial<Extraction> | null | undefined,
   semanticInput: Partial<Extraction> | null | undefined,
 ): Extraction {
   const ast = ensureCliExtractionShape(astInput);
   const semantic = ensureCliExtractionShape(semanticInput);
   const mergedNodes: Extraction["nodes"] = [...ast.nodes];
-  const seen = new Set(ast.nodes.map((node) => node.id));
+  const byId = new Map(mergedNodes.map((node) => [node.id, node]));
   for (const node of semantic.nodes) {
-    if (seen.has(node.id)) continue;
-    seen.add(node.id);
+    const kept = byId.get(node.id);
+    if (kept) {
+      // SPEC_CITATIONS: before skipping the duplicate, fold its citations into
+      // the kept node so the union (not one chunk's set) survives assembly.
+      foldCitationsInto(kept, node);
+      continue;
+    }
+    byId.set(node.id, node);
     mergedNodes.push(node);
   }
   return {

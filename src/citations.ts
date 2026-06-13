@@ -100,6 +100,22 @@ export function unionCitations(
   return out;
 }
 
+/**
+ * Fold `dup`'s citations into `kept` (the surviving node) as the deduped union.
+ * Used at the skip-duplicate assembly sites (cli/skill-runtime) so a duplicate
+ * entity's distinct citations are preserved rather than discarded. Mutates
+ * `kept.citations` in place; a no-op when neither side carries citations.
+ */
+export function foldCitationsInto(
+  kept: { citations?: OntologyCitation[] | unknown },
+  dup: { citations?: OntologyCitation[] | unknown },
+): void {
+  const keptCites = Array.isArray(kept.citations) ? (kept.citations as OntologyCitation[]) : [];
+  const dupCites = Array.isArray(dup.citations) ? (dup.citations as OntologyCitation[]) : [];
+  if (keptCites.length === 0 && dupCites.length === 0) return;
+  kept.citations = unionCitations([keptCites, dupCites]);
+}
+
 /** True when a citation carries a finer locator than a bare source_file. */
 function hasFineLocator(c: OntologyCitation): boolean {
   return c.page != null || (c.section != null && c.section !== "") || (c.paragraph_id != null && c.paragraph_id !== "");
