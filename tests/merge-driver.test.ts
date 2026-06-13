@@ -128,4 +128,71 @@ describe("merge graph driver", () => {
 
     expect(() => mergeGraphJsonFiles(ancestor, current, other)).toThrow("exceeds 100000-node cap");
   });
+
+  // F5: the node merge picked one branch's K-set + one count (last-write-wins),
+  // silently dropping the other branch's distinct citations. Union them by
+  // identity and set citation_count = max(both counts, |union|).
+  it("unions a node's citations across both branches and reconciles citation_count", () => {
+    const dir = tempDir();
+    const ancestor = join(dir, "ancestor.json");
+    const current = join(dir, "current.json");
+    const other = join(dir, "other.json");
+
+    const baseNode = { id: "hub", label: "Hub", source_file: "doc.txt", file_type: "document" as const };
+
+    writeFileSync(
+      ancestor,
+      JSON.stringify({ directed: false, graph: {}, nodes: [baseNode], links: [] }),
+      "utf-8",
+    );
+    writeFileSync(
+      current,
+      JSON.stringify({
+        directed: false,
+        graph: {},
+        nodes: [
+          {
+            ...baseNode,
+            citation_count: 5,
+            citations: [
+              { source_file: "a.txt", page: 1 },
+              { source_file: "b.txt", page: 2 },
+            ],
+          },
+        ],
+        links: [],
+      }),
+      "utf-8",
+    );
+    writeFileSync(
+      other,
+      JSON.stringify({
+        directed: false,
+        graph: {},
+        nodes: [
+          {
+            ...baseNode,
+            citation_count: 7,
+            citations: [
+              { source_file: "b.txt", page: 2 }, // overlap with current
+              { source_file: "c.txt", page: 3 },
+            ],
+          },
+        ],
+        links: [],
+      }),
+      "utf-8",
+    );
+
+    mergeGraphJsonFiles(ancestor, current, other);
+    const merged = JSON.parse(readFileSync(current, "utf-8")) as {
+      nodes: Array<{ id: string; citations?: Array<{ source_file?: string; page?: number }>; citation_count?: number }>;
+    };
+    const hub = merged.nodes.find((n) => n.id === "hub")!;
+    // deduped union a:1, b:2, c:3 (3 distinct) — NOT one branch's 2.
+    const keys = (hub.citations ?? []).map((c) => `${c.source_file}:${c.page}`).sort();
+    expect(keys).toEqual(["a.txt:1", "b.txt:2", "c.txt:3"]);
+    // count = max(5, 7, |union|=3) = 7 (never silently below either branch).
+    expect(hub.citation_count).toBe(7);
+  });
 });

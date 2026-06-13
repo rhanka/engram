@@ -3,8 +3,10 @@ import { resolve } from "node:path";
 
 import type { SerializedGraphData } from "./graph.js";
 import { createGraph, serializeGraph } from "./graph.js";
+import { unionCitations } from "./citations.js";
 import { mergeHyperedges, setHyperedges } from "./hyperedges.js";
 import type { Hyperedge } from "./hyperedges.js";
+import type { OntologyCitation } from "./types.js";
 
 export interface MergeGraphJsonResult {
   out: string;
@@ -121,7 +123,31 @@ export function mergeGraphJsonFiles(
   for (const raw of graphs) {
     for (const node of raw.nodes ?? []) {
       const { id, ...attrs } = node;
-      merged.mergeNode(id, attrs);
+      // SPEC_CITATIONS F5: graphology mergeNode is shallow last-write-wins, so
+      // one branch's K-set + one branch's count would survive and the other
+      // branch's distinct citations would be silently dropped. Union the
+      // `citations` by identity and reconcile `citation_count` to the larger of
+      // both counts and the union size, so an accepted git merge of two graph.json
+      // K-sets sums distinct citations instead of discarding half.
+      const incoming = { ...attrs } as Record<string, unknown>;
+      if (merged.hasNode(id)) {
+        const existingCites = merged.getNodeAttribute(id, "citations");
+        if (Array.isArray(incoming.citations) || Array.isArray(existingCites)) {
+          const union = unionCitations([
+            Array.isArray(existingCites) ? (existingCites as OntologyCitation[]) : [],
+            Array.isArray(incoming.citations) ? (incoming.citations as OntologyCitation[]) : [],
+          ]);
+          incoming.citations = union;
+          const existingCount = merged.getNodeAttribute(id, "citation_count");
+          const counts = [
+            typeof existingCount === "number" ? existingCount : 0,
+            typeof incoming.citation_count === "number" ? incoming.citation_count : 0,
+            union.length,
+          ];
+          incoming.citation_count = Math.max(...counts);
+        }
+      }
+      merged.mergeNode(id, incoming);
     }
   }
 
