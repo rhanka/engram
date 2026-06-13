@@ -133,7 +133,7 @@ describe("wiki description target collection", () => {
       includeCommunityTargets: false,
       maxNodeTargets: 0, // unlimited
     });
-    // All 4 god-node candidates should be included, not capped at DEFAULT_NODE_TARGET_LIMIT=10
+    // All 4 god-node candidates should be included, not capped at DEFAULT_NODE_TARGET_LIMIT=100
     // (the graph has 4 nodes so all 4 are returned; the key assertion is no hard cap)
     expect(targets.nodes.length).toBe(4);
   });
@@ -154,20 +154,20 @@ describe("wiki description target collection", () => {
     expect(targets.communities.length).toBe(3);
   });
 
-  it("T-C3c: maxNodeTargets=0 with a graph larger than the default cap (10) returns all", () => {
+  it("T-C3c: maxNodeTargets=0 with a graph larger than the default cap (100) returns all", () => {
     const g = new Graph({ type: "undirected" });
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < 150; i++) {
       g.mergeNode(`n${i}`, { label: `Node${i}`, source_file: `src/n${i}.ts`, community: 0 });
     }
-    for (let i = 1; i < 15; i++) {
+    for (let i = 1; i < 150; i++) {
       g.mergeEdge("n0", `n${i}`, { relation: "uses", confidence: "EXTRACTED" });
     }
     const targets = collectWikiDescriptionTargets(g, {
       includeNodeTargets: true,
       includeCommunityTargets: false,
-      maxNodeTargets: 0, // unlimited — must exceed default cap of 10
+      maxNodeTargets: 0, // unlimited — must exceed default cap of 100
     });
-    expect(targets.nodes.length).toBe(15);
+    expect(targets.nodes.length).toBe(150);
   });
 });
 
