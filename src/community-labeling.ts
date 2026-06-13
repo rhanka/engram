@@ -103,6 +103,18 @@ export function emitLabelInstructions(
 }
 
 /**
+ * Returns true when a community-label instruction file has been emitted
+ * (`communities.md`) but the assistant has not yet written its answer
+ * (`communities.json`). Used by `checkUpdate` and the rebuild marker logic
+ * to detect pending assistant work.
+ */
+export function hasUnansweredLabelInstructions(instructionDir: string): boolean {
+  const instructionPath = join(instructionDir, LABEL_INSTRUCTION_FILE);
+  const answerPath = join(instructionDir, LABEL_ANSWER_FILE);
+  return existsSync(instructionPath) && !existsSync(answerPath);
+}
+
+/**
  * Try to read the completed answer file written by the assistant. Returns a
  * partial map (cids with valid names); silently returns empty map if the file
  * is missing or malformed.
