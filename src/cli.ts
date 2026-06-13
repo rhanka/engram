@@ -3520,8 +3520,11 @@ export async function main(): Promise<void> {
       const projectConfigDiscovery = discoverProjectConfig(updatePath);
       if (projectConfigDiscovery.found) {
         console.warn(
-          `WARNING: ${projectConfigDiscovery.path} detected — \`graphify update\` only rebuilds the code-mode graph and ignores profile inputs (corpus, registries, ontology). ` +
-          `For profile mode run \`graphify profile build ${updatePath}\` (deterministic, no LLM), then \`graphify extract --semantic <path> --backend …\` for semantic extraction. Continuing in code-only mode.`,
+          `WARNING: ${projectConfigDiscovery.path} detected — \`graphify update\` is WRONG for this project type. ` +
+          `It only rebuilds the code-mode graph and silently ignores all profile inputs (corpus files, registries, ontology). ` +
+          `For a corpus/profile project use: \`graphify profile build ${updatePath}\` (deterministic, no LLM) ` +
+          `followed by \`graphify extract --semantic <path> --backend <provider>\` for semantic extraction. ` +
+          `Continuing in code-only mode — profile outputs will NOT be updated.`,
         );
       }
       const describe = opts.description !== false;
@@ -3854,8 +3857,8 @@ export async function main(): Promise<void> {
     .option("--targets <scope>", "Targets to describe: nodes, communities, all", "nodes")
     .option("--out <dir>", "Directory to write sidecar JSON files")
     .option("--instructions-dir <dir>", "Directory to write assistant instruction files")
-    .option("--max-nodes <count>", "Maximum node targets")
-    .option("--max-communities <count>", "Maximum community targets")
+    .option("--max-nodes <count>", "Maximum node targets (0 = unlimited, default 10)")
+    .option("--max-communities <count>", "Maximum community targets (0 = unlimited, default 12)")
     .option("--max-neighbors <count>", "Maximum node neighbors in each prompt")
     .action(async (opts) => {
       try {
@@ -3871,8 +3874,9 @@ export async function main(): Promise<void> {
         const outputDir = resolve(opts.out ?? join(dirname(graphPath), "wiki", "descriptions"));
         const instructionsDir = resolve(opts.instructionsDir ?? join(dirname(graphPath), "wiki", "description-instructions"));
         const targetOptions = parseWikiDescriptionTargets(opts.targets);
-        const maxNodeTargets = parsePositiveIntegerOption(opts.maxNodes, "--max-nodes");
-        const maxCommunityTargets = parsePositiveIntegerOption(opts.maxCommunities, "--max-communities");
+        // C3: --max-nodes 0 / --max-communities 0 = unlimited (maps to internal 0→sentinel)
+        const maxNodeTargets = String(opts.maxNodes ?? "").trim() === "0" ? 0 : parsePositiveIntegerOption(opts.maxNodes, "--max-nodes");
+        const maxCommunityTargets = String(opts.maxCommunities ?? "").trim() === "0" ? 0 : parsePositiveIntegerOption(opts.maxCommunities, "--max-communities");
         const maxNeighbors = parsePositiveIntegerOption(opts.maxNeighbors, "--max-neighbors");
 
         const G = loadCliGraph(graphPath);

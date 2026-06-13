@@ -272,7 +272,8 @@ export function collectWikiDescriptionTargets(
   if (includeNodeTargets) {
     const ids = nodeIds && nodeIds.length > 0
       ? uniqueSorted(nodeIds.filter((id) => graph.hasNode(id)))
-      : godNodes(graph, Math.max(1, maxNodeTargets)).map((entry) => entry.id);
+      // C3: maxNodeTargets=0 means unlimited — pass graph.order to get all nodes ranked
+      : godNodes(graph, maxNodeTargets > 0 ? maxNodeTargets : graph.order || 1).map((entry) => entry.id);
 
     const selectedIds = ids
       .filter((id) => graph.hasNode(id))

@@ -7,6 +7,8 @@ import Graph from "graphology";
 import {
   WIKI_DESCRIPTION_PROMPT_VERSION,
   buildWikiDescriptionCacheKey,
+  buildNodeContentHash,
+  buildCommunityContentHash,
 } from "../src/wiki-descriptions.js";
 import {
   buildWikiDescriptionPrompt,
@@ -121,6 +123,51 @@ describe("wiki description target collection", () => {
     expect(targets.nodes[0].neighbors).toHaveLength(3);
     expect(targets.communities.map((target) => target.target_id)).toEqual(["community:0", "community:1"]);
     expect(targets.communities[0].source_refs).toEqual(["src/alpha.ts", "src/beta.ts"]);
+  });
+
+  // T-C3: --max-nodes 0 / --max-communities 0 = unlimited sentinel
+  it("T-C3a: maxNodeTargets=0 collects ALL nodes (unlimited)", () => {
+    const graph = mkGraph(); // 4 nodes: alpha, beta, gamma, delta
+    const targets = collectWikiDescriptionTargets(graph, {
+      includeNodeTargets: true,
+      includeCommunityTargets: false,
+      maxNodeTargets: 0, // unlimited
+    });
+    // All 4 god-node candidates should be included, not capped at DEFAULT_NODE_TARGET_LIMIT=10
+    // (the graph has 4 nodes so all 4 are returned; the key assertion is no hard cap)
+    expect(targets.nodes.length).toBe(4);
+  });
+
+  it("T-C3b: maxCommunityTargets=0 collects ALL communities (unlimited)", () => {
+    const graph = mkGraph();
+    const communities = new Map<number, string[]>([
+      [0, ["alpha", "beta"]],
+      [1, ["gamma", "delta"]],
+      [2, ["alpha"]], // extra community
+    ]);
+    const targets = collectWikiDescriptionTargets(graph, {
+      communities,
+      includeNodeTargets: false,
+      includeCommunityTargets: true,
+      maxCommunityTargets: 0, // unlimited
+    });
+    expect(targets.communities.length).toBe(3);
+  });
+
+  it("T-C3c: maxNodeTargets=0 with a graph larger than the default cap (10) returns all", () => {
+    const g = new Graph({ type: "undirected" });
+    for (let i = 0; i < 15; i++) {
+      g.mergeNode(`n${i}`, { label: `Node${i}`, source_file: `src/n${i}.ts`, community: 0 });
+    }
+    for (let i = 1; i < 15; i++) {
+      g.mergeEdge("n0", `n${i}`, { relation: "uses", confidence: "EXTRACTED" });
+    }
+    const targets = collectWikiDescriptionTargets(g, {
+      includeNodeTargets: true,
+      includeCommunityTargets: false,
+      maxNodeTargets: 0, // unlimited — must exceed default cap of 10
+    });
+    expect(targets.nodes.length).toBe(15);
   });
 });
 
@@ -261,10 +308,16 @@ describe("assistant-mode generation behavior", () => {
     });
 
     expect(result.prompt_version).toBe(WIKI_DESCRIPTION_PROMPT_VERSION);
+    // C2: the cache key now incorporates a per-target content hash instead of the
+    // global graph_hash. Build the expected keys using the node_content_hash that
+    // the generation pass computed and stored in the sidecar.
+    const alphaNodeNch = result.index.nodes["alpha"]?.node_content_hash;
+    const communityNch = result.index.communities?.["0"]?.node_content_hash;
     const nodeKey = buildWikiDescriptionCacheKey({
       target_id: "alpha",
       target_kind: "node",
       graph_hash: "graph-hash",
+      node_content_hash: alphaNodeNch,
       prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
       mode: "assistant",
       provider: "assistant",
@@ -274,6 +327,7 @@ describe("assistant-mode generation behavior", () => {
       target_id: "community:0",
       target_kind: "community",
       graph_hash: "graph-hash",
+      node_content_hash: communityNch,
       prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
       mode: "assistant",
       provider: "assistant",
@@ -282,6 +336,25 @@ describe("assistant-mode generation behavior", () => {
 
     expect(result.index.nodes["alpha"]?.cache_key).toBe(nodeKey);
     expect(result.index.communities?.["0"]?.cache_key).toBe(communityKey);
+    // C2: verify node_content_hash is populated and is a non-empty string
+    expect(typeof alphaNodeNch).toBe("string");
+    expect(typeof communityNch).toBe("string");
+    // C2: verify the per-node hash matches buildNodeContentHash directly
+    const referenceGraph = mkGraph();
+    const expectedAlphaNch = buildNodeContentHash({
+      label: "AlphaService",
+      node_type: "service",
+      neighbors: (collectWikiDescriptionTargets(referenceGraph, { maxNodeTargets: 1, maxNodeNeighbors: 12 }).nodes[0]?.neighbors ?? [])
+        .map((n) => ({ relation: n.relation, target_id: n.target_id })),
+      evidence_refs: ["src/alpha.ts"],
+    });
+    expect(alphaNodeNch).toBe(expectedAlphaNch);
+    const expectedCommunityNch = buildCommunityContentHash({
+      label: "Community 0",
+      member_ids: ["alpha", "beta"],
+      source_refs: ["src/alpha.ts", "src/beta.ts"],
+    });
+    expect(communityNch).toBe(expectedCommunityNch);
   });
 
   it("UAT: mocked client emits 1 generated + 1 insufficient_evidence and toWiki renders accordingly", async () => {
