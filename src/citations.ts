@@ -186,12 +186,29 @@ export interface AggregateCitationsOptions {
   topK?: number;
   /** Include bbox in identity (figure/image corpora). Default false. */
   includeBbox?: boolean;
+  /**
+   * A snapshot of the prior `citations.json` (the FULL per-node union before
+   * this pass), captured via `readCitationsSidecar` BEFORE the aggregation /
+   * graph.json write. When supplied, each node's fresh `citations` are unioned
+   * with its prior FULL set (NOT the already-trimmed K-set in graph.json) before
+   * the count + top-K are computed.
+   *
+   * This is the F1 (finalize-update) fix: the live `/graphify update` flow loads
+   * a graph whose inline `citations` are already K-trimmed; a re-extracted hub's
+   * fresh chunk carries only a handful of citations and `mergeNode` is
+   * last-write-wins, so without this the exhaustive tail in citations.json would
+   * be lost and the stale `citation_count` would be locked by the idempotency
+   * Math.max. Unioning the prior FULL set recovers the true union and re-stamps
+   * the correct count.
+   */
+  priorSidecar?: CitationAggregateMap | null;
 }
 
 /**
  * One pass over the assembled graph. For every node carrying citations:
  *   - compute the deduped union (the node's `citations` are already the
- *     post-merge union; this re-dedupes defensively),
+ *     post-merge union; this re-dedupes defensively), unioned with the prior
+ *     FULL per-node set from `priorSidecar` when supplied,
  *   - set `node.citation_count = union.length` (the true, degree-independent
  *     count, authoritative even when the inline set is trimmed),
  *   - replace `node.citations` with the deterministic top-K (the graph.json
@@ -203,20 +220,36 @@ export interface AggregateCitationsOptions {
 export function aggregateCitations(G: Graph, options: AggregateCitationsOptions = {}): CitationAggregateMap {
   const topK = options.topK ?? CITATIONS_INLINE_TOP_K;
   const includeBbox = options.includeBbox ?? false;
+  const prior = options.priorSidecar ?? null;
   const map: CitationAggregateMap = {};
 
   G.forEachNode((nodeId, attrs) => {
     const record = attrs as Record<string, unknown>;
     const raw = record.citations;
-    if (!Array.isArray(raw) || raw.length === 0) return;
-    const union = unionCitations([raw as OntologyCitation[]], { includeBbox });
+    const priorEntry = prior?.[nodeId] ?? null;
+    const hasFresh = Array.isArray(raw) && raw.length > 0;
+    const hasPrior = priorEntry != null && Array.isArray(priorEntry.citations) && priorEntry.citations.length > 0;
+    if (!hasFresh && !hasPrior) return;
+    // F1: union the fresh extraction with the prior FULL per-node set from the
+    // sidecar (NOT the trimmed inline), so a re-extracted hub recovers the
+    // exhaustive tail instead of collapsing to the fresh chunk's handful.
+    const union = unionCitations(
+      [
+        hasFresh ? (raw as OntologyCitation[]) : [],
+        hasPrior ? priorEntry.citations : [],
+      ],
+      { includeBbox },
+    );
     if (union.length === 0) return;
-    // Idempotency guard: a prior aggregation pass already trimmed the inline
-    // set to K and stamped the TRUE count. Re-deriving the count from the
-    // trimmed inline would undercount, so keep the larger known count. (Within
-    // a single build pass this is a no-op; it only protects an accidental
-    // double-call on the same in-memory graph.)
-    const priorCount = typeof record.citation_count === "number" ? record.citation_count : 0;
+    // Count = the unioned set size. When a `priorSidecar` is supplied the union
+    // above already covers the FULL tail (prior sidecar ∪ fresh), so it is
+    // authoritative and the (possibly stale) node `citation_count` must NOT be
+    // allowed to override it — that stale count + trimmed inline is exactly the
+    // F1 inconsistency. Without a prior sidecar, fall back to the idempotency
+    // guard: a prior aggregation pass on this SAME in-memory graph already
+    // trimmed the inline set and stamped the true count, so re-deriving from the
+    // trimmed inline would undercount — keep the larger known count.
+    const priorCount = prior ? 0 : (typeof record.citation_count === "number" ? record.citation_count : 0);
     const count = Math.max(union.length, priorCount);
     const inline = selectTopCitations(union, topK);
     G.setNodeAttribute(nodeId, "citation_count", count);
