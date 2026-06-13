@@ -14,7 +14,7 @@ import { buildFromJson } from "./build.js";
 import { cluster, scoreAll } from "./cluster.js";
 import { godNodes, surprisingConnections, suggestQuestions } from "./analyze.js";
 import { generate } from "./report.js";
-import { backupIfProtected, toJson } from "./export.js";
+import { backupIfProtected, persistGraphWithCitations } from "./export.js";
 import { safeToHtml } from "./html-export.js";
 import { extractWithDiagnostics, type ExtractionDiagnostic } from "./extract.js";
 import { resolveGraphifyPaths } from "./paths.js";
@@ -241,7 +241,7 @@ export async function buildProject(
   }
 
   writeFileSync(reportPath, report, "utf-8");
-  toJson(G, communities, graphPath, { communityLabels: labels });
+  persistGraphWithCitations(G, communities, graphPath, { communityLabels: labels });
   persistCommunityLabels(labels, paths.scratch.labels);
 
   let htmlPath: string | undefined;

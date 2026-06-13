@@ -29,7 +29,7 @@ import {
   resolveCliInputScopeSelection,
   resolveConfiguredInputScopeSelection,
 } from "./input-scope.js";
-import { toCypher, toGraphml, toHtml, toJson, toSvg, pushToNeo4j } from "./export.js";
+import { persistGraphWithCitations, toCypher, toGraphml, toHtml, toJson, toSvg, pushToNeo4j } from "./export.js";
 import { safeToHtml } from "./html-export.js";
 import { extractWithDiagnostics } from "./extract.js";
 import {
@@ -1189,7 +1189,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         { labelsPath },
       );
 
-      toJson(G, analyzed.communities, resolve(opts.graphOut), {
+      persistGraphWithCitations(G, analyzed.communities, resolve(opts.graphOut), {
         communityLabels: analyzed.labels,
       });
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
@@ -1268,7 +1268,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       );
       analyzed.analysis.diff = graphDiff(oldGraph, mergedGraph);
 
-      toJson(mergedGraph, analyzed.communities, resolve(opts.graphOut), {
+      persistGraphWithCitations(mergedGraph, analyzed.communities, resolve(opts.graphOut), {
         communityLabels: analyzed.labels,
       });
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
@@ -1319,7 +1319,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       );
 
       mkdirSync(dirname(resolve(opts.graphOut)), { recursive: true });
-      toJson(G, analyzed.communities, resolve(opts.graphOut), {
+      persistGraphWithCitations(G, analyzed.communities, resolve(opts.graphOut), {
         communityLabels: analyzed.labels,
       });
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
@@ -1375,7 +1375,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       analysis.labels = mapToObject(labels);
       writeFileSync(resolve(opts.reportOut), report, "utf-8");
       if (opts.graphOut) {
-        toJson(G, communities, resolve(opts.graphOut), { communityLabels: labels });
+        persistGraphWithCitations(G, communities, resolve(opts.graphOut), { communityLabels: labels });
       }
       if (opts.htmlOut) {
         safeToHtml(G, communities, resolve(opts.htmlOut), { communityLabels: labels }, {
@@ -1566,7 +1566,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       );
       analyzed.analysis.diff = graphDiff(oldGraph, mergedGraph);
 
-      toJson(mergedGraph, analyzed.communities, resolve(opts.graphOut), {
+      persistGraphWithCitations(mergedGraph, analyzed.communities, resolve(opts.graphOut), {
         communityLabels: analyzed.labels,
       });
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
@@ -1613,6 +1613,10 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       ]) {
         mkdirSync(dirname(target), { recursive: true });
       }
+      // Reload-only re-cluster path: G comes from an existing graph.json whose
+      // inline citations are already K-trimmed, so re-emitting the sidecar here
+      // would shrink its full list to K. Keep plain toJson and leave the
+      // co-derived citations.json (emitted by the extract/assemble pass) intact.
       toJson(G, analyzed.communities, resolve(opts.graphOut), {
         communityLabels: analyzed.labels,
       });
