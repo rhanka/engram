@@ -1103,10 +1103,16 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       const fresh = freshLoad.extraction;
 
       const dedupedNodes: Extraction["nodes"] = [];
-      const seen = new Set<string>();
+      const byId = new Map<string, Extraction["nodes"][number]>();
       for (const node of [...cached.nodes, ...fresh.nodes]) {
-        if (seen.has(node.id)) continue;
-        seen.add(node.id);
+        const kept = byId.get(node.id);
+        if (kept) {
+          // SPEC_CITATIONS F2: fold the duplicate's citations into the kept node
+          // (mirrors mergeSemanticArtifacts) instead of discarding them.
+          foldCitationsInto(kept, node);
+          continue;
+        }
+        byId.set(node.id, node);
         dedupedNodes.push(node);
       }
 
@@ -1136,10 +1142,16 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       const semantic = loadAndSanitizeFragment(opts.semantic, "semantic").extraction;
 
       const mergedNodes: Extraction["nodes"] = [...ast.nodes];
-      const seen = new Set(ast.nodes.map((node) => node.id));
+      const byId = new Map(mergedNodes.map((node) => [node.id, node]));
       for (const node of semantic.nodes) {
-        if (seen.has(node.id)) continue;
-        seen.add(node.id);
+        const kept = byId.get(node.id);
+        if (kept) {
+          // SPEC_CITATIONS F2: fold the semantic duplicate's citations into the
+          // kept AST node (mirrors mergeAstAndSemantic) instead of discarding.
+          foldCitationsInto(kept, node);
+          continue;
+        }
+        byId.set(node.id, node);
         mergedNodes.push(node);
       }
 
