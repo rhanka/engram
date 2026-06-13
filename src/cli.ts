@@ -3822,7 +3822,7 @@ export async function main(): Promise<void> {
     .option("--backend <provider>", "LLM provider (default: auto-detect from API keys)")
     .option("--model <id>", "LLM model override")
     .option("--label-mode <mode>", "Execution mode: assistant (default, no key) or direct (API key)", "")
-    .option("--citation-cap <n|all>", "Per-node citation cap forwarded to the description engine when this run also (re)describes; resolved from corpus type when absent")
+    .option("--citation-cap <n|all>", "Accepted for CLI symmetry; has no effect on `label` (use `describe`/`update` to ground descriptions)")
     .action(async (labelPath = ".", opts) => {
       const root = resolve(labelPath);
       const paths = resolveGraphifyPaths({ root });

@@ -102,3 +102,37 @@ describe("resolveCitationPolicyForRoot", () => {
     expect(p.describeCap).toBe("all");
   });
 });
+
+describe("7b: `label --citation-cap` help is honest (no effect on label)", () => {
+  async function labelHelp(): Promise<string> {
+    const { main } = await import("../src/cli.js");
+    const out: string[] = [];
+    const originalArgv = process.argv;
+    const originalLog = console.log;
+    const originalWrite = process.stdout.write.bind(process.stdout);
+    const originalExit = process.exit;
+    console.log = (...a: unknown[]) => { out.push(a.join(" ")); };
+    process.stdout.write = ((chunk: unknown) => { out.push(String(chunk)); return true; }) as typeof process.stdout.write;
+    process.exit = ((): never => { throw new Error("__exit__"); }) as typeof process.exit;
+    process.argv = ["node", "graphify", "label", "--help"];
+    try {
+      await main();
+    } catch (err) {
+      if ((err as Error).message !== "__exit__") throw err;
+    } finally {
+      process.argv = originalArgv;
+      console.log = originalLog;
+      process.stdout.write = originalWrite;
+      process.exit = originalExit;
+    }
+    return out.join("\n");
+  }
+
+  it("does not promise that the flag grounds descriptions on `label`", async () => {
+    const help = await labelHelp();
+    expect(help).toContain("--citation-cap");
+    expect(help).toMatch(/has no effect on .?label.?/);
+    // The old over-promising wording must be gone.
+    expect(help).not.toContain("forwarded to the description engine");
+  });
+});
