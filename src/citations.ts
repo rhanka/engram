@@ -206,14 +206,22 @@ export function aggregateCitations(G: Graph, options: AggregateCitationsOptions 
   const map: CitationAggregateMap = {};
 
   G.forEachNode((nodeId, attrs) => {
-    const raw = (attrs as Record<string, unknown>).citations;
+    const record = attrs as Record<string, unknown>;
+    const raw = record.citations;
     if (!Array.isArray(raw) || raw.length === 0) return;
     const union = unionCitations([raw as OntologyCitation[]], { includeBbox });
     if (union.length === 0) return;
+    // Idempotency guard: a prior aggregation pass already trimmed the inline
+    // set to K and stamped the TRUE count. Re-deriving the count from the
+    // trimmed inline would undercount, so keep the larger known count. (Within
+    // a single build pass this is a no-op; it only protects an accidental
+    // double-call on the same in-memory graph.)
+    const priorCount = typeof record.citation_count === "number" ? record.citation_count : 0;
+    const count = Math.max(union.length, priorCount);
     const inline = selectTopCitations(union, topK);
-    G.setNodeAttribute(nodeId, "citation_count", union.length);
+    G.setNodeAttribute(nodeId, "citation_count", count);
     G.setNodeAttribute(nodeId, "citations", inline);
-    map[nodeId] = { count: union.length, citations: union };
+    map[nodeId] = { count, citations: union };
   });
 
   return map;

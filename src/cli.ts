@@ -3358,7 +3358,7 @@ export async function main(): Promise<void> {
           return;
         }
 
-        const [{ buildFromJson }, { cluster, scoreAll }, { godNodes, surprisingConnections, suggestQuestions }, { generate }, { toJson }, { safeToHtml }] = await Promise.all([
+        const [{ buildFromJson }, { cluster, scoreAll }, { godNodes, surprisingConnections, suggestQuestions }, { generate }, { persistGraphWithCitations }, { safeToHtml }] = await Promise.all([
           import("./build.js"),
           import("./cluster.js"),
           import("./analyze.js"),
@@ -3403,7 +3403,7 @@ export async function main(): Promise<void> {
         );
 
         writeFileSync(paths.report, report, "utf-8");
-        toJson(G, communities, paths.graph, { communityLabels: labels, force: true });
+        persistGraphWithCitations(G, communities, paths.graph, { communityLabels: labels, force: true });
         // Track C-3.5: pick up ontology profile for visual encoding override
         // when a graphify.yaml + ontology-profile is present in the project.
         const ontologyProfileForExtractHtml = await tryLoadHtmlOntologyProfile(root);

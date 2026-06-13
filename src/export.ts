@@ -10,6 +10,11 @@ import { isDirectedGraph } from "./graph.js";
 import { assertGraphJsonFileSize, assertGraphJsonSize } from "./graph-size-guard.js";
 import { safeGitRevParse } from "./git.js";
 import type { Hyperedge, NormalizedOntologyProfile, OntologyVisualEncoding } from "./types.js";
+import {
+  aggregateCitations,
+  writeCitationsSidecar,
+  type AggregateCitationsOptions,
+} from "./citations.js";
 import type { WikiDescriptionSidecarIndex } from "./wiki-descriptions.js";
 import {
   type NumericMapLike,
@@ -547,6 +552,38 @@ export function toJson(
   assertGraphJsonSize(Buffer.byteLength(serialized, "utf-8"), "write", outputPath);
   writeFileSync(outputPath, serialized, "utf-8");
   return true;
+}
+
+/**
+ * Co-emit chokepoint (SPEC_CITATIONS area 6). Runs the citation aggregation
+ * pass over the assembled graph IMMEDIATELY before graph.json is written, then
+ * writes graph.json (trimmed inline `citations` + `citation_count`) and the
+ * co-derived `citations.json` so the two projections are always consistent.
+ *
+ * The aggregation mutates `G` in place: each node's `citations` is trimmed to
+ * the deterministic top-K and `citation_count` is stamped with the true union
+ * size; the full per-entity union is written to
+ * `<dirname(graphPath)>/ontology/citations.json`.
+ *
+ * Returns the same boolean as `toJson` (false when the shrink-guard refuses the
+ * write). The sidecar is only written when graph.json itself was written and at
+ * least one node carries citations (no empty sidecar littering).
+ */
+export function persistGraphWithCitations(
+  G: Graph,
+  communities: NumericMapLike<string[]>,
+  outputPath: string,
+  options?: JsonOptions & { citations?: AggregateCitationsOptions },
+): boolean {
+  const map = aggregateCitations(G, options?.citations ?? {});
+  const jsonOptions: JsonOptions | undefined = options
+    ? { ...(options.communityLabels ? { communityLabels: options.communityLabels } : {}), ...(options.force ? { force: true } : {}) }
+    : undefined;
+  const written = toJson(G, communities, outputPath, jsonOptions);
+  if (written) {
+    writeCitationsSidecar(dirname(outputPath), map, G);
+  }
+  return written;
 }
 
 // ---------------------------------------------------------------------------

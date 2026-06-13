@@ -161,7 +161,7 @@ export async function rebuildCode(
     const { cluster, scoreAll } = await import("./cluster.js");
     const { godNodes, surprisingConnections, suggestQuestions } = await import("./analyze.js");
     const { generate } = await import("./report.js");
-    const { toJson, computeTopologySignature } = await import("./export.js");
+    const { persistGraphWithCitations, computeTopologySignature } = await import("./export.js");
 
     const root = pathResolve(watchPath);
     const scopeInventory = inspectInputScope(root, {
@@ -396,7 +396,7 @@ export async function rebuildCode(
       descriptionsComplete = result.coverage.described >= result.coverage.describable;
     }
 
-    const jsonWritten = toJson(G, communities, paths.graph, {
+    const jsonWritten = persistGraphWithCitations(G, communities, paths.graph, {
       communityLabels: labels,
       force: options.force,
     });
