@@ -262,6 +262,31 @@ describe("citationsByFile (SVELTE-2)", () => {
     const g = citationsByFile({ source_file: "x.txt", citations: [{ section: "s" }] });
     expect(g[0].file).toBe("x.txt");
   });
+
+  it("citationsByFileFrom groups an explicit citation list (lazy sidecar upgrade)", async () => {
+    const { citationsByFileFrom, citationsByFile } = await import("../lib/graphAdapter.js");
+    // The full sidecar list (more than the inline K-set on the node) groups the
+    // same way as citationsByFile(node) does over node.citations.
+    const fullList = [
+      { source_file: "a.txt", section: "ch1" },
+      { source_file: "a.txt", section: "ch2" },
+      { source_file: "b.txt", page: 5 },
+      { source_file: "c.txt", section: "intro" },
+    ];
+    const groups = citationsByFileFrom(fullList);
+    expect(groups.map((g) => g.file)).toEqual(["a.txt", "b.txt", "c.txt"]);
+    expect(groups.find((g) => g.file === "a.txt").count).toBe(2);
+    // Parity: citationsByFile(node) delegates to citationsByFileFrom(node.citations).
+    expect(citationsByFile({ citations: fullList })).toEqual(groups);
+  });
+
+  it("citationsByFileFrom accepts a fallback source_file and handles empty", async () => {
+    const { citationsByFileFrom } = await import("../lib/graphAdapter.js");
+    expect(citationsByFileFrom([])).toEqual([]);
+    expect(citationsByFileFrom(null)).toEqual([]);
+    const g = citationsByFileFrom([{ section: "s" }], "x.txt");
+    expect(g[0].file).toBe("x.txt");
+  });
 });
 
 describe("candidateSubgraph (SVELTE-7)", () => {

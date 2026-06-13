@@ -33,6 +33,13 @@ import {
   resolveCliInputScopeSelection,
   resolveConfiguredInputScopeSelection,
 } from "./input-scope.js";
+import { foldCitationsInto } from "./citations.js";
+import {
+  resolveCitationPolicy,
+  resolveCorpusType,
+  type CitationCapValue,
+  type ResolvedCitationPolicy,
+} from "./citation-policy.js";
 import { forEachTraversalNeighbor, loadGraphFromData } from "./graph.js";
 import { communitiesFromGraph, communityLabelsFromGraph } from "./graph-communities.js";
 import { safeExecGit } from "./git.js";
@@ -127,6 +134,72 @@ function readJson<T>(path: string): T {
 
 function isJsonRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// ---------------------------------------------------------------------------
+// Citation-policy CLI plumbing (SPEC_CITATIONS.md "CLI and config surface").
+//
+// `--citation-cap <n|all>` (describe/label/update) and `--citations-top-k <n>`
+// (extract/update/watch) override the corpus-type default resolved from
+// `.graphify_detect.json`. Precedence: CLI flag > config > corpus-type > global.
+// (Config is flag-only on the code-mode engine path — see report.)
+// ---------------------------------------------------------------------------
+
+/** Parse `--citation-cap <n|all>`. Invalid / empty → undefined (no override). */
+export function parseCitationCapFlag(raw: unknown): CitationCapValue | undefined {
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim().toLowerCase();
+  if (trimmed === "") return undefined;
+  if (trimmed === "all") return "all";
+  const n = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(n) || n < 0 || String(n) !== trimmed) return undefined;
+  return n;
+}
+
+/** Parse `--citations-top-k <n>`. Non-positive / invalid → undefined (no override). */
+export function parseTopKFlag(raw: unknown): number | undefined {
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed === "") return undefined;
+  const n = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(n) || n <= 0 || String(n) !== trimmed) return undefined;
+  return n;
+}
+
+/**
+ * Resolve the citation policy for a project root: read the corpus type from
+ * `.graphify_detect.json` (when present), apply the corpus-type default, then
+ * layer any explicit CLI flags on top. Never throws and never calls an LLM —
+ * a missing/garbage detect file degrades to the global default (cap 10, K 8).
+ */
+export function resolveCitationPolicyForRoot(
+  root: string,
+  flags: {
+    describeCapFlag?: CitationCapValue | undefined;
+    topKFlag?: number | undefined;
+    profileMode?: boolean;
+  },
+): ResolvedCitationPolicy {
+  let detect: { files?: Record<string, unknown>; total_words?: unknown } | null = null;
+  try {
+    const detectPath = resolveGraphifyPaths({ root }).scratch.detect;
+    if (existsSync(detectPath)) {
+      const parsed = readJson<unknown>(detectPath);
+      if (isJsonRecord(parsed)) {
+        detect = parsed as { files?: Record<string, unknown>; total_words?: unknown };
+      }
+    }
+  } catch {
+    /* missing / unreadable / malformed detect → global default */
+  }
+  const corpusType = resolveCorpusType(detect, { profileMode: flags.profileMode ?? false });
+  return resolveCitationPolicy({
+    corpusType,
+    cli: {
+      ...(flags.describeCapFlag !== undefined ? { describeCap: flags.describeCapFlag } : {}),
+      ...(flags.topKFlag !== undefined ? { inlineTopK: flags.topKFlag } : {}),
+    },
+  });
 }
 
 function loadWikiDescriptionSidecarIndex(inputPath?: string): WikiDescriptionSidecarIndex | undefined {
@@ -319,17 +392,23 @@ function ensureCliExtractionShape(value?: Partial<Extraction> | null): Extractio
   };
 }
 
-function mergeCliAstAndSemantic(
+export function mergeCliAstAndSemantic(
   astInput: Partial<Extraction> | null | undefined,
   semanticInput: Partial<Extraction> | null | undefined,
 ): Extraction {
   const ast = ensureCliExtractionShape(astInput);
   const semantic = ensureCliExtractionShape(semanticInput);
   const mergedNodes: Extraction["nodes"] = [...ast.nodes];
-  const seen = new Set(ast.nodes.map((node) => node.id));
+  const byId = new Map(mergedNodes.map((node) => [node.id, node]));
   for (const node of semantic.nodes) {
-    if (seen.has(node.id)) continue;
-    seen.add(node.id);
+    const kept = byId.get(node.id);
+    if (kept) {
+      // SPEC_CITATIONS: before skipping the duplicate, fold its citations into
+      // the kept node so the union (not one chunk's set) survives assembly.
+      foldCitationsInto(kept, node);
+      continue;
+    }
+    byId.set(node.id, node);
     mergedNodes.push(node);
   }
   return {
@@ -3122,6 +3201,7 @@ export async function main(): Promise<void> {
     .option("--concurrency <n>", "Direct backend semantic chunk concurrency", "4")
     .option("--token-budget <n>", "Approximate direct backend token budget per semantic chunk", "60000")
     .option("--no-cluster", "Write the raw merged extraction and skip graph clustering/reporting")
+    .option("--citations-top-k <n>", "Inline Level-1 citations kept per node in graph.json (default: corpus-resolved; 3 code / 8 others)")
     .option("--scope <mode>", scopeOptionDescription())
     .option("--all", "Alias for --scope all")
     .option(
@@ -3351,7 +3431,7 @@ export async function main(): Promise<void> {
           return;
         }
 
-        const [{ buildFromJson }, { cluster, scoreAll }, { godNodes, surprisingConnections, suggestQuestions }, { generate }, { toJson }, { safeToHtml }] = await Promise.all([
+        const [{ buildFromJson }, { cluster, scoreAll }, { godNodes, surprisingConnections, suggestQuestions }, { generate }, { persistGraphWithCitations }, { safeToHtml }] = await Promise.all([
           import("./build.js"),
           import("./cluster.js"),
           import("./analyze.js"),
@@ -3396,7 +3476,14 @@ export async function main(): Promise<void> {
         );
 
         writeFileSync(paths.report, report, "utf-8");
-        toJson(G, communities, paths.graph, { communityLabels: labels, force: true });
+        const extractCitationPolicy = resolveCitationPolicyForRoot(outputRoot, {
+          topKFlag: parseTopKFlag(opts.citationsTopK),
+        });
+        persistGraphWithCitations(G, communities, paths.graph, {
+          communityLabels: labels,
+          force: true,
+          citations: { topK: extractCitationPolicy.inlineTopK },
+        });
         // Track C-3.5: pick up ontology profile for visual encoding override
         // when a graphify.yaml + ontology-profile is present in the project.
         const ontologyProfileForExtractHtml = await tryLoadHtmlOntologyProfile(root);
@@ -3459,15 +3546,18 @@ export async function main(): Promise<void> {
     .command("watch [path]")
     .description("Watch a folder and auto-rebuild graph outputs on code changes")
     .option("--debounce <seconds>", "Wait time before rebuild", "3")
+    .option("--citations-top-k <n>", "Inline Level-1 citations kept per node in graph.json (default: corpus-resolved; 3 code / 8 others)")
     .option("--scope <mode>", scopeOptionDescription())
     .option("--all", "Alias for --scope all")
     .action(async (watchPath, opts) => {
       const { watch } = await import("./watch.js");
       const debounce = Number.parseFloat(opts.debounce);
       const scopeSelection = resolveCliScopeSelection(opts);
+      const topKFlag = parseTopKFlag(opts.citationsTopK);
       await watch(watchPath ?? ".", Number.isFinite(debounce) ? debounce : 3, {
         scope: scopeSelection.mode,
         scopeSource: scopeSelection.source,
+        ...(topKFlag !== undefined ? { citationsTopK: topKFlag } : {}),
       });
     });
 
@@ -3508,6 +3598,8 @@ export async function main(): Promise<void> {
     .option("--label-backend <provider>", "Community-label LLM provider (default: auto-detect from API keys)")
     .option("--label-model <id>", "Community-label LLM model override")
     .option("--label-mode <mode>", "Label execution mode: assistant (default, no key) or direct (API key)", "")
+    .option("--citation-cap <n|all>", "Per-node citation snippets injected into the description prompt (default: corpus-resolved; 3 code / 10 mixed / all long-doc)")
+    .option("--citations-top-k <n>", "Inline Level-1 citations kept per node in graph.json (default: corpus-resolved; 3 code / 8 others)")
     .option("--scope <mode>", scopeOptionDescription())
     .option("--all", "Alias for --scope all")
     .action(async (updatePath = ".", opts) => {
@@ -3517,6 +3609,10 @@ export async function main(): Promise<void> {
       }
       const { rebuildCode } = await import("./watch.js");
       const scopeSelection = resolveCliScopeSelection(opts);
+      const updateCitationPolicy = resolveCitationPolicyForRoot(resolve(updatePath), {
+        describeCapFlag: parseCitationCapFlag(opts.citationCap),
+        topKFlag: parseTopKFlag(opts.citationsTopK),
+      });
       const projectConfigDiscovery = discoverProjectConfig(updatePath);
       if (projectConfigDiscovery.found) {
         console.warn(
@@ -3561,6 +3657,8 @@ export async function main(): Promise<void> {
         ...(typeof opts.labelMode === "string" && (opts.labelMode === "assistant" || opts.labelMode === "direct")
           ? { labelMode: opts.labelMode as "assistant" | "direct" }
           : {}),
+        citationCap: updateCitationPolicy.describeCap,
+        citationsTopK: updateCitationPolicy.inlineTopK,
         scope: scopeSelection.mode,
         scopeSource: scopeSelection.source,
       });
@@ -3724,6 +3822,7 @@ export async function main(): Promise<void> {
     .option("--backend <provider>", "LLM provider (default: auto-detect from API keys)")
     .option("--model <id>", "LLM model override")
     .option("--label-mode <mode>", "Execution mode: assistant (default, no key) or direct (API key)", "")
+    .option("--citation-cap <n|all>", "Accepted for CLI symmetry; has no effect on `label` (use `describe`/`update` to ground descriptions)")
     .action(async (labelPath = ".", opts) => {
       const root = resolve(labelPath);
       const paths = resolveGraphifyPaths({ root });
@@ -3733,6 +3832,13 @@ export async function main(): Promise<void> {
       }
 
       mkdirSync(paths.stateDir, { recursive: true });
+
+      // `label` (re)names communities and never builds the description prompt,
+      // so the resolved cap is informational here (kept for CLI-surface
+      // symmetry with describe/update and validated/normalized via the policy).
+      resolveCitationPolicyForRoot(root, {
+        describeCapFlag: parseCitationCapFlag(opts.citationCap),
+      });
 
       const rawGraphText = readFileSync(paths.graph, "utf-8");
       const rawGraphParsed = JSON.parse(rawGraphText) as {
@@ -3856,6 +3962,7 @@ export async function main(): Promise<void> {
     .option("--description-model <id>", "LLM model override")
     .option("--description-mode <mode>", "Execution mode: assistant (default, no key) or direct (API key)", "")
     .option("--fill-missing", "Only describe nodes whose description is empty/absent (idempotent gap-fill)")
+    .option("--citation-cap <n|all>", "Per-node citation snippets injected into the description prompt (default: corpus-resolved; 3 code / 10 mixed / all long-doc)")
     .action(async (describePath = ".", opts) => {
       const root = resolve(describePath);
       const paths = resolveGraphifyPaths({ root });
@@ -3865,6 +3972,10 @@ export async function main(): Promise<void> {
       }
 
       mkdirSync(paths.stateDir, { recursive: true });
+
+      const citationPolicy = resolveCitationPolicyForRoot(root, {
+        describeCapFlag: parseCitationCapFlag(opts.citationCap),
+      });
 
       const rawGraphText = readFileSync(paths.graph, "utf-8");
       const rawGraphParsed = JSON.parse(rawGraphText) as {
@@ -3896,12 +4007,35 @@ export async function main(): Promise<void> {
 
       const instructionDir = join(paths.stateDir, DESCRIPTION_INSTRUCTIONS_DIR);
 
+      // F4: the graph's inline `citations` is already K-trimmed (<= 8), so a
+      // resolved cap above K (e.g. `--citation-cap all/50` on a long-doc hub)
+      // would inject at most K snippets. Load the fuller per-node citation set
+      // from citations.json and feed it to the describe engine so descriptions
+      // ground on many distinct sources. Absent/missing entries fall back to the
+      // inline set (collectNodeContext never shrinks). No LLM / network.
+      let citationsByNode: Record<string, unknown[]> | undefined;
+      {
+        const { readCitationsSidecar } = await import("./citations.js");
+        const sidecar = readCitationsSidecar(dirname(paths.graph));
+        if (sidecar) {
+          const map: Record<string, unknown[]> = {};
+          for (const [id, entry] of Object.entries(sidecar)) {
+            if (Array.isArray(entry.citations) && entry.citations.length > 0) {
+              map[id] = entry.citations;
+            }
+          }
+          if (Object.keys(map).length > 0) citationsByNode = map;
+        }
+      }
+
       console.log("Generating node descriptions...");
       const result = await generateNodeDescriptions(G, {
         ...(backendArg ? { provider: backendArg } : {}),
         ...(modelArg ? { model: modelArg } : {}),
         ...(descriptionModeArg ? { mode: descriptionModeArg } : {}),
         ...(opts.fillMissing ? { onlyMissing: true } : {}),
+        citationCap: citationPolicy.describeCap,
+        ...(citationsByNode ? { citationsByNode } : {}),
         instructionDir,
       });
 
@@ -3927,6 +4061,70 @@ export async function main(): Promise<void> {
           : "skipped (no LLM backend configured)";
       console.log(
         `Done - ${result.describedCount} node description(s) added/updated (${sourceMsg}). graph.json updated.`,
+      );
+    });
+
+  // ---------------------------------------------------------------------------
+  // graphify backfill-citations [path]
+  // Lossy backward-compat projection of a pre-feature graph: for each node with
+  // a legacy citations[] but no citation_count, set citation_count, trim the
+  // inline set to top-K, and co-emit citations.json. NO LLM / network — purely
+  // deterministic. Counts are a LOWER BOUND (the bounded graph never held the
+  // full union); a re-extract is required for true exhaustive counts.
+  // ---------------------------------------------------------------------------
+  program
+    .command("backfill-citations [path]")
+    .description("Project legacy graph.json citations[] into citation_count + a K-trimmed inline set + citations.json (lower-bound counts; no LLM)")
+    .option("--citations-top-k <n>", "Inline Level-1 citations kept per node (default: corpus-resolved; 3 code / 8 others)")
+    .action(async (backfillPath = ".", opts) => {
+      const root = resolve(backfillPath);
+      const paths = resolveGraphifyPaths({ root });
+      if (!existsSync(paths.graph)) {
+        console.error(`error: no graph found at ${paths.graph} - run /graphify first`);
+        process.exit(1);
+      }
+      mkdirSync(paths.stateDir, { recursive: true });
+
+      const policy = resolveCitationPolicyForRoot(root, {
+        topKFlag: parseTopKFlag(opts.citationsTopK),
+      });
+
+      const rawGraphText = readFileSync(paths.graph, "utf-8");
+      const G = makeGraphPortable(loadGraphFromData(JSON.parse(rawGraphText)), root);
+      const { backfillCitations } = await import("./citations.js");
+      const { toJson } = await import("./export.js");
+
+      // Preserve existing community assignments + names so toJson writes the
+      // graph back byte-for-byte aside from the citation fields.
+      const communities = communitiesFromGraph(G);
+      const communityLabels = communityLabelsFromGraph(G, communities);
+
+      const result = backfillCitations(G, dirname(paths.graph), {
+        topK: policy.inlineTopK,
+      });
+
+      // Re-write graph.json with the trimmed inline citations + citation_count.
+      // Only when something was projected — a graph with nothing to backfill is
+      // left untouched (true no-op, no spurious diff).
+      if (result.backfilledNodes > 0) {
+        toJson(G, communities, paths.graph, { communityLabels, force: true });
+      }
+
+      if (result.backfilledNodes === 0) {
+        console.log(
+          "backfill-citations: nothing to backfill — no node carries a legacy citations[] without a citation_count. graph.json unchanged.",
+        );
+        return;
+      }
+
+      console.log(
+        `backfill-citations: projected ${result.backfilledNodes} node(s); ` +
+          `wrote citation_count + a top-${policy.inlineTopK} inline set + ${result.sidecarPath}.`,
+      );
+      console.log(
+        "CAVEAT (LOWER BOUND): these counts reflect ONLY the bounded citation sample already in graph.json. " +
+          "The original duplicate-discard dropped citations a backfill cannot recover. " +
+          "Re-extract the corpus for true exhaustive counts.",
       );
     });
 
@@ -4974,6 +5172,10 @@ export async function main(): Promise<void> {
         describe: false,
         label: false,
         markDescribePending: true,
+        // Re-derive citations.json LLM-free with the no-shrink guard so the
+        // fast commit-time rebuild never clobbers a fuller existing sidecar
+        // (and rebuilds the full tail from the extraction output when present).
+        citationsReproject: true,
         scope: scopeSelection.mode,
         scopeSource: scopeSelection.source,
       });
