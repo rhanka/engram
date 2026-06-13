@@ -7,8 +7,8 @@ import { type NumericMapLike, toNumericMap } from "./collections.js";
 import { validateWikiDescriptionSidecar, WIKI_DESCRIPTION_PROMPT_VERSION, WIKI_DESCRIPTION_SCHEMA, buildWikiDescriptionCacheKey, buildNodeContentHash, buildCommunityContentHash, createInsufficientEvidenceRecord, type WikiDescriptionGenerator, type WikiDescriptionSidecar, type WikiDescriptionSidecarIndex, type WikiDescriptionTargetKind } from "./wiki-descriptions.js";
 import type { LlmExecutionMode, TextJsonGenerationClient } from "./llm-execution.js";
 
-const DEFAULT_NODE_TARGET_LIMIT = 10;
-const DEFAULT_COMMUNITY_TARGET_LIMIT = 12;
+const DEFAULT_NODE_TARGET_LIMIT = 100;
+const DEFAULT_COMMUNITY_TARGET_LIMIT = 100;
 const DEFAULT_NODE_NEIGHBOR_LIMIT = 12;
 
 interface RawNode {
