@@ -12,9 +12,12 @@
  * a missing sidecar yields nulls so the entity panel stays graph-only.
  */
 
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import type { OntologyCitation } from "./types.js";
 
 export interface StudioAssetResult {
   status: number;
@@ -216,10 +219,127 @@ export function __resetGraphDescriptionCache(): void {
   graphDescriptionCache.clear();
 }
 
+// ---------------------------------------------------------------------------
+// Level-2 citations store (`ontology/citations.json`, SPEC_CITATIONS.md). The
+// full per-entity citation list lives here, served lazily on entity selection.
+// Like the description index above, it can be large and is hit once per
+// selection, so it is loaded through a single mtime-keyed in-memory index
+// (the loadGraphNodeDescriptions pattern) — NOT re-parsed per request.
+//
+// Consistency gate: the store carries the citation-content `graph_signature`
+// of the graph.json it was emitted against. On read, the signature is matched
+// against the current graph.json's citation-content hash; on MISMATCH the
+// store is treated as ABSENT (the client then falls back to the inline K-set).
+// ---------------------------------------------------------------------------
+
+/** One node's Level-2 citation record: true count + the full union list. */
+export interface CitationSidecarEntry {
+  count: number;
+  citations: OntologyCitation[];
+}
+
+interface CitationsSidecarShape {
+  schema?: unknown;
+  graph_signature?: unknown;
+  nodes?: Record<string, CitationSidecarEntry>;
+}
+
+interface CitationsSidecarCacheEntry {
+  mtimeMs: number;
+  store: CitationsSidecarShape | null;
+}
+
+const citationsSidecarCache = new Map<string, CitationsSidecarCacheEntry>();
+
+/**
+ * Load `<stateDir>/ontology/citations.json` through an mtime-keyed in-memory
+ * index. Returns null when the store is missing/unreadable. Cached per state
+ * dir, invalidated on mtime change (an in-process rebuild is picked up).
+ */
+function loadCitationsSidecar(stateDir: string): CitationsSidecarShape | null {
+  const path = join(stateDir, "ontology", "citations.json");
+  let mtimeMs: number;
+  try {
+    mtimeMs = statSync(path).mtimeMs;
+  } catch {
+    citationsSidecarCache.delete(stateDir);
+    return null;
+  }
+  const cached = citationsSidecarCache.get(stateDir);
+  if (cached && cached.mtimeMs === mtimeMs) return cached.store;
+
+  const store = loadJsonSafe<CitationsSidecarShape>(path);
+  citationsSidecarCache.set(stateDir, { mtimeMs, store });
+  return store;
+}
+
+/** Test seam: drop the cached citations.json index. */
+export function __resetCitationsSidecarCache(): void {
+  citationsSidecarCache.clear();
+}
+
+interface GraphFileShapeWithCitations {
+  nodes?: Array<{ id?: unknown; citations?: unknown }>;
+}
+
+/**
+ * Citation-content hash of the on-disk graph.json — a faithful replica of the
+ * pass-1 `computeCitationSignature` (src/citations.ts), which hashes the sorted
+ * projection `{ node_id -> inline citations }` over the in-memory graph. Here
+ * the projection is read from the serialized graph.json node array (toJson
+ * spreads `...attrs`, so each node's inline `citations` is verbatim). Byte-
+ * identical inline citations ⇒ identical signature; any change ⇒ a different
+ * one. Kept in lock-step with citations.ts; the union test cross-checks them.
+ */
+function computeGraphCitationSignature(stateDir: string): string {
+  const graphPath = join(stateDir, "graph.json");
+  const graph = loadJsonSafe<GraphFileShapeWithCitations>(graphPath);
+  const projection: Record<string, OntologyCitation[]> = {};
+  if (graph && Array.isArray(graph.nodes)) {
+    for (const node of graph.nodes) {
+      const id = node?.id;
+      if (typeof id !== "string" || !id) continue;
+      const inline = node?.citations;
+      if (Array.isArray(inline) && inline.length > 0) {
+        projection[id] = inline as OntologyCitation[];
+      }
+    }
+  }
+  const sortedIds = Object.keys(projection).sort();
+  const canonical = sortedIds.map((id) => [id, projection[id]] as const);
+  return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
+}
+
+/**
+ * The Level-2 citation record for a node id, or undefined when the store is
+ * absent / signature-stale / has no entry for the id. The signature gate is
+ * evaluated once per (cached) store read.
+ */
+function loadCitationsForNode(stateDir: string, id: string): CitationSidecarEntry | undefined {
+  const store = loadCitationsSidecar(stateDir);
+  if (!store || !store.nodes) return undefined;
+  // Consistency gate: a content-stale store is treated as ABSENT so the client
+  // falls back to the inline K-set rather than silently mixing tiers.
+  const stamped = typeof store.graph_signature === "string" ? store.graph_signature : "";
+  if (!stamped || stamped !== computeGraphCitationSignature(stateDir)) return undefined;
+  const entry = store.nodes[id];
+  if (!entry || typeof entry !== "object") return undefined;
+  const count = typeof entry.count === "number" ? entry.count : 0;
+  const citations = Array.isArray(entry.citations) ? entry.citations : [];
+  return { count, citations };
+}
+
 export interface EntitySidecarResponse {
   id: string;
   description: { status: string; description: string | null } | null;
   occurrences: unknown;
+  /**
+   * Level-2 full per-entity citation list, lazily served (SPEC_CITATIONS.md).
+   * Present only when `ontology/citations.json` exists, its `graph_signature`
+   * matches the current graph.json, and it carries an entry for this id;
+   * undefined otherwise (the client then renders the inline K-set).
+   */
+  citations?: CitationSidecarEntry;
 }
 
 /**
@@ -261,5 +381,9 @@ export function buildEntitySidecar(stateDir: string, id: string): EntitySidecarR
     occurrences = nodes[id] ?? null;
   }
 
-  return { id, description, occurrences };
+  const citations = loadCitationsForNode(stateDir, id);
+
+  const response: EntitySidecarResponse = { id, description, occurrences };
+  if (citations) response.citations = citations;
+  return response;
 }

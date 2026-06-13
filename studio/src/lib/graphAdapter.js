@@ -693,17 +693,23 @@ export function communityStats(graph) {
 }
 
 /**
- * SVELTE-2: group a node's citations by source file, with their passages.
- * Each citation is `{ source_file, section?, quote? }`. Returns one entry per
- * distinct file, with its passages (section + optional verbatim quote). Used by
- * the entity panel's double accordion (file > passages) for full traceability.
+ * SVELTE-2: group an EXPLICIT citation list by source file, with their
+ * passages. Each citation is `{ source_file, section?, page?, quote? }`. Used
+ * for the citations lazy upgrade: the panel feeds the inline K-set (instant)
+ * first, then the sidecar's full per-entity list once `fetchEntity` resolves —
+ * the same renderer over richer data. `fallbackSourceFile` covers citations
+ * with no own `source_file` (legacy graphs). Passages render LOCATORS
+ * (section/page); there is no verbatim `quote` field in the citation schema, so
+ * `quote` stays null on the new lazy path (the render guards on it).
+ * @param {Array<object>|null|undefined} list
+ * @param {string|null} [fallbackSourceFile]
  * @returns {{ file: string, count: number, passages: { section: string|null, quote: string|null }[] }[]}
  */
-export function citationsByFile(node) {
-  const cites = Array.isArray(node?.citations) ? node.citations : [];
+export function citationsByFileFrom(list, fallbackSourceFile = null) {
+  const cites = Array.isArray(list) ? list : [];
   const byFile = new Map();
   for (const c of cites) {
-    const file = displayValue(c?.source_file) ?? displayValue(node?.source_file) ?? "(unknown source)";
+    const file = displayValue(c?.source_file) ?? displayValue(fallbackSourceFile) ?? "(unknown source)";
     if (!byFile.has(file)) byFile.set(file, []);
     byFile.get(file).push({
       section: displayValue(c?.section) ?? null,
@@ -713,6 +719,18 @@ export function citationsByFile(node) {
   return [...byFile.entries()]
     .map(([file, passages]) => ({ file, count: passages.length, passages }))
     .sort((a, b) => b.count - a.count || a.file.localeCompare(b.file));
+}
+
+/**
+ * SVELTE-2: group a node's inline citations by source file. Thin wrapper over
+ * {@link citationsByFileFrom} that reads `node.citations` (now the K-bounded
+ * inline set) and falls back to `node.source_file`. Renders instantly off the
+ * already-loaded graph; the lazy upgrade calls `citationsByFileFrom` directly
+ * with the sidecar's full list.
+ * @returns {{ file: string, count: number, passages: { section: string|null, quote: string|null }[] }[]}
+ */
+export function citationsByFile(node) {
+  return citationsByFileFrom(node?.citations, node?.source_file ?? null);
 }
 
 /**
