@@ -34,6 +34,12 @@ import {
   resolveConfiguredInputScopeSelection,
 } from "./input-scope.js";
 import { foldCitationsInto } from "./citations.js";
+import {
+  resolveCitationPolicy,
+  resolveCorpusType,
+  type CitationCapValue,
+  type ResolvedCitationPolicy,
+} from "./citation-policy.js";
 import { forEachTraversalNeighbor, loadGraphFromData } from "./graph.js";
 import { communitiesFromGraph, communityLabelsFromGraph } from "./graph-communities.js";
 import { safeExecGit } from "./git.js";
@@ -128,6 +134,72 @@ function readJson<T>(path: string): T {
 
 function isJsonRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// ---------------------------------------------------------------------------
+// Citation-policy CLI plumbing (SPEC_CITATIONS.md "CLI and config surface").
+//
+// `--citation-cap <n|all>` (describe/label/update) and `--citations-top-k <n>`
+// (extract/update/watch) override the corpus-type default resolved from
+// `.graphify_detect.json`. Precedence: CLI flag > config > corpus-type > global.
+// (Config is flag-only on the code-mode engine path — see report.)
+// ---------------------------------------------------------------------------
+
+/** Parse `--citation-cap <n|all>`. Invalid / empty → undefined (no override). */
+export function parseCitationCapFlag(raw: unknown): CitationCapValue | undefined {
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim().toLowerCase();
+  if (trimmed === "") return undefined;
+  if (trimmed === "all") return "all";
+  const n = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(n) || n < 0 || String(n) !== trimmed) return undefined;
+  return n;
+}
+
+/** Parse `--citations-top-k <n>`. Non-positive / invalid → undefined (no override). */
+export function parseTopKFlag(raw: unknown): number | undefined {
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed === "") return undefined;
+  const n = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(n) || n <= 0 || String(n) !== trimmed) return undefined;
+  return n;
+}
+
+/**
+ * Resolve the citation policy for a project root: read the corpus type from
+ * `.graphify_detect.json` (when present), apply the corpus-type default, then
+ * layer any explicit CLI flags on top. Never throws and never calls an LLM —
+ * a missing/garbage detect file degrades to the global default (cap 10, K 8).
+ */
+export function resolveCitationPolicyForRoot(
+  root: string,
+  flags: {
+    describeCapFlag?: CitationCapValue | undefined;
+    topKFlag?: number | undefined;
+    profileMode?: boolean;
+  },
+): ResolvedCitationPolicy {
+  let detect: { files?: Record<string, unknown>; total_words?: unknown } | null = null;
+  try {
+    const detectPath = resolveGraphifyPaths({ root }).scratch.detect;
+    if (existsSync(detectPath)) {
+      const parsed = readJson<unknown>(detectPath);
+      if (isJsonRecord(parsed)) {
+        detect = parsed as { files?: Record<string, unknown>; total_words?: unknown };
+      }
+    }
+  } catch {
+    /* missing / unreadable / malformed detect → global default */
+  }
+  const corpusType = resolveCorpusType(detect, { profileMode: flags.profileMode ?? false });
+  return resolveCitationPolicy({
+    corpusType,
+    cli: {
+      ...(flags.describeCapFlag !== undefined ? { describeCap: flags.describeCapFlag } : {}),
+      ...(flags.topKFlag !== undefined ? { inlineTopK: flags.topKFlag } : {}),
+    },
+  });
 }
 
 function loadWikiDescriptionSidecarIndex(inputPath?: string): WikiDescriptionSidecarIndex | undefined {
@@ -3129,6 +3201,7 @@ export async function main(): Promise<void> {
     .option("--concurrency <n>", "Direct backend semantic chunk concurrency", "4")
     .option("--token-budget <n>", "Approximate direct backend token budget per semantic chunk", "60000")
     .option("--no-cluster", "Write the raw merged extraction and skip graph clustering/reporting")
+    .option("--citations-top-k <n>", "Inline Level-1 citations kept per node in graph.json (default: corpus-resolved; 3 code / 8 others)")
     .option("--scope <mode>", scopeOptionDescription())
     .option("--all", "Alias for --scope all")
     .option(
@@ -3403,7 +3476,14 @@ export async function main(): Promise<void> {
         );
 
         writeFileSync(paths.report, report, "utf-8");
-        persistGraphWithCitations(G, communities, paths.graph, { communityLabels: labels, force: true });
+        const extractCitationPolicy = resolveCitationPolicyForRoot(outputRoot, {
+          topKFlag: parseTopKFlag(opts.citationsTopK),
+        });
+        persistGraphWithCitations(G, communities, paths.graph, {
+          communityLabels: labels,
+          force: true,
+          citations: { topK: extractCitationPolicy.inlineTopK },
+        });
         // Track C-3.5: pick up ontology profile for visual encoding override
         // when a graphify.yaml + ontology-profile is present in the project.
         const ontologyProfileForExtractHtml = await tryLoadHtmlOntologyProfile(root);
@@ -3466,15 +3546,18 @@ export async function main(): Promise<void> {
     .command("watch [path]")
     .description("Watch a folder and auto-rebuild graph outputs on code changes")
     .option("--debounce <seconds>", "Wait time before rebuild", "3")
+    .option("--citations-top-k <n>", "Inline Level-1 citations kept per node in graph.json (default: corpus-resolved; 3 code / 8 others)")
     .option("--scope <mode>", scopeOptionDescription())
     .option("--all", "Alias for --scope all")
     .action(async (watchPath, opts) => {
       const { watch } = await import("./watch.js");
       const debounce = Number.parseFloat(opts.debounce);
       const scopeSelection = resolveCliScopeSelection(opts);
+      const topKFlag = parseTopKFlag(opts.citationsTopK);
       await watch(watchPath ?? ".", Number.isFinite(debounce) ? debounce : 3, {
         scope: scopeSelection.mode,
         scopeSource: scopeSelection.source,
+        ...(topKFlag !== undefined ? { citationsTopK: topKFlag } : {}),
       });
     });
 
@@ -3515,6 +3598,8 @@ export async function main(): Promise<void> {
     .option("--label-backend <provider>", "Community-label LLM provider (default: auto-detect from API keys)")
     .option("--label-model <id>", "Community-label LLM model override")
     .option("--label-mode <mode>", "Label execution mode: assistant (default, no key) or direct (API key)", "")
+    .option("--citation-cap <n|all>", "Per-node citation snippets injected into the description prompt (default: corpus-resolved; 3 code / 10 mixed / all long-doc)")
+    .option("--citations-top-k <n>", "Inline Level-1 citations kept per node in graph.json (default: corpus-resolved; 3 code / 8 others)")
     .option("--scope <mode>", scopeOptionDescription())
     .option("--all", "Alias for --scope all")
     .action(async (updatePath = ".", opts) => {
@@ -3524,6 +3609,10 @@ export async function main(): Promise<void> {
       }
       const { rebuildCode } = await import("./watch.js");
       const scopeSelection = resolveCliScopeSelection(opts);
+      const updateCitationPolicy = resolveCitationPolicyForRoot(resolve(updatePath), {
+        describeCapFlag: parseCitationCapFlag(opts.citationCap),
+        topKFlag: parseTopKFlag(opts.citationsTopK),
+      });
       const projectConfigDiscovery = discoverProjectConfig(updatePath);
       if (projectConfigDiscovery.found) {
         console.warn(
@@ -3568,6 +3657,8 @@ export async function main(): Promise<void> {
         ...(typeof opts.labelMode === "string" && (opts.labelMode === "assistant" || opts.labelMode === "direct")
           ? { labelMode: opts.labelMode as "assistant" | "direct" }
           : {}),
+        citationCap: updateCitationPolicy.describeCap,
+        citationsTopK: updateCitationPolicy.inlineTopK,
         scope: scopeSelection.mode,
         scopeSource: scopeSelection.source,
       });
@@ -3731,6 +3822,7 @@ export async function main(): Promise<void> {
     .option("--backend <provider>", "LLM provider (default: auto-detect from API keys)")
     .option("--model <id>", "LLM model override")
     .option("--label-mode <mode>", "Execution mode: assistant (default, no key) or direct (API key)", "")
+    .option("--citation-cap <n|all>", "Per-node citation cap forwarded to the description engine when this run also (re)describes; resolved from corpus type when absent")
     .action(async (labelPath = ".", opts) => {
       const root = resolve(labelPath);
       const paths = resolveGraphifyPaths({ root });
@@ -3740,6 +3832,13 @@ export async function main(): Promise<void> {
       }
 
       mkdirSync(paths.stateDir, { recursive: true });
+
+      // `label` (re)names communities and never builds the description prompt,
+      // so the resolved cap is informational here (kept for CLI-surface
+      // symmetry with describe/update and validated/normalized via the policy).
+      resolveCitationPolicyForRoot(root, {
+        describeCapFlag: parseCitationCapFlag(opts.citationCap),
+      });
 
       const rawGraphText = readFileSync(paths.graph, "utf-8");
       const rawGraphParsed = JSON.parse(rawGraphText) as {
@@ -3863,6 +3962,7 @@ export async function main(): Promise<void> {
     .option("--description-model <id>", "LLM model override")
     .option("--description-mode <mode>", "Execution mode: assistant (default, no key) or direct (API key)", "")
     .option("--fill-missing", "Only describe nodes whose description is empty/absent (idempotent gap-fill)")
+    .option("--citation-cap <n|all>", "Per-node citation snippets injected into the description prompt (default: corpus-resolved; 3 code / 10 mixed / all long-doc)")
     .action(async (describePath = ".", opts) => {
       const root = resolve(describePath);
       const paths = resolveGraphifyPaths({ root });
@@ -3872,6 +3972,10 @@ export async function main(): Promise<void> {
       }
 
       mkdirSync(paths.stateDir, { recursive: true });
+
+      const citationPolicy = resolveCitationPolicyForRoot(root, {
+        describeCapFlag: parseCitationCapFlag(opts.citationCap),
+      });
 
       const rawGraphText = readFileSync(paths.graph, "utf-8");
       const rawGraphParsed = JSON.parse(rawGraphText) as {
@@ -3909,6 +4013,7 @@ export async function main(): Promise<void> {
         ...(modelArg ? { model: modelArg } : {}),
         ...(descriptionModeArg ? { mode: descriptionModeArg } : {}),
         ...(opts.fillMissing ? { onlyMissing: true } : {}),
+        citationCap: citationPolicy.describeCap,
         instructionDir,
       });
 

@@ -149,6 +149,20 @@ export async function rebuildCode(
      * only when THIS flag is set — never merely because `describe === false`.
      */
     markDescribePending?: boolean;
+    /**
+     * Per-node citation cap injected into the description prompt. Forwarded to
+     * `generateNodeDescriptions`. Resolved from corpus type by the CLI when a
+     * `--citation-cap` flag is absent; undefined here → the node-descriptions
+     * resolved default (10).
+     */
+    citationCap?: number | "all";
+    /**
+     * Inline Level-1 citations kept per node in graph.json (the K-bounded set).
+     * Forwarded to `persistGraphWithCitations`. Resolved from corpus type by the
+     * CLI when a `--citations-top-k` flag is absent; undefined → the citations
+     * module default (8).
+     */
+    citationsTopK?: number;
   } = {},
 ): Promise<boolean> {
   try {
@@ -388,6 +402,7 @@ export async function rebuildCode(
         ...(options.descriptionMaxNodes !== undefined ? { maxNodes: options.descriptionMaxNodes } : {}),
         ...(options.descriptionOnlyMissing ? { onlyMissing: true } : {}),
         ...(options.descriptionMode ? { mode: options.descriptionMode } : {}),
+        ...(options.citationCap !== undefined ? { citationCap: options.citationCap } : {}),
         instructionDir: join(paths.stateDir, "description-instructions"),
       });
       // "Complete" = every describable node now has a description. When a backend
@@ -399,6 +414,7 @@ export async function rebuildCode(
     const jsonWritten = persistGraphWithCitations(G, communities, paths.graph, {
       communityLabels: labels,
       force: options.force,
+      ...(options.citationsTopK !== undefined ? { citations: { topK: options.citationsTopK } } : {}),
     });
     if (!jsonWritten) {
       return false;
@@ -670,6 +686,8 @@ export async function watch(
   options: {
     scope?: GraphifyInputScopeMode;
     scopeSource?: InputScopeSource;
+    /** Inline Level-1 citations kept per node in graph.json. Default: corpus-resolved. */
+    citationsTopK?: number;
   } = {},
 ): Promise<void> {
   let chokidar: typeof import("chokidar");
