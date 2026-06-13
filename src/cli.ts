@@ -4007,6 +4007,27 @@ export async function main(): Promise<void> {
 
       const instructionDir = join(paths.stateDir, DESCRIPTION_INSTRUCTIONS_DIR);
 
+      // F4: the graph's inline `citations` is already K-trimmed (<= 8), so a
+      // resolved cap above K (e.g. `--citation-cap all/50` on a long-doc hub)
+      // would inject at most K snippets. Load the fuller per-node citation set
+      // from citations.json and feed it to the describe engine so descriptions
+      // ground on many distinct sources. Absent/missing entries fall back to the
+      // inline set (collectNodeContext never shrinks). No LLM / network.
+      let citationsByNode: Record<string, unknown[]> | undefined;
+      {
+        const { readCitationsSidecar } = await import("./citations.js");
+        const sidecar = readCitationsSidecar(dirname(paths.graph));
+        if (sidecar) {
+          const map: Record<string, unknown[]> = {};
+          for (const [id, entry] of Object.entries(sidecar)) {
+            if (Array.isArray(entry.citations) && entry.citations.length > 0) {
+              map[id] = entry.citations;
+            }
+          }
+          if (Object.keys(map).length > 0) citationsByNode = map;
+        }
+      }
+
       console.log("Generating node descriptions...");
       const result = await generateNodeDescriptions(G, {
         ...(backendArg ? { provider: backendArg } : {}),
@@ -4014,6 +4035,7 @@ export async function main(): Promise<void> {
         ...(descriptionModeArg ? { mode: descriptionModeArg } : {}),
         ...(opts.fillMissing ? { onlyMissing: true } : {}),
         citationCap: citationPolicy.describeCap,
+        ...(citationsByNode ? { citationsByNode } : {}),
         instructionDir,
       });
 

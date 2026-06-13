@@ -428,6 +428,7 @@ export interface NodeContext {
 function collectCitationContext(
   attrs: Record<string, unknown>,
   cap: number = MAX_CITATIONS,
+  citationsOverride?: unknown[],
 ): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
@@ -440,7 +441,11 @@ function collectCitationContext(
     }
   };
 
-  const citations = attrs.citations;
+  // F4: on the describe-on-existing-graph path the node's in-memory `citations`
+  // is already K-trimmed; a caller that loaded the fuller per-node set from
+  // citations.json passes it here so `--citation-cap all/50` can ground on more
+  // than K distinct sources. Falls back to the inline attr otherwise.
+  const citations = citationsOverride ?? attrs.citations;
   if (Array.isArray(citations)) {
     for (const entry of citations) {
       if (out.length >= cap) break;
@@ -496,6 +501,15 @@ export interface CollectNodeContextOptions {
    * every citation. Unspecified resolves to RESOLVED_DEFAULT_CITATION_CAP (10).
    */
   citationCap?: CitationCap;
+  /**
+   * F4: fuller per-node citation sets (keyed by node id), loaded from
+   * citations.json on the describe-on-existing-graph path. When an entry is
+   * present AND longer than the node's K-trimmed inline `citations`, it is used
+   * for prompt grounding so `--citation-cap all/50` can reach beyond K distinct
+   * sources. A missing/empty/smaller entry falls back to the inline set (never
+   * shrinks).
+   */
+  citationsByNode?: Record<string, unknown[]>;
 }
 
 export function collectNodeContext(
@@ -506,6 +520,12 @@ export function collectNodeContext(
   const attrs = G.getNodeAttributes(nodeId) as Record<string, unknown>;
   const isCode = isCodeNode(attrs);
   const cap = resolveCitationCap(options.citationCap);
+  // F4: prefer the fuller sidecar set only when it is genuinely richer than the
+  // K-trimmed inline — otherwise keep the inline so we never shrink grounding.
+  const inlineLen = Array.isArray(attrs.citations) ? attrs.citations.length : 0;
+  const override = options.citationsByNode?.[nodeId];
+  const citationsOverride =
+    Array.isArray(override) && override.length > inlineLen ? override : undefined;
   return {
     id: nodeId,
     label: truncate(safeString(attrs.label) ?? nodeId),
@@ -516,7 +536,7 @@ export function collectNodeContext(
     degree: G.degree(nodeId),
     neighbors: collectNeighbors(G, nodeId, 6),
     // Citation grounding only matters for entity nodes; skip the work for code.
-    citations: isCode ? [] : collectCitationContext(attrs, cap),
+    citations: isCode ? [] : collectCitationContext(attrs, cap, citationsOverride),
   };
 }
 
@@ -731,6 +751,12 @@ export interface DescribeNodesOptions {
    * resolves to RESOLVED_DEFAULT_CITATION_CAP (10).
    */
   citationCap?: CitationCap;
+  /**
+   * F4: fuller per-node citation sets (from citations.json) keyed by node id.
+   * On the describe-on-existing-graph path the inline `citations` is K-trimmed,
+   * so the caller passes the fuller set here to ground beyond K.
+   */
+  citationsByNode?: Record<string, unknown[]>;
 }
 
 /**
@@ -755,7 +781,10 @@ export async function describeNodes(
 
   for (const batch of chunk(targetIds, batchSize)) {
     const contexts = batch.map((id) =>
-      collectNodeContext(G, id, { citationCap: options.citationCap }),
+      collectNodeContext(G, id, {
+        citationCap: options.citationCap,
+        ...(options.citationsByNode ? { citationsByNode: options.citationsByNode } : {}),
+      }),
     );
     const prompt = buildNodeDescriptionPrompt(contexts);
     const validIds = new Set(batch);
@@ -818,6 +847,13 @@ export interface GenerateNodeDescriptionsOptions {
    * Flows on BOTH the direct (API) path and the no-key assistant path.
    */
   citationCap?: CitationCap;
+  /**
+   * F4: fuller per-node citation sets (from citations.json) keyed by node id.
+   * Supplied by the describe-on-existing-graph CLI path so `--citation-cap
+   * all/50` can ground on more than the K-trimmed inline `citations`. Flows on
+   * BOTH the direct (API) path and the no-key assistant path.
+   */
+  citationsByNode?: Record<string, unknown[]>;
 }
 
 /**
@@ -1048,7 +1084,12 @@ export async function generateNodeDescriptions(
       return skip("assistant", "noBackend");
     }
     const batches = chunk(
-      targetIds.map((id) => collectNodeContext(G, id, { citationCap: options.citationCap })),
+      targetIds.map((id) =>
+        collectNodeContext(G, id, {
+          citationCap: options.citationCap,
+          ...(options.citationsByNode ? { citationsByNode: options.citationsByNode } : {}),
+        }),
+      ),
       batchSize,
     );
     const { instructionPaths, answerPaths } = emitDescriptionInstructions(
@@ -1107,6 +1148,7 @@ export async function generateNodeDescriptions(
       ...(options.callLlm ? { callLlm: options.callLlm } : {}),
       ...(options.onlyMissing !== undefined ? { onlyMissing: options.onlyMissing } : {}),
       ...(options.citationCap !== undefined ? { citationCap: options.citationCap } : {}),
+      ...(options.citationsByNode ? { citationsByNode: options.citationsByNode } : {}),
     });
 
     let describedCount = 0;
