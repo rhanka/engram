@@ -13,6 +13,13 @@
  *
  *   CLI flag  >  config (`citations.*`)  >  corpus-type default  >  global default
  *
+ * v1 wiring note: the `config` tier is NOT populated by the code-mode CLI —
+ * `resolveCitationPolicyForRoot` never passes `config` (the loader is
+ * ontology-profile-only), so the effective v1 precedence is the 3-tier
+ * `CLI flag > corpus-type default > global default`. The `config` slot is
+ * retained here for a future PR that wires the `citations:` YAML block; until
+ * then it is inert (SPEC_CITATIONS "CLI and config surface", F3/7a).
+ *
  * Everything here is a PURE function: no fs, no LLM, no network. Callers read
  * `.graphify_detect.json` and pass the parsed object in.
  */
