@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import Graph from "graphology";
 import { godNodes } from "./analyze.js";
 import { type NumericMapLike, toNumericMap } from "./collections.js";
-import { validateWikiDescriptionSidecar, WIKI_DESCRIPTION_PROMPT_VERSION, WIKI_DESCRIPTION_SCHEMA, buildWikiDescriptionCacheKey, createInsufficientEvidenceRecord, type WikiDescriptionGenerator, type WikiDescriptionSidecar, type WikiDescriptionSidecarIndex, type WikiDescriptionTargetKind } from "./wiki-descriptions.js";
+import { validateWikiDescriptionSidecar, WIKI_DESCRIPTION_PROMPT_VERSION, WIKI_DESCRIPTION_SCHEMA, buildWikiDescriptionCacheKey, buildNodeContentHash, buildCommunityContentHash, createInsufficientEvidenceRecord, type WikiDescriptionGenerator, type WikiDescriptionSidecar, type WikiDescriptionSidecarIndex, type WikiDescriptionTargetKind } from "./wiki-descriptions.js";
 import type { LlmExecutionMode, TextJsonGenerationClient } from "./llm-execution.js";
 
 const DEFAULT_NODE_TARGET_LIMIT = 10;
@@ -475,6 +475,28 @@ function writeIndex(path: string | undefined, index: WikiDescriptionSidecarIndex
   writeFileSync(path, JSON.stringify(index, null, 2) + "\n", "utf-8");
 }
 
+/**
+ * C2 — Compute the per-target content hash for a describe target.
+ * For node targets: covers label, node_type, sorted neighbor (relation, id) pairs,
+ * and evidence_refs. For community targets: covers label, sorted member ids, and
+ * source_refs. An unrelated graph.json change will not affect these hashes.
+ */
+function buildTargetContentHash(target: WikiDescriptionTargetContext): string {
+  if (target.target_kind === "node") {
+    return buildNodeContentHash({
+      label: target.label,
+      node_type: target.node_type,
+      neighbors: target.neighbors.map((n) => ({ relation: n.relation, target_id: n.target_id })),
+      evidence_refs: target.source_refs,
+    });
+  }
+  return buildCommunityContentHash({
+    label: target.label,
+    member_ids: target.top_members.map((m) => m.id),
+    source_refs: target.source_refs,
+  });
+}
+
 function ensureSidecarGenerator(
   sidecar: WikiDescriptionSidecar,
   mode: LlmExecutionMode,
@@ -482,11 +504,13 @@ function ensureSidecarGenerator(
   model: string | null,
   graphHash: string,
   promptVersion: string,
+  nodeContentHash?: string | null,
 ): WikiDescriptionSidecar {
   const cache_key = buildWikiDescriptionCacheKey({
     target_id: sidecar.target_id,
     target_kind: sidecar.target_kind,
     graph_hash: graphHash,
+    node_content_hash: nodeContentHash,
     prompt_version: promptVersion,
     mode,
     provider,
@@ -496,6 +520,7 @@ function ensureSidecarGenerator(
   return {
     ...sidecar,
     graph_hash: graphHash,
+    ...(nodeContentHash != null ? { node_content_hash: nodeContentHash } : {}),
     cache_key,
     generator: {
       mode,
@@ -510,6 +535,7 @@ function buildFallbackSidecar(
   target: WikiDescriptionTargetContext,
   options: {
     graph_hash: string;
+    node_content_hash?: string | null;
     prompt_version: string;
     mode: LlmExecutionMode;
     provider: string;
@@ -521,6 +547,7 @@ function buildFallbackSidecar(
     target_id: target.target_id,
     target_kind: target.target_kind,
     graph_hash: options.graph_hash,
+    node_content_hash: options.node_content_hash,
     mode: options.mode,
     prompt_version: options.prompt_version,
     provider: options.provider,
@@ -537,6 +564,7 @@ function tryReadGeneratedSidecar(
     provider: string;
     model: string | null;
     graph_hash: string;
+    node_content_hash?: string | null;
     prompt_version: string;
     createdAt?: string;
   },
@@ -554,6 +582,7 @@ function tryReadGeneratedSidecar(
         metadata.model,
         metadata.graph_hash,
         metadata.prompt_version,
+        metadata.node_content_hash,
       );
     }
 
@@ -580,6 +609,7 @@ function tryReadGeneratedSidecar(
       target_id: target.target_id,
       target_kind: target.target_kind,
       graph_hash: metadata.graph_hash,
+      ...(metadata.node_content_hash != null ? { node_content_hash: metadata.node_content_hash } : {}),
       status: "generated",
       description,
       evidence_refs: evidenceRefs as [string, ...string[]],
@@ -588,6 +618,7 @@ function tryReadGeneratedSidecar(
         target_id: target.target_id,
         target_kind: target.target_kind,
         graph_hash: metadata.graph_hash,
+        node_content_hash: metadata.node_content_hash,
         prompt_version: metadata.prompt_version,
         mode: metadata.mode,
         provider: metadata.provider,
@@ -641,8 +672,11 @@ export async function generateWikiDescriptionSidecars(
   if (!client) {
     for (const target of allTargets) {
       const outputPath = targetOutputPath(outputDir, target.target_id);
+      // C2: compute per-target content hash so unrelated graph changes don't stale
+      const node_content_hash = buildTargetContentHash(target);
       const sidecar = buildFallbackSidecar(target, {
         graph_hash: graphHash,
+        node_content_hash,
         prompt_version: promptVersion,
         mode,
         provider: mode,
@@ -698,8 +732,11 @@ export async function generateWikiDescriptionSidecars(
       outputPath,
     });
 
+    // C2: compute per-target content hash so unrelated graph changes don't stale
+    const node_content_hash = buildTargetContentHash(target);
     const generatorMetadata = {
       graph_hash: graphHash,
+      node_content_hash,
       prompt_version: promptVersion,
       mode,
       provider: client.provider,
