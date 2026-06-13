@@ -516,7 +516,9 @@ export function toJson(
   // canonical fields (label, source_file, relation) were HTML-escaped on
   // every write. Untrusted node / edge metadata sites must apply the helper
   // at the assignment site instead.
+  const provenance = G.getAttribute("provenance");
   const sanitisedGraphBlock = sanitizeMetadata({
+    ...(provenance !== undefined ? { provenance } : {}),
     community_labels: communityLabelsObject,
     ...buildFreshnessMetadata(outputPath),
   });
