@@ -4,6 +4,18 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.13.1 (2026-06-13)
+
+Description-contract correction: `graph.json` `node.description` is the canonical description; the wiki sidecar only enriches/fills gaps and never masks or blanks a valid canonical description.
+
+- **Exports honor `node.description`.** `export wiki`, `export html`, and `export obsidian` now render a node's `description` from `graph.json` when no fresh `generated` wiki sidecar exists (previously they showed a Description only when a sidecar was passed, so a correctly-described graph rendered blank). Precedence is `node.description` > fresh `generated` sidecar > none, consistent with the Studio entity panel. `insufficient_evidence`/stale sidecars never blank a node that has a canonical description.
+- **Per-node sidecar freshness.** A wiki sidecar is staled by a change to *its own* node's describe-relevant attributes, not by any unrelated byte change to `graph.json`.
+- **Bigger default describe coverage.** `graphify wiki describe` defaults to the top **100** node + **100** community targets (was 10/12); `--max-nodes 0` / `--max-communities 0` = unlimited. The canonical `graphify update` describe path already covers all describable nodes by default.
+- **Honest assistant-mode pending state.** When `graphify update` runs in no-key assistant mode and emits instruction files that are never answered, `check-update` now reports the pending work (instead of falsely "current"); instruction files are cleaned up on a completing run, so a stale orphan no longer causes a permanent false-pending. The `--no-description` opt-out still never marks the graph stale.
+- **Ungrounded-node visibility.** The describe coverage report now counts entity nodes that have no citations/evidence (left undescribed by the anti-hallucination policy) instead of silently excluding them.
+
+Patch bump (export/render + describe-flow correctness; no graph-schema or CLI-contract change). `@sentropic/graph` unchanged at 0.1.3.
+
 ## 0.13.0 (2026-06-12)
 
 Node descriptions and community labels now work **by default without any API key** — via the assistant/skill (CLI) path — for both code and non-code nodes.
