@@ -40,3 +40,27 @@ describe("EntityPanel description", () => {
     expect(panelSource).toMatch(/\.entity-description\s*{[\s\S]*font-size:\s*0\.9rem;[\s\S]*}/);
   });
 });
+
+describe("EntityPanel citations (exhaustive-citations Level-1/Level-2)", () => {
+  it("Citations header count reads node.citation_count (true count), not the inline sum", () => {
+    // A hub reads "Citations (214)" immediately from the Level-1 true count;
+    // only old graphs (no citation_count) fall back to the inline length.
+    expect(panelSource).toMatch(/node\.citation_count/);
+    expect(panelSource).toMatch(/typeof node\.citation_count === "number"/);
+    // The count is fed to the Citations accordion.
+    expect(panelSource).toMatch(/<Accordion title="Citations" count=\{citationTotal\}/);
+  });
+
+  it("renders the inline K-set instantly, then upgrades to the sidecar's full list", () => {
+    // Inline node.citations (K-set) renders before the fetch resolves; when the
+    // lazy sidecar arrives with citations.citations, the full list replaces it.
+    expect(panelSource).toMatch(/citationsByFileFrom/);
+    expect(panelSource).toMatch(/entity\?\.citations\?\.citations/);
+    // The full list is preferred over the inline node citations when present.
+    expect(panelSource).toMatch(/Array\.isArray\(entity\?\.citations\?\.citations\)/);
+  });
+
+  it("imports citationsByFileFrom for the lazy upgrade", () => {
+    expect(panelSource).toMatch(/citationsByFileFrom/);
+  });
+});

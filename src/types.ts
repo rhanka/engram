@@ -51,6 +51,14 @@ export interface GraphNode {
   previous_status?: OntologyStatus;
   review_status?: OntologyStatus;
   citations?: OntologyCitation[];
+  /**
+   * True number of distinct citations for this entity across the whole corpus
+   * (size of the deduped union). Degree-independent "cited N times" signal,
+   * authoritative even when the inline `citations` set is trimmed to the
+   * deterministic top-K. Populated by the pre-toJson aggregation pass; the full
+   * list beyond K lives in the co-derived `citations.json`. Additive/optional.
+   */
+  citation_count?: number;
   evidence_refs?: string[];
   confidence_handle?: string;
   provenance_handle?: string;
