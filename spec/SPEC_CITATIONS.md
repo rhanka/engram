@@ -169,7 +169,7 @@ Key points:
 - **CLI flag (override).** Placement corrected after review:
   - `--citation-cap <n|all>` on the commands that build the description prompt: `graphify describe|label|update` (these call `toJson`/the describe engine). `describe`/`label` have no such flag today (`cli.ts:3853-3858`), so it is added.
   - `--citations-top-k <n>` on the commands that WRITE graph.json node citations via `toJson`: `graphify extract|update|watch` — NOT the top-level `graphify build` (`cli.ts:2750`), which is a non-LLM profile chain (`validate → dataprep → ontology-output`) that never runs `toJson` and cannot apply the flag.
-  - Precedence: CLI flag > config > corpus-type default (from `.graphify_detect.json`) > global default (cap 10, K 8). `assistant`-mode skill runs set the corpus-type default before invoking; no key required.
+  - Precedence (v1): CLI flag > corpus-type default (from `.graphify_detect.json`) > global default (cap 10, K 8). `assistant`-mode skill runs set the corpus-type default before invoking; no key required. (The `citations:` YAML config block is NOT loaded by the code-mode CLI in v1 — flag + corpus-type only; config wiring deferred. The resolver keeps an inert `config` slot for a future tier.)
 
 ## Studio UX
 
@@ -214,6 +214,11 @@ graphify backfill-citations [path]                # project legacy citations[] -
 `--citations-top-k` is NOT added to the top-level `graphify build` (non-LLM profile chain; does not write graph.json node citations).
 
 ```yaml
+# (v1: NOT loaded by the code-mode CLI — flag + corpus-type only; config wiring
+#  deferred. The code-mode loader is ontology-profile-only and
+#  `resolveCitationPolicyForRoot` never passes `config`, so these keys are inert
+#  today. The `config` slot is retained in `resolveCitationPolicy` for a future
+#  PR, but the surface advertised below is the real 3-tier v1 precedence.)
 citations:
   describe_cap: 10        # n | "all" ; corpus-type default unless set
   inline_top_k: 8         # Level-1 inline K
@@ -221,7 +226,7 @@ citations:
   dedupe_key: [source_file, page, section, paragraph_id]   # bbox added only for figure/image corpora
 ```
 
-Precedence: CLI flag > config > corpus-type default (from `.graphify_detect.json`) > global default (cap 10, K 8). `assistant`-mode skill runs set the corpus-type default before invoking; no key required.
+Precedence (v1): CLI flag > corpus-type default (from `.graphify_detect.json`) > global default (cap 10, K 8). `assistant`-mode skill runs set the corpus-type default before invoking; no key required. (The `citations:` YAML block above is NOT wired in v1 — config wiring is deferred; the `resolveCitationPolicy` `config` slot stays for future use but does not participate in the advertised v1 precedence.)
 
 ## Test plan
 
