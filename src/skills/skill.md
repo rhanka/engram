@@ -1423,6 +1423,22 @@ graphify claude uninstall  # remove the section
 
 ---
 
+## For /graphify agent-stats
+
+Attribute branches, commits, and work-packages to the agentic-CLI **session** that produced them, by indexing conversation transcripts already on disk (Claude `~/.claude/projects/`, Codex `~/.codex/sessions/`, agy/Antigravity `~/.gemini/`). Use it when git authorship is uniform/uninformative (e.g. every commit is the same human author with no agent trailer) and you need to know which agent did what. Attribution is ranked evidence (commit-sha printed in tool output > Codex thread-ids > h2a registry > worktree×branch×time-window > PR-merge), never the git author. Citation excerpts are anonymized before they leave the store.
+
+```bash
+graphify agent-stats                       # per-agent summary table (--format text|json|md)
+graphify agent-stats report [--agent <id>] # per-agent detail with anonymized evidence citations
+graphify agent-stats sync [--full]         # parse/refresh transcripts into .graphify/agents/facts.jsonl
+graphify agent-stats sessions [--agent <id>] [--branch <b>] [--since <date>] [--json]
+graphify agent-stats wp <trackItemId> [--no-pr] [--json]   # conductor view: sessions joined to a Track work-package
+```
+
+The store (`.graphify/agents/facts.jsonl` + byte-offset cursors) is fully re-derivable; `sync` is incremental. The reports emit stable `graphify.agent-stats/v1` (summary/report) and `graphify.agent-stats.sessions/v1` (sessions) schemas. `wp` optionally uses `gh` to add PR-merge attribution (`--no-pr` to skip).
+
+---
+
 ## Honesty Rules
 
 - Never invent an edge. If unsure, use AMBIGUOUS.
