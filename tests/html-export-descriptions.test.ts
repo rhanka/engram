@@ -100,3 +100,96 @@ describe("Track G G-studio-lot4 — node descriptions in HTML export (part A)", 
     expect(withDescr).not.toBe(without);
   });
 });
+
+// T-M2: Phase 1 — toHtml node.description fallback (O1 canonical-precedence contract)
+describe("T-M2 — toHtml node.description fallback (O1 canonical precedence)", () => {
+  function renderWithNodeDesc(): string {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-html-nodedesc-"));
+    const htmlPath = join(dir, "graph.html");
+    const g = new Graph();
+    // Node with description attr in graph — no sidecar needed
+    g.addNode("holmes", {
+      label: "Sherlock Holmes",
+      source_file: "corpus/holmes.txt",
+      file_type: "document",
+      node_type: "Character",
+      description: "Canonical detective description from graph.json.",
+    });
+    g.addNode("watson", {
+      label: "Dr Watson",
+      source_file: "corpus/watson.txt",
+      file_type: "document",
+      node_type: "Character",
+      // no description attr
+    });
+    g.addUndirectedEdge("holmes", "watson", { relation: "works_with", confidence: "EXTRACTED" });
+    const communities = new Map([[0, ["holmes", "watson"]]]);
+    // No sidecar passed at all
+    toHtml(g, communities, htmlPath, {
+      communityLabels: new Map([[0, "Detectives"]]),
+    });
+    const html = readFileSync(htmlPath, "utf-8");
+    rmSync(dir, { recursive: true, force: true });
+    return html;
+  }
+
+  function renderNodeDescWinsSidecar(): string {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-html-nodedesc-wins-"));
+    const htmlPath = join(dir, "graph.html");
+    const g = new Graph();
+    g.addNode("holmes", {
+      label: "Sherlock Holmes",
+      source_file: "corpus/holmes.txt",
+      file_type: "document",
+      node_type: "Character",
+      description: "Canonical description wins over sidecar.",
+    });
+    g.addUndirectedEdge = g.addUndirectedEdge.bind(g);
+    g.addNode("watson", { label: "Dr Watson", source_file: "corpus/watson.txt", file_type: "document" });
+    g.addUndirectedEdge("holmes", "watson", { relation: "works_with", confidence: "EXTRACTED" });
+    const communities = new Map([[0, ["holmes", "watson"]]]);
+    const sc: WikiDescriptionSidecarIndex = {
+      schema: "graphify_wiki_description_index_v1",
+      graph_hash: "h",
+      prompt_version: "wiki-description-v1",
+      nodes: {
+        holmes: {
+          schema: "graphify_wiki_description_v1",
+          target_id: "holmes",
+          target_kind: "node",
+          graph_hash: "h",
+          status: "generated",
+          description: "Sidecar text that must NOT appear.",
+          evidence_refs: ["corpus/holmes.txt#1"],
+          confidence: 0.9,
+          cache_key: "k",
+          generator: { mode: "assistant", provider: "pack", model: null, prompt_version: "wiki-description-v1" },
+        },
+      },
+    } as unknown as WikiDescriptionSidecarIndex;
+    toHtml(g, communities, htmlPath, {
+      communityLabels: new Map([[0, "Detectives"]]),
+      descriptions: sc,
+    });
+    const html = readFileSync(htmlPath, "utf-8");
+    rmSync(dir, { recursive: true, force: true });
+    return html;
+  }
+
+  it("T-M2a: renders node.description attr with no sidecar supplied", () => {
+    const html = renderWithNodeDesc();
+    expect(html).toContain('"description":"Canonical detective description from graph.json."');
+  });
+
+  it("T-M2b: node without description attr and no sidecar — no description field in output", () => {
+    const html = renderWithNodeDesc();
+    // watson has no description attr and no sidecar — must not have description field
+    expect((html.match(/"description":"/g) ?? []).length).toBe(1); // only holmes
+  });
+
+  it("T-M2c: node.description attr wins over generated sidecar — sidecar text never appears", () => {
+    const html = renderNodeDescWinsSidecar();
+    expect(html).toContain('"description":"Canonical description wins over sidecar."');
+    expect(html).not.toContain("Sidecar text that must NOT appear.");
+  });
+});
