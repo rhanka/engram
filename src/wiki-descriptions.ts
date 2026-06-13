@@ -307,11 +307,19 @@ export function checkWikiDescriptionFreshness(
   if (inputs.model !== undefined && (sidecar.generator.model ?? null) !== (inputs.model ?? null)) {
     reasons.push("model_mismatch");
   }
+  // C2 render symmetry: when the caller does not supply node_content_hash (render
+  // path has no freshly-recomputed per-node hash), fall back to the sidecar's own
+  // stored node_content_hash so the expected key is recomputed the same way it was
+  // originally built.  Without this, buildWikiDescriptionCacheKey would use graph_hash
+  // (because node_content_hash is undefined/null) and could never equal the stored key,
+  // producing a spurious cache_key_mismatch on every render of a C2 sidecar.
+  const effectiveNodeContentHash =
+    inputs.node_content_hash != null ? inputs.node_content_hash : sidecar.node_content_hash;
   const expected_cache_key = buildWikiDescriptionCacheKey({
     target_id: sidecar.target_id,
     target_kind: sidecar.target_kind,
     graph_hash: inputs.graph_hash,
-    node_content_hash: inputs.node_content_hash,
+    node_content_hash: effectiveNodeContentHash,
     prompt_version: inputs.prompt_version,
     mode: inputs.mode ?? sidecar.generator.mode,
     provider: inputs.provider ?? sidecar.generator.provider,
