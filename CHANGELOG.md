@@ -4,6 +4,17 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.13.2 (2026-06-13)
+
+New non-destructive `graphify describe [path]` top-level command: stamps `node.description` onto an existing `graph.json` without re-extracting from source. Mirrors `graphify label [path]`. Use when `graphify update` would re-extract and destroy a curated graph (e.g. the mystery corpus: 1 193 curated nodes).
+
+- **`graphify describe [path]`** loads the existing graph.json, runs the same `generateNodeDescriptions` pipeline as `graphify update --description`, and writes back — preserving node IDs, edges, communities, and all other node attributes unchanged. Only `description` is added/updated.
+- **Flags**: `--description-backend <provider>`, `--description-model <id>`, `--description-mode assistant|direct` (same resolution as `graphify update`), `--fill-missing` (idempotent gap-fill).
+- **Assistant mode** (default no-key): emits `.graphify/description-instructions/` batches for the host assistant; ingests on re-run; lifecycle cleanup from 0.13.1 applies.
+- **Skill.md updated** to document `graphify describe` as the non-destructive counterpart to `graphify label`.
+
+Patch bump (new command, no schema change). `@sentropic/graph` unchanged at 0.1.3.
+
 ## 0.13.1 (2026-06-13)
 
 Description-contract correction: `graph.json` `node.description` is the canonical description; the wiki sidecar only enriches/fills gaps and never masks or blanks a valid canonical description.
