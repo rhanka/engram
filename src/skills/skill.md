@@ -488,6 +488,19 @@ graphify update .
 
 **Opt out of either step**: `--no-description` / `--no-label`.
 
+**To describe an existing curated graph without re-extraction** (e.g. after manual curation or corpus build), use `graphify describe [path]` — the non-destructive counterpart to `graphify label [path]`:
+
+```bash
+# Non-destructive: stamps node.description onto graph.json without re-extracting
+graphify describe .
+# Only fill missing descriptions (idempotent):
+graphify describe . --fill-missing
+# Direct mode with API key:
+graphify describe . --description-mode direct --description-backend anthropic
+```
+
+`graphify describe` loads the existing `graph.json`, runs the same description pipeline as `graphify update --description`, and writes back — without touching node IDs, edges, communities, or any other node attributes. Only `description` is added/updated. Use it when `graphify update` would re-extract and destroy a curated graph.
+
 **Legacy manual label approach** (still works; skip if using the CLI two-step above):
 
 Read `.graphify/.graphify_analysis.json`. For each community key, look at its node labels and write a 2-5 word name. Then regenerate the report:

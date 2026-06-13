@@ -3843,6 +3843,93 @@ export async function main(): Promise<void> {
       );
     });
 
+  // ---------------------------------------------------------------------------
+  // graphify describe [path]
+  // Stamp node.description onto an EXISTING graph.json NON-DESTRUCTIVELY.
+  // No re-extraction, no source reading — loads graph.json, calls
+  // generateNodeDescriptions, writes back via toJson.  Mirrors label [path].
+  // ---------------------------------------------------------------------------
+  program
+    .command("describe [path]")
+    .description("Generate node.description on an existing graph.json without re-extracting (non-destructive counterpart to `graphify label`)")
+    .option("--description-backend <provider>", "LLM provider (default: auto-detect from API keys)")
+    .option("--description-model <id>", "LLM model override")
+    .option("--description-mode <mode>", "Execution mode: assistant (default, no key) or direct (API key)", "")
+    .option("--fill-missing", "Only describe nodes whose description is empty/absent (idempotent gap-fill)")
+    .action(async (describePath = ".", opts) => {
+      const root = resolve(describePath);
+      const paths = resolveGraphifyPaths({ root });
+      if (!existsSync(paths.graph)) {
+        console.error(`error: no graph found at ${paths.graph} - run /graphify first`);
+        process.exit(1);
+      }
+
+      mkdirSync(paths.stateDir, { recursive: true });
+
+      const rawGraphText = readFileSync(paths.graph, "utf-8");
+      const rawGraphParsed = JSON.parse(rawGraphText) as {
+        nodes?: Array<Record<string, unknown>>;
+      };
+      const G = makeGraphPortable(loadGraphFromData(JSON.parse(rawGraphText)), root);
+      const { cluster, remapCommunitiesToPrevious } = await import("./cluster.js");
+      const { toJson } = await import("./export.js");
+      const { generateNodeDescriptions, DESCRIPTION_INSTRUCTIONS_DIR } = await import("./node-descriptions.js");
+
+      let communities = cluster(G);
+      const previousNodeCommunity: Record<string, number> = {};
+      for (const n of (rawGraphParsed.nodes ?? [])) {
+        const nodeId = typeof n["id"] === "string" ? n["id"] : undefined;
+        const nodeCommunity = typeof n["community"] === "number" ? n["community"] : undefined;
+        if (nodeId !== undefined && nodeCommunity !== undefined) {
+          previousNodeCommunity[nodeId] = nodeCommunity;
+        }
+      }
+      if (Object.keys(previousNodeCommunity).length > 0) {
+        communities = remapCommunitiesToPrevious(communities, previousNodeCommunity);
+      }
+
+      const backendArg = typeof opts.descriptionBackend === "string" ? opts.descriptionBackend.trim() || undefined : undefined;
+      const modelArg = typeof opts.descriptionModel === "string" ? opts.descriptionModel.trim() || undefined : undefined;
+      const descriptionModeArg = typeof opts.descriptionMode === "string" && (opts.descriptionMode === "assistant" || opts.descriptionMode === "direct")
+        ? opts.descriptionMode as "assistant" | "direct"
+        : undefined;
+
+      const instructionDir = join(paths.stateDir, DESCRIPTION_INSTRUCTIONS_DIR);
+
+      console.log("Generating node descriptions...");
+      const result = await generateNodeDescriptions(G, {
+        ...(backendArg ? { provider: backendArg } : {}),
+        ...(modelArg ? { model: modelArg } : {}),
+        ...(descriptionModeArg ? { mode: descriptionModeArg } : {}),
+        ...(opts.fillMissing ? { onlyMissing: true } : {}),
+        instructionDir,
+      });
+
+      // Reconstruct community labels from existing community_name attrs so
+      // toJson preserves them byte-for-byte (no re-labeling, purely additive).
+      const communityLabels = new Map<number, string>();
+      for (const [cid, members] of communities.entries()) {
+        const sampleId = members[0];
+        if (sampleId !== undefined) {
+          const attrs = G.getNodeAttributes(sampleId) as Record<string, unknown>;
+          if (typeof attrs["community_name"] === "string") {
+            communityLabels.set(cid, attrs["community_name"]);
+          }
+        }
+      }
+
+      toJson(G, communities, paths.graph, { communityLabels, force: true });
+
+      const sourceMsg = result.source === "llm"
+        ? "LLM-generated"
+        : result.source === "assistant"
+          ? "assistant/skill mode (instructions emitted or ingested)"
+          : "skipped (no LLM backend configured)";
+      console.log(
+        `Done - ${result.describedCount} node description(s) added/updated (${sourceMsg}). graph.json updated.`,
+      );
+    });
+
   const wikiCommand = program
     .command("wiki")
     .description("Generate and maintain Graphify wiki artifacts");
