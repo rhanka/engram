@@ -3857,8 +3857,8 @@ export async function main(): Promise<void> {
     .option("--targets <scope>", "Targets to describe: nodes, communities, all", "nodes")
     .option("--out <dir>", "Directory to write sidecar JSON files")
     .option("--instructions-dir <dir>", "Directory to write assistant instruction files")
-    .option("--max-nodes <count>", "Maximum node targets (0 = unlimited, default 10)")
-    .option("--max-communities <count>", "Maximum community targets (0 = unlimited, default 12)")
+    .option("--max-nodes <count>", "Maximum node targets (0 = unlimited, default 100)")
+    .option("--max-communities <count>", "Maximum community targets (0 = unlimited, default 100)")
     .option("--max-neighbors <count>", "Maximum node neighbors in each prompt")
     .action(async (opts) => {
       try {
