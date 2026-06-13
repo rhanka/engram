@@ -103,6 +103,19 @@ export function correlate(input: CorrelateInput): CorrelationLink[] {
   const byPrefix = indexCommits(input.commits);
   const mergeByBranch = indexPrMergesByBranch(input.prMerges ?? []);
 
+  // COMMITTER PRECEDENCE (Phase 2): which facts have COMMIT-level evidence on
+  // each branch (their own `git commit` output named it). Used to keep a
+  // pr-merge squash commit away from a session that merely `checkout -b`'d
+  // the branch when somebody else demonstrably authored the work.
+  const committersByBranch = new Map<string, Set<string>>();
+  for (const fact of input.facts) {
+    for (const branch of fact.groundTruth.branches) {
+      let set = committersByBranch.get(branch);
+      if (!set) committersByBranch.set(branch, (set = new Set()));
+      set.add(fact.factId);
+    }
+  }
+
   for (const fact of input.facts) {
     const inst = matchInstance(input.instances, fact.host, fact.cwds);
     const agentId = resolveIdentity(fact, inst).agentId;
@@ -140,6 +153,12 @@ export function correlate(input: CorrelateInput): CorrelationLink[] {
       // BRANCH-SCOPED: the session must have committed on / created THAT
       // branch — committing somewhere else does not earn this squash commit.
       if (!worked.has(branch)) continue;
+      // COMMITTER PRECEDENCE: when this session only CREATED the branch
+      // (checkout -b) and ANOTHER session demonstrably committed on it, the
+      // squash commit belongs to the committer(s), not the scaffolder.
+      const committers = committersByBranch.get(branch);
+      const isCommitter = fact.groundTruth.branches.includes(branch);
+      if (!isCommitter && committers && committers.size > 0) continue;
       links.push({
         factId: fact.factId,
         agentId,
@@ -147,7 +166,7 @@ export function correlate(input: CorrelateInput): CorrelationLink[] {
         rank: 2,
         rule: "pr-merge",
         confidence: "high",
-        evidence: `session worked branch "${branch}"; PR #${merge.number} merged it as commit ${merge.mergeCommit.slice(0, 7)} on the base branch`,
+        evidence: `session ${isCommitter ? "committed on" : "created"} branch "${branch}"; PR #${merge.number} merged it as commit ${merge.mergeCommit.slice(0, 7)} on the base branch`,
       });
     }
 
@@ -239,6 +258,46 @@ export function correlate(input: CorrelateInput): CorrelationLink[] {
   }
 
   return links;
+}
+
+/** A commit claimed by more than one agent (spoof / data-quality signal). */
+export interface CommitConflict {
+  /** 7-char lowercase sha prefix identifying the contested commit. */
+  sha: string;
+  branch?: string;
+  /** The competing claims, strongest rank first. */
+  agents: { agentId: string; rule: CorrelationLink["rule"]; confidence: CorrelationLink["confidence"]; rank: number }[];
+}
+
+/**
+ * Detect commits attributed to MORE THAN ONE distinct agent. Two sessions of
+ * the SAME agent claiming a commit is normal (resumed session); two different
+ * agents claiming it is not — it means a spoof slipped through or the evidence
+ * is ambiguous. Surfaced in the report instead of silently picking a winner.
+ */
+export function detectCommitConflicts(links: CorrelationLink[]): CommitConflict[] {
+  const bySha = new Map<string, { branch?: string; claims: Map<string, CommitConflict["agents"][number]> }>();
+  for (const l of links) {
+    if (l.target.kind !== "commit") continue;
+    const key = l.target.sha.slice(0, 7).toLowerCase();
+    let entry = bySha.get(key);
+    if (!entry) bySha.set(key, (entry = { branch: l.target.branch, claims: new Map() }));
+    if (!entry.branch && l.target.branch) entry.branch = l.target.branch;
+    const prev = entry.claims.get(l.agentId);
+    if (!prev || l.rank < prev.rank) {
+      entry.claims.set(l.agentId, { agentId: l.agentId, rule: l.rule, confidence: l.confidence, rank: l.rank });
+    }
+  }
+  const conflicts: CommitConflict[] = [];
+  for (const [sha, entry] of bySha) {
+    if (entry.claims.size < 2) continue;
+    conflicts.push({
+      sha,
+      branch: entry.branch,
+      agents: Array.from(entry.claims.values()).sort((a, b) => a.rank - b.rank || a.agentId.localeCompare(b.agentId)),
+    });
+  }
+  return conflicts.sort((a, b) => a.sha.localeCompare(b.sha));
 }
 
 /** Index merged-PR attributions by branch (skips entries without a branch). */
