@@ -4042,6 +4042,70 @@ export async function main(): Promise<void> {
       );
     });
 
+  // ---------------------------------------------------------------------------
+  // graphify backfill-citations [path]
+  // Lossy backward-compat projection of a pre-feature graph: for each node with
+  // a legacy citations[] but no citation_count, set citation_count, trim the
+  // inline set to top-K, and co-emit citations.json. NO LLM / network — purely
+  // deterministic. Counts are a LOWER BOUND (the bounded graph never held the
+  // full union); a re-extract is required for true exhaustive counts.
+  // ---------------------------------------------------------------------------
+  program
+    .command("backfill-citations [path]")
+    .description("Project legacy graph.json citations[] into citation_count + a K-trimmed inline set + citations.json (lower-bound counts; no LLM)")
+    .option("--citations-top-k <n>", "Inline Level-1 citations kept per node (default: corpus-resolved; 3 code / 8 others)")
+    .action(async (backfillPath = ".", opts) => {
+      const root = resolve(backfillPath);
+      const paths = resolveGraphifyPaths({ root });
+      if (!existsSync(paths.graph)) {
+        console.error(`error: no graph found at ${paths.graph} - run /graphify first`);
+        process.exit(1);
+      }
+      mkdirSync(paths.stateDir, { recursive: true });
+
+      const policy = resolveCitationPolicyForRoot(root, {
+        topKFlag: parseTopKFlag(opts.citationsTopK),
+      });
+
+      const rawGraphText = readFileSync(paths.graph, "utf-8");
+      const G = makeGraphPortable(loadGraphFromData(JSON.parse(rawGraphText)), root);
+      const { backfillCitations } = await import("./citations.js");
+      const { toJson } = await import("./export.js");
+
+      // Preserve existing community assignments + names so toJson writes the
+      // graph back byte-for-byte aside from the citation fields.
+      const communities = communitiesFromGraph(G);
+      const communityLabels = communityLabelsFromGraph(G, communities);
+
+      const result = backfillCitations(G, dirname(paths.graph), {
+        topK: policy.inlineTopK,
+      });
+
+      // Re-write graph.json with the trimmed inline citations + citation_count.
+      // Only when something was projected — a graph with nothing to backfill is
+      // left untouched (true no-op, no spurious diff).
+      if (result.backfilledNodes > 0) {
+        toJson(G, communities, paths.graph, { communityLabels, force: true });
+      }
+
+      if (result.backfilledNodes === 0) {
+        console.log(
+          "backfill-citations: nothing to backfill — no node carries a legacy citations[] without a citation_count. graph.json unchanged.",
+        );
+        return;
+      }
+
+      console.log(
+        `backfill-citations: projected ${result.backfilledNodes} node(s); ` +
+          `wrote citation_count + a top-${policy.inlineTopK} inline set + ${result.sidecarPath}.`,
+      );
+      console.log(
+        "CAVEAT (LOWER BOUND): these counts reflect ONLY the bounded citation sample already in graph.json. " +
+          "The original duplicate-discard dropped citations a backfill cannot recover. " +
+          "Re-extract the corpus for true exhaustive counts.",
+      );
+    });
+
   const wikiCommand = program
     .command("wiki")
     .description("Generate and maintain Graphify wiki artifacts");
