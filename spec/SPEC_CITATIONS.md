@@ -7,6 +7,7 @@
 - Activation: detection is always exhaustive; tiering and the lazy store are the default emit path; corpus-type tuning is automatic with an explicit override
 - Default behavior: `.graphify/graph.json` carries a citation COUNT + a small inline top-K per node; the FULL citation list moves to a lazily-loaded per-entity store served through the existing `/api/ontology/entity/<id>` sidecar route
 - Product decision (user, 2026-06-13): "extract ALL citations; don't bloat graph.json or the studio; describe prompt cap stays tunable, default 3 → 10, long-docs/entity-corpus → all"
+- Decisions resolved (user, 2026-06-13): inline K=8 with most-distinct-source selection; citation identity excludes `bbox` for prose (includes it only for figure/image corpora); stale pre-feature graphs WARN + render legacy inline (no auto-backfill); the full list + count live in a single keyed `citations.json` (not folded into `occurrences.json`, not a per-id directory); edge citations stay out of v1. See `## Decisions` below — these are binding, not proposals.
 - Constraint: `.graphify/graph.json` remains the single source of truth (description-contract work). The lazy store is a DERIVED projection of graph.json, never a competing truth.
 - Delivery: PR1 is this spec; implementation follows the roadmap below.
 - CLI, config and field-name surfaces in this document are PROPOSED; they freeze at the implementation PR.
@@ -231,18 +232,18 @@ Automated tests should cover:
 - Run `graphify describe` on the mystery corpus: descriptions ground on many distinct sources (cap = all), while a code project's descriptions still cap at 3.
 - Run `backfill-citations` on a pre-feature graph: it renders under the new schema with a lower-bound count caveat; re-extract then shows the true exhaustive count.
 
-## Open decisions
+## Decisions
 
-These need a human call.
+Resolved by the conductor on 2026-06-13. These are BINDING for the implementation PR — the `PROPOSED` markers elsewhere in this spec resolve to the values below.
 
-1. **Where does the frequency count live — fold into `occurrences.json`, or a dedicated `citations.json`?** `occurrences.json` is the historically intended frequency artifact (empty today) and `buildEntitySidecar` already reads it keyed by id. Either (a) populate `occurrences.json` with `{ count }` and keep the full citation list in `citations.json`, or (b) put both count and list in `citations.json` and leave `occurrences.json` for non-citation occurrence data. Recommendation: (b) — keep citations self-contained in one store; revisit if occurrences gains independent meaning.
+1. **Frequency count + full list live in a single dedicated `citations.json`** (schema `graphify_ontology_citations_v1`), NOT folded into `occurrences.json`. `occurrences.json` is left for non-citation occurrence data; citation count and the exhaustive list are self-contained in one store. Revisit only if occurrences gains independent meaning.
 
-2. **Inline top-K default value and selection key.** Recommendation: K = 8, most-distinct-source primary key. Alternatives the human may prefer: K = 5 (leaner eager payload) or earliest-in-document (simpler, less salient). Pick one; it freezes the determinism contract.
+2. **Inline top-K: K = 8, most-distinct-source primary selection key** (then locator specificity, then stable lexicographic tie-break on `(source_file, page, section, paragraph_id)`). This freezes the determinism contract: two builds of the same graph produce byte-identical `citations_top`. Earliest-in-document was rejected (fills a hub's preview with whichever work sorts first).
 
-3. **Citation dedupe granularity.** Is a citation identity `source_file + page + section + paragraph_id` (passages differing only in `bbox` collapse), or is `bbox` part of identity (every distinct region counts)? Finer identity inflates counts; coarser merges legitimately distinct passages. Recommendation: exclude `bbox` from identity for prose corpora; include it only for image/figure-heavy corpora.
+3. **Citation identity excludes `bbox` for prose corpora** — identity = `source_file + page + section + paragraph_id`; passages differing only in `bbox` collapse to one citation. `bbox` is part of identity ONLY for figure/image-heavy corpora (so distinct figure regions on a page count separately). Keeps prose "cited N times" realistic, not bbox-inflated.
 
-4. **Keyed file vs per-id directory for Level-2.** Recommendation: single keyed `citations.json` (reuses the occurrences/descriptions caching path). Switch to `.graphify/citations/<id>.json` only if the keyed file exceeds a size budget (PROPOSED trigger: > ~10 MB or a corpus where a single load stalls server start). Human sets the budget / confirms the trigger.
+4. **Level-2 is a single keyed `citations.json`** (reuses the `occurrences.json`/`descriptions.json` in-memory-index caching path, cached by graph.json mtime). It is NOT a per-id directory. A switch to `.graphify/citations/<id>.json` is reconsidered only if the keyed file later exceeds a size budget (deferred trigger: > ~10 MB or a corpus where a single load stalls server start) — not a v1 concern.
 
-5. **Backfill default posture for stale graphs.** When a pre-feature graph is opened, default to (a) warn + render legacy inline only, or (b) auto-run a non-destructive backfill to populate the new fields/store. Recommendation: (a) warn — auto-backfill produces lower-bound counts that could be mistaken for true exhaustive counts; keep exhaustiveness an explicit re-extract.
+5. **Stale pre-feature graphs WARN + render legacy inline** on open; no auto-backfill. True exhaustiveness stays an explicit `graphify backfill-citations` (lower-bound counts, clearly captioned) or a re-extract. Auto-backfill was rejected because its lower-bound counts could be mistaken for the true exhaustive count.
 
-6. **Edge citations.** v1 leaves `GraphEdge.citations[]` (`src/types.ts:75`) unchanged (edges are far less cited than hub entities). Confirm edges stay out of the tiered model for v1, or fold them in if edge citation volume is also unbounded in the entity corpus.
+6. **Edge citations stay OUT of the tiered model for v1.** `GraphEdge.citations[]` (`src/types.ts:75`) is unchanged — edges are far less cited than hub entities. Folding edges in is a follow-up only if edge citation volume proves unbounded in an entity corpus.
