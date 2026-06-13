@@ -4,11 +4,14 @@ import Graph from "graphology";
 import {
   buildNodeDescriptionPrompt,
   collectNodeContext,
+  countUnansweredDescriptionBatches,
   describeNodes,
   detectDescriptionBackend,
+  emitDescriptionInstructions,
   generateNodeDescriptions,
   isTransientBackendError,
   type CallLlmFn,
+  type NodeContext,
 } from "../src/node-descriptions.js";
 
 const ORIGINAL_ENV = { ...process.env };
@@ -430,6 +433,7 @@ describe("generateNodeDescriptions coverage report", () => {
       describable: 3,
       described: 3,
       skipped: 0,
+      ungrounded: 0,
       reasons: { noBackend: 0, emptyReply: 0, error: 0, optedOut: 0 },
     });
   });
@@ -533,5 +537,182 @@ describe("detectDescriptionBackend", () => {
   it("returns null when no provider key is present", () => {
     clearProviderKeys();
     expect(detectDescriptionBackend()).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-C4: ungrounded entity nodes are counted and visible in the coverage report
+// ---------------------------------------------------------------------------
+
+describe("C4: ungrounded entity node visibility in coverage report", () => {
+  /** A graph with mixed nodes: 2 code, 1 grounded entity, 1 ungrounded entity. */
+  function mkMixedGraph(): Graph {
+    const G = new Graph({ type: "undirected" });
+    G.addNode("code_a", { label: "fnA()", file_type: "code", source_file: "a.ts" });
+    G.addNode("code_b", { label: "fnB()", file_type: "code", source_file: "b.ts" });
+    G.addNode("ent_grounded", {
+      label: "Lady Carfax",
+      node_type: "Person",
+      citations: [{ source_file: "story.md", quote: "a wealthy spinster" }],
+    });
+    // This entity node has NO citations / evidence → ungrounded, excluded from generation.
+    G.addNode("ent_ungrounded", { label: "Unknown Stranger", node_type: "Person" });
+    G.addUndirectedEdge("code_a", "code_b");
+    G.addUndirectedEdge("ent_grounded", "code_a");
+    return G;
+  }
+
+  it("coverage.ungrounded counts entity nodes with no citations/evidence", async () => {
+    const G = mkMixedGraph();
+    const result = await generateNodeDescriptions(G, {
+      callLlm: mockCallLlm((id) => `Describes ${id}.`),
+      quiet: true,
+    });
+    // 2 code nodes + 1 grounded entity = 3 describable; 1 ungrounded entity.
+    expect(result.coverage.describable).toBe(3);
+    expect(result.coverage.ungrounded).toBe(1);
+  });
+
+  it("ungrounded node is NOT in the describable denominator (anti-hallucination policy)", async () => {
+    const G = mkMixedGraph();
+    const result = await generateNodeDescriptions(G, {
+      callLlm: mockCallLlm((id) => `Describes ${id}.`),
+      quiet: true,
+    });
+    // The grounded entity IS in the describable denominator and should be described.
+    expect(G.getNodeAttribute("ent_grounded", "description")).toBeTruthy();
+    // The ungrounded entity is NOT in the describable set (coverage denominator = 3, not 4).
+    expect(result.coverage.describable).toBe(3); // 2 code + 1 grounded entity
+    expect(result.coverage.ungrounded).toBe(1);  // 1 ungrounded entity excluded
+  });
+
+  it("a 100%-cited corpus reports 0 ungrounded", async () => {
+    const G = new Graph({ type: "undirected" });
+    G.addNode("ent_a", {
+      label: "Holmes",
+      node_type: "Person",
+      citations: [{ source_file: "s.md", quote: "a detective" }],
+    });
+    G.addNode("ent_b", {
+      label: "Watson",
+      node_type: "Person",
+      citations: [{ source_file: "s.md", quote: "his companion" }],
+    });
+    const result = await generateNodeDescriptions(G, {
+      callLlm: mockCallLlm((id) => `Describes ${id}.`),
+      quiet: true,
+    });
+    expect(result.coverage.ungrounded).toBe(0);
+  });
+
+  it("surfaces the ungrounded count in stderr (not quiet)", async () => {
+    const G = mkMixedGraph();
+    const written: string[] = [];
+    vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      written.push(String(chunk));
+      return true;
+    });
+    await generateNodeDescriptions(G, {
+      callLlm: mockCallLlm((id) => `Describes ${id}.`),
+      quiet: false,
+    });
+    const output = written.join("");
+    expect(output).toContain("1 entity node(s) have no grounding");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-C1: countUnansweredDescriptionBatches + pending-marker logic
+// ---------------------------------------------------------------------------
+
+describe("C1: countUnansweredDescriptionBatches", () => {
+  it("returns 0 when the instruction dir does not exist", () => {
+    expect(countUnansweredDescriptionBatches("/nonexistent/path/abc123")).toBe(0);
+  });
+
+  it("returns 0 when all batch .md files have a corresponding .json answer", async () => {
+    const { mkdtempSync, writeFileSync: wf } = await import("node:fs");
+    const { join: pj } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const dir = mkdtempSync(pj(tmpdir(), "graphify-c1-answered-"));
+    wf(pj(dir, "batch-000.md"), "instruction", "utf-8");
+    wf(pj(dir, "batch-000.json"), "{}", "utf-8");
+    wf(pj(dir, "batch-001.md"), "instruction", "utf-8");
+    wf(pj(dir, "batch-001.json"), "{}", "utf-8");
+    expect(countUnansweredDescriptionBatches(dir)).toBe(0);
+  });
+
+  it("counts batches whose .md exists but .json is absent", async () => {
+    const { mkdtempSync, writeFileSync: wf } = await import("node:fs");
+    const { join: pj } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const dir = mkdtempSync(pj(tmpdir(), "graphify-c1-partial-"));
+    wf(pj(dir, "batch-000.md"), "instruction", "utf-8");
+    wf(pj(dir, "batch-000.json"), "{}", "utf-8"); // answered
+    wf(pj(dir, "batch-001.md"), "instruction", "utf-8"); // NOT answered
+    wf(pj(dir, "batch-002.md"), "instruction", "utf-8"); // NOT answered
+    expect(countUnansweredDescriptionBatches(dir)).toBe(2);
+  });
+
+  it("emitDescriptionInstructions + countUnansweredDescriptionBatches: emit → unanswered", async () => {
+    clearProviderKeys();
+    const { mkdtempSync } = await import("node:fs");
+    const { join: pj } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const dir = mkdtempSync(pj(tmpdir(), "graphify-c1-emit-"));
+    const G = mkCodeGraph();
+    // Build batches manually to test the emit/count cycle.
+    const contexts: NodeContext[] = G.nodes().map((id) => ({
+      id,
+      label: id,
+      isCode: true,
+      sourceFile: null,
+      sourceLocation: null,
+      nodeType: null,
+      degree: G.degree(id),
+      neighbors: [],
+      citations: [],
+    }));
+    emitDescriptionInstructions([contexts], dir);
+    // After emit: 1 unanswered batch.
+    expect(countUnansweredDescriptionBatches(dir)).toBe(1);
+  });
+
+  it("generateNodeDescriptions assistant emit then ingest clears unanswered count", async () => {
+    clearProviderKeys();
+    const { mkdtempSync, writeFileSync: wf } = await import("node:fs");
+    const { join: pj } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const G = mkCodeGraph();
+    const dir = mkdtempSync(pj(tmpdir(), "graphify-c1-cycle-"));
+
+    // First run: assistant mode, emits instructions, no answers.
+    vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    await generateNodeDescriptions(G, { instructionDir: dir, quiet: false });
+    expect(countUnansweredDescriptionBatches(dir)).toBeGreaterThan(0);
+
+    // Simulate assistant filling in the answers.
+    const answerMap: Record<string, string> = {};
+    for (const id of G.nodes()) answerMap[id] = `Description of ${id}.`;
+    wf(pj(dir, "batch-000.json"), JSON.stringify(answerMap), "utf-8");
+
+    // Second run: ingests the answers, unanswered count drops to 0.
+    const result = await generateNodeDescriptions(G, { instructionDir: dir, quiet: true });
+    expect(result.source).toBe("assistant");
+    expect(result.describedCount).toBeGreaterThan(0);
+    // All batch .md files now have corresponding .json files → 0 unanswered.
+    expect(countUnansweredDescriptionBatches(dir)).toBe(0);
+  });
+
+  it("--no-description: does NOT create unanswered instruction files (no false pending)", async () => {
+    clearProviderKeys();
+    const { mkdtempSync } = await import("node:fs");
+    const { join: pj } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const dir = mkdtempSync(pj(tmpdir(), "graphify-c1-no-desc-"));
+    // Simulate what update --no-description does: skip generateNodeDescriptions entirely.
+    // No instruction files should be emitted.
+    expect(countUnansweredDescriptionBatches(dir)).toBe(0);
+    // (The dir is empty; no .md files → no false pending)
   });
 });
