@@ -29,6 +29,7 @@ Each stage is a single module with a narrow contract. They communicate through p
 | `src/watch.ts` | `watch(root, debounce)` / `rebuildCode(root)` | directory -> rebuild / update flag |
 | `src/benchmark.ts` | `runBenchmark(graphPath)` | graph file -> corpus vs subgraph token comparison |
 | `src/skill-runtime.ts` | `detect`, `extract-ast`, `finalize-build`, `finalize-update`, etc. | deterministic helper entrypoint for the Codex skill |
+| `src/agent-stats/` | `discover`/`normalize`/`correlate`/`buildReport` | agentic-CLI transcripts (Claude/Codex/agy) -> branch/commit/work-package attribution per agent session (re-derivable `.graphify/agents/facts.jsonl`; `graphify.agent-stats/v1` report) |
 | `src/cli.ts` | packaged `graphify` CLI | user-facing commands |
 
 ## Extraction output schema
