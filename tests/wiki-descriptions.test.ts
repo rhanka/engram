@@ -422,3 +422,153 @@ function makeNodeSidecarWithNch(nch: string): WikiNodeDescriptionSidecar {
     }),
   };
 }
+
+// ─── Regression: C2 render-path symmetry ───────────────────────────────────
+// Before the fix, the render path (loadFreshWikiDescriptionSidecarIndex →
+// selectFreshWikiDescriptions) called checkWikiDescriptionFreshness with no
+// node_content_hash.  buildWikiDescriptionCacheKey then fell back to graph_hash
+// and produced a key that could never match the stored (node_content_hash-based)
+// cache_key → spurious cache_key_mismatch → C2 sidecars silently dropped in
+// every render, even on a byte-identical graph.
+describe("C2 regression — render-path cache_key symmetry", () => {
+  // Simulate exactly how tryReadGeneratedSidecar / the generator stores a sidecar:
+  // cache_key is built with node_content_hash, not graph_hash.
+  function makeC2GeneratedSidecar(opts: {
+    nodeLabel: string;
+    nodeType: string | null;
+    neighbors: Array<{ relation: string; target_id: string }>;
+    evidenceRefs: string[];
+    graphHash: string;
+  }): WikiNodeDescriptionSidecar {
+    const nch = buildNodeContentHash({
+      label: opts.nodeLabel,
+      node_type: opts.nodeType,
+      neighbors: opts.neighbors,
+      evidence_refs: opts.evidenceRefs,
+    });
+    const cache_key = buildWikiDescriptionCacheKey({
+      target_id: "node:target",
+      target_kind: "node",
+      graph_hash: opts.graphHash,
+      node_content_hash: nch,
+      prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+      mode: "assistant",
+      provider: "assistant",
+      model: null,
+    });
+    return {
+      schema: WIKI_DESCRIPTION_SCHEMA,
+      target_id: "node:target",
+      target_kind: "node",
+      graph_hash: opts.graphHash,
+      node_content_hash: nch,
+      status: "generated",
+      description: "LLM gap-fill description for a node without node.description.",
+      evidence_refs: ["corpus/doc.txt#1"],
+      confidence: 0.75,
+      cache_key,
+      generator: {
+        mode: "assistant",
+        provider: "assistant",
+        model: null,
+        prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+      },
+    };
+  }
+
+  it("C2 generated sidecar is FRESH when render path passes no node_content_hash (byte-identical graph)", () => {
+    const graphHash = "graph-stable-xyz";
+    const sidecar = makeC2GeneratedSidecar({
+      nodeLabel: "TargetNode",
+      nodeType: "Function",
+      neighbors: [{ relation: "calls", target_id: "helper" }],
+      evidenceRefs: ["corpus/doc.txt#1"],
+      graphHash,
+    });
+    // Render path: only passes graph_hash + prompt_version (no node_content_hash)
+    const result = checkWikiDescriptionFreshness(sidecar, {
+      graph_hash: graphHash,
+      prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+    });
+    expect(result.reasons).toEqual([]);
+    expect(result.fresh).toBe(true);
+  });
+
+  it("C2 generated sidecar is STALE when the node's own attrs change (render path passes fresh hash)", () => {
+    const graphHash = "graph-stable-xyz";
+    const sidecar = makeC2GeneratedSidecar({
+      nodeLabel: "TargetNode",
+      nodeType: "Function",
+      neighbors: [{ relation: "calls", target_id: "helper" }],
+      evidenceRefs: ["corpus/doc.txt#1"],
+      graphHash,
+    });
+    // Node changed: different label → different node_content_hash
+    const freshNch = buildNodeContentHash({
+      label: "TargetNodeRenamed",
+      node_type: "Function",
+      neighbors: [{ relation: "calls", target_id: "helper" }],
+      evidence_refs: ["corpus/doc.txt#1"],
+    });
+    const result = checkWikiDescriptionFreshness(sidecar, {
+      graph_hash: "graph-new-hash", // global hash changes too since node changed
+      node_content_hash: freshNch,
+      prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+    });
+    expect(result.fresh).toBe(false);
+    expect(result.reasons).toContain("node_content_hash_mismatch");
+    expect(result.reasons).not.toContain("graph_hash_mismatch");
+  });
+
+  it("C2 generated sidecar is FRESH when an UNRELATED node changes (render path passes same node hash)", () => {
+    const originalGraphHash = "graph-before-unrelated-change";
+    const sidecar = makeC2GeneratedSidecar({
+      nodeLabel: "TargetNode",
+      nodeType: "Function",
+      neighbors: [{ relation: "calls", target_id: "helper" }],
+      evidenceRefs: ["corpus/doc.txt#1"],
+      graphHash: originalGraphHash,
+    });
+    // Unrelated node changed → graph_hash differs, but this node's content hash is same
+    const sameSidecarNch = buildNodeContentHash({
+      label: "TargetNode",
+      node_type: "Function",
+      neighbors: [{ relation: "calls", target_id: "helper" }],
+      evidence_refs: ["corpus/doc.txt#1"],
+    });
+    const result = checkWikiDescriptionFreshness(sidecar, {
+      graph_hash: "graph-after-unrelated-change",
+      node_content_hash: sameSidecarNch,
+      prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+    });
+    expect(result.fresh).toBe(true);
+    expect(result.reasons).toEqual([]);
+  });
+
+  it("C2 generated sidecar survives selectFreshWikiDescriptions on byte-identical graph (render-path integration)", () => {
+    const graphHash = "graph-stable-abc";
+    const sidecar = makeC2GeneratedSidecar({
+      nodeLabel: "GapFillNode",
+      nodeType: "Class",
+      neighbors: [],
+      evidenceRefs: ["corpus/src.txt#2"],
+      graphHash,
+    });
+    const index: WikiDescriptionSidecarIndex = {
+      schema: "graphify_wiki_description_index_v1",
+      graph_hash: graphHash,
+      prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+      nodes: { "node:target": sidecar },
+    };
+    // Simulate render path: no node_content_hash passed
+    const { fresh, stale } = selectFreshWikiDescriptions(index, {
+      graph_hash: graphHash,
+      prompt_version: WIKI_DESCRIPTION_PROMPT_VERSION,
+    });
+    expect(stale.nodes).toEqual([]);
+    expect(Object.keys(fresh.nodes)).toContain("node:target");
+    expect(fresh.nodes["node:target"].description).toBe(
+      "LLM gap-fill description for a node without node.description.",
+    );
+  });
+});
