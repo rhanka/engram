@@ -11,13 +11,21 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import Graph from "graphology";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
   buildEntitySidecar,
   serveStudioAsset,
   __resetGraphDescriptionCache,
+  __resetCitationsSidecarCache,
 } from "../src/studio-assets.js";
+import {
+  aggregateCitations,
+  writeCitationsSidecar,
+  CITATIONS_SIDECAR_RELPATH,
+} from "../src/citations.js";
+import type { OntologyCitation } from "../src/types.js";
 
 function makeStateDir(): string {
   const dir = mkdtempSync(join(tmpdir(), "graphify-studio-assets-"));
@@ -47,6 +55,110 @@ function writeGraph(dir: string, nodes: Array<Record<string, unknown>>): void {
 
 afterEach(() => {
   __resetGraphDescriptionCache();
+  __resetCitationsSidecarCache();
+});
+
+/**
+ * Build a real (graph.json + ontology/citations.json) pair via the engine
+ * aggregation pass so the studio-side signature gate is tested against the
+ * SAME content hash the producer stamps. `hubCitations` is the full union for
+ * the hub node; the engine trims the inline set + writes the co-derived store.
+ */
+function makeCitationStateDir(hubCitations: OntologyCitation[]): { dir: string; count: number } {
+  const dir = mkdtempSync(join(tmpdir(), "graphify-citations-"));
+  mkdirSync(join(dir, "ontology"), { recursive: true });
+  const G = new Graph({ type: "directed" });
+  G.addNode("hub", { label: "Hub", citations: hubCitations.map((c) => ({ ...c })) });
+  G.addNode("leaf", { label: "Leaf" });
+  const map = aggregateCitations(G);
+  // graph.json mirrors toJson's `...attrs` spread: each node serializes its
+  // (now trimmed) inline `citations` + `citation_count`.
+  const nodes = G.mapNodes((id, attrs) => ({ id, ...attrs }));
+  writeFileSync(join(dir, "graph.json"), JSON.stringify({ nodes, edges: [] }));
+  writeCitationsSidecar(dir, map, G);
+  return { dir, count: map.hub!.count };
+}
+
+function citation(source: string, section: string, page?: number): OntologyCitation {
+  return page == null ? { source_file: source, section } : { source_file: source, section, page };
+}
+
+describe("buildEntitySidecar citations (Level-2 lazy store)", () => {
+  it("returns { count, citations } for a present hub id", () => {
+    const cites = [
+      citation("a.txt", "ch1", 1),
+      citation("b.txt", "ch2", 2),
+      citation("c.txt", "ch3", 3),
+      citation("d.txt", "ch4", 4),
+      citation("e.txt", "ch5", 5),
+      citation("f.txt", "ch6", 6),
+      citation("g.txt", "ch7", 7),
+      citation("h.txt", "ch8", 8),
+      citation("i.txt", "ch9", 9),
+      citation("j.txt", "ch10", 10),
+    ];
+    const { dir, count } = makeCitationStateDir(cites);
+    const res = buildEntitySidecar(dir, "hub");
+    expect(res.citations).not.toBeUndefined();
+    expect(res.citations!.count).toBe(count);
+    expect(count).toBe(10);
+    // The full union (10) is served, not just the inline top-K.
+    expect(res.citations!.citations).toHaveLength(10);
+  });
+
+  it("returns undefined citations for an absent id", () => {
+    const { dir } = makeCitationStateDir([citation("a.txt", "ch1", 1)]);
+    const res = buildEntitySidecar(dir, "ghost");
+    expect(res.citations).toBeUndefined();
+  });
+
+  it("returns undefined citations when no citations.json exists", () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-nocite-"));
+    writeFileSync(join(dir, "graph.json"), JSON.stringify({ nodes: [{ id: "hub" }], edges: [] }));
+    const res = buildEntitySidecar(dir, "hub");
+    expect(res.citations).toBeUndefined();
+  });
+
+  it("treats the store as ABSENT on graph_signature mismatch (client falls back to inline)", () => {
+    const { dir } = makeCitationStateDir([
+      citation("a.txt", "ch1", 1),
+      citation("b.txt", "ch2", 2),
+    ]);
+    // Rewrite graph.json with DIFFERENT inline citations -> the on-disk
+    // citation-content hash no longer matches the stamped graph_signature.
+    writeFileSync(
+      join(dir, "graph.json"),
+      JSON.stringify({
+        nodes: [{ id: "hub", citations: [citation("z.txt", "zzz", 99)], citation_count: 2 }],
+        edges: [],
+      }),
+    );
+    __resetGraphDescriptionCache();
+    __resetCitationsSidecarCache();
+    const res = buildEntitySidecar(dir, "hub");
+    expect(res.citations).toBeUndefined();
+  });
+
+  it("caches citations.json by mtime (no re-parse at an unchanged mtime)", async () => {
+    const { dir } = makeCitationStateDir([citation("a.txt", "ch1", 1)]);
+    const citePath = join(dir, CITATIONS_SIDECAR_RELPATH);
+    const { utimesSync } = await import("node:fs");
+    // Pin mtime to a whole-second epoch so a later restore is exact (mtimeMs
+    // has sub-ms drift across writes otherwise). First read populates the
+    // mtime-keyed index for this stamp.
+    const pinned = new Date(1_700_000_000_000); // 2023-11-14T22:13:20Z, integer ms
+    utimesSync(citePath, pinned, pinned);
+    __resetCitationsSidecarCache();
+    const first = buildEntitySidecar(dir, "hub");
+    expect(first.citations).not.toBeUndefined();
+    // Corrupt the file but restore the SAME mtime: a re-parse would now fail
+    // (loadJsonSafe -> null -> undefined). A stable result proves the cache
+    // served the second call without re-reading citations.json.
+    writeFileSync(citePath, "}{ not json");
+    utimesSync(citePath, pinned, pinned);
+    const second = buildEntitySidecar(dir, "hub");
+    expect(second.citations).toEqual(first.citations);
+  });
 });
 
 describe("buildEntitySidecar", () => {
