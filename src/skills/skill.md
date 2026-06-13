@@ -501,6 +501,29 @@ graphify describe . --description-mode direct --description-backend anthropic
 
 `graphify describe` loads the existing `graph.json`, runs the same description pipeline as `graphify update --description`, and writes back — without touching node IDs, edges, communities, or any other node attributes. Only `description` is added/updated. Use it when `graphify update` would re-extract and destroy a curated graph.
 
+**Citation density per corpus type (no key needed).** `describe`/`update`/`extract`/`watch` auto-tune two citation knobs from the corpus type they read out of `.graphify/.graphify_detect.json` (no extra step): the **describe-prompt cap** (citation snippets grounding each description) and the **inline top-K** (citations kept per node in `graph.json`; the full per-entity tail always lands in `.graphify/ontology/citations.json`). Resolution precedence is **CLI flag > corpus-type default > global default (cap 10, K 8)**. Corpus-type defaults:
+
+| Corpus type | describe cap | inline K |
+|---|---|---|
+| code (code dominates, no docs/papers) | 3 | 3 |
+| mixed (the middle default) | 10 | 8 |
+| long-document (docs/papers, large word count) | all | 8 |
+| entity-corpus (ontology/profile mode) | all | 8 |
+
+You normally rely on the auto-resolved policy. Override it explicitly per detected corpus type when needed — e.g. a long-form prose corpus should ground descriptions on many distinct sources, while a code project stays terse:
+
+```bash
+# Long-document / entity corpus: ground on every distinct source.
+graphify describe . --citation-cap all
+# Code project: keep descriptions terse.
+graphify describe . --citation-cap 3
+# Bound how many citations ride inline in graph.json (the full tail stays in citations.json):
+graphify extract . --citations-top-k 8
+graphify update  . --citation-cap all --citations-top-k 8
+```
+
+`--citation-cap <n|all>` is on `describe`/`label`/`update`; `--citations-top-k <n>` is on `extract`/`update`/`watch`. Both are flag-only overrides (no key, no config file required) — absent, the corpus-type default above applies. To project a pre-feature graph into the new schema without re-extracting (lower-bound counts; re-extract for true exhaustive counts), run `graphify backfill-citations .`.
+
 **Legacy manual label approach** (still works; skip if using the CLI two-step above):
 
 Read `.graphify/.graphify_analysis.json`. For each community key, look at its node labels and write a 2-5 word name. Then regenerate the report:
