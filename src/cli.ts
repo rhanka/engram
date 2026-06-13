@@ -311,6 +311,7 @@ function printOntologyPatchResult(result: {
 
 function ensureCliExtractionShape(value?: Partial<Extraction> | null): Extraction {
   return {
+    ...(value?.provenance ? { provenance: value.provenance } : {}),
     nodes: value?.nodes ?? [],
     edges: value?.edges ?? [],
     hyperedges: value?.hyperedges ?? [],
@@ -3109,6 +3110,29 @@ export async function main(): Promise<void> {
       } else {
         console.log(JSON.stringify(result, null, 2));
       }
+    });
+
+  program
+    .command("build")
+    .description("Build or update .graphify/graph.json from validated graph fragments")
+    .requiredOption("--fragment <path>", "Extraction fragment JSON to validate and merge")
+    .option("--graph <path>", "Graph JSON output path", ".graphify/graph.json")
+    .action(async (opts) => {
+      const fragmentPath = resolve(opts.fragment);
+      const graphPath = resolve(opts.graph);
+      const fragment = ensureCliExtractionShape(readJson<Partial<Extraction>>(fragmentPath));
+      const { assertValid } = await import("./validate.js");
+      const { buildMerge } = await import("./build.js");
+      const { toJson } = await import("./export.js");
+
+      assertValid(fragment);
+      mkdirSync(dirname(graphPath), { recursive: true });
+      const graph = buildMerge([fragment], { graphPath });
+      toJson(graph, new Map(), graphPath, { force: true });
+      console.log(
+        `[graphify build] ingested fragment ${fragmentPath} into ${graphPath}: ` +
+        `${graph.order} nodes, ${graph.size} edges`,
+      );
     });
 
   program
