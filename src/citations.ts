@@ -227,6 +227,81 @@ export function aggregateCitations(G: Graph, options: AggregateCitationsOptions 
   return map;
 }
 
+export interface BackfillCitationsOptions {
+  /** Inline Level-1 K. Default CITATIONS_INLINE_TOP_K (8). */
+  topK?: number;
+  /** Include bbox in identity (figure/image corpora). Default false. */
+  includeBbox?: boolean;
+}
+
+export interface BackfillCitationsResult {
+  /** How many LEGACY nodes (citations[] but no citation_count) were projected. */
+  backfilledNodes: number;
+  /** Absolute path of the written `citations.json`, or null when none written. */
+  sidecarPath: string | null;
+  /**
+   * Always true when at least one node was backfilled: backfill projects only
+   * the bounded sample already in graph.json, so the counts are a LOWER BOUND.
+   */
+  lowerBound: boolean;
+}
+
+/**
+ * Lossy backward-compat projection (SPEC_CITATIONS.md "Backfill"). Walks the
+ * graph and, for every node carrying a legacy `citations[]` but no
+ * `citation_count`, sets `citation_count = |dedupe(citations)|`, trims the
+ * inline `citations` to the deterministic top-K, and records the full deduped
+ * set for the co-derived `citations.json`.
+ *
+ * Nodes that already carry a `citation_count` are LEFT UNTOUCHED (their true
+ * count — possibly from a real exhaustive extract — is never downgraded to the
+ * trimmed inline length); they are still included in the emitted sidecar from
+ * their existing inline set so a re-run reproduces a byte-identical store.
+ *
+ * Counts are a LOWER BOUND: backfill cannot invent citations the bounded graph
+ * never held. Idempotent — a second run finds nothing left to backfill.
+ *
+ * Mutates `G` in place. No LLM, no network.
+ */
+export function backfillCitations(
+  G: Graph,
+  outDir: string,
+  options: BackfillCitationsOptions = {},
+): BackfillCitationsResult {
+  const topK = options.topK ?? CITATIONS_INLINE_TOP_K;
+  const includeBbox = options.includeBbox ?? false;
+  const map: CitationAggregateMap = {};
+  let backfilledNodes = 0;
+
+  G.forEachNode((nodeId, attrs) => {
+    const record = attrs as Record<string, unknown>;
+    const raw = record.citations;
+    if (!Array.isArray(raw) || raw.length === 0) return;
+
+    const union = unionCitations([raw as OntologyCitation[]], { includeBbox });
+    if (union.length === 0) return;
+
+    const hasCount = typeof record.citation_count === "number";
+    if (hasCount) {
+      // Already projected (backfill or real extract): do not touch the count or
+      // the inline set, but mirror the existing inline citations into the
+      // sidecar so the store stays consistent and re-runs are byte-identical.
+      map[nodeId] = { count: record.citation_count as number, citations: union };
+      return;
+    }
+
+    // Legacy node: project it.
+    const inline = selectTopCitations(union, topK);
+    G.setNodeAttribute(nodeId, "citation_count", union.length);
+    G.setNodeAttribute(nodeId, "citations", inline);
+    map[nodeId] = { count: union.length, citations: union };
+    backfilledNodes += 1;
+  });
+
+  const sidecarPath = backfilledNodes > 0 ? writeCitationsSidecar(outDir, map, G) : null;
+  return { backfilledNodes, sidecarPath, lowerBound: backfilledNodes > 0 };
+}
+
 /**
  * Citation-content hash: sha256 over the sorted projection
  * `{ node_id -> inline citations }`. Explicitly NOT computeTopologySignature
