@@ -31,6 +31,7 @@ import {
   toProjectRelativePath,
 } from "./portable-artifacts.js";
 import { loadGraphFromData } from "./graph.js";
+import type { CitationAggregateMap } from "./citations.js";
 import { assertGraphJsonFileSize } from "./graph-size-guard.js";
 import { persistCommunityLabels, resolveCommunityLabels } from "./community-labels.js";
 import {
@@ -149,6 +150,28 @@ export async function rebuildCode(
      * only when THIS flag is set — never merely because `describe === false`.
      */
     markDescribePending?: boolean;
+    /**
+     * Per-node citation cap injected into the description prompt. Forwarded to
+     * `generateNodeDescriptions`. Resolved from corpus type by the CLI when a
+     * `--citation-cap` flag is absent; undefined here → the node-descriptions
+     * resolved default (10).
+     */
+    citationCap?: number | "all";
+    /**
+     * Inline Level-1 citations kept per node in graph.json (the K-bounded set).
+     * Forwarded to `persistGraphWithCitations`. Resolved from corpus type by the
+     * CLI when a `--citations-top-k` flag is absent; undefined → the citations
+     * module default (8).
+     */
+    citationsTopK?: number;
+    /**
+     * hook-rebuild signal: after writing graph.json, re-derive `citations.json`
+     * LLM-free with the no-shrink guard — a re-projection from a K-trimmed
+     * graph.json must never clobber a fuller existing sidecar, and when the
+     * persisted extraction output is available the full tail is rebuilt from it.
+     * Only the fast git-hook rebuild sets this.
+     */
+    citationsReproject?: boolean;
   } = {},
 ): Promise<boolean> {
   try {
@@ -161,7 +184,7 @@ export async function rebuildCode(
     const { cluster, scoreAll } = await import("./cluster.js");
     const { godNodes, surprisingConnections, suggestQuestions } = await import("./analyze.js");
     const { generate } = await import("./report.js");
-    const { toJson, computeTopologySignature } = await import("./export.js");
+    const { persistGraphWithCitations, computeTopologySignature } = await import("./export.js");
 
     const root = pathResolve(watchPath);
     const scopeInventory = inspectInputScope(root, {
@@ -388,6 +411,7 @@ export async function rebuildCode(
         ...(options.descriptionMaxNodes !== undefined ? { maxNodes: options.descriptionMaxNodes } : {}),
         ...(options.descriptionOnlyMissing ? { onlyMissing: true } : {}),
         ...(options.descriptionMode ? { mode: options.descriptionMode } : {}),
+        ...(options.citationCap !== undefined ? { citationCap: options.citationCap } : {}),
         instructionDir: join(paths.stateDir, "description-instructions"),
       });
       // "Complete" = every describable node now has a description. When a backend
@@ -396,13 +420,39 @@ export async function rebuildCode(
       descriptionsComplete = result.coverage.described >= result.coverage.describable;
     }
 
-    const jsonWritten = toJson(G, communities, paths.graph, {
+    // hook-rebuild fidelity guard: `persistGraphWithCitations` below re-derives
+    // `citations.json` from the (already K-trimmed) in-memory graph, which would
+    // SHRINK a fuller existing sidecar. Snapshot the rich store BEFORE the write
+    // so the re-projection can restore the exhaustive tail (it is no longer on
+    // disk once persist overwrites it).
+    let priorCitationsSidecar: CitationAggregateMap | null = null;
+    if (options.citationsReproject) {
+      const { readCitationsSidecar } = await import("./citations.js");
+      priorCitationsSidecar = readCitationsSidecar(dirname(paths.graph));
+    }
+
+    const jsonWritten = persistGraphWithCitations(G, communities, paths.graph, {
       communityLabels: labels,
       force: options.force,
+      ...(options.citationsTopK !== undefined ? { citations: { topK: options.citationsTopK } } : {}),
     });
     if (!jsonWritten) {
       return false;
     }
+
+    // Re-run the LLM-free re-projection with the no-shrink guard so the
+    // exhaustive tail survives — rebuilding from the persisted extraction output
+    // when present, else preserving the pre-write snapshot. No-op when no node
+    // carries citations. Only fires for the git hook (full builds skip this).
+    if (options.citationsReproject) {
+      const { reprojectCitationsLLMFree } = await import("./citations.js");
+      reprojectCitationsLLMFree(G, dirname(paths.graph), {
+        ...(options.citationsTopK !== undefined ? { topK: options.citationsTopK } : {}),
+        ...(existsSync(paths.scratch.extract) ? { extractionPath: paths.scratch.extract } : {}),
+        priorSidecar: priorCitationsSidecar,
+      });
+    }
+
     persistCommunityLabels(labels, paths.scratch.labels);
     writeFileSync(paths.report, report, "utf-8");
 
@@ -670,6 +720,8 @@ export async function watch(
   options: {
     scope?: GraphifyInputScopeMode;
     scopeSource?: InputScopeSource;
+    /** Inline Level-1 citations kept per node in graph.json. Default: corpus-resolved. */
+    citationsTopK?: number;
   } = {},
 ): Promise<void> {
   let chokidar: typeof import("chokidar");

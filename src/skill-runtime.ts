@@ -21,6 +21,12 @@ import {
   type SemanticFragment,
 } from "./semantic-fragment-validation.js";
 import { buildFromJson } from "./build.js";
+import {
+  foldCitationsInto,
+  unionCitations,
+  readCitationsSidecar,
+  type CitationAggregateMap,
+} from "./citations.js";
 import { cluster, scoreAll } from "./cluster.js";
 import { detect, detectIncremental, saveManifest } from "./detect.js";
 import {
@@ -28,7 +34,7 @@ import {
   resolveCliInputScopeSelection,
   resolveConfiguredInputScopeSelection,
 } from "./input-scope.js";
-import { toCypher, toGraphml, toHtml, toJson, toSvg, pushToNeo4j } from "./export.js";
+import { persistGraphWithCitations, toCypher, toGraphml, toHtml, toJson, toSvg, pushToNeo4j } from "./export.js";
 import { safeToHtml } from "./html-export.js";
 import { extractWithDiagnostics } from "./extract.js";
 import {
@@ -112,6 +118,7 @@ import type {
   GodNodeEntry,
   GraphDiffResult,
   InputScopeSource,
+  OntologyCitation,
   SuggestedQuestion,
   SurpriseEntry,
   NormalizedOntologyProfile,
@@ -317,7 +324,21 @@ function mergeHyperedges(
 
 function mergeGraphs(target: Graph, source: Graph): void {
   source.forEachNode((nodeId, attrs) => {
-    target.mergeNode(nodeId, attrs);
+    // SPEC_CITATIONS F1: graphology mergeNode is shallow last-write-wins, so the
+    // source (fresh re-extraction) node's `citations` would REPLACE the target
+    // (existing graph) node's set, dropping the union. Mirror build.ts:291-298 —
+    // union the `citations` attr by identity BEFORE the merge so a re-extracted
+    // hub keeps every distinct citation across the old and new node. Code nodes
+    // rarely carry citations; when neither side has any this is a no-op.
+    const incoming = { ...(attrs as Record<string, unknown>) };
+    if (target.hasNode(nodeId) && Array.isArray(incoming.citations)) {
+      const existing = target.getNodeAttribute(nodeId, "citations");
+      incoming.citations = unionCitations([
+        Array.isArray(existing) ? (existing as OntologyCitation[]) : [],
+        incoming.citations as OntologyCitation[],
+      ]);
+    }
+    target.mergeNode(nodeId, incoming);
   });
   source.forEachEdge((_edge, attrs, sourceId, targetId) => {
     if (!target.hasNode(sourceId) || !target.hasNode(targetId)) return;
@@ -409,7 +430,7 @@ function placeholderDetection(root: string = "."): DetectionResult {
   };
 }
 
-function mergeSemanticArtifacts(
+export function mergeSemanticArtifacts(
   cached: Partial<Extraction> | null | undefined,
   fresh: Partial<Extraction> | null | undefined,
 ): Extraction {
@@ -417,10 +438,15 @@ function mergeSemanticArtifacts(
   const freshExtraction = ensureExtractionShape(fresh);
 
   const dedupedNodes: Extraction["nodes"] = [];
-  const seen = new Set<string>();
+  const byId = new Map<string, Extraction["nodes"][number]>();
   for (const node of [...cachedExtraction.nodes, ...freshExtraction.nodes]) {
-    if (seen.has(node.id)) continue;
-    seen.add(node.id);
+    const kept = byId.get(node.id);
+    if (kept) {
+      // SPEC_CITATIONS: fold the duplicate's citations into the kept node.
+      foldCitationsInto(kept, node);
+      continue;
+    }
+    byId.set(node.id, node);
     dedupedNodes.push(node);
   }
 
@@ -433,7 +459,7 @@ function mergeSemanticArtifacts(
   };
 }
 
-function mergeAstAndSemantic(
+export function mergeAstAndSemantic(
   astInput: Partial<Extraction> | null | undefined,
   semanticInput: Partial<Extraction> | null | undefined,
 ): Extraction {
@@ -441,10 +467,15 @@ function mergeAstAndSemantic(
   const semantic = ensureExtractionShape(semanticInput);
 
   const mergedNodes: Extraction["nodes"] = [...ast.nodes];
-  const seen = new Set(ast.nodes.map((node) => node.id));
+  const byId = new Map(mergedNodes.map((node) => [node.id, node]));
   for (const node of semantic.nodes) {
-    if (seen.has(node.id)) continue;
-    seen.add(node.id);
+    const kept = byId.get(node.id);
+    if (kept) {
+      // SPEC_CITATIONS: fold the duplicate's citations into the kept node.
+      foldCitationsInto(kept, node);
+      continue;
+    }
+    byId.set(node.id, node);
     mergedNodes.push(node);
   }
 
@@ -1072,10 +1103,16 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       const fresh = freshLoad.extraction;
 
       const dedupedNodes: Extraction["nodes"] = [];
-      const seen = new Set<string>();
+      const byId = new Map<string, Extraction["nodes"][number]>();
       for (const node of [...cached.nodes, ...fresh.nodes]) {
-        if (seen.has(node.id)) continue;
-        seen.add(node.id);
+        const kept = byId.get(node.id);
+        if (kept) {
+          // SPEC_CITATIONS F2: fold the duplicate's citations into the kept node
+          // (mirrors mergeSemanticArtifacts) instead of discarding them.
+          foldCitationsInto(kept, node);
+          continue;
+        }
+        byId.set(node.id, node);
         dedupedNodes.push(node);
       }
 
@@ -1105,10 +1142,16 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       const semantic = loadAndSanitizeFragment(opts.semantic, "semantic").extraction;
 
       const mergedNodes: Extraction["nodes"] = [...ast.nodes];
-      const seen = new Set(ast.nodes.map((node) => node.id));
+      const byId = new Map(mergedNodes.map((node) => [node.id, node]));
       for (const node of semantic.nodes) {
-        if (seen.has(node.id)) continue;
-        seen.add(node.id);
+        const kept = byId.get(node.id);
+        if (kept) {
+          // SPEC_CITATIONS F2: fold the semantic duplicate's citations into the
+          // kept AST node (mirrors mergeAstAndSemantic) instead of discarding.
+          foldCitationsInto(kept, node);
+          continue;
+        }
+        byId.set(node.id, node);
         mergedNodes.push(node);
       }
 
@@ -1178,7 +1221,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         { labelsPath },
       );
 
-      toJson(G, analyzed.communities, resolve(opts.graphOut), {
+      persistGraphWithCitations(G, analyzed.communities, resolve(opts.graphOut), {
         communityLabels: analyzed.labels,
       });
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
@@ -1257,8 +1300,19 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       );
       analyzed.analysis.diff = graphDiff(oldGraph, mergedGraph);
 
-      toJson(mergedGraph, analyzed.communities, resolve(opts.graphOut), {
+      // SPEC_CITATIONS F1: the existing graph's inline `citations` are already
+      // K-trimmed; mergeGraphs unions old↔new inline sets, but the exhaustive
+      // tail lives in citations.json. Snapshot that FULL prior store (exactly
+      // the watch.ts:428-453 hook-rebuild pattern) and hand it to the aggregation
+      // pass so each node's prior FULL union ∪ the fresh extraction is what sets
+      // `citation_count` + the top-K — recovering the true union, not the trimmed
+      // K-set, and re-stamping a count consistent with citations.json.
+      const finalizePriorSidecar: CitationAggregateMap | null = readCitationsSidecar(
+        dirname(resolve(opts.graphOut)),
+      );
+      persistGraphWithCitations(mergedGraph, analyzed.communities, resolve(opts.graphOut), {
         communityLabels: analyzed.labels,
+        ...(finalizePriorSidecar ? { citations: { priorSidecar: finalizePriorSidecar } } : {}),
       });
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
       writeJson(opts.analysisOut, analyzed.analysis);
@@ -1308,7 +1362,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       );
 
       mkdirSync(dirname(resolve(opts.graphOut)), { recursive: true });
-      toJson(G, analyzed.communities, resolve(opts.graphOut), {
+      persistGraphWithCitations(G, analyzed.communities, resolve(opts.graphOut), {
         communityLabels: analyzed.labels,
       });
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
@@ -1364,7 +1418,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       analysis.labels = mapToObject(labels);
       writeFileSync(resolve(opts.reportOut), report, "utf-8");
       if (opts.graphOut) {
-        toJson(G, communities, resolve(opts.graphOut), { communityLabels: labels });
+        persistGraphWithCitations(G, communities, resolve(opts.graphOut), { communityLabels: labels });
       }
       if (opts.htmlOut) {
         safeToHtml(G, communities, resolve(opts.htmlOut), { communityLabels: labels }, {
@@ -1555,8 +1609,16 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       );
       analyzed.analysis.diff = graphDiff(oldGraph, mergedGraph);
 
-      toJson(mergedGraph, analyzed.communities, resolve(opts.graphOut), {
+      // SPEC_CITATIONS F1 (mirrors finalize-update): recover the exhaustive
+      // citation tail from the prior citations.json before re-aggregating, so a
+      // re-extracted hub's count + top-K derive from the prior FULL union ∪ fresh
+      // rather than the K-trimmed inline.
+      const mergeUpdatePriorSidecar: CitationAggregateMap | null = readCitationsSidecar(
+        dirname(resolve(opts.graphOut)),
+      );
+      persistGraphWithCitations(mergedGraph, analyzed.communities, resolve(opts.graphOut), {
         communityLabels: analyzed.labels,
+        ...(mergeUpdatePriorSidecar ? { citations: { priorSidecar: mergeUpdatePriorSidecar } } : {}),
       });
       writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
       writeJson(opts.analysisOut, analyzed.analysis);
@@ -1602,6 +1664,10 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       ]) {
         mkdirSync(dirname(target), { recursive: true });
       }
+      // Reload-only re-cluster path: G comes from an existing graph.json whose
+      // inline citations are already K-trimmed, so re-emitting the sidecar here
+      // would shrink its full list to K. Keep plain toJson and leave the
+      // co-derived citations.json (emitted by the extract/assemble pass) intact.
       toJson(G, analyzed.communities, resolve(opts.graphOut), {
         communityLabels: analyzed.labels,
       });

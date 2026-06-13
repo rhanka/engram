@@ -372,8 +372,34 @@ function isDescribableNode(attrs: Record<string, unknown>): boolean {
 /** Snippet length cap for an individual citation/evidence string. */
 const CITATION_MAXLEN = 120;
 
-/** Max citation / evidence entries injected per node prompt line. */
+/**
+ * Code-default fallback for the per-node prompt citation cap. Used only when no
+ * cap is threaded through (kept at 3, the historic value). SPEC_CITATIONS pass
+ * 1: the resolved default when a caller does not specify is 10
+ * (RESOLVED_DEFAULT_CITATION_CAP), set at the resolution boundary below.
+ */
 const MAX_CITATIONS = 3;
+
+/**
+ * Tunable per-node prompt citation cap. A number bounds the snippets injected
+ * per node; "all" injects every citation. Threaded from
+ * GenerateNodeDescriptionsOptions / DescribeNodesOptions.
+ */
+export type CitationCap = number | "all";
+
+/** Resolved default cap for this pass when a caller does not specify one. */
+export const RESOLVED_DEFAULT_CITATION_CAP = 10;
+
+/**
+ * Resolve a (possibly undefined) cap option to a concrete numeric limit.
+ * "all" → Infinity; undefined → RESOLVED_DEFAULT_CITATION_CAP; a finite number
+ * → itself (clamped to >= 0).
+ */
+function resolveCitationCap(cap: CitationCap | undefined): number {
+  if (cap === "all") return Number.POSITIVE_INFINITY;
+  if (typeof cap === "number" && Number.isFinite(cap)) return Math.max(0, cap);
+  return RESOLVED_DEFAULT_CITATION_CAP;
+}
 
 export interface NodeContext {
   id: string;
@@ -399,22 +425,30 @@ export interface NodeContext {
  * quote, page, section, …) and `evidence_refs` (string[]). Returns a small,
  * deduped, truncated list suitable for direct injection into a prompt line.
  */
-function collectCitationContext(attrs: Record<string, unknown>): string[] {
+function collectCitationContext(
+  attrs: Record<string, unknown>,
+  cap: number = MAX_CITATIONS,
+  citationsOverride?: unknown[],
+): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
   const push = (value: string): void => {
     const snippet = truncate(value, CITATION_MAXLEN);
     const key = snippet.toLowerCase();
-    if (snippet && !seen.has(key) && out.length < MAX_CITATIONS) {
+    if (snippet && !seen.has(key) && out.length < cap) {
       seen.add(key);
       out.push(snippet);
     }
   };
 
-  const citations = attrs.citations;
+  // F4: on the describe-on-existing-graph path the node's in-memory `citations`
+  // is already K-trimmed; a caller that loaded the fuller per-node set from
+  // citations.json passes it here so `--citation-cap all/50` can ground on more
+  // than K distinct sources. Falls back to the inline attr otherwise.
+  const citations = citationsOverride ?? attrs.citations;
   if (Array.isArray(citations)) {
     for (const entry of citations) {
-      if (out.length >= MAX_CITATIONS) break;
+      if (out.length >= cap) break;
       if (typeof entry === "string") {
         push(entry);
         continue;
@@ -440,7 +474,7 @@ function collectCitationContext(attrs: Record<string, unknown>): string[] {
   const evidenceRefs = attrs.evidence_refs;
   if (Array.isArray(evidenceRefs)) {
     for (const ref of evidenceRefs) {
-      if (out.length >= MAX_CITATIONS) break;
+      if (out.length >= cap) break;
       const value = safeString(ref);
       if (value) push(value);
     }
@@ -461,9 +495,37 @@ function collectNeighbors(G: Graph, nodeId: string, limit: number): string[] {
   return out;
 }
 
-export function collectNodeContext(G: Graph, nodeId: string): NodeContext {
+export interface CollectNodeContextOptions {
+  /**
+   * Per-node prompt citation cap. A number bounds the snippets; "all" injects
+   * every citation. Unspecified resolves to RESOLVED_DEFAULT_CITATION_CAP (10).
+   */
+  citationCap?: CitationCap;
+  /**
+   * F4: fuller per-node citation sets (keyed by node id), loaded from
+   * citations.json on the describe-on-existing-graph path. When an entry is
+   * present AND longer than the node's K-trimmed inline `citations`, it is used
+   * for prompt grounding so `--citation-cap all/50` can reach beyond K distinct
+   * sources. A missing/empty/smaller entry falls back to the inline set (never
+   * shrinks).
+   */
+  citationsByNode?: Record<string, unknown[]>;
+}
+
+export function collectNodeContext(
+  G: Graph,
+  nodeId: string,
+  options: CollectNodeContextOptions = {},
+): NodeContext {
   const attrs = G.getNodeAttributes(nodeId) as Record<string, unknown>;
   const isCode = isCodeNode(attrs);
+  const cap = resolveCitationCap(options.citationCap);
+  // F4: prefer the fuller sidecar set only when it is genuinely richer than the
+  // K-trimmed inline — otherwise keep the inline so we never shrink grounding.
+  const inlineLen = Array.isArray(attrs.citations) ? attrs.citations.length : 0;
+  const override = options.citationsByNode?.[nodeId];
+  const citationsOverride =
+    Array.isArray(override) && override.length > inlineLen ? override : undefined;
   return {
     id: nodeId,
     label: truncate(safeString(attrs.label) ?? nodeId),
@@ -474,7 +536,7 @@ export function collectNodeContext(G: Graph, nodeId: string): NodeContext {
     degree: G.degree(nodeId),
     neighbors: collectNeighbors(G, nodeId, 6),
     // Citation grounding only matters for entity nodes; skip the work for code.
-    citations: isCode ? [] : collectCitationContext(attrs),
+    citations: isCode ? [] : collectCitationContext(attrs, cap, citationsOverride),
   };
 }
 
@@ -683,6 +745,18 @@ export interface DescribeNodesOptions {
   callLlm?: CallLlmFn;
   /** Only rank/describe nodes whose `description` attr is empty/absent. */
   onlyMissing?: boolean;
+  /**
+   * Per-node prompt citation cap (SPEC_CITATIONS). A number bounds the citation
+   * snippets injected per node; "all" injects every citation. Unspecified
+   * resolves to RESOLVED_DEFAULT_CITATION_CAP (10).
+   */
+  citationCap?: CitationCap;
+  /**
+   * F4: fuller per-node citation sets (from citations.json) keyed by node id.
+   * On the describe-on-existing-graph path the inline `citations` is K-trimmed,
+   * so the caller passes the fuller set here to ground beyond K.
+   */
+  citationsByNode?: Record<string, unknown[]>;
 }
 
 /**
@@ -706,7 +780,12 @@ export async function describeNodes(
   const callLlm = options.callLlm ?? (await makeDefaultCallLlm(options.provider, options.model));
 
   for (const batch of chunk(targetIds, batchSize)) {
-    const contexts = batch.map((id) => collectNodeContext(G, id));
+    const contexts = batch.map((id) =>
+      collectNodeContext(G, id, {
+        citationCap: options.citationCap,
+        ...(options.citationsByNode ? { citationsByNode: options.citationsByNode } : {}),
+      }),
+    );
     const prompt = buildNodeDescriptionPrompt(contexts);
     const validIds = new Set(batch);
     const maxTokens = Math.min(120 + 48 * batch.length, 8192);
@@ -761,6 +840,20 @@ export interface GenerateNodeDescriptionsOptions {
    * directory (callers that know the project root pass it here).
    */
   instructionDir?: string;
+  /**
+   * Per-node prompt citation cap (SPEC_CITATIONS). A number bounds the citation
+   * snippets injected per node into the description prompt; "all" injects every
+   * citation. Unspecified resolves to RESOLVED_DEFAULT_CITATION_CAP (10).
+   * Flows on BOTH the direct (API) path and the no-key assistant path.
+   */
+  citationCap?: CitationCap;
+  /**
+   * F4: fuller per-node citation sets (from citations.json) keyed by node id.
+   * Supplied by the describe-on-existing-graph CLI path so `--citation-cap
+   * all/50` can ground on more than the K-trimmed inline `citations`. Flows on
+   * BOTH the direct (API) path and the no-key assistant path.
+   */
+  citationsByNode?: Record<string, unknown[]>;
 }
 
 /**
@@ -991,7 +1084,12 @@ export async function generateNodeDescriptions(
       return skip("assistant", "noBackend");
     }
     const batches = chunk(
-      targetIds.map((id) => collectNodeContext(G, id)),
+      targetIds.map((id) =>
+        collectNodeContext(G, id, {
+          citationCap: options.citationCap,
+          ...(options.citationsByNode ? { citationsByNode: options.citationsByNode } : {}),
+        }),
+      ),
       batchSize,
     );
     const { instructionPaths, answerPaths } = emitDescriptionInstructions(
@@ -1049,6 +1147,8 @@ export async function generateNodeDescriptions(
       ...(options.batchSize !== undefined ? { batchSize: options.batchSize } : {}),
       ...(options.callLlm ? { callLlm: options.callLlm } : {}),
       ...(options.onlyMissing !== undefined ? { onlyMissing: options.onlyMissing } : {}),
+      ...(options.citationCap !== undefined ? { citationCap: options.citationCap } : {}),
+      ...(options.citationsByNode ? { citationsByNode: options.citationsByNode } : {}),
     });
 
     let describedCount = 0;

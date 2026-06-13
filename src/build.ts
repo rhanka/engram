@@ -11,7 +11,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, relative as pathRelative, resolve } from "node:path";
 import Graph from "graphology";
-import type { Extraction } from "./types.js";
+import type { Extraction, OntologyCitation } from "./types.js";
+import { unionCitations } from "./citations.js";
 import { createGraph } from "./graph.js";
 import { assertGraphJsonFileSize } from "./graph-size-guard.js";
 import { cleanupStaleNodes } from "./semantic-cleanup.js";
@@ -282,6 +283,17 @@ export function buildFromJson(extraction: Extraction, options?: BuildOptions): G
     const normalizedAttrs = { ...attrs };
     if ("source_file" in normalizedAttrs) {
       normalizedAttrs.source_file = normalizeSourceFilePath(normalizedAttrs.source_file, root) ?? normalizedAttrs.source_file;
+    }
+    // SPEC_CITATIONS: graphology mergeNode is shallow last-write-wins, so a
+    // later chunk's `citations` would REPLACE the earlier chunk's set, dropping
+    // the union. Union them by citation identity before the merge so a hub
+    // entity keeps every distinct citation across chunks.
+    if (G.hasNode(id) && Array.isArray(normalizedAttrs.citations)) {
+      const existing = G.getNodeAttribute(id, "citations");
+      normalizedAttrs.citations = unionCitations([
+        Array.isArray(existing) ? (existing as OntologyCitation[]) : [],
+        normalizedAttrs.citations as OntologyCitation[],
+      ]);
     }
     G.mergeNode(id, normalizedAttrs);
   }
