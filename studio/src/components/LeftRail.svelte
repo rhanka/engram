@@ -5,7 +5,7 @@
    * the selection (click = add/remove); selected rows are marked. The selection
    * itself is shown in the right column (SelectionPanel).
    */
-  import { SelectableRow } from "@sentropic/design-system-svelte";
+  import { SelectableRow, Search, Badge } from "@sentropic/design-system-svelte";
   import Accordion from "./Accordion.svelte";
   import TypeShapeGlyph from "./TypeShapeGlyph.svelte";
   import {
@@ -70,8 +70,8 @@
   </header>
 
   <div class="rail-search">
-    <input
-      type="search"
+    <Search
+      size="sm"
       placeholder="Search entities…"
       value={query}
       oninput={(e) => onSetQuery?.(e.currentTarget.value)}
@@ -90,7 +90,7 @@
               <span class="rail-row-content">
                 <TypeShapeGlyph type={t.key} />
                 <span class="rail-row-label">{t.key}</span>
-                <span class="rail-row-count">{t.count}</span>
+                <Badge tone="neutral">{t.count}</Badge>
               </span>
             </SelectableRow>
           </li>
@@ -114,7 +114,7 @@
                   aria-hidden="true"
                 ></span>
                 <span class="rail-row-label">{c.key}</span>
-                <span class="rail-row-count">{c.count}</span>
+                <Badge tone="neutral">{c.count}</Badge>
               </span>
             </SelectableRow>
           </li>
@@ -200,14 +200,6 @@
     padding: 0.5rem 0.85rem 0.7rem;
     border-bottom: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
   }
-  .rail-search input {
-    width: 100%;
-    padding: 0.45rem 0.6rem;
-    border: 1px solid var(--st-semantic-border-strong, #94a3b8);
-    border-radius: var(--st-radius-sm, 4px);
-    background: var(--st-semantic-surface-default, #fff);
-    color: var(--st-semantic-text-primary, #0f172a);
-  }
   .rail-list {
     list-style: none;
     margin: 0;
@@ -240,16 +232,6 @@
     height: 10px;
     border-radius: 50%;
     border: 1px solid rgba(0, 0, 0, 0.12);
-  }
-  .rail-row-count {
-    flex-shrink: 0;
-    font-variant-numeric: tabular-nums;
-    color: var(--st-semantic-text-muted, #64748b);
-    background: var(--st-semantic-surface-subtle, #f8fafc);
-    border: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
-    border-radius: var(--st-radius-pill, 999px);
-    padding: 0.02rem 0.45rem;
-    font-size: 0.72rem;
   }
   .rail-type-groups {
     list-style: none;
