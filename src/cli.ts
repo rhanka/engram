@@ -5150,6 +5150,10 @@ export async function main(): Promise<void> {
         describe: false,
         label: false,
         markDescribePending: true,
+        // Re-derive citations.json LLM-free with the no-shrink guard so the
+        // fast commit-time rebuild never clobbers a fuller existing sidecar
+        // (and rebuilds the full tail from the extraction output when present).
+        citationsReproject: true,
         scope: scopeSelection.mode,
         scopeSource: scopeSelection.source,
       });

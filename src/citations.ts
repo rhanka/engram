@@ -12,7 +12,7 @@
  * replayable from already-extracted citation locators.
  */
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type Graph from "graphology";
 import type { OntologyCitation } from "./types.js";
@@ -353,4 +353,163 @@ export function writeCitationsSidecar(
   };
   writeFileSync(target, JSON.stringify(payload, null, 2), "utf-8");
   return target;
+}
+
+// ---------------------------------------------------------------------------
+// hook-rebuild re-projection (LLM-free)
+// ---------------------------------------------------------------------------
+
+/** Read an existing `citations.json` store, or null when absent/unreadable. */
+function readExistingSidecar(outDir: string): CitationAggregateMap | null {
+  const target = join(outDir, CITATIONS_SIDECAR_RELPATH);
+  if (!existsSync(target)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(target, "utf-8")) as {
+      nodes?: Record<string, { count?: unknown; citations?: unknown }>;
+    };
+    if (!parsed || typeof parsed !== "object" || !parsed.nodes) return null;
+    const map: CitationAggregateMap = {};
+    for (const [id, entry] of Object.entries(parsed.nodes)) {
+      const citations = Array.isArray(entry?.citations) ? (entry.citations as OntologyCitation[]) : [];
+      const count = typeof entry?.count === "number" ? entry.count : citations.length;
+      map[id] = { count, citations };
+    }
+    return map;
+  } catch {
+    return null;
+  }
+}
+
+/** Read per-node full citations from a persisted extraction JSON, or null. */
+function readExtractionCitations(extractionPath: string): Record<string, OntologyCitation[]> | null {
+  if (!existsSync(extractionPath)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(extractionPath, "utf-8")) as {
+      nodes?: Array<{ id?: unknown; citations?: unknown }>;
+    };
+    if (!parsed || !Array.isArray(parsed.nodes)) return null;
+    const out: Record<string, OntologyCitation[]> = {};
+    for (const node of parsed.nodes) {
+      const id = typeof node?.id === "string" ? node.id : null;
+      if (!id) continue;
+      if (!Array.isArray(node.citations) || node.citations.length === 0) continue;
+      const existing = out[id] ?? [];
+      out[id] = unionCitations([existing, node.citations as OntologyCitation[]]);
+    }
+    return Object.keys(out).length > 0 ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface ReprojectCitationsOptions {
+  /** Inline Level-1 K. Default CITATIONS_INLINE_TOP_K (8). */
+  topK?: number;
+  /** Include bbox in identity (figure/image corpora). Default false. */
+  includeBbox?: boolean;
+  /**
+   * Path to the persisted merged extraction JSON (`.graphify_extract.json`). When
+   * present AND it carries richer per-node citations than graph.json, the FULL
+   * Level-1 + Level-2 projection is rebuilt from it. Absent → the no-shrink
+   * guard path (preserve an existing fuller sidecar).
+   */
+  extractionPath?: string;
+  /**
+   * A snapshot of the prior `citations.json` captured BEFORE any same-pass
+   * write that may have shrunk it (e.g. a preceding `persistGraphWithCitations`
+   * in the hook path). When supplied it is the no-shrink baseline instead of the
+   * on-disk store — so the guard compares against the genuinely fuller tail, not
+   * an already-overwritten K-set. Falls back to the on-disk store when absent.
+   */
+  priorSidecar?: CitationAggregateMap | null;
+}
+
+/**
+ * Read the current on-disk `citations.json` as an aggregate map (or null when
+ * absent / unreadable). Exposed so callers can snapshot the RICH sidecar before
+ * a same-pass write shrinks it, then hand it back via `priorSidecar`.
+ */
+export function readCitationsSidecar(outDir: string): CitationAggregateMap | null {
+  return readExistingSidecar(outDir);
+}
+
+export interface ReprojectCitationsResult {
+  /** True when the sidecar was fully rebuilt from the extraction output. */
+  rebuiltFromExtraction: boolean;
+  /** Absolute path of the (re)written sidecar, or null when none written. */
+  sidecarPath: string | null;
+}
+
+/**
+ * LLM-free citation re-projection for `hook-rebuild` (SPEC_CITATIONS.md
+ * "Exhaustive Extraction" → hook-rebuild). Re-projects Level-1
+ * (`citation_count` + trimmed inline `citations`) and re-derives the Level-2
+ * `citations.json`, with the pass-1 fidelity guard:
+ *
+ *   - If the extraction output is available AND richer than graph.json, rebuild
+ *     the FULL sidecar (and Level-1) from it — the exhaustive tail is recovered.
+ *   - If only the K-trimmed graph.json is available, re-project Level-1 in place
+ *     (the aggregateCitations idempotency guard keeps the larger known count)
+ *     and write the sidecar MERGED with any existing store, taking the richer
+ *     per-node entry — so a re-projection from a trimmed graph NEVER clobbers a
+ *     fuller `citations.json`.
+ *
+ * Never adds a citation the inputs do not already contain. No LLM, no network.
+ * Mutates `G` in place.
+ */
+export function reprojectCitationsLLMFree(
+  G: Graph,
+  outDir: string,
+  options: ReprojectCitationsOptions = {},
+): ReprojectCitationsResult {
+  const topK = options.topK ?? CITATIONS_INLINE_TOP_K;
+  const includeBbox = options.includeBbox ?? false;
+
+  const extractionCitations = options.extractionPath
+    ? readExtractionCitations(options.extractionPath)
+    : null;
+
+  // Path 1: full rebuild from the extraction output. Fold the extraction's full
+  // per-node citations into G BEFORE aggregating so Level-1 + Level-2 both
+  // derive from the exhaustive set.
+  if (extractionCitations) {
+    G.forEachNode((nodeId) => {
+      const fromExtraction = extractionCitations[nodeId];
+      if (!fromExtraction || fromExtraction.length === 0) return;
+      // The extraction output IS the upstream source of truth (SPEC "Source of
+      // truth"): the full sidecar derives from it, NOT from graph.json's
+      // K-bounded inline. Replace the node's citations with the extraction set
+      // so Level-1 + Level-2 both re-derive from the exhaustive list.
+      const union = unionCitations([fromExtraction], { includeBbox });
+      G.setNodeAttribute(nodeId, "citations", union);
+      // Clear the stale count so aggregateCitations stamps the true union size
+      // (the prior count may be stale relative to a re-extraction).
+      G.removeNodeAttribute(nodeId, "citation_count");
+    });
+    const map = aggregateCitations(G, { topK, includeBbox });
+    const sidecarPath = writeCitationsSidecar(outDir, map, G);
+    return { rebuiltFromExtraction: true, sidecarPath };
+  }
+
+  // Path 2: trimmed graph only. Re-project Level-1 in place (guarded count) and
+  // merge with the existing sidecar so a fuller tail is never shrunk. Prefer the
+  // caller-supplied pre-write snapshot over the on-disk store (which a preceding
+  // same-pass write may already have shrunk).
+  const freshMap = aggregateCitations(G, { topK, includeBbox });
+  const existing = options.priorSidecar ?? readExistingSidecar(outDir);
+  if (existing) {
+    for (const [id, prior] of Object.entries(existing)) {
+      const fresh = freshMap[id];
+      // Keep whichever entry is richer (larger count / longer list).
+      if (!fresh || prior.count > fresh.count || prior.citations.length > fresh.citations.length) {
+        freshMap[id] = prior;
+        // Reflect the richer count back onto Level-1 so graph.json stays honest.
+        if (G.hasNode(id) && prior.count > 0) {
+          G.setNodeAttribute(id, "citation_count", Math.max(prior.count, fresh?.count ?? 0));
+        }
+      }
+    }
+  }
+  const sidecarPath = writeCitationsSidecar(outDir, freshMap, G);
+  return { rebuiltFromExtraction: false, sidecarPath };
 }

@@ -31,6 +31,7 @@ import {
   toProjectRelativePath,
 } from "./portable-artifacts.js";
 import { loadGraphFromData } from "./graph.js";
+import type { CitationAggregateMap } from "./citations.js";
 import { assertGraphJsonFileSize } from "./graph-size-guard.js";
 import { persistCommunityLabels, resolveCommunityLabels } from "./community-labels.js";
 import {
@@ -163,6 +164,14 @@ export async function rebuildCode(
      * module default (8).
      */
     citationsTopK?: number;
+    /**
+     * hook-rebuild signal: after writing graph.json, re-derive `citations.json`
+     * LLM-free with the no-shrink guard — a re-projection from a K-trimmed
+     * graph.json must never clobber a fuller existing sidecar, and when the
+     * persisted extraction output is available the full tail is rebuilt from it.
+     * Only the fast git-hook rebuild sets this.
+     */
+    citationsReproject?: boolean;
   } = {},
 ): Promise<boolean> {
   try {
@@ -411,6 +420,17 @@ export async function rebuildCode(
       descriptionsComplete = result.coverage.described >= result.coverage.describable;
     }
 
+    // hook-rebuild fidelity guard: `persistGraphWithCitations` below re-derives
+    // `citations.json` from the (already K-trimmed) in-memory graph, which would
+    // SHRINK a fuller existing sidecar. Snapshot the rich store BEFORE the write
+    // so the re-projection can restore the exhaustive tail (it is no longer on
+    // disk once persist overwrites it).
+    let priorCitationsSidecar: CitationAggregateMap | null = null;
+    if (options.citationsReproject) {
+      const { readCitationsSidecar } = await import("./citations.js");
+      priorCitationsSidecar = readCitationsSidecar(dirname(paths.graph));
+    }
+
     const jsonWritten = persistGraphWithCitations(G, communities, paths.graph, {
       communityLabels: labels,
       force: options.force,
@@ -419,6 +439,20 @@ export async function rebuildCode(
     if (!jsonWritten) {
       return false;
     }
+
+    // Re-run the LLM-free re-projection with the no-shrink guard so the
+    // exhaustive tail survives — rebuilding from the persisted extraction output
+    // when present, else preserving the pre-write snapshot. No-op when no node
+    // carries citations. Only fires for the git hook (full builds skip this).
+    if (options.citationsReproject) {
+      const { reprojectCitationsLLMFree } = await import("./citations.js");
+      reprojectCitationsLLMFree(G, dirname(paths.graph), {
+        ...(options.citationsTopK !== undefined ? { topK: options.citationsTopK } : {}),
+        ...(existsSync(paths.scratch.extract) ? { extractionPath: paths.scratch.extract } : {}),
+        priorSidecar: priorCitationsSidecar,
+      });
+    }
+
     persistCommunityLabels(labels, paths.scratch.labels);
     writeFileSync(paths.report, report, "utf-8");
 
