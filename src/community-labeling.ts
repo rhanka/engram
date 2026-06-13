@@ -28,7 +28,7 @@
  *   entry point `generateCommunityLabels`.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import Graph from "graphology";
@@ -131,6 +131,23 @@ export function ingestLabelAnswer(
     return parseLabelResponse(raw, labeledCids);
   } catch {
     return new Map();
+  }
+}
+
+/**
+ * Delete the community-label instruction file (`communities.md`) and answer
+ * file (`communities.json`) from `instructionDir`. Called after ingesting
+ * label answers or after a completing run, so stale orphan files cannot cause
+ * false-pending signals on subsequent runs.
+ *
+ * Safe to call when the directory does not exist.
+ */
+export function cleanLabelInstructionDir(instructionDir: string): void {
+  for (const filename of [LABEL_INSTRUCTION_FILE, LABEL_ANSWER_FILE]) {
+    const p = join(instructionDir, filename);
+    if (existsSync(p)) {
+      try { unlinkSync(p); } catch { /* ignore */ }
+    }
   }
 }
 
@@ -542,6 +559,9 @@ export async function generateCommunityLabels(
             `from ${instructionDir}\n`,
         );
       }
+      // Lifecycle: delete the consumed instruction+answer files so they cannot
+      // cause a false-pending signal on the next run.
+      cleanLabelInstructionDir(instructionDir);
       return { labels, source: "assistant" };
     }
 

@@ -34,7 +34,7 @@
  *   "on by default" safe in CI / no-API-key environments.
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import Graph from "graphology";
@@ -152,6 +152,73 @@ export function countUnansweredDescriptionBatches(instructionDir: string): numbe
     }
   }
   return unanswered;
+}
+
+/**
+ * Delete all batch instruction files (`batch-*.md` and `batch-*.json`) from
+ * `instructionDir`. Called after a completing run (all describable nodes
+ * described) or after fully ingesting assistant answers, so stale orphan files
+ * cannot cause false-pending signals on subsequent runs.
+ *
+ * Safe to call when the directory does not exist.
+ */
+export function cleanDescriptionInstructionDir(instructionDir: string): void {
+  if (!existsSync(instructionDir)) return;
+  let files: string[];
+  try {
+    files = readdirSync(instructionDir);
+  } catch {
+    return;
+  }
+  for (const f of files) {
+    if ((f.startsWith("batch-") && f.endsWith(".md")) ||
+        (f.startsWith("batch-") && f.endsWith(".json"))) {
+      try { unlinkSync(join(instructionDir, f)); } catch { /* ignore */ }
+    }
+  }
+}
+
+/**
+ * Read graph.json at `graphPath` and count how many describable nodes still
+ * lack a description. Returns -1 when the file is missing or unreadable
+ * (unknown state — callers must NOT treat this as "fully described").
+ *
+ * A node is describable when it is a code node (has `type === "code"`, or has
+ * a `signature`) OR an entity node that has at least one context alias/mention
+ * (i.e. has grounding). This mirrors the `isDescribableNode` logic used inside
+ * `generateNodeDescriptions`, kept as a lightweight JSON scan to avoid loading
+ * the full Graphology graph in `checkUpdate`.
+ */
+export function countUndescribedInGraph(graphPath: string): number {
+  if (!existsSync(graphPath)) return -1;
+  try {
+    const raw = JSON.parse(readFileSync(graphPath, "utf-8")) as {
+      nodes?: Array<{ attributes?: Record<string, unknown> }>;
+    };
+    const nodes = raw.nodes ?? [];
+    let count = 0;
+    for (const node of nodes) {
+      const a = node.attributes ?? {};
+      // Code node: has `type === "code"` or non-empty `signature`
+      const isCode =
+        a["type"] === "code" ||
+        (typeof a["signature"] === "string" && (a["signature"] as string).length > 0);
+      // Entity node: has grounding (at least one alias or mention)
+      const hasGround =
+        (Array.isArray(a["aliases"]) && (a["aliases"] as unknown[]).length > 0) ||
+        (Array.isArray(a["mentions"]) && (a["mentions"] as unknown[]).length > 0) ||
+        (typeof a["grounding"] === "string" && (a["grounding"] as string).length > 0);
+      const isDescribable = isCode || hasGround;
+      if (!isDescribable) continue;
+      // Has description?
+      const desc = a["description"];
+      const hasDesc = typeof desc === "string" && (desc as string).trim().length > 0;
+      if (!hasDesc) count += 1;
+    }
+    return count;
+  } catch {
+    return -1;
+  }
 }
 
 /**
@@ -913,6 +980,9 @@ export async function generateNodeDescriptions(
         );
       }
       reportCoverage(coverage, false, options.quiet);
+      // Lifecycle: delete the consumed instruction+answer files so they cannot
+      // cause a false-pending signal on the next run.
+      cleanDescriptionInstructionDir(instructionDir);
       return { describedCount, source: "assistant", coverage };
     }
 

@@ -34,10 +34,13 @@ import { loadGraphFromData } from "./graph.js";
 import { assertGraphJsonFileSize } from "./graph-size-guard.js";
 import { persistCommunityLabels, resolveCommunityLabels } from "./community-labels.js";
 import {
+  cleanDescriptionInstructionDir,
   countUnansweredDescriptionBatches,
+  countUndescribedInGraph,
   DESCRIPTION_INSTRUCTIONS_DIR,
 } from "./node-descriptions.js";
 import {
+  cleanLabelInstructionDir,
   hasUnansweredLabelInstructions,
   LABEL_INSTRUCTIONS_DIR,
 } from "./community-labeling.js";
@@ -419,11 +422,27 @@ export async function rebuildCode(
     //      and write the pending marker with an actionable message, independent of
     //      `markDescribePending`. Clears when a subsequent run ingests the answers.
     //
+    // Instruction-file lifecycle (C1 stale-orphan fix): when this run completed
+    // all descriptions, purge every batch-*.md/json and communities.md/json from
+    // the instruction dirs so a leftover orphan from a prior run cannot produce a
+    // permanent false-pending signal on the NEXT check-update. The ingest paths
+    // in node-descriptions.ts / community-labeling.ts already delete consumed
+    // files; this is the safety net for the direct-mode completing path.
+    //
     // A run that completes descriptions (all describable nodes described) clears
     // any pre-existing marker regardless of which path created it.
     {
       const descInstructionDir = join(paths.stateDir, DESCRIPTION_INSTRUCTIONS_DIR);
       const labelInstructionDir = join(paths.stateDir, LABEL_INSTRUCTIONS_DIR);
+
+      if (descriptionsComplete) {
+        // Completing run: purge any stale orphan instruction files so subsequent
+        // countUnansweredDescriptionBatches / hasUnansweredLabelInstructions calls
+        // return 0/false even if a prior run left leftover .md files.
+        cleanDescriptionInstructionDir(descInstructionDir);
+        cleanLabelInstructionDir(labelInstructionDir);
+      }
+
       const unansweredBatches = options.describe !== false
         ? countUnansweredDescriptionBatches(descInstructionDir)
         : 0;
@@ -513,20 +532,37 @@ export function checkUpdate(root: string): CheckUpdateResult {
   // emitted)" from "assistant work pending"; then also probe the dirs directly
   // so we catch stale markers and fresh instruction files that pre-date a
   // marker flush.
+  //
+  // Stale-orphan guard (C1 false-pending fix): an orphan .md without a .json
+  // that was left by a prior run must NOT trigger pending when the graph is
+  // already fully described. We reconcile by reading graph.json: if it has zero
+  // undescribed describable nodes the instruction files are stale and we ignore
+  // them. This handles the case where a completing direct-mode run did not clean
+  // up (e.g. pre-fix binary) or where files arrive via external tooling.
   const descInstructionDir = join(paths.stateDir, DESCRIPTION_INSTRUCTIONS_DIR);
   const labelInstructionDir = join(paths.stateDir, LABEL_INSTRUCTIONS_DIR);
   const unansweredBatches = countUnansweredDescriptionBatches(descInstructionDir);
   const unansweredLabels = hasUnansweredLabelInstructions(labelInstructionDir);
   if (!describePending && (unansweredBatches > 0 || unansweredLabels)) {
-    // Instruction files exist without answers AND the marker was not already
-    // written (avoid double-counting with the describePending reason above).
-    const parts: string[] = [];
-    if (unansweredBatches > 0) parts.push(`${unansweredBatches} description batch(es)`);
-    if (unansweredLabels) parts.push("community label instructions");
-    reasons.push(
-      `assistant-mode work pending: ${parts.join(" + ")} awaiting answers ` +
-        `(fill batch-*.json / communities.json and re-run \`graphify update\`)`,
-    );
+    // Before reporting pending, check whether the graph itself still has
+    // undescribed describable nodes. Returns -1 when graph.json is missing or
+    // unreadable (treat as "unknown" — do NOT suppress pending in that case).
+    // Only suppress when we can positively confirm zero undescribed nodes (=0).
+    const undescribedCount = countUndescribedInGraph(paths.graph);
+    if (undescribedCount !== 0) {
+      // undescribedCount > 0: genuine pending (real undescribed nodes exist).
+      // undescribedCount < 0 (−1): graph.json absent/unreadable — state unknown,
+      //   keep the pending signal rather than silently hiding it.
+      const parts: string[] = [];
+      if (unansweredBatches > 0) parts.push(`${unansweredBatches} description batch(es)`);
+      if (unansweredLabels) parts.push("community label instructions");
+      reasons.push(
+        `assistant-mode work pending: ${parts.join(" + ")} awaiting answers ` +
+          `(fill batch-*.json / communities.json and re-run \`graphify update\`)`,
+      );
+    }
+    // When undescribedCount === 0 the orphan files are stale — ignore them.
+    // (They will be cleaned up on the next completing run.)
   }
 
   if (metadata?.branch.stale) {
