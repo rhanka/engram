@@ -191,7 +191,11 @@ function renderTable(headers: string[], data: string[][]): string {
  * "(unattributed/human)" row reports the commits no agent claimed — honest
  * coverage instead of silently implying 100% attribution.
  */
-export function formatStatsTable(rows: AgentStatsRow[], residual?: AttributionResidual): string {
+export function formatStatsTable(
+  rows: AgentStatsRow[],
+  residual?: AttributionResidual,
+  conflicts?: { sha: string; branch?: string; agents: { agentId: string; rule: string }[] }[],
+): string {
   if (rows.length === 0 && !residual) {
     return "No agent sessions found for this repo. Run `graphify agent-stats sync` first.";
   }
@@ -218,7 +222,17 @@ export function formatStatsTable(rows: AgentStatsRow[], residual?: AttributionRe
       "-",
     ]);
   }
-  return renderTable(headers, data);
+  let out = renderTable(headers, data);
+  if (conflicts && conflicts.length > 0) {
+    const lines = conflicts.map(
+      (c) =>
+        `  ${c.sha.slice(0, 7)}${c.branch ? ` (${c.branch})` : ""}: claimed by ${c.agents
+          .map((a) => `${a.agentId} via ${a.rule}`)
+          .join(" AND ")}`,
+    );
+    out += `\n\nWARNING: ${conflicts.length} commit(s) claimed by more than one agent:\n${lines.join("\n")}`;
+  }
+  return out;
 }
 
 /** Render a session list (for `agent-stats sessions`). */

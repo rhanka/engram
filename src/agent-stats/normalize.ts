@@ -113,23 +113,26 @@ export function normalizeAgy(raw: RawAgySession): SessionFact {
     factId: `agy:${raw.sessionId}`,
     host: "agy",
     sessionId: raw.sessionId,
-    cwds: [],
+    cwds: dedupPaths(raw.cwds),
     startedAt: raw.startedAt,
     endedAt: raw.endedAt,
     models: dedup(raw.models),
     tokens: raw.tokens,
     gitActions: raw.gitActions,
     groundTruth: raw.groundTruth,
-    branchesObserved: [],
-    filesTouched: [],
-    evidence: [],
+    branchesObserved: dedup(raw.branches),
+    filesTouched: dedupPaths(raw.filesTouched),
+    evidence: raw.evidence,
   };
 }
 
 /** True when a normalized session belongs to the repo described by `scope`. */
 export function factInRepo(fact: SessionFact, scope: RepoScope, agyProjectHashForSession?: string): boolean {
   if (fact.host === "agy") {
-    return agyProjectHashForSession ? scope.agyHashes.has(agyProjectHashForSession) : false;
+    // projectHash is the primary key; a captured cwd (newer host versions)
+    // also counts so a hash-less transcript is not silently dropped.
+    if (agyProjectHashForSession && scope.agyHashes.has(agyProjectHashForSession)) return true;
+    return fact.cwds.length > 0 && cwdInRepo(fact.cwds, scope.repoRoot);
   }
   return cwdInRepo(fact.cwds, scope.repoRoot);
 }
