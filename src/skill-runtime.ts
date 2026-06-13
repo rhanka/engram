@@ -21,6 +21,7 @@ import {
   type SemanticFragment,
 } from "./semantic-fragment-validation.js";
 import { buildFromJson } from "./build.js";
+import { foldCitationsInto } from "./citations.js";
 import { cluster, scoreAll } from "./cluster.js";
 import { detect, detectIncremental, saveManifest } from "./detect.js";
 import {
@@ -409,7 +410,7 @@ function placeholderDetection(root: string = "."): DetectionResult {
   };
 }
 
-function mergeSemanticArtifacts(
+export function mergeSemanticArtifacts(
   cached: Partial<Extraction> | null | undefined,
   fresh: Partial<Extraction> | null | undefined,
 ): Extraction {
@@ -417,10 +418,15 @@ function mergeSemanticArtifacts(
   const freshExtraction = ensureExtractionShape(fresh);
 
   const dedupedNodes: Extraction["nodes"] = [];
-  const seen = new Set<string>();
+  const byId = new Map<string, Extraction["nodes"][number]>();
   for (const node of [...cachedExtraction.nodes, ...freshExtraction.nodes]) {
-    if (seen.has(node.id)) continue;
-    seen.add(node.id);
+    const kept = byId.get(node.id);
+    if (kept) {
+      // SPEC_CITATIONS: fold the duplicate's citations into the kept node.
+      foldCitationsInto(kept, node);
+      continue;
+    }
+    byId.set(node.id, node);
     dedupedNodes.push(node);
   }
 
@@ -433,7 +439,7 @@ function mergeSemanticArtifacts(
   };
 }
 
-function mergeAstAndSemantic(
+export function mergeAstAndSemantic(
   astInput: Partial<Extraction> | null | undefined,
   semanticInput: Partial<Extraction> | null | undefined,
 ): Extraction {
@@ -441,10 +447,15 @@ function mergeAstAndSemantic(
   const semantic = ensureExtractionShape(semanticInput);
 
   const mergedNodes: Extraction["nodes"] = [...ast.nodes];
-  const seen = new Set(ast.nodes.map((node) => node.id));
+  const byId = new Map(mergedNodes.map((node) => [node.id, node]));
   for (const node of semantic.nodes) {
-    if (seen.has(node.id)) continue;
-    seen.add(node.id);
+    const kept = byId.get(node.id);
+    if (kept) {
+      // SPEC_CITATIONS: fold the duplicate's citations into the kept node.
+      foldCitationsInto(kept, node);
+      continue;
+    }
+    byId.set(node.id, node);
     mergedNodes.push(node);
   }
 
