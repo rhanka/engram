@@ -14,6 +14,7 @@
     nodeCommunity,
     nodeSourcePath,
     citationsByFile,
+    citationsByFileFrom,
   } from "../lib/graphAdapter.js";
   import { renderInlineMarkdown } from "../lib/markdown.js";
 
@@ -21,9 +22,27 @@
 
   const node = $derived(focusId ? (indexNodes(graph).get(focusId) ?? null) : null);
   const relations = $derived(focusId ? relationRowsFor(focusId, graph) : []);
-  // SVELTE-2: citations grouped by file (file > passages double accordion).
-  const citationFiles = $derived(node ? citationsByFile(node) : []);
-  const citationTotal = $derived(citationFiles.reduce((n, f) => n + f.count, 0));
+  // SVELTE-2 + exhaustive-citations: the inline node.citations (K-bounded set)
+  // renders INSTANTLY off the already-loaded graph. When the lazy entity sidecar
+  // arrives with the full per-entity list (entity.citations.citations), it
+  // REPLACES the inline render with the complete file > passages accordion —
+  // same renderer, richer data. Passages render locators (section/page); the
+  // schema carries no verbatim quote.
+  const fullCitations = $derived(
+    Array.isArray(entity?.citations?.citations) ? entity.citations.citations : null,
+  );
+  const citationFiles = $derived.by(() => {
+    if (!node) return [];
+    if (fullCitations) return citationsByFileFrom(fullCitations, node.source_file ?? null);
+    return citationsByFile(node);
+  });
+  // Level-1: the Citations header shows the TRUE count (node.citation_count),
+  // so a hub reads "Citations (214)" immediately, before the full list loads.
+  // Old graphs (no citation_count) fall back to summing the inline citations.
+  const citationTotal = $derived.by(() => {
+    if (node && typeof node.citation_count === "number") return node.citation_count;
+    return citationFiles.reduce((n, f) => n + f.count, 0);
+  });
   const description = $derived.by(() => {
     const sidecar = entity?.description;
     if (sidecar && sidecar.status === "generated" && typeof sidecar.description === "string") {
