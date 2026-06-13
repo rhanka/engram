@@ -6,6 +6,17 @@ export const VALID_FILE_TYPES = new Set(["code", "document", "paper", "image", "
 export const VALID_CONFIDENCES = new Set(["EXTRACTED", "INFERRED", "AMBIGUOUS"]);
 export const REQUIRED_NODE_FIELDS = ["id", "label", "file_type", "source_file"] as const;
 export const REQUIRED_EDGE_FIELDS = ["source", "target", "relation", "confidence", "source_file"] as const;
+export const REQUIRED_PROVENANCE_FIELDS = [
+  "source_owner",
+  "source_id",
+  "observed_at",
+  "source_hash",
+  "adapter_version",
+] as const;
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
 
 /**
  * Validate an extraction JSON dict against the graphify schema.
@@ -18,6 +29,22 @@ export function validateExtraction(data: unknown): string[] {
 
   const d = data as Record<string, unknown>;
   const errors: string[] = [];
+
+  if ("provenance" in d && d.provenance !== undefined) {
+    if (typeof d.provenance !== "object" || d.provenance === null || Array.isArray(d.provenance)) {
+      errors.push("'provenance' must be an object when present");
+    } else {
+      const provenance = d.provenance as Record<string, unknown>;
+      for (const field of REQUIRED_PROVENANCE_FIELDS) {
+        if (!isNonEmptyString(provenance[field])) {
+          errors.push(`provenance.${field} must be a non-empty string`);
+        }
+      }
+      if ("ttl" in provenance && provenance.ttl !== undefined && !isNonEmptyString(provenance.ttl)) {
+        errors.push("provenance.ttl must be a non-empty string when present");
+      }
+    }
+  }
 
   // Nodes
   if (!("nodes" in d)) {
@@ -43,6 +70,9 @@ export function validateExtraction(data: unknown): string[] {
           `Node ${i} (id=${JSON.stringify(node.id ?? "?")}) has invalid file_type ` +
             `'${node.file_type}' - must be one of ${JSON.stringify([...VALID_FILE_TYPES].sort())}`,
         );
+      }
+      if ("id" in node && !isNonEmptyString(node.id)) {
+        errors.push(`Node ${i} id must be a non-empty string`);
       }
     }
   }
@@ -78,6 +108,12 @@ export function validateExtraction(data: unknown): string[] {
           `Edge ${i} has invalid confidence '${edge.confidence}' ` +
             `- must be one of ${JSON.stringify([...VALID_CONFIDENCES].sort())}`,
         );
+      }
+      if ("source" in edge && !isNonEmptyString(edge.source)) {
+        errors.push(`Edge ${i} source must be a non-empty string`);
+      }
+      if ("target" in edge && !isNonEmptyString(edge.target)) {
+        errors.push(`Edge ${i} target must be a non-empty string`);
       }
       if ("source" in edge && nodeIds.size > 0 && !nodeIds.has(edge.source as string)) {
         errors.push(`Edge ${i} source '${edge.source}' does not match any node id`);
