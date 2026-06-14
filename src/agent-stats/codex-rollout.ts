@@ -20,7 +20,7 @@
 
 import { classifyGitVerb, emptyGroundTruth, isGroundTruthVerb, scrapeGroundTruth } from "./git-evidence.js";
 import { redactExcerpt } from "./redact.js";
-import type { EvidenceSnippet, GitAction, GroundTruth, SessionParent, TokenTotals } from "./types.js";
+import type { CodexOrigin, EvidenceSnippet, GitAction, GroundTruth, SessionParent, TokenTotals } from "./types.js";
 
 export interface CodexParseOptions {
   /**
@@ -46,6 +46,8 @@ export interface RawCodexSession {
   branches: string[];
   models: string[];
   version?: string;
+  /** Invocation origin (tui / exec-headless / vscode), from session_meta. */
+  origin?: CodexOrigin;
   startedAt?: string;
   endedAt?: string;
   tokens: TokenTotals;
@@ -87,6 +89,30 @@ function workdirFromArgs(args: any): string | undefined {
   }
   if (args && typeof args === "object" && typeof args.workdir === "string") return args.workdir;
   return undefined;
+}
+
+/**
+ * Classify a Codex session's invocation origin from its `session_meta`.
+ *
+ * Observed on real rollouts (all in `~/.codex/sessions`, same JSONL shape):
+ *   - interactive TUI:    originator `codex-tui`, source `{ subagent | cli }`.
+ *   - headless exec:      originator `codex_exec`, source `"exec"` (a STRING).
+ *   - IDE extension:      originator `Claude Code`, source `"vscode"`.
+ * `source` is preferred (it directly names the surface); originator is the
+ * fallback. Returns `undefined` only when neither field is present, so a
+ * malformed header does not invent an origin.
+ */
+export function codexOrigin(originator: unknown, source: unknown): CodexOrigin | undefined {
+  const src = typeof source === "string" ? source.toLowerCase() : "";
+  if (src === "exec") return "exec";
+  if (src === "vscode") return "vscode";
+  if (src === "cli" || src === "subagent") return "tui";
+  const orig = typeof originator === "string" ? originator.toLowerCase() : "";
+  if (orig === "codex_exec") return "exec";
+  if (orig === "codex-tui") return "tui";
+  if (orig === "vscode") return "vscode";
+  if (!orig && (source === undefined || source === null)) return undefined;
+  return "other";
 }
 
 function emptySession(sessionId: string): RawCodexSession {
@@ -144,8 +170,11 @@ export function parseCodexRollout(
       pushUnique(session.cwds, payload.cwd);
       if (typeof payload.cwd === "string") currentCwd = payload.cwd;
       if (typeof payload.cli_version === "string") session.version = payload.cli_version;
+      session.origin = codexOrigin(payload.originator, payload.source);
       const git = payload.git;
       if (git && typeof git === "object") pushUnique(session.branches, git.branch);
+      // `payload.source` may be a STRING ("exec"/"vscode"/"cli") for headless /
+      // IDE runs, in which case `.subagent` is undefined and no parent is set.
       const sub = payload.source?.subagent;
       if (sub && typeof sub === "object") {
         const spawn = sub.thread_spawn;
