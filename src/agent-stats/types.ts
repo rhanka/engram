@@ -10,6 +10,19 @@
 
 export type AgentHost = "claude" | "codex" | "agy";
 
+/**
+ * How a Codex session was invoked, derived from the rollout `session_meta`
+ * (`originator` + `source`). Interactive TUI runs and headless `codex exec`
+ * runs share the same on-disk location and JSONL shape, so this is the only
+ * signal that tells them apart:
+ *   - `tui`    — interactive `codex` TUI (`originator: "codex-tui"`).
+ *   - `exec`   — headless / non-interactive `codex exec` (`originator:
+ *                "codex_exec"`, `source: "exec"`).
+ *   - `vscode` — the IDE extension (`source: "vscode"`).
+ *   - `other`  — recognized rollout with an unmapped originator/source.
+ */
+export type CodexOrigin = "tui" | "exec" | "vscode" | "other";
+
 /** A single git-relevant action a session performed, parsed from tool INPUT. */
 export interface GitAction {
   /** Coarse verb classification of the command. */
@@ -50,6 +63,13 @@ export interface SessionFact {
   models: string[];
   /** CLI version string, if the host records one. */
   cliVersion?: string;
+  /**
+   * Codex-only: how the session was invoked (interactive TUI vs headless
+   * `codex exec` vs IDE). Lets a headless run be told apart from an
+   * interactive one even though they share location + shape. Undefined for
+   * non-codex hosts.
+   */
+  origin?: CodexOrigin;
   /** Token totals (best effort; semantics differ per host — see tokens.note). */
   tokens: TokenTotals;
   /** Parentage / sub-agent lineage when the host records it. */
