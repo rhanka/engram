@@ -47,8 +47,13 @@ describe("EntityPanel citations (exhaustive-citations Level-1/Level-2)", () => {
     // only old graphs (no citation_count) fall back to the inline length.
     expect(panelSource).toMatch(/node\.citation_count/);
     expect(panelSource).toMatch(/typeof node\.citation_count === "number"/);
-    // The count is fed to the Citations accordion.
-    expect(panelSource).toMatch(/<Accordion title="Citations" count=\{citationTotal\}/);
+    // The count is fed to the Citations disclosure (DS Collapsible) via the
+    // trailing circle Badge. The custom Accordion was replaced by DS Collapsible
+    // in the P3 migration; the true count still reaches the header.
+    expect(panelSource).toMatch(/<Collapsible title="Citations" open=\{false\}>/);
+    expect(panelSource).toMatch(
+      /<Badge shape="circle" size="sm" tone="neutral">\{citationTotal\}<\/Badge>/,
+    );
   });
 
   it("renders the inline K-set instantly, then upgrades to the sidecar's full list", () => {
