@@ -60,6 +60,10 @@ const NODE_PROFILE_FIELDS = [
   "confidence_score",
   "evidence_refs",
   "canonical_id",
+  // workspace-bundle-contract-v1 (D2): lossless registry passthrough (raw
+  // id_column verbatim). Kept in lockstep with src/studio-scene.ts.
+  "registry_id",
+  "registry_record_id",
   "entity_url",
   "source_file",
   "source_location",
