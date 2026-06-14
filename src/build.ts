@@ -17,6 +17,28 @@ import { createGraph } from "./graph.js";
 import { assertGraphJsonFileSize } from "./graph-size-guard.js";
 import { cleanupStaleNodes } from "./semantic-cleanup.js";
 import { validateExtraction } from "./validate.js";
+import {
+  deOrphanByContainer,
+  deriveAliasesAndNormalizedTerms,
+  normalizeSchemaHygiene,
+  type AliasDerivationConfig,
+  type DeOrphanConfig,
+  type SchemaHygieneConfig,
+} from "./assembly-hygiene.js";
+
+/**
+ * Config-gated CORE assembly-hygiene pre-pass (default OFF). Each sub-step is
+ * an independent, deterministic, idempotent transform of the extraction before
+ * the graphology build:
+ *   - `schemaHygiene`: id-prefix + type canonicalization with merge-union (A)
+ *   - `deriveAliases`: alias / normalized_terms derivation (B)
+ *   - `deOrphan`: finest-container `appears_in` derivation (D)
+ */
+export interface AssemblyHygieneOptions {
+  schemaHygiene?: boolean | SchemaHygieneConfig;
+  deriveAliases?: boolean | AliasDerivationConfig;
+  deOrphan?: boolean | DeOrphanConfig;
+}
 
 export interface BuildOptions {
   directed?: boolean;
@@ -27,6 +49,45 @@ export interface BuildOptions {
    * paths, splitting nodes across two identities.
    */
   root?: string;
+  /**
+   * Config-gated CORE assembly-hygiene pre-pass (default OFF — opt-in per
+   * corpus). Runs schema-hygiene → alias-derivation → de-orphan on the
+   * extraction before the graphology build. See `applyAssemblyHygiene`.
+   */
+  assemblyHygiene?: AssemblyHygieneOptions;
+}
+
+/**
+ * Run the config-gated assembly-hygiene transforms on an extraction, in the
+ * fixed order schema-hygiene → alias-derivation → de-orphan. Pure + idempotent;
+ * each step is a no-op unless explicitly enabled. Exported so the CLI and
+ * offline tools can productionize the same pipeline the prototypes validated.
+ */
+export function applyAssemblyHygiene(
+  extraction: Extraction,
+  options?: AssemblyHygieneOptions,
+): Extraction {
+  if (!options) return extraction;
+  let current = extraction;
+  if (options.schemaHygiene) {
+    current = normalizeSchemaHygiene(
+      current,
+      typeof options.schemaHygiene === "object" ? options.schemaHygiene : {},
+    );
+  }
+  if (options.deriveAliases) {
+    current = deriveAliasesAndNormalizedTerms(
+      current,
+      typeof options.deriveAliases === "object" ? options.deriveAliases : {},
+    );
+  }
+  if (options.deOrphan) {
+    current = deOrphanByContainer(
+      current,
+      typeof options.deOrphan === "object" ? options.deOrphan : {},
+    ).extraction;
+  }
+  return current;
 }
 
 const CHUNK_SUFFIX = /_c\d+$/;
@@ -252,6 +313,9 @@ export function deduplicateByLabel(extraction: Extraction): Extraction {
 
 export function buildFromJson(extraction: Extraction, options?: BuildOptions): Graph {
   const root = rootForOptions(options);
+  // CORE assembly-hygiene pre-pass (config-gated, default OFF). Runs before
+  // validation so the build sees canonical ids/types and derived edges.
+  extraction = applyAssemblyHygiene(extraction, options?.assemblyHygiene);
   for (const node of extraction.nodes ?? []) {
     const legacySource = node.source as unknown;
     if (legacySource !== undefined && node.source_file === undefined) {
