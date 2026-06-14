@@ -92,6 +92,7 @@ let buildStudioScene;
 let attachLayoutPositions;
 let buildEntitySidecar;
 let emitSceneHierarchies;
+let emitWorkspaceManifest;
 let loadOntologyReconciliationCandidates;
 let queryOntologyReconciliationCandidates;
 try {
@@ -100,6 +101,7 @@ try {
     attachLayoutPositions,
     buildEntitySidecar,
     emitSceneHierarchies,
+    emitWorkspaceManifest,
     loadOntologyReconciliationCandidates,
     queryOntologyReconciliationCandidates,
   } = await import(join(root, "dist", "index.js")));
@@ -119,6 +121,7 @@ for (const f of [
   "graph.json",
   "reconciliation-candidates.json",
   "entities.json",
+  "workspace-manifest.json",
 ]) {
   rmSync(join(outDir, f), { force: true });
 }
@@ -197,6 +200,14 @@ for (const node of nodes) {
 }
 writeFileSync(join(outDir, "entities.json"), JSON.stringify(entities));
 
+// --- 6. workspace-manifest.json (workspace-bundle-contract-v1). ---
+// The bundle descriptor the process-std-am peer consumes first: it discovers the
+// artifacts, validates their schema ids, and verifies integrity via the
+// per-artifact sha256 + size. Emitted LAST so it hashes the final bytes of
+// every artifact above; absent artifacts are recorded present:false (the
+// scene is OPTIONAL per F1, so a no-scene bundle stays valid).
+const manifestResult = emitWorkspaceManifest({ bundleDir: outDir });
+
 // --- Summary. ---
 console.log(`build-studio-demo: wrote standalone studio export to ${outDir}`);
 console.log(`  nodes: ${nodes.length} | scene nodes: ${scene.nodes.length} | scene edges: ${scene.edges.length}`);
@@ -207,3 +218,6 @@ console.log(
 );
 console.log(`  reconciliation candidates: ${candidatesResponse.total ?? candidatesResponse.items.length}`);
 console.log(`  entities index: ${Object.keys(entities).length} ids (${withDescription} with description, ${withOccurrences} with occurrences)`);
+console.log(
+  `  workspace-manifest: ${manifestResult.manifest.present_count}/${manifestResult.manifest.artifacts.length} artifacts present (${manifestResult.path})`,
+);
