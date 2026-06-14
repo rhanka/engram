@@ -98,6 +98,7 @@ export function normalizeCodex(raw: RawCodexSession): SessionFact {
     endedAt: raw.endedAt,
     models: dedup(raw.models),
     cliVersion: raw.version,
+    origin: raw.origin,
     tokens: raw.tokens,
     parent: raw.parent,
     gitActions: raw.gitActions,

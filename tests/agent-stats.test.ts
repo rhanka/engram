@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { parseClaudeTranscript } from "../src/agent-stats/claude-transcript.js";
 import { parseCodexRollout } from "../src/agent-stats/codex-rollout.js";
 import { parseAgyChat } from "../src/agent-stats/agy-chat.js";
-import { normalizeClaude, pathToTilde } from "../src/agent-stats/normalize.js";
+import { normalizeClaude, normalizeCodex, pathToTilde } from "../src/agent-stats/normalize.js";
 import { correlate } from "../src/agent-stats/correlate.js";
 import { redact, redactExcerpt } from "../src/agent-stats/redact.js";
 import { classifyGitVerb, scrapeGroundTruth, emptyGroundTruth, parseWpLabel } from "../src/agent-stats/git-evidence.js";
@@ -119,6 +119,42 @@ describe("agent-stats host parsers", () => {
     expect(s.projectHash).toBe("abc123");
     expect(s.models).toContain("gemini-3.5-flash");
     expect(s.tokens.total).toBe(13);
+  });
+});
+
+describe("agent-stats codex-headless (exec) host", () => {
+  it("tags a headless `codex exec` rollout with origin=exec from originator/source", () => {
+    const fixture = loadFixture("codex-headless-exec.jsonl").split("__REPO__").join("/tmp/repo");
+    const s = parseCodexRollout(fixture, "019e7b9c-bda9-73e3-8e05-8edcf22252e1");
+    // The headless run still parses git evidence + tokens like an interactive one…
+    expect(s.cwds).toContain("/tmp/repo");
+    expect(s.gitActions.some((a) => a.verb === "checkout-b")).toBe(true);
+    expect(s.groundTruth.commitShas).toContain("cafe123");
+    expect(s.tokens.total).toBe(12555);
+    // …but is now distinguishable from an interactive session.
+    expect(s.origin).toBe("exec");
+    // No subagent lineage for a top-level headless run.
+    expect(s.parent).toBeUndefined();
+  });
+
+  it("tags an interactive (tui) rollout with origin=tui and a vscode rollout with origin=vscode", () => {
+    const meta = (originator: string, source: unknown) =>
+      JSON.stringify({
+        type: "session_meta",
+        timestamp: "2026-05-01T10:00:00.000Z",
+        payload: { id: "sess", cwd: "/tmp/repo", originator, source, git: { branch: "main" } },
+      });
+    const tui = parseCodexRollout(meta("codex-tui", { subagent: { other: "guardian" } }), "sess");
+    expect(tui.origin).toBe("tui");
+    // VS Code extension runs report originator "Claude Code" with a string source "vscode".
+    const vscode = parseCodexRollout(meta("Claude Code", "vscode"), "sess");
+    expect(vscode.origin).toBe("vscode");
+  });
+
+  it("normalizes the codex origin onto the SessionFact", () => {
+    const fixture = loadFixture("codex-headless-exec.jsonl").split("__REPO__").join("/tmp/repo");
+    const fact = normalizeCodex(parseCodexRollout(fixture, "headless-1"));
+    expect(fact.origin).toBe("exec");
   });
 });
 
