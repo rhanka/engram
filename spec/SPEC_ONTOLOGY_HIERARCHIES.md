@@ -4,7 +4,10 @@
 
 - Product: Graphify TypeScript port
 - Scope: profile-driven ontology hierarchy generation, sidecar artifacts, studio passthrough
-- Spec state: **Draft — decision surface, not yet approved**
+- Spec state: **Approved — D1=1b, D2=2a confirmed; declarative path implemented**
+- Decisions: Decision 1 = **1b** (declarative, rebuild-only) and Decision 2 = **2a**
+  (registry `id_column`) are both **Approved**. The process-std-am peer signed
+  `workspace-bundle-contract-v1` (artifactHash `sha256:5b08e19d…afaf`, stabilized 2/2).
 - State root: `.graphify/`
 - Activation: explicit ontology profile `hierarchies` block only
 - Default behavior: unchanged and artifact-free
@@ -28,35 +31,42 @@ project, regulated-domain, or proprietary ontology examples.
 Graphify already accepts a `hierarchies` block in its ontology profile YAML/JSON.
 The type system, normalizer, and validator for that block are fully implemented.
 
-**`OntologyHierarchySpec`** (`src/types.ts:581-588`) declares six fields:
+**`OntologyHierarchySpec`** (`src/types.ts:674-718`) declares six fields:
 `registry`, `parent_column`, `child_column`, `relation_type`,
-`parent_node_type`, `child_node_type`.
+`parent_node_type`, `child_node_type` (with `OntologyHierarchyArc` and its
+`status` / `confidence` lifecycle fields following in the same range).
 
 **`normalizeHierarchy`** (`src/ontology-profile.ts:160-169`) converts each entry
 to a `NormalizedOntologyHierarchySpec` and stores the result on
-`NormalizedOntologyProfile.hierarchies` (`src/types.ts:692`).
+`NormalizedOntologyProfile.hierarchies` (`src/types.ts:835`).
 
 **`validateOntologyProfile`** (`src/ontology-profile.ts:234, 331-358`) checks
 that every hierarchy entry references a valid registry, valid node types, and a
 valid relation type.
 
-Despite this, **`src/ontology-output.ts`** never reads `profile.hierarchies`.
-The compile step (`compileOntologyOutputs`, L220-268) writes six sidecar files —
-`manifest.json`, `nodes.json`, `aliases.json`, `relations.json`,
-`validation.json`, `index.json` — but produces no hierarchy artifacts. The
-declared structure is validated and then silently dropped.
+The **declarative compile path is now implemented**: `compileOntologyOutputs`
+(`src/ontology-output.ts`, L229+) reads `options.profile.hierarchies`
+(`src/ontology-output.ts:241,247`) and, when the profile declares hierarchies,
+emits `hierarchies.json` and `hierarchy-index.json` alongside the existing
+sidecar files (`manifest.json`, `nodes.json`, `aliases.json`, `relations.json`,
+`validation.json`, `index.json`). The earlier claim that
+`compileOntologyOutputs` "never reads `profile.hierarchies`" and silently drops
+the declared structure is **no longer true** — that gap is closed under D1=1b
+(declarative, rebuild-only).
 
 At the same time, the studio scene passthrough **is already in place** (commit
-`7bbba08`). `NODE_PROFILE_FIELDS` in `src/studio-scene.ts:139-159` lists
+`7bbba08`). `NODE_PROFILE_FIELDS` in `src/studio-scene.ts:164` lists
 `parent_id`, `child_ids`, `level`, `code`, `hierarchy_id`, `hierarchy_ids` for
-nodes, and `EDGE_PROFILE_FIELDS` (L161-171) lists `hierarchy_id`, `structural`
-for edges. These fields are copied verbatim from graph nodes when present
-(`copyOwnFields`, L374). The studio front-end will receive and render hierarchy
-fields as soon as the core emits them.
+nodes (L175-180), and `EDGE_PROFILE_FIELDS` (L185) lists `hierarchy_id`,
+`structural` for edges (L192-193). These fields are copied verbatim from graph
+nodes when present (`copyOwnFields`, L143). The studio front-end receives and
+renders hierarchy fields as soon as the core emits them.
 
-**The gap:** the profile declares hierarchies, validation passes, but no
-hierarchy artifact is generated and no node receives hierarchy fields during
-compile. The studio passthrough is ready; the core generation step is missing.
+**Status:** the profile declares hierarchies, validation passes, and the core
+compile step now generates the hierarchy sidecar (D1=1b declarative path). The
+studio passthrough consumes the emitted fields. The remaining out-of-scope-v1
+surface is the `source:"extracted"` lane and registry→canonical unification
+(see "v2 bridge" below).
 
 ---
 
@@ -142,9 +152,11 @@ and does not emit the cyclic hierarchy entry.
 
 ### Integration Point in `compileOntologyOutputs` (`src/ontology-output.ts`)
 
-The hierarchy compile step is inserted inside `compileOntologyOutputs`
-(currently L220-268), after `compileRelations` and before the manifest write.
-It reads `options.profile.hierarchies`, joins parent→child arcs to the
+The hierarchy compile step runs inside `compileOntologyOutputs`
+(`src/ontology-output.ts:229+`; hierarchy block at L239-269), after
+`compileRelations` and before the manifest write.
+It reads `options.profile.hierarchies` (`src/ontology-output.ts:241,247`), joins
+parent→child arcs to the
 already-compiled `nodes` array, runs BFS for level assignment and ancestor-path
 computation, detects cycles, and writes `hierarchies.json` +
 `hierarchy-index.json`. If no `hierarchies` entries are declared, both files
@@ -155,6 +167,12 @@ existing consumers are unaffected.
 ---
 
 ## Decision 1 — Hierarchy Lifecycle: Declarative vs. Reconciliation Cycle
+
+> **Resolved — Approved: D1 = Option 1b (declarative, rebuild-only).** Confirmed
+> by the product owner; the process-std-am peer signed `workspace-bundle-contract-v1`
+> (artifactHash `sha256:5b08e19d…afaf`, stabilized 2/2). The declarative path is
+> implemented in `compileOntologyOutputs`. The `source:"extracted"` candidate
+> lane is reserved for v2 (see "v2 bridge").
 
 **Context.** The existing patch model (`src/ontology-patch.ts`) supports a
 reviewed lifecycle for entity matches and relations (operations: `accept_match`,
@@ -208,12 +226,19 @@ are not uncertain. The `source` field is forward-compatible: `"profile"` /
 `"registry"` arcs stay declarative; `"extracted"` arcs (reserved) enter the
 queue. The decision log is not polluted with trivially accepted registry rows.
 
-**Product owner: confirm 1b, or escalate to 1a if hierarchy arcs require human
-sign-off even when registry-bound.**
+**Product owner decision: Approved — 1b confirmed.** Registry-bound arcs stay
+declarative; human sign-off is not required when registry-bound. (Signed via
+`workspace-bundle-contract-v1`, `sha256:5b08e19d…afaf`, stabilized 2/2.)
 
 ---
 
 ## Decision 2 — Canonical ID Scheme for Parent and Child
+
+> **Resolved — Approved: D2 = Option 2a (registry `id_column`).** Confirmed by
+> the product owner; signed via `workspace-bundle-contract-v1`
+> (`sha256:5b08e19d…afaf`, stabilized 2/2). `parent_id`/`child_id` reference the
+> registry `id_column`; the downstream bundle join key is `registry_record_id`
+> with no id_map. The 2b registry→canonical unification is reserved for v2.
 
 **Context.** When `compileOntologyOutputs` compiles `nodes.json`, each node
 receives an `id`. That id is used to link arcs in `hierarchies.json`. Two
@@ -255,8 +280,51 @@ directly reusable for cross-work reconciliation in the public-pack corpus. The
 sequencing dependency imposed by Option 2b is unjustified when registry bindings
 already attest the arc with confidence = 1.0.
 
-**Product owner: confirm 2a, or escalate to 2b if a unified id space with
-`relations.json` is a hard studio requirement.**
+**Product owner decision: Approved — 2a confirmed.** `parent_id`/`child_id` =
+registry `id_column`; cross-work reuse via stable registry ids; downstream join
+key `registry_record_id`, no id_map. (Signed via `workspace-bundle-contract-v1`,
+`sha256:5b08e19d…afaf`, stabilized 2/2.) A unified id space with `relations.json`
+(2b) is not a v1 requirement and is reserved for v2.
+
+---
+
+## Bundle relationship — core `hierarchies.json` → process-std-am `scene-hierarchies.json`
+
+The core `hierarchies.json` (schema `graphify_ontology_hierarchies_v1`, a flat
+list of directed arcs) is the **upstream** artifact. The WP4 G2 bundle emitter
+reshapes it into the process-std-am-facing `scene-hierarchies.json` (schema
+`graphify_scene_hierarchies_v1`); the bundle is the downstream consumption
+artifact, not a replacement for the core sidecar.
+
+Per the approved decisions:
+
+- **D1 = 1b** → every emitted arc carries `status: "reference"`,
+  `source: "profile"`, `confidence: 1.0` (registry-bound, declarative,
+  rebuild-only — no candidate queue, no patch).
+- **D2 = 2a** → `parent_id` / `child_id` are the registry `id_column` values.
+- **Join key** → the downstream join from `scene-hierarchies.json` back to the
+  registry / scene records is `registry_record_id`. There is **no id_map**: the
+  registry id is the canonical key on both sides of the bundle boundary.
+
+The bundle emitter is **additive and gated**: it activates only when
+`hierarchies.json` exists (no `hierarchies` block → no core sidecar → no bundle),
+so the default path is byte-identical to today.
+
+### v2 bridge (reserved — out of scope for v1)
+
+Two extensions are explicitly **deferred to v2 / increment-C** and are NOT
+produced in v1:
+
+- The **`source:"extracted"` arc lane** — LLM-extracted arcs with
+  `confidence < 1.0` that enter the candidate → patch review queue (Option 1a
+  applies to that lane only; registry-bound arcs stay declarative).
+- The **registry→canonical unification (Decision 2b)** — a unified id space
+  shared with `relations.json` via reconciliation `canonical_id`, replacing the
+  `registry_record_id` join key with an attested canonical id.
+
+Both are forward-compatible with the v1 schema: the `source` and `status`/
+`confidence` fields are already reserved, and the `registry_record_id` join can
+be superseded by a `canonical_id` join without breaking the v1 arc shape.
 
 ---
 
@@ -284,10 +352,11 @@ File: `src/ontology-output.ts`
 File: `src/studio-scene.ts`
 
 Commit `7bbba08` already added `parent_id`, `child_ids`, `level`, `code`,
-`hierarchy_id`, `hierarchy_ids` to `NODE_PROFILE_FIELDS` (L151-156) and
-`hierarchy_id`, `structural` to `EDGE_PROFILE_FIELDS` (L169-170). The studio
-will receive these fields as soon as graph nodes carry them. No further change
-to the passthrough is required for v1.
+`hierarchy_id`, `hierarchy_ids` to `NODE_PROFILE_FIELDS`
+(`src/studio-scene.ts:164`, fields at L175-180) and `hierarchy_id`, `structural`
+to `EDGE_PROFILE_FIELDS` (`src/studio-scene.ts:185`, fields at L192-193). The
+studio receives these fields as soon as graph nodes carry them. No further
+change to the passthrough is required for v1.
 
 ### Graph schema impact
 
@@ -330,17 +399,19 @@ scene passthrough already reads).
 
 ---
 
-## Open Decisions
+## Resolved & Open Decisions
 
-1. **Decision 1 (owner required)** — Hierarchy lifecycle: declarative rebuild-only
-   (Option 1b, recommended) vs. candidate→patch cycle (Option 1a). See
+1. **Decision 1 — RESOLVED (Approved: 1b).** Hierarchy lifecycle: declarative
+   rebuild-only. Confirmed by the product owner and signed via
+   `workspace-bundle-contract-v1` (`sha256:5b08e19d…afaf`, stabilized 2/2). See
    section "Decision 1" above.
 
-2. **Decision 2 (owner required)** — Canonical ID scheme: registry ids (Option 2a,
-   recommended) vs. reconciliation canonical ids (Option 2b). See section
-   "Decision 2" above.
+2. **Decision 2 — RESOLVED (Approved: 2a).** Canonical ID scheme: registry
+   `id_column`. Confirmed by the product owner and signed via
+   `workspace-bundle-contract-v1` (`sha256:5b08e19d…afaf`, stabilized 2/2). See
+   section "Decision 2" above.
 
-3. **guessed→validated policy** — The treatment of hierarchy arcs whose source
+3. **guessed→validated policy (open)** — The treatment of hierarchy arcs whose source
    node carries `status: "guessed"` (i.e., the extraction did not attest the
    registry match directly) is not specified here. This policy is shared with the
    broader entity status hardening work and is tracked separately under
