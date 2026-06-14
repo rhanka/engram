@@ -26,7 +26,11 @@
     nodeType,
   } from "../lib/graphAdapter.js";
 
-  let { graph, onOpenEntity } = $props();
+  // BUG-1: `labelMaxChars` parameterizes the DRAWN focal-box label length. The
+  // two recon entities are pinned close together; a long name (e.g. "Dr. John H.
+  // Watson") otherwise sizes an over-wide box that overflows the slot. The full
+  // name remains on hover (GraphCanvas tooltip) and in the rail/detail `title`s.
+  let { graph, onOpenEntity, labelMaxChars = 22 } = $props();
 
   let candidates = $state([]);
   let total = $state(0);
@@ -115,6 +119,21 @@
     const n = idx.get(id);
     return n ? nodeType(n) : null;
   }
+  // BUG-2: a candidate references two node ids; either can be ABSENT from the
+  // loaded graph (e.g. a stale candidates queue whose ids no longer match a
+  // re-extracted graph). When that happens the centre graph can only render ONE
+  // box, so the proposed pair reads as a lone node. We detect the missing side
+  // here so the panels can flag it explicitly instead of silently degrading.
+  function present(id) {
+    return id != null && idx.has(id);
+  }
+  const missingSides = $derived.by(() => {
+    if (!active) return [];
+    const out = [];
+    if (!present(active.candidate_id)) out.push({ role: "Candidate", id: active.candidate_id });
+    if (!present(active.canonical_id)) out.push({ role: "Canonical", id: active.canonical_id });
+    return out;
+  });
 
   async function reload() {
     const res = await fetchReconciliationCandidates();
@@ -205,7 +224,10 @@
                 class:active={activeId === c.id}
                 onclick={() => { activeId = c.id; actionResult = null; }}
               >
-                <span class="recon-rail-label">{label(c.candidate_id)} ↔ {label(c.canonical_id)}</span>
+                <span
+                  class="recon-rail-label"
+                  title={`${label(c.candidate_id)} ↔ ${label(c.canonical_id)}`}
+                >{label(c.candidate_id)} ↔ {label(c.canonical_id)}</span>
                 <span class="recon-rail-score">{Math.round((c.score ?? 0) * 100)}%</span>
               </button>
             </li>
@@ -223,6 +245,7 @@
         centerOnIds={selectedIds}
         focusId={active.candidate_id}
         labelMode="plain"
+        {labelMaxChars}
         onSelect={(id) => onOpenEntity?.(id)}
         onOpenEntity={(id) => onOpenEntity?.(id)}
         {mergePair}
@@ -239,16 +262,27 @@
         <p class="recon-empty">No candidate selected.</p>
       {:else}
         <header class="recon-detail-head">
-          <p class="recon-kicker">Reconciliation candidate</p>
-          <h2>{label(active.candidate_id)} ↔ {label(active.canonical_id)}</h2>
+          <p class="recon-kicker">Proposed match · these two entities</p>
+          <h2 title={`${label(active.candidate_id)} ↔ ${label(active.canonical_id)}`}>
+            {label(active.candidate_id)} ↔ {label(active.canonical_id)}
+          </h2>
           <p class="recon-detail-score">
             {active.proposed_patch_operation} · score {Math.round((active.score ?? 0) * 100)}%
           </p>
         </header>
 
+        {#if missingSides.length}
+          <p class="recon-warning" role="alert">
+            {missingSides.map((s) => `${s.role} “${s.id}”`).join(" and ")}
+            {missingSides.length > 1 ? "are" : "is"} not in the loaded graph — the
+            pair can’t be shown in full. The reconciliation queue may be stale
+            (regenerate candidates for the current graph).
+          </p>
+        {/if}
+
         <dl class="recon-compare">
-          <div><dt>Candidate</dt><dd>{label(active.candidate_id)} <small>{typeOf(active.candidate_id) ?? ""}</small></dd></div>
-          <div><dt>Canonical</dt><dd>{label(active.canonical_id)} <small>{typeOf(active.canonical_id) ?? ""}</small></dd></div>
+          <div><dt>Candidate</dt><dd title={label(active.candidate_id)}>{label(active.candidate_id)} <small>{typeOf(active.candidate_id) ?? (present(active.candidate_id) ? "" : "missing")}</small></dd></div>
+          <div><dt>Canonical</dt><dd title={label(active.canonical_id)}>{label(active.canonical_id)} <small>{typeOf(active.canonical_id) ?? (present(active.canonical_id) ? "" : "missing")}</small></dd></div>
           {#if active.shared_terms?.length}
             <div><dt>Shared</dt><dd>{active.shared_terms.join(", ")}</dd></div>
           {/if}
@@ -359,15 +393,30 @@
     margin: 0; text-transform: uppercase; letter-spacing: 0.06em;
     font-size: 0.7rem; font-weight: 700; color: var(--st-semantic-text-muted, #64748b);
   }
-  .recon-detail-head h2 { margin: 0.15rem 0 0.2rem; font-size: 1.05rem; line-height: 1.25; }
+  .recon-detail-head h2 {
+    margin: 0.15rem 0 0.2rem; font-size: 1.05rem; line-height: 1.25;
+    /* BUG-1: long entity names must not overflow the panel; wrap, then clamp to
+       two lines with an ellipsis. Full text stays on the title hover. */
+    overflow-wrap: anywhere;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+    overflow: hidden;
+  }
   .recon-detail-score { margin: 0; font-size: 0.8rem; color: var(--st-semantic-text-muted, #64748b); }
+  /* BUG-2: stale/dangling-id warning when a proposed side is missing from the graph. */
+  .recon-warning {
+    margin: 0.7rem 0 0; padding: 0.5rem 0.6rem; font-size: 0.78rem; line-height: 1.35;
+    border: 1px solid var(--st-semantic-feedback-warningBorder, #fcd34d);
+    background: var(--st-semantic-feedback-warningSurface, #fffbeb);
+    color: var(--st-semantic-feedback-warningText, #92400e);
+    border-radius: var(--st-radius-sm, 4px);
+  }
   .recon-compare { margin: 0.9rem 0 0; display: grid; gap: 0.3rem; font-size: 0.84rem; }
   .recon-compare > div { display: grid; grid-template-columns: 6rem 1fr; gap: 0.5rem; }
   .recon-compare dt {
     margin: 0; color: var(--st-semantic-text-muted, #64748b);
     text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.68rem; font-weight: 600;
   }
-  .recon-compare dd { margin: 0; }
+  .recon-compare dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
   .recon-compare small { color: var(--st-semantic-text-muted, #64748b); }
   .recon-reasons, .recon-evidence {
     list-style: none; margin: 0; padding: 0; display: grid; gap: 0.2rem;

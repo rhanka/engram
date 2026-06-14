@@ -4,12 +4,14 @@ import {
   buildConnectedDimStyle,
   buildGraphRendererPayload,
   densityScale,
+  DEFAULT_LABEL_MAX_CHARS,
   findNearestEdge,
   findNearestNode,
   findNearestNodeId,
   interpolateMergeStyle,
   interpolateMergePositions,
   isBoxShape,
+  truncateLabel,
 } from "../lib/graphRendererPayload.js";
 
 // --- Item 1: density-aware base node size ---
@@ -144,6 +146,78 @@ describe("forceBoxLabel (reconciliation focal-pair override)", () => {
     const leafIdx = payload.nodeIndexById.get("leafbox");
     // Degree-1 box below the 15% gate: still NO in-box label without the flag.
     expect(payload.baseStyle.nodeLabels[leafIdx]).toBe("");
+  });
+});
+
+// --- BUG-1: label truncation (overflow guard for long entity names) ---
+describe("truncateLabel", () => {
+  it("returns short labels unchanged", () => {
+    expect(truncateLabel("Holmes", 22)).toBe("Holmes");
+    expect(truncateLabel("Dr. Watson", 22)).toBe("Dr. Watson");
+  });
+
+  it("clips long labels and appends a single ellipsis", () => {
+    const out = truncateLabel("Dr. John H. Watson, M.D., Late of the Army", 18);
+    expect(out.endsWith("…")).toBe(true);
+    // 18 visible glyphs (whitespace trimmed) + the ellipsis.
+    expect([...out].length).toBeLessThanOrEqual(19);
+    expect(out).toBe("Dr. John H. Watson…");
+  });
+
+  it("trims trailing whitespace before the ellipsis (no 'Foo …')", () => {
+    expect(truncateLabel("Inspector Lestrade Yard", 10)).toBe("Inspector…");
+  });
+
+  it("disables clipping for a non-positive / non-finite budget", () => {
+    const long = "x".repeat(100);
+    expect(truncateLabel(long, 0)).toBe(long);
+    expect(truncateLabel(long, Number.POSITIVE_INFINITY)).toBe(long);
+  });
+
+  it("coerces non-string input safely", () => {
+    expect(truncateLabel(null)).toBe("");
+    expect(truncateLabel(undefined)).toBe("");
+  });
+
+  it("uses DEFAULT_LABEL_MAX_CHARS when no budget is given", () => {
+    const long = "y".repeat(DEFAULT_LABEL_MAX_CHARS + 5);
+    const out = truncateLabel(long);
+    expect([...out].length).toBe(DEFAULT_LABEL_MAX_CHARS + 1); // budget + ellipsis
+  });
+});
+
+// --- BUG-1: the renderer payload caps the DRAWN in-box focal label ---
+describe("buildGraphRendererPayload focal-box label truncation", () => {
+  const longName = "Dr. John H. Watson, M.D., Late of the Army Medical Department";
+  const makeScene = () => ({
+    nodes: [
+      { id: "twin-a", label: longName, type: "Character", shape: "roundedbox", forceBoxLabel: true, x: 0, y: 0, weight: 1 },
+      { id: "twin-b", label: "Sherlock Holmes", type: "Character", shape: "roundedbox", forceBoxLabel: true, x: 30, y: 0, weight: 1 },
+    ],
+    edges: [{ source: "twin-a", target: "twin-b", relation: "≈ reconcile" }],
+  });
+
+  it("truncates the long focal-box label by default while keeping node.label full", () => {
+    const payload = buildGraphRendererPayload(makeScene(), { nodeRadius: 3 });
+    const aIdx = payload.nodeIndexById.get("twin-a");
+    const drawn = payload.baseStyle.nodeLabels[aIdx];
+    expect(drawn.endsWith("…")).toBe(true);
+    expect(drawn.length).toBeLessThan(longName.length);
+    // The full name is still on the payload node (hover tooltip source).
+    expect(payload.nodeById.get("twin-a").label).toBe(longName);
+  });
+
+  it("honours an explicit labelMaxChars override", () => {
+    const payload = buildGraphRendererPayload(makeScene(), { nodeRadius: 3, labelMaxChars: 6 });
+    const aIdx = payload.nodeIndexById.get("twin-a");
+    // "Dr. John...".slice(0,6) -> "Dr. Jo" (no trailing ws) -> "Dr. Jo…"
+    expect(payload.baseStyle.nodeLabels[aIdx]).toBe("Dr. Jo…");
+  });
+
+  it("leaves short focal labels untouched (no spurious ellipsis)", () => {
+    const payload = buildGraphRendererPayload(makeScene(), { nodeRadius: 3 });
+    const bIdx = payload.nodeIndexById.get("twin-b");
+    expect(payload.baseStyle.nodeLabels[bIdx]).toBe("Sherlock Holmes");
   });
 });
 
