@@ -83,6 +83,14 @@ Legacy compatibility:
 
 Every edge keeps provenance confidence: EXTRACTED, INFERRED, or AMBIGUOUS, with scores where available.
 
+### Assembly Hygiene (CORE, config-gated, default OFF)
+
+Between step 6 (merge AST + semantic) and step 7 (build the graph), an optional, deterministic, idempotent, NO-KEY pre-pass canonicalizes the assembled extraction. It is gated through `BuildOptions.assemblyHygiene` (and exposed standalone as `applyAssemblyHygiene`), default OFF so the base non-profile contract is unchanged. The three sub-steps run in fixed order and benefit any corpus (`src/assembly-hygiene.ts`):
+
+1. **Schema hygiene (`normalizeSchemaHygiene`).** Canonicalizes synonymous id-prefixes through an explicit, extensible synonym map (defaults `location_`→`place_`, `org_`→`organization_`) and normalizes the node `type` to its canonical Capitalized form (default overrides `place`→`Location`, `chapter`/`story`→`ChapterOrStory`; bare lowercase types fold to Capitalize, e.g. `character`→`Character`). When two nodes collapse onto the same canonical id their edges, string-array fields, and citations are **UNIONed** (the 0.14.0 citation-union-at-merge posture — never last-write-wins-dropped); scalar attrs are filled first-seen by sorted id order. Self-loops created by a collapse are dropped. Re-running on its own output is a no-op.
+2. **Alias / normalized_terms derivation (`deriveAliasesAndNormalizedTerms`).** Derives `aliases` + `normalized_terms` from the label CONSERVATIVELY: strips leading honorifics/titles (Dr., Sir, Colonel, Inspector, Mr., Mrs., Lord, Lady, Captain, Professor, …) and parentheticals (`Hugo Oberstein (spy)`→alias `Hugo Oberstein`), lowercases the normalized terms. No fuzzy stemming (no invented collisions). Merges with — never clobbers — any pre-existing aliases/terms; idempotent.
+3. **De-orphan (`deOrphanByContainer`).** Links each degree-0 entity node to its FINEST available container — a ChapterOrStory/Scene/Section sharing its provenance (`source_file` or path slug), else the Work — through a derived `appears_in` edge (`derived:true`, `derivation_method:"deorphan:finest-container"`, `confidence:"INFERRED"`). Finest-container is chosen over straight-to-Work because all-orphans→Work inflates Work-node degree (Work hubs outrank protagonists) and distorts the force layout. Idempotent: respects pre-existing `appears_in`, never double-adds, never links a container node into itself.
+
 ## Configured Ontology Dataprep Profiles
 
 Configured ontology dataprep profiles are an additive layer over the existing pipeline. They activate only through a discovered project config (`graphify.yaml`, `graphify.yml`, `.graphify/config.yaml`, `.graphify/config.yml`) or an explicit `--config`/`--profile` option. Without that activation, the normal non-profile graphify behavior and base `validateExtraction()` contract remain unchanged.
