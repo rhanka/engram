@@ -9,12 +9,20 @@ export interface RepoKeyRunner {
 
 const defaultRepoKeyRunner: RepoKeyRunner = {
   run(command: string, args: string[], cwd: string): string {
-    return execFileSync(command, args, {
-      cwd,
-      encoding: "utf-8",
-      maxBuffer: 64 * 1024 * 1024,
-      stdio: ["ignore", "pipe", "pipe"],
-    }).trim();
+    try {
+      return execFileSync(command, args, {
+        cwd,
+        encoding: "utf-8",
+        maxBuffer: 64 * 1024 * 1024,
+        stdio: ["ignore", "pipe", "pipe"],
+      }).trim();
+    } catch (err) {
+      const maybe = err as { status?: number; stdout?: string | Buffer };
+      if (maybe.status === 0 && maybe.stdout !== undefined) {
+        return String(maybe.stdout).trim();
+      }
+      throw err;
+    }
   },
 };
 
