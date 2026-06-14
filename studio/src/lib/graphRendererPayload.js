@@ -108,6 +108,33 @@ export function isBoxShape(shape) {
   return value === "box" || value === "roundedbox";
 }
 
+/**
+ * Default character budget for an in-canvas / overlay node label. The renderer
+ * sizes a box glyph to its label's drawn width, so a long entity name (e.g.
+ * "Dr. John H. Watson") yields a wide box that overflows a compact recon focal
+ * slot. We cap the DRAWN text and append an ellipsis; the full, untruncated name
+ * is still reachable on hover (the GraphCanvas tooltip + the recon rail/detail
+ * `title`s carry `node.label` verbatim). Parameterizable so a view can opt into
+ * a wider/narrower budget without touching the renderer.
+ */
+export const DEFAULT_LABEL_MAX_CHARS = 22;
+
+/**
+ * Truncate a label to at most `maxChars` glyphs, appending a single-character
+ * ellipsis (…) when clipped. Trims trailing whitespace before the ellipsis so we
+ * never render "Foo …". A non-positive / non-finite `maxChars` disables clipping
+ * (returns the label unchanged) so callers can opt out explicitly.
+ * @param {unknown} label     the source label (coerced to string)
+ * @param {number} [maxChars] max visible glyphs before the ellipsis
+ * @returns {string} the display label (truncated when longer than the budget)
+ */
+export function truncateLabel(label, maxChars = DEFAULT_LABEL_MAX_CHARS) {
+  const text = String(label ?? "");
+  if (!Number.isFinite(maxChars) || maxChars <= 0) return text;
+  if (text.length <= maxChars) return text;
+  return text.slice(0, maxChars).replace(/\s+$/u, "") + "…";
+}
+
 function cloneStyle(style) {
   return {
     nodeSizes: new Float32Array(style.nodeSizes),
@@ -176,6 +203,11 @@ export function buildGraphRendererPayload(scene, options = {}) {
   const focusId = options.focusId ?? null;
   const hoveredNodeId = options.hoveredNodeId ?? null;
   const requestedRadius = options.nodeRadius ?? 3;
+  // BUG-1: max DRAWN chars for in-box labels (recon focal pair). Default keeps
+  // long names from overflowing; a view can override via options.labelMaxChars.
+  const labelMaxChars = Number.isFinite(options.labelMaxChars)
+    ? options.labelMaxChars
+    : DEFAULT_LABEL_MAX_CHARS;
   const sceneNodes = scene?.nodes ?? [];
   const sceneEdges = scene?.edges ?? [];
 
@@ -242,7 +274,12 @@ export function buildGraphRendererPayload(scene, options = {}) {
     if (node.forceBoxLabel !== true || !isBoxShape(node.shape)) continue;
     const index = nodeIndexById.get(node.id);
     if (!Number.isInteger(index)) continue;
-    baseStyle.nodeLabels[index] = node.label || String(node.id);
+    // BUG-1: the renderer sizes the box to the drawn label width, so a long
+    // entity name overflows the compact recon focal slot. Cap the DRAWN text
+    // (parameterizable via labelMaxChars; default DEFAULT_LABEL_MAX_CHARS). The
+    // full name stays reachable on hover (GraphCanvas tooltip uses node.label,
+    // which is left untouched on the payload node) and in the recon rail/detail.
+    baseStyle.nodeLabels[index] = truncateLabel(node.label || String(node.id), labelMaxChars);
   }
   const renderedEdges = Array.from(renderGraph.edgeInputIndices ?? [], (inputIndex) => edges[inputIndex]);
 
