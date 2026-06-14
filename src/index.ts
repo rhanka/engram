@@ -258,7 +258,26 @@ export type {
   ProfileReportPdfArtifact,
 } from "./profile-report.js";
 export { validateExtraction, assertValid } from "./validate.js";
-export { buildFromJson, build, buildMerge, deduplicateByLabel } from "./build.js";
+export { buildFromJson, build, buildMerge, deduplicateByLabel, applyAssemblyHygiene } from "./build.js";
+export type { AssemblyHygieneOptions } from "./build.js";
+export {
+  normalizeSchemaHygiene,
+  deriveAliasesAndNormalizedTerms,
+  deriveLabelTerms,
+  deOrphanByContainer,
+  canonicalId,
+  canonicalType,
+  DEFAULT_ID_PREFIX_SYNONYMS,
+  DEFAULT_TYPE_SYNONYMS,
+  DEFAULT_HONORIFICS,
+  DEFAULT_CONTAINER_TYPES_FINEST_FIRST,
+} from "./assembly-hygiene.js";
+export type {
+  SchemaHygieneConfig,
+  AliasDerivationConfig,
+  DeOrphanConfig,
+  DeOrphanResult,
+} from "./assembly-hygiene.js";
 export { cleanupStaleNodes } from "./semantic-cleanup.js";
 export type { CleanupStaleNodesOptions, CleanupStaleNodesResult } from "./semantic-cleanup.js";
 export { cloneRepo, defaultCloneDestination } from "./repo-clone.js";
