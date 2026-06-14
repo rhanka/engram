@@ -5,7 +5,7 @@
    * + the description sidecar). Clicking a relation target opens that entity
    * (highlight, NO graph reload) via onOpenEntity.
    */
-  import Accordion from "./Accordion.svelte";
+  import { Badge, Collapsible } from "@sentropic/design-system-svelte";
   import {
     relationRowsFor,
     indexNodes,
@@ -97,7 +97,10 @@
 
     <!-- SVELTE-1: relations in an accordion, collapsed by default (like citations). -->
     <div class="entity-acc">
-      <Accordion title="Relations" count={relations.length} open={false}>
+      <Collapsible title="Relations" open={false}>
+        {#snippet trailing()}
+          <Badge shape="circle" size="sm" tone="neutral">{relations.length}</Badge>
+        {/snippet}
         {#if relations.length === 0}
           <p class="entity-empty-inline">No relations.</p>
         {:else}
@@ -119,19 +122,25 @@
             {/each}
           </ul>
         {/if}
-      </Accordion>
+      </Collapsible>
     </div>
 
     <!-- SVELTE-2: citations as a double accordion (file > passages). -->
     <div class="entity-acc">
-      <Accordion title="Citations" count={citationTotal} open={false}>
+      <Collapsible title="Citations" open={false}>
+        {#snippet trailing()}
+          <Badge shape="circle" size="sm" tone="neutral">{citationTotal}</Badge>
+        {/snippet}
         {#if citationFiles.length === 0}
           <p class="entity-empty-inline">No citations recorded.</p>
         {:else}
           <ul class="entity-cite-files">
             {#each citationFiles as cf (cf.file)}
               <li>
-                <Accordion title={cf.file} count={cf.count} open={false} compact>
+                <Collapsible title={cf.file} open={false} size="sm">
+                  {#snippet trailing()}
+                    <Badge shape="circle" size="sm" tone="neutral">{cf.count}</Badge>
+                  {/snippet}
                   <ul class="entity-cite-passages">
                     {#each cf.passages as p, i (cf.file + i)}
                       <li class="entity-cite-passage">
@@ -141,12 +150,12 @@
                       </li>
                     {/each}
                   </ul>
-                </Accordion>
+                </Collapsible>
               </li>
             {/each}
           </ul>
         {/if}
-      </Accordion>
+      </Collapsible>
     </div>
   {/if}
 </aside>
