@@ -30,6 +30,13 @@ export const WORKSPACE_MANIFEST_SCHEMA = "graphify_workspace_manifest_v1";
 export const WORKSPACE_MANIFEST_FILENAME = "workspace-manifest.json";
 
 /**
+ * Numeric schema version, separate from the string schema id. The signed
+ * contract annotates the manifest with "+schema_version" so the consumer can
+ * gate on a monotonic integer (additive bumps) without parsing the schema id.
+ */
+export const WORKSPACE_MANIFEST_SCHEMA_VERSION = 1 as const;
+
+/**
  * The signed contract this bundle honours. The process-std-am peer signed
  * `workspace-bundle-contract-v1` (stabilized 2/2, ed25519); the manifest stamps
  * it so the consumer can assert the join semantics (registry_record_id key,
@@ -70,6 +77,8 @@ export interface WorkspaceManifestArtifact {
 
 export interface WorkspaceManifest {
   schema: typeof WORKSPACE_MANIFEST_SCHEMA;
+  /** Monotonic integer schema version (contract "+schema_version"). */
+  schema_version: typeof WORKSPACE_MANIFEST_SCHEMA_VERSION;
   contract: typeof WORKSPACE_BUNDLE_CONTRACT;
   generated_at: string;
   /** Optional graph hash linking the bundle to a graph.json snapshot. */
@@ -132,6 +141,7 @@ export function buildWorkspaceManifest(
 
   return {
     schema: WORKSPACE_MANIFEST_SCHEMA,
+    schema_version: WORKSPACE_MANIFEST_SCHEMA_VERSION,
     contract: WORKSPACE_BUNDLE_CONTRACT,
     generated_at: options.generatedAt ?? new Date().toISOString(),
     graph_hash: options.graphHash ?? null,
