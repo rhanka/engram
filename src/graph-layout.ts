@@ -203,24 +203,25 @@ function applyRepulsion(
  *
  * MEASURED (WP1): layout cost is exactly linear in iterations, and the layout's
  * macro-structure (cluster placement, bbox spread) is set within ~60-90 ticks;
- * beyond ~120 ticks the mean per-node drift plateaus (residual is orbital jitter,
- * not progress), so iterations 120..300 are wasted compute. Small graphs are
- * cheap, so they keep the full 300-tick settle; larger graphs taper toward a
- * floor where extra ticks no longer change the picture. Reduces ONLY wasted
- * compute — never node count.
+ * by ~120 ticks the mean per-node drift vs the full 300-tick layout has already
+ * plateaued (the residual is orbital jitter, not progress), so iterations
+ * 120..300 are wasted compute. Tiny graphs are cheap, so they keep the full
+ * 300-tick settle for the smoothest result; everything else taper toward a ~120
+ * working point and then a 90 floor at tens of thousands of nodes, where extra
+ * ticks no longer change the picture. Reduces ONLY wasted compute — never nodes.
  *
- * 300 @ n<=400, easing to 120 @ n>=5000, floor 90 @ n>=20000.
+ * 300 @ n<=300, easing to 120 @ n>=1500, floor 90 @ n>=20000.
  */
 export function defaultLayoutIterations(n: number): number {
-  if (!Number.isFinite(n) || n <= 400) return 300;
+  if (!Number.isFinite(n) || n <= 300) return 300;
   if (n >= 20000) return 90;
-  if (n >= 5000) {
-    // 5000->120 easing to 20000->90
-    const t = (n - 5000) / (20000 - 5000);
+  if (n >= 1500) {
+    // 1500->120 easing to 20000->90.
+    const t = (n - 1500) / (20000 - 1500);
     return Math.round(120 - t * 30);
   }
-  // 400->300 easing to 5000->120
-  const t = (n - 400) / (5000 - 400);
+  // 300->300 easing to 1500->120.
+  const t = (n - 300) / (1500 - 300);
   return Math.round(300 - t * 180);
 }
 

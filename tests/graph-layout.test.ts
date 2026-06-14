@@ -144,7 +144,8 @@ function ringGraph(count = 40): { nodes: LayoutGraphNode[]; edges: LayoutGraphEd
 describe("defaultLayoutIterations", () => {
   it("keeps the full 300 ticks for small graphs and tapers for large ones", () => {
     expect(defaultLayoutIterations(50)).toBe(300);
-    expect(defaultLayoutIterations(400)).toBe(300);
+    expect(defaultLayoutIterations(300)).toBe(300);
+    expect(defaultLayoutIterations(2092)).toBeLessThan(150); // mystery graph: ~2.5x cut
     expect(defaultLayoutIterations(100000)).toBe(90);
     // Monotone non-increasing across the curve.
     let prev = Infinity;
