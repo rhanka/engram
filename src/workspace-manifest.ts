@@ -38,8 +38,11 @@ export const WORKSPACE_MANIFEST_SCHEMA_VERSION = 1 as const;
 
 /**
  * The bundle contract this manifest stamps. `workspace-bundle-contract-v1` is
- * the negotiated contract with the process-std-am peer (consumer ratified 2026-06-12;
- * graphify-side ratification pending at the time of writing). Stamping the
+ * the negotiated contract with the process-std-am peer — signed by both parties and
+ * stabilized 2026-06-12 (h2a negotiation `workspace-bundle-contract-v1`,
+ * artifactHash sha256:5b08e19d…; the `graphify_principal:"pending"` field inside
+ * the proposed contract body is a frozen propose-time snapshot, superseded by
+ * graphify's own signature at journal seq2). Stamping the
  * contract id lets the consumer assert WHICH bundle shape it is reading — the
  * artifact set + the join semantics defined by the contract (join on
  * `registry_record_id`; the scene-hierarchies sidecar is authoritative for
