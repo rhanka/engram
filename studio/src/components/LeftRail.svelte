@@ -10,8 +10,8 @@
     SelectableRow,
     Search,
     Badge,
+    Collapsible,
   } from "@sentropic/design-system-svelte";
-  import Accordion from "./Accordion.svelte";
   import TypeShapeGlyph from "./TypeShapeGlyph.svelte";
   import {
     graphNodes,
@@ -109,7 +109,10 @@
     />
   </div>
 
-  <Accordion title="Types" count={typeList.length} open={false}>
+  <Collapsible title="Types" open={false}>
+    {#snippet trailing()}
+      <Badge shape="circle" size="sm" tone="neutral">{typeList.length}</Badge>
+    {/snippet}
     {#if typeList.length === 0}
       <p class="rail-empty">No types.</p>
     {:else}
@@ -127,15 +130,18 @@
             {/snippet}
             {t.key}
             {#snippet trailing()}
-              <Badge tone="neutral">{t.count}</Badge>
+              <Badge shape="circle" size="sm" tone="neutral">{t.count}</Badge>
             {/snippet}
           </SelectableRow>
         {/each}
       </SelectableList>
     {/if}
-  </Accordion>
+  </Collapsible>
 
-  <Accordion title="Communities" count={communityInfo.liveCount}>
+  <Collapsible title="Communities" open={false}>
+    {#snippet trailing()}
+      <Badge shape="circle" size="sm" tone="neutral">{communityInfo.liveCount}</Badge>
+    {/snippet}
     {#if communityInfo.liveCount === 0}
       <p class="rail-empty">No communities.</p>
     {:else}
@@ -156,7 +162,7 @@
               {/snippet}
               {c.key}
               {#snippet trailing()}
-                <Badge tone="neutral">{c.count}</Badge>
+                <Badge shape="circle" size="sm" tone="neutral">{c.count}</Badge>
               {/snippet}
             </SelectableRow>
           </li>
@@ -169,16 +175,22 @@
         </p>
       {/if}
     {/if}
-  </Accordion>
+  </Collapsible>
 
-  <Accordion title="Entities" count={entityTotal} open={false}>
+  <Collapsible title="Entities" open={false}>
+    {#snippet trailing()}
+      <Badge shape="circle" size="sm" tone="neutral">{entityTotal}</Badge>
+    {/snippet}
     {#if entityTotal === 0}
       <p class="rail-empty">No matching entities.</p>
     {:else}
       <ul class="rail-type-groups">
         {#each entitiesByType as grp (grp.type)}
           <li>
-            <Accordion title={grp.type} count={grp.count} open={false} compact>
+            <Collapsible title={grp.type} open={false} size="sm">
+              {#snippet trailing()}
+                <Badge shape="circle" size="sm" tone="neutral">{grp.count}</Badge>
+              {/snippet}
               <ul class="rail-list">
                 {#each grp.items as r (r.id)}
                   <li>
@@ -192,14 +204,14 @@
                   </li>
                 {/each}
               </ul>
-            </Accordion>
+            </Collapsible>
           </li>
         {/each}
       </ul>
     {/if}
-  </Accordion>
+  </Collapsible>
 
-  <Accordion title="Options" open={false}>
+  <Collapsible title="Options" open={false}>
     <label class="rail-facet">
       <input
         type="checkbox"
@@ -208,7 +220,7 @@
       />
       Show weak (inferred) links
     </label>
-  </Accordion>
+  </Collapsible>
 </aside>
 
 <style>

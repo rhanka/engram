@@ -7,7 +7,7 @@
    * the detail also opens when the entity is picked in the graph (focusId).
    * ✕ removes a bucket or entity from the selection.
    */
-  import Accordion from "./Accordion.svelte";
+  import { Badge, Collapsible } from "@sentropic/design-system-svelte";
   import EntityPanel from "./EntityPanel.svelte";
   import {
     entitiesByType,
@@ -85,7 +85,10 @@
       see its detail.
     </p>
   {:else}
-    <Accordion title="Types" count={selection.types.length} open={selection.types.length > 0}>
+    <Collapsible title="Types" open={selection.types.length > 0}>
+      {#snippet trailing()}
+        <Badge shape="circle" size="sm" tone="neutral">{selection.types.length}</Badge>
+      {/snippet}
       {#if selection.types.length === 0}
         <p class="sel-muted">No type selected.</p>
       {:else}
@@ -97,18 +100,24 @@
                 <span class="sel-bucket-name">{type}</span>
                 <button class="sel-remove" title="Remove" onclick={() => onToggleType?.(type)}>✕</button>
               </div>
-              <Accordion title="Entities" count={items.length} open={false} compact>
+              <Collapsible title="Entities" open={false} size="sm">
+                {#snippet trailing()}
+                  <Badge shape="circle" size="sm" tone="neutral">{items.length}</Badge>
+                {/snippet}
                 <div class="sel-entities">
                   {#each items as e (e.id)}{@render entityRow(e, false)}{/each}
                 </div>
-              </Accordion>
+              </Collapsible>
             </div>
           {/each}
         </div>
       {/if}
-    </Accordion>
+    </Collapsible>
 
-    <Accordion title="Communities" count={selection.communities.length} open={selection.communities.length > 0}>
+    <Collapsible title="Communities" open={selection.communities.length > 0}>
+      {#snippet trailing()}
+        <Badge shape="circle" size="sm" tone="neutral">{selection.communities.length}</Badge>
+      {/snippet}
       {#if selection.communities.length === 0}
         <p class="sel-muted">No community selected.</p>
       {:else}
@@ -120,18 +129,24 @@
                 <span class="sel-bucket-name">{community}</span>
                 <button class="sel-remove" title="Remove" onclick={() => onToggleCommunity?.(community)}>✕</button>
               </div>
-              <Accordion title="Entities" count={items.length} open={false} compact>
+              <Collapsible title="Entities" open={false} size="sm">
+                {#snippet trailing()}
+                  <Badge shape="circle" size="sm" tone="neutral">{items.length}</Badge>
+                {/snippet}
                 <div class="sel-entities">
                   {#each items as e (e.id)}{@render entityRow(e, false)}{/each}
                 </div>
-              </Accordion>
+              </Collapsible>
             </div>
           {/each}
         </div>
       {/if}
-    </Accordion>
+    </Collapsible>
 
-    <Accordion title="Entities" count={selection.entities.length} open={selection.entities.length > 0}>
+    <Collapsible title="Entities" open={selection.entities.length > 0}>
+      {#snippet trailing()}
+        <Badge shape="circle" size="sm" tone="neutral">{selection.entities.length}</Badge>
+      {/snippet}
       {#if directEntities.length === 0}
         <p class="sel-muted">No entity selected.</p>
       {:else}
@@ -139,7 +154,7 @@
           {#each directEntities as e (e.id)}{@render entityRow(e, true)}{/each}
         </div>
       {/if}
-    </Accordion>
+    </Collapsible>
   {/if}
 </aside>
 

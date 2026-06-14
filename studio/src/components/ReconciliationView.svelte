@@ -9,9 +9,10 @@
    */
   import { onMount } from "svelte";
 
+  import { Badge, Collapsible } from "@sentropic/design-system-svelte";
+
   import WorkspaceShell from "./WorkspaceShell.svelte";
   import GraphCanvas from "./GraphCanvas.svelte";
-  import Accordion from "./Accordion.svelte";
   import { fetchReconciliationCandidates, postPatchApply } from "../lib/api.js";
   import { buildPatchFromCandidate } from "../lib/reconciliation.js";
   import {
@@ -254,15 +255,21 @@
         </dl>
 
         {#if active.reasons?.length}
-          <Accordion title="Reasons" count={active.reasons.length} open={true}>
+          <Collapsible title="Reasons" open={true}>
+            {#snippet trailing()}
+              <Badge shape="circle" size="sm" tone="neutral">{active.reasons.length}</Badge>
+            {/snippet}
             <ul class="recon-reasons">
               {#each active.reasons as r (r)}<li>{r}</li>{/each}
             </ul>
-          </Accordion>
+          </Collapsible>
         {/if}
 
         <!-- Evidence collapsed by default (user request). -->
-        <Accordion title="Evidence" count={(active.evidence_refs ?? []).length} open={false}>
+        <Collapsible title="Evidence" open={false}>
+          {#snippet trailing()}
+            <Badge shape="circle" size="sm" tone="neutral">{(active.evidence_refs ?? []).length}</Badge>
+          {/snippet}
           {#if (active.evidence_refs ?? []).length === 0}
             <p class="recon-empty">No evidence refs.</p>
           {:else}
@@ -270,7 +277,7 @@
               {#each active.evidence_refs as ref (ref)}<li>{ref}</li>{/each}
             </ul>
           {/if}
-        </Accordion>
+        </Collapsible>
 
         <div class="recon-actions">
           <button class="recon-accept" disabled={busy} onclick={() => decide("accept")}>
