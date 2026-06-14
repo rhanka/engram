@@ -35,6 +35,21 @@ export const CODE_EXTENSIONS = new Set([
   ".sln", ".csproj", ".fsproj", ".vbproj", ".props", ".targets",
 ]);
 
+/**
+ * MCP (Model Context Protocol) config files, classified by FILENAME (not
+ * extension — a bare `.json` is otherwise unclassified). Dispatched to
+ * `extractMcpConfig`. Port of upstream safishamsi 2c01a89 (#... mcp_ingest).
+ * `.mcp.json` is a hidden file: the detection walk skips dot-prefixed
+ * basenames, so it is classified here for explicit single-file targets but not
+ * picked up during a directory scan (consistent with the hidden-file policy).
+ */
+export const MCP_CONFIG_FILENAMES = new Set([
+  ".mcp.json",
+  "claude_desktop_config.json",
+  "mcp.json",
+  "mcp_servers.json",
+]);
+
 export const DOC_EXTENSIONS = new Set([".md", ".mdx", ".qmd", ".txt", ".rst", ".html", ".yaml", ".yml"]);
 export const PAPER_EXTENSIONS = new Set([".pdf"]);
 export const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"]);
@@ -331,6 +346,8 @@ function hasCodeShebang(filePath: string): boolean {
 export function classifyFile(filePath: string): FileType | null {
   const ext = extname(filePath).toLowerCase();
   if (CODE_EXTENSIONS.has(ext)) return FileType.CODE;
+  // MCP config files are recognised by full filename, not extension.
+  if (MCP_CONFIG_FILENAMES.has(basename(filePath))) return FileType.CODE;
   if (PAPER_EXTENSIONS.has(ext)) {
     // PDFs inside Xcode asset catalogs are vector icons, not papers
     const parts = filePath.split(sep);
