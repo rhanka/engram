@@ -17,6 +17,7 @@ import { generate } from "./report.js";
 import { backupIfProtected, persistGraphWithCitations } from "./export.js";
 import { safeToHtml } from "./html-export.js";
 import { extractWithDiagnostics, type ExtractionDiagnostic } from "./extract.js";
+import { buildCodeFileNodeIdMap, extractGit, mergeExtractions } from "./extract-git.js";
 import { resolveGraphifyPaths } from "./paths.js";
 import { markLifecycleAnalyzed } from "./lifecycle.js";
 import { persistCommunityLabels, resolveCommunityLabels } from "./community-labels.js";
@@ -170,6 +171,10 @@ export async function buildProject(
   }
 
   const extracted = await extractWithDiagnostics(codeFiles);
+  const gitExtraction = extractGit(rootResolved, {
+    fileNodeIds: buildCodeFileNodeIdMap(rootResolved, codeFiles),
+  });
+  const mergedExtraction = mergeExtractions(extracted.extraction, gitExtraction);
   const diagnostics = extracted.diagnostics;
 
   if (diagnostics.length > 0) {
@@ -181,7 +186,7 @@ export async function buildProject(
     });
   }
 
-  if (extracted.extraction.nodes.length === 0) {
+  if (mergedExtraction.nodes.length === 0) {
     const detail = diagnostics.length > 0
       ? ` ${formatDiagnosticSummary(diagnostics)}`
       : "";
@@ -192,7 +197,7 @@ export async function buildProject(
     );
   }
 
-  const extraction = makeExtractionPortable(extracted.extraction, rootResolved);
+  const extraction = makeExtractionPortable(mergedExtraction, rootResolved);
   const G = buildFromJson(extraction, { directed: options?.directed === true });
   if (G.order === 0) {
     throw new Error("Graph is empty after buildFromJson().");
