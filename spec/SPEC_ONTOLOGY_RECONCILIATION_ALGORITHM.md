@@ -57,6 +57,21 @@ For each candidate pair, `score = Σ wᵢ · signalᵢ`, every contribution expo
 
 Weights `wᵢ` and tier thresholds are **profile-configurable with code defaults** (works cold, portable per corpus).
 
+### 2a. Implemented tiers (MVP — `src/ontology-reconciliation.ts`)
+
+The deployed deterministic generator (`generateOntologyReconciliationCandidates`) emits two tiers, each candidate tagged with `tier`:
+
+- **Exact tier** (`tier: "exact"`). A shared NORMALIZED term across `{label, aliases, normalized_terms}` (case/whitespace-folded). When the two normalized LABELS are equal the pair scores **1.0** (canonical exact match); a shared non-label term (alias / normalized_term) scores **0.85**. This tier is exact-only and depends on the assembly-stage alias/normalized_terms derivation to be more than label-equality (see `SPEC_GRAPHIFY.md → Assembly Hygiene`).
+- **Fuzzy tier** (`tier: "fuzzy"`, strictly LOWER confidence). Engaged only for a pair with no shared exact term. It compares honorific-stripped tokens across tagged surface VARIANTS of each label/alias — the parenthetical-**stripped** surface (a `name` variant) and the parenthetical **content** alone (a `paren` variant) — and matches when an admissible variant pair is token-SEQUENCE **equal** (score 0.9), the smaller token set strictly **contains** the larger (score 0.75), or the best `name`↔`name` token **Jaccard** clears `fuzzyThreshold` (default **0.6**, score 0.7). Leading honorifics/titles (Dr., Sir, Colonel, Inspector, Mr., Mrs., Lord, Lady, Captain, Professor, M./Mme./Mlle., …) are stripped before tokenization. Guard rails that keep precision high on a large corpus:
+  - **≥ 2 meaningful tokens** required on the smaller side, so a single generic locator ("Greenford", "Seawood", "inn", "butler") cannot match every node that merely mentions it.
+  - **`paren`↔`paren` never compared**, so two unrelated nodes sharing a generic descriptor ("(servant)", "(mentioned)", "(Evidence)", "(murder weapon)") do not collide; a `paren` variant matches only another node's real NAME (this is what surfaces "Exmoor estate" ⊆ "Devonshire (Exmoor estate)").
+  - **Order-preserving equality** + a **formulaic-series guard**: a pair whose token symmetric-difference is entirely ordinal-ish (roman numerals, digits, single letters) is rejected — "Edward I/II/III", "Part I, Chapter II" vs "Part II, Chapter I" are distinct members, not variants.
+  - **Structural container types excluded from the fuzzy tier** by default (`fuzzyExcludeTypes` = Work, ChapterOrStory, Scene, Section, Saga): fuzzy coreference is for ENTITIES; distinct chapters/works are never the same thing and their formulaic titles ("The Adventures of …", "Part I, Chapter II: …") would otherwise dominate the output. The exact tier still runs on these types.
+
+The **type-guard** (`left.type !== right.type` → skip) applies AFTER schema hygiene has canonicalized types, so `place`/`Location` no longer split a pair. Output is ranked by score (exact above fuzzy) and capped (`cap`, default 200). The fuzzy tier is config-gated (`fuzzy`, default ON) and never auto-applies — every candidate remains a non-destructive `accept_match` for human convergence.
+
+**Precision contract (mystery pack).** The fuzzy tier MUST surface genuine qualifier-variants — "Hugo Oberstein" ↔ "Hugo Oberstein (spy)"; "British Museum" ↔ "British Museum (Egyptian Antiquities)" (bridged across `place_`/`location_` by schema hygiene); "Devonshire (Exmoor estate)" ↔ "Exmoor estate"; "Reuben Hornby" ↔ "Reuben Hornby (accused)"; "Gournay-Martin" ↔ "M. Gournay-Martin" — and MUST reject siblings ("Sir Henry" ↔ "Sir Charles Baskerville"), regnal series ("Edward I/II/III"), generic honorific collisions ("Inspector Lestrade" ↔ "Inspector Gregson"), and distinct "Château de …". These cases are pinned in `tests/ontology-reconciliation-fuzzy.test.ts`.
+
 ## 3. LLM signal (phase 2, optional)
 
 The LLM may **re-rank the review shortlist** and **propose thresholds/rules** (active learning). It is **never** part of deterministic validation or patch apply — consistent with `SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md`.
