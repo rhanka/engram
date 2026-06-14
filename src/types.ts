@@ -33,6 +33,15 @@ export interface InputScopeInspection {
   recommendation: string | null;
 }
 
+export interface GitDetectionWindow {
+  source_owner: "git";
+  source_hash: string;
+  branches: string[];
+  max_commits: number;
+  active_within_days: number;
+  since_days?: number;
+}
+
 /** A node in the knowledge graph. */
 export interface GraphNode {
   id: string;
@@ -137,6 +146,7 @@ export interface DetectionResult {
   warning: string | null;
   skipped_sensitive: string[];
   graphifyignore_patterns: number;
+  git?: GitDetectionWindow;
   /** Present in incremental mode. */
   incremental?: boolean;
   new_files?: Record<string, string[]>;

@@ -16,6 +16,7 @@ import { FileType } from "./types.js";
 import { googleWorkspaceEnabled } from "./google-workspace.js";
 import { fileWithinSizeCap, zipWithinCaps } from "./office-guard.js";
 import type { DetectionResult, InputScopeInspection } from "./types.js";
+import { detectGitWindow } from "./extract-git.js";
 
 export const CODE_EXTENSIONS = new Set([
   ".py", ".ts", ".js", ".jsx", ".tsx", ".go", ".rs", ".java", ".cpp", ".cc", ".cxx",
@@ -798,6 +799,8 @@ export function detect(root: string, options?: DetectOptions): DetectionResult {
       `Consider running on a subfolder, or use --no-semantic to run AST-only.`;
   }
 
+  const gitWindow = detectGitWindow(rootResolved);
+
   return {
     files,
     total_files: totalFiles,
@@ -806,6 +809,7 @@ export function detect(root: string, options?: DetectOptions): DetectionResult {
     warning,
     skipped_sensitive: skippedSensitive,
     graphifyignore_patterns: ignorePatterns.length,
+    ...(gitWindow ? { git: gitWindow } : {}),
     ...(options?.scope
       ? {
         scope: {
