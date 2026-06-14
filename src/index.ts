@@ -278,6 +278,16 @@ export type {
   DeOrphanConfig,
   DeOrphanResult,
 } from "./assembly-hygiene.js";
+export {
+  fuzzyMatchNodes,
+  DEFAULT_FUZZY_TOKEN_JACCARD_THRESHOLD,
+  DEFAULT_RECONCILIATION_CANDIDATE_CAP,
+  DEFAULT_FUZZY_EXCLUDE_TYPES,
+} from "./ontology-reconciliation.js";
+export type {
+  FuzzyMatchResult,
+  OntologyReconciliationCandidateTier,
+} from "./ontology-reconciliation.js";
 export { cleanupStaleNodes } from "./semantic-cleanup.js";
 export type { CleanupStaleNodesOptions, CleanupStaleNodesResult } from "./semantic-cleanup.js";
 export { cloneRepo, defaultCloneDestination } from "./repo-clone.js";
