@@ -5,7 +5,12 @@
    * the selection (click = add/remove); selected rows are marked. The selection
    * itself is shown in the right column (SelectionPanel).
    */
-  import { SelectableRow, Search, Badge } from "@sentropic/design-system-svelte";
+  import {
+    SelectableList,
+    SelectableRow,
+    Search,
+    Badge,
+  } from "@sentropic/design-system-svelte";
   import Accordion from "./Accordion.svelte";
   import TypeShapeGlyph from "./TypeShapeGlyph.svelte";
   import {
@@ -59,9 +64,34 @@
   });
   const entityTotal = $derived(entitiesByType.reduce((n, g) => n + g.count, 0));
 
-  const typeSet = $derived(new Set(selection.types));
+  // Communities + Entities use STANDALONE SelectableRows (selected/onselect), so
+  // they need the selection-membership sets for the per-row `selected` flag.
+  // (Types uses a SelectableList controlled by selection.types — see below.)
   const commSet = $derived(new Set(selection.communities));
   const entSet = $derived(new Set(selection.entities));
+
+  // Types is wrapped in a DS SelectableList (only ~3 rows, so the listbox roving
+  // tabindex is cheap). The list is controlled by the current selection array and
+  // emits the FULL new array on every change; the studio's viewerState model is a
+  // per-element toggle (toggleType), so recover the single key that flipped between
+  // `prev` and `next` and forward it to the existing toggle action. A multi-toggle
+  // changes exactly one key per activate.
+  //
+  // NOTE: Communities (222) and Entities (1000s) deliberately do NOT use
+  // SelectableList — its register()/sortByDom() is O(n) per row → O(n²) at mount
+  // of a large list, which pegs the main thread when those accordions expand.
+  // Standalone rows keep the multi-toggle behavior at zero registration cost.
+  function toggledKey(prev, next) {
+    const before = new Set(prev);
+    const after = new Set(next);
+    for (const k of after) if (!before.has(k)) return k; // added
+    for (const k of before) if (!after.has(k)) return k; // removed
+    return null;
+  }
+  function onListChange(prev, next, toggle) {
+    const key = toggledKey(prev, next);
+    if (key != null) toggle?.(key);
+  }
 </script>
 
 <aside class="rail" aria-label="Search">
@@ -83,19 +113,25 @@
     {#if typeList.length === 0}
       <p class="rail-empty">No types.</p>
     {:else}
-      <ul class="rail-list">
+      <SelectableList
+        class="rail-list"
+        label="Types"
+        multiple
+        value={selection.types}
+        onchange={(next) => onListChange(selection.types, next, onToggleType)}
+      >
         {#each typeList as t (t.key)}
-          <li>
-            <SelectableRow value={t.key} selected={typeSet.has(t.key)} onselect={() => onToggleType?.(t.key)}>
-              <span class="rail-row-content">
-                <TypeShapeGlyph type={t.key} />
-                <span class="rail-row-label">{t.key}</span>
-                <Badge tone="neutral">{t.count}</Badge>
-              </span>
-            </SelectableRow>
-          </li>
+          <SelectableRow value={t.key}>
+            {#snippet leading()}
+              <TypeShapeGlyph type={t.key} />
+            {/snippet}
+            {t.key}
+            {#snippet trailing()}
+              <Badge tone="neutral">{t.count}</Badge>
+            {/snippet}
+          </SelectableRow>
         {/each}
-      </ul>
+      </SelectableList>
     {/if}
   </Accordion>
 
@@ -106,16 +142,22 @@
       <ul class="rail-list">
         {#each communityInfo.live as c (c.key)}
           <li>
-            <SelectableRow value={c.key} selected={commSet.has(c.key)} onselect={() => onToggleCommunity?.(c.key)}>
-              <span class="rail-row-content">
+            <SelectableRow
+              value={c.key}
+              selected={commSet.has(c.key)}
+              onselect={() => onToggleCommunity?.(c.key)}
+            >
+              {#snippet leading()}
                 <span
                   class="rail-swatch"
                   style="background: var(--st-semantic-data-{c.tone}, #94a3b8)"
                   aria-hidden="true"
                 ></span>
-                <span class="rail-row-label">{c.key}</span>
+              {/snippet}
+              {c.key}
+              {#snippet trailing()}
                 <Badge tone="neutral">{c.count}</Badge>
-              </span>
+              {/snippet}
             </SelectableRow>
           </li>
         {/each}
@@ -140,10 +182,12 @@
               <ul class="rail-list">
                 {#each grp.items as r (r.id)}
                   <li>
-                    <SelectableRow value={r.id} selected={entSet.has(r.id)} onselect={() => onToggleEntity?.(r.id)}>
-                      <span class="rail-row-content" title={r.id}>
-                        <span class="rail-row-label">{r.label}</span>
-                      </span>
+                    <SelectableRow
+                      value={r.id}
+                      selected={entSet.has(r.id)}
+                      onselect={() => onToggleEntity?.(r.id)}
+                    >
+                      <span class="rail-ent-label" title={r.id}>{r.label}</span>
                     </SelectableRow>
                   </li>
                 {/each}
@@ -200,28 +244,24 @@
     padding: 0.5rem 0.85rem 0.7rem;
     border-bottom: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
   }
-  .rail-list {
+  /* The Communities/Entities lists are plain <ul> of standalone SelectableRows. */
+  ul.rail-list {
     list-style: none;
     margin: 0;
     padding: 0;
     display: grid;
     gap: 1px;
   }
-  /* SelectableRow (DS, R8-5) owns the row wrapper + selected styling; this is
-     just the inner layout (swatch | label | count). */
-  .rail-row-content {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    width: 100%;
-    min-width: 0;
-    font-size: 0.85rem;
+  /* The Types list is a DS SelectableList (listbox wrapper, roving tabindex); each
+     SelectableRow owns leading | content | trailing layout + selected styling. We
+     only tighten the inter-row gap to the rail's dense 1px feel. */
+  :global(.rail-list.st-selectableList) {
+    gap: 1px;
   }
-  .rail-row-label {
-    flex: 1;
-    /* min-width:0 lets the flex item shrink below its content so the ellipsis
-       kicks in (and the count to its right stays in view) instead of overflowing. */
-    min-width: 0;
+  /* Entity rows wrap the label in a titled span (hover tooltip = full id). The
+     DS row content already ellipsizes; the span just carries the title. */
+  .rail-ent-label {
+    display: block;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

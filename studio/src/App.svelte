@@ -10,7 +10,7 @@
    * architecture.
    */
   import { onMount } from "svelte";
-  import { Header, Button, Badge, ButtonGroup } from "@sentropic/design-system-svelte";
+  import { AppChrome, Button, Badge, ButtonGroup } from "@sentropic/design-system-svelte";
 
   import GraphCanvas from "./components/GraphCanvas.svelte";
   import LeftRail from "./components/LeftRail.svelte";
@@ -130,13 +130,12 @@
 </script>
 
 <div class="app" data-st-theme="entropic">
-  <Header
+  <AppChrome
     class="app-header"
-    title="Graphify Studio"
-    label="Graphify Ontology Studio"
-    sticky={true}
+    brandName="Graphify"
+    productName="Ontology Studio"
   >
-    {#snippet navigation()}
+    {#snippet identity()}
       <ButtonGroup attached size="sm" label="Studio view" class="app-view-switcher">
         <Button
           size="sm"
@@ -160,7 +159,7 @@
         </Button>
       </ButtonGroup>
     {/snippet}
-    {#snippet actions()}
+    {#snippet extraSelectors()}
       {#if loaded && !loadError}
         <span class="app-stats" aria-label="Graph summary">
           <Badge tone="neutral">{scene.stats.nodeCount} nodes</Badge>
@@ -169,7 +168,7 @@
         </span>
       {/if}
     {/snippet}
-  </Header>
+  </AppChrome>
 
   <main class="app-body">
     {#if !loaded}
@@ -236,7 +235,7 @@
     height: 100%;
     min-height: 0;
   }
-  /* DS Header owns surface/layout/sticky; local CSS only sizes slot content. */
+  /* DS AppChrome owns surface/layout/sticky; local CSS only sizes slot content. */
   :global(.app-view-switcher) {
     white-space: nowrap;
   }
