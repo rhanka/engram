@@ -91,6 +91,7 @@ if (!existsSync(join(spaDir, "index.html"))) {
 let buildStudioScene;
 let attachLayoutPositions;
 let buildEntitySidecar;
+let emitSceneHierarchies;
 let loadOntologyReconciliationCandidates;
 let queryOntologyReconciliationCandidates;
 try {
@@ -98,6 +99,7 @@ try {
     buildStudioScene,
     attachLayoutPositions,
     buildEntitySidecar,
+    emitSceneHierarchies,
     loadOntologyReconciliationCandidates,
     queryOntologyReconciliationCandidates,
   } = await import(join(root, "dist", "index.js")));
@@ -111,7 +113,13 @@ try {
 mkdirSync(outDir, { recursive: true });
 // Wipe stale generated data files but keep the dir (so an external .nojekyll or
 // similar is not collateral). We copy the SPA over the top.
-for (const f of ["scene.json", "graph.json", "reconciliation-candidates.json", "entities.json"]) {
+for (const f of [
+  "scene.json",
+  "scene-hierarchies.json",
+  "graph.json",
+  "reconciliation-candidates.json",
+  "entities.json",
+]) {
   rmSync(join(outDir, f), { force: true });
 }
 rmSync(join(outDir, "assets"), { recursive: true, force: true });
@@ -129,6 +137,21 @@ const nodes = Array.isArray(graph.nodes) ? graph.nodes : [];
 // mount. Matches the live server route byte-for-byte (deterministic layout).
 const scene = attachLayoutPositions(buildStudioScene(graph));
 writeFileSync(join(outDir, "scene.json"), JSON.stringify(scene));
+
+// --- 3b. scene-hierarchies.json (workspace-bundle-contract-v1, D1). ---
+// STANDALONE sidecar (never embedded in scene.json), emitted iff the
+// ontology compile produced <state>/ontology/hierarchies.json. Joins on the
+// raw registry ids: the scene contributes its lossless `registry_record_id`s.
+const sceneRawIds = new Set();
+for (const node of scene.nodes) {
+  const raw = typeof node.registry_record_id === "string" ? node.registry_record_id : node.id;
+  if (raw) sceneRawIds.add(raw);
+}
+const hierarchiesResult = emitSceneHierarchies({
+  ontologyOutputDir: join(stateDir, "ontology"),
+  sceneDir: outDir,
+  sceneNodeIds: sceneRawIds,
+});
 
 // --- 4. reconciliation-candidates.json: mirror the SPA's request. ---
 // The SPA fetches /api/ontology/reconciliation/candidates?sort=score&order=desc&limit=50.
@@ -177,5 +200,10 @@ writeFileSync(join(outDir, "entities.json"), JSON.stringify(entities));
 // --- Summary. ---
 console.log(`build-studio-demo: wrote standalone studio export to ${outDir}`);
 console.log(`  nodes: ${nodes.length} | scene nodes: ${scene.nodes.length} | scene edges: ${scene.edges.length}`);
+console.log(
+  hierarchiesResult.path
+    ? `  scene-hierarchies: ${Object.keys(hierarchiesResult.sidecar.hierarchies).length} hierarchies (${hierarchiesResult.path})`
+    : "  scene-hierarchies: none (no ontology/hierarchies.json in state dir)",
+);
 console.log(`  reconciliation candidates: ${candidatesResponse.total ?? candidatesResponse.items.length}`);
 console.log(`  entities index: ${Object.keys(entities).length} ids (${withDescription} with description, ${withOccurrences} with occurrences)`);
