@@ -95,12 +95,13 @@ function workdirFromArgs(args: any): string | undefined {
  * Classify a Codex session's invocation origin from its `session_meta`.
  *
  * Observed on real rollouts (all in `~/.codex/sessions`, same JSONL shape):
- *   - interactive TUI:    originator `codex-tui`, source `{ subagent | cli }`.
+ *   - interactive TUI:    originator `codex-tui` (or older `codex_cli_rs`), source `{ subagent | cli }`.
  *   - headless exec:      originator `codex_exec`, source `"exec"` (a STRING).
- *   - IDE extension:      originator `Claude Code`, source `"vscode"`.
+ *   - IDE extension:      originator `codex_vscode` (or `Claude Code`), source `"vscode"`.
  * `source` is preferred (it directly names the surface); originator is the
  * fallback. Returns `undefined` only when neither field is present, so a
  * malformed header does not invent an origin.
+ * (Originator literals verified against all 2427 rollouts on disk, 2026-02→06.)
  */
 export function codexOrigin(originator: unknown, source: unknown): CodexOrigin | undefined {
   const src = typeof source === "string" ? source.toLowerCase() : "";
@@ -109,8 +110,8 @@ export function codexOrigin(originator: unknown, source: unknown): CodexOrigin |
   if (src === "cli" || src === "subagent") return "tui";
   const orig = typeof originator === "string" ? originator.toLowerCase() : "";
   if (orig === "codex_exec") return "exec";
-  if (orig === "codex-tui") return "tui";
-  if (orig === "vscode") return "vscode";
+  if (orig === "codex-tui" || orig === "codex_cli_rs") return "tui";
+  if (orig === "vscode" || orig === "codex_vscode" || orig === "claude code") return "vscode";
   if (!orig && (source === undefined || source === null)) return undefined;
   return "other";
 }
