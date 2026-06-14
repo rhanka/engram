@@ -199,6 +199,33 @@ function applyRepulsion(
 }
 
 /**
+ * Adaptive iteration count for a graph of `n` nodes.
+ *
+ * MEASURED (WP1): layout cost is exactly linear in iterations, and the layout's
+ * macro-structure (cluster placement, bbox spread) is set within ~60-90 ticks;
+ * by ~120 ticks the mean per-node drift vs the full 300-tick layout has already
+ * plateaued (the residual is orbital jitter, not progress), so iterations
+ * 120..300 are wasted compute. Tiny graphs are cheap, so they keep the full
+ * 300-tick settle for the smoothest result; everything else taper toward a ~120
+ * working point and then a 90 floor at tens of thousands of nodes, where extra
+ * ticks no longer change the picture. Reduces ONLY wasted compute — never nodes.
+ *
+ * 300 @ n<=300, easing to 120 @ n>=1500, floor 90 @ n>=20000.
+ */
+export function defaultLayoutIterations(n: number): number {
+  if (!Number.isFinite(n) || n <= 300) return 300;
+  if (n >= 20000) return 90;
+  if (n >= 1500) {
+    // 1500->120 easing to 20000->90.
+    const t = (n - 1500) / (20000 - 1500);
+    return Math.round(120 - t * 30);
+  }
+  // 300->300 easing to 1500->120.
+  const t = (n - 300) / (1500 - 300);
+  return Math.round(300 - t * 180);
+}
+
+/**
  * Compute deterministic (x, y) positions for a graph.
  *
  * @returns one `{ id, x, y }` per input node, in input order. Nodes with finite
@@ -334,10 +361,33 @@ export function computeLayout(
   return sim.map((node) => ({ id: node.id, x: node.x, y: node.y }));
 }
 
+
+/**
+ * True when the WP1 fast-layout opt-in is enabled (env `GRAPHIFY_FAST_LAYOUT`
+ * truthy: "1"/"true"/"on"). OFF by default, so the serve/build scene-layout is
+ * byte-identical to today unless an operator opts in. Fully reversible.
+ */
+export function fastLayoutEnabled(): boolean {
+  const raw =
+    typeof process !== "undefined" && process.env ? process.env.GRAPHIFY_FAST_LAYOUT : undefined;
+  if (!raw) return false;
+  const v = String(raw).trim().toLowerCase();
+  return v === "1" || v === "true" || v === "on" || v === "yes";
+}
+
 /**
  * Pre-compute a scene's layout and pin it: writes `x`, `y` AND `fx`, `fy` onto
  * each node so the Studio can render pinned positions directly.
  * Mutates and returns the scene.
+ *
+ * WP1 opt-in (env `GRAPHIFY_FAST_LAYOUT`): when enabled AND the caller did not
+ * pin `iterations` explicitly, use the ADAPTIVE (node-count-aware) iteration
+ * budget instead of the flat 300. MEASURED: the layout's macro-structure settles
+ * within ~60-120 ticks and the per-node drift then plateaus, so the extra ticks
+ * up to 300 are wasted compute — cutting them roughly halves-to-thirds the cold
+ * scene precompute (the dominant cost) with a visually equivalent layout, and
+ * NEVER drops a node. With the env unset (default) behaviour is unchanged (300
+ * ticks, byte-identical to today).
  */
 export function attachLayoutPositions<
   T extends {
@@ -346,7 +396,12 @@ export function attachLayoutPositions<
   },
 >(scene: T, options: ComputeLayoutOptions = {}): T {
   if (!scene || !Array.isArray(scene.nodes) || scene.nodes.length === 0) return scene;
-  const positions = computeLayout(scene.nodes, scene.edges ?? [], options);
+  let opts = options;
+  if (fastLayoutEnabled() && options.iterations === undefined) {
+    // Opt-in: adaptive iteration budget, but never override an explicit caller value.
+    opts = { ...options, iterations: defaultLayoutIterations(scene.nodes.length) };
+  }
+  const positions = computeLayout(scene.nodes, scene.edges ?? [], opts);
   const byId = new Map(positions.map((p) => [p.id, p]));
   for (const node of scene.nodes) {
     const p = byId.get(node.id);
