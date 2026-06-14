@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
   attachLayoutPositions,
   computeLayout,
+  defaultLayoutIterations,
+  fastLayoutEnabled,
   type LayoutGraphEdge,
   type LayoutGraphNode,
 } from "../src/graph-layout.js";
@@ -123,5 +125,111 @@ describe("attachLayoutPositions", () => {
   it("no-ops on an empty / missing node list", () => {
     const empty = { nodes: [] as LayoutGraphNode[], edges: [] as LayoutGraphEdge[] };
     expect(attachLayoutPositions(empty)).toBe(empty);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WP1: adaptive iterations + env opt-in (measured highest-leverage layout win).
+// ---------------------------------------------------------------------------
+function ringGraph(count = 40): { nodes: LayoutGraphNode[]; edges: LayoutGraphEdge[] } {
+  const nodes: LayoutGraphNode[] = Array.from({ length: count }, (_, i) => ({ id: `n${i}` }));
+  const edges: LayoutGraphEdge[] = [];
+  for (let i = 1; i < count; i++) {
+    edges.push({ source: `n${i}`, target: "n0" });
+    if (i > 1) edges.push({ source: `n${i}`, target: `n${i - 1}` });
+  }
+  return { nodes, edges };
+}
+
+describe("defaultLayoutIterations", () => {
+  it("keeps the full 300 ticks for small graphs and tapers for large ones", () => {
+    expect(defaultLayoutIterations(50)).toBe(300);
+    expect(defaultLayoutIterations(400)).toBe(300);
+    expect(defaultLayoutIterations(100000)).toBe(90);
+    // Monotone non-increasing across the curve.
+    let prev = Infinity;
+    for (const n of [400, 1000, 2092, 5000, 10000, 20000, 50000]) {
+      const it = defaultLayoutIterations(n);
+      expect(it).toBeLessThanOrEqual(prev);
+      expect(it).toBeGreaterThanOrEqual(90);
+      prev = it;
+    }
+  });
+});
+
+describe("fastLayoutEnabled / env opt-in", () => {
+  const prev = process.env.GRAPHIFY_FAST_LAYOUT;
+  afterEach(() => {
+    if (prev === undefined) delete process.env.GRAPHIFY_FAST_LAYOUT;
+    else process.env.GRAPHIFY_FAST_LAYOUT = prev;
+  });
+
+  it("is OFF by default and ON for truthy env values", () => {
+    delete process.env.GRAPHIFY_FAST_LAYOUT;
+    expect(fastLayoutEnabled()).toBe(false);
+    for (const v of ["1", "true", "on", "YES"]) {
+      process.env.GRAPHIFY_FAST_LAYOUT = v;
+      expect(fastLayoutEnabled()).toBe(true);
+    }
+    process.env.GRAPHIFY_FAST_LAYOUT = "0";
+    expect(fastLayoutEnabled()).toBe(false);
+  });
+
+  it("attachLayoutPositions still pins fx/fy under the env opt-in", () => {
+    process.env.GRAPHIFY_FAST_LAYOUT = "1";
+    const scene = {
+      nodes: [{ id: "a" }, { id: "b" }, { id: "c" }] as LayoutGraphNode[],
+      edges: [{ source: "a", target: "b" }] as LayoutGraphEdge[],
+    };
+    const out = attachLayoutPositions(scene);
+    for (const node of out.nodes) {
+      expect(Number.isFinite(node.x as number)).toBe(true);
+      expect(node.fx).toBe(node.x);
+      expect(node.fy).toBe(node.y);
+    }
+  });
+
+  it("an explicit iterations is never overridden by the env opt-in", () => {
+    const { nodes, edges } = ringGraph(20);
+    // Baseline: explicit 50-iter layout with the env OFF.
+    delete process.env.GRAPHIFY_FAST_LAYOUT;
+    const baseline = computeLayout(nodes, edges, { iterations: 50 });
+    // With the env ON but iterations pinned explicitly, the pinned value wins, so
+    // the result matches the baseline exactly (no adaptive substitution).
+    process.env.GRAPHIFY_FAST_LAYOUT = "1";
+    const scene = { nodes: nodes.map((n) => ({ ...n })), edges };
+    attachLayoutPositions(scene, { iterations: 50 });
+    scene.nodes.forEach((node, i) => {
+      expect(node.x).toBeCloseTo(baseline[i]!.x, 6);
+      expect(node.y).toBeCloseTo(baseline[i]!.y, 6);
+    });
+  });
+
+  it("applies the adaptive (reduced) iteration budget under the env opt-in", () => {
+    // For a graph large enough that defaultLayoutIterations() < 300, the env-on
+    // layout differs from the flat-300 layout (fewer ticks => earlier-stop
+    // positions), proving the adaptive budget is actually applied.
+    const count = 600; // defaultLayoutIterations(600) < 300
+    expect(defaultLayoutIterations(count)).toBeLessThan(300);
+    const nodes: LayoutGraphNode[] = Array.from({ length: count }, (_, i) => ({ id: `n${i}` }));
+    const edges: LayoutGraphEdge[] = [];
+    for (let i = 1; i < count; i++) edges.push({ source: `n${i}`, target: `n${i % 30}` });
+
+    delete process.env.GRAPHIFY_FAST_LAYOUT;
+    const sceneDefault = { nodes: nodes.map((n) => ({ ...n })), edges };
+    attachLayoutPositions(sceneDefault); // 300 ticks
+
+    process.env.GRAPHIFY_FAST_LAYOUT = "1";
+    const sceneFast = { nodes: nodes.map((n) => ({ ...n })), edges };
+    attachLayoutPositions(sceneFast); // adaptive ticks
+
+    // Both finite + pinned; the adaptive layout is NOT identical to the 300-tick one.
+    let differs = false;
+    sceneFast.nodes.forEach((node, i) => {
+      expect(Number.isFinite(node.x as number)).toBe(true);
+      expect(node.fx).toBe(node.x);
+      if (Math.abs((node.x as number) - (sceneDefault.nodes[i]!.x as number)) > 1e-6) differs = true;
+    });
+    expect(differs).toBe(true);
   });
 });
