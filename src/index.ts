@@ -427,6 +427,24 @@ export type {
   EmitSceneHierarchiesOptions,
   EmitSceneHierarchiesResult,
 } from "./scene-hierarchies-emitter.js";
+export {
+  WORKSPACE_MANIFEST_SCHEMA,
+  WORKSPACE_MANIFEST_SCHEMA_VERSION,
+  WORKSPACE_BUNDLE_CONTRACT,
+  WORKSPACE_MANIFEST_FILENAME,
+  buildWorkspaceManifest,
+} from "./workspace-manifest.js";
+export type {
+  WorkspaceManifest,
+  WorkspaceManifestArtifact,
+  WorkspaceManifestArtifactInput,
+  BuildWorkspaceManifestOptions,
+} from "./workspace-manifest.js";
+export { emitWorkspaceManifest } from "./workspace-manifest-emitter.js";
+export type {
+  EmitWorkspaceManifestOptions,
+  EmitWorkspaceManifestResult,
+} from "./workspace-manifest-emitter.js";
 export { buildEntitySidecar, resolveStudioAppDir } from "./studio-assets.js";
 export type { EntitySidecarResponse } from "./studio-assets.js";
 export { computeLayout, attachLayoutPositions } from "./graph-layout.js";
