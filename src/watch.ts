@@ -45,6 +45,7 @@ import {
   hasUnansweredLabelInstructions,
   LABEL_INSTRUCTIONS_DIR,
 } from "./community-labeling.js";
+import { buildCodeFileNodeIdMap, extractGit, mergeExtractions } from "./extract-git.js";
 import type { Extraction, GraphifyInputScopeMode, InputScopeSource } from "./types.js";
 
 const WATCHED_EXTENSIONS = new Set([
@@ -82,6 +83,23 @@ function builtFromCommit(root: string, graphPath: string): string | null {
   } catch {
     return null;
   }
+}
+
+function changedCodeFilesFromHook(root: string, codeFiles: string[]): string[] | null {
+  const raw = process.env.GRAPHIFY_CHANGED;
+  if (!raw || raw.trim().length === 0) return null;
+  const changed = new Set(
+    raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .flatMap((line) => [line.replace(/\\/g, "/"), pathResolve(root, line).replace(/\\/g, "/")]),
+  );
+  return codeFiles.filter((file) => {
+    const abs = pathResolve(file).replace(/\\/g, "/");
+    const rel = toProjectRelativePath(root, file);
+    return changed.has(abs) || changed.has(rel);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -204,13 +222,15 @@ export async function rebuildCode(
     }
     saveManifest(rawDetection.files, paths.manifest, { root });
 
-    let codeFiles = (rawDetection.files.code ?? []).filter(
+    const allCodeFiles = (rawDetection.files.code ?? []).filter(
       (f: string) =>
         !f.includes(DEFAULT_GRAPHIFY_STATE_DIR) &&
         !f.includes(LEGACY_GRAPHIFY_STATE_DIR) &&
         !f.includes("__pycache__") &&
         !f.includes("node_modules"),
     );
+    const hookChangedCodeFiles = changedCodeFilesFromHook(root, allCodeFiles);
+    const codeFiles = hookChangedCodeFiles ?? allCodeFiles;
 
     let result: Extraction;
     if (codeFiles.length === 0) {
@@ -236,9 +256,15 @@ export async function rebuildCode(
         return false;
       }
     }
+    result = mergeExtractions(
+      result,
+      extractGit(root, {
+        fileNodeIds: buildCodeFileNodeIdMap(root, allCodeFiles),
+      }),
+    );
 
     const relativeResult = makeExtractionPortable(result, root);
-    const relativeCodeFiles = codeFiles.map((file) => toProjectRelativePath(root, file));
+    const relativeCodeFiles = allCodeFiles.map((file) => toProjectRelativePath(root, file));
 
     const detection = {
       ...portableDetection,
