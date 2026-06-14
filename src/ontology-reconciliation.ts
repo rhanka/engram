@@ -350,6 +350,313 @@ function fuzzyScore(result: FuzzyMatchResult): number {
   return 0.7;
 }
 
+// --- Precision guards ------------------------------------------------------
+//
+// Both tiers (exact-via-alias and fuzzy) over-generate on a large corpus by
+// matching on a GENERIC shared token or across surface forms that, on close
+// reading, name DIFFERENT real entities (siblings, spouses, a place vs a
+// landmark inside it). These guards reject the classes that are confidently NOT
+// the same entity, while deliberately KEEPING low-confidence near-duplicates
+// that plausibly are the same (a human triages those by score). Each guard is
+// pure over label/aliases and runs before a pair is emitted in EITHER tier.
+
+/**
+ * Generic role / common nouns that, when they are the ONLY thing two labels
+ * share, do not evidence the same entity. "Narrator (Watson)" and
+ * "Narrator (Bunny Manders)" share only "narrator"; a dozen revolvers share
+ * only "revolver". A surname ("Robinson", "Oberstein") or a place name is NOT
+ * here — those legitimately identify an entity.
+ */
+const GENERIC_ENTITY_NOUNS = new Set([
+  // narrative / role nouns
+  "narrator", "author", "writer", "editor", "client", "victim", "witness",
+  "suspect", "murderer", "killer", "thief", "criminal", "detective", "prisoner",
+  "stranger", "visitor", "guest", "person", "people", "figure", "character",
+  // people-by-occupation / honorific common nouns
+  "man", "woman", "men", "women", "boy", "girl", "child", "lady", "gentleman",
+  "servant", "maid", "butler", "housekeeper", "cook", "footman", "page",
+  "doctor", "nurse", "inspector", "constable", "sergeant", "officer", "policeman",
+  "captain", "colonel", "general", "major", "sergeant", "soldier", "guard",
+  "count", "countess", "lord", "duke", "duchess", "king", "queen", "prince",
+  "princess", "baron", "earl", "knight", "priest", "vicar", "clerk", "agent",
+  "spy", "sailor", "driver", "landlord", "landlady", "innkeeper", "barber",
+  "husband", "wife", "widow", "son", "daughter", "brother", "sister", "father",
+  "mother", "uncle", "aunt", "cousin", "nephew", "niece",
+  // common object / weapon nouns
+  "revolver", "razor", "rope", "knife", "gun", "pistol", "dagger", "sword",
+  "hammer", "poison", "letter", "note", "key", "box", "bag", "case", "ring",
+  "bottle", "glass", "cup", "hat", "coat", "stick", "cane", "lamp", "candle",
+  "pipe", "cigar", "cigarette", "money", "coin", "coins", "jewel", "jewels",
+  "weapon", "body", "corpse", "blood", "footprint", "footprints",
+  // generic event / abstract nouns
+  "murder", "death", "theft", "robbery", "crime", "case", "mystery", "secret",
+  "revenge", "arrest", "escape", "trial", "execution", "disappearance",
+  "analysis", "test", "method",
+  // generic place nouns
+  "house", "room", "inn", "hotel", "street", "road", "lane", "square", "park",
+  "garden", "gardens", "church", "abbey", "hall", "tower", "bridge", "station",
+  "shop", "office", "club", "school", "river", "wood", "woods", "hill", "town",
+  "village", "city", "country", "estate", "manor", "castle", "cottage",
+]);
+
+/** Opposite-gender honorific pairs — a label-prefix delta that means
+ * spouse/relative, never the same person. Stored as a canonical-keyed map. */
+const OPPOSITE_GENDER_TITLES: Record<string, string> = {
+  mr: "mrs", mrs: "mr", lord: "lady", lady: "lord", king: "queen", queen: "king",
+  count: "countess", countess: "count", duke: "duchess", duchess: "duke",
+  sir: "dame", dame: "sir", brother: "sister", sister: "brother",
+  monsieur: "madame", madame: "monsieur", baron: "baroness", baroness: "baron",
+  prince: "princess", princess: "prince", master: "mistress", mistress: "master",
+  m: "mme", mme: "m",
+};
+
+/** Parenthetical RELATIONAL cues — a parenthetical describing the entity as
+ * someone else's relative/ancestor names a DIFFERENT person. */
+const RELATIONAL_CUES = new Set([
+  "husband", "wife", "widow", "widower", "spouse", "ancestor", "descendant",
+  "son", "daughter", "father", "mother", "brother", "sister", "uncle", "aunt",
+  "cousin", "nephew", "niece", "fiance", "fiancee", "betrothed", "lover",
+  "mistress", "relative", "kin", "parent",
+]);
+
+/** Generic place head-nouns. When two place names share one of these but carry
+ * DIFFERENT qualifiers for it ("Bloomsbury Square" ↔ "Queen Square"), they are
+ * different places even if one token-set contains the other. */
+const PLACE_HEAD_NOUNS = new Set([
+  "square", "street", "road", "lane", "avenue", "place", "court", "gardens",
+  "park", "hall", "house", "inn", "hotel", "club", "bridge", "station", "yard",
+  "market", "terrace", "row", "crescent", "walk", "gate", "wharf", "quay",
+  "mews", "close", "drive", "way", "circus", "common", "green",
+]);
+
+/** Locational / structural head-nouns whose ADDITION turns a place name into a
+ * DIFFERENT (contained or adjacent) place: "Scotland Yard" → "Black Museum,
+ * Scotland Yard"; "Westminster Abbey" → "New flats near Westminster Abbey". */
+const CONTAINMENT_HEAD_NOUNS = new Set([
+  "near", "flat", "flats", "shop", "island", "museum", "memorial", "room",
+  "building", "mine", "mines", "wing", "annex", "annexe", "outhouse", "stable",
+  "stables", "cellar", "attic", "tower", "gate", "yard", "court", "monument",
+  "statue", "site", "ruins", "vault", "crypt", "tomb", "well", "pond",
+  "spectroscopic", "defibrination",
+]);
+
+/** Gendered honorifics (a one-sided one + shared surname = spouse/relative). */
+const GENDERED_TITLES = new Set([
+  "mr", "mrs", "ms", "lord", "lady", "sir", "dame", "count", "countess",
+  "duke", "duchess", "king", "queen", "prince", "princess", "baron", "baroness",
+  "madame", "monsieur", "mme", "m", "mlle", "miss",
+]);
+
+/** Leading-title vocabulary recognised by the guards: the fuzzy honorific
+ * stop-list PLUS gendered/relational titles (count/countess, duke/duchess…)
+ * that are not honorifics for tokenization but DO carry gender for guard C. */
+const GUARD_TITLE_TOKENS = new Set<string>([
+  ...FUZZY_HONORIFICS,
+  ...Object.keys(OPPOSITE_GENDER_TITLES),
+]);
+/** Honorifics stripped to recover a label's bare NAME tokens (mirror of the
+ * fuzzy tokenizer's stop-list; used by the guards). */
+const GUARD_HONORIFICS = FUZZY_HONORIFICS;
+
+interface GuardSurface {
+  /** Bare-name tokens (parenthetical-stripped, honorific-stripped). */
+  name: string[];
+  /** Per-parenthetical token lists. */
+  parens: string[][];
+  /** Leading title of the raw label (lowercased, period-stripped), or null —
+   * any recognised honorific OR gendered/relational title (count, countess…). */
+  leadingTitle: string | null;
+  /** All tokens of the raw label (honorific-stripped) — name + every
+   * parenthetical — for cross-reference relational detection. */
+  allTokens: Set<string>;
+}
+
+/** Decompose a label into bare-name tokens, parenthetical token lists, and its
+ * leading title. Deterministic; reads the surface string only. */
+function guardSurface(label: string): GuardSurface {
+  const lead = /^\s*([A-Za-zÀ-ÖØ-öø-ÿ]+)\.?\s+/u.exec(label);
+  const leadTok = lead ? lead[1]!.toLowerCase() : null;
+  const leadingTitle = leadTok && GUARD_TITLE_TOKENS.has(leadTok) ? leadTok : null;
+  const name = fuzzyTokens(label.replace(PARENTHETICAL, " "));
+  const parens: string[][] = [];
+  const allTokens = new Set<string>(name);
+  for (const m of label.match(/\(([^)]*)\)/gu) ?? []) {
+    const toks = fuzzyTokens(m.slice(1, -1));
+    if (toks.length > 0) {
+      parens.push(toks);
+      for (const t of toks) allTokens.add(t);
+    }
+  }
+  return { name, parens, leadingTitle, allTokens };
+}
+
+/** Best surface per node: the primary label decomposition. We use the node's
+ * label when present, else the first alias, so the guards have a stable surface. */
+function nodeGuardSurface(node: OntologyPatchNode): GuardSurface {
+  const label = node.label ?? node.aliases?.[0] ?? "";
+  return guardSurface(label);
+}
+
+function isSubsetTokens(small: string[], big: string[]): boolean {
+  const B = new Set(big);
+  return small.every((t) => B.has(t));
+}
+
+/**
+ * Returns a human-readable REASON when two nodes are confidently DIFFERENT
+ * entities (so the pair must be rejected by both tiers), else null. Errs toward
+ * KEEPING plausible near-duplicates: only the measured high-confidence
+ * false-positive classes are rejected.
+ */
+export function differentEntityReason(
+  left: OntologyPatchNode,
+  right: OntologyPatchNode,
+): string | null {
+  const a = nodeGuardSurface(left);
+  const b = nodeGuardSurface(right);
+  if (a.name.length === 0 || b.name.length === 0) return null;
+  // Gender/relational title rules apply to PERSON-like entities only: a place
+  // name beginning with "Queen"/"King"/"Lord" ("Queen Square", "King's Bench
+  // Walk") must not be read as a gendered honorific.
+  const t = String(left.type ?? "").toLowerCase();
+  const isPlaceType = t === "location" || t === "place";
+
+  const setA = new Set(a.name);
+  const setB = new Set(b.name);
+  const sharedName = a.name.filter((t) => setB.has(t));
+  const aHasParen = a.parens.length > 0;
+  const bHasParen = b.parens.length > 0;
+  // A bare name vs the SAME name + a parenthetical disambiguator is the
+  // canonical KEEP case ("Hugo Oberstein" ↔ "Hugo Oberstein (spy)"): one side
+  // has no parenthetical and its name is a subset of the other's name.
+  const isDisambiguatorPair =
+    (!aHasParen && isSubsetTokens(a.name, b.name)) ||
+    (!bHasParen && isSubsetTokens(b.name, a.name));
+
+  // (C) Opposite-gender / relational honorific → spouse/relative, not the same.
+  if (
+    !isPlaceType &&
+    a.leadingTitle &&
+    b.leadingTitle &&
+    OPPOSITE_GENDER_TITLES[a.leadingTitle] === b.leadingTitle
+  ) {
+    return `opposite-gender title: ${a.leadingTitle} vs ${b.leadingTitle}`;
+  }
+  // Relational cue in a parenthetical that CROSS-REFERENCES the other node —
+  // either the two share a name token (the relation is between these two), the
+  // pair is a bare-name/disambiguator pair, or the relational parenthetical
+  // names a token that appears in the OTHER node's surface ("Lucas's wife" on
+  // the Fournaye node, where "Lucas" is the other node's name).
+  for (const [self, other] of [[a, b], [b, a]] as const) {
+    for (const paren of self.parens) {
+      if (!paren.some((t) => RELATIONAL_CUES.has(t))) continue;
+      const crossRef = paren.some((t) => !RELATIONAL_CUES.has(t) && other.allTokens.has(t));
+      if (sharedName.length > 0 || isDisambiguatorPair || crossRef) {
+        return `relational parenthetical (spouse/relative): ${paren.join(" ")}`;
+      }
+    }
+  }
+  // One-sided gendered title + shared surname + an extra given name on the
+  // titled side ⇒ a relative of the bare-named person, not the same person
+  // ("Lady Hilda Trelawney Hope" ↔ "Trelawney Hope"). The Lestrade keep-case is
+  // safe: "Inspector" is not a gendered title.
+  {
+    const titled = a.leadingTitle && GENDERED_TITLES.has(a.leadingTitle) ? a : b.leadingTitle && GENDERED_TITLES.has(b.leadingTitle) ? b : null;
+    const bare = titled === a ? b : titled === b ? a : null;
+    if (
+      !isPlaceType &&
+      titled &&
+      bare &&
+      !(bare.leadingTitle && GENDERED_TITLES.has(bare.leadingTitle)) &&
+      sharedName.length >= 1 &&
+      isSubsetTokens(bare.name, titled.name) &&
+      titled.name.length > bare.name.length
+    ) {
+      return `one-sided gendered title + extra given name (relative): ${titled.leadingTitle}`;
+    }
+  }
+
+  // (A) Role-noun / common-noun-only overlap: the only shared NAME tokens are
+  // all generic. "Narrator (Watson)" ↔ "Narrator (Bunny Manders)" share only
+  // "narrator"; never the same entity. Disambiguator-pairs are exempt (a bare
+  // generic noun + a qualifier may still be a refinement — but two DIFFERENT
+  // parentheticals over a generic noun are different things).
+  if (sharedName.length > 0 && sharedName.every((t) => GENERIC_ENTITY_NOUNS.has(t))) {
+    if (!isDisambiguatorPair) {
+      return `shared tokens are all generic nouns: ${sharedName.join(", ")}`;
+    }
+  }
+
+  // (B) Thin overlap + DISJOINT disambiguators: a single shared non-generic
+  // token (a surname/placename) but both carry parentheticals that are mutually
+  // disjoint (neither a subset of the other) → different bearers of the name
+  // ("Inspector Robinson (Highgate)" ↔ "Mrs. Robinson (housekeeper)"). When one
+  // parenthetical refines the other (subset), it is the SAME entity (keep).
+  if (sharedName.length <= 1 && aHasParen && bHasParen && !isDisambiguatorPair) {
+    const disjoint = a.parens.every((pa) =>
+      b.parens.every((pb) => !isSubsetTokens(pa, pb) && !isSubsetTokens(pb, pa)),
+    );
+    if (disjoint && sharedName.length === 1) {
+      return `different disambiguators over a single shared token: ${sharedName[0]}`;
+    }
+  }
+
+  // (D) Containment that ADDS a new locational/structural head-noun → different
+  // (contained or adjacent) place. Applies when one bare name strictly contains
+  // the other AND the extra tokens include a containment head-noun. The pure
+  // disambiguator case (identical name-part, qualifier only in a parenthetical)
+  // never reaches here because name-parts are equal, not strictly contained.
+  {
+    const [small, big] = a.name.length <= b.name.length ? [a.name, b.name] : [b.name, a.name];
+    if (small.length >= 1 && small.length < big.length && isSubsetTokens(small, big)) {
+      const smallSet = new Set(small);
+      const extra = big.filter((t) => !smallSet.has(t));
+      if (extra.some((t) => CONTAINMENT_HEAD_NOUNS.has(t))) {
+        return `containment adds a new head-noun: ${extra.filter((t) => CONTAINMENT_HEAD_NOUNS.has(t)).join(", ")}`;
+      }
+      // Place re-qualification: both names contain a generic place head-noun
+      // (e.g. "square") and the larger one adds a NEW qualifier for it that is
+      // not itself a place head-noun ("Bloomsbury Square" ⊂ "Queen Square,
+      // Bloomsbury" adds "queen") → a different place.
+      if (
+        isPlaceType &&
+        small.some((t) => PLACE_HEAD_NOUNS.has(t)) &&
+        extra.some((t) => !PLACE_HEAD_NOUNS.has(t) && !isOrdinalToken(t))
+      ) {
+        return `place re-qualified around a shared head-noun: +${extra.join(" ")}`;
+      }
+    }
+  }
+
+  // (E) Leading address-number / serial divergence: two place names that share a
+  // tail and differ in a numeric leading token are distinct addresses
+  // ("5A King's Bench Walk" ↔ "6A King's Bench Walk").
+  if (sharedName.length >= 1) {
+    const aNum = a.name[0]!;
+    const bNum = b.name[0]!;
+    if (aNum !== bNum && /\d/u.test(aNum) && /\d/u.test(bNum)) {
+      return `address/serial number differs: ${aNum} vs ${bNum}`;
+    }
+  }
+
+  // (F) Divergent distinctive tokens around a shared GENERIC head: not a
+  // subset/disambiguator pair, the shared tokens include a generic place/event/
+  // object head-noun, and EACH side carries a distinctive (non-generic,
+  // non-ordinal) token the other lacks → different entities ("Revenge for John
+  // Ferrier" ↔ "Revenge for Lucy Ferrier"; "Queen Square, Bloomsbury" ↔
+  // "Bloomsbury Square"; "Murder of Major Murray" ↔ "Execution of … St. Clare").
+  if (!isDisambiguatorPair && sharedName.length >= 1) {
+    const sharedHasGenericHead = sharedName.some((t) => GENERIC_ENTITY_NOUNS.has(t));
+    const aDistinct = a.name.filter((t) => !setB.has(t) && !GENERIC_ENTITY_NOUNS.has(t) && !isOrdinalToken(t));
+    const bDistinct = b.name.filter((t) => !setA.has(t) && !GENERIC_ENTITY_NOUNS.has(t) && !isOrdinalToken(t));
+    if (sharedHasGenericHead && aDistinct.length >= 1 && bDistinct.length >= 1) {
+      return `divergent distinctive tokens around a shared generic head: ${aDistinct.join(" ")} vs ${bDistinct.join(" ")}`;
+    }
+  }
+
+  return null;
+}
+
 function statusRank(status: string | undefined): number {
   switch (status) {
     case "validated":
@@ -510,7 +817,13 @@ export function generateOntologyReconciliationCandidates(
         ...(candidate.source_refs ?? []),
       ]);
 
+      // Precision guards reject confidently-different entities in BOTH tiers
+      // (role-noun collisions, opposite-gender/relational pairs, place
+      // containment with a new head-noun, address/serial divergence).
+      const rejectReason = differentEntityReason(left, right);
+
       if (sharedTerms.length > 0) {
+        if (rejectReason) continue;
         // Exact tier: shared normalized term (label/alias/normalized_term).
         emittedPairs.add(pairKey);
         candidates.push({
@@ -536,6 +849,8 @@ export function generateOntologyReconciliationCandidates(
       // Fuzzy tier is for ENTITIES — skip structural container types (their
       // formulaic titles are non-mergeable noise). Types are equal here.
       if (fuzzyExcludeTypes.has(String(left.type))) continue;
+      // Precision guard: same rejection classes as the exact tier.
+      if (rejectReason) continue;
       // Fuzzy tier: honorific-stripped token containment / Jaccard.
       const fuzzy = fuzzyMatchNodes(left, right, fuzzyThreshold);
       if (!fuzzy.matched) continue;

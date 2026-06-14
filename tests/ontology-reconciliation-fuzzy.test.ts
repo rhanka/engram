@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  differentEntityReason,
   fuzzyMatchNodes,
   generateOntologyReconciliationCandidates,
   type OntologyReconciliationCandidate,
 } from "../src/ontology-reconciliation.js";
+import { deriveLabelTerms } from "../src/assembly-hygiene.js";
 import type { OntologyPatchContext, OntologyPatchNode } from "../src/ontology-patch.js";
 import type { NormalizedOntologyProfile } from "../src/types.js";
 
@@ -157,5 +159,117 @@ describe("reconciliation fuzzy tier — precision on known mystery pairs", () =>
       fuzzyExcludeTypes: [],
     });
     expect(queue2.candidates.some((c) => c.tier === "fuzzy")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Precision guards (broad-ranked posture): reject the measured false-positive
+// CLASSES from the mystery pack while keeping the genuine qualifier-variants.
+// Each guard is exercised both as a pure `differentEntityReason` predicate and
+// end-to-end through the generator (so it covers BOTH the alias-fed exact tier
+// and the fuzzy tier).
+// ---------------------------------------------------------------------------
+
+/** A node carrying explicit normalized_terms (simulating post-hygiene state, so
+ * the EXACT tier fires on a shared generic term such as "narrator"). */
+function withTerms(label: string, terms: string[], type = "Character"): OntologyPatchNode {
+  return { ...n(label, type), normalized_terms: terms.map((t) => t.toLowerCase()) };
+}
+
+describe("reconciliation precision guards — reject confidently-different entities", () => {
+  // (1) Role-noun / common-noun explosion (the worst class; exact tier).
+  it("rejects the Narrator role-noun explosion (shared generic term only)", () => {
+    // Both nodes carry "narrator" as a normalized term → exact tier would pair
+    // them; the guard rejects because the ONLY shared name token is generic.
+    const a = withTerms("Narrator (Watson)", ["narrator", "watson"]);
+    const b = withTerms("Narrator (Bunny Manders)", ["narrator", "bunny manders"]);
+    expect(differentEntityReason(a, b)).not.toBeNull();
+    const queue = generateOntologyReconciliationCandidates(ctx([a, b]), { generatedAt: "t" });
+    expect(pairsLabels(queue.candidates, [a, b], a.label!, b.label!)).toBe(false);
+  });
+
+  it.each([
+    ["Inspector Robinson (Highgate)", "Mrs. Robinson (housekeeper)"], // surname + disjoint disambiguators
+    ["Revolver (left in bedroom by Smart)", "Revolver (Royce's, fired into carpet)"], // generic object noun
+  ])("rejects role/common-noun collision: %s ↔ %s", (a, b) => {
+    expect(differentEntityReason(n(a), n(b))).not.toBeNull();
+  });
+
+  // (2) Opposite-gender / relational title pairs.
+  it.each([
+    ["Lord Galloway", "Lady Galloway"],
+    ["Mr. Warren", "Mrs. Warren"],
+    ["Count de Dreux-Soubise", "Countess de Dreux-Soubise"],
+    ["Mrs. Smith", "Mr. Smith (beekeeper)"],
+    ["Lady Mounteagle", "Lord Mounteagle"],
+  ])("rejects opposite-gender title pair: %s ↔ %s", (a, b) => {
+    expect(differentEntityReason(n(a), n(b))).not.toBeNull();
+  });
+
+  it.each([
+    ["Eduardo Lucas (Henri Fournaye)", "Mme. Henri Fournaye (Lucas's wife)"],
+    ["Madame Grunov", "Mr. Grunov (Madame Grunov's husband)"],
+    ["Captain James Musgrave", "Sir James Musgrave (ancestor, portrait)"],
+    ["Lady Hilda Trelawney Hope", "Trelawney Hope (European Secretary)"],
+  ])("rejects relational (spouse/relative) pair: %s ↔ %s", (a, b) => {
+    expect(differentEntityReason(n(a), n(b))).not.toBeNull();
+  });
+
+  // (3) Containment with a NEW head-noun → different (contained/adjacent) place.
+  it.each([
+    ["Westminster Abbey", "New flats near Westminster Abbey"],
+    ["Camden Town", "Camden Town confectioner's shop"],
+    ["Scotland Yard", "Black Museum, Scotland Yard"],
+    ["Grimpen Mire", "Tin Mine Island in Grimpen Mire"],
+    ["Bloomsbury Square", "Queen Square, Bloomsbury"],
+  ])("rejects containment-adds-new-head-noun place: %s ↔ %s", (a, b) => {
+    expect(differentEntityReason(n(a, "Location"), n(b, "Location"))).not.toBeNull();
+  });
+
+  // (4) Address / numeric divergence.
+  it("rejects address-number divergence: 5A ↔ 6A King's Bench Walk", () => {
+    expect(
+      differentEntityReason(n("5A King's Bench Walk, Temple", "Location"), n("6A King's Bench Walk, Inner Temple", "Location")),
+    ).not.toBeNull();
+  });
+
+  // MUST-KEEP genuine pairs — the precision FLOOR. A trailing parenthetical
+  // disambiguator on a person/thing name means SAME entity.
+  const mustKeep: Array<[string, string, string]> = [
+    ["Character", "Hugo Oberstein", "Hugo Oberstein (spy)"],
+    ["Location", "Devonshire (Exmoor estate)", "Exmoor estate"],
+    ["Object", "The Black Pearl", "Black Pearl of the Borgias"],
+    ["Character", "The Duke of Exmoor (actually Isaac Green)", "Isaac Green (lawyer / actual identity of the 'Duke')"],
+    ["Character", "Marquis of Marne (James Mair / Maurice Mair)", "Maurice Mair (the false Marquis, the impersonator)"],
+    ["Character", "Inspector Lestrade", "Lestrade (mentioned)"],
+    ["Object", "Western Sun (American newspaper)", "Western Sun (American daily)"],
+    ["Character", "Reuben Hornby", "Reuben Hornby (Vanishing Man)"],
+    ["Character", "Germaine Gournay-Martin", "M. Gournay-Martin"],
+    ["Event", "Murder of Michael Moonshine / John Bankes kills Moonshine", "Moonshine Murder"],
+    ["Location", "Devonshire", "Devonshire (Exmoor estate)"],
+    ["Location", "British Museum", "British Museum (Egyptian Antiquities)"],
+  ];
+
+  it.each(mustKeep)("keeps genuine pair (%s): %s ↔ %s — guard returns null", (type, a, b) => {
+    expect(differentEntityReason(n(a, type), n(b, type))).toBeNull();
+  });
+
+  // Build a node whose aliases/normalized_terms are derived exactly as the
+  // assembly hygiene stage does in production, so the generator exercises the
+  // real exact + fuzzy tiers (some genuine pairs only share a DERIVED term).
+  function hygieneNode(label: string, type: string): OntologyPatchNode {
+    const { aliases, normalizedTerms } = deriveLabelTerms(label);
+    return { ...n(label, type), aliases, normalized_terms: normalizedTerms };
+  }
+
+  it.each(mustKeep)("surfaces genuine pair through the generator (%s): %s ↔ %s", (type, a, b) => {
+    const nodes = [hygieneNode(a, type), hygieneNode(b, type)];
+    const queue = generateOntologyReconciliationCandidates(ctx(nodes), { generatedAt: "t" });
+    expect(pairsLabels(queue.candidates, nodes, a, b)).toBe(true);
+  });
+
+  it("a one-sided non-gendered title (Inspector/Dr.) is NOT a relative — kept", () => {
+    expect(differentEntityReason(n("Inspector Lestrade"), n("Lestrade (mentioned)"))).toBeNull();
+    expect(differentEntityReason(n("Dr. Simon"), n("Simon (Dr Hirsch's old servant)"))).toBeNull();
   });
 });
