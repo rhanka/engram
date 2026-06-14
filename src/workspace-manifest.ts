@@ -37,10 +37,14 @@ export const WORKSPACE_MANIFEST_FILENAME = "workspace-manifest.json";
 export const WORKSPACE_MANIFEST_SCHEMA_VERSION = 1 as const;
 
 /**
- * The signed contract this bundle honours. The process-std-am peer signed
- * `workspace-bundle-contract-v1` (stabilized 2/2, ed25519); the manifest stamps
- * it so the consumer can assert the join semantics (registry_record_id key,
- * status:"reference" declarative lane) without out-of-band knowledge.
+ * The bundle contract this manifest stamps. `workspace-bundle-contract-v1` is
+ * the negotiated contract with the process-std-am peer (consumer ratified 2026-06-12;
+ * graphify-side ratification pending at the time of writing). Stamping the
+ * contract id lets the consumer assert WHICH bundle shape it is reading — the
+ * artifact set + the join semantics defined by the contract (join on
+ * `registry_record_id`; the scene-hierarchies sidecar is authoritative for
+ * traversal). The manifest itself carries only discovery + integrity data; the
+ * join keys live in the artifacts it lists, not here.
  */
 export const WORKSPACE_BUNDLE_CONTRACT = "workspace-bundle-contract-v1";
 
