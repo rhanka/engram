@@ -11,6 +11,7 @@
     interpolateMergeStyle,
     interpolateMergePositions,
     isBoxShape,
+    truncateLabel,
   } from "../lib/graphRendererPayload.js";
 
   const EMPTY_SCENE = {
@@ -57,6 +58,10 @@
     // 'none'  → no generic labels (workspace / main graph).
     // 'plain' → plain-text labels (no box) for high-degree + active nodes (recon).
     labelMode = "none",
+    // BUG-1: max DRAWN chars for in-box labels + DOM overlay labels. The full
+    // label is always available on hover (tooltip + overlay `title`). Undefined
+    // falls back to the renderer default (DEFAULT_LABEL_MAX_CHARS).
+    labelMaxChars = undefined,
   } = $props();
 
   let container;
@@ -317,6 +322,7 @@
       focusId,
       hoveredNodeId,
       nodeRadius: NODE_RADIUS,
+      ...(Number.isFinite(labelMaxChars) ? { labelMaxChars } : {}),
     });
     clearHoveredEdge({ notify: false, render: false });
     computeNodeDegrees();
@@ -470,9 +476,13 @@
       const screen = worldToScreen(worldX, worldY);
       if (!screen) continue;
       const radius = (payload.style?.nodeSizes?.[idx] ?? NODE_RADIUS) * camera.zoom;
+      // BUG-1: cap the DRAWN overlay text; keep the full name for the `title`
+      // hover so long entity names no longer overflow the canvas.
+      const fullLabel = node?.label ?? id;
       next.push({
         id,
-        label: node?.label ?? id,
+        label: truncateLabel(fullLabel, labelMaxChars),
+        fullLabel,
         x: screen.x,
         y: screen.y - radius - 4,
         active: activeIds.has(id),
@@ -932,6 +942,7 @@
         <span
           class={item.active ? "node-label node-label-active" : "node-label"}
           style={`left: ${item.x}px; top: ${item.y}px;`}
+          title={item.fullLabel}
         >{item.label}</span>
       {/each}
     </div>
