@@ -278,6 +278,15 @@ export { WIKI_DESCRIPTION_BATCH_SCHEMA, buildTargetKindsMap, buildWikiDescriptio
 export type { BuildWikiDescriptionBatchOptions, ParseWikiDescriptionBatchOptions, WikiDescriptionBatchResultRecord } from "./wiki-description-batch.js";
 export { detect, classifyFile, detectIncremental, saveManifest } from "./detect.js";
 export { extract, collectFiles } from "./extract.js";
+export {
+  CODE_GIT_ONTOLOGY_PROFILE,
+  GIT_EXTRACT_ADAPTER_VERSION,
+  buildCodeFileNodeIdMap,
+  codeFileNodeId,
+  detectGitWindow,
+  extractGit,
+  mergeExtractions,
+} from "./extract-git.js";
 export { fileHash, loadCached, saveCached, checkSemanticCache, saveSemanticCache } from "./cache.js";
 export {
   MAX_SEMANTIC_FRAGMENT_BYTES,
