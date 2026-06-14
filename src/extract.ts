@@ -11,6 +11,7 @@ import { resolve, basename, extname, dirname, join, relative, sep } from "node:p
 import { createRequire } from "node:module";
 import type { GraphNode, GraphEdge, Extraction } from "./types.js";
 import { loadCached, saveCached } from "./cache.js";
+import { sanitizeLabel } from "./security.js";
 
 // ---------------------------------------------------------------------------
 // web-tree-sitter types  (re-exported from the package)
@@ -4903,6 +4904,205 @@ async function _extractCsprojAsync(filePath: string, rootDir?: string): Promise<
 }
 
 // ---------------------------------------------------------------------------
+// MCP (Model Context Protocol) server configuration files.
+// Port of upstream safishamsi 2c01a89 (#... mcp_ingest): extracts the
+// `mcpServers` map of `.mcp.json` / `claude_desktop_config.json` / `mcp.json` /
+// `mcp_servers.json` into server / command / package / env-var nodes.
+//
+// Symmetry: graphify exposes itself AS an MCP server (`--mcp`); this indexes
+// MCP servers AS a corpus type, completing the loop.
+//
+// Security parity with upstream:
+//   - Env var VALUES are NEVER read — only env var NAMES become nodes
+//     (`env: {"API_KEY": "sk-..."}` → node "API_KEY" only).
+//   - File size capped at 1 MiB (matches the generic JSON extractor cap).
+//   - args are NOT persisted (they can embed paths / secrets); only a detected
+//     npm/pypi package id from args becomes a node.
+//   - All labels go through sanitizeLabel.
+//
+// Cross-config emergent edges: command / package / env_var nodes use GLOBAL ids
+// (no per-file stem) so the same package or env var shared across two configs
+// produces one shared node. Server nodes ARE stem-scoped so two configs both
+// declaring "filesystem" do not collide.
+// ---------------------------------------------------------------------------
+
+/** Recognised MCP config filenames (matched on basename, case-sensitive). */
+const _MCP_CONFIG_FILENAMES: ReadonlySet<string> = new Set([
+  ".mcp.json",
+  "claude_desktop_config.json",
+  "mcp.json",
+  "mcp_servers.json",
+]);
+
+const _MCP_MAX_BYTES = 1_048_576; // 1 MiB
+const _MCP_MAX_SERVERS_PER_FILE = 200;
+
+/** True when `filePath`'s basename is a recognised MCP config filename. */
+export function isMcpConfigPath(filePath: string): boolean {
+  return _MCP_CONFIG_FILENAMES.has(basename(filePath));
+}
+
+// Patterns observed in real MCP server configs (npx / uvx / pnpx / python):
+//   ["-y", "@modelcontextprotocol/server-filesystem", "/data"]
+//   ["-y", "@org/pkg@1.2.3"]   ["mcp-server-fetch"]   ["mcp-server-time", "--tz=UTC"]
+const _MCP_NPM_PKG_RE = /^@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*(?:@[\w.\-+]+)?$/;
+const _MCP_PY_PKG_RE = /^[a-z0-9][a-z0-9._-]*-mcp(?:-[a-z0-9._-]+)?$|^mcp-[a-z0-9][a-z0-9._-]*$/;
+const _MCP_ARG_FLAG_RE = /^-{1,2}\w/;
+
+/** Drop the `@version` suffix from an npm package id, preserving the scope. */
+function _mcpStripVersion(pkg: string): string {
+  if (pkg.startsWith("@")) {
+    const versionAt = pkg.indexOf("@", 1);
+    return versionAt === -1 ? pkg : pkg.slice(0, versionAt);
+  }
+  const versionAt = pkg.indexOf("@");
+  return versionAt === -1 ? pkg : pkg.slice(0, versionAt);
+}
+
+/** First arg that looks like an npm or pypi package id, else null. */
+function _mcpDetectPackageFromArgs(args: unknown[]): string | null {
+  for (const raw of args) {
+    if (typeof raw !== "string") continue;
+    const arg = raw.trim();
+    if (!arg || _MCP_ARG_FLAG_RE.test(arg)) continue;
+    if (_MCP_NPM_PKG_RE.test(arg)) return _mcpStripVersion(arg);
+    if (_MCP_PY_PKG_RE.test(arg)) return arg;
+  }
+  return null;
+}
+
+/**
+ * Parse an MCP config file into graphify nodes and edges. Mirrors the other
+ * extractors: `{ nodes, edges }` on success, `{ nodes: [], edges: [], error }`
+ * on parse failure / oversize / missing `mcpServers` map (indistinguishable
+ * from "no MCP config here" for downstream callers).
+ */
+export function extractMcpConfig(filePath: string, rootDir?: string): ExtractionResult {
+  let raw: Buffer;
+  try {
+    raw = readFileSync(filePath) as Buffer;
+  } catch (e: unknown) {
+    return { nodes: [], edges: [], error: `mcp_ingest read error: ${String(e)}` };
+  }
+  if (raw.length > _MCP_MAX_BYTES) {
+    return { nodes: [], edges: [], error: "mcp config too large to index" };
+  }
+
+  let doc: unknown;
+  try {
+    doc = JSON.parse(raw.toString("utf-8"));
+  } catch (e: unknown) {
+    return { nodes: [], edges: [], error: `mcp_ingest json error: ${String(e)}` };
+  }
+  if (typeof doc !== "object" || doc === null || Array.isArray(doc)) {
+    return { nodes: [], edges: [], error: "mcp_ingest: root is not an object" };
+  }
+
+  const docObj = doc as Record<string, unknown>;
+  let servers = docObj["mcpServers"];
+  if (typeof servers !== "object" || servers === null || Array.isArray(servers)) {
+    // Some tools nest the map (e.g. {"mcp": {"servers": {...}}}). Try one
+    // well-known alternate shape, no exhaustive search.
+    const nested = docObj["mcp"];
+    if (typeof nested === "object" && nested !== null && !Array.isArray(nested)) {
+      servers = (nested as Record<string, unknown>)["servers"];
+    }
+    if (typeof servers !== "object" || servers === null || Array.isArray(servers)) {
+      return { nodes: [], edges: [], error: "mcp_ingest: no mcpServers map" };
+    }
+  }
+
+  const resolvedRoot = rootDir ?? dirname(resolve(filePath));
+  const fileNid = _makeId(resolve(filePath));
+  const fileStem = qualifiedFileStem(filePath, resolvedRoot);
+  const nodes: GraphNode[] = [];
+  const edges: GraphEdge[] = [];
+  const seenIds = new Set<string>();
+  const seenEdges = new Set<string>();
+
+  function addNode(nid: string, label: string, mcpKind: string): boolean {
+    if (!nid || seenIds.has(nid)) return false;
+    seenIds.add(nid);
+    nodes.push({
+      id: nid,
+      label: sanitizeLabel(label),
+      file_type: "code",
+      source_file: filePath,
+      source_location: "L1",
+      node_type: mcpKind,
+    });
+    return true;
+  }
+
+  function addEdge(source: string, target: string, relation: string): void {
+    if (!source || !target || source === target) return;
+    const key = `${source} ${target} ${relation}`;
+    if (seenEdges.has(key)) return;
+    seenEdges.add(key);
+    edges.push({
+      source,
+      target,
+      relation,
+      confidence: "EXTRACTED",
+      confidence_score: 1.0,
+      source_file: filePath,
+      source_location: "L1",
+      weight: 1.0,
+    });
+  }
+
+  addNode(fileNid, basename(filePath), "mcp_config_file");
+
+  let serverCount = 0;
+  for (const [serverName, spec] of Object.entries(servers as Record<string, unknown>)) {
+    if (!serverName) continue;
+    if (typeof spec !== "object" || spec === null || Array.isArray(spec)) continue;
+    if (serverCount >= _MCP_MAX_SERVERS_PER_FILE) break;
+    serverCount += 1;
+
+    const specObj = spec as Record<string, unknown>;
+    const serverNid = _makeId(fileStem, "mcp_server", serverName);
+    addNode(serverNid, serverName, "mcp_server");
+    addEdge(fileNid, serverNid, "contains");
+
+    const command = specObj["command"];
+    if (typeof command === "string" && command.trim()) {
+      const cmd = command.trim();
+      const cmdNid = _makeId("mcp_command", cmd);
+      addNode(cmdNid, cmd, "mcp_command");
+      addEdge(serverNid, cmdNid, "references");
+    }
+
+    const args = specObj["args"];
+    if (Array.isArray(args)) {
+      const pkg = _mcpDetectPackageFromArgs(args);
+      if (pkg) {
+        const pkgNid = _makeId("mcp_package", pkg);
+        addNode(pkgNid, pkg, "mcp_package");
+        addEdge(serverNid, pkgNid, "references");
+      }
+    }
+
+    const env = specObj["env"];
+    if (typeof env === "object" && env !== null && !Array.isArray(env)) {
+      // ONLY KEYS. Values may contain secrets and are never read here.
+      for (const envName of Object.keys(env as Record<string, unknown>)) {
+        if (!envName) continue;
+        const envNid = _makeId("env_var", envName);
+        addNode(envNid, envName, "env_var");
+        addEdge(serverNid, envNid, "requires_env");
+      }
+    }
+  }
+
+  return { nodes, edges };
+}
+
+async function _extractMcpConfigAsync(filePath: string, rootDir?: string): Promise<ExtractionResult> {
+  return extractMcpConfig(filePath, rootDir);
+}
+
+// ---------------------------------------------------------------------------
 // Main extract() and collectFiles()
 // ---------------------------------------------------------------------------
 
@@ -5082,9 +5282,14 @@ export async function extractWithDiagnostics(paths: string[]): Promise<ExtractWi
     }
     const filePath = normalizedPaths[i]!;
     const ext = extname(filePath).toLowerCase();
-    const extractor = basename(filePath).endsWith(".blade.php")
-      ? extractRegexBackedCode
-      : _DISPATCH[ext];
+    // Filename-based dispatch takes precedence over the suffix lookup so an
+    // MCP config (`.mcp.json`, `mcp.json`, …) is not swallowed by generic
+    // `.json` handling. Port of upstream 2c01a89 (dispatched-by-filename).
+    const extractor = isMcpConfigPath(filePath)
+      ? _extractMcpConfigAsync
+      : basename(filePath).endsWith(".blade.php")
+        ? extractRegexBackedCode
+        : _DISPATCH[ext];
     if (!extractor) continue;
 
     const cached = loadCached(filePath, root);
@@ -5242,7 +5447,12 @@ export function collectFiles(target: string, options?: { followSymlinks?: boolea
         walkDir(fullPath, visited);
       } else if (stat.isFile()) {
         const ext = extname(entry);
-        if (_EXTENSIONS.has(ext)) {
+        // MCP config files are dispatched by FILENAME, not extension (a bare
+        // `.json` would otherwise be ignored). `.mcp.json` is a hidden file and
+        // is intentionally skipped here (the `entry.startsWith(".")` guard
+        // above), consistent with graphify's hidden-file policy — it is still
+        // extracted when passed as an explicit single-file target.
+        if (_EXTENSIONS.has(ext) || _MCP_CONFIG_FILENAMES.has(entry)) {
           results.push(fullPath);
         }
       }
