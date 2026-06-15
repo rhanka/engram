@@ -270,6 +270,114 @@ describe("deOrphanByContainer (D)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// (D) De-orphan — giant-component island/star avoidance (TRACKED #3)
+// ---------------------------------------------------------------------------
+describe("deOrphanByContainer (D) — giant-component steering", () => {
+  /**
+   * Build a graph where the Work is in the giant component, a SECOND chapter is
+   * isolated (degree-0, shares the orphan's provenance), and the orphan's only
+   * provenance match is that isolated chapter. Legacy strict-finest links the
+   * orphan to the isolated chapter → a 2-node island; giant-mode must link it to
+   * the Work (in the giant) instead.
+   */
+  function islandScenario() {
+    const work = node({ id: "work_w", label: "W", type: "Work", source_file: "corpus/saga/the-work/text.txt" });
+    // chapter1 is part of the giant component (linked to Work and a hub character).
+    const ch1 = node({ id: "chapter_the-work_ch1", label: "Ch1", type: "ChapterOrStory", source_file: "corpus/saga/the-work/ch1.txt" });
+    const hero = node({ id: "character_hero", label: "Hero", type: "Character", source_file: "corpus/saga/the-work/ch1.txt" });
+    // chapter2 shares the orphan's provenance but is ISOLATED (no other edges).
+    const ch2 = node({ id: "chapter_the-work_ch2", label: "Ch2", type: "ChapterOrStory", source_file: "corpus/saga/the-work/ch2.txt" });
+    const orphan = node({ id: "character_x", label: "X", type: "Character", source_file: "corpus/saga/the-work/ch2.txt" });
+    const edges = [
+      edge({ source: "chapter_the-work_ch1", target: "work_w", relation: "part_of" }),
+      edge({ source: "character_hero", target: "chapter_the-work_ch1", relation: "appears_in" }),
+      edge({ source: "character_hero", target: "work_w", relation: "central_to" }),
+    ];
+    return extraction([work, ch1, hero, ch2, orphan], edges);
+  }
+
+  it("links to the Work (giant) when the finest container is an isolated chapter — no 2-node island", () => {
+    const ex = islandScenario();
+    const out = deOrphanByContainer(ex); // default: preferGiantComponent on
+    const appears = out.extraction.edges.filter((e) => e.relation === "appears_in" && e.source === "character_x");
+    expect(appears).toHaveLength(1);
+    expect(appears[0]!.target).toBe("work_w"); // the giant anchor, NOT the isolated chapter
+    // Work is the finest container that is itself in the giant component here.
+    expect(appears[0]!.derivation_method).toBe("deorphan:giant-component");
+    // character_x is no longer an orphan (the isolated container chapter_ch2
+    // stays a container-orphan — that is the separate re-index concern).
+    const xDegree = out.extraction.edges.filter(
+      (e) => e.source === "character_x" || e.target === "character_x",
+    ).length;
+    expect(xDegree).toBeGreaterThan(0);
+  });
+
+  it("legacy mode (preferGiantComponent:false) links to the isolated finest chapter (regression baseline)", () => {
+    const ex = islandScenario();
+    const out = deOrphanByContainer(ex, { preferGiantComponent: false });
+    const appears = out.extraction.edges.filter((e) => e.relation === "appears_in" && e.source === "character_x");
+    expect(appears[0]!.target).toBe("chapter_the-work_ch2"); // isolated chapter → island
+  });
+
+  it("still prefers the finest container when that container IS in the giant component", () => {
+    // chapter1 in giant; orphan shares chapter1's provenance → link to chapter1, not Work.
+    const work = node({ id: "work_w", label: "W", type: "Work", source_file: "corpus/saga/the-work/text.txt" });
+    const ch1 = node({ id: "chapter_the-work_ch1", label: "Ch1", type: "ChapterOrStory", source_file: "corpus/saga/the-work/ch1.txt" });
+    const hero = node({ id: "character_hero", label: "Hero", type: "Character", source_file: "corpus/saga/the-work/ch1.txt" });
+    const orphan = node({ id: "character_x", label: "X", type: "Character", source_file: "corpus/saga/the-work/ch1.txt" });
+    const ex = extraction([work, ch1, hero, orphan], [
+      edge({ source: "chapter_the-work_ch1", target: "work_w", relation: "part_of" }),
+      edge({ source: "character_hero", target: "chapter_the-work_ch1", relation: "appears_in" }),
+    ]);
+    const out = deOrphanByContainer(ex);
+    const appears = out.extraction.edges.filter((e) => e.relation === "appears_in" && e.source === "character_x");
+    expect(appears[0]!.target).toBe("chapter_the-work_ch1");
+    expect(appears[0]!.derivation_method).toBe("deorphan:giant-component");
+  });
+
+  it("never adds a redundant entity->Work edge — exactly one container per orphan", () => {
+    const ex = islandScenario();
+    const out = deOrphanByContainer(ex);
+    const added = out.extraction.edges.filter(
+      (e) => e.source === "character_x" && String((e as Record<string, unknown>).derived) === "true",
+    );
+    expect(added).toHaveLength(1); // one anchor edge only, no chapter+Work double
+  });
+
+  it("falls back to the Work over an isolated finer chapter when no container reaches the giant", () => {
+    // The giant lives in an UNRELATED work; this work's chapter+Work are both
+    // outside the giant. The orphan still anchors on its Work (coarser, denser)
+    // rather than the isolated finer chapter — the work-fallback path.
+    const otherWork = node({ id: "work_other", label: "Other", type: "Work", source_file: "corpus/other/text.txt" });
+    const a = node({ id: "character_a", label: "A", type: "Character", source_file: "corpus/other/text.txt" });
+    const b = node({ id: "character_b", label: "B", type: "Character", source_file: "corpus/other/text.txt" });
+    const c = node({ id: "character_c", label: "C", type: "Character", source_file: "corpus/other/text.txt" });
+    const work = node({ id: "work_w", label: "W", type: "Work", source_file: "corpus/saga/the-work/text.txt" });
+    const ch = node({ id: "chapter_the-work_ch9", label: "Ch9", type: "ChapterOrStory", source_file: "corpus/saga/the-work/ch9.txt" });
+    const orphan = node({ id: "character_x", label: "X", type: "Character", source_file: "corpus/saga/the-work/ch9.txt" });
+    const ex = extraction([otherWork, a, b, c, work, ch, orphan], [
+      // giant = the 4-node Other-work clique; everything in the-work is isolated.
+      edge({ source: "character_a", target: "work_other", relation: "central_to" }),
+      edge({ source: "character_b", target: "work_other", relation: "central_to" }),
+      edge({ source: "character_c", target: "work_other", relation: "central_to" }),
+      edge({ source: "character_a", target: "character_b", relation: "knows" }),
+    ]);
+    const out = deOrphanByContainer(ex);
+    const appears = out.extraction.edges.filter((e) => e.relation === "appears_in" && e.source === "character_x");
+    expect(appears[0]!.target).toBe("work_w"); // Work, not the isolated chapter
+    expect(appears[0]!.derivation_method).toBe("deorphan:work-fallback");
+  });
+
+  it("is idempotent in giant mode (re-run adds nothing, byte-equal edges)", () => {
+    const ex = islandScenario();
+    const first = deOrphanByContainer(ex);
+    const second = deOrphanByContainer(first.extraction);
+    expect(second.appearsInAdded).toBe(0);
+    expect(second.extraction.edges).toEqual(first.extraction.edges);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Pipeline wiring — config-gated, default OFF
 // ---------------------------------------------------------------------------
 describe("assembly-hygiene pipeline gate", () => {
