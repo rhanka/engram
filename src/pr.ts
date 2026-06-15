@@ -20,11 +20,18 @@ export interface PullRequestSummary {
   updatedAt?: string;
 }
 
+export interface PullRequestCheck {
+  name: string;
+  conclusion: string;
+  url?: string;
+}
+
 export interface PullRequestDetails extends PullRequestSummary {
   body?: string;
   files: string[];
   commits: string[];
   checks: string[];
+  checkRuns: PullRequestCheck[];
 }
 
 export interface WorktreePrInfo {
@@ -101,6 +108,23 @@ function authorLogin(value: unknown): string | undefined {
   return normalizeString(login);
 }
 
+function checkUrl(value: Record<string, unknown>): string | undefined {
+  return normalizeString(value.detailsUrl) ?? normalizeString(value.targetUrl) ?? normalizeString(value.url);
+}
+
+function normalizeCheckRun(value: unknown): PullRequestCheck | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const item = value as Record<string, unknown>;
+  const name = normalizeString(item.name) ?? normalizeString(item.context);
+  const conclusion = normalizeString(item.conclusion) ?? normalizeString(item.state) ?? normalizeString(item.status);
+  if (!name || !conclusion) return undefined;
+  return {
+    name,
+    conclusion,
+    ...(checkUrl(item) ? { url: checkUrl(item) } : {}),
+  };
+}
+
 function parseJson<T>(raw: string, label: string): T {
   try {
     return JSON.parse(raw) as T;
@@ -163,23 +187,19 @@ function normalizePrDetails(value: unknown): PullRequestDetails {
       })
       .filter((commit): commit is string => Boolean(commit))
     : [];
-  const checks = Array.isArray(item.statusCheckRollup)
+  const checkRuns = Array.isArray(item.statusCheckRollup)
     ? item.statusCheckRollup
-      .map((check) => {
-        if (!check || typeof check !== "object") return undefined;
-        const c = check as Record<string, unknown>;
-        const name = normalizeString(c.name) ?? normalizeString(c.context);
-        const conclusion = normalizeString(c.conclusion) ?? normalizeString(c.state) ?? normalizeString(c.status);
-        return [name, conclusion].filter(Boolean).join(": ");
-      })
-      .filter((check): check is string => Boolean(check))
+      .map(normalizeCheckRun)
+      .filter((check): check is PullRequestCheck => Boolean(check))
     : [];
+  const checks = checkRuns.map((check) => [check.name, check.conclusion].filter(Boolean).join(": "));
   return {
     ...summary,
     body: normalizeString(item.body),
     files,
     commits,
     checks,
+    checkRuns,
   };
 }
 
