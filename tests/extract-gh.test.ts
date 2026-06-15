@@ -164,7 +164,7 @@ describe("extractPullRequests", () => {
         }),
         expect.objectContaining({
           source: prId(KEY, 42),
-          target: commitId(KEY, headSha.slice(0, 12)),
+          target: commitId(KEY, headSha),
           relation: "CONTAINS_COMMIT",
         }),
       ]),
@@ -223,21 +223,34 @@ describe("extractPullRequests", () => {
       expect.arrayContaining([
         expect.objectContaining({
           source: prId(KEY, 77),
-          target: commitId(KEY, firstSha.slice(0, 12)),
+          target: commitId(KEY, firstSha),
           relation: "CONTAINS_COMMIT",
         }),
         expect.objectContaining({
           source: prId(KEY, 77),
-          target: commitId(KEY, secondSha.slice(0, 12)),
+          target: commitId(KEY, secondSha),
           relation: "CONTAINS_COMMIT",
         }),
         expect.objectContaining({
           source: prId(KEY, 77),
-          target: commitId(KEY, mergeSha.slice(0, 12)),
+          target: commitId(KEY, mergeSha),
           relation: "MERGED_AS",
         }),
       ]),
     );
+
+    // Interop with the git extractor (WP2): commit: ids MUST be the FULL sha,
+    // not truncated, or CONTAINS_COMMIT/MERGED_AS never join the Commit nodes
+    // emitted by extract-git (which uses `git show -s --format=%H`, full shas).
+    const commitTargets = extraction.edges
+      .filter((e) => e.relation === "CONTAINS_COMMIT" || e.relation === "MERGED_AS")
+      .map((e) => e.target);
+    expect(commitTargets).toContain(commitId(KEY, firstSha));
+    expect(commitTargets).toContain(commitId(KEY, mergeSha));
+    for (const target of commitTargets) {
+      const sha = target.split("@").at(-1)!;
+      expect(sha).toMatch(/^[0-9a-f]{40}$/);
+    }
   });
 
   it("aggregates mixed check conclusions without storing logs", () => {

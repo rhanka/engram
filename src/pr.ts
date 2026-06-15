@@ -249,7 +249,7 @@ export interface PrMergeInfo {
   headRefName?: string;
   /** Full sha of the commit that landed on the base branch, if merged. */
   mergeCommit?: string;
-  /** Abbreviated (12-char) shas of the PR's branch commits. */
+  /** Full shas of the PR's branch commits (joins the git extractor's commit: ids). */
   commits: string[];
 }
 
@@ -267,7 +267,6 @@ function normalizePrMerge(value: unknown): PrMergeInfo {
         ? normalizeString((commit as { oid?: unknown }).oid)
         : undefined)
       .filter((oid): oid is string => Boolean(oid))
-      .map((oid) => oid.slice(0, 12))
     : [];
   return {
     number,

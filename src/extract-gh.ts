@@ -109,11 +109,14 @@ function positiveInteger(value: number | undefined, fallback: number): number {
   return Math.max(1, Math.floor(value));
 }
 
-function shortSha(value: string | undefined): string | undefined {
+// Returns the FULL commit sha (not truncated) so the commit: ids emitted here
+// join the git extractor's nodes, which use full shas (extract-git.ts uses
+// `git show -s --format=%H`). Truncating would break the cross-profile join.
+function commitSha(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   if (!trimmed) return undefined;
   const match = trimmed.match(/[0-9a-f]{7,64}/i);
-  return match ? match[0]!.slice(0, 12) : undefined;
+  return match ? match[0]! : undefined;
 }
 
 function uniqueSorted(values: Array<string | undefined>): string[] {
@@ -228,15 +231,14 @@ export function extractPullRequests(root: string = ".", options: ExtractPullRequ
       edges.push(extractedEdge(id, branchId(repoKeyStr, details.baseRefName), "INTO_BRANCH", "gh_pr_ref"));
     }
 
-    const commits = uniqueSorted([
-      ...merge.commits.map(shortSha),
-      ...details.commits.map(shortSha),
-    ]);
+    // Source commit shas from the merge query (raw full oids), not from
+    // getPullRequest().commits which is a display string with 12-char oids.
+    const commits = uniqueSorted(merge.commits.map(commitSha));
     for (const sha of commits) {
       edges.push(extractedEdge(id, commitId(repoKeyStr, sha), "CONTAINS_COMMIT", "gh_pr_commits"));
     }
 
-    const mergeCommit = shortSha(merge.mergeCommit);
+    const mergeCommit = commitSha(merge.mergeCommit);
     if (mergeCommit) {
       edges.push(extractedEdge(id, commitId(repoKeyStr, mergeCommit), "MERGED_AS", "gh_pr_merge_commit"));
     }
