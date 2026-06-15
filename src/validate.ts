@@ -18,8 +18,13 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-function isExternalReferenceId(value: unknown): boolean {
-  return typeof value === "string" && value.startsWith("commit:");
+// Cross-profile references: an edge endpoint may point at a node owned by
+// another extraction profile (a `commit:`/`branch:` id from extract-git, or a
+// `commit:` id from the conversations connector). These are legitimately absent
+// from this fragment's node set, so they are not dangling edges.
+export function isExternalReferenceId(value: unknown): boolean {
+  if (!isNonEmptyString(value)) return false;
+  return value.startsWith("commit:") || value.startsWith("branch:");
 }
 
 /**
