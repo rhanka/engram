@@ -212,13 +212,22 @@ describe("deOrphanByContainer (D)", () => {
       type: "Character",
       source_file: "corpus/saga/the-work/text.txt",
     });
-    const ex = extraction([work, orphan], [
-      // work must not be an orphan itself for this assertion to be about the orphan
-      edge({ source: "work_w", target: "work_w_anchor", relation: "noop" }),
+    // The Work must itself be in the giant component for it to be a valid link
+    // target — anchor it to a real connected entity (work_anchor) so the Work is
+    // the giant and the degree-0 orphan is what gets de-orphaned onto it.
+    const anchor = node({
+      id: "character_anchor",
+      label: "Anchor",
+      type: "Character",
+      source_file: "corpus/saga/the-work/text.txt",
+    });
+    const ex = extraction([work, anchor, orphan], [
+      edge({ source: "character_anchor", target: "work_w", relation: "appears_in" }),
     ]);
     const out = deOrphanByContainer(ex);
-    const appears = out.extraction.edges.filter((e) => e.relation === "appears_in");
+    const appears = out.extraction.edges.filter((e) => (e as { derived?: boolean }).derived);
     expect(appears).toHaveLength(1);
+    expect(appears[0]!.source).toBe("character_y");
     expect(appears[0]!.target).toBe("work_w");
   });
 
@@ -266,6 +275,150 @@ describe("deOrphanByContainer (D)", () => {
     ]);
     const out = deOrphanByContainer(ex);
     expect(out.appearsInAdded).toBe(0);
+  });
+
+  // -- Giant-component join (TRACKED #3): no 2-node island, no isolated orphan --
+
+  // Helper: undirected connected-components from an extraction's edges.
+  function componentsOf(ex: Extraction): string[][] {
+    const ids = new Set((ex.nodes ?? []).map((n) => String(n.id)));
+    const adj = new Map<string, Set<string>>();
+    for (const id of ids) adj.set(id, new Set());
+    for (const e of ex.edges ?? []) {
+      const s = String(e.source);
+      const t = String(e.target);
+      if (!ids.has(s) || !ids.has(t) || s === t) continue;
+      adj.get(s)!.add(t);
+      adj.get(t)!.add(s);
+    }
+    const seen = new Set<string>();
+    const comps: string[][] = [];
+    for (const id of ids) {
+      if (seen.has(id)) continue;
+      const members: string[] = [];
+      const stack = [id];
+      seen.add(id);
+      while (stack.length) {
+        const u = stack.pop()!;
+        members.push(u);
+        for (const v of adj.get(u)!) if (!seen.has(v)) {
+          seen.add(v);
+          stack.push(v);
+        }
+      }
+      comps.push(members.sort());
+    }
+    return comps.sort((a, b) => b.length - a.length || a[0]!.localeCompare(b[0]!));
+  }
+
+  it("links an orphan to the in-giant Work when the finest container is itself isolated (no 2-node island)", () => {
+    // A giant component exists (work + chapter + several connected entities).
+    const giantWork = node({ id: "work_g", label: "Giant Work", type: "Work", source_file: "corpus/saga/g/text.txt" });
+    const giantCh = node({ id: "chapter_g_ch1", label: "G ch1", type: "ChapterOrStory", source_file: "corpus/saga/g/text.txt" });
+    const a = node({ id: "character_a", label: "A", type: "Character", source_file: "corpus/saga/g/text.txt" });
+    const b = node({ id: "character_b", label: "B", type: "Character", source_file: "corpus/saga/g/text.txt" });
+    // An ISOLATED chapter sharing the orphan's provenance but connected to NOTHING.
+    // Its id sorts BEFORE the connected chapter (chapter_g_ch0 < chapter_g_ch1) so a
+    // naive first-seen-by-id container index would pick this isolated one — the fix
+    // must reject it because it is not in the giant component.
+    const lonelyCh = node({ id: "chapter_g_ch0", label: "G ch0", type: "ChapterOrStory", source_file: "corpus/saga/g/text.txt" });
+    const orphan = node({ id: "character_orphan", label: "Orphan", type: "Character", source_file: "corpus/saga/g/text.txt" });
+    const ex = extraction(
+      [giantWork, giantCh, a, b, lonelyCh, orphan],
+      [
+        edge({ source: "chapter_g_ch1", target: "work_g", relation: "part_of" }),
+        edge({ source: "character_a", target: "chapter_g_ch1", relation: "appears_in" }),
+        edge({ source: "character_b", target: "chapter_g_ch1", relation: "appears_in" }),
+        edge({ source: "character_a", target: "character_b", relation: "knows" }),
+      ],
+    );
+    const out = deOrphanByContainer(ex);
+    const added = out.extraction.edges.filter((e) => (e as { derived?: boolean }).derived);
+    const orphanEdge = added.find((e) => String(e.source) === "character_orphan");
+    expect(orphanEdge).toBeDefined();
+    // MUST link to an in-giant container, NOT the isolated lonely chapter.
+    expect(orphanEdge!.target).not.toBe("chapter_g_ch0");
+    // And no 2-node island may exist after.
+    const comps = componentsOf(out.extraction);
+    const twoNode = comps.filter((c) => c.length === 2);
+    expect(twoNode).toHaveLength(0);
+    // The orphan now belongs to the single giant component.
+    expect(comps[0]).toContain("character_orphan");
+  });
+
+  it("dissolves a pre-existing 2-node island into the giant component", () => {
+    // Giant: a work + chapter + 3 connected entities.
+    const giantWork = node({ id: "work_g", label: "Giant Work", type: "Work", source_file: "corpus/saga/g/text.txt" });
+    const giantCh = node({ id: "chapter_g_ch1", label: "G ch1", type: "ChapterOrStory", source_file: "corpus/saga/g/text.txt" });
+    const a = node({ id: "character_a", label: "A", type: "Character", source_file: "corpus/saga/g/text.txt" });
+    const b = node({ id: "character_b", label: "B", type: "Character", source_file: "corpus/saga/g/text.txt" });
+    const c = node({ id: "character_c", label: "C", type: "Character", source_file: "corpus/saga/g/text.txt" });
+    // 2-node island: two entities linked ONLY to each other (each degree-1).
+    const islandX = node({ id: "character_x_isle", label: "X", type: "Character", source_file: "corpus/saga/g/text.txt" });
+    const islandY = node({ id: "object_y_isle", label: "Y", type: "Object", source_file: "corpus/saga/g/text.txt" });
+    const ex = extraction(
+      [giantWork, giantCh, a, b, c, islandX, islandY],
+      [
+        edge({ source: "chapter_g_ch1", target: "work_g", relation: "part_of" }),
+        edge({ source: "character_a", target: "chapter_g_ch1", relation: "appears_in" }),
+        edge({ source: "character_b", target: "chapter_g_ch1", relation: "appears_in" }),
+        edge({ source: "character_c", target: "chapter_g_ch1", relation: "appears_in" }),
+        // the island, disconnected from everything else
+        edge({ source: "character_x_isle", target: "object_y_isle", relation: "uses" }),
+      ],
+    );
+    const before = componentsOf(ex);
+    expect(before.filter((comp) => comp.length === 2)).toHaveLength(1); // the island exists before
+    const out = deOrphanByContainer(ex);
+    const comps = componentsOf(out.extraction);
+    expect(comps.filter((comp) => comp.length === 2)).toHaveLength(0); // dissolved
+    expect(comps).toHaveLength(1); // single giant component
+    expect(comps[0]).toContain("character_x_isle");
+    expect(comps[0]).toContain("object_y_isle");
+  });
+
+  it("does not add a redundant entity->Work edge when the entity already reaches the work via a chapter", () => {
+    const giantWork = node({ id: "work_g", label: "Giant Work", type: "Work", source_file: "corpus/saga/g/text.txt" });
+    const giantCh = node({ id: "chapter_g_ch1", label: "G ch1", type: "ChapterOrStory", source_file: "corpus/saga/g/text.txt" });
+    const a = node({ id: "character_a", label: "A", type: "Character", source_file: "corpus/saga/g/text.txt" });
+    const ex = extraction(
+      [giantWork, giantCh, a],
+      [
+        edge({ source: "chapter_g_ch1", target: "work_g", relation: "part_of" }),
+        edge({ source: "character_a", target: "chapter_g_ch1", relation: "appears_in" }),
+      ],
+    );
+    // character_a already reaches work_g via the chapter; it is not an orphan.
+    const out = deOrphanByContainer(ex);
+    const addedToWork = out.extraction.edges.filter(
+      (e) => (e as { derived?: boolean }).derived && String(e.target) === "work_g" && String(e.source) === "character_a",
+    );
+    expect(addedToWork).toHaveLength(0);
+  });
+
+  it("is idempotent under the giant-component join path", () => {
+    const giantWork = node({ id: "work_g", label: "Giant Work", type: "Work", source_file: "corpus/saga/g/text.txt" });
+    const giantCh = node({ id: "chapter_g_ch1", label: "G ch1", type: "ChapterOrStory", source_file: "corpus/saga/g/text.txt" });
+    const a = node({ id: "character_a", label: "A", type: "Character", source_file: "corpus/saga/g/text.txt" });
+    const b = node({ id: "character_b", label: "B", type: "Character", source_file: "corpus/saga/g/text.txt" });
+    const islandX = node({ id: "character_x_isle", label: "X", type: "Character", source_file: "corpus/saga/g/text.txt" });
+    const islandY = node({ id: "object_y_isle", label: "Y", type: "Object", source_file: "corpus/saga/g/text.txt" });
+    const lonelyCh = node({ id: "chapter_g_ch9", label: "G ch9", type: "ChapterOrStory", source_file: "corpus/saga/g/text.txt" });
+    const orphan = node({ id: "character_orphan", label: "Orphan", type: "Character", source_file: "corpus/saga/g/text.txt" });
+    const ex = extraction(
+      [giantWork, giantCh, a, b, islandX, islandY, lonelyCh, orphan],
+      [
+        edge({ source: "chapter_g_ch1", target: "work_g", relation: "part_of" }),
+        edge({ source: "character_a", target: "chapter_g_ch1", relation: "appears_in" }),
+        edge({ source: "character_b", target: "chapter_g_ch1", relation: "appears_in" }),
+        edge({ source: "character_a", target: "character_b", relation: "knows" }),
+        edge({ source: "character_x_isle", target: "object_y_isle", relation: "uses" }),
+      ],
+    );
+    const first = deOrphanByContainer(ex);
+    const second = deOrphanByContainer(first.extraction);
+    expect(second.appearsInAdded).toBe(0);
+    expect(second.extraction.edges).toEqual(first.extraction.edges);
   });
 });
 

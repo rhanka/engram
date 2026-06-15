@@ -16,11 +16,15 @@
  *       honorifics/titles, strip parentheticals, lowercase. No fuzzy stemming
  *       (no invented collisions).
  *
- *   (D) `deOrphanByContainer` — link every degree-0 entity node to its FINEST
- *       available container (ChapterOrStory/Scene/Section matching provenance,
- *       else the Work) via a derived `appears_in` edge. Idempotent: respects
- *       pre-existing `appears_in`, never double-adds. Finest-container (not
- *       straight-to-Work) keeps Work hubs from outranking real protagonists.
+ *   (D) `deOrphanByContainer` — link every entity that is NOT in the giant
+ *       connected component (degree-0 orphans AND members of tiny disconnected
+ *       islands) to a container that is ITSELF in the giant component, via a
+ *       derived `appears_in` edge: prefer the finest in-giant container
+ *       (ChapterOrStory/Scene/Section matching provenance), falling back to the
+ *       in-giant Work. Guarantees orphans JOIN the giant — never a 2-node island
+ *       (TRACKED #3). Idempotent: respects pre-existing `appears_in`, never
+ *       double-adds, never adds a redundant entity→Work edge for an entity that
+ *       already reaches the work via a chapter (so it does not inflate stars).
  *
  * Everything here is deterministic and replayable: no LLM, no network, no
  * secrets, stable ordering, and re-running on its own output is a no-op.
@@ -330,7 +334,7 @@ export function deriveAliasesAndNormalizedTerms(
 }
 
 // ---------------------------------------------------------------------------
-// (D) De-orphan — finest-container appears_in derivation
+// (D) De-orphan — giant-component appears_in derivation
 // ---------------------------------------------------------------------------
 
 export interface DeOrphanConfig {
@@ -338,6 +342,19 @@ export interface DeOrphanConfig {
   containerTypesFinestFirst?: string[];
   /** The coarsest fallback container type (the Work). */
   workType?: string;
+  /**
+   * Giant-component join (default ON). When true, the de-orphan target set is
+   * every entity NOT in the giant connected component (degree-0 orphans AND
+   * members of tiny disconnected islands), and a container is chosen ONLY if it
+   * is itself in the giant component — preferring the finest in-giant container,
+   * falling back to the in-giant Work. This guarantees the orphan JOINS the
+   * giant component and never forms (or sustains) a 2-node island.
+   *
+   * When false, the legacy degree-0-only behavior is used (every orphan linked
+   * to its finest provenance-sharing container, even if that container is itself
+   * isolated). Retained for backward-compat / explicit opt-out.
+   */
+  joinGiantComponent?: boolean;
 }
 
 /** Default container ranking: chapter/scene/section first, Work last. */
@@ -381,13 +398,82 @@ export interface DeOrphanResult {
 }
 
 /**
- * (D) Link each degree-0 entity node to its finest available container via a
- * derived `appears_in` edge. Container resolution, per orphan:
- *   1. a container node (finest type first) sharing the orphan's source_file
- *      or source-file slug;
- *   2. else the Work sharing the source_file / slug.
- * Idempotent: skips nodes that already have any edge, never duplicates an
- * `appears_in` pair it (or a prior run) already created.
+ * Compute undirected connected components over the node id set. Returns a map
+ * id→componentId and the id of the giant (largest) component. Ties on size are
+ * broken by the smallest member id, so the giant is a deterministic fixed point.
+ */
+function connectedComponents(
+  nodeIds: string[],
+  edges: readonly GraphEdge[],
+): { componentOf: Map<string, number>; giantComponent: number; giantSize: number } {
+  const adjacency = new Map<string, Set<string>>();
+  const idSet = new Set(nodeIds);
+  for (const id of nodeIds) adjacency.set(id, new Set());
+  for (const e of edges) {
+    const s = edgeEndpoint(e.source);
+    const t = edgeEndpoint(e.target);
+    if (!idSet.has(s) || !idSet.has(t) || s === t) continue;
+    adjacency.get(s)!.add(t);
+    adjacency.get(t)!.add(s);
+  }
+  const componentOf = new Map<string, number>();
+  const componentSize = new Map<number, number>();
+  const componentMinId = new Map<number, string>();
+  let nextId = 0;
+  // Iterate in sorted id order so component numbering is deterministic.
+  for (const id of [...nodeIds].sort((a, b) => a.localeCompare(b))) {
+    if (componentOf.has(id)) continue;
+    const cid = nextId++;
+    let size = 0;
+    let minId = id;
+    const stack = [id];
+    componentOf.set(id, cid);
+    while (stack.length) {
+      const u = stack.pop()!;
+      size += 1;
+      if (u.localeCompare(minId) < 0) minId = u;
+      for (const v of adjacency.get(u)!) {
+        if (!componentOf.has(v)) {
+          componentOf.set(v, cid);
+          stack.push(v);
+        }
+      }
+    }
+    componentSize.set(cid, size);
+    componentMinId.set(cid, minId);
+  }
+  let giantComponent = -1;
+  let bestSize = -1;
+  let bestMin = "";
+  for (const [cid, size] of componentSize) {
+    const minId = componentMinId.get(cid)!;
+    if (size > bestSize || (size === bestSize && minId.localeCompare(bestMin) < 0)) {
+      giantComponent = cid;
+      bestSize = size;
+      bestMin = minId;
+    }
+  }
+  return { componentOf, giantComponent, giantSize: Math.max(bestSize, 0) };
+}
+
+/**
+ * (D) Link each entity that is NOT in the giant connected component to a
+ * container that is ITSELF in the giant component, via a derived `appears_in`
+ * edge — so the orphan JOINS the giant rather than forming a 2-node island.
+ *
+ * Container resolution, per orphan (`joinGiantComponent`, default ON):
+ *   1. the FINEST container (chapter/scene/section first) sharing the orphan's
+ *      source_file / slug AND already in the giant component;
+ *   2. else the in-giant Work sharing the source_file / slug.
+ * A provenance-sharing container that is itself isolated is REJECTED (it would
+ * merely extend the island), so no new 2-node island is ever created. Because
+ * only nodes outside the giant are targeted, an entity that already reaches its
+ * Work via a chapter is left untouched (no redundant entity→Work edge, no star
+ * inflation).
+ *
+ * Idempotent: skips nodes already in the giant, never duplicates an
+ * `appears_in` pair it (or a prior run) created. With `joinGiantComponent:
+ * false`, the legacy degree-0-only behavior is used.
  */
 export function deOrphanByContainer(
   extraction: Extraction,
@@ -395,10 +481,12 @@ export function deOrphanByContainer(
 ): DeOrphanResult {
   const containerTypes = config.containerTypesFinestFirst ?? [...DEFAULT_CONTAINER_TYPES_FINEST_FIRST];
   const workType = config.workType ?? DEFAULT_WORK_TYPE;
+  const joinGiant = config.joinGiantComponent ?? true;
   const nodes = extraction.nodes ?? [];
   const edges = extraction.edges ?? [];
+  const nodeIds = nodes.map((n) => String(n.id));
 
-  const degree = new Map<string, number>(nodes.map((n) => [String(n.id), 0]));
+  const degree = new Map<string, number>(nodeIds.map((id) => [id, 0]));
   const existingPair = new Set<string>();
   for (const e of edges) {
     const s = edgeEndpoint(e.source);
@@ -408,8 +496,26 @@ export function deOrphanByContainer(
     existingPair.add(`${s} ${t}`);
   }
 
+  // Component membership (only computed for the giant-join path). `inGiant`
+  // reports whether a node currently belongs to the giant connected component.
+  // A "giant" must have at least one edge (size ≥ 2): if every component is a
+  // singleton (a fresh, edge-less extraction), there is no giant to be inside,
+  // so every entity is treated as an orphan and linked to its Work anchor.
+  let giantComponent = -1;
+  let giantSize = 0;
+  let componentOf = new Map<string, number>();
+  if (joinGiant) {
+    ({ componentOf, giantComponent, giantSize } = connectedComponents(nodeIds, edges));
+  }
+  const hasGiant = joinGiant && giantSize >= 2;
+  const inGiant = (id: string): boolean =>
+    !joinGiant || (hasGiant && componentOf.get(id) === giantComponent);
+
   // Build container indices by source_file and by slug, per container rank.
   // rankOf: finest container types get the lowest rank number; Work is last.
+  // In the giant-join path, finer-container indices hold ONLY in-giant
+  // containers (an isolated chapter is never offered → no 2-node island); the
+  // Work index is unconditional (the root anchor that builds the giant).
   const rankOf = new Map<string, number>();
   containerTypes.forEach((t, i) => rankOf.set(t, i));
   rankOf.set(workType, containerTypes.length);
@@ -421,10 +527,18 @@ export function deOrphanByContainer(
     byRankSource.push(new Map());
     byRankSlug.push(new Map());
   }
+  const workRank = containerTypes.length;
   const containerOrdered = [...nodes].sort((a, b) => String(a.id).localeCompare(String(b.id)));
   for (const n of containerOrdered) {
     const rank = rankOf.get(String(n.type));
     if (rank === undefined) continue;
+    // In the giant-join path, only index FINER containers (chapter/scene/…) that
+    // are in the giant — an isolated finer container must never be offered as a
+    // link target (that is exactly what makes a 2-node island). The Work is the
+    // root anchor ("necessarily linked to many") and is always a valid target:
+    // linking entities to it is what BUILDS the giant around it, so it is indexed
+    // unconditionally even when it currently has no edges of its own.
+    if (joinGiant && rank !== workRank && !inGiant(String(n.id))) continue;
     const srcMap = byRankSource[rank]!;
     const slugMap = byRankSlug[rank]!;
     if (typeof n.source_file === "string" && n.source_file && !srcMap.has(n.source_file)) {
@@ -439,12 +553,17 @@ export function deOrphanByContainer(
   }
 
   const containerTypeSet = new Set([...containerTypes, workType]);
-  const orphans = nodes.filter((n) => (degree.get(String(n.id)) ?? 0) === 0);
+  // Targets: entities to de-orphan. Giant-join path → every node NOT in the
+  // giant component (degree-0 orphans AND members of tiny islands). Legacy path
+  // → degree-0 nodes only.
+  const orphans = nodes.filter((n) =>
+    joinGiant ? !inGiant(String(n.id)) : (degree.get(String(n.id)) ?? 0) === 0,
+  );
   const added: GraphEdge[] = [];
   let unresolved = 0;
 
   for (const orphan of orphans) {
-    // A container node that is itself an orphan has no parent of its own kind
+    // A container node that is itself out-of-giant has no parent of its own kind
     // to link into (a Work has no Work parent). Leave it as-is.
     if (containerTypeSet.has(String(orphan.type))) {
       unresolved += 1;
@@ -453,7 +572,8 @@ export function deOrphanByContainer(
     const sources = nodeSourceFiles(orphan);
     let linked = false;
     // Resolve the FINEST container across all of the orphan's source files:
-    // sweep ranks finest→coarsest, take the first hit.
+    // sweep ranks finest→coarsest, take the first hit. In the giant-join path
+    // the indices already exclude isolated containers, so any hit is in-giant.
     let containerId: string | undefined;
     for (let rank = 0; rank <= containerTypes.length && !containerId; rank += 1) {
       for (const sf of sources) {
@@ -475,7 +595,7 @@ export function deOrphanByContainer(
           confidence: "INFERRED",
           source_file: typeof orphan.source_file === "string" ? orphan.source_file : "",
           derived: true,
-          derivation_method: "deorphan:finest-container",
+          derivation_method: "deorphan:giant-component",
         } as GraphEdge);
       }
       linked = true;
@@ -486,7 +606,7 @@ export function deOrphanByContainer(
   const nextExtraction: Extraction = { ...extraction, edges: [...edges, ...added] };
 
   // Recompute orphans after.
-  const degreeAfter = new Map<string, number>(nodes.map((n) => [String(n.id), 0]));
+  const degreeAfter = new Map<string, number>(nodeIds.map((id) => [id, 0]));
   for (const e of nextExtraction.edges) {
     const s = edgeEndpoint(e.source);
     const t = edgeEndpoint(e.target);

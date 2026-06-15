@@ -32,7 +32,7 @@ import {
  * the graphology build:
  *   - `schemaHygiene`: id-prefix + type canonicalization with merge-union (A)
  *   - `deriveAliases`: alias / normalized_terms derivation (B)
- *   - `deOrphan`: finest-container `appears_in` derivation (D)
+ *   - `deOrphan`: giant-component `appears_in` derivation (D)
  */
 export interface AssemblyHygieneOptions {
   schemaHygiene?: boolean | SchemaHygieneConfig;
