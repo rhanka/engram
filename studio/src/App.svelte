@@ -25,7 +25,7 @@
     setStaticBaseProvider,
     __resetEntitiesIndexCache,
   } from "./lib/api.js";
-  import { createModelStore } from "./lib/modelStore.js";
+  import { createModelStore } from "./lib/modelStore.svelte.js";
   import {
     buildScene,
     applyWeakFilter,
