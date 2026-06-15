@@ -338,6 +338,17 @@ export interface DeOrphanConfig {
   containerTypesFinestFirst?: string[];
   /** The coarsest fallback container type (the Work). */
   workType?: string;
+  /**
+   * When true (default), an orphan is linked to the finest container that is
+   * ITSELF in the giant connected component. If every finer container sharing
+   * the orphan's provenance is isolated (would create a 2-node island or
+   * amplify a poorly-connected satellite), fall back to a coarser container
+   * that IS in the giant component (typically the Work). This guarantees a
+   * de-orphaned node joins the giant component and never forms an island.
+   *
+   * Set false to restore the legacy "strict finest container" behavior.
+   */
+  preferGiantComponent?: boolean;
 }
 
 /** Default container ranking: chapter/scene/section first, Work last. */
@@ -381,11 +392,72 @@ export interface DeOrphanResult {
 }
 
 /**
- * (D) Link each degree-0 entity node to its finest available container via a
- * derived `appears_in` edge. Container resolution, per orphan:
- *   1. a container node (finest type first) sharing the orphan's source_file
- *      or source-file slug;
- *   2. else the Work sharing the source_file / slug.
+ * Build an undirected adjacency map over the given nodes/edges (self-loops and
+ * dangling endpoints ignored). Used to identify the giant connected component
+ * so de-orphan can link into it rather than into an isolated island.
+ */
+function buildAdjacency(nodes: GraphNode[], edges: GraphEdge[]): Map<string, Set<string>> {
+  const adj = new Map<string, Set<string>>();
+  for (const n of nodes) adj.set(String(n.id), new Set<string>());
+  for (const e of edges) {
+    const s = edgeEndpoint(e.source);
+    const t = edgeEndpoint(e.target);
+    if (s === t) continue;
+    const sa = adj.get(s);
+    const ta = adj.get(t);
+    if (sa && ta) {
+      sa.add(t);
+      ta.add(s);
+    }
+  }
+  return adj;
+}
+
+/**
+ * Return the set of node ids belonging to the giant (largest) connected
+ * component of `adj`. Ties broken by the smallest member id for determinism.
+ * An empty graph yields an empty set.
+ */
+function giantComponent(adj: Map<string, Set<string>>): Set<string> {
+  const seen = new Set<string>();
+  let best: Set<string> = new Set();
+  let bestKey = "";
+  // Iterate ids in sorted order so component discovery is deterministic.
+  const ids = Array.from(adj.keys()).sort((a, b) => a.localeCompare(b));
+  for (const start of ids) {
+    if (seen.has(start)) continue;
+    const comp = new Set<string>();
+    const stack = [start];
+    while (stack.length > 0) {
+      const u = stack.pop()!;
+      if (comp.has(u)) continue;
+      comp.add(u);
+      seen.add(u);
+      for (const v of adj.get(u) ?? []) if (!comp.has(v)) stack.push(v);
+    }
+    // Deterministic tiebreak: prefer the larger component; on equal size prefer
+    // the one whose smallest member id sorts first.
+    const minId = comp.size > 0 ? Array.from(comp).sort((a, b) => a.localeCompare(b))[0]! : "";
+    if (comp.size > best.size || (comp.size === best.size && minId < bestKey)) {
+      best = comp;
+      bestKey = minId;
+    }
+  }
+  return best;
+}
+
+/**
+ * (D) Link each degree-0 entity node to a container via a derived `appears_in`
+ * edge, steering the orphan INTO the giant connected component so it never
+ * forms a 2-node island. Container resolution, per orphan (giant mode, default):
+ *   1. the FINEST container (chapter→scene→section, then Work) sharing the
+ *      orphan's source_file / slug that is ITSELF in the giant component;
+ *   2. else the Work sharing provenance (island-avoiding fallback — the Work is
+ *      the densely-connected anchor: "in two items, one is the WORK");
+ *   3. else (no Work) the strict finest container as a best-effort.
+ * Exactly one container is chosen per orphan, so no redundant entity→Work edge
+ * is added when a finer container already carries the orphan toward the Work.
+ * Set `preferGiantComponent: false` for the legacy strict-finest behavior.
  * Idempotent: skips nodes that already have any edge, never duplicates an
  * `appears_in` pair it (or a prior run) already created.
  */
@@ -439,9 +511,16 @@ export function deOrphanByContainer(
   }
 
   const containerTypeSet = new Set([...containerTypes, workType]);
+  const workRank = containerTypes.length;
   const orphans = nodes.filter((n) => (degree.get(String(n.id)) ?? 0) === 0);
   const added: GraphEdge[] = [];
   let unresolved = 0;
+
+  // Giant connected component over the EXISTING edges. Used to steer orphans
+  // into the giant component instead of into an isolated finest-container
+  // (which would otherwise create a 2-node island or amplify a poor satellite).
+  const preferGiant = config.preferGiantComponent ?? true;
+  const giant = preferGiant ? giantComponent(buildAdjacency(nodes, edges)) : new Set<string>();
 
   for (const orphan of orphans) {
     // A container node that is itself an orphan has no parent of its own kind
@@ -452,17 +531,45 @@ export function deOrphanByContainer(
     }
     const sources = nodeSourceFiles(orphan);
     let linked = false;
-    // Resolve the FINEST container across all of the orphan's source files:
-    // sweep ranks finest→coarsest, take the first hit.
-    let containerId: string | undefined;
-    for (let rank = 0; rank <= containerTypes.length && !containerId; rank += 1) {
+    // Resolve candidate containers per rank (finest→coarsest), recording the
+    // finest hit AND the finest hit that is itself in the giant component.
+    let finestId: string | undefined; // strict finest container (legacy choice)
+    let giantId: string | undefined; // finest container that is in the giant component
+    let workId: string | undefined; // the Work container (rank === workRank), if any
+    for (let rank = 0; rank <= containerTypes.length; rank += 1) {
+      let hit: string | undefined;
       for (const sf of sources) {
-        const hit = byRankSource[rank]!.get(sf) ?? byRankSlug[rank]!.get(slugOfSourceFile(sf) ?? "");
-        if (hit && hit !== String(orphan.id)) {
-          containerId = hit;
+        const candidate = byRankSource[rank]!.get(sf) ?? byRankSlug[rank]!.get(slugOfSourceFile(sf) ?? "");
+        if (candidate && candidate !== String(orphan.id)) {
+          hit = candidate;
           break;
         }
       }
+      if (!hit) continue;
+      if (finestId === undefined) finestId = hit;
+      if (rank === workRank) workId = hit;
+      if (preferGiant && giantId === undefined && giant.has(hit)) giantId = hit;
+    }
+    // Selection — exactly ONE container per orphan (no redundant entity→Work
+    // edge: when a finer container is chosen the orphan already reaches the
+    // Work through it, so we never additionally wire the Work):
+    //   - giant mode: prefer the finest container that is in the giant
+    //     component; if none is, fall back to the Work (so the orphan joins the
+    //     Work's subgraph rather than forming a 2-node island), and only if
+    //     there is no Work fall back to the strict finest container.
+    //   - legacy mode: take the strict finest container.
+    let containerId: string | undefined;
+    let method = "deorphan:finest-container";
+    if (!preferGiant) {
+      containerId = finestId;
+    } else if (giantId !== undefined) {
+      containerId = giantId;
+      method = "deorphan:giant-component";
+    } else if (workId !== undefined) {
+      containerId = workId;
+      method = "deorphan:work-fallback";
+    } else {
+      containerId = finestId;
     }
     if (containerId) {
       const key = `${String(orphan.id)} ${containerId}`;
@@ -475,7 +582,7 @@ export function deOrphanByContainer(
           confidence: "INFERRED",
           source_file: typeof orphan.source_file === "string" ? orphan.source_file : "",
           derived: true,
-          derivation_method: "deorphan:finest-container",
+          derivation_method: method,
         } as GraphEdge);
       }
       linked = true;
