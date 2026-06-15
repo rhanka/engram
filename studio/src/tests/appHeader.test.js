@@ -24,6 +24,13 @@ describe("App header DS structure", () => {
     expect(appSource).toContain("<Badge tone=\"info\">{scene.stats.communityCount} groups</Badge>");
   });
 
+  it("renders the in-UI model switcher (DS Select) in the chrome, gated on >1 model", () => {
+    expect(appSource).toMatch(/import \{[^}]*\bSelect\b[^}]*\} from "@sentropic\/design-system-svelte"/);
+    expect(appSource).toMatch(/{#snippet extraSelectors\(\)}[\s\S]*{#if modelStore\.models\.length > 1}/);
+    expect(appSource).toMatch(/<Select[\s\S]*value=\{modelId\}[\s\S]*onchange=\{[^}]*handleSelectModel/);
+    expect(appSource).toMatch(/{#each modelStore\.models as model \(model\.id\)}/);
+  });
+
   it("keeps responsive header behavior on local slot content instead of DS internals", () => {
     expect(appSource).not.toMatch(/st-appChrome__/);
     expect(appSource).not.toMatch(/st-appHeader__/);
