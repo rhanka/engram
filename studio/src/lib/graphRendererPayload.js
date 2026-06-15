@@ -270,16 +270,27 @@ export function buildGraphRendererPayload(scene, options = {}) {
   // view sets the flag; main-view scenes never do, so the god-class gate is
   // untouched there. Applied to baseStyle BEFORE buildConnectedDimStyle so
   // the label survives dim / merge re-styling (cloneStyle copies nodeLabels).
-  for (const node of nodes) {
-    if (node.forceBoxLabel !== true || !isBoxShape(node.shape)) continue;
-    const index = nodeIndexById.get(node.id);
-    if (!Number.isInteger(index)) continue;
-    // BUG-1: the renderer sizes the box to the drawn label width, so a long
-    // entity name overflows the compact recon focal slot. Cap the DRAWN text
-    // (parameterizable via labelMaxChars; default DEFAULT_LABEL_MAX_CHARS). The
-    // full name stays reachable on hover (GraphCanvas tooltip uses node.label,
-    // which is left untouched on the payload node) and in the recon rail/detail.
-    baseStyle.nodeLabels[index] = truncateLabel(node.label || String(node.id), labelMaxChars);
+  // BUG-1 (regression fix): the renderer sizes a box glyph to its DRAWN label
+  // width, so a long entity / chapter name (e.g. "Part I, Chapter I: Being a
+  // Reprint of the Reminiscences of John H. Watson, M.D., …") overflows far past
+  // the box — on the MAIN graph, not just the recon focal slot. Truncation must
+  // cover EVERY box node, not only the `forceBoxLabel` recon pair. We truncate
+  // the SOURCE label (never an already-clipped string, so no double ellipsis);
+  // the full name stays on node.label for the hover tooltip + recon rail/detail.
+  if (baseStyle.nodeLabels) {
+    for (const node of nodes) {
+      if (!isBoxShape(node.shape)) continue;
+      const index = nodeIndexById.get(node.id);
+      if (!Number.isInteger(index)) continue;
+      const forced = node.forceBoxLabel === true;
+      const existing = baseStyle.nodeLabels[index];
+      const hasExisting = typeof existing === "string" && existing.length > 0;
+      // forceBoxLabel nodes always get a label; main-graph box nodes only carry
+      // one when buildStyleBuffers' label gate already set it. Skip the rest.
+      if (!forced && !hasExisting) continue;
+      const source = forced ? (node.label || String(node.id)) : existing;
+      baseStyle.nodeLabels[index] = truncateLabel(source, labelMaxChars);
+    }
   }
   const renderedEdges = Array.from(renderGraph.edgeInputIndices ?? [], (inputIndex) => edges[inputIndex]);
 
