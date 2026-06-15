@@ -743,22 +743,44 @@ export function citationsByFile(node) {
  * and every edge whose endpoints are both in the kept set. Returns a graph
  * shaped like the full one ({ nodes, links }) so buildScene can consume it.
  */
-export function candidateSubgraph(graph, idA, idB, hops = 1) {
+// #4.1: default neighbourhood depth for the recon focal pair. The two entities
+// under comparison are expanded to DEPTH-3 so the operator can judge the match
+// from the surrounding context (shared neighbours, shared communities), not just
+// the bare twins. `maxNodes` CAPS the fan-out: a depth-3 ball around a
+// high-degree hub can pull in hundreds of nodes (an unreadable hairball that
+// also stalls the force layout), so once the kept set reaches the cap we stop
+// growing the frontier and return the partial ball. The two seed twins are
+// always kept (added before any cap check), so the pair can never be dropped.
+export const RECON_SUBGRAPH_DEPTH = 3;
+export const RECON_SUBGRAPH_MAX_NODES = 160;
+
+export function candidateSubgraph(
+  graph,
+  idA,
+  idB,
+  hops = 1,
+  { maxNodes = RECON_SUBGRAPH_MAX_NODES } = {},
+) {
   const idx = indexNodes(graph);
   const edges = graphEdges(graph);
   const keep = new Set();
   for (const a of [idA, idB]) {
     if (a != null && idx.has(a)) keep.add(a);
   }
+  const cap = Number.isFinite(maxNodes) ? Math.max(keep.size, maxNodes) : Infinity;
   let frontier = new Set(keep);
   for (let h = 0; h < Math.max(0, hops); h++) {
+    if (keep.size >= cap) break; // fan-out cap reached — stop expanding.
     const next = new Set();
     for (const e of edges) {
       const s = e?.source, t = e?.target;
       if (frontier.has(s) && t != null && idx.has(t) && !keep.has(t)) next.add(t);
       if (frontier.has(t) && s != null && idx.has(s) && !keep.has(s)) next.add(s);
     }
-    for (const n of next) keep.add(n);
+    for (const n of next) {
+      if (keep.size >= cap) break; // never exceed the cap (twins already kept).
+      keep.add(n);
+    }
     frontier = next;
     if (next.size === 0) break;
   }

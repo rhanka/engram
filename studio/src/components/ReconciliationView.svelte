@@ -8,6 +8,7 @@
    * On a loopback --write server no token is needed (SVELTE-7 server change).
    */
   import { onMount } from "svelte";
+  import { SvelteSet } from "svelte/reactivity";
 
   import { Badge, Collapsible } from "@sentropic/design-system-svelte";
 
@@ -24,13 +25,19 @@
     indexNodes,
     nodeLabel,
     nodeType,
+    RECON_SUBGRAPH_DEPTH,
+    RECON_SUBGRAPH_MAX_NODES,
   } from "../lib/graphAdapter.js";
 
   // BUG-1: `labelMaxChars` parameterizes the DRAWN focal-box label length. The
   // two recon entities are pinned close together; a long name (e.g. "Dr. John H.
   // Watson") otherwise sizes an over-wide box that overflows the slot. The full
   // name remains on hover (GraphCanvas tooltip) and in the rail/detail `title`s.
-  let { graph, onOpenEntity, labelMaxChars = 22 } = $props();
+  // #4.1: `reconDepth` controls how far the focal pair's neighbourhood is
+  // expanded (default 3 — see RECON_SUBGRAPH_DEPTH). Fan-out is capped at
+  // RECON_SUBGRAPH_MAX_NODES inside candidateSubgraph so a deep ball around a
+  // high-degree hub can't explode into an unreadable hairball.
+  let { graph, onOpenEntity, labelMaxChars = 22, reconDepth = RECON_SUBGRAPH_DEPTH } = $props();
 
   let candidates = $state([]);
   let total = $state(0);
@@ -61,6 +68,48 @@
     );
   });
 
+  // #4 (a): GROUP the candidate list by entity TYPE (Character, Location, Work…)
+  // so the rail reads as typed sections with headers. The type is the candidate
+  // node's type from the graph (typeOf); we fall back to the canonical side, then
+  // to "Other" when neither node is in the loaded graph (stale ids). Within a
+  // group, candidates stay in their incoming (score-desc) order.
+  const grouped = $derived.by(() => {
+    const buckets = new Map();
+    for (const c of filtered) {
+      const t = typeOf(c.candidate_id) ?? typeOf(c.canonical_id) ?? "Other";
+      if (!buckets.has(t)) buckets.set(t, []);
+      buckets.get(t).push(c);
+    }
+    // Largest groups first; ties alphabetical so order is stable and meaningful.
+    return [...buckets.entries()]
+      .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
+      .map(([type, items]) => ({ type, items }));
+  });
+
+  // #4 (d): batch-selection state. A Set of candidate ids ticked for bulk action.
+  let selected = $state(new SvelteSet());
+  // Only ids still present in the (filtered) queue count toward bulk actions.
+  const selectedCount = $derived(
+    filtered.reduce((n, c) => (selected.has(c.id) ? n + 1 : n), 0),
+  );
+  const allFilteredSelected = $derived(
+    filtered.length > 0 && filtered.every((c) => selected.has(c.id)),
+  );
+  // Bulk progress feedback (e.g. "Validated 4 of 6 — 2 failed").
+  let bulkResult = $state(null);
+
+  function toggleSelected(id) {
+    if (selected.has(id)) selected.delete(id);
+    else selected.add(id);
+  }
+  function toggleSelectAll() {
+    if (allFilteredSelected) {
+      for (const c of filtered) selected.delete(c.id);
+    } else {
+      for (const c of filtered) selected.add(c.id);
+    }
+  }
+
   // Center graph: subgraph around the two candidate entities (focused context).
   // The twins usually have no direct edge, so we (a) pin them side by side and
   // (b) add a bold synthetic "reconcile" edge so they read as a pair.
@@ -72,7 +121,11 @@
   // AROUND the centred, side-by-side pair (a compact, centred, twinned cluster).
   const scene = $derived.by(() => {
     if (!active) return buildScene({ nodes: [], links: [] });
-    const sub = candidateSubgraph(graph, active.candidate_id, active.canonical_id, 1);
+    // #4.1: expand each entity's neighbourhood to DEPTH reconDepth (default 3),
+    // capped at RECON_SUBGRAPH_MAX_NODES nodes (fan-out cap, see candidateSubgraph).
+    const sub = candidateSubgraph(graph, active.candidate_id, active.canonical_id, reconDepth, {
+      maxNodes: RECON_SUBGRAPH_MAX_NODES,
+    });
     const base = buildScene(sub, { showWeakLinks: true });
     const linked = withReconcileEdge(base, active.candidate_id, active.canonical_id);
     // Pin the two twins symmetrically near the centre so both stay in view. We
@@ -192,6 +245,56 @@
       busy = false;
     }
   }
+
+  // #4 (d): BATCH validation. Apply the same decision (accept | reject) to every
+  // ticked candidate. We snapshot the targets up front (the queue mutates as we
+  // remove decided rows), apply patches sequentially so the write server isn't
+  // hammered, count outcomes, then drop the succeeded ones and report a summary.
+  // No merge animation here — that single-pair flourish would serialise oddly
+  // across a bulk run; bulk is a queue-clearing action, not a focused merge.
+  async function decideBulk(decision) {
+    if (busy) return;
+    const targets = filtered.filter((c) => selected.has(c.id));
+    if (targets.length === 0) return;
+    busy = true;
+    bulkResult = null;
+    actionResult = null;
+    let ok = 0;
+    const failures = [];
+    try {
+      for (const cand of targets) {
+        try {
+          const patch = buildPatchFromCandidate(cand, decision, { graphHash, profileHash });
+          const res = await postPatchApply(patch);
+          if (res.ok && res.valid !== false) {
+            ok += 1;
+            selected.delete(cand.id);
+            candidates = candidates.filter((c) => c.id !== cand.id);
+            total = Math.max(0, total - 1);
+          } else {
+            const issues = (res.issues ?? []).map((i) => i.message).join("; ");
+            failures.push(`${cand.id}: ${issues || res.error || res.status}`);
+          }
+        } catch (err) {
+          failures.push(`${cand.id}: ${String(err)}`);
+        }
+      }
+    } finally {
+      busy = false;
+    }
+    // Keep the active selection valid after the queue shrank.
+    if (activeId && !candidates.some((c) => c.id === activeId)) {
+      activeId = candidates[0]?.id ?? null;
+    }
+    const verb = decision === "accept" ? "Validated" : "Rejected";
+    bulkResult = {
+      ok: failures.length === 0,
+      msg:
+        failures.length === 0
+          ? `${verb} ${ok} candidate(s).`
+          : `${verb} ${ok} of ${targets.length} — ${failures.length} failed: ${failures.join(" · ")}`,
+    };
+  }
 </script>
 
 <WorkspaceShell>
@@ -216,23 +319,79 @@
       {:else if filtered.length === 0}
         <p class="recon-empty">Reconciliation queue is empty.</p>
       {:else}
-        <ul class="recon-rail-list">
-          {#each filtered as c (c.id)}
-            <li>
-              <button
-                class="recon-rail-row"
-                class:active={activeId === c.id}
-                onclick={() => { activeId = c.id; actionResult = null; }}
-              >
-                <span
-                  class="recon-rail-label"
-                  title={`${label(c.candidate_id)} ↔ ${label(c.canonical_id)}`}
-                >{label(c.candidate_id)} ↔ {label(c.canonical_id)}</span>
-                <span class="recon-rail-score">{Math.round((c.score ?? 0) * 100)}%</span>
-              </button>
-            </li>
+        <!-- #4 (d): batch validation bar — select all + bulk validate/reject. -->
+        <div class="recon-bulk-bar">
+          <label class="recon-bulk-all">
+            <input
+              type="checkbox"
+              checked={allFilteredSelected}
+              onchange={toggleSelectAll}
+              aria-label="Select all candidates"
+            />
+            <span>{selectedCount} selected</span>
+          </label>
+          <div class="recon-bulk-actions">
+            <button
+              class="recon-bulk-accept"
+              disabled={busy || selectedCount === 0}
+              onclick={() => decideBulk("accept")}
+            >Validate</button>
+            <button
+              class="recon-bulk-reject"
+              disabled={busy || selectedCount === 0}
+              onclick={() => decideBulk("reject")}
+            >Reject</button>
+          </div>
+        </div>
+        {#if bulkResult}
+          <p class="recon-bulk-result" class:ok={bulkResult.ok} class:err={!bulkResult.ok}>
+            {bulkResult.msg}
+          </p>
+        {/if}
+
+        <!-- #4 (a): candidates GROUPED by entity type, with type headers. -->
+        <div class="recon-rail-groups">
+          {#each grouped as group (group.type)}
+            <section class="recon-group">
+              <h3 class="recon-group-head">
+                <span class="recon-group-type">{group.type}</span>
+                <span class="recon-group-count">{group.items.length}</span>
+              </h3>
+              <ul class="recon-rail-list">
+                {#each group.items as c (c.id)}
+                  <li
+                    class="recon-rail-item"
+                    class:active={activeId === c.id}
+                    class:checked={selected.has(c.id)}
+                  >
+                    <!-- #4 (d): per-candidate checkbox for batch selection. -->
+                    <input
+                      class="recon-rail-check"
+                      type="checkbox"
+                      checked={selected.has(c.id)}
+                      onchange={() => toggleSelected(c.id)}
+                      aria-label={`Select ${label(c.candidate_id)} ↔ ${label(c.canonical_id)}`}
+                    />
+                    <button
+                      class="recon-rail-row"
+                      onclick={() => { activeId = c.id; actionResult = null; }}
+                    >
+                      <!-- #4 (c): the two entities on TWO separate lines. -->
+                      <span class="recon-rail-pair">
+                        <span class="recon-rail-line" title={label(c.candidate_id)}>{label(c.candidate_id)}</span>
+                        <span class="recon-rail-line recon-rail-canon" title={label(c.canonical_id)}>{label(c.canonical_id)}</span>
+                      </span>
+                      <!-- #4 (b): match score as a % bubble on the RIGHT. -->
+                      <span class="recon-score-bubble" title={`Match score ${Math.round((c.score ?? 0) * 100)}%`}>
+                        {Math.round((c.score ?? 0) * 100)}%
+                      </span>
+                    </button>
+                  </li>
+                {/each}
+              </ul>
+            </section>
           {/each}
-        </ul>
+        </div>
       {/if}
     </aside>
   </div>
@@ -365,29 +524,109 @@
     color: var(--st-semantic-text-secondary, #475569);
     background: var(--st-semantic-surface-subtle, #f8fafc);
   }
-  .recon-rail-list { list-style: none; margin: 0; padding: 0 0.5rem; display: grid; gap: 2px; }
+  /* #4 (d): batch-validation bar. */
+  .recon-bulk-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.4rem 0.85rem 0.5rem;
+    border-bottom: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
+  }
+  .recon-bulk-all {
+    display: flex; align-items: center; gap: 0.4rem;
+    font-size: 0.76rem; color: var(--st-semantic-text-secondary, #475569);
+    cursor: pointer;
+  }
+  .recon-bulk-actions { display: flex; gap: 0.35rem; }
+  .recon-bulk-accept, .recon-bulk-reject {
+    border-radius: var(--st-radius-sm, 4px);
+    padding: 0.28rem 0.6rem;
+    font-size: 0.76rem; font-weight: 600; cursor: pointer;
+  }
+  .recon-bulk-accept {
+    border: 1px solid var(--st-semantic-action-primary, #2563eb);
+    background: var(--st-semantic-action-primary, #2563eb);
+    color: var(--st-semantic-action-primaryText, #fff);
+  }
+  .recon-bulk-reject {
+    border: 1px solid var(--st-semantic-border-strong, #94a3b8);
+    background: var(--st-semantic-surface-subtle, #f8fafc);
+    color: var(--st-semantic-text-primary, #0f172a);
+  }
+  .recon-bulk-accept:disabled, .recon-bulk-reject:disabled { opacity: 0.5; cursor: not-allowed; }
+  .recon-bulk-result { margin: 0.4rem 0.85rem 0; font-size: 0.76rem; line-height: 1.35; }
+  .recon-bulk-result.ok { color: var(--st-semantic-feedback-success, #16a34a); }
+  .recon-bulk-result.err { color: var(--st-semantic-feedback-error, #dc2626); }
+
+  /* #4 (a): type-grouped sections. */
+  .recon-rail-groups { padding: 0.35rem 0; }
+  .recon-group { margin: 0 0 0.4rem; }
+  .recon-group-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 0.5rem; margin: 0; padding: 0.3rem 0.85rem 0.25rem;
+    position: sticky; top: 0; z-index: 1;
+    background: var(--st-semantic-surface-default, #fff);
+    text-transform: uppercase; letter-spacing: 0.05em;
+    font-size: 0.68rem; font-weight: 700;
+    color: var(--st-semantic-text-muted, #64748b);
+    border-bottom: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
+  }
+  .recon-group-count {
+    font-variant-numeric: tabular-nums;
+    background: var(--st-semantic-surface-subtle, #f8fafc);
+    border: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
+    border-radius: var(--st-radius-pill, 999px);
+    padding: 0 0.4rem; min-width: 1.4rem; text-align: center;
+  }
+
+  .recon-rail-list { list-style: none; margin: 0; padding: 0.15rem 0.5rem; display: grid; gap: 2px; }
+  /* #4 (d): row = checkbox + clickable body. */
+  .recon-rail-item {
+    display: flex; align-items: stretch; gap: 0.35rem;
+    border: 1px solid transparent;
+    border-radius: var(--st-radius-sm, 4px);
+  }
+  .recon-rail-item.active {
+    border-color: var(--st-semantic-action-primary, #2563eb);
+    box-shadow: inset 3px 0 0 var(--st-semantic-action-primary, #2563eb);
+  }
+  .recon-rail-item.checked { background: var(--st-semantic-surface-subtle, #f1f5f9); }
+  .recon-rail-check { margin: 0 0 0 0.35rem; align-self: center; cursor: pointer; }
   .recon-rail-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
-    width: 100%;
+    flex: 1; min-width: 0;
     text-align: left;
-    border: 1px solid transparent;
+    border: none;
     background: transparent;
     border-radius: var(--st-radius-sm, 4px);
     padding: 0.4rem 0.5rem;
     cursor: pointer;
-    font-size: 0.82rem;
     color: var(--st-semantic-text-primary, #0f172a);
   }
   .recon-rail-row:hover { background: var(--st-semantic-surface-subtle, #f8fafc); }
-  .recon-rail-row.active {
-    border-color: var(--st-semantic-action-primary, #2563eb);
-    box-shadow: inset 3px 0 0 var(--st-semantic-action-primary, #2563eb);
+  /* #4 (c): two entities, two lines. */
+  .recon-rail-pair { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+  .recon-rail-line {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 0.82rem; line-height: 1.25;
   }
-  .recon-rail-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .recon-rail-score { font-variant-numeric: tabular-nums; color: var(--st-semantic-text-muted, #64748b); font-size: 0.74rem; }
+  .recon-rail-canon { color: var(--st-semantic-text-secondary, #475569); font-size: 0.78rem; }
+  /* #4 (b): score bubble, pinned right. */
+  .recon-score-bubble {
+    flex: none;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.72rem; font-weight: 700;
+    color: var(--st-semantic-action-primaryText, #fff);
+    background: var(--st-semantic-action-primary, #2563eb);
+    border-radius: var(--st-radius-pill, 999px);
+    padding: 0.1rem 0.45rem;
+    min-width: 2.4rem; text-align: center;
+    align-self: center;
+  }
   .recon-detail { padding: 1rem 1.1rem 2rem; }
   .recon-kicker {
     margin: 0; text-transform: uppercase; letter-spacing: 0.06em;
