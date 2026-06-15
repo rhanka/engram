@@ -10,14 +10,22 @@
    * architecture.
    */
   import { onMount } from "svelte";
-  import { AppChrome, Button, Badge, ButtonGroup } from "@sentropic/design-system-svelte";
+  import { AppChrome, Button, Badge, ButtonGroup, Select } from "@sentropic/design-system-svelte";
 
   import GraphCanvas from "./components/GraphCanvas.svelte";
   import LeftRail from "./components/LeftRail.svelte";
   import ReconciliationView from "./components/ReconciliationView.svelte";
   import SelectionPanel from "./components/SelectionPanel.svelte";
   import WorkspaceShell from "./components/WorkspaceShell.svelte";
-  import { fetchEntity, fetchGraph, fetchScene } from "./lib/api.js";
+  import {
+    fetchEntity,
+    fetchGraph,
+    fetchModelsManifest,
+    fetchScene,
+    setStaticBaseProvider,
+    __resetEntitiesIndexCache,
+  } from "./lib/api.js";
+  import { createModelStore } from "./lib/modelStore.svelte.js";
   import {
     buildScene,
     applyWeakFilter,
@@ -50,6 +58,15 @@
   let loadError = $state(null);
   let viewerState = $state(createDefaultViewerState());
   let entityCache = $state({});
+
+  // ----- in-UI model switcher ----------------------------------------------
+  // The store holds the manifest + active model; api.js resolves static fetches
+  // under `models/<id>/` via the base provider registered below. Empty manifest
+  // (no models.json) = single-model mode and the switcher is hidden.
+  const modelStore = createModelStore();
+  setStaticBaseProvider(() => modelStore.base);
+  let modelId = $state(null);
+  let switching = $state(false);
 
   // ----- derived ------------------------------------------------------------
   // The scene drives the central graph; selection flows separately through
@@ -102,10 +119,13 @@
     if (data) entityCache = { ...entityCache, [id]: data };
   }
 
-  onMount(async () => {
-    // ÉTAPE 1b: mount from the light scene.json; the raw graph hydrates lazily
-    // for the side panels. Falls back to fetchGraph()+buildScene() if there is
-    // no scene.json (older server / static export).
+  /**
+   * Load the ACTIVE model's workspace (scene + lazy graph) and swap it into the
+   * reactive state IN PLACE — no page reload, no new tab. Used both at mount and
+   * on every model switch. Resets the entities cache so the new model's sidecars
+   * are fetched fresh, and clears selection (ids don't carry across models).
+   */
+  async function loadActiveModel() {
     const result = await loadWorkspace({
       fetchScene,
       fetchGraph,
@@ -118,13 +138,54 @@
     } else if (result.mode === "scene") {
       // Render straight from the light scene; graph may still be null if its
       // lazy load failed (panels degrade, the graph view stays up).
+      loadError = null;
       sceneData = result.scene;
       graph = result.graph ?? EMPTY_GRAPH;
     } else {
       // Legacy fallback: scene rebuilt from the raw graph each toggle.
+      loadError = null;
       sceneData = null;
       graph = result.graph ?? EMPTY_GRAPH;
     }
+  }
+
+  /** Flip the active model and re-render the SAME studio in place. */
+  async function handleSelectModel(id) {
+    if (switching || !modelStore.select(id)) return;
+    modelId = modelStore.activeId;
+    switching = true;
+    // The fetch base now points at the new model's dir; clear stale per-model
+    // client state before re-loading.
+    __resetEntitiesIndexCache();
+    entityCache = {};
+    viewerState = clearSelection(viewerState);
+    try {
+      await loadActiveModel();
+    } finally {
+      switching = false;
+    }
+  }
+
+  onMount(async () => {
+    // Multi-model bundle: discover available re-indexations first. With a
+    // manifest, the active model's data lives under `models/<id>/`; without one
+    // the studio runs single-model (server route / flat ./scene.json) unchanged.
+    const manifest = await fetchModelsManifest();
+    if (manifest) {
+      modelStore.setManifest(manifest);
+      // Optional deep-link: `?model=<id>` picks the initial model (the dropdown
+      // still does the in-place switch afterwards). Unknown ids are ignored.
+      const wanted =
+        typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search).get("model")
+          : null;
+      if (wanted) modelStore.select(wanted);
+      modelId = modelStore.activeId;
+    }
+    // ÉTAPE 1b: mount from the light scene.json; the raw graph hydrates lazily
+    // for the side panels. Falls back to fetchGraph()+buildScene() if there is
+    // no scene.json (older server / static export).
+    await loadActiveModel();
     loaded = true;
   });
 </script>
@@ -160,6 +221,25 @@
       </ButtonGroup>
     {/snippet}
     {#snippet extraSelectors()}
+      {#if modelStore.models.length > 1}
+        <span class="app-model-switch">
+          <Select
+            size="sm"
+            label="Model"
+            class="app-model-select"
+            aria-label="Re-indexation model"
+            value={modelId}
+            disabled={switching}
+            onchange={(event) => handleSelectModel(event.currentTarget.value)}
+          >
+            {#each modelStore.models as model (model.id)}
+              <option value={model.id}>
+                {model.label}{model.nodeCount != null ? ` — ${model.nodeCount} nodes` : ""}
+              </option>
+            {/each}
+          </Select>
+        </span>
+      {/if}
       {#if loaded && !loadError}
         <span class="app-stats" aria-label="Graph summary">
           <Badge tone="neutral">{scene.stats.nodeCount} nodes</Badge>
@@ -238,6 +318,24 @@
   /* DS AppChrome owns surface/layout/sticky; local CSS only sizes slot content. */
   :global(.app-view-switcher) {
     white-space: nowrap;
+  }
+  /* Model switcher: keep the DS Select unobtrusive in the chrome — inline label,
+     compact width — without reaching into DS internals beyond layout. */
+  .app-model-switch {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+  }
+  :global(.app-model-select) {
+    max-width: none;
+  }
+  :global(.app-model-select .st-field__control) {
+    grid-auto-flow: column;
+    align-items: center;
+    gap: var(--st-spacing-2, 0.5rem);
+  }
+  :global(.app-model-select .st-select) {
+    min-width: 11rem;
   }
   .view-label--compact {
     display: none;
