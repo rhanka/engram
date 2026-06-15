@@ -288,6 +288,20 @@ export type {
   FuzzyMatchResult,
   OntologyReconciliationCandidateTier,
 } from "./ontology-reconciliation.js";
+export {
+  AGENT_STATS_CORE_VERSION,
+  CONVERSATIONS_ADAPTER_VERSION,
+  CONVERSATIONS_ONTOLOGY_PROFILE,
+  buildConversationsExtraction,
+  resolveClaudeCommit,
+} from "./conversations.js";
+export type {
+  BuildConversationsExtractionOptions,
+  ClaudeCommitResolveOptions,
+  ConversationSessionAggregate,
+  ConversationsCore,
+  ConversationsSessionEvent,
+} from "./conversations.js";
 export { cleanupStaleNodes } from "./semantic-cleanup.js";
 export type { CleanupStaleNodesOptions, CleanupStaleNodesResult } from "./semantic-cleanup.js";
 export { cloneRepo, defaultCloneDestination } from "./repo-clone.js";
