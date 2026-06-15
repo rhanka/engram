@@ -173,6 +173,13 @@
     const manifest = await fetchModelsManifest();
     if (manifest) {
       modelStore.setManifest(manifest);
+      // Optional deep-link: `?model=<id>` picks the initial model (the dropdown
+      // still does the in-place switch afterwards). Unknown ids are ignored.
+      const wanted =
+        typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search).get("model")
+          : null;
+      if (wanted) modelStore.select(wanted);
       modelId = modelStore.activeId;
     }
     // ÉTAPE 1b: mount from the light scene.json; the raw graph hydrates lazily
