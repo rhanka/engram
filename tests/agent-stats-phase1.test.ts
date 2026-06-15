@@ -206,7 +206,10 @@ describe("pr.getPullRequestMerge (gh runner mock)", () => {
     expect(info.number).toBe(130);
     expect(info.headRefName).toBe("feat/agent-stats-mvp");
     expect(info.mergeCommit).toBe("613bf6100000000000000000000000000000abcd");
-    expect(info.commits).toEqual(["8f2fbf400000", "aaaaaaa00000"]);
+    expect(info.commits).toEqual([
+      "8f2fbf400000000000000000000000000000abcd",
+      "aaaaaaa00000000000000000000000000000abcd",
+    ]);
   });
 
   it("returns undefined mergeCommit for an unmerged PR", () => {

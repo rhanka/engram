@@ -2599,7 +2599,8 @@ export async function main(): Promise<void> {
     program.command(`${name} [selector]`)
       .description("Inspect local GitHub pull requests through gh and git worktree data")
       .option("--limit <n>", "Maximum PRs to list", String(30))
-      .option("--state <state>", "PR state for list/conflicts/worktrees", "open")
+      .option("--state <state>", "PR state for list/conflicts/worktrees/extract")
+      .option("--extract-gh", "Explicitly opt in to networked gh PR extraction")
       .action(async (selector: string | undefined, opts) => {
         const {
           formatPrWorktrees,
@@ -2612,8 +2613,17 @@ export async function main(): Promise<void> {
           listPullRequests,
         } = await import("./pr.js");
         const limit = parsePositiveIntegerOption(opts.limit, "--limit") ?? 30;
-        const state = opts.state;
         const command = selector ?? "list";
+        const state = opts.state ?? (command === "extract" ? "all" : "open");
+        if (command === "extract") {
+          if (opts.extractGh !== true) {
+            console.error("error: PR extraction requires the explicit --extract-gh opt-in flag");
+            process.exit(1);
+          }
+          const { extractPullRequests } = await import("./extract-gh.js");
+          console.log(JSON.stringify(extractPullRequests(".", { enabled: true, limit, state }), null, 2));
+          return;
+        }
         if (command === "list") {
           console.log(formatPullRequestList(listPullRequests({ limit, state })));
           return;
@@ -2628,7 +2638,7 @@ export async function main(): Promise<void> {
         }
         const parsedNumber = Number.parseInt(command, 10);
         if (!Number.isFinite(parsedNumber) || String(parsedNumber) !== command || parsedNumber <= 0) {
-          console.error("error: PR selector must be one of list, conflicts, worktrees, or a positive PR number");
+          console.error("error: PR selector must be one of list, conflicts, worktrees, extract, or a positive PR number");
           process.exit(1);
         }
         console.log(formatPullRequestDetails(getPullRequest(parsedNumber)));
