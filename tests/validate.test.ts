@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateExtraction, assertValid } from "../src/validate.js";
+import { validateExtraction, assertValid, isExternalReferenceId } from "../src/validate.js";
 
 describe("validateExtraction", () => {
   it("rejects non-object input", () => {
@@ -54,6 +54,33 @@ describe("validateExtraction", () => {
       edges: [{ source: "a", target: "missing", relation: "calls", confidence: "EXTRACTED", source_file: "f.py" }],
     });
     expect(errors.some((e) => e.includes("does not match any node id"))).toBe(true);
+  });
+
+  it("accepts whitelisted cross-profile commit and branch references", () => {
+    expect(isExternalReferenceId("commit:repo:github.com/rhanka/graphify@abc123456789")).toBe(true);
+    expect(isExternalReferenceId("branch:repo:github.com/rhanka/graphify#feature/wp9")).toBe(true);
+    expect(isExternalReferenceId("missing")).toBe(false);
+
+    const errors = validateExtraction({
+      nodes: [{ id: "pr:repo:github.com/rhanka/graphify#42", label: "#42", file_type: "concept", source_file: "gh" }],
+      edges: [
+        {
+          source: "pr:repo:github.com/rhanka/graphify#42",
+          target: "commit:repo:github.com/rhanka/graphify@abc123456789",
+          relation: "CONTAINS_COMMIT",
+          confidence: "EXTRACTED",
+          source_file: "gh",
+        },
+        {
+          source: "pr:repo:github.com/rhanka/graphify#42",
+          target: "branch:repo:github.com/rhanka/graphify#feature/wp9",
+          relation: "FROM_BRANCH",
+          confidence: "EXTRACTED",
+          source_file: "gh",
+        },
+      ],
+    });
+    expect(errors).toEqual([]);
   });
 
   it("accepts valid extraction", () => {

@@ -330,6 +330,13 @@ export {
   extractGit,
   mergeExtractions,
 } from "./extract-git.js";
+export {
+  GH_EXTRACT_ADAPTER_VERSION,
+  GH_EXTRACTION_TTL,
+  GH_ONTOLOGY_PROFILE,
+  extractPullRequests,
+} from "./extract-gh.js";
+export type { ExtractPullRequestsOptions } from "./extract-gh.js";
 export { fileHash, loadCached, saveCached, checkSemanticCache, saveSemanticCache } from "./cache.js";
 export {
   MAX_SEMANTIC_FRAGMENT_BYTES,
