@@ -32,3 +32,9 @@ declare module "@sentropic/design-system/tokens" {
   const defaultTokens: WorkspaceThemedTokens;
   export default defaultTokens;
 }
+
+declare module "@sentropic/agent-stats-core" {
+  export const VERSION: string;
+  export function collect(opts?: unknown): AsyncGenerator<unknown, void, unknown>;
+  export function aggregateSessions(events: AsyncIterable<unknown> | Iterable<unknown>): Promise<unknown[]>;
+}

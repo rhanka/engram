@@ -123,6 +123,7 @@
     "unpdf": "^1.6.2"
   },
   "peerDependencies": {
+    "@sentropic/agent-stats-core": "^0.3.0",
     "faster-whisper-ts": "^1.2.1",
     "tree-sitter-c-sharp": "^0.23.1",
     "tree-sitter-elixir": "^0.3.5",
@@ -135,6 +136,9 @@
     "tree-sitter-zig": "^0.2.0"
   },
   "peerDependenciesMeta": {
+    "@sentropic/agent-stats-core": {
+      "optional": true
+    },
     "faster-whisper-ts": {
       "optional": true
     },

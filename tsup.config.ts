@@ -2,6 +2,8 @@ import { defineConfig } from "tsup";
 
 const optionalRuntimeDeps = [
   "@mixmark-io/domino",
+  "@sentropic/agent-stats-core",
+  "@sentropic/agent-stats-core/*",
   "@modelcontextprotocol/sdk",
   "@modelcontextprotocol/sdk/*",
   "chokidar",

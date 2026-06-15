@@ -18,6 +18,10 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+function isExternalReferenceId(value: unknown): boolean {
+  return typeof value === "string" && value.startsWith("commit:");
+}
+
 /**
  * Validate an extraction JSON dict against the graphify schema.
  * Returns a list of error strings - empty list means valid.
@@ -115,10 +119,10 @@ export function validateExtraction(data: unknown): string[] {
       if ("target" in edge && !isNonEmptyString(edge.target)) {
         errors.push(`Edge ${i} target must be a non-empty string`);
       }
-      if ("source" in edge && nodeIds.size > 0 && !nodeIds.has(edge.source as string)) {
+      if ("source" in edge && nodeIds.size > 0 && !nodeIds.has(edge.source as string) && !isExternalReferenceId(edge.source)) {
         errors.push(`Edge ${i} source '${edge.source}' does not match any node id`);
       }
-      if ("target" in edge && nodeIds.size > 0 && !nodeIds.has(edge.target as string)) {
+      if ("target" in edge && nodeIds.size > 0 && !nodeIds.has(edge.target as string) && !isExternalReferenceId(edge.target)) {
         errors.push(`Edge ${i} target '${edge.target}' does not match any node id`);
       }
     }
