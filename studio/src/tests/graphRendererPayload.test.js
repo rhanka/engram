@@ -221,6 +221,44 @@ describe("buildGraphRendererPayload focal-box label truncation", () => {
   });
 });
 
+// --- BUG-1 REGRESSION: main-graph box labels must truncate too (not only the
+// recon focal pair — #160 fixed only forceBoxLabel; the chapter/work boxes on
+// the ordinary graph still overflowed). ---
+describe("buildGraphRendererPayload main-graph box label truncation (regression)", () => {
+  const longChapter =
+    "Part I, Chapter I: Being a Reprint of the Reminiscences of John H. Watson, M.D., Late of the Army Medical Department";
+  // A box-shaped god-node (highest degree → boxed by the label gate) WITHOUT any
+  // forceBoxLabel flag: exactly the main/workspace graph path where the bug lived.
+  const makeMainScene = () => {
+    const nodes = [
+      { id: "chap", label: longChapter, type: "ChapterOrStory", shape: "roundedbox", x: 0, y: 0, weight: 1 },
+    ];
+    const edges = [];
+    for (let i = 0; i < 12; i += 1) {
+      nodes.push({ id: `e${i}`, label: `E${i}`, type: "Character", shape: "diamond", x: i, y: 40, weight: 1 });
+      edges.push({ source: "chap", target: `e${i}` });
+    }
+    return { nodes, edges };
+  };
+
+  it("truncates a long main-graph box label (no forceBoxLabel) while keeping node.label full", () => {
+    const payload = buildGraphRendererPayload(makeMainScene(), { nodeRadius: 3 });
+    const idx = payload.nodeIndexById.get("chap");
+    const drawn = payload.baseStyle.nodeLabels[idx];
+    expect(drawn).toBeTruthy();
+    expect(drawn.endsWith("…")).toBe(true);
+    expect([...drawn].length).toBeLessThanOrEqual(DEFAULT_LABEL_MAX_CHARS + 1);
+    // full name preserved on the payload node for the hover tooltip
+    expect(payload.nodeById.get("chap").label).toBe(longChapter);
+  });
+
+  it("honours labelMaxChars on main-graph box nodes", () => {
+    const payload = buildGraphRendererPayload(makeMainScene(), { nodeRadius: 3, labelMaxChars: 8 });
+    const idx = payload.nodeIndexById.get("chap");
+    expect([...payload.baseStyle.nodeLabels[idx]].length).toBeLessThanOrEqual(9);
+  });
+});
+
 // --- legacy box parity: box nodes own their label (single text per box) ---
 describe("isBoxShape", () => {
   it("recognises the box-category scene shapes (case-insensitive)", () => {
