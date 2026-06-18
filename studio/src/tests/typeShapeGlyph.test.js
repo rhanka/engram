@@ -41,7 +41,7 @@ describe("TypeShapeGlyph (left-rail type swatches)", () => {
     expect(variantForType({ type: "Character" })).toEqual({});
     expect(variantForType({ type: "Alias" })).toEqual({ fill: "hollow" });
     expect(variantForType({ type: "Author" })).toEqual({ border: "bold" });
-    expect(variantForType({ type: "Work" })).toEqual({ border: "bold" });
+    expect(variantForType({ type: "Work" })).toEqual({ fill: "hollow", border: "bold" });
     expect(variantForType({ type: "Object" })).toEqual({ fill: "hollow" });
   });
 

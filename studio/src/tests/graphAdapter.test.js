@@ -317,7 +317,8 @@ describe("shapeForType (SVELTE-4)", () => {
     expect(shapeForType({ type: "Character" })).toBe("diamond");
     expect(shapeForType({ node_type: "Location" })).toBe("triangle");
     expect(shapeForType({ type: "Evidence" })).toBe("square");
-    expect(shapeForType({ type: "Work" })).toBe("roundedbox");
+    expect(shapeForType({ type: "Work" })).toBe("hexagon");
+    expect(shapeForType({ type: "ChapterOrStory" })).toBe("dot");
     expect(shapeForType({ type: "Unknownish" })).toBe("dot");
     expect(shapeForType({})).toBe("dot");
   });
@@ -334,7 +335,8 @@ describe("shapeForType (SVELTE-4)", () => {
         { id: "char", type: "Character" }, // diamond, defaults
         { id: "alias", type: "Alias" }, // diamond, hollow
         { id: "author", type: "Author" }, // star, bold border
-        { id: "work", type: "Work" }, // roundedbox, bold border
+        { id: "work", type: "Work" }, // hexagon, bold border
+        { id: "story", type: "ChapterOrStory" }, // dot, bold border
       ],
       links: [],
     });
@@ -344,13 +346,32 @@ describe("shapeForType (SVELTE-4)", () => {
     expect(byId.get("alias").fill).toBe("hollow");
     expect(byId.get("alias").border).toBeUndefined();
     expect(byId.get("author").border).toBe("bold");
+    expect(byId.get("work").fill).toBe("hollow");
     expect(byId.get("work").border).toBe("bold");
+    expect(byId.get("story").border).toBe("bold");
+  });
+  it("keeps shared hexagon types visually distinct by fill/border variant", async () => {
+    const { buildScene } = await import("../lib/graphAdapter.js");
+    const s = buildScene({
+      nodes: ["Organization", "ForensicMethod", "Saga", "Work"].map((type, i) => ({ id: `n${i}`, type })),
+      links: [],
+    });
+    const signatures = s.nodes.map((node) =>
+      [node.type, node.shape, node.fill ?? "solid", node.border ?? "normal"].join(":"),
+    );
+    expect(signatures).toEqual([
+      "Organization:hexagon:solid:normal",
+      "ForensicMethod:hexagon:hollow:normal",
+      "Saga:hexagon:solid:bold",
+      "Work:hexagon:hollow:bold",
+    ]);
   });
 });
 
-describe("computeGodClass — data-driven box-label class", () => {
-  // sherlock (Character) is the global hub (degree 3); works are box-typed but
-  // less connected. The god-class must resolve to Character WITHOUT hardcoding.
+describe("computeGodClass — Character-gated box-label class", () => {
+  // sherlock (Character) is the global hub (degree 3); works are non-box
+  // structural nodes. The god-class must resolve to Character WITHOUT
+  // hardcoding individual ids.
   const GRAPH = {
     nodes: [
       { id: "sherlock", label: "Sherlock Holmes", type: "Character" },
@@ -373,12 +394,12 @@ describe("computeGodClass — data-driven box-label class", () => {
     // Both Characters pass the gate (deg >= 0.15 * 3) -> labelled boxes.
     expect(byId.get("sherlock").shape).toBe("roundedbox");
     expect(byId.get("watson").shape).toBe("roundedbox");
-    // Work keeps its box SHAPE (type default) but is not the god-class.
-    expect(byId.get("memoirs").shape).toBe("roundedbox");
+    // Work keeps its non-box type default; only Character hubs become boxes.
+    expect(byId.get("memoirs").shape).toBe("hexagon");
     expect(byId.get("baker").shape).toBe("triangle");
   });
 
-  it("resolves the most-connected class for any corpus (not hardcoded Character)", async () => {
+  it("does not box-label non-Character hubs even when they dominate the graph", async () => {
     const { buildScene, computeGodClass, computeDegrees } = await import("../lib/graphAdapter.js");
     const flipped = {
       nodes: [
@@ -392,10 +413,10 @@ describe("computeGodClass — data-driven box-label class", () => {
       ],
     };
     const degree = computeDegrees(flipped.nodes, flipped.links);
-    expect(computeGodClass(flipped.nodes, degree, 2)).toBe("Lab");
+    expect(computeGodClass(flipped.nodes, degree, 2)).toBe(null);
     const s = buildScene(flipped);
     const byId = new Map(s.nodes.map((n) => [n.id, n]));
-    expect(byId.get("lab").shape).toBe("roundedbox"); // hub class -> box
+    expect(byId.get("lab").shape).toBe("dot"); // non-Character hub keeps base shape
     expect(byId.get("p1").shape).toBe("dot"); // unmapped type default
   });
 

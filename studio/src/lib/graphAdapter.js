@@ -137,14 +137,12 @@ const TYPE_SHAPE = {
   Evidence: "square",
   Object: "square",
   ForensicMethod: "hexagon",
-  // Legacy vis-network parity: Work + ChapterOrStory keep the box SHAPE, but
-  // the in-box LABEL is reserved to the data-driven god-class hubs (see
-  // computeGodClass) — non-god-class boxes render as small empty rounded
-  // rects. Saga / Author / Translator carry their own ontological shapes,
-  // matching public-pack ontology-profile.yaml. Kept in lockstep with
-  // src/studio-scene.ts TYPE_SHAPE (parity test enforces this).
-  Work: "roundedbox",
-  ChapterOrStory: "roundedbox",
+  // Labelled boxes are reserved for data-driven Character hubs (see
+  // computeGodClass). Document/work/story types stay non-box by default so
+  // corpus structure cannot look like a labelled person hub. Kept in lockstep
+  // with src/studio-scene.ts TYPE_SHAPE (parity test enforces this).
+  Work: "hexagon",
+  ChapterOrStory: "dot",
   Saga: "hexagon",
   Author: "star",
   Translator: "triangle",
@@ -211,7 +209,8 @@ const TYPE_VARIANT = {
   ForensicMethod: { fill: "hollow" }, // vs Organization (hexagon)
   Saga: { border: "bold" }, // vs Organization / ForensicMethod (hexagon)
   Object: { fill: "hollow" }, // vs Evidence (square)
-  Work: { border: "bold" }, // vs ChapterOrStory (roundedbox)
+  Work: { fill: "hollow", border: "bold" }, // vs Organization / ForensicMethod / Saga
+  ChapterOrStory: { border: "bold" }, // vs generic dot-like domain facts
 };
 
 /** Variant (fill/border) for a node's ontology type; {} when default. */
@@ -256,23 +255,22 @@ export function computeDegrees(nodes, edges) {
 const LABEL_DEGREE_FRACTION = 0.15;
 
 /**
- * Data-driven "god-class" (UAT box-label): the node_type whose nodes carry the
- * highest degrees. Types are ranked by their MAXIMUM node degree (the class
- * owning the global highest-degree node — Character/Sherlock in the mystery
- * corpus), tie-broken by the count of nodes above the label gate
- * (degree >= LABEL_DEGREE_FRACTION × maxDegree), then by type name for
- * determinism. Central nodes of this class render as LABELLED boxes (their
- * glyph is overridden to the box shape). Null when the graph has no edges or
- * no typed nodes. Kept in lockstep with src/studio-scene.ts computeGodClass
- * (parity test enforces scene equality).
+ * Character-gated "god-class" (UAT box-label): only Character nodes are
+ * eligible for the labelled hub-box override. Earlier revisions selected the
+ * most-connected type generically, which let document/story or implementation
+ * nodes become labelled boxes when they dominated a corpus. Null when the graph
+ * has no eligible Character hub. Kept in lockstep with src/studio-scene.ts
+ * computeGodClass (parity test enforces scene equality).
  */
+const BOX_LABEL_NODE_TYPES = new Set(["Character"]);
+
 export function computeGodClass(nodes, degree, maxDegree) {
   if (!(Number.isFinite(maxDegree) && maxDegree > 0)) return null;
   const threshold = LABEL_DEGREE_FRACTION * maxDegree;
   const byType = new Map();
   for (const node of nodes) {
     const type = nodeType(node);
-    if (!type) continue;
+    if (!type || !BOX_LABEL_NODE_TYPES.has(type)) continue;
     const deg = degree.get(node.id) ?? 0;
     let rec = byType.get(type);
     if (!rec) byType.set(type, (rec = { maxDeg: 0, gateCount: 0 }));

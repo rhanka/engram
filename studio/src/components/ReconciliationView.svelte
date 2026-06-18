@@ -73,6 +73,29 @@
   // node's type from the graph (typeOf); we fall back to the canonical side, then
   // to "Other" when neither node is in the loaded graph (stale ids). Within a
   // group, candidates stay in their incoming (score-desc) order.
+  const TYPE_GROUP_ORDER = [
+    "Character",
+    "Alias",
+    "DisguisePersona",
+    "NarrativeRole",
+    "Location",
+    "Organization",
+    "Object",
+    "Evidence",
+    "Case",
+    "CrimeOrScheme",
+    "Event",
+    "ForensicMethod",
+    "Motive",
+    "Fact",
+    "Work",
+    "ChapterOrStory",
+    "Saga",
+    "Author",
+    "Translator",
+    "Other",
+  ];
+  const TYPE_GROUP_RANK = new Map(TYPE_GROUP_ORDER.map((type, index) => [type, index]));
   const grouped = $derived.by(() => {
     const buckets = new Map();
     for (const c of filtered) {
@@ -80,9 +103,13 @@
       if (!buckets.has(t)) buckets.set(t, []);
       buckets.get(t).push(c);
     }
-    // Largest groups first; ties alphabetical so order is stable and meaningful.
+    // Domain type order first; unknown types fall back to alphabetical order.
     return [...buckets.entries()]
-      .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
+      .sort((a, b) => {
+        const ar = TYPE_GROUP_RANK.get(a[0]) ?? 999;
+        const br = TYPE_GROUP_RANK.get(b[0]) ?? 999;
+        return ar - br || a[0].localeCompare(b[0]);
+      })
       .map(([type, items]) => ({ type, items }));
   });
 
@@ -352,11 +379,11 @@
         <!-- #4 (a): candidates GROUPED by entity type, with type headers. -->
         <div class="recon-rail-groups">
           {#each grouped as group (group.type)}
-            <section class="recon-group">
-              <h3 class="recon-group-head">
+            <details class="recon-group">
+              <summary class="recon-group-head">
                 <span class="recon-group-type">{group.type}</span>
                 <span class="recon-group-count">{group.items.length}</span>
-              </h3>
+              </summary>
               <ul class="recon-rail-list">
                 {#each group.items as c (c.id)}
                   <li
@@ -389,7 +416,7 @@
                   </li>
                 {/each}
               </ul>
-            </section>
+            </details>
           {/each}
         </div>
       {/if}
@@ -562,6 +589,7 @@
   /* #4 (a): type-grouped sections. */
   .recon-rail-groups { padding: 0.35rem 0; }
   .recon-group { margin: 0 0 0.4rem; }
+  .recon-group[open] { padding-bottom: 0.15rem; }
   .recon-group-head {
     display: flex; align-items: center; justify-content: space-between;
     gap: 0.5rem; margin: 0; padding: 0.3rem 0.85rem 0.25rem;
@@ -571,7 +599,19 @@
     font-size: 0.68rem; font-weight: 700;
     color: var(--st-semantic-text-muted, #64748b);
     border-bottom: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
+    cursor: pointer;
+    list-style: none;
   }
+  .recon-group-head::-webkit-details-marker { display: none; }
+  .recon-group-head::before {
+    content: ">";
+    display: inline-block;
+    width: 0.75rem;
+    margin-right: 0.2rem;
+    transition: transform 120ms ease;
+  }
+  .recon-group[open] .recon-group-head::before { transform: rotate(90deg); }
+  .recon-group-type { flex: 1; }
   .recon-group-count {
     font-variant-numeric: tabular-nums;
     background: var(--st-semantic-surface-subtle, #f8fafc);
