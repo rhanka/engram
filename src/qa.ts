@@ -227,6 +227,27 @@ function graphEdges(graph: unknown): unknown[] {
   return Array.isArray(links) ? links : [];
 }
 
+function edgeEndpoint(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  const id = asRecord(value).id;
+  return typeof id === "string" ? id : null;
+}
+
+function graphDegrees(nodes: Array<Record<string, unknown>>, edges: unknown[]): Map<string, number> {
+  const degrees = new Map<string, number>();
+  for (const node of nodes) {
+    if (typeof node.id === "string") degrees.set(node.id, 0);
+  }
+  for (const edge of edges) {
+    const rec = asRecord(edge);
+    const source = edgeEndpoint(rec.source);
+    const target = edgeEndpoint(rec.target);
+    if (source !== null && degrees.has(source)) degrees.set(source, degrees.get(source)! + 1);
+    if (target !== null && degrees.has(target)) degrees.set(target, degrees.get(target)! + 1);
+  }
+  return degrees;
+}
+
 function nodeType(node: Record<string, unknown>): string | null {
   const value = node.node_type ?? node.type;
   return typeof value === "string" && value.trim() ? value : null;
@@ -429,6 +450,93 @@ function evaluateGraph(target: NormalizedQualityTarget, graph: unknown | null, c
       "missing descriptions must be within target",
       { expected: `<= ${target.graph.max_missing_descriptions}`, actual: missing },
     );
+  }
+  if (target.graph.max_orphan_nodes !== null) {
+    const degrees = graphDegrees(nodes, edges);
+    const orphanIds = nodes
+      .map((node) => typeof node.id === "string" ? node.id : null)
+      .filter((id): id is string => id !== null && (degrees.get(id) ?? 0) === 0);
+    add(
+      checks,
+      orphanIds.length > target.graph.max_orphan_nodes,
+      "graph.max_orphan_nodes",
+      "orphan node count must be within target",
+      { expected: `<= ${target.graph.max_orphan_nodes}`, actual: { count: orphanIds.length, examples: orphanIds.slice(0, 20) } },
+    );
+  }
+  if (target.graph.forbidden_node_id_patterns.length > 0) {
+    const patterns = target.graph.forbidden_node_id_patterns.flatMap((pattern) => {
+      try {
+        return [new RegExp(pattern)];
+      } catch {
+        return [];
+      }
+    });
+    const offenders = nodes
+      .map((node) => typeof node.id === "string" ? node.id : null)
+      .filter((id): id is string => id !== null && patterns.some((pattern) => pattern.test(id)));
+    add(
+      checks,
+      offenders.length > 0,
+      "graph.forbidden_node_id_patterns",
+      "node ids must not match forbidden patterns",
+      { expected: target.graph.forbidden_node_id_patterns, actual: { count: offenders.length, examples: offenders.slice(0, 20) } },
+    );
+  }
+  if (target.graph.forbidden_source_path_patterns.length > 0) {
+    const offenders = nodes
+      .map((node) => ({
+        id: typeof node.id === "string" ? node.id : null,
+        source_file: typeof node.source_file === "string" ? node.source_file : null,
+      }))
+      .filter((entry) =>
+        entry.id !== null &&
+        entry.source_file !== null &&
+        target.graph.forbidden_source_path_patterns.some((pattern) => globDenyMatch(pattern, entry.source_file!))
+      );
+    add(
+      checks,
+      offenders.length > 0,
+      "graph.forbidden_source_path_patterns",
+      "node source paths must not match forbidden patterns",
+      { expected: target.graph.forbidden_source_path_patterns, actual: { count: offenders.length, examples: offenders.slice(0, 20) } },
+    );
+  }
+  if (target.graph.allowed_node_types.length > 0) {
+    const allowed = new Set(target.graph.allowed_node_types);
+    const offenders = nodes
+      .map((node) => ({
+        id: typeof node.id === "string" ? node.id : null,
+        type: nodeType(node),
+      }))
+      .filter((entry) => entry.id !== null && (entry.type === null || !allowed.has(entry.type)));
+    add(
+      checks,
+      offenders.length > 0,
+      "graph.allowed_node_types",
+      "node types must be in the allowed target set",
+      { expected: target.graph.allowed_node_types, actual: { count: offenders.length, examples: offenders.slice(0, 20) } },
+    );
+  }
+  if (Object.keys(target.graph.min_degree_by_type).length > 0) {
+    const degrees = graphDegrees(nodes, edges);
+    for (const [type, minDegree] of Object.entries(target.graph.min_degree_by_type)) {
+      const offenders = nodes
+        .map((node) => ({
+          id: typeof node.id === "string" ? node.id : null,
+          label: typeof node.label === "string" ? node.label : undefined,
+          degree: typeof node.id === "string" ? (degrees.get(node.id) ?? 0) : 0,
+          type: nodeType(node),
+        }))
+        .filter((entry) => entry.id !== null && entry.type === type && entry.degree < minDegree);
+      add(
+        checks,
+        offenders.length > 0,
+        `graph.min_degree_by_type.${type}`,
+        "node degree by type must meet target",
+        { expected: `>= ${minDegree}`, actual: { count: offenders.length, examples: offenders.slice(0, 20) } },
+      );
+    }
   }
 }
 

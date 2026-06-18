@@ -70,6 +70,17 @@ function targetYaml(contractHash = hashCitationExtractionContract(ALL_EXTRACTED_
     "      graph:",
     "        min_nodes: 2091",
     "        min_edges: 3168",
+    "        forbidden_node_id_patterns:",
+    "          - '^src_'",
+    "          - '^scripts_'",
+    "        forbidden_source_path_patterns:",
+    "          - src/**",
+    "          - scripts/**",
+    "        allowed_node_types:",
+    "          - Character",
+    "          - ChapterOrStory",
+    "        min_degree_by_type:",
+    "          ChapterOrStory: 2",
     "      reconciliation:",
     "        min_candidates: 31",
     "        require_groupable_by_type: true",
@@ -97,6 +108,10 @@ describe("quality target config", () => {
     expect(target.citations.extraction.mode).toBe("all_extracted");
     expect(target.citations.inline).toEqual({ mode: "top_k", top_k: 8 });
     expect(target.citations.min_count_by_node.character_sherlock_holmes).toBe(89);
+    expect(target.graph.forbidden_node_id_patterns).toEqual(["^src_", "^scripts_"]);
+    expect(target.graph.forbidden_source_path_patterns).toEqual(["src/**", "scripts/**"]);
+    expect(target.graph.allowed_node_types).toEqual(["Character", "ChapterOrStory"]);
+    expect(target.graph.min_degree_by_type).toEqual({ ChapterOrStory: 2 });
     expect(validateQualityTarget(target)).toEqual([]);
   });
 

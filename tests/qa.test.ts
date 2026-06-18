@@ -77,6 +77,18 @@ function targetYaml(contractHash = hashCitationExtractionContract(ALL_EXTRACTED_
     "        min_nodes: 2",
     "        min_edges: 1",
     "        max_missing_descriptions: 0",
+    "        forbidden_node_id_patterns:",
+    "          - '^src_'",
+    "          - '^scripts_'",
+    "          - '^tests_'",
+    "        forbidden_source_path_patterns:",
+    "          - src/**",
+    "          - scripts/**",
+    "          - tests/**",
+    "        allowed_node_types:",
+    "          - Character",
+    "        min_degree_by_type:",
+    "          Character: 1",
     "      reconciliation:",
     "        min_candidates: 1",
     "        require_groupable_by_type: true",
@@ -236,6 +248,48 @@ describe("evaluateQualityBundle", () => {
     expect(report.status).toBe("passed");
     expect(report.summary.failed).toBe(0);
     expect(report.chrome?.bundle_non_data_tree_hash).toBe(report.chrome?.chrome_reference_tree_hash);
+  });
+
+  it("rejects graph boundary leaks and under-connected target types", () => {
+    const root = tempDir();
+    const { target, bundleDir, manifest } = writeValidBundle(root);
+    target.graph.allowed_node_types = ["Character", "ChapterOrStory"];
+    target.graph.min_degree_by_type = { ChapterOrStory: 2 };
+    manifest.target_hash = hashQualityTarget(target);
+
+    const graph = graphFixture();
+    graph.nodes.push({
+      id: "src_graphify_deepening_ts",
+      label: "graphify-deepening.ts",
+      node_type: "code",
+      source_file: "src/graphify-deepening.ts",
+      file_type: "code",
+      description: "Implementation node leaked into a document-only bundle.",
+      citation_count: 0,
+      citations: [],
+    });
+    graph.nodes.push({
+      id: "story_speckled_band",
+      label: "The Adventure of the Speckled Band",
+      node_type: "ChapterOrStory",
+      source_file: "sherlock-holmes/the-adventures-of-sherlock-holmes.md",
+      file_type: "document",
+      description: "Story fixture.",
+      citation_count: 0,
+      citations: [],
+    });
+    graph.links.push({ source: "a", target: "story_speckled_band", relation: "appears_in" });
+    writeJson(join(bundleDir, "graph.json"), graph);
+    manifest.artifacts["graph.json"]!.sha256 = sha256File(join(bundleDir, "graph.json"));
+
+    const report = evaluateQualityBundle({ target, bundleDir, manifest });
+
+    expect(errorIds(report)).toEqual(expect.arrayContaining([
+      "graph.forbidden_node_id_patterns",
+      "graph.forbidden_source_path_patterns",
+      "graph.allowed_node_types",
+      "graph.min_degree_by_type.ChapterOrStory",
+    ]));
   });
 
   it("rejects scratch/no-publish artifact provenance", () => {

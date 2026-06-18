@@ -86,6 +86,10 @@ export interface QualityTargetGraphConfig {
   };
   max_missing_descriptions: number | null;
   max_orphan_nodes: number | null;
+  forbidden_node_id_patterns: string[];
+  forbidden_source_path_patterns: string[];
+  allowed_node_types: string[];
+  min_degree_by_type: Record<string, number>;
 }
 
 export interface QualityTargetReconciliationConfig {
@@ -293,6 +297,10 @@ export function normalizeQualityTarget(
       },
       max_missing_descriptions: asNonNegativeNumber(graphRaw.max_missing_descriptions),
       max_orphan_nodes: asNonNegativeNumber(graphRaw.max_orphan_nodes),
+      forbidden_node_id_patterns: asStringArray(graphRaw.forbidden_node_id_patterns),
+      forbidden_source_path_patterns: asStringArray(graphRaw.forbidden_source_path_patterns),
+      allowed_node_types: asStringArray(graphRaw.allowed_node_types),
+      min_degree_by_type: normalizeMinCountByNode(graphRaw.min_degree_by_type),
     },
     reconciliation: {
       min_candidates: asNonNegativeNumber(reconciliationRaw.min_candidates),
@@ -405,6 +413,13 @@ export function validateQualityTarget(target: NormalizedQualityTarget): string[]
   }
   if (target.citations.display === "full" && target.citations.require_sidecar !== true) {
     errors.push("citations.require_sidecar must be true when citations.display is full");
+  }
+  for (const pattern of target.graph.forbidden_node_id_patterns) {
+    try {
+      new RegExp(pattern);
+    } catch {
+      errors.push(`graph.forbidden_node_id_patterns contains invalid RegExp: ${pattern}`);
+    }
   }
   return errors;
 }

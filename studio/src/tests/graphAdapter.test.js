@@ -348,7 +348,7 @@ describe("shapeForType (SVELTE-4)", () => {
   });
 });
 
-describe("computeGodClass — data-driven box-label class", () => {
+describe("computeGodClass — Character-gated box-label class", () => {
   // sherlock (Character) is the global hub (degree 3); works are box-typed but
   // less connected. The god-class must resolve to Character WITHOUT hardcoding.
   const GRAPH = {
@@ -378,7 +378,7 @@ describe("computeGodClass — data-driven box-label class", () => {
     expect(byId.get("baker").shape).toBe("triangle");
   });
 
-  it("resolves the most-connected class for any corpus (not hardcoded Character)", async () => {
+  it("does not box-label non-Character hubs even when they dominate the graph", async () => {
     const { buildScene, computeGodClass, computeDegrees } = await import("../lib/graphAdapter.js");
     const flipped = {
       nodes: [
@@ -392,10 +392,10 @@ describe("computeGodClass — data-driven box-label class", () => {
       ],
     };
     const degree = computeDegrees(flipped.nodes, flipped.links);
-    expect(computeGodClass(flipped.nodes, degree, 2)).toBe("Lab");
+    expect(computeGodClass(flipped.nodes, degree, 2)).toBe(null);
     const s = buildScene(flipped);
     const byId = new Map(s.nodes.map((n) => [n.id, n]));
-    expect(byId.get("lab").shape).toBe("roundedbox"); // hub class -> box
+    expect(byId.get("lab").shape).toBe("dot"); // non-Character hub keeps base shape
     expect(byId.get("p1").shape).toBe("dot"); // unmapped type default
   });
 
