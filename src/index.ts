@@ -75,6 +75,56 @@ export {
   validateProjectConfig,
 } from "./project-config.js";
 export {
+  ALL_EXTRACTED_CITATION_CONTRACT,
+  ALL_EXTRACTED_CITATION_CONTRACT_ID,
+  CITATION_EXTRACTION_CONTRACT_SCHEMA,
+  QUALITY_TARGET_CONFIG_CANDIDATES,
+  canonicalJson,
+  discoverQualityTargetsConfig,
+  hashCitationExtractionContract,
+  hashQualityTarget,
+  loadQualityTargetsConfig,
+  normalizeQualityTarget,
+  normalizeQualityTargetsConfig,
+  parseQualityTargetsConfig,
+  sha256Prefixed,
+  validateCitationExtractionContractForTarget,
+  validateQualityTarget,
+} from "./quality-target.js";
+export type {
+  CitationExtractionContract,
+  NormalizedQualityTarget,
+  NormalizedQualityTargetsConfig,
+  QualityTargetCitationExtractionConfig,
+  QualityTargetCitationsConfig,
+  QualityTargetCommunitiesConfig,
+  QualityTargetDiscoveryResult,
+  QualityTargetGraphConfig,
+  QualityTargetPublicationConfig,
+  QualityTargetReconciliationConfig,
+  TargetCitationDisplay,
+  TargetCitationExtractionMode,
+  TargetCitationInline,
+} from "./quality-target.js";
+export {
+  QA_REPORT_FILENAME,
+  QA_REPORT_SCHEMA,
+  RESOLVED_TARGET_MANIFEST_SCHEMA,
+  computeDataOnlyChromeHashes,
+  computeGraphCitationSignatureFromJson,
+  evaluateQualityBundle,
+  sha256File,
+  validatePrecomputedQaReportBinding,
+} from "./qa.js";
+export type {
+  DataOnlyChromeHashes,
+  EvaluateQualityBundleOptions,
+  QualityQaCheck,
+  QualityQaReport,
+  ResolvedTargetArtifact,
+  ResolvedTargetManifest,
+} from "./qa.js";
+export {
   createAssistantTextJsonClient,
   createAssistantVisionJsonClient,
   createDirectTextJsonClient,
