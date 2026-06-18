@@ -137,14 +137,12 @@ const TYPE_SHAPE = {
   Evidence: "square",
   Object: "square",
   ForensicMethod: "hexagon",
-  // Legacy vis-network parity: Work + ChapterOrStory keep the box SHAPE, but
-  // the in-box LABEL is reserved to the data-driven god-class hubs (see
-  // computeGodClass) — non-god-class boxes render as small empty rounded
-  // rects. Saga / Author / Translator carry their own ontological shapes,
-  // matching public-pack ontology-profile.yaml. Kept in lockstep with
-  // src/studio-scene.ts TYPE_SHAPE (parity test enforces this).
-  Work: "roundedbox",
-  ChapterOrStory: "roundedbox",
+  // Labelled boxes are reserved for data-driven Character hubs (see
+  // computeGodClass). Document/work/story types stay non-box by default so
+  // corpus structure cannot look like a labelled person hub. Kept in lockstep
+  // with src/studio-scene.ts TYPE_SHAPE (parity test enforces this).
+  Work: "hexagon",
+  ChapterOrStory: "dot",
   Saga: "hexagon",
   Author: "star",
   Translator: "triangle",
@@ -211,7 +209,8 @@ const TYPE_VARIANT = {
   ForensicMethod: { fill: "hollow" }, // vs Organization (hexagon)
   Saga: { border: "bold" }, // vs Organization / ForensicMethod (hexagon)
   Object: { fill: "hollow" }, // vs Evidence (square)
-  Work: { border: "bold" }, // vs ChapterOrStory (roundedbox)
+  Work: { fill: "hollow", border: "bold" }, // vs Organization / ForensicMethod / Saga
+  ChapterOrStory: { border: "bold" }, // vs generic dot-like domain facts
 };
 
 /** Variant (fill/border) for a node's ontology type; {} when default. */

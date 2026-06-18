@@ -56,6 +56,7 @@ function targetYaml(contractHash = hashCitationExtractionContract(ALL_EXTRACTED_
     "          - .graphify/scratch/**",
     "        data_allowlist:",
     "          - graph.json",
+    "          - scene.json",
     "          - reconciliation-candidates.json",
     "          - ontology/citations.json",
     "      citations:",
@@ -89,6 +90,26 @@ function targetYaml(contractHash = hashCitationExtractionContract(ALL_EXTRACTED_
     "          - Character",
     "        min_degree_by_type:",
     "          Character: 1",
+    "        max_degree_by_type:",
+    "          Character: 2",
+    "        max_degree_by_type_and_derivation:",
+    "          Character:",
+    "            citation_section_story_context: 2",
+    "        required_neighbor_ids_by_node:",
+    "          a:",
+    "            - b",
+    "        forbidden_edges:",
+    "          - source: b",
+    "            target: a",
+    "            relation: SHOULD_NOT",
+    "      scene:",
+    "        forbidden_shape_by_type:",
+    "          Work:",
+    "            - box",
+    "            - roundedbox",
+    "          ChapterOrStory:",
+    "            - box",
+    "            - roundedbox",
     "      reconciliation:",
     "        min_candidates: 1",
     "        require_groupable_by_type: true",
@@ -168,6 +189,14 @@ function writeValidBundle(root: string): { target: NormalizedQualityTarget; bund
   write(bundleDir + "/index.html", "<html>chrome</html>");
   write(referenceDir + "/index.html", "<html>chrome</html>");
   writeJson(join(bundleDir, "graph.json"), graph);
+  writeJson(join(bundleDir, "scene.json"), {
+    nodes: [
+      { id: "a", label: "A", type: "Character", shape: "roundedbox" },
+      { id: "b", label: "B", type: "Character", shape: "diamond" },
+    ],
+    edges: [{ source: "a", target: "b", relation: "KNOWS" }],
+    stats: { nodeCount: 2, edgeCount: 1, weakEdgeCount: 0, communityCount: 1 },
+  });
   writeJson(join(bundleDir, "ontology", "citations.json"), {
     schema: "graphify_ontology_citations_v1",
     graph_signature: computeGraphCitationSignatureFromJson(graph),
@@ -194,6 +223,12 @@ function writeValidBundle(root: string): { target: NormalizedQualityTarget; bund
         source_path: ".graphify/runs/run-1/graph.json",
         source_kind: "generated",
         sha256: sha256File(join(bundleDir, "graph.json")),
+      },
+      "scene.json": {
+        bundle_path: "scene.json",
+        source_path: ".graphify/runs/run-1/scene.json",
+        source_kind: "generated",
+        sha256: sha256File(join(bundleDir, "scene.json")),
       },
       "reconciliation-candidates.json": {
         bundle_path: "reconciliation-candidates.json",
@@ -250,11 +285,13 @@ describe("evaluateQualityBundle", () => {
     expect(report.chrome?.bundle_non_data_tree_hash).toBe(report.chrome?.chrome_reference_tree_hash);
   });
 
-  it("rejects graph boundary leaks and under-connected target types", () => {
+  it("rejects graph boundary leaks and out-of-bounds target type degrees", () => {
     const root = tempDir();
     const { target, bundleDir, manifest } = writeValidBundle(root);
     target.graph.allowed_node_types = ["Character", "ChapterOrStory"];
     target.graph.min_degree_by_type = { ChapterOrStory: 2 };
+    target.graph.max_degree_by_type = { ChapterOrStory: 2 };
+    target.graph.max_degree_by_type_and_derivation = { ChapterOrStory: { citation_section_story_context: 2 } };
     manifest.target_hash = hashQualityTarget(target);
 
     const graph = graphFixture();
@@ -278,7 +315,20 @@ describe("evaluateQualityBundle", () => {
       citation_count: 0,
       citations: [],
     });
+    graph.nodes.push({
+      id: "story_case_book_catch_all",
+      label: "The Case-Book catch-all",
+      node_type: "ChapterOrStory",
+      source_file: "sherlock-holmes/the-case-book-of-sherlock-holmes.md",
+      file_type: "document",
+      description: "Story fixture.",
+      citation_count: 0,
+      citations: [],
+    });
     graph.links.push({ source: "a", target: "story_speckled_band", relation: "appears_in" });
+    graph.links.push({ source: "a", target: "story_case_book_catch_all", relation: "appears_in", derivation_method: "citation_section_story_context" });
+    graph.links.push({ source: "b", target: "story_case_book_catch_all", relation: "appears_in", derivation_method: "citation_section_story_context" });
+    graph.links.push({ source: "story_case_book_catch_all", target: "a", relation: "mentions", derivation_method: "citation_section_story_context" });
     writeJson(join(bundleDir, "graph.json"), graph);
     manifest.artifacts["graph.json"]!.sha256 = sha256File(join(bundleDir, "graph.json"));
 
@@ -289,7 +339,119 @@ describe("evaluateQualityBundle", () => {
       "graph.forbidden_source_path_patterns",
       "graph.allowed_node_types",
       "graph.min_degree_by_type.ChapterOrStory",
+      "graph.max_degree_by_type.ChapterOrStory",
+      "graph.max_degree_by_type_and_derivation.ChapterOrStory.citation_section_story_context",
     ]));
+  });
+
+  it("counts derivation-specific degree independently from total degree", () => {
+    const root = tempDir();
+    const { target, bundleDir, manifest } = writeValidBundle(root);
+    target.graph.allowed_node_types = ["Character", "ChapterOrStory"];
+    target.graph.min_degree_by_type = {};
+    target.graph.max_degree_by_type = {};
+    target.graph.max_degree_by_type_and_derivation = { ChapterOrStory: { citation_section_story_context: 1 } };
+    manifest.target_hash = hashQualityTarget(target);
+
+    const graph = graphFixture();
+    graph.nodes.push({
+      id: "story_context_target",
+      label: "Story Context Target",
+      node_type: "ChapterOrStory",
+      source_file: "sherlock-holmes/the-case-book-of-sherlock-holmes.md",
+      file_type: "document",
+      description: "Story fixture.",
+      citation_count: 0,
+      citations: [],
+    });
+    graph.links.push({ source: "a", target: "story_context_target", relation: "appears_in" });
+    graph.links.push({ source: "b", target: "story_context_target", relation: "appears_in" });
+    graph.links.push({
+      source: "story_context_target",
+      target: "a",
+      relation: "mentions",
+      derivation_method: "citation_section_story_context",
+    });
+    writeJson(join(bundleDir, "graph.json"), graph);
+    manifest.artifacts["graph.json"]!.sha256 = sha256File(join(bundleDir, "graph.json"));
+
+    const report = evaluateQualityBundle({ target, bundleDir, manifest });
+
+    expect(errorIds(report)).not.toContain(
+      "graph.max_degree_by_type_and_derivation.ChapterOrStory.citation_section_story_context",
+    );
+  });
+
+  it("rejects missing required graph neighbors and forbidden graph edges", () => {
+    const root = tempDir();
+    const { target, bundleDir, manifest } = writeValidBundle(root);
+    target.graph.required_neighbor_ids_by_node = {
+      story_speckled_band: ["character_helen_stoner"],
+    };
+    target.graph.forbidden_edges = [
+      { source: "b", target: "a", relation: "KNOWS" },
+    ];
+    manifest.target_hash = hashQualityTarget(target);
+
+    const report = evaluateQualityBundle({ target, bundleDir, manifest });
+
+    expect(errorIds(report)).toEqual(expect.arrayContaining([
+      "graph.required_neighbor_ids_by_node.story_speckled_band",
+      "graph.forbidden_edges",
+    ]));
+  });
+
+  it("rejects dangling edges instead of counting them as degree or required-neighbor evidence", () => {
+    const root = tempDir();
+    const { target, bundleDir, manifest } = writeValidBundle(root);
+    target.graph.min_nodes = 1;
+    target.graph.min_edges = 1;
+    target.graph.min_degree_by_type = { Character: 1 };
+    target.graph.max_degree_by_type = {};
+    target.graph.max_degree_by_type_and_derivation = {};
+    target.graph.required_neighbor_ids_by_node = { a: ["missing_story"] };
+    target.graph.forbidden_edges = [];
+    target.reconciliation.min_candidates = null;
+    target.reconciliation.require_groupable_by_type = false;
+    manifest.target_hash = hashQualityTarget(target);
+
+    const graph = graphFixture();
+    graph.nodes = graph.nodes.filter((node) => node.id === "a");
+    graph.links = [{ source: "a", target: "missing_story", relation: "KNOWS" }];
+    writeJson(join(bundleDir, "graph.json"), graph);
+    manifest.artifacts["graph.json"]!.sha256 = sha256File(join(bundleDir, "graph.json"));
+
+    const report = evaluateQualityBundle({ target, bundleDir, manifest });
+
+    expect(errorIds(report)).toEqual(expect.arrayContaining([
+      "graph.edge_endpoints_present",
+      "graph.min_degree_by_type.Character",
+      "graph.required_neighbor_ids_by_node.a",
+    ]));
+  });
+
+  it("rejects forbidden scene shapes by node type", () => {
+    const root = tempDir();
+    const { target, bundleDir, manifest } = writeValidBundle(root);
+    manifest.target_hash = hashQualityTarget(target);
+    writeJson(join(bundleDir, "scene.json"), {
+      nodes: [
+        { id: "story_speckled_band", label: "The Adventure of the Speckled Band", type: "ChapterOrStory", shape: "roundedbox" },
+        { id: "work_adventures", label: "The Adventures of Sherlock Holmes", type: "Work", shape: "box" },
+        { id: "character_sherlock_holmes", label: "Sherlock Holmes", type: "Character", shape: "roundedbox" },
+      ],
+      edges: [],
+      stats: { nodeCount: 3, edgeCount: 0, weakEdgeCount: 0, communityCount: 0 },
+    });
+    manifest.artifacts["scene.json"]!.sha256 = sha256File(join(bundleDir, "scene.json"));
+
+    const report = evaluateQualityBundle({ target, bundleDir, manifest });
+
+    expect(errorIds(report)).toEqual(expect.arrayContaining([
+      "scene.forbidden_shape_by_type.ChapterOrStory",
+      "scene.forbidden_shape_by_type.Work",
+    ]));
+    expect(errorIds(report)).not.toContain("scene.forbidden_shape_by_type.Character");
   });
 
   it("rejects scratch/no-publish artifact provenance", () => {

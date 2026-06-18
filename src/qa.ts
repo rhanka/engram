@@ -242,10 +242,50 @@ function graphDegrees(nodes: Array<Record<string, unknown>>, edges: unknown[]): 
     const rec = asRecord(edge);
     const source = edgeEndpoint(rec.source);
     const target = edgeEndpoint(rec.target);
-    if (source !== null && degrees.has(source)) degrees.set(source, degrees.get(source)! + 1);
-    if (target !== null && degrees.has(target)) degrees.set(target, degrees.get(target)! + 1);
+    if (source === null || target === null || !degrees.has(source) || !degrees.has(target)) continue;
+    degrees.set(source, degrees.get(source)! + 1);
+    degrees.set(target, degrees.get(target)! + 1);
   }
   return degrees;
+}
+
+function hasDerivationMethod(edge: Record<string, unknown>, derivationMethod: string): boolean {
+  const value = edge.derivation_method ?? edge.derivation_methods;
+  if (typeof value === "string") return value === derivationMethod;
+  return Array.isArray(value) && value.includes(derivationMethod);
+}
+
+function graphDegreesByDerivation(nodes: Array<Record<string, unknown>>, edges: unknown[], derivationMethod: string): Map<string, number> {
+  const degrees = new Map<string, number>();
+  for (const node of nodes) {
+    if (typeof node.id === "string") degrees.set(node.id, 0);
+  }
+  for (const edge of edges) {
+    const rec = asRecord(edge);
+    if (!hasDerivationMethod(rec, derivationMethod)) continue;
+    const source = edgeEndpoint(rec.source);
+    const target = edgeEndpoint(rec.target);
+    if (source === null || target === null || !degrees.has(source) || !degrees.has(target)) continue;
+    degrees.set(source, degrees.get(source)! + 1);
+    degrees.set(target, degrees.get(target)! + 1);
+  }
+  return degrees;
+}
+
+function graphNeighbors(nodes: Array<Record<string, unknown>>, edges: unknown[]): Map<string, Set<string>> {
+  const neighbors = new Map<string, Set<string>>();
+  for (const node of nodes) {
+    if (typeof node.id === "string") neighbors.set(node.id, new Set());
+  }
+  for (const edge of edges) {
+    const rec = asRecord(edge);
+    const source = edgeEndpoint(rec.source);
+    const target = edgeEndpoint(rec.target);
+    if (source === null || target === null || !neighbors.has(source) || !neighbors.has(target)) continue;
+    neighbors.get(source)!.add(target);
+    neighbors.get(target)!.add(source);
+  }
+  return neighbors;
 }
 
 function nodeType(node: Record<string, unknown>): string | null {
@@ -441,6 +481,24 @@ function evaluateGraph(target: NormalizedQualityTarget, graph: unknown | null, c
       actual: edges.length,
     });
   }
+  const nodeIds = new Set(nodes.map((node) => typeof node.id === "string" ? node.id : null).filter((id): id is string => id !== null));
+  const danglingEdges = edges
+    .map((edge) => {
+      const rec = asRecord(edge);
+      return {
+        source: edgeEndpoint(rec.source),
+        target: edgeEndpoint(rec.target),
+        relation: typeof rec.relation === "string" ? rec.relation : undefined,
+      };
+    })
+    .filter((edge) => edge.source === null || edge.target === null || !nodeIds.has(edge.source) || !nodeIds.has(edge.target));
+  add(
+    checks,
+    danglingEdges.length > 0,
+    "graph.edge_endpoints_present",
+    "edge endpoints must resolve to graph nodes",
+    { actual: { count: danglingEdges.length, examples: danglingEdges.slice(0, 20) } },
+  );
   if (target.graph.max_missing_descriptions !== null) {
     const missing = nodes.filter((node) => typeof node.description !== "string" || !node.description.trim()).length;
     add(
@@ -537,6 +595,121 @@ function evaluateGraph(target: NormalizedQualityTarget, graph: unknown | null, c
         { expected: `>= ${minDegree}`, actual: { count: offenders.length, examples: offenders.slice(0, 20) } },
       );
     }
+  }
+  if (Object.keys(target.graph.max_degree_by_type).length > 0) {
+    const degrees = graphDegrees(nodes, edges);
+    for (const [type, maxDegree] of Object.entries(target.graph.max_degree_by_type)) {
+      const offenders = nodes
+        .map((node) => ({
+          id: typeof node.id === "string" ? node.id : null,
+          label: typeof node.label === "string" ? node.label : undefined,
+          degree: typeof node.id === "string" ? (degrees.get(node.id) ?? 0) : 0,
+          type: nodeType(node),
+        }))
+        .filter((entry) => entry.id !== null && entry.type === type && entry.degree > maxDegree);
+      add(
+        checks,
+        offenders.length > 0,
+        `graph.max_degree_by_type.${type}`,
+        "node degree by type must not exceed target",
+        { expected: `<= ${maxDegree}`, actual: { count: offenders.length, examples: offenders.slice(0, 20) } },
+      );
+    }
+  }
+  if (Object.keys(target.graph.max_degree_by_type_and_derivation).length > 0) {
+    for (const [type, derivationRules] of Object.entries(target.graph.max_degree_by_type_and_derivation)) {
+      for (const [derivationMethod, maxDegree] of Object.entries(derivationRules)) {
+        const degrees = graphDegreesByDerivation(nodes, edges, derivationMethod);
+        const offenders = nodes
+          .map((node) => ({
+            id: typeof node.id === "string" ? node.id : null,
+            label: typeof node.label === "string" ? node.label : undefined,
+            degree: typeof node.id === "string" ? (degrees.get(node.id) ?? 0) : 0,
+            type: nodeType(node),
+          }))
+          .filter((entry) => entry.id !== null && entry.type === type && entry.degree > maxDegree);
+        add(
+          checks,
+          offenders.length > 0,
+          `graph.max_degree_by_type_and_derivation.${type}.${derivationMethod}`,
+          "node degree by type and derivation method must not exceed target",
+          { expected: `<= ${maxDegree}`, actual: { count: offenders.length, examples: offenders.slice(0, 20) } },
+        );
+      }
+    }
+  }
+  if (Object.keys(target.graph.required_neighbor_ids_by_node).length > 0) {
+    const neighbors = graphNeighbors(nodes, edges);
+    for (const [nodeId, requiredIds] of Object.entries(target.graph.required_neighbor_ids_by_node)) {
+      const actualNeighbors = neighbors.get(nodeId) ?? new Set<string>();
+      const missing = requiredIds.filter((requiredId) => !actualNeighbors.has(requiredId));
+      add(
+        checks,
+        !neighbors.has(nodeId) || missing.length > 0,
+        `graph.required_neighbor_ids_by_node.${nodeId}`,
+        "node must be connected to required neighbor ids",
+        {
+          expected: requiredIds,
+          actual: {
+            node_present: neighbors.has(nodeId),
+            missing,
+          },
+        },
+      );
+    }
+  }
+  if (target.graph.forbidden_edges.length > 0) {
+    const offenders: Array<{ source: string; target: string; relation: string | null }> = [];
+    for (const edge of edges) {
+      const rec = asRecord(edge);
+      const source = edgeEndpoint(rec.source);
+      const targetId = edgeEndpoint(rec.target);
+      const relation = typeof rec.relation === "string" ? rec.relation : null;
+      if (source === null || targetId === null) continue;
+      const matchesRule = target.graph.forbidden_edges.some((rule) => {
+        const endpointsMatch =
+          (source === rule.source && targetId === rule.target) ||
+          (source === rule.target && targetId === rule.source);
+        const relationMatches = rule.relation === null || relation === rule.relation;
+        return endpointsMatch && relationMatches;
+      });
+      if (matchesRule) offenders.push({ source, target: targetId, relation });
+    }
+    add(
+      checks,
+      offenders.length > 0,
+      "graph.forbidden_edges",
+      "graph must not contain forbidden edges",
+      { expected: target.graph.forbidden_edges, actual: { count: offenders.length, examples: offenders.slice(0, 20) } },
+    );
+  }
+}
+
+function evaluateScene(target: NormalizedQualityTarget, scene: unknown | null, checks: QualityQaCheck[]): void {
+  const rules = target.scene.forbidden_shape_by_type;
+  if (Object.keys(rules).length === 0) return;
+  if (!scene) {
+    add(checks, true, "scene.present", "scene.json is required when scene shape targets are configured");
+    return;
+  }
+  const nodes = graphNodes(scene);
+  for (const [type, forbiddenShapes] of Object.entries(rules)) {
+    const forbidden = new Set(forbiddenShapes);
+    const offenders = nodes
+      .map((node) => ({
+        id: typeof node.id === "string" ? node.id : null,
+        label: typeof node.label === "string" ? node.label : undefined,
+        type: nodeType(node),
+        shape: typeof node.shape === "string" ? node.shape.trim().toLowerCase() : null,
+      }))
+      .filter((entry) => entry.id !== null && entry.type === type && entry.shape !== null && forbidden.has(entry.shape));
+    add(
+      checks,
+      offenders.length > 0,
+      `scene.forbidden_shape_by_type.${type}`,
+      "scene node shapes must not use forbidden glyphs for this type",
+      { expected: { forbidden: forbiddenShapes }, actual: { count: offenders.length, examples: offenders.slice(0, 20) } },
+    );
   }
 }
 
@@ -721,9 +894,11 @@ export function evaluateQualityBundle(options: EvaluateQualityBundleOptions): Qu
   evaluateDataOnlyChromeTarget(target, bundleDir, checks);
   const manifestHash = evaluateManifest(target, bundleDir, manifest, targetHash, checks);
   const graph = loadBundleJson(bundleDir, "graph.json");
+  const scene = loadBundleJson(bundleDir, "scene.json");
   const sidecar = loadBundleJson(bundleDir, "ontology/citations.json");
   const reconciliation = loadBundleJson(bundleDir, "reconciliation-candidates.json");
   evaluateGraph(target, graph, checks);
+  evaluateScene(target, scene, checks);
   evaluateCitations(target, graph, sidecar, checks);
   evaluateReconciliation(target, graph, reconciliation, checks);
 

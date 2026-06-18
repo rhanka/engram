@@ -12,6 +12,7 @@ export const QUALITY_TARGET_CONFIG_CANDIDATES = [
 
 export const CITATION_EXTRACTION_CONTRACT_SCHEMA = "graphify_citation_extraction_contract_v1";
 export const ALL_EXTRACTED_CITATION_CONTRACT_ID = "graphify_all_extracted_entity_citations_v1";
+const SCENE_SHAPES = new Set(["box", "diamond", "dot", "hexagon", "roundedbox", "square", "star", "triangle"]);
 
 export type TargetCitationExtractionMode = "all_extracted" | "bounded_sample" | "unknown";
 export type TargetCitationDisplay = "inline" | "full";
@@ -77,6 +78,12 @@ export interface QualityTargetCitationsConfig {
   no_shrink_by_node: Record<string, { baseline_field: string; max_drop: number }>;
 }
 
+export interface QualityTargetForbiddenEdgeConfig {
+  source: string;
+  target: string;
+  relation: string | null;
+}
+
 export interface QualityTargetGraphConfig {
   min_nodes: number | null;
   min_edges: number | null;
@@ -90,6 +97,14 @@ export interface QualityTargetGraphConfig {
   forbidden_source_path_patterns: string[];
   allowed_node_types: string[];
   min_degree_by_type: Record<string, number>;
+  max_degree_by_type: Record<string, number>;
+  max_degree_by_type_and_derivation: Record<string, Record<string, number>>;
+  required_neighbor_ids_by_node: Record<string, string[]>;
+  forbidden_edges: QualityTargetForbiddenEdgeConfig[];
+}
+
+export interface QualityTargetSceneConfig {
+  forbidden_shape_by_type: Record<string, string[]>;
 }
 
 export interface QualityTargetReconciliationConfig {
@@ -114,6 +129,7 @@ export interface NormalizedQualityTarget {
   publication: QualityTargetPublicationConfig;
   citations: QualityTargetCitationsConfig;
   graph: QualityTargetGraphConfig;
+  scene: QualityTargetSceneConfig;
   reconciliation: QualityTargetReconciliationConfig;
   communities: QualityTargetCommunitiesConfig;
 }
@@ -197,6 +213,50 @@ function normalizeMinCountByNode(value: unknown): Record<string, number> {
   return out;
 }
 
+function normalizeNestedCountByName(value: unknown): Record<string, Record<string, number>> {
+  const out: Record<string, Record<string, number>> = {};
+  for (const [name, rawRules] of Object.entries(asRecord(value))) {
+    const rules = normalizeMinCountByNode(rawRules);
+    if (Object.keys(rules).length > 0) out[name] = rules;
+  }
+  return out;
+}
+
+function normalizeStringArrayByName(value: unknown): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const [name, rawValues] of Object.entries(asRecord(value))) {
+    const values = typeof rawValues === "string" ? [rawValues] : asStringArray(rawValues);
+    const normalized = values.map((item) => item.trim().toLowerCase()).filter(Boolean);
+    if (normalized.length > 0) out[name] = normalized;
+  }
+  return out;
+}
+
+function normalizeStringListByName(value: unknown): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const [name, rawValues] of Object.entries(asRecord(value))) {
+    const values = typeof rawValues === "string" ? [rawValues] : asStringArray(rawValues);
+    const normalized = [...new Set(values.map((item) => item.trim()).filter(Boolean))];
+    if (normalized.length > 0) out[name] = normalized;
+  }
+  return out;
+}
+
+function normalizeForbiddenEdges(value: unknown): QualityTargetForbiddenEdgeConfig[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((rawEdge) => {
+    const edge = asRecord(rawEdge);
+    const source = asString(edge.source);
+    const target = asString(edge.target);
+    if (!source || !target) return [];
+    return [{
+      source,
+      target,
+      relation: asString(edge.relation),
+    }];
+  });
+}
+
 function normalizeMaxDrop(value: unknown): { max_drop: number } | undefined {
   const maxDrop = asNonNegativeNumber(asRecord(value).max_drop);
   return maxDrop === null ? undefined : { max_drop: maxDrop };
@@ -249,6 +309,7 @@ export function normalizeQualityTarget(
   const citationsRaw = asRecord(raw.citations);
   const extractionRaw = asRecord(citationsRaw.extraction);
   const graphRaw = asRecord(raw.graph);
+  const sceneRaw = asRecord(raw.scene);
   const reconciliationRaw = asRecord(raw.reconciliation);
   const communitiesRaw = asRecord(raw.communities);
   const bundlePath = asString(raw.bundle_path);
@@ -301,6 +362,13 @@ export function normalizeQualityTarget(
       forbidden_source_path_patterns: asStringArray(graphRaw.forbidden_source_path_patterns),
       allowed_node_types: asStringArray(graphRaw.allowed_node_types),
       min_degree_by_type: normalizeMinCountByNode(graphRaw.min_degree_by_type),
+      max_degree_by_type: normalizeMinCountByNode(graphRaw.max_degree_by_type),
+      max_degree_by_type_and_derivation: normalizeNestedCountByName(graphRaw.max_degree_by_type_and_derivation),
+      required_neighbor_ids_by_node: normalizeStringListByName(graphRaw.required_neighbor_ids_by_node),
+      forbidden_edges: normalizeForbiddenEdges(graphRaw.forbidden_edges),
+    },
+    scene: {
+      forbidden_shape_by_type: normalizeStringArrayByName(sceneRaw.forbidden_shape_by_type),
     },
     reconciliation: {
       min_candidates: asNonNegativeNumber(reconciliationRaw.min_candidates),
@@ -414,11 +482,28 @@ export function validateQualityTarget(target: NormalizedQualityTarget): string[]
   if (target.citations.display === "full" && target.citations.require_sidecar !== true) {
     errors.push("citations.require_sidecar must be true when citations.display is full");
   }
+  const hasSceneShapeRules = Object.keys(target.scene.forbidden_shape_by_type).length > 0;
+  if (hasSceneShapeRules && !target.publication.data_allowlist.includes("scene.json")) {
+    errors.push("publication.data_allowlist must include scene.json when scene.forbidden_shape_by_type is configured");
+  }
+  for (const [type, shapes] of Object.entries(target.scene.forbidden_shape_by_type)) {
+    for (const shape of shapes) {
+      if (!SCENE_SHAPES.has(shape)) {
+        errors.push(`scene.forbidden_shape_by_type.${type} contains unknown scene shape: ${shape}`);
+      }
+    }
+  }
   for (const pattern of target.graph.forbidden_node_id_patterns) {
     try {
       new RegExp(pattern);
     } catch {
       errors.push(`graph.forbidden_node_id_patterns contains invalid RegExp: ${pattern}`);
+    }
+  }
+  for (const [type, maxDegree] of Object.entries(target.graph.max_degree_by_type)) {
+    const minDegree = target.graph.min_degree_by_type[type];
+    if (minDegree !== undefined && maxDegree < minDegree) {
+      errors.push(`graph.max_degree_by_type.${type} must be >= graph.min_degree_by_type.${type}`);
     }
   }
   return errors;
