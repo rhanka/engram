@@ -101,6 +101,11 @@ describe("public API compatibility", () => {
     expect(typeof api.defaultCloneDestination).toBe("function");
     expect(typeof api.mergeGraphsFromFiles).toBe("function");
     expect(typeof api.serializeGraph).toBe("function");
+    expect(typeof api.discoverQualityTargetsConfig).toBe("function");
+    expect(typeof api.hashQualityTarget).toBe("function");
+    expect(typeof api.loadQualityTargetsConfig).toBe("function");
+    expect(typeof api.evaluateQualityBundle).toBe("function");
+    expect(typeof api.validatePrecomputedQaReportBinding).toBe("function");
   });
 
   it("accepts object-style map inputs and option objects", () => {
