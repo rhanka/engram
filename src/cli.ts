@@ -4162,6 +4162,67 @@ export async function main(): Promise<void> {
       );
     });
 
+  program
+    .command("qa")
+    .description("Evaluate a final Graphify bundle against a configured quality target")
+    .requiredOption("--target <id>", "quality.targets.<id> to evaluate")
+    .option("--config <path>", "graphify.yaml / .graphify/config.yaml containing quality.targets")
+    .option("--bundle <path>", "Final bundle directory; defaults to the target bundle_path")
+    .option("--manifest <path>", "Resolved target manifest JSON; defaults to <bundle>/resolved-target.json when present")
+    .option("--write-report [path]", "Write graphify_qa_report_v1 JSON; default <bundle>/quality-qa-report.json")
+    .option("--fail-on-error", "Exit non-zero when QA reports errors, even for advisory targets")
+    .action(async (opts) => {
+      const {
+        discoverQualityTargetsConfig,
+        loadQualityTargetsConfig,
+      } = await import("./quality-target.js");
+      const {
+        QA_REPORT_FILENAME,
+        evaluateQualityBundle,
+      } = await import("./qa.js");
+      type ResolvedTargetManifest = import("./qa.js").ResolvedTargetManifest;
+
+      const configPath = opts.config
+        ? resolve(opts.config)
+        : (() => {
+            const discovery = discoverQualityTargetsConfig(".");
+            return discovery.found ? discovery.path : null;
+          })();
+      if (!configPath) {
+        console.error("error: no graphify config found for quality target");
+        process.exit(1);
+      }
+      const config = loadQualityTargetsConfig(configPath);
+      const target = config.targets[String(opts.target)];
+      if (!target) {
+        console.error(`error: quality target not found: ${opts.target}`);
+        process.exit(1);
+      }
+      const bundleDir = resolve(opts.bundle ?? target.resolvedBundlePath ?? target.bundle_path ?? ".");
+      if (!existsSync(bundleDir) || !statSync(bundleDir).isDirectory()) {
+        console.error(`error: bundle directory not found: ${bundleDir}`);
+        process.exit(1);
+      }
+      const manifestPath = opts.manifest
+        ? resolve(opts.manifest)
+        : join(bundleDir, "resolved-target.json");
+      const manifest = existsSync(manifestPath)
+        ? readJson<ResolvedTargetManifest>(manifestPath)
+        : null;
+      const report = evaluateQualityBundle({ target, bundleDir, manifest });
+      const writeReport = opts.writeReport;
+      if (writeReport !== undefined) {
+        const reportPath = typeof writeReport === "string"
+          ? resolve(writeReport)
+          : join(bundleDir, QA_REPORT_FILENAME);
+        writeJson(reportPath, report);
+      }
+      console.log(JSON.stringify(report, null, 2));
+      if (report.status === "failed" && (opts.failOnError === true || target.publication.blocking)) {
+        process.exit(1);
+      }
+    });
+
   const wikiCommand = program
     .command("wiki")
     .description("Generate and maintain Graphify wiki artifacts");
