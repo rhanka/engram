@@ -248,6 +248,7 @@ describe("buildStudioScene — parity with studio buildScene", () => {
     expect(byId.get("c")!.fill).toBeUndefined();
     expect(byId.get("c")!.border).toBeUndefined();
     expect(byId.get("al")!.fill).toBe("hollow");
+    expect(byId.get("w")!.fill).toBe("hollow");
     expect(byId.get("w")!.border).toBe("bold");
 
     // Profile visual_encoding overrides shape AND the variant dimensions.
@@ -290,18 +291,18 @@ describe("buildStudioScene — parity with studio buildScene", () => {
     });
   });
 
-  describe("TYPE_SHAPE — legacy box-family mapping", () => {
-    // Only Work + ChapterOrStory are box glyphs; Saga/Author/Translator carry
-    // their canonical ontology shapes (matches public-pack ontology-profile.yaml).
+  describe("TYPE_SHAPE — corpus structure stays non-box", () => {
+    // Labelled boxes are reserved for Character hubs. Work/ChapterOrStory keep
+    // explicit non-box glyphs so corpus structure cannot masquerade as a hub.
     const expected: Record<string, string> = {
-      Work: "roundedbox",
-      ChapterOrStory: "roundedbox",
+      Work: "hexagon",
+      ChapterOrStory: "dot",
       Saga: "hexagon",
       Author: "star",
       Translator: "triangle",
     };
 
-    it("buildStudioScene (TS) maps the box-family types", () => {
+    it("buildStudioScene (TS) maps structural corpus types without box glyphs", () => {
       const graph = {
         nodes: Object.keys(expected).map((type, i) => ({ id: `n${i}`, type })),
         edges: [],
@@ -310,6 +311,7 @@ describe("buildStudioScene — parity with studio buildScene", () => {
       for (const node of scene.nodes) {
         expect(node.shape).toBe(expected[node.type as string]);
       }
+      expect(scene.nodes.filter((node) => node.shape === "roundedbox")).toHaveLength(0);
     });
 
     it("buildScene (SPA) stays in lockstep with the TS port", () => {
@@ -321,6 +323,27 @@ describe("buildStudioScene — parity with studio buildScene", () => {
       for (const node of scene.nodes) {
         expect(node.shape).toBe(expected[node.type as string]);
       }
+      expect(scene.nodes.filter((node) => node.shape === "roundedbox")).toHaveLength(0);
+    });
+
+    it("keeps shared hexagon types visually distinct by fill/border variant", () => {
+      const graph = {
+        nodes: ["Organization", "ForensicMethod", "Saga", "Work"].map((type, i) => ({
+          id: `n${i}`,
+          type,
+        })),
+        edges: [],
+      };
+      const scene = buildStudioScene(graph);
+      const signatures = scene.nodes.map((node) =>
+        [node.type, node.shape, node.fill ?? "solid", node.border ?? "normal"].join(":"),
+      );
+      expect(signatures).toEqual([
+        "Organization:hexagon:solid:normal",
+        "ForensicMethod:hexagon:hollow:normal",
+        "Saga:hexagon:solid:bold",
+        "Work:hexagon:hollow:bold",
+      ]);
     });
   });
 });
