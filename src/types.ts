@@ -768,6 +768,132 @@ export interface OntologyHierarchyIndex {
   cycles: string[][];
 }
 
+// ---------------------------------------------------------------------------
+// Class-hierarchies (EVOL 2.c) — graphify_ontology_class_hierarchies_v1
+// ---------------------------------------------------------------------------
+//
+// A SEPARATE, additive ontology artifact (`class-hierarchies.json`) describing
+// the CLASS layer: a mono-parent class tree (`subclass_of`) whose leaf classes
+// gather the graph's entity nodes by their `node_type` (`has_instance`). It is
+// independent of the signed `graphify_scene_hierarchies_v1` sidecar (which
+// describes the ENTITY-instance tree); the two never share state. Class node
+// ids are synthetic and namespaced `class:<ClassName>` to avoid colliding with
+// raw registry / entity ids. Entities join leaf classes by their graph/scene
+// node `id` (NOT registry_record_id — see the join-key ambiguity note in
+// scene-hierarchies.ts / SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md).
+
+/** One class in a profile-declared class hierarchy (profile input). */
+export interface ClassHierarchyClass {
+  /** Parent class name within the same hierarchy, or null for a root class. */
+  parent?: string | null;
+  /** Optional human-readable label (defaults to the class name). */
+  label?: string;
+  /**
+   * Node types whose entities are instances of this (leaf) class. A node_type
+   * may appear under at most one class per hierarchy; duplicates are reported
+   * as conflicts and only the first (by sorted class name) wins.
+   */
+  member_node_types?: string[];
+}
+
+/** A profile-declared class hierarchy (profile input). */
+export interface ClassHierarchySpec {
+  /** Class→parent relation (default "subclass_of"). */
+  relation_type?: string;
+  /** Class→entity membership relation (default "has_instance"). */
+  membership_relation_type?: string;
+  /** Class name → class definition. */
+  classes?: Record<string, ClassHierarchyClass>;
+}
+
+/** Profile `class_hierarchies` block: hierarchy_id → spec. */
+export type ClassHierarchiesProfileBlock = Record<string, ClassHierarchySpec>;
+
+/** Normalized class definition (all optionals defaulted). */
+export interface NormalizedClassHierarchyClass {
+  parent: string | null;
+  label: string | null;
+  member_node_types: string[];
+}
+
+/** Normalized class hierarchy spec (all optionals defaulted). */
+export interface NormalizedClassHierarchySpec {
+  relation_type: string;
+  membership_relation_type: string;
+  classes: Record<string, NormalizedClassHierarchyClass>;
+}
+
+/** Per-class entry of a compiled class hierarchy. Keyed by synthetic class id. */
+export interface ClassHierarchyClassEntry {
+  /** Synthetic class id, namespaced `class:<ClassName>`. Equals the entry key. */
+  id: string;
+  /** Display label (the class name when none was declared). */
+  label: string;
+  /** Synthetic id of the parent class, or null for roots / cycle-broken nodes. */
+  parent_id: string | null;
+  /** Synthetic ids of the direct child classes, sorted. */
+  child_ids: string[];
+  /** Depth from the root (0 = root). */
+  level: number;
+  /** Node types whose entities are instances of this class, sorted. */
+  member_node_types: string[];
+  /**
+   * Graph/scene node ids (NOT registry_record_id) of the entities attached to
+   * this leaf class via `member_node_types`. Sorted; empty for inner classes.
+   */
+  member_ids: string[];
+  /** Always "profile" for profile-declared classes (mirrors the arc source). */
+  source: "profile";
+  /** Lifecycle status — profile-declared classes are authoritative references. */
+  status: "reference";
+}
+
+/** A single compiled class hierarchy. */
+export interface ClassHierarchy {
+  /** Class→parent relation type (e.g. "subclass_of"). */
+  relation_type: string;
+  /** Class→entity membership relation type (e.g. "has_instance"). */
+  membership_relation_type: string;
+  /** Synthetic ids of the root classes (no parent), sorted. */
+  root_class_ids: string[];
+  /** Maximum class depth (0 when every class is a root). */
+  max_depth: number;
+  /** Synthetic class id → class entry. */
+  classes_by_id: Record<string, ClassHierarchyClassEntry>;
+  /**
+   * Class names whose declared parent is absent from the hierarchy. They are
+   * promoted to roots and listed here (sorted) so consumers can flag them.
+   */
+  orphan_class_names: string[];
+  /**
+   * Cycles among the class parent links. Each entry is an ordered list of
+   * synthetic class ids. Classes on a cycle are detached (parent_id=null) and
+   * excluded from levels, exactly like buildHierarchyIndex.
+   */
+  cycles: string[][];
+  /**
+   * Node types claimed by more than one class. Each entry records the node_type
+   * and the losing class names (the first class by sorted name keeps it).
+   */
+  member_node_type_conflicts: Array<{ node_type: string; dropped_classes: string[] }>;
+  /**
+   * Number of entity nodes whose node_type maps to no class in this hierarchy
+   * (left unattached).
+   */
+  unattached_entity_count: number;
+}
+
+export const ONTOLOGY_CLASS_HIERARCHIES_SCHEMA = "graphify_ontology_class_hierarchies_v1";
+
+/** The `class-hierarchies.json` artifact (graphify_ontology_class_hierarchies_v1). */
+export interface ClassHierarchiesArtifact {
+  schema: typeof ONTOLOGY_CLASS_HIERARCHIES_SCHEMA;
+  generated_at: string;
+  graph_hash?: string | null;
+  profile_hash?: string | null;
+  hierarchies: Record<string, ClassHierarchy>;
+}
+
 export type OntologyRelationExport = string | { relation_type?: string };
 
 export interface OntologyOutputWikiPolicy {
@@ -806,6 +932,8 @@ export interface OntologyProfile {
   inference_policy?: OntologyInferencePolicy;
   evidence_policy?: OntologyEvidencePolicy;
   hierarchies?: Record<string, OntologyHierarchySpec>;
+  /** EVOL 2.c — class-layer hierarchies (separate from registry hierarchies). */
+  class_hierarchies?: Record<string, ClassHierarchySpec>;
   outputs?: OntologyProfileOutputs;
 }
 
@@ -862,6 +990,12 @@ export interface NormalizedOntologyProfile {
   inference_policy: NormalizedOntologyInferencePolicy;
   evidence_policy: NormalizedOntologyEvidencePolicy;
   hierarchies: Record<string, NormalizedOntologyHierarchySpec>;
+  /**
+   * EVOL 2.c — normalized class-layer hierarchies. Always populated by
+   * normalizeOntologyProfile (empty when the profile omits the block), but
+   * declared OPTIONAL so existing NormalizedOntologyProfile literals stay valid.
+   */
+  class_hierarchies?: Record<string, NormalizedClassHierarchySpec>;
   outputs: NormalizedOntologyProfileOutputs;
 }
 

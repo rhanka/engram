@@ -142,6 +142,26 @@ export async function fetchModelsManifest() {
   }
 }
 
+/**
+ * EVOL 2.a: fetch the standalone `class-hierarchies.json` artifact (schema
+ * `graphify_ontology_class_hierarchies_v1`) that drives the ontology-class
+ * display toggle. Tries the same-origin server route first, then the
+ * bundle-relative static copy (resolved under the active model's dir in a
+ * multi-model bundle). Resolves `null` when absent — the toggle then injects
+ * nothing — and never throws (mirrors fetchModelsManifest).
+ */
+export async function fetchClassHierarchies() {
+  try {
+    return await getJson("/api/ontology/class-hierarchies.json");
+  } catch {
+    try {
+      return await getJson(staticPath("class-hierarchies.json"));
+    } catch {
+      return null;
+    }
+  }
+}
+
 export async function fetchReconciliationCandidates() {
   try {
     return await getJson("/api/ontology/reconciliation/candidates?sort=score&order=desc&limit=50");

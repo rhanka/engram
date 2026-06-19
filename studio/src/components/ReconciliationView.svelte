@@ -18,6 +18,7 @@
   import { buildPatchFromCandidate } from "../lib/reconciliation.js";
   import {
     candidateSubgraph,
+    candidateUnionSubgraph,
     buildScene,
     withReconcileEdge,
     attachReconLayout,
@@ -147,6 +148,20 @@
   // subgraph with the twins HELD FIXED at the centre, so the neighbours settle
   // AROUND the centred, side-by-side pair (a compact, centred, twinned cluster).
   const scene = $derived.by(() => {
+    // EVOL 1.b: when MORE THAN ONE candidate is ticked, the centre graph shows
+    // the UNION of the selected candidates' subgraphs (each folded into its
+    // canonical) — a live preview of the combined post-merge graph. A single (or
+    // zero) selection keeps the focused twin-pair view below.
+    const picked = filtered.filter((c) => selected.has(c.id));
+    if (picked.length > 1) {
+      const union = candidateUnionSubgraph(
+        graph,
+        picked.map((c) => ({ candidate_id: c.candidate_id, canonical_id: c.canonical_id })),
+        reconDepth,
+        { maxNodes: RECON_SUBGRAPH_MAX_NODES },
+      );
+      return attachReconLayout(buildScene(union, { showWeakLinks: true }));
+    }
     if (!active) return buildScene({ nodes: [], links: [] });
     // #4.1: expand each entity's neighbourhood to DEPTH reconDepth (default 3),
     // capped at RECON_SUBGRAPH_MAX_NODES nodes (fan-out cap, see candidateSubgraph).
@@ -189,7 +204,13 @@
     // Run the local layout (twins fixed) so neighbours arrange around the pair.
     return attachReconLayout({ ...linked, nodes });
   });
-  const selectedIds = $derived(active ? [active.candidate_id, active.canonical_id] : []);
+  // EVOL 1.b: in union mode (multi-select) the centre frames the surviving
+  // canonicals; otherwise it frames the focused twin pair.
+  const selectedIds = $derived.by(() => {
+    const picked = filtered.filter((c) => selected.has(c.id));
+    if (picked.length > 1) return [...new Set(picked.map((c) => c.canonical_id))];
+    return active ? [active.candidate_id, active.canonical_id] : [];
+  });
 
   function label(id) {
     const n = idx.get(id);
@@ -223,6 +244,9 @@
     stale = Boolean(res?.stale);
     graphHash = res?.graph_hash ?? "";
     profileHash = res?.profile_hash ?? "";
+    // EVOL 1.a: pre-select ALL candidates by default (was: none) so the operator
+    // starts from "validate everything" and unticks exceptions, not the reverse.
+    selected = new SvelteSet(candidates.map((c) => c.id));
     loaded = true;
     if (!activeId && candidates.length) activeId = candidates[0].id;
   }
@@ -620,10 +644,17 @@
     padding: 0 0.4rem; min-width: 1.4rem; text-align: center;
   }
 
-  .recon-rail-list { list-style: none; margin: 0; padding: 0.15rem 0.5rem; display: grid; gap: 2px; }
+  /* EVOL 1.c (real root cause): the grid had NO grid-template-columns, so its
+     implicit `auto` column sized to the widest row's content and OVERFLOWED the
+     rail — pushing the score % bubble off-screen (the pair's overflow:hidden
+     below was necessary but not sufficient). minmax(0,1fr) pins the column to the
+     container width; min-width:0 on the flex item lets the row shrink. Together
+     with the pair clip, long Character labels ellipsise and the % stays visible. */
+  .recon-rail-list { list-style: none; margin: 0; padding: 0.15rem 0.5rem; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
   /* #4 (d): row = checkbox + clickable body. */
   .recon-rail-item {
     display: flex; align-items: stretch; gap: 0.35rem;
+    min-width: 0;
     border: 1px solid transparent;
     border-radius: var(--st-radius-sm, 4px);
   }
@@ -649,9 +680,14 @@
   }
   .recon-rail-row:hover { background: var(--st-semantic-surface-subtle, #f8fafc); }
   /* #4 (c): two entities, two lines. */
-  .recon-rail-pair { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+  /* EVOL 1.c: the pair MUST clip — min-width:0 ALONE is not enough because, as a
+     column flex container, its min-content width is the widest nowrap line, which
+     pushes the score % bubble out of view (seen on long Character names). Adding
+     overflow:hidden forces min-content to 0 so the pair shrinks and each line
+     ellipsises within the available flex width, keeping the % bubble visible. */
+  .recon-rail-pair { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; overflow: hidden; }
   .recon-rail-line {
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
     font-size: 0.82rem; line-height: 1.25;
   }
   .recon-rail-canon { color: var(--st-semantic-text-secondary, #475569); font-size: 0.78rem; }

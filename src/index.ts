@@ -64,6 +64,14 @@ export type {
   OntologyHierarchyIndex,
   NormalizedOntologyHierarchySpec,
   OntologyHierarchySpec,
+  ClassHierarchySpec,
+  ClassHierarchyClass,
+  ClassHierarchiesProfileBlock,
+  NormalizedClassHierarchySpec,
+  NormalizedClassHierarchyClass,
+  ClassHierarchy,
+  ClassHierarchyClassEntry,
+  ClassHierarchiesArtifact,
 } from "./types.js";
 export { inspectInputScope } from "./input-scope.js";
 export type { InputScopeInventory, InspectInputScopeOptions } from "./input-scope.js";
@@ -527,6 +535,25 @@ export type {
   EmitSceneHierarchiesOptions,
   EmitSceneHierarchiesResult,
 } from "./scene-hierarchies-emitter.js";
+export {
+  ONTOLOGY_CLASS_HIERARCHIES_SCHEMA,
+  CLASS_ID_PREFIX,
+  buildClassHierarchies,
+  classNodeId,
+} from "./ontology-class-hierarchies.js";
+export type {
+  BuildClassHierarchiesOptions,
+  ClassHierarchyGraphNode,
+} from "./ontology-class-hierarchies.js";
+export {
+  CLASS_HIERARCHIES_FILENAME,
+  clearClassHierarchiesEmitterCache,
+  emitClassHierarchies,
+} from "./ontology-class-hierarchies-emitter.js";
+export type {
+  EmitClassHierarchiesOptions,
+  EmitClassHierarchiesResult,
+} from "./ontology-class-hierarchies-emitter.js";
 export {
   WORKSPACE_MANIFEST_SCHEMA,
   WORKSPACE_MANIFEST_SCHEMA_VERSION,

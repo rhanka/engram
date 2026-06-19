@@ -4,6 +4,10 @@ import { extname, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 
 import type {
+  ClassHierarchyClass,
+  ClassHierarchySpec,
+  NormalizedClassHierarchyClass,
+  NormalizedClassHierarchySpec,
   NormalizedOntologyProfile,
   NormalizedOntologyEvidencePolicy,
   NormalizedOntologyHierarchySpec,
@@ -177,6 +181,44 @@ function normalizeHierarchies(value: unknown): Record<string, NormalizedOntology
     Object.entries(normalizeStringMap<OntologyHierarchySpec>(value)).map(([id, hierarchy]) => [
       id,
       normalizeHierarchy(hierarchy),
+    ]),
+  );
+}
+
+function normalizeClassHierarchyClass(value: ClassHierarchyClass): NormalizedClassHierarchyClass {
+  const parent = value.parent;
+  return {
+    parent: typeof parent === "string" && parent.trim().length > 0 ? parent.trim() : null,
+    label: typeof value.label === "string" && value.label.trim().length > 0 ? value.label.trim() : null,
+    member_node_types: asStringArray(value.member_node_types),
+  };
+}
+
+function normalizeClassHierarchy(spec: ClassHierarchySpec): NormalizedClassHierarchySpec {
+  const classes = normalizeStringMap<ClassHierarchyClass>(spec.classes);
+  return {
+    relation_type:
+      typeof spec.relation_type === "string" && spec.relation_type.trim().length > 0
+        ? spec.relation_type.trim()
+        : "subclass_of",
+    membership_relation_type:
+      typeof spec.membership_relation_type === "string" && spec.membership_relation_type.trim().length > 0
+        ? spec.membership_relation_type.trim()
+        : "has_instance",
+    classes: Object.fromEntries(
+      Object.entries(classes).map(([name, klass]) => [name, normalizeClassHierarchyClass(klass)]),
+    ),
+  };
+}
+
+/** EVOL 2.c — normalize the optional `class_hierarchies` profile block. */
+function normalizeClassHierarchies(
+  value: unknown,
+): Record<string, NormalizedClassHierarchySpec> {
+  return Object.fromEntries(
+    Object.entries(normalizeStringMap<ClassHierarchySpec>(value)).map(([id, spec]) => [
+      id,
+      normalizeClassHierarchy(spec),
     ]),
   );
 }
@@ -418,7 +460,9 @@ export function validateOntologyProfile(profile: OntologyProfile): string[] {
   return errors;
 }
 
-export function hashOntologyProfile(profile: OntologyProfile | NormalizedOntologyProfile): string {
+export function hashOntologyProfile(
+  profile: OntologyProfile | NormalizedOntologyProfile | Omit<NormalizedOntologyProfile, "profile_hash">,
+): string {
   const h = createHash("sha256");
   h.update(JSON.stringify(stableForHash(profile)));
   return h.digest("hex");
@@ -451,6 +495,7 @@ export function normalizeOntologyProfile(profile: OntologyProfile, sourcePath?: 
     inference_policy: normalizeInferencePolicy(profile.inference_policy),
     evidence_policy: normalizeEvidencePolicy(profile.evidence_policy),
     hierarchies: normalizeHierarchies(profile.hierarchies),
+    class_hierarchies: normalizeClassHierarchies(profile.class_hierarchies),
     outputs: normalizeOutputs(profile.outputs),
   };
 
