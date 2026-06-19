@@ -26,11 +26,15 @@
     query = "",
     selection = { types: [], communities: [], entities: [] },
     showWeakLinks = true,
+    showOntologyClasses = false,
+    collapsedClassCount = 0,
     onToggleType,
     onToggleCommunity,
     onToggleEntity,
     onSetQuery,
     onToggleWeak,
+    onToggleOntologyClasses,
+    onExpandAllClasses,
   } = $props();
 
   const typeList = $derived(groupCounts(graph, nodeType));
@@ -220,6 +224,28 @@
       />
       Show weak (inferred) links
     </label>
+    <label class="rail-facet">
+      <input
+        type="checkbox"
+        checked={showOntologyClasses}
+        onchange={(e) => onToggleOntologyClasses?.(e.currentTarget.checked)}
+      />
+      Show ontology classes
+    </label>
+    {#if showOntologyClasses}
+      <p class="rail-facet-hint">
+        Click a class node to fold its subtree; click again to expand.
+      </p>
+      {#if collapsedClassCount > 0}
+        <button
+          type="button"
+          class="rail-reset-btn"
+          onclick={() => onExpandAllClasses?.()}
+        >
+          Expand all classes ({collapsedClassCount} collapsed)
+        </button>
+      {/if}
+    {/if}
   </Collapsible>
 </aside>
 
@@ -319,5 +345,25 @@
     font-size: 0.82rem;
     color: var(--st-semantic-text-secondary, #475569);
     cursor: pointer;
+  }
+  .rail-facet-hint {
+    margin: 0.35rem 0 0.15rem;
+    color: var(--st-semantic-text-muted, #64748b);
+    font-size: 0.72rem;
+    font-style: italic;
+    line-height: 1.3;
+  }
+  .rail-reset-btn {
+    margin-top: 0.25rem;
+    padding: 0.3rem 0.55rem;
+    border: 1px solid var(--st-semantic-border-muted, #e2e8f0);
+    border-radius: 4px;
+    background: var(--st-semantic-surface-default, #fff);
+    color: var(--st-semantic-action-primary, #2563eb);
+    font-size: 0.76rem;
+    cursor: pointer;
+  }
+  .rail-reset-btn:hover {
+    background: var(--st-semantic-surface-hover, #f1f5f9);
   }
 </style>

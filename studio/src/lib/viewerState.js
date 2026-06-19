@@ -8,7 +8,10 @@
  *               on the left. Each list toggles independently (click = add/remove).
  *   focusId   : the last individually-picked entity → gets the "double" emphasis
  *               (selection highlight + focus shadow) and opens its detail.
- *   options   : { showWeakLinks } — graph options (ex-"Facets").
+ *   options   : { showWeakLinks, showOntologyClasses, collapsedClassIds } — graph
+ *               options (ex-"Facets"). `collapsedClassIds` (EVOL 2.b/2.d) is the
+ *               set of ontology class ids the user has folded; each click on a
+ *               class node toggles its id in/out and the subtree collapses.
  *   query     : free-text filter for the Entities list.
  *   activeView: "workspace" | "reconciliation".
  *
@@ -22,7 +25,7 @@ export function createDefaultViewerState() {
     query: "",
     selection: { types: [], communities: [], entities: [] },
     focusId: null,
-    options: { showWeakLinks: true },
+    options: { showWeakLinks: true, showOntologyClasses: false, collapsedClassIds: [] },
   };
 }
 
@@ -47,6 +50,10 @@ export function normalizeViewerState(partial = {}) {
   next.focusId = typeof next.focusId === "string" && next.focusId ? next.focusId : null;
   if (next.activeView !== "reconciliation") next.activeView = "workspace";
   next.options.showWeakLinks = Boolean(next.options.showWeakLinks);
+  next.options.showOntologyClasses = Boolean(next.options.showOntologyClasses);
+  next.options.collapsedClassIds = uniqueStrings(
+    next.options.collapsedClassIds ?? base.options.collapsedClassIds,
+  );
   // The focus must be a selected entity; drop it if it was deselected.
   if (next.focusId && !next.selection.entities.includes(next.focusId)) next.focusId = null;
   return next;
@@ -135,5 +142,59 @@ export function setShowWeakLinks(state, value) {
   return normalizeViewerState({
     ...state,
     options: { ...state.options, showWeakLinks: Boolean(value) },
+  });
+}
+
+export function setShowOntologyClasses(state, value) {
+  const on = Boolean(value);
+  return normalizeViewerState({
+    ...state,
+    options: {
+      ...state.options,
+      showOntologyClasses: on,
+      // Turning the class layer OFF clears any pending collapse so the next
+      // turn-on starts fully expanded (no stale folds against a hidden layer).
+      collapsedClassIds: on ? state.options.collapsedClassIds : [],
+    },
+  });
+}
+
+/**
+ * EVOL 2.b/2.d — toggle a single ontology CLASS id in/out of the collapsed set.
+ * Collapsing folds the class's whole subtree (sub-classes + member entities)
+ * into the class node; collapsing again (toggle off) restores it.
+ */
+export function toggleCollapseClass(state, classId) {
+  if (typeof classId !== "string" || !classId) return normalizeViewerState(state);
+  return normalizeViewerState({
+    ...state,
+    options: {
+      ...state.options,
+      collapsedClassIds: toggleIn(state.options.collapsedClassIds ?? [], classId),
+    },
+  });
+}
+
+/** EVOL 2.b/2.d — expand everything (clear the collapsed set). */
+export function expandAllClasses(state) {
+  return normalizeViewerState({
+    ...state,
+    options: { ...state.options, collapsedClassIds: [] },
+  });
+}
+
+/**
+ * EVOL 2.b/2.d — collapse a given set of TOP-LEVEL class ids in one gesture
+ * (a convenience reset, e.g. "fold every root class"). Callers pass the ids to
+ * collapse; the union with any current set is kept.
+ */
+export function collapseAllTopClasses(state, classIds = []) {
+  const next = uniqueStrings([
+    ...(state.options.collapsedClassIds ?? []),
+    ...(classIds ?? []),
+  ]);
+  return normalizeViewerState({
+    ...state,
+    options: { ...state.options, collapsedClassIds: next },
   });
 }

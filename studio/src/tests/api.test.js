@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   __resetEntitiesIndexCache,
+  fetchClassHierarchies,
   fetchEntity,
   fetchReconciliationCandidates,
   fetchScene,
@@ -92,6 +93,42 @@ describe("fetchEntity (standalone fallback)", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(fetchEntity("n1")).resolves.toBeNull();
+  });
+});
+
+describe("fetchClassHierarchies (EVOL 2.a)", () => {
+  const artifact = {
+    schema: "graphify_ontology_class_hierarchies_v1",
+    hierarchies: { mystery: { classes_by_id: {} } },
+  };
+
+  it("returns the artifact from the same-origin route", async () => {
+    const fetchMock = vi.fn(async (url) => {
+      if (url === "/api/ontology/class-hierarchies.json") return jsonResponse(artifact);
+      throw new Error(`unexpected url ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchClassHierarchies()).resolves.toEqual(artifact);
+  });
+
+  it("falls back to the bundle-relative ./class-hierarchies.json (standalone file://)", async () => {
+    const fetchMock = vi.fn(async (url) => {
+      if (url === "/api/ontology/class-hierarchies.json") return jsonResponse({ error: "nope" }, false);
+      if (url === "./class-hierarchies.json") return jsonResponse(artifact);
+      throw new Error(`unexpected url ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchClassHierarchies()).resolves.toEqual(artifact);
+    expect(fetchMock).toHaveBeenCalledWith("./class-hierarchies.json", expect.anything());
+  });
+
+  it("returns null when the artifact is absent (never throws)", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ error: "nope" }, false));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchClassHierarchies()).resolves.toBeNull();
   });
 });
 

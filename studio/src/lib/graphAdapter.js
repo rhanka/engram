@@ -75,6 +75,9 @@ const NODE_PROFILE_FIELDS = [
   "hierarchy_ids",
   "badges",
   "documents",
+  // EVOL 2.a: synthetic ontology CLASS node passthrough (injectOntologyClassNodes).
+  "ontology_node_kind",
+  "ontology_class_id",
 ];
 
 const EDGE_PROFILE_FIELDS = [
@@ -87,6 +90,8 @@ const EDGE_PROFILE_FIELDS = [
   "evidence_refs",
   "hierarchy_id",
   "structural",
+  // EVOL 2.a: synthetic ontology class edge kind (has_instance / subclass_of).
+  "ontology_edge_kind",
 ];
 
 export function nodeLabel(node) {
@@ -146,6 +151,9 @@ const TYPE_SHAPE = {
   Saga: "hexagon",
   Author: "star",
   Translator: "triangle",
+  // EVOL 2.a: synthetic ontology CLASS nodes render as labelled rounded boxes
+  // (the class name sits inside the box), distinct from data-driven entity hubs.
+  OntologyClass: "roundedbox",
 };
 
 /**
@@ -182,6 +190,11 @@ const REL_DASH = {
   used_in: "long-dash",
   uses_method: "long-dash",
   involves: "long-dash",
+  // EVOL 2.a: ontology class structure (synthetic). subclass_of = the class
+  // tree skeleton (solid); has_instance = a class gathering its members (dotted
+  // anchoring, like other membership/structural-anchoring relations).
+  subclass_of: "solid",
+  has_instance: "dotted",
 };
 export function dashForRelation(relation) {
   if (!relation) return undefined;
@@ -227,11 +240,19 @@ export function isStrongEdge(edge) {
   return conf === "EXTRACTED";
 }
 
-/** Undirected degree per node id, used to scale node radius. */
+/**
+ * Undirected degree per node id, used to scale node radius and elect the
+ * god-class box. SYNTHETIC structural edges (EVOL 2.a class membership /
+ * subclass edges, flagged `edge.structural`) are EXCLUDED: injecting ontology
+ * class nodes must never change which entity is the god-class box nor inflate an
+ * entity's degree-driven radius. (The class nodes themselves therefore size to
+ * the degree floor, as intended — their salience comes from the box label.)
+ */
 export function computeDegrees(nodes, edges) {
   const degree = new Map();
   for (const node of nodes) degree.set(node.id, 0);
   for (const edge of edges) {
+    if (edge.structural) continue;
     if (degree.has(edge.source)) degree.set(edge.source, degree.get(edge.source) + 1);
     if (degree.has(edge.target)) degree.set(edge.target, degree.get(edge.target) + 1);
   }
@@ -788,6 +809,74 @@ export function candidateSubgraph(
 }
 
 /**
+ * EVOL 1.b: UNION of several reconciliation candidates' subgraphs, shown as a
+ * single PREVIEW of the post-merge result. Each selected pair {candidate_id,
+ * canonical_id} folds its candidate INTO its canonical (survivor); we union the
+ * depth-`hops` neighbourhoods of all anchors, then re-endpoint every edge onto
+ * the surviving canonical, drop self-loops created by the fold, and dedup
+ * parallel edges (by source|target|relation). This previews exactly what the
+ * graph becomes if the whole selection is validated — it does NOT mutate the
+ * graph (apply still posts the existing per-candidate accept_match patches,
+ * which fold into the same canonicals on rebuild). Returns { nodes, links, fold }.
+ */
+export function candidateUnionSubgraph(
+  graph,
+  pairs,
+  hops = RECON_SUBGRAPH_DEPTH,
+  { maxNodes = RECON_SUBGRAPH_MAX_NODES } = {},
+) {
+  const idx = indexNodes(graph);
+  const edges = graphEdges(graph);
+  const keep = new Set();
+  const fold = new Map(); // candidate_id -> canonical_id (survivor)
+  for (const p of pairs ?? []) {
+    const canon = p?.canonical_id;
+    const cand = p?.candidate_id;
+    if (canon != null && idx.has(canon)) keep.add(canon);
+    if (cand != null && idx.has(cand)) {
+      keep.add(cand);
+      if (canon != null && idx.has(canon)) fold.set(cand, canon);
+    }
+  }
+  const cap = Number.isFinite(maxNodes) ? Math.max(keep.size, maxNodes) : Infinity;
+  let frontier = new Set(keep);
+  for (let h = 0; h < Math.max(0, hops); h++) {
+    if (keep.size >= cap) break;
+    const next = new Set();
+    for (const e of edges) {
+      const s = e?.source, t = e?.target;
+      if (frontier.has(s) && t != null && idx.has(t) && !keep.has(t)) next.add(t);
+      if (frontier.has(t) && s != null && idx.has(s) && !keep.has(s)) next.add(s);
+    }
+    for (const n of next) {
+      if (keep.size >= cap) break;
+      keep.add(n);
+    }
+    frontier = next;
+    if (next.size === 0) break;
+  }
+  const rep = (id) => fold.get(id) ?? id;
+  // Folded candidates merge into their canonical, so they are not emitted as nodes.
+  const nodes = [...keep]
+    .filter((id) => !fold.has(id))
+    .map((id) => idx.get(id))
+    .filter(Boolean);
+  const seen = new Set();
+  const links = [];
+  for (const e of edges) {
+    if (!keep.has(e?.source) || !keep.has(e?.target)) continue;
+    const s = rep(e.source), t = rep(e.target);
+    if (s === t) continue; // self-loop created by the fold — drop it.
+    const rel = e.relation ?? e.relation_type ?? "";
+    const key = `${s} ${t} ${rel}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    links.push({ ...e, source: s, target: t });
+  }
+  return { nodes, links, fold };
+}
+
+/**
  * SVELTE-7: add a synthetic "reconciliation" edge between the two candidate
  * entities so the force layout pulls them side by side and the link is visible
  * (the twins usually have no direct edge). Marked `reconcile: true` and given a
@@ -953,6 +1042,39 @@ export function attachReconLayout(scene, options = {}) {
     const x = p.x - width / 2 + cx;
     const y = p.y - height / 2 + cy;
     return { ...n, x, y, fx: x, fy: y };
+  });
+  return { ...scene, nodes };
+}
+
+/**
+ * EVOL 2.a/2.b: run a force layout over a scene that carries NO precomputed
+ * positions. The default workspace renders `scene.json` (build-time positions),
+ * but the ontology class-display / collapse views rebuild the scene from
+ * `graph.json` (no x/y), and GraphCanvas renders static positions (no live sim) —
+ * so without this the renderer falls back to a degenerate ring. Iterations scale
+ * DOWN with node count so a ~2k-node toggle stays responsive.
+ */
+export function attachForceLayout(scene, options = {}) {
+  if (!scene || !Array.isArray(scene.nodes) || scene.nodes.length === 0) return scene;
+  const n = scene.nodes.length;
+  const width = finiteNumber(options.width) ? options.width : Math.max(1200, Math.sqrt(n) * 42);
+  const height = finiteNumber(options.height) ? options.height : Math.max(900, Math.sqrt(n) * 32);
+  const iterations = finiteNumber(options.iterations)
+    ? options.iterations
+    : n > 1500 ? 90 : n > 600 ? 130 : 180;
+  const positions = computeLayout(
+    scene.nodes.map((node) => ({
+      id: node.id,
+      fx: finiteNumber(node.fx) ? node.fx : undefined,
+      fy: finiteNumber(node.fy) ? node.fy : undefined,
+    })),
+    scene.edges ?? [],
+    { iterations, width, height },
+  );
+  const byId = new Map(positions.map((p) => [p.id, p]));
+  const nodes = scene.nodes.map((node) => {
+    const p = byId.get(node.id);
+    return p ? { ...node, x: p.x, y: p.y } : node;
   });
   return { ...scene, nodes };
 }

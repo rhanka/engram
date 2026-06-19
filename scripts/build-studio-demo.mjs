@@ -117,6 +117,8 @@ let buildStudioScene;
 let attachLayoutPositions;
 let buildEntitySidecar;
 let emitSceneHierarchies;
+let emitClassHierarchies;
+let loadOntologyProfile;
 let emitWorkspaceManifest;
 let discoverQualityTargetsConfig;
 let hashQualityTarget;
@@ -134,6 +136,8 @@ try {
     buildEntitySidecar,
     discoverQualityTargetsConfig,
     emitSceneHierarchies,
+    emitClassHierarchies,
+    loadOntologyProfile,
     emitWorkspaceManifest,
     evaluateQualityBundle,
     hashQualityTarget,
@@ -314,6 +318,29 @@ const hierarchiesResult = emitSceneHierarchies({
   sceneNodeIds: sceneRawIds,
 });
 
+// --- 3c. class-hierarchies.json (EVOL 2.c). ---
+// SEPARATE, additive ontology artifact (never embedded in scene/graph),
+// emitted into <state>/ontology IFF the bound profile carries a non-empty
+// `class_hierarchies` block. Entities join leaf classes by their graph node
+// `id` (NOT registry_record_id). Absent block / no --profile => no file
+// (byte-identical to today). A profile that cannot be loaded is non-fatal.
+let classHierarchiesResult = { written: false, path: null, artifact: null };
+if (args.profile) {
+  try {
+    const ontologyProfile = loadOntologyProfile(args.profile);
+    classHierarchiesResult = emitClassHierarchies({
+      classHierarchies: ontologyProfile.class_hierarchies,
+      graphNodes: nodes,
+      ontologyOutputDir: join(stateDir, "ontology"),
+      profileHash: ontologyProfile.profile_hash,
+    });
+  } catch (err) {
+    console.warn(
+      `build-studio-demo: could not load profile for class-hierarchies (${err instanceof Error ? err.message : String(err)}); skipping class-hierarchies.json.`,
+    );
+  }
+}
+
 // --- 4. reconciliation-candidates.json: publish the complete candidate set. ---
 // The SPA can page client-side from this static artifact. Publication QA must
 // see the full queue/response, not a UI page capped at 50.
@@ -417,6 +444,11 @@ console.log(
   hierarchiesResult.path
     ? `  scene-hierarchies: ${Object.keys(hierarchiesResult.sidecar.hierarchies).length} hierarchies (${hierarchiesResult.path})`
     : "  scene-hierarchies: none (no ontology/hierarchies.json in state dir)",
+);
+console.log(
+  classHierarchiesResult.path
+    ? `  class-hierarchies: ${Object.keys(classHierarchiesResult.artifact.hierarchies).length} hierarchies (${classHierarchiesResult.path})`
+    : "  class-hierarchies: none (no class_hierarchies block in profile)",
 );
 console.log(`  reconciliation candidates: ${candidatesResponse.total ?? candidatesResponse.items.length}`);
 console.log(`  entities index: ${Object.keys(entities).length} ids (${withDescription} with description, ${withOccurrences} with occurrences)`);

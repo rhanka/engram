@@ -658,3 +658,39 @@ describe("memoised graph index (quick-win C) — parity with the old filter+sort
     expect(a.live.find((x) => x.key === "Beta")?.count).toBe(3);
   });
 });
+
+describe("candidateUnionSubgraph (EVOL 1.b)", () => {
+  it("folds each candidate into its canonical, drops fold self-loops, dedups parallels", async () => {
+    const { candidateUnionSubgraph } = await import("../lib/graphAdapter.js");
+    const graph = {
+      nodes: [
+        { id: "A", type: "Character" }, { id: "B", type: "Character" },
+        { id: "C", type: "Location" }, { id: "D", type: "Location" },
+        { id: "N1", type: "Object" }, { id: "N2", type: "Object" },
+      ],
+      links: [
+        { source: "A", target: "N1", relation: "owns" },
+        { source: "B", target: "N1", relation: "owns" },   // parallel after fold A->B -> dedup
+        { source: "A", target: "B", relation: "alias_of" }, // self-loop after fold -> dropped
+        { source: "C", target: "N2", relation: "at" },
+      ],
+    };
+    const sub = candidateUnionSubgraph(
+      graph,
+      [{ candidate_id: "A", canonical_id: "B" }, { candidate_id: "C", canonical_id: "D" }],
+      1,
+    );
+    const ids = sub.nodes.map((n) => n.id);
+    expect(ids).not.toContain("A"); // folded into B
+    expect(ids).not.toContain("C"); // folded into D
+    expect(ids).toContain("B");
+    expect(ids).toContain("D");
+    // no self-loops survive the fold (alias_of A<->B becomes B<->B and is dropped)
+    expect(sub.links.every((e) => e.source !== e.target)).toBe(true);
+    expect(sub.links.some((e) => e.relation === "alias_of")).toBe(false);
+    // the two parallel "owns" edges collapse to one B->N1
+    const owns = sub.links.filter((e) => e.relation === "owns");
+    expect(owns.length).toBe(1);
+    expect(owns[0].source).toBe("B");
+  });
+});
