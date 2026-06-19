@@ -228,6 +228,10 @@
       sceneData = null;
       graph = result.graph ?? EMPTY_GRAPH;
     }
+    // EVOL: the Types facet renders a Domain → Sub-domain → Type accordion from
+    // the class taxonomy, so fetch class-hierarchies eagerly (not just on the
+    // class-display toggle). Cached; a no-op when the artifact is absent.
+    await ensureClassHierarchies();
   }
 
   /** Flip the active model and re-render the SAME studio in place. */
@@ -356,6 +360,7 @@
         <div class="col col-left">
           <LeftRail
             {graph}
+            {classHierarchies}
             query={viewerState.query}
             selection={viewerState.selection}
             showWeakLinks={viewerState.options.showWeakLinks}

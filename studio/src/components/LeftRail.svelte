@@ -23,6 +23,7 @@
 
   let {
     graph,
+    classHierarchies = null,
     query = "",
     selection = { types: [], communities: [], entities: [] },
     showWeakLinks = true,
@@ -40,6 +41,45 @@
   const typeList = $derived(groupCounts(graph, nodeType));
   // Communities excluding degree-0 singletons (folded into `isolatedCount`).
   const communityInfo = $derived(communityStats(graph));
+
+  const typeSet = $derived(new Set(selection.types));
+  // EVOL: nested Domain → Sub-domain → Type tree from the ontology class
+  // taxonomy (class-hierarchies.json). Each leaf type keeps its live count and
+  // its toggle behaviour; when no taxonomy is loaded the Types facet falls back
+  // to the previous flat list.
+  const typeTree = $derived.by(() => {
+    const hs = classHierarchies?.hierarchies;
+    if (!hs) return null;
+    const h = hs[Object.keys(hs)[0]];
+    if (!h?.classes_by_id || !(h.root_class_ids?.length)) return null;
+    const classes = h.classes_by_id;
+    const countByType = new Map(typeList.map((t) => [t.key, t.count]));
+    const labelOf = (id) => classes[id]?.label || String(id).replace(/^class:/, "");
+    const seen = new Set();
+    const domains = h.root_class_ids
+      .map((rootId) => {
+        const subs = (classes[rootId]?.child_ids ?? [])
+          .map((subId) => {
+            const types = (classes[subId]?.member_node_types ?? []).map((t) => {
+              seen.add(t);
+              return { key: t, count: countByType.get(t) ?? 0 };
+            });
+            return { id: subId, label: labelOf(subId), types, count: types.reduce((n, t) => n + t.count, 0) };
+          })
+          .filter((s) => s.types.length);
+        return { id: rootId, label: labelOf(rootId), subs, count: subs.reduce((n, s) => n + s.count, 0) };
+      })
+      .filter((d) => d.subs.length);
+    // Types not covered by the taxonomy (and not synthetic class nodes) keep a
+    // home so nothing disappears from the facet.
+    const other = typeList.filter((t) => !seen.has(t.key) && t.key !== "OntologyClass");
+    if (other.length) {
+      const types = other.map((t) => ({ key: t.key, count: t.count }));
+      const count = types.reduce((n, t) => n + t.count, 0);
+      domains.push({ id: "__other__", label: "Other", count, subs: [{ id: "__other_sub__", label: "Ungrouped", types, count }] });
+    }
+    return domains;
+  });
 
   // Entities grouped by type (count) -> rows, filtered by the search query.
   // No cap: per-type accordions stay collapsed so all entities are reachable.
@@ -119,6 +159,49 @@
     {/snippet}
     {#if typeList.length === 0}
       <p class="rail-empty">No types.</p>
+    {:else if typeTree}
+      <!-- EVOL: nested Domain → Sub-domain → Type accordions (taxonomy-driven). -->
+      <ul class="rail-type-groups">
+        {#each typeTree as domain (domain.id)}
+          <li>
+            <Collapsible title={domain.label} open={false} size="sm">
+              {#snippet trailing()}
+                <Badge shape="circle" size="sm" tone="neutral">{domain.count}</Badge>
+              {/snippet}
+              <ul class="rail-type-groups">
+                {#each domain.subs as sub (sub.id)}
+                  <li>
+                    <Collapsible title={sub.label} open={false} size="sm">
+                      {#snippet trailing()}
+                        <Badge shape="circle" size="sm" tone="neutral">{sub.count}</Badge>
+                      {/snippet}
+                      <ul class="rail-list">
+                        {#each sub.types as t (t.key)}
+                          <li>
+                            <SelectableRow
+                              value={t.key}
+                              selected={typeSet.has(t.key)}
+                              onselect={() => onToggleType?.(t.key)}
+                            >
+                              {#snippet leading()}
+                                <TypeShapeGlyph type={t.key} />
+                              {/snippet}
+                              {t.key}
+                              {#snippet trailing()}
+                                <Badge shape="circle" size="sm" tone="neutral">{t.count}</Badge>
+                              {/snippet}
+                            </SelectableRow>
+                          </li>
+                        {/each}
+                      </ul>
+                    </Collapsible>
+                  </li>
+                {/each}
+              </ul>
+            </Collapsible>
+          </li>
+        {/each}
+      </ul>
     {:else}
       <SelectableList
         class="rail-list"

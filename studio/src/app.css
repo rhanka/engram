@@ -35,3 +35,22 @@ body {
 button {
   font: inherit;
 }
+
+/*
+ * Workaround for a @sentropic/design-system-svelte Collapsible bug: its chevron
+ * rotation rule `.st-collapsible--open .st-collapsible__icon` is a DESCENDANT
+ * selector, so an OPEN parent collapsible rotates EVERY nested icon — including
+ * collapsed sub-accordions (visible in the Types Domain → Sub-domain tree, where
+ * the collapsed domains showed an "up" chevron). Re-scope rotation to each
+ * collapsible's OWN trigger icon (the trigger is a direct child of the root;
+ * nested collapsibles live in the sibling __region, so `>` excludes them).
+ * Upstream one-line fix: scope that DS rule to `> .st-collapsible__trigger`.
+ */
+/* The DS rule uses :where() (specificity-neutral), so a plain override only ties
+ * and loses on source order — !important is required to win. */
+.st-collapsible > .st-collapsible__trigger .st-collapsible__icon {
+  transform: none !important;
+}
+.st-collapsible--open > .st-collapsible__trigger .st-collapsible__icon {
+  transform: rotate(180deg) !important;
+}
