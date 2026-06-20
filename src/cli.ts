@@ -4263,6 +4263,7 @@ export async function main(): Promise<void> {
 
   exportCommand
     .command("html")
+    .description("Export standalone graph.html; large graphs are aggregated by community")
     .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
     .option("--out <path>", "Path to write graph.html")
     .option("--no-viz", "Skip HTML export and remove any stale output")
@@ -4273,6 +4274,10 @@ export async function main(): Promise<void> {
     .option(
       "--descriptions <path>",
       "Optional wiki description sidecar index JSON; node descriptions render in the node-info panel (Track G G-studio-lot4)",
+    )
+    .addHelpText(
+      "after",
+      "\nLarge graphs: Graphs over 5000 nodes render as aggregated community nodes.\n",
     )
     .action(async (opts) => {
       try {

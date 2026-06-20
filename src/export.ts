@@ -186,6 +186,7 @@ export function inferEdgeDashes(relation: string, confidenceTier: string): boole
 }
 
 const MAX_NODES_FOR_VIZ = 5_000;
+const MAX_COMMUNITIES_FOR_AGGREGATED_VIZ = 500;
 
 const CONFIDENCE_SCORE_DEFAULTS: Record<string, number> = {
   EXTRACTED: 1.0,
@@ -358,6 +359,31 @@ function lookupNodeDescription(
   if (!entry || entry.status !== "generated") return null;
   const text = typeof entry.description === "string" ? entry.description.trim() : "";
   return text ? text : null;
+}
+
+function summarizeRepoCounts(repoCounts: Map<string, number> | undefined): string {
+  if (!repoCounts || repoCounts.size === 0) return "";
+  const entries = [...repoCounts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const visible = entries
+    .slice(0, 4)
+    .map(([repo, count]) => `${sanitizeLabel(repo)} (${count})`);
+  const remaining = entries.length - visible.length;
+  return remaining > 0
+    ? `${visible.join(", ")} +${remaining} more`
+    : visible.join(", ");
+}
+
+function dominantRelationLabel(relationCounts: Map<string, number>): string {
+  if (relationCounts.size === 0) return "links";
+  const [relation, count] = [...relationCounts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]!;
+  return count > 1 ? `${relation} x${count}` : relation;
+}
+
+function communityColor(cid: number): string {
+  const index = ((cid % COMMUNITY_COLORS.length) + COMMUNITY_COLORS.length) % COMMUNITY_COLORS.length;
+  return COMMUNITY_COLORS[index]!;
 }
 
 /**
@@ -1321,12 +1347,7 @@ export function buildGraphHtml(
   const studioMode = normalizeStudioMode(communityLabelsOrOptions);
   const descriptions = normalizeDescriptions(communityLabelsOrOptions);
   const workspaceTheme = getWorkspaceTokens();
-  if (G.order > MAX_NODES_FOR_VIZ) {
-    throw new Error(
-      `Graph has ${G.order} nodes - too large for HTML viz. ` +
-      `Use --no-viz or reduce input size.`,
-    );
-  }
+  const useCommunityAggregation = G.order > MAX_NODES_FOR_VIZ;
 
   const nodeComm = nodeCommunityMap(communityMap);
   const degree = new Map<string, number>();
@@ -1353,64 +1374,6 @@ export function buildGraphHtml(
     /** G-studio-lot4 (#7): generated wiki description, omitted when absent. */
     description?: string;
   }
-  const visNodes: VisNode[] = [];
-  G.forEachNode((nodeId, data) => {
-    const cid = nodeComm.get(nodeId) ?? 0;
-    const paletteColor = COMMUNITY_COLORS[cid % COMMUNITY_COLORS.length]!;
-    const label = sanitizeLabel((data.label as string) ?? nodeId);
-    const deg = degree.get(nodeId) ?? 1;
-    const memberCount = memberCounts?.get(cid) ?? 1;
-    const size = memberCounts
-      ? 10 + 30 * (memberCount / maxMemberCount)
-      : 10 + 30 * (deg / maxDeg);
-    const fontSize = memberCounts ? 12 : (deg >= maxDeg * 0.15 ? 12 : 0);
-    const sourceFile = (data.source_file as string) ?? "";
-    const fileType = (data.file_type as string) ?? "";
-    // Track C-3.5: read node_type (canonical attribute on ontology graphs;
-    // legacy `type` is tolerated as fallback) and resolve shape + color
-    // via the profile first, with file_type/community palette as fallback.
-    const nodeType = (data.node_type as string) ?? (data.type as string) ?? "";
-    const shape = resolveNodeShape({ nodeType, fileType, sourceFile, profile });
-    const color = resolveNodeColor({ nodeType, profile, fallback: paletteColor });
-    // C-final-1 / G-studio-lot1 #2: shape "box" (document/paper/concept)
-    // renders "hollow" — coloured border, but a SEMI-OPAQUE WHITE fill
-    // (~50%) rather than a fully transparent one. Arrows leave from the box
-    // centre, so a 0-alpha fill leaves the label unreadable over crossing
-    // edges; a 50% white fill keeps the text legible while still looking
-    // hollow. It stays visually distinct from "square" (test), which is
-    // solid-filled. Consistent whether `box` comes from inferNodeShape or
-    // from a profile visual_encoding override.
-    const isOutlinedShape = shape === "box";
-    const outlinedFill = "rgba(255,255,255,0.5)";
-    // O1 contract: pass node.description attr so lookupNodeDescription prefers
-    // the canonical graph attribute over a sidecar entry (gap-fill only).
-    const nodeAttrDescription = typeof data.description === "string" ? data.description : undefined;
-    const description = lookupNodeDescription(descriptions, nodeId, nodeAttrDescription);
-    const visNode: VisNode = {
-      id: nodeId,
-      label,
-      color: {
-        background: isOutlinedShape ? outlinedFill : color,
-        border: color,
-        highlight: { background: workspaceTheme.colour.surface, border: color },
-      },
-      size: Math.round(size * 10) / 10,
-      font: { size: fontSize, color: workspaceTheme.colour.text },
-      title: label,
-      community: cid,
-      community_name: sanitizeLabel(communityLabels?.get(cid) ?? `Community ${cid}`),
-      source_file: sanitizeLabel(sourceFile),
-      file_type: fileType,
-      shape,
-      degree: deg,
-    };
-    // G-studio-lot4 (#7): attach the generated description only when present;
-    // insufficient_evidence / missing entries leave the field off entirely.
-    if (description) visNode.description = sanitizeLabel(description);
-    visNodes.push(visNode);
-  });
-
-  // Build edges list
   interface VisEdge {
     from: string;
     to: string;
@@ -1422,42 +1385,257 @@ export function buildGraphHtml(
     confidence: string;
     relation: string;
   }
-  const visEdges: VisEdge[] = [];
-  G.forEachEdge((_edge, data, u, v) => {
-    const confidence = (data.confidence as string) ?? "EXTRACTED";
-    const relation = (data.relation as string) ?? "";
-    visEdges.push({
-      from: u,
-      to: v,
-      label: relation,
-      title: `${relation} [${confidence}]`,
-      dashes: inferEdgeDashes(relation, confidence),
-      width: confidence === "EXTRACTED" ? 2 : 1,
-      color: {
-        color: workspaceTheme.colour["text-muted"],
-        highlight: workspaceTheme.colour.accent,
-        hover: workspaceTheme.colour.accent,
-        opacity: confidence === "EXTRACTED" ? 0.7 : 0.35,
-      },
-      confidence,
-      relation,
-    });
-  });
-
-  // Build community legend data
   interface LegendEntry {
     cid: number;
     color: string;
     label: string;
     count: number;
   }
+
+  const communityLabel = (cid: number): string =>
+    sanitizeLabel(communityLabels?.get(cid) ?? `Community ${cid}`);
+  const visNodes: VisNode[] = [];
+  const visEdges: VisEdge[] = [];
   const legendData: LegendEntry[] = [];
-  const labelKeys = communityLabels ? [...communityLabels.keys()].sort((a, b) => a - b) : [];
-  for (const cid of labelKeys) {
-    const color = COMMUNITY_COLORS[cid % COMMUNITY_COLORS.length]!;
-    const lbl = escapeHtml(sanitizeLabel(communityLabels?.get(cid) ?? `Community ${cid}`));
-    const n = memberCounts?.get(cid) ?? communityMap.get(cid)?.length ?? 0;
-    legendData.push({ cid, color, label: lbl, count: n });
+  let groupedAggregateCommunityCount = 0;
+
+  if (useCommunityAggregation) {
+    const membersByCommunity = new Map<number, string[]>();
+    const repoCountsByCommunity = new Map<number, Map<string, number>>();
+    G.forEachNode((nodeId, data) => {
+      const cid = nodeComm.get(nodeId) ?? 0;
+      const members = membersByCommunity.get(cid) ?? [];
+      members.push(nodeId);
+      membersByCommunity.set(cid, members);
+      const repo = typeof data.repo === "string" ? data.repo.trim() : "";
+      if (repo) {
+        const repoCounts = repoCountsByCommunity.get(cid) ?? new Map<string, number>();
+        repoCounts.set(repo, (repoCounts.get(repo) ?? 0) + 1);
+        repoCountsByCommunity.set(cid, repoCounts);
+      }
+    });
+
+    const originalCommunityIds = [...membersByCommunity.keys()].sort((a, b) => a - b);
+    let otherCommunityId = -1;
+    while (membersByCommunity.has(otherCommunityId)) otherCommunityId -= 1;
+    let visibleOriginalCommunityIds = new Set(originalCommunityIds);
+    if (originalCommunityIds.length > MAX_COMMUNITIES_FOR_AGGREGATED_VIZ) {
+      const topCommunityIds = [...originalCommunityIds]
+        .sort((a, b) => (membersByCommunity.get(b)?.length ?? 0) - (membersByCommunity.get(a)?.length ?? 0) || a - b)
+        .slice(0, MAX_COMMUNITIES_FOR_AGGREGATED_VIZ - 1);
+      visibleOriginalCommunityIds = new Set(topCommunityIds);
+      groupedAggregateCommunityCount = originalCommunityIds.length - visibleOriginalCommunityIds.size;
+    }
+    const renderCommunityId = (cid: number): number =>
+      visibleOriginalCommunityIds.has(cid) ? cid : otherCommunityId;
+    const aggregateCommunityLabel = (cid: number): string =>
+      groupedAggregateCommunityCount > 0 && cid === otherCommunityId
+        ? "Other communities"
+        : communityLabel(cid);
+
+    const renderedMembersByCommunity = new Map<number, string[]>();
+    const renderedRepoCountsByCommunity = new Map<number, Map<string, number>>();
+    for (const originalCid of originalCommunityIds) {
+      const renderedCid = renderCommunityId(originalCid);
+      const targetMembers = renderedMembersByCommunity.get(renderedCid) ?? [];
+      targetMembers.push(...(membersByCommunity.get(originalCid) ?? []));
+      renderedMembersByCommunity.set(renderedCid, targetMembers);
+
+      const originalRepoCounts = repoCountsByCommunity.get(originalCid);
+      if (originalRepoCounts) {
+        const targetRepoCounts = renderedRepoCountsByCommunity.get(renderedCid) ?? new Map<string, number>();
+        for (const [repo, count] of originalRepoCounts) {
+          targetRepoCounts.set(repo, (targetRepoCounts.get(repo) ?? 0) + count);
+        }
+        renderedRepoCountsByCommunity.set(renderedCid, targetRepoCounts);
+      }
+    }
+
+    const communityIds = [...renderedMembersByCommunity.keys()]
+      .sort((a, b) => {
+        if (a === otherCommunityId) return 1;
+        if (b === otherCommunityId) return -1;
+        return a - b;
+      });
+    const maxCommunitySize = Math.max(1, ...communityIds.map((cid) => renderedMembersByCommunity.get(cid)?.length ?? 0));
+    const communityEdgeCounts = new Map<number, number>();
+    const directed = isDirectedGraph(G);
+    const aggregatedEdges = new Map<string, {
+      fromCid: number;
+      toCid: number;
+      weight: number;
+      relations: Map<string, number>;
+    }>();
+
+    G.forEachEdge((_edge, data, source, target) => {
+      const sourceCid = renderCommunityId(nodeComm.get(source) ?? 0);
+      const targetCid = renderCommunityId(nodeComm.get(target) ?? 0);
+      communityEdgeCounts.set(sourceCid, (communityEdgeCounts.get(sourceCid) ?? 0) + 1);
+      if (targetCid !== sourceCid) {
+        communityEdgeCounts.set(targetCid, (communityEdgeCounts.get(targetCid) ?? 0) + 1);
+      }
+      if (sourceCid === targetCid) return;
+
+      const fromCid = directed ? sourceCid : Math.min(sourceCid, targetCid);
+      const toCid = directed ? targetCid : Math.max(sourceCid, targetCid);
+      const key = directed ? `${fromCid}->${toCid}` : `${fromCid}--${toCid}`;
+      const relation = sanitizeLabel((data.relation as string) ?? "") || "links";
+      const bucket = aggregatedEdges.get(key) ?? {
+        fromCid,
+        toCid,
+        weight: 0,
+        relations: new Map<string, number>(),
+      };
+      bucket.weight += 1;
+      bucket.relations.set(relation, (bucket.relations.get(relation) ?? 0) + 1);
+      aggregatedEdges.set(key, bucket);
+    });
+
+    for (const cid of communityIds) {
+      const color = communityColor(cid);
+      const label = aggregateCommunityLabel(cid);
+      const memberCount = renderedMembersByCommunity.get(cid)?.length ?? 0;
+      const repoSummary = summarizeRepoCounts(renderedRepoCountsByCommunity.get(cid));
+      const size = 18 + 34 * Math.sqrt(memberCount / maxCommunitySize);
+      const description = [
+        groupedAggregateCommunityCount > 0 && cid === otherCommunityId
+          ? `Aggregated ${groupedAggregateCommunityCount} smaller community(ies) with ${memberCount} member node(s).`
+          : `Aggregated community with ${memberCount} member node(s).`,
+        repoSummary ? `Repos: ${repoSummary}.` : "",
+      ].filter(Boolean).join(" ");
+      visNodes.push({
+        id: `community:${cid}`,
+        label,
+        color: {
+          background: color,
+          border: color,
+          highlight: { background: workspaceTheme.colour.surface, border: color },
+        },
+        size: Math.round(size * 10) / 10,
+        font: { size: 12, color: workspaceTheme.colour.text },
+        title: repoSummary ? `${label} (${memberCount} members) - ${repoSummary}` : `${label} (${memberCount} members)`,
+        community: cid,
+        community_name: label,
+        source_file: repoSummary ? `repos: ${repoSummary}` : "",
+        file_type: "community",
+        shape: "dot",
+        degree: communityEdgeCounts.get(cid) ?? 0,
+        description: sanitizeLabel(description),
+      });
+      legendData.push({
+        cid,
+        color,
+        label: escapeHtml(label),
+        count: memberCount,
+      });
+    }
+
+    for (const bucket of [...aggregatedEdges.values()].sort((a, b) => a.fromCid - b.fromCid || a.toCid - b.toCid)) {
+      const relation = dominantRelationLabel(bucket.relations);
+      const title = `${bucket.weight} link(s): ${aggregateCommunityLabel(bucket.fromCid)} -> ${aggregateCommunityLabel(bucket.toCid)} (${relation})`;
+      const width = Math.round((1 + Math.min(8, Math.log2(bucket.weight + 1))) * 10) / 10;
+      visEdges.push({
+        from: `community:${bucket.fromCid}`,
+        to: `community:${bucket.toCid}`,
+        label: `${bucket.weight}`,
+        title,
+        dashes: false,
+        width,
+        color: {
+          color: workspaceTheme.colour["text-muted"],
+          highlight: workspaceTheme.colour.accent,
+          hover: workspaceTheme.colour.accent,
+          opacity: 0.65,
+        },
+        confidence: "AGGREGATED",
+        relation,
+      });
+    }
+  } else {
+    G.forEachNode((nodeId, data) => {
+      const cid = nodeComm.get(nodeId) ?? 0;
+      const paletteColor = COMMUNITY_COLORS[cid % COMMUNITY_COLORS.length]!;
+      const label = sanitizeLabel((data.label as string) ?? nodeId);
+      const deg = degree.get(nodeId) ?? 1;
+      const memberCount = memberCounts?.get(cid) ?? 1;
+      const size = memberCounts
+        ? 10 + 30 * (memberCount / maxMemberCount)
+        : 10 + 30 * (deg / maxDeg);
+      const fontSize = memberCounts ? 12 : (deg >= maxDeg * 0.15 ? 12 : 0);
+      const sourceFile = (data.source_file as string) ?? "";
+      const fileType = (data.file_type as string) ?? "";
+      // Track C-3.5: read node_type (canonical attribute on ontology graphs;
+      // legacy `type` is tolerated as fallback) and resolve shape + color
+      // via the profile first, with file_type/community palette as fallback.
+      const nodeType = (data.node_type as string) ?? (data.type as string) ?? "";
+      const shape = resolveNodeShape({ nodeType, fileType, sourceFile, profile });
+      const color = resolveNodeColor({ nodeType, profile, fallback: paletteColor });
+      // C-final-1 / G-studio-lot1 #2: shape "box" (document/paper/concept)
+      // renders "hollow" — coloured border, but a SEMI-OPAQUE WHITE fill
+      // (~50%) rather than a fully transparent one. Arrows leave from the box
+      // centre, so a 0-alpha fill leaves the label unreadable over crossing
+      // edges; a 50% white fill keeps the text legible while still looking
+      // hollow. It stays visually distinct from "square" (test), which is
+      // solid-filled. Consistent whether `box` comes from inferNodeShape or
+      // from a profile visual_encoding override.
+      const isOutlinedShape = shape === "box";
+      const outlinedFill = "rgba(255,255,255,0.5)";
+      // O1 contract: pass node.description attr so lookupNodeDescription prefers
+      // the canonical graph attribute over a sidecar entry (gap-fill only).
+      const nodeAttrDescription = typeof data.description === "string" ? data.description : undefined;
+      const description = lookupNodeDescription(descriptions, nodeId, nodeAttrDescription);
+      const visNode: VisNode = {
+        id: nodeId,
+        label,
+        color: {
+          background: isOutlinedShape ? outlinedFill : color,
+          border: color,
+          highlight: { background: workspaceTheme.colour.surface, border: color },
+        },
+        size: Math.round(size * 10) / 10,
+        font: { size: fontSize, color: workspaceTheme.colour.text },
+        title: label,
+        community: cid,
+        community_name: communityLabel(cid),
+        source_file: sanitizeLabel(sourceFile),
+        file_type: fileType,
+        shape,
+        degree: deg,
+      };
+      // G-studio-lot4 (#7): attach the generated description only when present;
+      // insufficient_evidence / missing entries leave the field off entirely.
+      if (description) visNode.description = sanitizeLabel(description);
+      visNodes.push(visNode);
+    });
+
+    G.forEachEdge((_edge, data, u, v) => {
+      const confidence = (data.confidence as string) ?? "EXTRACTED";
+      const relation = (data.relation as string) ?? "";
+      visEdges.push({
+        from: u,
+        to: v,
+        label: relation,
+        title: `${relation} [${confidence}]`,
+        dashes: inferEdgeDashes(relation, confidence),
+        width: confidence === "EXTRACTED" ? 2 : 1,
+        color: {
+          color: workspaceTheme.colour["text-muted"],
+          highlight: workspaceTheme.colour.accent,
+          hover: workspaceTheme.colour.accent,
+          opacity: confidence === "EXTRACTED" ? 0.7 : 0.35,
+        },
+        confidence,
+        relation,
+      });
+    });
+
+    const labelKeys = communityLabels ? [...communityLabels.keys()].sort((a, b) => a - b) : [];
+    for (const cid of labelKeys) {
+      const color = COMMUNITY_COLORS[cid % COMMUNITY_COLORS.length]!;
+      const lbl = escapeHtml(communityLabel(cid));
+      const n = memberCounts?.get(cid) ?? communityMap.get(cid)?.length ?? 0;
+      legendData.push({ cid, color, label: lbl, count: n });
+    }
   }
 
   const nodesJson = JSON.stringify(visNodes);
@@ -1466,8 +1644,12 @@ export function buildGraphHtml(
   const rawHyperedges = (G.getAttribute("hyperedges") as Hyperedge[] | undefined) ?? [];
   const hyperedgesJson = JSON.stringify(rawHyperedges);
   const title = escapeHtml(sanitizeLabel(basename(outputPath)));
-  const stats =
-    `${G.order} nodes &middot; ${G.size} edges &middot; ${communityMap.size} communities`;
+  const aggregateGroupingStats = groupedAggregateCommunityCount > 0
+    ? ` &middot; ${groupedAggregateCommunityCount} smaller communities grouped into Other`
+    : "";
+  const stats = useCommunityAggregation
+    ? `${G.order} nodes &middot; ${G.size} edges &middot; ${visNodes.length} rendered communities &middot; rendered as ${visNodes.length} community nodes${aggregateGroupingStats}`
+    : `${G.order} nodes &middot; ${G.size} edges &middot; ${communityMap.size} communities`;
 
   const html = `<!DOCTYPE html>
 <html lang="en">

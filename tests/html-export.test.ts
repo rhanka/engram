@@ -6,6 +6,13 @@ import Graph from "graphology";
 import { inferEdgeDashes, inferNodeShape, toHtml } from "../src/export.js";
 import { safeToHtml } from "../src/html-export.js";
 
+function readInlineJsonArray<T>(html: string, name: "RAW_NODES" | "RAW_EDGES"): T[] {
+  const nextConst = name === "RAW_NODES" ? "RAW_EDGES" : "LEGEND";
+  const match = html.match(new RegExp(`const ${name} = ([\\s\\S]*?);\\nconst ${nextConst} = `));
+  if (!match) throw new Error(`Could not find ${name} in HTML export`);
+  return JSON.parse(match[1]!) as T[];
+}
+
 describe("safeToHtml", () => {
   it("does not leak the absolute output path in the document title", () => {
     const dir = mkdtempSync(join(tmpdir(), "graphify-html-export-"));
@@ -116,6 +123,66 @@ describe("safeToHtml", () => {
 
     expect(() => toHtml(G, communities, htmlPath)).not.toThrow();
     expect(readFileSync(htmlPath, "utf-8")).toContain("\"source_file\":\"\"");
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("automatically collapses graphs over the vis cap into community aggregates", () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphify-html-large-"));
+    const htmlPath = join(dir, "graph.html");
+
+    const G = new Graph();
+    const communityCount = 24;
+    const nodesPerCommunity = 230;
+    const communities = new Map<number, string[]>();
+    const labels = new Map<number, string>();
+
+    for (let cid = 0; cid < communityCount; cid++) {
+      labels.set(cid, `Community ${cid}`);
+      const members: string[] = [];
+      for (let index = 0; index < nodesPerCommunity; index++) {
+        const nodeId = `c${cid}-node-${index}`;
+        members.push(nodeId);
+        G.addNode(nodeId, {
+          label: `Node ${cid}.${index}`,
+          source_file: `src/community-${cid}/node-${index}.ts`,
+          file_type: "code",
+          repo: index % 2 === 0 ? "repo:github.com/acme/graphify" : "repo:github.com/acme/sentropic",
+        });
+        if (index > 0) {
+          G.addUndirectedEdge(`c${cid}-node-${index - 1}`, nodeId, {
+            relation: "calls",
+            confidence: "EXTRACTED",
+          });
+        }
+      }
+      communities.set(cid, members);
+    }
+
+    for (let cid = 0; cid < communityCount; cid++) {
+      const next = (cid + 1) % communityCount;
+      G.addUndirectedEdge(`c${cid}-node-0`, `c${next}-node-0`, {
+        relation: "imports",
+        confidence: "EXTRACTED",
+      });
+    }
+
+    toHtml(G, communities, htmlPath, { communityLabels: labels });
+
+    const html = readFileSync(htmlPath, "utf-8");
+    const renderedNodes = readInlineJsonArray<{ id: string; source_file: string }>(html, "RAW_NODES");
+    const renderedEdges = readInlineJsonArray<{ from: string; to: string; relation: string }>(html, "RAW_EDGES");
+
+    expect(G.order).toBeGreaterThan(5000);
+    expect(renderedNodes).toHaveLength(communityCount);
+    expect(renderedNodes.length).toBeLessThanOrEqual(100);
+    expect(renderedEdges.length).toBeLessThanOrEqual(communityCount);
+    expect(renderedNodes.every((node) => node.id.startsWith("community:"))).toBe(true);
+    expect(renderedNodes[0]?.source_file).toContain("repo:github.com/acme/graphify");
+    expect(renderedNodes[0]?.source_file).toContain("repo:github.com/acme/sentropic");
+    expect(html).toContain(`${G.order} nodes &middot; ${G.size} edges`);
+    expect(html).toContain(`rendered as ${communityCount} community nodes`);
+    expect(html).toContain(`"count":${nodesPerCommunity}`);
 
     rmSync(dir, { recursive: true, force: true });
   });

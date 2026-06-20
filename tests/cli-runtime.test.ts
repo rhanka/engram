@@ -178,6 +178,47 @@ async function runCli(args: string[], cwd: string, options: { interceptExit?: bo
   return runMain(() => main(), ["node", "graphify", ...args], cwd, options);
 }
 
+async function commandHelp(args: string[], cwd: string): Promise<string> {
+  const { main } = await import("../src/cli.js");
+  const previousArgv = process.argv;
+  const previousCwd = process.cwd();
+  const originalLog = console.log;
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  const originalExit = process.exit;
+  const output: string[] = [];
+
+  console.log = (...values: unknown[]) => { output.push(values.join(" ")); };
+  process.stdout.write = ((chunk: unknown) => {
+    output.push(String(chunk));
+    return true;
+  }) as typeof process.stdout.write;
+  process.exit = ((code?: string | number | null): never => {
+    throw new Error(`process.exit ${code ?? 0}`);
+  }) as typeof process.exit;
+  process.argv = ["node", "graphify", ...args, "--help"];
+  process.chdir(cwd);
+  try {
+    await main();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.startsWith("process.exit ")) throw error;
+  } finally {
+    process.argv = previousArgv;
+    process.chdir(previousCwd);
+    console.log = originalLog;
+    process.stdout.write = originalWrite;
+    process.exit = originalExit;
+  }
+
+  return output.join("\n");
+}
+
+function readHtmlRawNodes(html: string): unknown[] {
+  const match = html.match(/const RAW_NODES = ([\s\S]*?);\nconst RAW_EDGES = /);
+  if (!match) throw new Error("Could not find RAW_NODES in HTML export");
+  return JSON.parse(match[1]!) as unknown[];
+}
+
 async function runSkillRuntime(args: string[], cwd: string, options: { interceptExit?: boolean } = {}) {
   const { main } = await import("../src/skill-runtime.js");
   return runMain(() => main(["node", "skill-runtime", ...args]), ["node", "skill-runtime", ...args], cwd, options);
@@ -381,6 +422,12 @@ describe("public CLI runtime command parity", () => {
     expect(noViz.exitCode).toBe(0);
     expect(noViz.logs.join("\n")).toContain("HTML export skipped");
     expect(existsSync(htmlPath)).toBe(false);
+  });
+
+  it("documents automatic community aggregation in export html help", async () => {
+    const help = await commandHelp(["export", "html"], tempProject());
+
+    expect(help).toContain("Graphs over 5000 nodes render as aggregated community nodes");
   });
 
   it("supports export wiki and obsidian vault generation", async () => {
@@ -1201,17 +1248,23 @@ describe("public CLI runtime command parity", () => {
     expect(existsSync(join(dir, ".graphify", "graph.html"))).toBe(true);
   });
 
-  it("supports cluster-only on oversized graphs by skipping HTML export", async () => {
+  it("supports cluster-only on oversized graphs with bounded aggregated HTML export", async () => {
     const dir = tempProject();
     writeLargeGraph(dir);
 
     const result = await runCli(["cluster-only", dir], dir);
+    const htmlPath = join(dir, ".graphify", "graph.html");
 
     expect(result.exitCode).toBe(0);
-    expect(result.warnings.join("\n")).toContain("HTML export skipped");
+    expect(result.warnings.join("\n")).not.toContain("HTML export skipped");
     expect(existsSync(join(dir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
     expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
-    expect(existsSync(join(dir, ".graphify", "graph.html"))).toBe(false);
+    expect(existsSync(htmlPath)).toBe(true);
+
+    const html = readFileSync(htmlPath, "utf-8");
+    const renderedNodes = readHtmlRawNodes(html);
+    expect(renderedNodes.length).toBeLessThanOrEqual(500);
+    expect(html).toContain("rendered as");
   });
 
   it("update --no-cluster skips Louvain and writes graph.json without communities", async () => {
