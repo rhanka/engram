@@ -367,20 +367,28 @@ describe("public CLI runtime command parity", () => {
     expect(readFileSync(join(dest, "README.md"), "utf-8")).toContain("source");
   });
 
-  it("supports export html and --no-viz cleanup", async () => {
+  it("replaces `export html` with `studio export` (static studio bundle)", async () => {
     const dir = tempProject();
-    const graphPath = writeGraph(dir);
-    const htmlPath = join(dir, ".graphify", "graph.html");
+    writeGraph(dir);
 
-    const html = await runCli(["export", "html", "--graph", graphPath], dir);
-    expect(html.exitCode).toBe(0);
-    expect(html.logs.join("\n")).toContain("graph.html");
-    expect(existsSync(htmlPath)).toBe(true);
+    // The legacy `graphify export html` subcommand is gone.
+    const removed = await runCli(["export", "html"], dir, { interceptExit: true });
+    expect(removed.exitCode).not.toBe(0);
 
-    const noViz = await runCli(["export", "html", "--graph", graphPath, "--no-viz"], dir);
-    expect(noViz.exitCode).toBe(0);
-    expect(noViz.logs.join("\n")).toContain("HTML export skipped");
-    expect(existsSync(htmlPath)).toBe(false);
+    // `graphify studio export <out>` is the replacement. When the prebuilt
+    // studio SPA is unavailable it must exit non-zero with a clear message
+    // (it never silently writes a half-built bundle).
+    const out = join(dir, "studio-out");
+    const studio = await runCli(["studio", "export", out], dir, { interceptExit: true });
+    const output = [...studio.logs, ...studio.errors].join("\n");
+    if (studio.exitCode === 0) {
+      // SPA present in this environment: a self-contained bundle is written.
+      expect(existsSync(join(out, "index.html"))).toBe(true);
+      expect(existsSync(join(out, "graph.json"))).toBe(true);
+      expect(existsSync(join(out, "scene.json"))).toBe(true);
+    } else {
+      expect(output).toContain("Studio SPA not built");
+    }
   });
 
   it("supports export wiki and obsidian vault generation", async () => {
@@ -1189,26 +1197,26 @@ describe("public CLI runtime command parity", () => {
     expect(failed.errors.join("\n")).toContain("GRAPH_REPORT.md");
   });
 
-  it("supports cluster-only and refreshes graph.html", async () => {
+  it("supports cluster-only and refreshes the static studio (no graph.html)", async () => {
     const dir = tempProject();
     writeGraph(dir);
 
     const result = await runCli(["cluster-only", dir], dir);
 
     expect(result.exitCode).toBe(0);
-    expect(result.logs.join("\n")).toContain("graph.html updated");
+    expect(result.logs.join("\n")).toContain("the static studio updated");
     expect(existsSync(join(dir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
-    expect(existsSync(join(dir, ".graphify", "graph.html"))).toBe(true);
+    // The legacy vis-network graph.html is no longer emitted.
+    expect(existsSync(join(dir, ".graphify", "graph.html"))).toBe(false);
   });
 
-  it("supports cluster-only on oversized graphs by skipping HTML export", async () => {
+  it("supports cluster-only on oversized graphs without writing graph.html", async () => {
     const dir = tempProject();
     writeLargeGraph(dir);
 
     const result = await runCli(["cluster-only", dir], dir);
 
     expect(result.exitCode).toBe(0);
-    expect(result.warnings.join("\n")).toContain("HTML export skipped");
     expect(existsSync(join(dir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
     expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
     expect(existsSync(join(dir, ".graphify", "graph.html"))).toBe(false);
@@ -1441,7 +1449,7 @@ describe("public CLI runtime command parity", () => {
 });
 
 describe("skill runtime artifact parity", () => {
-  it("cluster-only accepts --html-out and writes graph.html", async () => {
+  it("cluster-only re-clusters and emits no graph.html", async () => {
     const dir = tempProject();
     const graphPath = writeGraph(dir);
     const reportPath = join(dir, ".graphify", "GRAPH_REPORT.md");
@@ -1455,13 +1463,13 @@ describe("skill runtime artifact parity", () => {
       "--graph-out", graphPath,
       "--report-out", reportPath,
       "--analysis-out", analysisPath,
-      "--html-out", htmlPath,
     ], dir);
 
     expect(result.exitCode).toBe(0);
     expect(result.logs.join("\n")).toContain("Re-clustered");
-    expect(existsSync(htmlPath)).toBe(true);
-    expect(readFileSync(htmlPath, "utf-8")).toContain("<title>graphify");
+    // The legacy vis-network graph.html is gone; the visual output is the
+    // static Ontology Studio bundle (emitted best-effort into .graphify/studio).
+    expect(existsSync(htmlPath)).toBe(false);
   });
 
   it("recognizes add as an alias for ingest", async () => {

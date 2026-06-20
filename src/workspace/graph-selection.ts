@@ -2,8 +2,8 @@
  * Track G Lot 1 / G4 — focus subgraph selection.
  *
  * Pure-data slicing of a Graphify graph.json payload driven by the
- * workspace viewer state. No vis.js, no DOM; this module is the
- * server-side bridge that decides what the graph panel renders.
+ * workspace viewer state. No rendering library, no DOM; this module is
+ * the server-side bridge that decides what the graph panel renders.
  *
  * Three modes from `viewState.graph.mode`:
  *

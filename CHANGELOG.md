@@ -8,6 +8,10 @@ This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refe
 
 Retroactive note: the agent-stats subsystem shipped incrementally without its own changelog line. It indexes agentic-CLI conversation transcripts already on disk (Claude, Codex, agy/Antigravity) and attributes branches/commits/work-packages to agent *sessions* by ranked evidence (commit-sha printed in tool output > Codex thread-ids > h2a registry > worktree×branch×time-window > PR-merge), because git authorship is uniform and uninformative here. Re-derivable store at `.graphify/agents/facts.jsonl`; anonymized citation excerpts as evidence. Surface: `graphify agent-stats` (per-agent table), `agent-stats report`, `agent-stats sync`, `agent-stats sessions`, `agent-stats wp <trackItemId>`; stable `graphify.agent-stats/v1` + `graphify.agent-stats.sessions/v1` schemas. MVP through Phase 1.5 (transcript parsing, evidence attribution, Track-WP join, privacy/correctness fixes — PRs #129/#130/#133/#134/#135) landed in **0.10.1**; Phase 2 (versioned JSON, agy/Gemini parser parity, `report` command, committer-precedence, attribution-quality tests — PR #142) landed in **0.13.1**.
 
+## 0.15.0 (2026-06-19)
+
+**BREAKING** — Removed the legacy vis-network `graph.html` output and all of its code (the `export html` command, the `--html` / `--no-viz` flags, `toHtml` / `buildGraphHtml`, the `outputs.write_html` config knob). The visual output is now a **static Ontology Studio export**: the default pipeline writes `.graphify/studio/`, and the new `graphify studio export <out>` command produces a self-contained static studio (SPA + data JSONs with force-layout positions) that opens with any static file server. Existing projects migrate automatically — a stale legacy graph viz is deleted on the next run. All skill variants were rewritten to point to the studio export.
+
 ## 0.14.0 (2026-06-13)
 
 Exhaustive per-entity citations with tiered lazy storage and a corpus-type-aware citation policy — on by default, no API key required.

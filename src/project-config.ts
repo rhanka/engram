@@ -399,7 +399,6 @@ export function normalizeProjectConfig(
     },
     outputs: {
       state_dir: resolvePath(configDir, outputs.state_dir ?? ".graphify"),
-      write_html: asBoolean(outputs.write_html, true),
       write_wiki: asBoolean(outputs.write_wiki, false),
       write_profile_report: asBoolean(outputs.write_profile_report, true),
       ontology: {

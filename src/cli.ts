@@ -45,7 +45,7 @@ import { communitiesFromGraph, communityLabelsFromGraph } from "./graph-communit
 import { safeExecGit } from "./git.js";
 import { safeGitRevParse } from "./git.js";
 import { discoverProjectConfig, loadProjectConfig } from "./project-config.js";
-import { defaultManifestPath, resolveGraphInputPath, resolveGraphifyPaths } from "./paths.js";
+import { DEFAULT_GRAPHIFY_STATE_DIR, defaultManifestPath, resolveGraphInputPath, resolveGraphifyPaths } from "./paths.js";
 import { normalizeSearchText, scoreSearchText } from "./search.js";
 import { makeGraphPortable, projectRootLabel, scanPortableGraphifyArtifacts } from "./portable-artifacts.js";
 import { loadOntologyPatchContext } from "./ontology-patch-context.js";
@@ -249,28 +249,41 @@ function writeJson(path: string, value: unknown): void {
 }
 
 /**
- * Track C-3.5: best-effort loader for the ontology profile used by HTML
- * export visual encoding overrides. Returns undefined if no graphify.yaml
- * project config exists, or if the profile cannot be loaded — this is a
- * cosmetic-only enhancement, so a missing or broken profile must NEVER
- * fail the surrounding HTML export. If `explicitPath` is provided we honor
- * --profile; otherwise we auto-discover graphify.yaml under `root`.
+ * Emit the default static Ontology Studio bundle into `<stateDir>/studio`
+ * (the visual output that replaced the former HTML graph export). Best-effort:
+ * when the prebuilt studio SPA is not available this warns and is a no-op,
+ * so the surrounding graph rebuild never fails on a missing SPA.
  */
-async function tryLoadHtmlOntologyProfile(
-  root: string,
-  explicitPath?: string,
-): Promise<import("./types.js").NormalizedOntologyProfile | undefined> {
+async function emitDefaultStaticStudio(stateDir: string): Promise<void> {
   try {
-    const { loadOntologyProfile } = await import("./ontology-profile.js");
-    if (explicitPath) {
-      return loadOntologyProfile(resolve(explicitPath));
+    const { buildStaticStudio, StudioSpaNotBuiltError, removeLegacyGraphViz } = await import(
+      "./studio-export.js"
+    );
+    try {
+      const studioDir = join(stateDir, "studio");
+      buildStaticStudio({
+        stateDir,
+        outDir: studioDir,
+        onWarning: (message) => console.warn(message),
+      });
+      console.log(`Static studio written to ${studioDir} (open index.html via any static server).`);
+      // Migration: erase a stale legacy graph viz left by an older graphify version.
+      if (removeLegacyGraphViz(stateDir)) {
+        console.log("Removed a stale legacy graph viz (superseded by the static studio).");
+      }
+    } catch (err) {
+      if (err instanceof StudioSpaNotBuiltError) {
+        console.warn(`Static studio export skipped: ${err.message}`);
+        return;
+      }
+      console.warn(
+        `Static studio export skipped: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
-    const discovery = discoverProjectConfig(root);
-    if (!discovery.found || !discovery.path) return undefined;
-    const projectConfig = loadProjectConfig(discovery.path);
-    return loadOntologyProfile(projectConfig.profile.resolvedPath, { projectConfig });
-  } catch {
-    return undefined;
+  } catch (err) {
+    console.warn(
+      `Static studio export skipped: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 }
 
@@ -3465,13 +3478,12 @@ export async function main(): Promise<void> {
           return;
         }
 
-        const [{ buildFromJson }, { cluster, scoreAll }, { godNodes, surprisingConnections, suggestQuestions }, { generate }, { persistGraphWithCitations }, { safeToHtml }] = await Promise.all([
+        const [{ buildFromJson }, { cluster, scoreAll }, { godNodes, surprisingConnections, suggestQuestions }, { generate }, { persistGraphWithCitations }] = await Promise.all([
           import("./build.js"),
           import("./cluster.js"),
           import("./analyze.js"),
           import("./report.js"),
           import("./export.js"),
-          import("./html-export.js"),
         ]);
 
         const G = buildFromJson(merged);
@@ -3518,21 +3530,9 @@ export async function main(): Promise<void> {
           force: true,
           citations: { topK: extractCitationPolicy.inlineTopK },
         });
-        // Track C-3.5: pick up ontology profile for visual encoding override
-        // when a graphify.yaml + ontology-profile is present in the project.
-        const ontologyProfileForExtractHtml = await tryLoadHtmlOntologyProfile(root);
-        safeToHtml(
-          G,
-          communities,
-          paths.html,
-          {
-            communityLabels: labels,
-            ...(ontologyProfileForExtractHtml ? { profile: ontologyProfileForExtractHtml } : {}),
-          },
-          {
-            onWarning: (message) => console.warn(message),
-          },
-        );
+        // Visual output: a self-contained static Ontology Studio (the
+        // replacement for the former HTML graph export). Best-effort.
+        await emitDefaultStaticStudio(paths.stateDir);
         persistCommunityLabels(labels, paths.scratch.labels);
         writeJson(paths.scratch.analysis, {
           communities: Object.fromEntries([...communities.entries()].map(([key, value]) => [String(key), value])),
@@ -3764,7 +3764,6 @@ export async function main(): Promise<void> {
       const { godNodes, surprisingConnections, suggestQuestions } = await import("./analyze.js");
       const { generate } = await import("./report.js");
       const { toJson } = await import("./export.js");
-      const { safeToHtml } = await import("./html-export.js");
 
       let communities = cluster(G);
       // Mirror the watch/update path (upstream #822): map new cids to prior ones
@@ -3817,21 +3816,8 @@ export async function main(): Promise<void> {
       );
       writeFileSync(paths.report, report, "utf-8");
       toJson(G, communities, paths.graph, { communityLabels: labels });
-      // Track C-3.5: opportunistically load the ontology profile so HTML
-      // export can override shape/color per node_type when declared.
-      const ontologyProfileForHtml = await tryLoadHtmlOntologyProfile(root);
-      safeToHtml(
-        G,
-        communities,
-        paths.html,
-        {
-          communityLabels: labels,
-          ...(ontologyProfileForHtml ? { profile: ontologyProfileForHtml } : {}),
-        },
-        {
-          onWarning: (message) => console.warn(message),
-        },
-      );
+      // Visual output: refresh the static Ontology Studio bundle (best-effort).
+      await emitDefaultStaticStudio(paths.stateDir);
       persistCommunityLabels(labels, paths.scratch.labels);
       const analysis = {
         communities: Object.fromEntries([...communities.entries()].map(([key, value]) => [String(key), value])),
@@ -3842,7 +3828,7 @@ export async function main(): Promise<void> {
         questions,
       };
       writeFileSync(paths.scratch.analysis, JSON.stringify(analysis, null, 2), "utf-8");
-      console.log(`Done - ${communities.size} communities. GRAPH_REPORT.md, graph.json and graph.html updated.`);
+      console.log(`Done - ${communities.size} communities. GRAPH_REPORT.md, graph.json and the static studio updated.`);
     });
 
   // ---------------------------------------------------------------------------
@@ -3883,7 +3869,6 @@ export async function main(): Promise<void> {
       const { godNodes, surprisingConnections, suggestQuestions } = await import("./analyze.js");
       const { generate } = await import("./report.js");
       const { toJson } = await import("./export.js");
-      const { safeToHtml } = await import("./html-export.js");
       const { generateCommunityLabels } = await import("./community-labeling.js");
 
       let communities = cluster(G);
@@ -3950,19 +3935,8 @@ export async function main(): Promise<void> {
       );
       writeFileSync(paths.report, report, "utf-8");
       toJson(G, communities, paths.graph, { communityLabels: labels });
-      const ontologyProfileForHtml = await tryLoadHtmlOntologyProfile(root);
-      safeToHtml(
-        G,
-        communities,
-        paths.html,
-        {
-          communityLabels: labels,
-          ...(ontologyProfileForHtml ? { profile: ontologyProfileForHtml } : {}),
-        },
-        {
-          onWarning: (message) => console.warn(message),
-        },
-      );
+      // Visual output: refresh the static Ontology Studio bundle (best-effort).
+      await emitDefaultStaticStudio(paths.stateDir);
       const analysis = {
         communities: Object.fromEntries([...communities.entries()].map(([key, value]) => [String(key), value])),
         cohesion: Object.fromEntries([...cohesion.entries()].map(([key, value]) => [String(key), value])),
@@ -3979,7 +3953,7 @@ export async function main(): Promise<void> {
           : "placeholder (no LLM backend)";
       console.log(
         `Done - ${communities.size} communities labeled (${sourceMsg}). ` +
-          "GRAPH_REPORT.md, graph.json and graph.html updated.",
+          "GRAPH_REPORT.md, graph.json and the static studio updated.",
       );
     });
 
@@ -4320,70 +4294,7 @@ export async function main(): Promise<void> {
 
   const exportCommand = program
     .command("export")
-    .description("Export an existing graph into HTML, wiki, Obsidian, SVG, GraphML, or Neo4j Cypher artifacts");
-
-  exportCommand
-    .command("html")
-    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
-    .option("--out <path>", "Path to write graph.html")
-    .option("--no-viz", "Skip HTML export and remove any stale output")
-    .option(
-      "--profile <path>",
-      "Optional ontology profile YAML for per-node-type visual encoding (Track C-3.5)",
-    )
-    .option(
-      "--descriptions <path>",
-      "Optional wiki description sidecar index JSON; node descriptions render in the node-info panel (Track G G-studio-lot4)",
-    )
-    .action(async (opts) => {
-      try {
-        const graphPath = resolveGraphInputPath(opts.graph);
-        const outPath = resolve(opts.out ?? join(dirname(graphPath), "graph.html"));
-        if (opts.viz === false) {
-          if (existsSync(outPath)) unlinkSync(outPath);
-          console.log(`HTML export skipped (--no-viz): ${outPath}`);
-          return;
-        }
-        const G = loadCliGraph(graphPath);
-        const communities = communitiesFromCliGraph(G);
-        const labels = communityLabelsFromCliGraph(G, communities);
-        // Track C-3.5: --profile wins over graphify.yaml auto-discovery,
-        // but auto-discovery still happens relative to the graph dir when
-        // --profile is omitted, so an existing graphify.yaml is honored.
-        const ontologyProfileForHtml = await tryLoadHtmlOntologyProfile(
-          dirname(graphPath),
-          typeof opts.profile === "string" ? opts.profile : undefined,
-        );
-        // Track G G-studio-lot4: --descriptions wires the wiki sidecar so node
-        // descriptions render in the node-info panel. Stale entries (graph_hash
-        // / prompt_version mismatch) are dropped with a warning.
-        const descriptions = await loadFreshWikiDescriptionSidecarIndex(
-          typeof opts.descriptions === "string" ? opts.descriptions : undefined,
-          graphPath,
-        );
-        const { safeToHtml } = await import("./html-export.js");
-        const written = safeToHtml(
-          G,
-          communities,
-          outPath,
-          {
-            communityLabels: labels,
-            ...(ontologyProfileForHtml ? { profile: ontologyProfileForHtml } : {}),
-            ...(descriptions ? { descriptions } : {}),
-          },
-          {
-            onWarning: (message) => console.warn(message),
-          },
-        );
-        if (!written) {
-          process.exit(1);
-        }
-        console.log(`graph.html written - open in any browser: ${outPath}`);
-      } catch (err) {
-        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
-        process.exit(1);
-      }
-    });
+    .description("Export an existing graph into wiki, Obsidian, SVG, GraphML, Spanner, or Neo4j Cypher artifacts (the interactive visual is `graphify studio export`)");
 
   exportCommand
     .command("wiki")
@@ -4506,6 +4417,53 @@ export async function main(): Promise<void> {
         console.log(`Spanner artifacts written to ${outDir}`);
         console.log(`  DDL: ${join(outDir, "spanner.ddl.sql")}`);
         console.log(`  DML: ${join(outDir, "spanner.dml.sql")}`);
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    });
+
+  const studioCommand = program
+    .command("studio")
+    .description("Static Ontology Studio export (the self-contained visual output)");
+
+  studioCommand
+    .command("export <out>")
+    .description(
+      "Bundle the prebuilt studio SPA + data artifacts into <out> as a self-contained static studio (openable via any static server)",
+    )
+    .option("--state <dir>", "graphify state dir (must contain graph.json)", DEFAULT_GRAPHIFY_STATE_DIR)
+    .option("--profile <path>", "Optional ontology profile YAML; emits class-hierarchies.json when the profile carries a class_hierarchies block")
+    .action(async (out, opts) => {
+      try {
+        const stateDir = resolve(opts.state ?? DEFAULT_GRAPHIFY_STATE_DIR);
+        const outDir = resolve(out);
+        const { buildStaticStudio, StudioSpaNotBuiltError } = await import("./studio-export.js");
+        try {
+          const result = buildStaticStudio({
+            stateDir,
+            outDir,
+            ...(typeof opts.profile === "string" && opts.profile.trim()
+              ? { profilePath: opts.profile.trim() }
+              : {}),
+            onWarning: (message) => console.warn(message),
+          });
+          console.log(`Static studio written to ${result.outDir}`);
+          console.log(
+            `  nodes: ${result.nodeCount} | scene nodes: ${result.sceneNodeCount} | scene edges: ${result.sceneEdgeCount}`,
+          );
+          console.log(`  entities index: ${result.entityCount} | reconciliation candidates: ${result.reconciliationCount}`);
+          console.log(
+            `  workspace-manifest: ${result.manifestPresentCount}/${result.manifestArtifactCount} artifacts present`,
+          );
+          console.log(`  open: serve ${result.outDir} with any static file server (index.html)`);
+        } catch (err) {
+          if (err instanceof StudioSpaNotBuiltError) {
+            console.error(`error: ${err.message}`);
+            process.exit(1);
+          }
+          throw err;
+        }
       } catch (err) {
         console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
         process.exit(1);

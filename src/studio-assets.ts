@@ -90,7 +90,7 @@ function isText(filePath: string): boolean {
  * Serve a static file from the built SPA. `pathname` is the request path
  * (already URL-decoded). "/" maps to index.html. Path traversal is rejected.
  * Returns null when the request is not a studio-app asset (so the caller can
- * fall through to the JSON API / legacy HTML routes).
+ * fall through to the JSON API routes).
  */
 export function serveStudioAsset(pathname: string): StudioAssetResult | null {
   const appDir = resolveStudioAppDir();
