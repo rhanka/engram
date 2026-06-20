@@ -1027,8 +1027,13 @@ export async function generateNodeDescriptions(
       ? "direct"
       : options.mode === "assistant"
         ? "assistant"
-        : // Auto: use direct when a backend is available, assistant otherwise.
-          provider !== null || Boolean(options.callLlm)
+        : // Auto (SPEC_GRAPHIFY § Enrichment Stages): resolve to ASSISTANT/emit
+          // unless `--description-mode direct` is EXPLICITLY requested. The mere
+          // presence of a detected backend / API key (incl. a discovered `.env`)
+          // must NOT silently switch to direct. An INJECTED `callLlm` is a
+          // programmatic direct opt-in (tests / embedders) and still resolves
+          // to direct — a detected `provider` alone does not.
+          options.callLlm
           ? "direct"
           : "assistant";
 

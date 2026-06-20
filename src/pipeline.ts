@@ -14,14 +14,15 @@ import { buildFromJson } from "./build.js";
 import { cluster, scoreAll } from "./cluster.js";
 import { godNodes, surprisingConnections, suggestQuestions } from "./analyze.js";
 import { generate } from "./report.js";
-import { backupIfProtected, persistGraphWithCitations } from "./export.js";
+import { backupIfProtected } from "./export.js";
 import { buildStaticStudio, StudioSpaNotBuiltError, removeLegacyGraphViz } from "./studio-export.js";
 import { extractWithDiagnostics, type ExtractionDiagnostic } from "./extract.js";
 import { buildCodeFileNodeIdMap, extractGit, mergeExtractions } from "./extract-git.js";
 import { resolveGraphifyPaths } from "./paths.js";
 import { markLifecycleAnalyzed } from "./lifecycle.js";
-import { persistCommunityLabels, resolveCommunityLabels } from "./community-labels.js";
-import { generateNodeDescriptions, type GenerateNodeDescriptionsOptions } from "./node-descriptions.js";
+import { resolveCommunityLabels } from "./community-labels.js";
+import type { GenerateNodeDescriptionsOptions } from "./node-descriptions.js";
+import { finalizeEnrichedGraphBuild } from "./finalize-enriched-graph.js";
 import { safeGitRevParse } from "./git.js";
 import { toWiki } from "./wiki.js";
 import {
@@ -216,8 +217,42 @@ export async function buildProject(
     labelsPath: paths.scratch.labels,
     graph: G,
   });
-  const questions = suggestQuestions(G, communities, labels);
 
+  // Upstream 6939494 (#834): snapshot existing artifacts before overwrite if
+  // the previous graph cost real LLM tokens or has been human-curated.
+  backupIfProtected(paths.stateDir);
+
+  // SPEC_GRAPHIFY § Enrichment Stages: run the shared finalization step
+  // (salient labels → node descriptions → citation projection writer) so this
+  // path converges with `graphify update` / `extract`. Previously buildProject
+  // described but only resolved existing labels and never applied salient names.
+  //
+  // The finalizer runs BEFORE report/question generation: it mutates `labels`
+  // in place with the salient/ingested community names. Generating the report
+  // or the suggested questions first would bake GENERIC labels into both
+  // artifacts even when salient names (or an ingested answer) resolved.
+  await finalizeEnrichedGraphBuild({
+    graph: G,
+    communities,
+    labels,
+    graphPath,
+    stateDir: paths.stateDir,
+    labelsPath: paths.scratch.labels,
+    gods,
+    ...(options?.describe !== undefined ? { describe: options.describe } : {}),
+    ...(options?.descriptionBackend ? { descriptionBackend: options.descriptionBackend } : {}),
+    ...(options?.descriptionModel ? { descriptionModel: options.descriptionModel } : {}),
+    ...(options?.descriptionMaxNodes !== undefined ? { descriptionMaxNodes: options.descriptionMaxNodes } : {}),
+    // `describeCallLlm` is a DESCRIPTION-only caller; pass it solely to the
+    // description stage. An injected callLlm is a programmatic direct opt-in
+    // (community-labeling.ts:535), so handing it to the label stage too would
+    // silently drive labels into direct mode with label prompts. buildProject
+    // exposes no label caller, so the label stage stays assistant/auto here.
+    ...(options?.describeCallLlm ? { descriptionCallLlm: options.describeCallLlm } : {}),
+  });
+
+  // Report + suggested questions are derived from the FINALIZED labels.
+  const questions = suggestQuestions(G, communities, labels);
   const report = generate(
     G,
     communities,
@@ -233,26 +268,7 @@ export async function buildProject(
       freshness: { builtFromCommit: safeGitRevParse(rootResolved, ["HEAD"]) },
     },
   );
-
-  // Upstream 6939494 (#834): snapshot existing artifacts before overwrite if
-  // the previous graph cost real LLM tokens or has been human-curated.
-  backupIfProtected(paths.stateDir);
-
-  // WP11: generate node descriptions by default (entity + code symbols) and
-  // stamp them onto G so the next toJson() persists each `description` to
-  // graph.json. Skips gracefully (no throw) when no backend is configured.
-  if (options?.describe !== false) {
-    await generateNodeDescriptions(G, {
-      ...(options?.descriptionBackend ? { provider: options.descriptionBackend } : {}),
-      ...(options?.descriptionModel ? { model: options.descriptionModel } : {}),
-      ...(options?.descriptionMaxNodes !== undefined ? { maxNodes: options.descriptionMaxNodes } : {}),
-      ...(options?.describeCallLlm ? { callLlm: options.describeCallLlm } : {}),
-    });
-  }
-
   writeFileSync(reportPath, report, "utf-8");
-  persistGraphWithCitations(G, communities, graphPath, { communityLabels: labels });
-  persistCommunityLabels(labels, paths.scratch.labels);
 
   // Visual output: the self-contained static Ontology Studio bundle (the
   // replacement for the former HTML graph export). Best-effort — a missing
