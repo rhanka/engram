@@ -454,6 +454,82 @@ function analyzeGraph(
   };
 }
 
+/**
+ * SPEC_GRAPHIFY § "Enrichment Stages" — route a RUNTIME finalization path
+ * through the shared `finalizeEnrichedGraphBuild` chokepoint.
+ *
+ * The runtime `finalize-build` / `finalize-update` / `analyze-build` paths
+ * previously resolved EXISTING labels (via `analyzeGraph`) and projected
+ * citations, but never ran salient community labels or node descriptions — so a
+ * no-key runtime/assistant build emitted neither `label-instructions/` nor
+ * `description-instructions/`. They now converge on the same finalizer
+ * `graphify extract` uses (cli.ts), giving every finalization path the same
+ * enrichment contract.
+ *
+ * The finalizer mutates `analyzed.labels` in place with the salient/ingested
+ * names AND writes graph.json (via `persistGraphWithCitations`, never raw
+ * `toJson`). Because `analyzeGraph` generated its report from the PRE-salient
+ * labels (FIX 2 ordering), this helper RE-generates the report + suggested
+ * questions from the finalized labels and returns them so the caller writes the
+ * enriched report/analysis, not the preliminary one.
+ */
+async function finalizeRuntimeBuild(args: {
+  graph: Graph;
+  detection: DetectionResult;
+  root: string;
+  tokenCost: { input: number; output: number };
+  graphOut: string;
+  labelsPath: string;
+  analyzed: ReturnType<typeof analyzeGraph>;
+  /** Prior FULL citation union (update/merge paths) — recovers the true union. */
+  priorSidecar?: CitationAggregateMap | null;
+  /** Force overwrite of a protected/curated graph (first-run builds). */
+  force?: boolean;
+}): Promise<{ report: string; questions: SuggestedQuestion[]; analysis: AnalysisFile }> {
+  const { finalizeEnrichedGraphBuild } = await import("./finalize-enriched-graph.js");
+  const { graph: G, detection, root, tokenCost, graphOut, labelsPath, analyzed } = args;
+  const stateDir = dirname(resolve(graphOut));
+
+  // Finalizer: salient labels (mutates `analyzed.labels`) → node descriptions →
+  // citation projection writer. This IS the graph.json writer for these paths.
+  await finalizeEnrichedGraphBuild({
+    graph: G,
+    communities: analyzed.communities,
+    labels: analyzed.labels,
+    graphPath: resolve(graphOut),
+    stateDir,
+    labelsPath,
+    gods: analyzed.gods,
+    ...(args.force ? { force: true } : {}),
+    ...(args.priorSidecar ? { citationsPriorSidecar: args.priorSidecar } : {}),
+  });
+
+  // Re-derive report + questions from the FINALIZED labels (FIX 2).
+  const questions = suggestQuestions(G, analyzed.communities, analyzed.labels);
+  const report = generate(
+    G,
+    analyzed.communities,
+    analyzed.cohesion,
+    analyzed.labels,
+    analyzed.gods,
+    analyzed.surprises,
+    detection,
+    tokenCost,
+    projectRootLabel(root),
+    {
+      suggestedQuestions: questions,
+      freshness: { builtFromCommit: safeGitRevParse(root, ["HEAD"]) },
+    },
+  );
+
+  const analysis: AnalysisFile = {
+    ...analyzed.analysis,
+    questions,
+    labels: mapToObject(analyzed.labels),
+  };
+  return { report, questions, analysis };
+}
+
 function placeholderDetection(root: string = "."): DetectionResult {
   return {
     files: { code: [], document: [], paper: [], image: [], video: [] },
@@ -1256,12 +1332,23 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         { labelsPath },
       );
 
-      persistGraphWithCitations(G, analyzed.communities, resolve(opts.graphOut), {
-        communityLabels: analyzed.labels,
+      // SPEC_GRAPHIFY § Enrichment Stages: route through the SHARED finalizer
+      // (salient labels → descriptions → citation projection writer) so a no-key
+      // runtime build emits BOTH label- and description-instructions/, not just
+      // existing-label resolution. The finalizer writes graph.json + persists
+      // the (salient-updated) labels, and we re-derive the report/analysis from
+      // the finalized labels (FIX 2 ordering).
+      const finalized = await finalizeRuntimeBuild({
+        graph: G,
+        detection: portableDetection,
+        root,
+        tokenCost: { input: extraction.input_tokens ?? 0, output: extraction.output_tokens ?? 0 },
+        graphOut: opts.graphOut,
+        labelsPath,
+        analyzed,
       });
-      writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
-      writeJson(opts.analysisOut, analyzed.analysis);
-      persistCommunityLabels(analyzed.labels, labelsPath);
+      writeFileSync(resolve(opts.reportOut), finalized.report, "utf-8");
+      writeJson(opts.analysisOut, finalized.analysis);
       await emitSkillStaticStudio(dirname(resolve(opts.graphOut)));
       saveManifest(portableDetection.files, join(dirname(resolve(opts.graphOut)), "manifest.json"), { root });
       const cost = updateCostFile(extraction, portableDetection, opts.costOut);
@@ -1338,19 +1425,28 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       const finalizePriorSidecar: CitationAggregateMap | null = readCitationsSidecar(
         dirname(resolve(opts.graphOut)),
       );
-      persistGraphWithCitations(mergedGraph, analyzed.communities, resolve(opts.graphOut), {
-        communityLabels: analyzed.labels,
-        ...(finalizePriorSidecar ? { citations: { priorSidecar: finalizePriorSidecar } } : {}),
+      // SPEC_GRAPHIFY § Enrichment Stages: route the update finalization through
+      // the SHARED finalizer (salient labels → descriptions → citation writer),
+      // forwarding the prior FULL citation sidecar so the union/count stay
+      // correct. Re-derive report/analysis from the finalized labels (FIX 2).
+      const finalized = await finalizeRuntimeBuild({
+        graph: mergedGraph,
+        detection: portableDetection,
+        root,
+        tokenCost: { input: extraction.input_tokens ?? 0, output: extraction.output_tokens ?? 0 },
+        graphOut: opts.graphOut,
+        labelsPath,
+        analyzed,
+        ...(finalizePriorSidecar ? { priorSidecar: finalizePriorSidecar } : {}),
       });
-      writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
-      writeJson(opts.analysisOut, analyzed.analysis);
-      persistCommunityLabels(analyzed.labels, labelsPath);
+      writeFileSync(resolve(opts.reportOut), finalized.report, "utf-8");
+      writeJson(opts.analysisOut, finalized.analysis);
       await emitSkillStaticStudio(dirname(resolve(opts.graphOut)));
       saveManifest(portableDetection.files, join(dirname(resolve(opts.graphOut)), "manifest.json"), { root });
       const cost = updateCostFile(extraction, portableDetection, opts.costOut);
 
       console.log(`Merged: ${mergedGraph.order} nodes, ${mergedGraph.size} edges`);
-      console.log(analyzed.analysis.diff.summary);
+      console.log(finalized.analysis.diff!.summary);
       console.log(`This run: ${(extraction.input_tokens ?? 0).toLocaleString()} input tokens, ${(extraction.output_tokens ?? 0).toLocaleString()} output tokens`);
       console.log(`All time: ${cost.total_input_tokens.toLocaleString()} input, ${cost.total_output_tokens.toLocaleString()} output (${cost.runs.length} runs)`);
     });
@@ -1364,7 +1460,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .requiredOption("--report-out <path>")
     .requiredOption("--analysis-out <path>")
     .option("--directed", "Build a directed graph (preserves source->target)")
-    .action((opts) => {
+    .action(async (opts) => {
       const root = resolve(opts.root);
       const extraction = makeExtractionPortable(ensureExtractionShape(readJson<Partial<Extraction>>(opts.extract)), root);
       const detection = makeDetectionPortable(readJson<DetectionResult>(opts.detect), root);
@@ -1384,12 +1480,21 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       );
 
       mkdirSync(dirname(resolve(opts.graphOut)), { recursive: true });
-      persistGraphWithCitations(G, analyzed.communities, resolve(opts.graphOut), {
-        communityLabels: analyzed.labels,
+      // SPEC_GRAPHIFY § Enrichment Stages: route through the SHARED finalizer so
+      // a no-key analyze-build emits BOTH label- and description-instructions/
+      // (was existing-label resolution + citations only). Report/analysis derive
+      // from the finalized labels (FIX 2).
+      const finalized = await finalizeRuntimeBuild({
+        graph: G,
+        detection,
+        root,
+        tokenCost: { input: extraction.input_tokens ?? 0, output: extraction.output_tokens ?? 0 },
+        graphOut: opts.graphOut,
+        labelsPath,
+        analyzed,
       });
-      writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
-      writeJson(opts.analysisOut, analyzed.analysis);
-      persistCommunityLabels(analyzed.labels, labelsPath);
+      writeFileSync(resolve(opts.reportOut), finalized.report, "utf-8");
+      writeJson(opts.analysisOut, finalized.analysis);
       saveManifest(detection.files, join(dirname(resolve(opts.graphOut)), "manifest.json"), { root });
       console.log(`Graph: ${G.order} nodes, ${G.size} edges, ${analyzed.communities.size} communities`);
     });
@@ -1585,7 +1690,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .requiredOption("--report-out <path>")
     .requiredOption("--analysis-out <path>")
     .option("--directed", "Build a directed graph (preserves source->target)")
-    .action((opts) => {
+    .action(async (opts) => {
       const root = resolve(opts.root);
       const oldGraph = makeGraphPortable(loadGraph(opts.existingGraph), root);
       const mergedGraph = makeGraphPortable(loadGraph(opts.existingGraph), root);
@@ -1614,17 +1719,26 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       const mergeUpdatePriorSidecar: CitationAggregateMap | null = readCitationsSidecar(
         dirname(resolve(opts.graphOut)),
       );
-      persistGraphWithCitations(mergedGraph, analyzed.communities, resolve(opts.graphOut), {
-        communityLabels: analyzed.labels,
-        ...(mergeUpdatePriorSidecar ? { citations: { priorSidecar: mergeUpdatePriorSidecar } } : {}),
+      // SPEC_GRAPHIFY § Enrichment Stages: mirrors finalize-update — route the
+      // re-extraction merge through the SHARED finalizer (salient labels →
+      // descriptions → citation writer with the prior sidecar). Report/analysis
+      // derive from the finalized labels (FIX 2).
+      const finalized = await finalizeRuntimeBuild({
+        graph: mergedGraph,
+        detection,
+        root,
+        tokenCost: { input: extraction.input_tokens ?? 0, output: extraction.output_tokens ?? 0 },
+        graphOut: opts.graphOut,
+        labelsPath,
+        analyzed,
+        ...(mergeUpdatePriorSidecar ? { priorSidecar: mergeUpdatePriorSidecar } : {}),
       });
-      writeFileSync(resolve(opts.reportOut), analyzed.report, "utf-8");
-      writeJson(opts.analysisOut, analyzed.analysis);
-      persistCommunityLabels(analyzed.labels, labelsPath);
+      writeFileSync(resolve(opts.reportOut), finalized.report, "utf-8");
+      writeJson(opts.analysisOut, finalized.analysis);
       saveManifest(detection.files, join(dirname(resolve(opts.graphOut)), "manifest.json"), { root });
 
       console.log(`Merged: ${mergedGraph.order} nodes, ${mergedGraph.size} edges`);
-      console.log(analyzed.analysis.diff.summary);
+      console.log(finalized.analysis.diff!.summary);
     });
 
   program

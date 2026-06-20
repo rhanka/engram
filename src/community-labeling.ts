@@ -529,7 +529,12 @@ export async function generateCommunityLabels(
       ? "direct"
       : options.mode === "assistant"
         ? "assistant"
-        : provider !== null || Boolean(options.callLlm)
+        : // Auto (SPEC_GRAPHIFY § Enrichment Stages): resolve to ASSISTANT/emit
+          // unless `--label-mode direct` is EXPLICITLY requested. A detected
+          // backend / API key (incl. a discovered `.env`) must NOT silently
+          // switch to direct. An INJECTED `callLlm` is a programmatic direct
+          // opt-in and still resolves to direct; a detected `provider` does not.
+          options.callLlm
           ? "direct"
           : "assistant";
 
