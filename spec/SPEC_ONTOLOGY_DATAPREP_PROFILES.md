@@ -31,7 +31,7 @@ Graphify already performs substantial dataprep:
 - AST extraction for code
 - assistant-driven semantic extraction for documents, papers and images
 - extraction validation
-- graph build, clustering, reports, wiki and exports
+- graph build, clustering, reports, wiki and exports (the INTENDED finalization stack adds default-on node descriptions + citation projection per `SPEC_GRAPHIFY.md` § Enrichment Stages — not yet wired into the corpus `extract` path)
 
 The missing layer is not a separate dataprep product. The missing layer is a generic way for a project to declare:
 

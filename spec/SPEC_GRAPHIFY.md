@@ -79,7 +79,11 @@ Legacy compatibility:
 7. Build a Graphology graph.
 8. Cluster with Louvain and compute cohesion.
 9. Label communities and compute analysis.
-10. Export graph.json, GRAPH_REPORT.md, graph.html, optional wiki and export formats.
+10. Describe entities — per-node descriptions (default-on enrichment, no-key assistant-emit; `--no-description` to skip).
+11. Project citations — deterministic union / true-count / tiering of the per-node citation locators emitted by step 4 (default-on, no LLM; `--no-citations` to skip).
+12. Export graph.json, GRAPH_REPORT.md, the static Ontology Studio, optional wiki and export formats.
+
+Steps 9–11 are **enrichment stages** governed by the shared policy in *Enrichment Stages* below; they run in EVERY graph-finalization path, not only `graphify update`.
 
 Every edge keeps provenance confidence: EXTRACTED, INFERRED, or AMBIGUOUS, with scores where available.
 
@@ -90,6 +94,39 @@ Between step 6 (merge AST + semantic) and step 7 (build the graph), an optional,
 1. **Schema hygiene (`normalizeSchemaHygiene`).** Canonicalizes synonymous id-prefixes through an explicit, extensible synonym map (defaults `location_`→`place_`, `org_`→`organization_`) and normalizes the node `type` to its canonical Capitalized form (default overrides `place`→`Location`, `chapter`/`story`→`ChapterOrStory`; bare lowercase types fold to Capitalize, e.g. `character`→`Character`). When two nodes collapse onto the same canonical id their edges, string-array fields, and citations are **UNIONed** (the 0.14.0 citation-union-at-merge posture — never last-write-wins-dropped); scalar attrs are filled first-seen by sorted id order. Self-loops created by a collapse are dropped. Re-running on its own output is a no-op.
 2. **Alias / normalized_terms derivation (`deriveAliasesAndNormalizedTerms`).** Derives `aliases` + `normalized_terms` from the label CONSERVATIVELY: strips leading honorifics/titles (Dr., Sir, Colonel, Inspector, Mr., Mrs., Lord, Lady, Captain, Professor, …) and parentheticals (`Hugo Oberstein (spy)`→alias `Hugo Oberstein`), lowercases the normalized terms. No fuzzy stemming (no invented collisions). Merges with — never clobbers — any pre-existing aliases/terms; idempotent.
 3. **De-orphan (`deOrphanByContainer`).** Links each degree-0 entity node to a container through a derived `appears_in` edge (`derived:true`, `confidence:"INFERRED"`), **steering the orphan into the giant connected component so it never forms a 2-node island**. Per orphan (giant mode, `preferGiantComponent` default ON): pick the FINEST container (ChapterOrStory/Scene/Section, then Work) sharing provenance (`source_file` or path slug) that is **itself in the giant component** (`derivation_method:"deorphan:giant-component"`); else fall back to the Work (the densely-connected anchor — "of two items one is necessarily the Work, and the Work is linked to many", `derivation_method:"deorphan:work-fallback"`) so the orphan joins the Work's subgraph rather than a degree-1↔degree-1 island; else the strict finest container as best-effort. Exactly ONE container is chosen per orphan, so no redundant entity→Work edge is added when a finer container already carries it toward the Work. Finest-in-giant is still chosen over straight-to-Work so Work hubs don't outrank protagonists. Set `preferGiantComponent:false` for the legacy strict-finest behavior (`derivation_method:"deorphan:finest-container"`). Idempotent: respects pre-existing `appears_in`, never double-adds, never links a container node into itself. **Honest residual:** de-orphan is a topology guardrail, not a density fix — on the public mystery-sagas corpus ~64.8% of entities carry ONLY an `appears_in` edge, which produces implausibly thin hub-spoke stars (e.g. a Father Brown chapter with ~184 degree-1 satellites) and a multi-work Thorndyke island that no container-linking strategy can merge into the giant without cross-work edges. That deeper low-density cause is the separate re-index work (TRACKED #5), not de-orphan.
+
+## Enrichment Stages — Labels, Descriptions, Citations
+
+Three pipeline stages enrich the clustered graph before export (steps 9–11). They share one policy resolver but split into two mechanics.
+
+**Target contract — NOT yet fully implemented.** These stages MUST run by default in every graph-finalization path — `graphify <path>` (first run), `graphify extract` (after semantic input is available), `graphify update` (code), and profile post-semantic finalization — through ONE shared finalization step. Today only `graphify update` (code) describes; `graphify extract` and `profile build` run labels/citations but never call `generateNodeDescriptions` (`src/cli.ts:3481-3528`, `src/cli.ts:2934`), and `buildProject` describes but only resolves existing community labels (`src/pipeline.ts:215-254`). Bringing `extract` / profile / `buildProject` / runtime onto the shared finalization step is the core change this spec mandates.
+
+### LLM/assistant stages — community labels + node descriptions
+
+Both require an LLM. The NO-KEY default is the assistant-emit contract: the stage emits instruction files for the host assistant (the running skill) to fill, then ingests the answers on the next run — never requiring an API key.
+
+- Labels emit `.graphify/label-instructions/`; the assistant writes the answers; the next run ingests and persists them (regardless of `assistant` vs `llm` source — neither path may drop assistant-ingested labels).
+- Descriptions emit `.graphify/description-instructions/batch-NNN.md`; the assistant writes `batch-NNN.json`; the next run ingests it before emitting new work and sets `node.description`.
+- Direct (keyed) execution is OPT-IN and EXPLICIT via `--label-mode direct` / `--description-mode direct`. The mere presence of an API key in the environment (e.g. a discovered `.env`) does NOT silently switch a stage to direct mode. *Required change:* today auto-mode resolves to **direct** whenever a backend/API key is detected (`src/node-descriptions.ts:1025-1033`, `src/community-labeling.ts:527-534`; the CLI also imports a local `.env`, `src/cli.ts:2201`) — auto must resolve to assistant/emit unless `direct` is explicitly requested.
+- Opt-out: `--no-label` / `--no-description`. `--no-cluster` also implies no labels.
+
+### Deterministic stage — citations
+
+Citation projection is deterministic and provider-neutral: NO LLM, network, or secrets. The citation LOCATORS (`{source_file, source_url?, page?, section?, paragraph_id?, figure_id?, bbox?}`, `src/types.ts:500`) are emitted PER NODE by the upstream semantic extraction (step 4) — when profile extraction is active, at the profile's `citation_policy.minimum_granularity` (`file | page | section | paragraph`; validation today enforces `source_file` always and `page` only when the minimum is `page`, `src/profile-validate.ts:66-77`); non-profile extraction preserves whatever locators the upstream extraction emitted. The citation stage only UNIONs/dedups the locators already on the nodes, sets the true degree-independent `citation_count`, and tiers them: an inline top-K in `graph.json` plus the full union lazily in `.graphify/ontology/citations.json`. It scans NO source text (no grep/regex). **Required invariant:** graph-finalization writers MUST route through `persistGraphWithCitations` (`src/export.ts:394`, `src/citations.ts:220`); today raw `toJson` writers still exist in non-finalization commands (fragment `build`, `label`, `describe`, `backfill-citations`, runtime reload — `src/cli.ts:3233,3937,4063,4118`) and each must be classified as a non-finalization rewrite that preserves/reprojects the existing sidecar, or migrated so no graph output can skip citation projection. Opt-out: `--no-citations`.
+
+### Cost-awareness policy (uniform across the three stages) — REQUIRED, not yet implemented
+
+None of the following exist in the CLI today (no `--batch`, no `CI=1` resolver, no impact-threshold warning, no `--description-top`/`--description-max-nodes`; describe default is full coverage, `DEFAULT_MAX_NODES = 0`, `src/node-descriptions.ts:261`). They are the target:
+
+- **Impact warning — *le cas échéant*.** Before a stage runs, if its workload exceeds a configurable threshold, warn with the concrete impact and the skip flag — describe: describable-node count → assistant-batch count; citations: estimated `citations.json` size (cost is bytes/time, not tokens — citation projection makes no provider calls). Below threshold: silent (no nag).
+- **Batch opt-out.** `--batch=skip|emit` is an umbrella across the stages; `CI=1` forces a deterministic posture (emit-only or skip, never direct). A non-TTY environment alone is NOT treated as batch (a scripted assistant run may legitimately want instruction files).
+- **Large-corpus threshold.** Configurable per stage. Above it the default is WARN + FULL coverage — NEVER a silent cap: an undescribed node has no sidecar fallback (unlike a citation, whose tail is preserved in `citations.json`, where an inline top-K is correct). A reduced pass is opt-in only (`--description-top <k>` / `--description-max-nodes <n>`, direct mode).
+
+### Migration
+
+On finalization paths that run the description stage, a graph with zero descriptions auto-emits description instructions on the next run; `--fill-missing` is the idempotent gap-fill for partially-described graphs. Citation-poor graphs are NOT auto re-extracted — exhaustive counts come from re-extraction or the opt-in `backfill-citations` path.
+
+`SPEC_WIKI_ENTITY_DESCRIPTIONS.md` (the older `--wiki-descriptions` opt-in framing) is SUPERSEDED by this default-on model for *generation*; its wiki-rendering consumption contract still applies.
 
 ## Configured Ontology Dataprep Profiles
 
