@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 
 import { assertGraphJsonFileSize } from "./graph-size-guard.js";
 
@@ -42,8 +41,6 @@ interface ReconciliationWorkspaceModel {
   decisionLogError: string | null;
   rebuildStatus: OntologyRebuildStatusResponse | null;
   graph: GraphLike | null;
-  graphHtmlUrl: string | null;
-  liveGraphHtmlUrl: string | null;
 }
 
 export interface RenderOntologyStudioWorkspaceOptions {
@@ -660,12 +657,7 @@ function renderGraphContext(model: ReconciliationWorkspaceModel): string {
     graph: model.graph,
     state,
     tokens: getWorkspaceTokens(),
-    ...(model.graphHtmlUrl ? { graphHtmlUrl: model.graphHtmlUrl } : {}),
-    ...(model.liveGraphHtmlUrl ? { liveGraphHtmlUrl: model.liveGraphHtmlUrl } : {}),
     height: 560,
-    // G-studio-lot2 (#3, #4): the embedded canvas runs in studio mode — full
-    // center, shapes/edges legend only, no community list / node-info panel.
-    studioMode: true,
   });
 }
 
@@ -774,15 +766,6 @@ function descriptionSidecarFor(
   return { status: "insufficient_evidence", target_id: nodeId, target_kind: "node" };
 }
 
-function graphHtmlUrl(stateDir: string): string | null {
-  const graphHtmlPath = join(stateDir, "graph.html");
-  return existsSync(graphHtmlPath) ? pathToFileURL(graphHtmlPath).href : null;
-}
-
-function liveGraphHtmlUrl(stateDir: string): string | null {
-  return existsSync(join(stateDir, "graph.html")) ? "/api/ontology/artifacts/graph.html" : null;
-}
-
 function buildModel(
   context: OntologyPatchContext,
   opts: RenderOntologyStudioWorkspaceOptions,
@@ -835,8 +818,6 @@ function buildModel(
     decisionLogError,
     rebuildStatus,
     graph: loadGraph(context.stateDir),
-    graphHtmlUrl: graphHtmlUrl(context.stateDir),
-    liveGraphHtmlUrl: liveGraphHtmlUrl(context.stateDir),
   };
 }
 

@@ -122,7 +122,7 @@ jobs:
           cd /tmp/smoke-test
           node -e "
             const g = require('@sentropic/graphify');
-            const expected = ['validateExtraction', 'buildFromJson', 'cluster', 'godNodes', 'generateReport', 'toJson', 'toHtml'];
+            const expected = ['validateExtraction', 'buildFromJson', 'cluster', 'godNodes', 'generateReport', 'toJson', 'buildStaticStudio'];
             for (const fn of expected) {
               if (typeof g[fn] !== 'function') {
                 throw new Error('Missing export: ' + fn);

@@ -184,7 +184,7 @@ function applyRepulsion(
     const dist = Math.sqrt(dist2);
     // FA2-style kernel: the region's aggregate mass (Σ 1+degree) scales the push,
     // so hubs carve out wide personal space while leaves pack into tight fans —
-    // the legacy vis-network `forceAtlas2Based` hub-and-spoke contrast.
+    // the classic `forceAtlas2Based` hub-and-spoke contrast.
     const f = (repulsion * q.mass) / dist2;
     force.fx += (dx / dist) * f;
     force.fy += (dy / dist) * f;
@@ -270,7 +270,7 @@ export function computeLayout(
     .map((e) => ({ s: idIndex.get(e.source), t: idIndex.get(e.target) }))
     .filter((l): l is { s: number; t: number } => l.s !== undefined && l.t !== undefined);
 
-  // FA2 mass = 1 + degree (same as vis-network's forceAtlas2Based solver).
+  // FA2 mass = 1 + degree (same as the classic forceAtlas2Based solver).
   for (const l of links) {
     (sim[l.s] as SimNode).mass += 1;
     (sim[l.t] as SimNode).mass += 1;

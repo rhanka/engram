@@ -15,7 +15,7 @@ import { cluster, scoreAll } from "./cluster.js";
 import { godNodes, surprisingConnections, suggestQuestions } from "./analyze.js";
 import { generate } from "./report.js";
 import { backupIfProtected, persistGraphWithCitations } from "./export.js";
-import { safeToHtml } from "./html-export.js";
+import { buildStaticStudio, StudioSpaNotBuiltError, removeLegacyGraphViz } from "./studio-export.js";
 import { extractWithDiagnostics, type ExtractionDiagnostic } from "./extract.js";
 import { buildCodeFileNodeIdMap, extractGit, mergeExtractions } from "./extract-git.js";
 import { resolveGraphifyPaths } from "./paths.js";
@@ -42,7 +42,12 @@ import type {
 export interface BuildProjectOptions {
   outputDir?: string;
   followSymlinks?: boolean;
-  html?: boolean;
+  /**
+   * Emit the static Ontology Studio bundle into `<stateDir>/studio` (the
+   * visual output that replaced the former HTML graph export). ON by default;
+   * best-effort — a missing prebuilt SPA degrades to a warning, never a throw.
+   */
+  studio?: boolean;
   wiki?: boolean;
   directed?: boolean;
   scope?: GraphifyInputScopeMode;
@@ -63,7 +68,7 @@ export interface BuildProjectOptions {
 }
 
 export interface BuildProjectWarning {
-  code: "non_code_skipped" | "partial_extraction" | "html_skipped";
+  code: "non_code_skipped" | "partial_extraction" | "studio_skipped";
   message: string;
 }
 
@@ -72,7 +77,7 @@ export interface BuildProjectArtifacts {
   manifestPath: string;
   reportPath: string;
   graphPath: string;
-  htmlPath?: string;
+  studioDir?: string;
   wikiDir?: string;
 }
 
@@ -249,16 +254,29 @@ export async function buildProject(
   persistGraphWithCitations(G, communities, graphPath, { communityLabels: labels });
   persistCommunityLabels(labels, paths.scratch.labels);
 
-  let htmlPath: string | undefined;
-  if (options?.html !== false) {
-    htmlPath = safeToHtml(G, communities, paths.html, { communityLabels: labels }, {
-      onWarning: (message) => {
-      warnings.push({
-        code: "html_skipped",
-          message,
+  // Visual output: the self-contained static Ontology Studio bundle (the
+  // replacement for the former HTML graph export). Best-effort — a missing
+  // prebuilt SPA degrades to a warning, never a throw.
+  let studioDir: string | undefined;
+  if (options?.studio !== false) {
+    try {
+      const result = buildStaticStudio({
+        stateDir: paths.stateDir,
+        outDir: paths.studioDir,
+        onWarning: (message) => warnings.push({ code: "studio_skipped", message }),
       });
-      },
-    });
+      studioDir = result.outDir;
+      // Migration: erase a stale legacy graph viz left by an older graphify version.
+      removeLegacyGraphViz(paths.stateDir);
+    } catch (err) {
+      const message =
+        err instanceof StudioSpaNotBuiltError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : String(err);
+      warnings.push({ code: "studio_skipped", message });
+    }
   }
 
   let wikiDir: string | undefined;
@@ -292,7 +310,7 @@ export async function buildProject(
       manifestPath,
       reportPath,
       graphPath,
-      htmlPath,
+      studioDir,
       wikiDir,
     },
   };

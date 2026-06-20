@@ -153,24 +153,20 @@ describe("graphify ontology studio --write", () => {
     expect(result.body).not.toContain("Patch preview");
     expect(result.body).not.toContain("&quot;operation&quot;");
     expect(result.body).toContain("<b>Mode:</b> Overview");
-    expect(result.body).toContain('title="Graphify graph surface"');
-    expect(result.body).toContain(encodeURI(`file://${fixture.stateDir}/graph.html`));
-    // G-studio-lot2 (#3, #4): the embedded studio canvas requests the studio
-    // variant of the served artifact (?studio=1 -> full center, legend-only).
-    expect(result.body).toContain('data-ws-live-graph-src="/api/ontology/artifacts/graph.html?studio=1"');
+    // The legacy vis-network graph.html iframe is gone; the panel now points
+    // at the static Ontology Studio export and embeds no interactive surface.
+    expect(result.body).not.toContain("<iframe");
+    expect(result.body).toContain("ws-graph-placeholder");
+    expect(result.body).toContain("graphify studio export");
     expect(result.body).not.toContain("Read-only reconciliation APIs are available");
 
+    // The graph.html artifact route was removed; the studio export replaces it.
     const graphArtifact = handleOntologyStudioRequest(
       { profileStatePath: fixture.profileStatePath, write: { token: "unused" } },
       "GET",
       "/api/ontology/artifacts/graph.html",
     );
-    expect(graphArtifact.status).toBe(200);
-    // D1/D8: the artifact is now generated from graph.json with the project
-    // profile (a sub-view of the studio model), not the stale on-disk stub.
-    expect(graphArtifact.body).toContain("graphify -");
-    expect(graphArtifact.body).toContain("Component A");
-    expect(graphArtifact.body).not.toBe("<!doctype html><title>graph</title>");
+    expect(graphArtifact.status).toBe(404);
   });
 
   it("refuses --write when host is not loopback", async () => {

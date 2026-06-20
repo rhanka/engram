@@ -33,10 +33,10 @@ import type {
 const DEFAULT_STATUSES = ["candidate", "attached", "needs_review", "validated", "rejected", "superseded"];
 const VALID_CITATION_MINIMUMS = new Set(["file", "page", "section", "paragraph"]);
 
-// Track C-3.5: vis.js shapes accepted in OntologyNodeType.visual_encoding.shape.
-// Keep aligned with src/export.ts inferNodeShape and OntologyVisualEncodingShape.
-const VIS_JS_SHAPE_LIST = ["dot", "square", "triangle", "box", "diamond", "star", "hexagon"] as const;
-const VIS_JS_SHAPES = new Set<string>(VIS_JS_SHAPE_LIST);
+// Track C-3.5: node shapes accepted in OntologyNodeType.visual_encoding.shape.
+// Keep aligned with OntologyVisualEncodingShape (consumed by the Studio scene).
+const VISUAL_ENCODING_SHAPE_LIST = ["dot", "square", "triangle", "box", "diamond", "star", "hexagon"] as const;
+const VISUAL_ENCODING_SHAPES = new Set<string>(VISUAL_ENCODING_SHAPE_LIST);
 const VISUAL_ENCODING_COLOR_HEX_REGEX = /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/;
 // Shape-variant dimensions (additive): hollow-vs-solid fill and bold-vs-normal
 // border multiply the 7 base shapes so ~19 node types stay distinguishable.
@@ -318,12 +318,15 @@ export function validateOntologyProfile(profile: OntologyProfile): string[] {
     }
     if (ve.shape !== undefined) {
       const shape = String(ve.shape);
-      if (!VIS_JS_SHAPES.has(shape)) {
+      if (!VISUAL_ENCODING_SHAPES.has(shape)) {
         errors.push(
-          `node_types.${nodeTypeId}.visual_encoding.shape must be one of ${VIS_JS_SHAPE_LIST.join(", ")} (got ${shape})`,
+          `node_types.${nodeTypeId}.visual_encoding.shape must be one of ${VISUAL_ENCODING_SHAPE_LIST.join(", ")} (got ${shape})`,
         );
       }
     }
+    // color_hex is INERT in the static studio (the renderer colors by
+    // community/group, not per-node-type) but is still FORMAT-validated so a
+    // malformed value is flagged. See OntologyVisualEncoding.color_hex.
     if (ve.color_hex !== undefined) {
       const color = String(ve.color_hex);
       if (!VISUAL_ENCODING_COLOR_HEX_REGEX.test(color)) {

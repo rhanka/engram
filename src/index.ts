@@ -369,7 +369,7 @@ export type { MergeGraphsOptions, MergeGraphsResult } from "./merge-graphs.js";
 export { cluster, cohesionScore, scoreAll } from "./cluster.js";
 export { godNodes, surprisingConnections, suggestQuestions, graphDiff } from "./analyze.js";
 export { generate as generateReport } from "./report.js";
-export { toJson, toHtml, toSvg, toGraphml, toCypher, toCanvas, toSpanner, pushToNeo4j, backupIfProtected } from "./export.js";
+export { toJson, toSvg, toGraphml, toCypher, toCanvas, toSpanner, pushToNeo4j, backupIfProtected } from "./export.js";
 export { toWiki } from "./wiki.js";
 export { WIKI_DESCRIPTION_PROMPT_VERSION, WIKI_DESCRIPTION_SCHEMA, buildWikiDescriptionCacheKey, checkWikiDescriptionFreshness, createInsufficientEvidenceRecord, selectFreshWikiDescriptions, validateWikiDescriptionSidecar } from "./wiki-descriptions.js";
 export type { CreateInsufficientEvidenceRecordInput, WikiCommunityDescriptionSidecar, WikiDescriptionCacheKeyInput, WikiDescriptionEvidenceRef, WikiDescriptionExecutionMode, WikiDescriptionFreshnessInputs, WikiDescriptionFreshnessResult, WikiDescriptionGenerator, WikiDescriptionSidecar, WikiDescriptionSidecarIndex, WikiDescriptionStaleReason, WikiDescriptionStatus, WikiDescriptionTargetKind, WikiGeneratedDescriptionSidecar, WikiInsufficientEvidenceSidecar, WikiNodeDescriptionSidecar } from "./wiki-descriptions.js";
@@ -574,6 +574,8 @@ export type {
 } from "./workspace-manifest-emitter.js";
 export { buildEntitySidecar, resolveStudioAppDir } from "./studio-assets.js";
 export type { EntitySidecarResponse } from "./studio-assets.js";
+export { buildStaticStudio, StudioSpaNotBuiltError, removeLegacyGraphViz } from "./studio-export.js";
+export type { BuildStaticStudioOptions, BuildStaticStudioResult } from "./studio-export.js";
 export { computeLayout, attachLayoutPositions } from "./graph-layout.js";
 export type {
   ComputeLayoutOptions,

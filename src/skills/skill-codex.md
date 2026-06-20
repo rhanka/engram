@@ -1,12 +1,12 @@
 ---
 name: graphify
-description: "any input (code, docs, papers, images) -> knowledge graph -> clustered communities -> HTML + JSON + audit report. Use when user asks any question about a codebase, project content, architecture, or file relationships, especially if .graphify/ exists. Provides persistent graph with god nodes, community detection, and BFS/DFS query tools."
+description: "any input (code, docs, papers, images) -> knowledge graph -> clustered communities -> static Ontology Studio + JSON + audit report. Use when user asks any question about a codebase, project content, architecture, or file relationships, especially if .graphify/ exists. Provides persistent graph with god nodes, community detection, and BFS/DFS query tools."
 trigger: $graphify
 ---
 
 # $graphify
 
-Turn any folder of files into a navigable knowledge graph with community detection, an honest audit trail, and three outputs: interactive HTML, GraphRAG-ready JSON, and a plain-language `GRAPH_REPORT.md`.
+Turn any folder of files into a navigable knowledge graph with community detection, an honest audit trail, and three outputs: a static Ontology Studio, GraphRAG-ready JSON, and a plain-language `GRAPH_REPORT.md`.
 
 This Codex skill is **TypeScript-backed**. Before calling the run successful, confirm [.graphify/.graphify_runtime.json](.graphify/.graphify_runtime.json) exists and contains `"runtime": "typescript"`.
 
@@ -26,7 +26,7 @@ $graphify <path> --pdf-ocr auto                       # preflight PDFs; OCR scan
 $graphify <path> --whisper-model medium               # use a larger Whisper model for local transcription
 $graphify <path> --update                             # incremental - re-extract only new/changed files
 $graphify <path> --cluster-only                       # re-run clustering/report on existing graph
-$graphify <path> --no-viz                             # skip HTML generation
+graphify studio export .graphify/studio               # build the self-contained static Ontology Studio (serve with any static file server)
 $graphify <path> --svg                                # also export graph.svg
 $graphify <path> --graphml                            # also export graph.graphml
 $graphify <path> --neo4j                              # export .graphify/cypher.txt
@@ -300,7 +300,6 @@ Then run one finalization command. It will:
 - merge AST + semantic extraction
 - build the graph
 - generate `graph.json`, `GRAPH_REPORT.md`, `manifest.json`, `cost.json`
-- optionally write `graph.html` if you pass `--html-out`
 
 ```bash
 $(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" finalize-build \
@@ -313,8 +312,7 @@ $(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" fina
   --graph-out .graphify/graph.json \
   --report-out .graphify/GRAPH_REPORT.md \
   --analysis-out .graphify/.graphify_analysis.json \
-  --cost-out .graphify/cost.json \
-  --html-out .graphify/graph.html
+  --cost-out .graphify/cost.json
 ```
 
 If this step fails because the graph is empty, stop and tell the user exactly that.
@@ -334,13 +332,19 @@ $(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" writ
   --labels .graphify/.graphify_labels.json \
   --root "INPUT_PATH" \
   --report-out .graphify/GRAPH_REPORT.md \
-  --graph-out .graphify/graph.json \
-  --html-out .graphify/graph.html
+  --graph-out .graphify/graph.json
 ```
 
 ### Step 6 - Export extras
 
-If `--no-viz` was given, skip HTML generation during finalization and omit `--html-out` from Step 5.
+**Static Ontology Studio (the visual output).** Build the self-contained static studio after the graph exists. It bundles the prebuilt studio SPA (`index.html` + `assets/`) with the data artifacts it reads next to it — `graph.json`, `scene.json` (with pre-computed force-layout positions), `entities.json`, `reconciliation-candidates.json`, and `class-hierarchies.json` (emitted only when a profile carries a `class_hierarchies` block). The studio scales to large graphs (WebGL + pre-computed positions), so there is no node-count cap:
+
+```bash
+# Default state dir is .graphify; pass --profile <path> to emit class-hierarchies.json for ontology profiles
+graphify studio export .graphify/studio
+```
+
+To open it, serve the export dir (`.graphify/studio`) with any static file server and load `index.html` in a browser.
 
 Wiki descriptions are opt-in and two-step. First generate sidecars, then pass their index into wiki or Obsidian rendering:
 
@@ -354,17 +358,6 @@ graphify export obsidian --graph .graphify/graph.json --descriptions .graphify/w
 ```
 
 Sidecars live under `.graphify/wiki/descriptions/` with an index at `.graphify/wiki/descriptions.json`. They record graph hash, prompt/generator provenance, evidence refs, and cache keys; existing generated sidecars may be reused when a fresh generation does not complete. `insufficient_evidence` sidecars render no Description section. This never mutates `.graphify/graph.json`.
-
-If you intentionally skipped `--html-out` in finalization and still want HTML afterwards, run:
-
-```bash
-$(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" export-html \
-  $GRAPHIFY_DIRECTED_FLAG \
-  --extract .graphify/.graphify_extract.json \
-  --analysis .graphify/.graphify_analysis.json \
-  --labels .graphify/.graphify_labels.json \
-  --out .graphify/graph.html
-```
 
 If `--svg` was requested:
 
@@ -448,7 +441,7 @@ Tell the user:
 ```text
 Graph complete. Outputs in PATH_TO_DIR/.graphify/
 
-  graph.html                 - interactive graph
+  studio/                    - static Ontology Studio (serve with any static file server, open index.html)
   GRAPH_REPORT.md            - audit report
   graph.json                 - raw graph data
   .graphify/.graphify_runtime.json     - runtime proof for this Codex run
@@ -547,8 +540,7 @@ $(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" fina
   --graph-out .graphify/graph.json \
   --report-out .graphify/GRAPH_REPORT.md \
   --analysis-out .graphify/.graphify_analysis.json \
-  --cost-out .graphify/cost.json \
-  --html-out .graphify/graph.html
+  --cost-out .graphify/cost.json
 ```
 
 Then run Steps 5-7 again. Clean up:

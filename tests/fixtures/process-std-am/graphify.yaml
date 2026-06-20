@@ -9,6 +9,5 @@ inputs:
 
 outputs:
   state_dir: .graphify
-  write_html: false
   write_wiki: false
   write_profile_report: false

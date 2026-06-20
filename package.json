@@ -1,6 +1,6 @@
 {
   "name": "@sentropic/graphify",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "publishConfig": {
     "access": "public"
   },
@@ -38,7 +38,7 @@
     "test:smoke": "./scripts/smoke-test.sh",
     "test:pipeline": "vitest run tests/pipeline.test.ts",
     "test:all": "vitest run && npm run test:smoke",
-    "prepublishOnly": "npm run build && npm test"
+    "prepublishOnly": "npm run build && node scripts/assert-studio-app.mjs && npm test"
   },
   "keywords": [
     "claude",

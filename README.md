@@ -63,10 +63,15 @@ This writes `.graphify/`:
 .graphify/
 ├── graph.json       persistent graph — query weeks later without re-reading
 ├── GRAPH_REPORT.md  god nodes, surprising connections, suggested questions
-├── graph.html       local standalone HTML export (legacy viewer)
+├── studio/          self-contained static Ontology Studio (open index.html via any static file server)
 ├── wiki/            optional LLM-readable wiki pages
 └── cache/           local SHA256 cache (ignored)
 ```
+
+The visual output is the **static Ontology Studio** in `.graphify/studio/` — a
+self-contained bundle (the prebuilt SPA + data artifacts). Open it by serving
+that directory with any static file server (`index.html`), or re-export it
+elsewhere with `graphify studio export .graphify/studio`.
 
 Query it directly from the terminal — no assistant needed:
 
@@ -88,7 +93,6 @@ The build is driven from the skill; common flags:
 /graphify ./raw --mode deep        # more aggressive INFERRED edge extraction
 /graphify ./raw --update           # re-extract only changed files, merge into existing graph
 /graphify ./raw --cluster-only     # rerun clustering only, no re-extraction
-/graphify ./raw --no-viz           # skip HTML, just report + JSON
 /graphify ./raw --svg              # also export graph.svg
 /graphify ./raw --graphml          # also export graph.graphml (Gephi, yEd)
 /graphify ./raw --neo4j-push bolt://localhost:7687   # push directly to a running Neo4j

@@ -8,9 +8,6 @@ import { URL } from "node:url";
 import { applyOntologyPatch, validateOntologyPatch } from "./ontology-patch.js";
 import { loadOntologyPatchContext } from "./ontology-patch-context.js";
 import { renderOntologyStudioWorkspace } from "./ontology-studio-workspace.js";
-import { buildGraphHtml } from "./export.js";
-import { loadGraphFromData } from "./graph.js";
-import { communitiesFromGraph, communityLabelsFromGraph } from "./graph-communities.js";
 import { ST_TOKENS_ROUTE, buildStTokensCss } from "./workspace/tokens-st.js";
 import {
   buildEntitySidecar,
@@ -171,23 +168,6 @@ function htmlResult(
 }
 
 /**
- * Track G G-studio-lot2 (#3, #4): flip the served graph.html into its studio
- * variant by adding the `studio-mode` body class. The studio CSS already
- * ships in every export, so the class alone makes the canvas claim the full
- * center and show only the shapes/edges legend. Idempotent: a body that is
- * already `studio-mode` is returned unchanged.
- */
-export function injectStudioMode(html: string): string {
-  if (/<body[^>]*class="[^"]*studio-mode/.test(html)) return html;
-  const withClass = html.replace(
-    /<body([^>]*?)\bclass="([^"]*)"/i,
-    (_match, attrs: string, classes: string) => `<body${attrs}class="${classes} studio-mode"`,
-  );
-  if (withClass !== html) return withClass;
-  return html.replace(/<body\b([^>]*)>/i, '<body$1 class="studio-mode">');
-}
-
-/**
  * Compiled design-system `--st-*` tokens (light + dark). Static for the
  * process lifetime, so compile once and reuse. Served from
  * `ST_TOKENS_ROUTE` and referenced by the workspace shell via <link>.
@@ -202,43 +182,6 @@ function stTokensCssResult(): OntologyStudioRouteResult {
     status: 200,
     contentType: "text/css; charset=utf-8",
     body: stTokensCssCache,
-  };
-}
-
-function graphHtmlArtifactResult(
-  context: ReturnType<typeof loadOntologyPatchContext>,
-  studioMode = false,
-): OntologyStudioRouteResult {
-  // Track G D1/D2/D5/D8: render the graph as a generated sub-view of the studio
-  // model — built from graph.json with the project profile (ontology node-type
-  // shapes/colours) and the native studio variant — instead of serving a
-  // possibly-stale, profile-less on-disk graph.html. Falls back to the on-disk
-  // artifact when graph.json is unavailable or rendering fails (e.g. too large).
-  const graphJsonPath = join(context.stateDir, "graph.json");
-  if (existsSync(graphJsonPath)) {
-    try {
-      const graph = loadGraphFromData(JSON.parse(readFileSync(graphJsonPath, "utf-8")));
-      const communities = communitiesFromGraph(graph);
-      const communityLabels = communityLabelsFromGraph(graph, communities);
-      const html = buildGraphHtml(graph, communities, "graph.html", {
-        communityLabels,
-        ...(context.profile ? { profile: context.profile } : {}),
-        studioMode,
-      });
-      return { status: 200, contentType: "text/html; charset=utf-8", body: html };
-    } catch {
-      // Fall through to the pre-built artifact below.
-    }
-  }
-  const graphHtmlPath = join(context.stateDir, "graph.html");
-  if (!existsSync(graphHtmlPath)) {
-    return jsonResult(404, { error: "graph.html not found" });
-  }
-  const raw = readFileSync(graphHtmlPath, "utf-8");
-  return {
-    status: 200,
-    contentType: "text/html; charset=utf-8",
-    body: studioMode ? injectStudioMode(raw) : raw,
   };
 }
 
@@ -477,9 +420,6 @@ export function handleOntologyStudioRequest(
       const resolvedView =
         activeView === "workspace" && rawCandidate ? "reconciliation" : activeView;
       return htmlResult(context, Boolean(options.write), rawCandidate, resolvedView, rawNode);
-    }
-    if (url.pathname === "/api/ontology/artifacts/graph.html") {
-      return graphHtmlArtifactResult(context, url.searchParams.get("studio") === "1");
     }
     if (url.pathname === "/api/ontology/graph.json") {
       return graphJsonResult(context.stateDir);

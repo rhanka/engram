@@ -132,7 +132,6 @@ describe("public API compatibility", () => {
     );
 
     api.toJson(G, communities, join(dir, "graph.json"), { communityLabels: labels });
-    api.toHtml(G, communities, join(dir, "graph.html"), { communityLabels: labels });
     api.toSvg(G, communities, join(dir, "graph.svg"), { communityLabels: labels });
     api.toCanvas(G, communities, join(dir, "graph.canvas"), { communityLabels: labels });
     const wikiCount = api.toWiki(G, communities, join(dir, "wiki"), {
@@ -143,7 +142,6 @@ describe("public API compatibility", () => {
 
     expect(report).toContain("## Summary");
     expect(existsSync(join(dir, "graph.json"))).toBe(true);
-    expect(existsSync(join(dir, "graph.html"))).toBe(true);
     expect(existsSync(join(dir, "graph.svg"))).toBe(true);
     expect(existsSync(join(dir, "graph.canvas"))).toBe(true);
     expect(existsSync(join(dir, "wiki", "index.md"))).toBe(true);
@@ -155,10 +153,6 @@ describe("public API compatibility", () => {
     };
     expect(graphJson.graph?.community_labels).toMatchObject({ 0: "Core Services" });
     expect(graphJson.nodes.find((node) => node.id === "alpha")?.community_name).toBe("Core Services");
-
-    const graphHtml = readFileSync(join(dir, "graph.html"), "utf-8");
-    expect(graphHtml).toContain("normalizeSearch");
-    expect(graphHtml).toContain("canvas.clientWidth");
   });
 
   it("supports the object form for saveQueryResult and runBenchmark", () => {

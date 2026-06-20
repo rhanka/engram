@@ -26,6 +26,5 @@ dataprep:
 
 outputs:
   state_dir: .graphify
-  write_html: true
   write_wiki: true
   write_profile_report: true

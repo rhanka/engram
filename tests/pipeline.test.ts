@@ -158,19 +158,6 @@ describe("End-to-end pipeline", () => {
     }
   });
 
-  it("Step 6b - toHtml writes valid HTML", async () => {
-    const { toHtml } = await import("../src/export.js");
-    toHtml(G, communities, join(TMP_OUT, "graph.html"));
-
-    expect(existsSync(join(TMP_OUT, "graph.html"))).toBe(true);
-    const html = readFileSync(join(TMP_OUT, "graph.html"), "utf-8");
-    expect(html).toContain("<!DOCTYPE html>");
-    expect(html).toContain("vis-network"); // vis.js
-    expect(html).toContain("graphify");
-    expect(html).toContain("network.on('hoverNode'");
-    expect(html).toContain("container.addEventListener('click'");
-  });
-
   it("Step 6c - toSvg writes valid SVG", async () => {
     const { toSvg } = await import("../src/export.js");
     toSvg(G, communities, join(TMP_OUT, "graph.svg"));

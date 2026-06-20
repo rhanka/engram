@@ -265,7 +265,6 @@ function writeOntologyPatchFixture(root: string): {
       llm_execution: { mode: "assistant", provider: null, text_json: { model: "" }, vision_json: { primary_model: "", deep_model: "" }, batch: { provider: "", completion_window: "24h" }, mesh: { adapter: "" } },
       outputs: {
         state_dir: stateDir,
-        write_html: true,
         write_wiki: false,
         write_profile_report: true,
         ontology: { reconciliation: { decisions_path: decisionsPath, patches_path: null } },

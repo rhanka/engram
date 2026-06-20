@@ -132,7 +132,6 @@ describe("project config loader", () => {
     );
     expect(loaded.llm_execution.mode).toBe("assistant");
     expect(loaded.outputs.state_dir).toBe(join(root, ".graphify"));
-    expect(loaded.outputs.write_html).toBe(true);
     expect(loaded.outputs.write_wiki).toBe(true);
     expect(loaded.outputs.write_profile_report).toBe(true);
   });
@@ -157,7 +156,6 @@ describe("project config loader", () => {
     expect(loaded.inputs.scope).toBe("all");
     expect(loaded.dataprep.pdf_ocr).toBe("auto");
     expect(loaded.outputs.state_dir).toBe(join(root, ".graphify"));
-    expect(loaded.outputs.write_html).toBe(true);
     expect(loaded.outputs.write_wiki).toBe(false);
     expect(loaded.outputs.write_profile_report).toBe(true);
     expect(loaded.dataprep.image_analysis.enabled).toBe(false);

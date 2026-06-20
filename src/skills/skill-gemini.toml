@@ -180,8 +180,7 @@ $(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" fina
   --graph-out .graphify/graph.json \
   --report-out .graphify/GRAPH_REPORT.md \
   --analysis-out .graphify/.graphify_analysis.json \
-  --cost-out .graphify/cost.json \
-  --html-out .graphify/graph.html
+  --cost-out .graphify/cost.json
 ```
 
 For `--update`, use `detect-incremental`, then rerun `prepare-semantic-detect --incremental` before semantic cache/extraction, and finish with `finalize-update`.
@@ -195,6 +194,13 @@ $(cat .graphify/.graphify_node) "$(cat .graphify/.graphify_runtime_script)" clus
   --graph-out .graphify/graph.json \
   --report-out .graphify/GRAPH_REPORT.md \
   --analysis-out .graphify/.graphify_analysis.json
+```
+
+For the visual output, build the self-contained static Ontology Studio after the graph exists. It bundles the prebuilt studio SPA (`index.html` + `assets/`) with the data artifacts it reads next to it — `graph.json`, `scene.json` (with pre-computed force-layout positions), `entities.json`, `reconciliation-candidates.json`, and `class-hierarchies.json` (emitted only when a profile carries a `class_hierarchies` block). The studio scales to large graphs (WebGL + pre-computed positions), so there is no node-count cap. Open it by serving the export dir (`.graphify/studio`) with any static file server and loading `index.html`:
+
+```bash
+# Default state dir is .graphify; pass --profile <path> to emit class-hierarchies.json for ontology profiles
+graphify studio export .graphify/studio
 ```
 
 For `--svg`, `--graphml`, `--neo4j`, `--neo4j-push`, call the matching `export-*` or `push-neo4j` runtime command after the build.
@@ -217,7 +223,7 @@ For `--mcp`, use the configured `graphify` MCP server from `.gemini/settings.jso
 After a successful build/update, confirm these outputs:
 - `.graphify/graph.json`
 - `.graphify/GRAPH_REPORT.md`
-- `.graphify/graph.html`
+- `.graphify/studio/` (static Ontology Studio; serve with any static file server and open `index.html`)
 - `.graphify/.graphify_runtime.json`
 
 ## Query, path, explain, and ingest
