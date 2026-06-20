@@ -7,9 +7,9 @@
 - Spec state: baseline accepted; render-only sidecar consumption implemented; generation command/API contract specified; assistant-first generation core implemented; CLI wiring and direct provider creation remain open
 - Implemented activation: explicit `graphify export wiki|obsidian --descriptions <path>` render path
 - Planned activation: explicit generation command/config/skill options only
-- Default behavior: unchanged
+- Default behavior: **SUPERSEDED for generation** — per-node description *generation* is now a default-on enrichment stage across all build paths per `SPEC_GRAPHIFY.md` § *Enrichment Stages* (no-key assistant-emit). The `--wiki-descriptions` opt-in framing below is historical. The wiki render-only sidecar *consumption* contract still applies.
 
-This spec defines an optional enrichment layer for Graphify wiki output. It applies to both code graphs and document/knowledge-base graphs, and it must reuse the existing LLM execution ports: assistant, direct, batch and mesh.
+For *generation*, this historical opt-in model is SUPERSEDED by `SPEC_GRAPHIFY.md` § Enrichment Stages (default-on, no-key assistant-emit). The remaining contract here is wiki/obsidian *rendering* — consuming an existing `node.description` or the description sidecar — across both code and document/knowledge-base graphs, reusing the existing LLM execution ports (assistant, direct, batch, mesh) where direct generation is still explicitly invoked.
 
 ## Problem
 
