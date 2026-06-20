@@ -98,7 +98,7 @@ describe("Track G G4 — graph panel", () => {
     ]);
   });
 
-  it("renders metrics and safely embeds an exported graph surface", () => {
+  it("renders metrics and a static-studio placeholder, escaping the focus id", () => {
     const tokens = getWorkspaceTokens("dark");
     const state = withGraphState(createDefaultViewerState(), { mode: "overview" });
 
@@ -106,7 +106,6 @@ describe("Track G G4 — graph panel", () => {
       graph,
       state: { ...state, focusEntityId: "<bad>" },
       tokens,
-      graphHtmlUrl: 'graph.html" onload="alert(1)',
       height: 320,
     });
 
@@ -114,29 +113,24 @@ describe("Track G G4 — graph panel", () => {
     expect(html).toContain("<b>Edges:</b> 2");
     expect(html).toContain("<b>Mode:</b> Overview");
     expect(html).toContain("&lt;bad&gt;");
-    expect(html).toContain('height:320px');
-    expect(html).toContain("graph.html&quot; onload=&quot;alert(1)");
-    expect(html).not.toContain('" onload="alert(1)');
-    expect(html).toContain('sandbox="allow-scripts"');
-    expect(html).not.toContain("allow-same-origin");
-    // D4: parent-side bridge opens the right-column entity panel when the
-    // embedded graph posts a node selection.
-    expect(html).toContain("graphify:selectNode");
-    expect(html).toContain('url.searchParams.set("node"');
+    expect(html).toContain("min-height:320px");
+    // The legacy vis-network iframe is gone; the panel points at the static
+    // Ontology Studio export instead and never embeds an interactive surface.
+    expect(html).not.toContain("<iframe");
+    expect(html).toContain("ws-graph-placeholder");
+    expect(html).toContain("graphify studio export");
   });
 
-  it("blocks javascript graph URLs and keeps the placeholder bounded", () => {
+  it("keeps the placeholder bounded with no embedded surface", () => {
     const html = renderGraphPanel({
       graph,
       state: createDefaultViewerState(),
       tokens: getWorkspaceTokens("dark"),
-      graphHtmlUrl: "javascript:alert(1)",
       height: 80,
     });
     expect(html).not.toContain("<iframe");
-    expect(html).not.toContain("javascript:alert(1)");
-    expect(html).not.toContain("graphify export");
     expect(html).toContain("ws-graph-placeholder");
+    expect(html).toContain("min-height:120px");
   });
 
   it("lets the workspace shell replace the G2 graph stub with the rendered panel", () => {

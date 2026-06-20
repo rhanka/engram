@@ -87,7 +87,8 @@ export interface GraphifyPaths {
   stateDir: string;
   graph: string;
   report: string;
-  html: string;
+  /** Static Ontology Studio export directory (the self-contained visual output). */
+  studioDir: string;
   flows: string;
   manifest: string;
   scope: string;
@@ -150,7 +151,7 @@ export function resolveGraphifyPaths(options: GraphifyPathOptions = {}): Graphif
     stateDir,
     graph: join(stateDir, "graph.json"),
     report: join(stateDir, "GRAPH_REPORT.md"),
-    html: join(stateDir, "graph.html"),
+    studioDir: join(stateDir, "studio"),
     flows: join(stateDir, "flows.json"),
     manifest: join(stateDir, "manifest.json"),
     scope: join(stateDir, "scope.json"),

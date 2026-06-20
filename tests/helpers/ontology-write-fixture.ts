@@ -156,7 +156,6 @@ export function writeOntologyWriteFixture(root: string): OntologyWriteFixture {
         },
         outputs: {
           state_dir: stateDir,
-          write_html: false,
           write_wiki: false,
           write_profile_report: false,
           ontology: { reconciliation: { decisions_path: decisionsPath, patches_path: null } },

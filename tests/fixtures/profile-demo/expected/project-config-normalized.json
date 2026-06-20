@@ -37,7 +37,6 @@
   },
   "outputs": {
     "state_dir": "__FIXTURE_ROOT__/.graphify",
-    "write_html": true,
     "write_wiki": true,
     "write_profile_report": true
   }
