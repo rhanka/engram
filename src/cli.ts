@@ -3248,6 +3248,10 @@ export async function main(): Promise<void> {
     .option("--concurrency <n>", "Direct backend semantic chunk concurrency", "4")
     .option("--token-budget <n>", "Approximate direct backend token budget per semantic chunk", "60000")
     .option("--no-cluster", "Write the raw merged extraction and skip graph clustering/reporting")
+    .option("--no-description", "Skip the node-description enrichment stage")
+    .option("--no-label", "Skip the salient community-label enrichment stage")
+    .option("--description-mode <mode>", "Description execution: 'assistant' (default, emit instructions, no key) or 'direct' (explicit, requires API key)")
+    .option("--label-mode <mode>", "Community-label execution: 'assistant' (default, emit instructions, no key) or 'direct' (explicit, requires API key)")
     .option("--citations-top-k <n>", "Inline Level-1 citations kept per node in graph.json (default: corpus-resolved; 3 code / 8 others)")
     .option("--scope <mode>", scopeOptionDescription())
     .option("--all", "Alias for --scope all")
@@ -3478,12 +3482,12 @@ export async function main(): Promise<void> {
           return;
         }
 
-        const [{ buildFromJson }, { cluster, scoreAll }, { godNodes, surprisingConnections, suggestQuestions }, { generate }, { persistGraphWithCitations }] = await Promise.all([
+        const [{ buildFromJson }, { cluster, scoreAll }, { godNodes, surprisingConnections, suggestQuestions }, { generate }, { finalizeEnrichedGraphBuild }] = await Promise.all([
           import("./build.js"),
           import("./cluster.js"),
           import("./analyze.js"),
           import("./report.js"),
-          import("./export.js"),
+          import("./finalize-enriched-graph.js"),
         ]);
 
         const G = buildFromJson(merged);
@@ -3503,8 +3507,40 @@ export async function main(): Promise<void> {
           labelsPath: paths.scratch.labels,
           graph: G,
         });
-        const questions = suggestQuestions(G, communities, labels);
         const tokenCost = { input: merged.input_tokens ?? 0, output: merged.output_tokens ?? 0 };
+        const extractCitationPolicy = resolveCitationPolicyForRoot(outputRoot, {
+          topKFlag: parseTopKFlag(opts.citationsTopK),
+        });
+        // SPEC_GRAPHIFY § Enrichment Stages: the corpus first-run path now routes
+        // through the SHARED finalization step. Previously it clustered, resolved
+        // existing labels and projected citations but NEVER described or generated
+        // salient labels — so a no-key corpus build emitted `label-instructions/`
+        // but no `description-instructions/`. Both stages now emit (assistant
+        // default, no key) and `persistGraphWithCitations` remains the writer.
+        //
+        // The finalizer runs BEFORE report/question generation: it mutates
+        // `labels` in place with the salient/ingested community names. Generating
+        // the report or the suggested questions first would bake GENERIC labels
+        // into both artifacts even when `--label-mode direct` (or an ingested
+        // answer) resolved real names.
+        await finalizeEnrichedGraphBuild({
+          graph: G,
+          communities,
+          labels,
+          graphPath: paths.graph,
+          stateDir: paths.stateDir,
+          labelsPath: paths.scratch.labels,
+          gods,
+          force: true,
+          citationsTopK: extractCitationPolicy.inlineTopK,
+          ...(opts.description === false ? { describe: false } : {}),
+          ...(opts.label === false ? { label: false } : {}),
+          ...(opts.descriptionMode ? { descriptionMode: opts.descriptionMode } : {}),
+          ...(opts.labelMode ? { labelMode: opts.labelMode } : {}),
+        });
+
+        // Report + suggested questions are derived from the FINALIZED labels.
+        const questions = suggestQuestions(G, communities, labels);
         const report = generate(
           G,
           communities,
@@ -3520,20 +3556,11 @@ export async function main(): Promise<void> {
             freshness: { builtFromCommit: safeGitRevParse(root, ["HEAD"]) },
           },
         );
-
         writeFileSync(paths.report, report, "utf-8");
-        const extractCitationPolicy = resolveCitationPolicyForRoot(outputRoot, {
-          topKFlag: parseTopKFlag(opts.citationsTopK),
-        });
-        persistGraphWithCitations(G, communities, paths.graph, {
-          communityLabels: labels,
-          force: true,
-          citations: { topK: extractCitationPolicy.inlineTopK },
-        });
+
         // Visual output: a self-contained static Ontology Studio (the
         // replacement for the former HTML graph export). Best-effort.
         await emitDefaultStaticStudio(paths.stateDir);
-        persistCommunityLabels(labels, paths.scratch.labels);
         writeJson(paths.scratch.analysis, {
           communities: Object.fromEntries([...communities.entries()].map(([key, value]) => [String(key), value])),
           cohesion: Object.fromEntries([...cohesion.entries()].map(([key, value]) => [String(key), value])),
