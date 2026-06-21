@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>graph golden harness</title>
+    <style>
+      /*
+       * Font determinism (§5.1): pin a bundled, deterministic family so text
+       * rasterization is reproducible across CI runners. We declare the family
+       * via @font-face pointing at a locally-served WOFF and force the renderer
+       * to use it; no system fallback is allowed to leak in. If the bundled
+       * font fails to load we still pin "monospace" which is far more stable
+       * across runners than the system "sans-serif".
+       */
+      @font-face {
+        font-family: "HarnessSans";
+        src: url("./fonts/harness-sans.woff2") format("woff2"),
+          url("./fonts/harness-sans.woff") format("woff");
+        font-weight: 400;
+        font-style: normal;
+        font-display: block;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: #ffffff;
+      }
+      canvas {
+        display: block;
+        image-rendering: pixelated;
+      }
+      #stage {
+        position: absolute;
+        top: 0;
+        left: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <script type="module">
+      // The renderer bundle is served from the graph package dist. The static
+      // server (cdp-harness.mjs) maps /graph-dist/index.js to packages/graph/dist.
+      import * as Graph from "/graph-dist/index.js";
+
+      // ---- shape code map (mirror of shape-geometry.ts shapeCode) -----------
+      const SHAPE_CODES = {
+        dot: 0,
+        circle: 0,
+        diamond: 1,
+        star: 2,
+        hexagon: 3,
+        square: 4,
+        box: 5,
+        roundedbox: 5,
+        triangle: 6,
+      };
+
+      function shapeCodeOf(value) {
+        if (typeof value === "number") return value;
+        const key = String(value ?? "dot").trim().toLowerCase();
+        return SHAPE_CODES[key] ?? 0;
+      }
+
+      // Parse a "#rrggbb" / "#rrggbbaa" / [r,g,b(,a)] color into an rgba8 tuple.
+      function toRgba(color, fallback) {
+        if (Array.isArray(color)) {
+          const [r, g, b, a = 255] = color;
+          return [r | 0, g | 0, b | 0, a | 0];
+        }
+        if (typeof color === "string" && color.startsWith("#")) {
+          const hex = color.slice(1);
+          const r = parseInt(hex.slice(0, 2), 16);
+          const g = parseInt(hex.slice(2, 4), 16);
+          const b = parseInt(hex.slice(4, 6), 16);
+          const a = hex.length >= 8 ? parseInt(hex.slice(6, 8), 16) : 255;
+          return [r, g, b, a];
+        }
+        return fallback ?? [77, 118, 255, 255];
+      }
+
+      /**
+       * Build RenderGraphBuffers + GraphStyleBuffers from a plain fixture spec.
+       * A fixture is:
+       *   {
+       *     nodes: [{ id, x, y, size, color, shape, label, fill, border }],
+       *     edges: [{ source, target, width, color, dash, curvature }],
+       *   }
+       * Coordinates are WORLD coordinates; the camera (set per capture) maps
+       * them to the canvas.
+       */
+      function buildBuffers(fixture) {
+        const nodes = fixture.nodes ?? [];
+        const edges = fixture.edges ?? [];
+        const nodeIds = nodes.map((n) => n.id);
+        const idToIndex = new Map(nodeIds.map((id, i) => [id, i]));
+
+        const positions = new Float32Array(nodes.length * 2);
+        const nodeSizes = new Float32Array(nodes.length);
+        const nodeColors = new Uint8Array(nodes.length * 4);
+        const nodeShapes = new Uint8Array(nodes.length);
+        const nodeFills = new Uint8Array(nodes.length);
+        const nodeBorders = new Uint8Array(nodes.length);
+        const nodeLabels = [];
+
+        nodes.forEach((node, i) => {
+          positions[i * 2] = node.x ?? 0;
+          positions[i * 2 + 1] = node.y ?? 0;
+          nodeSizes[i] = node.size ?? 6;
+          const [r, g, b, a] = toRgba(node.color, [77, 118, 255, 255]);
+          nodeColors[i * 4] = r;
+          nodeColors[i * 4 + 1] = g;
+          nodeColors[i * 4 + 2] = b;
+          nodeColors[i * 4 + 3] = a;
+          nodeShapes[i] = shapeCodeOf(node.shape);
+          nodeFills[i] = node.fill === "hollow" ? 1 : 0;
+          nodeBorders[i] = node.border === "bold" ? 1 : 0;
+          nodeLabels[i] = node.label ?? "";
+        });
+
+        const edgeArr = new Uint32Array(edges.length * 2);
+        const edgeWidths = new Float32Array(edges.length);
+        const edgeColors = new Uint8Array(edges.length * 4);
+        const edgeDash = new Uint8Array(edges.length);
+        const edgeCurvatures = new Float32Array(edges.length);
+        const DASH_CODES = { solid: 0, dashed: 1, dotted: 2, "long-dash": 3 };
+
+        edges.forEach((edge, i) => {
+          edgeArr[i * 2] = idToIndex.get(edge.source) ?? 0;
+          edgeArr[i * 2 + 1] = idToIndex.get(edge.target) ?? 0;
+          edgeWidths[i] = edge.width ?? 1;
+          const [r, g, b, a] = toRgba(edge.color, [121, 133, 153, 180]);
+          edgeColors[i * 4] = r;
+          edgeColors[i * 4 + 1] = g;
+          edgeColors[i * 4 + 2] = b;
+          edgeColors[i * 4 + 3] = a;
+          edgeDash[i] = DASH_CODES[edge.dash ?? "solid"] ?? 0;
+          edgeCurvatures[i] = edge.curvature ?? 0;
+        });
+
+        return {
+          graph: { nodeIds, positions, edges: edgeArr },
+          style: {
+            nodeSizes,
+            nodeColors,
+            nodeShapes,
+            nodeFills,
+            nodeBorders,
+            nodeLabels,
+            edgeWidths,
+            edgeColors,
+            edgeDash,
+            edgeCurvatures,
+          },
+        };
+      }
+
+      // The font the renderer must use. drawFallback2D builds its font string
+      // as `${fontPx}px sans-serif` (renderer.ts). To pin the family we patch
+      // the 2D context's font setter to swap "sans-serif" for our pinned family
+      // on this harness page ONLY (never in the shipped renderer).
+      const PINNED_FAMILY = '"HarnessSans", monospace';
+
+      function pinFontOnContext(ctx) {
+        const proto = Object.getPrototypeOf(ctx);
+        const desc = Object.getOwnPropertyDescriptor(proto, "font");
+        if (!desc || !desc.set || ctx.__fontPinned) return;
+        const origSet = desc.set;
+        const origGet = desc.get;
+        Object.defineProperty(ctx, "font", {
+          configurable: true,
+          get() {
+            return origGet.call(this);
+          },
+          set(value) {
+            const pinned = String(value).replace(/sans-serif/g, PINNED_FAMILY);
+            origSet.call(this, pinned);
+          },
+        });
+        ctx.__fontPinned = true;
+      }
+
+      /**
+       * Render a fixture with the Canvas2D backend onto a real canvas at the
+       * given DPR + camera, and return an accessor to read its pixels DIRECTLY.
+       *
+       * opts: { dpr, cssWidth, cssHeight, camera: {x,y,zoom}, backend }
+       */
+      window.__renderFixture = function renderFixture(fixture, opts) {
+        const dpr = opts.dpr ?? 1;
+        const cssWidth = opts.cssWidth ?? 200;
+        const cssHeight = opts.cssHeight ?? 200;
+        const backend = opts.backend ?? "canvas2d";
+        const camera = opts.camera ?? { x: 0, y: 0, zoom: 1 };
+
+        const stage = document.getElementById("stage");
+        // Fresh canvas each call: avoids any retained context state.
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(cssWidth * dpr); // device backing store
+        canvas.height = Math.round(cssHeight * dpr);
+        canvas.style.width = cssWidth + "px";
+        canvas.style.height = cssHeight + "px";
+        stage.innerHTML = "";
+        stage.appendChild(canvas);
+
+        // Pin the font on the 2D context BEFORE the renderer measures/draws.
+        const ctx2d = canvas.getContext("2d");
+        pinFontOnContext(ctx2d);
+
+        const { graph, style } = buildBuffers(fixture);
+        const renderer = Graph.createGraphRenderer(canvas, {
+          backend,
+          pixelRatio: dpr,
+        });
+        renderer.setGraph(graph);
+        renderer.setStyle(style);
+        renderer.setCamera(camera);
+        renderer.render();
+
+        const snap = renderer.snapshot();
+
+        // Expose a direct-pixel read of the canvas BACKING STORE. For the 2D
+        // backend we read via getImageData; for a future WebGL backend the
+        // caller switches to gl.readPixels (handled in __readPixels).
+        window.__lastCanvas = canvas;
+        window.__lastBackend = snap.backend;
+
+        return {
+          width: canvas.width,
+          height: canvas.height,
+          backend: snap.backend,
+        };
+      };
+
+      /**
+       * Read the FULL device-resolution pixel buffer of the last rendered
+       * canvas, directly from the backing store. Returns base64 of the raw
+       * RGBA bytes (row-major, top-left origin, premultiplied=false as 2D
+       * getImageData / gl.readPixels both deliver straight RGBA).
+       *
+       * For the 2D backend: getImageData(0,0,w,h).
+       * For a WebGL backend: gl.readPixels(...) then row-flip (GL origin is
+       * bottom-left). Phase 0 only exercises the 2D path, but the WebGL branch
+       * is wired so the GL phases need zero harness changes.
+       */
+      window.__readPixels = function readPixels() {
+        const canvas = window.__lastCanvas;
+        if (!canvas) throw new Error("no canvas rendered yet");
+        const w = canvas.width;
+        const h = canvas.height;
+        let bytes;
+        if (window.__lastBackend === "webgl") {
+          const gl =
+            canvas.getContext("webgl2") || canvas.getContext("webgl");
+          const buf = new Uint8Array(w * h * 4);
+          gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+          // Flip rows: GL origin is bottom-left, we want top-left.
+          bytes = new Uint8Array(w * h * 4);
+          const stride = w * 4;
+          for (let y = 0; y < h; y += 1) {
+            const src = (h - 1 - y) * stride;
+            bytes.set(buf.subarray(src, src + stride), y * stride);
+          }
+        } else {
+          const ctx = canvas.getContext("2d");
+          bytes = new Uint8Array(ctx.getImageData(0, 0, w, h).data.buffer);
+        }
+        // base64 encode (chunked to avoid call-stack limits on large buffers)
+        let binary = "";
+        const CHUNK = 0x8000;
+        for (let i = 0; i < bytes.length; i += CHUNK) {
+          binary += String.fromCharCode.apply(
+            null,
+            bytes.subarray(i, i + CHUNK),
+          );
+        }
+        return { width: w, height: h, base64: btoa(binary) };
+      };
+
+      // Signal readiness only AFTER the pinned font is loaded (§5.1:
+      // document.fonts.ready before any capture).
+      window.__harnessReady = (async () => {
+        try {
+          await document.fonts.load('16px "HarnessSans"');
+        } catch {
+          /* bundled font may be absent in minimal envs; monospace fallback */
+        }
+        await document.fonts.ready;
+        window.__fontsReady = true;
+        return true;
+      })();
+    </script>
+  </body>
+</html>
