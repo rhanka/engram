@@ -28,14 +28,42 @@ export const DEFAULT_ALPHA = 0.85;
  */
 export const DEFAULT_MAX_ITERATIONS = 100;
 export const DEFAULT_TOLERANCE = 1e-6;
+/**
+ * Lazy-walk self-retention fraction. The walk keeps `lazy` of a node's mass on
+ * itself and spreads `(1 - lazy)` to its weighted neighbors each step. This is
+ * the standard PPR remedy for two pathologies the C7 contract / T6 require us to
+ * avoid:
+ *
+ *   1. **Leaf mass-leak** — a degree-1 seed (a path endpoint) would otherwise
+ *      ship ALL its walk-mass to its single neighbor, so the NEIGHBOUR, not the
+ *      seed, ends up with the most mass (verified: a plain PPR seeded on a path
+ *      endpoint scores node 1 > node 0). T6 requires "all seed mass on ONE node →
+ *      mass concentrates THERE and decays with distance" — the lazy walk keeps the
+ *      seed sticky enough to dominate while the (1-lazy) spread still decays
+ *      monotonically along the path.
+ *   2. **Bipartite/periodicity** — the self-retention makes the chain aperiodic,
+ *      guaranteeing convergence of the power iteration.
+ *
+ * `0.6` is the frozen Phase-A default: the smallest value (so the graph topology
+ * still dominates ranking) at which a degree-1 seed strictly out-scores its lone
+ * neighbour on the T6 path fixtures, while preserving the symmetric-uniform shape
+ * (endpoints equal, interior higher) and the α-monotonicity (lower α → more seed
+ * mass). It is deterministic — pure arithmetic, fixed iteration order.
+ */
+export const DEFAULT_LAZY = 0.6;
 
 export interface PprOptions {
   /** Damping / teleport-back probability (default 0.85). */
   alpha?: number;
-  /** Power-iteration cap (default 50). */
+  /** Power-iteration cap (default 100). */
   maxIterations?: number;
   /** L1 convergence tolerance (default 1e-6). */
   tolerance?: number;
+  /**
+   * Lazy-walk self-retention fraction in [0,1] (default 0.6). See {@link DEFAULT_LAZY}.
+   * `0` recovers the plain (non-lazy) random walk.
+   */
+  lazy?: number;
 }
 
 export interface PprResult {
@@ -58,10 +86,12 @@ export interface PprResult {
  *                  is normalized internally). When empty, falls back to uniform
  *                  teleport (ordinary PageRank).
  *
- * Iteration:  r_{t+1} = (1-α)·p  +  α·Wᵀ·r_t, where W is the row-stochastic
- * weighted transition (column j of Wᵀ distributes node j's mass to its
- * weighted neighbors). Dangling nodes (no out-edges) redistribute their mass to
- * the teleport vector p, conserving total mass.
+ * Iteration (LAZY weighted walk):
+ *   r_{t+1} = (1-α)·p  +  α·[ lazy·r_t  +  (1-lazy)·Wᵀ·r_t ]
+ * where W is the row-stochastic weighted transition (column j of Wᵀ distributes
+ * node j's mass to its weighted neighbors) and `lazy` (DEFAULT_LAZY) is the
+ * self-retention fraction. Dangling nodes (no out-edges) redistribute their mass
+ * to the teleport vector p, conserving total mass.
  */
 export function personalizedPageRank(
   adjacency: CsrAdjacency,
@@ -72,6 +102,8 @@ export function personalizedPageRank(
   const alpha = options.alpha ?? DEFAULT_ALPHA;
   const maxIterations = options.maxIterations ?? DEFAULT_MAX_ITERATIONS;
   const tolerance = options.tolerance ?? DEFAULT_TOLERANCE;
+  const lazy = options.lazy ?? DEFAULT_LAZY;
+  const spread = 1 - lazy;
 
   if (N === 0) return { scores: [], iterations: 0, converged: true, delta: 0 };
 
@@ -80,14 +112,14 @@ export function personalizedPageRank(
   let teleportTotal = 0;
   for (const [node, mass] of teleport) {
     if (node >= 0 && node < N && Number.isFinite(mass) && mass > 0) {
-      p[node] += mass;
+      p[node]! += mass;
       teleportTotal += mass;
     }
   }
   if (teleportTotal <= 0) {
     for (let i = 0; i < N; i++) p[i] = 1 / N;
   } else {
-    for (let i = 0; i < N; i++) p[i] /= teleportTotal;
+    for (let i = 0; i < N; i++) p[i]! /= teleportTotal;
   }
 
   const { node_ptr, neighbors, edge_weights } = adjacency;
@@ -115,11 +147,15 @@ export function personalizedPageRank(
     // Base: teleport + redistributed dangling mass.
     for (let i = 0; i < N; i++) next[i] = (1 - alpha) * p[i]! + alpha * dangling * p[i]!;
 
-    // Spread each node's mass to its weighted neighbors.
+    // Lazy walk: keep `lazy` of each node's walk-mass on itself, spread the rest
+    // (`spread = 1 - lazy`) to its weighted neighbors. Lazy retention stops a
+    // degree-1 seed from leaking ALL its mass to its lone neighbour (T6) and
+    // makes the chain aperiodic (guaranteed convergence).
     for (let i = 0; i < N; i++) {
       const ow = outWeight[i]!;
       if (ow === 0) continue;
-      const share = (alpha * r[i]!) / ow;
+      next[i]! += alpha * lazy * r[i]!;
+      const share = (alpha * spread * r[i]!) / ow;
       for (let k = node_ptr[i]!; k < node_ptr[i + 1]!; k++) {
         next[neighbors[k]!]! += share * edge_weights[k]!;
       }
