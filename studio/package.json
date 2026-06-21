@@ -15,6 +15,7 @@
     "jsdom": "^25.0.0",
     "svelte": "^5.53.2",
     "vite": "^7.3.1",
+    "vite-plugin-singlefile": "^2.3.3",
     "vitest": "^4.0.15"
   },
   "dependencies": {

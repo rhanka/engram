@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  __resetBundle,
   __resetEntitiesIndexCache,
   fetchClassHierarchies,
   fetchEntity,
+  fetchGraph,
+  fetchModelsManifest,
   fetchReconciliationCandidates,
   fetchScene,
 } from "../lib/api.js";
@@ -20,6 +23,7 @@ function jsonResponse(body, ok = true) {
 afterEach(() => {
   vi.unstubAllGlobals();
   __resetEntitiesIndexCache();
+  __resetBundle();
 });
 
 describe("fetchScene (ÉTAPE 1b)", () => {
@@ -164,5 +168,78 @@ describe("fetchReconciliationCandidates (standalone fallback)", () => {
     expect(res.items).toEqual([]);
     expect(res.total).toBe(0);
     expect(res.error).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T2 — inlined offline-bundle short-circuit (window.__GRAPHIFY_BUNDLE__).
+// The single-file `studio.html` cannot fetch() over file://; the data is inlined
+// and api.js must serve it from memory WITHOUT issuing any fetch.
+// ---------------------------------------------------------------------------
+describe("offline bundle short-circuit (window.__GRAPHIFY_BUNDLE__)", () => {
+  // A fetch that EXPLODES if ever called, so the no-fetch invariant is proven.
+  function throwingFetch() {
+    return vi.fn(() => {
+      throw new Error("fetch must not be called when the bundle holds the key");
+    });
+  }
+
+  it("scene-only: fetchScene resolves from the bundle and fetch is NEVER called", async () => {
+    const scene = { nodes: [{ id: "a", x: 1, y: 2 }], edges: [], stats: { nodeCount: 1 } };
+    window.__GRAPHIFY_BUNDLE__ = { "scene.json": scene };
+    const fetchMock = throwingFetch();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchScene()).resolves.toEqual(scene);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("scene-only: fetchGraph resolves null (no doomed file:// fetch)", async () => {
+    window.__GRAPHIFY_BUNDLE__ = { "scene.json": { nodes: [], edges: [] } };
+    const fetchMock = throwingFetch();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchGraph()).resolves.toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("scene-only: fetchEntity/candidates/classHierarchies/models stay off the network", async () => {
+    window.__GRAPHIFY_BUNDLE__ = { "scene.json": { nodes: [], edges: [] } };
+    const fetchMock = throwingFetch();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchEntity("missing")).resolves.toBeNull();
+    await expect(fetchReconciliationCandidates()).resolves.toEqual({ items: [], total: 0 });
+    await expect(fetchClassHierarchies()).resolves.toBeNull();
+    await expect(fetchModelsManifest()).resolves.toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("full-offline: graph + entities are served from the bundle without fetch", async () => {
+    const scene = { nodes: [{ id: "a" }], edges: [], stats: { nodeCount: 1 } };
+    const graph = { nodes: [{ id: "a", description: "x" }], links: [] };
+    const entities = { a: { id: "a", description: { status: "generated", description: "x" }, occurrences: null } };
+    window.__GRAPHIFY_BUNDLE__ = { "scene.json": scene, "graph.json": graph, "entities.json": entities };
+    const fetchMock = throwingFetch();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchScene()).resolves.toEqual(scene);
+    await expect(fetchGraph()).resolves.toEqual(graph);
+    await expect(fetchEntity("a")).resolves.toEqual(entities.a);
+    await expect(fetchEntity("missing")).resolves.toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("is invisible with no bundle: accessors still fetch as before", async () => {
+    // No window.__GRAPHIFY_BUNDLE__ → the seam must not intercept.
+    const scene = { nodes: [], edges: [], stats: { nodeCount: 0 } };
+    const fetchMock = vi.fn(async (url) => {
+      if (url === "/api/ontology/scene.json") return jsonResponse(scene);
+      throw new Error(`unexpected url ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchScene()).resolves.toEqual(scene);
+    expect(fetchMock).toHaveBeenCalledWith("/api/ontology/scene.json", expect.anything());
   });
 });
