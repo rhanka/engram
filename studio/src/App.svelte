@@ -10,7 +10,7 @@
    * architecture.
    */
   import { onMount } from "svelte";
-  import { AppChrome, Button, Badge, ButtonGroup, Select } from "@sentropic/design-system-svelte";
+  import { AppChrome, Button, ButtonGroup, Select } from "@sentropic/design-system-svelte";
 
   import GraphCanvas from "./components/GraphCanvas.svelte";
   import LeftRail from "./components/LeftRail.svelte";
@@ -32,11 +32,22 @@
     applyWeakFilter,
     attachForceLayout,
     resolveSelectedIds,
+    communityStats,
+    nodeCommunity,
   } from "./lib/graphAdapter.js";
-  import { injectOntologyClassNodes, applyOntologyCollapse } from "./lib/classNodes.js";
+  import {
+    injectOntologyClassNodes,
+    applyOntologyCollapse,
+    applyGroupCollapse,
+    buildClassParentIndex,
+    injectCommunityNodes,
+    buildCommunityParentIndex,
+    mintCommunityNodeIds,
+  } from "./lib/classNodes.js";
   import { loadWorkspace } from "./lib/sceneLoader.js";
   import {
     createDefaultViewerState,
+    normalizeGroupAxisAvailability,
     toggleType,
     toggleCommunity,
     toggleEntity,
@@ -46,9 +57,10 @@
     setActiveView,
     setQuery,
     setShowWeakLinks,
-    setShowOntologyClasses,
-    toggleCollapseClass,
-    expandAllClasses,
+    setGroupAxis,
+    toggleCollapse,
+    foldToLevel,
+    expandAll,
   } from "./lib/viewerState.js";
 
   const EMPTY_GRAPH = { nodes: [], links: [] };
@@ -91,38 +103,81 @@
   // selectedIds/focusId (no re-layout). The weak-link toggle re-filters the
   // scene WITHOUT the raw graph (ÉTAPE 1b): on the light scene via
   // applyWeakFilter, or — in legacy fallback — by rebuilding from the graph.
-  //
-  // EVOL 2.a: when "Show ontology classes" is ON we cannot reuse the light
-  // sceneData fast-path — synthetic class nodes + has_instance edges must enter
-  // BEFORE buildScene so degrees / god-class / the weak filter all operate on
-  // the displayed topology. So we inject into the raw graph and rebuild. The
-  // injection is a no-op (returns the graph unchanged) when the artifact is
-  // absent or the graph has not hydrated yet, so this stays robust during load.
-  const ontologyGraph = $derived(
-    viewerState.options.showOntologyClasses
-      ? injectOntologyClassNodes(graph, classHierarchies, { levels: ontologyClassLevels })
-      : graph,
-  );
-  // EVOL 2.b/2.d: once one or more classes are folded, collapse the injected
-  // graph (re-endpoint edges to the nearest visible ancestor, fold the subtree)
-  // BEFORE buildScene so degrees / god-class / the weak filter all operate on the
-  // collapsed topology. An empty collapsed set returns the graph unchanged.
-  const collapsedGraph = $derived(
-    viewerState.options.showOntologyClasses && viewerState.options.collapsedClassIds.length > 0
-      ? applyOntologyCollapse(ontologyGraph, classHierarchies, {
-          collapsedClassIds: viewerState.options.collapsedClassIds,
-        })
-      : ontologyGraph,
-  );
+
+  // B2: the active group-by axis (none | community | ontology). `axis:"none"` is
+  // the FAST PATH and must be byte-identical to the pre-B2 default (A3).
+  const groupAxis = $derived(viewerState.options.groupBy.axis);
+
+  // B2 / C4: which axes the CURRENT graph + artifacts support. Ontology needs the
+  // class-hierarchies artifact; Community needs at least one live community. The
+  // picker omits absent axes; an unavailable persisted axis is downgraded by
+  // normalizeGroupAxisAvailability once the graph is in hand.
+  const communityInfo = $derived(communityStats(graph));
+  const availableAxes = $derived([
+    "none",
+    ...(communityInfo.liveCount > 0 ? ["community"] : []),
+    ...(classHierarchies?.hierarchies ? ["ontology"] : []),
+  ]);
+
+  // B2 / A1+A2: mint the live community keys + their collision-safe synthetic ids
+  // + per-key tone ONCE, so the injector and the parent index agree on ids.
+  const communityCtx = $derived.by(() => {
+    if (groupAxis !== "community") return null;
+    const live = communityInfo.live;
+    const liveKeys = live.map((c) => c.key);
+    const idByKey = mintCommunityNodeIds(liveKeys, new Set((graph?.nodes ?? []).map((n) => n.id)));
+    const toneKeyByKey = new Map(live.map((c) => [c.key, c.groupKey ?? c.key]));
+    return {
+      liveKeys,
+      idByKey,
+      communityOf: nodeCommunity,
+      toneKeyOf: (k) => toneKeyByKey.get(k),
+      labelOf: (k) => k,
+    };
+  });
+
+  // B2: axis-dispatched scene pipeline.
+  //   axis "none"      → fast path (applyWeakFilter / buildScene fallback) [A3]
+  //   axis "ontology"  → inject classes → applyGroupCollapse(ontology) → buildScene
+  //   axis "community" → inject communities → applyGroupCollapse(community) → buildScene
+  // A non-"none" axis abandons sceneData and runs force layout (A4 cost accepted).
+  const groupedGraph = $derived.by(() => {
+    if (groupAxis === "ontology") {
+      const injected = injectOntologyClassNodes(graph, classHierarchies, {
+        levels: ontologyClassLevels,
+      });
+      const ids = viewerState.options.groupBy.ontology.collapsedClassIds;
+      if (ids.length === 0) return injected;
+      const { parentById, descendantClassIds } = buildClassParentIndex(classHierarchies);
+      return applyGroupCollapse(injected, {
+        parentById,
+        collapseTargets: ids,
+        descendantsByTarget: descendantClassIds,
+      });
+    }
+    if (groupAxis === "community" && communityCtx) {
+      const injected = injectCommunityNodes(graph, communityCtx);
+      const keys = viewerState.options.groupBy.community.collapsedKeys;
+      if (keys.length === 0) return injected;
+      const { parentById, descendantsByTarget, collapseTargetByKey } =
+        buildCommunityParentIndex(graph, communityCtx);
+      const collapseTargets = keys
+        .map((k) => collapseTargetByKey(k))
+        .filter((id) => typeof id === "string");
+      return applyGroupCollapse(injected, { parentById, collapseTargets, descendantsByTarget });
+    }
+    return graph;
+  });
   const scene = $derived(
-    viewerState.options.showOntologyClasses
-      ? // EVOL 2.a/2.b: the class/collapse scene is rebuilt from graph.json (no
-        // positions) — attach a force layout so it doesn't render as a ring.
+    groupAxis !== "none"
+      ? // B2/A4: the grouped scene is rebuilt from graph.json (no positions) —
+        // attach a force layout so it doesn't render as a ring.
         attachForceLayout(
-          buildScene(collapsedGraph, { showWeakLinks: viewerState.options.showWeakLinks }),
+          buildScene(groupedGraph, { showWeakLinks: viewerState.options.showWeakLinks }),
         )
       : sceneData
-        ? applyWeakFilter(sceneData, viewerState.options.showWeakLinks)
+        ? // A3 FAST PATH — byte-identical to the pre-B2 default-off.
+          applyWeakFilter(sceneData, viewerState.options.showWeakLinks)
         : buildScene(graph, { showWeakLinks: viewerState.options.showWeakLinks }),
   );
   // Graph highlight = every entity of every selected type/community + the
@@ -134,31 +189,35 @@
   function handleToggleCommunity(community) {
     viewerState = toggleCommunity(viewerState, community);
   }
-  // EVOL 2.b/2.d: a click on a CLASS node folds/unfolds its subtree instead of
-  // selecting it as an entity. We branch on the displayed node's kind (the scene
-  // carries ontology_node_kind through from injectOntologyClassNodes).
-  function sceneNodeKind(id) {
-    return scene?.nodes?.find((n) => n.id === id)?.ontology_node_kind ?? null;
+  // B2 / A2: a click on ANY group-synthetic node folds/unfolds it instead of
+  // selecting an entity. Ontology class nodes toggle by their id; community fold
+  // nodes toggle by their `community_key` field (NEVER the parsed id). Returns
+  // the toggle key when the node is a group node, else null (entity selection).
+  function groupNodeToggleKey(id) {
+    const node = scene?.nodes?.find((n) => n.id === id);
+    if (!node) return null;
+    if (node.ontology_node_kind === "class") return node.id;
+    if (node.community_node_kind === "community") return node.community_key ?? null;
+    return null;
   }
   function handleToggleEntity(id) {
-    if (sceneNodeKind(id) === "class") {
-      viewerState = toggleCollapseClass(viewerState, id);
+    const groupKey = groupNodeToggleKey(id);
+    if (groupKey != null) {
+      viewerState = toggleCollapse(viewerState, groupKey);
       return;
     }
     viewerState = toggleEntity(viewerState, id);
     if (viewerState.focusId) void ensureEntity(viewerState.focusId);
   }
   function handleFocusEntity(id) {
-    // Double-click on a class node = collapse toggle too (no entity detail).
-    if (sceneNodeKind(id) === "class") {
-      viewerState = toggleCollapseClass(viewerState, id);
+    // Double-click on a group node = collapse toggle too (no entity detail).
+    const groupKey = groupNodeToggleKey(id);
+    if (groupKey != null) {
+      viewerState = toggleCollapse(viewerState, groupKey);
       return;
     }
     viewerState = focusEntityAction(viewerState, id);
     void ensureEntity(id);
-  }
-  function handleExpandAllClasses() {
-    viewerState = expandAllClasses(viewerState);
   }
   function handleSetFocus(id) {
     // Expand/collapse the right-column entity detail (null = collapse).
@@ -174,15 +233,53 @@
   function handleToggleWeak(value) {
     viewerState = setShowWeakLinks(viewerState, value);
   }
-  function handleToggleOntologyClasses(value) {
-    viewerState = setShowOntologyClasses(viewerState, value);
-    // Lazily load the artifact the first time the toggle is switched on; the
-    // derived scene re-runs once it lands (no-op injection until then).
-    if (value) void ensureClassHierarchies();
+  // B2: group-by axis callbacks (replace the ontology-class toggle).
+  function handleSetAxis(axis) {
+    viewerState = setGroupAxis(viewerState, axis);
+    // Ontology needs the class-hierarchies artifact; load it lazily the first
+    // time the axis is chosen (the derived scene re-runs once it lands).
+    if (axis === "ontology") void ensureClassHierarchies();
+  }
+  function handleToggleCollapse(key) {
+    viewerState = toggleCollapse(viewerState, key);
+  }
+  function handleExpandAll() {
+    viewerState = expandAll(viewerState);
+  }
+  // B2 / F8: BASELINE fold to an ontology level. Compute the exact class ids at
+  // the level from the taxonomy, then SET them as the collapse set (not a union).
+  function handleFoldToLevel(level) {
+    viewerState = foldToLevel(viewerState, classIdsAtLevel(level));
   }
   function handleSetView(view) {
     viewerState = setActiveView(viewerState, view);
   }
+
+  // B2 / F8: the class ids at a given ontology level (0=Domain, 1=Sub-domain,
+  // 2=Type), read from the class-hierarchies artifact. Used as the baseline set.
+  function classIdsAtLevel(level) {
+    const hs = classHierarchies?.hierarchies;
+    if (!hs) return [];
+    const out = [];
+    for (const h of Object.values(hs)) {
+      const classes = h?.classes_by_id;
+      if (!classes || typeof classes !== "object") continue;
+      for (const entry of Object.values(classes)) {
+        if (typeof entry?.id === "string" && (entry.level ?? 0) === level) out.push(entry.id);
+      }
+    }
+    return out;
+  }
+
+  // B2 / C4: availability coercion at the App seam (the only place with graph +
+  // artifact context). A persisted axis that the current graph no longer supports
+  // is downgraded → "none" WITHOUT wiping the per-axis collapse sets, so re-loading
+  // on a graph that does have the axis restores it. Idempotent; safe to run on
+  // every availableAxes change.
+  $effect(() => {
+    const next = normalizeGroupAxisAvailability(viewerState, availableAxes);
+    if (next !== viewerState) viewerState = next;
+  });
 
   async function ensureEntity(id) {
     if (!id || entityCache[id]) return;
@@ -250,8 +347,8 @@
     viewerState = clearSelection(viewerState);
     try {
       await loadActiveModel();
-      // Re-fetch eagerly if the toggle is currently on (otherwise it stays lazy).
-      if (viewerState.options.showOntologyClasses) await ensureClassHierarchies();
+      // Re-fetch eagerly if the ontology axis is currently active (else lazy).
+      if (viewerState.options.groupBy.axis === "ontology") await ensureClassHierarchies();
     } finally {
       switching = false;
     }
@@ -330,13 +427,6 @@
           </Select>
         </span>
       {/if}
-      {#if loaded && !loadError}
-        <span class="app-stats" aria-label="Graph summary">
-          <Badge tone="neutral">{scene.stats.nodeCount} nodes</Badge>
-          <Badge tone="neutral">{scene.stats.edgeCount} edges</Badge>
-          <Badge tone="info">{scene.stats.communityCount} groups</Badge>
-        </span>
-      {/if}
     {/snippet}
   </AppChrome>
 
@@ -363,15 +453,18 @@
             query={viewerState.query}
             selection={viewerState.selection}
             showWeakLinks={viewerState.options.showWeakLinks}
-            showOntologyClasses={viewerState.options.showOntologyClasses}
-            collapsedClassCount={viewerState.options.collapsedClassIds.length}
+            groupBy={viewerState.options.groupBy}
+            {availableAxes}
+            stats={scene.stats}
             onToggleType={handleToggleType}
             onToggleCommunity={handleToggleCommunity}
             onToggleEntity={handleToggleEntity}
             onSetQuery={handleSetQuery}
             onToggleWeak={handleToggleWeak}
-            onToggleOntologyClasses={handleToggleOntologyClasses}
-            onExpandAllClasses={handleExpandAllClasses}
+            onSetAxis={handleSetAxis}
+            onToggleCollapse={handleToggleCollapse}
+            onFoldToLevel={handleFoldToLevel}
+            onExpandAll={handleExpandAll}
           />
         </div>
         <div class="col col-center">
@@ -435,13 +528,6 @@
   .view-label--compact {
     display: none;
   }
-  .app-stats {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--st-spacing-2, 0.5rem);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
   .app-body {
     flex: 1;
     min-height: 0;
@@ -480,12 +566,6 @@
     }
     .col-center {
       height: 70vh;
-    }
-  }
-
-  @media (max-width: 720px) {
-    .app-stats {
-      display: none;
     }
   }
 
