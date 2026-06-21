@@ -694,3 +694,60 @@ describe("candidateUnionSubgraph (EVOL 1.b)", () => {
     expect(owns[0].source).toBe("B");
   });
 });
+
+describe("B2 — T12 numeric-only-community tone parity (A5)", () => {
+  // A graph whose communities are NUMERIC-ONLY (no community_name). Two live
+  // communities (0, 1). The DS tone walk keys by nodeGroup (`community:<n>`), so
+  // the rail/canvas tone for community 1 is category2, NOT the category1 fallback
+  // the un-fixed `toneByGroup.get(nodeCommunity)` lookup produced.
+  const numericGraph = {
+    nodes: [
+      { id: "a", community: 0 },
+      { id: "b", community: 0 },
+      { id: "c", community: 1 },
+      { id: "d", community: 1 },
+    ],
+    links: [
+      { source: "a", target: "b", relation: "knows" },
+      { source: "c", target: "d", relation: "knows" },
+    ],
+  };
+
+  it("each numeric community's tone matches its nodeGroup palette key (not category1)", () => {
+    const stats = communityStats(numericGraph);
+    expect(stats.liveCount).toBe(2);
+    const byKey = new Map(stats.live.map((c) => [c.key, c]));
+    // nodeCommunity keys are `Community 0` / `Community 1`; nodeGroup keys are
+    // `community:0` / `community:1`. The tones follow first-seen nodeGroup order.
+    expect(nodeCommunity(numericGraph.nodes[0])).toBe("Community 0");
+    expect(nodeGroup(numericGraph.nodes[0])).toBe("community:0");
+    // community 0 first-seen → category1; community 1 → category2 (NOT category1).
+    expect(byKey.get("Community 0").tone).toBe("category1");
+    expect(byKey.get("Community 1").tone).toBe("category2");
+    expect(byKey.get("Community 1").tone).not.toBe("category1");
+    // The exposed groupKey is the nodeGroup palette key (the canvas tone key).
+    expect(byKey.get("Community 0").groupKey).toBe("community:0");
+    expect(byKey.get("Community 1").groupKey).toBe("community:1");
+  });
+
+  it("NAMED-community tone parity stays green (unaffected by the fix)", () => {
+    const namedGraph = {
+      nodes: [
+        { id: "a", community_name: "People" },
+        { id: "b", community_name: "People" },
+        { id: "c", community_name: "Places" },
+        { id: "d", community_name: "Places" },
+      ],
+      links: [
+        { source: "a", target: "b", relation: "knows" },
+        { source: "c", target: "d", relation: "knows" },
+      ],
+    };
+    const stats = communityStats(namedGraph);
+    const byKey = new Map(stats.live.map((c) => [c.key, c]));
+    // Named communities: nodeGroup === nodeCommunity === community_name.
+    expect(byKey.get("People").tone).toBe("category1");
+    expect(byKey.get("Places").tone).toBe("category2");
+    expect(byKey.get("People").groupKey).toBe("People");
+  });
+});
