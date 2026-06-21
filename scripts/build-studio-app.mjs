@@ -25,9 +25,18 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const studio = join(root, "studio");
 const src = join(studio, "dist");
 const dest = join(root, "dist", "studio-app");
+// The single-file Vite pass writes here; its inlined index.html is then lifted
+// to dist/studio-template.html (resolved by the exporter alongside index.html).
+const singleFileDist = join(studio, "dist-singlefile");
+const singleFileTemplate = join(src, "studio-template.html");
 
-function run(cmd, args, cwd) {
-  const r = spawnSync(cmd, args, { cwd, stdio: "inherit", shell: false });
+function run(cmd, args, cwd, env) {
+  const r = spawnSync(cmd, args, {
+    cwd,
+    stdio: "inherit",
+    shell: false,
+    ...(env ? { env: { ...process.env, ...env } } : {}),
+  });
   return r.status === 0;
 }
 
@@ -54,6 +63,26 @@ if (!existsSync(join(studio, "node_modules", "vite"))) {
 if (!run("npm", ["run", "build"], studio) || !existsSync(src)) {
   warn("studio SPA build failed");
   process.exit(0);
+}
+
+// Second pass: the self-contained single-file template (Blocker 1 fix for the
+// offline `file://` studio). Gated by GRAPHIFY_STUDIO_SINGLEFILE=1, written to a
+// distinct dir so the multi-file dist/ above stays byte-unchanged (INV-2/INV-4),
+// then lifted to dist/studio-template.html as a sibling of index.html (resolved
+// by resolveStudioAppDir the same way). Best-effort: a failure here warns but
+// does NOT fail the multi-file build — the offline emit then no-ops (INV-3).
+rmSync(singleFileDist, { recursive: true, force: true });
+if (run("npm", ["run", "build"], studio, { GRAPHIFY_STUDIO_SINGLEFILE: "1" })) {
+  const singleFileIndex = join(singleFileDist, "index.html");
+  if (existsSync(singleFileIndex)) {
+    cpSync(singleFileIndex, singleFileTemplate);
+    rmSync(singleFileDist, { recursive: true, force: true });
+    console.log(`build-studio-app: single-file template -> ${singleFileTemplate}`);
+  } else {
+    warn("single-file build produced no index.html (offline studio.html will no-op)");
+  }
+} else {
+  warn("single-file build failed (offline studio.html will no-op)");
 }
 
 rmSync(dest, { recursive: true, force: true });
