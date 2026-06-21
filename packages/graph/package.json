@@ -25,8 +25,15 @@
   "scripts": {
     "build": "tsup --config tsup.config.ts",
     "test": "vitest run --config vitest.config.ts",
+    "golden:build": "tsup --config tsup.config.ts --no-dts",
+    "test:golden": "npm run golden:build && vitest run --config vitest.config.ts tests/golden/golden-harness.test.ts",
+    "golden:selftest": "npm run golden:build && node tests/golden/cdp-harness.mjs --selftest",
     "bench": "npm run build && node bench/buffers-bench.mjs",
     "prepublishOnly": "npm run test && npm run build"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "^1.0.0",
+    "ws": "^8.18.0"
   },
   "sideEffects": false
 }
