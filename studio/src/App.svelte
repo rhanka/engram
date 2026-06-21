@@ -284,8 +284,7 @@
 <div class="app" data-st-theme="entropic">
   <AppChrome
     class="app-header"
-    brandName="Graphify"
-    productName="Ontology Studio"
+    productName="Graphify"
   >
     {#snippet identity()}
       <ButtonGroup attached size="sm" label="Studio view" class="app-view-switcher">
