@@ -336,6 +336,14 @@
     if (switching || !modelStore.select(id)) return;
     modelId = modelStore.activeId;
     switching = true;
+    // B2 regression fix: capture the active group-by axis BEFORE we drop the
+    // per-model artifacts. Nulling classHierarchies removes "ontology" from
+    // availableAxes, so the availability $effect downgrades the axis to "none"
+    // while the new model's taxonomy is in flight. We re-assert the intended
+    // axis once the artifact lands (below) IF it is available again, so a model
+    // switch within a multi-model bundle keeps an active Ontology grouping (the
+    // collapse set already survives in viewerState — only the axis was lost).
+    const intendedAxis = viewerState.options.groupBy.axis;
     // The fetch base now points at the new model's dir; clear stale per-model
     // client state before re-loading.
     __resetEntitiesIndexCache();
@@ -347,8 +355,16 @@
     viewerState = clearSelection(viewerState);
     try {
       await loadActiveModel();
-      // Re-fetch eagerly if the ontology axis is currently active (else lazy).
-      if (viewerState.options.groupBy.axis === "ontology") await ensureClassHierarchies();
+      // Re-fetch eagerly if the ontology axis was active (else lazy). loadActiveModel
+      // already eagerly fetches class-hierarchies, so this is a cached no-op.
+      if (intendedAxis === "ontology") await ensureClassHierarchies();
+      // Restore the intended axis if the new model still supports it. A downgrade
+      // happened while the artifact was null; reassert now that availableAxes is
+      // up to date. normalizeGroupAxisAvailability is idempotent and keeps the axis
+      // only when it is genuinely available (else this re-asserts to a no-op).
+      if (intendedAxis !== viewerState.options.groupBy.axis && availableAxes.includes(intendedAxis)) {
+        viewerState = setGroupAxis(viewerState, intendedAxis);
+      }
     } finally {
       switching = false;
     }
