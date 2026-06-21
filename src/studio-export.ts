@@ -23,6 +23,10 @@
  *   entities.json                   <- { id: buildEntitySidecar } index
  *   ontology/citations.json         <- verbatim copy (iff present)
  *   workspace-manifest.json         <- emitWorkspaceManifest (bundle descriptor)
+ *   studio.html                     <- self-contained single-file studio, opens
+ *                                      from a bare file:// (default-on; the
+ *                                      scene is inlined, +graph/entities with
+ *                                      --full-offline). SPEC_STUDIO_OFFLINE_EXPORT.
  */
 
 import {
@@ -67,6 +71,19 @@ export interface BuildStaticStudioOptions {
   profilePath?: string;
   /** Override the resolved SPA dir (tests). */
   spaDir?: string;
+  /**
+   * Emit the self-contained, double-clickable `studio.html` (single-file,
+   * scene-inlined). Default `true`. `--no-single-file` sets this `false` to emit
+   * only the multi-file bundle. Best-effort: a missing single-file template (or
+   * any single-file-only failure) warns and is a no-op (INV-3).
+   */
+  singleFile?: boolean;
+  /**
+   * Inline `graph.json` + `entities.json` into `studio.html` too (not just the
+   * scene), so the offline studio needs ZERO network even for the background
+   * graph hydration. Default `false` (scene-only). Implies `singleFile`.
+   */
+  fullOffline?: boolean;
   /** Emit a warning (non-fatal). Defaults to console.warn. */
   onWarning?: (message: string) => void;
 }
@@ -84,6 +101,10 @@ export interface BuildStaticStudioResult {
   manifestPath: string;
   manifestPresentCount: number;
   manifestArtifactCount: number;
+  /** Absolute path of the emitted single-file `studio.html`, or null when skipped. */
+  studioHtmlPath: string | null;
+  /** Byte size of the emitted `studio.html`, or null when skipped. */
+  studioHtmlBytes: number | null;
 }
 
 const GENERATED_DATA_FILES = [
@@ -99,6 +120,10 @@ const GENERATED_DATA_FILES = [
   // scene.json/graph.json instead of stale per-model data left by a previous
   // multi-model export into the same dir.
   "models.json",
+  // The self-contained single-file studio. Wiped up front so a `--no-single-file`
+  // re-export into a dir that previously got a default (single-file) export does
+  // not leave a stale studio.html behind.
+  "studio.html",
 ];
 
 /** Stale directories a previous (possibly multi-model) export may have left. */
@@ -148,6 +173,83 @@ export function removeLegacyGraphViz(stateDir: string): boolean {
     return true;
   }
   return false;
+}
+
+// ---------------------------------------------------------------------------
+// Single-file (`studio.html`) offline export — see SPEC_STUDIO_OFFLINE_EXPORT.md.
+// The exporter injects the inlined data + reads the prebuilt single-file template
+// (`studio-template.html`, produced by the flagged Vite pass). Both halves —
+// inlining the data AND the api.js short-circuit that reads it — are mandatory
+// for the `file://` double-click to render.
+// ---------------------------------------------------------------------------
+
+/** The prebuilt single-file template the exporter injects the data script into. */
+export const SINGLE_FILE_TEMPLATE_NAME = "studio-template.html";
+
+/**
+ * Escape an already-serialized JSON string so it can be embedded as a JS string
+ * literal inside an inline `<script>` and round-trip through `JSON.parse` (C3a).
+ *
+ * Strategy: `JSON.stringify` the JSON text (double-encode) to get a safe,
+ * fully-escaped JS string literal (handles backslashes, quotes, control chars),
+ * then post-replace the three sequences `JSON.stringify` does NOT neutralise:
+ *   - `</`  -> `<\/`  so a `</script>` substring in any value cannot close the
+ *                     script element early (HTML-context break / injection).
+ *   - U+2028 / U+2029 -> ` ` / ` ` — valid in JSON strings but JS line
+ *                     terminators; unescaped they throw a SyntaxError at load.
+ * The result includes the surrounding double quotes, ready to drop into
+ * `JSON.parse(<here>)`.
+ */
+export function escapeBundleJsonLiteral(jsonText: string): string {
+  const LS = String.fromCharCode(0x2028); // U+2028 LINE SEPARATOR
+  const PS = String.fromCharCode(0x2029); // U+2029 PARAGRAPH SEPARATOR
+  return JSON.stringify(jsonText)
+    .replace(/<\//g, "<\\/")
+    .split(LS)
+    .join("\\u2028")
+    .split(PS)
+    .join("\\u2029");
+}
+
+/**
+ * Build the inline classic `<script>` that sets `window.__GRAPHIFY_BUNDLE__` from
+ * an escaped JSON string. `bundle` is a map keyed by the filenames the api.js
+ * static fallbacks request (`scene.json`, optionally `graph.json`/`entities.json`).
+ */
+export function buildBundleScript(bundle: Record<string, unknown>): string {
+  const jsonText = JSON.stringify(bundle);
+  const literal = escapeBundleJsonLiteral(jsonText);
+  return `<script>window.__GRAPHIFY_BUNDLE__ = JSON.parse(${literal});</script>`;
+}
+
+/**
+ * Inject the bundle script into the single-file template BEFORE the app's
+ * (inlined) module/boot script, so `window.__GRAPHIFY_BUNDLE__` exists before
+ * `mount(App)` runs (C4 ordering). Insertion point, in priority order:
+ *   1. immediately before the FIRST `<script type="module"` (the boot script);
+ *   2. else immediately before the first `<script` of any kind;
+ *   3. else immediately before `</body>`;
+ *   4. else appended (last resort).
+ * Returns the augmented HTML.
+ */
+export function injectBundleScript(templateHtml: string, bundleScript: string): string {
+  const moduleIdx = templateHtml.search(/<script\b[^>]*\btype\s*=\s*["']module["']/i);
+  if (moduleIdx >= 0) {
+    return templateHtml.slice(0, moduleIdx) + bundleScript + "\n" + templateHtml.slice(moduleIdx);
+  }
+  const anyScriptIdx = templateHtml.search(/<script\b/i);
+  if (anyScriptIdx >= 0) {
+    return (
+      templateHtml.slice(0, anyScriptIdx) + bundleScript + "\n" + templateHtml.slice(anyScriptIdx)
+    );
+  }
+  const bodyCloseIdx = templateHtml.search(/<\/body>/i);
+  if (bodyCloseIdx >= 0) {
+    return (
+      templateHtml.slice(0, bodyCloseIdx) + bundleScript + "\n" + templateHtml.slice(bodyCloseIdx)
+    );
+  }
+  return templateHtml + "\n" + bundleScript;
 }
 
 /**
@@ -254,7 +356,11 @@ export function buildStaticStudio(
   const scene = attachLayoutPositions(
     buildStudioScene(graph, ontologyProfile ? { profile: ontologyProfile } : {}),
   );
-  writeFileSync(join(outDir, "scene.json"), JSON.stringify(scene));
+  // The exact serialized scene bytes — reused verbatim for the inlined offline
+  // bundle so the inlined scene is byte-identical to scene.json (T5/C3b: carries
+  // the same x,y + fx,fy positions; no recompute, no degenerate circle).
+  const sceneJsonText = JSON.stringify(scene);
+  writeFileSync(join(outDir, "scene.json"), sceneJsonText);
 
   // 3b. scene-hierarchies.json: standalone sidecar, emitted iff the ontology
   //     compile produced <state>/ontology/hierarchies.json. Joins on the raw
@@ -310,8 +416,55 @@ export function buildStaticStudio(
   }
 
   // 6. workspace-manifest.json: the bundle descriptor (hashes the final bytes of
-  //    every artifact above). Emitted LAST.
+  //    every artifact above). Emitted LAST of the MULTI-FILE bundle. studio.html
+  //    is NOT one of its artifacts, so the manifest bytes are identical whether
+  //    or not the single-file emit runs (INV-2 / T6).
   const manifestResult = emitWorkspaceManifest({ bundleDir: outDir });
+
+  // 7. studio.html: the self-contained, double-clickable single-file studio
+  //    (default-on, additive, AFTER the manifest). Inlines the position-bearing
+  //    scene (and, with --full-offline, graph + entities) as an escaped
+  //    window.__GRAPHIFY_BUNDLE__ injected before the inlined boot script. Best-
+  //    effort: a missing single-file template warns and is a no-op (INV-3).
+  let studioHtmlPath: string | null = null;
+  let studioHtmlBytes: number | null = null;
+  const singleFile = options.fullOffline ? true : options.singleFile !== false;
+  if (singleFile) {
+    const templatePath = join(spaDir, SINGLE_FILE_TEMPLATE_NAME);
+    if (!existsSync(templatePath)) {
+      warn(
+        `studio export: single-file template not found at ${templatePath}; skipping studio.html ` +
+          "(build it with `GRAPHIFY_STUDIO_SINGLEFILE=1 npm run build` / `node scripts/build-studio-app.mjs`).",
+      );
+    } else {
+      try {
+        // Bundle keyed by the same filenames the api.js static fallbacks request.
+        // Scene-only by default; --full-offline adds graph + entities so even the
+        // background hydration needs zero network. Reuse the SAME scene object so
+        // the inlined scene is byte-identical to scene.json (T5/C3b).
+        const bundle: Record<string, unknown> = { "scene.json": scene };
+        if (options.fullOffline) {
+          bundle["graph.json"] = JSON.parse(graphRaw);
+          bundle["entities.json"] = entities;
+        }
+        const templateHtml = readFileSync(templatePath, "utf-8");
+        const html = injectBundleScript(templateHtml, buildBundleScript(bundle));
+        const outPath = join(outDir, "studio.html");
+        writeFileSync(outPath, html);
+        studioHtmlPath = outPath;
+        studioHtmlBytes = Buffer.byteLength(html, "utf-8");
+      } catch (err) {
+        warn(
+          `studio export: could not emit studio.html (${err instanceof Error ? err.message : String(err)}); the multi-file bundle is unaffected.`,
+        );
+      }
+    }
+  }
+  // Belt-and-braces: when single-file is OFF, ensure no stale studio.html lingers
+  // (the up-front cleanup already wipes it, but a guard keeps the result honest).
+  if (!singleFile) {
+    rmSync(join(outDir, "studio.html"), { force: true });
+  }
 
   return {
     outDir,
@@ -326,5 +479,7 @@ export function buildStaticStudio(
     manifestPath: manifestResult.path,
     manifestPresentCount: manifestResult.manifest.present_count,
     manifestArtifactCount: manifestResult.manifest.artifacts.length,
+    studioHtmlPath,
+    studioHtmlBytes,
   };
 }
