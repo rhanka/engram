@@ -115,4 +115,20 @@ describe("BM25 core (T1 — it is REAL BM25, not term-overlap)", () => {
     expect(index.postings.an).toBeUndefined();
     expect(index.postings.extraction).toBeDefined();
   });
+
+  it("T1b — indexes the 'constructor' token without prototype pollution (code graphs)", () => {
+    // Code graphs carry tokens like "constructor" that collide with
+    // Object.prototype members. A plain-object postings map makes
+    // postings["constructor"] resolve to the inherited function, so list.push
+    // throws and the whole index build crashes. A prototype-less map indexes it.
+    const docs: Bm25Doc[] = [
+      { label: "constructor", description: "the class constructor" },
+      { label: "ordinary alpha" },
+      { label: "beta gamma" },
+    ];
+    // Must NOT throw (the old plain-object postings map threw here):
+    const index = buildBm25Index(docs);
+    // "constructor" is a real, retrievable posting — not an inherited member:
+    expect(topDoc(index, "constructor")).toBe(0);
+  });
 });

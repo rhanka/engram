@@ -94,7 +94,10 @@ export interface Bm25Doc {
  */
 export function buildBm25Index(docs: Bm25Doc[], params: Bm25Params = defaultBm25Params()): Bm25Index {
   const N = docs.length;
-  const postings: Record<string, FieldPosting[]> = {};
+  // Prototype-less map: tokens like "constructor"/"toString"/"hasOwnProperty"
+  // (common in code graphs) would otherwise resolve to inherited Object.prototype
+  // members, so `postings[term]` returns a function and `list.push` throws.
+  const postings: Record<string, FieldPosting[]> = Object.create(null);
   const fieldLengths: Array<Record<Bm25Field, number>> = [];
   const totals: Record<Bm25Field, number> = { label: 0, description: 0, quote: 0 };
 
