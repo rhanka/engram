@@ -40,6 +40,7 @@ import {
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import { attachLayoutPositions } from "./graph-layout.js";
+import { loadGraphFromData, type SerializedGraphData } from "./graph.js";
 import { emitClassHierarchies } from "./ontology-class-hierarchies-emitter.js";
 import { loadOntologyProfile } from "./ontology-profile.js";
 import {
@@ -47,6 +48,7 @@ import {
   queryOntologyReconciliationCandidates,
 } from "./ontology-reconciliation.js";
 import { emitSceneHierarchies } from "./scene-hierarchies-emitter.js";
+import { emitSearchIndex } from "./search-index-emitter.js";
 import { buildEntitySidecar, resolveStudioAppDir } from "./studio-assets.js";
 import { buildStudioScene, type StudioSceneGraphLike } from "./studio-scene.js";
 import { emitWorkspaceManifest } from "./workspace-manifest-emitter.js";
@@ -96,6 +98,7 @@ export interface BuildStaticStudioResult {
   sceneEdgeCount: number;
   entityCount: number;
   reconciliationCount: number;
+  searchIndexNodeCount: number;
   sceneHierarchiesPath: string | null;
   classHierarchiesPath: string | null;
   manifestPath: string;
@@ -112,6 +115,7 @@ const GENERATED_DATA_FILES = [
   "scene-hierarchies.json",
   "class-hierarchies.json",
   "graph.json",
+  "search-index.json",
   "reconciliation-candidates.json",
   "entities.json",
   "workspace-manifest.json",
@@ -406,6 +410,21 @@ export function buildStaticStudio(
   //    cleanup).
   writeFileSync(join(outDir, "entities.json"), JSON.stringify(entities));
 
+  // 5a. search-index.json: the offline-first retrieval substrate (work-stream C,
+  //     Phase A). Self-carries the BM25F postings + per-doc grounding + CSR
+  //     adjacency + community membership PPR/assembly need, so the offline
+  //     answer path runs WITHOUT graph.json (C3a). Additive sibling.
+  let searchIndexNodeCount = 0;
+  try {
+    const searchGraph = loadGraphFromData(graph as SerializedGraphData);
+    const emitted = emitSearchIndex(searchGraph, { outDir });
+    searchIndexNodeCount = emitted.index.docs.length;
+  } catch (err) {
+    warn(
+      `studio export: could not emit search-index.json (${err instanceof Error ? err.message : String(err)}); offline search will be unavailable.`,
+    );
+  }
+
   // 5b. ontology/citations.json: verbatim copy of the Level-2 citation store
   //     (captured before cleanup), so the SPA can lazily fetch full per-entity
   //     citations.
@@ -474,6 +493,7 @@ export function buildStaticStudio(
     sceneEdgeCount: scene.edges.length,
     entityCount: Object.keys(entities).length,
     reconciliationCount: candidatesResponse.total ?? candidatesResponse.items.length,
+    searchIndexNodeCount,
     sceneHierarchiesPath: hierarchiesResult.path,
     classHierarchiesPath,
     manifestPath: manifestResult.path,

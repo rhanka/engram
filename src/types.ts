@@ -505,6 +505,14 @@ export interface OntologyCitation {
   paragraph_id?: string;
   figure_id?: string;
   bbox?: [number, number, number, number];
+  /**
+   * Verbatim citation span (the grounding payload). Corpus-dependent
+   * enrichment, NEVER a dependency (C13): present on quote-bearing corpora
+   * (e.g. the mystery export), absent on the code graph. Typed here so inline
+   * `graph.json` citations type-check and `quote` travels losslessly into the
+   * search index (C2/C3) and the answer pack (C10) where present.
+   */
+  quote?: string;
 }
 
 export interface OntologyEvidenceRecord {
