@@ -387,8 +387,8 @@
       Show weak (inferred) links
     </label>
 
-    <!-- B2 / C1+F1: the "Show ontology classes" checkbox is GONE — group-by is a
-         nested sub-menu with an axis selector (None · Community · Ontology). -->
+    <!-- B2 / C1+F1: the legacy ontology-class checkbox is removed (F2) — group-by
+         is a nested sub-menu with an axis selector (None / Community / Ontology). -->
     <Collapsible title="Group by" open={false} size="sm">
       {#snippet trailing()}
         <Badge shape="circle" size="sm" tone="neutral">{groupBy.axis}</Badge>
