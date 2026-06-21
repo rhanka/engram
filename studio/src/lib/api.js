@@ -61,6 +61,59 @@ function staticPath(file) {
   return base ? `./${base}/${file}` : `./${file}`;
 }
 
+// ---------------------------------------------------------------------------
+// Inlined offline bundle (`studio.html`) short-circuit.
+//
+// A `file://` page cannot `fetch()` a sibling JSON: every `file://` is an opaque
+// origin and a cross-origin fetch from `origin: null` is rejected by CORS. The
+// offline single-file export therefore inlines the data into a global
+// `window.__GRAPHIFY_BUNDLE__`, keyed by the SAME filenames the static fallbacks
+// request (`scene.json`, `graph.json`, `entities.json`, ...). Each accessor
+// consults the bundle BEFORE issuing any `fetch` (mirroring the staticBaseProvider
+// indirection above), so on the `file://` first-paint path the scene resolves
+// from memory with ZERO network requests (INV-1). When no bundle is present
+// (server / HTTP static host) the seam is invisible — every accessor behaves
+// exactly as before.
+// ---------------------------------------------------------------------------
+
+// Sentinel distinct from any JSON value (incl. null) so an absent key is told
+// apart from a present-but-null one.
+const BUNDLE_ABSENT = Symbol("bundle-absent");
+
+/**
+ * True when an inlined offline bundle is present (the page is the self-contained
+ * `studio.html`). In that mode a `fetch` of a sibling file is doomed over
+ * `file://`, so accessors prefer the in-memory bundle and avoid the failing
+ * request entirely.
+ */
+function bundlePresent() {
+  return (
+    typeof window !== "undefined" &&
+    window.__GRAPHIFY_BUNDLE__ != null &&
+    typeof window.__GRAPHIFY_BUNDLE__ === "object"
+  );
+}
+
+/**
+ * Read an inlined artifact from `window.__GRAPHIFY_BUNDLE__` by the same bare
+ * filename the static fallbacks request (e.g. "scene.json"). Returns the parsed
+ * value, or the {@link BUNDLE_ABSENT} sentinel when no bundle is present or the
+ * key is missing. NEVER touches the network. Offline bundles are single-model,
+ * so keys are flat — the lookup uses the filename, not the model-scoped path.
+ */
+function bundleGet(file) {
+  if (!bundlePresent()) return BUNDLE_ABSENT;
+  const value = window.__GRAPHIFY_BUNDLE__[file];
+  return value === undefined ? BUNDLE_ABSENT : value;
+}
+
+/** Test seam: clear the inlined offline bundle so each test starts clean. */
+export function __resetBundle() {
+  if (typeof window !== "undefined") {
+    delete window.__GRAPHIFY_BUNDLE__;
+  }
+}
+
 /**
  * ÉTAPE 1b: fetch the light Studio `scene.json` — the mount payload. It is
  * the build/server-side `buildStudioScene(graph)` output (a few hundred KB)
@@ -70,6 +123,10 @@ function staticPath(file) {
  * the legacy `fetchGraph()` + `buildScene()` path.
  */
 export async function fetchScene() {
+  // Offline: when `studio.html` inlined the scene, return it from memory with NO
+  // fetch (the first-paint no-fetch invariant, INV-1).
+  const inlined = bundleGet("scene.json");
+  if (inlined !== BUNDLE_ABSENT) return inlined;
   try {
     return await getJson("/api/ontology/scene.json");
   } catch (err) {
@@ -79,7 +136,19 @@ export async function fetchScene() {
   }
 }
 
+/**
+ * Fetch the raw graph. Offline: returned from the inlined bundle (present only
+ * with `--full-offline`). When a bundle IS present but carries no `graph.json`
+ * (the default scene-only `studio.html`), resolve `null` instead of issuing a
+ * doomed `file://` fetch — graph hydration is off the render-critical path and
+ * the caller is null-tolerant, so this keeps the first-paint path fetch-clean
+ * (no failed request, no console error; INV-1).
+ */
 export async function fetchGraph() {
+  const inlined = bundleGet("graph.json");
+  if (inlined !== BUNDLE_ABSENT) return inlined;
+  // Scene-only offline bundle: no graph.json to fetch over file://; resolve null.
+  if (bundlePresent()) return null;
   try {
     return await getJson("/api/ontology/graph.json");
   } catch (err) {
@@ -100,6 +169,18 @@ let entitiesIndexPromise;
 let entitiesIndexKey;
 
 function loadEntitiesIndex() {
+  // Offline: serve the inlined entities index from memory (present only with
+  // `--full-offline`); a scene-only bundle has none, so cache null rather than
+  // attempt a doomed file:// fetch.
+  if (bundlePresent()) {
+    const inlined = bundleGet("entities.json");
+    const key = "__bundle__:entities.json";
+    if (entitiesIndexPromise === undefined || entitiesIndexKey !== key) {
+      entitiesIndexKey = key;
+      entitiesIndexPromise = Promise.resolve(inlined === BUNDLE_ABSENT ? null : (inlined ?? null));
+    }
+    return entitiesIndexPromise;
+  }
   const url = staticPath("entities.json");
   // Re-fetch when the active model (and thus the path) changed.
   if (entitiesIndexPromise === undefined || entitiesIndexKey !== url) {
@@ -121,6 +202,12 @@ export function __resetEntitiesIndexCache() {
  * on any failure so the panel degrades to graph-only data.
  */
 export async function fetchEntity(id) {
+  // Offline bundle path: never hit the server route (its fetch would fail over
+  // file://); consult the in-memory entities index directly.
+  if (bundlePresent()) {
+    const index = await loadEntitiesIndex();
+    return index?.[id] ?? null;
+  }
   try {
     return await getJson(`/api/ontology/entity/${encodeURIComponent(id)}`);
   } catch {
@@ -135,6 +222,11 @@ export async function fetchEntity(id) {
  * the switcher is hidden. Never throws.
  */
 export async function fetchModelsManifest() {
+  // Offline single-file bundles are single-model: serve the inlined manifest if
+  // present, else resolve null (no doomed file:// fetch) so the switcher hides.
+  const inlined = bundleGet("models.json");
+  if (inlined !== BUNDLE_ABSENT) return inlined;
+  if (bundlePresent()) return null;
   try {
     return await getJson("./models.json");
   } catch {
@@ -151,6 +243,11 @@ export async function fetchModelsManifest() {
  * nothing — and never throws (mirrors fetchModelsManifest).
  */
 export async function fetchClassHierarchies() {
+  // Offline: serve the inlined artifact if present (only with `--full-offline`),
+  // else resolve null (no doomed file:// fetch).
+  const inlined = bundleGet("class-hierarchies.json");
+  if (inlined !== BUNDLE_ABSENT) return inlined;
+  if (bundlePresent()) return null;
   try {
     return await getJson("/api/ontology/class-hierarchies.json");
   } catch {
@@ -163,6 +260,11 @@ export async function fetchClassHierarchies() {
 }
 
 export async function fetchReconciliationCandidates() {
+  // Offline: serve the inlined queue if present (only with `--full-offline`),
+  // else an empty queue (no doomed file:// fetch).
+  const inlined = bundleGet("reconciliation-candidates.json");
+  if (inlined !== BUNDLE_ABSENT) return inlined;
+  if (bundlePresent()) return { items: [], total: 0 };
   try {
     return await getJson("/api/ontology/reconciliation/candidates?sort=score&order=desc&limit=50");
   } catch (err) {

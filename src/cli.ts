@@ -261,12 +261,17 @@ async function emitDefaultStaticStudio(stateDir: string): Promise<void> {
     );
     try {
       const studioDir = join(stateDir, "studio");
-      buildStaticStudio({
+      // Default-on: also emits a self-contained studio.html (single-file, scene-
+      // inlined) restoring the double-click affordance over file://.
+      const result = buildStaticStudio({
         stateDir,
         outDir: studioDir,
         onWarning: (message) => console.warn(message),
       });
       console.log(`Static studio written to ${studioDir} (open index.html via any static server).`);
+      if (result.studioHtmlPath) {
+        console.log(`Offline studio written to ${result.studioHtmlPath} (double-click to open via file://).`);
+      }
       // Migration: erase a stale legacy graph viz left by an older graphify version.
       if (removeLegacyGraphViz(stateDir)) {
         console.log("Removed a stale legacy graph viz (superseded by the static studio).");
@@ -4461,6 +4466,8 @@ export async function main(): Promise<void> {
     )
     .option("--state <dir>", "graphify state dir (must contain graph.json)", DEFAULT_GRAPHIFY_STATE_DIR)
     .option("--profile <path>", "Optional ontology profile YAML; emits class-hierarchies.json when the profile carries a class_hierarchies block")
+    .option("--no-single-file", "Skip the self-contained studio.html; emit only the multi-file bundle")
+    .option("--full-offline", "Inline graph.json + entities.json into studio.html too (not just the scene) so the offline studio needs zero network")
     .action(async (out, opts) => {
       try {
         const stateDir = resolve(opts.state ?? DEFAULT_GRAPHIFY_STATE_DIR);
@@ -4473,6 +4480,10 @@ export async function main(): Promise<void> {
             ...(typeof opts.profile === "string" && opts.profile.trim()
               ? { profilePath: opts.profile.trim() }
               : {}),
+            // Commander maps --no-single-file -> singleFile:false (default true),
+            // and --full-offline -> fullOffline:true (default false).
+            singleFile: opts.singleFile !== false,
+            fullOffline: opts.fullOffline === true,
             onWarning: (message) => console.warn(message),
           });
           console.log(`Static studio written to ${result.outDir}`);
@@ -4483,6 +4494,14 @@ export async function main(): Promise<void> {
           console.log(
             `  workspace-manifest: ${result.manifestPresentCount}/${result.manifestArtifactCount} artifacts present`,
           );
+          if (result.studioHtmlPath) {
+            const kb = result.studioHtmlBytes != null ? ` (${(result.studioHtmlBytes / 1024).toFixed(0)} KB)` : "";
+            console.log(
+              `  offline studio.html: ${result.studioHtmlPath}${kb}${opts.fullOffline ? " [full-offline: scene+graph+entities]" : " [scene-only]"} — double-click to open`,
+            );
+          } else {
+            console.log("  offline studio.html: skipped (--no-single-file)");
+          }
           console.log(`  open: serve ${result.outDir} with any static file server (index.html)`);
         } catch (err) {
           if (err instanceof StudioSpaNotBuiltError) {
