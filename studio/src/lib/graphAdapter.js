@@ -78,6 +78,15 @@ const NODE_PROFILE_FIELDS = [
   // EVOL 2.a: synthetic ontology CLASS node passthrough (injectOntologyClassNodes).
   "ontology_node_kind",
   "ontology_class_id",
+  // B2 / Amendment A2: synthetic COMMUNITY fold node passthrough
+  // (injectCommunityNodes). `community_key` lets click dispatch recover the fold
+  // key WITHOUT parsing the (collision-disambiguated) synthetic id.
+  "community_node_kind",
+  "community_key",
+  // B2: fold-node annotations survive into the scene for the (+N) in-box label.
+  "collapsed",
+  "hidden_node_count",
+  "internal_edge_count",
 ];
 
 const EDGE_PROFILE_FIELDS = [
@@ -154,6 +163,9 @@ const TYPE_SHAPE = {
   // EVOL 2.a: synthetic ontology CLASS nodes render as labelled rounded boxes
   // (the class name sits inside the box), distinct from data-driven entity hubs.
   OntologyClass: "roundedbox",
+  // B2 / Amendment A2: synthetic COMMUNITY fold nodes also read as a GROUP, not an
+  // entity — a labelled box (the community name inside), tone from communityStats.
+  OntologyCommunity: "roundedbox",
 };
 
 /**
@@ -195,6 +207,8 @@ const REL_DASH = {
   // anchoring, like other membership/structural-anchoring relations).
   subclass_of: "solid",
   has_instance: "dotted",
+  // B2: community membership structural edge (community node -> member entity).
+  has_member: "dotted",
 };
 export function dashForRelation(relation) {
   if (!relation) return undefined;
@@ -678,6 +692,14 @@ function computeCommunityStats(graph) {
   }
 
   const byComm = new Map();
+  // B2 / Amendment A5: the tone map is keyed by `nodeGroup`, but a NUMERIC-only
+  // community's `nodeCommunity` key (`Community <n>`) differs from its `nodeGroup`
+  // palette key (`community:<n>`), so a direct `toneByGroup.get(nodeCommunity)`
+  // MISSES and silently falls back to category1 — diverging from the canvas. Each
+  // node knows BOTH, so record the community key -> nodeGroup palette key mapping
+  // and resolve the tone under the palette key. Named communities are unaffected
+  // (their nodeGroup and nodeCommunity both resolve to community_name).
+  const groupKeyByComm = new Map();
   let isolatedCount = 0;
   for (const node of nodes) {
     const key = nodeCommunity(node);
@@ -685,6 +707,10 @@ function computeCommunityStats(graph) {
     if (key === undefined || key === null || key === "") {
       if (!live) isolatedCount += 1;
       continue;
+    }
+    if (!groupKeyByComm.has(key)) {
+      const g = nodeGroup(node);
+      groupKeyByComm.set(key, g === undefined || g === null ? key : g);
     }
     const rec = byComm.get(key) ?? { count: 0, live: false };
     rec.count += 1;
@@ -694,7 +720,15 @@ function computeCommunityStats(graph) {
   const liveList = [];
   for (const [key, rec] of byComm) {
     if (rec.live) {
-      liveList.push({ key: String(key), count: rec.count, tone: toneByGroup.get(key) ?? "category1" });
+      const groupKey = groupKeyByComm.get(key) ?? key;
+      liveList.push({
+        key: String(key),
+        count: rec.count,
+        // `groupKey` is the `nodeGroup` palette key (= `key` for named
+        // communities, `community:<n>` for numeric-only) — the canvas tone key.
+        groupKey: String(groupKey),
+        tone: toneByGroup.get(groupKey) ?? "category1",
+      });
     } else {
       isolatedCount += rec.count;
     }
