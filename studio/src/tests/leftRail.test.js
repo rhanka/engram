@@ -110,18 +110,19 @@ describe("LeftRail — T13 F2 visible-UI lock (PER-ITEM group-by checkboxes)", (
     // `rail-type-group-check` variant).
     const onMarkers = railSource.match(/class:rail-group-check--on=/g) ?? [];
     expect(onMarkers.length).toBe(4);
-    // The Domain + Sub-domain + Community checkboxes live in a `leading()` snippet
-    // (left edge of the Collapsible/SelectableRow header).
-    const leadingChecks = railSource.split('class="rail-group-check"');
-    expect(leadingChecks.length).toBe(4); // 3 leading()-hosted bare checkboxes
-    for (let i = 1; i < leadingChecks.length; i += 1) {
-      const before = leadingChecks[i - 1];
-      const leadIdx = before.lastIndexOf("{#snippet leading()}");
-      const trailIdx = before.lastIndexOf("{#snippet trailing()}");
-      expect(leadIdx, `checkbox #${i} must sit inside a leading() snippet`).toBeGreaterThan(
-        trailIdx,
-      );
-    }
+    // FIX: the DS Collapsible exposes NO `leading` slot (only trailing/children),
+    // so the Domain + Sub-domain group-by checkboxes are SIBLINGS *before*
+    // <Collapsible> inside a `.rail-onto-head` flex row — NOT in a (silently
+    // dropped) leading() snippet. That dropped slot is exactly why the
+    // Domain/Sub-domain checkboxes were invisible.
+    const ontoHeads = railSource.match(/<li class="rail-onto-head">/g) ?? [];
+    expect(ontoHeads.length).toBe(2); // Domain + Sub-domain rows
+    expect(railSource).toMatch(
+      /<li class="rail-onto-head">[\s\S]*?class="rail-group-check"[\s\S]*?onToggleGroupOntology[\s\S]*?<Collapsible/,
+    );
+    // Regression guard: NEVER put a group-by checkbox in a Collapsible leading()
+    // snippet — the DS Collapsible drops it.
+    expect(railSource).not.toMatch(/<Collapsible[^>]*>\s*\{#snippet leading\(\)\}/);
     // The leaf Type checkbox sits FIRST in its flex row, BEFORE the FILTER
     // SelectableRow — left, bare, separate from the Type FILTER select (§2).
     expect(railSource).toMatch(

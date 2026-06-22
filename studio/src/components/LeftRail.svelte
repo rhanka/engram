@@ -263,53 +263,47 @@
            onToggleType) stays a SEPARATE concern. -->
       <ul class="rail-type-groups rail-onto-tree" aria-label="Ontology classes">
         {#each typeTree as domain (domain.id)}
-          <li>
+          {@const dAbs = ontologyAbsorbed.get(domain.id)}
+          <li class="rail-onto-head">
+            <label
+              class="rail-group-check"
+              class:rail-group-check--on={ontologyCheckedSet.has(domain.id)}
+              title={dAbs?.absorbed
+                ? `grouped by parent ${dAbs.byLabel}`
+                : `Group by ${domain.label}`}
+            >
+              <input
+                type="checkbox"
+                checked={ontologyCheckedSet.has(domain.id)}
+                disabled={dAbs?.absorbed === true}
+                aria-label="Group by {domain.label}"
+                onchange={() => onToggleGroupOntology?.(domain.id)}
+              />
+            </label>
             <Collapsible title={domain.label} open={false} size="sm">
-              {#snippet leading()}
-                {@const dAbs = ontologyAbsorbed.get(domain.id)}
-                <label
-                  class="rail-group-check"
-                  class:rail-group-check--on={ontologyCheckedSet.has(domain.id)}
-                  title={dAbs?.absorbed
-                    ? `grouped by parent ${dAbs.byLabel}`
-                    : `Group by ${domain.label}`}
-                  onclick={(e) => e.stopPropagation()}
-                >
-                  <input
-                    type="checkbox"
-                    checked={ontologyCheckedSet.has(domain.id)}
-                    disabled={dAbs?.absorbed === true}
-                    aria-label="Group by {domain.label}"
-                    onchange={() => onToggleGroupOntology?.(domain.id)}
-                  />
-                </label>
-              {/snippet}
               {#snippet trailing()}
                 <Badge shape="circle" size="sm" tone="neutral">{domain.count}</Badge>
               {/snippet}
               <ul class="rail-type-groups">
                 {#each domain.subs as sub (sub.id)}
-                  <li>
+                  {@const sAbs = ontologyAbsorbed.get(sub.id)}
+                  <li class="rail-onto-head">
+                    <label
+                      class="rail-group-check"
+                      class:rail-group-check--on={ontologyCheckedSet.has(sub.id)}
+                      title={sAbs?.absorbed
+                        ? `grouped by parent ${sAbs.byLabel}`
+                        : `Group by ${sub.label}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={ontologyCheckedSet.has(sub.id)}
+                        disabled={sAbs?.absorbed === true}
+                        aria-label="Group by {sub.label}"
+                        onchange={() => onToggleGroupOntology?.(sub.id)}
+                      />
+                    </label>
                     <Collapsible title={sub.label} open={false} size="sm">
-                      {#snippet leading()}
-                        {@const sAbs = ontologyAbsorbed.get(sub.id)}
-                        <label
-                          class="rail-group-check"
-                          class:rail-group-check--on={ontologyCheckedSet.has(sub.id)}
-                          title={sAbs?.absorbed
-                            ? `grouped by parent ${sAbs.byLabel}`
-                            : `Group by ${sub.label}`}
-                          onclick={(e) => e.stopPropagation()}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={ontologyCheckedSet.has(sub.id)}
-                            disabled={sAbs?.absorbed === true}
-                            aria-label="Group by {sub.label}"
-                            onchange={() => onToggleGroupOntology?.(sub.id)}
-                          />
-                        </label>
-                      {/snippet}
                       {#snippet trailing()}
                         <Badge shape="circle" size="sm" tone="neutral">{sub.count}</Badge>
                       {/snippet}
@@ -701,6 +695,25 @@
   }
   .rail-type-group-check {
     flex-shrink: 0;
+  }
+  /* B2 FIX: the DS Collapsible exposes NO `leading` slot, so the Domain/Sub-domain
+     group-by checkbox is rendered as a SIBLING before <Collapsible> (not in a
+     dropped leading() snippet). align-start keeps the bare checkbox on the header
+     line even when the accordion body is expanded below. */
+  .rail-onto-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.3rem;
+  }
+  .rail-onto-head > :global(.st-collapsible) {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .rail-onto-head > .rail-group-check {
+    flex-shrink: 0;
+    /* match the sm Collapsible header height (paddingBlock 0.4rem×2 + ~1.05rem
+       line) so the bare checkbox vertically centres on the header title. */
+    min-height: 1.85rem;
   }
   /* B2 (per-item): the per-item GROUP-BY checkbox affordance, now the FIRST
      element on the LEFT edge of every groupable row (Ontology class header /
