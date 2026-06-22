@@ -331,6 +331,19 @@ function loadCitationsForNode(stateDir: string, id: string): CitationSidecarEntr
 
 export interface EntitySidecarResponse {
   id: string;
+  /**
+   * Ontology / file type of the node (node_type → type → kind → file_type, the
+   * same precedence the scene + SPA `nodeType` use). Carried on the entity
+   * sidecar so the Types facet + per-entity badge populate from `entities.json`
+   * even when the heavy graph.json has not hydrated (the default scene-only
+   * `studio.html`, or a multi-file bundle opened over `file://`). `null` when the
+   * node has no type. Bug A fix.
+   */
+  type?: string | null;
+  /** Numeric community id, when the node carries one (Bug A — facet source). */
+  community?: number;
+  /** Human community label (named, then "Community N"), when present (Bug A). */
+  community_name?: string | null;
   description: { status: string; description: string | null } | null;
   occurrences: unknown;
   /**
@@ -343,6 +356,36 @@ export interface EntitySidecarResponse {
 }
 
 /**
+ * Loose graph-node shape buildEntitySidecar reads type/community from. Mirrors
+ * the fields the SPA `nodeType`/`nodeCommunity` consult.
+ */
+export interface EntitySidecarNode {
+  node_type?: unknown;
+  type?: unknown;
+  kind?: unknown;
+  file_type?: unknown;
+  community?: unknown;
+  community_name?: unknown;
+}
+
+function sidecarDisplay(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+/** Node type with the SPA's precedence (node_type → type → kind → file_type). */
+function sidecarNodeType(node: EntitySidecarNode | undefined): string | null {
+  if (!node) return null;
+  return (
+    sidecarDisplay(node.node_type) ??
+    sidecarDisplay(node.type) ??
+    sidecarDisplay(node.kind) ??
+    sidecarDisplay(node.file_type)
+  );
+}
+
+/**
  * Build the `/api/ontology/entity/<id>` payload: the node description
  * (normalised to { status, description }) plus the occurrence record for this
  * node id, if any. Returns the shape the SPA's EntityPanel expects.
@@ -352,7 +395,11 @@ export interface EntitySidecarResponse {
  * graph whose nodes all carry descriptions reports them all here even without a
  * wiki sidecar present.
  */
-export function buildEntitySidecar(stateDir: string, id: string): EntitySidecarResponse {
+export function buildEntitySidecar(
+  stateDir: string,
+  id: string,
+  node?: EntitySidecarNode,
+): EntitySidecarResponse {
   let description: EntitySidecarResponse["description"] = null;
 
   // 1. graph.json node.description (the default WP11 source).
@@ -384,6 +431,13 @@ export function buildEntitySidecar(stateDir: string, id: string): EntitySidecarR
   const citations = loadCitationsForNode(stateDir, id);
 
   const response: EntitySidecarResponse = { id, description, occurrences };
+  // Bug A: surface type + community on the entity sidecar so the SPA facets can
+  // populate from entities.json alone (graph.json may be absent/unhydrated).
+  const type = sidecarNodeType(node);
+  if (type !== null) response.type = type;
+  if (typeof node?.community === "number") response.community = node.community;
+  const communityName = sidecarDisplay(node?.community_name);
+  if (communityName !== null) response.community_name = communityName;
   if (citations) response.citations = citations;
   return response;
 }
