@@ -1,6 +1,16 @@
 import { buildRenderGraphBuffers, buildStyleBuffers } from "@sentropic/graph";
 
-const GROUP_PALETTE = [
+/**
+ * SINGLE source of truth for a group's (community / type) colour. Both the
+ * canvas node fill (`buildGraphRendererPayload`) AND the left-rail community
+ * legend swatch resolve a group's colour through {@link colorForGroup} over the
+ * SAME key (the group / community name). Previously the legend assigned a DS
+ * category token by sorted position while the canvas hashed the name into this
+ * palette — two independent schemes that diverged (the biggest community could
+ * render blue on the canvas but amber in the legend). Reusing one function over
+ * one key guarantees the legend dot and the node fill are byte-identical.
+ */
+export const GROUP_PALETTE = [
   "#4f7cac",
   "#f59e0b",
   "#10b981",
@@ -62,7 +72,12 @@ function stableHash(value) {
   return hash >>> 0;
 }
 
-function colorForGroup(group) {
+/**
+ * Resolve the palette colour for a group key (community / type name). Exported
+ * so the legend (LeftRail) reuses the EXACT same mapping as the canvas — the
+ * single source of truth for community→colour (BUG B fix).
+ */
+export function colorForGroup(group) {
   const index = stableHash(group ?? "default") % GROUP_PALETTE.length;
   return GROUP_PALETTE[index];
 }

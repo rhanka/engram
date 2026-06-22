@@ -22,6 +22,13 @@
 
 import { computeLayout } from "@graphify/graph-layout";
 
+// Single source of truth for community/group → colour. The legend swatch
+// (computeCommunityStats below) and the canvas node fill (graphRendererPayload)
+// resolve a group's colour through this ONE function over the SAME key, so the
+// legend and the canvas never diverge (BUG B). graphRendererPayload imports only
+// from @sentropic/graph, so this back-reference creates no import cycle.
+import { colorForGroup } from "./graphRendererPayload.js";
+
 /** Graphify persists `links`; some adapters/tests pass `edges`. Accept both. */
 export function graphEdges(graph) {
   if (!graph) return [];
@@ -67,6 +74,13 @@ const NODE_PROFILE_FIELDS = [
   "entity_url",
   "source_file",
   "source_location",
+  // Community membership passthrough: the scene is the always-present mount
+  // payload, so carrying the raw `community`/`community_name` lets the
+  // Types/Communities facets + the community→colour legend resolve from the
+  // scene ALONE when graph.json has not (or cannot) hydrate. Kept in lockstep
+  // with src/studio-scene.ts NODE_PROFILE_FIELDS (parity test enforces this).
+  "community",
+  "community_name",
   "parent_id",
   "child_ids",
   "level",
@@ -200,9 +214,53 @@ export function dashForRelation(relation) {
   if (!relation) return undefined;
   return REL_DASH[String(relation)] ?? "solid";
 }
+
+/**
+ * Shape-per-type fallback ring for types NOT in the curated {@link TYPE_SHAPE}
+ * map. A non-profile graph (graphify's own corpus, the aero contribution pack,
+ * any `file_type`-typed graph) carries types like `code` / `concept` / `Commit`
+ * that the narrative TYPE_SHAPE map never anticipated — they previously ALL fell
+ * back to the constant `dot`, so the canvas showed one glyph for every type and
+ * the legend had no shape-per-type key. We now assign each unknown type a STABLE
+ * shape by hashing its name into this ring, so distinct types render as distinct
+ * glyphs (and the type-shape legend is meaningful) on profile-less graphs.
+ *
+ * The ring deliberately EXCLUDES the box family (`box`/`roundedbox`), reserved
+ * for god-class Character hubs + synthetic ontology class nodes, so an ordinary
+ * data type can never masquerade as a labelled hub box. Kept in lockstep with
+ * src/studio-scene.ts FALLBACK_TYPE_SHAPES (the parity test enforces this).
+ */
+const FALLBACK_TYPE_SHAPES = ["dot", "triangle", "square", "diamond", "hexagon", "star"];
+
+/** FNV-1a hash (mirrors graphRendererPayload.stableHash) for stable bucketing. */
+function stableTypeHash(value) {
+  const text = String(value ?? "");
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+/**
+ * Stable scene shape for a type the curated {@link TYPE_SHAPE} map does not
+ * cover: hash the type name into {@link FALLBACK_TYPE_SHAPES}. Deterministic
+ * (same type ⇒ same shape across the canvas, legend, and re-exports).
+ */
+export function fallbackShapeForType(type) {
+  const t = displayValue(type);
+  if (!t) return "dot";
+  return FALLBACK_TYPE_SHAPES[stableTypeHash(t) % FALLBACK_TYPE_SHAPES.length];
+}
+
 export function shapeForType(node) {
   const t = nodeType(node);
-  return (t && TYPE_SHAPE[t]) || "dot";
+  if (!t) return "dot";
+  // Curated narrative types keep their hand-picked glyph; everything else
+  // (file_type-based / non-profile types) gets a stable per-type shape so the
+  // canvas and legend distinguish them instead of collapsing to one dot.
+  return TYPE_SHAPE[t] ?? fallbackShapeForType(t);
 }
 
 /**
@@ -435,17 +493,37 @@ export function buildScene(graph, options = {}) {
     return out;
   });
 
+  const cstats = communityStats(graph);
   return {
     nodes,
     edges: sceneEdges,
+    // BUG B: the SINGLE source of truth community → colour map, emitted in the
+    // scene so every consumer (legend, canvas, downstream tools) reads ONE
+    // mapping instead of recomputing it with a divergent scheme. Keyed by the
+    // live community name; the value is colorForGroup() over the canvas group
+    // key, so scene.communityColors[name] === the on-canvas fill of that
+    // community's nodes === the legend swatch. Kept in lockstep with
+    // src/studio-scene.ts (parity test enforces byte-equality).
+    communityColors: communityColorMap(cstats),
     stats: {
       nodeCount: nodes.length,
       edgeCount: sceneEdges.length,
       weakEdgeCount: sceneEdges.filter((e) => e.weak).length,
       // Isolated singletons (degree-0) are excluded from the community count.
-      communityCount: communityStats(graph).liveCount,
+      communityCount: cstats.liveCount,
     },
   };
+}
+
+/**
+ * Plain `{ communityName: color }` map from the live community stats — the
+ * scene's emitted single source of truth for BUG B. Insertion order follows the
+ * stats' descending-count order so the serialized map is deterministic.
+ */
+export function communityColorMap(cstats) {
+  const map = {};
+  for (const c of cstats?.live ?? []) map[c.key] = c.color;
+  return map;
 }
 
 /**
@@ -663,19 +741,6 @@ function computeCommunityStats(graph) {
     deg.set(e.source, (deg.get(e.source) ?? 0) + 1);
     deg.set(e.target, (deg.get(e.target) ?? 0) + 1);
   }
-  // Reproduce the DS tone assignment: it walks scene nodes and assigns
-  // category1..8 to each new `group` in first-seen order. We mirror that here
-  // (same node order, same nodeGroup key) so the rail swatch matches the graph.
-  const TONES = [
-    "category1", "category2", "category3", "category4",
-    "category5", "category6", "category7", "category8",
-  ];
-  const toneByGroup = new Map();
-  for (const node of nodes) {
-    const g = nodeGroup(node);
-    if (g === undefined || g === null || toneByGroup.has(g)) continue;
-    toneByGroup.set(g, TONES[toneByGroup.size % TONES.length]);
-  }
 
   const byComm = new Map();
   let isolatedCount = 0;
@@ -686,7 +751,7 @@ function computeCommunityStats(graph) {
       if (!live) isolatedCount += 1;
       continue;
     }
-    const rec = byComm.get(key) ?? { count: 0, live: false };
+    const rec = byComm.get(key) ?? { count: 0, live: false, group: nodeGroup(node) };
     rec.count += 1;
     if (live) rec.live = true;
     byComm.set(key, rec);
@@ -694,7 +759,16 @@ function computeCommunityStats(graph) {
   const liveList = [];
   for (const [key, rec] of byComm) {
     if (rec.live) {
-      liveList.push({ key: String(key), count: rec.count, tone: toneByGroup.get(key) ?? "category1" });
+      // BUG B: the legend swatch resolves its colour through the SAME
+      // colorForGroup() the canvas uses, over the SAME key the canvas hashes
+      // (nodeGroup, captured in rec.group). So the legend dot and the node fill
+      // are guaranteed identical — no more independent DS-tone-by-sorted-
+      // position scheme diverging from the canvas hash.
+      liveList.push({
+        key: String(key),
+        count: rec.count,
+        color: colorForGroup(rec.group ?? key),
+      });
     } else {
       isolatedCount += rec.count;
     }

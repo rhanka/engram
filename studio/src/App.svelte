@@ -125,9 +125,26 @@
         ? applyWeakFilter(sceneData, viewerState.options.showWeakLinks)
         : buildScene(graph, { showWeakLinks: viewerState.options.showWeakLinks }),
   );
+  // BUG A: facet / selection source. The left rail (Types / Communities /
+  // Entities), the selection panel, and the selected-id resolution all read a
+  // graph-like. Normally that is the hydrated raw `graph` (richest source). But
+  // when graph.json is NOT available — the default scene-only `studio.html`, or
+  // a multi-file static bundle opened over `file://` where a sibling fetch is
+  // blocked — `graph` stays EMPTY_GRAPH and EVERY facet renders empty ("No
+  // types / No communities"). The light scene IS always present and now carries
+  // `type` + `community`/`community_name` per node (+ its edges), so fall back to
+  // it: the facets populate from the scene alone. The scene's edges drive the
+  // community live/degree computation, identical to the graph path.
+  const facetGraph = $derived(
+    (graph?.nodes?.length ?? 0) > 0
+      ? graph
+      : scene
+        ? { nodes: scene.nodes, links: scene.edges }
+        : graph,
+  );
   // Graph highlight = every entity of every selected type/community + the
   // directly-selected entities (R8-3.B).
-  const selectedIds = $derived(resolveSelectedIds(graph, viewerState.selection));
+  const selectedIds = $derived(resolveSelectedIds(facetGraph, viewerState.selection));
   function handleToggleType(type) {
     viewerState = toggleType(viewerState, type);
   }
@@ -358,7 +375,7 @@
       <WorkspaceShell>
         <div class="col col-left">
           <LeftRail
-            {graph}
+            graph={facetGraph}
             {classHierarchies}
             query={viewerState.query}
             selection={viewerState.selection}
@@ -386,7 +403,7 @@
         </div>
         <div class="col col-right">
           <SelectionPanel
-            {graph}
+            graph={facetGraph}
             selection={viewerState.selection}
             focusId={viewerState.focusId}
             {entityCache}

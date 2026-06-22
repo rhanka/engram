@@ -113,6 +113,13 @@ export interface StudioSceneStats {
 export interface StudioScene {
   nodes: StudioSceneNode[];
   edges: StudioSceneEdge[];
+  /**
+   * BUG B: the single source of truth community → colour map (community name →
+   * hex). Emitted in the scene so the legend, the canvas, and any downstream
+   * consumer read ONE mapping. Identical to the on-canvas node fill + the legend
+   * swatch (all resolve via colorForGroup over the same key).
+   */
+  communityColors: Record<string, string>;
   stats: StudioSceneStats;
 }
 
@@ -180,6 +187,15 @@ const NODE_PROFILE_FIELDS = [
   "entity_url",
   "source_file",
   "source_location",
+  // Community membership passthrough: the scene is the SPA's always-present
+  // mount payload, so carrying the raw `community`/`community_name` lets the
+  // Types/Communities facets + the community→colour legend resolve from the
+  // scene ALONE when the heavy graph.json has not (or cannot) hydrate — e.g. the
+  // default scene-only `studio.html`, or a multi-file bundle opened over
+  // `file://` (cross-origin fetch of a sibling graph.json is blocked). Without
+  // this the facets read an empty graph and render "No types / No communities".
+  "community",
+  "community_name",
   "parent_id",
   "child_ids",
   "level",
@@ -259,9 +275,41 @@ const TYPE_SHAPE: Record<string, string> = {
   Translator: "triangle",
 };
 
+/**
+ * Shape-per-type fallback ring for types NOT in the curated {@link TYPE_SHAPE}
+ * map. A non-profile graph (graphify's own corpus, the aero contribution pack,
+ * any `file_type`-typed graph) carries types like `code` / `concept` / `Commit`
+ * the narrative TYPE_SHAPE map never anticipated — they previously ALL fell back
+ * to the constant `dot`, so the canvas showed one glyph for every type and the
+ * legend had no shape-per-type key. Each unknown type now gets a STABLE shape by
+ * hashing its name into this ring, so distinct types render as distinct glyphs.
+ * Excludes the box family (reserved for god-class hubs / class nodes). Kept in
+ * lockstep with studio/src/lib/graphAdapter.js FALLBACK_TYPE_SHAPES (parity).
+ */
+const FALLBACK_TYPE_SHAPES = ["dot", "triangle", "square", "diamond", "hexagon", "star"];
+
+/** FNV-1a hash (mirrors graphRendererPayload.stableHash) for stable bucketing. */
+function stableTypeHash(value: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+/** Stable scene shape for a type the curated {@link TYPE_SHAPE} map omits. */
+function fallbackShapeForType(type: string): string {
+  return FALLBACK_TYPE_SHAPES[stableTypeHash(type) % FALLBACK_TYPE_SHAPES.length] ?? "dot";
+}
+
 function shapeForType(node: StudioSceneGraphNode | undefined): string {
   const t = nodeType(node);
-  return (t && TYPE_SHAPE[t]) || "dot";
+  if (!t) return "dot";
+  // Curated narrative types keep their hand-picked glyph; everything else
+  // (file_type-based / non-profile types) gets a stable per-type shape so the
+  // canvas and legend distinguish them instead of collapsing to one dot.
+  return TYPE_SHAPE[t] ?? fallbackShapeForType(t);
 }
 
 /**
@@ -436,10 +484,52 @@ function isBoxSceneShape(shape: unknown): boolean {
 }
 
 /**
- * Community breakdown that EXCLUDES isolated singletons from the count. Mirrors
- * graphAdapter.js communityStats; only `liveCount` is consumed by buildScene.
+ * Group / community → colour palette and lookup. THE single source of truth for
+ * BUG B: both this build-time scene emitter AND the SPA canvas/legend resolve a
+ * group's colour through colorForGroup() over the SAME key, so the emitted
+ * scene.communityColors map, the on-canvas node fill, and the legend swatch are
+ * all identical. Kept in lockstep with studio/src/lib/graphRendererPayload.js
+ * GROUP_PALETTE / colorForGroup (the offline-render test cross-checks them).
  */
-function communityLiveCount(graph: StudioSceneGraphLike): number {
+const GROUP_PALETTE = [
+  "#4f7cac",
+  "#f59e0b",
+  "#10b981",
+  "#ef4444",
+  "#8b5cf6",
+  "#14b8a6",
+  "#f97316",
+  "#64748b",
+  "#ec4899",
+  "#22c55e",
+  "#3b82f6",
+  "#a855f7",
+] as const;
+
+function groupHash(value: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function colorForGroup(group: string | undefined): string {
+  return GROUP_PALETTE[groupHash(group ?? "default") % GROUP_PALETTE.length] ?? GROUP_PALETTE[0];
+}
+
+/**
+ * Community breakdown that EXCLUDES isolated singletons. Mirrors graphAdapter.js
+ * computeCommunityStats EXACTLY (same node order, same nodeGroup colour key,
+ * same descending-count/key sort) so the emitted `communityColors` map and the
+ * `communityCount` are byte-identical to the SPA's. Returns the live-count and
+ * the colour map (keyed by community name, descending-count order).
+ */
+function communityStats(graph: StudioSceneGraphLike): {
+  liveCount: number;
+  communityColors: Record<string, string>;
+} {
   const nodes = graphNodes(graph);
   const ids = new Set(nodes.map((n) => n.id));
   const deg = new Map<string, number>();
@@ -449,21 +539,26 @@ function communityLiveCount(graph: StudioSceneGraphLike): number {
     deg.set(e.target, (deg.get(e.target) ?? 0) + 1);
   }
 
-  const byComm = new Map<string, { count: number; live: boolean }>();
+  const byComm = new Map<string, { count: number; live: boolean; group: string | undefined }>();
   for (const node of nodes) {
     const key = nodeCommunity(node);
     const live = (deg.get(node.id) ?? 0) > 0;
     if (key === undefined || key === null || key === "") continue;
-    const rec = byComm.get(key) ?? { count: 0, live: false };
+    const rec = byComm.get(key) ?? { count: 0, live: false, group: nodeGroup(node) };
     rec.count += 1;
     if (live) rec.live = true;
     byComm.set(key, rec);
   }
-  let liveCount = 0;
-  for (const rec of byComm.values()) {
-    if (rec.live) liveCount += 1;
+  const liveList: Array<{ key: string; count: number; color: string }> = [];
+  for (const [key, rec] of byComm) {
+    if (rec.live) {
+      liveList.push({ key: String(key), count: rec.count, color: colorForGroup(rec.group ?? key) });
+    }
   }
-  return liveCount;
+  liveList.sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+  const communityColors: Record<string, string> = {};
+  for (const c of liveList) communityColors[c.key] = c.color;
+  return { liveCount: liveList.length, communityColors };
 }
 
 // ---------------------------------------------------------------------------
@@ -559,14 +654,19 @@ export function buildStudioScene(
     return out;
   });
 
+  const cstats = communityStats(safeGraph);
   return {
     nodes,
     edges: sceneEdges,
+    // BUG B: emitted single source of truth community → colour map (see
+    // communityStats / colorForGroup). Byte-identical to the SPA buildScene
+    // output (parity test enforces it).
+    communityColors: cstats.communityColors,
     stats: {
       nodeCount: nodes.length,
       edgeCount: sceneEdges.length,
       weakEdgeCount: sceneEdges.filter((e) => e.weak).length,
-      communityCount: communityLiveCount(safeGraph),
+      communityCount: cstats.liveCount,
     },
   };
 }

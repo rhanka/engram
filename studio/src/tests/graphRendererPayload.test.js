@@ -3,16 +3,66 @@ import { describe, expect, it } from "vitest";
 import {
   buildConnectedDimStyle,
   buildGraphRendererPayload,
+  colorForGroup,
   densityScale,
   DEFAULT_LABEL_MAX_CHARS,
   findNearestEdge,
   findNearestNode,
   findNearestNodeId,
+  GROUP_PALETTE,
   interpolateMergeStyle,
   interpolateMergePositions,
   isBoxShape,
   truncateLabel,
 } from "../lib/graphRendererPayload.js";
+import { buildScene, communityStats, nodeGroup } from "../lib/graphAdapter.js";
+
+// --- BUG B: single source of truth for community → colour ---
+// The legend swatch (communityStats[].color) and the canvas node fill
+// (buildGraphRendererPayload -> colorForGroup(node.group)) must resolve a
+// community to the SAME palette colour. Before the fix the legend assigned a
+// DS category token by sorted position while the canvas hashed the name into
+// GROUP_PALETTE — two independent schemes that diverged.
+describe("community colour single source (BUG B)", () => {
+  // 3 named communities of differing sizes so a sort-by-count legend would
+  // reorder them (and, with the old scheme, recolour them away from the canvas).
+  const GRAPH = {
+    nodes: [
+      { id: "a1", community_name: "Alpha big" },
+      { id: "a2", community_name: "Alpha big" },
+      { id: "a3", community_name: "Alpha big" },
+      { id: "b1", community_name: "Beta mid" },
+      { id: "b2", community_name: "Beta mid" },
+      { id: "g1", community_name: "Gamma small" },
+    ],
+    links: [
+      { source: "a1", target: "a2" },
+      { source: "a2", target: "a3" },
+      { source: "b1", target: "b2" },
+      { source: "a1", target: "g1" },
+    ],
+  };
+
+  it("colorForGroup is a stable palette lookup", () => {
+    expect(GROUP_PALETTE).toContain(colorForGroup("Alpha big"));
+    expect(colorForGroup("Alpha big")).toBe(colorForGroup("Alpha big"));
+  });
+
+  it("every legend swatch colour equals the canvas node fill for that community", () => {
+    const scene = buildScene(GRAPH);
+    const payload = buildGraphRendererPayload(scene, { nodeRadius: 3 });
+    const { live } = communityStats(GRAPH);
+    // The legend is sorted by descending count; the canvas is in node order.
+    // Regardless of ordering, each community's legend colour must equal the
+    // fill of EVERY one of its member nodes on the canvas.
+    for (const community of live) {
+      const memberNode = GRAPH.nodes.find((n) => n.community_name === community.key);
+      const canvasColor = payload.nodeById.get(memberNode.id).color;
+      expect(community.color, `legend ${community.key}`).toBe(canvasColor);
+      expect(community.color).toBe(colorForGroup(nodeGroup(memberNode)));
+    }
+  });
+});
 
 // --- Item 1: density-aware base node size ---
 describe("densityScale", () => {

@@ -243,7 +243,7 @@
               {#snippet leading()}
                 <span
                   class="rail-swatch"
-                  style="background: var(--st-semantic-data-{c.tone}, #94a3b8)"
+                  style="background: {c.color}"
                   aria-hidden="true"
                 ></span>
               {/snippet}
