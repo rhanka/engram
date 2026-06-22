@@ -1,23 +1,28 @@
 /**
  * Single client viewer state for the ontology studio SPA (selection rework R8-3,
- * group-by axis B2).
+ * PER-ITEM group-by B2).
  *
- * The LEFT column is navigation (search + Types / Communities / Entities lists);
- * the RIGHT column shows the current SELECTION and drills down to an entity.
+ * The LEFT column is navigation (search + Ontology / Communities / Entities
+ * lists); the RIGHT column shows the current SELECTION and drills down to an
+ * entity.
  *
  *   selection : { types:[], communities:[], entities:[] } — what the user picked
  *               on the left. Each list toggles independently (click = add/remove).
+ *               NOTE: `selection.types` is the ontology FILTER facet and is kept
+ *               STRICTLY SEPARATE from the group-by set below — grouping a class
+ *               is NOT selecting/filtering it.
  *   focusId   : the last individually-picked entity → gets the "double" emphasis
  *               (selection highlight + focus shadow) and opens its detail.
  *   options   : { showWeakLinks, groupBy } — graph options (ex-"Facets").
- *               `groupBy` (B2) is the axis-scoped group-by MODE:
- *                 { axis: "none"|"community"|"ontology",   // mutually exclusive
- *                   ontology:  { collapsedClassIds:[] },   // mixed-level class ids
- *                   community: { collapsedKeys:[] } }      // community keys
- *               Only the ACTIVE axis's collapse set is applied; both sets coexist
- *               in state so each axis remembers its own folds (F3 memory). The
- *               pre-B2 `showOntologyClasses` is subsumed: axis:"ontology" + empty
- *               collapse set === "show classes, nothing folded".
+ *               `groupBy` (B2 per-item) is a SET of GROUPED ITEM KEYS:
+ *                 { grouped: [ "ontology:<classId>" | "community:<key>", … ] }
+ *               Every checked item (an Ontology class node OR a community)
+ *               contributes one namespaced key; checking GROUPS (collapses) it,
+ *               unchecking ungroups it. MULTI-SELECT: several keys — mixing
+ *               ontology classes and communities — collapse simultaneously. The
+ *               App splits the set back into ontology class ids + community keys
+ *               (`splitGroupedKeys`) and feeds the shared engine's collapse-target
+ *               SET. An empty set === nothing grouped (fast path, A3).
  *   query     : free-text filter for the Entities list.
  *   activeView: "workspace" | "reconciliation".
  *
@@ -25,18 +30,60 @@
  * (a selected type/community contributes all its member entity ids).
  */
 
-/** The mutually-exclusive group-by axes (the `groupBy.axis` enum). */
-export const GROUP_AXES = ["none", "community", "ontology"];
-
 /** Ontology baseline levels for `foldToLevel` (0=Domain, 1=Sub-domain, 2=Type). */
 export const ONTOLOGY_LEVELS = { domain: 0, subDomain: 1, type: 2 };
 
-function createDefaultGroupBy() {
+/* ---------------------------------------------------------------------------
+ * Group-item key namespacing.
+ *
+ * A grouped item key is a single string that carries BOTH the item's kind
+ * (ontology class vs community) and its identifier. The namespace prefix is
+ * matched on the FIRST `:`-segment only, so an ontology class id ("class:People")
+ * or a colon-bearing community key both round-trip losslessly.
+ * ------------------------------------------------------------------------- */
+
+export const GROUP_KIND = { ontology: "ontology", community: "community" };
+
+/** Build the grouped key for an Ontology class node id (e.g. "class:People"). */
+export function groupKeyForOntology(classId) {
+  return `${GROUP_KIND.ontology}:${classId}`;
+}
+
+/** Build the grouped key for a community key (free text, may contain colons). */
+export function groupKeyForCommunity(communityKey) {
+  return `${GROUP_KIND.community}:${communityKey}`;
+}
+
+/**
+ * Split a flat grouped-key set back into its two engine inputs:
+ *   - ontologyClassIds : the raw class ids to collapse on the ontology axis.
+ *   - communityKeys    : the raw community keys to collapse on the community axis.
+ * Unknown / malformed prefixes are ignored. PURE (no graph context).
+ *
+ * @param {string[]} grouped  the namespaced grouped-key set.
+ * @returns {{ ontologyClassIds: string[], communityKeys: string[] }}
+ */
+export function splitGroupedKeys(grouped = []) {
+  const ontologyClassIds = [];
+  const communityKeys = [];
+  for (const key of grouped ?? []) {
+    if (typeof key !== "string" || key.length === 0) continue;
+    const sep = key.indexOf(":");
+    if (sep < 0) continue;
+    const kind = key.slice(0, sep);
+    const rest = key.slice(sep + 1);
+    if (rest.length === 0) continue;
+    if (kind === GROUP_KIND.ontology) ontologyClassIds.push(rest);
+    else if (kind === GROUP_KIND.community) communityKeys.push(rest);
+  }
   return {
-    axis: "none",
-    ontology: { collapsedClassIds: [] },
-    community: { collapsedKeys: [] },
+    ontologyClassIds: uniqueStrings(ontologyClassIds),
+    communityKeys: uniqueStrings(communityKeys),
   };
+}
+
+function createDefaultGroupBy() {
+  return { grouped: [] };
 }
 
 export function createDefaultViewerState() {
@@ -53,42 +100,48 @@ function uniqueStrings(values = []) {
   return [...new Set(values.filter((v) => typeof v === "string" && v.length > 0))];
 }
 
-/** Coerce any value to a valid axis enum member (out-of-enum → "none"). */
-function coerceAxis(value) {
-  return GROUP_AXES.includes(value) ? value : "none";
-}
-
 /**
  * Normalize the `groupBy` sub-object, folding the PURE (graph-free) shape
- * migration from the pre-B2 `showOntologyClasses`/`collapsedClassIds` fields:
- *   - showOntologyClasses:true  → axis:"ontology" (unless groupBy.axis is set)
- *   - collapsedClassIds         → groupBy.ontology.collapsedClassIds
- * Availability (artifact present / liveCount>0) is NOT consulted here — that is
- * the separate App-level `normalizeGroupAxisAvailability` step (C4).
+ * migration from the pre-B2 axis-scoped / pre-B2-flat shapes into the per-item
+ * `grouped` set:
+ *   - legacy flat   showOntologyClasses:true → group every collapsedClassId
+ *   - legacy flat   collapsedClassIds        → ontology grouped keys
+ *   - axis-scoped   groupBy.axis:"ontology"  → ontology grouped keys (from its set)
+ *   - axis-scoped   groupBy.axis:"community" → community grouped keys (from its set)
+ *   - per-item      groupBy.grouped          → kept as-is (normalized + deduped)
+ * Both legacy axis collapse sets fold in regardless of which axis was "active",
+ * because per-item grouping has no single active axis — every fold is live.
+ * Availability (artifact present / liveCount>0) is NOT consulted here.
  */
 function normalizeGroupBy(options = {}) {
-  const def = createDefaultGroupBy();
   const raw = options.groupBy ?? {};
-  // Migration: old flat fields seed the new shape when groupBy is absent/partial.
-  const legacyAxis =
-    options.showOntologyClasses === true ? "ontology" : "none";
-  const axis = coerceAxis(
-    raw.axis !== undefined ? raw.axis : legacyAxis,
-  );
-  const ontologyIds = uniqueStrings(
+  const keys = [];
+
+  // Per-item shape: the canonical `grouped` set (already namespaced).
+  if (Array.isArray(raw.grouped)) {
+    for (const k of raw.grouped) if (typeof k === "string") keys.push(k);
+  }
+
+  // Legacy axis-scoped ontology fold set → ontology grouped keys.
+  const axisOntologyIds =
     raw.ontology?.collapsedClassIds ??
-      // legacy: collapsedClassIds lived flat under options
-      options.collapsedClassIds ??
-      def.ontology.collapsedClassIds,
-  );
-  const communityKeys = uniqueStrings(
-    raw.community?.collapsedKeys ?? def.community.collapsedKeys,
-  );
-  return {
-    axis,
-    ontology: { collapsedClassIds: ontologyIds },
-    community: { collapsedKeys: communityKeys },
-  };
+    // legacy flat: collapsedClassIds lived under options
+    options.collapsedClassIds ??
+    [];
+  for (const id of axisOntologyIds) {
+    if (typeof id === "string" && id.length > 0) keys.push(groupKeyForOntology(id));
+  }
+
+  // Legacy axis-scoped community fold set → community grouped keys.
+  const axisCommunityKeys = raw.community?.collapsedKeys ?? [];
+  for (const k of axisCommunityKeys) {
+    if (typeof k === "string" && k.length > 0) keys.push(groupKeyForCommunity(k));
+  }
+
+  // Legacy flat `showOntologyClasses` only ever meant "inject classes"; with no
+  // explicit collapse set it groups nothing, so there is nothing extra to add.
+
+  return { grouped: uniqueStrings(keys) };
 }
 
 export function normalizeViewerState(partial = {}) {
@@ -111,40 +164,12 @@ export function normalizeViewerState(partial = {}) {
   // Normalize from the RAW partial options (not the base-merged one) so the
   // absence of `groupBy` is genuinely detectable and the legacy migration fires.
   next.options.groupBy = normalizeGroupBy(partial.options ?? {});
-  // Drop the subsumed legacy flat fields so they cannot drift out of sync.
+  // Drop the subsumed legacy flat / axis-scoped fields so they cannot drift.
   delete next.options.showOntologyClasses;
   delete next.options.collapsedClassIds;
   // The focus must be a selected entity; drop it if it was deselected.
   if (next.focusId && !next.selection.entities.includes(next.focusId)) next.focusId = null;
   return next;
-}
-
-/**
- * App-level AVAILABILITY coercion (C4) — SEPARATE from the pure normalizer.
- *
- * Runs only where graph/artifact context exists (the App seam that already knows
- * `availableAxes` from artifact presence + communityStats().liveCount). Downgrades
- * a persisted, enum-valid `axis` to "none" when it is not currently available,
- * WITHOUT touching the per-axis collapse sets (so F3 memory survives a downgrade
- * and is restored on a graph that has the axis). Idempotent; "none" and any
- * available axis pass through unchanged.
- *
- * @param {object} state          a (normalized) viewer state.
- * @param {string[]} availableAxes  the axes the current graph/artifacts support
- *        (always includes "none").
- * @returns {object} the state, possibly with `groupBy.axis` downgraded to "none".
- */
-export function normalizeGroupAxisAvailability(state, availableAxes = GROUP_AXES) {
-  const available = new Set(["none", ...(availableAxes ?? [])]);
-  const axis = state?.options?.groupBy?.axis ?? "none";
-  if (axis === "none" || available.has(axis)) return state;
-  return normalizeViewerState({
-    ...state,
-    options: {
-      ...state.options,
-      groupBy: { ...state.options.groupBy, axis: "none" },
-    },
-  });
 }
 
 function toggleIn(list, value) {
@@ -154,7 +179,7 @@ function toggleIn(list, value) {
   return [...set];
 }
 
-/** Toggle a TYPE bucket in/out of the selection. */
+/** Toggle a TYPE bucket in/out of the selection (FILTER facet, NOT group-by). */
 export function toggleType(state, type) {
   return normalizeViewerState({
     ...state,
@@ -234,96 +259,78 @@ export function setShowWeakLinks(state, value) {
 }
 
 /* ===========================================================================
- * B2 — group-by AXIS actions (replace the pre-B2 ontology-only ones).
+ * B2 — PER-ITEM group-by actions.
  *
- * One axis-dispatched API: the canvas click and the rail row call the SAME fns
- * regardless of axis. The active axis's collapse set is the one mutated; both
- * per-axis sets always survive (F3 memory — `setGroupAxis` NEVER wipes).
+ * Every groupable left-rail item (an Ontology class node OR a community) owns a
+ * checkbox. Checking it adds its namespaced key to the `grouped` SET; unchecking
+ * removes it. Multiple keys — mixing ontology classes and communities — group at
+ * once. The App splits the set (`splitGroupedKeys`) and feeds the shared engine.
  * ======================================================================== */
 
-/** Read the active axis's collapse-set array out of a state. */
-function activeCollapseSet(groupBy) {
-  if (groupBy.axis === "ontology") return groupBy.ontology.collapsedClassIds ?? [];
-  if (groupBy.axis === "community") return groupBy.community.collapsedKeys ?? [];
-  return [];
-}
-
-/** Return a new groupBy with the active axis's collapse set replaced. */
-function withActiveCollapseSet(groupBy, nextSet) {
-  if (groupBy.axis === "ontology") {
-    return { ...groupBy, ontology: { collapsedClassIds: uniqueStrings(nextSet) } };
-  }
-  if (groupBy.axis === "community") {
-    return { ...groupBy, community: { collapsedKeys: uniqueStrings(nextSet) } };
-  }
-  return groupBy;
-}
-
-/**
- * B2 (replaces setShowOntologyClasses) — set the group-by axis. An out-of-enum
- * value coerces to "none" (pure check). RETAINS every per-axis collapse set, so
- * Ontology → Community → Ontology restores the ontology folds (F3). Availability
- * of the chosen axis is the caller's concern (the picker only offers available
- * axes; the App availability step downgrades a now-unavailable persisted axis).
- */
-export function setGroupAxis(state, axis) {
+/** Replace the grouped set on a state (deduped, string-only). */
+function withGrouped(state, nextKeys) {
   return normalizeViewerState({
     ...state,
     options: {
       ...state.options,
-      groupBy: { ...state.options.groupBy, axis: coerceAxis(axis) },
+      groupBy: { grouped: uniqueStrings(nextKeys) },
     },
   });
 }
 
 /**
- * B2 (replaces toggleCollapseClass) — toggle a key in/out of the ACTIVE axis's
- * collapse set (a class id for ontology, a community key for community). One
- * action, axis-dispatched: the canvas click and the rail row share it.
+ * Toggle ANY grouped item by its namespaced key (build it with
+ * `groupKeyForOntology` / `groupKeyForCommunity`). A non-string / empty key is a
+ * no-op.
  */
-export function toggleCollapse(state, key) {
+export function toggleGroupItem(state, key) {
   if (typeof key !== "string" || !key) return normalizeViewerState(state);
-  const groupBy = state.options.groupBy;
-  if (groupBy.axis === "none") return normalizeViewerState(state);
-  const next = toggleIn(activeCollapseSet(groupBy), key);
-  return normalizeViewerState({
-    ...state,
-    options: { ...state.options, groupBy: withActiveCollapseSet(groupBy, next) },
-  });
+  return withGrouped(state, toggleIn(state.options.groupBy.grouped, key));
+}
+
+/** Toggle an Ontology class node into/out of the grouped set. */
+export function toggleGroupOntology(state, classId) {
+  if (typeof classId !== "string" || !classId) return normalizeViewerState(state);
+  return toggleGroupItem(state, groupKeyForOntology(classId));
+}
+
+/** Toggle a community into/out of the grouped set. */
+export function toggleGroupCommunity(state, communityKey) {
+  if (typeof communityKey !== "string" || !communityKey) return normalizeViewerState(state);
+  return toggleGroupItem(state, groupKeyForCommunity(communityKey));
+}
+
+/** Is this Ontology class node currently grouped (checked)? PURE predicate. */
+export function isOntologyGrouped(state, classId) {
+  return state?.options?.groupBy?.grouped?.includes(groupKeyForOntology(classId)) ?? false;
+}
+
+/** Is this community currently grouped (checked)? PURE predicate. */
+export function isCommunityGrouped(state, communityKey) {
+  return state?.options?.groupBy?.grouped?.includes(groupKeyForCommunity(communityKey)) ?? false;
+}
+
+/** Clear the entire grouped set (ungroup everything). */
+export function clearGrouping(state) {
+  return withGrouped(state, []);
 }
 
 /**
- * B2 (replaces expandAllClasses) — clear the ACTIVE axis's collapse set.
- */
-export function expandAll(state) {
-  const groupBy = state.options.groupBy;
-  if (groupBy.axis === "none") return normalizeViewerState(state);
-  return normalizeViewerState({
-    ...state,
-    options: { ...state.options, groupBy: withActiveCollapseSet(groupBy, []) },
-  });
-}
-
-/**
- * B2 (replaces collapseAllTopClasses) — ontology BASELINE fold (F8). SETS the
- * ontology collapse set to exactly `levelClassIds` (the class ids at the chosen
- * level, computed by the caller from the taxonomy), discarding the previous set.
- * Because the new set IS exactly the level-N ids, no conflicting ancestor or
- * descendant fold can remain — "fold to level" is a SET operation, not a blind
- * union. Per-node folds the user adds afterward mix freely on top. No-op unless
- * the active axis is ontology.
+ * B2 baseline fold (F8) — group EXACTLY the given ontology class ids, REPLACING
+ * the current ontology grouped keys (community keys are untouched). Used by the
+ * "Fold all to: Domain / Sub-domain / Type" bulk buttons; the caller computes the
+ * level's class ids from the taxonomy. Because the set IS replaced for the
+ * ontology kind, no stale ancestor/descendant ontology fold survives.
  *
  * @param {object} state
  * @param {string[]} levelClassIds  the class ids at the target level.
  */
-export function foldToLevel(state, levelClassIds = []) {
-  const groupBy = state.options.groupBy;
-  if (groupBy.axis !== "ontology") return normalizeViewerState(state);
-  return normalizeViewerState({
-    ...state,
-    options: {
-      ...state.options,
-      groupBy: { ...groupBy, ontology: { collapsedClassIds: uniqueStrings(levelClassIds) } },
-    },
-  });
+export function foldOntologyToLevel(state, levelClassIds = []) {
+  const ids = uniqueStrings(levelClassIds);
+  // Keep every NON-ontology grouped key (communities), drop old ontology keys,
+  // then add the level's ontology keys.
+  const kept = (state.options.groupBy.grouped ?? []).filter(
+    (k) => typeof k === "string" && !k.startsWith(`${GROUP_KIND.ontology}:`),
+  );
+  return withGrouped(state, [...kept, ...ids.map(groupKeyForOntology)]);
 }

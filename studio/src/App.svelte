@@ -47,7 +47,9 @@
   import { loadWorkspace } from "./lib/sceneLoader.js";
   import {
     createDefaultViewerState,
-    normalizeGroupAxisAvailability,
+    splitGroupedKeys,
+    groupKeyForOntology,
+    groupKeyForCommunity,
     toggleType,
     toggleCommunity,
     toggleEntity,
@@ -57,10 +59,11 @@
     setActiveView,
     setQuery,
     setShowWeakLinks,
-    setGroupAxis,
-    toggleCollapse,
-    foldToLevel,
-    expandAll,
+    toggleGroupOntology,
+    toggleGroupCommunity,
+    toggleGroupItem,
+    foldOntologyToLevel,
+    clearGrouping,
   } from "./lib/viewerState.js";
 
   const EMPTY_GRAPH = { nodes: [], links: [] };
@@ -104,25 +107,28 @@
   // scene WITHOUT the raw graph (ÉTAPE 1b): on the light scene via
   // applyWeakFilter, or — in legacy fallback — by rebuilding from the graph.
 
-  // B2: the active group-by axis (none | community | ontology). `axis:"none"` is
-  // the FAST PATH and must be byte-identical to the pre-B2 default (A3).
-  const groupAxis = $derived(viewerState.options.groupBy.axis);
+  // B2 (per-item): the grouped item SET split back into its two engine inputs.
+  // An EMPTY set is the FAST PATH and must be byte-identical to the pre-B2
+  // default (A3). Several keys — mixing ontology classes and communities —
+  // collapse simultaneously.
+  const groupedSplit = $derived(splitGroupedKeys(viewerState.options.groupBy.grouped));
+  const hasOntologyGroup = $derived(groupedSplit.ontologyClassIds.length > 0);
+  const hasCommunityGroup = $derived(groupedSplit.communityKeys.length > 0);
+  const hasAnyGroup = $derived(hasOntologyGroup || hasCommunityGroup);
 
-  // B2 / C4: which axes the CURRENT graph + artifacts support. Ontology needs the
-  // class-hierarchies artifact; Community needs at least one live community. The
-  // picker omits absent axes; an unavailable persisted axis is downgraded by
-  // normalizeGroupAxisAvailability once the graph is in hand.
+  // C4: which kinds are AVAILABLE to group. Ontology needs the class-hierarchies
+  // artifact; Community needs at least one live community. The rail hides the
+  // checkbox affordance for an absent kind (and grouped keys for an unavailable
+  // kind simply contribute no collapse target — the engine ignores them).
   const communityInfo = $derived(communityStats(graph));
-  const availableAxes = $derived([
-    "none",
-    ...(communityInfo.liveCount > 0 ? ["community"] : []),
-    ...(classHierarchies?.hierarchies ? ["ontology"] : []),
-  ]);
+  const canGroupOntology = $derived(Boolean(classHierarchies?.hierarchies));
+  const canGroupCommunity = $derived(communityInfo.liveCount > 0);
 
   // B2 / A1+A2: mint the live community keys + their collision-safe synthetic ids
-  // + per-key tone ONCE, so the injector and the parent index agree on ids.
+  // + per-key tone ONCE, so the injector and the parent index agree on ids. Built
+  // only when at least one community is grouped (the injector is skipped otherwise).
   const communityCtx = $derived.by(() => {
-    if (groupAxis !== "community") return null;
+    if (!hasCommunityGroup) return null;
     const live = communityInfo.live;
     const liveKeys = live.map((c) => c.key);
     const idByKey = mintCommunityNodeIds(liveKeys, new Set((graph?.nodes ?? []).map((n) => n.id)));
@@ -136,40 +142,56 @@
     };
   });
 
-  // B2: axis-dispatched scene pipeline.
-  //   axis "none"      → fast path (applyWeakFilter / buildScene fallback) [A3]
-  //   axis "ontology"  → inject classes → applyGroupCollapse(ontology) → buildScene
-  //   axis "community" → inject communities → applyGroupCollapse(community) → buildScene
-  // A non-"none" axis abandons sceneData and runs force layout (A4 cost accepted).
+  // B2 (per-item): build ONE collapse over the UNION of every grouped item.
+  //   - inject ontology class nodes when any ontology class is grouped;
+  //   - inject community fold nodes when any community is grouped;
+  //   - merge their parent indexes + descendant maps;
+  //   - call applyGroupCollapse ONCE with the union of collapse targets.
+  // An empty grouped set is the fast path (returns the raw graph untouched, A3).
   const groupedGraph = $derived.by(() => {
-    if (groupAxis === "ontology") {
-      const injected = injectOntologyClassNodes(graph, classHierarchies, {
+    if (!hasAnyGroup) return graph;
+
+    let injected = graph;
+    const parentById = new Map();
+    const descendantsByTarget = new Map();
+    const collapseTargets = [];
+
+    if (hasOntologyGroup && classHierarchies?.hierarchies) {
+      injected = injectOntologyClassNodes(injected, classHierarchies, {
         levels: ontologyClassLevels,
       });
-      const ids = viewerState.options.groupBy.ontology.collapsedClassIds;
-      if (ids.length === 0) return injected;
-      const { parentById, descendantClassIds } = buildClassParentIndex(classHierarchies);
-      return applyGroupCollapse(injected, {
-        parentById,
-        collapseTargets: ids,
-        descendantsByTarget: descendantClassIds,
-      });
+      const { parentById: classParents, descendantClassIds } =
+        buildClassParentIndex(classHierarchies);
+      for (const [k, v] of classParents) parentById.set(k, v);
+      for (const [k, v] of descendantClassIds) descendantsByTarget.set(k, v);
+      for (const id of groupedSplit.ontologyClassIds) collapseTargets.push(id);
     }
-    if (groupAxis === "community" && communityCtx) {
-      const injected = injectCommunityNodes(graph, communityCtx);
-      const keys = viewerState.options.groupBy.community.collapsedKeys;
-      if (keys.length === 0) return injected;
-      const { parentById, descendantsByTarget, collapseTargetByKey } =
-        buildCommunityParentIndex(graph, communityCtx);
-      const collapseTargets = keys
-        .map((k) => collapseTargetByKey(k))
-        .filter((id) => typeof id === "string");
-      return applyGroupCollapse(injected, { parentById, collapseTargets, descendantsByTarget });
+
+    if (hasCommunityGroup && communityCtx) {
+      injected = injectCommunityNodes(injected, communityCtx);
+      const {
+        parentById: commParents,
+        descendantsByTarget: commDesc,
+        collapseTargetByKey,
+      } = buildCommunityParentIndex(injected, communityCtx);
+      for (const [k, v] of commParents) {
+        // Don't clobber an ontology parent mapping for a shared entity; the
+        // community membership only governs entities the ontology pass left
+        // unmapped (community nodes themselves are unmapped roots).
+        if (!parentById.has(k)) parentById.set(k, v);
+      }
+      for (const [k, v] of commDesc) descendantsByTarget.set(k, v);
+      for (const key of groupedSplit.communityKeys) {
+        const id = collapseTargetByKey(key);
+        if (typeof id === "string") collapseTargets.push(id);
+      }
     }
-    return graph;
+
+    if (collapseTargets.length === 0) return injected;
+    return applyGroupCollapse(injected, { parentById, collapseTargets, descendantsByTarget });
   });
   const scene = $derived(
-    groupAxis !== "none"
+    hasAnyGroup
       ? // B2/A4: the grouped scene is rebuilt from graph.json (no positions) —
         // attach a force layout so it doesn't render as a ring.
         attachForceLayout(
@@ -189,31 +211,33 @@
   function handleToggleCommunity(community) {
     viewerState = toggleCommunity(viewerState, community);
   }
-  // B2 / A2: a click on ANY group-synthetic node folds/unfolds it instead of
-  // selecting an entity. Ontology class nodes toggle by their id; community fold
-  // nodes toggle by their `community_key` field (NEVER the parsed id). Returns
-  // the toggle key when the node is a group node, else null (entity selection).
+  // B2 / A2: a click on ANY group-synthetic node UNGROUPS it instead of selecting
+  // an entity. Ontology class nodes toggle their namespaced ontology key (by id);
+  // community fold nodes toggle their namespaced community key (read from the
+  // `community_key` field, NEVER the parsed id). Returns the namespaced grouped
+  // key when the node is a group node, else null (entity selection).
   function groupNodeToggleKey(id) {
     const node = scene?.nodes?.find((n) => n.id === id);
     if (!node) return null;
-    if (node.ontology_node_kind === "class") return node.id;
-    if (node.community_node_kind === "community") return node.community_key ?? null;
+    if (node.ontology_node_kind === "class") return groupKeyForOntology(node.id);
+    if (node.community_node_kind === "community")
+      return node.community_key != null ? groupKeyForCommunity(node.community_key) : null;
     return null;
   }
   function handleToggleEntity(id) {
     const groupKey = groupNodeToggleKey(id);
     if (groupKey != null) {
-      viewerState = toggleCollapse(viewerState, groupKey);
+      viewerState = toggleGroupItem(viewerState, groupKey);
       return;
     }
     viewerState = toggleEntity(viewerState, id);
     if (viewerState.focusId) void ensureEntity(viewerState.focusId);
   }
   function handleFocusEntity(id) {
-    // Double-click on a group node = collapse toggle too (no entity detail).
+    // Double-click on a group node = ungroup toggle too (no entity detail).
     const groupKey = groupNodeToggleKey(id);
     if (groupKey != null) {
-      viewerState = toggleCollapse(viewerState, groupKey);
+      viewerState = toggleGroupItem(viewerState, groupKey);
       return;
     }
     viewerState = focusEntityAction(viewerState, id);
@@ -233,23 +257,28 @@
   function handleToggleWeak(value) {
     viewerState = setShowWeakLinks(viewerState, value);
   }
-  // B2: group-by axis callbacks (replace the ontology-class toggle).
-  function handleSetAxis(axis) {
-    viewerState = setGroupAxis(viewerState, axis);
-    // Ontology needs the class-hierarchies artifact; load it lazily the first
-    // time the axis is chosen (the derived scene re-runs once it lands).
-    if (axis === "ontology") void ensureClassHierarchies();
+  // B2 (per-item): group-by callbacks. Every groupable rail item owns a checkbox
+  // that GROUPS (collapses) the item when checked. Ontology classes and
+  // communities each toggle their own kind; the App splits the grouped set and
+  // collapses the union (handled in `groupedGraph`).
+  function handleToggleGroupOntology(classId) {
+    viewerState = toggleGroupOntology(viewerState, classId);
+    // Ontology grouping needs the class-hierarchies artifact; load it lazily the
+    // first time something ontology is grouped (the scene re-runs once it lands).
+    void ensureClassHierarchies();
   }
-  function handleToggleCollapse(key) {
-    viewerState = toggleCollapse(viewerState, key);
+  function handleToggleGroupCommunity(communityKey) {
+    viewerState = toggleGroupCommunity(viewerState, communityKey);
   }
-  function handleExpandAll() {
-    viewerState = expandAll(viewerState);
+  function handleClearGrouping() {
+    viewerState = clearGrouping(viewerState);
   }
   // B2 / F8: BASELINE fold to an ontology level. Compute the exact class ids at
-  // the level from the taxonomy, then SET them as the collapse set (not a union).
+  // the level from the taxonomy, then group exactly them (replacing prior
+  // ontology folds; community folds are untouched).
   function handleFoldToLevel(level) {
-    viewerState = foldToLevel(viewerState, classIdsAtLevel(level));
+    viewerState = foldOntologyToLevel(viewerState, classIdsAtLevel(level));
+    void ensureClassHierarchies();
   }
   function handleSetView(view) {
     viewerState = setActiveView(viewerState, view);
@@ -270,16 +299,6 @@
     }
     return out;
   }
-
-  // B2 / C4: availability coercion at the App seam (the only place with graph +
-  // artifact context). A persisted axis that the current graph no longer supports
-  // is downgraded → "none" WITHOUT wiping the per-axis collapse sets, so re-loading
-  // on a graph that does have the axis restores it. Idempotent; safe to run on
-  // every availableAxes change.
-  $effect(() => {
-    const next = normalizeGroupAxisAvailability(viewerState, availableAxes);
-    if (next !== viewerState) viewerState = next;
-  });
 
   async function ensureEntity(id) {
     if (!id || entityCache[id]) return;
@@ -336,14 +355,16 @@
     if (switching || !modelStore.select(id)) return;
     modelId = modelStore.activeId;
     switching = true;
-    // B2 regression fix: capture the active group-by axis BEFORE we drop the
-    // per-model artifacts. Nulling classHierarchies removes "ontology" from
-    // availableAxes, so the availability $effect downgrades the axis to "none"
-    // while the new model's taxonomy is in flight. We re-assert the intended
-    // axis once the artifact lands (below) IF it is available again, so a model
-    // switch within a multi-model bundle keeps an active Ontology grouping (the
-    // collapse set already survives in viewerState — only the axis was lost).
-    const intendedAxis = viewerState.options.groupBy.axis;
+    // B2 (per-item): the grouped item SET survives a model switch — it lives in
+    // viewerState.options.groupBy.grouped and clearSelection() below only touches
+    // the selection/focus, never the grouping. Capture whether any ONTOLOGY item
+    // is grouped so we can guarantee the per-model taxonomy is re-fetched
+    // (loadActiveModel does this eagerly anyway, but keep the intent explicit) —
+    // grouped ontology keys reference class ids that the new model's taxonomy must
+    // provide for the fold to take effect again.
+    const hadOntologyGroup = splitGroupedKeys(
+      viewerState.options.groupBy.grouped,
+    ).ontologyClassIds.length > 0;
     // The fetch base now points at the new model's dir; clear stale per-model
     // client state before re-loading.
     __resetEntitiesIndexCache();
@@ -355,16 +376,10 @@
     viewerState = clearSelection(viewerState);
     try {
       await loadActiveModel();
-      // Re-fetch eagerly if the ontology axis was active (else lazy). loadActiveModel
-      // already eagerly fetches class-hierarchies, so this is a cached no-op.
-      if (intendedAxis === "ontology") await ensureClassHierarchies();
-      // Restore the intended axis if the new model still supports it. A downgrade
-      // happened while the artifact was null; reassert now that availableAxes is
-      // up to date. normalizeGroupAxisAvailability is idempotent and keeps the axis
-      // only when it is genuinely available (else this re-asserts to a no-op).
-      if (intendedAxis !== viewerState.options.groupBy.axis && availableAxes.includes(intendedAxis)) {
-        viewerState = setGroupAxis(viewerState, intendedAxis);
-      }
+      // Re-fetch eagerly if any ontology item was grouped (else lazy).
+      // loadActiveModel already eagerly fetches class-hierarchies, so this is a
+      // cached no-op — but it guarantees the grouped ontology folds re-apply.
+      if (hadOntologyGroup) await ensureClassHierarchies();
     } finally {
       switching = false;
     }
@@ -470,17 +485,18 @@
             selection={viewerState.selection}
             showWeakLinks={viewerState.options.showWeakLinks}
             groupBy={viewerState.options.groupBy}
-            {availableAxes}
+            {canGroupOntology}
+            {canGroupCommunity}
             stats={scene.stats}
             onToggleType={handleToggleType}
             onToggleCommunity={handleToggleCommunity}
             onToggleEntity={handleToggleEntity}
             onSetQuery={handleSetQuery}
             onToggleWeak={handleToggleWeak}
-            onSetAxis={handleSetAxis}
-            onToggleCollapse={handleToggleCollapse}
+            onToggleGroupOntology={handleToggleGroupOntology}
+            onToggleGroupCommunity={handleToggleGroupCommunity}
             onFoldToLevel={handleFoldToLevel}
-            onExpandAll={handleExpandAll}
+            onClearGrouping={handleClearGrouping}
           />
         </div>
         <div class="col col-center">

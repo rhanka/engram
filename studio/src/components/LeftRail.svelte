@@ -27,9 +27,15 @@
     query = "",
     selection = { types: [], communities: [], entities: [] },
     showWeakLinks = true,
-    // B2: axis-scoped group-by state + the axes the current graph supports.
-    groupBy = { axis: "none", ontology: { collapsedClassIds: [] }, community: { collapsedKeys: [] } },
-    availableAxes = ["none"],
+    // B2 (per-item): the grouped item SET — namespaced keys
+    // ("ontology:<classId>" | "community:<key>"). Every checked rail item adds
+    // one key; checking GROUPS (collapses) it. Multi-select is the default.
+    groupBy = { grouped: [] },
+    // Which kinds are AVAILABLE to group (C4): ontology needs the taxonomy,
+    // community needs ≥1 live community. The checkbox affordance is hidden for an
+    // absent kind.
+    canGroupOntology = false,
+    canGroupCommunity = false,
     // The scene's count badges (relocated under the search bar).
     stats = { nodeCount: 0, edgeCount: 0, communityCount: 0 },
     onToggleType,
@@ -37,32 +43,36 @@
     onToggleEntity,
     onSetQuery,
     onToggleWeak,
-    // B2 group-by callbacks (replace the ontology-class toggle).
-    onSetAxis,
-    onToggleCollapse,
+    // B2 (per-item) group-by callbacks.
+    onToggleGroupOntology,
+    onToggleGroupCommunity,
     onFoldToLevel,
-    onExpandAll,
+    onClearGrouping,
   } = $props();
 
   const typeList = $derived(groupCounts(graph, nodeType));
   // Communities excluding degree-0 singletons (folded into `isolatedCount`).
   const communityInfo = $derived(communityStats(graph));
 
-  // B2: which axes the picker offers (omit absent axes, C4). "none" always shown.
-  const axisAvailable = $derived(new Set(availableAxes));
-  const showCommunityAxis = $derived(axisAvailable.has("community"));
-  const showOntologyAxis = $derived(axisAvailable.has("ontology"));
-
-  // B2: the active axis's folded set, for per-row glyphs/state.
-  const ontologyFolded = $derived(new Set(groupBy.ontology?.collapsedClassIds ?? []));
-  const communityFolded = $derived(new Set(groupBy.community?.collapsedKeys ?? []));
-  const activeFoldedCount = $derived(
-    groupBy.axis === "ontology"
-      ? ontologyFolded.size
-      : groupBy.axis === "community"
-        ? communityFolded.size
-        : 0,
+  // B2 (per-item): split the namespaced grouped SET into per-row membership sets.
+  // A class/community is "grouped" when its namespaced key is present. Mixing
+  // ontology + community keys is allowed; both render their checked state here.
+  const groupedSet = $derived(new Set(groupBy.grouped ?? []));
+  const ontologyGrouped = $derived(
+    new Set(
+      (groupBy.grouped ?? [])
+        .filter((k) => typeof k === "string" && k.startsWith("ontology:"))
+        .map((k) => k.slice("ontology:".length)),
+    ),
   );
+  const communityGrouped = $derived(
+    new Set(
+      (groupBy.grouped ?? [])
+        .filter((k) => typeof k === "string" && k.startsWith("community:"))
+        .map((k) => k.slice("community:".length)),
+    ),
+  );
+  const groupedCount = $derived(groupedSet.size);
 
   const typeSet = $derived(new Set(selection.types));
   // EVOL: nested Domain → Sub-domain → Type tree from the ontology class
@@ -139,45 +149,6 @@
   const totalNodeCount = $derived(graphNodes(graph).length);
   const hasQuery = $derived(query.trim().length > 0);
 
-  // B2 / C2: the ontology FOLD tree (per-node "fold here" pills + glyphs), built
-  // from the same taxonomy the Types facet uses but rendered as fold controls, not
-  // selectable rows (the §Two-Concepts separation device). Domains/sub-domains get
-  // a fold pill; leaf Type rows are read-only in v1 (F5 deferred).
-  const foldTree = $derived.by(() => {
-    const hs = classHierarchies?.hierarchies;
-    if (!hs) return null;
-    const h = hs[Object.keys(hs)[0]];
-    if (!h?.classes_by_id || !(h.root_class_ids?.length)) return null;
-    const classes = h.classes_by_id;
-    const countByType = new Map(typeList.map((t) => [t.key, t.count]));
-    const labelOf = (id) => classes[id]?.label || String(id).replace(/^class:/, "");
-    const domains = h.root_class_ids
-      .map((rootId) => {
-        const subs = (classes[rootId]?.child_ids ?? [])
-          .map((subId) => {
-            const types = (classes[subId]?.member_node_types ?? []).map((t) => ({
-              key: t,
-              count: countByType.get(t) ?? 0,
-            }));
-            return {
-              id: subId,
-              label: labelOf(subId),
-              types,
-              count: types.reduce((n, t) => n + t.count, 0),
-            };
-          })
-          .filter((s) => s.types.length);
-        return {
-          id: rootId,
-          label: labelOf(rootId),
-          subs,
-          count: subs.reduce((n, s) => n + s.count, 0),
-        };
-      })
-      .filter((d) => d.subs.length);
-    return domains;
-  });
-
   // Communities + Entities use STANDALONE SelectableRows (selected/onselect), so
   // they need the selection-membership sets for the per-row `selected` flag.
   // (Types uses a SelectableList controlled by selection.types — see below.)
@@ -239,20 +210,57 @@
     {#if typeList.length === 0}
       <p class="rail-empty">No types.</p>
     {:else if typeTree}
-      <!-- EVOL: nested Domain → Sub-domain → Type accordions (taxonomy-driven). -->
-      <ul class="rail-type-groups">
+      <!-- EVOL: nested Domain → Sub-domain → Type accordions (taxonomy-driven).
+           B2 (per-item): each Ontology CLASS node (Domain + Sub-domain) carries a
+           hover-revealed GROUP-BY checkbox in its header. Checking it GROUPS
+           (collapses) that class; the FILTER facet (leaf Type SelectableRows →
+           onToggleType) stays a SEPARATE concern. -->
+      <ul class="rail-type-groups rail-onto-tree" aria-label="Ontology classes">
         {#each typeTree as domain (domain.id)}
           <li>
             <Collapsible title={domain.label} open={false} size="sm">
               {#snippet trailing()}
-                <Badge shape="circle" size="sm" tone="neutral">{domain.count}</Badge>
+                <span class="rail-onto-trailing">
+                  <Badge shape="circle" size="sm" tone="neutral">{domain.count}</Badge>
+                  <label
+                    class="rail-group-check"
+                    class:rail-group-check--on={ontologyGrouped.has(domain.id)}
+                    title="Group by {domain.label}"
+                    onclick={(e) => e.stopPropagation()}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={ontologyGrouped.has(domain.id)}
+                      aria-label="Group by {domain.label}"
+                      onchange={() => onToggleGroupOntology?.(domain.id)}
+                    />
+                    <span class="rail-group-hint" aria-hidden="true">group</span>
+                  </label>
+                </span>
               {/snippet}
               <ul class="rail-type-groups">
                 {#each domain.subs as sub (sub.id)}
                   <li>
                     <Collapsible title={sub.label} open={false} size="sm">
                       {#snippet trailing()}
-                        <Badge shape="circle" size="sm" tone="neutral">{sub.count}</Badge>
+                        <span class="rail-onto-trailing">
+                          <Badge shape="circle" size="sm" tone="neutral">{sub.count}</Badge>
+                          <label
+                            class="rail-group-check"
+                            class:rail-group-check--on={ontologyGrouped.has(sub.id)}
+                            title="Group by {sub.label}"
+                            onclick={(e) => e.stopPropagation()}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={ontologyGrouped.has(sub.id)}
+                              disabled={ontologyGrouped.has(domain.id)}
+                              aria-label="Group by {sub.label}"
+                              onchange={() => onToggleGroupOntology?.(sub.id)}
+                            />
+                            <span class="rail-group-hint" aria-hidden="true">group</span>
+                          </label>
+                        </span>
                       {/snippet}
                       <ul class="rail-list">
                         {#each sub.types as t (t.key)}
@@ -281,6 +289,21 @@
           </li>
         {/each}
       </ul>
+      <!-- B2 / F8: bulk baseline fold + an ungroup-all reset, scoped to the
+           Ontology facet (only shown when the taxonomy supports grouping). -->
+      {#if canGroupOntology}
+        <div class="rail-fold-bulk">
+          <span class="rail-fold-bulk-label">Group all to:</span>
+          <button type="button" class="rail-fold-baseline" onclick={() => onFoldToLevel?.(0)}>Domain</button>
+          <button type="button" class="rail-fold-baseline" onclick={() => onFoldToLevel?.(1)}>Sub-domain</button>
+          <button type="button" class="rail-fold-baseline" onclick={() => onFoldToLevel?.(2)}>Type</button>
+        </div>
+      {/if}
+      {#if groupedCount > 0}
+        <button type="button" class="rail-reset-btn" onclick={() => onClearGrouping?.()}>
+          Ungroup all ({groupedCount} grouped)
+        </button>
+      {/if}
     {:else}
       <SelectableList
         class="rail-list"
@@ -328,7 +351,26 @@
               {/snippet}
               {c.key}
               {#snippet trailing()}
-                <Badge shape="circle" size="sm" tone="neutral">{c.count}</Badge>
+                <span class="rail-onto-trailing">
+                  <Badge shape="circle" size="sm" tone="neutral">{c.count}</Badge>
+                  <!-- B2 (per-item): hover-revealed GROUP-BY checkbox. Checking it
+                       GROUPS (collapses) the community; the row's own SELECT
+                       (onToggleCommunity, filter) stays a separate concern. -->
+                  <label
+                    class="rail-group-check"
+                    class:rail-group-check--on={communityGrouped.has(c.key)}
+                    title="Group by {c.key}"
+                    onclick={(e) => e.stopPropagation()}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={communityGrouped.has(c.key)}
+                      aria-label="Group by {c.key}"
+                      onchange={() => onToggleGroupCommunity?.(c.key)}
+                    />
+                    <span class="rail-group-hint" aria-hidden="true">group</span>
+                  </label>
+                </span>
               {/snippet}
             </SelectableRow>
           </li>
@@ -387,154 +429,11 @@
       Show weak (inferred) links
     </label>
 
-    <!-- B2 / C1+F1: the legacy ontology-class checkbox is removed (F2) — group-by
-         is a nested sub-menu with an axis selector (None / Community / Ontology). -->
-    <Collapsible title="Group by" open={false} size="sm">
-      {#snippet trailing()}
-        <Badge shape="circle" size="sm" tone="neutral">{groupBy.axis}</Badge>
-      {/snippet}
-
-      <div class="rail-axis" role="radiogroup" aria-label="Group-by axis">
-        <button
-          type="button"
-          class="rail-axis-btn"
-          role="radio"
-          aria-checked={groupBy.axis === "none"}
-          class:rail-axis-btn--on={groupBy.axis === "none"}
-          onclick={() => onSetAxis?.("none")}
-        >None</button>
-        {#if showCommunityAxis}
-          <button
-            type="button"
-            class="rail-axis-btn"
-            role="radio"
-            aria-checked={groupBy.axis === "community"}
-            class:rail-axis-btn--on={groupBy.axis === "community"}
-            onclick={() => onSetAxis?.("community")}
-          >Community</button>
-        {/if}
-        {#if showOntologyAxis}
-          <button
-            type="button"
-            class="rail-axis-btn"
-            role="radio"
-            aria-checked={groupBy.axis === "ontology"}
-            class:rail-axis-btn--on={groupBy.axis === "ontology"}
-            onclick={() => onSetAxis?.("ontology")}
-          >Ontology</button>
-        {/if}
-      </div>
-
-      {#if groupBy.axis === "ontology"}
-        <p class="rail-facet-hint">Collapse the graph at any class — folding re-lays out the graph.</p>
-        {#if foldTree}
-          <div class="rail-fold-tree" aria-label="Collapse the graph at">
-            {#each foldTree as domain (domain.id)}
-              <Collapsible title={domain.label} open={false} size="sm">
-                {#snippet trailing()}
-                  <span class="rail-fold-trailing">
-                    <Badge shape="circle" size="sm" tone="neutral">{domain.count}</Badge>
-                    <button
-                      type="button"
-                      class="rail-fold-pill"
-                      class:rail-fold-pill--on={ontologyFolded.has(domain.id)}
-                      aria-pressed={ontologyFolded.has(domain.id)}
-                      onclick={(e) => { e.stopPropagation(); onToggleCollapse?.(domain.id); }}
-                    >
-                      <span class="rail-fold-glyph" aria-hidden="true"
-                        >{ontologyFolded.has(domain.id) ? "●" : "◯"}</span
-                      >{ontologyFolded.has(domain.id) ? "folded" : "fold"}
-                    </button>
-                  </span>
-                {/snippet}
-                <ul class="rail-type-groups">
-                  {#each domain.subs as sub (sub.id)}
-                    <li>
-                      <Collapsible title={sub.label} open={false} size="sm">
-                        {#snippet trailing()}
-                          <span class="rail-fold-trailing">
-                            <Badge shape="circle" size="sm" tone="neutral">{sub.count}</Badge>
-                            <button
-                              type="button"
-                              class="rail-fold-pill"
-                              class:rail-fold-pill--on={ontologyFolded.has(sub.id)}
-                              aria-pressed={ontologyFolded.has(sub.id)}
-                              disabled={ontologyFolded.has(domain.id)}
-                              onclick={(e) => { e.stopPropagation(); onToggleCollapse?.(sub.id); }}
-                            >
-                              <span class="rail-fold-glyph" aria-hidden="true"
-                                >{ontologyFolded.has(sub.id) ? "●" : "◯"}</span
-                              >{ontologyFolded.has(sub.id) ? "folded" : "fold"}
-                            </button>
-                          </span>
-                        {/snippet}
-                        <ul class="rail-list">
-                          {#each sub.types as t (t.key)}
-                            <li class="rail-fold-leaf">
-                              <span class="rail-fold-glyph rail-fold-glyph--leaf" aria-hidden="true">·</span>
-                              <span class="rail-fold-leaf-label">{t.key}</span>
-                              <Badge shape="circle" size="sm" tone="neutral">{t.count}</Badge>
-                            </li>
-                          {/each}
-                        </ul>
-                      </Collapsible>
-                    </li>
-                  {/each}
-                </ul>
-              </Collapsible>
-            {/each}
-          </div>
-          <div class="rail-fold-bulk">
-            <span class="rail-fold-bulk-label">Fold all to:</span>
-            <button type="button" class="rail-fold-baseline" onclick={() => onFoldToLevel?.(0)}>Domain</button>
-            <button type="button" class="rail-fold-baseline" onclick={() => onFoldToLevel?.(1)}>Sub-domain</button>
-            <button type="button" class="rail-fold-baseline" onclick={() => onFoldToLevel?.(2)}>Type</button>
-          </div>
-          {#if activeFoldedCount > 0}
-            <button type="button" class="rail-reset-btn" onclick={() => onExpandAll?.()}>
-              Expand all ({activeFoldedCount} folded)
-            </button>
-          {/if}
-        {:else}
-          <p class="rail-empty">No ontology taxonomy loaded.</p>
-        {/if}
-      {:else if groupBy.axis === "community"}
-        <p class="rail-facet-hint">Fold members into their community — folding re-lays out the graph.</p>
-        {#if communityInfo.liveCount === 0}
-          <p class="rail-empty">No communities.</p>
-        {:else}
-          <ul class="rail-list">
-            {#each communityInfo.live as c (c.key)}
-              <li class="rail-fold-row">
-                <span
-                  class="rail-swatch"
-                  style="background: var(--st-semantic-data-{c.tone}, #94a3b8)"
-                  aria-hidden="true"
-                ></span>
-                <span class="rail-fold-leaf-label">{c.key}</span>
-                <Badge shape="circle" size="sm" tone="neutral">{c.count}</Badge>
-                <button
-                  type="button"
-                  class="rail-fold-pill"
-                  class:rail-fold-pill--on={communityFolded.has(c.key)}
-                  aria-pressed={communityFolded.has(c.key)}
-                  onclick={() => onToggleCollapse?.(c.key)}
-                >
-                  <span class="rail-fold-glyph" aria-hidden="true"
-                    >{communityFolded.has(c.key) ? "●" : "◯"}</span
-                  >{communityFolded.has(c.key) ? "folded" : "fold"}
-                </button>
-              </li>
-            {/each}
-          </ul>
-          {#if activeFoldedCount > 0}
-            <button type="button" class="rail-reset-btn" onclick={() => onExpandAll?.()}>
-              Expand all ({activeFoldedCount} folded)
-            </button>
-          {/if}
-        {/if}
-      {/if}
-    </Collapsible>
+    <!-- B2 (per-item): group-by is NOT a separate axis sub-menu anymore — every
+         groupable Ontology class / Community owns its OWN checkbox inline in its
+         facet section above (the legacy class-display checkbox and the axis
+         selector were both removed, F2). Options keeps only true graph options
+         (weak links). -->
   </Collapsible>
 </aside>
 
@@ -644,13 +543,6 @@
     color: var(--st-semantic-text-secondary, #475569);
     cursor: pointer;
   }
-  .rail-facet-hint {
-    margin: 0.35rem 0 0.15rem;
-    color: var(--st-semantic-text-muted, #64748b);
-    font-size: 0.72rem;
-    font-style: italic;
-    line-height: 1.3;
-  }
   .rail-reset-btn {
     margin-top: 0.25rem;
     padding: 0.3rem 0.55rem;
@@ -665,85 +557,47 @@
     background: var(--st-semantic-surface-hover, #f1f5f9);
   }
 
-  /* B2 — group-by axis selector (segmented control). */
-  .rail-axis {
-    display: inline-flex;
-    margin: 0.35rem 0 0.2rem;
-    border: 1px solid var(--st-semantic-border-muted, #e2e8f0);
-    border-radius: 5px;
-    overflow: hidden;
-  }
-  .rail-axis-btn {
-    padding: 0.28rem 0.6rem;
-    border: 0;
-    border-right: 1px solid var(--st-semantic-border-muted, #e2e8f0);
-    background: var(--st-semantic-surface-default, #fff);
-    color: var(--st-semantic-text-secondary, #475569);
-    font-size: 0.76rem;
-    cursor: pointer;
-  }
-  .rail-axis-btn:last-child {
-    border-right: 0;
-  }
-  .rail-axis-btn--on {
-    background: var(--st-semantic-action-primary, #2563eb);
-    color: #fff;
-  }
-  /* B2 — fold tree + pills (the §Two-Concepts separation device: NO selectable
-     rows / shape glyphs here; fold pills + state glyphs only). */
-  .rail-fold-tree {
-    display: grid;
-    gap: 0.15rem;
-    margin-top: 0.2rem;
-  }
-  .rail-fold-trailing {
+  /* B2 (per-item): an Ontology class / Community row carries its count Badge AND
+     a hover-revealed group-by checkbox in the SAME trailing slot. */
+  .rail-onto-trailing {
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
   }
-  .rail-fold-pill {
+  .rail-onto-tree {
+    margin-top: 0.15rem;
+  }
+  /* B2 (per-item): the per-item GROUP-BY checkbox affordance. The "group" hint
+     label is hidden until the row is hovered (or the box is already checked), so
+     the rail stays calm; a checked box keeps the affordance visible as feedback. */
+  .rail-group-check {
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
-    padding: 0.12rem 0.4rem;
-    border: 1px solid var(--st-semantic-border-muted, #e2e8f0);
-    border-radius: 999px;
-    background: var(--st-semantic-surface-default, #fff);
-    color: var(--st-semantic-action-primary, #2563eb);
-    font-size: 0.68rem;
+    gap: 0.2rem;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+  }
+  .rail-group-check input {
+    margin: 0;
     cursor: pointer;
   }
-  .rail-fold-pill--on {
-    background: var(--st-semantic-action-primary, #2563eb);
-    color: #fff;
-    border-color: var(--st-semantic-action-primary, #2563eb);
-  }
-  .rail-fold-pill:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-  .rail-fold-glyph {
-    font-size: 0.7rem;
-    line-height: 1;
-  }
-  .rail-fold-glyph--leaf {
+  .rail-group-hint {
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
     color: var(--st-semantic-text-muted, #64748b);
   }
-  .rail-fold-leaf,
-  .rail-fold-row {
-    list-style: none;
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.2rem 0.1rem;
-    font-size: 0.78rem;
-    color: var(--st-semantic-text-secondary, #475569);
+  /* Reveal on hover of the enclosing row, on keyboard focus, or when checked. */
+  :global(.st-collapsible__header:hover) .rail-group-check,
+  :global(.st-selectableRow:hover) .rail-group-check,
+  .rail-group-check:focus-within,
+  .rail-group-check--on {
+    opacity: 1;
   }
-  .rail-fold-leaf-label {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .rail-group-check--on .rail-group-hint {
+    color: var(--st-semantic-action-primary, #2563eb);
+    font-weight: 600;
   }
   .rail-fold-bulk {
     display: flex;
