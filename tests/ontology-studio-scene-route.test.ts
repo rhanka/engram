@@ -99,3 +99,39 @@ describe("GET /api/ontology/scene.json", () => {
     expect(JSON.parse(result.body)).toEqual({ error: "graph.json not found" });
   });
 });
+
+describe("GET /api/ontology/search-index.json (work-stream C)", () => {
+  it("serves the v1 search index the SPA Answer view runs over", () => {
+    const fixture = writeOntologyWriteFixture(makeTempDir());
+    writeGraph(fixture.stateDir, GRAPH_FIXTURE);
+
+    const result = handleOntologyStudioRequest(
+      { profileStatePath: fixture.profileStatePath },
+      "GET",
+      "/api/ontology/search-index.json",
+    );
+
+    expect(result.status).toBe(200);
+    expect(result.contentType).toBe("application/json; charset=utf-8");
+
+    const payload = JSON.parse(result.body);
+    expect(payload.schema).toBe("graphify_search_index_v1");
+    // Self-contained substrate: docs + BM25 postings + CSR adjacency ride inline,
+    // so the in-browser BM25 + PPR needs neither graph.json nor a second fetch.
+    expect(Array.isArray(payload.docs)).toBe(true);
+    expect(payload.docs.length).toBe(GRAPH_FIXTURE.nodes.length);
+    expect(payload.bm25).toBeDefined();
+    expect(payload.adjacency).toBeDefined();
+  });
+
+  it("404s when graph.json is absent", () => {
+    const fixture = writeOntologyWriteFixture(makeTempDir());
+    const result = handleOntologyStudioRequest(
+      { profileStatePath: fixture.profileStatePath },
+      "GET",
+      "/api/ontology/search-index.json",
+    );
+    expect(result.status).toBe(404);
+    expect(JSON.parse(result.body)).toEqual({ error: "graph.json not found" });
+  });
+});

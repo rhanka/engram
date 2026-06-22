@@ -259,6 +259,32 @@ export async function fetchClassHierarchies() {
   }
 }
 
+/**
+ * Work-stream C: fetch the offline retrieval substrate `search-index.json` (the
+ * self-contained BM25F postings + CSR adjacency + community membership the
+ * in-browser answer-pack runs over). Same resolution ladder as the other
+ * artifacts: inlined offline bundle → same-origin server route → bundle-relative
+ * static copy (under the active model's dir in a multi-model bundle). Resolves
+ * `null` when absent so the Answer view degrades to a clear "no index" state and
+ * never throws (mirrors fetchClassHierarchies).
+ */
+export async function fetchSearchIndex() {
+  // Offline: serve the inlined index if present (only when studio.html inlined
+  // it), else resolve null (no doomed file:// fetch).
+  const inlined = bundleGet("search-index.json");
+  if (inlined !== BUNDLE_ABSENT) return inlined;
+  if (bundlePresent()) return null;
+  try {
+    return await getJson("/api/ontology/search-index.json");
+  } catch {
+    try {
+      return await getJson(staticPath("search-index.json"));
+    } catch {
+      return null;
+    }
+  }
+}
+
 export async function fetchReconciliationCandidates() {
   // Offline: serve the inlined queue if present (only with `--full-offline`),
   // else an empty queue (no doomed file:// fetch).

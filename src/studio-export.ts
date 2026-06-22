@@ -49,6 +49,7 @@ import {
 } from "./ontology-reconciliation.js";
 import { emitSceneHierarchies } from "./scene-hierarchies-emitter.js";
 import { emitSearchIndex } from "./search-index-emitter.js";
+import type { SearchIndex } from "./search-index.js";
 import { buildEntitySidecar, resolveStudioAppDir } from "./studio-assets.js";
 import { buildStudioScene, type StudioSceneGraphLike } from "./studio-scene.js";
 import { emitWorkspaceManifest } from "./workspace-manifest-emitter.js";
@@ -415,10 +416,15 @@ export function buildStaticStudio(
   //     adjacency + community membership PPR/assembly need, so the offline
   //     answer path runs WITHOUT graph.json (C3a). Additive sibling.
   let searchIndexNodeCount = 0;
+  // Held for the single-file bundle so the offline studio.html's Answer view runs
+  // BM25 + PPR over the SAME index bytes as the multi-file export (no fetch, no
+  // graph.json, no LLM — grounded retrieval only). null when the emit failed.
+  let searchIndex: SearchIndex | null = null;
   try {
     const searchGraph = loadGraphFromData(graph as SerializedGraphData);
     const emitted = emitSearchIndex(searchGraph, { outDir });
     searchIndexNodeCount = emitted.index.docs.length;
+    searchIndex = emitted.index;
   } catch (err) {
     warn(
       `studio export: could not emit search-index.json (${err instanceof Error ? err.message : String(err)}); offline search will be unavailable.`,
@@ -462,6 +468,15 @@ export function buildStaticStudio(
         // background hydration needs zero network. Reuse the SAME scene object so
         // the inlined scene is byte-identical to scene.json (T5/C3b).
         const bundle: Record<string, unknown> = { "scene.json": scene };
+        // Inline the search index so the offline studio.html's Answer view runs
+        // the in-browser BM25 + PPR retrieval with zero network (the index is
+        // self-contained — postings + CSR adjacency + community membership — so
+        // it needs neither graph.json nor a server route). Inlined whenever the
+        // emit above succeeded, independent of --full-offline (the Answer view is
+        // a first-class offline surface, not background hydration).
+        if (searchIndex !== null) {
+          bundle["search-index.json"] = searchIndex;
+        }
         if (options.fullOffline) {
           bundle["graph.json"] = JSON.parse(graphRaw);
           bundle["entities.json"] = entities;
