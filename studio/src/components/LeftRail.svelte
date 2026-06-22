@@ -441,7 +441,7 @@
     {#if communityInfo.liveCount === 0}
       <p class="rail-empty">No communities.</p>
     {:else}
-      <ul class="rail-list">
+      <ul class="rail-list rail-comm-list">
         {#each communityInfo.live as c (c.key)}
           <li>
             <SelectableRow
@@ -475,7 +475,10 @@
                   ></span>
                 </span>
               {/snippet}
-              {c.key}
+              <!-- B2-UI-4: a long community label (e.g. "The Absence of Mr Glass")
+                   is ellipsised by the row content; the titled span carries the
+                   FULL text on hover so nothing is lost. -->
+              <span class="rail-comm-label" title={c.key}>{c.key}</span>
               {#snippet trailing()}
                 <Badge shape="circle" size="sm" tone="neutral">{c.count}</Badge>
               {/snippet}
@@ -629,9 +632,46 @@
   :global(.rail-list.st-selectableList) {
     gap: 1px;
   }
+  /* B2-UI-3 + B2-UI-4: DS typography alignment. The bare DS SelectableRow has NO
+     font-size of its own — it inherits the rail's base 1rem, which renders the
+     leaf Type / Community labels LARGER than the Domain/Sub-domain Collapsible
+     triggers (those use the `--sm` accordion token = 0.875rem / weight 500). We
+     normalise EVERY rail row to the SAME tokens the AppHeader's horizontal nav
+     menu uses — `.st-appHeader__nav` / `.st-appHeader__navLink`:
+       font-size: 0.875rem; font-weight: 500; line-height: 1.
+     The whole .rail inherits these so SelectableRow labels, Collapsible bodies and
+     leaf rows all match the nav scale; smaller token sizes (badges, kickers,
+     notes) keep their explicit sizes below. Pinning the font here ALSO shrinks
+     long Community labels enough to stop the overflow-x regression (paired with
+     the ellipsis on the row content below). */
+  .rail {
+    font-size: 0.875rem;
+    font-weight: 500;
+    line-height: 1;
+  }
+  /* B2-UI-4: ellipsis long labels (Community / Type / Domain) so they never
+     overflow the rail horizontally. The DS SelectableRow __content already
+     ellipsizes, but the standalone Community rows render their label as a direct
+     text child of __content — re-assert nowrap/ellipsis here so any wrapping
+     theme cannot let a long name (e.g. "The Absence of Mr Glass") push the rail
+     into horizontal scroll. The full text stays reachable via the row tooltip. */
+  .rail :global(.st-selectableRow__content) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
   /* Entity rows wrap the label in a titled span (hover tooltip = full id). The
      DS row content already ellipsizes; the span just carries the title. */
   .rail-ent-label {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* B2-UI-4: the Community label mirrors the entity label — block + ellipsis with
+     the FULL name in the hover tooltip (title). Stops the long-label overflow-x. */
+  .rail-comm-label {
     display: block;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -679,8 +719,33 @@
     color: var(--st-semantic-text-secondary, #475569);
     cursor: pointer;
   }
+  /* B2-UI-1/2/5 — uniform indentation.
+     The Domain → Sub-domain → Type tree is built from NESTED DS Collapsibles, each
+     wrapping its body in a `.st-collapsible__region` with its own 0.25rem inline
+     padding. Left unchecked those paddings stack UNEVENLY (region + checkbox +
+     gap), making L1 (Domain) over-indented and the L2→L3 (Sub-domain→Type) step
+     visibly larger than L0→L1.
+     Fix: neutralise the nested region's HORIZONTAL padding inside the tree and
+     drive indentation ourselves with ONE equal step per level (`--rail-indent`).
+     L1 (Domain) gets ZERO extra indent so its checkbox aligns with the "Ontology"
+     header's left edge (both at the region's 0.25rem origin); every deeper level
+     adds exactly `--rail-indent`, so L0→L1, L1→L2 and L2→L3 are identical. */
   .rail-onto-tree {
+    --rail-indent: 0.75rem;
     margin-top: 0.15rem;
+  }
+  /* Kill the nested Collapsible region's inline padding INSIDE the tree (keep the
+     bottom padding) so our per-level indent is the only horizontal offset. */
+  .rail-onto-tree :global(.st-collapsible__region) {
+    padding-left: 0;
+    padding-right: 0;
+  }
+  /* One equal indent step applied to each nested level's list. The Domain list
+     (rail-onto-tree itself) gets NONE → Domain checkbox aligns with the Ontology
+     header; the Sub-domain list and the Type/leaf list each add one step. */
+  .rail-onto-tree .rail-type-groups,
+  .rail-onto-tree .rail-list {
+    padding-left: var(--rail-indent);
   }
   /* B2 (§2): the leaf Type row puts its bare group-by checkbox FIRST (left),
      then the Type FILTER SelectableRow — two separate concerns on one line. */
@@ -753,6 +818,16 @@
     align-items: center;
     gap: 0.35rem;
   }
+  /* B2-UI-5: align the FIRST-LEVEL Community checkbox with the first-level Domain
+     checkbox. The Domain checkbox sits at the Ontology Collapsible region origin
+     (~0.25rem). The Community checkbox lives inside a DS SelectableRow whose own
+     0.75rem inline padding would push it ~0.75rem further right than the Domain
+     box. Drop that inline padding on the community rows so BOTH first-level
+     checkboxes share the same distance from the rail's left edge. */
+  .rail-comm-list :global(.st-selectableRow) {
+    padding-left: 0;
+    padding-right: 0.25rem;
+  }
   .rail-fold-bulk {
     display: flex;
     flex-wrap: wrap;
@@ -768,6 +843,21 @@
   .rail-fold-btn :global(.st-button) {
     display: inline-flex;
     align-items: center;
+  }
+  /* B2-UI-6: the DS Button has only sm/md/lg — there is NO `xs`. The bulk buttons
+     are already `size="sm"`, but in the dense rail that is still too big, so we
+     tighten the `sm` button down to an xs scale: a shorter control height, tighter
+     inline/block padding and the nav-aligned font (0.875rem → 0.78rem, matching
+     the smaller rail density). Applied to every bulk button — the ontology
+     "Group all to" trio, "Ungroup all", and the community Group all / Ungroup
+     all — via their shared rail wrappers. */
+  .rail-fold-bulk :global(.st-button),
+  .rail-fold-ungroup :global(.st-button) {
+    min-height: 1.6rem;
+    min-width: 0;
+    padding: 0.15rem 0.45rem;
+    font-size: 0.78rem;
+    line-height: 1.1;
   }
   .rail-fold-ungroup {
     margin-top: 0.3rem;
