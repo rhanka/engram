@@ -733,6 +733,10 @@
   .rail-onto-tree {
     --rail-indent: 0.75rem;
     margin-top: 0.15rem;
+    /* B2-UI-1: L1 (Domain) ALSO gets one indent step — its checkbox sits a step
+       to the RIGHT of the "Ontology" header (not flush), and L0→L1 = L1→L2 =
+       L2→L3 are all equal. Aligned with the Community first-level checkbox (UI-5). */
+    padding-left: var(--rail-indent);
   }
   /* Kill the nested Collapsible region's inline padding INSIDE the tree (keep the
      bottom padding) so our per-level indent is the only horizontal offset. */
@@ -818,12 +822,14 @@
     align-items: center;
     gap: 0.35rem;
   }
-  /* B2-UI-5: align the FIRST-LEVEL Community checkbox with the first-level Domain
-     checkbox. The Domain checkbox sits at the Ontology Collapsible region origin
-     (~0.25rem). The Community checkbox lives inside a DS SelectableRow whose own
-     0.75rem inline padding would push it ~0.75rem further right than the Domain
-     box. Drop that inline padding on the community rows so BOTH first-level
-     checkboxes share the same distance from the rail's left edge. */
+  /* B2-UI-1+5: align the FIRST-LEVEL Community checkbox with the first-level
+     Domain checkbox. The Domain checkbox now sits ONE indent step (0.75rem) to
+     the right of the "Ontology" header; the community list takes the SAME left
+     indent, and the DS SelectableRow's own inline padding is dropped, so BOTH
+     first-level checkboxes share the same distance from the rail's left edge. */
+  .rail-comm-list {
+    padding-left: 0.75rem;
+  }
   .rail-comm-list :global(.st-selectableRow) {
     padding-left: 0;
     padding-right: 0.25rem;
