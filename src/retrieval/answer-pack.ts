@@ -27,10 +27,52 @@
  */
 
 import { buildSeeds, fusedSeedVector, type FusedSeed, type SeedOptions } from "./query.js";
-import { personalizedPageRank, type PprOptions } from "./ppr.js";
+import { backgroundPageRank, personalizedPageRank, type PprOptions } from "./ppr.js";
 import type { CsrAdjacency, SearchIndex } from "../search-index.js";
 
 export const ANSWER_PACK_SCHEMA = "graphify_answer_pack_v1";
+
+/**
+ * Specificity (lift-over-background) re-rank — the expansion-ranking fix.
+ *
+ * Personalized PPR gives universally-central HUBS (the book, the intro chapter,
+ * "Sherlock Holmes", "Dr. Watson") high mass for EVERY query, drowning the
+ * query-specific answer ("Jefferson Hope" for the murderer question). The remedy
+ * is to rank the neighborhood by how much each node LIFTS over its query-agnostic
+ * background centrality, not by raw personalized mass:
+ *
+ *   specificity(node) = ppr_personalized(node) / (ppr_background(node) + eps)
+ *
+ * where `ppr_background` is the uniform-teleport PageRank (computed once per index,
+ * {@link backgroundPageRank}) and `eps = SPECIFICITY_BACKGROUND_PRIOR / N` is a
+ * uniform background prior (the mass a node would carry under no structure at
+ * all). The prior is essential: a bare ratio explodes on near-disconnected leaf
+ * nodes (tiny background → huge ratio), so it is smoothed by the uniform floor —
+ * empirically (mystery graph) the bare ratio ranks obscure degree-1 nodes top
+ * while the smoothed ratio surfaces the actual answer in the top ~3 and demotes
+ * the hubs.
+ *
+ * This is an ADDITIVE re-rank WITHIN the C5a pipeline: the personalized PPR (and
+ * its `ppr` field in the pack) is unchanged in its math; we add a background
+ * channel and sort the neighborhood by the lift. `SPECIFICITY_BACKGROUND_PRIOR`
+ * is the only new knob (default 1 = exactly one unit of uniform mass), forwarded
+ * via {@link AnswerPackOptions.specificityPrior}.
+ */
+export const SPECIFICITY_BACKGROUND_PRIOR = 1;
+
+/**
+ * Structural/document node types (chapters, works, sections) are graph hubs that
+ * absorb PPR mass but are NOT the answer to a "who/what" question. After the
+ * specificity re-rank they would still crowd the top (a chapter is genuinely
+ * lift-relevant to its own content), so demote them by this factor — the final
+ * rank is `specificity × (structural ? demotion : 1)`, which surfaces the
+ * query-specific ENTITIES (people, evidence, schemes). Type-less graphs (code
+ * graphs carry no node `type`) get weight 1 → no demotion.
+ */
+export const DEFAULT_STRUCTURAL_DEMOTION = 0.2;
+
+/** Node types treated as structural/document containers (case-insensitive). */
+export const STRUCTURAL_TYPE_RX = /chapter|story|reprint|\bwork\b|document|\bbook\b|section|\bpage\b/i;
 
 export type AnswerMode = "offline" | "online" | "agent";
 
@@ -54,7 +96,17 @@ export interface PackGrounding {
 export interface PackNeighbor {
   node_id: string;
   label: string;
+  /** The node's ontology type where present (e.g. "Character"); drives the structural demotion. */
+  type?: string;
+  /** Query-personalized PPR mass (the HippoRAG expansion score). Unchanged math. */
   ppr: number;
+  /**
+   * Specificity = ppr / (background_ppr + eps): lift over query-agnostic
+   * centrality. This is the value the neighborhood is RANKED by, so hubs (high
+   * background) are demoted and seed-specific nodes surface. See
+   * {@link SPECIFICITY_BACKGROUND_PRIOR}.
+   */
+  specificity: number;
   community: number;
   description?: string;
   grounding?: PackGrounding[];
@@ -103,6 +155,19 @@ export interface AnswerPackOptions extends SeedOptions {
   mode?: AnswerMode;
   /** PPR knobs (alpha/tolerance/maxIterations/lazy) — forwarded to the expander. */
   ppr?: PprOptions;
+  /**
+   * Specificity background prior `c` in `eps = c/N` for the lift-over-background
+   * re-rank (default {@link SPECIFICITY_BACKGROUND_PRIOR}). Larger `c` smooths the
+   * lift more (less leaf-explosion, hubs demoted less aggressively); `0` recovers
+   * the bare ratio (which over-rewards near-disconnected leaves — not recommended).
+   */
+  specificityPrior?: number;
+  /**
+   * Demotion factor for structural/document node types (default
+   * {@link DEFAULT_STRUCTURAL_DEMOTION}). `1` disables it (rank by pure
+   * specificity); smaller pushes chapters/works further down.
+   */
+  structuralDemotion?: number;
   /** Max neighborhood entries returned (default 20). */
   neighborhoodSize?: number;
   /** Max connecting paths returned (default 8). */
@@ -199,17 +264,39 @@ export function assembleAnswerPack(
   const pprOptions: PprOptions = options.ppr ?? {};
   const ppr = personalizedPageRank(index.adjacency, N, teleport, pprOptions);
 
-  // ---- C5a step 4: final expansion rank = PPR + community-guided traversal ----
-  // Rank all nodes by PPR desc, docId asc (deterministic). Drop zero-mass nodes
-  // (unreachable from the seeds) so the neighborhood is the seeded sub-graph.
-  // When refused (no lexical seed), there is nothing to expand: PPR would fall
-  // back to UNIFORM mass over every node, which is NOT a seeded neighborhood — so
-  // the refused pack carries an empty neighborhood/paths and leaves synthesis to
-  // the host (it still reports the PPR run that proved no seed mass).
+  // ---- Specificity channel: background (uniform-teleport) PageRank ----
+  // Query-AGNOSTIC global centrality, computed with the SAME power iteration and
+  // the SAME PPR knobs (so background and personalized are on one scale). It is
+  // the denominator of the lift re-rank below. (Computed unconditionally — cheap,
+  // deterministic, query-independent; only used when not refused.)
+  const background = backgroundPageRank(index.adjacency, N, pprOptions);
+  const specificityPrior = options.specificityPrior ?? SPECIFICITY_BACKGROUND_PRIOR;
+  const eps = N > 0 ? specificityPrior / N : 1; // uniform background prior
+  const specificity = (d: number): number => ppr.scores[d]! / (background.scores[d]! + eps);
+
+  // Demote structural/document types (chapters, works) so query-specific entities
+  // top the rank; type-less graphs get weight 1 (no demotion).
+  const structuralDemotion = options.structuralDemotion ?? DEFAULT_STRUCTURAL_DEMOTION;
+  const typeWeight = (d: number): number => {
+    const t = index.docs[d]!.type;
+    return t !== undefined && STRUCTURAL_TYPE_RX.test(t) ? structuralDemotion : 1;
+  };
+  const rankScore = (d: number): number => specificity(d) * typeWeight(d);
+
+  // ---- C5a step 4: final expansion rank = SPECIFICITY (lift over background) ----
+  // Rank all reachable nodes by specificity desc, docId asc (deterministic). Raw
+  // personalized PPR puts universally-central hubs on top for every query; ranking
+  // by lift-over-background demotes them and surfaces the query-specific answer.
+  // Drop zero-(personalized-)mass nodes (unreachable from the seeds) so the
+  // neighborhood is the seeded sub-graph. When refused (no lexical seed), there is
+  // nothing to expand: PPR would fall back to UNIFORM mass over every node, which
+  // is NOT a seeded neighborhood — so the refused pack carries an empty
+  // neighborhood/paths and leaves synthesis to the host (it still reports the PPR
+  // run that proved no seed mass).
   const ranked: number[] = [];
   if (!refused) {
     for (let i = 0; i < N; i++) if (ppr.scores[i]! > 0) ranked.push(i);
-    ranked.sort((a, b) => ppr.scores[b]! - ppr.scores[a]! || a - b);
+    ranked.sort((a, b) => rankScore(b) - rankScore(a) || a - b);
   }
   const top = ranked.slice(0, neighborhoodSize);
 
@@ -219,8 +306,10 @@ export function assembleAnswerPack(
       node_id: doc.nodeId,
       label: doc.label,
       ppr: ppr.scores[d]!,
+      specificity: specificity(d),
       community: doc.community,
     };
+    if (doc.type !== undefined) entry.type = doc.type;
     if (doc.description !== undefined) entry.description = doc.description;
     // Ground: attach the verbatim quote where present; label+description only
     // otherwise (graceful degradation, the code-graph case — INV-6). The

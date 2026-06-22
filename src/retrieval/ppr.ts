@@ -78,6 +78,27 @@ export interface PprResult {
 }
 
 /**
+ * Background (global-centrality) PageRank — the SAME power iteration with a
+ * UNIFORM personalization vector (1/N teleport, the `teleport.size === 0`
+ * branch of {@link personalizedPageRank}). It depends only on the graph
+ * topology, NOT on the query, so it is computed ONCE per index and reused for
+ * every question as the specificity denominator (lift-over-background re-rank,
+ * see answer-pack.ts). Universally-central hubs score high HERE; that high
+ * background is what divides them down in the specificity ranking.
+ *
+ * This adds a SECOND PageRank channel (background) alongside the existing
+ * query-personalized one; the personalized PPR math is untouched.
+ */
+export function backgroundPageRank(
+  adjacency: CsrAdjacency,
+  N: number,
+  options: PprOptions = {},
+): PprResult {
+  // Empty teleport → uniform 1/N personalization (ordinary PageRank).
+  return personalizedPageRank(adjacency, N, new Map(), options);
+}
+
+/**
  * Run Personalized PageRank over a CSR adjacency.
  *
  * @param adjacency self-carried CSR (node_ptr / neighbors / edge_weights), C3a.

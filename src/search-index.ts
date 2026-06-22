@@ -20,6 +20,13 @@ export const SEARCH_INDEX_SCHEMA = "graphify_search_index_v1";
 export interface SearchIndexDoc {
   nodeId: string;
   label: string;
+  /**
+   * The node's ontology type (e.g. "Character", "ChapterOrStory"), where the
+   * graph carries one. The answer-pack demotes structural/document types
+   * (chapters, works) so query-specific ENTITIES surface. Absent on type-less
+   * graphs (e.g. code graphs) — then no demotion applies.
+   */
+  type?: string;
   description?: string;
   /**
    * The verbatim grounding span, stored INLINE (Open Decision 2 default = inline;
