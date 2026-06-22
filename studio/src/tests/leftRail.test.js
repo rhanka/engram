@@ -14,7 +14,7 @@ const railSource = readFileSync(
 );
 const appSource = readFileSync(resolve(process.cwd(), "src/App.svelte"), "utf8");
 
-describe("LeftRail — T13 F2 visible-UI lock (group-by replaces the checkbox)", () => {
+describe("LeftRail — T13 F2 visible-UI lock (PER-ITEM group-by checkboxes)", () => {
   it("NO 'Show ontology classes' checkbox remains (input nor label text)", () => {
     expect(railSource).not.toMatch(/Show ontology classes/i);
     // The pre-B2 checkbox handler / props are gone from the LeftRail ↔ App wiring.
@@ -24,49 +24,63 @@ describe("LeftRail — T13 F2 visible-UI lock (group-by replaces the checkbox)",
     expect(appSource).not.toMatch(/onToggleOntologyClasses=/);
   });
 
-  it("the group-by axis control appears under Options with a 3-way None/Community/Ontology selector", () => {
-    expect(railSource).toMatch(/<Collapsible title="Options"/);
-    expect(railSource).toMatch(/<Collapsible title="Group by"/);
-    expect(railSource).toMatch(/role="radiogroup"[\s\S]*aria-label="Group-by axis"/);
-    // The three axis buttons.
-    expect(railSource).toMatch(/onSetAxis\?\.\("none"\)/);
-    expect(railSource).toMatch(/onSetAxis\?\.\("community"\)/);
-    expect(railSource).toMatch(/onSetAxis\?\.\("ontology"\)/);
+  it("the OLD axis selector + per-axis fold sub-menu are fully removed", () => {
+    // No "Group by" axis sub-menu, no axis radiogroup, no axis handlers/props.
+    expect(railSource).not.toMatch(/<Collapsible title="Group by"/);
+    expect(railSource).not.toMatch(/aria-label="Group-by axis"/);
+    expect(railSource).not.toMatch(/onSetAxis/);
+    expect(railSource).not.toMatch(/onToggleCollapse/);
+    expect(railSource).not.toMatch(/onExpandAll/);
+    expect(railSource).not.toMatch(/availableAxes/);
+    expect(railSource).not.toMatch(/showCommunityAxis|showOntologyAxis/);
+    expect(railSource).not.toMatch(/groupBy\.axis/);
+    // …and the App no longer wires any axis prop/derivation either.
+    expect(appSource).not.toMatch(/availableAxes/);
+    expect(appSource).not.toMatch(/onSetAxis/);
+    expect(appSource).not.toMatch(/onToggleCollapse/);
+    expect(appSource).not.toMatch(/setGroupAxis/);
   });
 
-  it("absent axes are OMITTED from the picker (driven by availableAxes, not hard-coded)", () => {
-    // Community / Ontology buttons are gated on availability flags derived from
-    // the availableAxes prop — not always rendered.
-    expect(railSource).toMatch(/showCommunityAxis = \$derived\(axisAvailable\.has\("community"\)\)/);
-    expect(railSource).toMatch(/showOntologyAxis = \$derived\(axisAvailable\.has\("ontology"\)\)/);
-    expect(railSource).toMatch(/{#if showCommunityAxis}/);
-    expect(railSource).toMatch(/{#if showOntologyAxis}/);
-    // App computes availableAxes from artifact presence + liveCount and passes it.
-    expect(appSource).toMatch(/availableAxes = \$derived\(\[/);
-    expect(appSource).toMatch(/communityInfo\.liveCount > 0 \? \["community"\]/);
-    expect(appSource).toMatch(/classHierarchies\?\.hierarchies \? \["ontology"\]/);
-    expect(appSource).toMatch(/<LeftRail[\s\S]*\{availableAxes\}/);
+  it("each groupable Ontology CLASS node owns a per-item group-by checkbox", () => {
+    // Domain + Sub-domain class headers each carry a checkbox → onToggleGroupOntology.
+    expect(railSource).toMatch(/class="rail-group-check"/);
+    expect(railSource).toMatch(/onToggleGroupOntology\?\.\(domain\.id\)/);
+    expect(railSource).toMatch(/onToggleGroupOntology\?\.\(sub\.id\)/);
+    // The checked state reflects membership in the grouped SET (per-item).
+    expect(railSource).toMatch(/checked=\{ontologyGrouped\.has\(domain\.id\)\}/);
+    expect(railSource).toMatch(/checked=\{ontologyGrouped\.has\(sub\.id\)\}/);
+    // App passes the per-item callbacks + availability flags (NOT availableAxes).
+    expect(appSource).toMatch(/onToggleGroupOntology=\{handleToggleGroupOntology\}/);
+    expect(appSource).toMatch(/onToggleGroupCommunity=\{handleToggleGroupCommunity\}/);
+    expect(appSource).toMatch(/\{canGroupOntology\}/);
+    expect(appSource).toMatch(/\{canGroupCommunity\}/);
   });
 
-  it("the ontology fold tree uses fold pills/glyphs, NOT selectable rows (Two-Concepts)", () => {
-    // Group-by renders fold pills + state glyphs.
-    expect(railSource).toMatch(/class="rail-fold-pill"/);
-    expect(railSource).toMatch(/onToggleCollapse\?\.\(/);
-    // Bulk baseline buttons (F8): Domain / Sub-domain / Type.
+  it("each Community row owns a per-item group-by checkbox (separate from its select)", () => {
+    expect(railSource).toMatch(/onToggleGroupCommunity\?\.\(c\.key\)/);
+    expect(railSource).toMatch(/checked=\{communityGrouped\.has\(c\.key\)\}/);
+  });
+
+  it("the bulk baseline + ungroup-all controls drive the grouped set (F8)", () => {
+    // Bulk baseline buttons (F8): Domain / Sub-domain / Type → onFoldToLevel.
     expect(railSource).toMatch(/onFoldToLevel\?\.\(0\)/);
     expect(railSource).toMatch(/onFoldToLevel\?\.\(1\)/);
     expect(railSource).toMatch(/onFoldToLevel\?\.\(2\)/);
-    // Leaf Type rows are read-only in v1 (no fold pill on the leaf class label).
-    expect(railSource).toMatch(/rail-fold-leaf/);
+    // The ungroup-all reset clears the whole grouped set.
+    expect(railSource).toMatch(/onClearGrouping\?\.\(/);
+    expect(appSource).toMatch(/onFoldToLevel=\{handleFoldToLevel\}/);
+    expect(appSource).toMatch(/onClearGrouping=\{handleClearGrouping\}/);
   });
 
-  it("the Ontology FILTER facet stays separate (selectable rows + shape glyphs, own toggle)", () => {
-    // The Ontology accordion (taxonomy facet) still renders SelectableRow + TypeShapeGlyph + onToggleType.
+  it("the Ontology FILTER facet stays SEPARATE from the group-by checkboxes", () => {
+    // The Ontology accordion (taxonomy facet) renders SelectableRow + TypeShapeGlyph
+    // + onToggleType — the FILTER concern, distinct from the group-by checkbox.
     expect(railSource).toMatch(/<Collapsible title="Ontology"/);
     expect(railSource).toMatch(/<TypeShapeGlyph type=\{t\.key\}/);
     expect(railSource).toMatch(/onselect=\{\(\) => onToggleType\?\.\(t\.key\)\}/);
-    // Group-by toggles call onToggleCollapse, never onToggleType — and vice-versa.
-    expect(railSource).not.toMatch(/onToggleType\?\.\([^)]*\)[\s\S]{0,40}rail-fold-pill/);
+    // The group-by checkbox calls onToggleGroupOntology, NEVER onToggleType —
+    // grouping a class is not selecting/filtering it.
+    expect(railSource).not.toMatch(/onToggleType\?\.\([^)]*\)[\s\S]{0,40}rail-group-check/);
   });
 });
 

@@ -3,102 +3,99 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  createDefaultViewerState,
   normalizeViewerState,
-  normalizeGroupAxisAvailability,
-  setGroupAxis,
+  clearSelection,
+  toggleGroupOntology,
+  toggleGroupCommunity,
+  toggleEntity,
+  splitGroupedKeys,
+  groupKeyForOntology,
 } from "../lib/viewerState.js";
 
 const appSource = readFileSync(resolve(process.cwd(), "src/App.svelte"), "utf8");
 
 /**
- * B2 regression: an active Ontology group-by axis must SURVIVE a model switch in
- * a multi-model bundle when the new model exposes the same taxonomy.
- *
- * The bug: handleSelectModel() nulled `classHierarchies` synchronously BEFORE the
- * new model's taxonomy landed. While null, the derived `availableAxes` drops
- * "ontology" and the availability $effect (normalizeGroupAxisAvailability)
- * downgrades groupBy.axis "ontology" → "none". The re-fetched taxonomy re-enables
- * the axis, but nothing restored it — so the active grouping silently vanished
- * (the per-axis collapse set survived in viewerState, but the axis was lost so
- * nothing folded).
- *
- * The fix captures the intended axis before the switch and re-asserts it once the
- * artifact lands IF the new model supports it again.
+ * B2 regression (per-item grouped set): an active group-by must SURVIVE a model
+ * switch. In the per-item model the grouped SET lives in
+ * `viewerState.options.groupBy.grouped`; a model switch only clears the
+ * SELECTION/focus (clearSelection), never the grouping. So unlike the old
+ * axis-scoped model — where `classHierarchies = null` transiently downgraded the
+ * axis to "none" and the grouping silently vanished — there is no axis to lose:
+ * the grouped keys persist verbatim. The App still re-fetches the per-model
+ * taxonomy eagerly (loadActiveModel) so grouped ONTOLOGY keys re-apply against the
+ * new model's class ids.
  */
-describe("model switch — group-by axis survives (B2 regression)", () => {
-  // Model the App's `availableAxes` derivation for the ontology axis: it is
-  // present iff the class-hierarchies artifact is loaded. (Community stays atomic
-  // with the graph swap and is exercised separately.)
-  const availableAxesFor = ({ ontologyLoaded }) => [
-    "none",
-    ...(ontologyLoaded ? ["ontology"] : []),
-  ];
+describe("model switch — grouped set survives (B2 per-item regression)", () => {
+  it("clearSelection (run on every model switch) leaves the grouped set untouched", () => {
+    // User has BOTH an ontology class and a community grouped, plus a selection.
+    let state = createDefaultViewerState();
+    state = toggleGroupOntology(state, "class:People");
+    state = toggleGroupCommunity(state, "Baker Street");
+    state = toggleEntity(state, "holmes"); // a live selection + focus
 
-  it("downgrade-then-restore: an active ontology axis is reasserted once the new model's taxonomy lands", () => {
-    // User has Ontology grouping active with a fold in place (F3 collapse set).
+    expect(state.selection.entities).toEqual(["holmes"]);
+    expect(state.focusId).toBe("holmes");
+
+    // The model switch clears the selection/focus (ids don't carry across models)…
+    const switched = clearSelection(state);
+    expect(switched.selection.entities).toEqual([]);
+    expect(switched.focusId).toBeNull();
+
+    // …but the grouped SET is preserved verbatim (grouping is model-agnostic).
+    const { ontologyClassIds, communityKeys } = splitGroupedKeys(
+      switched.options.groupBy.grouped,
+    );
+    expect(ontologyClassIds).toEqual(["class:People"]);
+    expect(communityKeys).toEqual(["Baker Street"]);
+  });
+
+  it("a grouped ontology key re-applies once the new model's taxonomy lands (same class id)", () => {
+    // Persisted grouped set referencing a class id the new model also provides.
     let state = normalizeViewerState({
-      options: {
-        groupBy: {
-          axis: "ontology",
-          ontology: { collapsedClassIds: ["class:People"] },
-        },
-      },
+      options: { groupBy: { grouped: [groupKeyForOntology("class:People")] } },
     });
-    expect(state.options.groupBy.axis).toBe("ontology");
-
-    // The handler captures the intended axis BEFORE dropping per-model artifacts.
-    const intendedAxis = state.options.groupBy.axis;
-
-    // --- model switch in flight: classHierarchies = null --------------------
-    // availableAxes drops "ontology"; the availability $effect downgrades the axis.
-    state = normalizeGroupAxisAvailability(state, availableAxesFor({ ontologyLoaded: false }));
-    expect(state.options.groupBy.axis).toBe("none"); // the transient downgrade
-    // The per-axis collapse set is RETAINED across the downgrade (F3 survives).
-    expect(state.options.groupBy.ontology.collapsedClassIds).toEqual(["class:People"]);
-
-    // --- new model's taxonomy lands: classHierarchies set again -------------
-    const availableAxes = availableAxesFor({ ontologyLoaded: true });
-    // The fix re-asserts the intended axis when it is available again.
-    if (intendedAxis !== state.options.groupBy.axis && availableAxes.includes(intendedAxis)) {
-      state = setGroupAxis(state, intendedAxis);
-    }
-
-    // Restored: the active grouping (axis + its fold) is back.
-    expect(state.options.groupBy.axis).toBe("ontology");
-    expect(state.options.groupBy.ontology.collapsedClassIds).toEqual(["class:People"]);
+    // Switch in flight: clearSelection runs; the grouped key is unaffected.
+    state = clearSelection(state);
+    // Once the new model's taxonomy (with class:People) is fetched, the SAME
+    // ontology grouped key folds again — nothing had to be "reasserted".
+    expect(splitGroupedKeys(state.options.groupBy.grouped).ontologyClassIds).toEqual([
+      "class:People",
+    ]);
   });
 
-  it("does NOT restore an axis the new model genuinely lacks (no taxonomy)", () => {
-    let state = normalizeViewerState({ options: { groupBy: { axis: "ontology" } } });
-    const intendedAxis = state.options.groupBy.axis;
-
-    // Switch into a model WITHOUT a class-hierarchies artifact: ontology stays
-    // unavailable even after the load settles.
-    const availableAxes = availableAxesFor({ ontologyLoaded: false });
-    state = normalizeGroupAxisAvailability(state, availableAxes);
-    if (intendedAxis !== state.options.groupBy.axis && availableAxes.includes(intendedAxis)) {
-      state = setGroupAxis(state, intendedAxis);
-    }
-    // Correctly stays "none" — the restore is gated on real availability.
-    expect(state.options.groupBy.axis).toBe("none");
+  it("a grouped key for a class the new model LACKS simply contributes no fold (engine ignores it)", () => {
+    // Per the App's groupedGraph wiring, an ontology grouped key whose class id is
+    // absent from the new taxonomy yields no collapse target — it neither errors
+    // nor is silently dropped from the persisted set. Here we assert it is retained
+    // (so a switch BACK to a model that has it re-folds).
+    let state = normalizeViewerState({
+      options: { groupBy: { grouped: [groupKeyForOntology("class:ModelOnlyClass")] } },
+    });
+    state = clearSelection(state);
+    expect(state.options.groupBy.grouped).toEqual([groupKeyForOntology("class:ModelOnlyClass")]);
   });
 
-  it("handleSelectModel captures the intended axis and re-asserts it after the artifact lands", () => {
+  it("handleSelectModel preserves the grouped set + re-fetches the taxonomy (source guard)", () => {
     // Source assertion (jsdom can't mount the GraphCanvas-bearing App tree — same
-    // convention as appHeader/leftRail tests). This step is ABSENT in the buggy
-    // version, so this guards against the regression returning.
+    // convention as appHeader/leftRail tests). Guards the regression from returning.
     const handler =
       appSource.match(/async function handleSelectModel\([\s\S]*?\n  }\n/)?.[0] ?? "";
     expect(handler).not.toBe("");
 
-    // Captures the axis BEFORE dropping per-model artifacts (classHierarchies=null).
+    // The switch captures whether any ONTOLOGY item was grouped BEFORE dropping the
+    // per-model taxonomy artifact (classHierarchies=null).
     expect(handler).toMatch(
-      /const intendedAxis = viewerState\.options\.groupBy\.axis;[\s\S]*classHierarchies = null;/,
+      /splitGroupedKeys\([\s\S]*?\)\.ontologyClassIds\.length > 0;[\s\S]*classHierarchies = null;/,
     );
-    // Re-asserts the intended axis after loadActiveModel(), gated on availability.
+    // It clears only the SELECTION (never the grouped set).
+    expect(handler).toMatch(/viewerState = clearSelection\(viewerState\)/);
+    // And it re-fetches the taxonomy after loadActiveModel() so grouped ontology
+    // keys re-apply against the new model's class ids.
     expect(handler).toMatch(/await loadActiveModel\(\);/);
-    expect(handler).toMatch(
-      /availableAxes\.includes\(intendedAxis\)[\s\S]*viewerState = setGroupAxis\(viewerState, intendedAxis\)/,
-    );
+    expect(handler).toMatch(/hadOntologyGroup[\s\S]*await ensureClassHierarchies\(\)/);
+    // The old axis-restore machinery is GONE.
+    expect(handler).not.toMatch(/setGroupAxis/);
+    expect(handler).not.toMatch(/normalizeGroupAxisAvailability/);
   });
 });
