@@ -232,7 +232,7 @@
     </span>
   </div>
 
-  <Collapsible title="Types" open={false}>
+  <Collapsible title="Ontology" open={false}>
     {#snippet trailing()}
       <Badge shape="circle" size="sm" tone="neutral">{typeList.length}</Badge>
     {/snippet}
@@ -284,7 +284,7 @@
     {:else}
       <SelectableList
         class="rail-list"
-        label="Types"
+        label="Ontology"
         multiple
         value={selection.types}
         onchange={(next) => onListChange(selection.types, next, onToggleType)}

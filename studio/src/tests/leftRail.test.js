@@ -60,9 +60,9 @@ describe("LeftRail — T13 F2 visible-UI lock (group-by replaces the checkbox)",
     expect(railSource).toMatch(/rail-fold-leaf/);
   });
 
-  it("the Types FILTER facet stays separate (selectable rows + shape glyphs, own toggle)", () => {
-    // The Types accordion still renders SelectableRow + TypeShapeGlyph + onToggleType.
-    expect(railSource).toMatch(/<Collapsible title="Types"/);
+  it("the Ontology FILTER facet stays separate (selectable rows + shape glyphs, own toggle)", () => {
+    // The Ontology accordion (taxonomy facet) still renders SelectableRow + TypeShapeGlyph + onToggleType.
+    expect(railSource).toMatch(/<Collapsible title="Ontology"/);
     expect(railSource).toMatch(/<TypeShapeGlyph type=\{t\.key\}/);
     expect(railSource).toMatch(/onselect=\{\(\) => onToggleType\?\.\(t\.key\)\}/);
     // Group-by toggles call onToggleCollapse, never onToggleType — and vice-versa.
