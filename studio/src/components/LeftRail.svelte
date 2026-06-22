@@ -203,7 +203,7 @@
     </span>
   </div>
 
-  <Collapsible title="Ontology" open={false}>
+  <Collapsible title="Ontology" open={true}>
     {#snippet trailing()}
       <Badge shape="circle" size="sm" tone="neutral">{typeList.length}</Badge>
     {/snippet}
@@ -211,8 +211,8 @@
       <p class="rail-empty">No types.</p>
     {:else if typeTree}
       <!-- EVOL: nested Domain → Sub-domain → Type accordions (taxonomy-driven).
-           B2 (per-item): each Ontology CLASS node (Domain + Sub-domain) carries a
-           hover-revealed GROUP-BY checkbox in its header. Checking it GROUPS
+           B2 (per-item): each Ontology CLASS node (Domain + Sub-domain) carries an
+           always-visible GROUP-BY checkbox in its header. Checking it GROUPS
            (collapses) that class; the FILTER facet (leaf Type SelectableRows →
            onToggleType) stays a SEPARATE concern. -->
       <ul class="rail-type-groups rail-onto-tree" aria-label="Ontology classes">
@@ -327,7 +327,7 @@
     {/if}
   </Collapsible>
 
-  <Collapsible title="Communities" open={false}>
+  <Collapsible title="Communities" open={true}>
     {#snippet trailing()}
       <Badge shape="circle" size="sm" tone="neutral">{communityInfo.liveCount}</Badge>
     {/snippet}
@@ -353,7 +353,7 @@
               {#snippet trailing()}
                 <span class="rail-onto-trailing">
                   <Badge shape="circle" size="sm" tone="neutral">{c.count}</Badge>
-                  <!-- B2 (per-item): hover-revealed GROUP-BY checkbox. Checking it
+                  <!-- B2 (per-item): always-visible GROUP-BY checkbox. Checking it
                        GROUPS (collapses) the community; the row's own SELECT
                        (onToggleCommunity, filter) stays a separate concern. -->
                   <label
@@ -567,16 +567,16 @@
   .rail-onto-tree {
     margin-top: 0.15rem;
   }
-  /* B2 (per-item): the per-item GROUP-BY checkbox affordance. The "group" hint
-     label is hidden until the row is hovered (or the box is already checked), so
-     the rail stays calm; a checked box keeps the affordance visible as feedback. */
+  /* B2 (per-item): the per-item GROUP-BY checkbox affordance. The checkbox is
+     ALWAYS visible to the left of/inline with each groupable row so the feature
+     is discoverable at rest; hover/focus/checked only ENHANCES the "group" hint
+     text (it is never the only way to see the box). */
   .rail-group-check {
     display: inline-flex;
     align-items: center;
     gap: 0.2rem;
     cursor: pointer;
-    opacity: 0;
-    transition: opacity 0.12s ease;
+    opacity: 1;
   }
   .rail-group-check input {
     margin: 0;
@@ -587,17 +587,20 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--st-semantic-text-muted, #64748b);
+    opacity: 0.55;
+    transition: opacity 0.12s ease, color 0.12s ease;
   }
-  /* Reveal on hover of the enclosing row, on keyboard focus, or when checked. */
-  :global(.st-collapsible__header:hover) .rail-group-check,
-  :global(.st-selectableRow:hover) .rail-group-check,
-  .rail-group-check:focus-within,
-  .rail-group-check--on {
+  /* Subtle hover/focus enhancement: bring the "group" hint forward. The checkbox
+     itself stays visible at rest, so this is additive affordance only. */
+  :global(.st-collapsible__header:hover) .rail-group-check .rail-group-hint,
+  :global(.st-selectableRow:hover) .rail-group-check .rail-group-hint,
+  .rail-group-check:focus-within .rail-group-hint {
     opacity: 1;
   }
   .rail-group-check--on .rail-group-hint {
     color: var(--st-semantic-action-primary, #2563eb);
     font-weight: 600;
+    opacity: 1;
   }
   .rail-fold-bulk {
     display: flex;
