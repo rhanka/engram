@@ -50,6 +50,15 @@ const CLASS_ID_PREFIX = "class:";
 const COMMUNITY_ID_PREFIX = "community-node:";
 
 /**
+ * Type synthetic-node id namespace prefix (B2 — Type-level group-by). The Type
+ * LEVEL of the ontology taxonomy is the entity `type` itself; the artifact has no
+ * per-type CLASS node, so grouping a Type folds every entity sharing that `type`
+ * into one synthetic type node — the single-level, community-like collapse.
+ * Distinct from `class:` and `community-node:` so the three never collide.
+ */
+const TYPE_ID_PREFIX = "type-node:";
+
+/**
  * Mint the reserved synthetic id for a community fold node from its key
  * (Amendment A2). The id is namespaced so it cannot be confused with a class id;
  * collision against a REAL node id is the caller's concern (see
@@ -676,6 +685,155 @@ export function injectCommunityNodes(
       relation: "has_member",
       structural: true,
       community_edge_kind: "membership",
+    });
+  }
+
+  return {
+    nodes: [...baseNodes, ...addedNodes],
+    links: [...baseEdges, ...addedEdges],
+    idByKey: ids,
+  };
+}
+
+/* ===========================================================================
+ * B2 — TYPE group-by axis: the leaf "Type" level, single-level collapse.
+ *
+ * The ontology taxonomy's leaf classes carry `member_node_types` (raw entity
+ * `type` strings like "Character"). Those Types are the rail's deepest rows but
+ * have NO per-type CLASS node in the artifact, so a grouped Type folds every
+ * entity whose `type` equals it into one synthetic type node — exactly the
+ * community pattern (a synthetic fold node + a one-hop entity parent map). The
+ * studio passes `typeOf` (entity -> its `type`) IN so this module needs no
+ * graphAdapter import (mirrors the community axis).
+ * ======================================================================== */
+
+/** Mint the reserved synthetic id for a Type fold node from its `type` value. */
+export function typeNodeId(typeName) {
+  return `${TYPE_ID_PREFIX}${typeName}`;
+}
+
+/**
+ * Collision-safe synthetic ids for grouped Type values (mirrors
+ * `mintCommunityNodeIds`): a real node literally equal to `type-node:<T>` is never
+ * clobbered/re-endpointed onto.
+ *
+ * @param {Iterable<string>} typeNames  the grouped type values to mint ids for.
+ * @param {Set<string>} existingIds     every id already present in the graph.
+ * @returns {Map<string,string>} type value -> chosen collision-free node id.
+ */
+export function mintTypeNodeIds(typeNames, existingIds) {
+  const idByKey = new Map();
+  const taken = new Set(existingIds);
+  for (const name of typeNames) {
+    if (typeof name !== "string" || name.length === 0 || idByKey.has(name)) continue;
+    let id = typeNodeId(name);
+    let salt = 1;
+    while (taken.has(id)) {
+      id = `${typeNodeId(name)}#${salt}`;
+      salt += 1;
+    }
+    taken.add(id);
+    idByKey.set(name, id);
+  }
+  return idByKey;
+}
+
+/**
+ * Build the Type parent index for `applyGroupCollapse`. Each entity whose `type`
+ * is a grouped (live) type gets its synthetic type fold node as its parent; the
+ * fold node has no parent and an EMPTY descendant set (single-level, members fold
+ * via the entity leg only — like community).
+ *
+ * @param {{ nodes?: object[] }} graph
+ * @param {object} index
+ * @param {(node:object)=>string|null} index.typeOf  entity -> its `type` value.
+ * @param {Iterable<string>} index.typeNames         the grouped type values.
+ * @param {Map<string,string>} [index.idByKey]       value -> synthetic node id.
+ * @returns {{ parentById: Map<string,string|null>,
+ *             descendantsByTarget: Map<string,Set<string>>,
+ *             idByKey: Map<string,string>,
+ *             collapseTargetByKey: (name:string)=>string|undefined }}
+ */
+export function buildTypeParentIndex(graph, { typeOf, typeNames, idByKey } = {}) {
+  const baseNodes = graphNodeList(graph);
+  const live = new Set(
+    [...(typeNames ?? [])].filter((k) => typeof k === "string" && k.length > 0),
+  );
+  const ids =
+    idByKey instanceof Map ? idByKey : mintTypeNodeIds(live, new Set(baseNodes.map((n) => n.id)));
+
+  const parentById = new Map();
+  for (const node of baseNodes) {
+    const id = node?.id;
+    if (typeof id !== "string") continue;
+    const name = typeOf?.(node);
+    if (typeof name !== "string" || !live.has(name)) continue;
+    const targetId = ids.get(name);
+    if (typeof targetId === "string") parentById.set(id, targetId);
+  }
+  const descendantsByTarget = new Map();
+  for (const targetId of ids.values()) descendantsByTarget.set(targetId, new Set());
+
+  return {
+    parentById,
+    descendantsByTarget,
+    idByKey: ids,
+    collapseTargetByKey: (name) => ids.get(name),
+  };
+}
+
+/**
+ * Inject one synthetic Type fold node per grouped `type` value + its `has_member`
+ * structural edges (mirrors `injectCommunityNodes`). The node carries
+ * `type_node_kind: "type"` + the original `type_name` (click dispatch reads
+ * THIS, never the id) and `type: "OntologyTypeGroup"` so the renderer boxes it.
+ *
+ * @param {{ nodes?: object[], links?: object[], edges?: object[] }} graph
+ * @param {object} options
+ * @param {(node:object)=>string|null} options.typeOf   entity -> its `type`.
+ * @param {Iterable<string>} options.typeNames          grouped type values.
+ * @param {Map<string,string>} [options.idByKey]        shared minted ids.
+ * @returns {{ nodes: object[], links: object[], idByKey: Map<string,string> }}
+ */
+export function injectTypeNodes(graph, { typeOf, typeNames, idByKey } = {}) {
+  const baseNodes = graphNodeList(graph);
+  const baseEdges = graphEdgeList(graph);
+  const live = new Set(
+    [...(typeNames ?? [])].filter((k) => typeof k === "string" && k.length > 0),
+  );
+  const ids =
+    idByKey instanceof Map ? idByKey : mintTypeNodeIds(live, new Set(baseNodes.map((n) => n.id)));
+
+  if (live.size === 0) return { nodes: baseNodes, links: baseEdges, idByKey: ids };
+
+  const addedNodes = [];
+  for (const name of live) {
+    const nodeId = ids.get(name);
+    if (typeof nodeId !== "string") continue;
+    addedNodes.push({
+      id: nodeId,
+      label: name,
+      type: "OntologyTypeGroup",
+      type_node_kind: "type",
+      type_name: name,
+      group: name,
+    });
+  }
+
+  const addedEdges = [];
+  for (const node of baseNodes) {
+    const id = node?.id;
+    if (typeof id !== "string") continue;
+    const name = typeOf?.(node);
+    if (typeof name !== "string" || !live.has(name)) continue;
+    const nodeId = ids.get(name);
+    if (typeof nodeId !== "string") continue;
+    addedEdges.push({
+      source: nodeId,
+      target: id,
+      relation: "has_member",
+      structural: true,
+      type_edge_kind: "membership",
     });
   }
 

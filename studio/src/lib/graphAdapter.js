@@ -83,6 +83,10 @@ const NODE_PROFILE_FIELDS = [
   // key WITHOUT parsing the (collision-disambiguated) synthetic id.
   "community_node_kind",
   "community_key",
+  // B2 (§2): synthetic TYPE fold node passthrough (injectTypeNodes). `type_name`
+  // lets click dispatch recover the fold key without parsing the synthetic id.
+  "type_node_kind",
+  "type_name",
   // B2: fold-node annotations survive into the scene for the (+N) in-box label.
   "collapsed",
   "hidden_node_count",
@@ -166,6 +170,8 @@ const TYPE_SHAPE = {
   // B2 / Amendment A2: synthetic COMMUNITY fold nodes also read as a GROUP, not an
   // entity — a labelled box (the community name inside), tone from communityStats.
   OntologyCommunity: "roundedbox",
+  // B2 (§2): synthetic TYPE fold nodes (Type-level group-by) read as a GROUP box.
+  OntologyTypeGroup: "roundedbox",
 };
 
 /**

@@ -10,6 +10,7 @@
     SelectableRow,
     Search,
     Badge,
+    Button,
     Collapsible,
   } from "@sentropic/design-system-svelte";
   import TypeShapeGlyph from "./TypeShapeGlyph.svelte";
@@ -36,6 +37,19 @@
     // absent kind.
     canGroupOntology = false,
     canGroupCommunity = false,
+    // B2 (§4) TRI-STATE bulk buttons: per-level { state:"none"|"partial"|"all",
+    // done, total }. B2 (§3) absorption: class id -> { absorbed, byLabel }.
+    ontologyLevelStates = {
+      domain: { state: "none", done: 0, total: 0 },
+      subDomain: { state: "none", done: 0, total: 0 },
+      type: { state: "none", done: 0, total: 0 },
+    },
+    ontologyAbsorbed = new Map(),
+    // B2 (§5) FLAT community bulk: true when EVERY live community is grouped.
+    allCommunitiesGrouped = false,
+    // B2 (§4/§5) scope-local "anything grouped" → native disabled on Ungroup all.
+    ontologyGrouped = false,
+    communityGrouped = false,
     // The scene's count badges (relocated under the search bar).
     stats = { nodeCount: 0, edgeCount: 0, communityCount: 0 },
     onToggleType,
@@ -46,8 +60,11 @@
     // B2 (per-item) group-by callbacks.
     onToggleGroupOntology,
     onToggleGroupCommunity,
-    onFoldToLevel,
-    onClearGrouping,
+    onToggleGroupType,
+    onBulkLevel,
+    onBulkCommunities,
+    onClearOntologyGrouping,
+    onClearCommunityGrouping,
   } = $props();
 
   const typeList = $derived(groupCounts(graph, nodeType));
@@ -55,24 +72,53 @@
   const communityInfo = $derived(communityStats(graph));
 
   // B2 (per-item): split the namespaced grouped SET into per-row membership sets.
-  // A class/community is "grouped" when its namespaced key is present. Mixing
-  // ontology + community keys is allowed; both render their checked state here.
-  const groupedSet = $derived(new Set(groupBy.grouped ?? []));
-  const ontologyGrouped = $derived(
+  // A class/community/type is "grouped" when its namespaced key is present.
+  // Mixing kinds is allowed; each row renders its own checked state here.
+  const ontologyCheckedSet = $derived(
     new Set(
       (groupBy.grouped ?? [])
         .filter((k) => typeof k === "string" && k.startsWith("ontology:"))
         .map((k) => k.slice("ontology:".length)),
     ),
   );
-  const communityGrouped = $derived(
+  const communityCheckedSet = $derived(
     new Set(
       (groupBy.grouped ?? [])
         .filter((k) => typeof k === "string" && k.startsWith("community:"))
         .map((k) => k.slice("community:".length)),
     ),
   );
-  const groupedCount = $derived(groupedSet.size);
+  const typeCheckedSet = $derived(
+    new Set(
+      (groupBy.grouped ?? [])
+        .filter((k) => typeof k === "string" && k.startsWith("type:"))
+        .map((k) => k.slice("type:".length)),
+    ),
+  );
+
+  // B2 (§4): map a level's tri-state to the DS Button render contract. The DS
+  // Button has only primary/secondary, so PARTIAL = secondary + a count Badge.
+  //   none    → secondary, aria-pressed=false  (groups the level)
+  //   all     → primary,   aria-pressed=true   (toggles OFF)
+  //   partial → secondary, aria-pressed=false, badge "n/m" (completes to all)
+  function levelButton(ls) {
+    const s = ls ?? { state: "none", done: 0, total: 0 };
+    if (s.state === "all") {
+      return { variant: "primary", ariaPressed: "true", showBadge: false, badge: null };
+    }
+    if (s.state === "partial") {
+      return {
+        variant: "secondary",
+        ariaPressed: "false",
+        showBadge: true,
+        badge: `${s.done}/${s.total}`,
+      };
+    }
+    return { variant: "secondary", ariaPressed: "false", showBadge: false, badge: null };
+  }
+  const domainBtn = $derived(levelButton(ontologyLevelStates.domain));
+  const subDomainBtn = $derived(levelButton(ontologyLevelStates.subDomain));
+  const typeBtn = $derived(levelButton(ontologyLevelStates.type));
 
   const typeSet = $derived(new Set(selection.types));
   // EVOL: nested Domain → Sub-domain → Type tree from the ontology class
@@ -220,15 +266,19 @@
           <li>
             <Collapsible title={domain.label} open={false} size="sm">
               {#snippet leading()}
+                {@const dAbs = ontologyAbsorbed.get(domain.id)}
                 <label
                   class="rail-group-check"
-                  class:rail-group-check--on={ontologyGrouped.has(domain.id)}
-                  title="Group by {domain.label}"
+                  class:rail-group-check--on={ontologyCheckedSet.has(domain.id)}
+                  title={dAbs?.absorbed
+                    ? `grouped by parent ${dAbs.byLabel}`
+                    : `Group by ${domain.label}`}
                   onclick={(e) => e.stopPropagation()}
                 >
                   <input
                     type="checkbox"
-                    checked={ontologyGrouped.has(domain.id)}
+                    checked={ontologyCheckedSet.has(domain.id)}
+                    disabled={dAbs?.absorbed === true}
                     aria-label="Group by {domain.label}"
                     onchange={() => onToggleGroupOntology?.(domain.id)}
                   />
@@ -242,16 +292,19 @@
                   <li>
                     <Collapsible title={sub.label} open={false} size="sm">
                       {#snippet leading()}
+                        {@const sAbs = ontologyAbsorbed.get(sub.id)}
                         <label
                           class="rail-group-check"
-                          class:rail-group-check--on={ontologyGrouped.has(sub.id)}
-                          title="Group by {sub.label}"
+                          class:rail-group-check--on={ontologyCheckedSet.has(sub.id)}
+                          title={sAbs?.absorbed
+                            ? `grouped by parent ${sAbs.byLabel}`
+                            : `Group by ${sub.label}`}
                           onclick={(e) => e.stopPropagation()}
                         >
                           <input
                             type="checkbox"
-                            checked={ontologyGrouped.has(sub.id)}
-                            disabled={ontologyGrouped.has(domain.id)}
+                            checked={ontologyCheckedSet.has(sub.id)}
+                            disabled={sAbs?.absorbed === true}
                             aria-label="Group by {sub.label}"
                             onchange={() => onToggleGroupOntology?.(sub.id)}
                           />
@@ -262,7 +315,25 @@
                       {/snippet}
                       <ul class="rail-list">
                         {#each sub.types as t (t.key)}
-                          <li>
+                          <li class="rail-type-row">
+                            <!-- B2 (§2): the leaf TYPE row carries its OWN bare
+                                 group-by checkbox on the LEFT — folds entities of
+                                 this `type`. It is SEPARATE from the Type FILTER
+                                 SelectableRow (onToggleType) that follows it. -->
+                            <label
+                              class="rail-group-check rail-type-group-check"
+                              class:rail-group-check--on={typeCheckedSet.has(t.key)}
+                              title="Group by {t.key}"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={typeCheckedSet.has(t.key)}
+                                disabled={ontologyCheckedSet.has(sub.id) ||
+                                  ontologyCheckedSet.has(domain.id)}
+                                aria-label="Group by {t.key}"
+                                onchange={() => onToggleGroupType?.(t.key)}
+                              />
+                            </label>
                             <SelectableRow
                               value={t.key}
                               selected={typeSet.has(t.key)}
@@ -287,20 +358,64 @@
           </li>
         {/each}
       </ul>
-      <!-- B2 / F8: bulk baseline fold + an ungroup-all reset, scoped to the
-           Ontology facet (only shown when the taxonomy supports grouping). -->
+      <!-- B2 (§4): TRI-STATE bulk "Group all to: Domain | Sub-domain | Type" via
+           the DS Button (secondary↔primary + a count Badge for partial) + a
+           scope-local Ungroup all (native disabled when nothing ontology is
+           grouped). Only shown when the taxonomy supports grouping. -->
       {#if canGroupOntology}
-        <div class="rail-fold-bulk">
+        <div class="rail-fold-bulk" role="group" aria-label="Group all ontology to level">
           <span class="rail-fold-bulk-label">Group all to:</span>
-          <button type="button" class="rail-fold-baseline" onclick={() => onFoldToLevel?.(0)}>Domain</button>
-          <button type="button" class="rail-fold-baseline" onclick={() => onFoldToLevel?.(1)}>Sub-domain</button>
-          <button type="button" class="rail-fold-baseline" onclick={() => onFoldToLevel?.(2)}>Type</button>
+          <span class="rail-fold-btn">
+            <Button
+              variant={domainBtn.variant}
+              size="sm"
+              aria-pressed={domainBtn.ariaPressed}
+              aria-label={domainBtn.showBadge
+                ? `Group all to Domain (${ontologyLevelStates.domain.done} of ${ontologyLevelStates.domain.total} grouped)`
+                : "Group all to Domain"}
+              onclick={() => onBulkLevel?.(0)}
+            >
+              Domain{#if domainBtn.showBadge}&nbsp;<Badge tone="neutral" size="sm">{domainBtn.badge}</Badge>{/if}
+            </Button>
+          </span>
+          <span class="rail-fold-btn">
+            <Button
+              variant={subDomainBtn.variant}
+              size="sm"
+              aria-pressed={subDomainBtn.ariaPressed}
+              aria-label={subDomainBtn.showBadge
+                ? `Group all to Sub-domain (${ontologyLevelStates.subDomain.done} of ${ontologyLevelStates.subDomain.total} grouped)`
+                : "Group all to Sub-domain"}
+              onclick={() => onBulkLevel?.(1)}
+            >
+              Sub-domain{#if subDomainBtn.showBadge}&nbsp;<Badge tone="neutral" size="sm">{subDomainBtn.badge}</Badge>{/if}
+            </Button>
+          </span>
+          <span class="rail-fold-btn">
+            <Button
+              variant={typeBtn.variant}
+              size="sm"
+              aria-pressed={typeBtn.ariaPressed}
+              aria-label={typeBtn.showBadge
+                ? `Group all to Type (${ontologyLevelStates.type.done} of ${ontologyLevelStates.type.total} grouped)`
+                : "Group all to Type"}
+              onclick={() => onBulkLevel?.(2)}
+            >
+              Type{#if typeBtn.showBadge}&nbsp;<Badge tone="neutral" size="sm">{typeBtn.badge}</Badge>{/if}
+            </Button>
+          </span>
         </div>
-      {/if}
-      {#if groupedCount > 0}
-        <button type="button" class="rail-reset-btn" onclick={() => onClearGrouping?.()}>
-          Ungroup all ({groupedCount} grouped)
-        </button>
+        <div class="rail-fold-ungroup">
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={!ontologyGrouped}
+            aria-label="Ungroup all ontology"
+            onclick={() => onClearOntologyGrouping?.()}
+          >
+            Ungroup all
+          </Button>
+        </div>
       {/if}
     {:else}
       <SelectableList
@@ -348,13 +463,13 @@
                 <span class="rail-comm-lead">
                   <label
                     class="rail-group-check"
-                    class:rail-group-check--on={communityGrouped.has(c.key)}
+                    class:rail-group-check--on={communityCheckedSet.has(c.key)}
                     title="Group by {c.key}"
                     onclick={(e) => e.stopPropagation()}
                   >
                     <input
                       type="checkbox"
-                      checked={communityGrouped.has(c.key)}
+                      checked={communityCheckedSet.has(c.key)}
                       aria-label="Group by {c.key}"
                       onchange={() => onToggleGroupCommunity?.(c.key)}
                     />
@@ -379,6 +494,35 @@
           Isolated · {communityInfo.isolatedCount}
           <span class="rail-isolated-note">degree-0, excluded from the count</span>
         </p>
+      {/if}
+      <!-- B2 (§5): FLAT 2-state community bulk — NO level, NO partial, NO count.
+           `Group all` (secondary→primary when ALL grouped, click toggles) +
+           a scope-local `Ungroup all` (native disabled when none grouped). -->
+      {#if canGroupCommunity}
+        <div class="rail-fold-bulk rail-comm-bulk" role="group" aria-label="Group all communities">
+          <span class="rail-fold-btn">
+            <Button
+              variant={allCommunitiesGrouped ? "primary" : "secondary"}
+              size="sm"
+              aria-pressed={allCommunitiesGrouped ? "true" : "false"}
+              aria-label="Group all communities"
+              onclick={() => onBulkCommunities?.()}
+            >
+              Group all
+            </Button>
+          </span>
+          <span class="rail-fold-btn">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={!communityGrouped}
+              aria-label="Ungroup all communities"
+              onclick={() => onClearCommunityGrouping?.()}
+            >
+              Ungroup all
+            </Button>
+          </span>
+        </div>
       {/if}
     {/if}
   </Collapsible>
@@ -541,22 +685,22 @@
     color: var(--st-semantic-text-secondary, #475569);
     cursor: pointer;
   }
-  .rail-reset-btn {
-    margin-top: 0.25rem;
-    padding: 0.3rem 0.55rem;
-    border: 1px solid var(--st-semantic-border-muted, #e2e8f0);
-    border-radius: 4px;
-    background: var(--st-semantic-surface-default, #fff);
-    color: var(--st-semantic-action-primary, #2563eb);
-    font-size: 0.76rem;
-    cursor: pointer;
-  }
-  .rail-reset-btn:hover {
-    background: var(--st-semantic-surface-hover, #f1f5f9);
-  }
-
   .rail-onto-tree {
     margin-top: 0.15rem;
+  }
+  /* B2 (§2): the leaf Type row puts its bare group-by checkbox FIRST (left),
+     then the Type FILTER SelectableRow — two separate concerns on one line. */
+  .rail-type-row {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+  .rail-type-row :global(.st-selectableRow) {
+    flex: 1;
+    min-width: 0;
+  }
+  .rail-type-group-check {
+    flex-shrink: 0;
   }
   /* B2 (per-item): the per-item GROUP-BY checkbox affordance, now the FIRST
      element on the LEFT edge of every groupable row (Ontology class header /
@@ -607,16 +751,15 @@
     font-size: 0.72rem;
     color: var(--st-semantic-text-muted, #64748b);
   }
-  .rail-fold-baseline {
-    padding: 0.22rem 0.5rem;
-    border: 1px solid var(--st-semantic-border-muted, #e2e8f0);
-    border-radius: 4px;
-    background: var(--st-semantic-surface-default, #fff);
-    color: var(--st-semantic-action-primary, #2563eb);
-    font-size: 0.72rem;
-    cursor: pointer;
+  /* The tri-state DS Button keeps its label + (n/m) Badge on one line. */
+  .rail-fold-btn :global(.st-button) {
+    display: inline-flex;
+    align-items: center;
   }
-  .rail-fold-baseline:hover {
-    background: var(--st-semantic-surface-hover, #f1f5f9);
+  .rail-fold-ungroup {
+    margin-top: 0.3rem;
+  }
+  .rail-comm-bulk {
+    margin-top: 0.45rem;
   }
 </style>

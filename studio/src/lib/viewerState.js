@@ -42,7 +42,7 @@ export const ONTOLOGY_LEVELS = { domain: 0, subDomain: 1, type: 2 };
  * or a colon-bearing community key both round-trip losslessly.
  * ------------------------------------------------------------------------- */
 
-export const GROUP_KIND = { ontology: "ontology", community: "community" };
+export const GROUP_KIND = { ontology: "ontology", community: "community", type: "type" };
 
 /** Build the grouped key for an Ontology class node id (e.g. "class:People"). */
 export function groupKeyForOntology(classId) {
@@ -52,6 +52,17 @@ export function groupKeyForOntology(classId) {
 /** Build the grouped key for a community key (free text, may contain colons). */
 export function groupKeyForCommunity(communityKey) {
   return `${GROUP_KIND.community}:${communityKey}`;
+}
+
+/**
+ * Build the grouped key for a leaf TYPE (a node `type` value, e.g. "Character").
+ * The Type LEVEL of the ontology taxonomy is the entity `type` itself — the
+ * artifact's leaf classes carry `member_node_types`, but there is no per-type
+ * CLASS node, so a grouped type folds entities sharing that `type` into one
+ * synthetic type node (the single-level, community-like collapse).
+ */
+export function groupKeyForType(typeName) {
+  return `${GROUP_KIND.type}:${typeName}`;
 }
 
 /**
@@ -66,6 +77,7 @@ export function groupKeyForCommunity(communityKey) {
 export function splitGroupedKeys(grouped = []) {
   const ontologyClassIds = [];
   const communityKeys = [];
+  const typeNames = [];
   for (const key of grouped ?? []) {
     if (typeof key !== "string" || key.length === 0) continue;
     const sep = key.indexOf(":");
@@ -75,10 +87,12 @@ export function splitGroupedKeys(grouped = []) {
     if (rest.length === 0) continue;
     if (kind === GROUP_KIND.ontology) ontologyClassIds.push(rest);
     else if (kind === GROUP_KIND.community) communityKeys.push(rest);
+    else if (kind === GROUP_KIND.type) typeNames.push(rest);
   }
   return {
     ontologyClassIds: uniqueStrings(ontologyClassIds),
     communityKeys: uniqueStrings(communityKeys),
+    typeNames: uniqueStrings(typeNames),
   };
 }
 
@@ -300,6 +314,12 @@ export function toggleGroupCommunity(state, communityKey) {
   return toggleGroupItem(state, groupKeyForCommunity(communityKey));
 }
 
+/** Toggle a leaf TYPE into/out of the grouped set (Type-level group-by). */
+export function toggleGroupType(state, typeName) {
+  if (typeof typeName !== "string" || !typeName) return normalizeViewerState(state);
+  return toggleGroupItem(state, groupKeyForType(typeName));
+}
+
 /** Is this Ontology class node currently grouped (checked)? PURE predicate. */
 export function isOntologyGrouped(state, classId) {
   return state?.options?.groupBy?.grouped?.includes(groupKeyForOntology(classId)) ?? false;
@@ -310,9 +330,90 @@ export function isCommunityGrouped(state, communityKey) {
   return state?.options?.groupBy?.grouped?.includes(groupKeyForCommunity(communityKey)) ?? false;
 }
 
+/** Is this leaf TYPE currently grouped (checked)? PURE predicate. */
+export function isTypeGrouped(state, typeName) {
+  return state?.options?.groupBy?.grouped?.includes(groupKeyForType(typeName)) ?? false;
+}
+
 /** Clear the entire grouped set (ungroup everything). */
 export function clearGrouping(state) {
   return withGrouped(state, []);
+}
+
+/** Keys NOT in the given kind namespace (drop only that scope's keys). */
+function keysExceptKind(state, kind) {
+  return (state.options.groupBy.grouped ?? []).filter(
+    (k) => typeof k === "string" && !k.startsWith(`${kind}:`),
+  );
+}
+
+/**
+ * Ungroup ALL ontology-scoped keys (spec §4 — the Ontology section's
+ * `Ungroup all`). Both class ids (Domain/Sub-domain) AND leaf TYPE keys are
+ * ontology-scoped; communities are untouched.
+ */
+export function clearOntologyGrouping(state) {
+  const kept = (state.options.groupBy.grouped ?? []).filter(
+    (k) =>
+      typeof k === "string" &&
+      !k.startsWith(`${GROUP_KIND.ontology}:`) &&
+      !k.startsWith(`${GROUP_KIND.type}:`),
+  );
+  return withGrouped(state, kept);
+}
+
+/** Ungroup ALL community-scoped keys (spec §5 — Communities `Ungroup all`). */
+export function clearCommunityGrouping(state) {
+  return withGrouped(state, keysExceptKind(state, GROUP_KIND.community));
+}
+
+/** Are ANY ontology-scoped (class OR type) items grouped? (disables Ungroup all) */
+export function hasOntologyGrouping(state) {
+  return (state?.options?.groupBy?.grouped ?? []).some(
+    (k) =>
+      typeof k === "string" &&
+      (k.startsWith(`${GROUP_KIND.ontology}:`) || k.startsWith(`${GROUP_KIND.type}:`)),
+  );
+}
+
+/** Are ANY community-scoped items grouped? (disables the community Ungroup all) */
+export function hasCommunityGrouping(state) {
+  return (state?.options?.groupBy?.grouped ?? []).some(
+    (k) => typeof k === "string" && k.startsWith(`${GROUP_KIND.community}:`),
+  );
+}
+
+/**
+ * Group EXACTLY the given ontology level (spec §4 — bulk "Group all to <level>").
+ * Replaces ALL ontology-scoped keys (class ids + type names) with the level's
+ * members so no stale ancestor/descendant fold survives; communities untouched.
+ *
+ * @param {object} state
+ * @param {number} level  0=Domain, 1=Sub-domain (class ids), 2=Type (type names).
+ * @param {string[]} levelClassIds  the class ids at level 0/1 (ignored for L2).
+ * @param {string[]} levelTypeNames the type values at level 2 (ignored for L0/L1).
+ */
+export function groupOntologyLevel(state, level, levelClassIds = [], levelTypeNames = []) {
+  const kept = (state.options.groupBy.grouped ?? []).filter(
+    (k) =>
+      typeof k === "string" &&
+      !k.startsWith(`${GROUP_KIND.ontology}:`) &&
+      !k.startsWith(`${GROUP_KIND.type}:`),
+  );
+  const next =
+    level === ONTOLOGY_LEVELS.type
+      ? uniqueStrings(levelTypeNames).map(groupKeyForType)
+      : uniqueStrings(levelClassIds).map(groupKeyForOntology);
+  return withGrouped(state, [...kept, ...next]);
+}
+
+/**
+ * Group EXACTLY the given community keys (spec §5 — Communities `Group all`).
+ * Replaces all community-scoped keys; ontology untouched.
+ */
+export function groupAllCommunities(state, communityKeys = []) {
+  const kept = keysExceptKind(state, GROUP_KIND.community);
+  return withGrouped(state, [...kept, ...uniqueStrings(communityKeys).map(groupKeyForCommunity)]);
 }
 
 /**

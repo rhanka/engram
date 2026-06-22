@@ -47,8 +47,8 @@ describe("LeftRail — T13 F2 visible-UI lock (PER-ITEM group-by checkboxes)", (
     expect(railSource).toMatch(/onToggleGroupOntology\?\.\(domain\.id\)/);
     expect(railSource).toMatch(/onToggleGroupOntology\?\.\(sub\.id\)/);
     // The checked state reflects membership in the grouped SET (per-item).
-    expect(railSource).toMatch(/checked=\{ontologyGrouped\.has\(domain\.id\)\}/);
-    expect(railSource).toMatch(/checked=\{ontologyGrouped\.has\(sub\.id\)\}/);
+    expect(railSource).toMatch(/checked=\{ontologyCheckedSet\.has\(domain\.id\)\}/);
+    expect(railSource).toMatch(/checked=\{ontologyCheckedSet\.has\(sub\.id\)\}/);
     // App passes the per-item callbacks + availability flags (NOT availableAxes).
     expect(appSource).toMatch(/onToggleGroupOntology=\{handleToggleGroupOntology\}/);
     expect(appSource).toMatch(/onToggleGroupCommunity=\{handleToggleGroupCommunity\}/);
@@ -56,38 +56,77 @@ describe("LeftRail — T13 F2 visible-UI lock (PER-ITEM group-by checkboxes)", (
     expect(appSource).toMatch(/\{canGroupCommunity\}/);
   });
 
+  it("each leaf TYPE row owns its OWN group-by checkbox (§2 — fixes Type grouping)", () => {
+    // The Type checkbox folds entities of that `type` → onToggleGroupType(t.key);
+    // its checked state reads the type-scoped membership set.
+    expect(railSource).toMatch(/onToggleGroupType\?\.\(t\.key\)/);
+    expect(railSource).toMatch(/checked=\{typeCheckedSet\.has\(t\.key\)\}/);
+    // It is SEPARATE from the Type FILTER SelectableRow (onToggleType) on the row.
+    expect(railSource).toMatch(/rail-type-group-check/);
+    expect(appSource).toMatch(/onToggleGroupType=\{handleToggleGroupType\}/);
+  });
+
   it("each Community row owns a per-item group-by checkbox (separate from its select)", () => {
     expect(railSource).toMatch(/onToggleGroupCommunity\?\.\(c\.key\)/);
-    expect(railSource).toMatch(/checked=\{communityGrouped\.has\(c\.key\)\}/);
+    expect(railSource).toMatch(/checked=\{communityCheckedSet\.has\(c\.key\)\}/);
   });
 
-  it("the bulk baseline + ungroup-all controls drive the grouped set (F8)", () => {
-    // Bulk baseline buttons (F8): Domain / Sub-domain / Type → onFoldToLevel.
-    expect(railSource).toMatch(/onFoldToLevel\?\.\(0\)/);
-    expect(railSource).toMatch(/onFoldToLevel\?\.\(1\)/);
-    expect(railSource).toMatch(/onFoldToLevel\?\.\(2\)/);
-    // The ungroup-all reset clears the whole grouped set.
-    expect(railSource).toMatch(/onClearGrouping\?\.\(/);
-    expect(appSource).toMatch(/onFoldToLevel=\{handleFoldToLevel\}/);
-    expect(appSource).toMatch(/onClearGrouping=\{handleClearGrouping\}/);
+  it("the ONTOLOGY tri-state bulk buttons drive the grouped set (§4)", () => {
+    // Tri-state bulk via DS Button → onBulkLevel(0|1|2), variant from the level's
+    // {none|partial|all} state, a count Badge for partial, aria-pressed (NOT mixed).
+    expect(railSource).toMatch(/onBulkLevel\?\.\(0\)/);
+    expect(railSource).toMatch(/onBulkLevel\?\.\(1\)/);
+    expect(railSource).toMatch(/onBulkLevel\?\.\(2\)/);
+    expect(railSource).toMatch(/variant=\{domainBtn\.variant\}/);
+    expect(railSource).toMatch(/aria-pressed=\{domainBtn\.ariaPressed\}/);
+    expect(railSource).toMatch(/\{domainBtn\.badge\}/);
+    // The DS Button only has primary/secondary — partial = secondary + Badge,
+    // never aria-checked="mixed".
+    expect(railSource).not.toMatch(/aria-checked="mixed"/);
+    // Scope-local Ungroup all (ontology), native disabled when nothing ontology grouped.
+    expect(railSource).toMatch(/disabled=\{!ontologyGrouped\}/);
+    expect(railSource).toMatch(/onClearOntologyGrouping\?\.\(/);
+    expect(appSource).toMatch(/onBulkLevel=\{handleBulkLevel\}/);
+    expect(appSource).toMatch(/onClearOntologyGrouping=\{handleClearOntologyGrouping\}/);
   });
 
-  it("the group-by checkbox is on the LEFT (leading) with NO 'group' text (SPEC)", () => {
-    // SPEC PART 1: the bare checkbox is the FIRST element on the row — it lives in
-    // a `leading()` snippet (left edge), NOT in `trailing()` (right side).
-    // Each group-by checkbox is immediately preceded by a `{#snippet leading()}`.
-    const checkboxBlocks = railSource.split('class="rail-group-check"');
-    // 3 group-by checkboxes (Domain, Sub-domain, Community) → 4 split segments.
-    expect(checkboxBlocks.length).toBe(4);
-    for (let i = 1; i < checkboxBlocks.length; i += 1) {
-      const before = checkboxBlocks[i - 1];
-      // The nearest snippet opening before the checkbox is leading(), not trailing().
+  it("the COMMUNITY section is FLAT 2-state — Group all / Ungroup all, no count (§5)", () => {
+    // Group all toggles secondary↔primary (aria-pressed) on allCommunitiesGrouped.
+    expect(railSource).toMatch(/onBulkCommunities\?\.\(/);
+    expect(railSource).toMatch(/allCommunitiesGrouped \? "primary" : "secondary"/);
+    expect(railSource).toMatch(/aria-pressed=\{allCommunitiesGrouped \? "true" : "false"\}/);
+    // Community Ungroup all: native disabled when nothing community grouped.
+    expect(railSource).toMatch(/disabled=\{!communityGrouped\}/);
+    expect(railSource).toMatch(/onClearCommunityGrouping\?\.\(/);
+    // NO partial/count badge in the community bulk (FLAT).
+    expect(appSource).toMatch(/onBulkCommunities=\{handleBulkCommunities\}/);
+    expect(appSource).toMatch(/onClearCommunityGrouping=\{handleClearCommunityGrouping\}/);
+  });
+
+  it("the group-by checkbox is on the LEFT with NO 'group' text (SPEC)", () => {
+    // SPEC PART 1: the bare checkbox is the FIRST element on the row. There are
+    // FOUR group-by checkboxes — Domain, Sub-domain, Type, Community — each
+    // carrying the `rail-group-check` affordance (the Type one adds the
+    // `rail-type-group-check` variant).
+    const onMarkers = railSource.match(/class:rail-group-check--on=/g) ?? [];
+    expect(onMarkers.length).toBe(4);
+    // The Domain + Sub-domain + Community checkboxes live in a `leading()` snippet
+    // (left edge of the Collapsible/SelectableRow header).
+    const leadingChecks = railSource.split('class="rail-group-check"');
+    expect(leadingChecks.length).toBe(4); // 3 leading()-hosted bare checkboxes
+    for (let i = 1; i < leadingChecks.length; i += 1) {
+      const before = leadingChecks[i - 1];
       const leadIdx = before.lastIndexOf("{#snippet leading()}");
       const trailIdx = before.lastIndexOf("{#snippet trailing()}");
       expect(leadIdx, `checkbox #${i} must sit inside a leading() snippet`).toBeGreaterThan(
         trailIdx,
       );
     }
+    // The leaf Type checkbox sits FIRST in its flex row, BEFORE the FILTER
+    // SelectableRow — left, bare, separate from the Type FILTER select (§2).
+    expect(railSource).toMatch(
+      /rail-type-group-check[\s\S]*?onToggleGroupType[\s\S]*?<SelectableRow/,
+    );
     // NO persistent "group" text label anywhere — the rail-group-hint span is gone.
     expect(railSource).not.toMatch(/rail-group-hint/);
     expect(railSource).not.toMatch(/>group<\/span>/);
