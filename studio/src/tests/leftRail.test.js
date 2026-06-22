@@ -72,6 +72,30 @@ describe("LeftRail — T13 F2 visible-UI lock (PER-ITEM group-by checkboxes)", (
     expect(appSource).toMatch(/onClearGrouping=\{handleClearGrouping\}/);
   });
 
+  it("the group-by checkbox is on the LEFT (leading) with NO 'group' text (SPEC)", () => {
+    // SPEC PART 1: the bare checkbox is the FIRST element on the row — it lives in
+    // a `leading()` snippet (left edge), NOT in `trailing()` (right side).
+    // Each group-by checkbox is immediately preceded by a `{#snippet leading()}`.
+    const checkboxBlocks = railSource.split('class="rail-group-check"');
+    // 3 group-by checkboxes (Domain, Sub-domain, Community) → 4 split segments.
+    expect(checkboxBlocks.length).toBe(4);
+    for (let i = 1; i < checkboxBlocks.length; i += 1) {
+      const before = checkboxBlocks[i - 1];
+      // The nearest snippet opening before the checkbox is leading(), not trailing().
+      const leadIdx = before.lastIndexOf("{#snippet leading()}");
+      const trailIdx = before.lastIndexOf("{#snippet trailing()}");
+      expect(leadIdx, `checkbox #${i} must sit inside a leading() snippet`).toBeGreaterThan(
+        trailIdx,
+      );
+    }
+    // NO persistent "group" text label anywhere — the rail-group-hint span is gone.
+    expect(railSource).not.toMatch(/rail-group-hint/);
+    expect(railSource).not.toMatch(/>group<\/span>/);
+    expect(railSource).not.toMatch(/aria-hidden="true">group/);
+    // The HOVER signal stays: the title tooltip "Group by …" is preserved.
+    expect(railSource).toMatch(/title="Group by /);
+  });
+
   it("the Ontology FILTER facet stays SEPARATE from the group-by checkboxes", () => {
     // The Ontology accordion (taxonomy facet) renders SelectableRow + TypeShapeGlyph
     // + onToggleType — the FILTER concern, distinct from the group-by checkbox.

@@ -124,12 +124,23 @@
   const canGroupOntology = $derived(Boolean(classHierarchies?.hierarchies));
   const canGroupCommunity = $derived(communityInfo.liveCount > 0);
 
-  // B2 / A1+A2: mint the live community keys + their collision-safe synthetic ids
-  // + per-key tone ONCE, so the injector and the parent index agree on ids. Built
-  // only when at least one community is grouped (the injector is skipped otherwise).
+  // B2 / A1+A2: mint the synthetic community fold ids + per-key tone ONCE, so the
+  // injector and the parent index agree on ids. Built only when at least one
+  // community is grouped (the injector is skipped otherwise).
+  //
+  // ROOT-CAUSE FIX (community grouping was broken): `liveKeys` is the set fed to
+  // `injectCommunityNodes` / `buildCommunityParentIndex`, which mint a fold node +
+  // re-parent members for EVERY key in it. Passing ALL live communities here
+  // injected an orphan box (plus its has_member edges) for every NON-grouped
+  // community — at mystery scale, checking ONE community spawned 120+ stray fold
+  // boxes and thousands of structural edges that never collapsed, so the graph
+  // visibly failed to "regroup". Restrict the set to the GROUPED ∩ LIVE keys: only
+  // the communities the user actually checked get a fold node, and they collapse.
   const communityCtx = $derived.by(() => {
     if (!hasCommunityGroup) return null;
-    const live = communityInfo.live;
+    const groupedSet = new Set(groupedSplit.communityKeys);
+    const live = communityInfo.live.filter((c) => groupedSet.has(c.key));
+    if (live.length === 0) return null;
     const liveKeys = live.map((c) => c.key);
     const idByKey = mintCommunityNodeIds(liveKeys, new Set((graph?.nodes ?? []).map((n) => n.id)));
     const toneKeyByKey = new Map(live.map((c) => [c.key, c.groupKey ?? c.key]));

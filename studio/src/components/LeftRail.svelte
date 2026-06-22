@@ -219,48 +219,46 @@
         {#each typeTree as domain (domain.id)}
           <li>
             <Collapsible title={domain.label} open={false} size="sm">
+              {#snippet leading()}
+                <label
+                  class="rail-group-check"
+                  class:rail-group-check--on={ontologyGrouped.has(domain.id)}
+                  title="Group by {domain.label}"
+                  onclick={(e) => e.stopPropagation()}
+                >
+                  <input
+                    type="checkbox"
+                    checked={ontologyGrouped.has(domain.id)}
+                    aria-label="Group by {domain.label}"
+                    onchange={() => onToggleGroupOntology?.(domain.id)}
+                  />
+                </label>
+              {/snippet}
               {#snippet trailing()}
-                <span class="rail-onto-trailing">
-                  <Badge shape="circle" size="sm" tone="neutral">{domain.count}</Badge>
-                  <label
-                    class="rail-group-check"
-                    class:rail-group-check--on={ontologyGrouped.has(domain.id)}
-                    title="Group by {domain.label}"
-                    onclick={(e) => e.stopPropagation()}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={ontologyGrouped.has(domain.id)}
-                      aria-label="Group by {domain.label}"
-                      onchange={() => onToggleGroupOntology?.(domain.id)}
-                    />
-                    <span class="rail-group-hint" aria-hidden="true">group</span>
-                  </label>
-                </span>
+                <Badge shape="circle" size="sm" tone="neutral">{domain.count}</Badge>
               {/snippet}
               <ul class="rail-type-groups">
                 {#each domain.subs as sub (sub.id)}
                   <li>
                     <Collapsible title={sub.label} open={false} size="sm">
+                      {#snippet leading()}
+                        <label
+                          class="rail-group-check"
+                          class:rail-group-check--on={ontologyGrouped.has(sub.id)}
+                          title="Group by {sub.label}"
+                          onclick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={ontologyGrouped.has(sub.id)}
+                            disabled={ontologyGrouped.has(domain.id)}
+                            aria-label="Group by {sub.label}"
+                            onchange={() => onToggleGroupOntology?.(sub.id)}
+                          />
+                        </label>
+                      {/snippet}
                       {#snippet trailing()}
-                        <span class="rail-onto-trailing">
-                          <Badge shape="circle" size="sm" tone="neutral">{sub.count}</Badge>
-                          <label
-                            class="rail-group-check"
-                            class:rail-group-check--on={ontologyGrouped.has(sub.id)}
-                            title="Group by {sub.label}"
-                            onclick={(e) => e.stopPropagation()}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={ontologyGrouped.has(sub.id)}
-                              disabled={ontologyGrouped.has(domain.id)}
-                              aria-label="Group by {sub.label}"
-                              onchange={() => onToggleGroupOntology?.(sub.id)}
-                            />
-                            <span class="rail-group-hint" aria-hidden="true">group</span>
-                          </label>
-                        </span>
+                        <Badge shape="circle" size="sm" tone="neutral">{sub.count}</Badge>
                       {/snippet}
                       <ul class="rail-list">
                         {#each sub.types as t (t.key)}
@@ -343,19 +341,11 @@
               onselect={() => onToggleCommunity?.(c.key)}
             >
               {#snippet leading()}
-                <span
-                  class="rail-swatch"
-                  style="background: var(--st-semantic-data-{c.tone}, #94a3b8)"
-                  aria-hidden="true"
-                ></span>
-              {/snippet}
-              {c.key}
-              {#snippet trailing()}
-                <span class="rail-onto-trailing">
-                  <Badge shape="circle" size="sm" tone="neutral">{c.count}</Badge>
-                  <!-- B2 (per-item): always-visible GROUP-BY checkbox. Checking it
-                       GROUPS (collapses) the community; the row's own SELECT
-                       (onToggleCommunity, filter) stays a separate concern. -->
+                <!-- B2 (per-item): the GROUP-BY checkbox is the FIRST thing on the
+                     row (left edge), before the color swatch. Checking it GROUPS
+                     (collapses) the community; the row's own SELECT
+                     (onToggleCommunity, filter) stays a separate concern. -->
+                <span class="rail-comm-lead">
                   <label
                     class="rail-group-check"
                     class:rail-group-check--on={communityGrouped.has(c.key)}
@@ -368,9 +358,17 @@
                       aria-label="Group by {c.key}"
                       onchange={() => onToggleGroupCommunity?.(c.key)}
                     />
-                    <span class="rail-group-hint" aria-hidden="true">group</span>
                   </label>
+                  <span
+                    class="rail-swatch"
+                    style="background: var(--st-semantic-data-{c.tone}, #94a3b8)"
+                    aria-hidden="true"
+                  ></span>
                 </span>
+              {/snippet}
+              {c.key}
+              {#snippet trailing()}
+                <Badge shape="circle" size="sm" tone="neutral">{c.count}</Badge>
               {/snippet}
             </SelectableRow>
           </li>
@@ -557,50 +555,46 @@
     background: var(--st-semantic-surface-hover, #f1f5f9);
   }
 
-  /* B2 (per-item): an Ontology class / Community row carries its count Badge AND
-     a hover-revealed group-by checkbox in the SAME trailing slot. */
-  .rail-onto-trailing {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-  }
   .rail-onto-tree {
     margin-top: 0.15rem;
   }
-  /* B2 (per-item): the per-item GROUP-BY checkbox affordance. The checkbox is
-     ALWAYS visible to the left of/inline with each groupable row so the feature
-     is discoverable at rest; hover/focus/checked only ENHANCES the "group" hint
-     text (it is never the only way to see the box). */
+  /* B2 (per-item): the per-item GROUP-BY checkbox affordance, now the FIRST
+     element on the LEFT edge of every groupable row (Ontology class header /
+     Community row), BEFORE the label. At rest it is a BARE checkbox — NO text.
+     The "group by" meaning is signalled on HOVER only (the title tooltip plus a
+     subtle ring around the box); never a persistent text label. */
   .rail-group-check {
     display: inline-flex;
     align-items: center;
-    gap: 0.2rem;
     cursor: pointer;
-    opacity: 1;
+    /* A faint hover ring is layered behind the box; keep a transparent baseline
+       so only hover/focus reveals it (no persistent visual chrome at rest). */
+    border-radius: 4px;
+    outline: 1px solid transparent;
+    outline-offset: 1px;
+    transition: outline-color 0.12s ease;
   }
   .rail-group-check input {
     margin: 0;
     cursor: pointer;
   }
-  .rail-group-hint {
-    font-size: 0.62rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--st-semantic-text-muted, #64748b);
-    opacity: 0.55;
-    transition: opacity 0.12s ease, color 0.12s ease;
+  /* Hover/focus-only hint: a faint outline appears around the bare checkbox when
+     the row is hovered or the box is focused, signalling "group by …" WITHOUT any
+     text. The title tooltip carries the wording. */
+  :global(.st-collapsible__header:hover) .rail-group-check,
+  :global(.st-selectableRow:hover) .rail-group-check,
+  .rail-group-check:focus-within {
+    outline-color: var(--st-semantic-action-primary, #2563eb);
   }
-  /* Subtle hover/focus enhancement: bring the "group" hint forward. The checkbox
-     itself stays visible at rest, so this is additive affordance only. */
-  :global(.st-collapsible__header:hover) .rail-group-check .rail-group-hint,
-  :global(.st-selectableRow:hover) .rail-group-check .rail-group-hint,
-  .rail-group-check:focus-within .rail-group-hint {
-    opacity: 1;
+  /* A grouped (checked) row keeps the accent ring so the active fold is legible. */
+  .rail-group-check--on {
+    outline-color: var(--st-semantic-action-primary, #2563eb);
   }
-  .rail-group-check--on .rail-group-hint {
-    color: var(--st-semantic-action-primary, #2563eb);
-    font-weight: 600;
-    opacity: 1;
+  /* Community row: the bare group-by checkbox sits FIRST, then the color swatch. */
+  .rail-comm-lead {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
   }
   .rail-fold-bulk {
     display: flex;
