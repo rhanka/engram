@@ -13,7 +13,7 @@
  *               set of ontology class ids the user has folded; each click on a
  *               class node toggles its id in/out and the subtree collapses.
  *   query     : free-text filter for the Entities list.
- *   activeView: "workspace" | "reconciliation".
+ *   activeView: "workspace" | "reconciliation" | "answer".
  *
  * The graph's `selectedIds` is DERIVED in App from `selection` + the graph
  * (a selected type/community contributes all its member entity ids).
@@ -48,7 +48,9 @@ export function normalizeViewerState(partial = {}) {
   };
   next.query = typeof next.query === "string" ? next.query : "";
   next.focusId = typeof next.focusId === "string" && next.focusId ? next.focusId : null;
-  if (next.activeView !== "reconciliation") next.activeView = "workspace";
+  if (next.activeView !== "reconciliation" && next.activeView !== "answer") {
+    next.activeView = "workspace";
+  }
   next.options.showWeakLinks = Boolean(next.options.showWeakLinks);
   next.options.showOntologyClasses = Boolean(next.options.showOntologyClasses);
   next.options.collapsedClassIds = uniqueStrings(
