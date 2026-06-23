@@ -92,6 +92,19 @@ const NODE_PROFILE_FIELDS = [
   // EVOL 2.a: synthetic ontology CLASS node passthrough (injectOntologyClassNodes).
   "ontology_node_kind",
   "ontology_class_id",
+  // B2 / Amendment A2: synthetic COMMUNITY fold node passthrough
+  // (injectCommunityNodes). `community_key` lets click dispatch recover the fold
+  // key WITHOUT parsing the (collision-disambiguated) synthetic id.
+  "community_node_kind",
+  "community_key",
+  // B2 (§2): synthetic TYPE fold node passthrough (injectTypeNodes). `type_name`
+  // lets click dispatch recover the fold key without parsing the synthetic id.
+  "type_node_kind",
+  "type_name",
+  // B2: fold-node annotations survive into the scene for the (+N) in-box label.
+  "collapsed",
+  "hidden_node_count",
+  "internal_edge_count",
 ];
 
 const EDGE_PROFILE_FIELDS = [
@@ -168,6 +181,11 @@ const TYPE_SHAPE = {
   // EVOL 2.a: synthetic ontology CLASS nodes render as labelled rounded boxes
   // (the class name sits inside the box), distinct from data-driven entity hubs.
   OntologyClass: "roundedbox",
+  // B2 / Amendment A2: synthetic COMMUNITY fold nodes also read as a GROUP, not an
+  // entity — a labelled box (the community name inside), tone from communityStats.
+  OntologyCommunity: "roundedbox",
+  // B2 (§2): synthetic TYPE fold nodes (Type-level group-by) read as a GROUP box.
+  OntologyTypeGroup: "roundedbox",
 };
 
 /**
@@ -209,6 +227,8 @@ const REL_DASH = {
   // anchoring, like other membership/structural-anchoring relations).
   subclass_of: "solid",
   has_instance: "dotted",
+  // B2: community membership structural edge (community node -> member entity).
+  has_member: "dotted",
 };
 export function dashForRelation(relation) {
   if (!relation) return undefined;
@@ -743,6 +763,14 @@ function computeCommunityStats(graph) {
   }
 
   const byComm = new Map();
+  // B2 / Amendment A5 + ia-aero BUG B (#195): a NUMERIC-only community's
+  // `nodeCommunity` key (`Community <n>`) differs from its `nodeGroup` palette
+  // key (`community:<n>`) — resolving a colour under the wrong key would diverge
+  // from the canvas. Each node knows BOTH, so capture `nodeGroup(node)` on the
+  // rec (`rec.group`) and resolve the swatch colour under that palette key below.
+  // This subsumes B2's old `groupKeyByComm`/`toneByGroup` fix: `colorForGroup`
+  // hashes the SAME `nodeGroup` key the canvas does, so named AND numeric-only
+  // communities resolve their colour exactly as the canvas fills them.
   let isolatedCount = 0;
   for (const node of nodes) {
     const key = nodeCommunity(node);
@@ -764,10 +792,18 @@ function computeCommunityStats(graph) {
       // (nodeGroup, captured in rec.group). So the legend dot and the node fill
       // are guaranteed identical — no more independent DS-tone-by-sorted-
       // position scheme diverging from the canvas hash.
+      const groupKey = rec.group ?? key;
       liveList.push({
         key: String(key),
         count: rec.count,
-        color: colorForGroup(rec.group ?? key),
+        color: colorForGroup(groupKey),
+        // B2 / A5: the `nodeGroup` palette key (= `key` for named communities,
+        // `community:<n>` for numeric-only). The community group-by path feeds
+        // this as the synthetic fold node's `group` (its tone key) so a folded
+        // numeric community's box takes the SAME colour the canvas fills its
+        // members — resolved under `community:<n>`, NOT the `Community <n>`
+        // legend key. Kept alongside `color` (the two are not exclusive).
+        groupKey: String(groupKey),
       });
     } else {
       isolatedCount += rec.count;

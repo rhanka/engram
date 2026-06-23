@@ -3,7 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   injectOntologyClassNodes,
   applyOntologyCollapse,
+  applyGroupCollapse,
   buildClassParentIndex,
+  buildCommunityParentIndex,
+  injectCommunityNodes,
+  communityNodeId,
+  mintCommunityNodeIds,
   nearestVisibleAncestor,
 } from "../lib/classNodes.js";
 import { buildScene, computeDegrees, computeGodClass } from "../lib/graphAdapter.js";
@@ -531,5 +536,249 @@ describe("applyOntologyCollapse — expand restores + determinism", () => {
     expect(g.links.length).toBe(beforeLinks);
     // The class node was not stamped with collapsed:true on the source graph.
     expect(g.nodes.find((n) => n.id === "class:Person").collapsed).toBeUndefined();
+  });
+});
+
+/* ===========================================================================
+ * B2 — applyGroupCollapse + community axis (T2, T4, T5, T8, T9, T10).
+ * ======================================================================== */
+
+describe("B2 — T2 fine sub-domain fold (mixed-depth, sibling stays expanded)", () => {
+  it("folds ONE sub-class subtree while its sibling sub-class stays expanded", () => {
+    const g = injectedTaxonomyGraph();
+    // Fold only class:Character (one leaf under Person); class:Villain sibling stays.
+    const out = applyOntologyCollapse(g, taxonomyHierarchies(), {
+      collapsedClassIds: ["class:Character"],
+    });
+    const ids = out.nodes.map((n) => n.id);
+    // Character members folded...
+    expect(ids).not.toContain("holmes");
+    expect(ids).not.toContain("watson");
+    expect(ids).toContain("class:Character");
+    // ...but the SIBLING sub-domain (Villain / moriarty) is untouched/expanded:
+    // both the sibling class node AND its member entity stay visible.
+    expect(ids).toContain("moriarty");
+    expect(ids).toContain("class:Villain");
+  });
+});
+
+describe("B2 — applyGroupCollapse empty set (T8 engine fast-path)", () => {
+  it("returns the input graph unchanged when there is nothing to collapse", () => {
+    const g = injectedTaxonomyGraph();
+    expect(applyGroupCollapse(g, { collapseTargets: [] })).toBe(g);
+    expect(applyGroupCollapse(g, {})).toBe(g);
+  });
+});
+
+// A graph whose communities map cleanly: { holmes, watson } in "People",
+// { moriarty } in "Villains"; baker is community-less. Edges mirror the
+// taxonomy graph so the community fold is comparable to a single-level ontology
+// fold of the SAME partition.
+function communityGraph() {
+  return {
+    nodes: [
+      { id: "holmes", label: "Holmes", type: "Character", community_name: "People" },
+      { id: "watson", label: "Watson", type: "Character", community_name: "People" },
+      { id: "moriarty", label: "Moriarty", type: "Villain", community_name: "Villains" },
+      { id: "baker", label: "Baker Street", type: "Location" },
+    ],
+    links: [
+      { source: "holmes", target: "watson", relation: "assists", evidence_refs: ["e1"] },
+      { source: "holmes", target: "moriarty", relation: "pursues", evidence_refs: ["e2"] },
+      { source: "watson", target: "moriarty", relation: "pursues", evidence_refs: ["e3"] },
+      { source: "holmes", target: "baker", relation: "located_in", evidence_refs: ["e4"] },
+      { source: "moriarty", target: "baker", relation: "located_in", evidence_refs: ["e5"] },
+    ],
+  };
+}
+
+const communityOf = (n) => n.community_name ?? null;
+
+describe("communityNodeId + mintCommunityNodeIds (A2 helper)", () => {
+  it("mints namespaced ids and disambiguates a collision deterministically", () => {
+    expect(communityNodeId("People")).toBe("community-node:People");
+    // A real node already owns the naive id -> the mint must NOT reuse it.
+    const existing = new Set(["community-node:People", "watson"]);
+    const ids = mintCommunityNodeIds(["People", "Villains"], existing);
+    expect(ids.get("People")).not.toBe("community-node:People");
+    expect(ids.get("People")).toBe("community-node:People#1");
+    expect(ids.get("Villains")).toBe("community-node:Villains");
+    // No minted id collides with an existing id.
+    for (const id of ids.values()) expect(existing.has(id)).toBe(false);
+  });
+});
+
+describe("B2 — injectCommunityNodes (synthetic nodes + has_member edges)", () => {
+  it("injects one node per LIVE key carrying kind + community_key + tone", () => {
+    const g = communityGraph();
+    const out = injectCommunityNodes(g, {
+      communityOf,
+      liveKeys: ["People", "Villains"],
+      toneKeyOf: (k) => k,
+    });
+    const peopleId = out.idByKey.get("People");
+    const node = out.nodes.find((n) => n.id === peopleId);
+    expect(node).toMatchObject({
+      community_node_kind: "community",
+      community_key: "People",
+      type: "OntologyCommunity",
+    });
+    // has_member edges: community node -> each live member present in the graph.
+    const memberEdges = out.links.filter((e) => e.relation === "has_member");
+    expect(memberEdges).toHaveLength(3); // holmes, watson (People) + moriarty (Villains)
+    expect(memberEdges.every((e) => e.structural === true)).toBe(true);
+    // baker (community-less) gets NO has_member edge.
+    expect(memberEdges.some((e) => e.target === "baker")).toBe(false);
+  });
+});
+
+describe("B2 — T4 community/ontology collapse PARITY (shared engine)", () => {
+  it("a community fold matches the same partition expressed as a 1-level ontology fold", () => {
+    // --- Community fold of "People" via the community index + engine. ---
+    const cg = communityGraph();
+    const ctx = { communityOf, liveKeys: ["People", "Villains"], toneKeyOf: (k) => k };
+    const injectedC = injectCommunityNodes(cg, ctx);
+    const { parentById, descendantsByTarget, collapseTargetByKey, idByKey } =
+      buildCommunityParentIndex(cg, { ...ctx, idByKey: injectedC.idByKey });
+    const peopleId = idByKey.get("People");
+    const communityOut = applyGroupCollapse(injectedC, {
+      parentById,
+      collapseTargets: [collapseTargetByKey("People")],
+      descendantsByTarget,
+    });
+
+    // --- Equivalent SINGLE-LEVEL ontology fold: one class "People" holding
+    //     holmes+watson, one class "Villains" holding moriarty, baker free. ---
+    const og = communityGraph(); // same edges; community_name fields are ignored by ontology
+    const flatHierarchies = {
+      schema: "graphify_ontology_class_hierarchies_v1",
+      hierarchies: {
+        flat: {
+          root_class_ids: [peopleId, idByKey.get("Villains")],
+          classes_by_id: {
+            [peopleId]: {
+              id: peopleId, label: "People", parent_id: null, child_ids: [], level: 0,
+              member_node_types: ["Character"], member_ids: ["holmes", "watson"],
+            },
+            [idByKey.get("Villains")]: {
+              id: idByKey.get("Villains"), label: "Villains", parent_id: null, child_ids: [], level: 0,
+              member_node_types: ["Villain"], member_ids: ["moriarty"],
+            },
+          },
+        },
+      },
+    };
+    const injectedO = injectOntologyClassNodes(og, flatHierarchies, { levels: "all" });
+    const { parentById: pOnt, descendantClassIds } = buildClassParentIndex(flatHierarchies);
+    const ontologyOut = applyGroupCollapse(injectedO, {
+      parentById: pOnt,
+      collapseTargets: [peopleId],
+      descendantsByTarget: descendantClassIds,
+    });
+
+    // The re-endpointed REAL TOPOLOGY (source|target|relation, aggregate counts)
+    // is identical — proving the engine is shared, not forked. The structural
+    // membership edges differ only in label (has_member vs has_instance, an
+    // injection detail), so compare the non-structural data edges.
+    const topo = (out) =>
+      out.links
+        .filter((e) => !e.structural)
+        .map((e) => `${e.source}|${e.target}|${e.relation}|${e.aggregate_count ?? 1}`)
+        .sort();
+    expect(topo(communityOut)).toEqual(topo(ontologyOut));
+
+    // Same fold-node annotations: People holds 2 hidden + the (+2) label.
+    const cPeople = communityOut.nodes.find((n) => n.id === peopleId);
+    const oPeople = ontologyOut.nodes.find((n) => n.id === peopleId);
+    expect(cPeople.hidden_node_count).toBe(2);
+    expect(oPeople.hidden_node_count).toBe(2);
+    expect(cPeople.label).toBe(oPeople.label);
+  });
+});
+
+describe("B2 — T5 link-bubbling invariant (community axis)", () => {
+  it("aggregates parallels, drops self-loops, unions evidence, deterministic order", () => {
+    const cg = communityGraph();
+    const ctx = { communityOf, liveKeys: ["People", "Villains"], toneKeyOf: (k) => k };
+    const injected = injectCommunityNodes(cg, ctx);
+    const { parentById, descendantsByTarget, collapseTargetByKey, idByKey } =
+      buildCommunityParentIndex(cg, { ...ctx, idByKey: injected.idByKey });
+    const peopleId = idByKey.get("People");
+    const out = applyGroupCollapse(injected, {
+      parentById,
+      collapseTargets: [collapseTargetByKey("People")],
+      descendantsByTarget,
+    });
+
+    // holmes/watson --pursues--> moriarty AGGREGATE into one People->moriarty edge.
+    const pursues = out.links.filter((e) => e.relation === "pursues");
+    expect(pursues).toHaveLength(1);
+    expect(pursues[0]).toMatchObject({ source: peopleId, target: "moriarty", aggregate_count: 2 });
+    expect(pursues[0].evidence_refs).toEqual(["e2", "e3"]);
+
+    // holmes--assists-->watson became an internal self-loop (both fold to People).
+    expect(out.links.some((e) => e.relation === "assists")).toBe(false);
+    const people = out.nodes.find((n) => n.id === peopleId);
+    // assists (1) + the People->holmes/watson has_member edges (2) self-loop = 3.
+    expect(people.internal_edge_count).toBe(3);
+
+    // No self-loops survive; output edge order is deterministic (sorted).
+    expect(out.links.every((e) => e.source !== e.target)).toBe(true);
+    const keys = out.links.map((e) => `${e.source}|${e.target}|${e.relation}`);
+    expect(keys).toEqual([...keys].sort());
+  });
+});
+
+describe("B2 — T9 A1 live-key guard (no vanish into a missing ancestor)", () => {
+  it("a fold key that is NOT live maps no entity, hides nothing", () => {
+    const cg = communityGraph();
+    // "Villains" is the only LIVE key we inject; a persisted fold of the NON-live
+    // "Ghosts" key must hide nothing (its members map to no community node).
+    const ctx = { communityOf, liveKeys: ["Villains"], toneKeyOf: (k) => k };
+    const injected = injectCommunityNodes(cg, ctx);
+    const { parentById, descendantsByTarget, idByKey } = buildCommunityParentIndex(cg, {
+      ...ctx,
+      idByKey: injected.idByKey,
+    });
+    // People entities have NO parent in the index (People is not live).
+    expect(parentById.has("holmes")).toBe(false);
+    expect(parentById.has("watson")).toBe(false);
+
+    // Collapsing a non-existent / non-live target hides nothing — engine no-op
+    // (empty collapseTargets) returns the input.
+    const out = applyGroupCollapse(injected, {
+      parentById,
+      collapseTargets: [], // "Ghosts"/"People" produced no synthetic id
+      descendantsByTarget,
+    });
+    expect(out).toBe(injected);
+    // holmes/watson remain visible (never vanished via a missing ancestor).
+    expect(injected.nodes.some((n) => n.id === "holmes")).toBe(true);
+    expect(injected.nodes.some((n) => n.id === "watson")).toBe(true);
+  });
+});
+
+describe("B2 — T10 id-collision safety (A2, NORMATIVE)", () => {
+  it("never mints two nodes with the same id when a real node owns the naive id", () => {
+    // A real entity whose id literally equals the naive community-node id.
+    const collidingGraph = {
+      nodes: [
+        { id: "community-node:People", label: "Decoy", type: "Character" },
+        { id: "holmes", label: "Holmes", type: "Character", community_name: "People" },
+      ],
+      links: [{ source: "holmes", target: "community-node:People", relation: "knows" }],
+    };
+    const ctx = { communityOf, liveKeys: ["People"], toneKeyOf: (k) => k };
+    const out = injectCommunityNodes(collidingGraph, ctx);
+
+    // The synthetic id was disambiguated; the real node is untouched.
+    const peopleId = out.idByKey.get("People");
+    expect(peopleId).not.toBe("community-node:People");
+    // No two nodes share an id post-injection.
+    const idCounts = new Map();
+    for (const n of out.nodes) idCounts.set(n.id, (idCounts.get(n.id) ?? 0) + 1);
+    for (const [, count] of idCounts) expect(count).toBe(1);
+    // The decoy real node still exists with its original id.
+    expect(out.nodes.find((n) => n.id === "community-node:People").label).toBe("Decoy");
   });
 });

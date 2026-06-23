@@ -38,6 +38,71 @@
 /** Class id namespace prefix the artifact uses (`class:<Name>`). */
 const CLASS_ID_PREFIX = "class:";
 
+/**
+ * Community synthetic-node id namespace prefix (B2 / Amendment A2). The id of a
+ * community fold node is minted ONLY by `communityNodeId`, never by raw concat,
+ * so click dispatch and collision detection have a single, auditable mint point
+ * — mirroring the `class:` discipline above. This is DISTINCT from the
+ * `nodeGroup` tone palette key (`community:<n>`, graphAdapter.js): keep the
+ * palette key, the `community_key` passthrough, and this synthetic id three
+ * separate, unambiguous things.
+ */
+const COMMUNITY_ID_PREFIX = "community-node:";
+
+/**
+ * Type synthetic-node id namespace prefix (B2 — Type-level group-by). The Type
+ * LEVEL of the ontology taxonomy is the entity `type` itself; the artifact has no
+ * per-type CLASS node, so grouping a Type folds every entity sharing that `type`
+ * into one synthetic type node — the single-level, community-like collapse.
+ * Distinct from `class:` and `community-node:` so the three never collide.
+ */
+const TYPE_ID_PREFIX = "type-node:";
+
+/**
+ * Mint the reserved synthetic id for a community fold node from its key
+ * (Amendment A2). The id is namespaced so it cannot be confused with a class id;
+ * collision against a REAL node id is the caller's concern (see
+ * `mintCommunityNodeIds`), which is why this helper is the only mint point.
+ * @param {string} key  the community key (a `nodeCommunity` value).
+ * @returns {string}
+ */
+export function communityNodeId(key) {
+  return `${COMMUNITY_ID_PREFIX}${key}`;
+}
+
+/**
+ * Deterministically assign a non-colliding synthetic id to every live community
+ * key (Amendment A2 — collision detection is MANDATORY). The naive id is
+ * `communityNodeId(key)`; if that literal already exists as a REAL node id we do
+ * NOT silently reuse it (which would let re-endpointing land edges on the wrong
+ * node). Instead we disambiguate by appending a numeric sentinel until the id is
+ * free, and record the chosen id. The mapping is returned so both the injector
+ * and the parent-index build from the SAME ids.
+ *
+ * @param {Iterable<string>} liveKeys  the live community keys to mint ids for.
+ * @param {Set<string>} existingIds    every id already present in the graph.
+ * @returns {Map<string,string>} community key -> chosen collision-free node id.
+ */
+export function mintCommunityNodeIds(liveKeys, existingIds) {
+  const idByKey = new Map();
+  const taken = new Set(existingIds);
+  for (const key of liveKeys) {
+    if (typeof key !== "string" || key.length === 0 || idByKey.has(key)) continue;
+    let id = communityNodeId(key);
+    // Collision with a real node id (or an already-minted synthetic) -> append a
+    // deterministic sentinel until free. The chosen id is recorded so the real
+    // node is never re-endpointed onto.
+    let salt = 1;
+    while (taken.has(id)) {
+      id = `${communityNodeId(key)}#${salt}`;
+      salt += 1;
+    }
+    taken.add(id);
+    idByKey.set(key, id);
+  }
+  return idByKey;
+}
+
 function graphNodeList(graph) {
   return graph?.nodes ?? [];
 }
@@ -287,54 +352,63 @@ function asArray(value) {
 }
 
 /**
- * EVOL 2.b + 2.d — collapse ontology classes with multi-level link inheritance.
+ * B2 — generalized, AXIS-NEUTRAL collapse engine (single source of truth).
  *
- * Produces a NEW graph in which every descendant (sub-class + member entity) of
- * a collapsed class is HIDDEN and folded into that collapsed class node (which
- * itself stays visible). Every edge is re-endpointed to the nearest visible
- * ancestor of each endpoint; edges whose endpoint resolves to nothing are
- * dropped, self-loops are dropped (and counted as internal), and parallel edges
- * are aggregated.
+ * Lifted verbatim from `applyOntologyCollapse` (EVOL 2.b/2.d), this is the one
+ * re-endpointing engine shared by the Ontology (multi-level) and Community
+ * (single-level degenerate) group-by axes. The only axis-specific input is the
+ * parent index; the link-bubbling contract (re-endpoint to nearest visible
+ * ancestor, drop dangling, drop+tally self-loops, aggregate parallels by
+ * `source|target|relation|weak`, structural-only-if-unanimous, weak preserved,
+ * `(+N)` fold-node annotations, deterministic order) is identical on every axis.
+ *
+ * Produces a NEW graph in which every descendant of a collapse target is HIDDEN
+ * and folded into that target node (which itself stays visible). For ontology a
+ * target's descendants are its sub-class CLASS ids; for community the set is
+ * empty (members fold via the entity leg of `parentById` only).
  *
  * @param {{ nodes?: object[], links?: object[], edges?: object[] }} graph
- *        a graph already injected with class nodes (levels: "all").
- * @param {object|null} classHierarchies the class-hierarchies.json artifact.
- * @param {object} [options]
- * @param {string[]} [options.collapsedClassIds=[]] class ids to collapse.
+ *        a graph already injected with the axis's synthetic group nodes.
+ * @param {object} index
+ * @param {Map<string,string|null>} index.parentById     each id -> its parent
+ *        (entity -> its leaf group; group -> its parent group, null at a root).
+ * @param {Iterable<string>} index.collapseTargets        the group ids to fold.
+ * @param {Map<string,Set<string>>} index.descendantsByTarget  target -> its
+ *        descendant GROUP ids (∅ for a single-level axis like community).
  * @returns {{ nodes: object[], links: object[] }} a NEW graph, or the input
  *        unchanged when nothing is collapsed.
  */
-export function applyOntologyCollapse(
+export function applyGroupCollapse(
   graph,
-  classHierarchies,
-  { collapsedClassIds = [] } = {},
+  { parentById = new Map(), collapseTargets = [], descendantsByTarget = new Map() } = {},
 ) {
   const collapsed = new Set(
-    (collapsedClassIds ?? []).filter((id) => typeof id === "string" && id.length > 0),
+    [...(collapseTargets ?? [])].filter((id) => typeof id === "string" && id.length > 0),
   );
   if (collapsed.size === 0) return graph;
 
   const baseNodes = graphNodeList(graph);
   const baseEdges = graphEdgeList(graph);
-  const { parentById, descendantClassIds } = buildClassParentIndex(classHierarchies);
 
-  // Ids hidden by the collapse: every CLASS + ENTITY descendant of any collapsed
-  // class. The collapsed class node itself STAYS visible (it is the fold target).
+  // Ids hidden by the collapse: every GROUP + ENTITY descendant of any collapse
+  // target. The target node itself STAYS visible (it is the fold target).
   const hidden = new Set();
-  for (const classId of collapsed) {
-    for (const descClassId of descendantClassIds.get(classId) ?? []) hidden.add(descClassId);
+  for (const targetId of collapsed) {
+    for (const descId of descendantsByTarget.get(targetId) ?? []) hidden.add(descId);
   }
-  // Entity members fold under a collapsed class when their leaf class is the
-  // collapsed class OR one of its (now hidden) descendant classes.
+  // Entity members fold under a collapse target when their leaf group is the
+  // target itself OR one of its (now hidden) descendant groups. For the
+  // single-level community axis `descendantsByTarget` is empty, so this reduces
+  // to "entity whose community is the collapsed one folds in one hop".
   for (const node of baseNodes) {
     const id = node?.id;
     if (typeof id !== "string") continue;
-    const leafClassId = parentById.get(id); // entity -> its leaf class (or undefined)
-    if (typeof leafClassId !== "string") continue;
-    if (collapsed.has(leafClassId) || hidden.has(leafClassId)) hidden.add(id);
+    const leafGroupId = parentById.get(id); // entity -> its leaf group (or undefined)
+    if (typeof leafGroupId !== "string") continue;
+    if (collapsed.has(leafGroupId) || hidden.has(leafGroupId)) hidden.add(id);
   }
-  // The collapsed class nodes are never themselves hidden.
-  for (const classId of collapsed) hidden.delete(classId);
+  // The collapse target nodes are never themselves hidden.
+  for (const targetId of collapsed) hidden.delete(targetId);
 
   const visibleIds = new Set();
   for (const node of baseNodes) {
@@ -344,8 +418,8 @@ export function applyOntologyCollapse(
   // Re-endpoint + aggregate every edge. Aggregation key is directional and keeps
   // strong/weak and relation distinct so different relation types never merge.
   const aggregated = new Map();
-  // internal_edge_count: edges that became self-loops inside a collapsed class.
-  const internalCountByClass = new Map();
+  // internal_edge_count: edges that became self-loops inside a collapse target.
+  const internalCountByTarget = new Map();
 
   // Stable edge order so aggregation (and thus output) is deterministic.
   const orderedEdges = [...baseEdges]
@@ -362,10 +436,10 @@ export function applyOntologyCollapse(
     // An endpoint that resolves to nothing visible -> drop the edge.
     if (source == null || target == null) continue;
     // Self-loop after folding -> drop, but tally it as an internal edge of the
-    // collapsed class it folded into.
+    // collapse target it folded into.
     if (source === target) {
       if (collapsed.has(source)) {
-        internalCountByClass.set(source, (internalCountByClass.get(source) ?? 0) + 1);
+        internalCountByTarget.set(source, (internalCountByTarget.get(source) ?? 0) + 1);
       }
       continue;
     }
@@ -408,15 +482,15 @@ export function applyOntologyCollapse(
     return ka < kb ? -1 : ka > kb ? 1 : 0;
   });
 
-  // Count hidden nodes per collapsed class (its whole hidden subtree). A hidden
+  // Count hidden nodes per collapse target (its whole hidden subtree). A hidden
   // node is attributed to the nearest collapsed ancestor on its parent chain.
-  const hiddenCountByClass = new Map();
+  const hiddenCountByTarget = new Map();
   for (const hiddenId of hidden) {
     let current = parentById.get(hiddenId) ?? null;
     const guard = new Set();
     while (current != null && !guard.has(current)) {
       if (collapsed.has(current)) {
-        hiddenCountByClass.set(current, (hiddenCountByClass.get(current) ?? 0) + 1);
+        hiddenCountByTarget.set(current, (hiddenCountByTarget.get(current) ?? 0) + 1);
         break;
       }
       guard.add(current);
@@ -428,18 +502,344 @@ export function applyOntologyCollapse(
     .filter((node) => typeof node?.id === "string" && visibleIds.has(node.id))
     .map((node) => {
       if (!collapsed.has(node.id)) return node;
-      const hiddenCount = hiddenCountByClass.get(node.id) ?? 0;
+      const hiddenCount = hiddenCountByTarget.get(node.id) ?? 0;
       const baseLabel = typeof node.label === "string" && node.label ? node.label : node.id;
       return {
         ...node,
         collapsed: true,
         hidden_node_count: hiddenCount,
-        internal_edge_count: internalCountByClass.get(node.id) ?? 0,
-        // Visual cue: a collapsed class shows its folded-member count so the
+        internal_edge_count: internalCountByTarget.get(node.id) ?? 0,
+        // Visual cue: a collapsed target shows its folded-member count so the
         // renderer's in-box label reads e.g. "Character (+42)".
         label: hiddenCount > 0 ? `${baseLabel} (+${hiddenCount})` : baseLabel,
       };
     });
 
   return { nodes, links };
+}
+
+/**
+ * EVOL 2.b/2.d — ontology collapse, now a thin ADAPTER over `applyGroupCollapse`.
+ *
+ * Builds the ontology parent index (`buildClassParentIndex`) and delegates to the
+ * shared engine; behaviour is byte-for-byte identical to the pre-B2 monolithic
+ * `applyOntologyCollapse` (same back-compat signature for existing callers/tests).
+ *
+ * @param {{ nodes?: object[], links?: object[], edges?: object[] }} graph
+ *        a graph already injected with class nodes (levels: "all").
+ * @param {object|null} classHierarchies the class-hierarchies.json artifact.
+ * @param {object} [options]
+ * @param {string[]} [options.collapsedClassIds=[]] class ids to collapse.
+ * @returns {{ nodes: object[], links: object[] }} a NEW graph, or the input
+ *        unchanged when nothing is collapsed.
+ */
+export function applyOntologyCollapse(graph, classHierarchies, { collapsedClassIds = [] } = {}) {
+  const collapseTargets = (collapsedClassIds ?? []).filter(
+    (id) => typeof id === "string" && id.length > 0,
+  );
+  if (collapseTargets.length === 0) return graph;
+  const { parentById, descendantClassIds } = buildClassParentIndex(classHierarchies);
+  return applyGroupCollapse(graph, {
+    parentById,
+    collapseTargets,
+    descendantsByTarget: descendantClassIds,
+  });
+}
+
+/* ===========================================================================
+ * B2 — COMMUNITY group-by axis: single-level "class layer in disguise".
+ *
+ * Communities are FLAT (no parent/level/sub-community schema anywhere), so the
+ * community axis is a degenerate single-level collapse. A synthetic community
+ * fold node is injected per LIVE community key; the multi-level engine
+ * degenerates correctly — a hidden entity resolves to its community node in one
+ * hop, a visible entity resolves to itself, no special-casing.
+ *
+ * The studio (graphAdapter) owns `nodeCommunity` and `communityStats`; to avoid
+ * a module cycle, the App layer passes the per-node community key + the live-key
+ * set + per-key tone IN, rather than this module importing graphAdapter.
+ * ======================================================================== */
+
+/**
+ * Build the community parent index for `applyGroupCollapse` (Amendments A1+A2).
+ *
+ * `parentById` maps each entity id to its community fold node id — but ONLY when
+ * the entity's community key is in the LIVE set (A1). Entities with no live
+ * community key get NO parent, so `nearestVisibleAncestor` resolves them to
+ * themselves and they never fold into a missing ancestor (which would make them
+ * vanish). Community nodes have no parent (single level) and an EMPTY descendant
+ * set (members fold via the entity leg only).
+ *
+ * @param {{ nodes?: object[] }} graph
+ * @param {object} index
+ * @param {(node:object)=>string|null} index.communityOf  entity -> community key.
+ * @param {Iterable<string>} index.liveKeys                the live community keys.
+ * @param {Map<string,string>} [index.idByKey]             key -> synthetic node id
+ *        (from `mintCommunityNodeIds`); minted here against the graph if omitted.
+ * @returns {{ parentById: Map<string,string|null>,
+ *             descendantsByTarget: Map<string,Set<string>>,
+ *             idByKey: Map<string,string>,
+ *             collapseTargetByKey: (key:string)=>string|undefined }}
+ */
+export function buildCommunityParentIndex(graph, { communityOf, liveKeys, idByKey } = {}) {
+  const baseNodes = graphNodeList(graph);
+  const live = new Set([...(liveKeys ?? [])].filter((k) => typeof k === "string" && k.length > 0));
+  const ids =
+    idByKey instanceof Map
+      ? idByKey
+      : mintCommunityNodeIds(live, new Set(baseNodes.map((n) => n.id)));
+
+  const parentById = new Map();
+  // A1: only entities whose community key is live get a parent (their community
+  // fold node). Non-live / community-less entities are left unmapped.
+  for (const node of baseNodes) {
+    const id = node?.id;
+    if (typeof id !== "string") continue;
+    const key = communityOf?.(node);
+    if (typeof key !== "string" || !live.has(key)) continue;
+    const targetId = ids.get(key);
+    if (typeof targetId === "string") parentById.set(id, targetId);
+  }
+  // The community node itself has no parent (single level) — leave it unmapped so
+  // it resolves to itself.
+  const descendantsByTarget = new Map();
+  for (const targetId of ids.values()) descendantsByTarget.set(targetId, new Set());
+
+  return {
+    parentById,
+    descendantsByTarget,
+    idByKey: ids,
+    collapseTargetByKey: (key) => ids.get(key),
+  };
+}
+
+/**
+ * Inject one synthetic community fold node per LIVE key + its `has_member`
+ * structural edges (mirrors `injectOntologyClassNodes`). Collision-safe ids come
+ * from `mintCommunityNodeIds` (Amendment A2) so a real node whose id literally
+ * equals `community-node:<key>` is never clobbered or re-endpointed onto.
+ *
+ * Each community node carries (A2):
+ *   - id                : the collision-free synthetic id
+ *   - community_node_kind: "community"   (click dispatch recognizes it)
+ *   - community_key     : the original key (click reads THIS, never the id)
+ *   - type              : "OntologyCommunity"  (box shape via TYPE_SHAPE)
+ *   - tone passthrough  : `group` set to the key's `nodeGroup` tone key so the
+ *                         fold-node swatch matches the rail/canvas (see A5)
+ *
+ * @param {{ nodes?: object[], links?: object[], edges?: object[] }} graph
+ * @param {object} options
+ * @param {(node:object)=>string|null} options.communityOf  entity -> key.
+ * @param {Iterable<string>} options.liveKeys                live keys to inject.
+ * @param {Map<string,string>} [options.idByKey]            shared minted ids.
+ * @param {(key:string)=>string|undefined} [options.toneKeyOf]  key -> nodeGroup
+ *        palette key for the swatch (A5); defaults to the key itself.
+ * @param {(key:string)=>string|undefined} [options.labelOf]  key -> display label.
+ * @returns {{ nodes: object[], links: object[], idByKey: Map<string,string> }}
+ *        a NEW graph (original + community nodes + has_member edges).
+ */
+export function injectCommunityNodes(
+  graph,
+  { communityOf, liveKeys, idByKey, toneKeyOf, labelOf } = {},
+) {
+  const baseNodes = graphNodeList(graph);
+  const baseEdges = graphEdgeList(graph);
+  const live = new Set([...(liveKeys ?? [])].filter((k) => typeof k === "string" && k.length > 0));
+  const ids =
+    idByKey instanceof Map
+      ? idByKey
+      : mintCommunityNodeIds(live, new Set(baseNodes.map((n) => n.id)));
+
+  if (live.size === 0) return { nodes: baseNodes, links: baseEdges, idByKey: ids };
+
+  const addedNodes = [];
+  for (const key of live) {
+    const nodeId = ids.get(key);
+    if (typeof nodeId !== "string") continue;
+    const node = {
+      id: nodeId,
+      label: (labelOf && labelOf(key)) || key,
+      type: "OntologyCommunity",
+      community_node_kind: "community",
+      community_key: key,
+    };
+    const tone = toneKeyOf ? toneKeyOf(key) : key;
+    // `group` drives the DS categorical palette; reuse the community's tone key
+    // (its `nodeGroup` palette key, A5) so the fold node matches rail/canvas.
+    if (tone != null) node.group = tone;
+    addedNodes.push(node);
+  }
+
+  // has_member: community node -> each live member entity present in the graph.
+  const addedEdges = [];
+  for (const node of baseNodes) {
+    const id = node?.id;
+    if (typeof id !== "string") continue;
+    const key = communityOf?.(node);
+    if (typeof key !== "string" || !live.has(key)) continue;
+    const nodeId = ids.get(key);
+    if (typeof nodeId !== "string") continue;
+    addedEdges.push({
+      source: nodeId,
+      target: id,
+      relation: "has_member",
+      structural: true,
+      community_edge_kind: "membership",
+    });
+  }
+
+  return {
+    nodes: [...baseNodes, ...addedNodes],
+    links: [...baseEdges, ...addedEdges],
+    idByKey: ids,
+  };
+}
+
+/* ===========================================================================
+ * B2 — TYPE group-by axis: the leaf "Type" level, single-level collapse.
+ *
+ * The ontology taxonomy's leaf classes carry `member_node_types` (raw entity
+ * `type` strings like "Character"). Those Types are the rail's deepest rows but
+ * have NO per-type CLASS node in the artifact, so a grouped Type folds every
+ * entity whose `type` equals it into one synthetic type node — exactly the
+ * community pattern (a synthetic fold node + a one-hop entity parent map). The
+ * studio passes `typeOf` (entity -> its `type`) IN so this module needs no
+ * graphAdapter import (mirrors the community axis).
+ * ======================================================================== */
+
+/** Mint the reserved synthetic id for a Type fold node from its `type` value. */
+export function typeNodeId(typeName) {
+  return `${TYPE_ID_PREFIX}${typeName}`;
+}
+
+/**
+ * Collision-safe synthetic ids for grouped Type values (mirrors
+ * `mintCommunityNodeIds`): a real node literally equal to `type-node:<T>` is never
+ * clobbered/re-endpointed onto.
+ *
+ * @param {Iterable<string>} typeNames  the grouped type values to mint ids for.
+ * @param {Set<string>} existingIds     every id already present in the graph.
+ * @returns {Map<string,string>} type value -> chosen collision-free node id.
+ */
+export function mintTypeNodeIds(typeNames, existingIds) {
+  const idByKey = new Map();
+  const taken = new Set(existingIds);
+  for (const name of typeNames) {
+    if (typeof name !== "string" || name.length === 0 || idByKey.has(name)) continue;
+    let id = typeNodeId(name);
+    let salt = 1;
+    while (taken.has(id)) {
+      id = `${typeNodeId(name)}#${salt}`;
+      salt += 1;
+    }
+    taken.add(id);
+    idByKey.set(name, id);
+  }
+  return idByKey;
+}
+
+/**
+ * Build the Type parent index for `applyGroupCollapse`. Each entity whose `type`
+ * is a grouped (live) type gets its synthetic type fold node as its parent; the
+ * fold node has no parent and an EMPTY descendant set (single-level, members fold
+ * via the entity leg only — like community).
+ *
+ * @param {{ nodes?: object[] }} graph
+ * @param {object} index
+ * @param {(node:object)=>string|null} index.typeOf  entity -> its `type` value.
+ * @param {Iterable<string>} index.typeNames         the grouped type values.
+ * @param {Map<string,string>} [index.idByKey]       value -> synthetic node id.
+ * @returns {{ parentById: Map<string,string|null>,
+ *             descendantsByTarget: Map<string,Set<string>>,
+ *             idByKey: Map<string,string>,
+ *             collapseTargetByKey: (name:string)=>string|undefined }}
+ */
+export function buildTypeParentIndex(graph, { typeOf, typeNames, idByKey } = {}) {
+  const baseNodes = graphNodeList(graph);
+  const live = new Set(
+    [...(typeNames ?? [])].filter((k) => typeof k === "string" && k.length > 0),
+  );
+  const ids =
+    idByKey instanceof Map ? idByKey : mintTypeNodeIds(live, new Set(baseNodes.map((n) => n.id)));
+
+  const parentById = new Map();
+  for (const node of baseNodes) {
+    const id = node?.id;
+    if (typeof id !== "string") continue;
+    const name = typeOf?.(node);
+    if (typeof name !== "string" || !live.has(name)) continue;
+    const targetId = ids.get(name);
+    if (typeof targetId === "string") parentById.set(id, targetId);
+  }
+  const descendantsByTarget = new Map();
+  for (const targetId of ids.values()) descendantsByTarget.set(targetId, new Set());
+
+  return {
+    parentById,
+    descendantsByTarget,
+    idByKey: ids,
+    collapseTargetByKey: (name) => ids.get(name),
+  };
+}
+
+/**
+ * Inject one synthetic Type fold node per grouped `type` value + its `has_member`
+ * structural edges (mirrors `injectCommunityNodes`). The node carries
+ * `type_node_kind: "type"` + the original `type_name` (click dispatch reads
+ * THIS, never the id) and `type: "OntologyTypeGroup"` so the renderer boxes it.
+ *
+ * @param {{ nodes?: object[], links?: object[], edges?: object[] }} graph
+ * @param {object} options
+ * @param {(node:object)=>string|null} options.typeOf   entity -> its `type`.
+ * @param {Iterable<string>} options.typeNames          grouped type values.
+ * @param {Map<string,string>} [options.idByKey]        shared minted ids.
+ * @returns {{ nodes: object[], links: object[], idByKey: Map<string,string> }}
+ */
+export function injectTypeNodes(graph, { typeOf, typeNames, idByKey } = {}) {
+  const baseNodes = graphNodeList(graph);
+  const baseEdges = graphEdgeList(graph);
+  const live = new Set(
+    [...(typeNames ?? [])].filter((k) => typeof k === "string" && k.length > 0),
+  );
+  const ids =
+    idByKey instanceof Map ? idByKey : mintTypeNodeIds(live, new Set(baseNodes.map((n) => n.id)));
+
+  if (live.size === 0) return { nodes: baseNodes, links: baseEdges, idByKey: ids };
+
+  const addedNodes = [];
+  for (const name of live) {
+    const nodeId = ids.get(name);
+    if (typeof nodeId !== "string") continue;
+    addedNodes.push({
+      id: nodeId,
+      label: name,
+      type: "OntologyTypeGroup",
+      type_node_kind: "type",
+      type_name: name,
+      group: name,
+    });
+  }
+
+  const addedEdges = [];
+  for (const node of baseNodes) {
+    const id = node?.id;
+    if (typeof id !== "string") continue;
+    const name = typeOf?.(node);
+    if (typeof name !== "string" || !live.has(name)) continue;
+    const nodeId = ids.get(name);
+    if (typeof nodeId !== "string") continue;
+    addedEdges.push({
+      source: nodeId,
+      target: id,
+      relation: "has_member",
+      structural: true,
+      type_edge_kind: "membership",
+    });
+  }
+
+  return {
+    nodes: [...baseNodes, ...addedNodes],
+    links: [...baseEdges, ...addedEdges],
+    idByKey: ids,
+  };
 }
