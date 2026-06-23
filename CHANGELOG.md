@@ -4,6 +4,10 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.17.1 (2026-06-23)
+
+- **SKILL — `graphify cite`.** The skill workflow (all 10 variants) now documents `graphify cite` in the Step-5 enrichment step (run before studio/wiki export for grounded `node.citations[]`; heuristic + no-key by default, `--mode heuristic|assistant|api`, anti-hallucination; symmetric to `describe`/`label`). Docs-only.
+
 ## 0.17.0 (2026-06-23)
 
 - **`graphify cite` — citation grounding (new producer command).** Scans a corpus and populates `node.citations[]` `{quote, source_file, source_location}` per entity — symmetric to `describe`/`label` (alias `ground-citations`). **Heuristic-first, no API key by default** (`--mode heuristic|assistant|api`); LLM-assisted modes are opt-in and gated by the same structural anti-hallucination invariant — every emitted `quote` is a verified verbatim substring of the source. Modality-aware (OCR-markdown sections + page resolution, plain-text), unions with existing citations (never clobbers the exhaustive `citations.json` tail), reuses the 0.14.0 citation tiering. Opt-in (not auto-run). Verified on a real corpus: 792/876 nodes grounded, 2854/2854 quotes verbatim, zero hallucinations, zero API calls.
