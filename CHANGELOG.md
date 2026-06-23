@@ -4,6 +4,12 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.17.0 (2026-06-23)
+
+- **`graphify cite` — citation grounding (new producer command).** Scans a corpus and populates `node.citations[]` `{quote, source_file, source_location}` per entity — symmetric to `describe`/`label` (alias `ground-citations`). **Heuristic-first, no API key by default** (`--mode heuristic|assistant|api`); LLM-assisted modes are opt-in and gated by the same structural anti-hallucination invariant — every emitted `quote` is a verified verbatim substring of the source. Modality-aware (OCR-markdown sections + page resolution, plain-text), unions with existing citations (never clobbers the exhaustive `citations.json` tail), reuses the 0.14.0 citation tiering. Opt-in (not auto-run). Verified on a real corpus: 792/876 nodes grounded, 2854/2854 quotes verbatim, zero hallucinations, zero API calls.
+- **`OntologyCitation` contract.** Promoted `quote?`, `confidence?`, `source_location?` to first-class optional fields — additive, backward-compatible (already de-facto present on the sibling evidence record and consumed by the studio); reverses the old SPEC_CITATIONS "no quote" non-goal. Storage/tiering unchanged.
+- **Renderer regression coverage.** Expanded the graph renderer's golden pixel oracle from a smoke subset to comprehensive non-regression coverage (per-type shapes, labelled/recon boxes + the pixel-fit label ellipsis, community colours, node borders, edges, selection) — test-only, no renderer change.
+
 ## 0.16.0 (2026-06-23)
 
 - **Studio group-by (B2).** Per-item group-by checkboxes on every groupable row (ontology Domain / Sub-domain / Type and communities) with tri-state bulk buttons ("Group all to: Domain / Sub-domain / Type" + scoped "Ungroup all") and nesting absorption — DS-native, no horizontal overflow.
