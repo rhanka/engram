@@ -303,6 +303,41 @@ describe("citeGraph — image nodes ground against the containing document", () 
     expect(c.confidence).toBe("INFERRED");
     expect(verifyVerbatim(c.quote, normalizeForMatch(OCR_MARKDOWN))).toBe(true);
   });
+
+  it("REGRESSION: grounds via the containing doc even when the image FILE EXISTS on disk", () => {
+    // The MAJOR bug: in real OCR output the binary image usually exists on disk,
+    // so reading source_file first read the binary as text and the markdown
+    // fallback never ran → the image node got 0 citations. The fix resolves the
+    // containing document BEFORE attempting to read the binary.
+    const { mkdtempSync, mkdirSync, writeFileSync } = require("node:fs") as typeof import("node:fs");
+    const { join } = require("node:path") as typeof import("node:path");
+    const { tmpdir } = require("node:os") as typeof import("node:os");
+    const root = mkdtempSync(join(tmpdir(), "graphify-cite-img-exists-"));
+    mkdirSync(join(root, "doc_images"), { recursive: true });
+    writeFileSync(join(root, "doc.md"), OCR_MARKDOWN, "utf-8");
+    // The image file ACTUALLY EXISTS — a few bytes of (binary-ish) content that
+    // would NOT verbatim-ground anything if read as text.
+    writeFileSync(join(root, "doc_images", "image-000.jpg"), Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]));
+
+    const G = new Graph();
+    G.addNode("i1", {
+      id: "i1",
+      label: "Figure 1",
+      file_type: "image",
+      source_file: "doc_images/image-000.jpg",
+    });
+
+    const result = citeGraph(G, { root, topK: 6 });
+    // Must STILL ground (the bug made this 0).
+    expect(result.groundedNodes).toBe(1);
+    expect(result.perNode.i1?.length).toBeGreaterThan(0);
+    const c = result.perNode.i1![0]!;
+    expect(c.source_file).toBe("doc.md"); // the containing document, not the jpg
+    expect(c.confidence).toBe("INFERRED");
+    // The jpg path is NOT left dangling as "unresolved" when grounding succeeded.
+    expect(result.unresolvedSources).not.toContain("doc_images/image-000.jpg");
+    expect(verifyVerbatim(c.quote, normalizeForMatch(OCR_MARKDOWN))).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

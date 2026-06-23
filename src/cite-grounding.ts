@@ -780,9 +780,18 @@ export function citeGraph(G: Graph, options: CiteGraphOptions, dryRun = false): 
     // context), labeling the citation with that document path. This recovers the
     // image-context grounding ia-aero's ground2.py did (the page:"unknown" /
     // uncited-image gap). Other non-text source_files simply stay unresolved.
-    let loaded = loadSource(sourceFile);
+    //
+    // CRITICAL: in real OCR output the binary image file USUALLY EXISTS on disk.
+    // We must NOT `loadSource(image)` first — that would read the binary as text
+    // and never reach the markdown fallback. For image nodes / image-extension
+    // source_files, resolve the containing OCR-markdown document FIRST and only
+    // fall back to reading the source itself when there is no containing doc.
+    const isImageSource =
+      kind === "image" || /\.(png|jpe?g|gif|webp|tiff?|bmp)$/i.test(sourceFile);
+
+    let loaded: { parsed: ParsedSource; norm: string } | null = null;
     let sourceLabel = sourceFile;
-    if (!loaded && /\.(png|jpe?g|gif|webp|tiff?|bmp)$/i.test(sourceFile)) {
+    if (isImageSource) {
       const docFile = containingDocumentFor(sourceFile);
       if (docFile) {
         const docLoaded = loadSource(docFile);
@@ -791,6 +800,15 @@ export function citeGraph(G: Graph, options: CiteGraphOptions, dryRun = false): 
           sourceLabel = docFile;
         }
       }
+      // No containing-doc convention match (or it didn't load): fall back to
+      // reading the source as text (degenerate, but keeps non-OCR images working
+      // when the file happens to be textual).
+      if (!loaded) {
+        loaded = loadSource(sourceFile);
+        sourceLabel = sourceFile;
+      }
+    } else {
+      loaded = loadSource(sourceFile);
     }
     if (!loaded) return;
 
