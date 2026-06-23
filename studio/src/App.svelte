@@ -10,7 +10,7 @@
    * architecture.
    */
   import { onMount } from "svelte";
-  import { AppChrome, Button, Badge, ButtonGroup, Select } from "@sentropic/design-system-svelte";
+  import { AppChrome, Button, ButtonGroup, Select } from "@sentropic/design-system-svelte";
 
   import GraphCanvas from "./components/GraphCanvas.svelte";
   import LeftRail from "./components/LeftRail.svelte";
@@ -32,11 +32,28 @@
     applyWeakFilter,
     attachForceLayout,
     resolveSelectedIds,
+    communityStats,
+    nodeCommunity,
+    nodeType,
   } from "./lib/graphAdapter.js";
-  import { injectOntologyClassNodes, applyOntologyCollapse } from "./lib/classNodes.js";
+  import {
+    mintCommunityNodeIds,
+    mintTypeNodeIds,
+  } from "./lib/classNodes.js";
+  import {
+    computeGroupedGraph,
+    classIdsAtLevel,
+    typeNamesInTaxonomy,
+    ontologyLevelState,
+    ontologyAbsorption,
+  } from "./lib/groupBy.js";
   import { loadWorkspace } from "./lib/sceneLoader.js";
   import {
     createDefaultViewerState,
+    splitGroupedKeys,
+    groupKeyForOntology,
+    groupKeyForCommunity,
+    groupKeyForType,
     toggleType,
     toggleCommunity,
     toggleEntity,
@@ -46,9 +63,16 @@
     setActiveView,
     setQuery,
     setShowWeakLinks,
-    setShowOntologyClasses,
-    toggleCollapseClass,
-    expandAllClasses,
+    toggleGroupOntology,
+    toggleGroupCommunity,
+    toggleGroupType,
+    toggleGroupItem,
+    groupOntologyLevel,
+    groupAllCommunities,
+    clearOntologyGrouping,
+    clearCommunityGrouping,
+    hasOntologyGrouping,
+    hasCommunityGrouping,
   } from "./lib/viewerState.js";
 
   const EMPTY_GRAPH = { nodes: [], links: [] };
@@ -72,10 +96,8 @@
   let classHierarchies = $state.raw(null);
   // EVOL 2.b/2.d: the class-injection granularity is "all" — EVERY class (not
   // just leaves) is injected so that intermediate super-classes exist as collapse
-  // HANDLES (click a class node to fold its subtree). With an empty collapsed set
-  // this is the 2.a display plus the inter-class subclass_of skeleton; the
-  // collapse pass below only ever does work once a class is folded.
-  const ontologyClassLevels = "all";
+  // HANDLES. `computeGroupedGraph` (lib/groupBy.js) owns the inject granularity;
+  // the collapse pass only ever does work once a class is folded.
 
   // ----- in-UI model switcher ----------------------------------------------
   // The store holds the manifest + active model; api.js resolves static fetches
@@ -91,38 +113,126 @@
   // selectedIds/focusId (no re-layout). The weak-link toggle re-filters the
   // scene WITHOUT the raw graph (ÉTAPE 1b): on the light scene via
   // applyWeakFilter, or — in legacy fallback — by rebuilding from the graph.
+
+  // B2 (per-item): the grouped item SET split back into its engine inputs.
+  // An EMPTY set is the FAST PATH and must be byte-identical to the pre-B2
+  // default (A3). Several keys — mixing ontology classes, communities AND leaf
+  // TYPES — collapse simultaneously.
+  const groupedSplit = $derived(splitGroupedKeys(viewerState.options.groupBy.grouped));
+  const hasOntologyGroup = $derived(groupedSplit.ontologyClassIds.length > 0);
+  const hasCommunityGroup = $derived(groupedSplit.communityKeys.length > 0);
+  const hasTypeGroup = $derived(groupedSplit.typeNames.length > 0);
+  const hasAnyGroup = $derived(hasOntologyGroup || hasCommunityGroup || hasTypeGroup);
+
+  // C4: which kinds are AVAILABLE to group. Ontology needs the class-hierarchies
+  // artifact; Community needs at least one live community. The rail hides the
+  // checkbox affordance for an absent kind (and grouped keys for an unavailable
+  // kind simply contribute no collapse target — the engine ignores them).
+  const communityInfo = $derived(communityStats(graph));
+  const canGroupOntology = $derived(Boolean(classHierarchies?.hierarchies));
+  const canGroupCommunity = $derived(communityInfo.liveCount > 0);
+
+  // B2 / A1+A2: mint the synthetic community fold ids + per-key tone ONCE, so the
+  // injector and the parent index agree on ids. Built only when at least one
+  // community is grouped (the injector is skipped otherwise).
   //
-  // EVOL 2.a: when "Show ontology classes" is ON we cannot reuse the light
-  // sceneData fast-path — synthetic class nodes + has_instance edges must enter
-  // BEFORE buildScene so degrees / god-class / the weak filter all operate on
-  // the displayed topology. So we inject into the raw graph and rebuild. The
-  // injection is a no-op (returns the graph unchanged) when the artifact is
-  // absent or the graph has not hydrated yet, so this stays robust during load.
-  const ontologyGraph = $derived(
-    viewerState.options.showOntologyClasses
-      ? injectOntologyClassNodes(graph, classHierarchies, { levels: ontologyClassLevels })
-      : graph,
+  // ROOT-CAUSE FIX (community grouping was broken): `liveKeys` is the set fed to
+  // `injectCommunityNodes` / `buildCommunityParentIndex`, which mint a fold node +
+  // re-parent members for EVERY key in it. Passing ALL live communities here
+  // injected an orphan box (plus its has_member edges) for every NON-grouped
+  // community — at mystery scale, checking ONE community spawned 120+ stray fold
+  // boxes and thousands of structural edges that never collapsed, so the graph
+  // visibly failed to "regroup". Restrict the set to the GROUPED ∩ LIVE keys: only
+  // the communities the user actually checked get a fold node, and they collapse.
+  const communityCtx = $derived.by(() => {
+    if (!hasCommunityGroup) return null;
+    const groupedSet = new Set(groupedSplit.communityKeys);
+    const live = communityInfo.live.filter((c) => groupedSet.has(c.key));
+    if (live.length === 0) return null;
+    const liveKeys = live.map((c) => c.key);
+    const idByKey = mintCommunityNodeIds(liveKeys, new Set((graph?.nodes ?? []).map((n) => n.id)));
+    const toneKeyByKey = new Map(live.map((c) => [c.key, c.groupKey ?? c.key]));
+    return {
+      liveKeys,
+      idByKey,
+      communityOf: nodeCommunity,
+      toneKeyOf: (k) => toneKeyByKey.get(k),
+      labelOf: (k) => k,
+    };
+  });
+
+  // B2 (per-item): the TYPE fold context — mint synthetic type-node ids ONCE so
+  // the injector and parent index agree. Only built when a Type is grouped. The
+  // Type LEVEL is the entity `type` itself (no per-type class node in the
+  // artifact), so a grouped type folds entities sharing that `type` (§2).
+  const typeCtx = $derived.by(() => {
+    if (!hasTypeGroup) return null;
+    const typeNames = groupedSplit.typeNames;
+    const idByKey = mintTypeNodeIds(typeNames, new Set((graph?.nodes ?? []).map((n) => n.id)));
+    return { typeNames, idByKey, typeOf: nodeType };
+  });
+
+  // B2 (per-item): the REAL App grouping chain, now a single EXTRACTED + tested
+  // function (`computeGroupedGraph`). It folds the UNION of every grouped item
+  // (ontology classes + communities + leaf types) into ONE collapse pass. An
+  // empty grouped set is the fast path (returns the raw graph untouched, A3).
+  const groupedGraph = $derived(
+    computeGroupedGraph({
+      graph,
+      classHierarchies,
+      communityCtx,
+      typeCtx,
+      grouped: viewerState.options.groupBy.grouped,
+    }),
   );
-  // EVOL 2.b/2.d: once one or more classes are folded, collapse the injected
-  // graph (re-endpoint edges to the nearest visible ancestor, fold the subtree)
-  // BEFORE buildScene so degrees / god-class / the weak filter all operate on the
-  // collapsed topology. An empty collapsed set returns the graph unchanged.
-  const collapsedGraph = $derived(
-    viewerState.options.showOntologyClasses && viewerState.options.collapsedClassIds.length > 0
-      ? applyOntologyCollapse(ontologyGraph, classHierarchies, {
-          collapsedClassIds: viewerState.options.collapsedClassIds,
-        })
-      : ontologyGraph,
+
+  // Tri-state of each ontology bulk button (spec §4) + per-class absorption view
+  // (spec §3). Denominators EXCLUDE absorbed classes; the rail renders the
+  // {none|partial|all} variant + (n/m) badge and disables absorbed rows.
+  const checkedOntologyIds = $derived(new Set(groupedSplit.ontologyClassIds));
+  const checkedTypeNames = $derived(new Set(groupedSplit.typeNames));
+  const ontologyLevelStates = $derived({
+    domain: ontologyLevelState({
+      classHierarchies,
+      level: 0,
+      checkedOntologyIds,
+      checkedTypeNames,
+    }),
+    subDomain: ontologyLevelState({
+      classHierarchies,
+      level: 1,
+      checkedOntologyIds,
+      checkedTypeNames,
+    }),
+    type: ontologyLevelState({
+      classHierarchies,
+      level: 2,
+      checkedOntologyIds,
+      checkedTypeNames,
+    }),
+  });
+  const ontologyAbsorbed = $derived(ontologyAbsorption(classHierarchies, checkedOntologyIds));
+  // Community bulk button state (spec §5 — FLAT, 2-state): all-grouped when every
+  // live community key is checked.
+  const allCommunitiesGrouped = $derived(
+    canGroupCommunity &&
+      communityInfo.live.length > 0 &&
+      communityInfo.live.every((c) => groupedSplit.communityKeys.includes(c.key)),
   );
+  // Scope-specific "anything grouped" flags → native `disabled` on each
+  // section's Ungroup all (spec §4/§5).
+  const ontologyGrouped = $derived(hasOntologyGrouping(viewerState));
+  const communityGrouped = $derived(hasCommunityGrouping(viewerState));
   const scene = $derived(
-    viewerState.options.showOntologyClasses
-      ? // EVOL 2.a/2.b: the class/collapse scene is rebuilt from graph.json (no
-        // positions) — attach a force layout so it doesn't render as a ring.
+    hasAnyGroup
+      ? // B2/A4: the grouped scene is rebuilt from graph.json (no positions) —
+        // attach a force layout so it doesn't render as a ring.
         attachForceLayout(
-          buildScene(collapsedGraph, { showWeakLinks: viewerState.options.showWeakLinks }),
+          buildScene(groupedGraph, { showWeakLinks: viewerState.options.showWeakLinks }),
         )
       : sceneData
-        ? applyWeakFilter(sceneData, viewerState.options.showWeakLinks)
+        ? // A3 FAST PATH — byte-identical to the pre-B2 default-off.
+          applyWeakFilter(sceneData, viewerState.options.showWeakLinks)
         : buildScene(graph, { showWeakLinks: viewerState.options.showWeakLinks }),
   );
   // BUG A: facet / selection source. The left rail (Types / Communities /
@@ -151,31 +261,39 @@
   function handleToggleCommunity(community) {
     viewerState = toggleCommunity(viewerState, community);
   }
-  // EVOL 2.b/2.d: a click on a CLASS node folds/unfolds its subtree instead of
-  // selecting it as an entity. We branch on the displayed node's kind (the scene
-  // carries ontology_node_kind through from injectOntologyClassNodes).
-  function sceneNodeKind(id) {
-    return scene?.nodes?.find((n) => n.id === id)?.ontology_node_kind ?? null;
+  // B2 / A2: a click on ANY group-synthetic node UNGROUPS it instead of selecting
+  // an entity. Ontology class nodes toggle their namespaced ontology key (by id);
+  // community fold nodes toggle their namespaced community key (read from the
+  // `community_key` field, NEVER the parsed id). Returns the namespaced grouped
+  // key when the node is a group node, else null (entity selection).
+  function groupNodeToggleKey(id) {
+    const node = scene?.nodes?.find((n) => n.id === id);
+    if (!node) return null;
+    if (node.ontology_node_kind === "class") return groupKeyForOntology(node.id);
+    if (node.community_node_kind === "community")
+      return node.community_key != null ? groupKeyForCommunity(node.community_key) : null;
+    if (node.type_node_kind === "type")
+      return node.type_name != null ? groupKeyForType(node.type_name) : null;
+    return null;
   }
   function handleToggleEntity(id) {
-    if (sceneNodeKind(id) === "class") {
-      viewerState = toggleCollapseClass(viewerState, id);
+    const groupKey = groupNodeToggleKey(id);
+    if (groupKey != null) {
+      viewerState = toggleGroupItem(viewerState, groupKey);
       return;
     }
     viewerState = toggleEntity(viewerState, id);
     if (viewerState.focusId) void ensureEntity(viewerState.focusId);
   }
   function handleFocusEntity(id) {
-    // Double-click on a class node = collapse toggle too (no entity detail).
-    if (sceneNodeKind(id) === "class") {
-      viewerState = toggleCollapseClass(viewerState, id);
+    // Double-click on a group node = ungroup toggle too (no entity detail).
+    const groupKey = groupNodeToggleKey(id);
+    if (groupKey != null) {
+      viewerState = toggleGroupItem(viewerState, groupKey);
       return;
     }
     viewerState = focusEntityAction(viewerState, id);
     void ensureEntity(id);
-  }
-  function handleExpandAllClasses() {
-    viewerState = expandAllClasses(viewerState);
   }
   function handleSetFocus(id) {
     // Expand/collapse the right-column entity detail (null = collapse).
@@ -191,11 +309,73 @@
   function handleToggleWeak(value) {
     viewerState = setShowWeakLinks(viewerState, value);
   }
-  function handleToggleOntologyClasses(value) {
-    viewerState = setShowOntologyClasses(viewerState, value);
-    // Lazily load the artifact the first time the toggle is switched on; the
-    // derived scene re-runs once it lands (no-op injection until then).
-    if (value) void ensureClassHierarchies();
+  // B2 (per-item): group-by callbacks. Every groupable rail item owns a checkbox
+  // that GROUPS (collapses) the item when checked. Ontology classes and
+  // communities each toggle their own kind; the App splits the grouped set and
+  // collapses the union (handled in `groupedGraph`).
+  function handleToggleGroupOntology(classId) {
+    viewerState = toggleGroupOntology(viewerState, classId);
+    // Ontology grouping needs the class-hierarchies artifact; load it lazily the
+    // first time something ontology is grouped (the scene re-runs once it lands).
+    void ensureClassHierarchies();
+  }
+  function handleToggleGroupCommunity(communityKey) {
+    viewerState = toggleGroupCommunity(viewerState, communityKey);
+  }
+  // B2 (§2): a leaf TYPE row owns its OWN group-by checkbox (separate from the
+  // Type FILTER select). Checking it folds entities of that `type`.
+  function handleToggleGroupType(typeName) {
+    viewerState = toggleGroupType(viewerState, typeName);
+    void ensureClassHierarchies();
+  }
+  // B2 (§4): clear ONLY the ontology scope (class + type keys). Community
+  // grouping survives — each section's `Ungroup all` is scope-local.
+  function handleClearOntologyGrouping() {
+    viewerState = clearOntologyGrouping(viewerState);
+  }
+  // B2 (§5): clear ONLY the community scope.
+  function handleClearCommunityGrouping() {
+    viewerState = clearCommunityGrouping(viewerState);
+  }
+
+  // B2 (§4): TRI-STATE bulk "Group all to <level>". By the level's current state:
+  //   none    → group every (non-absorbed) member at that level
+  //   all     → toggle OFF (ungroup the level — clears the ontology scope)
+  //   partial → complete to ALL (re-group every member at the level)
+  // For Domain/Sub-domain the members are class ids; for Type they are the
+  // taxonomy's `type` values.
+  function handleBulkLevel(level) {
+    const ls =
+      level === 0
+        ? ontologyLevelStates.domain
+        : level === 1
+          ? ontologyLevelStates.subDomain
+          : ontologyLevelStates.type;
+    if (ls.state === "all") {
+      // Toggle OFF: drop only the ontology scope (class + type keys).
+      viewerState = clearOntologyGrouping(viewerState);
+      return;
+    }
+    // none OR partial → group every member at the level (replaces ontology scope).
+    if (level === 2) {
+      viewerState = groupOntologyLevel(viewerState, 2, [], typeNamesInTaxonomy(classHierarchies));
+    } else {
+      viewerState = groupOntologyLevel(viewerState, level, classIdsAtLevel(classHierarchies, level));
+    }
+    void ensureClassHierarchies();
+  }
+
+  // B2 (§5): FLAT community bulk toggle — `Group all` groups every live
+  // community; when all are already grouped, the same button ungroups them.
+  function handleBulkCommunities() {
+    if (allCommunitiesGrouped) {
+      viewerState = clearCommunityGrouping(viewerState);
+    } else {
+      viewerState = groupAllCommunities(
+        viewerState,
+        communityInfo.live.map((c) => c.key),
+      );
+    }
   }
   function handleSetView(view) {
     viewerState = setActiveView(viewerState, view);
@@ -256,6 +436,16 @@
     if (switching || !modelStore.select(id)) return;
     modelId = modelStore.activeId;
     switching = true;
+    // B2 (per-item): the grouped item SET survives a model switch — it lives in
+    // viewerState.options.groupBy.grouped and clearSelection() below only touches
+    // the selection/focus, never the grouping. Capture whether any ONTOLOGY item
+    // is grouped so we can guarantee the per-model taxonomy is re-fetched
+    // (loadActiveModel does this eagerly anyway, but keep the intent explicit) —
+    // grouped ontology keys reference class ids that the new model's taxonomy must
+    // provide for the fold to take effect again.
+    const hadOntologyGroup = splitGroupedKeys(
+      viewerState.options.groupBy.grouped,
+    ).ontologyClassIds.length > 0;
     // The fetch base now points at the new model's dir; clear stale per-model
     // client state before re-loading.
     __resetEntitiesIndexCache();
@@ -267,8 +457,10 @@
     viewerState = clearSelection(viewerState);
     try {
       await loadActiveModel();
-      // Re-fetch eagerly if the toggle is currently on (otherwise it stays lazy).
-      if (viewerState.options.showOntologyClasses) await ensureClassHierarchies();
+      // Re-fetch eagerly if any ontology item was grouped (else lazy).
+      // loadActiveModel already eagerly fetches class-hierarchies, so this is a
+      // cached no-op — but it guarantees the grouped ontology folds re-apply.
+      if (hadOntologyGroup) await ensureClassHierarchies();
     } finally {
       switching = false;
     }
@@ -347,13 +539,6 @@
           </Select>
         </span>
       {/if}
-      {#if loaded && !loadError}
-        <span class="app-stats" aria-label="Graph summary">
-          <Badge tone="neutral">{scene.stats.nodeCount} nodes</Badge>
-          <Badge tone="neutral">{scene.stats.edgeCount} edges</Badge>
-          <Badge tone="info">{scene.stats.communityCount} groups</Badge>
-        </span>
-      {/if}
     {/snippet}
   </AppChrome>
 
@@ -380,15 +565,27 @@
             query={viewerState.query}
             selection={viewerState.selection}
             showWeakLinks={viewerState.options.showWeakLinks}
-            showOntologyClasses={viewerState.options.showOntologyClasses}
-            collapsedClassCount={viewerState.options.collapsedClassIds.length}
+            groupBy={viewerState.options.groupBy}
+            {canGroupOntology}
+            {canGroupCommunity}
+            {ontologyLevelStates}
+            {ontologyAbsorbed}
+            {allCommunitiesGrouped}
+            {ontologyGrouped}
+            {communityGrouped}
+            stats={scene.stats}
             onToggleType={handleToggleType}
             onToggleCommunity={handleToggleCommunity}
             onToggleEntity={handleToggleEntity}
             onSetQuery={handleSetQuery}
             onToggleWeak={handleToggleWeak}
-            onToggleOntologyClasses={handleToggleOntologyClasses}
-            onExpandAllClasses={handleExpandAllClasses}
+            onToggleGroupOntology={handleToggleGroupOntology}
+            onToggleGroupCommunity={handleToggleGroupCommunity}
+            onToggleGroupType={handleToggleGroupType}
+            onBulkLevel={handleBulkLevel}
+            onBulkCommunities={handleBulkCommunities}
+            onClearOntologyGrouping={handleClearOntologyGrouping}
+            onClearCommunityGrouping={handleClearCommunityGrouping}
           />
         </div>
         <div class="col col-center">
@@ -452,13 +649,6 @@
   .view-label--compact {
     display: none;
   }
-  .app-stats {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--st-spacing-2, 0.5rem);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
   .app-body {
     flex: 1;
     min-height: 0;
@@ -497,12 +687,6 @@
     }
     .col-center {
       height: 70vh;
-    }
-  }
-
-  @media (max-width: 720px) {
-    .app-stats {
-      display: none;
     }
   }
 
