@@ -334,3 +334,31 @@ export const ALL_FIXTURES = {
  */
 export const DPR_MATRIX = [1, 1.25, 2, 3];
 export const ZOOM_MATRIX = [1, 2]; // at least 2 zooms (plan: >=2)
+
+// ---------------------------------------------------------------------------
+// B1 Phase 1 — per-shape-family golden fixtures (N1-N6). One labelled colour
+// per family so a geometry probe at the node centre lands on a known colour.
+// The box (shape 5) is NOT a Phase-1 GL shape (Canvas2D draws it) so it is not
+// in this set. Edges omitted: Phase 1 gates SHAPES only.
+// ---------------------------------------------------------------------------
+
+/** Each Phase-1 shape family: a single centred node so a centre probe is exact. */
+export const SHAPE_FAMILIES = [
+  { name: "circle", shape: "circle", size: 16, color: "#d62728", rgb: [214, 39, 40] },
+  { name: "diamond", shape: "diamond", size: 16, color: "#1f77b4", rgb: [31, 119, 180] },
+  { name: "star", shape: "star", size: 18, color: "#ff7f0e", rgb: [255, 127, 14] },
+  { name: "hexagon", shape: "hexagon", size: 16, color: "#2ca02c", rgb: [44, 160, 44] },
+  { name: "square", shape: "square", size: 16, color: "#9467bd", rgb: [148, 103, 189] },
+  { name: "triangle", shape: "triangle", size: 16, color: "#8c564b", rgb: [140, 86, 75] },
+];
+
+/** A single-node fixture for one shape family, centred at world origin. */
+export function shapeFixture(family) {
+  return {
+    nodes: [{ id: family.name, x: 0, y: 0, size: family.size, color: family.color, shape: family.shape }],
+    edges: [],
+  };
+}
+
+/** GL-phase zoom matrix (>= 2 zooms per the plan). */
+export const SHAPE_ZOOM_MATRIX = [1, 2.5];

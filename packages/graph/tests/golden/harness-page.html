@@ -212,6 +212,11 @@
         const renderer = Graph.createGraphRenderer(canvas, {
           backend,
           pixelRatio: dpr,
+          // B1 Phase 1 INTERNAL CANARY: the golden caller opts the WebGL backend
+          // into the new INSTANCED-SHAPE path so the harness diffs the real
+          // instanced shapes vs Canvas2D. Default (undefined) keeps the legacy
+          // point-sprite path — the canvas2d goldens are unaffected.
+          instancedShapes: opts.instancedShapes ?? undefined,
         });
         renderer.setGraph(graph);
         renderer.setStyle(style);
