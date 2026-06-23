@@ -756,19 +756,23 @@
   .rail-onto-tree .rail-list {
     /* B2-UI-8: the Domain step (rail-onto-tree padding, 0.75rem) is kept (user:
        "perfect, don't touch"); the DEEPER steps (Domain→Sub-domain, Sub-domain→
-       Type) were too large — reduce them. */
-    padding-left: 0.4rem;
+       Type) were too large — reduce them. (UI-10: still ~2× too big → halve to 0.2rem.) */
+    padding-left: 0.2rem;
   }
   /* B2 (§2): the leaf Type row puts its bare group-by checkbox FIRST (left),
      then the Type FILTER SelectableRow — two separate concerns on one line. */
   .rail-type-row {
     display: flex;
     align-items: center;
-    gap: 0.3rem;
+    /* B2-UI-11: checkbox→glyph gap. Measured 17px (too large) — the DS SelectableRow's
+       own left padding inflated it. Drop that padding (below) + set the gap so the
+       checkbox→glyph distance (~8px) matches the community checkbox→swatch. */
+    gap: 0.5rem;
   }
   .rail-type-row :global(.st-selectableRow) {
     flex: 1;
     min-width: 0;
+    padding-left: 0;
   }
   .rail-type-group-check {
     flex-shrink: 0;
@@ -801,34 +805,22 @@
     display: inline-flex;
     align-items: center;
     cursor: pointer;
-    /* A faint hover ring is layered behind the box; keep a transparent baseline
-       so only hover/focus reveals it (no persistent visual chrome at rest). */
-    border-radius: 4px;
-    outline: 1px solid transparent;
-    outline-offset: 1px;
-    transition: outline-color 0.12s ease;
   }
   .rail-group-check input {
     margin: 0;
     cursor: pointer;
   }
-  /* Hover/focus-only hint: a faint outline appears around the bare checkbox when
-     the row is hovered or the box is focused, signalling "group by …" WITHOUT any
-     text. The title tooltip carries the wording. */
-  :global(.st-collapsible__header:hover) .rail-group-check,
-  :global(.st-selectableRow:hover) .rail-group-check,
-  .rail-group-check:focus-within {
-    outline-color: var(--st-semantic-action-primary, #2563eb);
-  }
-  /* A grouped (checked) row keeps the accent ring so the active fold is legible. */
-  .rail-group-check--on {
-    outline-color: var(--st-semantic-action-primary, #2563eb);
-  }
+  /* B2-UI-12: NO hover/focus outline ring on the checkbox. The ring only ever
+     matched community/type rows (the ontology Collapsible-header hover never
+     selected the now-sibling checkbox), so it read as a random inconsistency.
+     A bare native checkbox is enough. */
   /* Community row: the bare group-by checkbox sits FIRST, then the color swatch. */
   .rail-comm-lead {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
+    /* B2-UI-11: checkbox→swatch gap. Measured 6px (too small) → match the Type
+       checkbox→glyph (~8px) so both use the standard checkbox-to-shape distance. */
+    gap: 0.5rem;
     /* B2-UI-7: the DS SelectableRow ignores the list's padding-left, so the
        community checkbox sat at the rail edge (measured 4px) vs the Domain
        checkbox at 16px. Shift the lead by one Domain step so they align. */
