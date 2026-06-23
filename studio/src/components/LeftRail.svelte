@@ -468,9 +468,11 @@
                       onchange={() => onToggleGroupCommunity?.(c.key)}
                     />
                   </label>
+                  <!-- ia-aero BUG B (#195): single-source community color (c.color),
+                       reused identically legend↔canvas — replaces the old c.tone. -->
                   <span
                     class="rail-swatch"
-                    style="background: var(--st-semantic-data-{c.tone}, #94a3b8)"
+                    style="background: {c.color}"
                     aria-hidden="true"
                   ></span>
                 </span>

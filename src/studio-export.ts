@@ -47,7 +47,11 @@ import {
   queryOntologyReconciliationCandidates,
 } from "./ontology-reconciliation.js";
 import { emitSceneHierarchies } from "./scene-hierarchies-emitter.js";
-import { buildEntitySidecar, resolveStudioAppDir } from "./studio-assets.js";
+import {
+  buildEntitySidecar,
+  type EntitySidecarNode,
+  resolveStudioAppDir,
+} from "./studio-assets.js";
 import { buildStudioScene, type StudioSceneGraphLike } from "./studio-scene.js";
 import { emitWorkspaceManifest } from "./workspace-manifest-emitter.js";
 
@@ -310,7 +314,10 @@ export function buildStaticStudio(
   for (const node of nodes) {
     const id = (node as { id?: unknown }).id;
     if (typeof id !== "string" || !id) continue;
-    entities[id] = buildEntitySidecar(stateDir, id);
+    // Pass the graph node so the sidecar carries its type/community (Bug A):
+    // the SPA facets then populate from entities.json even when graph.json is
+    // not hydrated (scene-only studio.html / file:// multi-file bundle).
+    entities[id] = buildEntitySidecar(stateDir, id, node as EntitySidecarNode);
   }
 
   // reconciliation candidates source (read before cleanup).

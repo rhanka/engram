@@ -272,19 +272,32 @@ describe("buildStudioScene — parity with studio buildScene", () => {
     const graphPath = join(REPO_ROOT, ".graphify", "graph.json");
     const hasRealGraph = existsSync(graphPath);
 
-    it.runIf(hasRealGraph)("matches node-by-node and edge-by-edge", () => {
-      const realGraph = JSON.parse(readFileSync(graphPath, "utf-8"));
-      // Sanity: this is the heavy real graph, not a stub.
-      expect((realGraph.nodes ?? []).length).toBeGreaterThan(100);
-      expectGranularParity(realGraph);
-      expectParity(realGraph);
-    });
+    // Heavy: granular + full parity over the WHOLE real graph (can be thousands
+    // of nodes/edges), so per-element JSON.stringify dominates — give it a
+    // generous timeout so a large local graph / loaded CI box never flakes.
+    const HEAVY_PARITY_TIMEOUT_MS = 120_000;
 
-    it.runIf(hasRealGraph)("matches with weak links filtered out", () => {
-      const realGraph = JSON.parse(readFileSync(graphPath, "utf-8"));
-      expectGranularParity(realGraph, { showWeakLinks: false });
-      expectParity(realGraph, { showWeakLinks: false });
-    });
+    it.runIf(hasRealGraph)(
+      "matches node-by-node and edge-by-edge",
+      () => {
+        const realGraph = JSON.parse(readFileSync(graphPath, "utf-8"));
+        // Sanity: this is the heavy real graph, not a stub.
+        expect((realGraph.nodes ?? []).length).toBeGreaterThan(100);
+        expectGranularParity(realGraph);
+        expectParity(realGraph);
+      },
+      HEAVY_PARITY_TIMEOUT_MS,
+    );
+
+    it.runIf(hasRealGraph)(
+      "matches with weak links filtered out",
+      () => {
+        const realGraph = JSON.parse(readFileSync(graphPath, "utf-8"));
+        expectGranularParity(realGraph, { showWeakLinks: false });
+        expectParity(realGraph, { showWeakLinks: false });
+      },
+      HEAVY_PARITY_TIMEOUT_MS,
+    );
 
     it.skipIf(hasRealGraph)("real graph absent — synthetic parity still proven", () => {
       expect(hasRealGraph).toBe(false);
