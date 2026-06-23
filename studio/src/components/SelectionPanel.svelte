@@ -161,8 +161,19 @@
 <style>
   .sel {
     background: var(--st-semantic-surface-default, #fff);
-    overflow-y: auto;
+    /* BUG B: the right rail must scroll INSIDE its column like the left rail
+       (.rail), not spill its overflow to the page. The left rail pins
+       height:100% + scrollbar-gutter:stable so `overflow-y:auto` engages
+       against the column height instead of growing the document; mirror that
+       exact pattern here. Without height:100% the panel is content-sized, the
+       column height bound is never reached, and a tall selection/detail pushes
+       the whole document into an external scrollbar. */
+    height: 100%;
     min-height: 0;
+    overflow-y: auto;
+    /* Reserve the gutter so the content width is identical with or without the
+       scrollbar (no reflow when a long detail expands). */
+    scrollbar-gutter: stable;
     display: flex;
     flex-direction: column;
   }
