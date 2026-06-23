@@ -26,8 +26,10 @@
   // renders INSTANTLY off the already-loaded graph. When the lazy entity sidecar
   // arrives with the full per-entity list (entity.citations.citations), it
   // REPLACES the inline render with the complete file > passages accordion —
-  // same renderer, richer data. Passages render locators (section/page); the
-  // schema carries no verbatim quote.
+  // same renderer, richer data. Passages render locators (section/page) AND, when
+  // present, a verbatim `quote` (WP #24: `quote` is now a first-class field on
+  // OntologyCitation, populated by `graphify cite`; the blockquote below renders
+  // it). Citations grounded by older pipelines may still be locator-only.
   const fullCitations = $derived(
     Array.isArray(entity?.citations?.citations) ? entity.citations.citations : null,
   );
