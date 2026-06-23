@@ -176,6 +176,51 @@ describe("graphify cite", () => {
     expect(graph.nodes.find((n) => n.id === "t1")!.citations ?? []).toHaveLength(0);
   });
 
+  it("REGRESSION: --source is truly repeatable — a source only in the FIRST root still grounds", async () => {
+    // Two extra source roots. The node's source_file lives ONLY under the first
+    // root. Before the collect-function fix, Commander kept only the LAST
+    // --source value, so the first root was dropped and the node never grounded.
+    const dir = mkdtempSync(join(tmpdir(), "graphify-cite-multisrc-"));
+    tempDirs.push(dir);
+    const graphDir = join(dir, ".graphify");
+    mkdirSync(graphDir, { recursive: true });
+
+    const rootA = join(dir, "rootA");
+    const rootB = join(dir, "rootB");
+    mkdirSync(rootA, { recursive: true });
+    mkdirSync(rootB, { recursive: true });
+    // The paper lives ONLY in rootA; rootB has an unrelated file.
+    writeFileSync(join(rootA, "paper.md"), OCR_MARKDOWN, "utf-8");
+    writeFileSync(join(rootB, "other.md"), "# Unrelated\n\nNothing to see here.\n", "utf-8");
+
+    writeFileSync(
+      join(graphDir, "graph.json"),
+      JSON.stringify({
+        directed: false,
+        graph: {},
+        nodes: [
+          { id: "p1", label: "Juliette Mattioli", file_type: "person", source_file: "paper.md", community: 0 },
+        ],
+        links: [],
+        community_labels: { "0": "Aero" },
+      }),
+      "utf-8",
+    );
+
+    // Pass BOTH roots; rootB (the last value) does NOT contain paper.md.
+    const { logs } = await runCli(
+      ["cite", dir, "--source", rootA, "--source", rootB],
+      dir,
+    );
+
+    const graph = readGraph(dir);
+    const mattioli = graph.nodes.find((n) => n.id === "p1")!;
+    // Grounds because rootA (the FIRST --source) is still searched.
+    expect(mattioli.citations?.length).toBeGreaterThan(0);
+    expect(mattioli.citations?.[0]?.quote).toContain("apprentissage automatique");
+    expect(logs.join("\n")).toMatch(/grounded \d+ verbatim citation/i);
+  });
+
   it("rejects an invalid --mode", async () => {
     const dir = citeProject();
     const { errors, exitCode } = await runCli(["cite", dir, "--mode", "bogus"], dir);

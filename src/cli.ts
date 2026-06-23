@@ -4295,7 +4295,12 @@ export async function main(): Promise<void> {
     .option("--top-k <n>", "Max citations grounded per node (default: 6)")
     .option("--types <list>", "Restrict to comma-separated node types (e.g. person,concept,reference,image)")
     .option("--only-missing", "Only ground nodes with no existing citations (additive 2nd pass)")
-    .option("--source <root>", "Extra source search root (repeatable); .graphify/converted is always searched")
+    .option(
+      "--source <root>",
+      "Extra source search root (repeatable); .graphify/converted is always searched",
+      (value: string, acc: string[]) => [...acc, value],
+      [] as string[],
+    )
     .option("--citations-top-k <n>", "Inline Level-1 citations kept per node after aggregation (default: corpus-resolved; 3 code / 8 others)")
     .option("--dry-run", "Report grounding coverage without writing graph.json or citations.json")
     .action(async (citePath = ".", opts) => {
@@ -4329,10 +4334,13 @@ export async function main(): Promise<void> {
       const types = typeof opts.types === "string"
         ? opts.types.split(",").map((t: string) => t.trim()).filter(Boolean)
         : [];
-      const extraSources: string[] = typeof opts.source === "string"
-        ? [resolve(opts.source)]
-        : Array.isArray(opts.source)
-          ? opts.source.map((s: string) => resolve(s))
+      // `--source` is truly repeatable (Commander collect): opts.source is an
+      // array of every root passed. Each is resolved and searched in turn, so a
+      // source present only in the FIRST root still grounds.
+      const extraSources: string[] = Array.isArray(opts.source)
+        ? opts.source.map((s: string) => resolve(s))
+        : typeof opts.source === "string"
+          ? [resolve(opts.source)]
           : [];
       const dryRun = Boolean(opts.dryRun);
 
