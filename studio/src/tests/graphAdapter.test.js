@@ -16,6 +16,7 @@ import {
   nodeType,
   relationRowsFor,
 } from "../lib/graphAdapter.js";
+import { colorForGroup } from "../lib/graphRendererPayload.js";
 
 const FIXTURE = {
   nodes: [
@@ -714,5 +715,66 @@ describe("candidateUnionSubgraph (EVOL 1.b)", () => {
     const owns = sub.links.filter((e) => e.relation === "owns");
     expect(owns.length).toBe(1);
     expect(owns[0].source).toBe("B");
+  });
+});
+
+describe("B2 — T12 numeric-only-community colour parity (A5 × BUG B)", () => {
+  // A graph whose communities are NUMERIC-ONLY (no community_name). Two live
+  // communities (0, 1). The A5 trap: the legend keys community by `nodeCommunity`
+  // (`Community <n>`), but the canvas fills by `nodeGroup` (`community:<n>`).
+  // Post-merge (#195 BUG B) the swatch resolves its colour through the SAME
+  // colorForGroup() the canvas uses, over the SAME `nodeGroup` palette key
+  // captured on rec.group — so each numeric community must get the colour of its
+  // `community:<n>` key (and two distinct numeric communities get DISTINCT
+  // colours, never both collapsing to colorForGroup of the wrong/missing key).
+  const numericGraph = {
+    nodes: [
+      { id: "a", community: 0 },
+      { id: "b", community: 0 },
+      { id: "c", community: 1 },
+      { id: "d", community: 1 },
+    ],
+    links: [
+      { source: "a", target: "b", relation: "knows" },
+      { source: "c", target: "d", relation: "knows" },
+    ],
+  };
+
+  it("each numeric community's colour matches colorForGroup of its nodeGroup palette key", () => {
+    const stats = communityStats(numericGraph);
+    expect(stats.liveCount).toBe(2);
+    const byKey = new Map(stats.live.map((c) => [c.key, c]));
+    // nodeCommunity keys are `Community 0` / `Community 1`; nodeGroup keys are
+    // `community:0` / `community:1` — the keys the canvas hashes for the fill.
+    expect(nodeCommunity(numericGraph.nodes[0])).toBe("Community 0");
+    expect(nodeGroup(numericGraph.nodes[0])).toBe("community:0");
+    // A5: the swatch colour is resolved under the `community:<n>` palette key,
+    // NOT the `Community <n>` legend key — so it equals the on-canvas fill.
+    expect(byKey.get("Community 0").color).toBe(colorForGroup("community:0"));
+    expect(byKey.get("Community 1").color).toBe(colorForGroup("community:1"));
+    // The two numeric communities get DISTINCT colours (the A5 bug collapsed
+    // community 1 to the wrong key's colour).
+    expect(byKey.get("Community 1").color).not.toBe(byKey.get("Community 0").color);
+  });
+
+  it("NAMED-community colour parity stays green (unaffected by the fix)", () => {
+    const namedGraph = {
+      nodes: [
+        { id: "a", community_name: "People" },
+        { id: "b", community_name: "People" },
+        { id: "c", community_name: "Places" },
+        { id: "d", community_name: "Places" },
+      ],
+      links: [
+        { source: "a", target: "b", relation: "knows" },
+        { source: "c", target: "d", relation: "knows" },
+      ],
+    };
+    const stats = communityStats(namedGraph);
+    const byKey = new Map(stats.live.map((c) => [c.key, c]));
+    // Named communities: nodeGroup === nodeCommunity === community_name, so the
+    // swatch colour is colorForGroup(community_name).
+    expect(byKey.get("People").color).toBe(colorForGroup("People"));
+    expect(byKey.get("Places").color).toBe(colorForGroup("Places"));
   });
 });
