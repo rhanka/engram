@@ -227,6 +227,15 @@
           // instanced shapes vs Canvas2D. Default (undefined) keeps the legacy
           // point-sprite path — the canvas2d goldens are unaffected.
           instancedShapes: opts.instancedShapes ?? undefined,
+          // The instanced shapes are HARD-EDGED triangle fans (the fragment
+          // shader emits a flat colour, no SDF/coverage AA). Canvas2D draws
+          // ANTIALIASED edges, so without MSAA the WebGL boundary rim is a hard
+          // step where Canvas2D has a ~1px coverage gradient — the pixel diff
+          // fails along the whole perimeter. Request a MULTISAMPLED default
+          // framebuffer for the WebGL golden capture so SwiftShader resolves
+          // AA'd edges that approximate Canvas2D. This is a CAPTURE-side request
+          // (the golden comparing AA vs AA), not a production default change.
+          antialias: backend === "webgl" ? true : undefined,
         });
         renderer.setGraph(graph);
         renderer.setStyle(style);
