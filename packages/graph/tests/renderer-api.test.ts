@@ -432,6 +432,95 @@ describe("createGraphRenderer", () => {
     expect(Math.max(...labelledBoxCorners.map((corner) => corner.cy))).toBe(59);
   });
 
+  it("PIXEL-FITS a long box label to the capped box width (ellipsis, no overflow)", () => {
+    const context2d = createFakeCanvas2DContext();
+    const canvas = {
+      width: 1000,
+      height: 200,
+      getContext: (kind: string) => (kind === "2d" ? context2d : null),
+    };
+    const view = createGraphRenderer(canvas as unknown as HTMLCanvasElement, {
+      backend: "canvas2d",
+      pixelRatio: 1,
+    });
+    view.setGraph({
+      nodeIds: ["chapter"],
+      positions: new Float32Array([0, 0]),
+      edges: new Uint32Array([]),
+    });
+    // A long chapter title that, measured at 7px/char, would otherwise size a
+    // box ~440px wide — far past the layout. The renderer must clip it to fit.
+    const longLabel =
+      "Part I, Chapter I: Being a Reprint of the Reminiscences of John H. Watson, M.D.";
+    view.setStyle({
+      nodeSizes: new Float32Array([11]),
+      nodeShapes: new Uint8Array([5]),
+      nodeLabels: [longLabel],
+      nodeColors: new Uint8Array([255, 0, 0, 255]),
+      edgeWidths: new Float32Array([]),
+      edgeColors: new Uint8Array([]),
+      edgeDash: new Uint8Array([]),
+      edgeCurvatures: new Float32Array([]),
+    });
+    view.setCamera({ x: 0, y: 0, zoom: 1 });
+    view.render();
+
+    // Geometry: boxHeight = 18 (× pr1 × zoom1), margin = 18 × 5/22, max box
+    // width = 18 × BOX_MAX_WIDTH_RATIO(10) = 180, so the DRAWN text must fit
+    // within 180 − 2×margin. measureText stub = text.length × 7.
+    const boxHeight = 18;
+    const margin = boxHeight * (5 / 22);
+    const maxTextWidth = boxHeight * 10 - 2 * margin;
+
+    // Exactly one label drawn, and it is CLIPPED with a single trailing ellipsis.
+    expect(context2d.calls.fillText).toHaveLength(1);
+    const drawn = context2d.calls.fillText[0]!.text;
+    expect(drawn.endsWith("…")).toBe(true);
+    expect(drawn).not.toBe(longLabel);
+    expect(drawn.length).toBeLessThan(longLabel.length);
+    // Single ellipsis only (no "Foo……").
+    expect(drawn.endsWith("……")).toBe(false);
+    // The drawn text fits the capped width (stub width = length × 7).
+    expect(drawn.length * 7).toBeLessThanOrEqual(maxTextWidth);
+    // And it is the LARGEST such prefix: one more visible glyph would overflow.
+    expect((drawn.length + 1) * 7).toBeGreaterThan(maxTextWidth);
+  });
+
+  it("leaves a short box label untouched (no spurious ellipsis, no width cap)", () => {
+    const context2d = createFakeCanvas2DContext();
+    const canvas = {
+      width: 400,
+      height: 100,
+      getContext: (kind: string) => (kind === "2d" ? context2d : null),
+    };
+    const view = createGraphRenderer(canvas as unknown as HTMLCanvasElement, {
+      backend: "canvas2d",
+      pixelRatio: 1,
+    });
+    view.setGraph({
+      nodeIds: ["work"],
+      positions: new Float32Array([0, 0]),
+      edges: new Uint32Array([]),
+    });
+    view.setStyle({
+      nodeSizes: new Float32Array([11]),
+      nodeShapes: new Uint8Array([5]),
+      nodeLabels: ["Sherlock Holmes"],
+      nodeColors: new Uint8Array([255, 0, 0, 255]),
+      edgeWidths: new Float32Array([]),
+      edgeColors: new Uint8Array([]),
+      edgeDash: new Uint8Array([]),
+      edgeCurvatures: new Float32Array([]),
+    });
+    view.setCamera({ x: 0, y: 0, zoom: 1 });
+    view.render();
+
+    // Short label well within the cap: drawn verbatim, no ellipsis.
+    expect(context2d.calls.fillText).toEqual([
+      { text: "Sherlock Holmes", x: 200, y: 50, font: `${18 * (12 / 22)}px sans-serif` },
+    ]);
+  });
+
   it("measures and draws the box label at the zoom-scaled font (no base/scaled mismatch)", () => {
     const context2d = createFakeCanvas2DContext();
     const canvas = {
