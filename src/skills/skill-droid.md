@@ -427,7 +427,15 @@ If this step prints `ERROR: Graph is empty`, stop and tell the user what happene
 
 Replace INPUT_PATH with the actual path.
 
-### Step 5 - Label communities
+### Step 5 - Label communities and enrich
+
+**Enrichment commands (no API key needed; opt-in, non-destructive).** On a built or curated `graph.json` you can stamp enrichment in place without re-extracting: `graphify describe .` (node descriptions), `graphify label .` (community labels), and `graphify cite .` (grounded citations). `graphify cite` (alias `ground-citations`) scans the corpus and grounds per-entity `node.citations[]` entries `{quote, source_file, source_location}` — populating **new** verbatim citations, not just projecting existing ones. **Heuristic mode is the no-key DEFAULT** (`--mode heuristic|assistant|api`); it is **anti-hallucination** — every emitted `quote` is a verified verbatim substring of the source, and any quote that cannot be relocated is dropped, never invented. It UNIONS with existing citations (never clobbers). Symmetric to `describe`/`label` and, like them, **opt-in** (NOT auto-run). **Run `graphify cite .` BEFORE the studio/wiki export** so entity panels ship non-null citations.
+
+```bash
+graphify cite .                 # no-key heuristic grounding (default)
+graphify cite . --only-missing  # additive pass: only nodes with no citations yet
+graphify cite . --dry-run       # report coverage without writing
+```
 
 Read `.graphify/.graphify_analysis.json`. For each community key, look at its node labels and write a 2-5 word plain-language name (e.g. "Attention Mechanism", "Training Pipeline", "Data Loading").
 
