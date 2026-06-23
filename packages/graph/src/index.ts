@@ -6,5 +6,6 @@ export * from "./render-geometry";
 export * from "./renderer";
 export * from "./shape-geometry";
 export * from "./webgl-shapes";
+export * from "./webgl-edges";
 export * from "./styles";
 export * from "./types";
