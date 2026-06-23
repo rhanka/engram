@@ -49,8 +49,19 @@ if (!existsSync(join(studio, "package.json"))) {
   process.exit(0);
 }
 
-// Install the SPA's own deps if missing.
-if (!existsSync(join(studio, "node_modules", "vite"))) {
+// Install the SPA's own deps if missing. We probe a SET of packages, not just
+// `vite`: a node_modules tree installed from an OLDER lockfile (before a dep was
+// added to studio/package.json) still has `vite` but is missing newer deps like
+// `vite-plugin-singlefile`. Without that package the gated single-file Vite pass
+// dies with `ERR_MODULE_NOT_FOUND` (the dynamic `import("vite-plugin-singlefile")`
+// in vite.config.js), the offline studio.html never builds, and the multi-file
+// build silently no-ops it. Probing the single-file plugin too forces a
+// lockfile-faithful reinstall so the offline export stays buildable.
+const REQUIRED_STUDIO_DEPS = ["vite", "vite-plugin-singlefile"];
+const missingDep = REQUIRED_STUDIO_DEPS.find(
+  (dep) => !existsSync(join(studio, "node_modules", dep)),
+);
+if (missingDep) {
   const installed =
     (existsSync(join(studio, "package-lock.json")) && run("npm", ["ci"], studio)) ||
     run("npm", ["install"], studio);
