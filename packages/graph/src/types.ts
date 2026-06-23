@@ -164,6 +164,16 @@ export interface GraphRendererOptions {
   backend?: GraphRendererBackend;
   antialias?: boolean;
   pixelRatio?: number;
+  /**
+   * INTERNAL CANARY (B1 migration Phase 1). When true AND the active backend is
+   * WebGL2, node glyphs are drawn with the new INSTANCED-SHAPE path
+   * (`webgl-shapes.ts`: instanced discs/polygons, radius-as-radius) instead of
+   * the legacy point-sprite path. Defaults to the resolved `GRAPHIFY_RENDER_BACKEND`
+   * flag, which is `false` (legacy) for users — so there is no user-facing
+   * change. Edges, the box glyph, labels, and picking stay on the legacy /
+   * Canvas2D path in Phase 1.
+   */
+  instancedShapes?: boolean;
   interaction?: {
     hover?: boolean;
     pan?: boolean;
@@ -184,6 +194,18 @@ export interface GraphRendererSnapshot {
   hasWebGL: boolean;
   backend: GraphRendererActiveBackend;
   hasStyle: boolean;
+  /**
+   * Whether the new INSTANCED-SHAPE WebGL path drew this renderer's nodes
+   * (B1 Phase 1 internal canary). False on the Canvas2D / legacy point-sprite
+   * paths.
+   */
+  instancedShapes?: boolean;
+  /**
+   * Count of non-finite world coordinates coerced at the geometry boundary in
+   * the LAST render (N1b / R13). Surfaced so a NaN/±Inf position is never
+   * silently swallowed by the WebGL backend.
+   */
+  nonFiniteCount?: number;
   layoutOptions?: undefined;
 }
 
