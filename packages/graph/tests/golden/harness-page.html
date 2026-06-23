@@ -227,6 +227,26 @@
           // instanced shapes vs Canvas2D. Default (undefined) keeps the legacy
           // point-sprite path — the canvas2d goldens are unaffected.
           instancedShapes: opts.instancedShapes ?? undefined,
+          // B1 Phase 3: the WebGL box-label TEXT atlas rasterizes onto an
+          // offscreen 2D canvas. For byte-parity with the Canvas2D reference the
+          // atlas MUST use the SAME pinned deterministic font (PINNED_FAMILY) the
+          // render-canvas 2D context uses. We hand the renderer a factory that
+          // creates a detached <canvas> and pins its font setter (the same swap
+          // pinFontOnContext applies), so the atlas text is rasterized by the
+          // SAME Chrome 2D engine + family that measured + drew the Canvas2D box.
+          // Only the WebGL backend consults it; canvas2d ignores it (no change).
+          atlasCanvasFactory:
+            backend === "webgl"
+              ? function (w, h) {
+                  const off = document.createElement("canvas");
+                  off.width = Math.max(1, w);
+                  off.height = Math.max(1, h);
+                  const c = off.getContext("2d");
+                  if (!c) return null;
+                  pinFontOnContext(c);
+                  return { canvas: off, ctx: c };
+                }
+              : undefined,
           // The instanced shapes are HARD-EDGED triangle fans (the fragment
           // shader emits a flat colour, no SDF/coverage AA). Canvas2D draws
           // ANTIALIASED edges, so without MSAA the WebGL boundary rim is a hard

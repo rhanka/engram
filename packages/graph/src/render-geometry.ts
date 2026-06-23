@@ -38,6 +38,16 @@ export const BOX_FONT_RATIO = 12 / 22;
 export const BOX_CORNER_RATIO = 1 / 4;
 /** Non-labelled (low-degree) box collapse, as a fraction of the box height. */
 export const BOX_EMPTY_RATIO = 10 / 22;
+/**
+ * Maximum box WIDTH as a multiple of the box height (#199 pixel-fit). A label
+ * too long to hug within this ceiling is PIXEL-FITTED to the available text
+ * width with an ellipsis, so the box never balloons into an over-wide text card.
+ * Scales with pixelRatio × zoom exactly like the height, so the cap reads the
+ * same at any zoom.
+ */
+export const BOX_MAX_WIDTH_RATIO = 10;
+/** Single-character ellipsis appended when a box label is pixel-clipped to fit. */
+export const BOX_ELLIPSIS = "…";
 
 /** Legacy box / hollow-glyph fill: translucent white (rgba 255,255,255,0.5). */
 export const BOX_FILL: readonly [number, number, number, number] = [255, 255, 255, 0.5 * 255];
@@ -69,32 +79,88 @@ export function drawnRadius(nodeSize: number, pixelRatio: number, zoom: number):
 }
 
 /**
- * Legacy `shape:box` glyph dimensions (lifted verbatim from renderer.ts:586-602).
+ * PIXEL-FIT a label so its DRAWN width never exceeds `maxTextWidth`, appending a
+ * single ellipsis when it has to clip (#199, lifted VERBATIM from renderer.ts so
+ * Canvas2D, WebGL, and the box-text atlas all clip identically). Unlike a fixed
+ * character-count cap, this is glyph-width aware (a run of wide letters clips
+ * sooner than a run of "i"s), so the box that hugs the returned text is
+ * guaranteed to stay within the max.
+ *
+ * Binary search over the keep-length keeps it O(log n) measureText calls per
+ * over-long label. When even the ellipsis alone does not fit (an absurdly tiny
+ * box) we still return the ellipsis so the caller draws SOMETHING rather than
+ * overflowing. The full text is unchanged on the node payload, so hover tooltips
+ * / detail panels keep the verbatim name.
+ */
+export function fitLabelToWidth(
+  label: string,
+  maxTextWidth: number,
+  font: string,
+  measureLabelWidth: (text: string, font: string) => number,
+): string {
+  if (!label) return label;
+  if (maxTextWidth <= 0) return label;
+  if (measureLabelWidth(label, font) <= maxTextWidth) return label;
+
+  // Search the largest prefix length whose `prefix + …` still fits.
+  let low = 0;
+  let high = label.length;
+  let best = "";
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    const candidate = label.slice(0, mid).replace(/\s+$/u, "") + BOX_ELLIPSIS;
+    if (measureLabelWidth(candidate, font) <= maxTextWidth) {
+      best = candidate;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+  // Even a lone ellipsis overflowed the (degenerate) box — draw it anyway.
+  return best || BOX_ELLIPSIS;
+}
+
+/**
+ * Legacy `shape:box` glyph dimensions (lifted verbatim from renderer.ts).
  * Box height is a fixed legacy base scaled by pixelRatio × zoom — degree
  * INDEPENDENT; the small font fits that height minus a per-side margin; the box
  * grows only in WIDTH to hug the measured label plus margins. A non-labelled
  * (low-degree) box collapses to a small square of BOX_EMPTY_RATIO × height.
  *
+ * WIDTH IS CAPPED at BOX_MAX_WIDTH_RATIO × height (#199): a label too long to hug
+ * within that ceiling is PIXEL-FITTED (see {@link fitLabelToWidth}) to the
+ * available text width with an ellipsis. The returned `label` is the exact
+ * (possibly clipped) text the box was sized to — the draw path (Canvas2D
+ * `fillText` / the WebGL text atlas) renders THAT string, so the box always hugs
+ * precisely what it shows.
+ *
  * `measureLabelWidth` is the SAME measureText service Canvas2D uses, so GL box
- * width and Canvas2D box width are identical to the pixel.
+ * width, the GL text atlas, and Canvas2D box width are identical to the pixel.
  */
 export function boxDimensions(
   height: number,
   label: string,
   measureLabelWidth: (text: string, font: string) => number,
-): { w: number; h: number; fontPx: number; corner: number } {
+): { w: number; h: number; fontPx: number; corner: number; label: string } {
   const margin = height * BOX_MARGIN_RATIO;
   const corner = height * BOX_CORNER_RATIO;
   const fontPx = height * BOX_FONT_RATIO;
 
   if (!label) {
     const side = height * BOX_EMPTY_RATIO;
-    return { w: side, h: side, fontPx, corner };
+    return { w: side, h: side, fontPx, corner, label };
   }
 
-  const textW = measureLabelWidth(label, `${fontPx}px sans-serif`);
-  return { w: textW + 2 * margin, h: height, fontPx, corner };
+  const font = `${fontPx}px sans-serif`;
+  // Text must fit inside the max box width minus a margin per side.
+  const maxTextWidth = Math.max(0, height * BOX_MAX_WIDTH_RATIO - 2 * margin);
+  const fitted = fitLabelToWidth(label, maxTextWidth, font, measureLabelWidth);
+  const textW = measureLabelWidth(fitted, font);
+  return { w: textW + 2 * margin, h: height, fontPx, corner, label: fitted };
 }
+
+/** Theme-dark box label text as an rgb tuple (slate-900, #0f172a). */
+export const BOX_TEXT_RGB: readonly [number, number, number] = [15, 23, 42];
 
 /**
  * The rounded-box corner CLAMP (N7c, renderer.ts:530-532). Both backends MUST

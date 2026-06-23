@@ -434,3 +434,46 @@ export const EDGE_GL_FIXTURES = [
   { name: "overlap", fixture: EDGE_OVERLAP_FIXTURE, rgb: [220, 38, 38], arrow: false, dashed: false },
   { name: "combo", fixture: EDGE_COMBO_FIXTURE, rgb: [124, 58, 237], arrow: true, dashed: true },
 ];
+
+// ---------------------------------------------------------------------------
+// B1 Phase 3 — per-box GL golden fixtures (N7 labelled / N9 empty / #199
+// pixel-fit, L1 in-box text). Each is ONE or two box nodes so a capture's drawn
+// content is unambiguously the box(es) + text. The border colour differs from
+// the dark text colour (#0f172a) so a text-presence probe never collides with
+// the border. Coordinates are WORLD; the camera maps them.
+// ---------------------------------------------------------------------------
+
+/** Box-over-box occlusion (R7): a later box must occlude an earlier box's rect
+ *  AND text. Two overlapping labelled boxes; the second (drawn later) sits on
+ *  top. Both backends must interleave occlusion identically (shared depth). */
+export const BOX_OVERLAP_FIXTURE = {
+  nodes: [
+    { id: "behind", x: -14, y: 0, size: 11, color: "#2563eb", shape: "box", label: "Behind" },
+    { id: "front", x: 14, y: 0, size: 11, color: "#dc2626", shape: "box", label: "Front" },
+  ],
+  edges: [],
+};
+
+/** Box-over-circle occlusion (R7): a box drawn after a circle must occlude it. */
+export const BOX_OVER_CIRCLE_FIXTURE = {
+  nodes: [
+    { id: "disc", x: 0, y: 0, size: 24, color: "#16a34a", shape: "circle" },
+    { id: "card", x: 0, y: 0, size: 11, color: "#2563eb", shape: "box", label: "Holmes" },
+  ],
+  edges: [],
+};
+
+/**
+ * Box GL fixtures, by name, for the per-box pixel-diff sweep. `text` flags
+ * whether the box carries a label (a text-presence probe applies); `rgb` is the
+ * node-colour border probe target.
+ */
+export const BOX_GL_FIXTURES = [
+  { name: "labelled", fixture: BOX_LABELLED_FIXTURE, rgb: [239, 68, 68], text: true },
+  { name: "empty", fixture: BOX_EMPTY_FIXTURE, rgb: [148, 103, 189], text: false },
+  { name: "focal", fixture: BOX_FOCAL_FIXTURE, rgb: [37, 99, 235], text: true },
+  { name: "long", fixture: BOX_LONG_LABEL_FIXTURE, rgb: [14, 165, 233], text: true },
+  { name: "short", fixture: BOX_SHORT_LABEL_FIXTURE, rgb: [14, 165, 233], text: true },
+  { name: "overlap", fixture: BOX_OVERLAP_FIXTURE, rgb: [220, 38, 38], text: true },
+  { name: "overCircle", fixture: BOX_OVER_CIRCLE_FIXTURE, rgb: [37, 99, 235], text: true },
+];
