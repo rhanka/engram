@@ -141,15 +141,33 @@ void main() {
   float cov = 1.0 - smoothstep(v_halfWidth - aa, v_halfWidth + aa, dist);
   if (cov <= 0.0) discard;
 
-  // Arc-length dashing: keep only fragments in the "on" portion of the period,
-  // with a soft ~1px edge on the on/off transition (round pips read smooth).
+  // Arc-length dashing with ROUND PIPS (E3 + E14). Canvas2D sets lineCap="round"
+  // for the whole frame, so each dash "on" run is a round-capped capsule: it
+  // bulges out by the stroke radius (= v_halfWidth) at BOTH ends, AND the pip is
+  // rounded across its width. We model the pip as a capsule whose CORE runs the
+  // on-length and whose caps add v_halfWidth each side — matching Canvas2D's
+  // visibly-longer round dashes (a hard cut would under-cover the pip, e.g. a
+  // 3px "on" reading as ~3px instead of Canvas2D's ~9px with 3px round caps).
   float coverage = cov;
   if (v_dashPeriod > 0.0) {
     float phase = mod(v_arc, v_dashPeriod);
-    float aaArc = fwidth(v_arc);
-    // Fade out as phase crosses the "on" length (one-sided; the period wrap is a
-    // hard reset which is acceptable — the gap is many px wide).
-    coverage *= 1.0 - smoothstep(v_dashOn - aaArc, v_dashOn + aaArc, phase);
+    // Distance ALONG the arc to the nearest point of the on-run [0 .. v_dashOn].
+    float dAlong = phase < 0.0 ? -phase
+                 : phase > v_dashOn ? phase - v_dashOn
+                 : 0.0;
+    // Also fold the previous period's pip so a pip that wraps the period seam
+    // still caps correctly (phase near v_dashPeriod is close to the NEXT pip's
+    // start at 0). Take the min distance to either pip.
+    float dNext = v_dashPeriod - phase; // distance to the next pip start (at 0)
+    dAlong = min(dAlong, dNext);
+    // Capsule SDF of the pip: combine the across-distance (v_local.y) with the
+    // along-overrun so the cap is round in BOTH axes, ≤ v_halfWidth keeps it.
+    float pipDist = length(vec2(dAlong, v_local.y));
+    float aaPip = fwidth(pipDist);
+    float pipCov = 1.0 - smoothstep(v_halfWidth - aaPip, v_halfWidth + aaPip, pipDist);
+    // The straight-segment coverage already handled the across axis for the
+    // on-core; gate by the pip capsule so caps/gaps read round.
+    coverage = min(coverage, pipCov);
     if (coverage <= 0.0) discard;
   }
 

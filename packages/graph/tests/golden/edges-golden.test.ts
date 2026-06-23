@@ -290,6 +290,11 @@ describe("B1 Phase 2 — edge pixel parity (WebGL vs Canvas2D, Chrome/CDP)", () 
         // pinned harness font (Phase 4); its pixel-diff is deferred. We still
         // assert the WebGL backend engaged + the edge drew SOME ink there.
         const isBox = ef.name === "box-clip";
+        // E13 overlap: the raw segment is fully COVERED by the (overlapping)
+        // glyphs, so NO edge ink shows on EITHER backend — that is the correct
+        // behaviour. Parity here = the drawn EXTENT (the two glyphs) matches and
+        // no arrow leaks out; an edge-ink count would be 0 on both and is N/A.
+        const isOverlap = ef.name === "overlap";
 
         const ref = await oracle.capture(ef.fixture, { ...opts, backend: "canvas2d" });
         const gl = await oracle.capture(ef.fixture, { ...opts, backend: "webgl", instancedShapes: true });
@@ -302,30 +307,42 @@ describe("B1 Phase 2 — edge pixel parity (WebGL vs Canvas2D, Chrome/CDP)", () 
         const refInk = countColorPixels(ref, ef.rgb, 60);
         const drew = glInk > 0 && refInk > 0;
 
+        // The drawn content's extent on both captures must match within a few px
+        // (the clip + arrow + glyphs set the extent). Shared by every case.
+        const glBox = contentBBox(gl, 12);
+        const refBox = contentBBox(ref, 12);
+        const extentOk =
+          Boolean(glBox) &&
+          Boolean(refBox) &&
+          Math.abs(glBox.width - refBox.width) <= 8 &&
+          Math.abs(glBox.height - refBox.height) <= 8;
+        const boxNote = `glBox=${glBox?.width}x${glBox?.height} refBox=${refBox?.width}x${refBox?.height}`;
+
         if (isBox) {
-          // Deferred parity: only assert the edge drew on BOTH backends.
-          results.push({ name: ef.name, pass: drew, note: `box-clip deferred; glInk=${glInk} refInk=${refInk}` });
+          // Deferred parity: assert the edge drew on BOTH backends + extent OK.
+          results.push({ name: ef.name, pass: drew && extentOk, note: `box-clip deferred; glInk=${glInk} refInk=${refInk} ${boxNote}` });
+          continue;
+        }
+
+        if (isOverlap) {
+          // E13: edge correctly occluded ⇒ no edge ink expected on either side;
+          // parity is the matching glyph extent (and the arrow-absence the
+          // geometry-parity layer already pins).
+          results.push({ name: ef.name, pass: extentOk, note: `overlap (edge occluded, E13); glInk=${glInk} refInk=${refInk} ${boxNote}` });
           continue;
         }
 
         // Edge ink presence within a comparable budget: the WebGL edge ink count
         // is within a generous ratio of the Canvas2D ink count (same width/dash/
         // clip ⇒ comparable stroked area). A grossly wrong stroke (1px legacy
-        // line, no clip, missing dash gaps) would blow this.
+        // line, no clip, missing round-pip dash caps) would blow this.
         const ratio = refInk > 0 ? glInk / refInk : 0;
         const inkOk = drew && ratio > 0.5 && ratio < 2.0;
-
-        // Arrow presence: the drawn content's horizontal extent on the GL capture
-        // matches Canvas2D within a few px (the arrow + clip set the extent).
-        const glBox = contentBBox(gl, 12);
-        const refBox = contentBBox(ref, 12);
-        const extentOk =
-          glBox && refBox && Math.abs(glBox.width - refBox.width) <= 8 && Math.abs(glBox.height - refBox.height) <= 8;
 
         results.push({
           name: ef.name,
           pass: Boolean(inkOk && extentOk),
-          note: `glInk=${glInk} refInk=${refInk} ratio=${ratio.toFixed(2)} glBox=${glBox?.width}x${glBox?.height} refBox=${refBox?.width}x${refBox?.height}`,
+          note: `glInk=${glInk} refInk=${refInk} ratio=${ratio.toFixed(2)} ${boxNote}`,
         });
       }
 
