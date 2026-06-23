@@ -1454,9 +1454,12 @@ graphify agent-stats report [--agent <id>] # per-agent detail with anonymized ev
 graphify agent-stats sync [--full]         # parse/refresh transcripts into .graphify/agents/facts.jsonl
 graphify agent-stats sessions [--agent <id>] [--branch <b>] [--since <date>] [--json]
 graphify agent-stats wp <trackItemId> [--no-pr] [--json]   # conductor view: sessions joined to a Track work-package
+graphify agent-stats project-graph [--config <id.json>] [--out <graph.json>] [--studio]   # rename-aware project/conversation graph.json
 ```
 
 The store (`.graphify/agents/facts.jsonl` + byte-offset cursors) is fully re-derivable; `sync` is incremental. The reports emit stable `graphify.agent-stats/v1` (summary/report) and `graphify.agent-stats.sessions/v1` (sessions) schemas. `wp` optionally uses `gh` to add PR-merge attribution (`--no-pr` to skip).
+
+`project-graph` turns those session facts into a graphify `graph.json` the studio can render (nodes: project / repo / agent / session / branch / commit; edges: `belongs-to`, `rename-lineage`, `worked-in`, `conducted-by`, `touched-branch`, `produced`, `derived-from`). Its point is **rename reconciliation**: agent-stats keys repo identity off the cwd *path*, so a renamed/moved project fragments into several path identities; a `ProjectIdentity` (canonical id + ordered path/remote aliases) collapses them into ONE project node and chains the incarnations with `rename-lineage` edges. `--config` supplies the identity (defaults to the sentropic→graphify lineage); `--studio` also exports a renderable static studio. Stable schema `graphify.agent-stats.project-graph/v1`.
 
 ---
 
