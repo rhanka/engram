@@ -279,3 +279,100 @@ Two independent adversarial Opus 4.8 reviews (2026-06-13) returned BLOCK; all fi
 - **citations.json caching (B#F, MUST-FIX):** mtime-keyed index, not uncached per-request.
 - **Survey carve-out (A#6), quote/locators (A#7), export non-impact (B#E):** folded into Problem/Non-Goals/Migration.
 - **Curated mystery migration (B#G, needs product call):** flagged as a rollout decision in Migration (backfill vs re-extract+re-describe); does not block implementation.
+
+---
+
+## Addendum — WP #24: the `cite` GROUNDING producer + contract delta (2026-06-23)
+
+This addendum extends the 0.14.0 storage spec with the citation-GROUNDING producer
+(`graphify cite`, a.k.a. `ground-citations`) and **reverses** two of the original
+v1 Non-Goals. The original decisions on storage/tiering remain BINDING; this
+delta is additive and backward-compatible.
+
+### Reversed Non-Goals (now in scope, ratified by production reality)
+
+- ~~**No verbatim-quote capture.**~~ **REVERSED.** `quote?: string` is now a
+  first-class optional field on `OntologyCitation`. It was de-facto present in
+  production already — carried by `OntologyEvidenceRecord`, the mystery
+  `citations.json` sidecar (`{source_file, section, quote}`, 1983 nodes), and read
+  by both the studio EntityPanel (`<blockquote>{p.quote}</blockquote>`) and the
+  describe grounding path (`collectCitationContext` reads `quote ?? text ?? snippet`).
+  Declaring it ends the "field that exists but isn't typed" drift.
+- ~~**No change to the `OntologyCitation` shape.**~~ **REVERSED.** Three optional
+  fields are added: `quote?: string`, `confidence?: CitationConfidence`
+  (`"EXTRACTED" | "INFERRED"`), and `source_location?: string` (the modality-encoded
+  human-readable locator string, e.g. `"p.12 · Section"`, that ia-aero's `ground.py`
+  already emits). All additive; locator-only citations remain valid. None of the
+  three is part of the citation IDENTITY key (`source_file|page|section|paragraph_id`):
+  two citations to the same locator with different quotes still dedupe to one.
+
+### `graphify cite [path]` — the GROUNDING producer
+
+`backfill-citations` only PROJECTS pre-existing `citations[]` into the tiered store;
+`cite` GROUNDS NEW citations by SCANNING the corpus source text — symmetric to
+`describe`/`label`. It is the productization of ia-aero's hand-coded `ground.py` /
+`ground2.py` (876/876 entities cited, zero API calls).
+
+Flags:
+
+```
+graphify cite [path]
+  --mode <heuristic|assistant|api>   # default heuristic (no key). assistant/api
+                                     #   are opt-in recall boosters, gated by the
+                                     #   SAME anti-hallucination verbatim check.
+  --top-k <n>                        # max citations grounded per node (default 6)
+  --types <a,b,c>                    # restrict to node kinds (file_type/node_type)
+  --only-missing                     # additive 2nd pass: ground only uncited nodes
+  --source <root>                    # extra source search root (.graphify/converted
+                                     #   is always searched)
+  --citations-top-k <n>             # inline Level-1 K after aggregation
+  --dry-run                          # report coverage; write nothing
+```
+
+It is OPT-IN (NOT auto-run in the default pipeline, like `describe`). It loads
+`graph.json`, grounds, UNIONS the result with each node's existing `citations`
+(union-not-clobber via `unionCitations`), then runs the shipped aggregation
+(`aggregateCitations` → `citation_count` + K-bounded inline + `citations.json`).
+
+### Anti-hallucination (HARD INVARIANT)
+
+Every emitted `quote` MUST be a verified VERBATIM substring of the NORMALIZED
+source text (`verifyVerbatim`: NFKD-deaccent + ligature-fold + lowercase +
+whitespace-collapse, then `includes`). In heuristic mode a citation **cannot** be
+emitted unless its windowed quote verifies — there is no path to invent text. The
+`assistant`/`api` modes are gated by the SAME check: an LLM proposes a quote, the
+heuristic verifier re-locates it, and a non-matching quote is DROPPED, never
+emitted. The invariant is unit-tested and verified against the real ia-aero corpus
+(2854/2854 grounded quotes verbatim, zero hallucinations).
+
+### Heuristic algorithm (ported from ground.py/ground2.py)
+
+Per node → modality-aware source parse → normalize (with the verbatim gate) →
+type-aware candidate match → window the quote → emit:
+
+1. **Modality parse.** OCR-markdown: leading `---…---` front-matter SKIPPED (so
+   page numbering starts at 1 — the process-std-am `page:"unknown"` fix); bare `---` →
+   page increment; `#{1,4} ` → section; `![](…)` → image with prev/next prose
+   context. Plain text: chapter/story headings → section; paragraphs → units;
+   pages meaningless (page 1).
+2. **Type-aware terms.** person → surname (section headings first, then body);
+   reference → the `[N]` marker resolved back into the body; image → surrounding
+   prose (INFERRED); acronym (3-6 caps) → whole-word; concept/… → most specific
+   stopword-filtered content word; quote/any → `rationale` verbatim quoted span
+   (gated). Aliases are added as strong terms.
+3. **Window + verify.** ±~110/210 chars snapped to sentence/quote boundaries,
+   ellipsis-padded, capped at 320 chars; verified verbatim; deduped by quote prefix;
+   capped at `--top-k`.
+4. **Emit + aggregate.** `{quote, source_file, source_location, page?, section?,
+   paragraph_id?, confidence}`; UNION with existing; `aggregateCitations` →
+   `citations.json`.
+
+### `source_location` semantics by modality
+
+| Modality | `source_location` | structured fields |
+|---|---|---|
+| OCR-markdown | `"p.{page} · {section}"` | `page`, `section`, `paragraph_id` |
+| plain text | `"{section}"` (chapter/story) | `section`, `paragraph_id` |
+
+(native PDF bbox + registry CSV row + web anchor are v2 modalities; the contract
+already carries `bbox`/`source_url` for them.)
