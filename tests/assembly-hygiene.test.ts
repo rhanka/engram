@@ -344,10 +344,12 @@ describe("deOrphanByContainer (D) — giant-component steering", () => {
     expect(added).toHaveLength(1); // one anchor edge only, no chapter+Work double
   });
 
-  it("falls back to the Work over an isolated finer chapter when no container reaches the giant", () => {
+  it("joins the giant via its global hub — never anchors to its own isolated Work (no disconnected star)", () => {
     // The giant lives in an UNRELATED work; this work's chapter+Work are both
-    // outside the giant. The orphan still anchors on its Work (coarser, denser)
-    // rather than the isolated finer chapter — the work-fallback path.
+    // OUTSIDE the giant (the orphan's whole Work is isolated). Anchoring the
+    // orphan to that isolated Work would spawn a disconnected star that never
+    // reaches the giant — the bug. The orphan must instead join the giant
+    // THROUGH its highest-degree node (here work_other, degree 3).
     const otherWork = node({ id: "work_other", label: "Other", type: "Work", source_file: "corpus/other/text.txt" });
     const a = node({ id: "character_a", label: "A", type: "Character", source_file: "corpus/other/text.txt" });
     const b = node({ id: "character_b", label: "B", type: "Character", source_file: "corpus/other/text.txt" });
@@ -363,9 +365,16 @@ describe("deOrphanByContainer (D) — giant-component steering", () => {
       edge({ source: "character_a", target: "character_b", relation: "knows" }),
     ]);
     const out = deOrphanByContainer(ex);
-    const appears = out.extraction.edges.filter((e) => e.relation === "appears_in" && e.source === "character_x");
-    expect(appears[0]!.target).toBe("work_w"); // Work, not the isolated chapter
-    expect(appears[0]!.derivation_method).toBe("deorphan:work-fallback");
+    const added = out.extraction.edges.filter((e) => e.source === "character_x");
+    expect(added).toHaveLength(1);
+    // Anchored to the giant's global hub (work_other, degree 3), NOT to the
+    // isolated work_w — and via a generic relation, not a false appears_in.
+    expect(added[0]!.target).toBe("work_other");
+    expect(added[0]!.relation).toBe("related_to");
+    expect(added[0]!.derivation_method).toBe("deorphan:giant-hub-global");
+    // And no isolated-Work star: work_w stays where it was (still isolated, the
+    // separate re-index concern), the orphan is in the giant.
+    expect(out.extraction.edges.some((e) => e.source === "character_x" && e.target === "work_w")).toBe(false);
   });
 
   it("is idempotent in giant mode (re-run adds nothing, byte-equal edges)", () => {
@@ -374,6 +383,182 @@ describe("deOrphanByContainer (D) — giant-component steering", () => {
     const second = deOrphanByContainer(first.extraction);
     expect(second.appearsInAdded).toBe(0);
     expect(second.extraction.edges).toEqual(first.extraction.edges);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (D) De-orphan — ABSOLUTE topology invariants on a representative graph
+//   (1) no 2-node islands  (2) no artificial hub-spoke star  (3) every orphan
+//   ends up in the SINGLE giant connected component. These are absolute (not
+//   relative-to-legacy) guarantees of the giant-hub join.
+// ---------------------------------------------------------------------------
+describe("deOrphanByContainer (D) — absolute topology invariants", () => {
+  function endpoint(v: unknown): string {
+    if (v && typeof v === "object" && "id" in (v as Record<string, unknown>)) {
+      return String((v as Record<string, unknown>).id);
+    }
+    return String(v);
+  }
+  /** Undirected components + per-node degree over an extraction. */
+  function topology(nodes: GraphNode[], edges: GraphEdge[]) {
+    const adj = new Map<string, Set<string>>();
+    for (const n of nodes) adj.set(String(n.id), new Set());
+    for (const e of edges) {
+      const s = endpoint(e.source);
+      const t = endpoint(e.target);
+      if (s === t) continue;
+      adj.get(s)?.add(t);
+      adj.get(t)?.add(s);
+    }
+    const seen = new Set<string>();
+    const comps: Set<string>[] = [];
+    for (const k of [...adj.keys()].sort()) {
+      if (seen.has(k)) continue;
+      const c = new Set<string>();
+      const stack = [k];
+      while (stack.length) {
+        const u = stack.pop()!;
+        if (c.has(u)) continue;
+        c.add(u);
+        seen.add(u);
+        for (const v of adj.get(u) ?? []) if (!c.has(v)) stack.push(v);
+      }
+      comps.push(c);
+    }
+    let giant = new Set<string>();
+    for (const c of comps) if (c.size > giant.size) giant = c;
+    const degree = new Map<string, number>();
+    for (const [k, v] of adj) degree.set(k, v.size);
+    return { adj, comps, giant, degree };
+  }
+
+  /**
+   * A REPRESENTATIVE orphan-rich graph reproducing BOTH legacy failure modes:
+   *   (a) orphans whose finer container (chapter) is isolated but whose WORK is
+   *       in the giant — legacy would spoke them onto the Work;
+   *   (b) orphans of a SEPARATE, fully-isolated "lonely" work — legacy
+   *       `work-fallback` would anchor them to that isolated Work, producing a
+   *       disconnected hub-spoke star (and, with a single orphan, a 2-node
+   *       island) that NEVER joins the giant.
+   * The fix must steer every entity orphan into the single giant component via a
+   * high-degree node.
+   */
+  function representativeGraph(): Extraction {
+    const nodes: GraphNode[] = [
+      // --- the giant: a connected saga ---
+      node({ id: "work_the-saga", label: "The Saga", type: "Work", source_file: "corpus/saga/the-saga/text.txt" }),
+      node({ id: "chapter_the-saga_ch1", label: "Ch1", type: "ChapterOrStory", source_file: "corpus/saga/the-saga/ch1.txt" }),
+      node({ id: "character_hero", label: "Hero", type: "Character", source_file: "corpus/saga/the-saga/ch1.txt" }),
+      node({ id: "character_friend", label: "Friend", type: "Character", source_file: "corpus/saga/the-saga/ch1.txt" }),
+      node({ id: "place_castle", label: "Castle", type: "Location", source_file: "corpus/saga/the-saga/ch1.txt" }),
+      // --- (a) orphans whose finer container (ch2/ch3) is isolated, same saga ---
+      node({ id: "character_o1", label: "O1", type: "Character", source_file: "corpus/saga/the-saga/ch2.txt" }),
+      node({ id: "character_o2", label: "O2", type: "Character", source_file: "corpus/saga/the-saga/ch2.txt" }),
+      node({ id: "object_o3", label: "O3", type: "Object", source_file: "corpus/saga/the-saga/ch3.txt" }),
+      node({ id: "chapter_the-saga_ch2", label: "Ch2", type: "ChapterOrStory", source_file: "corpus/saga/the-saga/ch2.txt" }),
+      node({ id: "chapter_the-saga_ch3", label: "Ch3", type: "ChapterOrStory", source_file: "corpus/saga/the-saga/ch3.txt" }),
+      // --- (b) a SEPARATE fully-isolated "lonely" work + its orphans ---
+      node({ id: "work_lonely", label: "Lonely", type: "Work", source_file: "corpus/lonely/the-lonely/text.txt" }),
+      node({ id: "character_l1", label: "L1", type: "Character", source_file: "corpus/lonely/the-lonely/text.txt" }),
+      node({ id: "character_l2", label: "L2", type: "Character", source_file: "corpus/lonely/the-lonely/text.txt" }),
+      node({ id: "place_l3", label: "L3", type: "Location", source_file: "corpus/lonely/the-lonely/text.txt" }),
+    ];
+    const edges: GraphEdge[] = [
+      // giant clique: hero–friend–castle around ch1/work, all densely linked.
+      edge({ source: "chapter_the-saga_ch1", target: "work_the-saga", relation: "part_of" }),
+      edge({ source: "character_hero", target: "chapter_the-saga_ch1", relation: "appears_in" }),
+      edge({ source: "character_friend", target: "chapter_the-saga_ch1", relation: "appears_in" }),
+      edge({ source: "place_castle", target: "chapter_the-saga_ch1", relation: "appears_in" }),
+      edge({ source: "character_hero", target: "character_friend", relation: "knows" }),
+      edge({ source: "character_hero", target: "place_castle", relation: "lives_in" }),
+      edge({ source: "character_hero", target: "work_the-saga", relation: "central_to" }),
+      // work_lonely and its l1/l2/l3 have NO edges → fully isolated until de-orphan.
+    ];
+    return { nodes, edges, hyperedges: [], input_tokens: 0, output_tokens: 0 };
+  }
+
+  it("INVARIANT 1: produces NO 2-node islands", () => {
+    const out = deOrphanByContainer(representativeGraph());
+    const { comps } = topology(out.extraction.nodes, out.extraction.edges);
+    const twoNodeIslands = comps.filter((c) => c.size === 2);
+    expect(twoNodeIslands).toHaveLength(0);
+  });
+
+  it("INVARIANT 2: introduces NO artificial hub-spoke star (no node becomes a synthetic hub with many derived degree-1 leaves)", () => {
+    const before = representativeGraph();
+    const out = deOrphanByContainer(before);
+    const { adj, degree } = topology(out.extraction.nodes, out.extraction.edges);
+
+    // A node only the DE-ORPHAN pass connected to (degree 0 before) must not
+    // emerge as a hub of derived degree-1 leaves — that is the synthetic star.
+    const beforeDeg = topology(before.nodes, before.edges).degree;
+    const derived = out.extraction.edges.filter(
+      (e) => String((e as Record<string, unknown>).derivation_method ?? "").startsWith("deorphan"),
+    );
+    const derivedTargets = new Set(derived.map((e) => endpoint(e.target)));
+    for (const hub of derivedTargets) {
+      // Any node a derived edge points at must already have been connected
+      // (degree>0) BEFORE de-orphan — i.e. it is a real, pre-existing hub of the
+      // giant, never a node de-orphan itself first wired up.
+      expect(beforeDeg.get(hub) ?? 0).toBeGreaterThan(0);
+      // And its leaves are not ALL synthetic degree-1 spokes: the hub is part of
+      // the giant, so it has non-leaf neighbours too.
+      const neighbours = [...(adj.get(hub) ?? [])];
+      const nonLeaf = neighbours.filter((v) => (degree.get(v) ?? 0) > 1);
+      expect(nonLeaf.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("INVARIANT 3: every orphan ends up in the SINGLE giant connected component", () => {
+    const before = representativeGraph();
+    const beforeTopo = topology(before.nodes, before.edges);
+    const orphansBefore = before.nodes
+      .filter((n) => (beforeTopo.degree.get(String(n.id)) ?? 0) === 0)
+      // container nodes (Work/Chapter) are not entity orphans we must rescue
+      .filter((n) => !["Work", "ChapterOrStory", "Scene", "Section"].includes(String(n.type)));
+    expect(orphansBefore.length).toBeGreaterThan(0); // the scenario IS orphan-rich
+
+    const out = deOrphanByContainer(before);
+    const { giant } = topology(out.extraction.nodes, out.extraction.edges);
+    for (const o of orphansBefore) {
+      expect(giant.has(String(o.id))).toBe(true);
+    }
+  });
+
+  it("anchors every entity orphan THROUGH a high-degree giant node (degree >= castle)", () => {
+    const out = deOrphanByContainer(representativeGraph());
+    const { degree } = topology(out.extraction.nodes, out.extraction.edges);
+    const derived = out.extraction.edges.filter(
+      (e) => String((e as Record<string, unknown>).derivation_method ?? "").startsWith("deorphan"),
+    );
+    expect(derived.length).toBeGreaterThan(0);
+    // every derived anchor target is a genuinely high-degree node (>= 2).
+    for (const e of derived) {
+      expect(degree.get(endpoint(e.target)) ?? 0).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it("is idempotent on the representative graph (re-run adds nothing)", () => {
+    const first = deOrphanByContainer(representativeGraph());
+    const second = deOrphanByContainer(first.extraction);
+    expect(second.appearsInAdded).toBe(0);
+    expect(second.extraction.edges).toEqual(first.extraction.edges);
+  });
+
+  it("REGRESSION LOCK: legacy isolated-Work fallback (joinGiantViaHub:false) DOES strand the lonely orphans in a separate star", () => {
+    // Same representative graph, but with the fix disabled, reproduces the bug:
+    // the lonely orphans anchor to their isolated Work and form a SEPARATE
+    // hub-spoke component that never reaches the giant. This locks in that the
+    // giant-hub join (default ON) is what fixes it.
+    const out = deOrphanByContainer(representativeGraph(), { joinGiantViaHub: false });
+    const { giant } = topology(out.extraction.nodes, out.extraction.edges);
+    // The lonely orphans are NOT in the giant under the legacy fallback.
+    expect(giant.has("character_l1")).toBe(false);
+    // work_lonely is the synthetic hub of a separate star (degree 3, its leaves).
+    const lonelyComp = topology(out.extraction.nodes, out.extraction.edges).comps.find((c) =>
+      c.has("work_lonely"),
+    )!;
+    expect(lonelyComp.has("character_hero")).toBe(false); // separate from the giant
   });
 });
 
