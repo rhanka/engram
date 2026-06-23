@@ -580,6 +580,11 @@
   .rail {
     background: var(--st-semantic-surface-default, #fff);
     overflow-y: auto;
+    /* B2-UI-9: clip horizontal overflow — never a horizontal scrollbar. With only
+       overflow-y:auto set, CSS promotes overflow-x:visible to `auto`, so a long
+       row (community label / bulk-button strip) pushed the rail into horizontal
+       scroll. Pin it hidden: labels ellipsize, the bulk buttons wrap → nothing lost. */
+    overflow-x: hidden;
     min-height: 0;
     /* Contain accordion growth INSIDE the rail: without a height bound,
        `overflow-y: auto` never engages — an expanded menu grows the rail past
@@ -749,7 +754,10 @@
      header; the Sub-domain list and the Type/leaf list each add one step. */
   .rail-onto-tree .rail-type-groups,
   .rail-onto-tree .rail-list {
-    padding-left: var(--rail-indent);
+    /* B2-UI-8: the Domain step (rail-onto-tree padding, 0.75rem) is kept (user:
+       "perfect, don't touch"); the DEEPER steps (Domain→Sub-domain, Sub-domain→
+       Type) were too large — reduce them. */
+    padding-left: 0.4rem;
   }
   /* B2 (§2): the leaf Type row puts its bare group-by checkbox FIRST (left),
      then the Type FILTER SelectableRow — two separate concerns on one line. */
@@ -821,6 +829,10 @@
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
+    /* B2-UI-7: the DS SelectableRow ignores the list's padding-left, so the
+       community checkbox sat at the rail edge (measured 4px) vs the Domain
+       checkbox at 16px. Shift the lead by one Domain step so they align. */
+    margin-left: 0.75rem;
   }
   /* B2-UI-1+5: align the FIRST-LEVEL Community checkbox with the first-level
      Domain checkbox. The Domain checkbox now sits ONE indent step (0.75rem) to
