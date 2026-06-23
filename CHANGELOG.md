@@ -4,8 +4,15 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
-## Unreleased
+## 0.16.0 (2026-06-23)
 
+- **Studio group-by (B2).** Per-item group-by checkboxes on every groupable row (ontology Domain / Sub-domain / Type and communities) with tri-state bulk buttons ("Group all to: Domain / Sub-domain / Type" + scoped "Ungroup all") and nesting absorption — DS-native, no horizontal overflow.
+- **Single-file offline studio fix.** `graphify studio export --full-offline` / `--single-file` again produces a real, self-contained `studio.html`: the build dependency guard now restores `vite-plugin-singlefile` (its absence had silently no-op'd the single-file build).
+- **Per-source description & label language.** `--description-lang auto|fr|en|…` on `describe`/`update` and `--label-lang` on `label`/`update`; the language is detected per source/node and injected into every prompt (assistant-batch and direct paths) so a single-language corpus stays in that language. LLM-free deterministic detector; default `auto` = the source's language.
+- **Graph label fit.** Box labels on the main graph are pixel-fitted to a capped width with a glyph-aware ellipsis (no more overflow); character hubs render as labelled boxes.
+- **De-orphan topology.** Orphan nodes now join the giant connected component through a high-degree work node — no 2-node islands, no synthetic hub-spoke stars.
+- **Studio right-rail polish.** The entity-detail panel wraps long source paths / quotes (no horizontal clipping) and scrolls inside its own column, consistent with the left rail.
+- **Description-coverage signal + rationale fallback.** Studio / wiki export warns when description coverage is ~0% (pointing to `graphify describe`), and falls back to a node's `rationale` as a clearly-marked provisional description so the studio is never empty when the data already exists.
 - **Agent-stats project/conversation graph (`graphify agent-stats project-graph`).** Builds a rename-aware graphify `graph.json` from agent-stats session facts — nodes = project / repo / agent / session / branch / commit; edges = `belongs-to`, `rename-lineage`, `worked-in`, `conducted-by`, `touched-branch`, `produced`, `derived-from` (codex sub-agent lineage). The headline feature is **rename reconciliation**: a project that was renamed/moved on disk (e.g. `~/src/sentropic` → `~/src/graphify`) fragments into several cwd-path identities (agent-stats keys repo membership off the path, not the git remote); a `ProjectIdentity` (canonical id + ordered path/remote aliases) collapses those incarnations into ONE project node, chains them with `rename-lineage` edges, and rolls every session up to the single project. `--studio` exports a renderable static studio next to the graph (pinned force-layout positions). Stable schema `graphify.agent-stats.project-graph/v1`. Defaults to the sentropic→graphify lineage; `--config <identity.json>` for any project.
 
 ### Agent stats — `graphify agent-stats` (shipped 0.10.1 + 0.13.1)
