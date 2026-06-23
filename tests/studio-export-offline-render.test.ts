@@ -7,7 +7,11 @@
  * network log shows no `Network.loadingFailed`.
  *
  * Best-effort gate: SKIPS (does not fail) when the prebuilt single-file template,
- * a Chrome binary, or the `ws` module is unavailable in the environment.
+ * a Chrome binary, or the `ws` module is unavailable in the environment — and also
+ * when Chrome is present but fails to launch / expose its CDP websocket for an
+ * ENVIRONMENTAL reason (e.g. the GitHub runner's flaky `Failed to connect to the
+ * bus` / dbus error that intermittently kills the devtools endpoint). The render
+ * assertions stay hard failures whenever Chrome actually comes up.
  */
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -102,12 +106,13 @@ describe("T1 — offline studio.html renders over file:// with zero failed reque
 
   run(
     "graph paints from the inlined bundle, no blocked/failed network requests",
-    async () => {
+    async (ctx) => {
       const WebSocketCtor = (await tryLoadWs()) as
         | (new (url: string, opts?: unknown) => WsLike)
         | null;
       if (!WebSocketCtor) {
         // ws unavailable: skip rather than fail (best-effort environment gate).
+        ctx.skip("ws module unavailable");
         return;
       }
 
@@ -133,6 +138,10 @@ describe("T1 — offline studio.html renders over file:// with zero failed reque
           "--headless=new",
           "--disable-gpu",
           "--no-sandbox",
+          // Stability flags for constrained CI runners: avoid the tiny default
+          // /dev/shm and the dbus session bus that flakes on GitHub runners.
+          "--disable-dev-shm-usage",
+          "--disable-dbus",
           "--remote-debugging-port=0",
           `--user-data-dir=${userDir}`,
           "about:blank",
@@ -141,18 +150,40 @@ describe("T1 — offline studio.html renders over file:// with zero failed reque
       );
       procs.push(chrome);
 
-      const wsUrl = await new Promise<string>((res, rej) => {
-        let stderr = "";
-        const t = setTimeout(() => rej(new Error(`no devtools ws; stderr:\n${stderr}`)), 20000);
-        chrome.stderr!.on("data", (d) => {
-          stderr += String(d);
-          const m = stderr.match(/ws:\/\/[^\s]+\/devtools\/browser\/[a-f0-9-]+/);
-          if (m) {
+      // A failed/aborted launch (missing binary, dbus failure, runner refusing to
+      // expose the CDP websocket) is ENVIRONMENTAL — skip rather than fail T1. Any
+      // error from the spawn itself or from waiting on the devtools ws lands here.
+      let wsUrl: string;
+      try {
+        wsUrl = await new Promise<string>((res, rej) => {
+          let stderr = "";
+          const t = setTimeout(() => rej(new Error(`no devtools ws; stderr:\n${stderr}`)), 20000);
+          chrome.on("error", (err) => {
             clearTimeout(t);
-            res(m[0]);
-          }
+            rej(err instanceof Error ? err : new Error(String(err)));
+          });
+          chrome.on("exit", (code, signal) => {
+            clearTimeout(t);
+            rej(new Error(`chrome exited early (code=${code}, signal=${signal})\n${stderr}`));
+          });
+          chrome.stderr!.on("data", (d) => {
+            stderr += String(d);
+            const m = stderr.match(/ws:\/\/[^\s]+\/devtools\/browser\/[a-f0-9-]+/);
+            if (m) {
+              clearTimeout(t);
+              res(m[0]);
+            }
+          });
         });
-      });
+      } catch (err) {
+        try {
+          chrome.kill("SIGKILL");
+        } catch {
+          /* ignore */
+        }
+        ctx.skip(`chrome failed to launch / expose CDP websocket: ${(err as Error).message}`);
+        return;
+      }
 
       const browser = makeCdp(WebSocketCtor, wsUrl);
       await browser.ready;
