@@ -302,3 +302,171 @@ export function coerceFinitePositions(
   }
   return { positions: out ?? positions, nonFiniteCount };
 }
+
+// ---------------------------------------------------------------------------
+// EDGE geometry (B1 Phase 2). Lifted VERBATIM from the `drawFallback2D` edge
+// pass (renderer.ts:844-921) into pure functions so the Canvas2D fallback, the
+// WebGL2 instanced-edge path, and the hit-test all consume ONE computation —
+// the same anti-divergence decision the node geometry made. The WebGL path
+// tessellates the curve here so the render-curve == hit-curve (R10): this is
+// the ONLY parity helper; `edge-geometry.ts` is NOT on this path (it uses a
+// different control-point sign/factor and a different default curvature).
+// ---------------------------------------------------------------------------
+
+/** Edge curvature lateral factor (renderer.ts:492). Control offset = curvature·this. */
+export const EDGE_CURVE_FACTOR = 0.5;
+
+/**
+ * Arrowhead length in world units per unit of edge width (renderer.ts:543).
+ * Device-space length = ARROW_LENGTH · width · pixelRatio · zoom (world-space,
+ * scales with zoom like every glyph).
+ */
+export const ARROW_LENGTH = 2.5;
+/** Arrow triangle base width as a fraction of its length (renderer.ts:545). */
+export const ARROW_WIDTH_RATIO = 0.9;
+
+/** Dash pattern (on/off CSS px, scaled by pixelRatio) per dash code (renderer.ts:480-489). */
+export function dashPattern(dash: number, pixelRatio: number): [number, number] | null {
+  if (dash === 1) return [6 * pixelRatio, 4 * pixelRatio];
+  if (dash === 2) return [1.5 * pixelRatio, 4 * pixelRatio];
+  if (dash === 3) return [10 * pixelRatio, 6 * pixelRatio];
+  return null; // solid
+}
+
+/** Drawn stroke width in device px (E1, renderer.ts:903): max(1, width·pixelRatio). */
+export function edgeStrokeWidth(width: number, pixelRatio: number): number {
+  return Math.max(1, width * pixelRatio);
+}
+
+/**
+ * Resolved per-edge geometry in DEVICE pixels, computed once with the EXACT
+ * `drawFallback2D` math: the (curved) control point, the OUTGOING/INCOMING unit
+ * tangents (the chord for straight edges, the control→endpoint directions for
+ * arcs — E7), whether the edge clips to the node borders (E5/E13), and the
+ * clipped start/end points the stroke and arrowhead use.
+ */
+export interface EdgeGeometry {
+  /** Edge is degenerate (endpoints coincide) — caller skips it (renderer.ts:857). */
+  degenerate: boolean;
+  /** Endpoints clip to the node borders; false ⇒ raw segment + NO arrow (E13). */
+  clipped: boolean;
+  /** Whether the edge is curved (curvature !== 0). */
+  curved: boolean;
+  /** Quadratic control point (device px); only meaningful when `curved`. */
+  controlX: number;
+  controlY: number;
+  /** Outgoing unit tangent at the source (curve start tangent / chord). */
+  outSx: number;
+  outSy: number;
+  /** Incoming unit tangent at the target (curve end tangent / chord). */
+  inTx: number;
+  inTy: number;
+  /** Clipped stroke start (source border) — raw source when not clipped. */
+  startX: number;
+  startY: number;
+  /** Clipped stroke end (target border) — raw target when not clipped. */
+  endX: number;
+  endY: number;
+}
+
+/**
+ * Compute one edge's drawn geometry from its endpoint SCREEN points + curvature.
+ * `offsetForDir(end, dirX, dirY)` returns the border offset of the given
+ * endpoint (`"source"`/`"target"`) along a unit direction — wire it to
+ * `borderOffset` so the box-rect / circular-clip choice is single-sourced.
+ *
+ * This is the verbatim renderer.ts:854-898 math: control point, tangents,
+ * clip test (`dist > offsetSource + offsetTarget + 1e-3`), clipped endpoints.
+ */
+export function edgeGeometry(
+  source: { x: number; y: number },
+  target: { x: number; y: number },
+  curvature: number,
+  offsetForDir: (end: "source" | "target", dirX: number, dirY: number) => number,
+): EdgeGeometry {
+  const dx = target.x - source.x;
+  const dy = target.y - source.y;
+  const distance = Math.hypot(dx, dy);
+  const degenerate = distance < 1e-6;
+  const curved = curvature !== 0;
+
+  let controlX = 0;
+  let controlY = 0;
+  if (curved && !degenerate) {
+    const midX = (source.x + target.x) / 2;
+    const midY = (source.y + target.y) / 2;
+    // control = mid + (-dy/d, dx/d)·d·curvature·EDGE_CURVE_FACTOR (renderer.ts:865)
+    controlX = midX + (-dy / distance) * distance * curvature * EDGE_CURVE_FACTOR;
+    controlY = midY + (dx / distance) * distance * curvature * EDGE_CURVE_FACTOR;
+  }
+
+  let outSx = degenerate ? 0 : dx / distance;
+  let outSy = degenerate ? 0 : dy / distance;
+  let inTx = outSx;
+  let inTy = outSy;
+  if (curved && !degenerate) {
+    const sLen = Math.hypot(controlX - source.x, controlY - source.y);
+    const tLen = Math.hypot(target.x - controlX, target.y - controlY);
+    if (sLen > 1e-6) {
+      outSx = (controlX - source.x) / sLen;
+      outSy = (controlY - source.y) / sLen;
+    }
+    if (tLen > 1e-6) {
+      inTx = (target.x - controlX) / tLen;
+      inTy = (target.y - controlY) / tLen;
+    }
+  }
+
+  const offsetSource = offsetForDir("source", outSx, outSy);
+  const offsetTarget = offsetForDir("target", -inTx, -inTy);
+  const clipped = !degenerate && distance > offsetSource + offsetTarget + 1e-3;
+
+  const startX = clipped ? source.x + outSx * offsetSource : source.x;
+  const startY = clipped ? source.y + outSy * offsetSource : source.y;
+  const endX = clipped ? target.x - inTx * offsetTarget : target.x;
+  const endY = clipped ? target.y - inTy * offsetTarget : target.y;
+
+  return {
+    degenerate,
+    clipped,
+    curved,
+    controlX,
+    controlY,
+    outSx,
+    outSy,
+    inTx,
+    inTy,
+    startX,
+    startY,
+    endX,
+    endY,
+  };
+}
+
+/**
+ * Tessellate the drawn edge into a polyline of device-pixel points. A straight
+ * edge is the single [start, end] segment; a curved edge samples the quadratic
+ * Bézier (start, control, end) at `segments+1` points. The polyline is what the
+ * WebGL capsule pipeline expands, and (sampled at the same steps) what the
+ * hit-test walks — so render-curve == hit-curve. The endpoints are the CLIPPED
+ * endpoints from `edgeGeometry`, so the curve starts/ends on the node borders.
+ */
+export function tessellateEdge(geom: EdgeGeometry, segments = 16): Array<[number, number]> {
+  if (!geom.curved) {
+    return [
+      [geom.startX, geom.startY],
+      [geom.endX, geom.endY],
+    ];
+  }
+  const steps = Math.max(2, segments);
+  const points: Array<[number, number]> = [];
+  for (let i = 0; i <= steps; i += 1) {
+    const t = i / steps;
+    const mt = 1 - t;
+    // Quadratic Bézier with the CLIPPED endpoints and the shared control point.
+    const x = mt * mt * geom.startX + 2 * mt * t * geom.controlX + t * t * geom.endX;
+    const y = mt * mt * geom.startY + 2 * mt * t * geom.controlY + t * t * geom.endY;
+    points.push([x, y]);
+  }
+  return points;
+}

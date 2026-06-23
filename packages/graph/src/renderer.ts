@@ -1,6 +1,7 @@
 import { computePositionBounds, copyPositions } from "./positions";
 import { BOX_GLYPH_CORNER_RATIO, SQUARE_INSET_RATIO, shapePolygonPoints } from "./shape-geometry";
 import { createWebGLShapeRenderer, type WebGLShapeRenderer } from "./webgl-shapes";
+import { createWebGLEdgeRenderer, type WebGLEdgeRenderer } from "./webgl-edges";
 import type {
   CameraState,
   FitViewOptions,
@@ -462,6 +463,44 @@ function cssDarkenedColor(
   const b = Math.round((source?.[offset + 2] ?? fallback[2]) * factor);
   const a = (source?.[offset + 3] ?? fallback[3]) / 255;
   return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
+/**
+ * Build a box-label `measureText` service for the WebGL edge path so an edge
+ * clipping to a BOX endpoint stops at the SAME rect border Canvas2D draws (E5).
+ * Uses a throwaway offscreen 2D canvas (OffscreenCanvas or a detached <canvas>)
+ * with a per-call font + text cache. Returns `null` in non-DOM environments —
+ * the edge path then falls back to the empty-collapse box rect (box-label clip
+ * parity finalises with the box glyph in Phase 4). NEVER touches the render
+ * canvas (a canvas holds one context type — a 2D ctx there would break WebGL).
+ */
+function createMeasureService(): ((text: string, font: string) => number) | null {
+  const g = globalThis as {
+    OffscreenCanvas?: new (w: number, h: number) => { getContext(t: "2d"): CanvasRenderingContext2D | null };
+    document?: { createElement(tag: "canvas"): HTMLCanvasElement };
+  };
+  let ctx: CanvasRenderingContext2D | null = null;
+  try {
+    if (typeof g.OffscreenCanvas === "function") {
+      ctx = new g.OffscreenCanvas(1, 1).getContext("2d");
+    } else if (g.document?.createElement) {
+      ctx = g.document.createElement("canvas").getContext("2d");
+    }
+  } catch {
+    return null;
+  }
+  if (!ctx) return null;
+  const measureCtx = ctx;
+  const cache = new Map<string, number>();
+  return (text: string, font: string): number => {
+    const key = `${font}|${text}`;
+    const cached = cache.get(key);
+    if (cached !== undefined) return cached;
+    measureCtx.font = font;
+    const width = measureCtx.measureText(text).width;
+    cache.set(key, width);
+    return width;
+  };
 }
 
 function screenPoint(
@@ -1008,6 +1047,15 @@ export function createGraphRenderer(
   const shapeRenderer: WebGLShapeRenderer | null =
     wantInstancedShapes && context && isWebGL2(context) ? createWebGLShapeRenderer(context) : null;
   const usesInstancedShapes = shapeRenderer !== null;
+  // B1 Phase 2 INTERNAL CANARY: the SAME `instancedShapes` flag turns on the
+  // WebGL2 instanced-EDGE path (thick/clip/dash/curve/arrows via capsule SDF),
+  // replacing the legacy 1px `LINES`. Gated identically — the studio default
+  // (canvas2d) never enters this branch, so there is no user-facing change.
+  const edgeRenderer: WebGLEdgeRenderer | null =
+    wantInstancedShapes && context && isWebGL2(context) ? createWebGLEdgeRenderer(context) : null;
+  // Box-label measure service for the WebGL edge clip (E5). Built once; null in
+  // non-DOM envs (the edge path then uses the empty-collapse box rect).
+  const edgeMeasureLabelWidth = edgeRenderer ? createMeasureService() ?? undefined : undefined;
   let lastNonFiniteCount = 0;
   let state: RendererState = {
     nodeIds: [],
@@ -1092,27 +1140,46 @@ export function createGraphRenderer(
     }
 
     if (!skipEdges && state.edges.length > 0) {
-      context.useProgram(resources.edgeProgram.program);
-      bindCameraUniforms(context, resources.edgeProgram.uniforms, camera, canvas, pixelRatio);
-      uploadAttribute(
-        context,
-        resources.positionBuffer,
-        resources.edgeProgram.attributes.position,
-        buildEdgePositions(state, pixelRatio),
-        2,
-        context.FLOAT,
-        false,
-      );
-      uploadAttribute(
-        context,
-        resources.colorBuffer,
-        resources.edgeProgram.attributes.color,
-        buildEdgeColors(state),
-        4,
-        context.UNSIGNED_BYTE,
-        true,
-      );
-      context.drawArrays(context.LINES, 0, state.edges.length);
+      if (edgeRenderer) {
+        // B1 Phase 2 INTERNAL CANARY: WebGL2 instanced edges (thick round-capped
+        // capsules + clip + dash + curve + arrowheads), driven by the shared
+        // render-geometry so the GL edge matches the Canvas2D edge — NOT the
+        // legacy 1px `LINES`. Box/labels/picking stay on later phases / Canvas2D.
+        edgeRenderer.renderEdges({
+          positions: state.positions,
+          nodeCount: state.nodeIds.length,
+          edges: state.edges,
+          style: state.style,
+          camera,
+          pixelRatio,
+          viewportWidth: canvas?.width ?? 0,
+          viewportHeight: canvas?.height ?? 0,
+          measureLabelWidth: edgeMeasureLabelWidth,
+        });
+      } else {
+        // Legacy 1px point-sprite edge path (default for users).
+        context.useProgram(resources.edgeProgram.program);
+        bindCameraUniforms(context, resources.edgeProgram.uniforms, camera, canvas, pixelRatio);
+        uploadAttribute(
+          context,
+          resources.positionBuffer,
+          resources.edgeProgram.attributes.position,
+          buildEdgePositions(state, pixelRatio),
+          2,
+          context.FLOAT,
+          false,
+        );
+        uploadAttribute(
+          context,
+          resources.colorBuffer,
+          resources.edgeProgram.attributes.color,
+          buildEdgeColors(state),
+          4,
+          context.UNSIGNED_BYTE,
+          true,
+        );
+        context.drawArrays(context.LINES, 0, state.edges.length);
+      }
     }
 
     if (state.nodeIds.length > 0) {
@@ -1200,6 +1267,7 @@ export function createGraphRenderer(
     destroy() {
       destroyed = true;
       shapeRenderer?.destroy();
+      edgeRenderer?.destroy();
     },
   };
 }
