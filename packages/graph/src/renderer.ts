@@ -1,5 +1,6 @@
 import { computePositionBounds, copyPositions } from "./positions";
 import { BOX_GLYPH_CORNER_RATIO, SQUARE_INSET_RATIO, shapePolygonPoints } from "./shape-geometry";
+import { createWebGLShapeRenderer, type WebGLShapeRenderer } from "./webgl-shapes";
 import type {
   CameraState,
   FitViewOptions,
@@ -114,6 +115,31 @@ void main() {
 const DEFAULT_NODE_COLOR = [77, 118, 255, 255] as const;
 const DEFAULT_EDGE_COLOR = [121, 133, 153, 180] as const;
 
+/**
+ * Resolve the B1 `GRAPHIFY_RENDER_BACKEND` flag for the INSTANCED-SHAPE canary.
+ *
+ * Precedence: explicit `options.instancedShapes` > the env flag > default
+ * `false` (legacy point sprites). The flag values `webgl`/`instanced`/`shapes`
+ * opt INTO the new instanced node-shape path; anything else (incl. the default
+ * `canvas2d`) keeps the legacy path. This is INTERNAL-CANARY-ONLY — the studio
+ * never sets it, so there is no user-facing change in Phase 1.
+ */
+function resolveInstancedShapes(options: GraphRendererOptions): boolean {
+  if (typeof options.instancedShapes === "boolean") return options.instancedShapes;
+  // Read the env flag without depending on @types/node (the package has none):
+  // reach `process.env` through `globalThis` and string-index it.
+  const proc = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process;
+  const env = proc?.env?.GRAPHIFY_RENDER_BACKEND;
+  if (!env) return false;
+  const flag = env.trim().toLowerCase();
+  return flag === "webgl" || flag === "instanced" || flag === "shapes";
+}
+
+/** True for a WebGL2 context (instancing + VAOs are WebGL2 core). */
+function isWebGL2(context: GraphContext): context is WebGL2RenderingContext {
+  return typeof (context as WebGL2RenderingContext).drawArraysInstanced === "function";
+}
+
 function acquireContext(canvas: GraphCanvasLike | null, options: GraphRendererOptions): GraphContext | null {
   if (!canvas) {
     return null;
@@ -122,7 +148,11 @@ function acquireContext(canvas: GraphCanvasLike | null, options: GraphRendererOp
   try {
     const contextOptions = {
       antialias: options.antialias ?? false,
-      preserveDrawingBuffer: false,
+      // The instanced-shape canary (B1 Phase 1) reads the backing store via the
+      // golden harness's synchronous gl.readPixels right after render(); keep
+      // the buffer alive for that path so the read is reliable across runners
+      // (plan §4.2 / R18). The default (legacy/users) keeps the lean `false`.
+      preserveDrawingBuffer: resolveInstancedShapes(options),
     };
     return (
       (canvas.getContext("webgl2", contextOptions) as GraphContext | null) ??
@@ -969,6 +999,16 @@ export function createGraphRenderer(
   const resources = context ? createRenderResources(context) : null;
   const pixelRatio = Math.max(Number.EPSILON, options.pixelRatio ?? 1);
   const activeBackend = context ? "webgl" : fallbackContext ? "canvas2d" : "none";
+
+  // B1 Phase 1 INTERNAL CANARY: when the flag is on AND we have a WebGL2 context,
+  // node shapes are drawn by the instanced-shape renderer (radius-as-radius). The
+  // legacy point-sprite path stays for the default (flag off), so users on the
+  // unchanged canvas2d/point-sprite path see no difference.
+  const wantInstancedShapes = resolveInstancedShapes(options);
+  const shapeRenderer: WebGLShapeRenderer | null =
+    wantInstancedShapes && context && isWebGL2(context) ? createWebGLShapeRenderer(context) : null;
+  const usesInstancedShapes = shapeRenderer !== null;
+  let lastNonFiniteCount = 0;
   let state: RendererState = {
     nodeIds: [],
     positions: new Float32Array(),
@@ -1076,36 +1116,57 @@ export function createGraphRenderer(
     }
 
     if (state.nodeIds.length > 0) {
-      context.useProgram(resources.nodeProgram.program);
-      bindCameraUniforms(context, resources.nodeProgram.uniforms, camera, canvas, pixelRatio);
-      uploadAttribute(
-        context,
-        resources.positionBuffer,
-        resources.nodeProgram.attributes.position,
-        state.positions,
-        2,
-        context.FLOAT,
-        false,
-      );
-      uploadAttribute(
-        context,
-        resources.colorBuffer,
-        resources.nodeProgram.attributes.color,
-        buildNodeColors(state),
-        4,
-        context.UNSIGNED_BYTE,
-        true,
-      );
-      uploadAttribute(
-        context,
-        resources.sizeBuffer,
-        resources.nodeProgram.attributes.size,
-        buildNodeSizes(state),
-        1,
-        context.FLOAT,
-        false,
-      );
-      context.drawArrays(context.POINTS, 0, state.nodeIds.length);
+      if (shapeRenderer) {
+        // B1 Phase 1 INTERNAL CANARY: instanced node shapes (radius-as-radius).
+        // Box glyphs (shape 5), labels, and picking are NOT drawn here (later
+        // phases / Canvas2D). The shared render-geometry drives the radii so the
+        // GL circle matches the Canvas2D circle exactly, not the half-sprite.
+        const bounds = computePositionBounds(state.positions);
+        const { nonFiniteCount } = shapeRenderer.renderShapes({
+          positions: state.positions,
+          nodeCount: state.nodeIds.length,
+          style: state.style,
+          camera,
+          pixelRatio,
+          viewportWidth: canvas?.width ?? 0,
+          viewportHeight: canvas?.height ?? 0,
+          centerX: Number.isFinite(bounds.centerX) ? bounds.centerX : 0,
+          centerY: Number.isFinite(bounds.centerY) ? bounds.centerY : 0,
+        });
+        lastNonFiniteCount = nonFiniteCount;
+      } else {
+        // Legacy point-sprite path (default for users).
+        context.useProgram(resources.nodeProgram.program);
+        bindCameraUniforms(context, resources.nodeProgram.uniforms, camera, canvas, pixelRatio);
+        uploadAttribute(
+          context,
+          resources.positionBuffer,
+          resources.nodeProgram.attributes.position,
+          state.positions,
+          2,
+          context.FLOAT,
+          false,
+        );
+        uploadAttribute(
+          context,
+          resources.colorBuffer,
+          resources.nodeProgram.attributes.color,
+          buildNodeColors(state),
+          4,
+          context.UNSIGNED_BYTE,
+          true,
+        );
+        uploadAttribute(
+          context,
+          resources.sizeBuffer,
+          resources.nodeProgram.attributes.size,
+          buildNodeSizes(state),
+          1,
+          context.FLOAT,
+          false,
+        );
+        context.drawArrays(context.POINTS, 0, state.nodeIds.length);
+      }
     }
   }
 
@@ -1132,10 +1193,13 @@ export function createGraphRenderer(
         hasWebGL: context !== null,
         backend: activeBackend,
         hasStyle: state.style !== undefined,
+        instancedShapes: usesInstancedShapes,
+        nonFiniteCount: lastNonFiniteCount,
       };
     },
     destroy() {
       destroyed = true;
+      shapeRenderer?.destroy();
     },
   };
 }
