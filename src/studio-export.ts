@@ -50,6 +50,7 @@ import { emitSceneHierarchies } from "./scene-hierarchies-emitter.js";
 import {
   buildEntitySidecar,
   type EntitySidecarNode,
+  type EntitySidecarResponse,
   resolveStudioAppDir,
 } from "./studio-assets.js";
 import { buildStudioScene, type StudioSceneGraphLike } from "./studio-scene.js";
@@ -99,6 +100,8 @@ export interface BuildStaticStudioResult {
   sceneNodeCount: number;
   sceneEdgeCount: number;
   entityCount: number;
+  /** Per-node description coverage (field report ia-aero); drives the low-coverage hint. */
+  descriptionCoverage: StudioDescriptionCoverage;
   reconciliationCount: number;
   sceneHierarchiesPath: string | null;
   classHierarchiesPath: string | null;
@@ -132,6 +135,61 @@ const GENERATED_DATA_FILES = [
 
 /** Stale directories a previous (possibly multi-model) export may have left. */
 const GENERATED_DATA_DIRS = ["assets", "ontology", "models"];
+
+/**
+ * Below this fraction of real descriptions (per describable node), the export
+ * emits a `describe`-pipeline hint (field report ia-aero). A ~0%-description
+ * graph is almost always an incomplete pipeline (`describe` was never run).
+ */
+const LOW_DESCRIPTION_COVERAGE_THRESHOLD = 0.02;
+
+/** Per-node description coverage of a static studio export. */
+export interface StudioDescriptionCoverage {
+  /** Nodes the export built an entity sidecar for. */
+  total: number;
+  /**
+   * Nodes with a REAL description — a generated, non-provisional description
+   * (the node's own graph.json description or a generated wiki entry).
+   * Provisional rationale fallbacks are deliberately EXCLUDED so the warning
+   * still fires when only rationales exist.
+   */
+  described: number;
+  /** Nodes filled by the provisional rationale fallback (source: "rationale"). */
+  provisional: number;
+}
+
+/** True when a sidecar description is a real, generated (non-provisional) one. */
+function isRealDescription(description: EntitySidecarResponse["description"]): boolean {
+  return (
+    !!description &&
+    description.status === "generated" &&
+    typeof description.description === "string" &&
+    description.description.trim().length > 0 &&
+    description.source !== "rationale"
+  );
+}
+
+/**
+ * Build the low-description-coverage hint (field report ia-aero), or null when
+ * coverage is healthy. Styled after the 'large corpus' detection warning.
+ */
+export function lowDescriptionCoverageWarning(
+  coverage: StudioDescriptionCoverage,
+): string | null {
+  const { total, described, provisional } = coverage;
+  if (total === 0) return null;
+  if (described / total > LOW_DESCRIPTION_COVERAGE_THRESHOLD) return null;
+  const pct = ((described / total) * 100).toFixed(described === 0 ? 0 : 1);
+  const provisionalNote =
+    provisional > 0
+      ? ` ${provisional} node(s) were filled provisionally from the extractor rationale (marked provisional in the studio) — good-enough, but not a real description.`
+      : "";
+  return (
+    `studio export: only ${described}/${total} node(s) (~${pct}%) have a real description. ` +
+    `A ~0%-description graph almost always means the description pass never ran.${provisionalNote} ` +
+    `Run \`graphify describe .\` (no API key needed — assistant mode) before exporting for non-null descriptions.`
+  );
+}
 
 /**
  * Guard against a destructive export. {@link buildStaticStudio} cleans `outDir`
@@ -309,16 +367,30 @@ export function buildStaticStudio(
   }
 
   // entities.json source: { id: sidecar } index built from stateDir BEFORE
-  // cleanup (buildEntitySidecar reads from stateDir).
+  // cleanup (buildEntitySidecar reads from stateDir). Track description coverage
+  // as we go so a ~0%-description export can warn (field report ia-aero).
   const entities: Record<string, unknown> = {};
+  const coverage: StudioDescriptionCoverage = { total: 0, described: 0, provisional: 0 };
   for (const node of nodes) {
     const id = (node as { id?: unknown }).id;
     if (typeof id !== "string" || !id) continue;
     // Pass the graph node so the sidecar carries its type/community (Bug A):
     // the SPA facets then populate from entities.json even when graph.json is
     // not hydrated (scene-only studio.html / file:// multi-file bundle).
-    entities[id] = buildEntitySidecar(stateDir, id, node as EntitySidecarNode);
+    const sidecar = buildEntitySidecar(stateDir, id, node as EntitySidecarNode);
+    entities[id] = sidecar;
+    coverage.total += 1;
+    if (isRealDescription(sidecar.description)) coverage.described += 1;
+    else if (sidecar.description?.source === "rationale") coverage.provisional += 1;
   }
+
+  // Low-description-coverage hint (field report ia-aero): a ~0%-description
+  // graph almost always means `describe` never ran. Emit a non-fatal warning
+  // pointing the user to `graphify describe` — provisional rationale fallbacks
+  // do NOT count as described, so the signal survives even when the studio is
+  // visually populated from rationales.
+  const coverageWarning = lowDescriptionCoverageWarning(coverage);
+  if (coverageWarning) warn(coverageWarning);
 
   // reconciliation candidates source (read before cleanup).
   let candidatesResponse: { items: unknown[]; total?: number } = { items: [], total: 0 };
@@ -480,6 +552,7 @@ export function buildStaticStudio(
     sceneNodeCount: scene.nodes.length,
     sceneEdgeCount: scene.edges.length,
     entityCount: Object.keys(entities).length,
+    descriptionCoverage: coverage,
     reconciliationCount: candidatesResponse.total ?? candidatesResponse.items.length,
     sceneHierarchiesPath: hierarchiesResult.path,
     classHierarchiesPath,
