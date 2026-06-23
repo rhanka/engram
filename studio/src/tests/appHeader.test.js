@@ -7,8 +7,9 @@ const appSource = readFileSync(resolve(process.cwd(), "src/App.svelte"), "utf8")
 describe("App header DS structure", () => {
   it("uses the DS AppChrome chrome for brand, segmented navigation and graph stats", () => {
     expect(appSource).toMatch(/import \{[^}]*AppChrome[^}]*Button[^}]*Badge[^}]*ButtonGroup[^}]*\}/);
-    expect(appSource).toMatch(/<AppChrome[\s\S]*brandName="Graphify"/);
-    expect(appSource).toMatch(/<AppChrome[\s\S]*productName="Ontology Studio"/);
+    // Simple "Graphify" title — the "Ontology Studio" subtitle was dropped
+    // (brand simplification); AppChrome now carries a single productName.
+    expect(appSource).toMatch(/<AppChrome[\s\S]*productName="Graphify"/);
     expect(appSource).toMatch(
       /{#snippet identity\(\)}[\s\S]*<ButtonGroup[\s\S]*attached[\s\S]*label="Studio view"/,
     );
