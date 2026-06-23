@@ -144,6 +144,17 @@ export async function rebuildCode(
      */
     descriptionMode?: "assistant" | "direct";
     /**
+     * Output language for descriptions (field report ia-aero). "auto" (default)
+     * → detect per source/node; an explicit code ("fr", "en", …) forces one
+     * language for every node. Forwarded to `generateNodeDescriptions`.
+     */
+    descriptionLang?: string;
+    /**
+     * Corpus-level default language (ontology profile `default_language`) used
+     * as the fallback when a node has no detectable language signal.
+     */
+    corpusDefaultLang?: string | null;
+    /**
      * WP12: generate salient community labels (LLM) by DEFAULT after Louvain
      * clustering, replacing generic "Community N" names. ON by default; CLI
      * `--no-label` sets this false. `--no-cluster` implies no labels (there are
@@ -158,6 +169,12 @@ export async function rebuildCode(
      * key) or "direct" (requires API key). When omitted, auto-selected.
      */
     labelMode?: "assistant" | "direct";
+    /**
+     * Output language for community names (field report ia-aero). "auto"
+     * (default) → detect per community; an explicit code forces one language.
+     * Forwarded to `applySalientCommunityLabels`.
+     */
+    labelLang?: string;
     /**
      * Phase 4: ONLY the fast git-hook rebuild (`hook-rebuild`) sets this true.
      * It runs LLM-free (`describe: false`, `label: false`) to keep commits
@@ -393,6 +410,8 @@ export async function rebuildCode(
         provider: options.labelBackend ?? null,
         ...(options.labelModel ? { model: options.labelModel } : {}),
         ...(options.labelMode ? { mode: options.labelMode } : {}),
+        ...(options.labelLang !== undefined ? { labelLang: options.labelLang } : {}),
+        ...(options.corpusDefaultLang ? { corpusDefaultLang: options.corpusDefaultLang } : {}),
         gods,
         instructionDir: join(paths.stateDir, "label-instructions"),
       });
@@ -438,6 +457,8 @@ export async function rebuildCode(
         ...(options.descriptionOnlyMissing ? { onlyMissing: true } : {}),
         ...(options.descriptionMode ? { mode: options.descriptionMode } : {}),
         ...(options.citationCap !== undefined ? { citationCap: options.citationCap } : {}),
+        ...(options.descriptionLang !== undefined ? { descriptionLang: options.descriptionLang } : {}),
+        ...(options.corpusDefaultLang ? { corpusDefaultLang: options.corpusDefaultLang } : {}),
         instructionDir: join(paths.stateDir, "description-instructions"),
       });
       // "Complete" = every describable node now has a description. When a backend
