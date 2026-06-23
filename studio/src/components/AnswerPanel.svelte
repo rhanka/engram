@@ -25,6 +25,22 @@
     searchIndex = null,
     /** Open an entity in the graph view (highlight + detail, no reload). */
     onOpenEntity,
+    /**
+     * ONLINE PROSE SEAM (architect cadrage D2/D3 — deferred, do NOT use offline).
+     *
+     * The typed mount-point contract for the future online answer. When the
+     * chat-lane ships the llm-gateway (WP16) + the `@sentropic/chat-ui` markdown
+     * primitive, it passes a Svelte snippet here that renders `view.answer`
+     * (the synthesized prose) into the empty `.ans-answer-slot` region below.
+     *
+     * OFFLINE this is undefined AND `view.answer` is always null, so the slot
+     * renders NOTHING — no fabricated prose. Leaving the contract typed + the
+     * region present means the online channel mounts here with no change to this
+     * file: a clean seam, not a stub.
+     *
+     * @type {import('svelte').Snippet<[{ answer: string, question: string }]>|undefined}
+     */
+    renderAnswer = undefined,
   } = $props();
 
   let query = $state("");
@@ -114,6 +130,22 @@
       <p>The query seeded the walk but no neighborhood entities ranked above zero.</p>
     </div>
   {:else}
+    <!--
+      ONLINE PROSE SEAM (cadrage D2/D3) — the empty answer region.
+
+      Offline `view.answer` is ALWAYS null, so this renders NOTHING (the grounded
+      retrieval below is the whole offline surface — no fabricated prose). When
+      the chat-lane wires the online channel, `view.answer` becomes a string and
+      a `renderAnswer` snippet (a `@sentropic/chat-ui` markdown primitive) mounts
+      the prose HERE, above the supporting evidence. Both conditions gate it so
+      no half-online state can leak a bare/escaped string.
+    -->
+    {#if view.answer && renderAnswer}
+      <section class="ans-answer-slot" aria-label="Synthesized answer">
+        {@render renderAnswer({ answer: view.answer, question: view.question })}
+      </section>
+    {/if}
+
     <!-- MOST RELEVANT (hero) — honestly labeled as retrieval, not an answer. -->
     {#if view.top}
       {@const top = view.top}
@@ -281,6 +313,13 @@
     background: var(--st-semantic-surface-subtle, #f1f5f9);
     padding: 0.05rem 0.3rem;
     border-radius: var(--st-radius-sm, 4px);
+  }
+
+  /* Online prose seam (D2/D3) — empty offline; the online channel mounts here. */
+  .ans-answer-slot {
+    max-width: 56rem;
+    width: 100%;
+    margin: 0 auto;
   }
 
   /* Most-relevant hero */

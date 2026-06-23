@@ -104,8 +104,26 @@ describe("buildAnswerView (studio in-browser retrieval view-model)", () => {
     const view = buildAnswerView(index, "xyzzyqwertyunmatched");
     expect(view.refused).toBe(true);
     expect(view.entities).toEqual([]);
-    // Honest: never fabricates an answer string anywhere in the model.
-    expect(view).not.toHaveProperty("answer");
+    // Honest: never fabricates an answer string. The ONLINE seam (D2/D3) is the
+    // explicit `answer` field, which is ALWAYS null offline (here: refused).
+    expect(view.answer).toBeNull();
+  });
+
+  it("offline answer seam (D2/D3): `answer` is present and null across every view state", () => {
+    const index = makeIndex();
+    // (1) populated result, (2) blank question, (3) no index, (4) refusal — the
+    // typed contract slot is ALWAYS present and ALWAYS null in the offline path,
+    // so the panel never has to render a fabricated prose answer.
+    for (const view of [
+      buildAnswerView(index, "who is the murderer?"),
+      buildAnswerView(index, "   "),
+      buildAnswerView(null, "who is the murderer?"),
+      buildAnswerView(index, "xyzzyqwertyunmatched"),
+    ]) {
+      expect("answer" in view).toBe(true); // typed seam slot exists
+      expect(view.answer).toBeNull(); // ...and is null offline (no LLM)
+      expect(typeof view.answer).not.toBe("string"); // never a prose string
+    }
   });
 
   it("formatScore renders compactly across the dynamic range", () => {

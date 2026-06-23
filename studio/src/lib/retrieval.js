@@ -16,6 +16,14 @@
  * view-model NEVER fabricates an answer string; it surfaces the ranked evidence
  * and labels it as retrieval, not as an answer.
  *
+ * ONLINE SEAM (architect cadrage D2/D3 — deferred, NOT implemented here): the
+ * view-model carries an explicit `answer: string | null` field as the typed
+ * contract for the future online prose. OFFLINE it is ALWAYS `null` (the
+ * assembler emits `answer: null` outside ONLINE mode), so nothing fabricates
+ * prose. When the chat-lane lands the llm-gateway (WP16) + the `@sentropic/chat-ui`
+ * markdown primitive, the ONLINE channel fills this same field and the panel
+ * mounts the prose renderer into its empty answer slot — no shape change here.
+ *
  * The assembler is imported through the `@graphify/retrieval` vite alias (→
  * `src/retrieval/answer-pack.ts`). The whole chain is dependency-free pure TS, so
  * it bundles into the SPA byte-for-byte with the Node build.
@@ -33,6 +41,7 @@ import { assembleAnswerPack } from "@graphify/retrieval";
  *     question,
  *     refused,            // true when no lexical seed matched (nothing to rank)
  *     mode: "offline",    // always offline in-browser (no LLM)
+ *     answer: null,       // ONLINE SEAM (D2/D3): prose; ALWAYS null offline, never fabricated
  *     top: <RankedEntity>|null,   // the single most-relevant entity ("most relevant")
  *     entities: RankedEntity[],   // the ranked relevant entities (top excluded? no — included at 0)
  *     seeds: { nodeId, label, bm25, fusedRank }[],   // the lexical BM25/RRF seeds
@@ -104,6 +113,10 @@ export function buildAnswerView(index, question, options = {}) {
     question: q,
     refused,
     mode: pack.mode ?? "offline",
+    // ONLINE SEAM (D2/D3): the prose answer. OFFLINE packs always carry null
+    // (the assembler only fills it in ONLINE mode); we pass it through verbatim
+    // and NEVER synthesize one here. The online channel later sets this field.
+    answer: typeof pack.answer === "string" ? pack.answer : null,
     top: entities.length > 0 ? entities[0] : null,
     entities,
     seeds,
@@ -119,6 +132,7 @@ function emptyView(question) {
     question: question ?? "",
     refused: false,
     mode: "offline",
+    answer: null, // ONLINE SEAM (D2/D3): null until the online channel fills it.
     top: null,
     entities: [],
     seeds: [],
