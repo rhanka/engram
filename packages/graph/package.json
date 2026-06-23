@@ -27,6 +27,8 @@
     "test": "vitest run --config vitest.config.ts",
     "golden:build": "tsup --config tsup.config.ts --no-dts",
     "test:golden": "npm run golden:build && vitest run --config vitest.config.ts tests/golden/golden-harness.test.ts",
+    "golden:webgl:preflight": "node tests/golden/webgl-preflight.mjs",
+    "test:golden:webgl": "npm run golden:build && npm run golden:webgl:preflight && vitest run --config vitest.config.ts tests/golden/",
     "golden:selftest": "npm run golden:build && node tests/golden/cdp-harness.mjs --selftest",
     "bench": "npm run build && node bench/buffers-bench.mjs",
     "prepublishOnly": "npm run test && npm run build"
