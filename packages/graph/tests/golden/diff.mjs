@@ -135,3 +135,73 @@ export function worldToDevice(world, { width, height, zoom, camera }) {
 export function drawnRadius(nodeSize, dpr, zoom) {
   return Math.max(1, nodeSize * dpr * zoom);
 }
+
+/**
+ * Bounding box of all NON-BACKGROUND pixels in a capture. The harness page
+ * paints a #ffffff (255,255,255,255) background, so any pixel whose RGB differs
+ * from white by more than `bgTolerance` on any channel is drawn content.
+ *
+ * Used for deterministic GEOMETRY-PARITY assertions that do NOT depend on font
+ * metrics or exact glyph rasters — e.g. asserting a #199-clipped box's rendered
+ * WIDTH stays within the BOX_MAX_WIDTH_RATIO cap, or that a glyph drew at all in
+ * its expected region. Returns null when the capture is entirely background.
+ *
+ * @returns {{ minX:number, minY:number, maxX:number, maxY:number,
+ *             width:number, height:number, count:number } | null}
+ */
+export function contentBBox(capture, bgTolerance = 8) {
+  const { width, height, data } = capture;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let count = 0;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const i = (y * width + x) * 4;
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      // Distance from white on any channel.
+      if (255 - r > bgTolerance || 255 - g > bgTolerance || 255 - b > bgTolerance) {
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+        count += 1;
+      }
+    }
+  }
+  if (count === 0) return null;
+  return {
+    minX,
+    minY,
+    maxX,
+    maxY,
+    width: maxX - minX + 1,
+    height: maxY - minY + 1,
+    count,
+  };
+}
+
+/**
+ * Count pixels in a capture whose RGB is within `tolerance` (per channel) of a
+ * target rgb. A coarse "did this colour appear?" probe used to assert, e.g., a
+ * dashed edge of a given colour drew SOME pixels (presence) without pinning the
+ * exact fragile dash phase. `rgb` is [r,g,b]; alpha is ignored (edges/glyphs
+ * composite over white so the on-screen RGB is what matters).
+ */
+export function countColorPixels(capture, rgb, tolerance = 24) {
+  const { width, height, data } = capture;
+  let n = 0;
+  for (let i = 0; i < width * height * 4; i += 4) {
+    if (
+      Math.abs(data[i] - rgb[0]) <= tolerance &&
+      Math.abs(data[i + 1] - rgb[1]) <= tolerance &&
+      Math.abs(data[i + 2] - rgb[2]) <= tolerance
+    ) {
+      n += 1;
+    }
+  }
+  return n;
+}
