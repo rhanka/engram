@@ -85,6 +85,7 @@ describe("node description prompt", () => {
         degree: G.degree("src_a_resolveconfig"),
         neighbors: ["buildGraph()"],
         citations: [],
+        sourceLang: null,
       },
     ]);
     expect(prompt).toContain("code symbol");
@@ -106,6 +107,7 @@ describe("node description prompt", () => {
         degree: 3,
         neighbors: ["Lausanne", "Hôtel National"],
         citations: ["a wealthy spinster who travels the continent (p.1)"],
+        sourceLang: null,
       },
     ]);
     // Entity guidance only appears when a non-code node is present.
@@ -128,6 +130,7 @@ describe("node description prompt", () => {
         degree: 2,
         neighbors: ["Lausanne"],
         citations: ["a wealthy spinster (p.1)", "src/story.md"],
+        sourceLang: null,
       },
     ]);
     expect(prompt).toContain("citations=[");
@@ -147,6 +150,7 @@ describe("node description prompt", () => {
         degree: 1,
         neighbors: [],
         citations: [],
+        sourceLang: null,
       },
     ]);
     expect(prompt).not.toContain("a person, place, event");
@@ -617,7 +621,11 @@ describe("C4: ungrounded entity node visibility in coverage report", () => {
       quiet: false,
     });
     const output = written.join("");
-    expect(output).toContain("1 entity node(s) have no grounding");
+    // The clarified (non-contradictory) warning: states the ungrounded count is
+    // ADDITIONAL and SEPARATE from the described nodes, not a failure.
+    expect(output).toContain("1 additional entity node(s) carry no grounding");
+    expect(output).toContain("separate from");
+    expect(output).toContain("do not count as failures");
   });
 });
 
@@ -672,6 +680,7 @@ describe("C1: countUnansweredDescriptionBatches", () => {
       degree: G.degree(id),
       neighbors: [],
       citations: [],
+      sourceLang: null,
     }));
     emitDescriptionInstructions([contexts], dir);
     // After emit: 1 unanswered batch.
