@@ -497,6 +497,17 @@ export type OntologyStatus =
   | "superseded"
   | string;
 
+/**
+ * Grounding confidence of a citation's `quote`/locator. `EXTRACTED` = the quote
+ * is a verified verbatim substring of the source text matched on a real term;
+ * `INFERRED` = a weaker, context-derived grounding (e.g. an image's surrounding
+ * prose, a description/rationale fallback). The viewer / `assertion_basis`
+ * legend can flag `INFERRED` grounding visually. A bare string union (not the
+ * `Confidence` enum) so it can ride on a citation independently of the
+ * relationship-confidence taxonomy.
+ */
+export type CitationConfidence = "EXTRACTED" | "INFERRED";
+
 export interface OntologyCitation {
   source_file: string;
   source_url?: string;
@@ -505,6 +516,32 @@ export interface OntologyCitation {
   paragraph_id?: string;
   figure_id?: string;
   bbox?: [number, number, number, number];
+  /**
+   * Human-readable, modality-encoded locator string (WP #24). The display form
+   * the studio shows next to a quote: `"p.12 · Section"` for OCR-markdown,
+   * `"p.12"` for native PDF, the chapter/story name for plain text. The
+   * structured `page`/`section` fields remain the machine locators; this is the
+   * pre-rendered display string ia-aero's `ground.py` already emits. Optional,
+   * NOT part of the identity key. (Mirrors `GraphNode.source_location`.)
+   */
+  source_location?: string;
+  /**
+   * Verbatim passage from the source that grounds this citation. First-class
+   * optional field (WP #24): de-facto present in production already — carried by
+   * `OntologyEvidenceRecord`, the mystery `citations.json` sidecar, and consumed
+   * by the studio EntityPanel + the describe grounding path
+   * (`collectCitationContext` reads `quote ?? text ?? snippet`) — the type
+   * omission was an inconsistency. NEVER part of the citation identity key
+   * (`source_file|page|section|paragraph_id`): two citations to the same locator
+   * with different quotes still dedupe to one. Backward-compatible.
+   */
+  quote?: string;
+  /**
+   * Grounding confidence for the `quote`. WP #24 first-class optional field,
+   * symmetric to `OntologyEvidenceRecord.confidence`. Not part of the identity
+   * key. Recorded, not hidden, so weaker (INFERRED) grounding is visible.
+   */
+  confidence?: CitationConfidence;
 }
 
 export interface OntologyEvidenceRecord {
