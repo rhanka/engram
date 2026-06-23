@@ -165,6 +165,13 @@
     background: var(--st-semantic-surface-default, #fff);
     overflow-y: auto;
     min-height: 0;
+    /* BUG A: the detail panel is nested inside the right rail's scroll
+       container (.sel). min-width:0 lets it shrink to the column width so a
+       long unbreakable token (Source path / description / quote) wraps inside
+       it; overflow-x:hidden guarantees the detail itself never produces a
+       horizontal scrollbar — content wraps, it does not scroll sideways. */
+    min-width: 0;
+    overflow-x: hidden;
     padding: 1rem 1.1rem 2rem;
   }
   .entity-empty,
@@ -201,7 +208,13 @@
   }
   .entity-meta > div {
     display: grid;
-    grid-template-columns: 6.5rem 1fr;
+    /* BUG A: the value track is `minmax(0, 1fr)` (not `1fr`) so it can shrink
+       below the intrinsic width of a long unbreakable token (e.g. a Source
+       path/locator). A bare `1fr` track has an implicit min-width of `auto`,
+       so a long path widens the grid past the panel and triggers a global
+       horizontal scrollbar. Combined with overflow-wrap:anywhere on the dd
+       (below), the path now wraps instead of clipping right. */
+    grid-template-columns: 6.5rem minmax(0, 1fr);
     gap: 0.5rem;
   }
   .entity-meta dt {
@@ -215,7 +228,13 @@
   .entity-meta dd {
     margin: 0;
     color: var(--st-semantic-text-primary, #0f172a);
+    /* BUG A: min-width:0 lets this grid cell shrink under a long token; pair it
+       with overflow-wrap:anywhere + word-break so a long unbreakable Source
+       path (e.g. `.graphify/converted/pdf/…_1eaf490f229c.md:Section 1.2.3 — Et
+       demain?`) breaks and wraps inside the panel instead of clipping right. */
+    min-width: 0;
     overflow-wrap: anywhere;
+    word-break: break-word;
   }
   .entity-src {
     font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
@@ -235,6 +254,11 @@
     line-height: 1.5;
     color: var(--st-semantic-text-primary, #0f172a);
     font-size: 0.9rem;
+    /* BUG A: a description can carry a long unbreakable token (URL / path /
+       identifier). min-width:0 + overflow-wrap:anywhere break it so the text
+       wraps inside the panel instead of widening it into a horizontal scroll. */
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
   .entity-relations {
     list-style: none;
@@ -302,6 +326,22 @@
     font-size: 0.74rem;
     font-weight: 600;
     color: var(--st-semantic-text-secondary, #475569);
+    /* BUG A: the passage locator (e.g. "Section 1.2.3 — Et demain?") wraps
+       inside the panel rather than clipping right. */
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  /* BUG A: the citation FILE path renders as a DS Collapsible trigger title
+     (e.g. ".graphify/converted/pdf/CONTRIBUATION_AI_AERONAUTIQUE_…md"). Its
+     long unbreakable token must wrap, otherwise it widens the nested accordion
+     and the whole right rail into a horizontal scroll. Scope the wrap to the
+     citation-file triggers only so other (short) titles are unaffected. */
+  .entity-cite-files :global(.st-collapsible__trigger) {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: normal;
+    text-align: left;
   }
   .entity-cite-quote {
     margin: 0.2rem 0 0;
@@ -311,5 +351,9 @@
     font-size: 0.8rem;
     font-style: italic;
     line-height: 1.4;
+    /* BUG A: a citation quote can contain a long unbreakable token; wrap it so
+       the blockquote never widens the panel into a horizontal scroll. */
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 </style>
