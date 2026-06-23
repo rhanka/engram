@@ -362,3 +362,75 @@ export function shapeFixture(family) {
 
 /** GL-phase zoom matrix (>= 2 zooms per the plan). */
 export const SHAPE_ZOOM_MATRIX = [1, 2.5];
+
+// ---------------------------------------------------------------------------
+// B1 Phase 2 — per-edge-case GL golden fixtures (E1-E6/E12-E14). Each fixture
+// is ONE isolated edge (two circle endpoints) so a capture's drawn content is
+// unambiguously that edge + its endpoints, and a presence/colour probe is
+// exact. Endpoints are circles (NOT boxes) so the circular E5 clip applies; the
+// box-rect clip is exercised by a dedicated box-endpoint fixture. The edge
+// colour differs from every endpoint colour so an edge-colour probe never
+// collides with a node colour. Coordinates are WORLD; the camera maps them.
+// ---------------------------------------------------------------------------
+
+/** A circle endpoint sized so the edge clearly clips to its border. */
+const EDGE_EP = (id, x, y, size = 8) => ({ id, x, y, size, color: "#cbd5e1", shape: "circle" });
+
+/** A single straight thick solid edge (E1 thick, E6 arrow, E14 round caps). */
+export const EDGE_THICK_FIXTURE = {
+  nodes: [EDGE_EP("t0", -120, 0), EDGE_EP("t1", 120, 0)],
+  edges: [{ source: "t0", target: "t1", width: 6, color: "#1d4ed8", dash: "solid" }],
+};
+/** The dash families (E3): one fixture each so a presence probe is per-family. */
+export const EDGE_DASHED_FIXTURE = {
+  nodes: [EDGE_EP("d0", -120, 0), EDGE_EP("d1", 120, 0)],
+  edges: [{ source: "d0", target: "d1", width: 3, color: "#dc2626", dash: "dashed" }],
+};
+export const EDGE_DOTTED_FIXTURE = {
+  nodes: [EDGE_EP("o0", -120, 0), EDGE_EP("o1", 120, 0)],
+  edges: [{ source: "o0", target: "o1", width: 3, color: "#16a34a", dash: "dotted" }],
+};
+export const EDGE_LONGDASH_FIXTURE = {
+  nodes: [EDGE_EP("l0", -120, 0), EDGE_EP("l1", 120, 0)],
+  edges: [{ source: "l0", target: "l1", width: 3, color: "#9333ea", dash: "long-dash" }],
+};
+/** A curved edge (E4 off-chord) — the curve bows away from the chord. */
+export const EDGE_CURVED_FIXTURE = {
+  nodes: [EDGE_EP("u0", -120, 0), EDGE_EP("u1", 120, 0)],
+  edges: [{ source: "u0", target: "u1", width: 4, color: "#0891b2", curvature: 0.5 }],
+};
+/** Box endpoints — the E5 RECTANGLE clip (vs the circular clip above). */
+export const EDGE_BOX_CLIP_FIXTURE = {
+  nodes: [
+    { id: "bx0", x: -120, y: 0, size: 11, color: "#2563eb", shape: "box", label: "Holmes" },
+    { id: "bx1", x: 120, y: 0, size: 11, color: "#2563eb", shape: "box", label: "Watson" },
+  ],
+  edges: [{ source: "bx0", target: "bx1", width: 4, color: "#1d4ed8" }],
+};
+/** Overlapping endpoints (E13): the edge draws a raw segment and NO arrow. */
+export const EDGE_OVERLAP_FIXTURE = {
+  nodes: [EDGE_EP("v0", -6, 0, 30), EDGE_EP("v1", 6, 0, 30)],
+  edges: [{ source: "v0", target: "v1", width: 3, color: "#dc2626" }],
+};
+/** The R4 combo: curved + thick + dashed + arrow + round-cap all at once. */
+export const EDGE_COMBO_FIXTURE = {
+  nodes: [EDGE_EP("k0", -120, -30), EDGE_EP("k1", 120, 30)],
+  edges: [{ source: "k0", target: "k1", width: 5, color: "#7c3aed", dash: "dashed", curvature: 0.45 }],
+};
+
+/**
+ * Edge GL fixtures, by name, for the per-edge pixel-diff sweep. Circle/box
+ * endpoints only — box-clip's PIXEL parity is deferred to Phase 4 (the WebGL
+ * canary does NOT draw the box GLYPH yet, so a box-endpoint capture would only
+ * show the edge, not the box, and an extent diff is meaningless); the
+ * box-rect-clip GEOMETRY is pinned by the layer-A `E5 box-rect clip` test.
+ */
+export const EDGE_GL_FIXTURES = [
+  { name: "thick", fixture: EDGE_THICK_FIXTURE, rgb: [29, 78, 216], arrow: true, dashed: false },
+  { name: "dashed", fixture: EDGE_DASHED_FIXTURE, rgb: [220, 38, 38], arrow: true, dashed: true },
+  { name: "dotted", fixture: EDGE_DOTTED_FIXTURE, rgb: [22, 163, 74], arrow: true, dashed: true },
+  { name: "long-dash", fixture: EDGE_LONGDASH_FIXTURE, rgb: [147, 51, 234], arrow: true, dashed: true },
+  { name: "curved", fixture: EDGE_CURVED_FIXTURE, rgb: [8, 145, 178], arrow: true, dashed: false },
+  { name: "overlap", fixture: EDGE_OVERLAP_FIXTURE, rgb: [220, 38, 38], arrow: false, dashed: false },
+  { name: "combo", fixture: EDGE_COMBO_FIXTURE, rgb: [124, 58, 237], arrow: true, dashed: true },
+];
