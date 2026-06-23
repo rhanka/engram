@@ -28,11 +28,12 @@ export const CODE_EXTENSIONS = new Set([
   // Tree-sitter TypeScript already handles .ets AST extraction; detect just
   // needed to recognize the extension. Port of upstream safishamsi 52d75bd / #926.
   ".ets",
-  // .NET project files — port of upstream safishamsi 8bcfffd / #515.
-  // Regex-backed extractors (extractSln, extractCsproj) handle these; no tree-sitter
-  // grammar required. .props/.targets are MSBuild SDK extension files that share the
-  // same XML schema as .csproj and are dispatched to extractCsproj.
-  ".sln", ".csproj", ".fsproj", ".vbproj", ".props", ".targets",
+  // .NET project files — port of upstream safishamsi 8bcfffd / #515 / 29e57cd.
+  // Regex-backed extractors (extractSln, extractSlnx, extractCsproj) handle these; no
+  // tree-sitter grammar required. .props/.targets are MSBuild SDK extension files that
+  // share the same XML schema as .csproj and are dispatched to extractCsproj. .slnx is
+  // the XML-based VS 2022 17.13+ replacement for .sln, dispatched to extractSlnx.
+  ".sln", ".slnx", ".csproj", ".fsproj", ".vbproj", ".props", ".targets",
 ]);
 
 /**

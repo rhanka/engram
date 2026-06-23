@@ -4895,9 +4895,121 @@ export function extractSln(filePath: string, _rootDir?: string): ExtractionResul
   return { nodes, edges };
 }
 
+// XML-based .slnx solution files (VS 2022 17.13+ replacement for .sln).
+const _SLNX_PROJECT_RE = /<Project\s[^>]*Path="([^"]+)"[^>]*\/?>/gi;
+const _SLNX_BUILDDEP_RE = /<BuildDependency\s[^>]*Project="([^"]+)"[^>]*\/?>/gi;
+
+/**
+ * Extract projects and inter-project dependencies from a .slnx file.
+ *
+ * `.slnx` is the XML-based replacement for the legacy `.sln` format. Projects
+ * are listed as `<Project Path="..."/>` elements (optionally nested inside
+ * `<Folder>` elements) and build-order dependencies as `<BuildDependency
+ * Project="..."/>` children. Unlike `.sln` there are no GUIDs — projects are
+ * identified by their (resolved) path.
+ *
+ * XML guard (ad3f3b2): size cap + DOCTYPE/ENTITY rejection before any parse.
+ * Extraction: regex over raw text (no XML parser), safe after the guard —
+ * mirrors `extractCsproj`. Port of upstream extract_slnx (29e57cd, #1189).
+ */
+export function extractSlnx(filePath: string, _rootDir?: string): ExtractionResult {
+  let src: Buffer;
+  try {
+    src = readFileSync(filePath) as Buffer;
+  } catch (e: unknown) {
+    return { nodes: [], edges: [], error: String(e) };
+  }
+
+  // --- XML DoS guard (ad3f3b2) — same as extractCsproj ---
+  if (src.length > _PROJECT_XML_MAX_BYTES) {
+    return { nodes: [], edges: [], error: "project file too large (>2 MiB)" };
+  }
+  if (!_projectXmlIsSafe(src)) {
+    return { nodes: [], edges: [], error: "refusing XML with DOCTYPE/ENTITY declaration (billion-laughs guard)" };
+  }
+
+  const text = src.toString("utf-8");
+  const fileNid = _makeId(resolve(filePath));
+  const nodes: GraphNode[] = [{
+    id: fileNid,
+    label: basename(filePath),
+    file_type: "code",
+    source_file: filePath,
+    source_location: "L1",
+  }];
+  const edges: GraphEdge[] = [];
+  const seenIds = new Set([fileNid]);
+  const projectNids = new Set<string>();
+
+  function resolveProj(projPath: string): string {
+    const norm = projPath.replace(/\\/g, "/");
+    try {
+      return resolve(dirname(filePath), norm);
+    } catch {
+      return norm;
+    }
+  }
+
+  // First pass: collect projects (anywhere in the tree, including <Folder>).
+  _SLNX_PROJECT_RE.lastIndex = 0;
+  for (const m of text.matchAll(_SLNX_PROJECT_RE)) {
+    const projPath = m[1]!;
+    const absProj = resolveProj(projPath);
+    const projNid = _makeId(absProj);
+    if (!projNid) continue;
+    if (!seenIds.has(projNid)) {
+      seenIds.add(projNid);
+      nodes.push({
+        id: projNid,
+        label: basename(projPath.replace(/\\/g, "/")).replace(/\.[^.]+$/, ""),
+        file_type: "code",
+        source_file: absProj,
+      });
+      edges.push({
+        source: fileNid,
+        target: projNid,
+        relation: "contains",
+        confidence: "EXTRACTED",
+        source_file: filePath,
+        weight: 1.0,
+      });
+    }
+    projectNids.add(projNid);
+  }
+
+  // Second pass: build-order dependencies between known projects.
+  // Walk each <Project ...> ... </Project> block and read its <BuildDependency>.
+  const _PROJECT_BLOCK_RE = /<Project\s[^>]*Path="([^"]+)"[^>]*>([\s\S]*?)<\/Project>/gi;
+  _PROJECT_BLOCK_RE.lastIndex = 0;
+  for (const block of text.matchAll(_PROJECT_BLOCK_RE)) {
+    const fromNid = _makeId(resolveProj(block[1]!));
+    if (!fromNid) continue;
+    const inner = block[2]!;
+    _SLNX_BUILDDEP_RE.lastIndex = 0;
+    for (const dep of inner.matchAll(_SLNX_BUILDDEP_RE)) {
+      const toNid = _makeId(resolveProj(dep[1]!));
+      if (fromNid && toNid && fromNid !== toNid && projectNids.has(toNid)) {
+        edges.push({
+          source: fromNid,
+          target: toNid,
+          relation: "imports",
+          confidence: "EXTRACTED",
+          source_file: filePath,
+          weight: 1.0,
+        });
+      }
+    }
+  }
+
+  return { nodes, edges };
+}
+
 // Async wrappers so they fit the ExtractorFn signature expected by _DISPATCH.
 async function _extractSlnAsync(filePath: string, rootDir?: string): Promise<ExtractionResult> {
   return extractSln(filePath, rootDir);
+}
+async function _extractSlnxAsync(filePath: string, rootDir?: string): Promise<ExtractionResult> {
+  return extractSlnx(filePath, rootDir);
 }
 async function _extractCsprojAsync(filePath: string, rootDir?: string): Promise<ExtractionResult> {
   return extractCsproj(filePath, rootDir);
@@ -5161,8 +5273,9 @@ const _DISPATCH: Record<string, ExtractorFn> = {
   ".f95": extractRegexBackedCode,
   ".f03": extractRegexBackedCode,
   ".f08": extractRegexBackedCode,
-  // .NET project files — port of upstream 8bcfffd / ad3f3b2
+  // .NET project files — port of upstream 8bcfffd / ad3f3b2 / 29e57cd
   ".sln": _extractSlnAsync,
+  ".slnx": _extractSlnxAsync,
   ".csproj": _extractCsprojAsync,
   ".fsproj": _extractCsprojAsync,
   ".vbproj": _extractCsprojAsync,
@@ -5378,8 +5491,8 @@ const _EXTENSIONS = new Set([
   ".vue", ".svelte", ".astro", ".dart", ".groovy", ".gradle", ".v", ".sv", ".svh", ".ejs",
   ".md", ".mdx", ".qmd",
   ".luau", ".r", ".R", ".f", ".F", ".f90", ".F90", ".f95", ".F95", ".f03", ".F03", ".f08", ".F08",
-  // .NET project files (8bcfffd / ad3f3b2)
-  ".sln", ".csproj", ".fsproj", ".vbproj", ".props", ".targets",
+  // .NET project files (8bcfffd / ad3f3b2 / 29e57cd)
+  ".sln", ".slnx", ".csproj", ".fsproj", ".vbproj", ".props", ".targets",
 ]);
 
 /**
