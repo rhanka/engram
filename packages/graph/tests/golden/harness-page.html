@@ -220,6 +220,26 @@
 
         const snap = renderer.snapshot();
 
+        // Composite an OPAQUE WHITE background BEHIND the rendered graph so the
+        // canvas BACKING STORE matches the visual page (the CSS background is
+        // white). The renderer clears to TRANSPARENT, so without this the
+        // backing store reads transparent-black where nothing drew and any
+        // translucent glyph (hollow interior, a<255 edge, box fill) reads over
+        // transparent instead of over white. The inventory contracts are
+        // defined OVER WHITE ("hollow interior reads white", "a180 edge lighter
+        // over white"), so we paint white-behind via destination-over. This is
+        // a HARNESS-ONLY composite (never the shipped renderer); for the WebGL
+        // backend the readback path is unchanged (GL clears to transparent and
+        // the same contract applies — a future GL capture would composite the
+        // same way). 2D only here.
+        if (snap.backend === "canvas2d") {
+          ctx2d.save();
+          ctx2d.globalCompositeOperation = "destination-over";
+          ctx2d.fillStyle = "#ffffff";
+          ctx2d.fillRect(0, 0, canvas.width, canvas.height);
+          ctx2d.restore();
+        }
+
         // Expose a direct-pixel read of the canvas BACKING STORE. For the 2D
         // backend we read via getImageData; for a future WebGL backend the
         // caller switches to gl.readPixels (handled in __readPixels).
