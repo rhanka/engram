@@ -340,6 +340,108 @@ describe("citeGraph — image nodes ground against the containing document", () 
   });
 });
 
+
+// ---------------------------------------------------------------------------
+// Matcher precision: a verbatim quote MUST contain the matched term, and a
+// surname must be a whole word in a heading (the two MAJOR grounding-quality
+// defects).
+// ---------------------------------------------------------------------------
+
+describe("matcher precision — quote contains the term, surname is whole-word", () => {
+  it("REGRESSION: under heavy/NBSP whitespace the emitted quote STILL contains the term", () => {
+    // The term "concurrent" sits far into a paragraph padded with non-breaking
+    // spaces and runs of whitespace. normalizeForMatch collapses those, so the
+    // NORMALIZED offset is much smaller than the RAW offset — windowing on the
+    // normalized offset would drift off the term. The fix maps normalized→raw
+    // offsets exactly AND re-checks containment in the emit gate.
+    const NBSP = String.fromCharCode(0x00a0); // a non-breaking space
+    // A wide collapsible whitespace run: 8 NBSP + 3 spaces + 8 NBSP. Each
+    // filler unit is ~22 raw chars but normalizes to ~5, so over 40 repeats the
+    // RAW offset of "concurrent" races HUNDREDS of chars ahead of its
+    // NORMALIZED offset — far enough to drift a normalized-offset window
+    // entirely off the term (the exact defect the offset map fixes).
+    const GAP = NBSP.repeat(8) + "   " + NBSP.repeat(8);
+    const filler = (`mot${GAP}`).repeat(40);
+    const para = `Introduction.${GAP}${filler} Le terme concurrent apparait ici precisement.`;
+    const md = ["# Section", "", para].join("\n");
+    const parsed = parseSource(md, "ocr-markdown");
+    const norm = normalizeForMatch(md);
+
+    // "concurrent" (a content word ≥5 chars, not a stopword) is the selected
+    // term; it sits deep in the raw paragraph behind a long NBSP/whitespace run.
+    const sel = selectNodeTerms({ id: "c1", label: "Système concurrent", file_type: "concept" });
+    expect(sel.terms).toContain("concurrent");
+
+    const cites = groundNodeCitations(
+      { id: "c1", label: "Système concurrent", file_type: "concept" },
+      parsed,
+      norm,
+      { topK: 6, sourceLabel: "x.md" },
+    );
+    expect(cites.length).toBeGreaterThan(0);
+    // The whole point: the emitted quote must actually contain the matched term.
+    expect(normalizeForMatch(cites[0]!.quote)).toContain("concurrent");
+    for (const c of cites) expect(verifyVerbatim(c.quote, norm)).toBe(true);
+  });
+
+  it("REGRESSION: a surname must NOT match as a substring of a heading word", () => {
+    // Surname "Mat" must NOT ground via the heading "Mathématiques" (substring
+    // includes would wrongly attach the math paragraph). Likewise a generic
+    // "Section" surname must not match "Section 3".
+    const md = [
+      "# Mathématiques appliquées",
+      "",
+      "Ce chapitre traite de l'algèbre linéaire et des matrices.",
+      "",
+      "# Section 3",
+      "",
+      "Cette section décrit le protocole expérimental.",
+    ].join("\n");
+    const parsed = parseSource(md, "ocr-markdown");
+    const norm = normalizeForMatch(md);
+
+    // "Mat" is the surname (label base is a single token used as surname).
+    const matCites = groundNodeCitations(
+      { id: "p_mat", label: "Mat", file_type: "person" },
+      parsed,
+      norm,
+      { topK: 6, sourceLabel: "x.md" },
+    );
+    // "Mat" is < 4 chars so it isn't even selected as a surname term; but even a
+    // 4-char near-miss must not substring-match a heading. Assert no false
+    // grounding occurs on the math paragraph.
+    expect(matCites.some((c) => c.quote.includes("algèbre"))).toBe(false);
+
+    // A surname that IS a heading word substring but NOT a whole word.
+    const sectionCites = groundNodeCitations(
+      { id: "p_section", label: "Sectionneur", file_type: "person" },
+      parsed,
+      norm,
+      { topK: 6, sourceLabel: "x.md" },
+    );
+    // "Sectionneur" is not a whole token in "Section 3" → no grounding here.
+    expect(sectionCites.some((c) => c.quote.includes("protocole"))).toBe(false);
+  });
+
+  it("a real whole-word surname STILL grounds in its section", () => {
+    const md = [
+      "# Entretien avec Mattioli",
+      "",
+      "Le travail de recherche se concentre sur la confiance algorithmique.",
+    ].join("\n");
+    const parsed = parseSource(md, "ocr-markdown");
+    const norm = normalizeForMatch(md);
+    const cites = groundNodeCitations(
+      { id: "p1", label: "Juliette Mattioli", file_type: "person" },
+      parsed,
+      norm,
+      { topK: 6, sourceLabel: "x.md" },
+    );
+    expect(cites.length).toBeGreaterThan(0);
+    expect(cites[0]!.quote).toContain("recherche");
+  });
+});
+
 // ---------------------------------------------------------------------------
 // (2) Mystery sidecar SHAPE consistency on plain text
 // ---------------------------------------------------------------------------

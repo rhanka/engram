@@ -469,11 +469,22 @@ export function groundNodeCitations(
     page: number,
     section: string,
     confidence: CitationConfidence,
+    requireTerm?: string,
   ): boolean => {
     if (out.length >= topK) return false;
     const quote = windowQuote(rawText, offset);
     // HARD GATE: never emit a quote that is not a verbatim substring.
     if (!verifyVerbatim(quote, normalizedSource)) return false;
+    // PRECISION GATE: a quote can be a verbatim source substring yet, due to
+    // whitespace drift in windowing, NOT contain the term/ref/surname that
+    // justified attaching it. When a matched term is supplied, REQUIRE the
+    // emitted (normalized) quote to actually contain it — otherwise reject so we
+    // never attach an unrelated passage. (Contextual emits like image prose pass
+    // no term and are intentionally exempt.)
+    if (requireTerm) {
+      const needle = normalizeForMatch(requireTerm);
+      if (needle && !normalizeForMatch(quote).includes(needle)) return false;
+    }
     const dedupKey = normalizeForMatch(quote).slice(0, 60);
     if (!dedupKey || seen.has(dedupKey)) return false;
     seen.add(dedupKey);
@@ -515,14 +526,22 @@ export function groundNodeCitations(
     return true;
   };
 
-  // 1) PERSON → attach the units of any section heading containing the surname.
+  // 1) PERSON → attach the units of any section heading whose TOKENS include the
+  //    surname. The surname must be a WHOLE WORD in the heading: a bare
+  //    substring `includes` would let a surname like "Mat" match inside
+  //    "Mathématiques", or "Section" match a "Section 3" heading, attaching an
+  //    unrelated paragraph. Tokenize the normalized heading and test membership.
   if (kind === "person") {
     const labelBase = safeStr(attrs.label).split(/[—–,(]/)[0] ?? "";
     const pname = sel.surname ?? normalizeForMatch(labelBase);
     if (pname) {
+      // The surname may itself be multi-token (e.g. "de la tour"); match it as a
+      // whole-word token RUN within the heading's token stream.
+      const nameTokens = pname.split(" ").filter(Boolean);
       for (const [sec, idxs] of source.sectionToIndices) {
         if (out.length >= topK) break;
-        if (!normalizeForMatch(sec).includes(pname)) continue;
+        const secTokens = tokenize(normalizeForMatch(sec));
+        if (!tokensContainRun(secTokens, nameTokens)) continue;
         for (const i of idxs) {
           if (out.length >= topK) break;
           const u = source.units[i];
@@ -537,7 +556,7 @@ export function groundNodeCitations(
     for (const u of source.units) {
       if (out.length >= topK) break;
       const di = u.text.indexOf(sel.refMarker);
-      if (di >= 0) emit(u.text, di, u.page, u.section, "EXTRACTED");
+      if (di >= 0) emit(u.text, di, u.page, u.section, "EXTRACTED", sel.refMarker);
     }
   }
 
@@ -561,22 +580,28 @@ export function groundNodeCitations(
       if (out.length >= topK) break;
       const normText = normalizeForMatch(u.text);
       let di = -1;
+      let matchedTerm: string | null = null;
       for (const t of sel.terms) {
         const j = normText.indexOf(t);
         if (j >= 0) {
-          // Map the normalized offset back to a raw offset approximately by
-          // locating the first raw token of the term. Fall back to a raw
-          // case-insensitive find of the term's leading word.
+          // Map the normalized offset back to its EXACT raw offset so the quote
+          // window centers on the term (robust to NBSP/heavy whitespace).
           di = rawOffsetForTerm(u.text, t);
           if (di < 0) di = 0;
+          matchedTerm = t;
           break;
         }
       }
       if (di < 0 && acrRe) {
         const m = acrRe.exec(u.text);
-        if (m) di = m.index;
+        if (m) {
+          di = m.index;
+          matchedTerm = sel.acronym;
+        }
       }
-      if (di >= 0) emit(u.text, di, u.page, u.section, "EXTRACTED");
+      // The PRECISION GATE in `emit` re-checks that the windowed quote actually
+      // contains the matched term, rejecting any whitespace-drifted miss.
+      if (di >= 0) emit(u.text, di, u.page, u.section, "EXTRACTED", matchedTerm ?? undefined);
     }
   }
 
@@ -626,24 +651,95 @@ function indexOfUnit(source: ParsedSource, rawText: string): number {
 }
 
 /**
- * Map a normalized term back to an approximate RAW offset in the unit text by
- * locating the term's first content word case/diacritic-insensitively. The
- * exact offset is non-critical (the quote window is wide); the goal is a
- * sensible center. Returns -1 if even the leading word can't be found raw.
+ * Build a per-character map from NORMALIZED offsets back to RAW offsets for one
+ * unit of text. `normalizeForMatch` deaccents, folds ligatures, lowercases, and
+ * collapses whitespace runs (including NBSP ` `) to a single space — so a
+ * normalized offset does NOT line up with the raw offset whenever the raw text
+ * carries multi-char or non-breaking whitespace. This recovers the exact raw
+ * offset of every normalized character so quote windowing centers on the
+ * matched term, not on drifted text further along the paragraph.
+ *
+ * Returns `{ norm, map }` where `norm` is the normalized string and `map[k]` is
+ * the raw index at which normalized char `k` begins. Implemented by normalizing
+ * one raw char at a time and tracking the collapsed-whitespace state, mirroring
+ * `normalizeForMatch` exactly.
+ */
+function buildNormToRawMap(rawText: string): { norm: string; map: number[] } {
+  const normChars: string[] = [];
+  const map: number[] = [];
+  let pendingSpace = false; // a run of whitespace not yet emitted
+  let sawNonSpace = false; // have we emitted any non-space char yet (for trim)
+  for (let i = 0; i < rawText.length; i += 1) {
+    const ch = rawText[i] ?? "";
+    // Per-char normalization that mirrors normalizeForMatch's transforms.
+    const piece = normalizeForMatch(ch);
+    if (piece === "") {
+      // Whitespace (or a char that normalizes away, e.g. a combining mark).
+      // Treat only real whitespace as a collapsible separator.
+      if (/\s/.test(ch)) pendingSpace = true;
+      continue;
+    }
+    if (pendingSpace && sawNonSpace) {
+      normChars.push(" ");
+      map.push(i); // the collapsed space anchors at the start of this token
+    }
+    pendingSpace = false;
+    // A single raw char can normalize to multiple chars (œ→oe). Map them all to
+    // the same raw offset.
+    for (const c of piece) {
+      normChars.push(c);
+      map.push(i);
+    }
+    sawNonSpace = true;
+  }
+  return { norm: normChars.join(""), map };
+}
+
+/**
+ * Map a normalized term to its exact RAW offset in the unit text via the
+ * normalized→raw offset map, so windowing centers on the matched term even when
+ * the raw text has heavy/NBSP whitespace (a windowed quote must contain the
+ * term, not drift off it). Returns -1 if the term is not present.
  */
 function rawOffsetForTerm(rawText: string, normTerm: string): number {
-  const firstWord = normTerm.split(" ")[0] ?? "";
-  if (!firstWord) return -1;
-  const normRaw = normalizeForMatch(rawText);
-  const at = normRaw.indexOf(firstWord);
+  if (!normTerm) return -1;
+  const { norm, map } = buildNormToRawMap(rawText);
+  const at = norm.indexOf(normTerm);
   if (at < 0) return -1;
-  // The normalized text is whitespace-collapsed; offsets roughly track the raw
-  // text for prose. Clamp into range.
-  return Math.min(at, Math.max(0, rawText.length - 1));
+  return map[at] ?? -1;
 }
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Split a NORMALIZED string into word tokens (letters/digits runs). Used for
+ * whole-word surname matching against section headings so a surname is never a
+ * mid-word substring (e.g. "Mat" must not match inside "Mathématiques").
+ */
+function tokenize(normalized: string): string[] {
+  return normalized.match(/[a-z0-9]+/g) ?? [];
+}
+
+/**
+ * True iff `needle` (a token run) appears as a CONTIGUOUS whole-token run inside
+ * `tokens`. Single-token surnames match a single heading token; multi-token
+ * surnames ("de la tour") match the contiguous run. Empty needle → false.
+ */
+function tokensContainRun(tokens: string[], needle: string[]): boolean {
+  if (needle.length === 0) return false;
+  for (let i = 0; i + needle.length <= tokens.length; i += 1) {
+    let ok = true;
+    for (let j = 0; j < needle.length; j += 1) {
+      if (tokens[i + j] !== needle[j]) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) return true;
+  }
+  return false;
 }
 
 /**
