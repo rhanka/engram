@@ -4600,6 +4600,11 @@ export async function main(): Promise<void> {
             `  nodes: ${result.nodeCount} | scene nodes: ${result.sceneNodeCount} | scene edges: ${result.sceneEdgeCount}`,
           );
           console.log(`  entities index: ${result.entityCount} | reconciliation candidates: ${result.reconciliationCount}`);
+          {
+            const cov = result.descriptionCoverage;
+            const provisionalNote = cov.provisional > 0 ? ` (+${cov.provisional} provisional from rationale)` : "";
+            console.log(`  descriptions: ${cov.described}/${cov.total} real${provisionalNote}`);
+          }
           console.log(
             `  workspace-manifest: ${result.manifestPresentCount}/${result.manifestArtifactCount} artifacts present`,
           );

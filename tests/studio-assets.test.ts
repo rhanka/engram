@@ -171,6 +171,7 @@ describe("buildEntitySidecar", () => {
     expect(res.description).toEqual({
       status: "generated",
       description: "Entry point that wires the asset routes.",
+      source: "description",
     });
   });
 
@@ -180,7 +181,11 @@ describe("buildEntitySidecar", () => {
     // node's own description must win.
     writeGraph(dir, [{ id: "work_a", description: "Node-level one-liner." }]);
     const res = buildEntitySidecar(dir, "work_a");
-    expect(res.description).toEqual({ status: "generated", description: "Node-level one-liner." });
+    expect(res.description).toEqual({
+      status: "generated",
+      description: "Node-level one-liner.",
+      source: "description",
+    });
   });
 
   it("falls back to the wiki sidecar when the node has no description", () => {
@@ -188,7 +193,11 @@ describe("buildEntitySidecar", () => {
     // graph.json present but work_a carries no description -> wiki fallback.
     writeGraph(dir, [{ id: "work_a" }]);
     const res = buildEntitySidecar(dir, "work_a");
-    expect(res.description).toEqual({ status: "generated", description: "A landmark **novel**." });
+    expect(res.description).toEqual({
+      status: "generated",
+      description: "A landmark **novel**.",
+      source: "description",
+    });
   });
 
   it("ignores blank/non-string node descriptions and falls back", () => {
@@ -196,21 +205,34 @@ describe("buildEntitySidecar", () => {
     writeGraph(dir, [{ id: "place_b", description: "   " }]);
     const res = buildEntitySidecar(dir, "place_b");
     // Blank node description -> wiki sidecar (insufficient_evidence) takes over.
-    expect(res.description).toEqual({ status: "insufficient_evidence", description: null });
+    // No rationale on the node, so the provisional fallback does not fire.
+    expect(res.description).toEqual({
+      status: "insufficient_evidence",
+      description: null,
+      source: "description",
+    });
   });
 
   it("returns the generated wiki description for a node", () => {
     const dir = makeStateDir();
     const res = buildEntitySidecar(dir, "work_a");
     expect(res.id).toBe("work_a");
-    expect(res.description).toEqual({ status: "generated", description: "A landmark **novel**." });
+    expect(res.description).toEqual({
+      status: "generated",
+      description: "A landmark **novel**.",
+      source: "description",
+    });
     expect(res.occurrences).toEqual({ total: 7, documents: { "doc.txt": 7 } });
   });
 
   it("normalises insufficient-evidence entries", () => {
     const dir = makeStateDir();
     const res = buildEntitySidecar(dir, "place_b");
-    expect(res.description).toEqual({ status: "insufficient_evidence", description: null });
+    expect(res.description).toEqual({
+      status: "insufficient_evidence",
+      description: null,
+      source: "description",
+    });
   });
 
   it("yields nulls for an unknown node id (panel degrades gracefully)", () => {
@@ -223,6 +245,69 @@ describe("buildEntitySidecar", () => {
   it("tolerates a missing state dir", () => {
     const res = buildEntitySidecar(join(tmpdir(), "does-not-exist-xyz"), "work_a");
     expect(res).toEqual({ id: "work_a", description: null, occurrences: null });
+  });
+});
+
+describe("buildEntitySidecar rationale fallback (field report ia-aero)", () => {
+  it("falls back to node.rationale, clearly marked provisional, when no description exists", () => {
+    const dir = makeStateDir();
+    // No description (node nor wiki) for rat_only, but it carries a rationale.
+    writeGraph(dir, [
+      { id: "rat_only", rationale: "Mentionné comme témoin principal de l'affaire." },
+    ]);
+    const res = buildEntitySidecar(dir, "rat_only");
+    expect(res.description).toEqual({
+      status: "generated",
+      description: "Mentionné comme témoin principal de l'affaire.",
+      source: "rationale",
+      provisional: true,
+    });
+  });
+
+  it("prefers a REAL description over the rationale fallback", () => {
+    const dir = makeStateDir();
+    writeGraph(dir, [
+      { id: "both", description: "A real one-liner.", rationale: "A weaker rationale." },
+    ]);
+    const res = buildEntitySidecar(dir, "both");
+    // The node's own description wins; the rationale is NOT used.
+    expect(res.description).toEqual({
+      status: "generated",
+      description: "A real one-liner.",
+      source: "description",
+    });
+  });
+
+  it("prefers a generated WIKI description over the rationale fallback", () => {
+    const dir = makeStateDir();
+    // work_a has a generated wiki description; the node carries only a rationale.
+    writeGraph(dir, [{ id: "work_a", rationale: "Should not win over the wiki description." }]);
+    const res = buildEntitySidecar(dir, "work_a");
+    expect(res.description).toEqual({
+      status: "generated",
+      description: "A landmark **novel**.",
+      source: "description",
+    });
+  });
+
+  it("fills an insufficient_evidence wiki entry from the rationale (still provisional)", () => {
+    const dir = makeStateDir();
+    // place_b is insufficient_evidence in the wiki sidecar; the rationale fills it.
+    writeGraph(dir, [{ id: "place_b", rationale: "Lieu cité dans le rapport." }]);
+    const res = buildEntitySidecar(dir, "place_b");
+    expect(res.description).toEqual({
+      status: "generated",
+      description: "Lieu cité dans le rapport.",
+      source: "rationale",
+      provisional: true,
+    });
+  });
+
+  it("ignores a blank rationale (panel stays empty)", () => {
+    const dir = makeStateDir();
+    writeGraph(dir, [{ id: "blank_rat", rationale: "   " }]);
+    const res = buildEntitySidecar(dir, "blank_rat");
+    expect(res.description).toBeNull();
   });
 });
 

@@ -50,6 +50,12 @@
     }
     return null;
   });
+  // Provisional rationale fallback (field report ia-aero): the description text
+  // came from the extractor's `rationale`, not a real `describe` pass. Mark it so
+  // the panel never silently presents a fallback as a curated description.
+  const descriptionProvisional = $derived(
+    entity?.description?.source === "rationale" && entity?.description?.provisional === true,
+  );
 </script>
 
 <aside class="entity" aria-label="Entity detail">
@@ -84,7 +90,12 @@
 
     {#if description}
       <section class="entity-section">
-        <h3 class="entity-section-heading">Description</h3>
+        <h3 class="entity-section-heading">
+          Description
+          {#if descriptionProvisional}
+            <span class="entity-description-provisional" title="From the extractor rationale — run `graphify describe` for a proper description.">provisional</span>
+          {/if}
+        </h3>
         <!-- eslint-disable-next-line svelte/no-at-html-tags -->
         <div class="entity-description">{@html renderInlineMarkdown(description)}</div>
       </section>
@@ -259,6 +270,18 @@
        wraps inside the panel instead of widening it into a horizontal scroll. */
     min-width: 0;
     overflow-wrap: anywhere;
+  }
+  .entity-description-provisional {
+    margin-left: 0.4rem;
+    padding: 0.05rem 0.35rem;
+    border-radius: var(--st-radius-sm, 4px);
+    background: var(--st-semantic-surface-subtle, #f1f5f9);
+    border: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
+    color: var(--st-semantic-text-secondary, #64748b);
+    font-size: 0.62rem;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    cursor: help;
   }
   .entity-relations {
     list-style: none;
