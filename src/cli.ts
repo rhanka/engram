@@ -2637,6 +2637,64 @@ export async function main(): Promise<void> {
       }
       console.log(formatWpView(result, trackItemId));
     });
+  agentStats
+    .command("project-graph")
+    .description(
+      "Build a rename-aware graphify graph.json of a project's conversations/sessions (nodes: project/repo/session/agent/branch/commit; reconciles repo renames into ONE project)",
+    )
+    .option(
+      "--config <file>",
+      "JSON ProjectIdentity { canonicalId, label, aliases:[{name,pathPrefixes,remote?}] }. Defaults to the built-in sentropic→graphify lineage.",
+    )
+    .option("--out <path>", "Output graph.json path", ".graphify/project-graph/graph.json")
+    .option("--no-commits", "Omit commit nodes")
+    .option("--no-branches", "Omit branch nodes")
+    .option("--studio", "Also export a static studio next to the graph.json (graphify studio export)")
+    .action(async (opts) => {
+      const { buildProjectGraphForIdentity } = await import("./agent-stats/index.js");
+      const { readFileSync, mkdirSync, writeFileSync } = await import("node:fs");
+      const { dirname, resolve: pathResolve } = await import("node:path");
+      // Built-in default: the sentropic project and its rename lineage.
+      const defaultIdentity = {
+        canonicalId: "sentropic",
+        label: "Sentropic / Graphify",
+        aliases: [
+          { name: "sentropic", pathPrefixes: ["~/src/sentropic"], remote: "rhanka/sentropic" },
+          { name: "graphify", pathPrefixes: ["~/src/graphify"], remote: "rhanka/graphify" },
+          { name: "regraphify", pathPrefixes: ["/tmp/regraphify", "/tmp/regraphify-brigham"] },
+        ],
+        repoRootForRegistry: resolveAgentStatsRepoRoot(),
+      };
+      const identity = opts.config
+        ? { repoRootForRegistry: resolveAgentStatsRepoRoot(), ...JSON.parse(readFileSync(opts.config, "utf-8")) }
+        : defaultIdentity;
+      const { graph, sessions } = buildProjectGraphForIdentity(identity, {
+        includeCommits: opts.commits !== false,
+        includeBranches: opts.branches !== false,
+      });
+      const outPath = pathResolve(opts.out);
+      mkdirSync(dirname(outPath), { recursive: true });
+      writeFileSync(outPath, JSON.stringify(graph, null, 2));
+      console.error(
+        `project-graph: ${graph.nodes.length} nodes, ${graph.links.length} edges from ${sessions} session(s) ` +
+          `across ${identity.aliases.length} rename-alias(es) → ${outPath}`,
+      );
+      if (opts.studio) {
+        try {
+          const { buildStaticStudio } = await import("./studio-export.js");
+          // buildStaticStudio reads <stateDir>/graph.json and writes the studio
+          // into outDir. We keep the export beside the graph.json.
+          const stateDir = dirname(outPath);
+          const studioOut = pathResolve(stateDir, "studio");
+          await buildStaticStudio({ stateDir, outDir: studioOut });
+          console.error(`project-graph: static studio exported to ${studioOut}`);
+        } catch (err) {
+          console.error(
+            `project-graph: studio export skipped (${err instanceof Error ? err.message : String(err)})`,
+          );
+        }
+      }
+    });
 
   function registerPrCommands(name: "pr" | "prs"): void {
     program.command(`${name} [selector]`)

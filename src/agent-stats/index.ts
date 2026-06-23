@@ -48,6 +48,14 @@ import {
 } from "./store.js";
 import { githubRepoFromRemote } from "../pr.js";
 import { parseWpLabel, prUrlInRepo } from "./git-evidence.js";
+import {
+  buildProjectGraph,
+  sessionFactToInput,
+  PROJECT_GRAPH_SCHEMA,
+  type ProjectGraph,
+  type ProjectIdentity,
+  type SessionInput,
+} from "./project-graph.js";
 import type {
   AgentStatsRow,
   AttributionResidual,
@@ -165,6 +173,24 @@ function codexHeaderMaybeInRepo(path: string, repoRoot: string): boolean {
   if (!m || typeof m[1] !== "string") return true;
   const cwd = m[1].replace(/\\(.)/g, "$1"); // unescape JSON string
   return cwd === repoRoot || cwd.startsWith(repoRoot + "/");
+}
+
+/**
+ * Cheap codex pre-filter for the project-graph loader: like
+ * {@link codexHeaderMaybeInRepo} but tests the header cwd against ANY of the
+ * project's rename-lineage path prefixes. Conservative: if no cwd is found in
+ * the head, parse (return true).
+ */
+function codexHeaderMaybeInPrefixes(path: string, prefixes: string[]): boolean {
+  const head = readHead(path, 4 * 1024);
+  if (!head) return true;
+  const m = head.match(/"cwd"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  if (!m || typeof m[1] !== "string") return true;
+  const cwd = m[1].replace(/\\(.)/g, "$1");
+  return prefixes.some((p) => {
+    const pp = p.replace(/\/+$/, "");
+    return cwd === pp || cwd.startsWith(pp + "/");
+  });
 }
 
 function cursorCurrent(prev: FileCursor | undefined, path: string): FileCursor | null {
@@ -572,6 +598,111 @@ export function listSessions(repoRoot: string, filter: SessionFilter, storeOverr
   return { facts, instances };
 }
 
+/**
+ * PROJECT/CONVERSATION GRAPH — rename-aware.
+ *
+ * Load every session across a project's rename lineage (sentropic → graphify →
+ * regraphify …) and build a graphify graph.json from it. Unlike the per-repo
+ * stats store (which is scoped to ONE cwd path), this scans the transcripts of
+ * EVERY alias path-prefix the project has lived at, so renames reconcile into a
+ * single project node. Pure builder lives in `project-graph.ts`; this is the
+ * fs-touching loader that feeds it.
+ */
+export interface LoadSessionsOptions {
+  identity: ProjectGraphIdentity;
+  home?: string;
+}
+
+/**
+ * Discover + parse transcripts for every alias of a project identity, returning
+ * deduped session inputs (one per factId, latest wins). Reuses the same host
+ * parsers as `sync`, but discovers across ALL the project's historical paths.
+ */
+export function loadSessionsForIdentity(opts: LoadSessionsOptions): SessionInput[] {
+  const home = opts.home ?? homedir();
+  const aliasPrefixes = opts.identity.aliases.flatMap((a) =>
+    a.pathPrefixes.map((p) => (p.startsWith("~") ? p.replace(/^~/, home) : p)),
+  );
+  const inIdentity = (cwds: string[]): boolean =>
+    cwds.some((c) => {
+      const abs = c.startsWith("~") ? c.replace(/^~/, home) : c;
+      return aliasPrefixes.some((p) => abs === p || abs.startsWith(p.replace(/\/+$/, "") + "/"));
+    });
+
+  // Discover: Claude transcripts per alias slug; codex/agy scanned globally and
+  // filtered by parsed cwd (their discovery is path-agnostic).
+  const seenPaths = new Set<string>();
+  const files: TranscriptFile[] = [];
+  for (const prefix of aliasPrefixes) {
+    for (const f of discoverClaude(home, repoSlug(prefix))) {
+      if (!seenPaths.has(f.path)) {
+        seenPaths.add(f.path);
+        files.push(f);
+      }
+    }
+  }
+  for (const f of [...discoverCodex(home), ...discoverAgy(home)]) {
+    if (!seenPaths.has(f.path)) {
+      seenPaths.add(f.path);
+      files.push(f);
+    }
+  }
+
+  const instances = loadH2aInstances(opts.identity.repoRootForRegistry ?? aliasPrefixes[0] ?? ".");
+  const byFactId = new Map<string, SessionInput>();
+  for (const file of files) {
+    // Cheap codex pre-filter: ~3000 rollouts mostly belong to OTHER repos. Skip a
+    // multi-MB read when the session_meta header cwd is outside this project's
+    // rename lineage (same header trick `sync` uses, generalized to N prefixes).
+    if (file.host === "codex" && !codexHeaderMaybeInPrefixes(file.path, aliasPrefixes)) {
+      continue;
+    }
+    let results;
+    try {
+      results = parseFile(file, home);
+    } catch {
+      continue;
+    }
+    for (const { fact } of results) {
+      // Tilde-normalize cwds for the membership test (parsers redact to `~`).
+      const cwds = fact.cwds.map((c) => (c.startsWith("~") ? c.replace(/^~/, home) : c));
+      if (!inIdentity(cwds)) continue;
+      const inst = matchInstance(instances, fact.host, fact.cwds);
+      const agentId = resolveIdentity(fact, inst).agentId;
+      byFactId.set(fact.factId, sessionFactToInput(fact, agentId));
+    }
+  }
+  return Array.from(byFactId.values());
+}
+
+/** Identity passed to the project-graph loader (adds a registry-root hint). */
+export type ProjectGraphIdentity = ProjectIdentity & { repoRootForRegistry?: string };
+
+/**
+ * End-to-end: load every session across the rename lineage and build the
+ * graph.json object. Returns the graph plus a small summary for the CLI.
+ */
+export function buildProjectGraphForIdentity(
+  identity: ProjectGraphIdentity,
+  opts: { home?: string; includeCommits?: boolean; includeBranches?: boolean } = {},
+): { graph: ProjectGraph; sessions: number } {
+  const sessions = loadSessionsForIdentity({ identity, home: opts.home });
+  const graph = buildProjectGraph({
+    identity,
+    sessions,
+    includeCommits: opts.includeCommits,
+    includeBranches: opts.includeBranches,
+    provenance: {
+      tool: "graphify agent-stats project-graph",
+      schema: PROJECT_GRAPH_SCHEMA,
+      generatedAt: new Date().toISOString(),
+      project: identity.canonicalId,
+      aliases: identity.aliases.map((a) => a.name),
+    },
+  });
+  return { graph, sessions: sessions.length };
+}
+
 export {
   formatStatsTable,
   formatSessionsTable,
@@ -581,6 +712,16 @@ export {
   type TrackItem,
 };
 export { detectCommitConflicts, type CommitConflict } from "./correlate.js";
+export {
+  buildProjectGraph,
+  sessionFactToInput,
+  aliasForCwd,
+  PROJECT_GRAPH_SCHEMA,
+  type ProjectGraph,
+  type ProjectIdentity,
+  type ProjectAlias,
+  type SessionInput,
+} from "./project-graph.js";
 export {
   AGENT_STATS_SCHEMA,
   SESSIONS_SCHEMA,
