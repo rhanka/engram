@@ -286,10 +286,6 @@ describe("B1 Phase 2 — edge pixel parity (WebGL vs Canvas2D, Chrome/CDP)", () 
       const results: Array<{ name: string; pass: boolean; note: string }> = [];
 
       for (const ef of EDGE_GL_FIXTURES) {
-        // Box-endpoint clip parity needs the box-label measure service + the
-        // pinned harness font (Phase 4); its pixel-diff is deferred. We still
-        // assert the WebGL backend engaged + the edge drew SOME ink there.
-        const isBox = ef.name === "box-clip";
         // E13 overlap: the raw segment is fully COVERED by the (overlapping)
         // glyphs, so NO edge ink shows on EITHER backend — that is the correct
         // behaviour. Parity here = the drawn EXTENT (the two glyphs) matches and
@@ -317,12 +313,6 @@ describe("B1 Phase 2 — edge pixel parity (WebGL vs Canvas2D, Chrome/CDP)", () 
           Math.abs(glBox.width - refBox.width) <= 8 &&
           Math.abs(glBox.height - refBox.height) <= 8;
         const boxNote = `glBox=${glBox?.width}x${glBox?.height} refBox=${refBox?.width}x${refBox?.height}`;
-
-        if (isBox) {
-          // Deferred parity: assert the edge drew on BOTH backends + extent OK.
-          results.push({ name: ef.name, pass: drew && extentOk, note: `box-clip deferred; glInk=${glInk} refInk=${refInk} ${boxNote}` });
-          continue;
-        }
 
         if (isOverlap) {
           // E13: edge correctly occluded ⇒ no edge ink expected on either side;

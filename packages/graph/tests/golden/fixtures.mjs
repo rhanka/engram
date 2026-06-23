@@ -418,14 +418,19 @@ export const EDGE_COMBO_FIXTURE = {
   edges: [{ source: "k0", target: "k1", width: 5, color: "#7c3aed", dash: "dashed", curvature: 0.45 }],
 };
 
-/** Edge GL fixtures, by name, for the per-edge pixel-diff sweep. */
+/**
+ * Edge GL fixtures, by name, for the per-edge pixel-diff sweep. Circle/box
+ * endpoints only — box-clip's PIXEL parity is deferred to Phase 4 (the WebGL
+ * canary does NOT draw the box GLYPH yet, so a box-endpoint capture would only
+ * show the edge, not the box, and an extent diff is meaningless); the
+ * box-rect-clip GEOMETRY is pinned by the layer-A `E5 box-rect clip` test.
+ */
 export const EDGE_GL_FIXTURES = [
   { name: "thick", fixture: EDGE_THICK_FIXTURE, rgb: [29, 78, 216], arrow: true, dashed: false },
   { name: "dashed", fixture: EDGE_DASHED_FIXTURE, rgb: [220, 38, 38], arrow: true, dashed: true },
   { name: "dotted", fixture: EDGE_DOTTED_FIXTURE, rgb: [22, 163, 74], arrow: true, dashed: true },
   { name: "long-dash", fixture: EDGE_LONGDASH_FIXTURE, rgb: [147, 51, 234], arrow: true, dashed: true },
   { name: "curved", fixture: EDGE_CURVED_FIXTURE, rgb: [8, 145, 178], arrow: true, dashed: false },
-  { name: "box-clip", fixture: EDGE_BOX_CLIP_FIXTURE, rgb: [29, 78, 216], arrow: true, dashed: false },
   { name: "overlap", fixture: EDGE_OVERLAP_FIXTURE, rgb: [220, 38, 38], arrow: false, dashed: false },
   { name: "combo", fixture: EDGE_COMBO_FIXTURE, rgb: [124, 58, 237], arrow: true, dashed: true },
 ];
