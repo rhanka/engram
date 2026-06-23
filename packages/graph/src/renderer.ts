@@ -479,6 +479,18 @@ const BOX_BASE_HEIGHT_PX = 18; // box height in CSS px (× pixelRatio × zoom), 
 const BOX_MARGIN_RATIO = 5 / 22; // legacy margin per side (5 of a 22 box)
 const BOX_FONT_RATIO = 12 / 22; // legacy font size (12 of a 22 box) — text much smaller than the box
 const BOX_CORNER_RATIO = 1 / 4; // corner radius as a fraction of box height
+// Maximum box WIDTH, expressed as a multiple of the box height (so it scales
+// with pixelRatio × zoom exactly like the height — the cap reads the same at
+// any zoom). The box still grows in width to hug short labels, but a long
+// chapter / entity name is PIXEL-FITTED to this ceiling with an ellipsis so the
+// glyph can never balloon into an over-wide text card that overflows the layout.
+// ~10× a small box height keeps a comfortable line (≈ 30-ish narrow glyphs at
+// the legacy 12/22 font) while bounding the worst case. This is the SHARED,
+// backend-agnostic render-geometry fix: it covers EVERY box node (main-graph
+// chapter/work/god-class hubs AND the recon focal pair), not just one view.
+const BOX_MAX_WIDTH_RATIO = 10;
+// Single-character ellipsis appended when a box label is pixel-clipped to fit.
+const BOX_ELLIPSIS = "…";
 // Non-labelled (low-degree) box collapse, as a fraction of the box height:
 // legacy hidden-font boxes shrink to their two 5-unit margins of a 22-unit box.
 const BOX_EMPTY_RATIO = 10 / 22;
@@ -576,29 +588,80 @@ interface NodeGeometry {
 }
 
 /**
+ * PIXEL-FIT a label so its DRAWN width never exceeds `maxTextWidth`, appending a
+ * single ellipsis when it has to clip. Unlike a fixed character-count cap, this
+ * is glyph-width aware (a run of wide letters clips sooner than a run of "i"s),
+ * so the box that hugs the returned text is guaranteed to stay within the max.
+ *
+ * Binary search over the keep-length keeps it O(log n) measureText calls per
+ * over-long label (cheap, and only long labels pay it). When even the ellipsis
+ * alone does not fit (an absurdly tiny box) we still return the ellipsis so the
+ * caller draws SOMETHING rather than overflowing. The full text is unchanged on
+ * the node payload, so hover tooltips / detail panels keep the verbatim name.
+ */
+function fitLabelToWidth(
+  label: string,
+  maxTextWidth: number,
+  font: string,
+  measureLabelWidth: (text: string, font: string) => number,
+): string {
+  if (!label) return label;
+  if (maxTextWidth <= 0) return label;
+  if (measureLabelWidth(label, font) <= maxTextWidth) return label;
+
+  // Search the largest prefix length whose `prefix + …` still fits.
+  let low = 0;
+  let high = label.length;
+  let best = "";
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    const candidate = label.slice(0, mid).replace(/\s+$/u, "") + BOX_ELLIPSIS;
+    if (measureLabelWidth(candidate, font) <= maxTextWidth) {
+      best = candidate;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+  // Even a lone ellipsis overflowed the (degenerate) box — draw it anyway.
+  return best || BOX_ELLIPSIS;
+}
+
+/**
  * Legacy `shape:box` glyph dimensions. The box height is a fixed legacy base
  * (BOX_BASE_HEIGHT_PX, scaled by pixelRatio × zoom) — degree-INDEPENDENT, so a
  * high-degree Work box never inflates past its neighbours; the small font fits
  * that height minus a margin per side, and the box only grows in WIDTH to hug
  * the text plus margins. A non-labelled (low-degree) box collapses like the
  * legacy hidden-font (fontSize 0) box: a small square of BOX_EMPTY_RATIO × height.
+ *
+ * WIDTH IS CAPPED at BOX_MAX_WIDTH_RATIO × height: a label too long to hug
+ * within that ceiling is PIXEL-FITTED (see {@link fitLabelToWidth}) to the
+ * available text width with an ellipsis, so the box never balloons into an
+ * over-wide text card that overflows the layout. The returned `label` is the
+ * exact (possibly clipped) text the box was sized to — the draw path renders
+ * THAT string, so the box always hugs precisely what it shows.
  */
 function boxDimensions(
   height: number,
   label: string,
   measureLabelWidth: (text: string, font: string) => number,
-): { w: number; h: number; fontPx: number; corner: number } {
+): { w: number; h: number; fontPx: number; corner: number; label: string } {
   const margin = height * BOX_MARGIN_RATIO;
   const corner = height * BOX_CORNER_RATIO;
   const fontPx = height * BOX_FONT_RATIO;
 
   if (!label) {
     const side = height * BOX_EMPTY_RATIO;
-    return { w: side, h: side, fontPx, corner };
+    return { w: side, h: side, fontPx, corner, label };
   }
 
-  const textW = measureLabelWidth(label, `${fontPx}px sans-serif`);
-  return { w: textW + 2 * margin, h: height, fontPx, corner };
+  const font = `${fontPx}px sans-serif`;
+  // Text must fit inside the max box width minus a margin per side.
+  const maxTextWidth = Math.max(0, height * BOX_MAX_WIDTH_RATIO - 2 * margin);
+  const fitted = fitLabelToWidth(label, maxTextWidth, font, measureLabelWidth);
+  const textW = measureLabelWidth(fitted, font);
+  return { w: textW + 2 * margin, h: height, fontPx, corner, label: fitted };
 }
 
 /**
@@ -860,7 +923,10 @@ function drawFallback2D(
         dims.corner,
         dims.fontPx,
         pixelRatio,
-        label,
+        // The PIXEL-FITTED label (clipped + ellipsised to the capped box width),
+        // so the drawn text matches the box `dims` was sized to — never the raw,
+        // possibly-overflowing source label.
+        dims.label,
         nodeColor,
         alpha,
         boldBorder,
