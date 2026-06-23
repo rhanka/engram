@@ -140,6 +140,7 @@ describe("buildNodeDescriptionPrompt still works with explicit contexts", () => 
         degree: 1,
         neighbors: ["Y"],
         citations: ["c1 (p.1)", "c2 (p.2)"],
+        sourceLang: null,
       },
     ]);
     expect(prompt).toContain("c1 (p.1)");
