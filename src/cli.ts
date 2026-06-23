@@ -4277,6 +4277,147 @@ export async function main(): Promise<void> {
       );
     });
 
+  // ---------------------------------------------------------------------------
+  // graphify cite [path]   (a.k.a. ground-citations)
+  // GROUND new citations into an EXISTING graph.json by SCANNING the corpus.
+  // Symmetric to `describe`/`label`: loads graph.json, walks nodes, grounds
+  // type-aware VERBATIM citations from each node's source_file, UNIONS them with
+  // existing citations (never clobbers), then runs the shipped aggregation
+  // (count + top-K inline + citations.json). Heuristic mode is the no-key
+  // DEFAULT; assistant/api are opt-in and gated by the SAME anti-hallucination
+  // verbatim check. Opt-in (NOT auto-run in the default pipeline), like describe.
+  // ---------------------------------------------------------------------------
+  program
+    .command("cite [path]")
+    .alias("ground-citations")
+    .description("Ground node.citations[] by scanning the corpus (verbatim, no-key heuristic; symmetric to describe). Populates new citations, not just projects existing ones.")
+    .option("--mode <mode>", "Grounding mode: heuristic (default, no key), assistant, or api", "heuristic")
+    .option("--top-k <n>", "Max citations grounded per node (default: 6)")
+    .option("--types <list>", "Restrict to comma-separated node types (e.g. person,concept,reference,image)")
+    .option("--only-missing", "Only ground nodes with no existing citations (additive 2nd pass)")
+    .option("--source <root>", "Extra source search root (repeatable); .graphify/converted is always searched")
+    .option("--citations-top-k <n>", "Inline Level-1 citations kept per node after aggregation (default: corpus-resolved; 3 code / 8 others)")
+    .option("--dry-run", "Report grounding coverage without writing graph.json or citations.json")
+    .action(async (citePath = ".", opts) => {
+      const root = resolve(citePath);
+      const paths = resolveGraphifyPaths({ root });
+      if (!existsSync(paths.graph)) {
+        console.error(`error: no graph found at ${paths.graph} - run /graphify first`);
+        process.exit(1);
+      }
+      mkdirSync(paths.stateDir, { recursive: true });
+
+      const mode = String(opts.mode ?? "heuristic").trim().toLowerCase();
+      if (!["heuristic", "assistant", "api"].includes(mode)) {
+        console.error("error: --mode must be one of: heuristic, assistant, api");
+        process.exit(1);
+      }
+      if (mode === "assistant" || mode === "api") {
+        // The LLM-assisted modes are opt-in recall boosters gated by the SAME
+        // anti-hallucination verbatim check. The proposer is not yet wired; the
+        // heuristic verifier (the load-bearing safety half) IS. Until the
+        // proposer lands, fall through to the heuristic core so the command is
+        // never a no-op and never emits an unverifiable quote.
+        console.log(
+          `cite: --mode ${mode} requested; the LLM proposer is not yet implemented. ` +
+            "Running the heuristic core (every quote is still verified verbatim). " +
+            "Re-run with --mode heuristic to silence this notice.",
+        );
+      }
+
+      const topK = parseTopKFlag(opts.topK) ?? 6;
+      const types = typeof opts.types === "string"
+        ? opts.types.split(",").map((t: string) => t.trim()).filter(Boolean)
+        : [];
+      const extraSources: string[] = typeof opts.source === "string"
+        ? [resolve(opts.source)]
+        : Array.isArray(opts.source)
+          ? opts.source.map((s: string) => resolve(s))
+          : [];
+      const dryRun = Boolean(opts.dryRun);
+
+      const policy = resolveCitationPolicyForRoot(root, {
+        topKFlag: parseTopKFlag(opts.citationsTopK),
+      });
+
+      const rawGraphText = readFileSync(paths.graph, "utf-8");
+      const G = makeGraphPortable(loadGraphFromData(JSON.parse(rawGraphText)), root);
+
+      const { citeGraph } = await import("./cite-grounding.js");
+      const groundResult = citeGraph(
+        G,
+        {
+          root,
+          topK,
+          types,
+          ...(opts.onlyMissing ? { onlyMissing: true } : {}),
+          searchRoots: [paths.convertedDir, ...extraSources],
+        },
+        dryRun,
+      );
+
+      const byKind = Object.entries(groundResult.byKind)
+        .sort((a, b) => b[1] - a[1])
+        .map(([k, v]) => `${k}:${v}`)
+        .join(", ");
+
+      if (dryRun) {
+        console.log(
+          `cite (dry-run): would ground ${groundResult.totalCitations} citation(s) across ` +
+            `${groundResult.groundedNodes} node(s)${byKind ? ` [${byKind}]` : ""}. No files written.`,
+        );
+        if (groundResult.unresolvedSources.length > 0) {
+          console.log(
+            `cite (dry-run): ${groundResult.unresolvedSources.length} source file(s) unresolved on disk ` +
+              `(e.g. ${groundResult.unresolvedSources.slice(0, 3).join(", ")}).`,
+          );
+        }
+        return;
+      }
+
+      if (groundResult.groundedNodes === 0) {
+        console.log(
+          "cite: grounded 0 nodes — no node's source_file resolved to text with a verbatim match. " +
+            (groundResult.unresolvedSources.length > 0
+              ? `${groundResult.unresolvedSources.length} source(s) unresolved on disk. `
+              : "") +
+            "graph.json unchanged.",
+        );
+        return;
+      }
+
+      // Run the shipped aggregation: snapshot the prior FULL sidecar so the
+      // exhaustive tail is unioned (not collapsed to the fresh grounding), then
+      // re-derive citation_count + the K-bounded inline set + citations.json.
+      const { aggregateCitations, readCitationsSidecar, writeCitationsSidecar } = await import("./citations.js");
+      const { toJson } = await import("./export.js");
+      const outDir = dirname(paths.graph);
+      const priorSidecar = readCitationsSidecar(outDir);
+      const aggMap = aggregateCitations(G, {
+        topK: policy.inlineTopK,
+        ...(priorSidecar ? { priorSidecar } : {}),
+      });
+      const sidecarPath = writeCitationsSidecar(outDir, aggMap, G);
+
+      // Preserve existing community assignments + names so toJson writes back
+      // byte-stable aside from the citation fields.
+      const communities = communitiesFromGraph(G);
+      const communityLabels = communityLabelsFromGraph(G, communities);
+      toJson(G, communities, paths.graph, { communityLabels, force: true });
+
+      console.log(
+        `cite: grounded ${groundResult.totalCitations} verbatim citation(s) across ` +
+          `${groundResult.groundedNodes} node(s)${byKind ? ` [${byKind}]` : ""}. ` +
+          `Re-aggregated (top-${policy.inlineTopK} inline + ${sidecarPath ?? "citations.json"}). graph.json updated.`,
+      );
+      if (groundResult.unresolvedSources.length > 0) {
+        console.log(
+          `cite: NOTE — ${groundResult.unresolvedSources.length} source file(s) could not be resolved on disk ` +
+            "(no grounding for their nodes). Ensure the corpus / .graphify/converted is present.",
+        );
+      }
+    });
+
   program
     .command("qa")
     .description("Evaluate a final Graphify bundle against a configured quality target")
