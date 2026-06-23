@@ -5,10 +5,8 @@ import { describe, expect, it } from "vitest";
 const appSource = readFileSync(resolve(process.cwd(), "src/App.svelte"), "utf8");
 
 describe("App header DS structure", () => {
-  it("uses the DS AppChrome chrome for brand, segmented navigation and graph stats", () => {
-    expect(appSource).toMatch(/import \{[^}]*AppChrome[^}]*Button[^}]*Badge[^}]*ButtonGroup[^}]*\}/);
-    // Simple "Graphify" title — the "Ontology Studio" subtitle was dropped
-    // (brand simplification); AppChrome now carries a single productName.
+  it("uses the DS AppChrome chrome for brand + segmented navigation", () => {
+    expect(appSource).toMatch(/import \{[^}]*AppChrome[^}]*Button[^}]*ButtonGroup[^}]*\}/);
     expect(appSource).toMatch(/<AppChrome[\s\S]*productName="Graphify"/);
     expect(appSource).toMatch(
       /{#snippet identity\(\)}[\s\S]*<ButtonGroup[\s\S]*attached[\s\S]*label="Studio view"/,
@@ -17,12 +15,16 @@ describe("App header DS structure", () => {
     expect(appSource).toMatch(/aria-pressed=\{viewerState\.activeView === "reconciliation"\}/);
     expect(appSource).toMatch(/onclick=\{\(\) => handleSetView\("workspace"\)\}/);
     expect(appSource).toMatch(/onclick=\{\(\) => handleSetView\("reconciliation"\)\}/);
-    expect(appSource).toMatch(
-      /{#snippet extraSelectors\(\)}[\s\S]*class="app-stats"[\s\S]*aria-label="Graph summary"/,
-    );
-    expect(appSource).toContain("<Badge tone=\"neutral\">{scene.stats.nodeCount} nodes</Badge>");
-    expect(appSource).toContain("<Badge tone=\"neutral\">{scene.stats.edgeCount} edges</Badge>");
-    expect(appSource).toContain("<Badge tone=\"info\">{scene.stats.communityCount} groups</Badge>");
+  });
+
+  it("relocates the count badges OUT of the header (now under the LeftRail search)", () => {
+    // Tracked UI change: the AppChrome header no longer renders the stats badges
+    // — they moved under the search bar in the LeftRail (see leftRail.test.js).
+    expect(appSource).not.toMatch(/class="app-stats"/);
+    expect(appSource).not.toContain("{scene.stats.nodeCount} nodes");
+    expect(appSource).not.toContain("{scene.stats.edgeCount} edges");
+    // The header now passes scene.stats DOWN to the LeftRail instead.
+    expect(appSource).toMatch(/<LeftRail[\s\S]*stats=\{scene\.stats\}/);
   });
 
   it("renders the in-UI model switcher (DS Select) in the chrome, gated on >1 model", () => {
@@ -39,6 +41,5 @@ describe("App header DS structure", () => {
     expect(appSource).toMatch(/class="view-label view-label--full">Knowledge graph</);
     expect(appSource).toMatch(/class="view-label view-label--full">Entity reconciliation</);
     expect(appSource).toMatch(/class="view-label view-label--compact" aria-hidden="true"[\s\S]*Recon/);
-    expect(appSource).toMatch(/@media \(max-width: 720px\)[\s\S]*\.app-stats[\s\S]*display: none/);
   });
 });

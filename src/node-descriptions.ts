@@ -45,6 +45,13 @@ import {
   isDirectLlmProvider,
   type DirectLlmProvider,
 } from "./llm-execution.js";
+import {
+  AUTO_LANGUAGE,
+  detectTextLanguage,
+  languageDirectiveLine,
+  resolveLanguage,
+  type LanguageSelection,
+} from "./description-language.js";
 
 // ---------------------------------------------------------------------------
 // Assistant-mode instruction files (no API key required)
@@ -76,13 +83,14 @@ function descriptionAnswerFile(batchIndex: number): string {
 export function emitDescriptionInstructions(
   batches: NodeContext[][],
   instructionDir: string,
+  promptOptions: BuildNodeDescriptionPromptOptions = {},
 ): { instructionPaths: string[]; answerPaths: string[] } {
   mkdirSync(instructionDir, { recursive: true });
   const instructionPaths: string[] = [];
   const answerPaths: string[] = [];
 
   for (const [i, contexts] of batches.entries()) {
-    const prompt = buildNodeDescriptionPrompt(contexts);
+    const prompt = buildNodeDescriptionPrompt(contexts, promptOptions);
     const answerPath = join(instructionDir, descriptionAnswerFile(i));
     const instructionPath = join(instructionDir, descriptionInstructionFile(i));
 
@@ -417,6 +425,14 @@ export interface NodeContext {
    * here must be describable (Phase 1 reliability guarantee).
    */
   citations: string[];
+  /**
+   * Detected dominant language of THIS node's source text (label + citation
+   * snippets), or null when there is not enough signal. Drives the per-source
+   * language directive in the prompt so a French source gets a French
+   * description even in a mixed corpus. `null` falls back to the forced /
+   * corpus-default / English language at prompt-build time.
+   */
+  sourceLang: string | null;
 }
 
 /**
@@ -512,6 +528,27 @@ export interface CollectNodeContextOptions {
   citationsByNode?: Record<string, unknown[]>;
 }
 
+/**
+ * Detect a node's source language from the text it already carries: an explicit
+ * per-node `lang` / `language` attribute first (authoritative when present),
+ * then the label + citation/evidence snippets (the source document's own
+ * words). Code symbols are language-neutral identifiers, so we only detect for
+ * entity nodes. Returns null when there is no signal.
+ */
+function detectNodeSourceLanguage(
+  attrs: Record<string, unknown>,
+  isCode: boolean,
+  citations: string[],
+): string | null {
+  // An explicit node/source language attribute is authoritative.
+  const explicit = safeString(attrs.lang) ?? safeString(attrs.language);
+  if (explicit) return explicit.trim().toLowerCase();
+  if (isCode) return null;
+  const label = safeString(attrs.label) ?? "";
+  const blob = [label, ...citations].join(" ");
+  return detectTextLanguage(blob);
+}
+
 export function collectNodeContext(
   G: Graph,
   nodeId: string,
@@ -526,6 +563,7 @@ export function collectNodeContext(
   const override = options.citationsByNode?.[nodeId];
   const citationsOverride =
     Array.isArray(override) && override.length > inlineLen ? override : undefined;
+  const citations = isCode ? [] : collectCitationContext(attrs, cap, citationsOverride);
   return {
     id: nodeId,
     label: truncate(safeString(attrs.label) ?? nodeId),
@@ -536,7 +574,8 @@ export function collectNodeContext(
     degree: G.degree(nodeId),
     neighbors: collectNeighbors(G, nodeId, 6),
     // Citation grounding only matters for entity nodes; skip the work for code.
-    citations: isCode ? [] : collectCitationContext(attrs, cap, citationsOverride),
+    citations,
+    sourceLang: detectNodeSourceLanguage(attrs, isCode, citations),
   };
 }
 
@@ -569,8 +608,26 @@ function hasCodeNode(contexts: NodeContext[]): boolean {
   return contexts.some((ctx) => ctx.isCode);
 }
 
+/**
+ * Resolve the output language for one node given the run's requested selection.
+ * `requested` "auto" → the node's detected `sourceLang`; an explicit code →
+ * that code for every node. Falls back via `corpusDefault` → English.
+ */
+function resolveNodeLanguage(
+  ctx: NodeContext,
+  requested: LanguageSelection | undefined,
+  corpusDefault?: string | null,
+): string {
+  return resolveLanguage(requested, ctx.sourceLang, corpusDefault);
+}
+
 /** Build the JSON-line context for one node inside a batch prompt. */
-function nodePromptLine(ctx: NodeContext): string {
+function nodePromptLine(
+  ctx: NodeContext,
+  requested: LanguageSelection | undefined,
+  corpusDefault: string | null | undefined,
+  emitLang: boolean,
+): string {
   const parts: string[] = [`"${ctx.id}": ${JSON.stringify(ctx.label)}`];
   if (ctx.isCode) {
     parts.push("kind=code-symbol");
@@ -589,10 +646,61 @@ function nodePromptLine(ctx: NodeContext): string {
   if (ctx.citations.length > 0) {
     parts.push(`citations=[${ctx.citations.map((c) => JSON.stringify(c)).join(", ")}]`);
   }
+  // Per-source language: pin THIS node's description language. Emitted only when
+  // the batch is multilingual (a single shared language is stated once in the
+  // header instead, keeping the common-case prompt compact).
+  if (emitLang) {
+    parts.push(`lang=${resolveNodeLanguage(ctx, requested, corpusDefault)}`);
+  }
   return `- ${parts.join(" | ")}`;
 }
 
-export function buildNodeDescriptionPrompt(contexts: NodeContext[]): string {
+export interface BuildNodeDescriptionPromptOptions {
+  /**
+   * Requested output language. "auto" (or undefined) → per-source detection
+   * from each node's `sourceLang`; an explicit code ("fr", "en", …) forces that
+   * language for every node. This is what stops the mixed FR/EN output reported
+   * from the field.
+   */
+  descriptionLang?: LanguageSelection;
+  /** Corpus-level default language used when a node has no detectable signal. */
+  corpusDefaultLang?: string | null;
+}
+
+/**
+ * The dominant DETECTED language across a batch, or null when nodes either have
+ * no detection or disagree. Used as the fallback for undetectable nodes (proper
+ * nouns, place names) so an otherwise-uniformly-French batch stays French
+ * instead of half-defaulting to English — the dominant-language-per-source
+ * behavior the field report asks for. Code-only / signal-less batches → null.
+ */
+function dominantDetectedLanguage(contexts: NodeContext[]): string | null {
+  const counts = new Map<string, number>();
+  for (const ctx of contexts) {
+    if (ctx.sourceLang) counts.set(ctx.sourceLang, (counts.get(ctx.sourceLang) ?? 0) + 1);
+  }
+  const detected = [...counts.keys()];
+  // Only treat the batch as having a dominant language when detection agrees.
+  return detected.length === 1 ? (detected[0] ?? null) : null;
+}
+
+export function buildNodeDescriptionPrompt(
+  contexts: NodeContext[],
+  options: BuildNodeDescriptionPromptOptions = {},
+): string {
+  const requested = options.descriptionLang;
+  // Undetectable nodes fall back to: an explicit corpus default if given, else
+  // the batch's dominant detected language (so proper-noun-only nodes in a
+  // French corpus stay French), else English at the leaf.
+  const dominant = dominantDetectedLanguage(contexts);
+  const corpusDefault = options.corpusDefaultLang ?? dominant ?? null;
+
+  // Resolve every node's language so we can tell whether the batch is uniform
+  // (one directive in the header) or mixed (a per-line `lang=` marker).
+  const perNodeLangs = contexts.map((ctx) => resolveNodeLanguage(ctx, requested, corpusDefault));
+  const distinctLangs = [...new Set(perNodeLangs)];
+  const multilingual = distinctLangs.length > 1;
+
   // A batch may be all code, all entity, or mixed. We emit guidance for both
   // kinds and let each prompt line's `kind=` marker steer the model per node.
   // Keeping a single batched call preserves the on-by-default cost bound.
@@ -619,13 +727,28 @@ export function buildNodeDescriptionPrompt(contexts: NodeContext[]): string {
       "left out of the reply.",
     );
   }
+  // LANGUAGE DIRECTIVE (per source). When the whole batch resolves to one
+  // language, state it once. When the batch is multilingual (mixed corpus),
+  // each node line carries its own `lang=` marker and must be honored per node.
+  if (multilingual) {
+    header.push(
+      "LANGUAGE: each entry has a `lang=` marker giving the language of its source.",
+      "Write that entry's description in EXACTLY that language. Do not translate to",
+      "a single common language — match each node's source language individually.",
+    );
+  } else {
+    header.push(languageDirectiveLine(distinctLangs[0] ?? "en"));
+  }
   header.push(
     "No marketing language.",
     "Respond ONLY with a JSON object mapping each node id (as a string) to its",
     "one-sentence description — no prose, no markdown fences.",
     "",
   );
-  return [...header, ...contexts.map(nodePromptLine)].join("\n");
+  return [
+    ...header,
+    ...contexts.map((ctx) => nodePromptLine(ctx, requested, corpusDefault, multilingual)),
+  ].join("\n");
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -757,6 +880,15 @@ export interface DescribeNodesOptions {
    * so the caller passes the fuller set here to ground beyond K.
    */
   citationsByNode?: Record<string, unknown[]>;
+  /**
+   * Output language directive (field report ia-aero). "auto" (default) →
+   * per-source detection; an explicit code ("fr", "en", …) forces one language
+   * for every node. Injected into EVERY batch prompt for deterministic,
+   * reproducible language instead of the backend's whim.
+   */
+  descriptionLang?: LanguageSelection;
+  /** Corpus-level default language used when a node has no detectable signal. */
+  corpusDefaultLang?: string | null;
 }
 
 /**
@@ -778,6 +910,10 @@ export async function describeNodes(
   if (targetIds.length === 0) return out;
 
   const callLlm = options.callLlm ?? (await makeDefaultCallLlm(options.provider, options.model));
+  const promptOptions: BuildNodeDescriptionPromptOptions = {
+    descriptionLang: options.descriptionLang,
+    corpusDefaultLang: options.corpusDefaultLang ?? null,
+  };
 
   for (const batch of chunk(targetIds, batchSize)) {
     const contexts = batch.map((id) =>
@@ -786,7 +922,7 @@ export async function describeNodes(
         ...(options.citationsByNode ? { citationsByNode: options.citationsByNode } : {}),
       }),
     );
-    const prompt = buildNodeDescriptionPrompt(contexts);
+    const prompt = buildNodeDescriptionPrompt(contexts, promptOptions);
     const validIds = new Set(batch);
     const maxTokens = Math.min(120 + 48 * batch.length, 8192);
     const text = await callLlmWithRetry(callLlm, prompt, maxTokens);
@@ -854,6 +990,21 @@ export interface GenerateNodeDescriptionsOptions {
    * BOTH the direct (API) path and the no-key assistant path.
    */
   citationsByNode?: Record<string, unknown[]>;
+  /**
+   * Output language directive (field report ia-aero). "auto" (default) →
+   * detect the dominant language PER SOURCE/NODE; an explicit code ("fr", "en",
+   * …) forces one language for every node. The directive is injected into EVERY
+   * batch prompt on BOTH the direct (API) path and the no-key assistant path,
+   * so a French corpus yields French descriptions deterministically — not the
+   * backend's per-batch whim.
+   */
+  descriptionLang?: LanguageSelection;
+  /**
+   * Corpus-level default language (e.g. an ontology profile `default_language`)
+   * used as the fallback when a node has no detectable language signal and no
+   * explicit `descriptionLang` was forced.
+   */
+  corpusDefaultLang?: string | null;
 }
 
 /**
@@ -944,9 +1095,16 @@ function reportCoverage(
       `emptyReply=${reasons.emptyReply} error=${reasons.error} optedOut=${reasons.optedOut}).\n`,
   );
   if (ungrounded > 0) {
+    // CLARITY FIX (field report): this set is DISJOINT from the `described`
+    // count above and from the "Done - M added" line the CLI prints next. These
+    // ungrounded nodes are NOT in the describable denominator, so they are
+    // neither a failure nor a contradiction of the M descriptions that WERE
+    // added — they are simply out of scope for description.
     process.stderr.write(
-      `[graphify describe] ${ungrounded} entity node(s) have no grounding (no citations/evidence) — ` +
-        "no description generated (anti-hallucination policy).\n",
+      `[graphify describe] note: ${ungrounded} additional entity node(s) carry no grounding ` +
+        "(no citations/evidence) and are intentionally left without a description " +
+        `(anti-hallucination policy). They are separate from the ${described} node(s) described above ` +
+        "and do not count as failures.\n",
     );
   }
   if (backendConfigured && describable > 0 && described < 0.5 * describable) {
@@ -1100,6 +1258,10 @@ export async function generateNodeDescriptions(
     const { instructionPaths, answerPaths } = emitDescriptionInstructions(
       batches,
       instructionDir,
+      {
+        descriptionLang: options.descriptionLang ?? AUTO_LANGUAGE,
+        corpusDefaultLang: options.corpusDefaultLang ?? null,
+      },
     );
 
     if (!options.quiet) {
@@ -1154,6 +1316,8 @@ export async function generateNodeDescriptions(
       ...(options.onlyMissing !== undefined ? { onlyMissing: options.onlyMissing } : {}),
       ...(options.citationCap !== undefined ? { citationCap: options.citationCap } : {}),
       ...(options.citationsByNode ? { citationsByNode: options.citationsByNode } : {}),
+      ...(options.descriptionLang !== undefined ? { descriptionLang: options.descriptionLang } : {}),
+      ...(options.corpusDefaultLang !== undefined ? { corpusDefaultLang: options.corpusDefaultLang } : {}),
     });
 
     let describedCount = 0;

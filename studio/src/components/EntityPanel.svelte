@@ -26,8 +26,10 @@
   // renders INSTANTLY off the already-loaded graph. When the lazy entity sidecar
   // arrives with the full per-entity list (entity.citations.citations), it
   // REPLACES the inline render with the complete file > passages accordion —
-  // same renderer, richer data. Passages render locators (section/page); the
-  // schema carries no verbatim quote.
+  // same renderer, richer data. Passages render locators (section/page) AND, when
+  // present, a verbatim `quote` (WP #24: `quote` is now a first-class field on
+  // OntologyCitation, populated by `graphify cite`; the blockquote below renders
+  // it). Citations grounded by older pipelines may still be locator-only.
   const fullCitations = $derived(
     Array.isArray(entity?.citations?.citations) ? entity.citations.citations : null,
   );
@@ -50,6 +52,12 @@
     }
     return null;
   });
+  // Provisional rationale fallback (field report ia-aero): the description text
+  // came from the extractor's `rationale`, not a real `describe` pass. Mark it so
+  // the panel never silently presents a fallback as a curated description.
+  const descriptionProvisional = $derived(
+    entity?.description?.source === "rationale" && entity?.description?.provisional === true,
+  );
 </script>
 
 <aside class="entity" aria-label="Entity detail">
@@ -84,7 +92,12 @@
 
     {#if description}
       <section class="entity-section">
-        <h3 class="entity-section-heading">Description</h3>
+        <h3 class="entity-section-heading">
+          Description
+          {#if descriptionProvisional}
+            <span class="entity-description-provisional" title="From the extractor rationale — run `graphify describe` for a proper description.">provisional</span>
+          {/if}
+        </h3>
         <!-- eslint-disable-next-line svelte/no-at-html-tags -->
         <div class="entity-description">{@html renderInlineMarkdown(description)}</div>
       </section>
@@ -165,6 +178,13 @@
     background: var(--st-semantic-surface-default, #fff);
     overflow-y: auto;
     min-height: 0;
+    /* BUG A: the detail panel is nested inside the right rail's scroll
+       container (.sel). min-width:0 lets it shrink to the column width so a
+       long unbreakable token (Source path / description / quote) wraps inside
+       it; overflow-x:hidden guarantees the detail itself never produces a
+       horizontal scrollbar — content wraps, it does not scroll sideways. */
+    min-width: 0;
+    overflow-x: hidden;
     padding: 1rem 1.1rem 2rem;
   }
   .entity-empty,
@@ -201,7 +221,13 @@
   }
   .entity-meta > div {
     display: grid;
-    grid-template-columns: 6.5rem 1fr;
+    /* BUG A: the value track is `minmax(0, 1fr)` (not `1fr`) so it can shrink
+       below the intrinsic width of a long unbreakable token (e.g. a Source
+       path/locator). A bare `1fr` track has an implicit min-width of `auto`,
+       so a long path widens the grid past the panel and triggers a global
+       horizontal scrollbar. Combined with overflow-wrap:anywhere on the dd
+       (below), the path now wraps instead of clipping right. */
+    grid-template-columns: 6.5rem minmax(0, 1fr);
     gap: 0.5rem;
   }
   .entity-meta dt {
@@ -215,7 +241,13 @@
   .entity-meta dd {
     margin: 0;
     color: var(--st-semantic-text-primary, #0f172a);
+    /* BUG A: min-width:0 lets this grid cell shrink under a long token; pair it
+       with overflow-wrap:anywhere + word-break so a long unbreakable Source
+       path (e.g. `.graphify/converted/pdf/…_1eaf490f229c.md:Section 1.2.3 — Et
+       demain?`) breaks and wraps inside the panel instead of clipping right. */
+    min-width: 0;
     overflow-wrap: anywhere;
+    word-break: break-word;
   }
   .entity-src {
     font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
@@ -235,6 +267,23 @@
     line-height: 1.5;
     color: var(--st-semantic-text-primary, #0f172a);
     font-size: 0.9rem;
+    /* BUG A: a description can carry a long unbreakable token (URL / path /
+       identifier). min-width:0 + overflow-wrap:anywhere break it so the text
+       wraps inside the panel instead of widening it into a horizontal scroll. */
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .entity-description-provisional {
+    margin-left: 0.4rem;
+    padding: 0.05rem 0.35rem;
+    border-radius: var(--st-radius-sm, 4px);
+    background: var(--st-semantic-surface-subtle, #f1f5f9);
+    border: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
+    color: var(--st-semantic-text-secondary, #64748b);
+    font-size: 0.62rem;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    cursor: help;
   }
   .entity-relations {
     list-style: none;
@@ -302,6 +351,22 @@
     font-size: 0.74rem;
     font-weight: 600;
     color: var(--st-semantic-text-secondary, #475569);
+    /* BUG A: the passage locator (e.g. "Section 1.2.3 — Et demain?") wraps
+       inside the panel rather than clipping right. */
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  /* BUG A: the citation FILE path renders as a DS Collapsible trigger title
+     (e.g. ".graphify/converted/pdf/CONTRIBUATION_AI_AERONAUTIQUE_…md"). Its
+     long unbreakable token must wrap, otherwise it widens the nested accordion
+     and the whole right rail into a horizontal scroll. Scope the wrap to the
+     citation-file triggers only so other (short) titles are unaffected. */
+  .entity-cite-files :global(.st-collapsible__trigger) {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: normal;
+    text-align: left;
   }
   .entity-cite-quote {
     margin: 0.2rem 0 0;
@@ -311,5 +376,9 @@
     font-size: 0.8rem;
     font-style: italic;
     line-height: 1.4;
+    /* BUG A: a citation quote can contain a long unbreakable token; wrap it so
+       the blockquote never widens the panel into a horizontal scroll. */
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 </style>

@@ -16,6 +16,7 @@ import {
   nodeType,
   relationRowsFor,
 } from "../lib/graphAdapter.js";
+import { colorForGroup } from "../lib/graphRendererPayload.js";
 
 const FIXTURE = {
   nodes: [
@@ -312,15 +313,33 @@ describe("candidateSubgraph (SVELTE-7)", () => {
 });
 
 describe("shapeForType (SVELTE-4)", () => {
-  it("maps ontology types to DS shapes, defaulting to dot", async () => {
+  it("maps curated ontology types to their hand-picked DS shapes", async () => {
     const { shapeForType } = await import("../lib/graphAdapter.js");
     expect(shapeForType({ type: "Character" })).toBe("diamond");
     expect(shapeForType({ node_type: "Location" })).toBe("triangle");
     expect(shapeForType({ type: "Evidence" })).toBe("square");
     expect(shapeForType({ type: "Work" })).toBe("hexagon");
     expect(shapeForType({ type: "ChapterOrStory" })).toBe("dot");
-    expect(shapeForType({ type: "Unknownish" })).toBe("dot");
+    // A typeless node still falls back to the neutral dot.
     expect(shapeForType({})).toBe("dot");
+  });
+
+  it("gives a NON-profile (file_type) type a stable, distinct shape per type", async () => {
+    const { shapeForType, fallbackShapeForType } = await import("../lib/graphAdapter.js");
+    // Bug fix: unknown types used to ALL collapse to "dot" (one glyph for every
+    // file_type, no shape-per-type legend). Each now gets a stable ring shape.
+    expect(shapeForType({ type: "Unknownish" })).toBe("diamond");
+    expect(shapeForType({ file_type: "code" })).toBe("square");
+    expect(shapeForType({ file_type: "concept" })).toBe("star");
+    expect(shapeForType({ file_type: "rationale" })).toBe("hexagon");
+    // Deterministic: same type ⇒ same shape across canvas / legend / re-export.
+    expect(fallbackShapeForType("code")).toBe(shapeForType({ type: "code" }));
+    expect(fallbackShapeForType("code")).toBe("square");
+    // Never the box family (reserved for god-class hubs / class nodes).
+    for (const t of ["code", "concept", "rationale", "Commit", "Branch", "zzz"]) {
+      expect(["box", "roundedbox"]).not.toContain(fallbackShapeForType(t));
+    }
+    expect(fallbackShapeForType("")).toBe("dot");
   });
   it("buildScene attaches a shape to every node", async () => {
     const { buildScene } = await import("../lib/graphAdapter.js");
@@ -416,8 +435,12 @@ describe("computeGodClass — Character-gated box-label class", () => {
     expect(computeGodClass(flipped.nodes, degree, 2)).toBe(null);
     const s = buildScene(flipped);
     const byId = new Map(s.nodes.map((n) => [n.id, n]));
-    expect(byId.get("lab").shape).toBe("dot"); // non-Character hub keeps base shape
-    expect(byId.get("p1").shape).toBe("dot"); // unmapped type default
+    // The intent: a non-Character hub is NEVER box-labelled (boxes are reserved
+    // for Character god-class hubs). Each non-profile type still gets its own
+    // stable per-type glyph (Lab → dot, Paper → star) — never a box.
+    expect(["box", "roundedbox"]).not.toContain(byId.get("lab").shape);
+    expect(byId.get("lab").shape).toBe("dot");
+    expect(byId.get("p1").shape).toBe("star");
   });
 
   it("returns null with no edges or no typed nodes (no override applied)", async () => {
@@ -692,5 +715,66 @@ describe("candidateUnionSubgraph (EVOL 1.b)", () => {
     const owns = sub.links.filter((e) => e.relation === "owns");
     expect(owns.length).toBe(1);
     expect(owns[0].source).toBe("B");
+  });
+});
+
+describe("B2 — T12 numeric-only-community colour parity (A5 × BUG B)", () => {
+  // A graph whose communities are NUMERIC-ONLY (no community_name). Two live
+  // communities (0, 1). The A5 trap: the legend keys community by `nodeCommunity`
+  // (`Community <n>`), but the canvas fills by `nodeGroup` (`community:<n>`).
+  // Post-merge (#195 BUG B) the swatch resolves its colour through the SAME
+  // colorForGroup() the canvas uses, over the SAME `nodeGroup` palette key
+  // captured on rec.group — so each numeric community must get the colour of its
+  // `community:<n>` key (and two distinct numeric communities get DISTINCT
+  // colours, never both collapsing to colorForGroup of the wrong/missing key).
+  const numericGraph = {
+    nodes: [
+      { id: "a", community: 0 },
+      { id: "b", community: 0 },
+      { id: "c", community: 1 },
+      { id: "d", community: 1 },
+    ],
+    links: [
+      { source: "a", target: "b", relation: "knows" },
+      { source: "c", target: "d", relation: "knows" },
+    ],
+  };
+
+  it("each numeric community's colour matches colorForGroup of its nodeGroup palette key", () => {
+    const stats = communityStats(numericGraph);
+    expect(stats.liveCount).toBe(2);
+    const byKey = new Map(stats.live.map((c) => [c.key, c]));
+    // nodeCommunity keys are `Community 0` / `Community 1`; nodeGroup keys are
+    // `community:0` / `community:1` — the keys the canvas hashes for the fill.
+    expect(nodeCommunity(numericGraph.nodes[0])).toBe("Community 0");
+    expect(nodeGroup(numericGraph.nodes[0])).toBe("community:0");
+    // A5: the swatch colour is resolved under the `community:<n>` palette key,
+    // NOT the `Community <n>` legend key — so it equals the on-canvas fill.
+    expect(byKey.get("Community 0").color).toBe(colorForGroup("community:0"));
+    expect(byKey.get("Community 1").color).toBe(colorForGroup("community:1"));
+    // The two numeric communities get DISTINCT colours (the A5 bug collapsed
+    // community 1 to the wrong key's colour).
+    expect(byKey.get("Community 1").color).not.toBe(byKey.get("Community 0").color);
+  });
+
+  it("NAMED-community colour parity stays green (unaffected by the fix)", () => {
+    const namedGraph = {
+      nodes: [
+        { id: "a", community_name: "People" },
+        { id: "b", community_name: "People" },
+        { id: "c", community_name: "Places" },
+        { id: "d", community_name: "Places" },
+      ],
+      links: [
+        { source: "a", target: "b", relation: "knows" },
+        { source: "c", target: "d", relation: "knows" },
+      ],
+    };
+    const stats = communityStats(namedGraph);
+    const byKey = new Map(stats.live.map((c) => [c.key, c]));
+    // Named communities: nodeGroup === nodeCommunity === community_name, so the
+    // swatch colour is colorForGroup(community_name).
+    expect(byKey.get("People").color).toBe(colorForGroup("People"));
+    expect(byKey.get("Places").color).toBe(colorForGroup("Places"));
   });
 });

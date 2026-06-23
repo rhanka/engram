@@ -39,6 +39,12 @@ import {
   isDirectLlmProvider,
   type DirectLlmProvider,
 } from "./llm-execution.js";
+import {
+  detectTextLanguage,
+  languageDirectiveLine,
+  resolveLanguage,
+  type LanguageSelection,
+} from "./description-language.js";
 import type { GodNodeEntry } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -66,6 +72,7 @@ export function emitLabelInstructions(
   promptLines: string[],
   labeledCids: number[],
   instructionDir: string,
+  languageDirective: string[] = [],
 ): { instructionPath: string; answerPath: string } {
   mkdirSync(instructionDir, { recursive: true });
   const instructionPath = join(instructionDir, LABEL_INSTRUCTION_FILE);
@@ -79,6 +86,9 @@ export function emitLabelInstructions(
       "Graphify is running in assistant/skill mode (no API key). You are the host",
       "assistant (Claude Code / Codex / Gemini CLI). Read the community listing below",
       "and write 2-5 word plain-language names for each.",
+      ...(languageDirective.length > 0
+        ? ["", "## Language", "", ...languageDirective]
+        : []),
       "",
       "## Communities",
       "",
@@ -184,12 +194,15 @@ export function buildLabelingPromptLines(
   gods: GodNodeEntry[],
   maxCommunities: number = MAX_COMMUNITIES,
   topK: number = TOP_K,
-): { lines: string[]; labeledCids: number[] } {
+): { lines: string[]; labeledCids: number[]; sampledNames: Map<number, string[]> } {
   const godSet = new Set(gods.map((g) => g.id));
   const sorted = [...communities.entries()].sort((a, b) => b[1].length - a[1].length);
 
   const lines: string[] = [];
   const labeledCids: number[] = [];
+  // Per-community sampled node labels — the SOURCE text used to detect the
+  // community's dominant language for the per-source label directive.
+  const sampledNames = new Map<number, string[]>();
 
   for (const [cid, members] of sorted.slice(0, maxCommunities)) {
     // God nodes first for best signal in the prompt.
@@ -216,10 +229,65 @@ export function buildLabelingPromptLines(
     if (names.length > 0) {
       lines.push(`Community ${cid}: ${names.join(", ")}`);
       labeledCids.push(cid);
+      sampledNames.set(cid, names);
     }
   }
 
-  return { lines, labeledCids };
+  return { lines, labeledCids, sampledNames };
+}
+
+/**
+ * Resolve the output language for each labeled community (field report
+ * ia-aero). `requested` "auto" → detect the dominant language from the
+ * community's sampled node labels (the source's words); an explicit code forces
+ * that language for every community. Falls back via `corpusDefault` → English.
+ */
+export function resolveLabelLanguages(
+  labeledCids: number[],
+  sampledNames: Map<number, string[]>,
+  requested: LanguageSelection | undefined,
+  corpusDefault?: string | null,
+): Map<number, string> {
+  const out = new Map<number, string>();
+  for (const cid of labeledCids) {
+    const detected = detectTextLanguage((sampledNames.get(cid) ?? []).join(" "));
+    out.set(cid, resolveLanguage(requested, detected, corpusDefault));
+  }
+  return out;
+}
+
+/**
+ * Build the community-naming language directive block. When all communities
+ * resolve to one language, state it once. When they are multilingual (mixed
+ * corpus), instruct per-community matching and annotate each community's
+ * prompt line with its `lang=` marker.
+ */
+export function applyLabelLanguageDirective(
+  lines: string[],
+  labeledCids: number[],
+  langByCid: Map<number, string>,
+): { directive: string[]; lines: string[] } {
+  const distinct = [...new Set(labeledCids.map((cid) => langByCid.get(cid) ?? "en"))];
+  if (distinct.length <= 1) {
+    return {
+      directive: [languageDirectiveLine(distinct[0] ?? "en", "name")],
+      lines,
+    };
+  }
+  // Mixed: annotate each line with its language and instruct per-community match.
+  const annotated = lines.map((line, i) => {
+    const cid = labeledCids[i];
+    const lang = (cid !== undefined ? langByCid.get(cid) : undefined) ?? "en";
+    return `${line} [lang=${lang}]`;
+  });
+  return {
+    directive: [
+      "LANGUAGE: each community line ends with a `[lang=…]` marker giving the",
+      "language of its source nodes. Write that community's name in EXACTLY that",
+      "language. Do not normalize every name to one common language.",
+    ],
+    lines: annotated,
+  };
 }
 
 /**
@@ -352,6 +420,14 @@ export interface LabelCommunitiesOptions {
    * Pass a mock here in tests to avoid network calls.
    */
   callLlm?: CallLlmFn;
+  /**
+   * Output language for community names (field report ia-aero). "auto"
+   * (default) → detect per community from its sampled node labels; an explicit
+   * code ("fr", "en", …) forces one language. Injected into the naming prompt.
+   */
+  labelLang?: LanguageSelection;
+  /** Corpus-level default language used when a community has no detectable signal. */
+  corpusDefaultLang?: string | null;
 }
 
 /**
@@ -366,7 +442,7 @@ export async function labelCommunities(
   options: LabelCommunitiesOptions,
 ): Promise<Map<number, string>> {
   const labels = placeholderLabels(communities);
-  const { lines, labeledCids } = buildLabelingPromptLines(
+  const { lines, labeledCids, sampledNames } = buildLabelingPromptLines(
     G,
     communities,
     options.gods ?? [],
@@ -375,13 +451,29 @@ export async function labelCommunities(
   );
   if (lines.length === 0) return labels;
 
+  // Per-source language directive: pin each community's name to the language of
+  // its source nodes (or a single forced language), stopping the mixed FR/EN
+  // community names reported from the field.
+  const langByCid = resolveLabelLanguages(
+    labeledCids,
+    sampledNames,
+    options.labelLang,
+    options.corpusDefaultLang ?? null,
+  );
+  const { directive, lines: promptLines } = applyLabelLanguageDirective(
+    lines,
+    labeledCids,
+    langByCid,
+  );
+
   const prompt =
     "You are naming clusters in a knowledge graph. For each community below, " +
     "return a concise 2-5 word plain-language name describing what it is about " +
     '(e.g. "Order Management", "Payment Flow", "Auth Middleware"). ' +
+    directive.join(" ") + " " +
     "Respond ONLY with a JSON object mapping the community id (as a string) to " +
     "its name — no prose, no markdown fences.\n\n" +
-    lines.join("\n");
+    promptLines.join("\n");
 
   const maxTokens = Math.min(40 + 16 * labeledCids.length, 4096);
 
@@ -475,6 +567,15 @@ export interface GenerateCommunityLabelsOptions {
    * root pass it here explicitly).
    */
   instructionDir?: string;
+  /**
+   * Output language for community names (field report ia-aero). "auto"
+   * (default) → detect per community from its sampled node labels; an explicit
+   * code ("fr", "en", …) forces one language. Flows on BOTH the direct (API)
+   * path and the no-key assistant path.
+   */
+  labelLang?: LanguageSelection;
+  /** Corpus-level default language used when a community has no detectable signal. */
+  corpusDefaultLang?: string | null;
 }
 
 export interface GenerateCommunityLabelsResult {
@@ -545,7 +646,7 @@ export async function generateCommunityLabels(
     const instructionDir = options.instructionDir ?? join(".graphify", LABEL_INSTRUCTIONS_DIR);
 
     // Build prompt lines (needed for both ingest and emit paths).
-    const { lines, labeledCids } = buildLabelingPromptLines(
+    const { lines, labeledCids, sampledNames } = buildLabelingPromptLines(
       G,
       communities,
       options.gods ?? [],
@@ -574,10 +675,23 @@ export async function generateCommunityLabels(
     if (lines.length === 0) {
       return { labels: placeholderLabels(communities), source: "placeholder" };
     }
-    const { instructionPath, answerPath } = emitLabelInstructions(
+    // Per-source language directive for the assistant instruction file.
+    const langByCid = resolveLabelLanguages(
+      labeledCids,
+      sampledNames,
+      options.labelLang,
+      options.corpusDefaultLang ?? null,
+    );
+    const { directive, lines: annotatedLines } = applyLabelLanguageDirective(
       lines,
       labeledCids,
+      langByCid,
+    );
+    const { instructionPath, answerPath } = emitLabelInstructions(
+      annotatedLines,
+      labeledCids,
       instructionDir,
+      directive,
     );
 
     if (!options.quiet) {
@@ -611,6 +725,8 @@ export async function generateCommunityLabels(
       model: options.model,
       gods: options.gods,
       callLlm: options.callLlm,
+      ...(options.labelLang !== undefined ? { labelLang: options.labelLang } : {}),
+      ...(options.corpusDefaultLang !== undefined ? { corpusDefaultLang: options.corpusDefaultLang } : {}),
     });
     return { labels, source: "llm" };
   } catch (err) {

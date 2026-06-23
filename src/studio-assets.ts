@@ -176,9 +176,16 @@ interface GraphNodeDescriptionCacheEntry {
 }
 
 const graphDescriptionCache = new Map<string, GraphNodeDescriptionCacheEntry>();
+// Parallel index of node `rationale` (the extractor's 1-2 sentence justification),
+// used as a CLEARLY-MARKED provisional fallback when a node has no description.
+const graphRationaleCache = new Map<string, GraphNodeDescriptionCacheEntry>();
 
 interface GraphFileShape {
   nodes?: Array<{ id?: unknown; description?: unknown }>;
+}
+
+interface GraphFileShapeWithRationale {
+  nodes?: Array<{ id?: unknown; rationale?: unknown }>;
 }
 
 /**
@@ -214,9 +221,45 @@ function loadGraphNodeDescriptions(stateDir: string): Map<string, string> {
   return byId;
 }
 
-/** Test seam: drop the cached graph.json node-description index. */
+/**
+ * Map of node id -> trimmed non-empty `rationale` from `<stateDir>/graph.json`.
+ * The extractor fills `rationale` (a 1-2 sentence justification) on most nodes
+ * even when `describe` has NOT run, so this is the provisional fallback source
+ * for {@link buildEntitySidecar}. Same mtime-keyed caching as the description
+ * index. Returns an empty map when graph.json is missing/unreadable.
+ */
+function loadGraphNodeRationales(stateDir: string): Map<string, string> {
+  const graphPath = join(stateDir, "graph.json");
+  let mtimeMs: number;
+  try {
+    mtimeMs = statSync(graphPath).mtimeMs;
+  } catch {
+    graphRationaleCache.delete(stateDir);
+    return new Map();
+  }
+  const cached = graphRationaleCache.get(stateDir);
+  if (cached && cached.mtimeMs === mtimeMs) return cached.byId;
+
+  const byId = new Map<string, string>();
+  const graph = loadJsonSafe<GraphFileShapeWithRationale>(graphPath);
+  if (graph && Array.isArray(graph.nodes)) {
+    for (const node of graph.nodes) {
+      const id = node?.id;
+      if (typeof id !== "string" || !id) continue;
+      const rationale = node?.rationale;
+      if (typeof rationale !== "string") continue;
+      const trimmed = rationale.trim();
+      if (trimmed) byId.set(id, trimmed);
+    }
+  }
+  graphRationaleCache.set(stateDir, { mtimeMs, byId });
+  return byId;
+}
+
+/** Test seam: drop the cached graph.json node-description + rationale indexes. */
 export function __resetGraphDescriptionCache(): void {
   graphDescriptionCache.clear();
+  graphRationaleCache.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -329,9 +372,45 @@ function loadCitationsForNode(stateDir: string, id: string): CitationSidecarEntr
   return { count, citations };
 }
 
+/**
+ * Normalised per-node description for the entity panel.
+ *
+ * `source` records WHERE the text came from so a provisional fallback can never
+ * masquerade as a real `describe` output:
+ *   - `"description"` — the node's own `graph.json` description, or the opt-in
+ *     wiki sidecar (a real, generated description). `provisional` is omitted.
+ *   - `"rationale"` — a CLEARLY-MARKED fallback: the node had no description but
+ *     carried an extractor `rationale`, surfaced so the studio is never empty.
+ *     `provisional: true` flags it so consumers (and the user) know `describe`
+ *     is still recommended for a proper description. `status` stays `"generated"`
+ *     so the SPA renders the text, but the marking keeps the "run describe"
+ *     signal alive (the 0%-coverage warning counts only REAL descriptions).
+ */
+export interface EntitySidecarDescription {
+  status: string;
+  description: string | null;
+  /** Where the description text came from (omitted = the default `"description"`). */
+  source?: "description" | "rationale";
+  /** True only for the `rationale` fallback — a provisional, describe-still-recommended fill. */
+  provisional?: boolean;
+}
+
 export interface EntitySidecarResponse {
   id: string;
-  description: { status: string; description: string | null } | null;
+  /**
+   * Ontology / file type of the node (node_type → type → kind → file_type, the
+   * same precedence the scene + SPA `nodeType` use). Carried on the entity
+   * sidecar so the Types facet + per-entity badge populate from `entities.json`
+   * even when the heavy graph.json has not hydrated (the default scene-only
+   * `studio.html`, or a multi-file bundle opened over `file://`). `null` when the
+   * node has no type. Bug A fix.
+   */
+  type?: string | null;
+  /** Numeric community id, when the node carries one (Bug A — facet source). */
+  community?: number;
+  /** Human community label (named, then "Community N"), when present (Bug A). */
+  community_name?: string | null;
+  description: EntitySidecarDescription | null;
   occurrences: unknown;
   /**
    * Level-2 full per-entity citation list, lazily served (SPEC_CITATIONS.md).
@@ -343,6 +422,36 @@ export interface EntitySidecarResponse {
 }
 
 /**
+ * Loose graph-node shape buildEntitySidecar reads type/community from. Mirrors
+ * the fields the SPA `nodeType`/`nodeCommunity` consult.
+ */
+export interface EntitySidecarNode {
+  node_type?: unknown;
+  type?: unknown;
+  kind?: unknown;
+  file_type?: unknown;
+  community?: unknown;
+  community_name?: unknown;
+}
+
+function sidecarDisplay(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+/** Node type with the SPA's precedence (node_type → type → kind → file_type). */
+function sidecarNodeType(node: EntitySidecarNode | undefined): string | null {
+  if (!node) return null;
+  return (
+    sidecarDisplay(node.node_type) ??
+    sidecarDisplay(node.type) ??
+    sidecarDisplay(node.kind) ??
+    sidecarDisplay(node.file_type)
+  );
+}
+
+/**
  * Build the `/api/ontology/entity/<id>` payload: the node description
  * (normalised to { status, description }) plus the occurrence record for this
  * node id, if any. Returns the shape the SPA's EntityPanel expects.
@@ -351,14 +460,26 @@ export interface EntitySidecarResponse {
  * the opt-in wiki sidecar index is consulted only when the node has none. So a
  * graph whose nodes all carry descriptions reports them all here even without a
  * wiki sidecar present.
+ *
+ * Rationale fallback (field report ia-aero): when a node has NO real description
+ * (node + wiki both empty) but carries an extractor `rationale`, the rationale
+ * is surfaced as a CLEARLY-MARKED provisional description (`source: "rationale"`,
+ * `provisional: true`) so the studio is never empty when the data already
+ * exists — avoiding a costly 2nd LLM pass for a good-enough result. The marking
+ * means it never masks the "run `describe`" signal: it counts as ungrounded for
+ * the 0%-coverage warning, which still recommends `describe`.
  */
-export function buildEntitySidecar(stateDir: string, id: string): EntitySidecarResponse {
+export function buildEntitySidecar(
+  stateDir: string,
+  id: string,
+  node?: EntitySidecarNode,
+): EntitySidecarResponse {
   let description: EntitySidecarResponse["description"] = null;
 
   // 1. graph.json node.description (the default WP11 source).
   const nodeDescription = loadGraphNodeDescriptions(stateDir).get(id);
   if (nodeDescription) {
-    description = { status: "generated", description: nodeDescription };
+    description = { status: "generated", description: nodeDescription, source: "description" };
   } else {
     // 2. Fall back to the opt-in wiki description sidecar.
     const index = loadDescriptionIndex(stateDir);
@@ -366,8 +487,24 @@ export function buildEntitySidecar(stateDir: string, id: string): EntitySidecarR
     if (entry) {
       description =
         entry.status === "generated"
-          ? { status: "generated", description: entry.description ?? null }
-          : { status: "insufficient_evidence", description: null };
+          ? { status: "generated", description: entry.description ?? null, source: "description" }
+          : { status: "insufficient_evidence", description: null, source: "description" };
+    }
+  }
+
+  // 3. Provisional rationale fallback: only when no REAL description text was
+  //    found (no node/wiki "generated" string). An insufficient_evidence wiki
+  //    entry is still treated as "no description text", so the rationale fills
+  //    it — clearly marked provisional so `describe` stays recommended.
+  if (!description || (description.status !== "generated" || !description.description)) {
+    const rationale = loadGraphNodeRationales(stateDir).get(id);
+    if (rationale) {
+      description = {
+        status: "generated",
+        description: rationale,
+        source: "rationale",
+        provisional: true,
+      };
     }
   }
 
@@ -384,6 +521,13 @@ export function buildEntitySidecar(stateDir: string, id: string): EntitySidecarR
   const citations = loadCitationsForNode(stateDir, id);
 
   const response: EntitySidecarResponse = { id, description, occurrences };
+  // Bug A: surface type + community on the entity sidecar so the SPA facets can
+  // populate from entities.json alone (graph.json may be absent/unhydrated).
+  const type = sidecarNodeType(node);
+  if (type !== null) response.type = type;
+  if (typeof node?.community === "number") response.community = node.community;
+  const communityName = sidecarDisplay(node?.community_name);
+  if (communityName !== null) response.community_name = communityName;
   if (citations) response.citations = citations;
   return response;
 }

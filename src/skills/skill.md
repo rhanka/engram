@@ -487,6 +487,30 @@ graphify update .
 
 **Opt out of either step**: `--no-description` / `--no-label`.
 
+> **REQUIRED before the studio/wiki export — `describe` is NOT optional for a populated studio.** There is an asymmetry to know about: the default `graphify update` flow wires the community-**labels** pass automatically, but the node-**descriptions** pass only fills `graph.json` when you actually complete the assistant two-step (or run with a key). If you skip it, every node ships with `description: null` and the **static studio / wiki export shows empty entity panels silently** (field report ia-aero: 620/620 null descriptions). The export now *warns* on ~0% description coverage and *provisionally* backfills entity panels from each node's extractor `rationale` (clearly marked "provisional" in the studio) — but that is a stop-gap, not a real description.
+>
+> So, for non-null descriptions, the explicit order is:
+>
+> 1. `graphify update .` (emits `.graphify/description-instructions/` + `.graphify/label-instructions/`).
+> 2. Fill **both** the `batch-NNN.json` description answers **and** `communities.json` labels.
+> 3. `graphify update .` again to ingest — OR, on an already-built/curated graph, `graphify describe .` (descriptions) + `graphify label .` (labels) non-destructively.
+> 4. **Then** generate the static Ontology Studio (Step 6). Confirm descriptions landed: a 0%-description studio means Step 5 was skipped — go back and run `describe`.
+
+**Language attention (per source).** Descriptions and community names are written in the **language of each node's SOURCE document**, detected per node from its label + citations (and the community's sampled node names). A 100%-French corpus yields French descriptions and French community names; a mixed corpus gets each node's description in its own source language — never a random FR/EN mix left to the backend's whim. The directive is injected into **every** prompt: the assistant `batch-NNN.md` files (look for the `Write every description in <Language>` line, or per-node `lang=` markers on a mixed batch) AND the direct API path. When you (the host assistant) fill an instruction file, **honor that language directive** — answer in the language the instruction states, per node.
+
+- Default is `--description-lang auto` / `--label-lang auto` (detect per source).
+- Force one language for the whole run with a code: `--description-lang fr`, `--label-lang fr` (also `en`, `de`, `es`, `it`, `pt`, `nl`). A forced code overrides detection for every node.
+- The ontology profile `default_language` (graphify.yaml) is the fallback for nodes with no detectable signal (e.g. proper-noun-only nodes).
+
+```bash
+# Force French descriptions + French community names on a French corpus:
+graphify describe . --description-lang fr
+graphify label    . --label-lang fr
+graphify update   . --description-lang fr --label-lang fr
+# Default (auto) — detect each source's language:
+graphify describe .
+```
+
 **To describe an existing curated graph without re-extraction** (e.g. after manual curation or corpus build), use `graphify describe [path]` — the non-destructive counterpart to `graphify label [path]`:
 
 ```bash
@@ -521,7 +545,7 @@ graphify extract . --citations-top-k 8
 graphify update  . --citation-cap all --citations-top-k 8
 ```
 
-`--citation-cap <n|all>` is on `describe`/`label`/`update`; `--citations-top-k <n>` is on `extract`/`update`/`watch`. Both are flag-only overrides (no key, no config file required) — absent, the corpus-type default above applies. To project a pre-feature graph into the new schema without re-extracting (lower-bound counts; re-extract for true exhaustive counts), run `graphify backfill-citations .`.
+`--citation-cap <n|all>` is on `describe`/`label`/`update`; `--citations-top-k <n>` is on `extract`/`update`/`watch`; `--description-lang <auto|code>` is on `describe`/`update` and `--label-lang <auto|code>` is on `label`/`update`. All are flag-only overrides (no key, no config file required) — absent, the corpus-type default (citations) or per-source detection (language) applies. To project a pre-feature graph into the new schema without re-extracting (lower-bound counts; re-extract for true exhaustive counts), run `graphify backfill-citations .`.
 
 **Legacy manual label approach** (still works; skip if using the CLI two-step above):
 
@@ -1439,9 +1463,12 @@ graphify agent-stats report [--agent <id>] # per-agent detail with anonymized ev
 graphify agent-stats sync [--full]         # parse/refresh transcripts into .graphify/agents/facts.jsonl
 graphify agent-stats sessions [--agent <id>] [--branch <b>] [--since <date>] [--json]
 graphify agent-stats wp <trackItemId> [--no-pr] [--json]   # conductor view: sessions joined to a Track work-package
+graphify agent-stats project-graph [--config <id.json>] [--out <graph.json>] [--studio]   # rename-aware project/conversation graph.json
 ```
 
 The store (`.graphify/agents/facts.jsonl` + byte-offset cursors) is fully re-derivable; `sync` is incremental. The reports emit stable `graphify.agent-stats/v1` (summary/report) and `graphify.agent-stats.sessions/v1` (sessions) schemas. `wp` optionally uses `gh` to add PR-merge attribution (`--no-pr` to skip).
+
+`project-graph` turns those session facts into a graphify `graph.json` the studio can render (nodes: project / repo / agent / session / branch / commit; edges: `belongs-to`, `rename-lineage`, `worked-in`, `conducted-by`, `touched-branch`, `produced`, `derived-from`). Its point is **rename reconciliation**: agent-stats keys repo identity off the cwd *path*, so a renamed/moved project fragments into several path identities; a `ProjectIdentity` (canonical id + ordered path/remote aliases) collapses them into ONE project node and chains the incarnations with `rename-lineage` edges. `--config` supplies the identity (defaults to the sentropic→graphify lineage); `--studio` also exports a renderable static studio. Stable schema `graphify.agent-stats.project-graph/v1`.
 
 ---
 

@@ -45,6 +45,8 @@ import { communitiesFromGraph, communityLabelsFromGraph } from "./graph-communit
 import { safeExecGit } from "./git.js";
 import { safeGitRevParse } from "./git.js";
 import { discoverProjectConfig, loadProjectConfig } from "./project-config.js";
+import { loadOntologyProfile } from "./ontology-profile.js";
+import { normalizeLanguageSelection } from "./description-language.js";
 import { DEFAULT_GRAPHIFY_STATE_DIR, defaultManifestPath, resolveGraphInputPath, resolveGraphifyPaths } from "./paths.js";
 import { normalizeSearchText, scoreSearchText } from "./search.js";
 import { makeGraphPortable, projectRootLabel, scanPortableGraphifyArtifacts } from "./portable-artifacts.js";
@@ -200,6 +202,29 @@ export function resolveCitationPolicyForRoot(
       ...(flags.topKFlag !== undefined ? { inlineTopK: flags.topKFlag } : {}),
     },
   });
+}
+
+/**
+ * Best-effort corpus-level default language (field report ia-aero) read from
+ * the project's ontology profile `default_language` when a graphify.yaml is
+ * present. Used as the LAST fallback for per-source language resolution when a
+ * node has no detectable signal and no `--description-lang` was forced. Never
+ * throws and never calls an LLM — any missing/garbage config degrades to null.
+ */
+function resolveCorpusDefaultLanguage(root: string): string | null {
+  try {
+    const discovery = discoverProjectConfig(root);
+    if (!discovery.found || !discovery.path) return null;
+    const projectConfig = loadProjectConfig(discovery.path);
+    const profilePath = projectConfig.profile?.resolvedPath;
+    if (!profilePath || !existsSync(profilePath)) return null;
+    const profile = loadOntologyProfile(profilePath, { projectConfig });
+    const lang = profile.default_language?.trim().toLowerCase();
+    return lang && lang !== "auto" ? lang : null;
+  } catch {
+    /* missing / unreadable / malformed config → no corpus default */
+  }
+  return null;
 }
 
 function loadWikiDescriptionSidecarIndex(inputPath?: string): WikiDescriptionSidecarIndex | undefined {
@@ -2612,6 +2637,64 @@ export async function main(): Promise<void> {
       }
       console.log(formatWpView(result, trackItemId));
     });
+  agentStats
+    .command("project-graph")
+    .description(
+      "Build a rename-aware graphify graph.json of a project's conversations/sessions (nodes: project/repo/session/agent/branch/commit; reconciles repo renames into ONE project)",
+    )
+    .option(
+      "--config <file>",
+      "JSON ProjectIdentity { canonicalId, label, aliases:[{name,pathPrefixes,remote?}] }. Defaults to the built-in sentropic→graphify lineage.",
+    )
+    .option("--out <path>", "Output graph.json path", ".graphify/project-graph/graph.json")
+    .option("--no-commits", "Omit commit nodes")
+    .option("--no-branches", "Omit branch nodes")
+    .option("--studio", "Also export a static studio next to the graph.json (graphify studio export)")
+    .action(async (opts) => {
+      const { buildProjectGraphForIdentity } = await import("./agent-stats/index.js");
+      const { readFileSync, mkdirSync, writeFileSync } = await import("node:fs");
+      const { dirname, resolve: pathResolve } = await import("node:path");
+      // Built-in default: the sentropic project and its rename lineage.
+      const defaultIdentity = {
+        canonicalId: "sentropic",
+        label: "Sentropic / Graphify",
+        aliases: [
+          { name: "sentropic", pathPrefixes: ["~/src/sentropic"], remote: "rhanka/sentropic" },
+          { name: "graphify", pathPrefixes: ["~/src/graphify"], remote: "rhanka/graphify" },
+          { name: "regraphify", pathPrefixes: ["/tmp/regraphify", "/tmp/regraphify-brigham"] },
+        ],
+        repoRootForRegistry: resolveAgentStatsRepoRoot(),
+      };
+      const identity = opts.config
+        ? { repoRootForRegistry: resolveAgentStatsRepoRoot(), ...JSON.parse(readFileSync(opts.config, "utf-8")) }
+        : defaultIdentity;
+      const { graph, sessions } = buildProjectGraphForIdentity(identity, {
+        includeCommits: opts.commits !== false,
+        includeBranches: opts.branches !== false,
+      });
+      const outPath = pathResolve(opts.out);
+      mkdirSync(dirname(outPath), { recursive: true });
+      writeFileSync(outPath, JSON.stringify(graph, null, 2));
+      console.error(
+        `project-graph: ${graph.nodes.length} nodes, ${graph.links.length} edges from ${sessions} session(s) ` +
+          `across ${identity.aliases.length} rename-alias(es) → ${outPath}`,
+      );
+      if (opts.studio) {
+        try {
+          const { buildStaticStudio } = await import("./studio-export.js");
+          // buildStaticStudio reads <stateDir>/graph.json and writes the studio
+          // into outDir. We keep the export beside the graph.json.
+          const stateDir = dirname(outPath);
+          const studioOut = pathResolve(stateDir, "studio");
+          await buildStaticStudio({ stateDir, outDir: studioOut });
+          console.error(`project-graph: static studio exported to ${studioOut}`);
+        } catch (err) {
+          console.error(
+            `project-graph: studio export skipped (${err instanceof Error ? err.message : String(err)})`,
+          );
+        }
+      }
+    });
 
   function registerPrCommands(name: "pr" | "prs"): void {
     program.command(`${name} [selector]`)
@@ -3656,6 +3739,7 @@ export async function main(): Promise<void> {
     .option("--description-backend <provider>", "Description LLM provider (default: auto-detect from API keys)")
     .option("--description-model <id>", "Description LLM model override")
     .option("--description-mode <mode>", "Description execution mode: assistant (default, no key) or direct (API key)", "")
+    .option("--description-lang <lang>", "Description language: 'auto' (default, detect per source) or a code like 'fr'/'en'", "")
     .option("--fill-missing", "Only describe nodes whose description is empty/absent (idempotent gap-fill)")
     // WP12: salient community labels are generated by DEFAULT after clustering.
     // --no-label opts out; --no-cluster also implies no labels. Without an LLM
@@ -3664,6 +3748,7 @@ export async function main(): Promise<void> {
     .option("--label-backend <provider>", "Community-label LLM provider (default: auto-detect from API keys)")
     .option("--label-model <id>", "Community-label LLM model override")
     .option("--label-mode <mode>", "Label execution mode: assistant (default, no key) or direct (API key)", "")
+    .option("--label-lang <lang>", "Community-name language: 'auto' (default, detect per community) or a code like 'fr'/'en'", "")
     .option("--citation-cap <n|all>", "Per-node citation snippets injected into the description prompt (default: corpus-resolved; 3 code / 10 mixed / all long-doc)")
     .option("--citations-top-k <n>", "Inline Level-1 citations kept per node in graph.json (default: corpus-resolved; 3 code / 8 others)")
     .option("--scope <mode>", scopeOptionDescription())
@@ -3679,6 +3764,7 @@ export async function main(): Promise<void> {
         describeCapFlag: parseCitationCapFlag(opts.citationCap),
         topKFlag: parseTopKFlag(opts.citationsTopK),
       });
+      const updateCorpusDefaultLang = resolveCorpusDefaultLanguage(resolve(updatePath));
       const projectConfigDiscovery = discoverProjectConfig(updatePath);
       if (projectConfigDiscovery.found) {
         console.warn(
@@ -3713,6 +3799,10 @@ export async function main(): Promise<void> {
         ...(typeof opts.descriptionMode === "string" && (opts.descriptionMode === "assistant" || opts.descriptionMode === "direct")
           ? { descriptionMode: opts.descriptionMode as "assistant" | "direct" }
           : {}),
+        descriptionLang: normalizeLanguageSelection(
+          typeof opts.descriptionLang === "string" ? opts.descriptionLang : undefined,
+        ),
+        ...(updateCorpusDefaultLang ? { corpusDefaultLang: updateCorpusDefaultLang } : {}),
         label: opts.label !== false,
         ...(typeof opts.labelBackend === "string" && opts.labelBackend.trim()
           ? { labelBackend: opts.labelBackend.trim() }
@@ -3723,6 +3813,9 @@ export async function main(): Promise<void> {
         ...(typeof opts.labelMode === "string" && (opts.labelMode === "assistant" || opts.labelMode === "direct")
           ? { labelMode: opts.labelMode as "assistant" | "direct" }
           : {}),
+        labelLang: normalizeLanguageSelection(
+          typeof opts.labelLang === "string" ? opts.labelLang : undefined,
+        ),
         citationCap: updateCitationPolicy.describeCap,
         citationsTopK: updateCitationPolicy.inlineTopK,
         scope: scopeSelection.mode,
@@ -3874,6 +3967,7 @@ export async function main(): Promise<void> {
     .option("--backend <provider>", "LLM provider (default: auto-detect from API keys)")
     .option("--model <id>", "LLM model override")
     .option("--label-mode <mode>", "Execution mode: assistant (default, no key) or direct (API key)", "")
+    .option("--label-lang <lang>", "Community-name language: 'auto' (default, detect per community) or a code like 'fr'/'en'", "")
     .option("--citation-cap <n|all>", "Accepted for CLI symmetry; has no effect on `label` (use `describe`/`update` to ground descriptions)")
     .action(async (labelPath = ".", opts) => {
       const root = resolve(labelPath);
@@ -3927,12 +4021,19 @@ export async function main(): Promise<void> {
         ? opts.labelMode as "assistant" | "direct"
         : undefined;
 
+      const labelLang = normalizeLanguageSelection(
+        typeof opts.labelLang === "string" ? opts.labelLang : undefined,
+      );
+      const labelCorpusDefaultLang = resolveCorpusDefaultLanguage(root);
+
       console.log("Labeling communities...");
       const { labels, source } = await generateCommunityLabels(G, communities, {
         provider: backendArg ?? null,
         model: modelArg,
         gods,
         ...(labelModeArg ? { mode: labelModeArg } : {}),
+        labelLang,
+        ...(labelCorpusDefaultLang ? { corpusDefaultLang: labelCorpusDefaultLang } : {}),
         instructionDir: join(paths.stateDir, "label-instructions"),
       });
 
@@ -4001,6 +4102,7 @@ export async function main(): Promise<void> {
     .option("--description-backend <provider>", "LLM provider (default: auto-detect from API keys)")
     .option("--description-model <id>", "LLM model override")
     .option("--description-mode <mode>", "Execution mode: assistant (default, no key) or direct (API key)", "")
+    .option("--description-lang <lang>", "Description language: 'auto' (default, detect per source) or a code like 'fr'/'en'", "")
     .option("--fill-missing", "Only describe nodes whose description is empty/absent (idempotent gap-fill)")
     .option("--citation-cap <n|all>", "Per-node citation snippets injected into the description prompt (default: corpus-resolved; 3 code / 10 mixed / all long-doc)")
     .action(async (describePath = ".", opts) => {
@@ -4045,6 +4147,11 @@ export async function main(): Promise<void> {
         ? opts.descriptionMode as "assistant" | "direct"
         : undefined;
 
+      const descriptionLang = normalizeLanguageSelection(
+        typeof opts.descriptionLang === "string" ? opts.descriptionLang : undefined,
+      );
+      const corpusDefaultLang = resolveCorpusDefaultLanguage(root);
+
       const instructionDir = join(paths.stateDir, DESCRIPTION_INSTRUCTIONS_DIR);
 
       // F4: the graph's inline `citations` is already K-trimmed (<= 8), so a
@@ -4076,6 +4183,8 @@ export async function main(): Promise<void> {
         ...(opts.fillMissing ? { onlyMissing: true } : {}),
         citationCap: citationPolicy.describeCap,
         ...(citationsByNode ? { citationsByNode } : {}),
+        descriptionLang,
+        ...(corpusDefaultLang ? { corpusDefaultLang } : {}),
         instructionDir,
       });
 
@@ -4166,6 +4275,155 @@ export async function main(): Promise<void> {
           "The original duplicate-discard dropped citations a backfill cannot recover. " +
           "Re-extract the corpus for true exhaustive counts.",
       );
+    });
+
+  // ---------------------------------------------------------------------------
+  // graphify cite [path]   (a.k.a. ground-citations)
+  // GROUND new citations into an EXISTING graph.json by SCANNING the corpus.
+  // Symmetric to `describe`/`label`: loads graph.json, walks nodes, grounds
+  // type-aware VERBATIM citations from each node's source_file, UNIONS them with
+  // existing citations (never clobbers), then runs the shipped aggregation
+  // (count + top-K inline + citations.json). Heuristic mode is the no-key
+  // DEFAULT; assistant/api are opt-in and gated by the SAME anti-hallucination
+  // verbatim check. Opt-in (NOT auto-run in the default pipeline), like describe.
+  // ---------------------------------------------------------------------------
+  program
+    .command("cite [path]")
+    .alias("ground-citations")
+    .description("Ground node.citations[] by scanning the corpus (verbatim, no-key heuristic; symmetric to describe). Populates new citations, not just projects existing ones.")
+    .option("--mode <mode>", "Grounding mode: heuristic (default, no key), assistant, or api", "heuristic")
+    .option("--top-k <n>", "Max citations grounded per node (default: 6)")
+    .option("--types <list>", "Restrict to comma-separated node types (e.g. person,concept,reference,image)")
+    .option("--only-missing", "Only ground nodes with no existing citations (additive 2nd pass)")
+    .option(
+      "--source <root>",
+      "Extra source search root (repeatable); .graphify/converted is always searched",
+      (value: string, acc: string[]) => [...acc, value],
+      [] as string[],
+    )
+    .option("--citations-top-k <n>", "Inline Level-1 citations kept per node after aggregation (default: corpus-resolved; 3 code / 8 others)")
+    .option("--dry-run", "Report grounding coverage without writing graph.json or citations.json")
+    .action(async (citePath = ".", opts) => {
+      const root = resolve(citePath);
+      const paths = resolveGraphifyPaths({ root });
+      if (!existsSync(paths.graph)) {
+        console.error(`error: no graph found at ${paths.graph} - run /graphify first`);
+        process.exit(1);
+      }
+      mkdirSync(paths.stateDir, { recursive: true });
+
+      const mode = String(opts.mode ?? "heuristic").trim().toLowerCase();
+      if (!["heuristic", "assistant", "api"].includes(mode)) {
+        console.error("error: --mode must be one of: heuristic, assistant, api");
+        process.exit(1);
+      }
+      if (mode === "assistant" || mode === "api") {
+        // The LLM-assisted modes are opt-in recall boosters gated by the SAME
+        // anti-hallucination verbatim check. The proposer is not yet wired; the
+        // heuristic verifier (the load-bearing safety half) IS. Until the
+        // proposer lands, fall through to the heuristic core so the command is
+        // never a no-op and never emits an unverifiable quote.
+        console.log(
+          `cite: --mode ${mode} requested; the LLM proposer is not yet implemented. ` +
+            "Running the heuristic core (every quote is still verified verbatim). " +
+            "Re-run with --mode heuristic to silence this notice.",
+        );
+      }
+
+      const topK = parseTopKFlag(opts.topK) ?? 6;
+      const types = typeof opts.types === "string"
+        ? opts.types.split(",").map((t: string) => t.trim()).filter(Boolean)
+        : [];
+      // `--source` is truly repeatable (Commander collect): opts.source is an
+      // array of every root passed. Each is resolved and searched in turn, so a
+      // source present only in the FIRST root still grounds.
+      const extraSources: string[] = Array.isArray(opts.source)
+        ? opts.source.map((s: string) => resolve(s))
+        : typeof opts.source === "string"
+          ? [resolve(opts.source)]
+          : [];
+      const dryRun = Boolean(opts.dryRun);
+
+      const policy = resolveCitationPolicyForRoot(root, {
+        topKFlag: parseTopKFlag(opts.citationsTopK),
+      });
+
+      const rawGraphText = readFileSync(paths.graph, "utf-8");
+      const G = makeGraphPortable(loadGraphFromData(JSON.parse(rawGraphText)), root);
+
+      const { citeGraph } = await import("./cite-grounding.js");
+      const groundResult = citeGraph(
+        G,
+        {
+          root,
+          topK,
+          types,
+          ...(opts.onlyMissing ? { onlyMissing: true } : {}),
+          searchRoots: [paths.convertedDir, ...extraSources],
+        },
+        dryRun,
+      );
+
+      const byKind = Object.entries(groundResult.byKind)
+        .sort((a, b) => b[1] - a[1])
+        .map(([k, v]) => `${k}:${v}`)
+        .join(", ");
+
+      if (dryRun) {
+        console.log(
+          `cite (dry-run): would ground ${groundResult.totalCitations} citation(s) across ` +
+            `${groundResult.groundedNodes} node(s)${byKind ? ` [${byKind}]` : ""}. No files written.`,
+        );
+        if (groundResult.unresolvedSources.length > 0) {
+          console.log(
+            `cite (dry-run): ${groundResult.unresolvedSources.length} source file(s) unresolved on disk ` +
+              `(e.g. ${groundResult.unresolvedSources.slice(0, 3).join(", ")}).`,
+          );
+        }
+        return;
+      }
+
+      if (groundResult.groundedNodes === 0) {
+        console.log(
+          "cite: grounded 0 nodes — no node's source_file resolved to text with a verbatim match. " +
+            (groundResult.unresolvedSources.length > 0
+              ? `${groundResult.unresolvedSources.length} source(s) unresolved on disk. `
+              : "") +
+            "graph.json unchanged.",
+        );
+        return;
+      }
+
+      // Run the shipped aggregation: snapshot the prior FULL sidecar so the
+      // exhaustive tail is unioned (not collapsed to the fresh grounding), then
+      // re-derive citation_count + the K-bounded inline set + citations.json.
+      const { aggregateCitations, readCitationsSidecar, writeCitationsSidecar } = await import("./citations.js");
+      const { toJson } = await import("./export.js");
+      const outDir = dirname(paths.graph);
+      const priorSidecar = readCitationsSidecar(outDir);
+      const aggMap = aggregateCitations(G, {
+        topK: policy.inlineTopK,
+        ...(priorSidecar ? { priorSidecar } : {}),
+      });
+      const sidecarPath = writeCitationsSidecar(outDir, aggMap, G);
+
+      // Preserve existing community assignments + names so toJson writes back
+      // byte-stable aside from the citation fields.
+      const communities = communitiesFromGraph(G);
+      const communityLabels = communityLabelsFromGraph(G, communities);
+      toJson(G, communities, paths.graph, { communityLabels, force: true });
+
+      console.log(
+        `cite: grounded ${groundResult.totalCitations} verbatim citation(s) across ` +
+          `${groundResult.groundedNodes} node(s)${byKind ? ` [${byKind}]` : ""}. ` +
+          `Re-aggregated (top-${policy.inlineTopK} inline + ${sidecarPath ?? "citations.json"}). graph.json updated.`,
+      );
+      if (groundResult.unresolvedSources.length > 0) {
+        console.log(
+          `cite: NOTE — ${groundResult.unresolvedSources.length} source file(s) could not be resolved on disk ` +
+            "(no grounding for their nodes). Ensure the corpus / .graphify/converted is present.",
+        );
+      }
     });
 
   program
@@ -4491,6 +4749,11 @@ export async function main(): Promise<void> {
             `  nodes: ${result.nodeCount} | scene nodes: ${result.sceneNodeCount} | scene edges: ${result.sceneEdgeCount}`,
           );
           console.log(`  entities index: ${result.entityCount} | reconciliation candidates: ${result.reconciliationCount}`);
+          {
+            const cov = result.descriptionCoverage;
+            const provisionalNote = cov.provisional > 0 ? ` (+${cov.provisional} provisional from rationale)` : "";
+            console.log(`  descriptions: ${cov.described}/${cov.total} real${provisionalNote}`);
+          }
           console.log(
             `  workspace-manifest: ${result.manifestPresentCount}/${result.manifestArtifactCount} artifacts present`,
           );
