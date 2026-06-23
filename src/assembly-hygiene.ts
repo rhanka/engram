@@ -349,6 +349,23 @@ export interface DeOrphanConfig {
    * Set false to restore the legacy "strict finest container" behavior.
    */
   preferGiantComponent?: boolean;
+  /**
+   * When true (default, only effective with `preferGiantComponent`), if NO
+   * container sharing the orphan's provenance is in the giant component — i.e.
+   * the orphan's Work is itself isolated — the orphan is anchored to a
+   * HIGH-DEGREE node OF THE GIANT COMPONENT instead of to its isolated Work.
+   * This is what keeps the giant-mode promise absolute: an orphan always lands
+   * in the giant component, attached THROUGH a densely-connected, semantically-
+   * relevant node, and we never emit a disconnected 2-node island nor an
+   * isolated synthetic Work star (the old `work-fallback` failure mode).
+   *
+   * The anchor is chosen as: (1) the highest-degree giant-component node that
+   * shares the orphan's provenance (a real, same-work hub), else (2) the
+   * highest-degree giant-component node overall (the global hub). Ties broken
+   * by smallest id for determinism. Set false to keep the legacy isolated-Work
+   * `work-fallback` (which can leave disconnected stars/islands).
+   */
+  joinGiantViaHub?: boolean;
 }
 
 /** Default container ranking: chapter/scene/section first, Work last. */
@@ -447,19 +464,51 @@ function giantComponent(adj: Map<string, Set<string>>): Set<string> {
 }
 
 /**
- * (D) Link each degree-0 entity node to a container via a derived `appears_in`
- * edge, steering the orphan INTO the giant connected component so it never
- * forms a 2-node island. Container resolution, per orphan (giant mode, default):
+ * Pick the highest-degree node id within `candidates` (a subset of `giant`),
+ * using the giant-component degree from `adj`. Ties broken by smallest id for
+ * determinism. Returns undefined when `candidates` is empty. This is the
+ * "high-degree, semantically-relevant" anchor an orphan attaches to so it joins
+ * the giant component THROUGH a real hub instead of forming an isolated star.
+ */
+function highestDegreeIn(
+  candidates: Iterable<string>,
+  adj: Map<string, Set<string>>,
+): string | undefined {
+  let bestId: string | undefined;
+  let bestDeg = -1;
+  for (const id of candidates) {
+    const deg = adj.get(id)?.size ?? 0;
+    if (deg > bestDeg || (deg === bestDeg && bestId !== undefined && id < bestId)) {
+      bestDeg = deg;
+      bestId = id;
+    }
+  }
+  return bestId;
+}
+
+/**
+ * (D) Link each degree-0 entity node into the graph via a derived edge,
+ * steering the orphan INTO the giant connected component so it NEVER forms a
+ * 2-node island nor an isolated synthetic star. Anchor resolution, per orphan
+ * (giant mode, default):
  *   1. the FINEST container (chapter→scene→section, then Work) sharing the
- *      orphan's source_file / slug that is ITSELF in the giant component;
- *   2. else the Work sharing provenance (island-avoiding fallback — the Work is
- *      the densely-connected anchor: "in two items, one is the WORK");
- *   3. else (no Work) the strict finest container as a best-effort.
- * Exactly one container is chosen per orphan, so no redundant entity→Work edge
- * is added when a finer container already carries the orphan toward the Work.
- * Set `preferGiantComponent: false` for the legacy strict-finest behavior.
- * Idempotent: skips nodes that already have any edge, never duplicates an
- * `appears_in` pair it (or a prior run) already created.
+ *      orphan's source_file / slug that is ITSELF in the giant component
+ *      (`appears_in`, method `deorphan:giant-component`);
+ *   2. else — the orphan's whole Work is isolated — attach to a HIGH-DEGREE
+ *      node OF THE GIANT COMPONENT instead of to that isolated Work: the densest
+ *      giant member sharing the orphan's provenance (`related_to`, method
+ *      `deorphan:giant-hub-provenance`), else the global giant hub (method
+ *      `deorphan:giant-hub-global`). This is the absolute-join guarantee: an
+ *      orphan always lands in the giant THROUGH a real, dense, semantically-
+ *      relevant node — no disconnected stars, no islands.
+ *   3. else (NO giant component at all — empty/edgeless graph) fall back to the
+ *      Work, then the strict finest container, as a best-effort.
+ * Exactly one anchor is chosen per orphan, so no redundant entity→Work edge is
+ * added when a finer container already carries the orphan toward the Work.
+ * Set `preferGiantComponent: false` for the legacy strict-finest behavior;
+ * `joinGiantViaHub: false` to keep the old isolated-Work fallback (stars/islands).
+ * Idempotent: skips nodes that already have any edge, never duplicates an anchor
+ * pair it (or a prior run) already created.
  */
 export function deOrphanByContainer(
   extraction: Extraction,
@@ -520,7 +569,36 @@ export function deOrphanByContainer(
   // into the giant component instead of into an isolated finest-container
   // (which would otherwise create a 2-node island or amplify a poor satellite).
   const preferGiant = config.preferGiantComponent ?? true;
-  const giant = preferGiant ? giantComponent(buildAdjacency(nodes, edges)) : new Set<string>();
+  const adjacency = preferGiant ? buildAdjacency(nodes, edges) : new Map<string, Set<string>>();
+  const giant = preferGiant ? giantComponent(adjacency) : new Set<string>();
+  const joinViaHub = (config.joinGiantViaHub ?? true) && preferGiant && giant.size > 0;
+
+  // Index giant-component members by provenance so an orphan whose Work is
+  // ISOLATED can still attach to a high-degree node that is genuinely related
+  // (same source_file / slug) AND inside the giant — rather than to its own
+  // isolated Work (which would spawn a disconnected star). Built once, lazily.
+  const giantBySource = new Map<string, Set<string>>();
+  const giantBySlug = new Map<string, Set<string>>();
+  if (joinViaHub) {
+    const byId = new Map<string, GraphNode>(nodes.map((n) => [String(n.id), n]));
+    for (const id of giant) {
+      const n = byId.get(id);
+      if (!n) continue;
+      for (const sf of nodeSourceFiles(n)) {
+        if (!giantBySource.has(sf)) giantBySource.set(sf, new Set());
+        giantBySource.get(sf)!.add(id);
+        const slug = slugOfSourceFile(sf);
+        if (slug) {
+          if (!giantBySlug.has(slug)) giantBySlug.set(slug, new Set());
+          giantBySlug.get(slug)!.add(id);
+        }
+      }
+    }
+  }
+  // The global highest-degree node of the giant component — the universal hub
+  // an orphan attaches to when nothing in the giant shares its provenance. This
+  // guarantees the orphan ALWAYS lands in the giant via a real, dense node.
+  const globalGiantHub = joinViaHub ? highestDegreeIn(giant, adjacency) : undefined;
 
   for (const orphan of orphans) {
     // A container node that is itself an orphan has no parent of its own kind
@@ -550,21 +628,52 @@ export function deOrphanByContainer(
       if (rank === workRank) workId = hit;
       if (preferGiant && giantId === undefined && giant.has(hit)) giantId = hit;
     }
-    // Selection — exactly ONE container per orphan (no redundant entity→Work
-    // edge: when a finer container is chosen the orphan already reaches the
-    // Work through it, so we never additionally wire the Work):
-    //   - giant mode: prefer the finest container that is in the giant
-    //     component; if none is, fall back to the Work (so the orphan joins the
-    //     Work's subgraph rather than forming a 2-node island), and only if
-    //     there is no Work fall back to the strict finest container.
+    // Selection — exactly ONE anchor per orphan (no redundant entity→Work edge:
+    // when a finer container is chosen the orphan already reaches the Work
+    // through it, so we never additionally wire the Work):
+    //   - giant mode: prefer the finest container that is IN the giant
+    //     component; if none of the orphan's provenance containers is in the
+    //     giant (its whole Work is isolated), DO NOT anchor to that isolated
+    //     Work — that would spawn a disconnected 2-node island / synthetic star
+    //     that never joins the giant. Instead attach to a HIGH-DEGREE giant
+    //     node: the densest giant member sharing the orphan's provenance, else
+    //     the global giant hub. Only when there is no giant at all (empty graph)
+    //     do we fall back to the Work / strict finest container.
     //   - legacy mode: take the strict finest container.
     let containerId: string | undefined;
     let method = "deorphan:finest-container";
+    let relation = APPEARS_IN;
     if (!preferGiant) {
       containerId = finestId;
     } else if (giantId !== undefined) {
       containerId = giantId;
       method = "deorphan:giant-component";
+    } else if (joinViaHub) {
+      // No provenance container is in the giant → join the giant THROUGH a
+      // high-degree node. Prefer a same-provenance giant hub (semantically
+      // related, same work), then the global giant hub (always connects).
+      const provenanceGiant = new Set<string>();
+      for (const sf of sources) {
+        for (const id of giantBySource.get(sf) ?? []) provenanceGiant.add(id);
+        const slug = slugOfSourceFile(sf);
+        if (slug) for (const id of giantBySlug.get(slug) ?? []) provenanceGiant.add(id);
+      }
+      provenanceGiant.delete(String(orphan.id));
+      const provenanceHub = highestDegreeIn(provenanceGiant, adjacency);
+      if (provenanceHub !== undefined) {
+        containerId = provenanceHub;
+        method = "deorphan:giant-hub-provenance";
+        relation = "related_to";
+      } else if (globalGiantHub !== undefined && globalGiantHub !== String(orphan.id)) {
+        containerId = globalGiantHub;
+        method = "deorphan:giant-hub-global";
+        relation = "related_to";
+      } else if (workId !== undefined) {
+        containerId = workId;
+        method = "deorphan:work-fallback";
+      } else {
+        containerId = finestId;
+      }
     } else if (workId !== undefined) {
       containerId = workId;
       method = "deorphan:work-fallback";
@@ -578,7 +687,7 @@ export function deOrphanByContainer(
         added.push({
           source: String(orphan.id),
           target: containerId,
-          relation: APPEARS_IN,
+          relation,
           confidence: "INFERRED",
           source_file: typeof orphan.source_file === "string" ? orphan.source_file : "",
           derived: true,
