@@ -715,26 +715,45 @@ function drawBoxNode(
  */
 export function drawBoxLabels2D(context: Graph2DContext, draws: readonly BoxTextDraw[]): void {
   if (draws.length === 0) return;
+
+  // Re-derive the box dimensions + #199 pixel-fit with THIS context's own
+  // measureText (the same engine + font that draws the box), so the box width
+  // and the fitted label agree to the pixel with what is drawn — the renderer's
+  // internal measure service uses a different (un-pinned) offscreen canvas, so
+  // re-fitting here is what makes the box rect EXTENT + text match the canvas2d
+  // golden by construction. Per-frame font|text cache (box fonts vary by node).
+  const labelWidthCache = new Map<string, number>();
+  const measureLabelWidth = (text: string, font: string): number => {
+    const key = `${font}|${text}`;
+    const cached = labelWidthCache.get(key);
+    if (cached !== undefined) return cached;
+    context.font = font;
+    const width = context.measureText(text).width;
+    labelWidthCache.set(key, width);
+    return width;
+  };
+
   for (const d of draws) {
+    const dims = boxDimensions(d.height, d.label, measureLabelWidth);
     context.save();
     context.globalAlpha = d.alpha;
 
     context.beginPath();
-    drawRoundedBox(context, d.centerX, d.centerY, d.halfW * 2, d.halfH * 2, d.corner);
+    drawRoundedBox(context, d.centerX, d.centerY, dims.w, dims.h, dims.corner);
     context.fillStyle = HOLLOW_FILL_STYLE;
     context.fill();
     context.strokeStyle = d.borderColor;
-    // The overlay draws carry the already-device-px stroke width (the canvas2d
-    // path's lineWidth = BORDER_WIDTH_* · pixelRatio), so set it directly.
+    // Already-device-px stroke width (the canvas2d path's lineWidth =
+    // BORDER_WIDTH_* · pixelRatio), so set it directly.
     context.lineWidth = d.borderWidth;
     context.stroke();
 
-    if (d.label) {
+    if (dims.label) {
       context.fillStyle = BOX_TEXT_COLOR;
-      context.font = `${d.fontPx}px sans-serif`;
+      context.font = `${dims.fontPx}px sans-serif`;
       context.textAlign = "center";
       context.textBaseline = "middle";
-      context.fillText(d.label, d.centerX, d.centerY);
+      context.fillText(dims.label, d.centerX, d.centerY);
     }
 
     context.restore();

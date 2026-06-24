@@ -372,16 +372,19 @@ export function buildBoxDraws(frame: WebGLBoxFrame): BoxDraw[] {
 
 /**
  * A single box GLYPH's overlay draw (HYBRID box path, B1-P3 shipping decision).
- * Carries the FULL device-px box geometry — centre, half-extents, corner, border
- * width + colour, the #199-FITTED label, font, and node alpha — i.e. everything a
- * Canvas2D `drawBoxNode` needs to reproduce the ENTIRE box glyph (rounded rect +
- * fill + node-colour border + centred label). The renderer hands these to a 2D
- * OVERLAY so the WHOLE box is drawn by the SAME canvas2d engine the golden
- * reference uses — box-rect EXTENT, border, AND text match BY CONSTRUCTION (a GPU
- * box-rect SDF + text atlas under SwiftShader could match neither the #199 width
- * cap nor the 2D AA, the #1 B1 risk). Boxes are FEW (god-class + recon focal
- * hubs) so canvas2d-drawing them has zero perf cost; the many simple nodes (P1)
- * + edges (P2) stay WebGL.
+ * Carries the box CENTRE (device px), the box HEIGHT (device px), the RAW label,
+ * the border STROKE width + colour, and the node alpha. The overlay
+ * (`drawBoxLabels2D`) re-derives the box dimensions + the #199 pixel-fit with ITS
+ * OWN 2D context's `measureText`, so the box width + fitted text are computed by
+ * the SAME (pinned) font that draws them. This is the crux of the parity: the
+ * renderer's internal measure service uses a DIFFERENT (un-pinned) offscreen
+ * canvas, so handing over a pre-fitted label would overflow when the overlay
+ * draws it with the pinned font. Re-fitting on the overlay context makes the box
+ * rect EXTENT (incl. the #199 width cap), the border, AND the text match the
+ * canvas2d golden BY CONSTRUCTION — no GPU box-rect SDF or text atlas (neither
+ * could match the #199 cap nor the 2D AA under SwiftShader, the #1 B1 risk).
+ * Boxes are FEW (god-class + recon focal hubs) so this costs nothing; the many
+ * simple nodes (P1) + edges (P2) stay WebGL.
  *
  * (Name kept as `BoxTextDraw` for back-compat; it now carries the full glyph.)
  */
@@ -390,19 +393,14 @@ export interface BoxTextDraw {
   /** Box centre in DEVICE px (rect is centred here; text is centre/middle). */
   centerX: number;
   centerY: number;
-  /** Box half-extents in DEVICE px (the #199-capped rectangle). */
-  halfW: number;
-  halfH: number;
-  /** Rounded-rect corner radius in DEVICE px (clamped to the half-extents). */
-  corner: number;
+  /** Box HEIGHT in DEVICE px (BOX_BASE_HEIGHT_PX · PR · zoom; degree-independent). */
+  height: number;
+  /** The RAW node label — the overlay re-fits it (#199) with its own measure. */
+  label: string;
   /** Border STROKE width in DEVICE px (Canvas2D lineWidth = 2·BoxDraw.border). */
   borderWidth: number;
   /** Node-colour border as a CSS rgba() string (carries the node alpha). */
   borderColor: string;
-  /** The #199-FITTED label (never the raw, possibly-overflowing source). */
-  label: string;
-  /** Device font px (BOX_FONT_RATIO · height · PR · zoom). */
-  fontPx: number;
   /** Node alpha 0..1 (the whole box glyph — fill/border/text — follows it). */
   alpha: number;
 }
@@ -410,31 +408,32 @@ export interface BoxTextDraw {
 /**
  * Extract the box GLYPH overlay draws for the HYBRID box path: ONE entry per box
  * node (labelled OR collapsed — the rect + border always draw; N9/N13b collapsed
- * boxes still draw a rect, just no text), carrying the FULL device-px geometry a
- * Canvas2D `drawBoxNode` needs. The renderer hands these to a Canvas2D OVERLAY so
- * the entire box glyph is drawn by the identical canvas2d engine the golden
- * reference uses — extent + border + text match BY CONSTRUCTION, no GPU box rect
- * or text atlas.
+ * boxes still draw a rect, just no text). Carries the box CENTRE + HEIGHT + RAW
+ * label so the Canvas2D OVERLAY can re-derive the box dimensions (incl. the #199
+ * fit) with the SAME context that draws them — extent + border + text match the
+ * canvas2d golden BY CONSTRUCTION, no GPU box rect or text atlas.
  */
 export function buildBoxTextDraws(frame: WebGLBoxFrame): BoxTextDraw[] {
   const out: BoxTextDraw[] = [];
-  for (const d of buildBoxDraws(frame)) {
-    const [r, g, b, a] = d.borderColor;
+  const style = frame.style;
+  const height = BOX_BASE_HEIGHT_PX * frame.pixelRatio * frame.camera.zoom;
+  for (let i = 0; i < frame.nodeCount; i += 1) {
+    if ((style?.nodeShapes?.[i] ?? 0) !== BOX_SHAPE_CODE) continue;
+    const center = screenPoint(frame.positions, i, frame);
+    const [r, g, b, a] = colorAt(style?.nodeColors, i * 4, DEFAULT_NODE_COLOR);
+    const bold = (style?.nodeBorders?.[i] ?? 0) === 1;
     out.push({
-      nodeIndex: d.nodeIndex,
-      centerX: d.centerX,
-      centerY: d.centerY,
-      halfW: d.halfW,
-      halfH: d.halfH,
-      corner: d.corner,
-      // BoxDraw.border is the SDF half-width; Canvas2D strokes the full width.
-      borderWidth: d.border * 2,
+      nodeIndex: i,
+      centerX: center.x,
+      centerY: center.y,
+      height,
+      label: style?.nodeLabels?.[i] ?? "",
+      // Canvas2D strokes lineWidth = (bold?BOLD:NORMAL)·PR (device px).
+      borderWidth: (bold ? BORDER_WIDTH_BOLD : BORDER_WIDTH_NORMAL) * frame.pixelRatio,
       // Mirror renderer.ts `cssColor`: rgba(r,g,b, a/255). The canvas2d golden
       // also sets globalAlpha=alpha, so the alpha is applied the SAME two ways.
       borderColor: `rgba(${r}, ${g}, ${b}, ${a / 255})`,
-      label: d.label,
-      fontPx: d.fontPx,
-      alpha: d.alpha,
+      alpha: a / 255,
     });
   }
   return out;
