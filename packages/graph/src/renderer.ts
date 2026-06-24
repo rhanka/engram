@@ -3,7 +3,7 @@ import { BOX_GLYPH_CORNER_RATIO, SQUARE_INSET_RATIO, shapePolygonPoints } from "
 import { boxDimensions } from "./render-geometry";
 import { createWebGLShapeRenderer, type WebGLShapeRenderer } from "./webgl-shapes";
 import { createWebGLEdgeRenderer, type WebGLEdgeRenderer } from "./webgl-edges";
-import { createWebGLBoxRenderer, type WebGLBoxRenderer } from "./webgl-boxes";
+import { createWebGLBoxRenderer, type BoxTextDraw, type WebGLBoxRenderer } from "./webgl-boxes";
 import type {
   CameraState,
   FitViewOptions,
@@ -698,6 +698,34 @@ function drawBoxNode(
 }
 
 /**
+ * HYBRID box-text overlay (B1-P3 shipping decision). Draw the WebGL box LABELS
+ * onto a Canvas2D OVERLAY context with the IDENTICAL text calls `drawBoxNode`
+ * makes (font="${fontPx}px sans-serif", centre/middle, #0f172a, per-node alpha),
+ * AFTER the WebGL box fill/border has been composited. Because the text is drawn
+ * by the SAME canvas2d engine the golden reference uses, the box-label text
+ * pixels match BY CONSTRUCTION — no GPU text atlas (which could not reproduce
+ * the 2D text AA under SwiftShader, the #1 B1 risk). The device-px centre +
+ * fitted label + device font come straight from the shared box geometry, so the
+ * overlay text lands exactly where the WebGL box was drawn. The context is
+ * expected to be at DEVICE resolution (the same backing-store size as the GL
+ * canvas); no extra transform is applied.
+ */
+export function drawBoxLabels2D(context: Graph2DContext, draws: readonly BoxTextDraw[]): void {
+  if (draws.length === 0) return;
+  context.save();
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  for (const d of draws) {
+    if (!d.label) continue;
+    context.globalAlpha = d.alpha;
+    context.fillStyle = BOX_TEXT_COLOR;
+    context.font = `${d.fontPx}px sans-serif`;
+    context.fillText(d.label, d.centerX, d.centerY);
+  }
+  context.restore();
+}
+
+/**
  * Filled triangular arrowhead whose TIP sits at (x, y) — the clipped edge
  * endpoint on the target node's border — pointing along the unit direction
  * (ux, uy) of the incoming edge.
@@ -981,6 +1009,12 @@ export function createGraphRenderer(
   const measureLabelWidth = edgeRenderer || boxRenderer ? createMeasureService() ?? undefined : undefined;
   const edgeMeasureLabelWidth = measureLabelWidth;
   let lastNonFiniteCount = 0;
+  // HYBRID box-text overlay (B1-P3): the WebGL box pass collects its per-label
+  // overlay draws here so the caller (the studio / the golden harness) can draw
+  // the box LABELS with a Canvas2D OVERLAY (the identical text engine the golden
+  // reference uses), composited on top of the WebGL box fill/border. Refreshed
+  // every render; empty on the Canvas2D / non-box paths.
+  let lastBoxTextDraws: BoxTextDraw[] = [];
   let state: RendererState = {
     nodeIds: [],
     positions: new Float32Array(),
@@ -1047,6 +1081,9 @@ export function createGraphRenderer(
     ensureAlive();
 
     const skipEdges = options?.skipEdges ?? false;
+    // Fresh per-frame box-label overlay draws (HYBRID text path). The WebGL box
+    // pass repopulates this; the Canvas2D path draws its own text inline.
+    lastBoxTextDraws = [];
 
     if (!context) {
       drawFallback2D(fallbackContext, state, camera, canvas, pixelRatio, skipEdges);
@@ -1173,6 +1210,14 @@ export function createGraphRenderer(
           viewportWidth: canvas?.width ?? 0,
           viewportHeight: canvas?.height ?? 0,
           measureLabelWidth,
+          // HYBRID text path (B1-P3 shipping decision): the WebGL box pass draws
+          // ONLY fill + border; the in-box LABEL TEXT is collected here and drawn
+          // by a Canvas2D OVERLAY (the identical text engine the golden reference
+          // uses) composited on top of the WebGL boxes — text parity by
+          // construction, no GPU text atlas. Exposed via `boxTextDraws()`.
+          onTextDraws: (draws) => {
+            lastBoxTextDraws = draws;
+          },
         });
       }
     }
@@ -1191,6 +1236,13 @@ export function createGraphRenderer(
       camera = { ...nextCamera };
     },
     render,
+    boxTextDraws(): BoxTextDraw[] {
+      // HYBRID box-text overlay (B1-P3): the per-label overlay draws collected
+      // by the LAST WebGL box render. The caller draws these with a Canvas2D
+      // OVERLAY (drawBoxLabels2D) on top of the WebGL boxes. Empty on the
+      // Canvas2D / non-box / legacy-atlas paths.
+      return lastBoxTextDraws;
+    },
     snapshot(): GraphRendererSnapshot {
       return {
         nodeCount: state.nodeIds.length,

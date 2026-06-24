@@ -229,6 +229,15 @@ export interface GraphRenderer {
   fitView(options: FitViewOptions): void;
   setCamera(camera: CameraState): void;
   render(options?: { skipEdges?: boolean }): void;
+  /**
+   * HYBRID box-text overlay draws (B1-P3) from the LAST WebGL box render: one
+   * entry per labelled box (device-px centre + #199-fitted label + device font
+   * + node alpha). The caller draws these onto a Canvas2D OVERLAY (the identical
+   * text engine the golden reference uses) composited on top of the WebGL boxes,
+   * so the in-box text matches the Canvas2D reference by construction. Returns an
+   * empty array on the Canvas2D / non-box paths (which draw their own text).
+   */
+  boxTextDraws(): import("./webgl-boxes").BoxTextDraw[];
   snapshot(): GraphRendererSnapshot;
   destroy(): void;
 }

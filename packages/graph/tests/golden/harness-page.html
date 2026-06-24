@@ -264,6 +264,31 @@
 
         const snap = renderer.snapshot();
 
+        // B1-P3 HYBRID box-text overlay: the WebGL box pass draws ONLY the box
+        // fill + border; the in-box LABEL TEXT is drawn here by a Canvas2D
+        // OVERLAY using the IDENTICAL pinned text engine the Canvas2D reference
+        // uses, composited (in __readPixels) ON TOP of the WebGL box pixels. So
+        // the box-label text matches the Canvas2D golden BY CONSTRUCTION — no GPU
+        // text atlas (the #1 B1 risk). We rasterize the overlay to an offscreen
+        // 2D canvas (a separate canvas: the GL canvas already holds a webgl2
+        // context and cannot also vend a 2D context) at the SAME device size, and
+        // stash it so __readPixels composites it over the GL readback.
+        window.__overlay = null;
+        if (snap.backend === "webgl" && typeof renderer.boxTextDraws === "function") {
+          const labels = renderer.boxTextDraws();
+          if (labels && labels.length > 0) {
+            const overlay = document.createElement("canvas");
+            overlay.width = canvas.width;
+            overlay.height = canvas.height;
+            const octx = overlay.getContext("2d");
+            if (octx) {
+              pinFontOnContext(octx);
+              Graph.drawBoxLabels2D(octx, labels);
+              window.__overlay = overlay;
+            }
+          }
+        }
+
         // Composite an OPAQUE WHITE background BEHIND the rendered graph so the
         // canvas BACKING STORE matches the visual page (the CSS background is
         // white). The renderer clears to TRANSPARENT, so without this the
@@ -344,6 +369,27 @@
             bytes[i + 1] = Math.min(255, bytes[i + 1] + inv);
             bytes[i + 2] = Math.min(255, bytes[i + 2] + inv);
             bytes[i + 3] = 255;
+          }
+
+          // B1-P3 HYBRID: composite the Canvas2D box-text OVERLAY ON TOP of the
+          // (over-white) WebGL box pixels. The overlay holds straight-RGBA dark
+          // text over transparent; source-over blend reproduces exactly what the
+          // Canvas2D reference draws when it fillTexts the label LAST (after the
+          // box rect). out = overlay·oa + gl·(1-oa). This is the seam that makes
+          // the box-label text pixels match the golden by construction.
+          const overlay = window.__overlay;
+          if (overlay && overlay.width === w && overlay.height === h) {
+            const octx = overlay.getContext("2d");
+            const otext = octx.getImageData(0, 0, w, h).data;
+            for (let i = 0; i < bytes.length; i += 4) {
+              const oa = otext[i + 3];
+              if (oa === 0) continue;
+              const inv = 255 - oa;
+              bytes[i] = Math.round((otext[i] * oa + bytes[i] * inv) / 255);
+              bytes[i + 1] = Math.round((otext[i + 1] * oa + bytes[i + 1] * inv) / 255);
+              bytes[i + 2] = Math.round((otext[i + 2] * oa + bytes[i + 2] * inv) / 255);
+              bytes[i + 3] = 255;
+            }
           }
         } else {
           const ctx = canvas.getContext("2d");
