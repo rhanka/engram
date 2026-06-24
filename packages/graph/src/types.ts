@@ -174,6 +174,18 @@ export interface GraphRendererOptions {
    * Canvas2D path in Phase 1.
    */
   instancedShapes?: boolean;
+  /**
+   * INTERNAL CANARY (B1 migration Phase 3). Offscreen-2D-canvas factory the
+   * WebGL box-label TEXT atlas rasterizes onto. The golden harness passes a
+   * factory that PINS the deterministic font on the raster context (the same
+   * pin it applies to the render canvas) so the atlas rasterizes with the SAME
+   * family Canvas2D measured + drew with. Defaults to a plain OffscreenCanvas /
+   * detached `<canvas>`. Only consulted on the WebGL2 instanced-box canary path.
+   */
+  atlasCanvasFactory?: (
+    width: number,
+    height: number,
+  ) => { canvas: unknown; ctx: CanvasRenderingContext2D } | null;
   interaction?: {
     hover?: boolean;
     pan?: boolean;
@@ -217,6 +229,15 @@ export interface GraphRenderer {
   fitView(options: FitViewOptions): void;
   setCamera(camera: CameraState): void;
   render(options?: { skipEdges?: boolean }): void;
+  /**
+   * HYBRID box-text overlay draws (B1-P3) from the LAST WebGL box render: one
+   * entry per labelled box (device-px centre + #199-fitted label + device font
+   * + node alpha). The caller draws these onto a Canvas2D OVERLAY (the identical
+   * text engine the golden reference uses) composited on top of the WebGL boxes,
+   * so the in-box text matches the Canvas2D reference by construction. Returns an
+   * empty array on the Canvas2D / non-box paths (which draw their own text).
+   */
+  boxTextDraws(): import("./webgl-boxes").BoxTextDraw[];
   snapshot(): GraphRendererSnapshot;
   destroy(): void;
 }
