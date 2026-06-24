@@ -221,6 +221,23 @@ export interface GraphRendererSnapshot {
   layoutOptions?: undefined;
 }
 
+/**
+ * The renderer is a pure DRAW surface — it owns no PICKING / hit-testing API
+ * (no `pick` / `hitTest` / `nodeAt` / `readPixels`), and this is intentional
+ * across every backend (B1-P4).
+ *
+ * Node picking is CPU / STUDIO-owned and BACKEND-AGNOSTIC: the studio converts
+ * the pointer to world coords through the camera and finds the nearest node
+ * from the SHARED render-geometry — `positions` (node centres) + the style
+ * `nodeSizes` (drawn radii) — the same buffers handed to {@link setGraph} /
+ * {@link setStyle}. The WebGL2 canary (P1 shapes, P2 edges, P3 box/text) only
+ * changes WHICH pixels are drawn from those buffers, so swapping canvas2d ↔
+ * webgl cannot move the node under the cursor. GPU color-picking (render ids to
+ * an offscreen attachment + readPixels) is therefore UNNECESSARY here; adding a
+ * picking method to this interface would create a per-backend hook that could
+ * silently diverge from the CPU hit-test. (Verified by
+ * studio/src/tests/pickingBackendAgnostic.test.js.)
+ */
 export interface GraphRenderer {
   setGraph(graph: RenderGraphInput | RenderGraphBuffers): void;
   setStyle(style: GraphStyleBuffers): void;
