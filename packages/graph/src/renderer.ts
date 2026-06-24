@@ -698,31 +698,47 @@ function drawBoxNode(
 }
 
 /**
- * HYBRID box-text overlay (B1-P3 shipping decision). Draw the WebGL box LABELS
- * onto a Canvas2D OVERLAY context with the IDENTICAL text calls `drawBoxNode`
- * makes (font="${fontPx}px sans-serif", centre/middle, #0f172a, per-node alpha),
- * AFTER the WebGL box fill/border has been composited. Because the text is drawn
- * by the SAME canvas2d engine the golden reference uses, the box-label text
- * pixels match BY CONSTRUCTION — no GPU text atlas (which could not reproduce
- * the 2D text AA under SwiftShader, the #1 B1 risk). The device-px centre +
- * fitted label + device font come straight from the shared box geometry, so the
- * overlay text lands exactly where the WebGL box was drawn. The context is
+ * HYBRID box overlay (B1-P3 SHIPPING decision). Draw the FULL box glyph — rounded
+ * rect + translucent fill + node-colour border + centred label — for each box
+ * node onto a Canvas2D OVERLAY, using the IDENTICAL `drawBoxNode` engine the
+ * default canvas2d path (the golden reference) uses, composited on top of the
+ * WebGL node/edge passes. Because the WHOLE box is drawn by the SAME canvas2d
+ * engine, the box-rect EXTENT (incl. the #199 width cap), the border, AND the
+ * text all match the canvas2d golden BY CONSTRUCTION — no GPU box-rect SDF or
+ * text atlas (neither could reproduce the #199-capped extent or the 2D AA under
+ * SwiftShader, the #1 B1 risk). Boxes are FEW (god-class + recon focal hubs), so
+ * overlay-drawing them costs nothing while the many simple nodes (P1) + edges
+ * (P2) stay WebGL. The device-px geometry comes straight from the shared box
+ * draws, so the overlay box lands exactly where the box node sits. The context is
  * expected to be at DEVICE resolution (the same backing-store size as the GL
  * canvas); no extra transform is applied.
  */
 export function drawBoxLabels2D(context: Graph2DContext, draws: readonly BoxTextDraw[]): void {
   if (draws.length === 0) return;
-  context.save();
-  context.textAlign = "center";
-  context.textBaseline = "middle";
   for (const d of draws) {
-    if (!d.label) continue;
+    context.save();
     context.globalAlpha = d.alpha;
-    context.fillStyle = BOX_TEXT_COLOR;
-    context.font = `${d.fontPx}px sans-serif`;
-    context.fillText(d.label, d.centerX, d.centerY);
+
+    context.beginPath();
+    drawRoundedBox(context, d.centerX, d.centerY, d.halfW * 2, d.halfH * 2, d.corner);
+    context.fillStyle = HOLLOW_FILL_STYLE;
+    context.fill();
+    context.strokeStyle = d.borderColor;
+    // The overlay draws carry the already-device-px stroke width (the canvas2d
+    // path's lineWidth = BORDER_WIDTH_* · pixelRatio), so set it directly.
+    context.lineWidth = d.borderWidth;
+    context.stroke();
+
+    if (d.label) {
+      context.fillStyle = BOX_TEXT_COLOR;
+      context.font = `${d.fontPx}px sans-serif`;
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.fillText(d.label, d.centerX, d.centerY);
+    }
+
+    context.restore();
   }
-  context.restore();
 }
 
 /**

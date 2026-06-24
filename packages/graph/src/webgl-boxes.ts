@@ -371,41 +371,67 @@ export function buildBoxDraws(frame: WebGLBoxFrame): BoxDraw[] {
 }
 
 /**
- * A single box LABEL's overlay draw (HYBRID text path). Device-px screen centre
- * + the #199-FITTED string + the device font + the node alpha — exactly what a
- * Canvas2D `fillText(label, x, y)` needs to reproduce the box text. This is the
- * data the renderer hands a 2D OVERLAY context so the box label is drawn by the
- * SAME canvas2d engine the golden reference uses (text parity by construction).
+ * A single box GLYPH's overlay draw (HYBRID box path, B1-P3 shipping decision).
+ * Carries the FULL device-px box geometry — centre, half-extents, corner, border
+ * width + colour, the #199-FITTED label, font, and node alpha — i.e. everything a
+ * Canvas2D `drawBoxNode` needs to reproduce the ENTIRE box glyph (rounded rect +
+ * fill + node-colour border + centred label). The renderer hands these to a 2D
+ * OVERLAY so the WHOLE box is drawn by the SAME canvas2d engine the golden
+ * reference uses — box-rect EXTENT, border, AND text match BY CONSTRUCTION (a GPU
+ * box-rect SDF + text atlas under SwiftShader could match neither the #199 width
+ * cap nor the 2D AA, the #1 B1 risk). Boxes are FEW (god-class + recon focal
+ * hubs) so canvas2d-drawing them has zero perf cost; the many simple nodes (P1)
+ * + edges (P2) stay WebGL.
+ *
+ * (Name kept as `BoxTextDraw` for back-compat; it now carries the full glyph.)
  */
 export interface BoxTextDraw {
   nodeIndex: number;
-  /** Box centre in DEVICE px (text is centre/middle aligned here). */
+  /** Box centre in DEVICE px (rect is centred here; text is centre/middle). */
   centerX: number;
   centerY: number;
+  /** Box half-extents in DEVICE px (the #199-capped rectangle). */
+  halfW: number;
+  halfH: number;
+  /** Rounded-rect corner radius in DEVICE px (clamped to the half-extents). */
+  corner: number;
+  /** Border STROKE width in DEVICE px (Canvas2D lineWidth = 2·BoxDraw.border). */
+  borderWidth: number;
+  /** Node-colour border as a CSS rgba() string (carries the node alpha). */
+  borderColor: string;
   /** The #199-FITTED label (never the raw, possibly-overflowing source). */
   label: string;
   /** Device font px (BOX_FONT_RATIO · height · PR · zoom). */
   fontPx: number;
-  /** Node alpha 0..1 (the box text follows it like the border). */
+  /** Node alpha 0..1 (the whole box glyph — fill/border/text — follows it). */
   alpha: number;
 }
 
 /**
- * Extract the box LABEL overlay draws for the HYBRID text path: one entry per
- * LABELLED box, carrying the device-px centre + fitted string + font + alpha.
- * The renderer hands these to a Canvas2D OVERLAY (drawn AFTER the WebGL box
- * fill/border) so the in-box text is rasterized by the identical canvas2d engine
- * the golden reference uses — text pixels then match BY CONSTRUCTION, with no
- * GPU text atlas. Empty/collapsed boxes (no label) emit nothing (N9/N13b).
+ * Extract the box GLYPH overlay draws for the HYBRID box path: ONE entry per box
+ * node (labelled OR collapsed — the rect + border always draw; N9/N13b collapsed
+ * boxes still draw a rect, just no text), carrying the FULL device-px geometry a
+ * Canvas2D `drawBoxNode` needs. The renderer hands these to a Canvas2D OVERLAY so
+ * the entire box glyph is drawn by the identical canvas2d engine the golden
+ * reference uses — extent + border + text match BY CONSTRUCTION, no GPU box rect
+ * or text atlas.
  */
 export function buildBoxTextDraws(frame: WebGLBoxFrame): BoxTextDraw[] {
   const out: BoxTextDraw[] = [];
   for (const d of buildBoxDraws(frame)) {
-    if (!d.label) continue;
+    const [r, g, b, a] = d.borderColor;
     out.push({
       nodeIndex: d.nodeIndex,
       centerX: d.centerX,
       centerY: d.centerY,
+      halfW: d.halfW,
+      halfH: d.halfH,
+      corner: d.corner,
+      // BoxDraw.border is the SDF half-width; Canvas2D strokes the full width.
+      borderWidth: d.border * 2,
+      // Mirror renderer.ts `cssColor`: rgba(r,g,b, a/255). The canvas2d golden
+      // also sets globalAlpha=alpha, so the alpha is applied the SAME two ways.
+      borderColor: `rgba(${r}, ${g}, ${b}, ${a / 255})`,
       label: d.label,
       fontPx: d.fontPx,
       alpha: d.alpha,
@@ -782,25 +808,34 @@ export function createWebGLBoxRenderer(
 
     const hybridText = typeof frame.onTextDraws === "function";
 
+    if (hybridText) {
+      // HYBRID box path (the B1-P3 SHIPPING decision). The box glyph — rounded
+      // rect + fill + node-colour border + centred label — is the WHOLE glyph
+      // for a HANDFUL of box nodes (god-class + recon focal hubs). It is drawn
+      // by a Canvas2D OVERLAY (the IDENTICAL `drawBoxNode` engine the golden
+      // reference uses), composited on top of the WebGL node/edge passes. So the
+      // box-rect EXTENT (incl. the #199 width cap), the border, AND the text all
+      // match the canvas2d golden BY CONSTRUCTION. We DELIBERATELY do NOT draw
+      // the box rect in WebGL: a GL SDF rect could not reproduce the #199-capped
+      // extent + the thin border ring under SwiftShader's AA. Boxes being few,
+      // overlay-drawing them costs nothing; the many simple nodes (P1) + edges
+      // (P2) stay WebGL. The GL box-rect + text pipelines are intentionally NOT
+      // exercised here (kept for the off-by-default reference unit tests below).
+      frame.onTextDraws?.(buildBoxTextDraws(frame));
+      return;
+    }
+
+    // Legacy in-GL reference path (off-by-default; exercised only by unit tests
+    // that omit `onTextDraws`). Box rect (fill + border via SDF) + canvas-raster
+    // text atlas, interleaved by a per-node depth buffer for R7 occlusion.
     const maxDepth = Math.max(1, frame.nodeCount);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-
-    // R7 byte-parity interleave via the DEPTH buffer: each box's rect (and its
-    // text, on the legacy in-GL atlas path) shares the node-index depth (a
-    // later/higher-index node maps NEARER), so a later box's rect occludes an
-    // EARLIER box's rect — exactly what Canvas2D gets by drawing
-    // rect→fill→stroke→fillText in one call per node. On the HYBRID path the
-    // text is composited by the Canvas2D OVERLAY (which orders itself), so only
-    // the rect occlusion needs the depth buffer here. We own a fresh depth range
-    // for the box pass (boxes draw last, after P1 shapes / P2 edges), clear it,
-    // and restore the depth-test state afterwards so nothing else is affected.
     gl.enable(gl.DEPTH_TEST);
     gl.depthFunc(gl.LEQUAL);
     gl.depthMask(true);
     gl.clear(gl.DEPTH_BUFFER_BIT);
 
-    // Box rects (fill + border via SDF).
     const boxInstances = buildBoxInstances(draws);
     gl.useProgram(box.program);
     if (box.viewport) gl.uniform2f(box.viewport, frame.viewportWidth, frame.viewportHeight);
@@ -811,46 +846,32 @@ export function createWebGLBoxRenderer(
     gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, draws.length);
     gl.bindVertexArray(null);
 
-    if (hybridText) {
-      // HYBRID text path (the shipping decision): hand the per-label overlay
-      // draws to the renderer's Canvas2D OVERLAY sink. The box label text is
-      // drawn by the SAME canvas2d engine the golden reference uses, AFTER the
-      // WebGL box fill/border is composited — so text pixels match BY
-      // CONSTRUCTION (no GPU text atlas, which could not match the 2D text AA
-      // under SwiftShader). The GL text pipeline is intentionally NOT exercised.
-      frame.onTextDraws?.(buildBoxTextDraws(frame));
-    } else {
-      // Legacy in-GL canvas-raster atlas path (off-by-default reference path).
-      // Box label text via the per-label canvas-raster atlas. Drawn under the
-      // SAME depth test as the rects (shared per-node depth), so a later box's
-      // rect occludes an earlier box's text.
-      const atlas = buildTextAtlas(draws, atlasFactory);
-      const textInstances = atlas ? buildTextInstances(draws, atlas) : [];
-      if (atlas && textInstances.length > 0) {
-        gl.useProgram(text.program);
-        if (text.viewport) gl.uniform2f(text.viewport, frame.viewportWidth, frame.viewportHeight);
-        if (text.maxDepth) gl.uniform1f(text.maxDepth, maxDepth);
+    const atlas = buildTextAtlas(draws, atlasFactory);
+    const textInstances = atlas ? buildTextInstances(draws, atlas) : [];
+    if (atlas && textInstances.length > 0) {
+      gl.useProgram(text.program);
+      if (text.viewport) gl.uniform2f(text.viewport, frame.viewportWidth, frame.viewportHeight);
+      if (text.maxDepth) gl.uniform1f(text.maxDepth, maxDepth);
 
-        if (!text.texture) text.texture = gl.createTexture();
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, text.texture);
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-        gl.texImage2D(
-          gl.TEXTURE_2D, 0, gl.RGBA, atlas.atlasW, atlas.atlasH, 0, gl.RGBA, gl.UNSIGNED_BYTE, atlas.pixels,
-        );
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        if (text.atlas) gl.uniform1i(text.atlas, 0);
+      if (!text.texture) text.texture = gl.createTexture();
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, text.texture);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      gl.texImage2D(
+        gl.TEXTURE_2D, 0, gl.RGBA, atlas.atlasW, atlas.atlasH, 0, gl.RGBA, gl.UNSIGNED_BYTE, atlas.pixels,
+      );
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      if (text.atlas) gl.uniform1i(text.atlas, 0);
 
-        gl.bindVertexArray(text.vao);
-        gl.bindBuffer(gl.ARRAY_BUFFER, text.instanceBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(textInstances), gl.DYNAMIC_DRAW);
-        gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, textInstances.length / TEXT_FLOATS_PER_INSTANCE);
-        gl.bindVertexArray(null);
-      }
+      gl.bindVertexArray(text.vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, text.instanceBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(textInstances), gl.DYNAMIC_DRAW);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, textInstances.length / TEXT_FLOATS_PER_INSTANCE);
+      gl.bindVertexArray(null);
     }
 
     // Restore the default no-depth state so subsequent renders (and any other
