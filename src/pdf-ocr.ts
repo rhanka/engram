@@ -4,7 +4,7 @@ import type { DetectionResult } from "./types.js";
 import { extractPdfTextLayer, pdfOcrSidecarStem, parsePdfOcrMode, preflightPdf, type PdfOcrMode, type PdfPreflightResult } from "./pdf-preflight.js";
 
 const MISTRAL_OCR_PACKAGE = "mistral-ocr";
-const DEFAULT_OCR_MODEL = "mistral-ocr-latest";
+const DEFAULT_OCR_MODEL = "mistral-ocr-4-0";
 const PDF_IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
 
 export interface PdfPreparationArtifact {

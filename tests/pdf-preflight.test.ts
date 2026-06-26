@@ -170,7 +170,7 @@ describe("PDF preflight and OCR preparation", () => {
     expect(convertPdfMock).toHaveBeenCalledWith(pdfPath, expect.objectContaining({
       apiKey: "test-key",
       generateDocx: false,
-      model: "mistral-ocr-latest",
+      model: "mistral-ocr-4-0",
     }));
     expect(result.detection.files.paper).toEqual([]);
     expect(result.detection.files.document).toHaveLength(1);

@@ -4,6 +4,10 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.17.2 (2026-06-24)
+
+- **Mistral OCR v4 default.** Bumps `mistral-ocr` to `^0.1.3` and pins Graphify's default PDF OCR model to `mistral-ocr-4-0` instead of the moving `mistral-ocr-latest` alias. `GRAPHIFY_PDF_OCR_MODEL` still overrides the model when needed.
+
 ## 0.17.1 (2026-06-23)
 
 - **SKILL — `graphify cite`.** The skill workflow (all 10 variants) now documents `graphify cite` in the Step-5 enrichment step (run before studio/wiki export for grounded `node.citations[]`; heuristic + no-key by default, `--mode heuristic|assistant|api`, anti-hallucination; symmetric to `describe`/`label`). Docs-only.
