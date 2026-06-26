@@ -275,7 +275,7 @@ Transcription uses the published `faster-whisper-ts` runtime (no Python). Defaul
 
 ### Optional provider variables
 
-For CI/headless text corpora, semantic extraction can be delegated to a direct provider with `graphify extract --backend anthropic|openai|gemini|mistral|cohere|ollama` (via the Vercel AI SDK). `OLLAMA_BASE_URL` overrides the local Ollama URL. Google Workspace export (`.gdoc`, `.gsheet`, `.gslides`) is enabled with `GRAPHIFY_GOOGLE_WORKSPACE=1` and the relevant `GOOGLE_OAUTH_*` credentials. API keys are read only from environment variables and are never written to config, `.graphify/`, reports, or logs.
+For CI/headless text corpora, semantic extraction can be delegated to a direct provider with `graphify extract --backend anthropic|openai|gemini|mistral|cohere|ollama` (via the Vercel AI SDK). Provider base URLs can be overridden with `ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL`, `GEMINI_BASE_URL` / `GOOGLE_GENERATIVE_AI_BASE_URL`, `MISTRAL_BASE_URL`, `COHERE_BASE_URL`, and `OLLAMA_BASE_URL` (local Ollama URL). Google Workspace export (`.gdoc`, `.gsheet`, `.gslides`) is enabled with `GRAPHIFY_GOOGLE_WORKSPACE=1` and the relevant `GOOGLE_OAUTH_*` credentials. API keys are read only from environment variables and are never written to config, `.graphify/`, reports, or logs.
 
 ### Privacy
 
