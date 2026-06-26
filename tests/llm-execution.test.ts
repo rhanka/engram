@@ -9,6 +9,7 @@ import {
   createAssistantTextJsonClient,
   createAssistantVisionJsonClient,
   defaultDirectLlmModel,
+  directProviderBaseUrlEnv,
   directProviderCredentialEnv,
   parseJsonFromLlmText,
   preflightLlmExecution,
@@ -17,17 +18,22 @@ import {
 
 const generateTextMock = vi.fn();
 const openaiMock = vi.fn((model: string) => ({ provider: "openai", model }));
+const createOpenAIMock = vi.fn((settings: unknown) => vi.fn((model: string) => ({ provider: "openai", model, settings })));
 const anthropicMock = vi.fn((model: string) => ({ provider: "anthropic", model }));
+const createAnthropicMock = vi.fn((settings: unknown) => vi.fn((model: string) => ({ provider: "anthropic", model, settings })));
 const googleMock = vi.fn((model: string) => ({ provider: "google", model }));
+const createGoogleGenerativeAIMock = vi.fn((settings: unknown) => vi.fn((model: string) => ({ provider: "google", model, settings })));
 const mistralMock = vi.fn((model: string) => ({ provider: "mistral", model }));
+const createMistralMock = vi.fn((settings: unknown) => vi.fn((model: string) => ({ provider: "mistral", model, settings })));
 const cohereMock = vi.fn((model: string) => ({ provider: "cohere", model }));
+const createCohereMock = vi.fn((settings: unknown) => vi.fn((model: string) => ({ provider: "cohere", model, settings })));
 
 vi.mock("ai", () => ({ generateText: generateTextMock }));
-vi.mock("@ai-sdk/openai", () => ({ openai: openaiMock }));
-vi.mock("@ai-sdk/anthropic", () => ({ anthropic: anthropicMock }));
-vi.mock("@ai-sdk/google", () => ({ google: googleMock }));
-vi.mock("@ai-sdk/mistral", () => ({ mistral: mistralMock }));
-vi.mock("@ai-sdk/cohere", () => ({ cohere: cohereMock }));
+vi.mock("@ai-sdk/openai", () => ({ openai: openaiMock, createOpenAI: createOpenAIMock }));
+vi.mock("@ai-sdk/anthropic", () => ({ anthropic: anthropicMock, createAnthropic: createAnthropicMock }));
+vi.mock("@ai-sdk/google", () => ({ google: googleMock, createGoogleGenerativeAI: createGoogleGenerativeAIMock }));
+vi.mock("@ai-sdk/mistral", () => ({ mistral: mistralMock, createMistral: createMistralMock }));
+vi.mock("@ai-sdk/cohere", () => ({ cohere: cohereMock, createCohere: createCohereMock }));
 
 const cleanupDirs: string[] = [];
 
@@ -51,6 +57,13 @@ beforeEach(() => {
   delete process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   delete process.env.MISTRAL_API_KEY;
   delete process.env.COHERE_API_KEY;
+  delete process.env.OPENAI_BASE_URL;
+  delete process.env.ANTHROPIC_BASE_URL;
+  delete process.env.GEMINI_BASE_URL;
+  delete process.env.GOOGLE_GENERATIVE_AI_BASE_URL;
+  delete process.env.MISTRAL_BASE_URL;
+  delete process.env.COHERE_BASE_URL;
+  delete process.env.OLLAMA_BASE_URL;
 });
 
 describe("LLM execution ports", () => {
@@ -239,6 +252,32 @@ describe("LLM execution ports", () => {
       hyperedges: [],
     });
     expect(JSON.stringify(result.audit)).not.toContain("test-key");
+  });
+
+  it("honors provider-specific base URL environment variables for direct mode", async () => {
+    generateTextMock.mockResolvedValue({
+      text: "{\"nodes\":[],\"edges\":[],\"hyperedges\":[]}",
+      finishReason: "stop",
+      usage: {},
+    });
+    process.env.GEMINI_API_KEY = "test-key";
+    process.env.GEMINI_BASE_URL = "https://gemini-proxy.example.test/v1beta";
+    const client = createDirectTextJsonClient({ provider: "gemini", model: "gemini-test" });
+
+    await client.generateJson({ schema: "graphify_extraction_v1", prompt: "Return JSON only." });
+
+    expect(directProviderBaseUrlEnv("gemini")).toEqual(["GEMINI_BASE_URL", "GOOGLE_GENERATIVE_AI_BASE_URL"]);
+    expect(createGoogleGenerativeAIMock).toHaveBeenCalledWith({
+      baseURL: "https://gemini-proxy.example.test/v1beta",
+    });
+    expect(googleMock).not.toHaveBeenCalled();
+    expect(generateTextMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: {
+        provider: "google",
+        model: "gemini-test",
+        settings: { baseURL: "https://gemini-proxy.example.test/v1beta" },
+      },
+    }));
   });
 
   it("rejects invalid direct JSON responses", async () => {
