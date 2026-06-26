@@ -72,6 +72,7 @@ describe("Track F F-0816-P2 (row 14) — GRAPHIFY_MAX_OUTPUT_TOKENS env", () => 
     // provider too so the test does not require provider credentials.
     vi.doMock("@ai-sdk/openai", () => ({
       openai: () => ({ provider: "openai" }),
+      createOpenAI: () => () => ({ provider: "openai" }),
     }));
 
     process.env.GRAPHIFY_MAX_OUTPUT_TOKENS = "12345";

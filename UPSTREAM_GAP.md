@@ -20,6 +20,27 @@ This document tracks the delta between this TypeScript port and upstream Python 
 - Active CRG stable review reference: `tirth8205/code-review-graph` tag `v2.3.3` at `52cf3bc63ee77c8b204fb809791a5f212e83a2de`
 - Current released line: `@sentropic/graphify@0.10.0` (rename, 2026-05-26); the `0.8.16` and `0.8.18` drift intakes below are both closed for the TypeScript line. F-0819-P1/P2 (PRs #87/#88, upstream `#1075`/`#1077`/`#1007`/`#1010`) and F-0831-P1-security (PR #93) are merged on `main` and unreleased; the next traceability pass formalizes the `v0.8.18..v0.8.31` window (`upstream/v8` fetched locally through `v0.8.31` at `7a588fb`) and reconciles those early ports
 
+## Active `0.8.49` Drift Intake
+
+Observed on 2026-06-25 after merging `@sentropic/graphify@0.17.2`:
+
+- Safi Python Graphify: `upstream/v8` at `9b583a01c3f1f9d3e6cb8f6c6b23d76e4b98afc9` (`fix(hooks): match the real file extension in the Read|Glob hook (#1463)`).
+- New remote tags seen in this fetch include `v0.8.46`, `v0.8.47`, and `v0.8.49`; local `upstream/v8` now spans the previously-audited `v0.8.31` checkpoint through `v0.8.49`.
+- Local TS baseline: `origin/main` at `53a2024` (`@sentropic/graphify@0.17.2`).
+- Early port in this pass: upstream `68dba89` (`feat(llm): honor *_BASE_URL for kimi/gemini/deepseek backends (#1458)`) maps to the TS direct-provider set by honoring `ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL`, `GEMINI_BASE_URL` / `GOOGLE_GENERATIVE_AI_BASE_URL`, `MISTRAL_BASE_URL`, and `COHERE_BASE_URL` in addition to the pre-existing `OLLAMA_BASE_URL`. Upstream-only Kimi/DeepSeek providers remain `n/a` until the TS `DirectLlmProvider` union adds them.
+
+| Source window | Representative commits | Initial TS bucket | Notes / next action |
+| --- | --- | --- | --- |
+| LLM/provider endpoints | `68dba89` | `ported (early)` | Direct provider base-URL env support added in TS; README and `tests/llm-execution.test.ts` cover Gemini alias precedence. |
+| Export/wiki filename safety | `5d63aad`, `7278e24`, `30cc4c0`, `739230e` | `must-audit` | Compare against Studio/wiki filename slugging and canvas/card layout. Likely small robustness ports. |
+| Extractor/language surface | `7dc5d96`, `dbce453`, `8e6ba9d`, `d12eb28`, `895a60f`, `f117aac`, `dbce453`, `b3ab221` | `feature / must-audit` | WPF/XAML, CUDA, package manifests, Java records, PowerShell manifests, oversized-doc slicing, extractor split. Port incrementally only where TS extractor lacks parity and tests are cheap. |
+| Hooks/skills/install/work-memory | `9b583a0`, `1e3270a`, `6d9617a`, `89dd00f`, `c06db05`, `ad6cb75`, `e7ba16b`, `1f42a2d`, `382b669`, `30fe8ba` | `mixed` | Separate skill text/doc fixes from Python work-memory features. Do not adopt Python-only hook machinery without TS install contract review. |
+| Query/MCP/serve | `53edd27`, `f9ded63` | `must-audit` | Trigram prefilter and community-name MCP output may map to `src/serve.ts`/query surfaces. |
+| Update/build correctness | `533859d`, `897483f`, `fd463de`, `8437ef4`, `b2e01f37`, `9a7dbfb`, `d885833`, `2100b3d` | `must-audit` | Reconcile against TS build-merge/update tests; many prior rows may already be covered. |
+| Security/deps | `ec6b397`, `9e8fa2a`, `d8fa70e` | `partial / n-a` | Starlette is Python-only; web/export XSS and vulnerable npm deps require separate TS dependency/security audit. |
+| Reflection/work-memory | `1a14e94`, `d193b62`, `6d9617a`, `89dd00f` | `defer / product decision` | Python `graphify reflect` and LESSONS.md workflow are not in the current TS product contract. |
+| Release/changelog-only | `29fd98f`, `f87011b`, `6d3c959`, `bc362cb`, `e4ff54f` | `release-only` | Do not mirror Python package version bumps into the TS line. |
+
 ## Source Lock Notes
 
 - `git ls-remote` is the authority for Safi Python tags while local tag clobber risk exists.
