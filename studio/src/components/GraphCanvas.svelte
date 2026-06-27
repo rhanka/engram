@@ -1,5 +1,5 @@
 <script>
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
   import { createGraphRenderer, drawBoxLabels2D } from "@sentropic/graph";
 
   import {
@@ -245,8 +245,16 @@
     toggleRenderBackend();
   }
 
-  function toggleRenderBackend() {
+  async function toggleRenderBackend() {
     activeBackend = toggleBackend(activeBackend);
+    // A <canvas> is permanently bound to the FIRST context type it hands out:
+    // once mode A called getContext("2d"), the same element can never return a
+    // WebGL2 context (and vice-versa), so rebuilding the renderer on the same
+    // node would always fall back to canvas2d ("WebGL2 unavailable"). The main
+    // canvas is wrapped in `{#key activeBackend}`, so flipping the backend
+    // remounts a FRESH canvas element; await the DOM flush before rebuilding so
+    // `bind:this={canvas}` points at the new (context-free) node.
+    await tick();
     // Force a destroy + recreate on the new backend (ensureRenderer reverts to
     // canvas2d + flags `backendUnavailable` when mode B finds no WebGL2 context).
     ensureRenderer(true);
@@ -1037,18 +1045,24 @@
     >Reset</button>
   </div>
 
-  <canvas
-    class="canvas-element"
-    bind:this={canvas}
-    aria-label="Ontology knowledge graph"
-    onclick={handleClick}
-    ondblclick={handleDoubleClick}
-    onpointermove={handlePointerMove}
-    onpointerdown={handlePointerDown}
-    onpointerup={handlePointerUp}
-    onmouseleave={handlePointerLeave}
-    onwheel={handleWheel}
-  ></canvas>
+  <!-- Keyed on the active backend: a <canvas> is permanently bound to its first
+       context type, so toggling canvas2d <-> WebGL2 must remount a FRESH canvas
+       (otherwise getContext("webgl2") on a 2D-poisoned canvas returns null and
+       mode B reports "WebGL2 unavailable"). Svelte re-attaches the handlers. -->
+  {#key activeBackend}
+    <canvas
+      class="canvas-element"
+      bind:this={canvas}
+      aria-label="Ontology knowledge graph"
+      onclick={handleClick}
+      ondblclick={handleDoubleClick}
+      onpointermove={handlePointerMove}
+      onpointerdown={handlePointerDown}
+      onpointerup={handlePointerUp}
+      onmouseleave={handlePointerLeave}
+      onwheel={handleWheel}
+    ></canvas>
+  {/key}
 
   <!-- Stacked Canvas2D overlay for the WebGL2 in-box label text (mode B). It
        shares the main canvas's CSS box, never receives pointer events, and stays
