@@ -488,6 +488,7 @@ export interface ProjectConfigValidationIssue {
 export type OntologyStatus =
   | "inferred"
   | "proposed"
+  | "guessed"
   | "candidate"
   | "validated"
   | "reference"
@@ -508,14 +509,48 @@ export type OntologyStatus =
  */
 export type CitationConfidence = "EXTRACTED" | "INFERRED";
 
+export type CitationModality = "markdown" | "pdf" | "docx" | "pptx" | "image" | "plain-text" | "csv" | "web";
+
+export interface CitedSourceRef {
+  /** Content-addressed document hash, without a sha256: prefix when exchanged with Radar. */
+  docSha?: string;
+  /** Object-store/CAS key (for example raw/proces-verbaux-<city>/cas/<sha>.pdf). */
+  rawRef?: string;
+  sourceUrl?: string;
+  /** 1-based source page number. */
+  page?: number;
+  /** Normalized top-left page fractions [x0,y0,x1,y1], when available. */
+  bbox?: [number, number, number, number];
+  /** Verbatim evidence text used for text-match fallback when bbox is absent. */
+  excerpt?: string;
+  citation?: string;
+  publishedAt?: string;
+  meetingDate?: string;
+  quoteSpan?: [number, number];
+}
+
 export interface OntologyCitation {
   source_file: string;
   source_url?: string;
+  /** Radar/raw-store compatible object reference for source viewers. */
+  rawRef?: string;
+  /** Content-addressed document hash, without a sha256: prefix when exchanged with Radar. */
+  docSha?: string;
+  /** Public/source URL alias used by Radar DTOs; mirrors source_url when both are present. */
+  sourceUrl?: string;
   page?: number | string;
   section?: string;
   paragraph_id?: string;
   figure_id?: string;
   bbox?: [number, number, number, number];
+  /** Canonical normalized overlay rectangle. For Radar PDF this is [x0,y0,x1,y1] page fractions. */
+  region?: [number, number, number, number];
+  /** Explicit source modality for viewer routing; otherwise consumers derive it from the source. */
+  modality?: CitationModality;
+  /** Optional excerpt alias for Radar/text-match consumers; quote remains the graphify canonical text. */
+  excerpt?: string;
+  /** Optional source-text span for consumers that can map quote offsets back to layout. */
+  quoteSpan?: [number, number];
   /**
    * Human-readable, modality-encoded locator string (WP #24). The display form
    * the studio shows next to a quote: `"p.12 · Section"` for OCR-markdown,
