@@ -90,9 +90,18 @@
   let activeBackend = $state(CANVAS2D_BACKEND);
   // True when a switch to mode B found no WebGL2 context and reverted to A.
   let backendUnavailable = $state(false);
-  // Transient indicator-badge text (auto-hides ~2s after a toggle).
-  let renderIndicator = $state(null);
+  // Render-mode badge. HIDDEN by default (clean UI on boot); the FIRST
+  // Ctrl+Shift+X / badge-click reveals it, after which it stays visible and
+  // reflects the live backend on every subsequent switch. `justToggled` briefly
+  // pulses it right after a switch.
+  let switchActivated = $state(false);
+  let justToggled = $state(false);
   let indicatorTimer = null;
+  const backendBadge = $derived(
+    backendUnavailable && activeBackend === CANVAS2D_BACKEND
+      ? "WebGL2 unavailable — Canvas2D"
+      : backendIndicatorLabel(activeBackend),
+  );
   let resizeObserver = null;
   let resizeFrame = null;
   let mergeFrame = null;
@@ -262,20 +271,20 @@
     // Re-apply graph + style + dragged positions and PRESERVE the current camera
     // (no refit) so toggling the backend doesn't jump the view.
     applyPayloadNoFit();
-    showRenderIndicator();
+    switchActivated = true;
+    pulseIndicator();
   }
 
-  function showRenderIndicator() {
-    renderIndicator =
-      backendUnavailable && activeBackend === CANVAS2D_BACKEND
-        ? "WebGL2 unavailable — using Canvas2D"
-        : backendIndicatorLabel(activeBackend);
+  // Briefly pulse the (always-visible) backend badge right after a switch so the
+  // change is noticeable; the badge text itself stays permanently visible.
+  function pulseIndicator() {
+    justToggled = true;
     if (typeof window === "undefined") return;
     if (indicatorTimer !== null) window.clearTimeout(indicatorTimer);
     indicatorTimer = window.setTimeout(() => {
       indicatorTimer = null;
-      renderIndicator = null;
-    }, 2000);
+      justToggled = false;
+    }, 1200);
   }
 
   function fitAndRender() {
@@ -1073,8 +1082,20 @@
     aria-hidden="true"
   ></canvas>
 
-  {#if renderIndicator}
-    <div class="render-indicator" role="status" aria-live="polite">{renderIndicator}</div>
+  <!-- Render-backend badge. HIDDEN until the first Ctrl+Shift+X (clean default
+       UI); once revealed it stays visible, reflects the live mode, and doubles
+       as a click target to switch (same as the shortcut). -->
+  {#if switchActivated}
+    <button
+      type="button"
+      class="render-indicator"
+      class:is-toggled={justToggled}
+      class:is-unavailable={backendUnavailable && activeBackend === CANVAS2D_BACKEND}
+      class:is-webgl={activeBackend === WEBGL2_BACKEND}
+      title="Render backend — click or press Ctrl+Shift+X to switch"
+      aria-live="polite"
+      onclick={toggleRenderBackend}
+    >{backendBadge}</button>
   {/if}
 
   {#if labels.length}
@@ -1186,15 +1207,42 @@
     top: 0.5rem;
     left: 0.5rem;
     z-index: 4;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0;
     padding: 0.3rem 0.6rem;
     border: 1px solid var(--st-semantic-border-muted, #e2e8f0);
     border-radius: 4px;
     background: color-mix(in srgb, var(--st-semantic-surface-inverse, #0f172a) 88%, transparent);
     color: var(--st-semantic-text-inverse, #fff);
+    font: inherit;
     font-size: 0.72rem;
     line-height: 1;
-    pointer-events: none;
+    cursor: pointer;
+    pointer-events: auto;
     box-shadow: 0 2px 8px rgb(15 23 42 / 0.18);
+    transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+  }
+  .render-indicator::before {
+    content: "";
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    background: var(--st-semantic-text-muted, #94a3b8);
+  }
+  .render-indicator.is-webgl::before {
+    background: var(--st-semantic-status-success, #22c55e);
+  }
+  .render-indicator.is-unavailable::before {
+    background: var(--st-semantic-status-warning, #f59e0b);
+  }
+  .render-indicator:hover {
+    box-shadow: 0 3px 12px rgb(15 23 42 / 0.28);
+  }
+  .render-indicator.is-toggled {
+    transform: scale(1.06);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--st-semantic-status-success, #22c55e) 45%, transparent);
   }
 
   .canvas-empty {
