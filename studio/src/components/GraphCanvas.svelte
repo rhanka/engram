@@ -1,6 +1,6 @@
 <script>
   import { onDestroy, onMount } from "svelte";
-  import { createGraphRenderer } from "@sentropic/graph";
+  import { createGraphRenderer, drawBoxLabels2D } from "@sentropic/graph";
 
   import {
     buildConnectedDimStyle,
@@ -13,6 +13,15 @@
     isBoxShape,
     truncateLabel,
   } from "../lib/graphRendererPayload.js";
+  import {
+    CANVAS2D_BACKEND,
+    WEBGL2_BACKEND,
+    backendIndicatorLabel,
+    createBackendRenderer,
+    isToggleShortcut,
+    paintBoxTextOverlay as paintBoxOverlay,
+    toggleBackend,
+  } from "../lib/renderBackend.js";
 
   const EMPTY_SCENE = {
     nodes: [],
@@ -66,11 +75,24 @@
 
   let container;
   let canvas;
+  // Stacked Canvas2D overlay that paints the in-box label text for the WebGL2
+  // box glyphs (mode B); stays cleared in mode A (canvas2d draws its own text).
+  let overlayCanvas;
+  let overlayCtx = null;
   let renderer = null;
   let payload = null;
   let camera = { x: 0, y: 0, zoom: 1 };
   let pixelRatio = 1;
   let mounted = false;
+
+  // Dual-render BETA switch (Ctrl+Shift+X). Mode A = canvas2d (DEFAULT). Mode B
+  // = WebGL2 beta. Default unchanged: the studio always boots on canvas2d.
+  let activeBackend = $state(CANVAS2D_BACKEND);
+  // True when a switch to mode B found no WebGL2 context and reverted to A.
+  let backendUnavailable = $state(false);
+  // Transient indicator-badge text (auto-hides ~2s after a toggle).
+  let renderIndicator = $state(null);
+  let indicatorTimer = null;
   let resizeObserver = null;
   let resizeFrame = null;
   let mergeFrame = null;
@@ -144,21 +166,108 @@
       canvas.height = nextHeight;
     }
 
+    // Keep the box-text overlay's backing store identical to the WebGL canvas so
+    // the device-px box draws (boxTextDraws) land exactly on the GPU boxes.
+    if (overlayCanvas && (overlayCanvas.width !== nextWidth || overlayCanvas.height !== nextHeight)) {
+      overlayCanvas.width = nextWidth;
+      overlayCanvas.height = nextHeight;
+    }
+
     return changed;
   }
 
-  // Returns true when a NEW renderer instance was created (first run or a
-  // devicePixelRatio change) — that renderer has no graph/style yet.
-  function ensureRenderer() {
+  // Returns true when a NEW renderer instance was created (first run, a
+  // devicePixelRatio change, or a forced backend rebuild) — that renderer has
+  // no graph/style yet.
+  //
+  // The renderer is built from `activeBackend` (the dual-render switch):
+  //   Mode A = createGraphRenderer(canvas, { backend: "canvas2d", pixelRatio }).
+  //   Mode B = { backend: "webgl", instancedShapes: true, pixelRatio }.
+  // `createBackendRenderer` degrades gracefully: when mode B is requested but no
+  // WebGL2 context is available, it reverts to canvas2d and we flag the
+  // unavailable indicator.
+  function ensureRenderer(force = false) {
     if (!canvas) return false;
 
     const nextPixelRatio = readPixelRatio();
-    if (renderer && nextPixelRatio === pixelRatio) return false;
+    if (renderer && !force && nextPixelRatio === pixelRatio) return false;
 
     renderer?.destroy();
     pixelRatio = nextPixelRatio;
-    renderer = createGraphRenderer(canvas, { backend: "canvas2d", pixelRatio });
+    const result = createBackendRenderer(createGraphRenderer, canvas, activeBackend, pixelRatio);
+    renderer = result.renderer;
+    if (result.fellBack) {
+      // mode B requested but no WebGL2 here → reverted to canvas2d (mode A).
+      activeBackend = CANVAS2D_BACKEND;
+      backendUnavailable = true;
+    } else {
+      backendUnavailable = false;
+    }
+    ensureOverlayCtx();
     return true;
+  }
+
+  function ensureOverlayCtx() {
+    if (!overlayCtx && overlayCanvas) {
+      overlayCtx = overlayCanvas.getContext("2d");
+    }
+    return overlayCtx;
+  }
+
+  // Single overlay-paint helper called after EVERY render. Mode B clears the
+  // overlay and paints renderer.boxTextDraws() (device-px in-box label text);
+  // mode A keeps the overlay cleared (canvas2d draws its own in-box text).
+  function paintBoxTextOverlay() {
+    paintBoxOverlay({
+      overlayCtx: ensureOverlayCtx(),
+      overlayCanvas,
+      renderer,
+      backend: activeBackend,
+      drawBoxLabels: drawBoxLabels2D,
+    });
+  }
+
+  // Render + paint the box-text overlay. Used wherever the canvas is redrawn so
+  // the WebGL2 in-box text stays in sync with the GPU boxes.
+  function renderNow(options) {
+    if (!renderer) return;
+    renderer.render(options);
+    paintBoxTextOverlay();
+  }
+
+  // --- Dual-render BETA switch (Ctrl+Shift+X) ---
+  // Window keydown handler: toggle the render backend, force a full renderer
+  // rebuild on the new backend, re-apply graph/style/positions/camera (preserving
+  // the user's view), and flash a transient indicator badge.
+  function handleKeydown(event) {
+    if (!isToggleShortcut(event)) return;
+    event.preventDefault();
+    toggleRenderBackend();
+  }
+
+  function toggleRenderBackend() {
+    activeBackend = toggleBackend(activeBackend);
+    // Force a destroy + recreate on the new backend (ensureRenderer reverts to
+    // canvas2d + flags `backendUnavailable` when mode B finds no WebGL2 context).
+    ensureRenderer(true);
+    resizeCanvas();
+    // Re-apply graph + style + dragged positions and PRESERVE the current camera
+    // (no refit) so toggling the backend doesn't jump the view.
+    applyPayloadNoFit();
+    showRenderIndicator();
+  }
+
+  function showRenderIndicator() {
+    renderIndicator =
+      backendUnavailable && activeBackend === CANVAS2D_BACKEND
+        ? "WebGL2 unavailable — using Canvas2D"
+        : backendIndicatorLabel(activeBackend);
+    if (typeof window === "undefined") return;
+    if (indicatorTimer !== null) window.clearTimeout(indicatorTimer);
+    indicatorTimer = window.setTimeout(() => {
+      indicatorTimer = null;
+      renderIndicator = null;
+    }, 2000);
   }
 
   function fitAndRender() {
@@ -189,14 +298,14 @@
         renderer.setCamera(camera);
       }
     }
-    renderer.render();
+    renderNow();
     setLabelsHidden(false);
   }
 
   function applyCamera(skipEdges = false) {
     if (!renderer) return;
     renderer.setCamera(camera);
-    renderer.render(skipEdges ? { skipEdges: true } : undefined);
+    renderNow(skipEdges ? { skipEdges: true } : undefined);
     updateLabels();
   }
 
@@ -238,7 +347,7 @@
       if (zoomSettleTimer !== null) window.clearTimeout(zoomSettleTimer);
       zoomSettleTimer = window.setTimeout(() => {
         zoomSettleTimer = null;
-        if (renderer && skipEdgesOnInteract) renderer.render();
+        if (renderer && skipEdgesOnInteract) renderNow();
         setLabelsHidden(false);
       }, ZOOM_SETTLE_MS);
     }
@@ -281,7 +390,7 @@
       if (canvas) canvas.style.cursor = "default";
       if (wasDrag) {
         // Finalize the moved node: refresh hover hit-testing + labels.
-        if (skipEdgesOnInteract && renderer) renderer.render();
+        if (skipEdgesOnInteract && renderer) renderNow();
         setLabelsHidden(false);
         // Swallow the trailing click so a drag doesn't also select.
         suppressNextClick = true;
@@ -293,7 +402,7 @@
     isPanning = false;
     if (canvas) canvas.style.cursor = "default";
     // Pan ended: restore edges with a full render.
-    if (skipEdgesOnInteract && renderer) renderer.render();
+    if (skipEdgesOnInteract && renderer) renderNow();
     setLabelsHidden(false);
   }
 
@@ -543,7 +652,7 @@
     if (draggingNodeId) draggedPositions.set(draggingNodeId, { x: worldX, y: worldY });
     renderer.setPositions(positions);
     // Skip edges mid-drag on dense graphs for fluidity (restored on pointerup).
-    renderer.render(skipEdgesOnInteract ? { skipEdges: true } : undefined);
+    renderNow(skipEdgesOnInteract ? { skipEdges: true } : undefined);
     updateLabels();
   }
 
@@ -601,7 +710,7 @@
     if (!renderer || !payload) return;
     const style = styleForHoveredEdge(hit);
     if (style) renderer.setStyle(style);
-    renderer.render();
+    renderNow();
   }
 
   function setHoveredEdge(hit, localX, localY) {
@@ -729,7 +838,7 @@
       if (renderer && style) {
         payload = { ...payload, style };
         renderer.setStyle(style);
-        renderer.render();
+        renderNow();
       }
     }
 
@@ -742,7 +851,7 @@
     setHoveredNode(null);
     isPanning = false;
     if (draggingNodeId) {
-      if (dragMoved && skipEdgesOnInteract && renderer) renderer.render();
+      if (dragMoved && skipEdgesOnInteract && renderer) renderNow();
       draggingNodeId = null;
       dragNodeIndex = -1;
       dragMoved = false;
@@ -771,7 +880,7 @@
     if (!renderer || !payload) return;
     renderer.setPositions(payload.renderGraph.positions);
     renderer.setStyle(payload.style);
-    renderer.render();
+    renderNow();
   }
 
   function finishMergeAnimation() {
@@ -810,7 +919,7 @@
 
       renderer.setPositions(positions);
       renderer.setStyle(interpolateMergeStyle(payload, pair, easeMergeProgress(progress)));
-      renderer.render();
+      renderNow();
 
       if (progress < 1) {
         mergeFrame = window.requestAnimationFrame(tick);
@@ -821,7 +930,7 @@
 
     renderer.setPositions(firstFrame);
     renderer.setStyle(interpolateMergeStyle(payload, pair, 0));
-    renderer.render();
+    renderNow();
     mergeFrame = window.requestAnimationFrame(tick);
   }
 
@@ -893,12 +1002,17 @@
     }
 
     window.addEventListener("resize", scheduleResize);
+    // Dual-render BETA toggle (Ctrl+Shift+X) — window-level so the shortcut
+    // works regardless of canvas focus.
+    window.addEventListener("keydown", handleKeydown);
 
     return () => {
       mounted = false;
       resizeObserver?.disconnect();
       window.removeEventListener("resize", scheduleResize);
+      window.removeEventListener("keydown", handleKeydown);
       if (resizeFrame !== null) window.cancelAnimationFrame(resizeFrame);
+      if (indicatorTimer !== null) window.clearTimeout(indicatorTimer);
       cancelMergeFrame();
       renderer?.destroy();
       renderer = null;
@@ -935,6 +1049,19 @@
     onmouseleave={handlePointerLeave}
     onwheel={handleWheel}
   ></canvas>
+
+  <!-- Stacked Canvas2D overlay for the WebGL2 in-box label text (mode B). It
+       shares the main canvas's CSS box, never receives pointer events, and stays
+       cleared in mode A. -->
+  <canvas
+    class="canvas-overlay"
+    bind:this={overlayCanvas}
+    aria-hidden="true"
+  ></canvas>
+
+  {#if renderIndicator}
+    <div class="render-indicator" role="status" aria-live="polite">{renderIndicator}</div>
+  {/if}
 
   {#if labels.length}
     <div class={`node-labels node-labels-${labelMode}`} aria-hidden="true">
@@ -1025,6 +1152,35 @@
   .canvas-element:focus-visible {
     outline: 2px solid var(--st-semantic-action-primary, #2563eb);
     outline-offset: -2px;
+  }
+
+  /* Box-text overlay: same CSS box as the main canvas, painted on top, never
+     intercepts pointer events (all hit-testing stays on the main canvas). */
+  .canvas-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: block;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+
+  /* Transient render-mode indicator badge (auto-hides ~2s after a toggle). */
+  .render-indicator {
+    position: absolute;
+    top: 0.5rem;
+    left: 0.5rem;
+    z-index: 4;
+    padding: 0.3rem 0.6rem;
+    border: 1px solid var(--st-semantic-border-muted, #e2e8f0);
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--st-semantic-surface-inverse, #0f172a) 88%, transparent);
+    color: var(--st-semantic-text-inverse, #fff);
+    font-size: 0.72rem;
+    line-height: 1;
+    pointer-events: none;
+    box-shadow: 0 2px 8px rgb(15 23 42 / 0.18);
   }
 
   .canvas-empty {
