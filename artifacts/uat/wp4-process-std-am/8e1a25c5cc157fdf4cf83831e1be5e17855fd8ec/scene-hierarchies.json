@@ -1,0 +1,65 @@
+{
+  "schema": "graphify_scene_hierarchies_v1",
+  "generated_at": "2026-06-27T14:45:57.027Z",
+  "graph_hash": null,
+  "hierarchies": {
+    "am_process_tree": {
+      "relation_type": "parent_process_of",
+      "kind": "tree",
+      "root_ids": [
+        "AM01"
+      ],
+      "max_depth": 4,
+      "nodes_by_id": {
+        "AM01": {
+          "parent_id": null,
+          "child_ids": [
+            "AM0104"
+          ],
+          "level": 0,
+          "status": "reference",
+          "registry_record_id": "AM01"
+        },
+        "AM0104": {
+          "parent_id": "AM01",
+          "child_ids": [
+            "AM0104.01"
+          ],
+          "level": 1,
+          "status": "reference",
+          "registry_record_id": "AM0104"
+        },
+        "AM0104.01": {
+          "parent_id": "AM0104",
+          "child_ids": [
+            "AM0104.01.10"
+          ],
+          "level": 2,
+          "status": "reference",
+          "registry_record_id": "AM0104.01"
+        },
+        "AM0104.01.10": {
+          "parent_id": "AM0104.01",
+          "child_ids": [
+            "AM0104.01.10.02"
+          ],
+          "level": 3,
+          "status": "reference",
+          "registry_record_id": "AM0104.01.10"
+        },
+        "AM0104.01.10.02": {
+          "parent_id": "AM0104.01.10",
+          "child_ids": [],
+          "level": 4,
+          "status": "reference",
+          "registry_record_id": "AM0104.01.10.02"
+        }
+      },
+      "overlay_arcs": [],
+      "orphan_ids": [],
+      "cycles": [],
+      "conflicts": [],
+      "dangling_arc_count": 5
+    }
+  }
+}
