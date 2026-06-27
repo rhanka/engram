@@ -1,0 +1,260 @@
+{
+  "_note": "Lifecycle states on hierarchy edges, routed by the REAL buildSceneHierarchySidecar. Stable IDs = raw PROCESS_STD registry ids (verbatim, D2). Reference/validated -> authoritative tree lane; candidate/proposed/inferred/guessed/rejected/superseded -> overlay lane.",
+  "schema": "graphify_scene_hierarchies_v1",
+  "graph_hash": "uat-lifecycle",
+  "input_arcs": [
+    {
+      "parent_id": "AM01",
+      "child_id": "AM0104",
+      "status": "reference",
+      "confidence": 1,
+      "source": "profile"
+    },
+    {
+      "parent_id": "AM0104",
+      "child_id": "AM0104.01",
+      "status": "validated",
+      "confidence": 1,
+      "source": "profile"
+    },
+    {
+      "parent_id": "AM0104.01",
+      "child_id": "AM0104.01.10",
+      "status": "candidate",
+      "confidence": 0.9,
+      "source": "profile"
+    },
+    {
+      "parent_id": "AM0104.01.10",
+      "child_id": "AM0104.01.10.02",
+      "status": "proposed",
+      "confidence": 0.75,
+      "source": "profile"
+    },
+    {
+      "parent_id": "AM03",
+      "child_id": "AM0301",
+      "status": "inferred",
+      "confidence": 0.6,
+      "source": "profile"
+    },
+    {
+      "parent_id": "AM06",
+      "child_id": "AM0601",
+      "status": "guessed",
+      "confidence": 0.4,
+      "source": "profile"
+    },
+    {
+      "parent_id": "AM08",
+      "child_id": "AM0801",
+      "status": "rejected",
+      "confidence": 0.2,
+      "source": "profile"
+    },
+    {
+      "parent_id": "AM01",
+      "child_id": "AM0101",
+      "status": "superseded",
+      "confidence": 0.5,
+      "source": "profile"
+    }
+  ],
+  "lifecycle_states_present": [
+    "candidate",
+    "guessed",
+    "inferred",
+    "proposed",
+    "reference",
+    "rejected",
+    "superseded",
+    "validated"
+  ],
+  "tree_lane_edges": [
+    {
+      "stable_id": "AM01",
+      "parent_id": null,
+      "level": 0,
+      "status": "reference",
+      "lane": "tree"
+    },
+    {
+      "stable_id": "AM0104",
+      "parent_id": "AM01",
+      "level": 1,
+      "status": "reference",
+      "lane": "tree"
+    },
+    {
+      "stable_id": "AM0104.01",
+      "parent_id": "AM0104",
+      "level": 2,
+      "status": "validated",
+      "lane": "tree"
+    }
+  ],
+  "overlay_lane_edges": [
+    {
+      "stable_parent_id": "AM01",
+      "stable_child_id": "AM0101",
+      "status": "superseded",
+      "confidence": 0.5,
+      "evidence_refs": [
+        "process-std-am/forest.csv#AM0101"
+      ],
+      "lane": "overlay"
+    },
+    {
+      "stable_parent_id": "AM0104.01",
+      "stable_child_id": "AM0104.01.10",
+      "status": "candidate",
+      "confidence": 0.9,
+      "evidence_refs": [
+        "process-std-am/forest.csv#AM0104.01.10"
+      ],
+      "lane": "overlay"
+    },
+    {
+      "stable_parent_id": "AM0104.01.10",
+      "stable_child_id": "AM0104.01.10.02",
+      "status": "proposed",
+      "confidence": 0.75,
+      "evidence_refs": [
+        "process-std-am/forest.csv#AM0104.01.10.02"
+      ],
+      "lane": "overlay"
+    },
+    {
+      "stable_parent_id": "AM03",
+      "stable_child_id": "AM0301",
+      "status": "inferred",
+      "confidence": 0.6,
+      "evidence_refs": [
+        "process-std-am/forest.csv#AM0301"
+      ],
+      "lane": "overlay"
+    },
+    {
+      "stable_parent_id": "AM06",
+      "stable_child_id": "AM0601",
+      "status": "guessed",
+      "confidence": 0.4,
+      "evidence_refs": [
+        "process-std-am/forest.csv#AM0601"
+      ],
+      "lane": "overlay"
+    },
+    {
+      "stable_parent_id": "AM08",
+      "stable_child_id": "AM0801",
+      "status": "rejected",
+      "confidence": 0.2,
+      "evidence_refs": [
+        "process-std-am/forest.csv#AM0801"
+      ],
+      "lane": "overlay"
+    }
+  ],
+  "sidecar": {
+    "schema": "graphify_scene_hierarchies_v1",
+    "generated_at": "2026-06-27T14:45:57.028Z",
+    "graph_hash": "uat-lifecycle",
+    "hierarchies": {
+      "am_process_lifecycle": {
+        "relation_type": "parent_process_of",
+        "kind": "tree",
+        "root_ids": [
+          "AM01"
+        ],
+        "max_depth": 2,
+        "nodes_by_id": {
+          "AM01": {
+            "parent_id": null,
+            "child_ids": [
+              "AM0104"
+            ],
+            "level": 0,
+            "status": "reference",
+            "registry_record_id": "AM01"
+          },
+          "AM0104": {
+            "parent_id": "AM01",
+            "child_ids": [
+              "AM0104.01"
+            ],
+            "level": 1,
+            "status": "reference",
+            "registry_record_id": "AM0104"
+          },
+          "AM0104.01": {
+            "parent_id": "AM0104",
+            "child_ids": [],
+            "level": 2,
+            "status": "validated",
+            "registry_record_id": "AM0104.01"
+          }
+        },
+        "overlay_arcs": [
+          {
+            "parent_id": "AM01",
+            "child_id": "AM0101",
+            "status": "superseded",
+            "confidence": 0.5,
+            "evidence_refs": [
+              "process-std-am/forest.csv#AM0101"
+            ]
+          },
+          {
+            "parent_id": "AM0104.01",
+            "child_id": "AM0104.01.10",
+            "status": "candidate",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "process-std-am/forest.csv#AM0104.01.10"
+            ]
+          },
+          {
+            "parent_id": "AM0104.01.10",
+            "child_id": "AM0104.01.10.02",
+            "status": "proposed",
+            "confidence": 0.75,
+            "evidence_refs": [
+              "process-std-am/forest.csv#AM0104.01.10.02"
+            ]
+          },
+          {
+            "parent_id": "AM03",
+            "child_id": "AM0301",
+            "status": "inferred",
+            "confidence": 0.6,
+            "evidence_refs": [
+              "process-std-am/forest.csv#AM0301"
+            ]
+          },
+          {
+            "parent_id": "AM06",
+            "child_id": "AM0601",
+            "status": "guessed",
+            "confidence": 0.4,
+            "evidence_refs": [
+              "process-std-am/forest.csv#AM0601"
+            ]
+          },
+          {
+            "parent_id": "AM08",
+            "child_id": "AM0801",
+            "status": "rejected",
+            "confidence": 0.2,
+            "evidence_refs": [
+              "process-std-am/forest.csv#AM0801"
+            ]
+          }
+        ],
+        "orphan_ids": [],
+        "cycles": [],
+        "conflicts": [],
+        "dangling_arc_count": 0
+      }
+    }
+  }
+}
