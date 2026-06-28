@@ -22,6 +22,10 @@
     paintBoxTextOverlay as paintBoxOverlay,
     toggleBackend,
   } from "../lib/renderBackend.js";
+  import {
+    createHoverIntent,
+    shouldDelayConnectedDim,
+  } from "../lib/hoverIntent.js";
 
   const EMPTY_SCENE = {
     nodes: [],
@@ -38,8 +42,24 @@
   const NODE_TIGHT_SLOP = 4;
   const HOVER_EDGE_COLOR = [37, 99, 235, 255];
   const MERGE_ANIMATION_DURATION_MS = 520;
-  // Hide edges during pan/zoom when nodes+edges exceed this, for interaction fluidity on large graphs.
-  const EDGE_SKIP_THRESHOLD = 1000;
+  // CANVAS2D ONLY: hide edges during active pan/zoom/drag when nodes+edges exceed
+  // this, for interaction fluidity (a legacy SVG-era guard). WebGL2 NEVER skips
+  // (GPU-instanced edges are cheap) — see `skipEdgesOnInteract`.
+  //
+  // Threshold raised 1000 → 6000 from a Skia/Canvas2D bench (Skia is the SAME
+  // rasterizer Chrome's 2D canvas uses), median per-frame full render() at
+  // 1440×900 DPR1 (.graphify/scratch/edge-skip-bench.mjs):
+  //   ·   1000 obj (old threshold): ~2.9 ms  (~343 fps) — skipping was absurdly
+  //       over-conservative for graphs this cheap.
+  //   ·   mystery 5676 obj (1983n/3693e): ~17 ms (~58 fps), ~13 ms of it edges.
+  //   ·   5k edges  / 7500 obj:  ~22.5 ms (~44 fps)
+  //   ·  10k edges  / 15000 obj: ~45 ms   (~22 fps)
+  //   ·  20k edges  / 28000 obj: ~87 ms   (~11 fps)
+  // 6000 sits just ABOVE mystery scale so typical graphs (incl. mystery) keep
+  // edges live during interaction (~58 fps, smooth), and just BELOW the 5k-edge
+  // step so denser graphs — and especially 10k+ edges (the non-regression guard)
+  // — still skip edges during pan/zoom to stay fluid. (See PR description.)
+  const EDGE_SKIP_THRESHOLD = 6000;
   // Delay before restoring edges after the last wheel/zoom event settles.
   const ZOOM_SETTLE_MS = 150;
   // Boxed labels: show a label for nodes whose degree >= this fraction of the max
@@ -85,15 +105,20 @@
   let pixelRatio = 1;
   let mounted = false;
 
-  // Dual-render BETA switch (Ctrl+Shift+X). Mode A = canvas2d (DEFAULT). Mode B
-  // = WebGL2 beta. Default unchanged: the studio always boots on canvas2d.
-  let activeBackend = $state(CANVAS2D_BACKEND);
-  // True when a switch to mode B found no WebGL2 context and reverted to A.
+  // Dual-render switch (Ctrl+Shift+X). Mode A = canvas2d, Mode B = WebGL2.
+  // P6 FLIP: the studio now BOOTS on WebGL2 (instancedShapes). `ensureRenderer`
+  // uses the EXISTING graceful fallback — when no WebGL2 context is available it
+  // reverts to canvas2d (mode A) and sets `backendUnavailable`. Ctrl+Shift+X
+  // still toggles both ways.
+  let activeBackend = $state(WEBGL2_BACKEND);
+  // True when WebGL2 was requested but no context was available, so we reverted
+  // to canvas2d — set at boot (fallback) or on a failed manual switch.
   let backendUnavailable = $state(false);
-  // Render-mode badge. HIDDEN by default (clean UI on boot); the FIRST
-  // Ctrl+Shift+X / badge-click reveals it, after which it stays visible and
-  // reflects the live backend on every subsequent switch. `justToggled` briefly
-  // pulses it right after a switch.
+  // Render-mode badge. On a successful WebGL2 boot it stays HIDDEN (clean UI);
+  // the FIRST Ctrl+Shift+X / badge-click reveals it. When the WebGL2 boot FALLS
+  // BACK to canvas2d (`backendUnavailable`) the badge is REVEALED immediately so
+  // the user sees the unavailable state. Once visible it reflects the live
+  // backend on every subsequent switch; `justToggled` briefly pulses it.
   let switchActivated = $state(false);
   let justToggled = $state(false);
   let indicatorTimer = null;
@@ -109,6 +134,10 @@
   let hoveredEdge = $state(null);
   let hoveredNode = $state(null);
   let hoveredNodeId = $state(null);
+  // Hover-intent dwell timer controller (Task B): defers the rest-of-graph
+  // connected-dim until the pointer DWELLS, but ONLY before the first
+  // selection/focus, so a pre-selection sweep across the graph no longer strobes.
+  const hoverIntent = createHoverIntent(() => applyConnectedDim());
 
   // Scene identity tracking so we only auto-fit on a genuine new graph (not selection/focus).
   let lastScene = null;
@@ -119,8 +148,15 @@
   // + edge endpoints): a recompute that yields the SAME content does NOT refit,
   // which also preserves a dragged node's position across an incidental rebuild.
   let lastSceneKey = null;
-  // True when the current update path is a real scene/graph-data change (mount/new graph/resize).
-  let skipEdgesOnInteract = false;
+  // BACKEND-AWARE edge-skip during active pan/zoom/drag. WebGL2 NEVER skips
+  // (GPU-instanced edges are cheap), so this is false whenever the active backend
+  // is WebGL2 — edges always render during interaction. On Canvas2D it skips only
+  // past EDGE_SKIP_THRESHOLD objects. `$derived` so a Ctrl+Shift+X backend flip
+  // (or a boot fallback to canvas2d) re-evaluates it immediately.
+  const skipEdgesOnInteract = $derived(
+    activeBackend !== WEBGL2_BACKEND &&
+      (scene?.nodes?.length ?? 0) + (scene?.edges?.length ?? 0) > edgeSkipThreshold,
+  );
   // Zoom-settle debounce timer: full-edge render after the last wheel event settles.
   let zoomSettleTimer = null;
 
@@ -191,10 +227,11 @@
   //
   // The renderer is built from `activeBackend` (the dual-render switch):
   //   Mode A = createGraphRenderer(canvas, { backend: "canvas2d", pixelRatio }).
-  //   Mode B = { backend: "webgl", instancedShapes: true, pixelRatio }.
-  // `createBackendRenderer` degrades gracefully: when mode B is requested but no
-  // WebGL2 context is available, it reverts to canvas2d and we flag the
-  // unavailable indicator.
+  //   Mode B = { backend: "webgl", instancedShapes: true, pixelRatio }  ← the
+  //            BOOT DEFAULT after the P6 flip.
+  // `createBackendRenderer` degrades gracefully: when mode B (the default) is
+  // requested but no WebGL2 context is available, it reverts to canvas2d and we
+  // flag `backendUnavailable` (which reveals the badge in its unavailable state).
   function ensureRenderer(force = false) {
     if (!canvas) return false;
 
@@ -372,6 +409,9 @@
 
   // --- Pointer down: node drag (over a node) or pan (over the background) ---
   function handlePointerDown(event) {
+    // A pan/drag is starting — cancel any pending hover-intent dwell so it can't
+    // fire (and dim) mid-interaction.
+    hoverIntent.cancel();
     const id = pickNode(event);
 
     if (id) {
@@ -453,10 +493,8 @@
     clearHoveredEdge({ notify: false, render: false });
     computeNodeDegrees();
     reapplyDraggedPositions();
-
-    // Skip edges during pan/zoom only when the object count is large enough.
-    const objectCount = (scene?.nodes?.length ?? 0) + (scene?.edges?.length ?? 0);
-    skipEdgesOnInteract = objectCount > edgeSkipThreshold;
+    // NB: `skipEdgesOnInteract` is a backend-aware `$derived` (declared above) —
+    // no imperative recompute here, so a backend flip updates it reactively.
   }
 
   // Re-write any user-dragged node positions onto the freshly-built payload so a
@@ -846,21 +884,41 @@
       hoveredNode = null;
     }
 
-    if (mounted && payload) {
-      const style = buildConnectedDimStyle(payload, {
-        selectedIds: selectedIds ?? [],
-        focusId,
-        hoveredNodeId,
-      });
-      if (renderer && style) {
-        payload = { ...payload, style };
-        renderer.setStyle(style);
-        renderNow();
-      }
-    }
+    // Rest-of-graph connected-dim. Gated by hover-intent: immediate when a
+    // selection/focus already exists (unchanged behavior) OR when the hover is
+    // clearing (restore base now); otherwise DEFERRED behind a ~200ms dwell so a
+    // pre-first-selection sweep across the graph no longer strobes dim/undim.
+    requestConnectedDim(Boolean(nodeId));
 
-    // Always-on label for the hovered node (plus the god-node set).
+    // The hovered node's OWN feedback (tooltip + label) stays immediate — only
+    // the rest-of-graph dim is delayed.
     updateLabels();
+  }
+
+  // Apply the connected-dim style for the CURRENT hover/selection/focus through
+  // the style buffers (no full payload rebuild). Pulled out of setHoveredNode so
+  // the hover-intent dwell timer can invoke it once the pointer settles.
+  function applyConnectedDim() {
+    if (!(mounted && payload)) return;
+    const style = buildConnectedDimStyle(payload, {
+      selectedIds: selectedIds ?? [],
+      focusId,
+      hoveredNodeId,
+    });
+    if (renderer && style) {
+      payload = { ...payload, style };
+      renderer.setStyle(style);
+      renderNow();
+    }
+  }
+
+  // Gate the rest-of-graph dim through the hover-intent dwell. Immediate when a
+  // selection/focus already exists OR when the hover is clearing (no target →
+  // restore base now); otherwise deferred until the pointer dwells.
+  function requestConnectedDim(hasHoverTarget) {
+    const immediate =
+      !shouldDelayConnectedDim({ selectedIds, focusId }) || !hasHoverTarget;
+    hoverIntent.request({ immediate });
   }
 
   function handlePointerLeave() {
@@ -990,6 +1048,9 @@
     // zoom and pan instead of resetting the view.
     selectedIds;
     focusId;
+    // A selection/focus appearing supersedes any pending pre-selection hover
+    // dwell — updateSelection() rebuilds the (selection-dimmed) style itself.
+    hoverIntent.cancel();
     updateSelection();
   });
 
@@ -1030,6 +1091,7 @@
       window.removeEventListener("keydown", handleKeydown);
       if (resizeFrame !== null) window.cancelAnimationFrame(resizeFrame);
       if (indicatorTimer !== null) window.clearTimeout(indicatorTimer);
+      hoverIntent.cancel();
       cancelMergeFrame();
       renderer?.destroy();
       renderer = null;
@@ -1082,10 +1144,12 @@
     aria-hidden="true"
   ></canvas>
 
-  <!-- Render-backend badge. HIDDEN until the first Ctrl+Shift+X (clean default
-       UI); once revealed it stays visible, reflects the live mode, and doubles
-       as a click target to switch (same as the shortcut). -->
-  {#if switchActivated}
+  <!-- Render-backend badge. On a successful WebGL2 boot it stays HIDDEN until the
+       first Ctrl+Shift+X (clean default UI); a boot fallback to canvas2d
+       (`backendUnavailable`) REVEALS it immediately so the unavailable state is
+       visible. Once revealed it reflects the live mode and doubles as a click
+       target to switch (same as the shortcut). -->
+  {#if switchActivated || backendUnavailable}
     <button
       type="button"
       class="render-indicator"
