@@ -25,7 +25,13 @@ export const WEBGL2_BACKEND = "webgl";
  */
 export function rendererOptionsFor(backend, pixelRatio) {
   if (backend === WEBGL2_BACKEND) {
-    return { backend: WEBGL2_BACKEND, instancedShapes: true, pixelRatio };
+    // Mode B (WebGL2 beta) requests a MULTISAMPLED context (antialias:true) so the
+    // GPU edges + node-shape borders get MSAA smoothing — without it the beta read
+    // more JAGGED than Canvas2D in real-browser UAT (the renderer's acquireContext
+    // honours options.antialias, which defaults to false). The Canvas2D branch and
+    // the golden harness are intentionally left untouched (the golden capture keeps
+    // its own deterministic context options).
+    return { backend: WEBGL2_BACKEND, instancedShapes: true, antialias: true, pixelRatio };
   }
   return { backend: CANVAS2D_BACKEND, pixelRatio };
 }
