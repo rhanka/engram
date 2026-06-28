@@ -29,7 +29,7 @@ import { shapeCode } from "../../src/shape-geometry";
 // @ts-expect-error -- .mjs harness modules are plain ESM, no types needed.
 import { openOracle } from "./cdp-harness.mjs";
 // @ts-expect-error
-import { diffPixels, geometryProbes, worldToDevice } from "./diff.mjs";
+import { diffPixels, geometryProbes, worldToDevice, countColorPixels } from "./diff.mjs";
 // @ts-expect-error
 import { SHAPE_FAMILIES, shapeFixture, SHAPE_ZOOM_MATRIX, DPR_MATRIX } from "./fixtures.mjs";
 
@@ -190,6 +190,60 @@ describe("B1 Phase 1 — shape pixel parity (WebGL vs Canvas2D, Chrome/CDP)", ()
       for (const r of results) {
         expect(r.pass, `${r.name}: failing=${r.failingPixels} maxDelta=${r.maxDelta}`).toBe(true);
       }
+
+      // -------------------------------------------------------------------
+      // OUTLINE WIDTH PARITY (B1 beta fidelity bug). The FAMILIES above are all
+      // SOLID fills, so they NEVER exercise the node BORDER — the path the beta
+      // rendered TOO THIN, which is why this oracle passed despite the visible
+      // bug. Canvas2D strokes the border CENTRED on the drawn radius (a band of
+      // (bold?3:1.5)·PR spanning [radius-half, radius+half]); the pre-fix WebGL
+      // ring was INSIDE-ONLY (a disc out to `radius`, carved from the inside),
+      // and for solid+bold the border was hidden entirely by the full-radius
+      // fill. We probe a pixel on the OUTER half of the Canvas2D stroke ring
+      // (radius + 1 device px): node-colour on Canvas2D AND the fixed WebGL ring,
+      // BACKGROUND on the pre-fix inside-only ring. So this FAILS on the too-thin
+      // outline and PASSES once the ring is centred at the correct width.
+      const borderRgb: [number, number, number] = [22, 163, 74]; // #16a34a
+      const hbFixture = {
+        nodes: [{ id: "hb", x: 0, y: 0, size: 20, color: "#16a34a", shape: "circle", fill: "hollow", border: "bold" }],
+        edges: [],
+      };
+      const hbRef = await oracle.capture(hbFixture, { ...opts, backend: "canvas2d" });
+      const hbGl = await oracle.capture(hbFixture, { ...opts, backend: "webgl", instancedShapes: true });
+      expect(hbGl.backend, "hollow-bold: expected webgl backend").toBe("webgl");
+
+      const view = { width: hbGl.width, height: hbGl.height, zoom, camera: { x: 0, y: 0 } };
+      const [cx, cy] = worldToDevice([0, 0], view);
+      const radius = drawnRadius(20, dpr, zoom); // 40 device px @ dpr 2
+      // Outer-half-of-ring probe: only painted when the border is centred at the
+      // correct (Canvas2D) width — NOT by the pre-fix inside-only ring.
+      const probeX = cx + radius + 1;
+      const refProbe = geometryProbes(hbRef, [
+        { name: "ref-border-outer", x: probeX, y: cy, expect: [...borderRgb, 255], tolerance: 40 },
+      ]);
+      const glProbe = geometryProbes(hbGl, [
+        { name: "gl-border-outer", x: probeX, y: cy, expect: [...borderRgb, 255], tolerance: 40 },
+      ]);
+      // Secondary: the WebGL border must paint a comparable amount of node-colour
+      // ink to Canvas2D (the pre-fix washed/inside-only ring paints much less).
+      const refBorderInk = countColorPixels(hbRef, borderRgb, 50);
+      const glBorderInk = countColorPixels(hbGl, borderRgb, 50);
+      const borderRatio = refBorderInk > 0 ? glBorderInk / refBorderInk : 0;
+      // eslint-disable-next-line no-console
+      console.log(
+        `[shapes-golden] OUTLINE width parity: refProbe=${JSON.stringify(refProbe.results[0].got)} ` +
+          `glProbe=${JSON.stringify(glProbe.results[0].got)} ` +
+          `refBorderInk=${refBorderInk} glBorderInk=${glBorderInk} ratio=${borderRatio.toFixed(3)}`,
+      );
+      expect(refProbe.pass, "canvas2d border ring must cover radius+1 (sanity)").toBe(true);
+      expect(
+        glProbe.pass,
+        `WebGL hollow-bold border too thin/inside-only at radius+1 (got ${JSON.stringify(glProbe.results[0].got)})`,
+      ).toBe(true);
+      expect(
+        borderRatio,
+        `WebGL border ink ratio ${borderRatio.toFixed(3)} too low — outline under-weighted vs Canvas2D`,
+      ).toBeGreaterThanOrEqual(0.6);
     } finally {
       await oracle.close();
     }
