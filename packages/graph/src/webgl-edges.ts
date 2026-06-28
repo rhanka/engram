@@ -93,10 +93,19 @@ void main() {
   vec2 dir = len > 1e-6 ? d / len : vec2(1.0, 0.0);
   vec2 nrm = vec2(-dir.y, dir.x);
 
-  // Pad each end by the half-width so the round cap fits inside the quad.
-  float pad = a_halfWidth;
+  // Pad each end by the half-width (so the round cap fits) PLUS a ~1.5px AA
+  // margin. WITHOUT the AA margin the quad ended at exactly a_halfWidth across,
+  // which clipped the fragment SDF's OUTER coverage feather (smoothstep up to
+  // a_halfWidth + fwidth): the outer ~1px of the stroke was never rasterized, so
+  // a WebGL edge rendered ~1px THINNER than the Canvas2D line of the SAME
+  // max(1,width·PR) width (the B1 beta fidelity bug). The SDF still puts the
+  // 50%-coverage isoline at exactly a_halfWidth, so padding the quad widens the
+  // rasterized region to fit the feather WITHOUT changing the drawn width --
+  // matching Canvas2D. Mirrors webgl-boxes a_half + a_border quad pad.
+  float aaPad = 1.5;
+  float pad = a_halfWidth + aaPad;
   float along = a_corner.x * (len + 2.0 * pad) - pad;        // [-pad .. len+pad]
-  float across = a_corner.y * a_halfWidth;                   // [-hw .. hw]
+  float across = a_corner.y * (a_halfWidth + aaPad);         // [-hw-aa .. hw+aa]
   vec2 screen = a_p0 + dir * along + nrm * across;
 
   // Local frame centred on the segment midpoint: x along, y across.
@@ -133,12 +142,19 @@ void main() {
   vec2 closest = vec2(ax, 0.0);
   float dist = distance(v_local, closest);
 
-  // ~1px SDF coverage AA at the capsule boundary so the stroke rim approximates
-  // Canvas2D's analytic-coverage AA (the MSAA-on-the-quad-triangles the golden
-  // capture requests does NOT smooth this in-quad boundary, so we feather it
-  // here). The hard core (dist << halfWidth) stays fully opaque.
-  float aa = fwidth(dist);
-  float cov = 1.0 - smoothstep(v_halfWidth - aa, v_halfWidth + aa, dist);
+  // ANALYTIC linear coverage at the capsule boundary so the stroke rim
+  // approximates Canvas2D's analytic-coverage AA (the MSAA-on-the-quad-triangles
+  // the golden capture requests does NOT smooth this in-quad boundary, so we
+  // feather it here). A LINEAR ramp of width aa centred on halfWidth -- NOT a
+  // smoothstep -- because smoothstep's inner skirt extends BELOW halfWidth - aa
+  // and, for a THIN stroke (halfWidth comparable to the ~1px aa), that skirt is
+  // truncated at the centerline so the cross-section integral falls below the
+  // true width: the stroke renders TOO THIN (the B1 beta fidelity bug). The
+  // linear ramp clamp((halfWidth - dist)/aa + 0.5, 0, 1) keeps the centerline
+  // fully opaque whenever halfWidth >= aa/2 and integrates to EXACTLY 2·halfWidth
+  // (= the Canvas2D max(1,width·PR) width), so thin and thick strokes both match.
+  float aa = max(fwidth(dist), 1e-4);
+  float cov = clamp((v_halfWidth - dist) / aa + 0.5, 0.0, 1.0);
   if (cov <= 0.0) discard;
 
   // Arc-length dashing with ROUND PIPS (E3 + E14). Canvas2D sets lineCap="round"
@@ -163,8 +179,9 @@ void main() {
     // Capsule SDF of the pip: combine the across-distance (v_local.y) with the
     // along-overrun so the cap is round in BOTH axes, ≤ v_halfWidth keeps it.
     float pipDist = length(vec2(dAlong, v_local.y));
-    float aaPip = fwidth(pipDist);
-    float pipCov = 1.0 - smoothstep(v_halfWidth - aaPip, v_halfWidth + aaPip, pipDist);
+    float aaPip = max(fwidth(pipDist), 1e-4);
+    // Analytic linear coverage (same width-conserving rule as the core stroke).
+    float pipCov = clamp((v_halfWidth - pipDist) / aaPip + 0.5, 0.0, 1.0);
     // The straight-segment coverage already handled the across axis for the
     // on-core; gate by the pip capsule so caps/gaps read round.
     coverage = min(coverage, pipCov);

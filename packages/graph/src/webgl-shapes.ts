@@ -321,36 +321,49 @@ export function buildShapeInstances(frame: WebGLShapeFrame): ShapeInstanceSet {
     const fillList = fill.get(family)!;
     const borderList = border.get(family)!;
 
+    // Stroke HALF-width in device px. Canvas2D strokes a line of width
+    // (bold?BOLD:NORMAL)·PR CENTRED on the glyph outline, so the visible border
+    // ring must span [radius - strokeHalf, radius + strokeHalf]. The two-disc
+    // ring is therefore built CENTRED on the radius (outer disc at radius +
+    // strokeHalf, carved by an inner disc at radius - strokeHalf) — NOT the old
+    // inside-only `radius - width` ring, which under-weighted the outline and
+    // (for solid+bold) was fully hidden by the full-radius fill disc.
+    const strokeHalf = strokeHalfWidth(bold, frame.pixelRatio);
+
     if (hollow) {
-      // Interior: FIXED translucent white, alpha-INDEPENDENT (N10). Only the
-      // border carries the dim/merge alpha.
-      pushInstance(fillList, cx, cy, radius, BOX_FILL[0], BOX_FILL[1], BOX_FILL[2], BOX_FILL[3] / 255, depth);
-      // Border: node colour at node alpha, drawn as a slightly-inset second
-      // pass scaled down by the stroke width so the ring reads (approximation
-      // of the Canvas2D stroke; tightened in a later phase).
-      const inset = strokeInset(radius, bold, frame.pixelRatio);
-      pushInstance(borderList, cx, cy, radius, nodeColor[0], nodeColor[1], nodeColor[2], alpha, depth);
-      pushInstance(fillList, cx, cy, Math.max(0, radius - inset), BOX_FILL[0], BOX_FILL[1], BOX_FILL[2], BOX_FILL[3] / 255, depth);
+      // Hollow glyph: a node-colour border RING centred on the drawn radius over
+      // a FIXED translucent-white interior (alpha-INDEPENDENT, N10). The ring is
+      // a node-colour disc out to radius + strokeHalf (drawn UNDER) carved by the
+      // translucent-white interior disc at radius - strokeHalf (drawn ON TOP), so
+      // the visible ring spans [radius - strokeHalf, radius + strokeHalf] — the
+      // SAME width AND position Canvas2D strokes. Only the border carries the
+      // node alpha; the interior keeps the fixed white.
+      pushInstance(borderList, cx, cy, radius + strokeHalf, nodeColor[0], nodeColor[1], nodeColor[2], alpha, depth);
+      pushInstance(fillList, cx, cy, Math.max(0, radius - strokeHalf), BOX_FILL[0], BOX_FILL[1], BOX_FILL[2], BOX_FILL[3] / 255, depth);
+    } else if (bold) {
+      // Solid + bold: a darkened-colour border RING (factor 0.62) centred on the
+      // radius, exactly like the Canvas2D solid+bold stroke. The outer darkened
+      // disc (radius + strokeHalf, drawn UNDER) is carved by the node-colour
+      // interior disc at radius - strokeHalf (drawn ON TOP), leaving a centred
+      // [radius - strokeHalf, radius + strokeHalf] ring. (The old code drew the
+      // darkened disc at `radius` UNDER a full-radius node-colour fill, which hid
+      // the border entirely — the worst case of the under-weight bug.)
+      const d = darken(nodeColor);
+      pushInstance(borderList, cx, cy, radius + strokeHalf, d[0], d[1], d[2], alpha, depth);
+      pushInstance(fillList, cx, cy, Math.max(0, radius - strokeHalf), nodeColor[0], nodeColor[1], nodeColor[2], alpha, depth);
     } else {
-      // Solid fill at node colour + alpha.
+      // Solid fill at node colour + alpha (no border).
       pushInstance(fillList, cx, cy, radius, nodeColor[0], nodeColor[1], nodeColor[2], alpha, depth);
-      if (bold) {
-        // Solid+bold: darkened-colour border ring (factor 0.62) under the fill.
-        const d = darken(nodeColor);
-        const inset = strokeInset(radius, true, frame.pixelRatio);
-        pushInstance(borderList, cx, cy, radius, d[0], d[1], d[2], alpha, depth);
-        pushInstance(fillList, cx, cy, Math.max(0, radius - inset), nodeColor[0], nodeColor[1], nodeColor[2], alpha, depth);
-      }
     }
   }
 
   return { fill, border, nonFiniteCount };
 }
 
-/** Stroke half-width inset for the ring approximation (device px). */
-function strokeInset(radius: number, bold: boolean, pixelRatio: number): number {
-  const width = (bold ? BORDER_WIDTH_BOLD : BORDER_WIDTH_NORMAL) * pixelRatio;
-  return Math.min(radius, width);
+/** Stroke HALF-width in device px: (bold?BOLD:NORMAL)·PR / 2 (Canvas2D centres
+ *  a stroke of (bold?BOLD:NORMAL)·PR on the outline, so each side is HALF). */
+function strokeHalfWidth(bold: boolean, pixelRatio: number): number {
+  return ((bold ? BORDER_WIDTH_BOLD : BORDER_WIDTH_NORMAL) * pixelRatio) / 2;
 }
 
 function pushInstance(
