@@ -278,6 +278,7 @@ mkdirSync(outDir, { recursive: true });
 for (const f of [
   "scene.json",
   "scene-hierarchies.json",
+  "class-hierarchies.json",
   "graph.json",
   "reconciliation-candidates.json",
   "entities.json",
@@ -328,10 +329,15 @@ let classHierarchiesResult = { written: false, path: null, artifact: null };
 if (args.profile) {
   try {
     const ontologyProfile = loadOntologyProfile(args.profile);
+    // Emit into the bundle OUT dir (next to scene.json), mirroring
+    // emitSceneHierarchies(sceneDir: outDir) + buildStaticStudio — the SPA
+    // fetches class-hierarchies.json from the bundle root to drive the group-by
+    // / ontology-tree facets. (Previously written to <state>/ontology, so static
+    // exports shipped WITHOUT it and lost the group-by taxonomy.)
     classHierarchiesResult = emitClassHierarchies({
       classHierarchies: ontologyProfile.class_hierarchies,
       graphNodes: nodes,
-      ontologyOutputDir: join(stateDir, "ontology"),
+      ontologyOutputDir: outDir,
       profileHash: ontologyProfile.profile_hash,
     });
   } catch (err) {
