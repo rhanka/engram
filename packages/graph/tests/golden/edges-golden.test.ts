@@ -40,7 +40,7 @@ import {
 // @ts-expect-error -- .mjs harness modules are plain ESM, no types needed.
 import { openOracle } from "./cdp-harness.mjs";
 // @ts-expect-error
-import { countColorPixels, contentBBox } from "./diff.mjs";
+import { countColorPixels, contentBBox, inkMass } from "./diff.mjs";
 // @ts-expect-error
 import { EDGE_GL_FIXTURES } from "./fixtures.mjs";
 
@@ -341,6 +341,47 @@ describe("B1 Phase 2 — edge pixel parity (WebGL vs Canvas2D, Chrome/CDP)", () 
       for (const r of results) {
         expect(r.pass, `${r.name}: ${r.note}`).toBe(true);
       }
+
+      // -------------------------------------------------------------------
+      // E1 WIDTH PARITY (B1 beta fidelity bug — was masked by the loose
+      // 0.5..2.0 ink-ratio above). The instanced capsule expanded its quad to
+      // EXACTLY ±halfWidth, which CLIPPED the fragment SDF's outer coverage
+      // feather, so a WebGL edge rendered ~1px THINNER than the Canvas2D line of
+      // the same max(1,width·PR) width. A THIN edge (≈2 device px here) makes
+      // that lost ~1px a LARGE fraction of the stroke, so the under-weight shows
+      // up as proportionally FEWER edge-colour pixels. We require the WebGL
+      // edge-ink to stay within a TIGHT ratio of Canvas2D — this FAILS on the
+      // pre-fix capsule and PASSES once the quad is padded to fit the feather.
+      const thinRgb: [number, number, number] = [190, 24, 93]; // pink-700
+      const thinFixture = {
+        nodes: [
+          { id: "tn0", x: -120, y: 0, size: 8, color: "#cbd5e1", shape: "circle" },
+          { id: "tn1", x: 120, y: 0, size: 8, color: "#cbd5e1", shape: "circle" },
+        ],
+        edges: [{ source: "tn0", target: "tn1", width: 1, color: "#be185d", dash: "solid" }],
+      };
+      const thinRef = await oracle.capture(thinFixture, { ...opts, backend: "canvas2d" });
+      const thinGl = await oracle.capture(thinFixture, { ...opts, backend: "webgl", instancedShapes: true });
+      expect(thinGl.backend, "thin edge: expected webgl backend").toBe("webgl");
+      // Measure the AA-INVARIANT ink mass in a CENTRAL band that holds ONLY the
+      // edge (no endpoint nodes): the green channel is the high-contrast one for
+      // pink (#be185d, G=24). Ink mass ∝ stroke width, independent of how each
+      // rasterizer spreads its AA — so it isolates WIDTH from softness.
+      const cx = thinGl.width / 2;
+      const band = { x0: cx - 50, x1: cx + 50, y0: 0, y1: thinGl.height };
+      const thinRefMass = inkMass(thinRef, band, 1);
+      const thinGlMass = inkMass(thinGl, band, 1);
+      const thinRatio = thinRefMass > 0 ? thinGlMass / thinRefMass : 0;
+      // eslint-disable-next-line no-console
+      console.log(
+        `[edges-golden] E1 thin-edge WIDTH parity (ink mass): glMass=${thinGlMass} refMass=${thinRefMass} ratio=${thinRatio.toFixed(3)}`,
+      );
+      expect(thinRefMass, "canvas2d thin edge must paint ink").toBeGreaterThan(0);
+      expect(
+        thinRatio,
+        `thin-edge width-parity ratio ${thinRatio.toFixed(3)} below floor — WebGL edge is too thin vs Canvas2D`,
+      ).toBeGreaterThanOrEqual(0.85);
+      expect(thinRatio, `thin-edge ratio ${thinRatio.toFixed(3)} above ceiling — WebGL edge is too thick`).toBeLessThanOrEqual(1.3);
     } finally {
       await oracle.close();
     }
