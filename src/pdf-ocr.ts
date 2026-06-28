@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { join, resolve } from "node:path";
 import type { DetectionResult } from "./types.js";
 import { extractPdfTextLayer, pdfOcrSidecarStem, parsePdfOcrMode, preflightPdf, type PdfOcrMode, type PdfPreflightResult } from "./pdf-preflight.js";
+import { buildPdfOcrPagesSidecar } from "./pdf-ocr-refs.js";
 
 const MISTRAL_OCR_PACKAGE = "mistral-ocr";
 const DEFAULT_OCR_MODEL = "mistral-ocr-4-0";
@@ -48,7 +49,11 @@ function countWords(text: string): number {
   return text.split(/\s+/).filter(Boolean).length;
 }
 
-function metadataPath(markdownPath: string): string {
+function prepMetadataPath(markdownPath: string): string {
+  return markdownPath.replace(/\.md$/i, ".prep.json");
+}
+
+function ocrPagesSidecarPath(markdownPath: string): string {
   return markdownPath.replace(/\.md$/i, ".ocr.json");
 }
 
@@ -130,7 +135,7 @@ async function preparePdf(
   const stem = pdfOcrSidecarStem(filePath, preflight.sha256);
   const markdownPath = join(outputDir, stem + ".md");
   const imageOutputDir = join(outputDir, stem + "_images");
-  const ocrMetadataPath = metadataPath(markdownPath);
+  const prepPath = prepMetadataPath(markdownPath);
 
   if (existsSync(markdownPath)) {
     const provider = preflight.shouldOcr ? "mistral-ocr" : preflight.textLayerProvider === "pdftotext" ? "pdftotext" : "unpdf";
@@ -144,7 +149,7 @@ async function preparePdf(
       reason: "sidecar_exists",
       preflight,
     };
-    writeMetadata(ocrMetadataPath, artifact);
+    writeMetadata(prepPath, artifact);
     return artifact;
   }
 
@@ -164,7 +169,7 @@ async function preparePdf(
           reason: preflight.reason,
           preflight,
         };
-        writeMetadata(ocrMetadataPath, artifact);
+        writeMetadata(prepPath, artifact);
         return artifact;
       }
     }
@@ -197,14 +202,28 @@ async function preparePdf(
 
   try {
     const mistralOcr = await loadMistralOcrModule();
-    await mistralOcr.convertPdf(resolve(filePath), {
+    const ocrModel = options.model ?? process.env.GRAPHIFY_PDF_OCR_MODEL ?? DEFAULT_OCR_MODEL;
+    const conversion = await mistralOcr.convertPdf(resolve(filePath), {
       apiKey,
-      model: options.model ?? process.env.GRAPHIFY_PDF_OCR_MODEL ?? DEFAULT_OCR_MODEL,
+      model: ocrModel,
       markdownPath,
       imageOutputDir,
       generateDocx: false,
       logger: false,
     });
+    // Additive capture: when Mistral OCR v4 returns the structured response,
+    // persist per-page text geometry to <stem>.ocr.json. The markdown sidecar
+    // above is untouched (byte-identical), and this is skipped entirely when the
+    // response is absent (e.g. non-OCR providers / mocked conversions).
+    const ocrPagesSidecar = buildPdfOcrPagesSidecar({
+      ocrResponse: conversion.ocrResponse,
+      source_file: resolve(filePath),
+      sha256: preflight.sha256,
+      model: ocrModel,
+    });
+    if (ocrPagesSidecar) {
+      writeFileSync(ocrPagesSidecarPath(markdownPath), JSON.stringify(ocrPagesSidecar, null, 2), "utf-8");
+    }
     const originalMarkdown = existsSync(markdownPath) ? readFileSync(markdownPath, "utf-8") : "";
     if (originalMarkdown && !originalMarkdown.startsWith("---\n")) {
       writeFileSync(
@@ -230,7 +249,7 @@ async function preparePdf(
       reason: preflight.reason,
       preflight,
     };
-    writeMetadata(ocrMetadataPath, artifact);
+    writeMetadata(prepPath, artifact);
     return artifact;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
