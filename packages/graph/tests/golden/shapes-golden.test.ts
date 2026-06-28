@@ -244,6 +244,57 @@ describe("B1 Phase 1 — shape pixel parity (WebGL vs Canvas2D, Chrome/CDP)", ()
         borderRatio,
         `WebGL border ink ratio ${borderRatio.toFixed(3)} too low — outline under-weighted vs Canvas2D`,
       ).toBeGreaterThanOrEqual(0.6);
+
+      // -------------------------------------------------------------------
+      // HOVER-DIM PARITY (premultiplied-alpha regression). The FAMILIES + the
+      // outline fixture above are all alpha=255 (opaque), where a·a == a, so they
+      // NEVER exercised the alpha-COMPOSITING path — which is exactly why the
+      // straight-alpha + blendFunc(SRC_ALPHA, ONE_MINUS_SRC_ALPHA) bug slipped the
+      // gate. That blend squared the source alpha into the framebuffer, so under
+      // premultipliedAlpha:true a DIMMED (alpha<1) node — e.g. a non-connected node
+      // on hover — composited TOO TRANSPARENT (washed toward the white background)
+      // in WebGL vs Canvas2D. The premultiplied output (rgb·a) + blendFunc(ONE,
+      // ONE_MINUS_SRC_ALPHA) makes the composite correct. We render a solid node at
+      // alpha 0x80 (~0.5) on BOTH backends (composited over the harness white) and
+      // assert the CENTRE pixel matches — the regression guard for the hover-dim bug.
+      const dimFixture = {
+        // "#16a34a80": green at alpha 128/255 (~0.502) — a typical hover-dim node.
+        nodes: [{ id: "dim", x: 0, y: 0, size: 24, color: "#16a34a80", shape: "circle" }],
+        edges: [],
+      };
+      const dimRef = await oracle.capture(dimFixture, { ...opts, backend: "canvas2d" });
+      const dimGl = await oracle.capture(dimFixture, { ...opts, backend: "webgl", instancedShapes: true });
+      expect(dimGl.backend, "hover-dim: expected webgl backend").toBe("webgl");
+
+      const dview = { width: dimGl.width, height: dimGl.height, zoom, camera: { x: 0, y: 0 } };
+      const [dcx, dcy] = worldToDevice([0, 0], dview);
+      // Read the centre pixel on each backend (interior ⇒ fully covered, so AA is
+      // not a factor; only the alpha-compositing math differs). tolerance 1024 just
+      // forces geometryProbes to RETURN `got` without failing on the throwaway expect.
+      const refCenter = geometryProbes(dimRef, [
+        { name: "ref-dim-center", x: dcx, y: dcy, expect: [0, 0, 0, 0], tolerance: 1024 },
+      ]).results[0].got;
+      const glCenter = geometryProbes(dimGl, [
+        { name: "gl-dim-center", x: dcx, y: dcy, expect: [0, 0, 0, 0], tolerance: 1024 },
+      ]).results[0].got;
+      // eslint-disable-next-line no-console
+      console.log(
+        `[shapes-golden] HOVER-DIM parity: refCenter=${JSON.stringify(refCenter)} glCenter=${JSON.stringify(glCenter)}`,
+      );
+      // The WebGL dim composite must match Canvas2D per channel (was washed-white pre-fix).
+      for (let c = 0; c < 3; c += 1) {
+        expect(
+          Math.abs(glCenter[c] - refCenter[c]),
+          `hover-dim channel ${c}: gl ${glCenter[c]} vs ref ${refCenter[c]} (WebGL dim composited unlike Canvas2D)`,
+        ).toBeLessThanOrEqual(20);
+      }
+      // Sanity: the dim node stays GREEN-ish (G well above R) on BOTH backends — a
+      // washed-to-white result (the bug) would collapse G−R toward 0.
+      expect(refCenter[1] - refCenter[0], "canvas2d dim must read green-ish (sanity)").toBeGreaterThan(30);
+      expect(
+        glCenter[1] - glCenter[0],
+        `WebGL dim washed toward white (G−R=${glCenter[1] - glCenter[0]}) — premultiplied-alpha regression`,
+      ).toBeGreaterThan(30);
     } finally {
       await oracle.close();
     }

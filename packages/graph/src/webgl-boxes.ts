@@ -182,7 +182,12 @@ void main() {
   float oa = border.a + fill.a * (1.0 - border.a);
   vec3 orgb = oa > 0.0 ? (border.rgb * border.a + fill.rgb * fill.a * (1.0 - border.a)) / oa : vec3(0.0);
   if (oa <= 0.0) discard;
-  outColor = vec4(orgb, oa);
+  // PREMULTIPLIED output (paired with blendFunc(ONE, ONE_MINUS_SRC_ALPHA)): orgb
+  // is the straight composited colour, so emit orgb·oa. Keeps alpha<1 boxes from
+  // compositing too transparent under premultipliedAlpha:true. (This GL box path
+  // is off by default — the studio + golden use the Canvas2D hybrid overlay — but
+  // it is kept premultiplied-consistent with the shape/edge passes.)
+  outColor = vec4(orgb * oa, oa);
 }
 `;
 
@@ -233,7 +238,10 @@ void main() {
   // by construction (the atlas WAS rasterized by Chrome's 2D engine).
   float cov = texture(u_atlas, v_uv).a;
   if (cov <= 0.0) discard;
-  outColor = vec4(v_color.rgb, cov * v_color.a);
+  // PREMULTIPLIED output (paired with blendFunc(ONE, ONE_MINUS_SRC_ALPHA)): the
+  // effective alpha is the glyph coverage times the node alpha; emit rgb·a.
+  float a = cov * v_color.a;
+  outColor = vec4(v_color.rgb * a, a);
 }
 `;
 
@@ -829,7 +837,8 @@ export function createWebGLBoxRenderer(
     // text atlas, interleaved by a per-node depth buffer for R7 occlusion.
     const maxDepth = Math.max(1, frame.nodeCount);
     gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    // PREMULTIPLIED-alpha "over": the box + text fragments emit premultiplied rgb.
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.enable(gl.DEPTH_TEST);
     gl.depthFunc(gl.LEQUAL);
     gl.depthMask(true);

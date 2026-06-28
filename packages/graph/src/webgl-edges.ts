@@ -61,6 +61,19 @@ const DEFAULT_EDGE_COLOR = [121, 133, 153, 180] as const;
 /** Curve tessellation step count — matches the 16-sample hit-test (X8). */
 const CURVE_SEGMENTS = 16;
 
+/**
+ * UAT polish (fix/webgl-aa-and-stroke-weight): draw the WebGL2 beta edge a touch
+ * HEAVIER than the exact Canvas2D ink-mass. The merged width-parity fix (2266cfa)
+ * matched Canvas2D to ratio ~1.0, but real-browser UAT read the edges slightly
+ * THIN. We scale the DRAWN half-width — the coverage isoline the capsule fragment
+ * shader integrates — by this factor (NOT just the AA pad), so the stroke renders
+ * ~12% thicker. The per-instance `a_halfWidth` attribute stays the EXACT Canvas2D
+ * half-width (max(1,width·PR)/2), so the geometry-parity gate is unchanged; only
+ * the rasterized width grows. Canvas2D itself is untouched. ~12% lands the golden
+ * edge ink-mass ratio around ~1.1 (within the 0.85–1.3 tolerance).
+ */
+export const WEBGL_STROKE_WEIGHT_BOOST = 1.12;
+
 // ---------------------------------------------------------------------------
 // Capsule (thick segment) program. A unit quad [0..1]² is expanded along the
 // segment by the instance's endpoints + half-width. The fragment shader does
@@ -102,16 +115,25 @@ void main() {
   // 50%-coverage isoline at exactly a_halfWidth, so padding the quad widens the
   // rasterized region to fit the feather WITHOUT changing the drawn width --
   // matching Canvas2D. Mirrors webgl-boxes a_half + a_border quad pad.
+  //
+  // UAT polish: the DRAWN half-width is the instance half-width scaled by
+  // WEBGL_STROKE_WEIGHT_BOOST (the edge read slightly THIN at exact parity). This
+  // is the VISIBLE half-width the fragment coverage integrates (v_halfWidth) and
+  // the cap radius — NOT merely the AA pad — so the stroke renders a touch
+  // thicker. a_halfWidth (the instance attribute) stays the exact Canvas2D value,
+  // so geometry-parity is untouched. The quad pad uses drawHalf so the wider
+  // coverage + round caps never get clipped at thick widths.
+  float drawHalf = a_halfWidth * ${WEBGL_STROKE_WEIGHT_BOOST.toFixed(4)};
   float aaPad = 1.5;
-  float pad = a_halfWidth + aaPad;
+  float pad = drawHalf + aaPad;
   float along = a_corner.x * (len + 2.0 * pad) - pad;        // [-pad .. len+pad]
-  float across = a_corner.y * (a_halfWidth + aaPad);         // [-hw-aa .. hw+aa]
+  float across = a_corner.y * (drawHalf + aaPad);            // [-hw-aa .. hw+aa]
   vec2 screen = a_p0 + dir * along + nrm * across;
 
   // Local frame centred on the segment midpoint: x along, y across.
   v_local = vec2(along - len * 0.5, across);
   v_halfLen = len * 0.5;
-  v_halfWidth = a_halfWidth;
+  v_halfWidth = drawHalf;
   v_color = a_color;
   v_arc = a_arcStart + along; // arc-length accumulates along the polyline
   v_dashPeriod = a_dashPeriod;
@@ -188,7 +210,13 @@ void main() {
     if (coverage <= 0.0) discard;
   }
 
-  outColor = vec4(v_color.rgb, v_color.a * coverage);
+  // PREMULTIPLIED alpha output (paired with blendFunc(ONE, ONE_MINUS_SRC_ALPHA)).
+  // The effective alpha is the edge alpha times the analytic coverage; emit
+  // rgb·a so the framebuffer stays premultiplied (premultipliedAlpha:true). The
+  // old straight output + SRC_ALPHA factor under-accumulated the framebuffer
+  // alpha (squared coverage), washing alpha<1 edges out + dark-fringing AA rims.
+  float a = v_color.a * coverage;
+  outColor = vec4(v_color.rgb * a, a);
 }
 `;
 
@@ -234,7 +262,9 @@ precision highp float;
 in vec4 v_color;
 out vec4 outColor;
 void main() {
-  outColor = v_color;
+  // PREMULTIPLIED alpha (paired with blendFunc(ONE, ONE_MINUS_SRC_ALPHA)), so an
+  // alpha<1 arrowhead composites the same way as its (now premultiplied) edge.
+  outColor = vec4(v_color.rgb * v_color.a, v_color.a);
 }
 `;
 
@@ -539,7 +569,10 @@ export function createWebGLEdgeRenderer(context: GL2 | null): WebGLEdgeRenderer 
     const { capsules, arrows } = buildEdgeInstances(frame);
 
     gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    // PREMULTIPLIED-alpha "over": the capsule/arrow fragments emit rgb·a, so the
+    // source factor is ONE. Fixes alpha<1 edges compositing too transparent + the
+    // dark AA fringe the old SRC_ALPHA factor produced under premultipliedAlpha.
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
     if (capsules.length > 0) {
       gl.useProgram(capsule.program);
