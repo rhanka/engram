@@ -43,6 +43,9 @@ describe("dual-render backend lib", () => {
     expect(rendererOptionsFor(WEBGL2_BACKEND, 2)).toEqual({
       backend: "webgl",
       instancedShapes: true,
+      // Mode B requests a MULTISAMPLED context (#229) so GPU edges/borders get
+      // MSAA smoothing — the lib returns antialias:true for WebGL2.
+      antialias: true,
       pixelRatio: 2,
     });
   });
@@ -142,7 +145,8 @@ describe("dual-render backend lib", () => {
   });
 
   it("simulating Ctrl+Shift+X toggles the backend, recreates the renderer, and paints the overlay via boxTextDraws()", () => {
-    // Start in mode A (the default).
+    // Start this toggle simulation from mode A (canvas2d); the toggle mechanics are
+    // backend-agnostic. (The studio BOOT default is WebGL2 — covered separately.)
     let activeBackend = CANVAS2D_BACKEND;
     const draws = [{ nodeIndex: 0, centerX: 1, centerY: 2, height: 8, label: "Hub", borderWidth: 2, borderColor: "rgba(1,2,3,1)", alpha: 1 }];
     // The factory hands out a webgl renderer when webgl is requested (WebGL2
@@ -184,10 +188,20 @@ describe("dual-render backend lib", () => {
 // Source-text guards: the component must wire the lib in (default canvas2d, the
 // keyboard toggle, the stacked overlay, the indicator badge).
 describe("GraphCanvas dual-render wiring", () => {
-  it("imports the render-backend lib and defaults to canvas2d", () => {
+  it("imports the render-backend lib and BOOTS on WebGL2 with a canvas2d fallback (P6 flip)", () => {
     const source = graphCanvasSource();
     expect(source).toContain('from "../lib/renderBackend.js"');
-    expect(source).toMatch(/activeBackend\s*=\s*\$state\(\s*CANVAS2D_BACKEND\s*\)/);
+    // P6 flip: the studio now boots on WebGL2 (was CANVAS2D_BACKEND), relying on
+    // the EXISTING graceful fallback when no WebGL2 context exists.
+    expect(source).toMatch(/activeBackend\s*=\s*\$state\(\s*WEBGL2_BACKEND\s*\)/);
+    expect(source).not.toMatch(/activeBackend\s*=\s*\$state\(\s*CANVAS2D_BACKEND\s*\)/);
+    // Graceful fallback still wired: createBackendRenderer's fellBack path reverts
+    // activeBackend to canvas2d and flags backendUnavailable.
+    expect(source).toContain("createBackendRenderer");
+    expect(source).toMatch(/result\.fellBack/);
+    expect(source).toMatch(/backendUnavailable\s*=\s*true/);
+    // The badge is revealed on the boot fallback so the unavailable state shows.
+    expect(source).toMatch(/switchActivated\s*\|\|\s*backendUnavailable/);
   });
 
   it("adds a window keydown listener for the Ctrl+Shift+X toggle and removes it on destroy", () => {
