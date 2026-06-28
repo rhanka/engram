@@ -423,6 +423,16 @@ export { parsePdfOcrMode, preflightPdf, pdfOcrSidecarStem } from "./pdf-prefligh
 export type { PdfOcrMode, PdfPreflightOptions, PdfPreflightResult } from "./pdf-preflight.js";
 export { augmentDetectionWithPdfPreflight } from "./pdf-ocr.js";
 export type { PdfPreparationArtifact, PdfPreparationOptions } from "./pdf-ocr.js";
+export { buildPdfOcrPagesSidecar, pdfOcrPagesToCitedSourceRefs, PDF_OCR_PAGES_SCHEMA } from "./pdf-ocr-refs.js";
+export type {
+  PdfOcrPagesSidecar,
+  PdfOcrPageRef,
+  PdfOcrImageRef,
+  PdfOcrBlockRef,
+  PdfOcrRefOptions,
+  BuildPdfOcrPagesInput,
+  NormalizedBbox,
+} from "./pdf-ocr-refs.js";
 export { prepareSemanticDetection } from "./semantic-prepare.js";
 export type { SemanticPreparationOptions, SemanticPreparationResult } from "./semantic-prepare.js";
 export {
