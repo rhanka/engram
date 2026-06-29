@@ -433,6 +433,8 @@ export type {
   BuildPdfOcrPagesInput,
   NormalizedBbox,
 } from "./pdf-ocr-refs.js";
+export { citationToCitedSourceRef, citationsToCitedSourceRefs, validateCitedSourceRef } from "./cited-source-refs.js";
+export type { CitedSourceRefValidation } from "./cited-source-refs.js";
 export { prepareSemanticDetection } from "./semantic-prepare.js";
 export type { SemanticPreparationOptions, SemanticPreparationResult } from "./semantic-prepare.js";
 export {
