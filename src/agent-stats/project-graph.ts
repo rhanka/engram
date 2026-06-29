@@ -63,6 +63,22 @@ export interface SessionInput {
   cwds: string[];
   startedAt?: string;
   endedAt?: string;
+  /**
+   * Session start/end as epoch-MILLISECONDS — the projection of the ISO
+   * `startedAt`/`endedAt`. T0 temporal slice: these feed the shared scene
+   * contract's `t`/`t_end` (epoch-ms; see src/studio-scene.ts) on the session
+   * node and on the edges that session OWNS. Carried HERE — the projection
+   * boundary — because finer timestamps are otherwise dropped crossing it.
+   *
+   * TODO(agent-stats temporal — deferred lots): only session-level start/end is
+   * projected for T0. The finer per-action timestamps are STILL dropped at this
+   * boundary — `GitAction.timestamp` and `EvidenceSnippet.timestamp`
+   * (src/agent-stats/types.ts) plus the git committer-date are NOT carried — so
+   * DERIVED Branch / Commit / Agent spans stay out of scope. Widen SessionInput
+   * with those per-action timestamps when the derived-span lots land.
+   */
+  startedAtMs?: number;
+  endedAtMs?: number;
   branches: string[];
   commitShas: string[];
   prUrls: string[];
@@ -114,6 +130,17 @@ export interface BuildProjectGraphOptions {
   provenance?: unknown;
 }
 
+/**
+ * Parse an ISO-8601 timestamp to epoch-MILLISECONDS, or `undefined` when the
+ * input is absent or unparseable. The single conversion point for the T0
+ * temporal projection (ISO `startedAt`/`endedAt` → scene-contract `t`/`t_end`).
+ */
+export function isoToEpochMs(iso: string | undefined): number | undefined {
+  if (!iso) return undefined;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : undefined;
+}
+
 /** Project the rich SessionFact onto the minimal SessionInput. */
 export function sessionFactToInput(fact: SessionFact, agentId: string): SessionInput {
   const branches = new Set<string>();
@@ -127,6 +154,8 @@ export function sessionFactToInput(fact: SessionFact, agentId: string): SessionI
     cwds: fact.cwds,
     startedAt: fact.startedAt,
     endedAt: fact.endedAt,
+    startedAtMs: isoToEpochMs(fact.startedAt),
+    endedAtMs: isoToEpochMs(fact.endedAt),
     branches: Array.from(branches).sort(),
     commitShas: Array.from(new Set(fact.groundTruth.commitShas.map((s) => s.slice(0, 7)))).sort(),
     prUrls: Array.from(new Set(fact.groundTruth.prUrls)),
@@ -196,6 +225,47 @@ function nodeId(kind: string, key: string): string {
   return `${kind}_${key}`.replace(/[^A-Za-z0-9_]/g, "_").toLowerCase();
 }
 
+/** Provenance tag for the T0 session-derived temporal stamp (`t`/`t_end`). */
+const SESSION_TIME_SRC = "session.started_at";
+
+/**
+ * Shared-scene-contract temporal stamp (epoch-ms). `t`/`t_end` are allowlisted
+ * by src/studio-scene.ts and flow through to the studio scene; `t_src` is
+ * graph-only provenance (NOT in the scene allowlist) recording where `t` came
+ * from. Spread onto a node/edge object — empty `{}` adds NO keys, so a timeless
+ * element stays byte-identical.
+ */
+interface TemporalStamp {
+  /** Interval START, epoch-ms (scene contract `t`). */
+  t?: number;
+  /** Interval END, epoch-ms (scene contract `t_end`); omitted when open-ended. */
+  t_end?: number;
+  /** Provenance of the stamp (graph-only; not carried into the scene). */
+  t_src?: string;
+}
+
+/**
+ * T0 temporal stamp for a SESSION and every edge that session OWNS (the edges
+ * whose `source` is the session node). `t` = session start, `t_end` = session
+ * end WHEN KNOWN. An open (still-running) session gets a `t` but NO `t_end` —
+ * it is an open interval, deliberately NOT a point-in-time `t_end === t`.
+ * Returns `{}` when the session carries no start timestamp, so a timeless
+ * session (and its edges) stay byte-identical (no `t` key emitted).
+ *
+ * DEDUP / FIRST-TOUCH: edges are deduped by `source|target|relation` (see
+ * `addEdge`), so a stamp follows first-touch semantics. For these session-owned
+ * edges that is unambiguous — the `source` IS the owning session node, so the
+ * triple is unique per session and the only emission carries that session's `t`.
+ */
+function sessionTemporal(s: SessionInput): TemporalStamp {
+  const startMs = s.startedAtMs ?? isoToEpochMs(s.startedAt);
+  if (startMs === undefined) return {};
+  const endMs = s.endedAtMs ?? isoToEpochMs(s.endedAt);
+  const stamp: TemporalStamp = { t: startMs, t_src: SESSION_TIME_SRC };
+  if (endMs !== undefined) stamp.t_end = endMs;
+  return stamp;
+}
+
 /**
  * Build the project/conversation graph from reconciled session inputs.
  *
@@ -218,6 +288,9 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
     return n.id;
   };
   const addEdge = (e: GraphEdgeOut) => {
+    // Deduped by source|target|relation: the FIRST emission wins, any later
+    // duplicate is dropped — so a temporal stamp (t/t_end) on the edge follows
+    // FIRST-TOUCH semantics (see sessionTemporal).
     const k = `${e.source}|${e.target}|${e.relation}`;
     if (linkSeen.has(k)) return;
     linkSeen.add(k);
@@ -278,11 +351,20 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
   // 3. SESSION / AGENT / BRANCH / COMMIT nodes from each in-identity session.
   const agentSessions = new Map<string, number>();
   const sessionNodeBySessionId = new Map<string, string>();
+  // T0 temporal stamp per session, reused for the session-owned derived-from
+  // edge built in step 4 (which is sourced from the CHILD session node).
+  const temporalBySessionId = new Map<string, TemporalStamp>();
 
   for (const s of opts.sessions) {
     const aliasIdx = sessionAlias(identity, s);
     if (aliasIdx < 0) continue; // not part of this project's lineage
     const repoNodeId = repoNodeIds[aliasIdx]!;
+
+    // T0 temporal: the session's own [t, t_end) span, reused on every edge the
+    // session owns (worked-in / conducted-by / touched-branch / produced and the
+    // derived-from in step 4). Empty {} when the session has no start timestamp.
+    const temporal = sessionTemporal(s);
+    temporalBySessionId.set(s.sessionId, temporal);
 
     // session node
     const sessId = addNode({
@@ -301,6 +383,7 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
       files_touched: s.filesTouched,
       commit_count: s.commitShas.length,
       branch_count: s.branches.length,
+      ...temporal,
     });
     sessionNodeBySessionId.set(s.sessionId, sessId);
 
@@ -312,6 +395,7 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
       confidence: "EXTRACTED",
       source_file: "agent-stats://session",
       weight: 1,
+      ...temporal,
     });
 
     // agent node + conducted-by edge
@@ -333,6 +417,7 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
       confidence: "EXTRACTED",
       source_file: "agent-stats://session",
       weight: 1,
+      ...temporal,
     });
 
     // branches
@@ -354,6 +439,7 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
           confidence: "EXTRACTED",
           source_file: "agent-stats://session",
           weight: 1,
+          ...temporal,
         });
       }
     }
@@ -378,6 +464,7 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
           confidence: "EXTRACTED",
           source_file: "agent-stats://ground-truth",
           weight: 1,
+          ...temporal,
         });
       }
     }
@@ -396,6 +483,9 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
         confidence: "INFERRED",
         source_file: "agent-stats://parentage",
         weight: 1,
+        // Owned by the CHILD (source) session: the derivation exists because the
+        // child declared a parent, so it carries the child session's t/t_end.
+        ...(temporalBySessionId.get(s.sessionId) ?? {}),
       });
     }
   }
