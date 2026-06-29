@@ -150,6 +150,77 @@ export function truncateLabel(label, maxChars = DEFAULT_LABEL_MAX_CHARS) {
   return text.slice(0, maxChars).replace(/\s+$/u, "") + "…";
 }
 
+/**
+ * Principal-character label LOD (top-K names at zoom-out).
+ *
+ * The god-class label gate (degree >= LABEL_DEGREE_FRACTION × maxDegree, applied
+ * inside @sentropic/graph buildStyleBuffers) can mark MANY Character hubs as
+ * labelled boxes on a dense corpus, so a zoomed-OUT main graph paints a wall of
+ * overlapping names. Instead we keep only the K highest-degree hubs labelled
+ * when zoomed out — the "principal cast" — and reveal the long tail once the
+ * user zooms past {@link LABEL_ZOOM_THRESHOLD}. Only the in-box NAME is gated:
+ * the hub glyph is untouched and the full name stays on node.label for hover.
+ */
+/** K — how many principal-character names stay visible when zoomed out. */
+export const MAX_PRINCIPAL_CHARACTER_LABELS = 5;
+/**
+ * world→screen zoom at/below which the long-tail hub names are HIDDEN (only the
+ * top-K principal names show). Above it the graph is zoomed in enough that every
+ * gated hub name fits, so all are revealed. The renderer maps world to screen as
+ * `screen = (world − camera) · zoom`, so zoom > 1 means a node's world unit spans
+ * more than one device pixel (a deliberate zoom-in past the default fit).
+ */
+export const LABEL_ZOOM_THRESHOLD = 1;
+
+/**
+ * Choose which god-class hub boxes keep their in-box NAME at the given zoom.
+ * Pure + deterministic (degree desc, ties by node index asc) so the studio and
+ * the unit tests agree. Above `zoomThreshold` every hub is kept; at/below it
+ * only the top-K by degree.
+ * @param {Array<{index:number, degree:number}>} hubs labelled hub candidates
+ * @param {number} zoom current world→screen zoom
+ * @param {{k?:number, zoomThreshold?:number}} [opts]
+ * @returns {Set<number>} the node indices whose name should stay visible
+ */
+export function selectPrincipalHubLabels(
+  hubs,
+  zoom,
+  { k = MAX_PRINCIPAL_CHARACTER_LABELS, zoomThreshold = LABEL_ZOOM_THRESHOLD } = {},
+) {
+  const keep = new Set();
+  if (!Array.isArray(hubs) || hubs.length === 0) return keep;
+  // Zoomed in past the threshold → reveal every gated hub name.
+  if (Number.isFinite(zoom) && zoom > zoomThreshold) {
+    for (const hub of hubs) keep.add(hub.index);
+    return keep;
+  }
+  // Zoomed out (the default fit) → only the K highest-degree principal hubs.
+  const ranked = [...hubs].sort((a, b) => b.degree - a.degree || a.index - b.index);
+  const limit = Math.min(Number.isFinite(k) && k > 0 ? k : 0, ranked.length);
+  for (let i = 0; i < limit; i += 1) keep.add(ranked[i].index);
+  return keep;
+}
+
+/**
+ * Undirected degree per node INDEX from a render-graph's flat edge index buffer
+ * (`edges` = [src0, tgt0, src1, tgt1, …]). Mirrors @sentropic/graph styles.ts
+ * computeNodeDegrees so the LOD ranks hubs by the SAME degree the label gate did.
+ * @param {{nodeIds?:ArrayLike<unknown>, edges?:ArrayLike<number>}} graph
+ * @returns {Uint32Array} degree by node index
+ */
+function computeDegreesByIndex(graph) {
+  const count = graph?.nodeIds?.length ?? 0;
+  const degrees = new Uint32Array(count);
+  const edges = graph?.edges ?? [];
+  for (let i = 0; i < edges.length; i += 1) {
+    const endpoint = edges[i];
+    if (Number.isInteger(endpoint) && endpoint >= 0 && endpoint < count) {
+      degrees[endpoint] += 1;
+    }
+  }
+  return degrees;
+}
+
 function cloneStyle(style) {
   return {
     nodeSizes: new Float32Array(style.nodeSizes),
@@ -223,6 +294,10 @@ export function buildGraphRendererPayload(scene, options = {}) {
   const labelMaxChars = Number.isFinite(options.labelMaxChars)
     ? options.labelMaxChars
     : DEFAULT_LABEL_MAX_CHARS;
+  // Current world→screen zoom drives the principal-character label LOD (top-K
+  // names at zoom-out). Undefined ⇒ treat as zoomed OUT so the default fit view
+  // already shows only the principal cast (see selectPrincipalHubLabels).
+  const labelZoom = Number.isFinite(options.zoom) ? options.zoom : 0;
   const sceneNodes = scene?.nodes ?? [];
   const sceneEdges = scene?.edges ?? [];
 
@@ -305,6 +380,32 @@ export function buildGraphRendererPayload(scene, options = {}) {
       if (!forced && !hasExisting) continue;
       const source = forced ? (node.label || String(node.id)) : existing;
       baseStyle.nodeLabels[index] = truncateLabel(source, labelMaxChars);
+    }
+  }
+
+  // Principal-character label LOD: when zoomed out keep only the top-K
+  // highest-degree god-class hub NAMES (declutter the wall of names a dense
+  // corpus produces); reveal the long tail once zoomed past LABEL_ZOOM_THRESHOLD.
+  // forceBoxLabel (recon focal pair) is EXEMPT — those twins always read as
+  // identical labelled boxes. The hub glyph is untouched; only the in-box name
+  // is cleared, and node.label keeps the full name for the hover tooltip.
+  if (baseStyle.nodeLabels) {
+    const degreesByIndex = computeDegreesByIndex(renderGraph);
+    const hubs = [];
+    for (const node of nodes) {
+      if (node.forceBoxLabel === true) continue;
+      const index = nodeIndexById.get(node.id);
+      if (!Number.isInteger(index)) continue;
+      const label = baseStyle.nodeLabels[index];
+      if (typeof label === "string" && label.length > 0) {
+        hubs.push({ index, degree: degreesByIndex[index] ?? 0 });
+      }
+    }
+    if (hubs.length > 0) {
+      const keep = selectPrincipalHubLabels(hubs, labelZoom);
+      for (const hub of hubs) {
+        if (!keep.has(hub.index)) baseStyle.nodeLabels[hub.index] = "";
+      }
     }
   }
   const renderedEdges = Array.from(renderGraph.edgeInputIndices ?? [], (inputIndex) => edges[inputIndex]);
