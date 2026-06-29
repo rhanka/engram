@@ -149,6 +149,14 @@ export interface LayoutOptions {
    * engines. Optional & additive — absent ⇒ a single (untyped) lane.
    */
   nodeTypes?: readonly (string | null | undefined)[];
+  /**
+   * Per-node interval START, epoch-ms, node-order keyed (parallel to
+   * {@link RenderGraphBuffers.nodeIds}) — the shared scene-contract `t` (#234).
+   * Consumed by the time-oriented (Variant E) layout to place nodes on the X
+   * (time) axis; ignored by the force / typed-layer / static engines. Optional &
+   * additive — a nullish / non-finite entry is treated as "untimed".
+   */
+  nodeTimes?: readonly (number | null | undefined)[];
 }
 
 export interface LayoutEngine {
