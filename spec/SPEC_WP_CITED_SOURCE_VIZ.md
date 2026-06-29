@@ -14,6 +14,10 @@
 > viewer-seam expresses all five (incl. a **quote-less geometry-only image-bbox** citation), and a
 > v1 / v2 / v3 per-modality lot sequence is added (image-bbox = **v3, needs detection, excluded from
 > Lot 1**). See §"Per-modality lots" and the dossier §8 Source-modality matrix.
+> Increment (2026-06-28, multisource): the Lot-0 projection (`citationToCitedSourceRef`) and validator
+> (`validateCitedSourceRef`) landed; the validator is now **modality-aware** — `page` is required only
+> for page-addressable modalities (`pdf`/`pptx`/`image`), while `markdown`/`plain-text`/`csv`/`web`/`docx`
+> are complete without a page (locator + `section`|`paragraph_id` + `excerpt`|`citation`). See §0.2.1 + AC0.5.
 > Sign-off: Lot 0 + Lot 1 ship **unilaterally** (graphify-owned). The viewer (Lots 2–3 internals)
 > needs **architect sign-off** — its public API is a sibling SPEC; this doc freezes only its *seam*.
 
@@ -97,6 +101,31 @@ Notes:
 | registry CSV row (`csv`) | `"row {row_id}"` | `paragraph_id` carries the row id / `row_hash` |
 | web (`web`) | `"{url}#{anchor}"` | `source_url`, `paragraph_id?` |
 
+### 0.2.1 Modality-aware completeness — `validateCitedSourceRef` (multisource)
+
+`validateCitedSourceRef(ref: CitedSourceRef)` is the **minimum cited-source contract** check
+Radar/immo and the projection (`citationToCitedSourceRef`) rely on. It is **modality-aware**: a
+single `page`-for-every-ref rule is correct for page-addressable sources but wrong for md/txt/web/docx,
+which have no page. Every ref still needs a **locator** (`rawRef` | `sourceUrl` | `docSha`) and
+**evidence text** (`excerpt` | `citation`); the *positional anchor* depends on the modality:
+
+| Modality class | Modalities | Required positional anchor | `bbox`/`region` |
+|---|---|---|---|
+| **page-addressable** | `pdf`, `pptx`, `image` | a 1-based integer `page` | meaningful (overlay rect) |
+| **non-page** | `markdown`, `plain-text`, `csv`, `web`, `docx` | a `section` **or** `paragraph_id` anchor — **no `page`** | not used |
+
+- The modality is read from `ref.modality`; when absent it is **derived from the locator suffix**
+  (`.pdf`→pdf, `.pptx`/`.ppt`→pptx, image exts→image, `.md`→markdown, `.txt`→plain-text, `.csv`→csv,
+  `.docx`/`.doc`→docx), and when still undeterminable it **defaults to the lenient (non-page) path**.
+- `bbox` is always optional; **when present it is validated** against the normalized
+  `[x0,y0,x1,y1]` 0..1 page-fraction convention (top-left origin, `x1≥x0`, `y1≥y0`) regardless of
+  modality. `bbox`/`region` overlays are *meaningful* only for `pdf`/`image`/`pptx`.
+- For `markdown`, the OCR `## Page N` page (§0.2) is **display enrichment**, not a completeness
+  requirement: markdown refs are anchored by `section`/`paragraph_id` and are **complete without a page**.
+
+So a `pdf` ref is **invalid without a `page`**, whereas an `md`/`txt`/`web` ref is **valid without a
+`page`** as long as it carries a locator + (`section` | `paragraph_id`) + (`excerpt` | `citation`).
+
 ### 0.3 Acceptance criteria (Lot 0)
 
 - AC0.1 — `OntologyCitation` carries `quote?`, `confidence?`, `source_location?`, **`modality?`,
@@ -110,6 +139,12 @@ Notes:
   the public cited-source contract.
 - AC0.4 — Golden: re-projecting an existing sidecar (`reprojectCitationsLLMFree`) is byte-stable
   before/after the type change for graphs that have no `quote` field.
+- AC0.5 — **Modality-aware validation (§0.2.1).** `validateCitedSourceRef` requires a `page` for
+  page-addressable modalities (`pdf`/`pptx`/`image`) and rejects them without one; a non-page ref
+  (`markdown`/`plain-text`/`csv`/`web`/`docx`) is complete with locator + (`section`|`paragraph_id`) +
+  (`excerpt`|`citation`) and **no `page`**. `bbox` is validated as normalized `[x0,y0,x1,y1]` 0..1
+  whenever present. Modality is taken from `ref.modality`, else derived from the locator suffix, else
+  the lenient (non-page) path. (Unit-covered in `tests/cited-source-refs.test.ts`.)
 
 ### 0.4 Sign-off — **graphify unilateral.** Data + schema graphify owns. No external sign-off.
 
