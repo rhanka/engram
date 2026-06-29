@@ -83,16 +83,23 @@ export interface SyncResult {
 /** Read `git log --all` for the repo as correlation ground truth. */
 export function readGitCommits(repoRoot: string): GitCommitMeta[] {
   // Reuse the project's ESM-safe git helper (the bundler cannot dynamic-require
-  // child_process). Pipe-delimited so subjects with spaces survive intact.
-  const out = safeExecGit(repoRoot, ["log", "--all", "--format=%H|%s"]);
+  // child_process). Pipe-delimited; `%cI` (strict ISO-8601) sits BETWEEN the sha
+  // and the subject. ISO-8601 contains no pipe, so a subject that itself holds
+  // pipes still survives intact (everything after the 2nd pipe is the subject).
+  const out = safeExecGit(repoRoot, ["log", "--all", "--format=%H|%cI|%s"]);
   if (!out) return [];
   const commits: GitCommitMeta[] = [];
   for (const line of out.split("\n")) {
-    const idx = line.indexOf("|");
-    if (idx < 7) continue;
-    const sha = line.slice(0, idx);
-    const subject = line.slice(idx + 1);
-    if (sha.length >= 7) commits.push({ sha, subject });
+    const i1 = line.indexOf("|");
+    if (i1 < 7) continue;
+    const i2 = line.indexOf("|", i1 + 1);
+    if (i2 < 0) continue;
+    const sha = line.slice(0, i1);
+    if (sha.length < 7) continue;
+    const dateIso = line.slice(i1 + 1, i2);
+    const subject = line.slice(i2 + 1);
+    const ms = Date.parse(dateIso);
+    commits.push({ sha, subject, committedAtMs: Number.isFinite(ms) ? ms : undefined });
   }
   return commits;
 }
@@ -684,14 +691,33 @@ export type ProjectGraphIdentity = ProjectIdentity & { repoRootForRegistry?: str
  */
 export function buildProjectGraphForIdentity(
   identity: ProjectGraphIdentity,
-  opts: { home?: string; includeCommits?: boolean; includeBranches?: boolean } = {},
+  opts: {
+    home?: string;
+    includeCommits?: boolean;
+    includeBranches?: boolean;
+    /** Inject git commits (skips `git log`); else read from the registry root. */
+    commits?: GitCommitMeta[];
+  } = {},
 ): { graph: ProjectGraph; sessions: number } {
-  const sessions = loadSessionsForIdentity({ identity, home: opts.home });
+  const home = opts.home ?? homedir();
+  const sessions = loadSessionsForIdentity({ identity, home });
+  // T2: stamp Commit nodes (and widen derived Branch/Agent/Project spans) from
+  // git committer-dates. Read `git log` from the registry / current-incarnation
+  // root (the same root loadSessionsForIdentity uses for the h2a registry). A
+  // missing / non-repo root degrades to [] (safeExecGit returns "") — the graph
+  // then stays byte-identical to pre-T2 output.
+  const gitRoot =
+    identity.repoRootForRegistry ??
+    (identity.aliases[0]?.pathPrefixes[0]
+      ? identity.aliases[0]!.pathPrefixes[0]!.replace(/^~/, home)
+      : undefined);
+  const commits = opts.commits ?? (gitRoot ? readGitCommits(gitRoot) : []);
   const graph = buildProjectGraph({
     identity,
     sessions,
     includeCommits: opts.includeCommits,
     includeBranches: opts.includeBranches,
+    commits,
     provenance: {
       tool: "graphify agent-stats project-graph",
       schema: PROJECT_GRAPH_SCHEMA,
