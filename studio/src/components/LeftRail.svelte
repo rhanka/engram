@@ -25,6 +25,11 @@
   let {
     graph,
     classHierarchies = null,
+    // Storage LOT 2 (prefer-server): the store's precomputed `node_type`
+    // group-by counts (the `GET /api/ontology/groups` payload), or null. When
+    // present the Types rail uses these O(#groups) counts instead of an O(#nodes)
+    // in-memory pass; null (the default flat-JSON studio) keeps the client count.
+    serverTypeCounts = null,
     query = "",
     selection = { types: [], communities: [], entities: [] },
     showWeakLinks = true,
@@ -67,7 +72,9 @@
     onClearCommunityGrouping,
   } = $props();
 
-  const typeList = $derived(groupCounts(graph, nodeType));
+  // Storage LOT 2: prefer the store's precomputed counts when present; otherwise
+  // `groupCounts` falls back to the in-memory pass (default studio unchanged).
+  const typeList = $derived(groupCounts(graph, nodeType, serverTypeCounts));
   // Communities excluding degree-0 singletons (folded into `isolatedCount`).
   const communityInfo = $derived(communityStats(graph));
 

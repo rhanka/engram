@@ -234,6 +234,51 @@ describe("graphAdapter helpers", () => {
   });
 });
 
+describe("groupCounts prefer-server (storage LOT 2)", () => {
+  it("uses the store's precomputed counts when supplied, NOT the in-memory graph", () => {
+    // A keyFn that EXPLODES if called proves no O(#nodes) pass happens when the
+    // server provided counts (the "instant grouping" win).
+    const keyFn = () => {
+      throw new Error("client keyFn must not run when server counts are present");
+    };
+    const serverCounts = {
+      axis: "node_type",
+      groups: [
+        { key: "Character", label: "Character", count: 12 },
+        { key: "Place", label: "Place", count: 5 },
+      ],
+    };
+    const result = groupCounts(FIXTURE, keyFn, serverCounts);
+    // Built straight from the server payload, re-sorted by count desc, key asc.
+    expect(result).toEqual([
+      { key: "Character", count: 12 },
+      { key: "Place", count: 5 },
+    ]);
+  });
+
+  it("accepts a bare groups array and re-sorts it by count desc, key asc", () => {
+    const result = groupCounts(FIXTURE, nodeType, [
+      { key: "Place", count: 5 },
+      { key: "Character", count: 12 },
+    ]);
+    expect(result.map((g) => g.key)).toEqual(["Character", "Place"]);
+  });
+
+  it("falls back to the client computation when serverCounts is null/empty", () => {
+    // Default flat-JSON studio: no store → null → identical to the legacy call.
+    const client = groupCounts(FIXTURE, nodeType);
+    expect(groupCounts(FIXTURE, nodeType, null)).toEqual(client);
+    expect(groupCounts(FIXTURE, nodeType, { axis: "node_type", groups: [] })).toEqual(client);
+    expect(groupCounts(FIXTURE, nodeType, [])).toEqual(client);
+  });
+
+  it("falls back when the server payload has no usable rows (missing key / NaN count)", () => {
+    const client = groupCounts(FIXTURE, nodeType);
+    const garbage = { axis: "node_type", groups: [{ label: "no key" }, { key: "x", count: "nope" }] };
+    expect(groupCounts(FIXTURE, nodeType, garbage)).toEqual(client);
+  });
+});
+
 describe("citationsByFile (SVELTE-2)", () => {
   it("groups citations by source file with passages", async () => {
     const { citationsByFile } = await import("../lib/graphAdapter.js");
