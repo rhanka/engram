@@ -8,13 +8,17 @@
  * only chooses WHICH positions are produced; it never touches the renderer,
  * camera, or shaders (raw-WebGL2 instanced draw path is unchanged).
  *
- * Two layouts ship registered:
- *   • `"force"`       — the DEFAULT. Passthrough of the already-baked positions
- *                       (the deterministic Barnes-Hut FA2 force layout runs OFF
- *                       this path — `src/graph-layout.ts` — and is pinned into
- *                       `graph.positions`; this engine returns them verbatim).
- *   • `"typed-layer"` — Variant A swimlane: deterministic O(n) banding by node
- *                       type. OPT-IN; never the default.
+ * Three layouts ship registered:
+ *   • `"force"`         — the DEFAULT. Passthrough of the already-baked positions
+ *                         (the deterministic Barnes-Hut FA2 force layout runs OFF
+ *                         this path — `src/graph-layout.ts` — and is pinned into
+ *                         `graph.positions`; this engine returns them verbatim).
+ *   • `"typed-layer"`   — Variant A swimlane: deterministic O(n) banding by node
+ *                         type. OPT-IN; never the default.
+ *   • `"time-oriented"` — Variant E: deterministic O(n) placement of nodes by
+ *                         their interval-start `t` on the X (time) axis (oldest
+ *                         left → newest right), banded into type lanes on Y.
+ *                         OPT-IN; never the default.
  *
  * The registry honors the existing {@link LayoutEngine} / {@link LayoutOptions}
  * contract: {@link createLayoutEngine} wraps any registered layout as the
@@ -37,6 +41,9 @@ export const DEFAULT_LAYOUT_ID = "force";
 
 /** Registered id of Variant A — the typed-layer / swimlane layout. */
 export const TYPED_LAYER_LAYOUT_ID = "typed-layer";
+
+/** Registered id of Variant E — the time-oriented (temporal X-axis) layout. */
+export const TIME_ORIENTED_LAYOUT_ID = "time-oriented";
 
 // ---------------------------------------------------------------------------
 // Registry
@@ -231,9 +238,164 @@ export const typedLayerLayout: LayoutFn = (graph, options) => {
 };
 
 // ---------------------------------------------------------------------------
+// Variant E — time-oriented layout (deterministic, O(n)). X = normalized time.
+// ---------------------------------------------------------------------------
+
+/** Tuning for {@link computeTimeOrientedPositions}. */
+export interface TimeOrientedLayoutOptions {
+  /**
+   * Total WIDTH of the time axis. Timed nodes spread across `[-width/2, +width/2]`
+   * (centred on x = 0, like Variant A), oldest `t` at the left edge, newest at the
+   * right. Default 1000.
+   */
+  width?: number;
+  /** Vertical distance between adjacent type-lane CENTRES (default 120). */
+  laneGap?: number;
+  /**
+   * Explicit lane ordering (top→bottom) by type name — identical semantics to
+   * Variant A. Types present but absent here are appended ascending (alpha); the
+   * untyped lane is always last. Default: all lanes alpha-sorted.
+   */
+  laneOrder?: readonly string[];
+  /**
+   * Horizontal gap LEFT of the timeline where UNTIMED nodes are parked. An
+   * untimed node (nullish / non-finite `t`) gets a deterministic x =
+   * `-width/2 - untimedGap`, sitting on a "park rail" just left of the oldest
+   * timed node, while keeping its type lane on Y. Default 80.
+   */
+  untimedGap?: number;
+}
+
+const DEFAULT_TIME_WIDTH = 1000;
+const DEFAULT_UNTIMED_GAP = 80;
+
+function finiteTime(value: number | null | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+/**
+ * Variant E core — place nodes on a horizontal TIME axis.
+ *
+ *   • x = the node's interval-start `t`, NORMALIZED across the timed range
+ *     `[tMin, tMax]` into `[-width/2, +width/2]` (oldest left → newest right).
+ *     When every timed node shares one instant (tMax === tMin) they sit at x = 0.
+ *     UNTIMED nodes (nullish / non-finite `t`) are parked deterministically at
+ *     x = `-width/2 - untimedGap`, just left of the timeline.
+ *   • y = a type LANE centre (one band per distinct type), ordered exactly like
+ *     Variant A (`laneOrder` first, then ascending alpha; untyped lane last), so
+ *     the time-oriented view is a temporal swimlane. With no `nodeTypes` every
+ *     node shares one lane (y = 0).
+ *
+ * Pure, deterministic, O(n) (+ O(L log L) to sort the L ≤ n lanes). Returns a
+ * fresh node-order-keyed `Float32Array` of length `2 * nodeTimes.length`.
+ *
+ * @param nodeTimes per-node interval start (epoch-ms), node-order keyed. A
+ *                  nullish / non-finite entry is "untimed".
+ * @param nodeTypes optional per-node type, node-order keyed (parallel). Absent ⇒
+ *                  one lane (y = 0).
+ */
+export function computeTimeOrientedPositions(
+  nodeTimes: readonly (number | null | undefined)[],
+  nodeTypes?: readonly (string | null | undefined)[],
+  options: TimeOrientedLayoutOptions = {},
+): Float32Array {
+  const n = nodeTimes.length;
+  const out = new Float32Array(n * 2);
+  if (n === 0) return out;
+
+  const width = options.width ?? DEFAULT_TIME_WIDTH;
+  const laneGap = options.laneGap ?? DEFAULT_LANE_GAP;
+  const untimedGap = options.untimedGap ?? DEFAULT_UNTIMED_GAP;
+  const halfWidth = width / 2;
+
+  // --- X: normalize timed nodes; park untimed ones on a deterministic rail. ---
+  let tMin = Number.POSITIVE_INFINITY;
+  let tMax = Number.NEGATIVE_INFINITY;
+  for (let i = 0; i < n; i++) {
+    const t = nodeTimes[i];
+    if (!finiteTime(t)) continue;
+    if (t < tMin) tMin = t;
+    if (t > tMax) tMax = t;
+  }
+  const span = tMax - tMin;
+  const untimedX = -halfWidth - untimedGap;
+  for (let i = 0; i < n; i++) {
+    const t = nodeTimes[i];
+    if (!finiteTime(t)) {
+      out[i * 2] = untimedX;
+      continue;
+    }
+    // span === 0 ⇒ every timed node shares one instant ⇒ centre them at x = 0.
+    const frac = span > 0 ? (t - tMin) / span : 0.5;
+    out[i * 2] = (frac - 0.5) * width;
+  }
+
+  // --- Y: type lanes, ordered exactly like Variant A. ---
+  const buckets = new Map<string, number[]>();
+  const untyped: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const type = normalizeType(nodeTypes?.[i]);
+    if (type === null) {
+      untyped.push(i);
+      continue;
+    }
+    let arr = buckets.get(type);
+    if (!arr) {
+      arr = [];
+      buckets.set(type, arr);
+    }
+    arr.push(i);
+  }
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+  for (const type of options.laneOrder ?? []) {
+    if (buckets.has(type) && !seen.has(type)) {
+      ordered.push(type);
+      seen.add(type);
+    }
+  }
+  for (const type of [...buckets.keys()].filter((t) => !seen.has(t)).sort()) {
+    ordered.push(type);
+  }
+  const lanes: number[][] = ordered.map((type) => buckets.get(type) as number[]);
+  if (untyped.length > 0) lanes.push(untyped);
+
+  const laneCount = lanes.length;
+  for (let lane = 0; lane < laneCount; lane++) {
+    // Centre the stack of lanes vertically around y = 0 (single lane ⇒ y = 0).
+    const y = (lane - (laneCount - 1) / 2) * laneGap;
+    for (const idx of lanes[lane] as number[]) {
+      out[idx * 2 + 1] = y;
+    }
+  }
+
+  return out;
+}
+
+/**
+ * Variant E as a {@link LayoutFn}. Reads per-node start times from
+ * {@link LayoutOptions.nodeTimes} and optional types from
+ * {@link LayoutOptions.nodeTypes} (both node-order keyed). Absent times ⇒ every
+ * node untimed (all parked on the left rail); absent types ⇒ one lane. Length
+ * always matches `graph.nodeIds.length`.
+ */
+export const timeOrientedLayout: LayoutFn = (graph, options) => {
+  const n = graph.nodeIds.length;
+  const times = options?.nodeTimes;
+  const nodeTimes: (number | null)[] = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const t = times?.[i];
+    nodeTimes[i] = finiteTime(t) ? t : null;
+  }
+  return computeTimeOrientedPositions(nodeTimes, options?.nodeTypes);
+};
+
+// ---------------------------------------------------------------------------
 // Register built-ins at module load. The DEFAULT (`"force"`) MUST stay the
-// passthrough — typed-layer is strictly opt-in and never replaces it.
+// passthrough — typed-layer / time-oriented are strictly opt-in and never
+// replace it.
 // ---------------------------------------------------------------------------
 
 registerLayout(DEFAULT_LAYOUT_ID, forceLayout);
 registerLayout(TYPED_LAYER_LAYOUT_ID, typedLayerLayout);
+registerLayout(TIME_ORIENTED_LAYOUT_ID, timeOrientedLayout);
