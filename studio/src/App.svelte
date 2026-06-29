@@ -21,6 +21,7 @@
     fetchClassHierarchies,
     fetchEntity,
     fetchGraph,
+    fetchGroupCounts,
     fetchModelsManifest,
     fetchScene,
     setStaticBaseProvider,
@@ -94,6 +95,12 @@
   // absent, in which case the toggle injects nothing. $state.raw — only ever
   // reassigned in bulk, never mutated in place.
   let classHierarchies = $state.raw(null);
+  // Storage LOT 2 (prefer-server group counts): the precomputed `node_type`
+  // group-by counts from a configured GraphStore mirror, fetched once per model
+  // via `GET /api/ontology/groups`. null when no store is configured (the
+  // default flat-JSON studio) — the Types rail then recomputes counts in-memory
+  // exactly as before. $state.raw: reassigned in bulk, never mutated in place.
+  let serverTypeCounts = $state.raw(null);
   // EVOL 2.b/2.d: the class-injection granularity is "all" — EVERY class (not
   // just leaves) is injected so that intermediate super-classes exist as collapse
   // HANDLES. `computeGroupedGraph` (lib/groupBy.js) owns the inject granularity;
@@ -429,6 +436,10 @@
     // the class taxonomy, so fetch class-hierarchies eagerly (not just on the
     // class-display toggle). Cached; a no-op when the artifact is absent.
     await ensureClassHierarchies();
+    // Storage LOT 2: prefer the store's precomputed `node_type` counts for the
+    // Types rail when a mirror is configured. Resolves null off the default
+    // flat-JSON studio, in which case the rail keeps computing counts in-memory.
+    serverTypeCounts = await fetchGroupCounts("node_type");
   }
 
   /** Flip the active model and re-render the SAME studio in place. */
@@ -454,6 +465,9 @@
     // re-fetches under the new model's base.
     classHierarchies = null;
     classHierarchiesFetched = false;
+    // The store group-counts are per-model too; drop them so the rail recomputes
+    // in-memory until loadActiveModel re-fetches for the new model.
+    serverTypeCounts = null;
     viewerState = clearSelection(viewerState);
     try {
       await loadActiveModel();
@@ -562,6 +576,7 @@
           <LeftRail
             graph={facetGraph}
             {classHierarchies}
+            {serverTypeCounts}
             query={viewerState.query}
             selection={viewerState.selection}
             showWeakLinks={viewerState.options.showWeakLinks}

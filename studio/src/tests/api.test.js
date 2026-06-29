@@ -6,6 +6,7 @@ import {
   fetchClassHierarchies,
   fetchEntity,
   fetchGraph,
+  fetchGroupCounts,
   fetchModelsManifest,
   fetchReconciliationCandidates,
   fetchScene,
@@ -133,6 +134,59 @@ describe("fetchClassHierarchies (EVOL 2.a)", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(fetchClassHierarchies()).resolves.toBeNull();
+  });
+});
+
+describe("fetchGroupCounts (storage LOT 2)", () => {
+  const counts = {
+    axis: "node_type",
+    groups: [
+      { key: "Character", label: "Character", count: 12 },
+      { key: "Place", label: "Place", count: 5 },
+    ],
+  };
+
+  it("returns the store counts from the same-origin route for the given axis", async () => {
+    const fetchMock = vi.fn(async (url) => {
+      if (url === "/api/ontology/groups?axis=node_type") return jsonResponse(counts);
+      throw new Error(`unexpected url ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchGroupCounts("node_type")).resolves.toEqual(counts);
+  });
+
+  it("defaults to the node_type axis when none is passed", async () => {
+    const fetchMock = vi.fn(async (url) => {
+      if (url === "/api/ontology/groups?axis=node_type") return jsonResponse(counts);
+      throw new Error(`unexpected url ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchGroupCounts()).resolves.toEqual(counts);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/ontology/groups?axis=node_type",
+      expect.anything(),
+    );
+  });
+
+  it("returns null when the route 404s (default flat-JSON studio, no store)", async () => {
+    // No bundle-relative static fallback: the counts are a live store projection.
+    const fetchMock = vi.fn(async () => jsonResponse({ error: "no store" }, false));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchGroupCounts("node_type")).resolves.toBeNull();
+  });
+
+  it("returns null in an offline bundle WITHOUT issuing any fetch", async () => {
+    window.__GRAPHIFY_BUNDLE__ = { "scene.json": { nodes: [], edges: [] } };
+    const fetchMock = vi.fn(() => {
+      throw new Error("fetch must not be called in an offline bundle");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchGroupCounts("node_type")).resolves.toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 
