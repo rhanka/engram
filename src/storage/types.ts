@@ -26,6 +26,24 @@ export interface GraphStoreCapabilities {
    * adapter owns when and how it maintains its table.
    */
   aggregate?: GraphStoreAggregateCapability;
+  /**
+   * Optional, VERSIONED windowed-loader capability (storage LOT 3). Absent on
+   * backends that do not precompute per-layout positions (neo4j/spanner/file
+   * simply omit it). When present, the adapter maintains a
+   * `graph_positions(layout_id, node_id, x, y, degree)` table and exposes
+   * `layoutPositions(layout)` (all positions for a layout) plus `graphWindow(opts)`
+   * (a BOUNDED slice — top-N by degree — of nodes + the edges induced among
+   * them). The studio loads the window for first paint instead of the full
+   * multi-MB scene; backends omitting the capability omit both methods and the
+   * studio keeps shipping the full scene unchanged.
+   *
+   * Like the aggregate, positions are tied to REPLACE / full-snapshot semantics:
+   * rebuilt ONLY inside a `mode: "replace"` push, never on a `merge`. A merge is
+   * an upsert that may leave stale rows behind, so rebuilding positions after a
+   * merge could surface deleted nodes; gating on replace keeps the window
+   * coherent with a committed full snapshot.
+   */
+  window?: GraphStoreWindowCapability;
 }
 
 /** Versioned descriptor for the optional group-by aggregate capability (LOT 1). */
@@ -34,6 +52,68 @@ export interface GraphStoreAggregateCapability {
   version: 1;
   /** Axes the backend can serve from its precomputed table (e.g. `node_type`). */
   axes: readonly string[];
+}
+
+/** Versioned descriptor for the optional windowed-loader capability (LOT 3). */
+export interface GraphStoreWindowCapability {
+  /** Schema/behaviour version of the window contract; consumers gate on it. */
+  version: 1;
+  /** Layout ids the backend has precomputed positions for (e.g. `force`). */
+  layouts: readonly string[];
+  /**
+   * Window strategies the backend can serve. LOT 3 ships `degree-top-n` only —
+   * the coarse first-paint slice (the N highest-degree nodes + induced edges).
+   */
+  strategies: readonly string[];
+}
+
+/** One precomputed node position for a given layout. */
+export interface GraphLayoutPosition {
+  node_id: string;
+  x: number;
+  y: number;
+}
+
+/** Parameters for {@link GraphStore.graphWindow}. */
+export interface GraphWindowOptions {
+  /** Window strategy; LOT 3 supports `degree-top-n` (the default). */
+  strategy?: string;
+  /** Layout id whose positions annotate the window nodes (e.g. `force`). */
+  layout?: string;
+  /** Upper bound on the number of nodes returned. */
+  limit?: number;
+}
+
+/** One node in a windowed slice: id + degree + (optional) layout position. */
+export interface GraphWindowNode {
+  id: string;
+  label: string;
+  node_type?: string;
+  /** Layout x, present when the requested layout has a position for this node. */
+  x?: number;
+  /** Layout y, present when the requested layout has a position for this node. */
+  y?: number;
+  /** Precomputed degree, drives node weight/size without a join. */
+  degree: number;
+}
+
+/** One edge in a windowed slice (induced among the window's nodes). */
+export interface GraphWindowEdge {
+  source: string;
+  target: string;
+  relation: string;
+}
+
+/** Result of {@link GraphStore.graphWindow}: a BOUNDED nodes+edges slice. */
+export interface GraphWindow {
+  /** Strategy that produced this slice (e.g. `degree-top-n`). */
+  strategy: string;
+  /** Layout the positions came from, when one was requested + available. */
+  layout?: string;
+  /** The effective node cap applied. */
+  limit: number;
+  nodes: GraphWindowNode[];
+  edges: GraphWindowEdge[];
 }
 
 /** One group bucket: a distinct value of an axis and its node count. */
@@ -107,6 +187,20 @@ export interface GraphStore {
    * `GraphStoreCapabilities.aggregate`.
    */
   groupCounts?(axis: string): Promise<GraphGroupCounts>;
+  /**
+   * Capability-gated read of every precomputed position for one layout (storage
+   * LOT 3). Present ONLY when `capabilities.window` is set. Reads the
+   * backend-maintained `graph_positions` table scoped to the latest REPLACE
+   * snapshot — see `GraphStoreCapabilities.window`.
+   */
+  layoutPositions?(layout: string): Promise<GraphLayoutPosition[]>;
+  /**
+   * Capability-gated windowed read (storage LOT 3). Present ONLY when
+   * `capabilities.window` is set. Returns a BOUNDED slice — the top-N nodes by
+   * precomputed degree plus the edges induced among them — so first paint never
+   * ships the full multi-MB scene. Scoped to the latest REPLACE snapshot.
+   */
+  graphWindow?(options?: GraphWindowOptions): Promise<GraphWindow>;
   close(): Promise<void>;
 }
 
