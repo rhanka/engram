@@ -729,10 +729,52 @@ export function nodeSourcePath(node) {
 }
 
 /**
+ * Storage LOT 2: normalize a server group-counts payload into the rail's
+ * `{ key, count }[]` shape, or null when there is nothing usable. Accepts either
+ * the route document (`{ axis, groups: [...] }`) or a bare `groups` array, so the
+ * caller can pass whatever `fetchGroupCounts` returned. Returns null for a
+ * missing/empty set so the caller falls back to the client computation.
+ * @param {{ groups?: { key: string, count: number }[] } | { key: string, count: number }[] | null | undefined} serverCounts
+ * @returns {{ key: string, count: number }[] | null}
+ */
+function normalizeServerGroups(serverCounts) {
+  if (!serverCounts) return null;
+  const groups = Array.isArray(serverCounts) ? serverCounts : serverCounts.groups;
+  if (!Array.isArray(groups) || groups.length === 0) return null;
+  const out = [];
+  for (const g of groups) {
+    if (!g || g.key == null) continue;
+    const count = typeof g.count === "number" ? g.count : Number(g.count);
+    if (!Number.isFinite(count)) continue;
+    out.push({ key: String(g.key), count });
+  }
+  return out.length > 0 ? out : null;
+}
+
+/**
  * Group nodes by their grouping key for the left-rail Types/Communities lists.
+ *
+ * Storage LOT 2 (prefer-server): when `serverCounts` is supplied — the
+ * precomputed group-by aggregate from a configured GraphStore mirror (via
+ * `fetchGroupCounts(axis)`) — the list is built STRAIGHT from it in O(#groups),
+ * with NO O(#nodes) pass over the in-memory graph (the "instant grouping" win).
+ * When it is absent/empty (the default flat-JSON studio, an offline bundle, or a
+ * 404), the original client-side computation runs UNCHANGED. Either way the
+ * output shape, key stringification and sort order are identical, so the rail UI
+ * is the same — only the COUNT SOURCE changes when a store is present.
+ *
+ * @param {object} graph  the in-memory graph (client fallback source).
+ * @param {(node: object) => string|null|undefined} keyFn  the grouping key.
+ * @param {object|Array|null} [serverCounts]  the store's group-counts payload.
  * @returns {{ key: string, count: number }[]} sorted by descending count.
  */
-export function groupCounts(graph, keyFn) {
+export function groupCounts(graph, keyFn, serverCounts = null) {
+  const serverGroups = normalizeServerGroups(serverCounts);
+  if (serverGroups) {
+    return serverGroups
+      .map(({ key, count }) => ({ key: String(key), count }))
+      .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+  }
   const counts = new Map();
   for (const node of graphNodes(graph)) {
     const key = keyFn(node);
