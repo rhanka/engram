@@ -23,6 +23,7 @@
  */
 
 import type { SessionFact } from "./types.js";
+import type { GitCommitMeta } from "./correlate.js";
 
 export const PROJECT_GRAPH_SCHEMA = "graphify.agent-stats.project-graph/v1";
 
@@ -126,6 +127,15 @@ export interface BuildProjectGraphOptions {
   includeCommits?: boolean;
   /** Include branch nodes. Default true. */
   includeBranches?: boolean;
+  /**
+   * T2 temporal ground-truth: git-log commits (only `sha` + `committedAtMs` are
+   * read). When supplied, a Commit node whose sha matches gets a point-in-time
+   * `t` (= committer-date) and the derived Branch / Agent / Project spans widen
+   * to include it. Absent / unmatched commits stay timeless (no `t` key), so the
+   * graph is byte-identical to the pre-T2 output. Structurally satisfied by
+   * `readGitCommits()` output (GitCommitMeta[]).
+   */
+  commits?: Pick<GitCommitMeta, "sha" | "committedAtMs">[];
   /** Provenance to stamp on graph.graph.provenance. */
   provenance?: unknown;
 }
@@ -228,6 +238,16 @@ function nodeId(kind: string, key: string): string {
 /** Provenance tag for the T0 session-derived temporal stamp (`t`/`t_end`). */
 const SESSION_TIME_SRC = "session.started_at";
 
+/** T2 provenance: a Commit node's `t` came from its git committer-date. */
+const COMMIT_TIME_SRC = "git.committer_date";
+
+/**
+ * T2 provenance: a container node's span (`t`/`t_end`) was DERIVED as the
+ * [min, max] envelope of its owned children's timestamps (not measured
+ * directly). See the derived-span second pass in {@link buildProjectGraph}.
+ */
+const DERIVED_SPAN_SRC = "derived.children_span";
+
 /**
  * Shared-scene-contract temporal stamp (epoch-ms). `t`/`t_end` are allowlisted
  * by src/studio-scene.ts and flow through to the studio scene; `t_src` is
@@ -267,6 +287,28 @@ function sessionTemporal(s: SessionInput): TemporalStamp {
 }
 
 /**
+ * T2 derived span: the [min, max] envelope over a node's owned children's
+ * timestamps. Pools EVERY known bound (a child's `t` and `t_end`) and returns
+ * `t` = earliest (FIRST activity), `t_end` = latest (LAST activity) — i.e. the
+ * outer hull of the children's intervals. An open-interval child (a running
+ * session: `t` but no `t_end`) contributes only its start, since that is its
+ * only known bound. Returns `{}` (NO keys) when no child carries a timestamp,
+ * so a container with only timeless children stays byte-identical (no `t`).
+ * Order-independent (pure min/max) → deterministic regardless of child order.
+ */
+function envelope(bounds: Iterable<number | undefined>): TemporalStamp {
+  let lo: number | undefined;
+  let hi: number | undefined;
+  for (const v of bounds) {
+    if (typeof v !== "number" || !Number.isFinite(v)) continue;
+    if (lo === undefined || v < lo) lo = v;
+    if (hi === undefined || v > hi) hi = v;
+  }
+  if (lo === undefined) return {};
+  return { t: lo, t_end: hi, t_src: DERIVED_SPAN_SRC };
+}
+
+/**
  * Build the project/conversation graph from reconciled session inputs.
  *
  * Only sessions that match an alias of the given identity are included — this is
@@ -278,6 +320,18 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
   const { identity } = opts;
   const includeCommits = opts.includeCommits !== false;
   const includeBranches = opts.includeBranches !== false;
+
+  // T2: index git committer-dates by 7-char sha prefix (the form sessions print
+  // and `sessionFactToInput` stores). FIRST-TOUCH on collision — a duplicate
+  // prefix keeps the first date — but the value is git ground-truth, NOT session
+  // order, so a Commit node's `t` is deterministic regardless of which session
+  // happened to create the node first.
+  const commitTimeBySha7 = new Map<string, number>();
+  for (const c of opts.commits ?? []) {
+    if (c.committedAtMs === undefined) continue;
+    const k = c.sha.slice(0, 7).toLowerCase();
+    if (!commitTimeBySha7.has(k)) commitTimeBySha7.set(k, c.committedAtMs);
+  }
 
   const nodes = new Map<string, GraphNodeOut>();
   const links: GraphEdgeOut[] = [];
@@ -447,6 +501,14 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
     // commits (ground-truth shas the session printed)
     if (includeCommits) {
       for (const sha of s.commitShas) {
+        // T2: a commit is a POINT in time — stamp `t` = `t_end` = its git
+        // committer-date (epoch-ms) when known. Setting `t_end === t` (vs
+        // omitting it) is the scene contract's point-in-time form and
+        // disambiguates a commit from an OPEN session (which omits `t_end` to
+        // mean "still running"). No matching git date → `{}` → no `t` key.
+        const ct = commitTimeBySha7.get(sha.slice(0, 7).toLowerCase());
+        const commitStamp: TemporalStamp =
+          ct !== undefined ? { t: ct, t_end: ct, t_src: COMMIT_TIME_SRC } : {};
         const cId = addNode({
           id: nodeId("commit", sha),
           label: sha,
@@ -456,6 +518,7 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
           community_name: COMMUNITY_LABELS["5"]!,
           node_type: "Commit",
           sha,
+          ...commitStamp,
         });
         addEdge({
           source: sessId,
@@ -487,6 +550,68 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
         // child declared a parent, so it carries the child session's t/t_end.
         ...(temporalBySessionId.get(s.sessionId) ?? {}),
       });
+    }
+  }
+
+  // 5. T2 DERIVED-SPAN second pass — pure over the structure built above, so the
+  //    builder stays deterministic. Container nodes get t = min / t_end = max
+  //    (FIRST / LAST activity) over their owned children's timestamps:
+  //      • Branch  ← the sessions that touched it (touched-branch) PLUS the
+  //                  commits those sessions produced — a branch's span covers
+  //                  both its sessions' intervals and its commits' points;
+  //      • Agent   ← the sessions it conducted (conducted-by);
+  //      • Project ← every in-identity session (global envelope; cheap, single
+  //                  project node).
+  //    A container with no timestamped child gets NO `t` key (byte-identical
+  //    back-compat). This stamps NODES ONLY — no new EDGE timestamps are
+  //    introduced, so the T0 edge dedup / first-touch semantics are untouched.
+  const nodeBound = (id: string, key: "t" | "t_end"): number | undefined => {
+    const v = nodes.get(id)?.[key];
+    return typeof v === "number" ? v : undefined;
+  };
+  const producedBySession = new Map<string, string[]>(); // session → commit ids
+  const sessionsByBranch = new Map<string, string[]>(); //  branch  → session ids
+  const sessionsByAgent = new Map<string, string[]>(); //   agent   → session ids
+  const pushTo = (m: Map<string, string[]>, k: string, v: string) => {
+    const arr = m.get(k);
+    if (arr) arr.push(v);
+    else m.set(k, [v]);
+  };
+  for (const e of links) {
+    if (e.relation === "produced") pushTo(producedBySession, e.source, e.target);
+    else if (e.relation === "touched-branch") pushTo(sessionsByBranch, e.target, e.source);
+    else if (e.relation === "conducted-by") pushTo(sessionsByAgent, e.target, e.source);
+  }
+  const applySpan = (id: string, stamp: TemporalStamp) => {
+    if (stamp.t === undefined) return; // no timestamped child → stay timeless
+    const n = nodes.get(id);
+    if (!n) return;
+    n.t = stamp.t;
+    if (stamp.t_end !== undefined) n.t_end = stamp.t_end;
+    n.t_src = stamp.t_src;
+  };
+  // Every in-identity session's bounds, collected once for the Project envelope.
+  const allSessionBounds: (number | undefined)[] = [];
+  for (const n of nodes.values()) {
+    if (n.node_type !== "Session") continue;
+    allSessionBounds.push(nodeBound(n.id, "t"), nodeBound(n.id, "t_end"));
+  }
+  for (const n of nodes.values()) {
+    if (n.node_type === "Branch") {
+      const bounds: (number | undefined)[] = [];
+      for (const sid of sessionsByBranch.get(n.id) ?? []) {
+        bounds.push(nodeBound(sid, "t"), nodeBound(sid, "t_end"));
+        for (const cid of producedBySession.get(sid) ?? []) bounds.push(nodeBound(cid, "t"));
+      }
+      applySpan(n.id, envelope(bounds));
+    } else if (n.node_type === "Agent") {
+      const bounds: (number | undefined)[] = [];
+      for (const sid of sessionsByAgent.get(n.id) ?? []) {
+        bounds.push(nodeBound(sid, "t"), nodeBound(sid, "t_end"));
+      }
+      applySpan(n.id, envelope(bounds));
+    } else if (n.node_type === "Project") {
+      applySpan(n.id, envelope(allSessionBounds));
     }
   }
 
