@@ -17,6 +17,7 @@ import {
   type SessionInput,
 } from "../src/agent-stats/project-graph.js";
 import type { SessionFact } from "../src/agent-stats/types.js";
+import { buildStudioScene } from "../src/studio-scene.js";
 
 const sentropicIdentity: ProjectIdentity = {
   canonicalId: "sentropic",
@@ -37,6 +38,8 @@ function mkSession(over: Partial<SessionInput>): SessionInput {
     cwds: over.cwds ?? ["~/src/sentropic"],
     startedAt: over.startedAt,
     endedAt: over.endedAt,
+    startedAtMs: over.startedAtMs,
+    endedAtMs: over.endedAtMs,
     branches: over.branches ?? [],
     commitShas: over.commitShas ?? [],
     prUrls: over.prUrls ?? [],
@@ -167,6 +170,163 @@ describe("buildProjectGraph — session detail", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// T0 temporal stamps: `t` / `t_end` (epoch-ms) + `t_src` (provenance) on
+// Session nodes and on every edge a session OWNS (worked-in / conducted-by /
+// touched-branch / produced / derived-from). Epoch-ms matches the shared scene
+// contract (src/studio-scene.ts). `t_src` is graph-only provenance.
+// ---------------------------------------------------------------------------
+const START_ISO = "2026-01-01T00:00:00.000Z";
+const END_ISO = "2026-01-01T01:00:00.000Z";
+const START_MS = Date.parse(START_ISO);
+const END_MS = Date.parse(END_ISO);
+
+describe("buildProjectGraph — T0 temporal stamps", () => {
+  it("stamps t/t_end/t_src on the Session node from started/ended", () => {
+    const g = buildProjectGraph({
+      identity: sentropicIdentity,
+      sessions: [mkSession({ cwds: ["~/src/graphify"], startedAt: START_ISO, endedAt: END_ISO })],
+    });
+    const sess = g.nodes.find((n) => n.node_type === "Session")!;
+    expect(sess.t).toBe(START_MS);
+    expect(sess.t_end).toBe(END_MS);
+    expect(sess.t_src).toBe("session.started_at");
+  });
+
+  it("stamps the session's t/t_end/t_src on every edge it OWNS", () => {
+    const g = buildProjectGraph({
+      identity: sentropicIdentity,
+      sessions: [
+        mkSession({
+          cwds: ["~/src/graphify"],
+          startedAt: START_ISO,
+          endedAt: END_ISO,
+          branches: ["feat/x"],
+          commitShas: ["abc1234"],
+          agentId: "claude:graphify:111",
+        }),
+      ],
+    });
+    const owned = g.links.filter((e) =>
+      ["worked-in", "conducted-by", "touched-branch", "produced"].includes(e.relation),
+    );
+    expect(owned.map((e) => e.relation).sort()).toEqual([
+      "conducted-by",
+      "produced",
+      "touched-branch",
+      "worked-in",
+    ]);
+    for (const e of owned) {
+      expect(e.t).toBe(START_MS);
+      expect(e.t_end).toBe(END_MS);
+      expect(e.t_src).toBe("session.started_at");
+    }
+  });
+
+  it("stamps derived-from with the CHILD (source) session's t/t_end", () => {
+    const g = buildProjectGraph({
+      identity: sentropicIdentity,
+      sessions: [
+        mkSession({
+          factId: "codex:parent",
+          sessionId: "parent",
+          host: "codex",
+          cwds: ["~/src/graphify"],
+          startedAt: "2026-01-01T00:00:00.000Z",
+          endedAt: "2026-01-01T00:30:00.000Z",
+        }),
+        mkSession({
+          factId: "codex:child",
+          sessionId: "child",
+          host: "codex",
+          cwds: ["~/src/graphify"],
+          parentThreadId: "parent",
+          startedAt: START_ISO,
+          endedAt: END_ISO,
+        }),
+      ],
+    });
+    const derived = g.links.find((e) => e.relation === "derived-from")!;
+    expect(derived.t).toBe(START_MS); // child's start, not the parent's
+    expect(derived.t_end).toBe(END_MS);
+    expect(derived.t_src).toBe("session.started_at");
+  });
+
+  it("omits t_end for an OPEN session (started, not ended) — open interval, not a point", () => {
+    const g = buildProjectGraph({
+      identity: sentropicIdentity,
+      sessions: [mkSession({ cwds: ["~/src/graphify"], startedAt: START_ISO })],
+    });
+    const sess = g.nodes.find((n) => n.node_type === "Session")!;
+    expect(sess.t).toBe(START_MS);
+    expect("t_end" in sess).toBe(false);
+    expect(sess.t_src).toBe("session.started_at");
+    const worked = g.links.find((e) => e.relation === "worked-in")!;
+    expect(worked.t).toBe(START_MS);
+    expect("t_end" in worked).toBe(false);
+  });
+
+  it("prefers the explicit epoch-ms (projection-boundary value) over the ISO string", () => {
+    const g = buildProjectGraph({
+      identity: sentropicIdentity,
+      sessions: [
+        mkSession({ cwds: ["~/src/graphify"], startedAt: "ignored-iso", startedAtMs: 123456789, endedAtMs: 987654321 }),
+      ],
+    });
+    const sess = g.nodes.find((n) => n.node_type === "Session")!;
+    expect(sess.t).toBe(123456789);
+    expect(sess.t_end).toBe(987654321);
+  });
+
+  it("emits NO temporal keys for a timeless session (byte-identical back-compat)", () => {
+    const g = buildProjectGraph({
+      identity: sentropicIdentity,
+      sessions: [mkSession({ cwds: ["~/src/graphify"], branches: ["main"], commitShas: ["abc1234"] })],
+    });
+    const sess = g.nodes.find((n) => n.node_type === "Session")!;
+    expect("t" in sess).toBe(false);
+    expect("t_end" in sess).toBe(false);
+    expect("t_src" in sess).toBe(false);
+    for (const e of g.links) {
+      expect("t" in e).toBe(false);
+      expect("t_end" in e).toBe(false);
+      expect("t_src" in e).toBe(false);
+    }
+  });
+});
+
+describe("agent-stats → studio scene carries t/t_end", () => {
+  it("a session node's t/t_end survive buildStudioScene (#234 scene allowlist)", () => {
+    const g = buildProjectGraph({
+      identity: sentropicIdentity,
+      sessions: [
+        mkSession({
+          factId: "claude:a",
+          sessionId: "a",
+          cwds: ["~/src/graphify"],
+          startedAt: START_ISO,
+          endedAt: END_ISO,
+          branches: ["feat/x"],
+        }),
+      ],
+    });
+    // buildProjectGraph emits `links`; buildStudioScene reads links as edges.
+    const scene = buildStudioScene(g);
+    const sceneSession = scene.nodes.find((n) => n.type === "Session")!;
+    expect(sceneSession).toBeTruthy();
+    expect(sceneSession.t).toBe(START_MS);
+    expect(sceneSession.t_end).toBe(END_MS);
+    // A session-owned edge also carries the span into the scene.
+    const ownedEdge = scene.edges.find(
+      (e) => e.relation === "worked-in" || e.relation === "touched-branch",
+    )!;
+    expect(ownedEdge.t).toBe(START_MS);
+    expect(ownedEdge.t_end).toBe(END_MS);
+    // t_src is graph-only provenance — NOT in the scene allowlist.
+    expect("t_src" in sceneSession).toBe(false);
+  });
+});
+
 describe("graph.json shape", () => {
   it("produces a valid node-link graph the studio can read", () => {
     const g = buildProjectGraph({ identity: sentropicIdentity, sessions: [mkSession({ cwds: ["~/src/graphify"] })], provenance: { tool: "test" } });
@@ -221,5 +381,27 @@ describe("sessionFactToInput", () => {
     expect(inp.commitShas).toEqual(["abc1234"]); // 7-char, deduped
     expect(inp.filesTouched).toBe(2);
     expect(inp.parentThreadId).toBe("p");
+    // T0 projection boundary: ISO started/ended also carried as epoch-ms.
+    expect(inp.startedAtMs).toBe(Date.parse("2026-01-01T00:00:00Z"));
+    expect(inp.endedAtMs).toBe(Date.parse("2026-01-01T01:00:00Z"));
+  });
+
+  it("leaves the epoch-ms undefined when the fact has no started/ended", () => {
+    const fact: SessionFact = {
+      factId: "claude:n",
+      host: "claude",
+      sessionId: "n",
+      cwds: ["~/src/graphify"],
+      models: [],
+      tokens: { input: 0, output: 0, cached: 0, total: 0 },
+      gitActions: [],
+      groundTruth: { commitShas: [], branches: [], shaBranch: {}, prUrls: [] },
+      branchesObserved: [],
+      filesTouched: [],
+      evidence: [],
+    };
+    const inp = sessionFactToInput(fact, "claude:graphify:zz");
+    expect(inp.startedAtMs).toBeUndefined();
+    expect(inp.endedAtMs).toBeUndefined();
   });
 });
