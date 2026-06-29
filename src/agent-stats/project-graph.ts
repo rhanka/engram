@@ -63,6 +63,22 @@ export interface SessionInput {
   cwds: string[];
   startedAt?: string;
   endedAt?: string;
+  /**
+   * Session start/end as epoch-MILLISECONDS — the projection of the ISO
+   * `startedAt`/`endedAt`. T0 temporal slice: these feed the shared scene
+   * contract's `t`/`t_end` (epoch-ms; see src/studio-scene.ts) on the session
+   * node and on the edges that session OWNS. Carried HERE — the projection
+   * boundary — because finer timestamps are otherwise dropped crossing it.
+   *
+   * TODO(agent-stats temporal — deferred lots): only session-level start/end is
+   * projected for T0. The finer per-action timestamps are STILL dropped at this
+   * boundary — `GitAction.timestamp` and `EvidenceSnippet.timestamp`
+   * (src/agent-stats/types.ts) plus the git committer-date are NOT carried — so
+   * DERIVED Branch / Commit / Agent spans stay out of scope. Widen SessionInput
+   * with those per-action timestamps when the derived-span lots land.
+   */
+  startedAtMs?: number;
+  endedAtMs?: number;
   branches: string[];
   commitShas: string[];
   prUrls: string[];
@@ -114,6 +130,17 @@ export interface BuildProjectGraphOptions {
   provenance?: unknown;
 }
 
+/**
+ * Parse an ISO-8601 timestamp to epoch-MILLISECONDS, or `undefined` when the
+ * input is absent or unparseable. The single conversion point for the T0
+ * temporal projection (ISO `startedAt`/`endedAt` → scene-contract `t`/`t_end`).
+ */
+export function isoToEpochMs(iso: string | undefined): number | undefined {
+  if (!iso) return undefined;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : undefined;
+}
+
 /** Project the rich SessionFact onto the minimal SessionInput. */
 export function sessionFactToInput(fact: SessionFact, agentId: string): SessionInput {
   const branches = new Set<string>();
@@ -127,6 +154,8 @@ export function sessionFactToInput(fact: SessionFact, agentId: string): SessionI
     cwds: fact.cwds,
     startedAt: fact.startedAt,
     endedAt: fact.endedAt,
+    startedAtMs: isoToEpochMs(fact.startedAt),
+    endedAtMs: isoToEpochMs(fact.endedAt),
     branches: Array.from(branches).sort(),
     commitShas: Array.from(new Set(fact.groundTruth.commitShas.map((s) => s.slice(0, 7)))).sort(),
     prUrls: Array.from(new Set(fact.groundTruth.prUrls)),
