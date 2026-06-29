@@ -691,14 +691,33 @@ export type ProjectGraphIdentity = ProjectIdentity & { repoRootForRegistry?: str
  */
 export function buildProjectGraphForIdentity(
   identity: ProjectGraphIdentity,
-  opts: { home?: string; includeCommits?: boolean; includeBranches?: boolean } = {},
+  opts: {
+    home?: string;
+    includeCommits?: boolean;
+    includeBranches?: boolean;
+    /** Inject git commits (skips `git log`); else read from the registry root. */
+    commits?: GitCommitMeta[];
+  } = {},
 ): { graph: ProjectGraph; sessions: number } {
-  const sessions = loadSessionsForIdentity({ identity, home: opts.home });
+  const home = opts.home ?? homedir();
+  const sessions = loadSessionsForIdentity({ identity, home });
+  // T2: stamp Commit nodes (and widen derived Branch/Agent/Project spans) from
+  // git committer-dates. Read `git log` from the registry / current-incarnation
+  // root (the same root loadSessionsForIdentity uses for the h2a registry). A
+  // missing / non-repo root degrades to [] (safeExecGit returns "") — the graph
+  // then stays byte-identical to pre-T2 output.
+  const gitRoot =
+    identity.repoRootForRegistry ??
+    (identity.aliases[0]?.pathPrefixes[0]
+      ? identity.aliases[0]!.pathPrefixes[0]!.replace(/^~/, home)
+      : undefined);
+  const commits = opts.commits ?? (gitRoot ? readGitCommits(gitRoot) : []);
   const graph = buildProjectGraph({
     identity,
     sessions,
     includeCommits: opts.includeCommits,
     includeBranches: opts.includeBranches,
+    commits,
     provenance: {
       tool: "graphify agent-stats project-graph",
       schema: PROJECT_GRAPH_SCHEMA,
