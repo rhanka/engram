@@ -24,9 +24,19 @@ import {
 } from "./ontology-reconciliation-api.js";
 import type { OntologyReconciliationCandidateFilter } from "./ontology-reconciliation.js";
 import type { OntologyReconciliationDecisionLogOptions } from "./ontology-patch.js";
+import type { GraphStore } from "./storage/types.js";
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost", "ip6-loopback"]);
 const POST_BODY_MAX_BYTES = 256 * 1024;
+
+/**
+ * The slice of a {@link GraphStore} the `/api/ontology/groups` route reads: the
+ * capability descriptor (to gate on the optional `aggregate`) plus the
+ * `groupCounts(axis)` reader. A full GraphStore satisfies it; tests inject a
+ * minimal fake. Optional everywhere downstream, so the DEFAULT flat-JSON studio
+ * (no store configured) is byte-for-byte unchanged.
+ */
+export type StudioGroupCountsStore = Pick<GraphStore, "capabilities" | "groupCounts">;
 
 export interface OntologyStudioWriteOptions {
   token: string;
@@ -37,6 +47,14 @@ export interface OntologyStudioHandlerOptions {
   write?: OntologyStudioWriteOptions;
   /** Bind host; when loopback, same-origin writes are trusted without a token. */
   host?: string;
+  /**
+   * Optional GraphStore mirror (storage LOT 1/2). Present ONLY when a backend
+   * declaring the `aggregate` capability is configured; the
+   * `GET /api/ontology/groups` route then serves O(#groups) precomputed counts
+   * from it. Absent for the default flat-JSON studio, where the route 404s and
+   * the SPA falls back to its in-memory group-by — so the default is unchanged.
+   */
+  store?: StudioGroupCountsStore;
 }
 
 export interface StartOntologyStudioServerOptions {
@@ -45,6 +63,12 @@ export interface StartOntologyStudioServerOptions {
   port?: number;
   write?: boolean;
   token?: string;
+  /**
+   * Optional aggregate-capable GraphStore for the `/api/ontology/groups` route
+   * (storage LOT 2). Omitted by the default studio, which keeps serving flat
+   * JSON only; the route then 404s and the SPA falls back to client group-by.
+   */
+  store?: StudioGroupCountsStore;
 }
 
 export interface StartedOntologyStudioServer {
@@ -317,6 +341,49 @@ function patchRouteForMethod(pathname: string): "validate" | "dry-run" | "apply"
   return null;
 }
 
+/**
+ * GET /api/ontology/groups?axis=node_type — storage LOT 2.
+ *
+ * Capability-gated, READ-ONLY group-by counts served from a configured
+ * GraphStore mirror's precomputed aggregate (O(#groups), never an O(#nodes) scan
+ * of the snapshot). The studio PREFERS these counts for the group rail and falls
+ * back to its in-memory computation whenever the route is unavailable, so the
+ * default flat-JSON studio (no store) is unaffected.
+ *
+ * Any gating miss returns 404 so the SPA cleanly falls back to client group-by:
+ *   - no store configured (the default studio);
+ *   - the store omits the `aggregate` capability / `groupCounts` reader;
+ *   - the requested axis is not one the capability advertises (e.g. an ontology
+ *     class axis the store does not precompute) — the client keeps owning it.
+ *
+ * Async because `groupCounts()` is async; it is dispatched from the (async)
+ * request handler ahead of the synchronous route table.
+ */
+export async function handleOntologyGroupsRequest(
+  options: OntologyStudioHandlerOptions,
+  requestUrl: string,
+): Promise<OntologyStudioRouteResult> {
+  const url = new URL(requestUrl, "http://127.0.0.1");
+  const axis = optionalString(url.searchParams.get("axis")) ?? "node_type";
+  const store = options.store;
+  const aggregate = store?.capabilities?.aggregate;
+  if (!store || !aggregate || typeof store.groupCounts !== "function") {
+    return jsonResult(404, {
+      error: "group counts unavailable: no aggregate-capable store configured",
+    });
+  }
+  if (!aggregate.axes.includes(axis)) {
+    return jsonResult(404, { error: `group counts unavailable for axis '${axis}'` });
+  }
+  try {
+    const counts = await store.groupCounts(axis);
+    return jsonResult(200, counts);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return jsonResult(500, { error: message });
+  }
+}
+
 export function createOntologyStudioRequestHandler(options: OntologyStudioHandlerOptions) {
   return async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     const method = request.method ?? "GET";
@@ -386,6 +453,14 @@ export function createOntologyStudioRequestHandler(options: OntologyStudioHandle
           sendAsset(response, asset);
           return;
         }
+      }
+      // Storage LOT 2: the async, store-backed group-by counts route. Handled
+      // here (not in the synchronous route table) because `groupCounts()` is
+      // async. With no store configured it returns 404 and the SPA falls back to
+      // its in-memory group-by, so the default studio path is unchanged.
+      if (url.pathname === "/api/ontology/groups") {
+        sendResult(response, await handleOntologyGroupsRequest(options, requestUrl));
+        return;
       }
     }
 
@@ -471,6 +546,9 @@ export async function startOntologyStudioServer(
   };
   if (writeEnabled) {
     handlerOptions.write = { token: options.token ?? generateOntologyStudioToken() };
+  }
+  if (options.store) {
+    handlerOptions.store = options.store;
   }
   const server = createServer(createOntologyStudioRequestHandler(handlerOptions));
   await new Promise<void>((resolve, reject) => {

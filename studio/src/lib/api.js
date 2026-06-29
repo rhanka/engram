@@ -259,6 +259,36 @@ export async function fetchClassHierarchies() {
   }
 }
 
+/**
+ * Storage LOT 2: fetch the precomputed group-by counts for an axis from a
+ * configured GraphStore mirror via `GET /api/ontology/groups?axis=<axis>`. The
+ * payload is a `graphify` group-counts document `{ axis, groups: [{ key, label,
+ * count, parent_key? }] }`. The studio PREFERS these over recomputing the rail
+ * counts across the full in-memory graph; whenever the route is unavailable —
+ * the default flat-JSON studio (no store), an offline bundle, a 404, or any
+ * network error — this resolves `null` so the caller falls back to its
+ * client-side group-by. Never throws (mirrors fetchClassHierarchies).
+ *
+ * Unlike the artifact fetchers there is NO bundle-relative static fallback: the
+ * counts are a live store projection, not a build-time artifact, so an offline
+ * export simply has none and the client computes them.
+ *
+ * @param {string} axis  e.g. "node_type".
+ * @returns {Promise<{ axis: string, groups: { key: string, label?: string,
+ *   count: number, parent_key?: string }[] } | null>}
+ */
+export async function fetchGroupCounts(axis) {
+  // Offline export ships no store aggregate; fall back to client group-by.
+  if (bundlePresent()) return null;
+  const param = encodeURIComponent(axis ?? "node_type");
+  try {
+    return await getJson(`/api/ontology/groups?axis=${param}`);
+  } catch {
+    // 404 (no aggregate-capable store / off-axis) or network error → client path.
+    return null;
+  }
+}
+
 export async function fetchReconciliationCandidates() {
   // Offline: serve the inlined queue if present (only with `--full-offline`),
   // else an empty queue (no doomed file:// fetch).

@@ -3174,6 +3174,44 @@ export async function main(): Promise<void> {
         process.exit(1);
       }
       const { startOntologyStudioServer } = await import("./ontology-studio.js");
+      // Storage LOT 2: when an aggregate-capable GraphStore mirror is configured
+      // (env GRAPHIFY_STORE, or a storage.mirrors[] backend in the project
+      // config), wire it so the SPA group rail reads precomputed O(#groups)
+      // counts via GET /api/ontology/groups. Resolution is best-effort and
+      // NON-FATAL: with no backend configured — or on any connect/capability
+      // miss — the studio keeps serving flat JSON only (the route 404s and the
+      // SPA falls back to client-side group-by). Never blocks the default studio.
+      let groupCountsStore:
+        | import("./ontology-studio.js").StudioGroupCountsStore
+        | undefined;
+      const storeBackendId =
+        process.env.GRAPHIFY_STORE ?? projectConfig.storage?.mirrors?.[0]?.backend;
+      if (storeBackendId) {
+        try {
+          const { resolveStoreConfig } = await import("./storage/config.js");
+          const { resolveGraphStore } = await import("./storage/registry.js");
+          const storeConfig = resolveStoreConfig(storeBackendId, { projectConfig });
+          const resolved = await resolveGraphStore(storeBackendId, storeConfig);
+          if (resolved.capabilities.aggregate && typeof resolved.groupCounts === "function") {
+            groupCountsStore = resolved;
+            console.log(
+              `Group-by counts served from the '${storeBackendId}' store aggregate ` +
+                `(axes: ${resolved.capabilities.aggregate.axes.join(", ")}).`,
+            );
+          } else {
+            console.warn(
+              `Store '${storeBackendId}' declares no group-by aggregate capability; ` +
+                `the studio will compute group counts client-side.`,
+            );
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.warn(
+            `Could not wire a group-by counts store (${message}); ` +
+              `the studio will compute group counts client-side.`,
+          );
+        }
+      }
       try {
         const started = await startOntologyStudioServer({
           profileStatePath,
@@ -3181,6 +3219,7 @@ export async function main(): Promise<void> {
           ...(opts.port ? { port: Number.parseInt(opts.port, 10) } : {}),
           ...(opts.write ? { write: true } : {}),
           ...(opts.token ? { token: String(opts.token) } : {}),
+          ...(groupCountsStore ? { store: groupCountsStore } : {}),
         });
         if (started.writeEnabled) {
           console.log(`Ontology studio (write-enabled) listening at ${started.url}`);
