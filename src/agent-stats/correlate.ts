@@ -32,6 +32,14 @@ export interface GitCommitMeta {
   sha: string; // full or abbreviated
   branch?: string;
   subject?: string;
+  /**
+   * Committer date (`git log %cI`) as epoch-MILLISECONDS, when known. T2: the
+   * ground-truth point-in-time for the commit, stamped onto Commit nodes as the
+   * shared-scene-contract `t` (see project-graph.ts). COMMITTER-date — not
+   * author-date — because rebase / cherry-pick rewrite the committer-date to
+   * when the commit actually landed, which is what a timeline should show.
+   */
+  committedAtMs?: number;
 }
 
 /**
