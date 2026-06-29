@@ -11,6 +11,47 @@ export interface GraphStoreCapabilities {
   query: boolean;
   clear: boolean;
   snapshotMeta: boolean;
+  /**
+   * Optional, VERSIONED group-by aggregate (storage LOT 1). Absent on backends
+   * that do not precompute it (neo4j/spanner simply omit it). When present, the
+   * adapter exposes `groupCounts(axis)` reading a backend-maintained counts
+   * table in O(#groups) — not O(#nodes).
+   *
+   * The aggregate is tied to REPLACE / full-snapshot semantics: it is rebuilt
+   * ONLY inside a `mode: "replace"` push, never on a `merge` push. A merge is an
+   * upsert that may leave stale rows behind, so rebuilding the aggregate after a
+   * merge could surface deleted / half-merged groups; gating the rebuild on
+   * replace keeps the counts coherent with a committed full snapshot. This
+   * capability does NOT imply any cross-backend transaction semantics — each
+   * adapter owns when and how it maintains its table.
+   */
+  aggregate?: GraphStoreAggregateCapability;
+}
+
+/** Versioned descriptor for the optional group-by aggregate capability (LOT 1). */
+export interface GraphStoreAggregateCapability {
+  /** Schema/behaviour version of the aggregate contract; consumers gate on it. */
+  version: 1;
+  /** Axes the backend can serve from its precomputed table (e.g. `node_type`). */
+  axes: readonly string[];
+}
+
+/** One group bucket: a distinct value of an axis and its node count. */
+export interface GraphGroupCount {
+  /** The axis value (e.g. a node_type string, or a community id as text). */
+  key: string;
+  /** Human-readable label for the bucket; defaults to `key` when none. */
+  label: string;
+  /** Number of nodes in the bucket for the current snapshot. */
+  count: number;
+  /** Parent bucket key for hierarchical axes; omitted for flat axes. */
+  parent_key?: string;
+}
+
+/** Result of `groupCounts(axis)`: the axis plus its precomputed buckets. */
+export interface GraphGroupCounts {
+  axis: string;
+  groups: GraphGroupCount[];
 }
 
 export interface GraphPushOptions {
@@ -57,6 +98,15 @@ export interface GraphStore {
     statement: string,
     params?: unknown[] | Record<string, unknown>,
   ): Promise<unknown>;
+  /**
+   * Capability-gated O(#groups) group-by counts (storage LOT 1). Present ONLY
+   * when `capabilities.aggregate` is set; backends that omit the capability omit
+   * this method (a no-op/absent on the contract). Reads a backend-maintained
+   * counts table (not the node rows), so it is O(#groups), not O(#nodes). The
+   * result is scoped to the latest REPLACE snapshot — see
+   * `GraphStoreCapabilities.aggregate`.
+   */
+  groupCounts?(axis: string): Promise<GraphGroupCounts>;
   close(): Promise<void>;
 }
 
