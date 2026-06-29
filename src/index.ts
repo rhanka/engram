@@ -595,6 +595,13 @@ export type {
   LayoutGraphNode,
   LayoutResult,
 } from "./graph-layout.js";
+export {
+  applySceneLayout,
+  attachTypedLayerPositions,
+  resolveSceneLayoutId,
+  TYPED_LAYER_SCENE_LAYOUT_ID,
+} from "./scene-layout.js";
+export type { SceneLayoutId } from "./scene-layout.js";
 export { buildStudioRenderBuffers } from "./studio-render-buffers.js";
 export type {
   BuildStudioRenderBuffersOptions,
