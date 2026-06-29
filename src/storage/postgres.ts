@@ -25,6 +25,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import type Graph from "graphology";
 import { toJson } from "../export.js";
 import type {
+  GraphGroupCounts,
   GraphPushOptions,
   GraphPushResult,
   GraphStore,
@@ -40,6 +41,16 @@ import type {
 const NODE_TABLE = "graph_nodes";
 const EDGE_TABLE = "graph_edges";
 const META_TABLE = "graph_meta";
+/** Precomputed group-by aggregate (storage LOT 1); rebuilt on replace pushes. */
+const COUNT_TABLE = "graph_group_counts";
+
+/**
+ * Axes the precomputed aggregate serves in LOT 1. `node_type` + `community` are
+ * lifted to typed columns / derivable on push, so the GROUP BY is cheap.
+ * `class_id`, `registry`, `status` and `ts` are DEFERRED to LOT 2 until those
+ * fields are lifted out of the props jsonb into queryable columns.
+ */
+const AGGREGATE_AXES = ["node_type", "community"] as const;
 
 /** Schema columns lifted into typed node columns; the rest go into props jsonb. */
 const NODE_SCHEMA_COLS = ["id", "label", "type", "node_type", "community"];
@@ -137,6 +148,18 @@ function buildPropsBag(
   return props;
 }
 
+/**
+ * Resolve a node's `node_type` the same way the `type` column is filled, so the
+ * graph_nodes rows and the graph_group_counts aggregate never disagree:
+ * node_type > type > file_type, else null (untyped — excluded from the axis).
+ */
+function resolveNodeType(a: Record<string, unknown>): string | null {
+  if (typeof a.node_type === "string") return a.node_type;
+  if (typeof a.type === "string") return a.type;
+  if (typeof a.file_type === "string") return a.file_type;
+  return null;
+}
+
 /** Chunk an array into subarrays of at most `size` elements. */
 function chunk<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
@@ -158,6 +181,8 @@ function chunk<T>(arr: T[], size: number): T[][] {
  *   - graph_edges(city_slug, source_id, target_id, relation)
  *       PRIMARY KEY (city_slug, source_id, target_id, relation), props jsonb
  *   - graph_meta(city_slug) PRIMARY KEY — one snapshot row per city_slug
+ *   - graph_group_counts(city_slug, axis, key) PRIMARY KEY — precomputed
+ *       group-by aggregate (LOT 1); rebuilt only inside a replace-mode push
  *
  * Indexes:
  *   - (city_slug, type) composite, for type-scoped scans
@@ -219,6 +244,28 @@ export function postgresDdlStatements(schema?: string): string[] {
       "  pushed_at text,",
       "  tool_version text,",
       "  PRIMARY KEY (city_slug)",
+      ")",
+    ].join("\n"),
+  );
+
+  // graph_group_counts — precomputed group-by aggregate (storage LOT 1).
+  // Rebuilt ONLY inside a replace-mode push (delete-all-then-load per city), so
+  // it holds exactly one snapshot's worth of rows per city_slug and a read by
+  // (city_slug, axis) is O(#groups). `snapshot_id` stamps the producing push
+  // (== graph_meta.pushed_at) for staleness cross-checks. The (city_slug, axis,
+  // key) primary key both enforces one row per group and serves the read as a
+  // covering prefix index — no extra index needed.
+  statements.push(
+    [
+      `CREATE TABLE IF NOT EXISTS ${q(COUNT_TABLE)} (`,
+      "  city_slug text NOT NULL,",
+      "  snapshot_id text NOT NULL,",
+      "  axis text NOT NULL,",
+      "  key text NOT NULL,",
+      "  label text,",
+      "  count integer NOT NULL,",
+      "  parent_key text,",
+      "  PRIMARY KEY (city_slug, axis, key)",
       ")",
     ].join("\n"),
   );
@@ -288,6 +335,12 @@ export interface PostgresGraphStore extends GraphStore {
    * not one SELECT per edge (the N+1 fix). Returns the matched neighbor rows.
    */
   queryNeighbors(nodeId: string, citySlug?: string): Promise<Array<Record<string, unknown>>>;
+  /**
+   * O(#groups) group-by counts read from the precomputed `graph_group_counts`
+   * table (storage LOT 1). Scoped to the latest REPLACE snapshot. Supported
+   * axes: see `AGGREGATE_AXES`. Unknown axes return an empty group list.
+   */
+  groupCounts(axis: string): Promise<GraphGroupCounts>;
 }
 
 // ---------------------------------------------------------------------------
@@ -420,17 +473,59 @@ export async function createPostgresGraphStore(
         citySlug,
         nodeId,
         typeof a.label === "string" ? a.label : nodeId,
-        typeof a.node_type === "string"
-          ? a.node_type
-          : typeof a.type === "string"
-            ? a.type
-            : typeof a.file_type === "string"
-              ? a.file_type
-              : null,
+        resolveNodeType(a),
         community ?? (typeof a.community === "number" ? a.community : null),
         JSON.stringify(buildPropsBag(a, NODE_SCHEMA_COLS)),
       ]);
     });
+    return rows;
+  }
+
+  /** Columns written for graph_group_counts, in order. */
+  const COUNT_COLUMNS = [
+    "city_slug",
+    "snapshot_id",
+    "axis",
+    "key",
+    "label",
+    "count",
+    "parent_key",
+  ];
+
+  /**
+   * Aggregate the full snapshot into group-count rows IN JS (one pass over the
+   * graph), mirroring the `node_type`/`community` derivation used for the node
+   * rows. Computed from the same in-memory snapshot that is being loaded, so the
+   * rows are exactly consistent with the post-replace graph_nodes — never with a
+   * stale row that a merge left behind. `node_type` and `community` are flat
+   * axes (no parent_key) in LOT 1.
+   */
+  function buildGroupCountRows(
+    G: Graph,
+    communityMap: Map<string, number>,
+    snapshotId: string,
+  ): unknown[][] {
+    const byType = new Map<string, number>();
+    const byCommunity = new Map<number, number>();
+    G.forEachNode((nodeId, attrs) => {
+      const a = attrs as Record<string, unknown>;
+      const nodeType = resolveNodeType(a);
+      if (nodeType !== null) byType.set(nodeType, (byType.get(nodeType) ?? 0) + 1);
+      const community =
+        communityMap.get(nodeId) ??
+        (typeof a.community === "number" ? a.community : null);
+      if (community !== null) {
+        byCommunity.set(community, (byCommunity.get(community) ?? 0) + 1);
+      }
+    });
+    const rows: unknown[][] = [];
+    for (const [key, count] of byType) {
+      rows.push([citySlug, snapshotId, "node_type", key, key, count, null]);
+    }
+    for (const [cid, count] of byCommunity) {
+      const key = String(cid);
+      rows.push([citySlug, snapshotId, "community", key, `Community ${key}`, count, null]);
+    }
     return rows;
   }
 
@@ -513,8 +608,8 @@ export async function createPostgresGraphStore(
     runner: { query(text: string, params?: unknown[]): Promise<PgQueryResult> },
     topologySignature: string,
     toolVersion: string,
+    pushedAt: string,
   ): Promise<void> {
-    const pushedAt = new Date().toISOString();
     await runner.query(
       `INSERT INTO ${q(META_TABLE)} (city_slug, topology_signature, pushed_at, tool_version) ` +
         `VALUES ($1, $2, $3, $4) ` +
@@ -569,6 +664,8 @@ export async function createPostgresGraphStore(
       query: true,
       clear: true,
       snapshotMeta: true,
+      // Precomputed group-by aggregate (storage LOT 1), replace-snapshot scoped.
+      aggregate: { version: 1, axes: [...AGGREGATE_AXES] },
     },
 
     async verifyConnection(): Promise<void> {
@@ -600,6 +697,7 @@ export async function createPostgresGraphStore(
       const communityMap = buildNodeCommunityMap(communities);
       const nodeRows = buildNodeRows(G, communityMap);
       const edgeRows = buildEdgeRows(G);
+      const pushedAt = new Date().toISOString();
 
       // All writes for one push run in a single transaction so a backend error
       // leaves the previous snapshot intact (SPEC: "the push aborts").
@@ -626,7 +724,23 @@ export async function createPostgresGraphStore(
           edgeRows,
           batchSize,
         );
-        await writeMeta(client, computeTopologySignature(G), resolveToolVersion());
+        // Aggregate is REPLACE-snapshot scoped (storage LOT 1): rebuild
+        // graph_group_counts ONLY in replace mode, from the full snapshot just
+        // loaded. A merge push is an upsert that may leave deleted nodes behind,
+        // so it deliberately leaves the counts table untouched — the staleness
+        // guard. Delete-all-then-upsert keeps exactly one snapshot per city.
+        if (mode === "replace") {
+          await deleteCityRows(client, q(COUNT_TABLE), citySlug);
+          await upsertBatched(
+            client,
+            q(COUNT_TABLE),
+            COUNT_COLUMNS,
+            ["city_slug", "axis", "key"],
+            buildGroupCountRows(G, communityMap, pushedAt),
+            batchSize,
+          );
+        }
+        await writeMeta(client, computeTopologySignature(G), resolveToolVersion(), pushedAt);
         await client.query("COMMIT");
       } catch (err) {
         try {
@@ -685,6 +799,30 @@ export async function createPostgresGraphStore(
       return result.rows ?? [];
     },
 
+    async groupCounts(axis: string): Promise<GraphGroupCounts> {
+      // O(#groups): read the precomputed aggregate, never the 47k node rows.
+      // The (city_slug, axis, key) primary key serves this as a prefix scan.
+      await ensureSchema();
+      const result = await pool.query(
+        `SELECT key, label, count, parent_key FROM ${q(COUNT_TABLE)} ` +
+          `WHERE city_slug = $1 AND axis = $2 ORDER BY count DESC, key ASC`,
+        [citySlug, axis],
+      );
+      const groups = (result.rows ?? []).map((row) => {
+        const group: GraphGroupCounts["groups"][number] = {
+          key: String(row.key),
+          label:
+            typeof row.label === "string" && row.label.length > 0
+              ? row.label
+              : String(row.key),
+          count: typeof row.count === "number" ? row.count : Number(row.count ?? 0),
+        };
+        if (row.parent_key != null) group.parent_key = String(row.parent_key);
+        return group;
+      });
+      return { axis, groups };
+    },
+
     async clear(options?: string | PostgresClearOptions): Promise<void> {
       const opts = typeof options === "string" ? { namespace: options } : options ?? {};
       if (!opts.force) {
@@ -699,6 +837,7 @@ export async function createPostgresGraphStore(
         await deleteCityRows(client, q(NODE_TABLE), targetSlug);
         await deleteCityRows(client, q(EDGE_TABLE), targetSlug);
         await deleteCityRows(client, q(META_TABLE), targetSlug);
+        await deleteCityRows(client, q(COUNT_TABLE), targetSlug);
         await client.query("COMMIT");
       } catch (err) {
         try {
