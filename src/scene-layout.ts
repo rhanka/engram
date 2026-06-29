@@ -25,8 +25,12 @@
  * Anything other than `"typed-layer"` (including unset) ⇒ `"force"`.
  */
 
-import { computeTypedLayerPositions } from "@sentropic/graph";
-import type { TypedLayerLayoutOptions } from "@sentropic/graph";
+// Vendored locally (see typed-layer-layout.ts): the published
+// `@sentropic/graph@^0.1.0` graphify depends on at RUNTIME does NOT export
+// `computeTypedLayerPositions`, so importing it from the package crashes the
+// installed CLI at load (smoke-test regression from #238).
+import { computeTypedLayerPositions } from "./typed-layer-layout.js";
+import type { TypedLayerLayoutOptions } from "./typed-layer-layout.js";
 
 import { attachLayoutPositions } from "./graph-layout.js";
 
