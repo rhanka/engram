@@ -517,9 +517,21 @@ export interface CitedSourceRef {
   /** Object-store/CAS key (for example raw/proces-verbaux-<city>/cas/<sha>.pdf). */
   rawRef?: string;
   sourceUrl?: string;
-  /** 1-based source page number. */
+  /**
+   * Source modality. Drives modality-aware completeness validation: `page` is the
+   * required anchor for page-addressable modalities (pdf, pptx, image), whereas
+   * markdown/plain-text/csv/web/docx are anchored by `section`/`paragraph_id`
+   * instead. When absent the validator derives it from the locator suffix and
+   * otherwise falls back to the lenient (non-page) path.
+   */
+  modality?: CitationModality;
+  /** 1-based source page number. Required anchor for page-addressable modalities. */
   page?: number;
-  /** Normalized top-left page fractions [x0,y0,x1,y1], when available. */
+  /** Section / heading anchor for non-page modalities (markdown, plain-text, web, docx). */
+  section?: string;
+  /** Paragraph / text-frame / CSV-row id anchor for non-page modalities. */
+  paragraph_id?: string;
+  /** Normalized top-left page fractions [x0,y0,x1,y1], when available (pdf/image/pptx). */
   bbox?: [number, number, number, number];
   /** Verbatim evidence text used for text-match fallback when bbox is absent. */
   excerpt?: string;
