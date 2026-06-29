@@ -83,16 +83,23 @@ export interface SyncResult {
 /** Read `git log --all` for the repo as correlation ground truth. */
 export function readGitCommits(repoRoot: string): GitCommitMeta[] {
   // Reuse the project's ESM-safe git helper (the bundler cannot dynamic-require
-  // child_process). Pipe-delimited so subjects with spaces survive intact.
-  const out = safeExecGit(repoRoot, ["log", "--all", "--format=%H|%s"]);
+  // child_process). Pipe-delimited; `%cI` (strict ISO-8601) sits BETWEEN the sha
+  // and the subject. ISO-8601 contains no pipe, so a subject that itself holds
+  // pipes still survives intact (everything after the 2nd pipe is the subject).
+  const out = safeExecGit(repoRoot, ["log", "--all", "--format=%H|%cI|%s"]);
   if (!out) return [];
   const commits: GitCommitMeta[] = [];
   for (const line of out.split("\n")) {
-    const idx = line.indexOf("|");
-    if (idx < 7) continue;
-    const sha = line.slice(0, idx);
-    const subject = line.slice(idx + 1);
-    if (sha.length >= 7) commits.push({ sha, subject });
+    const i1 = line.indexOf("|");
+    if (i1 < 7) continue;
+    const i2 = line.indexOf("|", i1 + 1);
+    if (i2 < 0) continue;
+    const sha = line.slice(0, i1);
+    if (sha.length < 7) continue;
+    const dateIso = line.slice(i1 + 1, i2);
+    const subject = line.slice(i2 + 1);
+    const ms = Date.parse(dateIso);
+    commits.push({ sha, subject, committedAtMs: Number.isFinite(ms) ? ms : undefined });
   }
   return commits;
 }
