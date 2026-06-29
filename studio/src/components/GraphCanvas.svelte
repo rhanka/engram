@@ -11,6 +11,7 @@
     interpolateMergeStyle,
     interpolateMergePositions,
     isBoxShape,
+    LABEL_ZOOM_THRESHOLD,
     truncateLabel,
   } from "../lib/graphRendererPayload.js";
   import {
@@ -177,6 +178,12 @@
   let labels = $state([]);
   // Suppress label rendering during an active interaction on dense graphs.
   let labelsHidden = $state(false);
+  // Principal-character label LOD bucket of the last payload build: "out" =
+  // top-K hub names only (zoomed out), "in" = all gated hub names (zoomed in).
+  // A wheel that moves zoom across LABEL_ZOOM_THRESHOLD flips the bucket and
+  // triggers a payload rebuild so the in-box name set follows the zoom.
+  let lastLabelZoomBucket = null;
+  const labelZoomBucket = (zoom) => (zoom > LABEL_ZOOM_THRESHOLD ? "in" : "out");
 
   // Node-drag state — not reactive, managed imperatively.
   let draggingNodeId = null;
@@ -401,7 +408,15 @@
       if (zoomSettleTimer !== null) window.clearTimeout(zoomSettleTimer);
       zoomSettleTimer = window.setTimeout(() => {
         zoomSettleTimer = null;
-        if (renderer && skipEdgesOnInteract) renderNow();
+        // Crossed the principal-character LOD threshold (zoomed in/out past it)?
+        // Rebuild the payload so the in-box hub-name set follows the zoom, then
+        // re-style without re-fitting. Otherwise just restore skipped edges.
+        if (renderer && labelZoomBucket(camera.zoom) !== lastLabelZoomBucket) {
+          rebuildPayload();
+          applyPayloadNoFit();
+        } else if (renderer && skipEdgesOnInteract) {
+          renderNow();
+        }
         setLabelsHidden(false);
       }, ZOOM_SETTLE_MS);
     }
@@ -488,8 +503,13 @@
       focusId,
       hoveredNodeId,
       nodeRadius: NODE_RADIUS,
+      // Current zoom drives the principal-character label LOD (top-K names at
+      // zoom-out). Sync the bucket so a wheel that crosses the threshold knows
+      // to rebuild (see handleWheel's settle callback).
+      zoom: camera.zoom,
       ...(Number.isFinite(labelMaxChars) ? { labelMaxChars } : {}),
     });
+    lastLabelZoomBucket = labelZoomBucket(camera.zoom);
     clearHoveredEdge({ notify: false, render: false });
     computeNodeDegrees();
     reapplyDraggedPositions();
