@@ -630,6 +630,85 @@ export function applyWeakFilter(scene, showWeak) {
 }
 
 /**
+ * Finite epoch-ms reader for the shared scene contract `t` (#234). Anything
+ * non-numeric / non-finite is treated as UNTIMED (no temporal coordinate).
+ * @param {unknown} value
+ * @returns {number | null}
+ */
+function finiteTime(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Temporal bounds of a scene — the [min, max] of every finite `t` (#234) across
+ * nodes AND edges. Returns null when NO element carries a finite `t`; the
+ * time-scrub control reads this to HIDE itself (no-op on non-temporal graphs).
+ * @param {{ nodes?: object[], edges?: object[] } | null | undefined} scene
+ * @returns {{ min: number, max: number } | null}
+ */
+export function sceneTimeRange(scene) {
+  if (!scene) return null;
+  let min = Infinity;
+  let max = -Infinity;
+  const scan = (items) => {
+    for (const it of items ?? []) {
+      const t = finiteTime(it && it.t);
+      if (t === null) continue;
+      if (t < min) min = t;
+      if (t > max) max = t;
+    }
+  };
+  scan(scene.nodes);
+  scan(scene.edges);
+  return Number.isFinite(min) ? { min, max } : null;
+}
+
+/**
+ * Time-scrub filter — restrict a scene to what is visible AT a cursor instant
+ * (epoch-ms). An element is shown iff it is UNTIMED (no finite `t` — timeless
+ * scaffolding) OR its `t` ≤ cursor; an edge additionally needs both endpoints
+ * visible. Mirrors {@link applyWeakFilter}: it takes the FULL scene and returns
+ * a NEW scene with the same node attributes but a filtered node/edge set +
+ * updated stats, re-fed through the SAME render path (no renderer API).
+ *
+ * A null / non-finite cursor is the OFF state → the scene is returned UNCHANGED
+ * (the same object), so the default view stays byte-identical until the user
+ * scrubs.
+ *
+ * @param {{ nodes?: object[], edges?: object[], stats?: object } | null} scene
+ * @param {number | null | undefined} cursor  epoch-ms; null = off (no filter)
+ * @returns {object} a new scene (or the same scene when off)
+ */
+export function applyTimeFilter(scene, cursor) {
+  if (!scene) return scene;
+  const c = finiteTime(cursor);
+  if (c === null) return scene;
+
+  const visibleByTime = (t) => {
+    const ft = finiteTime(t);
+    return ft === null || ft <= c;
+  };
+
+  const nodes = (scene.nodes ?? []).filter((n) => visibleByTime(n && n.t));
+  const keptIds = new Set(nodes.map((n) => n.id));
+  const edges = (scene.edges ?? []).filter(
+    (e) => keptIds.has(e.source) && keptIds.has(e.target) && visibleByTime(e && e.t),
+  );
+
+  return {
+    ...scene,
+    nodes,
+    edges,
+    stats: {
+      ...scene.stats,
+      nodeCount: nodes.length,
+      edgeCount: edges.length,
+      weakEdgeCount: edges.filter((e) => e.weak).length,
+    },
+  };
+}
+
+/**
  * Index nodes by id for O(1) lookups in the entity panel / relations.
  * @returns {Map<string, object>}
  */
