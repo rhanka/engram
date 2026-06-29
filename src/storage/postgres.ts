@@ -26,11 +26,16 @@ import type Graph from "graphology";
 import { toJson } from "../export.js";
 import type {
   GraphGroupCounts,
+  GraphLayoutPosition,
   GraphPushOptions,
   GraphPushResult,
   GraphStore,
   GraphStoreConfig,
   GraphStoreSnapshotMeta,
+  GraphWindow,
+  GraphWindowEdge,
+  GraphWindowNode,
+  GraphWindowOptions,
   StoreTestDeps,
 } from "./types.js";
 
@@ -43,6 +48,8 @@ const EDGE_TABLE = "graph_edges";
 const META_TABLE = "graph_meta";
 /** Precomputed group-by aggregate (storage LOT 1); rebuilt on replace pushes. */
 const COUNT_TABLE = "graph_group_counts";
+/** Precomputed per-layout positions (storage LOT 3); rebuilt on replace pushes. */
+const POSITION_TABLE = "graph_positions";
 
 /**
  * Axes the precomputed aggregate serves in LOT 1. `node_type` + `community` are
@@ -51,6 +58,25 @@ const COUNT_TABLE = "graph_group_counts";
  * fields are lifted out of the props jsonb into queryable columns.
  */
 const AGGREGATE_AXES = ["node_type", "community"] as const;
+
+/**
+ * The single pinned layout LOT 3 persists. The graph carries exactly one baked
+ * layout today (`x`/`y` node attributes from `attachLayoutPositions`), so the
+ * adapter mirrors those into `graph_positions` under this layout id. Additional
+ * layouts (typed-layer / dag / 3d / time) are DEFERRED to LOT 6.
+ */
+const DEFAULT_LAYOUT = "force";
+
+/**
+ * Window strategies LOT 3 serves. `degree-top-n` returns the N highest-degree
+ * nodes (the coarse first-paint slice) + the edges induced among them.
+ */
+const WINDOW_STRATEGIES = ["degree-top-n"] as const;
+
+/** Default node cap for a windowed slice when the caller pins none. */
+const DEFAULT_WINDOW_LIMIT = 2000;
+/** Hard ceiling on a windowed slice, so no request can ship the full scene. */
+const MAX_WINDOW_LIMIT = 20000;
 
 /** Schema columns lifted into typed node columns; the rest go into props jsonb. */
 const NODE_SCHEMA_COLS = ["id", "label", "type", "node_type", "community"];
@@ -183,6 +209,8 @@ function chunk<T>(arr: T[], size: number): T[][] {
  *   - graph_meta(city_slug) PRIMARY KEY — one snapshot row per city_slug
  *   - graph_group_counts(city_slug, axis, key) PRIMARY KEY — precomputed
  *       group-by aggregate (LOT 1); rebuilt only inside a replace-mode push
+ *   - graph_positions(city_slug, layout_id, node_id) PRIMARY KEY — precomputed
+ *       per-layout positions + degree (LOT 3); rebuilt only inside a replace push
  *
  * Indexes:
  *   - (city_slug, type) composite, for type-scoped scans
@@ -270,6 +298,35 @@ export function postgresDdlStatements(schema?: string): string[] {
     ].join("\n"),
   );
 
+  // graph_positions — precomputed per-layout positions (storage LOT 3). Rebuilt
+  // ONLY inside a replace-mode push (delete-all-then-load per city), so it holds
+  // exactly one snapshot's positions per (city_slug, layout_id). `degree` is
+  // precomputed at push (drives node weight/size and the degree-top-n window
+  // without a join) and `snapshot_id` stamps the producing push for staleness
+  // cross-checks. The (city_slug, layout_id, node_id) primary key enforces one
+  // row per node per layout; the (city_slug, layout_id, degree) index serves the
+  // top-N-by-degree window read as an indexed scan.
+  statements.push(
+    [
+      `CREATE TABLE IF NOT EXISTS ${q(POSITION_TABLE)} (`,
+      "  city_slug text NOT NULL,",
+      "  snapshot_id text NOT NULL,",
+      "  layout_id text NOT NULL,",
+      "  node_id text NOT NULL,",
+      "  x double precision NOT NULL,",
+      "  y double precision NOT NULL,",
+      "  degree integer NOT NULL,",
+      "  PRIMARY KEY (city_slug, layout_id, node_id)",
+      ")",
+    ].join("\n"),
+  );
+
+  // Degree-ordered index for the degree-top-n window read (per city + layout).
+  statements.push(
+    `CREATE INDEX IF NOT EXISTS ${ix("graph_positions_city_layout_degree_idx")} ` +
+      `ON ${q(POSITION_TABLE)} (city_slug, layout_id, degree DESC)`,
+  );
+
   // Composite (city_slug, type) — type-scoped scans within a city.
   statements.push(
     `CREATE INDEX IF NOT EXISTS ${ix("graph_nodes_city_type_idx")} ` +
@@ -341,6 +398,18 @@ export interface PostgresGraphStore extends GraphStore {
    * axes: see `AGGREGATE_AXES`. Unknown axes return an empty group list.
    */
   groupCounts(axis: string): Promise<GraphGroupCounts>;
+  /**
+   * All precomputed positions for one layout (storage LOT 3), read from the
+   * `graph_positions` table. Scoped to the latest REPLACE snapshot. An unknown
+   * layout returns an empty array.
+   */
+  layoutPositions(layout: string): Promise<GraphLayoutPosition[]>;
+  /**
+   * A BOUNDED windowed slice (storage LOT 3): the top-N nodes by precomputed
+   * degree for a layout + the edges induced among them. Scoped to the latest
+   * REPLACE snapshot. The node cap is clamped to `MAX_WINDOW_LIMIT`.
+   */
+  graphWindow(options?: GraphWindowOptions): Promise<GraphWindow>;
 }
 
 // ---------------------------------------------------------------------------
@@ -529,6 +598,40 @@ export async function createPostgresGraphStore(
     return rows;
   }
 
+  /** Columns written for graph_positions, in order. */
+  const POSITION_COLUMNS = [
+    "city_slug",
+    "snapshot_id",
+    "layout_id",
+    "node_id",
+    "x",
+    "y",
+    "degree",
+  ];
+
+  /**
+   * Mirror the graph's single baked layout into position rows (storage LOT 3).
+   * `attachLayoutPositions` writes numeric `x`/`y` node attributes; this persists
+   * exactly those under `DEFAULT_LAYOUT`, alongside the node's degree (computed in
+   * one pass, drives node weight/size and the degree-top-n window without a join).
+   * Nodes WITHOUT finite x/y (no baked layout) are skipped — the window then has
+   * no positions for them and the studio keeps the full-scene fallback. Computed
+   * from the same in-memory snapshot being loaded, so the rows are exactly
+   * consistent with the post-replace graph_nodes.
+   */
+  function buildPositionRows(G: Graph, snapshotId: string): unknown[][] {
+    const rows: unknown[][] = [];
+    G.forEachNode((nodeId, attrs) => {
+      const a = attrs as Record<string, unknown>;
+      const x = a.x;
+      const y = a.y;
+      if (typeof x !== "number" || !Number.isFinite(x)) return;
+      if (typeof y !== "number" || !Number.isFinite(y)) return;
+      rows.push([citySlug, snapshotId, DEFAULT_LAYOUT, nodeId, x, y, G.degree(nodeId)]);
+    });
+    return rows;
+  }
+
   function buildEdgeRows(G: Graph): unknown[][] {
     const rows: unknown[][] = [];
     G.forEachEdge((_edgeKey, attrs, source, target) => {
@@ -666,6 +769,13 @@ export async function createPostgresGraphStore(
       snapshotMeta: true,
       // Precomputed group-by aggregate (storage LOT 1), replace-snapshot scoped.
       aggregate: { version: 1, axes: [...AGGREGATE_AXES] },
+      // Precomputed per-layout positions + degree-top-n window (storage LOT 3),
+      // replace-snapshot scoped. Advertises the one baked layout LOT 3 persists.
+      window: {
+        version: 1,
+        layouts: [DEFAULT_LAYOUT],
+        strategies: [...WINDOW_STRATEGIES],
+      },
     },
 
     async verifyConnection(): Promise<void> {
@@ -737,6 +847,20 @@ export async function createPostgresGraphStore(
             COUNT_COLUMNS,
             ["city_slug", "axis", "key"],
             buildGroupCountRows(G, communityMap, pushedAt),
+            batchSize,
+          );
+          // Per-layout positions are REPLACE-snapshot scoped too (storage LOT 3):
+          // same staleness guard as the aggregate — rebuild graph_positions ONLY
+          // in replace mode, from the full snapshot just loaded, so a merge never
+          // leaves positions for deleted nodes behind. Delete-all-then-upsert
+          // keeps exactly one snapshot of positions per (city, layout).
+          await deleteCityRows(client, q(POSITION_TABLE), citySlug);
+          await upsertBatched(
+            client,
+            q(POSITION_TABLE),
+            POSITION_COLUMNS,
+            ["city_slug", "layout_id", "node_id"],
+            buildPositionRows(G, pushedAt),
             batchSize,
           );
         }
@@ -823,6 +947,92 @@ export async function createPostgresGraphStore(
       return { axis, groups };
     },
 
+    async layoutPositions(layout: string): Promise<GraphLayoutPosition[]> {
+      // Storage LOT 3: every precomputed position for one layout, scoped to the
+      // latest REPLACE snapshot. An unknown layout yields an empty array.
+      await ensureSchema();
+      const result = await pool.query(
+        `SELECT node_id, x, y FROM ${q(POSITION_TABLE)} ` +
+          `WHERE city_slug = $1 AND layout_id = $2 ORDER BY node_id ASC`,
+        [citySlug, layout],
+      );
+      return (result.rows ?? []).map((row) => ({
+        node_id: String(row.node_id),
+        x: Number(row.x),
+        y: Number(row.y),
+      }));
+    },
+
+    async graphWindow(options: GraphWindowOptions = {}): Promise<GraphWindow> {
+      // Storage LOT 3: a BOUNDED first-paint slice. The top-N nodes by precomputed
+      // degree (an indexed scan over graph_positions — never the 47k node rows),
+      // annotated with their layout x/y, plus the edges induced among them. The
+      // node cap is clamped so no request can ship the full scene.
+      await ensureSchema();
+      const strategy = options.strategy ?? "degree-top-n";
+      const layout = options.layout ?? DEFAULT_LAYOUT;
+      const requested = options.limit ?? DEFAULT_WINDOW_LIMIT;
+      const limit = Math.max(1, Math.min(MAX_WINDOW_LIMIT, Math.floor(requested)));
+
+      // (1) top-N nodes by degree for the layout (indexed by (city, layout, degree)).
+      const posResult = await pool.query(
+        `SELECT node_id, x, y, degree FROM ${q(POSITION_TABLE)} ` +
+          `WHERE city_slug = $1 AND layout_id = $2 ORDER BY degree DESC, node_id ASC LIMIT $3`,
+        [citySlug, layout, limit],
+      );
+      const posRows = posResult.rows ?? [];
+      const ids = posRows.map((r) => String(r.node_id));
+
+      // (2) label/type for the windowed ids (one round-trip, ANY($ids)).
+      const attrById = new Map<string, { label: string; node_type?: string }>();
+      if (ids.length > 0) {
+        const nodeResult = await pool.query(
+          `SELECT id, label, type FROM ${q(NODE_TABLE)} WHERE city_slug = $1 AND id = ANY($2)`,
+          [citySlug, ids],
+        );
+        for (const row of nodeResult.rows ?? []) {
+          const id = String(row.id);
+          const label = typeof row.label === "string" && row.label.length > 0 ? row.label : id;
+          const entry: { label: string; node_type?: string } = { label };
+          if (typeof row.type === "string" && row.type.length > 0) entry.node_type = row.type;
+          attrById.set(id, entry);
+        }
+      }
+
+      const nodes: GraphWindowNode[] = posRows.map((r) => {
+        const id = String(r.node_id);
+        const attr = attrById.get(id);
+        const node: GraphWindowNode = {
+          id,
+          label: attr?.label ?? id,
+          degree: typeof r.degree === "number" ? r.degree : Number(r.degree ?? 0),
+        };
+        if (attr?.node_type !== undefined) node.node_type = attr.node_type;
+        if (r.x != null) node.x = Number(r.x);
+        if (r.y != null) node.y = Number(r.y);
+        return node;
+      });
+
+      // (3) induced edges: both endpoints inside the window (one round-trip).
+      const edges: GraphWindowEdge[] = [];
+      if (ids.length > 0) {
+        const edgeResult = await pool.query(
+          `SELECT source_id, target_id, relation FROM ${q(EDGE_TABLE)} ` +
+            `WHERE city_slug = $1 AND source_id = ANY($2) AND target_id = ANY($2)`,
+          [citySlug, ids],
+        );
+        for (const row of edgeResult.rows ?? []) {
+          edges.push({
+            source: String(row.source_id),
+            target: String(row.target_id),
+            relation: typeof row.relation === "string" ? row.relation : "RELATES_TO",
+          });
+        }
+      }
+
+      return { strategy, layout, limit, nodes, edges };
+    },
+
     async clear(options?: string | PostgresClearOptions): Promise<void> {
       const opts = typeof options === "string" ? { namespace: options } : options ?? {};
       if (!opts.force) {
@@ -838,6 +1048,7 @@ export async function createPostgresGraphStore(
         await deleteCityRows(client, q(EDGE_TABLE), targetSlug);
         await deleteCityRows(client, q(META_TABLE), targetSlug);
         await deleteCityRows(client, q(COUNT_TABLE), targetSlug);
+        await deleteCityRows(client, q(POSITION_TABLE), targetSlug);
         await client.query("COMMIT");
       } catch (err) {
         try {

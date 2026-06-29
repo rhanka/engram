@@ -289,6 +289,53 @@ export async function fetchGroupCounts(axis) {
   }
 }
 
+/**
+ * Storage LOT 3: fetch a BOUNDED windowed scene slice from a configured,
+ * window-capable GraphStore mirror via
+ * `GET /api/ontology/window?strategy=&layout=&limit=`. The payload is a
+ * `graphify` window document `{ strategy, layout?, limit, nodes: [{ id, label,
+ * node_type?, x?, y?, degree }], edges: [{ source, target, relation }] }` — the
+ * N highest-degree nodes (degree-top-n) + the edges induced among them, with the
+ * active layout's precomputed positions. The studio PREFERS this for first paint
+ * over shipping the full multi-MB scene; whenever the route is unavailable — the
+ * default flat-JSON studio (no store), an offline bundle, a 404 (no
+ * window-capable store / off-strategy / off-layout), or any network error — this
+ * resolves `null` so the caller keeps loading the full `fetchScene()`. Never
+ * throws (mirrors fetchGroupCounts).
+ *
+ * Like the counts there is NO bundle-relative static fallback: the window is a
+ * live store projection, not a build-time artifact, so an offline export simply
+ * has none and the client loads its inlined full scene.
+ *
+ * CLIENT-RENDER INTEGRATION IS DEFERRED (see WP3 note): this accessor + its
+ * server route are the windowed-loader primitive; wiring App.svelte's first paint
+ * to PREFER the window and hydrate the rest lazily touches the renderer/scene
+ * draw path, which is explicitly out of scope here. With no store wired the
+ * accessor returns null on every call, so the default scene path is unchanged.
+ *
+ * @param {{ strategy?: string, layout?: string, limit?: number }} [params]
+ * @returns {Promise<{ strategy: string, layout?: string, limit: number,
+ *   nodes: { id: string, label: string, node_type?: string, x?: number,
+ *     y?: number, degree: number }[],
+ *   edges: { source: string, target: string, relation: string }[] } | null>}
+ */
+export async function fetchWindow(params = {}) {
+  // Offline export ships no store window; the caller loads the full scene.
+  if (bundlePresent()) return null;
+  const search = new URLSearchParams();
+  if (params.strategy) search.set("strategy", params.strategy);
+  if (params.layout) search.set("layout", params.layout);
+  if (params.limit != null) search.set("limit", String(params.limit));
+  const qs = search.toString();
+  const url = qs ? `/api/ontology/window?${qs}` : "/api/ontology/window";
+  try {
+    return await getJson(url);
+  } catch {
+    // 404 (no window-capable store / off-strategy / off-layout) or network error.
+    return null;
+  }
+}
+
 export async function fetchReconciliationCandidates() {
   // Offline: serve the inlined queue if present (only with `--full-offline`),
   // else an empty queue (no doomed file:// fetch).
