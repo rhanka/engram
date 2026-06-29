@@ -93,4 +93,70 @@ describe("cited-source refs projection", () => {
     expect(citationKey(enriched)).toBe(citationKey(base));
     expect(unionCitations([[base], [enriched]])).toHaveLength(1);
   });
+
+  it("requires a page for page-addressable modalities (pdf)", () => {
+    const result = validateCitedSourceRef({ rawRef: "raw/doc.pdf", modality: "pdf", excerpt: "verbatim" });
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("page must be a 1-based integer");
+  });
+
+  it("accepts md/txt/web refs without a page (locator + section/paragraph_id + excerpt)", () => {
+    // markdown — anchored by section, no page
+    expect(
+      validateCitedSourceRef({
+        rawRef: "raw/notes.md",
+        docSha: "md-sha",
+        modality: "markdown",
+        section: "Background",
+        excerpt: "grounded passage",
+      }),
+    ).toEqual({ ok: true, errors: [] });
+
+    // plain-text — anchored by paragraph_id, citation as evidence
+    expect(
+      validateCitedSourceRef({
+        sourceUrl: "https://example.test/story.txt",
+        modality: "plain-text",
+        paragraph_id: "p-42",
+        citation: "chapter quote",
+      }).ok,
+    ).toBe(true);
+
+    // web — anchored by section, no page
+    expect(
+      validateCitedSourceRef({
+        sourceUrl: "https://example.test/article",
+        modality: "web",
+        section: "Methods",
+        excerpt: "web passage",
+      }).ok,
+    ).toBe(true);
+  });
+
+  it("requires a section/paragraph anchor for non-page modalities", () => {
+    const result = validateCitedSourceRef({ rawRef: "raw/notes.md", modality: "markdown", excerpt: "passage" });
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("missing anchor: expected section or paragraph_id for non-page modalities");
+  });
+
+  it("still validates bbox normalization when present, including non-page modalities", () => {
+    const result = validateCitedSourceRef({
+      rawRef: "raw/notes.md",
+      modality: "markdown",
+      section: "Background",
+      excerpt: "passage",
+      bbox: [0, 0, 1.5, 1],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("bbox must be normalized [x0,y0,x1,y1] page fractions with finite 0..1 values");
+  });
+
+  it("derives page-addressability from the locator suffix when modality is absent", () => {
+    // .pdf locator, no modality → page required
+    expect(validateCitedSourceRef({ rawRef: "raw/x.pdf", excerpt: "q" }).errors).toContain(
+      "page must be a 1-based integer",
+    );
+    // .md locator, no modality → lenient (no page), valid with a section anchor
+    expect(validateCitedSourceRef({ rawRef: "raw/x.md", section: "S", excerpt: "q" }).ok).toBe(true);
+  });
 });
