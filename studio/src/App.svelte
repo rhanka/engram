@@ -31,6 +31,8 @@
   import {
     buildScene,
     applyWeakFilter,
+    applyTimeFilter,
+    sceneTimeRange,
     attachForceLayout,
     resolveSelectedIds,
     communityStats,
@@ -64,6 +66,7 @@
     setActiveView,
     setQuery,
     setShowWeakLinks,
+    setTimeCursor,
     toggleGroupOntology,
     toggleGroupCommunity,
     toggleGroupType,
@@ -230,7 +233,8 @@
   // section's Ungroup all (spec §4/§5).
   const ontologyGrouped = $derived(hasOntologyGrouping(viewerState));
   const communityGrouped = $derived(hasCommunityGrouping(viewerState));
-  const scene = $derived(
+  // BASE scene (pre time-scrub) — the existing weak-link / group-by path.
+  const baseScene = $derived(
     hasAnyGroup
       ? // B2/A4: the grouped scene is rebuilt from graph.json (no positions) —
         // attach a force layout so it doesn't render as a ring.
@@ -242,6 +246,14 @@
           applyWeakFilter(sceneData, viewerState.options.showWeakLinks)
         : buildScene(graph, { showWeakLinks: viewerState.options.showWeakLinks }),
   );
+  // Temporal bounds of the BASE scene (#234 `t`); null on a non-temporal scene →
+  // the time-scrub control hides. Read from the base so the bounds stay STABLE
+  // while the cursor moves (the filtered scene must not shrink the range).
+  const timeRange = $derived(sceneTimeRange(baseScene));
+  // Time-scrub: filter the base scene to elements with `t <= cursor`. With the
+  // default cursor (null = OFF) this returns the base scene UNCHANGED, so the
+  // default view is byte-identical to before.
+  const scene = $derived(applyTimeFilter(baseScene, viewerState.options.timeCursor));
   // BUG A: facet / selection source. The left rail (Types / Communities /
   // Entities), the selection panel, and the selected-id resolution all read a
   // graph-like. Normally that is the hydrated raw `graph` (richest source). But
@@ -315,6 +327,9 @@
   }
   function handleToggleWeak(value) {
     viewerState = setShowWeakLinks(viewerState, value);
+  }
+  function handleSetTimeCursor(value) {
+    viewerState = setTimeCursor(viewerState, value);
   }
   // B2 (per-item): group-by callbacks. Every groupable rail item owns a checkbox
   // that GROUPS (collapses) the item when checked. Ontology classes and
@@ -594,6 +609,9 @@
             onToggleEntity={handleToggleEntity}
             onSetQuery={handleSetQuery}
             onToggleWeak={handleToggleWeak}
+            {timeRange}
+            timeCursor={viewerState.options.timeCursor}
+            onSetTimeCursor={handleSetTimeCursor}
             onToggleGroupOntology={handleToggleGroupOntology}
             onToggleGroupCommunity={handleToggleGroupCommunity}
             onToggleGroupType={handleToggleGroupType}
