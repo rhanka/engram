@@ -24,6 +24,7 @@
     "src/skills"
   ],
   "scripts": {
+    "prebuild": "npm run build:graph && node scripts/sync-graph-dist.mjs",
     "build": "node scripts/gen-st-tokens.mjs && tsup && npm run build:studio",
     "build:graph": "npm --prefix packages/graph run build",
     "build:server": "node scripts/gen-st-tokens.mjs && tsup",

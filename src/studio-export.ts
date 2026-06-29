@@ -16,7 +16,7 @@
  * Emitted layout (mirrors the SPA's static fallbacks):
  *   index.html + assets/            <- the built SPA (resolveStudioAppDir)
  *   graph.json                      <- verbatim copy of <state>/graph.json
- *   scene.json                      <- attachLayoutPositions(buildStudioScene)
+ *   scene.json                      <- applySceneLayout(buildStudioScene) (force|typed-layer)
  *   scene-hierarchies.json          <- emitSceneHierarchies (iff ontology arcs)
  *   class-hierarchies.json          <- emitClassHierarchies (iff profile block)
  *   reconciliation-candidates.json  <- the reconciliation queue (iff present)
@@ -39,7 +39,7 @@ import {
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
-import { attachLayoutPositions } from "./graph-layout.js";
+import { applySceneLayout, resolveSceneLayoutId } from "./scene-layout.js";
 import { emitClassHierarchies } from "./ontology-class-hierarchies-emitter.js";
 import { loadOntologyProfile } from "./ontology-profile.js";
 import {
@@ -427,13 +427,17 @@ export function buildStaticStudio(
   // 2. graph.json: verbatim copy (byte-identical to the artifact).
   writeFileSync(join(outDir, "graph.json"), graphRaw);
 
-  // 3. scene.json: the light Studio scene, with pinned force-layout positions
-  //    (x,y + fx,fy) so the SPA renders the settled layout without re-running
-  //    the O(n^2) sim at mount. Honors GRAPHIFY_FAST_LAYOUT via attachLayoutPositions.
-  //    The bound profile's per-type visual_encoding (shape/fill/border) drives
-  //    the scene encoding; absent a profile the built-in type defaults apply.
-  const scene = attachLayoutPositions(
+  // 3. scene.json: the light Studio scene, with pinned positions (x,y + fx,fy)
+  //    so the SPA renders the settled layout without re-running the O(n^2) sim at
+  //    mount. The layout is SELECTABLE (display Lot-1): `GRAPHIFY_LAYOUT=typed-layer`
+  //    opts into Variant A (swimlane by type, stamps layout_id="typed-layer");
+  //    unset ⇒ the DEFAULT force layout (Barnes-Hut FA2, honors GRAPHIFY_FAST_LAYOUT),
+  //    byte-identical to before. The bound profile's per-type visual_encoding
+  //    (shape/fill/border) drives the scene encoding; absent a profile the
+  //    built-in type defaults apply.
+  const scene = applySceneLayout(
     buildStudioScene(graph, ontologyProfile ? { profile: ontologyProfile } : {}),
+    resolveSceneLayoutId(),
   );
   // The exact serialized scene bytes — reused verbatim for the inlined offline
   // bundle so the inlined scene is byte-identical to scene.json (T5/C3b: carries

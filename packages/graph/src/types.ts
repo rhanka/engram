@@ -142,6 +142,13 @@ export interface LayoutOptions {
   pinnedIds?: readonly NodeId[];
   pinMask?: Uint8Array;
   pinPositions?: Float32Array;
+  /**
+   * Per-node type label, node-order keyed (parallel to
+   * {@link RenderGraphBuffers.nodeIds}). Consumed by typed-layer / swimlane
+   * layouts to band nodes into lanes by type; ignored by the force / static
+   * engines. Optional & additive — absent ⇒ a single (untyped) lane.
+   */
+  nodeTypes?: readonly (string | null | undefined)[];
 }
 
 export interface LayoutEngine {

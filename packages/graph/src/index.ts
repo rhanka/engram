@@ -1,6 +1,7 @@
 export * from "./buffers";
 export * from "./edge-geometry";
 export * from "./layout";
+export * from "./layout-registry";
 export * from "./positions";
 export * from "./render-geometry";
 export * from "./renderer";
