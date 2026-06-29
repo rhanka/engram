@@ -13,6 +13,9 @@ import {
   interpolateMergeStyle,
   interpolateMergePositions,
   isBoxShape,
+  LABEL_ZOOM_THRESHOLD,
+  MAX_PRINCIPAL_CHARACTER_LABELS,
+  selectPrincipalHubLabels,
   truncateLabel,
 } from "../lib/graphRendererPayload.js";
 import { buildScene, communityStats, nodeGroup } from "../lib/graphAdapter.js";
@@ -306,6 +309,103 @@ describe("buildGraphRendererPayload main-graph box label truncation (regression)
     const payload = buildGraphRendererPayload(makeMainScene(), { nodeRadius: 3, labelMaxChars: 8 });
     const idx = payload.nodeIndexById.get("chap");
     expect([...payload.baseStyle.nodeLabels[idx]].length).toBeLessThanOrEqual(9);
+  });
+});
+
+// --- Principal-character label LOD: top-K names at zoom-out, all when zoomed in.
+// The god-class gate can label MANY Character hubs on a dense corpus; at zoom-out
+// we keep only the K most important (highest-degree) names — the principal cast —
+// and reveal the long tail past LABEL_ZOOM_THRESHOLD. ---
+describe("selectPrincipalHubLabels (pure top-K-by-degree selection)", () => {
+  // 8 hubs with DISTINCT degrees 1..8 (so the ranking is unambiguous).
+  const hubs = Array.from({ length: 8 }, (_, i) => ({ index: i, degree: i + 1 }));
+
+  it("keeps exactly the top-K highest-degree hubs when zoomed OUT", () => {
+    const keep = selectPrincipalHubLabels(hubs, 0); // zoom 0 ≤ threshold
+    expect(keep.size).toBe(MAX_PRINCIPAL_CHARACTER_LABELS);
+    // degrees 8,7,6,5,4 → indices 7,6,5,4,3
+    expect([...keep].sort((a, b) => a - b)).toEqual([3, 4, 5, 6, 7]);
+    // the low-degree tail (indices 0,1,2) is dropped
+    expect(keep.has(0)).toBe(false);
+    expect(keep.has(2)).toBe(false);
+  });
+
+  it("reveals ALL gated hubs once zoomed in past the threshold", () => {
+    const keep = selectPrincipalHubLabels(hubs, LABEL_ZOOM_THRESHOLD + 0.5);
+    expect(keep.size).toBe(8);
+  });
+
+  it("is exactly at the threshold still treated as zoomed OUT (top-K only)", () => {
+    const keep = selectPrincipalHubLabels(hubs, LABEL_ZOOM_THRESHOLD);
+    expect(keep.size).toBe(MAX_PRINCIPAL_CHARACTER_LABELS);
+  });
+
+  it("breaks degree ties by lowest node index (deterministic)", () => {
+    const tied = [
+      { index: 5, degree: 10 },
+      { index: 2, degree: 10 },
+      { index: 9, degree: 10 },
+    ];
+    const keep = selectPrincipalHubLabels(tied, 0, { k: 2 });
+    expect([...keep].sort((a, b) => a - b)).toEqual([2, 5]);
+  });
+
+  it("does not exceed the candidate count (fewer hubs than K)", () => {
+    const keep = selectPrincipalHubLabels([{ index: 1, degree: 3 }], 0);
+    expect(keep.size).toBe(1);
+  });
+});
+
+describe("buildGraphRendererPayload principal-character label LOD (integration)", () => {
+  // A clique of `hubCount` Character hubs (so each becomes a god-class labelled
+  // box) plus `i` dedicated leaves on hub i, giving DISTINCT degrees
+  // (hubCount-1)+i. Leaves are untyped degree-1 nodes (not boxes, not labelled).
+  const characterHubGraph = (hubCount = 8) => {
+    const nodes = [];
+    const links = [];
+    for (let i = 0; i < hubCount; i += 1) {
+      nodes.push({ id: `c${i}`, label: `Character number ${i}`, node_type: "Character" });
+    }
+    for (let i = 0; i < hubCount; i += 1) {
+      for (let j = i + 1; j < hubCount; j += 1) links.push({ source: `c${i}`, target: `c${j}` });
+    }
+    for (let i = 0; i < hubCount; i += 1) {
+      for (let k = 0; k < i; k += 1) {
+        const leaf = `c${i}_leaf${k}`;
+        nodes.push({ id: leaf });
+        links.push({ source: `c${i}`, target: leaf });
+      }
+    }
+    return { nodes, links };
+  };
+
+  const labelOf = (payload, id) => payload.baseStyle.nodeLabels[payload.nodeIndexById.get(id)];
+  const countLabels = (payload) =>
+    payload.baseStyle.nodeLabels.filter((l) => typeof l === "string" && l.length > 0).length;
+
+  it("labels exactly the top-K principal characters at the default (zoomed-out) view", () => {
+    const scene = buildScene(characterHubGraph(8));
+    const payload = buildGraphRendererPayload(scene, { nodeRadius: 3 }); // zoom omitted ⇒ out
+    expect(countLabels(payload)).toBe(MAX_PRINCIPAL_CHARACTER_LABELS);
+    // Highest-degree hubs c7..c3 keep their name; the c0..c2 tail is cleared.
+    for (const id of ["c7", "c6", "c5", "c4", "c3"]) expect(labelOf(payload, id)).toBeTruthy();
+    for (const id of ["c2", "c1", "c0"]) expect(labelOf(payload, id)).toBe("");
+  });
+
+  it("reveals every gated character name when zoomed in past the threshold", () => {
+    const scene = buildScene(characterHubGraph(8));
+    const payload = buildGraphRendererPayload(scene, {
+      nodeRadius: 3,
+      zoom: LABEL_ZOOM_THRESHOLD + 1,
+    });
+    expect(countLabels(payload)).toBe(8);
+    for (let i = 0; i < 8; i += 1) expect(labelOf(payload, `c${i}`)).toBeTruthy();
+  });
+
+  it("does not regress a graph with ≤ K hubs (all stay labelled at any zoom)", () => {
+    const scene = buildScene(characterHubGraph(3));
+    const payload = buildGraphRendererPayload(scene, { nodeRadius: 3 });
+    expect(countLabels(payload)).toBe(3);
   });
 });
 
