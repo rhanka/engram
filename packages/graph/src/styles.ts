@@ -162,7 +162,7 @@ function computeNodeDegrees(graph: RenderGraphBuffers): { degrees: Uint32Array; 
   for (let i = 0; i < graph.edges.length; i += 1) {
     const endpoint = graph.edges[i];
     if (endpoint !== undefined && endpoint < degrees.length) {
-      degrees[endpoint] += 1;
+      degrees[endpoint] = (degrees[endpoint] ?? 0) + 1;
     }
   }
   let maxDegree = 0;
