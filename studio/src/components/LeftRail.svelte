@@ -14,6 +14,7 @@
     Collapsible,
   } from "@sentropic/design-system-svelte";
   import TypeShapeGlyph from "./TypeShapeGlyph.svelte";
+  import TimeScrub from "./TimeScrub.svelte";
   import {
     graphNodes,
     nodeType,
@@ -57,6 +58,12 @@
     onToggleEntity,
     onSetQuery,
     onToggleWeak,
+    // Time-scrub (opt-in, #234): the scene's temporal bounds ({min,max} epoch-ms
+    // or null = non-temporal scene ⇒ the control hides), the current cursor
+    // (epoch-ms or null = OFF), and the cursor setter.
+    timeRange = null,
+    timeCursor = null,
+    onSetTimeCursor,
     // B2 (per-item) group-by callbacks.
     onToggleGroupOntology,
     onToggleGroupCommunity,
@@ -569,6 +576,11 @@
       />
       Show weak (inferred) links
     </label>
+
+    <!-- Time-scrub (opt-in): hidden unless the scene carries temporal `t` (#234).
+         Moving the cursor filters the graph to elements with t ≤ cursor via the
+         existing scene → render path (graphAdapter.applyTimeFilter). -->
+    <TimeScrub range={timeRange} cursor={timeCursor} onSetCursor={onSetTimeCursor} />
 
     <!-- B2 (per-item): group-by is NOT a separate axis sub-menu anymore — every
          groupable Ontology class / Community owns its OWN checkbox inline in its

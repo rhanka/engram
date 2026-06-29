@@ -106,7 +106,9 @@ export function createDefaultViewerState() {
     query: "",
     selection: { types: [], communities: [], entities: [] },
     focusId: null,
-    options: { showWeakLinks: true, groupBy: createDefaultGroupBy() },
+    // `timeCursor`: time-scrub cursor (epoch-ms) or null = OFF (no temporal
+    // filter). Default null so the scene is unfiltered until the user scrubs.
+    options: { showWeakLinks: true, timeCursor: null, groupBy: createDefaultGroupBy() },
   };
 }
 
@@ -175,6 +177,11 @@ export function normalizeViewerState(partial = {}) {
   next.focusId = typeof next.focusId === "string" && next.focusId ? next.focusId : null;
   if (next.activeView !== "reconciliation") next.activeView = "workspace";
   next.options.showWeakLinks = Boolean(next.options.showWeakLinks);
+  // Time-scrub cursor (epoch-ms) — coerce any non-finite value to null (OFF).
+  next.options.timeCursor =
+    typeof next.options.timeCursor === "number" && Number.isFinite(next.options.timeCursor)
+      ? next.options.timeCursor
+      : null;
   // Normalize from the RAW partial options (not the base-merged one) so the
   // absence of `groupBy` is genuinely detectable and the legacy migration fires.
   next.options.groupBy = normalizeGroupBy(partial.options ?? {});
@@ -269,6 +276,19 @@ export function setShowWeakLinks(state, value) {
   return normalizeViewerState({
     ...state,
     options: { ...state.options, showWeakLinks: Boolean(value) },
+  });
+}
+
+/**
+ * Set the time-scrub cursor (epoch-ms) or null to turn scrubbing OFF. A
+ * non-finite value coerces to null. Additive & opt-in — the default cursor is
+ * null so the scene is unfiltered until the user scrubs.
+ */
+export function setTimeCursor(state, value) {
+  const t = typeof value === "number" && Number.isFinite(value) ? value : null;
+  return normalizeViewerState({
+    ...state,
+    options: { ...state.options, timeCursor: t },
   });
 }
 
