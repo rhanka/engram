@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   applySceneLayout,
   attachTimeOrientedPositions,
+  resolveEdgeCurveStyle,
   resolveSceneLayoutId,
   resolveTimeOrientedSceneOptions,
 } from "../src/scene-layout.js";
@@ -230,5 +231,42 @@ describe("resolveTimeOrientedSceneOptions — env-driven lane controls", () => {
     expect(y.get("sess_a")).not.toBe(y.get("sess_b"));
     expect(y.get("sess_a")).toBe(y.get("repo_a"));
     expect(scene.layout_id).toBe("time-oriented");
+  });
+});
+
+describe("edge-curve style — time-oriented stamps inflected (v3)", () => {
+  const prior = process.env.GRAPHIFY_EDGE_CURVE;
+  afterEach(() => {
+    if (prior === undefined) delete process.env.GRAPHIFY_EDGE_CURVE;
+    else process.env.GRAPHIFY_EDGE_CURVE = prior;
+  });
+
+  it("defaults to 'inflected', opts out only on GRAPHIFY_EDGE_CURVE=convex", () => {
+    delete process.env.GRAPHIFY_EDGE_CURVE;
+    expect(resolveEdgeCurveStyle()).toBe("inflected");
+    process.env.GRAPHIFY_EDGE_CURVE = "Convex";
+    expect(resolveEdgeCurveStyle()).toBe("convex");
+    process.env.GRAPHIFY_EDGE_CURVE = "bogus";
+    expect(resolveEdgeCurveStyle()).toBe("inflected");
+  });
+
+  it("time-oriented export stamps scene.edgeCurve='inflected' by default", () => {
+    delete process.env.GRAPHIFY_EDGE_CURVE;
+    const scene = applySceneLayout(buildStudioScene(clone(GRAPH)), "time-oriented");
+    expect(scene.edgeCurve).toBe("inflected");
+  });
+
+  it("GRAPHIFY_EDGE_CURVE=convex stamps the historical bow", () => {
+    process.env.GRAPHIFY_EDGE_CURVE = "convex";
+    const scene = applySceneLayout(buildStudioScene(clone(GRAPH)), "time-oriented");
+    expect(scene.edgeCurve).toBe("convex");
+  });
+
+  it("force / typed-layer layouts never stamp edgeCurve (back-compat)", () => {
+    delete process.env.GRAPHIFY_EDGE_CURVE;
+    const force = applySceneLayout(buildStudioScene(clone(GRAPH)), "force");
+    expect(force.edgeCurve).toBeUndefined();
+    const typed = applySceneLayout(buildStudioScene(clone(GRAPH)), "typed-layer");
+    expect(typed.edgeCurve).toBeUndefined();
   });
 });

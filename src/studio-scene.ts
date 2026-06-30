@@ -191,6 +191,14 @@ export interface StudioScene {
    * otherwise. Not consumed here.
    */
   snapshot_id?: string;
+  /**
+   * Per-SCENE edge-curve style (display Lot — time-oriented v3). `"inflected"`
+   * draws every edge as an S-shaped cubic (an inflection near the midpoint);
+   * `"convex"` / unset keeps the historical bow. Stamped by the time-oriented
+   * layout (see scene-layout.attachTimeOrientedPositions); the studio reads it
+   * into the renderer style buffer. Omitted otherwise (back-compat byte-identity).
+   */
+  edgeCurve?: "convex" | "inflected";
 }
 
 // ---------------------------------------------------------------------------

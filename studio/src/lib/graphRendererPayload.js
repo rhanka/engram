@@ -236,6 +236,9 @@ function cloneStyle(style) {
     edgeColors: new Uint8Array(style.edgeColors),
     edgeDash: new Uint8Array(style.edgeDash),
     edgeCurvatures: new Float32Array(style.edgeCurvatures),
+    // Per-scene edge-curve style (convex | inflected) survives dim / merge
+    // re-styling so the time-oriented S-curves persist on hover / selection.
+    edgeCurve: style.edgeCurve,
   };
 }
 
@@ -349,6 +352,13 @@ export function buildGraphRendererPayload(scene, options = {}) {
     node: { size: nodeRadius },
     edge: { width: 1, color: EDGE_COLOR, dash: "solid", curvature: 0.15 },
   });
+  // Per-SCENE edge-curve style (time-oriented v3). "inflected" makes both the
+  // Canvas2D fallback and the WebGL2 edge path draw S-shaped cubic edges; unset /
+  // "convex" keeps the historical bow. Stamped on the scene by the time-oriented
+  // layout (scene-layout.applySceneLayout) and read straight into the style.
+  if (scene?.edgeCurve === "inflected" || scene?.edgeCurve === "convex") {
+    baseStyle.edgeCurve = scene.edgeCurve;
+  }
   const nodeIndexById = new Map(nodes.map((node, index) => [node.id, index]));
 
   // Recon focal-pair parity: nodes flagged `forceBoxLabel` (the two entities
