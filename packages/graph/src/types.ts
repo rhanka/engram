@@ -216,7 +216,19 @@ export interface GraphRendererSnapshot {
   nodeCount: number;
   edgeCount: number;
   positions: number[];
+  /**
+   * The 2D camera as the PUBLIC `{x, y, zoom}` pan/zoom API (unchanged). The
+   * renderer derives the mat4 view-projection from it (see {@link viewProjection}).
+   */
   camera: CameraState;
+  /**
+   * UNIFIED CAMERA: the column-major (16-element) mat4 VIEW-PROJECTION the GPU
+   * vertex shaders are driven by, DERIVED from {@link camera} + the device
+   * viewport. For 2D it is the ORTHOGRAPHIC matrix equivalent to the legacy
+   * pan/zoom affine; it is the seam a future perspective(3D) camera replaces.
+   * Additive & optional — callers that only need pan/zoom keep using {@link camera}.
+   */
+  viewProjection?: number[];
   destroyed: boolean;
   hasWebGL: boolean;
   backend: GraphRendererActiveBackend;

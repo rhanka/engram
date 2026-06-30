@@ -83,6 +83,7 @@ function createFakeGL2() {
     getUniformLocation: (_p: unknown, name: string) => ({ name }),
     uniform1f: () => undefined,
     uniform2f: () => undefined,
+    uniformMatrix4fv: () => undefined,
     createVertexArray: () => ({}),
     bindVertexArray: () => undefined,
     deleteVertexArray: () => undefined,
