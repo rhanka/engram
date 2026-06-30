@@ -89,7 +89,12 @@ interface LayoutableScene {
   edges: Array<{ source: string; target: string }>;
   layout_id?: string;
   layout_dims?: 2 | 3;
+  /** Per-scene edge-curve style stamped by the time-oriented layout (v3). */
+  edgeCurve?: "convex" | "inflected";
 }
+
+/** Per-scene edge-curve style stamped on the time-oriented export. */
+export type SceneEdgeCurve = "convex" | "inflected";
 
 /**
  * Resolve the build-time layout id. Explicit arg wins; otherwise read env
@@ -125,6 +130,19 @@ export function resolveTimeOrientedSceneOptions(): TimeOrientedLayoutOptions {
   else if (laneByRaw === "node_type" || laneByRaw === "type") options.laneBy = "node_type";
   if (subRaw === "node_type" || subRaw === "type") options.subLaneBy = "node_type";
   return options;
+}
+
+/**
+ * Resolve the time-oriented edge-curve style from the environment. The v3
+ * time-oriented view defaults to `"inflected"` (S-curves disentangle the dense
+ * cross-lane bundles); set `GRAPHIFY_EDGE_CURVE=convex` to fall back to the
+ * historical bow. Only `"convex"` opts out — anything else (incl. unset) ⇒
+ * `"inflected"`.
+ */
+export function resolveEdgeCurveStyle(): SceneEdgeCurve {
+  const env = typeof process !== "undefined" && process.env ? process.env : {};
+  const raw = String(env.GRAPHIFY_EDGE_CURVE ?? "").trim().toLowerCase();
+  return raw === "convex" ? "convex" : "inflected";
 }
 
 /**
@@ -237,7 +255,11 @@ export function applySceneLayout<T extends LayoutableScene>(
   if (layoutId === "time-oriented") {
     // Honour GRAPHIFY_LANE_BY / GRAPHIFY_SUBLANE_BY on the export path (the call
     // site passes no explicit options); unset ⇒ {} ⇒ type lanes (back-compat).
-    return attachTimeOrientedPositions(scene, resolveTimeOrientedSceneOptions());
+    const positioned = attachTimeOrientedPositions(scene, resolveTimeOrientedSceneOptions());
+    // The time-oriented view draws INFLECTED (S-curve) edges by default (v3) to
+    // disentangle dense cross-lane bundles; GRAPHIFY_EDGE_CURVE=convex opts out.
+    positioned.edgeCurve = resolveEdgeCurveStyle();
+    return positioned;
   }
   return attachLayoutPositions(scene);
 }
