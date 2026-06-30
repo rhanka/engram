@@ -1,6 +1,7 @@
 import { computePositionBounds, copyPositions } from "./positions";
 import { BOX_GLYPH_CORNER_RATIO, SQUARE_INSET_RATIO, shapePolygonPoints } from "./shape-geometry";
 import { boxDimensions } from "./render-geometry";
+import { cameraToViewProjection } from "./mat4";
 import { createWebGLShapeRenderer, type WebGLShapeRenderer } from "./webgl-shapes";
 import { createWebGLEdgeRenderer, type WebGLEdgeRenderer } from "./webgl-edges";
 import { createWebGLBoxRenderer, type BoxTextDraw, type WebGLBoxRenderer } from "./webgl-boxes";
@@ -37,9 +38,13 @@ interface AttributeLocations {
 }
 
 interface UniformLocations {
-  camera: WebGLUniformLocation | null;
-  viewport: WebGLUniformLocation | null;
-  zoom: WebGLUniformLocation | null;
+  // UNIFIED CAMERA: the single mat4 view-projection that drives the world->clip
+  // vertex transform (mat4.ts). It replaces the old raw `u_camera`/`u_zoom`/
+  // `u_viewport` affine. `zoom`/`pixelRatio` survive ONLY to size the legacy
+  // point sprite (gl_PointSize), which is a screen-space quantity, not a
+  // world->clip transform.
+  viewProj: WebGLUniformLocation | null;
+  zoom?: WebGLUniformLocation | null;
   pixelRatio?: WebGLUniformLocation | null;
 }
 
@@ -57,18 +62,21 @@ interface RenderResources {
   sizeBuffer: WebGLBuffer;
 }
 
+// UNIFIED CAMERA (mat4 view-projection). The world->clip transform is a single
+// `u_viewProj * vec4(world, 0, 1)` — for 2D it is the ORTHO matrix built from the
+// camera {x,y,zoom} (mat4.cameraToViewProjection), mathematically equivalent to
+// the old `screen = (a_position - u_camera)*u_zoom; clip = screen*(2/vw,-2/vh)`
+// affine, so the pixels are unchanged. z = 0 maps to clip.z = 0 (symmetric
+// near/far), identical to the legacy `vec4(clip, 0, 1)`. The door to a future
+// perspective(3D) matrix is now open (swap the matrix, the shader is unchanged).
 const EDGE_VERTEX_SHADER = `
 attribute vec2 a_position;
 attribute vec4 a_color;
-uniform vec2 u_camera;
-uniform vec2 u_viewport;
-uniform float u_zoom;
+uniform mat4 u_viewProj;
 varying vec4 v_color;
 
 void main() {
-  vec2 screen = (a_position - u_camera) * u_zoom;
-  vec2 clip = vec2(screen.x * 2.0 / u_viewport.x, -screen.y * 2.0 / u_viewport.y);
-  gl_Position = vec4(clip, 0.0, 1.0);
+  gl_Position = u_viewProj * vec4(a_position, 0.0, 1.0);
   v_color = a_color;
 }
 `;
@@ -77,17 +85,15 @@ const NODE_VERTEX_SHADER = `
 attribute vec2 a_position;
 attribute vec4 a_color;
 attribute float a_size;
-uniform vec2 u_camera;
-uniform vec2 u_viewport;
+uniform mat4 u_viewProj;
 uniform float u_zoom;
 uniform float u_pixelRatio;
 varying vec4 v_color;
 
 void main() {
-  vec2 screen = (a_position - u_camera) * u_zoom;
-  vec2 clip = vec2(screen.x * 2.0 / u_viewport.x, -screen.y * 2.0 / u_viewport.y);
-  gl_Position = vec4(clip, 0.0, 1.0);
-  // World-space sizing for legacy ForceGraph parity: glyphs scale with camera zoom.
+  gl_Position = u_viewProj * vec4(a_position, 0.0, 1.0);
+  // World-space sizing for legacy ForceGraph parity: the SPRITE (a screen-space
+  // billboard, not a world->clip transform) scales with camera zoom.
   gl_PointSize = max(1.0, a_size * u_pixelRatio * u_zoom);
   v_color = a_color;
 }
@@ -234,9 +240,10 @@ function createDrawProgram(
     program,
     attributes,
     uniforms: {
-      camera: context.getUniformLocation(program, "u_camera"),
-      viewport: context.getUniformLocation(program, "u_viewport"),
-      zoom: context.getUniformLocation(program, "u_zoom"),
+      viewProj: context.getUniformLocation(program, "u_viewProj"),
+      // Only the node (point-sprite) program needs zoom + pixelRatio, and ONLY to
+      // size gl_PointSize — never for the world->clip transform (that is u_viewProj).
+      zoom: includeSize ? context.getUniformLocation(program, "u_zoom") : null,
       pixelRatio: includeSize ? context.getUniformLocation(program, "u_pixelRatio") : null,
     },
   };
@@ -432,8 +439,12 @@ function bindCameraUniforms(
   canvas: GraphCanvasLike | null,
   pixelRatio: number,
 ): void {
-  if (uniforms.camera) context.uniform2f(uniforms.camera, camera.x, camera.y);
-  if (uniforms.viewport) context.uniform2f(uniforms.viewport, canvas?.width ?? 1, canvas?.height ?? 1);
+  // UNIFIED CAMERA: build the mat4 view-projection from {x,y,zoom} + the device
+  // viewport and upload it once. The world->clip transform is now matrix-driven
+  // (mat4.ts) instead of the hand-rolled per-shader affine.
+  const viewProj = cameraToViewProjection(camera, canvas?.width ?? 1, canvas?.height ?? 1);
+  if (uniforms.viewProj) context.uniformMatrix4fv(uniforms.viewProj, false, viewProj);
+  // gl_PointSize sizing only (screen-space sprite), never the world transform.
   if (uniforms.zoom) context.uniform1f(uniforms.zoom, camera.zoom);
   if (uniforms.pixelRatio) context.uniform1f(uniforms.pixelRatio, pixelRatio);
 }
@@ -1284,6 +1295,12 @@ export function createGraphRenderer(
         edgeCount: state.edges.length / 2,
         positions: Array.from(state.positions),
         camera: { ...camera },
+        // UNIFIED CAMERA (mat4): the column-major view-projection the GPU vertex
+        // transform is driven by, DERIVED from {x,y,zoom} + the device viewport.
+        // {x,y,zoom} stays the public camera API; this exposes the matrix the
+        // renderer actually feeds the shaders, opening the door to a future
+        // perspective(3D) matrix without changing callers.
+        viewProjection: Array.from(cameraToViewProjection(camera, canvas?.width ?? 1, canvas?.height ?? 1)),
         destroyed,
         hasWebGL: context !== null,
         backend: activeBackend,
