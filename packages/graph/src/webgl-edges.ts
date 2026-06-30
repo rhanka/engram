@@ -352,6 +352,10 @@ export function buildEdgeInstances(frame: WebGLEdgeFrame): EdgeInstanceSet {
   const edgeCount = frame.edges.length / 2;
   if (edgeCount === 0) return { capsules, arrows };
 
+  // Per-SCENE edge-curve style (default convex). When "inflected" every edge is
+  // an S-shaped cubic Bézier — the time-oriented lane view's opt-in style.
+  const edgeCurve = style?.edgeCurve ?? "convex";
+
   // Shared node geometry (radii + box extents) in device px, so the edge clip
   // reads the SAME border offsets the node pass draws. Boxes need a measureText
   // service; edges to boxes use their rect extents (box label measuring is a
@@ -377,8 +381,13 @@ export function buildEdgeInstances(frame: WebGLEdgeFrame): EdgeInstanceSet {
     const curvature = style?.edgeCurvatures?.[edgeIndex] ?? 0;
     const width = style?.edgeWidths?.[edgeIndex] ?? 1;
 
-    const geom = edgeGeometry(source, target, curvature, (end, dx, dy) =>
-      borderOffset(geometry, style?.nodeShapes, end === "source" ? sourceIndex : targetIndex, dx, dy),
+    const geom = edgeGeometry(
+      source,
+      target,
+      curvature,
+      (end, dx, dy) =>
+        borderOffset(geometry, style?.nodeShapes, end === "source" ? sourceIndex : targetIndex, dx, dy),
+      edgeCurve,
     );
     if (geom.degenerate) continue;
 

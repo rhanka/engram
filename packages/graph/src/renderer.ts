@@ -532,6 +532,12 @@ function applyDash(context: Graph2DContext, dash: number, pixelRatio: number): v
 
 const EDGE_CURVE_FACTOR = 0.5;
 
+// Lateral amplitude (effective curvature) of an INFLECTED (S-curve) edge when its
+// per-edge curvature is 0 — mirrors render-geometry.DEFAULT_INFLECT_CURVATURE so
+// the Canvas2D fallback and the WebGL2 edge path draw the SAME S. A set per-edge
+// curvature wins. Only consulted when the scene's edgeCurve style is "inflected".
+const DEFAULT_INFLECT_CURVATURE = 0.5;
+
 // Legacy vis-network `shape:box` parity. The box IS the node glyph drawn by the
 // Canvas2D fallback: a rounded rectangle, white-translucent fill, node-coloured
 // border, dark centred text. SCALE rule: the box HEIGHT equals the node's drawn
@@ -899,6 +905,40 @@ function drawFallback2D(
       }
     }
 
+    // INFLECTED (S-curve) override: when the scene's edge-curve style is
+    // "inflected" the edge is drawn as a cubic Bézier whose two control points sit
+    // on OPPOSITE sides of the chord, so it leaves the source bending one way and
+    // reaches the target bending the other (an inflection near the midpoint).
+    // Default ("convex" / unset) leaves the control point + tangents above
+    // byte-identical, so the golden suite is unaffected. Mirrors
+    // render-geometry.edgeGeometry's inflected branch (single-sourced shape).
+    const inflected = state.style?.edgeCurve === "inflected";
+    let control2X = 0;
+    let control2Y = 0;
+    if (inflected) {
+      const ux = dx / distance;
+      const uy = dy / distance;
+      const nx = -uy;
+      const ny = ux;
+      const amp =
+        (curvature !== 0 ? curvature : DEFAULT_INFLECT_CURVATURE) * distance * EDGE_CURVE_FACTOR;
+      const third = distance / 3;
+      controlX = source.x + ux * third + nx * amp;
+      controlY = source.y + uy * third + ny * amp;
+      control2X = target.x - ux * third - nx * amp;
+      control2Y = target.y - uy * third - ny * amp;
+      const sLen = Math.hypot(controlX - source.x, controlY - source.y);
+      const tLen = Math.hypot(target.x - control2X, target.y - control2Y);
+      if (sLen > 1e-6) {
+        outSx = (controlX - source.x) / sLen;
+        outSy = (controlY - source.y) / sLen;
+      }
+      if (tLen > 1e-6) {
+        inTx = (target.x - control2X) / tLen;
+        inTy = (target.y - control2Y) / tLen;
+      }
+    }
+
     // Legacy parity: the line STOPS at each node's drawn border and the
     // arrowhead tip sits ON the target border. Overlapping nodes (combined
     // border offsets exceed the centre distance) draw the raw segment — the
@@ -917,7 +957,9 @@ function drawFallback2D(
     context.lineWidth = Math.max(1, width * pixelRatio);
     applyDash(context, state.style?.edgeDash[edgeIndex] ?? 0, pixelRatio);
     context.moveTo(startX, startY);
-    if (curvature !== 0) {
+    if (inflected) {
+      context.bezierCurveTo(controlX, controlY, control2X, control2Y, endX, endY);
+    } else if (curvature !== 0) {
       context.quadraticCurveTo(controlX, controlY, endX, endY);
     } else {
       context.lineTo(endX, endY);
