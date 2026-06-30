@@ -56,6 +56,7 @@ function createFakeWebGlContext() {
     getUniformLocation: (_program: unknown, name: string) => ({ name }),
     uniform2f: () => undefined,
     uniform1f: () => undefined,
+    uniformMatrix4fv: () => undefined,
     enableVertexAttribArray: () => undefined,
     vertexAttribPointer: () => undefined,
     viewport: () => undefined,

@@ -34,6 +34,7 @@
  * camera-relative → zoom → clip, y flipped to clip space.
  */
 
+import { cameraToViewProjection } from "./mat4";
 import {
   BORDER_WIDTH_BOLD,
   BORDER_WIDTH_NORMAL,
@@ -59,25 +60,27 @@ layout(location = 2) in float a_radius;    // instance: drawn radius (device px)
 layout(location = 3) in vec4 a_color;      // instance: drawn rgba (0..1)
 layout(location = 4) in float a_depth;     // instance: drawList index (interleave)
 
-uniform vec2 u_camera;
-uniform vec2 u_viewport;
-uniform float u_zoom;
+uniform mat4 u_viewProj;   // UNIFIED CAMERA: world -> clip (ortho for 2D, mat4.ts)
+uniform vec2 u_viewport;   // device size, for the screen-space radius billboard
 uniform float u_maxDepth;
 
 out vec4 v_color;
 
 void main() {
-  // World centre -> camera-relative -> zoom (positions are world coords; the
-  // radius is already in device px). Mirrors renderer.ts screenPoint/edge shader.
-  vec2 worldScreen = (a_center - u_camera) * u_zoom;
-  // The unit shape is scaled by the drawn radius (device px), so the disc radius
-  // IS the radius -- no gl_PointSize diameter trap.
-  vec2 screen = worldScreen + a_unit * a_radius;
-  vec2 clip = vec2(screen.x * 2.0 / u_viewport.x, -screen.y * 2.0 / u_viewport.y);
+  // UNIFIED CAMERA: the node CENTRE (world) goes through the SAME mat4 the legacy
+  // node/edge shaders use. The glyph RADIUS is a DEVICE-px billboard offset
+  // (screen-space, constant-pixel) added in clip space via the viewport -- exactly
+  // how a screen-aligned billboard works, which is also 3D-ready. This is
+  // mathematically equivalent to the old
+  //   screen = (a_center - u_camera)*u_zoom + a_unit*a_radius; clip = screen*(2/vw,-2/vh)
+  // (the *2/vw distributes over the centre + radius sum), so the pixels are unchanged.
+  vec4 centerClip = u_viewProj * vec4(a_center, 0.0, 1.0);
+  vec2 radiusClip = vec2(a_unit.x * a_radius * 2.0 / u_viewport.x,
+                        -a_unit.y * a_radius * 2.0 / u_viewport.y);
   // Map the drawList index to a depth in (-1,1): later ops sit nearer the camera
   // so a later node occludes an earlier one (byte-parity interleave plumbing).
   float z = u_maxDepth > 0.0 ? (a_depth / u_maxDepth) : 0.0;
-  gl_Position = vec4(clip, -z, 1.0);
+  gl_Position = vec4(centerClip.xy + radiusClip, -z, 1.0);
   v_color = a_color;
 }
 `;
@@ -100,9 +103,8 @@ void main() {
 interface ShapeProgram {
   program: WebGLProgram;
   uniforms: {
-    camera: WebGLUniformLocation | null;
+    viewProj: WebGLUniformLocation | null;
     viewport: WebGLUniformLocation | null;
-    zoom: WebGLUniformLocation | null;
     maxDepth: WebGLUniformLocation | null;
   };
 }
@@ -422,9 +424,8 @@ export function createWebGLShapeRenderer(context: GL2 | null): WebGLShapeRendere
   const shapeProgram: ShapeProgram = {
     program,
     uniforms: {
-      camera: gl.getUniformLocation(program, "u_camera"),
+      viewProj: gl.getUniformLocation(program, "u_viewProj"),
       viewport: gl.getUniformLocation(program, "u_viewport"),
-      zoom: gl.getUniformLocation(program, "u_zoom"),
       maxDepth: gl.getUniformLocation(program, "u_maxDepth"),
     },
   };
@@ -434,11 +435,19 @@ export function createWebGLShapeRenderer(context: GL2 | null): WebGLShapeRendere
     const { fill, border, nonFiniteCount } = buildShapeInstances(frame);
 
     gl.useProgram(shapeProgram.program);
-    if (shapeProgram.uniforms.camera) gl.uniform2f(shapeProgram.uniforms.camera, frame.camera.x, frame.camera.y);
+    // UNIFIED CAMERA: the same mat4 view-projection the legacy node/edge shaders
+    // use, built from {x,y,zoom} + the device viewport (mat4.cameraToViewProjection).
+    if (shapeProgram.uniforms.viewProj) {
+      gl.uniformMatrix4fv(
+        shapeProgram.uniforms.viewProj,
+        false,
+        cameraToViewProjection(frame.camera, frame.viewportWidth, frame.viewportHeight),
+      );
+    }
+    // Viewport stays for the screen-space radius billboard (device-px glyph extent).
     if (shapeProgram.uniforms.viewport) {
       gl.uniform2f(shapeProgram.uniforms.viewport, frame.viewportWidth, frame.viewportHeight);
     }
-    if (shapeProgram.uniforms.zoom) gl.uniform1f(shapeProgram.uniforms.zoom, frame.camera.zoom);
     if (shapeProgram.uniforms.maxDepth) gl.uniform1f(shapeProgram.uniforms.maxDepth, Math.max(1, frame.nodeCount));
 
     gl.enable(gl.BLEND);
