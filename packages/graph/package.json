@@ -3,6 +3,11 @@
   "version": "0.2.0",
   "description": "Fast WebGL-oriented graph rendering primitives for known-position graphs.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rhanka/graphify.git",
+    "directory": "packages/graph"
+  },
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
