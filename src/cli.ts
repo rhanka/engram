@@ -3160,12 +3160,18 @@ export async function main(): Promise<void> {
 
   ontology
     .command("studio")
-    .description("Start a local ontology reconciliation studio API; --write enables patch mutation routes (loopback only)")
+    .description(
+      "Start a local ontology reconciliation studio API; --write enables patch mutation routes (loopback only). " +
+        "When --store (or GRAPHIFY_STORE / storage.mirrors) names an aggregate-capable GraphStore that has been " +
+        "`graphify store push`ed, GET /api/ontology/groups serves O(#groups) counts from the store instead of an " +
+        "O(#nodes) client recompute.",
+    )
     .requiredOption("--config <path>", "Graphify project config path")
     .option("--host <host>", "Host to bind", "127.0.0.1")
     .option("--port <port>", "Port to bind; defaults to an ephemeral port")
     .option("--write", "Enable POST /api/ontology/patch/{validate,dry-run,apply} routes (loopback only)")
     .option("--token <token>", "Bearer token for write routes (default: random hex24 generated at startup)")
+    .option("--store <id>", "GraphStore backend id to serve group counts from (default: GRAPHIFY_STORE or storage.mirrors[0].backend)")
     .action(async (opts) => {
       const projectConfig = loadProjectConfig(resolve(opts.config));
       const profileStatePath = join(projectConfig.outputs.state_dir, "profile", "profile-state.json");
@@ -3185,7 +3191,7 @@ export async function main(): Promise<void> {
         | import("./ontology-studio.js").StudioGroupCountsStore
         | undefined;
       const storeBackendId =
-        process.env.GRAPHIFY_STORE ?? projectConfig.storage?.mirrors?.[0]?.backend;
+        opts.store ?? process.env.GRAPHIFY_STORE ?? projectConfig.storage?.mirrors?.[0]?.backend;
       if (storeBackendId) {
         try {
           const { resolveStoreConfig } = await import("./storage/config.js");
@@ -3238,6 +3244,63 @@ export async function main(): Promise<void> {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error(`error: ${message}`);
+        process.exit(1);
+      }
+    });
+
+  // -------------------------------------------------------------------------
+  // `store` — push the graph to a configured GraphStore mirror and inspect it.
+  // Productionizes the DB instant-grouping path (storage LOTs 1/2/3): a REPLACE
+  // push rebuilds the O(#groups) group-by aggregate + windowed positions so the
+  // studio serves them instead of an O(#nodes) client recompute. No bespoke
+  // script — the store comes from --store / GRAPHIFY_STORE / storage.mirrors.
+  // -------------------------------------------------------------------------
+  const storeCommand = program
+    .command("store")
+    .description("Push the graph to a configured GraphStore mirror (Postgres/neo4j/…) and inspect it");
+
+  storeCommand
+    .command("push")
+    .description(
+      "Push the graph to the configured GraphStore in REPLACE mode so it rebuilds the O(#groups) " +
+        "group-by counts + windowed positions. Store = --store, else GRAPHIFY_STORE " +
+        "(+ GRAPHIFY_POSTGRES_URL for postgres), else storage.mirrors[0].backend.",
+    )
+    .option("--graph <path>", "Path to graph.json (default: --config's state dir, else .graphify/graph.json)")
+    .option("--config <path>", "Graphify project config path (resolves the graph dir + storage.mirrors)")
+    .option("--store <id>", "Store backend id (default: GRAPHIFY_STORE or storage.mirrors[0].backend)")
+    .option("--mode <mode>", "Push mode: replace (default; rebuilds the aggregate + positions) or merge", "replace")
+    .option("--dry-run", "Plan and report counts without writing to the backend")
+    .action(async (opts) => {
+      try {
+        const { runStorePush } = await import("./store-cli.js");
+        await runStorePush({
+          ...(opts.graph ? { graph: String(opts.graph) } : {}),
+          ...(opts.config ? { config: String(opts.config) } : {}),
+          ...(opts.store ? { store: String(opts.store) } : {}),
+          ...(opts.mode ? { mode: String(opts.mode) } : {}),
+          ...(opts.dryRun ? { dryRun: true } : {}),
+        });
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    });
+
+  storeCommand
+    .command("status")
+    .description("Show the configured GraphStore's capabilities + latest snapshot meta (cheap; no full scan)")
+    .option("--config <path>", "Graphify project config path (resolves storage.mirrors)")
+    .option("--store <id>", "Store backend id (default: GRAPHIFY_STORE or storage.mirrors[0].backend)")
+    .action(async (opts) => {
+      try {
+        const { runStoreStatus } = await import("./store-cli.js");
+        await runStoreStatus({
+          ...(opts.config ? { config: String(opts.config) } : {}),
+          ...(opts.store ? { store: String(opts.store) } : {}),
+        });
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
         process.exit(1);
       }
     });

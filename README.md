@@ -177,6 +177,27 @@ graphify ontology studio --config graphify.yaml --write         # token-gated ap
 
 The same write-guarded core is also exposed over MCP — the default `graphify serve` graph server is read-only, and mutation tools require the explicit `graphify ontology serve --config graphify.yaml --write`.
 
+### Store mirrors (instant server-side group counts)
+
+`graph.json` stays the source of truth, but you can mirror it into a database backend (Postgres/neo4j/…) so the studio reads precomputed, O(#groups) group-by counts and a windowed first-paint slice from the backend instead of recomputing them over every node in the browser. On a real 47k-node graph the server group-counts are ~600x faster than a client recompute.
+
+```bash
+# Push the graph to the configured backend in REPLACE mode (rebuilds the
+# group-by aggregate + windowed positions — the source of the instant counts).
+GRAPHIFY_STORE=postgres GRAPHIFY_POSTGRES_URL=postgres://user:pass@host/db \
+  graphify store push --config graphify.yaml          # or: --graph .graphify/graph.json
+graphify store status --store postgres                # capabilities + latest snapshot
+
+# Serve the studio with the store wired in: GET /api/ontology/groups is then
+# answered from the backend aggregate. The store is picked up from --store, then
+# GRAPHIFY_STORE, then storage.mirrors[0] in the config.
+GRAPHIFY_STORE=postgres GRAPHIFY_POSTGRES_URL=postgres://user:pass@host/db \
+  graphify ontology studio --config graphify.yaml
+graphify ontology studio --config graphify.yaml --store postgres
+```
+
+The store comes from `--store`, the `GRAPHIFY_STORE` / `GRAPHIFY_POSTGRES_URL` environment variables, or a `storage.mirrors[]` entry in the project config. `store push` defaults to `--mode replace` because the group-by aggregate and windowed positions are only valid against a committed full snapshot (a `--mode merge` upsert leaves them untouched). With no store configured the studio is unchanged: the route 404s and the SPA falls back to its in-memory group-by.
+
 ## Multimodal ingestion
 
 The same semantic pass handles non-code inputs:
