@@ -157,6 +157,23 @@ export interface LayoutOptions {
    * additive — a nullish / non-finite entry is treated as "untimed".
    */
   nodeTimes?: readonly (number | null | undefined)[];
+  /**
+   * Per-node PRIMARY lane key (the owning repo/project id), node-order keyed.
+   * Consumed by the time-oriented layout when `laneBy === "repo"` to band nodes
+   * into one lane per project/repo; ignored otherwise. Optional & additive.
+   */
+  nodeLanes?: readonly (string | null | undefined)[];
+  /**
+   * Which per-node attribute drives the time-oriented PRIMARY Y lane:
+   * `"node_type"` (default — band by `nodeTypes`) or `"repo"` (band by
+   * `nodeLanes`). Ignored by every other layout.
+   */
+  laneBy?: "node_type" | "repo";
+  /**
+   * When `"node_type"`, the time-oriented layout sub-bands each primary lane into
+   * closely-spaced sub-lines by `nodeTypes`. Ignored by every other layout.
+   */
+  subLaneBy?: "node_type";
 }
 
 export interface LayoutEngine {

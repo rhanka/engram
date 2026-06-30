@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AGENT_LANE_KEY,
   buildRenderGraphBuffers,
   computeTimeOrientedPositions,
+  deriveRepoLaneKeys,
   getLayout,
   hasLayout,
   listLayouts,
@@ -120,5 +122,163 @@ describe("Variant E — time-oriented layout", () => {
     expect(xy(out, 2).x).toBeLessThan(xy(out, 0).x);
     // One type ⇒ one lane.
     expect(xy(out, 0).y).toBe(xy(out, 1).y);
+  });
+});
+
+describe("Variant E — lanes by REPO (laneBy: 'repo') + type SUB-lanes", () => {
+  // Two repos (A older lane, B newer lane); types mixed so banding can't be a type
+  // accident. node order: [repoA/Session, repoA/Branch, repoB/Session, repoB/Commit].
+  const times = [T0, T1, T2, T3];
+  const types = ["Session", "Branch", "Session", "Commit"];
+  const lanes = ["repoA", "repoA", "repoB", "repoB"];
+
+  it("bands PRIMARILY by the owning repo, NOT by type", () => {
+    const pos = computeTimeOrientedPositions(times, types, { laneBy: "repo", nodeLanes: lanes });
+    // Same repo ⇒ same y lane (even though types differ); different repo ⇒ different lane.
+    expect(xy(pos, 0).y).toBe(xy(pos, 1).y); // both repoA
+    expect(xy(pos, 2).y).toBe(xy(pos, 3).y); // both repoB
+    expect(xy(pos, 0).y).not.toBe(xy(pos, 2).y); // repoA vs repoB
+  });
+
+  it("still orders nodes by `t` on the X axis under repo lanes", () => {
+    // node order [T2, T0, T3, T1] (NOT chronological) → x increases with t.
+    const t = [T2, T0, T3, T1];
+    const pos = computeTimeOrientedPositions(t, types, { laneBy: "repo", nodeLanes: lanes });
+    const xByT = new Map(t.map((v, i) => [v, xy(pos, i).x]));
+    expect(xByT.get(T0)!).toBeLessThan(xByT.get(T1)!);
+    expect(xByT.get(T1)!).toBeLessThan(xByT.get(T2)!);
+    expect(xByT.get(T2)!).toBeLessThan(xByT.get(T3)!);
+  });
+
+  it("honors laneOrder (top→bottom) for the repo lanes", () => {
+    const pos = computeTimeOrientedPositions(times, types, {
+      laneBy: "repo",
+      nodeLanes: lanes,
+      laneOrder: ["repoB", "repoA"], // repoB on top now
+      laneGap: 100,
+    });
+    expect(xy(pos, 2).y).toBeLessThan(xy(pos, 0).y); // repoB lane above repoA lane
+  });
+
+  it("collapses to one lane when laneBy='repo' but nodeLanes is absent (graceful)", () => {
+    const pos = computeTimeOrientedPositions(times, types, { laneBy: "repo" });
+    for (let i = 1; i < 4; i++) expect(xy(pos, i).y).toBe(xy(pos, 0).y);
+  });
+
+  it("subLaneBy='node_type' splits each repo lane into closely-spaced type sub-lines", () => {
+    const subTypes = ["Session", "Branch", "Session", "Branch"];
+    const pos = computeTimeOrientedPositions(times, subTypes, {
+      laneBy: "repo",
+      nodeLanes: lanes,
+      laneGap: 120,
+      subLaneBy: "node_type",
+    });
+    const y0 = xy(pos, 0).y; // repoA / Session
+    const y1 = xy(pos, 1).y; // repoA / Branch
+    const y2 = xy(pos, 2).y; // repoB / Session
+    const y3 = xy(pos, 3).y; // repoB / Branch
+    // Within a repo lane, the two types now sit on DIFFERENT sub-lines.
+    expect(y0).not.toBe(y1);
+    // The SAME type keeps the SAME sub-offset across lanes (global sub-order):
+    // Session→Session and Branch→Branch differ only by the lane gap.
+    expect(y1 - y0).toBeCloseTo(y3 - y2, 6);
+    // Sub-lane separation is strictly TIGHTER than the primary lane separation.
+    expect(Math.abs(y1 - y0)).toBeLessThan(Math.abs(y2 - y0));
+  });
+
+  it("is deterministic under repo lanes + sub-lanes", () => {
+    const opts = { laneBy: "repo" as const, nodeLanes: lanes, subLaneBy: "node_type" as const };
+    const a = computeTimeOrientedPositions(times, types, opts);
+    const b = computeTimeOrientedPositions(times, types, opts);
+    expect(Array.from(a)).toEqual(Array.from(b));
+  });
+});
+
+describe("deriveRepoLaneKeys — repo membership from graph topology", () => {
+  // A mini agent-stats project graph: one Project, two Repos (rename lineage),
+  // one Agent, two Sessions, a Branch SHARED across both repos, one Commit.
+  const nodes = [
+    { id: "project_p", type: "Project" },
+    { id: "repo_a", type: "Repo" },
+    { id: "repo_b", type: "Repo" },
+    { id: "agent_x", type: "Agent" },
+    { id: "sess_1", type: "Session" },
+    { id: "sess_2", type: "Session" },
+    { id: "branch_shared", type: "Branch" },
+    { id: "commit_1", type: "Commit" },
+  ];
+  const edges = [
+    { source: "repo_a", target: "project_p" }, // belongs-to
+    { source: "repo_b", target: "project_p" },
+    { source: "repo_a", target: "repo_b" }, // rename-lineage
+    { source: "sess_1", target: "repo_a" }, // worked-in
+    { source: "sess_2", target: "repo_b" },
+    { source: "sess_1", target: "agent_x" }, // conducted-by (hub — excluded)
+    { source: "sess_2", target: "agent_x" },
+    { source: "sess_1", target: "branch_shared" }, // touched-branch
+    { source: "sess_2", target: "branch_shared" }, // shared across both repos
+    { source: "sess_1", target: "commit_1" }, // produced
+  ];
+
+  it("keys Repo/Project nodes to their own lane and groups Agents into AGENT_LANE_KEY", () => {
+    const { laneKeys } = deriveRepoLaneKeys(nodes, edges);
+    const byId = new Map(nodes.map((nd, i) => [nd.id, laneKeys[i]]));
+    expect(byId.get("repo_a")).toBe("repo_a");
+    expect(byId.get("repo_b")).toBe("repo_b");
+    expect(byId.get("project_p")).toBe("project_p");
+    expect(byId.get("agent_x")).toBe(AGENT_LANE_KEY);
+  });
+
+  it("inherits each Session's repo (worked-in) and its Commit's repo (produced)", () => {
+    const { laneKeys } = deriveRepoLaneKeys(nodes, edges);
+    const byId = new Map(nodes.map((nd, i) => [nd.id, laneKeys[i]]));
+    expect(byId.get("sess_1")).toBe("repo_a");
+    expect(byId.get("sess_2")).toBe("repo_b");
+    expect(byId.get("commit_1")).toBe("repo_a"); // produced by sess_1
+  });
+
+  it("resolves a SHARED branch deterministically to the earliest repo (tie-break)", () => {
+    const { laneKeys } = deriveRepoLaneKeys(nodes, edges);
+    const byId = new Map(nodes.map((nd, i) => [nd.id, laneKeys[i]]));
+    // branch touched by both sessions → claimed by repo_a (seeded first);
+    // sess_2 (repo_b) → branch_shared then reads as a cross-lane (inter-repo) link.
+    expect(byId.get("branch_shared")).toBe("repo_a");
+  });
+
+  it("does NOT leak a repo across the shared Project/Agent hubs", () => {
+    // If the hubs were traversable, sess_2's repo could bleed into repo_a's nodes.
+    const { laneKeys } = deriveRepoLaneKeys(nodes, edges);
+    const byId = new Map(nodes.map((nd, i) => [nd.id, laneKeys[i]]));
+    expect(byId.get("sess_2")).toBe("repo_b"); // stayed in its own repo
+  });
+
+  it("suggests a stable laneOrder: repos (graph order) → projects → agents", () => {
+    const { laneOrder } = deriveRepoLaneKeys(nodes, edges);
+    expect(laneOrder).toEqual(["repo_a", "repo_b", "project_p", AGENT_LANE_KEY]);
+  });
+
+  it("feeds straight into computeTimeOrientedPositions as nodeLanes (repo lanes)", () => {
+    const { laneKeys, laneOrder } = deriveRepoLaneKeys(nodes, edges);
+    const nodeTimes = nodes.map((_, i) => T0 + i * 1000);
+    const nodeTypes = nodes.map((nd) => nd.type);
+    const pos = computeTimeOrientedPositions(nodeTimes, nodeTypes, {
+      laneBy: "repo",
+      nodeLanes: laneKeys,
+      laneOrder,
+    });
+    const yById = new Map(nodes.map((nd, i) => [nd.id, xy(pos, i).y]));
+    // sess_1, branch_shared, commit_1 all in the repo_a lane (loops stay local).
+    expect(yById.get("sess_1")).toBe(yById.get("repo_a"));
+    expect(yById.get("branch_shared")).toBe(yById.get("repo_a"));
+    expect(yById.get("commit_1")).toBe(yById.get("repo_a"));
+    // sess_2 in the repo_b lane → its branch_shared edge spans lanes (inter-repo).
+    expect(yById.get("sess_2")).toBe(yById.get("repo_b"));
+    expect(yById.get("sess_2")).not.toBe(yById.get("branch_shared"));
+  });
+
+  it("handles the empty graph", () => {
+    const { laneKeys, laneOrder } = deriveRepoLaneKeys([], []);
+    expect(laneKeys).toEqual([]);
+    expect(laneOrder).toEqual([]);
   });
 });
