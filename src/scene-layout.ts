@@ -23,6 +23,13 @@
  *                         positions and stamps `layout_id: "time-oriented"` +
  *                         `layout_dims: 2`.
  *
+ * For `time-oriented`, two further env knobs (read by
+ * {@link resolveTimeOrientedSceneOptions}) shape the Y lanes — `GRAPHIFY_LANE_BY=repo`
+ * bands by each node's owning REPO/PROJECT instead of by type (surfacing
+ * inter-project edges across lanes + intra-project loops within a lane), and
+ * `GRAPHIFY_SUBLANE_BY=node_type` splits each lane into 6 tight type sub-lines.
+ * Both unset ⇒ the historical type lanes (byte-identical).
+ *
  * SELECTION (opt-in; default stays force):
  *   • env `GRAPHIFY_LAYOUT=typed-layer` | `time-oriented` — mirrors the existing
  *     `GRAPHIFY_FAST_LAYOUT` opt-in style; read by {@link resolveSceneLayoutId}
@@ -41,8 +48,10 @@
 import {
   computeTimeOrientedPositions,
   computeTypedLayerPositions,
+  deriveRepoLaneKeys,
 } from "./typed-layer-layout.js";
 import type {
+  RepoLaneNode,
   TimeOrientedLayoutOptions,
   TypedLayerLayoutOptions,
 } from "./typed-layer-layout.js";
@@ -95,6 +104,27 @@ export function resolveSceneLayoutId(explicit?: string): SceneLayoutId {
   if (value === "typed-layer") return "typed-layer";
   if (value === "time-oriented") return "time-oriented";
   return "force";
+}
+
+/**
+ * Resolve the Variant-E lane controls from the environment (the export path):
+ *   • `GRAPHIFY_LANE_BY=repo` (or `project`) → primary lanes by owning repo/project;
+ *     `node_type` / `type` → primary lanes by type (the default). Anything else /
+ *     unset ⇒ undefined (→ the layout default `node_type`, byte-identical).
+ *   • `GRAPHIFY_SUBLANE_BY=node_type` (or `type`) → split each primary lane into
+ *     closely-spaced type sub-lines. Unset ⇒ off.
+ * Returns only the keys that were explicitly requested, so an unset environment
+ * yields `{}` and the historical (type-lane) behaviour is preserved.
+ */
+export function resolveTimeOrientedSceneOptions(): TimeOrientedLayoutOptions {
+  const env = typeof process !== "undefined" && process.env ? process.env : {};
+  const laneByRaw = String(env.GRAPHIFY_LANE_BY ?? "").trim().toLowerCase();
+  const subRaw = String(env.GRAPHIFY_SUBLANE_BY ?? "").trim().toLowerCase();
+  const options: TimeOrientedLayoutOptions = {};
+  if (laneByRaw === "repo" || laneByRaw === "project") options.laneBy = "repo";
+  else if (laneByRaw === "node_type" || laneByRaw === "type") options.laneBy = "node_type";
+  if (subRaw === "node_type" || subRaw === "type") options.subLaneBy = "node_type";
+  return options;
 }
 
 /**
@@ -152,7 +182,26 @@ export function attachTimeOrientedPositions<T extends LayoutableScene>(
   const nodeTypes = scene.nodes.map((node) =>
     typeof node.type === "string" && node.type.trim() !== "" ? node.type : null,
   );
-  const positions = computeTimeOrientedPositions(nodeTimes, nodeTypes, options);
+
+  // When laneBy="repo", derive each node's owning repo/project lane from the
+  // graph topology (scene nodes + edges) and band PRIMARILY by it; the optional
+  // type sub-lanes (subLaneBy) still come from node.type. Default (node_type)
+  // skips derivation entirely → byte-identical to the historical behaviour.
+  let layoutOptions: TimeOrientedLayoutOptions = options;
+  if (options.laneBy === "repo") {
+    const laneNodes: RepoLaneNode[] = scene.nodes.map((node) => ({
+      id: node.id,
+      type: typeof node.type === "string" ? node.type : null,
+    }));
+    const { laneKeys, laneOrder } = deriveRepoLaneKeys(laneNodes, scene.edges);
+    layoutOptions = {
+      ...options,
+      nodeLanes: laneKeys,
+      // Stack repo lanes in graph order unless the caller pinned an order.
+      laneOrder: options.laneOrder ?? laneOrder,
+    };
+  }
+  const positions = computeTimeOrientedPositions(nodeTimes, nodeTypes, layoutOptions);
 
   for (let i = 0; i < scene.nodes.length; i++) {
     const node = scene.nodes[i];
@@ -186,7 +235,9 @@ export function applySceneLayout<T extends LayoutableScene>(
     return attachTypedLayerPositions(scene);
   }
   if (layoutId === "time-oriented") {
-    return attachTimeOrientedPositions(scene);
+    // Honour GRAPHIFY_LANE_BY / GRAPHIFY_SUBLANE_BY on the export path (the call
+    // site passes no explicit options); unset ⇒ {} ⇒ type lanes (back-compat).
+    return attachTimeOrientedPositions(scene, resolveTimeOrientedSceneOptions());
   }
   return attachLayoutPositions(scene);
 }
