@@ -2,6 +2,7 @@ export * from "./buffers";
 export * from "./edge-geometry";
 export * from "./layout";
 export * from "./layout-registry";
+export * from "./mat4";
 export * from "./positions";
 export * from "./render-geometry";
 export * from "./renderer";
