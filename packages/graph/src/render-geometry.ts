@@ -17,6 +17,7 @@
  */
 
 import { BOX_SHAPE_CODE, shapePolygonPoints, SQUARE_INSET_RATIO } from "./shape-geometry";
+import type { EdgeCurveStyle } from "./types";
 
 // Re-export the single-sourced box shape code for callers that import box
 // metrics from this module.
@@ -383,6 +384,15 @@ export function coerceFinitePositions(
 export const EDGE_CURVE_FACTOR = 0.5;
 
 /**
+ * Lateral amplitude (as an effective curvature) of an INFLECTED (S-curve) edge
+ * when its per-edge `curvature` is 0 — so a time-oriented scene whose edges carry
+ * no explicit curvature still reads as a clear S. A set per-edge curvature wins.
+ * The two cubic control points sit ±(amp = thisOrCurvature·dist·EDGE_CURVE_FACTOR)
+ * off the chord, at 1/3 and 2/3 along it.
+ */
+export const DEFAULT_INFLECT_CURVATURE = 0.5;
+
+/**
  * Arrowhead length in world units per unit of edge width (renderer.ts:543).
  * Device-space length = ARROW_LENGTH · width · pixelRatio · zoom (world-space,
  * scales with zoom like every glyph).
@@ -416,11 +426,20 @@ export interface EdgeGeometry {
   degenerate: boolean;
   /** Endpoints clip to the node borders; false ⇒ raw segment + NO arrow (E13). */
   clipped: boolean;
-  /** Whether the edge is curved (curvature !== 0). */
+  /** Whether the edge is curved (curvature !== 0, OR inflected style). */
   curved: boolean;
-  /** Quadratic control point (device px); only meaningful when `curved`. */
+  /**
+   * Whether the curve is a CUBIC Bézier (two control points — the inflected
+   * S-curve) rather than the convex quadratic. When false, `control2*` are 0 and
+   * the convex single-control quadratic is drawn.
+   */
+  cubic: boolean;
+  /** First control point (device px): quadratic control (convex) / cubic c1 (inflected). */
   controlX: number;
   controlY: number;
+  /** Second cubic control point (device px); only meaningful when `cubic`. */
+  control2X: number;
+  control2Y: number;
   /** Outgoing unit tangent at the source (curve start tangent / chord). */
   outSx: number;
   outSy: number;
@@ -449,28 +468,62 @@ export function edgeGeometry(
   target: { x: number; y: number },
   curvature: number,
   offsetForDir: (end: "source" | "target", dirX: number, dirY: number) => number,
+  curveStyle: EdgeCurveStyle = "convex",
 ): EdgeGeometry {
   const dx = target.x - source.x;
   const dy = target.y - source.y;
   const distance = Math.hypot(dx, dy);
   const degenerate = distance < 1e-6;
-  const curved = curvature !== 0;
+  const inflected = curveStyle === "inflected" && !degenerate;
+  // Inflected edges are always curved (even at curvature 0); convex edges curve
+  // only when a per-edge curvature is set — the historical predicate.
+  const curved = inflected || curvature !== 0;
 
   let controlX = 0;
   let controlY = 0;
-  if (curved && !degenerate) {
-    const midX = (source.x + target.x) / 2;
-    const midY = (source.y + target.y) / 2;
-    // control = mid + (-dy/d, dx/d)·d·curvature·EDGE_CURVE_FACTOR (renderer.ts:865)
-    controlX = midX + (-dy / distance) * distance * curvature * EDGE_CURVE_FACTOR;
-    controlY = midY + (dx / distance) * distance * curvature * EDGE_CURVE_FACTOR;
-  }
+  let control2X = 0;
+  let control2Y = 0;
+  let cubic = false;
 
   let outSx = degenerate ? 0 : dx / distance;
   let outSy = degenerate ? 0 : dy / distance;
   let inTx = outSx;
   let inTy = outSy;
-  if (curved && !degenerate) {
+
+  if (inflected) {
+    // INFLECTED S-curve: a cubic Bézier whose two control points sit on OPPOSITE
+    // sides of the chord (at 1/3 and 2/3 along it), so the stroke leaves the
+    // source bending one way and reaches the target bending the other — an
+    // inflection point near the midpoint. Tangents come from the near control.
+    const ux = dx / distance;
+    const uy = dy / distance;
+    const nx = -uy;
+    const ny = ux;
+    const amp =
+      (curvature !== 0 ? curvature : DEFAULT_INFLECT_CURVATURE) * distance * EDGE_CURVE_FACTOR;
+    const third = distance / 3;
+    controlX = source.x + ux * third + nx * amp;
+    controlY = source.y + uy * third + ny * amp;
+    control2X = target.x - ux * third - nx * amp;
+    control2Y = target.y - uy * third - ny * amp;
+    cubic = true;
+    const sLen = Math.hypot(controlX - source.x, controlY - source.y);
+    const tLen = Math.hypot(target.x - control2X, target.y - control2Y);
+    if (sLen > 1e-6) {
+      outSx = (controlX - source.x) / sLen;
+      outSy = (controlY - source.y) / sLen;
+    }
+    if (tLen > 1e-6) {
+      inTx = (target.x - control2X) / tLen;
+      inTy = (target.y - control2Y) / tLen;
+    }
+  } else if (curvature !== 0 && !degenerate) {
+    // CONVEX bow (historical, byte-identical): a single quadratic control point.
+    const midX = (source.x + target.x) / 2;
+    const midY = (source.y + target.y) / 2;
+    // control = mid + (-dy/d, dx/d)·d·curvature·EDGE_CURVE_FACTOR (renderer.ts:865)
+    controlX = midX + (-dy / distance) * distance * curvature * EDGE_CURVE_FACTOR;
+    controlY = midY + (dx / distance) * distance * curvature * EDGE_CURVE_FACTOR;
     const sLen = Math.hypot(controlX - source.x, controlY - source.y);
     const tLen = Math.hypot(target.x - controlX, target.y - controlY);
     if (sLen > 1e-6) {
@@ -496,8 +549,11 @@ export function edgeGeometry(
     degenerate,
     clipped,
     curved,
+    cubic,
     controlX,
     controlY,
+    control2X,
+    control2Y,
     outSx,
     outSy,
     inTx,
@@ -529,10 +585,22 @@ export function tessellateEdge(geom: EdgeGeometry, segments = 16): Array<[number
   for (let i = 0; i <= steps; i += 1) {
     const t = i / steps;
     const mt = 1 - t;
-    // Quadratic Bézier with the CLIPPED endpoints and the shared control point.
-    const x = mt * mt * geom.startX + 2 * mt * t * geom.controlX + t * t * geom.endX;
-    const y = mt * mt * geom.startY + 2 * mt * t * geom.controlY + t * t * geom.endY;
-    points.push([x, y]);
+    if (geom.cubic) {
+      // CUBIC Bézier (inflected S-curve) with the CLIPPED endpoints + both
+      // control points. B(t) = mt³·P0 + 3·mt²·t·C1 + 3·mt·t²·C2 + t³·P1.
+      const a = mt * mt * mt;
+      const b = 3 * mt * mt * t;
+      const c = 3 * mt * t * t;
+      const d = t * t * t;
+      const x = a * geom.startX + b * geom.controlX + c * geom.control2X + d * geom.endX;
+      const y = a * geom.startY + b * geom.controlY + c * geom.control2Y + d * geom.endY;
+      points.push([x, y]);
+    } else {
+      // Quadratic Bézier with the CLIPPED endpoints and the shared control point.
+      const x = mt * mt * geom.startX + 2 * mt * t * geom.controlX + t * t * geom.endX;
+      const y = mt * mt * geom.startY + 2 * mt * t * geom.controlY + t * t * geom.endY;
+      points.push([x, y]);
+    }
   }
   return points;
 }

@@ -72,6 +72,18 @@ export interface RenderGraphInput {
   attrs?: Float32Array;
 }
 
+/**
+ * Per-SCENE edge-curve drawing style (display Lot — time-oriented v3).
+ *   • `"convex"`    — the DEFAULT bow: a single quadratic control point offset to
+ *     one side of the chord (a C-shaped arc). Byte-identical to the historical
+ *     edge rendering; the golden suite renders this style.
+ *   • `"inflected"` — an S-curve with an INFLECTION point: a cubic Bézier whose
+ *     two control points sit on OPPOSITE sides of the chord, so the stroke leaves
+ *     the source bending one way and reaches the target bending the other. OPT-IN,
+ *     used by the time-oriented lane view to disentangle dense cross-lane bundles.
+ */
+export type EdgeCurveStyle = "convex" | "inflected";
+
 export interface GraphStyleBuffers {
   nodeSizes: Float32Array;
   nodeColors: Uint8Array;
@@ -98,6 +110,13 @@ export interface GraphStyleBuffers {
   edgeColors: Uint8Array;
   edgeDash: Uint8Array;
   edgeCurvatures: Float32Array;
+  /**
+   * Optional per-SCENE edge-curve style (default `"convex"` when omitted). When
+   * `"inflected"`, both the Canvas2D fallback and the WebGL2 edge path draw each
+   * curved/straight edge as an S-shaped cubic Bézier (see {@link EdgeCurveStyle}).
+   * Additive: absent ⇒ the historical convex/straight rendering (golden-stable).
+   */
+  edgeCurve?: EdgeCurveStyle;
 }
 
 export interface GraphStyleDefaults {
