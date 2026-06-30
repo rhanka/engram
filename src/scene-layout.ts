@@ -32,20 +32,21 @@
  * Anything else (including unset) ⇒ `"force"`.
  */
 
-// Vendored locally (see typed-layer-layout.ts): the published
-// `@sentropic/graph@^0.1.0` graphify depends on at RUNTIME does NOT export
-// `computeTypedLayerPositions` / `computeTimeOrientedPositions`, so importing
-// them from the package crashes the installed CLI at load (smoke-test
-// regression from #238). The vendored copies are byte-identical to the
-// canonical `packages/graph/src/layout-registry.ts` helpers.
+// The published `@sentropic/graph` (>= 0.2.0) exports the layout cores again, so
+// graphify imports them DIRECTLY from the package instead of from a vendored
+// copy. (graphify previously vendored byte-identical copies in
+// `src/typed-layer-layout.ts` because the published `@sentropic/graph@^0.1.0`
+// did not export `computeTypedLayerPositions` / `computeTimeOrientedPositions`,
+// which crashed the installed CLI at load — the #238 smoke-test regression. That
+// module is now a thin re-export shim; see packages/graph/PUBLISHING.md.)
 import {
   computeTimeOrientedPositions,
   computeTypedLayerPositions,
-} from "./typed-layer-layout.js";
+} from "@sentropic/graph";
 import type {
   TimeOrientedLayoutOptions,
   TypedLayerLayoutOptions,
-} from "./typed-layer-layout.js";
+} from "@sentropic/graph";
 
 import { attachLayoutPositions } from "./graph-layout.js";
 
