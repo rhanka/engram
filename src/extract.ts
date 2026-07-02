@@ -700,6 +700,73 @@ function _cppCollectTypeRefs(
   }
 }
 
+/**
+ * Walk a Rust type expression; append `[name, role]` tuples. Skips primitives,
+ * resolves the tail of a `scoped_type_identifier` (`crate::Logger` → `Logger`)
+ * and the base + arguments of a `generic_type` (`Vec<Config>` → `Vec` +
+ * `Config` as a generic_arg). Port of upstream safishamsi `_rust_collect_type_refs`.
+ */
+function _rustCollectTypeRefs(
+  node: SyntaxNode | null, source: string, generic: boolean, out: TypeRef[],
+): void {
+  if (node === null) return;
+  const t = node.type;
+  if (t === "primitive_type") return;
+  if (t === "type_identifier") {
+    const text = _readText(node, source);
+    if (text) out.push([text, generic ? "generic_arg" : "type"]);
+    return;
+  }
+  if (t === "scoped_type_identifier") {
+    const text = _readText(node, source).split("::").pop() ?? "";
+    if (text) out.push([text, generic ? "generic_arg" : "type"]);
+    return;
+  }
+  if (t === "generic_type") {
+    let nameNode = node.childForFieldName("type");
+    if (!nameNode) {
+      for (const c of node.children) {
+        if (c.type === "type_identifier" || c.type === "scoped_type_identifier") {
+          nameNode = c;
+          break;
+        }
+      }
+    }
+    if (nameNode) {
+      const text = _readText(nameNode, source).split("::").pop() ?? "";
+      if (text) out.push([text, generic ? "generic_arg" : "type"]);
+    }
+    for (const c of node.children) {
+      if (c.type === "type_arguments") {
+        for (const arg of c.children) {
+          if (arg.isNamed) _rustCollectTypeRefs(arg, source, true, out);
+        }
+      }
+    }
+    return;
+  }
+  if (
+    t === "reference_type" || t === "pointer_type" || t === "array_type" ||
+    t === "tuple_type" || t === "slice_type"
+  ) {
+    for (const c of node.children) {
+      if (c.isNamed) _rustCollectTypeRefs(c, source, generic, out);
+    }
+    return;
+  }
+  if (node.isNamed) {
+    for (const c of node.children) {
+      if (c.isNamed) _rustCollectTypeRefs(c, source, generic, out);
+    }
+  }
+}
+
+/** Rust type-expression node types that can appear as a positional (tuple) field. */
+const _RUST_FIELD_TYPE_NODES = new Set<string>([
+  "type_identifier", "generic_type", "scoped_type_identifier",
+  "reference_type", "primitive_type", "tuple_type", "array_type",
+]);
+
 // ---------------------------------------------------------------------------
 // LanguageConfig interface + generic helpers
 // ---------------------------------------------------------------------------
@@ -3876,8 +3943,35 @@ export async function extractRust(filePath: string, rootDir?: string): Promise<E
   function addEdge(
     src: string, tgt: string, relation: string, line: number,
     confidence: "EXTRACTED" | "INFERRED" = "EXTRACTED", weight: number = 1.0,
+    context?: string,
   ): void {
-    edges.push({ source: src, target: tgt, relation, confidence, source_file: strPath, source_location: `L${line}`, weight });
+    const edge: GraphEdge = { source: src, target: tgt, relation, confidence, source_file: strPath, source_location: `L${line}`, weight };
+    if (context) edge.context = context;
+    edges.push(edge);
+  }
+
+  /** Resolve a referenced type name to a same-file node or a sourceless stub. */
+  function ensureNamedNode(name: string): string {
+    let nid = _makeId(stem, name);
+    if (seenIds.has(nid)) return nid;
+    nid = _makeId(name);
+    if (!seenIds.has(nid)) {
+      seenIds.add(nid);
+      nodes.push({ id: nid, label: name, file_type: "code", source_file: "", source_location: "" });
+    }
+    return nid;
+  }
+
+  /** Emit `references` edges from a struct/enum to each collected field type. */
+  function emitRustTypeRefs(itemNid: string, typeNode: SyntaxNode | null, line: number): void {
+    if (typeNode === null) return;
+    const refs: TypeRef[] = [];
+    _rustCollectTypeRefs(typeNode, source, false, refs);
+    for (const [refName, role] of refs) {
+      const ctx = role === "generic_arg" ? "generic_arg" : "field";
+      const tgt = ensureNamedNode(refName);
+      if (tgt !== itemNid) addEdge(itemNid, tgt, "references", line, "EXTRACTED", 1.0, ctx);
+    }
   }
 
   const fileNid = _makeId(stem);
@@ -3923,6 +4017,59 @@ export async function extractRust(filePath: string, rootDir?: string): Promise<E
         const itemNid = _makeId(stem, itemName);
         addNode(itemNid, itemName, line);
         addEdge(fileNid, itemNid, "contains", line);
+
+        // Field type `references` — previously every struct/enum field type was
+        // silently dropped (extractRust only created the item node). Ports of
+        // upstream safishamsi: named-struct fields (base), tuple-struct fields
+        // (7eb847b), and enum-variant field types (674184d).
+        if (t === "struct_item") {
+          // Named struct: `struct S { a: Logger, b: Vec<Config> }`.
+          for (const c of node.children) {
+            if (c.type !== "field_declaration_list") continue;
+            for (const field of c.children) {
+              if (field.type !== "field_declaration") continue;
+              let typeNode = field.childForFieldName("type");
+              if (!typeNode) {
+                typeNode = field.children.find((fc) => _RUST_FIELD_TYPE_NODES.has(fc.type)) ?? null;
+              }
+              emitRustTypeRefs(itemNid, typeNode, field.startPosition.row + 1);
+            }
+          }
+          // Tuple struct: `struct Wrapper(pub Logger, Config);` — positional
+          // field types nest directly under ordered_field_declaration_list with
+          // no field_declaration wrapper (7eb847b).
+          for (const c of node.children) {
+            if (c.type !== "ordered_field_declaration_list") continue;
+            const fline = c.startPosition.row + 1;
+            for (const tc of c.children) {
+              if (_RUST_FIELD_TYPE_NODES.has(tc.type)) emitRustTypeRefs(itemNid, tc, fline);
+            }
+          }
+        }
+        if (t === "enum_item") {
+          // Variant payloads: tuple variant `Click(Logger)` nests types under
+          // ordered_field_declaration_list; struct variant `Resize { size: Dim }`
+          // under field_declaration_list (674184d).
+          for (const c of node.children) {
+            if (c.type !== "enum_variant_list") continue;
+            for (const variant of c.children) {
+              if (variant.type !== "enum_variant") continue;
+              const vline = variant.startPosition.row + 1;
+              for (const vc of variant.children) {
+                if (vc.type === "ordered_field_declaration_list") {
+                  for (const tc of vc.children) {
+                    if (_RUST_FIELD_TYPE_NODES.has(tc.type)) emitRustTypeRefs(itemNid, tc, vline);
+                  }
+                } else if (vc.type === "field_declaration_list") {
+                  for (const field of vc.children) {
+                    if (field.type !== "field_declaration") continue;
+                    emitRustTypeRefs(itemNid, field.childForFieldName("type"), field.startPosition.row + 1);
+                  }
+                }
+              }
+            }
+          }
+        }
       }
       return;
     }

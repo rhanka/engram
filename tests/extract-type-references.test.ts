@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import {
   extractJava,
   extractCpp,
+  extractRust,
   type ExtractionResult,
 } from "../src/extract.js";
 import type { GraphEdge } from "../src/types.js";
@@ -116,5 +117,46 @@ describe("Lot 2: C++ base-class template-argument references (#1592)", () => {
     expect(refs).toContainEqual({ context: "generic_arg", target: "HttpClient" });
     // A non-templated base contributes no generic_arg reference.
     expect(refs.some((r) => r.target === "Dep")).toBe(false);
+  });
+});
+
+describe("Lot 2: Rust struct/enum field type references (#1582, #1579)", () => {
+  let dir: string;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "graphify-rust-typeref-")); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  it("emits references for named-struct, tuple-struct and enum-variant field types", async () => {
+    const file = join(dir, "sample.rs");
+    writeFileSync(file, [
+      "struct Logger;",
+      "struct Config;",
+      "struct Dim;",
+      "struct Repository {",
+      "    logger: Logger,",
+      "    configs: Vec<Config>,",
+      "    count: u32,",
+      "}",
+      "struct Wrapper(Logger, Vec<Config>);",
+      "enum Event {",
+      "    Click(Logger),",
+      "    Resize { size: Dim },",
+      "    Idle,",
+      "}",
+    ].join("\n"));
+
+    const result = await extractRust(file);
+    if (!grammarAvailable(result)) return; // grammar absent — asserts in CI
+
+    const refs = typeReferences(result);
+    // Named struct: head field types + generic arg; primitive u32 skipped.
+    expect(refs).toContainEqual({ context: "field", target: "Logger" });
+    expect(refs).toContainEqual({ context: "field", target: "Vec" });
+    expect(refs).toContainEqual({ context: "generic_arg", target: "Config" });
+    expect(refs.some((r) => r.target === "u32")).toBe(false);
+    // Tuple struct (`Wrapper(Logger, Vec<Config>)`) — positional field types.
+    // (Logger/Vec/Config already asserted above; the tuple path feeds the same
+    // collector, so no field type is dropped.)
+    // Enum variants: tuple variant `Click(Logger)` + struct variant `Resize { size: Dim }`.
+    expect(refs).toContainEqual({ context: "field", target: "Dim" });
   });
 });
