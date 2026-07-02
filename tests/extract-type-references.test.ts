@@ -7,6 +7,7 @@ import {
   extractCpp,
   extractRust,
   extractPhp,
+  extractCsharp,
   type ExtractionResult,
 } from "../src/extract.js";
 import type { GraphEdge } from "../src/types.js";
@@ -191,5 +192,38 @@ describe("Lot 2: PHP property + promoted-ctor type references (#1590)", () => {
     expect(refs).toContainEqual({ context: "field", target: "Cache" });
     // A non-promoted scalar param (`string $name`) leaks no class field edge.
     expect(refs.some((r) => r.target === "string" || r.target === "name")).toBe(false);
+  });
+});
+
+// tree-sitter-c-sharp ships no prebuilt WASM in this repo, so this soft-skips
+// locally and asserts in CI (mirrors extract-swift-extensions.test.ts).
+describe("Lot 2: C# field + property type references (#1591)", () => {
+  let dir: string;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "graphify-csharp-typeref-")); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  it("emits field references for fields and auto-properties incl. generic args", async () => {
+    const file = join(dir, "Sample.cs");
+    writeFileSync(file, [
+      "class Widget {}",
+      "class Repository {",
+      "    private Widget _main;",
+      "    public Widget Main { get; set; }",
+      "    public System.Collections.Generic.List<Widget> Widgets { get; set; }",
+      "    public int Count { get; set; }",
+      "}",
+    ].join("\n"));
+
+    const result = await extractCsharp(file);
+    if (!grammarAvailable(result)) return; // grammar absent — asserts in CI
+
+    const refs = typeReferences(result);
+    // Field + auto-property head types.
+    expect(refs).toContainEqual({ context: "field", target: "Widget" });
+    // Generic argument on `List<Widget>`.
+    expect(refs).toContainEqual({ context: "generic_arg", target: "Widget" });
+    expect(refs).toContainEqual({ context: "field", target: "List" });
+    // Predefined `int` is never referenced.
+    expect(refs.some((r) => r.target === "int")).toBe(false);
   });
 });
