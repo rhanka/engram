@@ -30,6 +30,9 @@ import type { CorrelationLink, SessionFact } from "./types.js";
 
 export interface GitCommitMeta {
   sha: string; // full or abbreviated
+  /** Parent commit shas, in git-log order. Present when read for graph skeletons. */
+  parentShas?: string[];
+  /** Branch/ref name when the commit was reached from a branch-specific query. */
   branch?: string;
   subject?: string;
   /**
