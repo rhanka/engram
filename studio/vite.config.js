@@ -38,6 +38,14 @@ export default defineConfig(async () => ({
       // the reconciliation view to arrange the local subgraph around the pinned
       // twins. Same module the server build/export uses for scene.json.
       "@graphify/graph-layout": resolve(here, "../src/graph-layout.ts"),
+      // Work-stream C offline retrieval. The answer-pack assembler runs the SAME
+      // BM25 + RRF + PPR + specificity/structural-demotion pipeline the CLI/MCP
+      // `answer` does, in-browser, over the bundled search-index.json (zero
+      // network, no key, no LLM). The whole chain (answer-pack → query/ppr →
+      // bm25/rrf → search) is dependency-free pure TS (INV-5), so it bundles into
+      // the SPA byte-for-byte with the Node build. search-index.ts is imported
+      // type-only by the assembler, so its node:crypto value import is erased.
+      "@graphify/retrieval": resolve(here, "../src/retrieval/answer-pack.ts"),
     },
   },
   build: {
