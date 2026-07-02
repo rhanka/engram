@@ -911,6 +911,49 @@ function _csharpCollectTypeRefs(
   }
 }
 
+/**
+ * Walk a Scala type expression; append `[name, role]` tuples. Handles
+ * `type_identifier`, `generic_type` (`List[T]`) and common type wrappers. Port
+ * of upstream safishamsi `_scala_collect_type_refs`.
+ */
+function _scalaCollectTypeRefs(
+  node: SyntaxNode | null, source: string, generic: boolean, out: TypeRef[],
+): void {
+  if (node === null) return;
+  const t = node.type;
+  if (t === "type_identifier") {
+    const text = _readText(node, source);
+    if (text) out.push([text, generic ? "generic_arg" : "type"]);
+    return;
+  }
+  if (t === "generic_type") {
+    let base = node.childForFieldName("type");
+    if (!base) {
+      base = node.children.find((c) => c.type === "type_identifier") ?? null;
+    }
+    if (base && base.type === "type_identifier") {
+      const text = _readText(base, source);
+      if (text) out.push([text, generic ? "generic_arg" : "type"]);
+    }
+    for (const c of node.children) {
+      if (c.type === "type_arguments") {
+        for (const arg of c.children) {
+          if (arg.isNamed) _scalaCollectTypeRefs(arg, source, true, out);
+        }
+      }
+    }
+    return;
+  }
+  if (
+    t === "compound_type" || t === "infix_type" || t === "function_type" ||
+    t === "tuple_type" || t === "annotated_type" || t === "projected_type"
+  ) {
+    for (const c of node.children) {
+      if (c.isNamed) _scalaCollectTypeRefs(c, source, generic, out);
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // LanguageConfig interface + generic helpers
 // ---------------------------------------------------------------------------
@@ -2573,6 +2616,22 @@ async function _extractGeneric(
         emitTypeRefs(parentClassNid, refs, line, "field");
       }
       return;
+    }
+
+    // Scala: `val a: Repo` / `var b: Repo` — field type references. val and var
+    // are structurally identical (both expose a `type` field); `var_definition`
+    // was the specific upstream fix (67b4525). Falls through (no return) so any
+    // call expressions in the initializer are still walked.
+    if (config.tsModule === "tree_sitter_scala"
+        && (t === "val_definition" || t === "var_definition")
+        && parentClassNid) {
+      const typeNode = node.childForFieldName("type");
+      if (typeNode) {
+        const line = node.startPosition.row + 1;
+        const refs: TypeRef[] = [];
+        _scalaCollectTypeRefs(typeNode, source, false, refs);
+        emitTypeRefs(parentClassNid, refs, line, "field");
+      }
     }
 
     // Default: recurse
