@@ -9,6 +9,7 @@ import {
   extractPhp,
   extractCsharp,
   extractScala,
+  extractSwift,
   type ExtractionResult,
 } from "../src/extract.js";
 import type { GraphEdge } from "../src/types.js";
@@ -255,5 +256,34 @@ describe("Lot 2: Scala val/var field type references (#1587)", () => {
     expect(refs).toContainEqual({ context: "field", target: "Logger" });
     // Generic argument on `List[Config]`.
     expect(refs).toContainEqual({ context: "generic_arg", target: "Config" });
+  });
+});
+
+// tree-sitter-swift ships no prebuilt WASM in this repo: soft-skip locally,
+// assert in CI.
+describe("Lot 2: Swift enum associated-value type references (#1593)", () => {
+  let dir: string;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "graphify-swift-typeref-")); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  it("emits references from an enum to its associated-value types", async () => {
+    const file = join(dir, "NetworkError.swift");
+    writeFileSync(file, [
+      "class Session {}",
+      "class Config {}",
+      "enum NetworkError {",
+      "    case started(Session)",
+      "    case failed(Config)",
+      "    case idle",
+      "}",
+    ].join("\n"));
+
+    const result = await extractSwift(file);
+    if (!grammarAvailable(result)) return; // grammar absent — asserts in CI
+
+    const refs = typeReferences(result);
+    // Associated-value types are referenced with context "type".
+    expect(refs).toContainEqual({ context: "type", target: "Session" });
+    expect(refs).toContainEqual({ context: "type", target: "Config" });
   });
 });

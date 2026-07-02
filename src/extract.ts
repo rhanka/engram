@@ -954,6 +954,61 @@ function _scalaCollectTypeRefs(
   }
 }
 
+/**
+ * Walk a Swift type expression; append `[name, role]` tuples. Unwraps
+ * `type_annotation` / optional / array / dictionary / tuple wrappers and reads
+ * the `type_identifier` head + `type_arguments` of a `user_type`. Port of
+ * upstream safishamsi `_swift_collect_type_refs`.
+ */
+function _swiftCollectTypeRefs(
+  node: SyntaxNode | null, source: string, generic: boolean, out: TypeRef[],
+): void {
+  if (node === null) return;
+  const t = node.type;
+  if (t === "type_annotation") {
+    for (const c of node.children) {
+      if (c.isNamed) _swiftCollectTypeRefs(c, source, generic, out);
+    }
+    return;
+  }
+  if (t === "user_type") {
+    for (const c of node.children) {
+      if (c.type === "type_identifier") {
+        const text = _readText(c, source);
+        if (text) out.push([text, generic ? "generic_arg" : "type"]);
+        break;
+      }
+    }
+    for (const c of node.children) {
+      if (c.type === "type_arguments") {
+        for (const arg of c.children) {
+          if (arg.isNamed) _swiftCollectTypeRefs(arg, source, true, out);
+        }
+      }
+    }
+    return;
+  }
+  if (t === "type_identifier") {
+    const text = _readText(node, source);
+    if (text) out.push([text, generic ? "generic_arg" : "type"]);
+    return;
+  }
+  if (
+    t === "optional_type" || t === "implicitly_unwrapped_optional_type" ||
+    t === "array_type" || t === "dictionary_type" || t === "tuple_type"
+  ) {
+    for (const c of node.children) {
+      if (c.isNamed) _swiftCollectTypeRefs(c, source, generic, out);
+    }
+    return;
+  }
+  if (node.isNamed) {
+    for (const c of node.children) {
+      if (c.isNamed) _swiftCollectTypeRefs(c, source, generic, out);
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // LanguageConfig interface + generic helpers
 // ---------------------------------------------------------------------------
@@ -1719,16 +1774,42 @@ function _swiftExtraWalk(
   _functionBodies: Array<[string, SyntaxNode]>,
   parentClassNid: string | null,
   addNodeFn: (nid: string, label: string, line: number) => void,
-  addEdgeFn: (src: string, tgt: string, relation: string, line: number) => void,
+  addEdgeFn: (
+    src: string, tgt: string, relation: string, line: number,
+    confidence?: "EXTRACTED" | "INFERRED", weight?: number, context?: string,
+  ) => void,
+  ensureNamedNodeFn?: (name: string, line: number) => string,
 ): boolean {
   if (node.type === "enum_entry" && parentClassNid) {
+    const line = node.startPosition.row + 1;
     for (const child of node.children) {
       if (child.type === "simple_identifier") {
         const caseName = _readText(child, source);
         const caseNid = _makeId(parentClassNid, caseName);
-        const line = node.startPosition.row + 1;
         addNodeFn(caseNid, caseName, line);
         addEdgeFn(parentClassNid, caseNid, "case_of", line);
+      }
+    }
+    // Associated-value types nest as `enum_type_parameters -> user_type ->
+    // type_identifier` (a sibling of the case-name simple_identifier). The
+    // case-name loop never descends into them, so `case started(Session)` used
+    // to drop the `Event -> Session` reference. Emit a `references` edge from
+    // the ENUM node to each collected type (port of upstream safishamsi ad70152).
+    if (ensureNamedNodeFn) {
+      for (const child of node.children) {
+        if (child.type !== "enum_type_parameters") continue;
+        for (const grand of child.children) {
+          if (!grand.isNamed) continue;
+          const refs: TypeRef[] = [];
+          _swiftCollectTypeRefs(grand, source, false, refs);
+          for (const [refName, role] of refs) {
+            const ctx = role === "generic_arg" ? "generic_arg" : "type";
+            const targetNid = ensureNamedNodeFn(refName, line);
+            if (targetNid !== parentClassNid) {
+              addEdgeFn(parentClassNid, targetNid, "references", line, "EXTRACTED", 1.0, ctx);
+            }
+          }
+        }
       }
     }
     return true;
@@ -2532,7 +2613,7 @@ async function _extractGeneric(
     if (config.tsModule === "tree_sitter_swift") {
       if (_swiftExtraWalk(node, source, fileNid, stem, strPath,
         nodes, edges, seenIds, functionBodies,
-        parentClassNid, addNode, addEdge)) {
+        parentClassNid, addNode, addEdge, ensureNamedNode)) {
         return;
       }
     }
