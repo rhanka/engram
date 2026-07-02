@@ -1741,6 +1741,42 @@ async function _extractGeneric(
         }
       }
 
+      // Ruby-specific: `class Dog < Animal` puts the base class in the
+      // `superclass` field (a `<` token followed by a `constant` or a
+      // `scope_resolution`). There was no Ruby branch, so every Ruby inherits
+      // edge was silently dropped. Port of upstream safishamsi a19b9e9.
+      if (config.tsModule === "tree_sitter_ruby") {
+        const sup = node.childForFieldName("superclass");
+        if (sup) {
+          let base = "";
+          for (const sub of sup.children) {
+            if (sub.type === "constant") {
+              base = _readText(sub, source);
+              break;
+            }
+            if (sub.type === "scope_resolution") {
+              const consts = sub.children.filter((c) => c.type === "constant");
+              if (consts.length > 0) base = _readText(consts[consts.length - 1]!, source);
+              break;
+            }
+          }
+          if (base) {
+            let baseNid = _makeId(stem, base);
+            if (!seenIds.has(baseNid)) {
+              baseNid = _makeId(base);
+              if (!seenIds.has(baseNid)) {
+                nodes.push({
+                  id: baseNid, label: base, file_type: "code",
+                  source_file: "", source_location: "",
+                });
+                seenIds.add(baseNid);
+              }
+            }
+            addEdge(classNid, baseNid, "inherits", line);
+          }
+        }
+      }
+
       // Java-specific: superclass / interface inheritance and implementation.
       if (config.tsModule === "tree_sitter_java") {
         const emitJavaParent = (baseName: string, relation: string): void => {
