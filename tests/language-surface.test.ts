@@ -994,4 +994,38 @@ class PaymentService extends BaseService implements Billable {}
       }),
     ]));
   });
+
+  it("extracts Ruby class superclass inheritance edges", async () => {
+    writeFileSync(join(dir, "Dog.rb"), [
+      "class Animal",
+      "  def speak",
+      "  end",
+      "end",
+      "",
+      "class Dog < Animal",
+      "  def bark",
+      "  end",
+      "end",
+      "",
+    ].join("\n"));
+
+    const result = await extract([join(dir, "Dog.rb")]);
+    const relations = result.edges.map((edge) => `${edge.source}:${edge.relation}:${edge.target}`);
+
+    expect(relations).toContain("dog_dog:inherits:dog_animal");
+  });
+
+  it("extracts Ruby scope-resolved superclass inheritance edges", async () => {
+    writeFileSync(join(dir, "Widget.rb"), [
+      "class Widget < Gtk::Container",
+      "end",
+      "",
+    ].join("\n"));
+
+    const result = await extract([join(dir, "Widget.rb")]);
+    const inherits = result.edges.filter((e) => e.relation === "inherits");
+    const targetLabels = inherits.map((e) => result.nodes.find((n) => n.id === e.target)?.label);
+
+    expect(targetLabels).toContain("Container");
+  });
 });
