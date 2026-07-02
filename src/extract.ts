@@ -767,6 +767,57 @@ const _RUST_FIELD_TYPE_NODES = new Set<string>([
   "reference_type", "primitive_type", "tuple_type", "array_type",
 ]);
 
+/** PHP type-expression node types that carry a declared type. */
+const _PHP_TYPE_NODES = new Set<string>([
+  "named_type", "primitive_type", "nullable_type",
+  "union_type", "intersection_type", "optional_type",
+]);
+
+/** Return the unqualified tail of a PHP `name`/`qualified_name` node (`A\B\C` → `C`). */
+function _phpNameText(node: SyntaxNode | null, source: string): string | null {
+  if (node === null) return null;
+  return _readText(node, source).split("\\").pop() || null;
+}
+
+/**
+ * Walk a PHP type expression; append `[name, role]` tuples. Skips primitives
+ * and unwraps `named_type` / nullable / union / intersection wrappers. Port of
+ * upstream safishamsi `_php_collect_type_refs`.
+ */
+function _phpCollectTypeRefs(
+  node: SyntaxNode | null, source: string, generic: boolean, out: TypeRef[],
+): void {
+  if (node === null) return;
+  const t = node.type;
+  if (t === "primitive_type") return;
+  if (t === "named_type") {
+    for (const c of node.children) {
+      if (c.type === "name" || c.type === "qualified_name") {
+        const text = _phpNameText(c, source);
+        if (text) out.push([text, generic ? "generic_arg" : "type"]);
+        return;
+      }
+    }
+    return;
+  }
+  if (t === "name" || t === "qualified_name") {
+    const text = _phpNameText(node, source);
+    if (text) out.push([text, generic ? "generic_arg" : "type"]);
+    return;
+  }
+  if (t === "nullable_type" || t === "union_type" || t === "intersection_type" || t === "optional_type") {
+    for (const c of node.children) {
+      if (c.isNamed) _phpCollectTypeRefs(c, source, generic, out);
+    }
+    return;
+  }
+  if (node.isNamed) {
+    for (const c of node.children) {
+      if (c.isNamed) _phpCollectTypeRefs(c, source, generic, out);
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // LanguageConfig interface + generic helpers
 // ---------------------------------------------------------------------------
@@ -2250,6 +2301,27 @@ async function _extractGeneric(
       return;
     }
 
+    // PHP 8 constructor property promotion: `__construct(private Repo $repo)`
+    // parses the promoted param as `property_promotion_parameter`. A promoted
+    // param is also a real class field, so emit a `field`-context reference on
+    // the class (port of upstream safishamsi 51f805e). Runs before the function
+    // handler and does NOT return, so the constructor is still processed
+    // normally as a method.
+    if (config.tsModule === "tree_sitter_php" && t === "method_declaration" && parentClassNid) {
+      const params = node.children.find((c) => c.type === "formal_parameters");
+      if (params) {
+        for (const p of params.children) {
+          if (p.type !== "property_promotion_parameter") continue;
+          const typeNode = p.children.find((sub) => _PHP_TYPE_NODES.has(sub.type));
+          if (!typeNode) continue;
+          const line = p.startPosition.row + 1;
+          const refs: TypeRef[] = [];
+          _phpCollectTypeRefs(typeNode, source, false, refs);
+          emitTypeRefs(parentClassNid, refs, line, "field");
+        }
+      }
+    }
+
     // Function types
     if (config.functionTypes.has(t)) {
       let funcName: string | null = null;
@@ -2357,6 +2429,19 @@ async function _extractGeneric(
         const line = node.startPosition.row + 1;
         const refs: TypeRef[] = [];
         _javaCollectTypeRefs(typeNode, source, false, refs);
+        emitTypeRefs(parentClassNid, refs, line, "field");
+      }
+      return;
+    }
+
+    // PHP: `private Repo $repo;` — typed class property references. The type
+    // sits as the first type-shaped direct child of the property_declaration.
+    if (config.tsModule === "tree_sitter_php" && t === "property_declaration" && parentClassNid) {
+      const typeNode = node.children.find((c) => _PHP_TYPE_NODES.has(c.type));
+      if (typeNode) {
+        const line = node.startPosition.row + 1;
+        const refs: TypeRef[] = [];
+        _phpCollectTypeRefs(typeNode, source, false, refs);
         emitTypeRefs(parentClassNid, refs, line, "field");
       }
       return;
