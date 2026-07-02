@@ -8,6 +8,7 @@ import {
   extractRust,
   extractPhp,
   extractCsharp,
+  extractScala,
   type ExtractionResult,
 } from "../src/extract.js";
 import type { GraphEdge } from "../src/types.js";
@@ -225,5 +226,34 @@ describe("Lot 2: C# field + property type references (#1591)", () => {
     expect(refs).toContainEqual({ context: "field", target: "List" });
     // Predefined `int` is never referenced.
     expect(refs.some((r) => r.target === "int")).toBe(false);
+  });
+});
+
+// tree-sitter-scala ships no prebuilt WASM in this repo: soft-skip locally,
+// assert in CI.
+describe("Lot 2: Scala val/var field type references (#1587)", () => {
+  let dir: string;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "graphify-scala-typeref-")); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  it("emits field references for both val and var declarations", async () => {
+    const file = join(dir, "Service.scala");
+    writeFileSync(file, [
+      "class Service {",
+      "  val a: Repo = null",
+      "  var b: Logger = null",
+      "  val items: List[Config] = null",
+      "}",
+    ].join("\n"));
+
+    const result = await extractScala(file);
+    if (!grammarAvailable(result)) return; // grammar absent — asserts in CI
+
+    const refs = typeReferences(result);
+    expect(refs).toContainEqual({ context: "field", target: "Repo" });
+    // The specific upstream fix: a `var` field type is now referenced like `val`.
+    expect(refs).toContainEqual({ context: "field", target: "Logger" });
+    // Generic argument on `List[Config]`.
+    expect(refs).toContainEqual({ context: "generic_arg", target: "Config" });
   });
 });
