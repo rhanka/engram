@@ -16,6 +16,9 @@ import {
 } from "./studio-assets.js";
 import { buildStudioScene, type StudioScene } from "./studio-scene.js";
 import { attachLayoutPositions } from "./graph-layout.js";
+import { buildSearchIndex } from "./search-index-emitter.js";
+import type { SearchIndex } from "./search-index.js";
+import { loadGraphFromData, type SerializedGraphData } from "./graph.js";
 import {
   getOntologyRebuildStatus,
   getOntologyReconciliationCandidate,
@@ -271,6 +274,33 @@ function sceneJsonResult(stateDir: string): OntologyStudioRouteResult {
     sceneCache = cached;
   }
   return jsonResult(200, cached.scene);
+}
+
+/**
+ * Serve the offline retrieval substrate `search-index.json` (work-stream C). Built
+ * from graph.json via the SAME deterministic emitter the static export uses
+ * ({@link buildSearchIndex}) and cached on graph.json identity (path + mtime +
+ * size) like the scene — so only the first fetch pays the build cost and any edit
+ * invalidates it. 404s when graph.json is absent; otherwise the SPA's Answer view
+ * runs BM25 + PPR over this payload in-browser (no LLM, grounded retrieval only).
+ */
+let searchIndexCache: { key: string; index: SearchIndex } | null = null;
+
+function searchIndexJsonResult(stateDir: string): OntologyStudioRouteResult {
+  const graphPath = join(stateDir, "graph.json");
+  if (!existsSync(graphPath)) {
+    return jsonResult(404, { error: "graph.json not found" });
+  }
+  const stat = statSync(graphPath);
+  const key = `${graphPath} ${stat.mtimeMs} ${stat.size}`;
+  let cached = searchIndexCache;
+  if (!cached || cached.key !== key) {
+    const data = JSON.parse(readFileSync(graphPath, "utf-8")) as SerializedGraphData;
+    const index = buildSearchIndex(loadGraphFromData(data));
+    cached = { key, index };
+    searchIndexCache = cached;
+  }
+  return jsonResult(200, cached.index);
 }
 
 function sendResult(response: ServerResponse, result: OntologyStudioRouteResult): void {
@@ -582,6 +612,9 @@ export function handleOntologyStudioRequest(
     }
     if (url.pathname === "/api/ontology/scene.json") {
       return sceneJsonResult(context.stateDir);
+    }
+    if (url.pathname === "/api/ontology/search-index.json") {
+      return searchIndexJsonResult(context.stateDir);
     }
     const entityPrefix = "/api/ontology/entity/";
     if (url.pathname.startsWith(entityPrefix)) {
