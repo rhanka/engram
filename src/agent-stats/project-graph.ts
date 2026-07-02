@@ -3,8 +3,10 @@
  *
  * Turns agent-stats session facts into a graphify `graph.json` (node-link
  * format) the studio can render: nodes = project / repos / sessions / agents /
- * branches / commits; edges = rename-lineage, belongs-to, worked-in,
- * conducted-by, touched-branch, produced, derived-from.
+ * branches / commits; edges = rename-lineage, belongs-to, touched-branch,
+ * produced, commit-parent, branch-head, derived-from. Repo/project lanes are
+ * node attributes, not hub edges, so decluttering relation edges cannot collapse
+ * the layout lanes.
  *
  * RENAME RECONCILIATION (the core of this module):
  *   agent-stats keys repo identity off the cwd *path* and does not persist the
@@ -135,7 +137,11 @@ export interface BuildProjectGraphOptions {
    * graph is byte-identical to the pre-T2 output. Structurally satisfied by
    * `readGitCommits()` output (GitCommitMeta[]).
    */
-  commits?: Pick<GitCommitMeta, "sha" | "committedAtMs">[];
+  commits?: Pick<GitCommitMeta, "sha" | "parentShas" | "subject" | "committedAtMs">[];
+  /** Branch heads for the git skeleton: branch/ref name -> head commit sha. */
+  branchHeads?: { name: string; sha: string }[];
+  /** Emit non-visual compatibility hubs/edges. Default true for API back-compat; CLI disables unless --hub-edges. */
+  includeHubEdges?: boolean;
   /** Provenance to stamp on graph.graph.provenance. */
   provenance?: unknown;
 }
@@ -320,6 +326,7 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
   const { identity } = opts;
   const includeCommits = opts.includeCommits !== false;
   const includeBranches = opts.includeBranches !== false;
+  const includeHubEdges = opts.includeHubEdges !== false;
 
   // T2: index git committer-dates by 7-char sha prefix (the form sessions print
   // and `sessionFactToInput` stores). FIRST-TOUCH on collision — a duplicate
@@ -327,9 +334,11 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
   // order, so a Commit node's `t` is deterministic regardless of which session
   // happened to create the node first.
   const commitTimeBySha7 = new Map<string, number>();
+  const commitMetaBySha7 = new Map<string, Pick<GitCommitMeta, "sha" | "parentShas" | "subject" | "committedAtMs">>();
   for (const c of opts.commits ?? []) {
-    if (c.committedAtMs === undefined) continue;
     const k = c.sha.slice(0, 7).toLowerCase();
+    if (!commitMetaBySha7.has(k)) commitMetaBySha7.set(k, c);
+    if (c.committedAtMs === undefined) continue;
     if (!commitTimeBySha7.has(k)) commitTimeBySha7.set(k, c.committedAtMs);
   }
 
@@ -377,17 +386,22 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
       node_type: "Repo",
       path_prefixes: alias.pathPrefixes,
       remote: alias.remote,
+      project: identity.canonicalId,
+      repo: alias.name,
+      lane: alias.name,
     });
     repoNodeIds.push(id);
-    // Each incarnation belongs to the one reconciled project.
-    addEdge({
-      source: id,
-      target: projectNodeId,
-      relation: "belongs-to",
-      confidence: "EXTRACTED",
-      source_file: "agent-stats://reconcile",
-      weight: 1,
-    });
+    // Compatibility-only semantic edge. The lane model does NOT depend on it.
+    if (includeHubEdges) {
+      addEdge({
+        source: id,
+        target: projectNodeId,
+        relation: "belongs-to",
+        confidence: "EXTRACTED",
+        source_file: "agent-stats://reconcile",
+        weight: 1,
+      });
+    }
   });
   // Chain the rename history: alias[i] --rename-lineage--> alias[i+1].
   for (let i = 0; i + 1 < repoNodeIds.length; i++) {
@@ -437,20 +451,27 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
       files_touched: s.filesTouched,
       commit_count: s.commitShas.length,
       branch_count: s.branches.length,
+      project: identity.canonicalId,
+      repo: identity.aliases[aliasIdx]?.name,
+      lane: identity.aliases[aliasIdx]?.name,
+      agent_kind: s.host,
       ...temporal,
     });
     sessionNodeBySessionId.set(s.sessionId, sessId);
 
-    // session worked-in repo (incarnation)
-    addEdge({
-      source: sessId,
-      target: repoNodeId,
-      relation: "worked-in",
-      confidence: "EXTRACTED",
-      source_file: "agent-stats://session",
-      weight: 1,
-      ...temporal,
-    });
+    // Compatibility-only semantic edge. Repo membership is now carried by node
+    // attributes (`project` / `repo` / `lane`) so decluttering edges preserves lanes.
+    if (includeHubEdges) {
+      addEdge({
+        source: sessId,
+        target: repoNodeId,
+        relation: "worked-in",
+        confidence: "EXTRACTED",
+        source_file: "agent-stats://session",
+        weight: 1,
+        ...temporal,
+      });
+    }
 
     // agent node + conducted-by edge
     const agentId = addNode({
@@ -462,17 +483,20 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
       community_name: COMMUNITY_LABELS["2"]!,
       node_type: "Agent",
       host: s.host,
+      agent_kind: s.host,
     });
     agentSessions.set(agentId, (agentSessions.get(agentId) ?? 0) + 1);
-    addEdge({
-      source: sessId,
-      target: agentId,
-      relation: "conducted-by",
-      confidence: "EXTRACTED",
-      source_file: "agent-stats://session",
-      weight: 1,
-      ...temporal,
-    });
+    if (includeHubEdges) {
+      addEdge({
+        source: sessId,
+        target: agentId,
+        relation: "conducted-by",
+        confidence: "EXTRACTED",
+        source_file: "agent-stats://session",
+        weight: 1,
+        ...temporal,
+      });
+    }
 
     // branches
     if (includeBranches) {
@@ -485,6 +509,9 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
           community: COMMUNITY.branch,
           community_name: COMMUNITY_LABELS["4"]!,
           node_type: "Branch",
+          project: identity.canonicalId,
+          repo: identity.aliases[aliasIdx]?.name,
+          lane: identity.aliases[aliasIdx]?.name,
         });
         addEdge({
           source: sessId,
@@ -506,18 +533,24 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
         // omitting it) is the scene contract's point-in-time form and
         // disambiguates a commit from an OPEN session (which omits `t_end` to
         // mean "still running"). No matching git date → `{}` → no `t` key.
-        const ct = commitTimeBySha7.get(sha.slice(0, 7).toLowerCase());
+        const sha7 = sha.slice(0, 7).toLowerCase();
+        const meta = commitMetaBySha7.get(sha7);
+        const ct = commitTimeBySha7.get(sha7);
         const commitStamp: TemporalStamp =
           ct !== undefined ? { t: ct, t_end: ct, t_src: COMMIT_TIME_SRC } : {};
         const cId = addNode({
-          id: nodeId("commit", sha),
-          label: sha,
+          id: nodeId("commit", meta?.sha ?? sha),
+          label: (meta?.sha ?? sha).slice(0, 7),
           file_type: "code",
           source_file: `agent-stats://commit/${sha}`,
           community: COMMUNITY.commit,
           community_name: COMMUNITY_LABELS["5"]!,
           node_type: "Commit",
-          sha,
+          sha: meta?.sha ?? sha,
+          subject: meta?.subject,
+          project: identity.canonicalId,
+          repo: identity.aliases[aliasIdx]?.name,
+          lane: identity.aliases[aliasIdx]?.name,
           ...commitStamp,
         });
         addEdge({
@@ -533,7 +566,100 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
     }
   }
 
-  // 4. derived-from edges between sessions (codex sub-agent lineage).
+  // 4. HYBRID GIT SKELETON: recent git DAG + session-produced commits.
+  // Commits come from the bounded git-log window plus any session shas the loader
+  // forced in. This is the real branch/commit ossature: commit -> parent and
+  // branch -> head commit. Branch/session attachment remains `touched-branch`.
+  if (includeCommits) {
+    for (const c of opts.commits ?? []) {
+      const sha7 = c.sha.slice(0, 7).toLowerCase();
+      const ct = commitTimeBySha7.get(sha7);
+      const commitStamp: TemporalStamp =
+        ct !== undefined ? { t: ct, t_end: ct, t_src: COMMIT_TIME_SRC } : {};
+      const cId = addNode({
+        id: nodeId("commit", c.sha),
+        label: c.sha.slice(0, 7),
+        file_type: "code",
+        source_file: `git://commit/${c.sha}`,
+        community: COMMUNITY.commit,
+        community_name: COMMUNITY_LABELS["5"]!,
+        node_type: "Commit",
+        sha: c.sha,
+        subject: c.subject,
+        project: identity.canonicalId,
+        repo: identity.aliases.at(-1)?.name,
+        lane: identity.aliases.at(-1)?.name,
+        skeleton: true,
+        ...commitStamp,
+      });
+      for (const parent of c.parentShas ?? []) {
+        const pId = addNode({
+          id: nodeId("commit", parent),
+          label: parent.slice(0, 7),
+          file_type: "code",
+          source_file: `git://commit/${parent}`,
+          community: COMMUNITY.commit,
+          community_name: COMMUNITY_LABELS["5"]!,
+          node_type: "Commit",
+          sha: parent,
+          project: identity.canonicalId,
+          repo: identity.aliases.at(-1)?.name,
+          lane: identity.aliases.at(-1)?.name,
+          skeleton: true,
+        });
+        addEdge({
+          source: cId,
+          target: pId,
+          relation: "commit-parent",
+          confidence: "EXTRACTED",
+          source_file: "git://log",
+          weight: 3,
+        });
+      }
+    }
+  }
+  if (includeBranches) {
+    for (const h of opts.branchHeads ?? []) {
+      const bId = addNode({
+        id: nodeId("branch", `${identity.canonicalId}__${h.name}`),
+        label: h.name,
+        file_type: "rationale",
+        source_file: `git://branch/${h.name}`,
+        community: COMMUNITY.branch,
+        community_name: COMMUNITY_LABELS["4"]!,
+        node_type: "Branch",
+        project: identity.canonicalId,
+        repo: identity.aliases.at(-1)?.name,
+        lane: identity.aliases.at(-1)?.name,
+        head_sha: h.sha,
+        skeleton: true,
+      });
+      const cId = addNode({
+        id: nodeId("commit", h.sha),
+        label: h.sha.slice(0, 7),
+        file_type: "code",
+        source_file: `git://commit/${h.sha}`,
+        community: COMMUNITY.commit,
+        community_name: COMMUNITY_LABELS["5"]!,
+        node_type: "Commit",
+        sha: h.sha,
+        project: identity.canonicalId,
+        repo: identity.aliases.at(-1)?.name,
+        lane: identity.aliases.at(-1)?.name,
+        skeleton: true,
+      });
+      addEdge({
+        source: bId,
+        target: cId,
+        relation: "branch-head",
+        confidence: "EXTRACTED",
+        source_file: "git://for-each-ref",
+        weight: 4,
+      });
+    }
+  }
+
+  // 5. derived-from edges between sessions (codex sub-agent lineage).
   for (const s of opts.sessions) {
     if (!s.parentThreadId) continue;
     const childNode = sessionNodeBySessionId.get(s.sessionId);
@@ -553,7 +679,7 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
     }
   }
 
-  // 5. T2 DERIVED-SPAN second pass — pure over the structure built above, so the
+  // 6. T2 DERIVED-SPAN second pass — pure over the structure built above, so the
   //    builder stays deterministic. Container nodes get t = min / t_end = max
   //    (FIRST / LAST activity) over their owned children's timestamps:
   //      • Branch  ← the sessions that touched it (touched-branch) PLUS the
