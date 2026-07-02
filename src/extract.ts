@@ -539,6 +539,117 @@ function _readText(node: SyntaxNode, source: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Type-reference collectors (Lot 2 — type/field/generic-arg references)
+//
+// Upstream safishamsi emits `references` edges for the declared types of class
+// fields / properties / vars / generic arguments across many languages. The TS
+// extractor had NO type-reference subsystem (the only `references` edges were
+// SQL foreign keys); these per-language collectors mirror upstream's
+// `_<lang>_collect_type_refs` helpers. Each walks a type expression and appends
+// `[name, role]` tuples where role is `"type"` (the head type) or
+// `"generic_arg"` (a nested generic/template argument). Primitive/builtin types
+// are skipped so they never become god-nodes.
+// ---------------------------------------------------------------------------
+
+/** A collected type reference: `[name, role]` where role is `"type"` or `"generic_arg"`. */
+type TypeRef = [string, string];
+
+/** Java declarations that can introduce type parameters visible to nested types. */
+const _JAVA_TYPE_PARAMETER_SCOPE_DECLARATIONS = new Set<string>([
+  "class_declaration",
+  "interface_declaration",
+  "record_declaration",
+  "method_declaration",
+  "constructor_declaration",
+]);
+
+/**
+ * Return the Java type-parameter names in scope at `node` (walking enclosing
+ * class/interface/record/method/constructor declarations). Port of upstream
+ * safishamsi 8b9a998 (#1518): a bare type parameter (`T` in `Box<T>`) must not
+ * emit a spurious `references`/`generic_arg` edge to a sourceless stub node.
+ */
+function _javaTypeParametersInScope(node: SyntaxNode, source: string): Set<string> {
+  const names = new Set<string>();
+  let scope: SyntaxNode | null = node;
+  while (scope !== null) {
+    if (_JAVA_TYPE_PARAMETER_SCOPE_DECLARATIONS.has(scope.type)) {
+      const params = scope.childForFieldName("type_parameters");
+      if (params) {
+        for (const param of params.children) {
+          if (param.type !== "type_parameter") continue;
+          const nameNode = param.children.find((c) => c.type === "type_identifier");
+          if (nameNode) names.add(_readText(nameNode, source));
+        }
+      }
+    }
+    scope = scope.parent;
+  }
+  return names;
+}
+
+/**
+ * Walk a Java type expression; append `[name, role]` tuples. Skips primitives
+ * and any in-scope type parameter, and resolves the unqualified tail of a
+ * `scoped_type_identifier` (`java.util.List` → `List`). Ports of upstream
+ * safishamsi 31b3752 (#1485) + 8b9a998 (#1518).
+ */
+function _javaCollectTypeRefs(
+  node: SyntaxNode | null,
+  source: string,
+  generic: boolean,
+  out: TypeRef[],
+  skip?: Set<string>,
+): void {
+  if (node === null) return;
+  const skipSet = skip ?? _javaTypeParametersInScope(node, source);
+  const t = node.type;
+  if (t === "integral_type" || t === "floating_point_type" || t === "boolean_type" || t === "void_type") {
+    return;
+  }
+  if (t === "type_identifier") {
+    const name = _readText(node, source);
+    if (name && !skipSet.has(name)) out.push([name, generic ? "generic_arg" : "type"]);
+    return;
+  }
+  if (t === "scoped_type_identifier") {
+    const text = _readText(node, source).split(".").pop() ?? "";
+    if (text) out.push([text, generic ? "generic_arg" : "type"]);
+    return;
+  }
+  if (t === "generic_type") {
+    for (const c of node.children) {
+      if (c.type === "type_identifier" || c.type === "scoped_type_identifier") {
+        const text = _readText(c, source).split(".").pop() ?? "";
+        if (text && (c.type === "scoped_type_identifier" || !skipSet.has(text))) {
+          out.push([text, generic ? "generic_arg" : "type"]);
+        }
+        break;
+      }
+    }
+    for (const c of node.children) {
+      if (c.type === "type_arguments") {
+        for (const arg of c.children) {
+          if (arg.isNamed) _javaCollectTypeRefs(arg, source, true, out, skipSet);
+        }
+      }
+    }
+    return;
+  }
+  if (t === "array_type") {
+    for (const c of node.children) {
+      if (c.isNamed) _javaCollectTypeRefs(c, source, generic, out, skipSet);
+    }
+    return;
+  }
+  if (node.isNamed) {
+    for (const c of node.children) {
+      if (c.isNamed) _javaCollectTypeRefs(c, source, generic, out, skipSet);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // LanguageConfig interface + generic helpers
 // ---------------------------------------------------------------------------
 
@@ -1599,12 +1710,57 @@ async function _extractGeneric(
   function addEdge(
     src: string, tgt: string, relation: string, line: number,
     confidence: "EXTRACTED" | "INFERRED" = "EXTRACTED", weight: number = 1.0,
+    context?: string,
   ): void {
-    edges.push({
+    const edge: GraphEdge = {
       source: src, target: tgt, relation,
       confidence, source_file: strPath,
       source_location: `L${line}`, weight,
-    });
+    };
+    // `context` labels a type-reference edge ("field" / "generic_arg" / "type" /
+    // "attribute"), mirroring upstream's `add_edge(..., context=...)`. Additive:
+    // only set when supplied so existing edges are byte-for-byte unchanged.
+    if (context) edge.context = context;
+    edges.push(edge);
+  }
+
+  /**
+   * Resolve a referenced type name to a node id, mirroring upstream's
+   * `ensure_named_node`. Prefer a same-file, stem-qualified definition; else
+   * emit a SOURCELESS stub (empty source_file) so the corpus-level cross-file
+   * rewire can collapse it onto the real definition (same shape the inherits /
+   * implements ports use). Deterministic and additive.
+   */
+  function ensureNamedNode(name: string, _line: number): string {
+    let nid = _makeId(stem, name);
+    if (seenIds.has(nid)) return nid;
+    nid = _makeId(name);
+    if (!seenIds.has(nid)) {
+      seenIds.add(nid);
+      nodes.push({
+        id: nid, label: name, file_type: "code",
+        source_file: "", source_location: "",
+      });
+    }
+    return nid;
+  }
+
+  /**
+   * Emit `references` edges from `sourceNid` to each collected type ref. A
+   * generic argument keeps `generic_arg` context; every other role uses
+   * `baseContext` (e.g. "field" for a field/property declaration, "type" for a
+   * Swift enum associated value). Self-references are skipped.
+   */
+  function emitTypeRefs(
+    sourceNid: string, refs: TypeRef[], line: number, baseContext: string,
+  ): void {
+    for (const [refName, role] of refs) {
+      const ctx = role === "generic_arg" ? "generic_arg" : baseContext;
+      const targetNid = ensureNamedNode(refName, line);
+      if (targetNid !== sourceNid) {
+        addEdge(sourceNid, targetNid, "references", line, "EXTRACTED", 1.0, ctx);
+      }
+    }
   }
 
   const fileNid = _makeId(stem);
@@ -2009,6 +2165,25 @@ async function _extractGeneric(
     if (config.tsModule === "tree_sitter_python" && t === "decorated_definition") {
       for (const child of node.children) {
         walk(child, parentClassNid);
+      }
+      return;
+    }
+
+    // ── Type/field/generic-arg references (Lot 2) ──────────────────────────
+    // Class field / property / var declarations emit `references` edges to
+    // their declared type(s), including generic arguments. These nodes are
+    // direct children of a class body, so `parentClassNid` is set when they are
+    // reached. Each branch mirrors the corresponding upstream safishamsi fix.
+
+    // Java: `private Repo<Config> repo;` — field type references (#1485), with
+    // in-scope type parameters skipped (#1518).
+    if (config.tsModule === "tree_sitter_java" && t === "field_declaration" && parentClassNid) {
+      const typeNode = node.childForFieldName("type");
+      if (typeNode) {
+        const line = node.startPosition.row + 1;
+        const refs: TypeRef[] = [];
+        _javaCollectTypeRefs(typeNode, source, false, refs);
+        emitTypeRefs(parentClassNid, refs, line, "field");
       }
       return;
     }
