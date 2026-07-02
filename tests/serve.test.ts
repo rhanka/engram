@@ -412,6 +412,7 @@ describe("MCP stdio server", () => {
           "review_analysis",
           "recommend_commits",
           "query_graph",
+          "answer_graph",
           "shortest_path",
         ].sort(),
       );

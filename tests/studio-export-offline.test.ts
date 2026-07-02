@@ -121,7 +121,7 @@ describe("escapeBundleJsonLiteral + injectBundleScript (T4 building blocks)", ()
 });
 
 describe("buildStaticStudio single-file emit", () => {
-  it("T7: default emit produces a scene-only studio.html (no graph/entities inlined)", () => {
+  it("T7: default emit inlines scene + search-index (no graph/entities)", () => {
     const spaDir = makeSpaDir();
     const stateDir = makeStateDir();
     const outDir = join(stateDir, "studio");
@@ -132,9 +132,40 @@ describe("buildStaticStudio single-file emit", () => {
 
     const html = readFileSync(join(outDir, "studio.html"), "utf-8");
     const bundle = readInlinedBundle(html);
-    expect(Object.keys(bundle)).toEqual(["scene.json"]);
+    // Work-stream C: the search index is inlined alongside the scene (so the
+    // offline Answer view runs in-browser BM25 + PPR with zero network), but the
+    // heavy graph/entities are NOT (scene-only default; --full-offline adds them).
+    expect(Object.keys(bundle).sort()).toEqual(["scene.json", "search-index.json"]);
     expect(bundle["graph.json"]).toBeUndefined();
     expect(bundle["entities.json"]).toBeUndefined();
+  });
+
+  it("work-stream C: the inlined search-index is the v1 substrate the Answer view runs over", () => {
+    const spaDir = makeSpaDir();
+    const stateDir = makeStateDir();
+    const outDir = join(stateDir, "studio");
+
+    const result = buildStaticStudio({ stateDir, outDir, spaDir, onWarning: () => {} });
+    expect(result.searchIndexNodeCount).toBeGreaterThan(0);
+
+    const html = readFileSync(join(outDir, "studio.html"), "utf-8");
+    const bundle = readInlinedBundle(html);
+    const index = bundle["search-index.json"] as {
+      schema?: string;
+      docs?: unknown[];
+      bm25?: unknown;
+      adjacency?: unknown;
+    };
+    expect(index.schema).toBe("graphify_search_index_v1");
+    expect(Array.isArray(index.docs)).toBe(true);
+    expect(index.docs!.length).toBe(result.searchIndexNodeCount);
+    // Self-contained: postings + CSR adjacency ride inline (no graph.json needed).
+    expect(index.bm25).toBeDefined();
+    expect(index.adjacency).toBeDefined();
+
+    // Byte-identical to the multi-file search-index.json (one source of truth).
+    const onDisk = readFileSync(join(outDir, "search-index.json"), "utf-8");
+    expect(JSON.stringify(index)).toBe(onDisk);
   });
 
   it("T7: --no-single-file (singleFile:false) omits studio.html; multi-file intact", () => {
@@ -158,7 +189,14 @@ describe("buildStaticStudio single-file emit", () => {
     buildStaticStudio({ stateDir, outDir, spaDir, fullOffline: true, onWarning: () => {} });
     const html = readFileSync(join(outDir, "studio.html"), "utf-8");
     const bundle = readInlinedBundle(html);
-    expect(Object.keys(bundle).sort()).toEqual(["entities.json", "graph.json", "scene.json"]);
+    // search-index.json is inlined regardless of --full-offline (work-stream C);
+    // --full-offline additionally adds the heavy graph + entities.
+    expect(Object.keys(bundle).sort()).toEqual([
+      "entities.json",
+      "graph.json",
+      "scene.json",
+      "search-index.json",
+    ]);
     expect(Array.isArray((bundle["graph.json"] as { nodes?: unknown }).nodes)).toBe(true);
     expect(typeof bundle["entities.json"]).toBe("object");
   });

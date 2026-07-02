@@ -12,6 +12,7 @@
   import { onMount } from "svelte";
   import { AppChrome, Button, ButtonGroup, Select } from "@sentropic/design-system-svelte";
 
+  import AnswerPanel from "./components/AnswerPanel.svelte";
   import GraphCanvas from "./components/GraphCanvas.svelte";
   import LeftRail from "./components/LeftRail.svelte";
   import ReconciliationView from "./components/ReconciliationView.svelte";
@@ -24,6 +25,7 @@
     fetchGroupCounts,
     fetchModelsManifest,
     fetchScene,
+    fetchSearchIndex,
     setStaticBaseProvider,
     __resetEntitiesIndexCache,
   } from "./lib/api.js";
@@ -98,6 +100,12 @@
   // absent, in which case the toggle injects nothing. $state.raw — only ever
   // reassigned in bulk, never mutated in place.
   let classHierarchies = $state.raw(null);
+  // Work-stream C: the offline retrieval substrate (search-index.json) backing
+  // the Answer view's in-browser BM25 + PPR. Lazily fetched once on first entry
+  // to the Answer view (like models.json); null until loaded / when absent, in
+  // which case the panel shows a clear "no index" state. $state.raw — only ever
+  // reassigned in bulk. Per-model, so dropped on a model switch.
+  let searchIndex = $state.raw(null);
   // Storage LOT 2 (prefer-server group counts): the precomputed `node_type`
   // group-by counts from a configured GraphStore mirror, fetched once per model
   // via `GET /api/ontology/groups`. null when no store is configured (the
@@ -401,6 +409,8 @@
   }
   function handleSetView(view) {
     viewerState = setActiveView(viewerState, view);
+    // Lazily load the retrieval substrate the first time the Answer view opens.
+    if (view === "answer") void ensureSearchIndex();
   }
 
   async function ensureEntity(id) {
@@ -417,6 +427,26 @@
     if (classHierarchiesFetched) return;
     classHierarchiesFetched = true;
     classHierarchies = await fetchClassHierarchies();
+  }
+
+  // Work-stream C: fetch search-index.json at most once (per model). A null
+  // result (absent substrate) is cached as "attempted" so we never re-fetch; the
+  // Answer panel then shows its "no index" state. Reset on a model switch.
+  let searchIndexFetched = false;
+  async function ensureSearchIndex() {
+    if (searchIndexFetched) return;
+    searchIndexFetched = true;
+    searchIndex = await fetchSearchIndex();
+  }
+
+  // Open an entity surfaced by the Answer view IN the graph: switch to the
+  // workspace view, add it to the selection + focus it (highlight + detail), and
+  // hydrate its sidecar — no graph reload (mirrors handleFocusEntity).
+  function handleOpenFromAnswer(id) {
+    if (!id) return;
+    viewerState = setActiveView(viewerState, "workspace");
+    viewerState = focusEntityAction(viewerState, id);
+    void ensureEntity(id);
   }
 
   /**
@@ -480,6 +510,10 @@
     // re-fetches under the new model's base.
     classHierarchies = null;
     classHierarchiesFetched = false;
+    // The search index is per-model; drop it so the Answer view re-fetches under
+    // the new model's base on its next open.
+    searchIndex = null;
+    searchIndexFetched = false;
     // The store group-counts are per-model too; drop them so the rail recomputes
     // in-memory until loadActiveModel re-fetches for the new model.
     serverTypeCounts = null;
@@ -546,6 +580,16 @@
           <span class="view-label view-label--full">Entity reconciliation</span>
           <span class="view-label view-label--compact" aria-hidden="true">Recon</span>
         </Button>
+        <Button
+          size="sm"
+          variant={viewerState.activeView === "answer" ? "primary" : "secondary"}
+          aria-pressed={viewerState.activeView === "answer"}
+          aria-label="Search and answer view"
+          onclick={() => handleSetView("answer")}
+        >
+          <span class="view-label view-label--full">Search</span>
+          <span class="view-label view-label--compact" aria-hidden="true">Search</span>
+        </Button>
       </ButtonGroup>
     {/snippet}
     {#snippet extraSelectors()}
@@ -585,6 +629,8 @@
       </section>
     {:else if viewerState.activeView === "reconciliation"}
       <ReconciliationView {graph} onOpenEntity={handleFocusEntity} />
+    {:else if viewerState.activeView === "answer"}
+      <AnswerPanel {searchIndex} onOpenEntity={handleOpenFromAnswer} />
     {:else}
       <WorkspaceShell>
         <div class="col col-left">

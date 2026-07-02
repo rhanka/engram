@@ -26,6 +26,8 @@ import { buildFirstHopSummary, firstHopSummaryToText } from "./summary.js";
 import { buildReviewDelta, reviewDeltaToText } from "./review.js";
 import { buildReviewAnalysis, reviewAnalysisToText } from "./review-analysis.js";
 import { buildCommitRecommendation, commitRecommendationToText } from "./recommend.js";
+import { buildSearchIndex } from "./search-index-emitter.js";
+import { assembleAnswerPack, type AnswerPackOptions } from "./retrieval/answer-pack.js";
 import {
   applyOntologyPatch,
   validateOntologyPatch,
@@ -354,6 +356,26 @@ function toolQueryGraph(G: Graph, args: Record<string, unknown>): string {
   );
   const header = `Traversal: ${mode.toUpperCase()} depth=${depth} | Start: [${startLabels.join(", ")}] | ${visited.size} nodes found\n\n`;
   return header + subgraphToText(G, visited, edges, budget);
+}
+
+/**
+ * `answer_graph` (work-stream C, Phase A / C9) — the WITH-RAG-AGENT surface.
+ * Builds the BM25/PPR retrieval core over the live graph and returns the frozen
+ * `graphify_answer_pack_v1` (mode="agent") for the CALLING agent to relevance-test
+ * + synthesize. Same assembler code path as the OFFLINE/ONLINE modes (INV-2);
+ * `answer` is null for the agent to fill.
+ */
+function toolAnswerGraph(G: Graph, args: Record<string, unknown>): string {
+  const question = args.question as string;
+  const index = buildSearchIndex(G);
+  const options: AnswerPackOptions = { mode: "agent" };
+  if (typeof args.token_budget === "number") options.tokenBudget = args.token_budget;
+  if (typeof args.neighborhood_size === "number") options.neighborhoodSize = args.neighborhood_size;
+  if (Array.isArray(args.sub_queries)) {
+    options.subQueries = (args.sub_queries as unknown[]).filter((s): s is string => typeof s === "string");
+  }
+  const pack = assembleAnswerPack(index, question, options);
+  return JSON.stringify(pack, null, 2);
 }
 
 function toolGetNode(G: Graph, args: Record<string, unknown>): string {
@@ -880,6 +902,36 @@ export async function serve(
         },
       },
       {
+        name: "answer_graph",
+        description:
+          "GraphRAG answer pack: BM25 seeds + RRF fusion + Personalized PageRank expansion over the entity graph, grounded on verbatim citation quotes. Returns a graphify_answer_pack_v1 JSON (seeds, PPR-scored neighborhood, connecting paths, communities) with answer:null — the calling agent relevance-tests and synthesizes the final answer over the pack.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            question: {
+              type: "string",
+              description: "Natural language question",
+            },
+            sub_queries: {
+              type: "array",
+              items: { type: "string" },
+              description: "Optional host multi-query sub-queries, RRF-fused with the main query",
+            },
+            neighborhood_size: {
+              type: "integer",
+              default: 20,
+              description: "Max PPR neighborhood entries",
+            },
+            token_budget: {
+              type: "integer",
+              default: 2000,
+              description: "Token budget surfaced in the pack",
+            },
+          },
+          required: ["question"],
+        },
+      },
+      {
         name: "get_node",
         description: "Get full details for a specific node by label or ID.",
         inputSchema: {
@@ -1096,6 +1148,7 @@ export async function serve(
     review_analysis: (a) => toolReviewAnalysis(graphStore.get().graph, a),
     recommend_commits: (a) => toolRecommendCommits(graphStore.get().graph, a),
     query_graph: (a) => toolQueryGraph(graphStore.get().graph, a),
+    answer_graph: (a) => toolAnswerGraph(graphStore.get().graph, a),
     get_node: (a) => toolGetNode(graphStore.get().graph, a),
     get_neighbors: (a) => toolGetNeighbors(graphStore.get().graph, a),
     get_community: (a) => {

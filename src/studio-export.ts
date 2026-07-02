@@ -40,6 +40,7 @@ import {
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import { applySceneLayout, resolveSceneLayoutId } from "./scene-layout.js";
+import { loadGraphFromData, type SerializedGraphData } from "./graph.js";
 import { emitClassHierarchies } from "./ontology-class-hierarchies-emitter.js";
 import { loadOntologyProfile } from "./ontology-profile.js";
 import {
@@ -47,6 +48,8 @@ import {
   queryOntologyReconciliationCandidates,
 } from "./ontology-reconciliation.js";
 import { emitSceneHierarchies } from "./scene-hierarchies-emitter.js";
+import { emitSearchIndex } from "./search-index-emitter.js";
+import type { SearchIndex } from "./search-index.js";
 import {
   buildEntitySidecar,
   type EntitySidecarNode,
@@ -103,6 +106,7 @@ export interface BuildStaticStudioResult {
   /** Per-node description coverage (field report ia-aero); drives the low-coverage hint. */
   descriptionCoverage: StudioDescriptionCoverage;
   reconciliationCount: number;
+  searchIndexNodeCount: number;
   sceneHierarchiesPath: string | null;
   classHierarchiesPath: string | null;
   manifestPath: string;
@@ -119,6 +123,7 @@ const GENERATED_DATA_FILES = [
   "scene-hierarchies.json",
   "class-hierarchies.json",
   "graph.json",
+  "search-index.json",
   "reconciliation-candidates.json",
   "entities.json",
   "workspace-manifest.json",
@@ -489,6 +494,26 @@ export function buildStaticStudio(
   //    cleanup).
   writeFileSync(join(outDir, "entities.json"), JSON.stringify(entities));
 
+  // 5a. search-index.json: the offline-first retrieval substrate (work-stream C,
+  //     Phase A). Self-carries the BM25F postings + per-doc grounding + CSR
+  //     adjacency + community membership PPR/assembly need, so the offline
+  //     answer path runs WITHOUT graph.json (C3a). Additive sibling.
+  let searchIndexNodeCount = 0;
+  // Held for the single-file bundle so the offline studio.html's Answer view runs
+  // BM25 + PPR over the SAME index bytes as the multi-file export (no fetch, no
+  // graph.json, no LLM — grounded retrieval only). null when the emit failed.
+  let searchIndex: SearchIndex | null = null;
+  try {
+    const searchGraph = loadGraphFromData(graph as SerializedGraphData);
+    const emitted = emitSearchIndex(searchGraph, { outDir });
+    searchIndexNodeCount = emitted.index.docs.length;
+    searchIndex = emitted.index;
+  } catch (err) {
+    warn(
+      `studio export: could not emit search-index.json (${err instanceof Error ? err.message : String(err)}); offline search will be unavailable.`,
+    );
+  }
+
   // 5b. ontology/citations.json: verbatim copy of the Level-2 citation store
   //     (captured before cleanup), so the SPA can lazily fetch full per-entity
   //     citations.
@@ -526,6 +551,15 @@ export function buildStaticStudio(
         // background hydration needs zero network. Reuse the SAME scene object so
         // the inlined scene is byte-identical to scene.json (T5/C3b).
         const bundle: Record<string, unknown> = { "scene.json": scene };
+        // Inline the search index so the offline studio.html's Answer view runs
+        // the in-browser BM25 + PPR retrieval with zero network (the index is
+        // self-contained — postings + CSR adjacency + community membership — so
+        // it needs neither graph.json nor a server route). Inlined whenever the
+        // emit above succeeded, independent of --full-offline (the Answer view is
+        // a first-class offline surface, not background hydration).
+        if (searchIndex !== null) {
+          bundle["search-index.json"] = searchIndex;
+        }
         if (options.fullOffline) {
           bundle["graph.json"] = JSON.parse(graphRaw);
           bundle["entities.json"] = entities;
@@ -558,6 +592,7 @@ export function buildStaticStudio(
     entityCount: Object.keys(entities).length,
     descriptionCoverage: coverage,
     reconciliationCount: candidatesResponse.total ?? candidatesResponse.items.length,
+    searchIndexNodeCount,
     sceneHierarchiesPath: hierarchiesResult.path,
     classHierarchiesPath,
     manifestPath: manifestResult.path,

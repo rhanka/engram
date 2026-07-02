@@ -5580,6 +5580,77 @@ export async function main(): Promise<void> {
       }
     });
 
+  // `answer` — the graph-aware GraphRAG surface (work-stream C, Phase A / C9).
+  // Distinct from `query` (degree-sorted text blob) and the token-reduction
+  // `benchmark`. Builds the BM25/PPR retrieval core and emits a frozen
+  // graphify_answer_pack_v1 for the host assistant to relevance-test + synthesize.
+  program
+    .command("answer <question>")
+    .description("GraphRAG answer pack (BM25 + RRF + PPR) for a question — graphify_answer_pack_v1")
+    .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
+    .option("--budget <n>", "Token budget surfaced in the pack", "2000")
+    .option("--neighborhood <n>", "Max PPR neighborhood entries", "20")
+    .option("--sub <q...>", "Host multi-query sub-queries (RRF-fused with the main query)")
+    .option("--json", "Emit only the raw graphify_answer_pack_v1 JSON")
+    .action(async (question, opts) => {
+      const { resolve: res } = await import("node:path");
+      const gp = res(opts.graph);
+      if (!existsSync(gp)) {
+        console.error(`error: graph file not found: ${gp}`);
+        process.exit(1);
+      }
+      try {
+        const raw = JSON.parse(readFileSync(gp, "utf-8"));
+        const G = loadGraphFromData(raw);
+        const { buildSearchIndex } = await import("./search-index-emitter.js");
+        const { assembleAnswerPack } = await import("./retrieval/answer-pack.js");
+        const index = buildSearchIndex(G);
+        const packOptions: Parameters<typeof assembleAnswerPack>[2] = {
+          mode: "offline",
+          tokenBudget: parseInt(opts.budget, 10) || 2000,
+          neighborhoodSize: parseInt(opts.neighborhood, 10) || 20,
+        };
+        if (Array.isArray(opts.sub) && opts.sub.length > 0) packOptions.subQueries = opts.sub;
+        const pack = assembleAnswerPack(index, question, packOptions);
+
+        if (opts.json) {
+          console.log(JSON.stringify(pack, null, 2));
+          return;
+        }
+        const lines: string[] = [];
+        lines.push(`# answer pack — ${pack.question}`);
+        lines.push(`mode=${pack.mode} graph_signature=${pack.graph_signature.slice(0, 12)} ppr_iters=${pack.retrieval.ppr.iterations} refused=${pack.retrieval.ppr.refused}`);
+        if (pack.retrieval.ppr.refused) {
+          lines.push("(no lexical seed matched the query — nothing to expand)");
+        }
+        lines.push(`\n## seeds (fused, k=${pack.retrieval.fusion.k})`);
+        for (const s of pack.retrieval.seeds.slice(0, 10)) {
+          lines.push(`  #${s.fused_rank} ${s.label}${s.bm25 !== undefined ? ` (bm25=${s.bm25.toFixed(2)})` : ""}`);
+        }
+        lines.push(`\n## neighborhood (PPR-ranked)`);
+        for (const n of pack.neighborhood) {
+          lines.push(`  ${n.ppr.toFixed(4)}  ${n.label}  [community=${n.community}]`);
+          if (n.grounding) for (const g of n.grounding) lines.push(`      ↳ "${g.quote}"`);
+        }
+        if (pack.paths.length > 0) {
+          lines.push(`\n## connecting paths`);
+          for (const p of pack.paths) {
+            const names = p.nodes.map((id) => index.docs.find((d) => d.nodeId === id)?.label ?? id);
+            lines.push(`  (${p.reliability}) ${names.join(" → ")}`);
+          }
+        }
+        if (pack.communities.length > 0) {
+          lines.push(`\n## communities`);
+          for (const c of pack.communities) lines.push(`  [${c.id}] ${c.label}${c.salient ? " *" : ""}`);
+        }
+        lines.push(`\nanswer: ${pack.answer ?? "(null — for the host assistant to synthesize)"}`);
+        console.log(lines.join("\n"));
+      } catch (e) {
+        console.error(`error: could not assemble answer pack: ${e}`);
+        process.exit(1);
+      }
+    });
+
   // Benchmark command
   program
     .command("benchmark [graph]")

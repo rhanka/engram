@@ -24,7 +24,7 @@
  *               (`splitGroupedKeys`) and feeds the shared engine's collapse-target
  *               SET. An empty set === nothing grouped (fast path, A3).
  *   query     : free-text filter for the Entities list.
- *   activeView: "workspace" | "reconciliation".
+ *   activeView: "workspace" | "reconciliation" | "answer".
  *
  * The graph's `selectedIds` is DERIVED in App from `selection` + the graph
  * (a selected type/community contributes all its member entity ids).
@@ -175,7 +175,9 @@ export function normalizeViewerState(partial = {}) {
   };
   next.query = typeof next.query === "string" ? next.query : "";
   next.focusId = typeof next.focusId === "string" && next.focusId ? next.focusId : null;
-  if (next.activeView !== "reconciliation") next.activeView = "workspace";
+  if (next.activeView !== "reconciliation" && next.activeView !== "answer") {
+    next.activeView = "workspace";
+  }
   next.options.showWeakLinks = Boolean(next.options.showWeakLinks);
   // Time-scrub cursor (epoch-ms) — coerce any non-finite value to null (OFF).
   next.options.timeCursor =
