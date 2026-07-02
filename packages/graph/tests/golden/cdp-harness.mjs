@@ -142,13 +142,28 @@ export async function openOracle() {
     ".graphify-cdp-prof-" + process.pid + "-" + Date.now(),
   );
 
+  // B1 Phase 1: the WebGL golden lane (GOLDEN_ENABLE_WEBGL=1) needs a real
+  // WebGL2 context. `--disable-gpu` (the deterministic 2D default) gives none,
+  // so we swap in ANGLE/SwiftShader SOFTWARE GL — a deterministic, GPU-
+  // independent WebGL2 raster stable across CI runners (plan §4.2 / R18). The
+  // canvas2d goldens keep `--disable-gpu` for CPU-deterministic 2D rasterization.
+  const enableWebGL = process.env.GOLDEN_ENABLE_WEBGL === "1";
+  const glFlags = enableWebGL
+    ? [
+        "--use-gl=angle",
+        "--use-angle=swiftshader-webgl",
+        "--enable-unsafe-swiftshader", // newer Chrome gates SwiftShader behind this
+      ]
+    : ["--disable-gpu"];
+
   const chrome = spawn(
     chromeBin,
     [
       "--headless=new",
-      // GPU is off: the 2D backend rasterizes on CPU deterministically, which
-      // is what Phase 0 needs. (The WebGL phases will toggle this.)
-      "--disable-gpu",
+      // GPU is off by default: the 2D backend rasterizes on CPU deterministically
+      // (Phase 0). The WebGL golden lane (GOLDEN_ENABLE_WEBGL=1) swaps in
+      // SwiftShader software GL above so the instanced-shape pixel diff can run.
+      ...glFlags,
       "--no-sandbox",
       "--hide-scrollbars",
       "--force-device-scale-factor=1", // we drive DPR via canvas backing store
@@ -237,18 +252,40 @@ export async function openOracle() {
       cssHeight: opts.cssHeight ?? 200,
       backend: opts.backend ?? "canvas2d",
       camera: opts.camera ?? { x: 0, y: 0, zoom: opts.zoom ?? 1 },
+      // B1 Phase 1 INTERNAL CANARY: opt the WebGL backend into the instanced-
+      // shape path. Only forwarded when set; the canvas2d goldens never set it.
+      ...(opts.instancedShapes !== undefined
+        ? { instancedShapes: opts.instancedShapes }
+        : {}),
     };
     // Re-assert fonts.ready before EVERY capture (§5.1).
     await evaluate("document.fonts.ready.then(()=>true)");
     const fixtureJson = JSON.stringify(fixture);
     const optsJson = JSON.stringify(params);
-    await evaluate(
+    // __renderFixture returns the ACTIVE backend so a silent canvas2d fallback
+    // (e.g. no WebGL context) is observable — never a false "webgl" pass.
+    const rendered = await evaluate(
       `window.__renderFixture(${fixtureJson}, ${optsJson})`,
-      false,
     );
     const out = await evaluate("window.__readPixels()");
     const data = new Uint8ClampedArray(Buffer.from(out.base64, "base64"));
-    return { width: out.width, height: out.height, data };
+    return {
+      width: out.width,
+      height: out.height,
+      data,
+      backend: rendered?.backend ?? params.backend,
+    };
+  }
+
+  /**
+   * True when this Chrome can create a real WebGL2 context (needed for the
+   * Canvas2D-vs-WebGL pixel diff). Where it returns false the geometry-parity
+   * layer is the gate and the pixel diff records an explicit residual/skip.
+   */
+  async function hasWebGL() {
+    return await evaluate(
+      "(function(){try{var c=document.createElement('canvas');return !!(c.getContext('webgl2'));}catch(e){return false;}})()",
+    );
   }
 
   async function close() {
@@ -274,7 +311,7 @@ export async function openOracle() {
     }
   }
 
-  return { capture, evaluate, close, chromeBin, httpPort };
+  return { capture, evaluate, hasWebGL, close, chromeBin, httpPort };
 }
 
 // ---- self-test -----------------------------------------------------------

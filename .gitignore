@@ -67,3 +67,4 @@ scripts/benchmark_kimi*.py
 
 # B1 golden harness: ephemeral headless-Chrome profile dirs
 packages/graph/.graphify-cdp-prof-*
+packages/graph/.graphify-webgl-preflight-*

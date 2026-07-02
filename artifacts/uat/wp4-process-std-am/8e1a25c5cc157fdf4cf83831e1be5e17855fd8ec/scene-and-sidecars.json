@@ -1,0 +1,248 @@
+{
+  "_note": "Consolidated Workspace Consumption Bundle: studio scene + autonomous sidecars, all emitted by buildStaticStudio (real code path).",
+  "scene": {
+    "nodes": [
+      {
+        "id": "registry_processes_AM01",
+        "label": "Organiser",
+        "weight": 7.5625,
+        "shape": "square",
+        "group": "Process",
+        "type": "Process",
+        "status": "validated",
+        "registry_record_id": "AM01",
+        "x": 710.8903345781563,
+        "y": 680.6364624439357,
+        "fx": 710.8903345781563,
+        "fy": 680.6364624439357
+      },
+      {
+        "id": "registry_processes_AM0104",
+        "label": "Tracer",
+        "weight": 23.04,
+        "shape": "square",
+        "group": "Process",
+        "type": "Process",
+        "status": "validated",
+        "registry_record_id": "AM0104",
+        "x": 411.01169697724515,
+        "y": 614.9315439302221,
+        "fx": 411.01169697724515,
+        "fy": 614.9315439302221
+      },
+      {
+        "id": "registry_processes_AM0104_01",
+        "label": "Qualifier",
+        "weight": 7.5625,
+        "shape": "square",
+        "group": "Process",
+        "type": "Process",
+        "status": "candidate",
+        "registry_record_id": "AM0104.01",
+        "x": 112.46526224102801,
+        "y": 537.7185943922799,
+        "fx": 112.46526224102801,
+        "fy": 537.7185943922799
+      },
+      {
+        "id": "registry_processes_AM0104_01_10",
+        "label": "Contrôler",
+        "weight": 1,
+        "shape": "square",
+        "group": "Process",
+        "type": "Process",
+        "status": "candidate",
+        "registry_record_id": "AM0104.01.10",
+        "x": 394.7339165503416,
+        "y": -19.49014572738563,
+        "fx": 394.7339165503416,
+        "fy": -19.49014572738563
+      },
+      {
+        "id": "registry_processes_AM0104_01_10_02",
+        "label": "Valider",
+        "weight": 1,
+        "shape": "square",
+        "group": "Process",
+        "type": "Process",
+        "status": "candidate",
+        "registry_record_id": "AM0104.01.10.02",
+        "x": 878.9770320916073,
+        "y": 163.64101237713496,
+        "fx": 878.9770320916073,
+        "fy": 163.64101237713496
+      }
+    ],
+    "edges": [
+      {
+        "source": "registry_processes_AM01",
+        "target": "registry_processes_AM0104",
+        "relation": "parent_process_of",
+        "dash": "solid"
+      },
+      {
+        "source": "registry_processes_AM0104",
+        "target": "registry_processes_AM0104_01",
+        "relation": "parent_process_of",
+        "dash": "solid"
+      }
+    ],
+    "communityColors": {},
+    "stats": {
+      "nodeCount": 5,
+      "edgeCount": 2,
+      "weakEdgeCount": 0,
+      "communityCount": 0
+    }
+  },
+  "scene_hierarchies": {
+    "schema": "graphify_scene_hierarchies_v1",
+    "generated_at": "2026-06-27T14:45:57.027Z",
+    "graph_hash": null,
+    "hierarchies": {
+      "am_process_tree": {
+        "relation_type": "parent_process_of",
+        "kind": "tree",
+        "root_ids": [
+          "AM01"
+        ],
+        "max_depth": 4,
+        "nodes_by_id": {
+          "AM01": {
+            "parent_id": null,
+            "child_ids": [
+              "AM0104"
+            ],
+            "level": 0,
+            "status": "reference",
+            "registry_record_id": "AM01"
+          },
+          "AM0104": {
+            "parent_id": "AM01",
+            "child_ids": [
+              "AM0104.01"
+            ],
+            "level": 1,
+            "status": "reference",
+            "registry_record_id": "AM0104"
+          },
+          "AM0104.01": {
+            "parent_id": "AM0104",
+            "child_ids": [
+              "AM0104.01.10"
+            ],
+            "level": 2,
+            "status": "reference",
+            "registry_record_id": "AM0104.01"
+          },
+          "AM0104.01.10": {
+            "parent_id": "AM0104.01",
+            "child_ids": [
+              "AM0104.01.10.02"
+            ],
+            "level": 3,
+            "status": "reference",
+            "registry_record_id": "AM0104.01.10"
+          },
+          "AM0104.01.10.02": {
+            "parent_id": "AM0104.01.10",
+            "child_ids": [],
+            "level": 4,
+            "status": "reference",
+            "registry_record_id": "AM0104.01.10.02"
+          }
+        },
+        "overlay_arcs": [],
+        "orphan_ids": [],
+        "cycles": [],
+        "conflicts": [],
+        "dangling_arc_count": 5
+      }
+    }
+  },
+  "workspace_manifest": {
+    "schema": "graphify_workspace_manifest_v1",
+    "schema_version": 1,
+    "contract": "workspace-bundle-contract-v1",
+    "generated_at": "2026-06-27T14:45:57.028Z",
+    "graph_hash": null,
+    "present_count": 5,
+    "artifacts": [
+      {
+        "name": "entities",
+        "path": "entities.json",
+        "schema": null,
+        "present": true,
+        "sha256": "07653c2b9e9503deb3787f19b4e6ba94ce69f082bd4a502a2d17480e7dc78771",
+        "size_bytes": 623,
+        "role": "entities"
+      },
+      {
+        "name": "graph",
+        "path": "graph.json",
+        "schema": null,
+        "present": true,
+        "sha256": "2b04b78da0b5d41407f721e97274798de3b8f934b931d56662d002fa569c47e2",
+        "size_bytes": 904,
+        "role": "graph"
+      },
+      {
+        "name": "reconciliation-candidates",
+        "path": "reconciliation-candidates.json",
+        "schema": "graphify_ontology_reconciliation_candidates_v1",
+        "present": true,
+        "sha256": "7b4fefa0ed2d3e72c16d73eb5857e4f19fd5ac8f4fe621d9b70b1d7ae2da1f81",
+        "size_bytes": 563,
+        "role": "reconciliation"
+      },
+      {
+        "name": "scene",
+        "path": "scene.json",
+        "schema": null,
+        "present": true,
+        "sha256": "1cb0d28cdbe92e472c5acaa673220f33fb3e6ac7f4a592000326bdcd195e006f",
+        "size_bytes": 1707,
+        "role": "scene"
+      },
+      {
+        "name": "scene-hierarchies",
+        "path": "scene-hierarchies.json",
+        "schema": "graphify_scene_hierarchies_v1",
+        "present": true,
+        "sha256": "3f1ef31f5ef7be719cfc96861bcbe619e5af2c3ae7040b8d9d7b034ad3ae43cf",
+        "size_bytes": 1573,
+        "role": "hierarchy"
+      }
+    ]
+  },
+  "reconciliation_candidates": {
+    "schema": "graphify_ontology_reconciliation_candidates_response_v1",
+    "generated_at": "2026-06-26T00:00:00.000Z",
+    "graph_hash": "uat-graph",
+    "profile_hash": "uat-profile",
+    "stale": false,
+    "total": 1,
+    "limit": 1,
+    "offset": 0,
+    "items": [
+      {
+        "id": "uat-candidate",
+        "kind": "entity_match",
+        "status": "candidate",
+        "score": 0.9,
+        "candidate_id": "registry_processes_AM0104_01",
+        "canonical_id": "registry_processes_AM0104",
+        "shared_terms": [
+          "process"
+        ],
+        "evidence_refs": [
+          "process-std-am/forest.csv#AM0104.01"
+        ],
+        "reasons": [
+          "representative process-std-AM hierarchy UAT fixture"
+        ],
+        "proposed_patch_operation": "accept_match"
+      }
+    ]
+  }
+}

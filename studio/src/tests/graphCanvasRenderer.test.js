@@ -24,10 +24,16 @@ describe("GraphCanvas renderer", () => {
     expect(source.indexOf("renderer.setPositions")).toBeLessThan(source.indexOf("onMergeComplete?.()"));
   });
 
-  it("forces the rich Canvas2D backend and restores pointer hover hit testing", () => {
+  it("boots on the WebGL2 backend (canvas2d fallback) and keeps pointer hover hit testing", () => {
     const source = graphCanvasSource();
 
-    expect(source).toContain('backend: "canvas2d"');
+    // P6 flip: WebGL2 is the boot default; canvas2d stays the graceful fallback
+    // (createBackendRenderer's fellBack path → backendUnavailable).
+    expect(source).toMatch(/activeBackend\s*=\s*\$state\(\s*WEBGL2_BACKEND\s*\)/);
+    expect(source).toContain("createBackendRenderer");
+    expect(source).toContain("backendUnavailable");
+    expect(source).toContain("CANVAS2D_BACKEND");
+    // hover hit-testing is unchanged.
     expect(source).toContain("findNearestEdge");
     expect(source).toContain("onpointermove");
   });

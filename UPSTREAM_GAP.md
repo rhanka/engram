@@ -20,6 +20,84 @@ This document tracks the delta between this TypeScript port and upstream Python 
 - Active CRG stable review reference: `tirth8205/code-review-graph` tag `v2.3.3` at `52cf3bc63ee77c8b204fb809791a5f212e83a2de`
 - Current released line: `@sentropic/graphify@0.10.0` (rename, 2026-05-26); the `0.8.16` and `0.8.18` drift intakes below are both closed for the TypeScript line. F-0819-P1/P2 (PRs #87/#88, upstream `#1075`/`#1077`/`#1007`/`#1010`) and F-0831-P1-security (PR #93) are merged on `main` and unreleased; the next traceability pass formalizes the `v0.8.18..v0.8.31` window (`upstream/v8` fetched locally through `v0.8.31` at `7a588fb`) and reconciles those early ports
 
+## Active `0.8.49` Drift Intake
+
+Observed on 2026-06-25 after merging `@sentropic/graphify@0.17.2`:
+
+- Safi Python Graphify: `upstream/v8` at `9b583a01c3f1f9d3e6cb8f6c6b23d76e4b98afc9` (`fix(hooks): match the real file extension in the Read|Glob hook (#1463)`).
+- New remote tags seen in this fetch include `v0.8.46`, `v0.8.47`, and `v0.8.49`; local `upstream/v8` now spans the previously-audited `v0.8.31` checkpoint through `v0.8.49`.
+- Local TS baseline: `origin/main` at `53a2024` (`@sentropic/graphify@0.17.2`).
+- Early port in this pass: upstream `68dba89` (`feat(llm): honor *_BASE_URL for kimi/gemini/deepseek backends (#1458)`) maps to the TS direct-provider set by honoring `ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL`, `GEMINI_BASE_URL` / `GOOGLE_GENERATIVE_AI_BASE_URL`, `MISTRAL_BASE_URL`, and `COHERE_BASE_URL` in addition to the pre-existing `OLLAMA_BASE_URL`. Upstream-only Kimi/DeepSeek providers remain `n/a` until the TS `DirectLlmProvider` union adds them.
+
+| Source window | Representative commits | Initial TS bucket | Notes / next action |
+| --- | --- | --- | --- |
+| LLM/provider endpoints | `68dba89` | `ported (early)` | Direct provider base-URL env support added in TS; README and `tests/llm-execution.test.ts` cover Gemini alias precedence. |
+| Export/wiki filename safety | `5d63aad`, `7278e24`, `30cc4c0`, `739230e` | `must-audit` | Compare against Studio/wiki filename slugging and canvas/card layout. Likely small robustness ports. |
+| Extractor/language surface | `7dc5d96`, `dbce453`, `8e6ba9d`, `d12eb28`, `895a60f`, `f117aac`, `dbce453`, `b3ab221` | `feature / must-audit` | WPF/XAML, CUDA, package manifests, Java records, PowerShell manifests, oversized-doc slicing, extractor split. Port incrementally only where TS extractor lacks parity and tests are cheap. |
+| Hooks/skills/install/work-memory | `9b583a0`, `1e3270a`, `6d9617a`, `89dd00f`, `c06db05`, `ad6cb75`, `e7ba16b`, `1f42a2d`, `382b669`, `30fe8ba` | `mixed` | Separate skill text/doc fixes from Python work-memory features. Do not adopt Python-only hook machinery without TS install contract review. |
+| Query/MCP/serve | `53edd27`, `f9ded63` | `must-audit` | Trigram prefilter and community-name MCP output may map to `src/serve.ts`/query surfaces. |
+| Update/build correctness | `533859d`, `897483f`, `fd463de`, `8437ef4`, `b2e01f37`, `9a7dbfb`, `d885833`, `2100b3d` | `must-audit` | Reconcile against TS build-merge/update tests; many prior rows may already be covered. |
+| Security/deps | `ec6b397`, `9e8fa2a`, `d8fa70e` | `partial / n-a` | Starlette is Python-only; web/export XSS and vulnerable npm deps require separate TS dependency/security audit. |
+| Reflection/work-memory | `1a14e94`, `d193b62`, `6d9617a`, `89dd00f` | `defer / product decision` | Python `graphify reflect` and LESSONS.md workflow are not in the current TS product contract. |
+| Release/changelog-only | `29fd98f`, `f87011b`, `6d3c959`, `bc362cb`, `e4ff54f` | `release-only` | Do not mirror Python package version bumps into the TS line. |
+
+## Active Drift Intake (v0.8.49 → v1.0.0 / upstream-v8)
+
+Observed on 2026-07-01 (this pass) against `origin/main` at `@sentropic/graphify@0.17.2`.
+
+- Safi Python Graphify: `upstream/v8` HEAD at `5190a4e` (`docs: point LinkedIn badge to Graphify Labs company page`), which `git describe` resolves as **`v0.9.4-20-g5190a4e`** (20 untagged commits past the highest reachable release tag `v0.9.4` at `b7f88af`).
+- **Window = `v0.8.49..upstream/v8` = 120 commits.** The first 7 (`e4ff54f`, `5d63aad`, `7278e24`, `68dba89`, `7dc5d96`, `1e3270a`, `9b583a0`) were already recorded in the prior `0.8.49` intake above (that intake was observed at `9b583a0`, which is 7 commits *ahead* of tag `v0.8.49 = 6d3c959`); they are re-classified here for completeness and carry their prior status. The genuinely-new slice is `9b583a0..upstream/v8` = 113 commits.
+- Reachable release tags in-window: `v0.8.50` (`b17e88c`), `v0.8.51` (`8e98b91`), `v0.9.0` (`92e682f`), `v0.9.1` (`b7e256f`), `v0.9.2` (`544f95e`), `v0.9.3` (`0c551ac`), `v0.9.4` (`b7f88af`).
+- **Title caveat (verified):** the task-supplied premise of `v0.9.5…v0.9.8` and `v1.0.0` upstream tags does **not** hold. `v0.9.5`/`v0.9.6` do not resolve; `v0.9.7` (`5d38117`) and `v0.9.8` (`efc46f8`) are **our own `rhanka` fork release-merge tags, NOT upstream** (both are `NOT-in-v8`). `v1.0.0` (`0a31c08`, "add git commit hook") remains a **non-target** — it is not an ancestor of `upstream/v8` (a divergent lightweight tag), confirming the standing note in this file. The real upstream frontier is `v0.9.4 + 20 untagged commits`.
+
+**Key grounding finding (drives lot sizing):** the TS extractor is a single `src/extract.ts` (5.4k lines). Most languages route through `_extractGeneric(config)`; Groovy/PowerShell/Objc/Julia/Elixir have bespoke walkers; `.sv`/`.svh`/`.v`/`.f*`/`.vue`/`.dart`/`.r` route to `extractRegexBackedCode` (regex, no tree-sitter). Crucially, **`_extractGeneric` has NO type-reference subsystem at all** — there is no `references`-edge emission for class fields/properties/generic args (the only `relation: "references"` edges in the file are SQL foreign keys, `src/extract.ts:2982-3045`, and MCP/sdk concept refs). Upstream's `_swift_collect_type_refs` / `_csharp_collect_type_refs` / `_cpp_collect_type_refs` / `field_declaration`/`property_declaration`/`val|var_definition` handlers are entirely absent. Therefore every upstream "emit type/field/generic_arg references" fix is a **subsystem port**, not a one-line branch add, and is deliberately *not* in the cheap lot.
+
+Per-bucket census (sums to 120):
+
+| Bucket | Count | Representative SHAs |
+| --- | --- | --- |
+| `ported (this pass)` | 3 | `a19b9e9` ruby-inherits, `a129ff2` powershell-inherits/implements, `cd3a376` objc-protocol-implements |
+| `ported (early / prior intake)` | 1 | `68dba89` `*_BASE_URL` (already merged) |
+| `must-audit → already-covered` | 1 | `64a6093` groovy inherits/implements (TS `extractGroovy` is regex-backed and already emits both, `src/extract.ts:2827-2837`) |
+| `port` (TS genuinely lacks, portable) | 18 | type-ref subsystem: `31b3752`,`9b49bfd`,`8b9a998`,`981e2b9`,`674184d`,`7eb847b`,`67b4525`,`51f805e`,`bb5e519`,`21bcb43`,`ad70152`; `indirect_call`: `19e7a31`,`cf747ab`,`8288829`,`6dc1cb0`,`311e63a`,`e34e27c`; `652ba42` Metal shaders |
+| `must-audit` (needs check vs existing TS) | 54 | cross-file/type resolution `76b6eab`,`b9d8067`,`49252d3`,`3bc3fee`,`36b76ce`,`6509d0c`,`784e9c8`; ids `b46634e`,`3999dbc`,`35fb437`,`73710d3`,`5320aa8`; origin_file `afa4ade`,`d177f04`; build/update `0080d8a`,`4f40967`,`4a8d6ba`,`de7d362`,`6eb7c01`; hyperedge `bd885cc`; llm `ff47316`,`64c1f21`,`4e4935a`; export/wiki `5d63aad`,`7278e24`,`8b177cb`,`407a7f1`,`7a94f72`; cluster `1aab291`,`8127ff9`; js-imports `2133539`,`e8dabad`,`5746964`,`c8c604d`,`1801da0`; objc/swift `8994b55`,`1652dad`,`0792b41`,`51fc00a`; java `940cb53`,`1f3f1c1`; ruby `86ecb76`; regex-lang `b8f41c7`,`297075c`; julia `984a6a8`; elixir `f2ea6a6`; cli/skill `f7f89d7`,`47033c8`,`a16b5bd`,`1b99496`; cache `7a9cda2`; hooks `9b583a0`,`879c058`; `.vue` grammar `349465b` |
+| `n-a` (Python-only: uv.lock, deps, packaging, str-decode, test-infra, skill/doc) | 13 | `6a45263`,`21a9f1f`,`faa9218` (uv.lock); `738c9ce`,`36b5e5c` (py deps); `11dc819`,`1225677`,`7592244` (uv/install docs); `0e8d92c` (GBK decode; TS reads UTF-8); `12193a8` (.DS_Store); `bee3849` (py test mock); `1e3270a`,`e3e4198` (skill text) |
+| `defer` (product decision) | 8 | `7dc5d96`,`905e0a7` (WPF/XAML — not in TS surface); `75a5e6d`,`5779767`,`00e00a0`,`2cdc212`,`c865a3c` (`reflect`/work-memory overlay — Python-only product); `8fdbf50` (`getattr()` indirect_call — Python idiom) |
+| `release-only` (changelog/version/badges) | 22 | `e4ff54f`,`b17e88c`,`8e98b91`,`92e682f`,`544f95e`,`0c551ac`,`b7f88af` (releases); `388d1b6`,`94e5baf`,`67d8c53`,`22a5afb`,`0ca73bd`,`1d8d278`,`69b3997`,`20547c4`,`93e8e44`,`7e24c3b`,`532a20e`,`f4a7994` (changelog); `1990612`,`5190a4e` (badges) |
+
+Thematic mapping of the actionable (`port`/`must-audit`) buckets to TS files:
+
+| Theme | Bucket | TS file(s) | Notes / next action |
+| --- | --- | --- | --- |
+| Class inheritance edges (Ruby/PowerShell/ObjC) | `ported (this pass)` | `src/extract.ts` `_extractGeneric` (ruby), `extractPowershell`, `extractObjc` | **Closed this pass** — see below. Groovy was `already-covered`. |
+| Language type/field/generic-arg references | `port` | `src/extract.ts` `_extractGeneric` + new per-lang `collectTypeRefs` helpers | Requires porting the absent `references`-edge subsystem (`field_declaration`/`property_declaration`/`val|var_definition`/enum-assoc/base-template-args). Big, coherent, high-value. Blocked for swift/csharp/scala verification by absent optional grammars locally. |
+| Indirect dispatch → `indirect_call` edges | `port` | `src/extract.ts` (all walkers) + `src/types.ts` (edge relation), consumers in `src/analyze.ts`/`src/build.ts` | New edge relation `indirect_call` not present in TS. Medium/large; touches many extractors + downstream. |
+| Cross-file member/type resolution (C++/ObjC/C#/Go) | `must-audit` | `src/extract.ts` post-extract resolution pass | Partial cross-file resolution exists; audit header/impl routing (`3bc3fee`), sourceless stubs (`36b76ce`,`6509d0c`), case-sensitivity (`784e9c8`). |
+| Node-ID / origin_file / dedup hardening | `must-audit` | `src/extract.ts` id logic, `src/build.ts` | TS already uses project-relative ids (`qualifiedFileStem`); check legacy-id warnings (`3999dbc`), separator-collision salting (`35fb437`), `origin_file` leak/stub (`afa4ade`/`d177f04`). |
+| build_merge / graph-JSON corruption hardening | `must-audit` | `src/build.ts`, `src/hyperedges.ts`, `src/graph.ts` | Preserve hyperedges + prune-root hardening (`4f40967`), corruption-tolerant load (`4a8d6ba`,`6eb7c01`), symlink-root relativize (`de7d362`). |
+| LLM dispatch robustness | `must-audit` | `src/llm-execution.ts` | Non-streaming OpenAI-compat (`ff47316`), 429 retry (`64c1f21`), secondary-path timeout (`4e4935a`). Several may already be covered — audit before porting. |
+| Export / wiki / GraphML | `must-audit` | `src/export.ts`, `src/wiki.ts`, `src/studio-*.ts`, `src/cli.ts` | Filename case-fold dedup (`5d63aad`), canvas grid (`7278e24`), vault-safety (`8b177cb`), GraphML null-attr + `--answer-file` (`407a7f1`), portable md links (`7a94f72`). |
+| Community-label determinism | `must-audit` | `src/community-labels.ts`, `src/cluster.ts` | Deterministic hub labels (`1aab291`), stale-label detection on re-cluster (`8127ff9`), `--missing-only` (`a16b5bd`). |
+| JS/TS import resolution | `must-audit`/`port` | `src/extract.ts` (`resolveJsImportTarget*`, tsconfig alias loader) | Wildcard aliases (`5746964`), namespace re-exports (`c8c604d`), `this.field.method()` ctor-injection (`1801da0`), package.json `exports` subpaths (`e8dabad`), workspace alias edges (`2133539`). |
+
+### Proposed port-lot list
+
+1. **Lot 1 — Class-inheritance edges (cheap, high-value).** Ruby / PowerShell / ObjC `inherits`/`implements`. Size **S** (3 small branches, existing patterns). Risk **low**. **CLOSED THIS PASS** (Groovy already-covered). Verified: Ruby asserts green locally; PowerShell/ObjC ports written against real TS source with soft-skip integration tests (optional grammar WASM absent in sandbox — assert in CI).
+2. **Lot 2 — Language type/field/generic-arg references subsystem.** Port the absent `references`-edge machinery + per-language collectors (java field/annotation/record, csharp property, scala var, php promoted ctor, swift enum-assoc, cpp base-template-args, rust tuple/enum field) = `port` bucket ×11. Size **L**. Risk **medium** (new subsystem + downstream analyze/dedup interplay; some langs unverifiable locally without optional grammars). Highest structural value.
+3. **Lot 3 — `indirect_call` dispatch edges.** New edge relation + capture across Python/JS-TS/cross-file, plus `getattr` slice as Python-only `defer`. Size **M/L**. Risk **medium** (touches every walker + `src/types.ts` + downstream consumers). Do after Lot 2 so the edge-type plumbing is settled.
+4. **Lot 4 — build_merge / graph-JSON corruption + ids/origin_file hardening.** `4f40967`,`4a8d6ba`,`6eb7c01`,`de7d362`,`3999dbc`,`35fb437`,`afa4ade`,`d177f04`,`5320aa8`. Size **M**. Risk **low/medium**, mostly additive robustness + regression tests. Good "correctness" lot independent of extractor work.
+5. **Lot 5 — LLM dispatch + export/wiki robustness.** `ff47316`,`64c1f21`,`4e4935a` (llm) and `5d63aad`,`7278e24`,`8b177cb`,`407a7f1`,`7a94f72` (export/wiki/GraphML). Size **M**. Risk **low**. Several likely `already-covered` — audit-first lot.
+6. **Lot 6 — Cross-file resolution + community-label determinism.** `3bc3fee`,`36b76ce`,`6509d0c`,`784e9c8` (resolution) + `1aab291`,`8127ff9`,`a16b5bd` (labels). Size **M**. Risk **medium**. Depends partly on Lot 2 groundwork.
+
+### Closed this pass — Lot 1a (class-inheritance edges)
+
+| Upstream | TS target | Status |
+| --- | --- | --- |
+| `a19b9e9` fix(ruby) superclass inherits | `_extractGeneric` ruby branch, `src/extract.ts` | **ported + verified** (grammar present; 2 regression tests assert green) |
+| `a129ff2` fix(powershell) inherits/implements | `extractPowershell`, `src/extract.ts` | **ported** (mirrors upstream; integration test soft-skips locally — `tree-sitter-powershell` WASM absent in sandbox, asserts in CI) |
+| `cd3a376` fix(objc) protocol-to-protocol implements | `extractObjc`, `src/extract.ts` | **ported** (mirrors upstream; integration test soft-skips locally — `tree-sitter-objc` WASM absent in sandbox, asserts in CI) |
+| `64a6093` fix(groovy) inherits/implements | `extractGroovy`, `src/extract.ts:2827-2837` | **already-covered** (regex extractor already emits both) |
+
 ## Source Lock Notes
 
 - `git ls-remote` is the authority for Safi Python tags while local tag clobber risk exists.

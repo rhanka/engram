@@ -630,6 +630,85 @@ export function applyWeakFilter(scene, showWeak) {
 }
 
 /**
+ * Finite epoch-ms reader for the shared scene contract `t` (#234). Anything
+ * non-numeric / non-finite is treated as UNTIMED (no temporal coordinate).
+ * @param {unknown} value
+ * @returns {number | null}
+ */
+function finiteTime(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Temporal bounds of a scene — the [min, max] of every finite `t` (#234) across
+ * nodes AND edges. Returns null when NO element carries a finite `t`; the
+ * time-scrub control reads this to HIDE itself (no-op on non-temporal graphs).
+ * @param {{ nodes?: object[], edges?: object[] } | null | undefined} scene
+ * @returns {{ min: number, max: number } | null}
+ */
+export function sceneTimeRange(scene) {
+  if (!scene) return null;
+  let min = Infinity;
+  let max = -Infinity;
+  const scan = (items) => {
+    for (const it of items ?? []) {
+      const t = finiteTime(it && it.t);
+      if (t === null) continue;
+      if (t < min) min = t;
+      if (t > max) max = t;
+    }
+  };
+  scan(scene.nodes);
+  scan(scene.edges);
+  return Number.isFinite(min) ? { min, max } : null;
+}
+
+/**
+ * Time-scrub filter — restrict a scene to what is visible AT a cursor instant
+ * (epoch-ms). An element is shown iff it is UNTIMED (no finite `t` — timeless
+ * scaffolding) OR its `t` ≤ cursor; an edge additionally needs both endpoints
+ * visible. Mirrors {@link applyWeakFilter}: it takes the FULL scene and returns
+ * a NEW scene with the same node attributes but a filtered node/edge set +
+ * updated stats, re-fed through the SAME render path (no renderer API).
+ *
+ * A null / non-finite cursor is the OFF state → the scene is returned UNCHANGED
+ * (the same object), so the default view stays byte-identical until the user
+ * scrubs.
+ *
+ * @param {{ nodes?: object[], edges?: object[], stats?: object } | null} scene
+ * @param {number | null | undefined} cursor  epoch-ms; null = off (no filter)
+ * @returns {object} a new scene (or the same scene when off)
+ */
+export function applyTimeFilter(scene, cursor) {
+  if (!scene) return scene;
+  const c = finiteTime(cursor);
+  if (c === null) return scene;
+
+  const visibleByTime = (t) => {
+    const ft = finiteTime(t);
+    return ft === null || ft <= c;
+  };
+
+  const nodes = (scene.nodes ?? []).filter((n) => visibleByTime(n && n.t));
+  const keptIds = new Set(nodes.map((n) => n.id));
+  const edges = (scene.edges ?? []).filter(
+    (e) => keptIds.has(e.source) && keptIds.has(e.target) && visibleByTime(e && e.t),
+  );
+
+  return {
+    ...scene,
+    nodes,
+    edges,
+    stats: {
+      ...scene.stats,
+      nodeCount: nodes.length,
+      edgeCount: edges.length,
+      weakEdgeCount: edges.filter((e) => e.weak).length,
+    },
+  };
+}
+
+/**
  * Index nodes by id for O(1) lookups in the entity panel / relations.
  * @returns {Map<string, object>}
  */
@@ -729,10 +808,52 @@ export function nodeSourcePath(node) {
 }
 
 /**
+ * Storage LOT 2: normalize a server group-counts payload into the rail's
+ * `{ key, count }[]` shape, or null when there is nothing usable. Accepts either
+ * the route document (`{ axis, groups: [...] }`) or a bare `groups` array, so the
+ * caller can pass whatever `fetchGroupCounts` returned. Returns null for a
+ * missing/empty set so the caller falls back to the client computation.
+ * @param {{ groups?: { key: string, count: number }[] } | { key: string, count: number }[] | null | undefined} serverCounts
+ * @returns {{ key: string, count: number }[] | null}
+ */
+function normalizeServerGroups(serverCounts) {
+  if (!serverCounts) return null;
+  const groups = Array.isArray(serverCounts) ? serverCounts : serverCounts.groups;
+  if (!Array.isArray(groups) || groups.length === 0) return null;
+  const out = [];
+  for (const g of groups) {
+    if (!g || g.key == null) continue;
+    const count = typeof g.count === "number" ? g.count : Number(g.count);
+    if (!Number.isFinite(count)) continue;
+    out.push({ key: String(g.key), count });
+  }
+  return out.length > 0 ? out : null;
+}
+
+/**
  * Group nodes by their grouping key for the left-rail Types/Communities lists.
+ *
+ * Storage LOT 2 (prefer-server): when `serverCounts` is supplied — the
+ * precomputed group-by aggregate from a configured GraphStore mirror (via
+ * `fetchGroupCounts(axis)`) — the list is built STRAIGHT from it in O(#groups),
+ * with NO O(#nodes) pass over the in-memory graph (the "instant grouping" win).
+ * When it is absent/empty (the default flat-JSON studio, an offline bundle, or a
+ * 404), the original client-side computation runs UNCHANGED. Either way the
+ * output shape, key stringification and sort order are identical, so the rail UI
+ * is the same — only the COUNT SOURCE changes when a store is present.
+ *
+ * @param {object} graph  the in-memory graph (client fallback source).
+ * @param {(node: object) => string|null|undefined} keyFn  the grouping key.
+ * @param {object|Array|null} [serverCounts]  the store's group-counts payload.
  * @returns {{ key: string, count: number }[]} sorted by descending count.
  */
-export function groupCounts(graph, keyFn) {
+export function groupCounts(graph, keyFn, serverCounts = null) {
+  const serverGroups = normalizeServerGroups(serverCounts);
+  if (serverGroups) {
+    return serverGroups
+      .map(({ key, count }) => ({ key: String(key), count }))
+      .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+  }
   const counts = new Map();
   for (const node of graphNodes(graph)) {
     const key = keyFn(node);

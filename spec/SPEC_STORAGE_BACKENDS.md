@@ -143,6 +143,26 @@ Port rules:
 - `dryRun` must produce the same counts and warnings as a real push, without writes.
 - Adapters own backend mechanics (sessions, batching, retries, type mapping). Core owns graph loading, namespace derivation, snapshot bookkeeping and reporting.
 
+### Group-by aggregate (storage LOT 1)
+
+An OPTIONAL, versioned capability lets a backend serve instant group-by counts without re-scanning every node:
+
+```ts
+export interface GraphStoreAggregateCapability {
+  version: 1;
+  axes: readonly string[]; // e.g. ["node_type", "community"]
+}
+// GraphStoreCapabilities gains: aggregate?: GraphStoreAggregateCapability
+// GraphStore gains:            groupCounts?(axis: string): Promise<GraphGroupCounts>
+```
+
+Rules:
+
+- **Capability-gated.** `groupCounts` is present only when `capabilities.aggregate` is set; neo4j/spanner/file omit both. The method is never assumed — call sites check the capability first, exactly like `query`/`clear`. The contract implies no cross-backend transaction semantics.
+- **REPLACE-snapshot scoped (the staleness guard).** The precomputed table is rebuilt ONLY inside a `mode: "replace"` push, from the full snapshot just loaded. A `merge` is an upsert that may leave deleted nodes behind, so rebuilding after a merge could surface stale/half-merged groups; merge therefore leaves the aggregate untouched and `groupCounts` keeps reporting the last committed full snapshot. The rows are stamped with the producing push's `snapshot_id` (== `graph_meta.pushed_at`) for cross-checks.
+- **O(#groups), not O(#nodes).** A read returns one row per distinct axis value, not the underlying node rows.
+- **Postgres v1 axes.** `node_type` and `community` (lifted to typed columns / derivable on push). `class_id`, `registry`, `status` and `ts` are DEFERRED to LOT 2 until those fields are lifted out of the props jsonb into queryable columns. The studio read path (route + `studio/src/lib/groupBy.js` refactor) is also LOT 2.
+
 ## Store Registry And Driver Loading
 
 Stores register through a factory so that driver loading stays lazy and testable:

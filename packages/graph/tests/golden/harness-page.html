@@ -204,14 +204,58 @@
         stage.innerHTML = "";
         stage.appendChild(canvas);
 
-        // Pin the font on the 2D context BEFORE the renderer measures/draws.
-        const ctx2d = canvas.getContext("2d");
-        pinFontOnContext(ctx2d);
+        // Pin the font on the 2D context BEFORE the renderer measures/draws —
+        // BUT ONLY for the canvas2d backend. A canvas can hold exactly ONE
+        // context type for its lifetime: calling getContext("2d") here would
+        // permanently bind a 2D context, so the WebGL backend's later
+        // getContext("webgl2") would return null and the renderer would fall
+        // back to backend "none" (the SwiftShader golden lane caught this).
+        // The font pin only affects 2D text rasterization, which the WebGL
+        // backend does not perform, so skipping it for webgl is a no-op there.
+        let ctx2d = null;
+        if (backend !== "webgl") {
+          ctx2d = canvas.getContext("2d");
+          pinFontOnContext(ctx2d);
+        }
 
         const { graph, style } = buildBuffers(fixture);
         const renderer = Graph.createGraphRenderer(canvas, {
           backend,
           pixelRatio: dpr,
+          // B1 Phase 1 INTERNAL CANARY: the golden caller opts the WebGL backend
+          // into the new INSTANCED-SHAPE path so the harness diffs the real
+          // instanced shapes vs Canvas2D. Default (undefined) keeps the legacy
+          // point-sprite path — the canvas2d goldens are unaffected.
+          instancedShapes: opts.instancedShapes ?? undefined,
+          // B1 Phase 3: the WebGL box-label TEXT atlas rasterizes onto an
+          // offscreen 2D canvas. For byte-parity with the Canvas2D reference the
+          // atlas MUST use the SAME pinned deterministic font (PINNED_FAMILY) the
+          // render-canvas 2D context uses. We hand the renderer a factory that
+          // creates a detached <canvas> and pins its font setter (the same swap
+          // pinFontOnContext applies), so the atlas text is rasterized by the
+          // SAME Chrome 2D engine + family that measured + drew the Canvas2D box.
+          // Only the WebGL backend consults it; canvas2d ignores it (no change).
+          atlasCanvasFactory:
+            backend === "webgl"
+              ? function (w, h) {
+                  const off = document.createElement("canvas");
+                  off.width = Math.max(1, w);
+                  off.height = Math.max(1, h);
+                  const c = off.getContext("2d");
+                  if (!c) return null;
+                  pinFontOnContext(c);
+                  return { canvas: off, ctx: c };
+                }
+              : undefined,
+          // The instanced shapes are HARD-EDGED triangle fans (the fragment
+          // shader emits a flat colour, no SDF/coverage AA). Canvas2D draws
+          // ANTIALIASED edges, so without MSAA the WebGL boundary rim is a hard
+          // step where Canvas2D has a ~1px coverage gradient — the pixel diff
+          // fails along the whole perimeter. Request a MULTISAMPLED default
+          // framebuffer for the WebGL golden capture so SwiftShader resolves
+          // AA'd edges that approximate Canvas2D. This is a CAPTURE-side request
+          // (the golden comparing AA vs AA), not a production default change.
+          antialias: backend === "webgl" ? true : undefined,
         });
         renderer.setGraph(graph);
         renderer.setStyle(style);
@@ -219,6 +263,31 @@
         renderer.render();
 
         const snap = renderer.snapshot();
+
+        // B1-P3 HYBRID box-text overlay: the WebGL box pass draws ONLY the box
+        // fill + border; the in-box LABEL TEXT is drawn here by a Canvas2D
+        // OVERLAY using the IDENTICAL pinned text engine the Canvas2D reference
+        // uses, composited (in __readPixels) ON TOP of the WebGL box pixels. So
+        // the box-label text matches the Canvas2D golden BY CONSTRUCTION — no GPU
+        // text atlas (the #1 B1 risk). We rasterize the overlay to an offscreen
+        // 2D canvas (a separate canvas: the GL canvas already holds a webgl2
+        // context and cannot also vend a 2D context) at the SAME device size, and
+        // stash it so __readPixels composites it over the GL readback.
+        window.__overlay = null;
+        if (snap.backend === "webgl" && typeof renderer.boxTextDraws === "function") {
+          const labels = renderer.boxTextDraws();
+          if (labels && labels.length > 0) {
+            const overlay = document.createElement("canvas");
+            overlay.width = canvas.width;
+            overlay.height = canvas.height;
+            const octx = overlay.getContext("2d");
+            if (octx) {
+              pinFontOnContext(octx);
+              Graph.drawBoxLabels2D(octx, labels);
+              window.__overlay = overlay;
+            }
+          }
+        }
 
         // Composite an OPAQUE WHITE background BEHIND the rendered graph so the
         // canvas BACKING STORE matches the visual page (the CSS background is
@@ -281,6 +350,46 @@
           for (let y = 0; y < h; y += 1) {
             const src = (h - 1 - y) * stride;
             bytes.set(buf.subarray(src, src + stride), y * stride);
+          }
+          // Composite OVER OPAQUE WHITE so the GL readback matches the
+          // canvas2d capture, which paints a #ffffff background behind the
+          // graph (destination-over above). The GL framebuffer is cleared to
+          // TRANSPARENT BLACK (renderer.ts: clearColor(0,0,0,0)) and the
+          // shapes blend with SRC_ALPHA, ONE_MINUS_SRC_ALPHA onto it, so the
+          // stored RGB is PREMULTIPLIED by coverage (rgb = color*alpha). The
+          // premultiplied-over-white formula is out = rgb + (255 - alpha),
+          // which yields exactly color*A + 255*(1-A) at full opacity — the
+          // same value canvas2d's getImageData returns after destination-over
+          // white. Without this, every transparent background pixel would read
+          // (0,0,0,0) vs canvas2d's (255,255,255,255) and blow the diff budget.
+          for (let i = 0; i < bytes.length; i += 4) {
+            const a = bytes[i + 3];
+            const inv = 255 - a;
+            bytes[i] = Math.min(255, bytes[i] + inv);
+            bytes[i + 1] = Math.min(255, bytes[i + 1] + inv);
+            bytes[i + 2] = Math.min(255, bytes[i + 2] + inv);
+            bytes[i + 3] = 255;
+          }
+
+          // B1-P3 HYBRID: composite the Canvas2D box-text OVERLAY ON TOP of the
+          // (over-white) WebGL box pixels. The overlay holds straight-RGBA dark
+          // text over transparent; source-over blend reproduces exactly what the
+          // Canvas2D reference draws when it fillTexts the label LAST (after the
+          // box rect). out = overlay·oa + gl·(1-oa). This is the seam that makes
+          // the box-label text pixels match the golden by construction.
+          const overlay = window.__overlay;
+          if (overlay && overlay.width === w && overlay.height === h) {
+            const octx = overlay.getContext("2d");
+            const otext = octx.getImageData(0, 0, w, h).data;
+            for (let i = 0; i < bytes.length; i += 4) {
+              const oa = otext[i + 3];
+              if (oa === 0) continue;
+              const inv = 255 - oa;
+              bytes[i] = Math.round((otext[i] * oa + bytes[i] * inv) / 255);
+              bytes[i + 1] = Math.round((otext[i + 1] * oa + bytes[i + 1] * inv) / 255);
+              bytes[i + 2] = Math.round((otext[i + 2] * oa + bytes[i + 2] * inv) / 255);
+              bytes[i + 3] = 255;
+            }
           }
         } else {
           const ctx = canvas.getContext("2d");

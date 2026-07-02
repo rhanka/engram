@@ -191,6 +191,38 @@ export function contentBBox(capture, bgTolerance = 8) {
  * exact fragile dash phase. `rgb` is [r,g,b]; alpha is ignored (edges/glyphs
  * composite over white so the on-screen RGB is what matters).
  */
+/**
+ * AA-INVARIANT "ink mass" of a stroke over a WHITE background, summed across a
+ * rectangle: Σ (255 − channelValue) for one high-contrast channel. Because a
+ * stroke composites OVER WHITE as `channel = C·a + 255·(1−a)`, each pixel's
+ * `255 − channel = (255 − C)·a`, so the SUM equals `(255 − C) · Σa = (255 − C) ·
+ * coveredArea`. Crucially Σa (the total geometric coverage) is CONSERVED no
+ * matter how the rasterizer distributes its anti-aliasing — a soft SDF edge and
+ * a crisp analytic edge of the SAME width yield the SAME ink mass. That makes
+ * this the right WIDTH metric for a cross-rasterizer (WebGL-vs-Canvas2D) diff: a
+ * pure colour-pixel COUNT conflates AA softness with width (a soft thin stroke
+ * has few full-colour pixels yet the correct width), but the ink mass does not.
+ *
+ * `rect` is {x0,x1,y0,y1} in device px (half-open); pick a band that contains
+ * ONLY the stroke (no node glyphs). `channel` is 0=R/1=G/2=B — choose the
+ * channel where the stroke colour is FARTHEST from 255 (max contrast).
+ */
+export function inkMass(capture, rect, channel = 1) {
+  const { width, height, data } = capture;
+  const x0 = Math.max(0, Math.floor(rect.x0));
+  const x1 = Math.min(width, Math.ceil(rect.x1));
+  const y0 = Math.max(0, Math.floor(rect.y0));
+  const y1 = Math.min(height, Math.ceil(rect.y1));
+  let sum = 0;
+  for (let y = y0; y < y1; y += 1) {
+    for (let x = x0; x < x1; x += 1) {
+      const i = (y * width + x) * 4 + channel;
+      sum += 255 - data[i];
+    }
+  }
+  return sum;
+}
+
 export function countColorPixels(capture, rgb, tolerance = 24) {
   const { width, height, data } = capture;
   let n = 0;

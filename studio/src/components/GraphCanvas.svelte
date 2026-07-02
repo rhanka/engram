@@ -1,6 +1,6 @@
 <script>
-  import { onDestroy, onMount } from "svelte";
-  import { createGraphRenderer } from "@sentropic/graph";
+  import { onDestroy, onMount, tick } from "svelte";
+  import { createGraphRenderer, drawBoxLabels2D } from "@sentropic/graph";
 
   import {
     buildConnectedDimStyle,
@@ -11,8 +11,22 @@
     interpolateMergeStyle,
     interpolateMergePositions,
     isBoxShape,
+    LABEL_ZOOM_THRESHOLD,
     truncateLabel,
   } from "../lib/graphRendererPayload.js";
+  import {
+    CANVAS2D_BACKEND,
+    WEBGL2_BACKEND,
+    backendIndicatorLabel,
+    createBackendRenderer,
+    isToggleShortcut,
+    paintBoxTextOverlay as paintBoxOverlay,
+    toggleBackend,
+  } from "../lib/renderBackend.js";
+  import {
+    createHoverIntent,
+    shouldDelayConnectedDim,
+  } from "../lib/hoverIntent.js";
 
   const EMPTY_SCENE = {
     nodes: [],
@@ -29,8 +43,24 @@
   const NODE_TIGHT_SLOP = 4;
   const HOVER_EDGE_COLOR = [37, 99, 235, 255];
   const MERGE_ANIMATION_DURATION_MS = 520;
-  // Hide edges during pan/zoom when nodes+edges exceed this, for interaction fluidity on large graphs.
-  const EDGE_SKIP_THRESHOLD = 1000;
+  // CANVAS2D ONLY: hide edges during active pan/zoom/drag when nodes+edges exceed
+  // this, for interaction fluidity (a legacy SVG-era guard). WebGL2 NEVER skips
+  // (GPU-instanced edges are cheap) — see `skipEdgesOnInteract`.
+  //
+  // Threshold raised 1000 → 6000 from a Skia/Canvas2D bench (Skia is the SAME
+  // rasterizer Chrome's 2D canvas uses), median per-frame full render() at
+  // 1440×900 DPR1 (.graphify/scratch/edge-skip-bench.mjs):
+  //   ·   1000 obj (old threshold): ~2.9 ms  (~343 fps) — skipping was absurdly
+  //       over-conservative for graphs this cheap.
+  //   ·   mystery 5676 obj (1983n/3693e): ~17 ms (~58 fps), ~13 ms of it edges.
+  //   ·   5k edges  / 7500 obj:  ~22.5 ms (~44 fps)
+  //   ·  10k edges  / 15000 obj: ~45 ms   (~22 fps)
+  //   ·  20k edges  / 28000 obj: ~87 ms   (~11 fps)
+  // 6000 sits just ABOVE mystery scale so typical graphs (incl. mystery) keep
+  // edges live during interaction (~58 fps, smooth), and just BELOW the 5k-edge
+  // step so denser graphs — and especially 10k+ edges (the non-regression guard)
+  // — still skip edges during pan/zoom to stay fluid. (See PR description.)
+  const EDGE_SKIP_THRESHOLD = 6000;
   // Delay before restoring edges after the last wheel/zoom event settles.
   const ZOOM_SETTLE_MS = 150;
   // Boxed labels: show a label for nodes whose degree >= this fraction of the max
@@ -66,11 +96,38 @@
 
   let container;
   let canvas;
+  // Stacked Canvas2D overlay that paints the in-box label text for the WebGL2
+  // box glyphs (mode B); stays cleared in mode A (canvas2d draws its own text).
+  let overlayCanvas;
+  let overlayCtx = null;
   let renderer = null;
   let payload = null;
   let camera = { x: 0, y: 0, zoom: 1 };
   let pixelRatio = 1;
   let mounted = false;
+
+  // Dual-render switch (Ctrl+Shift+X). Mode A = canvas2d, Mode B = WebGL2.
+  // P6 FLIP: the studio now BOOTS on WebGL2 (instancedShapes). `ensureRenderer`
+  // uses the EXISTING graceful fallback — when no WebGL2 context is available it
+  // reverts to canvas2d (mode A) and sets `backendUnavailable`. Ctrl+Shift+X
+  // still toggles both ways.
+  let activeBackend = $state(WEBGL2_BACKEND);
+  // True when WebGL2 was requested but no context was available, so we reverted
+  // to canvas2d — set at boot (fallback) or on a failed manual switch.
+  let backendUnavailable = $state(false);
+  // Render-mode badge. On a successful WebGL2 boot it stays HIDDEN (clean UI);
+  // the FIRST Ctrl+Shift+X / badge-click reveals it. When the WebGL2 boot FALLS
+  // BACK to canvas2d (`backendUnavailable`) the badge is REVEALED immediately so
+  // the user sees the unavailable state. Once visible it reflects the live
+  // backend on every subsequent switch; `justToggled` briefly pulses it.
+  let switchActivated = $state(false);
+  let justToggled = $state(false);
+  let indicatorTimer = null;
+  const backendBadge = $derived(
+    backendUnavailable && activeBackend === CANVAS2D_BACKEND
+      ? "WebGL2 unavailable — Canvas2D"
+      : backendIndicatorLabel(activeBackend),
+  );
   let resizeObserver = null;
   let resizeFrame = null;
   let mergeFrame = null;
@@ -78,6 +135,10 @@
   let hoveredEdge = $state(null);
   let hoveredNode = $state(null);
   let hoveredNodeId = $state(null);
+  // Hover-intent dwell timer controller (Task B): defers the rest-of-graph
+  // connected-dim until the pointer DWELLS, but ONLY before the first
+  // selection/focus, so a pre-selection sweep across the graph no longer strobes.
+  const hoverIntent = createHoverIntent(() => applyConnectedDim());
 
   // Scene identity tracking so we only auto-fit on a genuine new graph (not selection/focus).
   let lastScene = null;
@@ -88,8 +149,15 @@
   // + edge endpoints): a recompute that yields the SAME content does NOT refit,
   // which also preserves a dragged node's position across an incidental rebuild.
   let lastSceneKey = null;
-  // True when the current update path is a real scene/graph-data change (mount/new graph/resize).
-  let skipEdgesOnInteract = false;
+  // BACKEND-AWARE edge-skip during active pan/zoom/drag. WebGL2 NEVER skips
+  // (GPU-instanced edges are cheap), so this is false whenever the active backend
+  // is WebGL2 — edges always render during interaction. On Canvas2D it skips only
+  // past EDGE_SKIP_THRESHOLD objects. `$derived` so a Ctrl+Shift+X backend flip
+  // (or a boot fallback to canvas2d) re-evaluates it immediately.
+  const skipEdgesOnInteract = $derived(
+    activeBackend !== WEBGL2_BACKEND &&
+      (scene?.nodes?.length ?? 0) + (scene?.edges?.length ?? 0) > edgeSkipThreshold,
+  );
   // Zoom-settle debounce timer: full-edge render after the last wheel event settles.
   let zoomSettleTimer = null;
 
@@ -110,6 +178,12 @@
   let labels = $state([]);
   // Suppress label rendering during an active interaction on dense graphs.
   let labelsHidden = $state(false);
+  // Principal-character label LOD bucket of the last payload build: "out" =
+  // top-K hub names only (zoomed out), "in" = all gated hub names (zoomed in).
+  // A wheel that moves zoom across LABEL_ZOOM_THRESHOLD flips the bucket and
+  // triggers a payload rebuild so the in-box name set follows the zoom.
+  let lastLabelZoomBucket = null;
+  const labelZoomBucket = (zoom) => (zoom > LABEL_ZOOM_THRESHOLD ? "in" : "out");
 
   // Node-drag state — not reactive, managed imperatively.
   let draggingNodeId = null;
@@ -144,21 +218,117 @@
       canvas.height = nextHeight;
     }
 
+    // Keep the box-text overlay's backing store identical to the WebGL canvas so
+    // the device-px box draws (boxTextDraws) land exactly on the GPU boxes.
+    if (overlayCanvas && (overlayCanvas.width !== nextWidth || overlayCanvas.height !== nextHeight)) {
+      overlayCanvas.width = nextWidth;
+      overlayCanvas.height = nextHeight;
+    }
+
     return changed;
   }
 
-  // Returns true when a NEW renderer instance was created (first run or a
-  // devicePixelRatio change) — that renderer has no graph/style yet.
-  function ensureRenderer() {
+  // Returns true when a NEW renderer instance was created (first run, a
+  // devicePixelRatio change, or a forced backend rebuild) — that renderer has
+  // no graph/style yet.
+  //
+  // The renderer is built from `activeBackend` (the dual-render switch):
+  //   Mode A = createGraphRenderer(canvas, { backend: "canvas2d", pixelRatio }).
+  //   Mode B = { backend: "webgl", instancedShapes: true, pixelRatio }  ← the
+  //            BOOT DEFAULT after the P6 flip.
+  // `createBackendRenderer` degrades gracefully: when mode B (the default) is
+  // requested but no WebGL2 context is available, it reverts to canvas2d and we
+  // flag `backendUnavailable` (which reveals the badge in its unavailable state).
+  function ensureRenderer(force = false) {
     if (!canvas) return false;
 
     const nextPixelRatio = readPixelRatio();
-    if (renderer && nextPixelRatio === pixelRatio) return false;
+    if (renderer && !force && nextPixelRatio === pixelRatio) return false;
 
     renderer?.destroy();
     pixelRatio = nextPixelRatio;
-    renderer = createGraphRenderer(canvas, { backend: "canvas2d", pixelRatio });
+    const result = createBackendRenderer(createGraphRenderer, canvas, activeBackend, pixelRatio);
+    renderer = result.renderer;
+    if (result.fellBack) {
+      // mode B requested but no WebGL2 here → reverted to canvas2d (mode A).
+      activeBackend = CANVAS2D_BACKEND;
+      backendUnavailable = true;
+    } else {
+      backendUnavailable = false;
+    }
+    ensureOverlayCtx();
     return true;
+  }
+
+  function ensureOverlayCtx() {
+    if (!overlayCtx && overlayCanvas) {
+      overlayCtx = overlayCanvas.getContext("2d");
+    }
+    return overlayCtx;
+  }
+
+  // Single overlay-paint helper called after EVERY render. Mode B clears the
+  // overlay and paints renderer.boxTextDraws() (device-px in-box label text);
+  // mode A keeps the overlay cleared (canvas2d draws its own in-box text).
+  function paintBoxTextOverlay() {
+    paintBoxOverlay({
+      overlayCtx: ensureOverlayCtx(),
+      overlayCanvas,
+      renderer,
+      backend: activeBackend,
+      drawBoxLabels: drawBoxLabels2D,
+    });
+  }
+
+  // Render + paint the box-text overlay. Used wherever the canvas is redrawn so
+  // the WebGL2 in-box text stays in sync with the GPU boxes.
+  function renderNow(options) {
+    if (!renderer) return;
+    renderer.render(options);
+    paintBoxTextOverlay();
+  }
+
+  // --- Dual-render BETA switch (Ctrl+Shift+X) ---
+  // Window keydown handler: toggle the render backend, force a full renderer
+  // rebuild on the new backend, re-apply graph/style/positions/camera (preserving
+  // the user's view), and flash a transient indicator badge.
+  function handleKeydown(event) {
+    if (!isToggleShortcut(event)) return;
+    event.preventDefault();
+    toggleRenderBackend();
+  }
+
+  async function toggleRenderBackend() {
+    activeBackend = toggleBackend(activeBackend);
+    // A <canvas> is permanently bound to the FIRST context type it hands out:
+    // once mode A called getContext("2d"), the same element can never return a
+    // WebGL2 context (and vice-versa), so rebuilding the renderer on the same
+    // node would always fall back to canvas2d ("WebGL2 unavailable"). The main
+    // canvas is wrapped in `{#key activeBackend}`, so flipping the backend
+    // remounts a FRESH canvas element; await the DOM flush before rebuilding so
+    // `bind:this={canvas}` points at the new (context-free) node.
+    await tick();
+    // Force a destroy + recreate on the new backend (ensureRenderer reverts to
+    // canvas2d + flags `backendUnavailable` when mode B finds no WebGL2 context).
+    ensureRenderer(true);
+    resizeCanvas();
+    // Re-apply graph + style + dragged positions and PRESERVE the current camera
+    // (no refit) so toggling the backend doesn't jump the view.
+    applyPayloadNoFit();
+    switchActivated = true;
+    pulseIndicator();
+  }
+
+  // Briefly pulse the (always-visible) backend badge right after a switch so the
+  // change is noticeable; the badge text itself stays permanently visible.
+  function pulseIndicator() {
+    justToggled = true;
+    if (typeof window === "undefined") return;
+    if (indicatorTimer !== null) window.clearTimeout(indicatorTimer);
+    indicatorTimer = window.setTimeout(() => {
+      indicatorTimer = null;
+      justToggled = false;
+    }, 1200);
   }
 
   function fitAndRender() {
@@ -189,14 +359,14 @@
         renderer.setCamera(camera);
       }
     }
-    renderer.render();
+    renderNow();
     setLabelsHidden(false);
   }
 
   function applyCamera(skipEdges = false) {
     if (!renderer) return;
     renderer.setCamera(camera);
-    renderer.render(skipEdges ? { skipEdges: true } : undefined);
+    renderNow(skipEdges ? { skipEdges: true } : undefined);
     updateLabels();
   }
 
@@ -238,7 +408,15 @@
       if (zoomSettleTimer !== null) window.clearTimeout(zoomSettleTimer);
       zoomSettleTimer = window.setTimeout(() => {
         zoomSettleTimer = null;
-        if (renderer && skipEdgesOnInteract) renderer.render();
+        // Crossed the principal-character LOD threshold (zoomed in/out past it)?
+        // Rebuild the payload so the in-box hub-name set follows the zoom, then
+        // re-style without re-fitting. Otherwise just restore skipped edges.
+        if (renderer && labelZoomBucket(camera.zoom) !== lastLabelZoomBucket) {
+          rebuildPayload();
+          applyPayloadNoFit();
+        } else if (renderer && skipEdgesOnInteract) {
+          renderNow();
+        }
         setLabelsHidden(false);
       }, ZOOM_SETTLE_MS);
     }
@@ -246,6 +424,9 @@
 
   // --- Pointer down: node drag (over a node) or pan (over the background) ---
   function handlePointerDown(event) {
+    // A pan/drag is starting — cancel any pending hover-intent dwell so it can't
+    // fire (and dim) mid-interaction.
+    hoverIntent.cancel();
     const id = pickNode(event);
 
     if (id) {
@@ -281,7 +462,7 @@
       if (canvas) canvas.style.cursor = "default";
       if (wasDrag) {
         // Finalize the moved node: refresh hover hit-testing + labels.
-        if (skipEdgesOnInteract && renderer) renderer.render();
+        if (skipEdgesOnInteract && renderer) renderNow();
         setLabelsHidden(false);
         // Swallow the trailing click so a drag doesn't also select.
         suppressNextClick = true;
@@ -293,7 +474,7 @@
     isPanning = false;
     if (canvas) canvas.style.cursor = "default";
     // Pan ended: restore edges with a full render.
-    if (skipEdgesOnInteract && renderer) renderer.render();
+    if (skipEdgesOnInteract && renderer) renderNow();
     setLabelsHidden(false);
   }
 
@@ -322,15 +503,18 @@
       focusId,
       hoveredNodeId,
       nodeRadius: NODE_RADIUS,
+      // Current zoom drives the principal-character label LOD (top-K names at
+      // zoom-out). Sync the bucket so a wheel that crosses the threshold knows
+      // to rebuild (see handleWheel's settle callback).
+      zoom: camera.zoom,
       ...(Number.isFinite(labelMaxChars) ? { labelMaxChars } : {}),
     });
+    lastLabelZoomBucket = labelZoomBucket(camera.zoom);
     clearHoveredEdge({ notify: false, render: false });
     computeNodeDegrees();
     reapplyDraggedPositions();
-
-    // Skip edges during pan/zoom only when the object count is large enough.
-    const objectCount = (scene?.nodes?.length ?? 0) + (scene?.edges?.length ?? 0);
-    skipEdgesOnInteract = objectCount > edgeSkipThreshold;
+    // NB: `skipEdgesOnInteract` is a backend-aware `$derived` (declared above) —
+    // no imperative recompute here, so a backend flip updates it reactively.
   }
 
   // Re-write any user-dragged node positions onto the freshly-built payload so a
@@ -543,7 +727,7 @@
     if (draggingNodeId) draggedPositions.set(draggingNodeId, { x: worldX, y: worldY });
     renderer.setPositions(positions);
     // Skip edges mid-drag on dense graphs for fluidity (restored on pointerup).
-    renderer.render(skipEdgesOnInteract ? { skipEdges: true } : undefined);
+    renderNow(skipEdgesOnInteract ? { skipEdges: true } : undefined);
     updateLabels();
   }
 
@@ -601,7 +785,7 @@
     if (!renderer || !payload) return;
     const style = styleForHoveredEdge(hit);
     if (style) renderer.setStyle(style);
-    renderer.render();
+    renderNow();
   }
 
   function setHoveredEdge(hit, localX, localY) {
@@ -720,21 +904,41 @@
       hoveredNode = null;
     }
 
-    if (mounted && payload) {
-      const style = buildConnectedDimStyle(payload, {
-        selectedIds: selectedIds ?? [],
-        focusId,
-        hoveredNodeId,
-      });
-      if (renderer && style) {
-        payload = { ...payload, style };
-        renderer.setStyle(style);
-        renderer.render();
-      }
-    }
+    // Rest-of-graph connected-dim. Gated by hover-intent: immediate when a
+    // selection/focus already exists (unchanged behavior) OR when the hover is
+    // clearing (restore base now); otherwise DEFERRED behind a ~200ms dwell so a
+    // pre-first-selection sweep across the graph no longer strobes dim/undim.
+    requestConnectedDim(Boolean(nodeId));
 
-    // Always-on label for the hovered node (plus the god-node set).
+    // The hovered node's OWN feedback (tooltip + label) stays immediate — only
+    // the rest-of-graph dim is delayed.
     updateLabels();
+  }
+
+  // Apply the connected-dim style for the CURRENT hover/selection/focus through
+  // the style buffers (no full payload rebuild). Pulled out of setHoveredNode so
+  // the hover-intent dwell timer can invoke it once the pointer settles.
+  function applyConnectedDim() {
+    if (!(mounted && payload)) return;
+    const style = buildConnectedDimStyle(payload, {
+      selectedIds: selectedIds ?? [],
+      focusId,
+      hoveredNodeId,
+    });
+    if (renderer && style) {
+      payload = { ...payload, style };
+      renderer.setStyle(style);
+      renderNow();
+    }
+  }
+
+  // Gate the rest-of-graph dim through the hover-intent dwell. Immediate when a
+  // selection/focus already exists OR when the hover is clearing (no target →
+  // restore base now); otherwise deferred until the pointer dwells.
+  function requestConnectedDim(hasHoverTarget) {
+    const immediate =
+      !shouldDelayConnectedDim({ selectedIds, focusId }) || !hasHoverTarget;
+    hoverIntent.request({ immediate });
   }
 
   function handlePointerLeave() {
@@ -742,7 +946,7 @@
     setHoveredNode(null);
     isPanning = false;
     if (draggingNodeId) {
-      if (dragMoved && skipEdgesOnInteract && renderer) renderer.render();
+      if (dragMoved && skipEdgesOnInteract && renderer) renderNow();
       draggingNodeId = null;
       dragNodeIndex = -1;
       dragMoved = false;
@@ -771,7 +975,7 @@
     if (!renderer || !payload) return;
     renderer.setPositions(payload.renderGraph.positions);
     renderer.setStyle(payload.style);
-    renderer.render();
+    renderNow();
   }
 
   function finishMergeAnimation() {
@@ -810,7 +1014,7 @@
 
       renderer.setPositions(positions);
       renderer.setStyle(interpolateMergeStyle(payload, pair, easeMergeProgress(progress)));
-      renderer.render();
+      renderNow();
 
       if (progress < 1) {
         mergeFrame = window.requestAnimationFrame(tick);
@@ -821,7 +1025,7 @@
 
     renderer.setPositions(firstFrame);
     renderer.setStyle(interpolateMergeStyle(payload, pair, 0));
-    renderer.render();
+    renderNow();
     mergeFrame = window.requestAnimationFrame(tick);
   }
 
@@ -864,6 +1068,9 @@
     // zoom and pan instead of resetting the view.
     selectedIds;
     focusId;
+    // A selection/focus appearing supersedes any pending pre-selection hover
+    // dwell — updateSelection() rebuilds the (selection-dimmed) style itself.
+    hoverIntent.cancel();
     updateSelection();
   });
 
@@ -893,12 +1100,18 @@
     }
 
     window.addEventListener("resize", scheduleResize);
+    // Dual-render BETA toggle (Ctrl+Shift+X) — window-level so the shortcut
+    // works regardless of canvas focus.
+    window.addEventListener("keydown", handleKeydown);
 
     return () => {
       mounted = false;
       resizeObserver?.disconnect();
       window.removeEventListener("resize", scheduleResize);
+      window.removeEventListener("keydown", handleKeydown);
       if (resizeFrame !== null) window.cancelAnimationFrame(resizeFrame);
+      if (indicatorTimer !== null) window.clearTimeout(indicatorTimer);
+      hoverIntent.cancel();
       cancelMergeFrame();
       renderer?.destroy();
       renderer = null;
@@ -923,18 +1136,51 @@
     >Reset</button>
   </div>
 
+  <!-- Keyed on the active backend: a <canvas> is permanently bound to its first
+       context type, so toggling canvas2d <-> WebGL2 must remount a FRESH canvas
+       (otherwise getContext("webgl2") on a 2D-poisoned canvas returns null and
+       mode B reports "WebGL2 unavailable"). Svelte re-attaches the handlers. -->
+  {#key activeBackend}
+    <canvas
+      class="canvas-element"
+      bind:this={canvas}
+      aria-label="Ontology knowledge graph"
+      onclick={handleClick}
+      ondblclick={handleDoubleClick}
+      onpointermove={handlePointerMove}
+      onpointerdown={handlePointerDown}
+      onpointerup={handlePointerUp}
+      onmouseleave={handlePointerLeave}
+      onwheel={handleWheel}
+    ></canvas>
+  {/key}
+
+  <!-- Stacked Canvas2D overlay for the WebGL2 in-box label text (mode B). It
+       shares the main canvas's CSS box, never receives pointer events, and stays
+       cleared in mode A. -->
   <canvas
-    class="canvas-element"
-    bind:this={canvas}
-    aria-label="Ontology knowledge graph"
-    onclick={handleClick}
-    ondblclick={handleDoubleClick}
-    onpointermove={handlePointerMove}
-    onpointerdown={handlePointerDown}
-    onpointerup={handlePointerUp}
-    onmouseleave={handlePointerLeave}
-    onwheel={handleWheel}
+    class="canvas-overlay"
+    bind:this={overlayCanvas}
+    aria-hidden="true"
   ></canvas>
+
+  <!-- Render-backend badge. On a successful WebGL2 boot it stays HIDDEN until the
+       first Ctrl+Shift+X (clean default UI); a boot fallback to canvas2d
+       (`backendUnavailable`) REVEALS it immediately so the unavailable state is
+       visible. Once revealed it reflects the live mode and doubles as a click
+       target to switch (same as the shortcut). -->
+  {#if switchActivated || backendUnavailable}
+    <button
+      type="button"
+      class="render-indicator"
+      class:is-toggled={justToggled}
+      class:is-unavailable={backendUnavailable && activeBackend === CANVAS2D_BACKEND}
+      class:is-webgl={activeBackend === WEBGL2_BACKEND}
+      title="Render backend — click or press Ctrl+Shift+X to switch"
+      aria-live="polite"
+      onclick={toggleRenderBackend}
+    >{backendBadge}</button>
+  {/if}
 
   {#if labels.length}
     <div class={`node-labels node-labels-${labelMode}`} aria-hidden="true">
@@ -1025,6 +1271,62 @@
   .canvas-element:focus-visible {
     outline: 2px solid var(--st-semantic-action-primary, #2563eb);
     outline-offset: -2px;
+  }
+
+  /* Box-text overlay: same CSS box as the main canvas, painted on top, never
+     intercepts pointer events (all hit-testing stays on the main canvas). */
+  .canvas-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: block;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+
+  /* Transient render-mode indicator badge (auto-hides ~2s after a toggle). */
+  .render-indicator {
+    position: absolute;
+    top: 0.5rem;
+    left: 0.5rem;
+    z-index: 4;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0;
+    padding: 0.3rem 0.6rem;
+    border: 1px solid var(--st-semantic-border-muted, #e2e8f0);
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--st-semantic-surface-inverse, #0f172a) 88%, transparent);
+    color: var(--st-semantic-text-inverse, #fff);
+    font: inherit;
+    font-size: 0.72rem;
+    line-height: 1;
+    cursor: pointer;
+    pointer-events: auto;
+    box-shadow: 0 2px 8px rgb(15 23 42 / 0.18);
+    transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+  }
+  .render-indicator::before {
+    content: "";
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    background: var(--st-semantic-text-muted, #94a3b8);
+  }
+  .render-indicator.is-webgl::before {
+    background: var(--st-semantic-status-success, #22c55e);
+  }
+  .render-indicator.is-unavailable::before {
+    background: var(--st-semantic-status-warning, #f59e0b);
+  }
+  .render-indicator:hover {
+    box-shadow: 0 3px 12px rgb(15 23 42 / 0.28);
+  }
+  .render-indicator.is-toggled {
+    transform: scale(1.06);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--st-semantic-status-success, #22c55e) 45%, transparent);
   }
 
   .canvas-empty {

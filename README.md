@@ -177,6 +177,27 @@ graphify ontology studio --config graphify.yaml --write         # token-gated ap
 
 The same write-guarded core is also exposed over MCP — the default `graphify serve` graph server is read-only, and mutation tools require the explicit `graphify ontology serve --config graphify.yaml --write`.
 
+### Store mirrors (instant server-side group counts)
+
+`graph.json` stays the source of truth, but you can mirror it into a database backend (Postgres/neo4j/…) so the studio reads precomputed, O(#groups) group-by counts and a windowed first-paint slice from the backend instead of recomputing them over every node in the browser. On a real 47k-node graph the server group-counts are ~600x faster than a client recompute.
+
+```bash
+# Push the graph to the configured backend in REPLACE mode (rebuilds the
+# group-by aggregate + windowed positions — the source of the instant counts).
+GRAPHIFY_STORE=postgres GRAPHIFY_POSTGRES_URL=postgres://user:pass@host/db \
+  graphify store push --config graphify.yaml          # or: --graph .graphify/graph.json
+graphify store status --store postgres                # capabilities + latest snapshot
+
+# Serve the studio with the store wired in: GET /api/ontology/groups is then
+# answered from the backend aggregate. The store is picked up from --store, then
+# GRAPHIFY_STORE, then storage.mirrors[0] in the config.
+GRAPHIFY_STORE=postgres GRAPHIFY_POSTGRES_URL=postgres://user:pass@host/db \
+  graphify ontology studio --config graphify.yaml
+graphify ontology studio --config graphify.yaml --store postgres
+```
+
+The store comes from `--store`, the `GRAPHIFY_STORE` / `GRAPHIFY_POSTGRES_URL` environment variables, or a `storage.mirrors[]` entry in the project config. `store push` defaults to `--mode replace` because the group-by aggregate and windowed positions are only valid against a committed full snapshot (a `--mode merge` upsert leaves them untouched). With no store configured the studio is unchanged: the route 404s and the SPA falls back to its in-memory group-by.
+
 ## Multimodal ingestion
 
 The same semantic pass handles non-code inputs:
@@ -275,7 +296,7 @@ Transcription uses the published `faster-whisper-ts` runtime (no Python). Defaul
 
 ### Optional provider variables
 
-For CI/headless text corpora, semantic extraction can be delegated to a direct provider with `graphify extract --backend anthropic|openai|gemini|mistral|cohere|ollama` (via the Vercel AI SDK). `OLLAMA_BASE_URL` overrides the local Ollama URL. Google Workspace export (`.gdoc`, `.gsheet`, `.gslides`) is enabled with `GRAPHIFY_GOOGLE_WORKSPACE=1` and the relevant `GOOGLE_OAUTH_*` credentials. API keys are read only from environment variables and are never written to config, `.graphify/`, reports, or logs.
+For CI/headless text corpora, semantic extraction can be delegated to a direct provider with `graphify extract --backend anthropic|openai|gemini|mistral|cohere|ollama` (via the Vercel AI SDK). Provider base URLs can be overridden with `ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL`, `GEMINI_BASE_URL` / `GOOGLE_GENERATIVE_AI_BASE_URL`, `MISTRAL_BASE_URL`, `COHERE_BASE_URL`, and `OLLAMA_BASE_URL` (local Ollama URL). Google Workspace export (`.gdoc`, `.gsheet`, `.gslides`) is enabled with `GRAPHIFY_GOOGLE_WORKSPACE=1` and the relevant `GOOGLE_OAUTH_*` credentials. API keys are read only from environment variables and are never written to config, `.graphify/`, reports, or logs.
 
 ### Privacy
 

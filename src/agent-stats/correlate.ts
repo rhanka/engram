@@ -30,8 +30,19 @@ import type { CorrelationLink, SessionFact } from "./types.js";
 
 export interface GitCommitMeta {
   sha: string; // full or abbreviated
+  /** Parent commit shas, in git-log order. Present when read for graph skeletons. */
+  parentShas?: string[];
+  /** Branch/ref name when the commit was reached from a branch-specific query. */
   branch?: string;
   subject?: string;
+  /**
+   * Committer date (`git log %cI`) as epoch-MILLISECONDS, when known. T2: the
+   * ground-truth point-in-time for the commit, stamped onto Commit nodes as the
+   * shared-scene-contract `t` (see project-graph.ts). COMMITTER-date — not
+   * author-date — because rebase / cherry-pick rewrite the committer-date to
+   * when the commit actually landed, which is what a timeline should show.
+   */
+  committedAtMs?: number;
 }
 
 /**

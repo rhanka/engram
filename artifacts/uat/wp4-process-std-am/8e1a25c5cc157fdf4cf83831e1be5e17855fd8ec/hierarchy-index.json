@@ -1,0 +1,52 @@
+{
+  "schema": "graphify_ontology_hierarchies_v1",
+  "root_ids": [
+    "AM01",
+    "AM03",
+    "AM06",
+    "AM08",
+    "MISSING_PARENT"
+  ],
+  "depth": 4,
+  "ancestor_paths": {
+    "AM01": [],
+    "AM0101": [
+      "AM01"
+    ],
+    "AM0104": [
+      "AM01"
+    ],
+    "AM0104.01": [
+      "AM01",
+      "AM0104"
+    ],
+    "AM0104.01.10": [
+      "AM01",
+      "AM0104",
+      "AM0104.01"
+    ],
+    "AM0104.01.10.02": [
+      "AM01",
+      "AM0104",
+      "AM0104.01",
+      "AM0104.01.10"
+    ],
+    "AM03": [],
+    "AM0301": [
+      "AM03"
+    ],
+    "AM06": [],
+    "AM0601": [
+      "AM06"
+    ],
+    "AM08": [],
+    "AM0801": [
+      "AM08"
+    ],
+    "MISSING_PARENT": [],
+    "ORPHAN01": [
+      "MISSING_PARENT"
+    ]
+  },
+  "cycles": []
+}

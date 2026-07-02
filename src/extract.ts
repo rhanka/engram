@@ -1741,6 +1741,42 @@ async function _extractGeneric(
         }
       }
 
+      // Ruby-specific: `class Dog < Animal` puts the base class in the
+      // `superclass` field (a `<` token followed by a `constant` or a
+      // `scope_resolution`). There was no Ruby branch, so every Ruby inherits
+      // edge was silently dropped. Port of upstream safishamsi a19b9e9.
+      if (config.tsModule === "tree_sitter_ruby") {
+        const sup = node.childForFieldName("superclass");
+        if (sup) {
+          let base = "";
+          for (const sub of sup.children) {
+            if (sub.type === "constant") {
+              base = _readText(sub, source);
+              break;
+            }
+            if (sub.type === "scope_resolution") {
+              const consts = sub.children.filter((c) => c.type === "constant");
+              if (consts.length > 0) base = _readText(consts[consts.length - 1]!, source);
+              break;
+            }
+          }
+          if (base) {
+            let baseNid = _makeId(stem, base);
+            if (!seenIds.has(baseNid)) {
+              baseNid = _makeId(base);
+              if (!seenIds.has(baseNid)) {
+                nodes.push({
+                  id: baseNid, label: base, file_type: "code",
+                  source_file: "", source_location: "",
+                });
+                seenIds.add(baseNid);
+              }
+            }
+            addEdge(classNid, baseNid, "inherits", line);
+          }
+        }
+      }
+
       // Java-specific: superclass / interface inheritance and implementation.
       if (config.tsModule === "tree_sitter_java") {
         const emitJavaParent = (baseName: string, relation: string): void => {
@@ -3939,6 +3975,22 @@ export async function extractPowershell(filePath: string, rootDir?: string): Pro
   const fileNid = _makeId(stem);
   addNode(fileNid, basename(filePath), 1);
 
+  // Resolve a bare type name to a node id: prefer an in-file definition
+  // (stem-qualified), otherwise emit a SOURCELESS stub so the corpus-level
+  // rewire can collapse it onto the real definition. Mirrors upstream's
+  // `ensure_named_node`; addNode is idempotent so this is safe to call
+  // before or after the referenced type is walked.
+  function ensureNamedNode(name: string, line: number): string {
+    const qualified = _makeId(stem, name);
+    if (seenIds.has(qualified)) return qualified;
+    const global = _makeId(name);
+    if (!seenIds.has(global)) {
+      seenIds.add(global);
+      nodes.push({ id: global, label: name, file_type: "code", source_file: "", source_location: "" });
+    }
+    return global;
+  }
+
   const _PS_SKIP = new Set([
     "using", "return", "if", "else", "elseif", "foreach", "for",
     "while", "do", "switch", "try", "catch", "finally", "throw",
@@ -3982,6 +4034,24 @@ export async function extractPowershell(filePath: string, rootDir?: string): Pro
         const classNid = _makeId(stem, className);
         addNode(classNid, className, line);
         addEdge(fileNid, classNid, "contains", line);
+        // Base type(s) after ':'. The handler previously read only the class
+        // name and dropped every `class Dog : Animal` inheritance edge.
+        // PowerShell has no syntactic base-vs-interface split, so (matching the
+        // C# convention) the first base is emitted as `inherits` and the rest
+        // as `implements`. Port of upstream safishamsi a129ff2.
+        let colonSeen = false;
+        let baseIndex = 0;
+        for (const child of node.children) {
+          if (child.type === ":") {
+            colonSeen = true;
+          } else if (colonSeen && child.type === "simple_name") {
+            const baseNid = ensureNamedNode(_readText(child, source), line);
+            if (baseNid !== classNid) {
+              addEdge(classNid, baseNid, baseIndex === 0 ? "inherits" : "implements", line);
+            }
+            baseIndex++;
+          }
+        }
         for (const child of node.children) {
           walk(child, classNid);
         }
@@ -4134,6 +4204,21 @@ export async function extractObjc(filePath: string, rootDir?: string): Promise<E
     return source.slice(node.startIndex, node.endIndex);
   }
 
+  // Resolve a bare type/protocol name to a node id: prefer an in-file
+  // definition (stem-qualified), otherwise emit a SOURCELESS stub so the
+  // corpus-level rewire can collapse it onto the real definition. Mirrors
+  // upstream's `ensure_named_node`.
+  function ensureNamedNode(name: string): string {
+    const qualified = _makeId(stem, name);
+    if (seenIds.has(qualified)) return qualified;
+    const global = _makeId(name);
+    if (!seenIds.has(global)) {
+      seenIds.add(global);
+      nodes.push({ id: global, label: name, file_type: "code", source_file: "", source_location: "" });
+    }
+    return global;
+  }
+
   function walk(node: SyntaxNode, parentNid: string | null = null): void {
     const t = node.type;
     const line = node.startPosition.row + 1;
@@ -4231,6 +4316,22 @@ export async function extractObjc(filePath: string, rootDir?: string): Promise<E
         const protoNid = _makeId(stem, name);
         addNode(protoNid, `<${name}>`, line);
         addEdge(fileNid, protoNid, "contains", line);
+        // Protocol-to-protocol adoption: `@protocol Foo <Bar>` exposes the
+        // adopted protocols in a `protocol_reference_list`. Emit an `implements`
+        // edge for each so protocol hierarchies aren't dropped. Port of
+        // upstream safishamsi cd3a376.
+        for (const child of node.children) {
+          if (child.type === "protocol_reference_list") {
+            for (const sub of child.children) {
+              if (sub.type === "identifier") {
+                const baseNid = ensureNamedNode(_read(sub));
+                if (baseNid !== protoNid) {
+                  addEdge(protoNid, baseNid, "implements", line);
+                }
+              }
+            }
+          }
+        }
         for (const child of node.children) walk(child, protoNid);
       }
       return;

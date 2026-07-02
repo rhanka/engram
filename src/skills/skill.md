@@ -493,8 +493,8 @@ graphify update .
 >
 > 1. `graphify update .` (emits `.graphify/description-instructions/` + `.graphify/label-instructions/`).
 > 2. Fill **both** the `batch-NNN.json` description answers **and** `communities.json` labels.
-> 3. `graphify update .` again to ingest — OR, on an already-built/curated graph, `graphify describe .` (descriptions) + `graphify label .` (labels) non-destructively.
-> 4. **Then** generate the static Ontology Studio (Step 6). Confirm descriptions landed: a 0%-description studio means Step 5 was skipped — go back and run `describe`.
+> 3. `graphify update .` again to ingest — OR, on an already-built/curated graph, `graphify describe .` (descriptions) + `graphify label .` (labels) + `graphify cite .` (grounded `node.citations[]`) non-destructively.
+> 4. **Then** generate the static Ontology Studio (Step 6). Confirm descriptions landed: a 0%-description studio means Step 5 was skipped — go back and run `describe` (and `cite` for non-null citations).
 
 **Language attention (per source).** Descriptions and community names are written in the **language of each node's SOURCE document**, detected per node from its label + citations (and the community's sampled node names). A 100%-French corpus yields French descriptions and French community names; a mixed corpus gets each node's description in its own source language — never a random FR/EN mix left to the backend's whim. The directive is injected into **every** prompt: the assistant `batch-NNN.md` files (look for the `Write every description in <Language>` line, or per-node `lang=` markers on a mixed batch) AND the direct API path. When you (the host assistant) fill an instruction file, **honor that language directive** — answer in the language the instruction states, per node.
 
@@ -523,6 +523,21 @@ graphify describe . --description-mode direct --description-backend anthropic
 ```
 
 `graphify describe` loads the existing `graph.json`, runs the same description pipeline as `graphify update --description`, and writes back — without touching node IDs, edges, communities, or any other node attributes. Only `description` is added/updated. Use it when `graphify update` would re-extract and destroy a curated graph.
+
+**Ground citations into the graph — `graphify cite` (alias `ground-citations`).** Symmetric to `describe`/`label`, and like them **opt-in** (NOT auto-run in the default pipeline): it loads the existing `graph.json`, scans the corpus, and grounds per-entity `node.citations[]` entries `{quote, source_file, source_location}` — populating **new** verbatim citations, not just projecting the ones already present. **Heuristic mode is the no-key DEFAULT**; `--mode heuristic|assistant|api` (assistant/api are opt-in recall boosters gated by the SAME verbatim check). It is **anti-hallucination by construction**: every emitted `quote` is a verified verbatim substring of the source text — a quote that cannot be relocated in the source is dropped, never invented. It UNIONS with existing citations (never clobbers) and re-runs the shipped aggregation (count + inline top-K + `.graphify/ontology/citations.json`). **Run it BEFORE the studio/wiki export** so entity panels ship non-null citations.
+
+```bash
+# No-key heuristic grounding (default): verbatim citations into node.citations[]
+graphify cite .
+# Only fill nodes that have no citations yet (additive second pass):
+graphify cite . --only-missing
+# Restrict to node types and cap per node:
+graphify cite . --types person,concept,reference --top-k 6
+# Report coverage without writing graph.json / citations.json:
+graphify cite . --dry-run
+# Opt-in LLM recall boost (still verbatim-gated):
+graphify cite . --mode assistant
+```
 
 **Citation density per corpus type (no key needed).** `describe`/`update`/`extract`/`watch` auto-tune two citation knobs from the corpus type they read out of `.graphify/.graphify_detect.json` (no extra step): the **describe-prompt cap** (citation snippets grounding each description) and the **inline top-K** (citations kept per node in `graph.json`; the full per-entity tail always lands in `.graphify/ontology/citations.json`). Resolution precedence is **CLI flag > corpus-type default > global default (cap 10, K 8)**. Corpus-type defaults:
 

@@ -22,6 +22,7 @@ Use the installed TypeScript runtime only. Do not fall back to Python.
 - `/graphify explain "Node"` means explain one node and its neighbors
 - `/graphify add <url>` means ingest the URL into `./raw` and then update the graph
 - `/graphify wiki describe` means generate opt-in wiki description sidecars before rendering with `--descriptions`
+- `/graphify cite` (alias `ground-citations`) means ground per-entity `node.citations[]` (`{quote, source_file, source_location}`) by scanning the corpus — heuristic + no-key by default (`--mode heuristic|assistant|api`), anti-hallucination (every quote a verified verbatim substring of the source), opt-in and symmetric to `describe`/`label`; run it BEFORE the studio/wiki export for non-null citations
 - `/graphify migrate-state` means run `graphify migrate-state --dry-run` first, then ask before applying migration or git mv advice
 
 Always prefer graphify outputs and graphify runtime commands over ad-hoc file traversal:

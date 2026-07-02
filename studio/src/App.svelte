@@ -22,6 +22,7 @@
     fetchClassHierarchies,
     fetchEntity,
     fetchGraph,
+    fetchGroupCounts,
     fetchModelsManifest,
     fetchScene,
     fetchSearchIndex,
@@ -32,6 +33,8 @@
   import {
     buildScene,
     applyWeakFilter,
+    applyTimeFilter,
+    sceneTimeRange,
     attachForceLayout,
     resolveSelectedIds,
     communityStats,
@@ -65,6 +68,7 @@
     setActiveView,
     setQuery,
     setShowWeakLinks,
+    setTimeCursor,
     toggleGroupOntology,
     toggleGroupCommunity,
     toggleGroupType,
@@ -102,6 +106,12 @@
   // which case the panel shows a clear "no index" state. $state.raw — only ever
   // reassigned in bulk. Per-model, so dropped on a model switch.
   let searchIndex = $state.raw(null);
+  // Storage LOT 2 (prefer-server group counts): the precomputed `node_type`
+  // group-by counts from a configured GraphStore mirror, fetched once per model
+  // via `GET /api/ontology/groups`. null when no store is configured (the
+  // default flat-JSON studio) — the Types rail then recomputes counts in-memory
+  // exactly as before. $state.raw: reassigned in bulk, never mutated in place.
+  let serverTypeCounts = $state.raw(null);
   // EVOL 2.b/2.d: the class-injection granularity is "all" — EVERY class (not
   // just leaves) is injected so that intermediate super-classes exist as collapse
   // HANDLES. `computeGroupedGraph` (lib/groupBy.js) owns the inject granularity;
@@ -231,7 +241,8 @@
   // section's Ungroup all (spec §4/§5).
   const ontologyGrouped = $derived(hasOntologyGrouping(viewerState));
   const communityGrouped = $derived(hasCommunityGrouping(viewerState));
-  const scene = $derived(
+  // BASE scene (pre time-scrub) — the existing weak-link / group-by path.
+  const baseScene = $derived(
     hasAnyGroup
       ? // B2/A4: the grouped scene is rebuilt from graph.json (no positions) —
         // attach a force layout so it doesn't render as a ring.
@@ -243,6 +254,14 @@
           applyWeakFilter(sceneData, viewerState.options.showWeakLinks)
         : buildScene(graph, { showWeakLinks: viewerState.options.showWeakLinks }),
   );
+  // Temporal bounds of the BASE scene (#234 `t`); null on a non-temporal scene →
+  // the time-scrub control hides. Read from the base so the bounds stay STABLE
+  // while the cursor moves (the filtered scene must not shrink the range).
+  const timeRange = $derived(sceneTimeRange(baseScene));
+  // Time-scrub: filter the base scene to elements with `t <= cursor`. With the
+  // default cursor (null = OFF) this returns the base scene UNCHANGED, so the
+  // default view is byte-identical to before.
+  const scene = $derived(applyTimeFilter(baseScene, viewerState.options.timeCursor));
   // BUG A: facet / selection source. The left rail (Types / Communities /
   // Entities), the selection panel, and the selected-id resolution all read a
   // graph-like. Normally that is the hydrated raw `graph` (richest source). But
@@ -316,6 +335,9 @@
   }
   function handleToggleWeak(value) {
     viewerState = setShowWeakLinks(viewerState, value);
+  }
+  function handleSetTimeCursor(value) {
+    viewerState = setTimeCursor(viewerState, value);
   }
   // B2 (per-item): group-by callbacks. Every groupable rail item owns a checkbox
   // that GROUPS (collapses) the item when checked. Ontology classes and
@@ -459,6 +481,10 @@
     // the class taxonomy, so fetch class-hierarchies eagerly (not just on the
     // class-display toggle). Cached; a no-op when the artifact is absent.
     await ensureClassHierarchies();
+    // Storage LOT 2: prefer the store's precomputed `node_type` counts for the
+    // Types rail when a mirror is configured. Resolves null off the default
+    // flat-JSON studio, in which case the rail keeps computing counts in-memory.
+    serverTypeCounts = await fetchGroupCounts("node_type");
   }
 
   /** Flip the active model and re-render the SAME studio in place. */
@@ -488,6 +514,9 @@
     // the new model's base on its next open.
     searchIndex = null;
     searchIndexFetched = false;
+    // The store group-counts are per-model too; drop them so the rail recomputes
+    // in-memory until loadActiveModel re-fetches for the new model.
+    serverTypeCounts = null;
     viewerState = clearSelection(viewerState);
     try {
       await loadActiveModel();
@@ -608,6 +637,7 @@
           <LeftRail
             graph={facetGraph}
             {classHierarchies}
+            {serverTypeCounts}
             query={viewerState.query}
             selection={viewerState.selection}
             showWeakLinks={viewerState.options.showWeakLinks}
@@ -625,6 +655,9 @@
             onToggleEntity={handleToggleEntity}
             onSetQuery={handleSetQuery}
             onToggleWeak={handleToggleWeak}
+            {timeRange}
+            timeCursor={viewerState.options.timeCursor}
+            onSetTimeCursor={handleSetTimeCursor}
             onToggleGroupOntology={handleToggleGroupOntology}
             onToggleGroupCommunity={handleToggleGroupCommunity}
             onToggleGroupType={handleToggleGroupType}

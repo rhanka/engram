@@ -334,3 +334,146 @@ export const ALL_FIXTURES = {
  */
 export const DPR_MATRIX = [1, 1.25, 2, 3];
 export const ZOOM_MATRIX = [1, 2]; // at least 2 zooms (plan: >=2)
+
+// ---------------------------------------------------------------------------
+// B1 Phase 1 — per-shape-family golden fixtures (N1-N6). One labelled colour
+// per family so a geometry probe at the node centre lands on a known colour.
+// The box (shape 5) is NOT a Phase-1 GL shape (Canvas2D draws it) so it is not
+// in this set. Edges omitted: Phase 1 gates SHAPES only.
+// ---------------------------------------------------------------------------
+
+/** Each Phase-1 shape family: a single centred node so a centre probe is exact. */
+export const SHAPE_FAMILIES = [
+  { name: "circle", shape: "circle", size: 16, color: "#d62728", rgb: [214, 39, 40] },
+  { name: "diamond", shape: "diamond", size: 16, color: "#1f77b4", rgb: [31, 119, 180] },
+  { name: "star", shape: "star", size: 18, color: "#ff7f0e", rgb: [255, 127, 14] },
+  { name: "hexagon", shape: "hexagon", size: 16, color: "#2ca02c", rgb: [44, 160, 44] },
+  { name: "square", shape: "square", size: 16, color: "#9467bd", rgb: [148, 103, 189] },
+  { name: "triangle", shape: "triangle", size: 16, color: "#8c564b", rgb: [140, 86, 75] },
+];
+
+/** A single-node fixture for one shape family, centred at world origin. */
+export function shapeFixture(family) {
+  return {
+    nodes: [{ id: family.name, x: 0, y: 0, size: family.size, color: family.color, shape: family.shape }],
+    edges: [],
+  };
+}
+
+/** GL-phase zoom matrix (>= 2 zooms per the plan). */
+export const SHAPE_ZOOM_MATRIX = [1, 2.5];
+
+// ---------------------------------------------------------------------------
+// B1 Phase 2 — per-edge-case GL golden fixtures (E1-E6/E12-E14). Each fixture
+// is ONE isolated edge (two circle endpoints) so a capture's drawn content is
+// unambiguously that edge + its endpoints, and a presence/colour probe is
+// exact. Endpoints are circles (NOT boxes) so the circular E5 clip applies; the
+// box-rect clip is exercised by a dedicated box-endpoint fixture. The edge
+// colour differs from every endpoint colour so an edge-colour probe never
+// collides with a node colour. Coordinates are WORLD; the camera maps them.
+// ---------------------------------------------------------------------------
+
+/** A circle endpoint sized so the edge clearly clips to its border. */
+const EDGE_EP = (id, x, y, size = 8) => ({ id, x, y, size, color: "#cbd5e1", shape: "circle" });
+
+/** A single straight thick solid edge (E1 thick, E6 arrow, E14 round caps). */
+export const EDGE_THICK_FIXTURE = {
+  nodes: [EDGE_EP("t0", -120, 0), EDGE_EP("t1", 120, 0)],
+  edges: [{ source: "t0", target: "t1", width: 6, color: "#1d4ed8", dash: "solid" }],
+};
+/** The dash families (E3): one fixture each so a presence probe is per-family. */
+export const EDGE_DASHED_FIXTURE = {
+  nodes: [EDGE_EP("d0", -120, 0), EDGE_EP("d1", 120, 0)],
+  edges: [{ source: "d0", target: "d1", width: 3, color: "#dc2626", dash: "dashed" }],
+};
+export const EDGE_DOTTED_FIXTURE = {
+  nodes: [EDGE_EP("o0", -120, 0), EDGE_EP("o1", 120, 0)],
+  edges: [{ source: "o0", target: "o1", width: 3, color: "#16a34a", dash: "dotted" }],
+};
+export const EDGE_LONGDASH_FIXTURE = {
+  nodes: [EDGE_EP("l0", -120, 0), EDGE_EP("l1", 120, 0)],
+  edges: [{ source: "l0", target: "l1", width: 3, color: "#9333ea", dash: "long-dash" }],
+};
+/** A curved edge (E4 off-chord) — the curve bows away from the chord. */
+export const EDGE_CURVED_FIXTURE = {
+  nodes: [EDGE_EP("u0", -120, 0), EDGE_EP("u1", 120, 0)],
+  edges: [{ source: "u0", target: "u1", width: 4, color: "#0891b2", curvature: 0.5 }],
+};
+/** Box endpoints — the E5 RECTANGLE clip (vs the circular clip above). */
+export const EDGE_BOX_CLIP_FIXTURE = {
+  nodes: [
+    { id: "bx0", x: -120, y: 0, size: 11, color: "#2563eb", shape: "box", label: "Holmes" },
+    { id: "bx1", x: 120, y: 0, size: 11, color: "#2563eb", shape: "box", label: "Watson" },
+  ],
+  edges: [{ source: "bx0", target: "bx1", width: 4, color: "#1d4ed8" }],
+};
+/** Overlapping endpoints (E13): the edge draws a raw segment and NO arrow. */
+export const EDGE_OVERLAP_FIXTURE = {
+  nodes: [EDGE_EP("v0", -6, 0, 30), EDGE_EP("v1", 6, 0, 30)],
+  edges: [{ source: "v0", target: "v1", width: 3, color: "#dc2626" }],
+};
+/** The R4 combo: curved + thick + dashed + arrow + round-cap all at once. */
+export const EDGE_COMBO_FIXTURE = {
+  nodes: [EDGE_EP("k0", -120, -30), EDGE_EP("k1", 120, 30)],
+  edges: [{ source: "k0", target: "k1", width: 5, color: "#7c3aed", dash: "dashed", curvature: 0.45 }],
+};
+
+/**
+ * Edge GL fixtures, by name, for the per-edge pixel-diff sweep. Circle/box
+ * endpoints only — box-clip's PIXEL parity is deferred to Phase 4 (the WebGL
+ * canary does NOT draw the box GLYPH yet, so a box-endpoint capture would only
+ * show the edge, not the box, and an extent diff is meaningless); the
+ * box-rect-clip GEOMETRY is pinned by the layer-A `E5 box-rect clip` test.
+ */
+export const EDGE_GL_FIXTURES = [
+  { name: "thick", fixture: EDGE_THICK_FIXTURE, rgb: [29, 78, 216], arrow: true, dashed: false },
+  { name: "dashed", fixture: EDGE_DASHED_FIXTURE, rgb: [220, 38, 38], arrow: true, dashed: true },
+  { name: "dotted", fixture: EDGE_DOTTED_FIXTURE, rgb: [22, 163, 74], arrow: true, dashed: true },
+  { name: "long-dash", fixture: EDGE_LONGDASH_FIXTURE, rgb: [147, 51, 234], arrow: true, dashed: true },
+  { name: "curved", fixture: EDGE_CURVED_FIXTURE, rgb: [8, 145, 178], arrow: true, dashed: false },
+  { name: "overlap", fixture: EDGE_OVERLAP_FIXTURE, rgb: [220, 38, 38], arrow: false, dashed: false },
+  { name: "combo", fixture: EDGE_COMBO_FIXTURE, rgb: [124, 58, 237], arrow: true, dashed: true },
+];
+
+// ---------------------------------------------------------------------------
+// B1 Phase 3 — per-box GL golden fixtures (N7 labelled / N9 empty / #199
+// pixel-fit, L1 in-box text). Each is ONE or two box nodes so a capture's drawn
+// content is unambiguously the box(es) + text. The border colour differs from
+// the dark text colour (#0f172a) so a text-presence probe never collides with
+// the border. Coordinates are WORLD; the camera maps them.
+// ---------------------------------------------------------------------------
+
+/** Box-over-box occlusion (R7): a later box must occlude an earlier box's rect
+ *  AND text. Two overlapping labelled boxes; the second (drawn later) sits on
+ *  top. Both backends must interleave occlusion identically (shared depth). */
+export const BOX_OVERLAP_FIXTURE = {
+  nodes: [
+    { id: "behind", x: -14, y: 0, size: 11, color: "#2563eb", shape: "box", label: "Behind" },
+    { id: "front", x: 14, y: 0, size: 11, color: "#dc2626", shape: "box", label: "Front" },
+  ],
+  edges: [],
+};
+
+/** Box-over-circle occlusion (R7): a box drawn after a circle must occlude it. */
+export const BOX_OVER_CIRCLE_FIXTURE = {
+  nodes: [
+    { id: "disc", x: 0, y: 0, size: 24, color: "#16a34a", shape: "circle" },
+    { id: "card", x: 0, y: 0, size: 11, color: "#2563eb", shape: "box", label: "Holmes" },
+  ],
+  edges: [],
+};
+
+/**
+ * Box GL fixtures, by name, for the per-box pixel-diff sweep. `text` flags
+ * whether the box carries a label (a text-presence probe applies); `rgb` is the
+ * node-colour border probe target.
+ */
+export const BOX_GL_FIXTURES = [
+  { name: "labelled", fixture: BOX_LABELLED_FIXTURE, rgb: [239, 68, 68], text: true },
+  { name: "empty", fixture: BOX_EMPTY_FIXTURE, rgb: [148, 103, 189], text: false },
+  { name: "focal", fixture: BOX_FOCAL_FIXTURE, rgb: [37, 99, 235], text: true },
+  { name: "long", fixture: BOX_LONG_LABEL_FIXTURE, rgb: [14, 165, 233], text: true },
+  { name: "short", fixture: BOX_SHORT_LABEL_FIXTURE, rgb: [14, 165, 233], text: true },
+  { name: "overlap", fixture: BOX_OVERLAP_FIXTURE, rgb: [220, 38, 38], text: true },
+  { name: "overCircle", fixture: BOX_OVER_CIRCLE_FIXTURE, rgb: [37, 99, 235], text: true },
+];

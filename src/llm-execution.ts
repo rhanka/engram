@@ -216,6 +216,31 @@ function ensureProviderCredential(provider: DirectLlmProvider): void {
   }
 }
 
+export function directProviderBaseUrlEnv(provider: DirectLlmProvider): string[] {
+  switch (provider) {
+    case "anthropic":
+      return ["ANTHROPIC_BASE_URL"];
+    case "openai":
+      return ["OPENAI_BASE_URL"];
+    case "gemini":
+      return ["GEMINI_BASE_URL", "GOOGLE_GENERATIVE_AI_BASE_URL"];
+    case "mistral":
+      return ["MISTRAL_BASE_URL"];
+    case "cohere":
+      return ["COHERE_BASE_URL"];
+    case "ollama":
+      return ["OLLAMA_BASE_URL"];
+  }
+}
+
+function resolveProviderBaseUrl(provider: DirectLlmProvider): string | undefined {
+  for (const envName of directProviderBaseUrlEnv(provider)) {
+    const value = process.env[envName]?.trim();
+    if (value) return value;
+  }
+  return undefined;
+}
+
 const MAX_DIRECT_LLM_JSON_BYTES = 10 * 1024 * 1024;
 
 export function parseJsonFromLlmText(text: string | null | undefined): unknown {
@@ -251,24 +276,29 @@ async function resolveDirectModel(provider: DirectLlmProvider, model: string): P
   ensureProviderCredential(provider);
   switch (provider) {
     case "anthropic": {
-      const { anthropic } = await import("@ai-sdk/anthropic");
-      return anthropic(model);
+      const { anthropic, createAnthropic } = await import("@ai-sdk/anthropic");
+      const baseURL = resolveProviderBaseUrl(provider);
+      return baseURL ? createAnthropic({ baseURL })(model) : anthropic(model);
     }
     case "openai": {
-      const { openai } = await import("@ai-sdk/openai");
-      return openai(model);
+      const { openai, createOpenAI } = await import("@ai-sdk/openai");
+      const baseURL = resolveProviderBaseUrl(provider);
+      return baseURL ? createOpenAI({ baseURL })(model) : openai(model);
     }
     case "gemini": {
-      const { google } = await import("@ai-sdk/google");
-      return google(model);
+      const { google, createGoogleGenerativeAI } = await import("@ai-sdk/google");
+      const baseURL = resolveProviderBaseUrl(provider);
+      return baseURL ? createGoogleGenerativeAI({ baseURL })(model) : google(model);
     }
     case "mistral": {
-      const { mistral } = await import("@ai-sdk/mistral");
-      return mistral(model);
+      const { mistral, createMistral } = await import("@ai-sdk/mistral");
+      const baseURL = resolveProviderBaseUrl(provider);
+      return baseURL ? createMistral({ baseURL })(model) : mistral(model);
     }
     case "cohere": {
-      const { cohere } = await import("@ai-sdk/cohere");
-      return cohere(model);
+      const { cohere, createCohere } = await import("@ai-sdk/cohere");
+      const baseURL = resolveProviderBaseUrl(provider);
+      return baseURL ? createCohere({ baseURL })(model) : cohere(model);
     }
     case "ollama": {
       const { createOllama } = await import("ollama-ai-provider");

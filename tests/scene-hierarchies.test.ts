@@ -102,10 +102,13 @@ describe("buildSceneHierarchySidecar — graphify_scene_hierarchies_v1", () => {
       arc("h", "a", "c", "proposed", { confidence: 0.7, evidence_refs: ["doc#1"] }),
       arc("h", "b", "c", "inferred", { confidence: 0.4 }),
       arc("h", "a", "b", "candidate"),
+      arc("h", "c", "d", "guessed"),
+      arc("h", "d", "e", "rejected"),
+      arc("h", "e", "f", "superseded"),
     ];
     const h = buildSceneHierarchySidecar({
       arcs,
-      sceneNodeIds: ids("r", "a", "b", "c"),
+      sceneNodeIds: ids("r", "a", "b", "c", "d", "e", "f"),
     }).hierarchies["h"]!;
 
     // Tree only contains the lane-1 arcs.
@@ -119,6 +122,9 @@ describe("buildSceneHierarchySidecar — graphify_scene_hierarchies_v1", () => {
       { parent_id: "a", child_id: "b", status: "candidate", confidence: 1.0 },
       { parent_id: "a", child_id: "c", status: "proposed", confidence: 0.7, evidence_refs: ["doc#1"] },
       { parent_id: "b", child_id: "c", status: "inferred", confidence: 0.4 },
+      { parent_id: "c", child_id: "d", status: "guessed", confidence: 1.0 },
+      { parent_id: "d", child_id: "e", status: "rejected", confidence: 1.0 },
+      { parent_id: "e", child_id: "f", status: "superseded", confidence: 1.0 },
     ]);
     expect(h.conflicts).toEqual([]);
     expect(h.dangling_arc_count).toBe(0);

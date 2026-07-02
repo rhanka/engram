@@ -18,6 +18,33 @@
  * normalised by maxDegree, computeDegrees, nodeGroup, nodeLabel, nodeType,
  * communityStats for the live community count). Keep them in lockstep with the
  * studio source until ÉTAPE 2 (client wiring) collapses the duplication.
+ *
+ * SHARED SCENE CONTRACT — temporal + layout + snapshot (additive, opt-in).
+ * ------------------------------------------------------------------------
+ * Prerequisite contract that unblocks the display-layout, DB-windowing and
+ * time-oriented agent-stats streams. It is a PURE PASS-THROUGH: these fields
+ * are CARRIED (allowlist + scene-level copy) but NOT consumed here — no
+ * rendering, layout or query depends on them yet.
+ *
+ *   TEMPORAL (per node AND per edge, both optional):
+ *     • `t`     — interval START, epoch milliseconds.
+ *     • `t_end` — interval END,   epoch milliseconds.
+ *     Semantics: a half-open span [t, t_end); membership in a time window is
+ *     SPAN-OVERLAP (an element is "in window [w0, w1)" iff t < w1 && t_end > w0).
+ *     A point-in-time element sets `t_end === t`. The agreed source-of-truth
+ *     representation is bigint epoch-ms; the JSON scene carries the value
+ *     verbatim as a `number` (JSON has no bigint) — no coercion happens here.
+ *
+ *   SCENE-LEVEL META (optional, top of the scene object):
+ *     • `layout_id`   — identity of the precomputed layout these x/y/z came from.
+ *     • `layout_dims` — 2 | 3, the dimensionality of that layout.
+ *     • `snapshot_id` — identity of the graph snapshot this scene was built from
+ *                       (DB-windowing / cache key).
+ *
+ * BACK-COMPAT INVARIANT: every field above is OPTIONAL and only emitted WHEN
+ * PRESENT on the input node / edge / graph. A graph WITHOUT these fields
+ * produces a BYTE-IDENTICAL scene (no empty keys), so existing golden output
+ * and the SPA parity (graphAdapter.js buildScene) are unaffected.
  */
 
 // ---------------------------------------------------------------------------
@@ -35,6 +62,10 @@ export interface StudioSceneGraphNode {
   file_type?: unknown;
   community?: unknown;
   community_name?: unknown;
+  /** Shared scene contract — interval start, epoch-ms (see module header). */
+  t?: number;
+  /** Shared scene contract — interval end, epoch-ms (see module header). */
+  t_end?: number;
   [key: string]: unknown;
 }
 
@@ -43,6 +74,10 @@ export interface StudioSceneGraphEdge {
   target: string;
   relation?: unknown;
   confidence?: unknown;
+  /** Shared scene contract — interval start, epoch-ms (see module header). */
+  t?: number;
+  /** Shared scene contract — interval end, epoch-ms (see module header). */
+  t_end?: number;
   [key: string]: unknown;
 }
 
@@ -50,6 +85,12 @@ export interface StudioSceneGraphLike {
   nodes?: StudioSceneGraphNode[];
   edges?: StudioSceneGraphEdge[];
   links?: StudioSceneGraphEdge[];
+  /** Shared scene contract — precomputed layout identity (see module header). */
+  layout_id?: string;
+  /** Shared scene contract — layout dimensionality (2 or 3). */
+  layout_dims?: 2 | 3;
+  /** Shared scene contract — graph snapshot identity (DB-windowing key). */
+  snapshot_id?: string;
 }
 
 export interface BuildStudioSceneOptions {
@@ -90,6 +131,13 @@ export interface StudioSceneNode {
   fx?: number;
   fy?: number;
   fixed?: boolean;
+  /**
+   * Shared scene contract — interval start, epoch-ms. Carried through verbatim
+   * from the input node WHEN PRESENT (omitted otherwise). Not consumed here.
+   */
+  t?: number;
+  /** Shared scene contract — interval end, epoch-ms. See {@link t}. */
+  t_end?: number;
   [key: string]: unknown;
 }
 
@@ -100,6 +148,13 @@ export interface StudioSceneEdge {
   relation_type?: string;
   dash?: string;
   weak?: true;
+  /**
+   * Shared scene contract — interval start, epoch-ms. Carried through verbatim
+   * from the input edge WHEN PRESENT (omitted otherwise). Not consumed here.
+   */
+  t?: number;
+  /** Shared scene contract — interval end, epoch-ms. See {@link t}. */
+  t_end?: number;
   [key: string]: unknown;
 }
 
@@ -121,6 +176,21 @@ export interface StudioScene {
    */
   communityColors: Record<string, string>;
   stats: StudioSceneStats;
+  /**
+   * Shared scene contract (additive, opt-in) — identity of the precomputed
+   * layout these node x/y(/z) coordinates came from. Carried through from the
+   * input graph WHEN PRESENT; omitted otherwise (back-compat byte-identity).
+   * Not consumed here.
+   */
+  layout_id?: string;
+  /** Shared scene contract — layout dimensionality (2 or 3). See {@link layout_id}. */
+  layout_dims?: 2 | 3;
+  /**
+   * Shared scene contract — identity of the graph snapshot this scene was built
+   * from (DB-windowing / cache key). Carried through WHEN PRESENT; omitted
+   * otherwise. Not consumed here.
+   */
+  snapshot_id?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -204,6 +274,12 @@ const NODE_PROFILE_FIELDS = [
   "hierarchy_ids",
   "badges",
   "documents",
+  // Shared scene contract (additive, opt-in): temporal interval [t, t_end),
+  // epoch-ms. copyOwnFields only copies an own, defined value, so a node
+  // WITHOUT these fields yields NO key (byte-identical scene). Pass-through
+  // only — not consumed here. See the module-header SHARED SCENE CONTRACT.
+  "t",
+  "t_end",
 ] as const;
 
 const EDGE_PROFILE_FIELDS = [
@@ -215,6 +291,11 @@ const EDGE_PROFILE_FIELDS = [
   "evidence_refs",
   "hierarchy_id",
   "structural",
+  // Shared scene contract (additive, opt-in): temporal interval [t, t_end),
+  // epoch-ms. Omitted when absent on the input edge (byte-identical scene).
+  // Pass-through only. See the module-header SHARED SCENE CONTRACT.
+  "t",
+  "t_end",
 ] as const;
 
 function nodeLabel(node: StudioSceneGraphNode | undefined): string {
@@ -655,7 +736,7 @@ export function buildStudioScene(
   });
 
   const cstats = communityStats(safeGraph);
-  return {
+  const scene: StudioScene = {
     nodes,
     edges: sceneEdges,
     // BUG B: emitted single source of truth community → colour map (see
@@ -669,4 +750,17 @@ export function buildStudioScene(
       communityCount: cstats.liveCount,
     },
   };
+
+  // Shared scene contract (additive, opt-in) — layout + snapshot meta. Carried
+  // through from the INPUT graph WHEN PRESENT, omitted otherwise so a graph
+  // without these fields serialises BYTE-IDENTICALLY to before (no empty keys).
+  // Pass-through only — nothing here consumes them. See module-header contract.
+  const snapshotId = displayValue(graph?.snapshot_id);
+  if (snapshotId) scene.snapshot_id = snapshotId;
+  const layoutId = displayValue(graph?.layout_id);
+  if (layoutId) scene.layout_id = layoutId;
+  const layoutDims = graph?.layout_dims;
+  if (layoutDims === 2 || layoutDims === 3) scene.layout_dims = layoutDims;
+
+  return scene;
 }

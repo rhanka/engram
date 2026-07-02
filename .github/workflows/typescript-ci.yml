@@ -3,7 +3,7 @@ name: TypeScript CI
 on:
   push:
     branches: ["v1", "v2", "v3", "v3-typescript", "main"]
-    tags: ["v*"]
+    tags: ["v*", "graph-v*"]
   pull_request:
     branches: ["v1", "v2", "v3", "v3-typescript", "main"]
 
@@ -51,6 +51,59 @@ jobs:
           node dist/cli.js --help
           node dist/cli.js --version
           node dist/cli.js install --platform claude || true
+
+  # SwiftShader headless-WebGL2 golden lane: PIXEL-validates the B1 WebGL2
+  # canary renderer (PR #211 and future B1 phases). GitHub runners have no
+  # hardware GL, so we drive ANGLE's SOFTWARE backend (SwiftShader) to get a
+  # real WebGL2 context, then run the golden harness so the Canvas2D-vs-WebGL2
+  # pixel-diff for the shape/node fixtures executes under the harness tolerance.
+  #
+  # GOLDEN_ENABLE_WEBGL=1 swaps `--disable-gpu` for the SwiftShader flags inside
+  # cdp-harness.mjs; GOLDEN_REQUIRE_WEBGL=1 turns a MISSING WebGL2 context into a
+  # HARD FAILURE (never a silent skip / false pass). The webgl:preflight step is
+  # the belt-and-braces gate: it boots Chrome with the same software-GL flags and
+  # exits non-zero unless a genuine WebGL2 context + readPixels is obtained, so a
+  # green run provably means the pixel-diff actually RAN against real software GL.
+  golden-webgl:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      # Chrome for Testing ships the SwiftShader (ANGLE software-GL) backend and
+      # is gated to a known-good version, instead of relying on whatever Chrome
+      # the runner image happens to preinstall. install-dependencies pulls the
+      # Linux GL/X libs SwiftShader needs.
+      - name: Set up Chrome (with SwiftShader software GL)
+        id: setup-chrome
+        uses: browser-actions/setup-chrome@v2
+        with:
+          chrome-version: stable
+          install-dependencies: true
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      # The golden harness imports the @sentropic/graph dist bundle; the
+      # test:golden:webgl script rebuilds that dist (golden:build) before running.
+      - name: Build
+        run: npm run build
+
+      # Run the SwiftShader WebGL2 golden lane. The script: (1) golden:build,
+      # (2) webgl-preflight (HARD-FAILS if no software WebGL2 context), then
+      # (3) the full golden suite under tests/golden/ -- which includes the
+      # Canvas2D-vs-WebGL2 shape/node pixel-diff once the B1 canary (#211) lands.
+      - name: Golden WebGL2 pixel lane (SwiftShader)
+        working-directory: packages/graph
+        env:
+          CHROME_BIN: ${{ steps.setup-chrome.outputs.chrome-path }}
+          GOLDEN_ENABLE_WEBGL: "1"
+          GOLDEN_REQUIRE_WEBGL: "1"
+          GOLDEN_REQUIRE_CHROME: "1"
+        run: npm run test:golden:webgl
 
   direct-llm-uat:
     needs: test
@@ -257,3 +310,56 @@ jobs:
           cd /tmp/post-publish
           npx graphify install --platform claude || true
           echo "Skill install command executed"
+
+  # Publish the @sentropic/graph sub-package on a graph-v<X> tag (decoupled from the
+  # root @sentropic/graphify release cadence). OIDC Trusted Publishing + provenance.
+  publish-graph:
+    needs: [test, smoke-test]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/graph-v')
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_BRANCH: ${{ github.event.repository.default_branch }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag is merged into default branch
+        run: |
+          git fetch origin "${RELEASE_BRANCH}:refs/remotes/origin/${RELEASE_BRANCH}"
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" "origin/${RELEASE_BRANCH}"; then
+            echo "::error::Refusing to publish ${GITHUB_REF_NAME}: ${GITHUB_SHA} is not merged into origin/${RELEASE_BRANCH}."
+            exit 1
+          fi
+
+      - name: Verify packages/graph version matches tag
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#graph-v}"
+          PACKAGE_VERSION="$(node -p "require('./packages/graph/package.json').version")"
+          if [ "$PACKAGE_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match packages/graph version ${PACKAGE_VERSION}."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Upgrade npm for Trusted Publishing
+        run: |
+          npm install -g npm@11.6.2
+          node --version
+          npm --version
+
+      - name: Install and build
+        run: |
+          npm ci --legacy-peer-deps
+          npm run build
+
+      - name: Publish @sentropic/graph to npm
+        working-directory: packages/graph
+        run: npm publish --provenance --access public
