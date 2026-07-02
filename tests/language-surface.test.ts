@@ -1028,4 +1028,34 @@ class PaymentService extends BaseService implements Billable {}
 
     expect(targetLabels).toContain("Container");
   });
+
+  // Integration test via the real grammar. tree-sitter-powershell is an
+  // optional peer dep, so when its WASM isn't installed the extractor returns
+  // empty nodes — soft-skip the assertion rather than fail (same convention as
+  // tests/extract-swift-extensions.test.ts).
+  it("extracts PowerShell class inheritance and interface edges", async () => {
+    writeFileSync(join(dir, "Shapes.ps1"), [
+      "class Shape {",
+      "    [string] Describe() { return 'shape' }",
+      "}",
+      "",
+      "class IDrawable {",
+      "}",
+      "",
+      "class Circle : Shape, IDrawable {",
+      "    [double] $Radius",
+      "}",
+      "",
+    ].join("\n"));
+
+    const result = await extract([join(dir, "Shapes.ps1")]);
+    if (!result.nodes.some((n) => n.id === "shapes_circle")) {
+      // grammar absent — nothing extracted; covered in CI where the grammar is present
+      return;
+    }
+    const relations = result.edges.map((edge) => `${edge.source}:${edge.relation}:${edge.target}`);
+
+    expect(relations).toContain("shapes_circle:inherits:shapes_shape");
+    expect(relations).toContain("shapes_circle:implements:shapes_idrawable");
+  });
 });

@@ -3975,6 +3975,22 @@ export async function extractPowershell(filePath: string, rootDir?: string): Pro
   const fileNid = _makeId(stem);
   addNode(fileNid, basename(filePath), 1);
 
+  // Resolve a bare type name to a node id: prefer an in-file definition
+  // (stem-qualified), otherwise emit a SOURCELESS stub so the corpus-level
+  // rewire can collapse it onto the real definition. Mirrors upstream's
+  // `ensure_named_node`; addNode is idempotent so this is safe to call
+  // before or after the referenced type is walked.
+  function ensureNamedNode(name: string, line: number): string {
+    const qualified = _makeId(stem, name);
+    if (seenIds.has(qualified)) return qualified;
+    const global = _makeId(name);
+    if (!seenIds.has(global)) {
+      seenIds.add(global);
+      nodes.push({ id: global, label: name, file_type: "code", source_file: "", source_location: "" });
+    }
+    return global;
+  }
+
   const _PS_SKIP = new Set([
     "using", "return", "if", "else", "elseif", "foreach", "for",
     "while", "do", "switch", "try", "catch", "finally", "throw",
@@ -4018,6 +4034,24 @@ export async function extractPowershell(filePath: string, rootDir?: string): Pro
         const classNid = _makeId(stem, className);
         addNode(classNid, className, line);
         addEdge(fileNid, classNid, "contains", line);
+        // Base type(s) after ':'. The handler previously read only the class
+        // name and dropped every `class Dog : Animal` inheritance edge.
+        // PowerShell has no syntactic base-vs-interface split, so (matching the
+        // C# convention) the first base is emitted as `inherits` and the rest
+        // as `implements`. Port of upstream safishamsi a129ff2.
+        let colonSeen = false;
+        let baseIndex = 0;
+        for (const child of node.children) {
+          if (child.type === ":") {
+            colonSeen = true;
+          } else if (colonSeen && child.type === "simple_name") {
+            const baseNid = ensureNamedNode(_readText(child, source), line);
+            if (baseNid !== classNid) {
+              addEdge(classNid, baseNid, baseIndex === 0 ? "inherits" : "implements", line);
+            }
+            baseIndex++;
+          }
+        }
         for (const child of node.children) {
           walk(child, classNid);
         }
