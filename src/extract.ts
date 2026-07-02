@@ -818,6 +818,99 @@ function _phpCollectTypeRefs(
   }
 }
 
+/** C# declarations that can introduce type parameters visible to nested types. */
+const _CSHARP_TYPE_PARAMETER_SCOPE_DECLARATIONS = new Set<string>([
+  "class_declaration", "interface_declaration", "record_declaration",
+  "struct_declaration", "method_declaration",
+]);
+
+/** Return the C# type-parameter names in scope at `node`. */
+function _csharpTypeParametersInScope(node: SyntaxNode, source: string): Set<string> {
+  const names = new Set<string>();
+  let scope: SyntaxNode | null = node;
+  while (scope !== null) {
+    if (_CSHARP_TYPE_PARAMETER_SCOPE_DECLARATIONS.has(scope.type)) {
+      for (const child of scope.children) {
+        if (child.type !== "type_parameter_list") continue;
+        for (const param of child.children) {
+          if (param.type === "type_parameter") {
+            const nameNode = param.children.find((sub) => sub.type === "identifier");
+            if (nameNode) {
+              const n = _readText(nameNode, source);
+              if (n) names.add(n);
+            }
+          } else if (param.type === "identifier") {
+            const n = _readText(param, source);
+            if (n) names.add(n);
+          }
+        }
+      }
+    }
+    scope = scope.parent;
+  }
+  return names;
+}
+
+/**
+ * Walk a C# type expression; append `[name, role]` tuples. Skips predefined
+ * types and in-scope type parameters, resolves the unqualified tail of a
+ * `qualified_name` and the base + arguments of a `generic_name` (`List<Widget>`
+ * → `List` + `Widget` as a generic_arg). Port of upstream safishamsi
+ * `_csharp_collect_type_refs` (the qualified/qualifier metadata it also returns
+ * is dropped here — TS reference edges carry no cross-file qualifier hint yet).
+ */
+function _csharpCollectTypeRefs(
+  node: SyntaxNode | null,
+  source: string,
+  generic: boolean,
+  out: TypeRef[],
+  skip?: Set<string>,
+): void {
+  if (node === null) return;
+  const skipSet = skip ?? _csharpTypeParametersInScope(node, source);
+  const t = node.type;
+  if (t === "predefined_type") return;
+  if (t === "identifier") {
+    const name = _readText(node, source);
+    if (name && !skipSet.has(name)) out.push([name, generic ? "generic_arg" : "type"]);
+    return;
+  }
+  if (t === "qualified_name") {
+    const text = (_readText(node, source).split(".").pop() ?? "").split("<")[0] ?? "";
+    if (text && !skipSet.has(text)) out.push([text, generic ? "generic_arg" : "type"]);
+    return;
+  }
+  if (t === "generic_name") {
+    let nameChild = node.childForFieldName("name");
+    if (!nameChild) {
+      nameChild = node.children.find((sub) => sub.type === "identifier") ?? null;
+    }
+    if (nameChild) {
+      const name = _readText(nameChild, source).split(".").pop() ?? "";
+      if (name && !skipSet.has(name)) out.push([name, generic ? "generic_arg" : "type"]);
+    }
+    for (const sub of node.children) {
+      if (sub.type === "type_argument_list") {
+        for (const arg of sub.children) {
+          if (arg.isNamed) _csharpCollectTypeRefs(arg, source, true, out, skipSet);
+        }
+      }
+    }
+    return;
+  }
+  if (t === "nullable_type" || t === "array_type" || t === "pointer_type" || t === "ref_type") {
+    for (const c of node.children) {
+      if (c.isNamed) _csharpCollectTypeRefs(c, source, generic, out, skipSet);
+    }
+    return;
+  }
+  if (node.isNamed) {
+    for (const c of node.children) {
+      if (c.isNamed) _csharpCollectTypeRefs(c, source, generic, out, skipSet);
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // LanguageConfig interface + generic helpers
 // ---------------------------------------------------------------------------
@@ -2442,6 +2535,41 @@ async function _extractGeneric(
         const line = node.startPosition.row + 1;
         const refs: TypeRef[] = [];
         _phpCollectTypeRefs(typeNode, source, false, refs);
+        emitTypeRefs(parentClassNid, refs, line, "field");
+      }
+      return;
+    }
+
+    // C#: field type references. The type is on the node's `type` field or,
+    // for a `T x;` field, nested in a `variable_declaration`.
+    if (config.tsModule === "tree_sitter_c_sharp" && t === "field_declaration" && parentClassNid) {
+      let typeNode = node.childForFieldName("type");
+      if (!typeNode) {
+        for (const child of node.children) {
+          if (child.type === "variable_declaration") {
+            typeNode = child.childForFieldName("type");
+            if (typeNode) break;
+          }
+        }
+      }
+      if (typeNode) {
+        const line = node.startPosition.row + 1;
+        const refs: TypeRef[] = [];
+        _csharpCollectTypeRefs(typeNode, source, false, refs);
+        emitTypeRefs(parentClassNid, refs, line, "field");
+      }
+      return;
+    }
+
+    // C#: auto-property type references (`public Widget Main { get; set; }`) —
+    // the idiomatic way to declare state, previously dropped (port of upstream
+    // safishamsi bb5e519). A property exposes its type directly on the node.
+    if (config.tsModule === "tree_sitter_c_sharp" && t === "property_declaration" && parentClassNid) {
+      const typeNode = node.childForFieldName("type");
+      if (typeNode) {
+        const line = node.startPosition.row + 1;
+        const refs: TypeRef[] = [];
+        _csharpCollectTypeRefs(typeNode, source, false, refs);
         emitTypeRefs(parentClassNid, refs, line, "field");
       }
       return;
