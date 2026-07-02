@@ -1058,4 +1058,27 @@ class PaymentService extends BaseService implements Billable {}
     expect(relations).toContain("shapes_circle:inherits:shapes_shape");
     expect(relations).toContain("shapes_circle:implements:shapes_idrawable");
   });
+
+  // Integration test via the real grammar. tree-sitter-objc is an optional peer
+  // dep; soft-skip when its WASM isn't installed (see convention above).
+  it("extracts Objective-C protocol-to-protocol adoption edges", async () => {
+    writeFileSync(join(dir, "Serializable.m"), [
+      "@protocol Codable",
+      "@end",
+      "",
+      "@protocol Serializable <Codable>",
+      "- (NSData *)serialize;",
+      "@end",
+      "",
+    ].join("\n"));
+
+    const result = await extract([join(dir, "Serializable.m")]);
+    if (!result.nodes.some((n) => n.id === "serializable_serializable")) {
+      // grammar absent — nothing extracted; covered in CI where the grammar is present
+      return;
+    }
+    const relations = result.edges.map((edge) => `${edge.source}:${edge.relation}:${edge.target}`);
+
+    expect(relations).toContain("serializable_serializable:implements:serializable_codable");
+  });
 });

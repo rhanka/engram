@@ -4204,6 +4204,21 @@ export async function extractObjc(filePath: string, rootDir?: string): Promise<E
     return source.slice(node.startIndex, node.endIndex);
   }
 
+  // Resolve a bare type/protocol name to a node id: prefer an in-file
+  // definition (stem-qualified), otherwise emit a SOURCELESS stub so the
+  // corpus-level rewire can collapse it onto the real definition. Mirrors
+  // upstream's `ensure_named_node`.
+  function ensureNamedNode(name: string): string {
+    const qualified = _makeId(stem, name);
+    if (seenIds.has(qualified)) return qualified;
+    const global = _makeId(name);
+    if (!seenIds.has(global)) {
+      seenIds.add(global);
+      nodes.push({ id: global, label: name, file_type: "code", source_file: "", source_location: "" });
+    }
+    return global;
+  }
+
   function walk(node: SyntaxNode, parentNid: string | null = null): void {
     const t = node.type;
     const line = node.startPosition.row + 1;
@@ -4301,6 +4316,22 @@ export async function extractObjc(filePath: string, rootDir?: string): Promise<E
         const protoNid = _makeId(stem, name);
         addNode(protoNid, `<${name}>`, line);
         addEdge(fileNid, protoNid, "contains", line);
+        // Protocol-to-protocol adoption: `@protocol Foo <Bar>` exposes the
+        // adopted protocols in a `protocol_reference_list`. Emit an `implements`
+        // edge for each so protocol hierarchies aren't dropped. Port of
+        // upstream safishamsi cd3a376.
+        for (const child of node.children) {
+          if (child.type === "protocol_reference_list") {
+            for (const sub of child.children) {
+              if (sub.type === "identifier") {
+                const baseNid = ensureNamedNode(_read(sub));
+                if (baseNid !== protoNid) {
+                  addEdge(protoNid, baseNid, "implements", line);
+                }
+              }
+            }
+          }
+        }
         for (const child of node.children) walk(child, protoNid);
       }
       return;
