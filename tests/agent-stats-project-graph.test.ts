@@ -538,3 +538,29 @@ describe("sessionFactToInput", () => {
     expect(inp.endedAtMs).toBeUndefined();
   });
 });
+
+describe("buildProjectGraph — hybrid git skeleton", () => {
+  it("emits commit-parent and branch-head edges, and carries repo lane as node attributes without hub edges", () => {
+    const g = buildProjectGraph({
+      identity: sentropicIdentity,
+      sessions: [mkSession({ cwds: ["~/src/graphify"], branches: ["main"], commitShas: ["bbbbbbb"] })],
+      includeHubEdges: false,
+      commits: [
+        { sha: "bbbbbbb2222222222222222222222222222222222", parentShas: ["aaaaaaa1111111111111111111111111111111111"], subject: "child", committedAtMs: 2 },
+        { sha: "aaaaaaa1111111111111111111111111111111111", parentShas: [], subject: "parent", committedAtMs: 1 },
+      ],
+      branchHeads: [{ name: "main", sha: "bbbbbbb2222222222222222222222222222222222" }],
+    });
+
+    expect(g.links.some((e) => e.relation === "worked-in")).toBe(false);
+    expect(g.links.some((e) => e.relation === "conducted-by")).toBe(false);
+    expect(g.links.some((e) => e.relation === "belongs-to")).toBe(false);
+    expect(g.links.filter((e) => e.relation === "commit-parent")).toHaveLength(1);
+    expect(g.links.filter((e) => e.relation === "branch-head")).toHaveLength(1);
+    const sess = g.nodes.find((n) => n.node_type === "Session")!;
+    expect(sess.project).toBe("sentropic");
+    expect(sess.repo).toBe("graphify");
+    expect(sess.lane).toBe("graphify");
+    expect(sess.agent_kind).toBe("claude");
+  });
+});
