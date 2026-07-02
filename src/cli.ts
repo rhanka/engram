@@ -2649,6 +2649,9 @@ export async function main(): Promise<void> {
     .option("--out <path>", "Output graph.json path", ".graphify/project-graph/graph.json")
     .option("--no-commits", "Omit commit nodes")
     .option("--no-branches", "Omit branch nodes")
+    .option("--git-since <date>", "Hybrid git skeleton window (git --since); use 'all' for full history", "6 months ago")
+    .option("--git-max-count <n>", "Hybrid git skeleton max commits", "2000")
+    .option("--hub-edges", "Also emit legacy worked-in/conducted-by/belongs-to hub edges")
     .option("--studio", "Also export a static studio next to the graph.json (graphify studio export)")
     .action(async (opts) => {
       const { buildProjectGraphForIdentity } = await import("./agent-stats/index.js");
@@ -2671,6 +2674,9 @@ export async function main(): Promise<void> {
       const { graph, sessions } = buildProjectGraphForIdentity(identity, {
         includeCommits: opts.commits !== false,
         includeBranches: opts.branches !== false,
+        gitSince: opts.gitSince,
+        gitMaxCount: Number.parseInt(opts.gitMaxCount, 10),
+        includeHubEdges: opts.hubEdges === true,
       });
       const outPath = pathResolve(opts.out);
       mkdirSync(dirname(outPath), { recursive: true });
