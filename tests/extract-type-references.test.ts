@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   extractJava,
+  extractCpp,
   type ExtractionResult,
 } from "../src/extract.js";
 import type { GraphEdge } from "../src/types.js";
@@ -80,5 +81,40 @@ describe("Lot 2: Java field type references (#1485, #1518)", () => {
     expect(refs.some((r) => r.target === "T")).toBe(false);
     // The real container type `List` is still referenced.
     expect(refs).toContainEqual({ context: "field", target: "List" });
+  });
+});
+
+describe("Lot 2: C++ base-class template-argument references (#1592)", () => {
+  let dir: string;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "graphify-cpp-typeref-")); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  it("emits inherits + generic_arg references for a templated base", async () => {
+    const file = join(dir, "sample.cpp");
+    writeFileSync(file, [
+      "class HttpClient {};",
+      "template <typename T>",
+      "class Connection {};",
+      "class Dep {};",
+      "class PooledClient : public Connection<HttpClient> {};",
+      "class Car : public Dep {};",
+    ].join("\n"));
+
+    const result = await extractCpp(file);
+    if (!grammarAvailable(result)) return; // grammar absent — asserts in CI
+
+    const labelById = new Map(result.nodes.map((n) => [n.id, n.label]));
+    const inherits = result.edges
+      .filter((e) => e.relation === "inherits")
+      .map((e) => `${labelById.get(e.source) ?? e.source}->${labelById.get(e.target) ?? e.target}`);
+    // Base inheritance edges are emitted (previously C++ had no inherits branch).
+    expect(inherits).toContain("PooledClient->Connection");
+    expect(inherits).toContain("Car->Dep");
+
+    const refs = typeReferences(result);
+    // The base's template argument becomes a generic_arg reference on the class.
+    expect(refs).toContainEqual({ context: "generic_arg", target: "HttpClient" });
+    // A non-templated base contributes no generic_arg reference.
+    expect(refs.some((r) => r.target === "Dep")).toBe(false);
   });
 });

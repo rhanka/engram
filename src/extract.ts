@@ -649,6 +649,57 @@ function _javaCollectTypeRefs(
   }
 }
 
+/** C/C++ node types that denote a primitive/builtin type (never referenced). */
+const _C_PRIMITIVE_TYPE_NODES = new Set<string>([
+  "primitive_type", "sized_type_specifier", "auto", "placeholder_type_specifier",
+]);
+
+/**
+ * Walk a C++ type expression; append `[name, role]` tuples. Resolves
+ * `qualified_identifier` tails (`std::string` → `string`) and `template_type`
+ * base + arguments (`std::vector<HttpClient>` → `vector` + `HttpClient` as a
+ * generic_arg). Port of upstream safishamsi `_cpp_collect_type_refs`.
+ */
+function _cppCollectTypeRefs(
+  node: SyntaxNode | null, source: string, generic: boolean, out: TypeRef[],
+): void {
+  if (node === null || _C_PRIMITIVE_TYPE_NODES.has(node.type)) return;
+  const t = node.type;
+  if (t === "type_identifier") {
+    const text = _readText(node, source);
+    if (text) out.push([text, generic ? "generic_arg" : "type"]);
+    return;
+  }
+  if (t === "qualified_identifier") {
+    const nameNode = node.childForFieldName("name");
+    if (nameNode) _cppCollectTypeRefs(nameNode, source, generic, out);
+    return;
+  }
+  if (t === "template_type") {
+    const nameNode = node.childForFieldName("name");
+    if (nameNode) {
+      const text = _readText(nameNode, source);
+      if (text) out.push([text, generic ? "generic_arg" : "type"]);
+    }
+    const argsNode = node.childForFieldName("arguments");
+    if (argsNode) {
+      for (const c of argsNode.children) {
+        if (c.isNamed) _cppCollectTypeRefs(c, source, true, out);
+      }
+    }
+    return;
+  }
+  if (
+    t === "type_descriptor" || t === "pointer_declarator" || t === "reference_declarator" ||
+    t === "array_declarator" || t === "type_qualifier" || t === "abstract_pointer_declarator" ||
+    t === "abstract_reference_declarator" || t === "abstract_array_declarator"
+  ) {
+    for (const c of node.children) {
+      if (c.isNamed) _cppCollectTypeRefs(c, source, generic, out);
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // LanguageConfig interface + generic helpers
 // ---------------------------------------------------------------------------
@@ -1984,6 +2035,62 @@ async function _extractGeneric(
             const names = new Set<string>();
             collectJavaTypeNames(child, names);
             for (const baseName of names) emitJavaParent(baseName, "inherits");
+          }
+        }
+      }
+
+      // C++: `class Car : public Base<Dep>` — the `base_class_clause` carries
+      // the inherited type(s). Emit an `inherits` edge on each base name and, for
+      // a templated base, `generic_arg` references for its template arguments
+      // (port of upstream safishamsi 21bcb43). This also closes the prior gap
+      // where C++ emitted no `inherits` edge at all — the class handler had no
+      // C++ branch, so `_cpp_collect_type_refs` handles nested/qualified args
+      // (`Base<std::vector<Dep>>`) too.
+      if (config.tsModule === "tree_sitter_cpp") {
+        for (const child of node.children) {
+          if (child.type !== "base_class_clause") continue;
+          for (const sub of child.children) {
+            let base = "";
+            let templateArgsNode: SyntaxNode | null = null;
+            if (sub.type === "type_identifier") {
+              base = _readText(sub, source);
+            } else if (sub.type === "qualified_identifier") {
+              // Use the unqualified tail so "std::vector" matches a "vector"
+              // node id if one exists; fall back to the full qualified text.
+              const tail = sub.childForFieldName("name");
+              base = tail ? _readText(tail, source) : _readText(sub, source);
+            } else if (sub.type === "template_type") {
+              const tname = sub.childForFieldName("name");
+              base = tname ? _readText(tname, source) : _readText(sub, source);
+              templateArgsNode = sub.childForFieldName("arguments");
+            } else {
+              continue;
+            }
+            if (!base) continue;
+            let baseNid = _makeId(stem, base);
+            if (!seenIds.has(baseNid)) {
+              baseNid = _makeId(base);
+              if (!seenIds.has(baseNid)) {
+                nodes.push({
+                  id: baseNid, label: base, file_type: "code",
+                  source_file: "", source_location: "",
+                });
+                seenIds.add(baseNid);
+              }
+            }
+            addEdge(classNid, baseNid, "inherits", line);
+            if (templateArgsNode) {
+              const argRefs: TypeRef[] = [];
+              for (const arg of templateArgsNode.children) {
+                if (arg.isNamed) _cppCollectTypeRefs(arg, source, true, argRefs);
+              }
+              for (const [refName] of argRefs) {
+                const targetNid = ensureNamedNode(refName, line);
+                if (targetNid !== classNid) {
+                  addEdge(classNid, targetNid, "references", line, "EXTRACTED", 1.0, "generic_arg");
+                }
+              }
+            }
           }
         }
       }
