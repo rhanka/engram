@@ -6,9 +6,11 @@ import {
   fetchClassHierarchies,
   fetchEntity,
   fetchGraph,
+  fetchGroupCounts,
   fetchModelsManifest,
   fetchReconciliationCandidates,
   fetchScene,
+  fetchWindow,
 } from "../lib/api.js";
 
 function jsonResponse(body, ok = true) {
@@ -133,6 +135,116 @@ describe("fetchClassHierarchies (EVOL 2.a)", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(fetchClassHierarchies()).resolves.toBeNull();
+  });
+});
+
+describe("fetchGroupCounts (storage LOT 2)", () => {
+  const counts = {
+    axis: "node_type",
+    groups: [
+      { key: "Character", label: "Character", count: 12 },
+      { key: "Place", label: "Place", count: 5 },
+    ],
+  };
+
+  it("returns the store counts from the same-origin route for the given axis", async () => {
+    const fetchMock = vi.fn(async (url) => {
+      if (url === "/api/ontology/groups?axis=node_type") return jsonResponse(counts);
+      throw new Error(`unexpected url ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchGroupCounts("node_type")).resolves.toEqual(counts);
+  });
+
+  it("defaults to the node_type axis when none is passed", async () => {
+    const fetchMock = vi.fn(async (url) => {
+      if (url === "/api/ontology/groups?axis=node_type") return jsonResponse(counts);
+      throw new Error(`unexpected url ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchGroupCounts()).resolves.toEqual(counts);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/ontology/groups?axis=node_type",
+      expect.anything(),
+    );
+  });
+
+  it("returns null when the route 404s (default flat-JSON studio, no store)", async () => {
+    // No bundle-relative static fallback: the counts are a live store projection.
+    const fetchMock = vi.fn(async () => jsonResponse({ error: "no store" }, false));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchGroupCounts("node_type")).resolves.toBeNull();
+  });
+
+  it("returns null in an offline bundle WITHOUT issuing any fetch", async () => {
+    window.__GRAPHIFY_BUNDLE__ = { "scene.json": { nodes: [], edges: [] } };
+    const fetchMock = vi.fn(() => {
+      throw new Error("fetch must not be called in an offline bundle");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchGroupCounts("node_type")).resolves.toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("fetchWindow (storage LOT 3)", () => {
+  // NB: not named `window` — that would shadow the global the offline test sets.
+  const windowDoc = {
+    strategy: "degree-top-n",
+    layout: "force",
+    limit: 2,
+    nodes: [
+      { id: "hub", label: "Hub", node_type: "code", x: 10, y: 20, degree: 3 },
+      { id: "a", label: "Node A", node_type: "doc", x: 1, y: 1, degree: 2 },
+    ],
+    edges: [{ source: "hub", target: "a", relation: "links" }],
+  };
+
+  it("returns the store window from the same-origin route with the given params", async () => {
+    const fetchMock = vi.fn(async (url) => {
+      if (url === "/api/ontology/window?strategy=degree-top-n&layout=force&limit=2")
+        return jsonResponse(windowDoc);
+      throw new Error(`unexpected url ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      fetchWindow({ strategy: "degree-top-n", layout: "force", limit: 2 }),
+    ).resolves.toEqual(windowDoc);
+  });
+
+  it("requests the bare route when called with no params", async () => {
+    const fetchMock = vi.fn(async (url) => {
+      if (url === "/api/ontology/window") return jsonResponse(windowDoc);
+      throw new Error(`unexpected url ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchWindow()).resolves.toEqual(windowDoc);
+    expect(fetchMock).toHaveBeenCalledWith("/api/ontology/window", expect.anything());
+  });
+
+  it("returns null when the route 404s (default flat-JSON studio, no store)", async () => {
+    // No bundle-relative static fallback: the window is a live store projection.
+    const fetchMock = vi.fn(async () => jsonResponse({ error: "no store" }, false));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchWindow({ layout: "force" })).resolves.toBeNull();
+  });
+
+  it("returns null in an offline bundle WITHOUT issuing any fetch", async () => {
+    window.__GRAPHIFY_BUNDLE__ = { "scene.json": { nodes: [], edges: [] } };
+    const fetchMock = vi.fn(() => {
+      throw new Error("fetch must not be called in an offline bundle");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchWindow({ layout: "force" })).resolves.toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

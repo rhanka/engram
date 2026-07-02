@@ -1,5 +1,10 @@
 import { computePositionBounds, copyPositions } from "./positions";
 import { BOX_GLYPH_CORNER_RATIO, SQUARE_INSET_RATIO, shapePolygonPoints } from "./shape-geometry";
+import { boxDimensions } from "./render-geometry";
+import { cameraToViewProjection } from "./mat4";
+import { createWebGLShapeRenderer, type WebGLShapeRenderer } from "./webgl-shapes";
+import { createWebGLEdgeRenderer, type WebGLEdgeRenderer } from "./webgl-edges";
+import { createWebGLBoxRenderer, type BoxTextDraw, type WebGLBoxRenderer } from "./webgl-boxes";
 import type {
   CameraState,
   FitViewOptions,
@@ -33,9 +38,13 @@ interface AttributeLocations {
 }
 
 interface UniformLocations {
-  camera: WebGLUniformLocation | null;
-  viewport: WebGLUniformLocation | null;
-  zoom: WebGLUniformLocation | null;
+  // UNIFIED CAMERA: the single mat4 view-projection that drives the world->clip
+  // vertex transform (mat4.ts). It replaces the old raw `u_camera`/`u_zoom`/
+  // `u_viewport` affine. `zoom`/`pixelRatio` survive ONLY to size the legacy
+  // point sprite (gl_PointSize), which is a screen-space quantity, not a
+  // world->clip transform.
+  viewProj: WebGLUniformLocation | null;
+  zoom?: WebGLUniformLocation | null;
   pixelRatio?: WebGLUniformLocation | null;
 }
 
@@ -53,18 +62,21 @@ interface RenderResources {
   sizeBuffer: WebGLBuffer;
 }
 
+// UNIFIED CAMERA (mat4 view-projection). The world->clip transform is a single
+// `u_viewProj * vec4(world, 0, 1)` — for 2D it is the ORTHO matrix built from the
+// camera {x,y,zoom} (mat4.cameraToViewProjection), mathematically equivalent to
+// the old `screen = (a_position - u_camera)*u_zoom; clip = screen*(2/vw,-2/vh)`
+// affine, so the pixels are unchanged. z = 0 maps to clip.z = 0 (symmetric
+// near/far), identical to the legacy `vec4(clip, 0, 1)`. The door to a future
+// perspective(3D) matrix is now open (swap the matrix, the shader is unchanged).
 const EDGE_VERTEX_SHADER = `
 attribute vec2 a_position;
 attribute vec4 a_color;
-uniform vec2 u_camera;
-uniform vec2 u_viewport;
-uniform float u_zoom;
+uniform mat4 u_viewProj;
 varying vec4 v_color;
 
 void main() {
-  vec2 screen = (a_position - u_camera) * u_zoom;
-  vec2 clip = vec2(screen.x * 2.0 / u_viewport.x, -screen.y * 2.0 / u_viewport.y);
-  gl_Position = vec4(clip, 0.0, 1.0);
+  gl_Position = u_viewProj * vec4(a_position, 0.0, 1.0);
   v_color = a_color;
 }
 `;
@@ -73,17 +85,15 @@ const NODE_VERTEX_SHADER = `
 attribute vec2 a_position;
 attribute vec4 a_color;
 attribute float a_size;
-uniform vec2 u_camera;
-uniform vec2 u_viewport;
+uniform mat4 u_viewProj;
 uniform float u_zoom;
 uniform float u_pixelRatio;
 varying vec4 v_color;
 
 void main() {
-  vec2 screen = (a_position - u_camera) * u_zoom;
-  vec2 clip = vec2(screen.x * 2.0 / u_viewport.x, -screen.y * 2.0 / u_viewport.y);
-  gl_Position = vec4(clip, 0.0, 1.0);
-  // World-space sizing for legacy ForceGraph parity: glyphs scale with camera zoom.
+  gl_Position = u_viewProj * vec4(a_position, 0.0, 1.0);
+  // World-space sizing for legacy ForceGraph parity: the SPRITE (a screen-space
+  // billboard, not a world->clip transform) scales with camera zoom.
   gl_PointSize = max(1.0, a_size * u_pixelRatio * u_zoom);
   v_color = a_color;
 }
@@ -114,6 +124,31 @@ void main() {
 const DEFAULT_NODE_COLOR = [77, 118, 255, 255] as const;
 const DEFAULT_EDGE_COLOR = [121, 133, 153, 180] as const;
 
+/**
+ * Resolve the B1 `GRAPHIFY_RENDER_BACKEND` flag for the INSTANCED-SHAPE canary.
+ *
+ * Precedence: explicit `options.instancedShapes` > the env flag > default
+ * `false` (legacy point sprites). The flag values `webgl`/`instanced`/`shapes`
+ * opt INTO the new instanced node-shape path; anything else (incl. the default
+ * `canvas2d`) keeps the legacy path. This is INTERNAL-CANARY-ONLY — the studio
+ * never sets it, so there is no user-facing change in Phase 1.
+ */
+function resolveInstancedShapes(options: GraphRendererOptions): boolean {
+  if (typeof options.instancedShapes === "boolean") return options.instancedShapes;
+  // Read the env flag without depending on @types/node (the package has none):
+  // reach `process.env` through `globalThis` and string-index it.
+  const proc = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process;
+  const env = proc?.env?.GRAPHIFY_RENDER_BACKEND;
+  if (!env) return false;
+  const flag = env.trim().toLowerCase();
+  return flag === "webgl" || flag === "instanced" || flag === "shapes";
+}
+
+/** True for a WebGL2 context (instancing + VAOs are WebGL2 core). */
+function isWebGL2(context: GraphContext): context is WebGL2RenderingContext {
+  return typeof (context as WebGL2RenderingContext).drawArraysInstanced === "function";
+}
+
 function acquireContext(canvas: GraphCanvasLike | null, options: GraphRendererOptions): GraphContext | null {
   if (!canvas) {
     return null;
@@ -122,7 +157,11 @@ function acquireContext(canvas: GraphCanvasLike | null, options: GraphRendererOp
   try {
     const contextOptions = {
       antialias: options.antialias ?? false,
-      preserveDrawingBuffer: false,
+      // The instanced-shape canary (B1 Phase 1) reads the backing store via the
+      // golden harness's synchronous gl.readPixels right after render(); keep
+      // the buffer alive for that path so the read is reliable across runners
+      // (plan §4.2 / R18). The default (legacy/users) keeps the lean `false`.
+      preserveDrawingBuffer: resolveInstancedShapes(options),
     };
     return (
       (canvas.getContext("webgl2", contextOptions) as GraphContext | null) ??
@@ -201,9 +240,10 @@ function createDrawProgram(
     program,
     attributes,
     uniforms: {
-      camera: context.getUniformLocation(program, "u_camera"),
-      viewport: context.getUniformLocation(program, "u_viewport"),
-      zoom: context.getUniformLocation(program, "u_zoom"),
+      viewProj: context.getUniformLocation(program, "u_viewProj"),
+      // Only the node (point-sprite) program needs zoom + pixelRatio, and ONLY to
+      // size gl_PointSize — never for the world->clip transform (that is u_viewProj).
+      zoom: includeSize ? context.getUniformLocation(program, "u_zoom") : null,
       pixelRatio: includeSize ? context.getUniformLocation(program, "u_pixelRatio") : null,
     },
   };
@@ -399,8 +439,12 @@ function bindCameraUniforms(
   canvas: GraphCanvasLike | null,
   pixelRatio: number,
 ): void {
-  if (uniforms.camera) context.uniform2f(uniforms.camera, camera.x, camera.y);
-  if (uniforms.viewport) context.uniform2f(uniforms.viewport, canvas?.width ?? 1, canvas?.height ?? 1);
+  // UNIFIED CAMERA: build the mat4 view-projection from {x,y,zoom} + the device
+  // viewport and upload it once. The world->clip transform is now matrix-driven
+  // (mat4.ts) instead of the hand-rolled per-shader affine.
+  const viewProj = cameraToViewProjection(camera, canvas?.width ?? 1, canvas?.height ?? 1);
+  if (uniforms.viewProj) context.uniformMatrix4fv(uniforms.viewProj, false, viewProj);
+  // gl_PointSize sizing only (screen-space sprite), never the world transform.
   if (uniforms.zoom) context.uniform1f(uniforms.zoom, camera.zoom);
   if (uniforms.pixelRatio) context.uniform1f(uniforms.pixelRatio, pixelRatio);
 }
@@ -432,6 +476,44 @@ function cssDarkenedColor(
   const b = Math.round((source?.[offset + 2] ?? fallback[2]) * factor);
   const a = (source?.[offset + 3] ?? fallback[3]) / 255;
   return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
+/**
+ * Build a box-label `measureText` service for the WebGL edge path so an edge
+ * clipping to a BOX endpoint stops at the SAME rect border Canvas2D draws (E5).
+ * Uses a throwaway offscreen 2D canvas (OffscreenCanvas or a detached <canvas>)
+ * with a per-call font + text cache. Returns `null` in non-DOM environments —
+ * the edge path then falls back to the empty-collapse box rect (box-label clip
+ * parity finalises with the box glyph in Phase 4). NEVER touches the render
+ * canvas (a canvas holds one context type — a 2D ctx there would break WebGL).
+ */
+function createMeasureService(): ((text: string, font: string) => number) | null {
+  const g = globalThis as {
+    OffscreenCanvas?: new (w: number, h: number) => { getContext(t: "2d"): CanvasRenderingContext2D | null };
+    document?: { createElement(tag: "canvas"): HTMLCanvasElement };
+  };
+  let ctx: CanvasRenderingContext2D | null = null;
+  try {
+    if (typeof g.OffscreenCanvas === "function") {
+      ctx = new g.OffscreenCanvas(1, 1).getContext("2d");
+    } else if (g.document?.createElement) {
+      ctx = g.document.createElement("canvas").getContext("2d");
+    }
+  } catch {
+    return null;
+  }
+  if (!ctx) return null;
+  const measureCtx = ctx;
+  const cache = new Map<string, number>();
+  return (text: string, font: string): number => {
+    const key = `${font}|${text}`;
+    const cached = cache.get(key);
+    if (cached !== undefined) return cached;
+    measureCtx.font = font;
+    const width = measureCtx.measureText(text).width;
+    cache.set(key, width);
+    return width;
+  };
 }
 
 function screenPoint(
@@ -476,24 +558,11 @@ const BOX_SHAPE = 5;
 // the largest diamond). It does NOT inflate with a god-node's degree (only zoom
 // scales it), so a labelled box never dwarfs its neighbours.
 const BOX_BASE_HEIGHT_PX = 18; // box height in CSS px (× pixelRatio × zoom), legacy 22 − ~20%
-const BOX_MARGIN_RATIO = 5 / 22; // legacy margin per side (5 of a 22 box)
-const BOX_FONT_RATIO = 12 / 22; // legacy font size (12 of a 22 box) — text much smaller than the box
-const BOX_CORNER_RATIO = 1 / 4; // corner radius as a fraction of box height
-// Maximum box WIDTH, expressed as a multiple of the box height (so it scales
-// with pixelRatio × zoom exactly like the height — the cap reads the same at
-// any zoom). The box still grows in width to hug short labels, but a long
-// chapter / entity name is PIXEL-FITTED to this ceiling with an ellipsis so the
-// glyph can never balloon into an over-wide text card that overflows the layout.
-// ~10× a small box height keeps a comfortable line (≈ 30-ish narrow glyphs at
-// the legacy 12/22 font) while bounding the worst case. This is the SHARED,
-// backend-agnostic render-geometry fix: it covers EVERY box node (main-graph
-// chapter/work/god-class hubs AND the recon focal pair), not just one view.
-const BOX_MAX_WIDTH_RATIO = 10;
-// Single-character ellipsis appended when a box label is pixel-clipped to fit.
-const BOX_ELLIPSIS = "…";
-// Non-labelled (low-degree) box collapse, as a fraction of the box height:
-// legacy hidden-font boxes shrink to their two 5-unit margins of a 22-unit box.
-const BOX_EMPTY_RATIO = 10 / 22;
+// The box height/margin/font/corner ratios, the BOX_MAX_WIDTH_RATIO cap, the
+// single-char ellipsis, and the box dimensions + #199 pixel-fit are all
+// single-sourced in render-geometry.ts (boxDimensions, fitLabelToWidth) so
+// Canvas2D, the WebGL box glyph, and the WebGL text atlas clip identically.
+// The renderer consumes them via the imported `boxDimensions`.
 const BOX_FILL: readonly [number, number, number, number] = [255, 255, 255, 0.5 * 255];
 const BOX_TEXT_COLOR = "#0f172a"; // theme-dark label text (slate-900)
 
@@ -588,83 +657,6 @@ interface NodeGeometry {
 }
 
 /**
- * PIXEL-FIT a label so its DRAWN width never exceeds `maxTextWidth`, appending a
- * single ellipsis when it has to clip. Unlike a fixed character-count cap, this
- * is glyph-width aware (a run of wide letters clips sooner than a run of "i"s),
- * so the box that hugs the returned text is guaranteed to stay within the max.
- *
- * Binary search over the keep-length keeps it O(log n) measureText calls per
- * over-long label (cheap, and only long labels pay it). When even the ellipsis
- * alone does not fit (an absurdly tiny box) we still return the ellipsis so the
- * caller draws SOMETHING rather than overflowing. The full text is unchanged on
- * the node payload, so hover tooltips / detail panels keep the verbatim name.
- */
-function fitLabelToWidth(
-  label: string,
-  maxTextWidth: number,
-  font: string,
-  measureLabelWidth: (text: string, font: string) => number,
-): string {
-  if (!label) return label;
-  if (maxTextWidth <= 0) return label;
-  if (measureLabelWidth(label, font) <= maxTextWidth) return label;
-
-  // Search the largest prefix length whose `prefix + …` still fits.
-  let low = 0;
-  let high = label.length;
-  let best = "";
-  while (low <= high) {
-    const mid = (low + high) >> 1;
-    const candidate = label.slice(0, mid).replace(/\s+$/u, "") + BOX_ELLIPSIS;
-    if (measureLabelWidth(candidate, font) <= maxTextWidth) {
-      best = candidate;
-      low = mid + 1;
-    } else {
-      high = mid - 1;
-    }
-  }
-  // Even a lone ellipsis overflowed the (degenerate) box — draw it anyway.
-  return best || BOX_ELLIPSIS;
-}
-
-/**
- * Legacy `shape:box` glyph dimensions. The box height is a fixed legacy base
- * (BOX_BASE_HEIGHT_PX, scaled by pixelRatio × zoom) — degree-INDEPENDENT, so a
- * high-degree Work box never inflates past its neighbours; the small font fits
- * that height minus a margin per side, and the box only grows in WIDTH to hug
- * the text plus margins. A non-labelled (low-degree) box collapses like the
- * legacy hidden-font (fontSize 0) box: a small square of BOX_EMPTY_RATIO × height.
- *
- * WIDTH IS CAPPED at BOX_MAX_WIDTH_RATIO × height: a label too long to hug
- * within that ceiling is PIXEL-FITTED (see {@link fitLabelToWidth}) to the
- * available text width with an ellipsis, so the box never balloons into an
- * over-wide text card that overflows the layout. The returned `label` is the
- * exact (possibly clipped) text the box was sized to — the draw path renders
- * THAT string, so the box always hugs precisely what it shows.
- */
-function boxDimensions(
-  height: number,
-  label: string,
-  measureLabelWidth: (text: string, font: string) => number,
-): { w: number; h: number; fontPx: number; corner: number; label: string } {
-  const margin = height * BOX_MARGIN_RATIO;
-  const corner = height * BOX_CORNER_RATIO;
-  const fontPx = height * BOX_FONT_RATIO;
-
-  if (!label) {
-    const side = height * BOX_EMPTY_RATIO;
-    return { w: side, h: side, fontPx, corner, label };
-  }
-
-  const font = `${fontPx}px sans-serif`;
-  // Text must fit inside the max box width minus a margin per side.
-  const maxTextWidth = Math.max(0, height * BOX_MAX_WIDTH_RATIO - 2 * margin);
-  const fitted = fitLabelToWidth(label, maxTextWidth, font, measureLabelWidth);
-  const textW = measureLabelWidth(fitted, font);
-  return { w: textW + 2 * margin, h: height, fontPx, corner, label: fitted };
-}
-
-/**
  * Draw a single legacy `shape:box` glyph (vis-network parity).
  *
  * - Eligible (central) box: a rounded rectangle with a white-translucent
@@ -714,6 +706,69 @@ function drawBoxNode(
   }
 
   context.restore();
+}
+
+/**
+ * HYBRID box overlay (B1-P3 SHIPPING decision). Draw the FULL box glyph — rounded
+ * rect + translucent fill + node-colour border + centred label — for each box
+ * node onto a Canvas2D OVERLAY, using the IDENTICAL `drawBoxNode` engine the
+ * default canvas2d path (the golden reference) uses, composited on top of the
+ * WebGL node/edge passes. Because the WHOLE box is drawn by the SAME canvas2d
+ * engine, the box-rect EXTENT (incl. the #199 width cap), the border, AND the
+ * text all match the canvas2d golden BY CONSTRUCTION — no GPU box-rect SDF or
+ * text atlas (neither could reproduce the #199-capped extent or the 2D AA under
+ * SwiftShader, the #1 B1 risk). Boxes are FEW (god-class + recon focal hubs), so
+ * overlay-drawing them costs nothing while the many simple nodes (P1) + edges
+ * (P2) stay WebGL. The device-px geometry comes straight from the shared box
+ * draws, so the overlay box lands exactly where the box node sits. The context is
+ * expected to be at DEVICE resolution (the same backing-store size as the GL
+ * canvas); no extra transform is applied.
+ */
+export function drawBoxLabels2D(context: Graph2DContext, draws: readonly BoxTextDraw[]): void {
+  if (draws.length === 0) return;
+
+  // Re-derive the box dimensions + #199 pixel-fit with THIS context's own
+  // measureText (the same engine + font that draws the box), so the box width
+  // and the fitted label agree to the pixel with what is drawn — the renderer's
+  // internal measure service uses a different (un-pinned) offscreen canvas, so
+  // re-fitting here is what makes the box rect EXTENT + text match the canvas2d
+  // golden by construction. Per-frame font|text cache (box fonts vary by node).
+  const labelWidthCache = new Map<string, number>();
+  const measureLabelWidth = (text: string, font: string): number => {
+    const key = `${font}|${text}`;
+    const cached = labelWidthCache.get(key);
+    if (cached !== undefined) return cached;
+    context.font = font;
+    const width = context.measureText(text).width;
+    labelWidthCache.set(key, width);
+    return width;
+  };
+
+  for (const d of draws) {
+    const dims = boxDimensions(d.height, d.label, measureLabelWidth);
+    context.save();
+    context.globalAlpha = d.alpha;
+
+    context.beginPath();
+    drawRoundedBox(context, d.centerX, d.centerY, dims.w, dims.h, dims.corner);
+    context.fillStyle = HOLLOW_FILL_STYLE;
+    context.fill();
+    context.strokeStyle = d.borderColor;
+    // Already-device-px stroke width (the canvas2d path's lineWidth =
+    // BORDER_WIDTH_* · pixelRatio), so set it directly.
+    context.lineWidth = d.borderWidth;
+    context.stroke();
+
+    if (dims.label) {
+      context.fillStyle = BOX_TEXT_COLOR;
+      context.font = `${dims.fontPx}px sans-serif`;
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.fillText(dims.label, d.centerX, d.centerY);
+    }
+
+    context.restore();
+  }
 }
 
 /**
@@ -969,6 +1024,43 @@ export function createGraphRenderer(
   const resources = context ? createRenderResources(context) : null;
   const pixelRatio = Math.max(Number.EPSILON, options.pixelRatio ?? 1);
   const activeBackend = context ? "webgl" : fallbackContext ? "canvas2d" : "none";
+
+  // B1 Phase 1 INTERNAL CANARY: when the flag is on AND we have a WebGL2 context,
+  // node shapes are drawn by the instanced-shape renderer (radius-as-radius). The
+  // legacy point-sprite path stays for the default (flag off), so users on the
+  // unchanged canvas2d/point-sprite path see no difference.
+  const wantInstancedShapes = resolveInstancedShapes(options);
+  const shapeRenderer: WebGLShapeRenderer | null =
+    wantInstancedShapes && context && isWebGL2(context) ? createWebGLShapeRenderer(context) : null;
+  const usesInstancedShapes = shapeRenderer !== null;
+  // B1 Phase 2 INTERNAL CANARY: the SAME `instancedShapes` flag turns on the
+  // WebGL2 instanced-EDGE path (thick/clip/dash/curve/arrows via capsule SDF),
+  // replacing the legacy 1px `LINES`. Gated identically — the studio default
+  // (canvas2d) never enters this branch, so there is no user-facing change.
+  const edgeRenderer: WebGLEdgeRenderer | null =
+    wantInstancedShapes && context && isWebGL2(context) ? createWebGLEdgeRenderer(context) : null;
+  // B1 Phase 3 INTERNAL CANARY: the SAME `instancedShapes` flag turns on the
+  // WebGL2 instanced-BOX path (rounded-rect SDF glyph + per-label canvas-raster
+  // TEXT atlas + #199 pixel-fit), drawing the box nodes (shape 5) the P1 shape
+  // renderer SKIPS. Gated identically — the studio default (canvas2d) never
+  // enters this branch, so there is no user-facing change.
+  const boxRenderer: WebGLBoxRenderer | null =
+    wantInstancedShapes && context && isWebGL2(context)
+      ? createWebGLBoxRenderer(context, options.atlasCanvasFactory)
+      : null;
+  // Box-label measure service for the WebGL edge clip (E5) AND the box glyph +
+  // text atlas (#199 pixel-fit + width). Built once; null in non-DOM envs (the
+  // edge path then uses the empty-collapse box rect; the box path then collapses
+  // unlabelled too — both match Canvas2D's measureText-less behaviour).
+  const measureLabelWidth = edgeRenderer || boxRenderer ? createMeasureService() ?? undefined : undefined;
+  const edgeMeasureLabelWidth = measureLabelWidth;
+  let lastNonFiniteCount = 0;
+  // HYBRID box-text overlay (B1-P3): the WebGL box pass collects its per-label
+  // overlay draws here so the caller (the studio / the golden harness) can draw
+  // the box LABELS with a Canvas2D OVERLAY (the identical text engine the golden
+  // reference uses), composited on top of the WebGL box fill/border. Refreshed
+  // every render; empty on the Canvas2D / non-box paths.
+  let lastBoxTextDraws: BoxTextDraw[] = [];
   let state: RendererState = {
     nodeIds: [],
     positions: new Float32Array(),
@@ -1035,6 +1127,9 @@ export function createGraphRenderer(
     ensureAlive();
 
     const skipEdges = options?.skipEdges ?? false;
+    // Fresh per-frame box-label overlay draws (HYBRID text path). The WebGL box
+    // pass repopulates this; the Canvas2D path draws its own text inline.
+    lastBoxTextDraws = [];
 
     if (!context) {
       drawFallback2D(fallbackContext, state, camera, canvas, pixelRatio, skipEdges);
@@ -1052,60 +1147,125 @@ export function createGraphRenderer(
     }
 
     if (!skipEdges && state.edges.length > 0) {
-      context.useProgram(resources.edgeProgram.program);
-      bindCameraUniforms(context, resources.edgeProgram.uniforms, camera, canvas, pixelRatio);
-      uploadAttribute(
-        context,
-        resources.positionBuffer,
-        resources.edgeProgram.attributes.position,
-        buildEdgePositions(state, pixelRatio),
-        2,
-        context.FLOAT,
-        false,
-      );
-      uploadAttribute(
-        context,
-        resources.colorBuffer,
-        resources.edgeProgram.attributes.color,
-        buildEdgeColors(state),
-        4,
-        context.UNSIGNED_BYTE,
-        true,
-      );
-      context.drawArrays(context.LINES, 0, state.edges.length);
+      if (edgeRenderer) {
+        // B1 Phase 2 INTERNAL CANARY: WebGL2 instanced edges (thick round-capped
+        // capsules + clip + dash + curve + arrowheads), driven by the shared
+        // render-geometry so the GL edge matches the Canvas2D edge — NOT the
+        // legacy 1px `LINES`. Box/labels/picking stay on later phases / Canvas2D.
+        edgeRenderer.renderEdges({
+          positions: state.positions,
+          nodeCount: state.nodeIds.length,
+          edges: state.edges,
+          style: state.style,
+          camera,
+          pixelRatio,
+          viewportWidth: canvas?.width ?? 0,
+          viewportHeight: canvas?.height ?? 0,
+          measureLabelWidth: edgeMeasureLabelWidth,
+        });
+      } else {
+        // Legacy 1px point-sprite edge path (default for users).
+        context.useProgram(resources.edgeProgram.program);
+        bindCameraUniforms(context, resources.edgeProgram.uniforms, camera, canvas, pixelRatio);
+        uploadAttribute(
+          context,
+          resources.positionBuffer,
+          resources.edgeProgram.attributes.position,
+          buildEdgePositions(state, pixelRatio),
+          2,
+          context.FLOAT,
+          false,
+        );
+        uploadAttribute(
+          context,
+          resources.colorBuffer,
+          resources.edgeProgram.attributes.color,
+          buildEdgeColors(state),
+          4,
+          context.UNSIGNED_BYTE,
+          true,
+        );
+        context.drawArrays(context.LINES, 0, state.edges.length);
+      }
     }
 
     if (state.nodeIds.length > 0) {
-      context.useProgram(resources.nodeProgram.program);
-      bindCameraUniforms(context, resources.nodeProgram.uniforms, camera, canvas, pixelRatio);
-      uploadAttribute(
-        context,
-        resources.positionBuffer,
-        resources.nodeProgram.attributes.position,
-        state.positions,
-        2,
-        context.FLOAT,
-        false,
-      );
-      uploadAttribute(
-        context,
-        resources.colorBuffer,
-        resources.nodeProgram.attributes.color,
-        buildNodeColors(state),
-        4,
-        context.UNSIGNED_BYTE,
-        true,
-      );
-      uploadAttribute(
-        context,
-        resources.sizeBuffer,
-        resources.nodeProgram.attributes.size,
-        buildNodeSizes(state),
-        1,
-        context.FLOAT,
-        false,
-      );
-      context.drawArrays(context.POINTS, 0, state.nodeIds.length);
+      if (shapeRenderer) {
+        // B1 Phase 1 INTERNAL CANARY: instanced node shapes (radius-as-radius).
+        // Box glyphs (shape 5), labels, and picking are NOT drawn here (later
+        // phases / Canvas2D). The shared render-geometry drives the radii so the
+        // GL circle matches the Canvas2D circle exactly, not the half-sprite.
+        const bounds = computePositionBounds(state.positions);
+        const { nonFiniteCount } = shapeRenderer.renderShapes({
+          positions: state.positions,
+          nodeCount: state.nodeIds.length,
+          style: state.style,
+          camera,
+          pixelRatio,
+          viewportWidth: canvas?.width ?? 0,
+          viewportHeight: canvas?.height ?? 0,
+          centerX: Number.isFinite(bounds.centerX) ? bounds.centerX : 0,
+          centerY: Number.isFinite(bounds.centerY) ? bounds.centerY : 0,
+        });
+        lastNonFiniteCount = nonFiniteCount;
+      } else {
+        // Legacy point-sprite path (default for users).
+        context.useProgram(resources.nodeProgram.program);
+        bindCameraUniforms(context, resources.nodeProgram.uniforms, camera, canvas, pixelRatio);
+        uploadAttribute(
+          context,
+          resources.positionBuffer,
+          resources.nodeProgram.attributes.position,
+          state.positions,
+          2,
+          context.FLOAT,
+          false,
+        );
+        uploadAttribute(
+          context,
+          resources.colorBuffer,
+          resources.nodeProgram.attributes.color,
+          buildNodeColors(state),
+          4,
+          context.UNSIGNED_BYTE,
+          true,
+        );
+        uploadAttribute(
+          context,
+          resources.sizeBuffer,
+          resources.nodeProgram.attributes.size,
+          buildNodeSizes(state),
+          1,
+          context.FLOAT,
+          false,
+        );
+        context.drawArrays(context.POINTS, 0, state.nodeIds.length);
+      }
+
+      // B1 Phase 3 INTERNAL CANARY: instanced BOX glyphs + in-box label text,
+      // drawn AFTER the node shapes (the P1 shape renderer skips shape-5 boxes).
+      // Only on the instanced canary path (boxRenderer is non-null only then);
+      // the legacy point-sprite path draws box nodes as plain points, unchanged.
+      if (boxRenderer) {
+        boxRenderer.renderBoxes({
+          positions: state.positions,
+          nodeCount: state.nodeIds.length,
+          style: state.style,
+          camera,
+          pixelRatio,
+          viewportWidth: canvas?.width ?? 0,
+          viewportHeight: canvas?.height ?? 0,
+          measureLabelWidth,
+          // HYBRID text path (B1-P3 shipping decision): the WebGL box pass draws
+          // ONLY fill + border; the in-box LABEL TEXT is collected here and drawn
+          // by a Canvas2D OVERLAY (the identical text engine the golden reference
+          // uses) composited on top of the WebGL boxes — text parity by
+          // construction, no GPU text atlas. Exposed via `boxTextDraws()`.
+          onTextDraws: (draws) => {
+            lastBoxTextDraws = draws;
+          },
+        });
+      }
     }
   }
 
@@ -1122,20 +1282,38 @@ export function createGraphRenderer(
       camera = { ...nextCamera };
     },
     render,
+    boxTextDraws(): BoxTextDraw[] {
+      // HYBRID box-text overlay (B1-P3): the per-label overlay draws collected
+      // by the LAST WebGL box render. The caller draws these with a Canvas2D
+      // OVERLAY (drawBoxLabels2D) on top of the WebGL boxes. Empty on the
+      // Canvas2D / non-box / legacy-atlas paths.
+      return lastBoxTextDraws;
+    },
     snapshot(): GraphRendererSnapshot {
       return {
         nodeCount: state.nodeIds.length,
         edgeCount: state.edges.length / 2,
         positions: Array.from(state.positions),
         camera: { ...camera },
+        // UNIFIED CAMERA (mat4): the column-major view-projection the GPU vertex
+        // transform is driven by, DERIVED from {x,y,zoom} + the device viewport.
+        // {x,y,zoom} stays the public camera API; this exposes the matrix the
+        // renderer actually feeds the shaders, opening the door to a future
+        // perspective(3D) matrix without changing callers.
+        viewProjection: Array.from(cameraToViewProjection(camera, canvas?.width ?? 1, canvas?.height ?? 1)),
         destroyed,
         hasWebGL: context !== null,
         backend: activeBackend,
         hasStyle: state.style !== undefined,
+        instancedShapes: usesInstancedShapes,
+        nonFiniteCount: lastNonFiniteCount,
       };
     },
     destroy() {
       destroyed = true;
+      shapeRenderer?.destroy();
+      edgeRenderer?.destroy();
+      boxRenderer?.destroy();
     },
   };
 }

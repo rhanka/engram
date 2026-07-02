@@ -27,9 +27,35 @@ import {
 } from "./ontology-reconciliation-api.js";
 import type { OntologyReconciliationCandidateFilter } from "./ontology-reconciliation.js";
 import type { OntologyReconciliationDecisionLogOptions } from "./ontology-patch.js";
+import type { GraphStore } from "./storage/types.js";
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost", "ip6-loopback"]);
 const POST_BODY_MAX_BYTES = 256 * 1024;
+
+/**
+ * The slice of a {@link GraphStore} the `/api/ontology/groups` route reads: the
+ * capability descriptor (to gate on the optional `aggregate`) plus the
+ * `groupCounts(axis)` reader. A full GraphStore satisfies it; tests inject a
+ * minimal fake. Optional everywhere downstream, so the DEFAULT flat-JSON studio
+ * (no store configured) is byte-for-byte unchanged.
+ */
+export type StudioGroupCountsStore = Pick<GraphStore, "capabilities" | "groupCounts">;
+
+/**
+ * The slice of a {@link GraphStore} the `/api/ontology/window` route reads: the
+ * capability descriptor (to gate on the optional `window`) plus the windowed
+ * readers. The readers are OPTIONAL (a backend may omit the capability), so a
+ * plain {@link StudioGroupCountsStore} also satisfies it — the default flat-JSON
+ * studio (no store) is unchanged, and a store without the `window` capability
+ * 404s the route.
+ */
+export type StudioWindowStore = Pick<
+  GraphStore,
+  "capabilities" | "layoutPositions" | "graphWindow"
+>;
+
+/** The store slice the studio routes consume: group-counts AND window readers. */
+export type StudioStore = StudioGroupCountsStore & StudioWindowStore;
 
 export interface OntologyStudioWriteOptions {
   token: string;
@@ -40,6 +66,15 @@ export interface OntologyStudioHandlerOptions {
   write?: OntologyStudioWriteOptions;
   /** Bind host; when loopback, same-origin writes are trusted without a token. */
   host?: string;
+  /**
+   * Optional GraphStore mirror (storage LOT 1/2/3). Present ONLY when a backend
+   * declaring the `aggregate` and/or `window` capability is configured; the
+   * `GET /api/ontology/groups` route then serves O(#groups) precomputed counts
+   * and `GET /api/ontology/window` serves a bounded first-paint slice. Absent for
+   * the default flat-JSON studio, where both routes 404 and the SPA falls back to
+   * its in-memory group-by + full scene — so the default is unchanged.
+   */
+  store?: StudioStore;
 }
 
 export interface StartOntologyStudioServerOptions {
@@ -48,6 +83,13 @@ export interface StartOntologyStudioServerOptions {
   port?: number;
   write?: boolean;
   token?: string;
+  /**
+   * Optional aggregate-/window-capable GraphStore for the
+   * `/api/ontology/groups` + `/api/ontology/window` routes (storage LOT 2/3).
+   * Omitted by the default studio, which keeps serving flat JSON only; the routes
+   * then 404 and the SPA falls back to client group-by + the full scene.
+   */
+  store?: StudioStore;
 }
 
 export interface StartedOntologyStudioServer {
@@ -347,6 +389,104 @@ function patchRouteForMethod(pathname: string): "validate" | "dry-run" | "apply"
   return null;
 }
 
+/**
+ * GET /api/ontology/groups?axis=node_type — storage LOT 2.
+ *
+ * Capability-gated, READ-ONLY group-by counts served from a configured
+ * GraphStore mirror's precomputed aggregate (O(#groups), never an O(#nodes) scan
+ * of the snapshot). The studio PREFERS these counts for the group rail and falls
+ * back to its in-memory computation whenever the route is unavailable, so the
+ * default flat-JSON studio (no store) is unaffected.
+ *
+ * Any gating miss returns 404 so the SPA cleanly falls back to client group-by:
+ *   - no store configured (the default studio);
+ *   - the store omits the `aggregate` capability / `groupCounts` reader;
+ *   - the requested axis is not one the capability advertises (e.g. an ontology
+ *     class axis the store does not precompute) — the client keeps owning it.
+ *
+ * Async because `groupCounts()` is async; it is dispatched from the (async)
+ * request handler ahead of the synchronous route table.
+ */
+export async function handleOntologyGroupsRequest(
+  options: OntologyStudioHandlerOptions,
+  requestUrl: string,
+): Promise<OntologyStudioRouteResult> {
+  const url = new URL(requestUrl, "http://127.0.0.1");
+  const axis = optionalString(url.searchParams.get("axis")) ?? "node_type";
+  const store = options.store;
+  const aggregate = store?.capabilities?.aggregate;
+  if (!store || !aggregate || typeof store.groupCounts !== "function") {
+    return jsonResult(404, {
+      error: "group counts unavailable: no aggregate-capable store configured",
+    });
+  }
+  if (!aggregate.axes.includes(axis)) {
+    return jsonResult(404, { error: `group counts unavailable for axis '${axis}'` });
+  }
+  try {
+    const counts = await store.groupCounts(axis);
+    return jsonResult(200, counts);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return jsonResult(500, { error: message });
+  }
+}
+
+/**
+ * GET /api/ontology/window?strategy=degree-top-n&layout=force&limit=N — storage
+ * LOT 3, the windowed scene loader that kills the full multi-MB scene transfer.
+ *
+ * Capability-gated, READ-ONLY. Serves a BOUNDED first-paint slice from a
+ * configured window-capable GraphStore mirror: the strategy is `degree-top-n`
+ * (the simplest useful window — the N highest-degree nodes + the edges induced
+ * among them, annotated with the layout's precomputed x/y), chosen because the
+ * coarse high-degree core is exactly what first paint needs and it is a single
+ * indexed scan over `graph_positions`, never an O(#nodes) sort. The studio
+ * PREFERS this for first paint and falls back to the full scene whenever the
+ * route is unavailable, so the default flat-JSON studio (no store) is unaffected.
+ *
+ * Any gating miss returns 404 so the SPA cleanly falls back to the full scene:
+ *   - no store / no `window` capability / no `graphWindow` reader;
+ *   - the requested strategy or layout is not one the capability advertises.
+ *
+ * Async because `graphWindow()` is async; dispatched from the (async) request
+ * handler ahead of the synchronous route table, like `/api/ontology/groups`.
+ */
+export async function handleOntologyWindowRequest(
+  options: OntologyStudioHandlerOptions,
+  requestUrl: string,
+): Promise<OntologyStudioRouteResult> {
+  const url = new URL(requestUrl, "http://127.0.0.1");
+  const store = options.store;
+  const window = store?.capabilities?.window;
+  if (!store || !window || typeof store.graphWindow !== "function") {
+    return jsonResult(404, {
+      error: "window unavailable: no windowed-loader store configured",
+    });
+  }
+  const strategy =
+    optionalString(url.searchParams.get("strategy")) ?? window.strategies[0] ?? "degree-top-n";
+  if (!window.strategies.includes(strategy)) {
+    return jsonResult(404, { error: `window unavailable for strategy '${strategy}'` });
+  }
+  const layout = optionalString(url.searchParams.get("layout")) ?? window.layouts[0] ?? "force";
+  if (!window.layouts.includes(layout)) {
+    return jsonResult(404, { error: `window unavailable for layout '${layout}'` });
+  }
+  const limit = optionalInteger(url.searchParams.get("limit"));
+  try {
+    const slice = await store.graphWindow({
+      strategy,
+      layout,
+      ...(limit !== undefined ? { limit } : {}),
+    });
+    return jsonResult(200, slice);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return jsonResult(500, { error: message });
+  }
+}
+
 export function createOntologyStudioRequestHandler(options: OntologyStudioHandlerOptions) {
   return async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     const method = request.method ?? "GET";
@@ -416,6 +556,22 @@ export function createOntologyStudioRequestHandler(options: OntologyStudioHandle
           sendAsset(response, asset);
           return;
         }
+      }
+      // Storage LOT 2: the async, store-backed group-by counts route. Handled
+      // here (not in the synchronous route table) because `groupCounts()` is
+      // async. With no store configured it returns 404 and the SPA falls back to
+      // its in-memory group-by, so the default studio path is unchanged.
+      if (url.pathname === "/api/ontology/groups") {
+        sendResult(response, await handleOntologyGroupsRequest(options, requestUrl));
+        return;
+      }
+      // Storage LOT 3: the async, store-backed windowed scene loader. Handled
+      // here (not in the synchronous route table) because `graphWindow()` is
+      // async. With no window-capable store it returns 404 and the SPA falls back
+      // to the full scene, so the default studio path is unchanged.
+      if (url.pathname === "/api/ontology/window") {
+        sendResult(response, await handleOntologyWindowRequest(options, requestUrl));
+        return;
       }
     }
 
@@ -504,6 +660,9 @@ export async function startOntologyStudioServer(
   };
   if (writeEnabled) {
     handlerOptions.write = { token: options.token ?? generateOntologyStudioToken() };
+  }
+  if (options.store) {
+    handlerOptions.store = options.store;
   }
   const server = createServer(createOntologyStudioRequestHandler(handlerOptions));
   await new Promise<void>((resolve, reject) => {

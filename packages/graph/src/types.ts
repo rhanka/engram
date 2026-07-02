@@ -142,6 +142,21 @@ export interface LayoutOptions {
   pinnedIds?: readonly NodeId[];
   pinMask?: Uint8Array;
   pinPositions?: Float32Array;
+  /**
+   * Per-node type label, node-order keyed (parallel to
+   * {@link RenderGraphBuffers.nodeIds}). Consumed by typed-layer / swimlane
+   * layouts to band nodes into lanes by type; ignored by the force / static
+   * engines. Optional & additive — absent ⇒ a single (untyped) lane.
+   */
+  nodeTypes?: readonly (string | null | undefined)[];
+  /**
+   * Per-node interval START, epoch-ms, node-order keyed (parallel to
+   * {@link RenderGraphBuffers.nodeIds}) — the shared scene-contract `t` (#234).
+   * Consumed by the time-oriented (Variant E) layout to place nodes on the X
+   * (time) axis; ignored by the force / typed-layer / static engines. Optional &
+   * additive — a nullish / non-finite entry is treated as "untimed".
+   */
+  nodeTimes?: readonly (number | null | undefined)[];
 }
 
 export interface LayoutEngine {
@@ -164,6 +179,28 @@ export interface GraphRendererOptions {
   backend?: GraphRendererBackend;
   antialias?: boolean;
   pixelRatio?: number;
+  /**
+   * INTERNAL CANARY (B1 migration Phase 1). When true AND the active backend is
+   * WebGL2, node glyphs are drawn with the new INSTANCED-SHAPE path
+   * (`webgl-shapes.ts`: instanced discs/polygons, radius-as-radius) instead of
+   * the legacy point-sprite path. Defaults to the resolved `GRAPHIFY_RENDER_BACKEND`
+   * flag, which is `false` (legacy) for users — so there is no user-facing
+   * change. Edges, the box glyph, labels, and picking stay on the legacy /
+   * Canvas2D path in Phase 1.
+   */
+  instancedShapes?: boolean;
+  /**
+   * INTERNAL CANARY (B1 migration Phase 3). Offscreen-2D-canvas factory the
+   * WebGL box-label TEXT atlas rasterizes onto. The golden harness passes a
+   * factory that PINS the deterministic font on the raster context (the same
+   * pin it applies to the render canvas) so the atlas rasterizes with the SAME
+   * family Canvas2D measured + drew with. Defaults to a plain OffscreenCanvas /
+   * detached `<canvas>`. Only consulted on the WebGL2 instanced-box canary path.
+   */
+  atlasCanvasFactory?: (
+    width: number,
+    height: number,
+  ) => { canvas: unknown; ctx: CanvasRenderingContext2D } | null;
   interaction?: {
     hover?: boolean;
     pan?: boolean;
@@ -179,14 +216,55 @@ export interface GraphRendererSnapshot {
   nodeCount: number;
   edgeCount: number;
   positions: number[];
+  /**
+   * The 2D camera as the PUBLIC `{x, y, zoom}` pan/zoom API (unchanged). The
+   * renderer derives the mat4 view-projection from it (see {@link viewProjection}).
+   */
   camera: CameraState;
+  /**
+   * UNIFIED CAMERA: the column-major (16-element) mat4 VIEW-PROJECTION the GPU
+   * vertex shaders are driven by, DERIVED from {@link camera} + the device
+   * viewport. For 2D it is the ORTHOGRAPHIC matrix equivalent to the legacy
+   * pan/zoom affine; it is the seam a future perspective(3D) camera replaces.
+   * Additive & optional — callers that only need pan/zoom keep using {@link camera}.
+   */
+  viewProjection?: number[];
   destroyed: boolean;
   hasWebGL: boolean;
   backend: GraphRendererActiveBackend;
   hasStyle: boolean;
+  /**
+   * Whether the new INSTANCED-SHAPE WebGL path drew this renderer's nodes
+   * (B1 Phase 1 internal canary). False on the Canvas2D / legacy point-sprite
+   * paths.
+   */
+  instancedShapes?: boolean;
+  /**
+   * Count of non-finite world coordinates coerced at the geometry boundary in
+   * the LAST render (N1b / R13). Surfaced so a NaN/±Inf position is never
+   * silently swallowed by the WebGL backend.
+   */
+  nonFiniteCount?: number;
   layoutOptions?: undefined;
 }
 
+/**
+ * The renderer is a pure DRAW surface — it owns no PICKING / hit-testing API
+ * (no `pick` / `hitTest` / `nodeAt` / `readPixels`), and this is intentional
+ * across every backend (B1-P4).
+ *
+ * Node picking is CPU / STUDIO-owned and BACKEND-AGNOSTIC: the studio converts
+ * the pointer to world coords through the camera and finds the nearest node
+ * from the SHARED render-geometry — `positions` (node centres) + the style
+ * `nodeSizes` (drawn radii) — the same buffers handed to {@link setGraph} /
+ * {@link setStyle}. The WebGL2 canary (P1 shapes, P2 edges, P3 box/text) only
+ * changes WHICH pixels are drawn from those buffers, so swapping canvas2d ↔
+ * webgl cannot move the node under the cursor. GPU color-picking (render ids to
+ * an offscreen attachment + readPixels) is therefore UNNECESSARY here; adding a
+ * picking method to this interface would create a per-backend hook that could
+ * silently diverge from the CPU hit-test. (Verified by
+ * studio/src/tests/pickingBackendAgnostic.test.js.)
+ */
 export interface GraphRenderer {
   setGraph(graph: RenderGraphInput | RenderGraphBuffers): void;
   setStyle(style: GraphStyleBuffers): void;
@@ -195,6 +273,15 @@ export interface GraphRenderer {
   fitView(options: FitViewOptions): void;
   setCamera(camera: CameraState): void;
   render(options?: { skipEdges?: boolean }): void;
+  /**
+   * HYBRID box-text overlay draws (B1-P3) from the LAST WebGL box render: one
+   * entry per labelled box (device-px centre + #199-fitted label + device font
+   * + node alpha). The caller draws these onto a Canvas2D OVERLAY (the identical
+   * text engine the golden reference uses) composited on top of the WebGL boxes,
+   * so the in-box text matches the Canvas2D reference by construction. Returns an
+   * empty array on the Canvas2D / non-box paths (which draw their own text).
+   */
+  boxTextDraws(): import("./webgl-boxes").BoxTextDraw[];
   snapshot(): GraphRendererSnapshot;
   destroy(): void;
 }

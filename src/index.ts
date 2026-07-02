@@ -423,6 +423,18 @@ export { parsePdfOcrMode, preflightPdf, pdfOcrSidecarStem } from "./pdf-prefligh
 export type { PdfOcrMode, PdfPreflightOptions, PdfPreflightResult } from "./pdf-preflight.js";
 export { augmentDetectionWithPdfPreflight } from "./pdf-ocr.js";
 export type { PdfPreparationArtifact, PdfPreparationOptions } from "./pdf-ocr.js";
+export { buildPdfOcrPagesSidecar, pdfOcrPagesToCitedSourceRefs, PDF_OCR_PAGES_SCHEMA } from "./pdf-ocr-refs.js";
+export type {
+  PdfOcrPagesSidecar,
+  PdfOcrPageRef,
+  PdfOcrImageRef,
+  PdfOcrBlockRef,
+  PdfOcrRefOptions,
+  BuildPdfOcrPagesInput,
+  NormalizedBbox,
+} from "./pdf-ocr-refs.js";
+export { citationToCitedSourceRef, citationsToCitedSourceRefs, validateCitedSourceRef } from "./cited-source-refs.js";
+export type { CitedSourceRefValidation } from "./cited-source-refs.js";
 export { prepareSemanticDetection } from "./semantic-prepare.js";
 export type { SemanticPreparationOptions, SemanticPreparationResult } from "./semantic-prepare.js";
 export {
@@ -583,6 +595,13 @@ export type {
   LayoutGraphNode,
   LayoutResult,
 } from "./graph-layout.js";
+export {
+  applySceneLayout,
+  attachTypedLayerPositions,
+  resolveSceneLayoutId,
+  TYPED_LAYER_SCENE_LAYOUT_ID,
+} from "./scene-layout.js";
+export type { SceneLayoutId } from "./scene-layout.js";
 export { buildStudioRenderBuffers } from "./studio-render-buffers.js";
 export type {
   BuildStudioRenderBuffersOptions,

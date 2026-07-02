@@ -18,8 +18,8 @@
  *     `conflicts[]` and demoted into `overlay_arcs`. `status` is carried by
  *     the CHILD entry. The sidecar is AUTHORITATIVE for traversal; the
  *     node-level parent_id/child_ids from G1 are display-only.
- *   - LANE 2 (overlay): the remaining statuses (proposed / inferred /
- *     candidate). Empty in v1 (the profile pipeline only produces
+ *   - LANE 2 (overlay): the remaining statuses (guessed / proposed / inferred /
+ *     candidate / rejected / superseded). Empty in v1 (the profile pipeline only produces
  *     status:"reference" arcs) apart from mono-parent demotions.
  *   - Orphan tolerance (B6): a child whose parent is absent from
  *     `sceneNodeIds` is promoted to root and listed in `orphan_ids`.
@@ -62,7 +62,7 @@ export interface SceneHierarchyNodeEntry {
 export interface SceneHierarchyOverlayArc {
   parent_id: string;
   child_id: string;
-  status: "proposed" | "inferred" | "candidate";
+  status: "guessed" | "proposed" | "inferred" | "candidate" | "rejected" | "superseded";
   confidence?: number;
   evidence_refs?: string[];
   derivation_method?: string;
@@ -158,8 +158,16 @@ function treeStatus(value: string): "reference" | "validated" {
   return value === "validated" ? "validated" : "reference";
 }
 
-function overlayStatus(value: string): "proposed" | "inferred" | "candidate" {
-  return value === "inferred" || value === "candidate" ? value : "proposed";
+type SceneHierarchyOverlayStatus = SceneHierarchyOverlayArc["status"];
+
+function overlayStatus(value: string): SceneHierarchyOverlayStatus {
+  return value === "guessed" ||
+    value === "inferred" ||
+    value === "candidate" ||
+    value === "rejected" ||
+    value === "superseded"
+    ? value
+    : "proposed";
 }
 
 function compareStrings(a: string, b: string): number {
@@ -168,7 +176,7 @@ function compareStrings(a: string, b: string): number {
 
 function overlayArcFrom(
   arc: OntologyHierarchyArc,
-  status: "proposed" | "inferred" | "candidate",
+  status: SceneHierarchyOverlayStatus,
   derivationMethod?: string,
 ): SceneHierarchyOverlayArc {
   const out: SceneHierarchyOverlayArc = {
