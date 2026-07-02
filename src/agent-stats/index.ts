@@ -80,13 +80,23 @@ export interface SyncResult {
   factsTotal: number;
 }
 
-/** Read `git log --all` for the repo as correlation ground truth. */
-export function readGitCommits(repoRoot: string): GitCommitMeta[] {
+export interface ReadGitCommitsOptions {
+  /** Hybrid skeleton window: bounded history, default 6 months. */
+  since?: string;
+  /** Safety cap for visualization exports, default 2000. */
+  maxCount?: number;
+}
+
+/** Read a bounded `git log --all` for correlation and project-graph skeletons. */
+export function readGitCommits(repoRoot: string, opts: ReadGitCommitsOptions = {}): GitCommitMeta[] {
   // Reuse the project's ESM-safe git helper (the bundler cannot dynamic-require
   // child_process). Pipe-delimited; `%cI` (strict ISO-8601) sits BETWEEN the sha
   // and the subject. ISO-8601 contains no pipe, so a subject that itself holds
   // pipes still survives intact (everything after the 2nd pipe is the subject).
-  const out = safeExecGit(repoRoot, ["log", "--all", "--format=%H|%cI|%s"]);
+  const args = ["log", "--all", `--max-count=${opts.maxCount ?? 2000}`];
+  if (opts.since !== "all") args.push(`--since=${opts.since ?? "6 months ago"}`);
+  args.push("--format=%H|%P|%cI|%s");
+  const out = safeExecGit(repoRoot, args);
   if (!out) return [];
   const commits: GitCommitMeta[] = [];
   for (const line of out.split("\n")) {
@@ -94,14 +104,43 @@ export function readGitCommits(repoRoot: string): GitCommitMeta[] {
     if (i1 < 7) continue;
     const i2 = line.indexOf("|", i1 + 1);
     if (i2 < 0) continue;
+    const i3 = line.indexOf("|", i2 + 1);
+    if (i3 < 0) continue;
     const sha = line.slice(0, i1);
     if (sha.length < 7) continue;
-    const dateIso = line.slice(i1 + 1, i2);
-    const subject = line.slice(i2 + 1);
+    const parents = line.slice(i1 + 1, i2).trim();
+    const dateIso = line.slice(i2 + 1, i3);
+    const subject = line.slice(i3 + 1);
     const ms = Date.parse(dateIso);
-    commits.push({ sha, subject, committedAtMs: Number.isFinite(ms) ? ms : undefined });
+    commits.push({
+      sha,
+      parentShas: parents ? parents.split(/\s+/).filter(Boolean) : [],
+      subject,
+      committedAtMs: Number.isFinite(ms) ? ms : undefined,
+    });
   }
   return commits;
+}
+
+export interface GitBranchHead {
+  name: string;
+  sha: string;
+}
+
+/** Read local branch heads for the project graph skeleton. */
+export function readGitBranchHeads(repoRoot: string): GitBranchHead[] {
+  const out = safeExecGit(repoRoot, ["for-each-ref", "--format=%(refname:short)|%(objectname)", "refs/heads"]);
+  if (!out) return [];
+  return out
+    .split("\n")
+    .map((line) => {
+      const i = line.indexOf("|");
+      if (i <= 0) return undefined;
+      const name = line.slice(0, i);
+      const sha = line.slice(i + 1);
+      return sha.length >= 7 ? { name, sha } : undefined;
+    })
+    .filter((x): x is GitBranchHead => !!x);
 }
 
 /** Resolve the origin GitHub repo ("owner/name") for PR-url scoping. */
@@ -695,8 +734,13 @@ export function buildProjectGraphForIdentity(
     home?: string;
     includeCommits?: boolean;
     includeBranches?: boolean;
-    /** Inject git commits (skips `git log`); else read from the registry root. */
+    /** Inject git commits (skips `git log`); else read bounded history from the registry root. */
     commits?: GitCommitMeta[];
+    /** Inject branch heads; else read from the registry root. */
+    branchHeads?: GitBranchHead[];
+    gitSince?: string;
+    gitMaxCount?: number;
+    includeHubEdges?: boolean;
   } = {},
 ): { graph: ProjectGraph; sessions: number } {
   const home = opts.home ?? homedir();
@@ -711,13 +755,16 @@ export function buildProjectGraphForIdentity(
     (identity.aliases[0]?.pathPrefixes[0]
       ? identity.aliases[0]!.pathPrefixes[0]!.replace(/^~/, home)
       : undefined);
-  const commits = opts.commits ?? (gitRoot ? readGitCommits(gitRoot) : []);
+  const commits = opts.commits ?? (gitRoot ? readGitCommits(gitRoot, { since: opts.gitSince, maxCount: opts.gitMaxCount }) : []);
+  const branchHeads = opts.branchHeads ?? (gitRoot ? readGitBranchHeads(gitRoot) : []);
   const graph = buildProjectGraph({
     identity,
     sessions,
     includeCommits: opts.includeCommits,
     includeBranches: opts.includeBranches,
     commits,
+    branchHeads,
+    includeHubEdges: opts.includeHubEdges,
     provenance: {
       tool: "graphify agent-stats project-graph",
       schema: PROJECT_GRAPH_SCHEMA,
