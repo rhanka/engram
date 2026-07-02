@@ -6,6 +6,7 @@ import {
   extractJava,
   extractCpp,
   extractRust,
+  extractPhp,
   type ExtractionResult,
 } from "../src/extract.js";
 import type { GraphEdge } from "../src/types.js";
@@ -158,5 +159,37 @@ describe("Lot 2: Rust struct/enum field type references (#1582, #1579)", () => {
     // collector, so no field type is dropped.)
     // Enum variants: tuple variant `Click(Logger)` + struct variant `Resize { size: Dim }`.
     expect(refs).toContainEqual({ context: "field", target: "Dim" });
+  });
+});
+
+describe("Lot 2: PHP property + promoted-ctor type references (#1590)", () => {
+  let dir: string;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "graphify-php-typeref-")); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  it("emits field references for typed properties and promoted constructor params", async () => {
+    const file = join(dir, "sample.php");
+    writeFileSync(file, [
+      "<?php",
+      "class Repo {}",
+      "class Logger {}",
+      "class UserService {",
+      "    private Repo $repo;",
+      "    protected ?Logger $logger;",
+      "    public function __construct(private Cache $cache, string $name) {}",
+      "}",
+    ].join("\n"));
+
+    const result = await extractPhp(file);
+    if (!grammarAvailable(result)) return; // grammar absent — asserts in CI
+
+    const refs = typeReferences(result);
+    // Typed class properties.
+    expect(refs).toContainEqual({ context: "field", target: "Repo" });
+    expect(refs).toContainEqual({ context: "field", target: "Logger" });
+    // Promoted constructor property is a real class field.
+    expect(refs).toContainEqual({ context: "field", target: "Cache" });
+    // A non-promoted scalar param (`string $name`) leaks no class field edge.
+    expect(refs.some((r) => r.target === "string" || r.target === "name")).toBe(false);
   });
 });
