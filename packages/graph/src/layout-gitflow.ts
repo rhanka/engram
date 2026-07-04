@@ -4,8 +4,9 @@
  * Deterministic left→right git-graph placement of the agent-stats project-graph
  * scene model (#257): node types `Commit` / `Branch` / `Session` connected by
  * `commit-parent` (child→parent), `branch-head` (branch→tip commit),
- * `produced` (session→commit), `touched-branch` (session→branch) and
- * `derived-from` (session→session).
+ * `produced` (session→commit), `touched-branch` (session→branch),
+ * `derived-from` (session→session) and `merged-as` (branch tip commit → the
+ * merge/squash commit it landed as on its base branch).
  *
  * Per REPO (one horizontal band per repo, bands stacked with a gap; the repo is
  * a colour community, never a rendered hub):
@@ -19,9 +20,10 @@
  *     display window (or with no resolvable fork) ATTACH AT THE WINDOW LEFT
  *     EDGE with a dashed/soft entry.
  *   • LANE-REUSE (gitk-style interval colouring) — each branch occupies a lane
- *     over its [forkRank, tipRank] interval only; a lane frees once the
- *     previous interval ends (+`laneReuseGap` ranks), so hundreds of branches
- *     stay compact. ALL branches are placed — there is no top-K.
+ *     over its [forkRank, tipRank] interval only (a MERGED branch's interval
+ *     extends to — and ENDS at — its `merged-as` commit's rank); a lane frees
+ *     once the previous interval ends (+`laneReuseGap` ranks), so hundreds of
+ *     branches stay compact. ALL branches are placed — there is no top-K.
  *   • DISPLAY WINDOW — sized to enclose the kept forks, capped at `maxWindow`
  *     ranks; trunk commits older than the window PARK (placed=0) one rank left
  *     of the window edge, so the window-left dashed entries visibly continue.
@@ -29,11 +31,13 @@
  *     their touched branch's tip), so the app can colour them by `agent_kind`.
  *
  * The layout also emits PER-EDGE ROUTE HINTS so the renderer draws git-flow
- * edges port-to-port: `commit-parent` edges are `flow-port-reverse` (the data
- * edge is child→parent = new→old; drawn old→new so every arrow enters a LEFT
- * port pointing right), window-left entries are dashed, structural edges
- * (`branch-head` / `touched-branch`) are hidden, session edges are short
- * subtle `session-link`s.
+ * edges port-to-port with the REFERENCE ARROW GRAMMAR (GitHub network graph /
+ * nvie git-flow): lane segments are arrowed `flow-port-reverse`; FORK descents
+ * (fork commit → first branch commit) are the SAME S but BARE (`arrow: false`
+ * — a descending arrow reads as an inverted merge); `merged-as` MERGE
+ * connectors are ascending `flow-port` S WITH the arrow pointing into the base
+ * commit; window-left entries are dashed; structural edges (`branch-head` /
+ * `touched-branch`) are hidden; session edges are short subtle `session-link`s.
  *
  * Pure & deterministic — no randomness, no renderer/camera/shader coupling.
  */
@@ -88,8 +92,15 @@ export interface GitFlowLayoutOptions {
 /** Per-edge ROUTE hint emitted by the layout (edge-order keyed). */
 export interface GitFlowEdgeHint {
   /**
+   * • `"flow-port"` — `merged-as` MERGE connector (branch tip commit → the
+   *   merge/squash commit on its base): drawn right-port → left-port as-is
+   *   (the tip is older/left of the merge commit), ALWAYS with the arrowhead
+   *   pointing INTO the base commit — the git-flow grammar's arrowed ascent.
    * • `"flow-port-reverse"` — git `commit-parent` edge between placed commits:
    *   drawn right-port → left-port with the endpoints swapped (old→new).
+   *   Lane segments carry the arrowhead (`arrow: true`); FORK descents (the
+   *   fork commit → a branch's first exclusive commit) are BARE
+   *   (`arrow: false`) — in the reference grammar only merges are arrowed.
    * • `"session-link"` — session attachment (`produced` / `derived-from`):
    *   short & subtle, centre-routed (the ONE style allowed to break the
    *   left→right invariant).
@@ -97,9 +108,15 @@ export interface GitFlowEdgeHint {
    *   (`branch-head`, `touched-branch`, edges into parked/off-lane nodes).
    * • `"default"` — any other relation between placed nodes.
    */
-  style: "flow-port-reverse" | "session-link" | "hidden" | "default";
+  style: "flow-port" | "flow-port-reverse" | "session-link" | "hidden" | "default";
   /** `"dashed"` marks a WINDOW-LEFT soft entry (fork outside the window). */
   dash?: "solid" | "dashed";
+  /**
+   * Whether the flow-port edge carries an arrowhead. `false` ⇒ map to the
+   * `*-no-arrow` edge_style (fork descents); `true`/absent ⇒ arrowed. Only
+   * meaningful on the `flow-port*` styles.
+   */
+  arrow?: boolean;
 }
 
 /** Branch label anchor (lane start) for the app's label pass. */
@@ -200,6 +217,7 @@ export function computeGitFlowPositions(
   const producedOf = new Map<number, number[]>(); // session → commits (input order)
   const sessionsOfCommit = new Map<number, number[]>(); // commit → sessions (input order)
   const touchedOf = new Map<number, number>(); // session → first touched branch
+  const mergedAs = new Map<number, number>(); // branch TIP commit → merge/squash commit
 
   input.edges.forEach((edge, e) => {
     const s = idToIndex.get(edge.source);
@@ -222,6 +240,9 @@ export function computeGitFlowPositions(
       else sessionsOfCommit.set(t, [s]);
     } else if (relation === "touched-branch" && typeOf(s) === "Session" && typeOf(t) === "Branch") {
       if (!touchedOf.has(s)) touchedOf.set(s, t);
+    } else if (relation === "merged-as" && typeOf(s) === "Commit" && typeOf(t) === "Commit") {
+      // MERGE hint: the branch tip `s` was merged/squashed into commit `t`.
+      if (!mergedAs.has(s)) mergedAs.set(s, t);
     }
   });
 
@@ -258,6 +279,10 @@ export function computeGitFlowPositions(
 
   // Global display-rank map (per repo bands never share commits, so one map).
   const displayRank = new Map<number, number>();
+  // FIRST exclusive commit of every placed branch: its first-parent edge is
+  // the FORK descent — drawn as a BARE S (no arrowhead) per the git-flow
+  // grammar (only merges and lane segments are arrowed).
+  const forkEntryCommits = new Set<number>();
 
   let bandTop = 0;
   for (const repo of repoKeys) {
@@ -395,13 +420,17 @@ export function computeGitFlowPositions(
       const windowLeft = forkDisplay === undefined || forkDisplay < windowStart;
       const displayFork = windowLeft ? windowStart - 1 : forkDisplay!;
       rec.exclusive.forEach((c, k) => displayRank.set(c, displayFork + 1 + k));
+      if (rec.exclusive.length > 0) forkEntryCommits.add(rec.exclusive[0]!);
       placedBranches.push({ ...rec, displayFork, windowLeft });
     }
 
-    // ---- 5. LANE-REUSE interval colouring over [displayFork, tip]. --------
+    // ---- 5. LANE-REUSE interval colouring over [displayFork, laneEnd]. -----
     // Greedy smallest-free-lane over intervals sorted by start (gitk-style):
     // overlapping intervals get distinct lanes; a lane frees `laneReuseGap`
-    // ranks after the previous interval ends and is then REUSED.
+    // ranks after the previous interval ends and is then REUSED. A MERGED
+    // branch (`merged-as` from its tip) keeps its lane reserved up to the
+    // MERGE commit's rank — the ascending merge connector spans that far — and
+    // frees it exactly there (the merge ENDS the interval).
     const laneLastEnd: number[] = []; // per lane (1-based below), last occupied rank
     const laneOf = new Map<number, number>(); // branch → lane (≥ 1)
     const byInterval = [...placedBranches].sort((a, b) => {
@@ -412,7 +441,12 @@ export function computeGitFlowPositions(
     });
     for (const rec of byInterval) {
       const start = rec.displayFork;
-      const end = rec.displayFork + rec.exclusive.length;
+      let end = rec.displayFork + rec.exclusive.length;
+      // merged-as: the interval ends AT the merge commit's display rank.
+      const tip = branchTip.get(rec.branch);
+      const mergeCommit = tip !== undefined ? mergedAs.get(tip) : undefined;
+      const mergeDisplay = mergeCommit !== undefined ? displayRank.get(mergeCommit) : undefined;
+      if (mergeDisplay !== undefined) end = Math.max(end, mergeDisplay);
       let lane = -1;
       for (let l = 0; l < laneLastEnd.length; l += 1) {
         if (laneLastEnd[l]! + laneReuseGap < start) {
@@ -570,14 +604,27 @@ export function computeGitFlowPositions(
     if (relation === "commit-parent") {
       const childPlaced = placed[s] === 1;
       const parentPlaced = placed[t] === 1;
+      // FORK descent = the first-parent edge INTO a branch's first exclusive
+      // commit: a bare S, NO arrowhead (only merges / lane segments arrow).
+      const isForkEntry = forkEntryCommits.has(s) && parentsOf.get(s)?.[0] === t;
       if (childPlaced && parentPlaced) {
-        edgeHints[e] = { style: "flow-port-reverse", dash: "solid" };
+        edgeHints[e] = { style: "flow-port-reverse", dash: "solid", arrow: !isForkEntry };
       } else if (childPlaced && !parentPlaced && typeOf(t) === "Commit") {
         // WINDOW-LEFT soft entry: the parent is parked at the window edge.
-        edgeHints[e] = { style: "flow-port-reverse", dash: "dashed" };
+        edgeHints[e] = { style: "flow-port-reverse", dash: "dashed", arrow: !isForkEntry };
       } else {
         edgeHints[e] = { style: "hidden" };
       }
+      return;
+    }
+    if (relation === "merged-as") {
+      // MERGE connector: branch tip → merge/squash commit, ascending S with
+      // the arrowhead pointing INTO the base commit (drawn as-is: the tip is
+      // older, so the edge already flows left→right).
+      edgeHints[e] =
+        placed[s] === 1 && placed[t] === 1
+          ? { style: "flow-port", dash: "solid", arrow: true }
+          : { style: "hidden" };
       return;
     }
     if (relation === "branch-head" || relation === "touched-branch") {
