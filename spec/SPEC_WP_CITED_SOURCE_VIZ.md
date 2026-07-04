@@ -460,3 +460,24 @@ Formal h2a trace `env:architect-s5-ratification-to-graphify-live-20260704T1147Z`
   studio immediately (pure component: `CitedSourceRef[]` props + source-resolver callback, DS
   tokens, zero graphify runtime import inside the component) so the later rebase into
   `packages/cited-source-viewer` is mechanical.
+
+### S.6 — Viewer UX: QUALIFIED REQUIREMENTS (principal UAT, 2026-07-04 — immo parity)
+
+The principal qualified the viewer UX **once**, against the immo/radar production viewer
+(SignalPdfOverlay UX). These requirements are **binding for the interim viewer AND for
+`@sentropic/cited-source-viewer`** — the qualification is NOT to be re-run per consumer
+(canevas, immo, graphify studio, process-std-am all inherit it).
+
+1. **Central overlay, NOT a modal.** The viewer takes the place of the CENTRAL view, as an
+   overlay over the canvas area only. Side panels (left rail, right selection panel) stay
+   visible AND interactive — clicking elsewhere keeps working; a click on another citation
+   RETARGETS the open overlay (no stacking). No blocking backdrop. X closes.
+2. **Rich toolbar** (immo reference: `≪ Signal 1/2 ≫ | PDF 1/2 | ‹ Page 11/15 › | − 136% + | Ouvrir ↗`):
+   citation navigator `‹ Citation x/y ›` · **document navigator `Doc x/y`** when refs span
+   multiple source files · page navigator `‹ Page x/y ›` · **zoom `− NN% +`** (re-renders page +
+   highlights at scale) · **`Ouvrir ↗`** (raw source in a new tab). One compact DS bar under the header.
+3. **Citation affordance in panels**: a FULL-WIDTH button UNDER the quote —
+   `📄 Voir la source · p.N` (immo pattern) — never a right-aligned truncatable inline button.
+4. **Generic multi-modal frame**: the overlay + toolbar are COMMON to all modalities (MD + PDF
+   text-layer in v1; DOCX/PPTX v2; image-bbox v3); only the body swaps per modality. The frame
+   is qualified once — modality lots may not fork the frame UX.
