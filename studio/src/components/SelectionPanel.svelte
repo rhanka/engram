@@ -27,6 +27,7 @@
     onToggleCommunity,
     onToggleEntity,
     onClear,
+    onOpenSource = null,
   } = $props();
 
   const total = $derived(
@@ -64,6 +65,7 @@
           entity={entityCache[e.id] ?? null}
           hideTitle
           onOpenEntity={onFocusEntity}
+          {onOpenSource}
         />
       </div>
     {/if}

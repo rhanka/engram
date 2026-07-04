@@ -51,6 +51,12 @@ export default defineConfig(async ({ mode }) => ({
       // the SPA byte-for-byte with the Node build. search-index.ts is imported
       // type-only by the assembler, so its node:crypto value import is erased.
       "@graphify/retrieval": resolve(here, "../src/retrieval/answer-pack.ts"),
+      // Frozen cited-source seam (PR #260): OntologyCitation -> CitedSourceRef
+      // converters. Pure TS, type-only imports of types.ts — bundles clean.
+      // Consumed ONLY by the studio glue (lib/citedSources.js), NEVER by the
+      // CitedSourceViewer component itself (purity contract for the rebase
+      // into @sentropic/cited-source-viewer).
+      "@graphify/cited-source-refs": resolve(here, "../src/cited-source-refs.ts"),
     },
   },
   build: {
