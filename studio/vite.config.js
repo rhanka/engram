@@ -28,10 +28,15 @@ async function singleFilePlugins() {
 // The built SPA is served by `graphify ontology studio` from a static route.
 // `base: "./"` keeps asset URLs relative so the bundle works regardless of the
 // mount path the studio server picks.
-export default defineConfig(async () => ({
+export default defineConfig(async ({ mode }) => ({
   base: "./",
   plugins: [svelte(), ...(await singleFilePlugins())],
   resolve: {
+    // Under vitest (mode "test"), prefer the BROWSER build of packages —
+    // otherwise `svelte` resolves to its server entry and `mount()` throws
+    // (needed by the component render smokes, e.g. citedSourceViewer.test.js).
+    // Additive condition, test-mode only: the build output is untouched.
+    ...(mode === "test" ? { conditions: ["browser"] } : {}),
     alias: {
       "@sentropic/graph": resolve(here, "../packages/graph/src/index.ts"),
       // Pure, DOM-free deterministic force layout (honors fx/fy pins). Reused by
@@ -46,6 +51,12 @@ export default defineConfig(async () => ({
       // the SPA byte-for-byte with the Node build. search-index.ts is imported
       // type-only by the assembler, so its node:crypto value import is erased.
       "@graphify/retrieval": resolve(here, "../src/retrieval/answer-pack.ts"),
+      // Frozen cited-source seam (PR #260): OntologyCitation -> CitedSourceRef
+      // converters. Pure TS, type-only imports of types.ts — bundles clean.
+      // Consumed ONLY by the studio glue (lib/citedSources.js), NEVER by the
+      // CitedSourceViewer component itself (purity contract for the rebase
+      // into @sentropic/cited-source-viewer).
+      "@graphify/cited-source-refs": resolve(here, "../src/cited-source-refs.ts"),
     },
   },
   build: {

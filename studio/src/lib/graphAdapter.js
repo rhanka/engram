@@ -957,17 +957,24 @@ export function communityStats(graph) {
  * `quote` stays null on the new lazy path (the render guards on it).
  * @param {Array<object>|null|undefined} list
  * @param {string|null} [fallbackSourceFile]
- * @returns {{ file: string, count: number, passages: { section: string|null, quote: string|null }[] }[]}
+ * @returns {{ file: string, count: number, passages: { section: string|null, quote: string|null, page: number|string|null, index: number }[] }[]}
  */
 export function citationsByFileFrom(list, fallbackSourceFile = null) {
   const cites = Array.isArray(list) ? list : [];
   const byFile = new Map();
-  for (const c of cites) {
+  for (let i = 0; i < cites.length; i++) {
+    const c = cites[i];
     const file = displayValue(c?.source_file) ?? displayValue(fallbackSourceFile) ?? "(unknown source)";
     if (!byFile.has(file)) byFile.set(file, []);
     byFile.get(file).push({
       section: displayValue(c?.section) ?? null,
       quote: displayValue(c?.quote) ?? null,
+      // Cited-source viewer affordance (additive): `page` is shown next to the
+      // locator; `index` is the passage's position in the ORIGINAL citation
+      // list, so the open-source click can activate the exact citation after
+      // the list is converted via the frozen CitedSourceRef projection.
+      page: finiteNumber(c?.page) ? c.page : (displayValue(c?.page) ?? null),
+      index: i,
     });
   }
   return [...byFile.entries()]
