@@ -500,7 +500,7 @@
            ‹ › jump to the FIRST citation of the neighbour entity (kbd e/E). -->
       <div class="csv-tb-group" aria-label="Entity navigator">
         <button class="csv-tb-btn" type="button" disabled={entityPos <= 0} onclick={() => goEntity(-1)} aria-label="Previous entity">‹</button>
-        <span class="csv-tb-label">Entité <strong>{entityPos + 1}/{entityOrder.length}</strong>{#if activeGroup?.label}<span class="csv-tb-entity"> — {activeGroup.label}</span>{/if}</span>
+        <span class="csv-tb-label">Entité <strong>{entityPos + 1}/{entityOrder.length}</strong>{#if activeGroup?.label}<span class="csv-tb-entity">— {activeGroup.label}</span>{/if}</span>
         <button class="csv-tb-btn" type="button" disabled={entityPos >= entityOrder.length - 1} onclick={() => goEntity(1)} aria-label="Next entity">›</button>
       </div>
     {/if}
@@ -711,6 +711,7 @@
   .csv-tb-entity {
     display: inline-block;
     vertical-align: bottom;
+    margin-left: 0.3rem;
     max-width: 11rem;
     overflow: hidden;
     text-overflow: ellipsis;
