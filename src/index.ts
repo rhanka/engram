@@ -435,6 +435,10 @@ export type {
 } from "./pdf-ocr-refs.js";
 export { citationToCitedSourceRef, citationsToCitedSourceRefs, validateCitedSourceRef } from "./cited-source-refs.js";
 export type { CitedSourceRefValidation } from "./cited-source-refs.js";
+// Citation-seam CORE types (canevas/immo request): the functions above were
+// public but their input/output types were not — consumers could not
+// `import type { CitedSourceRef } from "@sentropic/graphify"`.
+export type { CitedSourceRef, CitationModality, OntologyCitation } from "./types.js";
 export { prepareSemanticDetection } from "./semantic-prepare.js";
 export type { SemanticPreparationOptions, SemanticPreparationResult } from "./semantic-prepare.js";
 export {
