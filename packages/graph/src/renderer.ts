@@ -319,6 +319,12 @@ function copyStyle(style: GraphStyleBuffers, nodeCount: number, edgeCount: numbe
     throw new RangeError("edge style buffers must match edge count");
   }
 
+  if (style.edgeRouteStyles && style.edgeRouteStyles.length !== edgeCount) {
+    throw new RangeError(
+      `edgeRouteStyles length ${style.edgeRouteStyles.length} does not match edge count ${edgeCount}`,
+    );
+  }
+
   return {
     nodeSizes: new Float32Array(style.nodeSizes),
     nodeColors: new Uint8Array(style.nodeColors),
@@ -330,6 +336,7 @@ function copyStyle(style: GraphStyleBuffers, nodeCount: number, edgeCount: numbe
     edgeColors: new Uint8Array(style.edgeColors),
     edgeDash: new Uint8Array(style.edgeDash),
     edgeCurvatures: new Float32Array(style.edgeCurvatures),
+    edgeRouteStyles: style.edgeRouteStyles ? new Uint8Array(style.edgeRouteStyles) : undefined,
   };
 }
 

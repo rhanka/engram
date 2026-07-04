@@ -146,10 +146,13 @@ describe("computeGitFlowPositions — trunk + lanes", () => {
     expect(layout.edgeHints[repo.edgeIndex.get("s1→a2")!]!.style).toBe("session-link");
   });
 
-  it("branch labels anchor at the LANE START, left of the first branch commit", () => {
+  it("branch labels anchor at the LANE START: left of the first commit, floated just above the lane", () => {
     const labelA = layout.branchLabels.find((l) => l.name === "feature-a")!;
     expect(labelA.x).toBeLessThan(xOf(repo, positions, "a1"));
-    expect(labelA.y).toBe(yOf(repo, positions, "a1"));
+    // Floated ABOVE its lane line (so a label glyph never covers the entry S
+    // or the first commit's left port), but well within the lane's half-gap.
+    expect(labelA.y).toBeLessThan(yOf(repo, positions, "a1"));
+    expect(labelA.y).toBeGreaterThan(yOf(repo, positions, "a1") - OPTS.laneGap / 2);
     expect(labelA.entry).toBe("in-window");
     const labelMain = layout.branchLabels.find((l) => l.name === "main")!;
     expect(labelMain.lane).toBe(0);

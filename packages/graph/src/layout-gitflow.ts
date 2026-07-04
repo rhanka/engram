@@ -143,6 +143,12 @@ const TRUNK_NAMES = ["main", "master", "develop"];
 
 /** Branch-label anchor sits this fraction of a rank LEFT of the first commit. */
 const LABEL_RANK_INSET = 0.6;
+/**
+ * Branch-label anchor floats this fraction of a lane ABOVE its lane line, so a
+ * label glyph (e.g. a text pill) never covers the entry S, the first commit's
+ * left port, or its arrowhead (GitHub network-graph label placement).
+ */
+const LABEL_LANE_LIFT = 0.4;
 /** Tip-only branch labels sit this fraction of a lane below their tip commit. */
 const TIP_LABEL_LANE_FRACTION = 0.35;
 
@@ -462,8 +468,9 @@ export function computeGitFlowPositions(
     // Branch nodes = label carriers at the LANE START.
     if (trunkBranch !== undefined && trunkChain.length > 0) {
       const x = xOf(windowStart) - LABEL_RANK_INSET * rankGap;
+      const y = laneY(0) - LABEL_LANE_LIFT * laneGap;
       positions[trunkBranch * 2] = x;
-      positions[trunkBranch * 2 + 1] = laneY(0);
+      positions[trunkBranch * 2 + 1] = y;
       placed[trunkBranch] = 1;
       branchLabels.push({
         nodeIndex: trunkBranch,
@@ -471,7 +478,7 @@ export function computeGitFlowPositions(
         repo,
         lane: 0,
         x,
-        y: laneY(0),
+        y,
         entry: "in-window",
       });
     }
@@ -479,8 +486,9 @@ export function computeGitFlowPositions(
       const lane = laneOf.get(rec.branch)!;
       const firstDisplay = rec.displayFork + 1;
       const x = xOf(firstDisplay) - LABEL_RANK_INSET * rankGap;
+      const y = laneY(lane) - LABEL_LANE_LIFT * laneGap;
       positions[rec.branch * 2] = x;
-      positions[rec.branch * 2 + 1] = laneY(lane);
+      positions[rec.branch * 2 + 1] = y;
       placed[rec.branch] = 1;
       branchLabels.push({
         nodeIndex: rec.branch,
@@ -488,7 +496,7 @@ export function computeGitFlowPositions(
         repo,
         lane,
         x,
-        y: laneY(lane),
+        y,
         entry: rec.windowLeft ? "window-left" : "in-window",
       });
     }
