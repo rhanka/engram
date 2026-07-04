@@ -18,7 +18,7 @@
   } from "../lib/graphAdapter.js";
   import { renderInlineMarkdown } from "../lib/markdown.js";
 
-  let { graph, focusId = null, entity = null, onOpenEntity, hideTitle = false } = $props();
+  let { graph, focusId = null, entity = null, onOpenEntity, hideTitle = false, onOpenSource = null } = $props();
 
   const node = $derived(focusId ? (indexNodes(graph).get(focusId) ?? null) : null);
   const relations = $derived(focusId ? relationRowsFor(focusId, graph) : []);
@@ -58,6 +58,19 @@
   const descriptionProvisional = $derived(
     entity?.description?.source === "rationale" && entity?.description?.provisional === true,
   );
+  // Cited-source viewer affordance: the FLAT citation list the rendered groups
+  // were derived from (full sidecar list when hydrated, else the inline K-set).
+  // Passage `index` positions refer to THIS list; the App converts it via the
+  // frozen CitedSourceRef projection and opens the viewer on the clicked one.
+  const sourceCitations = $derived(fullCitations ?? (Array.isArray(node?.citations) ? node.citations : []));
+  function openSource(passage) {
+    onOpenSource?.({
+      citations: sourceCitations,
+      index: passage.index,
+      fallbackSourceFile: node?.source_file ?? null,
+      label: node ? nodeLabel(node) : null,
+    });
+  }
 </script>
 
 <aside class="entity" aria-label="Entity detail">
@@ -157,9 +170,23 @@
                   <ul class="entity-cite-passages">
                     {#each cf.passages as p, i (cf.file + i)}
                       <li class="entity-cite-passage">
-                        {#if p.section}<span class="entity-cite-section">{p.section}</span>{/if}
+                        <div class="entity-cite-row">
+                          <div class="entity-cite-loc">
+                            {#if p.section}<span class="entity-cite-section">{p.section}</span>{/if}
+                            {#if p.page != null}<span class="entity-cite-page">p.{p.page}</span>{/if}
+                            {#if !p.section && p.page == null && !p.quote}<span class="entity-cite-section">(passage)</span>{/if}
+                          </div>
+                          {#if onOpenSource}
+                            <button
+                              class="entity-cite-open"
+                              type="button"
+                              title="Open the cited source with this passage highlighted"
+                              aria-label="Open source for this citation"
+                              onclick={() => openSource(p)}
+                            >Open source ↗</button>
+                          {/if}
+                        </div>
                         {#if p.quote}<blockquote class="entity-cite-quote">{p.quote}</blockquote>{/if}
-                        {#if !p.section && !p.quote}<span class="entity-cite-section">(passage)</span>{/if}
                       </li>
                     {/each}
                   </ul>
@@ -355,6 +382,41 @@
        inside the panel rather than clipping right. */
     min-width: 0;
     overflow-wrap: anywhere;
+  }
+  /* Cited-source viewer affordance: locator row + "Open source" button. */
+  .entity-cite-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+  }
+  .entity-cite-loc {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: 0.4rem;
+    align-items: baseline;
+  }
+  .entity-cite-page {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--st-semantic-text-muted, #64748b);
+    white-space: nowrap;
+  }
+  .entity-cite-open {
+    flex-shrink: 0;
+    border: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
+    background: var(--st-semantic-surface-subtle, #f8fafc);
+    border-radius: var(--st-radius-sm, 4px);
+    color: var(--st-semantic-text-link, #2563eb);
+    cursor: pointer;
+    font-size: 0.68rem;
+    line-height: 1.2;
+    padding: 0.1rem 0.35rem;
+    white-space: nowrap;
+  }
+  .entity-cite-open:hover {
+    border-color: var(--st-semantic-action-primary, #2563eb);
   }
   /* BUG A: the citation FILE path renders as a DS Collapsible trigger title
      (e.g. ".graphify/converted/pdf/CONTRIBUATION_AI_AERONAUTIQUE_…md"). Its

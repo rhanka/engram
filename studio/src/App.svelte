@@ -13,11 +13,13 @@
   import { AppChrome, Button, ButtonGroup, Select } from "@sentropic/design-system-svelte";
 
   import AnswerPanel from "./components/AnswerPanel.svelte";
+  import CitedSourceViewer from "./components/CitedSourceViewer.svelte";
   import GraphCanvas from "./components/GraphCanvas.svelte";
   import LeftRail from "./components/LeftRail.svelte";
   import ReconciliationView from "./components/ReconciliationView.svelte";
   import SelectionPanel from "./components/SelectionPanel.svelte";
   import WorkspaceShell from "./components/WorkspaceShell.svelte";
+  import { refsForCitations, resolveBundleSource } from "./lib/citedSources.js";
   import {
     fetchClassHierarchies,
     fetchEntity,
@@ -439,6 +441,28 @@
     searchIndex = await fetchSearchIndex();
   }
 
+  // ----- cited-source viewer (INTERIM, architect-ratified §S.5) --------------
+  // IMPURE studio glue: the EntityPanel affordance hands the node's raw
+  // OntologyCitation list here; the frozen public projection converts it to
+  // CitedSourceRef[] and the DS-styled modal hosts the PURE CitedSourceViewer
+  // with the bundle resolver (sources/ dir, `--include-sources` export).
+  // null = closed; { refs, activeIndex, title } = open.
+  let sourceView = $state(null);
+  function handleOpenSource({ citations, index, fallbackSourceFile, label }) {
+    const refs = refsForCitations(citations, fallbackSourceFile);
+    if (refs.length === 0) return;
+    const active = Number.isInteger(index) && index >= 0 && index < refs.length ? index : 0;
+    const locator = refs[active]?.rawRef ?? refs[active]?.sourceUrl ?? "";
+    sourceView = {
+      refs,
+      activeIndex: active,
+      title: label ? `${label} — ${locator}` : locator,
+    };
+  }
+  function handleCloseSource() {
+    sourceView = null;
+  }
+
   // Open an entity surfaced by the Answer view IN the graph: switch to the
   // workspace view, add it to the selection + focus it (highlight + detail), and
   // hydrate its sidecar — no graph reload (mirrors handleFocusEntity).
@@ -689,9 +713,32 @@
             onToggleCommunity={handleToggleCommunity}
             onToggleEntity={handleToggleEntity}
             onClear={handleClear}
+            onOpenSource={handleOpenSource}
           />
         </div>
       </WorkspaceShell>
+    {/if}
+
+    {#if sourceView}
+      <!-- Cited-source viewer modal (DS-styled). The component is PURE: refs +
+           resolveSource only; all graphify glue stays in this file. -->
+      <div class="source-modal" role="dialog" aria-modal="true" aria-label="Cited source">
+        <button
+          class="source-modal-backdrop"
+          type="button"
+          aria-label="Close source viewer"
+          onclick={handleCloseSource}
+        ></button>
+        <div class="source-modal-panel">
+          <CitedSourceViewer
+            refs={sourceView.refs}
+            activeIndex={sourceView.activeIndex}
+            title={sourceView.title}
+            resolveSource={resolveBundleSource}
+            onClose={handleCloseSource}
+          />
+        </div>
+      </div>
     {/if}
   </main>
 </div>
@@ -731,6 +778,41 @@
   .app-body {
     flex: 1;
     min-height: 0;
+    /* Anchor for the cited-source modal overlay. */
+    position: relative;
+  }
+  /* Cited-source viewer modal: DS-token backdrop + centered panel. */
+  .source-modal {
+    position: absolute;
+    inset: 0;
+    z-index: 40;
+    display: grid;
+    place-items: center;
+    padding: var(--st-spacing-6, 1.5rem);
+  }
+  .source-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    background: color-mix(in srgb, var(--st-semantic-text-primary, #0f172a) 45%, transparent);
+  }
+  .source-modal-panel {
+    position: relative;
+    width: min(58rem, 100%);
+    height: min(46rem, 100%);
+    min-height: 0;
+    display: flex;
+    background: var(--st-semantic-surface-default, #fff);
+    border: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
+    border-radius: var(--st-radius-lg, 10px);
+    box-shadow: 0 12px 40px rgba(15, 23, 42, 0.35);
+    overflow: hidden;
+  }
+  .source-modal-panel > :global(.csv) {
+    flex: 1;
+    min-width: 0;
   }
   .col {
     min-height: 0;
