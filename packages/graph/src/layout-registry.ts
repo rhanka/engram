@@ -26,6 +26,7 @@
  * straight into the existing engine consumer path.
  */
 
+import { gitFlowLayout } from "./layout-gitflow";
 import { copyPositions, createPositionFrame } from "./positions";
 import type { LayoutEngine, LayoutOptions, PositionFrame, RenderGraphBuffers } from "./types";
 
@@ -44,6 +45,13 @@ export const TYPED_LAYER_LAYOUT_ID = "typed-layer";
 
 /** Registered id of Variant E — the time-oriented (temporal X-axis) layout. */
 export const TIME_ORIENTED_LAYOUT_ID = "time-oriented";
+
+/**
+ * Registered id of the GIT-FLOW layout (left→right git graph: trunk lane 0,
+ * lane-reused branch lanes, window-left attaches, session sub-positions —
+ * see `layout-gitflow.ts`). OPT-IN; never the default.
+ */
+export const GIT_FLOW_LAYOUT_ID = "git-flow";
 
 // ---------------------------------------------------------------------------
 // Registry
@@ -399,3 +407,4 @@ export const timeOrientedLayout: LayoutFn = (graph, options) => {
 registerLayout(DEFAULT_LAYOUT_ID, forceLayout);
 registerLayout(TYPED_LAYER_LAYOUT_ID, typedLayerLayout);
 registerLayout(TIME_ORIENTED_LAYOUT_ID, timeOrientedLayout);
+registerLayout(GIT_FLOW_LAYOUT_ID, gitFlowLayout);
