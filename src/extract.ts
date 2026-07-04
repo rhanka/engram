@@ -539,6 +539,477 @@ function _readText(node: SyntaxNode, source: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Type-reference collectors (Lot 2 — type/field/generic-arg references)
+//
+// Upstream safishamsi emits `references` edges for the declared types of class
+// fields / properties / vars / generic arguments across many languages. The TS
+// extractor had NO type-reference subsystem (the only `references` edges were
+// SQL foreign keys); these per-language collectors mirror upstream's
+// `_<lang>_collect_type_refs` helpers. Each walks a type expression and appends
+// `[name, role]` tuples where role is `"type"` (the head type) or
+// `"generic_arg"` (a nested generic/template argument). Primitive/builtin types
+// are skipped so they never become god-nodes.
+// ---------------------------------------------------------------------------
+
+/** A collected type reference: `[name, role]` where role is `"type"` or `"generic_arg"`. */
+type TypeRef = [string, string];
+
+/** Java declarations that can introduce type parameters visible to nested types. */
+const _JAVA_TYPE_PARAMETER_SCOPE_DECLARATIONS = new Set<string>([
+  "class_declaration",
+  "interface_declaration",
+  "record_declaration",
+  "method_declaration",
+  "constructor_declaration",
+]);
+
+/**
+ * Return the Java type-parameter names in scope at `node` (walking enclosing
+ * class/interface/record/method/constructor declarations). Port of upstream
+ * safishamsi 8b9a998 (#1518): a bare type parameter (`T` in `Box<T>`) must not
+ * emit a spurious `references`/`generic_arg` edge to a sourceless stub node.
+ */
+function _javaTypeParametersInScope(node: SyntaxNode, source: string): Set<string> {
+  const names = new Set<string>();
+  let scope: SyntaxNode | null = node;
+  while (scope !== null) {
+    if (_JAVA_TYPE_PARAMETER_SCOPE_DECLARATIONS.has(scope.type)) {
+      const params = scope.childForFieldName("type_parameters");
+      if (params) {
+        for (const param of params.children) {
+          if (param.type !== "type_parameter") continue;
+          const nameNode = param.children.find((c) => c.type === "type_identifier");
+          if (nameNode) names.add(_readText(nameNode, source));
+        }
+      }
+    }
+    scope = scope.parent;
+  }
+  return names;
+}
+
+/**
+ * Walk a Java type expression; append `[name, role]` tuples. Skips primitives
+ * and any in-scope type parameter, and resolves the unqualified tail of a
+ * `scoped_type_identifier` (`java.util.List` → `List`). Ports of upstream
+ * safishamsi 31b3752 (#1485) + 8b9a998 (#1518).
+ */
+function _javaCollectTypeRefs(
+  node: SyntaxNode | null,
+  source: string,
+  generic: boolean,
+  out: TypeRef[],
+  skip?: Set<string>,
+): void {
+  if (node === null) return;
+  const skipSet = skip ?? _javaTypeParametersInScope(node, source);
+  const t = node.type;
+  if (t === "integral_type" || t === "floating_point_type" || t === "boolean_type" || t === "void_type") {
+    return;
+  }
+  if (t === "type_identifier") {
+    const name = _readText(node, source);
+    if (name && !skipSet.has(name)) out.push([name, generic ? "generic_arg" : "type"]);
+    return;
+  }
+  if (t === "scoped_type_identifier") {
+    const text = _readText(node, source).split(".").pop() ?? "";
+    if (text) out.push([text, generic ? "generic_arg" : "type"]);
+    return;
+  }
+  if (t === "generic_type") {
+    for (const c of node.children) {
+      if (c.type === "type_identifier" || c.type === "scoped_type_identifier") {
+        const text = _readText(c, source).split(".").pop() ?? "";
+        if (text && (c.type === "scoped_type_identifier" || !skipSet.has(text))) {
+          out.push([text, generic ? "generic_arg" : "type"]);
+        }
+        break;
+      }
+    }
+    for (const c of node.children) {
+      if (c.type === "type_arguments") {
+        for (const arg of c.children) {
+          if (arg.isNamed) _javaCollectTypeRefs(arg, source, true, out, skipSet);
+        }
+      }
+    }
+    return;
+  }
+  if (t === "array_type") {
+    for (const c of node.children) {
+      if (c.isNamed) _javaCollectTypeRefs(c, source, generic, out, skipSet);
+    }
+    return;
+  }
+  if (node.isNamed) {
+    for (const c of node.children) {
+      if (c.isNamed) _javaCollectTypeRefs(c, source, generic, out, skipSet);
+    }
+  }
+}
+
+/** C/C++ node types that denote a primitive/builtin type (never referenced). */
+const _C_PRIMITIVE_TYPE_NODES = new Set<string>([
+  "primitive_type", "sized_type_specifier", "auto", "placeholder_type_specifier",
+]);
+
+/**
+ * Walk a C++ type expression; append `[name, role]` tuples. Resolves
+ * `qualified_identifier` tails (`std::string` → `string`) and `template_type`
+ * base + arguments (`std::vector<HttpClient>` → `vector` + `HttpClient` as a
+ * generic_arg). Port of upstream safishamsi `_cpp_collect_type_refs`.
+ */
+function _cppCollectTypeRefs(
+  node: SyntaxNode | null, source: string, generic: boolean, out: TypeRef[],
+): void {
+  if (node === null || _C_PRIMITIVE_TYPE_NODES.has(node.type)) return;
+  const t = node.type;
+  if (t === "type_identifier") {
+    const text = _readText(node, source);
+    if (text) out.push([text, generic ? "generic_arg" : "type"]);
+    return;
+  }
+  if (t === "qualified_identifier") {
+    const nameNode = node.childForFieldName("name");
+    if (nameNode) _cppCollectTypeRefs(nameNode, source, generic, out);
+    return;
+  }
+  if (t === "template_type") {
+    const nameNode = node.childForFieldName("name");
+    if (nameNode) {
+      const text = _readText(nameNode, source);
+      if (text) out.push([text, generic ? "generic_arg" : "type"]);
+    }
+    const argsNode = node.childForFieldName("arguments");
+    if (argsNode) {
+      for (const c of argsNode.children) {
+        if (c.isNamed) _cppCollectTypeRefs(c, source, true, out);
+      }
+    }
+    return;
+  }
+  if (
+    t === "type_descriptor" || t === "pointer_declarator" || t === "reference_declarator" ||
+    t === "array_declarator" || t === "type_qualifier" || t === "abstract_pointer_declarator" ||
+    t === "abstract_reference_declarator" || t === "abstract_array_declarator"
+  ) {
+    for (const c of node.children) {
+      if (c.isNamed) _cppCollectTypeRefs(c, source, generic, out);
+    }
+  }
+}
+
+/**
+ * Walk a Rust type expression; append `[name, role]` tuples. Skips primitives,
+ * resolves the tail of a `scoped_type_identifier` (`crate::Logger` → `Logger`)
+ * and the base + arguments of a `generic_type` (`Vec<Config>` → `Vec` +
+ * `Config` as a generic_arg). Port of upstream safishamsi `_rust_collect_type_refs`.
+ */
+function _rustCollectTypeRefs(
+  node: SyntaxNode | null, source: string, generic: boolean, out: TypeRef[],
+): void {
+  if (node === null) return;
+  const t = node.type;
+  if (t === "primitive_type") return;
+  if (t === "type_identifier") {
+    const text = _readText(node, source);
+    if (text) out.push([text, generic ? "generic_arg" : "type"]);
+    return;
+  }
+  if (t === "scoped_type_identifier") {
+    const text = _readText(node, source).split("::").pop() ?? "";
+    if (text) out.push([text, generic ? "generic_arg" : "type"]);
+    return;
+  }
+  if (t === "generic_type") {
+    let nameNode = node.childForFieldName("type");
+    if (!nameNode) {
+      for (const c of node.children) {
+        if (c.type === "type_identifier" || c.type === "scoped_type_identifier") {
+          nameNode = c;
+          break;
+        }
+      }
+    }
+    if (nameNode) {
+      const text = _readText(nameNode, source).split("::").pop() ?? "";
+      if (text) out.push([text, generic ? "generic_arg" : "type"]);
+    }
+    for (const c of node.children) {
+      if (c.type === "type_arguments") {
+        for (const arg of c.children) {
+          if (arg.isNamed) _rustCollectTypeRefs(arg, source, true, out);
+        }
+      }
+    }
+    return;
+  }
+  if (
+    t === "reference_type" || t === "pointer_type" || t === "array_type" ||
+    t === "tuple_type" || t === "slice_type"
+  ) {
+    for (const c of node.children) {
+      if (c.isNamed) _rustCollectTypeRefs(c, source, generic, out);
+    }
+    return;
+  }
+  if (node.isNamed) {
+    for (const c of node.children) {
+      if (c.isNamed) _rustCollectTypeRefs(c, source, generic, out);
+    }
+  }
+}
+
+/** Rust type-expression node types that can appear as a positional (tuple) field. */
+const _RUST_FIELD_TYPE_NODES = new Set<string>([
+  "type_identifier", "generic_type", "scoped_type_identifier",
+  "reference_type", "primitive_type", "tuple_type", "array_type",
+]);
+
+/** PHP type-expression node types that carry a declared type. */
+const _PHP_TYPE_NODES = new Set<string>([
+  "named_type", "primitive_type", "nullable_type",
+  "union_type", "intersection_type", "optional_type",
+]);
+
+/** Return the unqualified tail of a PHP `name`/`qualified_name` node (`A\B\C` → `C`). */
+function _phpNameText(node: SyntaxNode | null, source: string): string | null {
+  if (node === null) return null;
+  return _readText(node, source).split("\\").pop() || null;
+}
+
+/**
+ * Walk a PHP type expression; append `[name, role]` tuples. Skips primitives
+ * and unwraps `named_type` / nullable / union / intersection wrappers. Port of
+ * upstream safishamsi `_php_collect_type_refs`.
+ */
+function _phpCollectTypeRefs(
+  node: SyntaxNode | null, source: string, generic: boolean, out: TypeRef[],
+): void {
+  if (node === null) return;
+  const t = node.type;
+  if (t === "primitive_type") return;
+  if (t === "named_type") {
+    for (const c of node.children) {
+      if (c.type === "name" || c.type === "qualified_name") {
+        const text = _phpNameText(c, source);
+        if (text) out.push([text, generic ? "generic_arg" : "type"]);
+        return;
+      }
+    }
+    return;
+  }
+  if (t === "name" || t === "qualified_name") {
+    const text = _phpNameText(node, source);
+    if (text) out.push([text, generic ? "generic_arg" : "type"]);
+    return;
+  }
+  if (t === "nullable_type" || t === "union_type" || t === "intersection_type" || t === "optional_type") {
+    for (const c of node.children) {
+      if (c.isNamed) _phpCollectTypeRefs(c, source, generic, out);
+    }
+    return;
+  }
+  if (node.isNamed) {
+    for (const c of node.children) {
+      if (c.isNamed) _phpCollectTypeRefs(c, source, generic, out);
+    }
+  }
+}
+
+/** C# declarations that can introduce type parameters visible to nested types. */
+const _CSHARP_TYPE_PARAMETER_SCOPE_DECLARATIONS = new Set<string>([
+  "class_declaration", "interface_declaration", "record_declaration",
+  "struct_declaration", "method_declaration",
+]);
+
+/** Return the C# type-parameter names in scope at `node`. */
+function _csharpTypeParametersInScope(node: SyntaxNode, source: string): Set<string> {
+  const names = new Set<string>();
+  let scope: SyntaxNode | null = node;
+  while (scope !== null) {
+    if (_CSHARP_TYPE_PARAMETER_SCOPE_DECLARATIONS.has(scope.type)) {
+      for (const child of scope.children) {
+        if (child.type !== "type_parameter_list") continue;
+        for (const param of child.children) {
+          if (param.type === "type_parameter") {
+            const nameNode = param.children.find((sub) => sub.type === "identifier");
+            if (nameNode) {
+              const n = _readText(nameNode, source);
+              if (n) names.add(n);
+            }
+          } else if (param.type === "identifier") {
+            const n = _readText(param, source);
+            if (n) names.add(n);
+          }
+        }
+      }
+    }
+    scope = scope.parent;
+  }
+  return names;
+}
+
+/**
+ * Walk a C# type expression; append `[name, role]` tuples. Skips predefined
+ * types and in-scope type parameters, resolves the unqualified tail of a
+ * `qualified_name` and the base + arguments of a `generic_name` (`List<Widget>`
+ * → `List` + `Widget` as a generic_arg). Port of upstream safishamsi
+ * `_csharp_collect_type_refs` (the qualified/qualifier metadata it also returns
+ * is dropped here — TS reference edges carry no cross-file qualifier hint yet).
+ */
+function _csharpCollectTypeRefs(
+  node: SyntaxNode | null,
+  source: string,
+  generic: boolean,
+  out: TypeRef[],
+  skip?: Set<string>,
+): void {
+  if (node === null) return;
+  const skipSet = skip ?? _csharpTypeParametersInScope(node, source);
+  const t = node.type;
+  if (t === "predefined_type") return;
+  if (t === "identifier") {
+    const name = _readText(node, source);
+    if (name && !skipSet.has(name)) out.push([name, generic ? "generic_arg" : "type"]);
+    return;
+  }
+  if (t === "qualified_name") {
+    const text = (_readText(node, source).split(".").pop() ?? "").split("<")[0] ?? "";
+    if (text && !skipSet.has(text)) out.push([text, generic ? "generic_arg" : "type"]);
+    return;
+  }
+  if (t === "generic_name") {
+    let nameChild = node.childForFieldName("name");
+    if (!nameChild) {
+      nameChild = node.children.find((sub) => sub.type === "identifier") ?? null;
+    }
+    if (nameChild) {
+      const name = _readText(nameChild, source).split(".").pop() ?? "";
+      if (name && !skipSet.has(name)) out.push([name, generic ? "generic_arg" : "type"]);
+    }
+    for (const sub of node.children) {
+      if (sub.type === "type_argument_list") {
+        for (const arg of sub.children) {
+          if (arg.isNamed) _csharpCollectTypeRefs(arg, source, true, out, skipSet);
+        }
+      }
+    }
+    return;
+  }
+  if (t === "nullable_type" || t === "array_type" || t === "pointer_type" || t === "ref_type") {
+    for (const c of node.children) {
+      if (c.isNamed) _csharpCollectTypeRefs(c, source, generic, out, skipSet);
+    }
+    return;
+  }
+  if (node.isNamed) {
+    for (const c of node.children) {
+      if (c.isNamed) _csharpCollectTypeRefs(c, source, generic, out, skipSet);
+    }
+  }
+}
+
+/**
+ * Walk a Scala type expression; append `[name, role]` tuples. Handles
+ * `type_identifier`, `generic_type` (`List[T]`) and common type wrappers. Port
+ * of upstream safishamsi `_scala_collect_type_refs`.
+ */
+function _scalaCollectTypeRefs(
+  node: SyntaxNode | null, source: string, generic: boolean, out: TypeRef[],
+): void {
+  if (node === null) return;
+  const t = node.type;
+  if (t === "type_identifier") {
+    const text = _readText(node, source);
+    if (text) out.push([text, generic ? "generic_arg" : "type"]);
+    return;
+  }
+  if (t === "generic_type") {
+    let base = node.childForFieldName("type");
+    if (!base) {
+      base = node.children.find((c) => c.type === "type_identifier") ?? null;
+    }
+    if (base && base.type === "type_identifier") {
+      const text = _readText(base, source);
+      if (text) out.push([text, generic ? "generic_arg" : "type"]);
+    }
+    for (const c of node.children) {
+      if (c.type === "type_arguments") {
+        for (const arg of c.children) {
+          if (arg.isNamed) _scalaCollectTypeRefs(arg, source, true, out);
+        }
+      }
+    }
+    return;
+  }
+  if (
+    t === "compound_type" || t === "infix_type" || t === "function_type" ||
+    t === "tuple_type" || t === "annotated_type" || t === "projected_type"
+  ) {
+    for (const c of node.children) {
+      if (c.isNamed) _scalaCollectTypeRefs(c, source, generic, out);
+    }
+  }
+}
+
+/**
+ * Walk a Swift type expression; append `[name, role]` tuples. Unwraps
+ * `type_annotation` / optional / array / dictionary / tuple wrappers and reads
+ * the `type_identifier` head + `type_arguments` of a `user_type`. Port of
+ * upstream safishamsi `_swift_collect_type_refs`.
+ */
+function _swiftCollectTypeRefs(
+  node: SyntaxNode | null, source: string, generic: boolean, out: TypeRef[],
+): void {
+  if (node === null) return;
+  const t = node.type;
+  if (t === "type_annotation") {
+    for (const c of node.children) {
+      if (c.isNamed) _swiftCollectTypeRefs(c, source, generic, out);
+    }
+    return;
+  }
+  if (t === "user_type") {
+    for (const c of node.children) {
+      if (c.type === "type_identifier") {
+        const text = _readText(c, source);
+        if (text) out.push([text, generic ? "generic_arg" : "type"]);
+        break;
+      }
+    }
+    for (const c of node.children) {
+      if (c.type === "type_arguments") {
+        for (const arg of c.children) {
+          if (arg.isNamed) _swiftCollectTypeRefs(arg, source, true, out);
+        }
+      }
+    }
+    return;
+  }
+  if (t === "type_identifier") {
+    const text = _readText(node, source);
+    if (text) out.push([text, generic ? "generic_arg" : "type"]);
+    return;
+  }
+  if (
+    t === "optional_type" || t === "implicitly_unwrapped_optional_type" ||
+    t === "array_type" || t === "dictionary_type" || t === "tuple_type"
+  ) {
+    for (const c of node.children) {
+      if (c.isNamed) _swiftCollectTypeRefs(c, source, generic, out);
+    }
+    return;
+  }
+  if (node.isNamed) {
+    for (const c of node.children) {
+      if (c.isNamed) _swiftCollectTypeRefs(c, source, generic, out);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // LanguageConfig interface + generic helpers
 // ---------------------------------------------------------------------------
 
@@ -1303,16 +1774,42 @@ function _swiftExtraWalk(
   _functionBodies: Array<[string, SyntaxNode]>,
   parentClassNid: string | null,
   addNodeFn: (nid: string, label: string, line: number) => void,
-  addEdgeFn: (src: string, tgt: string, relation: string, line: number) => void,
+  addEdgeFn: (
+    src: string, tgt: string, relation: string, line: number,
+    confidence?: "EXTRACTED" | "INFERRED", weight?: number, context?: string,
+  ) => void,
+  ensureNamedNodeFn?: (name: string, line: number) => string,
 ): boolean {
   if (node.type === "enum_entry" && parentClassNid) {
+    const line = node.startPosition.row + 1;
     for (const child of node.children) {
       if (child.type === "simple_identifier") {
         const caseName = _readText(child, source);
         const caseNid = _makeId(parentClassNid, caseName);
-        const line = node.startPosition.row + 1;
         addNodeFn(caseNid, caseName, line);
         addEdgeFn(parentClassNid, caseNid, "case_of", line);
+      }
+    }
+    // Associated-value types nest as `enum_type_parameters -> user_type ->
+    // type_identifier` (a sibling of the case-name simple_identifier). The
+    // case-name loop never descends into them, so `case started(Session)` used
+    // to drop the `Event -> Session` reference. Emit a `references` edge from
+    // the ENUM node to each collected type (port of upstream safishamsi ad70152).
+    if (ensureNamedNodeFn) {
+      for (const child of node.children) {
+        if (child.type !== "enum_type_parameters") continue;
+        for (const grand of child.children) {
+          if (!grand.isNamed) continue;
+          const refs: TypeRef[] = [];
+          _swiftCollectTypeRefs(grand, source, false, refs);
+          for (const [refName, role] of refs) {
+            const ctx = role === "generic_arg" ? "generic_arg" : "type";
+            const targetNid = ensureNamedNodeFn(refName, line);
+            if (targetNid !== parentClassNid) {
+              addEdgeFn(parentClassNid, targetNid, "references", line, "EXTRACTED", 1.0, ctx);
+            }
+          }
+        }
       }
     }
     return true;
@@ -1599,12 +2096,57 @@ async function _extractGeneric(
   function addEdge(
     src: string, tgt: string, relation: string, line: number,
     confidence: "EXTRACTED" | "INFERRED" = "EXTRACTED", weight: number = 1.0,
+    context?: string,
   ): void {
-    edges.push({
+    const edge: GraphEdge = {
       source: src, target: tgt, relation,
       confidence, source_file: strPath,
       source_location: `L${line}`, weight,
-    });
+    };
+    // `context` labels a type-reference edge ("field" / "generic_arg" / "type" /
+    // "attribute"), mirroring upstream's `add_edge(..., context=...)`. Additive:
+    // only set when supplied so existing edges are byte-for-byte unchanged.
+    if (context) edge.context = context;
+    edges.push(edge);
+  }
+
+  /**
+   * Resolve a referenced type name to a node id, mirroring upstream's
+   * `ensure_named_node`. Prefer a same-file, stem-qualified definition; else
+   * emit a SOURCELESS stub (empty source_file) so the corpus-level cross-file
+   * rewire can collapse it onto the real definition (same shape the inherits /
+   * implements ports use). Deterministic and additive.
+   */
+  function ensureNamedNode(name: string, _line: number): string {
+    let nid = _makeId(stem, name);
+    if (seenIds.has(nid)) return nid;
+    nid = _makeId(name);
+    if (!seenIds.has(nid)) {
+      seenIds.add(nid);
+      nodes.push({
+        id: nid, label: name, file_type: "code",
+        source_file: "", source_location: "",
+      });
+    }
+    return nid;
+  }
+
+  /**
+   * Emit `references` edges from `sourceNid` to each collected type ref. A
+   * generic argument keeps `generic_arg` context; every other role uses
+   * `baseContext` (e.g. "field" for a field/property declaration, "type" for a
+   * Swift enum associated value). Self-references are skipped.
+   */
+  function emitTypeRefs(
+    sourceNid: string, refs: TypeRef[], line: number, baseContext: string,
+  ): void {
+    for (const [refName, role] of refs) {
+      const ctx = role === "generic_arg" ? "generic_arg" : baseContext;
+      const targetNid = ensureNamedNode(refName, line);
+      if (targetNid !== sourceNid) {
+        addEdge(sourceNid, targetNid, "references", line, "EXTRACTED", 1.0, ctx);
+      }
+    }
   }
 
   const fileNid = _makeId(stem);
@@ -1832,6 +2374,62 @@ async function _extractGeneric(
         }
       }
 
+      // C++: `class Car : public Base<Dep>` — the `base_class_clause` carries
+      // the inherited type(s). Emit an `inherits` edge on each base name and, for
+      // a templated base, `generic_arg` references for its template arguments
+      // (port of upstream safishamsi 21bcb43). This also closes the prior gap
+      // where C++ emitted no `inherits` edge at all — the class handler had no
+      // C++ branch, so `_cpp_collect_type_refs` handles nested/qualified args
+      // (`Base<std::vector<Dep>>`) too.
+      if (config.tsModule === "tree_sitter_cpp") {
+        for (const child of node.children) {
+          if (child.type !== "base_class_clause") continue;
+          for (const sub of child.children) {
+            let base = "";
+            let templateArgsNode: SyntaxNode | null = null;
+            if (sub.type === "type_identifier") {
+              base = _readText(sub, source);
+            } else if (sub.type === "qualified_identifier") {
+              // Use the unqualified tail so "std::vector" matches a "vector"
+              // node id if one exists; fall back to the full qualified text.
+              const tail = sub.childForFieldName("name");
+              base = tail ? _readText(tail, source) : _readText(sub, source);
+            } else if (sub.type === "template_type") {
+              const tname = sub.childForFieldName("name");
+              base = tname ? _readText(tname, source) : _readText(sub, source);
+              templateArgsNode = sub.childForFieldName("arguments");
+            } else {
+              continue;
+            }
+            if (!base) continue;
+            let baseNid = _makeId(stem, base);
+            if (!seenIds.has(baseNid)) {
+              baseNid = _makeId(base);
+              if (!seenIds.has(baseNid)) {
+                nodes.push({
+                  id: baseNid, label: base, file_type: "code",
+                  source_file: "", source_location: "",
+                });
+                seenIds.add(baseNid);
+              }
+            }
+            addEdge(classNid, baseNid, "inherits", line);
+            if (templateArgsNode) {
+              const argRefs: TypeRef[] = [];
+              for (const arg of templateArgsNode.children) {
+                if (arg.isNamed) _cppCollectTypeRefs(arg, source, true, argRefs);
+              }
+              for (const [refName] of argRefs) {
+                const targetNid = ensureNamedNode(refName, line);
+                if (targetNid !== classNid) {
+                  addEdge(classNid, targetNid, "references", line, "EXTRACTED", 1.0, "generic_arg");
+                }
+              }
+            }
+          }
+        }
+      }
+
       // TypeScript / JavaScript: emit inherits/implements edges from heritage
       // clauses.  Two cases (port of upstream 88a8e3b #1095):
       //
@@ -1920,6 +2518,27 @@ async function _extractGeneric(
       return;
     }
 
+    // PHP 8 constructor property promotion: `__construct(private Repo $repo)`
+    // parses the promoted param as `property_promotion_parameter`. A promoted
+    // param is also a real class field, so emit a `field`-context reference on
+    // the class (port of upstream safishamsi 51f805e). Runs before the function
+    // handler and does NOT return, so the constructor is still processed
+    // normally as a method.
+    if (config.tsModule === "tree_sitter_php" && t === "method_declaration" && parentClassNid) {
+      const params = node.children.find((c) => c.type === "formal_parameters");
+      if (params) {
+        for (const p of params.children) {
+          if (p.type !== "property_promotion_parameter") continue;
+          const typeNode = p.children.find((sub) => _PHP_TYPE_NODES.has(sub.type));
+          if (!typeNode) continue;
+          const line = p.startPosition.row + 1;
+          const refs: TypeRef[] = [];
+          _phpCollectTypeRefs(typeNode, source, false, refs);
+          emitTypeRefs(parentClassNid, refs, line, "field");
+        }
+      }
+    }
+
     // Function types
     if (config.functionTypes.has(t)) {
       let funcName: string | null = null;
@@ -1994,7 +2613,7 @@ async function _extractGeneric(
     if (config.tsModule === "tree_sitter_swift") {
       if (_swiftExtraWalk(node, source, fileNid, stem, strPath,
         nodes, edges, seenIds, functionBodies,
-        parentClassNid, addNode, addEdge)) {
+        parentClassNid, addNode, addEdge, ensureNamedNode)) {
         return;
       }
     }
@@ -2011,6 +2630,89 @@ async function _extractGeneric(
         walk(child, parentClassNid);
       }
       return;
+    }
+
+    // ── Type/field/generic-arg references (Lot 2) ──────────────────────────
+    // Class field / property / var declarations emit `references` edges to
+    // their declared type(s), including generic arguments. These nodes are
+    // direct children of a class body, so `parentClassNid` is set when they are
+    // reached. Each branch mirrors the corresponding upstream safishamsi fix.
+
+    // Java: `private Repo<Config> repo;` — field type references (#1485), with
+    // in-scope type parameters skipped (#1518).
+    if (config.tsModule === "tree_sitter_java" && t === "field_declaration" && parentClassNid) {
+      const typeNode = node.childForFieldName("type");
+      if (typeNode) {
+        const line = node.startPosition.row + 1;
+        const refs: TypeRef[] = [];
+        _javaCollectTypeRefs(typeNode, source, false, refs);
+        emitTypeRefs(parentClassNid, refs, line, "field");
+      }
+      return;
+    }
+
+    // PHP: `private Repo $repo;` — typed class property references. The type
+    // sits as the first type-shaped direct child of the property_declaration.
+    if (config.tsModule === "tree_sitter_php" && t === "property_declaration" && parentClassNid) {
+      const typeNode = node.children.find((c) => _PHP_TYPE_NODES.has(c.type));
+      if (typeNode) {
+        const line = node.startPosition.row + 1;
+        const refs: TypeRef[] = [];
+        _phpCollectTypeRefs(typeNode, source, false, refs);
+        emitTypeRefs(parentClassNid, refs, line, "field");
+      }
+      return;
+    }
+
+    // C#: field type references. The type is on the node's `type` field or,
+    // for a `T x;` field, nested in a `variable_declaration`.
+    if (config.tsModule === "tree_sitter_c_sharp" && t === "field_declaration" && parentClassNid) {
+      let typeNode = node.childForFieldName("type");
+      if (!typeNode) {
+        for (const child of node.children) {
+          if (child.type === "variable_declaration") {
+            typeNode = child.childForFieldName("type");
+            if (typeNode) break;
+          }
+        }
+      }
+      if (typeNode) {
+        const line = node.startPosition.row + 1;
+        const refs: TypeRef[] = [];
+        _csharpCollectTypeRefs(typeNode, source, false, refs);
+        emitTypeRefs(parentClassNid, refs, line, "field");
+      }
+      return;
+    }
+
+    // C#: auto-property type references (`public Widget Main { get; set; }`) —
+    // the idiomatic way to declare state, previously dropped (port of upstream
+    // safishamsi bb5e519). A property exposes its type directly on the node.
+    if (config.tsModule === "tree_sitter_c_sharp" && t === "property_declaration" && parentClassNid) {
+      const typeNode = node.childForFieldName("type");
+      if (typeNode) {
+        const line = node.startPosition.row + 1;
+        const refs: TypeRef[] = [];
+        _csharpCollectTypeRefs(typeNode, source, false, refs);
+        emitTypeRefs(parentClassNid, refs, line, "field");
+      }
+      return;
+    }
+
+    // Scala: `val a: Repo` / `var b: Repo` — field type references. val and var
+    // are structurally identical (both expose a `type` field); `var_definition`
+    // was the specific upstream fix (67b4525). Falls through (no return) so any
+    // call expressions in the initializer are still walked.
+    if (config.tsModule === "tree_sitter_scala"
+        && (t === "val_definition" || t === "var_definition")
+        && parentClassNid) {
+      const typeNode = node.childForFieldName("type");
+      if (typeNode) {
+        const line = node.startPosition.row + 1;
+        const refs: TypeRef[] = [];
+        _scalaCollectTypeRefs(typeNode, source, false, refs);
+        emitTypeRefs(parentClassNid, refs, line, "field");
+      }
     }
 
     // Default: recurse
@@ -3594,8 +4296,35 @@ export async function extractRust(filePath: string, rootDir?: string): Promise<E
   function addEdge(
     src: string, tgt: string, relation: string, line: number,
     confidence: "EXTRACTED" | "INFERRED" = "EXTRACTED", weight: number = 1.0,
+    context?: string,
   ): void {
-    edges.push({ source: src, target: tgt, relation, confidence, source_file: strPath, source_location: `L${line}`, weight });
+    const edge: GraphEdge = { source: src, target: tgt, relation, confidence, source_file: strPath, source_location: `L${line}`, weight };
+    if (context) edge.context = context;
+    edges.push(edge);
+  }
+
+  /** Resolve a referenced type name to a same-file node or a sourceless stub. */
+  function ensureNamedNode(name: string): string {
+    let nid = _makeId(stem, name);
+    if (seenIds.has(nid)) return nid;
+    nid = _makeId(name);
+    if (!seenIds.has(nid)) {
+      seenIds.add(nid);
+      nodes.push({ id: nid, label: name, file_type: "code", source_file: "", source_location: "" });
+    }
+    return nid;
+  }
+
+  /** Emit `references` edges from a struct/enum to each collected field type. */
+  function emitRustTypeRefs(itemNid: string, typeNode: SyntaxNode | null, line: number): void {
+    if (typeNode === null) return;
+    const refs: TypeRef[] = [];
+    _rustCollectTypeRefs(typeNode, source, false, refs);
+    for (const [refName, role] of refs) {
+      const ctx = role === "generic_arg" ? "generic_arg" : "field";
+      const tgt = ensureNamedNode(refName);
+      if (tgt !== itemNid) addEdge(itemNid, tgt, "references", line, "EXTRACTED", 1.0, ctx);
+    }
   }
 
   const fileNid = _makeId(stem);
@@ -3641,6 +4370,59 @@ export async function extractRust(filePath: string, rootDir?: string): Promise<E
         const itemNid = _makeId(stem, itemName);
         addNode(itemNid, itemName, line);
         addEdge(fileNid, itemNid, "contains", line);
+
+        // Field type `references` — previously every struct/enum field type was
+        // silently dropped (extractRust only created the item node). Ports of
+        // upstream safishamsi: named-struct fields (base), tuple-struct fields
+        // (7eb847b), and enum-variant field types (674184d).
+        if (t === "struct_item") {
+          // Named struct: `struct S { a: Logger, b: Vec<Config> }`.
+          for (const c of node.children) {
+            if (c.type !== "field_declaration_list") continue;
+            for (const field of c.children) {
+              if (field.type !== "field_declaration") continue;
+              let typeNode = field.childForFieldName("type");
+              if (!typeNode) {
+                typeNode = field.children.find((fc) => _RUST_FIELD_TYPE_NODES.has(fc.type)) ?? null;
+              }
+              emitRustTypeRefs(itemNid, typeNode, field.startPosition.row + 1);
+            }
+          }
+          // Tuple struct: `struct Wrapper(pub Logger, Config);` — positional
+          // field types nest directly under ordered_field_declaration_list with
+          // no field_declaration wrapper (7eb847b).
+          for (const c of node.children) {
+            if (c.type !== "ordered_field_declaration_list") continue;
+            const fline = c.startPosition.row + 1;
+            for (const tc of c.children) {
+              if (_RUST_FIELD_TYPE_NODES.has(tc.type)) emitRustTypeRefs(itemNid, tc, fline);
+            }
+          }
+        }
+        if (t === "enum_item") {
+          // Variant payloads: tuple variant `Click(Logger)` nests types under
+          // ordered_field_declaration_list; struct variant `Resize { size: Dim }`
+          // under field_declaration_list (674184d).
+          for (const c of node.children) {
+            if (c.type !== "enum_variant_list") continue;
+            for (const variant of c.children) {
+              if (variant.type !== "enum_variant") continue;
+              const vline = variant.startPosition.row + 1;
+              for (const vc of variant.children) {
+                if (vc.type === "ordered_field_declaration_list") {
+                  for (const tc of vc.children) {
+                    if (_RUST_FIELD_TYPE_NODES.has(tc.type)) emitRustTypeRefs(itemNid, tc, vline);
+                  }
+                } else if (vc.type === "field_declaration_list") {
+                  for (const field of vc.children) {
+                    if (field.type !== "field_declaration") continue;
+                    emitRustTypeRefs(itemNid, field.childForFieldName("type"), field.startPosition.row + 1);
+                  }
+                }
+              }
+            }
+          }
+        }
       }
       return;
     }
