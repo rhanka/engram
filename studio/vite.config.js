@@ -28,10 +28,15 @@ async function singleFilePlugins() {
 // The built SPA is served by `graphify ontology studio` from a static route.
 // `base: "./"` keeps asset URLs relative so the bundle works regardless of the
 // mount path the studio server picks.
-export default defineConfig(async () => ({
+export default defineConfig(async ({ mode }) => ({
   base: "./",
   plugins: [svelte(), ...(await singleFilePlugins())],
   resolve: {
+    // Under vitest (mode "test"), prefer the BROWSER build of packages —
+    // otherwise `svelte` resolves to its server entry and `mount()` throws
+    // (needed by the component render smokes, e.g. citedSourceViewer.test.js).
+    // Additive condition, test-mode only: the build output is untouched.
+    ...(mode === "test" ? { conditions: ["browser"] } : {}),
     alias: {
       "@sentropic/graph": resolve(here, "../packages/graph/src/index.ts"),
       // Pure, DOM-free deterministic force layout (honors fx/fy pins). Reused by
