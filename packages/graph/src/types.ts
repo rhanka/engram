@@ -189,6 +189,25 @@ export interface LayoutOptions {
    * additive — a nullish / non-finite entry is treated as "untimed".
    */
   nodeTimes?: readonly (number | null | undefined)[];
+  /**
+   * Per-node REPO/BAND key (the owning repo name), node-order keyed. Consumed
+   * by the git-flow layout to stack one horizontal band per repo; ignored by
+   * every other layout. Optional & additive.
+   */
+  nodeLanes?: readonly (string | null | undefined)[];
+  /**
+   * Per-node NAME (the branch name for Branch nodes), node-order keyed.
+   * Consumed by the git-flow layout to pick the trunk (main/master/develop)
+   * and order branch lanes deterministically. Optional & additive.
+   */
+  nodeNames?: readonly (string | null | undefined)[];
+  /**
+   * Per-edge RELATION label (`commit-parent`, `branch-head`, `produced`,
+   * `touched-branch`, `derived-from`, …), edge-order keyed (parallel to
+   * `graph.edges` pairs). Consumed by the git-flow layout to walk the git DAG;
+   * ignored by every other layout. Optional & additive.
+   */
+  edgeRelations?: readonly (string | null | undefined)[];
 }
 
 export interface LayoutEngine {
