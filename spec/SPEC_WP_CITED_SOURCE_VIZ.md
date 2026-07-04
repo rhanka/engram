@@ -356,6 +356,47 @@ overlay (image); (f) acknowledge **image-bbox grounding needs a producer-side de
 its render path ships earlier, its data does not, until a YOLO-style/layout detector (or figure-caption
 heuristic) exists.
 
+### S.6 Qualified generic frame *(principal UAT 2026-07-04 — binding baseline for `@sentropic/cited-source-viewer`)*
+
+The interim studio viewer (PR #262) qualified the GENERIC frame once for the shared package: a
+NON-modal central overlay (side panels stay live), ONE compact DS toolbar common to ALL modalities —
+`‹ Citation x/y ›` · `‹ Doc x/y ›` (multi-file refs) · modality segments (`‹ Page x/y ›`, zoom) ·
+`Ouvrir ↗` — with only the BODY swapping per modality. The component is PURE (props + resolver
+callbacks, zero graphify runtime import) and retargets an open instance on new props (no stacking).
+
+#### S.6.1 Increment — selection-scope citation navigation *(principal-approved, qualified 2026-07-04)*
+
+The selection can hold SEVERAL entities, each cited several times, possibly across several documents.
+The viewer supports TWO navigation scopes:
+
+- **Entité** (baseline): citations of the current entity only.
+- **Sélection** (increment): ONE continuous thread of ALL citations of ALL selected entities —
+  stepping past the last citation of entity A lands on the first citation of entity B WITHOUT
+  closing the overlay.
+
+Approved UX (generic frame — the toggle/indicator are modality-agnostic toolbar segments):
+
+- Toolbar gains a **scope toggle `[ Entité | Sélection ]`** left of the citation navigator, shown
+  ONLY when the selection holds ≥2 entities with citations (else plain Entité mode, no toggle).
+- In Sélection scope the citation counter is GLOBAL (`Citation 7/23`) and an
+  **`‹ Entité x/y — <label> ›`** indicator group appears (prev/next jump to the FIRST citation of
+  the neighbour entity).
+- **Thread order: selection order → then document (first appearance) → then page.** The thread is
+  built by CONSUMER GLUE (graphify studio: `lib/citedSources.js` `buildSelectionThread`), never by
+  the component.
+- Keyboard: `n`/`N` = next/prev citation in the ACTIVE scope; `e`/`E` = next/prev entity
+  (Sélection scope only). Form fields are never intercepted.
+- **Right-panel sync, bidirectional:** the selection panel FOLLOWS the navigation — current entity
+  AND current citation highlighted (DS `--st-*` tokens) and scrolled into view via the pure
+  `onFocusChange(groupId, refIndex)` callback; clicking a citation in the panel retargets the open
+  viewer, and clicking one on ANOTHER selected entity keeps/switches to Sélection scope.
+
+Extended pure API (carried as-is into `@sentropic/cited-source-viewer`):
+`groups: Array<{ id, label, refs: CitedSourceRef[] }>` (grouped thread; flat `refs` = one anonymous
+group) + `activeGroupIndex` / `activeIndex` (ref index WITHIN the group) + `scope`
+(`"entity" | "selection"`, prop-seeded) + `onScopeChange(scope)` + `onFocusChange(groupId, refIndex)`.
+All selection logic (thread building, panel focus, scope memory) stays in the consumer glue.
+
 ---
 
 ## Per-modality lots — the v1 / v2 / v3 sequence  *(principal's full-modality requirement)*
