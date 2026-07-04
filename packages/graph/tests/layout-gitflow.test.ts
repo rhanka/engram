@@ -140,6 +140,20 @@ describe("computeGitFlowPositions — trunk + lanes", () => {
     });
   });
 
+  it("ARROW GRAMMAR: fork descents are BARE (arrow false); lane segments keep the arrow", () => {
+    // Fork entries (fork commit → first exclusive branch commit): no arrowhead
+    // — a descending arrow reads as an inverted merge (principal's UAT).
+    for (const forkEdge of ["a1→c2", "b1→c3", "d1→c7"]) {
+      const hint = layout.edgeHints[repo.edgeIndex.get(forkEdge)!]!;
+      expect(hint.style, forkEdge).toBe("flow-port-reverse");
+      expect(hint.arrow, forkEdge).toBe(false);
+    }
+    // Lane segments (trunk + within-branch) stay arrowed.
+    for (const laneEdge of ["c5→c4", "a2→a1", "b2→b1", "d2→d1"]) {
+      expect(layout.edgeHints[repo.edgeIndex.get(laneEdge)!]!.arrow, laneEdge).toBe(true);
+    }
+  });
+
   it("branch-head / touched-branch edges are hidden; produced is a session-link", () => {
     expect(layout.edgeHints[repo.edgeIndex.get("branch-feature-a→a3")!]!.style).toBe("hidden");
     expect(layout.edgeHints[repo.edgeIndex.get("s3→branch-feature-b")!]!.style).toBe("hidden");
@@ -238,10 +252,12 @@ describe("computeGitFlowPositions — display window", () => {
     expect(oldLabel.entry).toBe("window-left");
     expect(xOf(repo, layout.positions, "old-0")).toBe(0); // re-anchored at the edge
     expect(layout.placed[repo.index.get("old-0")!]).toBe(1); // still PLACED — no top-K
-    // …with a DASHED soft entry (its fork commit c10 is parked pre-window).
+    // …with a DASHED soft entry (its fork commit c10 is parked pre-window),
+    // BARE like every fork descent (only merges / lane segments arrow).
     const entry = layout.edgeHints[repo.edgeIndex.get("old-0→c10")!]!;
     expect(entry.style).toBe("flow-port-reverse");
     expect(entry.dash).toBe("dashed");
+    expect(entry.arrow).toBe(false);
 
     // The RECENT branch stays a normal in-window fork.
     const recentLabel = layout.branchLabels.find((l) => l.name === "recent")!;
@@ -252,6 +268,62 @@ describe("computeGitFlowPositions — display window", () => {
     expect(layout.placed[repo.index.get("c100")!]).toBe(0);
     expect(layout.placed[repo.index.get("c599")!]).toBe(1);
     expect(xOf(repo, layout.positions, "c599")).toBe((599 - 200) * 60);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// merged-as: arrowed ascending merge connectors + lane freed AT the merge rank.
+// ---------------------------------------------------------------------------
+
+describe("computeGitFlowPositions — merged-as (merge-back connectors)", () => {
+  // Branch A forks at rank 2 (2 commits, tip rank 4); branch B forks at 6.
+  // WITHOUT a merge, A's interval [2,4] frees before 6 ⇒ B reuses A's lane.
+  // WITH `merged-as` A-1 → c8 the interval extends to the merge rank 8 ⇒ B
+  // must open a NEW lane, and the lane only frees AFTER rank 8.
+  const build = (withMerge: boolean): Repo => {
+    const repo = longTrunkRepo(12, [
+      { name: "aaa", at: 2, len: 2 },
+      { name: "bbb", at: 6, len: 2 },
+    ]);
+    if (withMerge) {
+      repo.edgeIndex.set("aaa-1→c8", repo.edges.length);
+      repo.edges.push({ source: "aaa-1", target: "c8", relation: "merged-as" });
+    }
+    return repo;
+  };
+
+  it("emits an ARROWED flow-port hint for the merge connector (tip LEFT of merge commit)", () => {
+    const repo = build(true);
+    const layout = computeGitFlowPositions(repo, OPTS);
+    const hint = layout.edgeHints[repo.edgeIndex.get("aaa-1→c8")!]!;
+    expect(hint.style).toBe("flow-port"); // drawn AS-IS: tip → merge, ascending
+    expect(hint.arrow).toBe(true); // the ONE arrowed connector of the grammar
+    // Direction invariant: the tip is LEFT of the merge commit (old → new).
+    expect(xOf(repo, layout.positions, "aaa-1")).toBeLessThan(xOf(repo, layout.positions, "c8"));
+  });
+
+  it("the merged branch's lane stays reserved up to the merge rank, then frees", () => {
+    // Control: no merge ⇒ interval [2,4] frees at 4+1 < 6 ⇒ bbb REUSES the lane.
+    const control = computeGitFlowPositions(build(false), OPTS);
+    const controlRepo = build(false);
+    expect(yOf(controlRepo, control.positions, "bbb-0")).toBe(
+      yOf(controlRepo, control.positions, "aaa-0"),
+    );
+    expect(control.laneCounts.get("r")).toBe(2); // trunk + 1 shared lane
+
+    // Merged: interval extends to the merge rank 8 ⇒ bbb (fork 6) CANNOT reuse.
+    const repo = build(true);
+    const merged = computeGitFlowPositions(repo, OPTS);
+    expect(yOf(repo, merged.positions, "bbb-0")).not.toBe(yOf(repo, merged.positions, "aaa-0"));
+    expect(merged.laneCounts.get("r")).toBe(3); // trunk + 2 lanes while A is open to rank 8
+  });
+
+  it("a merge into an UNPLACED commit degrades to hidden (never a dangling arrow)", () => {
+    const repo = longTrunkRepo(12, [{ name: "aaa", at: 2, len: 2 }]);
+    repo.edgeIndex.set("aaa-1→ghost", repo.edges.length);
+    repo.edges.push({ source: "aaa-1", target: "ghost", relation: "merged-as" });
+    const layout = computeGitFlowPositions(repo, OPTS);
+    expect(layout.edgeHints[repo.edgeIndex.get("aaa-1→ghost")!]!.style).toBe("hidden");
   });
 });
 
