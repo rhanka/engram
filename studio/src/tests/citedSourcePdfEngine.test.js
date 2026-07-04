@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { computeHighlightRects } from "../lib/cited-source/pdfEngine.js";
+import {
+  MAX_RENDER_SCALE,
+  MIN_RENDER_SCALE,
+  computeHighlightRects,
+  resolveRenderScale,
+} from "../lib/cited-source/pdfEngine.js";
 
 /**
  * Pure geometry half of the pdf.js engine: quote -> text-layer rects. Verifies
@@ -55,5 +60,26 @@ describe("cited-source pdfEngine.computeHighlightRects", () => {
     );
     expect(rects).toEqual([]);
     expect(coverage).toBe(0);
+  });
+});
+
+describe("cited-source pdfEngine.resolveRenderScale (toolbar zoom)", () => {
+  it("defaults to fit-width: containerWidth / baseWidth, clamped", () => {
+    expect(resolveRenderScale({ baseWidth: 600, containerWidth: 900 })).toBeCloseTo(1.5);
+    // Tiny container clamps to the minimum scale.
+    expect(resolveRenderScale({ baseWidth: 600, containerWidth: 10 })).toBe(MIN_RENDER_SCALE);
+    // Huge container clamps to the maximum scale.
+    expect(resolveRenderScale({ baseWidth: 100, containerWidth: 100000 })).toBe(MAX_RENDER_SCALE);
+  });
+
+  it("userScale (manual zoom) overrides fit-width and is clamped", () => {
+    expect(resolveRenderScale({ baseWidth: 600, containerWidth: 900, userScale: 1.36 })).toBeCloseTo(1.36);
+    expect(resolveRenderScale({ baseWidth: 600, containerWidth: 900, userScale: 99 })).toBe(MAX_RENDER_SCALE);
+    expect(resolveRenderScale({ baseWidth: 600, containerWidth: 900, userScale: 0.01 })).toBe(MIN_RENDER_SCALE);
+  });
+
+  it("null/NaN userScale falls back to fit-width", () => {
+    expect(resolveRenderScale({ baseWidth: 600, containerWidth: 600, userScale: null })).toBeCloseTo(1);
+    expect(resolveRenderScale({ baseWidth: 600, containerWidth: 600, userScale: Number.NaN })).toBeCloseTo(1);
   });
 });

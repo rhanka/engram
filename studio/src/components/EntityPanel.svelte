@@ -170,23 +170,27 @@
                   <ul class="entity-cite-passages">
                     {#each cf.passages as p, i (cf.file + i)}
                       <li class="entity-cite-passage">
-                        <div class="entity-cite-row">
-                          <div class="entity-cite-loc">
-                            {#if p.section}<span class="entity-cite-section">{p.section}</span>{/if}
-                            {#if p.page != null}<span class="entity-cite-page">p.{p.page}</span>{/if}
-                            {#if !p.section && p.page == null && !p.quote}<span class="entity-cite-section">(passage)</span>{/if}
-                          </div>
-                          {#if onOpenSource}
-                            <button
-                              class="entity-cite-open"
-                              type="button"
-                              title="Open the cited source with this passage highlighted"
-                              aria-label="Open source for this citation"
-                              onclick={() => openSource(p)}
-                            >Open source ↗</button>
-                          {/if}
+                        <div class="entity-cite-loc">
+                          {#if p.section}<span class="entity-cite-section">{p.section}</span>{/if}
+                          {#if p.page != null}<span class="entity-cite-page">p.{p.page}</span>{/if}
+                          {#if !p.section && p.page == null && !p.quote}<span class="entity-cite-section">(passage)</span>{/if}
                         </div>
                         {#if p.quote}<blockquote class="entity-cite-quote">{p.quote}</blockquote>{/if}
+                        {#if onOpenSource}
+                          <!-- Qualified UX (immo "Voir la preuve · p.N"): FULL-WIDTH
+                               button UNDER the quote — never truncates against the
+                               panel edge, one per citation. -->
+                          <button
+                            class="entity-cite-src"
+                            type="button"
+                            title="Ouvrir la source citée avec ce passage surligné"
+                            aria-label="Voir la source de cette citation"
+                            onclick={() => openSource(p)}
+                          >
+                            <svg class="entity-cite-src-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+                            <span>Voir la source{#if p.page != null}&nbsp;· p.{p.page}{/if}</span>
+                          </button>
+                        {/if}
                       </li>
                     {/each}
                   </ul>
@@ -383,14 +387,8 @@
     min-width: 0;
     overflow-wrap: anywhere;
   }
-  /* Cited-source viewer affordance: locator row + "Open source" button. */
-  .entity-cite-row {
-    display: flex;
-    align-items: baseline;
-    gap: 0.4rem;
-  }
+  /* Cited-source viewer affordance: locator row + full-width source button. */
   .entity-cite-loc {
-    flex: 1;
     min-width: 0;
     display: flex;
     flex-wrap: wrap;
@@ -403,20 +401,34 @@
     color: var(--st-semantic-text-muted, #64748b);
     white-space: nowrap;
   }
-  .entity-cite-open {
-    flex-shrink: 0;
+  /* Qualified UX (immo parity): FULL-WIDTH "Voir la source · p.N" under the
+     quote — wraps inside the panel, can never clip against the right edge. */
+  .entity-cite-src {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    width: 100%;
+    margin-top: 0.3rem;
     border: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
     background: var(--st-semantic-surface-subtle, #f8fafc);
     border-radius: var(--st-radius-sm, 4px);
     color: var(--st-semantic-text-link, #2563eb);
     cursor: pointer;
-    font-size: 0.68rem;
+    font-size: 0.74rem;
+    font-weight: 600;
     line-height: 1.2;
-    padding: 0.1rem 0.35rem;
-    white-space: nowrap;
+    padding: 0.3rem 0.5rem;
+    min-width: 0;
   }
-  .entity-cite-open:hover {
+  .entity-cite-src:hover {
     border-color: var(--st-semantic-action-primary, #2563eb);
+    background: var(--st-semantic-surface-selected, #eff6ff);
+  }
+  .entity-cite-src-ico {
+    width: 0.85rem;
+    height: 0.85rem;
+    flex-shrink: 0;
   }
   /* BUG A: the citation FILE path renders as a DS Collapsible trigger title
      (e.g. ".graphify/converted/pdf/CONTRIBUATION_AI_AERONAUTIQUE_…md"). Its

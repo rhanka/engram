@@ -9,6 +9,30 @@
    * node.citations, converting via citationToCitedSourceRef, fetching bytes)
    * lives OUTSIDE, in the studio wiring (App.svelte + lib/citedSources.js).
    *
+   * QUALIFIED UX (principal UAT 2026-07-04, immo/radar SignalPdfOverlay
+   * parity). This frame is being qualified ONCE for the shared package, so it
+   * is GENERIC — toolbar/frame common to ALL modalities, only the body swaps:
+   *
+   *   header   kicker / title / active locator / ✕ close
+   *   toolbar  ONE compact DS bar, common to all modalities:
+   *              ‹ Citation x/y ›  active-ref navigator (shown when y > 1)
+   *              ‹ Doc x/y ›       source-document navigator (shown when the
+   *                                refs span MULTIPLE locators; prev/next jumps
+   *                                to the FIRST ref of the neighbour document)
+   *              ‹ Page x/y ›      modality segment (page-addressable only)
+   *              − NN% +           modality segment (render-scale zoom; the %
+   *                                button resets to fit-width)
+   *              Ouvrir ↗          opens the raw source in a new tab (shown
+   *                                when `sourceHref(ref)` resolves a URL)
+   *   body     the ONLY modality-specific region (pdf canvas + highlight
+   *            layer · markdown render + <mark>; image canvas later)
+   *   footer   degradation strip, shown ONLY when honesty requires it
+   *            ("quote not located — showing anyway")
+   *
+   * The component is NON-modal by design: the consumer hosts it as a central
+   * overlay (over its canvas/main view only) and keeps its side panels live; a
+   * NEW `refs` array + `activeIndex` RETARGETS an open viewer (no stacking).
+   *
    * Props (the frozen seam, SPEC_WP_CITED_SOURCE_VIZ §S.1/§S.3):
    *   refs          CitedSourceRef[] (shape only — no type import needed in JS):
    *                 { rawRef?, sourceUrl?, docSha?, modality?, page?, section?,
@@ -16,30 +40,40 @@
    *   resolveSource async (ref) => { kind: "pdf", data: ArrayBuffer }
    *                              | { kind: "markdown", text: string }
    *                 The component NEVER reads bytes itself (§S.3).
-   *   activeIndex   Initially-active ref index (optional).
+   *   sourceHref    (ref) => string|null — href for the "Ouvrir ↗" raw-source
+   *                 link; null/absent hides the button. Pure callback: the
+   *                 consumer owns the URL scheme (bundle sources/, API route…).
+   *   activeIndex   Active ref index; with a new `refs` array it retargets.
    *   title         Header title (e.g. the source file the user clicked).
    *   onClose       Close callback (optional; hides the ✕ when absent).
    *
    * v1 scope: MD (incl. OCR-markdown / plain text) + PDF text-layer only.
-   * PDF: render page + highlight the matched quote in the text layer; page
-   * navigation; "quote not found on this page" shows the page anyway.
-   * Markdown: full render, scroll-to + <mark> the quote.
    */
   import { tick } from "svelte";
-  import { computeHighlightRects, loadPdfDocument, renderPdfPage } from "../lib/cited-source/pdfEngine.js";
+  import {
+    MAX_RENDER_SCALE,
+    MIN_RENDER_SCALE,
+    computeHighlightRects,
+    loadPdfDocument,
+    renderPdfPage,
+  } from "../lib/cited-source/pdfEngine.js";
   import { renderSourceHtml } from "../lib/cited-source/markdownSource.js";
 
   let {
     refs = [],
     resolveSource,
+    sourceHref = null,
     activeIndex = 0,
     title = "Cited source",
     onClose = null,
   } = $props();
 
-  // Active ref index — internal state seeded from the prop (prev/next moves it).
+  // Active ref index — internal state seeded from the props. Tracking BOTH the
+  // refs identity and the activeIndex prop makes a re-open with the same index
+  // on a new refs array retarget correctly (no stale internal position).
   let index = $state(0);
   let lastActiveProp = -1;
+  let lastRefsProp = null;
 
   // Load pipeline state.
   let loading = $state(false);
@@ -55,6 +89,8 @@
   let currentPage = $state(1);
   let highlightRects = $state([]);
   let quoteOnPage = $state(true);
+  let scale = $state(1); // effective render scale (drives the toolbar %)
+  let userScale = $state(null); // manual zoom; null = fit-width (default)
   let canvasEl = $state(null);
   let scrollEl = $state(null);
   let mdEl = $state(null);
@@ -66,6 +102,31 @@
   const ref = $derived(refs[index] ?? null);
   const refCount = $derived(refs.length);
   const quoteOf = (r) => r?.excerpt ?? r?.citation ?? null;
+  const locatorOf = (r) => r?.rawRef ?? r?.sourceUrl ?? r?.docSha ?? "";
+
+  // ── Document navigator (immo "PDF x/y"): distinct source locators, in ref
+  //    order. Prev/next jumps to the FIRST ref of the neighbour document.
+  const docLocators = $derived.by(() => {
+    const seen = [];
+    for (const r of refs) {
+      const loc = locatorOf(r);
+      if (!seen.includes(loc)) seen.push(loc);
+    }
+    return seen;
+  });
+  const docCount = $derived(docLocators.length);
+  const docIndex = $derived(ref ? docLocators.indexOf(locatorOf(ref)) : -1);
+  function goDoc(delta) {
+    const target = docIndex + delta;
+    if (target < 0 || target >= docCount) return;
+    const loc = docLocators[target];
+    const first = refs.findIndex((r) => locatorOf(r) === loc);
+    if (first >= 0) index = first;
+  }
+
+  const rawHref = $derived(
+    ref && typeof sourceHref === "function" ? (sourceHref(ref) ?? null) : null,
+  );
 
   /** Human locator label for the header ("p.3", "§ Chapter 2", …). */
   function locatorLabel(r) {
@@ -76,13 +137,13 @@
     else if (r.paragraph_id) parts.push(`¶${r.paragraph_id}`);
     return parts.join(" · ");
   }
-  function sourceLabel(r) {
-    return r?.rawRef ?? r?.sourceUrl ?? r?.docSha ?? "(no locator)";
-  }
 
-  // React to the activeIndex prop (a new click while open re-targets the viewer).
+  // Retarget on ANY prop change (new refs array and/or new activeIndex): a
+  // click on another citation while the overlay is open re-aims the SAME
+  // viewer instead of stacking a second one.
   $effect(() => {
-    if (activeIndex !== lastActiveProp) {
+    if (refs !== lastRefsProp || activeIndex !== lastActiveProp) {
+      lastRefsProp = refs;
       lastActiveProp = activeIndex;
       const clamped = Math.max(0, Math.min(refs.length - 1, activeIndex ?? 0));
       index = refs.length > 0 ? clamped : 0;
@@ -106,6 +167,7 @@
     numPages = 0;
     highlightRects = [];
     quoteOnPage = true;
+    userScale = null; // a new source starts back in fit-width (radar #90)
     try {
       const payload = await resolveSource(target);
       if (token !== loadToken) return;
@@ -146,8 +208,9 @@
     await tick();
     if (!canvasEl) return;
     const containerWidth = scrollEl ? Math.max(120, scrollEl.clientWidth - 32) : 720;
-    const { viewport, scale } = await renderPdfPage(pdfPage, canvasEl, { containerWidth });
+    const rendered = await renderPdfPage(pdfPage, canvasEl, { containerWidth, userScale });
     if (token !== renderToken) return;
+    scale = rendered.scale;
 
     // Highlight only on the ref's own page (radar bug #83 guard: a generic
     // fallback window would otherwise re-highlight on EVERY page).
@@ -157,7 +220,7 @@
     if (quote && onRefPage) {
       const content = await pdfPage.getTextContent();
       if (token !== renderToken) return;
-      const { rects } = computeHighlightRects(content, viewport, scale, quote);
+      const { rects } = computeHighlightRects(content, rendered.viewport, rendered.scale, quote);
       highlightRects = rects;
       quoteOnPage = rects.length > 0;
       if (rects.length > 0) queueScrollToHighlight(rects[0]);
@@ -166,6 +229,26 @@
       // Off the ref page: nothing is expected to highlight — not a degradation.
       quoteOnPage = !quote || !onRefPage ? true : false;
     }
+  }
+
+  // ── Zoom (immo "− 136% +"): manual render-scale override; the % button
+  //    resets to fit-width. Re-renders the page + highlights at the new scale.
+  function setUserScale(next) {
+    const clamped = Math.max(MIN_RENDER_SCALE, Math.min(MAX_RENDER_SCALE, next));
+    if (userScale !== null && Math.abs(clamped - userScale) < 0.001) return;
+    userScale = clamped;
+    if (pdfDoc) void renderPage(currentPage);
+  }
+  function zoomIn() {
+    setUserScale((userScale ?? scale) + 0.2);
+  }
+  function zoomOut() {
+    setUserScale((userScale ?? scale) - 0.2);
+  }
+  function resetZoom() {
+    if (userScale === null) return;
+    userScale = null;
+    if (pdfDoc) void renderPage(currentPage);
   }
 
   /** rAF with a setTimeout fallback (jsdom test environments may lack rAF). */
@@ -201,7 +284,18 @@
     if (i < 0 || i >= refCount || i === index) return;
     index = i;
   }
+
+  /** True when the key event belongs to a form field. The overlay is NON-modal
+   *  (side panels stay interactive), so typing there must never page/close. */
+  function isEditableTarget(event) {
+    const el = event.target;
+    if (!el || typeof el.closest !== "function") return false;
+    return Boolean(
+      el.closest("input, textarea, select, [contenteditable=''], [contenteditable='true']"),
+    );
+  }
   function handleKeydown(event) {
+    if (isEditableTarget(event)) return;
     if (event.key === "Escape" && onClose) onClose();
     else if (event.key === "ArrowLeft" && pdfDoc) goPrevPage();
     else if (event.key === "ArrowRight" && pdfDoc) goNextPage();
@@ -214,10 +308,10 @@
   <header class="csv-head">
     <div class="csv-head-text">
       <p class="csv-kicker">Cited source</p>
-      <h2 class="csv-title" title={sourceLabel(ref)}>{title}</h2>
+      <h2 class="csv-title" title={locatorOf(ref)}>{title}</h2>
       {#if ref}
         <p class="csv-locator">
-          <span class="csv-locator-file">{sourceLabel(ref)}</span>
+          <span class="csv-locator-file">{locatorOf(ref) || "(no locator)"}</span>
           {#if locatorLabel(ref)}<span class="csv-locator-pos">{locatorLabel(ref)}</span>{/if}
         </p>
       {/if}
@@ -227,25 +321,51 @@
     {/if}
   </header>
 
-  {#if refCount > 1}
-    <nav class="csv-refs" aria-label="Citations in this source set">
-      <button
-        class="csv-refnav"
-        type="button"
-        disabled={index <= 0}
-        onclick={() => goRef(index - 1)}
-        aria-label="Previous citation"
-      >←</button>
-      <span class="csv-refcount">Citation {index + 1}/{refCount}</span>
-      <button
-        class="csv-refnav"
-        type="button"
-        disabled={index >= refCount - 1}
-        onclick={() => goRef(index + 1)}
-        aria-label="Next citation"
-      >→</button>
-    </nav>
-  {/if}
+  <!-- QUALIFIED TOOLBAR (immo parity): one compact bar, generic frame; only
+       the Page/Zoom segments are modality-gated (page-addressable sources). -->
+  <div class="csv-toolbar" role="toolbar" aria-label="Source navigation">
+    {#if refCount > 1}
+      <div class="csv-tb-group" aria-label="Citation navigator">
+        <button class="csv-tb-btn" type="button" disabled={index <= 0} onclick={() => goRef(index - 1)} aria-label="Previous citation">‹</button>
+        <span class="csv-tb-label">Citation <strong>{index + 1}/{refCount}</strong></span>
+        <button class="csv-tb-btn" type="button" disabled={index >= refCount - 1} onclick={() => goRef(index + 1)} aria-label="Next citation">›</button>
+      </div>
+    {/if}
+
+    {#if docCount > 1}
+      <div class="csv-tb-group" aria-label="Document navigator">
+        <button class="csv-tb-btn" type="button" disabled={docIndex <= 0} onclick={() => goDoc(-1)} aria-label="Previous document">‹</button>
+        <span class="csv-tb-label">Doc <strong>{docIndex + 1}/{docCount}</strong></span>
+        <button class="csv-tb-btn" type="button" disabled={docIndex >= docCount - 1} onclick={() => goDoc(1)} aria-label="Next document">›</button>
+      </div>
+    {/if}
+
+    {#if pdfDoc}
+      <div class="csv-tb-group" aria-label="Page navigator">
+        <button class="csv-tb-btn" type="button" disabled={currentPage <= 1} onclick={goPrevPage} aria-label="Previous page">‹</button>
+        <span class="csv-tb-label">Page <strong>{currentPage}/{numPages}</strong></span>
+        <button class="csv-tb-btn" type="button" disabled={currentPage >= numPages} onclick={goNextPage} aria-label="Next page">›</button>
+      </div>
+
+      <div class="csv-tb-group" aria-label="Zoom">
+        <button class="csv-tb-btn" type="button" disabled={scale <= MIN_RENDER_SCALE + 0.001} onclick={zoomOut} aria-label="Zoom out">−</button>
+        <button
+          class="csv-tb-zoom"
+          type="button"
+          onclick={resetZoom}
+          title="Back to fit-width"
+          aria-label="Zoom level {Math.round(scale * 100)} percent, click to fit width"
+        >{Math.round(scale * 100)}%</button>
+        <button class="csv-tb-btn" type="button" disabled={scale >= MAX_RENDER_SCALE - 0.001} onclick={zoomIn} aria-label="Zoom in">+</button>
+      </div>
+    {/if}
+
+    <span class="csv-tb-spacer"></span>
+
+    {#if rawHref}
+      <a class="csv-tb-open" href={rawHref} target="_blank" rel="noopener noreferrer">Ouvrir ↗</a>
+    {/if}
+  </div>
 
   {#if quoteOf(ref)}
     <blockquote class="csv-quote">{quoteOf(ref)}</blockquote>
@@ -258,7 +378,7 @@
       <div class="csv-error" role="alert">
         <p class="csv-error-title">Source unavailable</p>
         <p class="csv-error-detail">{loadError}</p>
-        <code class="csv-error-ref">{sourceLabel(ref)}</code>
+        <code class="csv-error-ref">{locatorOf(ref) || "(no locator)"}</code>
       </div>
     {:else if pdfDoc}
       <div class="csv-page-stage">
@@ -281,20 +401,15 @@
     {/if}
   </div>
 
-  <footer class="csv-foot">
-    {#if pdfDoc}
-      <div class="csv-pager" role="group" aria-label="Page navigation">
-        <button class="csv-refnav" type="button" onclick={goPrevPage} disabled={currentPage <= 1} aria-label="Previous page">←</button>
-        <span class="csv-page-ind">Page {currentPage}/{numPages}</span>
-        <button class="csv-refnav" type="button" onclick={goNextPage} disabled={currentPage >= numPages} aria-label="Next page">→</button>
-      </div>
-      {#if !quoteOnPage}
-        <span class="csv-degraded">Quote not located on this page — showing the page anyway.</span>
-      {/if}
-    {:else if mdPayload && quoteOf(ref) && !mdFound}
+  {#if pdfDoc && !quoteOnPage}
+    <footer class="csv-foot">
+      <span class="csv-degraded">Quote not located on this page — showing the page anyway.</span>
+    </footer>
+  {:else if mdPayload && quoteOf(ref) && !mdFound}
+    <footer class="csv-foot">
       <span class="csv-degraded">Quote not located in the source — showing the document anyway.</span>
-    {/if}
-  </footer>
+    </footer>
+  {/if}
 </section>
 
 <style>
@@ -363,36 +478,91 @@
     color: var(--st-semantic-feedback-error, #dc2626);
     border-color: var(--st-semantic-feedback-error, #dc2626);
   }
-  .csv-refs {
+  /* ── Qualified toolbar (immo parity) ──────────────────────────────────── */
+  .csv-toolbar {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.4rem 1rem;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    padding: 0.35rem 1rem;
     border-bottom: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
     background: var(--st-semantic-surface-subtle, #f8fafc);
+    min-height: 2.1rem;
   }
-  .csv-refcount {
-    font-size: 0.74rem;
-    font-weight: 600;
-    color: var(--st-semantic-text-secondary, #475569);
-  }
-  .csv-refnav {
+  .csv-tb-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.1rem 0.2rem;
     border: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
+    border-radius: var(--st-radius-sm, 4px);
     background: var(--st-semantic-surface-default, #fff);
+  }
+  .csv-tb-label {
+    font-size: 0.72rem;
+    color: var(--st-semantic-text-secondary, #475569);
+    padding: 0 0.25rem;
+    white-space: nowrap;
+  }
+  .csv-tb-label strong {
+    font-weight: 700;
+    color: var(--st-semantic-text-primary, #0f172a);
+  }
+  .csv-tb-btn {
+    border: none;
+    background: transparent;
     border-radius: var(--st-radius-sm, 4px);
     color: var(--st-semantic-text-secondary, #475569);
     cursor: pointer;
-    font-size: 0.8rem;
+    font-size: 0.9rem;
     line-height: 1;
-    padding: 0.25rem 0.5rem;
+    padding: 0.15rem 0.4rem;
   }
-  .csv-refnav:disabled {
-    opacity: 0.4;
+  .csv-tb-btn:disabled {
+    opacity: 0.35;
     cursor: default;
   }
-  .csv-refnav:not(:disabled):hover {
-    border-color: var(--st-semantic-action-primary, #2563eb);
+  .csv-tb-btn:not(:disabled):hover {
+    background: var(--st-semantic-surface-subtle, #f1f5f9);
     color: var(--st-semantic-action-primary, #2563eb);
+  }
+  .csv-tb-zoom {
+    border: none;
+    background: transparent;
+    border-radius: var(--st-radius-sm, 4px);
+    color: var(--st-semantic-text-primary, #0f172a);
+    cursor: pointer;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 0.2rem 0.3rem;
+    min-width: 2.6rem;
+    text-align: center;
+  }
+  .csv-tb-zoom:hover {
+    background: var(--st-semantic-surface-subtle, #f1f5f9);
+    color: var(--st-semantic-action-primary, #2563eb);
+  }
+  .csv-tb-spacer {
+    flex: 1;
+  }
+  .csv-tb-open {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
+    border-radius: var(--st-radius-sm, 4px);
+    background: var(--st-semantic-surface-default, #fff);
+    color: var(--st-semantic-text-link, #2563eb);
+    font-size: 0.74rem;
+    font-weight: 600;
+    line-height: 1;
+    padding: 0.3rem 0.5rem;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .csv-tb-open:hover {
+    border-color: var(--st-semantic-action-primary, #2563eb);
   }
   .csv-quote {
     margin: 0.55rem 1rem 0.2rem;
@@ -493,19 +663,8 @@
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    padding: 0.45rem 1rem;
+    padding: 0.35rem 1rem;
     border-top: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
-    min-height: 2.1rem;
-  }
-  .csv-pager {
-    display: flex;
-    align-items: center;
-    gap: 0.45rem;
-  }
-  .csv-page-ind {
-    font-size: 0.76rem;
-    font-weight: 600;
-    color: var(--st-semantic-text-secondary, #475569);
   }
   .csv-degraded {
     font-size: 0.74rem;
