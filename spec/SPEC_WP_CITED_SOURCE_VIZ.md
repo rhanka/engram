@@ -433,3 +433,30 @@ UI to the viewer, (3) any auth/layout. No graphify coupling required for the vie
 > **Modality tiering:** v1 (MD + PDF text-layer) and v2 (DOCX + PPTX) are pure text-match (no key, no
 > detection); **v3 (image-bbox) needs a YOLO-style/layout detection step and is excluded from Lot 1** —
 > only its contract (`bbox`/`region`/`modality`) lands early so the viewer can render image citations.
+
+### S.5 — RATIFIED_WITH_CONDITIONS (architect, 2026-07-04)
+
+Formal h2a trace `env:architect-s5-ratification-to-graphify-live-20260704T1147Z`; reconciles the
+2026-06-26 double-consensus SPEC_EVOL_PDF_CANEVA_VIEWER (owner=architect, seam=graphify, seed=lift radar).
+
+- **Name/home AMENDED**: the viewer lib is **`@sentropic/cited-source-viewer`**, home = sentropic
+  monorepo `packages/cited-source-viewer`, **ARCHITECT-owned**, **DS-THEMED** (consumes DS tokens) —
+  NOT DS-governed. `@sentropic/pdf-*` and the "under DS governance" clause are **dropped** (a
+  multi-modal document viewer is application code, not a DS primitive).
+- **(b) Purity**: no graphify runtime dep — enforced as a CI gate in the package (+ a
+  no-radar/no-`$lib` import gate).
+- **(c) Frozen contract = the SEAM** (`OntologyCitation`/`CitedSourceRef`), not a phantom viewer
+  API. Core seam types export from the public barrel since PR #260. **Scope v1 = MD + PDF
+  text-layer ONLY.**
+- **(d) Seed**: lift radar `SignalPdfOverlay.svelte` + `pdf-citation-match.ts`, with a radar
+  **parity acceptance gate** (radar deletes its bespoke overlay only at parity).
+- **(e) Deps ratified for v1 only**: pdf.js + markdown; v2 (DOCX/PPTX: mammoth/pptx) and v3
+  (image-bbox) deferred to their lots. **(f)** Quote-less image-bbox stays v3, gated on
+  producer-side detection.
+- **Lots 2 + 3: GREENLIT** at v1 scope under these conditions.
+- **Role split**: graphify owns the Lot-0 seam + producers and **codes the first Lot-2 cut** in the
+  sentropic monorepo under architect API review; the architect governs the exported surface.
+- **Interim GO**: a thin app-local interim viewer under the frozen seam ships in the graphify
+  studio immediately (pure component: `CitedSourceRef[]` props + source-resolver callback, DS
+  tokens, zero graphify runtime import inside the component) so the later rebase into
+  `packages/cited-source-viewer` is mechanical.
