@@ -78,3 +78,36 @@ The legacy server-rendered studio at `/` is untouched — the two coexist.
 - **Group filtering**: the rail filters the Results list by type/community; the
   center graph is not yet sliced to the active group (BFS focus subgraph from
   `graph-selection.ts` is the intended next step).
+
+## Cited-source viewer (INTERIM, architect-ratified §S.5)
+
+`components/CitedSourceViewer.svelte` is the app-local interim build of the
+future `@sentropic/cited-source-viewer` package. Contract:
+
+- **Pure component** (mechanical-rebase seam): props are
+  `refs: CitedSourceRef[]` + `resolveSource(ref) => Promise<{kind:"pdf",data}|{kind:"markdown",text}>`
+  (+ `activeIndex`, `title`, `onClose`). It imports ONLY `lib/cited-source/*`
+  (quote matcher lifted from radar `pdf-citation-match.ts`, pdf.js engine seeded
+  from radar `SignalPdfOverlay.svelte`) and Svelte — **no graphify import**.
+- **Impure glue** lives in `lib/citedSources.js` + `App.svelte`: converts
+  `node.citations` via the frozen public projection
+  (`citationToCitedSourceRef`, `src/cited-source-refs.ts`), fills the
+  `source_file` locator, and resolves bytes.
+- **v1 scope**: MD/OCR-markdown/plain-text + PDF text-layer. No DOCX/PPTX (v2),
+  no image-bbox (v3).
+
+### Source-byte resolution (distribution pathing)
+
+`graphify studio export <out> --include-sources` copies every cited file into
+`<out>/sources/<project-relative source_file>` (opt-in, only files actually
+referenced by citations; `--sources-root` overrides the project root, default =
+parent of `--state`). The SPA glue fetches `./sources/<source_file>` relative to
+the bundle.
+
+What works where:
+
+| Mode | Viewer |
+| --- | --- |
+| Served multi-file bundle (any static server / Pages) | **Full**: PDF render + text-layer highlight, markdown highlight |
+| Live `graphify ontology studio` server | Panel affordance shows; sources 404 (no `/api` source route yet — follow-up) |
+| `file://` (double-clicked `studio.html` / `index.html`) | Viewer opens, shows its explicit "Source unavailable" state (browser blocks sibling `file://` fetches; pdf.js worker cannot load either) |
