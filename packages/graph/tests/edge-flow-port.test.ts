@@ -19,7 +19,9 @@ import { describe, expect, it } from "vitest";
 import {
   FLOW_PORT_MIN_STUB,
   ROUTE_STYLE_FLOW_PORT,
+  ROUTE_STYLE_FLOW_PORT_NO_ARROW,
   ROUTE_STYLE_FLOW_PORT_REVERSE,
+  ROUTE_STYLE_FLOW_PORT_REVERSE_NO_ARROW,
   drawnRadius,
   flowPortEdgeGeometry,
   tessellateEdge,
@@ -213,6 +215,26 @@ describe("buildEdgeInstances honours edgeRouteStyles", () => {
     expect(zeroed.capsules).toEqual(baseline.capsules);
     expect(zeroed.arrows).toEqual(baseline.arrows);
   });
+
+  it("arrowLESS variants (3/4): identical S capsules, NO arrowhead (git-flow fork grammar)", () => {
+    // flow-port vs flow-port-no-arrow: same stroke, arrow suppressed.
+    const arrowed = buildEdgeInstances(makeFrame([A, B], [[0, 1]], [ROUTE_STYLE_FLOW_PORT]));
+    const bare = buildEdgeInstances(makeFrame([A, B], [[0, 1]], [ROUTE_STYLE_FLOW_PORT_NO_ARROW]));
+    expect(bare.capsules).toEqual(arrowed.capsules);
+    expect(arrowed.arrows.length).toBeGreaterThan(0);
+    expect(bare.arrows).toEqual([]);
+
+    // Reversed pair: same swap, arrow suppressed on 4.
+    const arrowedRev = buildEdgeInstances(
+      makeFrame([A, B], [[1, 0]], [ROUTE_STYLE_FLOW_PORT_REVERSE]),
+    );
+    const bareRev = buildEdgeInstances(
+      makeFrame([A, B], [[1, 0]], [ROUTE_STYLE_FLOW_PORT_REVERSE_NO_ARROW]),
+    );
+    expect(bareRev.capsules).toEqual(arrowedRev.capsules);
+    expect(arrowedRev.arrows.length).toBeGreaterThan(0);
+    expect(bareRev.arrows).toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -226,18 +248,20 @@ describe("buildStyleBuffers parses edge_style", () => {
     { id: "c", x: 20, y: 0 },
   ];
 
-  it("maps flow-port / flow-port-reverse to codes 1 / 2 (default 0)", () => {
+  it("maps flow-port family to codes 1/2/3/4 (default 0)", () => {
     const input = {
       nodes,
       edges: [
         { source: "a", target: "b", edge_style: "flow-port" },
         { source: "b", target: "c", edge_style: "flow-port-reverse" },
         { source: "a", target: "c" },
+        { source: "c", target: "a", edge_style: "flow-port-no-arrow" },
+        { source: "c", target: "b", edge_style: "flow-port-reverse-no-arrow" },
       ],
     };
     const graph = buildRenderGraphBuffers(input);
     const style = buildStyleBuffers(input, graph);
-    expect(Array.from(style.edgeRouteStyles ?? [])).toEqual([1, 2, 0]);
+    expect(Array.from(style.edgeRouteStyles ?? [])).toEqual([1, 2, 0, 3, 4]);
   });
 
   it("omits edgeRouteStyles entirely when no edge opts in (historical shape)", () => {

@@ -48,10 +48,15 @@ export interface HighLevelGraphEdge {
    *     (x + radius) and ENTERS the target node at its LEFT port (x − radius),
    *     routed as a horizontal-dominant smooth S (GitKraken / gitgraph.js
    *     style); the arrowhead sits on the target's left port pointing RIGHT.
+   *     Git-flow MERGE connectors (branch tip → merge commit) use this.
    *   • `"flow-port-reverse"` — same routing with the ENDPOINTS SWAPPED before
    *     drawing. Used for edges whose data direction is new→old (e.g. git
    *     `commit-parent` child→parent) so the DRAWN edge still flows old→new
    *     (left→right) with the arrow on the newer node.
+   *   • `"flow-port-no-arrow"` / `"flow-port-reverse-no-arrow"` — identical
+   *     routing WITHOUT the arrowhead: the git-flow FORK descent (branch-off)
+   *     is a bare S; only merges and lane segments carry an arrow (GitHub
+   *     network-graph grammar).
    */
   edge_style?: EdgeRouteStyle | string;
   [key: string]: unknown;
@@ -61,10 +66,15 @@ export interface HighLevelGraphEdge {
  * Per-edge ROUTE style (git-flow display lot). `"default"` is the historical
  * centre-to-centre routing; see {@link HighLevelGraphEdge.edge_style} for the
  * flow-port semantics. Encoded per edge in
- * {@link GraphStyleBuffers.edgeRouteStyles} as
- * 0 default / 1 flow-port / 2 flow-port-reverse.
+ * {@link GraphStyleBuffers.edgeRouteStyles} as 0 default / 1 flow-port /
+ * 2 flow-port-reverse / 3 flow-port-no-arrow / 4 flow-port-reverse-no-arrow.
  */
-export type EdgeRouteStyle = "default" | "flow-port" | "flow-port-reverse";
+export type EdgeRouteStyle =
+  | "default"
+  | "flow-port"
+  | "flow-port-reverse"
+  | "flow-port-no-arrow"
+  | "flow-port-reverse-no-arrow";
 
 export interface HighLevelGraphInput {
   nodes: readonly HighLevelGraphNode[];
