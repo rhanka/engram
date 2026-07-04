@@ -203,18 +203,207 @@ describe("CitedSourceViewer qualified toolbar (immo parity)", () => {
     expect(el.querySelector("a.csv-tb-open")).toBeNull();
   });
 
-  it("pins the retarget contract in the source (refs identity + activeIndex both tracked)", () => {
+  it("pins the retarget contract in the source (thread identity + index props tracked)", () => {
     // A plain-JS vitest cannot push prop updates into a Svelte-5 mount(), so
-    // the retarget-on-reopen behavior (new refs array + activeIndex re-aim an
-    // OPEN viewer, no stacking) is exercised end-to-end by the UAT run; here
-    // we pin the load-bearing implementation: the $effect must compare BOTH
-    // the refs identity and the activeIndex prop before reseeding `index`.
+    // the retarget-on-reopen behavior (new groups/refs array + indexes re-aim
+    // an OPEN viewer, no stacking) is exercised end-to-end by the UAT run;
+    // here we pin the load-bearing implementation: the $effect must compare
+    // the groups AND refs identities AND both index props before reseeding,
+    // and the scope prop must be tracked in its OWN effect (a consumer scope
+    // echo must never re-seed an internally-navigated position).
     const source = readFileSync(
       resolve(process.cwd(), "src/components/CitedSourceViewer.svelte"),
       "utf8",
     );
-    expect(source).toMatch(/refs !== lastRefsProp \|\| activeIndex !== lastActiveProp/);
+    expect(source).toMatch(/groups !== lastGroupsProp \|\|/);
+    expect(source).toMatch(/refs !== lastRefsProp \|\|/);
+    expect(source).toMatch(/activeGroupIndex !== lastActiveGroupProp \|\|/);
+    expect(source).toMatch(/activeIndex !== lastActiveProp\s*\n/);
     expect(source).toMatch(/lastRefsProp = refs;/);
+    expect(source).toMatch(/lastGroupsProp = groups;/);
+    expect(source).toMatch(/scope !== lastScopeProp/);
+  });
+});
+
+describe("CitedSourceViewer grouped thread — selection scope (§S.6.1)", () => {
+  // Two entities, each cited twice, across TWO documents (the approved
+  // multi-entity fixture shape). Group refs are already thread-ordered
+  // (selection → document → page) — the consumer glue owns that ordering.
+  const NOTES_TEXT =
+    "# Notes\n\nHere is a passage from the second document indeed.\n\n" +
+    "Later, the doctor wrote his notes by the fire.";
+  const GROUP_A = {
+    id: "e:holmes",
+    label: "Sherlock Holmes",
+    refs: [
+      { rawRef: "corpus/blue-study.md", section: "Chapter 1", excerpt: "Holmes examined the ledger in silence" },
+      { rawRef: "corpus/notes.md", section: "Notes", excerpt: "a passage from the second document" },
+    ],
+  };
+  const GROUP_B = {
+    id: "e:watson",
+    label: "John Watson",
+    refs: [
+      { rawRef: "corpus/blue-study.md", section: "Chapter 2", excerpt: "the coronet had vanished from his private safe" },
+      { rawRef: "corpus/notes.md", section: "Notes", excerpt: "the doctor wrote his notes" },
+    ],
+  };
+  const GROUPS = [GROUP_A, GROUP_B];
+  const groupResolver = () =>
+    vi.fn(async (r) =>
+      r.rawRef === "corpus/notes.md"
+        ? { kind: "markdown", text: NOTES_TEXT }
+        : { kind: "markdown", text: SOURCE_TEXT },
+    );
+  const byLabel = (el, label) =>
+    [...el.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === label);
+  const scopeBtn = (el, text) =>
+    [...el.querySelectorAll(".csv-scope-btn")].find((b) => b.textContent.trim() === text);
+  const pressKey = async (key) => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+    flushSync();
+    await settle();
+  };
+
+  it("defaults to Entité scope: toggle shown, per-entity counter, no entity indicator", async () => {
+    const el = mountViewer({ refs: [], groups: GROUPS, resolveSource: groupResolver(), title: "t" });
+    await settle();
+    expect(scopeBtn(el, "Entité")).toBeTruthy();
+    expect(scopeBtn(el, "Sélection")).toBeTruthy();
+    expect(scopeBtn(el, "Entité").getAttribute("aria-pressed")).toBe("true");
+    // Counter covers the CURRENT entity only (2 refs), not the thread (4).
+    expect(el.textContent).toContain("Citation 1/2");
+    expect(el.querySelector('[aria-label="Entity navigator"]')).toBeNull();
+    // Header follows the active group label.
+    expect(el.textContent).toContain("Sherlock Holmes");
+  });
+
+  it("hides the scope toggle when only ONE group carries citations (plain Entité mode)", async () => {
+    const el = mountViewer({
+      refs: [],
+      groups: [GROUP_A, { id: "e:empty", label: "Nobody", refs: [] }],
+      resolveSource: groupResolver(),
+      title: "t",
+    });
+    await settle();
+    expect(el.querySelector(".csv-tb-scope")).toBeNull();
+    expect(el.textContent).toContain("Citation 1/2");
+  });
+
+  it("Entité scope stops at the entity boundary (next disabled on its last citation)", async () => {
+    const el = mountViewer({
+      refs: [],
+      groups: GROUPS,
+      activeGroupIndex: 0,
+      activeIndex: 1,
+      resolveSource: groupResolver(),
+      title: "t",
+    });
+    await settle();
+    expect(el.textContent).toContain("Citation 2/2");
+    expect(byLabel(el, "Next citation").disabled).toBe(true);
+  });
+
+  it("switching to Sélection makes the counter global and shows the entity indicator", async () => {
+    const onScopeChange = vi.fn();
+    const el = mountViewer({
+      refs: [],
+      groups: GROUPS,
+      resolveSource: groupResolver(),
+      onScopeChange,
+      title: "t",
+    });
+    await settle();
+    scopeBtn(el, "Sélection").click();
+    flushSync();
+    await settle();
+    expect(onScopeChange).toHaveBeenCalledWith("selection");
+    expect(el.textContent).toContain("Citation 1/4");
+    const indicator = el.querySelector('[aria-label="Entity navigator"]');
+    expect(indicator).not.toBeNull();
+    expect(indicator.textContent).toContain("Entité");
+    expect(indicator.textContent).toContain("1/2");
+    expect(indicator.textContent).toContain("Sherlock Holmes");
+  });
+
+  it("Sélection scope crosses the entity boundary as ONE continuous thread + fires onFocusChange", async () => {
+    const onFocusChange = vi.fn();
+    const resolveSource = groupResolver();
+    const el = mountViewer({
+      refs: [],
+      groups: GROUPS,
+      activeGroupIndex: 0,
+      activeIndex: 1, // last citation of entity A
+      scope: "selection",
+      resolveSource,
+      onFocusChange,
+      title: "t",
+    });
+    await settle();
+    expect(el.textContent).toContain("Citation 2/4");
+
+    byLabel(el, "Next citation").click();
+    flushSync();
+    await settle();
+
+    // Landed on the FIRST citation of entity B — overlay never closed.
+    expect(onFocusChange).toHaveBeenCalledWith("e:watson", 0);
+    expect(el.textContent).toContain("Citation 3/4");
+    const indicator = el.querySelector('[aria-label="Entity navigator"]');
+    expect(indicator.textContent).toContain("2/2");
+    expect(indicator.textContent).toContain("John Watson");
+    expect(resolveSource).toHaveBeenLastCalledWith(GROUP_B.refs[0]);
+    expect(el.querySelector("[data-csv-mark]")?.textContent).toContain("coronet had vanished");
+  });
+
+  it("keyboard n/N steps the ACTIVE scope; e/E jumps entities in Sélection scope", async () => {
+    const onFocusChange = vi.fn();
+    const el = mountViewer({
+      refs: [],
+      groups: GROUPS,
+      scope: "selection",
+      resolveSource: groupResolver(),
+      onFocusChange,
+      title: "t",
+    });
+    await settle();
+    expect(el.textContent).toContain("Citation 1/4");
+
+    await pressKey("n");
+    expect(el.textContent).toContain("Citation 2/4");
+    expect(onFocusChange).toHaveBeenLastCalledWith("e:holmes", 1);
+
+    await pressKey("N");
+    expect(el.textContent).toContain("Citation 1/4");
+
+    await pressKey("e");
+    expect(el.textContent).toContain("Citation 3/4");
+    expect(onFocusChange).toHaveBeenLastCalledWith("e:watson", 0);
+
+    await pressKey("E");
+    expect(el.textContent).toContain("Citation 1/4");
+    expect(onFocusChange).toHaveBeenLastCalledWith("e:holmes", 0);
+  });
+
+  it("keyboard e/E is inert in Entité scope (per the approved UX)", async () => {
+    const el = mountViewer({ refs: [], groups: GROUPS, resolveSource: groupResolver(), title: "t" });
+    await settle();
+    expect(el.textContent).toContain("Citation 1/2");
+    await pressKey("e");
+    // Still on entity A, entity indicator still hidden.
+    expect(el.textContent).toContain("Citation 1/2");
+    expect(el.textContent).toContain("Sherlock Holmes");
+    expect(el.querySelector('[aria-label="Entity navigator"]')).toBeNull();
+  });
+
+  it("flat refs mode still supports n/N as citation stepping (single anonymous group)", async () => {
+    const el = mountViewer({ refs: REFS, resolveSource: mdResolver(), title: "t" });
+    await settle();
+    expect(el.textContent).toContain("Citation 1/2");
+    await pressKey("n");
+    expect(el.textContent).toContain("Citation 2/2");
+    await pressKey("N");
+    expect(el.textContent).toContain("Citation 1/2");
   });
 });
 
@@ -234,5 +423,23 @@ describe("CitedSourceViewer purity (rebase seam)", () => {
     // No graphify alias / server import can sneak in.
     expect(source).not.toMatch(/@graphify\//);
     expect(source).not.toMatch(/\.\.\/lib\/(api|graphAdapter|citedSources)/);
+  });
+
+  it("declares the §S.6.1 grouped-thread props on the SAME pure seam (no new imports)", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "src/components/CitedSourceViewer.svelte"),
+      "utf8",
+    );
+    // The extended API stays a pure-props surface: the grouped thread and its
+    // callbacks are declared in $props(), never derived from graphify state.
+    for (const prop of [
+      "groups = []",
+      "activeGroupIndex = 0",
+      'scope = "entity"',
+      "onScopeChange = null",
+      "onFocusChange = null",
+    ]) {
+      expect(source).toContain(prop);
+    }
   });
 });
