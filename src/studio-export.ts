@@ -35,6 +35,7 @@ import {
   mkdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -92,6 +93,21 @@ export interface BuildStaticStudioOptions {
    * graph hydration. Default `false` (scene-only). Implies `singleFile`.
    */
   fullOffline?: boolean;
+  /**
+   * Copy every CITED source file (node.source_file + citations[].source_file,
+   * incl. the Level-2 sidecar) into `<out>/sources/<project-relative-path>` so
+   * the cited-source viewer can fetch the actual documents from the served
+   * bundle. OPT-IN (default `false`) and size-conscious: only files actually
+   * referenced by citations are copied; missing files warn, never fail.
+   */
+  includeSources?: boolean;
+  /**
+   * Root the relative `source_file` locators resolve against (typically the
+   * project root the graph was extracted from). Default: the parent of
+   * `stateDir` (source_file values like `corpus/x.pdf` or
+   * `.graphify/converted/pdf/x.md` are project-root-relative).
+   */
+  sourcesRoot?: string;
   /** Emit a warning (non-fatal). Defaults to console.warn. */
   onWarning?: (message: string) => void;
 }
@@ -116,6 +132,8 @@ export interface BuildStaticStudioResult {
   studioHtmlPath: string | null;
   /** Byte size of the emitted `studio.html`, or null when skipped. */
   studioHtmlBytes: number | null;
+  /** `--include-sources` summary, or null when the option was off. */
+  sources: { copied: number; missing: number; bytes: number } | null;
 }
 
 const GENERATED_DATA_FILES = [
@@ -139,7 +157,7 @@ const GENERATED_DATA_FILES = [
 ];
 
 /** Stale directories a previous (possibly multi-model) export may have left. */
-const GENERATED_DATA_DIRS = ["assets", "ontology", "models"];
+const GENERATED_DATA_DIRS = ["assets", "ontology", "models", "sources"];
 
 /**
  * Below this fraction of real descriptions (per describable node), the export
@@ -240,6 +258,102 @@ export function removeLegacyGraphViz(stateDir: string): boolean {
     return true;
   }
   return false;
+}
+
+// ---------------------------------------------------------------------------
+// `--include-sources` — bundle the CITED source documents (cited-source viewer).
+// ---------------------------------------------------------------------------
+
+/**
+ * Collect every relative `source_file` locator referenced by the graph's nodes
+ * (node.source_file + node.citations[].source_file) and by the Level-2
+ * citations sidecar (deep-scanned for `source_file` string values, so the set
+ * covers files cited beyond the inline top-K).
+ */
+export function collectCitedSourceFiles(
+  nodes: Array<Record<string, unknown>>,
+  citationsSidecarJson: unknown,
+): string[] {
+  const files = new Set<string>();
+  const add = (value: unknown): void => {
+    if (typeof value === "string" && value.trim()) files.add(value.trim());
+  };
+  for (const node of nodes) {
+    add(node.source_file);
+    const citations = node.citations;
+    if (Array.isArray(citations)) {
+      for (const c of citations) add((c as Record<string, unknown> | null)?.source_file);
+    }
+  }
+  const walk = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item);
+    } else if (value && typeof value === "object") {
+      for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+        if (key === "source_file") add(item);
+        else walk(item);
+      }
+    }
+  };
+  walk(citationsSidecarJson);
+  return [...files].sort();
+}
+
+/**
+ * Normalize a cited locator to the bundle-relative `sources/` path. Returns
+ * null for locators that cannot be safely mirrored (absolute paths, URLs, or
+ * paths escaping the root after normalization).
+ */
+export function normalizeSourceRelPath(locator: string): string | null {
+  const trimmed = locator.trim().replace(/^\.\//, "");
+  if (!trimmed || isAbsolute(trimmed) || /^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return null;
+  const normalized = trimmed.split(/[\\/]+/).filter((seg) => seg && seg !== ".");
+  if (normalized.includes("..")) return null;
+  return normalized.join("/");
+}
+
+/**
+ * Copy the cited source files into `<outDir>/sources/`, preserving their
+ * project-relative paths (the SPA glue fetches `./sources/<source_file>`).
+ * Each locator is resolved against `roots` in order (project root first, then
+ * the state dir). Missing / unsafe locators are counted and warned, never fatal.
+ */
+function emitCitedSources(
+  files: string[],
+  roots: string[],
+  outDir: string,
+  warn: (message: string) => void,
+): { copied: number; missing: number; bytes: number } {
+  let copied = 0;
+  let missing = 0;
+  let bytes = 0;
+  const missingSamples: string[] = [];
+  for (const locator of files) {
+    const rel = normalizeSourceRelPath(locator);
+    if (!rel) {
+      missing += 1;
+      if (missingSamples.length < 5) missingSamples.push(`${locator} (unsafe/non-relative)`);
+      continue;
+    }
+    const from = roots.map((root) => join(root, rel)).find((p) => existsSync(p));
+    if (!from) {
+      missing += 1;
+      if (missingSamples.length < 5) missingSamples.push(rel);
+      continue;
+    }
+    const to = join(outDir, "sources", rel);
+    mkdirSync(dirname(to), { recursive: true });
+    cpSync(from, to);
+    copied += 1;
+    bytes += statSync(to).size;
+  }
+  if (missing > 0) {
+    warn(
+      `studio export: --include-sources could not bundle ${missing} cited file(s) ` +
+        `(searched ${roots.join(", ")}): ${missingSamples.join("; ")}${missing > missingSamples.length ? "; …" : ""}`,
+    );
+  }
+  return { copied, missing, bytes };
 }
 
 // ---------------------------------------------------------------------------
@@ -523,6 +637,29 @@ export function buildStaticStudio(
     writeFileSync(outCitationsPath, citationsRaw);
   }
 
+  // 5c. sources/: OPT-IN copy of the cited source documents themselves, so the
+  //     cited-source viewer can fetch `./sources/<source_file>` from the served
+  //     bundle. Locators resolve against the project root (parent of stateDir,
+  //     overridable via sourcesRoot), then the state dir. Size-conscious: only
+  //     files actually referenced by citations; missing files warn, never fail.
+  let sources: BuildStaticStudioResult["sources"] = null;
+  if (options.includeSources) {
+    let citationsSidecarJson: unknown = null;
+    if (citationsRaw !== null) {
+      try {
+        citationsSidecarJson = JSON.parse(citationsRaw.toString("utf-8"));
+      } catch {
+        warn("studio export: could not parse ontology/citations.json for --include-sources; using graph citations only.");
+      }
+    }
+    const citedFiles = collectCitedSourceFiles(
+      nodes as Array<Record<string, unknown>>,
+      citationsSidecarJson,
+    );
+    const roots = [resolve(options.sourcesRoot ?? dirname(resolve(stateDir))), resolve(stateDir)];
+    sources = emitCitedSources(citedFiles, roots, outDir, warn);
+  }
+
   // 6. workspace-manifest.json: the bundle descriptor (hashes the final bytes of
   //    every artifact above). Emitted LAST of the MULTI-FILE bundle. studio.html
   //    is NOT one of its artifacts, so the manifest bytes are identical whether
@@ -600,5 +737,6 @@ export function buildStaticStudio(
     manifestArtifactCount: manifestResult.manifest.artifacts.length,
     studioHtmlPath,
     studioHtmlBytes,
+    sources,
   };
 }
