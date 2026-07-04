@@ -19,7 +19,7 @@
   import ReconciliationView from "./components/ReconciliationView.svelte";
   import SelectionPanel from "./components/SelectionPanel.svelte";
   import WorkspaceShell from "./components/WorkspaceShell.svelte";
-  import { refsForCitations, resolveBundleSource } from "./lib/citedSources.js";
+  import { refsForCitations, resolveBundleSource, sourceHrefFor } from "./lib/citedSources.js";
   import {
     fetchClassHierarchies,
     fetchEntity,
@@ -444,8 +444,11 @@
   // ----- cited-source viewer (INTERIM, architect-ratified §S.5) --------------
   // IMPURE studio glue: the EntityPanel affordance hands the node's raw
   // OntologyCitation list here; the frozen public projection converts it to
-  // CitedSourceRef[] and the DS-styled modal hosts the PURE CitedSourceViewer
-  // with the bundle resolver (sources/ dir, `--include-sources` export).
+  // CitedSourceRef[] and a CENTRAL OVERLAY (qualified UX, immo parity: covers
+  // the graph canvas area ONLY — no backdrop, side panels stay interactive)
+  // hosts the PURE CitedSourceViewer with the bundle resolver (sources/ dir,
+  // `--include-sources` export). Clicking another citation while open simply
+  // replaces this state -> the viewer RETARGETS (no stacking).
   // null = closed; { refs, activeIndex, title } = open.
   let sourceView = $state(null);
   function handleOpenSource({ citations, index, fallbackSourceFile, label }) {
@@ -700,6 +703,23 @@
             onSelect={handleToggleEntity}
             onOpenEntity={handleFocusEntity}
           />
+          {#if sourceView}
+            <!-- Cited-source viewer as a CENTRAL OVERLAY (qualified UX, immo
+                 parity): covers the graph canvas area ONLY — no backdrop, the
+                 left rail + right selection panel stay visible and interactive.
+                 The component is PURE: refs + resolvers only; all graphify
+                 glue stays in this file. -->
+            <div class="source-overlay" role="region" aria-label="Cited source">
+              <CitedSourceViewer
+                refs={sourceView.refs}
+                activeIndex={sourceView.activeIndex}
+                title={sourceView.title}
+                resolveSource={resolveBundleSource}
+                sourceHref={sourceHrefFor}
+                onClose={handleCloseSource}
+              />
+            </div>
+          {/if}
         </div>
         <div class="col col-right">
           <SelectionPanel
@@ -717,28 +737,6 @@
           />
         </div>
       </WorkspaceShell>
-    {/if}
-
-    {#if sourceView}
-      <!-- Cited-source viewer modal (DS-styled). The component is PURE: refs +
-           resolveSource only; all graphify glue stays in this file. -->
-      <div class="source-modal" role="dialog" aria-modal="true" aria-label="Cited source">
-        <button
-          class="source-modal-backdrop"
-          type="button"
-          aria-label="Close source viewer"
-          onclick={handleCloseSource}
-        ></button>
-        <div class="source-modal-panel">
-          <CitedSourceViewer
-            refs={sourceView.refs}
-            activeIndex={sourceView.activeIndex}
-            title={sourceView.title}
-            resolveSource={resolveBundleSource}
-            onClose={handleCloseSource}
-          />
-        </div>
-      </div>
     {/if}
   </main>
 </div>
@@ -778,39 +776,24 @@
   .app-body {
     flex: 1;
     min-height: 0;
-    /* Anchor for the cited-source modal overlay. */
+  }
+  /* Central cited-source overlay (qualified UX, immo parity): fills the
+     CENTER column only, in surimpression over the graph canvas. NO backdrop —
+     the side rails stay visible and clickable. */
+  .col-center {
     position: relative;
   }
-  /* Cited-source viewer modal: DS-token backdrop + centered panel. */
-  .source-modal {
+  .source-overlay {
     position: absolute;
     inset: 0;
-    z-index: 40;
-    display: grid;
-    place-items: center;
-    padding: var(--st-spacing-6, 1.5rem);
-  }
-  .source-modal-backdrop {
-    position: absolute;
-    inset: 0;
-    border: none;
-    padding: 0;
-    cursor: pointer;
-    background: color-mix(in srgb, var(--st-semantic-text-primary, #0f172a) 45%, transparent);
-  }
-  .source-modal-panel {
-    position: relative;
-    width: min(58rem, 100%);
-    height: min(46rem, 100%);
-    min-height: 0;
+    z-index: 30;
     display: flex;
     background: var(--st-semantic-surface-default, #fff);
     border: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
-    border-radius: var(--st-radius-lg, 10px);
-    box-shadow: 0 12px 40px rgba(15, 23, 42, 0.35);
+    box-shadow: 0 8px 32px rgba(15, 23, 42, 0.22);
     overflow: hidden;
   }
-  .source-modal-panel > :global(.csv) {
+  .source-overlay > :global(.csv) {
     flex: 1;
     min-width: 0;
   }

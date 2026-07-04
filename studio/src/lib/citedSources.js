@@ -63,6 +63,19 @@ export function bundleSourcePath(locator) {
 }
 
 /**
+ * Href for the viewer's "Ouvrir ↗" raw-source link (qualified toolbar).
+ * Consumer-owned URL scheme (§S.3): the bundle-relative `sources/` copy.
+ * Returns null when the ref carries no resolvable locator (the toolbar then
+ * hides the button).
+ * @param {object} ref  CitedSourceRef
+ * @returns {string|null}
+ */
+export function sourceHrefFor(ref) {
+  const locator = ref?.rawRef ?? ref?.sourceUrl ?? null;
+  return locator ? bundleSourcePath(locator) : null;
+}
+
+/**
  * The studio's ResolveSource (frozen seam §S.3): fetch the cited file relative
  * to the export bundle.
  *

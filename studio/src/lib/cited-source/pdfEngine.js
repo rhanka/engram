@@ -41,6 +41,32 @@ export function getPdfjs() {
   return pdfjsPromise;
 }
 
+/** Zoom bounds shared by the fit-width computation and the toolbar zoom. */
+export const MIN_RENDER_SCALE = 0.4;
+export const MAX_RENDER_SCALE = 4;
+
+/**
+ * Resolve the effective render scale for a page. PURE (unit-tested):
+ * - `userScale` set (toolbar zoom) -> clamped user scale, container ignored;
+ * - else fit-width: containerWidth / baseWidth, clamped.
+ * Mirrors radar's two zoom regimes (#81 fit-width default, #85 manual zoom).
+ * @param {{ baseWidth: number, containerWidth?: number|null, userScale?: number|null,
+ *           minScale?: number, maxScale?: number }} options
+ * @returns {number}
+ */
+export function resolveRenderScale({
+  baseWidth,
+  containerWidth = null,
+  userScale = null,
+  minScale = MIN_RENDER_SCALE,
+  maxScale = MAX_RENDER_SCALE,
+}) {
+  const clamp = (v) => Math.max(minScale, Math.min(maxScale, v));
+  if (typeof userScale === "number" && Number.isFinite(userScale)) return clamp(userScale);
+  const available = Math.max(120, containerWidth ?? baseWidth);
+  return clamp(available / Math.max(1, baseWidth));
+}
+
 /**
  * Load a PDF document from raw bytes.
  * @param {ArrayBuffer|Uint8Array} data
@@ -60,15 +86,18 @@ export async function loadPdfDocument(data) {
  * needed by the highlight pass.
  * @param {import("pdfjs-dist").PDFPageProxy} pdfPage
  * @param {HTMLCanvasElement} canvas
- * @param {{ containerWidth?: number, minScale?: number, maxScale?: number }} [options]
+ * @param {{ containerWidth?: number, userScale?: number|null, minScale?: number, maxScale?: number }} [options]
  * @returns {Promise<{ viewport: object, scale: number }>}
  */
 export async function renderPdfPage(pdfPage, canvas, options = {}) {
-  const minScale = options.minScale ?? 0.4;
-  const maxScale = options.maxScale ?? 4;
   const baseViewport = pdfPage.getViewport({ scale: 1 });
-  const available = Math.max(120, options.containerWidth ?? baseViewport.width);
-  const scale = Math.max(minScale, Math.min(maxScale, available / baseViewport.width));
+  const scale = resolveRenderScale({
+    baseWidth: baseViewport.width,
+    containerWidth: options.containerWidth ?? null,
+    userScale: options.userScale ?? null,
+    ...(options.minScale != null ? { minScale: options.minScale } : {}),
+    ...(options.maxScale != null ? { maxScale: options.maxScale } : {}),
+  });
   const viewport = pdfPage.getViewport({ scale });
 
   const ctx = canvas.getContext("2d");

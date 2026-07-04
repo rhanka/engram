@@ -134,6 +134,90 @@ describe("CitedSourceViewer (markdown path)", () => {
   });
 });
 
+describe("CitedSourceViewer qualified toolbar (immo parity)", () => {
+  // Refs spanning TWO source documents: 2 in blue-study.md + 1 in notes.md.
+  const MULTI_DOC_REFS = [
+    ...REFS,
+    { rawRef: "corpus/notes.md", section: "Notes", excerpt: "a passage from the second document" },
+  ];
+  const multiResolver = () =>
+    vi.fn(async (r) =>
+      r.rawRef === "corpus/notes.md"
+        ? { kind: "markdown", text: "# Notes\n\nHere is a passage from the second document indeed." }
+        : { kind: "markdown", text: SOURCE_TEXT },
+    );
+
+  it("shows the Doc x/y navigator only when refs span multiple documents", async () => {
+    const single = mountViewer({ refs: REFS, resolveSource: mdResolver(), title: "t" });
+    await settle();
+    expect(single.textContent).not.toContain("Doc");
+    unmount(instance);
+    instance = null;
+    host.remove();
+
+    const multi = mountViewer({ refs: MULTI_DOC_REFS, resolveSource: multiResolver(), title: "t" });
+    await settle();
+    expect(multi.textContent).toContain("Doc");
+    expect(multi.textContent).toContain("1/2");
+    expect(multi.textContent).toContain("Citation 1/3");
+  });
+
+  it("Next document jumps to the FIRST ref of the next source file and loads it", async () => {
+    const resolveSource = multiResolver();
+    const el = mountViewer({ refs: MULTI_DOC_REFS, resolveSource, activeIndex: 0, title: "t" });
+    await settle();
+
+    const nextDoc = [...el.querySelectorAll("button")].find(
+      (b) => b.getAttribute("aria-label") === "Next document",
+    );
+    expect(nextDoc).toBeTruthy();
+    nextDoc.click();
+    flushSync();
+    await settle();
+
+    // Jumped to ref index 2 (first ref of corpus/notes.md) -> Citation 3/3, Doc 2/2.
+    expect(el.textContent).toContain("Citation 3/3");
+    expect(el.textContent).toContain("Doc 2/2");
+    expect(resolveSource).toHaveBeenLastCalledWith(MULTI_DOC_REFS[2]);
+    expect(el.querySelector("[data-csv-mark]")?.textContent).toContain("passage from the second document");
+  });
+
+  it("renders the Ouvrir raw-source link from the sourceHref callback", async () => {
+    const el = mountViewer({
+      refs: REFS,
+      resolveSource: mdResolver(),
+      sourceHref: (r) => `./sources/${r.rawRef}`,
+      title: "t",
+    });
+    await settle();
+    const link = el.querySelector("a.csv-tb-open");
+    expect(link).not.toBeNull();
+    expect(link.textContent).toContain("Ouvrir");
+    expect(link.getAttribute("href")).toBe("./sources/corpus/blue-study.md");
+    expect(link.getAttribute("target")).toBe("_blank");
+  });
+
+  it("hides the Ouvrir link when sourceHref is absent or resolves null", async () => {
+    const el = mountViewer({ refs: REFS, resolveSource: mdResolver(), title: "t" });
+    await settle();
+    expect(el.querySelector("a.csv-tb-open")).toBeNull();
+  });
+
+  it("pins the retarget contract in the source (refs identity + activeIndex both tracked)", () => {
+    // A plain-JS vitest cannot push prop updates into a Svelte-5 mount(), so
+    // the retarget-on-reopen behavior (new refs array + activeIndex re-aim an
+    // OPEN viewer, no stacking) is exercised end-to-end by the UAT run; here
+    // we pin the load-bearing implementation: the $effect must compare BOTH
+    // the refs identity and the activeIndex prop before reseeding `index`.
+    const source = readFileSync(
+      resolve(process.cwd(), "src/components/CitedSourceViewer.svelte"),
+      "utf8",
+    );
+    expect(source).toMatch(/refs !== lastRefsProp \|\| activeIndex !== lastActiveProp/);
+    expect(source).toMatch(/lastRefsProp = refs;/);
+  });
+});
+
 describe("CitedSourceViewer purity (rebase seam)", () => {
   it("imports nothing from graphify — only the sibling pure lib and svelte", () => {
     const source = readFileSync(
