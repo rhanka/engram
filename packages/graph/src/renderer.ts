@@ -1,6 +1,11 @@
 import { computePositionBounds, copyPositions } from "./positions";
 import { BOX_GLYPH_CORNER_RATIO, SQUARE_INSET_RATIO, shapePolygonPoints } from "./shape-geometry";
-import { boxDimensions } from "./render-geometry";
+import {
+  FLOW_PORT_MIN_STUB,
+  ROUTE_STYLE_FLOW_PORT_REVERSE,
+  boxDimensions,
+  flowPortEdgeGeometry,
+} from "./render-geometry";
 import { cameraToViewProjection } from "./mat4";
 import { createWebGLShapeRenderer, type WebGLShapeRenderer } from "./webgl-shapes";
 import { createWebGLEdgeRenderer, type WebGLEdgeRenderer } from "./webgl-edges";
@@ -868,13 +873,57 @@ function drawFallback2D(
 
   const edgeCount = skipEdges ? 0 : state.edges.length / 2;
   for (let edgeIndex = 0; edgeIndex < edgeCount; edgeIndex += 1) {
-    const sourceIndex = state.edges[edgeIndex * 2] ?? 0;
-    const targetIndex = state.edges[edgeIndex * 2 + 1] ?? 0;
+    let sourceIndex = state.edges[edgeIndex * 2] ?? 0;
+    let targetIndex = state.edges[edgeIndex * 2 + 1] ?? 0;
+    const route = state.style?.edgeRouteStyles?.[edgeIndex] ?? 0;
+    // flow-port-reverse: swap the endpoints BEFORE routing so a new→old data
+    // edge (git commit-parent child→parent) is DRAWN old→new (left→right).
+    if (route === ROUTE_STYLE_FLOW_PORT_REVERSE) {
+      const swapIndex = sourceIndex;
+      sourceIndex = targetIndex;
+      targetIndex = swapIndex;
+    }
     const source = screenPoint(state.positions, sourceIndex, camera, canvas);
     const target = screenPoint(state.positions, targetIndex, camera, canvas);
     const curvature = state.style?.edgeCurvatures[edgeIndex] ?? 0;
     const width = state.style?.edgeWidths[edgeIndex] ?? 1;
     const colorOffset = edgeIndex * 4;
+
+    // FLOW-PORT routing (route codes 1/2): the edge EXITS the source node at
+    // its RIGHT port and ENTERS the target node at its LEFT port as a
+    // horizontal-dominant smooth S (or a straight lane segment on the same
+    // row); the arrowhead sits on the left port pointing RIGHT. Single-sourced
+    // with the WebGL2 instanced path via render-geometry.flowPortEdgeGeometry.
+    // Default (0) falls through to the historical path below, byte-identical.
+    if (route !== 0) {
+      const geom = flowPortEdgeGeometry(
+        source,
+        target,
+        borderOffset(sourceIndex, 1, 0),
+        borderOffset(targetIndex, -1, 0),
+        FLOW_PORT_MIN_STUB * pixelRatio * camera.zoom,
+      );
+      if (geom.degenerate) continue;
+      const flowColor = cssColor(state.style?.edgeColors, colorOffset, DEFAULT_EDGE_COLOR);
+      context.beginPath();
+      context.strokeStyle = flowColor;
+      context.lineWidth = Math.max(1, width * pixelRatio);
+      applyDash(context, state.style?.edgeDash[edgeIndex] ?? 0, pixelRatio);
+      context.moveTo(geom.startX, geom.startY);
+      if (geom.cubic) {
+        context.bezierCurveTo(geom.controlX, geom.controlY, geom.control2X, geom.control2Y, geom.endX, geom.endY);
+      } else {
+        context.lineTo(geom.endX, geom.endY);
+      }
+      context.stroke();
+      // Arrow ON the target's left port, pointing right (incoming tangent is
+      // horizontal by construction; ports sit on the borders, so always drawn).
+      const flowArrowLength = ARROW_LENGTH * width * pixelRatio * camera.zoom;
+      context.setLineDash([]);
+      context.fillStyle = flowColor;
+      drawArrowHead(context, geom.endX, geom.endY, geom.inTx, geom.inTy, flowArrowLength);
+      continue;
+    }
 
     const dx = target.x - source.x;
     const dy = target.y - source.y;

@@ -41,8 +41,30 @@ export interface HighLevelGraphEdge {
   color?: ColorInput;
   dash?: EdgeDashMode;
   curvature?: number;
+  /**
+   * Optional per-edge ROUTE style (additive; absent ⇒ the historical
+   * centre-to-centre routing, golden-stable):
+   *   • `"flow-port"`         — the edge EXITS the source node at its RIGHT port
+   *     (x + radius) and ENTERS the target node at its LEFT port (x − radius),
+   *     routed as a horizontal-dominant smooth S (GitKraken / gitgraph.js
+   *     style); the arrowhead sits on the target's left port pointing RIGHT.
+   *   • `"flow-port-reverse"` — same routing with the ENDPOINTS SWAPPED before
+   *     drawing. Used for edges whose data direction is new→old (e.g. git
+   *     `commit-parent` child→parent) so the DRAWN edge still flows old→new
+   *     (left→right) with the arrow on the newer node.
+   */
+  edge_style?: EdgeRouteStyle | string;
   [key: string]: unknown;
 }
+
+/**
+ * Per-edge ROUTE style (git-flow display lot). `"default"` is the historical
+ * centre-to-centre routing; see {@link HighLevelGraphEdge.edge_style} for the
+ * flow-port semantics. Encoded per edge in
+ * {@link GraphStyleBuffers.edgeRouteStyles} as
+ * 0 default / 1 flow-port / 2 flow-port-reverse.
+ */
+export type EdgeRouteStyle = "default" | "flow-port" | "flow-port-reverse";
 
 export interface HighLevelGraphInput {
   nodes: readonly HighLevelGraphNode[];
@@ -98,6 +120,16 @@ export interface GraphStyleBuffers {
   edgeColors: Uint8Array;
   edgeDash: Uint8Array;
   edgeCurvatures: Float32Array;
+  /**
+   * Optional per-edge ROUTE-style codes (parallel to edges): 0 default
+   * (centre-to-centre, historical), 1 flow-port (right-port → left-port smooth
+   * S with a rightward arrow), 2 flow-port with the endpoints SWAPPED before
+   * drawing (for new→old data edges like git `commit-parent`). Additive:
+   * absent ⇒ every edge draws the historical routing (golden-stable). Drawn by
+   * the Canvas2D fallback AND the WebGL2 instanced-edge path (single-sourced
+   * via render-geometry.flowPortEdgeGeometry).
+   */
+  edgeRouteStyles?: Uint8Array;
 }
 
 export interface GraphStyleDefaults {
