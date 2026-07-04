@@ -87,11 +87,16 @@ function dashCode(value: EdgeDashMode | undefined): number {
   return 0;
 }
 
-/** Route-style code: 1 flow-port, 2 flow-port-reverse, 0 default (back-compatible). */
+/**
+ * Route-style code: 1 flow-port, 2 flow-port-reverse, 3/4 the arrowLESS
+ * variants (git-flow fork descents draw a bare S), 0 default (back-compatible).
+ */
 function routeStyleCode(value: unknown): number {
   const style = String(value ?? "default").trim().toLowerCase();
   if (style === "flow-port") return 1;
   if (style === "flow-port-reverse") return 2;
+  if (style === "flow-port-no-arrow") return 3;
+  if (style === "flow-port-reverse-no-arrow") return 4;
   return 0;
 }
 

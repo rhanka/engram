@@ -2,9 +2,10 @@ import { computePositionBounds, copyPositions } from "./positions";
 import { BOX_GLYPH_CORNER_RATIO, SQUARE_INSET_RATIO, shapePolygonPoints } from "./shape-geometry";
 import {
   FLOW_PORT_MIN_STUB,
-  ROUTE_STYLE_FLOW_PORT_REVERSE,
   boxDimensions,
   flowPortEdgeGeometry,
+  routeIsArrowless,
+  routeIsReversed,
 } from "./render-geometry";
 import { cameraToViewProjection } from "./mat4";
 import { createWebGLShapeRenderer, type WebGLShapeRenderer } from "./webgl-shapes";
@@ -883,9 +884,9 @@ function drawFallback2D(
     let sourceIndex = state.edges[edgeIndex * 2] ?? 0;
     let targetIndex = state.edges[edgeIndex * 2 + 1] ?? 0;
     const route = state.style?.edgeRouteStyles?.[edgeIndex] ?? 0;
-    // flow-port-reverse: swap the endpoints BEFORE routing so a new→old data
-    // edge (git commit-parent child→parent) is DRAWN old→new (left→right).
-    if (route === ROUTE_STYLE_FLOW_PORT_REVERSE) {
+    // flow-port-reverse (2/4): swap the endpoints BEFORE routing so a new→old
+    // data edge (git commit-parent child→parent) is DRAWN old→new (left→right).
+    if (routeIsReversed(route)) {
       const swapIndex = sourceIndex;
       sourceIndex = targetIndex;
       targetIndex = swapIndex;
@@ -896,11 +897,13 @@ function drawFallback2D(
     const width = state.style?.edgeWidths[edgeIndex] ?? 1;
     const colorOffset = edgeIndex * 4;
 
-    // FLOW-PORT routing (route codes 1/2): the edge EXITS the source node at
+    // FLOW-PORT routing (route codes 1-4): the edge EXITS the source node at
     // its RIGHT port and ENTERS the target node at its LEFT port as a
     // horizontal-dominant smooth S (or a straight lane segment on the same
-    // row); the arrowhead sits on the left port pointing RIGHT. Single-sourced
-    // with the WebGL2 instanced path via render-geometry.flowPortEdgeGeometry.
+    // row). Arrow-carrying codes (1/2 — merge connectors, lane segments) put
+    // the arrowhead ON the left port pointing RIGHT; arrowless codes (3/4 —
+    // git-flow FORK descents) draw the bare S. Single-sourced with the WebGL2
+    // instanced path via render-geometry.flowPortEdgeGeometry.
     // Default (0) falls through to the historical path below, byte-identical.
     if (route !== 0) {
       const geom = flowPortEdgeGeometry(
@@ -923,12 +926,14 @@ function drawFallback2D(
         context.lineTo(geom.endX, geom.endY);
       }
       context.stroke();
-      // Arrow ON the target's left port, pointing right (incoming tangent is
-      // horizontal by construction; ports sit on the borders, so always drawn).
-      const flowArrowLength = ARROW_LENGTH * width * pixelRatio * camera.zoom;
-      context.setLineDash([]);
-      context.fillStyle = flowColor;
-      drawArrowHead(context, geom.endX, geom.endY, geom.inTx, geom.inTy, flowArrowLength);
+      if (!routeIsArrowless(route)) {
+        // Arrow ON the target's left port, pointing right (incoming tangent is
+        // horizontal by construction; ports sit on the borders).
+        const flowArrowLength = ARROW_LENGTH * width * pixelRatio * camera.zoom;
+        context.setLineDash([]);
+        context.fillStyle = flowColor;
+        drawArrowHead(context, geom.endX, geom.endY, geom.inTx, geom.inTy, flowArrowLength);
+      }
       continue;
     }
 
