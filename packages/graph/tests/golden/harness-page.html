@@ -130,7 +130,13 @@
         // Per-edge ROUTE style (git-flow lot): flow-port / flow-port-reverse.
         // Only attached when a fixture edge opts in, so every historical
         // fixture builds the EXACT buffer shape it always did (golden parity).
-        const ROUTE_CODES = { default: 0, "flow-port": 1, "flow-port-reverse": 2 };
+        const ROUTE_CODES = {
+          default: 0,
+          "flow-port": 1,
+          "flow-port-reverse": 2,
+          "flow-port-no-arrow": 3,
+          "flow-port-reverse-no-arrow": 4,
+        };
 
         edges.forEach((edge, i) => {
           edgeArr[i * 2] = idToIndex.get(edge.source) ?? 0;

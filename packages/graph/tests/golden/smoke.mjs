@@ -97,7 +97,10 @@ function buildBuffers(fixture) {
   const edgeRouteStyles = new Uint8Array(edges.length);
   let hasRouteStyles = false;
   // Per-edge ROUTE style (git-flow lot) — mirrors harness-page buildBuffers.
-  const ROUTE_CODES = { default: 0, "flow-port": 1, "flow-port-reverse": 2 };
+  const ROUTE_CODES = {
+    default: 0, "flow-port": 1, "flow-port-reverse": 2,
+    "flow-port-no-arrow": 3, "flow-port-reverse-no-arrow": 4,
+  };
   edges.forEach((edge, i) => {
     edgeArr[i * 2] = idToIndex.get(edge.source) ?? 0;
     edgeArr[i * 2 + 1] = idToIndex.get(edge.target) ?? 0;

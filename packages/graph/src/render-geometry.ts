@@ -538,6 +538,24 @@ export const ROUTE_STYLE_DEFAULT = 0;
 export const ROUTE_STYLE_FLOW_PORT = 1;
 /** Flow-port with the ENDPOINTS SWAPPED before drawing (new→old data edges). */
 export const ROUTE_STYLE_FLOW_PORT_REVERSE = 2;
+/**
+ * ArrowLESS flow-port variants (git-flow grammar): a FORK descent (branch-off)
+ * is a BARE S — only MERGE connectors and lane segments carry an arrowhead
+ * (GitHub network-graph / nvie git-flow reference imagery). Same routing as
+ * codes 1/2; the ONLY difference is no arrowhead is emitted at the target port.
+ */
+export const ROUTE_STYLE_FLOW_PORT_NO_ARROW = 3;
+export const ROUTE_STYLE_FLOW_PORT_REVERSE_NO_ARROW = 4;
+
+/** True when a route code draws flow-port geometry with the endpoints swapped. */
+export function routeIsReversed(route: number): boolean {
+  return route === ROUTE_STYLE_FLOW_PORT_REVERSE || route === ROUTE_STYLE_FLOW_PORT_REVERSE_NO_ARROW;
+}
+
+/** True when a route code suppresses the arrowhead (bare fork descent). */
+export function routeIsArrowless(route: number): boolean {
+  return route === ROUTE_STYLE_FLOW_PORT_NO_ARROW || route === ROUTE_STYLE_FLOW_PORT_REVERSE_NO_ARROW;
+}
 
 /**
  * Minimum horizontal STUB (world/CSS px, × pixelRatio × zoom at the call site)
@@ -559,11 +577,12 @@ export const FLOW_PORT_MIN_STUB = 12;
  *     the classic flowchart/gitgraph S (a backward edge loops out and back but
  *     still exits the right port and enters the left port horizontally).
  *
- * The end tangents are exactly (1, 0) at both ports, so the arrowhead (drawn by
- * the caller with the incoming tangent) sits ON the target's left border
- * pointing RIGHT — time flows left→right. `clipped` is true whenever the edge
- * is non-degenerate: ports are on the borders by construction, so the arrow is
- * always drawn (there is no centre-overlap fallback on this style).
+ * The end tangents are exactly (1, 0) at both ports, so an arrowhead (drawn by
+ * the caller with the incoming tangent, ONLY for arrow-carrying route codes —
+ * see {@link routeIsArrowless}) sits ON the target's left border pointing RIGHT
+ * — time flows left→right. `clipped` is true whenever the edge is
+ * non-degenerate: ports are on the borders by construction (there is no
+ * centre-overlap fallback on this style).
  *
  * Pass `sourcePortOffset` = borderOffset(source, +1, 0) and `targetPortOffset`
  * = borderOffset(target, −1, 0) so circle radii and box half-widths stay

@@ -45,13 +45,14 @@ import {
   ARROW_LENGTH,
   ARROW_WIDTH_RATIO,
   FLOW_PORT_MIN_STUB,
-  ROUTE_STYLE_FLOW_PORT_REVERSE,
   borderOffset,
   dashPattern,
   edgeGeometry,
   edgeStrokeWidth,
   flowPortEdgeGeometry,
   nodeGeometry,
+  routeIsArrowless,
+  routeIsReversed,
   tessellateEdge,
   type NodeGeometry,
 } from "./render-geometry";
@@ -376,10 +377,10 @@ export function buildEdgeInstances(frame: WebGLEdgeFrame): EdgeInstanceSet {
     let sourceIndex = frame.edges[edgeIndex * 2] ?? 0;
     let targetIndex = frame.edges[edgeIndex * 2 + 1] ?? 0;
     const route = style?.edgeRouteStyles?.[edgeIndex] ?? 0;
-    // flow-port-reverse: swap the endpoints BEFORE routing so a new→old data
-    // edge (git commit-parent child→parent) is DRAWN old→new: it exits the
-    // older node's right port and its arrow enters the newer node's left port.
-    if (route === ROUTE_STYLE_FLOW_PORT_REVERSE) {
+    // flow-port-reverse (2/4): swap the endpoints BEFORE routing so a new→old
+    // data edge (git commit-parent child→parent) is DRAWN old→new: it exits
+    // the older node's right port and enters the newer node's left port.
+    if (routeIsReversed(route)) {
       const swap = sourceIndex;
       sourceIndex = targetIndex;
       targetIndex = swap;
@@ -389,7 +390,7 @@ export function buildEdgeInstances(frame: WebGLEdgeFrame): EdgeInstanceSet {
     const curvature = style?.edgeCurvatures?.[edgeIndex] ?? 0;
     const width = style?.edgeWidths?.[edgeIndex] ?? 1;
 
-    // FLOW-PORT routing (route codes 1/2): right-port → left-port smooth S,
+    // FLOW-PORT routing (route codes 1-4): right-port → left-port smooth S,
     // single-sourced with the Canvas2D fallback via flowPortEdgeGeometry.
     // Default (0): the historical centre-to-centre geometry, byte-identical.
     const geom =
@@ -437,8 +438,10 @@ export function buildEdgeInstances(frame: WebGLEdgeFrame): EdgeInstanceSet {
     }
 
     // Arrowhead on every CLIPPED edge (E6), tip on the target border, oriented
-    // by the incoming tangent (E7); skipped when !clipped (E13).
-    if (geom.clipped) {
+    // by the incoming tangent (E7); skipped when !clipped (E13) and on the
+    // arrowLESS flow-port variants (3/4 — a git-flow FORK descent is a bare S;
+    // only merge connectors and lane segments carry the arrow).
+    if (geom.clipped && !routeIsArrowless(route)) {
       const arrowLength = ARROW_LENGTH * width * frame.pixelRatio * frame.camera.zoom;
       arrows.push(geom.endX, geom.endY, geom.inTx, geom.inTy, arrowLength, r, g, b, a);
     }
