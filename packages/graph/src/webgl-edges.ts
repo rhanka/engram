@@ -44,10 +44,13 @@
 import {
   ARROW_LENGTH,
   ARROW_WIDTH_RATIO,
+  FLOW_PORT_MIN_STUB,
+  ROUTE_STYLE_FLOW_PORT_REVERSE,
   borderOffset,
   dashPattern,
   edgeGeometry,
   edgeStrokeWidth,
+  flowPortEdgeGeometry,
   nodeGeometry,
   tessellateEdge,
   type NodeGeometry,
@@ -370,16 +373,37 @@ export function buildEdgeInstances(frame: WebGLEdgeFrame): EdgeInstanceSet {
   );
 
   for (let edgeIndex = 0; edgeIndex < edgeCount; edgeIndex += 1) {
-    const sourceIndex = frame.edges[edgeIndex * 2] ?? 0;
-    const targetIndex = frame.edges[edgeIndex * 2 + 1] ?? 0;
+    let sourceIndex = frame.edges[edgeIndex * 2] ?? 0;
+    let targetIndex = frame.edges[edgeIndex * 2 + 1] ?? 0;
+    const route = style?.edgeRouteStyles?.[edgeIndex] ?? 0;
+    // flow-port-reverse: swap the endpoints BEFORE routing so a new→old data
+    // edge (git commit-parent child→parent) is DRAWN old→new: it exits the
+    // older node's right port and its arrow enters the newer node's left port.
+    if (route === ROUTE_STYLE_FLOW_PORT_REVERSE) {
+      const swap = sourceIndex;
+      sourceIndex = targetIndex;
+      targetIndex = swap;
+    }
     const source = screenPoint(frame.positions, sourceIndex, frame);
     const target = screenPoint(frame.positions, targetIndex, frame);
     const curvature = style?.edgeCurvatures?.[edgeIndex] ?? 0;
     const width = style?.edgeWidths?.[edgeIndex] ?? 1;
 
-    const geom = edgeGeometry(source, target, curvature, (end, dx, dy) =>
-      borderOffset(geometry, style?.nodeShapes, end === "source" ? sourceIndex : targetIndex, dx, dy),
-    );
+    // FLOW-PORT routing (route codes 1/2): right-port → left-port smooth S,
+    // single-sourced with the Canvas2D fallback via flowPortEdgeGeometry.
+    // Default (0): the historical centre-to-centre geometry, byte-identical.
+    const geom =
+      route !== 0
+        ? flowPortEdgeGeometry(
+            source,
+            target,
+            borderOffset(geometry, style?.nodeShapes, sourceIndex, 1, 0),
+            borderOffset(geometry, style?.nodeShapes, targetIndex, -1, 0),
+            FLOW_PORT_MIN_STUB * frame.pixelRatio * frame.camera.zoom,
+          )
+        : edgeGeometry(source, target, curvature, (end, dx, dy) =>
+            borderOffset(geometry, style?.nodeShapes, end === "source" ? sourceIndex : targetIndex, dx, dy),
+          );
     if (geom.degenerate) continue;
 
     const color = edgeColorAt(style?.edgeColors, edgeIndex * 4);
