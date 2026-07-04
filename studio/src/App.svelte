@@ -13,11 +13,13 @@
   import { AppChrome, Button, ButtonGroup, Select } from "@sentropic/design-system-svelte";
 
   import AnswerPanel from "./components/AnswerPanel.svelte";
+  import CitedSourceViewer from "./components/CitedSourceViewer.svelte";
   import GraphCanvas from "./components/GraphCanvas.svelte";
   import LeftRail from "./components/LeftRail.svelte";
   import ReconciliationView from "./components/ReconciliationView.svelte";
   import SelectionPanel from "./components/SelectionPanel.svelte";
   import WorkspaceShell from "./components/WorkspaceShell.svelte";
+  import { refsForCitations, resolveBundleSource, sourceHrefFor } from "./lib/citedSources.js";
   import {
     fetchClassHierarchies,
     fetchEntity,
@@ -439,6 +441,31 @@
     searchIndex = await fetchSearchIndex();
   }
 
+  // ----- cited-source viewer (INTERIM, architect-ratified §S.5) --------------
+  // IMPURE studio glue: the EntityPanel affordance hands the node's raw
+  // OntologyCitation list here; the frozen public projection converts it to
+  // CitedSourceRef[] and a CENTRAL OVERLAY (qualified UX, immo parity: covers
+  // the graph canvas area ONLY — no backdrop, side panels stay interactive)
+  // hosts the PURE CitedSourceViewer with the bundle resolver (sources/ dir,
+  // `--include-sources` export). Clicking another citation while open simply
+  // replaces this state -> the viewer RETARGETS (no stacking).
+  // null = closed; { refs, activeIndex, title } = open.
+  let sourceView = $state(null);
+  function handleOpenSource({ citations, index, fallbackSourceFile, label }) {
+    const refs = refsForCitations(citations, fallbackSourceFile);
+    if (refs.length === 0) return;
+    const active = Number.isInteger(index) && index >= 0 && index < refs.length ? index : 0;
+    const locator = refs[active]?.rawRef ?? refs[active]?.sourceUrl ?? "";
+    sourceView = {
+      refs,
+      activeIndex: active,
+      title: label ? `${label} — ${locator}` : locator,
+    };
+  }
+  function handleCloseSource() {
+    sourceView = null;
+  }
+
   // Open an entity surfaced by the Answer view IN the graph: switch to the
   // workspace view, add it to the selection + focus it (highlight + detail), and
   // hydrate its sidecar — no graph reload (mirrors handleFocusEntity).
@@ -676,6 +703,23 @@
             onSelect={handleToggleEntity}
             onOpenEntity={handleFocusEntity}
           />
+          {#if sourceView}
+            <!-- Cited-source viewer as a CENTRAL OVERLAY (qualified UX, immo
+                 parity): covers the graph canvas area ONLY — no backdrop, the
+                 left rail + right selection panel stay visible and interactive.
+                 The component is PURE: refs + resolvers only; all graphify
+                 glue stays in this file. -->
+            <div class="source-overlay" role="region" aria-label="Cited source">
+              <CitedSourceViewer
+                refs={sourceView.refs}
+                activeIndex={sourceView.activeIndex}
+                title={sourceView.title}
+                resolveSource={resolveBundleSource}
+                sourceHref={sourceHrefFor}
+                onClose={handleCloseSource}
+              />
+            </div>
+          {/if}
         </div>
         <div class="col col-right">
           <SelectionPanel
@@ -689,6 +733,7 @@
             onToggleCommunity={handleToggleCommunity}
             onToggleEntity={handleToggleEntity}
             onClear={handleClear}
+            onOpenSource={handleOpenSource}
           />
         </div>
       </WorkspaceShell>
@@ -731,6 +776,26 @@
   .app-body {
     flex: 1;
     min-height: 0;
+  }
+  /* Central cited-source overlay (qualified UX, immo parity): fills the
+     CENTER column only, in surimpression over the graph canvas. NO backdrop —
+     the side rails stay visible and clickable. */
+  .col-center {
+    position: relative;
+  }
+  .source-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    display: flex;
+    background: var(--st-semantic-surface-default, #fff);
+    border: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
+    box-shadow: 0 8px 32px rgba(15, 23, 42, 0.22);
+    overflow: hidden;
+  }
+  .source-overlay > :global(.csv) {
+    flex: 1;
+    min-width: 0;
   }
   .col {
     min-height: 0;
