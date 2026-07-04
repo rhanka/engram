@@ -4834,6 +4834,8 @@ export async function main(): Promise<void> {
     .option("--profile <path>", "Optional ontology profile YAML; emits class-hierarchies.json when the profile carries a class_hierarchies block")
     .option("--no-single-file", "Skip the self-contained studio.html; emit only the multi-file bundle")
     .option("--full-offline", "Inline graph.json + entities.json into studio.html too (not just the scene) so the offline studio needs zero network")
+    .option("--include-sources", "Copy the CITED source documents into <out>/sources/ so the cited-source viewer can open them from the served bundle (opt-in; only files referenced by citations)")
+    .option("--sources-root <dir>", "Root the relative source_file locators resolve against (default: the parent of --state)")
     .action(async (out, opts) => {
       try {
         const stateDir = resolve(opts.state ?? DEFAULT_GRAPHIFY_STATE_DIR);
@@ -4850,6 +4852,10 @@ export async function main(): Promise<void> {
             // and --full-offline -> fullOffline:true (default false).
             singleFile: opts.singleFile !== false,
             fullOffline: opts.fullOffline === true,
+            includeSources: opts.includeSources === true,
+            ...(typeof opts.sourcesRoot === "string" && opts.sourcesRoot.trim()
+              ? { sourcesRoot: resolve(opts.sourcesRoot.trim()) }
+              : {}),
             onWarning: (message) => console.warn(message),
           });
           console.log(`Static studio written to ${result.outDir}`);
@@ -4872,6 +4878,13 @@ export async function main(): Promise<void> {
             );
           } else {
             console.log("  offline studio.html: skipped (--no-single-file)");
+          }
+          if (result.sources) {
+            const mb = (result.sources.bytes / (1024 * 1024)).toFixed(1);
+            console.log(
+              `  cited sources: ${result.sources.copied} file(s) (${mb} MB) under sources/` +
+                (result.sources.missing > 0 ? ` — ${result.sources.missing} missing (see warnings)` : ""),
+            );
           }
           console.log(`  open: serve ${result.outDir} with any static file server (index.html)`);
         } catch (err) {
