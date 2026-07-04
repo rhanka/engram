@@ -87,6 +87,14 @@ function dashCode(value: EdgeDashMode | undefined): number {
   return 0;
 }
 
+/** Route-style code: 1 flow-port, 2 flow-port-reverse, 0 default (back-compatible). */
+function routeStyleCode(value: unknown): number {
+  const style = String(value ?? "default").trim().toLowerCase();
+  if (style === "flow-port") return 1;
+  if (style === "flow-port-reverse") return 2;
+  return 0;
+}
+
 /** Fill variant code: 1 hollow, 0 solid (default — back-compatible). */
 function fillCode(value: unknown): number {
   return String(value ?? "solid").trim().toLowerCase() === "hollow" ? 1 : 0;
@@ -233,6 +241,8 @@ export function buildStyleBuffers(
   const edgeColors = new Uint8Array(edgeCount * 4);
   const edgeDash = new Uint8Array(edgeCount);
   const edgeCurvatures = new Float32Array(edgeCount);
+  const edgeRouteStyles = new Uint8Array(edgeCount);
+  let hasRouteStyles = false;
 
   for (let edgeIndex = 0; edgeIndex < edgeCount; edgeIndex += 1) {
     const sourceIndex = graph.edgeInputIndices?.[edgeIndex] ?? edgeIndex;
@@ -242,6 +252,9 @@ export function buildStyleBuffers(
     writeColor(edgeColors, edgeIndex * 4, parseColor(edge?.color, edgeDefaults.color));
     edgeDash[edgeIndex] = dashCode(edge?.dash ?? edgeDefaults.dash);
     edgeCurvatures[edgeIndex] = finiteOrDefault(edge?.curvature, edgeDefaults.curvature);
+    const routeCode = routeStyleCode(edge?.edge_style);
+    edgeRouteStyles[edgeIndex] = routeCode;
+    if (routeCode !== 0) hasRouteStyles = true;
   }
 
   return {
@@ -255,5 +268,8 @@ export function buildStyleBuffers(
     edgeColors,
     edgeDash,
     edgeCurvatures,
+    // Only attached when some edge actually opts into a flow-port route, so an
+    // input without edge_style produces the EXACT historical buffer shape.
+    ...(hasRouteStyles ? { edgeRouteStyles } : {}),
   };
 }
