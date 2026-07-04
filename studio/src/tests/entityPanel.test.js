@@ -49,8 +49,10 @@ describe("EntityPanel citations (exhaustive-citations Level-1/Level-2)", () => {
     expect(panelSource).toMatch(/typeof node\.citation_count === "number"/);
     // The count is fed to the Citations disclosure (DS Collapsible) via the
     // trailing circle Badge. The custom Accordion was replaced by DS Collapsible
-    // in the P3 migration; the true count still reaches the header.
-    expect(panelSource).toMatch(/<Collapsible title="Citations" open=\{false\}>/);
+    // in the P3 migration; the true count still reaches the header. §S.6.1: the
+    // accordion stays collapsed by default and OPENS when the cited-source
+    // viewer focuses one of this entity's citations.
+    expect(panelSource).toMatch(/<Collapsible title="Citations" open=\{focusCitationIndex >= 0\}>/);
     expect(panelSource).toMatch(
       /<Badge shape="circle" size="sm" tone="neutral">\{citationTotal\}<\/Badge>/,
     );
@@ -67,5 +69,28 @@ describe("EntityPanel citations (exhaustive-citations Level-1/Level-2)", () => {
 
   it("imports citationsByFileFrom for the lazy upgrade", () => {
     expect(panelSource).toMatch(/citationsByFileFrom/);
+  });
+});
+
+describe("EntityPanel viewer→panel sync (§S.6.1 selection-scope navigation)", () => {
+  it("resolves focusCitation to a passage index — identity first, loose fields fallback", () => {
+    expect(panelSource).toMatch(/focusCitation = null,/);
+    expect(panelSource).toMatch(/sourceCitations\.indexOf\(focusCitation\)/);
+    expect(panelSource).toMatch(/citationLooksSame\(c, focusCitation\)/);
+  });
+
+  it("highlights + tags the current passage and opens its file accordion", () => {
+    expect(panelSource).toMatch(/entity-cite-passage--current=\{p\.index === focusCitationIndex\}/);
+    expect(panelSource).toMatch(/data-cite-current=\{p\.index === focusCitationIndex \? "true" : undefined\}/);
+    expect(panelSource).toMatch(/open=\{cf\.passages\.some\(\(p\) => p\.index === focusCitationIndex\)\}/);
+  });
+
+  it("hands the entity id to the open-source payload (thread aiming)", () => {
+    expect(panelSource).toMatch(/entityId: node\?\.id \?\? focusId \?\? null,/);
+  });
+
+  it("scrolls the current passage into view (guarded for jsdom)", () => {
+    expect(panelSource).toMatch(/data-cite-current='true'/);
+    expect(panelSource).toMatch(/typeof el\.scrollIntoView === "function"/);
   });
 });
