@@ -131,6 +131,17 @@ export interface GitFlowBranchLabel {
   y: number;
   /** How the branch enters the window (window-left entries draw dashed). */
   entry: "in-window" | "window-left" | "tip-only";
+  /**
+   * World x of the branch TIP commit (label-policy extras: recency weighting
+   * + the fork→tip anchor fallback). Equals `x` for tip-only labels.
+   */
+  tipX?: number;
+  /**
+   * World y of the branch's LANE LINE (the label anchor `y` floats ABOVE it
+   * by the lane lift). Interaction hit targets cover the lane interval
+   * `[x, tipX]` at this y — not just the label pill (P1.3).
+   */
+  laneY?: number;
 }
 
 export interface GitFlowLayout {
@@ -514,6 +525,8 @@ export function computeGitFlowPositions(
         x,
         y,
         entry: "in-window",
+        tipX: xOf(tipRank),
+        laneY: laneY(0),
       });
     }
     for (const rec of placedBranches) {
@@ -532,6 +545,8 @@ export function computeGitFlowPositions(
         x,
         y,
         entry: rec.windowLeft ? "window-left" : "in-window",
+        tipX: xOf(rec.displayFork + rec.exclusive.length),
+        laneY: laneY(lane),
       });
     }
     // Tip-only branches: a small label just below their (already placed) tip.
@@ -545,7 +560,17 @@ export function computeGitFlowPositions(
       positions[b * 2] = x;
       positions[b * 2 + 1] = y;
       placed[b] = placed[tip] ?? 0;
-      branchLabels.push({ nodeIndex: b, name: branchName(b), repo, lane: -1, x, y, entry: "tip-only" });
+      branchLabels.push({
+        nodeIndex: b,
+        name: branchName(b),
+        repo,
+        lane: -1,
+        x,
+        y,
+        entry: "tip-only",
+        tipX: x,
+        laneY: positions[tip * 2 + 1] ?? bandTop,
+      });
     }
     // Headless branch nodes: off-lane.
     for (const b of band.branches) {
