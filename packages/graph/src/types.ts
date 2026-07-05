@@ -218,6 +218,13 @@ export interface LayoutOptions {
    * ignored by every other layout. Optional & additive.
    */
   edgeRelations?: readonly (string | null | undefined)[];
+  /**
+   * Git-flow X-axis mode: `"rank"` (default — topological sequence) or
+   * `"time"` (x ∝ commit committer-date `t`, one global axis across repo
+   * bands). Consumed by the git-flow layout only; ignored by every other
+   * layout. Optional & additive — absent ⇒ `"rank"`, the historical output.
+   */
+  xMode?: "rank" | "time";
 }
 
 export interface LayoutEngine {
