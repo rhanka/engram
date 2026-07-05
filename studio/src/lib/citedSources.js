@@ -44,6 +44,88 @@ export function refsForCitations(citations, fallbackSourceFile = null) {
   });
 }
 
+/**
+ * Increment 2 (selection-scope navigation, §S.6.1): build the GROUPED citation
+ * thread for the CURRENT multi-selection.
+ *
+ * One group per selected entity WITH at least one citation, in SELECTION ORDER
+ * (the caller passes entities in `viewerState.selection.entities` order).
+ * Within a group the refs are ordered DOCUMENT-first (documents in first-
+ * appearance order of the entity's citation list), then PAGE ascending
+ * (page-less refs keep their relative order after paged ones of the same doc
+ * are sorted; the sort is stable). This is the approved thread order:
+ * selection → document → page.
+ *
+ * Returns BOTH the pure viewer input (`groups`, shape
+ * `{ id, label, refs: CitedSourceRef[] }` — the CitedSourceViewer prop) and a
+ * PARALLEL `meta` array (`{ id, citations }`, citations[i] is the RAW
+ * OntologyCitation behind groups[g].refs[i]) so the impure consumer can map an
+ * `onFocusChange(groupId, refIndex)` back to the exact citation object for the
+ * right-panel sync. The component itself never sees `meta` (purity seam).
+ *
+ * @param {Array<{id: string, label?: string|null, citations?: Array<object>|null, fallbackSourceFile?: string|null}>} entities
+ * @returns {{ groups: Array<{id: string, label: string|null, refs: Array<object>}>, meta: Array<{id: string, citations: Array<object>}> }}
+ */
+export function buildSelectionThread(entities) {
+  const groups = [];
+  const meta = [];
+  for (const entity of Array.isArray(entities) ? entities : []) {
+    if (!entity || entity.id == null) continue;
+    const citations = Array.isArray(entity.citations) ? entity.citations : [];
+    if (citations.length === 0) continue;
+    const refs = refsForCitations(citations, entity.fallbackSourceFile ?? null);
+    // Pair each ref with its raw citation, then order document → page.
+    const docOrder = new Map();
+    for (const ref of refs) {
+      const doc = threadDocKey(ref);
+      if (!docOrder.has(doc)) docOrder.set(doc, docOrder.size);
+    }
+    const pairs = refs.map((ref, i) => ({ ref, citation: citations[i] }));
+    pairs.sort((a, b) => {
+      const docDelta = docOrder.get(threadDocKey(a.ref)) - docOrder.get(threadDocKey(b.ref));
+      if (docDelta !== 0) return docDelta;
+      return threadPageRank(a.ref) - threadPageRank(b.ref);
+    });
+    groups.push({
+      id: entity.id,
+      label: entity.label ?? null,
+      refs: pairs.map((p) => p.ref),
+    });
+    meta.push({ id: entity.id, citations: pairs.map((p) => p.citation) });
+  }
+  return { groups, meta };
+}
+
+/** Document identity for the thread order (mirrors the viewer's locatorOf). */
+function threadDocKey(ref) {
+  return ref?.rawRef ?? ref?.sourceUrl ?? ref?.docSha ?? "";
+}
+
+/** Page sort rank: numeric pages ascending, page-less refs last (stable). */
+function threadPageRank(ref) {
+  const page = Number(ref?.page);
+  return Number.isFinite(page) ? page : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Loose citation identity for the panel↔viewer sync fallback (used when the
+ * object reference does not match because a list was re-fetched): same source
+ * file, page, section and quote text.
+ * @param {object|null|undefined} a
+ * @param {object|null|undefined} b
+ */
+export function sameCitation(a, b) {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const norm = (v) => (v == null ? null : String(v));
+  return (
+    norm(a.source_file) === norm(b.source_file) &&
+    norm(a.page) === norm(b.page) &&
+    norm(a.section) === norm(b.section) &&
+    norm(a.quote ?? a.excerpt) === norm(b.quote ?? b.excerpt)
+  );
+}
+
 /** File-suffix modality sniff for the resolver's binary/text routing. */
 function looksLikePdf(locator) {
   return /\.pdf(?:[?#]|$)/i.test(locator);

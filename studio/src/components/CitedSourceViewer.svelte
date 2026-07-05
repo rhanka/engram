@@ -5,9 +5,15 @@
    *
    * PURITY CONTRACT (for the mechanical rebase into the sentropic monorepo):
    * this component imports NOTHING from graphify — only its sibling pure lib
-   * (`../lib/cited-source/*`) and Svelte. All graphify-specific glue (reading
-   * node.citations, converting via citationToCitedSourceRef, fetching bytes)
-   * lives OUTSIDE, in the studio wiring (App.svelte + lib/citedSources.js).
+   * (`../lib/cited-source/*`), Svelte, and the DS package
+   * (@sentropic/design-system-svelte: the architect-owned shared package
+   * itself depends on the DS, so DS imports are part of the seam —
+   * ALLOWED_EXTERNAL mirrors the package: svelte + design-system-svelte +
+   * pdfjs-dist). All controls are REAL DS components (IconButton / Button /
+   * ContentSwitcher / Link) — no raw <button>/<a> chrome. All
+   * graphify-specific glue (reading node.citations, converting via
+   * citationToCitedSourceRef, fetching bytes) lives OUTSIDE, in the studio
+   * wiring (App.svelte + lib/citedSources.js).
    *
    * QUALIFIED UX (principal UAT 2026-07-04, immo/radar SignalPdfOverlay
    * parity). This frame is being qualified ONCE for the shared package, so it
@@ -33,23 +39,55 @@
    * overlay (over its canvas/main view only) and keeps its side panels live; a
    * NEW `refs` array + `activeIndex` RETARGETS an open viewer (no stacking).
    *
-   * Props (the frozen seam, SPEC_WP_CITED_SOURCE_VIZ §S.1/§S.3):
+   * Props (the frozen seam, SPEC_WP_CITED_SOURCE_VIZ §S.1/§S.3; grouped-thread
+   * increment §S.6.1 — this extended API is carried as-is into
+   * @sentropic/cited-source-viewer):
    *   refs          CitedSourceRef[] (shape only — no type import needed in JS):
    *                 { rawRef?, sourceUrl?, docSha?, modality?, page?, section?,
    *                   paragraph_id?, bbox?, excerpt?, citation? }
+   *                 FLAT single-entity mode: used only when `groups` is absent
+   *                 or empty (it then behaves as one anonymous group).
+   *   groups        Array<{ id, label, refs: CitedSourceRef[] }> — the GROUPED
+   *                 citation thread (§S.6.1): one group per source entity, in
+   *                 the consumer's selection order. When ≥2 groups carry refs,
+   *                 the toolbar gains the [ Entité | Sélection ] scope toggle
+   *                 and the Sélection scope navigates ONE continuous thread
+   *                 across all groups. The component never builds the thread —
+   *                 ordering (selection → document → page) is consumer glue.
+   *   activeGroupIndex  Index of the initially/retarget-active group.
+   *   activeIndex   Active ref index WITHIN the active group (flat mode: index
+   *                 into `refs`); with a new `groups`/`refs` identity it
+   *                 retargets an OPEN viewer (no stacking).
+   *   scope         "entity" | "selection" — navigation scope seed. Tracked
+   *                 like the index props: a CHANGED prop value re-seeds the
+   *                 internal scope; internal toggles do not echo back.
+   *   onScopeChange (scope) => void — user toggled the scope in the toolbar.
+   *   onFocusChange (groupId, refIndex) => void — the focused citation changed
+   *                 through IN-VIEWER navigation (buttons/keyboard). refIndex
+   *                 is WITHIN the group. Not fired for prop-driven retargets
+   *                 (the consumer already knows those).
    *   resolveSource async (ref) => { kind: "pdf", data: ArrayBuffer }
    *                              | { kind: "markdown", text: string }
    *                 The component NEVER reads bytes itself (§S.3).
    *   sourceHref    (ref) => string|null — href for the "Ouvrir ↗" raw-source
    *                 link; null/absent hides the button. Pure callback: the
    *                 consumer owns the URL scheme (bundle sources/, API route…).
-   *   activeIndex   Active ref index; with a new `refs` array it retargets.
-   *   title         Header title (e.g. the source file the user clicked).
+   *   title         Header title fallback. In grouped mode the header shows
+   *                 the ACTIVE group's label + locator (follows the thread).
    *   onClose       Close callback (optional; hides the ✕ when absent).
+   *
+   * Keyboard (generic frame, §S.6.1): n/N next/prev citation in the ACTIVE
+   * scope; e/E next/prev entity (Sélection scope only); ←/→ PDF pages; Esc
+   * closes. Form fields are never intercepted.
    *
    * v1 scope: MD (incl. OCR-markdown / plain text) + PDF text-layer only.
    */
   import { tick } from "svelte";
+  // DS components ARE part of the pure seam (the architect-owned shared
+  // package itself imports the DS): allowed externals mirror the package's
+  // ALLOWED_EXTERNAL = svelte + @sentropic/design-system-svelte + pdfjs-dist.
+  // graphify runtime imports remain forbidden.
+  import { Button, ContentSwitcher, IconButton, Link } from "@sentropic/design-system-svelte";
   import {
     MAX_RENDER_SCALE,
     MIN_RENDER_SCALE,
@@ -61,19 +99,34 @@
 
   let {
     refs = [],
+    groups = [],
     resolveSource,
     sourceHref = null,
+    activeGroupIndex = 0,
     activeIndex = 0,
+    scope = "entity",
+    onScopeChange = null,
+    onFocusChange = null,
     title = "Cited source",
     onClose = null,
   } = $props();
 
-  // Active ref index — internal state seeded from the props. Tracking BOTH the
-  // refs identity and the activeIndex prop makes a re-open with the same index
-  // on a new refs array retarget correctly (no stale internal position).
-  let index = $state(0);
+  // Active (group, ref) position — internal state seeded from the props.
+  // Tracking BOTH the groups/refs identity and the index props makes a re-open
+  // with the same indexes on a new thread retarget correctly (no stale
+  // internal position).
+  let gIndex = $state(0);
+  let rIndex = $state(0);
   let lastActiveProp = -1;
+  let lastActiveGroupProp = -1;
   let lastRefsProp = null;
+  let lastGroupsProp = null;
+
+  // Navigation scope (§S.6.1). Seeded from the `scope` prop (own last-seen
+  // tracking, SEPARATE from the index retarget so a scope write-back from the
+  // consumer never re-seeds an internally-navigated position).
+  let scopeState = $state("entity");
+  let lastScopeProp = null;
 
   // Load pipeline state.
   let loading = $state(false);
@@ -99,17 +152,89 @@
   let loadToken = 0;
   let renderToken = 0;
 
-  const ref = $derived(refs[index] ?? null);
-  const refCount = $derived(refs.length);
   const quoteOf = (r) => r?.excerpt ?? r?.citation ?? null;
   const locatorOf = (r) => r?.rawRef ?? r?.sourceUrl ?? r?.docSha ?? "";
 
-  // ── Document navigator (immo "PDF x/y"): distinct source locators, in ref
-  //    order. Prev/next jumps to the FIRST ref of the neighbour document.
+  // ── Grouped thread normalization (§S.6.1). Flat `refs` mode is ONE anonymous
+  //    group, so every navigator below runs off the same structure.
+  const normGroups = $derived(
+    Array.isArray(groups) && groups.length > 0
+      ? groups
+      : refs.length > 0
+        ? [{ id: null, label: null, refs }]
+        : [],
+  );
+  const activeGroup = $derived(normGroups[gIndex] ?? null);
+  const groupRefs = (g) => (Array.isArray(g?.refs) ? g.refs : []);
+  const ref = $derived(groupRefs(activeGroup)[rIndex] ?? null);
+
+  // The FLAT thread: every (group, ref) position in order. Sélection scope
+  // navigates this list continuously — stepping past the last citation of one
+  // entity lands on the first citation of the next.
+  const thread = $derived.by(() => {
+    const items = [];
+    normGroups.forEach((g, gi) => {
+      groupRefs(g).forEach((r, ri) => items.push({ gi, ri, ref: r }));
+    });
+    return items;
+  });
+
+  // Entity order = groups that actually carry refs. The scope toggle only
+  // shows for a REAL multi-entity thread (≥2 groups with citations).
+  const entityOrder = $derived(
+    normGroups.map((g, gi) => (groupRefs(g).length > 0 ? gi : -1)).filter((gi) => gi >= 0),
+  );
+  const scopeEligible = $derived(entityOrder.length >= 2);
+  const effectiveScope = $derived(scopeEligible && scopeState === "selection" ? "selection" : "entity");
+  const entityPos = $derived(entityOrder.indexOf(gIndex));
+
+  // The ACTIVE-SCOPE item list drives the citation counter AND the document
+  // navigator: current entity's refs (Entité) or the whole thread (Sélection).
+  const scopeItems = $derived(
+    effectiveScope === "selection" ? thread : thread.filter((it) => it.gi === gIndex),
+  );
+  const scopePos = $derived(scopeItems.findIndex((it) => it.gi === gIndex && it.ri === rIndex));
+  const scopeCount = $derived(scopeItems.length);
+
+  /** Move the focus and notify the consumer (right-panel sync, §S.6.1). */
+  function focusTo(gi, ri) {
+    if (gi === gIndex && ri === rIndex) return;
+    gIndex = gi;
+    rIndex = ri;
+    if (typeof onFocusChange === "function") {
+      onFocusChange(normGroups[gi]?.id ?? null, ri);
+    }
+  }
+
+  /** Next/prev citation in the ACTIVE scope (toolbar ‹ › and n/N). */
+  function goScopeRef(delta) {
+    const target = scopePos + delta;
+    if (target < 0 || target >= scopeCount) return;
+    const item = scopeItems[target];
+    focusTo(item.gi, item.ri);
+  }
+
+  /** Next/prev entity (Sélection scope): first citation of the neighbour group. */
+  function goEntity(delta) {
+    const target = entityPos + delta;
+    if (target < 0 || target >= entityOrder.length) return;
+    focusTo(entityOrder[target], 0);
+  }
+
+  function setScope(next) {
+    if (next !== "entity" && next !== "selection") return;
+    if (scopeState === next) return;
+    scopeState = next;
+    if (typeof onScopeChange === "function") onScopeChange(next);
+  }
+
+  // ── Document navigator (immo "PDF x/y"): distinct source locators of the
+  //    ACTIVE SCOPE, in thread order. Prev/next jumps to the FIRST ref of the
+  //    neighbour document.
   const docLocators = $derived.by(() => {
     const seen = [];
-    for (const r of refs) {
-      const loc = locatorOf(r);
+    for (const it of scopeItems) {
+      const loc = locatorOf(it.ref);
       if (!seen.includes(loc)) seen.push(loc);
     }
     return seen;
@@ -120,12 +245,18 @@
     const target = docIndex + delta;
     if (target < 0 || target >= docCount) return;
     const loc = docLocators[target];
-    const first = refs.findIndex((r) => locatorOf(r) === loc);
-    if (first >= 0) index = first;
+    const first = scopeItems.find((it) => locatorOf(it.ref) === loc);
+    if (first) focusTo(first.gi, first.ri);
   }
 
   const rawHref = $derived(
     ref && typeof sourceHref === "function" ? (sourceHref(ref) ?? null) : null,
+  );
+
+  // Grouped mode: the header FOLLOWS the thread (active entity label +
+  // current locator); flat mode keeps the consumer-provided title verbatim.
+  const displayTitle = $derived(
+    activeGroup?.label ? [activeGroup.label, locatorOf(ref)].filter(Boolean).join(" — ") : title,
   );
 
   /** Human locator label for the header ("p.3", "§ Chapter 2", …). */
@@ -138,15 +269,35 @@
     return parts.join(" · ");
   }
 
-  // Retarget on ANY prop change (new refs array and/or new activeIndex): a
-  // click on another citation while the overlay is open re-aims the SAME
-  // viewer instead of stacking a second one.
+  // Retarget on ANY thread/index prop change (new groups/refs identity and/or
+  // new active indexes): a click on another citation while the overlay is open
+  // re-aims the SAME viewer instead of stacking a second one. The scope prop
+  // is tracked in its OWN effect below so a consumer-side scope echo never
+  // re-seeds an internally-navigated position.
   $effect(() => {
-    if (refs !== lastRefsProp || activeIndex !== lastActiveProp) {
+    if (
+      groups !== lastGroupsProp ||
+      refs !== lastRefsProp ||
+      activeGroupIndex !== lastActiveGroupProp ||
+      activeIndex !== lastActiveProp
+    ) {
+      lastGroupsProp = groups;
       lastRefsProp = refs;
+      lastActiveGroupProp = activeGroupIndex;
       lastActiveProp = activeIndex;
-      const clamped = Math.max(0, Math.min(refs.length - 1, activeIndex ?? 0));
-      index = refs.length > 0 ? clamped : 0;
+      const gi = Math.max(0, Math.min(normGroups.length - 1, activeGroupIndex ?? 0));
+      const seeded = normGroups.length > 0 ? gi : 0;
+      const count = groupRefs(normGroups[seeded]).length;
+      gIndex = seeded;
+      rIndex = count > 0 ? Math.max(0, Math.min(count - 1, activeIndex ?? 0)) : 0;
+    }
+  });
+
+  // Scope retarget (§S.6.1): only a CHANGED prop value re-seeds the scope.
+  $effect(() => {
+    if (scope !== lastScopeProp) {
+      lastScopeProp = scope;
+      scopeState = scope === "selection" ? "selection" : "entity";
     }
   });
 
@@ -280,10 +431,6 @@
   function goNextPage() {
     if (currentPage < numPages) void renderPage(currentPage + 1);
   }
-  function goRef(i) {
-    if (i < 0 || i >= refCount || i === index) return;
-    index = i;
-  }
 
   /** True when the key event belongs to a form field. The overlay is NON-modal
    *  (side panels stay interactive), so typing there must never page/close. */
@@ -299,6 +446,12 @@
     if (event.key === "Escape" && onClose) onClose();
     else if (event.key === "ArrowLeft" && pdfDoc) goPrevPage();
     else if (event.key === "ArrowRight" && pdfDoc) goNextPage();
+    // §S.6.1 keyboard: n/N step the citation thread in the ACTIVE scope; e/E
+    // jump entities (Sélection scope only, per the approved UX).
+    else if (event.key === "n") goScopeRef(1);
+    else if (event.key === "N") goScopeRef(-1);
+    else if (event.key === "e" && effectiveScope === "selection") goEntity(1);
+    else if (event.key === "E" && effectiveScope === "selection") goEntity(-1);
   }
 </script>
 
@@ -308,7 +461,7 @@
   <header class="csv-head">
     <div class="csv-head-text">
       <p class="csv-kicker">Cited source</p>
-      <h2 class="csv-title" title={locatorOf(ref)}>{title}</h2>
+      <h2 class="csv-title" title={locatorOf(ref)}>{displayTitle}</h2>
       {#if ref}
         <p class="csv-locator">
           <span class="csv-locator-file">{locatorOf(ref) || "(no locator)"}</span>
@@ -317,53 +470,82 @@
       {/if}
     </div>
     {#if onClose}
-      <button class="csv-close" type="button" onclick={() => onClose()} aria-label="Close source viewer">✕</button>
+      <IconButton size="sm" variant="ghost" aria-label="Close source viewer" class="csv-close" onclick={() => onClose()}>✕</IconButton>
     {/if}
   </header>
 
   <!-- QUALIFIED TOOLBAR (immo parity): one compact bar, generic frame; only
-       the Page/Zoom segments are modality-gated (page-addressable sources). -->
+       the Page/Zoom segments are modality-gated (page-addressable sources).
+       100% DS controls: IconButton (‹ › − + ✕), Button (zoom-% reset),
+       ContentSwitcher (scope toggle), Link (Ouvrir ↗). -->
   <div class="csv-toolbar" role="toolbar" aria-label="Source navigation">
-    {#if refCount > 1}
+    {#if scopeEligible}
+      <!-- §S.6.1 scope toggle — only for a REAL multi-entity thread (≥2 groups
+           with citations); otherwise the plain Entité behavior applies. -->
+      <ContentSwitcher
+        size="sm"
+        label="Navigation scope"
+        class="csv-tb-scope"
+        items={[
+          { value: "entity", label: "Entité" },
+          { value: "selection", label: "Sélection" },
+        ]}
+        value={effectiveScope}
+        onchange={(value) => setScope(value)}
+      />
+    {/if}
+
+    {#if scopeCount > 1}
       <div class="csv-tb-group" aria-label="Citation navigator">
-        <button class="csv-tb-btn" type="button" disabled={index <= 0} onclick={() => goRef(index - 1)} aria-label="Previous citation">‹</button>
-        <span class="csv-tb-label">Citation <strong>{index + 1}/{refCount}</strong></span>
-        <button class="csv-tb-btn" type="button" disabled={index >= refCount - 1} onclick={() => goRef(index + 1)} aria-label="Next citation">›</button>
+        <IconButton size="sm" disabled={scopePos <= 0} onclick={() => goScopeRef(-1)} aria-label="Previous citation">‹</IconButton>
+        <span class="csv-tb-label">Citation <strong>{scopePos + 1}/{scopeCount}</strong></span>
+        <IconButton size="sm" disabled={scopePos >= scopeCount - 1} onclick={() => goScopeRef(1)} aria-label="Next citation">›</IconButton>
+      </div>
+    {/if}
+
+    {#if scopeEligible && effectiveScope === "selection"}
+      <!-- §S.6.1 entity indicator: position in the selection + current label;
+           ‹ › jump to the FIRST citation of the neighbour entity (kbd e/E). -->
+      <div class="csv-tb-group" aria-label="Entity navigator">
+        <IconButton size="sm" disabled={entityPos <= 0} onclick={() => goEntity(-1)} aria-label="Previous entity">‹</IconButton>
+        <span class="csv-tb-label">Entité <strong>{entityPos + 1}/{entityOrder.length}</strong>{#if activeGroup?.label}<span class="csv-tb-entity">— {activeGroup.label}</span>{/if}</span>
+        <IconButton size="sm" disabled={entityPos >= entityOrder.length - 1} onclick={() => goEntity(1)} aria-label="Next entity">›</IconButton>
       </div>
     {/if}
 
     {#if docCount > 1}
       <div class="csv-tb-group" aria-label="Document navigator">
-        <button class="csv-tb-btn" type="button" disabled={docIndex <= 0} onclick={() => goDoc(-1)} aria-label="Previous document">‹</button>
+        <IconButton size="sm" disabled={docIndex <= 0} onclick={() => goDoc(-1)} aria-label="Previous document">‹</IconButton>
         <span class="csv-tb-label">Doc <strong>{docIndex + 1}/{docCount}</strong></span>
-        <button class="csv-tb-btn" type="button" disabled={docIndex >= docCount - 1} onclick={() => goDoc(1)} aria-label="Next document">›</button>
+        <IconButton size="sm" disabled={docIndex >= docCount - 1} onclick={() => goDoc(1)} aria-label="Next document">›</IconButton>
       </div>
     {/if}
 
     {#if pdfDoc}
       <div class="csv-tb-group" aria-label="Page navigator">
-        <button class="csv-tb-btn" type="button" disabled={currentPage <= 1} onclick={goPrevPage} aria-label="Previous page">‹</button>
+        <IconButton size="sm" disabled={currentPage <= 1} onclick={goPrevPage} aria-label="Previous page">‹</IconButton>
         <span class="csv-tb-label">Page <strong>{currentPage}/{numPages}</strong></span>
-        <button class="csv-tb-btn" type="button" disabled={currentPage >= numPages} onclick={goNextPage} aria-label="Next page">›</button>
+        <IconButton size="sm" disabled={currentPage >= numPages} onclick={goNextPage} aria-label="Next page">›</IconButton>
       </div>
 
       <div class="csv-tb-group" aria-label="Zoom">
-        <button class="csv-tb-btn" type="button" disabled={scale <= MIN_RENDER_SCALE + 0.001} onclick={zoomOut} aria-label="Zoom out">−</button>
-        <button
+        <IconButton size="sm" disabled={scale <= MIN_RENDER_SCALE + 0.001} onclick={zoomOut} aria-label="Zoom out">−</IconButton>
+        <Button
+          size="sm"
+          variant="ghost"
           class="csv-tb-zoom"
-          type="button"
           onclick={resetZoom}
           title="Back to fit-width"
           aria-label="Zoom level {Math.round(scale * 100)} percent, click to fit width"
-        >{Math.round(scale * 100)}%</button>
-        <button class="csv-tb-btn" type="button" disabled={scale >= MAX_RENDER_SCALE - 0.001} onclick={zoomIn} aria-label="Zoom in">+</button>
+        >{Math.round(scale * 100)}%</Button>
+        <IconButton size="sm" disabled={scale >= MAX_RENDER_SCALE - 0.001} onclick={zoomIn} aria-label="Zoom in">+</IconButton>
       </div>
     {/if}
 
     <span class="csv-tb-spacer"></span>
 
     {#if rawHref}
-      <a class="csv-tb-open" href={rawHref} target="_blank" rel="noopener noreferrer">Ouvrir ↗</a>
+      <Link href={rawHref} external variant="standalone" class="csv-tb-open">Ouvrir ↗</Link>
     {/if}
   </div>
 
@@ -463,20 +645,10 @@
     color: var(--st-semantic-text-secondary, #475569);
     white-space: nowrap;
   }
-  .csv-close {
+  /* DS components own their chrome; local CSS is LAYOUT-ONLY (:global hooks
+     target the class passed to the DS root, which Svelte cannot scope). */
+  .csv-head :global(.csv-close) {
     flex-shrink: 0;
-    border: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
-    background: var(--st-semantic-surface-subtle, #f8fafc);
-    border-radius: var(--st-radius-sm, 4px);
-    color: var(--st-semantic-text-secondary, #475569);
-    cursor: pointer;
-    font-size: 0.85rem;
-    line-height: 1;
-    padding: 0.3rem 0.45rem;
-  }
-  .csv-close:hover {
-    color: var(--st-semantic-feedback-error, #dc2626);
-    border-color: var(--st-semantic-feedback-error, #dc2626);
   }
   /* ── Qualified toolbar (immo parity) ──────────────────────────────────── */
   .csv-toolbar {
@@ -508,61 +680,27 @@
     font-weight: 700;
     color: var(--st-semantic-text-primary, #0f172a);
   }
-  .csv-tb-btn {
-    border: none;
-    background: transparent;
-    border-radius: var(--st-radius-sm, 4px);
-    color: var(--st-semantic-text-secondary, #475569);
-    cursor: pointer;
-    font-size: 0.9rem;
-    line-height: 1;
-    padding: 0.15rem 0.4rem;
-  }
-  .csv-tb-btn:disabled {
-    opacity: 0.35;
-    cursor: default;
-  }
-  .csv-tb-btn:not(:disabled):hover {
-    background: var(--st-semantic-surface-subtle, #f1f5f9);
-    color: var(--st-semantic-action-primary, #2563eb);
-  }
-  .csv-tb-zoom {
-    border: none;
-    background: transparent;
-    border-radius: var(--st-radius-sm, 4px);
+  /* §S.6.1 entity indicator label — bounded, never widens the toolbar. */
+  .csv-tb-entity {
+    display: inline-block;
+    vertical-align: bottom;
+    margin-left: 0.3rem;
+    max-width: 11rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     color: var(--st-semantic-text-primary, #0f172a);
-    cursor: pointer;
-    font-size: 0.72rem;
-    font-weight: 700;
-    line-height: 1;
-    padding: 0.2rem 0.3rem;
-    min-width: 2.6rem;
-    text-align: center;
-  }
-  .csv-tb-zoom:hover {
-    background: var(--st-semantic-surface-subtle, #f1f5f9);
-    color: var(--st-semantic-action-primary, #2563eb);
+    font-weight: 600;
   }
   .csv-tb-spacer {
     flex: 1;
   }
-  .csv-tb-open {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    border: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
-    border-radius: var(--st-radius-sm, 4px);
-    background: var(--st-semantic-surface-default, #fff);
-    color: var(--st-semantic-text-link, #2563eb);
-    font-size: 0.74rem;
-    font-weight: 600;
-    line-height: 1;
-    padding: 0.3rem 0.5rem;
-    text-decoration: none;
+  /* Layout-only hooks on DS roots (chrome comes from the DS itself). */
+  .csv-toolbar :global(.csv-tb-open) {
     white-space: nowrap;
   }
-  .csv-tb-open:hover {
-    border-color: var(--st-semantic-action-primary, #2563eb);
+  .csv-toolbar :global(.csv-tb-zoom) {
+    min-width: 2.9rem;
   }
   .csv-quote {
     margin: 0.55rem 1rem 0.2rem;
