@@ -28,6 +28,11 @@
     onToggleEntity,
     onClear,
     onOpenSource = null,
+    // §S.6.1 viewer→panel sync: { entityId, citation } for the citation
+    // currently OPEN in the cited-source viewer. The matching entity row is
+    // highlighted + scrolled into view; its EntityPanel highlights the exact
+    // passage. null when the viewer is closed.
+    sourceFocus = null,
   } = $props();
 
   const total = $derived(
@@ -39,10 +44,32 @@
       .map((id) => ({ id, label: nodeLabel(nodeIndex.get(id) ?? { id }) }))
       .sort((a, b) => a.label.localeCompare(b.label)),
   );
+
+  // §S.6.1: scroll the CITED entity's row into view when the viewer's focus
+  // moves to another entity (the passage-level scroll inside EntityPanel then
+  // refines the position). Guarded for jsdom (no scrollIntoView there).
+  let panelEl = $state(null);
+  $effect(() => {
+    const id = sourceFocus?.entityId;
+    if (!id || !panelEl) return;
+    const raf =
+      typeof requestAnimationFrame === "function" ? requestAnimationFrame : (fn) => setTimeout(fn, 0);
+    raf(() => {
+      const row = panelEl?.querySelector(`[data-sel-entity="${CSS.escape(id)}"]`);
+      if (row && typeof row.scrollIntoView === "function") {
+        row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+    });
+  });
 </script>
 
 {#snippet entityRow(e, removable)}
-  <div class="sel-entity" class:open={focusId === e.id}>
+  <div
+    class="sel-entity"
+    class:open={focusId === e.id}
+    class:cited={sourceFocus?.entityId === e.id}
+    data-sel-entity={e.id}
+  >
     <div class="sel-entity-bar">
       <button
         class="sel-entity-head"
@@ -66,13 +93,14 @@
           hideTitle
           onOpenEntity={onFocusEntity}
           {onOpenSource}
+          focusCitation={sourceFocus?.entityId === e.id ? (sourceFocus?.citation ?? null) : null}
         />
       </div>
     {/if}
   </div>
 {/snippet}
 
-<aside class="sel" aria-label="Selection">
+<aside class="sel" aria-label="Selection" bind:this={panelEl}>
   <header class="sel-head">
     <span class="sel-kicker">Selection · {total}</span>
     {#if total > 0}
@@ -271,6 +299,18 @@
     background: var(--st-semantic-surface-selected, #eff6ff);
     color: var(--st-semantic-action-primary, #2563eb);
     font-weight: 600;
+  }
+  /* §S.6.1 viewer→panel sync: the entity whose citation is OPEN in the
+     cited-source viewer carries a DS accent bar so the panel visibly follows
+     the thread as navigation crosses entity boundaries. */
+  .sel-entity.cited {
+    border-left: 3px solid var(--st-semantic-action-primary, #2563eb);
+    background: color-mix(
+      in srgb,
+      var(--st-semantic-surface-selected, #eff6ff) 55%,
+      transparent
+    );
+    border-radius: 0 var(--st-radius-sm, 4px) var(--st-radius-sm, 4px) 0;
   }
   .sel-chevron {
     flex-shrink: 0;
