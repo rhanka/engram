@@ -60,14 +60,16 @@ export interface OntologyCitation {
   modality?:                 // NEW — explicit modality tag (else derived by citationModality())
     | "markdown" | "pdf" | "docx" | "pptx" | "image"
     | "plain-text" | "csv" | "web";
-  confidence?: "EXTRACTED" | "INFERRED" | number;  // NEW — grounding strength (string enum or 0..1)
+  confidence?: "EXTRACTED" | "INFERRED";  // NEW — grounding strength (enum only; arbitrated 2026-07-05: numeric widening = deliberate additive change if a real need appears)
 }
 ```
 
 Notes:
 - `quote?` and `confidence?` mirror the fields already on `OntologyEvidenceRecord` — no new concept.
 - `confidence` accepts the string enum `{EXTRACTED, INFERRED}` (producer convention: exact match =
-  `EXTRACTED`, fuzzy word-run = `INFERRED`) **or** a numeric `0..1`; the viewer/legend treats both.
+  `EXTRACTED`, fuzzy word-run = `INFERRED`). **Enum ONLY** — architect arbitration 2026-07-05
+  (h2a env:architect-spec-arbitration-enum-only-20260705T1205Z): spec follows the shipped impl;
+  a numeric widening would be a deliberate additive change later.
 - `source_location?` is an *optional* convenience string for display; the structured fields
   (`page`/`section`/`paragraph_id`/`bbox`/`region`) remain authoritative. The router derives one from the other.
 - **`modality?` and `region?` are NEW (this increment)** for the principal's five-modality set
