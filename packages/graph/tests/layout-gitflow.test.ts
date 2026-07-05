@@ -388,3 +388,182 @@ describe("git-flow layout registration", () => {
     expect(Array.from(viaRegistry)).toEqual(Array.from(direct.positions));
   });
 });
+
+// ---------------------------------------------------------------------------
+// xMode — SEQUENCE (rank, default) vs TIME (x ∝ commit committer-date `t`).
+// ---------------------------------------------------------------------------
+
+/**
+ * Timed fixture (rankGap 60 ⇒ epsilon = 6):
+ *   trunk  c0(t=0) → c1(t=100) → c2(UNDATED) → c3(t=300) → c4(t=1000, tip)
+ *   feat-t: forks at c1 — f1(t=500) → f2(t=500)   (same instant)
+ *   feat-u: forks at c3 — u1, u2 both UNDATED     (whole lane undated)
+ * Rank-mode ranks: trunk 0…4 (x 0…240), f1/f2 ranks 2/3, u1/u2 ranks 4/5
+ * (x 240/300) ⇒ rank width = 300 (u2) = the time-axis width.
+ */
+function makeTimedRepo(): Repo {
+  const nodes: GitFlowNodeInput[] = [];
+  const edges: GitFlowEdgeInput[] = [];
+  const index = new Map<string, number>();
+  const edgeIndex = new Map<string, number>();
+  const addNode = (node: GitFlowNodeInput): void => {
+    index.set(node.id, nodes.length);
+    nodes.push(node);
+  };
+  const addEdge = (edge: GitFlowEdgeInput): void => {
+    edgeIndex.set(`${edge.source}→${edge.target}`, edges.length);
+    edges.push(edge);
+  };
+  const repo = "r";
+  const trunkT: (number | null)[] = [0, 100, null, 300, 1000];
+  trunkT.forEach((t, i) => addNode({ id: `c${i}`, type: "Commit", repo, t }));
+  for (let i = 1; i < trunkT.length; i += 1)
+    addEdge({ source: `c${i}`, target: `c${i - 1}`, relation: "commit-parent" });
+  addNode({ id: "branch-main", type: "Branch", repo, name: "main" });
+  addEdge({ source: "branch-main", target: "c4", relation: "branch-head" });
+
+  addNode({ id: "f1", type: "Commit", repo, t: 500 });
+  addNode({ id: "f2", type: "Commit", repo, t: 500 });
+  addEdge({ source: "f1", target: "c1", relation: "commit-parent" });
+  addEdge({ source: "f2", target: "f1", relation: "commit-parent" });
+  addNode({ id: "branch-feat-t", type: "Branch", repo, name: "feat-t" });
+  addEdge({ source: "branch-feat-t", target: "f2", relation: "branch-head" });
+
+  addNode({ id: "u1", type: "Commit", repo });
+  addNode({ id: "u2", type: "Commit", repo });
+  addEdge({ source: "u1", target: "c3", relation: "commit-parent" });
+  addEdge({ source: "u2", target: "u1", relation: "commit-parent" });
+  addNode({ id: "branch-feat-u", type: "Branch", repo, name: "feat-u" });
+  addEdge({ source: "branch-feat-u", target: "u2", relation: "branch-head" });
+
+  addNode({ id: "st", type: "Session", repo });
+  addEdge({ source: "st", target: "f1", relation: "produced" });
+  return { nodes, edges, index, edgeIndex };
+}
+
+const EPSILON = OPTS.rankGap * 0.1; // TIME_EPSILON_FRACTION pinned by contract
+
+describe("computeGitFlowPositions — xMode (SEQUENCE vs TIME)", () => {
+  it("REGRESSION PIN: default output is byte-identical to explicit xMode:'rank', even with t present", () => {
+    const timed = makeTimedRepo();
+    const byDefault = computeGitFlowPositions(timed, OPTS);
+    const byRank = computeGitFlowPositions(timed, { ...OPTS, xMode: "rank" });
+    expect(Array.from(byDefault.positions)).toEqual(Array.from(byRank.positions));
+    expect(byDefault.edgeHints).toEqual(byRank.edgeHints);
+    expect(byDefault.branchLabels).toEqual(byRank.branchLabels);
+    // …and t is IGNORED by the default mode: same x whether t is present or not.
+    const untimed = makeTimedRepo();
+    for (const n of untimed.nodes) delete n.t;
+    const noT = computeGitFlowPositions(untimed, OPTS);
+    expect(Array.from(noT.positions)).toEqual(Array.from(byDefault.positions)); // rank x = pure topology
+  });
+
+  it("TIME: dated commits sit ∝ t on ONE axis scaled to the rank-mode width", () => {
+    const repo = makeTimedRepo();
+    const { positions } = computeGitFlowPositions(repo, { ...OPTS, xMode: "time" });
+    // Rank width = 300 (u2 at rank 5); span = 1000 ⇒ x = t * 0.3.
+    expect(xOf(repo, positions, "c0")).toBeCloseTo(0, 3);
+    expect(xOf(repo, positions, "c1")).toBeCloseTo(30, 3);
+    expect(xOf(repo, positions, "c3")).toBeCloseTo(90, 3);
+    expect(xOf(repo, positions, "c4")).toBeCloseTo(300, 3);
+    expect(xOf(repo, positions, "f1")).toBeCloseTo(150, 3); // t=500
+    // Ordering by t regardless of topological rank spacing.
+    expect(xOf(repo, positions, "c1")).toBeGreaterThan(xOf(repo, positions, "c0"));
+    expect(xOf(repo, positions, "c4")).toBeGreaterThan(xOf(repo, positions, "f2"));
+  });
+
+  it("TIME: same-instant commits on a lane spread by the epsilon min-spacing", () => {
+    const repo = makeTimedRepo();
+    const { positions } = computeGitFlowPositions(repo, { ...OPTS, xMode: "time" });
+    const f1 = xOf(repo, positions, "f1");
+    const f2 = xOf(repo, positions, "f2");
+    expect(f2).toBeCloseTo(f1 + EPSILON, 3); // t identical ⇒ epsilon apart
+    expect(f2).toBeGreaterThan(f1); // never collapse
+  });
+
+  it("TIME: an UNDATED commit interpolates between its nearest dated lane neighbours", () => {
+    const repo = makeTimedRepo();
+    const { positions } = computeGitFlowPositions(repo, { ...OPTS, xMode: "time" });
+    // c2 (undated) sits halfway between c1 (x=30) and c3 (x=90).
+    expect(xOf(repo, positions, "c2")).toBeCloseTo(60, 3);
+  });
+
+  it("TIME: a fully UNDATED lane parks at its lane start (fork anchor) + epsilon steps", () => {
+    const repo = makeTimedRepo();
+    const { positions } = computeGitFlowPositions(repo, { ...OPTS, xMode: "time" });
+    const fork = xOf(repo, positions, "c3"); // 90
+    expect(xOf(repo, positions, "u1")).toBeCloseTo(fork + EPSILON, 3);
+    expect(xOf(repo, positions, "u2")).toBeCloseTo(fork + 2 * EPSILON, 3);
+  });
+
+  it("TIME: sessions keep anchoring under their produced commit; labels re-anchor to the moved lane", () => {
+    const repo = makeTimedRepo();
+    const layout = computeGitFlowPositions(repo, { ...OPTS, xMode: "time" });
+    const { positions } = layout;
+    expect(xOf(repo, positions, "st")).toBeCloseTo(xOf(repo, positions, "f1"), 3);
+    expect(yOf(repo, positions, "st")).toBeGreaterThan(yOf(repo, positions, "f1")); // still BELOW
+    const label = layout.branchLabels.find((l) => l.name === "feat-t")!;
+    expect(label.x).toBeCloseTo(xOf(repo, positions, "f1") - 0.6 * OPTS.rankGap, 3); // LABEL_RANK_INSET
+    expect(label.tipX).toBeCloseTo(xOf(repo, positions, "f2"), 3);
+    // Branch label Y / lane assignment logic untouched by the x remap.
+    const rank = computeGitFlowPositions(makeTimedRepo(), OPTS);
+    expect(label.y).toBeCloseTo(rank.branchLabels.find((l) => l.name === "feat-t")!.y, 6);
+    expect(label.lane).toBe(rank.branchLabels.find((l) => l.name === "feat-t")!.lane);
+  });
+
+  it("TIME: one GLOBAL axis across repo bands — equal t ⇒ equal x in different repos", () => {
+    const nodes: GitFlowNodeInput[] = [
+      { id: "ra0", type: "Commit", repo: "A", t: 0 },
+      { id: "ra1", type: "Commit", repo: "A", t: 1000 },
+      { id: "rb0", type: "Commit", repo: "B", t: 500 },
+      { id: "rb1", type: "Commit", repo: "B", t: 1000 },
+    ];
+    const edges: GitFlowEdgeInput[] = [
+      { source: "ra1", target: "ra0", relation: "commit-parent" },
+      { source: "rb1", target: "rb0", relation: "commit-parent" },
+    ];
+    const layout = computeGitFlowPositions({ nodes, edges }, { ...OPTS, xMode: "time" });
+    const x = (i: number): number => layout.positions[i * 2]!;
+    expect(x(1)).toBeCloseTo(x(3), 3); // t=1000 aligns across bands
+    expect(x(2)).toBeCloseTo(x(1) / 2, 3); // t=500 = mid-axis
+  });
+
+  it("TIME: with NO dated commit anywhere, falls back to the rank x wholesale", () => {
+    const repo = makeTimedRepo();
+    for (const n of repo.nodes) delete n.t;
+    const time = computeGitFlowPositions(repo, { ...OPTS, xMode: "time" });
+    const rank = computeGitFlowPositions(repo, OPTS);
+    expect(Array.from(time.positions)).toEqual(Array.from(rank.positions));
+  });
+
+  it("registry adapter forwards LayoutOptions.xMode to the git-flow layout", () => {
+    const repo = makeTimedRepo();
+    const nodeIds = repo.nodes.map((n) => n.id);
+    const edgePairs = new Uint32Array(repo.edges.length * 2);
+    repo.edges.forEach((edge, e) => {
+      edgePairs[e * 2] = repo.index.get(edge.source)!;
+      edgePairs[e * 2 + 1] = repo.index.get(edge.target)!;
+    });
+    const graph = {
+      nodeIds,
+      idToIndex: repo.index,
+      positions: new Float32Array(nodeIds.length * 2),
+      edges: edgePairs,
+      droppedEdges: 0,
+    };
+    const layoutOptions = {
+      nodeTypes: repo.nodes.map((n) => n.type),
+      nodeLanes: repo.nodes.map((n) => n.repo),
+      nodeNames: repo.nodes.map((n) => n.name),
+      nodeTimes: repo.nodes.map((n) => n.t),
+      edgeRelations: repo.edges.map((e) => e.relation),
+    };
+    const viaTime = gitFlowLayout(graph, { ...layoutOptions, xMode: "time" });
+    const direct = computeGitFlowPositions(repo, { xMode: "time" }); // default gaps
+    expect(Array.from(viaTime)).toEqual(Array.from(direct.positions));
+    const viaDefault = gitFlowLayout(graph, layoutOptions);
+    expect(Array.from(viaDefault)).toEqual(
+      Array.from(computeGitFlowPositions(repo).positions), // rank remains the default
+    );
+  });
+});
