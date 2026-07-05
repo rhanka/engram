@@ -360,6 +360,26 @@ describe("buildProjectGraph — T2 git committer-date on Commit nodes", () => {
     expect("t" in commit).toBe(false);
     expect("t_src" in commit).toBe(false);
   });
+
+  it("still stamps a skeleton commit first created as an UNDATED parent stub (git-log is newest-first)", () => {
+    // Child comes FIRST (git-log order): the parent node is created as a bare
+    // `%P` stub before its own log line. addNode() is first-write-wins — the
+    // enrich pass must land t/t_end/t_src (and the subject) on the stub.
+    const PARENT_MS = Date.parse("2025-12-31T23:00:00.000Z");
+    const g = buildProjectGraph({
+      identity: sentropicIdentity,
+      sessions: [],
+      commits: [
+        { sha: "abc1234def", parentShas: ["9876543fed"], subject: "child", committedAtMs: COMMIT_MS },
+        { sha: "9876543fed", parentShas: [], subject: "parent", committedAtMs: PARENT_MS },
+      ],
+    });
+    const parent = g.nodes.find((n) => n.id === "commit_9876543fed")!;
+    expect(parent.t).toBe(PARENT_MS);
+    expect(parent.t_end).toBe(PARENT_MS);
+    expect(parent.t_src).toBe("git.committer_date");
+    expect(parent.subject).toBe("parent");
+  });
 });
 
 describe("buildProjectGraph — T2 derived container spans", () => {
