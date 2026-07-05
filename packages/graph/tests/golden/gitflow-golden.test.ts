@@ -32,6 +32,13 @@ import {
   type GitFlowEdgeInput,
   type GitFlowNodeInput,
 } from "../../src/layout-gitflow";
+import {
+  approximateLabelMeasure,
+  placeGitFlowLabels,
+  type GitFlowLabelCamera,
+  type GitFlowLabelInteraction,
+  type GitFlowLabelPlacement,
+} from "../../src/gitflow-labels";
 // @ts-expect-error -- .mjs harness modules are plain ESM, no types needed.
 import { openOracle } from "./cdp-harness.mjs";
 // @ts-expect-error
@@ -70,6 +77,16 @@ const SESSION_LINK_COLOR = "#94a3b8";
 
 const LAYOUT_OPTS = { rankGap: 60, laneGap: 44, sessionGap: 16 };
 
+/** The demo capture camera in LABEL-POLICY form (same values as DEMO_OPTS). */
+const DEMO_CAMERA: GitFlowLabelCamera = {
+  x: 310,
+  y: 100,
+  zoom: 1,
+  width: 900,
+  height: 340,
+  pixelRatio: 1,
+};
+
 interface Demo {
   fixture: {
     nodes: Array<Record<string, unknown>>;
@@ -78,9 +95,34 @@ interface Demo {
   /** World position per node id (from the git-flow layout). */
   world: Map<string, [number, number]>;
   layout: ReturnType<typeof computeGitFlowPositions>;
+  /** Label-policy output the fixture emitted (SPEC_GITFLOW_LABELS). */
+  placement: GitFlowLabelPlacement;
 }
 
-export function buildGitFlowDemo(): Demo {
+/**
+ * Map a Branch node through the LABEL POLICY output: a PLACED label becomes a
+ * text pill at the policy's (possibly tip/stagger) anchor; a culled/demoted
+ * one stays an EMPTY pill at its layout anchor — the branch stays visible as
+ * structure (I2), its name is hover/selection-first.
+ */
+function branchFixtureNode(
+  nodeIndex: number,
+  id: string,
+  fallback: [number, number],
+  color: string | undefined,
+  placement: GitFlowLabelPlacement,
+): Record<string, unknown> {
+  const placed = placement.labels.find((l) => l.nodeIndex === nodeIndex);
+  if (placed) {
+    return { id, x: placed.x, y: placed.y, size: 10, shape: "box", label: placed.text, color };
+  }
+  return { id, x: fallback[0], y: fallback[1], size: 10, shape: "box", label: "", color };
+}
+
+export function buildGitFlowDemo(
+  camera: GitFlowLabelCamera = DEMO_CAMERA,
+  interaction?: GitFlowLabelInteraction,
+): Demo {
   const nodes: GitFlowNodeInput[] = [];
   const edges: GitFlowEdgeInput[] = [];
   const colorOf = new Map<string, string>();
@@ -160,8 +202,14 @@ export function buildGitFlowDemo(): Demo {
     });
   }
 
-  // ---- Layout, then map to a harness fixture. -----------------------------
+  // ---- Layout → label policy → harness fixture. ---------------------------
   const layout = computeGitFlowPositions({ nodes, edges }, LAYOUT_OPTS);
+  const placement = placeGitFlowLabels({
+    labels: layout.branchLabels,
+    measure: approximateLabelMeasure,
+    camera,
+    interaction,
+  });
   const world = new Map<string, [number, number]>();
   nodes.forEach((node, i) => {
     world.set(node.id, [layout.positions[i * 2]!, layout.positions[i * 2 + 1]!]);
@@ -170,7 +218,7 @@ export function buildGitFlowDemo(): Demo {
   const fixtureNodes = nodes.map((node, i) => {
     const [x, y] = world.get(node.id)!;
     if (node.type === "Branch") {
-      return { id: node.id, x, y, size: 10, shape: "box", label: node.name, color: colorOf.get(node.id) };
+      return branchFixtureNode(i, node.id, [x, y], colorOf.get(node.id), placement);
     }
     if (node.type === "Session") {
       return { id: node.id, x, y, size: 4, shape: "triangle", color: AGENT_COLORS[agentOf.get(node.id)!]! };
@@ -207,7 +255,176 @@ export function buildGitFlowDemo(): Demo {
     return { source: edge.source, target: edge.target, width: 1 };
   });
 
-  return { fixture: { nodes: fixtureNodes, edges: fixtureEdges }, world, layout };
+  return { fixture: { nodes: fixtureNodes, edges: fixtureEdges }, world, layout, placement };
+}
+
+// ---------------------------------------------------------------------------
+// DENSE synthetic scene (SPEC AC1/AC2-analog): trunk of 50 commits + 49
+// branches — 16 `worktree-agent-*` + 2 dependabot (the demoted class), 22
+// human feature/fix/chore branches (several beyond the 22-char ellipsis
+// budget), 2 release + 2 hotfix, 4 stacked tip-only refs (guaranteed label
+// pressure). Deterministic tables only.
+// ---------------------------------------------------------------------------
+
+const DENSE_REPO = "dense";
+const DENSE_PALETTE = Object.values(BRANCH_COLORS);
+const DENSE_AGENT_COLOR = "#9ca3af";
+
+const DENSE_HUMAN_NAMES = [
+  "feat/alpha-service",
+  "feat/beta-widget-rework",
+  "feat/cadrage-geo-integration-longue",
+  "feat/descriptions-and-labels-default",
+  "feat/ontology-hierarchy-evolutions",
+  "feat/windowed-loader",
+  "feat/citations-pass2-engine",
+  "feat/agent-stats-hybrid-skeleton",
+  "feat/recon-center-twins",
+  "feat/studio-visual-finalize",
+  "feat/exports-node-fallback",
+  "feat/search-graphrag-phase-a",
+  "feat/time-oriented-v3",
+  "feat/upstream-lot2-typerefs",
+  "feat/assembly-reconciliation-hardening",
+  "feat/interim-cited-source-viewer",
+  "feat/mistral-ocr-v4-page-bbox",
+  "feat/node-type-boxes-v3",
+  "fix/graph-export-published-dep",
+  "fix/mistral-ocr-5xx-resilient",
+  "chore/track-accept-effective-wave",
+  "chore/release-0.17.0",
+];
+
+export function buildDenseGitFlowScene(): {
+  nodes: GitFlowNodeInput[];
+  edges: GitFlowEdgeInput[];
+  colorOf: Map<string, string>;
+} {
+  const nodes: GitFlowNodeInput[] = [];
+  const edges: GitFlowEdgeInput[] = [];
+  const colorOf = new Map<string, string>();
+
+  for (let i = 0; i < 50; i += 1) {
+    nodes.push({ id: `t${i}`, type: "Commit", repo: DENSE_REPO });
+    colorOf.set(`t${i}`, TRUNK_COLOR);
+    if (i > 0) edges.push({ source: `t${i}`, target: `t${i - 1}`, relation: "commit-parent" });
+  }
+  nodes.push({ id: "b-main", type: "Branch", repo: DENSE_REPO, name: "main" });
+  colorOf.set("b-main", TRUNK_COLOR);
+  edges.push({ source: "b-main", target: "t49", relation: "branch-head" });
+
+  const specs: Array<{ name: string; fork: number; len: number; mergedAt?: number }> = [];
+  DENSE_HUMAN_NAMES.forEach((name, k) => {
+    const fork = 1 + ((k * 2) % 45);
+    const len = 2 + (k % 3);
+    specs.push({
+      name,
+      fork,
+      len,
+      mergedAt: k % 2 === 1 ? Math.min(48, fork + len + 2) : undefined,
+    });
+  });
+  specs.push({ name: "release/1.2.0", fork: 10, len: 2, mergedAt: 15 });
+  specs.push({ name: "release/1.3.0", fork: 30, len: 2 });
+  specs.push({ name: "hotfix/cve-2026-0001", fork: 20, len: 1, mergedAt: 23 });
+  specs.push({ name: "hotfix/crash-on-empty-scene", fork: 40, len: 1 });
+  for (let a = 0; a < 16; a += 1) {
+    const hex = (0xa000000 + a * 0x11111).toString(16).padStart(7, "0");
+    const fork = 2 + ((a * 3) % 44);
+    specs.push({
+      name: `worktree-agent-${hex}beefbeef${(a % 10).toString()}`,
+      fork,
+      len: 1 + (a % 2),
+      mergedAt: a % 3 === 0 ? Math.min(48, fork + 4) : undefined,
+    });
+  }
+  specs.push({ name: "dependabot/npm_and_yarn/lodash-4.17.21", fork: 12, len: 1 });
+  specs.push({ name: "dependabot/pip/requests-2.31.0", fork: 33, len: 1 });
+
+  const slug = (name: string): string => name.replace(/\W+/g, "-");
+  specs.forEach((b, k) => {
+    const color = b.name.startsWith("worktree-agent-") || b.name.startsWith("dependabot/")
+      ? DENSE_AGENT_COLOR
+      : DENSE_PALETTE[k % DENSE_PALETTE.length]!;
+    const ids = Array.from({ length: b.len }, (_, j) => `${slug(b.name)}-${j}`);
+    ids.forEach((id, j) => {
+      nodes.push({ id, type: "Commit", repo: DENSE_REPO });
+      colorOf.set(id, color);
+      edges.push({
+        source: id,
+        target: j === 0 ? `t${b.fork}` : ids[j - 1]!,
+        relation: "commit-parent",
+      });
+    });
+    const branchNode = `b-${slug(b.name)}`;
+    nodes.push({ id: branchNode, type: "Branch", repo: DENSE_REPO, name: b.name });
+    colorOf.set(branchNode, color);
+    edges.push({ source: branchNode, target: ids[ids.length - 1]!, relation: "branch-head" });
+    if (b.mergedAt !== undefined) {
+      edges.push({ source: ids[ids.length - 1]!, target: `t${b.mergedAt}`, relation: "merged-as" });
+    }
+  });
+
+  // Four tip-only refs STACKED on the same trunk commit: guaranteed vertical
+  // label pressure — the culling gate must engage (I1), never the geometry.
+  for (const tag of ["v1.2.0", "v1.3.0", "v1.4.0", "v1.5.0"]) {
+    const id = `ref-${tag}`;
+    nodes.push({ id, type: "Branch", repo: DENSE_REPO, name: `${tag}-tag-ref` });
+    colorOf.set(id, "#64748b");
+    edges.push({ source: id, target: "t30", relation: "branch-head" });
+  }
+
+  return { nodes, edges, colorOf };
+}
+
+interface DenseDemo {
+  fixture: { nodes: Array<Record<string, unknown>>; edges: Array<Record<string, unknown>> };
+  layout: ReturnType<typeof computeGitFlowPositions>;
+  placement: GitFlowLabelPlacement;
+  nodes: GitFlowNodeInput[];
+}
+
+export function buildDenseGitFlowDemo(
+  camera: GitFlowLabelCamera,
+  interaction?: GitFlowLabelInteraction,
+): DenseDemo {
+  const { nodes, edges, colorOf } = buildDenseGitFlowScene();
+  const layout = computeGitFlowPositions({ nodes, edges }, LAYOUT_OPTS);
+  const placement = placeGitFlowLabels({
+    labels: layout.branchLabels,
+    measure: approximateLabelMeasure,
+    camera,
+    interaction,
+  });
+
+  const fixtureNodes = nodes.map((node, i) => {
+    const x = layout.positions[i * 2]!;
+    const y = layout.positions[i * 2 + 1]!;
+    if (node.type === "Branch") {
+      return branchFixtureNode(i, node.id, [x, y], colorOf.get(node.id), placement);
+    }
+    return { id: node.id, x, y, size: 5, shape: "dot", color: colorOf.get(node.id) };
+  });
+  const fixtureEdges = edges.map((edge, e) => {
+    const hint = layout.edgeHints[e]!;
+    if (hint.style === "flow-port" || hint.style === "flow-port-reverse") {
+      const edgeStyle = hint.arrow === false ? `${hint.style}-no-arrow` : hint.style;
+      return {
+        source: edge.source,
+        target: edge.target,
+        width: 2,
+        color: colorOf.get(edge.source) ?? TRUNK_COLOR,
+        edge_style: edgeStyle,
+        ...(hint.dash === "dashed" ? { dash: "dashed" } : {}),
+      };
+    }
+    if (hint.style === "hidden") {
+      return { source: edge.source, target: edge.target, width: 1, color: "#00000000" };
+    }
+    return { source: edge.source, target: edge.target, width: 1 };
+  });
+
+  return { fixture: { nodes: fixtureNodes, edges: fixtureEdges }, layout, placement, nodes };
 }
 
 // Camera framing the whole band: world x ∈ [−36, ~660], y ∈ [0, ~215].
@@ -311,6 +528,25 @@ describe("git-flow demo — layout sanity (pure, always runs)", () => {
     // delta forks at 6 — alpha's lane is NOT free (alpha merged at rank 5,
     // 5+gap ≥ 6), so delta must sit on a fresh lane: the merge EXTENDS reuse.
     expect(y("hotfix-delta-0")).not.toBe(y("feat-alpha-0"));
+  });
+
+  it("label policy: all 9 demo labels place (compacted) at the demo camera — zero culled", () => {
+    expect(demo.placement.tier).toBe(1);
+    expect(demo.placement.culled).toEqual([]);
+    const texts = [...demo.placement.labels.map((l) => l.text)].sort();
+    expect(texts).toEqual(
+      [
+        "main",
+        "feat:alpha",
+        "feat:beta",
+        "feat:gamma",
+        "hotfix:delta",
+        "feat:epsilon",
+        "fix:zeta",
+        "feat:eta",
+        "chore:theta",
+      ].sort(),
+    );
   });
 
   it("merged branches emit ARROWED flow-port merge hints; forks are BARE", () => {
@@ -481,6 +717,183 @@ describe("git-flow demo — golden capture (Chrome/CDP; skips without Chrome)", 
     // eslint-disable-next-line no-console
     console.log(`[gitflow-golden] webgl demo screenshot: ${png}`);
   }, 60_000);
+});
+
+// ---------------------------------------------------------------------------
+// SPEC_GITFLOW_LABELS acceptance — dense fixture at 3 zoom tiers.
+// ---------------------------------------------------------------------------
+
+const DENSE_VIEW = { width: 900, height: 340 };
+const DENSE_CENTER = { x: 1470, y: 300 };
+const denseCamera = (zoom: number, center = DENSE_CENTER): GitFlowLabelCamera => ({
+  ...center,
+  zoom,
+  width: DENSE_VIEW.width,
+  height: DENSE_VIEW.height,
+  pixelRatio: 1,
+});
+/** Probe cameras for the three LOD tiers (defaults: T0 <0.3, T2 ≥1.2). The
+ * T2 CAPTURE recentres near the trunk so the artifact shows agent pills. */
+const TIER_CAMERAS: Array<[string, number, { x: number; y: number }]> = [
+  ["t0", 0.15, DENSE_CENTER],
+  ["t1", 0.6, DENSE_CENTER],
+  ["t2", 2.0, { x: 1500, y: 60 }],
+];
+
+/** AC1 — no two ACCEPTED label AABBs intersect. */
+function expectDisjointPills(placement: GitFlowLabelPlacement, context: string): void {
+  for (let a = 0; a < placement.labels.length; a += 1) {
+    for (let b = a + 1; b < placement.labels.length; b += 1) {
+      const A = placement.labels[a]!;
+      const B = placement.labels[b]!;
+      const overlap =
+        Math.abs(A.screenX - B.screenX) < (A.w + B.w) / 2 &&
+        Math.abs(A.screenY - B.screenY) < (A.h + B.h) / 2;
+      expect(overlap, `${context}: "${A.text}" overlaps "${B.text}"`).toBe(false);
+    }
+  }
+}
+
+describe("git-flow labels — dense scene, LOD tiers (pure, always runs)", () => {
+  it("dense scene has the mandated shape: ≥40 branches incl. ≥15 worktree-agent-*", () => {
+    const { nodes } = buildDenseGitFlowScene();
+    const branches = nodes.filter((n) => n.type === "Branch");
+    expect(branches.length).toBeGreaterThanOrEqual(40);
+    expect(
+      branches.filter((b) => (b.name ?? "").startsWith("worktree-agent-")).length,
+    ).toBeGreaterThanOrEqual(15);
+  });
+
+  it("AC1: zero overlapping pills at all three zoom tiers", () => {
+    for (const [tag, zoom, center] of TIER_CAMERAS) {
+      expectDisjointPills(buildDenseGitFlowDemo(denseCamera(zoom)).placement, tag);
+      expectDisjointPills(
+        buildDenseGitFlowDemo(denseCamera(zoom, center)).placement,
+        `${tag}@capture-center`,
+      );
+    }
+  });
+
+  it("T0 (far): trunk pill only — no worktree-agent-* / autogenerated pill (AC2 analog)", () => {
+    const demo = buildDenseGitFlowDemo(denseCamera(0.15));
+    expect(demo.placement.tier).toBe(0);
+    expect(demo.placement.labels.map((l) => l.text)).toEqual(["main"]);
+  });
+
+  it("T1 (mid): human labels survive culling; still no agent:* pill; culling engaged", () => {
+    const demo = buildDenseGitFlowDemo(denseCamera(0.6));
+    expect(demo.placement.tier).toBe(1);
+    expect(demo.placement.labels.length).toBeGreaterThan(5);
+    expect(demo.placement.labels.some((l) => l.text.startsWith("agent:"))).toBe(false);
+    expect(demo.placement.labels.some((l) => l.text.startsWith("deps:"))).toBe(false);
+    // The stacked tip-only refs force REAL culling (I1 gate, not geometry).
+    expect(demo.placement.culled.length).toBeGreaterThan(0);
+  });
+
+  it("T2 (near): autogenerated appear in compacted agent:<hash> form, culling-gated", () => {
+    const demo = buildDenseGitFlowDemo(denseCamera(2.0));
+    expect(demo.placement.tier).toBe(2);
+    expect(demo.placement.labels.some((l) => l.text.startsWith("agent:"))).toBe(true);
+  });
+
+  it("AC5: same scene + camera ⇒ byte-identical label set across runs, at every tier", () => {
+    for (const [tag, zoom] of TIER_CAMERAS) {
+      const a = buildDenseGitFlowDemo(denseCamera(zoom));
+      const b = buildDenseGitFlowDemo(denseCamera(zoom));
+      expect(JSON.stringify(a.placement.labels), tag).toBe(JSON.stringify(b.placement.labels));
+      expect(a.placement.culled, tag).toEqual(b.placement.culled);
+    }
+  });
+
+  it("AC4: a demoted agent branch marked SELECTED joins the placement with its FULL name", () => {
+    const bare = buildDenseGitFlowDemo(denseCamera(0.6));
+    const agent = bare.layout.branchLabels.find((l) => l.name.startsWith("worktree-agent-a0888"))!;
+    expect(agent).toBeDefined();
+    expect(bare.placement.placed.has(agent.nodeIndex)).toBe(false); // demoted at T1
+    const sel = buildDenseGitFlowDemo(denseCamera(0.6), { selected: new Set([agent.nodeIndex]) });
+    const pill = sel.placement.labels.find((l) => l.nodeIndex === agent.nodeIndex);
+    expect(pill).toBeDefined();
+    expect(pill!.fullName).toBe(true);
+    expect(pill!.text).toBe(agent.name);
+    expectDisjointPills(sel.placement, "t1+selection");
+  });
+});
+
+describe("git-flow labels — dense golden captures (Chrome/CDP; skips without Chrome)", () => {
+  /** Slate-ish text-ink counter: excludes every fixture stroke colour, keeps
+   * the dark (possibly AA-lightened) BOX label text. */
+  function slateInkInRect(
+    cap: { width: number; height: number; data: Uint8ClampedArray },
+    cx: number,
+    cy: number,
+    halfW: number,
+    halfH: number,
+  ): number {
+    let ink = 0;
+    for (let y = Math.round(cy - halfH); y <= Math.round(cy + halfH); y += 1) {
+      for (let x = Math.round(cx - halfW); x <= Math.round(cx + halfW); x += 1) {
+        const p = samplePixel(cap, x, y);
+        if (!p || p[3]! <= 10) continue;
+        if (p[0]! < 160 && p[1]! < 160 && p[2]! < 170) ink += 1;
+      }
+    }
+    return ink;
+  }
+
+  it("captures the dense fixture at the 3 tier cameras (artifacts) — deterministic A/B", async () => {
+    if (!chromeUp || !oracle) return;
+    for (const [tag, zoom, center] of TIER_CAMERAS) {
+      const demo = buildDenseGitFlowDemo(denseCamera(zoom, center));
+      const opts = {
+        dpr: 1,
+        cssWidth: DENSE_VIEW.width,
+        cssHeight: DENSE_VIEW.height,
+        camera: { ...center, zoom },
+      };
+      const a = await oracle.capture(demo.fixture, opts);
+      const b = await oracle.capture(demo.fixture, opts);
+      const d = diffPixels(a, b, { channelTolerance: 0, maxFailingPixels: 0 });
+      expect(d.failingPixels, tag).toBe(0);
+      const png = writePng(a, `gitflow-dense-${tag}.png`);
+      // eslint-disable-next-line no-console
+      console.log(`[gitflow-golden] dense ${tag} screenshot: ${png}`);
+    }
+  }, 120_000);
+
+  it("AC4 probe: the selected demoted branch actually DRAWS its full-name pill", async () => {
+    if (!chromeUp || !oracle) return;
+    const bare = buildDenseGitFlowDemo(denseCamera(0.6));
+    // Pick the agent label whose placed pill would sit most centrally
+    // on-screen (deterministic — computed from the layout, no randomness).
+    const sx = (wx: number): number =>
+      (wx - DENSE_CENTER.x) * 0.6 + DENSE_VIEW.width / 2;
+    const agents = bare.layout.branchLabels.filter((l) => l.name.startsWith("worktree-agent-"));
+    const central = [...agents].sort(
+      (a, b) =>
+        Math.abs(sx(a.x) - DENSE_VIEW.width / 2) - Math.abs(sx(b.x) - DENSE_VIEW.width / 2) ||
+        (a.name < b.name ? -1 : 1),
+    )[0]!;
+    const sel = buildDenseGitFlowDemo(denseCamera(0.6), { selected: new Set([central.nodeIndex]) });
+    const pill = sel.placement.labels.find((l) => l.nodeIndex === central.nodeIndex)!;
+    expect(pill).toBeDefined();
+
+    const opts = {
+      dpr: 1,
+      cssWidth: DENSE_VIEW.width,
+      cssHeight: DENSE_VIEW.height,
+      camera: { ...DENSE_CENTER, zoom: 0.6 },
+    };
+    const withSel = await oracle.capture(sel.fixture, opts);
+    const without = await oracle.capture(bare.fixture, opts);
+    const inkSel = slateInkInRect(withSel, pill.screenX, pill.screenY, pill.w / 2, pill.h / 2);
+    const inkBare = slateInkInRect(without, pill.screenX, pill.screenY, pill.w / 2, pill.h / 2);
+    expect(inkSel, `selected pill text ink (sel=${inkSel} bare=${inkBare})`).toBeGreaterThan(
+      inkBare + 5,
+    );
+    const png = writePng(withSel, "gitflow-dense-t1-selected.png");
+    // eslint-disable-next-line no-console
+    console.log(`[gitflow-golden] dense t1+selection screenshot: ${png}`);
+  }, 120_000);
 });
 
 describe("git-flow demo — napi smoke screenshot (always where napi is present)", () => {
