@@ -19,7 +19,12 @@
   import ReconciliationView from "./components/ReconciliationView.svelte";
   import SelectionPanel from "./components/SelectionPanel.svelte";
   import WorkspaceShell from "./components/WorkspaceShell.svelte";
-  import { refsForCitations, resolveBundleSource, sourceHrefFor } from "./lib/citedSources.js";
+  import {
+    buildSelectionThread,
+    resolveBundleSource,
+    sameCitation,
+    sourceHrefFor,
+  } from "./lib/citedSources.js";
   import {
     fetchClassHierarchies,
     fetchEntity,
@@ -40,7 +45,9 @@
     attachForceLayout,
     resolveSelectedIds,
     communityStats,
+    indexNodes,
     nodeCommunity,
+    nodeLabel,
     nodeType,
   } from "./lib/graphAdapter.js";
   import {
@@ -441,7 +448,7 @@
     searchIndex = await fetchSearchIndex();
   }
 
-  // ----- cited-source viewer (INTERIM, architect-ratified §S.5) --------------
+  // ----- cited-source viewer (INTERIM, architect-ratified §S.5 + §S.6.1) -----
   // IMPURE studio glue: the EntityPanel affordance hands the node's raw
   // OntologyCitation list here; the frozen public projection converts it to
   // CitedSourceRef[] and a CENTRAL OVERLAY (qualified UX, immo parity: covers
@@ -449,21 +456,106 @@
   // hosts the PURE CitedSourceViewer with the bundle resolver (sources/ dir,
   // `--include-sources` export). Clicking another citation while open simply
   // replaces this state -> the viewer RETARGETS (no stacking).
-  // null = closed; { refs, activeIndex, title } = open.
+  //
+  // §S.6.1 (selection-scope navigation): every open builds the GROUPED thread
+  // from the CURRENT multi-selection (selection order → document → page, via
+  // buildSelectionThread) so the viewer can navigate ONE continuous thread
+  // across all selected entities. `meta` mirrors `groups` with the RAW
+  // citation objects; onFocusChange maps back through it so the right panel
+  // can follow (highlight + scroll the exact passage).
+  // null = closed; { groups, meta, activeGroupIndex, activeIndex, scope, title } = open.
   let sourceView = $state(null);
-  function handleOpenSource({ citations, index, fallbackSourceFile, label }) {
-    const refs = refsForCitations(citations, fallbackSourceFile);
-    if (refs.length === 0) return;
-    const active = Number.isInteger(index) && index >= 0 && index < refs.length ? index : 0;
-    const locator = refs[active]?.rawRef ?? refs[active]?.sourceUrl ?? "";
+  // Viewer→panel sync target: { entityId, citation } (null = viewer closed).
+  let sourceFocus = $state(null);
+
+  /** Selected entities (SELECTION ORDER) with their best-known citation lists:
+   *  the hydrated sidecar's full list when available, else the inline K-set —
+   *  the SAME precedence EntityPanel renders, so panel positions and thread
+   *  positions refer to the same arrays. */
+  function selectionThreadEntities() {
+    const idx = indexNodes(facetGraph);
+    return viewerState.selection.entities.map((id) => {
+      const node = idx.get(id) ?? { id };
+      const full = Array.isArray(entityCache[id]?.citations?.citations)
+        ? entityCache[id].citations.citations
+        : null;
+      return {
+        id,
+        label: nodeLabel(node),
+        citations: full ?? (Array.isArray(node.citations) ? node.citations : []),
+        fallbackSourceFile: node.source_file ?? null,
+      };
+    });
+  }
+
+  function handleOpenSource({ citations, index, fallbackSourceFile, label, entityId = null }) {
+    const clicked = Array.isArray(citations)
+      ? (citations[Number.isInteger(index) && index >= 0 ? index : 0] ?? null)
+      : null;
+    // Build the selection thread; if the clicked entity is not part of the
+    // multi-selection (e.g. focused via a type/community bucket), fall back to
+    // a single-group thread for it — same ordering rules, plain Entité mode.
+    let thread = buildSelectionThread(selectionThreadEntities());
+    let gi = entityId != null ? thread.groups.findIndex((g) => g.id === entityId) : -1;
+    if (gi < 0) {
+      thread = buildSelectionThread([
+        { id: entityId ?? "(entity)", label, citations, fallbackSourceFile },
+      ]);
+      gi = 0;
+    }
+    if (thread.groups.length === 0) return;
+    // Aim at the clicked citation inside its (thread-ordered) group.
+    const metaCitations = thread.meta[gi]?.citations ?? [];
+    let ri = clicked ? metaCitations.indexOf(clicked) : -1;
+    if (ri < 0 && clicked) ri = metaCitations.findIndex((c) => sameCitation(c, clicked));
+    if (ri < 0) ri = 0;
+    // Scope policy (§S.6.1): fresh open = Entité; a click on ANOTHER selected
+    // entity while the viewer is open keeps/switches to Sélection; a click on
+    // the SAME entity keeps whatever scope the user last chose.
+    const eligible = thread.groups.filter((g) => g.refs.length > 0).length >= 2;
+    let scope = "entity";
+    if (sourceView && eligible) {
+      const currentEntityId = sourceFocus?.entityId ?? null;
+      scope =
+        entityId != null && currentEntityId != null && entityId !== currentEntityId
+          ? "selection"
+          : (sourceView.scope ?? "entity");
+    }
+    const activeRef = thread.groups[gi]?.refs?.[ri] ?? null;
+    const locator = activeRef?.rawRef ?? activeRef?.sourceUrl ?? "";
     sourceView = {
-      refs,
-      activeIndex: active,
+      groups: thread.groups,
+      meta: thread.meta,
+      activeGroupIndex: gi,
+      activeIndex: ri,
+      scope,
       title: label ? `${label} — ${locator}` : locator,
+    };
+    sourceFocus = {
+      entityId: thread.groups[gi].id,
+      citation: metaCitations[ri] ?? null,
     };
   }
   function handleCloseSource() {
     sourceView = null;
+    sourceFocus = null;
+  }
+  /** §S.6.1: the viewer navigated — make the RIGHT PANEL follow: highlight +
+   *  scroll the current entity and citation, and open that entity's detail. */
+  function handleSourceFocusChange(groupId, refIndex) {
+    if (!sourceView || groupId == null) return;
+    const meta = sourceView.meta.find((m) => m.id === groupId);
+    sourceFocus = { entityId: groupId, citation: meta?.citations?.[refIndex] ?? null };
+    // Open the entity's detail in the selection panel (no graph reload) so the
+    // highlighted citation is visible; hydrate its sidecar lazily.
+    if (viewerState.focusId !== groupId) {
+      viewerState = setFocus(viewerState, groupId);
+      void ensureEntity(groupId);
+    }
+  }
+  /** §S.6.1: remember the user's scope choice so a retarget keeps it. */
+  function handleSourceScopeChange(scope) {
+    if (sourceView) sourceView = { ...sourceView, scope };
   }
 
   // Open an entity surfaced by the Answer view IN the graph: switch to the
@@ -711,11 +803,15 @@
                  glue stays in this file. -->
             <div class="source-overlay" role="region" aria-label="Cited source">
               <CitedSourceViewer
-                refs={sourceView.refs}
+                groups={sourceView.groups}
+                activeGroupIndex={sourceView.activeGroupIndex}
                 activeIndex={sourceView.activeIndex}
+                scope={sourceView.scope}
                 title={sourceView.title}
                 resolveSource={resolveBundleSource}
                 sourceHref={sourceHrefFor}
+                onFocusChange={handleSourceFocusChange}
+                onScopeChange={handleSourceScopeChange}
                 onClose={handleCloseSource}
               />
             </div>
@@ -734,6 +830,7 @@
             onToggleEntity={handleToggleEntity}
             onClear={handleClear}
             onOpenSource={handleOpenSource}
+            {sourceFocus}
           />
         </div>
       </WorkspaceShell>

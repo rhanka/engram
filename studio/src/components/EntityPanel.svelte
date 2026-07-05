@@ -5,7 +5,7 @@
    * + the description sidecar). Clicking a relation target opens that entity
    * (highlight, NO graph reload) via onOpenEntity.
    */
-  import { Badge, Collapsible } from "@sentropic/design-system-svelte";
+  import { Badge, Button, Collapsible } from "@sentropic/design-system-svelte";
   import {
     relationRowsFor,
     indexNodes,
@@ -18,7 +18,19 @@
   } from "../lib/graphAdapter.js";
   import { renderInlineMarkdown } from "../lib/markdown.js";
 
-  let { graph, focusId = null, entity = null, onOpenEntity, hideTitle = false, onOpenSource = null } = $props();
+  let {
+    graph,
+    focusId = null,
+    entity = null,
+    onOpenEntity,
+    hideTitle = false,
+    onOpenSource = null,
+    // §S.6.1 right-panel sync: the RAW citation currently shown in the
+    // cited-source viewer (null when the viewer is closed or focused on
+    // another entity). The matching passage is highlighted + scrolled into
+    // view, and the Citations accordions open to reveal it.
+    focusCitation = null,
+  } = $props();
 
   const node = $derived(focusId ? (indexNodes(graph).get(focusId) ?? null) : null);
   const relations = $derived(focusId ? relationRowsFor(focusId, graph) : []);
@@ -69,11 +81,50 @@
       index: passage.index,
       fallbackSourceFile: node?.source_file ?? null,
       label: node ? nodeLabel(node) : null,
+      // §S.6.1: the clicked entity's id lets the App aim the SELECTION thread
+      // at the right group (and keep/switch to the Sélection scope).
+      entityId: node?.id ?? focusId ?? null,
     });
   }
+
+  // §S.6.1 viewer→panel sync: resolve the focused citation to its position in
+  // THIS panel's flat citation list. Object identity first (the thread is
+  // built from the same arrays), loose field identity as a fallback (list
+  // swapped by the lazy sidecar upgrade). -1 = no highlight.
+  const focusCitationIndex = $derived.by(() => {
+    if (!focusCitation) return -1;
+    const byRef = sourceCitations.indexOf(focusCitation);
+    if (byRef >= 0) return byRef;
+    return sourceCitations.findIndex((c) => citationLooksSame(c, focusCitation));
+  });
+  function citationLooksSame(a, b) {
+    if (!a || !b) return false;
+    const norm = (v) => (v == null ? null : String(v));
+    return (
+      norm(a.source_file) === norm(b.source_file) &&
+      norm(a.page) === norm(b.page) &&
+      norm(a.section) === norm(b.section) &&
+      norm(a.quote ?? a.excerpt) === norm(b.quote ?? b.excerpt)
+    );
+  }
+  // Scroll the highlighted passage into view as the viewer navigates. rAF so
+  // the accordions (opened by the prop resync below) have rendered; guarded
+  // for jsdom (no scrollIntoView there).
+  let panelEl = $state(null);
+  $effect(() => {
+    if (focusCitationIndex < 0 || !panelEl) return;
+    const raf =
+      typeof requestAnimationFrame === "function" ? requestAnimationFrame : (fn) => setTimeout(fn, 0);
+    raf(() => {
+      const el = panelEl?.querySelector("[data-cite-current='true']");
+      if (el && typeof el.scrollIntoView === "function") {
+        el.scrollIntoView({ block: "center", behavior: "smooth" });
+      }
+    });
+  });
 </script>
 
-<aside class="entity" aria-label="Entity detail">
+<aside class="entity" aria-label="Entity detail" bind:this={panelEl}>
   {#if !node}
     <div class="entity-empty">
       <p class="entity-empty-kicker">Entity</p>
@@ -151,9 +202,10 @@
       </Collapsible>
     </div>
 
-    <!-- SVELTE-2: citations as a double accordion (file > passages). -->
+    <!-- SVELTE-2: citations as a double accordion (file > passages). §S.6.1:
+         a viewer-focused citation OPENS the accordion path down to itself. -->
     <div class="entity-acc">
-      <Collapsible title="Citations" open={false}>
+      <Collapsible title="Citations" open={focusCitationIndex >= 0}>
         {#snippet trailing()}
           <Badge shape="circle" size="sm" tone="neutral">{citationTotal}</Badge>
         {/snippet}
@@ -163,13 +215,21 @@
           <ul class="entity-cite-files">
             {#each citationFiles as cf (cf.file)}
               <li>
-                <Collapsible title={cf.file} open={false} size="sm">
+                <Collapsible
+                  title={cf.file}
+                  open={cf.passages.some((p) => p.index === focusCitationIndex)}
+                  size="sm"
+                >
                   {#snippet trailing()}
                     <Badge shape="circle" size="sm" tone="neutral">{cf.count}</Badge>
                   {/snippet}
                   <ul class="entity-cite-passages">
                     {#each cf.passages as p, i (cf.file + i)}
-                      <li class="entity-cite-passage">
+                      <li
+                        class="entity-cite-passage"
+                        class:entity-cite-passage--current={p.index === focusCitationIndex}
+                        data-cite-current={p.index === focusCitationIndex ? "true" : undefined}
+                      >
                         <div class="entity-cite-loc">
                           {#if p.section}<span class="entity-cite-section">{p.section}</span>{/if}
                           {#if p.page != null}<span class="entity-cite-page">p.{p.page}</span>{/if}
@@ -178,18 +238,19 @@
                         {#if p.quote}<blockquote class="entity-cite-quote">{p.quote}</blockquote>{/if}
                         {#if onOpenSource}
                           <!-- Qualified UX (immo "Voir la preuve · p.N"): FULL-WIDTH
-                               button UNDER the quote — never truncates against the
-                               panel edge, one per citation. -->
-                          <button
+                               DS Button (secondary) UNDER the quote — never
+                               truncates against the panel edge, one per citation. -->
+                          <Button
+                            variant="secondary"
+                            size="sm"
                             class="entity-cite-src"
-                            type="button"
                             title="Ouvrir la source citée avec ce passage surligné"
                             aria-label="Voir la source de cette citation"
                             onclick={() => openSource(p)}
                           >
                             <svg class="entity-cite-src-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
                             <span>Voir la source{#if p.page != null}&nbsp;· p.{p.page}{/if}</span>
-                          </button>
+                          </Button>
                         {/if}
                       </li>
                     {/each}
@@ -377,6 +438,15 @@
     padding: 0.25rem 0;
     border-bottom: 1px dotted var(--st-semantic-border-subtle, #e2e8f0);
   }
+  /* §S.6.1 viewer→panel sync: the citation currently OPEN in the cited-source
+     viewer. DS-token highlight (selected surface + primary accent bar). */
+  .entity-cite-passage--current {
+    background: var(--st-semantic-surface-selected, #eff6ff);
+    border-left: 3px solid var(--st-semantic-action-primary, #2563eb);
+    border-radius: 0 var(--st-radius-sm, 4px) var(--st-radius-sm, 4px) 0;
+    padding-left: 0.45rem;
+    padding-right: 0.3rem;
+  }
   .entity-cite-section {
     display: block;
     font-size: 0.74rem;
@@ -402,30 +472,15 @@
     white-space: nowrap;
   }
   /* Qualified UX (immo parity): FULL-WIDTH "Voir la source · p.N" under the
-     quote — wraps inside the panel, can never clip against the right edge. */
-  .entity-cite-src {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.35rem;
+     quote. Chrome comes from the DS Button (secondary/sm); the local hooks are
+     LAYOUT-ONLY (full width + icon sizing — :global because the class lands on
+     the DS-rendered root, which Svelte cannot scope). */
+  .entity-cite-passage :global(.entity-cite-src) {
     width: 100%;
     margin-top: 0.3rem;
-    border: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
-    background: var(--st-semantic-surface-subtle, #f8fafc);
-    border-radius: var(--st-radius-sm, 4px);
-    color: var(--st-semantic-text-link, #2563eb);
-    cursor: pointer;
-    font-size: 0.74rem;
-    font-weight: 600;
-    line-height: 1.2;
-    padding: 0.3rem 0.5rem;
     min-width: 0;
   }
-  .entity-cite-src:hover {
-    border-color: var(--st-semantic-action-primary, #2563eb);
-    background: var(--st-semantic-surface-selected, #eff6ff);
-  }
-  .entity-cite-src-ico {
+  .entity-cite-passage :global(.entity-cite-src-ico) {
     width: 0.85rem;
     height: 0.85rem;
     flex-shrink: 0;
