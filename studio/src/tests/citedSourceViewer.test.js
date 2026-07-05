@@ -257,8 +257,11 @@ describe("CitedSourceViewer grouped thread — selection scope (§S.6.1)", () =>
     );
   const byLabel = (el, label) =>
     [...el.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === label);
+  // DS ContentSwitcher renders the scope toggle as role="tab" options.
   const scopeBtn = (el, text) =>
-    [...el.querySelectorAll(".csv-scope-btn")].find((b) => b.textContent.trim() === text);
+    [...el.querySelectorAll(".st-contentSwitcher__option")].find(
+      (b) => b.textContent.trim() === text,
+    );
   const pressKey = async (key) => {
     window.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
     flushSync();
@@ -270,7 +273,7 @@ describe("CitedSourceViewer grouped thread — selection scope (§S.6.1)", () =>
     await settle();
     expect(scopeBtn(el, "Entité")).toBeTruthy();
     expect(scopeBtn(el, "Sélection")).toBeTruthy();
-    expect(scopeBtn(el, "Entité").getAttribute("aria-pressed")).toBe("true");
+    expect(scopeBtn(el, "Entité").getAttribute("aria-selected")).toBe("true");
     // Counter covers the CURRENT entity only (2 refs), not the thread (4).
     expect(el.textContent).toContain("Citation 1/2");
     expect(el.querySelector('[aria-label="Entity navigator"]')).toBeNull();
@@ -408,7 +411,7 @@ describe("CitedSourceViewer grouped thread — selection scope (§S.6.1)", () =>
 });
 
 describe("CitedSourceViewer purity (rebase seam)", () => {
-  it("imports nothing from graphify — only the sibling pure lib and svelte", () => {
+  it("imports nothing from graphify — only svelte, the DS package and the sibling pure lib", () => {
     const source = readFileSync(
       resolve(process.cwd(), "src/components/CitedSourceViewer.svelte"),
       "utf8",
@@ -417,8 +420,13 @@ describe("CitedSourceViewer purity (rebase seam)", () => {
       ...source.matchAll(/^\s*import\s+(?:[\s\S]*?from\s+)?["']([^"']+)["']/gm),
     ].map((m) => m[1]);
     expect(importSpecs.length).toBeGreaterThan(0);
+    // ALLOWED_EXTERNAL mirrors the @sentropic/cited-source-viewer package:
+    // svelte + @sentropic/design-system-svelte + pdfjs-dist (the DS is part of
+    // the architect-owned seam; graphify runtime imports remain forbidden).
     for (const spec of importSpecs) {
-      expect(spec).toMatch(/^(svelte|\.\.\/lib\/cited-source\/)/);
+      expect(spec).toMatch(
+        /^(svelte|@sentropic\/design-system-svelte$|pdfjs-dist|\.\.\/lib\/cited-source\/)/,
+      );
     }
     // No graphify alias / server import can sneak in.
     expect(source).not.toMatch(/@graphify\//);
