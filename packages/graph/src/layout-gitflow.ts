@@ -56,7 +56,11 @@ export interface GitFlowNodeInput {
   repo?: string | null;
   /** Branch NAME (Branch nodes) — trunk pick + deterministic ordering. */
   name?: string | null;
-  /** Optional temporal stamp (RESERVED — carried through, not consulted yet). */
+  /**
+   * Optional temporal stamp — for Commit nodes, the git committer-date in
+   * epoch-ms (`t` on the agent-stats project-graph). Consulted ONLY by
+   * `xMode: "time"`; ignored (carried through) in the default rank mode.
+   */
   t?: number | null;
 }
 
@@ -87,6 +91,24 @@ export interface GitFlowLayoutOptions {
   maxWindow?: number;
   /** Ranks a lane stays reserved after a branch interval ends (default 1). */
   laneReuseGap?: number;
+  /**
+   * X-axis mode (default `"rank"` — the byte-identical historical layout).
+   *
+   * • `"rank"` — x = topological display rank (SEQUENCE view): every commit
+   *   advances one `rankGap`, regardless of when it happened.
+   * • `"time"` — x ∝ the commit's `t` (git committer-date, epoch-ms) on ONE
+   *   GLOBAL time axis shared by every repo band (cross-repo comparability).
+   *   The axis spans [tMin, tMax] of the placed dated commits and is scaled to
+   *   the rank-mode width, so both modes fit the same camera. UNDATED commits
+   *   interpolate linearly (by lane sequence position) between their nearest
+   *   DATED lane neighbours; a run with no dated neighbour on either side
+   *   parks at its LANE START (the fork anchor; the window-left/axis origin
+   *   for the trunk or fork-less lanes). A per-lane epsilon min-spacing
+   *   (`rankGap` × 0.1) then pushes same-instant / parked commits apart so
+   *   they never collapse; lanes stay strictly left→right. Sessions keep
+   *   anchoring under their commit; branch labels / lane logic are unchanged.
+   */
+  xMode?: "rank" | "time";
 }
 
 /** Per-edge ROUTE hint emitted by the layout (edge-order keyed). */
@@ -179,9 +201,28 @@ const LABEL_RANK_INSET = 0.6;
 const LABEL_LANE_LIFT = 0.4;
 /** Tip-only branch labels sit this fraction of a lane below their tip commit. */
 const TIP_LABEL_LANE_FRACTION = 0.35;
+/**
+ * `xMode:"time"` epsilon min-spacing, as a fraction of `rankGap`: the minimum
+ * per-lane x advance so same-instant (or parked undated) commits never collapse
+ * onto one pixel column and lanes stay strictly left→right.
+ */
+const TIME_EPSILON_FRACTION = 0.1;
 
 function norm(value: string | null | undefined): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+// --- xMode:"time" aux records (collected during the rank pass, consulted -----
+// --- only by the optional time post-pass; the rank output is untouched). -----
+
+/** One placed LANE: its ordered commits + fork anchor + label-carrying branch. */
+interface TimeLaneRecord {
+  /** Lane commits, oldest → newest (trunk in-window chain / branch exclusives). */
+  commits: number[];
+  /** Fork commit node (already on an earlier lane), null = window-left/trunk. */
+  fork: number | null;
+  /** Branch node carrying the lane's label, null = label-less trunk fallback. */
+  branch: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -199,6 +240,7 @@ export function computeGitFlowPositions(
   const maxBranchLen = Math.max(1, options.maxBranchLen ?? DEFAULT_MAX_BRANCH_LEN);
   const maxWindow = Math.max(1, options.maxWindow ?? DEFAULT_MAX_WINDOW);
   const laneReuseGap = Math.max(0, options.laneReuseGap ?? DEFAULT_LANE_REUSE_GAP);
+  const xMode = options.xMode ?? "rank";
 
   const n = input.nodes.length;
   const positions = new Float32Array(n * 2);
@@ -274,6 +316,11 @@ export function computeGitFlowPositions(
     else band.sessions.push(i);
   }
   const repoKeys = [...bandNodes.keys()].sort();
+
+  // xMode:"time" aux (cheap to collect; only consulted by the time post-pass).
+  const timeLanes: TimeLaneRecord[] = [];
+  const timeTipOnly: Array<{ branch: number; tip: number }> = [];
+  const timeSessions: Array<{ session: number; anchor: number }> = [];
 
   // First-parent walk from `tip`, stopping BEFORE `stop(commit)` says so.
   const firstParentWalk = (tip: number, cap: number, stop: (c: number) => boolean): number[] => {
@@ -481,18 +528,21 @@ export function computeGitFlowPositions(
     const laneY = (lane: number): number => bandTop + lane * laneGap;
 
     // Trunk commits: in-window at their rank; pre-window PARKED one rank left.
+    const trunkInWindow: number[] = [];
     for (const c of trunkChain) {
       const r = rank.get(c)!;
       if (r >= windowStart) {
         positions[c * 2] = xOf(r);
         positions[c * 2 + 1] = laneY(0);
         placed[c] = 1;
+        trunkInWindow.push(c); // oldest → newest (trunkChain order)
       } else {
         positions[c * 2] = -rankGap;
         positions[c * 2 + 1] = laneY(0);
         placed[c] = 0;
       }
     }
+    timeLanes.push({ commits: trunkInWindow, fork: null, branch: trunkBranch ?? null });
     // Branch commits on their reused lane.
     for (const rec of placedBranches) {
       const lane = laneOf.get(rec.branch)!;
@@ -501,6 +551,13 @@ export function computeGitFlowPositions(
         positions[c * 2 + 1] = laneY(lane);
         placed[c] = 1;
       }
+      // Fork anchor only when the fork is displayed (window-left lanes re-park
+      // at the axis origin in time mode, mirroring their rank-mode entry).
+      timeLanes.push({
+        commits: rec.exclusive,
+        fork: rec.windowLeft ? null : rec.forkCommit,
+        branch: rec.branch,
+      });
     }
     // Commits reachable from NO branch walk (orphans / beyond caps): park.
     for (const c of band.commits) {
@@ -560,6 +617,7 @@ export function computeGitFlowPositions(
       positions[b * 2] = x;
       positions[b * 2 + 1] = y;
       placed[b] = placed[tip] ?? 0;
+      timeTipOnly.push({ branch: b, tip });
       branchLabels.push({
         nodeIndex: b,
         name: branchName(b),
@@ -604,10 +662,105 @@ export function computeGitFlowPositions(
       positions[s * 2] = positions[anchor * 2] ?? 0;
       positions[s * 2 + 1] = (positions[anchor * 2 + 1] ?? bandTop) + sessionGap * (1 + 0.6 * k);
       placed[s] = 1;
+      timeSessions.push({ session: s, anchor });
     }
 
     // Advance the band cursor: lanes + the session sub-strip + the band gap.
     bandTop += (laneCount - 1) * laneGap + sessionGap + bandGap;
+  }
+
+  // --- xMode:"time" — remap lane X onto ONE global committer-date axis. -----
+  // Post-pass by design: the rank pass above stays byte-identical (regression
+  // pin) and the time mode reuses its lane/label/session structure verbatim.
+  if (xMode === "time") {
+    const timeOf = (i: number): number | null => {
+      const t = input.nodes[i]?.t;
+      return typeof t === "number" && Number.isFinite(t) ? t : null;
+    };
+    // Global [tMin, tMax] over the placed dated commits + the rank-mode width
+    // (reusing the width keeps both modes camera/zoom-compatible).
+    let tMin = Number.POSITIVE_INFINITY;
+    let tMax = Number.NEGATIVE_INFINITY;
+    let width = 0;
+    for (const lane of timeLanes) {
+      for (const c of lane.commits) {
+        width = Math.max(width, positions[c * 2]!);
+        const t = timeOf(c);
+        if (t === null) continue;
+        if (t < tMin) tMin = t;
+        if (t > tMax) tMax = t;
+      }
+    }
+    // No dated commit anywhere ⇒ keep the rank x wholesale (documented fallback).
+    if (tMin <= tMax) {
+      if (width <= 0) width = rankGap;
+      const span = tMax - tMin;
+      const xOfTime = (t: number): number => (span > 0 ? ((t - tMin) / span) * width : 0);
+      const epsilon = rankGap * TIME_EPSILON_FRACTION;
+      const labelByNode = new Map(branchLabels.map((l) => [l.nodeIndex, l]));
+      // Lane insertion order = trunk before its branches, parents before the
+      // branches forked off them — so a lane's fork x is ALWAYS final here.
+      for (const lane of timeLanes) {
+        const count = lane.commits.length;
+        if (count === 0) continue;
+        const xs: (number | null)[] = lane.commits.map((c) => {
+          const t = timeOf(c);
+          return t === null ? null : xOfTime(t);
+        });
+        const forkX = lane.fork !== null ? positions[lane.fork * 2]! : null;
+        const parkX = forkX ?? 0; // lane start: the fork anchor, else the axis origin
+        // UNDATED commits interpolate (linearly, by lane position) between
+        // their nearest dated lane neighbours; a run missing a dated side
+        // parks at the lane start and lets the epsilon pass spread it.
+        let lastDated = -1;
+        for (let i = 0; i < count; i += 1) {
+          if (xs[i] !== null) {
+            lastDated = i;
+            continue;
+          }
+          let j = i + 1;
+          while (j < count && xs[j] === null) j += 1;
+          const left = lastDated >= 0 ? xs[lastDated]! : null;
+          const right = j < count ? xs[j]! : null;
+          for (let m = i; m < j; m += 1) {
+            xs[m] =
+              left !== null && right !== null
+                ? left + ((right - left) * (m - lastDated)) / (j - lastDated)
+                : parkX;
+          }
+          i = j - 1;
+        }
+        // Epsilon min-spacing, seeded at the fork: lanes stay strictly
+        // left→right and same-instant commits never collapse.
+        let prev = forkX ?? Number.NEGATIVE_INFINITY;
+        for (let i = 0; i < count; i += 1) {
+          const x = Math.max(xs[i]!, prev + epsilon);
+          positions[lane.commits[i]! * 2] = x;
+          prev = x;
+        }
+        // Re-anchor the lane's Branch node + label extras to the moved commits
+        // (same inset/tip semantics as the rank pass; y / lane logic untouched).
+        const label = lane.branch !== null ? labelByNode.get(lane.branch) : undefined;
+        if (label !== undefined && lane.branch !== null) {
+          const x = positions[lane.commits[0]! * 2]! - LABEL_RANK_INSET * rankGap;
+          positions[lane.branch * 2] = x;
+          label.x = x;
+          label.tipX = positions[lane.commits[count - 1]! * 2]!;
+        }
+      }
+      for (const rec of timeTipOnly) {
+        const x = positions[rec.tip * 2]!;
+        positions[rec.branch * 2] = x;
+        const label = labelByNode.get(rec.branch);
+        if (label !== undefined) {
+          label.x = x;
+          label.tipX = x;
+        }
+      }
+      // Sessions keep anchoring under their commit (or fallback branch) in
+      // both modes — x follows the anchor, y (sub-strip stacking) untouched.
+      for (const rec of timeSessions) positions[rec.session * 2] = positions[rec.anchor * 2]!;
+    }
   }
 
   // --- Off-lane strip: everything the flow view ignores, parked ABOVE. ------
@@ -694,5 +847,8 @@ export const gitFlowLayout: LayoutFn = (graph, options) => {
       relation: options?.edgeRelations?.[e] ?? null,
     });
   }
-  return computeGitFlowPositions({ nodes, edges }).positions;
+  return computeGitFlowPositions(
+    { nodes, edges },
+    options?.xMode !== undefined ? { xMode: options.xMode } : {},
+  ).positions;
 };
