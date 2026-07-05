@@ -204,6 +204,9 @@ export function nodeGeometry(
   pixelRatio: number,
   zoom: number,
   measureLabelWidth: (text: string, font: string) => number,
+  // Box base height in CSS px (git-flow label-scale knob); default legacy 18
+  // — every existing caller stays byte-identical.
+  boxBaseHeightPx: number = BOX_BASE_HEIGHT_PX,
 ): NodeGeometry {
   const { nodeCount } = input;
   const geometry: NodeGeometry = {
@@ -217,7 +220,7 @@ export function nodeGeometry(
     geometry.radii[nodeIndex] = drawnRadius(size, pixelRatio, zoom);
     if ((input.nodeShapes?.[nodeIndex] ?? 0) !== BOX_SHAPE_CODE) continue;
     const label = input.nodeLabels?.[nodeIndex] ?? "";
-    const boxHeight = BOX_BASE_HEIGHT_PX * pixelRatio * zoom;
+    const boxHeight = boxBaseHeightPx * pixelRatio * zoom;
     const dims = boxDimensions(boxHeight, label, measureLabelWidth);
     geometry.boxHalfWidths[nodeIndex] = dims.w / 2;
     geometry.boxHalfHeights[nodeIndex] = dims.h / 2;

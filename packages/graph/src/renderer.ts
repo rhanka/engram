@@ -818,6 +818,10 @@ function drawFallback2D(
   canvas: GraphCanvasLike | null,
   pixelRatio: number,
   skipEdges = false,
+  // Box glyph base height in CSS px — the git-flow LABEL-SCALE knob
+  // (GraphRendererOptions.boxBaseHeightPx). Default = the legacy metric, so
+  // every existing caller/golden is byte-identical.
+  boxBaseHeightPx: number = BOX_BASE_HEIGHT_PX,
 ): void {
   if (!context || !canvas) return;
 
@@ -857,7 +861,7 @@ function drawFallback2D(
     const label = state.style?.nodeLabels?.[nodeIndex] ?? "";
     // Box size is degree-INDEPENDENT (legacy): a fixed base height scaled only by
     // pixelRatio × zoom, so a high-degree Work box never balloons past its neighbours.
-    const boxHeight = BOX_BASE_HEIGHT_PX * pixelRatio * camera.zoom;
+    const boxHeight = boxBaseHeightPx * pixelRatio * camera.zoom;
     const dims = boxDimensions(boxHeight, label, measureLabelWidth);
     geometry.boxHalfWidths[nodeIndex] = dims.w / 2;
     geometry.boxHalfHeights[nodeIndex] = dims.h / 2;
@@ -1028,7 +1032,7 @@ function drawFallback2D(
       // inherently hollow; only the border-weight variant applies.
       const label = state.style?.nodeLabels?.[nodeIndex] ?? "";
       const alpha = (state.style?.nodeColors[colorOffset + 3] ?? 255) / 255;
-      const boxHeight = BOX_BASE_HEIGHT_PX * pixelRatio * camera.zoom;
+      const boxHeight = boxBaseHeightPx * pixelRatio * camera.zoom;
       const dims = boxDimensions(boxHeight, label, measureLabelWidth);
       drawBoxNode(
         context,
@@ -1084,6 +1088,11 @@ export function createGraphRenderer(
   const fallbackContext = context || requestedBackend === "webgl" ? null : acquire2DContext(canvas);
   const resources = context ? createRenderResources(context) : null;
   const pixelRatio = Math.max(Number.EPSILON, options.pixelRatio ?? 1);
+  // Git-flow LABEL-SCALE knob: base height of every `shape:box` glyph in CSS
+  // px. Defaults to the legacy 18 — existing consumers are byte-identical; the
+  // git-flow view passes `gitFlowLabelBoxHeightPx()` so the drawn pills match
+  // the label policy's measured collision AABBs.
+  const boxBaseHeightPx = options.boxBaseHeightPx ?? BOX_BASE_HEIGHT_PX;
   const activeBackend = context ? "webgl" : fallbackContext ? "canvas2d" : "none";
 
   // B1 Phase 1 INTERNAL CANARY: when the flag is on AND we have a WebGL2 context,
@@ -1193,7 +1202,7 @@ export function createGraphRenderer(
     lastBoxTextDraws = [];
 
     if (!context) {
-      drawFallback2D(fallbackContext, state, camera, canvas, pixelRatio, skipEdges);
+      drawFallback2D(fallbackContext, state, camera, canvas, pixelRatio, skipEdges, boxBaseHeightPx);
       return;
     }
 
@@ -1220,6 +1229,7 @@ export function createGraphRenderer(
           style: state.style,
           camera,
           pixelRatio,
+          boxBaseHeightPx,
           viewportWidth: canvas?.width ?? 0,
           viewportHeight: canvas?.height ?? 0,
           measureLabelWidth: edgeMeasureLabelWidth,
@@ -1314,6 +1324,7 @@ export function createGraphRenderer(
           style: state.style,
           camera,
           pixelRatio,
+          boxBaseHeightPx,
           viewportWidth: canvas?.width ?? 0,
           viewportHeight: canvas?.height ?? 0,
           measureLabelWidth,
