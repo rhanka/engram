@@ -1,5 +1,6 @@
 export * from "./buffers";
 export * from "./edge-geometry";
+export * from "./gitflow-labels";
 export * from "./layout";
 export * from "./layout-gitflow";
 export * from "./layout-registry";
