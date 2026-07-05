@@ -237,6 +237,10 @@
         const renderer = Graph.createGraphRenderer(canvas, {
           backend,
           pixelRatio: dpr,
+          // Git-flow LABEL-SCALE knob (SPEC_GITFLOW_LABELS -20% pills): only the
+          // git-flow captures pass it; absent (undefined) keeps the legacy box
+          // metric, so every pre-existing golden stays byte-identical.
+          boxBaseHeightPx: opts.boxBaseHeightPx ?? undefined,
           // B1 Phase 1 INTERNAL CANARY: the golden caller opts the WebGL backend
           // into the new INSTANCED-SHAPE path so the harness diffs the real
           // instanced shapes vs Canvas2D. Default (undefined) keeps the legacy

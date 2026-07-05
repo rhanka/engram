@@ -34,6 +34,7 @@ import {
 } from "../../src/layout-gitflow";
 import {
   approximateLabelMeasure,
+  gitFlowLabelBoxHeightPx,
   placeGitFlowLabels,
   type GitFlowLabelCamera,
   type GitFlowLabelInteraction,
@@ -433,6 +434,9 @@ const DEMO_OPTS = {
   cssWidth: 900,
   cssHeight: 340,
   camera: { x: 310, y: 100, zoom: 1 },
+  // Drawn pills MUST use the SAME (-20% by default) base height the label
+  // policy measured its collision AABBs with (SPEC I1/I4 sync rule).
+  boxBaseHeightPx: gitFlowLabelBoxHeightPx(),
 };
 const VIEW = { width: 900, height: 340, zoom: 1, camera: DEMO_OPTS.camera };
 
@@ -849,6 +853,7 @@ describe("git-flow labels — dense golden captures (Chrome/CDP; skips without C
         cssWidth: DENSE_VIEW.width,
         cssHeight: DENSE_VIEW.height,
         camera: { ...center, zoom },
+        boxBaseHeightPx: gitFlowLabelBoxHeightPx(),
       };
       const a = await oracle.capture(demo.fixture, opts);
       const b = await oracle.capture(demo.fixture, opts);
@@ -882,6 +887,7 @@ describe("git-flow labels — dense golden captures (Chrome/CDP; skips without C
       cssWidth: DENSE_VIEW.width,
       cssHeight: DENSE_VIEW.height,
       camera: { ...DENSE_CENTER, zoom: 0.6 },
+      boxBaseHeightPx: gitFlowLabelBoxHeightPx(),
     };
     const withSel = await oracle.capture(sel.fixture, opts);
     const without = await oracle.capture(bare.fixture, opts);

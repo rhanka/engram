@@ -143,7 +143,12 @@ export async function smokeCapture(fixture, opts = {}) {
   const canvas = createCanvas(Math.round(cssWidth * dpr), Math.round(cssHeight * dpr));
   const { graph, style } = buildBuffers(fixture);
 
-  const renderer = Graph.createGraphRenderer(canvas, { backend: "canvas2d", pixelRatio: dpr });
+  const renderer = Graph.createGraphRenderer(canvas, {
+    backend: "canvas2d",
+    pixelRatio: dpr,
+    // Git-flow label-scale knob; absent = legacy metric (goldens identical).
+    ...(opts.boxBaseHeightPx !== undefined ? { boxBaseHeightPx: opts.boxBaseHeightPx } : {}),
+  });
   renderer.setGraph(graph);
   renderer.setStyle(style);
   renderer.setCamera(camera);

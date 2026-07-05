@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import {
   approximateLabelMeasure,
   compactGitFlowLabels,
+  gitFlowLabelBoxHeightPx,
   compactGitFlowName,
   gitFlowNameHash,
   middleEllipsisPreservingSuffix,
@@ -20,6 +21,7 @@ import {
   type GitFlowLabelPolicyInput,
 } from "../src/gitflow-labels";
 import type { GitFlowBranchLabel } from "../src/layout-gitflow";
+import { BOX_BASE_HEIGHT_PX } from "../src/render-geometry";
 
 const CAMERA: GitFlowLabelCamera = { x: 0, y: 0, zoom: 1, width: 1600, height: 800 };
 
@@ -353,5 +355,47 @@ describe("tier gating and interaction full names", () => {
     ];
     const p = place(labels);
     expect(p.labels[0]!.nodeIndex).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Label scale (−20% principal verdict, 2026-07-05): pills shrink font+padding
+// together and the collision AABBs use the SHRUNKEN boxes.
+// ---------------------------------------------------------------------------
+
+describe("labelScale (−20% pills)", () => {
+  it("gitFlowLabelBoxHeightPx: default 0.8 × legacy height; explicit overrides win", () => {
+    expect(gitFlowLabelBoxHeightPx()).toBeCloseTo(BOX_BASE_HEIGHT_PX * 0.8, 10);
+    expect(gitFlowLabelBoxHeightPx({ labelScale: 1 })).toBe(BOX_BASE_HEIGHT_PX);
+    expect(gitFlowLabelBoxHeightPx({ labelScale: 0.5 })).toBeCloseTo(BOX_BASE_HEIGHT_PX * 0.5, 10);
+    expect(gitFlowLabelBoxHeightPx({ boxHeightPx: 12, labelScale: 1 })).toBe(12);
+  });
+
+  it("placed pill AABBs shrink exactly 20% (height AND width) vs labelScale 1", () => {
+    const labels = [label({ nodeIndex: 0, name: "feat/some-branch", x: 0, y: 0 })];
+    const legacy = place(labels, {}, { labelScale: 1 }).labels[0]!;
+    const scaled = place(labels).labels[0]!; // default labelScale 0.8
+    expect(scaled.h).toBeCloseTo(legacy.h * 0.8, 6);
+    expect(scaled.w).toBeCloseTo(legacy.w * 0.8, 6);
+    // The culling used the SHRUNKEN box: at 0.8 the AABB is strictly smaller.
+    expect(scaled.h).toBeCloseTo(BOX_BASE_HEIGHT_PX * 0.8, 6); // zoom 1, pr 1
+  });
+
+  it("shrunken pills relieve collision pressure (more labels survive culling)", () => {
+    const labels: GitFlowBranchLabel[] = [];
+    for (let i = 0; i < 40; i += 1) {
+      labels.push(
+        label({
+          nodeIndex: i,
+          name: `feat/branch-${String(i).padStart(2, "0")}`,
+          x: (i % 6) * 30,
+          y: Math.floor(i / 6) * 6,
+          tipX: (i % 6) * 30 + 120,
+        }),
+      );
+    }
+    const scaled = place(labels); // default 0.8
+    const legacy = place(labels, {}, { labelScale: 1 });
+    expect(scaled.labels.length).toBeGreaterThanOrEqual(legacy.labels.length);
   });
 });
