@@ -284,6 +284,10 @@ export interface WebGLEdgeFrame {
   style?: GraphStyleBuffers;
   camera: { x: number; y: number; zoom: number };
   pixelRatio: number;
+  /** Box base height in CSS px (git-flow label-scale knob); default legacy 18.
+   * Threaded into the shared nodeGeometry so an edge clipping to a SHRUNKEN
+   * pill stops at the shrunken rect border, not the legacy one. */
+  boxBaseHeightPx?: number;
   /** Device backing-store size. */
   viewportWidth: number;
   viewportHeight: number;
@@ -371,6 +375,7 @@ export function buildEdgeInstances(frame: WebGLEdgeFrame): EdgeInstanceSet {
     frame.pixelRatio,
     frame.camera.zoom,
     frame.measureLabelWidth ?? (() => 0),
+    frame.boxBaseHeightPx,
   );
 
   for (let edgeIndex = 0; edgeIndex < edgeCount; edgeIndex += 1) {

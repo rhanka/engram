@@ -82,6 +82,15 @@ export const DEFAULT_LABEL_MAX_CHARS = 22;
  * extra clearance; an ALREADY-PLACED one only needs zero overlap, so panning
  * doesn't flicker labels on the knife edge. */
 export const DEFAULT_HYSTERESIS_MARGIN_PX = 8;
+/**
+ * Branch-label pill SCALE relative to the legacy box glyph (principal verdict
+ * 2026-07-05: "les labels sont encore un peu grands — 20% de trop"). Applied
+ * to the pill BASE HEIGHT, which drives font + padding + measured width
+ * together, so the collision AABBs and the drawn pills shrink IN SYNC.
+ * Callers hand the SAME resolved height to the renderer via
+ * {@link gitFlowLabelBoxHeightPx} → `GraphRendererOptions.boxBaseHeightPx`.
+ */
+export const DEFAULT_GITFLOW_LABEL_SCALE = 0.8;
 /** Camera zoom at which T0 (far) hands over to T1 (mid) — P2.1. */
 export const DEFAULT_TIER1_ZOOM = 0.3;
 /** Camera zoom at which T1 (mid) hands over to T2 (near) — P2.1. */
@@ -116,8 +125,13 @@ export interface GitFlowLabelPolicyOptions {
   tier2Zoom?: number;
   /** Tier hysteresis ratio (default 0.1 = ±10%). */
   tierHysteresisRatio?: number;
-  /** Pill base height in CSS px (default {@link BOX_BASE_HEIGHT_PX} — the
-   * SAME legacy box metric the renderer draws, so policy AABBs == drawn pills). */
+  /** Pill SCALE relative to the legacy box glyph (default
+   * {@link DEFAULT_GITFLOW_LABEL_SCALE} = 0.8, the −20% principal verdict).
+   * Ignored when `boxHeightPx` is given explicitly. */
+  labelScale?: number;
+  /** Pill base height in CSS px (default {@link BOX_BASE_HEIGHT_PX} ×
+   * `labelScale` — the SAME metric the renderer must draw with
+   * (`boxBaseHeightPx`), so policy AABBs == drawn pills). */
   boxHeightPx?: number;
   /** Tip-anchor clearance in CSS px (default 10). */
   tipClearancePx?: number;
@@ -375,6 +389,18 @@ function toSet(v: ReadonlySet<number> | readonly number[] | undefined): Readonly
 const EMPTY_SET: ReadonlySet<number> = new Set();
 
 /**
+ * Resolved pill BASE HEIGHT in CSS px for a policy option set. THE sync point
+ * between the policy's measured AABBs and the renderer's drawn pills: pass
+ * this value as `GraphRendererOptions.boxBaseHeightPx` on the git-flow view.
+ */
+export function gitFlowLabelBoxHeightPx(options: GitFlowLabelPolicyOptions = {}): number {
+  return (
+    options.boxHeightPx ??
+    BOX_BASE_HEIGHT_PX * (options.labelScale ?? DEFAULT_GITFLOW_LABEL_SCALE)
+  );
+}
+
+/**
  * Deterministic APPROXIMATE text measurer for headless/fixture builds (no
  * canvas): a per-glyph width table that deliberately OVER-estimates average
  * sans-serif widths, so policy AABBs stay conservative vs the real
@@ -469,7 +495,7 @@ export function placeGitFlowLabels(
   const pixelRatio = camera.pixelRatio ?? 1;
   const zoom = camera.zoom;
   const margin = options.hysteresisMarginPx ?? DEFAULT_HYSTERESIS_MARGIN_PX;
-  const boxHeightPx = options.boxHeightPx ?? BOX_BASE_HEIGHT_PX;
+  const boxHeightPx = gitFlowLabelBoxHeightPx(options);
   const tipClearancePx = options.tipClearancePx ?? DEFAULT_TIP_CLEARANCE_PX;
   const staggerGapPx = options.staggerGapPx ?? DEFAULT_STAGGER_GAP_PX;
 

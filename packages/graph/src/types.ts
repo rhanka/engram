@@ -241,6 +241,14 @@ export interface GraphRendererOptions {
   antialias?: boolean;
   pixelRatio?: number;
   /**
+   * Base HEIGHT of the `shape:box` glyph in CSS px (× pixelRatio × zoom).
+   * Default 18 (the legacy metric) — existing consumers render byte-identical.
+   * The GIT-FLOW view passes the label policy's resolved pill height
+   * (`gitFlowLabelBoxHeightPx()`, −20% by default) so the DRAWN pills always
+   * match the policy's measured collision AABBs (SPEC_GITFLOW_LABELS I1/I4).
+   */
+  boxBaseHeightPx?: number;
+  /**
    * INTERNAL CANARY (B1 migration Phase 1). When true AND the active backend is
    * WebGL2, node glyphs are drawn with the new INSTANCED-SHAPE path
    * (`webgl-shapes.ts`: instanced discs/polygons, radius-as-radius) instead of

@@ -256,6 +256,8 @@ export interface WebGLBoxFrame {
   style?: GraphStyleBuffers;
   camera: { x: number; y: number; zoom: number };
   pixelRatio: number;
+  /** Box base height in CSS px (git-flow label-scale knob); default legacy 18. */
+  boxBaseHeightPx?: number;
   /** Device backing-store size. */
   viewportWidth: number;
   viewportHeight: number;
@@ -342,7 +344,7 @@ export function buildBoxDraws(frame: WebGLBoxFrame): BoxDraw[] {
   const draws: BoxDraw[] = [];
   const style = frame.style;
   const measure = frame.measureLabelWidth ?? (() => 0);
-  const boxHeight = BOX_BASE_HEIGHT_PX * frame.pixelRatio * frame.camera.zoom;
+  const boxHeight = (frame.boxBaseHeightPx ?? BOX_BASE_HEIGHT_PX) * frame.pixelRatio * frame.camera.zoom;
 
   for (let i = 0; i < frame.nodeCount; i += 1) {
     if ((style?.nodeShapes?.[i] ?? 0) !== BOX_SHAPE_CODE) continue;
@@ -424,7 +426,7 @@ export interface BoxTextDraw {
 export function buildBoxTextDraws(frame: WebGLBoxFrame): BoxTextDraw[] {
   const out: BoxTextDraw[] = [];
   const style = frame.style;
-  const height = BOX_BASE_HEIGHT_PX * frame.pixelRatio * frame.camera.zoom;
+  const height = (frame.boxBaseHeightPx ?? BOX_BASE_HEIGHT_PX) * frame.pixelRatio * frame.camera.zoom;
   for (let i = 0; i < frame.nodeCount; i += 1) {
     if ((style?.nodeShapes?.[i] ?? 0) !== BOX_SHAPE_CODE) continue;
     const center = screenPoint(frame.positions, i, frame);
