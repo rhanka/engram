@@ -5,9 +5,15 @@
    *
    * PURITY CONTRACT (for the mechanical rebase into the sentropic monorepo):
    * this component imports NOTHING from graphify — only its sibling pure lib
-   * (`../lib/cited-source/*`) and Svelte. All graphify-specific glue (reading
-   * node.citations, converting via citationToCitedSourceRef, fetching bytes)
-   * lives OUTSIDE, in the studio wiring (App.svelte + lib/citedSources.js).
+   * (`../lib/cited-source/*`), Svelte, and the DS package
+   * (@sentropic/design-system-svelte: the architect-owned shared package
+   * itself depends on the DS, so DS imports are part of the seam —
+   * ALLOWED_EXTERNAL mirrors the package: svelte + design-system-svelte +
+   * pdfjs-dist). All controls are REAL DS components (IconButton / Button /
+   * ContentSwitcher / Link) — no raw <button>/<a> chrome. All
+   * graphify-specific glue (reading node.citations, converting via
+   * citationToCitedSourceRef, fetching bytes) lives OUTSIDE, in the studio
+   * wiring (App.svelte + lib/citedSources.js).
    *
    * QUALIFIED UX (principal UAT 2026-07-04, immo/radar SignalPdfOverlay
    * parity). This frame is being qualified ONCE for the shared package, so it
@@ -77,6 +83,11 @@
    * v1 scope: MD (incl. OCR-markdown / plain text) + PDF text-layer only.
    */
   import { tick } from "svelte";
+  // DS components ARE part of the pure seam (the architect-owned shared
+  // package itself imports the DS): allowed externals mirror the package's
+  // ALLOWED_EXTERNAL = svelte + @sentropic/design-system-svelte + pdfjs-dist.
+  // graphify runtime imports remain forbidden.
+  import { Button, ContentSwitcher, IconButton, Link } from "@sentropic/design-system-svelte";
   import {
     MAX_RENDER_SCALE,
     MIN_RENDER_SCALE,
@@ -459,39 +470,36 @@
       {/if}
     </div>
     {#if onClose}
-      <button class="csv-close" type="button" onclick={() => onClose()} aria-label="Close source viewer">✕</button>
+      <IconButton size="sm" variant="ghost" aria-label="Close source viewer" class="csv-close" onclick={() => onClose()}>✕</IconButton>
     {/if}
   </header>
 
   <!-- QUALIFIED TOOLBAR (immo parity): one compact bar, generic frame; only
-       the Page/Zoom segments are modality-gated (page-addressable sources). -->
+       the Page/Zoom segments are modality-gated (page-addressable sources).
+       100% DS controls: IconButton (‹ › − + ✕), Button (zoom-% reset),
+       ContentSwitcher (scope toggle), Link (Ouvrir ↗). -->
   <div class="csv-toolbar" role="toolbar" aria-label="Source navigation">
     {#if scopeEligible}
       <!-- §S.6.1 scope toggle — only for a REAL multi-entity thread (≥2 groups
            with citations); otherwise the plain Entité behavior applies. -->
-      <div class="csv-tb-group csv-tb-scope" role="group" aria-label="Navigation scope">
-        <button
-          class="csv-scope-btn"
-          class:csv-scope-btn--active={effectiveScope === "entity"}
-          type="button"
-          aria-pressed={effectiveScope === "entity"}
-          onclick={() => setScope("entity")}
-        >Entité</button>
-        <button
-          class="csv-scope-btn"
-          class:csv-scope-btn--active={effectiveScope === "selection"}
-          type="button"
-          aria-pressed={effectiveScope === "selection"}
-          onclick={() => setScope("selection")}
-        >Sélection</button>
-      </div>
+      <ContentSwitcher
+        size="sm"
+        label="Navigation scope"
+        class="csv-tb-scope"
+        items={[
+          { value: "entity", label: "Entité" },
+          { value: "selection", label: "Sélection" },
+        ]}
+        value={effectiveScope}
+        onchange={(value) => setScope(value)}
+      />
     {/if}
 
     {#if scopeCount > 1}
       <div class="csv-tb-group" aria-label="Citation navigator">
-        <button class="csv-tb-btn" type="button" disabled={scopePos <= 0} onclick={() => goScopeRef(-1)} aria-label="Previous citation">‹</button>
+        <IconButton size="sm" disabled={scopePos <= 0} onclick={() => goScopeRef(-1)} aria-label="Previous citation">‹</IconButton>
         <span class="csv-tb-label">Citation <strong>{scopePos + 1}/{scopeCount}</strong></span>
-        <button class="csv-tb-btn" type="button" disabled={scopePos >= scopeCount - 1} onclick={() => goScopeRef(1)} aria-label="Next citation">›</button>
+        <IconButton size="sm" disabled={scopePos >= scopeCount - 1} onclick={() => goScopeRef(1)} aria-label="Next citation">›</IconButton>
       </div>
     {/if}
 
@@ -499,44 +507,45 @@
       <!-- §S.6.1 entity indicator: position in the selection + current label;
            ‹ › jump to the FIRST citation of the neighbour entity (kbd e/E). -->
       <div class="csv-tb-group" aria-label="Entity navigator">
-        <button class="csv-tb-btn" type="button" disabled={entityPos <= 0} onclick={() => goEntity(-1)} aria-label="Previous entity">‹</button>
+        <IconButton size="sm" disabled={entityPos <= 0} onclick={() => goEntity(-1)} aria-label="Previous entity">‹</IconButton>
         <span class="csv-tb-label">Entité <strong>{entityPos + 1}/{entityOrder.length}</strong>{#if activeGroup?.label}<span class="csv-tb-entity">— {activeGroup.label}</span>{/if}</span>
-        <button class="csv-tb-btn" type="button" disabled={entityPos >= entityOrder.length - 1} onclick={() => goEntity(1)} aria-label="Next entity">›</button>
+        <IconButton size="sm" disabled={entityPos >= entityOrder.length - 1} onclick={() => goEntity(1)} aria-label="Next entity">›</IconButton>
       </div>
     {/if}
 
     {#if docCount > 1}
       <div class="csv-tb-group" aria-label="Document navigator">
-        <button class="csv-tb-btn" type="button" disabled={docIndex <= 0} onclick={() => goDoc(-1)} aria-label="Previous document">‹</button>
+        <IconButton size="sm" disabled={docIndex <= 0} onclick={() => goDoc(-1)} aria-label="Previous document">‹</IconButton>
         <span class="csv-tb-label">Doc <strong>{docIndex + 1}/{docCount}</strong></span>
-        <button class="csv-tb-btn" type="button" disabled={docIndex >= docCount - 1} onclick={() => goDoc(1)} aria-label="Next document">›</button>
+        <IconButton size="sm" disabled={docIndex >= docCount - 1} onclick={() => goDoc(1)} aria-label="Next document">›</IconButton>
       </div>
     {/if}
 
     {#if pdfDoc}
       <div class="csv-tb-group" aria-label="Page navigator">
-        <button class="csv-tb-btn" type="button" disabled={currentPage <= 1} onclick={goPrevPage} aria-label="Previous page">‹</button>
+        <IconButton size="sm" disabled={currentPage <= 1} onclick={goPrevPage} aria-label="Previous page">‹</IconButton>
         <span class="csv-tb-label">Page <strong>{currentPage}/{numPages}</strong></span>
-        <button class="csv-tb-btn" type="button" disabled={currentPage >= numPages} onclick={goNextPage} aria-label="Next page">›</button>
+        <IconButton size="sm" disabled={currentPage >= numPages} onclick={goNextPage} aria-label="Next page">›</IconButton>
       </div>
 
       <div class="csv-tb-group" aria-label="Zoom">
-        <button class="csv-tb-btn" type="button" disabled={scale <= MIN_RENDER_SCALE + 0.001} onclick={zoomOut} aria-label="Zoom out">−</button>
-        <button
+        <IconButton size="sm" disabled={scale <= MIN_RENDER_SCALE + 0.001} onclick={zoomOut} aria-label="Zoom out">−</IconButton>
+        <Button
+          size="sm"
+          variant="ghost"
           class="csv-tb-zoom"
-          type="button"
           onclick={resetZoom}
           title="Back to fit-width"
           aria-label="Zoom level {Math.round(scale * 100)} percent, click to fit width"
-        >{Math.round(scale * 100)}%</button>
-        <button class="csv-tb-btn" type="button" disabled={scale >= MAX_RENDER_SCALE - 0.001} onclick={zoomIn} aria-label="Zoom in">+</button>
+        >{Math.round(scale * 100)}%</Button>
+        <IconButton size="sm" disabled={scale >= MAX_RENDER_SCALE - 0.001} onclick={zoomIn} aria-label="Zoom in">+</IconButton>
       </div>
     {/if}
 
     <span class="csv-tb-spacer"></span>
 
     {#if rawHref}
-      <a class="csv-tb-open" href={rawHref} target="_blank" rel="noopener noreferrer">Ouvrir ↗</a>
+      <Link href={rawHref} external variant="standalone" class="csv-tb-open">Ouvrir ↗</Link>
     {/if}
   </div>
 
@@ -636,20 +645,10 @@
     color: var(--st-semantic-text-secondary, #475569);
     white-space: nowrap;
   }
-  .csv-close {
+  /* DS components own their chrome; local CSS is LAYOUT-ONLY (:global hooks
+     target the class passed to the DS root, which Svelte cannot scope). */
+  .csv-head :global(.csv-close) {
     flex-shrink: 0;
-    border: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
-    background: var(--st-semantic-surface-subtle, #f8fafc);
-    border-radius: var(--st-radius-sm, 4px);
-    color: var(--st-semantic-text-secondary, #475569);
-    cursor: pointer;
-    font-size: 0.85rem;
-    line-height: 1;
-    padding: 0.3rem 0.45rem;
-  }
-  .csv-close:hover {
-    color: var(--st-semantic-feedback-error, #dc2626);
-    border-color: var(--st-semantic-feedback-error, #dc2626);
   }
   /* ── Qualified toolbar (immo parity) ──────────────────────────────────── */
   .csv-toolbar {
@@ -681,32 +680,6 @@
     font-weight: 700;
     color: var(--st-semantic-text-primary, #0f172a);
   }
-  /* §S.6.1 scope toggle [ Entité | Sélection ] — DS-token segmented control. */
-  .csv-tb-scope {
-    padding: 0.1rem;
-    gap: 0.1rem;
-  }
-  .csv-scope-btn {
-    border: none;
-    background: transparent;
-    border-radius: var(--st-radius-sm, 4px);
-    color: var(--st-semantic-text-secondary, #475569);
-    cursor: pointer;
-    font-size: 0.72rem;
-    font-weight: 600;
-    line-height: 1;
-    padding: 0.25rem 0.5rem;
-    white-space: nowrap;
-  }
-  .csv-scope-btn:not(.csv-scope-btn--active):hover {
-    background: var(--st-semantic-surface-subtle, #f1f5f9);
-    color: var(--st-semantic-action-primary, #2563eb);
-  }
-  .csv-scope-btn--active {
-    background: var(--st-semantic-surface-selected, #eff6ff);
-    color: var(--st-semantic-action-primary, #2563eb);
-    font-weight: 700;
-  }
   /* §S.6.1 entity indicator label — bounded, never widens the toolbar. */
   .csv-tb-entity {
     display: inline-block;
@@ -719,61 +692,15 @@
     color: var(--st-semantic-text-primary, #0f172a);
     font-weight: 600;
   }
-  .csv-tb-btn {
-    border: none;
-    background: transparent;
-    border-radius: var(--st-radius-sm, 4px);
-    color: var(--st-semantic-text-secondary, #475569);
-    cursor: pointer;
-    font-size: 0.9rem;
-    line-height: 1;
-    padding: 0.15rem 0.4rem;
-  }
-  .csv-tb-btn:disabled {
-    opacity: 0.35;
-    cursor: default;
-  }
-  .csv-tb-btn:not(:disabled):hover {
-    background: var(--st-semantic-surface-subtle, #f1f5f9);
-    color: var(--st-semantic-action-primary, #2563eb);
-  }
-  .csv-tb-zoom {
-    border: none;
-    background: transparent;
-    border-radius: var(--st-radius-sm, 4px);
-    color: var(--st-semantic-text-primary, #0f172a);
-    cursor: pointer;
-    font-size: 0.72rem;
-    font-weight: 700;
-    line-height: 1;
-    padding: 0.2rem 0.3rem;
-    min-width: 2.6rem;
-    text-align: center;
-  }
-  .csv-tb-zoom:hover {
-    background: var(--st-semantic-surface-subtle, #f1f5f9);
-    color: var(--st-semantic-action-primary, #2563eb);
-  }
   .csv-tb-spacer {
     flex: 1;
   }
-  .csv-tb-open {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    border: 1px solid var(--st-semantic-border-subtle, #e2e8f0);
-    border-radius: var(--st-radius-sm, 4px);
-    background: var(--st-semantic-surface-default, #fff);
-    color: var(--st-semantic-text-link, #2563eb);
-    font-size: 0.74rem;
-    font-weight: 600;
-    line-height: 1;
-    padding: 0.3rem 0.5rem;
-    text-decoration: none;
+  /* Layout-only hooks on DS roots (chrome comes from the DS itself). */
+  .csv-toolbar :global(.csv-tb-open) {
     white-space: nowrap;
   }
-  .csv-tb-open:hover {
-    border-color: var(--st-semantic-action-primary, #2563eb);
+  .csv-toolbar :global(.csv-tb-zoom) {
+    min-width: 2.9rem;
   }
   .csv-quote {
     margin: 0.55rem 1rem 0.2rem;
