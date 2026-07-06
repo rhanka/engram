@@ -237,6 +237,44 @@ function scoreNodes(G: Graph, terms: string[]): Array<[number, string]> {
   return scored;
 }
 
+/**
+ * Select BFS seed nodes: the global top-`maxK` scored candidates plus at
+ * least one seed per distinct query term that has any match at all.
+ *
+ * Taking only the global top slice has a failure mode on multi-term
+ * natural-language queries: one term's incidental high-scoring label match
+ * (e.g. a common word also used as an unrelated identifier) can occupy every
+ * top slot, so the traversal only ever explores the neighborhood of that one
+ * unrelated match and the query's other, actually-relevant terms are starved
+ * out. Guaranteeing one seed per matched term prevents that; ties within a
+ * term are broken by node degree (structural centrality), so an isolated
+ * incidental match doesn't out-rank a real, well-connected hub for that
+ * term. Port of upstream safishamsi d56ee83 (#1445).
+ *
+ * Exported for the CLI `query` command and tests.
+ */
+export function pickSeeds(
+  G: Graph,
+  scored: Array<[number, string]>,
+  terms: string[],
+  maxK: number = 3,
+): string[] {
+  const seeds = scored.slice(0, maxK).map(([, nid]) => nid);
+  if (seeds.length === 0 || terms.length === 0) return seeds;
+  const normTerms = [...new Set(terms)].sort();
+  for (const term of normTerms) {
+    const termScored = scoreNodes(G, [term]);
+    if (termScored.length === 0) continue;
+    const bestScore = termScored[0]![0];
+    const tied = termScored.filter(([score]) => score === bestScore).map(([, nid]) => nid);
+    const bestNid = tied.length > 1
+      ? tied.reduce((a, b) => (G.degree(b) > G.degree(a) ? b : a))
+      : termScored[0]![1];
+    if (!seeds.includes(bestNid)) seeds.push(bestNid);
+  }
+  return seeds;
+}
+
 function bfs(
   G: Graph,
   startNodes: string[],
@@ -347,7 +385,9 @@ function toolQueryGraph(G: Graph, args: Record<string, unknown>): string {
   const terms = dropQueryStopwords(queryTerms(question).map(normalizeSearchText));
 
   const scored = scoreNodes(G, terms);
-  const startNodes = scored.slice(0, 3).map(([, nid]) => nid);
+  // Per-term seed diversity: one term's incidental top match cannot starve
+  // the other terms' seeds — port of upstream d56ee83 (#1445).
+  const startNodes = pickSeeds(G, scored, terms);
   if (startNodes.length === 0) return "No matching nodes found.";
 
   const { visited, edges } =
