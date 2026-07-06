@@ -56,3 +56,76 @@ export async function loadWorkspace({ fetchScene, fetchGraph, buildScene }) {
     };
   }
 }
+
+/** Race sentinel: the full workspace settled before the window probe did. */
+const WORKSPACE_SETTLED = Symbol("workspace-settled");
+
+/**
+ * Storage LOT 3 / WP1: workspace mount that PREFERS a bounded store window for
+ * FIRST PAINT, then hydrates the full workspace lazily. Wraps (and returns the
+ * exact result of) {@link loadWorkspace}, which stays byte-identical.
+ *
+ * Policy — a pure PREFERENCE with a clean fallback:
+ *   1. The full `loadWorkspace()` load and the `fetchWindow()` probe start
+ *      CONCURRENTLY, so the default path is never delayed by the probe.
+ *   2. If the window resolves FIRST with a non-empty node set, the bounded
+ *      scene (`buildWindowScene(window)` — N highest-degree nodes + induced
+ *      edges + precomputed layout positions) is handed to `onFirstPaint`; the
+ *      caller paints it immediately instead of waiting on the multi-MB scene.
+ *   3. When the full workspace resolves, its result is returned UNCHANGED —
+ *      the caller swaps in the full scene (lazy hydration of the remainder).
+ *   4. Whenever the window is unavailable — no store configured (the default
+ *      flat-JSON studio), an offline bundle, a 404, a fetch error, an empty
+ *      window, or simply losing the race to the full workspace — `onFirstPaint`
+ *      is NOT called and the behaviour is EXACTLY `loadWorkspace(deps)`. A
+ *      stale window can never downgrade an already-loaded full scene.
+ *
+ * @param {object} deps  {@link loadWorkspace} deps plus:
+ * @param {() => Promise<object|null>} [deps.fetchWindow]  resolves the store
+ *        window document, or null when no window-capable store is reachable
+ *        (never rejects in the api.js accessor; rejections are treated as null)
+ * @param {(windowDoc: object) => object} [deps.buildWindowScene]  adapts the
+ *        window document into a renderable scene (graphAdapter.buildWindowScene)
+ * @param {(scene: object, windowDoc: object) => void} [deps.onFirstPaint]
+ *        called AT MOST ONCE, before the returned promise resolves, with the
+ *        bounded scene; a throw here never breaks the full-scene load
+ * @returns {Promise<{ mode: "scene"|"graph"|"error", scene: object|null,
+ *   graph: object|null, error: string|null }>} the {@link loadWorkspace} result
+ */
+export async function loadWorkspaceWindowed({
+  fetchWindow,
+  buildWindowScene,
+  onFirstPaint,
+  fetchScene,
+  fetchGraph,
+  buildScene,
+}) {
+  const workspace = loadWorkspace({ fetchScene, fetchGraph, buildScene });
+  if (
+    typeof fetchWindow === "function" &&
+    typeof buildWindowScene === "function" &&
+    typeof onFirstPaint === "function"
+  ) {
+    // Never rejects: any probe failure means "no window" (the clean fallback).
+    const windowProbe = Promise.resolve()
+      .then(() => fetchWindow())
+      .catch(() => null);
+    const first = await Promise.race([
+      workspace.then(() => WORKSPACE_SETTLED),
+      windowProbe,
+    ]);
+    if (
+      first !== WORKSPACE_SETTLED &&
+      first &&
+      Array.isArray(first.nodes) &&
+      first.nodes.length > 0
+    ) {
+      try {
+        onFirstPaint(buildWindowScene(first), first);
+      } catch {
+        // A paint failure must never break the full-scene load.
+      }
+    }
+  }
+  return workspace;
+}
