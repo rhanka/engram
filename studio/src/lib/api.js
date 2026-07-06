@@ -333,11 +333,12 @@ export async function fetchGroupCounts(axis) {
  * live store projection, not a build-time artifact, so an offline export simply
  * has none and the client loads its inlined full scene.
  *
- * CLIENT-RENDER INTEGRATION IS DEFERRED (see WP3 note): this accessor + its
- * server route are the windowed-loader primitive; wiring App.svelte's first paint
- * to PREFER the window and hydrate the rest lazily touches the renderer/scene
- * draw path, which is explicitly out of scope here. With no store wired the
- * accessor returns null on every call, so the default scene path is unchanged.
+ * CLIENT-RENDER INTEGRATION (WP1, wired): App.svelte's first paint now PREFERS
+ * this window via `sceneLoader.loadWorkspaceWindowed` — the probe races the full
+ * workspace load, a non-empty window paints first (adapted by
+ * `graphAdapter.buildWindowScene`), and the full scene replaces it when its load
+ * settles (lazy hydration). With no store wired the accessor returns null on
+ * every call, so the default scene path is unchanged.
  *
  * @param {{ strategy?: string, layout?: string, limit?: number }} [params]
  * @returns {Promise<{ strategy: string, layout?: string, limit: number,
