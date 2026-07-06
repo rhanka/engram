@@ -1746,6 +1746,18 @@ function _requireImportsJs(
   return found;
 }
 
+/**
+ * Node types whose value is a callable, for the JS/TS `const x = <fn>` form
+ * below. Older tree-sitter-javascript grammars label a function expression
+ * `function`; current ones use `function_expression`. `generator_function`
+ * (`const h = function*(){}`) — port of upstream safishamsi 09aeb97; the
+ * function/function_expression members close the same long-standing gap for
+ * plain function expressions (upstream `_JS_FUNCTION_VALUE_TYPES`).
+ */
+const _JS_FUNCTION_VALUE_TYPES = new Set<string>([
+  "arrow_function", "function_expression", "function", "generator_function",
+]);
+
 function _jsExtraWalk(
   node: SyntaxNode, source: string, fileNid: string, stem: string, strPath: string,
   _nodes: GraphNode[], edges: GraphEdge[], _seenIds: Set<string>,
@@ -1780,7 +1792,7 @@ function _jsExtraWalk(
         if (child.type === "variable_declarator") {
           const value = child.childForFieldName("value");
           const nameNode = child.childForFieldName("name");
-          if (value && value.type === "arrow_function") {
+          if (value && _JS_FUNCTION_VALUE_TYPES.has(value.type)) {
             if (nameNode) {
               const funcName = _readText(nameNode, source);
               const line = child.startPosition.row + 1;
@@ -1810,6 +1822,74 @@ function _jsExtraWalk(
       }
     }
     return node.type === "lexical_declaration" || requireFound || arrowFound || constFound;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// TS extra walk for namespace / module declarations
+// ---------------------------------------------------------------------------
+
+/**
+ * Emit a container node for a TS `namespace`/`module` declaration.
+ *
+ * `namespace Foo {}` parses as `internal_module` (with `name`/`body` fields);
+ * `module Bar {}` and ambient `declare module "pkg" {}` parse as a named
+ * `module` node that exposes no fields, so its name and body are found
+ * positionally. Without this the container was never a node — its members
+ * were still reached by the default recurse but the namespace itself was
+ * invisible to the graph. Members stay file-contained (parity with
+ * `_csharpExtraWalk`); the namespace becomes a sibling marker node so it is
+ * queryable. Returns true if handled.
+ *
+ * The guard requires `isNamed` because the anonymous `module` keyword token
+ * shares the `module` type string and would otherwise match here.
+ * Port of upstream safishamsi 869aaf7.
+ */
+function _tsExtraWalk(
+  node: SyntaxNode, source: string, fileNid: string, stem: string,
+  parentClassNid: string | null,
+  addNodeFn: (nid: string, label: string, line: number) => void,
+  addEdgeFn: (src: string, tgt: string, relation: string, line: number) => void,
+  walkFn: (node: SyntaxNode, parentClassNid: string | null) => void,
+): boolean {
+  if (node.isNamed && (node.type === "internal_module" || node.type === "module")) {
+    let nameNode = node.childForFieldName("name");
+    if (!nameNode) {
+      for (const child of node.children) {
+        if (child.isNamed && (child.type === "identifier" || child.type === "nested_identifier" || child.type === "string")) {
+          nameNode = child;
+          break;
+        }
+      }
+    }
+    let body = node.childForFieldName("body");
+    if (!body) {
+      for (const child of node.children) {
+        if (child.type === "statement_block") {
+          body = child;
+          break;
+        }
+      }
+    }
+    if (nameNode) {
+      let nsName = _readText(nameNode, source);
+      if (nameNode.type === "string") {
+        nsName = nsName.replace(/^['"`]+|['"`]+$/g, "");
+      }
+      if (nsName) {
+        const nsNid = _makeId(stem, nsName);
+        const line = node.startPosition.row + 1;
+        addNodeFn(nsNid, nsName, line);
+        addEdgeFn(fileNid, nsNid, "contains", line);
+      }
+    }
+    if (body) {
+      for (const child of body.children) {
+        walkFn(child, parentClassNid);
+      }
+    }
+    return true;
   }
   return false;
 }
@@ -2062,7 +2142,10 @@ const _JS_CONFIG: LanguageConfig = defaultConfig({
   tsGrammarName: "javascript",
   tsModule: "tree_sitter_javascript",
   classTypes: new Set(["class_declaration"]),
-  functionTypes: new Set(["function_declaration", "method_definition"]),
+  // generator_function_declaration: `function* g()` — absent from
+  // function_types upstream too until 09aeb97; generator *methods* already
+  // parse as method_definition. Port of upstream safishamsi 09aeb97.
+  functionTypes: new Set(["function_declaration", "generator_function_declaration", "method_definition"]),
   // export_statement is included so the walker hands re-exports
   // (`export { X } from './m'`) to _importJs. Pure exports (no `from`)
   // fall through to walk children in _extract_generic. Port of upstream
@@ -2072,7 +2155,7 @@ const _JS_CONFIG: LanguageConfig = defaultConfig({
   callFunctionField: "function",
   callAccessorNodeTypes: new Set(["member_expression"]),
   callAccessorField: "property",
-  functionBoundaryTypes: new Set(["function_declaration", "arrow_function", "method_definition"]),
+  functionBoundaryTypes: new Set(["function_declaration", "generator_function_declaration", "arrow_function", "method_definition"]),
   importHandler: _importJs,
 });
 
@@ -2080,7 +2163,8 @@ const _TS_CONFIG: LanguageConfig = defaultConfig({
   tsGrammarName: "typescript",
   tsModule: "tree_sitter_typescript",
   classTypes: new Set(["class_declaration", "interface_declaration", "enum_declaration", "type_alias_declaration"]),
-  functionTypes: new Set(["function_declaration", "method_definition"]),
+  // generator_function_declaration — port of upstream safishamsi 09aeb97.
+  functionTypes: new Set(["function_declaration", "generator_function_declaration", "method_definition"]),
   // export_statement is included so the walker hands re-exports
   // (`export { X } from './m'`) to _importJs. Pure exports (no `from`)
   // fall through to walk children in _extract_generic. Port of upstream
@@ -2090,7 +2174,7 @@ const _TS_CONFIG: LanguageConfig = defaultConfig({
   callFunctionField: "function",
   callAccessorNodeTypes: new Set(["member_expression"]),
   callAccessorField: "property",
-  functionBoundaryTypes: new Set(["function_declaration", "arrow_function", "method_definition"]),
+  functionBoundaryTypes: new Set(["function_declaration", "generator_function_declaration", "arrow_function", "method_definition"]),
   importHandler: _importJs,
 });
 
@@ -2826,6 +2910,14 @@ async function _extractGeneric(
       if (_jsExtraWalk(node, source, fileNid, stem, strPath,
         nodes, edges, seenIds, functionBodies,
         parentClassNid, addNode, addEdge, rootDir)) {
+        return;
+      }
+    }
+
+    // TS namespace / module containers (internal_module, module) — port of
+    // upstream safishamsi 869aaf7.
+    if (config.tsModule === "tree_sitter_typescript") {
+      if (_tsExtraWalk(node, source, fileNid, stem, parentClassNid, addNode, addEdge, walk)) {
         return;
       }
     }
