@@ -245,6 +245,17 @@ graphify agent-stats wp <WP-id>       # conductor view: agents/sessions joined t
 
 The `wp` view can additionally attribute merged PRs via the `gh` CLI (skip with `--no-pr` when offline).
 
+### Git-flow view
+
+The agent-stats project graph can be rendered as a deterministic, GitHub-network-style **git graph**: one horizontal band per repository, the trunk (`main`/`master`/`develop`) on lane 0, commits ordered left→right by topological rank or by real commit time (one global time axis shared across repos), and gitk-style lane reuse so hundreds of branches stay compact — all branches are placed, no top-K. Fork and merge connectors are drawn **port-to-port** as smooth S curves (only merges carry an arrowhead), and agent sessions appear as agent-coloured triangles under the commits they produced. Branch-name pills are governed by a zero-overlap label policy (compaction, priority culling, zoom LOD).
+
+```bash
+graphify agent-stats project-graph --git-since all   # per-repo Commit/Branch/Session DAG
+graphify merge-graphs repoA.json repoB.json --out multi.json
+```
+
+The layout ships in `@sentropic/graph` as the `git-flow` layout (`computeGitFlowPositions`). Reference: [spec/SPEC_GITFLOW_VIEW.md](spec/SPEC_GITFLOW_VIEW.md) (visual grammar, edge styles, API, pipeline) and [spec/SPEC_GITFLOW_LABELS.md](spec/SPEC_GITFLOW_LABELS.md) (label policy). Studio integration is a follow-up lot.
+
 ## How it works
 
 graphify combines a deterministic structural pass with a model-backed semantic pass:
