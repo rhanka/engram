@@ -6,7 +6,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import Graph from "graphology";
 import { bidirectional } from "graphology-shortest-path/unweighted.js";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import pkg from "../package.json";
 import {
   forEachTraversalNeighbor,
@@ -165,16 +165,14 @@ function loadGraphSnapshot(safePath: string): GraphSnapshot {
   };
 }
 
-function createReloadingGraphStore(graphPath: string): ReloadingGraphStore {
-  const safePath = validateGraphFilePath(graphPath);
-  let snapshot: GraphSnapshot;
-  try {
-    snapshot = loadGraphSnapshot(safePath);
-  } catch (err) {
-    console.error(`error: ${err instanceof Error ? err.message : err}`);
-    process.exit(1);
-  }
-
+/**
+ * Build a hot-reloading store for an already-validated graph path. Throws on
+ * a missing/corrupt graph instead of exiting — required for per-call
+ * project_path routing where a bad project graph must surface as a tool
+ * error, not a process exit (upstream 9e7fbcb `_load_ctx`).
+ */
+function createGraphStoreAt(safePath: string): ReloadingGraphStore {
+  let snapshot = loadGraphSnapshot(safePath);
   return {
     graphPath: safePath,
     get(): GraphSnapshot {
@@ -185,6 +183,16 @@ function createReloadingGraphStore(graphPath: string): ReloadingGraphStore {
       return snapshot;
     },
   };
+}
+
+function createReloadingGraphStore(graphPath: string): ReloadingGraphStore {
+  const safePath = validateGraphFilePath(graphPath);
+  try {
+    return createGraphStoreAt(safePath);
+  } catch (err) {
+    console.error(`error: ${err instanceof Error ? err.message : err}`);
+    process.exit(1);
+  }
 }
 
 function getVersion(): string {
@@ -836,6 +844,33 @@ export async function serve(
   }
 
   const graphStore = createReloadingGraphStore(graphPath);
+
+  // Multi-project routing (upstream 9e7fbcb): per-graph store cache keyed by
+  // resolved graph path, unified across the default graph and every
+  // project_path graph. Graphs load lazily; each store keeps its own
+  // mtime+size hot-reload. A missing/corrupt project graph is a tool error
+  // (thrown here, caught by the CallTool handler), never a process exit.
+  const projectStores = new Map<string, ReloadingGraphStore>([[graphStore.graphPath, graphStore]]);
+  const selectStore = (args: Record<string, unknown>): ReloadingGraphStore => {
+    const projectPath = args.project_path;
+    if (projectPath === undefined || projectPath === null || projectPath === "") {
+      return graphStore;
+    }
+    if (typeof projectPath !== "string") {
+      throw new Error("project_path must be a string (absolute project root path)");
+    }
+    if (!isAbsolute(projectPath)) {
+      throw new Error(`project_path must be an absolute path, got: ${projectPath}`);
+    }
+    const candidate = resolveGraphInputPath(undefined, projectPath);
+    const safePath = validateGraphPath(candidate, dirname(resolve(candidate)));
+    const existing = projectStores.get(safePath);
+    if (existing) return existing;
+    const store = createGraphStoreAt(safePath);
+    projectStores.set(safePath, store);
+    return store;
+  };
+
   const ontologyWrite = options.ontology?.write === true;
   if (ontologyWrite && !options.ontology?.profileStatePath) {
     throw new Error("ontology write mode requires profileStatePath");
@@ -1161,6 +1196,23 @@ export async function serve(
     );
   }
 
+  // Inject the optional multi-project routing field on every tool (upstream
+  // 9e7fbcb): omitted -> the server's default graph (fully backward
+  // compatible); an absolute project_path -> that project's graph.json.
+  // Ontology tools accept the field for schema uniformity but their handlers
+  // are bound to the server's profile state and ignore it.
+  for (const tool of tools) {
+    const schema = tool.inputSchema as { properties?: Record<string, unknown> };
+    schema.properties = {
+      ...(schema.properties ?? {}),
+      project_path: {
+        type: "string",
+        description:
+          "Optional absolute path to another graphify project root; routes this call to that project's graph.json. Omit to use the server's default graph.",
+      },
+    };
+  }
+
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
   server.setRequestHandler(ListResourcesRequestSchema, async () => ({
     resources: MCP_RESOURCES,
@@ -1181,43 +1233,46 @@ export async function serve(
     };
   });
 
+  // Graph-backed handlers take the per-call store (selected from the optional
+  // project_path, upstream 9e7fbcb); ontology handlers are bound to the
+  // server's profile state and ignore routing.
   const handlers: Record<
     string,
-    (args: Record<string, unknown>) => string
+    (store: ReloadingGraphStore, args: Record<string, unknown>) => string
   > = {
-    first_hop_summary: () => toolFirstHopSummary(graphStore.get().graph),
-    review_delta: (a) => toolReviewDelta(graphStore.get().graph, a),
-    review_analysis: (a) => toolReviewAnalysis(graphStore.get().graph, a),
-    recommend_commits: (a) => toolRecommendCommits(graphStore.get().graph, a),
-    query_graph: (a) => toolQueryGraph(graphStore.get().graph, a),
-    answer_graph: (a) => toolAnswerGraph(graphStore.get().graph, a),
-    get_node: (a) => toolGetNode(graphStore.get().graph, a),
-    get_neighbors: (a) => toolGetNeighbors(graphStore.get().graph, a),
-    get_community: (a) => {
-      const { graph, communities } = graphStore.get();
+    first_hop_summary: (s) => toolFirstHopSummary(s.get().graph),
+    review_delta: (s, a) => toolReviewDelta(s.get().graph, a),
+    review_analysis: (s, a) => toolReviewAnalysis(s.get().graph, a),
+    recommend_commits: (s, a) => toolRecommendCommits(s.get().graph, a),
+    query_graph: (s, a) => toolQueryGraph(s.get().graph, a),
+    answer_graph: (s, a) => toolAnswerGraph(s.get().graph, a),
+    get_node: (s, a) => toolGetNode(s.get().graph, a),
+    get_neighbors: (s, a) => toolGetNeighbors(s.get().graph, a),
+    get_community: (s, a) => {
+      const { graph, communities } = s.get();
       return toolGetCommunity(communities, graph, a);
     },
-    god_nodes: (a) => toolGodNodes(graphStore.get().graph, a),
-    graph_stats: () => {
-      const { graph, communities } = graphStore.get();
+    god_nodes: (s, a) => toolGodNodes(s.get().graph, a),
+    graph_stats: (s) => {
+      const { graph, communities } = s.get();
       return toolGraphStats(graph, communities);
     },
-    shortest_path: (a) => toolShortestPath(graphStore.get().graph, a),
+    shortest_path: (s, a) => toolShortestPath(s.get().graph, a),
   };
   if (ontologyPatchContext) {
-    handlers.list_reconciliation_candidates = (a) =>
+    handlers.list_reconciliation_candidates = (_s, a) =>
       toolListReconciliationCandidates(ontologyPatchContext, a);
-    handlers.get_reconciliation_candidate = (a) =>
+    handlers.get_reconciliation_candidate = (_s, a) =>
       toolGetReconciliationCandidate(ontologyPatchContext, a);
-    handlers.preview_ontology_decision_log = (a) =>
+    handlers.preview_ontology_decision_log = (_s, a) =>
       toolPreviewOntologyDecisionLog(ontologyPatchContext, a);
     handlers.ontology_rebuild_status = () =>
       toolOntologyRebuildStatus(ontologyPatchContext);
   }
   if (ontologyPatchContext && ontologyWrite) {
-    handlers.validate_ontology_patch = (a) =>
+    handlers.validate_ontology_patch = (_s, a) =>
       JSON.stringify(validateOntologyPatch(a.patch, ontologyPatchContext), null, 2);
-    handlers.apply_ontology_patch = (a) =>
+    handlers.apply_ontology_patch = (_s, a) =>
       JSON.stringify(
         applyOntologyPatch(a.patch, ontologyPatchContext, {
           dryRun: a.write === true ? false : true,
@@ -1235,7 +1290,12 @@ export async function serve(
       return { content: [{ type: "text" as const, text: `Unknown tool: ${name}` }] };
     }
     try {
-      const text = handler((args ?? {}) as Record<string, unknown>);
+      const rawArgs = (args ?? {}) as Record<string, unknown>;
+      // Route to the requested project graph (or the default); strip the
+      // routing field so tool handlers never see it.
+      const store = selectStore(rawArgs);
+      const { project_path: _projectPath, ...toolArgs } = rawArgs;
+      const text = handler(store, toolArgs);
       return { content: [{ type: "text" as const, text }] };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
