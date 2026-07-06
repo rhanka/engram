@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<title>graphify — git-flow live</title>
+<style>
+  html,body{margin:0;padding:0;background:#fff;overflow:hidden;font-family:system-ui,sans-serif}
+  #bar{position:fixed;top:10px;left:10px;z-index:5;display:flex;gap:8px;align-items:center;
+       background:#ffffffee;border:1px solid #e5e7eb;border-radius:10px;padding:8px 12px;box-shadow:0 2px 8px #0001}
+  #bar button{border:1px solid #d1d5db;background:#fff;border-radius:8px;padding:5px 12px;font-size:13px;cursor:pointer}
+  #bar button.on{background:#2563eb;color:#fff;border-color:#2563eb}
+  #hint{font-size:12px;color:#6b7280}
+  #legend{position:fixed;bottom:10px;left:10px;z-index:5;background:#ffffffee;border:1px solid #e5e7eb;
+          border-radius:10px;padding:8px 12px;font-size:12px;color:#374151;box-shadow:0 2px 8px #0001;
+          max-width:min(94vw,1280px);line-height:1.7}
+  .sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin:0 4px 0 10px;vertical-align:-1px}
+  #tip{position:fixed;z-index:6;display:none;background:#0f172aee;color:#f8fafc;font-size:12px;
+       padding:4px 8px;border-radius:6px;pointer-events:none;max-width:60vw;overflow-wrap:anywhere}
+  canvas{display:block;cursor:grab}
+  canvas.drag{cursor:grabbing}
+</style>
+</head>
+<body>
+<div id="bar">
+  <button id="bDemo">Démo synthétique</button>
+  <button id="bReal">Données réelles</button>
+  <span style="width:1px;height:18px;background:#e5e7eb"></span>
+  <button id="bSeq" title="x = rang topologique">Séquence</button>
+  <button id="bTime" title="x = date de commit (axe temps global, partagé entre repos)">Temps</button>
+  <span id="hint">molette = zoom · glisser = pan · R = recadrer · survol = nom complet · clic = épingler</span>
+</div>
+<div id="legend"></div>
+<div id="tip"></div>
+<canvas id="cv"></canvas>
+<script type="module">
+import * as Graph from "./graph.js";
+
+// The 4 historical repo colours stay PINNED (stable across reloads/additions);
+// every other repo gets a deterministic palette pick via FNV-1a(name), so a
+// repo keeps its colour no matter which other repos are present.
+const REPO_COLORS = { graphify:"#ef4444", track:"#8b5cf6", "process-std-am":"#d97706", "radar-immobilier":"#10b981" };
+const REPO_PALETTE=["#f43f5e","#0ea5e9","#22c55e","#eab308","#a855f7","#14b8a6","#f97316","#3b82f6",
+                    "#84cc16","#ec4899","#06b6d4","#b45309","#9333ea","#0d9488","#b91c1c","#0369a1",
+                    "#ca8a04","#7c3aed","#15803d","#be185d"];
+function repoColor(name){
+  if(REPO_COLORS[name])return REPO_COLORS[name];
+  let h=0x811c9dc5;const s=String(name??"");
+  for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,0x01000193)>>>0;}
+  return REPO_PALETTE[h%REPO_PALETTE.length];
+}
+const AGENT_COLORS = { claude:"#d97706", codex:"#0ea5e9", gemini:"#10b981", agy:"#10b981" };
+const TRUNK="#2563eb", SESSION_LINK="#94a3b8";
+// Variant knob (principal comparison, relaxes spec I5 for the SHOT only):
+// ?lg=<laneGap> — e.g. lg=55 = +25% lane spacing. Default 44 = the spec keeper.
+const LG=parseFloat(new URLSearchParams(location.search).get("lg"))||44;
+const LAYOUT_OPTS = { rankGap:60, laneGap:LG, sessionGap:16 };
+// X-axis mode (increment B): "rank" = Séquence (default), "time" = Temps
+// (x ∝ commit committer-date on ONE global axis shared across repo bands).
+// URL: ?x=time. The toggle re-runs the layout on the SAME scene data.
+let xMode=new URLSearchParams(location.search).get("x")==="time"?"time":"rank";
+
+// ---------- fixture -> renderer buffers (mirrors the golden harness) ----------
+const SHAPE={dot:0,circle:0,diamond:1,star:2,hexagon:3,square:4,box:5,roundedbox:5,triangle:6};
+const DASH={solid:0,dashed:1,dotted:2,"long-dash":3};
+const ROUTE={default:0,"flow-port":1,"flow-port-reverse":2,"flow-port-no-arrow":3,"flow-port-reverse-no-arrow":4};
+function rgba(c,f){if(Array.isArray(c)){const[r,g,b,a=255]=c;return[r|0,g|0,b|0,a|0];}
+  if(typeof c==="string"&&c[0]==="#"){const h=c.slice(1);return[parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16),h.length>=8?parseInt(h.slice(6,8),16):255];}
+  return f??[77,118,255,255];}
+function buildBuffers(fx){
+  const N=fx.nodes,E=fx.edges,ids=N.map(n=>n.id),idx=new Map(ids.map((d,i)=>[d,i]));
+  const pos=new Float32Array(N.length*2),sz=new Float32Array(N.length),nc=new Uint8Array(N.length*4),
+        sh=new Uint8Array(N.length),fi=new Uint8Array(N.length),bo=new Uint8Array(N.length),lb=[];
+  N.forEach((n,i)=>{pos[i*2]=n.x||0;pos[i*2+1]=n.y||0;sz[i]=n.size??6;
+    const[r,g,b,a]=rgba(n.color);nc[i*4]=r;nc[i*4+1]=g;nc[i*4+2]=b;nc[i*4+3]=a;
+    sh[i]=SHAPE[n.shape??"dot"]??0;fi[i]=n.fill==="hollow"?1:0;bo[i]=0;lb[i]=n.label??"";});
+  const ea=new Uint32Array(E.length*2),ew=new Float32Array(E.length),ec=new Uint8Array(E.length*4),
+        ed=new Uint8Array(E.length),cu=new Float32Array(E.length),rs=new Uint8Array(E.length);
+  let hasR=false;
+  E.forEach((e,i)=>{ea[i*2]=idx.get(e.source)??0;ea[i*2+1]=idx.get(e.target)??0;ew[i]=e.width??1;
+    const[r,g,b,a]=rgba(e.color,[121,133,153,180]);ec[i*4]=r;ec[i*4+1]=g;ec[i*4+2]=b;ec[i*4+3]=a;
+    ed[i]=DASH[e.dash??"solid"]??0;cu[i]=e.curvature??0;rs[i]=ROUTE[e.edge_style??"default"]??0;if(rs[i])hasR=true;});
+  return {graph:{nodeIds:ids,positions:pos,edges:ea},
+          style:{nodeSizes:sz,nodeColors:nc,nodeShapes:sh,nodeFills:fi,nodeBorders:bo,nodeLabels:lb,
+                 edgeWidths:ew,edgeColors:ec,edgeDash:ed,edgeCurvatures:cu,...(hasR?{edgeRouteStyles:rs}:{})}};
+}
+
+// ---------- fixture from layout output + LABEL POLICY (SPEC_GITFLOW_LABELS) ----------
+// The policy decides which branch names render (compaction / priority culling /
+// LOD tiers / anchor fallback). A branch WITHOUT a placed label stays visible
+// as structure (I2): an empty pill at its lane-start anchor.
+function toFixture(scene,placement){
+  const {nodes,edges,layout,color}=scene;
+  const world=new Map();nodes.forEach((n,i)=>world.set(n.id,[layout.positions[i*2],layout.positions[i*2+1]]));
+  const placed=new Set();nodes.forEach((n,i)=>{if(!layout.placed||layout.placed[i])placed.add(n.id);});
+  const pill=new Map();placement.labels.forEach(l=>pill.set(l.nodeIndex,l));
+  const fN=[],fE=[];
+  nodes.forEach((n,i)=>{if(!placed.has(n.id))return;const[x,y]=world.get(n.id);
+    if(n.type==="Branch"){const p=pill.get(i);
+      if(p)fN.push({id:n.id,x:p.x,y:p.y,size:10,shape:"box",label:p.text,color:color.node(n)});
+      else fN.push({id:n.id,x,y,size:10,shape:"box",label:"",color:color.node(n)});}
+    else if(n.type==="Session")fN.push({id:n.id,x,y,size:4,shape:"triangle",color:color.session(n)});
+    else fN.push({id:n.id,x,y,size:5,shape:"dot",color:color.node(n)});});
+  edges.forEach((e,i)=>{const h=layout.edgeHints[i];if(!h||h.style==="hidden")return;
+    if(!placed.has(e.source)||!placed.has(e.target))return;
+    if(h.style==="flow-port-reverse")fE.push({source:e.source,target:e.target,width:2,
+      color:color.edge(e),edge_style:h.arrow===false?"flow-port-reverse-no-arrow":"flow-port-reverse",
+      ...(h.dash==="dashed"?{dash:"dashed"}:{})});
+    else if(h.style==="flow-port")fE.push({source:e.source,target:e.target,width:2,
+      color:color.edge(e),edge_style:h.arrow===false?"flow-port-no-arrow":"flow-port"});
+    else if(h.style==="session-link")fE.push({source:e.source,target:e.target,width:1,color:SESSION_LINK,dash:"dotted"});
+    else fE.push({source:e.source,target:e.target,width:1,color:color.edge(e)});});
+  return {nodes:fN,edges:fE};
+}
+
+// ---------- demo scene (port of the golden demo) ----------
+// Synthetic committer-dates for the Temps axis: trunk commits at FIBONACCI day
+// offsets (an obviously non-uniform tempo, so Séquence vs Temps is legible at
+// a glance); branch commits half-day-step after their fork. `chore/theta`
+// stays UNDATED on purpose — it demos the park-at-lane-start fallback.
+const DAY=86400000,T0=Date.UTC(2026,0,1);
+const DEMO_TRUNK_DAYS=[0,1,2,3,5,8,13,21,34,55,89,144];
+function demoData(){
+  const BC={"feat/alpha":"#22c55e","feat/beta":"#ef4444","feat/gamma":"#f59e0b","hotfix/delta":"#a855f7",
+            "feat/epsilon":"#06b6d4","fix/zeta":"#ec4899","feat/eta":"#84cc16","chore/theta":"#f97316"};
+  const nodes=[],edges=[],cOf=new Map(),aOf=new Map();
+  for(let i=0;i<12;i++){nodes.push({id:`m${i}`,type:"Commit",repo:"demo",t:T0+DEMO_TRUNK_DAYS[i]*DAY});
+    cOf.set(`m${i}`,TRUNK);
+    if(i>0)edges.push({source:`m${i}`,target:`m${i-1}`,relation:"commit-parent"});}
+  nodes.push({id:"branch-main",type:"Branch",repo:"demo",name:"main"});cOf.set("branch-main",TRUNK);
+  edges.push({source:"branch-main",target:"m11",relation:"branch-head"});
+  const brs=[["feat/alpha",1,3],["feat/beta",2,4],["feat/gamma",3,2],["hotfix/delta",6,2],
+             ["feat/epsilon",7,3],["fix/zeta",8,2],["feat/eta",9,2],["chore/theta",10,1]];
+  const slug=s=>s.replace(/\W+/g,"-");
+  for(const[name,fork,len]of brs){const ids=Array.from({length:len},(_,k)=>`${slug(name)}-${k}`);
+    ids.forEach((id,k)=>{
+      const t=name==="chore/theta"?undefined:T0+DEMO_TRUNK_DAYS[fork]*DAY+(k+1)*0.5*DAY;
+      nodes.push({id,type:"Commit",repo:"demo",...(t!==undefined?{t}:{})});cOf.set(id,BC[name]);
+      edges.push({source:id,target:k===0?`m${fork}`:ids[k-1],relation:"commit-parent"});});
+    const bn=`branch-${slug(name)}`;nodes.push({id:bn,type:"Branch",repo:"demo",name});cOf.set(bn,BC[name]);
+    edges.push({source:bn,target:ids[ids.length-1],relation:"branch-head"});}
+  // merged branches: tip -> merge commit on main (ascending arrowed S)
+  const merges=[["feat-alpha-2","m5"],["feat-beta-3","m8"],["hotfix-delta-1","m10"],["fix-zeta-1","m11"]];
+  for(const[tip,mc]of merges)edges.push({source:tip,target:mc,relation:"merged-as"});
+  const sess=[["sess-a1","claude","feat-alpha-1"],["sess-a2","codex","feat-alpha-1"],["sess-z","gemini","fix-zeta-1"]];
+  for(const[id,agent,prod]of sess){nodes.push({id,type:"Session",repo:"demo"});aOf.set(id,agent);
+    edges.push({source:id,target:prod,relation:"produced"});}
+  edges.push({source:"sess-e",target:"branch-feat-eta",relation:"touched-branch"});
+  nodes.push({id:"sess-e",type:"Session",repo:"demo"});aOf.set("sess-e","claude");
+  return {nodes,edges,repos:["demo"],color:{
+    node:n=>cOf.get(n.id)??TRUNK, session:n=>AGENT_COLORS[aOf.get(n.id)]??"#6b7280",
+    edge:e=>cOf.get(e.source)??TRUNK}};
+}
+
+// ---------- real data (ALL ~/src repos, sessions with a produced commit only) ----------
+let realRaw=null; // fetched once; the Séquence/Temps toggle only re-runs the layout
+async function realData(){
+  if(!realRaw)realRaw=await(await fetch("./real-graph.json")).json();
+  const raw=realRaw;
+  const produced=new Set(raw.edges.filter(e=>e.relation==="produced").map(e=>e.source));
+  const nodes=raw.nodes.filter(n=>n.type!=="Session"||produced.has(n.id));
+  const keep=new Set(nodes.map(n=>n.id));
+  const edges=raw.edges.filter(e=>keep.has(e.source)&&keep.has(e.target));
+  const byId=new Map(nodes.map(n=>[n.id,n]));
+  const repos=[...new Set(nodes.map(n=>n.repo))].sort();
+  const repoC=n=>repoColor(n.repo);
+  return {nodes,edges,repos,color:{
+    node:repoC, session:n=>AGENT_COLORS[n.agent]??"#6b7280",
+    edge:e=>{const s=byId.get(e.source);return s?repoC(s):"#6b7280";}}};
+}
+
+// The layout step is shared: xMode (Séquence/Temps) only re-runs THIS.
+function withLayout(data){
+  return {...data,layout:Graph.computeGitFlowPositions(
+    {nodes:data.nodes,edges:data.edges},{...LAYOUT_OPTS,xMode})};
+}
+
+// ---------- renderer + camera + LABEL-POLICY refresh ----------
+const cv=document.getElementById("cv");
+const tip=document.getElementById("tip");
+const dpr=Math.max(1,window.devicePixelRatio||1);
+let renderer=null,scene=null,cam={x:0,y:0,zoom:1};
+let hovered=new Set(),selected=new Set(),policyPrev={};
+const mctx=document.createElement("canvas").getContext("2d");
+const measure=(t,f)=>{mctx.font=f;return mctx.measureText(t).width;};
+function sizeCanvas(){cv.width=Math.round(innerWidth*dpr);cv.height=Math.round(innerHeight*dpr);
+  cv.style.width=innerWidth+"px";cv.style.height=innerHeight+"px";}
+// Deterministic UAT camera override: ?z=<zoom>&cx=<worldX>&cy=<worldY> —
+// applied INSIDE fit() so late resize/fit events cannot undo it.
+const CAMQ=(()=>{const q=new URLSearchParams(location.search);
+  return q.has("z")?{z:parseFloat(q.get("z")),
+    cx:q.has("cx")?parseFloat(q.get("cx")):null,
+    cy:q.has("cy")?parseFloat(q.get("cy")):null}:null;})();
+function fit(){if(!scene)return;
+  let x0=1e18,x1=-1e18,y0=1e18,y1=-1e18,seen=false;
+  scene.nodes.forEach((n,i)=>{if(scene.layout.placed&&!scene.layout.placed[i])return;seen=true;
+    const x=scene.layout.positions[i*2],y=scene.layout.positions[i*2+1];
+    if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;});
+  if(!seen)return;
+  const w=Math.max(60,x1-x0),h=Math.max(60,y1-y0);
+  cam={x:(x0+x1)/2,y:(y0+y1)/2,zoom:Math.min(innerWidth/w,innerHeight/h)*0.88};
+  if(CAMQ){if(CAMQ.z)cam.zoom=CAMQ.z;if(CAMQ.cx!=null)cam.x=CAMQ.cx;if(CAMQ.cy!=null)cam.y=CAMQ.cy;}
+}
+// Per-frame: run the label policy for the CURRENT camera + interaction state,
+// feed the previous {tier, placed} back for both hysteresis mechanisms.
+function refresh(){
+  if(!scene)return;
+  const placement=Graph.placeGitFlowLabels({
+    labels:scene.layout.branchLabels,measure,
+    camera:{x:cam.x,y:cam.y,zoom:cam.zoom,width:cv.width,height:cv.height,pixelRatio:dpr},
+    interaction:{hovered,selected},
+    previous:policyPrev,
+  });
+  policyPrev={tier:placement.tier,placed:placement.placed};
+  const {graph,style}=buildBuffers(toFixture(scene,placement));
+  if(!renderer)renderer=Graph.createGraphRenderer(cv,{backend:"canvas2d",pixelRatio:dpr,boxBaseHeightPx:Graph.gitFlowLabelBoxHeightPx()});
+  renderer.setGraph(graph);renderer.setStyle(style);
+  renderer.setCamera(cam);renderer.render();
+}
+let raf=0;function draw(){if(raf)return;raf=requestAnimationFrame(()=>{raf=0;refresh();});}
+function load(s){scene=s;hovered=new Set();selected=new Set();policyPrev={};fit();draw();}
+addEventListener("resize",()=>{sizeCanvas();fit();draw();});
+sizeCanvas();
+
+// interactions — P1.3 hit targets cover the branch LANE INTERVAL [fork, tip]
+// (laneY from the layout label extras), not just the pill.
+function branchAt(clientX,clientY){
+  if(!scene)return null;
+  const wx=cam.x+(clientX*dpr-cv.width/2)/cam.zoom;
+  const wy=cam.y+(clientY*dpr-cv.height/2)/cam.zoom;
+  const tol=10/cam.zoom;let best=null,bestD=1/0;
+  for(const l of scene.layout.branchLabels){
+    const laneY=l.laneY??l.y;
+    const xa=Math.min(l.x,l.tipX??l.x)-tol,xb=Math.max(l.x,l.tipX??l.x)+tol;
+    const d=Math.abs(wy-laneY);
+    if(d<=tol&&wx>=xa&&wx<=xb&&d<bestD){best=l;bestD=d;}
+  }
+  return best;
+}
+let drag=null,dragMoved=0;
+cv.addEventListener("mousedown",e=>{drag={x:e.clientX,y:e.clientY};dragMoved=0;cv.classList.add("drag");});
+addEventListener("mouseup",e=>{
+  if(drag&&dragMoved<4){const hit=branchAt(e.clientX,e.clientY);
+    if(hit){if(selected.has(hit.nodeIndex))selected.delete(hit.nodeIndex);else selected.add(hit.nodeIndex);draw();}}
+  drag=null;cv.classList.remove("drag");});
+addEventListener("mousemove",e=>{
+  if(drag){dragMoved+=Math.abs(e.clientX-drag.x)+Math.abs(e.clientY-drag.y);
+    cam.x-=(e.clientX-drag.x)/cam.zoom;cam.y-=(e.clientY-drag.y)/cam.zoom;
+    drag={x:e.clientX,y:e.clientY};tip.style.display="none";draw();return;}
+  const hit=branchAt(e.clientX,e.clientY);
+  const next=hit?new Set([hit.nodeIndex]):new Set();
+  const changed=next.size!==hovered.size||[...next].some(i=>!hovered.has(i));
+  hovered=next;
+  if(hit){tip.textContent=hit.name;tip.style.display="block";
+    tip.style.left=`${e.clientX+14}px`;tip.style.top=`${e.clientY-28}px`;}
+  else tip.style.display="none";
+  if(changed)draw();});
+cv.addEventListener("wheel",e=>{e.preventDefault();
+  const f=e.deltaY<0?1.18:1/1.18,z2=Math.min(80,Math.max(0.01,cam.zoom*f));
+  const mx=e.clientX-innerWidth/2,my=e.clientY-innerHeight/2;
+  cam.x+=mx/cam.zoom-mx/z2; cam.y+=my/cam.zoom-my/z2; cam.zoom=z2; draw();},{passive:false});
+addEventListener("keydown",e=>{if(e.key==="r"||e.key==="R"){fit();draw();}});
+
+// legend + mode buttons + Séquence/Temps toggle
+const legend=document.getElementById("legend");
+function setLegend(mode,repos){
+  const ag=Object.entries(AGENT_COLORS).filter(([k])=>k!=="agy").map(([k,c])=>`<span class="sw" style="background:${c}"></span>${k}`).join("");
+  const ax=xMode==="time"?"axe X = date de commit (temps global partagé entre repos)":"axe X = séquence (rang topologique)";
+  if(mode==="real"){
+    const rep=(repos??Object.keys(REPO_COLORS)).map(k=>`<span class="sw" style="background:${repoColor(k)}"></span>${k}`).join("");
+    legend.innerHTML=`<b>repos (${(repos??[]).length})</b>${rep}<br/><b>agents</b> (▲ sessions, avec commit produit)${ag} · ${ax}`
+      +`<br/>labels : politique LOD — zoomer pour les noms de branches, survoler/cliquer pour le nom complet`;
+  }else legend.innerHTML=`démo synthétique — couleur = branche · ▲ sessions par agent${ag} · ${ax}`;
+}
+const bD=document.getElementById("bDemo"),bR=document.getElementById("bReal");
+const bS=document.getElementById("bSeq"),bT=document.getElementById("bTime");
+let curMode="demo",curData=null;
+function syncButtons(){
+  bD.classList.toggle("on",curMode==="demo");bR.classList.toggle("on",curMode==="real");
+  bS.classList.toggle("on",xMode==="rank");bT.classList.toggle("on",xMode==="time");
+}
+async function mode(m){
+  curMode=m;curData=m==="demo"?demoData():await realData();
+  if(m==="real")bR.textContent=`Données réelles (${curData.repos.length} repos)`;
+  syncButtons();setLegend(m,curData.repos);load(withLayout(curData));
+}
+function setX(x){
+  if(x===xMode||!curData)return;
+  xMode=x;syncButtons();setLegend(curMode,curData.repos);load(withLayout(curData));
+}
+bD.onclick=()=>mode("demo");bR.onclick=()=>mode("real");
+bS.onclick=()=>setX("rank");bT.onclick=()=>setX("time");
+mode(new URLSearchParams(location.search).get("mode")==="real"?"real":"demo");
+</script>
+</body>
+</html>

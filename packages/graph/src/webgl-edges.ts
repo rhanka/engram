@@ -44,11 +44,15 @@
 import {
   ARROW_LENGTH,
   ARROW_WIDTH_RATIO,
+  FLOW_PORT_MIN_STUB,
   borderOffset,
   dashPattern,
   edgeGeometry,
   edgeStrokeWidth,
+  flowPortEdgeGeometry,
   nodeGeometry,
+  routeIsArrowless,
+  routeIsReversed,
   tessellateEdge,
   type NodeGeometry,
 } from "./render-geometry";
@@ -280,6 +284,10 @@ export interface WebGLEdgeFrame {
   style?: GraphStyleBuffers;
   camera: { x: number; y: number; zoom: number };
   pixelRatio: number;
+  /** Box base height in CSS px (git-flow label-scale knob); default legacy 18.
+   * Threaded into the shared nodeGeometry so an edge clipping to a SHRUNKEN
+   * pill stops at the shrunken rect border, not the legacy one. */
+  boxBaseHeightPx?: number;
   /** Device backing-store size. */
   viewportWidth: number;
   viewportHeight: number;
@@ -367,19 +375,41 @@ export function buildEdgeInstances(frame: WebGLEdgeFrame): EdgeInstanceSet {
     frame.pixelRatio,
     frame.camera.zoom,
     frame.measureLabelWidth ?? (() => 0),
+    frame.boxBaseHeightPx,
   );
 
   for (let edgeIndex = 0; edgeIndex < edgeCount; edgeIndex += 1) {
-    const sourceIndex = frame.edges[edgeIndex * 2] ?? 0;
-    const targetIndex = frame.edges[edgeIndex * 2 + 1] ?? 0;
+    let sourceIndex = frame.edges[edgeIndex * 2] ?? 0;
+    let targetIndex = frame.edges[edgeIndex * 2 + 1] ?? 0;
+    const route = style?.edgeRouteStyles?.[edgeIndex] ?? 0;
+    // flow-port-reverse (2/4): swap the endpoints BEFORE routing so a new→old
+    // data edge (git commit-parent child→parent) is DRAWN old→new: it exits
+    // the older node's right port and enters the newer node's left port.
+    if (routeIsReversed(route)) {
+      const swap = sourceIndex;
+      sourceIndex = targetIndex;
+      targetIndex = swap;
+    }
     const source = screenPoint(frame.positions, sourceIndex, frame);
     const target = screenPoint(frame.positions, targetIndex, frame);
     const curvature = style?.edgeCurvatures?.[edgeIndex] ?? 0;
     const width = style?.edgeWidths?.[edgeIndex] ?? 1;
 
-    const geom = edgeGeometry(source, target, curvature, (end, dx, dy) =>
-      borderOffset(geometry, style?.nodeShapes, end === "source" ? sourceIndex : targetIndex, dx, dy),
-    );
+    // FLOW-PORT routing (route codes 1-4): right-port → left-port smooth S,
+    // single-sourced with the Canvas2D fallback via flowPortEdgeGeometry.
+    // Default (0): the historical centre-to-centre geometry, byte-identical.
+    const geom =
+      route !== 0
+        ? flowPortEdgeGeometry(
+            source,
+            target,
+            borderOffset(geometry, style?.nodeShapes, sourceIndex, 1, 0),
+            borderOffset(geometry, style?.nodeShapes, targetIndex, -1, 0),
+            FLOW_PORT_MIN_STUB * frame.pixelRatio * frame.camera.zoom,
+          )
+        : edgeGeometry(source, target, curvature, (end, dx, dy) =>
+            borderOffset(geometry, style?.nodeShapes, end === "source" ? sourceIndex : targetIndex, dx, dy),
+          );
     if (geom.degenerate) continue;
 
     const color = edgeColorAt(style?.edgeColors, edgeIndex * 4);
@@ -413,8 +443,10 @@ export function buildEdgeInstances(frame: WebGLEdgeFrame): EdgeInstanceSet {
     }
 
     // Arrowhead on every CLIPPED edge (E6), tip on the target border, oriented
-    // by the incoming tangent (E7); skipped when !clipped (E13).
-    if (geom.clipped) {
+    // by the incoming tangent (E7); skipped when !clipped (E13) and on the
+    // arrowLESS flow-port variants (3/4 — a git-flow FORK descent is a bare S;
+    // only merge connectors and lane segments carry the arrow).
+    if (geom.clipped && !routeIsArrowless(route)) {
       const arrowLength = ARROW_LENGTH * width * frame.pixelRatio * frame.camera.zoom;
       arrows.push(geom.endX, geom.endY, geom.inTx, geom.inTy, arrowLength, r, g, b, a);
     }

@@ -204,6 +204,9 @@ export function nodeGeometry(
   pixelRatio: number,
   zoom: number,
   measureLabelWidth: (text: string, font: string) => number,
+  // Box base height in CSS px (git-flow label-scale knob); default legacy 18
+  // — every existing caller stays byte-identical.
+  boxBaseHeightPx: number = BOX_BASE_HEIGHT_PX,
 ): NodeGeometry {
   const { nodeCount } = input;
   const geometry: NodeGeometry = {
@@ -217,7 +220,7 @@ export function nodeGeometry(
     geometry.radii[nodeIndex] = drawnRadius(size, pixelRatio, zoom);
     if ((input.nodeShapes?.[nodeIndex] ?? 0) !== BOX_SHAPE_CODE) continue;
     const label = input.nodeLabels?.[nodeIndex] ?? "";
-    const boxHeight = BOX_BASE_HEIGHT_PX * pixelRatio * zoom;
+    const boxHeight = boxBaseHeightPx * pixelRatio * zoom;
     const dims = boxDimensions(boxHeight, label, measureLabelWidth);
     geometry.boxHalfWidths[nodeIndex] = dims.w / 2;
     geometry.boxHalfHeights[nodeIndex] = dims.h / 2;
@@ -416,11 +419,22 @@ export interface EdgeGeometry {
   degenerate: boolean;
   /** Endpoints clip to the node borders; false ⇒ raw segment + NO arrow (E13). */
   clipped: boolean;
-  /** Whether the edge is curved (curvature !== 0). */
+  /** Whether the edge is curved (curvature !== 0, or a curved flow-port route). */
   curved: boolean;
-  /** Quadratic control point (device px); only meaningful when `curved`. */
+  /**
+   * Whether the curve is a CUBIC Bézier (two control points — the flow-port
+   * S route) rather than the historical convex quadratic. When false,
+   * `control2X/Y` are 0 and the single-control quadratic applies. Additive:
+   * `edgeGeometry` always returns false (byte-identical historical output);
+   * only `flowPortEdgeGeometry` produces cubic geometry.
+   */
+  cubic: boolean;
+  /** First control point (device px): quadratic control / cubic c1. */
   controlX: number;
   controlY: number;
+  /** Second cubic control point (device px); only meaningful when `cubic`. */
+  control2X: number;
+  control2Y: number;
   /** Outgoing unit tangent at the source (curve start tangent / chord). */
   outSx: number;
   outSy: number;
@@ -496,12 +510,136 @@ export function edgeGeometry(
     degenerate,
     clipped,
     curved,
+    cubic: false,
     controlX,
     controlY,
+    control2X: 0,
+    control2Y: 0,
     outSx,
     outSy,
     inTx,
     inTy,
+    startX,
+    startY,
+    endX,
+    endY,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// FLOW-PORT edge routing (git-flow display lot). Directional PORTS: the edge
+// EXITS the source node at its RIGHT border (x + radius / box half-width) and
+// ENTERS the target node at its LEFT border, routed as a horizontal-dominant
+// smooth S (GitKraken / gitgraph.js style): leave rightward, bend vertically,
+// arrive HORIZONTALLY into the left port — never node-centre to node-centre.
+// Pure device-px math, single-sourced for the Canvas2D fallback, the WebGL2
+// instanced-edge path, and any hit-test (same anti-divergence rule as above).
+// ---------------------------------------------------------------------------
+
+/** Per-edge route-style codes carried by GraphStyleBuffers.edgeRouteStyles. */
+export const ROUTE_STYLE_DEFAULT = 0;
+export const ROUTE_STYLE_FLOW_PORT = 1;
+/** Flow-port with the ENDPOINTS SWAPPED before drawing (new→old data edges). */
+export const ROUTE_STYLE_FLOW_PORT_REVERSE = 2;
+/**
+ * ArrowLESS flow-port variants (git-flow grammar): a FORK descent (branch-off)
+ * is a BARE S — only MERGE connectors and lane segments carry an arrowhead
+ * (GitHub network-graph / nvie git-flow reference imagery). Same routing as
+ * codes 1/2; the ONLY difference is no arrowhead is emitted at the target port.
+ */
+export const ROUTE_STYLE_FLOW_PORT_NO_ARROW = 3;
+export const ROUTE_STYLE_FLOW_PORT_REVERSE_NO_ARROW = 4;
+
+/** True when a route code draws flow-port geometry with the endpoints swapped. */
+export function routeIsReversed(route: number): boolean {
+  return route === ROUTE_STYLE_FLOW_PORT_REVERSE || route === ROUTE_STYLE_FLOW_PORT_REVERSE_NO_ARROW;
+}
+
+/** True when a route code suppresses the arrowhead (bare fork descent). */
+export function routeIsArrowless(route: number): boolean {
+  return route === ROUTE_STYLE_FLOW_PORT_NO_ARROW || route === ROUTE_STYLE_FLOW_PORT_REVERSE_NO_ARROW;
+}
+
+/**
+ * Minimum horizontal STUB (world/CSS px, × pixelRatio × zoom at the call site)
+ * an S route keeps out of each port, so even a near-vertical or backward edge
+ * visibly LEAVES rightward and ARRIVES horizontally into the left port.
+ */
+export const FLOW_PORT_MIN_STUB = 12;
+
+/**
+ * Compute a FLOW-PORT edge's drawn geometry from the endpoint node CENTRES
+ * (device px) and their horizontal border offsets:
+ *
+ *   • source port P0 = (source.x + sourcePortOffset, source.y) — RIGHT border;
+ *   • target port P1 = (target.x − targetPortOffset, target.y) — LEFT border;
+ *   • same row (|Δy| < 0.5 px) and forward (Δx > 0) ⇒ a STRAIGHT horizontal
+ *     lane segment;
+ *   • otherwise a CUBIC Bézier S with HORIZONTAL end tangents: c1 = P0 + (k, 0),
+ *     c2 = P1 − (k, 0), k = max(minStub, Δx/2 when forward, minStub backward) —
+ *     the classic flowchart/gitgraph S (a backward edge loops out and back but
+ *     still exits the right port and enters the left port horizontally).
+ *
+ * The end tangents are exactly (1, 0) at both ports, so an arrowhead (drawn by
+ * the caller with the incoming tangent, ONLY for arrow-carrying route codes —
+ * see {@link routeIsArrowless}) sits ON the target's left border pointing RIGHT
+ * — time flows left→right. `clipped` is true whenever the edge is
+ * non-degenerate: ports are on the borders by construction (there is no
+ * centre-overlap fallback on this style).
+ *
+ * Pass `sourcePortOffset` = borderOffset(source, +1, 0) and `targetPortOffset`
+ * = borderOffset(target, −1, 0) so circle radii and box half-widths stay
+ * single-sourced with the node pass.
+ */
+export function flowPortEdgeGeometry(
+  source: { x: number; y: number },
+  target: { x: number; y: number },
+  sourcePortOffset: number,
+  targetPortOffset: number,
+  minStub: number = FLOW_PORT_MIN_STUB,
+): EdgeGeometry {
+  const startX = source.x + Math.max(0, sourcePortOffset);
+  const startY = source.y;
+  const endX = target.x - Math.max(0, targetPortOffset);
+  const endY = target.y;
+
+  const dx = endX - startX;
+  const dy = endY - startY;
+  const degenerate = Math.hypot(dx, dy) < 1e-6;
+
+  // Same row + forward: a straight horizontal lane segment (port to port).
+  const straight = !degenerate && Math.abs(dy) < 0.5 && dx > 0;
+
+  let cubic = false;
+  let controlX = 0;
+  let controlY = 0;
+  let control2X = 0;
+  let control2Y = 0;
+  if (!degenerate && !straight) {
+    const stub = Math.max(0, minStub);
+    const k = dx > 0 ? Math.max(stub, dx / 2) : stub;
+    controlX = startX + k;
+    controlY = startY;
+    control2X = endX - k;
+    control2Y = endY;
+    cubic = true;
+  }
+
+  return {
+    degenerate,
+    clipped: !degenerate,
+    curved: cubic,
+    cubic,
+    controlX,
+    controlY,
+    control2X,
+    control2Y,
+    // Horizontal end tangents BY CONSTRUCTION: out of the right port…
+    outSx: 1,
+    outSy: 0,
+    // …and horizontally INTO the left port (the arrow points right).
+    inTx: 1,
+    inTy: 0,
     startX,
     startY,
     endX,
@@ -529,10 +667,23 @@ export function tessellateEdge(geom: EdgeGeometry, segments = 16): Array<[number
   for (let i = 0; i <= steps; i += 1) {
     const t = i / steps;
     const mt = 1 - t;
-    // Quadratic Bézier with the CLIPPED endpoints and the shared control point.
-    const x = mt * mt * geom.startX + 2 * mt * t * geom.controlX + t * t * geom.endX;
-    const y = mt * mt * geom.startY + 2 * mt * t * geom.controlY + t * t * geom.endY;
-    points.push([x, y]);
+    if (geom.cubic) {
+      // CUBIC Bézier (flow-port S route) with both control points.
+      // B(t) = mt³·P0 + 3·mt²·t·C1 + 3·mt·t²·C2 + t³·P1.
+      const a = mt * mt * mt;
+      const b = 3 * mt * mt * t;
+      const c = 3 * mt * t * t;
+      const d = t * t * t;
+      points.push([
+        a * geom.startX + b * geom.controlX + c * geom.control2X + d * geom.endX,
+        a * geom.startY + b * geom.controlY + c * geom.control2Y + d * geom.endY,
+      ]);
+    } else {
+      // Quadratic Bézier with the CLIPPED endpoints and the shared control point.
+      const x = mt * mt * geom.startX + 2 * mt * t * geom.controlX + t * t * geom.endX;
+      const y = mt * mt * geom.startY + 2 * mt * t * geom.controlY + t * t * geom.endY;
+      points.push([x, y]);
+    }
   }
   return points;
 }

@@ -94,6 +94,13 @@ function buildBuffers(fixture) {
   const edgeColors = new Uint8Array(edges.length * 4);
   const edgeDash = new Uint8Array(edges.length);
   const edgeCurvatures = new Float32Array(edges.length);
+  const edgeRouteStyles = new Uint8Array(edges.length);
+  let hasRouteStyles = false;
+  // Per-edge ROUTE style (git-flow lot) — mirrors harness-page buildBuffers.
+  const ROUTE_CODES = {
+    default: 0, "flow-port": 1, "flow-port-reverse": 2,
+    "flow-port-no-arrow": 3, "flow-port-reverse-no-arrow": 4,
+  };
   edges.forEach((edge, i) => {
     edgeArr[i * 2] = idToIndex.get(edge.source) ?? 0;
     edgeArr[i * 2 + 1] = idToIndex.get(edge.target) ?? 0;
@@ -103,6 +110,8 @@ function buildBuffers(fixture) {
     edgeColors[i * 4 + 2] = b; edgeColors[i * 4 + 3] = a;
     edgeDash[i] = DASH_CODES[edge.dash ?? "solid"] ?? 0;
     edgeCurvatures[i] = edge.curvature ?? 0;
+    edgeRouteStyles[i] = ROUTE_CODES[edge.edge_style ?? "default"] ?? 0;
+    if (edgeRouteStyles[i] !== 0) hasRouteStyles = true;
   });
 
   return {
@@ -110,6 +119,7 @@ function buildBuffers(fixture) {
     style: {
       nodeSizes, nodeColors, nodeShapes, nodeFills, nodeBorders, nodeLabels,
       edgeWidths, edgeColors, edgeDash, edgeCurvatures,
+      ...(hasRouteStyles ? { edgeRouteStyles } : {}),
     },
   };
 }
@@ -133,7 +143,12 @@ export async function smokeCapture(fixture, opts = {}) {
   const canvas = createCanvas(Math.round(cssWidth * dpr), Math.round(cssHeight * dpr));
   const { graph, style } = buildBuffers(fixture);
 
-  const renderer = Graph.createGraphRenderer(canvas, { backend: "canvas2d", pixelRatio: dpr });
+  const renderer = Graph.createGraphRenderer(canvas, {
+    backend: "canvas2d",
+    pixelRatio: dpr,
+    // Git-flow label-scale knob; absent = legacy metric (goldens identical).
+    ...(opts.boxBaseHeightPx !== undefined ? { boxBaseHeightPx: opts.boxBaseHeightPx } : {}),
+  });
   renderer.setGraph(graph);
   renderer.setStyle(style);
   renderer.setCamera(camera);
