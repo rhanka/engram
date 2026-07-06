@@ -2253,7 +2253,10 @@ const _CPP_CONFIG: LanguageConfig = defaultConfig({
 const _RUBY_CONFIG: LanguageConfig = defaultConfig({
   tsGrammarName: "ruby",
   tsModule: "tree_sitter_ruby",
-  classTypes: new Set(["class"]),
+  // "module": plain `module Foo` produced no container node — its methods
+  // hung off the file with dot-less labels and no edge could target the
+  // module. Port of upstream safishamsi 13e2bdd (#1640).
+  classTypes: new Set(["class", "module"]),
   functionTypes: new Set(["method", "singleton_method"]),
   importTypes: new Set(),
   callTypes: new Set(["call"]),
@@ -2715,6 +2718,51 @@ async function _extractGeneric(
             addEdge(classNid, baseNid, "inherits", line);
           }
         }
+
+        // `include`/`extend`/`prepend <Const>` in the class/module body ->
+        // a `mixes_in` edge to the module (port of upstream 6631af7 #1668).
+        // Only bare/namespaced constant arguments count; `extend self`,
+        // `include some_var`, etc. are skipped. Upstream resolves the target
+        // through its cross-file Ruby resolver; the TS analog is the
+        // sourceless-stub + corpus-rewire pattern already used for inherits.
+        // Class-body calls are never walked by the call pass (it only walks
+        // function bodies), so these markers cannot be mislabeled as calls.
+        const rubyBody = _findBody(node, config);
+        if (rubyBody) {
+          for (const stmt of rubyBody.children) {
+            if (stmt.type !== "call") continue;
+            if (stmt.childForFieldName("receiver")) continue;
+            const methodNode = stmt.childForFieldName("method");
+            const methodName = methodNode ? _readText(methodNode, source) : "";
+            if (methodName !== "include" && methodName !== "extend" && methodName !== "prepend") continue;
+            const argList = stmt.childForFieldName("arguments");
+            if (!argList) continue;
+            for (const arg of argList.children) {
+              let moduleName = "";
+              if (arg.type === "constant") {
+                moduleName = _readText(arg, source);
+              } else if (arg.type === "scope_resolution") {
+                const consts = arg.children.filter((c) => c.type === "constant");
+                if (consts.length > 0) moduleName = _readText(consts[consts.length - 1]!, source);
+              }
+              if (!moduleName) continue; // `extend self`, variables, …
+              let moduleNid = _makeId(stem, moduleName);
+              if (!seenIds.has(moduleNid)) {
+                moduleNid = _makeId(moduleName);
+                if (!seenIds.has(moduleNid)) {
+                  nodes.push({
+                    id: moduleNid, label: moduleName, file_type: "code",
+                    source_file: "", source_location: "",
+                  });
+                  seenIds.add(moduleNid);
+                }
+              }
+              if (moduleNid !== classNid) {
+                addEdge(classNid, moduleNid, "mixes_in", stmt.startPosition.row + 1);
+              }
+            }
+          }
+        }
       }
 
       // Java-specific: superclass / interface inheritance and implementation.
@@ -2914,6 +2962,64 @@ async function _extractGeneric(
         }
       }
       return;
+    }
+
+    // Ruby: a constant assignment whose RHS is `Struct.new(...)`,
+    // `Class.new(...)` or `Data.define(...)` defines a class in everything
+    // but syntax — synthesize a class node named after the constant, attach
+    // block-defined methods to it, and emit `inherits` for
+    // `Class.new(Super)`. Plain constant assignments (MAX = 100, X = Foo.new)
+    // are untouched. Port of upstream safishamsi 13e2bdd (#1640).
+    if (config.tsModule === "tree_sitter_ruby" && t === "assignment") {
+      const left = node.childForFieldName("left");
+      const right = node.childForFieldName("right");
+      if (left?.type === "constant" && right?.type === "call") {
+        const recvNode = right.childForFieldName("receiver");
+        const methNode = right.childForFieldName("method");
+        const recv = recvNode ? _readText(recvNode, source) : "";
+        const meth = methNode ? _readText(methNode, source) : "";
+        const isClassFactory =
+          ((recv === "Struct" || recv === "Class") && meth === "new") ||
+          (recv === "Data" && meth === "define");
+        if (isClassFactory) {
+          const className = _readText(left, source);
+          const classNid = _makeId(stem, className);
+          const line = node.startPosition.row + 1;
+          addNode(classNid, className, line);
+          addEdge(fileNid, classNid, "contains", line);
+
+          // `Class.new(Super)` — first constant argument is the superclass.
+          if (recv === "Class") {
+            const argList = right.childForFieldName("arguments");
+            const firstConst = argList?.children.find((c) => c.type === "constant");
+            if (firstConst) {
+              const base = _readText(firstConst, source);
+              let baseNid = _makeId(stem, base);
+              if (!seenIds.has(baseNid)) {
+                baseNid = _makeId(base);
+                if (!seenIds.has(baseNid)) {
+                  nodes.push({
+                    id: baseNid, label: base, file_type: "code",
+                    source_file: "", source_location: "",
+                  });
+                  seenIds.add(baseNid);
+                }
+              }
+              addEdge(classNid, baseNid, "inherits", line);
+            }
+          }
+
+          // Methods defined in the do-block attach to the synthesized class.
+          const block = right.children.find((c) => c.type === "do_block" || c.type === "block");
+          if (block) {
+            const blockBody = block.children.find((c) => c.type === "body_statement") ?? block;
+            for (const child of blockBody.children) {
+              walk(child, classNid);
+            }
+          }
+          return;
+        }
+      }
     }
 
     // PHP 8 constructor property promotion: `__construct(private Repo $repo)`
