@@ -547,6 +547,53 @@ export function communityColorMap(cstats) {
 }
 
 /**
+ * Storage LOT 3 / WP1 (windowed first paint): adapt a store window document —
+ * the `GET /api/ontology/window` payload `{ strategy, layout?, limit, nodes,
+ * edges }` (the N highest-degree nodes + the edges induced among them, annotated
+ * with a layout's precomputed x/y) — into a renderable Studio scene.
+ *
+ * The window's nodes/edges are a graph-like, so the scene comes from the SAME
+ * buildScene() as every other path: shapes, weights, dashes, weak flags and
+ * community colours stay consistent, and the precomputed x/y carry through
+ * (buildScene copies finite node positions verbatim). If ANY node lacks a
+ * position the whole window is force-laid-out client-side — the window is
+ * BOUNDED (N nodes), so this is cheap and it keeps the first paint from
+ * degenerating into the renderer's fallback ring.
+ *
+ * Honest sizing caveat: buildScene recomputes degrees over the INDUCED edges,
+ * so a window node's weight reflects its in-window degree, not its store-wide
+ * `degree` field. The full scene replaces the window at hydration (see
+ * sceneLoader.loadWorkspaceWindowed) and corrects any visual difference.
+ *
+ * The returned scene is tagged `scene.window = { strategy, layout?, limit }` so
+ * consumers and tests can tell a bounded first-paint scene from a full one.
+ * The tag is additive and survives applyWeakFilter / applyTimeFilter (both
+ * spread `...scene`).
+ *
+ * @param {{ strategy?: string, layout?: string, limit?: number,
+ *   nodes?: object[], edges?: object[] } | null | undefined} windowDoc
+ * @param {object} [options]  forwarded to buildScene (e.g. showWeakLinks)
+ * @returns {{ nodes: object[], edges: object[], stats: object,
+ *   window: { strategy: string, layout?: string, limit: number } }}
+ */
+export function buildWindowScene(windowDoc, options = {}) {
+  const scene = buildScene(
+    { nodes: windowDoc?.nodes ?? [], links: windowDoc?.edges ?? [] },
+    options,
+  );
+  const positioned =
+    scene.nodes.length > 0 &&
+    scene.nodes.every((n) => finiteNumber(n.x) && finiteNumber(n.y));
+  const out = positioned ? scene : attachForceLayout(scene);
+  out.window = {
+    strategy: windowDoc?.strategy ?? "degree-top-n",
+    ...(windowDoc?.layout != null ? { layout: windowDoc.layout } : {}),
+    limit: windowDoc?.limit ?? out.nodes.length,
+  };
+  return out;
+}
+
+/**
  * ÉTAPE 1b: re-apply the weak-link filter on an ALREADY-BUILT scene, without the
  * raw graph. The SPA mounts the light `scene.json` (the full scene, weak links
  * included), then the Options toggle flips weak links on/off purely on the scene

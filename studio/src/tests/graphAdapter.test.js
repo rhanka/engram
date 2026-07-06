@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildScene,
+  buildWindowScene,
   communityStats,
   entitiesByCommunity,
   entitiesByType,
@@ -547,6 +548,79 @@ describe("applyWeakFilter (ÉTAPE 1b — scene.json parity)", () => {
     const snapshot = JSON.parse(JSON.stringify(full));
     applyWeakFilter(full, false);
     expect(full).toEqual(snapshot);
+  });
+});
+
+describe("buildWindowScene (storage LOT 3 / WP1 — windowed first paint)", () => {
+  // The GET /api/ontology/window payload shape: N highest-degree nodes with the
+  // layout's precomputed x/y + the edges induced among them.
+  const WINDOW = {
+    strategy: "degree-top-n",
+    layout: "force",
+    limit: 3,
+    nodes: [
+      { id: "hub", label: "Hub", node_type: "Character", x: 10, y: 20, degree: 7 },
+      { id: "a", label: "Node A", node_type: "Work", x: -3, y: 4, degree: 5 },
+      { id: "b", label: "Node B", node_type: "Location", x: 0, y: -8, degree: 4 },
+    ],
+    edges: [
+      { source: "hub", target: "a", relation: "appears_in" },
+      { source: "hub", target: "b", relation: "located_in" },
+    ],
+  };
+
+  it("renders the BOUNDED set through buildScene semantics", () => {
+    const scene = buildWindowScene(WINDOW);
+    expect(scene.stats.nodeCount).toBe(3);
+    expect(scene.stats.edgeCount).toBe(2);
+    expect(scene.nodes.map((n) => n.id)).toEqual(["hub", "a", "b"]);
+    // Same visual grammar as every other scene path: type-driven shape, a
+    // finite weight, and the relation carried on the edges.
+    expect(scene.nodes[0].type).toBe("Character");
+    expect(scene.nodes[0].shape).toBeTruthy();
+    expect(scene.nodes.every((n) => Number.isFinite(n.weight))).toBe(true);
+    expect(scene.edges[0].relation).toBe("appears_in");
+    // Window edges carry no confidence -> strong (never flagged weak).
+    expect(scene.edges.some((e) => e.weak)).toBe(false);
+  });
+
+  it("carries the precomputed layout positions through verbatim", () => {
+    const scene = buildWindowScene(WINDOW);
+    expect(scene.nodes.map((n) => [n.x, n.y])).toEqual([
+      [10, 20],
+      [-3, 4],
+      [0, -8],
+    ]);
+  });
+
+  it("tags the scene with the window meta (strategy / layout / limit)", () => {
+    const scene = buildWindowScene(WINDOW);
+    expect(scene.window).toEqual({ strategy: "degree-top-n", layout: "force", limit: 3 });
+  });
+
+  it("force-lays-out the window when a position is missing (never the fallback ring)", () => {
+    const noPositions = {
+      ...WINDOW,
+      nodes: WINDOW.nodes.map(({ x, y, ...node }) => node),
+    };
+    const scene = buildWindowScene(noPositions);
+    expect(scene.nodes.every((n) => Number.isFinite(n.x) && Number.isFinite(n.y))).toBe(true);
+    expect(scene.window.strategy).toBe("degree-top-n");
+  });
+
+  it("the window tag survives applyWeakFilter and applyTimeFilter", async () => {
+    const { applyWeakFilter, applyTimeFilter } = await import("../lib/graphAdapter.js");
+    const scene = buildWindowScene(WINDOW);
+    expect(applyWeakFilter(scene, false).window).toEqual(scene.window);
+    expect(applyTimeFilter(scene, 12345).window).toEqual(scene.window);
+  });
+
+  it("drops edges whose endpoints fall outside the window (defensive)", () => {
+    const scene = buildWindowScene({
+      ...WINDOW,
+      edges: [...WINDOW.edges, { source: "hub", target: "outside", relation: "links" }],
+    });
+    expect(scene.stats.edgeCount).toBe(2);
   });
 });
 
