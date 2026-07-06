@@ -46,6 +46,42 @@ export function queryTerms(question: string): string[] {
   return out;
 }
 
+/**
+ * English question/filler words dropped from QUERY terms so content words
+ * drive BFS seeding. Without this, "how does the frontier cache work" seeds
+ * on "how"/"the"/"work" (which prefix-match prose labels like "Working
+ * Principles") instead of "frontier"/"cache", and lands in the wrong part of
+ * the graph. Port of upstream safishamsi 6e97088.
+ *
+ * IMPORTANT: applied to query terms only, never to node/index text — the
+ * BM25 index side (`src/retrieval/bm25.ts` tokenizeField) keeps calling the
+ * unfiltered `queryTerms`, so a symbol literally named `work` stays findable.
+ * `work`/`works`/`working` are included because "how does X work" is the most
+ * common question phrasing. Tokens of length <= 2 ("is", "be", …) are already
+ * dropped by `queryTerms`' short-English filter but stay listed for parity
+ * with the upstream set (harmless).
+ */
+export const QUERY_STOPWORDS: ReadonlySet<string> = new Set([
+  "how", "what", "why", "when", "where", "which", "who", "whom", "whose",
+  "does", "did", "is", "are", "was", "were", "be", "been", "being",
+  "can", "could", "should", "would", "will", "shall", "may", "might", "must",
+  "has", "have", "had", "the", "and", "but", "not", "for", "from", "with",
+  "without", "into", "onto", "off", "that", "this", "these", "those", "there",
+  "here", "its", "their", "them", "they", "about", "any", "all", "some",
+  "work", "works", "working",
+]);
+
+/**
+ * Drop question/filler stopwords from already-tokenized QUERY terms, falling
+ * back to the unfiltered terms when the query is all stopwords ("how does it
+ * work" still seeds on something). Port of upstream 6e97088; see
+ * `QUERY_STOPWORDS` for scope (query side only).
+ */
+export function dropQueryStopwords(terms: string[]): string[] {
+  const content = terms.filter((term) => !QUERY_STOPWORDS.has(term));
+  return content.length > 0 ? content : terms;
+}
+
 export function textMatchesQuery(text: string, query: string): boolean {
   const normalizedText = normalizeSearchText(text);
   const terms = normalizeSearchText(query).split(/\s+/).filter(Boolean);

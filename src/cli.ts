@@ -751,8 +751,12 @@ export const GraphifyPlugin = async ({ directory }) => {
       if (!existsSync(join(directory, ".graphify", "graph.json"))) return;
 
       if (input.tool === "bash") {
+        // Separate with ';' not '&&' — Windows PowerShell 5.1 rejects '&&' as a
+        // statement separator, which broke the first bash command of every
+        // OpenCode session on Windows. ';' works in PowerShell 5.1, Bash, and
+        // POSIX shells alike. Port of upstream 54825b6 (#1646).
         output.args.command =
-          'echo "[graphify] Knowledge graph at .graphify/. For focused questions, run graphify query \\"<question>\\" (scoped subgraph, usually much smaller than GRAPH_REPORT.md) instead of grepping raw files. Read GRAPH_REPORT.md only for broad architecture context." && ' +
+          'echo "[graphify] Knowledge graph at .graphify/. For focused questions, run graphify query \\"<question>\\" (scoped subgraph, usually much smaller than GRAPH_REPORT.md) instead of grepping raw files. Read GRAPH_REPORT.md only for broad architecture context." ; ' +
           output.args.command;
         reminded = true;
       }
@@ -5489,7 +5493,7 @@ export async function main(): Promise<void> {
     .action(async (question, opts) => {
       const { readFileSync: rf } = await import("node:fs");
       const { resolve: res } = await import("node:path");
-      const { scoreSearchText } = await import("./search.js");
+      const { dropQueryStopwords, scoreSearchText } = await import("./search.js");
       const gp = res(opts.graph);
       if (!existsSync(gp)) {
         console.error(`error: graph file not found: ${gp}`);
@@ -5504,7 +5508,12 @@ export async function main(): Promise<void> {
         const raw = JSON.parse(rf(gp, "utf-8"));
         const G = loadGraphFromData(raw);
 
-        const terms = normalizeSearchText(question).split(/\s+/).filter((t: string) => t.length > 2);
+        // Question/filler stopwords are dropped from the QUERY terms only
+        // (node text is never filtered) so content words drive seeding —
+        // port of upstream 6e97088.
+        const terms = dropQueryStopwords(
+          normalizeSearchText(question).split(/\s+/).filter((t: string) => t.length > 2),
+        );
         const scored: [number, string][] = [];
         G.forEachNode((nid: string, data: Record<string, unknown>) => {
           const score = scoreSearchText(
@@ -5521,7 +5530,12 @@ export async function main(): Promise<void> {
           process.exit(0);
         }
 
-        const startNodes = scored.slice(0, 5).map(([, nid]) => nid);
+        // Per-term seed diversity (upstream d56ee83 / #1445): keep the
+        // historical top-5 slice, then guarantee at least one seed per
+        // distinct matched query term so one term's incidental top match
+        // cannot starve the others.
+        const { pickSeeds } = await import("./serve.js");
+        const startNodes = pickSeeds(G, scored, terms, 5);
         const budget = parseInt(opts.budget, 10) || 2000;
         const useDfs = opts.dfs ?? false;
 
