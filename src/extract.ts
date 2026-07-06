@@ -3395,7 +3395,121 @@ export async function extractJs(filePath: string, rootDir?: string): Promise<Ext
     : ext === ".ts" || ext === ".mts" || ext === ".cts"
       ? _TS_CONFIG
       : _JS_CONFIG;
-  return _extractGeneric(filePath, config, rootDir);
+  const result = await _extractGeneric(filePath, config, rootDir);
+  if (!result.error) {
+    _extractJsRationale(filePath, result, rootDir);
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// JS/TS rationale + doc-reference extraction
+//
+// Parity with _extractPythonRationale (port of upstream safishamsi 6d3a6f1):
+// Python files get rationale nodes from docstrings and `# NOTE:`-style
+// comments, but JS/TS comments were discarded entirely. That silently drops
+// two high-value signals in mixed corpora:
+//   1. rationale comments (`// NOTE:`, `// WHY:`, …) — same as Python;
+//   2. architecture-decision references (`ADR-0011`, `RFC 793`) that teams
+//      conventionally cite in file/function headers. These are the natural
+//      join points between code and design docs in the same graph — without
+//      them, code<->ADR edges never form even when the code cites the ADR.
+// ---------------------------------------------------------------------------
+
+const _JS_RATIONALE_PREFIXES = [
+  "// NOTE:", "// IMPORTANT:", "// HACK:", "// WHY:", "// RATIONALE:",
+  "// TODO:", "// FIXME:",
+  "* NOTE:", "* IMPORTANT:", "* HACK:", "* WHY:", "* RATIONALE:",
+  "* TODO:", "* FIXME:",
+];
+
+// Doc-reference tokens worth first-classing as graph nodes. Deliberately
+// conservative: ADR-NNNN (any zero padding) and RFC NNNN / RFC-NNNN.
+const _JS_DOC_REF_RE = /\b(ADR[- ]?\d{1,5}|RFC[- ]?\d{1,5})\b/gi;
+
+// Only look for doc references inside comments, not string literals or code.
+const _JS_COMMENT_LINE_RE = /^\s*(\/\/|\/\*|\*)/;
+
+/**
+ * Post-pass: extract rationale comments and ADR/RFC doc references from JS/TS
+ * source. Mutates `result` in place (appends nodes/edges). Text-based, no
+ * parser needed. Port of upstream safishamsi 6d3a6f1.
+ */
+function _extractJsRationale(
+  filePath: string,
+  result: ExtractionResult,
+  rootDir: string = dirname(resolve(filePath)),
+): void {
+  let sourceText: string;
+  try {
+    sourceText = readFileSync(filePath, "utf-8");
+  } catch {
+    return;
+  }
+
+  const stem = qualifiedFileStem(filePath, rootDir);
+  const strPath = filePath;
+  const { nodes, edges } = result;
+  const seenIds = new Set(nodes.map((n) => n.id));
+  const fileNid = _makeId(stem);
+  const seenDocRefs = new Set<string>();
+
+  const addRationale = (text: string, line: number): void => {
+    const label = text.slice(0, 80).replace(/[\r\n]+/g, " ").trim();
+    const rid = _makeId(stem, "rationale", String(line));
+    if (!seenIds.has(rid)) {
+      seenIds.add(rid);
+      nodes.push({
+        id: rid, label, file_type: "rationale",
+        source_file: strPath, source_location: `L${line}`,
+      });
+    }
+    edges.push({
+      source: rid, target: fileNid, relation: "rationale_for",
+      confidence: "EXTRACTED", source_file: strPath,
+      source_location: `L${line}`, weight: 1.0,
+    });
+  };
+
+  const addDocRef = (token: string, line: number): void => {
+    // Normalize "adr 11" / "ADR-0011" spellings to a canonical "ADR-0011"
+    // style label so references to the same document collapse to one node.
+    const m = /^([A-Za-z]+)[- ]?(\d+)$/.exec(token);
+    if (!m) return;
+    const kind = m[1]!.toUpperCase();
+    const num = m[2]!;
+    const label = kind === "ADR" ? `${kind}-${num.padStart(4, "0")}` : `${kind}-${num}`;
+    if (seenDocRefs.has(label)) return;
+    seenDocRefs.add(label);
+    const rid = _makeId("docref", label);
+    if (!seenIds.has(rid)) {
+      seenIds.add(rid);
+      nodes.push({
+        id: rid, label, file_type: "doc_ref",
+        source_file: strPath, source_location: `L${line}`,
+      });
+    }
+    edges.push({
+      source: fileNid, target: rid, relation: "cites",
+      confidence: "EXTRACTED", source_file: strPath,
+      source_location: `L${line}`, weight: 1.0,
+    });
+  };
+
+  const lines = sourceText.split(/\r\n|\r|\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const lineText = lines[i]!;
+    const lineno = i + 1;
+    const stripped = lineText.trim();
+    if (_JS_RATIONALE_PREFIXES.some((p) => stripped.startsWith(p))) {
+      addRationale(stripped.replace(/^[/* ]+/, ""), lineno);
+    }
+    if (_JS_COMMENT_LINE_RE.test(lineText)) {
+      for (const match of stripped.matchAll(_JS_DOC_REF_RE)) {
+        addDocRef(match[1]!, lineno);
+      }
+    }
+  }
 }
 
 export async function extractJava(filePath: string, rootDir?: string): Promise<ExtractionResult> {
