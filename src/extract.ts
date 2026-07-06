@@ -6632,10 +6632,20 @@ export interface ExtractWithDiagnosticsResult {
   diagnostics: ExtractionDiagnostic[];
 }
 
+/**
+ * Whether a non-error extraction result is safe to cache: every extractable
+ * file yields at least a file node, so a zero-node result is anomalous and
+ * must not be persisted (upstream 1288a55 / #1666).
+ */
+function _shouldCacheExtraction(result: ExtractionResult): boolean {
+  return !result.error && (result.nodes?.length ?? 0) > 0;
+}
+
 export async function extractWithDiagnostics(paths: string[]): Promise<ExtractWithDiagnosticsResult> {
   const normalizedPaths = paths.map((filePath) => resolve(filePath));
   const perFile: ExtractionResult[] = [];
   const diagnostics: ExtractionDiagnostic[] = [];
+  const zeroNodeFiles: string[] = [];
   const root = inferCommonRoot(normalizedPaths);
 
   const total = normalizedPaths.length;
@@ -6669,7 +6679,17 @@ export async function extractWithDiagnostics(paths: string[]): Promise<ExtractWi
       continue;
     }
     if (!result.error) {
-      saveCached(filePath, result as unknown as Record<string, unknown>, root);
+      // Never cache a zero-node result for an extractable file. Every
+      // supported source produces at least a file node, so an empty node list
+      // is anomalous (e.g. a transient hiccup). Caching it makes the empty
+      // byte-stable across runs and silently blinds downstream queries to and
+      // through the file; skipping the write lets a rerun self-heal. Port of
+      // upstream safishamsi 1288a55 (#1666).
+      if (_shouldCacheExtraction(result)) {
+        saveCached(filePath, result as unknown as Record<string, unknown>, root);
+      } else {
+        zeroNodeFiles.push(filePath);
+      }
     } else {
       diagnostics.push({ filePath, error: result.error });
     }
@@ -6678,6 +6698,15 @@ export async function extractWithDiagnostics(paths: string[]): Promise<ExtractWi
 
   if (total >= _PROGRESS_INTERVAL) {
     process.stderr.write(`  AST extraction: ${total}/${total} files (100%)\n`);
+  }
+
+  // Surface previously-silent blindness: an accepted source file that landed
+  // in the graph with zero nodes (port of upstream 1288a55 / #1666).
+  if (zeroNodeFiles.length > 0) {
+    process.stderr.write(
+      `warning: ${zeroNodeFiles.length} source file(s) extracted with zero nodes (not cached, rerun self-heals):\n` +
+      zeroNodeFiles.map((f) => `  - ${f}\n`).join(""),
+    );
   }
 
   let allNodes: GraphNode[] = [];
@@ -6837,4 +6866,6 @@ export const __testing = {
   resolveLuaImportTarget: _resolveLuaImportTarget,
   /** Return the extractor for a given file path (real dispatch: filename, suffix, then shebang). */
   getExtractor: (filePath: string): ExtractorFn | undefined => _getExtractor(filePath),
+  /** Cache-write gate for extraction results (upstream 1288a55 / #1666). */
+  shouldCacheExtraction: _shouldCacheExtraction,
 };
