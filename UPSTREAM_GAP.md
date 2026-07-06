@@ -17,8 +17,132 @@ This document tracks the delta between this TypeScript port and upstream Python 
 - Closed parity target commit for `0.7.4`: `26a5a35200dda6207bf6fc16afed83c71238bb65` on `upstream/v7`, with feature commit `741ac3655bd33314e1aaca51e6fd30271c74c61b`
 - Closed Python `0.7.10` drift lock: remote `upstream/v7` observed on 2026-05-08 at `0c29b2cb88c6274d889ca7c33a684ce103808715`, with remote tag `v0.7.10` at `ef1050b0e4134df0bd59956b0f900dc3c83e8184`
 - Observed Python drift lock for the next pass: remote `upstream/v7` observed on 2026-05-12 at `ab32098063adb1ab4d9247747742958ad185db41`, with remote tag `v0.7.16` at the same commit
-- Active CRG stable review reference: `tirth8205/code-review-graph` tag `v2.3.3` at `52cf3bc63ee77c8b204fb809791a5f212e83a2de`
+- Active CRG stable review reference: `tirth8205/code-review-graph` tag `v2.3.6` at `935695f800f2b02e71aae6d463f3df65f0c6493e` (advanced from `v2.3.3` on 2026-07-06; see `Drift Re-Scan (2026-07-06)`)
+- Reference upstream (functional, no code ports — AGPL): `repowise-dev/repowise` at `6680c2822a64ee2c0bc53c196fe7a321df9aaf8a` (`v0.27.0`+1); see `Repowise Reference Intake (2026-07-06)` and `spec/SPEC_EVOL_CURATED_RESPONSES.md`
 - Current released line: `@sentropic/graphify@0.10.0` (rename, 2026-05-26); the `0.8.16` and `0.8.18` drift intakes below are both closed for the TypeScript line. F-0819-P1/P2 (PRs #87/#88, upstream `#1075`/`#1077`/`#1007`/`#1010`) and F-0831-P1-security (PR #93) are merged on `main` and unreleased; the next traceability pass formalizes the `v0.8.18..v0.8.31` window (`upstream/v8` fetched locally through `v0.8.31` at `7a588fb`) and reconciles those early ports
+
+## Drift Re-Scan (2026-07-06): Python `v0.9.7+1` And CRG `v2.3.6`
+
+Observed on 2026-07-06 (upstream-intake wave, same pass as the Repowise intake below). Both reference upstreams **have drifted** since the 2026-07-01 census lock.
+
+### Safi Python Graphify
+
+- Previous lock: `upstream/v8` at `5190a4e` (= `v0.9.4-20`, 2026-07-01 census above).
+- Re-fetched: `upstream/v8` advanced `5190a4e..31211a0` = **55 new commits**.
+- New remote tags (authority `git ls-remote`, per standing source-lock rule): `v0.9.5` at `d89ec68af95e0cad801b56d88df383991e659823`, `v0.9.6` (annotated `254191a2`) at `29b3f9126d9347dcf40993f2f3c4101b1f3d4ab4`, and **upstream's own `v0.9.7`** (annotated `fdca07c5`) at `b699182a4fed5207c4e6a4aa4d3cd2f5f983590e`.
+- **Tag-collision warning:** the 2026-07-01 census correctly recorded that `v0.9.7`/`v0.9.8` were *rhanka fork* release tags at that date. Upstream has now published its **own, different** `v0.9.7` (`b699182`), which the local fetch rejects (`would clobber existing tag`). The local `v0.9.7` ref remains the fork tag; never use local tag pointers for `0.9.7` parity claims — `git ls-remote upstream` only. `v1.0.0` (`0a31c08`) remains a non-target (unchanged).
+- New upstream frontier: `v0.9.7 + 1` (`31211a0`, docs-only README overhaul).
+
+**Grounding update superseding a 2026-07-01 census fact:** Lot 2 (language type/field/generic-arg `references` subsystem) is **already merged on `main`** (PR #258, collectors at `src/extract.ts:542-1071`). Type-ref follow-ups in this window are therefore small ports into an existing subsystem, no longer subsystem work. `indirect_call` (Lot 3) remains unstarted.
+
+Per-bucket census (sums to 55):
+
+| Bucket | Count | SHAs |
+| --- | --- | --- |
+| `port` | 21 | `92edf78` java-stdlib-suppression, `6d3a6f1` js/ts-rationale+ADR-refs, `2ab0867` shebang-routing, `6631af7` ruby mixes_in, `aa1bbda` case-insensitive suffix filter, `1288a55` no-cache-zero-node, `54825b6` skill/opencode fixes, `62b8eb1` import-evidence gating, `13e2bdd` ruby containers, `9b04022` kotlin `by` delegation, `2ba07e8` to_canvas guard, `4744dfe` ts/js receiver typing, `d56ee83` per-term BFS seeds, `eebc406` c# receiver calls, `3540416` decorator refs, `869aaf7` ts namespace nodes, `09aeb97` generator nodes, `1226c34` .mts/.cts, `9e7fbcb` multi-project MCP, `6e97088` query stopwords, `44c0a5e` swift singleton receiver |
+| `must-audit` | 9 | `f917494` office/detect cache, `e2ef4ef` semantic hardening + phantom imports, `8d8d2b8` update rename reconcile, `cf4b4ef` scan-root source_file, `62f49ba` cluster-only sidecar, `009a98b` symlink containment, `9811def` import-equals (likely covered), `1256d65` hook stall (likely covered), `b70a6d7` merge-graphs mixed types |
+| `n-a` | 3 | `7d463c9` pascal pip-extra packaging, `21294f0` upstream skill-snippet utf-8, `32ff6d6` claude-cli subprocess backend (TS no-key path is skill/assistant by design) |
+| `defer` | 3 | `94392de` import-cycle report fix (TS has no cycle report), `5ffa921` pg-introspect Windows URIs (no TS pg_introspect subsystem), `53c769d` Apex extractor (language not in TS surface) |
+| `release-only` | 19 | `31211a0`, `b699182` (0.9.7), `29b3f91` (0.9.6), `d89ec68` (0.9.5), `dd8c24c`, `f2b81a9`, `a4d4533`, `5cfd7d9`, `d7aafb0`, `b06c55e`, `21b52e1`, `d9f97b9`, `3140b2e`, `9fea1a4`, `983da3c`, `5737388`, `53638d4`, `412a29d`, `41ce87e` |
+
+Highlights with verified TS evidence (from this pass's audit):
+
+- `aa1bbda` **reproduces in TS today**: `collectFiles` filters with raw `extname(entry)` against `_EXTENSIONS` (`src/extract.ts:6339`) while dispatch lowercases (`:6168`) — capitalized/mixed-case extensions are silently skipped.
+- `54825b6` — 2 of 3 bugs reproduce verbatim: `src/skills/skill-windows.md:2` ships `name: graphify-windows` yet installs into `.claude/skills/graphify/` (`src/cli.ts:594-597`); the opencode plugin prepends its reminder with `&& ` (`src/cli.ts:754-756`).
+- `e2ef4ef` (#1638 slice) — confirmed TS-exposed phantom-import collision: unresolved bare npm imports fall back to `_makeId(moduleName)` (`src/extract.ts:459-461`).
+- `2ba07e8` — TS `toCanvas` reads `G.getNodeAttribute(member)` with no `hasNode` guard (`src/export.ts:982-996`).
+- `d56ee83` — TS `toolQueryGraph` takes global top-3 seeds (`src/serve.ts:348`), no per-term seed diversity; `6e97088` — `queryTerms` keeps "what"/"how" filler terms (`src/search.ts:26-49`).
+
+Lot roll-up of the 30 actionable rows:
+
+| Lot | Rows |
+| --- | --- |
+| Lot 2 follow-ups (subsystem now merged, #258) | `92edf78`, `3540416` |
+| Lot 4 build/update/cache/detect hardening | `1288a55`, `f917494`, `8d8d2b8`, `cf4b4ef`, `009a98b` |
+| Lot 5 LLM/export robustness | `2ba07e8`, `e2ef4ef` |
+| Lot 6 cross-file/member resolution + cluster | `6631af7`, `62b8eb1`, `13e2bdd`, `4744dfe`, `eebc406`, `44c0a5e`, `62f49ba` |
+| New-lot: dispatch/collect parity | `2ab0867`, `aa1bbda`, `1226c34` |
+| New-lot: JS/TS extractor parity | `6d3a6f1`, `869aaf7`, `09aeb97`, `9811def` |
+| New-lot: serve/query parity | `d56ee83`, `6e97088`, `9e7fbcb` |
+| New-lot: skill/install parity (2 bugs live in TS today) | `54825b6` |
+| New-lot: inheritance follow-up (Lot-1 style) | `9b04022` |
+| Unassigned must-audit (likely covered, test-confirm) | `1256d65`, `b70a6d7` |
+
+Honesty caveats (unchanged from prior passes): optional tree-sitter WASM grammars (kotlin, swift, c#, ruby, objc) are absent in this sandbox — language-gap rows were verified by reading `src/extract.ts`, not by running extraction; `9811def`/`1256d65`/`b70a6d7` look already-covered but are kept `must-audit` pending test confirmation.
+
+### CRG recheck (`tirth8205/code-review-graph`)
+
+- Previous lock: `v2.3.3` at `52cf3bc63ee77c8b204fb809791a5f212e83a2de` (Scope + Source Lock Notes).
+- `git ls-remote --tags` now shows `v2.3.4` (`26cd1ab2`), `v2.3.5` (`f81c67ff`), `v2.3.6` (`935695f8`), plus a first VS Code extension tag `vscode-v0.2.1` (`36777165`). Delta `v2.3.3...v2.3.6` = **46 commits** (GitHub compare API).
+- Skim of the meaningful review-features in the window:
+  - `feat: GitHub Action for risk-scored PR review comments` — the one genuinely interesting review-surface feature; classify `defer / opportunity` for the `review-delta`/`pr` lane (a CI-bot packaging of what `graphify review-analysis` already computes locally).
+  - `feat: config-driven custom language support (bring your own language)` — `defer / opportunity`; our extractor is code-driven (`src/extract.ts`), a config-driven extension lane would be a separate spec.
+  - `feat: deterministic eval pipeline, multi-hop benchmark, search lift` + `feat(eval): honest benchmark story` — CRG-internal eval infra; `n-a` (graphify has `review-eval` and `benchmark` CLI surfaces already; nothing to port, methodology worth reading).
+  - `feat: real-time Token Savings panel` + `feat: add estimated context savings` — CRG dashboard UX; `n-a` as UI, but note the convergence with the repowise counterfactual-savings row (#2 of the Repowise adoption table below): two upstreams now ship savings accounting.
+  - Remaining ~40 commits: CRG-internal fixes (daemon PID checks, SQLite/FTS transactions, embeddings provider validation, stdin draining, release/infra) — `n-a` under the standing `deferred / intentional-delta` posture on CRG daemon/SQLite infrastructure.
+- New stable CRG reference going forward: `v2.3.6` at `935695f800f2b02e71aae6d463f3df65f0c6493e`. No CRG feature adoption in this pass.
+
+## Repowise Reference Intake (2026-07-06)
+
+New reference upstream added by the principal alongside Safi Python Graphify and CRG: `repowise-dev/repowise`, observed at `6680c2822a64ee2c0bc53c196fe7a321df9aaf8a` (one commit past tag `v0.27.0`, 2026-07-05), cloned for audit at `.graphify/scratch/clones/repowise`. ANALYSIS-ONLY intake — no port in this lot; the deliverable is this table plus `spec/SPEC_EVOL_CURATED_RESPONSES.md`.
+
+> **License wall (hard rule for every row below):** repowise is **AGPL-3.0** (dual-licensed with a hosted commercial layer, `docs/COMMERCIAL.md`); this repo is MIT. Every `adopt`/`must-audit` bucket below means **design-level adoption only** — re-design from the functional description, never copy or translate repowise code.
+
+### What repowise is (functional summary)
+
+A local-first "codebase intelligence" engine (Python core + FastAPI server + Next.js dashboard + VSCode extension + Claude Code/Codex plugins) that indexes a repo once into **five intelligence layers** — Graph (tree-sitter, 15 languages, two-tier file+symbol graph, Leiden/PageRank/betweenness/SCC, framework route→handler edges), Git (hotspots, ownership/bus-factor, co-change pairs, Kamei change-risk, agent provenance), Docs (LLM wiki with confidence/freshness decay), Decisions (ADR mining from 8 sources with an exact/fuzzy/unverified verification gate), Code Health (25 deterministic markers calibrated against a real defect corpus) — persisted in SQLite/Postgres via SQLAlchemy+alembic (`packages/core/src/repowise/core/persistence/models.py`), and served to agents through ~10 task-shaped MCP tools whose responses are **curated answers** with counterfactual token-savings accounting. Pipeline: `packages/core/src/repowise/core/pipeline/orchestrator.py:155`. The enterprise security/compliance layer (CVE, SBOM, SSO/RBAC, PR bots) is hosted-only and absent from the OSS repo — the OSS core itself is complete and runs fully offline (Ollama path).
+
+Architectural affinities with this repo worth naming: files-first local mode, offline/no-LLM default for all deterministic layers, curation as **sidecar overlays over an untouched base graph** (`kg_node_meta`: "the AST graph's `graph_nodes` rows are untouched"), and refusal-over-fabrication answer gating — all four match standing graphify invariants.
+
+### Feature-by-feature adoption table
+
+Buckets: `adopt` (design-level, sketch + cost given) / `must-audit` (compare against existing TS surface first) / `n-a` (covered, intentional delta, or commercial) / `defer` (real feature, product decision needed). Repowise paths relative to the clone; graphify paths relative to repo root.
+
+| # | Repowise feature | What it does | Graphify equivalent today | Bucket | Adoption sketch / cost |
+| --- | --- | --- | --- | --- | --- |
+| 1 | **Curated responses stack**: `get_answer` one-call RAG (`mcp_server/tool_answer/`), confidence gating (hedge detector + value-grounding, `tool_answer/confidence.py`), `answer_cache` keyed by question-hash (`models.py:1063`), `human_notes` surviving regeneration (`models.py:123`), `corrections` CLI (`commands/corrections_cmd.py:29`) | Persisted, provenance-stamped Q&A over the generated corpus; low confidence degrades to excerpts instead of prose | `answer` CLI `src/cli.ts:5601` + MCP `answer_graph` `src/serve.ts:905` + `src/retrieval/answer-pack.ts` (`answer:null` offline seam, #192); citations `src/citations.ts`; no cache/ledger, no human-curation slot | `adopt` | Full design sketch in `spec/SPEC_EVOL_CURATED_RESPONSES.md` (3 targets: code corpora / process-std-am / nc-fullstack). Cost **M** + **S** authoring CLI |
+| 2 | Counterfactual savings accounting: every MCP answer logs the raw exploration it replaced (`mcp_server/_savings/counterfactual.py`, `recorder.py` incl. dead-ends), `saved`/`costs` dashboards | Honest per-tool token/$ savings ledger priced at the agent's model | `src/agent-stats/stats.ts:38` `costWeightedTokens` (spend, not savings); `src/report.ts:147` | `adopt` | Log per-call `replaced_tokens` estimates on the MCP serve path into agent-stats. Independent mini-lot, cost **S** |
+| 3 | Deterministic CLAUDE.md/AGENTS.md generation (`commands/claude_md_cmd.py:20`, no LLM) | Managed repo-context block (entry points, hotspots, modules) regenerated on sync | Skill installs write trigger docs (`src/skill-install.ts`, `src/cli.ts:2279+`) but no graph-derived context block | `adopt` | Emit a managed block from `summary`/`GRAPH_REPORT` data into CLAUDE.md on `hook-rebuild`; no-key by construction. Cost **S** |
+| 4 | SCC / import-cycle detection (`graph_node_membership`, `models.py:295`; surfaced in conformance + dashboards) | Tags strongly-connected components; powers cycle warnings | Absent — no SCC/cycle pass in `src/analyze.ts` (BFS/shortest-path only) | `adopt` | Tarjan over the Graphology graph in `src/analyze.ts`, surface in `graph_stats`/`review-analysis` cycle warnings. Cost **S** |
+| 5 | Hybrid search auto-routing by query shape: identifier→symbols, path→file pages, prose→semantic, mixed→hybrid (`mcp_server/tool_search.py:543`) | One search tool that classifies the query instead of forcing mode flags | `src/retrieval/query.ts` (BM25F+RRF+PPR), `src/search-index.ts`; no query-shape routing | `must-audit` | Add shape classifier in front of existing retrieval lanes. Cost **S/M** |
+| 6 | Kamei/JIT change-risk model on git features: lines±, entropy, subsystems, author experience, is_fix (`analysis/change_risk`, `git_commits` `models.py:473`, `docs/CHANGE_RISK.md`) | 0-10 defect-risk score per commit/range, PR directives (`will_break`, `missing_tests`) | `src/detect-changes.ts:185` `computeRiskScore` (structural, graph-based; no git-history features) | `must-audit` | Compare feature sets; git-mined features (churn/entropy/experience) would enrich `review-delta`/`review-analysis`. Cost **M** |
+| 7 | Agent provenance from git (`git_commits.agent_name`/`autonomy_tier`, `git_metadata` rollup) | Attributes commits to AI agents from commit trailers/heuristics | `src/agent-stats/correlate.ts` correlates real transcripts↔git/PRs — richer signal than commit heuristics | `must-audit` | We are ahead on mechanism; audit their commit-classification heuristics as a fallback lane when transcripts are absent. Cost **S** |
+| 8 | Per-call LLM cost ledger (`llm_costs`, `models.py:835`; `costs` cmd) | Every pipeline LLM call records model/operation/tokens/$ | Agent-transcript accounting only (`src/agent-stats/`); pipeline calls not individually ledgered | `must-audit` | Emit cost rows from `src/llm-execution.ts` dispatch into state; join with provider pricing (`src/provider-registry.ts`). Cost **S** |
+| 9 | Knowledge Map: curated layers + sub-groups + guided tour steps (`models.py:1088-1139`), entry-point ranking (`kg_project_meta`), per-node curated type/summary/tags overlay (`kg_node_meta`) | Machine-curated presentation overlay; base graph untouched | Scene hierarchies sidecar 2 lanes validé/proposé (`src/scene-hierarchies.ts`, WP4 G2), Studio group-by; no tour, no entry-point ranking | `must-audit` | Tour-steps + ranked entry points map naturally onto the hierarchy sidecar + Studio; feed the curated-responses lifecycle (§3 of the spec). Cost **M** |
+| 10 | `get_context` batch context: docs summary + ownership + freshness + co-change + decisions per target, `include=` facets, skeleton rendering (`mcp_server/tool_context/`, `docs/MCP_TOOLS.md`) | One call replacing several file reads; token-budgeted skeletons from persisted symbol bounds | `query_graph`/`get_node`/`get_neighbors` (`src/serve.ts:874-965`), `review-context` (`src/cli.ts:5191`); no ownership/freshness facets, no skeleton | `must-audit` | Facet-style `include=` on `get_node`/`answer_graph` is cheap; skeletons need persisted symbol bounds (extract already has spans). Cost **M** |
+| 11 | External systems from manifests with `io_kind` (db/network/…), powering C4 L1 (`ExternalSystem`, `models.py:201`; `ingestion/resolvers`) | Third-party deps become first-class graph entities | Package-manifest extraction exists in the extractor surface (upstream-parity rows); no external-system entity/io classification | `must-audit` | Check overlap with the python-upstream package-manifest rows already in the census before designing anything. Cost **M** |
+| 12 | Providers: DeepSeek, OpenRouter, LiteLLM, OpenCode backends (`core/providers/llm/`) | Broader BYOK provider matrix | `DirectLlmProvider` = anthropic/openai/gemini/mistral/cohere/ollama (`src/llm-execution.ts:8-11`); kimi/deepseek already noted `n/a` in the 0.8.49 intake | `must-audit` | Same decision as the standing python-upstream row — extend the union only on user demand. Cost **S** each |
+| 13 | Code Health: 25 deterministic markers, offline-calibrated defect model, 3 orthogonal dimensions (`analysis/health`, `docs/CODE_HEALTH.md`) | 1-10 file scores that provably predict defects (AUC 0.74 cross-project) | Absent — no health/maintainability metrics | `defer` | New product axis (zero-LLM analytics). Real value, big surface, needs its own spec + calibration honesty. Cost **L** |
+| 14 | Dead-code detection (`analysis/dead_code`, `dead_code_findings` `models.py:872`) | Unreachable files/exports/packages, confidence-tiered, safe-to-delete | Absent | `defer` | Graph reachability from entry points + export analysis; feasible on our graph, product decision first. Cost **M/L** |
+| 15 | Co-change / coupling mining (`analysis/coupling`, `git_metadata.co_change_partners`) | Hidden coupling AST can't see; feeds risk + context | Absent (no git-history mining at all) | `defer` | Would enrich `review-delta` and curated context; opens the whole "git intelligence" axis — decide the axis, not the feature. Cost **M** |
+| 16 | Owners / bus factor / contributor profiles (`git_metadata`, `services/owner_profile.py`) | Human ownership analytics, knowledge silos | Absent (agent-stats covers agents, not humans) | `defer` | Same git-mining axis as #15; adjacent to agent-stats plumbing. Cost **M** |
+| 17 | Decisions/ADR intelligence: mining from 8 sources, evidence accretion, verification `exact/fuzzy/unverified`, typed decision graph, staleness (`analysis/decisions`, `models.py:592-798`) | "Why is it shaped this way" answers with anti-hallucination gates | Absent (only the ontology reconciliation decision log, `src/ontology-patch.ts`) | `defer` | The **verification ladder + evidence accretion are adopted as design patterns** in the curated-responses spec; full ADR mining is its own later spec. Cost **L** |
+| 18 | Distill: index-aware command-output compression + omission store + `expand` reversibility (`core/distill/`, `docs/DISTILL.md`) | Compresses agent-bound output, errors-first, 100% reversible via `[repowise#ref]` markers | Absent | `defer` | Separate product surface (agent-IO middleware). The reversible-omission pattern is noted in the curated spec. Cost **L** |
+| 19 | Multi-repo workspaces: cross-repo co-change, HTTP/gRPC/topic/DB contract provider↔consumer matching, conformance, architecture score, federated MCP (`core/workspace/`, `docs/WORKSPACES.md`) | Cross-repo intelligence | Absent (our "workspace" = single-repo Studio/process-std-am bundle, `src/workspace-manifest.ts`) | `defer` | Big axis; contract extraction is the interesting kernel. Cost **L** |
+| 20 | C4 architecture views with curation service (`services/c4_builder/`, web `/c4`) | L1-L3 diagrams from graph + external systems | Absent (ontology hierarchies + Studio collapse are our analog) | `defer` | Re-evaluate after hierarchy collapse UX stabilizes; C4 is a rendering of data we partially have. Cost **M/L** |
+| 21 | Proactive agent hooks / `augment`: PostToolUse zero-result rescue, flood triage by PageRank, stale-wiki nudge (`commands/augment_cmd.py:87`, plugin hooks) | Injects graph context into the agent loop only when asymmetric value | Absent (our skill is pull-based; hooks only rebuild) | `defer` | Agent-UX product decision; interacts with the no-key skill contract. Cost **M** |
+| 22 | Refactoring plans + opt-in LLM codegen (`refactoring_suggestions` `models.py:947`, `tool_refactoring.py:61`, `docs/REFACTORING.md`) | Extract/Move/Break-cycle/Split plans ranked by impact×centrality×blast | `recommend-commits` (`src/recommend.ts`) is commit-grouping, not refactoring | `defer` | Depends on health (#13) + SCC (#4) foundations. Cost **L** |
+| 23 | Coverage ingestion (LCOV/Cobertura/Clover → `coverage_files`) lighting up untested hotspots | Test-coverage joins the risk picture | Absent | `defer` | Cheap once a health/risk axis exists. Cost **S** |
+| 24 | Reviewer suggestions (`services/reviewer_suggestions.py`) | Ranked reviewers for a changeset from ownership | Absent | `defer` | Needs #16 first. Cost **S/M** |
+| 25 | Wiki restyle / prose styles, computed glossary, onboarding pages (`commands/restyle_cmd.py:142`, `docs/COMPUTED_GLOSSARY.md`) | Re-render generated corpus in different registers; derived term glossary | Wiki exists (`src/wiki.ts`); no styles/glossary | `defer` | Nice-to-have on the existing wiki lane. Cost **S/M** each |
+| 26 | Local security pattern scan (`security_findings`, `routers/security.py`) | Dangerous-API/secret heuristics | Absent | `defer` | Overlaps the standing TS dependency/security audit note in the 0.8.49 intake. Cost **M** |
+| 27 | Web KPI dashboard (~35 Next.js pages) + codebase chat (SSE loop over MCP tools) (`packages/web/`, `routers/chat.py`) | Full product UI + in-product chat | Studio is a DS-native graph explorer by posture; chat lives in the HOST assistant (no-key skill default; WP16 chat-ui seam) | `n-a` | Intentional architecture delta — do not adopt an in-product chat/KPI web app |
+| 28 | `get_overview` / `list_repos` / single-repo `get_blast_radius` equivalents | Orientation + impact tools | Covered: `first_hop_summary` + `summary` CLI + GRAPH_REPORT resources (`src/serve.ts:85-115,812`); `review_analysis` blast radius (`src/review-analysis.ts:159`) | `n-a` | Covered (cross-repo blast radius is #19) |
+| 29 | Auto-sync core: post-commit hook, watcher, polling (`docs/AUTO_SYNC.md`) | Keep index fresh | Covered: `src/watch.ts`, `src/hooks.ts`, `hook-rebuild` (`src/cli.ts:5691`) | `n-a` | Covered; GitHub/GitLab **webhook intake** is the only missing lane → fold into #19 if ever |
+| 30 | VSCode native extension (risk panel, gutter heat, CodeLens, dashboards) (`packages/vscode/`, `docs/VSCODE.md`) | IDE surface over the local server | Skill/MCP-config install only (`src/cli.ts:2385`) | `defer` | Same standing decision as CRG row #19 (no VS Code extension without a dedicated spec). Cost **L** |
+| 31 | Hosted/commercial layer: CVE/OSV reachability, SBOM/VEX, SSO/RBAC/SCIM, PR bots, compliance (`docs/COMMERCIAL.md`) | Enterprise governance | n/a | `n-a` | Not in the OSS repo; nothing to audit |
+
+**Bucket counts:** adopt 4 (#1 #2 #3 #4) · must-audit 8 (#5-#12) · defer 14 (#13-#26, #30) · n-a 4 (#27 #28 #29 #31). The adopt bucket is deliberately small and S/M-sized except the curated-responses program itself, which is the principal's named interest and carries its own decision spec.
+
+### Curated responses — pointer
+
+The deep-dive (exact upstream mechanism: schema, keying, retrieval, gating, lifecycle, who curates) and the three-target adoption design (code corpora / **process-std-am** / **nc-fullstack**) live in **`spec/SPEC_EVOL_CURATED_RESPONSES.md`** (DRAFT, decision-ready, 5 open decisions for the principal). Ten-line mechanism summary is §1 of that spec.
+
+### Repowise source-lock notes
+
+- Reference lock: `repowise-dev/repowise` `main` at `6680c282` (= `v0.27.0` + 1 commit). Re-scan cadence: opportunistic, alongside python/CRG drift passes.
+- Verified honest gaps: OSS core is complete (no license-gated stubs found in the open packages; hosted features are absent, not stubbed); the one in-tree stub is `PipelineJob` checkpoint/resume orchestrator integration (`models.py:1196+` docstring).
+- AGPL-3.0: never vendor, copy, or translate repowise code into this MIT repo. Design-level adoption only, each time re-specified in our own terms.
 
 ## Active `0.8.49` Drift Intake
 
