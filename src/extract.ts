@@ -457,7 +457,16 @@ function resolveJsImportTargetInfo(raw: string, importerPath: string): JsImportT
   }
 
   const moduleName = raw.split("/").pop() ?? "";
-  return moduleName ? { targetId: _makeId(moduleName) } : null;
+  // Unresolved: relative/absolute and tsconfig-alias resolution have run and
+  // failed, so this is an external package (or a dangling local path).
+  // Namespace the id with the "ref" prefix so it can NEVER collapse to the
+  // same _makeId as a local file/symbol node. Without it, the bare
+  // last-segment id (e.g. "tailwindcss/colors" -> "colors") collides with any
+  // unrelated local file of that stem, producing a confident (EXTRACTED)
+  // cross-language phantom imports_from edge. The ref-namespaced target has
+  // no node, so build drops it as an external reference — the correct outcome
+  // for a third-party import. Port of upstream e2ef4ef (#1638).
+  return moduleName ? { targetId: _makeId("ref", raw) } : null;
 }
 
 function resolveJsImportTarget(raw: string, importerPath: string): string | null {
