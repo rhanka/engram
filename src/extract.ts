@@ -1918,6 +1918,146 @@ const _PYTHON_CONFIG: LanguageConfig = defaultConfig({
   importHandler: _importPython,
 });
 
+/**
+ * Return the head symbol of a TS/JS `decorator` node: `@Injectable` → the
+ * identifier; `@Component({...})` / `@Input()` → the `function` of the
+ * call_expression; `@ng.Component()` / `@core.Injectable` → the `property` of
+ * the member_expression (the imported symbol, not the namespace alias).
+ * Port of upstream safishamsi 3540416.
+ */
+function _tsDecoratorName(decoNode: SyntaxNode, source: string): string | null {
+  for (const child of decoNode.children) {
+    if (!child.isNamed) continue;
+    let target: SyntaxNode = child;
+    if (target.type === "call_expression") {
+      target = target.childForFieldName("function") ?? target;
+    }
+    if (target.type === "member_expression") {
+      const prop = target.childForFieldName("property");
+      return prop ? _readText(prop, source) : null;
+    }
+    if (target.type === "identifier") {
+      return _readText(target, source);
+    }
+    return null;
+  }
+  return null;
+}
+
+/** Name of a `method_definition`, matching the id the function-types branch builds. */
+function _tsMethodName(methodNode: SyntaxNode, source: string): string | null {
+  const nameNode = methodNode.childForFieldName("name");
+  return nameNode ? _readText(nameNode, source) : null;
+}
+
+/**
+ * Collect `decorator` nodes under `node` (e.g. parameter decorators inside a
+ * method's formal_parameters, or a field's own decorator), without crossing
+ * into a nested class or a nested method, which own their own decorators.
+ */
+function _tsDescendantDecorators(node: SyntaxNode): SyntaxNode[] {
+  const out: SyntaxNode[] = [];
+  const rec = (n: SyntaxNode, top: boolean): void => {
+    for (const child of n.children) {
+      const ct = child.type;
+      if (ct === "decorator") {
+        out.push(child);
+      } else if (ct === "class_declaration" || ct === "abstract_class_declaration") {
+        continue;
+      } else if (ct === "method_definition" && !top) {
+        continue;
+      } else {
+        rec(child, false);
+      }
+    }
+  };
+  rec(node, true);
+  return out;
+}
+
+/**
+ * Emit `references` edges (context="decorator") from a class and its members
+ * to the symbols of the TS/JS decorators applied to them (`@Component`,
+ * `@Injectable`, `@Input`, `@Inject`, `@Entity`, …). Decorators occur only on
+ * classes, class members, and parameters, so a single pass over the class
+ * declaration covers them. Members that are graph nodes (methods) own their
+ * decorators and their parameter decorators; members that are not nodes
+ * (fields, parameters) attribute to the enclosing class. Targets go through
+ * `ensureNamedNode`, so a decorator imported from another module becomes a
+ * sourceless stub the corpus rewire collapses onto the real definition.
+ * Port of upstream safishamsi 3540416.
+ */
+function _tsEmitDecoratorEdges(
+  classNode: SyntaxNode,
+  classNid: string,
+  source: string,
+  ensureNamedNode: (name: string, line: number) => string,
+  addEdge: (
+    src: string, tgt: string, relation: string, line: number,
+    confidence?: "EXTRACTED" | "INFERRED", weight?: number, context?: string,
+  ) => void,
+): void {
+  const emit = (decoNode: SyntaxNode, ownerNid: string): void => {
+    const name = _tsDecoratorName(decoNode, source);
+    if (!name) return;
+    const line = decoNode.startPosition.row + 1;
+    const target = ensureNamedNode(name, line);
+    if (target !== ownerNid) {
+      addEdge(ownerNid, target, "references", line, "EXTRACTED", 1.0, "decorator");
+    }
+  };
+
+  // Class-level decorators: direct children of the class node (`@Deco class C`),
+  // plus — when exported (`@Deco export class C`) — the decorators that sit on
+  // the wrapping export_statement, before the class.
+  for (const child of classNode.children) {
+    if (child.type === "decorator") emit(child, classNid);
+  }
+  const parent = classNode.parent;
+  if (parent !== null && parent.type === "export_statement") {
+    for (const child of parent.children) {
+      if (child.type === "decorator") {
+        emit(child, classNid);
+      } else if (child.type === "class_declaration" || child.type === "abstract_class_declaration") {
+        break;
+      }
+    }
+  }
+
+  // Member decorators inside the class body.
+  const body = classNode.children.find((c) => c.type === "class_body");
+  if (!body) return;
+  for (const member of body.children) {
+    const mt = member.type;
+    if (mt === "decorator") {
+      // A method decorator is a sibling preceding the method; skip past any
+      // stacked decorators to find it.
+      let owner = classNid;
+      let sib: SyntaxNode | null = member.nextNamedSibling;
+      while (sib !== null && sib.type === "decorator") {
+        sib = sib.nextNamedSibling;
+      }
+      if (sib !== null && sib.type === "method_definition") {
+        const mname = _tsMethodName(sib, source);
+        if (mname) owner = _makeId(classNid, mname);
+      }
+      emit(member, owner);
+    } else if (mt === "method_definition") {
+      const mname = _tsMethodName(member, source);
+      const mNid = mname ? _makeId(classNid, mname) : classNid;
+      for (const deco of _tsDescendantDecorators(member)) {
+        emit(deco, mNid);
+      }
+    } else {
+      // Fields / accessors: the member is not a node, so attribute its
+      // decorators (e.g. `@Input()`, `@Column()`) to the class.
+      for (const deco of _tsDescendantDecorators(member)) {
+        emit(deco, classNid);
+      }
+    }
+  }
+}
+
 const _JS_CONFIG: LanguageConfig = defaultConfig({
   tsGrammarName: "javascript",
   tsModule: "tree_sitter_javascript",
@@ -2275,6 +2415,13 @@ async function _extractGeneric(
       const line = node.startPosition.row + 1;
       addNode(classNid, className, line);
       addEdge(fileNid, classNid, "contains", line);
+
+      // TS/JS decorators on the class and its members (@Component,
+      // @Injectable, @Input, @Inject, @Entity, …). Decorators live only in
+      // class subtrees. Port of upstream safishamsi 3540416.
+      if (config.tsModule === "tree_sitter_javascript" || config.tsModule === "tree_sitter_typescript") {
+        _tsEmitDecoratorEdges(node, classNid, source, ensureNamedNode, addEdge);
+      }
 
       // Swift extension dedup: tree-sitter-swift parses both `class Foo` and
       // `extension Foo` as `class_declaration`, with `extension Foo` carrying
