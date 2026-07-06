@@ -17,8 +17,70 @@ This document tracks the delta between this TypeScript port and upstream Python 
 - Closed parity target commit for `0.7.4`: `26a5a35200dda6207bf6fc16afed83c71238bb65` on `upstream/v7`, with feature commit `741ac3655bd33314e1aaca51e6fd30271c74c61b`
 - Closed Python `0.7.10` drift lock: remote `upstream/v7` observed on 2026-05-08 at `0c29b2cb88c6274d889ca7c33a684ce103808715`, with remote tag `v0.7.10` at `ef1050b0e4134df0bd59956b0f900dc3c83e8184`
 - Observed Python drift lock for the next pass: remote `upstream/v7` observed on 2026-05-12 at `ab32098063adb1ab4d9247747742958ad185db41`, with remote tag `v0.7.16` at the same commit
-- Active CRG stable review reference: `tirth8205/code-review-graph` tag `v2.3.3` at `52cf3bc63ee77c8b204fb809791a5f212e83a2de`
+- Active CRG stable review reference: `tirth8205/code-review-graph` tag `v2.3.6` at `935695f800f2b02e71aae6d463f3df65f0c6493e` (advanced from `v2.3.3` on 2026-07-06; see `Drift Re-Scan (2026-07-06)`)
+- Reference upstream (functional, no code ports — AGPL): `repowise-dev/repowise` at `6680c2822a64ee2c0bc53c196fe7a321df9aaf8a` (`v0.27.0`+1); see `Repowise Reference Intake (2026-07-06)` and `spec/SPEC_EVOL_CURATED_RESPONSES.md`
 - Current released line: `@sentropic/graphify@0.10.0` (rename, 2026-05-26); the `0.8.16` and `0.8.18` drift intakes below are both closed for the TypeScript line. F-0819-P1/P2 (PRs #87/#88, upstream `#1075`/`#1077`/`#1007`/`#1010`) and F-0831-P1-security (PR #93) are merged on `main` and unreleased; the next traceability pass formalizes the `v0.8.18..v0.8.31` window (`upstream/v8` fetched locally through `v0.8.31` at `7a588fb`) and reconciles those early ports
+
+## Drift Re-Scan (2026-07-06): Python `v0.9.7+1` And CRG `v2.3.6`
+
+Observed on 2026-07-06 (upstream-intake wave, same pass as the Repowise intake below). Both reference upstreams **have drifted** since the 2026-07-01 census lock.
+
+### Safi Python Graphify
+
+- Previous lock: `upstream/v8` at `5190a4e` (= `v0.9.4-20`, 2026-07-01 census above).
+- Re-fetched: `upstream/v8` advanced `5190a4e..31211a0` = **55 new commits**.
+- New remote tags (authority `git ls-remote`, per standing source-lock rule): `v0.9.5` at `d89ec68af95e0cad801b56d88df383991e659823`, `v0.9.6` (annotated `254191a2`) at `29b3f9126d9347dcf40993f2f3c4101b1f3d4ab4`, and **upstream's own `v0.9.7`** (annotated `fdca07c5`) at `b699182a4fed5207c4e6a4aa4d3cd2f5f983590e`.
+- **Tag-collision warning:** the 2026-07-01 census correctly recorded that `v0.9.7`/`v0.9.8` were *rhanka fork* release tags at that date. Upstream has now published its **own, different** `v0.9.7` (`b699182`), which the local fetch rejects (`would clobber existing tag`). The local `v0.9.7` ref remains the fork tag; never use local tag pointers for `0.9.7` parity claims — `git ls-remote upstream` only. `v1.0.0` (`0a31c08`) remains a non-target (unchanged).
+- New upstream frontier: `v0.9.7 + 1` (`31211a0`, docs-only README overhaul).
+
+**Grounding update superseding a 2026-07-01 census fact:** Lot 2 (language type/field/generic-arg `references` subsystem) is **already merged on `main`** (PR #258, collectors at `src/extract.ts:542-1071`). Type-ref follow-ups in this window are therefore small ports into an existing subsystem, no longer subsystem work. `indirect_call` (Lot 3) remains unstarted.
+
+Per-bucket census (sums to 55):
+
+| Bucket | Count | SHAs |
+| --- | --- | --- |
+| `port` | 21 | `92edf78` java-stdlib-suppression, `6d3a6f1` js/ts-rationale+ADR-refs, `2ab0867` shebang-routing, `6631af7` ruby mixes_in, `aa1bbda` case-insensitive suffix filter, `1288a55` no-cache-zero-node, `54825b6` skill/opencode fixes, `62b8eb1` import-evidence gating, `13e2bdd` ruby containers, `9b04022` kotlin `by` delegation, `2ba07e8` to_canvas guard, `4744dfe` ts/js receiver typing, `d56ee83` per-term BFS seeds, `eebc406` c# receiver calls, `3540416` decorator refs, `869aaf7` ts namespace nodes, `09aeb97` generator nodes, `1226c34` .mts/.cts, `9e7fbcb` multi-project MCP, `6e97088` query stopwords, `44c0a5e` swift singleton receiver |
+| `must-audit` | 9 | `f917494` office/detect cache, `e2ef4ef` semantic hardening + phantom imports, `8d8d2b8` update rename reconcile, `cf4b4ef` scan-root source_file, `62f49ba` cluster-only sidecar, `009a98b` symlink containment, `9811def` import-equals (likely covered), `1256d65` hook stall (likely covered), `b70a6d7` merge-graphs mixed types |
+| `n-a` | 3 | `7d463c9` pascal pip-extra packaging, `21294f0` upstream skill-snippet utf-8, `32ff6d6` claude-cli subprocess backend (TS no-key path is skill/assistant by design) |
+| `defer` | 3 | `94392de` import-cycle report fix (TS has no cycle report), `5ffa921` pg-introspect Windows URIs (no TS pg_introspect subsystem), `53c769d` Apex extractor (language not in TS surface) |
+| `release-only` | 19 | `31211a0`, `b699182` (0.9.7), `29b3f91` (0.9.6), `d89ec68` (0.9.5), `dd8c24c`, `f2b81a9`, `a4d4533`, `5cfd7d9`, `d7aafb0`, `b06c55e`, `21b52e1`, `d9f97b9`, `3140b2e`, `9fea1a4`, `983da3c`, `5737388`, `53638d4`, `412a29d`, `41ce87e` |
+
+Highlights with verified TS evidence (from this pass's audit):
+
+- `aa1bbda` **reproduces in TS today**: `collectFiles` filters with raw `extname(entry)` against `_EXTENSIONS` (`src/extract.ts:6339`) while dispatch lowercases (`:6168`) — capitalized/mixed-case extensions are silently skipped.
+- `54825b6` — 2 of 3 bugs reproduce verbatim: `src/skills/skill-windows.md:2` ships `name: graphify-windows` yet installs into `.claude/skills/graphify/` (`src/cli.ts:594-597`); the opencode plugin prepends its reminder with `&& ` (`src/cli.ts:754-756`).
+- `e2ef4ef` (#1638 slice) — confirmed TS-exposed phantom-import collision: unresolved bare npm imports fall back to `_makeId(moduleName)` (`src/extract.ts:459-461`).
+- `2ba07e8` — TS `toCanvas` reads `G.getNodeAttribute(member)` with no `hasNode` guard (`src/export.ts:982-996`).
+- `d56ee83` — TS `toolQueryGraph` takes global top-3 seeds (`src/serve.ts:348`), no per-term seed diversity; `6e97088` — `queryTerms` keeps "what"/"how" filler terms (`src/search.ts:26-49`).
+
+Lot roll-up of the 30 actionable rows:
+
+| Lot | Rows |
+| --- | --- |
+| Lot 2 follow-ups (subsystem now merged, #258) | `92edf78`, `3540416` |
+| Lot 4 build/update/cache/detect hardening | `1288a55`, `f917494`, `8d8d2b8`, `cf4b4ef`, `009a98b` |
+| Lot 5 LLM/export robustness | `2ba07e8`, `e2ef4ef` |
+| Lot 6 cross-file/member resolution + cluster | `6631af7`, `62b8eb1`, `13e2bdd`, `4744dfe`, `eebc406`, `44c0a5e`, `62f49ba` |
+| New-lot: dispatch/collect parity | `2ab0867`, `aa1bbda`, `1226c34` |
+| New-lot: JS/TS extractor parity | `6d3a6f1`, `869aaf7`, `09aeb97`, `9811def` |
+| New-lot: serve/query parity | `d56ee83`, `6e97088`, `9e7fbcb` |
+| New-lot: skill/install parity (2 bugs live in TS today) | `54825b6` |
+| New-lot: inheritance follow-up (Lot-1 style) | `9b04022` |
+| Unassigned must-audit (likely covered, test-confirm) | `1256d65`, `b70a6d7` |
+
+Honesty caveats (unchanged from prior passes): optional tree-sitter WASM grammars (kotlin, swift, c#, ruby, objc) are absent in this sandbox — language-gap rows were verified by reading `src/extract.ts`, not by running extraction; `9811def`/`1256d65`/`b70a6d7` look already-covered but are kept `must-audit` pending test confirmation.
+
+### CRG recheck (`tirth8205/code-review-graph`)
+
+- Previous lock: `v2.3.3` at `52cf3bc63ee77c8b204fb809791a5f212e83a2de` (Scope + Source Lock Notes).
+- `git ls-remote --tags` now shows `v2.3.4` (`26cd1ab2`), `v2.3.5` (`f81c67ff`), `v2.3.6` (`935695f8`), plus a first VS Code extension tag `vscode-v0.2.1` (`36777165`). Delta `v2.3.3...v2.3.6` = **46 commits** (GitHub compare API).
+- Skim of the meaningful review-features in the window:
+  - `feat: GitHub Action for risk-scored PR review comments` — the one genuinely interesting review-surface feature; classify `defer / opportunity` for the `review-delta`/`pr` lane (a CI-bot packaging of what `graphify review-analysis` already computes locally).
+  - `feat: config-driven custom language support (bring your own language)` — `defer / opportunity`; our extractor is code-driven (`src/extract.ts`), a config-driven extension lane would be a separate spec.
+  - `feat: deterministic eval pipeline, multi-hop benchmark, search lift` + `feat(eval): honest benchmark story` — CRG-internal eval infra; `n-a` (graphify has `review-eval` and `benchmark` CLI surfaces already; nothing to port, methodology worth reading).
+  - `feat: real-time Token Savings panel` + `feat: add estimated context savings` — CRG dashboard UX; `n-a` as UI, but note the convergence with the repowise counterfactual-savings row (#2 of the Repowise adoption table below): two upstreams now ship savings accounting.
+  - Remaining ~40 commits: CRG-internal fixes (daemon PID checks, SQLite/FTS transactions, embeddings provider validation, stdin draining, release/infra) — `n-a` under the standing `deferred / intentional-delta` posture on CRG daemon/SQLite infrastructure.
+- New stable CRG reference going forward: `v2.3.6` at `935695f800f2b02e71aae6d463f3df65f0c6493e`. No CRG feature adoption in this pass.
 
 ## Repowise Reference Intake (2026-07-06)
 
