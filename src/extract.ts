@@ -1038,6 +1038,29 @@ function _scalaCollectTypeRefs(
 }
 
 /**
+ * Return the head identifier text from a Kotlin `user_type` node (without
+ * generics). Port of upstream safishamsi `_kotlin_user_type_name`.
+ */
+function _kotlinUserTypeName(userTypeNode: SyntaxNode | null, source: string): string | null {
+  if (userTypeNode === null) return null;
+  for (const c of userTypeNode.children) {
+    if (c.type === "type_identifier" || c.type === "identifier") {
+      const text = _readText(c, source);
+      return text || null;
+    }
+    if (c.type === "simple_user_type") {
+      for (const sub of c.children) {
+        if (sub.type === "identifier" || sub.type === "type_identifier") {
+          const text = _readText(sub, source);
+          return text || null;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * Walk a Swift type expression; append `[name, role]` tuples. Unwraps
  * `type_annotation` / optional / array / dictionary / tuple wrappers and reads
  * the `type_identifier` head + `type_arguments` of a `user_type`. Port of
@@ -2593,6 +2616,67 @@ async function _extractGeneric(
                 addEdge(classNid, baseNid, "inherits", line);
               }
             }
+          }
+        }
+      }
+
+      // Kotlin-specific: delegation_specifiers → inherits
+      // (constructor_invocation) / implements (user_type), including the
+      // `class Foo : Bar by baz` form which wraps the delegated interface in
+      // an `explicit_delegation` node. Port of upstream safishamsi kotlin
+      // delegation handling + 9b04022 (by-delegation branch). Generic-arg
+      // reference recovery is deferred with the kotlin type-refs collector
+      // (Lot 2 kotlin slice not yet ported).
+      if (config.tsModule === "tree_sitter_kotlin") {
+        for (const child of node.children) {
+          if (child.type !== "delegation_specifiers") continue;
+          for (const spec of child.children) {
+            if (spec.type !== "delegation_specifier") continue;
+            let relation = "implements";
+            let userTypeNode: SyntaxNode | null = null;
+            for (const sub of spec.children) {
+              if (sub.type === "constructor_invocation") {
+                relation = "inherits";
+                for (const inner of sub.children) {
+                  if (inner.type === "user_type") {
+                    userTypeNode = inner;
+                    break;
+                  }
+                }
+                break;
+              }
+              if (sub.type === "user_type") {
+                userTypeNode = sub;
+                break;
+              }
+              // `class Foo : Bar by baz` wraps the delegated interface `Bar`
+              // in an `explicit_delegation` node; grab its first `user_type`
+              // descendant so the implements edge still fires (9b04022).
+              if (sub.type === "explicit_delegation") {
+                for (const inner of sub.children) {
+                  if (inner.type === "user_type") {
+                    userTypeNode = inner;
+                    break;
+                  }
+                }
+                break;
+              }
+            }
+            if (!userTypeNode) continue;
+            const base = _kotlinUserTypeName(userTypeNode, source);
+            if (!base) continue;
+            let baseNid = _makeId(stem, base);
+            if (!seenIds.has(baseNid)) {
+              baseNid = _makeId(base);
+              if (!seenIds.has(baseNid)) {
+                nodes.push({
+                  id: baseNid, label: base, file_type: "code",
+                  source_file: "", source_location: "",
+                });
+                seenIds.add(baseNid);
+              }
+            }
+            addEdge(classNid, baseNid, relation, line);
           }
         }
       }
@@ -6868,4 +6952,6 @@ export const __testing = {
   getExtractor: (filePath: string): ExtractorFn | undefined => _getExtractor(filePath),
   /** Cache-write gate for extraction results (upstream 1288a55 / #1666). */
   shouldCacheExtraction: _shouldCacheExtraction,
+  /** Kotlin user_type head-name reader (upstream _kotlin_user_type_name). */
+  kotlinUserTypeName: _kotlinUserTypeName,
 };
