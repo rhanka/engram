@@ -124,7 +124,19 @@
         const edgeColors = new Uint8Array(edges.length * 4);
         const edgeDash = new Uint8Array(edges.length);
         const edgeCurvatures = new Float32Array(edges.length);
+        const edgeRouteStyles = new Uint8Array(edges.length);
+        let hasRouteStyles = false;
         const DASH_CODES = { solid: 0, dashed: 1, dotted: 2, "long-dash": 3 };
+        // Per-edge ROUTE style (git-flow lot): flow-port / flow-port-reverse.
+        // Only attached when a fixture edge opts in, so every historical
+        // fixture builds the EXACT buffer shape it always did (golden parity).
+        const ROUTE_CODES = {
+          default: 0,
+          "flow-port": 1,
+          "flow-port-reverse": 2,
+          "flow-port-no-arrow": 3,
+          "flow-port-reverse-no-arrow": 4,
+        };
 
         edges.forEach((edge, i) => {
           edgeArr[i * 2] = idToIndex.get(edge.source) ?? 0;
@@ -137,6 +149,8 @@
           edgeColors[i * 4 + 3] = a;
           edgeDash[i] = DASH_CODES[edge.dash ?? "solid"] ?? 0;
           edgeCurvatures[i] = edge.curvature ?? 0;
+          edgeRouteStyles[i] = ROUTE_CODES[edge.edge_style ?? "default"] ?? 0;
+          if (edgeRouteStyles[i] !== 0) hasRouteStyles = true;
         });
 
         return {
@@ -152,6 +166,7 @@
             edgeColors,
             edgeDash,
             edgeCurvatures,
+            ...(hasRouteStyles ? { edgeRouteStyles } : {}),
           },
         };
       }
@@ -222,6 +237,10 @@
         const renderer = Graph.createGraphRenderer(canvas, {
           backend,
           pixelRatio: dpr,
+          // Git-flow LABEL-SCALE knob (SPEC_GITFLOW_LABELS -20% pills): only the
+          // git-flow captures pass it; absent (undefined) keeps the legacy box
+          // metric, so every pre-existing golden stays byte-identical.
+          boxBaseHeightPx: opts.boxBaseHeightPx ?? undefined,
           // B1 Phase 1 INTERNAL CANARY: the golden caller opts the WebGL backend
           // into the new INSTANCED-SHAPE path so the harness diffs the real
           // instanced shapes vs Canvas2D. Default (undefined) keeps the legacy
