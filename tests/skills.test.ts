@@ -288,6 +288,17 @@ describe("skill cache examples", () => {
     }
   });
 
+  it("declares frontmatter name 'graphify' in every distributed markdown skill (upstream 54825b6 #1635)", () => {
+    // Claude Code requires the skill folder name to equal the frontmatter
+    // `name`. Every install destination is a `skills/graphify/` folder, so a
+    // suffixed name (e.g. `graphify-windows`) silently breaks discovery.
+    for (const relativePath of DISTRIBUTED_SKILL_DOCS) {
+      if (!relativePath.endsWith(".md")) continue;
+      const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
+      expect(content, relativePath).toMatch(/^name: graphify$/m);
+    }
+  });
+
   it("keeps the Windows skill usage lines aligned with upstream v0.3.28", () => {
     const content = readFileSync(new URL("../src/skills/skill-windows.md", import.meta.url), "utf-8");
 
