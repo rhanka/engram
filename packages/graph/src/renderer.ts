@@ -1,6 +1,12 @@
 import { computePositionBounds, copyPositions } from "./positions";
 import { BOX_GLYPH_CORNER_RATIO, SQUARE_INSET_RATIO, shapePolygonPoints } from "./shape-geometry";
-import { boxDimensions } from "./render-geometry";
+import {
+  FLOW_PORT_MIN_STUB,
+  boxDimensions,
+  flowPortEdgeGeometry,
+  routeIsArrowless,
+  routeIsReversed,
+} from "./render-geometry";
 import { cameraToViewProjection } from "./mat4";
 import { createWebGLShapeRenderer, type WebGLShapeRenderer } from "./webgl-shapes";
 import { createWebGLEdgeRenderer, type WebGLEdgeRenderer } from "./webgl-edges";
@@ -314,6 +320,12 @@ function copyStyle(style: GraphStyleBuffers, nodeCount: number, edgeCount: numbe
     throw new RangeError("edge style buffers must match edge count");
   }
 
+  if (style.edgeRouteStyles && style.edgeRouteStyles.length !== edgeCount) {
+    throw new RangeError(
+      `edgeRouteStyles length ${style.edgeRouteStyles.length} does not match edge count ${edgeCount}`,
+    );
+  }
+
   return {
     nodeSizes: new Float32Array(style.nodeSizes),
     nodeColors: new Uint8Array(style.nodeColors),
@@ -325,6 +337,7 @@ function copyStyle(style: GraphStyleBuffers, nodeCount: number, edgeCount: numbe
     edgeColors: new Uint8Array(style.edgeColors),
     edgeDash: new Uint8Array(style.edgeDash),
     edgeCurvatures: new Float32Array(style.edgeCurvatures),
+    edgeRouteStyles: style.edgeRouteStyles ? new Uint8Array(style.edgeRouteStyles) : undefined,
   };
 }
 
@@ -805,6 +818,10 @@ function drawFallback2D(
   canvas: GraphCanvasLike | null,
   pixelRatio: number,
   skipEdges = false,
+  // Box glyph base height in CSS px — the git-flow LABEL-SCALE knob
+  // (GraphRendererOptions.boxBaseHeightPx). Default = the legacy metric, so
+  // every existing caller/golden is byte-identical.
+  boxBaseHeightPx: number = BOX_BASE_HEIGHT_PX,
 ): void {
   if (!context || !canvas) return;
 
@@ -844,7 +861,7 @@ function drawFallback2D(
     const label = state.style?.nodeLabels?.[nodeIndex] ?? "";
     // Box size is degree-INDEPENDENT (legacy): a fixed base height scaled only by
     // pixelRatio × zoom, so a high-degree Work box never balloons past its neighbours.
-    const boxHeight = BOX_BASE_HEIGHT_PX * pixelRatio * camera.zoom;
+    const boxHeight = boxBaseHeightPx * pixelRatio * camera.zoom;
     const dims = boxDimensions(boxHeight, label, measureLabelWidth);
     geometry.boxHalfWidths[nodeIndex] = dims.w / 2;
     geometry.boxHalfHeights[nodeIndex] = dims.h / 2;
@@ -868,13 +885,61 @@ function drawFallback2D(
 
   const edgeCount = skipEdges ? 0 : state.edges.length / 2;
   for (let edgeIndex = 0; edgeIndex < edgeCount; edgeIndex += 1) {
-    const sourceIndex = state.edges[edgeIndex * 2] ?? 0;
-    const targetIndex = state.edges[edgeIndex * 2 + 1] ?? 0;
+    let sourceIndex = state.edges[edgeIndex * 2] ?? 0;
+    let targetIndex = state.edges[edgeIndex * 2 + 1] ?? 0;
+    const route = state.style?.edgeRouteStyles?.[edgeIndex] ?? 0;
+    // flow-port-reverse (2/4): swap the endpoints BEFORE routing so a new→old
+    // data edge (git commit-parent child→parent) is DRAWN old→new (left→right).
+    if (routeIsReversed(route)) {
+      const swapIndex = sourceIndex;
+      sourceIndex = targetIndex;
+      targetIndex = swapIndex;
+    }
     const source = screenPoint(state.positions, sourceIndex, camera, canvas);
     const target = screenPoint(state.positions, targetIndex, camera, canvas);
     const curvature = state.style?.edgeCurvatures[edgeIndex] ?? 0;
     const width = state.style?.edgeWidths[edgeIndex] ?? 1;
     const colorOffset = edgeIndex * 4;
+
+    // FLOW-PORT routing (route codes 1-4): the edge EXITS the source node at
+    // its RIGHT port and ENTERS the target node at its LEFT port as a
+    // horizontal-dominant smooth S (or a straight lane segment on the same
+    // row). Arrow-carrying codes (1/2 — merge connectors, lane segments) put
+    // the arrowhead ON the left port pointing RIGHT; arrowless codes (3/4 —
+    // git-flow FORK descents) draw the bare S. Single-sourced with the WebGL2
+    // instanced path via render-geometry.flowPortEdgeGeometry.
+    // Default (0) falls through to the historical path below, byte-identical.
+    if (route !== 0) {
+      const geom = flowPortEdgeGeometry(
+        source,
+        target,
+        borderOffset(sourceIndex, 1, 0),
+        borderOffset(targetIndex, -1, 0),
+        FLOW_PORT_MIN_STUB * pixelRatio * camera.zoom,
+      );
+      if (geom.degenerate) continue;
+      const flowColor = cssColor(state.style?.edgeColors, colorOffset, DEFAULT_EDGE_COLOR);
+      context.beginPath();
+      context.strokeStyle = flowColor;
+      context.lineWidth = Math.max(1, width * pixelRatio);
+      applyDash(context, state.style?.edgeDash[edgeIndex] ?? 0, pixelRatio);
+      context.moveTo(geom.startX, geom.startY);
+      if (geom.cubic) {
+        context.bezierCurveTo(geom.controlX, geom.controlY, geom.control2X, geom.control2Y, geom.endX, geom.endY);
+      } else {
+        context.lineTo(geom.endX, geom.endY);
+      }
+      context.stroke();
+      if (!routeIsArrowless(route)) {
+        // Arrow ON the target's left port, pointing right (incoming tangent is
+        // horizontal by construction; ports sit on the borders).
+        const flowArrowLength = ARROW_LENGTH * width * pixelRatio * camera.zoom;
+        context.setLineDash([]);
+        context.fillStyle = flowColor;
+        drawArrowHead(context, geom.endX, geom.endY, geom.inTx, geom.inTy, flowArrowLength);
+      }
+      continue;
+    }
 
     const dx = target.x - source.x;
     const dy = target.y - source.y;
@@ -967,7 +1032,7 @@ function drawFallback2D(
       // inherently hollow; only the border-weight variant applies.
       const label = state.style?.nodeLabels?.[nodeIndex] ?? "";
       const alpha = (state.style?.nodeColors[colorOffset + 3] ?? 255) / 255;
-      const boxHeight = BOX_BASE_HEIGHT_PX * pixelRatio * camera.zoom;
+      const boxHeight = boxBaseHeightPx * pixelRatio * camera.zoom;
       const dims = boxDimensions(boxHeight, label, measureLabelWidth);
       drawBoxNode(
         context,
@@ -1023,6 +1088,11 @@ export function createGraphRenderer(
   const fallbackContext = context || requestedBackend === "webgl" ? null : acquire2DContext(canvas);
   const resources = context ? createRenderResources(context) : null;
   const pixelRatio = Math.max(Number.EPSILON, options.pixelRatio ?? 1);
+  // Git-flow LABEL-SCALE knob: base height of every `shape:box` glyph in CSS
+  // px. Defaults to the legacy 18 — existing consumers are byte-identical; the
+  // git-flow view passes `gitFlowLabelBoxHeightPx()` so the drawn pills match
+  // the label policy's measured collision AABBs.
+  const boxBaseHeightPx = options.boxBaseHeightPx ?? BOX_BASE_HEIGHT_PX;
   const activeBackend = context ? "webgl" : fallbackContext ? "canvas2d" : "none";
 
   // B1 Phase 1 INTERNAL CANARY: when the flag is on AND we have a WebGL2 context,
@@ -1132,7 +1202,7 @@ export function createGraphRenderer(
     lastBoxTextDraws = [];
 
     if (!context) {
-      drawFallback2D(fallbackContext, state, camera, canvas, pixelRatio, skipEdges);
+      drawFallback2D(fallbackContext, state, camera, canvas, pixelRatio, skipEdges, boxBaseHeightPx);
       return;
     }
 
@@ -1159,6 +1229,7 @@ export function createGraphRenderer(
           style: state.style,
           camera,
           pixelRatio,
+          boxBaseHeightPx,
           viewportWidth: canvas?.width ?? 0,
           viewportHeight: canvas?.height ?? 0,
           measureLabelWidth: edgeMeasureLabelWidth,
@@ -1253,6 +1324,7 @@ export function createGraphRenderer(
           style: state.style,
           camera,
           pixelRatio,
+          boxBaseHeightPx,
           viewportWidth: canvas?.width ?? 0,
           viewportHeight: canvas?.height ?? 0,
           measureLabelWidth,

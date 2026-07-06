@@ -576,6 +576,18 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
       const ct = commitTimeBySha7.get(sha7);
       const commitStamp: TemporalStamp =
         ct !== undefined ? { t: ct, t_end: ct, t_src: COMMIT_TIME_SRC } : {};
+      // addNode() is first-write-wins, and git-log order is NEWEST-first: a
+      // commit is usually created as an UNDATED `%P` parent stub of its child
+      // BEFORE its own log line is processed. Enrich the pre-existing node in
+      // place so the T2 committer-date stamp (and subject) still land on it —
+      // otherwise almost every skeleton commit silently loses `t`.
+      const existingSelf = nodes.get(nodeId("commit", c.sha));
+      if (existingSelf) {
+        if (existingSelf["subject"] === undefined && c.subject !== undefined) {
+          existingSelf["subject"] = c.subject;
+        }
+        if (existingSelf["t"] === undefined && ct !== undefined) Object.assign(existingSelf, commitStamp);
+      }
       const cId = addNode({
         id: nodeId("commit", c.sha),
         label: c.sha.slice(0, 7),

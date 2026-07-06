@@ -257,6 +257,11 @@ export async function openOracle() {
       ...(opts.instancedShapes !== undefined
         ? { instancedShapes: opts.instancedShapes }
         : {}),
+      // Git-flow LABEL-SCALE knob (-20% pills): only the git-flow captures set
+      // it; absent keeps the legacy box metric (pre-existing goldens identical).
+      ...(opts.boxBaseHeightPx !== undefined
+        ? { boxBaseHeightPx: opts.boxBaseHeightPx }
+        : {}),
     };
     // Re-assert fonts.ready before EVERY capture (§5.1).
     await evaluate("document.fonts.ready.then(()=>true)");
