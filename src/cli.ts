@@ -5530,7 +5530,12 @@ export async function main(): Promise<void> {
           process.exit(0);
         }
 
-        const startNodes = scored.slice(0, 5).map(([, nid]) => nid);
+        // Per-term seed diversity (upstream d56ee83 / #1445): keep the
+        // historical top-5 slice, then guarantee at least one seed per
+        // distinct matched query term so one term's incidental top match
+        // cannot starve the others.
+        const { pickSeeds } = await import("./serve.js");
+        const startNodes = pickSeeds(G, scored, terms, 5);
         const budget = parseInt(opts.budget, 10) || 2000;
         const useDfs = opts.dfs ?? false;
 
