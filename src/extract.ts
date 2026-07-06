@@ -12,6 +12,7 @@ import { createRequire } from "node:module";
 import type { GraphNode, GraphEdge, Extraction } from "./types.js";
 import { loadCached, saveCached } from "./cache.js";
 import { sanitizeLabel } from "./security.js";
+import { shebangInterpreter } from "./detect.js";
 
 // ---------------------------------------------------------------------------
 // web-tree-sitter types  (re-exported from the package)
@@ -409,6 +410,8 @@ function normalizeJsImportTarget(resolvedImport: string): string {
   const candidates = [
     `${resolvedImport}.ts`,
     `${resolvedImport}.tsx`,
+    `${resolvedImport}.mts`,
+    `${resolvedImport}.cts`,
     `${resolvedImport}.js`,
     `${resolvedImport}.jsx`,
     `${resolvedImport}.mjs`,
@@ -3073,8 +3076,15 @@ export async function extractPython(filePath: string, rootDir?: string): Promise
 }
 
 export async function extractJs(filePath: string, rootDir?: string): Promise<ExtractionResult> {
-  const ext = extname(filePath);
-  const config = ext === ".tsx" ? _TSX_CONFIG : ext === ".ts" ? _TS_CONFIG : _JS_CONFIG;
+  const ext = extname(filePath).toLowerCase();
+  // `.mts`/`.cts` are TypeScript module/CommonJS variants — parse with the TS
+  // grammar (the JS grammar drops `type`/`interface` declarations). Port of
+  // upstream 1226c34.
+  const config = ext === ".tsx"
+    ? _TSX_CONFIG
+    : ext === ".ts" || ext === ".mts" || ext === ".cts"
+      ? _TS_CONFIG
+      : _JS_CONFIG;
   return _extractGeneric(filePath, config, rootDir);
 }
 
@@ -6007,6 +6017,9 @@ const _DISPATCH: Record<string, ExtractorFn> = {
   ".mjs": extractJs,
   ".ts": extractJs,
   ".tsx": extractJs,
+  // TypeScript module/CommonJS variants — port of upstream 1226c34.
+  ".mts": extractJs,
+  ".cts": extractJs,
   ".vue": extractRegexBackedCode,
   ".svelte": extractSvelte,
   ".astro": extractAstro,
@@ -6061,6 +6074,42 @@ const _DISPATCH: Record<string, ExtractorFn> = {
   ".props": _extractCsprojAsync,
   ".targets": _extractCsprojAsync,
 };
+
+// Extensionless executables (CLI entry points like `devctl` or `manage`) carry
+// their language in the shebang, not the suffix. detect.classifyFile already
+// routes them to the CODE path via shebangInterpreter; extraction dispatch must
+// honor the same signal or these files are classified as code and then
+// silently dropped. Only interpreters with a real TS extractor are mapped —
+// detect's wider set (bash-family, perl, fish, tcsh, Rscript) stays unmapped
+// and skipped rather than being mis-parsed by a wrong grammar (the TS port has
+// no bash extractor, unlike upstream). Port of upstream 2ab0867.
+const _SHEBANG_DISPATCH: Record<string, ExtractorFn> = {
+  "python": extractPython,
+  "python2": extractPython,
+  "python3": extractPython,
+  "node": extractJs,
+  "nodejs": extractJs,
+  "ruby": extractRuby,
+  "lua": extractLua,
+  "php": extractPhp,
+  "julia": extractJulia,
+};
+
+/**
+ * Return the extractor for a file: filename-based MCP/blade routing first,
+ * then the lowercased-suffix dispatch table, then (for extensionless files)
+ * shebang-interpreter routing mirroring detect.classifyFile.
+ */
+function _getExtractor(filePath: string): ExtractorFn | undefined {
+  if (isMcpConfigPath(filePath)) return _extractMcpConfigAsync;
+  if (basename(filePath).toLowerCase().endsWith(".blade.php")) return extractRegexBackedCode;
+  const ext = extname(filePath).toLowerCase();
+  if (!ext) {
+    const interp = shebangInterpreter(filePath);
+    return interp ? _SHEBANG_DISPATCH[interp] : undefined;
+  }
+  return _DISPATCH[ext];
+}
 
 /**
  * Collapse cross-file Swift `extension Foo` nodes into the canonical `Foo`.
@@ -6173,15 +6222,11 @@ export async function extractWithDiagnostics(paths: string[]): Promise<ExtractWi
       process.stderr.write(`  AST extraction: ${i}/${total} files (${Math.floor(i * 100 / total)}%)\n`);
     }
     const filePath = normalizedPaths[i]!;
-    const ext = extname(filePath).toLowerCase();
     // Filename-based dispatch takes precedence over the suffix lookup so an
     // MCP config (`.mcp.json`, `mcp.json`, …) is not swallowed by generic
-    // `.json` handling. Port of upstream 2c01a89 (dispatched-by-filename).
-    const extractor = isMcpConfigPath(filePath)
-      ? _extractMcpConfigAsync
-      : basename(filePath).toLowerCase().endsWith(".blade.php")
-        ? extractRegexBackedCode
-        : _DISPATCH[ext];
+    // `.json` handling (port of upstream 2c01a89); extensionless files route
+    // by shebang (port of upstream 2ab0867).
+    const extractor = _getExtractor(filePath);
     if (!extractor) continue;
 
     const cached = loadCached(filePath, root);
@@ -6261,7 +6306,7 @@ export async function extract(paths: string[]): Promise<Extraction> {
 // ---------------------------------------------------------------------------
 
 const _EXTENSIONS = new Set([
-  ".py", ".js", ".jsx", ".mjs", ".ts", ".tsx", ".go", ".rs",
+  ".py", ".js", ".jsx", ".mjs", ".ts", ".tsx", ".mts", ".cts", ".go", ".rs",
   ".java", ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp",
   ".rb", ".cs", ".kt", ".kts", ".scala", ".php", ".swift",
   ".lua", ".toc", ".zig", ".ps1",
@@ -6366,6 +6411,6 @@ export function collectFiles(target: string, options?: { followSymlinks?: boolea
  */
 export const __testing = {
   resolveLuaImportTarget: _resolveLuaImportTarget,
-  /** Return the dispatch-table extractor function for a given file path (by extension). */
-  getExtractor: (filePath: string): ExtractorFn | undefined => _DISPATCH[extname(filePath).toLowerCase()],
+  /** Return the extractor for a given file path (real dispatch: filename, suffix, then shebang). */
+  getExtractor: (filePath: string): ExtractorFn | undefined => _getExtractor(filePath),
 };
