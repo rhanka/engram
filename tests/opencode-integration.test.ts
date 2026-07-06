@@ -28,6 +28,11 @@ describe("OpenCode integration contract", () => {
     expect(plugin).toContain("tool.execute.before");
     expect(plugin).toContain("graphify query");
     expect(plugin).toContain("Read GRAPH_REPORT.md only for broad architecture context");
+    // The reminder must be joined with ';', never '&&' — Windows PowerShell 5.1
+    // rejects '&&' as a statement separator, breaking the first bash command of
+    // every session (upstream 54825b6 #1646).
+    expect(plugin).toContain('." ; ');
+    expect(plugin).not.toContain('." && ');
     expect(config.plugin).toEqual([".opencode/plugins/graphify.js"]);
   });
 

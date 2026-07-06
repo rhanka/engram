@@ -24,6 +24,8 @@ export const CODE_EXTENSIONS = new Set([
   ".lua", ".toc", ".zig", ".ps1", ".ex", ".exs", ".m", ".mm", ".jl", ".vue",
   ".svelte", ".astro", ".dart", ".v", ".sv", ".svh", ".mjs", ".ejs", ".sql", ".r", ".groovy",
   ".gradle", ".luau", ".f", ".f90", ".f95", ".f03", ".f08",
+  // TypeScript module/CommonJS variants — port of upstream 1226c34.
+  ".mts", ".cts",
   // ArkTS — TypeScript-superset used by HarmonyOS / OpenHarmony app development.
   // Tree-sitter TypeScript already handles .ets AST extraction; detect just
   // needed to recognize the extension. Port of upstream safishamsi 52d75bd / #926.
