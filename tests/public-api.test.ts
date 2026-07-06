@@ -208,6 +208,29 @@ describe("public API compatibility", () => {
     expect(graphJson.links).toContainEqual(expect.objectContaining({ source: "alpha", target: "beta" }));
   });
 
+  it("skips dangling community members in toCanvas instead of throwing (upstream 2ba07e8, #1236 follow-up)", () => {
+    const dir = makeTempDir();
+    const G = new Graph({ type: "undirected" });
+    G.addNode("alpha", {
+      label: "AlphaService",
+      source_file: "src/alpha.ts",
+      file_type: "code",
+    });
+
+    // "ghost" is a community member with no backing node in G — this used to
+    // throw in the card-layout sort (getNodeAttribute on an unknown id).
+    api.toCanvas(G, { 0: ["alpha", "ghost"] }, join(dir, "graph.canvas"));
+
+    const canvas = JSON.parse(readFileSync(join(dir, "graph.canvas"), "utf-8")) as {
+      nodes: Array<{ id: string; type: string; width?: number }>;
+    };
+    expect(canvas.nodes.some((node) => node.id === "n_alpha")).toBe(true);
+    expect(canvas.nodes.some((node) => node.id === "n_ghost")).toBe(false);
+    // The group box must be sized for the one real card, not the dangling id.
+    const group = canvas.nodes.find((node) => node.type === "group");
+    expect(group?.width).toBe(600);
+  });
+
   it("normalizes CRLF labels when generating canvas filenames", () => {
     const dir = makeTempDir();
     const G = new Graph({ type: "undirected" });

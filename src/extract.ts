@@ -12,6 +12,7 @@ import { createRequire } from "node:module";
 import type { GraphNode, GraphEdge, Extraction } from "./types.js";
 import { loadCached, saveCached } from "./cache.js";
 import { sanitizeLabel } from "./security.js";
+import { shebangInterpreter } from "./detect.js";
 
 // ---------------------------------------------------------------------------
 // web-tree-sitter types  (re-exported from the package)
@@ -409,6 +410,8 @@ function normalizeJsImportTarget(resolvedImport: string): string {
   const candidates = [
     `${resolvedImport}.ts`,
     `${resolvedImport}.tsx`,
+    `${resolvedImport}.mts`,
+    `${resolvedImport}.cts`,
     `${resolvedImport}.js`,
     `${resolvedImport}.jsx`,
     `${resolvedImport}.mjs`,
@@ -457,7 +460,16 @@ function resolveJsImportTargetInfo(raw: string, importerPath: string): JsImportT
   }
 
   const moduleName = raw.split("/").pop() ?? "";
-  return moduleName ? { targetId: _makeId(moduleName) } : null;
+  // Unresolved: relative/absolute and tsconfig-alias resolution have run and
+  // failed, so this is an external package (or a dangling local path).
+  // Namespace the id with the "ref" prefix so it can NEVER collapse to the
+  // same _makeId as a local file/symbol node. Without it, the bare
+  // last-segment id (e.g. "tailwindcss/colors" -> "colors") collides with any
+  // unrelated local file of that stem, producing a confident (EXTRACTED)
+  // cross-language phantom imports_from edge. The ref-namespaced target has
+  // no node, so build drops it as an external reference — the correct outcome
+  // for a third-party import. Port of upstream e2ef4ef (#1638).
+  return moduleName ? { targetId: _makeId("ref", raw) } : null;
 }
 
 function resolveJsImportTarget(raw: string, importerPath: string): string | null {
@@ -589,10 +601,75 @@ function _javaTypeParametersInScope(node: SyntaxNode, source: string): Set<strin
 }
 
 /**
- * Walk a Java type expression; append `[name, role]` tuples. Skips primitives
- * and any in-scope type parameter, and resolves the unqualified tail of a
+ * java.lang (auto-imported) plus the ubiquitous java.util / java.io /
+ * java.time / java.util.{stream,function,concurrent} / java.math /
+ * java.nio.file types that appear as field, parameter, return, and
+ * generic-argument annotations. They never resolve to a project node, so
+ * emitting `references` edges to them is pure noise. Suppressed at the
+ * type-ref walker so they are never created as nodes or emitted as edges;
+ * primitives are already dropped by grammar node type. Port of upstream
+ * safishamsi 92edf78 (#1603).
+ */
+const _JAVA_BUILTIN_TYPES = new Set<string>([
+  // java.lang — core
+  "Object", "String", "CharSequence", "StringBuilder", "StringBuffer",
+  "Number", "Byte", "Short", "Integer", "Long", "Float", "Double",
+  "Boolean", "Character", "Void", "Class", "Enum", "Record", "Math",
+  "System", "Thread", "Runnable", "Comparable", "Iterable", "Cloneable",
+  "AutoCloseable", "Appendable", "Readable", "Process", "ProcessBuilder",
+  "Runtime", "Package", "ThreadLocal", "InheritableThreadLocal",
+  // java.lang — throwables
+  "Throwable", "Exception", "RuntimeException", "Error",
+  "IllegalArgumentException", "IllegalStateException", "NullPointerException",
+  "IndexOutOfBoundsException", "ArrayIndexOutOfBoundsException",
+  "ClassCastException", "NumberFormatException", "ArithmeticException",
+  "UnsupportedOperationException", "InterruptedException",
+  "CloneNotSupportedException", "SecurityException", "StackOverflowError",
+  "OutOfMemoryError", "AssertionError",
+  // java.util — collections & core
+  "Collection", "List", "ArrayList", "LinkedList", "Vector", "Stack",
+  "Set", "HashSet", "LinkedHashSet", "TreeSet", "SortedSet", "NavigableSet",
+  "EnumSet", "Map", "HashMap", "LinkedHashMap", "TreeMap", "SortedMap",
+  "NavigableMap", "Hashtable", "EnumMap", "Properties", "Queue", "Deque",
+  "ArrayDeque", "PriorityQueue", "Iterator", "ListIterator", "Comparator",
+  "Optional", "OptionalInt", "OptionalLong", "OptionalDouble", "Collections",
+  "Arrays", "Objects", "Date", "Calendar", "Random", "UUID", "Scanner",
+  "StringJoiner", "StringTokenizer", "BitSet", "Spliterator", "Locale",
+  "NoSuchElementException", "ConcurrentModificationException",
+  // java.util.stream
+  "Stream", "IntStream", "LongStream", "DoubleStream", "Collector",
+  "Collectors",
+  // java.util.function
+  "Function", "BiFunction", "Consumer", "BiConsumer", "Supplier",
+  "Predicate", "BiPredicate", "UnaryOperator", "BinaryOperator",
+  "IntFunction", "ToIntFunction", "ToLongFunction", "ToDoubleFunction",
+  // java.util.concurrent
+  "Callable", "Future", "CompletableFuture", "CompletionStage", "Executor",
+  "ExecutorService", "Executors", "ScheduledExecutorService", "TimeUnit",
+  "ConcurrentHashMap", "ConcurrentMap", "CopyOnWriteArrayList",
+  "BlockingQueue", "CountDownLatch", "Semaphore", "CyclicBarrier",
+  "AtomicInteger", "AtomicLong", "AtomicBoolean", "AtomicReference",
+  // java.time
+  "Instant", "Duration", "Period", "LocalDate", "LocalTime", "LocalDateTime",
+  "ZonedDateTime", "OffsetDateTime", "ZoneId", "ZoneOffset", "DayOfWeek",
+  "Month", "Year", "Clock", "DateTimeFormatter",
+  // java.io / java.nio.file
+  "IOException", "UncheckedIOException", "FileNotFoundException", "File",
+  "InputStream", "OutputStream", "Reader", "Writer", "BufferedReader",
+  "BufferedWriter", "InputStreamReader", "OutputStreamWriter", "FileReader",
+  "FileWriter", "PrintStream", "PrintWriter", "ByteArrayInputStream",
+  "ByteArrayOutputStream", "Serializable", "Closeable", "Path", "Paths",
+  "Files",
+  // java.math
+  "BigDecimal", "BigInteger",
+]);
+
+/**
+ * Walk a Java type expression; append `[name, role]` tuples. Skips primitives,
+ * any in-scope type parameter, and java stdlib builtins
+ * (`_JAVA_BUILTIN_TYPES`), and resolves the unqualified tail of a
  * `scoped_type_identifier` (`java.util.List` → `List`). Ports of upstream
- * safishamsi 31b3752 (#1485) + 8b9a998 (#1518).
+ * safishamsi 31b3752 (#1485) + 8b9a998 (#1518) + 92edf78 (#1603).
  */
 function _javaCollectTypeRefs(
   node: SyntaxNode | null,
@@ -609,19 +686,25 @@ function _javaCollectTypeRefs(
   }
   if (t === "type_identifier") {
     const name = _readText(node, source);
-    if (name && !skipSet.has(name)) out.push([name, generic ? "generic_arg" : "type"]);
+    if (name && !skipSet.has(name) && !_JAVA_BUILTIN_TYPES.has(name)) {
+      out.push([name, generic ? "generic_arg" : "type"]);
+    }
     return;
   }
   if (t === "scoped_type_identifier") {
     const text = _readText(node, source).split(".").pop() ?? "";
-    if (text) out.push([text, generic ? "generic_arg" : "type"]);
+    if (text && !_JAVA_BUILTIN_TYPES.has(text)) out.push([text, generic ? "generic_arg" : "type"]);
     return;
   }
   if (t === "generic_type") {
     for (const c of node.children) {
       if (c.type === "type_identifier" || c.type === "scoped_type_identifier") {
         const text = _readText(c, source).split(".").pop() ?? "";
-        if (text && (c.type === "scoped_type_identifier" || !skipSet.has(text))) {
+        if (
+          text &&
+          !_JAVA_BUILTIN_TYPES.has(text) &&
+          (c.type === "scoped_type_identifier" || !skipSet.has(text))
+        ) {
           out.push([text, generic ? "generic_arg" : "type"]);
         }
         break;
@@ -952,6 +1035,29 @@ function _scalaCollectTypeRefs(
       if (c.isNamed) _scalaCollectTypeRefs(c, source, generic, out);
     }
   }
+}
+
+/**
+ * Return the head identifier text from a Kotlin `user_type` node (without
+ * generics). Port of upstream safishamsi `_kotlin_user_type_name`.
+ */
+function _kotlinUserTypeName(userTypeNode: SyntaxNode | null, source: string): string | null {
+  if (userTypeNode === null) return null;
+  for (const c of userTypeNode.children) {
+    if (c.type === "type_identifier" || c.type === "identifier") {
+      const text = _readText(c, source);
+      return text || null;
+    }
+    if (c.type === "simple_user_type") {
+      for (const sub of c.children) {
+        if (sub.type === "identifier" || sub.type === "type_identifier") {
+          const text = _readText(sub, source);
+          return text || null;
+        }
+      }
+    }
+  }
+  return null;
 }
 
 /**
@@ -1663,6 +1769,18 @@ function _requireImportsJs(
   return found;
 }
 
+/**
+ * Node types whose value is a callable, for the JS/TS `const x = <fn>` form
+ * below. Older tree-sitter-javascript grammars label a function expression
+ * `function`; current ones use `function_expression`. `generator_function`
+ * (`const h = function*(){}`) — port of upstream safishamsi 09aeb97; the
+ * function/function_expression members close the same long-standing gap for
+ * plain function expressions (upstream `_JS_FUNCTION_VALUE_TYPES`).
+ */
+const _JS_FUNCTION_VALUE_TYPES = new Set<string>([
+  "arrow_function", "function_expression", "function", "generator_function",
+]);
+
 function _jsExtraWalk(
   node: SyntaxNode, source: string, fileNid: string, stem: string, strPath: string,
   _nodes: GraphNode[], edges: GraphEdge[], _seenIds: Set<string>,
@@ -1697,7 +1815,7 @@ function _jsExtraWalk(
         if (child.type === "variable_declarator") {
           const value = child.childForFieldName("value");
           const nameNode = child.childForFieldName("name");
-          if (value && value.type === "arrow_function") {
+          if (value && _JS_FUNCTION_VALUE_TYPES.has(value.type)) {
             if (nameNode) {
               const funcName = _readText(nameNode, source);
               const line = child.startPosition.row + 1;
@@ -1727,6 +1845,74 @@ function _jsExtraWalk(
       }
     }
     return node.type === "lexical_declaration" || requireFound || arrowFound || constFound;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// TS extra walk for namespace / module declarations
+// ---------------------------------------------------------------------------
+
+/**
+ * Emit a container node for a TS `namespace`/`module` declaration.
+ *
+ * `namespace Foo {}` parses as `internal_module` (with `name`/`body` fields);
+ * `module Bar {}` and ambient `declare module "pkg" {}` parse as a named
+ * `module` node that exposes no fields, so its name and body are found
+ * positionally. Without this the container was never a node — its members
+ * were still reached by the default recurse but the namespace itself was
+ * invisible to the graph. Members stay file-contained (parity with
+ * `_csharpExtraWalk`); the namespace becomes a sibling marker node so it is
+ * queryable. Returns true if handled.
+ *
+ * The guard requires `isNamed` because the anonymous `module` keyword token
+ * shares the `module` type string and would otherwise match here.
+ * Port of upstream safishamsi 869aaf7.
+ */
+function _tsExtraWalk(
+  node: SyntaxNode, source: string, fileNid: string, stem: string,
+  parentClassNid: string | null,
+  addNodeFn: (nid: string, label: string, line: number) => void,
+  addEdgeFn: (src: string, tgt: string, relation: string, line: number) => void,
+  walkFn: (node: SyntaxNode, parentClassNid: string | null) => void,
+): boolean {
+  if (node.isNamed && (node.type === "internal_module" || node.type === "module")) {
+    let nameNode = node.childForFieldName("name");
+    if (!nameNode) {
+      for (const child of node.children) {
+        if (child.isNamed && (child.type === "identifier" || child.type === "nested_identifier" || child.type === "string")) {
+          nameNode = child;
+          break;
+        }
+      }
+    }
+    let body = node.childForFieldName("body");
+    if (!body) {
+      for (const child of node.children) {
+        if (child.type === "statement_block") {
+          body = child;
+          break;
+        }
+      }
+    }
+    if (nameNode) {
+      let nsName = _readText(nameNode, source);
+      if (nameNode.type === "string") {
+        nsName = nsName.replace(/^['"`]+|['"`]+$/g, "");
+      }
+      if (nsName) {
+        const nsNid = _makeId(stem, nsName);
+        const line = node.startPosition.row + 1;
+        addNodeFn(nsNid, nsName, line);
+        addEdgeFn(fileNid, nsNid, "contains", line);
+      }
+    }
+    if (body) {
+      for (const child of body.children) {
+        walkFn(child, parentClassNid);
+      }
+    }
+    return true;
   }
   return false;
 }
@@ -1835,11 +2021,154 @@ const _PYTHON_CONFIG: LanguageConfig = defaultConfig({
   importHandler: _importPython,
 });
 
+/**
+ * Return the head symbol of a TS/JS `decorator` node: `@Injectable` → the
+ * identifier; `@Component({...})` / `@Input()` → the `function` of the
+ * call_expression; `@ng.Component()` / `@core.Injectable` → the `property` of
+ * the member_expression (the imported symbol, not the namespace alias).
+ * Port of upstream safishamsi 3540416.
+ */
+function _tsDecoratorName(decoNode: SyntaxNode, source: string): string | null {
+  for (const child of decoNode.children) {
+    if (!child.isNamed) continue;
+    let target: SyntaxNode = child;
+    if (target.type === "call_expression") {
+      target = target.childForFieldName("function") ?? target;
+    }
+    if (target.type === "member_expression") {
+      const prop = target.childForFieldName("property");
+      return prop ? _readText(prop, source) : null;
+    }
+    if (target.type === "identifier") {
+      return _readText(target, source);
+    }
+    return null;
+  }
+  return null;
+}
+
+/** Name of a `method_definition`, matching the id the function-types branch builds. */
+function _tsMethodName(methodNode: SyntaxNode, source: string): string | null {
+  const nameNode = methodNode.childForFieldName("name");
+  return nameNode ? _readText(nameNode, source) : null;
+}
+
+/**
+ * Collect `decorator` nodes under `node` (e.g. parameter decorators inside a
+ * method's formal_parameters, or a field's own decorator), without crossing
+ * into a nested class or a nested method, which own their own decorators.
+ */
+function _tsDescendantDecorators(node: SyntaxNode): SyntaxNode[] {
+  const out: SyntaxNode[] = [];
+  const rec = (n: SyntaxNode, top: boolean): void => {
+    for (const child of n.children) {
+      const ct = child.type;
+      if (ct === "decorator") {
+        out.push(child);
+      } else if (ct === "class_declaration" || ct === "abstract_class_declaration") {
+        continue;
+      } else if (ct === "method_definition" && !top) {
+        continue;
+      } else {
+        rec(child, false);
+      }
+    }
+  };
+  rec(node, true);
+  return out;
+}
+
+/**
+ * Emit `references` edges (context="decorator") from a class and its members
+ * to the symbols of the TS/JS decorators applied to them (`@Component`,
+ * `@Injectable`, `@Input`, `@Inject`, `@Entity`, …). Decorators occur only on
+ * classes, class members, and parameters, so a single pass over the class
+ * declaration covers them. Members that are graph nodes (methods) own their
+ * decorators and their parameter decorators; members that are not nodes
+ * (fields, parameters) attribute to the enclosing class. Targets go through
+ * `ensureNamedNode`, so a decorator imported from another module becomes a
+ * sourceless stub the corpus rewire collapses onto the real definition.
+ * Port of upstream safishamsi 3540416.
+ */
+function _tsEmitDecoratorEdges(
+  classNode: SyntaxNode,
+  classNid: string,
+  source: string,
+  ensureNamedNode: (name: string, line: number) => string,
+  addEdge: (
+    src: string, tgt: string, relation: string, line: number,
+    confidence?: "EXTRACTED" | "INFERRED", weight?: number, context?: string,
+  ) => void,
+): void {
+  const emit = (decoNode: SyntaxNode, ownerNid: string): void => {
+    const name = _tsDecoratorName(decoNode, source);
+    if (!name) return;
+    const line = decoNode.startPosition.row + 1;
+    const target = ensureNamedNode(name, line);
+    if (target !== ownerNid) {
+      addEdge(ownerNid, target, "references", line, "EXTRACTED", 1.0, "decorator");
+    }
+  };
+
+  // Class-level decorators: direct children of the class node (`@Deco class C`),
+  // plus — when exported (`@Deco export class C`) — the decorators that sit on
+  // the wrapping export_statement, before the class.
+  for (const child of classNode.children) {
+    if (child.type === "decorator") emit(child, classNid);
+  }
+  const parent = classNode.parent;
+  if (parent !== null && parent.type === "export_statement") {
+    for (const child of parent.children) {
+      if (child.type === "decorator") {
+        emit(child, classNid);
+      } else if (child.type === "class_declaration" || child.type === "abstract_class_declaration") {
+        break;
+      }
+    }
+  }
+
+  // Member decorators inside the class body.
+  const body = classNode.children.find((c) => c.type === "class_body");
+  if (!body) return;
+  for (const member of body.children) {
+    const mt = member.type;
+    if (mt === "decorator") {
+      // A method decorator is a sibling preceding the method; skip past any
+      // stacked decorators to find it.
+      let owner = classNid;
+      let sib: SyntaxNode | null = member.nextNamedSibling;
+      while (sib !== null && sib.type === "decorator") {
+        sib = sib.nextNamedSibling;
+      }
+      if (sib !== null && sib.type === "method_definition") {
+        const mname = _tsMethodName(sib, source);
+        if (mname) owner = _makeId(classNid, mname);
+      }
+      emit(member, owner);
+    } else if (mt === "method_definition") {
+      const mname = _tsMethodName(member, source);
+      const mNid = mname ? _makeId(classNid, mname) : classNid;
+      for (const deco of _tsDescendantDecorators(member)) {
+        emit(deco, mNid);
+      }
+    } else {
+      // Fields / accessors: the member is not a node, so attribute its
+      // decorators (e.g. `@Input()`, `@Column()`) to the class.
+      for (const deco of _tsDescendantDecorators(member)) {
+        emit(deco, classNid);
+      }
+    }
+  }
+}
+
 const _JS_CONFIG: LanguageConfig = defaultConfig({
   tsGrammarName: "javascript",
   tsModule: "tree_sitter_javascript",
   classTypes: new Set(["class_declaration"]),
-  functionTypes: new Set(["function_declaration", "method_definition"]),
+  // generator_function_declaration: `function* g()` — absent from
+  // function_types upstream too until 09aeb97; generator *methods* already
+  // parse as method_definition. Port of upstream safishamsi 09aeb97.
+  functionTypes: new Set(["function_declaration", "generator_function_declaration", "method_definition"]),
   // export_statement is included so the walker hands re-exports
   // (`export { X } from './m'`) to _importJs. Pure exports (no `from`)
   // fall through to walk children in _extract_generic. Port of upstream
@@ -1849,7 +2178,7 @@ const _JS_CONFIG: LanguageConfig = defaultConfig({
   callFunctionField: "function",
   callAccessorNodeTypes: new Set(["member_expression"]),
   callAccessorField: "property",
-  functionBoundaryTypes: new Set(["function_declaration", "arrow_function", "method_definition"]),
+  functionBoundaryTypes: new Set(["function_declaration", "generator_function_declaration", "arrow_function", "method_definition"]),
   importHandler: _importJs,
 });
 
@@ -1857,7 +2186,8 @@ const _TS_CONFIG: LanguageConfig = defaultConfig({
   tsGrammarName: "typescript",
   tsModule: "tree_sitter_typescript",
   classTypes: new Set(["class_declaration", "interface_declaration", "enum_declaration", "type_alias_declaration"]),
-  functionTypes: new Set(["function_declaration", "method_definition"]),
+  // generator_function_declaration — port of upstream safishamsi 09aeb97.
+  functionTypes: new Set(["function_declaration", "generator_function_declaration", "method_definition"]),
   // export_statement is included so the walker hands re-exports
   // (`export { X } from './m'`) to _importJs. Pure exports (no `from`)
   // fall through to walk children in _extract_generic. Port of upstream
@@ -1867,7 +2197,7 @@ const _TS_CONFIG: LanguageConfig = defaultConfig({
   callFunctionField: "function",
   callAccessorNodeTypes: new Set(["member_expression"]),
   callAccessorField: "property",
-  functionBoundaryTypes: new Set(["function_declaration", "arrow_function", "method_definition"]),
+  functionBoundaryTypes: new Set(["function_declaration", "generator_function_declaration", "arrow_function", "method_definition"]),
   importHandler: _importJs,
 });
 
@@ -1923,7 +2253,10 @@ const _CPP_CONFIG: LanguageConfig = defaultConfig({
 const _RUBY_CONFIG: LanguageConfig = defaultConfig({
   tsGrammarName: "ruby",
   tsModule: "tree_sitter_ruby",
-  classTypes: new Set(["class"]),
+  // "module": plain `module Foo` produced no container node — its methods
+  // hung off the file with dot-less labels and no edge could target the
+  // module. Port of upstream safishamsi 13e2bdd (#1640).
+  classTypes: new Set(["class", "module"]),
   functionTypes: new Set(["method", "singleton_method"]),
   importTypes: new Set(),
   callTypes: new Set(["call"]),
@@ -2193,6 +2526,13 @@ async function _extractGeneric(
       addNode(classNid, className, line);
       addEdge(fileNid, classNid, "contains", line);
 
+      // TS/JS decorators on the class and its members (@Component,
+      // @Injectable, @Input, @Inject, @Entity, …). Decorators live only in
+      // class subtrees. Port of upstream safishamsi 3540416.
+      if (config.tsModule === "tree_sitter_javascript" || config.tsModule === "tree_sitter_typescript") {
+        _tsEmitDecoratorEdges(node, classNid, source, ensureNamedNode, addEdge);
+      }
+
       // Swift extension dedup: tree-sitter-swift parses both `class Foo` and
       // `extension Foo` as `class_declaration`, with `extension Foo` carrying
       // an "extension" child node. Collect these so a corpus-level merge can
@@ -2283,6 +2623,67 @@ async function _extractGeneric(
         }
       }
 
+      // Kotlin-specific: delegation_specifiers → inherits
+      // (constructor_invocation) / implements (user_type), including the
+      // `class Foo : Bar by baz` form which wraps the delegated interface in
+      // an `explicit_delegation` node. Port of upstream safishamsi kotlin
+      // delegation handling + 9b04022 (by-delegation branch). Generic-arg
+      // reference recovery is deferred with the kotlin type-refs collector
+      // (Lot 2 kotlin slice not yet ported).
+      if (config.tsModule === "tree_sitter_kotlin") {
+        for (const child of node.children) {
+          if (child.type !== "delegation_specifiers") continue;
+          for (const spec of child.children) {
+            if (spec.type !== "delegation_specifier") continue;
+            let relation = "implements";
+            let userTypeNode: SyntaxNode | null = null;
+            for (const sub of spec.children) {
+              if (sub.type === "constructor_invocation") {
+                relation = "inherits";
+                for (const inner of sub.children) {
+                  if (inner.type === "user_type") {
+                    userTypeNode = inner;
+                    break;
+                  }
+                }
+                break;
+              }
+              if (sub.type === "user_type") {
+                userTypeNode = sub;
+                break;
+              }
+              // `class Foo : Bar by baz` wraps the delegated interface `Bar`
+              // in an `explicit_delegation` node; grab its first `user_type`
+              // descendant so the implements edge still fires (9b04022).
+              if (sub.type === "explicit_delegation") {
+                for (const inner of sub.children) {
+                  if (inner.type === "user_type") {
+                    userTypeNode = inner;
+                    break;
+                  }
+                }
+                break;
+              }
+            }
+            if (!userTypeNode) continue;
+            const base = _kotlinUserTypeName(userTypeNode, source);
+            if (!base) continue;
+            let baseNid = _makeId(stem, base);
+            if (!seenIds.has(baseNid)) {
+              baseNid = _makeId(base);
+              if (!seenIds.has(baseNid)) {
+                nodes.push({
+                  id: baseNid, label: base, file_type: "code",
+                  source_file: "", source_location: "",
+                });
+                seenIds.add(baseNid);
+              }
+            }
+            addEdge(classNid, baseNid, relation, line);
+          }
+        }
+      }
+
       // Ruby-specific: `class Dog < Animal` puts the base class in the
       // `superclass` field (a `<` token followed by a `constant` or a
       // `scope_resolution`). There was no Ruby branch, so every Ruby inherits
@@ -2315,6 +2716,51 @@ async function _extractGeneric(
               }
             }
             addEdge(classNid, baseNid, "inherits", line);
+          }
+        }
+
+        // `include`/`extend`/`prepend <Const>` in the class/module body ->
+        // a `mixes_in` edge to the module (port of upstream 6631af7 #1668).
+        // Only bare/namespaced constant arguments count; `extend self`,
+        // `include some_var`, etc. are skipped. Upstream resolves the target
+        // through its cross-file Ruby resolver; the TS analog is the
+        // sourceless-stub + corpus-rewire pattern already used for inherits.
+        // Class-body calls are never walked by the call pass (it only walks
+        // function bodies), so these markers cannot be mislabeled as calls.
+        const rubyBody = _findBody(node, config);
+        if (rubyBody) {
+          for (const stmt of rubyBody.children) {
+            if (stmt.type !== "call") continue;
+            if (stmt.childForFieldName("receiver")) continue;
+            const methodNode = stmt.childForFieldName("method");
+            const methodName = methodNode ? _readText(methodNode, source) : "";
+            if (methodName !== "include" && methodName !== "extend" && methodName !== "prepend") continue;
+            const argList = stmt.childForFieldName("arguments");
+            if (!argList) continue;
+            for (const arg of argList.children) {
+              let moduleName = "";
+              if (arg.type === "constant") {
+                moduleName = _readText(arg, source);
+              } else if (arg.type === "scope_resolution") {
+                const consts = arg.children.filter((c) => c.type === "constant");
+                if (consts.length > 0) moduleName = _readText(consts[consts.length - 1]!, source);
+              }
+              if (!moduleName) continue; // `extend self`, variables, …
+              let moduleNid = _makeId(stem, moduleName);
+              if (!seenIds.has(moduleNid)) {
+                moduleNid = _makeId(moduleName);
+                if (!seenIds.has(moduleNid)) {
+                  nodes.push({
+                    id: moduleNid, label: moduleName, file_type: "code",
+                    source_file: "", source_location: "",
+                  });
+                  seenIds.add(moduleNid);
+                }
+              }
+              if (moduleNid !== classNid) {
+                addEdge(classNid, moduleNid, "mixes_in", stmt.startPosition.row + 1);
+              }
+            }
           }
         }
       }
@@ -2518,6 +2964,64 @@ async function _extractGeneric(
       return;
     }
 
+    // Ruby: a constant assignment whose RHS is `Struct.new(...)`,
+    // `Class.new(...)` or `Data.define(...)` defines a class in everything
+    // but syntax — synthesize a class node named after the constant, attach
+    // block-defined methods to it, and emit `inherits` for
+    // `Class.new(Super)`. Plain constant assignments (MAX = 100, X = Foo.new)
+    // are untouched. Port of upstream safishamsi 13e2bdd (#1640).
+    if (config.tsModule === "tree_sitter_ruby" && t === "assignment") {
+      const left = node.childForFieldName("left");
+      const right = node.childForFieldName("right");
+      if (left?.type === "constant" && right?.type === "call") {
+        const recvNode = right.childForFieldName("receiver");
+        const methNode = right.childForFieldName("method");
+        const recv = recvNode ? _readText(recvNode, source) : "";
+        const meth = methNode ? _readText(methNode, source) : "";
+        const isClassFactory =
+          ((recv === "Struct" || recv === "Class") && meth === "new") ||
+          (recv === "Data" && meth === "define");
+        if (isClassFactory) {
+          const className = _readText(left, source);
+          const classNid = _makeId(stem, className);
+          const line = node.startPosition.row + 1;
+          addNode(classNid, className, line);
+          addEdge(fileNid, classNid, "contains", line);
+
+          // `Class.new(Super)` — first constant argument is the superclass.
+          if (recv === "Class") {
+            const argList = right.childForFieldName("arguments");
+            const firstConst = argList?.children.find((c) => c.type === "constant");
+            if (firstConst) {
+              const base = _readText(firstConst, source);
+              let baseNid = _makeId(stem, base);
+              if (!seenIds.has(baseNid)) {
+                baseNid = _makeId(base);
+                if (!seenIds.has(baseNid)) {
+                  nodes.push({
+                    id: baseNid, label: base, file_type: "code",
+                    source_file: "", source_location: "",
+                  });
+                  seenIds.add(baseNid);
+                }
+              }
+              addEdge(classNid, baseNid, "inherits", line);
+            }
+          }
+
+          // Methods defined in the do-block attach to the synthesized class.
+          const block = right.children.find((c) => c.type === "do_block" || c.type === "block");
+          if (block) {
+            const blockBody = block.children.find((c) => c.type === "body_statement") ?? block;
+            for (const child of blockBody.children) {
+              walk(child, classNid);
+            }
+          }
+          return;
+        }
+      }
+    }
+
     // PHP 8 constructor property promotion: `__construct(private Repo $repo)`
     // parses the promoted param as `property_promotion_parameter`. A promoted
     // param is also a real class field, so emit a `field`-context reference on
@@ -2596,6 +3100,14 @@ async function _extractGeneric(
       if (_jsExtraWalk(node, source, fileNid, stem, strPath,
         nodes, edges, seenIds, functionBodies,
         parentClassNid, addNode, addEdge, rootDir)) {
+        return;
+      }
+    }
+
+    // TS namespace / module containers (internal_module, module) — port of
+    // upstream safishamsi 869aaf7.
+    if (config.tsModule === "tree_sitter_typescript") {
+      if (_tsExtraWalk(node, source, fileNid, stem, parentClassNid, addNode, addEdge, walk)) {
         return;
       }
     }
@@ -3064,9 +3576,130 @@ export async function extractPython(filePath: string, rootDir?: string): Promise
 }
 
 export async function extractJs(filePath: string, rootDir?: string): Promise<ExtractionResult> {
-  const ext = extname(filePath);
-  const config = ext === ".tsx" ? _TSX_CONFIG : ext === ".ts" ? _TS_CONFIG : _JS_CONFIG;
-  return _extractGeneric(filePath, config, rootDir);
+  const ext = extname(filePath).toLowerCase();
+  // `.mts`/`.cts` are TypeScript module/CommonJS variants — parse with the TS
+  // grammar (the JS grammar drops `type`/`interface` declarations). Port of
+  // upstream 1226c34.
+  const config = ext === ".tsx"
+    ? _TSX_CONFIG
+    : ext === ".ts" || ext === ".mts" || ext === ".cts"
+      ? _TS_CONFIG
+      : _JS_CONFIG;
+  const result = await _extractGeneric(filePath, config, rootDir);
+  if (!result.error) {
+    _extractJsRationale(filePath, result, rootDir);
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// JS/TS rationale + doc-reference extraction
+//
+// Parity with _extractPythonRationale (port of upstream safishamsi 6d3a6f1):
+// Python files get rationale nodes from docstrings and `# NOTE:`-style
+// comments, but JS/TS comments were discarded entirely. That silently drops
+// two high-value signals in mixed corpora:
+//   1. rationale comments (`// NOTE:`, `// WHY:`, …) — same as Python;
+//   2. architecture-decision references (`ADR-0011`, `RFC 793`) that teams
+//      conventionally cite in file/function headers. These are the natural
+//      join points between code and design docs in the same graph — without
+//      them, code<->ADR edges never form even when the code cites the ADR.
+// ---------------------------------------------------------------------------
+
+const _JS_RATIONALE_PREFIXES = [
+  "// NOTE:", "// IMPORTANT:", "// HACK:", "// WHY:", "// RATIONALE:",
+  "// TODO:", "// FIXME:",
+  "* NOTE:", "* IMPORTANT:", "* HACK:", "* WHY:", "* RATIONALE:",
+  "* TODO:", "* FIXME:",
+];
+
+// Doc-reference tokens worth first-classing as graph nodes. Deliberately
+// conservative: ADR-NNNN (any zero padding) and RFC NNNN / RFC-NNNN.
+const _JS_DOC_REF_RE = /\b(ADR[- ]?\d{1,5}|RFC[- ]?\d{1,5})\b/gi;
+
+// Only look for doc references inside comments, not string literals or code.
+const _JS_COMMENT_LINE_RE = /^\s*(\/\/|\/\*|\*)/;
+
+/**
+ * Post-pass: extract rationale comments and ADR/RFC doc references from JS/TS
+ * source. Mutates `result` in place (appends nodes/edges). Text-based, no
+ * parser needed. Port of upstream safishamsi 6d3a6f1.
+ */
+function _extractJsRationale(
+  filePath: string,
+  result: ExtractionResult,
+  rootDir: string = dirname(resolve(filePath)),
+): void {
+  let sourceText: string;
+  try {
+    sourceText = readFileSync(filePath, "utf-8");
+  } catch {
+    return;
+  }
+
+  const stem = qualifiedFileStem(filePath, rootDir);
+  const strPath = filePath;
+  const { nodes, edges } = result;
+  const seenIds = new Set(nodes.map((n) => n.id));
+  const fileNid = _makeId(stem);
+  const seenDocRefs = new Set<string>();
+
+  const addRationale = (text: string, line: number): void => {
+    const label = text.slice(0, 80).replace(/[\r\n]+/g, " ").trim();
+    const rid = _makeId(stem, "rationale", String(line));
+    if (!seenIds.has(rid)) {
+      seenIds.add(rid);
+      nodes.push({
+        id: rid, label, file_type: "rationale",
+        source_file: strPath, source_location: `L${line}`,
+      });
+    }
+    edges.push({
+      source: rid, target: fileNid, relation: "rationale_for",
+      confidence: "EXTRACTED", source_file: strPath,
+      source_location: `L${line}`, weight: 1.0,
+    });
+  };
+
+  const addDocRef = (token: string, line: number): void => {
+    // Normalize "adr 11" / "ADR-0011" spellings to a canonical "ADR-0011"
+    // style label so references to the same document collapse to one node.
+    const m = /^([A-Za-z]+)[- ]?(\d+)$/.exec(token);
+    if (!m) return;
+    const kind = m[1]!.toUpperCase();
+    const num = m[2]!;
+    const label = kind === "ADR" ? `${kind}-${num.padStart(4, "0")}` : `${kind}-${num}`;
+    if (seenDocRefs.has(label)) return;
+    seenDocRefs.add(label);
+    const rid = _makeId("docref", label);
+    if (!seenIds.has(rid)) {
+      seenIds.add(rid);
+      nodes.push({
+        id: rid, label, file_type: "doc_ref",
+        source_file: strPath, source_location: `L${line}`,
+      });
+    }
+    edges.push({
+      source: fileNid, target: rid, relation: "cites",
+      confidence: "EXTRACTED", source_file: strPath,
+      source_location: `L${line}`, weight: 1.0,
+    });
+  };
+
+  const lines = sourceText.split(/\r\n|\r|\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const lineText = lines[i]!;
+    const lineno = i + 1;
+    const stripped = lineText.trim();
+    if (_JS_RATIONALE_PREFIXES.some((p) => stripped.startsWith(p))) {
+      addRationale(stripped.replace(/^[/* ]+/, ""), lineno);
+    }
+    if (_JS_COMMENT_LINE_RE.test(lineText)) {
+      for (const match of stripped.matchAll(_JS_DOC_REF_RE)) {
+        addDocRef(match[1]!, lineno);
+      }
+    }
+  }
 }
 
 export async function extractJava(filePath: string, rootDir?: string): Promise<ExtractionResult> {
@@ -5998,6 +6631,9 @@ const _DISPATCH: Record<string, ExtractorFn> = {
   ".mjs": extractJs,
   ".ts": extractJs,
   ".tsx": extractJs,
+  // TypeScript module/CommonJS variants — port of upstream 1226c34.
+  ".mts": extractJs,
+  ".cts": extractJs,
   ".vue": extractRegexBackedCode,
   ".svelte": extractSvelte,
   ".astro": extractAstro,
@@ -6052,6 +6688,42 @@ const _DISPATCH: Record<string, ExtractorFn> = {
   ".props": _extractCsprojAsync,
   ".targets": _extractCsprojAsync,
 };
+
+// Extensionless executables (CLI entry points like `devctl` or `manage`) carry
+// their language in the shebang, not the suffix. detect.classifyFile already
+// routes them to the CODE path via shebangInterpreter; extraction dispatch must
+// honor the same signal or these files are classified as code and then
+// silently dropped. Only interpreters with a real TS extractor are mapped —
+// detect's wider set (bash-family, perl, fish, tcsh, Rscript) stays unmapped
+// and skipped rather than being mis-parsed by a wrong grammar (the TS port has
+// no bash extractor, unlike upstream). Port of upstream 2ab0867.
+const _SHEBANG_DISPATCH: Record<string, ExtractorFn> = {
+  "python": extractPython,
+  "python2": extractPython,
+  "python3": extractPython,
+  "node": extractJs,
+  "nodejs": extractJs,
+  "ruby": extractRuby,
+  "lua": extractLua,
+  "php": extractPhp,
+  "julia": extractJulia,
+};
+
+/**
+ * Return the extractor for a file: filename-based MCP/blade routing first,
+ * then the lowercased-suffix dispatch table, then (for extensionless files)
+ * shebang-interpreter routing mirroring detect.classifyFile.
+ */
+function _getExtractor(filePath: string): ExtractorFn | undefined {
+  if (isMcpConfigPath(filePath)) return _extractMcpConfigAsync;
+  if (basename(filePath).toLowerCase().endsWith(".blade.php")) return extractRegexBackedCode;
+  const ext = extname(filePath).toLowerCase();
+  if (!ext) {
+    const interp = shebangInterpreter(filePath);
+    return interp ? _SHEBANG_DISPATCH[interp] : undefined;
+  }
+  return _DISPATCH[ext];
+}
 
 /**
  * Collapse cross-file Swift `extension Foo` nodes into the canonical `Foo`.
@@ -6150,10 +6822,20 @@ export interface ExtractWithDiagnosticsResult {
   diagnostics: ExtractionDiagnostic[];
 }
 
+/**
+ * Whether a non-error extraction result is safe to cache: every extractable
+ * file yields at least a file node, so a zero-node result is anomalous and
+ * must not be persisted (upstream 1288a55 / #1666).
+ */
+function _shouldCacheExtraction(result: ExtractionResult): boolean {
+  return !result.error && (result.nodes?.length ?? 0) > 0;
+}
+
 export async function extractWithDiagnostics(paths: string[]): Promise<ExtractWithDiagnosticsResult> {
   const normalizedPaths = paths.map((filePath) => resolve(filePath));
   const perFile: ExtractionResult[] = [];
   const diagnostics: ExtractionDiagnostic[] = [];
+  const zeroNodeFiles: string[] = [];
   const root = inferCommonRoot(normalizedPaths);
 
   const total = normalizedPaths.length;
@@ -6164,15 +6846,11 @@ export async function extractWithDiagnostics(paths: string[]): Promise<ExtractWi
       process.stderr.write(`  AST extraction: ${i}/${total} files (${Math.floor(i * 100 / total)}%)\n`);
     }
     const filePath = normalizedPaths[i]!;
-    const ext = extname(filePath).toLowerCase();
     // Filename-based dispatch takes precedence over the suffix lookup so an
     // MCP config (`.mcp.json`, `mcp.json`, …) is not swallowed by generic
-    // `.json` handling. Port of upstream 2c01a89 (dispatched-by-filename).
-    const extractor = isMcpConfigPath(filePath)
-      ? _extractMcpConfigAsync
-      : basename(filePath).endsWith(".blade.php")
-        ? extractRegexBackedCode
-        : _DISPATCH[ext];
+    // `.json` handling (port of upstream 2c01a89); extensionless files route
+    // by shebang (port of upstream 2ab0867).
+    const extractor = _getExtractor(filePath);
     if (!extractor) continue;
 
     const cached = loadCached(filePath, root);
@@ -6191,7 +6869,17 @@ export async function extractWithDiagnostics(paths: string[]): Promise<ExtractWi
       continue;
     }
     if (!result.error) {
-      saveCached(filePath, result as unknown as Record<string, unknown>, root);
+      // Never cache a zero-node result for an extractable file. Every
+      // supported source produces at least a file node, so an empty node list
+      // is anomalous (e.g. a transient hiccup). Caching it makes the empty
+      // byte-stable across runs and silently blinds downstream queries to and
+      // through the file; skipping the write lets a rerun self-heal. Port of
+      // upstream safishamsi 1288a55 (#1666).
+      if (_shouldCacheExtraction(result)) {
+        saveCached(filePath, result as unknown as Record<string, unknown>, root);
+      } else {
+        zeroNodeFiles.push(filePath);
+      }
     } else {
       diagnostics.push({ filePath, error: result.error });
     }
@@ -6200,6 +6888,15 @@ export async function extractWithDiagnostics(paths: string[]): Promise<ExtractWi
 
   if (total >= _PROGRESS_INTERVAL) {
     process.stderr.write(`  AST extraction: ${total}/${total} files (100%)\n`);
+  }
+
+  // Surface previously-silent blindness: an accepted source file that landed
+  // in the graph with zero nodes (port of upstream 1288a55 / #1666).
+  if (zeroNodeFiles.length > 0) {
+    process.stderr.write(
+      `warning: ${zeroNodeFiles.length} source file(s) extracted with zero nodes (not cached, rerun self-heals):\n` +
+      zeroNodeFiles.map((f) => `  - ${f}\n`).join(""),
+    );
   }
 
   let allNodes: GraphNode[] = [];
@@ -6252,7 +6949,7 @@ export async function extract(paths: string[]): Promise<Extraction> {
 // ---------------------------------------------------------------------------
 
 const _EXTENSIONS = new Set([
-  ".py", ".js", ".jsx", ".mjs", ".ts", ".tsx", ".go", ".rs",
+  ".py", ".js", ".jsx", ".mjs", ".ts", ".tsx", ".mts", ".cts", ".go", ".rs",
   ".java", ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp",
   ".rb", ".cs", ".kt", ".kts", ".scala", ".php", ".swift",
   ".lua", ".toc", ".zig", ".ps1",
@@ -6335,7 +7032,12 @@ export function collectFiles(target: string, options?: { followSymlinks?: boolea
         // is intentionally skipped here (the `entry.startsWith(".")` guard
         // above), consistent with graphify's hidden-file policy — it is still
         // extracted when passed as an explicit single-file target.
-        if (_EXTENSIONS.has(ext) || _MCP_CONFIG_FILENAMES.has(entry)) {
+        // Case-insensitive suffix fallback (raw match first so exact entries
+        // like `.R`/`.F90` are untouched): the extractor dispatch lowercases
+        // its extension, but this filter compared the raw suffix — so
+        // capitalized/mixed-case extensions (`.PY`, `.Ts`) were silently
+        // skipped at collection time. Port of upstream aa1bbda (#1671).
+        if (_EXTENSIONS.has(ext) || _EXTENSIONS.has(ext.toLowerCase()) || _MCP_CONFIG_FILENAMES.has(entry)) {
           results.push(fullPath);
         }
       }
@@ -6352,6 +7054,10 @@ export function collectFiles(target: string, options?: { followSymlinks?: boolea
  */
 export const __testing = {
   resolveLuaImportTarget: _resolveLuaImportTarget,
-  /** Return the dispatch-table extractor function for a given file path (by extension). */
-  getExtractor: (filePath: string): ExtractorFn | undefined => _DISPATCH[extname(filePath)],
+  /** Return the extractor for a given file path (real dispatch: filename, suffix, then shebang). */
+  getExtractor: (filePath: string): ExtractorFn | undefined => _getExtractor(filePath),
+  /** Cache-write gate for extraction results (upstream 1288a55 / #1666). */
+  shouldCacheExtraction: _shouldCacheExtraction,
+  /** Kotlin user_type head-name reader (upstream _kotlin_user_type_name). */
+  kotlinUserTypeName: _kotlinUserTypeName,
 };

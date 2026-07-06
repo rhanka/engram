@@ -62,8 +62,8 @@ describe("Lot 2: Java field type references (#1485, #1518)", () => {
     const refs = typeReferences(result);
     // Head field types -> context "field"
     expect(refs).toContainEqual({ context: "field", target: "Logger" });
-    expect(refs).toContainEqual({ context: "field", target: "List" });
-    // Generic argument -> context "generic_arg"
+    // Generic argument -> context "generic_arg" (the `List` head itself is a
+    // java stdlib builtin, suppressed since upstream 92edf78 / #1603).
     expect(refs).toContainEqual({ context: "generic_arg", target: "Config" });
     // Primitive `int` is never referenced
     expect(refs.some((r) => r.target === "int")).toBe(false);
@@ -74,7 +74,7 @@ describe("Lot 2: Java field type references (#1485, #1518)", () => {
     writeFileSync(file, [
       "class Container<T> {",
       "    T value;",
-      "    List<T> items;",
+      "    CustomList<T> items;",
       "}",
     ].join("\n"));
 
@@ -84,8 +84,41 @@ describe("Lot 2: Java field type references (#1485, #1518)", () => {
     const refs = typeReferences(result);
     // `T` is a type parameter, not a real type: never referenced (head or arg).
     expect(refs.some((r) => r.target === "T")).toBe(false);
-    // The real container type `List` is still referenced.
-    expect(refs).toContainEqual({ context: "field", target: "List" });
+    // The real (user) container type is still referenced.
+    expect(refs).toContainEqual({ context: "field", target: "CustomList" });
+  });
+
+  it("suppresses java stdlib builtins from references (upstream 92edf78 / #1603)", async () => {
+    const file = join(dir, "Svc.java");
+    writeFileSync(file, [
+      "package com.app;",
+      "import java.util.List;",
+      "import java.util.Map;",
+      "import java.util.Optional;",
+      "public class Svc {",
+      "    private String name;",
+      "    private List<Order> orders;",
+      "    private Map<String, Customer> byId;",
+      "    private Optional<Config> cfg;",
+      "    private OrderValidator validator;",
+      "}",
+    ].join("\n"));
+
+    const result = await extractJava(file);
+    if (!grammarAvailable(result)) return; // grammar absent — asserts in CI
+
+    const refs = typeReferences(result);
+    // Stdlib heads/args never emit references (they can't resolve to a
+    // project node — pure noise).
+    for (const builtin of ["String", "List", "Map", "Optional"]) {
+      expect(refs.some((r) => r.target === builtin), builtin).toBe(false);
+    }
+    // Nested user types inside stdlib generics still resolve…
+    expect(refs).toContainEqual({ context: "generic_arg", target: "Order" });
+    expect(refs).toContainEqual({ context: "generic_arg", target: "Customer" });
+    expect(refs).toContainEqual({ context: "generic_arg", target: "Config" });
+    // …and plain user field types are untouched.
+    expect(refs).toContainEqual({ context: "field", target: "OrderValidator" });
   });
 });
 
