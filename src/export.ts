@@ -900,10 +900,17 @@ export function toCanvas(
 
   const sortedCids = [...communityMap.keys()].sort((a, b) => a - b);
 
+  // Skip dangling community members with no backing node / filename, so box
+  // sizing matches the cards actually laid out and the label/filename deref
+  // below never touches a missing node (graphology getNodeAttribute throws on
+  // unknown ids). Port of upstream 2ba07e8 (#1236 follow-up).
+  const presentMembers = (cid: number): string[] =>
+    (communityMap.get(cid) ?? []).filter((m) => G.hasNode(m) && filenameMap.has(m));
+
   // Precompute group sizes
   const groupSizes = new Map<number, [number, number]>();
   for (const cid of sortedCids) {
-    const members = communityMap.get(cid) ?? [];
+    const members = presentMembers(cid);
     const memberCount = members.length;
     const w = Math.max(600, memberCount > 0 ? 220 * Math.ceil(Math.sqrt(memberCount)) : 600);
     const h = Math.max(400, memberCount > 0 ? 100 * Math.ceil(memberCount / 3) + 120 : 400);
@@ -961,7 +968,9 @@ export function toCanvas(
   // Generate group and node canvas entries
   for (let idx = 0; idx < sortedCids.length; idx++) {
     const cid = sortedCids[idx]!;
-    const members = communityMap.get(cid) ?? [];
+    // Same dangling-member guard as the sizing loop (#1236 follow-up): a
+    // community id absent from G / filenameMap would throw in the sort below.
+    const members = presentMembers(cid);
     const communityName = communityLabels?.get(cid) ?? `Community ${cid}`;
     const [gx, gy, gw, gh] = groupLayout.get(cid) ?? [0, 0, 600, 400];
     const canvasColor = CANVAS_COLORS[idx % CANVAS_COLORS.length]!;
