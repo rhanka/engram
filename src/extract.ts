@@ -601,10 +601,75 @@ function _javaTypeParametersInScope(node: SyntaxNode, source: string): Set<strin
 }
 
 /**
- * Walk a Java type expression; append `[name, role]` tuples. Skips primitives
- * and any in-scope type parameter, and resolves the unqualified tail of a
+ * java.lang (auto-imported) plus the ubiquitous java.util / java.io /
+ * java.time / java.util.{stream,function,concurrent} / java.math /
+ * java.nio.file types that appear as field, parameter, return, and
+ * generic-argument annotations. They never resolve to a project node, so
+ * emitting `references` edges to them is pure noise. Suppressed at the
+ * type-ref walker so they are never created as nodes or emitted as edges;
+ * primitives are already dropped by grammar node type. Port of upstream
+ * safishamsi 92edf78 (#1603).
+ */
+const _JAVA_BUILTIN_TYPES = new Set<string>([
+  // java.lang — core
+  "Object", "String", "CharSequence", "StringBuilder", "StringBuffer",
+  "Number", "Byte", "Short", "Integer", "Long", "Float", "Double",
+  "Boolean", "Character", "Void", "Class", "Enum", "Record", "Math",
+  "System", "Thread", "Runnable", "Comparable", "Iterable", "Cloneable",
+  "AutoCloseable", "Appendable", "Readable", "Process", "ProcessBuilder",
+  "Runtime", "Package", "ThreadLocal", "InheritableThreadLocal",
+  // java.lang — throwables
+  "Throwable", "Exception", "RuntimeException", "Error",
+  "IllegalArgumentException", "IllegalStateException", "NullPointerException",
+  "IndexOutOfBoundsException", "ArrayIndexOutOfBoundsException",
+  "ClassCastException", "NumberFormatException", "ArithmeticException",
+  "UnsupportedOperationException", "InterruptedException",
+  "CloneNotSupportedException", "SecurityException", "StackOverflowError",
+  "OutOfMemoryError", "AssertionError",
+  // java.util — collections & core
+  "Collection", "List", "ArrayList", "LinkedList", "Vector", "Stack",
+  "Set", "HashSet", "LinkedHashSet", "TreeSet", "SortedSet", "NavigableSet",
+  "EnumSet", "Map", "HashMap", "LinkedHashMap", "TreeMap", "SortedMap",
+  "NavigableMap", "Hashtable", "EnumMap", "Properties", "Queue", "Deque",
+  "ArrayDeque", "PriorityQueue", "Iterator", "ListIterator", "Comparator",
+  "Optional", "OptionalInt", "OptionalLong", "OptionalDouble", "Collections",
+  "Arrays", "Objects", "Date", "Calendar", "Random", "UUID", "Scanner",
+  "StringJoiner", "StringTokenizer", "BitSet", "Spliterator", "Locale",
+  "NoSuchElementException", "ConcurrentModificationException",
+  // java.util.stream
+  "Stream", "IntStream", "LongStream", "DoubleStream", "Collector",
+  "Collectors",
+  // java.util.function
+  "Function", "BiFunction", "Consumer", "BiConsumer", "Supplier",
+  "Predicate", "BiPredicate", "UnaryOperator", "BinaryOperator",
+  "IntFunction", "ToIntFunction", "ToLongFunction", "ToDoubleFunction",
+  // java.util.concurrent
+  "Callable", "Future", "CompletableFuture", "CompletionStage", "Executor",
+  "ExecutorService", "Executors", "ScheduledExecutorService", "TimeUnit",
+  "ConcurrentHashMap", "ConcurrentMap", "CopyOnWriteArrayList",
+  "BlockingQueue", "CountDownLatch", "Semaphore", "CyclicBarrier",
+  "AtomicInteger", "AtomicLong", "AtomicBoolean", "AtomicReference",
+  // java.time
+  "Instant", "Duration", "Period", "LocalDate", "LocalTime", "LocalDateTime",
+  "ZonedDateTime", "OffsetDateTime", "ZoneId", "ZoneOffset", "DayOfWeek",
+  "Month", "Year", "Clock", "DateTimeFormatter",
+  // java.io / java.nio.file
+  "IOException", "UncheckedIOException", "FileNotFoundException", "File",
+  "InputStream", "OutputStream", "Reader", "Writer", "BufferedReader",
+  "BufferedWriter", "InputStreamReader", "OutputStreamWriter", "FileReader",
+  "FileWriter", "PrintStream", "PrintWriter", "ByteArrayInputStream",
+  "ByteArrayOutputStream", "Serializable", "Closeable", "Path", "Paths",
+  "Files",
+  // java.math
+  "BigDecimal", "BigInteger",
+]);
+
+/**
+ * Walk a Java type expression; append `[name, role]` tuples. Skips primitives,
+ * any in-scope type parameter, and java stdlib builtins
+ * (`_JAVA_BUILTIN_TYPES`), and resolves the unqualified tail of a
  * `scoped_type_identifier` (`java.util.List` → `List`). Ports of upstream
- * safishamsi 31b3752 (#1485) + 8b9a998 (#1518).
+ * safishamsi 31b3752 (#1485) + 8b9a998 (#1518) + 92edf78 (#1603).
  */
 function _javaCollectTypeRefs(
   node: SyntaxNode | null,
@@ -621,19 +686,25 @@ function _javaCollectTypeRefs(
   }
   if (t === "type_identifier") {
     const name = _readText(node, source);
-    if (name && !skipSet.has(name)) out.push([name, generic ? "generic_arg" : "type"]);
+    if (name && !skipSet.has(name) && !_JAVA_BUILTIN_TYPES.has(name)) {
+      out.push([name, generic ? "generic_arg" : "type"]);
+    }
     return;
   }
   if (t === "scoped_type_identifier") {
     const text = _readText(node, source).split(".").pop() ?? "";
-    if (text) out.push([text, generic ? "generic_arg" : "type"]);
+    if (text && !_JAVA_BUILTIN_TYPES.has(text)) out.push([text, generic ? "generic_arg" : "type"]);
     return;
   }
   if (t === "generic_type") {
     for (const c of node.children) {
       if (c.type === "type_identifier" || c.type === "scoped_type_identifier") {
         const text = _readText(c, source).split(".").pop() ?? "";
-        if (text && (c.type === "scoped_type_identifier" || !skipSet.has(text))) {
+        if (
+          text &&
+          !_JAVA_BUILTIN_TYPES.has(text) &&
+          (c.type === "scoped_type_identifier" || !skipSet.has(text))
+        ) {
           out.push([text, generic ? "generic_arg" : "type"]);
         }
         break;
