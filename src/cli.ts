@@ -5493,7 +5493,7 @@ export async function main(): Promise<void> {
     .action(async (question, opts) => {
       const { readFileSync: rf } = await import("node:fs");
       const { resolve: res } = await import("node:path");
-      const { scoreSearchText } = await import("./search.js");
+      const { dropQueryStopwords, scoreSearchText } = await import("./search.js");
       const gp = res(opts.graph);
       if (!existsSync(gp)) {
         console.error(`error: graph file not found: ${gp}`);
@@ -5508,7 +5508,12 @@ export async function main(): Promise<void> {
         const raw = JSON.parse(rf(gp, "utf-8"));
         const G = loadGraphFromData(raw);
 
-        const terms = normalizeSearchText(question).split(/\s+/).filter((t: string) => t.length > 2);
+        // Question/filler stopwords are dropped from the QUERY terms only
+        // (node text is never filtered) so content words drive seeding —
+        // port of upstream 6e97088.
+        const terms = dropQueryStopwords(
+          normalizeSearchText(question).split(/\s+/).filter((t: string) => t.length > 2),
+        );
         const scored: [number, string][] = [];
         G.forEachNode((nid: string, data: Record<string, unknown>) => {
           const score = scoreSearchText(

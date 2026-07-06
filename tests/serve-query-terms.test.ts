@@ -12,7 +12,8 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { queryTerms } from "../src/search.js";
+import { dropQueryStopwords, queryTerms } from "../src/search.js";
+import { tokenizeField } from "../src/retrieval/bm25.js";
 
 describe("Track F F-0816-P2 (row 12) — queryTerms", () => {
   it("keeps two-character non-English terms (CJK)", () => {
@@ -57,5 +58,31 @@ describe("Track F F-0816-P2 (row 12) — queryTerms", () => {
     // We follow the upstream rule: short non-English (length <= 2) tokens
     // that contain ANY non-ASCII char are kept.
     expect(queryTerms("é 前 ok hello")).toEqual(["é", "前", "hello"]);
+  });
+});
+
+describe("query stopwords (upstream 6e97088)", () => {
+  it("drops question/filler words so content terms drive seeding", () => {
+    // "how does the frontier cache work" must reduce to the content terms,
+    // or it seeds on "how"/"the"/"work" (which prefix-match prose labels
+    // like "Working Principles") instead of "frontier"/"cache".
+    expect(dropQueryStopwords(queryTerms("how does the frontier cache work")))
+      .toEqual(["frontier", "cache"]);
+    expect(dropQueryStopwords(queryTerms("what calls extract?")))
+      .toEqual(["calls", "extract"]);
+  });
+
+  it("falls back to the unfiltered terms when the query is all stopwords", () => {
+    // queryTerms drops "it" (short English), leaving all-stopword terms;
+    // the fallback keeps them rather than seeding on nothing.
+    expect(dropQueryStopwords(queryTerms("how does it work")))
+      .toEqual(["how", "does", "work"]);
+  });
+
+  it("never filters the index side: node text keeps stopword tokens", () => {
+    // The BM25F index tokenizer must stay unfiltered so a symbol literally
+    // named `work` (or a "Working Principles" doc heading) stays findable.
+    expect(tokenizeField("Working Principles")).toEqual(["working", "principles"]);
+    expect(queryTerms("workQueue does_work")).toEqual(["workqueue", "does_work"]);
   });
 });
