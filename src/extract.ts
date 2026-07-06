@@ -6170,7 +6170,7 @@ export async function extractWithDiagnostics(paths: string[]): Promise<ExtractWi
     // `.json` handling. Port of upstream 2c01a89 (dispatched-by-filename).
     const extractor = isMcpConfigPath(filePath)
       ? _extractMcpConfigAsync
-      : basename(filePath).endsWith(".blade.php")
+      : basename(filePath).toLowerCase().endsWith(".blade.php")
         ? extractRegexBackedCode
         : _DISPATCH[ext];
     if (!extractor) continue;
@@ -6335,7 +6335,12 @@ export function collectFiles(target: string, options?: { followSymlinks?: boolea
         // is intentionally skipped here (the `entry.startsWith(".")` guard
         // above), consistent with graphify's hidden-file policy — it is still
         // extracted when passed as an explicit single-file target.
-        if (_EXTENSIONS.has(ext) || _MCP_CONFIG_FILENAMES.has(entry)) {
+        // Case-insensitive suffix fallback (raw match first so exact entries
+        // like `.R`/`.F90` are untouched): the extractor dispatch lowercases
+        // its extension, but this filter compared the raw suffix — so
+        // capitalized/mixed-case extensions (`.PY`, `.Ts`) were silently
+        // skipped at collection time. Port of upstream aa1bbda (#1671).
+        if (_EXTENSIONS.has(ext) || _EXTENSIONS.has(ext.toLowerCase()) || _MCP_CONFIG_FILENAMES.has(entry)) {
           results.push(fullPath);
         }
       }
@@ -6353,5 +6358,5 @@ export function collectFiles(target: string, options?: { followSymlinks?: boolea
 export const __testing = {
   resolveLuaImportTarget: _resolveLuaImportTarget,
   /** Return the dispatch-table extractor function for a given file path (by extension). */
-  getExtractor: (filePath: string): ExtractorFn | undefined => _DISPATCH[extname(filePath)],
+  getExtractor: (filePath: string): ExtractorFn | undefined => _DISPATCH[extname(filePath).toLowerCase()],
 };

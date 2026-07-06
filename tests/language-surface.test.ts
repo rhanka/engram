@@ -54,6 +54,27 @@ describe("upstream v4 language surface", () => {
     expect(collectFiles(dir).map((p) => p.split("/").pop()).sort()).toEqual(files.sort());
   });
 
+  it("collects capitalized/mixed-case extensions case-insensitively (upstream aa1bbda #1671)", () => {
+    const files = ["MAIN.PY", "Widget.TSX", "Notes.Md", "Template.BLADE.PHP"];
+
+    for (const file of files) {
+      writeFileSync(join(dir, file), "# fixture\n");
+    }
+
+    expect(collectFiles(dir).map((p) => p.split("/").pop()).sort()).toEqual(files.sort());
+  });
+
+  it("extracts a capitalized-extension source file end-to-end (upstream aa1bbda #1671)", async () => {
+    writeFileSync(join(dir, "SOLVER.PY"), "def solve():\n    return 1\n");
+
+    const collected = collectFiles(dir);
+    expect(collected.map((p) => p.split("/").pop())).toContain("SOLVER.PY");
+
+    const extraction = await extract(collected);
+    const labels = extraction.nodes.map((n) => n.label);
+    expect(labels).toContain("solve()");
+  });
+
   it("collects files when the explicit project root is inside a hidden parent", () => {
     const worktreeRoot = join(dir, ".worktrees", "feature-branch");
     mkdirSync(join(worktreeRoot, "src"), { recursive: true });
