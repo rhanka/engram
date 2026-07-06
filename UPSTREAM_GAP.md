@@ -138,6 +138,8 @@ Buckets: `adopt` (design-level, sketch + cost given) / `must-audit` (compare aga
 
 The deep-dive (exact upstream mechanism: schema, keying, retrieval, gating, lifecycle, who curates) and the three-target adoption design (code corpora / **process-std-am** / **nc-fullstack**) live in **`spec/SPEC_EVOL_CURATED_RESPONSES.md`** (DRAFT, decision-ready, 5 open decisions for the principal). Ten-line mechanism summary is §1 of that spec.
 
+The **full opportunity study** deep-diving every other table row (savings accounting, CLAUDE.md context block, SCC, search routing, Kamei features, agent provenance, cost ledger, knowledge-map/tours, `get_context` facets, external systems, provider union + the defer sweep), with a prioritized owner/phase table and 8 open decisions, lives in **`spec/SPEC_EVOL_REPOWISE_OPPORTUNITIES.md`** (DRAFT, 2026-07-06 follow-up).
+
 ### Repowise source-lock notes
 
 - Reference lock: `repowise-dev/repowise` `main` at `6680c282` (= `v0.27.0` + 1 commit). Re-scan cadence: opportunistic, alongside python/CRG drift passes.
