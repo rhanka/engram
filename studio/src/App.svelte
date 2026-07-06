@@ -33,12 +33,14 @@
     fetchModelsManifest,
     fetchScene,
     fetchSearchIndex,
+    fetchWindow,
     setStaticBaseProvider,
     __resetEntitiesIndexCache,
   } from "./lib/api.js";
   import { createModelStore } from "./lib/modelStore.svelte.js";
   import {
     buildScene,
+    buildWindowScene,
     applyWeakFilter,
     applyTimeFilter,
     sceneTimeRange,
@@ -61,7 +63,7 @@
     ontologyLevelState,
     ontologyAbsorption,
   } from "./lib/groupBy.js";
-  import { loadWorkspace } from "./lib/sceneLoader.js";
+  import { loadWorkspaceWindowed } from "./lib/sceneLoader.js";
   import {
     createDefaultViewerState,
     splitGroupedKeys,
@@ -575,7 +577,28 @@
    * are fetched fresh, and clears selection (ids don't carry across models).
    */
   async function loadActiveModel() {
-    const result = await loadWorkspace({
+    const result = await loadWorkspaceWindowed({
+      // Storage LOT 3 / WP1: when a window-capable GraphStore mirror is
+      // configured, PREFER its bounded window (N highest-degree nodes + induced
+      // edges + precomputed positions) for FIRST PAINT instead of waiting on
+      // the multi-MB scene. With no store (default flat-JSON studio / offline
+      // bundle / 404) the probe resolves null and this is EXACTLY the previous
+      // loadWorkspace path — full scene, unchanged.
+      fetchWindow,
+      // Built with DEFAULT options (weak edges kept + flagged), like the
+      // server-side scene.json: the derived applyWeakFilter(sceneData, …) owns
+      // the toggle, so the window scene behaves exactly like a full scene.
+      buildWindowScene: (win) => buildWindowScene(win),
+      onFirstPaint: (windowScene) => {
+        // Bounded first paint: render the window NOW. The full workspace load
+        // continues in the background and replaces it below (lazy hydration).
+        loadError = null;
+        // Never pair the new window with a stale (previous-model) graph.
+        graph = EMPTY_GRAPH;
+        sceneData = windowScene;
+        // Unlock the template (onMount only flips it after the FULL load).
+        loaded = true;
+      },
       fetchScene,
       fetchGraph,
       buildScene: (g) => buildScene(g, { showWeakLinks: viewerState.options.showWeakLinks }),
