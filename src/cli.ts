@@ -751,8 +751,12 @@ export const GraphifyPlugin = async ({ directory }) => {
       if (!existsSync(join(directory, ".graphify", "graph.json"))) return;
 
       if (input.tool === "bash") {
+        // Separate with ';' not '&&' — Windows PowerShell 5.1 rejects '&&' as a
+        // statement separator, which broke the first bash command of every
+        // OpenCode session on Windows. ';' works in PowerShell 5.1, Bash, and
+        // POSIX shells alike. Port of upstream 54825b6 (#1646).
         output.args.command =
-          'echo "[graphify] Knowledge graph at .graphify/. For focused questions, run graphify query \\"<question>\\" (scoped subgraph, usually much smaller than GRAPH_REPORT.md) instead of grepping raw files. Read GRAPH_REPORT.md only for broad architecture context." && ' +
+          'echo "[graphify] Knowledge graph at .graphify/. For focused questions, run graphify query \\"<question>\\" (scoped subgraph, usually much smaller than GRAPH_REPORT.md) instead of grepping raw files. Read GRAPH_REPORT.md only for broad architecture context." ; ' +
           output.args.command;
         reminded = true;
       }
