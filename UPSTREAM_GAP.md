@@ -68,7 +68,35 @@ Lot roll-up of the 30 actionable rows:
 | New-lot: inheritance follow-up (Lot-1 style) | `9b04022` |
 | Unassigned must-audit (likely covered, test-confirm) | `1256d65`, `b70a6d7` |
 
-Honesty caveats (unchanged from prior passes): optional tree-sitter WASM grammars (kotlin, swift, c#, ruby, objc) are absent in this sandbox — language-gap rows were verified by reading `src/extract.ts`, not by running extraction; `9811def`/`1256d65`/`b70a6d7` look already-covered but are kept `must-audit` pending test confirmation.
+Honesty caveats (unchanged from prior passes): optional tree-sitter WASM grammars (kotlin, swift, c#, ruby, objc) are absent in this sandbox — language-gap rows were verified by reading `src/extract.ts`, not by running extraction; `9811def`/`1256d65`/`b70a6d7` look already-covered but are kept `must-audit` pending test confirmation. (2026-07-06 port pass correction: `tree-sitter-ruby` WASM **is** present in this sandbox — the ruby ports below were verified by live extraction; kotlin/swift/c# remain absent.)
+
+### Closed this pass — 2026-07-06 port wave (WP6 upstream-ports branch)
+
+Verified-local = regression test ran green in this sandbox; CI-only = integration test soft-skips locally (optional grammar absent) and asserts where the grammar installs.
+
+| Upstream | TS change | Test | Status |
+| --- | --- | --- | --- |
+| `aa1bbda` case-insensitive suffix filter | `collectFiles` + dispatch lowercase fallback, `src/extract.ts` | `tests/language-surface.test.ts` | **ported + verified-local** (bug was live) |
+| `54825b6` skill/opencode fixes (2 of 3 slices) | `src/skills/skill-windows.md` name, opencode `;` separator `src/cli.ts` | `tests/skills.test.ts`, `tests/opencode-integration.test.ts` | **ported + verified-local** (bugs were live; #1657 report slice n/a — no Import Cycles section in TS) |
+| `e2ef4ef` (#1638 slice) phantom bare-import ids | ref-namespaced external-import fallback, `src/extract.ts` | `tests/extract-phantom-external-import.test.ts` | **ported + verified-local** (bug was live) |
+| `2ba07e8` to_canvas guard | member `hasNode`+filename filter in `toCanvas`, `src/export.ts` | `tests/public-api.test.ts` | **ported + verified-local** (bug was live; toObsidian half n/a) |
+| `2ab0867` shebang routing | `_SHEBANG_DISPATCH` + `_getExtractor`, `src/extract.ts` | `tests/extract-dispatch-parity.test.ts` | **ported + verified-local** |
+| `1226c34` `.mts`/`.cts` | detect + dispatch + TS grammar + import candidates | `tests/extract-dispatch-parity.test.ts` | **ported + verified-local** |
+| `6e97088` query stopwords | `QUERY_STOPWORDS`/`dropQueryStopwords` (`src/search.ts`), query paths only | `tests/serve-query-terms.test.ts` | **ported + verified-local** (index side intentionally unfiltered) |
+| `d56ee83` per-term BFS seeds | exported `pickSeeds` (`src/serve.ts`), MCP top-3 + CLI top-5 | `tests/serve-seed-diversity.test.ts` | **ported + verified-local** (unit + MCP e2e) |
+| `9e7fbcb` multi-project MCP | optional `project_path` on every tool, per-graph store cache | `tests/serve-multi-project.test.ts` | **ported + verified-local**; deliberate delta: strict default-graph startup kept |
+| `92edf78` java stdlib suppression | `_JAVA_BUILTIN_TYPES` in `_javaCollectTypeRefs` | `tests/extract-type-references.test.ts` | **ported + verified-local** |
+| `3540416` TS/JS decorator refs | `_tsEmitDecoratorEdges` in the class branch | `tests/extract-ts-decorators.test.ts` | **ported + verified-local** (abstract classes follow the pre-existing classTypes gap) |
+| `869aaf7` TS namespace/module nodes | `_tsExtraWalk` (internal_module/module) | `tests/extract-ts-namespace.test.ts` | **ported + verified-local** |
+| `09aeb97` generator nodes | `generator_function_declaration` + `_JS_FUNCTION_VALUE_TYPES` | `tests/extract-ts-generators.test.ts` | **ported + verified-local** (also closes `const x = function(){}`) |
+| `6d3a6f1` JS/TS rationale + ADR/RFC refs | `_extractJsRationale` post-pass; `doc_ref` file_type | `tests/extract-js-rationale.test.ts` | **ported + verified-local** |
+| `1288a55` zero-node cache guard | `_shouldCacheExtraction` gate + warning | `tests/extract-cache-zero-node.test.ts` | **ported + verified-local** |
+| `9b04022` kotlin `by` delegation | full kotlin delegation_specifier branch (TS had none) + `_kotlinUserTypeName` | `tests/extract-kotlin-delegation.test.ts` | **ported**; helper unit verified-local, integration **CI-only** (kotlin WASM absent) |
+| `13e2bdd` (#1640 slice) ruby containers | `module` classType; Struct.new/Class.new/Data.define synthesis + inherits | `tests/extract-ruby-containers.test.ts` | **ported + verified-local** (ruby WASM present) |
+| `6631af7` (#1668 slice) ruby mixes_in | include/extend/prepend scan in class/module body, stub targets | `tests/extract-ruby-containers.test.ts` | **ported + verified-local** |
+| `9811def` import-equals | none needed — `readStringSpecifier` recurses | `tests/extract-ts-import-equals.test.ts` | **already-covered, test-pinned** |
+
+Deferred from the 21-port bucket — all blocked on the same absent subsystem (cross-file member-call resolution / receiver typing; TS has no `resolve_*_member_calls` analog at all): `4744dfe` (extends the #1316 JS receiver-type table), `eebc406` (C# receiver calls), `44c0a5e` (Swift singleton receiver), `62b8eb1` (import-evidence gate on the #1553 single-candidate resolver — the phantom-edge failure mode does not exist in TS because that resolver is absent; the gate becomes relevant when the resolver lands), plus the `13e2bdd` #1634 constant-receiver slice and the `6631af7` #1669 affected-seeding slice (TS has no `affected` command). These form one coherent next structural lot alongside Lot 3 `indirect_call` (still unstarted).
 
 ### CRG recheck (`tirth8205/code-review-graph`)
 
