@@ -18,6 +18,7 @@ This document tracks the delta between this TypeScript port and upstream Python 
 - Closed Python `0.7.10` drift lock: remote `upstream/v7` observed on 2026-05-08 at `0c29b2cb88c6274d889ca7c33a684ce103808715`, with remote tag `v0.7.10` at `ef1050b0e4134df0bd59956b0f900dc3c83e8184`
 - Observed Python drift lock for the next pass: remote `upstream/v7` observed on 2026-05-12 at `ab32098063adb1ab4d9247747742958ad185db41`, with remote tag `v0.7.16` at the same commit
 - Active CRG stable review reference: `tirth8205/code-review-graph` tag `v2.3.6` at `935695f800f2b02e71aae6d463f3df65f0c6493e` (advanced from `v2.3.3` on 2026-07-06; see `Drift Re-Scan (2026-07-06)`)
+- Active Codeflow graph-UX reference: `braedonsaunders/codeflow` tag `v1` / `main` at `af3b0073f2b41c9f54938c6520509fd97d133803` (added 2026-07-09 for prettier/faster parametric graph rendering and stronger filtering UX; additive only, no npm parity impact — see `Codeflow intake (2026-07-09)` and `spec/SPEC_STUDIO_GRAPH_UX_CODEFLOW_PARITY.md`)
 - Reference upstream (functional, no code ports — AGPL): `repowise-dev/repowise` at `6680c2822a64ee2c0bc53c196fe7a321df9aaf8a` (`v0.27.0`+1); see `Repowise Reference Intake (2026-07-06)` and `spec/SPEC_EVOL_CURATED_RESPONSES.md`
 - Current released line: `@sentropic/graphify@0.10.0` (rename, 2026-05-26); the `0.8.16` and `0.8.18` drift intakes below are both closed for the TypeScript line. F-0819-P1/P2 (PRs #87/#88, upstream `#1075`/`#1077`/`#1007`/`#1010`) and F-0831-P1-security (PR #93) are merged on `main` and unreleased; the next traceability pass formalizes the `v0.8.18..v0.8.31` window (`upstream/v8` fetched locally through `v0.8.31` at `7a588fb`) and reconciles those early ports
 
@@ -97,6 +98,26 @@ Verified-local = regression test ran green in this sandbox; CI-only = integratio
 | `9811def` import-equals | none needed — `readStringSpecifier` recurses | `tests/extract-ts-import-equals.test.ts` | **already-covered, test-pinned** |
 
 Deferred from the 21-port bucket — all blocked on the same absent subsystem (cross-file member-call resolution / receiver typing; TS has no `resolve_*_member_calls` analog at all): `4744dfe` (extends the #1316 JS receiver-type table), `eebc406` (C# receiver calls), `44c0a5e` (Swift singleton receiver), `62b8eb1` (import-evidence gate on the #1553 single-candidate resolver — the phantom-edge failure mode does not exist in TS because that resolver is absent; the gate becomes relevant when the resolver lands), plus the `13e2bdd` #1634 constant-receiver slice and the `6631af7` #1669 affected-seeding slice (TS has no `affected` command). These form one coherent next structural lot alongside Lot 3 `indirect_call` (still unstarted).
+
+### Codeflow intake (2026-07-09) (`braedonsaunders/codeflow`)
+
+Remote check on 2026-07-09:
+
+```bash
+git ls-remote --heads --tags https://github.com/braedonsaunders/codeflow main refs/tags/v1
+# af3b0073f2b41c9f54938c6520509fd97d133803 refs/heads/main
+# af3b0073f2b41c9f54938c6520509fd97d133803 refs/tags/v1
+```
+
+Status: `needs-review` / opportunity, principal-set as a **hard graph-UX parity target** (2026-07-09). Additive graph-UX reference — NOT a Python Graphify parity source and NOT a release-version driver; no code copied (confirm licence before any reuse). The full requirement lives in `spec/SPEC_STUDIO_GRAPH_UX_CODEFLOW_PARITY.md` and is seated in track under the `Renderer & Views` WP (`01KW89F1EGCH2MZXDAY9T8D6D4`, item `01KX4HFAWA726WEDD1HFRTXQRZ`).
+
+| Area | Why it matters locally | Follow-up |
+| --- | --- | --- |
+| Parametric layouts | Codeflow ships Force/Radial/Layers/Grid/Metro with live Spread+Links sliders, very fast. | Add `radial`/`grid`/`metro` engines to the `@sentropic/graph` layout registry (force + Variant A already exist). |
+| Animated dynamics | Codeflow animates node positions on layout/slider change; graphify paints one static frame. | Interpolate the existing `PositionFrame` stream on the shipped WebGL2 renderer — the headline gap. |
+| Color-by | Folder / Layer / **Churn** (continuous scalar heat). | Add a continuous scalar colour axis (sequential ramp) beyond categorical buckets. |
+| Filtering UX | User feedback: filtering may be more functional. | Audit filter primitives against Studio facets / group filters. |
+| Integration boundary | Keep Graphify generic and TypeScript-first. | Design/reference input only unless a later spec adopts concrete behavior. |
 
 ### CRG recheck (`tirth8205/code-review-graph`)
 
