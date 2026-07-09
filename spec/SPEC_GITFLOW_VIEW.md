@@ -36,7 +36,7 @@ Implementation surfaces:
 
 ## 2. Visual grammar
 
-Reference imagery: GitHub network graph / nvie git-flow / gitk. All rules below are
+Reference imagery: GitHub network graph / nvie git-flow / gitk. `braedonsaunders/codeflow` is now tracked as an additive graph-UX reference for visual polish, parametric layouts, and animated dynamics (`spec/SPEC_STUDIO_GRAPH_UX_CODEFLOW_PARITY.md`), but does not change the shipped grammar until a follow-up spec adopts concrete deltas. All rules below are
 implemented in `layout-gitflow.ts` (header contract at `layout-gitflow.ts:1-43`) and are
 **pure and deterministic** — no randomness, no camera coupling.
 
