@@ -12,17 +12,18 @@ This document is the durable upstream traceability contract for the TypeScript G
 
 ## Purpose
 
-Graphify TypeScript has two upstream references:
+Graphify TypeScript has three upstream/reference inputs:
 
 - Safi Python Graphify is the product lineage.
 - `tirth8205/code-review-graph` is an additive review-workflow reference.
+- `braedonsaunders/codeflow` is an additive graph-UX reference for prettier/faster parametric layouts, animated dynamics, and filtering ideas (`spec/SPEC_STUDIO_GRAPH_UX_CODEFLOW_PARITY.md`).
 
 The TypeScript fork must stay generic, npm-first, `.graphify/`-based, and TypeScript-backed. Upstream catch-up must preserve local additions unless a later spec explicitly rejects them.
 
 ## Versioning Rule
 
 - Python Graphify is the only upstream that may drive npm parity version numbers.
-- `code-review-graph` is an additive feature source and must never determine the published npm version.
+- `code-review-graph` and `codeflow` are additive feature sources and must never determine the published npm version.
 - Local patch releases between parity milestones are allowed, but the next parity target must be named after the upstream Python Graphify line it actually covers.
 - Upstream Python `v1.0.0` must remain `deferred` until a dedicated traceability pass confirms that the active release train has moved beyond `v7` / `0.7.x`.
 - Every catch-up must stay TypeScript-only; do not introduce new Python runtime dependencies to claim parity.
@@ -47,6 +48,7 @@ The TypeScript fork must stay generic, npm-first, `.graphify/`-based, and TypeSc
 | Safi Python Graphify | remote tag `v1.0.0` | `0a31c0862b600d0755b0b8da41d6cdf99df135df` | not tracked locally | `1.0.0` | `deferred` | Exists upstream, but not the active parity target while releases are still landing on `v6` / `0.7.x`. |
 | code-review-graph | remote tag `v2.3.2` | `db2d2df789c25a101e33477b898c1840fb4c7bc7` | `/tmp/code-review-graph-v2.3.2` at same commit | `2.3.2` | `covered` | Stable CRG implementation reference for review features. |
 | code-review-graph | remote tag `v2.3.3` / `main` | `52cf3bc63ee77c8b204fb809791a5f212e83a2de` | `/tmp/code-review-graph-upstream` at same commit | `2.3.3` | `deferred` | New stable CRG reference observed on 2026-05-08. It is additive input only, does not drive Graphify npm versioning, and must not block Python `0.7.10` parity. |
+| codeflow | remote tag `v1` / `main` | `af3b0073f2b41c9f54938c6520509fd97d133803` | not tracked locally | `v1` | `needs-review` | Additive graph-UX reference observed on 2026-07-09 from `https://github.com/braedonsaunders/codeflow`; principal-set hard parity target for parametric layouts + animated WebGL dynamics + colour-by. See `spec/SPEC_STUDIO_GRAPH_UX_CODEFLOW_PARITY.md`. |
 
 No CRG `main` / `v2.3.3` feature has been adopted in this `0.7.10` catch-up without being recorded as an additive TypeScript delta.
 
@@ -70,6 +72,9 @@ git ls-remote --heads --tags https://github.com/safishamsi/graphify \
 
 git ls-remote --heads --tags https://github.com/tirth8205/code-review-graph \
   main refs/tags/v2.3.2 refs/tags/v2.3.3
+
+git ls-remote --heads --tags https://github.com/braedonsaunders/codeflow \
+  main refs/tags/v1
 ```
 
 If a local tag differs from the remote tag, record the remote commit in this document and avoid using the local tag in parity claims.
