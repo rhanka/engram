@@ -1,10 +1,12 @@
 <script>
   import { onDestroy, onMount, tick } from "svelte";
+  import { Button, ButtonGroup } from "@sentropic/design-system-svelte";
   import { createGraphRenderer, drawBoxLabels2D } from "@sentropic/graph";
 
   import {
     buildConnectedDimStyle,
     buildGraphRendererPayload,
+    computeLayoutBuffer,
     findNearestEdge,
     findNearestNode,
     findNearestNodeId,
@@ -12,6 +14,9 @@
     interpolateMergePositions,
     isBoxShape,
     LABEL_ZOOM_THRESHOLD,
+    LAYOUT_MODE_FORCE,
+    LAYOUT_MODES,
+    morphPositions,
     truncateLabel,
   } from "../lib/graphRendererPayload.js";
   import {
@@ -43,6 +48,10 @@
   const NODE_TIGHT_SLOP = 4;
   const HOVER_EDGE_COLOR = [37, 99, 235, 255];
   const MERGE_ANIMATION_DURATION_MS = 520;
+  // codeflow-parity Lot 1: duration of the all-node layout MORPH tween
+  // (Force ↔ Layers). Kept in the ~300–500 ms band the spec calls for, so
+  // labels + interaction are only locked briefly (§2.6).
+  const LAYOUT_MORPH_DURATION_MS = 480;
   // CANVAS2D ONLY: hide edges during active pan/zoom/drag when nodes+edges exceed
   // this, for interaction fluidity (a legacy SVG-era guard). WebGL2 NEVER skips
   // (GPU-instanced edges are cheap) — see `skipEdgesOnInteract`.
@@ -92,6 +101,11 @@
     // label is always available on hover (tooltip + overlay `title`). Undefined
     // falls back to the renderer default (DEFAULT_LABEL_MAX_CHARS).
     labelMaxChars = undefined,
+    // codeflow-parity Lot 1: show the layout switcher (Force · Layers) in the
+    // toolbar and enable the all-node layout MORPH. Opt-in — only the workspace
+    // main graph passes it; the reconciliation view (pinned twins, its own local
+    // layout) and git-flow leave it off so the animated switcher is scoped there.
+    showLayoutSwitcher = false,
   } = $props();
 
   let container;
@@ -132,6 +146,26 @@
   let resizeFrame = null;
   let mergeFrame = null;
   let completedMergeKey = null;
+
+  // --- codeflow-parity Lot 1: layout switcher + all-node morph tween ---------
+  // The currently-selected layout mode (drives the segmented control + morph).
+  let layoutMode = $state(LAYOUT_MODE_FORCE);
+  // rAF handle for the in-flight layout morph (distinct from the merge loop).
+  let layoutMorphFrame = null;
+  // The LIVE interpolated buffer of the in-flight morph — re-seeds `bufA` on an
+  // interrupt (switching mid-morph) and is re-applied after a selection/hover
+  // rebuild so the effect can't clobber the tween (cf. reapplyDraggedPositions).
+  let liveMorphBuffer = null;
+  // The SETTLED target buffer of the active non-force layout (null while Force,
+  // which uses the native scene positions). Re-applied after every payload
+  // rebuild so a Layers layout survives a selection/hover-driven rebuild.
+  let activeLayoutBuffer = null;
+  // The CACHED pristine force positions captured at scene-build time — the
+  // morph TARGET for switch-to-Force (Lot 1 never cold re-solves force).
+  let forceBaseBuffer = null;
+  // True while a layout morph is in flight: hides labels + locks canvas
+  // interaction for the (~480 ms) tween, exactly as pan/zoom already do.
+  let morphActive = $state(false);
   let hoveredEdge = $state(null);
   let hoveredNode = $state(null);
   let hoveredNodeId = $state(null);
@@ -372,6 +406,11 @@
 
   // --- Zoom centred on cursor ---
   function handleWheel(event) {
+    // Lock zoom during a layout morph (§2.6) — the tween owns the buffer.
+    if (morphActive) {
+      event.preventDefault();
+      return;
+    }
     if (!renderer || !canvas) return;
     event.preventDefault();
 
@@ -424,6 +463,8 @@
 
   // --- Pointer down: node drag (over a node) or pan (over the background) ---
   function handlePointerDown(event) {
+    // Lock pan/drag while a layout morph is in flight (§2.6).
+    if (morphActive) return;
     // A pan/drag is starting — cancel any pending hover-intent dwell so it can't
     // fire (and dim) mid-interaction.
     hoverIntent.cancel();
@@ -512,9 +553,26 @@
     lastLabelZoomBucket = labelZoomBucket(camera.zoom);
     clearHoveredEdge({ notify: false, render: false });
     computeNodeDegrees();
+    // Re-apply the active layout FIRST (so a Layers layout / an in-flight morph
+    // survives a selection/hover rebuild), THEN dragged positions on top (a
+    // user drag wins over the layout).
+    reapplyLayoutPositions();
     reapplyDraggedPositions();
     // NB: `skipEdgesOnInteract` is a backend-aware `$derived` (declared above) —
     // no imperative recompute here, so a backend flip updates it reactively.
+  }
+
+  // codeflow-parity Lot 1: re-write the active layout's positions onto a freshly
+  // built payload so the selection `$effect` (rebuildPayload → applyPayloadNoFit
+  // → setPositions) cannot clobber the layout / the interpolated morph buffer
+  // (§2.6). Mid-morph the LIVE buffer wins; otherwise the settled non-force
+  // layout buffer. Force (activeLayoutBuffer === null, not morphing) is a no-op,
+  // so the default path stays byte-identical to before this lot.
+  function reapplyLayoutPositions() {
+    const source = morphActive ? liveMorphBuffer : activeLayoutBuffer;
+    if (!source || !payload?.renderGraph) return;
+    const positions = payload.renderGraph.positions;
+    if (source.length === positions.length) positions.set(source);
   }
 
   // Re-write any user-dragged node positions onto the freshly-built payload so a
@@ -535,9 +593,21 @@
     if (!mounted) return;
 
     rebuildPayload();
+    // Cache the pristine force positions of the fresh scene as the switch-to-
+    // Force morph target (Lot 1 never cold re-solves force). Captured AFTER the
+    // rebuild, when positions still hold the baked/attached force layout (the
+    // genuine-new-scene path resets layout state first, so no override applies).
+    captureForceBaseBuffer();
     ensureRenderer();
     resizeCanvas();
     applyPayload();
+  }
+
+  // codeflow-parity Lot 1: snapshot the current (pristine force) positions as the
+  // cached switch-to-Force morph target.
+  function captureForceBaseBuffer() {
+    const positions = payload?.renderGraph?.positions;
+    forceBaseBuffer = positions ? new Float32Array(positions) : null;
   }
 
   // Selection/focus update — preserves the user's current zoom and pan.
@@ -744,6 +814,8 @@
   }
 
   function handleClick(event) {
+    // Ignore canvas clicks while a layout morph is animating.
+    if (morphActive) return;
     // A click that concludes a node drag must not also select.
     if (suppressNextClick) {
       suppressNextClick = false;
@@ -754,6 +826,7 @@
   }
 
   function handleDoubleClick(event) {
+    if (morphActive) return;
     const id = pickNode(event);
     if (id) onOpenEntity?.(id);
   }
@@ -807,6 +880,8 @@
   }
 
   function handlePointerMove(event) {
+    // Suppress hover / pan / drag while a layout morph owns the position buffer.
+    if (morphActive) return;
     // Node drag takes priority over everything else.
     if (draggingNodeId) {
       if (!dragMoved) {
@@ -1029,6 +1104,106 @@
     mergeFrame = window.requestAnimationFrame(tick);
   }
 
+  // --- codeflow-parity Lot 1: all-node layout MORPH driver -------------------
+  // Generalizes the one-node merge tween into a cross-buffer morph between two
+  // index-parallel position buffers (§2.5/§2.6): capture the current on-screen
+  // buffer as `bufA`, compute the target `bufB` for the chosen mode (Layers =
+  // resolveLayout('typed-layer'); Force = the CACHED initial force positions —
+  // no cold re-solve in Lot 1), rAF-lerp bufA→bufB via renderer.setPositions,
+  // then exactly ONE fitAndRender() at t=1.
+
+  function cancelLayoutMorphFrame() {
+    if (typeof window !== "undefined" && layoutMorphFrame !== null) {
+      window.cancelAnimationFrame(layoutMorphFrame);
+    }
+    layoutMorphFrame = null;
+  }
+
+  // Reset all layout state to the Force default. Called on a genuine scene-
+  // content change so we NEVER tween across a scene rebuild (new node indices).
+  function resetLayoutState() {
+    cancelLayoutMorphFrame();
+    morphActive = false;
+    liveMorphBuffer = null;
+    activeLayoutBuffer = null;
+    layoutMode = LAYOUT_MODE_FORCE;
+  }
+
+  // Toolbar click: morph to `mode`. Ignores a click on the already-active mode
+  // (during a morph `layoutMode` is already the target, so re-clicking it is a
+  // no-op while clicking the OTHER mode interrupts and re-targets).
+  function selectLayoutMode(mode) {
+    if (mode === layoutMode) return;
+    startLayoutMorph(mode);
+  }
+
+  // Bake a settled layout into the payload (so hit-testing / labels / edges read
+  // the new positions), remember it for re-application across rebuilds, and do
+  // the single deliberate end-fit.
+  function settleLayout(mode, buffer) {
+    activeLayoutBuffer =
+      mode === LAYOUT_MODE_FORCE || !buffer ? null : new Float32Array(buffer);
+    const positions = payload?.renderGraph?.positions;
+    if (positions && buffer && buffer.length === positions.length) {
+      positions.set(buffer);
+    }
+    liveMorphBuffer = null;
+    morphActive = false;
+    // ONE end-fit: the new layout has a different bbox (§2.6). fitAndRender()
+    // also restores labels (setLabelsHidden(false)).
+    fitAndRender();
+  }
+
+  function startLayoutMorph(mode) {
+    if (!renderer || !payload?.renderGraph) {
+      layoutMode = mode;
+      return;
+    }
+    const current = payload.renderGraph.positions;
+    // Interrupt: re-seed bufA from the LIVE interpolated buffer, never snap back
+    // to base (§2.6). Otherwise capture the current on-screen buffer.
+    const bufA =
+      layoutMorphFrame !== null && liveMorphBuffer
+        ? new Float32Array(liveMorphBuffer)
+        : new Float32Array(current);
+    const bufB = computeLayoutBuffer(payload, mode, { forceBuffer: forceBaseBuffer });
+
+    cancelLayoutMorphFrame();
+    layoutMode = mode;
+
+    const canAnimate =
+      typeof window !== "undefined" &&
+      typeof window.requestAnimationFrame === "function";
+    // Bad / mismatched target, or no rAF (SSR/tests): settle instantly.
+    if (!bufB || bufB.length !== bufA.length || !canAnimate) {
+      settleLayout(mode, bufB && bufB.length === current.length ? bufB : null);
+      return;
+    }
+
+    morphActive = true;
+    setLabelsHidden(true);
+    liveMorphBuffer = new Float32Array(bufA.length);
+    const startTime = window.performance?.now?.() ?? Date.now();
+    const step = (now) => {
+      const elapsed = Math.max(0, now - startTime);
+      const progress = Math.min(1, elapsed / LAYOUT_MORPH_DURATION_MS);
+      morphPositions(bufA, bufB, easeMergeProgress(progress), liveMorphBuffer);
+      renderer.setPositions(liveMorphBuffer);
+      renderNow();
+      if (progress < 1) {
+        layoutMorphFrame = window.requestAnimationFrame(step);
+      } else {
+        layoutMorphFrame = null;
+        settleLayout(mode, bufB);
+      }
+    };
+    // Prime frame 0 so there is no flash, then drive the tween.
+    morphPositions(bufA, bufB, 0, liveMorphBuffer);
+    renderer.setPositions(liveMorphBuffer);
+    renderNow();
+    layoutMorphFrame = window.requestAnimationFrame(step);
+  }
+
   // Stable content signature of a scene: node ids + positions + edge endpoints +
   // counts. Two structurally-equivalent scenes share a signature even when they
   // are different object instances (a `$derived.by` recompute), so we don't refit
@@ -1059,6 +1234,9 @@
     lastSceneKey = key;
     // Genuine new graph/candidate: drop stale dragged positions before refit.
     draggedPositions.clear();
+    // Never tween across a scene-content change (new node indices) — reset the
+    // layout to Force and recapture the fresh force baseline in updateGraph.
+    resetLayoutState();
     updateGraph();
   });
 
@@ -1113,6 +1291,7 @@
       if (indicatorTimer !== null) window.clearTimeout(indicatorTimer);
       hoverIntent.cancel();
       cancelMergeFrame();
+      cancelLayoutMorphFrame();
       renderer?.destroy();
       renderer = null;
     };
@@ -1128,6 +1307,22 @@
 
 <div class="canvas" bind:this={container}>
   <div class="canvas-toolbar" aria-label="Graph controls">
+    {#if showLayoutSwitcher}
+      <!-- codeflow-parity Lot 1: layout switcher (Force · Layers). Choosing a
+           mode drives the all-node morph tween. DS segmented control, same
+           attached ButtonGroup pattern as the app view switcher. -->
+      <ButtonGroup attached size="sm" label="Graph layout" class="layout-switcher">
+        {#each LAYOUT_MODES as mode (mode.id)}
+          <Button
+            size="sm"
+            variant={layoutMode === mode.id ? "primary" : "secondary"}
+            aria-pressed={layoutMode === mode.id}
+            aria-label={`${mode.label} layout`}
+            onclick={() => selectLayoutMode(mode.id)}
+          >{mode.label}</Button>
+        {/each}
+      </ButtonGroup>
+    {/if}
     <button
       class="toolbar-btn"
       type="button"
@@ -1241,6 +1436,7 @@
     right: 0.5rem;
     z-index: 3;
     display: flex;
+    align-items: center;
     gap: 0.35rem;
     pointer-events: auto;
   }

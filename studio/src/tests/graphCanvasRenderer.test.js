@@ -141,3 +141,70 @@ describe("GraphCanvas renderer", () => {
     expect(source).toContain("isPanning = true");
   });
 });
+
+// --- codeflow-parity Lot 1: layout switcher + all-node morph tween ----------
+// jsdom has no WebGL, so (like the merge-animation test above) we assert against
+// the .svelte SOURCE that the switcher path is wired: selecting a mode CAPTURES
+// the current buffer, COMPUTES the target, and drives renderer.setPositions.
+describe("GraphCanvas layout switcher + morph (Lot 1)", () => {
+  it("renders a DS ButtonGroup switcher gated on showLayoutSwitcher", () => {
+    const source = graphCanvasSource();
+    expect(source).toContain("showLayoutSwitcher");
+    expect(source).toMatch(/\{#if showLayoutSwitcher\}/);
+    expect(source).toContain("ButtonGroup");
+    expect(source).toContain("LAYOUT_MODES");
+    // Choosing a mode invokes the morph driver.
+    expect(source).toMatch(/onclick=\{\(\) => selectLayoutMode\(mode\.id\)\}/);
+  });
+
+  it("selecting a mode captures→computes→calls setPositions (the morph driver)", () => {
+    const source = graphCanvasSource();
+    const driver = source.slice(
+      source.indexOf("function startLayoutMorph"),
+      source.indexOf("// Stable content signature of a scene"),
+    );
+    // CAPTURE the current on-screen buffer as bufA.
+    expect(driver).toMatch(/new Float32Array\(current\)/);
+    // COMPUTE the target buffer for the chosen mode.
+    expect(driver).toContain("computeLayoutBuffer(payload, mode");
+    // DRIVE the tween through the all-node morph + renderer.setPositions.
+    expect(driver).toContain("morphPositions(bufA, bufB");
+    expect(driver).toContain("renderer.setPositions(liveMorphBuffer)");
+  });
+
+  it("hides labels + locks interaction for the morph, and fits exactly once at t=1", () => {
+    const source = graphCanvasSource();
+    // Labels hidden while morphing.
+    expect(source).toMatch(/morphActive = true;\s*\n\s*setLabelsHidden\(true\)/);
+    // Interaction is locked (pointer/click/wheel guarded on morphActive).
+    expect(source).toMatch(/function handlePointerMove[\s\S]{0,120}if \(morphActive\) return;/);
+    expect(source).toMatch(/function handleWheel[\s\S]{0,120}if \(morphActive\)/);
+    // Exactly one deliberate end-fit at settle.
+    expect(source).toMatch(/function settleLayout[\s\S]*fitAndRender\(\);/);
+  });
+
+  it("re-seeds bufA from the LIVE buffer on interrupt, never snapping to base", () => {
+    const source = graphCanvasSource();
+    const driver = source.slice(source.indexOf("function startLayoutMorph"));
+    expect(driver).toMatch(
+      /layoutMorphFrame !== null && liveMorphBuffer\s*\n?\s*\?\s*new Float32Array\(liveMorphBuffer\)/,
+    );
+  });
+
+  it("guards the selection $effect from clobbering the morph (reapplyLayoutPositions)", () => {
+    const source = graphCanvasSource();
+    // rebuildPayload re-applies the live morph / active layout buffer, like the
+    // dragged-position re-application, so a mid-morph rebuild can't clobber it.
+    expect(source).toContain("reapplyLayoutPositions");
+    expect(source).toMatch(/function reapplyLayoutPositions[\s\S]*morphActive \? liveMorphBuffer : activeLayoutBuffer/);
+    expect(source).toMatch(/reapplyLayoutPositions\(\);\s*\n\s*reapplyDraggedPositions\(\);/);
+  });
+
+  it("never tweens across a scene-content change (resetLayoutState before updateGraph)", () => {
+    const source = graphCanvasSource();
+    expect(source).toMatch(/resetLayoutState\(\);\s*\n\s*updateGraph\(\);/);
+    // Force target is the CACHED force positions (no cold re-solve in Lot 1).
+    expect(source).toContain("captureForceBaseBuffer");
+    expect(source).toContain("forceBuffer: forceBaseBuffer");
+  });
+});
