@@ -16,7 +16,10 @@ import {
   isBoxShape,
   LABEL_ZOOM_THRESHOLD,
   LAYOUT_MODE_FORCE,
+  LAYOUT_MODE_GRID,
   LAYOUT_MODE_LAYERS,
+  LAYOUT_MODE_RADIAL,
+  LAYOUT_MODES,
   MAX_PRINCIPAL_CHARACTER_LABELS,
   morphPositions,
   nodeTypesForPayload,
@@ -745,5 +748,55 @@ describe("layout switcher seam (Lot 1) — morphPositions / computeLayoutBuffer"
 
   it("computeLayoutBuffer degrades to null for a missing payload", () => {
     expect(computeLayoutBuffer(null, LAYOUT_MODE_LAYERS)).toBeNull();
+  });
+
+  // --- Lot 2: Radial + Grid appear in the switcher and yield valid buffers -----
+  it("the switcher offers Force / Radial / Layers / Grid", () => {
+    const ids = LAYOUT_MODES.map((m) => m.id);
+    expect(ids).toEqual([LAYOUT_MODE_FORCE, LAYOUT_MODE_RADIAL, LAYOUT_MODE_LAYERS, LAYOUT_MODE_GRID]);
+    expect(LAYOUT_MODES.map((m) => m.label)).toEqual(["Force", "Radial", "Layers", "Grid"]);
+  });
+
+  it("every switcher mode yields a valid 2·n buffer via computeLayoutBuffer", () => {
+    const payload = buildGraphRendererPayload(makeTypedScene(), { nodeRadius: 3 });
+    const n = payload.renderGraph.nodeIds.length;
+    const cached = new Float32Array(n * 2).fill(2);
+    for (const mode of LAYOUT_MODES) {
+      const buf = computeLayoutBuffer(payload, mode.id, { forceBuffer: cached });
+      expect(buf, `mode ${mode.id}`).toBeInstanceOf(Float32Array);
+      expect(buf.length, `mode ${mode.id}`).toBe(n * 2);
+      for (const v of buf) expect(Number.isFinite(v)).toBe(true);
+    }
+  });
+
+  it("computeLayoutBuffer('radial') hubs the highest-degree node at the origin", () => {
+    const payload = buildGraphRendererPayload(makeTypedScene(), { nodeRadius: 3 });
+    const n = payload.renderGraph.nodeIds.length;
+    const radial = computeLayoutBuffer(payload, LAYOUT_MODE_RADIAL);
+    expect(radial).toBeInstanceOf(Float32Array);
+    expect(radial.length).toBe(n * 2);
+    // In makeTypedScene, a & b share the only edge → degree 1 (max); a (earlier)
+    // is the hub at the origin.
+    const iA = payload.nodeIndexById.get("a");
+    expect(radial[iA * 2]).toBe(0);
+    expect(radial[iA * 2 + 1]).toBe(0);
+  });
+
+  it("computeLayoutBuffer('grid') lays nodes on a centred ceil(√n) grid", () => {
+    const payload = buildGraphRendererPayload(makeTypedScene(), { nodeRadius: 3 });
+    const n = payload.renderGraph.nodeIds.length; // 4 → 2×2 grid
+    const grid = computeLayoutBuffer(payload, LAYOUT_MODE_GRID);
+    expect(grid).toBeInstanceOf(Float32Array);
+    expect(grid.length).toBe(n * 2);
+    // Centred bounding box: x and y extents are symmetric around 0.
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (let i = 0; i < grid.length; i += 2) {
+      minX = Math.min(minX, grid[i]); maxX = Math.max(maxX, grid[i]);
+      minY = Math.min(minY, grid[i + 1]); maxY = Math.max(maxY, grid[i + 1]);
+    }
+    expect(minX + maxX).toBeCloseTo(0, 5);
+    expect(minY + maxY).toBeCloseTo(0, 5);
+    // A real morph target (differs from the force input positions).
+    expect(Array.from(grid)).not.toEqual(Array.from(payload.renderGraph.positions));
   });
 });
