@@ -149,7 +149,11 @@ function normalizedChurnById(sceneNodes, sceneEdges) {
   for (const node of sceneNodes) {
     raw.set(node.id, explicitChurnValue(node) ?? degree.get(node.id) ?? 0);
   }
-  const max = Math.max(0, ...raw.values());
+  // Reduce, not `Math.max(0, ...raw.values())`: the spread passes every value as
+  // a separate argument, which overflows the engine arg-count limit (RangeError)
+  // at ~1e5 nodes when Color-by=Churn.
+  let max = 0;
+  for (const v of raw.values()) if (v > max) max = v;
   const normalized = new Map();
   for (const [id, value] of raw) normalized.set(id, max > 0 ? value / max : 0);
   return normalized;
