@@ -7,6 +7,7 @@
   import {
     buildConnectedDimStyle,
     buildGraphRendererPayload,
+    COLOR_BY_CHURN,
     COLOR_BY_FOLDER,
     COLOR_BY_LAYER,
     computeLayoutBuffer,
@@ -194,6 +195,7 @@
   const COLOR_MODES = [
     { id: COLOR_BY_FOLDER, label: "Folder" },
     { id: COLOR_BY_LAYER, label: "Layer" },
+    { id: COLOR_BY_CHURN, label: "Churn" },
   ];
 
   let hoveredEdge = $state(null);
@@ -1539,6 +1541,11 @@
           >{mode.label}</Button>
         {/each}
       </ButtonGroup>
+      {#if colorMode === COLOR_BY_CHURN}
+        <div class="churn-legend" aria-label="Churn colour legend">
+          <span>Low</span><span class="churn-ramp"></span><span>High</span>
+        </div>
+      {/if}
       <!-- codeflow-parity Lot 4: Curved-links toggle (DS Switch). ON ⇒ 0.15
            (current behaviour), OFF ⇒ straight. Flips edge curvature LIVE. -->
       <Switch
@@ -1690,6 +1697,26 @@
 
   .force-controls input[type="range"] {
     width: 5.5rem;
+  }
+
+  .churn-legend {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--st-semantic-border-muted, #e2e8f0);
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--st-semantic-surface-default, #fff) 90%, transparent);
+    box-shadow: 0 1px 4px rgb(15 23 42 / 0.08);
+    font-size: 0.75rem;
+    white-space: nowrap;
+  }
+
+  .churn-ramp {
+    width: 3.5rem;
+    height: 0.6rem;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #e2e8f0, #ef4444);
   }
 
   /* codeflow-parity Lot 4: keep the Curved-links DS Switch compact + legible in
