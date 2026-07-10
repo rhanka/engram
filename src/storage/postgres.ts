@@ -576,6 +576,10 @@ export async function createPostgresGraphStore(
   ): unknown[][] {
     const byType = new Map<string, number>();
     const byCommunity = new Map<number, number>();
+    // Human community label carried on the node (`community_name`). All members
+    // of a community share it, so the first non-empty value wins; communities
+    // without one fall back to the synthetic `Community <key>` label below.
+    const communityLabel = new Map<number, string>();
     G.forEachNode((nodeId, attrs) => {
       const a = attrs as Record<string, unknown>;
       const nodeType = resolveNodeType(a);
@@ -585,6 +589,10 @@ export async function createPostgresGraphStore(
         (typeof a.community === "number" ? a.community : null);
       if (community !== null) {
         byCommunity.set(community, (byCommunity.get(community) ?? 0) + 1);
+        if (!communityLabel.has(community) && typeof a.community_name === "string") {
+          const name = a.community_name.trim();
+          if (name.length > 0) communityLabel.set(community, name);
+        }
       }
     });
     const rows: unknown[][] = [];
@@ -593,7 +601,8 @@ export async function createPostgresGraphStore(
     }
     for (const [cid, count] of byCommunity) {
       const key = String(cid);
-      rows.push([citySlug, snapshotId, "community", key, `Community ${key}`, count, null]);
+      const label = communityLabel.get(cid) ?? `Community ${key}`;
+      rows.push([citySlug, snapshotId, "community", key, label, count, null]);
     }
     return rows;
   }

@@ -257,6 +257,28 @@ describe("Postgres group counts: replace push aggregate", () => {
     expect(result.groups.find((g) => g.key === "0")!.label).toBe("Community 0");
   });
 
+  it("groupCounts('community') labels a community by its node community_name when present", async () => {
+    const state = freshState();
+    const store = await makePostgresStore(state, "gc_comm_named");
+
+    // Community 0's members carry a human `community_name`; community 1 does not.
+    const G = new Graph();
+    G.addNode("alpha", { label: "Alpha", node_type: "code", community_name: "Detectives" });
+    G.addNode("beta", { label: "Beta", node_type: "code", community_name: "Detectives" });
+    G.addNode("gamma", { label: "Gamma", node_type: "doc" });
+    G.addEdge("alpha", "beta", { relation: "imports" });
+    const communities = new Map([[0, ["alpha", "beta"]], [1, ["gamma"]]]);
+
+    await store.pushGraph(G, communities, { mode: "replace" });
+    const result = await store.groupCounts!("community");
+    await store.close();
+
+    // The named community surfaces its community_name as the group label…
+    expect(result.groups.find((g) => g.key === "0")!.label).toBe("Detectives");
+    // …while an unnamed community keeps the synthetic fallback.
+    expect(result.groups.find((g) => g.key === "1")!.label).toBe("Community 1");
+  });
+
   it("returns an empty group list for an unknown / deferred axis (class_id)", async () => {
     const state = freshState();
     const store = await makePostgresStore(state, "gc_unknown");
