@@ -163,8 +163,10 @@ describe("GraphCanvas layout switcher + morph (Lot 1)", () => {
       source.indexOf("function startLayoutMorph"),
       source.indexOf("// Stable content signature of a scene"),
     );
-    // CAPTURE the current on-screen buffer as bufA.
-    expect(driver).toMatch(/new Float32Array\(current\)/);
+    // CAPTURE the current on-screen buffer as bufA (via the shared helper so
+    // Lot 3 force re-solves can warm-start from the same source of truth).
+    expect(source).toContain("function currentLayoutBuffer");
+    expect(driver).toContain("currentLayoutBuffer()");
     // COMPUTE the target buffer for the chosen mode.
     expect(driver).toContain("computeLayoutBuffer(payload, mode");
     // DRIVE the tween through the all-node morph + renderer.setPositions.
@@ -185,8 +187,8 @@ describe("GraphCanvas layout switcher + morph (Lot 1)", () => {
 
   it("re-seeds bufA from the LIVE buffer on interrupt, never snapping to base", () => {
     const source = graphCanvasSource();
-    const driver = source.slice(source.indexOf("function startLayoutMorph"));
-    expect(driver).toMatch(
+    const helper = source.slice(source.indexOf("function currentLayoutBuffer"));
+    expect(helper).toMatch(
       /layoutMorphFrame !== null && liveMorphBuffer\s*\n?\s*\?\s*new Float32Array\(liveMorphBuffer\)/,
     );
   });
@@ -238,6 +240,45 @@ describe("GraphCanvas layout switcher + morph (Lot 1)", () => {
     // Reduced motion is part of the instant-settle guard (goes straight to settleLayout).
     expect(driver).toMatch(/\|\| prefersReducedMotion\(\)\)/);
     expect(driver).toMatch(/prefersReducedMotion\(\)\)[\s\S]{0,120}settleLayout\(/);
+  });
+});
+
+// --- codeflow-parity Lot 3: Spread/Links force re-solve controls -------------
+describe("GraphCanvas force Spread/Links controls (Lot 3)", () => {
+  it("renders Spread/Links sliders + Reset inside the workspace toolbar gate", () => {
+    const source = graphCanvasSource();
+    const gated = source.slice(
+      source.indexOf("{#if showLayoutSwitcher}"),
+      source.indexOf("aria-label=\"Reset view\""),
+    );
+    expect(gated).toContain('aria-label="Force spacing controls"');
+    expect(gated).toContain('aria-label="Spread"');
+    expect(gated).toContain('aria-label="Links"');
+    expect(gated).toContain('aria-label="Reset layout"');
+  });
+
+  it("maps Spread→repulsion and Links→linkDistance, warm-starting interactive solves", () => {
+    const source = graphCanvasSource();
+    expect(source).toContain('import { computeLayout } from "@graphify/graph-layout"');
+    const solve = source.slice(
+      source.indexOf("function computeForceRelayoutBuffer"),
+      source.indexOf("function resetForceLayout"),
+    );
+    expect(solve).toContain("repulsion: forceSpread");
+    expect(solve).toContain("linkDistance: forceLinks");
+    expect(solve).toContain("initialPositions");
+    expect(source).toMatch(/function commitForceSpread[\s\S]*resolveForceLayout\(\{ warmStart: true \}\)/);
+    expect(source).toMatch(/function commitForceLinks[\s\S]*resolveForceLayout\(\{ warmStart: true \}\)/);
+  });
+
+  it("debounces expensive solves to drag-end and keeps Reset cold/deterministic", () => {
+    const source = graphCanvasSource();
+    const gated = source.slice(source.indexOf('aria-label="Force spacing controls"'));
+    expect(gated).toMatch(/oninput=\{\(event\) => \(forceSpread = Number\(event\.currentTarget\.value\)\)\}/);
+    expect(gated).toMatch(/onchange=\{commitForceSpread\}/);
+    expect(gated).toMatch(/oninput=\{\(event\) => \(forceLinks = Number\(event\.currentTarget\.value\)\)\}/);
+    expect(gated).toMatch(/onchange=\{commitForceLinks\}/);
+    expect(source).toMatch(/function resetForceLayout\(\) \{\s*resolveForceLayout\(\{ warmStart: false \}\);\s*\}/);
   });
 });
 

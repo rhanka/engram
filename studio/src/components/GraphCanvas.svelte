@@ -2,6 +2,7 @@
   import { onDestroy, onMount, tick } from "svelte";
   import { Button, ButtonGroup, Switch } from "@sentropic/design-system-svelte";
   import { createGraphRenderer, drawBoxLabels2D } from "@sentropic/graph";
+  import { computeLayout } from "@graphify/graph-layout";
 
   import {
     buildConnectedDimStyle,
@@ -54,6 +55,9 @@
   // (Force ↔ Layers). Kept in the ~300–500 ms band the spec calls for, so
   // labels + interaction are only locked briefly (§2.6).
   const LAYOUT_MORPH_DURATION_MS = 480;
+  const FORCE_SPREAD_DEFAULT = 1;
+  const FORCE_LINKS_DEFAULT = 0.6;
+  const FORCE_SLIDER_ITERATIONS = 180;
   // CANVAS2D ONLY: hide edges during active pan/zoom/drag when nodes+edges exceed
   // this, for interaction fluidity (a legacy SVG-era guard). WebGL2 NEVER skips
   // (GPU-instanced edges are cheap) — see `skipEdgesOnInteract`.
@@ -168,6 +172,15 @@
   // True while a layout morph is in flight: hides labels + locks canvas
   // interaction for the (~480 ms) tween, exactly as pan/zoom already do.
   let morphActive = $state(false);
+
+  // --- codeflow-parity Lot 3: Spread / Links force re-solve controls ---------
+  // Spread maps to computeLayout(repulsion), Links maps to computeLayout's new
+  // linkDistance rest-length factor. Slider changes are committed on drag-end
+  // (change event), not per input frame, because a Barnes-Hut solve is too heavy
+  // for 60Hz. Interactive solves warm-start from the current buffer; Reset is the
+  // deterministic cold solve for the selected parameter values.
+  let forceSpread = $state(FORCE_SPREAD_DEFAULT);
+  let forceLinks = $state(FORCE_LINKS_DEFAULT);
 
   // --- codeflow-parity Lot 4: Curved-links toggle + Color-by (Folder/Layer) ---
   // Both are per-render style attributes (edge curvature / node colour keying),
@@ -1188,6 +1201,72 @@
     draggedPositions.clear();
   }
 
+  function currentLayoutBuffer() {
+    if (!payload?.renderGraph?.positions) return null;
+    return layoutMorphFrame !== null && liveMorphBuffer
+      ? new Float32Array(liveMorphBuffer)
+      : new Float32Array(payload.renderGraph.positions);
+  }
+
+  function currentPositionMap() {
+    const graph = payload?.renderGraph;
+    const positions = currentLayoutBuffer();
+    if (!graph || !positions) return null;
+    const map = new Map();
+    for (let i = 0; i < graph.nodeIds.length; i++) {
+      map.set(graph.nodeIds[i], { x: positions[i * 2] ?? 0, y: positions[i * 2 + 1] ?? 0 });
+    }
+    return map;
+  }
+
+  function computeForceRelayoutBuffer({ warmStart = true } = {}) {
+    const graph = payload?.renderGraph;
+    if (!graph || !scene?.nodes) return null;
+    const initialPositions = warmStart ? currentPositionMap() : undefined;
+    const solved = computeLayout(
+      scene.nodes.map((node) => ({ id: node.id })),
+      scene.edges ?? [],
+      {
+        repulsion: forceSpread,
+        linkDistance: forceLinks,
+        iterations: FORCE_SLIDER_ITERATIONS,
+        initialPositions,
+      },
+    );
+    if (solved.length !== graph.nodeIds.length) return null;
+    const byId = new Map(solved.map((node) => [node.id, node]));
+    const buffer = new Float32Array(graph.nodeIds.length * 2);
+    for (let i = 0; i < graph.nodeIds.length; i++) {
+      const p = byId.get(graph.nodeIds[i]);
+      if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
+      buffer[i * 2] = p.x;
+      buffer[i * 2 + 1] = p.y;
+    }
+    return buffer;
+  }
+
+  function resolveForceLayout({ warmStart = true } = {}) {
+    if (layoutMode !== LAYOUT_MODE_FORCE) layoutMode = LAYOUT_MODE_FORCE;
+    const target = computeForceRelayoutBuffer({ warmStart });
+    if (!target) return;
+    forceBaseBuffer = new Float32Array(target);
+    startLayoutMorphToBuffer(LAYOUT_MODE_FORCE, target);
+  }
+
+  function resetForceLayout() {
+    resolveForceLayout({ warmStart: false });
+  }
+
+  function commitForceSpread(event) {
+    forceSpread = Number(event?.currentTarget?.value ?? forceSpread);
+    resolveForceLayout({ warmStart: true });
+  }
+
+  function commitForceLinks(event) {
+    forceLinks = Number(event?.currentTarget?.value ?? forceLinks);
+    resolveForceLayout({ warmStart: true });
+  }
+
   // Toolbar click: morph to `mode`. Ignores a click on the already-active mode
   // (during a morph `layoutMode` is already the target, so re-clicking it is a
   // no-op while clicking the OTHER mode interrupts and re-targets).
@@ -1214,6 +1293,11 @@
   }
 
   function startLayoutMorph(mode) {
+    const bufB = computeLayoutBuffer(payload, mode, { forceBuffer: forceBaseBuffer });
+    startLayoutMorphToBuffer(mode, bufB);
+  }
+
+  function startLayoutMorphToBuffer(mode, bufB) {
     if (!renderer || !payload?.renderGraph) {
       layoutMode = mode;
       return;
@@ -1221,11 +1305,7 @@
     const current = payload.renderGraph.positions;
     // Interrupt: re-seed bufA from the LIVE interpolated buffer, never snap back
     // to base (§2.6). Otherwise capture the current on-screen buffer.
-    const bufA =
-      layoutMorphFrame !== null && liveMorphBuffer
-        ? new Float32Array(liveMorphBuffer)
-        : new Float32Array(current);
-    const bufB = computeLayoutBuffer(payload, mode, { forceBuffer: forceBaseBuffer });
+    const bufA = currentLayoutBuffer() ?? new Float32Array(current);
 
     cancelLayoutMorphFrame();
     layoutMode = mode;
@@ -1413,6 +1493,38 @@
           >{mode.label}</Button>
         {/each}
       </ButtonGroup>
+      <!-- codeflow-parity Lot 3: force spacing controls. `input` only updates
+           the label; the expensive Barnes-Hut solve runs on `change` (drag-end).
+           Interactive solves warm-start; Reset is the deterministic cold solve. -->
+      <div class="force-controls" aria-label="Force spacing controls">
+        <label>
+          <span>Spread {forceSpread.toFixed(1)}</span>
+          <input
+            type="range"
+            min="0.2"
+            max="3"
+            step="0.1"
+            value={forceSpread}
+            aria-label="Spread"
+            oninput={(event) => (forceSpread = Number(event.currentTarget.value))}
+            onchange={commitForceSpread}
+          />
+        </label>
+        <label>
+          <span>Links {forceLinks.toFixed(1)}</span>
+          <input
+            type="range"
+            min="0.2"
+            max="2"
+            step="0.1"
+            value={forceLinks}
+            aria-label="Links"
+            oninput={(event) => (forceLinks = Number(event.currentTarget.value))}
+            onchange={commitForceLinks}
+          />
+        </label>
+        <Button size="sm" variant="secondary" aria-label="Reset layout" onclick={resetForceLayout}>Reset</Button>
+      </div>
       <!-- codeflow-parity Lot 4: Color-by (Folder · Layer). Re-keys the node
            colour LIVE (no layout recompute, no morph). Same attached DS
            ButtonGroup pattern as the layout switcher. -->
@@ -1555,6 +1667,29 @@
     gap: 0.35rem 0.5rem;
     max-width: calc(100% - 1rem);
     pointer-events: auto;
+  }
+
+  .force-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--st-semantic-border-muted, #e2e8f0);
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--st-semantic-surface-default, #fff) 90%, transparent);
+    box-shadow: 0 1px 4px rgb(15 23 42 / 0.08);
+  }
+
+  .force-controls label {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.75rem;
+    white-space: nowrap;
+  }
+
+  .force-controls input[type="range"] {
+    width: 5.5rem;
   }
 
   /* codeflow-parity Lot 4: keep the Curved-links DS Switch compact + legible in
