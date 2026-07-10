@@ -168,16 +168,16 @@ function parseFile(
   }
   const parseOpts = { scopeRoot: scope?.repoRoot, originRepo: scope?.originRepo };
   if (file.host === "claude") {
-    return [{ fact: normalizeClaude(parseClaudeTranscript(content, file.sessionId, home, parseOpts)) }];
+    return [{ fact: normalizeClaude(parseClaudeTranscript(content, file.sessionId, home, parseOpts), home) }];
   }
   if (file.host === "codex") {
-    return [{ fact: normalizeCodex(parseCodexRollout(content, file.sessionId, home, parseOpts)) }];
+    return [{ fact: normalizeCodex(parseCodexRollout(content, file.sessionId, home, parseOpts), home) }];
   }
   // agy: a single chat file may hold several logical sessions.
   // projectHash is on the header; if absent, derive from the dir name.
   const projectHashFromDir = file.path.match(/\.gemini\/tmp\/([^/]+)\//)?.[1];
   return parseAgyChats(content, file.sessionId, home, parseOpts).map((raw) => ({
-    fact: normalizeAgy(raw),
+    fact: normalizeAgy(raw, home),
     agyHash: raw.projectHash ?? projectHashFromDir,
   }));
 }
