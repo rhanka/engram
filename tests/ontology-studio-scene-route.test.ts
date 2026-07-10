@@ -7,6 +7,7 @@ import { handleOntologyStudioRequest } from "../src/ontology-studio.js";
 import { buildStudioScene } from "../src/studio-scene.js";
 import { attachLayoutPositions } from "../src/graph-layout.js";
 import { writeOntologyWriteFixture } from "./helpers/ontology-write-fixture.js";
+import type { NormalizedClassHierarchySpec } from "../src/types.js";
 
 const tempDirs: string[] = [];
 
@@ -130,6 +131,70 @@ describe("GET /api/ontology/search-index.json (work-stream C)", () => {
       { profileStatePath: fixture.profileStatePath },
       "GET",
       "/api/ontology/search-index.json",
+    );
+    expect(result.status).toBe(404);
+    expect(JSON.parse(result.body)).toEqual({ error: "graph.json not found" });
+  });
+});
+
+describe("GET /api/ontology/class-hierarchies.json (EVOL 2.c)", () => {
+  // A minimal normalized class taxonomy: Thing → Person, Person gathers the
+  // graph's `Character` node_type as instances.
+  const TAXONOMY: Record<string, NormalizedClassHierarchySpec> = {
+    tax: {
+      relation_type: "subclass_of",
+      membership_relation_type: "has_instance",
+      classes: {
+        Thing: { parent: null, label: null, member_node_types: [] },
+        Person: { parent: "Thing", label: null, member_node_types: ["Character"] },
+      },
+    },
+  };
+
+  it("serves the emitClassHierarchies artifact when the profile declares a block", () => {
+    const fixture = writeOntologyWriteFixture(makeTempDir(), { classHierarchies: TAXONOMY });
+    writeGraph(fixture.stateDir, GRAPH_FIXTURE);
+
+    const result = handleOntologyStudioRequest(
+      { profileStatePath: fixture.profileStatePath },
+      "GET",
+      "/api/ontology/class-hierarchies.json",
+    );
+
+    expect(result.status).toBe(200);
+    expect(result.contentType).toBe("application/json; charset=utf-8");
+
+    const payload = JSON.parse(result.body);
+    expect(payload.schema).toBe("graphify_ontology_class_hierarchies_v1");
+    // Character-typed graph nodes (n1..n3) are gathered under the Person leaf.
+    expect(payload.hierarchies.tax.classes_by_id["class:Person"].member_ids).toEqual([
+      "n1",
+      "n2",
+      "n3",
+    ]);
+  });
+
+  it("404s (client-tolerated) when the profile has no class_hierarchies block", () => {
+    // The default fixture carries no block — mirrors the static export writing
+    // no file; the SPA's fetchClassHierarchies falls back to null.
+    const fixture = writeOntologyWriteFixture(makeTempDir());
+    writeGraph(fixture.stateDir, GRAPH_FIXTURE);
+
+    const result = handleOntologyStudioRequest(
+      { profileStatePath: fixture.profileStatePath },
+      "GET",
+      "/api/ontology/class-hierarchies.json",
+    );
+    expect(result.status).toBe(404);
+    expect(JSON.parse(result.body).error).toMatch(/class_hierarchies/);
+  });
+
+  it("404s when graph.json is absent", () => {
+    const fixture = writeOntologyWriteFixture(makeTempDir(), { classHierarchies: TAXONOMY });
+    const result = handleOntologyStudioRequest(
+      { profileStatePath: fixture.profileStatePath },
+      "GET",
+      "/api/ontology/class-hierarchies.json",
     );
     expect(result.status).toBe(404);
     expect(JSON.parse(result.body)).toEqual({ error: "graph.json not found" });
