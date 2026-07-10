@@ -101,6 +101,33 @@ describe("computeLayout (Barnes-Hut force layout)", () => {
     expect(out).toHaveLength(count);
     expect(out.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(true);
   });
+
+  it("honors linkDistance as the spring rest-length factor", () => {
+    const nodes: LayoutGraphNode[] = [{ id: "a" }, { id: "b" }];
+    const edges: LayoutGraphEdge[] = [{ source: "a", target: "b" }];
+    const tight = computeLayout(nodes, edges, { iterations: 180, linkDistance: 0.2 });
+    const loose = computeLayout(nodes, edges, { iterations: 180, linkDistance: 2 });
+    const dist = (out: typeof tight) => Math.hypot(out[0]!.x - out[1]!.x, out[0]!.y - out[1]!.y);
+    expect(dist(loose)).toBeGreaterThan(dist(tight));
+  });
+
+  it("warm-starts from initialPositions without pinning nodes", () => {
+    const nodes: LayoutGraphNode[] = [{ id: "a" }, { id: "b" }, { id: "c" }];
+    const edges: LayoutGraphEdge[] = [
+      { source: "a", target: "b" },
+      { source: "b", target: "c" },
+    ];
+    const initialPositions = new Map([
+      ["a", { x: 10, y: 10 }],
+      ["b", { x: 20, y: 20 }],
+      ["c", { x: 30, y: 30 }],
+    ]);
+    const out = computeLayout(nodes, edges, { iterations: 1, initialPositions });
+    expect(out).toHaveLength(3);
+    expect(out.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(true);
+    // If initialPositions pinned nodes, the first node would stay exactly there.
+    expect(out[0]).not.toMatchObject({ x: 10, y: 10 });
+  });
 });
 
 describe("attachLayoutPositions", () => {
