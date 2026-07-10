@@ -294,6 +294,55 @@ describe("GraphCanvas force Spread/Links controls (Lot 3)", () => {
   });
 });
 
+// --- Lot 7 double-consensus review must-fixes --------------------------------
+// jsdom has no WebGL, so (as elsewhere) these assert against the .svelte SOURCE
+// that the two SERIOUS layout-persistence bugs + the MINOR worker-rejection are
+// fixed. Behavioural runtime coverage would need a WebGL canvas the env lacks.
+describe("GraphCanvas Lot 7 review must-fixes (double-consensus)", () => {
+  it("SERIOUS-1: settleLayout persists the settled buffer for EVERY mode (Force included)", () => {
+    const source = graphCanvasSource();
+    const settle = source.slice(
+      source.indexOf("function settleLayout"),
+      source.indexOf("function startLayoutMorph"),
+    );
+    // The fix: persist the buffer regardless of mode. A Force re-solve (Lot 3
+    // Spread/Links/Reset) settles under LAYOUT_MODE_FORCE, so nulling it here
+    // would drop the re-solved layout on the next selection/hover rebuild.
+    expect(settle).toMatch(/activeLayoutBuffer = buffer \? new Float32Array\(buffer\) : null;/);
+    // The old buggy shortcut (null out activeLayoutBuffer for Force) is gone.
+    expect(settle).not.toMatch(/mode === LAYOUT_MODE_FORCE \|\| !buffer \? null/);
+    // reapplyLayoutPositions still consults activeLayoutBuffer (so Force re-solves
+    // are re-applied across a rebuild too, not just non-force layouts).
+    expect(source).toMatch(/function reapplyLayoutPositions[\s\S]*morphActive \? liveMorphBuffer : activeLayoutBuffer/);
+    // A genuine scene change still nulls it (a NEW scene must use scene positions).
+    expect(source).toMatch(/function resetLayoutState\(\)[\s\S]{0,400}activeLayoutBuffer = null/);
+  });
+
+  it("SERIOUS-2: a late Force solve is discarded when the user switched away from Force", () => {
+    const source = graphCanvasSource();
+    const resolve = source.slice(
+      source.indexOf("async function resolveForceLayout"),
+      source.indexOf("function resetForceLayout"),
+    );
+    // resolveForceLayout sets layoutMode = Force synchronously at entry, so a
+    // mid-solve switch to Layers/Grid/Radial/Metro flips layoutMode; the
+    // continuation must drop the stale solve on that mode mismatch.
+    expect(resolve).toMatch(/if \(!target \|\| token !== forceSolveToken \|\| !mounted \|\| layoutMode !== LAYOUT_MODE_FORCE\)/);
+  });
+
+  it("MINOR-1: computeForceRelayoutBuffer wraps the worker solve in try/catch → null on error", () => {
+    const source = graphCanvasSource();
+    const compute = source.slice(
+      source.indexOf("async function computeForceRelayoutBuffer"),
+      source.indexOf("async function resolveForceLayout"),
+    );
+    // The await must be guarded so a worker rejection can't escape as an
+    // unhandled rejection in the fire-and-forget caller.
+    expect(compute).toMatch(/try \{\s*\n\s*solved = await solveForce\(/);
+    expect(compute).toMatch(/\} catch \{\s*\n\s*return null;\s*\n\s*\}/);
+  });
+});
+
 // --- codeflow-parity Lots 4/5: Curved-links + Color-by controls -------------
 // jsdom can't mount the WebGL-bearing canvas, so (as with the Lot 1 switcher) we
 // assert against the .svelte SOURCE that the controls are wired: gated on

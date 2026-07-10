@@ -941,4 +941,24 @@ describe("Color-by Churn heat ramp (Lot 5, R4/D2)", () => {
     expect(payload.nodeById.get("hub").color).toBe(colorForChurn(1));
     expect(payload.nodeById.get("leaf1").color).toBe(colorForChurn(0.5));
   });
+
+  // MINOR-3 (double-consensus review): normalizedChurnById must compute the max
+  // with a reduce/loop, NOT `Math.max(0, ...raw.values())`. The spread passes
+  // every value as a separate call argument, which overflows the engine's
+  // arg-count limit (RangeError: Maximum call stack size exceeded) well before
+  // ~1e5 nodes — silently breaking Color-by=Churn on any real large graph.
+  it("does not throw on a many-node churn scene (no spread over node values)", () => {
+    const N = 150000; // > the ~128k spread arg-count limit measured on V8.
+    const nodes = new Array(N);
+    for (let i = 0; i < N; i++) {
+      nodes[i] = { id: `n${i}`, x: i % 500, y: (i / 500) | 0, churn: i % 37 };
+    }
+    let payload;
+    expect(() => {
+      payload = buildGraphRendererPayload({ nodes, edges: [] }, { nodeRadius: 3, colorBy: COLOR_BY_CHURN });
+    }).not.toThrow();
+    expect(payload.renderGraph.nodeIds.length).toBe(N);
+    // Ramp still normalizes: the max-churn node maps to the hot end.
+    expect(payload.nodeById.get(`n${36}`).color).toBe(colorForChurn(1));
+  });
 });
