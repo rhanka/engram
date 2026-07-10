@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildConnectedDimStyle,
   buildGraphRendererPayload,
+  COLOR_BY_CHURN,
   COLOR_BY_FOLDER,
   COLOR_BY_LAYER,
+  colorForChurn,
   colorForGroup,
   computeLayoutBuffer,
   DEFAULT_EDGE_CURVATURE,
@@ -887,5 +889,49 @@ describe("Color-by Folder vs Layer (Lot 4, R4)", () => {
     });
     // Selected node uses SELECTED_COLOR (#2563eb → 37,99,235), not the layer hue.
     expect([...payload.baseStyle.nodeColors.slice(0, 3)]).toEqual([37, 99, 235]);
+  });
+});
+
+// --- codeflow-parity Lot 5: Color-by Churn (degree/activity fallback first) ---
+describe("Color-by Churn heat ramp (Lot 5, R4/D2)", () => {
+  it("exports a deterministic low→high sequential ramp", () => {
+    expect(colorForChurn(0)).toBe("#e2e8f0");
+    expect(colorForChurn(1)).toBe("#ef4444");
+    expect(colorForChurn(-1)).toBe("#e2e8f0");
+    expect(colorForChurn(2)).toBe("#ef4444");
+  });
+
+  it("uses explicit churn/activity scalars when present", () => {
+    const payload = buildGraphRendererPayload(
+      {
+        nodes: [
+          { id: "cold", x: 0, y: 0, churn: 0 },
+          { id: "hot", x: 1, y: 1, churn: 10 },
+        ],
+        edges: [],
+      },
+      { nodeRadius: 3, colorBy: COLOR_BY_CHURN },
+    );
+    expect(payload.nodeById.get("cold").color).toBe(colorForChurn(0));
+    expect(payload.nodeById.get("hot").color).toBe(colorForChurn(1));
+  });
+
+  it("falls back to normalized degree when no churn source exists", () => {
+    const payload = buildGraphRendererPayload(
+      {
+        nodes: [
+          { id: "hub", x: 0, y: 0 },
+          { id: "leaf1", x: 1, y: 1 },
+          { id: "leaf2", x: 2, y: 2 },
+        ],
+        edges: [
+          { source: "hub", target: "leaf1" },
+          { source: "hub", target: "leaf2" },
+        ],
+      },
+      { nodeRadius: 3, colorBy: COLOR_BY_CHURN },
+    );
+    expect(payload.nodeById.get("hub").color).toBe(colorForChurn(1));
+    expect(payload.nodeById.get("leaf1").color).toBe(colorForChurn(0.5));
   });
 });

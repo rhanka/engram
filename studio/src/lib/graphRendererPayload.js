@@ -57,6 +57,8 @@ export const DEFAULT_EDGE_CURVATURE = 0.15;
 export const COLOR_BY_FOLDER = "folder";
 /** Color-by mode — colour by typed layer / ontology level (`node_type`). */
 export const COLOR_BY_LAYER = "layer";
+/** Color-by mode — continuous churn/activity heat ramp (degree fallback first). */
+export const COLOR_BY_CHURN = "churn";
 
 // Density-aware base node sizing. The user confirmed sizes read well at ~1000
 // nodes but are too big at ~5000. We shrink only the BASE radius as the graph
@@ -106,6 +108,50 @@ function stableHash(value) {
 export function colorForGroup(group) {
   const index = stableHash(group ?? "default") % GROUP_PALETTE.length;
   return GROUP_PALETTE[index];
+}
+
+const CHURN_LOW = [226, 232, 240];
+const CHURN_HIGH = [239, 68, 68];
+
+function hex2(value) {
+  return value.toString(16).padStart(2, "0");
+}
+
+/** Sequential light-slate → red ramp for normalized churn/activity heat. */
+export function colorForChurn(value) {
+  const t = clampUnit(value);
+  const rgb = CHURN_LOW.map((lo, index) => Math.round(lo + (CHURN_HIGH[index] - lo) * t));
+  return `#${hex2(rgb[0])}${hex2(rgb[1])}${hex2(rgb[2])}`;
+}
+
+function explicitChurnValue(node) {
+  const candidates = [node.churn, node.git_churn, node.activity, node.activity_score, node.change_count];
+  for (const value of candidates) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric >= 0) return numeric;
+  }
+  return null;
+}
+
+function nodeDegreeFallback(sceneNodes, sceneEdges) {
+  const degree = new Map(sceneNodes.map((node) => [node.id, 0]));
+  for (const edge of sceneEdges) {
+    if (degree.has(edge.source)) degree.set(edge.source, degree.get(edge.source) + 1);
+    if (degree.has(edge.target)) degree.set(edge.target, degree.get(edge.target) + 1);
+  }
+  return degree;
+}
+
+function normalizedChurnById(sceneNodes, sceneEdges) {
+  const raw = new Map();
+  const degree = nodeDegreeFallback(sceneNodes, sceneEdges);
+  for (const node of sceneNodes) {
+    raw.set(node.id, explicitChurnValue(node) ?? degree.get(node.id) ?? 0);
+  }
+  const max = Math.max(0, ...raw.values());
+  const normalized = new Map();
+  for (const [id, value] of raw) normalized.set(id, max > 0 ? value / max : 0);
+  return normalized;
 }
 
 function positionForNode(node, index, total) {
@@ -329,7 +375,12 @@ export function buildGraphRendererPayload(scene, options = {}) {
   // typed layer (node_type). Both resolve through the SAME palette (colorForGroup)
   // so the legend swatch and node fill stay one source of truth. Default = Folder,
   // so an unset option is byte-identical to before this lot.
-  const colorBy = options.colorBy === COLOR_BY_LAYER ? COLOR_BY_LAYER : COLOR_BY_FOLDER;
+  const colorBy =
+    options.colorBy === COLOR_BY_LAYER
+      ? COLOR_BY_LAYER
+      : options.colorBy === COLOR_BY_CHURN
+        ? COLOR_BY_CHURN
+        : COLOR_BY_FOLDER;
   // codeflow-parity Lot 4 — Curved links (R3): ON ⇒ DEFAULT_EDGE_CURVATURE (the
   // current behaviour), OFF ⇒ 0 (straight). Default ON so an unset option is
   // byte-identical to before this lot. It is a per-edge RENDER attribute — the
@@ -337,6 +388,7 @@ export function buildGraphRendererPayload(scene, options = {}) {
   const edgeCurvature = options.curvedLinks === false ? 0 : DEFAULT_EDGE_CURVATURE;
   const sceneNodes = scene?.nodes ?? [];
   const sceneEdges = scene?.edges ?? [];
+  const churnById = colorBy === COLOR_BY_CHURN ? normalizedChurnById(sceneNodes, sceneEdges) : null;
 
   // Shrink the BASE radius on dense graphs while keeping the per-node degree
   // spread (sqrt(weight)) intact. nodeRadius is the effective base used both for
@@ -348,9 +400,12 @@ export function buildGraphRendererPayload(scene, options = {}) {
     const focused = node.id === focusId;
     const selected = focused || selectedIds.has(node.id);
     const nodeType = node.node_type ?? node.type ?? null;
-    // Color-by (R4): Layer keys the categorical colour on the typed layer,
-    // Folder (default) on community/container. Selection/focus overrides still win.
+    // Color-by (R4/R5): Layer keys the categorical colour on the typed layer,
+    // Folder (default) on community/container, Churn on a continuous activity heat.
+    // Selection/focus overrides still win.
     const colorKey = colorBy === COLOR_BY_LAYER ? nodeType : node.group;
+    const baseColor =
+      colorBy === COLOR_BY_CHURN ? colorForChurn(churnById?.get(node.id) ?? 0) : colorForGroup(colorKey);
     return {
       id: node.id,
       label: node.label ?? node.id,
@@ -367,7 +422,7 @@ export function buildGraphRendererPayload(scene, options = {}) {
       // node's label in-box, bypassing the degree/god-class label gate.
       forceBoxLabel: node.forceBoxLabel === true,
       size: nodeSize(node, nodeRadius, selected, focused),
-      color: focused ? FOCUS_COLOR : selected ? SELECTED_COLOR : colorForGroup(colorKey),
+      color: focused ? FOCUS_COLOR : selected ? SELECTED_COLOR : baseColor,
     };
   });
 
