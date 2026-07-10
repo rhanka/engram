@@ -1,4 +1,10 @@
-import { buildRenderGraphBuffers, buildStyleBuffers } from "@sentropic/graph";
+import {
+  buildRenderGraphBuffers,
+  buildStyleBuffers,
+  DEFAULT_LAYOUT_ID,
+  resolveLayout,
+  TYPED_LAYER_LAYOUT_ID,
+} from "@sentropic/graph";
 
 /**
  * SINGLE source of truth for a group's (community / type) colour. Both the
@@ -451,6 +457,115 @@ export function interpolateMergePositions(payload, mergePair, progress) {
   positions[fromOffset + 1] = fromY + (intoY - fromY) * t;
 
   return positions;
+}
+
+// ---------------------------------------------------------------------------
+// Layout switcher seam (codeflow-parity Lot 1). The studio does not otherwise
+// consume the @sentropic/graph layout registry; these helpers are the ONE seam
+// that resolves a named layout into a node-order-keyed position buffer and
+// morphs the on-screen buffer toward it. Every registered layout returns a
+// `Float32Array` of `2 · nodeCount` floats PARALLEL to `graph.nodeIds`, so a
+// cross-layout tween is a trivial per-index lerp between two static buffers —
+// no correspondence problem (see SPEC_STUDIO_GRAPH_UX_CODEFLOW_PARITY §2.6).
+// ---------------------------------------------------------------------------
+
+/** Layout mode id — force-directed (the default baked positions). */
+export const LAYOUT_MODE_FORCE = "force";
+/** Layout mode id — typed swimlanes (registered `typed-layer`, ≈ "Layers"). */
+export const LAYOUT_MODE_LAYERS = "layers";
+
+/**
+ * The layout modes exposed by the studio switcher (Lot 1 = Force + Layers on the
+ * already-registered engines). `registryId` is the id passed to
+ * {@link resolveLayout}; Force has none because its target is the CACHED initial
+ * force positions, not a (cold) registry re-solve (Lot 1 does not re-solve force).
+ */
+export const LAYOUT_MODES = [
+  { id: LAYOUT_MODE_FORCE, label: "Force", registryId: DEFAULT_LAYOUT_ID },
+  { id: LAYOUT_MODE_LAYERS, label: "Layers", registryId: TYPED_LAYER_LAYOUT_ID },
+];
+
+/**
+ * Node-order-keyed per-node TYPE labels for a built payload (parallel to
+ * `payload.renderGraph.nodeIds`). Read from the payload's node objects
+ * (`node_type`), so the typed-layer layout bands the SAME nodes the canvas
+ * drew. A missing node → `null` (the untyped lane).
+ * @param {object} payload  a buildGraphRendererPayload result
+ * @returns {(string|null)[]}
+ */
+export function nodeTypesForPayload(payload) {
+  const graph = payload?.renderGraph;
+  const ids = graph?.nodeIds ?? [];
+  const types = new Array(ids.length);
+  for (let i = 0; i < ids.length; i += 1) {
+    const node = payload?.nodeById?.get(ids[i]);
+    types[i] = node?.node_type ?? null;
+  }
+  return types;
+}
+
+/**
+ * Resolve a layout MODE into a fresh node-order-keyed position buffer
+ * (`2 · nodeCount` floats) for the payload's render graph — the morph TARGET
+ * (`bufB`). Never throws: an unknown mode / missing payload degrades to the
+ * force passthrough.
+ *
+ *   • `"layers"` → the registered `typed-layer` swimlane layout, banded by the
+ *     payload's per-node types.
+ *   • `"force"`  → the CACHED initial force positions (`forceBuffer`) — Lot 1
+ *     does NOT cold re-solve force (warm-started re-solve is Lot 3). When no
+ *     cached buffer is supplied it falls back to the registry force passthrough
+ *     (a copy of the CURRENT positions).
+ *
+ * @param {object} payload  a buildGraphRendererPayload result
+ * @param {string} mode     a LAYOUT_MODES id
+ * @param {{ forceBuffer?: Float32Array|null }} [opts]
+ * @returns {Float32Array|null}
+ */
+export function computeLayoutBuffer(payload, mode, { forceBuffer = null } = {}) {
+  const graph = payload?.renderGraph;
+  if (!graph) return null;
+  const floatCount = (graph.nodeIds?.length ?? 0) * 2;
+
+  if (mode === LAYOUT_MODE_LAYERS) {
+    const nodeTypes = nodeTypesForPayload(payload);
+    return resolveLayout(TYPED_LAYER_LAYOUT_ID)(graph, { nodeTypes });
+  }
+
+  // Force (default): the cached pristine force positions when we have them.
+  if (forceBuffer && forceBuffer.length === floatCount) {
+    return new Float32Array(forceBuffer);
+  }
+  // No cache → passthrough a copy of the current baked positions.
+  return resolveLayout(DEFAULT_LAYOUT_ID)(graph);
+}
+
+/**
+ * ALL-NODE layout morph — the general form of {@link interpolateMergePositions}.
+ * Linearly interpolates EVERY one of the `2 · nodeCount` floats between two
+ * index-parallel position buffers: `out[i] = a[i] + (b[i] − a[i]) · t`. Edges
+ * follow for free (they are re-derived from node positions each frame). `t` is
+ * clamped to [0, 1]; the CALLER applies any easing to `t` before calling (so
+ * `t = 0.5` is the exact midpoint — testable, deterministic). An optional `out`
+ * buffer is reused when large enough (rAF loops reuse one allocation).
+ *
+ * @param {Float32Array} bufA  start buffer (2·n floats)
+ * @param {Float32Array} bufB  target buffer (2·n floats, same length as bufA)
+ * @param {number} t           progress in [0, 1] (already eased by the caller)
+ * @param {Float32Array} [out] optional reusable output buffer
+ * @returns {Float32Array|null} the interpolated buffer, or null on bad input
+ */
+export function morphPositions(bufA, bufB, t, out = null) {
+  if (!bufA || !bufB) return null;
+  const len = Math.min(bufA.length, bufB.length);
+  const result = out && out.length >= len ? out : new Float32Array(len);
+  const progress = clampUnit(t);
+  for (let i = 0; i < len; i += 1) {
+    const a = bufA[i] ?? 0;
+    const b = bufB[i] ?? 0;
+    result[i] = a + (b - a) * progress;
+  }
+  return result;
 }
 
 export function interpolateMergeStyle(payload, mergePair, progress) {
