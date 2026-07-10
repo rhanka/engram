@@ -207,4 +207,36 @@ describe("GraphCanvas layout switcher + morph (Lot 1)", () => {
     expect(source).toContain("captureForceBaseBuffer");
     expect(source).toContain("forceBuffer: forceBaseBuffer");
   });
+
+  // --- Review must-fixes (double-consensus) ---
+  it("F1: clears dragged positions on a layout switch so stale drags can't re-snap", () => {
+    const source = graphCanvasSource();
+    const driver = source.slice(
+      source.indexOf("function startLayoutMorph"),
+      source.indexOf("// Stable content signature of a scene"),
+    );
+    // A layout switch re-places every node → drop the stale Force-space drag map.
+    expect(driver).toContain("draggedPositions.clear()");
+    // resetLayoutState also clears it (scene change + abnormal-exit path).
+    expect(source).toMatch(/function resetLayoutState\(\)[\s\S]{0,400}draggedPositions\.clear\(\)/);
+  });
+
+  it("F2: a throwing morph frame unwinds instead of leaving the canvas locked", () => {
+    const source = graphCanvasSource();
+    const driver = source.slice(source.indexOf("function startLayoutMorph"));
+    // The frame body + the priming block are guarded, and the abort path
+    // restores a clean, interactive state (resetLayoutState → morphActive false).
+    expect(driver).toContain("abortMorph");
+    expect(driver).toMatch(/const abortMorph = \(\) => \{[\s\S]*resetLayoutState\(\);[\s\S]*fitAndRender\(\);/);
+    expect(driver).toMatch(/\} catch \{\s*\n\s*abortMorph\(\);/);
+  });
+
+  it("F3: honors prefers-reduced-motion by settling instantly (no tween)", () => {
+    const source = graphCanvasSource();
+    expect(source).toContain('window.matchMedia("(prefers-reduced-motion: reduce)")');
+    const driver = source.slice(source.indexOf("function startLayoutMorph"));
+    // Reduced motion is part of the instant-settle guard (goes straight to settleLayout).
+    expect(driver).toMatch(/\|\| prefersReducedMotion\(\)\)/);
+    expect(driver).toMatch(/prefersReducedMotion\(\)\)[\s\S]{0,120}settleLayout\(/);
+  });
 });
