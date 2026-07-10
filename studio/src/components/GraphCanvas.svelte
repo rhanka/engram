@@ -2,7 +2,7 @@
   import { onDestroy, onMount, tick } from "svelte";
   import { Button, ButtonGroup, Switch } from "@sentropic/design-system-svelte";
   import { createGraphRenderer, drawBoxLabels2D } from "@sentropic/graph";
-  import { computeLayout } from "@graphify/graph-layout";
+  import { solveForce, terminateForceWorker } from "../lib/forceLayoutClient.js";
 
   import {
     buildConnectedDimStyle,
@@ -182,6 +182,10 @@
   // deterministic cold solve for the selected parameter values.
   let forceSpread = $state(FORCE_SPREAD_DEFAULT);
   let forceLinks = $state(FORCE_LINKS_DEFAULT);
+  // Lot 7: monotonic token so a worker solve that resolves AFTER a scene-content
+  // change (or a newer slider commit) is discarded instead of morphing a stale
+  // buffer sized for the previous node set.
+  let forceSolveToken = 0;
 
   // --- codeflow-parity Lot 4: Curved-links toggle + Color-by (Folder/Layer) ---
   // Both are per-render style attributes (edge curvature / node colour keying),
@@ -1198,6 +1202,9 @@
     liveMorphBuffer = null;
     activeLayoutBuffer = null;
     layoutMode = LAYOUT_MODE_FORCE;
+    // Lot 7: invalidate any in-flight worker force solve — its buffer is sized
+    // for the OLD node set and must not be morphed after the scene changed.
+    forceSolveToken++;
     // §F1: a layout reset re-places all nodes, so stale Force-space drags must
     // not survive it (they would re-snap into the new coordinate space).
     draggedPositions.clear();
@@ -1221,11 +1228,13 @@
     return map;
   }
 
-  function computeForceRelayoutBuffer({ warmStart = true } = {}) {
+  async function computeForceRelayoutBuffer({ warmStart = true } = {}) {
     const graph = payload?.renderGraph;
     if (!graph || !scene?.nodes) return null;
     const initialPositions = warmStart ? currentPositionMap() : undefined;
-    const solved = computeLayout(
+    // Lot 7: off-main-thread solve when a Worker is available (falls back to a
+    // synchronous solve in SSR / tests). Debounced to drag-end by the caller.
+    const solved = await solveForce(
       scene.nodes.map((node) => ({ id: node.id })),
       scene.edges ?? [],
       {
@@ -1235,7 +1244,7 @@
         initialPositions,
       },
     );
-    if (solved.length !== graph.nodeIds.length) return null;
+    if (!Array.isArray(solved) || solved.length !== graph.nodeIds.length) return null;
     const byId = new Map(solved.map((node) => [node.id, node]));
     const buffer = new Float32Array(graph.nodeIds.length * 2);
     for (let i = 0; i < graph.nodeIds.length; i++) {
@@ -1247,10 +1256,14 @@
     return buffer;
   }
 
-  function resolveForceLayout({ warmStart = true } = {}) {
+  async function resolveForceLayout({ warmStart = true } = {}) {
     if (layoutMode !== LAYOUT_MODE_FORCE) layoutMode = LAYOUT_MODE_FORCE;
-    const target = computeForceRelayoutBuffer({ warmStart });
-    if (!target) return;
+    // Generation token: an async solve that resolves AFTER a scene-content change
+    // (which bumps forceSolveToken via resetLayoutState) is stale — discard it so
+    // we never morph a buffer sized for the previous node set (§2.6 index-safety).
+    const token = ++forceSolveToken;
+    const target = await computeForceRelayoutBuffer({ warmStart });
+    if (!target || token !== forceSolveToken || !mounted) return;
     forceBaseBuffer = new Float32Array(target);
     startLayoutMorphToBuffer(LAYOUT_MODE_FORCE, target);
   }
@@ -1475,6 +1488,8 @@
       renderer.destroy();
       renderer = null;
     }
+    // Lot 7: release the off-main-thread layout worker.
+    terminateForceWorker();
   });
 </script>
 
