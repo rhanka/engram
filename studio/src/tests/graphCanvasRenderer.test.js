@@ -282,12 +282,12 @@ describe("GraphCanvas force Spread/Links controls (Lot 3)", () => {
   });
 });
 
-// --- codeflow-parity Lot 4: Curved-links toggle + Color-by (Folder / Layer) ---
+// --- codeflow-parity Lots 4/5: Curved-links + Color-by controls -------------
 // jsdom can't mount the WebGL-bearing canvas, so (as with the Lot 1 switcher) we
-// assert against the .svelte SOURCE that the two controls are wired: gated on
+// assert against the .svelte SOURCE that the controls are wired: gated on
 // showLayoutSwitcher, they flip state and re-style LIVE via a payload rebuild that
 // preserves the camera (applyPayloadNoFit) — no morph, no layout recompute.
-describe("GraphCanvas Curved-links + Color-by controls (Lot 4)", () => {
+describe("GraphCanvas Curved-links + Color-by controls (Lots 4/5)", () => {
   it("renders both DS controls inside the showLayoutSwitcher gate", () => {
     const source = graphCanvasSource();
     // Same workspace-only gate as the layout switcher.
@@ -295,9 +295,10 @@ describe("GraphCanvas Curved-links + Color-by controls (Lot 4)", () => {
       source.indexOf("{#if showLayoutSwitcher}"),
       source.indexOf("aria-label=\"Reset view\""),
     );
-    // Color-by segmented control (DS ButtonGroup over COLOR_MODES).
+    // Color-by segmented control (DS ButtonGroup over COLOR_MODES) + Churn legend.
     expect(gated).toContain("COLOR_MODES");
     expect(gated).toMatch(/onclick=\{\(\) => selectColorMode\(mode\.id\)\}/);
+    expect(gated).toContain('aria-label="Churn colour legend"');
     // Curved-links DS Switch.
     expect(gated).toContain("Switch");
     expect(gated).toContain('label="Curved links"');
@@ -309,6 +310,7 @@ describe("GraphCanvas Curved-links + Color-by controls (Lot 4)", () => {
     const source = graphCanvasSource();
     expect(source).toContain("COLOR_BY_FOLDER");
     expect(source).toContain("COLOR_BY_LAYER");
+    expect(source).toContain("COLOR_BY_CHURN");
     expect(source).toMatch(/import \{ Button, ButtonGroup, Switch \} from "@sentropic\/design-system-svelte"/);
   });
 
