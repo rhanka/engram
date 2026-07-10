@@ -1119,14 +1119,28 @@
     layoutMorphFrame = null;
   }
 
+  // §F3 (a11y): honor prefers-reduced-motion — skip the tween and place the new
+  // layout instantly, consistent with the pan/zoom reduced-motion handling.
+  function prefersReducedMotion() {
+    return (
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    );
+  }
+
   // Reset all layout state to the Force default. Called on a genuine scene-
-  // content change so we NEVER tween across a scene rebuild (new node indices).
+  // content change so we NEVER tween across a scene rebuild (new node indices),
+  // and on an abnormal morph exit (§F2) so the canvas can never stay locked.
   function resetLayoutState() {
     cancelLayoutMorphFrame();
     morphActive = false;
     liveMorphBuffer = null;
     activeLayoutBuffer = null;
     layoutMode = LAYOUT_MODE_FORCE;
+    // §F1: a layout reset re-places all nodes, so stale Force-space drags must
+    // not survive it (they would re-snap into the new coordinate space).
+    draggedPositions.clear();
   }
 
   // Toolbar click: morph to `mode`. Ignores a click on the already-active mode
@@ -1170,12 +1184,18 @@
 
     cancelLayoutMorphFrame();
     layoutMode = mode;
+    // §F1: bufA already snapshotted the on-screen (incl. dragged) positions, so
+    // the drag is preserved as the morph START; drop the stale drag map now — a
+    // layout switch explicitly re-places every node, so a later selection
+    // rebuild must NOT re-apply old Force-space drag coords into the new space.
+    draggedPositions.clear();
 
     const canAnimate =
       typeof window !== "undefined" &&
       typeof window.requestAnimationFrame === "function";
-    // Bad / mismatched target, or no rAF (SSR/tests): settle instantly.
-    if (!bufB || bufB.length !== bufA.length || !canAnimate) {
+    // Bad / mismatched target, no rAF (SSR/tests), or reduced-motion (§F3):
+    // settle instantly (place the layout, no tween).
+    if (!bufB || bufB.length !== bufA.length || !canAnimate || prefersReducedMotion()) {
       settleLayout(mode, bufB && bufB.length === current.length ? bufB : null);
       return;
     }
@@ -1184,24 +1204,40 @@
     setLabelsHidden(true);
     liveMorphBuffer = new Float32Array(bufA.length);
     const startTime = window.performance?.now?.() ?? Date.now();
+    // §F2: never let a throwing frame leave the canvas locked (morphActive stuck
+    // true freezes every pointer/wheel handler). Any abnormal exit unwinds to a
+    // clean Force state and restores interaction + labels.
+    const abortMorph = () => {
+      cancelLayoutMorphFrame();
+      resetLayoutState();
+      fitAndRender();
+    };
     const step = (now) => {
-      const elapsed = Math.max(0, now - startTime);
-      const progress = Math.min(1, elapsed / LAYOUT_MORPH_DURATION_MS);
-      morphPositions(bufA, bufB, easeMergeProgress(progress), liveMorphBuffer);
-      renderer.setPositions(liveMorphBuffer);
-      renderNow();
-      if (progress < 1) {
-        layoutMorphFrame = window.requestAnimationFrame(step);
-      } else {
-        layoutMorphFrame = null;
-        settleLayout(mode, bufB);
+      try {
+        const elapsed = Math.max(0, now - startTime);
+        const progress = Math.min(1, elapsed / LAYOUT_MORPH_DURATION_MS);
+        morphPositions(bufA, bufB, easeMergeProgress(progress), liveMorphBuffer);
+        renderer.setPositions(liveMorphBuffer);
+        renderNow();
+        if (progress < 1) {
+          layoutMorphFrame = window.requestAnimationFrame(step);
+        } else {
+          layoutMorphFrame = null;
+          settleLayout(mode, bufB);
+        }
+      } catch {
+        abortMorph();
       }
     };
     // Prime frame 0 so there is no flash, then drive the tween.
-    morphPositions(bufA, bufB, 0, liveMorphBuffer);
-    renderer.setPositions(liveMorphBuffer);
-    renderNow();
-    layoutMorphFrame = window.requestAnimationFrame(step);
+    try {
+      morphPositions(bufA, bufB, 0, liveMorphBuffer);
+      renderer.setPositions(liveMorphBuffer);
+      renderNow();
+      layoutMorphFrame = window.requestAnimationFrame(step);
+    } catch {
+      abortMorph();
+    }
   }
 
   // Stable content signature of a scene: node ids + positions + edge endpoints +
