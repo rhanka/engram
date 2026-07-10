@@ -23,6 +23,7 @@ import {
   LAYOUT_MODE_FORCE,
   LAYOUT_MODE_GRID,
   LAYOUT_MODE_LAYERS,
+  LAYOUT_MODE_METRO,
   LAYOUT_MODE_RADIAL,
   LAYOUT_MODES,
   MAX_PRINCIPAL_CHARACTER_LABELS,
@@ -755,11 +756,17 @@ describe("layout switcher seam (Lot 1) — morphPositions / computeLayoutBuffer"
     expect(computeLayoutBuffer(null, LAYOUT_MODE_LAYERS)).toBeNull();
   });
 
-  // --- Lot 2: Radial + Grid appear in the switcher and yield valid buffers -----
-  it("the switcher offers Force / Radial / Layers / Grid", () => {
+  // --- Lots 2/6: Radial + Grid + Metro appear in the switcher --------------
+  it("the switcher offers Force / Radial / Layers / Grid / Metro", () => {
     const ids = LAYOUT_MODES.map((m) => m.id);
-    expect(ids).toEqual([LAYOUT_MODE_FORCE, LAYOUT_MODE_RADIAL, LAYOUT_MODE_LAYERS, LAYOUT_MODE_GRID]);
-    expect(LAYOUT_MODES.map((m) => m.label)).toEqual(["Force", "Radial", "Layers", "Grid"]);
+    expect(ids).toEqual([
+      LAYOUT_MODE_FORCE,
+      LAYOUT_MODE_RADIAL,
+      LAYOUT_MODE_LAYERS,
+      LAYOUT_MODE_GRID,
+      LAYOUT_MODE_METRO,
+    ]);
+    expect(LAYOUT_MODES.map((m) => m.label)).toEqual(["Force", "Radial", "Layers", "Grid", "Metro"]);
   });
 
   it("every switcher mode yields a valid 2·n buffer via computeLayoutBuffer", () => {
