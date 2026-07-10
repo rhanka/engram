@@ -48,9 +48,12 @@ describe("TypeShapeGlyph (left-rail type swatches)", () => {
   it("LeftRail shows the glyph in the DS SelectableRow leading slot, left of the type label", () => {
     expect(railSource).toMatch(/import TypeShapeGlyph from "\.\/TypeShapeGlyph\.svelte"/);
     // DS slots: the glyph lives in the `leading` slot (rendered left of content)
-    // and the type label is the row's default content.
+    // and the type label is the row's default content. Both the taxonomy accordion
+    // and the flat fallback render the Type SelectableRow with its FILTER wiring
+    // (value/selected/onselect) — so the opening tag is multi-line — followed by
+    // the glyph-in-leading-slot pattern.
     expect(railSource).toMatch(
-      /<SelectableRow value=\{t\.key\}>\s*\{#snippet leading\(\)}\s*<TypeShapeGlyph type=\{t\.key\} \/>\s*\{\/snippet}\s*\{t\.key\}/,
+      /<SelectableRow[\s\S]*?value=\{t\.key\}[\s\S]*?>\s*\{#snippet leading\(\)}\s*<TypeShapeGlyph type=\{t\.key\} \/>\s*\{\/snippet}\s*\{t\.key\}/,
     );
   });
 

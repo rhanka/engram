@@ -66,6 +66,25 @@ describe("LeftRail — T13 F2 visible-UI lock (PER-ITEM group-by checkboxes)", (
     expect(appSource).toMatch(/onToggleGroupType=\{handleToggleGroupType\}/);
   });
 
+  it("the FLAT fallback (no taxonomy) ALSO offers a per-type group-by checkbox", () => {
+    // FIX: when the class taxonomy is absent the Ontology facet falls back to the
+    // {:else} flat list. It must still expose the Type-axis group-by (the engine
+    // folds by type WITHOUT a taxonomy), so "Group by entity" is reachable there
+    // too — mirroring the accordion leaf. The flat list is now a <ul> of
+    // standalone rows (checkbox → onToggleGroupType, then the FILTER SelectableRow
+    // → onToggleType), NOT a bare SelectableList without a group-by affordance.
+    expect(railSource).toMatch(/rail-type-flat/);
+    // The flat branch renders BOTH a group-by checkbox AND the filter row per type.
+    expect(railSource).toMatch(
+      /rail-type-flat[\s\S]*?rail-type-group-check[\s\S]*?onToggleGroupType\?\.\(t\.key\)[\s\S]*?onselect=\{\(\) => onToggleType\?\.\(t\.key\)\}/,
+    );
+    // There are now FIVE `--on` group-by checkboxes in the source: Domain,
+    // Sub-domain, accordion Type, FLAT Type, Community (the accordion + flat Type
+    // checkboxes are mutually exclusive at runtime via {#if typeTree}/{:else}).
+    const onMarkers = railSource.match(/class:rail-group-check--on=/g) ?? [];
+    expect(onMarkers.length).toBe(5);
+  });
+
   it("each Community row owns a per-item group-by checkbox (separate from its select)", () => {
     expect(railSource).toMatch(/onToggleGroupCommunity\?\.\(c\.key\)/);
     expect(railSource).toMatch(/checked=\{communityCheckedSet\.has\(c\.key\)\}/);
@@ -105,11 +124,12 @@ describe("LeftRail — T13 F2 visible-UI lock (PER-ITEM group-by checkboxes)", (
 
   it("the group-by checkbox is on the LEFT with NO 'group' text (SPEC)", () => {
     // SPEC PART 1: the bare checkbox is the FIRST element on the row. There are
-    // FOUR group-by checkboxes — Domain, Sub-domain, Type, Community — each
-    // carrying the `rail-group-check` affordance (the Type one adds the
-    // `rail-type-group-check` variant).
+    // FIVE group-by checkboxes — Domain, Sub-domain, accordion Type, FLAT-fallback
+    // Type, Community — each carrying the `rail-group-check` affordance (the two
+    // Type ones add the `rail-type-group-check` variant; the accordion and flat
+    // Type checkboxes are mutually exclusive at runtime via {#if typeTree}/{:else}).
     const onMarkers = railSource.match(/class:rail-group-check--on=/g) ?? [];
-    expect(onMarkers.length).toBe(4);
+    expect(onMarkers.length).toBe(5);
     // FIX: the DS Collapsible exposes NO `leading` slot (only trailing/children),
     // so the Domain + Sub-domain group-by checkboxes are SIBLINGS *before*
     // <Collapsible> inside a `.rail-onto-head` flex row — NOT in a (silently

@@ -6,7 +6,6 @@
    * itself is shown in the right column (SelectionPanel).
    */
   import {
-    SelectableList,
     SelectableRow,
     Search,
     Badge,
@@ -209,34 +208,14 @@
   const totalNodeCount = $derived(graphNodes(graph).length);
   const hasQuery = $derived(query.trim().length > 0);
 
-  // Communities + Entities use STANDALONE SelectableRows (selected/onselect), so
-  // they need the selection-membership sets for the per-row `selected` flag.
-  // (Types uses a SelectableList controlled by selection.types — see below.)
+  // Types, Communities + Entities all use STANDALONE SelectableRows
+  // (selected/onselect), so they need the selection-membership sets for the
+  // per-row `selected` flag. Standalone rows also avoid the DS SelectableList
+  // register()/sortByDom() O(n) per row → O(n²) at mount that pegs the main
+  // thread on a large list, and let each Type row carry its own left-hand
+  // group-by checkbox next to the FILTER row.
   const commSet = $derived(new Set(selection.communities));
   const entSet = $derived(new Set(selection.entities));
-
-  // Types is wrapped in a DS SelectableList (only ~3 rows, so the listbox roving
-  // tabindex is cheap). The list is controlled by the current selection array and
-  // emits the FULL new array on every change; the studio's viewerState model is a
-  // per-element toggle (toggleType), so recover the single key that flipped between
-  // `prev` and `next` and forward it to the existing toggle action. A multi-toggle
-  // changes exactly one key per activate.
-  //
-  // NOTE: Communities (222) and Entities (1000s) deliberately do NOT use
-  // SelectableList — its register()/sortByDom() is O(n) per row → O(n²) at mount
-  // of a large list, which pegs the main thread when those accordions expand.
-  // Standalone rows keep the multi-toggle behavior at zero registration cost.
-  function toggledKey(prev, next) {
-    const before = new Set(prev);
-    const after = new Set(next);
-    for (const k of after) if (!before.has(k)) return k; // added
-    for (const k of before) if (!after.has(k)) return k; // removed
-    return null;
-  }
-  function onListChange(prev, next, toggle) {
-    const key = toggledKey(prev, next);
-    if (key != null) toggle?.(key);
-  }
 </script>
 
 <aside class="rail" aria-label="Search">
@@ -426,25 +405,44 @@
         </div>
       {/if}
     {:else}
-      <SelectableList
-        class="rail-list"
-        label="Ontology"
-        multiple
-        value={selection.types}
-        onchange={(next) => onListChange(selection.types, next, onToggleType)}
-      >
+      <!-- FLAT fallback (no class taxonomy). Each leaf TYPE row carries its OWN
+           bare group-by checkbox on the LEFT — folds entities of this `type` via
+           onToggleGroupType (the engine folds by type WITHOUT a taxonomy, so
+           "Group by entity" / the Type axis must be reachable here too). It is
+           SEPARATE from the Type FILTER SelectableRow (onToggleType) that follows
+           it. Mirrors the accordion leaf row (§2). Standalone SelectableRows keep
+           the multi-toggle at zero SelectableList registration cost. -->
+      <ul class="rail-list rail-type-flat" aria-label="Ontology types">
         {#each typeList as t (t.key)}
-          <SelectableRow value={t.key}>
-            {#snippet leading()}
-              <TypeShapeGlyph type={t.key} />
-            {/snippet}
-            {t.key}
-            {#snippet trailing()}
-              <Badge shape="circle" size="sm" tone="neutral">{t.count}</Badge>
-            {/snippet}
-          </SelectableRow>
+          <li class="rail-type-row">
+            <label
+              class="rail-group-check rail-type-group-check"
+              class:rail-group-check--on={typeCheckedSet.has(t.key)}
+              title="Group by {t.key}"
+            >
+              <input
+                type="checkbox"
+                checked={typeCheckedSet.has(t.key)}
+                aria-label="Group by {t.key}"
+                onchange={() => onToggleGroupType?.(t.key)}
+              />
+            </label>
+            <SelectableRow
+              value={t.key}
+              selected={typeSet.has(t.key)}
+              onselect={() => onToggleType?.(t.key)}
+            >
+              {#snippet leading()}
+                <TypeShapeGlyph type={t.key} />
+              {/snippet}
+              {t.key}
+              {#snippet trailing()}
+                <Badge shape="circle" size="sm" tone="neutral">{t.count}</Badge>
+              {/snippet}
+            </SelectableRow>
+          </li>
         {/each}
-      </SelectableList>
+      </ul>
     {/if}
   </Collapsible>
 
@@ -644,18 +642,13 @@
     margin-top: 0.45rem;
     font-variant-numeric: tabular-nums;
   }
-  /* The Communities/Entities lists are plain <ul> of standalone SelectableRows. */
+  /* The Types (flat fallback) / Communities / Entities lists are plain <ul> of
+     standalone SelectableRows. */
   ul.rail-list {
     list-style: none;
     margin: 0;
     padding: 0;
     display: grid;
-    gap: 1px;
-  }
-  /* The Types list is a DS SelectableList (listbox wrapper, roving tabindex); each
-     SelectableRow owns leading | content | trailing layout + selected styling. We
-     only tighten the inter-row gap to the rail's dense 1px feel. */
-  :global(.rail-list.st-selectableList) {
     gap: 1px;
   }
   /* B2-UI-3 + B2-UI-4: DS typography alignment. The bare DS SelectableRow has NO
