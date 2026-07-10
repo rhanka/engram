@@ -240,3 +240,64 @@ describe("GraphCanvas layout switcher + morph (Lot 1)", () => {
     expect(driver).toMatch(/prefersReducedMotion\(\)\)[\s\S]{0,120}settleLayout\(/);
   });
 });
+
+// --- codeflow-parity Lot 4: Curved-links toggle + Color-by (Folder / Layer) ---
+// jsdom can't mount the WebGL-bearing canvas, so (as with the Lot 1 switcher) we
+// assert against the .svelte SOURCE that the two controls are wired: gated on
+// showLayoutSwitcher, they flip state and re-style LIVE via a payload rebuild that
+// preserves the camera (applyPayloadNoFit) — no morph, no layout recompute.
+describe("GraphCanvas Curved-links + Color-by controls (Lot 4)", () => {
+  it("renders both DS controls inside the showLayoutSwitcher gate", () => {
+    const source = graphCanvasSource();
+    // Same workspace-only gate as the layout switcher.
+    const gated = source.slice(
+      source.indexOf("{#if showLayoutSwitcher}"),
+      source.indexOf("aria-label=\"Reset view\""),
+    );
+    // Color-by segmented control (DS ButtonGroup over COLOR_MODES).
+    expect(gated).toContain("COLOR_MODES");
+    expect(gated).toMatch(/onclick=\{\(\) => selectColorMode\(mode\.id\)\}/);
+    // Curved-links DS Switch.
+    expect(gated).toContain("Switch");
+    expect(gated).toContain('label="Curved links"');
+    expect(gated).toContain("checked={curvedLinks}");
+    expect(gated).toContain("onchange={toggleCurvedLinks}");
+  });
+
+  it("imports the color-by constants + DS Switch", () => {
+    const source = graphCanvasSource();
+    expect(source).toContain("COLOR_BY_FOLDER");
+    expect(source).toContain("COLOR_BY_LAYER");
+    expect(source).toMatch(/import \{ Button, ButtonGroup, Switch \} from "@sentropic\/design-system-svelte"/);
+  });
+
+  it("defaults match today's behaviour (curved ON, colour by Folder)", () => {
+    const source = graphCanvasSource();
+    expect(source).toMatch(/let curvedLinks = \$state\(true\)/);
+    expect(source).toMatch(/let colorMode = \$state\(COLOR_BY_FOLDER\)/);
+  });
+
+  it("passes colorBy + curvedLinks through rebuildPayload", () => {
+    const source = graphCanvasSource();
+    const rebuild = source.slice(
+      source.indexOf("function rebuildPayload"),
+      source.indexOf("function reapplyLayoutPositions"),
+    );
+    expect(rebuild).toContain("colorBy: colorMode");
+    expect(rebuild).toContain("curvedLinks,");
+  });
+
+  it("a control change re-styles LIVE (rebuild + applyPayloadNoFit, no morph/fit)", () => {
+    const source = graphCanvasSource();
+    // Reactive effect reads both deps and calls the live re-style.
+    expect(source).toMatch(/curvedLinks;\s*\n\s*colorMode;\s*\n\s*updateDisplayStyle\(\);/);
+    const restyle = source.slice(
+      source.indexOf("function updateDisplayStyle"),
+      source.indexOf("function toggleCurvedLinks"),
+    );
+    // No re-fit (preserve camera) and no morph — same shape as updateSelection.
+    expect(restyle).toContain("applyPayloadNoFit()");
+    expect(restyle).not.toContain("fitAndRender");
+    expect(restyle).not.toContain("startLayoutMorph");
+  });
+});

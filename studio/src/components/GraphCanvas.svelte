@@ -1,11 +1,13 @@
 <script>
   import { onDestroy, onMount, tick } from "svelte";
-  import { Button, ButtonGroup } from "@sentropic/design-system-svelte";
+  import { Button, ButtonGroup, Switch } from "@sentropic/design-system-svelte";
   import { createGraphRenderer, drawBoxLabels2D } from "@sentropic/graph";
 
   import {
     buildConnectedDimStyle,
     buildGraphRendererPayload,
+    COLOR_BY_FOLDER,
+    COLOR_BY_LAYER,
     computeLayoutBuffer,
     findNearestEdge,
     findNearestNode,
@@ -166,6 +168,21 @@
   // True while a layout morph is in flight: hides labels + locks canvas
   // interaction for the (~480 ms) tween, exactly as pan/zoom already do.
   let morphActive = $state(false);
+
+  // --- codeflow-parity Lot 4: Curved-links toggle + Color-by (Folder/Layer) ---
+  // Both are per-render style attributes (edge curvature / node colour keying),
+  // so a change re-styles LIVE — rebuild payload + re-render, NO layout recompute
+  // and NO morph (applyPayloadNoFit preserves camera + the active layout buffer).
+  // Defaults MATCH the current studio behaviour (curved ON, colour by Folder), so
+  // an untouched control is byte-identical to before this lot.
+  let curvedLinks = $state(true);
+  let colorMode = $state(COLOR_BY_FOLDER);
+  // The Color-by options exposed by the segmented control.
+  const COLOR_MODES = [
+    { id: COLOR_BY_FOLDER, label: "Folder" },
+    { id: COLOR_BY_LAYER, label: "Layer" },
+  ];
+
   let hoveredEdge = $state(null);
   let hoveredNode = $state(null);
   let hoveredNodeId = $state(null);
@@ -548,6 +565,10 @@
       // zoom-out). Sync the bucket so a wheel that crosses the threshold knows
       // to rebuild (see handleWheel's settle callback).
       zoom: camera.zoom,
+      // codeflow-parity Lot 4: Color-by keying + Curved-links scalar. Defaults
+      // (Folder / curved) keep the output byte-identical to before this lot.
+      colorBy: colorMode,
+      curvedLinks,
       ...(Number.isFinite(labelMaxChars) ? { labelMaxChars } : {}),
     });
     lastLabelZoomBucket = labelZoomBucket(camera.zoom);
@@ -618,6 +639,30 @@
     ensureRenderer();
     resizeCanvas();
     applyPayloadNoFit();
+  }
+
+  // codeflow-parity Lot 4: Curved-links / Color-by change → LIVE re-style. Both
+  // are per-render style attributes (edge curvature / node colour keying), so we
+  // rebuild the payload with the new options and re-render WITHOUT re-fitting the
+  // camera or recomputing a layout — no morph, the active layout buffer survives
+  // (rebuildPayload → reapplyLayoutPositions). Same shape as updateSelection.
+  function updateDisplayStyle() {
+    if (!mounted) return;
+
+    rebuildPayload();
+    ensureRenderer();
+    resizeCanvas();
+    applyPayloadNoFit();
+  }
+
+  // Toolbar handlers: flip the display state; the reactive $effect re-styles.
+  function toggleCurvedLinks() {
+    curvedLinks = !curvedLinks;
+  }
+
+  function selectColorMode(mode) {
+    if (mode === colorMode) return;
+    colorMode = mode;
   }
 
   // ResizeObserver / window-resize path. Two guarantees (UAT):
@@ -1289,6 +1334,16 @@
   });
 
   $effect(() => {
+    // codeflow-parity Lot 4: Curved-links / Color-by change → live re-style,
+    // preserving the current camera + layout (no re-fit, no morph). Reading both
+    // deps registers the effect; the guard in updateDisplayStyle no-ops at mount
+    // (updateGraph already did the first render with the defaults).
+    curvedLinks;
+    colorMode;
+    updateDisplayStyle();
+  });
+
+  $effect(() => {
     const key = mergeKey(mergePair);
     if (!key) {
       completedMergeKey = null;
@@ -1358,6 +1413,28 @@
           >{mode.label}</Button>
         {/each}
       </ButtonGroup>
+      <!-- codeflow-parity Lot 4: Color-by (Folder · Layer). Re-keys the node
+           colour LIVE (no layout recompute, no morph). Same attached DS
+           ButtonGroup pattern as the layout switcher. -->
+      <ButtonGroup attached size="sm" label="Colour by" class="color-switcher">
+        {#each COLOR_MODES as mode (mode.id)}
+          <Button
+            size="sm"
+            variant={colorMode === mode.id ? "primary" : "secondary"}
+            aria-pressed={colorMode === mode.id}
+            aria-label={`Colour by ${mode.label}`}
+            onclick={() => selectColorMode(mode.id)}
+          >{mode.label}</Button>
+        {/each}
+      </ButtonGroup>
+      <!-- codeflow-parity Lot 4: Curved-links toggle (DS Switch). ON ⇒ 0.15
+           (current behaviour), OFF ⇒ straight. Flips edge curvature LIVE. -->
+      <Switch
+        class="curved-links-toggle"
+        label="Curved links"
+        checked={curvedLinks}
+        onchange={toggleCurvedLinks}
+      />
     {/if}
     <button
       class="toolbar-btn"
@@ -1472,9 +1549,25 @@
     right: 0.5rem;
     z-index: 3;
     display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     align-items: center;
-    gap: 0.35rem;
+    gap: 0.35rem 0.5rem;
+    max-width: calc(100% - 1rem);
     pointer-events: auto;
+  }
+
+  /* codeflow-parity Lot 4: keep the Curved-links DS Switch compact + legible in
+     the floating toolbar (matches the segmented controls' scale). */
+  .canvas-toolbar :global(.curved-links-toggle) {
+    gap: 0.4rem;
+    padding: 0.2rem 0.5rem;
+    border: 1px solid var(--st-semantic-border-muted, #e2e8f0);
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--st-semantic-surface-default, #fff) 90%, transparent);
+    box-shadow: 0 1px 4px rgb(15 23 42 / 0.08);
+    font-size: 0.75rem;
+    white-space: nowrap;
   }
 
   .toolbar-btn {

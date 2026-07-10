@@ -40,6 +40,24 @@ const WEAK_EDGE_COLOR = [203, 213, 225, 128];
 const EDGE_CURVE_FACTOR = 0.5;
 const DIM_ALPHA = Math.round(255 * 0.35); // 89
 
+// --- codeflow-parity Lot 4: Curved-links toggle + Color-by (Folder / Layer) ---
+/**
+ * Default curvature for a main-graph edge — the studio's CURRENT behaviour.
+ * Both @sentropic/graph backends already draw a per-edge quadratic when
+ * curvature !== 0 (`styles.ts:259`, `render-geometry.edgeGeometry`), so the
+ * "Curved links" toggle is purely this scalar: ON ⇒ this value (default,
+ * byte-identical to before), OFF ⇒ 0 (straight). Wiring only — NOT the discrete
+ * flow-port S-routing (R3).
+ */
+export const DEFAULT_EDGE_CURVATURE = 0.15;
+/**
+ * Color-by mode — colour by directory / container (community/container, i.e.
+ * `node.group`). This is the studio's CURRENT default keying (`colorForGroup`).
+ */
+export const COLOR_BY_FOLDER = "folder";
+/** Color-by mode — colour by typed layer / ontology level (`node_type`). */
+export const COLOR_BY_LAYER = "layer";
+
 // Density-aware base node sizing. The user confirmed sizes read well at ~1000
 // nodes but are too big at ~5000. We shrink only the BASE radius as the graph
 // grows (the per-node degree spread — sqrt(weight), i.e. the RADIUS_RATIO
@@ -306,6 +324,17 @@ export function buildGraphRendererPayload(scene, options = {}) {
   // names at zoom-out). Undefined ⇒ treat as zoomed OUT so the default fit view
   // already shows only the principal cast (see selectPrincipalHubLabels).
   const labelZoom = Number.isFinite(options.zoom) ? options.zoom : 0;
+  // codeflow-parity Lot 4 — Color-by (R4): Folder keys the categorical colour on
+  // community/container (node.group, the CURRENT default); Layer keys it on the
+  // typed layer (node_type). Both resolve through the SAME palette (colorForGroup)
+  // so the legend swatch and node fill stay one source of truth. Default = Folder,
+  // so an unset option is byte-identical to before this lot.
+  const colorBy = options.colorBy === COLOR_BY_LAYER ? COLOR_BY_LAYER : COLOR_BY_FOLDER;
+  // codeflow-parity Lot 4 — Curved links (R3): ON ⇒ DEFAULT_EDGE_CURVATURE (the
+  // current behaviour), OFF ⇒ 0 (straight). Default ON so an unset option is
+  // byte-identical to before this lot. It is a per-edge RENDER attribute — the
+  // caller re-renders live with no layout recompute.
+  const edgeCurvature = options.curvedLinks === false ? 0 : DEFAULT_EDGE_CURVATURE;
   const sceneNodes = scene?.nodes ?? [];
   const sceneEdges = scene?.edges ?? [];
 
@@ -318,10 +347,14 @@ export function buildGraphRendererPayload(scene, options = {}) {
     const position = positionForNode(node, index, sceneNodes.length);
     const focused = node.id === focusId;
     const selected = focused || selectedIds.has(node.id);
+    const nodeType = node.node_type ?? node.type ?? null;
+    // Color-by (R4): Layer keys the categorical colour on the typed layer,
+    // Folder (default) on community/container. Selection/focus overrides still win.
+    const colorKey = colorBy === COLOR_BY_LAYER ? nodeType : node.group;
     return {
       id: node.id,
       label: node.label ?? node.id,
-      node_type: node.node_type ?? node.type ?? null,
+      node_type: nodeType,
       x: position.x,
       y: position.y,
       fixed: position.fixed,
@@ -334,7 +367,7 @@ export function buildGraphRendererPayload(scene, options = {}) {
       // node's label in-box, bypassing the degree/god-class label gate.
       forceBoxLabel: node.forceBoxLabel === true,
       size: nodeSize(node, nodeRadius, selected, focused),
-      color: focused ? FOCUS_COLOR : selected ? SELECTED_COLOR : colorForGroup(node.group),
+      color: focused ? FOCUS_COLOR : selected ? SELECTED_COLOR : colorForGroup(colorKey),
     };
   });
 
@@ -348,14 +381,14 @@ export function buildGraphRendererPayload(scene, options = {}) {
     width: edgeWidth(edge),
     color: edge.weak ? WEAK_EDGE_COLOR : EDGE_COLOR,
     dash: edge.dash ?? (edge.weak ? "dotted" : "solid"),
-    curvature: finite(edge.curvature) ? edge.curvature : 0.15,
+    curvature: finite(edge.curvature) ? edge.curvature : edgeCurvature,
   }));
 
   const input = { nodes, edges };
   const renderGraph = buildRenderGraphBuffers(input);
   const baseStyle = buildStyleBuffers(input, renderGraph, {
     node: { size: nodeRadius },
-    edge: { width: 1, color: EDGE_COLOR, dash: "solid", curvature: 0.15 },
+    edge: { width: 1, color: EDGE_COLOR, dash: "solid", curvature: edgeCurvature },
   });
   const nodeIndexById = new Map(nodes.map((node, index) => [node.id, index]));
 
