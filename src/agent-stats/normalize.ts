@@ -65,16 +65,20 @@ function dedup(arr: string[]): string[] {
 }
 
 /** Dedup + tilde-normalize a list of absolute paths (privacy + matching). */
-function dedupPaths(arr: string[], home = homedir()): string[] {
-  return Array.from(new Set(arr.filter((x) => typeof x === "string" && x).map((p) => pathToTilde(p, home))));
+function dedupPaths(arr: string[], home?: string): string[] {
+  const paths = arr.filter((x) => typeof x === "string" && x);
+  // In-memory parser/normalizer calls preserve absolute paths for tests and
+  // caller-side correlation. Sync/persistence passes an explicit home to opt in
+  // to `~` redaction before writing facts.jsonl.
+  return Array.from(new Set(home === undefined ? paths : paths.map((p) => pathToTilde(p, home))));
 }
 
-export function normalizeClaude(raw: RawClaudeSession): SessionFact {
+export function normalizeClaude(raw: RawClaudeSession, home?: string): SessionFact {
   return {
     factId: `claude:${raw.sessionId}`,
     host: "claude",
     sessionId: raw.sessionId,
-    cwds: dedupPaths(raw.cwds),
+    cwds: dedupPaths(raw.cwds, home),
     startedAt: raw.startedAt,
     endedAt: raw.endedAt,
     models: dedup(raw.models),
@@ -83,17 +87,17 @@ export function normalizeClaude(raw: RawClaudeSession): SessionFact {
     gitActions: raw.gitActions,
     groundTruth: raw.groundTruth,
     branchesObserved: dedup(raw.branches),
-    filesTouched: dedupPaths(raw.filesTouched),
+    filesTouched: dedupPaths(raw.filesTouched, home),
     evidence: raw.evidence,
   };
 }
 
-export function normalizeCodex(raw: RawCodexSession): SessionFact {
+export function normalizeCodex(raw: RawCodexSession, home?: string): SessionFact {
   return {
     factId: `codex:${raw.sessionId}`,
     host: "codex",
     sessionId: raw.sessionId,
-    cwds: dedupPaths(raw.cwds),
+    cwds: dedupPaths(raw.cwds, home),
     startedAt: raw.startedAt,
     endedAt: raw.endedAt,
     models: dedup(raw.models),
@@ -104,17 +108,17 @@ export function normalizeCodex(raw: RawCodexSession): SessionFact {
     gitActions: raw.gitActions,
     groundTruth: raw.groundTruth,
     branchesObserved: dedup(raw.branches),
-    filesTouched: dedupPaths(raw.filesTouched),
+    filesTouched: dedupPaths(raw.filesTouched, home),
     evidence: raw.evidence,
   };
 }
 
-export function normalizeAgy(raw: RawAgySession): SessionFact {
+export function normalizeAgy(raw: RawAgySession, home?: string): SessionFact {
   return {
     factId: `agy:${raw.sessionId}`,
     host: "agy",
     sessionId: raw.sessionId,
-    cwds: dedupPaths(raw.cwds),
+    cwds: dedupPaths(raw.cwds, home),
     startedAt: raw.startedAt,
     endedAt: raw.endedAt,
     models: dedup(raw.models),
@@ -122,7 +126,7 @@ export function normalizeAgy(raw: RawAgySession): SessionFact {
     gitActions: raw.gitActions,
     groundTruth: raw.groundTruth,
     branchesObserved: dedup(raw.branches),
-    filesTouched: dedupPaths(raw.filesTouched),
+    filesTouched: dedupPaths(raw.filesTouched, home),
     evidence: raw.evidence,
   };
 }
