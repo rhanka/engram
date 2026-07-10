@@ -4,6 +4,7 @@ export * from "./gitflow-labels";
 export * from "./layout";
 export * from "./layout-gitflow";
 export * from "./layout-grid";
+export * from "./layout-metro";
 export * from "./layout-radial";
 export * from "./layout-registry";
 export * from "./mat4";

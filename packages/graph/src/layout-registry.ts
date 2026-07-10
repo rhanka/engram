@@ -28,6 +28,7 @@
 
 import { gitFlowLayout } from "./layout-gitflow";
 import { gridLayout } from "./layout-grid";
+import { metroLayout } from "./layout-metro";
 import { radialLayout } from "./layout-radial";
 import { copyPositions, createPositionFrame } from "./positions";
 import type { LayoutEngine, LayoutOptions, PositionFrame, RenderGraphBuffers } from "./types";
@@ -67,6 +68,13 @@ export const RADIAL_LAYOUT_ID = "radial";
  * the origin, node-id order — see `layout-grid.ts`). OPT-IN; never the default.
  */
 export const GRID_LAYOUT_ID = "grid";
+
+/**
+ * Registered id of the METRO layout (BFS lanes, grid-snapped nodes — see
+ * `layout-metro.ts`; MVP: octilinear edge routing deferred). OPT-IN; never the
+ * default.
+ */
+export const METRO_LAYOUT_ID = "metro";
 
 // ---------------------------------------------------------------------------
 // Registry
@@ -425,3 +433,4 @@ registerLayout(TIME_ORIENTED_LAYOUT_ID, timeOrientedLayout);
 registerLayout(GIT_FLOW_LAYOUT_ID, gitFlowLayout);
 registerLayout(RADIAL_LAYOUT_ID, radialLayout);
 registerLayout(GRID_LAYOUT_ID, gridLayout);
+registerLayout(METRO_LAYOUT_ID, metroLayout);
