@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -172,6 +172,14 @@ describe("GET /api/ontology/class-hierarchies.json (EVOL 2.c)", () => {
       "n2",
       "n3",
     ]);
+
+    // A GET must be side-effect-free: the route calls the PURE builder, so it
+    // writes NO class-hierarchies.json into the state dir's ontology/ (the old
+    // writing emitter did — this guards against a regression that 500s on a
+    // read-only FS and can dirty a tracked worktree).
+    expect(
+      existsSync(join(fixture.stateDir, "ontology", "class-hierarchies.json")),
+    ).toBe(false);
   });
 
   it("404s (client-tolerated) when the profile has no class_hierarchies block", () => {
