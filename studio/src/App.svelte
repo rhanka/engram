@@ -792,6 +792,7 @@
             {selectedIds}
             focusId={viewerState.focusId}
             labelMode="none"
+            showLayoutSwitcher
             onSelect={handleToggleEntity}
             onOpenEntity={handleFocusEntity}
           />

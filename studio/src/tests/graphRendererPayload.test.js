@@ -4,6 +4,7 @@ import {
   buildConnectedDimStyle,
   buildGraphRendererPayload,
   colorForGroup,
+  computeLayoutBuffer,
   densityScale,
   DEFAULT_LABEL_MAX_CHARS,
   findNearestEdge,
@@ -14,7 +15,11 @@ import {
   interpolateMergePositions,
   isBoxShape,
   LABEL_ZOOM_THRESHOLD,
+  LAYOUT_MODE_FORCE,
+  LAYOUT_MODE_LAYERS,
   MAX_PRINCIPAL_CHARACTER_LABELS,
+  morphPositions,
+  nodeTypesForPayload,
   selectPrincipalHubLabels,
   truncateLabel,
 } from "../lib/graphRendererPayload.js";
@@ -639,5 +644,106 @@ describe("graphRendererPayload", () => {
     expect(style.edgeColors[3]).toBe(128);
     expect(style.edgeColors[7]).toBe(255);
     expect(payload.style.nodeColors[3]).toBe(255);
+  });
+});
+
+// --- codeflow-parity Lot 1: layout switcher seam + all-node morph tween ------
+// morphPositions generalizes the one-node merge lerp into a per-index morph
+// between two index-parallel buffers; computeLayoutBuffer is the studio↔registry
+// seam that resolves a mode ("layers" → typed-layer, "force" → cached buffer).
+describe("layout switcher seam (Lot 1) — morphPositions / computeLayoutBuffer", () => {
+  const makeTypedScene = () => ({
+    nodes: [
+      { id: "a", label: "A", type: "Character", x: 10, y: 10, weight: 1 },
+      { id: "b", label: "B", type: "Character", x: 20, y: 20, weight: 1 },
+      { id: "c", label: "C", type: "Location", x: 30, y: 30, weight: 1 },
+      { id: "d", label: "D", x: 40, y: 40, weight: 1 }, // untyped
+    ],
+    edges: [{ source: "a", target: "b", relation: "knows" }],
+    stats: { nodeCount: 4, edgeCount: 1, weakEdgeCount: 0, communityCount: 1 },
+  });
+
+  it("morphPositions: t=0 → bufA, t=1 → bufB, midpoint = average, all nodes moved", () => {
+    const bufA = new Float32Array([0, 0, 10, 10, -4, 8]);
+    const bufB = new Float32Array([2, 2, 30, -10, 0, 0]);
+
+    expect(Array.from(morphPositions(bufA, bufB, 0))).toEqual(Array.from(bufA));
+    expect(Array.from(morphPositions(bufA, bufB, 1))).toEqual(Array.from(bufB));
+
+    const mid = morphPositions(bufA, bufB, 0.5);
+    for (let i = 0; i < bufA.length; i += 1) {
+      expect(mid[i]).toBeCloseTo((bufA[i] + bufB[i]) / 2, 5);
+    }
+    // EVERY node moved between the endpoints (no correspondence problem: all
+    // 2·nodeCount floats are lerped in one loop).
+    const nodeCount = bufA.length / 2;
+    for (let n = 0; n < nodeCount; n += 1) {
+      expect(mid[n * 2]).not.toBe(bufA[n * 2]);
+      expect(mid[n * 2 + 1]).not.toBe(bufA[n * 2 + 1]);
+    }
+  });
+
+  it("morphPositions clamps t to [0,1] and reuses a supplied out buffer", () => {
+    const bufA = new Float32Array([0, 0]);
+    const bufB = new Float32Array([10, 20]);
+    expect(Array.from(morphPositions(bufA, bufB, -1))).toEqual([0, 0]);
+    expect(Array.from(morphPositions(bufA, bufB, 2))).toEqual([10, 20]);
+    const out = new Float32Array(2);
+    const result = morphPositions(bufA, bufB, 1, out);
+    expect(result).toBe(out); // reused, no fresh allocation
+    expect(Array.from(out)).toEqual([10, 20]);
+  });
+
+  it("morphPositions returns null on missing input", () => {
+    expect(morphPositions(null, new Float32Array(2), 0.5)).toBeNull();
+    expect(morphPositions(new Float32Array(2), null, 0.5)).toBeNull();
+  });
+
+  it("nodeTypesForPayload reads node_type node-order-keyed (parallel to nodeIds)", () => {
+    const payload = buildGraphRendererPayload(makeTypedScene(), { nodeRadius: 3 });
+    const types = nodeTypesForPayload(payload);
+    expect(types.length).toBe(payload.renderGraph.nodeIds.length);
+    for (let i = 0; i < types.length; i += 1) {
+      const id = payload.renderGraph.nodeIds[i];
+      expect(types[i]).toBe(payload.nodeById.get(id)?.node_type ?? null);
+    }
+    expect(types[payload.nodeIndexById.get("d")]).toBeNull(); // untyped node
+  });
+
+  it("computeLayoutBuffer('layers') bands typed nodes into swimlanes (2·n floats)", () => {
+    const payload = buildGraphRendererPayload(makeTypedScene(), { nodeRadius: 3 });
+    const n = payload.renderGraph.nodeIds.length;
+    const layers = computeLayoutBuffer(payload, LAYOUT_MODE_LAYERS);
+
+    expect(layers).toBeInstanceOf(Float32Array);
+    expect(layers.length).toBe(n * 2);
+
+    const iA = payload.nodeIndexById.get("a");
+    const iB = payload.nodeIndexById.get("b");
+    const iC = payload.nodeIndexById.get("c");
+    // Same type ⇒ same lane (y); different type ⇒ different lane.
+    expect(layers[iA * 2 + 1]).toBe(layers[iB * 2 + 1]);
+    expect(layers[iA * 2 + 1]).not.toBe(layers[iC * 2 + 1]);
+    // The target differs from the (force) input positions → a real morph.
+    expect(Array.from(layers)).not.toEqual(Array.from(payload.renderGraph.positions));
+  });
+
+  it("computeLayoutBuffer('force') returns a COPY of the cached buffer (no cold re-solve)", () => {
+    const payload = buildGraphRendererPayload(makeTypedScene(), { nodeRadius: 3 });
+    const n = payload.renderGraph.nodeIds.length;
+    const cached = new Float32Array(n * 2).fill(3);
+    const out = computeLayoutBuffer(payload, LAYOUT_MODE_FORCE, { forceBuffer: cached });
+    expect(Array.from(out)).toEqual(Array.from(cached));
+    expect(out).not.toBe(cached); // fresh copy, never the caller's buffer
+  });
+
+  it("computeLayoutBuffer('force') falls back to the current positions without a cache", () => {
+    const payload = buildGraphRendererPayload(makeTypedScene(), { nodeRadius: 3 });
+    const out = computeLayoutBuffer(payload, LAYOUT_MODE_FORCE);
+    expect(Array.from(out)).toEqual(Array.from(payload.renderGraph.positions));
+  });
+
+  it("computeLayoutBuffer degrades to null for a missing payload", () => {
+    expect(computeLayoutBuffer(null, LAYOUT_MODE_LAYERS)).toBeNull();
   });
 });
