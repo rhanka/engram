@@ -8,6 +8,7 @@ import {
   GRID_LAYOUT_ID,
   hasLayout,
   listLayouts,
+  METRO_LAYOUT_ID,
   RADIAL_LAYOUT_ID,
   registerLayout,
   resolveLayout,
@@ -54,6 +55,18 @@ describe("layout registry — register / lookup / default", () => {
       expect(out.length).toBe(graph.nodeIds.length * 2);
       for (const v of out) expect(Number.isFinite(v)).toBe(true);
     }
+  });
+
+  it("ships the Lot-6 metro layout registered and resolvable", () => {
+    expect(METRO_LAYOUT_ID).toBe("metro");
+    expect(hasLayout(METRO_LAYOUT_ID)).toBe(true);
+    expect(listLayouts()).toEqual(expect.arrayContaining(["metro"]));
+    expect(resolveLayout(METRO_LAYOUT_ID)).toBe(getLayout(METRO_LAYOUT_ID));
+    const graph = sampleGraph();
+    const out = resolveLayout(METRO_LAYOUT_ID)(graph);
+    expect(out).toBeInstanceOf(Float32Array);
+    expect(out.length).toBe(graph.nodeIds.length * 2);
+    for (const v of out) expect(Number.isFinite(v)).toBe(true);
   });
 
   it("default ('force') is a passthrough of the baked positions", () => {

@@ -3,6 +3,7 @@ import {
   buildStyleBuffers,
   DEFAULT_LAYOUT_ID,
   GRID_LAYOUT_ID,
+  METRO_LAYOUT_ID,
   RADIAL_LAYOUT_ID,
   resolveLayout,
   TYPED_LAYER_LAYOUT_ID,
@@ -567,6 +568,8 @@ export const LAYOUT_MODE_LAYERS = "layers";
 export const LAYOUT_MODE_RADIAL = "radial";
 /** Layout mode id — regular grid (registered `grid`). */
 export const LAYOUT_MODE_GRID = "grid";
+/** Layout mode id — metro lanes (registered `metro`; MVP, orthogonal edges deferred). */
+export const LAYOUT_MODE_METRO = "metro";
 
 /**
  * The layout modes exposed by the studio switcher (Lot 1 = Force + Layers; Lot 2
@@ -581,6 +584,7 @@ export const LAYOUT_MODES = [
   { id: LAYOUT_MODE_RADIAL, label: "Radial", registryId: RADIAL_LAYOUT_ID },
   { id: LAYOUT_MODE_LAYERS, label: "Layers", registryId: TYPED_LAYER_LAYOUT_ID },
   { id: LAYOUT_MODE_GRID, label: "Grid", registryId: GRID_LAYOUT_ID },
+  { id: LAYOUT_MODE_METRO, label: "Metro", registryId: METRO_LAYOUT_ID },
 ];
 
 /**
@@ -640,6 +644,10 @@ export function computeLayoutBuffer(payload, mode, { forceBuffer = null } = {}) 
 
   if (mode === LAYOUT_MODE_GRID) {
     return resolveLayout(GRID_LAYOUT_ID)(graph, { nodeTypes: nodeTypesForPayload(payload) });
+  }
+
+  if (mode === LAYOUT_MODE_METRO) {
+    return resolveLayout(METRO_LAYOUT_ID)(graph, { nodeTypes: nodeTypesForPayload(payload) });
   }
 
   // Force (default): the cached pristine force positions when we have them.
