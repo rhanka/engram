@@ -2,6 +2,8 @@ import {
   buildRenderGraphBuffers,
   buildStyleBuffers,
   DEFAULT_LAYOUT_ID,
+  GRID_LAYOUT_ID,
+  RADIAL_LAYOUT_ID,
   resolveLayout,
   TYPED_LAYER_LAYOUT_ID,
 } from "@sentropic/graph";
@@ -473,16 +475,24 @@ export function interpolateMergePositions(payload, mergePair, progress) {
 export const LAYOUT_MODE_FORCE = "force";
 /** Layout mode id — typed swimlanes (registered `typed-layer`, ≈ "Layers"). */
 export const LAYOUT_MODE_LAYERS = "layers";
+/** Layout mode id — radial concentric rings (registered `radial`). */
+export const LAYOUT_MODE_RADIAL = "radial";
+/** Layout mode id — regular grid (registered `grid`). */
+export const LAYOUT_MODE_GRID = "grid";
 
 /**
- * The layout modes exposed by the studio switcher (Lot 1 = Force + Layers on the
- * already-registered engines). `registryId` is the id passed to
- * {@link resolveLayout}; Force has none because its target is the CACHED initial
- * force positions, not a (cold) registry re-solve (Lot 1 does not re-solve force).
+ * The layout modes exposed by the studio switcher (Lot 1 = Force + Layers; Lot 2
+ * adds Radial + Grid on the already-registered engines). `registryId` is the id
+ * passed to {@link resolveLayout}; Force has none because its target is the
+ * CACHED initial force positions, not a (cold) registry re-solve (Lot 1 does not
+ * re-solve force). Radial and Grid are pure, deterministic O(n[+e]) engines and
+ * morph for free through the same all-node tween (index-parallel buffers, §2.6).
  */
 export const LAYOUT_MODES = [
   { id: LAYOUT_MODE_FORCE, label: "Force", registryId: DEFAULT_LAYOUT_ID },
+  { id: LAYOUT_MODE_RADIAL, label: "Radial", registryId: RADIAL_LAYOUT_ID },
   { id: LAYOUT_MODE_LAYERS, label: "Layers", registryId: TYPED_LAYER_LAYOUT_ID },
+  { id: LAYOUT_MODE_GRID, label: "Grid", registryId: GRID_LAYOUT_ID },
 ];
 
 /**
@@ -512,6 +522,10 @@ export function nodeTypesForPayload(payload) {
  *
  *   • `"layers"` → the registered `typed-layer` swimlane layout, banded by the
  *     payload's per-node types.
+ *   • `"radial"` → the registered `radial` layout (highest-degree hub at the
+ *     centre, BFS levels on concentric rings). Pure O(n+e) from the graph.
+ *   • `"grid"`   → the registered `grid` layout (regular `ceil(√n)` grid centred
+ *     on the origin, node-id order). Pure O(n) from the node count.
  *   • `"force"`  → the CACHED initial force positions (`forceBuffer`) — Lot 1
  *     does NOT cold re-solve force (warm-started re-solve is Lot 3). When no
  *     cached buffer is supplied it falls back to the registry force passthrough
@@ -530,6 +544,14 @@ export function computeLayoutBuffer(payload, mode, { forceBuffer = null } = {}) 
   if (mode === LAYOUT_MODE_LAYERS) {
     const nodeTypes = nodeTypesForPayload(payload);
     return resolveLayout(TYPED_LAYER_LAYOUT_ID)(graph, { nodeTypes });
+  }
+
+  if (mode === LAYOUT_MODE_RADIAL) {
+    return resolveLayout(RADIAL_LAYOUT_ID)(graph, { nodeTypes: nodeTypesForPayload(payload) });
+  }
+
+  if (mode === LAYOUT_MODE_GRID) {
+    return resolveLayout(GRID_LAYOUT_ID)(graph, { nodeTypes: nodeTypesForPayload(payload) });
   }
 
   // Force (default): the cached pristine force positions when we have them.
