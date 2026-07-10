@@ -220,7 +220,7 @@ describe("GraphCanvas layout switcher + morph (Lot 1)", () => {
     // A layout switch re-places every node → drop the stale Force-space drag map.
     expect(driver).toContain("draggedPositions.clear()");
     // resetLayoutState also clears it (scene change + abnormal-exit path).
-    expect(source).toMatch(/function resetLayoutState\(\)[\s\S]{0,400}draggedPositions\.clear\(\)/);
+    expect(source).toMatch(/function resetLayoutState\(\)[\s\S]{0,700}draggedPositions\.clear\(\)/);
   });
 
   it("F2: a throwing morph frame unwinds instead of leaving the canvas locked", () => {
@@ -259,16 +259,28 @@ describe("GraphCanvas force Spread/Links controls (Lot 3)", () => {
 
   it("maps Spread→repulsion and Links→linkDistance, warm-starting interactive solves", () => {
     const source = graphCanvasSource();
-    expect(source).toContain('import { computeLayout } from "@graphify/graph-layout"');
+    // Lot 7: the solve goes through the off-main-thread client (worker + sync fallback).
+    expect(source).toContain('import { solveForce, terminateForceWorker } from "../lib/forceLayoutClient.js"');
     const solve = source.slice(
       source.indexOf("function computeForceRelayoutBuffer"),
       source.indexOf("function resetForceLayout"),
     );
+    expect(solve).toContain("await solveForce(");
     expect(solve).toContain("repulsion: forceSpread");
     expect(solve).toContain("linkDistance: forceLinks");
     expect(solve).toContain("initialPositions");
     expect(source).toMatch(/function commitForceSpread[\s\S]*resolveForceLayout\(\{ warmStart: true \}\)/);
     expect(source).toMatch(/function commitForceLinks[\s\S]*resolveForceLayout\(\{ warmStart: true \}\)/);
+  });
+
+  it("Lot 7: discards a stale worker solve (generation token) and terminates on destroy", () => {
+    const source = graphCanvasSource();
+    // A solve resolving after the scene changed is dropped (token mismatch).
+    expect(source).toMatch(/const token = \+\+forceSolveToken;[\s\S]*token !== forceSolveToken/);
+    // resetLayoutState invalidates in-flight solves.
+    expect(source).toMatch(/function resetLayoutState\(\)[\s\S]{0,400}forceSolveToken\+\+/);
+    // The worker is torn down when the component is destroyed.
+    expect(source).toMatch(/onDestroy\([\s\S]*terminateForceWorker\(\)/);
   });
 
   it("debounces expensive solves to drag-end and keeps Reset cold/deterministic", () => {
