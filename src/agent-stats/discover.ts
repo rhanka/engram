@@ -57,8 +57,13 @@ export function discoverClaude(home: string, repoSlug: string): TranscriptFile[]
     return [];
   }
   const files: string[] = [];
+  const legacySlashSlug = repoSlug.replace(/--/g, "-");
   for (const name of entries) {
-    if (name !== repoSlug && !name.startsWith(repoSlug + "-")) continue;
+    const modernMatch = name === repoSlug || name.startsWith(repoSlug + "-");
+    const legacyMatch = name === legacySlashSlug || name.startsWith(legacySlashSlug + "-");
+    const legacyNonSlashMatch = repoSlug.length === name.length &&
+      Array.from(repoSlug).every((ch, i) => ch === name[i] || (ch === "-" && name[i] !== "/"));
+    if (!modernMatch && !legacyMatch && !legacyNonSlashMatch) continue;
     listFilesRec(join(projectsDir, name), (n) => n.endsWith(".jsonl"), files);
   }
   return files.map((path) => ({ host: "claude" as const, path, sessionId: basenameNoExt(path) }));
