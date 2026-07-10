@@ -18,7 +18,7 @@ import { buildStudioScene, type StudioScene } from "./studio-scene.js";
 import { attachLayoutPositions } from "./graph-layout.js";
 import { buildSearchIndex } from "./search-index-emitter.js";
 import type { SearchIndex } from "./search-index.js";
-import { emitClassHierarchies } from "./ontology-class-hierarchies-emitter.js";
+import { buildClassHierarchies } from "./ontology-class-hierarchies.js";
 import type { ClassHierarchiesArtifact } from "./types.js";
 import { loadGraphFromData, type SerializedGraphData } from "./graph.js";
 import {
@@ -310,15 +310,19 @@ function searchIndexJsonResult(stateDir: string): OntologyStudioRouteResult {
  * schema graphify_ontology_class_hierarchies_v1) the SPA's ontology-class
  * grouping (the taxonomy accordion + "Group by entity" Type axis) consumes.
  *
- * The STATIC `studio export` bakes this file via {@link emitClassHierarchies},
- * gated on the profile's `class_hierarchies` block — but the LIVE `ontology
- * studio` server had no equivalent route, so the SPA's `fetchClassHierarchies`
- * 404-ed and the class taxonomy never lit up. This route closes that gap: it
- * runs the SAME emitter over the loaded profile block + graph.json nodes and,
- * exactly like the scene / search-index routes, caches the result on graph.json
- * identity (path + mtime + size) so only the first fetch pays the build cost and
- * any edit invalidates it. The profile hash rides the key too, so restoring or
- * editing the profile block also busts the cache.
+ * The STATIC `studio export` bakes this file via `emitClassHierarchies` (the
+ * pure {@link buildClassHierarchies} + a disk write), gated on the profile's
+ * `class_hierarchies` block — but the LIVE `ontology studio` server had no
+ * equivalent route, so the SPA's `fetchClassHierarchies` 404-ed and the class
+ * taxonomy never lit up. This route closes that gap: like the scene /
+ * search-index routes it is PURE — it calls the same {@link buildClassHierarchies}
+ * builder over the loaded profile block + graph.json nodes and performs NO disk
+ * I/O (a GET must be side-effect-free: writing here would 500 on a read-only FS
+ * and could dirty a tracked worktree). Exactly like those sibling routes it
+ * caches the built artifact on graph.json identity (path + mtime + size) so only
+ * the first fetch pays the build cost and any edit invalidates it. The profile
+ * hash rides the key too, so restoring or editing the profile block also busts
+ * the cache.
  *
  * When the profile carries NO `class_hierarchies` block the artifact is absent
  * (byte-identical to the static export, which writes no file): the route 404s and
@@ -343,17 +347,22 @@ function classHierarchiesJsonResult(
   const key = `${graphPath} ${stat.mtimeMs} ${stat.size} ${profileHash ?? ""}`;
   let cached = classHierarchiesCache;
   if (!cached || cached.key !== key) {
-    const graph = JSON.parse(readFileSync(graphPath, "utf-8")) as {
-      nodes?: Array<{ id?: string; node_type?: string; type?: string }>;
-    };
-    const graphNodes = Array.isArray(graph.nodes) ? graph.nodes : [];
-    const result = emitClassHierarchies({
-      ...(block ? { classHierarchies: block } : {}),
-      graphNodes,
-      ontologyOutputDir: join(stateDir, "ontology"),
-      ...(profileHash !== undefined ? { profileHash } : {}),
-    });
-    cached = { key, artifact: result.artifact };
+    // Gate identical to emitClassHierarchies' `hasClassHierarchies`: build the
+    // artifact IFF the profile carries a NON-EMPTY block; an absent/empty block
+    // yields a null artifact (the emitter writes no file for it) and the route
+    // 404s below. PURE — no mkdirSync/writeFileSync — so a GET never touches the
+    // state dir.
+    let artifact: ClassHierarchiesArtifact | null = null;
+    if (block && Object.keys(block).length > 0) {
+      const graph = JSON.parse(readFileSync(graphPath, "utf-8")) as {
+        nodes?: Array<{ id?: string; node_type?: string; type?: string }>;
+      };
+      const graphNodes = Array.isArray(graph.nodes) ? graph.nodes : [];
+      artifact = buildClassHierarchies(block, graphNodes, {
+        ...(profileHash !== undefined ? { profileHash } : {}),
+      });
+    }
+    cached = { key, artifact };
     classHierarchiesCache = cached;
   }
   if (cached.artifact === null) {
