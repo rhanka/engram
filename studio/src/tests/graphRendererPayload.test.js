@@ -3,8 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   buildConnectedDimStyle,
   buildGraphRendererPayload,
+  COLOR_BY_FOLDER,
+  COLOR_BY_LAYER,
   colorForGroup,
   computeLayoutBuffer,
+  DEFAULT_EDGE_CURVATURE,
   densityScale,
   DEFAULT_LABEL_MAX_CHARS,
   findNearestEdge,
@@ -798,5 +801,91 @@ describe("layout switcher seam (Lot 1) — morphPositions / computeLayoutBuffer"
     expect(minY + maxY).toBeCloseTo(0, 5);
     // A real morph target (differs from the force input positions).
     expect(Array.from(grid)).not.toEqual(Array.from(payload.renderGraph.positions));
+  });
+});
+
+// --- codeflow-parity Lot 4: Curved-links toggle + Color-by (Folder / Layer) ---
+// R3: curved links are a per-edge 0↔0.15 scalar (both backends already draw the
+// curve). R4: Color-by re-keys the categorical node colour — Folder (default) on
+// community/container (node.group), Layer on the typed layer (node_type). Both
+// re-style with NO layout recompute; defaults MUST stay byte-identical to before.
+describe("Curved-links toggle (Lot 4, R3)", () => {
+  const makeEdgeScene = () => ({
+    nodes: [
+      { id: "a", label: "A", x: 0, y: 0, weight: 1, group: "G1" },
+      { id: "b", label: "B", x: 100, y: 0, weight: 1, group: "G1" },
+    ],
+    // A plain edge with NO explicit curvature → the default scalar applies.
+    edges: [{ source: "a", target: "b", relation: "links" }],
+    stats: { nodeCount: 2, edgeCount: 1, weakEdgeCount: 0, communityCount: 1 },
+  });
+
+  it("defaults to the current curved behaviour (0.15) when the option is unset", () => {
+    const payload = buildGraphRendererPayload(makeEdgeScene(), { nodeRadius: 3 });
+    expect(payload.style.edgeCurvatures[0]).toBeCloseTo(DEFAULT_EDGE_CURVATURE, 6);
+    expect(DEFAULT_EDGE_CURVATURE).toBe(0.15);
+    // The emitted per-edge input carries the same scalar.
+    expect(payload.edges[0].curvature).toBeCloseTo(0.15, 6);
+  });
+
+  it("OFF → 0 (straight) and ON → 0.15, flipping the curvature the builder emits", () => {
+    const straight = buildGraphRendererPayload(makeEdgeScene(), { nodeRadius: 3, curvedLinks: false });
+    const curved = buildGraphRendererPayload(makeEdgeScene(), { nodeRadius: 3, curvedLinks: true });
+    expect(straight.style.edgeCurvatures[0]).toBe(0);
+    expect(curved.style.edgeCurvatures[0]).toBeCloseTo(0.15, 6);
+    expect(straight.edges[0].curvature).toBe(0);
+    expect(curved.edges[0].curvature).toBeCloseTo(0.15, 6);
+  });
+
+  it("explicit curvedLinks:true is byte-identical to the unset default", () => {
+    const def = buildGraphRendererPayload(makeEdgeScene(), { nodeRadius: 3 });
+    const on = buildGraphRendererPayload(makeEdgeScene(), { nodeRadius: 3, curvedLinks: true });
+    expect(Array.from(on.style.edgeCurvatures)).toEqual(Array.from(def.style.edgeCurvatures));
+  });
+});
+
+describe("Color-by Folder vs Layer (Lot 4, R4)", () => {
+  // group ("Folder-A") and node_type ("Layer-Z") hash to DIFFERENT palette slots
+  // (7 vs 1) so the two keyings produce a visibly different node fill.
+  const GROUP = "Folder-A";
+  const TYPE = "Layer-Z";
+  const makeScene = () => ({
+    nodes: [{ id: "a", label: "A", x: 0, y: 0, weight: 1, group: GROUP, type: TYPE }],
+    edges: [],
+    stats: { nodeCount: 1, edgeCount: 0, weakEdgeCount: 0, communityCount: 1 },
+  });
+
+  it("precondition: the two keys map to distinct palette colours", () => {
+    expect(colorForGroup(GROUP)).not.toBe(colorForGroup(TYPE));
+  });
+
+  it("defaults to Folder (community/container) keying when colorBy is unset", () => {
+    const payload = buildGraphRendererPayload(makeScene(), { nodeRadius: 3 });
+    expect(payload.nodeById.get("a").color).toBe(colorForGroup(GROUP));
+  });
+
+  it("Folder keys the node colour on node.group; Layer keys it on node_type", () => {
+    const folder = buildGraphRendererPayload(makeScene(), { nodeRadius: 3, colorBy: COLOR_BY_FOLDER });
+    const layer = buildGraphRendererPayload(makeScene(), { nodeRadius: 3, colorBy: COLOR_BY_LAYER });
+    expect(folder.nodeById.get("a").color).toBe(colorForGroup(GROUP));
+    expect(layer.nodeById.get("a").color).toBe(colorForGroup(TYPE));
+    // Switching the axis actually re-colours the node in the style buffer.
+    expect(Array.from(layer.style.nodeColors)).not.toEqual(Array.from(folder.style.nodeColors));
+  });
+
+  it("explicit colorBy:'folder' is byte-identical to the unset default", () => {
+    const def = buildGraphRendererPayload(makeScene(), { nodeRadius: 3 });
+    const folder = buildGraphRendererPayload(makeScene(), { nodeRadius: 3, colorBy: COLOR_BY_FOLDER });
+    expect(Array.from(folder.style.nodeColors)).toEqual(Array.from(def.style.nodeColors));
+  });
+
+  it("selection / focus colour still overrides both keyings", () => {
+    const payload = buildGraphRendererPayload(makeScene(), {
+      nodeRadius: 3,
+      colorBy: COLOR_BY_LAYER,
+      selectedIds: ["a"],
+    });
+    // Selected node uses SELECTED_COLOR (#2563eb → 37,99,235), not the layer hue.
+    expect([...payload.baseStyle.nodeColors.slice(0, 3)]).toEqual([37, 99, 235]);
   });
 });
