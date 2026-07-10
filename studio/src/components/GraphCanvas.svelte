@@ -163,9 +163,10 @@
   // interrupt (switching mid-morph) and is re-applied after a selection/hover
   // rebuild so the effect can't clobber the tween (cf. reapplyDraggedPositions).
   let liveMorphBuffer = null;
-  // The SETTLED target buffer of the active non-force layout (null while Force,
-  // which uses the native scene positions). Re-applied after every payload
-  // rebuild so a Layers layout survives a selection/hover-driven rebuild.
+  // The SETTLED target buffer of the last committed layout (null before any
+  // switch/re-solve, when the native scene positions apply). Re-applied after
+  // every payload rebuild so a Layers layout — OR a Lot-3 Force re-solve
+  // (Spread/Links/Reset) — survives a selection/hover-driven rebuild.
   let activeLayoutBuffer = null;
   // The CACHED pristine force positions captured at scene-build time — the
   // morph TARGET for switch-to-Force (Lot 1 never cold re-solves force).
@@ -605,9 +606,9 @@
   // codeflow-parity Lot 1: re-write the active layout's positions onto a freshly
   // built payload so the selection `$effect` (rebuildPayload → applyPayloadNoFit
   // → setPositions) cannot clobber the layout / the interpolated morph buffer
-  // (§2.6). Mid-morph the LIVE buffer wins; otherwise the settled non-force
-  // layout buffer. Force (activeLayoutBuffer === null, not morphing) is a no-op,
-  // so the default path stays byte-identical to before this lot.
+  // (§2.6). Mid-morph the LIVE buffer wins; otherwise the settled layout buffer.
+  // Before any layout switch/re-solve activeLayoutBuffer is null (not morphing),
+  // so the fresh-scene default path is a no-op and stays byte-identical.
   function reapplyLayoutPositions() {
     const source = morphActive ? liveMorphBuffer : activeLayoutBuffer;
     if (!source || !payload?.renderGraph) return;
@@ -1234,16 +1235,25 @@
     const initialPositions = warmStart ? currentPositionMap() : undefined;
     // Lot 7: off-main-thread solve when a Worker is available (falls back to a
     // synchronous solve in SSR / tests). Debounced to drag-end by the caller.
-    const solved = await solveForce(
-      scene.nodes.map((node) => ({ id: node.id })),
-      scene.edges ?? [],
-      {
-        repulsion: forceSpread,
-        linkDistance: forceLinks,
-        iterations: FORCE_SLIDER_ITERATIONS,
-        initialPositions,
-      },
-    );
+    // A worker error (postMessage/onerror rejection) must NOT surface as an
+    // unhandled rejection in the fire-and-forget caller — swallow it and return
+    // null so resolveForceLayout returns without morphing. The NEXT commit falls
+    // back to the synchronous solve once the worker is flagged broken.
+    let solved;
+    try {
+      solved = await solveForce(
+        scene.nodes.map((node) => ({ id: node.id })),
+        scene.edges ?? [],
+        {
+          repulsion: forceSpread,
+          linkDistance: forceLinks,
+          iterations: FORCE_SLIDER_ITERATIONS,
+          initialPositions,
+        },
+      );
+    } catch {
+      return null;
+    }
     if (!Array.isArray(solved) || solved.length !== graph.nodeIds.length) return null;
     const byId = new Map(solved.map((node) => [node.id, node]));
     const buffer = new Float32Array(graph.nodeIds.length * 2);
@@ -1263,7 +1273,14 @@
     // we never morph a buffer sized for the previous node set (§2.6 index-safety).
     const token = ++forceSolveToken;
     const target = await computeForceRelayoutBuffer({ warmStart });
-    if (!target || token !== forceSolveToken || !mounted) return;
+    // Discard the solve when: it was superseded (token bump), the component
+    // unmounted, the solve failed, OR the user switched AWAY from Force while it
+    // was in flight. resolveForceLayout sets layoutMode = Force synchronously at
+    // entry, so a mid-solve selectLayoutMode → startLayoutMorph (Layers/Grid/
+    // Radial/Metro) flips layoutMode and this late Force solve must not hijack
+    // the user's chosen layout back to Force (§2.6).
+    if (!target || token !== forceSolveToken || !mounted || layoutMode !== LAYOUT_MODE_FORCE)
+      return;
     forceBaseBuffer = new Float32Array(target);
     startLayoutMorphToBuffer(LAYOUT_MODE_FORCE, target);
   }
@@ -1294,8 +1311,14 @@
   // the new positions), remember it for re-application across rebuilds, and do
   // the single deliberate end-fit.
   function settleLayout(mode, buffer) {
-    activeLayoutBuffer =
-      mode === LAYOUT_MODE_FORCE || !buffer ? null : new Float32Array(buffer);
+    // Persist the settled buffer for EVERY mode, Force included. A Lot-3 force
+    // re-solve (Spread/Links slider or Reset) settles under LAYOUT_MODE_FORCE;
+    // nulling activeLayoutBuffer here would drop that re-solved layout so the
+    // next selection/hover/display rebuild (reapplyLayoutPositions) would snap
+    // the graph back to the scene's baked force positions (§2.6). A plain
+    // switch-to-Force settles the pristine forceBaseBuffer (== scene positions),
+    // so re-applying it across a rebuild is a harmless no-op.
+    activeLayoutBuffer = buffer ? new Float32Array(buffer) : null;
     const positions = payload?.renderGraph?.positions;
     if (positions && buffer && buffer.length === positions.length) {
       positions.set(buffer);
