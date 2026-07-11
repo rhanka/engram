@@ -1,6 +1,6 @@
 <script>
   import { onDestroy, onMount, tick } from "svelte";
-  import { Button, ButtonGroup, Switch } from "@sentropic/design-system-svelte";
+  import { Button, ButtonGroup, IconButton, Popover, Switch } from "@sentropic/design-system-svelte";
   import { createGraphRenderer, drawBoxLabels2D } from "@sentropic/graph";
   import { solveForce, terminateForceWorker } from "../lib/forceLayoutClient.js";
 
@@ -203,6 +203,35 @@
     { id: COLOR_BY_CHURN, label: "Churn" },
   ];
 
+  // Representation-polish remark 4: the whole layout/spacing/display toolbar
+  // collapses behind a gear icon into a settings popover (codeflow parity),
+  // instead of a permanently-open row of controls crowding the canvas.
+  let settingsOpen = $state(false);
+  let settingsHost;
+
+  function toggleSettings() {
+    settingsOpen = !settingsOpen;
+  }
+
+  function closeSettings() {
+    settingsOpen = false;
+  }
+
+  // Click-outside / Escape to close, same lightweight pattern a DS Popover
+  // leaves to its host (Popover itself is host-controlled, no built-in
+  // dismiss-on-outside-click).
+  function handleSettingsWindowPointerDown(event) {
+    if (!settingsOpen || !settingsHost) return;
+    if (!settingsHost.contains(event.target)) closeSettings();
+  }
+
+  function handleSettingsWindowKeydown(event) {
+    if (settingsOpen && event.key === "Escape") {
+      event.preventDefault();
+      closeSettings();
+    }
+  }
+
   let hoveredEdge = $state(null);
   let hoveredNode = $state(null);
   let hoveredNodeId = $state(null);
@@ -402,15 +431,20 @@
     }, 1200);
   }
 
-  function fitAndRender() {
-    if (!renderer || !canvas) return;
+  // Compute the fitted target camera WITHOUT animating — shared by the
+  // instant fitAndRender() and the animated animateFitAndRender() (remark 7)
+  // so both land on the EXACT same target. `renderer.fitView(...)` computes
+  // AND applies the bbox fit; centerOnIds (recon) then overrides x/y only,
+  // keeping the fit zoom.
+  function computeFitTargetCamera() {
+    if (!renderer || !canvas) return null;
 
     const viewportWidth = Math.max(1, canvas.width);
     const viewportHeight = Math.max(1, canvas.height);
     const padding = Math.min(FIT_PADDING * pixelRatio, Math.floor(Math.min(viewportWidth, viewportHeight) / 3));
 
     renderer.fitView({ padding, viewportWidth, viewportHeight });
-    camera = renderer.snapshot().camera;
+    let target = renderer.snapshot().camera;
     // Recon: centre the view on specific nodes (the twins) rather than the
     // bbox centre, so the entities-to-reconcile sit at the exact viewport
     // centre (horizontal + vertical). Keeps the fit zoom.
@@ -425,13 +459,111 @@
           n += 1;
         }
       }
-      if (n > 0) {
-        camera = { ...camera, x: sx / n, y: sy / n };
-        renderer.setCamera(camera);
-      }
+      if (n > 0) target = { ...target, x: sx / n, y: sy / n };
     }
+    return target;
+  }
+
+  function fitAndRender() {
+    if (!renderer || !canvas) return;
+    // An explicit instant fit (mount / new scene / resize / "Reset view")
+    // wins over any in-flight camera tween.
+    cancelCameraTween();
+    const target = computeFitTargetCamera();
+    if (!target) return;
+    camera = target;
+    renderer.setCamera(camera);
     renderNow();
     setLabelsHidden(false);
+  }
+
+  // --- Representation-polish remark 7: smooth recenter ------------------
+  // fitAndRender() above SNAPS the camera to the fitted target in one step —
+  // fine for mount/resize/an explicit "Reset view" click, but jarring right
+  // after a layout/param morph, where the NODE positions just tweened
+  // smoothly and the camera then popped. animateFitAndRender tweens the
+  // CAMERA (x/y/zoom) from wherever it currently sits to the same fit
+  // target, over the SAME duration/easing as the node morph
+  // (LAYOUT_MORPH_DURATION_MS / easeMergeProgress), so the recenter reads as
+  // one continuous motion. Used ONLY by settleLayout (end of a layout/param
+  // change) — mount/resize/"Reset view" keep the instant fit above.
+  let cameraTweenFrame = null;
+
+  function cancelCameraTween() {
+    if (typeof window !== "undefined" && cameraTweenFrame !== null) {
+      window.cancelAnimationFrame(cameraTweenFrame);
+    }
+    cameraTweenFrame = null;
+  }
+
+  function lerpCamera(a, b, t) {
+    return {
+      x: a.x + (b.x - a.x) * t,
+      y: a.y + (b.y - a.y) * t,
+      zoom: a.zoom + (b.zoom - a.zoom) * t,
+    };
+  }
+
+  function animateFitAndRender() {
+    if (!renderer || !canvas) return;
+    const startCamera = camera;
+    // computeFitTargetCamera() calls renderer.fitView(...), which APPLIES the
+    // target to the renderer immediately as a side effect of computing it;
+    // we read it back via snapshot() then restore startCamera below (prime
+    // frame 0) so nothing flashes to the target before the tween runs.
+    const target = computeFitTargetCamera();
+    if (!target) return;
+
+    const canAnimate =
+      typeof window !== "undefined" && typeof window.requestAnimationFrame === "function";
+    // §F3 parity (a11y): honour prefers-reduced-motion — snap instead of tween.
+    if (!canAnimate || prefersReducedMotion()) {
+      camera = target;
+      renderer.setCamera(camera);
+      renderNow();
+      setLabelsHidden(false);
+      return;
+    }
+
+    cancelCameraTween();
+    setLabelsHidden(true);
+    const startTime = window.performance?.now?.() ?? Date.now();
+    // Never let a throwing frame leave the camera short of the target or
+    // labels stuck hidden (mirrors the node morph's §F2 abort guard).
+    const abortTween = () => {
+      cancelCameraTween();
+      camera = target;
+      renderer.setCamera(camera);
+      renderNow();
+      setLabelsHidden(false);
+    };
+    const step = (now) => {
+      try {
+        const elapsed = Math.max(0, now - startTime);
+        const progress = Math.min(1, elapsed / LAYOUT_MORPH_DURATION_MS);
+        camera = lerpCamera(startCamera, target, easeMergeProgress(progress));
+        renderer.setCamera(camera);
+        renderNow();
+        if (progress < 1) {
+          cameraTweenFrame = window.requestAnimationFrame(step);
+        } else {
+          cameraTweenFrame = null;
+          setLabelsHidden(false);
+        }
+      } catch {
+        abortTween();
+      }
+    };
+    // Prime frame 0 (restore the pre-fit camera fitView() just jumped to) so
+    // there is no flash, then drive the tween.
+    try {
+      camera = startCamera;
+      renderer.setCamera(camera);
+      renderNow();
+      cameraTweenFrame = window.requestAnimationFrame(step);
+    } catch {
+      abortTween();
+    }
   }
 
   function applyCamera(skipEdges = false) {
@@ -450,6 +582,9 @@
     }
     if (!renderer || !canvas) return;
     event.preventDefault();
+    // Remark 7: the user zooming takes over from any in-flight camera-recenter
+    // tween immediately, rather than fighting it for the rest of the tween.
+    cancelCameraTween();
 
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / Math.max(1, rect.width);
@@ -505,6 +640,9 @@
     // A pan/drag is starting — cancel any pending hover-intent dwell so it can't
     // fire (and dim) mid-interaction.
     hoverIntent.cancel();
+    // Remark 7: the user panning/dragging takes over from any in-flight
+    // camera-recenter tween immediately, rather than fighting it.
+    cancelCameraTween();
     const id = pickNode(event);
 
     if (id) {
@@ -1002,7 +1140,19 @@
     const nodeMaxDistance = PICK_RADIUS * world.scale;
     const edgeMaxDistance = EDGE_PICK_RADIUS * world.scale;
     const nodeHit = findNearestNode(payload, world.x, world.y, nodeMaxDistance);
-    const edgeHit = findNearestEdge(payload, world.x, world.y, edgeMaxDistance);
+    // Remark 3 (edge hover dead outside Force): pass the CURRENT settled
+    // positions EXPLICITLY rather than relying on findNearestEdge's implicit
+    // `payload.renderGraph.positions` default — settleLayout mutates that
+    // array in place on every layout switch (Force/Radial/Grid/Metro/Layers),
+    // so this is the same array either way, but naming it here removes any
+    // ambiguity that the hit-test could ever read a pre-morph/stale buffer.
+    const edgeHit = findNearestEdge(
+      payload,
+      world.x,
+      world.y,
+      edgeMaxDistance,
+      payload.renderGraph.positions,
+    );
 
     // Tight node zone: on the glyph (radius) plus a few CSS px of slop.
     const tightNodeRadius = (nodeHit?.radius ?? 0) + NODE_TIGHT_SLOP * world.scale;
@@ -1199,6 +1349,16 @@
   // and on an abnormal morph exit (§F2) so the canvas can never stay locked.
   function resetLayoutState() {
     cancelLayoutMorphFrame();
+    // Remark 7: a scene reset / abnormal morph exit also cancels any in-flight
+    // camera-recenter tween — its target bbox is for the OLD scene/layout.
+    cancelCameraTween();
+    // Remark 2 (hover-dwell flicker regression): a pending dwell timer keeps
+    // ticking via its own setTimeout regardless of morph/scene state. If it
+    // fires AFTER a layout reset (new scene, or an abnormal morph exit) it
+    // would apply a connected-dim for a hover target whose position (or very
+    // existence) no longer matches what's on screen — a visible "pop" that
+    // reads as flicker. Cancel it here so it can never fire stale.
+    hoverIntent.cancel();
     morphActive = false;
     liveMorphBuffer = null;
     activeLayoutBuffer = null;
@@ -1325,9 +1485,12 @@
     }
     liveMorphBuffer = null;
     morphActive = false;
-    // ONE end-fit: the new layout has a different bbox (§2.6). fitAndRender()
-    // also restores labels (setLabelsHidden(false)).
-    fitAndRender();
+    // ONE end-fit: the new layout has a different bbox (§2.6). Remark 7:
+    // animateFitAndRender() TWEENS the camera to the new fit (instead of
+    // snapping) over the same duration/easing as the node morph just
+    // finished, so the recenter reads as one continuous motion; it also
+    // restores labels (setLabelsHidden(false)) once the tween settles.
+    animateFitAndRender();
   }
 
   function startLayoutMorph(mode) {
@@ -1346,6 +1509,18 @@
     const bufA = currentLayoutBuffer() ?? new Float32Array(current);
 
     cancelLayoutMorphFrame();
+    // Remark 7: a NEW node morph starting supersedes any camera-recenter tween
+    // still animating from the PREVIOUS layout settle (e.g. a rapid re-click)
+    // — its target bbox is now stale.
+    cancelCameraTween();
+    // Remark 2: a layout morph LOCKS pointer/hover input (handlePointerMove
+    // early-returns while morphActive), but a hover-intent dwell timer that
+    // was already pending when the morph started is NOT an input event — it
+    // keeps ticking on its own setTimeout and can fire mid-morph or right
+    // after settle, dimming for a hover target that's no longer under the
+    // cursor (the layout just moved everything). Cancel it before the morph
+    // starts so it can never fire stale.
+    hoverIntent.cancel();
     layoutMode = mode;
     // §F1: bufA already snapshotted the on-screen (incl. dragged) positions, so
     // the drag is preserved as the morph START; drop the stale drag map now — a
@@ -1490,17 +1665,23 @@
     // Dual-render BETA toggle (Ctrl+Shift+X) — window-level so the shortcut
     // works regardless of canvas focus.
     window.addEventListener("keydown", handleKeydown);
+    // Remark 4: gear settings popover — dismiss on outside click / Escape.
+    window.addEventListener("pointerdown", handleSettingsWindowPointerDown);
+    window.addEventListener("keydown", handleSettingsWindowKeydown);
 
     return () => {
       mounted = false;
       resizeObserver?.disconnect();
       window.removeEventListener("resize", scheduleResize);
       window.removeEventListener("keydown", handleKeydown);
+      window.removeEventListener("pointerdown", handleSettingsWindowPointerDown);
+      window.removeEventListener("keydown", handleSettingsWindowKeydown);
       if (resizeFrame !== null) window.cancelAnimationFrame(resizeFrame);
       if (indicatorTimer !== null) window.clearTimeout(indicatorTimer);
       hoverIntent.cancel();
       cancelMergeFrame();
       cancelLayoutMorphFrame();
+      cancelCameraTween();
       renderer?.destroy();
       renderer = null;
     };
@@ -1519,79 +1700,120 @@
 <div class="canvas" bind:this={container}>
   <div class="canvas-toolbar" aria-label="Graph controls">
     {#if showLayoutSwitcher}
-      <!-- codeflow-parity Lot 1: layout switcher (Force · Layers). Choosing a
-           mode drives the all-node morph tween. DS segmented control, same
-           attached ButtonGroup pattern as the app view switcher. -->
-      <ButtonGroup attached size="sm" label="Graph layout" class="layout-switcher">
-        {#each LAYOUT_MODES as mode (mode.id)}
-          <Button
-            size="sm"
-            variant={layoutMode === mode.id ? "primary" : "secondary"}
-            aria-pressed={layoutMode === mode.id}
-            aria-label={`${mode.label} layout`}
-            onclick={() => selectLayoutMode(mode.id)}
-          >{mode.label}</Button>
-        {/each}
-      </ButtonGroup>
-      <!-- codeflow-parity Lot 3: force spacing controls. `input` only updates
-           the label; the expensive Barnes-Hut solve runs on `change` (drag-end).
-           Interactive solves warm-start; Reset is the deterministic cold solve. -->
-      <div class="force-controls" aria-label="Force spacing controls">
-        <label>
-          <span>Spread {forceSpread.toFixed(1)}</span>
-          <input
-            type="range"
-            min="0.2"
-            max="3"
-            step="0.1"
-            value={forceSpread}
-            aria-label="Spread"
-            oninput={(event) => (forceSpread = Number(event.currentTarget.value))}
-            onchange={commitForceSpread}
-          />
-        </label>
-        <label>
-          <span>Links {forceLinks.toFixed(1)}</span>
-          <input
-            type="range"
-            min="0.2"
-            max="2"
-            step="0.1"
-            value={forceLinks}
-            aria-label="Links"
-            oninput={(event) => (forceLinks = Number(event.currentTarget.value))}
-            onchange={commitForceLinks}
-          />
-        </label>
-        <Button size="sm" variant="secondary" aria-label="Reset layout" onclick={resetForceLayout}>Reset</Button>
+      <!-- Representation-polish remark 4: the whole layout/spacing/display
+           toolbar collapses behind a gear icon into a settings popover
+           (codeflow parity) instead of a permanently-open control row. -->
+      <div class="graph-settings-host" bind:this={settingsHost}>
+        <Popover label="Graph display settings" open={settingsOpen} placement="bottom">
+          {#snippet trigger()}
+            <IconButton
+              size="sm"
+              variant="secondary"
+              aria-label="Graph display settings"
+              aria-expanded={settingsOpen}
+              onclick={toggleSettings}
+            >⚙</IconButton>
+          {/snippet}
+          {#snippet children()}
+            <div class="graph-settings-panel">
+              <!-- LAYOUT: codeflow-parity Lot 1/2/6 layout switcher (Force ·
+                   Radial · Layers · Grid · Metro). Choosing a mode drives the
+                   all-node morph tween. -->
+              <section class="graph-settings-section" aria-label="Layout">
+                <p class="graph-settings-heading">Layout</p>
+                <ButtonGroup attached size="sm" label="Graph layout" class="layout-switcher">
+                  {#each LAYOUT_MODES as mode (mode.id)}
+                    <Button
+                      size="sm"
+                      variant={layoutMode === mode.id ? "primary" : "secondary"}
+                      aria-pressed={layoutMode === mode.id}
+                      aria-label={`${mode.label} layout`}
+                      onclick={() => selectLayoutMode(mode.id)}
+                    >{mode.label}</Button>
+                  {/each}
+                </ButtonGroup>
+              </section>
+              <!-- SPACING: codeflow-parity Lot 3 force spacing controls. `input`
+                   only updates the label; the expensive Barnes-Hut solve runs on
+                   `change` (drag-end). Interactive solves warm-start; Reset is the
+                   deterministic cold solve. Remark 6: Spread/Links sit on their
+                   own row and are DISABLED off-Force — they only drive the force
+                   re-solve, so they (and Reset, same re-solve) are inert on any
+                   other layout. -->
+              <section class="graph-settings-section" aria-label="Spacing">
+                <p class="graph-settings-heading">Spacing</p>
+                <div class="force-sliders-row" aria-label="Force spacing controls">
+                  <label class:is-disabled={layoutMode !== LAYOUT_MODE_FORCE}>
+                    <span>Spread {forceSpread.toFixed(1)}</span>
+                    <input
+                      type="range"
+                      min="0.2"
+                      max="3"
+                      step="0.1"
+                      value={forceSpread}
+                      aria-label="Spread"
+                      disabled={layoutMode !== LAYOUT_MODE_FORCE}
+                      oninput={(event) => (forceSpread = Number(event.currentTarget.value))}
+                      onchange={commitForceSpread}
+                    />
+                  </label>
+                  <label class:is-disabled={layoutMode !== LAYOUT_MODE_FORCE}>
+                    <span>Links {forceLinks.toFixed(1)}</span>
+                    <input
+                      type="range"
+                      min="0.2"
+                      max="2"
+                      step="0.1"
+                      value={forceLinks}
+                      aria-label="Links"
+                      disabled={layoutMode !== LAYOUT_MODE_FORCE}
+                      oninput={(event) => (forceLinks = Number(event.currentTarget.value))}
+                      onchange={commitForceLinks}
+                    />
+                  </label>
+                </div>
+                <div class="force-reset-row">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    aria-label="Reset layout"
+                    disabled={layoutMode !== LAYOUT_MODE_FORCE}
+                    onclick={resetForceLayout}
+                  >Reset</Button>
+                </div>
+              </section>
+              <!-- DISPLAY: codeflow-parity Lot 4 Color-by (Folder · Layer ·
+                   Churn) + Curved-links. Both re-style LIVE (no layout
+                   recompute, no morph). -->
+              <section class="graph-settings-section" aria-label="Display">
+                <p class="graph-settings-heading">Display</p>
+                <ButtonGroup attached size="sm" label="Colour by" class="color-switcher">
+                  {#each COLOR_MODES as mode (mode.id)}
+                    <Button
+                      size="sm"
+                      variant={colorMode === mode.id ? "primary" : "secondary"}
+                      aria-pressed={colorMode === mode.id}
+                      aria-label={`Colour by ${mode.label}`}
+                      onclick={() => selectColorMode(mode.id)}
+                    >{mode.label}</Button>
+                  {/each}
+                </ButtonGroup>
+                {#if colorMode === COLOR_BY_CHURN}
+                  <div class="churn-legend" aria-label="Churn colour legend">
+                    <span>Low</span><span class="churn-ramp"></span><span>High</span>
+                  </div>
+                {/if}
+                <Switch
+                  class="curved-links-toggle"
+                  label="Curved links"
+                  checked={curvedLinks}
+                  onchange={toggleCurvedLinks}
+                />
+              </section>
+            </div>
+          {/snippet}
+        </Popover>
       </div>
-      <!-- codeflow-parity Lot 4: Color-by (Folder · Layer). Re-keys the node
-           colour LIVE (no layout recompute, no morph). Same attached DS
-           ButtonGroup pattern as the layout switcher. -->
-      <ButtonGroup attached size="sm" label="Colour by" class="color-switcher">
-        {#each COLOR_MODES as mode (mode.id)}
-          <Button
-            size="sm"
-            variant={colorMode === mode.id ? "primary" : "secondary"}
-            aria-pressed={colorMode === mode.id}
-            aria-label={`Colour by ${mode.label}`}
-            onclick={() => selectColorMode(mode.id)}
-          >{mode.label}</Button>
-        {/each}
-      </ButtonGroup>
-      {#if colorMode === COLOR_BY_CHURN}
-        <div class="churn-legend" aria-label="Churn colour legend">
-          <span>Low</span><span class="churn-ramp"></span><span>High</span>
-        </div>
-      {/if}
-      <!-- codeflow-parity Lot 4: Curved-links toggle (DS Switch). ON ⇒ 0.15
-           (current behaviour), OFF ⇒ straight. Flips edge curvature LIVE. -->
-      <Switch
-        class="curved-links-toggle"
-        label="Curved links"
-        checked={curvedLinks}
-        onchange={toggleCurvedLinks}
-      />
     {/if}
     <button
       class="toolbar-btn"
@@ -1714,27 +1936,99 @@
     pointer-events: auto;
   }
 
-  .force-controls {
-    display: flex;
-    align-items: center;
-    gap: 0.45rem;
-    padding: 0.25rem 0.5rem;
-    border: 1px solid var(--st-semantic-border-muted, #e2e8f0);
-    border-radius: 4px;
-    background: color-mix(in srgb, var(--st-semantic-surface-default, #fff) 90%, transparent);
-    box-shadow: 0 1px 4px rgb(15 23 42 / 0.08);
+  /* Representation-polish remark 4: gear-icon trigger + settings popover
+     host. The popover itself (DS Popover) anchors LEFT of its trigger by
+     default (.st-popover--bottom { left: 0 }), which would overflow past the
+     canvas's right edge since the gear sits at the toolbar's far-right end —
+     flip it to anchor from the RIGHT so the panel grows leftward, staying
+     inside the canvas. */
+  .graph-settings-host {
+    position: relative;
   }
 
-  .force-controls label {
+  .graph-settings-host :global(.st-popover--bottom) {
+    left: auto;
+    right: 0;
+  }
+
+  /* Representation-polish remark 5: every control in the settings panel
+     (layout buttons, Color-by, slider labels) uses the SAME compact font as
+     the small "Reset" button (.toolbar-btn, 0.75rem) instead of the DS
+     sm-density default (0.875rem for Button), which reads noticeably bigger
+     side-by-side with Reset. Overriding the anatomy tokens here (rather than
+     fighting specificity) keeps every DS Button/ButtonGroup inside the panel
+     on the SAME compact scale, DS-consistent.
+  */
+  .graph-settings-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    font-size: 0.75rem;
+    --st-component-button-anatomy-density-sm-fontSize: 0.75rem;
+    --st-component-button-anatomy-density-sm-controlHeight: 1.75rem;
+    --st-component-button-anatomy-density-sm-paddingInline: 0.6rem;
+    --st-component-button-anatomy-density-sm-paddingInlineEnd: 0.6rem;
+  }
+
+  /* Switch hardcodes its label font-size (no anatomy token to override), so
+     match Reset's compact scale directly. */
+  .graph-settings-panel :global(.st-switch__label) {
+    font-size: 0.75rem;
+  }
+
+  .graph-settings-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .graph-settings-heading {
+    margin: 0;
+    color: var(--st-semantic-text-muted, #64748b);
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  /* codeflow-parity Lot 3 / remark 6: Spread + Links each get their own line
+     (stacked), separate from the Layout switcher above and the Reset button
+     below. `input` only updates the label; the expensive Barnes-Hut solve
+     runs on `change` (drag-end). */
+  .force-sliders-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .force-sliders-row label {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: 0.4rem;
     font-size: 0.75rem;
     white-space: nowrap;
   }
 
-  .force-controls input[type="range"] {
-    width: 5.5rem;
+  /* Remark 6: greyed + non-interactive whenever the active layout isn't
+     Force — Spread/Links (and Reset, same re-solve) only drive the force
+     re-solve, so they're inert on any other layout. */
+  .force-sliders-row label.is-disabled {
+    color: var(--st-semantic-text-muted, #94a3b8);
+    opacity: 0.55;
+  }
+
+  .force-sliders-row input[type="range"] {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .force-sliders-row input[type="range"]:disabled {
+    cursor: not-allowed;
+  }
+
+  .force-reset-row {
+    display: flex;
+    justify-content: flex-end;
   }
 
   .churn-legend {
@@ -1757,8 +2051,9 @@
     background: linear-gradient(90deg, #e2e8f0, #ef4444);
   }
 
-  /* codeflow-parity Lot 4: keep the Curved-links DS Switch compact + legible in
-     the floating toolbar (matches the segmented controls' scale). */
+  /* codeflow-parity Lot 4: keep the Curved-links DS Switch compact + legible
+     inside the DISPLAY section of the settings panel (matches the segmented
+     controls' scale). */
   .canvas-toolbar :global(.curved-links-toggle) {
     gap: 0.4rem;
     padding: 0.2rem 0.5rem;
