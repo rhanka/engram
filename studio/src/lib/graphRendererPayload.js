@@ -43,9 +43,17 @@ const SELECTED_COLOR = "#2563eb";
 // accepts an [r,g,b,a] ColorInput, so we spell the colour as an array to
 // carry the alpha (studio-only — packages/graph's own defaults/goldens are
 // untouched).
-const EDGE_BASE_ALPHA = Math.round(255 * 0.5); // 128
-const EDGE_COLOR = [148, 163, 184, EDGE_BASE_ALPHA];
-const WEAK_EDGE_COLOR = [203, 213, 225, 128];
+const EDGE_BASE_OPACITY = 0.5;
+const EDGE_MIN_OPACITY = 0.3;
+const EDGE_BASE_ALPHA = Math.round(255 * EDGE_BASE_OPACITY); // 128
+const EDGE_COLOR_RGB = [148, 163, 184];
+const WEAK_EDGE_COLOR_RGB = [203, 213, 225];
+const EDGE_COLOR = [...EDGE_COLOR_RGB, EDGE_BASE_ALPHA];
+// Degree 1–2 is visually sparse and stays at the historical 0.50. From there,
+// a logarithmic curve handles the long-tailed degree distribution of knowledge
+// graphs; degree 32+ reaches the 0.30 floor instead of becoming invisible.
+const EDGE_DENSITY_START_DEGREE = 2;
+const EDGE_DENSITY_FULL_DEGREE = 32;
 const EDGE_CURVE_FACTOR = 0.5;
 const DIM_ALPHA = Math.round(255 * 0.35); // 89 — connected-dim for NON-neighbour nodes
 // Remark 1: non-incident edges dim FURTHER than nodes on hover (edges are
@@ -155,9 +163,23 @@ function nodeDegreeFallback(sceneNodes, sceneEdges) {
   return degree;
 }
 
-function normalizedChurnById(sceneNodes, sceneEdges) {
+export function edgeBaseAlphaForDegree(degree) {
+  const endpointDegree = Number.isFinite(degree) ? Math.max(0, degree) : 0;
+  if (endpointDegree <= EDGE_DENSITY_START_DEGREE) return EDGE_BASE_ALPHA;
+  const range = Math.log2(EDGE_DENSITY_FULL_DEGREE / EDGE_DENSITY_START_DEGREE);
+  const density = clampUnit(
+    Math.log2(endpointDegree / EDGE_DENSITY_START_DEGREE) / range,
+  );
+  const opacity = EDGE_BASE_OPACITY - density * (EDGE_BASE_OPACITY - EDGE_MIN_OPACITY);
+  return Math.round(255 * opacity);
+}
+
+function normalizedChurnById(
+  sceneNodes,
+  sceneEdges,
+  degree = nodeDegreeFallback(sceneNodes, sceneEdges),
+) {
   const raw = new Map();
-  const degree = nodeDegreeFallback(sceneNodes, sceneEdges);
   for (const node of sceneNodes) {
     raw.set(node.id, explicitChurnValue(node) ?? degree.get(node.id) ?? 0);
   }
@@ -405,7 +427,10 @@ export function buildGraphRendererPayload(scene, options = {}) {
   const edgeCurvature = options.curvedLinks === false ? 0 : DEFAULT_EDGE_CURVATURE;
   const sceneNodes = scene?.nodes ?? [];
   const sceneEdges = scene?.edges ?? [];
-  const churnById = colorBy === COLOR_BY_CHURN ? normalizedChurnById(sceneNodes, sceneEdges) : null;
+  // One degree pass serves both churn fallback and density-graded edge alpha.
+  const degreeById = nodeDegreeFallback(sceneNodes, sceneEdges);
+  const churnById =
+    colorBy === COLOR_BY_CHURN ? normalizedChurnById(sceneNodes, sceneEdges, degreeById) : null;
 
   // Shrink the BASE radius on dense graphs while keeping the per-node degree
   // spread (sqrt(weight)) intact. nodeRadius is the effective base used both for
@@ -443,18 +468,25 @@ export function buildGraphRendererPayload(scene, options = {}) {
     };
   });
 
-  const edges = sceneEdges.map((edge) => ({
-    source: edge.source,
-    target: edge.target,
-    relation: edge.relation,
-    label: edge.relation,
-    weak: edge.weak === true,
-    emphasis: edge.emphasis === true,
-    width: edgeWidth(edge),
-    color: edge.weak ? WEAK_EDGE_COLOR : EDGE_COLOR,
-    dash: edge.dash ?? (edge.weak ? "dotted" : "solid"),
-    curvature: finite(edge.curvature) ? edge.curvature : edgeCurvature,
-  }));
+  const edges = sceneEdges.map((edge) => {
+    const endpointDegree = Math.max(
+      degreeById.get(edge.source) ?? 0,
+      degreeById.get(edge.target) ?? 0,
+    );
+    const alpha = edgeBaseAlphaForDegree(endpointDegree);
+    return {
+      source: edge.source,
+      target: edge.target,
+      relation: edge.relation,
+      label: edge.relation,
+      weak: edge.weak === true,
+      emphasis: edge.emphasis === true,
+      width: edgeWidth(edge),
+      color: [...(edge.weak ? WEAK_EDGE_COLOR_RGB : EDGE_COLOR_RGB), alpha],
+      dash: edge.dash ?? (edge.weak ? "dotted" : "solid"),
+      curvature: finite(edge.curvature) ? edge.curvature : edgeCurvature,
+    };
+  });
 
   const input = { nodes, edges };
   const renderGraph = buildRenderGraphBuffers(input);

@@ -110,6 +110,27 @@ describe("GraphCanvas renderer", () => {
     expect(source).toContain("findNearestEdge");
   });
 
+  it("gives a valid edge hit priority whenever the cursor is outside a node glyph", () => {
+    const source = graphCanvasSource();
+    const pointerMove = source.slice(
+      source.indexOf("function handlePointerMove"),
+      source.indexOf("function setHoveredNode"),
+    );
+
+    expect(pointerMove).toContain("const preferEdge = edgeHit !== null && !onNodeGlyph");
+    expect(pointerMove).toContain("const preferNode = nodeHit !== null && !preferEdge");
+    expect(pointerMove).not.toContain("nodeNorm <= edgeNorm");
+  });
+
+  it("reapplies edge emphasis after a delayed connected-dim style settles", () => {
+    const source = graphCanvasSource();
+    const applyDim = source.slice(
+      source.indexOf("function applyConnectedDim"),
+      source.indexOf("function requestConnectedDim"),
+    );
+    expect(applyDim).toContain("renderHoverStyle(hoveredEdge)");
+  });
+
   // --- P1: Node hover tooltip ---
   it("shows a node tooltip on hover with label, type/node_type, and degree", () => {
     const source = graphCanvasSource();
@@ -266,7 +287,7 @@ describe("GraphCanvas force Spread/Links controls (Lot 3)", () => {
     const source = graphCanvasSource();
     const gated = source.slice(
       source.indexOf("{#if showLayoutSwitcher}"),
-      source.indexOf("aria-label=\"Reset view\""),
+      source.indexOf("<!-- Keyed on the active backend"),
     );
     expect(gated).toContain('aria-label="Force spacing controls"');
     expect(gated).toContain('aria-label="Spread"');
@@ -371,7 +392,7 @@ describe("GraphCanvas Curved-links + Color-by controls (Lots 4/5)", () => {
     // Same workspace-only gate as the layout switcher.
     const gated = source.slice(
       source.indexOf("{#if showLayoutSwitcher}"),
-      source.indexOf("aria-label=\"Reset view\""),
+      source.indexOf("<!-- Keyed on the active backend"),
     );
     // Color-by segmented control (DS ButtonGroup over COLOR_MODES) + Churn legend.
     expect(gated).toContain("COLOR_MODES");
@@ -429,7 +450,33 @@ describe("GraphCanvas Curved-links + Color-by controls (Lots 4/5)", () => {
 // --- Studio representation-polish remarks 4/5/6: gear-menu settings popover -
 describe("GraphCanvas settings popover (remarks 4/5/6)", () => {
   const toolbarGate = (source) =>
-    source.slice(source.indexOf("{#if showLayoutSwitcher}"), source.indexOf('aria-label="Reset view"'));
+    source.slice(
+      source.indexOf("{#if showLayoutSwitcher}"),
+      source.indexOf("<!-- Keyed on the active backend"),
+    );
+
+  it("places Reset left of the gear and pins both sm controls to exactly the same height", () => {
+    const source = graphCanvasSource();
+    const toolbar = source.slice(
+      source.indexOf('<div class="canvas-toolbar"'),
+      source.indexOf("<!-- Keyed on the active backend"),
+    );
+    expect(toolbar.indexOf('aria-label="Reset view"')).toBeLessThan(
+      toolbar.indexOf('aria-label="Graph display settings"'),
+    );
+    expect(toolbar).toMatch(/<Button[\s\S]{0,120}size="sm"[\s\S]{0,120}aria-label="Reset view"/);
+
+    const style = source.slice(source.indexOf("<style>"));
+    expect(style).toContain(
+      "--st-component-button-anatomy-density-sm-controlHeight: var(--graph-toolbar-control-height)",
+    );
+    expect(style).toContain(
+      "--st-component-iconButton-smSize: var(--graph-toolbar-control-height)",
+    );
+    expect(style).toMatch(
+      /\.canvas-toolbar :global\(\.reset-view-button\),[\s\S]{0,100}\.canvas-toolbar :global\(\.st-iconButton--sm\)[\s\S]{0,160}height: var\(--graph-toolbar-control-height\)/,
+    );
+  });
 
   it("R4: collapses layout/spacing/display behind a gear IconButton + Popover, gated on showLayoutSwitcher", () => {
     const source = graphCanvasSource();
