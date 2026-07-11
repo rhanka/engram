@@ -587,10 +587,15 @@ describe("graphRendererPayload", () => {
     expect(hoverStyle.nodeColors[payload.nodeIndexById.get("d") * 4 + 3]).toBeLessThanOrEqual(90);
   });
 
-  it("dims non-incident edges when hoveredNodeId is set", () => {
+  // Representation-polish remark 1: main-graph edges are ~0.5 alpha (128) by
+  // DEFAULT (not opaque); on hover, INCIDENT edges stay at that base ~0.5+
+  // (untouched by the dim loop) while NON-incident edges dim FURTHER, to
+  // ~0.15 (38) — well below the 0.35 (89) node dim, since edges are mostly
+  // noise once a node is focused.
+  it("dims non-incident edges FURTHER than nodes when hoveredNodeId is set", () => {
     const scene = makeTriangleScene();
     // a → b (index 0), a → c (index 1), b → d (index 2)
-    // Hover "a": edges 0 and 1 are incident → full alpha; edge 2 is not → dimmed
+    // Hover "a": edges 0 and 1 are incident → base alpha; edge 2 is not → dimmed
     const payload = buildGraphRendererPayload(scene, { hoveredNodeId: "a", nodeRadius: 3 });
     const graph = payload.renderGraph;
     const iA = payload.nodeIndexById.get("a");
@@ -602,10 +607,19 @@ describe("graphRendererPayload", () => {
       const isIncident = src === iA || tgt === iA;
       const alpha = payload.style.edgeColors[e * 4 + 3];
       if (isIncident) {
-        expect(alpha).toBe(255);
+        expect(alpha).toBe(128); // EDGE_BASE_ALPHA: 255 * 0.5, untouched by the dim
       } else {
-        expect(alpha).toBeLessThanOrEqual(90);
+        expect(alpha).toBe(38); // EDGE_DIM_ALPHA: 255 * 0.15, rounded
       }
+    }
+  });
+
+  it("renders main-graph edges at ~0.5 alpha by default (no selection/hover/focus)", () => {
+    const scene = makeTriangleScene();
+    const payload = buildGraphRendererPayload(scene, { nodeRadius: 3 });
+    const edgeCount = payload.renderGraph.edges.length / 2;
+    for (let e = 0; e < edgeCount; e++) {
+      expect(payload.style.edgeColors[e * 4 + 3]).toBe(128); // 255 * 0.5
     }
   });
 
@@ -650,8 +664,13 @@ describe("graphRendererPayload", () => {
     const style = interpolateMergeStyle(payload, { from: "candidate", into: "canonical" }, 0.5);
 
     expect(style.nodeColors[3]).toBe(128);
-    expect(style.edgeColors[3]).toBe(128);
-    expect(style.edgeColors[7]).toBe(255);
+    // Edge 0 (candidate→neighbor) is incident to the merging "from" node: its
+    // base alpha (128, EDGE_BASE_ALPHA — remark 1's ~0.5 default) is halved
+    // by the merge fade (alphaScale 0.5) → 64.
+    expect(style.edgeColors[3]).toBe(64);
+    // Edge 1 (canonical→neighbor) is NOT incident to "candidate" → untouched,
+    // stays at the base ~0.5 alpha (128).
+    expect(style.edgeColors[7]).toBe(128);
     expect(payload.style.nodeColors[3]).toBe(255);
   });
 });
@@ -810,6 +829,68 @@ describe("layout switcher seam (Lot 1) — morphPositions / computeLayoutBuffer"
     expect(minY + maxY).toBeCloseTo(0, 5);
     // A real morph target (differs from the force input positions).
     expect(Array.from(grid)).not.toEqual(Array.from(payload.renderGraph.positions));
+  });
+
+  // Representation-polish remark 3: edge hover must work in EVERY layout, not
+  // just Force. GraphCanvas.settleLayout persists the settled buffer into
+  // `payload.renderGraph.positions` IN PLACE (`positions.set(buffer)`), and
+  // handlePointerMove reads findNearestEdge off that SAME array — this locks
+  // in that (a) findNearestEdge sees the settled non-Force positions right
+  // after a "settle", (b) it still sees them after a later payload rebuild
+  // (selection/hover/display-style change) re-applies the active layout
+  // buffer on top of a freshly-built payload (reapplyLayoutPositions), for
+  // EVERY registered layout mode.
+  describe("edge hover after a layout settles (remark 3)", () => {
+    const makeRingScene = (n = 8) => {
+      const nodes = Array.from({ length: n }, (_, i) => ({ id: `n${i}`, label: `N${i}` }));
+      const edges = Array.from({ length: n }, (_, i) => ({ source: `n${i}`, target: `n${(i + 1) % n}` }));
+      return { nodes, edges };
+    };
+
+    for (const mode of LAYOUT_MODES) {
+      it(`findNearestEdge hits an edge midpoint right after settling "${mode.id}"`, () => {
+        const scene = makeRingScene();
+        const payload = buildGraphRendererPayload(scene, { nodeRadius: 3 });
+        const forceBase = new Float32Array(payload.renderGraph.positions);
+
+        const settled = computeLayoutBuffer(payload, mode.id, { forceBuffer: forceBase });
+        // Mirror GraphCanvas.settleLayout: mutate renderGraph.positions IN PLACE.
+        payload.renderGraph.positions.set(settled);
+
+        const iA = payload.nodeIndexById.get("n0");
+        const iB = payload.nodeIndexById.get("n1");
+        const midX = (payload.renderGraph.positions[iA * 2] + payload.renderGraph.positions[iB * 2]) / 2;
+        const midY = (payload.renderGraph.positions[iA * 2 + 1] + payload.renderGraph.positions[iB * 2 + 1]) / 2;
+
+        const hit = findNearestEdge(payload, midX, midY, 40);
+        expect(hit, `mode ${mode.id}`).not.toBeNull();
+        expect([hit.edge.source, hit.edge.target]).toEqual(["n0", "n1"]);
+      });
+
+      it(`findNearestEdge still hits after a payload REBUILD re-applies the settled "${mode.id}" buffer`, () => {
+        const scene = makeRingScene();
+        let payload = buildGraphRendererPayload(scene, { nodeRadius: 3 });
+        const forceBase = new Float32Array(payload.renderGraph.positions);
+        const settled = computeLayoutBuffer(payload, mode.id, { forceBuffer: forceBase });
+        payload.renderGraph.positions.set(settled);
+        const activeLayoutBuffer = new Float32Array(settled);
+
+        // Mirror rebuildPayload(): a FRESH payload (fresh, force-baked positions)
+        // with reapplyLayoutPositions re-applying the settled buffer on top —
+        // exactly what a selection/hover/display-style change triggers.
+        const rebuilt = buildGraphRendererPayload(scene, { selectedIds: ["n0"], nodeRadius: 3 });
+        rebuilt.renderGraph.positions.set(activeLayoutBuffer);
+
+        const iA = rebuilt.nodeIndexById.get("n0");
+        const iB = rebuilt.nodeIndexById.get("n1");
+        const midX = (rebuilt.renderGraph.positions[iA * 2] + rebuilt.renderGraph.positions[iB * 2]) / 2;
+        const midY = (rebuilt.renderGraph.positions[iA * 2 + 1] + rebuilt.renderGraph.positions[iB * 2 + 1]) / 2;
+
+        const hit = findNearestEdge(rebuilt, midX, midY, 40);
+        expect(hit, `mode ${mode.id}`).not.toBeNull();
+        expect([hit.edge.source, hit.edge.target]).toEqual(["n0", "n1"]);
+      });
+    }
   });
 });
 

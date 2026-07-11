@@ -36,10 +36,22 @@ export const GROUP_PALETTE = [
 
 const FOCUS_COLOR = "#ef4444";
 const SELECTED_COLOR = "#2563eb";
-const EDGE_COLOR = "#94a3b8";
+// Studio representation-polish remark 1: main-graph edges render semi-
+// transparent by DEFAULT (not opaque) — same #94a3b8 hue as before, now at
+// ~0.5 alpha — so the graph reads less like a solid mesh even before any
+// hover. `#94a3b8` = rgb(148, 163, 184); packages/graph's buildStyleBuffers
+// accepts an [r,g,b,a] ColorInput, so we spell the colour as an array to
+// carry the alpha (studio-only — packages/graph's own defaults/goldens are
+// untouched).
+const EDGE_BASE_ALPHA = Math.round(255 * 0.5); // 128
+const EDGE_COLOR = [148, 163, 184, EDGE_BASE_ALPHA];
 const WEAK_EDGE_COLOR = [203, 213, 225, 128];
 const EDGE_CURVE_FACTOR = 0.5;
-const DIM_ALPHA = Math.round(255 * 0.35); // 89
+const DIM_ALPHA = Math.round(255 * 0.35); // 89 — connected-dim for NON-neighbour nodes
+// Remark 1: non-incident edges dim FURTHER than nodes on hover (edges are
+// mostly noise once a node is focused) — incident edges are left at the
+// EDGE_BASE_ALPHA (~0.5+) by simply not being touched by the dim loop below.
+const EDGE_DIM_ALPHA = Math.round(255 * 0.15); // 38
 
 // --- codeflow-parity Lot 4: Curved-links toggle + Color-by (Folder / Layer) ---
 /**
@@ -354,7 +366,7 @@ export function buildConnectedDimStyle(payload, options = {}) {
     const tgtId = graph.nodeIds[tgtIdx];
     const isIncident = activeFocusIds.has(srcId) || activeFocusIds.has(tgtId);
     if (!isIncident) {
-      style.edgeColors[e * 4 + 3] = DIM_ALPHA;
+      style.edgeColors[e * 4 + 3] = EDGE_DIM_ALPHA;
     }
   }
 
