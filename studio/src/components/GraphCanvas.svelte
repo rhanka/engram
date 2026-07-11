@@ -1130,13 +1130,10 @@
 
     // World-space pick radii (constant in world units) so the on-screen hit zones scale
     // with camera zoom, matching the now zoom-scaled (world-space sized) node glyphs.
-    // Item 1.3: the node hit-test no longer wins unconditionally. We compute BOTH
-    // the nearest node and the nearest edge, then:
-    //   - if the cursor is within the node's TIGHT (drawn-radius + slop) zone, the
-    //     node clearly wins (you're on the glyph);
-    //   - otherwise pick whichever the cursor is proportionally closer to, comparing
-    //     each hit's distance NORMALIZED by its own pick threshold. This stops a
-    //     node from "magnetizing" the hover when the cursor is really over an edge.
+    // Item 1.3: compute BOTH hits. A node wins only inside its tight drawn-glyph
+    // zone; anywhere else, a valid near-line edge hit wins. Dense knowledge
+    // graphs nearly always have a node inside the broader node pick radius, so a
+    // proportional node-vs-edge comparison made edge hover effectively dead.
     const nodeMaxDistance = PICK_RADIUS * world.scale;
     const edgeMaxDistance = EDGE_PICK_RADIUS * world.scale;
     const nodeHit = findNearestNode(payload, world.x, world.y, nodeMaxDistance);
@@ -1158,10 +1155,8 @@
     const tightNodeRadius = (nodeHit?.radius ?? 0) + NODE_TIGHT_SLOP * world.scale;
     const onNodeGlyph = nodeHit !== null && nodeHit.distance <= tightNodeRadius;
 
-    // Normalized distances (0 = dead centre of the pick zone, 1 = its edge).
-    const nodeNorm = nodeHit ? nodeHit.distance / Math.max(nodeMaxDistance, nodeHit.radius) : Infinity;
-    const edgeNorm = edgeHit ? edgeHit.distance / edgeMaxDistance : Infinity;
-    const preferNode = nodeHit !== null && (onNodeGlyph || edgeHit === null || nodeNorm <= edgeNorm);
+    const preferEdge = edgeHit !== null && !onNodeGlyph;
+    const preferNode = nodeHit !== null && !preferEdge;
 
     if (preferNode) {
       clearHoveredEdge({ render: false });
@@ -1194,11 +1189,10 @@
       hoveredNode = null;
     }
 
-    // Rest-of-graph connected-dim. Gated by hover-intent: immediate when a
-    // selection/focus already exists (unchanged behavior) OR when the hover is
-    // clearing (restore base now); otherwise DEFERRED behind a ~200ms dwell so a
-    // pre-first-selection sweep across the graph no longer strobes dim/undim.
-    requestConnectedDim(Boolean(nodeId));
+    // Rest-of-graph connected-dim. Before selection/focus, EVERY target change
+    // (node, another node, or empty space) dwells for ~200ms. Keeping the current
+    // style across momentary gaps prevents dim → undim → dim flashes.
+    requestConnectedDim();
 
     // The hovered node's OWN feedback (tooltip + label) stays immediate — only
     // the rest-of-graph dim is delayed.
@@ -1218,16 +1212,17 @@
     if (renderer && style) {
       payload = { ...payload, style };
       renderer.setStyle(style);
-      renderNow();
+      // A node→edge transition schedules this style change. Preserve the edge's
+      // immediate highlight when the delayed base/connected style settles.
+      if (hoveredEdge) renderHoverStyle(hoveredEdge);
+      else renderNow();
     }
   }
 
-  // Gate the rest-of-graph dim through the hover-intent dwell. Immediate when a
-  // selection/focus already exists OR when the hover is clearing (no target →
-  // restore base now); otherwise deferred until the pointer dwells.
-  function requestConnectedDim(hasHoverTarget) {
-    const immediate =
-      !shouldDelayConnectedDim({ selectedIds, focusId }) || !hasHoverTarget;
+  // Gate every pre-selection transparency change through the hover-intent dwell.
+  // Selection/focus retains the established immediate path.
+  function requestConnectedDim() {
+    const immediate = !shouldDelayConnectedDim({ selectedIds, focusId });
     hoverIntent.request({ immediate });
   }
 
@@ -1699,6 +1694,13 @@
 
 <div class="canvas" bind:this={container}>
   <div class="canvas-toolbar" aria-label="Graph controls">
+    <Button
+      class="reset-view-button"
+      size="sm"
+      variant="secondary"
+      aria-label="Reset view"
+      onclick={fitAndRender}
+    >Reset</Button>
     {#if showLayoutSwitcher}
       <!-- Representation-polish remark 4: the whole layout/spacing/display
            toolbar collapses behind a gear icon into a settings popover
@@ -1815,12 +1817,6 @@
         </Popover>
       </div>
     {/if}
-    <button
-      class="toolbar-btn"
-      type="button"
-      aria-label="Reset view"
-      onclick={fitAndRender}
-    >Reset</button>
   </div>
 
   <!-- Keyed on the active backend: a <canvas> is permanently bound to its first
@@ -1934,6 +1930,19 @@
     gap: 0.35rem 0.5rem;
     max-width: calc(100% - 1rem);
     pointer-events: auto;
+    /* Button sm uses controlHeight; IconButton sm uses smSize. Pin both DS
+       anatomy tokens to one value so Reset and the square gear are exact peers. */
+    --graph-toolbar-control-height: 2rem;
+    --st-component-button-anatomy-density-sm-controlHeight: var(--graph-toolbar-control-height);
+    --st-component-iconButton-smSize: var(--graph-toolbar-control-height);
+    --st-component-button-anatomy-density-sm-fontSize: 0.75rem;
+  }
+
+  .canvas-toolbar :global(.reset-view-button),
+  .canvas-toolbar :global(.st-iconButton--sm) {
+    box-sizing: border-box;
+    height: var(--graph-toolbar-control-height);
+    min-height: var(--graph-toolbar-control-height);
   }
 
   /* Representation-polish remark 4: gear-icon trigger + settings popover
@@ -1953,7 +1962,7 @@
 
   /* Representation-polish remark 5: every control in the settings panel
      (layout buttons, Color-by, slider labels) uses the SAME compact font as
-     the small "Reset" button (.toolbar-btn, 0.75rem) instead of the DS
+     the small "Reset" button (0.75rem) instead of the DS
      sm-density default (0.875rem for Button), which reads noticeably bigger
      side-by-side with Reset. Overriding the anatomy tokens here (rather than
      fighting specificity) keeps every DS Button/ButtonGroup inside the panel
@@ -2063,22 +2072,6 @@
     box-shadow: 0 1px 4px rgb(15 23 42 / 0.08);
     font-size: 0.75rem;
     white-space: nowrap;
-  }
-
-  .toolbar-btn {
-    padding: 0.3rem 0.6rem;
-    border: 1px solid var(--st-semantic-border-muted, #e2e8f0);
-    border-radius: 4px;
-    background: color-mix(in srgb, var(--st-semantic-surface-default, #fff) 90%, transparent);
-    color: var(--st-semantic-text-default, #1e293b);
-    font-size: 0.75rem;
-    line-height: 1;
-    cursor: pointer;
-    box-shadow: 0 1px 4px rgb(15 23 42 / 0.08);
-  }
-
-  .toolbar-btn:hover {
-    background: var(--st-semantic-surface-hover, #f1f5f9);
   }
 
   .canvas-element {
