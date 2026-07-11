@@ -623,6 +623,36 @@ describe("graphRendererPayload", () => {
     }
   });
 
+  it("grades base edge alpha down for dense endpoints without crossing the 0.30 floor", () => {
+    const nodes = [
+      { id: "hub", x: 0, y: 0 },
+      { id: "mid", x: 0, y: 100 },
+      { id: "low-a", x: 0, y: 200 },
+      { id: "low-b", x: 100, y: 200 },
+      ...Array.from({ length: 32 }, (_, i) => ({ id: `hub-${i}`, x: 100, y: i })),
+      ...Array.from({ length: 8 }, (_, i) => ({ id: `mid-${i}`, x: 100, y: 100 + i })),
+    ];
+    const edges = [
+      { source: "low-a", target: "low-b" },
+      ...Array.from({ length: 32 }, (_, i) => ({ source: "hub", target: `hub-${i}` })),
+      ...Array.from({ length: 8 }, (_, i) => ({ source: "mid", target: `mid-${i}` })),
+    ];
+    const payload = buildGraphRendererPayload({ nodes, edges });
+    const alphaForInputEdge = (inputIndex) => {
+      const renderedIndex = Array.from(payload.renderGraph.edgeInputIndices).indexOf(inputIndex);
+      return payload.baseStyle.edgeColors[renderedIndex * 4 + 3];
+    };
+
+    const lowAlpha = alphaForInputEdge(0);
+    const hubAlpha = alphaForInputEdge(1);
+    const midAlpha = alphaForInputEdge(33);
+
+    expect(lowAlpha).toBe(128);
+    expect(midAlpha).toBeLessThan(lowAlpha);
+    expect(midAlpha).toBeGreaterThan(hubAlpha);
+    expect(hubAlpha).toBeGreaterThanOrEqual(Math.round(255 * 0.3));
+  });
+
   it("dims non-neighbour nodes when a node is selected (selectedIds)", () => {
     const scene = makeTriangleScene();
     // Select "b": neighbours are a and d. c is NOT a direct neighbour of b.
