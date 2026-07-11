@@ -6,6 +6,16 @@ import { describe, expect, it } from "vitest";
 const graphCanvasSource = () =>
   readFileSync(resolve("src/components/GraphCanvas.svelte"), "utf8");
 
+// resetLayoutState()'s own body, bounded to the NEXT function — used instead
+// of a fixed-size [\s\S]{0,N} window so a comment added anywhere inside it
+// (e.g. remark 2/7's hoverIntent.cancel() / cancelCameraTween() cleanup)
+// can't silently push a later assertion out of range.
+const resetLayoutStateBody = (source) =>
+  source.slice(
+    source.indexOf("function resetLayoutState"),
+    source.indexOf("function currentLayoutBuffer"),
+  );
+
 describe("GraphCanvas renderer", () => {
   it("uses the @sentropic/graph renderer instead of the design-system ForceGraph", () => {
     const source = graphCanvasSource();
@@ -181,8 +191,15 @@ describe("GraphCanvas layout switcher + morph (Lot 1)", () => {
     // Interaction is locked (pointer/click/wheel guarded on morphActive).
     expect(source).toMatch(/function handlePointerMove[\s\S]{0,120}if \(morphActive\) return;/);
     expect(source).toMatch(/function handleWheel[\s\S]{0,120}if \(morphActive\)/);
-    // Exactly one deliberate end-fit at settle.
-    expect(source).toMatch(/function settleLayout[\s\S]*fitAndRender\(\);/);
+    // Exactly one deliberate end-fit at settle. Remark 7: it's the ANIMATED
+    // fit (camera tweens to the target instead of snapping), not the instant
+    // one used by mount/resize/"Reset view".
+    const settle = source.slice(
+      source.indexOf("function settleLayout"),
+      source.indexOf("function startLayoutMorph"),
+    );
+    expect(settle).toContain("animateFitAndRender();");
+    expect(settle).not.toMatch(/(?<!animate)fitAndRender\(\);/);
   });
 
   it("re-seeds bufA from the LIVE buffer on interrupt, never snapping to base", () => {
@@ -220,7 +237,7 @@ describe("GraphCanvas layout switcher + morph (Lot 1)", () => {
     // A layout switch re-places every node → drop the stale Force-space drag map.
     expect(driver).toContain("draggedPositions.clear()");
     // resetLayoutState also clears it (scene change + abnormal-exit path).
-    expect(source).toMatch(/function resetLayoutState\(\)[\s\S]{0,700}draggedPositions\.clear\(\)/);
+    expect(resetLayoutStateBody(source)).toContain("draggedPositions.clear()");
   });
 
   it("F2: a throwing morph frame unwinds instead of leaving the canvas locked", () => {
@@ -278,7 +295,7 @@ describe("GraphCanvas force Spread/Links controls (Lot 3)", () => {
     // A solve resolving after the scene changed is dropped (token mismatch).
     expect(source).toMatch(/const token = \+\+forceSolveToken;[\s\S]*token !== forceSolveToken/);
     // resetLayoutState invalidates in-flight solves.
-    expect(source).toMatch(/function resetLayoutState\(\)[\s\S]{0,400}forceSolveToken\+\+/);
+    expect(resetLayoutStateBody(source)).toContain("forceSolveToken++");
     // The worker is torn down when the component is destroyed.
     expect(source).toMatch(/onDestroy\([\s\S]*terminateForceWorker\(\)/);
   });
@@ -315,7 +332,7 @@ describe("GraphCanvas Lot 7 review must-fixes (double-consensus)", () => {
     // are re-applied across a rebuild too, not just non-force layouts).
     expect(source).toMatch(/function reapplyLayoutPositions[\s\S]*morphActive \? liveMorphBuffer : activeLayoutBuffer/);
     // A genuine scene change still nulls it (a NEW scene must use scene positions).
-    expect(source).toMatch(/function resetLayoutState\(\)[\s\S]{0,400}activeLayoutBuffer = null/);
+    expect(resetLayoutStateBody(source)).toContain("activeLayoutBuffer = null");
   });
 
   it("SERIOUS-2: a late Force solve is discarded when the user switched away from Force", () => {
@@ -372,7 +389,10 @@ describe("GraphCanvas Curved-links + Color-by controls (Lots 4/5)", () => {
     expect(source).toContain("COLOR_BY_FOLDER");
     expect(source).toContain("COLOR_BY_LAYER");
     expect(source).toContain("COLOR_BY_CHURN");
-    expect(source).toMatch(/import \{ Button, ButtonGroup, Switch \} from "@sentropic\/design-system-svelte"/);
+    // Remark 4: the toolbar now also imports IconButton + Popover (gear menu).
+    expect(source).toMatch(
+      /import \{ Button, ButtonGroup, IconButton, Popover, Switch \} from "@sentropic\/design-system-svelte"/,
+    );
   });
 
   it("defaults match today's behaviour (curved ON, colour by Folder)", () => {
@@ -403,5 +423,115 @@ describe("GraphCanvas Curved-links + Color-by controls (Lots 4/5)", () => {
     expect(restyle).toContain("applyPayloadNoFit()");
     expect(restyle).not.toContain("fitAndRender");
     expect(restyle).not.toContain("startLayoutMorph");
+  });
+});
+
+// --- Studio representation-polish remarks 4/5/6: gear-menu settings popover -
+describe("GraphCanvas settings popover (remarks 4/5/6)", () => {
+  const toolbarGate = (source) =>
+    source.slice(source.indexOf("{#if showLayoutSwitcher}"), source.indexOf('aria-label="Reset view"'));
+
+  it("R4: collapses layout/spacing/display behind a gear IconButton + Popover, gated on showLayoutSwitcher", () => {
+    const source = graphCanvasSource();
+    const gated = toolbarGate(source);
+    expect(gated).toContain("<Popover");
+    expect(gated).toContain('label="Graph display settings"');
+    expect(gated).toContain("<IconButton");
+    expect(gated).toContain('aria-label="Graph display settings"');
+    expect(gated).toContain("onclick={toggleSettings}");
+    // The 3 sections codeflow's own settings popover uses.
+    expect(gated).toContain('aria-label="Layout"');
+    expect(gated).toContain('aria-label="Spacing"');
+    expect(gated).toContain('aria-label="Display"');
+    expect(gated).toContain(">Layout<");
+    expect(gated).toContain(">Spacing<");
+    expect(gated).toContain(">Display<");
+    // Every control that used to sit directly in the toolbar row now lives
+    // inside the popover panel.
+    expect(gated).toContain("layout-switcher");
+    expect(gated).toContain("force-sliders-row");
+    expect(gated).toContain("color-switcher");
+    expect(gated).toContain("curved-links-toggle");
+  });
+
+  it("R4: the gear toggles `settingsOpen`, dismissed on outside click / Escape", () => {
+    const source = graphCanvasSource();
+    expect(source).toMatch(/let settingsOpen = \$state\(false\)/);
+    expect(source).toMatch(/function toggleSettings\(\)\s*\{\s*settingsOpen = !settingsOpen;/);
+    expect(source).toContain("handleSettingsWindowPointerDown");
+    expect(source).toContain("handleSettingsWindowKeydown");
+    expect(source).toMatch(/event\.key === "Escape"/);
+    expect(source).toContain('window.addEventListener("pointerdown", handleSettingsWindowPointerDown)');
+    expect(source).toContain('window.removeEventListener("pointerdown", handleSettingsWindowPointerDown)');
+  });
+
+  it("R5: every DS control inside the panel is size=\"sm\", overridden to the compact Reset-button font scale", () => {
+    const source = graphCanvasSource();
+    const panel = source.slice(source.indexOf('{#snippet children()}'), source.indexOf('{/snippet}\n        </Popover>'));
+    // No lg/md controls snuck in — every Button/ButtonGroup in the panel is sm.
+    expect(panel).not.toMatch(/size="lg"/);
+    expect(panel).not.toMatch(/size="md"/);
+    const buttonCount = (panel.match(/<Button\b/g) ?? []).length;
+    const smCount = (panel.match(/size="sm"/g) ?? []).length;
+    expect(buttonCount).toBeGreaterThan(0);
+    expect(smCount).toBeGreaterThanOrEqual(buttonCount);
+    // The compact font-scale override matches the Reset button's own 0.75rem.
+    const style = source.slice(source.indexOf("<style>"));
+    expect(style).toMatch(/\.graph-settings-panel\s*\{[^}]*font-size:\s*0\.75rem/);
+    expect(style).toMatch(/--st-component-button-anatomy-density-sm-fontSize:\s*0\.75rem/);
+    expect(style).toMatch(/\.graph-settings-panel :global\(\.st-switch__label\)\s*\{\s*font-size:\s*0\.75rem/);
+  });
+
+  it("R6: Spread/Links sit on their own row and are disabled whenever layoutMode isn't Force", () => {
+    const source = graphCanvasSource();
+    const gated = toolbarGate(source);
+    const sliders = gated.slice(gated.indexOf("force-sliders-row"), gated.indexOf("force-reset-row"));
+    // Both sliders (and their wrapping labels) are disabled off-Force.
+    // (?<!-) excludes the tail of "class:is-disabled={...}" (below), which
+    // would otherwise also match the plain "disabled={...}" substring.
+    expect((sliders.match(/(?<!-)disabled=\{layoutMode !== LAYOUT_MODE_FORCE\}/g) ?? []).length).toBe(2);
+    expect((sliders.match(/class:is-disabled=\{layoutMode !== LAYOUT_MODE_FORCE\}/g) ?? []).length).toBe(2);
+    // Reset (same force re-solve) is disabled off-Force too.
+    const resetRow = gated.slice(gated.indexOf("force-reset-row"));
+    expect(resetRow).toMatch(/aria-label="Reset layout"[\s\S]{0,80}disabled=\{layoutMode !== LAYOUT_MODE_FORCE\}/);
+  });
+});
+
+// --- Studio representation-polish remark 7: smooth camera recenter ---------
+describe("GraphCanvas smooth recenter (remark 7)", () => {
+  it("settleLayout tweens the camera to the fit target instead of snapping", () => {
+    const source = graphCanvasSource();
+    expect(source).toContain("function animateFitAndRender");
+    // Shares the node-morph's duration + easing so the recenter reads as one
+    // continuous motion with the just-finished layout morph.
+    expect(source).toMatch(/function animateFitAndRender[\s\S]*LAYOUT_MORPH_DURATION_MS/);
+    expect(source).toMatch(/function animateFitAndRender[\s\S]*easeMergeProgress/);
+    expect(source).toMatch(/function animateFitAndRender[\s\S]*renderer\.setCamera\(camera\)/);
+    // §F3 parity: reduced-motion snaps instead of tweening.
+    expect(source).toMatch(/function animateFitAndRender[\s\S]{0,800}prefersReducedMotion\(\)/);
+  });
+
+  it("mount/resize/Reset-view keep the INSTANT fit; only settleLayout uses the tween", () => {
+    const source = graphCanvasSource();
+    const applyPayload = source.slice(
+      source.indexOf("function applyPayload()"),
+      source.indexOf("function applyPayloadNoFit"),
+    );
+    expect(applyPayload).toContain("fitAndRender();");
+    expect(applyPayload).not.toContain("animateFitAndRender");
+    expect(source).toMatch(/aria-label="Reset view"[\s\S]{0,40}onclick=\{fitAndRender\}/);
+  });
+
+  it("cancels the camera tween when a new interaction/morph supersedes it", () => {
+    const source = graphCanvasSource();
+    expect(source).toContain("function cancelCameraTween");
+    // A new node morph, a scene reset, and starting to pan/zoom all cancel a
+    // stale camera tween instead of fighting it.
+    expect(source).toMatch(/function startLayoutMorphToBuffer[\s\S]{0,700}cancelCameraTween\(\);/);
+    expect(resetLayoutStateBody(source)).toContain("cancelCameraTween();");
+    expect(source).toMatch(/function handlePointerDown[\s\S]{0,400}cancelCameraTween\(\);/);
+    expect(source).toMatch(/function handleWheel[\s\S]{0,400}cancelCameraTween\(\);/);
+    // Cleaned up on unmount so no stray rAF outlives the component.
+    expect(source).toMatch(/cancelLayoutMorphFrame\(\);\s*\n\s*cancelCameraTween\(\);/);
   });
 });
