@@ -256,6 +256,14 @@ export interface GraphRendererOptions {
    */
   boxBaseHeightPx?: number;
   /**
+   * Scale node/box border strokes with the camera zoom (default false = legacy
+   * screen-space width, byte-identical goldens & existing consumers). Interactive
+   * views (the studio) set this true so a bordered node's outline stays
+   * proportional to its zoom-scaled radius instead of over-dominating when zoomed
+   * out. At zoom=1 the width equals the legacy value, so it is a no-op there.
+   */
+  scaleBordersWithZoom?: boolean;
+  /**
    * INTERNAL CANARY (B1 migration Phase 1). When true AND the active backend is
    * WebGL2, node glyphs are drawn with the new INSTANCED-SHAPE path
    * (`webgl-shapes.ts`: instanced discs/polygons, radius-as-radius) instead of

@@ -58,6 +58,37 @@ export const BOX_TEXT_COLOR = "#0f172a";
 export const BORDER_WIDTH_NORMAL = 1.5;
 export const BORDER_WIDTH_BOLD = 3;
 
+/** Absolute floor / cap for the zoom-scaled border stroke (× pixelRatio / × base). */
+const BORDER_ZOOM_FLOOR_PX = 0.75;
+const BORDER_ZOOM_CAP_FACTOR = 3;
+
+/**
+ * Border stroke FULL width in device px.
+ *
+ * Default (`scaleWithZoom` false) = the legacy SCREEN-space width
+ * `(bold?BOLD:NORMAL)·pixelRatio`, byte-identical to the golden reference and
+ * every existing consumer.
+ *
+ * When `scaleWithZoom` is on (interactive studio views), the stroke scales with
+ * the camera zoom so a node's border stays PROPORTIONAL to its zoom-scaled
+ * radius (`drawnRadius` is `size·PR·zoom`) instead of a fixed screen width that
+ * over-dominates a tiny node when zoomed out. Clamped so it never vanishes
+ * (floor 0.75·PR) nor explodes (cap 3× the base). At zoom=1 the scaled value
+ * equals the base, so zoom=1 output — and thus every golden — is unchanged even
+ * with the flag on.
+ */
+export function borderStrokeWidthPx(
+  bold: boolean,
+  pixelRatio: number,
+  zoom: number,
+  scaleWithZoom = false,
+): number {
+  const base = (bold ? BORDER_WIDTH_BOLD : BORDER_WIDTH_NORMAL) * pixelRatio;
+  if (!scaleWithZoom) return base;
+  const scaled = base * (Number.isFinite(zoom) && zoom > 0 ? zoom : 1);
+  return Math.min(Math.max(scaled, BORDER_ZOOM_FLOOR_PX * pixelRatio), base * BORDER_ZOOM_CAP_FACTOR);
+}
+
 /** Hollow glyph interior CSS string (alpha-independent translucent white). */
 export const HOLLOW_FILL_STYLE = `rgba(${BOX_FILL[0]}, ${BOX_FILL[1]}, ${BOX_FILL[2]}, ${BOX_FILL[3] / 255})`;
 

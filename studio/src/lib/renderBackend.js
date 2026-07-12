@@ -24,6 +24,10 @@ export const WEBGL2_BACKEND = "webgl";
  *  - Mode B (webgl): the WebGL2 beta — instanced shapes/edges/boxes.
  */
 export function rendererOptionsFor(backend, pixelRatio) {
+  // scaleBordersWithZoom: the studio is an INTERACTIVE pan/zoom view, so node/box
+  // outlines scale with the camera zoom (proportional to the zoom-scaled node)
+  // instead of a fixed screen width that over-dominates a tiny node when zoomed
+  // out. It is a no-op at zoom=1, so goldens/other consumers are unaffected.
   if (backend === WEBGL2_BACKEND) {
     // Mode B (WebGL2 beta) requests a MULTISAMPLED context (antialias:true) so the
     // GPU edges + node-shape borders get MSAA smoothing — without it the beta read
@@ -31,9 +35,15 @@ export function rendererOptionsFor(backend, pixelRatio) {
     // honours options.antialias, which defaults to false). The Canvas2D branch and
     // the golden harness are intentionally left untouched (the golden capture keeps
     // its own deterministic context options).
-    return { backend: WEBGL2_BACKEND, instancedShapes: true, antialias: true, pixelRatio };
+    return {
+      backend: WEBGL2_BACKEND,
+      instancedShapes: true,
+      antialias: true,
+      scaleBordersWithZoom: true,
+      pixelRatio,
+    };
   }
-  return { backend: CANVAS2D_BACKEND, pixelRatio };
+  return { backend: CANVAS2D_BACKEND, scaleBordersWithZoom: true, pixelRatio };
 }
 
 /** Toggle between the two render modes (A ↔ B). */
