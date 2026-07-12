@@ -36,8 +36,7 @@
 
 import { cameraToViewProjection } from "./mat4";
 import {
-  BORDER_WIDTH_BOLD,
-  BORDER_WIDTH_NORMAL,
+  borderStrokeWidthPx,
   BOX_FILL,
   BOX_SHAPE_CODE,
   coerceFiniteCoord,
@@ -133,6 +132,12 @@ export interface WebGLShapeFrame {
   /** Coercion centre for non-finite world coords (N1b). */
   centerX?: number;
   centerY?: number;
+  /**
+   * Scale the border stroke with the camera zoom (default false = legacy
+   * screen-space width). On for interactive studio views so outlines stay
+   * proportional to the zoom-scaled node instead of dominating when zoomed out.
+   */
+  scaleBordersWithZoom?: boolean;
 }
 
 export interface WebGLShapeRenderer {
@@ -336,7 +341,12 @@ export function buildShapeInstances(frame: WebGLShapeFrame): ShapeInstanceSet {
     // strokeHalf, carved by an inner disc at radius - strokeHalf) — NOT the old
     // inside-only `radius - width` ring, which under-weighted the outline and
     // (for solid+bold) was fully hidden by the full-radius fill disc.
-    const strokeHalf = strokeHalfWidth(bold, frame.pixelRatio);
+    const strokeHalf = strokeHalfWidth(
+      bold,
+      frame.pixelRatio,
+      frame.camera.zoom,
+      frame.scaleBordersWithZoom ?? false,
+    );
 
     if (hollow) {
       // Hollow glyph: a node-colour border RING centred on the drawn radius over
@@ -384,8 +394,13 @@ const WEBGL_OUTLINE_WEIGHT_BOOST = 1.12;
  *  a stroke of (bold?BOLD:NORMAL)·PR on the outline, so each side is HALF),
  *  scaled by WEBGL_OUTLINE_WEIGHT_BOOST so the WebGL beta ring reads a touch
  *  HEAVIER than Canvas2D (UAT polish) — Canvas2D's own stroke is unchanged. */
-function strokeHalfWidth(bold: boolean, pixelRatio: number): number {
-  return (((bold ? BORDER_WIDTH_BOLD : BORDER_WIDTH_NORMAL) * pixelRatio) / 2) * WEBGL_OUTLINE_WEIGHT_BOOST;
+function strokeHalfWidth(
+  bold: boolean,
+  pixelRatio: number,
+  zoom = 1,
+  scaleWithZoom = false,
+): number {
+  return (borderStrokeWidthPx(bold, pixelRatio, zoom, scaleWithZoom) / 2) * WEBGL_OUTLINE_WEIGHT_BOOST;
 }
 
 function pushInstance(

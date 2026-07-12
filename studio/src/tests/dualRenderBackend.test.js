@@ -38,6 +38,8 @@ describe("dual-render backend lib", () => {
   it("builds canvas2d options for mode A and webgl+instancedShapes for mode B", () => {
     expect(rendererOptionsFor(CANVAS2D_BACKEND, 2)).toEqual({
       backend: "canvas2d",
+      // Interactive views scale borders with zoom (no-op at zoom=1).
+      scaleBordersWithZoom: true,
       pixelRatio: 2,
     });
     expect(rendererOptionsFor(WEBGL2_BACKEND, 2)).toEqual({
@@ -46,6 +48,8 @@ describe("dual-render backend lib", () => {
       // Mode B requests a MULTISAMPLED context (#229) so GPU edges/borders get
       // MSAA smoothing — the lib returns antialias:true for WebGL2.
       antialias: true,
+      // Interactive views scale borders with zoom (no-op at zoom=1).
+      scaleBordersWithZoom: true,
       pixelRatio: 2,
     });
   });
@@ -73,7 +77,11 @@ describe("dual-render backend lib", () => {
     expect(out.backend).toBe(CANVAS2D_BACKEND);
     expect(out.fellBack).toBe(false);
     expect(create).toHaveBeenCalledTimes(1);
-    expect(create.mock.calls[0][1]).toEqual({ backend: "canvas2d", pixelRatio: 1 });
+    expect(create.mock.calls[0][1]).toEqual({
+      backend: "canvas2d",
+      scaleBordersWithZoom: true,
+      pixelRatio: 1,
+    });
   });
 
   it("mode B keeps webgl when a WebGL2 context is available", () => {
@@ -103,7 +111,11 @@ describe("dual-render backend lib", () => {
     expect(webglAttempt.destroy).toHaveBeenCalledTimes(1);
     expect(create).toHaveBeenCalledTimes(2);
     expect(create.mock.calls[0][1]).toMatchObject({ backend: "webgl", instancedShapes: true });
-    expect(create.mock.calls[1][1]).toEqual({ backend: "canvas2d", pixelRatio: 1 });
+    expect(create.mock.calls[1][1]).toEqual({
+      backend: "canvas2d",
+      scaleBordersWithZoom: true,
+      pixelRatio: 1,
+    });
   });
 
   it("mode B overlay paint clears then draws boxTextDraws()", () => {
