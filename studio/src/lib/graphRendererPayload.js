@@ -46,14 +46,18 @@ const SELECTED_COLOR = "#2563eb";
 const EDGE_BASE_OPACITY = 0.5;
 const EDGE_MIN_OPACITY = 0.3;
 const EDGE_BASE_ALPHA = Math.round(255 * EDGE_BASE_OPACITY); // 128
+// ONE slate hue for EVERY edge (remark: edges must all be the same colour and
+// differ ONLY by a transparency degree — a whiter hue for "weak" edges reads as
+// a colour change and is a bug). Weakness is conveyed by the dotted dash alone,
+// never by a paler RGB.
 const EDGE_COLOR_RGB = [148, 163, 184];
-const WEAK_EDGE_COLOR_RGB = [203, 213, 225];
 const EDGE_COLOR = [...EDGE_COLOR_RGB, EDGE_BASE_ALPHA];
 // Degree 1–2 is visually sparse and stays at the historical 0.50. From there,
 // a logarithmic curve handles the long-tailed degree distribution of knowledge
-// graphs; degree 32+ reaches the 0.30 floor instead of becoming invisible.
+// graphs; the floor (0.30 = the 70%-transparent cap) is now reached by degree
+// 16 so hub edges recede enough for the density gradient to READ clearly.
 const EDGE_DENSITY_START_DEGREE = 2;
-const EDGE_DENSITY_FULL_DEGREE = 32;
+const EDGE_DENSITY_FULL_DEGREE = 16;
 const EDGE_CURVE_FACTOR = 0.5;
 const DIM_ALPHA = Math.round(255 * 0.35); // 89 — connected-dim for NON-neighbour nodes
 // Remark 1: non-incident edges dim FURTHER than nodes on hover (edges are
@@ -482,7 +486,9 @@ export function buildGraphRendererPayload(scene, options = {}) {
       weak: edge.weak === true,
       emphasis: edge.emphasis === true,
       width: edgeWidth(edge),
-      color: [...(edge.weak ? WEAK_EDGE_COLOR_RGB : EDGE_COLOR_RGB), alpha],
+      // Uniform slate hue for all edges; only the density alpha varies. Weak
+      // edges stay this same colour and are distinguished by the dotted dash.
+      color: [...EDGE_COLOR_RGB, alpha],
       dash: edge.dash ?? (edge.weak ? "dotted" : "solid"),
       curvature: finite(edge.curvature) ? edge.curvature : edgeCurvature,
     };
