@@ -121,7 +121,19 @@ describe("GraphCanvas hover-intent wiring", () => {
     expect(source).toContain("requestConnectedDim");
     expect(source).toContain("applyConnectedDim");
     expect(source).not.toContain("|| !hasHoverTarget");
-    // the dwell is cancelled on pan/drag start, on selection change, and on destroy.
+    const pointerDown = source.slice(
+      source.indexOf("function handlePointerDown"),
+      source.indexOf("function handlePointerUp"),
+    );
+    expect(pointerDown).not.toContain("hoverIntent.cancel()");
+    const morphStartIndex = source.indexOf("function startLayoutMorphToBuffer");
+    const morphStart = source.slice(
+      morphStartIndex,
+      source.indexOf("const canAnimate", morphStartIndex),
+    );
+    expect(morphStart).toContain("setHoveredNode(null)");
+    expect(morphStart).not.toContain("hoverIntent.cancel()");
+    // Stale timers are still cancelled on scene reset, selection change, and destroy.
     expect(source).toContain("hoverIntent.cancel()");
   });
 });
