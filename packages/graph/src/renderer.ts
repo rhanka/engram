@@ -2,6 +2,7 @@ import { computePositionBounds, copyPositions } from "./positions";
 import { BOX_GLYPH_CORNER_RATIO, SQUARE_INSET_RATIO, shapePolygonPoints } from "./shape-geometry";
 import {
   FLOW_PORT_MIN_STUB,
+  borderStrokeWidthPx,
   boxDimensions,
   flowPortEdgeGeometry,
   routeIsArrowless,
@@ -579,10 +580,9 @@ const BOX_BASE_HEIGHT_PX = 18; // box height in CSS px (× pixelRatio × zoom), 
 const BOX_FILL: readonly [number, number, number, number] = [255, 255, 255, 0.5 * 255];
 const BOX_TEXT_COLOR = "#0f172a"; // theme-dark label text (slate-900)
 
-// Shape-variant outline widths in CSS px (× pixelRatio, screen-space like the
-// box border): "normal" hollow outlines and the heavier "bold" border variant.
-const BORDER_WIDTH_NORMAL = 1.5;
-const BORDER_WIDTH_BOLD = 3;
+// Shape-variant outline widths come from the shared `borderStrokeWidthPx`
+// (render-geometry.ts): screen-space by default, zoom-scaled when the studio
+// opts in via GraphRendererOptions.scaleBordersWithZoom.
 // Hollow glyph interior: same translucent white as the legacy box fill, so a
 // hollow shape reads as an outline without disappearing over edges.
 const HOLLOW_FILL_STYLE = `rgba(${BOX_FILL[0]}, ${BOX_FILL[1]}, ${BOX_FILL[2]}, ${BOX_FILL[3] / 255})`;
@@ -698,6 +698,8 @@ function drawBoxNode(
   borderColor: string,
   alpha: number,
   boldBorder = false,
+  zoom = 1,
+  scaleBordersWithZoom = false,
 ): void {
   context.save();
   context.globalAlpha = alpha;
@@ -707,7 +709,7 @@ function drawBoxNode(
   context.fillStyle = HOLLOW_FILL_STYLE;
   context.fill();
   context.strokeStyle = borderColor;
-  context.lineWidth = (boldBorder ? BORDER_WIDTH_BOLD : BORDER_WIDTH_NORMAL) * pixelRatio;
+  context.lineWidth = borderStrokeWidthPx(boldBorder, pixelRatio, zoom, scaleBordersWithZoom);
   context.stroke();
 
   if (label) {
@@ -822,6 +824,9 @@ function drawFallback2D(
   // (GraphRendererOptions.boxBaseHeightPx). Default = the legacy metric, so
   // every existing caller/golden is byte-identical.
   boxBaseHeightPx: number = BOX_BASE_HEIGHT_PX,
+  // Scale border strokes with the camera zoom (default false = legacy
+  // screen-space width; no-op at zoom=1 so goldens are byte-identical).
+  scaleBordersWithZoom = false,
 ): void {
   if (!context || !canvas) return;
 
@@ -1050,6 +1055,8 @@ function drawFallback2D(
         nodeColor,
         alpha,
         boldBorder,
+        camera.zoom,
+        scaleBordersWithZoom,
       );
       continue;
     }
@@ -1062,7 +1069,7 @@ function drawFallback2D(
       context.fillStyle = HOLLOW_FILL_STYLE;
       context.fill();
       context.strokeStyle = nodeColor;
-      context.lineWidth = (boldBorder ? BORDER_WIDTH_BOLD : BORDER_WIDTH_NORMAL) * pixelRatio;
+      context.lineWidth = borderStrokeWidthPx(boldBorder, pixelRatio, camera.zoom, scaleBordersWithZoom);
       context.stroke();
     } else {
       context.fillStyle = nodeColor;
@@ -1070,7 +1077,7 @@ function drawFallback2D(
       if (boldBorder) {
         // Bold border on a solid fill: darkened outline so it stays visible.
         context.strokeStyle = cssDarkenedColor(state.style?.nodeColors, colorOffset, DEFAULT_NODE_COLOR);
-        context.lineWidth = BORDER_WIDTH_BOLD * pixelRatio;
+        context.lineWidth = borderStrokeWidthPx(true, pixelRatio, camera.zoom, scaleBordersWithZoom);
         context.stroke();
       }
     }
@@ -1093,6 +1100,9 @@ export function createGraphRenderer(
   // git-flow view passes `gitFlowLabelBoxHeightPx()` so the drawn pills match
   // the label policy's measured collision AABBs.
   const boxBaseHeightPx = options.boxBaseHeightPx ?? BOX_BASE_HEIGHT_PX;
+  // Interactive views scale border strokes with the camera zoom (default false =
+  // legacy screen-space width; no-op at zoom=1, so goldens are unchanged).
+  const scaleBordersWithZoom = options.scaleBordersWithZoom ?? false;
   const activeBackend = context ? "webgl" : fallbackContext ? "canvas2d" : "none";
 
   // B1 Phase 1 INTERNAL CANARY: when the flag is on AND we have a WebGL2 context,
@@ -1202,7 +1212,16 @@ export function createGraphRenderer(
     lastBoxTextDraws = [];
 
     if (!context) {
-      drawFallback2D(fallbackContext, state, camera, canvas, pixelRatio, skipEdges, boxBaseHeightPx);
+      drawFallback2D(
+        fallbackContext,
+        state,
+        camera,
+        canvas,
+        pixelRatio,
+        skipEdges,
+        boxBaseHeightPx,
+        scaleBordersWithZoom,
+      );
       return;
     }
 
@@ -1273,6 +1292,7 @@ export function createGraphRenderer(
           style: state.style,
           camera,
           pixelRatio,
+          scaleBordersWithZoom,
           viewportWidth: canvas?.width ?? 0,
           viewportHeight: canvas?.height ?? 0,
           centerX: Number.isFinite(bounds.centerX) ? bounds.centerX : 0,
@@ -1325,6 +1345,7 @@ export function createGraphRenderer(
           camera,
           pixelRatio,
           boxBaseHeightPx,
+          scaleBordersWithZoom,
           viewportWidth: canvas?.width ?? 0,
           viewportHeight: canvas?.height ?? 0,
           measureLabelWidth,
