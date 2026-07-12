@@ -637,9 +637,8 @@
   function handlePointerDown(event) {
     // Lock pan/drag while a layout morph is in flight (§2.6).
     if (morphActive) return;
-    // A pan/drag is starting — cancel any pending hover-intent dwell so it can't
-    // fire (and dim) mid-interaction.
-    hoverIntent.cancel();
+    // Keep the hover dwell alive across pointer-down. Canceling it here can
+    // strand an applied node dim when the pending target is empty space.
     // Remark 7: the user panning/dragging takes over from any in-flight
     // camera-recenter tween immediately, rather than fighting it.
     cancelCameraTween();
@@ -1508,14 +1507,11 @@
     // still animating from the PREVIOUS layout settle (e.g. a rapid re-click)
     // — its target bbox is now stale.
     cancelCameraTween();
-    // Remark 2: a layout morph LOCKS pointer/hover input (handlePointerMove
-    // early-returns while morphActive), but a hover-intent dwell timer that
-    // was already pending when the morph started is NOT an input event — it
-    // keeps ticking on its own setTimeout and can fire mid-morph or right
-    // after settle, dimming for a hover target that's no longer under the
-    // cursor (the layout just moved everything). Cancel it before the morph
-    // starts so it can never fire stale.
-    hoverIntent.cancel();
+    // A layout moves hovered geometry away from the pointer. Clear that stale
+    // target through the SAME dwell gate: the delayed base-style restore can
+    // neither flash immediately nor strand the old node's dim.
+    clearHoveredEdge();
+    setHoveredNode(null);
     layoutMode = mode;
     // §F1: bufA already snapshotted the on-screen (incl. dragged) positions, so
     // the drag is preserved as the morph START; drop the stale drag map now — a
@@ -1543,6 +1539,9 @@
     const abortMorph = () => {
       cancelLayoutMorphFrame();
       resetLayoutState();
+      // The abnormal path has no payload rebuild after resetLayoutState cancels
+      // timers, so reconcile its already-cleared hover state explicitly.
+      applyConnectedDim();
       fitAndRender();
     };
     const step = (now) => {
