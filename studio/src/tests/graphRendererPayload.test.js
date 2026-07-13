@@ -35,10 +35,13 @@ import {
   LAYOUT_MODE_LAYERS,
   LAYOUT_MODE_METRO,
   LAYOUT_MODE_RADIAL,
+  carryScenePositions,
+  goldenAngleFan,
   LAYOUT_MODES,
   MAX_PRINCIPAL_CHARACTER_LABELS,
   morphPositions,
   nodeTypesForPayload,
+  resolveGroupFolds,
   selectPrincipalHubLabels,
   truncateLabel,
 } from "../lib/graphRendererPayload.js";
@@ -1303,5 +1306,81 @@ describe("edge alpha modes + opacity", () => {
       if (payload.style.edgeColors[e * 4 + 3] < 128) sawDim = true;
     }
     expect(sawDim).toBe(true);
+  });
+});
+
+// --- Group/ungroup animation pure helpers (behavioural, not source-string) -----
+describe("resolveGroupFolds — fold set + anchor rule", () => {
+  const nodeIds = ["a", "b", "c", "g"];
+  // a(0,0) b(10,0) c(20,0) g(4,4)
+  const positions = new Float32Array([0, 0, 10, 0, 20, 0, 4, 4]);
+
+  it("anchors on the group node's OWN position when it is on screen", () => {
+    const info = resolveGroupFolds({
+      nodeIds,
+      positions,
+      anchors: new Map([["a", "g"], ["b", "g"]]),
+    });
+    expect([...info.foldingSet].sort()).toEqual([0, 1]); // a,b fold
+    expect(info.anchorPosByGroup.get("g")).toEqual({ x: 4, y: 4 }); // g's own pos
+  });
+
+  it("falls back to the folding members' CENTROID when the group node is off screen", () => {
+    const info = resolveGroupFolds({
+      nodeIds: ["a", "b", "c"], // g absent from this scene
+      positions: new Float32Array([0, 0, 10, 0, 20, 0]),
+      anchors: new Map([["a", "g"], ["b", "g"]]),
+    });
+    expect(info.anchorPosByGroup.get("g")).toEqual({ x: 5, y: 0 }); // centroid of a,b
+  });
+
+  it("returns null for empty anchors or when no folded child is on screen", () => {
+    expect(resolveGroupFolds({ nodeIds, positions, anchors: new Map() })).toBeNull();
+    expect(
+      resolveGroupFolds({ nodeIds, positions, anchors: new Map([["zz", "g"]]) }),
+    ).toBeNull();
+  });
+});
+
+describe("carryScenePositions — by-id coordinate carry", () => {
+  it("carries shared ids, applies explicit placements, and neighbour-centroids brand-new nodes", () => {
+    // new(2) is edge-connected to shared s(0); grp(1) is explicitly placed.
+    const out = carryScenePositions({
+      nodeIds: ["s", "grp", "new"],
+      positions: new Float32Array([99, 99, 99, 99, 99, 99]), // scene-baked (should be overridden)
+      edges: new Uint32Array([2, 0]), // new <-> s
+      carriedPosById: new Map([["s", { x: 1, y: 2 }]]),
+      placedPosById: new Map([["grp", { x: 3, y: 4 }]]),
+    });
+    expect([out[0], out[1]]).toEqual([1, 2]); // s carried
+    expect([out[2], out[3]]).toEqual([3, 4]); // grp placed
+    expect([out[4], out[5]]).toEqual([1, 2]); // new → centroid of its only placed neighbour (s)
+  });
+
+  it("leaves a brand-new node with no placed neighbour at its scene-baked position", () => {
+    const out = carryScenePositions({
+      nodeIds: ["s", "new"],
+      positions: new Float32Array([0, 0, 7, 8]),
+      edges: new Uint32Array([]), // no edges → no neighbour
+      carriedPosById: new Map([["s", { x: 1, y: 1 }]]),
+      placedPosById: new Map(),
+    });
+    expect([out[2], out[3]]).toEqual([7, 8]); // scene-baked fallback
+  });
+});
+
+describe("goldenAngleFan — deterministic sunflower", () => {
+  it("is order-independent (sorted by id) and places child 0 at anchor+spacing", () => {
+    const a = goldenAngleFan({ anchor: { x: 10, y: 20 }, childIds: ["b", "a"], spacing: 5 });
+    const b = goldenAngleFan({ anchor: { x: 10, y: 20 }, childIds: ["a", "b"], spacing: 5 });
+    expect([...a.entries()]).toEqual([...b.entries()]); // same id set → same slots
+    // child "a" is index 0 → angle 0, radius = spacing → anchor + (spacing, 0)
+    expect(a.get("a").x).toBeCloseTo(15, 6);
+    expect(a.get("a").y).toBeCloseTo(20, 6);
+  });
+
+  it("caps the radius", () => {
+    const fan = goldenAngleFan({ anchor: { x: 0, y: 0 }, childIds: ["a", "b", "c"], spacing: 100, cap: 50 });
+    for (const { x, y } of fan.values()) expect(Math.hypot(x, y)).toBeLessThanOrEqual(50 + 1e-6);
   });
 });
