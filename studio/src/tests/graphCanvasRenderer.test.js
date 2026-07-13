@@ -650,3 +650,92 @@ describe("GraphCanvas smooth recenter (remark 7)", () => {
     expect(source).toMatch(/cancelLayoutMorphFrame\(\);\s*\n\s*cancelCameraTween\(\);/);
   });
 });
+
+// --- Collapse/expand GROUP transition animation ------------------------------
+// jsdom has no WebGL (like the merge/layout-morph tests above), so we assert
+// against the .svelte SOURCE that the animated group/ungroup transition is
+// wired: an optional groupTransition prop, a scene-effect hook that hands off to
+// the driver (with a hard-cut fallback), and a driver that REUSES morphPositions
+// + the merge-fade style on the same rAF loop, locking interaction via
+// morphActive exactly like the layout morph.
+describe("GraphCanvas collapse/expand group transition", () => {
+  const driverSource = (source) =>
+    source.slice(
+      source.indexOf("// --- Collapse/expand GROUP transition driver"),
+      source.indexOf("// Stable content signature of a scene"),
+    );
+
+  it("accepts an optional groupTransition prop (absent ⇒ current behaviour)", () => {
+    const source = graphCanvasSource();
+    expect(source).toMatch(/groupTransition = null,/);
+  });
+
+  it("the scene-effect tries the animated transition, falling back to the hard cut", () => {
+    const source = graphCanvasSource();
+    // untrack so groupTransition is not a hidden dependency of the scene effect.
+    expect(source).toMatch(/const transition = untrack\(\(\) => groupTransition\);/);
+    expect(source).toMatch(/untrack\(\(\) => tryStartGroupTransition\(transition\)\)/);
+    // A redundant scene re-derivation must not cancel an in-flight tween.
+    expect(source).toMatch(/if \(groupTweenFrame !== null && !transition\) return;/);
+    // On a handled transition the effect returns before the hard refit; otherwise
+    // it still runs resetLayoutState(); updateGraph(); (the safety fallback).
+    expect(source).toMatch(
+      /tryStartGroupTransition\(transition\)\)\) return;\s*\n[\s\S]{0,240}resetLayoutState\(\);\s*\n\s*updateGraph\(\);/,
+    );
+  });
+
+  it("collapse keeps the old scene, tweens folding nodes to their anchor, then swaps", () => {
+    const source = graphCanvasSource();
+    const driver = driverSource(source);
+    // COLLAPSE builds bufA/bufB against the CURRENT (pre-collapse) payload and
+    // swaps to the collapsed scene at t=1 (resetLayoutState → updateGraph).
+    expect(driver).toContain("function startCollapseTween");
+    expect(driver).toMatch(/fadeOut: true[\s\S]{0,200}resetLayoutState\(\);\s*\n\s*updateGraph\(\);/);
+  });
+
+  it("expand swaps first, then tweens the revealed nodes OUT from their anchor", () => {
+    const source = graphCanvasSource();
+    const driver = driverSource(source);
+    // EXPAND swaps to the expanded scene FIRST (updateGraph), then fades IN.
+    expect(driver).toMatch(/function startExpandTween[\s\S]{0,200}resetLayoutState\(\);\s*\n\s*updateGraph\(\);/);
+    expect(driver).toMatch(/fadeOut: false/);
+  });
+
+  it("REUSES morphPositions + the merge-fade style on the rAF loop, locking morphActive", () => {
+    const source = graphCanvasSource();
+    const driver = driverSource(source);
+    // Same all-node position lerp as the layout morph, into the reused buffer.
+    expect(driver).toContain("morphPositions(bufA, bufB, eased, liveMorphBuffer)");
+    expect(driver).toContain("renderer.setPositions(liveMorphBuffer)");
+    // The merge-fade pattern generalized to a SET of folding nodes (alpha+size).
+    expect(driver).toContain("interpolateGroupFadeStyle(payload, foldingSet, alphaScale, sizeScale)");
+    // Interaction is locked exactly like the layout morph.
+    expect(driver).toMatch(/morphActive = true;\s*\n\s*setLabelsHidden\(true\)/);
+    // Driven on requestAnimationFrame with the shared duration + easing.
+    expect(driver).toContain("LAYOUT_MORPH_DURATION_MS");
+    expect(driver).toContain("easeMergeProgress(progress)");
+    expect(driver).toContain("window.requestAnimationFrame(step)");
+  });
+
+  it("SAFETY: no renderer / no matching child / SSR / reduced-motion falls back cleanly", () => {
+    const source = graphCanvasSource();
+    const driver = driverSource(source);
+    // tryStart returns false (→ hard cut) without a renderer/payload/anchors.
+    expect(driver).toMatch(/function tryStartGroupTransition[\s\S]{0,220}return false;/);
+    // collectGroupFolds returns null when NO folding child is on screen.
+    expect(driver).toMatch(/if \(!info\) return false;/);
+    // The tween honours prefers-reduced-motion + missing rAF (instant settle).
+    expect(driver).toContain("prefersReducedMotion()");
+    // An abnormal frame unwinds instead of leaving the canvas locked.
+    expect(driver).toMatch(/const abort = \(\) => \{[\s\S]*resetLayoutState\(\);[\s\S]*fitAndRender\(\);/);
+    expect(driver).toMatch(/\} catch \{\s*\n\s*abort\(\);/);
+  });
+
+  it("cleans up the group tween on scene reset and on destroy", () => {
+    const source = graphCanvasSource();
+    // resetLayoutState cancels an in-flight group tween (indices are stale after).
+    expect(resetLayoutStateBody(source)).toContain("cancelGroupTweenFrame()");
+    // Unmount cancels it too, so no stray rAF outlives the component.
+    expect(source).toMatch(/cancelMergeFrame\(\);\s*\n\s*cancelGroupTweenFrame\(\);/);
+  });
+});
