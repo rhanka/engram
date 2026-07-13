@@ -10,6 +10,11 @@
     COLOR_BY_CHURN,
     COLOR_BY_FOLDER,
     COLOR_BY_LAYER,
+    DEFAULT_EDGE_OPACITY,
+    EDGE_ALPHA_DENSE,
+    EDGE_ALPHA_FLAT,
+    EDGE_ALPHA_INVERSE,
+    EDGE_ALPHA_MID,
     computeLayoutBuffer,
     findNearestEdge,
     findNearestNode,
@@ -203,6 +208,22 @@
     { id: COLOR_BY_FOLDER, label: "Community" },
     { id: COLOR_BY_LAYER, label: "Ontology" },
     { id: COLOR_BY_CHURN, label: "Degree" },
+  ];
+
+  // Configurable edge-transparency: the along-edge fade MODE + the flat base
+  // OPACITY. Both re-style LIVE like Color-by (per-render edge attributes: the
+  // alpha SHAPE + the base alpha), so a change rebuilds the payload + re-renders
+  // with NO layout recompute + NO morph. Defaults (dense fade, 0.5 opacity) match
+  // the studio's prior ~0.5 base + hub density-falloff, so an untouched control
+  // is byte-identical to before.
+  let edgeAlphaMode = $state(EDGE_ALPHA_DENSE);
+  let edgeOpacity = $state(DEFAULT_EDGE_OPACITY);
+  // The Edge-fade options exposed by the segmented control (default first).
+  const EDGE_FADE_MODES = [
+    { id: EDGE_ALPHA_DENSE, label: "Dense" },
+    { id: EDGE_ALPHA_INVERSE, label: "Inverse" },
+    { id: EDGE_ALPHA_MID, label: "Mid" },
+    { id: EDGE_ALPHA_FLAT, label: "Flat" },
   ];
 
   // Representation-polish remark 4: the whole layout/spacing/display toolbar
@@ -728,6 +749,10 @@
       // (Folder / curved) keep the output byte-identical to before this lot.
       colorBy: colorMode,
       curvedLinks,
+      // Configurable edge-transparency: the along-edge fade mode + flat base
+      // opacity. Defaults (dense / 0.5) keep the historical edge look.
+      edgeAlphaMode,
+      edgeOpacity,
       ...(Number.isFinite(labelMaxChars) ? { labelMaxChars } : {}),
     });
     lastLabelZoomBucket = labelZoomBucket(camera.zoom);
@@ -822,6 +847,13 @@
   function selectColorMode(mode) {
     if (mode === colorMode) return;
     colorMode = mode;
+  }
+
+  // Configurable edge-transparency handlers: flip the $state; the reactive
+  // $effect above re-styles LIVE (same path as Color-by / Curved-links).
+  function selectEdgeAlphaMode(mode) {
+    if (mode === edgeAlphaMode) return;
+    edgeAlphaMode = mode;
   }
 
   // ResizeObserver / window-resize path. Two guarantees (UAT):
@@ -1634,9 +1666,15 @@
     // (updateGraph already did the first render with the defaults).
     curvedLinks;
     colorMode;
+    // Configurable edge-transparency deps: a fade-mode / opacity change re-styles
+    // LIVE through the same path (per-render edge attributes, no layout recompute).
+    edgeAlphaMode;
+    edgeOpacity;
     // Same hidden-dependency guard as the selection effect: updateDisplayStyle →
     // rebuildPayload reads hoveredNodeId, so untrack it to depend ONLY on the
-    // curvedLinks/colorMode reads above (else a hover re-fires this re-style).
+    // curvedLinks/colorMode/edge-fade reads above (else a hover re-fires this
+    // re-style). Keeping the untrack is CRITICAL — it prevents a hidden
+    // hoveredNodeId dependency from killing edge hover.
     untrack(() => updateDisplayStyle());
   });
 
@@ -1820,6 +1858,31 @@
                   checked={curvedLinks}
                   onchange={toggleCurvedLinks}
                 />
+                <!-- Configurable edge-transparency: a segmented Edge-fade mode +
+                     an Edge-opacity slider. Both re-style LIVE like Color-by. -->
+                <ButtonGroup attached size="sm" label="Edge fade" class="edge-fade-switcher">
+                  {#each EDGE_FADE_MODES as mode (mode.id)}
+                    <Button
+                      size="sm"
+                      variant={edgeAlphaMode === mode.id ? "primary" : "secondary"}
+                      aria-pressed={edgeAlphaMode === mode.id}
+                      aria-label={`Edge fade ${mode.label}`}
+                      onclick={() => selectEdgeAlphaMode(mode.id)}
+                    >{mode.label}</Button>
+                  {/each}
+                </ButtonGroup>
+                <label class="edge-opacity-row">
+                  <span>Edge opacity {edgeOpacity.toFixed(2)}</span>
+                  <input
+                    type="range"
+                    min="0.1"
+                    max="0.8"
+                    step="0.05"
+                    value={edgeOpacity}
+                    aria-label="Edge opacity"
+                    oninput={(event) => (edgeOpacity = Number(event.currentTarget.value))}
+                  />
+                </label>
               </section>
             </div>
           {/snippet}
@@ -2081,6 +2144,21 @@
     box-shadow: 0 1px 4px rgb(15 23 42 / 0.08);
     font-size: 0.75rem;
     white-space: nowrap;
+  }
+
+  /* Configurable edge-transparency: the Edge-opacity slider row matches the
+     Spread/Links force sliders' compact scale + layout. */
+  .edge-opacity-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    white-space: nowrap;
+  }
+
+  .edge-opacity-row input[type="range"] {
+    flex: 1;
+    min-width: 0;
   }
 
   .canvas-element {

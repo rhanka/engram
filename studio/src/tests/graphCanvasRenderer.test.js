@@ -449,6 +449,72 @@ describe("GraphCanvas Curved-links + Color-by controls (Lots 4/5)", () => {
   });
 });
 
+// --- Configurable edge-transparency: Edge fade + Edge opacity controls -------
+// jsdom can't mount the WebGL canvas, so (as with the Lot 1/4/5 controls) we
+// assert against the .svelte SOURCE that the controls are wired: an Edge-fade
+// segmented group + an Edge-opacity slider in the gated Display section, both
+// re-styling LIVE via the same $effect that reacts to curvedLinks/colorMode.
+describe("GraphCanvas edge-transparency controls (Edge fade + Edge opacity)", () => {
+  const gatedSource = (source) =>
+    source.slice(
+      source.indexOf("{#if showLayoutSwitcher}"),
+      source.indexOf("<!-- Keyed on the active backend"),
+    );
+
+  it("imports the edge-alpha constants + default opacity", () => {
+    const source = graphCanvasSource();
+    expect(source).toContain("EDGE_ALPHA_DENSE");
+    expect(source).toContain("EDGE_ALPHA_INVERSE");
+    expect(source).toContain("EDGE_ALPHA_MID");
+    expect(source).toContain("EDGE_ALPHA_FLAT");
+    expect(source).toContain("DEFAULT_EDGE_OPACITY");
+  });
+
+  it("defaults to dense fade + the default edge opacity", () => {
+    const source = graphCanvasSource();
+    expect(source).toMatch(/let edgeAlphaMode = \$state\(EDGE_ALPHA_DENSE\)/);
+    expect(source).toMatch(/let edgeOpacity = \$state\(DEFAULT_EDGE_OPACITY\)/);
+  });
+
+  it("renders the Edge fade segmented group (English labels) + Edge opacity slider in the Display section", () => {
+    const source = graphCanvasSource();
+    const gated = gatedSource(source);
+    // Segmented Edge-fade control over EDGE_FADE_MODES.
+    expect(gated).toContain("EDGE_FADE_MODES");
+    expect(gated).toContain('class="edge-fade-switcher"');
+    expect(gated).toMatch(/onclick=\{\(\) => selectEdgeAlphaMode\(mode\.id\)\}/);
+    expect(gated).toContain('aria-label={`Edge fade ${mode.label}`}');
+    // English labels for every mode.
+    expect(source).toMatch(/\{ id: EDGE_ALPHA_DENSE, label: "Dense" \}/);
+    expect(source).toMatch(/\{ id: EDGE_ALPHA_INVERSE, label: "Inverse" \}/);
+    expect(source).toMatch(/\{ id: EDGE_ALPHA_MID, label: "Mid" \}/);
+    expect(source).toMatch(/\{ id: EDGE_ALPHA_FLAT, label: "Flat" \}/);
+    // Native range slider for the base opacity.
+    expect(gated).toContain('aria-label="Edge opacity"');
+    expect(gated).toMatch(/type="range"[\s\S]{0,120}min="0\.1"[\s\S]{0,120}max="0\.8"/);
+    expect(gated).toMatch(/oninput=\{\(event\) => \(edgeOpacity = Number\(event\.currentTarget\.value\)\)\}/);
+  });
+
+  it("passes edgeAlphaMode + edgeOpacity through rebuildPayload", () => {
+    const source = graphCanvasSource();
+    const rebuild = source.slice(
+      source.indexOf("function rebuildPayload"),
+      source.indexOf("function reapplyLayoutPositions"),
+    );
+    expect(rebuild).toContain("edgeAlphaMode,");
+    expect(rebuild).toContain("edgeOpacity,");
+  });
+
+  it("re-styles LIVE from the SAME effect (new deps added, untrack kept)", () => {
+    const source = graphCanvasSource();
+    // The curved/color effect now also reads edgeAlphaMode + edgeOpacity, and
+    // still wraps the imperative work in untrack (edge-hover fix must survive).
+    expect(source).toMatch(
+      /curvedLinks;\s*\n\s*colorMode;[\s\S]*?edgeAlphaMode;\s*\n\s*edgeOpacity;[\s\S]*?untrack\(\(\) => updateDisplayStyle\(\)\);/,
+    );
+  });
+});
+
 // --- Studio representation-polish remarks 4/5/6: gear-menu settings popover -
 describe("GraphCanvas settings popover (remarks 4/5/6)", () => {
   const toolbarGate = (source) =>
