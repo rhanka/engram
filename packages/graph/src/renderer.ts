@@ -327,6 +327,12 @@ function copyStyle(style: GraphStyleBuffers, nodeCount: number, edgeCount: numbe
     );
   }
 
+  if (style.edgeAlphaShape && style.edgeAlphaShape.length !== edgeCount * 3) {
+    throw new RangeError(
+      `edgeAlphaShape length ${style.edgeAlphaShape.length} does not match edge count ${edgeCount} (expected ${edgeCount * 3})`,
+    );
+  }
+
   return {
     nodeSizes: new Float32Array(style.nodeSizes),
     nodeColors: new Uint8Array(style.nodeColors),
@@ -339,6 +345,7 @@ function copyStyle(style: GraphStyleBuffers, nodeCount: number, edgeCount: numbe
     edgeDash: new Uint8Array(style.edgeDash),
     edgeCurvatures: new Float32Array(style.edgeCurvatures),
     edgeRouteStyles: style.edgeRouteStyles ? new Uint8Array(style.edgeRouteStyles) : undefined,
+    edgeAlphaShape: style.edgeAlphaShape ? new Uint8Array(style.edgeAlphaShape) : undefined,
   };
 }
 
