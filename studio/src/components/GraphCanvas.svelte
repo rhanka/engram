@@ -198,11 +198,11 @@
   let colorMode = $state(COLOR_BY_FOLDER);
   // The Color-by options exposed by the segmented control.
   const COLOR_MODES = [
-    // graphify terms (not codeflow's code-graph vocabulary): community/container
-    // → Communauté, typed layer / node_type → Ontologie, degree heat → Degré.
-    { id: COLOR_BY_FOLDER, label: "Communauté" },
-    { id: COLOR_BY_LAYER, label: "Ontologie" },
-    { id: COLOR_BY_CHURN, label: "Degré" },
+    // graphify terms (not codeflow's code-graph vocabulary): community/container,
+    // typed layer / node_type = ontology, degree heat. English UI — i18n later.
+    { id: COLOR_BY_FOLDER, label: "Community" },
+    { id: COLOR_BY_LAYER, label: "Ontology" },
+    { id: COLOR_BY_CHURN, label: "Degree" },
   ];
 
   // Representation-polish remark 4: the whole layout/spacing/display toolbar
@@ -1810,8 +1810,8 @@
                   {/each}
                 </ButtonGroup>
                 {#if colorMode === COLOR_BY_CHURN}
-                  <div class="churn-legend" aria-label="Degré colour legend">
-                    <span>Faible</span><span class="churn-ramp"></span><span>Élevé</span>
+                  <div class="churn-legend" aria-label="Degree colour legend">
+                    <span>Low</span><span class="churn-ramp"></span><span>High</span>
                   </div>
                 {/if}
                 <Switch
