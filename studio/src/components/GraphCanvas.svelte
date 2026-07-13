@@ -15,10 +15,12 @@
     EDGE_ALPHA_FLAT,
     EDGE_ALPHA_INVERSE,
     EDGE_ALPHA_MID,
+    carryScenePositions,
     computeLayoutBuffer,
     findNearestEdge,
     findNearestNode,
     findNearestNodeId,
+    goldenAngleFan,
     interpolateGroupFadeStyle,
     interpolateMergeStyle,
     interpolateMergePositions,
@@ -27,6 +29,7 @@
     LAYOUT_MODE_FORCE,
     LAYOUT_MODES,
     morphPositions,
+    resolveGroupFolds,
     truncateLabel,
   } from "../lib/graphRendererPayload.js";
   import {
@@ -189,6 +192,39 @@
   // True while a layout morph is in flight: hides labels + locks canvas
   // interaction for the (~480 ms) tween, exactly as pan/zoom already do.
   let morphActive = $state(false);
+
+  // --- Collapse/expand GROUP-transition state (redesign spec §3) -------------
+  // Consumed-once guard (RC-D): groupTransition is a memoized $derived, so a
+  // redundant scene tick re-reads the SAME non-null descriptor. We keep the last
+  // consumed reference so only a GENUINELY new descriptor (new object) starts a
+  // tween — a redundant re-read is treated as absent and never restarts it.
+  let lastConsumedGroupTransition = null;
+  // Rebuild-quiescence flag (RC-B): true from a COLLAPSE tween's start until its
+  // carried swap has run. While set, updateSelection/updateDisplayStyle DEFER
+  // (payload is intentionally one scene behind the `scene` prop); the deferred
+  // restyle is applied ONCE after the swap. Expand never sets it (its payload is
+  // already current). $state per spec §3.3 (harmless — read only imperatively).
+  let groupSwapPending = $state(false);
+  // Set when a selection/display rebuild was deferred during groupSwapPending, so
+  // exactly one post-swap updateSelection() runs (the change is queued, not lost).
+  let pendingPostSwapRestyle = false;
+  // The "jump straight to the end state" closure of the IN-FLIGHT group tween
+  // (collapse → finishCollapseSwap; expand → settleGroupTween(bufB)). Used by the
+  // abnormal-frame abort (§3.7) AND by the scene-effect interrupt rule so a
+  // genuine new transition first COMPLETES the pending swap synchronously (payload
+  // never lags two scenes behind). Cleared by the settle it invokes.
+  let pendingGroupSettle = null;
+  // Position cache for expand target restoration (§3.6): folded child id →
+  // {x, y, epoch}. A collapse→expand round trip (same epoch) restores the exact
+  // prior constellation; a genuine coordinate-space change bumps `coordinateEpoch`
+  // so stale entries are ignored (expand then falls back to the golden-angle fan).
+  const lastKnownPosById = new Map();
+  let coordinateEpoch = 0;
+  // Content signature of the last selection we rebuilt from (§3.3 hardening):
+  // resolveSelectedIds returns a FRESH array on every group toggle even when its
+  // content is identical, so comparing content (not identity) stops those no-op
+  // rebuilds from firing under a collapse tween.
+  let lastSelectionKey = null;
 
   // --- codeflow-parity Lot 3: Spread / Links force re-solve controls ---------
   // Spread maps to computeLayout(repulsion), Links maps to computeLayout's new
@@ -828,6 +864,14 @@
   // Selection/focus update — preserves the user's current zoom and pan.
   function updateSelection() {
     if (!mounted) return;
+    // RC-B: while a collapse tween runs, `payload` is intentionally one scene
+    // behind the `scene` prop. A rebuild now would swap the renderer to the NEW
+    // (collapsed) node set mid-tween → the next tween frame's setPositions throws
+    // on the length mismatch → hard cut. DEFER: apply exactly once post-swap.
+    if (groupSwapPending) {
+      pendingPostSwapRestyle = true;
+      return;
+    }
 
     rebuildPayload();
     ensureRenderer();
@@ -842,6 +886,12 @@
   // (rebuildPayload → reapplyLayoutPositions). Same shape as updateSelection.
   function updateDisplayStyle() {
     if (!mounted) return;
+    // Same RC-B deferral as updateSelection: never rebuild the payload out from
+    // under a running collapse tween (apply once post-swap).
+    if (groupSwapPending) {
+      pendingPostSwapRestyle = true;
+      return;
+    }
 
     rebuildPayload();
     ensureRenderer();
@@ -1404,11 +1454,40 @@
     liveMorphBuffer = null;
     activeLayoutBuffer = null;
     layoutMode = LAYOUT_MODE_FORCE;
+    // A genuine reset / abnormal-exit hard cut also clears the group-transition
+    // bookkeeping so no deferred restyle or pending settle leaks into the new scene.
+    groupSwapPending = false;
+    pendingPostSwapRestyle = false;
+    pendingGroupSettle = null;
     // Lot 7: invalidate any in-flight worker force solve — its buffer is sized
     // for the OLD node set and must not be morphed after the scene changed.
     forceSolveToken++;
     // §F1: a layout reset re-places all nodes, so stale Force-space drags must
     // not survive it (they would re-snap into the new coordinate space).
+    draggedPositions.clear();
+  }
+
+  // Redesign spec §3.2: the LIGHTER cancellation set used by the carried
+  // collapse/expand swap. It cancels the transient timers/tweens that would
+  // clobber a position-preserving swap, but — unlike resetLayoutState — it does
+  // NOT cancel the group tween frame, does NOT null activeLayoutBuffer (the carry
+  // re-establishes it), does NOT force layoutMode, and is NEVER followed by a fit.
+  function resetTransientLayoutState() {
+    cancelLayoutMorphFrame();
+    cancelCameraTween();
+    // A pending hover-dwell timer would apply a stale connected-dim after the
+    // swap re-places nodes — cancel it (same class as the resetLayoutState guard).
+    hoverIntent.cancel();
+    // The zoom-settle callback calls rebuildPayload → it would clobber the carried
+    // positions one tick later (same class of bug as RC-B). Clear it.
+    if (typeof window !== "undefined" && zoomSettleTimer !== null) {
+      window.clearTimeout(zoomSettleTimer);
+      zoomSettleTimer = null;
+    }
+    // Invalidate any in-flight worker force solve (buffer sized for the OLD set).
+    forceSolveToken++;
+    // Drag coords are already baked into the pre-swap snapshot (currentPositionMap
+    // reads them via currentLayoutBuffer), so drop the stale Force-space drag map.
     draggedPositions.clear();
   }
 
@@ -1483,6 +1562,9 @@
     if (!target || token !== forceSolveToken || !mounted || layoutMode !== LAYOUT_MODE_FORCE)
       return;
     forceBaseBuffer = new Float32Array(target);
+    // §3.6: a Force re-solve genuinely moves every node, so any cached prior
+    // constellation is stale — invalidate the expand-restore cache.
+    coordinateEpoch += 1;
     startLayoutMorphToBuffer(LAYOUT_MODE_FORCE, target);
   }
 
@@ -1504,6 +1586,10 @@
   // (during a morph `layoutMode` is already the target, so re-clicking it is a
   // no-op while clicking the OTHER mode interrupts and re-targets).
   function selectLayoutMode(mode) {
+    // §3.3: a layout morph must not be computed against a mid-transition payload
+    // (a group tween owns the buffer). Pointer/wheel are already locked by
+    // morphActive; this covers the toolbar click path.
+    if (groupTweenFrame !== null) return;
     if (mode === layoutMode) return;
     startLayoutMorph(mode);
   }
@@ -1520,6 +1606,10 @@
     // switch-to-Force settles the pristine forceBaseBuffer (== scene positions),
     // so re-applying it across a rebuild is a harmless no-op.
     activeLayoutBuffer = buffer ? new Float32Array(buffer) : null;
+    // §3.6: switching to a NON-Force layout (Layers/Grid/Radial/Metro) relocates
+    // every node into a new coordinate space, so the expand-restore cache is
+    // stale — invalidate it. (A Force re-solve bumps the epoch in resolveForceLayout.)
+    if (mode !== LAYOUT_MODE_FORCE) coordinateEpoch += 1;
     const positions = payload?.renderGraph?.positions;
     if (positions && buffer && buffer.length === positions.length) {
       positions.set(buffer);
@@ -1619,15 +1709,19 @@
     }
   }
 
-  // --- Collapse/expand GROUP transition driver -------------------------------
-  // Animate a grouping (collapse) / ungrouping (expand) instead of hard-cutting
-  // to the new scene. REUSES the layout-morph machinery: a per-index position
-  // lerp (morphPositions) into a reused liveMorphBuffer + the merge-fade style
-  // (interpolateGroupFadeStyle) on the SAME rAF loop, locking interaction via
-  // morphActive exactly as the layout morph does. The App passes the direction +
-  // the folded-child → group-node anchor map; the group node's on-screen anchor
-  // is its own position when present, else the centroid of its folding members
-  // (the group node usually lives in the OTHER scene across the fold boundary).
+  // --- Collapse/expand GROUP transition driver (redesign spec §3) ------------
+  // Animate a grouping (collapse) / ungrouping (expand) as a COHERENT start→final
+  // fold, NOT a re-solve/refit morph. The invariant: any node present before AND
+  // after keeps its exact on-screen position and the camera never moves (spec §2).
+  // REUSES the layout-morph machinery — a per-index lerp (morphPositions) into a
+  // reused liveMorphBuffer + the merge-fade style (interpolateGroupFadeStyle) on
+  // the SAME rAF loop, locking interaction via morphActive. The swap itself goes
+  // through applyCarriedScene (position-preserving, NO fit):
+  //   · COLLAPSE — keep the OLD scene, tween each folding child → its group anchor
+  //     (fade+shrink), then carried-swap so the group node lands at that anchor.
+  //   · EXPAND   — carried-swap FIRST (children stacked on the group's LAST
+  //     on-screen position), then tween them OUT to the cached prior constellation
+  //     (or a deterministic golden-angle fan) while fading + growing in.
 
   function cancelGroupTweenFrame() {
     if (typeof window !== "undefined" && groupTweenFrame !== null) {
@@ -1636,56 +1730,69 @@
     groupTweenFrame = null;
   }
 
-  // Resolve the folding/revealing children against the CURRENT payload: which
-  // node indices fade, grouped by anchor, and each group's on-screen anchor
-  // position. Returns null when NONE of the anchor children are in the payload
-  // (nothing to animate → the caller falls back to the hard cut).
+  // Redesign spec §3.2 — the collapse/expand SWAP primitive. Swaps the renderer
+  // to the NEW scene WITHOUT losing the on-screen coordinate space and WITHOUT a
+  // camera refit: rebuild the payload, then OVERWRITE the fresh scene-baked
+  // positions BY ID from the pre-swap snapshot (shared nodes carried; group node
+  // at the fold centroid on collapse; children stacked on the anchor on expand;
+  // brand-new handles at their neighbour-centroid). Persists the carried buffer to
+  // activeLayoutBuffer + forceBaseBuffer so later rebuilds don't re-derive scene-
+  // baked coords (RC-E), and ends with applyPayloadNoFit() — no refit.
+  function applyCarriedScene({ carriedPosById, placedPosById } = {}) {
+    // Null the OLD layout buffer so the rebuild yields PRISTINE scene-baked coords
+    // (the carry's last-resort fallback); we re-establish the carried buffer below.
+    activeLayoutBuffer = null;
+    liveMorphBuffer = null;
+    rebuildPayload(); // payload = NEW scene (scene-baked coords, overwritten next).
+    const graph = payload?.renderGraph;
+    if (graph?.positions) {
+      const carried = carryScenePositions({
+        nodeIds: graph.nodeIds,
+        positions: graph.positions,
+        edges: graph.edges,
+        carriedPosById: carriedPosById ?? new Map(),
+        placedPosById: placedPosById ?? new Map(),
+      });
+      if (carried && carried.length === graph.positions.length) graph.positions.set(carried);
+      // Survive later selection/hover/display rebuilds (RC-E). Layers→Force returns
+      // to THIS carried buffer, not the unused fresh solve; layoutMode returns to
+      // Force so a subsequent switch reads the carried buffer as its base.
+      activeLayoutBuffer = new Float32Array(graph.positions);
+      forceBaseBuffer = new Float32Array(graph.positions);
+      layoutMode = LAYOUT_MODE_FORCE;
+    }
+    ensureRenderer();
+    resizeCanvas();
+    applyPayloadNoFit(); // setGraph + setStyle + applyCamera — preserves the camera.
+  }
+
+  // Resolve the folding/revealing children against the CURRENT payload (§3.4
+  // step 2) — reading positions via currentLayoutBuffer() so a group action that
+  // lands mid layout-morph anchors against the LIVE interpolated coords, not the
+  // stale scene-baked ones. Delegates the anchor rule (group node's own position
+  // when on screen, else member centroid) to the pure resolveGroupFolds core.
+  // Returns null when NONE of the anchor children are on screen (the caller then
+  // does a position-preserving carried swap, never a refit).
   function collectGroupFolds(anchors) {
     const graph = payload?.renderGraph;
     const idx = payload?.nodeIndexById;
-    const positions = graph?.positions;
+    const positions = currentLayoutBuffer();
     if (!graph || !idx || !positions) return null;
-
-    const foldingSet = new Set();
-    const groupMembers = new Map(); // groupNodeId -> [nodeIndex]
-    for (const [childId, groupId] of anchors) {
-      const i = idx.get(childId);
-      if (!Number.isInteger(i)) continue;
-      foldingSet.add(i);
-      let members = groupMembers.get(groupId);
-      if (!members) {
-        members = [];
-        groupMembers.set(groupId, members);
-      }
-      members.push(i);
-    }
-    if (foldingSet.size === 0) return null;
-
-    const anchorPosByGroup = new Map();
-    for (const [groupId, members] of groupMembers) {
-      const gi = idx.get(groupId);
-      if (Number.isInteger(gi)) {
-        anchorPosByGroup.set(groupId, {
-          x: positions[gi * 2] ?? 0,
-          y: positions[gi * 2 + 1] ?? 0,
-        });
-      } else {
-        let sx = 0;
-        let sy = 0;
-        for (const i of members) {
-          sx += positions[i * 2] ?? 0;
-          sy += positions[i * 2 + 1] ?? 0;
-        }
-        anchorPosByGroup.set(groupId, { x: sx / members.length, y: sy / members.length });
-      }
-    }
-    return { foldingSet, groupMembers, anchorPosByGroup, positions };
+    const info = resolveGroupFolds({
+      nodeIds: graph.nodeIds,
+      nodeIndexById: idx,
+      positions,
+      anchors,
+    });
+    if (!info) return null;
+    return { ...info, positions };
   }
 
   // Try to play the animated collapse/expand for `transition`. Returns true when
   // the driver TOOK OVER the scene swap (the caller must NOT also hard-cut), false
-  // to fall back to the current hard refit (safety: missing/ambiguous transition,
-  // no renderer, or no matching children on screen).
+  // to fall back to the refit path (safety: missing/ambiguous transition, or no
+  // renderer/payload). NOTE: an on-screen-empty fold set is NOT a false here — the
+  // driver still owns the swap and does a position-preserving carried swap.
   function tryStartGroupTransition(transition) {
     if (!transition || !mounted || !renderer || !payload) return false;
     const anchors = transition.anchorByNodeId;
@@ -1695,76 +1802,213 @@
     return false;
   }
 
-  // COLLAPSE: keep the OLD (pre-collapse) scene on screen and tween each folding
-  // node → its group anchor while fading + shrinking it; at t=1 swap to the new
-  // collapsed scene (updateGraph refits/settles).
+  // COLLAPSE (§3.4): snapshot the OLD on-screen positions, tween each folding
+  // child → its group anchor (fade+shrink) on the OLD payload, then at t=1
+  // carried-swap so the group node lands EXACTLY where its children converged and
+  // every shared node keeps its position. groupSwapPending defers any concurrent
+  // selection/display rebuild until after the swap (RC-B).
   function startCollapseTween(anchors) {
+    const oldPos = currentPositionMap() ?? new Map(); // carriedPosById (with drags)
     const info = collectGroupFolds(anchors);
-    if (!info) return false; // no folding child on screen → hard cut
+    if (!info) {
+      // No folding child on screen → nothing to animate, but STILL position-
+      // preserving: carried swap straight to the collapsed scene (never a refit).
+      groupSwapPending = true;
+      finishCollapseSwap(oldPos, new Map(), anchors);
+      return true;
+    }
     const { foldingSet, groupMembers, anchorPosByGroup, positions } = info;
     const bufA = new Float32Array(positions);
     const bufB = new Float32Array(positions);
+    const placedPosById = new Map(); // groupNodeId -> the fold-centroid anchor
     for (const [groupId, members] of groupMembers) {
       const a = anchorPosByGroup.get(groupId);
+      placedPosById.set(groupId, { x: a.x, y: a.y });
       for (const i of members) {
         bufB[i * 2] = a.x;
         bufB[i * 2 + 1] = a.y;
       }
     }
+    groupSwapPending = true;
+    // The "jump to end" closure used by the abort path AND the interrupt rule.
+    pendingGroupSettle = () => finishCollapseSwap(oldPos, placedPosById, anchors);
     runGroupTween({
       bufA,
       bufB,
       foldingSet,
       fadeOut: true,
-      onDone: () => {
-        // Swap to the collapsed scene + settle. The folding nodes already faded
-        // to alpha 0 at their anchor, so the group node appears in their place.
-        resetLayoutState();
-        updateGraph();
-      },
+      onDone: () => pendingGroupSettle?.(),
     });
     return true;
   }
 
-  // EXPAND: swap to the new (expanded) scene FIRST, then start each newly-revealed
-  // node AT its group anchor (faint + small) and tween it OUT to its real layout
-  // position while fading + growing in.
-  function startExpandTween(anchors) {
-    resetLayoutState();
-    updateGraph(); // payload now = expanded scene, fitted
-    const info = collectGroupFolds(anchors);
-    // The swap already stands as the result; if no revealed child matched, there
-    // is simply nothing to animate (still handled — do NOT hard-cut again).
-    if (!info) return true;
-    const { foldingSet, groupMembers, anchorPosByGroup, positions } = info;
-    const bufB = new Float32Array(positions); // real, settled positions (target)
-    const bufA = new Float32Array(positions); // revealed children at their anchor
-    for (const [groupId, members] of groupMembers) {
-      const a = anchorPosByGroup.get(groupId);
-      for (const i of members) {
-        bufA[i * 2] = a.x;
-        bufA[i * 2 + 1] = a.y;
+  // Collapse settle (§3.4 step 5): carried-swap to the collapsed scene with the
+  // group node placed at the fold centroid and shared nodes carried; apply any
+  // deferred restyle exactly once; record the folded children's pre-fold positions
+  // for a later expand restore (§3.6).
+  function finishCollapseSwap(oldPos, placedPosById, anchors) {
+    pendingGroupSettle = null;
+    resetTransientLayoutState();
+    applyCarriedScene({ carriedPosById: oldPos ?? new Map(), placedPosById: placedPosById ?? new Map() });
+    // §3.6 WRITE: remember each folded child's PRE-fold position so a same-epoch
+    // expand restores the exact prior constellation.
+    if (anchors instanceof Map && oldPos instanceof Map) {
+      for (const childId of anchors.keys()) {
+        const p = oldPos.get(childId);
+        if (p) lastKnownPosById.set(childId, { x: p.x, y: p.y, epoch: coordinateEpoch });
       }
     }
+    morphActive = false;
+    liveMorphBuffer = null;
+    groupSwapPending = false;
+    if (pendingPostSwapRestyle) {
+      pendingPostSwapRestyle = false;
+      updateSelection();
+    }
+    setLabelsHidden(false);
+    renderNow();
+  }
+
+  // EXPAND (§3.5): capture the group anchor BEFORE the swap (RC-C), carried-swap
+  // FIRST so the revealed children start stacked on the group's last on-screen
+  // position, then tween them OUT to their targets (cached prior constellation
+  // when same-epoch, else a deterministic golden-angle fan) while fading+growing.
+  function startExpandTween(anchors) {
+    // 1. PRE-swap snapshot — the group node IS in the current payload here.
+    const oldPos = currentPositionMap() ?? new Map();
+    const anchorPosByGroup = new Map(); // groupNodeId -> its last on-screen position
+    for (const groupId of new Set(anchors.values())) {
+      const p = oldPos.get(groupId);
+      if (p) anchorPosByGroup.set(groupId, { x: p.x, y: p.y });
+    }
+    // Children start stacked at their group's former spot.
+    const placedPosById = new Map(); // revealedChildId -> anchorPos(itsGroup)
+    for (const [childId, groupId] of anchors) {
+      const a = anchorPosByGroup.get(groupId);
+      if (a) placedPosById.set(childId, { x: a.x, y: a.y });
+    }
+    // 2. Carried swap FIRST (camera untouched, shared nodes carried, children on
+    // the anchor). Expand's payload is now current — no groupSwapPending needed.
+    resetTransientLayoutState();
+    applyCarriedScene({ carriedPosById: oldPos, placedPosById });
+    // 3. Resolve the revealed children against the NEW payload.
+    const info = collectGroupFolds(anchors);
+    if (!info) {
+      // No revealed child on screen → the carried swap already stands. Persist the
+      // buffers (RC-E) so later rebuilds don't re-derive scene-baked coords.
+      settleGroupTween(payload?.renderGraph?.positions);
+      return true;
+    }
+    const { foldingSet, groupMembers, anchorPosByGroup: postAnchor, positions } = info;
+    const bufA = new Float32Array(positions); // children currently AT the anchor
+    const bufB = new Float32Array(positions);
+    // 4. Targets: cached prior constellation (same epoch) else golden-angle fan.
+    const targets = computeExpandTargets(groupMembers, postAnchor, positions);
+    for (const [i, p] of targets) {
+      bufB[i * 2] = p.x;
+      bufB[i * 2 + 1] = p.y;
+    }
+    // 5. Tween on the NEW payload; settle persists activeLayoutBuffer (RC-E).
+    pendingGroupSettle = () => settleGroupTween(bufB);
     runGroupTween({
       bufA,
       bufB,
       foldingSet,
       fadeOut: false,
-      onDone: () => settleGroupTween(bufB),
+      onDone: () => pendingGroupSettle?.(),
     });
     return true;
   }
 
-  // Restore the settled positions + base style at the end of an EXPAND tween.
+  // Expand targets (§3.5.2), per revealed-child index: the cached prior position
+  // when the cache holds a SAME-epoch entry (collapse→expand round trip restores
+  // the exact prior shape), else a deterministic golden-angle (sunflower) fan
+  // around the group anchor — sorted by id so the same id set → the same slots.
+  function computeExpandTargets(groupMembers, anchorPosByGroup, positions) {
+    const nodeIds = payload?.renderGraph?.nodeIds ?? [];
+    const targetByIndex = new Map(); // nodeIndex -> {x, y}
+    const diag = bboxDiagonal(positions);
+    const spacing = Math.max(4 * NODE_RADIUS, 0.02 * diag);
+    const cap = 0.15 * diag;
+    for (const [groupId, members] of groupMembers) {
+      const anchor = anchorPosByGroup.get(groupId) ?? { x: 0, y: 0 };
+      const fanIndices = [];
+      for (const i of members) {
+        const cached = lastKnownPosById.get(nodeIds[i]);
+        if (cached && cached.epoch === coordinateEpoch) {
+          targetByIndex.set(i, { x: cached.x, y: cached.y });
+        } else {
+          fanIndices.push(i);
+        }
+      }
+      if (fanIndices.length > 0) {
+        const fan = goldenAngleFan({
+          anchor,
+          childIds: fanIndices.map((i) => nodeIds[i]),
+          spacing,
+          cap,
+        });
+        for (const i of fanIndices) {
+          const p = fan.get(nodeIds[i]);
+          if (p) targetByIndex.set(i, p);
+        }
+      }
+    }
+    return targetByIndex;
+  }
+
+  // Diagonal of the bounding box of a position buffer (world units) — the scale
+  // reference for the expand fan spacing + radius cap. 0 for an empty/degenerate
+  // buffer (the fan then collapses to the anchor — harmless, nothing to reveal).
+  function bboxDiagonal(positions) {
+    if (!positions || positions.length < 2) return 0;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (let i = 0; i < positions.length; i += 2) {
+      const x = positions[i];
+      const y = positions[i + 1];
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+    if (!Number.isFinite(minX) || !Number.isFinite(minY)) return 0;
+    return Math.hypot(maxX - minX, maxY - minY);
+  }
+
+  // Settle the end of an EXPAND tween (§3.5 step 5 + RC-E): bake the settled
+  // positions, PERSIST them to activeLayoutBuffer + forceBaseBuffer (so a later
+  // selection/hover/display rebuild re-applies them instead of re-deriving scene-
+  // baked coords and jumping), refresh the position cache, and restore the style.
   function settleGroupTween(buffer) {
+    pendingGroupSettle = null;
     morphActive = false;
     liveMorphBuffer = null;
+    groupSwapPending = false; // defensive — expand never sets it, but never leak it.
     const positions = payload?.renderGraph?.positions;
     if (positions && buffer && buffer.length === positions.length) positions.set(buffer);
+    if (positions) {
+      activeLayoutBuffer = new Float32Array(positions);
+      forceBaseBuffer = new Float32Array(positions);
+      // §3.6: refresh the cache for the settled ids (same epoch).
+      const nodeIds = payload?.renderGraph?.nodeIds ?? [];
+      for (let i = 0; i < nodeIds.length; i += 1) {
+        lastKnownPosById.set(nodeIds[i], {
+          x: positions[i * 2] ?? 0,
+          y: positions[i * 2 + 1] ?? 0,
+          epoch: coordinateEpoch,
+        });
+      }
+    }
     if (renderer && payload) {
       renderer.setPositions(payload.renderGraph.positions);
       renderer.setStyle(payload.style);
+    }
+    if (pendingPostSwapRestyle) {
+      pendingPostSwapRestyle = false;
+      updateSelection();
     }
     setLabelsHidden(false);
     renderNow();
@@ -1782,8 +2026,8 @@
 
     const canAnimate =
       typeof window !== "undefined" && typeof window.requestAnimationFrame === "function";
-    // No rAF (SSR/tests) or reduced-motion (§F3): skip the tween, let the caller
-    // settle straight to the end state (a hard cut).
+    // No rAF (SSR/tests) or reduced-motion (§3.7): skip the tween, settle STRAIGHT
+    // to the end state — a position-preserving instant swap, NOT a refit.
     if (
       !renderer ||
       !bufA ||
@@ -1800,13 +2044,19 @@
     setLabelsHidden(true);
     liveMorphBuffer = new Float32Array(bufA.length);
     const startTime = window.performance?.now?.() ?? Date.now();
-    // §F2: an abnormal frame must never leave the canvas locked (morphActive stuck
-    // true freezes every pointer/wheel handler) — unwind to a clean, fitted state.
+    // §3.7: an abnormal frame must never leave the canvas locked — JUMP to the end
+    // state (finishCollapseSwap / settleGroupTween via onDone), position-
+    // preserving; only if THAT also throws do we fall back to the fitAndRender
+    // hard cut as the absolute last resort.
     const abort = () => {
       cancelGroupTweenFrame();
-      resetLayoutState();
-      applyConnectedDim();
-      fitAndRender();
+      try {
+        onDone?.();
+      } catch {
+        resetLayoutState();
+        applyConnectedDim();
+        fitAndRender();
+      }
     };
     const renderFrame = (eased) => {
       morphPositions(bufA, bufB, eased, liveMorphBuffer);
@@ -1861,6 +2111,14 @@
     return key;
   }
 
+  // Content signature of the selection (§3.3): sorted selected ids + focus. Two
+  // fresh arrays with the same members share a signature, so the every-toggle
+  // fresh-array identity from resolveSelectedIds does not trigger a no-op rebuild.
+  function selectionSignature(ids, focus) {
+    const list = Array.isArray(ids) ? [...ids].sort() : [];
+    return `${focus ?? ""}|${list.join(",")}`;
+  }
+
   $effect(() => {
     // Graph data (scene) change -> rebuild payload and auto-fit the view, but
     // ONLY when the scene's CONTENT actually changed (not merely its object
@@ -1872,25 +2130,41 @@
     if (key === lastSceneKey) return;
     lastSceneKey = key;
     // Animated collapse/expand: when App signalled a group transition for THIS
-    // scene change, its driver OWNS the swap (collapse keeps the old scene and
-    // morphs into updateGraph at t=1; expand swaps first then morphs out). untrack
-    // so this effect depends ONLY on `scene` — a later groupTransition prop update
-    // must not re-fire a rebuild, and it must not become a hidden dependency.
-    const transition = untrack(() => groupTransition);
-    // A group tween owns the canvas: a REDUNDANT scene re-derivation (the same
-    // group action re-laying out positions, or the ontology artifact settling one
-    // tick after the fold) must NOT cancel the in-flight tween. Only a GENUINE new
-    // transition interrupts; otherwise let the tween settle (its onDone rebuilds
-    // from the latest scene). Without this, such a follow-up tick hard-cut and
-    // froze the animation on frame 0 (observed under CDP).
-    if (groupTweenFrame !== null && !transition) return;
+    // scene change, its driver OWNS the swap. untrack so this effect depends ONLY
+    // on `scene` — a later groupTransition prop update must not re-fire a rebuild
+    // and must not become a hidden dependency.
+    const raw = untrack(() => groupTransition);
+    // Consumed-once (RC-D): groupTransition is a memoized $derived, so a redundant
+    // scene tick (the same group action re-laying out positions, or the ontology
+    // artifact settling one tick later) re-reads the SAME non-null descriptor.
+    // Only a GENUINELY new descriptor (a new object from a new groupedGraph) is
+    // FRESH; a re-read is treated as absent so it can neither restart nor kill the
+    // in-flight tween.
+    const fresh = raw && raw !== lastConsumedGroupTransition ? raw : null;
+    if (fresh) lastConsumedGroupTransition = raw;
+    // A group tween owns the canvas: a redundant tick (no fresh descriptor) mid-
+    // tween must NOT rebuild — let the tween settle (its onDone swaps from the
+    // latest scene).
+    if (groupTweenFrame !== null && !fresh) return;
+    // §3.7 interrupt rule: a GENUINE new transition arriving mid-tween must first
+    // COMPLETE the pending swap synchronously (finishCollapseSwap / settleGroupTween
+    // via pendingGroupSettle) so `payload` never lags two scenes behind, then start
+    // the new transition from the settled state.
+    if (groupTweenFrame !== null && fresh && pendingGroupSettle) {
+      cancelGroupTweenFrame();
+      pendingGroupSettle();
+    }
     // Genuine new graph/candidate: drop stale dragged positions before refit.
     draggedPositions.clear();
-    // Falls through to the hard cut when the transition is absent/ambiguous or no
-    // folding node is on screen (the safety fallback — never breaks the collapse).
-    if (untrack(() => tryStartGroupTransition(transition))) return;
-    // Never tween across a scene-content change (new node indices) — reset the
-    // layout to Force and recapture the fresh force baseline in updateGraph.
+    // Hand off to the animated driver (collapse/expand). It OWNS the swap (position-
+    // preserving carried swap, no refit) and returns true; only an absent/ambiguous
+    // transition or a genuine non-group scene change falls through.
+    if (untrack(() => tryStartGroupTransition(fresh))) return;
+    // Genuine NON-group scene change (model switch, weak-link, time scrub) or mixed/
+    // no descriptor: the coordinate space genuinely changes → invalidate the
+    // expand-restore cache (§3.6), then the historical reset + refit path. Never
+    // tween across a scene-content change (new node indices).
+    coordinateEpoch += 1;
     resetLayoutState();
     updateGraph();
   });
@@ -1898,9 +2172,17 @@
   $effect(() => {
     // Selection / focus change → rebuild styling but PRESERVE the current
     // camera (no refit), so clicking or opening a node keeps the user's
-    // zoom and pan instead of resetting the view.
-    selectedIds;
-    focusId;
+    // zoom and pan instead of resetting the view. Reading selectedIds + focusId
+    // registers both as dependencies.
+    const key = selectionSignature(selectedIds, focusId);
+    // §3.3 hardening: resolveSelectedIds returns a FRESH array on EVERY group
+    // toggle even when its content is identical (App: `return [...ids]`), so the
+    // prop identity changes on every toggle. Compare CONTENT, not identity, so
+    // those no-op rebuilds no longer fire at all — which (together with the
+    // groupSwapPending deferral) stops the same-flush rebuild that killed collapse
+    // (RC-B). A genuine selection/focus change still passes this guard.
+    if (key === lastSelectionKey) return;
+    lastSelectionKey = key;
     // A selection/focus appearing supersedes any pending pre-selection hover
     // dwell — updateSelection() rebuilds the (selection-dimmed) style itself.
     hoverIntent.cancel();
