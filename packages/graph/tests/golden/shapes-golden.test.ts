@@ -19,13 +19,8 @@
  */
 
 import { describe, expect, it } from "vitest";
-import {
-  buildShapeInstances,
-  decodeInstance,
-  effectiveStrokeHalfWidth,
-  type WebGLShapeFrame,
-} from "../../src/webgl-shapes";
-import { drawnRadius } from "../../src/render-geometry";
+import { buildShapeInstances, decodeInstance, type WebGLShapeFrame } from "../../src/webgl-shapes";
+import { borderStrokeWidthPx, drawnRadius } from "../../src/render-geometry";
 import { shapeCode } from "../../src/shape-geometry";
 // @ts-expect-error -- .mjs harness modules are plain ESM, no types needed.
 import { openOracle } from "./cdp-harness.mjs";
@@ -111,21 +106,26 @@ describe("B1 Phase 1 — shape geometry parity (WebGL a_radius == Canvas2D radiu
   });
 
   // ---------------------------------------------------------------------
-  // Border-thickness fix: the two-disc ring is built by scaling the WHOLE
-  // unit polygon by a RADIAL offset (radius ± effectiveStrokeHalf). For a
-  // disc (circle) the radial offset IS the perpendicular gap, but for a
+  // Border-thickness geometry (apothem compensation + per-shape THINNING,
+  // 2026-07-13 user request): the two-disc ring is built by scaling the
+  // WHOLE unit polygon by a RADIAL offset (radius ± effectiveStrokeHalf). For
+  // a disc (circle) the radial offset IS the perpendicular gap, but for a
   // flat-faced polygon (diamond/square/hexagon/triangle) the gap measured
   // PERPENDICULAR to a face is `radial offset x apothem/circumradius ratio`
   // (apothem = radius x ratio) — so circles/hexagons rendered a MUCH thicker
-  // perpendicular border than diamonds/squares/triangles. The fix compensates
-  // by DIVIDING the radial offset by each family's own apothem ratio, so that
-  // once re-foreshortened by that SAME ratio the visible PERPENDICULAR width
-  // is identical everywhere. This asserts the perpendicular (radial x ratio),
-  // NOT the radial offset itself, is uniform — the radial offsets are
-  // deliberately UNEQUAL by design (that inequality is what cancels the
-  // per-shape foreshortening). Deterministic, no GPU needed.
+  // perpendicular border than diamonds/squares/triangles. The apothem
+  // compensation DIVIDES the radial offset by each family's own apothem
+  // ratio, so that once re-foreshortened by that SAME ratio every family
+  // lands on a COMMON perpendicular baseline. On TOP of that baseline,
+  // SHAPE_BORDER_THIN then applies an ADDITIONAL per-shape cut — circle/
+  // hexagon x0.5, diamond/square/star/triangle x0.8 — so the perpendicular
+  // width is now a deliberate TWO-TIER geometry (no longer fully uniform).
+  // This asserts the perpendicular (radial x ratio), NOT the radial offset
+  // itself — the radial offsets are deliberately UNEQUAL by design (that
+  // inequality is what cancels the per-shape foreshortening AND encodes the
+  // per-shape thinning). Deterministic, no GPU needed.
   // ---------------------------------------------------------------------
-  it("border perpendicular half-width is UNIFORM across every shape family (apothem compensation)", () => {
+  it("border perpendicular half-width is TWO-TIER across shape families (apothem compensation + per-shape thinning)", () => {
     const dpr = 2;
     const zoom = 1;
     // Documented apothem-per-a_radius ratios (shape-geometry.ts regular
@@ -170,27 +170,41 @@ describe("B1 Phase 1 — shape geometry parity (WebGL a_radius == Canvas2D radiu
       return { name: family.name, code, perp: radialHalfWidth * APOTHEM_RATIO_BY_CODE[code]! };
     });
 
-    const reference = perpWidths[0]!.perp;
-    // Precision 3 (not tighter): this test's ratio table intentionally uses
-    // documented ROUNDED literals (e.g. 0.707) while the source computes
-    // exact trig (Math.cos(Math.PI/4)), so a ~3e-4 rounding gap is expected
-    // and not a regression.
-    for (const { name, perp } of perpWidths) {
+    // Tier 1: circle (0) & hexagon (3) — SHAPE_BORDER_THIN x0.5.
+    const circle = perpWidths.find((p) => p.code === 0)!.perp;
+    const hexagon = perpWidths.find((p) => p.code === 3)!.perp;
+    expect(circle, "circle vs hexagon: same tier (both x0.5), must match").toBeCloseTo(hexagon, 3);
+
+    // Tier 2: diamond (1), star (2), square (4), triangle (6) — x0.8 (star &
+    // triangle NOT specified by the user request; defaulted to the same 0.8
+    // as diamond/square rather than left at the old uniform baseline).
+    const tier2Codes = [1, 2, 4, 6];
+    const reference = perpWidths.find((p) => p.code === tier2Codes[0])!.perp;
+    for (const code of tier2Codes) {
+      const perp = perpWidths.find((p) => p.code === code)!.perp;
       expect(
         perp,
-        `${name}: PERPENDICULAR border half-width (${perp}) must match every other family` +
-          ` (reference ${reference}) — the fix compensates the radial offset by the apothem ratio` +
-          ` so the VISIBLE border weight no longer depends on shape.`,
+        `code ${code}: PERPENDICULAR border half-width (${perp}) must match the rest of tier 2` +
+          ` (reference ${reference})`,
       ).toBeCloseTo(reference, 3);
     }
-    // Sanity: circle (ratio 1.0) and diamond (ratio 0.707, genuinely much
-    // thinner pre-fix) now match to the pixel — the exact bug this fix
-    // targets — as do circle and square (ratio 0.88).
-    const circle = perpWidths.find((p) => p.code === 0)!.perp;
-    const diamond = perpWidths.find((p) => p.code === 1)!.perp;
-    const square = perpWidths.find((p) => p.code === 4)!.perp;
-    expect(circle).toBeCloseTo(diamond, 3);
-    expect(circle).toBeCloseTo(square, 3);
+
+    // Cross-tier: circle/hexagon vs diamond/square/star/triangle differ by
+    // EXACTLY the two SHAPE_BORDER_THIN multipliers' ratio (0.5 / 0.8 =
+    // 0.625) — NOT 0.5 (0.5 is only the circle/hexagon multiplier applied to
+    // the shared baseline, not its ratio to the OTHER tier's own, different
+    // 0.8 multiplier). Verified numerically (0.308 / 0.493 = 0.625).
+    expect(circle / reference).toBeCloseTo(0.5 / 0.8, 2);
+
+    // REGRESSION LOCK: absolute perpendicular widths, as a fraction of the
+    // raw (uncompensated, un-thinned) strokeHalfWidth.
+    const base = borderStrokeWidthPx(true, dpr, zoom) / 2;
+    const rawStrokeHalf = base * 1.12; // WEBGL_OUTLINE_WEIGHT_BOOST, unchanged by this fix
+    // circle/hexagon: 0.616 (BORDER_PERP_SCALE) x 0.5 (thin factor) = 0.308
+    expect(circle / rawStrokeHalf).toBeCloseTo(0.308, 2);
+    expect(hexagon / rawStrokeHalf).toBeCloseTo(0.308, 2);
+    // diamond/square/star/triangle: 0.616 x 0.8 = 0.493
+    expect(reference / rawStrokeHalf).toBeCloseTo(0.493, 2);
   });
 });
 
@@ -277,18 +291,20 @@ describe("B1 Phase 1 — shape pixel parity (WebGL vs Canvas2D, Chrome/CDP)", ()
 
       // -------------------------------------------------------------------
       // OUTLINE WIDTH PARITY (B1 beta fidelity bug, UPDATED for the per-shape
-      // apothem-compensation fix). The FAMILIES above are all SOLID fills, so
-      // they never exercise the node BORDER. Canvas2D strokes the border
-      // CENTRED on the drawn radius (a band of (bold?3:1.5)·PR spanning
-      // [radius-half, radius+half]) — UNCHANGED by this fix. The WebGL ring is
-      // now DELIBERATELY ~30% THINNER than the pre-existing square/diamond
-      // weight (uniform across shapes — see webgl-shapes.ts BORDER_PERP_SCALE),
-      // so the probe location and ink-ratio floor below are the NEW intended
-      // geometry, not the old "reads a touch heavier than Canvas2D" target.
-      // We probe a fraction of the way into the ring (not right at its edge,
-      // to stay clear of AA/MSAA at the boundary) using the SAME formula the
-      // source computes, so a probe failure means an actual geometry/colour
-      // regression, not a stale hardcoded pixel offset.
+      // apothem-compensation fix AND the 2026-07-13 per-shape THINNING on top
+      // of it). The FAMILIES above are all SOLID fills, so they never
+      // exercise the node BORDER. Canvas2D strokes the border CENTRED on the
+      // drawn radius (a band of (bold?3:1.5)·PR spanning [radius-half,
+      // radius+half]) — UNCHANGED by this fix. The WebGL ring for this CIRCLE
+      // fixture is now DELIBERATELY thinner still than the already-thinned
+      // uniform baseline — SHAPE_BORDER_THIN's circle/hexagon tier (x0.5) —
+      // so the probe location and ink-ratio floor/ceiling below are the NEW
+      // intended geometry for circle specifically, not the uniform-baseline
+      // (~30%-thinner-than-square) target the apothem-compensation fix alone
+      // produced. We probe a fraction of the way into the ring (not right at
+      // its edge, to stay clear of AA/MSAA at the boundary) using the SAME
+      // formula the source computes, so a probe failure means an actual
+      // geometry/colour regression, not a stale hardcoded pixel offset.
       const borderRgb: [number, number, number] = [22, 163, 74]; // #16a34a
       const hbFixture = {
         nodes: [{ id: "hb", x: 0, y: 0, size: 20, color: "#16a34a", shape: "circle", fill: "hollow", border: "bold" }],
@@ -301,13 +317,18 @@ describe("B1 Phase 1 — shape pixel parity (WebGL vs Canvas2D, Chrome/CDP)", ()
       const view = { width: hbGl.width, height: hbGl.height, zoom, camera: { x: 0, y: 0 } };
       const [cx, cy] = worldToDevice([0, 0], view);
       const radius = drawnRadius(20, dpr, zoom); // 40 device px @ dpr 2
-      // Circle's apothem ratio is 1.0, so its radial ring offset IS the new
-      // uniform perpendicular half-width directly — probe 60% of the way from
-      // the drawn radius to the ring's outer edge (safely inside the ring,
-      // clear of the AA boundary), a fraction of the SOURCE's own formula so
-      // this stays correct if the constants ever change.
-      const ringHalfWidth = effectiveStrokeHalfWidth(0, true, dpr, zoom);
-      const probeX = cx + radius + ringHalfWidth * 0.6;
+      // Circle's apothem ratio is 1.0, so its radial ring offset IS the
+      // perpendicular half-width directly. Probe AT the ring's centreline
+      // (`radius`, i.e. the drawn a_radius itself — equidistant from both the
+      // inner and outer ring edges) rather than a fraction toward the outer
+      // edge: with the 2026-07-13 per-shape thinning the circle ring's
+      // half-width shrank to ~1px @ dpr 2 (0.5x the already-thinned uniform
+      // baseline), so a probe biased toward the outer edge (the OLD 0.6-of-
+      // the-way-out fraction) now lands within the AA blur radius of that
+      // edge and reads washed-toward-background. The centreline keeps a full
+      // half-width of margin from EITHER edge regardless of how thin the ring
+      // is, so this stays robust as the constants change.
+      const probeX = cx + radius;
       const refProbe = geometryProbes(hbRef, [
         { name: "ref-border-outer", x: probeX, y: cy, expect: [...borderRgb, 255], tolerance: 40 },
       ]);
@@ -315,10 +336,16 @@ describe("B1 Phase 1 — shape pixel parity (WebGL vs Canvas2D, Chrome/CDP)", ()
         { name: "gl-border-outer", x: probeX, y: cy, expect: [...borderRgb, 255], tolerance: 40 },
       ]);
       // Secondary: the WebGL border must paint a comparable amount of node-colour
-      // ink to Canvas2D. The NEW ring is intentionally ~0.69x the Canvas2D width
-      // (uniform across shapes, ~30% thinner than the old square/diamond weight,
-      // itself already thinner than Canvas2D for those shapes) — floor/ceiling
-      // bracket the intended ~0.69 ratio with room for AA-driven pixel-count noise.
+      // ink to Canvas2D. This fixture is a CIRCLE, which now carries the
+      // circle/hexagon SHAPE_BORDER_THIN tier (x0.5, on top of the x0.616
+      // apothem-compensated baseline) — 2026-07-13 per-shape thinning update.
+      // Full-ring-width ratio to Canvas2D: WEBGL_OUTLINE_WEIGHT_BOOST (1.12) x
+      // BORDER_PERP_SCALE (0.616) x thin(circle) (0.5) = 0.345 (down from the
+      // pre-thinning ~0.69 uniform target). Ring-area ink-pixel counts track
+      // ring width closely for a thin annulus, so the floor/ceiling below
+      // bracket ~0.345 with the same generous relative margin the old ~0.69
+      // bracket used (~ -42%/+30% of target), to absorb AA/MSAA pixel-count
+      // noise on an even-thinner ring.
       const refBorderInk = countColorPixels(hbRef, borderRgb, 50);
       const glBorderInk = countColorPixels(hbGl, borderRgb, 50);
       const borderRatio = refBorderInk > 0 ? glBorderInk / refBorderInk : 0;
@@ -335,12 +362,12 @@ describe("B1 Phase 1 — shape pixel parity (WebGL vs Canvas2D, Chrome/CDP)", ()
       ).toBe(true);
       expect(
         borderRatio,
-        `WebGL border ink ratio ${borderRatio.toFixed(3)} too low — border thinner than the intended ~0.69x Canvas2D`,
-      ).toBeGreaterThanOrEqual(0.4);
+        `WebGL border ink ratio ${borderRatio.toFixed(3)} too low — border thinner than the intended ~0.345x Canvas2D (circle tier)`,
+      ).toBeGreaterThanOrEqual(0.2);
       expect(
         borderRatio,
-        `WebGL border ink ratio ${borderRatio.toFixed(3)} too high — border not thinned as intended (~0.69x Canvas2D)`,
-      ).toBeLessThanOrEqual(0.9);
+        `WebGL border ink ratio ${borderRatio.toFixed(3)} too high — border not thinned as intended (~0.345x Canvas2D, circle tier)`,
+      ).toBeLessThanOrEqual(0.45);
 
       // -------------------------------------------------------------------
       // HOVER-DIM PARITY (premultiplied-alpha regression). The FAMILIES + the
