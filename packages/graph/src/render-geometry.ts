@@ -58,9 +58,8 @@ export const BOX_TEXT_COLOR = "#0f172a";
 export const BORDER_WIDTH_NORMAL = 1.5;
 export const BORDER_WIDTH_BOLD = 3;
 
-/** Absolute floor / cap for the zoom-scaled border stroke (× pixelRatio / × base). */
-const BORDER_ZOOM_FLOOR_PX = 0.75;
-const BORDER_ZOOM_CAP_FACTOR = 3;
+/** Minimal absolute floor for the zoom-scaled border so it never fully vanishes. */
+const BORDER_ZOOM_FLOOR_PX = 0.5;
 
 /**
  * Border stroke FULL width in device px.
@@ -69,13 +68,16 @@ const BORDER_ZOOM_CAP_FACTOR = 3;
  * `(bold?BOLD:NORMAL)·pixelRatio`, byte-identical to the golden reference and
  * every existing consumer.
  *
- * When `scaleWithZoom` is on (interactive studio views), the stroke scales with
- * the camera zoom so a node's border stays PROPORTIONAL to its zoom-scaled
- * radius (`drawnRadius` is `size·PR·zoom`) instead of a fixed screen width that
- * over-dominates a tiny node when zoomed out. Clamped so it never vanishes
- * (floor 0.75·PR) nor explodes (cap 3× the base). At zoom=1 the scaled value
- * equals the base, so zoom=1 output — and thus every golden — is unchanged even
- * with the flag on.
+ * When `scaleWithZoom` is on (interactive studio views), the stroke scales
+ * LINEARLY with the camera zoom, exactly like the drawn radius (`size·PR·zoom`),
+ * so the border/radius RATIO is CONSTANT at every zoom — a bordered node reads
+ * the same at any scale instead of over-dominating when zoomed out (fixed screen
+ * width on a tiny node) or looking hairline when zoomed in. The ONLY clamp is a
+ * tiny floor (0.5·PR) so an extreme zoom-out doesn't drop the outline to nothing;
+ * there is deliberately NO upper cap — a cap would break the proportionality the
+ * moment it bit (the earlier 3×-base cap made zoomed-in borders read too thin).
+ * At zoom=1 the scaled width equals the base, so zoom=1 output — and thus every
+ * golden — is unchanged even with the flag on.
  */
 export function borderStrokeWidthPx(
   bold: boolean,
@@ -86,7 +88,7 @@ export function borderStrokeWidthPx(
   const base = (bold ? BORDER_WIDTH_BOLD : BORDER_WIDTH_NORMAL) * pixelRatio;
   if (!scaleWithZoom) return base;
   const scaled = base * (Number.isFinite(zoom) && zoom > 0 ? zoom : 1);
-  return Math.min(Math.max(scaled, BORDER_ZOOM_FLOOR_PX * pixelRatio), base * BORDER_ZOOM_CAP_FACTOR);
+  return Math.max(scaled, BORDER_ZOOM_FLOOR_PX * pixelRatio);
 }
 
 /** Hollow glyph interior CSS string (alpha-independent translucent white). */
