@@ -5,8 +5,11 @@ import {
   createLayoutEngine,
   DEFAULT_LAYOUT_ID,
   getLayout,
+  GRID_LAYOUT_ID,
   hasLayout,
   listLayouts,
+  METRO_LAYOUT_ID,
+  RADIAL_LAYOUT_ID,
   registerLayout,
   resolveLayout,
   TYPED_LAYER_LAYOUT_ID,
@@ -33,6 +36,37 @@ describe("layout registry — register / lookup / default", () => {
     const ids = listLayouts();
     expect(ids).toContain("force");
     expect(ids).toContain("typed-layer");
+  });
+
+  it("ships the Lot-2 radial + grid layouts registered and resolvable", () => {
+    expect(RADIAL_LAYOUT_ID).toBe("radial");
+    expect(GRID_LAYOUT_ID).toBe("grid");
+    expect(hasLayout(RADIAL_LAYOUT_ID)).toBe(true);
+    expect(hasLayout(GRID_LAYOUT_ID)).toBe(true);
+    expect(listLayouts()).toEqual(expect.arrayContaining(["radial", "grid"]));
+    // resolveLayout returns the registered engines (not the default fallback).
+    expect(resolveLayout(RADIAL_LAYOUT_ID)).toBe(getLayout(RADIAL_LAYOUT_ID));
+    expect(resolveLayout(GRID_LAYOUT_ID)).toBe(getLayout(GRID_LAYOUT_ID));
+    // Both yield a valid 2*N buffer for a sample graph.
+    const graph = sampleGraph();
+    for (const id of [RADIAL_LAYOUT_ID, GRID_LAYOUT_ID]) {
+      const out = resolveLayout(id)(graph);
+      expect(out).toBeInstanceOf(Float32Array);
+      expect(out.length).toBe(graph.nodeIds.length * 2);
+      for (const v of out) expect(Number.isFinite(v)).toBe(true);
+    }
+  });
+
+  it("ships the Lot-6 metro layout registered and resolvable", () => {
+    expect(METRO_LAYOUT_ID).toBe("metro");
+    expect(hasLayout(METRO_LAYOUT_ID)).toBe(true);
+    expect(listLayouts()).toEqual(expect.arrayContaining(["metro"]));
+    expect(resolveLayout(METRO_LAYOUT_ID)).toBe(getLayout(METRO_LAYOUT_ID));
+    const graph = sampleGraph();
+    const out = resolveLayout(METRO_LAYOUT_ID)(graph);
+    expect(out).toBeInstanceOf(Float32Array);
+    expect(out.length).toBe(graph.nodeIds.length * 2);
+    for (const v of out) expect(Number.isFinite(v)).toBe(true);
   });
 
   it("default ('force') is a passthrough of the baked positions", () => {

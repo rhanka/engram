@@ -25,7 +25,9 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  alphaShapeAt,
   buildEdgeInstances,
+  CAPSULE_FLOATS_PER_INSTANCE,
   decodeArrow,
   decodeCapsule,
   type WebGLEdgeFrame,
@@ -156,7 +158,7 @@ describe("B1 Phase 2 — edge geometry parity (WebGL instances == Canvas2D math)
   it("E4 curve: a curved edge tessellates into many off-chord capsules", () => {
     const frame = straightFrame({ x0: -120, x1: 120, size: 8, width: 4, dpr: 2, zoom: 1, curvature: 0.5 });
     const set = buildEdgeInstances(frame);
-    const segCount = set.capsules.length / 12;
+    const segCount = set.capsules.length / CAPSULE_FLOATS_PER_INSTANCE;
     expect(segCount).toBeGreaterThan(8); // tessellated, not a single chord segment
     // Some mid capsule must bow OFF the chord (y != 0 at the midpoint region).
     let maxOff = 0;
@@ -244,6 +246,46 @@ describe("B1 Phase 2 — edge geometry parity (WebGL instances == Canvas2D math)
     const b = buildEdgeInstances(straightFrame({ x0: -120, x1: 120, size: 8, width: 4, dpr: 2, zoom: 1, dash: 1, curvature: 0.3 }));
     expect(a.capsules).toEqual(b.capsules);
     expect(a.arrows).toEqual(b.arrows);
+  });
+
+  // --- Configurable edge-transparency: the along-edge ALPHA SHAPE ------------
+  // Default (no edgeAlphaShape) is byte-identical to the historical uniform edge;
+  // a non-uniform shape fades the sampled alpha along the edge WITHOUT touching
+  // the base alpha (v_color.a) or the geometry (endpoints/half-width/dash).
+  it("no edgeAlphaShape ⇒ uniform (1,1,1); byte-identical to the pre-shape build", () => {
+    const base = straightFrame({ x0: -120, x1: 120, size: 8, width: 4, dpr: 2, zoom: 1 });
+    const set = buildEdgeInstances(base);
+    const cap = decodeCapsule(set.capsules, 0);
+    expect(cap.shape).toEqual([1, 1, 1]);
+    // The uniform shape multiplies alpha by 1 at every sample point.
+    for (const tt of [0, 0.25, 0.5, 0.75, 1]) expect(alphaShapeAt(cap.shape, tt)).toBeCloseTo(1, 6);
+  });
+
+  it("mid-fade shape [255,64,255]: the mid-edge alpha is lower than both endpoints", () => {
+    const frame = straightFrame({ x0: -120, x1: 120, size: 8, width: 4, dpr: 2, zoom: 1 });
+    frame.style!.edgeAlphaShape = new Uint8Array([255, 64, 255]);
+    const cap = decodeCapsule(buildEdgeInstances(frame).capsules, 0);
+    const atSource = alphaShapeAt(cap.shape, 0);
+    const atMid = alphaShapeAt(cap.shape, 0.5);
+    const atTarget = alphaShapeAt(cap.shape, 1);
+    expect(atMid).toBeLessThan(atSource);
+    expect(atMid).toBeLessThan(atTarget);
+    expect(atSource).toBeCloseTo(1, 5);
+    expect(atTarget).toBeCloseTo(1, 5);
+    expect(atMid).toBeCloseTo(64 / 255, 5);
+  });
+
+  it("target-fade shape [255,255,64]: alpha decreases monotonically toward the target", () => {
+    const frame = straightFrame({ x0: -120, x1: 120, size: 8, width: 4, dpr: 2, zoom: 1 });
+    frame.style!.edgeAlphaShape = new Uint8Array([255, 255, 64]);
+    const cap = decodeCapsule(buildEdgeInstances(frame).capsules, 0);
+    const atSource = alphaShapeAt(cap.shape, 0);
+    const atMid = alphaShapeAt(cap.shape, 0.5);
+    const atTarget = alphaShapeAt(cap.shape, 1);
+    expect(atSource).toBeCloseTo(1, 5);
+    expect(atMid).toBeCloseTo(1, 5);
+    expect(atTarget).toBeLessThan(atMid); // fades toward the target endpoint
+    expect(atTarget).toBeCloseTo(64 / 255, 5);
   });
 });
 
