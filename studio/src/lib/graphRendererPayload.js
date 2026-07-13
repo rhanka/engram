@@ -893,6 +893,52 @@ export function interpolateMergeStyle(payload, mergePair, progress) {
 }
 
 /**
+ * The SET generalization of {@link interpolateMergeStyle} for the collapse/expand
+ * group animation: fade (and optionally shrink) a whole SET of folding/revealing
+ * nodes and their incident edges over the same rAF loop as the layout morph.
+ *
+ * Clones the payload style and, for every node index in `foldingIndices`, scales
+ * its colour ALPHA by `alphaScale` and its drawn SIZE by `sizeScale`; every edge
+ * touching a folding node has its base alpha scaled by `alphaScale` too, so an
+ * edge fades with its endpoint. `alphaScale`/`sizeScale` are clamped to [0, 1].
+ * Non-folding nodes/edges keep the base style byte-for-byte. Returns the base
+ * style unchanged when there is nothing to fade.
+ *
+ * @param {object} payload  a buildGraphRendererPayload result
+ * @param {Set<number>|Iterable<number>} foldingIndices  node indices to fade
+ * @param {number} alphaScale  colour-alpha multiplier for folding nodes/edges
+ * @param {number} [sizeScale=1]  size multiplier for folding nodes (shrink)
+ * @returns {object|null} a cloned, faded style (or the base style on bad input)
+ */
+export function interpolateGroupFadeStyle(payload, foldingIndices, alphaScale, sizeScale = 1) {
+  const graph = payload?.renderGraph;
+  if (!graph || !payload?.style) return payload?.style ?? null;
+  const set = foldingIndices instanceof Set ? foldingIndices : new Set(foldingIndices ?? []);
+  if (set.size === 0) return payload.style;
+
+  const style = cloneStyle(payload.style);
+  const a = clampUnit(alphaScale);
+  const s = clampUnit(sizeScale);
+  for (const index of set) {
+    if (!Number.isInteger(index) || index < 0) continue;
+    const alphaOffset = index * 4 + 3;
+    style.nodeColors[alphaOffset] = Math.round((style.nodeColors[alphaOffset] ?? 255) * a);
+    style.nodeSizes[index] = (style.nodeSizes[index] ?? 4) * s;
+  }
+
+  const edgeCount = graph.edges.length / 2;
+  for (let edgeIndex = 0; edgeIndex < edgeCount; edgeIndex += 1) {
+    const sourceIndex = graph.edges[edgeIndex * 2];
+    const targetIndex = graph.edges[edgeIndex * 2 + 1];
+    if (!set.has(sourceIndex) && !set.has(targetIndex)) continue;
+    const alphaOffset = edgeIndex * 4 + 3;
+    style.edgeColors[alphaOffset] = Math.round((style.edgeColors[alphaOffset] ?? 255) * a);
+  }
+
+  return style;
+}
+
+/**
  * Nearest node to (worldX, worldY) within the pick zone, returning the id, the
  * world-space distance to its centre, and its drawn world radius. The pick zone
  * is `max(maxDistance, radius)` so a generous grab still works, while callers

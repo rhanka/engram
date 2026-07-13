@@ -19,6 +19,7 @@
     findNearestEdge,
     findNearestNode,
     findNearestNodeId,
+    interpolateGroupFadeStyle,
     interpolateMergeStyle,
     interpolateMergePositions,
     isBoxShape,
@@ -96,6 +97,11 @@
 
   let {
     scene = EMPTY_SCENE,
+    // Optional collapse/expand ANIMATION descriptor, produced by App when the
+    // grouped-key set changes: { direction: 'collapse'|'expand',
+    // anchorByNodeId: Map<foldedId, groupNodeId> }. Absent/null ⇒ the current
+    // hard-cut refit (safety fallback). See the scene-change $effect below.
+    groupTransition = null,
     selectedIds = [],
     centerOnIds = [],
     focusId = null,
@@ -164,6 +170,10 @@
   let layoutMode = $state(LAYOUT_MODE_FORCE);
   // rAF handle for the in-flight layout morph (distinct from the merge loop).
   let layoutMorphFrame = null;
+  // rAF handle for the in-flight collapse/expand GROUP transition (distinct from
+  // both the merge loop and the layout morph — a group action can arrive while a
+  // layout morph settles, so it owns its own handle to cancel independently).
+  let groupTweenFrame = null;
   // The LIVE interpolated buffer of the in-flight morph — re-seeds `bufA` on an
   // interrupt (switching mid-morph) and is re-applied after a selection/hover
   // rebuild so the effect can't clobber the tween (cf. reapplyDraggedPositions).
@@ -1377,6 +1387,9 @@
   // and on an abnormal morph exit (§F2) so the canvas can never stay locked.
   function resetLayoutState() {
     cancelLayoutMorphFrame();
+    // A scene reset / abnormal exit also cancels any in-flight collapse/expand
+    // group tween — its bufA/bufB are indexed for the pre-swap node set.
+    cancelGroupTweenFrame();
     // Remark 7: a scene reset / abnormal morph exit also cancels any in-flight
     // camera-recenter tween — its target bbox is for the OLD scene/layout.
     cancelCameraTween();
@@ -1606,6 +1619,230 @@
     }
   }
 
+  // --- Collapse/expand GROUP transition driver -------------------------------
+  // Animate a grouping (collapse) / ungrouping (expand) instead of hard-cutting
+  // to the new scene. REUSES the layout-morph machinery: a per-index position
+  // lerp (morphPositions) into a reused liveMorphBuffer + the merge-fade style
+  // (interpolateGroupFadeStyle) on the SAME rAF loop, locking interaction via
+  // morphActive exactly as the layout morph does. The App passes the direction +
+  // the folded-child → group-node anchor map; the group node's on-screen anchor
+  // is its own position when present, else the centroid of its folding members
+  // (the group node usually lives in the OTHER scene across the fold boundary).
+
+  function cancelGroupTweenFrame() {
+    if (typeof window !== "undefined" && groupTweenFrame !== null) {
+      window.cancelAnimationFrame(groupTweenFrame);
+    }
+    groupTweenFrame = null;
+  }
+
+  // Resolve the folding/revealing children against the CURRENT payload: which
+  // node indices fade, grouped by anchor, and each group's on-screen anchor
+  // position. Returns null when NONE of the anchor children are in the payload
+  // (nothing to animate → the caller falls back to the hard cut).
+  function collectGroupFolds(anchors) {
+    const graph = payload?.renderGraph;
+    const idx = payload?.nodeIndexById;
+    const positions = graph?.positions;
+    if (!graph || !idx || !positions) return null;
+
+    const foldingSet = new Set();
+    const groupMembers = new Map(); // groupNodeId -> [nodeIndex]
+    for (const [childId, groupId] of anchors) {
+      const i = idx.get(childId);
+      if (!Number.isInteger(i)) continue;
+      foldingSet.add(i);
+      let members = groupMembers.get(groupId);
+      if (!members) {
+        members = [];
+        groupMembers.set(groupId, members);
+      }
+      members.push(i);
+    }
+    if (foldingSet.size === 0) return null;
+
+    const anchorPosByGroup = new Map();
+    for (const [groupId, members] of groupMembers) {
+      const gi = idx.get(groupId);
+      if (Number.isInteger(gi)) {
+        anchorPosByGroup.set(groupId, {
+          x: positions[gi * 2] ?? 0,
+          y: positions[gi * 2 + 1] ?? 0,
+        });
+      } else {
+        let sx = 0;
+        let sy = 0;
+        for (const i of members) {
+          sx += positions[i * 2] ?? 0;
+          sy += positions[i * 2 + 1] ?? 0;
+        }
+        anchorPosByGroup.set(groupId, { x: sx / members.length, y: sy / members.length });
+      }
+    }
+    return { foldingSet, groupMembers, anchorPosByGroup, positions };
+  }
+
+  // Try to play the animated collapse/expand for `transition`. Returns true when
+  // the driver TOOK OVER the scene swap (the caller must NOT also hard-cut), false
+  // to fall back to the current hard refit (safety: missing/ambiguous transition,
+  // no renderer, or no matching children on screen).
+  function tryStartGroupTransition(transition) {
+    if (!transition || !mounted || !renderer || !payload) return false;
+    const anchors = transition.anchorByNodeId;
+    if (!(anchors instanceof Map) || anchors.size === 0) return false;
+    if (transition.direction === "collapse") return startCollapseTween(anchors);
+    if (transition.direction === "expand") return startExpandTween(anchors);
+    return false;
+  }
+
+  // COLLAPSE: keep the OLD (pre-collapse) scene on screen and tween each folding
+  // node → its group anchor while fading + shrinking it; at t=1 swap to the new
+  // collapsed scene (updateGraph refits/settles).
+  function startCollapseTween(anchors) {
+    const info = collectGroupFolds(anchors);
+    if (!info) return false; // no folding child on screen → hard cut
+    const { foldingSet, groupMembers, anchorPosByGroup, positions } = info;
+    const bufA = new Float32Array(positions);
+    const bufB = new Float32Array(positions);
+    for (const [groupId, members] of groupMembers) {
+      const a = anchorPosByGroup.get(groupId);
+      for (const i of members) {
+        bufB[i * 2] = a.x;
+        bufB[i * 2 + 1] = a.y;
+      }
+    }
+    runGroupTween({
+      bufA,
+      bufB,
+      foldingSet,
+      fadeOut: true,
+      onDone: () => {
+        // Swap to the collapsed scene + settle. The folding nodes already faded
+        // to alpha 0 at their anchor, so the group node appears in their place.
+        resetLayoutState();
+        updateGraph();
+      },
+    });
+    return true;
+  }
+
+  // EXPAND: swap to the new (expanded) scene FIRST, then start each newly-revealed
+  // node AT its group anchor (faint + small) and tween it OUT to its real layout
+  // position while fading + growing in.
+  function startExpandTween(anchors) {
+    resetLayoutState();
+    updateGraph(); // payload now = expanded scene, fitted
+    const info = collectGroupFolds(anchors);
+    // The swap already stands as the result; if no revealed child matched, there
+    // is simply nothing to animate (still handled — do NOT hard-cut again).
+    if (!info) return true;
+    const { foldingSet, groupMembers, anchorPosByGroup, positions } = info;
+    const bufB = new Float32Array(positions); // real, settled positions (target)
+    const bufA = new Float32Array(positions); // revealed children at their anchor
+    for (const [groupId, members] of groupMembers) {
+      const a = anchorPosByGroup.get(groupId);
+      for (const i of members) {
+        bufA[i * 2] = a.x;
+        bufA[i * 2 + 1] = a.y;
+      }
+    }
+    runGroupTween({
+      bufA,
+      bufB,
+      foldingSet,
+      fadeOut: false,
+      onDone: () => settleGroupTween(bufB),
+    });
+    return true;
+  }
+
+  // Restore the settled positions + base style at the end of an EXPAND tween.
+  function settleGroupTween(buffer) {
+    morphActive = false;
+    liveMorphBuffer = null;
+    const positions = payload?.renderGraph?.positions;
+    if (positions && buffer && buffer.length === positions.length) positions.set(buffer);
+    if (renderer && payload) {
+      renderer.setPositions(payload.renderGraph.positions);
+      renderer.setStyle(payload.style);
+    }
+    setLabelsHidden(false);
+    renderNow();
+  }
+
+  // The shared collapse/expand rAF loop (mirrors startLayoutMorphToBuffer): lerp
+  // bufA→bufB per index while fading (fadeOut) / revealing (!fadeOut) the folding
+  // node set + its edges, then hand off to `onDone` at t=1.
+  function runGroupTween({ bufA, bufB, foldingSet, fadeOut, onDone }) {
+    cancelGroupTweenFrame();
+    cancelLayoutMorphFrame();
+    cancelCameraTween();
+    clearHoveredEdge({ notify: false, render: false });
+    setHoveredNode(null);
+
+    const canAnimate =
+      typeof window !== "undefined" && typeof window.requestAnimationFrame === "function";
+    // No rAF (SSR/tests) or reduced-motion (§F3): skip the tween, let the caller
+    // settle straight to the end state (a hard cut).
+    if (
+      !renderer ||
+      !bufA ||
+      !bufB ||
+      bufA.length !== bufB.length ||
+      !canAnimate ||
+      prefersReducedMotion()
+    ) {
+      onDone?.();
+      return;
+    }
+
+    morphActive = true;
+    setLabelsHidden(true);
+    liveMorphBuffer = new Float32Array(bufA.length);
+    const startTime = window.performance?.now?.() ?? Date.now();
+    // §F2: an abnormal frame must never leave the canvas locked (morphActive stuck
+    // true freezes every pointer/wheel handler) — unwind to a clean, fitted state.
+    const abort = () => {
+      cancelGroupTweenFrame();
+      resetLayoutState();
+      applyConnectedDim();
+      fitAndRender();
+    };
+    const renderFrame = (eased) => {
+      morphPositions(bufA, bufB, eased, liveMorphBuffer);
+      renderer.setPositions(liveMorphBuffer);
+      // Collapse fades OUT + shrinks toward the anchor; expand fades IN + grows
+      // from it. Size never fully vanishes so a node stays pickable-adjacent.
+      const alphaScale = fadeOut ? 1 - eased : eased;
+      const sizeScale = fadeOut ? 1 - 0.8 * eased : 0.2 + 0.8 * eased;
+      renderer.setStyle(interpolateGroupFadeStyle(payload, foldingSet, alphaScale, sizeScale));
+      renderNow();
+    };
+    const step = (now) => {
+      try {
+        const elapsed = Math.max(0, now - startTime);
+        const progress = Math.min(1, elapsed / LAYOUT_MORPH_DURATION_MS);
+        renderFrame(easeMergeProgress(progress));
+        if (progress < 1) {
+          groupTweenFrame = window.requestAnimationFrame(step);
+        } else {
+          groupTweenFrame = null;
+          onDone?.();
+        }
+      } catch {
+        abort();
+      }
+    };
+    // Prime frame 0 synchronously (no flash of the un-animated end state), then
+    // drive the tween on the same loop as the layout morph.
+    try {
+      renderFrame(0);
+      groupTweenFrame = window.requestAnimationFrame(step);
+    } catch {
+      abort();
+    }
+  }
+
   // Stable content signature of a scene: node ids + positions + edge endpoints +
   // counts. Two structurally-equivalent scenes share a signature even when they
   // are different object instances (a `$derived.by` recompute), so we don't refit
@@ -1634,8 +1871,24 @@
     lastScene = scene;
     if (key === lastSceneKey) return;
     lastSceneKey = key;
+    // Animated collapse/expand: when App signalled a group transition for THIS
+    // scene change, its driver OWNS the swap (collapse keeps the old scene and
+    // morphs into updateGraph at t=1; expand swaps first then morphs out). untrack
+    // so this effect depends ONLY on `scene` — a later groupTransition prop update
+    // must not re-fire a rebuild, and it must not become a hidden dependency.
+    const transition = untrack(() => groupTransition);
+    // A group tween owns the canvas: a REDUNDANT scene re-derivation (the same
+    // group action re-laying out positions, or the ontology artifact settling one
+    // tick after the fold) must NOT cancel the in-flight tween. Only a GENUINE new
+    // transition interrupts; otherwise let the tween settle (its onDone rebuilds
+    // from the latest scene). Without this, such a follow-up tick hard-cut and
+    // froze the animation on frame 0 (observed under CDP).
+    if (groupTweenFrame !== null && !transition) return;
     // Genuine new graph/candidate: drop stale dragged positions before refit.
     draggedPositions.clear();
+    // Falls through to the hard cut when the transition is absent/ambiguous or no
+    // folding node is on screen (the safety fallback — never breaks the collapse).
+    if (untrack(() => tryStartGroupTransition(transition))) return;
     // Never tween across a scene-content change (new node indices) — reset the
     // layout to Force and recapture the fresh force baseline in updateGraph.
     resetLayoutState();
@@ -1722,6 +1975,7 @@
       if (indicatorTimer !== null) window.clearTimeout(indicatorTimer);
       hoverIntent.cancel();
       cancelMergeFrame();
+      cancelGroupTweenFrame();
       cancelLayoutMorphFrame();
       cancelCameraTween();
       renderer?.destroy();

@@ -25,6 +25,7 @@ import {
   findNearestNode,
   findNearestNodeId,
   GROUP_PALETTE,
+  interpolateGroupFadeStyle,
   interpolateMergeStyle,
   interpolateMergePositions,
   isBoxShape,
@@ -723,6 +724,68 @@ describe("graphRendererPayload", () => {
     // stays at the base ~0.5 alpha (128).
     expect(style.edgeColors[7]).toBe(128);
     expect(payload.style.nodeColors[3]).toBe(255);
+  });
+});
+
+// --- Collapse/expand group animation: interpolateGroupFadeStyle --------------
+// The SET generalization of interpolateMergeStyle used by the group transition:
+// fade + shrink a whole set of folding/revealing nodes and their incident edges.
+describe("interpolateGroupFadeStyle (collapse/expand fade)", () => {
+  const makePayload = () =>
+    buildGraphRendererPayload({
+      nodes: [
+        { id: "a", label: "A", x: 0, y: 0, weight: 1 },
+        { id: "b", label: "B", x: 100, y: 40, weight: 1 },
+        { id: "c", label: "C", x: -20, y: 10, weight: 1 },
+      ],
+      edges: [
+        { source: "a", target: "c", relation: "mentions" },
+        { source: "b", target: "c", relation: "seen_by" },
+      ],
+      stats: { nodeCount: 3, edgeCount: 2, weakEdgeCount: 0, communityCount: 1 },
+    });
+
+  it("fades + shrinks the folding set and its incident edges, leaving others intact", () => {
+    const payload = makePayload();
+    const baseSizeA = payload.style.nodeSizes[0];
+    // Fold node index 0 ("a") at half alpha, half size.
+    const style = interpolateGroupFadeStyle(payload, new Set([0]), 0.5, 0.5);
+    // Node a: alpha 255→128, size halved.
+    expect(style.nodeColors[3]).toBe(128);
+    expect(style.nodeSizes[0]).toBeCloseTo(baseSizeA * 0.5, 5);
+    // Node b (not folding) untouched.
+    expect(style.nodeColors[7]).toBe(255);
+    expect(style.nodeSizes[1]).toBe(payload.style.nodeSizes[1]);
+    // Edge 0 (a→c) is incident to a → its base alpha (128) halved to 64.
+    expect(style.edgeColors[3]).toBe(64);
+    // Edge 1 (b→c) not incident to a → untouched.
+    expect(style.edgeColors[7]).toBe(128);
+    // The base style is never mutated (a fresh clone is returned).
+    expect(payload.style.nodeColors[3]).toBe(255);
+    expect(payload.style.nodeSizes[0]).toBe(baseSizeA);
+  });
+
+  it("t=0 fully hides (alpha 0) and t=1 (scale 1) is byte-identical to base alpha", () => {
+    const payload = makePayload();
+    const hidden = interpolateGroupFadeStyle(payload, new Set([0]), 0, 1);
+    expect(hidden.nodeColors[3]).toBe(0);
+    expect(hidden.edgeColors[3]).toBe(0);
+    const full = interpolateGroupFadeStyle(payload, new Set([0]), 1, 1);
+    expect(full.nodeColors[3]).toBe(payload.style.nodeColors[3]);
+    expect(full.edgeColors[3]).toBe(payload.style.edgeColors[3]);
+  });
+
+  it("returns the base style unchanged when the folding set is empty", () => {
+    const payload = makePayload();
+    expect(interpolateGroupFadeStyle(payload, new Set(), 0.5)).toBe(payload.style);
+  });
+
+  it("clamps alpha/size scales to [0,1] and accepts any iterable of indices", () => {
+    const payload = makePayload();
+    // Out-of-range scales clamp; an array (not a Set) is accepted.
+    const style = interpolateGroupFadeStyle(payload, [0], 5, -3);
+    expect(style.nodeColors[3]).toBe(255); // alpha clamped to 1
+    expect(style.nodeSizes[0]).toBe(0); // size clamped to 0
   });
 });
 
