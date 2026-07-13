@@ -484,13 +484,21 @@ export function applyGroupCollapse(
 
   // Count hidden nodes per collapse target (its whole hidden subtree). A hidden
   // node is attributed to the nearest collapsed ancestor on its parent chain.
+  // The SAME walk yields, for the collapse/expand ANIMATION, each hidden (folded)
+  // node's group-node ANCHOR — the nearest collapsed ancestor it folds into. This
+  // `foldAnchorById` is surfaced as additive metadata (a NON-ENUMERABLE property
+  // on the returned graph, so `toEqual`/spread/Object.keys ignore it and no
+  // existing caller/test can observe it) purely so the studio can tween each
+  // folding node toward its group node (see GraphCanvas group-transition).
   const hiddenCountByTarget = new Map();
+  const foldAnchorById = new Map();
   for (const hiddenId of hidden) {
     let current = parentById.get(hiddenId) ?? null;
     const guard = new Set();
     while (current != null && !guard.has(current)) {
       if (collapsed.has(current)) {
         hiddenCountByTarget.set(current, (hiddenCountByTarget.get(current) ?? 0) + 1);
+        foldAnchorById.set(hiddenId, current);
         break;
       }
       guard.add(current);
@@ -515,7 +523,39 @@ export function applyGroupCollapse(
       };
     });
 
-  return { nodes, links };
+  const result = { nodes, links };
+  // Additive, side-channel metadata for the collapse/expand animation. Attached
+  // NON-ENUMERABLY so it is invisible to `toEqual`, `{...graph}`, `Object.keys`,
+  // and every existing caller/test — `readFoldAnchors()` is the single reader.
+  Object.defineProperty(result, FOLD_ANCHORS_KEY, {
+    value: foldAnchorById,
+    enumerable: false,
+    writable: false,
+    configurable: true,
+  });
+  return result;
+}
+
+/**
+ * Property key under which {@link applyGroupCollapse} stashes its fold-anchor map
+ * (`Map<foldedNodeId, groupNodeId>`) on the returned graph. Non-enumerable, read
+ * ONLY through {@link readFoldAnchors} — a Symbol so it can never collide with a
+ * real graph field.
+ */
+export const FOLD_ANCHORS_KEY = Symbol.for("graphify.foldAnchors");
+
+/**
+ * Read the fold-anchor map surfaced by {@link applyGroupCollapse} (each hidden/
+ * folded node id → its group-node anchor id, the nearest collapsed ancestor).
+ * Returns an EMPTY map when the graph carries no such metadata (fast path, fresh
+ * graph, or a non-collapse result), so callers never branch on presence.
+ *
+ * @param {object|null|undefined} graph  a graph returned by the collapse engine.
+ * @returns {Map<string,string>}
+ */
+export function readFoldAnchors(graph) {
+  const map = graph?.[FOLD_ANCHORS_KEY];
+  return map instanceof Map ? map : new Map();
 }
 
 /**
