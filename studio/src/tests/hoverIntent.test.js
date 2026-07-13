@@ -75,6 +75,26 @@ describe("hover-intent dwell gate", () => {
       expect(apply).toHaveBeenCalledTimes(1);
     });
 
+    it("keeps the current dim while empty space has not completed its dwell", () => {
+      let target = "node-a";
+      let appliedTarget = null;
+      const hi = createHoverIntent(() => {
+        appliedTarget = target;
+      });
+
+      hi.request({ immediate: false });
+      vi.advanceTimersByTime(HOVER_INTENT_DWELL_MS);
+      expect(appliedTarget).toBe("node-a");
+
+      target = null;
+      hi.request({ immediate: false });
+      vi.advanceTimersByTime(HOVER_INTENT_DWELL_MS - 1);
+      expect(appliedTarget).toBe("node-a");
+
+      vi.advanceTimersByTime(1);
+      expect(appliedTarget).toBeNull();
+    });
+
     it("an immediate request cancels a pending dwell (selection appears mid-dwell)", () => {
       const apply = vi.fn();
       const hi = createHoverIntent(apply);
@@ -100,7 +120,20 @@ describe("GraphCanvas hover-intent wiring", () => {
     // setHoveredNode no longer applies the dim inline; it requests it via the gate.
     expect(source).toContain("requestConnectedDim");
     expect(source).toContain("applyConnectedDim");
-    // the dwell is cancelled on pan/drag start, on selection change, and on destroy.
+    expect(source).not.toContain("|| !hasHoverTarget");
+    const pointerDown = source.slice(
+      source.indexOf("function handlePointerDown"),
+      source.indexOf("function handlePointerUp"),
+    );
+    expect(pointerDown).not.toContain("hoverIntent.cancel()");
+    const morphStartIndex = source.indexOf("function startLayoutMorphToBuffer");
+    const morphStart = source.slice(
+      morphStartIndex,
+      source.indexOf("const canAnimate", morphStartIndex),
+    );
+    expect(morphStart).toContain("setHoveredNode(null)");
+    expect(morphStart).not.toContain("hoverIntent.cancel()");
+    // Stale timers are still cancelled on scene reset, selection change, and destroy.
     expect(source).toContain("hoverIntent.cancel()");
   });
 });

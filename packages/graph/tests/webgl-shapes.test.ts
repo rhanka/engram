@@ -16,12 +16,14 @@ import {
   buildShapeInstances,
   createWebGLShapeRenderer,
   decodeInstance,
+  effectiveStrokeHalfWidth,
   instancedShapeFamilies,
   FLOATS_PER_INSTANCE,
   type WebGLShapeFrame,
 } from "../src/webgl-shapes";
 import {
   BOX_FILL,
+  borderStrokeWidthPx,
   drawnRadius,
   unitShapeGeometry,
 } from "../src/render-geometry";
@@ -244,6 +246,174 @@ describe("B1 Phase 1 — instance attribute parity (N1/N10/N11)", () => {
     const border = decodeInstance(set.border.get(code)!, 0);
     expect(Math.round(border.color[0] * 255)).toBe(Math.round(200 * 0.62));
     expect(Math.round(border.color[1] * 255)).toBe(Math.round(100 * 0.62));
+  });
+
+  // ---------------------------------------------------------------------
+  // Border-thickness geometry (per-shape apothem compensation + per-shape
+  // THINNING, 2026-07-13 user request): circles/hexagons used to draw a MUCH
+  // thicker PERPENDICULAR border than diamonds/squares. The two-disc ring is
+  // built by scaling the WHOLE unit polygon by a RADIAL offset (radius ±
+  // effectiveStrokeHalf); for a disc (apothem == radius) the radial offset IS
+  // the perpendicular gap, but for a flat polygon face the gap between the
+  // outer/inner similar polygons, measured PERPENDICULAR to that face, is
+  // `effectiveStrokeHalf · apothemRatio(family)` (apothem = radius ·
+  // apothemRatio). The apothem-compensation fix set
+  // `effectiveStrokeHalf(family) = strokeHalf · BORDER_PERP_SCALE /
+  // apothemRatio(family)` — a RADIAL offset that VARIES by family — so that,
+  // once foreshortened by that same family's apothem ratio, every family's
+  // VISIBLE perpendicular width landed on a COMMON `strokeHalf ·
+  // BORDER_PERP_SCALE` baseline. On TOP of that baseline, `SHAPE_BORDER_THIN`
+  // now applies an ADDITIONAL per-shape cut: circle/hexagon × 0.5, and
+  // diamond/square/star/triangle × 0.8 — so the perpendicular width is no
+  // longer fully uniform, but a deliberate TWO-TIER geometry: circle/hexagon
+  // together (thinner), and diamond/square/star/triangle together (the other
+  // tier), each tier internally uniform.
+  // ---------------------------------------------------------------------
+  describe("border perpendicular half-width: two-tier by shape (circle/hexagon thinner)", () => {
+    const SHAPE_NAME_BY_FAMILY: Record<number, string> = {
+      0: "circle",
+      1: "diamond",
+      2: "star",
+      3: "hexagon",
+      4: "square",
+      6: "triangle",
+    };
+    // Documented apothem-per-a_radius ratios (shape-geometry.ts regular
+    // polygons; star approximated) — an INDEPENDENT copy of the source's
+    // lookup so this test pins the intended per-shape numbers, not merely
+    // the implementation's own arithmetic. NOTE square is 0.88 (its own
+    // SQUARE_INSET_RATIO), NOT cos(45°)=0.707 — the square's unit outline is
+    // pre-inset BEFORE the a_radius scale (shape-geometry.ts), unlike diamond
+    // (same 4-gon shape, but no inset, so a_radius IS its circumradius).
+    const APOTHEM_RATIO_BY_FAMILY: Record<number, number> = {
+      0: 1.0,
+      1: 0.707,
+      2: 0.5,
+      3: 0.866,
+      4: 0.88,
+      6: 0.5,
+    };
+    // Independent copy of SHAPE_BORDER_THIN (webgl-shapes.ts): circle/hexagon
+    // get the 50%-thinner cut, diamond/square/star/triangle the 20%-thinner
+    // cut (star/triangle NOT specified by the user request — defaulted to
+    // the same 0.8 as the other angular shapes).
+    const THIN_FACTOR_BY_FAMILY: Record<number, number> = {
+      0: 0.5,
+      3: 0.5,
+      1: 0.8,
+      4: 0.8,
+      2: 0.8,
+      6: 0.8,
+    };
+    const dpr = 2;
+    const zoom = 1;
+
+    function radialHalfWidth(family: number, bold: boolean): number {
+      const shapeName = SHAPE_NAME_BY_FAMILY[family]!;
+      const code = shapeCode(shapeName);
+      const set = buildShapeInstances(
+        frame([{ x: 0, y: 0, size: 20, shape: shapeName, rgb: [10, 20, 30], fill: 1, border: bold ? 1 : 0 }], dpr, zoom),
+      );
+      const border = decodeInstance(set.border.get(code)!, 0);
+      const innerFill = decodeInstance(set.fill.get(code)!, 0);
+      return (border.radius - innerFill.radius) / 2;
+    }
+
+    it.each(instancedShapeFamilies())(
+      "family %i: RADIAL ring half-width matches effectiveStrokeHalfWidth (varies BY DESIGN)",
+      (family) => {
+        const halfWidth = radialHalfWidth(family, false);
+        const expected = effectiveStrokeHalfWidth(family, false, dpr, zoom);
+        expect(halfWidth).toBeCloseTo(expected, 5);
+      },
+    );
+
+    it("circle & hexagon PERPENDICULAR width == (0.5/0.8) x the square/diamond PERPENDICULAR width", () => {
+      // NOTE: the two SHAPE_BORDER_THIN multipliers (0.5 for circle/hexagon,
+      // 0.8 for square/diamond) are each applied to the SAME shared
+      // BORDER_PERP_SCALE baseline (0.616 x strokeHalf), so the resulting
+      // CROSS-TIER ratio is 0.5 / 0.8 = 0.625, NOT 0.5 — 0.5 is only the
+      // circle/hexagon multiplier value itself, not its ratio to the other
+      // tier's already-different (0.8x) multiplier. Verified numerically
+      // (0.308 / 0.493 = 0.625) before writing this assertion.
+      const perpWidths = instancedShapeFamilies().map((family) => {
+        const radial = radialHalfWidth(family, true);
+        return { family, perp: radial * APOTHEM_RATIO_BY_FAMILY[family]! };
+      });
+      const circle = perpWidths.find((p) => p.family === 0)!.perp;
+      const hexagon = perpWidths.find((p) => p.family === 3)!.perp;
+      const square = perpWidths.find((p) => p.family === 4)!.perp;
+      const diamond = perpWidths.find((p) => p.family === 1)!.perp;
+      const expectedRatio = 0.5 / 0.8; // 0.625
+      // Precision 2: same rounding-literal tolerance as elsewhere in this
+      // file (documented ROUNDED apothem ratios vs the source's exact trig).
+      expect(circle / square).toBeCloseTo(expectedRatio, 2);
+      expect(hexagon / diamond).toBeCloseTo(expectedRatio, 2);
+    });
+
+    it("square, diamond, star, triangle PERPENDICULAR widths are equal to each other (same tier)", () => {
+      const perpWidths = instancedShapeFamilies().map((family) => {
+        const radial = radialHalfWidth(family, true);
+        return { family, perp: radial * APOTHEM_RATIO_BY_FAMILY[family]! };
+      });
+      const angularFamilies = [1, 2, 4, 6];
+      const reference = perpWidths.find((p) => p.family === angularFamilies[0])!.perp;
+      for (const family of angularFamilies) {
+        const perp = perpWidths.find((p) => p.family === family)!.perp;
+        expect(perp, `family ${family}: perpendicular width ${perp} != reference ${reference}`).toBeCloseTo(
+          reference,
+          3,
+        );
+      }
+    });
+
+    it("circle & hexagon PERPENDICULAR widths are equal to each other (same tier)", () => {
+      const perpWidths = instancedShapeFamilies().map((family) => {
+        const radial = radialHalfWidth(family, true);
+        return { family, perp: radial * APOTHEM_RATIO_BY_FAMILY[family]! };
+      });
+      const circle = perpWidths.find((p) => p.family === 0)!.perp;
+      const hexagon = perpWidths.find((p) => p.family === 3)!.perp;
+      expect(circle).toBeCloseTo(hexagon, 3);
+    });
+
+    it("REGRESSION LOCK: absolute perpendicular widths, relative to raw strokeHalfWidth", () => {
+      // Raw (uncompensated, un-thinned) stroke half-width — the common unit
+      // both tiers are expressed as a fraction of.
+      const base = borderStrokeWidthPx(true, dpr, zoom) / 2;
+      const OUTLINE_WEIGHT_BOOST = 1.12; // WEBGL_OUTLINE_WEIGHT_BOOST, unchanged by this fix
+      const rawStrokeHalf = base * OUTLINE_WEIGHT_BOOST;
+
+      const perpWidths = instancedShapeFamilies().map((family) => {
+        const radial = radialHalfWidth(family, true);
+        return { family, perp: radial * APOTHEM_RATIO_BY_FAMILY[family]! };
+      });
+      const circle = perpWidths.find((p) => p.family === 0)!.perp;
+      const hexagon = perpWidths.find((p) => p.family === 3)!.perp;
+      const square = perpWidths.find((p) => p.family === 4)!.perp;
+      const diamond = perpWidths.find((p) => p.family === 1)!.perp;
+
+      // circle/hexagon: 0.616 (BORDER_PERP_SCALE) x 0.5 (thin factor) = 0.308
+      expect(circle / rawStrokeHalf).toBeCloseTo(0.308, 2);
+      expect(hexagon / rawStrokeHalf).toBeCloseTo(0.308, 2);
+      // square/diamond (and star/triangle, same tier): 0.616 x 0.8 = 0.493
+      expect(square / rawStrokeHalf).toBeCloseTo(0.493, 2);
+      expect(diamond / rawStrokeHalf).toBeCloseTo(0.493, 2);
+    });
+
+    it("per-shape thin factor matches effectiveStrokeHalfWidth directly (unit-level, no ring geometry)", () => {
+      for (const family of instancedShapeFamilies()) {
+        const withThin = effectiveStrokeHalfWidth(family, false, dpr, zoom);
+        // Reconstruct the pre-thin (apothem-compensated only) baseline the
+        // same way the source's BORDER_PERP_SCALE doc describes it, then
+        // check the ratio against THIN_FACTOR_BY_FAMILY.
+        const base = borderStrokeWidthPx(false, dpr, zoom) / 2;
+        const rawStrokeHalf = base * 1.12;
+        const apothem = APOTHEM_RATIO_BY_FAMILY[family]!;
+        const preThinBaseline = (rawStrokeHalf * (0.7 * 0.88)) / apothem;
+        expect(withThin / preThinBaseline).toBeCloseTo(THIN_FACTOR_BY_FAMILY[family]!, 2);
+      }
+    });
   });
 });
 

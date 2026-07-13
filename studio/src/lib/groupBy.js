@@ -116,6 +116,56 @@ export function computeGroupedGraph({
 }
 
 /* ===========================================================================
+ * Collapse/expand ANIMATION signal — direction detection from the FOLD DELTA.
+ *
+ * When the grouped set changes, the studio animates the transition instead of
+ * hard-cutting to the new scene. This PURE helper diffs the previous vs next
+ * fold-anchor map (each hidden node id → its group-node anchor, from
+ * `readFoldAnchors(computeGroupedGraph(...))`) into a transition descriptor the
+ * GraphCanvas consumes:
+ *
+ *   { direction: "collapse" | "expand", anchorByNodeId: Map<foldedId, groupId> }
+ *
+ *   - children present in NEXT but not PREV just FOLDED  ⇒ collapse candidates.
+ *   - children present in PREV but not NEXT just REVEALED ⇒ expand candidates.
+ *   - only-folded (none revealed)  ⇒ COLLAPSE (anchors read from the NEXT map:
+ *     the children are still on screen and tween toward their group node).
+ *   - only-revealed (none folded)  ⇒ EXPAND (anchors read from the PREV map: the
+ *     group is now gone, so its OLD anchor is where the children explode from).
+ *   - BOTH folded and revealed (a MIXED change, e.g. Domain→Sub-domain), or
+ *     neither (a no-op) ⇒ null (the caller hard-cuts — the safety fallback).
+ *
+ * Keying off the fold DELTA (not the grouped-key diff) makes the signal robust to
+ * the ontology artifact loading ASYNC: the collapse "lands" in whichever reactive
+ * tick the fold map actually populates, regardless of when the grouped key
+ * changed. Returns null when there is nothing to animate, so an absent descriptor
+ * always means "keep the current, non-animated behaviour".
+ *
+ * @param {object} args
+ * @param {Map<string,string>} [args.prevFoldAnchors]  fold map BEFORE the change.
+ * @param {Map<string,string>} [args.nextFoldAnchors]  fold map AFTER the change.
+ * @returns {{ direction: "collapse"|"expand", anchorByNodeId: Map<string,string> }|null}
+ */
+export function computeGroupTransition({ prevFoldAnchors, nextFoldAnchors } = {}) {
+  const prev = prevFoldAnchors instanceof Map ? prevFoldAnchors : new Map();
+  const next = nextFoldAnchors instanceof Map ? nextFoldAnchors : new Map();
+
+  const folded = new Map(); // newly folded: present in next, absent from prev
+  const revealed = new Map(); // newly revealed: present in prev, absent from next
+  for (const [childId, groupId] of next) if (!prev.has(childId)) folded.set(childId, groupId);
+  for (const [childId, groupId] of prev) if (!next.has(childId)) revealed.set(childId, groupId);
+
+  if (folded.size > 0 && revealed.size === 0) {
+    return { direction: "collapse", anchorByNodeId: folded };
+  }
+  if (revealed.size > 0 && folded.size === 0) {
+    return { direction: "expand", anchorByNodeId: revealed };
+  }
+  // Mixed (both folded and revealed) or a no-op → no animation (hard cut).
+  return null;
+}
+
+/* ===========================================================================
  * Tri-state bulk-button + NESTING-ABSORPTION math (spec §3/§4).
  * ======================================================================== */
 

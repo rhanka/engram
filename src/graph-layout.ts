@@ -43,6 +43,14 @@ export interface ComputeLayoutOptions {
   height?: number;
   /** Repulsion factor, clamped to [0.1, 10] (default 1). */
   repulsion?: number;
+  /** Link rest-length factor, clamped to [0.1, 3] (default 0.6). */
+  linkDistance?: number;
+  /**
+   * Optional warm-start coordinates keyed by node id. Unlike `fx`/`fy`, these seed
+   * the solver without pinning the node, so interactive re-solves can settle from
+   * the current on-screen layout while the deterministic cold path stays unchanged.
+   */
+  initialPositions?: ReadonlyMap<string, { x: number; y: number }> | Record<string, { x: number; y: number }>;
   /** Barnes-Hut opening angle: larger = faster/looser (default 0.9). */
   theta?: number;
 }
@@ -244,21 +252,31 @@ export function computeLayout(
   const ticks = Math.max(1, Math.round(options.iterations ?? 300));
   const theta = options.theta ?? 0.9;
   const repulsionFactor = Math.min(Math.max(options.repulsion ?? 1, 0.1), 10);
+  const linkDistanceFactor = Math.min(Math.max(options.linkDistance ?? 0.6, 0.1), 3);
 
   const cx = w / 2;
   const cy = h / 2;
   const rand = mulberry32(stableSeed(nodes.map((node) => node.id)));
 
+  const initialFor = (id: string): { x: number; y: number } | undefined => {
+    const initial = options.initialPositions;
+    if (!initial) return undefined;
+    const value = initial instanceof Map ? initial.get(id) : initial[id];
+    if (!value || !Number.isFinite(value.x) || !Number.isFinite(value.y)) return undefined;
+    return value;
+  };
+
   const idIndex = new Map<string, number>();
   const sim: SimNode[] = nodes.map((node, i) => {
     idIndex.set(node.id, i);
     const fixed = Number.isFinite(node.fx) && Number.isFinite(node.fy);
+    const initial = fixed ? undefined : initialFor(node.id);
     const angle = (i / Math.max(n, 1)) * Math.PI * 2;
     const r = Math.min(w, h) * 0.3 * (0.5 + rand() * 0.5);
     return {
       id: node.id,
-      x: fixed ? (node.fx as number) : cx + Math.cos(angle) * r,
-      y: fixed ? (node.fy as number) : cy + Math.sin(angle) * r,
+      x: fixed ? (node.fx as number) : initial ? initial.x : cx + Math.cos(angle) * r,
+      y: fixed ? (node.fy as number) : initial ? initial.y : cy + Math.sin(angle) * r,
       vx: 0,
       vy: 0,
       fixed,
@@ -279,7 +297,7 @@ export function computeLayout(
   const area = w * h;
   const k = Math.sqrt(area / Math.max(n, 1)); // ideal node distance
   const repulsion = k * k * 0.6 * repulsionFactor;
-  const restLength = k * 0.6;
+  const restLength = k * linkDistanceFactor;
   const springK = 0.08;
   const gravity = 0.004;
   const damping = 0.85;

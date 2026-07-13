@@ -53,9 +53,11 @@
   import {
     mintCommunityNodeIds,
     mintTypeNodeIds,
+    readFoldAnchors,
   } from "./lib/classNodes.js";
   import {
     computeGroupedGraph,
+    computeGroupTransition,
     classIdsAtLevel,
     typeNamesInTaxonomy,
     ontologyLevelState,
@@ -212,6 +214,27 @@
       grouped: viewerState.options.groupBy.grouped,
     }),
   );
+
+  // Collapse/expand ANIMATION signal. Diff the previous vs current fold-anchor map
+  // (each hidden node id → its group-node anchor) into a transition descriptor
+  // ({ direction, anchorByNodeId }) the GraphCanvas plays instead of a hard cut.
+  // Keying off the FOLD DELTA (not the grouped-key diff) makes the signal robust
+  // to the ontology artifact loading async — the collapse "lands" in whichever
+  // tick the fold map populates. The "previous" snapshot is tracked in a plain
+  // (non-reactive) `let`, advanced INSIDE this memoized `$derived` — a deliberate
+  // previous-value pattern: the derived recomputes exactly once per
+  // grouped/groupedGraph change (Svelte memoizes reads), so `groupTransition` is
+  // glitch-free and current by the time GraphCanvas's scene effect reads it.
+  let _prevFoldAnchors = null;
+  const groupTransition = $derived.by(() => {
+    const nextFoldAnchors = readFoldAnchors(groupedGraph);
+    const prevFoldAnchors = _prevFoldAnchors;
+    // Advance the snapshot for the NEXT change before returning.
+    _prevFoldAnchors = nextFoldAnchors;
+    // First evaluation (mount): nothing to animate FROM.
+    if (prevFoldAnchors === null) return null;
+    return computeGroupTransition({ prevFoldAnchors, nextFoldAnchors });
+  });
 
   // Tri-state of each ontology bulk button (spec §4) + per-class absorption view
   // (spec §3). Denominators EXCLUDE absorbed classes; the rail renders the
@@ -789,9 +812,11 @@
         <div class="col col-center">
           <GraphCanvas
             {scene}
+            {groupTransition}
             {selectedIds}
             focusId={viewerState.focusId}
             labelMode="none"
+            showLayoutSwitcher
             onSelect={handleToggleEntity}
             onOpenEntity={handleFocusEntity}
           />

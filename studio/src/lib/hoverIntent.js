@@ -6,10 +6,11 @@
 // dim/undim.
 //
 // FIX: while NO selection AND NO focus exists, require the pointer to DWELL on an
-// object ~200ms before applying the rest-of-graph dim. If the pointer leaves the
-// object (or moves to empty space) before the dwell elapses, the dim is never
-// applied. Once a selection/focus exists, the dim stays IMMEDIATE — the
-// established behavior is unchanged; only the pre-first-selection path is gated.
+// object ~200ms before applying the rest-of-graph dim. Target changes — including
+// moving to empty space — also dwell before changing the transparency, so a
+// momentary gap does not flash the graph back to full opacity. Once a
+// selection/focus exists, changes stay IMMEDIATE — the established behavior is
+// unchanged; only the pre-first-selection path is gated.
 //
 // The hovered object's OWN feedback (tooltip + label + edge emphasis) is left
 // immediate by the caller; only the REST-OF-GRAPH dim flows through this gate.
@@ -55,10 +56,10 @@ export function createHoverIntent(apply, {
 
   /**
    * Request the dim for the CURRENT hover. `immediate` (a selection/focus is
-   * present, or the hover is clearing and must restore the base style now)
-   * applies it synchronously; otherwise the dim is deferred until the pointer
-   * dwells `delayMs`. Any prior pending dwell is cancelled first, so a hover
-   * target change restarts the dwell rather than firing early.
+   * present) applies it synchronously; otherwise the dim is deferred until the
+   * pointer dwells `delayMs`. Any prior pending dwell is cancelled first, so a
+   * hover target change — including empty space — restarts the dwell rather than
+   * changing transparency early.
    *
    * @param {{ immediate?: boolean }} [options]
    */
