@@ -866,6 +866,200 @@ export function morphPositions(bufA, bufB, t, out = null) {
   return result;
 }
 
+/* ===========================================================================
+ * Collapse/expand GROUP-transition PURE cores (redesign spec §3).
+ *
+ * These are the deterministic, DOM-free maths of the animation extracted from
+ * GraphCanvas so they are unit-testable (jsdom has no WebGL, so the component's
+ * rAF/renderer wiring can only be source-asserted). The .svelte component owns
+ * the reactive flags, the rAF loop, and the renderer calls; it delegates the
+ * position bookkeeping to the three helpers below.
+ * ======================================================================== */
+
+// ~137.5° in radians — the golden angle. Successive multiples spread points
+// evenly with no two ever landing on the same ray, giving the sunflower/
+// phyllotaxis fan used for expand when there is no cached prior constellation.
+export const GROUP_FAN_GOLDEN_ANGLE = 2.399963229728653;
+
+/**
+ * Resolve which node INDICES fold (grouped by anchor) and each group's on-screen
+ * anchor position, against a given position buffer. The anchor rule (spec §3.4
+ * step 2): the group node's OWN current position when it is on screen (its id is
+ * in the payload), else the CENTROID of the folding members' current positions.
+ * Absent children (ids not in the payload) are skipped. Returns null when NONE of
+ * the anchor children resolve (nothing to animate → the caller carries-swaps).
+ *
+ * Pure: no reference to the component or the renderer. The caller passes the
+ * live position buffer (currentLayoutBuffer — live-morph aware).
+ *
+ * @param {object} args
+ * @param {string[]} args.nodeIds                node ids in render order.
+ * @param {ArrayLike<number>} args.positions     2·n position floats (index-parallel).
+ * @param {Map<string,string>} args.anchors      foldedChildId → groupNodeId.
+ * @param {Map<string,number>} [args.nodeIndexById]  id → index (derived if absent).
+ * @returns {{ foldingSet: Set<number>, groupMembers: Map<string, number[]>,
+ *   anchorPosByGroup: Map<string, {x:number,y:number}> } | null}
+ */
+export function resolveGroupFolds({ nodeIds, positions, anchors, nodeIndexById } = {}) {
+  if (!nodeIds?.length || !positions || !(anchors instanceof Map) || anchors.size === 0) {
+    return null;
+  }
+  const idx = nodeIndexById instanceof Map ? nodeIndexById : new Map(nodeIds.map((id, i) => [id, i]));
+
+  const foldingSet = new Set();
+  const groupMembers = new Map(); // groupNodeId -> [nodeIndex]
+  for (const [childId, groupId] of anchors) {
+    const i = idx.get(childId);
+    if (!Number.isInteger(i)) continue;
+    foldingSet.add(i);
+    let members = groupMembers.get(groupId);
+    if (!members) {
+      members = [];
+      groupMembers.set(groupId, members);
+    }
+    members.push(i);
+  }
+  if (foldingSet.size === 0) return null;
+
+  const anchorPosByGroup = new Map();
+  for (const [groupId, members] of groupMembers) {
+    const gi = idx.get(groupId);
+    if (Number.isInteger(gi)) {
+      // Group node is ON SCREEN (nested case: folding into a visible ancestor) →
+      // its own position is the anchor.
+      anchorPosByGroup.set(groupId, {
+        x: positions[gi * 2] ?? 0,
+        y: positions[gi * 2 + 1] ?? 0,
+      });
+    } else {
+      // Usual case: the group node lives only in the OTHER scene → centroid of
+      // the folding members' current positions.
+      let sx = 0;
+      let sy = 0;
+      for (const i of members) {
+        sx += positions[i * 2] ?? 0;
+        sy += positions[i * 2 + 1] ?? 0;
+      }
+      anchorPosByGroup.set(groupId, { x: sx / members.length, y: sy / members.length });
+    }
+  }
+  return { foldingSet, groupMembers, anchorPosByGroup };
+}
+
+/**
+ * Carry a coordinate space across a scene swap (spec §3.2). Builds a NEW position
+ * buffer for the NEW scene, resolving each node's position BY ID:
+ *   1. an explicit placement (`placedPosById`) — group node at the fold centroid
+ *      on collapse; revealed children stacked on the anchor on expand;
+ *   2. else a carried-over position (`carriedPosById`) — shared nodes keep their
+ *      exact on-screen spot;
+ *   3. else, for a brand-new node with neither (e.g. a newly-injected visible
+ *      class handle), the CENTROID of its already-placed graph neighbours over
+ *      the NEW scene's edges;
+ *   4. else the scene-baked position (the last-resort fallback, already in
+ *      `positions`).
+ *
+ * Neighbour placement (step 3) reads ONLY step-1/2 results, so it is order-
+ * independent (deterministic). Returns a fresh Float32Array; never mutates input.
+ *
+ * @param {object} args
+ * @param {string[]} args.nodeIds               NEW-scene node ids in render order.
+ * @param {ArrayLike<number>} args.positions    NEW-scene scene-baked 2·n floats.
+ * @param {ArrayLike<number>} [args.edges]      NEW-scene edge INDEX pairs (2·e).
+ * @param {Map<string,{x:number,y:number}>} [args.carriedPosById]  old on-screen pos.
+ * @param {Map<string,{x:number,y:number}>} [args.placedPosById]   explicit new pos.
+ * @returns {Float32Array|null}
+ */
+export function carryScenePositions({ nodeIds, positions, edges, carriedPosById, placedPosById } = {}) {
+  if (!nodeIds?.length || !positions || positions.length < nodeIds.length * 2) return null;
+  const carried = carriedPosById instanceof Map ? carriedPosById : new Map();
+  const placed = placedPosById instanceof Map ? placedPosById : new Map();
+
+  const out = new Float32Array(positions); // start from scene-baked (step 4).
+  const isPlaced = new Array(nodeIds.length).fill(false);
+
+  // Pass 1: explicit placement (step 1) then carried-over (step 2), by id.
+  for (let i = 0; i < nodeIds.length; i += 1) {
+    const id = nodeIds[i];
+    const p = placed.get(id) ?? carried.get(id);
+    if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) {
+      out[i * 2] = p.x;
+      out[i * 2 + 1] = p.y;
+      isPlaced[i] = true;
+    }
+  }
+
+  // Pass 2: brand-new nodes → neighbour centroid over the new edges (step 3);
+  // else the scene-baked value already sitting in `out` (step 4).
+  if (edges && edges.length) {
+    const neighbours = new Map(); // index -> [neighbour indices]
+    const addNeighbour = (a, b) => {
+      let list = neighbours.get(a);
+      if (!list) {
+        list = [];
+        neighbours.set(a, list);
+      }
+      list.push(b);
+    };
+    const edgeCount = Math.floor(edges.length / 2);
+    for (let e = 0; e < edgeCount; e += 1) {
+      const a = edges[e * 2];
+      const b = edges[e * 2 + 1];
+      if (!Number.isInteger(a) || !Number.isInteger(b)) continue;
+      addNeighbour(a, b);
+      addNeighbour(b, a);
+    }
+    for (let i = 0; i < nodeIds.length; i += 1) {
+      if (isPlaced[i]) continue;
+      const nbrs = neighbours.get(i);
+      if (!nbrs || nbrs.length === 0) continue;
+      let sx = 0;
+      let sy = 0;
+      let count = 0;
+      for (const j of nbrs) {
+        if (!isPlaced[j]) continue; // ONLY already-placed neighbours
+        sx += out[j * 2];
+        sy += out[j * 2 + 1];
+        count += 1;
+      }
+      if (count > 0) {
+        out[i * 2] = sx / count;
+        out[i * 2 + 1] = sy / count;
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Deterministic golden-angle (sunflower) fan of `childIds` around `anchor`
+ * (spec §3.5.2) — the expand fallback when there is no cached prior constellation.
+ * Children are sorted by id, so the SAME id set always lands on the SAME slots.
+ * Child j of m sits at angle `j · GROUP_FAN_GOLDEN_ANGLE`, radius
+ * `min(spacing · √(j+1), cap)`.
+ *
+ * @param {object} args
+ * @param {{x:number,y:number}} args.anchor    the fan centre.
+ * @param {Iterable<string>} args.childIds     ids to place (sorted internally).
+ * @param {number} args.spacing                radial spacing factor (world units).
+ * @param {number} [args.cap=Infinity]         max radius (world units).
+ * @returns {Map<string,{x:number,y:number}>}
+ */
+export function goldenAngleFan({ anchor, childIds, spacing, cap = Infinity } = {}) {
+  const out = new Map();
+  const ids = childIds ? [...childIds].sort() : [];
+  const ax = Number.isFinite(anchor?.x) ? anchor.x : 0;
+  const ay = Number.isFinite(anchor?.y) ? anchor.y : 0;
+  const s = Number.isFinite(spacing) && spacing > 0 ? spacing : 1;
+  const maxR = Number.isFinite(cap) ? cap : Infinity;
+  for (let j = 0; j < ids.length; j += 1) {
+    const angle = j * GROUP_FAN_GOLDEN_ANGLE;
+    const radius = Math.min(s * Math.sqrt(j + 1), maxR);
+    out.set(ids[j], { x: ax + radius * Math.cos(angle), y: ay + radius * Math.sin(angle) });
+  }
+  return out;
+}
+
 export function interpolateMergeStyle(payload, mergePair, progress) {
   const graph = payload?.renderGraph;
   if (!graph || !payload?.style || !mergePair?.from) return payload?.style ?? null;

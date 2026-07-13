@@ -651,13 +651,18 @@ describe("GraphCanvas smooth recenter (remark 7)", () => {
   });
 });
 
-// --- Collapse/expand GROUP transition animation ------------------------------
+// --- Collapse/expand GROUP transition animation (redesign spec §3) ----------
 // jsdom has no WebGL (like the merge/layout-morph tests above), so we assert
-// against the .svelte SOURCE that the animated group/ungroup transition is
-// wired: an optional groupTransition prop, a scene-effect hook that hands off to
-// the driver (with a hard-cut fallback), and a driver that REUSES morphPositions
-// + the merge-fade style on the same rAF loop, locking interaction via
-// morphActive exactly like the layout morph.
+// against the .svelte SOURCE that the CORRECTED animated group/ungroup transition
+// is wired: an optional groupTransition prop; a scene-effect that consumes the
+// descriptor ONCE and hands off to the driver; a driver that swaps through the
+// position-preserving applyCarriedScene (NEVER a refit) — collapse tweens on the
+// OLD payload then carried-swaps, expand carried-swaps FIRST then tweens on the
+// NEW payload; a groupSwapPending deferral + selectedIds content-signature that
+// stop the same-flush rebuild that killed collapse (RC-B); and settleGroupTween
+// persisting the layout buffer (RC-E). The BEHAVIOURAL maths of the swap/fan/fold
+// (carryScenePositions / goldenAngleFan / resolveGroupFolds) are unit-tested in
+// graphRendererPayload.test.js.
 describe("GraphCanvas collapse/expand group transition", () => {
   const driverSource = (source) =>
     source.slice(
@@ -670,35 +675,120 @@ describe("GraphCanvas collapse/expand group transition", () => {
     expect(source).toMatch(/groupTransition = null,/);
   });
 
-  it("the scene-effect tries the animated transition, falling back to the hard cut", () => {
+  it("consumes the descriptor ONCE and hands off to the driver, falling back to refit", () => {
     const source = graphCanvasSource();
     // untrack so groupTransition is not a hidden dependency of the scene effect.
-    expect(source).toMatch(/const transition = untrack\(\(\) => groupTransition\);/);
-    expect(source).toMatch(/untrack\(\(\) => tryStartGroupTransition\(transition\)\)/);
-    // A redundant scene re-derivation must not cancel an in-flight tween.
-    expect(source).toMatch(/if \(groupTweenFrame !== null && !transition\) return;/);
-    // On a handled transition the effect returns before the hard refit; otherwise
-    // it still runs resetLayoutState(); updateGraph(); (the safety fallback).
+    expect(source).toMatch(/const raw = untrack\(\(\) => groupTransition\);/);
+    // RC-D: consumed-once reference guard — only a GENUINELY new descriptor is fresh.
+    expect(source).toMatch(/const fresh = raw && raw !== lastConsumedGroupTransition \? raw : null;/);
+    expect(source).toMatch(/if \(fresh\) lastConsumedGroupTransition = raw;/);
+    expect(source).toMatch(/untrack\(\(\) => tryStartGroupTransition\(fresh\)\)/);
+    // A redundant tick (no fresh descriptor) mid-tween must NOT rebuild.
+    expect(source).toMatch(/if \(groupTweenFrame !== null && !fresh\) return;/);
+    // §3.7 interrupt: a genuine new transition mid-tween completes the pending swap
+    // synchronously before starting the next one.
     expect(source).toMatch(
-      /tryStartGroupTransition\(transition\)\)\) return;\s*\n[\s\S]{0,240}resetLayoutState\(\);\s*\n\s*updateGraph\(\);/,
+      /if \(groupTweenFrame !== null && fresh && pendingGroupSettle\) \{\s*\n\s*cancelGroupTweenFrame\(\);\s*\n\s*pendingGroupSettle\(\);/,
+    );
+    // On a handled transition the effect returns before the refit; otherwise the
+    // genuine non-group scene change bumps the epoch then resetLayoutState/updateGraph.
+    expect(source).toMatch(
+      /tryStartGroupTransition\(fresh\)\)\) return;\s*\n[\s\S]{0,320}coordinateEpoch \+= 1;\s*\n\s*resetLayoutState\(\);\s*\n\s*updateGraph\(\);/,
     );
   });
 
-  it("collapse keeps the old scene, tweens folding nodes to their anchor, then swaps", () => {
+  it("collapse snapshots first, tweens on the OLD payload, then carried-swaps (no refit)", () => {
     const source = graphCanvasSource();
     const driver = driverSource(source);
-    // COLLAPSE builds bufA/bufB against the CURRENT (pre-collapse) payload and
-    // swaps to the collapsed scene at t=1 (resetLayoutState → updateGraph).
     expect(driver).toContain("function startCollapseTween");
-    expect(driver).toMatch(/fadeOut: true[\s\S]{0,200}resetLayoutState\(\);\s*\n\s*updateGraph\(\);/);
+    // Snapshot the OLD on-screen positions BEFORE the swap (carriedPosById).
+    expect(driver).toMatch(/const oldPos = currentPositionMap\(\) \?\? new Map\(\);[\s\S]{0,200}collectGroupFolds\(anchors\)/);
+    // Defers concurrent selection rebuilds while the tween runs (RC-B).
+    expect(driver).toMatch(/groupSwapPending = true;/);
+    // At t=1 it finishes via finishCollapseSwap — NOT resetLayoutState/updateGraph.
+    expect(driver).toMatch(/fadeOut: true[\s\S]{0,160}onDone: \(\) => pendingGroupSettle\?\.\(\)/);
+    expect(driver).toContain("function finishCollapseSwap");
+    expect(driver).toMatch(/function finishCollapseSwap[\s\S]{0,400}applyCarriedScene\(\{ carriedPosById: oldPos/);
+    // The collapse path never hard-refits (no resetLayoutState();updateGraph(); pair).
+    const collapse = source.slice(source.indexOf("function startCollapseTween"), source.indexOf("function finishCollapseSwap"));
+    expect(collapse).not.toMatch(/resetLayoutState\(\);\s*\n\s*updateGraph\(\);/);
   });
 
-  it("expand swaps first, then tweens the revealed nodes OUT from their anchor", () => {
+  it("expand captures the anchor PRE-swap, carried-swaps FIRST, then tweens on the new payload", () => {
     const source = graphCanvasSource();
     const driver = driverSource(source);
-    // EXPAND swaps to the expanded scene FIRST (updateGraph), then fades IN.
-    expect(driver).toMatch(/function startExpandTween[\s\S]{0,200}resetLayoutState\(\);\s*\n\s*updateGraph\(\);/);
+    // RC-C: snapshot + per-group anchor captured BEFORE the swap.
+    expect(driver).toMatch(/function startExpandTween[\s\S]{0,320}const oldPos = currentPositionMap\(\)/);
+    expect(driver).toMatch(/anchorPosByGroup\.set\(groupId, \{ x: p\.x, y: p\.y \}\)/);
+    // Carried swap FIRST (children stacked on the anchor), then resolve on the NEW payload.
+    expect(driver).toMatch(/applyCarriedScene\(\{ carriedPosById: oldPos, placedPosById \}\);\s*\n\s*\/\/ 3\. Resolve the revealed children against the NEW payload\.\s*\n\s*const info = collectGroupFolds\(anchors\);/);
+    // Targets come from the cache-or-fan helper; tween fades IN.
+    expect(driver).toContain("computeExpandTargets(groupMembers, postAnchor, positions)");
     expect(driver).toMatch(/fadeOut: false/);
+    // Expand never hard-refits either.
+    const expand = source.slice(source.indexOf("function startExpandTween"), source.indexOf("function computeExpandTargets"));
+    expect(expand).not.toMatch(/resetLayoutState\(\);\s*\n\s*updateGraph\(\);/);
+  });
+
+  it("applyCarriedScene rebuilds, carries by id, persists the layout buffer, and never refits", () => {
+    const source = graphCanvasSource();
+    const carried = source.slice(
+      source.indexOf("function applyCarriedScene"),
+      source.indexOf("// Resolve the folding/revealing children"),
+    );
+    // Rebuild the NEW scene, then OVERWRITE positions by id via the pure carry core.
+    expect(carried).toContain("rebuildPayload();");
+    expect(carried).toContain("carryScenePositions({");
+    // RC-E: persist so later rebuilds don't re-derive scene-baked coords + jump.
+    expect(carried).toContain("activeLayoutBuffer = new Float32Array(graph.positions)");
+    expect(carried).toContain("forceBaseBuffer = new Float32Array(graph.positions)");
+    // Ends with the no-fit apply — never fitAndRender.
+    expect(carried).toContain("applyPayloadNoFit()");
+    expect(carried).not.toMatch(/(?<!animate)fitAndRender\(/);
+  });
+
+  it("settleGroupTween persists activeLayoutBuffer/forceBaseBuffer + clears the swap flag (RC-E)", () => {
+    const source = graphCanvasSource();
+    const settle = source.slice(
+      source.indexOf("function settleGroupTween"),
+      source.indexOf("function runGroupTween"),
+    );
+    expect(settle).toContain("activeLayoutBuffer = new Float32Array(positions)");
+    expect(settle).toContain("forceBaseBuffer = new Float32Array(positions)");
+    expect(settle).toContain("groupSwapPending = false");
+    // Refreshes the expand-restore cache for the settled ids.
+    expect(settle).toContain("lastKnownPosById.set");
+  });
+
+  it("defers selection/display rebuilds under a collapse tween, applying once post-swap (RC-B)", () => {
+    const source = graphCanvasSource();
+    // Both restyle paths bail out while groupSwapPending, queuing a single restyle.
+    const selection = source.slice(
+      source.indexOf("function updateSelection"),
+      source.indexOf("function updateDisplayStyle"),
+    );
+    expect(selection).toMatch(/if \(groupSwapPending\) \{\s*\n\s*pendingPostSwapRestyle = true;\s*\n\s*return;/);
+    const display = source.slice(
+      source.indexOf("function updateDisplayStyle"),
+      source.indexOf("function toggleCurvedLinks"),
+    );
+    expect(display).toMatch(/if \(groupSwapPending\) \{\s*\n\s*pendingPostSwapRestyle = true;\s*\n\s*return;/);
+    // The deferred restyle is flushed ONCE inside the settle.
+    expect(source).toMatch(/if \(pendingPostSwapRestyle\) \{\s*\n\s*pendingPostSwapRestyle = false;\s*\n\s*updateSelection\(\);/);
+  });
+
+  it("hardens the selection $effect with a content signature (fresh-array no-op guard, §3.3)", () => {
+    const source = graphCanvasSource();
+    expect(source).toContain("function selectionSignature");
+    expect(source).toMatch(/const key = selectionSignature\(selectedIds, focusId\);/);
+    expect(source).toMatch(/if \(key === lastSelectionKey\) return;/);
+    // The untrack on updateSelection MUST survive (edge-hover / hidden-dep fix).
+    expect(source).toMatch(/untrack\(\(\) => updateSelection\(\)\);/);
+  });
+
+  it("a layout-mode switch is a no-op while a group tween owns the payload (§3.3)", () => {
+    const source = graphCanvasSource();
+    expect(source).toMatch(/function selectLayoutMode\(mode\) \{\s*\n[\s\S]{0,300}if \(groupTweenFrame !== null\) return;/);
   });
 
   it("REUSES morphPositions + the merge-fade style on the rAF loop, locking morphActive", () => {
@@ -717,17 +807,18 @@ describe("GraphCanvas collapse/expand group transition", () => {
     expect(driver).toContain("window.requestAnimationFrame(step)");
   });
 
-  it("SAFETY: no renderer / no matching child / SSR / reduced-motion falls back cleanly", () => {
+  it("SAFETY: no renderer / SSR / reduced-motion / abnormal frame settle position-preserving", () => {
     const source = graphCanvasSource();
     const driver = driverSource(source);
-    // tryStart returns false (→ hard cut) without a renderer/payload/anchors.
-    expect(driver).toMatch(/function tryStartGroupTransition[\s\S]{0,220}return false;/);
-    // collectGroupFolds returns null when NO folding child is on screen.
-    expect(driver).toMatch(/if \(!info\) return false;/);
-    // The tween honours prefers-reduced-motion + missing rAF (instant settle).
+    // tryStart returns false (→ refit fallback) without a renderer/payload/anchors.
+    expect(driver).toMatch(/function tryStartGroupTransition[\s\S]{0,260}return false;/);
+    // An EMPTY on-screen fold set is NOT a hard cut — collapse still carried-swaps.
+    expect(driver).toMatch(/if \(!info\) \{\s*\n[\s\S]{0,200}finishCollapseSwap\(oldPos, new Map\(\), anchors\);/);
+    // The tween honours prefers-reduced-motion + missing rAF (settle to end state).
     expect(driver).toContain("prefersReducedMotion()");
-    // An abnormal frame unwinds instead of leaving the canvas locked.
-    expect(driver).toMatch(/const abort = \(\) => \{[\s\S]*resetLayoutState\(\);[\s\S]*fitAndRender\(\);/);
+    // §3.7: an abnormal frame JUMPS to the end state (onDone) first; fitAndRender
+    // is only the absolute last resort if that also throws.
+    expect(driver).toMatch(/const abort = \(\) => \{[\s\S]{0,200}try \{\s*\n\s*onDone\?\.\(\);\s*\n\s*\} catch \{[\s\S]{0,120}fitAndRender\(\);/);
     expect(driver).toMatch(/\} catch \{\s*\n\s*abort\(\);/);
   });
 
