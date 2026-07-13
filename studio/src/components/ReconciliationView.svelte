@@ -452,6 +452,7 @@
       <GraphCanvas
         {scene}
         {selectedIds}
+        showLayoutSwitcher
         centerOnIds={selectedIds}
         focusId={active.candidate_id}
         labelMode="plain"
