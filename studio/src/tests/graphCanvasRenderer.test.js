@@ -397,7 +397,7 @@ describe("GraphCanvas Curved-links + Color-by controls (Lots 4/5)", () => {
     // Color-by segmented control (DS ButtonGroup over COLOR_MODES) + Churn legend.
     expect(gated).toContain("COLOR_MODES");
     expect(gated).toMatch(/onclick=\{\(\) => selectColorMode\(mode\.id\)\}/);
-    expect(gated).toContain('aria-label="Degré colour legend"');
+    expect(gated).toContain('aria-label="Degree colour legend"');
     // Curved-links DS Switch.
     expect(gated).toContain("Switch");
     expect(gated).toContain('label="Curved links"');
