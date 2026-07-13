@@ -2,19 +2,46 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildConnectedDimStyle,
+  buildEdgeAlphaShape,
   buildGraphRendererPayload,
+  COLOR_BY_CHURN,
+  COLOR_BY_FOLDER,
+  COLOR_BY_LAYER,
+  colorForChurn,
   colorForGroup,
+  computeLayoutBuffer,
+  DEFAULT_EDGE_CURVATURE,
+  DEFAULT_EDGE_OPACITY,
   densityScale,
   DEFAULT_LABEL_MAX_CHARS,
+  EDGE_ALPHA_DENSE,
+  EDGE_ALPHA_FLAT,
+  EDGE_ALPHA_FLOOR,
+  EDGE_ALPHA_INVERSE,
+  EDGE_ALPHA_MID,
+  edgeAlphaShapeFor,
+  edgeDensityForDegree,
   findNearestEdge,
   findNearestNode,
   findNearestNodeId,
   GROUP_PALETTE,
+  interpolateGroupFadeStyle,
   interpolateMergeStyle,
   interpolateMergePositions,
   isBoxShape,
   LABEL_ZOOM_THRESHOLD,
+  LAYOUT_MODE_FORCE,
+  LAYOUT_MODE_GRID,
+  LAYOUT_MODE_LAYERS,
+  LAYOUT_MODE_METRO,
+  LAYOUT_MODE_RADIAL,
+  carryScenePositions,
+  goldenAngleFan,
+  LAYOUT_MODES,
   MAX_PRINCIPAL_CHARACTER_LABELS,
+  morphPositions,
+  nodeTypesForPayload,
+  resolveGroupFolds,
   selectPrincipalHubLabels,
   truncateLabel,
 } from "../lib/graphRendererPayload.js";
@@ -573,10 +600,15 @@ describe("graphRendererPayload", () => {
     expect(hoverStyle.nodeColors[payload.nodeIndexById.get("d") * 4 + 3]).toBeLessThanOrEqual(90);
   });
 
-  it("dims non-incident edges when hoveredNodeId is set", () => {
+  // Representation-polish remark 1: main-graph edges are ~0.5 alpha (128) by
+  // DEFAULT (not opaque); on hover, INCIDENT edges stay at that base ~0.5+
+  // (untouched by the dim loop) while NON-incident edges dim FURTHER, to
+  // ~0.15 (38) — well below the 0.35 (89) node dim, since edges are mostly
+  // noise once a node is focused.
+  it("dims non-incident edges FURTHER than nodes when hoveredNodeId is set", () => {
     const scene = makeTriangleScene();
     // a → b (index 0), a → c (index 1), b → d (index 2)
-    // Hover "a": edges 0 and 1 are incident → full alpha; edge 2 is not → dimmed
+    // Hover "a": edges 0 and 1 are incident → base alpha; edge 2 is not → dimmed
     const payload = buildGraphRendererPayload(scene, { hoveredNodeId: "a", nodeRadius: 3 });
     const graph = payload.renderGraph;
     const iA = payload.nodeIndexById.get("a");
@@ -588,11 +620,62 @@ describe("graphRendererPayload", () => {
       const isIncident = src === iA || tgt === iA;
       const alpha = payload.style.edgeColors[e * 4 + 3];
       if (isIncident) {
-        expect(alpha).toBe(255);
+        expect(alpha).toBe(128); // EDGE_BASE_ALPHA: 255 * 0.5, untouched by the dim
       } else {
-        expect(alpha).toBeLessThanOrEqual(90);
+        expect(alpha).toBe(38); // EDGE_DIM_ALPHA: 255 * 0.15, rounded
       }
     }
+  });
+
+  it("renders main-graph edges at ~0.5 alpha by default (no selection/hover/focus)", () => {
+    const scene = makeTriangleScene();
+    const payload = buildGraphRendererPayload(scene, { nodeRadius: 3 });
+    const edgeCount = payload.renderGraph.edges.length / 2;
+    for (let e = 0; e < edgeCount; e++) {
+      expect(payload.style.edgeColors[e * 4 + 3]).toBe(128); // 255 * 0.5
+    }
+  });
+
+  it("grades the density falloff via edgeAlphaShape (not the base alpha) at the dense endpoint", () => {
+    const nodes = [
+      { id: "hub", x: 0, y: 0 },
+      { id: "mid", x: 0, y: 100 },
+      { id: "low-a", x: 0, y: 200 },
+      { id: "low-b", x: 100, y: 200 },
+      ...Array.from({ length: 32 }, (_, i) => ({ id: `hub-${i}`, x: 100, y: i })),
+      ...Array.from({ length: 8 }, (_, i) => ({ id: `mid-${i}`, x: 100, y: 100 + i })),
+    ];
+    const edges = [
+      { source: "low-a", target: "low-b" },
+      ...Array.from({ length: 32 }, (_, i) => ({ source: "hub", target: `hub-${i}` })),
+      ...Array.from({ length: 8 }, (_, i) => ({ source: "mid", target: `mid-${i}` })),
+    ];
+    const payload = buildGraphRendererPayload({ nodes, edges });
+    const renderedIndexOf = (inputIndex) =>
+      Array.from(payload.renderGraph.edgeInputIndices).indexOf(inputIndex);
+    const baseAlphaForInputEdge = (inputIndex) =>
+      payload.baseStyle.edgeColors[renderedIndexOf(inputIndex) * 4 + 3];
+    // m0 = the SOURCE-endpoint multiplier of the along-edge shape (each edge here
+    // is authored source=hub/mid/low, so m0 carries that endpoint's density).
+    const sourceShapeForInputEdge = (inputIndex) =>
+      payload.baseStyle.edgeAlphaShape[renderedIndexOf(inputIndex) * 3];
+
+    // The BASE alpha is now the flat edgeOpacity default (0.5 → 128) for EVERY
+    // edge; density no longer bends it — the shape does.
+    expect(baseAlphaForInputEdge(0)).toBe(128);
+    expect(baseAlphaForInputEdge(1)).toBe(128);
+    expect(baseAlphaForInputEdge(33)).toBe(128);
+
+    const lowShape = sourceShapeForInputEdge(0); // low-a source, degree 1
+    const hubShape = sourceShapeForInputEdge(1); // hub source, degree 32
+    const midShape = sourceShapeForInputEdge(33); // mid source, degree 8
+
+    // A rare endpoint stays opaque (255); denser endpoints fade toward the floor.
+    expect(lowShape).toBe(255);
+    expect(midShape).toBeLessThan(lowShape);
+    expect(hubShape).toBeLessThan(midShape);
+    // Never below the faint floor (0.15 · 255 ≈ 38).
+    expect(hubShape).toBeGreaterThanOrEqual(Math.round(255 * EDGE_ALPHA_FLOOR));
   });
 
   it("dims non-neighbour nodes when a node is selected (selectedIds)", () => {
@@ -636,8 +719,668 @@ describe("graphRendererPayload", () => {
     const style = interpolateMergeStyle(payload, { from: "candidate", into: "canonical" }, 0.5);
 
     expect(style.nodeColors[3]).toBe(128);
-    expect(style.edgeColors[3]).toBe(128);
-    expect(style.edgeColors[7]).toBe(255);
+    // Edge 0 (candidate→neighbor) is incident to the merging "from" node: its
+    // base alpha (128, EDGE_BASE_ALPHA — remark 1's ~0.5 default) is halved
+    // by the merge fade (alphaScale 0.5) → 64.
+    expect(style.edgeColors[3]).toBe(64);
+    // Edge 1 (canonical→neighbor) is NOT incident to "candidate" → untouched,
+    // stays at the base ~0.5 alpha (128).
+    expect(style.edgeColors[7]).toBe(128);
     expect(payload.style.nodeColors[3]).toBe(255);
+  });
+});
+
+// --- Collapse/expand group animation: interpolateGroupFadeStyle --------------
+// The SET generalization of interpolateMergeStyle used by the group transition:
+// fade + shrink a whole set of folding/revealing nodes and their incident edges.
+describe("interpolateGroupFadeStyle (collapse/expand fade)", () => {
+  const makePayload = () =>
+    buildGraphRendererPayload({
+      nodes: [
+        { id: "a", label: "A", x: 0, y: 0, weight: 1 },
+        { id: "b", label: "B", x: 100, y: 40, weight: 1 },
+        { id: "c", label: "C", x: -20, y: 10, weight: 1 },
+      ],
+      edges: [
+        { source: "a", target: "c", relation: "mentions" },
+        { source: "b", target: "c", relation: "seen_by" },
+      ],
+      stats: { nodeCount: 3, edgeCount: 2, weakEdgeCount: 0, communityCount: 1 },
+    });
+
+  it("fades + shrinks the folding set and its incident edges, leaving others intact", () => {
+    const payload = makePayload();
+    const baseSizeA = payload.style.nodeSizes[0];
+    // Fold node index 0 ("a") at half alpha, half size.
+    const style = interpolateGroupFadeStyle(payload, new Set([0]), 0.5, 0.5);
+    // Node a: alpha 255→128, size halved.
+    expect(style.nodeColors[3]).toBe(128);
+    expect(style.nodeSizes[0]).toBeCloseTo(baseSizeA * 0.5, 5);
+    // Node b (not folding) untouched.
+    expect(style.nodeColors[7]).toBe(255);
+    expect(style.nodeSizes[1]).toBe(payload.style.nodeSizes[1]);
+    // Edge 0 (a→c) is incident to a → its base alpha (128) halved to 64.
+    expect(style.edgeColors[3]).toBe(64);
+    // Edge 1 (b→c) not incident to a → untouched.
+    expect(style.edgeColors[7]).toBe(128);
+    // The base style is never mutated (a fresh clone is returned).
+    expect(payload.style.nodeColors[3]).toBe(255);
+    expect(payload.style.nodeSizes[0]).toBe(baseSizeA);
+  });
+
+  it("t=0 fully hides (alpha 0) and t=1 (scale 1) is byte-identical to base alpha", () => {
+    const payload = makePayload();
+    const hidden = interpolateGroupFadeStyle(payload, new Set([0]), 0, 1);
+    expect(hidden.nodeColors[3]).toBe(0);
+    expect(hidden.edgeColors[3]).toBe(0);
+    const full = interpolateGroupFadeStyle(payload, new Set([0]), 1, 1);
+    expect(full.nodeColors[3]).toBe(payload.style.nodeColors[3]);
+    expect(full.edgeColors[3]).toBe(payload.style.edgeColors[3]);
+  });
+
+  it("returns the base style unchanged when the folding set is empty", () => {
+    const payload = makePayload();
+    expect(interpolateGroupFadeStyle(payload, new Set(), 0.5)).toBe(payload.style);
+  });
+
+  it("clamps alpha/size scales to [0,1] and accepts any iterable of indices", () => {
+    const payload = makePayload();
+    // Out-of-range scales clamp; an array (not a Set) is accepted.
+    const style = interpolateGroupFadeStyle(payload, [0], 5, -3);
+    expect(style.nodeColors[3]).toBe(255); // alpha clamped to 1
+    expect(style.nodeSizes[0]).toBe(0); // size clamped to 0
+  });
+});
+
+// --- codeflow-parity Lot 1: layout switcher seam + all-node morph tween ------
+// morphPositions generalizes the one-node merge lerp into a per-index morph
+// between two index-parallel buffers; computeLayoutBuffer is the studio↔registry
+// seam that resolves a mode ("layers" → typed-layer, "force" → cached buffer).
+describe("layout switcher seam (Lot 1) — morphPositions / computeLayoutBuffer", () => {
+  const makeTypedScene = () => ({
+    nodes: [
+      { id: "a", label: "A", type: "Character", x: 10, y: 10, weight: 1 },
+      { id: "b", label: "B", type: "Character", x: 20, y: 20, weight: 1 },
+      { id: "c", label: "C", type: "Location", x: 30, y: 30, weight: 1 },
+      { id: "d", label: "D", x: 40, y: 40, weight: 1 }, // untyped
+    ],
+    edges: [{ source: "a", target: "b", relation: "knows" }],
+    stats: { nodeCount: 4, edgeCount: 1, weakEdgeCount: 0, communityCount: 1 },
+  });
+
+  it("morphPositions: t=0 → bufA, t=1 → bufB, midpoint = average, all nodes moved", () => {
+    const bufA = new Float32Array([0, 0, 10, 10, -4, 8]);
+    const bufB = new Float32Array([2, 2, 30, -10, 0, 0]);
+
+    expect(Array.from(morphPositions(bufA, bufB, 0))).toEqual(Array.from(bufA));
+    expect(Array.from(morphPositions(bufA, bufB, 1))).toEqual(Array.from(bufB));
+
+    const mid = morphPositions(bufA, bufB, 0.5);
+    for (let i = 0; i < bufA.length; i += 1) {
+      expect(mid[i]).toBeCloseTo((bufA[i] + bufB[i]) / 2, 5);
+    }
+    // EVERY node moved between the endpoints (no correspondence problem: all
+    // 2·nodeCount floats are lerped in one loop).
+    const nodeCount = bufA.length / 2;
+    for (let n = 0; n < nodeCount; n += 1) {
+      expect(mid[n * 2]).not.toBe(bufA[n * 2]);
+      expect(mid[n * 2 + 1]).not.toBe(bufA[n * 2 + 1]);
+    }
+  });
+
+  it("morphPositions clamps t to [0,1] and reuses a supplied out buffer", () => {
+    const bufA = new Float32Array([0, 0]);
+    const bufB = new Float32Array([10, 20]);
+    expect(Array.from(morphPositions(bufA, bufB, -1))).toEqual([0, 0]);
+    expect(Array.from(morphPositions(bufA, bufB, 2))).toEqual([10, 20]);
+    const out = new Float32Array(2);
+    const result = morphPositions(bufA, bufB, 1, out);
+    expect(result).toBe(out); // reused, no fresh allocation
+    expect(Array.from(out)).toEqual([10, 20]);
+  });
+
+  it("morphPositions returns null on missing input", () => {
+    expect(morphPositions(null, new Float32Array(2), 0.5)).toBeNull();
+    expect(morphPositions(new Float32Array(2), null, 0.5)).toBeNull();
+  });
+
+  it("nodeTypesForPayload reads node_type node-order-keyed (parallel to nodeIds)", () => {
+    const payload = buildGraphRendererPayload(makeTypedScene(), { nodeRadius: 3 });
+    const types = nodeTypesForPayload(payload);
+    expect(types.length).toBe(payload.renderGraph.nodeIds.length);
+    for (let i = 0; i < types.length; i += 1) {
+      const id = payload.renderGraph.nodeIds[i];
+      expect(types[i]).toBe(payload.nodeById.get(id)?.node_type ?? null);
+    }
+    expect(types[payload.nodeIndexById.get("d")]).toBeNull(); // untyped node
+  });
+
+  it("computeLayoutBuffer('layers') bands typed nodes into swimlanes (2·n floats)", () => {
+    const payload = buildGraphRendererPayload(makeTypedScene(), { nodeRadius: 3 });
+    const n = payload.renderGraph.nodeIds.length;
+    const layers = computeLayoutBuffer(payload, LAYOUT_MODE_LAYERS);
+
+    expect(layers).toBeInstanceOf(Float32Array);
+    expect(layers.length).toBe(n * 2);
+
+    const iA = payload.nodeIndexById.get("a");
+    const iB = payload.nodeIndexById.get("b");
+    const iC = payload.nodeIndexById.get("c");
+    // Same type ⇒ same lane (y); different type ⇒ different lane.
+    expect(layers[iA * 2 + 1]).toBe(layers[iB * 2 + 1]);
+    expect(layers[iA * 2 + 1]).not.toBe(layers[iC * 2 + 1]);
+    // The target differs from the (force) input positions → a real morph.
+    expect(Array.from(layers)).not.toEqual(Array.from(payload.renderGraph.positions));
+  });
+
+  it("computeLayoutBuffer('force') returns a COPY of the cached buffer (no cold re-solve)", () => {
+    const payload = buildGraphRendererPayload(makeTypedScene(), { nodeRadius: 3 });
+    const n = payload.renderGraph.nodeIds.length;
+    const cached = new Float32Array(n * 2).fill(3);
+    const out = computeLayoutBuffer(payload, LAYOUT_MODE_FORCE, { forceBuffer: cached });
+    expect(Array.from(out)).toEqual(Array.from(cached));
+    expect(out).not.toBe(cached); // fresh copy, never the caller's buffer
+  });
+
+  it("computeLayoutBuffer('force') falls back to the current positions without a cache", () => {
+    const payload = buildGraphRendererPayload(makeTypedScene(), { nodeRadius: 3 });
+    const out = computeLayoutBuffer(payload, LAYOUT_MODE_FORCE);
+    expect(Array.from(out)).toEqual(Array.from(payload.renderGraph.positions));
+  });
+
+  it("computeLayoutBuffer degrades to null for a missing payload", () => {
+    expect(computeLayoutBuffer(null, LAYOUT_MODE_LAYERS)).toBeNull();
+  });
+
+  // --- Lots 2/6: Radial + Grid + Metro appear in the switcher --------------
+  it("the switcher offers Force / Radial / Layers / Grid / Metro", () => {
+    const ids = LAYOUT_MODES.map((m) => m.id);
+    expect(ids).toEqual([
+      LAYOUT_MODE_FORCE,
+      LAYOUT_MODE_RADIAL,
+      LAYOUT_MODE_LAYERS,
+      LAYOUT_MODE_GRID,
+      LAYOUT_MODE_METRO,
+    ]);
+    expect(LAYOUT_MODES.map((m) => m.label)).toEqual(["Force", "Radial", "Layers", "Grid", "Metro"]);
+  });
+
+  it("every switcher mode yields a valid 2·n buffer via computeLayoutBuffer", () => {
+    const payload = buildGraphRendererPayload(makeTypedScene(), { nodeRadius: 3 });
+    const n = payload.renderGraph.nodeIds.length;
+    const cached = new Float32Array(n * 2).fill(2);
+    for (const mode of LAYOUT_MODES) {
+      const buf = computeLayoutBuffer(payload, mode.id, { forceBuffer: cached });
+      expect(buf, `mode ${mode.id}`).toBeInstanceOf(Float32Array);
+      expect(buf.length, `mode ${mode.id}`).toBe(n * 2);
+      for (const v of buf) expect(Number.isFinite(v)).toBe(true);
+    }
+  });
+
+  it("computeLayoutBuffer('radial') hubs the highest-degree node at the origin", () => {
+    const payload = buildGraphRendererPayload(makeTypedScene(), { nodeRadius: 3 });
+    const n = payload.renderGraph.nodeIds.length;
+    const radial = computeLayoutBuffer(payload, LAYOUT_MODE_RADIAL);
+    expect(radial).toBeInstanceOf(Float32Array);
+    expect(radial.length).toBe(n * 2);
+    // In makeTypedScene, a & b share the only edge → degree 1 (max); a (earlier)
+    // is the hub at the origin.
+    const iA = payload.nodeIndexById.get("a");
+    expect(radial[iA * 2]).toBe(0);
+    expect(radial[iA * 2 + 1]).toBe(0);
+  });
+
+  it("computeLayoutBuffer('grid') lays nodes on a centred ceil(√n) grid", () => {
+    const payload = buildGraphRendererPayload(makeTypedScene(), { nodeRadius: 3 });
+    const n = payload.renderGraph.nodeIds.length; // 4 → 2×2 grid
+    const grid = computeLayoutBuffer(payload, LAYOUT_MODE_GRID);
+    expect(grid).toBeInstanceOf(Float32Array);
+    expect(grid.length).toBe(n * 2);
+    // Centred bounding box: x and y extents are symmetric around 0.
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (let i = 0; i < grid.length; i += 2) {
+      minX = Math.min(minX, grid[i]); maxX = Math.max(maxX, grid[i]);
+      minY = Math.min(minY, grid[i + 1]); maxY = Math.max(maxY, grid[i + 1]);
+    }
+    expect(minX + maxX).toBeCloseTo(0, 5);
+    expect(minY + maxY).toBeCloseTo(0, 5);
+    // A real morph target (differs from the force input positions).
+    expect(Array.from(grid)).not.toEqual(Array.from(payload.renderGraph.positions));
+  });
+
+  // Representation-polish remark 3: edge hover must work in EVERY layout, not
+  // just Force. GraphCanvas.settleLayout persists the settled buffer into
+  // `payload.renderGraph.positions` IN PLACE (`positions.set(buffer)`), and
+  // handlePointerMove reads findNearestEdge off that SAME array — this locks
+  // in that (a) findNearestEdge sees the settled non-Force positions right
+  // after a "settle", (b) it still sees them after a later payload rebuild
+  // (selection/hover/display-style change) re-applies the active layout
+  // buffer on top of a freshly-built payload (reapplyLayoutPositions), for
+  // EVERY registered layout mode.
+  describe("edge hover after a layout settles (remark 3)", () => {
+    const makeRingScene = (n = 8) => {
+      const nodes = Array.from({ length: n }, (_, i) => ({ id: `n${i}`, label: `N${i}` }));
+      const edges = Array.from({ length: n }, (_, i) => ({ source: `n${i}`, target: `n${(i + 1) % n}` }));
+      return { nodes, edges };
+    };
+
+    for (const mode of LAYOUT_MODES) {
+      it(`findNearestEdge hits an edge midpoint right after settling "${mode.id}"`, () => {
+        const scene = makeRingScene();
+        const payload = buildGraphRendererPayload(scene, { nodeRadius: 3 });
+        const forceBase = new Float32Array(payload.renderGraph.positions);
+
+        const settled = computeLayoutBuffer(payload, mode.id, { forceBuffer: forceBase });
+        // Mirror GraphCanvas.settleLayout: mutate renderGraph.positions IN PLACE.
+        payload.renderGraph.positions.set(settled);
+
+        const iA = payload.nodeIndexById.get("n0");
+        const iB = payload.nodeIndexById.get("n1");
+        const midX = (payload.renderGraph.positions[iA * 2] + payload.renderGraph.positions[iB * 2]) / 2;
+        const midY = (payload.renderGraph.positions[iA * 2 + 1] + payload.renderGraph.positions[iB * 2 + 1]) / 2;
+
+        const hit = findNearestEdge(payload, midX, midY, 40);
+        expect(hit, `mode ${mode.id}`).not.toBeNull();
+        expect([hit.edge.source, hit.edge.target]).toEqual(["n0", "n1"]);
+      });
+
+      it(`findNearestEdge still hits after a payload REBUILD re-applies the settled "${mode.id}" buffer`, () => {
+        const scene = makeRingScene();
+        let payload = buildGraphRendererPayload(scene, { nodeRadius: 3 });
+        const forceBase = new Float32Array(payload.renderGraph.positions);
+        const settled = computeLayoutBuffer(payload, mode.id, { forceBuffer: forceBase });
+        payload.renderGraph.positions.set(settled);
+        const activeLayoutBuffer = new Float32Array(settled);
+
+        // Mirror rebuildPayload(): a FRESH payload (fresh, force-baked positions)
+        // with reapplyLayoutPositions re-applying the settled buffer on top —
+        // exactly what a selection/hover/display-style change triggers.
+        const rebuilt = buildGraphRendererPayload(scene, { selectedIds: ["n0"], nodeRadius: 3 });
+        rebuilt.renderGraph.positions.set(activeLayoutBuffer);
+
+        const iA = rebuilt.nodeIndexById.get("n0");
+        const iB = rebuilt.nodeIndexById.get("n1");
+        const midX = (rebuilt.renderGraph.positions[iA * 2] + rebuilt.renderGraph.positions[iB * 2]) / 2;
+        const midY = (rebuilt.renderGraph.positions[iA * 2 + 1] + rebuilt.renderGraph.positions[iB * 2 + 1]) / 2;
+
+        const hit = findNearestEdge(rebuilt, midX, midY, 40);
+        expect(hit, `mode ${mode.id}`).not.toBeNull();
+        expect([hit.edge.source, hit.edge.target]).toEqual(["n0", "n1"]);
+      });
+    }
+  });
+});
+
+// --- codeflow-parity Lot 4: Curved-links toggle + Color-by (Folder / Layer) ---
+// R3: curved links are a per-edge 0↔0.15 scalar (both backends already draw the
+// curve). R4: Color-by re-keys the categorical node colour — Folder (default) on
+// community/container (node.group), Layer on the typed layer (node_type). Both
+// re-style with NO layout recompute; defaults MUST stay byte-identical to before.
+describe("Curved-links toggle (Lot 4, R3)", () => {
+  const makeEdgeScene = () => ({
+    nodes: [
+      { id: "a", label: "A", x: 0, y: 0, weight: 1, group: "G1" },
+      { id: "b", label: "B", x: 100, y: 0, weight: 1, group: "G1" },
+    ],
+    // A plain edge with NO explicit curvature → the default scalar applies.
+    edges: [{ source: "a", target: "b", relation: "links" }],
+    stats: { nodeCount: 2, edgeCount: 1, weakEdgeCount: 0, communityCount: 1 },
+  });
+
+  it("defaults to the current curved behaviour (0.15) when the option is unset", () => {
+    const payload = buildGraphRendererPayload(makeEdgeScene(), { nodeRadius: 3 });
+    expect(payload.style.edgeCurvatures[0]).toBeCloseTo(DEFAULT_EDGE_CURVATURE, 6);
+    expect(DEFAULT_EDGE_CURVATURE).toBe(0.15);
+    // The emitted per-edge input carries the same scalar.
+    expect(payload.edges[0].curvature).toBeCloseTo(0.15, 6);
+  });
+
+  it("OFF → 0 (straight) and ON → 0.15, flipping the curvature the builder emits", () => {
+    const straight = buildGraphRendererPayload(makeEdgeScene(), { nodeRadius: 3, curvedLinks: false });
+    const curved = buildGraphRendererPayload(makeEdgeScene(), { nodeRadius: 3, curvedLinks: true });
+    expect(straight.style.edgeCurvatures[0]).toBe(0);
+    expect(curved.style.edgeCurvatures[0]).toBeCloseTo(0.15, 6);
+    expect(straight.edges[0].curvature).toBe(0);
+    expect(curved.edges[0].curvature).toBeCloseTo(0.15, 6);
+  });
+
+  it("explicit curvedLinks:true is byte-identical to the unset default", () => {
+    const def = buildGraphRendererPayload(makeEdgeScene(), { nodeRadius: 3 });
+    const on = buildGraphRendererPayload(makeEdgeScene(), { nodeRadius: 3, curvedLinks: true });
+    expect(Array.from(on.style.edgeCurvatures)).toEqual(Array.from(def.style.edgeCurvatures));
+  });
+});
+
+describe("Color-by Folder vs Layer (Lot 4, R4)", () => {
+  // group ("Folder-A") and node_type ("Layer-Z") hash to DIFFERENT palette slots
+  // (7 vs 1) so the two keyings produce a visibly different node fill.
+  const GROUP = "Folder-A";
+  const TYPE = "Layer-Z";
+  const makeScene = () => ({
+    nodes: [{ id: "a", label: "A", x: 0, y: 0, weight: 1, group: GROUP, type: TYPE }],
+    edges: [],
+    stats: { nodeCount: 1, edgeCount: 0, weakEdgeCount: 0, communityCount: 1 },
+  });
+
+  it("precondition: the two keys map to distinct palette colours", () => {
+    expect(colorForGroup(GROUP)).not.toBe(colorForGroup(TYPE));
+  });
+
+  it("defaults to Folder (community/container) keying when colorBy is unset", () => {
+    const payload = buildGraphRendererPayload(makeScene(), { nodeRadius: 3 });
+    expect(payload.nodeById.get("a").color).toBe(colorForGroup(GROUP));
+  });
+
+  it("Folder keys the node colour on node.group; Layer keys it on node_type", () => {
+    const folder = buildGraphRendererPayload(makeScene(), { nodeRadius: 3, colorBy: COLOR_BY_FOLDER });
+    const layer = buildGraphRendererPayload(makeScene(), { nodeRadius: 3, colorBy: COLOR_BY_LAYER });
+    expect(folder.nodeById.get("a").color).toBe(colorForGroup(GROUP));
+    expect(layer.nodeById.get("a").color).toBe(colorForGroup(TYPE));
+    // Switching the axis actually re-colours the node in the style buffer.
+    expect(Array.from(layer.style.nodeColors)).not.toEqual(Array.from(folder.style.nodeColors));
+  });
+
+  it("explicit colorBy:'folder' is byte-identical to the unset default", () => {
+    const def = buildGraphRendererPayload(makeScene(), { nodeRadius: 3 });
+    const folder = buildGraphRendererPayload(makeScene(), { nodeRadius: 3, colorBy: COLOR_BY_FOLDER });
+    expect(Array.from(folder.style.nodeColors)).toEqual(Array.from(def.style.nodeColors));
+  });
+
+  it("selection / focus colour still overrides both keyings", () => {
+    const payload = buildGraphRendererPayload(makeScene(), {
+      nodeRadius: 3,
+      colorBy: COLOR_BY_LAYER,
+      selectedIds: ["a"],
+    });
+    // Selected node uses SELECTED_COLOR (#2563eb → 37,99,235), not the layer hue.
+    expect([...payload.baseStyle.nodeColors.slice(0, 3)]).toEqual([37, 99, 235]);
+  });
+});
+
+// --- codeflow-parity Lot 5: Color-by Churn (degree/activity fallback first) ---
+describe("Color-by Churn heat ramp (Lot 5, R4/D2)", () => {
+  it("exports a deterministic low→high sequential ramp", () => {
+    expect(colorForChurn(0)).toBe("#e2e8f0");
+    expect(colorForChurn(1)).toBe("#ef4444");
+    expect(colorForChurn(-1)).toBe("#e2e8f0");
+    expect(colorForChurn(2)).toBe("#ef4444");
+  });
+
+  it("uses explicit churn/activity scalars when present", () => {
+    const payload = buildGraphRendererPayload(
+      {
+        nodes: [
+          { id: "cold", x: 0, y: 0, churn: 0 },
+          { id: "hot", x: 1, y: 1, churn: 10 },
+        ],
+        edges: [],
+      },
+      { nodeRadius: 3, colorBy: COLOR_BY_CHURN },
+    );
+    expect(payload.nodeById.get("cold").color).toBe(colorForChurn(0));
+    expect(payload.nodeById.get("hot").color).toBe(colorForChurn(1));
+  });
+
+  it("falls back to normalized degree when no churn source exists", () => {
+    const payload = buildGraphRendererPayload(
+      {
+        nodes: [
+          { id: "hub", x: 0, y: 0 },
+          { id: "leaf1", x: 1, y: 1 },
+          { id: "leaf2", x: 2, y: 2 },
+        ],
+        edges: [
+          { source: "hub", target: "leaf1" },
+          { source: "hub", target: "leaf2" },
+        ],
+      },
+      { nodeRadius: 3, colorBy: COLOR_BY_CHURN },
+    );
+    expect(payload.nodeById.get("hub").color).toBe(colorForChurn(1));
+    expect(payload.nodeById.get("leaf1").color).toBe(colorForChurn(0.5));
+  });
+
+  // MINOR-3 (double-consensus review): normalizedChurnById must compute the max
+  // with a reduce/loop, NOT `Math.max(0, ...raw.values())`. The spread passes
+  // every value as a separate call argument, which overflows the engine's
+  // arg-count limit (RangeError: Maximum call stack size exceeded) well before
+  // ~1e5 nodes — silently breaking Color-by=Churn on any real large graph.
+  it("does not throw on a many-node churn scene (no spread over node values)", () => {
+    const N = 150000; // > the ~128k spread arg-count limit measured on V8.
+    const nodes = new Array(N);
+    for (let i = 0; i < N; i++) {
+      nodes[i] = { id: `n${i}`, x: i % 500, y: (i / 500) | 0, churn: i % 37 };
+    }
+    let payload;
+    expect(() => {
+      payload = buildGraphRendererPayload({ nodes, edges: [] }, { nodeRadius: 3, colorBy: COLOR_BY_CHURN });
+    }).not.toThrow();
+    expect(payload.renderGraph.nodeIds.length).toBe(N);
+    // Ramp still normalizes: the max-churn node maps to the hot end.
+    expect(payload.nodeById.get(`n${36}`).color).toBe(colorForChurn(1));
+  });
+});
+
+// --- Configurable edge-transparency: along-edge alpha SHAPE + edge opacity ----
+// The density falloff and the fade modes live in the per-edge alpha SHAPE
+// (edgeAlphaShape, a separate multiplier of the flat base alpha). Defaults
+// (dense mode, 0.5 opacity) keep the ~0.5 base + hub-fade the studio already had.
+describe("edge alpha modes + opacity", () => {
+  const FLOOR = Math.round(255 * EDGE_ALPHA_FLOOR); // 38
+
+  describe("edgeDensityForDegree (log-scaled endpoint density)", () => {
+    it("is 0 at/below START (deg ≤ 2) and 1 at/above FULL (deg ≥ 16)", () => {
+      expect(edgeDensityForDegree(0)).toBe(0);
+      expect(edgeDensityForDegree(1)).toBe(0);
+      expect(edgeDensityForDegree(2)).toBe(0);
+      expect(edgeDensityForDegree(16)).toBe(1);
+      expect(edgeDensityForDegree(32)).toBe(1); // clamped
+    });
+
+    it("increases monotonically between START and FULL", () => {
+      expect(edgeDensityForDegree(4)).toBeLessThan(edgeDensityForDegree(8));
+      expect(edgeDensityForDegree(8)).toBeLessThan(edgeDensityForDegree(16));
+      expect(edgeDensityForDegree(8)).toBeCloseTo(2 / 3, 5);
+    });
+  });
+
+  describe("edgeAlphaShapeFor (pure mode → [m0, mMid, m1])", () => {
+    it("flat: uniform 255 regardless of density", () => {
+      expect(edgeAlphaShapeFor(EDGE_ALPHA_FLAT, 0.4, 0.9)).toEqual([255, 255, 255]);
+    });
+
+    it("mid: opaque at both ends, faint (FLOOR) in the middle", () => {
+      expect(edgeAlphaShapeFor(EDGE_ALPHA_MID, 0.4, 0.9)).toEqual([255, FLOOR, 255]);
+    });
+
+    it("dense: opaque at the RARE endpoint (density 0), faint at the DENSE one (density 1)", () => {
+      // rare source (d0=0) → 255; dense target (d1=1) → FLOOR; mid = average.
+      const shape = edgeAlphaShapeFor(EDGE_ALPHA_DENSE, 0, 1);
+      expect(shape[0]).toBe(255);
+      expect(shape[2]).toBe(FLOOR);
+      expect(shape[1]).toBe(Math.round((255 + FLOOR) / 2));
+    });
+
+    it("inverse: mirror of dense — faint at the rare endpoint, opaque at the dense one", () => {
+      const shape = edgeAlphaShapeFor(EDGE_ALPHA_INVERSE, 0, 1);
+      expect(shape[0]).toBe(FLOOR);
+      expect(shape[2]).toBe(255);
+    });
+
+    it("an unknown mode falls back to dense", () => {
+      expect(edgeAlphaShapeFor("bogus", 0, 1)).toEqual(edgeAlphaShapeFor(EDGE_ALPHA_DENSE, 0, 1));
+    });
+  });
+
+  // A hub of degree 17 (density 1) → one leaf of degree 1 (density 0). Input
+  // edge 0 is authored hub→leaf, so its shape reads [m0=hub, mMid, m1=leaf].
+  const makeHubScene = () => {
+    const nodes = [{ id: "hub" }, { id: "leaf" }];
+    const edges = [{ source: "hub", target: "leaf" }];
+    for (let i = 0; i < 16; i += 1) {
+      nodes.push({ id: `x${i}` });
+      edges.push({ source: "hub", target: `x${i}` });
+    }
+    return { nodes, edges };
+  };
+  const shapeForInputEdge0 = (payload) => {
+    const rendered = Array.from(payload.renderGraph.edgeInputIndices).indexOf(0);
+    const s = payload.baseStyle.edgeAlphaShape;
+    return [s[rendered * 3], s[rendered * 3 + 1], s[rendered * 3 + 2]];
+  };
+
+  it("buildGraphRendererPayload always attaches a 3-per-edge shape buffer", () => {
+    const payload = buildGraphRendererPayload(makeHubScene(), { nodeRadius: 3 });
+    const edgeCount = payload.renderGraph.edges.length / 2;
+    expect(payload.baseStyle.edgeAlphaShape).toBeInstanceOf(Uint8Array);
+    expect(payload.baseStyle.edgeAlphaShape.length).toBe(edgeCount * 3);
+  });
+
+  it("defaults to dense mode (opaque at the rare leaf, faint at the dense hub)", () => {
+    const payload = buildGraphRendererPayload(makeHubScene(), { nodeRadius: 3 });
+    const [m0, , m1] = shapeForInputEdge0(payload);
+    expect(m0).toBe(FLOOR); // hub side (dense) faded to the floor
+    expect(m1).toBe(255); // leaf side (rare) opaque
+  });
+
+  it("inverse mode swaps the ramp (opaque at the hub, faint at the leaf)", () => {
+    const payload = buildGraphRendererPayload(makeHubScene(), { nodeRadius: 3, edgeAlphaMode: EDGE_ALPHA_INVERSE });
+    const [m0, , m1] = shapeForInputEdge0(payload);
+    expect(m0).toBe(255);
+    expect(m1).toBe(FLOOR);
+  });
+
+  it("mid mode fades the middle, keeping both endpoints opaque", () => {
+    const payload = buildGraphRendererPayload(makeHubScene(), { nodeRadius: 3, edgeAlphaMode: EDGE_ALPHA_MID });
+    const [m0, mMid, m1] = shapeForInputEdge0(payload);
+    expect(m0).toBe(255);
+    expect(m1).toBe(255);
+    expect(mMid).toBe(FLOOR);
+  });
+
+  it("flat mode emits an all-255 (uniform) shape for every edge", () => {
+    const payload = buildGraphRendererPayload(makeHubScene(), { nodeRadius: 3, edgeAlphaMode: EDGE_ALPHA_FLAT });
+    for (const v of payload.baseStyle.edgeAlphaShape) expect(v).toBe(255);
+  });
+
+  it("edgeOpacity sets the uniform base alpha (0..1 → 0..255); default is 0.5", () => {
+    const def = buildGraphRendererPayload(makeHubScene(), { nodeRadius: 3 });
+    const dim = buildGraphRendererPayload(makeHubScene(), { nodeRadius: 3, edgeOpacity: 0.2 });
+    const bright = buildGraphRendererPayload(makeHubScene(), { nodeRadius: 3, edgeOpacity: 0.8 });
+    expect(DEFAULT_EDGE_OPACITY).toBe(0.5);
+    expect(def.baseStyle.edgeColors[3]).toBe(128); // 255 * 0.5
+    expect(dim.baseStyle.edgeColors[3]).toBe(Math.round(255 * 0.2)); // 51
+    expect(bright.baseStyle.edgeColors[3]).toBe(Math.round(255 * 0.8)); // 204
+    // The base alpha is uniform: every edge shares it (density is in the shape).
+    const edgeCount = dim.renderGraph.edges.length / 2;
+    for (let e = 0; e < edgeCount; e += 1) expect(dim.baseStyle.edgeColors[e * 4 + 3]).toBe(51);
+  });
+
+  it("buildEdgeAlphaShape reproduces the payload's shape from the same degrees", () => {
+    const payload = buildGraphRendererPayload(makeHubScene(), { nodeRadius: 3 });
+    const edgeCount = payload.renderGraph.edges.length / 2;
+    // Recompute undirected degrees exactly as the payload does.
+    const deg = new Map();
+    for (const id of payload.renderGraph.nodeIds) deg.set(id, 0);
+    for (let e = 0; e < edgeCount; e += 1) {
+      const s = payload.renderGraph.nodeIds[payload.renderGraph.edges[e * 2]];
+      const t = payload.renderGraph.nodeIds[payload.renderGraph.edges[e * 2 + 1]];
+      deg.set(s, (deg.get(s) ?? 0) + 1);
+      deg.set(t, (deg.get(t) ?? 0) + 1);
+    }
+    const rebuilt = buildEdgeAlphaShape(payload.renderGraph, deg, EDGE_ALPHA_DENSE);
+    expect(rebuilt.length).toBe(edgeCount * 3);
+    expect(Array.from(rebuilt)).toEqual(Array.from(payload.baseStyle.edgeAlphaShape));
+  });
+
+  it("the shape survives connected-dim re-styling (only edgeColors.a is dimmed)", () => {
+    const payload = buildGraphRendererPayload(makeHubScene(), { nodeRadius: 3, selectedIds: ["leaf"] });
+    // The dimmed style keeps the EXACT shape buffer (cloneStyle carries it).
+    expect(Array.from(payload.style.edgeAlphaShape)).toEqual(
+      Array.from(payload.baseStyle.edgeAlphaShape),
+    );
+    // Some non-incident edge's BASE alpha was dimmed below the 128 base…
+    let sawDim = false;
+    const edgeCount = payload.renderGraph.edges.length / 2;
+    for (let e = 0; e < edgeCount; e += 1) {
+      if (payload.style.edgeColors[e * 4 + 3] < 128) sawDim = true;
+    }
+    expect(sawDim).toBe(true);
+  });
+});
+
+// --- Group/ungroup animation pure helpers (behavioural, not source-string) -----
+describe("resolveGroupFolds — fold set + anchor rule", () => {
+  const nodeIds = ["a", "b", "c", "g"];
+  // a(0,0) b(10,0) c(20,0) g(4,4)
+  const positions = new Float32Array([0, 0, 10, 0, 20, 0, 4, 4]);
+
+  it("anchors on the group node's OWN position when it is on screen", () => {
+    const info = resolveGroupFolds({
+      nodeIds,
+      positions,
+      anchors: new Map([["a", "g"], ["b", "g"]]),
+    });
+    expect([...info.foldingSet].sort()).toEqual([0, 1]); // a,b fold
+    expect(info.anchorPosByGroup.get("g")).toEqual({ x: 4, y: 4 }); // g's own pos
+  });
+
+  it("falls back to the folding members' CENTROID when the group node is off screen", () => {
+    const info = resolveGroupFolds({
+      nodeIds: ["a", "b", "c"], // g absent from this scene
+      positions: new Float32Array([0, 0, 10, 0, 20, 0]),
+      anchors: new Map([["a", "g"], ["b", "g"]]),
+    });
+    expect(info.anchorPosByGroup.get("g")).toEqual({ x: 5, y: 0 }); // centroid of a,b
+  });
+
+  it("returns null for empty anchors or when no folded child is on screen", () => {
+    expect(resolveGroupFolds({ nodeIds, positions, anchors: new Map() })).toBeNull();
+    expect(
+      resolveGroupFolds({ nodeIds, positions, anchors: new Map([["zz", "g"]]) }),
+    ).toBeNull();
+  });
+});
+
+describe("carryScenePositions — by-id coordinate carry", () => {
+  it("carries shared ids, applies explicit placements, and neighbour-centroids brand-new nodes", () => {
+    // new(2) is edge-connected to shared s(0); grp(1) is explicitly placed.
+    const out = carryScenePositions({
+      nodeIds: ["s", "grp", "new"],
+      positions: new Float32Array([99, 99, 99, 99, 99, 99]), // scene-baked (should be overridden)
+      edges: new Uint32Array([2, 0]), // new <-> s
+      carriedPosById: new Map([["s", { x: 1, y: 2 }]]),
+      placedPosById: new Map([["grp", { x: 3, y: 4 }]]),
+    });
+    expect([out[0], out[1]]).toEqual([1, 2]); // s carried
+    expect([out[2], out[3]]).toEqual([3, 4]); // grp placed
+    expect([out[4], out[5]]).toEqual([1, 2]); // new → centroid of its only placed neighbour (s)
+  });
+
+  it("leaves a brand-new node with no placed neighbour at its scene-baked position", () => {
+    const out = carryScenePositions({
+      nodeIds: ["s", "new"],
+      positions: new Float32Array([0, 0, 7, 8]),
+      edges: new Uint32Array([]), // no edges → no neighbour
+      carriedPosById: new Map([["s", { x: 1, y: 1 }]]),
+      placedPosById: new Map(),
+    });
+    expect([out[2], out[3]]).toEqual([7, 8]); // scene-baked fallback
+  });
+});
+
+describe("goldenAngleFan — deterministic sunflower", () => {
+  it("is order-independent (sorted by id) and places child 0 at anchor+spacing", () => {
+    const a = goldenAngleFan({ anchor: { x: 10, y: 20 }, childIds: ["b", "a"], spacing: 5 });
+    const b = goldenAngleFan({ anchor: { x: 10, y: 20 }, childIds: ["a", "b"], spacing: 5 });
+    expect([...a.entries()]).toEqual([...b.entries()]); // same id set → same slots
+    // child "a" is index 0 → angle 0, radius = spacing → anchor + (spacing, 0)
+    expect(a.get("a").x).toBeCloseTo(15, 6);
+    expect(a.get("a").y).toBeCloseTo(20, 6);
+  });
+
+  it("caps the radius", () => {
+    const fan = goldenAngleFan({ anchor: { x: 0, y: 0 }, childIds: ["a", "b", "c"], spacing: 100, cap: 50 });
+    for (const { x, y } of fan.values()) expect(Math.hypot(x, y)).toBeLessThanOrEqual(50 + 1e-6);
   });
 });

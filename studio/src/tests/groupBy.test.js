@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   computeGroupedGraph,
+  computeGroupTransition,
   classIdsAtLevel,
   typeNamesInTaxonomy,
   ontologyLevelState,
@@ -444,5 +445,96 @@ describe("B2 — real served mystery artifact (if present) folds a Domain end-to
     expect(node, `${domainId} fold node must be present`).toBeTruthy();
     expect(node.collapsed).toBe(true);
     expect(out.nodes.length).toBeLessThan(graph.nodes.length);
+  });
+});
+
+/* ===========================================================================
+ * Collapse/expand ANIMATION — computeGroupTransition (direction detection).
+ *
+ * PURE diff of (prev grouped keys, next grouped keys, prev fold-anchor map, next
+ * fold-anchor map) into the transition descriptor GraphCanvas plays:
+ *   - a target ADDED (grew, none removed)  → collapse (newly-folded children)
+ *   - a target REMOVED (shrank, none added) → expand (newly-revealed children)
+ *   - MIXED / no-op                          → null (hard cut, safety fallback)
+ * ======================================================================== */
+describe("computeGroupTransition — collapse/expand direction detection", () => {
+  it("children newly FOLDED (none revealed) → collapse, anchored via the NEXT map", () => {
+    const t = computeGroupTransition({
+      prevFoldAnchors: new Map(),
+      nextFoldAnchors: new Map([
+        ["holmes", "class:People"],
+        ["watson", "class:People"],
+      ]),
+    });
+    expect(t).not.toBeNull();
+    expect(t.direction).toBe("collapse");
+    expect(t.anchorByNodeId.get("holmes")).toBe("class:People");
+    expect(t.anchorByNodeId.get("watson")).toBe("class:People");
+    expect(t.anchorByNodeId.size).toBe(2);
+  });
+
+  it("an incremental collapse only animates the NEWLY-folded children (delta)", () => {
+    // People already folded; adding Villains folds moriarty. holmes/watson are
+    // ALREADY hidden (present in prev), so they must NOT animate again.
+    const t = computeGroupTransition({
+      prevFoldAnchors: new Map([
+        ["holmes", "class:People"],
+        ["watson", "class:People"],
+      ]),
+      nextFoldAnchors: new Map([
+        ["holmes", "class:People"],
+        ["watson", "class:People"],
+        ["moriarty", "class:Villains"],
+      ]),
+    });
+    expect(t.direction).toBe("collapse");
+    expect([...t.anchorByNodeId.keys()]).toEqual(["moriarty"]);
+    expect(t.anchorByNodeId.get("moriarty")).toBe("class:Villains");
+  });
+
+  it("children newly REVEALED (none folded) → expand, anchored via the PREV map", () => {
+    const t = computeGroupTransition({
+      prevFoldAnchors: new Map([
+        ["holmes", "class:People"],
+        ["watson", "class:People"],
+      ]),
+      nextFoldAnchors: new Map(),
+    });
+    expect(t.direction).toBe("expand");
+    expect(t.anchorByNodeId.get("holmes")).toBe("class:People");
+    expect(t.anchorByNodeId.get("watson")).toBe("class:People");
+    expect(t.anchorByNodeId.size).toBe(2);
+  });
+
+  it("a MIXED change (some folded AND some revealed) → null (hard cut fallback)", () => {
+    const t = computeGroupTransition({
+      prevFoldAnchors: new Map([["holmes", "class:People"]]),
+      nextFoldAnchors: new Map([["moriarty", "class:Villains"]]),
+    });
+    expect(t).toBeNull();
+  });
+
+  it("a no-op change (identical fold maps) → null", () => {
+    expect(
+      computeGroupTransition({
+        prevFoldAnchors: new Map([["holmes", "class:People"]]),
+        nextFoldAnchors: new Map([["holmes", "class:People"]]),
+      }),
+    ).toBeNull();
+  });
+
+  it("robust to ASYNC fold landing: a key change that folds NOTHING yet → null", () => {
+    // The grouped key changed but the artifact hasn't loaded, so the fold map is
+    // still empty on both sides — no direction until the fold actually lands.
+    expect(
+      computeGroupTransition({
+        prevFoldAnchors: new Map(),
+        nextFoldAnchors: new Map(),
+      }),
+    ).toBeNull();
+  });
+
+  it("defaults are safe — no args → null", () => {
+    expect(computeGroupTransition()).toBeNull();
   });
 });

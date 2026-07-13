@@ -45,8 +45,7 @@
  */
 
 import {
-  BORDER_WIDTH_BOLD,
-  BORDER_WIDTH_NORMAL,
+  borderStrokeWidthPx,
   BOX_BASE_HEIGHT_PX,
   BOX_FILL,
   BOX_SHAPE_CODE,
@@ -262,6 +261,12 @@ export interface WebGLBoxFrame {
   viewportWidth: number;
   viewportHeight: number;
   /**
+   * Scale the box border stroke with the camera zoom (default false = legacy
+   * screen-space width). On for interactive studio views so the outline stays
+   * proportional to the zoom-scaled box instead of dominating when zoomed out.
+   */
+  scaleBordersWithZoom?: boolean;
+  /**
    * Box-label width measure service (the SAME `measureText` cache Canvas2D uses)
    * so the box WIDTH + the #199 pixel-fit + the atlas all agree to the pixel.
    * Absent in non-DOM envs ⇒ boxes collapse to the empty-rect (a no-op width);
@@ -360,7 +365,9 @@ export function buildBoxDraws(frame: WebGLBoxFrame): BoxDraw[] {
     const bold = (style?.nodeBorders?.[i] ?? 0) === 1;
     // Canvas2D strokes lineWidth = (bold?BOLD:NORMAL)·PR; the SDF border is a
     // band of HALF that width on each side of the outline.
-    const border = ((bold ? BORDER_WIDTH_BOLD : BORDER_WIDTH_NORMAL) * frame.pixelRatio) / 2;
+    const border =
+      borderStrokeWidthPx(bold, frame.pixelRatio, frame.camera.zoom, frame.scaleBordersWithZoom ?? false) /
+      2;
 
     draws.push({
       nodeIndex: i,
@@ -439,7 +446,12 @@ export function buildBoxTextDraws(frame: WebGLBoxFrame): BoxTextDraw[] {
       height,
       label: style?.nodeLabels?.[i] ?? "",
       // Canvas2D strokes lineWidth = (bold?BOLD:NORMAL)·PR (device px).
-      borderWidth: (bold ? BORDER_WIDTH_BOLD : BORDER_WIDTH_NORMAL) * frame.pixelRatio,
+      borderWidth: borderStrokeWidthPx(
+        bold,
+        frame.pixelRatio,
+        frame.camera.zoom,
+        frame.scaleBordersWithZoom ?? false,
+      ),
       // Mirror renderer.ts `cssColor`: rgba(r,g,b, a/255). The canvas2d golden
       // also sets globalAlpha=alpha, so the alpha is applied the SAME two ways.
       borderColor: `rgba(${r}, ${g}, ${b}, ${a / 255})`,

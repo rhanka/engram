@@ -1,4 +1,13 @@
-import { buildRenderGraphBuffers, buildStyleBuffers } from "@sentropic/graph";
+import {
+  buildRenderGraphBuffers,
+  buildStyleBuffers,
+  DEFAULT_LAYOUT_ID,
+  GRID_LAYOUT_ID,
+  METRO_LAYOUT_ID,
+  RADIAL_LAYOUT_ID,
+  resolveLayout,
+  TYPED_LAYER_LAYOUT_ID,
+} from "@sentropic/graph";
 
 /**
  * SINGLE source of truth for a group's (community / type) colour. Both the
@@ -27,10 +36,82 @@ export const GROUP_PALETTE = [
 
 const FOCUS_COLOR = "#ef4444";
 const SELECTED_COLOR = "#2563eb";
-const EDGE_COLOR = "#94a3b8";
-const WEAK_EDGE_COLOR = [203, 213, 225, 128];
+// Studio representation-polish remark 1: main-graph edges render semi-
+// transparent by DEFAULT (not opaque) — same #94a3b8 hue as before, now at
+// ~0.5 alpha — so the graph reads less like a solid mesh even before any
+// hover. `#94a3b8` = rgb(148, 163, 184); packages/graph's buildStyleBuffers
+// accepts an [r,g,b,a] ColorInput, so we spell the colour as an array to
+// carry the alpha (studio-only — packages/graph's own defaults/goldens are
+// untouched).
+const EDGE_BASE_OPACITY = 0.5;
+const EDGE_MIN_OPACITY = 0.3;
+const EDGE_BASE_ALPHA = Math.round(255 * EDGE_BASE_OPACITY); // 128
+// ONE slate hue for EVERY edge (remark: edges must all be the same colour and
+// differ ONLY by a transparency degree — a whiter hue for "weak" edges reads as
+// a colour change and is a bug). Weakness is conveyed by the dotted dash alone,
+// never by a paler RGB.
+const EDGE_COLOR_RGB = [148, 163, 184];
+// Degree 1–2 is visually sparse and stays at the historical 0.50. From there,
+// a logarithmic curve handles the long-tailed degree distribution of knowledge
+// graphs; the floor (0.30 = the 70%-transparent cap) is now reached by degree
+// 16 so hub edges recede enough for the density gradient to READ clearly.
+const EDGE_DENSITY_START_DEGREE = 2;
+const EDGE_DENSITY_FULL_DEGREE = 16;
 const EDGE_CURVE_FACTOR = 0.5;
-const DIM_ALPHA = Math.round(255 * 0.35); // 89
+const DIM_ALPHA = Math.round(255 * 0.35); // 89 — connected-dim for NON-neighbour nodes
+// Remark 1: non-incident edges dim FURTHER than nodes on hover (edges are
+// mostly noise once a node is focused) — incident edges are left at the
+// EDGE_BASE_ALPHA (~0.5+) by simply not being touched by the dim loop below.
+const EDGE_DIM_ALPHA = Math.round(255 * 0.15); // 38
+
+// --- codeflow-parity Lot 4: Curved-links toggle + Color-by (Folder / Layer) ---
+/**
+ * Default curvature for a main-graph edge — the studio's CURRENT behaviour.
+ * Both @sentropic/graph backends already draw a per-edge quadratic when
+ * curvature !== 0 (`styles.ts:259`, `render-geometry.edgeGeometry`), so the
+ * "Curved links" toggle is purely this scalar: ON ⇒ this value (default,
+ * byte-identical to before), OFF ⇒ 0 (straight). Wiring only — NOT the discrete
+ * flow-port S-routing (R3).
+ */
+export const DEFAULT_EDGE_CURVATURE = 0.15;
+/**
+ * Color-by mode — colour by directory / container (community/container, i.e.
+ * `node.group`). This is the studio's CURRENT default keying (`colorForGroup`).
+ */
+export const COLOR_BY_FOLDER = "folder";
+/** Color-by mode — colour by typed layer / ontology level (`node_type`). */
+export const COLOR_BY_LAYER = "layer";
+/** Color-by mode — continuous churn/activity heat ramp (degree fallback first). */
+export const COLOR_BY_CHURN = "churn";
+
+// --- Configurable edge-transparency (along-edge alpha shape) ------------------
+/**
+ * Edge-fade mode — DENSE fade (DEFAULT): each edge is opaque at its RARE
+ * (low-degree) endpoint and fades toward its DENSE (high-degree) endpoint, so a
+ * hub's incident edges recede near the hub and the sparse rim reads clearly.
+ */
+export const EDGE_ALPHA_DENSE = "dense";
+/** Edge-fade mode — INVERSE: opaque at the dense endpoint, faint at the rare one. */
+export const EDGE_ALPHA_INVERSE = "inverse";
+/** Edge-fade mode — MID fade: opaque near BOTH nodes, faint in the MIDDLE. */
+export const EDGE_ALPHA_MID = "mid";
+/** Edge-fade mode — FLAT: uniform base alpha, no along-edge gradient. */
+export const EDGE_ALPHA_FLAT = "flat";
+/** Edge-fade modes exposed by the studio segmented control (default first). */
+export const EDGE_ALPHA_MODES = [
+  EDGE_ALPHA_DENSE,
+  EDGE_ALPHA_INVERSE,
+  EDGE_ALPHA_MID,
+  EDGE_ALPHA_FLAT,
+];
+/** Default base edge opacity (0..1) — the flat base alpha before any fade shape. */
+export const DEFAULT_EDGE_OPACITY = 0.5;
+/**
+ * The FAINT fraction the along-edge fade decays to (the dense endpoint / the edge
+ * middle). 0.15 keeps a hub's incident edges visible-but-receded rather than
+ * vanishing. Applied as a MULTIPLIER of the base alpha inside the shape buffer.
+ */
+export const EDGE_ALPHA_FLOOR = 0.15;
 
 // Density-aware base node sizing. The user confirmed sizes read well at ~1000
 // nodes but are too big at ~5000. We shrink only the BASE radius as the graph
@@ -80,6 +161,149 @@ function stableHash(value) {
 export function colorForGroup(group) {
   const index = stableHash(group ?? "default") % GROUP_PALETTE.length;
   return GROUP_PALETTE[index];
+}
+
+const CHURN_LOW = [226, 232, 240];
+const CHURN_HIGH = [239, 68, 68];
+
+function hex2(value) {
+  return value.toString(16).padStart(2, "0");
+}
+
+/** Sequential light-slate → red ramp for normalized churn/activity heat. */
+export function colorForChurn(value) {
+  const t = clampUnit(value);
+  const rgb = CHURN_LOW.map((lo, index) => Math.round(lo + (CHURN_HIGH[index] - lo) * t));
+  return `#${hex2(rgb[0])}${hex2(rgb[1])}${hex2(rgb[2])}`;
+}
+
+function explicitChurnValue(node) {
+  const candidates = [node.churn, node.git_churn, node.activity, node.activity_score, node.change_count];
+  for (const value of candidates) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric >= 0) return numeric;
+  }
+  return null;
+}
+
+function nodeDegreeFallback(sceneNodes, sceneEdges) {
+  const degree = new Map(sceneNodes.map((node) => [node.id, 0]));
+  for (const edge of sceneEdges) {
+    if (degree.has(edge.source)) degree.set(edge.source, degree.get(edge.source) + 1);
+    if (degree.has(edge.target)) degree.set(edge.target, degree.get(edge.target) + 1);
+  }
+  return degree;
+}
+
+export function edgeBaseAlphaForDegree(degree) {
+  const endpointDegree = Number.isFinite(degree) ? Math.max(0, degree) : 0;
+  if (endpointDegree <= EDGE_DENSITY_START_DEGREE) return EDGE_BASE_ALPHA;
+  const range = Math.log2(EDGE_DENSITY_FULL_DEGREE / EDGE_DENSITY_START_DEGREE);
+  const density = clampUnit(
+    Math.log2(endpointDegree / EDGE_DENSITY_START_DEGREE) / range,
+  );
+  const opacity = EDGE_BASE_OPACITY - density * (EDGE_BASE_OPACITY - EDGE_MIN_OPACITY);
+  return Math.round(255 * opacity);
+}
+
+/** Linear interpolation (a at t=0, b at t=1). */
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+/**
+ * Normalized endpoint DENSITY in [0,1] from a node's undirected degree — the
+ * log-scaled position between START (=2, "sparse") and FULL (=16, "hub") the
+ * along-edge fade uses. deg ≤ START ⇒ 0 (rare); deg ≥ FULL ⇒ 1 (dense). Reuses
+ * the same START/FULL knobs as {@link edgeBaseAlphaForDegree}.
+ * @param {number} degree undirected node degree
+ * @returns {number} density in [0,1]
+ */
+export function edgeDensityForDegree(degree) {
+  const d = Number.isFinite(degree) ? Math.max(0, degree) : 0;
+  const range = Math.log2(EDGE_DENSITY_FULL_DEGREE / EDGE_DENSITY_START_DEGREE);
+  return clampUnit(
+    Math.log2(Math.max(d, EDGE_DENSITY_START_DEGREE) / EDGE_DENSITY_START_DEGREE) / range,
+  );
+}
+
+/**
+ * Resolve the three along-edge alpha MULTIPLIERS (m0 at source, mMid at 0.5, m1
+ * at target — each 0..255) for one edge, from the fade mode + the per-endpoint
+ * densities (d0 source, d1 target). These MULTIPLY the flat base alpha in the
+ * WebGL shader; (255,255,255) = uniform. See {@link EDGE_ALPHA_DENSE} etc.
+ * @param {string} mode  one of EDGE_ALPHA_MODES
+ * @param {number} d0    source endpoint density in [0,1]
+ * @param {number} d1    target endpoint density in [0,1]
+ * @returns {[number, number, number]} [m0, mMid, m1] rounded to 0..255
+ */
+export function edgeAlphaShapeFor(mode, d0, d1) {
+  const F = EDGE_ALPHA_FLOOR;
+  if (mode === EDGE_ALPHA_FLAT) return [255, 255, 255];
+  if (mode === EDGE_ALPHA_MID) {
+    return [255, Math.round(255 * F), 255];
+  }
+  // dense: opaque at the RARE endpoint (density 0 ⇒ 1), faint at the DENSE one
+  // (density 1 ⇒ FLOOR). inverse: swap the ends of the ramp.
+  let m0;
+  let m1;
+  if (mode === EDGE_ALPHA_INVERSE) {
+    m0 = Math.round(255 * lerp(F, 1, d0));
+    m1 = Math.round(255 * lerp(F, 1, d1));
+  } else {
+    // EDGE_ALPHA_DENSE (default) and any unknown mode fall back to dense.
+    m0 = Math.round(255 * lerp(1, F, d0));
+    m1 = Math.round(255 * lerp(1, F, d1));
+  }
+  return [m0, Math.round((m0 + m1) / 2), m1];
+}
+
+/**
+ * Build the per-edge ALPHA SHAPE buffer (3 bytes/edge, parallel to
+ * `renderGraph.edges`) for a fade mode. Each edge's endpoints are looked up by
+ * node id through `degreeById`, converted to a normalized density, then mapped
+ * to the [m0, mMid, m1] multipliers by {@link edgeAlphaShapeFor}. Flat mode
+ * still emits a buffer (all 255) so the shape is always present + explicit.
+ * @param {{ edges: ArrayLike<number>, nodeIds: ArrayLike<string> }} renderGraph
+ * @param {Map<string, number>} degreeById  scene node id → undirected degree
+ * @param {string} mode  one of EDGE_ALPHA_MODES
+ * @returns {Uint8Array} 3·edgeCount bytes
+ */
+export function buildEdgeAlphaShape(renderGraph, degreeById, mode) {
+  const edgeCount = (renderGraph?.edges?.length ?? 0) / 2;
+  const shape = new Uint8Array(edgeCount * 3);
+  for (let e = 0; e < edgeCount; e += 1) {
+    const srcIdx = renderGraph.edges[e * 2];
+    const tgtIdx = renderGraph.edges[e * 2 + 1];
+    const srcId = renderGraph.nodeIds[srcIdx];
+    const tgtId = renderGraph.nodeIds[tgtIdx];
+    const d0 = edgeDensityForDegree(degreeById.get(srcId) ?? 0);
+    const d1 = edgeDensityForDegree(degreeById.get(tgtId) ?? 0);
+    const [m0, mMid, m1] = edgeAlphaShapeFor(mode, d0, d1);
+    shape[e * 3] = m0;
+    shape[e * 3 + 1] = mMid;
+    shape[e * 3 + 2] = m1;
+  }
+  return shape;
+}
+
+function normalizedChurnById(
+  sceneNodes,
+  sceneEdges,
+  degree = nodeDegreeFallback(sceneNodes, sceneEdges),
+) {
+  const raw = new Map();
+  for (const node of sceneNodes) {
+    raw.set(node.id, explicitChurnValue(node) ?? degree.get(node.id) ?? 0);
+  }
+  // Reduce, not `Math.max(0, ...raw.values())`: the spread passes every value as
+  // a separate argument, which overflows the engine arg-count limit (RangeError)
+  // at ~1e5 nodes when Color-by=Churn.
+  let max = 0;
+  for (const v of raw.values()) if (v > max) max = v;
+  const normalized = new Map();
+  for (const [id, value] of raw) normalized.set(id, max > 0 ? value / max : 0);
+  return normalized;
 }
 
 function positionForNode(node, index, total) {
@@ -236,6 +460,10 @@ function cloneStyle(style) {
     edgeColors: new Uint8Array(style.edgeColors),
     edgeDash: new Uint8Array(style.edgeDash),
     edgeCurvatures: new Float32Array(style.edgeCurvatures),
+    // The along-edge alpha SHAPE is a separate multiplier from edgeColors.a, so
+    // it survives dim / hover / merge re-styling unchanged (those only scale the
+    // base alpha). Clone it like the other per-edge buffers.
+    edgeAlphaShape: style.edgeAlphaShape ? new Uint8Array(style.edgeAlphaShape) : undefined,
   };
 }
 
@@ -277,7 +505,7 @@ export function buildConnectedDimStyle(payload, options = {}) {
     const tgtId = graph.nodeIds[tgtIdx];
     const isIncident = activeFocusIds.has(srcId) || activeFocusIds.has(tgtId);
     if (!isIncident) {
-      style.edgeColors[e * 4 + 3] = DIM_ALPHA;
+      style.edgeColors[e * 4 + 3] = EDGE_DIM_ALPHA;
     }
   }
 
@@ -298,8 +526,39 @@ export function buildGraphRendererPayload(scene, options = {}) {
   // names at zoom-out). Undefined ⇒ treat as zoomed OUT so the default fit view
   // already shows only the principal cast (see selectPrincipalHubLabels).
   const labelZoom = Number.isFinite(options.zoom) ? options.zoom : 0;
+  // codeflow-parity Lot 4 — Color-by (R4): Folder keys the categorical colour on
+  // community/container (node.group, the CURRENT default); Layer keys it on the
+  // typed layer (node_type). Both resolve through the SAME palette (colorForGroup)
+  // so the legend swatch and node fill stay one source of truth. Default = Folder,
+  // so an unset option is byte-identical to before this lot.
+  const colorBy =
+    options.colorBy === COLOR_BY_LAYER
+      ? COLOR_BY_LAYER
+      : options.colorBy === COLOR_BY_CHURN
+        ? COLOR_BY_CHURN
+        : COLOR_BY_FOLDER;
+  // codeflow-parity Lot 4 — Curved links (R3): ON ⇒ DEFAULT_EDGE_CURVATURE (the
+  // current behaviour), OFF ⇒ 0 (straight). Default ON so an unset option is
+  // byte-identical to before this lot. It is a per-edge RENDER attribute — the
+  // caller re-renders live with no layout recompute.
+  const edgeCurvature = options.curvedLinks === false ? 0 : DEFAULT_EDGE_CURVATURE;
+  // Configurable edge-transparency: the along-edge fade MODE (default dense) and
+  // the flat BASE opacity (default 0.5). The mode drives a per-edge alpha SHAPE
+  // (a separate multiplier); the opacity sets the uniform base alpha. An unset
+  // option is byte-identical to the historical ~0.5 base + dense falloff.
+  const edgeAlphaMode = EDGE_ALPHA_MODES.includes(options.edgeAlphaMode)
+    ? options.edgeAlphaMode
+    : EDGE_ALPHA_DENSE;
+  const edgeOpacity = Number.isFinite(options.edgeOpacity)
+    ? clampUnit(options.edgeOpacity)
+    : DEFAULT_EDGE_OPACITY;
+  const edgeBaseAlpha = Math.round(255 * edgeOpacity);
   const sceneNodes = scene?.nodes ?? [];
   const sceneEdges = scene?.edges ?? [];
+  // One degree pass serves both churn fallback and density-graded edge alpha.
+  const degreeById = nodeDegreeFallback(sceneNodes, sceneEdges);
+  const churnById =
+    colorBy === COLOR_BY_CHURN ? normalizedChurnById(sceneNodes, sceneEdges, degreeById) : null;
 
   // Shrink the BASE radius on dense graphs while keeping the per-node degree
   // spread (sqrt(weight)) intact. nodeRadius is the effective base used both for
@@ -310,10 +569,17 @@ export function buildGraphRendererPayload(scene, options = {}) {
     const position = positionForNode(node, index, sceneNodes.length);
     const focused = node.id === focusId;
     const selected = focused || selectedIds.has(node.id);
+    const nodeType = node.node_type ?? node.type ?? null;
+    // Color-by (R4/R5): Layer keys the categorical colour on the typed layer,
+    // Folder (default) on community/container, Churn on a continuous activity heat.
+    // Selection/focus overrides still win.
+    const colorKey = colorBy === COLOR_BY_LAYER ? nodeType : node.group;
+    const baseColor =
+      colorBy === COLOR_BY_CHURN ? colorForChurn(churnById?.get(node.id) ?? 0) : colorForGroup(colorKey);
     return {
       id: node.id,
       label: node.label ?? node.id,
-      node_type: node.node_type ?? node.type ?? null,
+      node_type: nodeType,
       x: position.x,
       y: position.y,
       fixed: position.fixed,
@@ -326,29 +592,40 @@ export function buildGraphRendererPayload(scene, options = {}) {
       // node's label in-box, bypassing the degree/god-class label gate.
       forceBoxLabel: node.forceBoxLabel === true,
       size: nodeSize(node, nodeRadius, selected, focused),
-      color: focused ? FOCUS_COLOR : selected ? SELECTED_COLOR : colorForGroup(node.group),
+      color: focused ? FOCUS_COLOR : selected ? SELECTED_COLOR : baseColor,
     };
   });
 
-  const edges = sceneEdges.map((edge) => ({
-    source: edge.source,
-    target: edge.target,
-    relation: edge.relation,
-    label: edge.relation,
-    weak: edge.weak === true,
-    emphasis: edge.emphasis === true,
-    width: edgeWidth(edge),
-    color: edge.weak ? WEAK_EDGE_COLOR : EDGE_COLOR,
-    dash: edge.dash ?? (edge.weak ? "dotted" : "solid"),
-    curvature: finite(edge.curvature) ? edge.curvature : 0.15,
-  }));
+  const edges = sceneEdges.map((edge) => {
+    return {
+      source: edge.source,
+      target: edge.target,
+      relation: edge.relation,
+      label: edge.relation,
+      weak: edge.weak === true,
+      emphasis: edge.emphasis === true,
+      width: edgeWidth(edge),
+      // Uniform slate hue AND uniform base alpha (edgeOpacity). The density
+      // falloff now lives in the per-edge alpha SHAPE (edgeAlphaShape, a separate
+      // multiplier), so dim/hover/merge — which scale this base alpha — compose
+      // with the fade automatically. Weak edges stay this colour, distinguished
+      // by the dotted dash.
+      color: [...EDGE_COLOR_RGB, edgeBaseAlpha],
+      dash: edge.dash ?? (edge.weak ? "dotted" : "solid"),
+      curvature: finite(edge.curvature) ? edge.curvature : edgeCurvature,
+    };
+  });
 
   const input = { nodes, edges };
   const renderGraph = buildRenderGraphBuffers(input);
   const baseStyle = buildStyleBuffers(input, renderGraph, {
     node: { size: nodeRadius },
-    edge: { width: 1, color: EDGE_COLOR, dash: "solid", curvature: 0.15 },
+    edge: { width: 1, color: [...EDGE_COLOR_RGB, edgeBaseAlpha], dash: "solid", curvature: edgeCurvature },
   });
+  // Along-edge alpha SHAPE (configurable edge-transparency). Parallel to
+  // renderGraph.edges; a separate multiplier of the base alpha the WebGL edge
+  // shader applies. Carried through cloneStyle so dim/hover/merge keep it.
+  baseStyle.edgeAlphaShape = buildEdgeAlphaShape(renderGraph, degreeById, edgeAlphaMode);
   const nodeIndexById = new Map(nodes.map((node, index) => [node.id, index]));
 
   // Recon focal-pair parity: nodes flagged `forceBoxLabel` (the two entities
@@ -453,6 +730,336 @@ export function interpolateMergePositions(payload, mergePair, progress) {
   return positions;
 }
 
+// ---------------------------------------------------------------------------
+// Layout switcher seam (codeflow-parity Lot 1). The studio does not otherwise
+// consume the @sentropic/graph layout registry; these helpers are the ONE seam
+// that resolves a named layout into a node-order-keyed position buffer and
+// morphs the on-screen buffer toward it. Every registered layout returns a
+// `Float32Array` of `2 · nodeCount` floats PARALLEL to `graph.nodeIds`, so a
+// cross-layout tween is a trivial per-index lerp between two static buffers —
+// no correspondence problem (see SPEC_STUDIO_GRAPH_UX_CODEFLOW_PARITY §2.6).
+// ---------------------------------------------------------------------------
+
+/** Layout mode id — force-directed (the default baked positions). */
+export const LAYOUT_MODE_FORCE = "force";
+/** Layout mode id — typed swimlanes (registered `typed-layer`, ≈ "Layers"). */
+export const LAYOUT_MODE_LAYERS = "layers";
+/** Layout mode id — radial concentric rings (registered `radial`). */
+export const LAYOUT_MODE_RADIAL = "radial";
+/** Layout mode id — regular grid (registered `grid`). */
+export const LAYOUT_MODE_GRID = "grid";
+/** Layout mode id — metro lanes (registered `metro`; MVP, orthogonal edges deferred). */
+export const LAYOUT_MODE_METRO = "metro";
+
+/**
+ * The layout modes exposed by the studio switcher (Lot 1 = Force + Layers; Lot 2
+ * adds Radial + Grid on the already-registered engines). `registryId` is the id
+ * passed to {@link resolveLayout}; Force has none because its target is the
+ * CACHED initial force positions, not a (cold) registry re-solve (Lot 1 does not
+ * re-solve force). Radial and Grid are pure, deterministic O(n[+e]) engines and
+ * morph for free through the same all-node tween (index-parallel buffers, §2.6).
+ */
+export const LAYOUT_MODES = [
+  { id: LAYOUT_MODE_FORCE, label: "Force", registryId: DEFAULT_LAYOUT_ID },
+  { id: LAYOUT_MODE_RADIAL, label: "Radial", registryId: RADIAL_LAYOUT_ID },
+  { id: LAYOUT_MODE_LAYERS, label: "Layers", registryId: TYPED_LAYER_LAYOUT_ID },
+  { id: LAYOUT_MODE_GRID, label: "Grid", registryId: GRID_LAYOUT_ID },
+  { id: LAYOUT_MODE_METRO, label: "Metro", registryId: METRO_LAYOUT_ID },
+];
+
+/**
+ * Node-order-keyed per-node TYPE labels for a built payload (parallel to
+ * `payload.renderGraph.nodeIds`). Read from the payload's node objects
+ * (`node_type`), so the typed-layer layout bands the SAME nodes the canvas
+ * drew. A missing node → `null` (the untyped lane).
+ * @param {object} payload  a buildGraphRendererPayload result
+ * @returns {(string|null)[]}
+ */
+export function nodeTypesForPayload(payload) {
+  const graph = payload?.renderGraph;
+  const ids = graph?.nodeIds ?? [];
+  const types = new Array(ids.length);
+  for (let i = 0; i < ids.length; i += 1) {
+    const node = payload?.nodeById?.get(ids[i]);
+    types[i] = node?.node_type ?? null;
+  }
+  return types;
+}
+
+/**
+ * Resolve a layout MODE into a fresh node-order-keyed position buffer
+ * (`2 · nodeCount` floats) for the payload's render graph — the morph TARGET
+ * (`bufB`). Never throws: an unknown mode / missing payload degrades to the
+ * force passthrough.
+ *
+ *   • `"layers"` → the registered `typed-layer` swimlane layout, banded by the
+ *     payload's per-node types.
+ *   • `"radial"` → the registered `radial` layout (highest-degree hub at the
+ *     centre, BFS levels on concentric rings). Pure O(n+e) from the graph.
+ *   • `"grid"`   → the registered `grid` layout (regular `ceil(√n)` grid centred
+ *     on the origin, node-id order). Pure O(n) from the node count.
+ *   • `"force"`  → the CACHED initial force positions (`forceBuffer`) — Lot 1
+ *     does NOT cold re-solve force (warm-started re-solve is Lot 3). When no
+ *     cached buffer is supplied it falls back to the registry force passthrough
+ *     (a copy of the CURRENT positions).
+ *
+ * @param {object} payload  a buildGraphRendererPayload result
+ * @param {string} mode     a LAYOUT_MODES id
+ * @param {{ forceBuffer?: Float32Array|null }} [opts]
+ * @returns {Float32Array|null}
+ */
+export function computeLayoutBuffer(payload, mode, { forceBuffer = null } = {}) {
+  const graph = payload?.renderGraph;
+  if (!graph) return null;
+  const floatCount = (graph.nodeIds?.length ?? 0) * 2;
+
+  if (mode === LAYOUT_MODE_LAYERS) {
+    const nodeTypes = nodeTypesForPayload(payload);
+    return resolveLayout(TYPED_LAYER_LAYOUT_ID)(graph, { nodeTypes });
+  }
+
+  if (mode === LAYOUT_MODE_RADIAL) {
+    return resolveLayout(RADIAL_LAYOUT_ID)(graph, { nodeTypes: nodeTypesForPayload(payload) });
+  }
+
+  if (mode === LAYOUT_MODE_GRID) {
+    return resolveLayout(GRID_LAYOUT_ID)(graph, { nodeTypes: nodeTypesForPayload(payload) });
+  }
+
+  if (mode === LAYOUT_MODE_METRO) {
+    return resolveLayout(METRO_LAYOUT_ID)(graph, { nodeTypes: nodeTypesForPayload(payload) });
+  }
+
+  // Force (default): the cached pristine force positions when we have them.
+  if (forceBuffer && forceBuffer.length === floatCount) {
+    return new Float32Array(forceBuffer);
+  }
+  // No cache → passthrough a copy of the current baked positions.
+  return resolveLayout(DEFAULT_LAYOUT_ID)(graph);
+}
+
+/**
+ * ALL-NODE layout morph — the general form of {@link interpolateMergePositions}.
+ * Linearly interpolates EVERY one of the `2 · nodeCount` floats between two
+ * index-parallel position buffers: `out[i] = a[i] + (b[i] − a[i]) · t`. Edges
+ * follow for free (they are re-derived from node positions each frame). `t` is
+ * clamped to [0, 1]; the CALLER applies any easing to `t` before calling (so
+ * `t = 0.5` is the exact midpoint — testable, deterministic). An optional `out`
+ * buffer is reused when large enough (rAF loops reuse one allocation).
+ *
+ * @param {Float32Array} bufA  start buffer (2·n floats)
+ * @param {Float32Array} bufB  target buffer (2·n floats, same length as bufA)
+ * @param {number} t           progress in [0, 1] (already eased by the caller)
+ * @param {Float32Array} [out] optional reusable output buffer
+ * @returns {Float32Array|null} the interpolated buffer, or null on bad input
+ */
+export function morphPositions(bufA, bufB, t, out = null) {
+  if (!bufA || !bufB) return null;
+  const len = Math.min(bufA.length, bufB.length);
+  const result = out && out.length >= len ? out : new Float32Array(len);
+  const progress = clampUnit(t);
+  for (let i = 0; i < len; i += 1) {
+    const a = bufA[i] ?? 0;
+    const b = bufB[i] ?? 0;
+    result[i] = a + (b - a) * progress;
+  }
+  return result;
+}
+
+/* ===========================================================================
+ * Collapse/expand GROUP-transition PURE cores (redesign spec §3).
+ *
+ * These are the deterministic, DOM-free maths of the animation extracted from
+ * GraphCanvas so they are unit-testable (jsdom has no WebGL, so the component's
+ * rAF/renderer wiring can only be source-asserted). The .svelte component owns
+ * the reactive flags, the rAF loop, and the renderer calls; it delegates the
+ * position bookkeeping to the three helpers below.
+ * ======================================================================== */
+
+// ~137.5° in radians — the golden angle. Successive multiples spread points
+// evenly with no two ever landing on the same ray, giving the sunflower/
+// phyllotaxis fan used for expand when there is no cached prior constellation.
+export const GROUP_FAN_GOLDEN_ANGLE = 2.399963229728653;
+
+/**
+ * Resolve which node INDICES fold (grouped by anchor) and each group's on-screen
+ * anchor position, against a given position buffer. The anchor rule (spec §3.4
+ * step 2): the group node's OWN current position when it is on screen (its id is
+ * in the payload), else the CENTROID of the folding members' current positions.
+ * Absent children (ids not in the payload) are skipped. Returns null when NONE of
+ * the anchor children resolve (nothing to animate → the caller carries-swaps).
+ *
+ * Pure: no reference to the component or the renderer. The caller passes the
+ * live position buffer (currentLayoutBuffer — live-morph aware).
+ *
+ * @param {object} args
+ * @param {string[]} args.nodeIds                node ids in render order.
+ * @param {ArrayLike<number>} args.positions     2·n position floats (index-parallel).
+ * @param {Map<string,string>} args.anchors      foldedChildId → groupNodeId.
+ * @param {Map<string,number>} [args.nodeIndexById]  id → index (derived if absent).
+ * @returns {{ foldingSet: Set<number>, groupMembers: Map<string, number[]>,
+ *   anchorPosByGroup: Map<string, {x:number,y:number}> } | null}
+ */
+export function resolveGroupFolds({ nodeIds, positions, anchors, nodeIndexById } = {}) {
+  if (!nodeIds?.length || !positions || !(anchors instanceof Map) || anchors.size === 0) {
+    return null;
+  }
+  const idx = nodeIndexById instanceof Map ? nodeIndexById : new Map(nodeIds.map((id, i) => [id, i]));
+
+  const foldingSet = new Set();
+  const groupMembers = new Map(); // groupNodeId -> [nodeIndex]
+  for (const [childId, groupId] of anchors) {
+    const i = idx.get(childId);
+    if (!Number.isInteger(i)) continue;
+    foldingSet.add(i);
+    let members = groupMembers.get(groupId);
+    if (!members) {
+      members = [];
+      groupMembers.set(groupId, members);
+    }
+    members.push(i);
+  }
+  if (foldingSet.size === 0) return null;
+
+  const anchorPosByGroup = new Map();
+  for (const [groupId, members] of groupMembers) {
+    const gi = idx.get(groupId);
+    if (Number.isInteger(gi)) {
+      // Group node is ON SCREEN (nested case: folding into a visible ancestor) →
+      // its own position is the anchor.
+      anchorPosByGroup.set(groupId, {
+        x: positions[gi * 2] ?? 0,
+        y: positions[gi * 2 + 1] ?? 0,
+      });
+    } else {
+      // Usual case: the group node lives only in the OTHER scene → centroid of
+      // the folding members' current positions.
+      let sx = 0;
+      let sy = 0;
+      for (const i of members) {
+        sx += positions[i * 2] ?? 0;
+        sy += positions[i * 2 + 1] ?? 0;
+      }
+      anchorPosByGroup.set(groupId, { x: sx / members.length, y: sy / members.length });
+    }
+  }
+  return { foldingSet, groupMembers, anchorPosByGroup };
+}
+
+/**
+ * Carry a coordinate space across a scene swap (spec §3.2). Builds a NEW position
+ * buffer for the NEW scene, resolving each node's position BY ID:
+ *   1. an explicit placement (`placedPosById`) — group node at the fold centroid
+ *      on collapse; revealed children stacked on the anchor on expand;
+ *   2. else a carried-over position (`carriedPosById`) — shared nodes keep their
+ *      exact on-screen spot;
+ *   3. else, for a brand-new node with neither (e.g. a newly-injected visible
+ *      class handle), the CENTROID of its already-placed graph neighbours over
+ *      the NEW scene's edges;
+ *   4. else the scene-baked position (the last-resort fallback, already in
+ *      `positions`).
+ *
+ * Neighbour placement (step 3) reads ONLY step-1/2 results, so it is order-
+ * independent (deterministic). Returns a fresh Float32Array; never mutates input.
+ *
+ * @param {object} args
+ * @param {string[]} args.nodeIds               NEW-scene node ids in render order.
+ * @param {ArrayLike<number>} args.positions    NEW-scene scene-baked 2·n floats.
+ * @param {ArrayLike<number>} [args.edges]      NEW-scene edge INDEX pairs (2·e).
+ * @param {Map<string,{x:number,y:number}>} [args.carriedPosById]  old on-screen pos.
+ * @param {Map<string,{x:number,y:number}>} [args.placedPosById]   explicit new pos.
+ * @returns {Float32Array|null}
+ */
+export function carryScenePositions({ nodeIds, positions, edges, carriedPosById, placedPosById } = {}) {
+  if (!nodeIds?.length || !positions || positions.length < nodeIds.length * 2) return null;
+  const carried = carriedPosById instanceof Map ? carriedPosById : new Map();
+  const placed = placedPosById instanceof Map ? placedPosById : new Map();
+
+  const out = new Float32Array(positions); // start from scene-baked (step 4).
+  const isPlaced = new Array(nodeIds.length).fill(false);
+
+  // Pass 1: explicit placement (step 1) then carried-over (step 2), by id.
+  for (let i = 0; i < nodeIds.length; i += 1) {
+    const id = nodeIds[i];
+    const p = placed.get(id) ?? carried.get(id);
+    if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) {
+      out[i * 2] = p.x;
+      out[i * 2 + 1] = p.y;
+      isPlaced[i] = true;
+    }
+  }
+
+  // Pass 2: brand-new nodes → neighbour centroid over the new edges (step 3);
+  // else the scene-baked value already sitting in `out` (step 4).
+  if (edges && edges.length) {
+    const neighbours = new Map(); // index -> [neighbour indices]
+    const addNeighbour = (a, b) => {
+      let list = neighbours.get(a);
+      if (!list) {
+        list = [];
+        neighbours.set(a, list);
+      }
+      list.push(b);
+    };
+    const edgeCount = Math.floor(edges.length / 2);
+    for (let e = 0; e < edgeCount; e += 1) {
+      const a = edges[e * 2];
+      const b = edges[e * 2 + 1];
+      if (!Number.isInteger(a) || !Number.isInteger(b)) continue;
+      addNeighbour(a, b);
+      addNeighbour(b, a);
+    }
+    for (let i = 0; i < nodeIds.length; i += 1) {
+      if (isPlaced[i]) continue;
+      const nbrs = neighbours.get(i);
+      if (!nbrs || nbrs.length === 0) continue;
+      let sx = 0;
+      let sy = 0;
+      let count = 0;
+      for (const j of nbrs) {
+        if (!isPlaced[j]) continue; // ONLY already-placed neighbours
+        sx += out[j * 2];
+        sy += out[j * 2 + 1];
+        count += 1;
+      }
+      if (count > 0) {
+        out[i * 2] = sx / count;
+        out[i * 2 + 1] = sy / count;
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Deterministic golden-angle (sunflower) fan of `childIds` around `anchor`
+ * (spec §3.5.2) — the expand fallback when there is no cached prior constellation.
+ * Children are sorted by id, so the SAME id set always lands on the SAME slots.
+ * Child j of m sits at angle `j · GROUP_FAN_GOLDEN_ANGLE`, radius
+ * `min(spacing · √(j+1), cap)`.
+ *
+ * @param {object} args
+ * @param {{x:number,y:number}} args.anchor    the fan centre.
+ * @param {Iterable<string>} args.childIds     ids to place (sorted internally).
+ * @param {number} args.spacing                radial spacing factor (world units).
+ * @param {number} [args.cap=Infinity]         max radius (world units).
+ * @returns {Map<string,{x:number,y:number}>}
+ */
+export function goldenAngleFan({ anchor, childIds, spacing, cap = Infinity } = {}) {
+  const out = new Map();
+  const ids = childIds ? [...childIds].sort() : [];
+  const ax = Number.isFinite(anchor?.x) ? anchor.x : 0;
+  const ay = Number.isFinite(anchor?.y) ? anchor.y : 0;
+  const s = Number.isFinite(spacing) && spacing > 0 ? spacing : 1;
+  const maxR = Number.isFinite(cap) ? cap : Infinity;
+  for (let j = 0; j < ids.length; j += 1) {
+    const angle = j * GROUP_FAN_GOLDEN_ANGLE;
+    const radius = Math.min(s * Math.sqrt(j + 1), maxR);
+    out.set(ids[j], { x: ax + radius * Math.cos(angle), y: ay + radius * Math.sin(angle) });
+  }
+  return out;
+}
+
 export function interpolateMergeStyle(payload, mergePair, progress) {
   const graph = payload?.renderGraph;
   if (!graph || !payload?.style || !mergePair?.from) return payload?.style ?? null;
@@ -474,6 +1081,52 @@ export function interpolateMergeStyle(payload, mergePair, progress) {
     if (sourceIndex !== fromIndex && targetIndex !== fromIndex) continue;
     const alphaOffset = edgeIndex * 4 + 3;
     style.edgeColors[alphaOffset] = Math.round((style.edgeColors[alphaOffset] ?? 255) * alphaScale);
+  }
+
+  return style;
+}
+
+/**
+ * The SET generalization of {@link interpolateMergeStyle} for the collapse/expand
+ * group animation: fade (and optionally shrink) a whole SET of folding/revealing
+ * nodes and their incident edges over the same rAF loop as the layout morph.
+ *
+ * Clones the payload style and, for every node index in `foldingIndices`, scales
+ * its colour ALPHA by `alphaScale` and its drawn SIZE by `sizeScale`; every edge
+ * touching a folding node has its base alpha scaled by `alphaScale` too, so an
+ * edge fades with its endpoint. `alphaScale`/`sizeScale` are clamped to [0, 1].
+ * Non-folding nodes/edges keep the base style byte-for-byte. Returns the base
+ * style unchanged when there is nothing to fade.
+ *
+ * @param {object} payload  a buildGraphRendererPayload result
+ * @param {Set<number>|Iterable<number>} foldingIndices  node indices to fade
+ * @param {number} alphaScale  colour-alpha multiplier for folding nodes/edges
+ * @param {number} [sizeScale=1]  size multiplier for folding nodes (shrink)
+ * @returns {object|null} a cloned, faded style (or the base style on bad input)
+ */
+export function interpolateGroupFadeStyle(payload, foldingIndices, alphaScale, sizeScale = 1) {
+  const graph = payload?.renderGraph;
+  if (!graph || !payload?.style) return payload?.style ?? null;
+  const set = foldingIndices instanceof Set ? foldingIndices : new Set(foldingIndices ?? []);
+  if (set.size === 0) return payload.style;
+
+  const style = cloneStyle(payload.style);
+  const a = clampUnit(alphaScale);
+  const s = clampUnit(sizeScale);
+  for (const index of set) {
+    if (!Number.isInteger(index) || index < 0) continue;
+    const alphaOffset = index * 4 + 3;
+    style.nodeColors[alphaOffset] = Math.round((style.nodeColors[alphaOffset] ?? 255) * a);
+    style.nodeSizes[index] = (style.nodeSizes[index] ?? 4) * s;
+  }
+
+  const edgeCount = graph.edges.length / 2;
+  for (let edgeIndex = 0; edgeIndex < edgeCount; edgeIndex += 1) {
+    const sourceIndex = graph.edges[edgeIndex * 2];
+    const targetIndex = graph.edges[edgeIndex * 2 + 1];
+    if (!set.has(sourceIndex) && !set.has(targetIndex)) continue;
+    const alphaOffset = edgeIndex * 4 + 3;
+    style.edgeColors[alphaOffset] = Math.round((style.edgeColors[alphaOffset] ?? 255) * a);
   }
 
   return style;
