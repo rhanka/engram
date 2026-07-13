@@ -353,9 +353,15 @@ export function buildShapeInstances(frame: WebGLShapeFrame): ShapeInstanceSet {
     // polygonal (bug, × the intended width: circle 1.00, hexagon 0.87,
     // triangle/star 0.5, diamond 0.71, square 0.88). `effectiveStrokeHalf`
     // below compensates per family so every shape's PERPENDICULAR border
-    // width is the SAME, fixed at 0.7× the (uncompensated) square's
-    // perpendicular width — i.e. 30% thinner than today's square border,
-    // uniform across every shape family.
+    // width lands on a COMMON baseline, fixed at 0.7× the (uncompensated)
+    // square's perpendicular width — i.e. 30% thinner than the old square
+    // border — and THEN applies an additional per-shape thinning
+    // (`SHAPE_BORDER_THIN`) on top of that baseline: circle/hexagon are cut
+    // to 0.5× the baseline (0.308×strokeHalf), diamond/square/star/triangle
+    // to 0.8× (0.493×strokeHalf). So the perpendicular width is no longer
+    // uniform across every family — it is a deliberate TWO-TIER geometry
+    // (smooth-boundary shapes thinner than angular ones), each tier still
+    // uniform within itself.
     const effectiveStrokeHalf = effectiveStrokeHalfWidth(
       family,
       bold,
@@ -371,13 +377,15 @@ export function buildShapeInstances(frame: WebGLShapeFrame): ShapeInstanceSet {
       // carved by the translucent-white interior disc at radius -
       // effectiveStrokeHalf (drawn ON TOP), so the visible ring spans
       // [radius - effectiveStrokeHalf, radius + effectiveStrokeHalf] — a
-      // UNIFORM perpendicular width across shape families (see above). Only the
-      // border carries the node alpha; the interior keeps the fixed white.
+      // per-shape TWO-TIER perpendicular width across shape families (see
+      // above). Only the border carries the node alpha; the interior keeps
+      // the fixed white.
       pushInstance(borderList, cx, cy, radius + effectiveStrokeHalf, nodeColor[0], nodeColor[1], nodeColor[2], alpha, depth);
       pushInstance(fillList, cx, cy, Math.max(0, radius - effectiveStrokeHalf), BOX_FILL[0], BOX_FILL[1], BOX_FILL[2], BOX_FILL[3] / 255, depth);
     } else if (bold) {
       // Solid + bold: a darkened-colour border RING (factor 0.62) centred on the
-      // radius, at the SAME uniform perpendicular width as the hollow ring above.
+      // radius, at the SAME per-shape (two-tier) perpendicular width as the
+      // hollow ring above.
       // The outer darkened disc (radius + effectiveStrokeHalf, drawn UNDER) is
       // carved by the node-colour interior disc at radius - effectiveStrokeHalf
       // (drawn ON TOP), leaving a centred
@@ -477,14 +485,49 @@ function apothemRatio(family: number): number {
  * `effectiveStrokeHalf = strokeHalf · BORDER_PERP_SCALE / apothemRatio(family)`
  * — dividing by the family's ratio undoes exactly the foreshortening that
  * ratio causes, so every family lands on the same BORDER_PERP_SCALE·strokeHalf
- * perpendicular width.
+ * perpendicular width. NOTE: this uniform baseline is this constant's OWN
+ * effect only — `effectiveStrokeHalfWidth` below then applies a further
+ * per-shape `SHAPE_BORDER_THIN` multiplier on top, so the FINAL perpendicular
+ * width is a two-tier (not fully uniform) geometry; see that lookup's doc.
  */
 const BORDER_PERP_SCALE = 0.7 * SQUARE_INSET_RATIO; // 0.7 · 0.88 = 0.616
 
 /**
+ * Per-shape THINNING multiplier applied ON TOP of the uniform
+ * `BORDER_PERP_SCALE / apothemRatio` compensation above (user request,
+ * 2026-07-13: the uniform 0.616×strokeHalf ring still read too heavy —
+ * particularly on the smooth-boundary families — and the user asked for it
+ * thinner on a per-shape basis, NOT uniformly). This does NOT undo the
+ * apothem compensation (that stays, so every family is still foreshortened
+ * back to a common baseline before this extra per-shape cut is applied); it
+ * only scales that already-uniform baseline down, differently per shape:
+ *  - circle (0) / hexagon (3): × 0.5  → 0.616 × 0.5 = 0.308 × strokeHalf
+ *  - diamond (1) / square (4): × 0.8  → 0.616 × 0.8 = 0.493 × strokeHalf
+ *  - star (2) / triangle (6):  × 0.8  (NOT specified by the user request —
+ *    defaulted to the same 0.8 as the other angular shapes, i.e. grouped with
+ *    diamond/square rather than left uniform or given a bespoke value)
+ * Any family code missing from the table (defensive) falls back to × 1 (no
+ * extra thinning beyond the existing apothem compensation).
+ */
+const SHAPE_BORDER_THIN: Readonly<Record<number, number>> = {
+  0: 0.5, // circle
+  3: 0.5, // hexagon
+  1: 0.8, // diamond
+  4: 0.8, // square
+  2: 0.8, // star — user-unspecified, defaulted to the angular-shape value
+  6: 0.8, // triangle — user-unspecified, defaulted to the angular-shape value
+};
+
+/** Per-shape border-thinning multiplier, defaulting to 1 (no thinning) for
+ *  any family code not present in `SHAPE_BORDER_THIN`. */
+function borderThinFactor(family: number): number {
+  return SHAPE_BORDER_THIN[family] ?? 1;
+}
+
+/**
  * The FINAL per-shape perpendicular stroke half-width used to build the
  * border ring (exported so tests can assert the fix directly instead of
- * duplicating the family/BORDER_PERP_SCALE arithmetic).
+ * duplicating the family/BORDER_PERP_SCALE/SHAPE_BORDER_THIN arithmetic).
  */
 export function effectiveStrokeHalfWidth(
   family: number,
@@ -493,7 +536,10 @@ export function effectiveStrokeHalfWidth(
   zoom = 1,
   scaleWithZoom = false,
 ): number {
-  return (strokeHalfWidth(bold, pixelRatio, zoom, scaleWithZoom) * BORDER_PERP_SCALE) / apothemRatio(family);
+  return (
+    ((strokeHalfWidth(bold, pixelRatio, zoom, scaleWithZoom) * BORDER_PERP_SCALE) / apothemRatio(family)) *
+    borderThinFactor(family)
+  );
 }
 
 function pushInstance(
