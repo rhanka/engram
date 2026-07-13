@@ -57,12 +57,13 @@
   } from "./lib/classNodes.js";
   import {
     computeGroupedGraph,
-    computeGroupTransition,
+    computeSceneTransition,
     classIdsAtLevel,
     typeNamesInTaxonomy,
     ontologyLevelState,
     ontologyAbsorption,
   } from "./lib/groupBy.js";
+  import { computeDisplayHiddenIds, applyVisibilityToScene } from "./lib/entityVisibility.js";
   import { loadWorkspace } from "./lib/sceneLoader.js";
   import {
     createDefaultViewerState,
@@ -90,9 +91,17 @@
     clearCommunityGrouping,
     hasOntologyGrouping,
     hasCommunityGrouping,
+    setEntityState,
+    resetVisibility,
+    soloActive,
+    hasAnyVisibilityOverride,
   } from "./lib/viewerState.js";
 
   const EMPTY_GRAPH = { nodes: [], links: [] };
+  // Stable EMPTY mask reference so the no-override fast path never churns the
+  // visibility deriveds (A4 byte-identity: applyVisibilityToScene returns the base
+  // scene BY REFERENCE only when the mask is this empty set).
+  const EMPTY_HIDDEN_IDS = new Set();
 
   // $state.raw: `graph` (1193 nodes) is only ever REASSIGNED in bulk, never
   // mutated in place — raw skips deep proxying (perf: less memory + hydration).
@@ -215,27 +224,6 @@
     }),
   );
 
-  // Collapse/expand ANIMATION signal. Diff the previous vs current fold-anchor map
-  // (each hidden node id → its group-node anchor) into a transition descriptor
-  // ({ direction, anchorByNodeId }) the GraphCanvas plays instead of a hard cut.
-  // Keying off the FOLD DELTA (not the grouped-key diff) makes the signal robust
-  // to the ontology artifact loading async — the collapse "lands" in whichever
-  // tick the fold map populates. The "previous" snapshot is tracked in a plain
-  // (non-reactive) `let`, advanced INSIDE this memoized `$derived` — a deliberate
-  // previous-value pattern: the derived recomputes exactly once per
-  // grouped/groupedGraph change (Svelte memoizes reads), so `groupTransition` is
-  // glitch-free and current by the time GraphCanvas's scene effect reads it.
-  let _prevFoldAnchors = null;
-  const groupTransition = $derived.by(() => {
-    const nextFoldAnchors = readFoldAnchors(groupedGraph);
-    const prevFoldAnchors = _prevFoldAnchors;
-    // Advance the snapshot for the NEXT change before returning.
-    _prevFoldAnchors = nextFoldAnchors;
-    // First evaluation (mount): nothing to animate FROM.
-    if (prevFoldAnchors === null) return null;
-    return computeGroupTransition({ prevFoldAnchors, nextFoldAnchors });
-  });
-
   // Tri-state of each ontology bulk button (spec §4) + per-class absorption view
   // (spec §3). Denominators EXCLUDE absorbed classes; the rail renders the
   // {none|partial|all} variant + (n/m) badge and disables absorbed rows.
@@ -290,10 +278,71 @@
   // the time-scrub control hides. Read from the base so the bounds stay STABLE
   // while the cursor moves (the filtered scene must not shrink the range).
   const timeRange = $derived(sceneTimeRange(baseScene));
-  // Time-scrub: filter the base scene to elements with `t <= cursor`. With the
-  // default cursor (null = OFF) this returns the base scene UNCHANGED, so the
-  // default view is byte-identical to before.
-  const scene = $derived(applyTimeFilter(baseScene, viewerState.options.timeCursor));
+  // 4-STATE visibility mask (D1/D5). The stored Hidden set + the Solo overlay
+  // derive a DISPLAY-hidden id set over the POST-FOLD baseScene (so a grouped
+  // entity's group node is itself maskable — §6.2). Guarded by
+  // hasAnyVisibilityOverride so the no-override fast path returns the STABLE empty
+  // set (A4): applyVisibilityToScene then hands back baseScene BY REFERENCE
+  // (byte-identity preserved, so the A3 default path stays untouched).
+  const anyVisibilityOverride = $derived(hasAnyVisibilityOverride(viewerState));
+  const displayHiddenIds = $derived(
+    anyVisibilityOverride
+      ? computeDisplayHiddenIds({
+          nodes: baseScene?.nodes ?? [],
+          hiddenKeys: viewerState.options.visibility.hidden,
+          soloKeys: viewerState.options.visibility.solo,
+          classHierarchies,
+        })
+      : EMPTY_HIDDEN_IDS,
+  );
+  // Apply the mask BEFORE the time filter (D5): Solo union > stored Hidden > Normal.
+  const visibleScene = $derived(applyVisibilityToScene(baseScene, displayHiddenIds));
+  // Time-scrub: filter the (visibility-masked) scene to elements with `t <= cursor`.
+  // With the default cursor (null = OFF) and no visibility override this returns the
+  // base scene UNCHANGED, so the default view is byte-identical to before.
+  const scene = $derived(applyTimeFilter(visibleScene, viewerState.options.timeCursor));
+
+  // Collapse/expand + Hide/Show/Solo ANIMATION signal. The UNIFIED, content-derived
+  // descriptor (SPINE): diff the previous vs current fold-anchor map AND the
+  // display-hidden mask into { folded, unfolded, hiddenIds, revealedIds, kind } the
+  // GraphCanvas plays through the SAME carry-over tween — so Hide/Solo NEVER hit the
+  // null-descriptor refit. Keying off the FOLD + MASK deltas (not the key diff) keeps
+  // the signal robust to the ontology artifact loading async. The three "previous"
+  // snapshots are advanced TOGETHER inside this ONE memoized `$derived` (both
+  // prev-values tick on the same flush, D3/A8) so the descriptor is glitch-free and
+  // current by the time GraphCanvas's scene effect reads it. The scene-id diff runs
+  // on the PRE-time-filter masks (visibleScene / displayHiddenIds) so a time-scrub
+  // never spawns hide/reveal tweens (A6). The generation gate nulls the descriptor
+  // across a graph object swap (model switch) — guard (c).
+  let _prevFoldAnchors = null;
+  let _prevHiddenIds = null;
+  let _prevSceneIds = null;
+  let _prevGraphRef = null;
+  const groupTransition = $derived.by(() => {
+    const nextFoldAnchors = readFoldAnchors(groupedGraph);
+    const nextHiddenIds = displayHiddenIds;
+    const nextSceneIds = new Set((visibleScene?.nodes ?? []).map((n) => n.id));
+    const generationChanged = _prevGraphRef !== null && _prevGraphRef !== graph;
+    const prevFoldAnchors = _prevFoldAnchors;
+    const prevHiddenIds = _prevHiddenIds;
+    const prevSceneIds = _prevSceneIds;
+    // Advance all snapshots for the NEXT change before returning.
+    _prevFoldAnchors = nextFoldAnchors;
+    _prevHiddenIds = nextHiddenIds;
+    _prevSceneIds = nextSceneIds;
+    _prevGraphRef = graph;
+    // First evaluation (mount): nothing to animate FROM.
+    if (prevFoldAnchors === null) return null;
+    return computeSceneTransition({
+      prevFoldAnchors,
+      nextFoldAnchors,
+      prevHiddenIds,
+      nextHiddenIds,
+      prevSceneIds,
+      nextSceneIds,
+      generationChanged,
+    });
+  });
   // BUG A: facet / selection source. The left rail (Types / Communities /
   // Entities), the selection panel, and the selected-id resolution all read a
   // graph-like. Normally that is the hydrated raw `graph` (richest source). But
@@ -389,6 +438,20 @@
   function handleToggleGroupType(typeName) {
     viewerState = toggleGroupType(viewerState, typeName);
     void ensureClassHierarchies();
+  }
+  // 4-STATE control (D6): the per-row EntityStateControl emits (namespacedKey,
+  // nextState). setEntityState enforces the exclusivity of grouped/hidden/normal and
+  // treats solo as an overlay (§3/§6.2). Ontology/type keys need the taxonomy for
+  // ancestor resolution, so ensure it (cached), mirroring the group-by handlers.
+  function handleSetEntityState(key, next) {
+    viewerState = setEntityState(viewerState, key, next);
+    if (typeof key === "string" && (key.startsWith("ontology:") || key.startsWith("type:"))) {
+      void ensureClassHierarchies();
+    }
+  }
+  // Global "Reset visibility" (D6 / §1): Grouped + Hidden + Solo → Normal.
+  function handleResetVisibility() {
+    viewerState = resetVisibility(viewerState);
   }
   // B2 (§4): clear ONLY the ontology scope (class + type keys). Community
   // grouping survives — each section's `Ungroup all` is scope-local.
@@ -784,6 +847,9 @@
             selection={viewerState.selection}
             showWeakLinks={viewerState.options.showWeakLinks}
             groupBy={viewerState.options.groupBy}
+            visibility={viewerState.options.visibility}
+            soloActive={soloActive(viewerState)}
+            hasVisibilityOverride={anyVisibilityOverride}
             {canGroupOntology}
             {canGroupCommunity}
             {ontologyLevelStates}
@@ -803,6 +869,8 @@
             onToggleGroupOntology={handleToggleGroupOntology}
             onToggleGroupCommunity={handleToggleGroupCommunity}
             onToggleGroupType={handleToggleGroupType}
+            onSetEntityState={handleSetEntityState}
+            onResetVisibility={handleResetVisibility}
             onBulkLevel={handleBulkLevel}
             onBulkCommunities={handleBulkCommunities}
             onClearOntologyGrouping={handleClearOntologyGrouping}

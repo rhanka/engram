@@ -100,6 +100,17 @@ function createDefaultGroupBy() {
   return { grouped: [] };
 }
 
+/**
+ * Default per-entity VISIBILITY overlay (4-state control). Stored state ∈
+ * {Normal, Grouped, Hidden} is exclusive (Grouped lives in `groupBy.grouped`,
+ * Hidden here); Solo is a SEPARATE overlay set that never mutates grouped/hidden
+ * storage. Both are keyed by the SAME namespaced keys as grouping
+ * (`ontology:|community:|type:`). Empty === nothing hidden/soloed (fast path).
+ */
+function createDefaultVisibility() {
+  return { hidden: [], solo: [] };
+}
+
 export function createDefaultViewerState() {
   return {
     activeView: "workspace",
@@ -108,8 +119,26 @@ export function createDefaultViewerState() {
     focusId: null,
     // `timeCursor`: time-scrub cursor (epoch-ms) or null = OFF (no temporal
     // filter). Default null so the scene is unfiltered until the user scrubs.
-    options: { showWeakLinks: true, timeCursor: null, groupBy: createDefaultGroupBy() },
+    options: {
+      showWeakLinks: true,
+      timeCursor: null,
+      groupBy: createDefaultGroupBy(),
+      visibility: createDefaultVisibility(),
+    },
   };
+}
+
+/** The four mutually-visible entity states the per-row control cycles through. */
+export const ENTITY_STATES = ["normal", "grouped", "hidden", "solo"];
+
+/** True when `key` carries a known group/visibility namespace prefix. */
+function hasKnownNamespace(key) {
+  return (
+    typeof key === "string" &&
+    (key.startsWith(`${GROUP_KIND.ontology}:`) ||
+      key.startsWith(`${GROUP_KIND.community}:`) ||
+      key.startsWith(`${GROUP_KIND.type}:`))
+  );
 }
 
 function uniqueStrings(values = []) {
@@ -160,6 +189,31 @@ function normalizeGroupBy(options = {}) {
   return { grouped: uniqueStrings(keys) };
 }
 
+/**
+ * Normalize the per-entity VISIBILITY overlay (4-state control). This is the ONLY
+ * "migration" surface — there is NO localStorage persistence of viewerState in
+ * studio/src, so an ABSENT `visibility` (every pre-feature state) simply defaults
+ * to empty sets. Both lists are deduped, string-only, and restricted to keys with
+ * a known namespace prefix so junk can never accumulate through the option
+ * spread. Exclusivity (a node's stored state is Grouped XOR Hidden) is enforced
+ * grouped-WINS: `hidden := hidden \ grouped`, so a bulk "Group all" that regroups
+ * a currently-Hidden entity simply un-hides it (zero bulk-writer changes). `solo`
+ * is an overlay and is NOT exclusivity-constrained (solo ∩ grouped / solo ∩ hidden
+ * are legal and meaningful — Solo preserves the stored state, §3/§6.2).
+ *
+ * @param {object} options   the RAW partial options (so absence is detectable).
+ * @param {string[]} groupedKeys  the already-normalized `groupBy.grouped` set.
+ */
+function normalizeVisibility(options = {}, groupedKeys = []) {
+  const raw = options.visibility ?? {};
+  const grouped = new Set(groupedKeys);
+  const hidden = uniqueStrings(Array.isArray(raw.hidden) ? raw.hidden : []).filter(
+    (k) => hasKnownNamespace(k) && !grouped.has(k),
+  );
+  const solo = uniqueStrings(Array.isArray(raw.solo) ? raw.solo : []).filter(hasKnownNamespace);
+  return { hidden, solo };
+}
+
 export function normalizeViewerState(partial = {}) {
   const base = createDefaultViewerState();
   const sel = partial.selection ?? {};
@@ -187,6 +241,9 @@ export function normalizeViewerState(partial = {}) {
   // Normalize from the RAW partial options (not the base-merged one) so the
   // absence of `groupBy` is genuinely detectable and the legacy migration fires.
   next.options.groupBy = normalizeGroupBy(partial.options ?? {});
+  // Per-entity visibility overlay (4-state control). Normalized AFTER groupBy so
+  // the grouped-wins exclusivity (hidden \ grouped) reads the final grouped set.
+  next.options.visibility = normalizeVisibility(partial.options ?? {}, next.options.groupBy.grouped);
   // Drop the subsumed legacy flat / axis-scoped fields so they cannot drift.
   delete next.options.showOntologyClasses;
   delete next.options.collapsedClassIds;
@@ -456,4 +513,110 @@ export function foldOntologyToLevel(state, levelClassIds = []) {
     (k) => typeof k === "string" && !k.startsWith(`${GROUP_KIND.ontology}:`),
   );
   return withGrouped(state, [...kept, ...ids.map(groupKeyForOntology)]);
+}
+
+/* ===========================================================================
+ * 4-STATE per-entity VISIBILITY control (Normal · Grouped · Hidden · Solo).
+ *
+ * D2 schema (double-consensus): keep `groupBy.grouped` UNCHANGED as the Grouped
+ * storage; add `options.visibility = { hidden:[], solo:[] }`, keyed by the SAME
+ * namespaced keys. Stored state ∈ {Normal, Grouped, Hidden} is EXCLUSIVE; Solo is
+ * a SEPARATE overlay set (a Grouped entity soloed shows its group node — Solo
+ * never mutates grouped/hidden storage). Reducer = setEntityState / toggleSolo /
+ * resetVisibility. Migration = defaults in normalizeViewerState (no localStorage).
+ * ======================================================================== */
+
+/**
+ * The state the per-row WIDGET displays for a namespaced key. Solo overlay wins
+ * visually (§4), then stored Hidden, then Grouped, else Normal. PURE predicate.
+ */
+export function displayedEntityState(state, key) {
+  const v = state?.options?.visibility;
+  if (Array.isArray(v?.solo) && v.solo.includes(key)) return "solo";
+  if (Array.isArray(v?.hidden) && v.hidden.includes(key)) return "hidden";
+  if (state?.options?.groupBy?.grouped?.includes(key)) return "grouped";
+  return "normal";
+}
+
+/**
+ * Radiogroup semantics (D2): clicking a segment PUTS the entity in that state.
+ *   - "solo"   → add to the Solo OVERLAY; stored grouped/hidden UNTOUCHED (§3/§6.2).
+ *   - "normal" → clear grouped + hidden + solo for the key.
+ *   - "grouped"→ exit solo, drop hidden, add to grouped (exclusive stored state).
+ *   - "hidden" → exit solo, drop grouped, add to hidden (exclusive stored state).
+ * A non-string / empty key or an unknown state is a normalize-only no-op.
+ */
+export function setEntityState(state, key, next) {
+  if (typeof key !== "string" || !key || !ENTITY_STATES.includes(next)) {
+    return normalizeViewerState(state);
+  }
+  const grouped = new Set(state.options.groupBy.grouped);
+  const hidden = new Set(state.options.visibility?.hidden ?? []);
+  const solo = new Set(state.options.visibility?.solo ?? []);
+  if (next === "solo") {
+    solo.add(key); // OVERLAY: stored grouped/hidden preserved (§3, §6.2).
+  } else {
+    solo.delete(key); // any non-solo click exits this entity's Solo.
+    grouped.delete(key);
+    hidden.delete(key);
+    if (next === "grouped") grouped.add(key);
+    else if (next === "hidden") hidden.add(key);
+    // next === "normal": the deletes above are the whole story.
+  }
+  return normalizeViewerState({
+    ...state,
+    options: {
+      ...state.options,
+      groupBy: { grouped: [...grouped] },
+      visibility: { hidden: [...hidden], solo: [...solo] },
+    },
+  });
+}
+
+/**
+ * Toggle a key in/out of the Solo overlay (§3 "Exit"). Adding accumulates
+ * (multi-Solo); removing returns the entity to its stored state for display.
+ * A non-string / empty key is a normalize-only no-op.
+ */
+export function toggleSolo(state, key) {
+  if (typeof key !== "string" || !key) return normalizeViewerState(state);
+  const solo = new Set(state.options.visibility?.solo ?? []);
+  if (solo.has(key)) solo.delete(key);
+  else solo.add(key);
+  return normalizeViewerState({
+    ...state,
+    options: {
+      ...state.options,
+      visibility: { hidden: [...(state.options.visibility?.hidden ?? [])], solo: [...solo] },
+    },
+  });
+}
+
+/**
+ * Global "Show all / Reset" (§1): Hidden + Solo + Grouped → Normal. Everything
+ * else (selection, weak-link, time cursor) is kept.
+ */
+export function resetVisibility(state) {
+  return normalizeViewerState({
+    ...state,
+    options: {
+      ...state.options,
+      groupBy: { grouped: [] },
+      visibility: { hidden: [], solo: [] },
+    },
+  });
+}
+
+/** Is ANY Solo overlay active? (drives the Solo-tier derivation + rail dimming). */
+export function soloActive(state) {
+  return (state?.options?.visibility?.solo?.length ?? 0) > 0;
+}
+
+/** Any Grouped / Hidden / Solo override present? (drives the global Reset's disabled). */
+export function hasAnyVisibilityOverride(state) {
+  return (
+    (state?.options?.groupBy?.grouped?.length ?? 0) > 0 ||
+    (state?.options?.visibility?.hidden?.length ?? 0) > 0 ||
+    (state?.options?.visibility?.solo?.length ?? 0) > 0
+  );
 }

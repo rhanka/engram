@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   computeGroupedGraph,
   computeGroupTransition,
+  computeSceneTransition,
   classIdsAtLevel,
   typeNamesInTaxonomy,
   ontologyLevelState,
@@ -536,5 +537,146 @@ describe("computeGroupTransition — collapse/expand direction detection", () =>
 
   it("defaults are safe — no args → null", () => {
     expect(computeGroupTransition()).toBeNull();
+  });
+});
+
+/* ===========================================================================
+ * UNIFIED scene transition (4-state visibility) — computeSceneTransition.
+ *
+ * The SPINE: Hide/Solo route through the SAME carry-over tween via a content-
+ * derived visibility delta. Three MANDATORY guards (D3), each with a regression:
+ *   (a) anchor-id exclusion — a pure collapse must NOT degrade to "mixed";
+ *   (b) ∩ scene-ids — a hidden-then-folded id must NOT masquerade as "revealed";
+ *   (c) generation gate — a graph-object swap (model switch) ⇒ null.
+ * ======================================================================== */
+describe("computeSceneTransition — unified 4-state descriptor", () => {
+  const S = (...ids) => new Set(ids);
+  const M = (pairs) => new Map(pairs);
+
+  it("pure HIDE ⇒ kind:out, hiddenIds only (fade-in-place)", () => {
+    const t = computeSceneTransition({
+      prevFoldAnchors: M([]),
+      nextFoldAnchors: M([]),
+      prevHiddenIds: S(),
+      nextHiddenIds: S("a", "b"),
+      prevSceneIds: S("a", "b", "c"),
+      nextSceneIds: S("c"),
+    });
+    expect(t.kind).toBe("out");
+    expect([...t.hiddenIds].sort()).toEqual(["a", "b"]);
+    expect(t.revealedIds.size).toBe(0);
+    expect(t.folded.size).toBe(0);
+  });
+
+  it("pure SHOW / Reset ⇒ kind:in, revealedIds only (fade-in-at-target)", () => {
+    const t = computeSceneTransition({
+      prevFoldAnchors: M([]),
+      nextFoldAnchors: M([]),
+      prevHiddenIds: S("a", "b"),
+      nextHiddenIds: S(),
+      prevSceneIds: S("c"),
+      nextSceneIds: S("a", "b", "c"),
+    });
+    expect(t.kind).toBe("in");
+    expect([...t.revealedIds].sort()).toEqual(["a", "b"]);
+    expect(t.hiddenIds.size).toBe(0);
+  });
+
+  it("pure COLLAPSE ⇒ kind:out, folded only — byte-identical routing to a2cf207", () => {
+    const t = computeSceneTransition({
+      prevFoldAnchors: M([]),
+      nextFoldAnchors: M([["child", "group"]]),
+      prevHiddenIds: S(),
+      nextHiddenIds: S(),
+      prevSceneIds: S("child"),
+      nextSceneIds: S("group"),
+    });
+    expect(t.kind).toBe("out");
+    expect([...t.folded]).toEqual([["child", "group"]]);
+    expect(t.hiddenIds.size).toBe(0);
+    expect(t.revealedIds.size).toBe(0);
+  });
+
+  it("two-sided (fold AND reveal) ⇒ kind:mixed", () => {
+    const t = computeSceneTransition({
+      prevFoldAnchors: M([]),
+      nextFoldAnchors: M([["c", "g"]]),
+      prevHiddenIds: S("h"),
+      nextHiddenIds: S(),
+      prevSceneIds: S("c", "h"),
+      nextSceneIds: S("g", "h"),
+    });
+    expect(t.kind).toBe("mixed");
+    expect(t.folded.size).toBe(1);
+    expect([...t.revealedIds]).toEqual(["h"]);
+  });
+
+  it("no-op ⇒ null (nothing to animate)", () => {
+    expect(
+      computeSceneTransition({
+        prevFoldAnchors: M([]),
+        nextFoldAnchors: M([]),
+        prevHiddenIds: S("x"),
+        nextHiddenIds: S("x"),
+        prevSceneIds: S("y"),
+        nextSceneIds: S("y"),
+      }),
+    ).toBeNull();
+  });
+
+  it("GUARD (a): a group node appearing does NOT slip into revealedIds → stays kind:out", () => {
+    // folded {child→G}; G was somehow in prevHidden — the anchor-id exclusion must
+    // keep it out of revealedIds so a pure collapse never degrades to "mixed".
+    const t = computeSceneTransition({
+      prevFoldAnchors: M([]),
+      nextFoldAnchors: M([["child", "G"]]),
+      prevHiddenIds: S("G"),
+      nextHiddenIds: S(),
+      prevSceneIds: S("child"),
+      nextSceneIds: S("G", "child"),
+    });
+    expect(t.revealedIds.has("G")).toBe(false);
+    expect(t.kind).toBe("out");
+  });
+
+  it("GUARD (b): a hidden-then-FOLDED id is NOT reported as revealed (∩ scene-ids)", () => {
+    // X was display-hidden, then its entity got grouped → X leaves the scene
+    // entirely (∉ nextSceneIds). The mask diff would call it "revealed"; the
+    // scene-id intersection kills that.
+    const t = computeSceneTransition({
+      prevFoldAnchors: M([]),
+      nextFoldAnchors: M([]),
+      prevHiddenIds: S("X"),
+      nextHiddenIds: S(),
+      prevSceneIds: S("other"),
+      nextSceneIds: S("other"), // X is NOT in the new scene
+    });
+    expect(t).toBeNull(); // nothing legitimately animates
+  });
+
+  it("GUARD (c): a graph-object swap (generationChanged) ⇒ null (hard-cut refit)", () => {
+    const t = computeSceneTransition({
+      generationChanged: true,
+      prevFoldAnchors: M([]),
+      nextFoldAnchors: M([["c", "g"]]),
+      prevHiddenIds: S(),
+      nextHiddenIds: S("z"),
+      prevSceneIds: S("c", "z"),
+      nextSceneIds: S("g"),
+    });
+    expect(t).toBeNull();
+  });
+
+  it("folded children are excluded from hiddenIds (no double-count)", () => {
+    const t = computeSceneTransition({
+      prevFoldAnchors: M([]),
+      nextFoldAnchors: M([["c", "g"]]),
+      prevHiddenIds: S(),
+      nextHiddenIds: S("c"), // c is both folded AND (spuriously) in the mask diff
+      prevSceneIds: S("c"),
+      nextSceneIds: S("g"),
+    });
+    expect(t.hiddenIds.has("c")).toBe(false);
+    expect(t.kind).toBe("out");
   });
 });
