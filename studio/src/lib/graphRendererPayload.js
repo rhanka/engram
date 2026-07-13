@@ -51,7 +51,6 @@ const EDGE_BASE_ALPHA = Math.round(255 * EDGE_BASE_OPACITY); // 128
 // a colour change and is a bug). Weakness is conveyed by the dotted dash alone,
 // never by a paler RGB.
 const EDGE_COLOR_RGB = [148, 163, 184];
-const EDGE_COLOR = [...EDGE_COLOR_RGB, EDGE_BASE_ALPHA];
 // Degree 1–2 is visually sparse and stays at the historical 0.50. From there,
 // a logarithmic curve handles the long-tailed degree distribution of knowledge
 // graphs; the floor (0.30 = the 70%-transparent cap) is now reached by degree
@@ -84,6 +83,35 @@ export const COLOR_BY_FOLDER = "folder";
 export const COLOR_BY_LAYER = "layer";
 /** Color-by mode — continuous churn/activity heat ramp (degree fallback first). */
 export const COLOR_BY_CHURN = "churn";
+
+// --- Configurable edge-transparency (along-edge alpha shape) ------------------
+/**
+ * Edge-fade mode — DENSE fade (DEFAULT): each edge is opaque at its RARE
+ * (low-degree) endpoint and fades toward its DENSE (high-degree) endpoint, so a
+ * hub's incident edges recede near the hub and the sparse rim reads clearly.
+ */
+export const EDGE_ALPHA_DENSE = "dense";
+/** Edge-fade mode — INVERSE: opaque at the dense endpoint, faint at the rare one. */
+export const EDGE_ALPHA_INVERSE = "inverse";
+/** Edge-fade mode — MID fade: opaque near BOTH nodes, faint in the MIDDLE. */
+export const EDGE_ALPHA_MID = "mid";
+/** Edge-fade mode — FLAT: uniform base alpha, no along-edge gradient. */
+export const EDGE_ALPHA_FLAT = "flat";
+/** Edge-fade modes exposed by the studio segmented control (default first). */
+export const EDGE_ALPHA_MODES = [
+  EDGE_ALPHA_DENSE,
+  EDGE_ALPHA_INVERSE,
+  EDGE_ALPHA_MID,
+  EDGE_ALPHA_FLAT,
+];
+/** Default base edge opacity (0..1) — the flat base alpha before any fade shape. */
+export const DEFAULT_EDGE_OPACITY = 0.5;
+/**
+ * The FAINT fraction the along-edge fade decays to (the dense endpoint / the edge
+ * middle). 0.15 keeps a hub's incident edges visible-but-receded rather than
+ * vanishing. Applied as a MULTIPLIER of the base alpha inside the shape buffer.
+ */
+export const EDGE_ALPHA_FLOOR = 0.15;
 
 // Density-aware base node sizing. The user confirmed sizes read well at ~1000
 // nodes but are too big at ~5000. We shrink only the BASE radius as the graph
@@ -176,6 +204,87 @@ export function edgeBaseAlphaForDegree(degree) {
   );
   const opacity = EDGE_BASE_OPACITY - density * (EDGE_BASE_OPACITY - EDGE_MIN_OPACITY);
   return Math.round(255 * opacity);
+}
+
+/** Linear interpolation (a at t=0, b at t=1). */
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+/**
+ * Normalized endpoint DENSITY in [0,1] from a node's undirected degree — the
+ * log-scaled position between START (=2, "sparse") and FULL (=16, "hub") the
+ * along-edge fade uses. deg ≤ START ⇒ 0 (rare); deg ≥ FULL ⇒ 1 (dense). Reuses
+ * the same START/FULL knobs as {@link edgeBaseAlphaForDegree}.
+ * @param {number} degree undirected node degree
+ * @returns {number} density in [0,1]
+ */
+export function edgeDensityForDegree(degree) {
+  const d = Number.isFinite(degree) ? Math.max(0, degree) : 0;
+  const range = Math.log2(EDGE_DENSITY_FULL_DEGREE / EDGE_DENSITY_START_DEGREE);
+  return clampUnit(
+    Math.log2(Math.max(d, EDGE_DENSITY_START_DEGREE) / EDGE_DENSITY_START_DEGREE) / range,
+  );
+}
+
+/**
+ * Resolve the three along-edge alpha MULTIPLIERS (m0 at source, mMid at 0.5, m1
+ * at target — each 0..255) for one edge, from the fade mode + the per-endpoint
+ * densities (d0 source, d1 target). These MULTIPLY the flat base alpha in the
+ * WebGL shader; (255,255,255) = uniform. See {@link EDGE_ALPHA_DENSE} etc.
+ * @param {string} mode  one of EDGE_ALPHA_MODES
+ * @param {number} d0    source endpoint density in [0,1]
+ * @param {number} d1    target endpoint density in [0,1]
+ * @returns {[number, number, number]} [m0, mMid, m1] rounded to 0..255
+ */
+export function edgeAlphaShapeFor(mode, d0, d1) {
+  const F = EDGE_ALPHA_FLOOR;
+  if (mode === EDGE_ALPHA_FLAT) return [255, 255, 255];
+  if (mode === EDGE_ALPHA_MID) {
+    return [255, Math.round(255 * F), 255];
+  }
+  // dense: opaque at the RARE endpoint (density 0 ⇒ 1), faint at the DENSE one
+  // (density 1 ⇒ FLOOR). inverse: swap the ends of the ramp.
+  let m0;
+  let m1;
+  if (mode === EDGE_ALPHA_INVERSE) {
+    m0 = Math.round(255 * lerp(F, 1, d0));
+    m1 = Math.round(255 * lerp(F, 1, d1));
+  } else {
+    // EDGE_ALPHA_DENSE (default) and any unknown mode fall back to dense.
+    m0 = Math.round(255 * lerp(1, F, d0));
+    m1 = Math.round(255 * lerp(1, F, d1));
+  }
+  return [m0, Math.round((m0 + m1) / 2), m1];
+}
+
+/**
+ * Build the per-edge ALPHA SHAPE buffer (3 bytes/edge, parallel to
+ * `renderGraph.edges`) for a fade mode. Each edge's endpoints are looked up by
+ * node id through `degreeById`, converted to a normalized density, then mapped
+ * to the [m0, mMid, m1] multipliers by {@link edgeAlphaShapeFor}. Flat mode
+ * still emits a buffer (all 255) so the shape is always present + explicit.
+ * @param {{ edges: ArrayLike<number>, nodeIds: ArrayLike<string> }} renderGraph
+ * @param {Map<string, number>} degreeById  scene node id → undirected degree
+ * @param {string} mode  one of EDGE_ALPHA_MODES
+ * @returns {Uint8Array} 3·edgeCount bytes
+ */
+export function buildEdgeAlphaShape(renderGraph, degreeById, mode) {
+  const edgeCount = (renderGraph?.edges?.length ?? 0) / 2;
+  const shape = new Uint8Array(edgeCount * 3);
+  for (let e = 0; e < edgeCount; e += 1) {
+    const srcIdx = renderGraph.edges[e * 2];
+    const tgtIdx = renderGraph.edges[e * 2 + 1];
+    const srcId = renderGraph.nodeIds[srcIdx];
+    const tgtId = renderGraph.nodeIds[tgtIdx];
+    const d0 = edgeDensityForDegree(degreeById.get(srcId) ?? 0);
+    const d1 = edgeDensityForDegree(degreeById.get(tgtId) ?? 0);
+    const [m0, mMid, m1] = edgeAlphaShapeFor(mode, d0, d1);
+    shape[e * 3] = m0;
+    shape[e * 3 + 1] = mMid;
+    shape[e * 3 + 2] = m1;
+  }
+  return shape;
 }
 
 function normalizedChurnById(
@@ -351,6 +460,10 @@ function cloneStyle(style) {
     edgeColors: new Uint8Array(style.edgeColors),
     edgeDash: new Uint8Array(style.edgeDash),
     edgeCurvatures: new Float32Array(style.edgeCurvatures),
+    // The along-edge alpha SHAPE is a separate multiplier from edgeColors.a, so
+    // it survives dim / hover / merge re-styling unchanged (those only scale the
+    // base alpha). Clone it like the other per-edge buffers.
+    edgeAlphaShape: style.edgeAlphaShape ? new Uint8Array(style.edgeAlphaShape) : undefined,
   };
 }
 
@@ -429,6 +542,17 @@ export function buildGraphRendererPayload(scene, options = {}) {
   // byte-identical to before this lot. It is a per-edge RENDER attribute — the
   // caller re-renders live with no layout recompute.
   const edgeCurvature = options.curvedLinks === false ? 0 : DEFAULT_EDGE_CURVATURE;
+  // Configurable edge-transparency: the along-edge fade MODE (default dense) and
+  // the flat BASE opacity (default 0.5). The mode drives a per-edge alpha SHAPE
+  // (a separate multiplier); the opacity sets the uniform base alpha. An unset
+  // option is byte-identical to the historical ~0.5 base + dense falloff.
+  const edgeAlphaMode = EDGE_ALPHA_MODES.includes(options.edgeAlphaMode)
+    ? options.edgeAlphaMode
+    : EDGE_ALPHA_DENSE;
+  const edgeOpacity = Number.isFinite(options.edgeOpacity)
+    ? clampUnit(options.edgeOpacity)
+    : DEFAULT_EDGE_OPACITY;
+  const edgeBaseAlpha = Math.round(255 * edgeOpacity);
   const sceneNodes = scene?.nodes ?? [];
   const sceneEdges = scene?.edges ?? [];
   // One degree pass serves both churn fallback and density-graded edge alpha.
@@ -473,11 +597,6 @@ export function buildGraphRendererPayload(scene, options = {}) {
   });
 
   const edges = sceneEdges.map((edge) => {
-    const endpointDegree = Math.max(
-      degreeById.get(edge.source) ?? 0,
-      degreeById.get(edge.target) ?? 0,
-    );
-    const alpha = edgeBaseAlphaForDegree(endpointDegree);
     return {
       source: edge.source,
       target: edge.target,
@@ -486,9 +605,12 @@ export function buildGraphRendererPayload(scene, options = {}) {
       weak: edge.weak === true,
       emphasis: edge.emphasis === true,
       width: edgeWidth(edge),
-      // Uniform slate hue for all edges; only the density alpha varies. Weak
-      // edges stay this same colour and are distinguished by the dotted dash.
-      color: [...EDGE_COLOR_RGB, alpha],
+      // Uniform slate hue AND uniform base alpha (edgeOpacity). The density
+      // falloff now lives in the per-edge alpha SHAPE (edgeAlphaShape, a separate
+      // multiplier), so dim/hover/merge — which scale this base alpha — compose
+      // with the fade automatically. Weak edges stay this colour, distinguished
+      // by the dotted dash.
+      color: [...EDGE_COLOR_RGB, edgeBaseAlpha],
       dash: edge.dash ?? (edge.weak ? "dotted" : "solid"),
       curvature: finite(edge.curvature) ? edge.curvature : edgeCurvature,
     };
@@ -498,8 +620,12 @@ export function buildGraphRendererPayload(scene, options = {}) {
   const renderGraph = buildRenderGraphBuffers(input);
   const baseStyle = buildStyleBuffers(input, renderGraph, {
     node: { size: nodeRadius },
-    edge: { width: 1, color: EDGE_COLOR, dash: "solid", curvature: edgeCurvature },
+    edge: { width: 1, color: [...EDGE_COLOR_RGB, edgeBaseAlpha], dash: "solid", curvature: edgeCurvature },
   });
+  // Along-edge alpha SHAPE (configurable edge-transparency). Parallel to
+  // renderGraph.edges; a separate multiplier of the base alpha the WebGL edge
+  // shader applies. Carried through cloneStyle so dim/hover/merge keep it.
+  baseStyle.edgeAlphaShape = buildEdgeAlphaShape(renderGraph, degreeById, edgeAlphaMode);
   const nodeIndexById = new Map(nodes.map((node, index) => [node.id, index]));
 
   // Recon focal-pair parity: nodes flagged `forceBoxLabel` (the two entities

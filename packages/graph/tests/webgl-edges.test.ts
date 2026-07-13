@@ -17,6 +17,7 @@ import {
   CAPSULE_FLOATS_PER_INSTANCE,
   buildEdgeInstances,
   createWebGLEdgeRenderer,
+  decodeCapsule,
   type WebGLEdgeFrame,
 } from "../src/webgl-edges";
 import { shapeCode } from "../src/shape-geometry";
@@ -144,11 +145,32 @@ describe("B1 Phase 2 — instanced edge draw contract (fake WebGL2)", () => {
   });
 
   it("instance buffer strides match the decoders", () => {
-    expect(CAPSULE_FLOATS_PER_INSTANCE).toBe(12);
+    expect(CAPSULE_FLOATS_PER_INSTANCE).toBe(15);
     expect(ARROW_FLOATS_PER_INSTANCE).toBe(9);
     const set = buildEdgeInstances(edgeFrame());
     expect(set.capsules.length % CAPSULE_FLOATS_PER_INSTANCE).toBe(0);
     expect(set.arrows.length % ARROW_FLOATS_PER_INSTANCE).toBe(0);
+  });
+
+  it("no edgeAlphaShape ⇒ every capsule uploads the uniform (1,1,1) shape", () => {
+    const set = buildEdgeInstances(edgeFrame());
+    const cap = decodeCapsule(set.capsules, 0);
+    expect(cap.shape).toEqual([1, 1, 1]);
+  });
+
+  it("edgeAlphaShape is normalised 0..1 and carried onto every segment", () => {
+    const frame = edgeFrame({ curvature: 0.5 });
+    // Fade toward the MIDDLE: opaque at both ends (255), faint mid (64).
+    frame.style!.edgeAlphaShape = new Uint8Array([255, 64, 255]);
+    const set = buildEdgeInstances(frame);
+    const segCount = set.capsules.length / CAPSULE_FLOATS_PER_INSTANCE;
+    expect(segCount).toBeGreaterThan(1); // curved ⇒ many segments
+    for (let n = 0; n < segCount; n += 1) {
+      const cap = decodeCapsule(set.capsules, n);
+      expect(cap.shape[0]).toBeCloseTo(1, 5);
+      expect(cap.shape[1]).toBeCloseTo(64 / 255, 5);
+      expect(cap.shape[2]).toBeCloseTo(1, 5);
+    }
   });
 });
 

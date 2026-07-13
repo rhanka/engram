@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildConnectedDimStyle,
+  buildEdgeAlphaShape,
   buildGraphRendererPayload,
   COLOR_BY_CHURN,
   COLOR_BY_FOLDER,
@@ -10,8 +11,16 @@ import {
   colorForGroup,
   computeLayoutBuffer,
   DEFAULT_EDGE_CURVATURE,
+  DEFAULT_EDGE_OPACITY,
   densityScale,
   DEFAULT_LABEL_MAX_CHARS,
+  EDGE_ALPHA_DENSE,
+  EDGE_ALPHA_FLAT,
+  EDGE_ALPHA_FLOOR,
+  EDGE_ALPHA_INVERSE,
+  EDGE_ALPHA_MID,
+  edgeAlphaShapeFor,
+  edgeDensityForDegree,
   findNearestEdge,
   findNearestNode,
   findNearestNodeId,
@@ -623,7 +632,7 @@ describe("graphRendererPayload", () => {
     }
   });
 
-  it("grades base edge alpha down for dense endpoints without crossing the 0.30 floor", () => {
+  it("grades the density falloff via edgeAlphaShape (not the base alpha) at the dense endpoint", () => {
     const nodes = [
       { id: "hub", x: 0, y: 0 },
       { id: "mid", x: 0, y: 100 },
@@ -638,19 +647,31 @@ describe("graphRendererPayload", () => {
       ...Array.from({ length: 8 }, (_, i) => ({ source: "mid", target: `mid-${i}` })),
     ];
     const payload = buildGraphRendererPayload({ nodes, edges });
-    const alphaForInputEdge = (inputIndex) => {
-      const renderedIndex = Array.from(payload.renderGraph.edgeInputIndices).indexOf(inputIndex);
-      return payload.baseStyle.edgeColors[renderedIndex * 4 + 3];
-    };
+    const renderedIndexOf = (inputIndex) =>
+      Array.from(payload.renderGraph.edgeInputIndices).indexOf(inputIndex);
+    const baseAlphaForInputEdge = (inputIndex) =>
+      payload.baseStyle.edgeColors[renderedIndexOf(inputIndex) * 4 + 3];
+    // m0 = the SOURCE-endpoint multiplier of the along-edge shape (each edge here
+    // is authored source=hub/mid/low, so m0 carries that endpoint's density).
+    const sourceShapeForInputEdge = (inputIndex) =>
+      payload.baseStyle.edgeAlphaShape[renderedIndexOf(inputIndex) * 3];
 
-    const lowAlpha = alphaForInputEdge(0);
-    const hubAlpha = alphaForInputEdge(1);
-    const midAlpha = alphaForInputEdge(33);
+    // The BASE alpha is now the flat edgeOpacity default (0.5 → 128) for EVERY
+    // edge; density no longer bends it — the shape does.
+    expect(baseAlphaForInputEdge(0)).toBe(128);
+    expect(baseAlphaForInputEdge(1)).toBe(128);
+    expect(baseAlphaForInputEdge(33)).toBe(128);
 
-    expect(lowAlpha).toBe(128);
-    expect(midAlpha).toBeLessThan(lowAlpha);
-    expect(midAlpha).toBeGreaterThan(hubAlpha);
-    expect(hubAlpha).toBeGreaterThanOrEqual(Math.round(255 * 0.3));
+    const lowShape = sourceShapeForInputEdge(0); // low-a source, degree 1
+    const hubShape = sourceShapeForInputEdge(1); // hub source, degree 32
+    const midShape = sourceShapeForInputEdge(33); // mid source, degree 8
+
+    // A rare endpoint stays opaque (255); denser endpoints fade toward the floor.
+    expect(lowShape).toBe(255);
+    expect(midShape).toBeLessThan(lowShape);
+    expect(hubShape).toBeLessThan(midShape);
+    // Never below the faint floor (0.15 · 255 ≈ 38).
+    expect(hubShape).toBeGreaterThanOrEqual(Math.round(255 * EDGE_ALPHA_FLOOR));
   });
 
   it("dims non-neighbour nodes when a node is selected (selectedIds)", () => {
@@ -1071,5 +1092,153 @@ describe("Color-by Churn heat ramp (Lot 5, R4/D2)", () => {
     expect(payload.renderGraph.nodeIds.length).toBe(N);
     // Ramp still normalizes: the max-churn node maps to the hot end.
     expect(payload.nodeById.get(`n${36}`).color).toBe(colorForChurn(1));
+  });
+});
+
+// --- Configurable edge-transparency: along-edge alpha SHAPE + edge opacity ----
+// The density falloff and the fade modes live in the per-edge alpha SHAPE
+// (edgeAlphaShape, a separate multiplier of the flat base alpha). Defaults
+// (dense mode, 0.5 opacity) keep the ~0.5 base + hub-fade the studio already had.
+describe("edge alpha modes + opacity", () => {
+  const FLOOR = Math.round(255 * EDGE_ALPHA_FLOOR); // 38
+
+  describe("edgeDensityForDegree (log-scaled endpoint density)", () => {
+    it("is 0 at/below START (deg ≤ 2) and 1 at/above FULL (deg ≥ 16)", () => {
+      expect(edgeDensityForDegree(0)).toBe(0);
+      expect(edgeDensityForDegree(1)).toBe(0);
+      expect(edgeDensityForDegree(2)).toBe(0);
+      expect(edgeDensityForDegree(16)).toBe(1);
+      expect(edgeDensityForDegree(32)).toBe(1); // clamped
+    });
+
+    it("increases monotonically between START and FULL", () => {
+      expect(edgeDensityForDegree(4)).toBeLessThan(edgeDensityForDegree(8));
+      expect(edgeDensityForDegree(8)).toBeLessThan(edgeDensityForDegree(16));
+      expect(edgeDensityForDegree(8)).toBeCloseTo(2 / 3, 5);
+    });
+  });
+
+  describe("edgeAlphaShapeFor (pure mode → [m0, mMid, m1])", () => {
+    it("flat: uniform 255 regardless of density", () => {
+      expect(edgeAlphaShapeFor(EDGE_ALPHA_FLAT, 0.4, 0.9)).toEqual([255, 255, 255]);
+    });
+
+    it("mid: opaque at both ends, faint (FLOOR) in the middle", () => {
+      expect(edgeAlphaShapeFor(EDGE_ALPHA_MID, 0.4, 0.9)).toEqual([255, FLOOR, 255]);
+    });
+
+    it("dense: opaque at the RARE endpoint (density 0), faint at the DENSE one (density 1)", () => {
+      // rare source (d0=0) → 255; dense target (d1=1) → FLOOR; mid = average.
+      const shape = edgeAlphaShapeFor(EDGE_ALPHA_DENSE, 0, 1);
+      expect(shape[0]).toBe(255);
+      expect(shape[2]).toBe(FLOOR);
+      expect(shape[1]).toBe(Math.round((255 + FLOOR) / 2));
+    });
+
+    it("inverse: mirror of dense — faint at the rare endpoint, opaque at the dense one", () => {
+      const shape = edgeAlphaShapeFor(EDGE_ALPHA_INVERSE, 0, 1);
+      expect(shape[0]).toBe(FLOOR);
+      expect(shape[2]).toBe(255);
+    });
+
+    it("an unknown mode falls back to dense", () => {
+      expect(edgeAlphaShapeFor("bogus", 0, 1)).toEqual(edgeAlphaShapeFor(EDGE_ALPHA_DENSE, 0, 1));
+    });
+  });
+
+  // A hub of degree 17 (density 1) → one leaf of degree 1 (density 0). Input
+  // edge 0 is authored hub→leaf, so its shape reads [m0=hub, mMid, m1=leaf].
+  const makeHubScene = () => {
+    const nodes = [{ id: "hub" }, { id: "leaf" }];
+    const edges = [{ source: "hub", target: "leaf" }];
+    for (let i = 0; i < 16; i += 1) {
+      nodes.push({ id: `x${i}` });
+      edges.push({ source: "hub", target: `x${i}` });
+    }
+    return { nodes, edges };
+  };
+  const shapeForInputEdge0 = (payload) => {
+    const rendered = Array.from(payload.renderGraph.edgeInputIndices).indexOf(0);
+    const s = payload.baseStyle.edgeAlphaShape;
+    return [s[rendered * 3], s[rendered * 3 + 1], s[rendered * 3 + 2]];
+  };
+
+  it("buildGraphRendererPayload always attaches a 3-per-edge shape buffer", () => {
+    const payload = buildGraphRendererPayload(makeHubScene(), { nodeRadius: 3 });
+    const edgeCount = payload.renderGraph.edges.length / 2;
+    expect(payload.baseStyle.edgeAlphaShape).toBeInstanceOf(Uint8Array);
+    expect(payload.baseStyle.edgeAlphaShape.length).toBe(edgeCount * 3);
+  });
+
+  it("defaults to dense mode (opaque at the rare leaf, faint at the dense hub)", () => {
+    const payload = buildGraphRendererPayload(makeHubScene(), { nodeRadius: 3 });
+    const [m0, , m1] = shapeForInputEdge0(payload);
+    expect(m0).toBe(FLOOR); // hub side (dense) faded to the floor
+    expect(m1).toBe(255); // leaf side (rare) opaque
+  });
+
+  it("inverse mode swaps the ramp (opaque at the hub, faint at the leaf)", () => {
+    const payload = buildGraphRendererPayload(makeHubScene(), { nodeRadius: 3, edgeAlphaMode: EDGE_ALPHA_INVERSE });
+    const [m0, , m1] = shapeForInputEdge0(payload);
+    expect(m0).toBe(255);
+    expect(m1).toBe(FLOOR);
+  });
+
+  it("mid mode fades the middle, keeping both endpoints opaque", () => {
+    const payload = buildGraphRendererPayload(makeHubScene(), { nodeRadius: 3, edgeAlphaMode: EDGE_ALPHA_MID });
+    const [m0, mMid, m1] = shapeForInputEdge0(payload);
+    expect(m0).toBe(255);
+    expect(m1).toBe(255);
+    expect(mMid).toBe(FLOOR);
+  });
+
+  it("flat mode emits an all-255 (uniform) shape for every edge", () => {
+    const payload = buildGraphRendererPayload(makeHubScene(), { nodeRadius: 3, edgeAlphaMode: EDGE_ALPHA_FLAT });
+    for (const v of payload.baseStyle.edgeAlphaShape) expect(v).toBe(255);
+  });
+
+  it("edgeOpacity sets the uniform base alpha (0..1 → 0..255); default is 0.5", () => {
+    const def = buildGraphRendererPayload(makeHubScene(), { nodeRadius: 3 });
+    const dim = buildGraphRendererPayload(makeHubScene(), { nodeRadius: 3, edgeOpacity: 0.2 });
+    const bright = buildGraphRendererPayload(makeHubScene(), { nodeRadius: 3, edgeOpacity: 0.8 });
+    expect(DEFAULT_EDGE_OPACITY).toBe(0.5);
+    expect(def.baseStyle.edgeColors[3]).toBe(128); // 255 * 0.5
+    expect(dim.baseStyle.edgeColors[3]).toBe(Math.round(255 * 0.2)); // 51
+    expect(bright.baseStyle.edgeColors[3]).toBe(Math.round(255 * 0.8)); // 204
+    // The base alpha is uniform: every edge shares it (density is in the shape).
+    const edgeCount = dim.renderGraph.edges.length / 2;
+    for (let e = 0; e < edgeCount; e += 1) expect(dim.baseStyle.edgeColors[e * 4 + 3]).toBe(51);
+  });
+
+  it("buildEdgeAlphaShape reproduces the payload's shape from the same degrees", () => {
+    const payload = buildGraphRendererPayload(makeHubScene(), { nodeRadius: 3 });
+    const edgeCount = payload.renderGraph.edges.length / 2;
+    // Recompute undirected degrees exactly as the payload does.
+    const deg = new Map();
+    for (const id of payload.renderGraph.nodeIds) deg.set(id, 0);
+    for (let e = 0; e < edgeCount; e += 1) {
+      const s = payload.renderGraph.nodeIds[payload.renderGraph.edges[e * 2]];
+      const t = payload.renderGraph.nodeIds[payload.renderGraph.edges[e * 2 + 1]];
+      deg.set(s, (deg.get(s) ?? 0) + 1);
+      deg.set(t, (deg.get(t) ?? 0) + 1);
+    }
+    const rebuilt = buildEdgeAlphaShape(payload.renderGraph, deg, EDGE_ALPHA_DENSE);
+    expect(rebuilt.length).toBe(edgeCount * 3);
+    expect(Array.from(rebuilt)).toEqual(Array.from(payload.baseStyle.edgeAlphaShape));
+  });
+
+  it("the shape survives connected-dim re-styling (only edgeColors.a is dimmed)", () => {
+    const payload = buildGraphRendererPayload(makeHubScene(), { nodeRadius: 3, selectedIds: ["leaf"] });
+    // The dimmed style keeps the EXACT shape buffer (cloneStyle carries it).
+    expect(Array.from(payload.style.edgeAlphaShape)).toEqual(
+      Array.from(payload.baseStyle.edgeAlphaShape),
+    );
+    // Some non-incident edge's BASE alpha was dimmed below the 128 base…
+    let sawDim = false;
+    const edgeCount = payload.renderGraph.edges.length / 2;
+    for (let e = 0; e < edgeCount; e += 1) {
+      if (payload.style.edgeColors[e * 4 + 3] < 128) sawDim = true;
+    }
+    expect(sawDim).toBe(true);
   });
 });
