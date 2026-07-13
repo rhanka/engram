@@ -16,12 +16,14 @@ import {
   buildShapeInstances,
   createWebGLShapeRenderer,
   decodeInstance,
+  effectiveStrokeHalfWidth,
   instancedShapeFamilies,
   FLOATS_PER_INSTANCE,
   type WebGLShapeFrame,
 } from "../src/webgl-shapes";
 import {
   BOX_FILL,
+  borderStrokeWidthPx,
   drawnRadius,
   unitShapeGeometry,
 } from "../src/render-geometry";
@@ -244,6 +246,114 @@ describe("B1 Phase 1 — instance attribute parity (N1/N10/N11)", () => {
     const border = decodeInstance(set.border.get(code)!, 0);
     expect(Math.round(border.color[0] * 255)).toBe(Math.round(200 * 0.62));
     expect(Math.round(border.color[1] * 255)).toBe(Math.round(100 * 0.62));
+  });
+
+  // ---------------------------------------------------------------------
+  // Border-thickness fix (per-shape apothem compensation): circles/hexagons
+  // used to draw a MUCH thicker PERPENDICULAR border than diamonds/squares.
+  // The two-disc ring is built by scaling the WHOLE unit polygon by a RADIAL
+  // offset (radius ± effectiveStrokeHalf); for a disc (apothem == radius) the
+  // radial offset IS the perpendicular gap, but for a flat polygon face the
+  // gap between the outer/inner similar polygons, measured PERPENDICULAR to
+  // that face, is `effectiveStrokeHalf · apothemRatio(family)` (apothem =
+  // radius · apothemRatio). The fix therefore sets
+  // `effectiveStrokeHalf(family) = strokeHalf · BORDER_PERP_SCALE /
+  // apothemRatio(family)` — a RADIAL offset that VARIES by family — so that,
+  // once foreshortened by that same family's apothem ratio, every family's
+  // VISIBLE perpendicular width lands on the SAME `strokeHalf · BORDER_PERP_SCALE`.
+  // These tests assert that: NOT that the radial offsets are equal (they
+  // deliberately are not — that was the bug's mechanism, run in reverse to
+  // fix it), but that radial-offset × apothemRatio (the perpendicular, i.e.
+  // visually apparent, width) is uniform across every shape family.
+  // ---------------------------------------------------------------------
+  describe("border perpendicular half-width is UNIFORM across shape families", () => {
+    const SHAPE_NAME_BY_FAMILY: Record<number, string> = {
+      0: "circle",
+      1: "diamond",
+      2: "star",
+      3: "hexagon",
+      4: "square",
+      6: "triangle",
+    };
+    // Documented apothem-per-a_radius ratios (shape-geometry.ts regular
+    // polygons; star approximated) — an INDEPENDENT copy of the source's
+    // lookup so this test pins the intended per-shape numbers, not merely
+    // the implementation's own arithmetic. NOTE square is 0.88 (its own
+    // SQUARE_INSET_RATIO), NOT cos(45°)=0.707 — the square's unit outline is
+    // pre-inset BEFORE the a_radius scale (shape-geometry.ts), unlike diamond
+    // (same 4-gon shape, but no inset, so a_radius IS its circumradius).
+    const APOTHEM_RATIO_BY_FAMILY: Record<number, number> = {
+      0: 1.0,
+      1: 0.707,
+      2: 0.5,
+      3: 0.866,
+      4: 0.88,
+      6: 0.5,
+    };
+    const dpr = 2;
+    const zoom = 1;
+
+    function radialHalfWidth(family: number, bold: boolean): number {
+      const shapeName = SHAPE_NAME_BY_FAMILY[family]!;
+      const code = shapeCode(shapeName);
+      const set = buildShapeInstances(
+        frame([{ x: 0, y: 0, size: 20, shape: shapeName, rgb: [10, 20, 30], fill: 1, border: bold ? 1 : 0 }], dpr, zoom),
+      );
+      const border = decodeInstance(set.border.get(code)!, 0);
+      const innerFill = decodeInstance(set.fill.get(code)!, 0);
+      return (border.radius - innerFill.radius) / 2;
+    }
+
+    it.each(instancedShapeFamilies())(
+      "family %i: RADIAL ring half-width matches effectiveStrokeHalfWidth (varies BY DESIGN)",
+      (family) => {
+        const halfWidth = radialHalfWidth(family, false);
+        const expected = effectiveStrokeHalfWidth(family, false, dpr, zoom);
+        expect(halfWidth).toBeCloseTo(expected, 5);
+      },
+    );
+
+    it("PERPENDICULAR width (radial x apothemRatio) is the SAME for every family — the actual fix", () => {
+      const perpWidths = instancedShapeFamilies().map((family) => {
+        const radial = radialHalfWidth(family, true);
+        return { family, perp: radial * APOTHEM_RATIO_BY_FAMILY[family]! };
+      });
+      const reference = perpWidths[0]!.perp;
+      // Precision 3 (not tighter): this test's ratio table intentionally uses
+      // documented ROUNDED literals (e.g. 0.707) while the source computes
+      // exact trig (Math.cos(Math.PI/4)), so a ~3e-4 rounding gap is expected
+      // and not a regression.
+      for (const { family, perp } of perpWidths) {
+        expect(perp, `family ${family}: perpendicular width ${perp} != reference ${reference}`).toBeCloseTo(
+          reference,
+          3,
+        );
+      }
+      // Sanity: circle (ratio 1.0) and diamond (ratio 0.707 — genuinely much
+      // thinner pre-fix) now match to the pixel; likewise square (ratio 0.88).
+      const circle = perpWidths.find((p) => p.family === 0)!.perp;
+      const diamond = perpWidths.find((p) => p.family === 1)!.perp;
+      const square = perpWidths.find((p) => p.family === 4)!.perp;
+      expect(circle).toBeCloseTo(diamond, 3);
+      expect(circle).toBeCloseTo(square, 3);
+    });
+
+    it("new uniform perpendicular width is ~0.7x the OLD (uncompensated) square perpendicular width", () => {
+      // OLD (pre-fix) behaviour used the RAW strokeHalf as the radial offset
+      // for every family (no apothem compensation), so square's perpendicular
+      // width was already foreshortened to strokeHalf x apothemRatio(square)
+      // = strokeHalf x 0.88 (SQUARE_INSET_RATIO) — this IS today's
+      // pre-existing square border weight (the anchor the task's 30%-thinner
+      // target is defined against).
+      const base = borderStrokeWidthPx(false, dpr, zoom) / 2;
+      const OLD_OUTLINE_WEIGHT_BOOST = 1.12; // WEBGL_OUTLINE_WEIGHT_BOOST, unchanged by this fix
+      const oldStrokeHalf = base * OLD_OUTLINE_WEIGHT_BOOST;
+      const oldSquarePerp = oldStrokeHalf * APOTHEM_RATIO_BY_FAMILY[4]!;
+      // Circle's apothemRatio is 1.0, so its radial offset IS the new uniform
+      // perpendicular width directly.
+      const newUniformPerp = effectiveStrokeHalfWidth(0, false, dpr, zoom);
+      expect(newUniformPerp / oldSquarePerp).toBeCloseTo(0.7, 2);
+    });
   });
 });
 
