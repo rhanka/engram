@@ -100,10 +100,13 @@
 
   let {
     scene = EMPTY_SCENE,
-    // Optional collapse/expand ANIMATION descriptor, produced by App when the
-    // grouped-key set changes: { direction: 'collapse'|'expand',
-    // anchorByNodeId: Map<foldedId, groupNodeId> }. Absent/null ⇒ the current
-    // hard-cut refit (safety fallback). See the scene-change $effect below.
+    // Optional UNIFIED scene-transition descriptor (4-state visibility), produced
+    // by App when the grouped set OR the display-hidden mask changes:
+    //   { folded: Map<childId, groupId>, unfolded: Map<childId, groupId>,
+    //     hiddenIds: Set<nodeId>, revealedIds: Set<nodeId>, kind: "out"|"in"|"mixed" }.
+    // Routed through the SAME carry-over tween as group/ungroup — folded → anchor,
+    // hidden → fade-in-place (bufB==bufA), revealed → fade-in-at-cached-target.
+    // Absent/null ⇒ the hard-cut refit (safety fallback). See the scene $effect below.
     groupTransition = null,
     selectedIds = [],
     centerOnIds = [],
@@ -1788,50 +1791,87 @@
     return { ...info, positions };
   }
 
-  // Try to play the animated collapse/expand for `transition`. Returns true when
-  // the driver TOOK OVER the scene swap (the caller must NOT also hard-cut), false
-  // to fall back to the refit path (safety: missing/ambiguous transition, or no
-  // renderer/payload). NOTE: an on-screen-empty fold set is NOT a false here — the
-  // driver still owns the swap and does a position-preserving carried swap.
+  // Resolve the on-screen INDICES of a display-hidden/revealed id set against the
+  // CURRENT payload (§SPINE): these fade IN PLACE (bufB==bufA), never toward an
+  // anchor. Ids absent from the payload are skipped. Returns an empty set when
+  // there is nothing on screen (the caller then does a position-preserving swap).
+  function collectInPlaceIndices(ids) {
+    const set = new Set();
+    const idx = payload?.nodeIndexById;
+    if (!(ids instanceof Set) || !idx) return set;
+    for (const id of ids) {
+      const i = idx.get(id);
+      if (Number.isInteger(i)) set.add(i);
+    }
+    return set;
+  }
+
+  // Try to play the animated transition for `transition` (the UNIFIED 4-state
+  // descriptor). Returns true when the driver TOOK OVER the scene swap (the caller
+  // must NOT also hard-cut), false to fall back to the refit path (safety: missing
+  // descriptor, no renderer/payload, unknown kind). NOTE: an on-screen-empty
+  // fold/hide set is NOT a false here — the driver still owns the swap and does a
+  // position-preserving carried swap.
+  //   · kind "out"   — group/hide: tween on the OLD payload (folded → anchor,
+  //     hidden → fade-in-place), then carried-swap. (startCollapseTween, extended.)
+  //   · kind "in"    — ungroup/show/reset: carried-swap FIRST, then tween on the NEW
+  //     payload (unfolded → fan/cache, revealed → fade-in-at-target). (startExpandTween.)
+  //   · kind "mixed" — two-sided: carried NON-animated swap (never a refit — strictly
+  //     better than today's mixed⇒refit). (applyMixedCarriedSwap.)
   function tryStartGroupTransition(transition) {
     if (!transition || !mounted || !renderer || !payload) return false;
-    const anchors = transition.anchorByNodeId;
-    if (!(anchors instanceof Map) || anchors.size === 0) return false;
-    if (transition.direction === "collapse") return startCollapseTween(anchors);
-    if (transition.direction === "expand") return startExpandTween(anchors);
+    const folded = transition.folded instanceof Map ? transition.folded : new Map();
+    const unfolded = transition.unfolded instanceof Map ? transition.unfolded : new Map();
+    const hiddenIds = transition.hiddenIds instanceof Set ? transition.hiddenIds : new Set();
+    const revealedIds = transition.revealedIds instanceof Set ? transition.revealedIds : new Set();
+    if (transition.kind === "out") return startCollapseTween(folded, hiddenIds);
+    if (transition.kind === "in") return startExpandTween(unfolded, revealedIds);
+    if (transition.kind === "mixed")
+      return applyMixedCarriedSwap({ folded, unfolded, hiddenIds, revealedIds });
     return false;
   }
 
-  // COLLAPSE (§3.4): snapshot the OLD on-screen positions, tween each folding
-  // child → its group anchor (fade+shrink) on the OLD payload, then at t=1
-  // carried-swap so the group node lands EXACTLY where its children converged and
-  // every shared node keeps its position. groupSwapPending defers any concurrent
-  // selection/display rebuild until after the swap (RC-B).
-  function startCollapseTween(anchors) {
+  // OUT (§3.4 / SPINE): snapshot the OLD on-screen positions, tween each folding
+  // child → its group anchor (fade+shrink) AND each newly display-HIDDEN node
+  // fade+shrink IN PLACE (bufB==bufA) on the OLD payload, then at t=1 carried-swap
+  // so the group node lands EXACTLY where its children converged and every shared
+  // node keeps its position. groupSwapPending defers any concurrent selection/
+  // display rebuild until after the swap (RC-B). `hiddenIds` = the pure-Hide / Solo
+  // complement (empty for a pure group op — byte-identical to a2cf207).
+  function startCollapseTween(anchors, hiddenIds = new Set()) {
     const oldPos = currentPositionMap() ?? new Map(); // carriedPosById (with drags)
     const info = collectGroupFolds(anchors);
+    const inPlaceIdx = collectInPlaceIndices(hiddenIds);
     if (!info) {
-      // No folding child on screen → nothing to animate, but STILL position-
-      // preserving: carried swap straight to the collapsed scene (never a refit).
-      groupSwapPending = true;
-      finishCollapseSwap(oldPos, new Map(), anchors);
-      return true;
+      // No folding child on screen. With nothing hidden either, carried-swap now.
+      if (inPlaceIdx.size === 0) {
+        groupSwapPending = true;
+        finishCollapseSwap(oldPos, new Map(), anchors);
+        return true;
+      }
+      // Pure Hide: no fold anchors, but hidden nodes fade in place. Fall through to
+      // the tween on the CURRENT payload with the in-place fade set.
     }
-    const { foldingSet, groupMembers, anchorPosByGroup, positions } = info;
+    const positions = info?.positions ?? currentLayoutBuffer() ?? new Float32Array(0);
+    const foldingSet = new Set(info?.foldingSet ?? []);
+    for (const i of inPlaceIdx) foldingSet.add(i);
     const bufA = new Float32Array(positions);
     const bufB = new Float32Array(positions);
     const placedPosById = new Map(); // groupNodeId -> the fold-centroid anchor
-    for (const [groupId, members] of groupMembers) {
-      const a = anchorPosByGroup.get(groupId);
-      placedPosById.set(groupId, { x: a.x, y: a.y });
-      for (const i of members) {
-        bufB[i * 2] = a.x;
-        bufB[i * 2 + 1] = a.y;
+    if (info) {
+      for (const [groupId, members] of info.groupMembers) {
+        const a = info.anchorPosByGroup.get(groupId);
+        placedPosById.set(groupId, { x: a.x, y: a.y });
+        for (const i of members) {
+          bufB[i * 2] = a.x;
+          bufB[i * 2 + 1] = a.y;
+        }
       }
     }
+    // Hidden nodes: bufB stays == bufA (fade + shrink IN PLACE — spec §4 "→ Hidden").
     groupSwapPending = true;
     // The "jump to end" closure used by the abort path AND the interrupt rule.
-    pendingGroupSettle = () => finishCollapseSwap(oldPos, placedPosById, anchors);
+    pendingGroupSettle = () => finishCollapseSwap(oldPos, placedPosById, anchors, hiddenIds);
     runGroupTween({
       bufA,
       bufB,
@@ -1846,7 +1886,7 @@
   // group node placed at the fold centroid and shared nodes carried; apply any
   // deferred restyle exactly once; record the folded children's pre-fold positions
   // for a later expand restore (§3.6).
-  function finishCollapseSwap(oldPos, placedPosById, anchors) {
+  function finishCollapseSwap(oldPos, placedPosById, anchors, hiddenIds = new Set()) {
     pendingGroupSettle = null;
     resetTransientLayoutState();
     applyCarriedScene({ carriedPosById: oldPos ?? new Map(), placedPosById: placedPosById ?? new Map() });
@@ -1856,6 +1896,14 @@
       for (const childId of anchors.keys()) {
         const p = oldPos.get(childId);
         if (p) lastKnownPosById.set(childId, { x: p.x, y: p.y, epoch: coordinateEpoch });
+      }
+    }
+    // SPINE: also cache each newly-HIDDEN node's pre-hide position so a later
+    // Show / Solo-exit fades it back in at the exact prior spot (same epoch).
+    if (hiddenIds instanceof Set && oldPos instanceof Map) {
+      for (const id of hiddenIds) {
+        const p = oldPos.get(id);
+        if (p) lastKnownPosById.set(id, { x: p.x, y: p.y, epoch: coordinateEpoch });
       }
     }
     morphActive = false;
@@ -1873,7 +1921,7 @@
   // FIRST so the revealed children start stacked on the group's last on-screen
   // position, then tween them OUT to their targets (cached prior constellation
   // when same-epoch, else a deterministic golden-angle fan) while fading+growing.
-  function startExpandTween(anchors) {
+  function startExpandTween(anchors, revealedIds = new Set()) {
     // 1. PRE-swap snapshot — the group node IS in the current payload here.
     const oldPos = currentPositionMap() ?? new Map();
     const anchorPosByGroup = new Map(); // groupNodeId -> its last on-screen position
@@ -1881,11 +1929,17 @@
       const p = oldPos.get(groupId);
       if (p) anchorPosByGroup.set(groupId, { x: p.x, y: p.y });
     }
-    // Children start stacked at their group's former spot.
+    // Unfolded children start stacked at their group's former spot; a newly-REVEALED
+    // node starts at its cached prior position (same epoch), else it is OMITTED here
+    // so the carry places it at its neighbour-centroid (spec §4 "→ Normal-from-Hidden").
     const placedPosById = new Map(); // revealedChildId -> anchorPos(itsGroup)
     for (const [childId, groupId] of anchors) {
       const a = anchorPosByGroup.get(groupId);
       if (a) placedPosById.set(childId, { x: a.x, y: a.y });
+    }
+    for (const id of revealedIds) {
+      const cached = lastKnownPosById.get(id);
+      if (cached && cached.epoch === coordinateEpoch) placedPosById.set(id, { x: cached.x, y: cached.y });
     }
     // 2. Carried swap FIRST (camera untouched, shared nodes carried, children on
     // the anchor). Expand's payload is now current — no groupSwapPending needed.
@@ -1893,13 +1947,18 @@
     applyCarriedScene({ carriedPosById: oldPos, placedPosById });
     // 3. Resolve the revealed children against the NEW payload.
     const info = collectGroupFolds(anchors);
-    if (!info) {
-      // No revealed child on screen → the carried swap already stands. Persist the
-      // buffers (RC-E) so later rebuilds don't re-derive scene-baked coords.
+    const revealedIdx = collectInPlaceIndices(revealedIds);
+    if (!info && revealedIdx.size === 0) {
+      // No unfolded/revealed child on screen → the carried swap already stands.
+      // Persist the buffers (RC-E) so later rebuilds don't re-derive scene-baked coords.
       settleGroupTween(payload?.renderGraph?.positions);
       return true;
     }
-    const { foldingSet, groupMembers, anchorPosByGroup: postAnchor, positions } = info;
+    const positions = info?.positions ?? currentLayoutBuffer() ?? new Float32Array(0);
+    const groupMembers = info?.groupMembers ?? new Map();
+    const postAnchor = info?.anchorPosByGroup ?? new Map();
+    const foldingSet = new Set(info?.foldingSet ?? []);
+    for (const i of revealedIdx) foldingSet.add(i);
     const bufA = new Float32Array(positions); // children currently AT the anchor
     const bufB = new Float32Array(positions);
     // 4. Targets: cached prior constellation (same epoch) else golden-angle fan.
@@ -1908,6 +1967,7 @@
       bufB[i * 2] = p.x;
       bufB[i * 2 + 1] = p.y;
     }
+    // Revealed slots stay == bufA (pure fade-in at their cached/neighbour target).
     // 5. Tween on the NEW payload; settle persists activeLayoutBuffer (RC-E).
     pendingGroupSettle = () => settleGroupTween(bufB);
     runGroupTween({
@@ -1917,6 +1977,60 @@
       fadeOut: false,
       onDone: () => pendingGroupSettle?.(),
     });
+    return true;
+  }
+
+  // MIXED (D4): a genuinely two-sided commit (Solo on a stored-Hidden entity; a
+  // bulk level re-target Domain→Sub-domain) — some nodes fold/hide AND others
+  // reveal in ONE change. A true cross-fade needs both node sets alive in one
+  // payload; V1 does a position-preserving CARRIED, NON-animated swap (shared nodes
+  // frozen, camera untouched) — strictly better than today's mixed⇒refit hard cut.
+  // (Sequential OUT-then-IN is a flagged V2.)
+  function applyMixedCarriedSwap({ folded, unfolded, hiddenIds, revealedIds } = {}) {
+    const oldPos = currentPositionMap() ?? new Map();
+    const placedPosById = new Map();
+    // Newly-folded children → their group's on-screen anchor (or member centroid).
+    const info = folded instanceof Map && folded.size > 0 ? collectGroupFolds(folded) : null;
+    if (info) {
+      for (const [groupId, a] of info.anchorPosByGroup) placedPosById.set(groupId, { x: a.x, y: a.y });
+    }
+    // Unfolded children start stacked on their group's last on-screen position.
+    if (unfolded instanceof Map) {
+      const anchorByGroup = new Map();
+      for (const groupId of new Set(unfolded.values())) {
+        const p = oldPos.get(groupId);
+        if (p) anchorByGroup.set(groupId, { x: p.x, y: p.y });
+      }
+      for (const [childId, groupId] of unfolded) {
+        const a = anchorByGroup.get(groupId);
+        if (a) placedPosById.set(childId, { x: a.x, y: a.y });
+      }
+    }
+    // Revealed nodes at their cached prior position (same epoch), else neighbour.
+    if (revealedIds instanceof Set) {
+      for (const id of revealedIds) {
+        const cached = lastKnownPosById.get(id);
+        if (cached && cached.epoch === coordinateEpoch) placedPosById.set(id, { x: cached.x, y: cached.y });
+      }
+    }
+    resetTransientLayoutState();
+    applyCarriedScene({ carriedPosById: oldPos, placedPosById });
+    // Cache the OUT-ids' pre-swap positions (folded children + hidden nodes) so a
+    // later reveal restores them at the exact prior spot.
+    if (folded instanceof Map) {
+      for (const childId of folded.keys()) {
+        const p = oldPos.get(childId);
+        if (p) lastKnownPosById.set(childId, { x: p.x, y: p.y, epoch: coordinateEpoch });
+      }
+    }
+    if (hiddenIds instanceof Set) {
+      for (const id of hiddenIds) {
+        const p = oldPos.get(id);
+        if (p) lastKnownPosById.set(id, { x: p.x, y: p.y, epoch: coordinateEpoch });
+      }
+    }
+    // Persist the carried buffer (RC-E) + restore the style — NO tween, NO refit.
+    settleGroupTween(payload?.renderGraph?.positions);
     return true;
   }
 
