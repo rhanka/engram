@@ -36,14 +36,14 @@
 
 import { cameraToViewProjection } from "./mat4";
 import {
-  BORDER_WIDTH_BOLD,
-  BORDER_WIDTH_NORMAL,
+  borderStrokeWidthPx,
   BOX_FILL,
   BOX_SHAPE_CODE,
   coerceFiniteCoord,
   drawnRadius,
   unitShapeGeometry,
 } from "./render-geometry";
+import { SQUARE_INSET_RATIO } from "./shape-geometry";
 import type { GraphStyleBuffers } from "./types";
 
 type GL2 = WebGL2RenderingContext;
@@ -133,6 +133,12 @@ export interface WebGLShapeFrame {
   /** Coercion centre for non-finite world coords (N1b). */
   centerX?: number;
   centerY?: number;
+  /**
+   * Scale the border stroke with the camera zoom (default false = legacy
+   * screen-space width). On for interactive studio views so outlines stay
+   * proportional to the zoom-scaled node instead of dominating when zoomed out.
+   */
+  scaleBordersWithZoom?: boolean;
 }
 
 export interface WebGLShapeRenderer {
@@ -336,29 +342,60 @@ export function buildShapeInstances(frame: WebGLShapeFrame): ShapeInstanceSet {
     // strokeHalf, carved by an inner disc at radius - strokeHalf) — NOT the old
     // inside-only `radius - width` ring, which under-weighted the outline and
     // (for solid+bold) was fully hidden by the full-radius fill disc.
-    const strokeHalf = strokeHalfWidth(bold, frame.pixelRatio);
+    //
+    // RADIAL offset != PERPENDICULAR width for a flat-faced polygon. A ring
+    // built this way (outer/inner instance at radius±strokeHalf) reads as a
+    // constant-perpendicular-width band ONLY for a disc (apothem == radius);
+    // for a diamond/square/hexagon/triangle the FACE sits inside the
+    // circumradius (or, for square, inside a fixed SQUARE_INSET_RATIO — see
+    // apothemRatio() below), so the same radial offset is foreshortened along
+    // the face normal — the border visibly THINS as the shape gets more
+    // polygonal (bug, × the intended width: circle 1.00, hexagon 0.87,
+    // triangle/star 0.5, diamond 0.71, square 0.88). `effectiveStrokeHalf`
+    // below compensates per family so every shape's PERPENDICULAR border
+    // width lands on a COMMON baseline, fixed at 0.7× the (uncompensated)
+    // square's perpendicular width — i.e. 30% thinner than the old square
+    // border — and THEN applies an additional per-shape thinning
+    // (`SHAPE_BORDER_THIN`) on top of that baseline: circle/hexagon are cut
+    // to 0.5× the baseline (0.308×strokeHalf), diamond/square/star/triangle
+    // to 0.8× (0.493×strokeHalf). So the perpendicular width is no longer
+    // uniform across every family — it is a deliberate TWO-TIER geometry
+    // (smooth-boundary shapes thinner than angular ones), each tier still
+    // uniform within itself.
+    const effectiveStrokeHalf = effectiveStrokeHalfWidth(
+      family,
+      bold,
+      frame.pixelRatio,
+      frame.camera.zoom,
+      frame.scaleBordersWithZoom ?? false,
+    );
 
     if (hollow) {
       // Hollow glyph: a node-colour border RING centred on the drawn radius over
       // a FIXED translucent-white interior (alpha-INDEPENDENT, N10). The ring is
-      // a node-colour disc out to radius + strokeHalf (drawn UNDER) carved by the
-      // translucent-white interior disc at radius - strokeHalf (drawn ON TOP), so
-      // the visible ring spans [radius - strokeHalf, radius + strokeHalf] — the
-      // SAME width AND position Canvas2D strokes. Only the border carries the
-      // node alpha; the interior keeps the fixed white.
-      pushInstance(borderList, cx, cy, radius + strokeHalf, nodeColor[0], nodeColor[1], nodeColor[2], alpha, depth);
-      pushInstance(fillList, cx, cy, Math.max(0, radius - strokeHalf), BOX_FILL[0], BOX_FILL[1], BOX_FILL[2], BOX_FILL[3] / 255, depth);
+      // a node-colour disc out to radius + effectiveStrokeHalf (drawn UNDER)
+      // carved by the translucent-white interior disc at radius -
+      // effectiveStrokeHalf (drawn ON TOP), so the visible ring spans
+      // [radius - effectiveStrokeHalf, radius + effectiveStrokeHalf] — a
+      // per-shape TWO-TIER perpendicular width across shape families (see
+      // above). Only the border carries the node alpha; the interior keeps
+      // the fixed white.
+      pushInstance(borderList, cx, cy, radius + effectiveStrokeHalf, nodeColor[0], nodeColor[1], nodeColor[2], alpha, depth);
+      pushInstance(fillList, cx, cy, Math.max(0, radius - effectiveStrokeHalf), BOX_FILL[0], BOX_FILL[1], BOX_FILL[2], BOX_FILL[3] / 255, depth);
     } else if (bold) {
       // Solid + bold: a darkened-colour border RING (factor 0.62) centred on the
-      // radius, exactly like the Canvas2D solid+bold stroke. The outer darkened
-      // disc (radius + strokeHalf, drawn UNDER) is carved by the node-colour
-      // interior disc at radius - strokeHalf (drawn ON TOP), leaving a centred
-      // [radius - strokeHalf, radius + strokeHalf] ring. (The old code drew the
-      // darkened disc at `radius` UNDER a full-radius node-colour fill, which hid
-      // the border entirely — the worst case of the under-weight bug.)
+      // radius, at the SAME per-shape (two-tier) perpendicular width as the
+      // hollow ring above.
+      // The outer darkened disc (radius + effectiveStrokeHalf, drawn UNDER) is
+      // carved by the node-colour interior disc at radius - effectiveStrokeHalf
+      // (drawn ON TOP), leaving a centred
+      // [radius - effectiveStrokeHalf, radius + effectiveStrokeHalf] ring. (The
+      // old code drew the darkened disc at `radius` UNDER a full-radius
+      // node-colour fill, which hid the border entirely — the worst case of the
+      // under-weight bug.)
       const d = darken(nodeColor);
-      pushInstance(borderList, cx, cy, radius + strokeHalf, d[0], d[1], d[2], alpha, depth);
-      pushInstance(fillList, cx, cy, Math.max(0, radius - strokeHalf), nodeColor[0], nodeColor[1], nodeColor[2], alpha, depth);
+      pushInstance(borderList, cx, cy, radius + effectiveStrokeHalf, d[0], d[1], d[2], alpha, depth);
+      pushInstance(fillList, cx, cy, Math.max(0, radius - effectiveStrokeHalf), nodeColor[0], nodeColor[1], nodeColor[2], alpha, depth);
     } else {
       // Solid fill at node colour + alpha (no border).
       pushInstance(fillList, cx, cy, radius, nodeColor[0], nodeColor[1], nodeColor[2], alpha, depth);
@@ -375,8 +412,10 @@ export function buildShapeInstances(frame: WebGLShapeFrame): ShapeInstanceSet {
  * read the borders slightly THIN. We scale the centred-ring half-width by this
  * factor (~12% thicker, symmetric about the drawn radius). Mirrors the edge boost
  * (WEBGL_STROKE_WEIGHT_BOOST in webgl-edges.ts). Canvas2D (BORDER_WIDTH_* in
- * render-geometry.ts) is untouched — only this WebGL ring widens, lifting the
- * golden border-ink ratio further above its 0.6 floor.
+ * render-geometry.ts) is untouched — only this WebGL ring widens. This boost is
+ * applied BEFORE the per-shape `apothemRatio` compensation below (see
+ * `effectiveStrokeHalfWidth`), which then intentionally brings the net result
+ * back down to a UNIFORM, ~30%-thinner-than-square perpendicular width.
  */
 const WEBGL_OUTLINE_WEIGHT_BOOST = 1.12;
 
@@ -384,8 +423,123 @@ const WEBGL_OUTLINE_WEIGHT_BOOST = 1.12;
  *  a stroke of (bold?BOLD:NORMAL)·PR on the outline, so each side is HALF),
  *  scaled by WEBGL_OUTLINE_WEIGHT_BOOST so the WebGL beta ring reads a touch
  *  HEAVIER than Canvas2D (UAT polish) — Canvas2D's own stroke is unchanged. */
-function strokeHalfWidth(bold: boolean, pixelRatio: number): number {
-  return (((bold ? BORDER_WIDTH_BOLD : BORDER_WIDTH_NORMAL) * pixelRatio) / 2) * WEBGL_OUTLINE_WEIGHT_BOOST;
+function strokeHalfWidth(
+  bold: boolean,
+  pixelRatio: number,
+  zoom = 1,
+  scaleWithZoom = false,
+): number {
+  return (borderStrokeWidthPx(bold, pixelRatio, zoom, scaleWithZoom) / 2) * WEBGL_OUTLINE_WEIGHT_BOOST;
+}
+
+/**
+ * Apothem-per-`a_radius` ratio per shape family (fix: circle/hexagon border
+ * thicker than square/diamond/triangle). The two-disc ring technique scales
+ * each shape's UNIT outline (fixed vertices, computed once at `a_radius = 1`)
+ * radially by `a_radius = radius ± strokeHalf`; since that scale is linear,
+ * a shape's apothem (perpendicular centre-to-face distance) at any `a_radius`
+ * equals `a_radius · apothemUnit`, where `apothemUnit` is the shape's OWN
+ * apothem at `a_radius = 1`. A disc's apothem == its radius (ratio 1); a flat
+ * polygon face sits INSIDE the circumradius, so its ratio is < 1 and the
+ * border reads THINNER there for the SAME radial offset.
+ *
+ * IMPORTANT: this is the apothem-per-`a_radius` ratio, NOT the shape-intrinsic
+ * apothem/circumradius ratio — those coincide for diamond/hexagon/triangle
+ * (`shapePolygonPoints` uses the radius argument directly as each vertex's
+ * distance from centre, so `a_radius` IS the circumradius: cos(45°)/cos(30°)/
+ * cos(60°)), but NOT for square: `shapePolygonPoints(4, r)` insets the square
+ * BEFORE the radius scale (`half = r · SQUARE_INSET_RATIO`, shape-geometry.ts
+ * — a deliberate visual-weight calibration, unrelated to border math), so its
+ * apothem-per-`a_radius` is `SQUARE_INSET_RATIO` (0.88) directly, NOT cos(45°)
+ * (0.707, which is diamond's ratio — a different, non-inset quadrilateral).
+ * Verified numerically against the actual `shapePolygonPoints` output before
+ * coding this. The star's alternating inner/outer vertices have no single
+ * apothem (its concave notches sit much closer to centre than its points), so
+ * it is approximated at the triangle's 0.5 and — like every family here —
+ * clamped to [0.5, 1.0] as a defensive floor/ceiling (a ratio outside that
+ * band would over- or under-compensate wildly for an unexpected shape code).
+ */
+const SHAPE_APOTHEM_RATIO: Readonly<Record<number, number>> = {
+  0: 1.0, // circle: apothem == circumradius (a disc)
+  1: Math.cos(Math.PI / 4), // diamond: regular 4-gon, no inset — cos(45°)
+  2: 0.5, // star: irregular, approximated/clamped
+  3: Math.cos(Math.PI / 6), // hexagon: regular 6-gon, no inset — cos(30°)
+  4: SQUARE_INSET_RATIO, // square: apothem-per-a_radius IS the inset (0.88), NOT cos(45°)
+  6: Math.cos(Math.PI / 3), // triangle: regular 3-gon, no inset — cos(60°)
+};
+
+/** Apothem-per-`a_radius` ratio for a shape family, clamped to [0.5, 1.0]. */
+function apothemRatio(family: number): number {
+  const ratio = SHAPE_APOTHEM_RATIO[family] ?? 1.0;
+  return Math.min(1.0, Math.max(0.5, ratio));
+}
+
+/**
+ * Target UNIFORM perpendicular half-width, as a fraction of the RADIAL
+ * `strokeHalf` a disc would draw at: 0.7 × today's square apothem ratio —
+ * i.e. 0.7 × the perpendicular half-width today's SQUARE already draws (its
+ * apothem-per-`a_radius` ratio is `SQUARE_INSET_RATIO`, 0.88 — see above), so
+ * the new uniform border is 30% THINNER than the current square, and (via
+ * `apothemRatio` above) identical on every other shape family instead of
+ * varying 0.50×–1.00× by shape.
+ * `effectiveStrokeHalf = strokeHalf · BORDER_PERP_SCALE / apothemRatio(family)`
+ * — dividing by the family's ratio undoes exactly the foreshortening that
+ * ratio causes, so every family lands on the same BORDER_PERP_SCALE·strokeHalf
+ * perpendicular width. NOTE: this uniform baseline is this constant's OWN
+ * effect only — `effectiveStrokeHalfWidth` below then applies a further
+ * per-shape `SHAPE_BORDER_THIN` multiplier on top, so the FINAL perpendicular
+ * width is a two-tier (not fully uniform) geometry; see that lookup's doc.
+ */
+const BORDER_PERP_SCALE = 0.7 * SQUARE_INSET_RATIO; // 0.7 · 0.88 = 0.616
+
+/**
+ * Per-shape THINNING multiplier applied ON TOP of the uniform
+ * `BORDER_PERP_SCALE / apothemRatio` compensation above (user request,
+ * 2026-07-13: the uniform 0.616×strokeHalf ring still read too heavy —
+ * particularly on the smooth-boundary families — and the user asked for it
+ * thinner on a per-shape basis, NOT uniformly). This does NOT undo the
+ * apothem compensation (that stays, so every family is still foreshortened
+ * back to a common baseline before this extra per-shape cut is applied); it
+ * only scales that already-uniform baseline down, differently per shape:
+ *  - circle (0) / hexagon (3): × 0.5  → 0.616 × 0.5 = 0.308 × strokeHalf
+ *  - diamond (1) / square (4): × 0.8  → 0.616 × 0.8 = 0.493 × strokeHalf
+ *  - star (2) / triangle (6):  × 0.8  (NOT specified by the user request —
+ *    defaulted to the same 0.8 as the other angular shapes, i.e. grouped with
+ *    diamond/square rather than left uniform or given a bespoke value)
+ * Any family code missing from the table (defensive) falls back to × 1 (no
+ * extra thinning beyond the existing apothem compensation).
+ */
+const SHAPE_BORDER_THIN: Readonly<Record<number, number>> = {
+  0: 0.5, // circle
+  3: 0.5, // hexagon
+  1: 0.8, // diamond
+  4: 0.8, // square
+  2: 0.8, // star — user-unspecified, defaulted to the angular-shape value
+  6: 0.8, // triangle — user-unspecified, defaulted to the angular-shape value
+};
+
+/** Per-shape border-thinning multiplier, defaulting to 1 (no thinning) for
+ *  any family code not present in `SHAPE_BORDER_THIN`. */
+function borderThinFactor(family: number): number {
+  return SHAPE_BORDER_THIN[family] ?? 1;
+}
+
+/**
+ * The FINAL per-shape perpendicular stroke half-width used to build the
+ * border ring (exported so tests can assert the fix directly instead of
+ * duplicating the family/BORDER_PERP_SCALE/SHAPE_BORDER_THIN arithmetic).
+ */
+export function effectiveStrokeHalfWidth(
+  family: number,
+  bold: boolean,
+  pixelRatio: number,
+  zoom = 1,
+  scaleWithZoom = false,
+): number {
+  return (
+    ((strokeHalfWidth(bold, pixelRatio, zoom, scaleWithZoom) * BORDER_PERP_SCALE) / apothemRatio(family)) *
+    borderThinFactor(family)
+  );
 }
 
 function pushInstance(

@@ -140,6 +140,19 @@ export interface GraphStyleBuffers {
    * via render-geometry.flowPortEdgeGeometry).
    */
   edgeRouteStyles?: Uint8Array;
+  /**
+   * Optional per-edge ALPHA SHAPE — three multipliers of the edge's BASE alpha
+   * (`edgeColors[e].a`) sampled along the edge at t=0 (source), t=0.5 (mid) and
+   * t=1 (target). 3 bytes per edge `[m0, mMid, m1]`, each 0..255 encoding a
+   * fraction 0..1. The WebGL2 instanced-edge fragment shader interpolates the
+   * shape PIECEWISE-LINEARLY along the edge (mix(m0,mMid) over the first half,
+   * mix(mMid,m1) over the second) and MULTIPLIES the base alpha by it — a
+   * separate multiplier from the base, so any dim/hover/merge scaling of
+   * `edgeColors.a` composes automatically. Additive & golden-stable: absent ⇒
+   * every edge uploads the uniform shape (1,1,1), byte-identical to before.
+   * WebGL2 only for now; the Canvas2D fallback keeps the uniform base alpha.
+   */
+  edgeAlphaShape?: Uint8Array;
 }
 
 export interface GraphStyleDefaults {
@@ -255,6 +268,14 @@ export interface GraphRendererOptions {
    * match the policy's measured collision AABBs (SPEC_GITFLOW_LABELS I1/I4).
    */
   boxBaseHeightPx?: number;
+  /**
+   * Scale node/box border strokes with the camera zoom (default false = legacy
+   * screen-space width, byte-identical goldens & existing consumers). Interactive
+   * views (the studio) set this true so a bordered node's outline stays
+   * proportional to its zoom-scaled radius instead of over-dominating when zoomed
+   * out. At zoom=1 the width equals the legacy value, so it is a no-op there.
+   */
+  scaleBordersWithZoom?: boolean;
   /**
    * INTERNAL CANARY (B1 migration Phase 1). When true AND the active backend is
    * WebGL2, node glyphs are drawn with the new INSTANCED-SHAPE path

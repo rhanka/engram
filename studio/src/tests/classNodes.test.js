@@ -10,6 +10,7 @@ import {
   communityNodeId,
   mintCommunityNodeIds,
   nearestVisibleAncestor,
+  readFoldAnchors,
 } from "../lib/classNodes.js";
 import { buildScene, computeDegrees, computeGodClass } from "../lib/graphAdapter.js";
 
@@ -780,5 +781,77 @@ describe("B2 — T10 id-collision safety (A2, NORMATIVE)", () => {
     for (const [, count] of idCounts) expect(count).toBe(1);
     // The decoy real node still exists with its original id.
     expect(out.nodes.find((n) => n.id === "community-node:People").label).toBe("Decoy");
+  });
+});
+
+/* ===========================================================================
+ * Collapse/expand ANIMATION — fold-anchor metadata exposure (additive).
+ *
+ * applyGroupCollapse surfaces, for the studio's collapse/expand tween, each
+ * hidden (folded) node id → its group-node ANCHOR (the nearest collapsed
+ * ancestor). It is attached NON-ENUMERABLY and read only via readFoldAnchors, so
+ * no existing caller/test can observe it.
+ * ======================================================================== */
+describe("applyGroupCollapse — fold-anchor metadata (readFoldAnchors)", () => {
+  it("maps every folded descendant to its nearest collapsed ancestor (multi-level)", () => {
+    const g = injectedTaxonomyGraph();
+    // Collapse the intermediate class:Person → its whole subtree folds into it:
+    // class:Character, class:Villain (sub-classes) + holmes, watson, moriarty.
+    const out = applyOntologyCollapse(g, taxonomyHierarchies(), {
+      collapsedClassIds: ["class:Person"],
+    });
+    const anchors = readFoldAnchors(out);
+    expect(anchors).toBeInstanceOf(Map);
+    // Every hidden node folds into class:Person (the collapse target).
+    expect(anchors.get("holmes")).toBe("class:Person");
+    expect(anchors.get("watson")).toBe("class:Person");
+    expect(anchors.get("moriarty")).toBe("class:Person");
+    expect(anchors.get("class:Character")).toBe("class:Person");
+    expect(anchors.get("class:Villain")).toBe("class:Person");
+    // The target itself is visible, never folded into itself.
+    expect(anchors.has("class:Person")).toBe(false);
+    // Non-folded nodes (Place subtree) carry no anchor.
+    expect(anchors.has("baker")).toBe(false);
+    // Deterministic: same input → identical mapping.
+    const again = readFoldAnchors(
+      applyOntologyCollapse(g, taxonomyHierarchies(), { collapsedClassIds: ["class:Person"] }),
+    );
+    expect([...again.entries()].sort()).toEqual([...anchors.entries()].sort());
+  });
+
+  it("attributes each folded node to the NEAREST collapsed ancestor when nested", () => {
+    const g = injectedTaxonomyGraph();
+    // Collapse BOTH class:Person and its child class:Character. holmes/watson are
+    // under class:Character (nearer) → they fold into Character, not Person.
+    const out = applyOntologyCollapse(g, taxonomyHierarchies(), {
+      collapsedClassIds: ["class:Person", "class:Character"],
+    });
+    const anchors = readFoldAnchors(out);
+    expect(anchors.get("holmes")).toBe("class:Character");
+    expect(anchors.get("watson")).toBe("class:Character");
+    // moriarty (under class:Villain, not itself collapsed) folds to Person.
+    expect(anchors.get("moriarty")).toBe("class:Person");
+  });
+
+  it("is non-enumerable — invisible to spread / Object.keys / toEqual", () => {
+    const g = injectedTaxonomyGraph();
+    const out = applyOntologyCollapse(g, taxonomyHierarchies(), {
+      collapsedClassIds: ["class:Character"],
+    });
+    // The metadata does not leak into the enumerable graph shape.
+    expect(Object.keys(out)).toEqual(["nodes", "links"]);
+    const spread = { ...out };
+    expect(readFoldAnchors(spread).size).toBe(0);
+    // Still readable on the original object.
+    expect(readFoldAnchors(out).get("holmes")).toBe("class:Character");
+  });
+
+  it("returns an empty map for a graph with no fold metadata (fast path)", () => {
+    expect(readFoldAnchors(taxonomyGraph()).size).toBe(0);
+    expect(readFoldAnchors(null).size).toBe(0);
+    expect(readFoldAnchors(undefined).size).toBe(0);
+    // The engine fast-path (nothing collapsed) returns the input unchanged.
+    const g = injectedTaxonomyGraph();
+    expect(readFoldAnchors(applyGroupCollapse(g, { collapseTargets: [] })).size).toBe(0);
   });
 });

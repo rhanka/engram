@@ -93,6 +93,7 @@ layout(location = 4) in vec4 a_color;      // instance: rgba (0..1)
 layout(location = 5) in float a_arcStart;  // instance: arc-length at p0 (device px)
 layout(location = 6) in float a_dashPeriod;// instance: dash on+off period (0 = solid)
 layout(location = 7) in float a_dashOn;    // instance: dash on length (device px)
+layout(location = 8) in vec3 a_shape;      // instance: alpha multipliers at t=0 / 0.5 / 1 (0..1)
 
 uniform vec2 u_viewport;
 
@@ -103,6 +104,7 @@ out vec4 v_color;
 out float v_arc;       // arc-length at this fragment (device px) for dashing
 out float v_dashPeriod;
 out float v_dashOn;
+out vec3 v_shape;      // along-edge alpha multipliers (m0, mMid, m1)
 
 void main() {
   vec2 d = a_p1 - a_p0;
@@ -142,6 +144,7 @@ void main() {
   v_arc = a_arcStart + along; // arc-length accumulates along the polyline
   v_dashPeriod = a_dashPeriod;
   v_dashOn = a_dashOn;
+  v_shape = a_shape;
 
   vec2 clip = vec2(screen.x * 2.0 / u_viewport.x - 1.0, 1.0 - screen.y * 2.0 / u_viewport.y);
   // Edges sit BEHIND every node (Canvas2D draws all edges before all nodes).
@@ -158,6 +161,7 @@ in vec4 v_color;
 in float v_arc;
 in float v_dashPeriod;
 in float v_dashOn;
+in vec3 v_shape;
 out vec4 outColor;
 
 void main() {
@@ -214,12 +218,26 @@ void main() {
     if (coverage <= 0.0) discard;
   }
 
+  // ALONG-EDGE ALPHA SHAPE (configurable edge-transparency gradient). tt is the
+  // 0..1 parameter from the source cap (v_local.x = -v_halfLen) to the target
+  // cap (+v_halfLen). The shape is PIECEWISE-LINEAR: mix(m0,mMid) over the first
+  // half, mix(mMid,m1) over the second. Default shape (1,1,1) ⇒ sh == 1 (uniform,
+  // byte-identical to before this feature); the studio drives it per mode
+  // (dense/inverse/mid/flat) to fade an edge toward its dense endpoint / the
+  // middle. It MULTIPLIES the base alpha, so dim/hover/merge (which only scale
+  // v_color.a) compose automatically.
+  float tt = clamp((v_local.x + v_halfLen) / (2.0 * v_halfLen), 0.0, 1.0);
+  float sh = tt < 0.5
+    ? mix(v_shape.x, v_shape.y, tt * 2.0)
+    : mix(v_shape.y, v_shape.z, (tt - 0.5) * 2.0);
+
   // PREMULTIPLIED alpha output (paired with blendFunc(ONE, ONE_MINUS_SRC_ALPHA)).
-  // The effective alpha is the edge alpha times the analytic coverage; emit
-  // rgb·a so the framebuffer stays premultiplied (premultipliedAlpha:true). The
-  // old straight output + SRC_ALPHA factor under-accumulated the framebuffer
-  // alpha (squared coverage), washing alpha<1 edges out + dark-fringing AA rims.
-  float a = v_color.a * coverage;
+  // The effective alpha is the edge alpha times the analytic coverage times the
+  // along-edge shape; emit rgb·a so the framebuffer stays premultiplied
+  // (premultipliedAlpha:true). The old straight output + SRC_ALPHA factor
+  // under-accumulated the framebuffer alpha (squared coverage), washing alpha<1
+  // edges out + dark-fringing AA rims.
+  float a = v_color.a * coverage * sh;
   outColor = vec4(v_color.rgb * a, a);
 }
 `;
@@ -272,8 +290,8 @@ void main() {
 }
 `;
 
-/** Floats per capsule instance. p0(2)+p1(2)+halfWidth(1)+color(4)+arcStart(1)+period(1)+on(1) = 12 */
-export const CAPSULE_FLOATS_PER_INSTANCE = 12;
+/** Floats per capsule instance. p0(2)+p1(2)+halfWidth(1)+color(4)+arcStart(1)+period(1)+on(1)+shape(3) = 15 */
+export const CAPSULE_FLOATS_PER_INSTANCE = 15;
 /** Floats per arrow instance. tip(2)+dir(2)+length(1)+color(4) = 9 */
 export const ARROW_FLOATS_PER_INSTANCE = 9;
 
@@ -423,6 +441,16 @@ export function buildEdgeInstances(frame: WebGLEdgeFrame): EdgeInstanceSet {
     const dashPeriod = dash ? dash[0] + dash[1] : 0;
     const dashOn = dash ? dash[0] : 0;
 
+    // Per-edge ALPHA SHAPE (3 multipliers at t=0 / 0.5 / 1, 0..255 → 0..1). Absent
+    // ⇒ the uniform (1,1,1) shape, so the emitted instances are byte-identical to
+    // before this feature. Keyed by the DATA edge index (source→target); the
+    // studio never sets a reversed flow-port route + a shape together, so the
+    // shape orientation always matches the drawn direction.
+    const shapeBuf = style?.edgeAlphaShape;
+    const s0 = shapeBuf ? (shapeBuf[edgeIndex * 3] ?? 255) / 255 : 1;
+    const sMid = shapeBuf ? (shapeBuf[edgeIndex * 3 + 1] ?? 255) / 255 : 1;
+    const s1 = shapeBuf ? (shapeBuf[edgeIndex * 3 + 2] ?? 255) / 255 : 1;
+
     // Tessellate the (clipped) drawn polyline and emit one capsule per segment,
     // accumulating arc-length so dashes are continuous across curve segments.
     const polyline = tessellateEdge(geom, CURVE_SEGMENTS);
@@ -438,6 +466,7 @@ export function buildEdgeInstances(frame: WebGLEdgeFrame): EdgeInstanceSet {
         arc,
         dashPeriod,
         dashOn,
+        s0, sMid, s1,
       );
       arc += Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
     }
@@ -528,7 +557,8 @@ function createCapsulePipeline(gl: GL2): CapsulePipeline {
   gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
   gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuffer);
-  // location 1 a_p0, 2 a_p1, 3 a_halfWidth, 4 a_color, 5 a_arcStart, 6 a_dashPeriod, 7 a_dashOn
+  // location 1 a_p0, 2 a_p1, 3 a_halfWidth, 4 a_color, 5 a_arcStart, 6 a_dashPeriod,
+  // 7 a_dashOn, 8 a_shape (vec3 along-edge alpha multipliers)
   const layout: Array<[number, number, number]> = [
     [1, 2, 0],
     [2, 2, 2 * 4],
@@ -537,6 +567,7 @@ function createCapsulePipeline(gl: GL2): CapsulePipeline {
     [5, 1, 9 * 4],
     [6, 1, 10 * 4],
     [7, 1, 11 * 4],
+    [8, 3, 12 * 4],
   ];
   for (const [loc, size, offset] of layout) {
     gl.enableVertexAttribArray(loc);
@@ -653,6 +684,21 @@ export interface CapsuleInstanceView {
   arcStart: number;
   dashPeriod: number;
   dashOn: number;
+  /** Along-edge alpha multipliers at t=0 / 0.5 / 1 (0..1); (1,1,1) = uniform. */
+  shape: [number, number, number];
+}
+
+/**
+ * The along-edge alpha multiplier the capsule fragment shader samples at `tt`
+ * (0 = source, 1 = target). PIECEWISE-LINEAR across the mid control point,
+ * IDENTICAL to the `sh` computed in CAPSULE_FRAGMENT_SHADER — exported so the
+ * geometry-parity tests can assert the emitted shape without a GPU. `shape`
+ * values are fractions in [0,1]; the default (1,1,1) returns 1 for every `tt`.
+ */
+export function alphaShapeAt(shape: readonly [number, number, number], tt: number): number {
+  const t = Math.min(1, Math.max(0, tt));
+  const [m0, mMid, m1] = shape;
+  return t < 0.5 ? m0 + (mMid - m0) * (t * 2) : mMid + (m1 - mMid) * ((t - 0.5) * 2);
 }
 
 export function decodeCapsule(list: number[], n: number): CapsuleInstanceView {
@@ -665,6 +711,7 @@ export function decodeCapsule(list: number[], n: number): CapsuleInstanceView {
     arcStart: list[o + 9] ?? 0,
     dashPeriod: list[o + 10] ?? 0,
     dashOn: list[o + 11] ?? 0,
+    shape: [list[o + 12] ?? 1, list[o + 13] ?? 1, list[o + 14] ?? 1],
   };
 }
 
