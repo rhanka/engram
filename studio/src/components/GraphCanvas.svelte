@@ -1,5 +1,5 @@
 <script>
-  import { onDestroy, onMount, tick } from "svelte";
+  import { onDestroy, onMount, tick, untrack } from "svelte";
   import { Button, ButtonGroup, IconButton, Popover, Switch } from "@sentropic/design-system-svelte";
   import { createGraphRenderer, drawBoxLabels2D } from "@sentropic/graph";
   import { solveForce, terminateForceWorker } from "../lib/forceLayoutClient.js";
@@ -198,9 +198,11 @@
   let colorMode = $state(COLOR_BY_FOLDER);
   // The Color-by options exposed by the segmented control.
   const COLOR_MODES = [
-    { id: COLOR_BY_FOLDER, label: "Folder" },
-    { id: COLOR_BY_LAYER, label: "Layer" },
-    { id: COLOR_BY_CHURN, label: "Churn" },
+    // graphify terms (not codeflow's code-graph vocabulary): community/container
+    // → Communauté, typed layer / node_type → Ontologie, degree heat → Degré.
+    { id: COLOR_BY_FOLDER, label: "Communauté" },
+    { id: COLOR_BY_LAYER, label: "Ontologie" },
+    { id: COLOR_BY_CHURN, label: "Degré" },
   ];
 
   // Representation-polish remark 4: the whole layout/spacing/display toolbar
@@ -1617,7 +1619,12 @@
     // A selection/focus appearing supersedes any pending pre-selection hover
     // dwell — updateSelection() rebuilds the (selection-dimmed) style itself.
     hoverIntent.cancel();
-    updateSelection();
+    // untrack: updateSelection → rebuildPayload READS hoveredNodeId (to style the
+    // hovered node). Without untrack, Svelte registers hoveredNodeId as a hidden
+    // dependency of THIS effect, so once a selection exists every hover re-fires
+    // it → rebuildPayload → clearHoveredEdge, killing edge hover one tick after
+    // it is set. Depend ONLY on the explicit selectedIds/focusId reads above.
+    untrack(() => updateSelection());
   });
 
   $effect(() => {
@@ -1627,7 +1634,10 @@
     // (updateGraph already did the first render with the defaults).
     curvedLinks;
     colorMode;
-    updateDisplayStyle();
+    // Same hidden-dependency guard as the selection effect: updateDisplayStyle →
+    // rebuildPayload reads hoveredNodeId, so untrack it to depend ONLY on the
+    // curvedLinks/colorMode reads above (else a hover re-fires this re-style).
+    untrack(() => updateDisplayStyle());
   });
 
   $effect(() => {
@@ -1800,8 +1810,8 @@
                   {/each}
                 </ButtonGroup>
                 {#if colorMode === COLOR_BY_CHURN}
-                  <div class="churn-legend" aria-label="Churn colour legend">
-                    <span>Low</span><span class="churn-ramp"></span><span>High</span>
+                  <div class="churn-legend" aria-label="Degré colour legend">
+                    <span>Faible</span><span class="churn-ramp"></span><span>Élevé</span>
                   </div>
                 {/if}
                 <Switch

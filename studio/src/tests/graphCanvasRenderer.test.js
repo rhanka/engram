@@ -397,7 +397,7 @@ describe("GraphCanvas Curved-links + Color-by controls (Lots 4/5)", () => {
     // Color-by segmented control (DS ButtonGroup over COLOR_MODES) + Churn legend.
     expect(gated).toContain("COLOR_MODES");
     expect(gated).toMatch(/onclick=\{\(\) => selectColorMode\(mode\.id\)\}/);
-    expect(gated).toContain('aria-label="Churn colour legend"');
+    expect(gated).toContain('aria-label="Degré colour legend"');
     // Curved-links DS Switch.
     expect(gated).toContain("Switch");
     expect(gated).toContain('label="Curved links"');
@@ -434,8 +434,10 @@ describe("GraphCanvas Curved-links + Color-by controls (Lots 4/5)", () => {
 
   it("a control change re-styles LIVE (rebuild + applyPayloadNoFit, no morph/fit)", () => {
     const source = graphCanvasSource();
-    // Reactive effect reads both deps and calls the live re-style.
-    expect(source).toMatch(/curvedLinks;\s*\n\s*colorMode;\s*\n\s*updateDisplayStyle\(\);/);
+    // Reactive effect reads both deps and calls the live re-style. The imperative
+    // work is untrack()ed so the effect depends ONLY on curvedLinks/colorMode (not
+    // on hoveredNodeId, which rebuildPayload reads — see the edge-hover fix).
+    expect(source).toMatch(/curvedLinks;\s*\n\s*colorMode;[\s\S]*?untrack\(\(\) => updateDisplayStyle\(\)\);/);
     const restyle = source.slice(
       source.indexOf("function updateDisplayStyle"),
       source.indexOf("function toggleCurvedLinks"),
