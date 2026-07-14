@@ -787,17 +787,12 @@ export function drawBoxLabels2D(context: Graph2DContext, draws: readonly BoxText
     if (d.halo) {
       context.save();
       context.shadowColor = d.haloColor ?? "rgba(0, 0, 0, 0)";
-      context.shadowBlur = Math.max(2, d.height * 0.28);
-      context.fillStyle = d.haloColor ?? "rgba(0, 0, 0, 0)";
+      context.shadowBlur = Math.max(2, Math.min(dims.w, dims.h) * 0.55);
+      // The source shape is the normal box fill; shadowBlur supplies the glow.
+      // Drawing the unscaled shape avoids a second hard-edged contour.
+      context.fillStyle = HOLLOW_FILL_STYLE;
       context.beginPath();
-      drawRoundedBox(
-        context,
-        d.centerX,
-        d.centerY,
-        dims.w * 1.65,
-        dims.h * 1.65,
-        dims.corner * 1.65,
-      );
+      drawRoundedBox(context, d.centerX, d.centerY, dims.w, dims.h, dims.corner);
       context.fill();
       context.restore();
     }
@@ -1057,20 +1052,23 @@ function drawFallback2D(
   }
   context.setLineDash([]);
 
-  // Canvas2D halo pass: shadowBlur gives the fallback a genuinely soft glow,
-  // while the expanded filled shape keeps the same geometry contract as the
-  // WebGL2 approximation. It runs before every real node fill, so node type /
-  // community colours remain the foreground and no contour is introduced.
+  // Canvas2D halo pass: draw the normal node shape with a primary-colour
+  // shadowBlur. The foreground node pass below remains responsible for the
+  // node's actual fill/stroke, so there is no expanded hard-edged contour or
+  // node-colour replacement.
   const haloColor = [0, 0, 0, 0] as const;
   for (let nodeIndex = 0; nodeIndex < state.nodeIds.length; nodeIndex += 1) {
     if (state.style?.haloMask?.[nodeIndex] !== 1) continue;
     const point = screenPoint(state.positions, nodeIndex, camera, canvas);
     const shape = state.style?.nodeShapes[nodeIndex] ?? 0;
+    const colorOffset = nodeIndex * 4;
+    const nodeColor = cssColor(state.style?.nodeColors, colorOffset, DEFAULT_NODE_COLOR);
+    const hollow = (state.style?.nodeFills?.[nodeIndex] ?? 0) === 1;
     const glow = cssColor(state.style?.haloColor, 0, haloColor, 0.28);
     context.save();
     context.shadowColor = glow;
     context.shadowBlur = Math.max(2, (geometry.radii[nodeIndex] ?? 1) * 0.55);
-    context.fillStyle = glow;
+    context.fillStyle = hollow ? HOLLOW_FILL_STYLE : nodeColor;
     if (shape === BOX_SHAPE) {
       const label = state.style?.nodeLabels?.[nodeIndex] ?? "";
       const boxHeight = boxBaseHeightPx * pixelRatio * camera.zoom;
@@ -1079,13 +1077,13 @@ function drawFallback2D(
         context,
         point.x,
         point.y,
-        dims.w * 1.65,
-        dims.h * 1.65,
-        dims.corner * 1.65,
+        dims.w,
+        dims.h,
+        dims.corner,
       );
     } else {
       context.beginPath();
-      drawNodeShapePath(context, point.x, point.y, (geometry.radii[nodeIndex] ?? 1) * 1.65, shape);
+      drawNodeShapePath(context, point.x, point.y, geometry.radii[nodeIndex] ?? 1, shape);
     }
     context.fill();
     context.restore();
