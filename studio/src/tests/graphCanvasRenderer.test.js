@@ -830,3 +830,77 @@ describe("GraphCanvas collapse/expand group transition", () => {
     expect(source).toMatch(/cancelMergeFrame\(\);\s*\n\s*cancelGroupTweenFrame\(\);/);
   });
 });
+
+// --- 4-STATE visibility: unified transition routing (Hide/Show/Solo) ----------
+// The SPINE: Hide/Solo route through the SAME carry-over tween as group/ungroup
+// via a content-derived visibility delta. jsdom has no WebGL, so (as elsewhere)
+// we assert the .svelte SOURCE wires the extended descriptor + the in-place fade.
+describe("GraphCanvas 4-state visibility transition (Hide/Show/Solo)", () => {
+  const driverSource = (source) =>
+    source.slice(
+      source.indexOf("// --- Collapse/expand GROUP transition driver"),
+      source.indexOf("// Stable content signature of a scene"),
+    );
+
+  it("documents the UNIFIED descriptor shape on the prop", () => {
+    const source = graphCanvasSource();
+    expect(source).toMatch(/hiddenIds: Set<nodeId>, revealedIds: Set<nodeId>, kind: "out"\|"in"\|"mixed"/);
+    expect(source).toMatch(/groupTransition = null,/);
+  });
+
+  it("routes by KIND: out→collapse(+hide), in→expand(+reveal), mixed→carried swap", () => {
+    const source = graphCanvasSource();
+    const driver = driverSource(source);
+    expect(driver).toMatch(/if \(transition\.kind === "out"\) return startCollapseTween\(folded, hiddenIds\);/);
+    expect(driver).toMatch(/if \(transition\.kind === "in"\) return startExpandTween\(unfolded, revealedIds\);/);
+    expect(driver).toMatch(/if \(transition\.kind === "mixed"\)\s*\n\s*return applyMixedCarriedSwap\(/);
+    // The unknown/absent path still returns false (refit fallback).
+    expect(driver).toMatch(/function tryStartGroupTransition[\s\S]{0,300}return false;/);
+  });
+
+  it("hidden nodes fade IN PLACE (bufB stays == bufA) — never toward an anchor", () => {
+    const source = graphCanvasSource();
+    const driver = driverSource(source);
+    // The in-place index helper resolves display-hidden/revealed ids on screen.
+    expect(driver).toContain("function collectInPlaceIndices");
+    // startCollapseTween unions the fold set with the in-place hidden indices…
+    expect(driver).toMatch(/function startCollapseTween\(anchors, hiddenIds = new Set\(\)\)/);
+    expect(driver).toMatch(/const inPlaceIdx = collectInPlaceIndices\(hiddenIds\);/);
+    expect(driver).toMatch(/for \(const i of inPlaceIdx\) foldingSet\.add\(i\);/);
+    // …and NEVER overwrites the hidden slots in bufB (they stay == bufA).
+    expect(driver).toMatch(/Hidden nodes: bufB stays == bufA/);
+  });
+
+  it("revealed nodes fade in at their CACHED same-epoch position (else neighbour)", () => {
+    const source = graphCanvasSource();
+    const driver = driverSource(source);
+    expect(driver).toMatch(/function startExpandTween\(anchors, revealedIds = new Set\(\)\)/);
+    expect(driver).toMatch(/for \(const id of revealedIds\) \{\s*\n\s*const cached = lastKnownPosById\.get\(id\);/);
+    expect(driver).toMatch(/const revealedIdx = collectInPlaceIndices\(revealedIds\);/);
+    expect(driver).toMatch(/for \(const i of revealedIdx\) foldingSet\.add\(i\);/);
+  });
+
+  it("finishCollapseSwap caches each HIDDEN node's pre-hide position (for later reveal)", () => {
+    const source = graphCanvasSource();
+    expect(source).toMatch(/function finishCollapseSwap\(oldPos, placedPosById, anchors, hiddenIds = new Set\(\)\)/);
+    const settle = source.slice(
+      source.indexOf("function finishCollapseSwap"),
+      source.indexOf("function startExpandTween"),
+    );
+    expect(settle).toMatch(/for \(const id of hiddenIds\) \{[\s\S]{0,120}lastKnownPosById\.set\(id/);
+  });
+
+  it("the MIXED path is a carried NON-animated swap — never a refit (D4)", () => {
+    const source = graphCanvasSource();
+    const mixed = source.slice(
+      source.indexOf("function applyMixedCarriedSwap"),
+      source.indexOf("// Expand targets"),
+    );
+    expect(mixed).toContain("applyCarriedScene({ carriedPosById: oldPos, placedPosById })");
+    expect(mixed).toContain("settleGroupTween(payload?.renderGraph?.positions)");
+    // No tween, no hard refit.
+    expect(mixed).not.toContain("runGroupTween");
+    expect(mixed).not.toMatch(/resetLayoutState\(\);\s*\n\s*updateGraph\(\);/);
+    expect(mixed).not.toMatch(/(?<!animate)fitAndRender\(/);
+  });
+});
