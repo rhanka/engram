@@ -166,6 +166,101 @@ export function computeGroupTransition({ prevFoldAnchors, nextFoldAnchors } = {}
 }
 
 /* ===========================================================================
+ * UNIFIED scene transition (4-state visibility) — the CONTENT-DERIVED descriptor.
+ *
+ * The a2cf207 fold-anchor delta is BLIND to Hide/Solo (they are a scene filter,
+ * not a fold), so a naive Hide yields an empty delta ⇒ null ⇒ GraphCanvas refits,
+ * violating the sacred no-refit invariant. This generalizes `computeGroupTransition`
+ * with a content-derived VISIBILITY delta (the display-hidden id masks) so Hide /
+ * Show / Solo route through the SAME carry-over tween as group/ungroup:
+ *
+ *   { folded, unfolded, hiddenIds, revealedIds, kind } | null
+ *     folded      : Map<childId, groupId>  newly folded  → collapse (anchor)
+ *     unfolded    : Map<childId, groupId>  newly revealed-from-group → expand
+ *     hiddenIds   : Set<nodeId>            newly display-hidden  → fade OUT in place
+ *     revealedIds : Set<nodeId>            newly display-shown   → fade IN at target
+ *     kind        : "out" | "in" | "mixed"
+ *   null ⇒ nothing to animate OR the graph object reference changed (generation gate).
+ *
+ * Three MANDATORY guards (D3), each closing a real classification trap:
+ *   (a) ANCHOR-ID exclusion — a plain collapse makes the group node APPEAR at swap
+ *       time; without \ anchorIds it could slip into revealedIds → "mixed" and
+ *       silently DEGRADE a shipped pure collapse to a non-animated swap.
+ *   (b) ∩ SCENE-IDS — a display-hidden node whose entity is then GROUPED leaves the
+ *       collapsed graph entirely; the raw mask diff would misclassify it as
+ *       "revealed". Requiring presence in the target scene kills that.
+ *   (c) GENERATION gate — a model switch changes the graph object wholesale; the
+ *       fold + hidden diffs would then straddle two unrelated coordinate spaces.
+ *       `generationChanged` ⇒ null (hard-cut refit, the correct behaviour there).
+ *
+ * @param {object} args
+ * @param {Map<string,string>} [args.prevFoldAnchors]
+ * @param {Map<string,string>} [args.nextFoldAnchors]
+ * @param {Set<string>} [args.prevHiddenIds]  DISPLAY-hidden mask BEFORE the change.
+ * @param {Set<string>} [args.nextHiddenIds]  DISPLAY-hidden mask AFTER the change.
+ * @param {Set<string>} [args.prevSceneIds]   pre-time-filter visible ids BEFORE.
+ * @param {Set<string>} [args.nextSceneIds]   pre-time-filter visible ids AFTER.
+ * @param {boolean} [args.generationChanged]  graph object reference changed.
+ * @returns {{ folded: Map<string,string>, unfolded: Map<string,string>,
+ *   hiddenIds: Set<string>, revealedIds: Set<string>, kind: "out"|"in"|"mixed" }|null}
+ */
+export function computeSceneTransition({
+  prevFoldAnchors,
+  nextFoldAnchors,
+  prevHiddenIds,
+  nextHiddenIds,
+  prevSceneIds,
+  nextSceneIds,
+  generationChanged = false,
+} = {}) {
+  // Guard (c): never diff across a wholesale graph swap (model switch).
+  if (generationChanged) return null;
+
+  const prevFold = prevFoldAnchors instanceof Map ? prevFoldAnchors : new Map();
+  const nextFold = nextFoldAnchors instanceof Map ? nextFoldAnchors : new Map();
+  const prevHidden = prevHiddenIds instanceof Set ? prevHiddenIds : new Set(prevHiddenIds ?? []);
+  const nextHidden = nextHiddenIds instanceof Set ? nextHiddenIds : new Set(nextHiddenIds ?? []);
+  const prevScene = prevSceneIds instanceof Set ? prevSceneIds : new Set(prevSceneIds ?? []);
+  const nextScene = nextSceneIds instanceof Set ? nextSceneIds : new Set(nextSceneIds ?? []);
+
+  const folded = new Map(); // next \ prev anchors
+  const unfolded = new Map(); // prev \ next anchors
+  for (const [childId, groupId] of nextFold) if (!prevFold.has(childId)) folded.set(childId, groupId);
+  for (const [childId, groupId] of prevFold) if (!nextFold.has(childId)) unfolded.set(childId, groupId);
+
+  // Guard (a): the group nodes appearing/disappearing at swap time — never let a
+  // fold anchor masquerade as a hidden/revealed node.
+  const anchorIds = new Set();
+  for (const groupId of folded.values()) anchorIds.add(groupId);
+  for (const groupId of unfolded.values()) anchorIds.add(groupId);
+  const foldedChildren = new Set(folded.keys());
+  const unfoldedChildren = new Set(unfolded.keys());
+
+  const hiddenIds = new Set();
+  for (const id of nextHidden) {
+    // Newly display-hidden AND still present in the PRE-change scene (guard b).
+    if (prevHidden.has(id)) continue;
+    if (!prevScene.has(id)) continue;
+    if (foldedChildren.has(id) || anchorIds.has(id)) continue;
+    hiddenIds.add(id);
+  }
+  const revealedIds = new Set();
+  for (const id of prevHidden) {
+    // Newly display-shown AND present in the POST-change scene (guard b).
+    if (nextHidden.has(id)) continue;
+    if (!nextScene.has(id)) continue;
+    if (unfoldedChildren.has(id) || anchorIds.has(id)) continue;
+    revealedIds.add(id);
+  }
+
+  const outSide = folded.size > 0 || hiddenIds.size > 0;
+  const inSide = unfolded.size > 0 || revealedIds.size > 0;
+  if (!outSide && !inSide) return null;
+  const kind = outSide && inSide ? "mixed" : outSide ? "out" : "in";
+  return { folded, unfolded, hiddenIds, revealedIds, kind };
+}
+
+/* ===========================================================================
  * Tri-state bulk-button + NESTING-ABSORPTION math (spec §3/§4).
  * ======================================================================== */
 

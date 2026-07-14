@@ -15,6 +15,7 @@
   } from "@sentropic/design-system-svelte";
   import TypeShapeGlyph from "./TypeShapeGlyph.svelte";
   import TimeScrub from "./TimeScrub.svelte";
+  import EntityStateControl from "./EntityStateControl.svelte";
   import {
     graphNodes,
     nodeType,
@@ -22,6 +23,11 @@
     groupCounts,
     communityStats,
   } from "../lib/graphAdapter.js";
+  import {
+    groupKeyForOntology,
+    groupKeyForCommunity,
+    groupKeyForType,
+  } from "../lib/viewerState.js";
 
   let {
     graph,
@@ -38,6 +44,14 @@
     // ("ontology:<classId>" | "community:<key>"). Every checked rail item adds
     // one key; checking GROUPS (collapses) it. Multi-select is the default.
     groupBy = { grouped: [] },
+    // 4-STATE control (D6): the per-entity visibility overlay { hidden:[], solo:[] }
+    // keyed by the SAME namespaced keys as groupBy. The per-row EntityStateControl
+    // renders the displayed state (Solo > Hidden > Grouped > Normal) and emits
+    // (key, nextState) up to onSetEntityState. `soloActive` dims the masked-out
+    // rows; `hasVisibilityOverride` drives the global Reset's disabled.
+    visibility = { hidden: [], solo: [] },
+    soloActive = false,
+    hasVisibilityOverride = false,
     // Which kinds are AVAILABLE to group (C4): ontology needs the taxonomy,
     // community needs ≥1 live community. The checkbox affordance is hidden for an
     // absent kind.
@@ -73,11 +87,27 @@
     onToggleGroupOntology,
     onToggleGroupCommunity,
     onToggleGroupType,
+    // 4-STATE control (D6): the per-row visibility setter + global reset.
+    onSetEntityState,
+    onResetVisibility,
     onBulkLevel,
     onBulkCommunities,
     onClearOntologyGrouping,
     onClearCommunityGrouping,
   } = $props();
+
+  // 4-STATE control (D6): the displayed state for a namespaced key. Solo overlay
+  // wins visually (§4), then stored Hidden, then Grouped, else Normal — mirrors
+  // viewerState.displayedEntityState over the same key vocabulary.
+  const soloKeySet = $derived(new Set(visibility?.solo ?? []));
+  const hiddenKeySet = $derived(new Set(visibility?.hidden ?? []));
+  const groupedKeySet = $derived(new Set(groupBy.grouped ?? []));
+  function entityStateOf(key) {
+    if (soloKeySet.has(key)) return "solo";
+    if (hiddenKeySet.has(key)) return "hidden";
+    if (groupedKeySet.has(key)) return "grouped";
+    return "normal";
+  }
 
   // Storage LOT 2: prefer the store's precomputed counts when present; otherwise
   // `groupCounts` falls back to the in-memory pass (default studio unchanged).
@@ -93,20 +123,6 @@
       (groupBy.grouped ?? [])
         .filter((k) => typeof k === "string" && k.startsWith("ontology:"))
         .map((k) => k.slice("ontology:".length)),
-    ),
-  );
-  const communityCheckedSet = $derived(
-    new Set(
-      (groupBy.grouped ?? [])
-        .filter((k) => typeof k === "string" && k.startsWith("community:"))
-        .map((k) => k.slice("community:".length)),
-    ),
-  );
-  const typeCheckedSet = $derived(
-    new Set(
-      (groupBy.grouped ?? [])
-        .filter((k) => typeof k === "string" && k.startsWith("type:"))
-        .map((k) => k.slice("type:".length)),
     ),
   );
 
@@ -261,6 +277,20 @@
       <Badge tone="neutral">{stats.edgeCount} edges</Badge>
       <Badge tone="info">{stats.communityCount} groups</Badge>
     </span>
+    <!-- 4-STATE control (D6): the GLOBAL "Reset visibility" affordance — clears
+         every Grouped + Hidden + Solo override back to Normal in one click. It is
+         global (not inside a section) because it also clears cross-section Solo. -->
+    <div class="rail-visibility-reset">
+      <Button
+        size="sm"
+        variant="secondary"
+        disabled={!hasVisibilityOverride}
+        aria-label="Reset all entity visibility"
+        onclick={() => onResetVisibility?.()}
+      >
+        Reset visibility
+      </Button>
+    </div>
   </div>
 
   <Collapsible title="Ontology" open={true}>
@@ -279,21 +309,15 @@
         {#each typeTree as domain (domain.id)}
           {@const dAbs = ontologyAbsorbed.get(domain.id)}
           <li class="rail-onto-head">
-            <label
-              class="rail-group-check"
-              class:rail-group-check--on={ontologyCheckedSet.has(domain.id)}
-              title={dAbs?.absorbed
-                ? `grouped by parent ${dAbs.byLabel}`
-                : `Group by ${domain.label}`}
-            >
-              <input
-                type="checkbox"
-                checked={ontologyCheckedSet.has(domain.id)}
-                disabled={dAbs?.absorbed === true}
-                aria-label="Group by {domain.label}"
-                onchange={() => onToggleGroupOntology?.(domain.id)}
-              />
-            </label>
+            <EntityStateControl
+              key={groupKeyForOntology(domain.id)}
+              label={domain.label}
+              state={entityStateOf(groupKeyForOntology(domain.id))}
+              disabled={dAbs?.absorbed === true}
+              absorbedBy={dAbs?.absorbed ? dAbs.byLabel : null}
+              dim={soloActive}
+              onSetState={onSetEntityState}
+            />
             <Collapsible title={domain.label} open={false} size="sm">
               {#snippet trailing()}
                 <Badge shape="circle" size="sm" tone="neutral">{domain.count}</Badge>
@@ -302,21 +326,15 @@
                 {#each domain.subs as sub (sub.id)}
                   {@const sAbs = ontologyAbsorbed.get(sub.id)}
                   <li class="rail-onto-head">
-                    <label
-                      class="rail-group-check"
-                      class:rail-group-check--on={ontologyCheckedSet.has(sub.id)}
-                      title={sAbs?.absorbed
-                        ? `grouped by parent ${sAbs.byLabel}`
-                        : `Group by ${sub.label}`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={ontologyCheckedSet.has(sub.id)}
-                        disabled={sAbs?.absorbed === true}
-                        aria-label="Group by {sub.label}"
-                        onchange={() => onToggleGroupOntology?.(sub.id)}
-                      />
-                    </label>
+                    <EntityStateControl
+                      key={groupKeyForOntology(sub.id)}
+                      label={sub.label}
+                      state={entityStateOf(groupKeyForOntology(sub.id))}
+                      disabled={sAbs?.absorbed === true}
+                      absorbedBy={sAbs?.absorbed ? sAbs.byLabel : null}
+                      dim={soloActive}
+                      onSetState={onSetEntityState}
+                    />
                     <Collapsible title={sub.label} open={false} size="sm">
                       {#snippet trailing()}
                         <Badge shape="circle" size="sm" tone="neutral">{sub.count}</Badge>
@@ -324,24 +342,28 @@
                       <ul class="rail-list">
                         {#each sub.types as t (t.key)}
                           <li class="rail-type-row">
-                            <!-- B2 (§2): the leaf TYPE row carries its OWN bare
-                                 group-by checkbox on the LEFT — folds entities of
-                                 this `type`. It is SEPARATE from the Type FILTER
-                                 SelectableRow (onToggleType) that follows it. -->
-                            <label
-                              class="rail-group-check rail-type-group-check"
-                              class:rail-group-check--on={typeCheckedSet.has(t.key)}
-                              title="Group by {t.key}"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={typeCheckedSet.has(t.key)}
+                            <!-- 4-STATE control (D6): the leaf TYPE row carries its
+                                 OWN per-entity visibility control on the LEFT —
+                                 Normal/Grouped/Hidden/Solo over this `type`. It is
+                                 SEPARATE from the Type FILTER SelectableRow
+                                 (onToggleType) that follows it. Disabled (absorbed)
+                                 when a parent Sub-domain/Domain is grouped. -->
+                            <span class="esc-slot rail-type-group-check">
+                              <EntityStateControl
+                                key={groupKeyForType(t.key)}
+                                label={t.key}
+                                state={entityStateOf(groupKeyForType(t.key))}
                                 disabled={ontologyCheckedSet.has(sub.id) ||
                                   ontologyCheckedSet.has(domain.id)}
-                                aria-label="Group by {t.key}"
-                                onchange={() => onToggleGroupType?.(t.key)}
+                                absorbedBy={ontologyCheckedSet.has(sub.id)
+                                  ? sub.label
+                                  : ontologyCheckedSet.has(domain.id)
+                                    ? domain.label
+                                    : null}
+                                dim={soloActive}
+                                onSetState={onSetEntityState}
                               />
-                            </label>
+                            </span>
                             <SelectableRow
                               value={t.key}
                               selected={typeSet.has(t.key)}
@@ -464,24 +486,20 @@
               onselect={() => onToggleCommunity?.(c.key)}
             >
               {#snippet leading()}
-                <!-- B2 (per-item): the GROUP-BY checkbox is the FIRST thing on the
-                     row (left edge), before the color swatch. Checking it GROUPS
-                     (collapses) the community; the row's own SELECT
-                     (onToggleCommunity, filter) stays a separate concern. -->
+                <!-- 4-STATE control (D6): the per-entity visibility control is the
+                     FIRST thing on the row (left edge), before the color swatch.
+                     Normal/Grouped/Hidden/Solo over this community; the row's own
+                     SELECT (onToggleCommunity, filter) stays a separate concern. -->
                 <span class="rail-comm-lead">
-                  <label
-                    class="rail-group-check"
-                    class:rail-group-check--on={communityCheckedSet.has(c.key)}
-                    title="Group by {c.key}"
-                    onclick={(e) => e.stopPropagation()}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={communityCheckedSet.has(c.key)}
-                      aria-label="Group by {c.key}"
-                      onchange={() => onToggleGroupCommunity?.(c.key)}
+                  <span class="esc-slot">
+                    <EntityStateControl
+                      key={groupKeyForCommunity(c.key)}
+                      label={c.key}
+                      state={entityStateOf(groupKeyForCommunity(c.key))}
+                      dim={soloActive}
+                      onSetState={onSetEntityState}
                     />
-                  </label>
+                  </span>
                   <!-- ia-aero BUG B (#195): single-source community color (c.color),
                        reused identically legend↔canvas — replaces the old c.tone. -->
                   <span
@@ -811,31 +829,32 @@
     flex: 1 1 auto;
     min-width: 0;
   }
-  .rail-onto-head > .rail-group-check {
+  /* 4-STATE control (D6): the per-entity visibility control (EntityStateControl)
+     replaces the old group checkbox at each row's LEFT edge. Its root is `.esc`;
+     leaf-type / community rows wrap it in a `.esc-slot` for flex alignment. */
+  .esc-slot {
     flex-shrink: 0;
-    /* match the sm Collapsible header height (paddingBlock 0.4rem×2 + ~1.05rem
-       line) so the bare checkbox vertically centres on the header title. */
-    min-height: 1.85rem;
-  }
-  /* B2 (per-item): the per-item GROUP-BY checkbox affordance, now the FIRST
-     element on the LEFT edge of every groupable row (Ontology class header /
-     Community row), BEFORE the label. At rest it is a BARE checkbox — NO text.
-     The "group by" meaning is signalled on HOVER only (the title tooltip plus a
-     subtle ring around the box); never a persistent text label. */
-  .rail-group-check {
     display: inline-flex;
     align-items: center;
-    cursor: pointer;
   }
-  .rail-group-check input {
-    margin: 0;
-    cursor: pointer;
+  .rail-onto-head > :global(.esc) {
+    flex-shrink: 0;
+    /* match the sm Collapsible header height so the glyph centres on the title. */
+    min-height: 1.85rem;
+    align-items: center;
   }
-  /* B2-UI-12: NO hover/focus outline ring on the checkbox. The ring only ever
-     matched community/type rows (the ontology Collapsible-header hover never
-     selected the now-sibling checkbox), so it read as a random inconsistency.
-     A bare native checkbox is enough. */
-  /* Community row: the bare group-by checkbox sits FIRST, then the color swatch. */
+  /* Global "Reset visibility" — sits under the search count badges (D6). */
+  .rail-visibility-reset {
+    margin-top: 0.5rem;
+  }
+  .rail-visibility-reset :global(.st-button) {
+    min-height: 1.6rem;
+    min-width: 0;
+    padding: 0.15rem 0.45rem;
+    font-size: 0.78rem;
+    line-height: 1.1;
+  }
+  /* Community row: the per-entity visibility control sits FIRST, then the swatch. */
   .rail-comm-lead {
     display: inline-flex;
     align-items: center;

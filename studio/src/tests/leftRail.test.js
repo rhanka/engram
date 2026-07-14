@@ -41,34 +41,38 @@ describe("LeftRail — T13 F2 visible-UI lock (PER-ITEM group-by checkboxes)", (
     expect(appSource).not.toMatch(/setGroupAxis/);
   });
 
-  it("each groupable Ontology CLASS node owns a per-item group-by checkbox", () => {
-    // Domain + Sub-domain class headers each carry a checkbox → onToggleGroupOntology.
-    expect(railSource).toMatch(/class="rail-group-check"/);
-    expect(railSource).toMatch(/onToggleGroupOntology\?\.\(domain\.id\)/);
-    expect(railSource).toMatch(/onToggleGroupOntology\?\.\(sub\.id\)/);
-    // The checked state reflects membership in the grouped SET (per-item).
-    expect(railSource).toMatch(/checked=\{ontologyCheckedSet\.has\(domain\.id\)\}/);
-    expect(railSource).toMatch(/checked=\{ontologyCheckedSet\.has\(sub\.id\)\}/);
-    // App passes the per-item callbacks + availability flags (NOT availableAxes).
-    expect(appSource).toMatch(/onToggleGroupOntology=\{handleToggleGroupOntology\}/);
-    expect(appSource).toMatch(/onToggleGroupCommunity=\{handleToggleGroupCommunity\}/);
+  it("each groupable Ontology CLASS node owns a per-entity visibility control (D6)", () => {
+    // The old group checkbox is SUPERSEDED by EntityStateControl (Normal · Grouped
+    // · Hidden · Solo). Domain + Sub-domain class headers each instantiate it,
+    // keyed by the namespaced ontology key + wired to onSetEntityState.
+    expect(railSource).toMatch(/import EntityStateControl from "\.\/EntityStateControl\.svelte"/);
+    expect(railSource).toMatch(/key=\{groupKeyForOntology\(domain\.id\)\}/);
+    expect(railSource).toMatch(/key=\{groupKeyForOntology\(sub\.id\)\}/);
+    // The displayed state comes from the D2 storage (Solo > Hidden > Grouped > Normal).
+    expect(railSource).toMatch(/state=\{entityStateOf\(groupKeyForOntology\(domain\.id\)\)\}/);
+    expect(railSource).toMatch(/state=\{entityStateOf\(groupKeyForOntology\(sub\.id\)\)\}/);
+    expect(railSource).toMatch(/onSetState=\{onSetEntityState\}/);
+    // App wires the reducer setter + the visibility overlay + availability flags.
+    expect(appSource).toMatch(/onSetEntityState=\{handleSetEntityState\}/);
+    expect(appSource).toMatch(/visibility=\{viewerState\.options\.visibility\}/);
     expect(appSource).toMatch(/\{canGroupOntology\}/);
     expect(appSource).toMatch(/\{canGroupCommunity\}/);
   });
 
-  it("each leaf TYPE row owns its OWN group-by checkbox (§2 — fixes Type grouping)", () => {
-    // The Type checkbox folds entities of that `type` → onToggleGroupType(t.key);
-    // its checked state reads the type-scoped membership set.
-    expect(railSource).toMatch(/onToggleGroupType\?\.\(t\.key\)/);
-    expect(railSource).toMatch(/checked=\{typeCheckedSet\.has\(t\.key\)\}/);
-    // It is SEPARATE from the Type FILTER SelectableRow (onToggleType) on the row.
+  it("each leaf TYPE row owns its OWN visibility control (§2), separate from the FILTER row", () => {
+    // The Type control targets that `type`'s namespaced key; it is a SEPARATE
+    // concern from the Type FILTER SelectableRow (onToggleType) that follows it.
+    expect(railSource).toMatch(/key=\{groupKeyForType\(t\.key\)\}/);
+    expect(railSource).toMatch(/state=\{entityStateOf\(groupKeyForType\(t\.key\)\)\}/);
     expect(railSource).toMatch(/rail-type-group-check/);
-    expect(appSource).toMatch(/onToggleGroupType=\{handleToggleGroupType\}/);
+    // Its own control is disabled (absorbed) when a parent Sub-domain/Domain is grouped.
+    expect(railSource).toMatch(/disabled=\{ontologyCheckedSet\.has\(sub\.id\) \|\|/);
+    expect(appSource).toMatch(/onSetEntityState=\{handleSetEntityState\}/);
   });
 
-  it("each Community row owns a per-item group-by checkbox (separate from its select)", () => {
-    expect(railSource).toMatch(/onToggleGroupCommunity\?\.\(c\.key\)/);
-    expect(railSource).toMatch(/checked=\{communityCheckedSet\.has\(c\.key\)\}/);
+  it("each Community row owns its OWN visibility control (separate from its select)", () => {
+    expect(railSource).toMatch(/key=\{groupKeyForCommunity\(c\.key\)\}/);
+    expect(railSource).toMatch(/state=\{entityStateOf\(groupKeyForCommunity\(c\.key\)\)\}/);
   });
 
   it("the ONTOLOGY tri-state bulk buttons drive the grouped set (§4)", () => {
@@ -103,37 +107,38 @@ describe("LeftRail — T13 F2 visible-UI lock (PER-ITEM group-by checkboxes)", (
     expect(appSource).toMatch(/onClearCommunityGrouping=\{handleClearCommunityGrouping\}/);
   });
 
-  it("the group-by checkbox is on the LEFT with NO 'group' text (SPEC)", () => {
-    // SPEC PART 1: the bare checkbox is the FIRST element on the row. There are
-    // FOUR group-by checkboxes — Domain, Sub-domain, Type, Community — each
-    // carrying the `rail-group-check` affordance (the Type one adds the
-    // `rail-type-group-check` variant).
-    const onMarkers = railSource.match(/class:rail-group-check--on=/g) ?? [];
-    expect(onMarkers.length).toBe(4);
-    // FIX: the DS Collapsible exposes NO `leading` slot (only trailing/children),
-    // so the Domain + Sub-domain group-by checkboxes are SIBLINGS *before*
-    // <Collapsible> inside a `.rail-onto-head` flex row — NOT in a (silently
-    // dropped) leading() snippet. That dropped slot is exactly why the
-    // Domain/Sub-domain checkboxes were invisible.
+  it("the visibility control is on the LEFT of every row, superseding the checkbox (D6)", () => {
+    // D6: the per-entity control is the FIRST element on the row. There are FOUR
+    // EntityStateControl instances — Domain, Sub-domain, Type, Community.
+    const controls = railSource.match(/<EntityStateControl/g) ?? [];
+    expect(controls.length).toBe(4);
+    // The old bare-checkbox affordance is gone (no <input type="checkbox"> group-by).
+    expect(railSource).not.toMatch(/class="rail-group-check"/);
+    expect(railSource).not.toMatch(/class:rail-group-check--on=/);
+    // FIX (preserved): the DS Collapsible exposes NO `leading` slot, so the Domain
+    // + Sub-domain controls are SIBLINGS *before* <Collapsible> in a `.rail-onto-head`
+    // flex row — NOT in a (silently dropped) leading() snippet.
     const ontoHeads = railSource.match(/<li class="rail-onto-head">/g) ?? [];
     expect(ontoHeads.length).toBe(2); // Domain + Sub-domain rows
     expect(railSource).toMatch(
-      /<li class="rail-onto-head">[\s\S]*?class="rail-group-check"[\s\S]*?onToggleGroupOntology[\s\S]*?<Collapsible/,
+      /<li class="rail-onto-head">[\s\S]*?<EntityStateControl[\s\S]*?groupKeyForOntology[\s\S]*?<Collapsible/,
     );
-    // Regression guard: NEVER put a group-by checkbox in a Collapsible leading()
-    // snippet — the DS Collapsible drops it.
+    // Regression guard: NEVER put the control in a Collapsible leading() snippet.
     expect(railSource).not.toMatch(/<Collapsible[^>]*>\s*\{#snippet leading\(\)\}/);
-    // The leaf Type checkbox sits FIRST in its flex row, BEFORE the FILTER
-    // SelectableRow — left, bare, separate from the Type FILTER select (§2).
+    // The leaf Type control sits FIRST in its flex row, BEFORE the FILTER
+    // SelectableRow — separate from the Type FILTER select (§2).
     expect(railSource).toMatch(
-      /rail-type-group-check[\s\S]*?onToggleGroupType[\s\S]*?<SelectableRow/,
+      /rail-type-group-check[\s\S]*?<EntityStateControl[\s\S]*?<SelectableRow/,
     );
     // NO persistent "group" text label anywhere — the rail-group-hint span is gone.
     expect(railSource).not.toMatch(/rail-group-hint/);
     expect(railSource).not.toMatch(/>group<\/span>/);
-    expect(railSource).not.toMatch(/aria-hidden="true">group/);
-    // The HOVER signal stays: the title tooltip "Group by …" is preserved.
-    expect(railSource).toMatch(/title="Group by /);
+    // The global "Reset visibility" affordance lives under the search stats (D6).
+    expect(railSource).toMatch(/aria-label="Reset all entity visibility"/);
+    expect(railSource).toMatch(/Reset visibility/);
+    expect(railSource).toMatch(/disabled=\{!hasVisibilityOverride\}/);
+    expect(appSource).toMatch(/onResetVisibility=\{handleResetVisibility\}/);
+    expect(appSource).toMatch(/hasVisibilityOverride=\{anyVisibilityOverride\}/);
   });
 
   it("the Ontology FILTER facet stays SEPARATE from the group-by checkboxes", () => {
