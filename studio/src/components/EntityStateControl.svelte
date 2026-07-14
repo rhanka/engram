@@ -3,12 +3,12 @@
    * Per-entity 4-state VISIBILITY control (D6) — the row affordance that
    * SUPERSEDES the old group checkbox. At rest it shows ONE inline-SVG glyph for
    * the entity's current state (visible at a glance across ~122 rows); on hover /
-   * focus / touch-tap it reveals a 4-segment radiogroup OVERLAY (a DS Popover, so
+   * focus / touch-tap it reveals a 4-row radiogroup OVERLAY (a DS Popover, so
    * the rail never reflows) where any state is one click away.
    *
    *   Normal · Grouped · Hidden · Solo   (mutually visible; radiogroup semantics)
    *
-   * WAI-ARIA radiogroup + roving tabindex (the CHECKED segment is the single tab
+   * WAI-ARIA radiogroup + roving tabindex (the CHECKED row is the single tab
    * stop; Arrow/Home/End move+select; Escape collapses). Absorbed rows (a type
    * under a grouped parent) render the whole control DISABLED. Wiring is a single
    * `onSetState(key, nextState)` up to App's `setEntityState` reducer.
@@ -33,7 +33,7 @@
     { id: "normal", label: "Normal", hint: "Normal — visible, ungrouped" },
     { id: "grouped", label: "Grouped", hint: "Grouped — collapse into a group node" },
     { id: "hidden", label: "Hidden", hint: "Hidden — remove from the graph" },
-    { id: "solo", label: "Solo — show only this", hint: "Solo — show only this entity" },
+    { id: "solo", label: "Show only", hint: "Solo — show only this entity" },
   ];
 
   let open = $state(false);
@@ -141,6 +141,7 @@
   }
 </script>
 
+<!-- TEMP glyphs — pending the DS-prescribed Sentropic icon set (handoff sent to the design-system peer); these get hot-swapped for an <Icon> from @sentropic/design-system-svelte. Do NOT redesign icons here. -->
 {#snippet glyph(id)}
   {#if id === "normal"}
     <svg class="esc-svg" viewBox="0 0 14 14" width="14" height="14" aria-hidden="true">
@@ -210,6 +211,7 @@
             onkeydown={(e) => onRadioKeydown(e, i)}
           >
             {@render glyph(s.id)}
+            <span class="esc-seg-label">{s.label}</span>
           </button>
         {/each}
       </div>
@@ -258,25 +260,27 @@
   .esc-svg {
     display: block;
   }
-  /* The 4-segment radiogroup overlay (inside the DS Popover panel — no rail reflow). */
+  /* The 4-row radiogroup overlay (inside the DS Popover panel — no rail reflow). */
   .esc-segments {
-    display: inline-flex;
-    align-items: center;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
     gap: 2px;
     padding: 2px;
   }
   .esc-seg {
-    display: inline-flex;
+    display: flex;
     align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    padding: 0;
+    width: 100%;
+    min-height: 30px;
+    gap: 8px;
+    padding: 5px 8px;
     border: 1px solid transparent;
     background: transparent;
     color: var(--st-semantic-text-secondary, #475569);
     cursor: pointer;
     border-radius: 5px;
+    text-align: left;
   }
   .esc-seg:hover,
   .esc-seg:focus-visible {
