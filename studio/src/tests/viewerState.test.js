@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   GROUP_KIND,
+  ENTITY_STATES,
   createDefaultViewerState,
   normalizeViewerState,
   setShowWeakLinks,
   groupKeyForOntology,
   groupKeyForCommunity,
+  groupKeyForType,
   splitGroupedKeys,
   toggleGroupItem,
   toggleGroupOntology,
@@ -16,6 +18,13 @@ import {
   clearGrouping,
   foldOntologyToLevel,
   ONTOLOGY_LEVELS,
+  setEntityState,
+  toggleSolo,
+  resetVisibility,
+  displayedEntityState,
+  soloActive,
+  hasAnyVisibilityOverride,
+  groupOntologyLevel,
 } from "../lib/viewerState.js";
 
 /* ===========================================================================
@@ -288,5 +297,164 @@ describe("viewerState — T7 pure migration of LEGACY shapes INTO the grouped se
     expect(normalized.options.groupBy.grouped.sort()).toEqual(
       [groupKeyForOntology("class:People"), groupKeyForCommunity("Baker Street")].sort(),
     );
+  });
+});
+
+/* ===========================================================================
+ * 4-STATE per-entity VISIBILITY control (Normal · Grouped · Hidden · Solo).
+ *
+ * D2 schema: `groupBy.grouped` stays the Grouped storage; `options.visibility =
+ * { hidden:[], solo:[] }` adds the Hidden storage + the Solo OVERLAY. Reducer =
+ * setEntityState / toggleSolo / resetVisibility; migration = defaults in
+ * normalizeViewerState (no localStorage). Solo NEVER mutates grouped/hidden.
+ * ======================================================================== */
+
+const K_ONTO = groupKeyForOntology("class:People");
+const K_COMM = groupKeyForCommunity("Baker Street");
+const K_TYPE = groupKeyForType("Character");
+
+describe("viewerState — 4-state visibility: defaults + normalization (D2)", () => {
+  it("defaults to EMPTY hidden + solo sets (fast-path default)", () => {
+    const state = createDefaultViewerState();
+    expect(state.options.visibility).toEqual({ hidden: [], solo: [] });
+    expect(ENTITY_STATES).toEqual(["normal", "grouped", "hidden", "solo"]);
+  });
+
+  it("an ABSENT visibility (every pre-feature state) migrates to empty sets", () => {
+    expect(normalizeViewerState({}).options.visibility).toEqual({ hidden: [], solo: [] });
+    expect(
+      normalizeViewerState({ options: { groupBy: { grouped: [K_ONTO] } } }).options.visibility,
+    ).toEqual({ hidden: [], solo: [] });
+  });
+
+  it("normalizes hidden/solo: dedup, string-only, known-namespace-only", () => {
+    const v = normalizeViewerState({
+      options: {
+        visibility: {
+          hidden: [K_COMM, K_COMM, "bogus:x", "noseparator", 42, ""],
+          solo: [K_TYPE, K_TYPE, "unknown:y"],
+        },
+      },
+    }).options.visibility;
+    expect(v.hidden).toEqual([K_COMM]);
+    expect(v.solo).toEqual([K_TYPE]);
+  });
+
+  it("grouped-WINS exclusivity: a key both grouped AND hidden drops from hidden", () => {
+    const v = normalizeViewerState({
+      options: {
+        groupBy: { grouped: [K_ONTO] },
+        visibility: { hidden: [K_ONTO, K_COMM], solo: [] },
+      },
+    }).options.visibility;
+    // K_ONTO is grouped → removed from hidden; K_COMM (not grouped) stays.
+    expect(v.hidden).toEqual([K_COMM]);
+  });
+
+  it("solo is an OVERLAY: solo ∩ grouped and solo ∩ hidden are legal", () => {
+    const v = normalizeViewerState({
+      options: {
+        groupBy: { grouped: [K_ONTO] },
+        visibility: { hidden: [K_COMM], solo: [K_ONTO, K_COMM] },
+      },
+    }).options.visibility;
+    expect(v.solo.sort()).toEqual([K_ONTO, K_COMM].sort());
+    expect(v.hidden).toEqual([K_COMM]);
+  });
+});
+
+describe("viewerState — 4-state reducer (setEntityState / toggleSolo / resetVisibility)", () => {
+  it("Normal → Grouped → Hidden → Normal (exclusive stored states)", () => {
+    let s = createDefaultViewerState();
+    expect(displayedEntityState(s, K_COMM)).toBe("normal");
+    s = setEntityState(s, K_COMM, "grouped");
+    expect(displayedEntityState(s, K_COMM)).toBe("grouped");
+    expect(s.options.groupBy.grouped).toEqual([K_COMM]);
+    // Grouped → Hidden: leaves grouped, enters hidden (mutually exclusive).
+    s = setEntityState(s, K_COMM, "hidden");
+    expect(displayedEntityState(s, K_COMM)).toBe("hidden");
+    expect(s.options.groupBy.grouped).toEqual([]);
+    expect(s.options.visibility.hidden).toEqual([K_COMM]);
+    // Hidden → Normal: clears everything for the key.
+    s = setEntityState(s, K_COMM, "normal");
+    expect(displayedEntityState(s, K_COMM)).toBe("normal");
+    expect(s.options.visibility.hidden).toEqual([]);
+  });
+
+  it("Solo is a display OVERLAY that PRESERVES the stored Grouped state (§6.2)", () => {
+    let s = setEntityState(createDefaultViewerState(), K_ONTO, "grouped");
+    s = setEntityState(s, K_ONTO, "solo");
+    // Display shows Solo; stored Grouped is UNTOUCHED.
+    expect(displayedEntityState(s, K_ONTO)).toBe("solo");
+    expect(s.options.groupBy.grouped).toEqual([K_ONTO]);
+    expect(s.options.visibility.solo).toEqual([K_ONTO]);
+    // Exiting Solo (click any non-solo) returns to the stored Grouped state.
+    s = setEntityState(s, K_ONTO, "grouped");
+    expect(displayedEntityState(s, K_ONTO)).toBe("grouped");
+    expect(s.options.visibility.solo).toEqual([]);
+    expect(s.options.groupBy.grouped).toEqual([K_ONTO]);
+  });
+
+  it("Solo on a stored-Hidden entity preserves the hidden storage, restored on exit", () => {
+    let s = setEntityState(createDefaultViewerState(), K_COMM, "hidden");
+    s = setEntityState(s, K_COMM, "solo");
+    expect(displayedEntityState(s, K_COMM)).toBe("solo");
+    expect(s.options.visibility.hidden).toEqual([K_COMM]); // preserved
+    s = setEntityState(s, K_COMM, "normal");
+    expect(s.options.visibility.solo).toEqual([]);
+    expect(s.options.visibility.hidden).toEqual([]); // normal clears hidden too
+  });
+
+  it("MULTI-Solo accumulates; each keeps its stored state", () => {
+    let s = createDefaultViewerState();
+    s = setEntityState(s, K_ONTO, "grouped");
+    s = setEntityState(s, K_ONTO, "solo");
+    s = setEntityState(s, K_COMM, "solo");
+    s = setEntityState(s, K_TYPE, "solo");
+    expect(soloActive(s)).toBe(true);
+    expect(s.options.visibility.solo.sort()).toEqual([K_ONTO, K_COMM, K_TYPE].sort());
+    // The grouped one still carries its grouped storage under the Solo overlay.
+    expect(s.options.groupBy.grouped).toEqual([K_ONTO]);
+  });
+
+  it("toggleSolo adds then removes a single entity from the Solo set (§3 Exit)", () => {
+    let s = toggleSolo(createDefaultViewerState(), K_COMM);
+    expect(s.options.visibility.solo).toEqual([K_COMM]);
+    s = toggleSolo(s, K_COMM);
+    expect(s.options.visibility.solo).toEqual([]);
+    // toggleSolo never touches grouped/hidden storage.
+    let g = setEntityState(createDefaultViewerState(), K_ONTO, "hidden");
+    g = toggleSolo(g, K_ONTO);
+    expect(g.options.visibility.hidden).toEqual([K_ONTO]);
+    expect(g.options.visibility.solo).toEqual([K_ONTO]);
+  });
+
+  it("resetVisibility clears Grouped + Hidden + Solo → all Normal (keeps selection etc.)", () => {
+    let s = createDefaultViewerState();
+    s = setEntityState(s, K_ONTO, "grouped");
+    s = setEntityState(s, K_COMM, "hidden");
+    s = setEntityState(s, K_TYPE, "solo");
+    expect(hasAnyVisibilityOverride(s)).toBe(true);
+    s = setShowWeakLinks(s, false); // an unrelated option must survive the reset
+    s = resetVisibility(s);
+    expect(s.options.groupBy.grouped).toEqual([]);
+    expect(s.options.visibility).toEqual({ hidden: [], solo: [] });
+    expect(hasAnyVisibilityOverride(s)).toBe(false);
+    expect(s.options.showWeakLinks).toBe(false);
+  });
+
+  it("setEntityState is a no-op for an empty key / unknown state", () => {
+    const s = createDefaultViewerState();
+    expect(setEntityState(s, "", "hidden").options.visibility.hidden).toEqual([]);
+    expect(setEntityState(s, K_COMM, "bogus").options.visibility.hidden).toEqual([]);
+  });
+
+  it("a bulk Group-all over a HIDDEN entity un-hides it (grouped-wins, zero bulk changes)", () => {
+    let s = setEntityState(createDefaultViewerState(), groupKeyForOntology("class:People"), "hidden");
+    // Bulk group the Domain level including class:People.
+    s = groupOntologyLevel(s, ONTOLOGY_LEVELS.domain, ["class:People", "class:Place"]);
+    // K_ONTO(class:People) is now grouped → normalize drops it from hidden.
+    expect(displayedEntityState(s, groupKeyForOntology("class:People"))).toBe("grouped");
+    expect(s.options.visibility.hidden).toEqual([]);
   });
 });
