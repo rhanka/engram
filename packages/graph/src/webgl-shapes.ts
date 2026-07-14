@@ -49,6 +49,9 @@ import type { GraphStyleBuffers } from "./types";
 type GL2 = WebGL2RenderingContext;
 
 const DEFAULT_NODE_COLOR = [77, 118, 255, 255] as const;
+const HALO_COLOR_FALLBACK = [0, 0, 0, 0] as const;
+const HALO_ALPHA = 0.28;
+const HALO_RADIUS_SCALE = 1.65;
 
 /** Shape codes Phase 1 renders as instanced polygons/discs (NOT the box). */
 const SHAPE_FAMILIES = [0, 1, 2, 3, 4, 6] as const;
@@ -279,6 +282,8 @@ export function decodeInstance(list: number[], n: number): ShapeInstanceView {
 }
 
 export interface ShapeInstanceSet {
+  /** Low-alpha expanded node geometry, drawn before border/fill. */
+  halo: Map<number, number[]>;
   fill: Map<number, number[]>;
   border: Map<number, number[]>;
   nonFiniteCount: number;
@@ -295,9 +300,11 @@ export interface ShapeInstanceSet {
  * runs deterministically even where a real WebGL context is unavailable.
  */
 export function buildShapeInstances(frame: WebGLShapeFrame): ShapeInstanceSet {
+  const halo = new Map<number, number[]>();
   const fill = new Map<number, number[]>();
   const border = new Map<number, number[]>();
   for (const shape of SHAPE_FAMILIES) {
+    halo.set(shape, []);
     fill.set(shape, []);
     border.set(shape, []);
   }
@@ -329,6 +336,23 @@ export function buildShapeInstances(frame: WebGLShapeFrame): ShapeInstanceSet {
 
     const nodeColor = colorAt(style?.nodeColors, i * 4, DEFAULT_NODE_COLOR);
     const alpha = nodeColor[3] / 255;
+    const haloColor = colorAt(style?.haloColor, 0, HALO_COLOR_FALLBACK);
+    if (style?.haloMask?.[i] === 1 && haloColor[3] > 0) {
+      // The halo is a filled, scaled copy of the SAME unit geometry. Its low
+      // alpha plus the real node drawn on top make a soft glow approximation;
+      // there is intentionally no outline/ring geometry here.
+      pushInstance(
+        halo.get(family)!,
+        cx,
+        cy,
+        radius * HALO_RADIUS_SCALE,
+        haloColor[0],
+        haloColor[1],
+        haloColor[2],
+        (haloColor[3] / 255) * HALO_ALPHA * alpha,
+        depth,
+      );
+    }
     const hollow = (style?.nodeFills?.[i] ?? 0) === 1;
     const bold = (style?.nodeBorders?.[i] ?? 0) === 1;
 
@@ -402,7 +426,7 @@ export function buildShapeInstances(frame: WebGLShapeFrame): ShapeInstanceSet {
     }
   }
 
-  return { fill, border, nonFiniteCount };
+  return { halo, fill, border, nonFiniteCount };
 }
 
 /**
@@ -586,7 +610,7 @@ export function createWebGLShapeRenderer(context: GL2 | null): WebGLShapeRendere
   const families = createShapeFamilyBuffers(gl);
 
   function renderShapes(frame: WebGLShapeFrame): { nonFiniteCount: number } {
-    const { fill, border, nonFiniteCount } = buildShapeInstances(frame);
+    const { halo, fill, border, nonFiniteCount } = buildShapeInstances(frame);
 
     gl.useProgram(shapeProgram.program);
     // UNIFIED CAMERA: the same mat4 view-projection the legacy node/edge shaders
@@ -611,6 +635,10 @@ export function createWebGLShapeRenderer(context: GL2 | null): WebGLShapeRendere
     // glyphs too far + dark-fringing AA rims under premultipliedAlpha:true).
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
+    // HALO PASS first: expanded, low-alpha copies sit behind the real node
+    // geometry. Then the border ring and interior fill preserve all existing
+    // node type/community colours and shape variants.
+    drawPass(gl, families, halo);
     // Border ring pass first (under the fill), then the interior fill pass, so a
     // hollow ring / bold outline sits beneath the (translucent or solid) centre.
     drawPass(gl, families, border);

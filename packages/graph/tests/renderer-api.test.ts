@@ -162,6 +162,29 @@ function createFakeCanvas2DContext() {
 }
 
 describe("createGraphRenderer", () => {
+  it("validates halo channels against node and edge counts", () => {
+    const view = createGraphRenderer(null);
+    view.setGraph({
+      nodeIds: ["a", "b"],
+      positions: new Float32Array([0, 0, 10, 0]),
+      edges: new Uint32Array([0, 1]),
+    });
+    const style = {
+      nodeSizes: new Float32Array([6, 8]),
+      nodeColors: new Uint8Array([255, 0, 0, 255, 0, 0, 255, 255]),
+      nodeShapes: new Uint8Array([0, 0]),
+      edgeWidths: new Float32Array([1]),
+      edgeColors: new Uint8Array([120, 130, 140, 255]),
+      edgeDash: new Uint8Array([0]),
+      edgeCurvatures: new Float32Array([0]),
+    };
+
+    expect(() => view.setStyle({ ...style, haloMask: new Uint8Array([1]) })).toThrow(/haloMask/);
+    expect(() => view.setStyle({ ...style, haloColor: new Uint8Array([1, 2, 3]) })).toThrow(/haloColor/);
+    expect(() => view.setStyle({ ...style, edgeHaloMask: new Uint8Array([1, 0]) })).toThrow(/edgeHaloMask/);
+    view.destroy();
+  });
+
   it("keeps rendering state separate from layout physics", () => {
     const view = createGraphRenderer(null, { interaction: { hover: true } });
     view.setGraph({
