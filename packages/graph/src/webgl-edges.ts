@@ -94,6 +94,7 @@ layout(location = 5) in float a_arcStart;  // instance: arc-length at p0 (device
 layout(location = 6) in float a_dashPeriod;// instance: dash on+off period (0 = solid)
 layout(location = 7) in float a_dashOn;    // instance: dash on length (device px)
 layout(location = 8) in vec3 a_shape;      // instance: alpha multipliers at t=0 / 0.5 / 1 (0..1)
+layout(location = 9) in float a_totalArcLength; // instance: complete edge arc length (device px)
 
 uniform vec2 u_viewport;
 
@@ -105,6 +106,7 @@ out float v_arc;       // arc-length at this fragment (device px) for dashing
 out float v_dashPeriod;
 out float v_dashOn;
 out vec3 v_shape;      // along-edge alpha multipliers (m0, mMid, m1)
+out float v_totalArcLength;
 
 void main() {
   vec2 d = a_p1 - a_p0;
@@ -145,6 +147,7 @@ void main() {
   v_dashPeriod = a_dashPeriod;
   v_dashOn = a_dashOn;
   v_shape = a_shape;
+  v_totalArcLength = a_totalArcLength;
 
   vec2 clip = vec2(screen.x * 2.0 / u_viewport.x - 1.0, 1.0 - screen.y * 2.0 / u_viewport.y);
   // Edges sit BEHIND every node (Canvas2D draws all edges before all nodes).
@@ -162,6 +165,7 @@ in float v_arc;
 in float v_dashPeriod;
 in float v_dashOn;
 in vec3 v_shape;
+in float v_totalArcLength;
 out vec4 outColor;
 
 void main() {
@@ -218,15 +222,18 @@ void main() {
     if (coverage <= 0.0) discard;
   }
 
-  // ALONG-EDGE ALPHA SHAPE (configurable edge-transparency gradient). tt is the
-  // 0..1 parameter from the source cap (v_local.x = -v_halfLen) to the target
-  // cap (+v_halfLen). The shape is PIECEWISE-LINEAR: mix(m0,mMid) over the first
-  // half, mix(mMid,m1) over the second. Default shape (1,1,1) ⇒ sh == 1 (uniform,
-  // byte-identical to before this feature); the studio drives it per mode
-  // (dense/inverse/mid/flat) to fade an edge toward its dense endpoint / the
-  // middle. It MULTIPLIES the base alpha, so dim/hover/merge (which only scale
-  // v_color.a) compose automatically.
-  float tt = clamp((v_local.x + v_halfLen) / (2.0 * v_halfLen), 0.0, 1.0);
+  // ALONG-EDGE ALPHA SHAPE (configurable edge-transparency gradient). Unlike
+  // the segment-local SDF coordinate above, v_arc is continuous across every
+  // tessellated capsule. Divide it by the COMPLETE edge arc length so the
+  // profile is sampled exactly once from source (t=0) to target (t=1), no
+  // matter how many device-pixel segments the curve has. Padding before/after
+  // the clipped endpoints is clamped away. Dashing remains on absolute v_arc.
+  float tt = clamp(v_arc / max(v_totalArcLength, 1e-5), 0.0, 1.0);
+  // The shape is PIECEWISE-LINEAR: mix(m0,mMid) over the first half, mix(mMid,m1)
+  // over the second. Default shape (1,1,1) ⇒ sh == 1 (uniform, byte-identical
+  // to before this feature); the studio drives it per mode (dense/inverse/mid/
+  // flat) to fade an edge toward its dense endpoint / the middle. It MULTIPLIES
+  // the base alpha, so dim/hover/merge (which only scale v_color.a) compose.
   float sh = tt < 0.5
     ? mix(v_shape.x, v_shape.y, tt * 2.0)
     : mix(v_shape.y, v_shape.z, (tt - 0.5) * 2.0);
@@ -290,8 +297,8 @@ void main() {
 }
 `;
 
-/** Floats per capsule instance. p0(2)+p1(2)+halfWidth(1)+color(4)+arcStart(1)+period(1)+on(1)+shape(3) = 15 */
-export const CAPSULE_FLOATS_PER_INSTANCE = 15;
+/** Floats per capsule instance: prior fields (15) + total edge arc length (1). */
+export const CAPSULE_FLOATS_PER_INSTANCE = 16;
 /** Floats per arrow instance. tip(2)+dir(2)+length(1)+color(4) = 9 */
 export const ARROW_FLOATS_PER_INSTANCE = 9;
 
@@ -451,9 +458,17 @@ export function buildEdgeInstances(frame: WebGLEdgeFrame): EdgeInstanceSet {
     const sMid = shapeBuf ? (shapeBuf[edgeIndex * 3 + 1] ?? 255) / 255 : 1;
     const s1 = shapeBuf ? (shapeBuf[edgeIndex * 3 + 2] ?? 255) / 255 : 1;
 
-    // Tessellate the (clipped) drawn polyline and emit one capsule per segment,
-    // accumulating arc-length so dashes are continuous across curve segments.
+    // Tessellate the (clipped) drawn polyline and emit one capsule per segment.
+    // The total is shared by every segment: dashes use each segment's absolute
+    // arc start, while the alpha profile uses arc / totalEdgeArcLength.
     const polyline = tessellateEdge(geom, CURVE_SEGMENTS);
+    let totalEdgeArcLength = 0;
+    for (let i = 0; i < polyline.length - 1; i += 1) {
+      totalEdgeArcLength += Math.hypot(
+        polyline[i + 1]![0] - polyline[i]![0],
+        polyline[i + 1]![1] - polyline[i]![1],
+      );
+    }
     let arc = 0;
     for (let i = 0; i < polyline.length - 1; i += 1) {
       const p0 = polyline[i]!;
@@ -467,6 +482,7 @@ export function buildEdgeInstances(frame: WebGLEdgeFrame): EdgeInstanceSet {
         dashPeriod,
         dashOn,
         s0, sMid, s1,
+        totalEdgeArcLength,
       );
       arc += Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
     }
@@ -558,7 +574,7 @@ function createCapsulePipeline(gl: GL2): CapsulePipeline {
 
   gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuffer);
   // location 1 a_p0, 2 a_p1, 3 a_halfWidth, 4 a_color, 5 a_arcStart, 6 a_dashPeriod,
-  // 7 a_dashOn, 8 a_shape (vec3 along-edge alpha multipliers)
+  // 7 a_dashOn, 8 a_shape (vec3 along-edge alpha multipliers), 9 a_totalArcLength
   const layout: Array<[number, number, number]> = [
     [1, 2, 0],
     [2, 2, 2 * 4],
@@ -568,6 +584,7 @@ function createCapsulePipeline(gl: GL2): CapsulePipeline {
     [6, 1, 10 * 4],
     [7, 1, 11 * 4],
     [8, 3, 12 * 4],
+    [9, 1, 15 * 4],
   ];
   for (const [loc, size, offset] of layout) {
     gl.enableVertexAttribArray(loc);
@@ -686,6 +703,8 @@ export interface CapsuleInstanceView {
   dashOn: number;
   /** Along-edge alpha multipliers at t=0 / 0.5 / 1 (0..1); (1,1,1) = uniform. */
   shape: [number, number, number];
+  /** Complete polyline arc length shared by every capsule of this edge (device px). */
+  totalArcLength: number;
 }
 
 /**
@@ -701,6 +720,20 @@ export function alphaShapeAt(shape: readonly [number, number, number], tt: numbe
   return t < 0.5 ? m0 + (mMid - m0) * (t * 2) : mMid + (m1 - mMid) * ((t - 0.5) * 2);
 }
 
+/** Normalize an absolute edge arc position to the complete edge's [0,1] range. */
+export function normalizedEdgeT(arc: number, totalArcLength: number): number {
+  return Math.min(1, Math.max(0, arc / Math.max(totalArcLength, 1e-5)));
+}
+
+/** Sample an alpha shape by absolute arc position, matching the fragment shader. */
+export function alphaShapeAtArc(
+  shape: readonly [number, number, number],
+  arc: number,
+  totalArcLength: number,
+): number {
+  return alphaShapeAt(shape, normalizedEdgeT(arc, totalArcLength));
+}
+
 export function decodeCapsule(list: number[], n: number): CapsuleInstanceView {
   const o = n * CAPSULE_FLOATS_PER_INSTANCE;
   return {
@@ -712,6 +745,7 @@ export function decodeCapsule(list: number[], n: number): CapsuleInstanceView {
     dashPeriod: list[o + 10] ?? 0,
     dashOn: list[o + 11] ?? 0,
     shape: [list[o + 12] ?? 1, list[o + 13] ?? 1, list[o + 14] ?? 1],
+    totalArcLength: list[o + 15] ?? 0,
   };
 }
 
