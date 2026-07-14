@@ -1,6 +1,7 @@
 <script>
   import { onDestroy, onMount, tick, untrack } from "svelte";
   import { Button, ButtonGroup, IconButton, Popover, Switch } from "@sentropic/design-system-svelte";
+  import Settings from "@lucide/svelte/icons/settings";
   import { createGraphRenderer, drawBoxLabels2D } from "@sentropic/graph";
   import { solveForce, terminateForceWorker } from "../lib/forceLayoutClient.js";
 
@@ -2411,7 +2412,9 @@
               aria-label="Graph display settings"
               aria-expanded={settingsOpen}
               onclick={toggleSettings}
-            >⚙</IconButton>
+            >
+              <Settings size={16} strokeWidth={2} aria-hidden="true" />
+            </IconButton>
           {/snippet}
           {#snippet children()}
             <div class="graph-settings-panel">
