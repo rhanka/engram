@@ -8,6 +8,7 @@ import {
   resolveLayout,
   TYPED_LAYER_LAYOUT_ID,
 } from "@sentropic/graph";
+import { shapeForType } from "./graphAdapter.js";
 
 /**
  * SINGLE source of truth for a group's (community / type) colour. Both the
@@ -347,6 +348,31 @@ export function isBoxShape(shape) {
   return value === "box" || value === "roundedbox";
 }
 
+const SYNTHETIC_GROUP_FIELDS = [
+  "community_node_kind",
+  "type_node_kind",
+  "ontology_node_kind",
+];
+
+function isSyntheticGroupNode(node) {
+  return SYNTHETIC_GROUP_FIELDS.some((field) => node?.[field] != null);
+}
+
+/**
+ * Resolve the shape used by the renderer from the same type mapping as the
+ * rail legend. Existing boxes and synthetic fold nodes are scene-level
+ * rendering decisions, so their baked shape remains authoritative.
+ */
+function rendererShapeForNode(node) {
+  const bakedShape = node?.shape ?? "dot";
+  if (isSyntheticGroupNode(node) || isBoxShape(bakedShape)) return bakedShape;
+
+  const type = node?.type ?? node?.type_name;
+  if (typeof type !== "string" || type.trim() === "") return bakedShape;
+
+  return shapeForType({ type }) || bakedShape;
+}
+
 /**
  * Default character budget for an in-canvas / overlay node label. The renderer
  * sizes a box glyph to its label's drawn width, so a long entity name (e.g.
@@ -583,7 +609,7 @@ export function buildGraphRendererPayload(scene, options = {}) {
       x: position.x,
       y: position.y,
       fixed: position.fixed,
-      shape: node.shape ?? "dot",
+      shape: rendererShapeForNode(node),
       // Shape variants (ontology visual_encoding): hollow / bold pass through
       // to the style buffers; absent = solid / normal (back-compatible).
       fill: node.fill,

@@ -45,7 +45,75 @@ import {
   selectPrincipalHubLabels,
   truncateLabel,
 } from "../lib/graphRendererPayload.js";
-import { buildScene, communityStats, nodeGroup } from "../lib/graphAdapter.js";
+import { buildScene, communityStats, nodeGroup, shapeForType } from "../lib/graphAdapter.js";
+
+describe("renderer node shapes match the type legend", () => {
+  it("uses shapeForType for entities while preserving boxes, synthetic groups, and fallbacks", () => {
+    const entityTypes = ["Case", "Character", "Evidence", "Location"];
+    const nodes = entityTypes.map((type, index) => ({
+      id: `entity-${index}`,
+      label: type,
+      type,
+      // Deliberately stale: the renderer must not trust the baked scene shape.
+      shape: "dot",
+    }));
+    nodes.push(
+      {
+        id: "case-from-type-name",
+        label: "Case from type_name",
+        type_name: "Case",
+        shape: "dot",
+      },
+      {
+        id: "work-box",
+        label: "Work box",
+        type: "Work",
+        // Work maps to a non-box glyph in shapeForType, but an existing box
+        // must keep the renderer's box path.
+        shape: "roundedbox",
+      },
+      {
+        id: "community-group",
+        label: "Community",
+        type: "OntologyCommunity",
+        community_node_kind: "community",
+        shape: "triangle",
+      },
+      {
+        id: "type-group",
+        label: "Type group",
+        type: "OntologyTypeGroup",
+        type_node_kind: "type",
+        shape: "diamond",
+      },
+      {
+        id: "ontology-class-group",
+        label: "Ontology class",
+        type: "OntologyClass",
+        ontology_node_kind: "class",
+        shape: "square",
+      },
+      { id: "untyped", label: "Untyped", shape: "hexagon" },
+    );
+
+    const payload = buildGraphRendererPayload({ nodes, edges: [] });
+
+    for (const [index, type] of entityTypes.entries()) {
+      expect(payload.nodeById.get(`entity-${index}`).shape, type).toBe(
+        shapeForType({ type }),
+      );
+    }
+    expect(payload.nodeById.get("entity-0").shape).toBe("star");
+    expect(payload.nodeById.get("case-from-type-name").shape).toBe(
+      shapeForType({ type: "Case" }),
+    );
+    expect(payload.nodeById.get("work-box").shape).toBe("roundedbox");
+    expect(payload.nodeById.get("community-group").shape).toBe("triangle");
+    expect(payload.nodeById.get("type-group").shape).toBe("diamond");
+    expect(payload.nodeById.get("ontology-class-group").shape).toBe("square");
+    expect(payload.nodeById.get("untyped").shape).toBe("hexagon");
+  });
+});
 
 // --- BUG B: single source of truth for community → colour ---
 // The legend swatch (communityStats[].color) and the canvas node fill
