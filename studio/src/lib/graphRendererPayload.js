@@ -35,8 +35,6 @@ export const GROUP_PALETTE = [
   "#a855f7",
 ];
 
-const FOCUS_COLOR = "#ef4444";
-const SELECTED_COLOR = "#2563eb";
 // Studio representation-polish remark 1: main-graph edges render semi-
 // transparent by DEFAULT (not opaque) — same #94a3b8 hue as before, now at
 // ~0.5 alpha — so the graph reads less like a solid mesh even before any
@@ -598,7 +596,8 @@ export function buildGraphRendererPayload(scene, options = {}) {
     const nodeType = node.node_type ?? node.type ?? null;
     // Color-by (R4/R5): Layer keys the categorical colour on the typed layer,
     // Folder (default) on community/container, Churn on a continuous activity heat.
-    // Selection/focus overrides still win.
+    // Selection/focus preserve that node colour; size and connected-dim styling
+    // provide the emphasis cues instead.
     const colorKey = colorBy === COLOR_BY_LAYER ? nodeType : node.group;
     const baseColor =
       colorBy === COLOR_BY_CHURN ? colorForChurn(churnById?.get(node.id) ?? 0) : colorForGroup(colorKey);
@@ -618,7 +617,7 @@ export function buildGraphRendererPayload(scene, options = {}) {
       // node's label in-box, bypassing the degree/god-class label gate.
       forceBoxLabel: node.forceBoxLabel === true,
       size: nodeSize(node, nodeRadius, selected, focused),
-      color: focused ? FOCUS_COLOR : selected ? SELECTED_COLOR : baseColor,
+      color: baseColor,
     };
   });
 
