@@ -309,6 +309,14 @@ function copyStyle(style: GraphStyleBuffers, nodeCount: number, edgeCount: numbe
     throw new RangeError(`nodeShapes length ${style.nodeShapes.length} does not match node count ${nodeCount}`);
   }
 
+  if (style.haloMask && style.haloMask.length !== nodeCount) {
+    throw new RangeError(`haloMask length ${style.haloMask.length} does not match node count ${nodeCount}`);
+  }
+
+  if (style.haloColor && style.haloColor.length !== 4) {
+    throw new RangeError(`haloColor length ${style.haloColor.length} must be 4 (RGBA)`);
+  }
+
   if (style.edgeWidths.length !== edgeCount) {
     throw new RangeError(`edgeWidths length ${style.edgeWidths.length} does not match edge count ${edgeCount}`);
   }
@@ -319,6 +327,10 @@ function copyStyle(style: GraphStyleBuffers, nodeCount: number, edgeCount: numbe
 
   if (style.edgeDash.length !== edgeCount || style.edgeCurvatures.length !== edgeCount) {
     throw new RangeError("edge style buffers must match edge count");
+  }
+
+  if (style.edgeHaloMask && style.edgeHaloMask.length !== edgeCount) {
+    throw new RangeError(`edgeHaloMask length ${style.edgeHaloMask.length} does not match edge count ${edgeCount}`);
   }
 
   if (style.edgeRouteStyles && style.edgeRouteStyles.length !== edgeCount) {
@@ -337,6 +349,8 @@ function copyStyle(style: GraphStyleBuffers, nodeCount: number, edgeCount: numbe
     nodeSizes: new Float32Array(style.nodeSizes),
     nodeColors: new Uint8Array(style.nodeColors),
     nodeShapes: style.nodeShapes ? new Uint8Array(style.nodeShapes) : new Uint8Array(nodeCount),
+    haloMask: style.haloMask ? new Uint8Array(style.haloMask) : undefined,
+    haloColor: style.haloColor ? new Uint8Array(style.haloColor) : undefined,
     nodeLabels: style.nodeLabels ? [...style.nodeLabels] : undefined,
     nodeFills: style.nodeFills ? new Uint8Array(style.nodeFills) : undefined,
     nodeBorders: style.nodeBorders ? new Uint8Array(style.nodeBorders) : undefined,
@@ -344,6 +358,7 @@ function copyStyle(style: GraphStyleBuffers, nodeCount: number, edgeCount: numbe
     edgeColors: new Uint8Array(style.edgeColors),
     edgeDash: new Uint8Array(style.edgeDash),
     edgeCurvatures: new Float32Array(style.edgeCurvatures),
+    edgeHaloMask: style.edgeHaloMask ? new Uint8Array(style.edgeHaloMask) : undefined,
     edgeRouteStyles: style.edgeRouteStyles ? new Uint8Array(style.edgeRouteStyles) : undefined,
     edgeAlphaShape: style.edgeAlphaShape ? new Uint8Array(style.edgeAlphaShape) : undefined,
   };
@@ -474,11 +489,12 @@ function cssColor(
   source: Uint8Array | undefined,
   offset: number,
   fallback: readonly [number, number, number, number],
+  alphaScale = 1,
 ): string {
   const r = source?.[offset] ?? fallback[0];
   const g = source?.[offset + 1] ?? fallback[1];
   const b = source?.[offset + 2] ?? fallback[2];
-  const a = (source?.[offset + 3] ?? fallback[3]) / 255;
+  const a = ((source?.[offset + 3] ?? fallback[3]) / 255) * alphaScale;
   return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 
@@ -768,6 +784,24 @@ export function drawBoxLabels2D(context: Graph2DContext, draws: readonly BoxText
 
   for (const d of draws) {
     const dims = boxDimensions(d.height, d.label, measureLabelWidth);
+    if (d.halo) {
+      context.save();
+      context.shadowColor = d.haloColor ?? "rgba(0, 0, 0, 0)";
+      context.shadowBlur = Math.max(2, d.height * 0.28);
+      context.fillStyle = d.haloColor ?? "rgba(0, 0, 0, 0)";
+      context.beginPath();
+      drawRoundedBox(
+        context,
+        d.centerX,
+        d.centerY,
+        dims.w * 1.65,
+        dims.h * 1.65,
+        dims.corner * 1.65,
+      );
+      context.fill();
+      context.restore();
+    }
+
     context.save();
     context.globalAlpha = d.alpha;
 
@@ -1022,6 +1056,40 @@ function drawFallback2D(
     }
   }
   context.setLineDash([]);
+
+  // Canvas2D halo pass: shadowBlur gives the fallback a genuinely soft glow,
+  // while the expanded filled shape keeps the same geometry contract as the
+  // WebGL2 approximation. It runs before every real node fill, so node type /
+  // community colours remain the foreground and no contour is introduced.
+  const haloColor = [0, 0, 0, 0] as const;
+  for (let nodeIndex = 0; nodeIndex < state.nodeIds.length; nodeIndex += 1) {
+    if (state.style?.haloMask?.[nodeIndex] !== 1) continue;
+    const point = screenPoint(state.positions, nodeIndex, camera, canvas);
+    const shape = state.style?.nodeShapes[nodeIndex] ?? 0;
+    const glow = cssColor(state.style?.haloColor, 0, haloColor, 0.28);
+    context.save();
+    context.shadowColor = glow;
+    context.shadowBlur = Math.max(2, (geometry.radii[nodeIndex] ?? 1) * 0.55);
+    context.fillStyle = glow;
+    if (shape === BOX_SHAPE) {
+      const label = state.style?.nodeLabels?.[nodeIndex] ?? "";
+      const boxHeight = boxBaseHeightPx * pixelRatio * camera.zoom;
+      const dims = boxDimensions(boxHeight, label, measureLabelWidth);
+      drawRoundedBox(
+        context,
+        point.x,
+        point.y,
+        dims.w * 1.65,
+        dims.h * 1.65,
+        dims.corner * 1.65,
+      );
+    } else {
+      context.beginPath();
+      drawNodeShapePath(context, point.x, point.y, (geometry.radii[nodeIndex] ?? 1) * 1.65, shape);
+    }
+    context.fill();
+    context.restore();
+  }
 
   for (let nodeIndex = 0; nodeIndex < state.nodeIds.length; nodeIndex += 1) {
     const point = screenPoint(state.positions, nodeIndex, camera, canvas);
