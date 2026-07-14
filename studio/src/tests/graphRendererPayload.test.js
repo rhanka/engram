@@ -538,7 +538,7 @@ function makeTriangleScene() {
 }
 
 describe("graphRendererPayload", () => {
-  it("maps a studio scene into @sentropic/graph buffers with selection styling", () => {
+  it("maps a studio scene with type colour, selection sizing, and connected dimming", () => {
     const payload = buildGraphRendererPayload(
       {
         nodes: [
@@ -561,8 +561,15 @@ describe("graphRendererPayload", () => {
     expect([...payload.renderGraph.positions.slice(0, 4)]).toEqual([0, 0, 10, 0]);
     expect(payload.style.nodeSizes[0]).toBeGreaterThan(payload.style.nodeSizes[1]);
     expect([...payload.style.nodeShapes]).toEqual([1, 6, 0]);
-    expect([...payload.style.nodeColors.slice(0, 4)]).toEqual([239, 68, 68, 255]);
-    expect([...payload.style.nodeColors.slice(4, 8)]).toEqual([37, 99, 235, 255]);
+    // Focus and selection retain each node's community/type colour; emphasis
+    // comes from the existing size growth and connected-dim alpha cues.
+    expect(payload.nodeById.get("a").color).toBe(colorForGroup("Case"));
+    expect(payload.nodeById.get("b").color).toBe(colorForGroup("Evidence"));
+    expect([...payload.style.nodeColors.slice(0, 3)]).toEqual([...payload.baseStyle.nodeColors.slice(0, 3)]);
+    expect([...payload.style.nodeColors.slice(4, 7)]).toEqual([...payload.baseStyle.nodeColors.slice(4, 7)]);
+    expect(payload.style.nodeColors[8 + 3]).toBeLessThanOrEqual(90);
+    expect(payload.style.nodeColors[3]).toBe(255);
+    expect(payload.style.nodeColors[7]).toBe(255);
   });
 
   it("finds the closest node in world coordinates", () => {
@@ -1154,14 +1161,23 @@ describe("Color-by Folder vs Layer (Lot 4, R4)", () => {
     expect(Array.from(folder.style.nodeColors)).toEqual(Array.from(def.style.nodeColors));
   });
 
-  it("selection / focus colour still overrides both keyings", () => {
-    const payload = buildGraphRendererPayload(makeScene(), {
+  it("selection and focus preserve the active group/type colour", () => {
+    const selected = buildGraphRendererPayload(makeScene(), {
       nodeRadius: 3,
       colorBy: COLOR_BY_LAYER,
       selectedIds: ["a"],
     });
-    // Selected node uses SELECTED_COLOR (#2563eb → 37,99,235), not the layer hue.
-    expect([...payload.baseStyle.nodeColors.slice(0, 3)]).toEqual([37, 99, 235]);
+    const focused = buildGraphRendererPayload(makeScene(), {
+      nodeRadius: 3,
+      colorBy: COLOR_BY_LAYER,
+      focusId: "a",
+    });
+    // Layer colour is the active type colour, and selection/focus do not replace it.
+    expect(selected.nodeById.get("a").color).toBe(colorForGroup(TYPE));
+    expect(focused.nodeById.get("a").color).toBe(colorForGroup(TYPE));
+    expect([...selected.baseStyle.nodeColors.slice(0, 3)]).toEqual([
+      ...focused.baseStyle.nodeColors.slice(0, 3),
+    ]);
   });
 });
 
