@@ -9,6 +9,7 @@ import {
   COLOR_BY_LAYER,
   colorForChurn,
   colorForGroup,
+  cssColorToRgba,
   computeLayoutBuffer,
   DEFAULT_EDGE_CURVATURE,
   DEFAULT_EDGE_OPACITY,
@@ -25,6 +26,8 @@ import {
   findNearestNode,
   findNearestNodeId,
   GROUP_PALETTE,
+  DS_PRIMARY_TOKEN,
+  resolveDsPrimaryColor,
   interpolateGroupFadeStyle,
   interpolateMergeStyle,
   interpolateMergePositions,
@@ -695,7 +698,7 @@ describe("graphRendererPayload", () => {
       const isIncident = src === iA || tgt === iA;
       const alpha = payload.style.edgeColors[e * 4 + 3];
       if (isIncident) {
-        expect(alpha).toBe(128); // EDGE_BASE_ALPHA: 255 * 0.5, untouched by the dim
+        expect(alpha).toBe(179); // halo emphasis raises incident edges to ~0.7 alpha
       } else {
         expect(alpha).toBe(38); // EDGE_DIM_ALPHA: 255 * 0.15, rounded
       }
@@ -766,6 +769,35 @@ describe("graphRendererPayload", () => {
     expect(payload.style.nodeColors[iB * 4 + 3]).toBe(255); // selected itself
     expect(payload.style.nodeColors[iD * 4 + 3]).toBe(255); // neighbour of b
     expect(payload.style.nodeColors[iC * 4 + 3]).toBeLessThanOrEqual(90); // not a neighbour
+  });
+
+  it("emits the primary halo over the exact selected-node 1-hop neighbourhood", () => {
+    const scene = makeTriangleScene();
+    // Select b: halo a, b, d; c is outside the connected-dim neighbour set.
+    const payload = buildGraphRendererPayload(scene, { selectedIds: ["b"], nodeRadius: 3 });
+    const halo = payload.style.haloMask;
+    const edgeHalo = payload.style.edgeHaloMask;
+    const iA = payload.nodeIndexById.get("a");
+    const iB = payload.nodeIndexById.get("b");
+    const iC = payload.nodeIndexById.get("c");
+    const iD = payload.nodeIndexById.get("d");
+
+    expect([...halo]).toEqual([1, 1, 0, 1]);
+    // Edges are a-b, a-c, b-d: only the two edges incident to selected b are emphasized.
+    expect([...edgeHalo]).toEqual([1, 0, 1]);
+    expect([...payload.style.haloColor]).toEqual([...resolveDsPrimaryColor()]);
+    expect(DS_PRIMARY_TOKEN).toBe("--st-semantic-action-primary");
+    expect(resolveDsPrimaryColor()).toEqual(cssColorToRgba("oklch(50% 0.134 242.749)"));
+    // Halo is behind the original type/community fills, not a recolour.
+    expect([...payload.style.nodeColors.slice(iA * 4, iA * 4 + 3)]).toEqual(
+      [...payload.baseStyle.nodeColors.slice(iA * 4, iA * 4 + 3)],
+    );
+    expect([...payload.style.nodeColors.slice(iB * 4, iB * 4 + 3)]).toEqual(
+      [...payload.baseStyle.nodeColors.slice(iB * 4, iB * 4 + 3)],
+    );
+    expect(halo[iC]).toBe(0);
+    expect(halo[iD]).toBe(1);
+    expect(payload.style.edgeWidths[0]).toBeGreaterThan(payload.baseStyle.edgeWidths[0]);
   });
 
   it("does NOT dim anything when neither selectedIds nor hoveredNodeId are provided", () => {
