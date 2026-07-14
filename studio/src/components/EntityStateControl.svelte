@@ -43,11 +43,14 @@
   let open = $state(false);
   let hovering = $state(false);
   let focused = $state(false);
+  let closeTimer = null;
   let host;
 
   $effect(() => {
     if (disabled) open = false;
   });
+
+  $effect(() => () => cancelClose());
 
   const currentLabel = $derived(
     STATE_ITEMS.find((item) => item.value === entityState)?.label ?? "Normal",
@@ -64,8 +67,24 @@
   }
 
   function reveal() {
+    cancelClose();
     if (disabled) return;
     open = true;
+  }
+
+  function cancelClose() {
+    if (closeTimer) {
+      clearTimeout(closeTimer);
+      closeTimer = null;
+    }
+  }
+
+  function scheduleClose() {
+    cancelClose();
+    closeTimer = setTimeout(() => {
+      closeTimer = null;
+      maybeClose();
+    }, 180);
   }
 
   function maybeClose() {
@@ -73,42 +92,48 @@
   }
 
   function onEnter() {
+    cancelClose();
     hovering = true;
     reveal();
   }
 
   function onLeave() {
     hovering = false;
-    // Defer so a move onto the menu (focus) keeps it open.
-    queueMicrotask(maybeClose);
+    scheduleClose();
   }
 
   function onFocusIn() {
+    cancelClose();
     focused = true;
     reveal();
   }
 
   function onFocusOut() {
     focused = false;
-    queueMicrotask(maybeClose);
+    scheduleClose();
   }
 
   function onWindowKeydown(event) {
     if (event.key !== "Escape" || !open) return;
     event.preventDefault();
+    cancelClose();
     open = false;
   }
 
   function onWindowPointerDown(event) {
     if (!open) return;
     const target = event.target;
-    if (host && target && !host.contains(target)) open = false;
+    if (host && target && !host.contains(target)) {
+      cancelClose();
+      open = false;
+    }
   }
 
   function select(next, event) {
     event?.stopPropagation?.();
     if (disabled || typeof key !== "string") return;
     onSetState?.(key, next);
+    cancelClose();
     open = false;
   }
 </script>
@@ -124,7 +149,6 @@
   bind:this={host}
   class="esc"
   class:esc--dim={dim && entityState === "normal"}
-  class:esc--solo={entityState === "solo"}
   role="group"
   aria-label={`Visibility control: ${label}`}
   onpointerenter={onEnter}
@@ -169,11 +193,6 @@
     color: var(--st-component-iconButton-text, var(--st-semantic-text-secondary));
   }
 
-  /* Solo is the only state that also masks OTHER rows, so it alone gets an accent. */
-  .esc--solo :global(.st-iconButton) {
-    color: var(--st-semantic-feedback-info);
-  }
-
   /* While a Solo is active elsewhere, a masked-out Normal row reads dimmer. */
   .esc--dim :global(.st-iconButton) {
     opacity: 0.45;
@@ -183,7 +202,8 @@
   .esc-menu-anchor {
     position: absolute;
     z-index: var(--st-component-popover-zIndex, 80);
-    top: calc(100% + var(--st-spacing-1, 0.25rem));
+    top: 100%;
     left: 0;
+    padding-top: 6px;
   }
 </style>
