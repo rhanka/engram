@@ -51,7 +51,21 @@ type GL2 = WebGL2RenderingContext;
 const DEFAULT_NODE_COLOR = [77, 118, 255, 255] as const;
 const HALO_COLOR_FALLBACK = [0, 0, 0, 0] as const;
 const HALO_ALPHA = 0.28;
-const HALO_RADIUS_SCALE = 1.65;
+export const HALO_RADIUS_SCALE = 2.0;
+
+/**
+ * Radial falloff used by the WebGL halo fragment path. The input is the
+ * distance from the centre expressed as a fraction of the OUTER shape
+ * boundary (so 1 is the outer edge and 1/HALO_RADIUS_SCALE is the node edge).
+ * This mirrors the GLSL smoothstep below and is exported for the deterministic
+ * unit test; the instance alpha remains the peak alpha and the shader applies
+ * this spatial multiplier per fragment.
+ */
+export function haloFalloffAt(shapeRadius: number): number {
+  const inner = 1 / HALO_RADIUS_SCALE;
+  const t = Math.min(1, Math.max(0, (shapeRadius - inner) / (1 - inner)));
+  return 1 - t * t * (3 - 2 * t);
+}
 
 /** Shape codes Phase 1 renders as instanced polygons/discs (NOT the box). */
 const SHAPE_FAMILIES = [0, 1, 2, 3, 4, 6] as const;
@@ -62,12 +76,15 @@ layout(location = 1) in vec2 a_center;     // instance: world centre
 layout(location = 2) in float a_radius;    // instance: drawn radius (device px)
 layout(location = 3) in vec4 a_color;      // instance: drawn rgba (0..1)
 layout(location = 4) in float a_depth;     // instance: drawList index (interleave)
+layout(location = 5) in float a_halo;      // instance: 1 for the feathered halo pass
 
 uniform mat4 u_viewProj;   // UNIFIED CAMERA: world -> clip (ortho for 2D, mat4.ts)
 uniform vec2 u_viewport;   // device size, for the screen-space radius billboard
 uniform float u_maxDepth;
 
 out vec4 v_color;
+out vec2 v_unit;
+out float v_halo;
 
 void main() {
   // UNIFIED CAMERA: the node CENTRE (world) goes through the SAME mat4 the legacy
@@ -85,21 +102,86 @@ void main() {
   float z = u_maxDepth > 0.0 ? (a_depth / u_maxDepth) : 0.0;
   gl_Position = vec4(centerClip.xy + radiusClip, -z, 1.0);
   v_color = a_color;
+  v_unit = a_unit;
+  v_halo = a_halo;
 }
 `;
 
 const SHAPE_FRAGMENT_SHADER = `#version 300 es
-precision mediump float;
+precision highp float;
 in vec4 v_color;
+in vec2 v_unit;
+in float v_halo;
+uniform float u_shapeFamily;
 out vec4 outColor;
+
+float cross2(vec2 a, vec2 b) {
+  return a.x * b.y - a.y * b.x;
+}
+
+vec2 starVertex(int index) {
+  float angle = float(index) * 0.6283185307 - 1.5707963268;
+  float radius = mod(float(index), 2.0) < 0.5 ? 1.0 : 0.42;
+  return vec2(cos(angle), sin(angle)) * radius;
+}
+
+// Return the distance from the centre to this shape's boundary along dir,
+// in the same unit coordinates used by the triangle-fan geometry. This makes
+// the feather follow flat/concave shape edges instead of leaving a circular
+// hard rim at polygon corners.
+float shapeBoundaryRadius(vec2 dir, float family) {
+  if (family < 0.5) return 1.0; // circle
+  if (family < 1.5) return 1.0 / (abs(dir.x) + abs(dir.y)); // diamond
+  if (family < 2.5) { // five-point star: intersect the centre ray with an edge
+    float boundary = 1e6;
+    for (int index = 0; index < 10; index += 1) {
+      vec2 p0 = starVertex(index);
+      vec2 p1 = starVertex((index + 1) % 10);
+      vec2 edge = p1 - p0;
+      float denominator = cross2(dir, edge);
+      if (denominator > 1e-5) {
+        boundary = min(boundary, cross2(p0, edge) / denominator);
+      }
+    }
+    return boundary < 1e5 ? boundary : 1.0;
+  }
+  if (family < 3.5) { // regular hexagon, circumradius 1 / apothem cos(30°)
+    float face = max(
+      max(abs(dir.x), abs(0.5 * dir.x + 0.8660254038 * dir.y)),
+      abs(-0.5 * dir.x + 0.8660254038 * dir.y)
+    );
+    return 0.8660254038 / max(face, 1e-5);
+  }
+  if (family < 4.5) { // inset square
+    return 0.88 / max(abs(dir.x), abs(dir.y));
+  }
+  // Triangle face normals are -30°, 90°, and 210°; its apothem is 0.5.
+  float face = max(
+    max(dot(dir, vec2(0.8660254038, -0.5)), dir.y),
+    dot(dir, vec2(-0.8660254038, -0.5))
+  );
+  return 0.5 / max(face, 1e-5);
+}
+
 void main() {
+  float alpha = v_color.a;
+  if (v_halo > 0.5) {
+    float distanceFromCentre = length(v_unit);
+    vec2 direction = distanceFromCentre > 1e-5 ? v_unit / distanceFromCentre : vec2(1.0, 0.0);
+    float boundary = shapeBoundaryRadius(direction, u_shapeFamily);
+    float shapeRadius = distanceFromCentre / max(boundary, 1e-5);
+    float inner = ${String(1 / HALO_RADIUS_SCALE)};
+    // The halo is strongest at the node edge and fades smoothly to zero at
+    // the outer shape boundary. Its alpha is never a uniform ring/contour.
+    alpha *= 1.0 - smoothstep(inner, 1.0, shapeRadius);
+  }
   // PREMULTIPLIED alpha output (paired with blendFunc(ONE, ONE_MINUS_SRC_ALPHA)).
   // The context is premultipliedAlpha:true (the default), so the framebuffer must
   // hold premultiplied RGBA. With the old straight output + blendFunc(SRC_ALPHA,
   // ONE_MINUS_SRC_ALPHA) the framebuffer ALPHA was under-accumulated (a·a instead
   // of a), so dimmed (alpha<1) glyphs composited TOO TRANSPARENT and AA rims read
   // as dark fringes. Emitting premultiplied rgb·a keeps rgb and alpha consistent.
-  outColor = vec4(v_color.rgb * v_color.a, v_color.a);
+  outColor = vec4(v_color.rgb * alpha, alpha);
 }
 `;
 
@@ -109,6 +191,7 @@ interface ShapeProgram {
     viewProj: WebGLUniformLocation | null;
     viewport: WebGLUniformLocation | null;
     maxDepth: WebGLUniformLocation | null;
+    shapeFamily: WebGLUniformLocation | null;
   };
 }
 
@@ -121,8 +204,8 @@ interface ShapeFamilyBuffers {
 }
 
 /** Floats per instance in the interleaved instance buffer. */
-// a_center(2) + a_radius(1) + a_color(4) + a_depth(1) = 8
-const FLOATS_PER_INSTANCE = 8;
+// a_center(2) + a_radius(1) + a_color(4) + a_depth(1) + a_halo(1) = 9
+const FLOATS_PER_INSTANCE = 9;
 
 export interface WebGLShapeFrame {
   positions: Float32Array;
@@ -182,7 +265,7 @@ function link(gl: GL2, vsSrc: string, fsSrc: string): WebGLProgram {
 
 /**
  * Build the per-shape-family VAOs: a unit triangle-fan VBO (location 0) +
- * an empty per-instance interleaved VBO (locations 1–4, divisor 1).
+ * an empty per-instance interleaved VBO (locations 1–5, divisor 1).
  */
 function createShapeFamilyBuffers(gl: GL2): Map<number, ShapeFamilyBuffers> {
   const families = new Map<number, ShapeFamilyBuffers>();
@@ -204,8 +287,9 @@ function createShapeFamilyBuffers(gl: GL2): Map<number, ShapeFamilyBuffers> {
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
-    // locations 1–4: per-instance attributes (divisor 1) from the interleaved
-    // instance buffer. a_center(2) | a_radius(1) | a_color(4) | a_depth(1).
+    // locations 1–5: per-instance attributes (divisor 1) from the interleaved
+    // instance buffer. a_center(2) | a_radius(1) | a_color(4) | a_depth(1) |
+    // a_halo(1).
     gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuffer);
     // a_center
     gl.enableVertexAttribArray(1);
@@ -223,6 +307,10 @@ function createShapeFamilyBuffers(gl: GL2): Map<number, ShapeFamilyBuffers> {
     gl.enableVertexAttribArray(4);
     gl.vertexAttribPointer(4, 1, gl.FLOAT, false, stride, 7 * 4);
     gl.vertexAttribDivisor(4, 1);
+    // a_halo
+    gl.enableVertexAttribArray(5);
+    gl.vertexAttribPointer(5, 1, gl.FLOAT, false, stride, 8 * 4);
+    gl.vertexAttribDivisor(5, 1);
 
     gl.bindVertexArray(null);
     families.set(shape, { vao, unitBuffer, instanceBuffer, fanVertexCount: geom.fanVertexCount });
@@ -269,6 +357,8 @@ export interface ShapeInstanceView {
   /** rgba in 0..1 (a is alpha 0..1, rgb are channel/255). */
   color: [number, number, number, number];
   depth: number;
+  /** Whether this instance uses the fragment shader's soft halo falloff. */
+  halo: boolean;
 }
 
 export function decodeInstance(list: number[], n: number): ShapeInstanceView {
@@ -278,11 +368,12 @@ export function decodeInstance(list: number[], n: number): ShapeInstanceView {
     radius: list[o + 2] ?? 0,
     color: [list[o + 3] ?? 0, list[o + 4] ?? 0, list[o + 5] ?? 0, list[o + 6] ?? 0],
     depth: list[o + 7] ?? 0,
+    halo: (list[o + 8] ?? 0) > 0.5,
   };
 }
 
 export interface ShapeInstanceSet {
-  /** Low-alpha expanded node geometry, drawn before border/fill. */
+  /** Expanded node geometry whose fragment alpha is feathered, drawn before border/fill. */
   halo: Map<number, number[]>;
   fill: Map<number, number[]>;
   border: Map<number, number[]>;
@@ -291,9 +382,10 @@ export interface ShapeInstanceSet {
 
 /**
  * Build the per-shape-family instance arrays for a frame. Each node maps to ONE
- * fill instance (interior) and — for hollow or bold variants — an extra border
- * pass instance. Box (shape 5) nodes are SKIPPED (Phase 1 leaves them to
- * Canvas2D). Non-finite world coords are coerced (N1b) and counted.
+ * feathered halo instance when selected, ONE fill instance (interior) and — for
+ * hollow or bold variants — an extra border pass instance. Box (shape 5) nodes
+ * are SKIPPED (Phase 1 leaves them to Canvas2D). Non-finite world coords are
+ * coerced (N1b) and counted.
  *
  * EXPORTED so the golden tests can assert the GL instances carry the SAME drawn
  * radius (radius-as-radius, N1) the Canvas2D path computes — a parity check that
@@ -338,9 +430,10 @@ export function buildShapeInstances(frame: WebGLShapeFrame): ShapeInstanceSet {
     const alpha = nodeColor[3] / 255;
     const haloColor = colorAt(style?.haloColor, 0, HALO_COLOR_FALLBACK);
     if (style?.haloMask?.[i] === 1 && haloColor[3] > 0) {
-      // The halo is a filled, scaled copy of the SAME unit geometry. Its low
-      // alpha plus the real node drawn on top make a soft glow approximation;
-      // there is intentionally no outline/ring geometry here.
+      // The halo uses the SAME unit geometry at a wider radius. The fragment
+      // shader identifies this instance and applies a shape-aware smoothstep
+      // feather from the node edge to the outer boundary; this alpha is only
+      // the peak colour, not a visible uniform contour.
       pushInstance(
         halo.get(family)!,
         cx,
@@ -351,6 +444,7 @@ export function buildShapeInstances(frame: WebGLShapeFrame): ShapeInstanceSet {
         haloColor[2],
         (haloColor[3] / 255) * HALO_ALPHA * alpha,
         depth,
+        true,
       );
     }
     const hollow = (style?.nodeFills?.[i] ?? 0) === 1;
@@ -576,8 +670,9 @@ function pushInstance(
   b: number,
   a: number,
   depth: number,
+  halo = false,
 ): void {
-  list.push(cx, cy, radius, r / 255, g / 255, b / 255, a, depth);
+  list.push(cx, cy, radius, r / 255, g / 255, b / 255, a, depth, halo ? 1 : 0);
 }
 
 /**
@@ -605,6 +700,7 @@ export function createWebGLShapeRenderer(context: GL2 | null): WebGLShapeRendere
       viewProj: gl.getUniformLocation(program, "u_viewProj"),
       viewport: gl.getUniformLocation(program, "u_viewport"),
       maxDepth: gl.getUniformLocation(program, "u_maxDepth"),
+      shapeFamily: gl.getUniformLocation(program, "u_shapeFamily"),
     },
   };
   const families = createShapeFamilyBuffers(gl);
@@ -635,14 +731,14 @@ export function createWebGLShapeRenderer(context: GL2 | null): WebGLShapeRendere
     // glyphs too far + dark-fringing AA rims under premultipliedAlpha:true).
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
-    // HALO PASS first: expanded, low-alpha copies sit behind the real node
+    // HALO PASS first: expanded, feathered copies sit behind the real node
     // geometry. Then the border ring and interior fill preserve all existing
     // node type/community colours and shape variants.
-    drawPass(gl, families, halo);
+    drawPass(gl, families, halo, shapeProgram.uniforms.shapeFamily);
     // Border ring pass first (under the fill), then the interior fill pass, so a
     // hollow ring / bold outline sits beneath the (translucent or solid) centre.
-    drawPass(gl, families, border);
-    drawPass(gl, families, fill);
+    drawPass(gl, families, border, shapeProgram.uniforms.shapeFamily);
+    drawPass(gl, families, fill, shapeProgram.uniforms.shapeFamily);
 
     gl.bindVertexArray(null);
     return { nonFiniteCount };
@@ -660,12 +756,18 @@ export function createWebGLShapeRenderer(context: GL2 | null): WebGLShapeRendere
   return { renderShapes, destroy };
 }
 
-function drawPass(gl: GL2, families: Map<number, ShapeFamilyBuffers>, instances: Map<number, number[]>): void {
+function drawPass(
+  gl: GL2,
+  families: Map<number, ShapeFamilyBuffers>,
+  instances: Map<number, number[]>,
+  shapeFamilyUniform: WebGLUniformLocation | null,
+): void {
   for (const [shape, list] of instances) {
     if (list.length === 0) continue;
     const buffers = families.get(shape);
     if (!buffers) continue;
     const instanceCount = list.length / FLOATS_PER_INSTANCE;
+    if (shapeFamilyUniform) gl.uniform1f(shapeFamilyUniform, shape);
     gl.bindVertexArray(buffers.vao);
     gl.bindBuffer(gl.ARRAY_BUFFER, buffers.instanceBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(list), gl.DYNAMIC_DRAW);
