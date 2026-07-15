@@ -17,6 +17,7 @@ import {
   createWebGLShapeRenderer,
   decodeInstance,
   effectiveStrokeHalfWidth,
+  haloFalloffAt,
   instancedShapeFamilies,
   FLOATS_PER_INSTANCE,
   type WebGLShapeFrame,
@@ -110,7 +111,17 @@ function createFakeGL2() {
 }
 
 function frame(
-  nodes: Array<{ x: number; y: number; size: number; shape: string; rgb: [number, number, number]; a?: number; fill?: 0 | 1; border?: 0 | 1 }>,
+  nodes: Array<{
+    x: number;
+    y: number;
+    size: number;
+    shape: string;
+    rgb: [number, number, number];
+    a?: number;
+    fill?: 0 | 1;
+    border?: 0 | 1;
+    halo?: boolean;
+  }>,
   dpr = 2,
   zoom = 1,
 ): WebGLShapeFrame {
@@ -121,6 +132,7 @@ function frame(
   const nodeColors = new Uint8Array(n * 4);
   const nodeFills = new Uint8Array(n);
   const nodeBorders = new Uint8Array(n);
+  const haloMask = new Uint8Array(n);
   nodes.forEach((node, i) => {
     positions[i * 2] = node.x;
     positions[i * 2 + 1] = node.y;
@@ -132,6 +144,7 @@ function frame(
     nodeColors[i * 4 + 3] = node.a ?? 255;
     nodeFills[i] = node.fill ?? 0;
     nodeBorders[i] = node.border ?? 0;
+    haloMask[i] = node.halo ? 1 : 0;
   });
   return {
     positions,
@@ -142,6 +155,8 @@ function frame(
       nodeShapes,
       nodeFills,
       nodeBorders,
+      haloMask,
+      haloColor: new Uint8Array([45, 90, 135, 255]),
       edgeWidths: new Float32Array(),
       edgeColors: new Uint8Array(),
       edgeDash: new Uint8Array(),
@@ -198,6 +213,44 @@ describe("B1 Phase 1 — instanced draw contract (fake WebGL2)", () => {
     expect(fanDraws).toHaveLength(2);
     const counts = fanDraws.map((d) => d.instanceCount).sort();
     expect(counts).toEqual([1, 2]);
+  });
+
+  it("runs a low-alpha expanded halo pass before the main node pass", () => {
+    const gl = createFakeGL2();
+    const renderer = createWebGLShapeRenderer(gl as unknown as WebGL2RenderingContext)!;
+    renderer.renderShapes(
+      frame([{ x: 0, y: 0, size: 14, shape: "circle", rgb: [214, 39, 40], halo: true }]),
+    );
+
+    expect(gl.draws).toHaveLength(2);
+    const halo = gl.draws[0]!.instanceData!;
+    const node = gl.draws[1]!.instanceData!;
+    expect(halo[2]).toBeGreaterThan(node[2]);
+    expect(halo[6]).toBeCloseTo(0.28, 5);
+    expect(decodeInstance(halo, 0).halo).toBe(true);
+    expect(decodeInstance(node, 0).halo).toBe(false);
+  });
+
+  it("halo alpha feathers from the node edge to zero at the outer edge", () => {
+    const profile = [0.5, 0.65, 0.8, 0.95, 1].map(haloFalloffAt);
+    expect(profile[0]).toBeCloseTo(1, 6);
+    expect(profile[0]).toBeGreaterThan(profile[1]!);
+    expect(profile[1]).toBeGreaterThan(profile[2]!);
+    expect(profile[2]).toBeGreaterThan(profile[3]!);
+    expect(profile[4]).toBeCloseTo(0, 6);
+    expect(new Set(profile).size).toBeGreaterThan(2);
+  });
+
+  it("emits no halo instances when the mask is empty or the halo color is transparent", () => {
+    const noMask = buildShapeInstances(frame([{ x: 0, y: 0, size: 14, shape: "circle", rgb: [214, 39, 40] }]));
+    expect(noMask.halo.get(0)).toEqual([]);
+
+    const transparentColorFrame = frame([
+      { x: 0, y: 0, size: 14, shape: "circle", rgb: [214, 39, 40], halo: true },
+    ]);
+    transparentColorFrame.style!.haloColor = new Uint8Array([45, 90, 135, 0]);
+    const transparentColor = buildShapeInstances(transparentColorFrame);
+    expect(transparentColor.halo.get(0)).toEqual([]);
   });
 
   it("box (shape 5) is NOT drawn by the instanced path (Canvas2D in Phase 1)", () => {
@@ -432,7 +485,7 @@ describe("B1 Phase 1 — N1b non-finite world-coord coercion", () => {
 
 describe("B1 Phase 1 — instance buffer encoding", () => {
   it("FLOATS_PER_INSTANCE matches a decoded instance stride; families exclude the box", () => {
-    expect(FLOATS_PER_INSTANCE).toBe(8);
+    expect(FLOATS_PER_INSTANCE).toBe(9);
     expect(instancedShapeFamilies()).not.toContain(5);
     expect(instancedShapeFamilies()).toEqual([0, 1, 2, 3, 4, 6]);
   });

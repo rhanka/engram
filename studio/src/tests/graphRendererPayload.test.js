@@ -9,6 +9,7 @@ import {
   COLOR_BY_LAYER,
   colorForChurn,
   colorForGroup,
+  cssColorToRgba,
   computeLayoutBuffer,
   DEFAULT_EDGE_CURVATURE,
   DEFAULT_EDGE_OPACITY,
@@ -25,6 +26,8 @@ import {
   findNearestNode,
   findNearestNodeId,
   GROUP_PALETTE,
+  DS_PRIMARY_TOKEN,
+  resolveDsPrimaryColor,
   interpolateGroupFadeStyle,
   interpolateMergeStyle,
   interpolateMergePositions,
@@ -45,7 +48,75 @@ import {
   selectPrincipalHubLabels,
   truncateLabel,
 } from "../lib/graphRendererPayload.js";
-import { buildScene, communityStats, nodeGroup } from "../lib/graphAdapter.js";
+import { buildScene, communityStats, nodeGroup, shapeForType } from "../lib/graphAdapter.js";
+
+describe("renderer node shapes match the type legend", () => {
+  it("uses shapeForType for entities while preserving boxes, synthetic groups, and fallbacks", () => {
+    const entityTypes = ["Case", "Character", "Evidence", "Location"];
+    const nodes = entityTypes.map((type, index) => ({
+      id: `entity-${index}`,
+      label: type,
+      type,
+      // Deliberately stale: the renderer must not trust the baked scene shape.
+      shape: "dot",
+    }));
+    nodes.push(
+      {
+        id: "case-from-type-name",
+        label: "Case from type_name",
+        type_name: "Case",
+        shape: "dot",
+      },
+      {
+        id: "work-box",
+        label: "Work box",
+        type: "Work",
+        // Work maps to a non-box glyph in shapeForType, but an existing box
+        // must keep the renderer's box path.
+        shape: "roundedbox",
+      },
+      {
+        id: "community-group",
+        label: "Community",
+        type: "OntologyCommunity",
+        community_node_kind: "community",
+        shape: "triangle",
+      },
+      {
+        id: "type-group",
+        label: "Type group",
+        type: "OntologyTypeGroup",
+        type_node_kind: "type",
+        shape: "diamond",
+      },
+      {
+        id: "ontology-class-group",
+        label: "Ontology class",
+        type: "OntologyClass",
+        ontology_node_kind: "class",
+        shape: "square",
+      },
+      { id: "untyped", label: "Untyped", shape: "hexagon" },
+    );
+
+    const payload = buildGraphRendererPayload({ nodes, edges: [] });
+
+    for (const [index, type] of entityTypes.entries()) {
+      expect(payload.nodeById.get(`entity-${index}`).shape, type).toBe(
+        shapeForType({ type }),
+      );
+    }
+    expect(payload.nodeById.get("entity-0").shape).toBe("star");
+    expect(payload.nodeById.get("case-from-type-name").shape).toBe(
+      shapeForType({ type: "Case" }),
+    );
+    expect(payload.nodeById.get("work-box").shape).toBe("roundedbox");
+    expect(payload.nodeById.get("community-group").shape).toBe("triangle");
+    expect(payload.nodeById.get("type-group").shape).toBe("diamond");
+    expect(payload.nodeById.get("ontology-class-group").shape).toBe("square");
+    expect(payload.nodeById.get("untyped").shape).toBe("hexagon");
+  });
+});
 
 // --- BUG B: single source of truth for community → colour ---
 // The legend swatch (communityStats[].color) and the canvas node fill
@@ -470,7 +541,7 @@ function makeTriangleScene() {
 }
 
 describe("graphRendererPayload", () => {
-  it("maps a studio scene into @sentropic/graph buffers with selection styling", () => {
+  it("maps a studio scene with type colour, selection sizing, and connected dimming", () => {
     const payload = buildGraphRendererPayload(
       {
         nodes: [
@@ -493,8 +564,15 @@ describe("graphRendererPayload", () => {
     expect([...payload.renderGraph.positions.slice(0, 4)]).toEqual([0, 0, 10, 0]);
     expect(payload.style.nodeSizes[0]).toBeGreaterThan(payload.style.nodeSizes[1]);
     expect([...payload.style.nodeShapes]).toEqual([1, 6, 0]);
-    expect([...payload.style.nodeColors.slice(0, 4)]).toEqual([239, 68, 68, 255]);
-    expect([...payload.style.nodeColors.slice(4, 8)]).toEqual([37, 99, 235, 255]);
+    // Focus and selection retain each node's community/type colour; emphasis
+    // comes from the existing size growth and connected-dim alpha cues.
+    expect(payload.nodeById.get("a").color).toBe(colorForGroup("Case"));
+    expect(payload.nodeById.get("b").color).toBe(colorForGroup("Evidence"));
+    expect([...payload.style.nodeColors.slice(0, 3)]).toEqual([...payload.baseStyle.nodeColors.slice(0, 3)]);
+    expect([...payload.style.nodeColors.slice(4, 7)]).toEqual([...payload.baseStyle.nodeColors.slice(4, 7)]);
+    expect(payload.style.nodeColors[8 + 3]).toBeLessThanOrEqual(90);
+    expect(payload.style.nodeColors[3]).toBe(255);
+    expect(payload.style.nodeColors[7]).toBe(255);
   });
 
   it("finds the closest node in world coordinates", () => {
@@ -620,7 +698,7 @@ describe("graphRendererPayload", () => {
       const isIncident = src === iA || tgt === iA;
       const alpha = payload.style.edgeColors[e * 4 + 3];
       if (isIncident) {
-        expect(alpha).toBe(128); // EDGE_BASE_ALPHA: 255 * 0.5, untouched by the dim
+        expect(alpha).toBe(179); // halo emphasis raises incident edges to ~0.7 alpha
       } else {
         expect(alpha).toBe(38); // EDGE_DIM_ALPHA: 255 * 0.15, rounded
       }
@@ -691,6 +769,35 @@ describe("graphRendererPayload", () => {
     expect(payload.style.nodeColors[iB * 4 + 3]).toBe(255); // selected itself
     expect(payload.style.nodeColors[iD * 4 + 3]).toBe(255); // neighbour of b
     expect(payload.style.nodeColors[iC * 4 + 3]).toBeLessThanOrEqual(90); // not a neighbour
+  });
+
+  it("emits the primary halo over the exact selected-node 1-hop neighbourhood", () => {
+    const scene = makeTriangleScene();
+    // Select b: halo a, b, d; c is outside the connected-dim neighbour set.
+    const payload = buildGraphRendererPayload(scene, { selectedIds: ["b"], nodeRadius: 3 });
+    const halo = payload.style.haloMask;
+    const edgeHalo = payload.style.edgeHaloMask;
+    const iA = payload.nodeIndexById.get("a");
+    const iB = payload.nodeIndexById.get("b");
+    const iC = payload.nodeIndexById.get("c");
+    const iD = payload.nodeIndexById.get("d");
+
+    expect([...halo]).toEqual([1, 1, 0, 1]);
+    // Edges are a-b, a-c, b-d: only the two edges incident to selected b are emphasized.
+    expect([...edgeHalo]).toEqual([1, 0, 1]);
+    expect([...payload.style.haloColor]).toEqual([...resolveDsPrimaryColor()]);
+    expect(DS_PRIMARY_TOKEN).toBe("--st-semantic-action-primary");
+    expect(resolveDsPrimaryColor()).toEqual(cssColorToRgba("oklch(50% 0.134 242.749)"));
+    // Halo is behind the original type/community fills, not a recolour.
+    expect([...payload.style.nodeColors.slice(iA * 4, iA * 4 + 3)]).toEqual(
+      [...payload.baseStyle.nodeColors.slice(iA * 4, iA * 4 + 3)],
+    );
+    expect([...payload.style.nodeColors.slice(iB * 4, iB * 4 + 3)]).toEqual(
+      [...payload.baseStyle.nodeColors.slice(iB * 4, iB * 4 + 3)],
+    );
+    expect(halo[iC]).toBe(0);
+    expect(halo[iD]).toBe(1);
+    expect(payload.style.edgeWidths[0]).toBeGreaterThan(payload.baseStyle.edgeWidths[0]);
   });
 
   it("does NOT dim anything when neither selectedIds nor hoveredNodeId are provided", () => {
@@ -1086,14 +1193,23 @@ describe("Color-by Folder vs Layer (Lot 4, R4)", () => {
     expect(Array.from(folder.style.nodeColors)).toEqual(Array.from(def.style.nodeColors));
   });
 
-  it("selection / focus colour still overrides both keyings", () => {
-    const payload = buildGraphRendererPayload(makeScene(), {
+  it("selection and focus preserve the active group/type colour", () => {
+    const selected = buildGraphRendererPayload(makeScene(), {
       nodeRadius: 3,
       colorBy: COLOR_BY_LAYER,
       selectedIds: ["a"],
     });
-    // Selected node uses SELECTED_COLOR (#2563eb → 37,99,235), not the layer hue.
-    expect([...payload.baseStyle.nodeColors.slice(0, 3)]).toEqual([37, 99, 235]);
+    const focused = buildGraphRendererPayload(makeScene(), {
+      nodeRadius: 3,
+      colorBy: COLOR_BY_LAYER,
+      focusId: "a",
+    });
+    // Layer colour is the active type colour, and selection/focus do not replace it.
+    expect(selected.nodeById.get("a").color).toBe(colorForGroup(TYPE));
+    expect(focused.nodeById.get("a").color).toBe(colorForGroup(TYPE));
+    expect([...selected.baseStyle.nodeColors.slice(0, 3)]).toEqual([
+      ...focused.baseStyle.nodeColors.slice(0, 3),
+    ]);
   });
 });
 
