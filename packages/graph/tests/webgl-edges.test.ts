@@ -15,6 +15,7 @@ import { createGraphRenderer } from "../src/renderer";
 import {
   ARROW_FLOATS_PER_INSTANCE,
   CAPSULE_FLOATS_PER_INSTANCE,
+  alphaShapeAtArc,
   buildEdgeInstances,
   createWebGLEdgeRenderer,
   decodeCapsule,
@@ -31,6 +32,7 @@ interface Draw {
 
 function createFakeGL2() {
   const draws: Draw[] = [];
+  const shaderSources: string[] = [];
   const TRIANGLES = 0x0004;
   const gl = {
     draws,
@@ -57,7 +59,9 @@ function createFakeGL2() {
     clear: () => undefined,
     drawArrays: () => undefined,
     createShader: () => ({}),
-    shaderSource: () => undefined,
+    shaderSource: (_shader: unknown, source: string) => {
+      shaderSources.push(source);
+    },
     compileShader: () => undefined,
     getShaderParameter: () => true,
     getShaderInfoLog: () => "",
@@ -89,13 +93,14 @@ function createFakeGL2() {
       draws.push({ mode, first, count, instanceCount });
     },
   };
-  return gl;
+  return { ...gl, shaderSources };
 }
 
 /** A straight single-edge frame (two circle endpoints) in device px. */
-function edgeFrame(opts: { curvature?: number; dash?: number; width?: number } = {}): WebGLEdgeFrame {
+function edgeFrame(opts: { curvature?: number; dash?: number; width?: number; span?: number } = {}): WebGLEdgeFrame {
+  const span = opts.span ?? 120;
   return {
-    positions: new Float32Array([-120, 0, 120, 0]),
+    positions: new Float32Array([-span, 0, span, 0]),
     nodeCount: 2,
     edges: new Uint32Array([0, 1]),
     style: {
@@ -145,7 +150,7 @@ describe("B1 Phase 2 — instanced edge draw contract (fake WebGL2)", () => {
   });
 
   it("instance buffer strides match the decoders", () => {
-    expect(CAPSULE_FLOATS_PER_INSTANCE).toBe(15);
+    expect(CAPSULE_FLOATS_PER_INSTANCE).toBe(16);
     expect(ARROW_FLOATS_PER_INSTANCE).toBe(9);
     const set = buildEdgeInstances(edgeFrame());
     expect(set.capsules.length % CAPSULE_FLOATS_PER_INSTANCE).toBe(0);
@@ -156,6 +161,16 @@ describe("B1 Phase 2 — instanced edge draw contract (fake WebGL2)", () => {
     const set = buildEdgeInstances(edgeFrame());
     const cap = decodeCapsule(set.capsules, 0);
     expect(cap.shape).toEqual([1, 1, 1]);
+  });
+
+  it("declares the full-edge arc varying and leaves dash phase on absolute arc", () => {
+    const gl = createFakeGL2();
+    createWebGLEdgeRenderer(gl as unknown as WebGL2RenderingContext);
+    const fragment = gl.shaderSources.find((source) => source.includes("out vec4 outColor;"));
+    expect(fragment).toBeDefined();
+    expect(fragment).toContain("in float v_totalArcLength;");
+    expect(fragment).toContain("v_arc / max(v_totalArcLength, 1e-5)");
+    expect(fragment).toContain("mod(v_arc, v_dashPeriod)");
   });
 
   it("edgeAlphaShape is normalised 0..1 and carried onto every segment", () => {
@@ -170,6 +185,40 @@ describe("B1 Phase 2 — instanced edge draw contract (fake WebGL2)", () => {
       expect(cap.shape[0]).toBeCloseTo(1, 5);
       expect(cap.shape[1]).toBeCloseTo(64 / 255, 5);
       expect(cap.shape[2]).toBeCloseTo(1, 5);
+      expect(cap.totalArcLength).toBeGreaterThan(0);
+    }
+  });
+
+  it("maps the alpha profile once over the complete arc for short and long edges", () => {
+    // Opaque at BOTH nodes and faint in the middle: this makes the intended
+    // single extremum unambiguous on both halves of the profile.
+    const shape = [1, 0.15, 1] as const;
+    for (const span of [30, 120]) {
+      const frame = edgeFrame({ curvature: 0.5, span });
+      frame.style!.edgeAlphaShape = new Uint8Array(shape.map((value) => Math.round(value * 255)));
+      const set = buildEdgeInstances(frame);
+      const segments = Array.from(
+        { length: set.capsules.length / CAPSULE_FLOATS_PER_INSTANCE },
+        (_, index) => decodeCapsule(set.capsules, index),
+      );
+      const total = segments[0]!.totalArcLength;
+      const samples = [0, 0.25, 0.5, 0.75, 1].map((t) => alphaShapeAtArc(shape, t * total, total));
+
+      expect(samples[0]).toBeCloseTo(shape[0], 6);
+      expect(samples[2]).toBeCloseTo(shape[1], 6);
+      expect(samples[4]).toBeCloseTo(shape[2], 6);
+      expect(samples[1]).toBeGreaterThan(samples[2]!);
+      expect(samples[3]).toBeLessThan(samples[4]!);
+      // The middle extremum occurs once; it does not restart at each capsule.
+      expect(samples.filter((value) => Math.abs(value - shape[1]) < 1e-6)).toHaveLength(1);
+      expect(segments.every((segment) => segment.totalArcLength === total)).toBe(true);
+
+      const segmentMidpoints = segments.map((segment) => {
+        const length = Math.hypot(segment.p1[0] - segment.p0[0], segment.p1[1] - segment.p0[1]);
+        return alphaShapeAtArc(segment.shape, segment.arcStart + length / 2, segment.totalArcLength);
+      });
+      expect(segmentMidpoints[0]).toBeGreaterThan(segmentMidpoints[1]!);
+      expect(segmentMidpoints.at(-1)).toBeGreaterThan(segmentMidpoints.at(-2)!);
     }
   });
 });

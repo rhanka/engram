@@ -108,6 +108,10 @@ export interface GraphStyleBuffers {
   nodeSizes: Float32Array;
   nodeColors: Uint8Array;
   nodeShapes: Uint8Array;
+  /** Optional per-node selection-neighbourhood halo mask (0/1). */
+  haloMask?: Uint8Array;
+  /** Optional RGBA8 colour shared by the halo pass. */
+  haloColor?: Uint8Array;
   /**
    * Optional per-node label text drawn INSIDE the glyph by the Canvas2D
    * fallback (legacy `shape:box` parity). Populated ONLY for box-category
@@ -130,6 +134,8 @@ export interface GraphStyleBuffers {
   edgeColors: Uint8Array;
   edgeDash: Uint8Array;
   edgeCurvatures: Float32Array;
+  /** Optional per-edge selection-neighbourhood emphasis mask (0/1). */
+  edgeHaloMask?: Uint8Array;
   /**
    * Optional per-edge ROUTE-style codes (parallel to edges): 0 default
    * (centre-to-centre, historical), 1 flow-port (right-port → left-port smooth
