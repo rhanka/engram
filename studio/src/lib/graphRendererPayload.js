@@ -8,6 +8,8 @@ import {
   resolveLayout,
   TYPED_LAYER_LAYOUT_ID,
 } from "@sentropic/graph";
+import { semantic } from "@sentropic/design-system-tokens";
+import { shapeForType } from "./graphAdapter.js";
 
 /**
  * SINGLE source of truth for a group's (community / type) colour. Both the
@@ -34,8 +36,6 @@ export const GROUP_PALETTE = [
   "#a855f7",
 ];
 
-const FOCUS_COLOR = "#ef4444";
-const SELECTED_COLOR = "#2563eb";
 // Studio representation-polish remark 1: main-graph edges render semi-
 // transparent by DEFAULT (not opaque) — same #94a3b8 hue as before, now at
 // ~0.5 alpha — so the graph reads less like a solid mesh even before any
@@ -63,6 +63,22 @@ const DIM_ALPHA = Math.round(255 * 0.35); // 89 — connected-dim for NON-neighb
 // mostly noise once a node is focused) — incident edges are left at the
 // EDGE_BASE_ALPHA (~0.5+) by simply not being touched by the dim loop below.
 const EDGE_DIM_ALPHA = Math.round(255 * 0.15); // 38
+// Selection-neighbourhood halo: the renderer draws a scaled, low-alpha copy of
+// the same node geometry before the real node fill. This is deliberately a
+// filled glow approximation, never a contour/ring, so the node's own colour
+// remains the foreground signal.
+export const HALO_ALPHA = Math.round(255 * 0.28);
+export const HALO_RADIUS_SCALE = 1.65;
+const EDGE_HALO_ALPHA = Math.round(255 * 0.7);
+const EDGE_HALO_WIDTH_SCALE = 1.25;
+const EDGE_HALO_TINT = 0.45;
+
+/** DS token used by the selection-neighbourhood halo. */
+export const DS_PRIMARY_TOKEN = "--st-semantic-action-primary";
+// The token package is the deterministic non-DOM fallback. Browser rendering
+// always tries the active computed CSS custom property first, so theme
+// overrides remain authoritative.
+const DS_PRIMARY_FALLBACK_CSS = semantic.action.primary;
 
 // --- codeflow-parity Lot 4: Curved-links toggle + Color-by (Folder / Layer) ---
 /**
@@ -161,6 +177,120 @@ function stableHash(value) {
 export function colorForGroup(group) {
   const index = stableHash(group ?? "default") % GROUP_PALETTE.length;
   return GROUP_PALETTE[index];
+}
+
+function cssAlpha(value) {
+  if (!finite(value)) return 1;
+  return clampUnit(value > 1 ? value / 100 : value);
+}
+
+function cssChannel(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  const numeric = Number.parseFloat(text);
+  if (!Number.isFinite(numeric)) return null;
+  return text.endsWith("%") ? numeric * 2.55 : numeric;
+}
+
+function cssAngle(value) {
+  const text = String(value ?? "").trim().toLowerCase();
+  const numeric = Number.parseFloat(text);
+  if (!Number.isFinite(numeric)) return null;
+  if (text.endsWith("rad")) return (numeric * 180) / Math.PI;
+  if (text.endsWith("grad")) return numeric * 0.9;
+  if (text.endsWith("turn")) return numeric * 360;
+  return numeric;
+}
+
+function oklchToRgba(value) {
+  const match = String(value ?? "").match(/^oklch\((.*)\)$/i);
+  if (!match) return null;
+  const parts = match[1].replace(/\//g, " / ").trim().split(/\s+/);
+  const slash = parts.indexOf("/");
+  const channels = slash >= 0 ? parts.slice(0, slash) : parts;
+  if (channels.length < 3) return null;
+
+  const lightnessText = channels[0];
+  const chromaText = channels[1];
+  const lightnessNumber = Number.parseFloat(lightnessText);
+  const chromaNumber = Number.parseFloat(chromaText);
+  const lightness = lightnessText.endsWith("%") ? lightnessNumber / 100 : lightnessNumber;
+  // CSS Color 4 maps OKLCH chroma percentages onto the [0, 0.4] range.
+  const chroma = chromaText.endsWith("%") ? (chromaNumber / 100) * 0.4 : chromaNumber;
+  const hue = cssAngle(channels[2]);
+  if (![lightness, chroma, hue].every(Number.isFinite)) return null;
+
+  const radians = (hue * Math.PI) / 180;
+  const a = chroma * Math.cos(radians);
+  const b = chroma * Math.sin(radians);
+  const l = lightness + 0.3963377774 * a + 0.2158037573 * b;
+  const m = lightness - 0.1055613458 * a - 0.0638541728 * b;
+  const s = lightness - 0.0894841775 * a - 1.291485548 * b;
+  const l3 = l ** 3;
+  const m3 = m ** 3;
+  const s3 = s ** 3;
+  const linear = [
+    4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3,
+    -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3,
+    -0.0041960863 * l3 - 0.7034186147 * m3 + 1.707614701 * s3,
+  ];
+  const toSrgb = (channel) => {
+    const clamped = Math.max(0, Math.min(1, channel));
+    return clamped <= 0.0031308
+      ? clamped * 12.92
+      : 1.055 * clamped ** (1 / 2.4) - 0.055;
+  };
+  const alpha = slash >= 0 ? cssAlpha(Number.parseFloat(parts[slash + 1])) : 1;
+  return [
+    Math.round(toSrgb(linear[0]) * 255),
+    Math.round(toSrgb(linear[1]) * 255),
+    Math.round(toSrgb(linear[2]) * 255),
+    Math.round(alpha * 255),
+  ];
+}
+
+/** Resolve the CSS colour syntaxes emitted by the DS theme into renderer RGBA bytes. */
+export function cssColorToRgba(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  const oklch = oklchToRgba(text);
+  if (oklch) return oklch;
+
+  const hex = text.replace(/^#/, "");
+  if (/^[0-9a-f]{3,8}$/i.test(hex)) {
+    const expanded = hex.length <= 4 ? [...hex].map((digit) => `${digit}${digit}`).join("") : hex;
+    const values = [0, 2, 4].map((offset) => Number.parseInt(expanded.slice(offset, offset + 2), 16));
+    const alpha = expanded.length === 8 ? Number.parseInt(expanded.slice(6, 8), 16) : 255;
+    return [...values, alpha];
+  }
+
+  const rgbMatch = text.match(/^rgba?\((.*)\)$/i);
+  if (!rgbMatch) return null;
+  const parts = rgbMatch[1].replace(/,/g, " ").replace(/\//g, " / ").trim().split(/\s+/);
+  const slash = parts.indexOf("/");
+  const channels = slash >= 0 ? parts.slice(0, slash) : parts;
+  if (channels.length < 3) return null;
+  const rgb = channels.slice(0, 3).map(cssChannel);
+  if (!rgb.every(Number.isFinite)) return null;
+  const alpha = slash >= 0 ? cssAlpha(Number.parseFloat(parts[slash + 1])) : cssAlpha(Number.parseFloat(channels[3]));
+  return [...rgb.map((channel) => Math.round(Math.max(0, Math.min(255, channel)))), Math.round(alpha * 255)];
+}
+
+/** Read the active DS primary token, with a deterministic authored-token fallback for tests/SSR. */
+export function resolveDsPrimaryColor() {
+  let cssValue = "";
+  if (typeof document !== "undefined" && document.documentElement && typeof getComputedStyle === "function") {
+    // The theme selector is scoped to the app root (`[data-st-theme]`), not
+    // necessarily `<html>`, so read from the actual themed owner first.
+    const themedRoot =
+      typeof document.querySelector === "function"
+        ? document.querySelector("[data-st-theme]")
+        : null;
+    cssValue = getComputedStyle(themedRoot ?? document.documentElement)
+      .getPropertyValue(DS_PRIMARY_TOKEN)
+      .trim();
+  }
+  return cssColorToRgba(cssValue) ?? cssColorToRgba(DS_PRIMARY_FALLBACK_CSS);
 }
 
 const CHURN_LOW = [226, 232, 240];
@@ -347,6 +477,31 @@ export function isBoxShape(shape) {
   return value === "box" || value === "roundedbox";
 }
 
+const SYNTHETIC_GROUP_FIELDS = [
+  "community_node_kind",
+  "type_node_kind",
+  "ontology_node_kind",
+];
+
+function isSyntheticGroupNode(node) {
+  return SYNTHETIC_GROUP_FIELDS.some((field) => node?.[field] != null);
+}
+
+/**
+ * Resolve the shape used by the renderer from the same type mapping as the
+ * rail legend. Existing boxes and synthetic fold nodes are scene-level
+ * rendering decisions, so their baked shape remains authoritative.
+ */
+function rendererShapeForNode(node) {
+  const bakedShape = node?.shape ?? "dot";
+  if (isSyntheticGroupNode(node) || isBoxShape(bakedShape)) return bakedShape;
+
+  const type = node?.type ?? node?.type_name;
+  if (typeof type !== "string" || type.trim() === "") return bakedShape;
+
+  return shapeForType({ type }) || bakedShape;
+}
+
 /**
  * Default character budget for an in-canvas / overlay node label. The renderer
  * sizes a box glyph to its label's drawn width, so a long entity name (e.g.
@@ -450,6 +605,8 @@ function cloneStyle(style) {
     nodeSizes: new Float32Array(style.nodeSizes),
     nodeColors: new Uint8Array(style.nodeColors),
     nodeShapes: new Uint8Array(style.nodeShapes),
+    haloMask: style.haloMask ? new Uint8Array(style.haloMask) : undefined,
+    haloColor: style.haloColor ? new Uint8Array(style.haloColor) : undefined,
     // Carry the legacy box labels through dim / merge re-styling so box glyphs
     // keep their text when a node is selected, hovered, or focused.
     nodeLabels: style.nodeLabels ? [...style.nodeLabels] : undefined,
@@ -460,6 +617,7 @@ function cloneStyle(style) {
     edgeColors: new Uint8Array(style.edgeColors),
     edgeDash: new Uint8Array(style.edgeDash),
     edgeCurvatures: new Float32Array(style.edgeCurvatures),
+    edgeHaloMask: style.edgeHaloMask ? new Uint8Array(style.edgeHaloMask) : undefined,
     // The along-edge alpha SHAPE is a separate multiplier from edgeColors.a, so
     // it survives dim / hover / merge re-styling unchanged (those only scale the
     // base alpha). Clone it like the other per-edge buffers.
@@ -498,13 +656,33 @@ export function buildConnectedDimStyle(payload, options = {}) {
     }
   }
 
+  const haloColor = resolveDsPrimaryColor();
+  style.haloMask = new Uint8Array(graph.nodeIds.length);
+  style.haloColor = new Uint8Array(haloColor);
+  for (let i = 0; i < graph.nodeIds.length; i++) {
+    if (neighbourSet.has(graph.nodeIds[i])) style.haloMask[i] = 1;
+  }
+
+  style.edgeHaloMask = new Uint8Array(edgeCount);
+
   for (let e = 0; e < edgeCount; e++) {
     const srcIdx = graph.edges[e * 2];
     const tgtIdx = graph.edges[e * 2 + 1];
     const srcId = graph.nodeIds[srcIdx];
     const tgtId = graph.nodeIds[tgtIdx];
     const isIncident = activeFocusIds.has(srcId) || activeFocusIds.has(tgtId);
-    if (!isIncident) {
+    if (isIncident) {
+      style.edgeHaloMask[e] = 1;
+      const offset = e * 4;
+      style.edgeWidths[e] = (style.edgeWidths[e] ?? 1) * EDGE_HALO_WIDTH_SCALE;
+      for (let channel = 0; channel < 3; channel += 1) {
+        const existing = style.edgeColors[offset + channel] ?? 0;
+        style.edgeColors[offset + channel] = Math.round(
+          existing * (1 - EDGE_HALO_TINT) + haloColor[channel] * EDGE_HALO_TINT,
+        );
+      }
+      style.edgeColors[offset + 3] = Math.max(style.edgeColors[offset + 3] ?? 0, EDGE_HALO_ALPHA);
+    } else {
       style.edgeColors[e * 4 + 3] = EDGE_DIM_ALPHA;
     }
   }
@@ -572,7 +750,8 @@ export function buildGraphRendererPayload(scene, options = {}) {
     const nodeType = node.node_type ?? node.type ?? null;
     // Color-by (R4/R5): Layer keys the categorical colour on the typed layer,
     // Folder (default) on community/container, Churn on a continuous activity heat.
-    // Selection/focus overrides still win.
+    // Selection/focus preserve that node colour; size and connected-dim styling
+    // provide the emphasis cues instead.
     const colorKey = colorBy === COLOR_BY_LAYER ? nodeType : node.group;
     const baseColor =
       colorBy === COLOR_BY_CHURN ? colorForChurn(churnById?.get(node.id) ?? 0) : colorForGroup(colorKey);
@@ -583,7 +762,7 @@ export function buildGraphRendererPayload(scene, options = {}) {
       x: position.x,
       y: position.y,
       fixed: position.fixed,
-      shape: node.shape ?? "dot",
+      shape: rendererShapeForNode(node),
       // Shape variants (ontology visual_encoding): hollow / bold pass through
       // to the style buffers; absent = solid / normal (back-compatible).
       fill: node.fill,
@@ -592,7 +771,7 @@ export function buildGraphRendererPayload(scene, options = {}) {
       // node's label in-box, bypassing the degree/god-class label gate.
       forceBoxLabel: node.forceBoxLabel === true,
       size: nodeSize(node, nodeRadius, selected, focused),
-      color: focused ? FOCUS_COLOR : selected ? SELECTED_COLOR : baseColor,
+      color: baseColor,
     };
   });
 
