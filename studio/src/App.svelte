@@ -13,7 +13,13 @@
   import { AppChrome, Button, ButtonGroup, Select } from "@sentropic/design-system-svelte";
 
   import AnswerPanel from "./components/AnswerPanel.svelte";
-  import CitedSourceViewer from "./components/CitedSourceViewer.svelte";
+  // The cited-source viewer FRAME now ships as the published, architect-ratified
+  // package @sentropic/cited-source-viewer (§S.5 "lift into a shared package";
+  // the lib was extracted FROM this studio's interim component, so the API and
+  // UX are iso). All graphify-specific glue (ref projection, selection thread,
+  // bundle resolver, Ouvrir href) stays local in ./lib/citedSources.js — the
+  // lib only takes pure props + resolver/href callbacks (purity seam §S.3).
+  import CitedSourceViewer from "@sentropic/cited-source-viewer/CitedSourceViewer.svelte";
   import GraphCanvas from "./components/GraphCanvas.svelte";
   import LeftRail from "./components/LeftRail.svelte";
   import ReconciliationView from "./components/ReconciliationView.svelte";
@@ -534,14 +540,14 @@
     searchIndex = await fetchSearchIndex();
   }
 
-  // ----- cited-source viewer (INTERIM, architect-ratified §S.5 + §S.6.1) -----
+  // ----- cited-source viewer (@sentropic/cited-source-viewer, §S.5 + §S.6.1) --
   // IMPURE studio glue: the EntityPanel affordance hands the node's raw
   // OntologyCitation list here; the frozen public projection converts it to
   // CitedSourceRef[] and a CENTRAL OVERLAY (qualified UX, immo parity: covers
   // the graph canvas area ONLY — no backdrop, side panels stay interactive)
-  // hosts the PURE CitedSourceViewer with the bundle resolver (sources/ dir,
-  // `--include-sources` export). Clicking another citation while open simply
-  // replaces this state -> the viewer RETARGETS (no stacking).
+  // hosts the published, PURE CitedSourceViewer with the bundle resolver
+  // (sources/ dir, `--include-sources` export). Clicking another citation while
+  // open simply replaces this state -> the viewer RETARGETS (no stacking).
   //
   // §S.6.1 (selection-scope navigation): every open builds the GROUPED thread
   // from the CURRENT multi-selection (selection order → document → page, via
