@@ -100,7 +100,8 @@ export function loadOntologyPatchContext(profileStatePath: string): OntologyPatc
         evidence_refs: stringArray(relation.evidence_refs),
       })),
     evidenceRefs: evidenceRefsFromSources(optionalJson(join(ontologyDir, "sources.json"), [])),
-    decisionsPath: context.projectConfig?.outputs.ontology.reconciliation.decisions_path ?? undefined,
+    decisionsPath:
+      context.projectConfig?.outputs?.ontology?.reconciliation?.decisions_path ?? undefined,
     dirtyWorktree: safeExecGit(rootDir, ["status", "--porcelain"]) !== null,
   };
 }
