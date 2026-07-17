@@ -441,7 +441,6 @@ export function buildBoxTextDraws(frame: WebGLBoxFrame): BoxTextDraw[] {
     if ((style?.nodeShapes?.[i] ?? 0) !== BOX_SHAPE_CODE) continue;
     const center = screenPoint(frame.positions, i, frame);
     const [r, g, b, a] = colorAt(style?.nodeColors, i * 4, DEFAULT_NODE_COLOR);
-    const [hr, hg, hb, ha] = colorAt(style?.haloColor, 0, [0, 0, 0, 0]);
     const bold = (style?.nodeBorders?.[i] ?? 0) === 1;
     out.push({
       nodeIndex: i,
@@ -460,8 +459,7 @@ export function buildBoxTextDraws(frame: WebGLBoxFrame): BoxTextDraw[] {
       // also sets globalAlpha=alpha, so the alpha is applied the SAME two ways.
       borderColor: `rgba(${r}, ${g}, ${b}, ${a / 255})`,
       alpha: a / 255,
-      halo: style?.haloMask?.[i] === 1,
-      haloColor: `rgba(${hr}, ${hg}, ${hb}, ${(ha / 255) * 0.28})`,
+      halo: false,
     });
   }
   return out;
