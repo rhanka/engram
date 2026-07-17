@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import type { Extraction, GraphEdge, GraphNode, NormalizedOntologyProfile, RegistryRecord } from "./types.js";
 import type { WikiDescriptionSidecarIndex } from "./wiki-descriptions.js";
 import { buildHierarchyIndex, compileHierarchies } from "./ontology-hierarchies.js";
+import { emitClassHierarchies } from "./ontology-class-hierarchies-emitter.js";
 
 export interface OntologyOutputConfig {
   enabled: boolean;
@@ -46,6 +47,12 @@ export interface CompileOntologyOutputsResult {
   validationIssues: string[];
   /** Number of hierarchy arcs written to hierarchies.json (0 when no hierarchies declared). */
   hierarchyArcCount: number;
+  /**
+   * Number of class hierarchies written to class-hierarchies.json (0 when the
+   * profile declares neither a `class_hierarchies` block nor a registry-derived
+   * `hierarchies:` spec with rows). The studio's ontology accordion consumes it.
+   */
+  classHierarchyCount: number;
 }
 
 interface CompiledNode {
@@ -228,7 +235,7 @@ function writeWiki(
 
 export function compileOntologyOutputs(options: CompileOntologyOutputsOptions): CompileOntologyOutputsResult {
   if (!options.config.enabled) {
-    return { enabled: false, nodeCount: 0, relationCount: 0, wikiPageCount: 0, validationIssues: [], hierarchyArcCount: 0 };
+    return { enabled: false, nodeCount: 0, relationCount: 0, wikiPageCount: 0, validationIssues: [], hierarchyArcCount: 0, classHierarchyCount: 0 };
   }
 
   const { nodes, aliasIssues } = compileNodes(options.extraction, options.profile, options.config);
@@ -253,6 +260,26 @@ export function compileOntologyOutputs(options: CompileOntologyOutputsOptions): 
     hierarchyArcCount = arcs.length;
   }
   // ---- End hierarchy artefacts ----
+
+  // ---- Class-hierarchy artefact (studio ontology accordion — additive) ----
+  // Emitted when the profile declares a `class_hierarchies` block (hand-authored
+  // classes) OR a registry-bound `hierarchies:` spec (registry-derived classes,
+  // one class per registry row). Reuses the SAME loaded registries as the arcs;
+  // deterministic + LLM-free. No-op (writes nothing) when neither is declared.
+  const classHierarchiesEmit = emitClassHierarchies({
+    ...(options.profile.class_hierarchies
+      ? { classHierarchies: options.profile.class_hierarchies }
+      : {}),
+    ...(hasHierarchies ? { registryHierarchies: options.profile.hierarchies } : {}),
+    ...(options.registries ? { registries: options.registries } : {}),
+    graphNodes: options.extraction.nodes as Array<{ id?: string; node_type?: string; type?: string }>,
+    ontologyOutputDir: options.outputDir,
+    profileHash: options.profile.profile_hash,
+  });
+  const classHierarchyCount = classHierarchiesEmit.artifact
+    ? Object.keys(classHierarchiesEmit.artifact.hierarchies).length
+    : 0;
+  // ---- End class-hierarchy artefact ----
 
   const manifest: Record<string, unknown> = {
     schema: "graphify_ontology_outputs_v1",
@@ -298,5 +325,5 @@ export function compileOntologyOutputs(options: CompileOntologyOutputsOptions): 
     })),
   });
 
-  return { enabled: true, nodeCount: nodes.length, relationCount: relations.length, wikiPageCount, validationIssues, hierarchyArcCount };
+  return { enabled: true, nodeCount: nodes.length, relationCount: relations.length, wikiPageCount, validationIssues, hierarchyArcCount, classHierarchyCount };
 }

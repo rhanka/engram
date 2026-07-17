@@ -26,7 +26,9 @@ import type {
   InputScopeSource,
   NormalizedOntologyProfile,
   NormalizedProjectConfig,
+  RegistryRecord,
 } from "./types.js";
+import { loadNormalizedRegistriesFromDir, loadProfileRegistries } from "./profile-registry.js";
 import type { ProfileState } from "./configured-dataprep.js";
 import {
   inspectInputScope,
@@ -405,6 +407,26 @@ function loadCliProfileContext(profileStatePath: string): {
     profile: readJson<NormalizedOntologyProfile>(join(profileDir, "ontology-profile.normalized.json")),
     ...(existsSync(projectConfigPath) ? { projectConfig: readJson<NormalizedProjectConfig>(projectConfigPath) } : {}),
   };
+}
+
+/**
+ * Load the registry rows for the ontology-output CLI step. Prefers the
+ * dataprep-normalized `<profile>/registries/*.json` on disk (binding-free);
+ * falls back to re-loading from the bound profile source files. Any failure
+ * degrades to `{}` (the step still runs, just without hierarchy artefacts).
+ */
+function loadCliProfileRegistries(
+  profileStatePath: string,
+  profile: NormalizedOntologyProfile,
+): Record<string, RegistryRecord[]> {
+  const registriesDir = join(dirname(resolve(profileStatePath)), "registries");
+  const onDisk = loadNormalizedRegistriesFromDir(registriesDir);
+  if (Object.keys(onDisk).length > 0) return onDisk;
+  try {
+    return loadProfileRegistries(profile);
+  } catch {
+    return {};
+  }
 }
 
 function printOntologyPatchResult(result: {
@@ -2930,11 +2952,17 @@ export async function main(): Promise<void> {
       const { compileOntologyOutputs } = await import("./ontology-output.js");
       const context = loadCliProfileContext(opts.profileState);
       const descriptions = loadWikiDescriptionSidecarIndex(opts.descriptions);
+      // Load the registry rows the hierarchy + class-hierarchy artefacts join on.
+      // Prefer the dataprep-normalized rows on disk (binding-free); fall back to
+      // re-loading from the bound profile. Without them compileHierarchies yields
+      // 0 arcs and no class-hierarchies.json (the registries-bug).
+      const registries = loadCliProfileRegistries(opts.profileState, context.profile);
       const result = compileOntologyOutputs({
         outputDir: resolve(opts.outDir),
         extraction: readJson(opts.input),
         profile: context.profile,
         config: context.profile.outputs.ontology,
+        ...(Object.keys(registries).length > 0 ? { registries } : {}),
         ...(descriptions ? { descriptions } : {}),
       });
       if (!result.enabled) {
@@ -2943,7 +2971,8 @@ export async function main(): Promise<void> {
       }
       console.log(
         `Ontology outputs: ${result.nodeCount} node(s), ${result.relationCount} relation(s), ` +
-        `${result.wikiPageCount} wiki page(s)`,
+        `${result.wikiPageCount} wiki page(s), ` +
+        `${result.hierarchyArcCount} hierarchy arc(s), ${result.classHierarchyCount} class hierarchy(ies)`,
       );
     });
 
@@ -3012,6 +3041,9 @@ export async function main(): Promise<void> {
           extraction,
           profile: ontologyProfile,
           config: ontologyConfig,
+          // Registry rows the hierarchy + class-hierarchy artefacts join on.
+          // Without them compileHierarchies yields 0 arcs (the registries-bug).
+          registries: dataprepResult.registries,
         });
         if (result.enabled) {
           ontologyRan = true;

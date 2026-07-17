@@ -8,7 +8,12 @@ import {
   clearClassHierarchiesEmitterCache,
   emitClassHierarchies,
 } from "../src/ontology-class-hierarchies-emitter.js";
-import type { NormalizedClassHierarchySpec } from "../src/types.js";
+import type {
+  NormalizedClassHierarchySpec,
+  NormalizedOntologyHierarchySpec,
+  RegistryRecord,
+} from "../src/types.js";
+import { registryClassNodeId } from "../src/ontology-class-hierarchies.js";
 
 const tempDirs: string[] = [];
 
@@ -90,6 +95,64 @@ describe("emitClassHierarchies — standalone class-hierarchies.json (EVOL 2.c)"
     const ontologyDir = join(makeTempDir(), "ontology");
     const result = emitClassHierarchies({
       classHierarchies: {},
+      graphNodes: [],
+      ontologyOutputDir: ontologyDir,
+    });
+    expect(result.written).toBe(false);
+    expect(result.path).toBeNull();
+    expect(existsSync(join(ontologyDir, CLASS_HIERARCHIES_FILENAME))).toBe(false);
+  });
+
+  it("emits the registry-DERIVED artifact from a hierarchies: spec + registry rows", () => {
+    const ontologyDir = join(makeTempDir(), "ontology");
+    const hierarchies: Record<string, NormalizedOntologyHierarchySpec> = {
+      proc_tree: {
+        registry: "procs",
+        parent_column: "parent_id",
+        child_column: "id",
+        relation_type: "parent_process",
+        parent_node_type: "Proc",
+        child_node_type: "Proc",
+      },
+    };
+    const registries: Record<string, RegistryRecord[]> = {
+      procs: [
+        { registryId: "procs", id: "A", label: "Root A", aliases: [], nodeType: "Proc", sourceFile: "/p.csv", raw: { id: "A", parent_id: "" } },
+        { registryId: "procs", id: "A.1", label: "Child", aliases: [], nodeType: "Proc", sourceFile: "/p.csv", raw: { id: "A.1", parent_id: "A" } },
+      ],
+    };
+    const result = emitClassHierarchies({
+      registryHierarchies: hierarchies,
+      registries,
+      graphNodes: [{ id: "registry_procs_A", node_type: "Proc", registry_record_id: "A" }],
+      ontologyOutputDir: ontologyDir,
+      profileHash: "p1",
+    });
+    expect(result.written).toBe(true);
+    expect(existsSync(result.path!)).toBe(true);
+    const tree = result.artifact!.hierarchies.proc_tree!;
+    expect(tree.classes_by_id[registryClassNodeId("proc_tree", "A")]!.member_ids).toEqual([
+      "registry_procs_A",
+    ]);
+    expect(tree.classes_by_id[registryClassNodeId("proc_tree", "A.1")]!.parent_id).toBe(
+      registryClassNodeId("proc_tree", "A"),
+    );
+  });
+
+  it("writes NO file when a hierarchies: spec has no loaded registry rows", () => {
+    const ontologyDir = join(makeTempDir(), "ontology");
+    const result = emitClassHierarchies({
+      registryHierarchies: {
+        proc_tree: {
+          registry: "procs",
+          parent_column: "parent_id",
+          child_column: "id",
+          relation_type: "parent_process",
+          parent_node_type: "Proc",
+          child_node_type: "Proc",
+        },
+      },
+      registries: {}, // no rows ⇒ nothing to derive ⇒ byte-identical to today
       graphNodes: [],
       ontologyOutputDir: ontologyDir,
     });

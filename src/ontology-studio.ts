@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { AddressInfo } from "node:net";
 import { URL } from "node:url";
 
@@ -18,6 +18,9 @@ import { buildStudioScene, type StudioScene } from "./studio-scene.js";
 import { attachLayoutPositions } from "./graph-layout.js";
 import { buildSearchIndex } from "./search-index-emitter.js";
 import type { SearchIndex } from "./search-index.js";
+import { emitClassHierarchies } from "./ontology-class-hierarchies-emitter.js";
+import { loadNormalizedRegistriesFromDir } from "./profile-registry.js";
+import type { ClassHierarchiesArtifact } from "./types.js";
 import { loadGraphFromData, type SerializedGraphData } from "./graph.js";
 import {
   getOntologyRebuildStatus,
@@ -301,6 +304,75 @@ function searchIndexJsonResult(stateDir: string): OntologyStudioRouteResult {
     searchIndexCache = cached;
   }
   return jsonResult(200, cached.index);
+}
+
+/**
+ * Serve the standalone ontology `class-hierarchies.json` artifact (schema
+ * graphify_ontology_class_hierarchies_v1) the SPA's ontology-class grouping (the
+ * taxonomy accordion + group-by / select) consumes.
+ *
+ * The STATIC `studio export` bakes this file via {@link emitClassHierarchies},
+ * gated on the profile's `class_hierarchies` block OR a registry-bound
+ * `hierarchies:` spec — but the LIVE server had no equivalent route, so the SPA's
+ * `fetchClassHierarchies` 404-ed and the class taxonomy never lit up. This route
+ * closes that gap for BOTH sources: it runs the SAME emitter over
+ *   - the profile `class_hierarchies` block (hand-authored classes), AND
+ *   - the profile `hierarchies:` specs + the dataprep-normalized registry rows
+ *     under `<profile>/registries/*.json` (registry-derived classes, e.g.
+ *     process-std-AM's process tree),
+ * caching on graph.json identity (path + mtime + size) plus the profile hash so
+ * only the first fetch pays the build cost and any edit invalidates it.
+ *
+ * When neither source has content the artifact is absent (byte-identical to the
+ * static export, which writes no file): the route 404s and the SPA's
+ * `fetchClassHierarchies` already tolerates that (falls back to the static copy,
+ * then to null → the class toggle injects nothing).
+ */
+let classHierarchiesCache:
+  | { key: string; artifact: ClassHierarchiesArtifact | null }
+  | null = null;
+
+function classHierarchiesJsonResult(
+  profileStatePath: string,
+  context: ReturnType<typeof loadOntologyPatchContext>,
+): OntologyStudioRouteResult {
+  const stateDir = context.stateDir;
+  const graphPath = join(stateDir, "graph.json");
+  if (!existsSync(graphPath)) {
+    return jsonResult(404, { error: "graph.json not found" });
+  }
+  const block = context.profile.class_hierarchies;
+  const registryHierarchies = context.profile.hierarchies;
+  const profileHash = context.profile.profile_hash;
+  const registriesDir = join(dirname(resolve(profileStatePath)), "registries");
+  const stat = statSync(graphPath);
+  const key = `${graphPath} ${stat.mtimeMs} ${stat.size} ${profileHash ?? ""}`;
+  let cached = classHierarchiesCache;
+  if (!cached || cached.key !== key) {
+    const graph = JSON.parse(readFileSync(graphPath, "utf-8")) as {
+      nodes?: Array<{ id?: string; node_type?: string; type?: string }>;
+    };
+    const graphNodes = Array.isArray(graph.nodes) ? graph.nodes : [];
+    const registries = loadNormalizedRegistriesFromDir(registriesDir);
+    const result = emitClassHierarchies({
+      ...(block ? { classHierarchies: block } : {}),
+      ...(registryHierarchies ? { registryHierarchies } : {}),
+      registries,
+      graphNodes,
+      ontologyOutputDir: join(stateDir, "ontology"),
+      ...(profileHash !== undefined ? { profileHash } : {}),
+    });
+    cached = { key, artifact: result.artifact };
+    classHierarchiesCache = cached;
+  }
+  if (cached.artifact === null) {
+    // No class_hierarchies block and no registry-derived hierarchy ⇒ no artifact
+    // (mirrors the static export, which writes no file). The SPA tolerates 404.
+    return jsonResult(404, {
+      error: "class-hierarchies unavailable: profile declares no class_hierarchies or registry hierarchies",
+    });
+  }
+  return jsonResult(200, cached.artifact);
 }
 
 function sendResult(response: ServerResponse, result: OntologyStudioRouteResult): void {
@@ -615,6 +687,9 @@ export function handleOntologyStudioRequest(
     }
     if (url.pathname === "/api/ontology/search-index.json") {
       return searchIndexJsonResult(context.stateDir);
+    }
+    if (url.pathname === "/api/ontology/class-hierarchies.json") {
+      return classHierarchiesJsonResult(options.profileStatePath, context);
     }
     const entityPrefix = "/api/ontology/entity/";
     if (url.pathname.startsWith(entityPrefix)) {

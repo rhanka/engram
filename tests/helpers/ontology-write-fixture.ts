@@ -2,6 +2,11 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { ONTOLOGY_PATCH_SCHEMA, type OntologyPatch } from "../../src/ontology-patch.js";
+import type {
+  NormalizedClassHierarchySpec,
+  NormalizedOntologyHierarchySpec,
+  RegistryRecord,
+} from "../../src/types.js";
 
 export interface OntologyWriteFixture {
   root: string;
@@ -13,6 +18,25 @@ export interface OntologyWriteFixture {
   patch: OntologyPatch;
 }
 
+export interface OntologyWriteFixtureOptions {
+  /**
+   * Optional normalized `class_hierarchies` block stamped on the fixture's
+   * ontology-profile.normalized.json (a hand-authored class taxonomy).
+   */
+  classHierarchies?: Record<string, NormalizedClassHierarchySpec>;
+  /**
+   * Optional registry-bound `hierarchies:` specs (profile.hierarchies) for the
+   * registry-derived class-hierarchy path.
+   */
+  hierarchies?: Record<string, NormalizedOntologyHierarchySpec>;
+  /**
+   * Optional dataprep-normalized registry rows, written to
+   * `<profile>/registries/<id>.json` — the source the registry-derived path and
+   * the live class-hierarchies route read.
+   */
+  registries?: Record<string, RegistryRecord[]>;
+}
+
 const PROFILE_HASH = "profile-hash";
 const GRAPH_HASH = "graph-hash";
 
@@ -21,7 +45,10 @@ const GRAPH_HASH = "graph-hash";
  * Mirrors the layout produced by `graphify profile dataprep` for a tiny synthetic
  * profile with a single Component canonical entity and one candidate.
  */
-export function writeOntologyWriteFixture(root: string): OntologyWriteFixture {
+export function writeOntologyWriteFixture(
+  root: string,
+  options: OntologyWriteFixtureOptions = {},
+): OntologyWriteFixture {
   const stateDir = join(root, ".graphify");
   const profileDir = join(stateDir, "profile");
   const ontologyDir = join(stateDir, "ontology");
@@ -81,7 +108,8 @@ export function writeOntologyWriteFixture(root: string): OntologyWriteFixture {
         },
         inference_policy: { allow_inferred_relations: true, allowed_relation_types: [], require_evidence_refs: false },
         evidence_policy: { require_evidence_refs: false, min_refs: 0, node_types: [], relation_types: [] },
-        hierarchies: {},
+        hierarchies: options.hierarchies ?? {},
+        ...(options.classHierarchies ? { class_hierarchies: options.classHierarchies } : {}),
         outputs: {
           ontology: {
             enabled: true,
@@ -190,6 +218,20 @@ export function writeOntologyWriteFixture(root: string): OntologyWriteFixture {
     JSON.stringify([{ id: "manual.md#p1" }], null, 2),
     "utf-8",
   );
+
+  // Dataprep-normalized registry rows (the registry-derived class-hierarchy path
+  // and the live class-hierarchies route read `<profile>/registries/<id>.json`).
+  if (options.registries) {
+    const registriesDir = join(profileDir, "registries");
+    mkdirSync(registriesDir, { recursive: true });
+    for (const [registryId, records] of Object.entries(options.registries)) {
+      writeFileSync(
+        join(registriesDir, `${registryId}.json`),
+        JSON.stringify(records, null, 2),
+        "utf-8",
+      );
+    }
+  }
 
   return {
     root,

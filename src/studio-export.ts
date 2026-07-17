@@ -43,6 +43,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { applySceneLayout, resolveSceneLayoutId } from "./scene-layout.js";
 import { loadGraphFromData, type SerializedGraphData } from "./graph.js";
 import { emitClassHierarchies } from "./ontology-class-hierarchies-emitter.js";
+import { loadNormalizedRegistriesFromDir } from "./profile-registry.js";
 import { loadOntologyProfile } from "./ontology-profile.js";
 import {
   loadOntologyReconciliationCandidates,
@@ -584,10 +585,20 @@ export function buildStaticStudio(
   //     non-empty `class_hierarchies` block.
   let classHierarchiesPath: string | null = null;
   if (ontologyProfile) {
+    // Registry-derived classes need the dataprep-normalized registry rows. They
+    // live under `<stateDir>/profile/registries/*.json` (binding-free); absent
+    // for projects without registries, so this stays a no-op there.
+    const registries = loadNormalizedRegistriesFromDir(
+      join(stateDir, "profile", "registries"),
+    );
     const result = emitClassHierarchies({
       ...(ontologyProfile.class_hierarchies
         ? { classHierarchies: ontologyProfile.class_hierarchies }
         : {}),
+      ...(ontologyProfile.hierarchies
+        ? { registryHierarchies: ontologyProfile.hierarchies }
+        : {}),
+      registries,
       graphNodes: nodes as Array<{ id?: string; node_type?: string; type?: string }>,
       ontologyOutputDir: outDir,
       ...(ontologyProfile.profile_hash !== undefined
