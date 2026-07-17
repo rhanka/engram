@@ -36,12 +36,14 @@ export function deaccent(s: string): string {
 }
 
 /**
- * Canonical match form: deaccent → lowercase → collapse whitespace → trim.
- * Ligatures (œ/æ) are folded so `cœur` matches `coeur`. Used for BOTH the
- * candidate-term match and the anti-hallucination verbatim check, so the two
- * are guaranteed to agree.
+ * Dotted initial runs normalize spacing around the points only when at least
+ * two one-letter initials are present: `A. J.` / `A . J .` / `A.J.` all become
+ * `a.j.`. This preserves the letters and points and avoids numeric padding or
+ * other cross-entity folds.
  */
-export function normalizeForMatch(s: string): string {
+const DOTTED_INITIAL_RUN_RE = /\b[a-z]\s*\.(?:\s*[a-z]\s*\.)+/g;
+
+function normalizeForMatchBase(s: string): string {
   return deaccent(s ?? "")
     .replace(/œ/g, "oe")
     .replace(/æ/g, "ae")
@@ -50,6 +52,20 @@ export function normalizeForMatch(s: string): string {
     .toLowerCase()
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function foldDottedInitialSpacing(s: string): string {
+  return s.replace(DOTTED_INITIAL_RUN_RE, (run) => run.replace(/\s+/g, ""));
+}
+
+/**
+ * Canonical match form: deaccent → lowercase → collapse whitespace → trim →
+ * fold dotted-initial spacing. Ligatures (œ/æ) are folded so `cœur` matches
+ * `coeur`. Used for BOTH the candidate-term match and the anti-hallucination
+ * verbatim check, so the two are guaranteed to agree.
+ */
+export function normalizeForMatch(s: string): string {
+  return foldDottedInitialSpacing(normalizeForMatchBase(s));
 }
 
 // ---------------------------------------------------------------------------
@@ -652,17 +668,18 @@ function indexOfUnit(source: ParsedSource, rawText: string): number {
 
 /**
  * Build a per-character map from NORMALIZED offsets back to RAW offsets for one
- * unit of text. `normalizeForMatch` deaccents, folds ligatures, lowercases, and
- * collapses whitespace runs (including NBSP ` `) to a single space — so a
- * normalized offset does NOT line up with the raw offset whenever the raw text
- * carries multi-char or non-breaking whitespace. This recovers the exact raw
- * offset of every normalized character so quote windowing centers on the
- * matched term, not on drifted text further along the paragraph.
+ * unit of text. `normalizeForMatch` deaccents, folds ligatures, lowercases,
+ * collapses whitespace runs (including NBSP ` `) to a single space, and folds
+ * dotted-initial spacing — so a normalized offset does NOT line up with the raw
+ * offset whenever the raw text carries multi-char, non-breaking whitespace, or
+ * spaces inside initial runs. This recovers the exact raw offset of every
+ * normalized character so quote windowing centers on the matched term, not on
+ * drifted text further along the paragraph.
  *
  * Returns `{ norm, map }` where `norm` is the normalized string and `map[k]` is
  * the raw index at which normalized char `k` begins. Implemented by normalizing
- * one raw char at a time and tracking the collapsed-whitespace state, mirroring
- * `normalizeForMatch` exactly.
+ * one raw char at a time, tracking collapsed whitespace, then applying the same
+ * dotted-initial fold to the normalized chars and their raw-offset map.
  */
 function buildNormToRawMap(rawText: string): { norm: string; map: number[] } {
   const normChars: string[] = [];
@@ -671,8 +688,9 @@ function buildNormToRawMap(rawText: string): { norm: string; map: number[] } {
   let sawNonSpace = false; // have we emitted any non-space char yet (for trim)
   for (let i = 0; i < rawText.length; i += 1) {
     const ch = rawText[i] ?? "";
-    // Per-char normalization that mirrors normalizeForMatch's transforms.
-    const piece = normalizeForMatch(ch);
+    // Per-char base normalization; dotted-initial folding is applied below
+    // because it depends on neighboring normalized characters.
+    const piece = normalizeForMatchBase(ch);
     if (piece === "") {
       // Whitespace (or a char that normalizes away, e.g. a combining mark).
       // Treat only real whitespace as a collapsible separator.
@@ -692,7 +710,34 @@ function buildNormToRawMap(rawText: string): { norm: string; map: number[] } {
     }
     sawNonSpace = true;
   }
-  return { norm: normChars.join(""), map };
+
+  const norm = normChars.join("");
+  const foldedChars: string[] = [];
+  const foldedMap: number[] = [];
+  let copiedUntil = 0;
+  DOTTED_INITIAL_RUN_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = DOTTED_INITIAL_RUN_RE.exec(norm)) !== null) {
+    const start = match.index;
+    const end = start + match[0].length;
+    for (let i = copiedUntil; i < start; i += 1) {
+      foldedChars.push(norm[i] ?? "");
+      foldedMap.push(map[i] ?? 0);
+    }
+    for (let i = start; i < end; i += 1) {
+      const c = norm[i] ?? "";
+      if (c === " ") continue;
+      foldedChars.push(c);
+      foldedMap.push(map[i] ?? 0);
+    }
+    copiedUntil = end;
+  }
+  for (let i = copiedUntil; i < norm.length; i += 1) {
+    foldedChars.push(norm[i] ?? "");
+    foldedMap.push(map[i] ?? 0);
+  }
+
+  return { norm: foldedChars.join(""), map: foldedMap };
 }
 
 /**
