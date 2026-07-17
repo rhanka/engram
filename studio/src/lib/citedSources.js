@@ -1,13 +1,17 @@
 /**
- * Studio-side (IMPURE) glue for the cited-source viewer.
+ * Studio-side (IMPURE) glue for the cited-source viewer — the per-consumer
+ * ADAPTER the published @sentropic/cited-source-viewer deliberately does NOT
+ * ship (its API takes pure props + resolver/href callbacks, SPEC_WP_
+ * CITED_SOURCE_VIZ §S.3). None of this is provided by the lib: it is all
+ * graphify-specific and stays local by design.
  *
- * Everything graphify-specific lives HERE, outside the pure
- * CitedSourceViewer component (rebase contract, SPEC_WP_CITED_SOURCE_VIZ
- * §S.3 "per-consumer adapter"):
+ * Everything graphify-specific lives HERE, outside the pure library
+ * CitedSourceViewer component (frozen seam, §S.3 "per-consumer adapter"):
  *   - node.citations (OntologyCitation[]) -> CitedSourceRef[] via the FROZEN
  *     public converters (src/cited-source-refs.ts, exported since PR #260);
- *   - the studio's ResolveSource: fetch the cited file's bytes from the
- *     `sources/` directory the exporter emits with `--include-sources`.
+ *   - the selection-thread builder (selection -> document -> page ordering);
+ *   - the studio's ResolveSource + Ouvrir href: fetch/link the cited file from
+ *     the `sources/` directory the exporter emits with `--include-sources`.
  */
 
 import { citationsToCitedSourceRefs } from "@graphify/cited-source-refs";
