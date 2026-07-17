@@ -3,14 +3,15 @@ import { resolve } from "node:path";
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import CitedSourceViewer from "../components/CitedSourceViewer.svelte";
-
-/**
- * Component render smoke for the INTERIM cited-source viewer. The markdown
- * path mounts fully in jsdom (no canvas needed); the PDF path is covered by
- * the pure engine tests (citedSourcePdfEngine) + UAT screenshots. Also pins
- * the PURITY contract: the component must not import graphify runtime.
- */
+// The viewer FRAME now comes from the published, architect-ratified package
+// (the lib was extracted FROM this studio's interim component, so the UX is
+// iso). These smokes exercise the LIB-BACKED wiring: (1) the published viewer
+// renders + navigates our refs and honours our `sourceHref` callback; (2) the
+// studio resolver SHIM (lib/citedSources.js) maps refs to bundle paths/bytes
+// correctly; (3) App.svelte hosts the lib viewer with the shim resolvers and
+// no longer references the decommissioned local component/engines.
+import CitedSourceViewer from "@sentropic/cited-source-viewer/CitedSourceViewer.svelte";
+import { bundleSourcePath, resolveBundleSource, sourceHrefFor } from "../lib/citedSources.js";
 
 const REFS = [
   {
@@ -48,6 +49,7 @@ afterEach(() => {
   instance = null;
   host?.remove();
   host = null;
+  vi.restoreAllMocks();
 });
 
 function mountViewer(props) {
@@ -58,8 +60,8 @@ function mountViewer(props) {
   return host;
 }
 
-describe("CitedSourceViewer (markdown path)", () => {
-  it("renders refs, resolves the source and highlights the active quote", async () => {
+describe("published CitedSourceViewer — lib-backed wiring (markdown path)", () => {
+  it("renders our refs, resolves the source and highlights the active quote", async () => {
     const resolveSource = mdResolver();
     const el = mountViewer({
       refs: REFS,
@@ -69,7 +71,7 @@ describe("CitedSourceViewer (markdown path)", () => {
     });
     await settle();
 
-    // Header + ref navigation reflect the ref list.
+    // Header + ref navigation reflect the ref list we passed.
     expect(el.textContent).toContain("corpus/blue-study.md");
     expect(el.textContent).toContain("Citation 1/2");
     // The active quote is shown and located in the rendered source.
@@ -86,38 +88,73 @@ describe("CitedSourceViewer (markdown path)", () => {
     const el = mountViewer({ refs: REFS, resolveSource, activeIndex: 0, title: "t" });
     await settle();
 
-    const next = [...el.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "Next citation");
+    const next = [...el.querySelectorAll("button")].find(
+      (b) => b.getAttribute("aria-label") === "Next citation",
+    );
     expect(next).toBeTruthy();
     next.click();
     flushSync();
     await settle();
 
     expect(el.textContent).toContain("Citation 2/2");
-    const mark = el.querySelector("[data-csv-mark]");
-    expect(mark).not.toBeNull();
-    expect(mark.textContent).toContain("Holmes examined the ledger");
-    // One resolve per ref activation.
+    expect(el.querySelector("[data-csv-mark]")?.textContent).toContain("Holmes examined the ledger");
     expect(resolveSource).toHaveBeenCalledTimes(2);
   });
 
-  it("honors the activeIndex prop for the initially-active citation", async () => {
-    const el = mountViewer({ refs: REFS, resolveSource: mdResolver(), activeIndex: 1, title: "t" });
-    await settle();
-    expect(el.textContent).toContain("Citation 2/2");
-    expect(el.querySelector("[data-csv-mark]")?.textContent).toContain("Holmes examined");
-  });
-
-  it("shows the graceful not-found note when the quote is not in the source", async () => {
+  it("renders the Ouvrir raw-source link from our sourceHref shim callback", async () => {
     const el = mountViewer({
-      refs: [{ rawRef: "corpus/blue-study.md", section: "X", excerpt: "a passage that is nowhere in this document" }],
+      refs: REFS,
       resolveSource: mdResolver(),
+      sourceHref: sourceHrefFor,
       title: "t",
     });
     await settle();
-    expect(el.querySelector("[data-csv-mark]")).toBeNull();
-    expect(el.textContent).toContain("Quote not located in the source");
-    // The document still renders (show anyway).
-    expect(el.textContent).toContain("Holmes examined the ledger");
+    const link = el.querySelector("a.csv-tb-open");
+    expect(link).not.toBeNull();
+    expect(link.textContent).toContain("Ouvrir");
+    // sourceHrefFor -> bundleSourcePath("corpus/blue-study.md").
+    expect(link.getAttribute("href")).toBe("./sources/corpus/blue-study.md");
+  });
+
+  it("hides the Ouvrir link when no sourceHref is supplied", async () => {
+    const el = mountViewer({ refs: REFS, resolveSource: mdResolver(), title: "t" });
+    await settle();
+    expect(el.querySelector("a.csv-tb-open")).toBeNull();
+  });
+
+  it("renders our GROUPED selection thread (buildSelectionThread output) with the scope toggle", async () => {
+    // Two entities, each cited twice — the shape App.svelte's
+    // buildSelectionThread emits. The lib gains the Entité/Sélection toggle and
+    // a per-entity counter in the default Entité scope.
+    const GROUPS = [
+      {
+        id: "e:holmes",
+        label: "Sherlock Holmes",
+        refs: [
+          { rawRef: "corpus/blue-study.md", section: "Chapter 1", excerpt: "Holmes examined the ledger in silence" },
+          { rawRef: "corpus/blue-study.md", section: "Chapter 2", excerpt: "the coronet had vanished from his private safe" },
+        ],
+      },
+      {
+        id: "e:watson",
+        label: "John Watson",
+        refs: [
+          { rawRef: "corpus/blue-study.md", section: "Chapter 1", excerpt: "Holmes examined the ledger in silence" },
+          { rawRef: "corpus/blue-study.md", section: "Chapter 2", excerpt: "the coronet had vanished from his private safe" },
+        ],
+      },
+    ];
+    const el = mountViewer({ refs: [], groups: GROUPS, resolveSource: mdResolver(), title: "t" });
+    await settle();
+    const scopeOptions = [...el.querySelectorAll(".st-contentSwitcher__option")].map((b) =>
+      b.textContent.trim(),
+    );
+    expect(scopeOptions).toContain("Entité");
+    expect(scopeOptions).toContain("Sélection");
+    // Header follows the active group's label; counter covers the CURRENT
+    // entity only (2 refs) in the default Entité scope, not the whole thread.
+    expect(el.textContent).toContain("Sherlock Holmes");
+    expect(el.textContent).toContain("Citation 1/2");
   });
 
   it("surfaces resolver failures as a clear source-unavailable state", async () => {
@@ -129,325 +166,75 @@ describe("CitedSourceViewer (markdown path)", () => {
       title: "t",
     });
     await settle();
-    expect(el.textContent).toContain("Source unavailable");
     expect(el.textContent).toContain("404 sources/corpus/blue-study.md");
   });
 });
 
-describe("CitedSourceViewer qualified toolbar (immo parity)", () => {
-  // Refs spanning TWO source documents: 2 in blue-study.md + 1 in notes.md.
-  const MULTI_DOC_REFS = [
-    ...REFS,
-    { rawRef: "corpus/notes.md", section: "Notes", excerpt: "a passage from the second document" },
-  ];
-  const multiResolver = () =>
-    vi.fn(async (r) =>
-      r.rawRef === "corpus/notes.md"
-        ? { kind: "markdown", text: "# Notes\n\nHere is a passage from the second document indeed." }
-        : { kind: "markdown", text: SOURCE_TEXT },
+describe("studio resolver shim (lib/citedSources.js) — maps refs to the bundle", () => {
+  it("bundleSourcePath normalizes locators under ./sources/ and encodes segments", () => {
+    expect(bundleSourcePath("corpus/report.pdf")).toBe("./sources/corpus/report.pdf");
+    expect(bundleSourcePath("./corpus/report.pdf")).toBe("./sources/corpus/report.pdf");
+    expect(bundleSourcePath("corpus/my report.pdf")).toBe("./sources/corpus/my%20report.pdf");
+  });
+
+  it("sourceHrefFor resolves rawRef/sourceUrl and returns null when unlocatable", () => {
+    expect(sourceHrefFor({ rawRef: "corpus/a.md" })).toBe("./sources/corpus/a.md");
+    expect(sourceHrefFor({ sourceUrl: "corpus/b.pdf" })).toBe("./sources/corpus/b.pdf");
+    expect(sourceHrefFor({ section: "no locator" })).toBeNull();
+    expect(sourceHrefFor(null)).toBeNull();
+  });
+
+  it("resolveBundleSource fetches the bundle path and routes pdf vs markdown", async () => {
+    const bytes = new ArrayBuffer(8);
+    const fetchMock = vi.fn(async (url) => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      arrayBuffer: async () => bytes,
+      text: async () => "# md\n\nbody",
+      _url: url,
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pdf = await resolveBundleSource({ rawRef: "corpus/report.pdf" });
+    expect(fetchMock).toHaveBeenCalledWith("./sources/corpus/report.pdf");
+    expect(pdf).toEqual({ kind: "pdf", data: bytes });
+
+    const md = await resolveBundleSource({ rawRef: "corpus/notes.md" });
+    expect(md).toEqual({ kind: "markdown", text: "# md\n\nbody" });
+  });
+
+  it("resolveBundleSource raises a helpful error on a missing bundle file", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: false, status: 404, statusText: "Not Found" })),
     );
-
-  it("shows the Doc x/y navigator only when refs span multiple documents", async () => {
-    const single = mountViewer({ refs: REFS, resolveSource: mdResolver(), title: "t" });
-    await settle();
-    expect(single.textContent).not.toContain("Doc");
-    unmount(instance);
-    instance = null;
-    host.remove();
-
-    const multi = mountViewer({ refs: MULTI_DOC_REFS, resolveSource: multiResolver(), title: "t" });
-    await settle();
-    expect(multi.textContent).toContain("Doc");
-    expect(multi.textContent).toContain("1/2");
-    expect(multi.textContent).toContain("Citation 1/3");
-  });
-
-  it("Next document jumps to the FIRST ref of the next source file and loads it", async () => {
-    const resolveSource = multiResolver();
-    const el = mountViewer({ refs: MULTI_DOC_REFS, resolveSource, activeIndex: 0, title: "t" });
-    await settle();
-
-    const nextDoc = [...el.querySelectorAll("button")].find(
-      (b) => b.getAttribute("aria-label") === "Next document",
+    await expect(resolveBundleSource({ rawRef: "corpus/missing.md" })).rejects.toThrow(
+      /404 Not Found.*--include-sources/s,
     );
-    expect(nextDoc).toBeTruthy();
-    nextDoc.click();
-    flushSync();
-    await settle();
-
-    // Jumped to ref index 2 (first ref of corpus/notes.md) -> Citation 3/3, Doc 2/2.
-    expect(el.textContent).toContain("Citation 3/3");
-    expect(el.textContent).toContain("Doc 2/2");
-    expect(resolveSource).toHaveBeenLastCalledWith(MULTI_DOC_REFS[2]);
-    expect(el.querySelector("[data-csv-mark]")?.textContent).toContain("passage from the second document");
   });
 
-  it("renders the Ouvrir raw-source link from the sourceHref callback", async () => {
-    const el = mountViewer({
-      refs: REFS,
-      resolveSource: mdResolver(),
-      sourceHref: (r) => `./sources/${r.rawRef}`,
-      title: "t",
-    });
-    await settle();
-    const link = el.querySelector("a.csv-tb-open");
-    expect(link).not.toBeNull();
-    expect(link.textContent).toContain("Ouvrir");
-    expect(link.getAttribute("href")).toBe("./sources/corpus/blue-study.md");
-    expect(link.getAttribute("target")).toBe("_blank");
-  });
-
-  it("hides the Ouvrir link when sourceHref is absent or resolves null", async () => {
-    const el = mountViewer({ refs: REFS, resolveSource: mdResolver(), title: "t" });
-    await settle();
-    expect(el.querySelector("a.csv-tb-open")).toBeNull();
-  });
-
-  it("pins the retarget contract in the source (thread identity + index props tracked)", () => {
-    // A plain-JS vitest cannot push prop updates into a Svelte-5 mount(), so
-    // the retarget-on-reopen behavior (new groups/refs array + indexes re-aim
-    // an OPEN viewer, no stacking) is exercised end-to-end by the UAT run;
-    // here we pin the load-bearing implementation: the $effect must compare
-    // the groups AND refs identities AND both index props before reseeding,
-    // and the scope prop must be tracked in its OWN effect (a consumer scope
-    // echo must never re-seed an internally-navigated position).
-    const source = readFileSync(
-      resolve(process.cwd(), "src/components/CitedSourceViewer.svelte"),
-      "utf8",
-    );
-    expect(source).toMatch(/groups !== lastGroupsProp \|\|/);
-    expect(source).toMatch(/refs !== lastRefsProp \|\|/);
-    expect(source).toMatch(/activeGroupIndex !== lastActiveGroupProp \|\|/);
-    expect(source).toMatch(/activeIndex !== lastActiveProp\s*\n/);
-    expect(source).toMatch(/lastRefsProp = refs;/);
-    expect(source).toMatch(/lastGroupsProp = groups;/);
-    expect(source).toMatch(/scope !== lastScopeProp/);
+  it("resolveBundleSource rejects a ref that carries no locator", async () => {
+    await expect(resolveBundleSource({ section: "nowhere" })).rejects.toThrow(/no source locator/);
   });
 });
 
-describe("CitedSourceViewer grouped thread — selection scope (§S.6.1)", () => {
-  // Two entities, each cited twice, across TWO documents (the approved
-  // multi-entity fixture shape). Group refs are already thread-ordered
-  // (selection → document → page) — the consumer glue owns that ordering.
-  const NOTES_TEXT =
-    "# Notes\n\nHere is a passage from the second document indeed.\n\n" +
-    "Later, the doctor wrote his notes by the fire.";
-  const GROUP_A = {
-    id: "e:holmes",
-    label: "Sherlock Holmes",
-    refs: [
-      { rawRef: "corpus/blue-study.md", section: "Chapter 1", excerpt: "Holmes examined the ledger in silence" },
-      { rawRef: "corpus/notes.md", section: "Notes", excerpt: "a passage from the second document" },
-    ],
-  };
-  const GROUP_B = {
-    id: "e:watson",
-    label: "John Watson",
-    refs: [
-      { rawRef: "corpus/blue-study.md", section: "Chapter 2", excerpt: "the coronet had vanished from his private safe" },
-      { rawRef: "corpus/notes.md", section: "Notes", excerpt: "the doctor wrote his notes" },
-    ],
-  };
-  const GROUPS = [GROUP_A, GROUP_B];
-  const groupResolver = () =>
-    vi.fn(async (r) =>
-      r.rawRef === "corpus/notes.md"
-        ? { kind: "markdown", text: NOTES_TEXT }
-        : { kind: "markdown", text: SOURCE_TEXT },
+describe("App.svelte hosts the published viewer with the shim resolvers", () => {
+  const appSrc = readFileSync(resolve(process.cwd(), "src/App.svelte"), "utf8");
+
+  it("imports the viewer FROM the published package, not the deleted local component", () => {
+    expect(appSrc).toMatch(
+      /import\s+CitedSourceViewer\s+from\s+["']@sentropic\/cited-source-viewer\/CitedSourceViewer\.svelte["']/,
     );
-  const byLabel = (el, label) =>
-    [...el.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === label);
-  // DS ContentSwitcher renders the scope toggle as role="tab" options.
-  const scopeBtn = (el, text) =>
-    [...el.querySelectorAll(".st-contentSwitcher__option")].find(
-      (b) => b.textContent.trim() === text,
-    );
-  const pressKey = async (key) => {
-    window.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
-    flushSync();
-    await settle();
-  };
-
-  it("defaults to Entité scope: toggle shown, per-entity counter, no entity indicator", async () => {
-    const el = mountViewer({ refs: [], groups: GROUPS, resolveSource: groupResolver(), title: "t" });
-    await settle();
-    expect(scopeBtn(el, "Entité")).toBeTruthy();
-    expect(scopeBtn(el, "Sélection")).toBeTruthy();
-    expect(scopeBtn(el, "Entité").getAttribute("aria-selected")).toBe("true");
-    // Counter covers the CURRENT entity only (2 refs), not the thread (4).
-    expect(el.textContent).toContain("Citation 1/2");
-    expect(el.querySelector('[aria-label="Entity navigator"]')).toBeNull();
-    // Header follows the active group label.
-    expect(el.textContent).toContain("Sherlock Holmes");
+    // The decommissioned local component/engines must not be referenced.
+    expect(appSrc).not.toMatch(/\.\/components\/CitedSourceViewer\.svelte/);
+    expect(appSrc).not.toMatch(/lib\/cited-source\//);
   });
 
-  it("hides the scope toggle when only ONE group carries citations (plain Entité mode)", async () => {
-    const el = mountViewer({
-      refs: [],
-      groups: [GROUP_A, { id: "e:empty", label: "Nobody", refs: [] }],
-      resolveSource: groupResolver(),
-      title: "t",
-    });
-    await settle();
-    expect(el.querySelector(".csv-tb-scope")).toBeNull();
-    expect(el.textContent).toContain("Citation 1/2");
-  });
-
-  it("Entité scope stops at the entity boundary (next disabled on its last citation)", async () => {
-    const el = mountViewer({
-      refs: [],
-      groups: GROUPS,
-      activeGroupIndex: 0,
-      activeIndex: 1,
-      resolveSource: groupResolver(),
-      title: "t",
-    });
-    await settle();
-    expect(el.textContent).toContain("Citation 2/2");
-    expect(byLabel(el, "Next citation").disabled).toBe(true);
-  });
-
-  it("switching to Sélection makes the counter global and shows the entity indicator", async () => {
-    const onScopeChange = vi.fn();
-    const el = mountViewer({
-      refs: [],
-      groups: GROUPS,
-      resolveSource: groupResolver(),
-      onScopeChange,
-      title: "t",
-    });
-    await settle();
-    scopeBtn(el, "Sélection").click();
-    flushSync();
-    await settle();
-    expect(onScopeChange).toHaveBeenCalledWith("selection");
-    expect(el.textContent).toContain("Citation 1/4");
-    const indicator = el.querySelector('[aria-label="Entity navigator"]');
-    expect(indicator).not.toBeNull();
-    expect(indicator.textContent).toContain("Entité");
-    expect(indicator.textContent).toContain("1/2");
-    expect(indicator.textContent).toContain("Sherlock Holmes");
-  });
-
-  it("Sélection scope crosses the entity boundary as ONE continuous thread + fires onFocusChange", async () => {
-    const onFocusChange = vi.fn();
-    const resolveSource = groupResolver();
-    const el = mountViewer({
-      refs: [],
-      groups: GROUPS,
-      activeGroupIndex: 0,
-      activeIndex: 1, // last citation of entity A
-      scope: "selection",
-      resolveSource,
-      onFocusChange,
-      title: "t",
-    });
-    await settle();
-    expect(el.textContent).toContain("Citation 2/4");
-
-    byLabel(el, "Next citation").click();
-    flushSync();
-    await settle();
-
-    // Landed on the FIRST citation of entity B — overlay never closed.
-    expect(onFocusChange).toHaveBeenCalledWith("e:watson", 0);
-    expect(el.textContent).toContain("Citation 3/4");
-    const indicator = el.querySelector('[aria-label="Entity navigator"]');
-    expect(indicator.textContent).toContain("2/2");
-    expect(indicator.textContent).toContain("John Watson");
-    expect(resolveSource).toHaveBeenLastCalledWith(GROUP_B.refs[0]);
-    expect(el.querySelector("[data-csv-mark]")?.textContent).toContain("coronet had vanished");
-  });
-
-  it("keyboard n/N steps the ACTIVE scope; e/E jumps entities in Sélection scope", async () => {
-    const onFocusChange = vi.fn();
-    const el = mountViewer({
-      refs: [],
-      groups: GROUPS,
-      scope: "selection",
-      resolveSource: groupResolver(),
-      onFocusChange,
-      title: "t",
-    });
-    await settle();
-    expect(el.textContent).toContain("Citation 1/4");
-
-    await pressKey("n");
-    expect(el.textContent).toContain("Citation 2/4");
-    expect(onFocusChange).toHaveBeenLastCalledWith("e:holmes", 1);
-
-    await pressKey("N");
-    expect(el.textContent).toContain("Citation 1/4");
-
-    await pressKey("e");
-    expect(el.textContent).toContain("Citation 3/4");
-    expect(onFocusChange).toHaveBeenLastCalledWith("e:watson", 0);
-
-    await pressKey("E");
-    expect(el.textContent).toContain("Citation 1/4");
-    expect(onFocusChange).toHaveBeenLastCalledWith("e:holmes", 0);
-  });
-
-  it("keyboard e/E is inert in Entité scope (per the approved UX)", async () => {
-    const el = mountViewer({ refs: [], groups: GROUPS, resolveSource: groupResolver(), title: "t" });
-    await settle();
-    expect(el.textContent).toContain("Citation 1/2");
-    await pressKey("e");
-    // Still on entity A, entity indicator still hidden.
-    expect(el.textContent).toContain("Citation 1/2");
-    expect(el.textContent).toContain("Sherlock Holmes");
-    expect(el.querySelector('[aria-label="Entity navigator"]')).toBeNull();
-  });
-
-  it("flat refs mode still supports n/N as citation stepping (single anonymous group)", async () => {
-    const el = mountViewer({ refs: REFS, resolveSource: mdResolver(), title: "t" });
-    await settle();
-    expect(el.textContent).toContain("Citation 1/2");
-    await pressKey("n");
-    expect(el.textContent).toContain("Citation 2/2");
-    await pressKey("N");
-    expect(el.textContent).toContain("Citation 1/2");
-  });
-});
-
-describe("CitedSourceViewer purity (rebase seam)", () => {
-  it("imports nothing from graphify — only svelte, the DS package and the sibling pure lib", () => {
-    const source = readFileSync(
-      resolve(process.cwd(), "src/components/CitedSourceViewer.svelte"),
-      "utf8",
-    );
-    const importSpecs = [
-      ...source.matchAll(/^\s*import\s+(?:[\s\S]*?from\s+)?["']([^"']+)["']/gm),
-    ].map((m) => m[1]);
-    expect(importSpecs.length).toBeGreaterThan(0);
-    // ALLOWED_EXTERNAL mirrors the @sentropic/cited-source-viewer package:
-    // svelte + @sentropic/design-system-svelte + pdfjs-dist (the DS is part of
-    // the architect-owned seam; graphify runtime imports remain forbidden).
-    for (const spec of importSpecs) {
-      expect(spec).toMatch(
-        /^(svelte|@sentropic\/design-system-svelte$|pdfjs-dist|\.\.\/lib\/cited-source\/)/,
-      );
-    }
-    // No graphify alias / server import can sneak in.
-    expect(source).not.toMatch(/@graphify\//);
-    expect(source).not.toMatch(/\.\.\/lib\/(api|graphAdapter|citedSources)/);
-  });
-
-  it("declares the §S.6.1 grouped-thread props on the SAME pure seam (no new imports)", () => {
-    const source = readFileSync(
-      resolve(process.cwd(), "src/components/CitedSourceViewer.svelte"),
-      "utf8",
-    );
-    // The extended API stays a pure-props surface: the grouped thread and its
-    // callbacks are declared in $props(), never derived from graphify state.
-    for (const prop of [
-      "groups = []",
-      "activeGroupIndex = 0",
-      'scope = "entity"',
-      "onScopeChange = null",
-      "onFocusChange = null",
-    ]) {
-      expect(source).toContain(prop);
-    }
+  it("wires the lib viewer with the studio glue resolvers (resolveSource + sourceHref)", () => {
+    expect(appSrc).toMatch(/resolveSource=\{resolveBundleSource\}/);
+    expect(appSrc).toMatch(/sourceHref=\{sourceHrefFor\}/);
+    // The glue helpers still come from the retained local adapter.
+    expect(appSrc).toMatch(/from\s+["']\.\/lib\/citedSources\.js["']/);
   });
 });
