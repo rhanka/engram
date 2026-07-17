@@ -85,6 +85,13 @@ describe("normalizeForMatch", () => {
     expect(normalizeForMatch("Le SYSTÈME  CŒUR")).toBe("le systeme coeur");
     expect(normalizeForMatch("Mattioli\n\tJuliette")).toBe("mattioli juliette");
   });
+
+  it("folds spacing inside dotted initial runs without changing numeric identifiers", () => {
+    expect(normalizeForMatch("A. J. Raffles")).toBe("a.j. raffles");
+    expect(normalizeForMatch("A . J . Raffles")).toBe("a.j. raffles");
+    expect(normalizeForMatch("a.j. raffles")).toBe("a.j. raffles");
+    expect(normalizeForMatch("C-01")).not.toBe(normalizeForMatch("C-1"));
+  });
 });
 
 describe("verifyVerbatim — the anti-hallucination gate", () => {
@@ -237,6 +244,25 @@ describe("groundNodeCitations — type-aware grounding produces VERBATIM quotes"
   it("a node with no match in the source emits NOTHING (no fabrication)", () => {
     const cites = ground({ id: "x", label: "Quetzalcoatl Spaceport", file_type: "concept" });
     expect(cites).toHaveLength(0);
+  });
+
+  it("grounds a candidate term with compact dotted initials against spaced source initials", () => {
+    const filler = "This opening sentence has no relevant name. ".repeat(8);
+    const text = `${filler}The visitor introduced himself as A. J. Raffles before dinner.`;
+    const parsed = parseSource(text, "plain-text");
+    const norm = normalizeForMatch(text);
+
+    const cites = groundNodeCitations(
+      { id: "raffles", label: "Unmatched Entity", file_type: "entity", aliases: ["a.j. raffles"] },
+      parsed,
+      norm,
+      { topK: 6, sourceLabel: "raffles.txt" },
+    );
+
+    expect(cites.length).toBeGreaterThan(0);
+    expect(cites[0]!.quote).toContain("A. J. Raffles");
+    expect(verifyVerbatim(cites[0]!.quote, norm)).toBe(true);
+    expect(verifyVerbatim("A.J. Raffles invented a submarine in this chapter", norm)).toBe(false);
   });
 
   it("rationale fallback: a quote node grounds on its verbatim rationale span", () => {
