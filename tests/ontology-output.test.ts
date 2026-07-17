@@ -301,4 +301,66 @@ describe("ontology output artifacts", () => {
     const nodes = JSON.parse(readFileSync(join(outputDir, "nodes.json"), "utf-8")) as Array<{ status: string }>;
     expect(nodes.every((node) => node.status === "needs_review")).toBe(true);
   });
+
+  it("emits class-hierarchies.json derived from registry parent columns", () => {
+    const root = makeTempDir();
+    const outputDir = join(root, ".graphify", "ontology");
+    const procProfile: NormalizedOntologyProfile = {
+      ...profile,
+      node_types: { ...profile.node_types, Proc: {} },
+      relation_types: {
+        ...profile.relation_types,
+        parent_process: { source_types: ["Proc"], target_types: ["Proc"] },
+      },
+      registries: {
+        procs: {
+          source: "procs",
+          id_column: "id",
+          label_column: "label",
+          alias_columns: [],
+          node_type: "Proc",
+        },
+      },
+      hierarchies: {
+        proc_tree: {
+          registry: "procs",
+          parent_column: "parent_id",
+          child_column: "id",
+          relation_type: "parent_process",
+          parent_node_type: "Proc",
+          child_node_type: "Proc",
+        },
+      },
+    };
+    const procExtraction: Extraction = {
+      input_tokens: 0,
+      output_tokens: 0,
+      nodes: [
+        { id: "registry_procs_A", label: "Root A", node_type: "Proc", registry_record_id: "A", file_type: "document", source_file: "r.csv" },
+        { id: "registry_procs_A_1", label: "Child", node_type: "Proc", registry_record_id: "A.1", file_type: "document", source_file: "r.csv" },
+      ],
+      edges: [],
+    };
+    const result = compileOntologyOutputs({
+      outputDir,
+      extraction: procExtraction,
+      profile: procProfile,
+      config: { enabled: true, canonical_node_types: ["Proc"] },
+      registries: {
+        procs: [
+          { registryId: "procs", id: "A", label: "Root A", aliases: [], nodeType: "Proc", sourceFile: "/r.csv", raw: { id: "A", parent_id: "" } },
+          { registryId: "procs", id: "A.1", label: "Child", aliases: [], nodeType: "Proc", sourceFile: "/r.csv", raw: { id: "A.1", parent_id: "A" } },
+        ],
+      },
+    });
+
+    // Registry arcs + a derived class hierarchy are both produced.
+    expect(result.hierarchyArcCount).toBe(1);
+    expect(result.classHierarchyCount).toBe(1);
+    const artifact = JSON.parse(readFileSync(join(outputDir, "class-hierarchies.json"), "utf-8"));
+    expect(artifact.schema).toBe("graphify_ontology_class_hierarchies_v1");
+    const tree = artifact.hierarchies.proc_tree;
+    expect(tree.classes_by_id["class:proc_tree:A"].child_ids).toEqual(["class:proc_tree:A.1"]);
+    expect(tree.classes_by_id["class:proc_tree:A.1"].member_ids).toEqual(["registry_procs_A_1"]);
+  });
 });

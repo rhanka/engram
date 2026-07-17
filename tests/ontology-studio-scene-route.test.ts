@@ -7,6 +7,13 @@ import { handleOntologyStudioRequest } from "../src/ontology-studio.js";
 import { buildStudioScene } from "../src/studio-scene.js";
 import { attachLayoutPositions } from "../src/graph-layout.js";
 import { writeOntologyWriteFixture } from "./helpers/ontology-write-fixture.js";
+import { clearClassHierarchiesEmitterCache } from "../src/ontology-class-hierarchies-emitter.js";
+import { registryClassNodeId } from "../src/ontology-class-hierarchies.js";
+import type {
+  NormalizedClassHierarchySpec,
+  NormalizedOntologyHierarchySpec,
+  RegistryRecord,
+} from "../src/types.js";
 
 const tempDirs: string[] = [];
 
@@ -40,6 +47,10 @@ afterEach(() => {
     const dir = tempDirs.pop();
     if (dir) rmSync(dir, { recursive: true, force: true });
   }
+  // The live route + emitter both cache on graph identity; per-temp-dir keys
+  // already isolate tests, but clear the emitter cache to be safe across fixtures
+  // that reuse the same profile hash.
+  clearClassHierarchiesEmitterCache();
 });
 
 describe("GET /api/ontology/scene.json", () => {
@@ -130,6 +141,116 @@ describe("GET /api/ontology/search-index.json (work-stream C)", () => {
       { profileStatePath: fixture.profileStatePath },
       "GET",
       "/api/ontology/search-index.json",
+    );
+    expect(result.status).toBe(404);
+    expect(JSON.parse(result.body)).toEqual({ error: "graph.json not found" });
+  });
+});
+
+describe("GET /api/ontology/class-hierarchies.json", () => {
+  // Hand-authored taxonomy: Thing → Person, Person gathers `Character` nodes.
+  const TAXONOMY: Record<string, NormalizedClassHierarchySpec> = {
+    tax: {
+      relation_type: "subclass_of",
+      membership_relation_type: "has_instance",
+      classes: {
+        Thing: { parent: null, label: null, member_node_types: [] },
+        Person: { parent: "Thing", label: null, member_node_types: ["Character"] },
+      },
+    },
+  };
+
+  // Registry-bound process tree (parent_id column) + its dataprep-normalized rows.
+  const HIERARCHIES: Record<string, NormalizedOntologyHierarchySpec> = {
+    proc_tree: {
+      registry: "procs",
+      parent_column: "parent_id",
+      child_column: "id",
+      relation_type: "parent_process",
+      parent_node_type: "Proc",
+      child_node_type: "Proc",
+    },
+  };
+  const PROC_REGISTRY: RegistryRecord[] = [
+    { registryId: "procs", id: "A", label: "Root A", aliases: [], nodeType: "Proc", sourceFile: "/p.csv", raw: { id: "A", parent_id: "" } },
+    { registryId: "procs", id: "A.1", label: "Child A1", aliases: [], nodeType: "Proc", sourceFile: "/p.csv", raw: { id: "A.1", parent_id: "A" } },
+  ];
+  const PROC_GRAPH = {
+    nodes: [
+      { id: "registry_procs_A", node_type: "Proc", registry_record_id: "A" },
+      { id: "registry_procs_A_1", node_type: "Proc", registry_record_id: "A.1" },
+    ],
+    links: [],
+  };
+
+  it("serves the DERIVED artifact for a registry-bound hierarchy (no class block)", () => {
+    const fixture = writeOntologyWriteFixture(makeTempDir(), {
+      hierarchies: HIERARCHIES,
+      registries: { procs: PROC_REGISTRY },
+    });
+    writeGraph(fixture.stateDir, PROC_GRAPH);
+
+    const result = handleOntologyStudioRequest(
+      { profileStatePath: fixture.profileStatePath },
+      "GET",
+      "/api/ontology/class-hierarchies.json",
+    );
+
+    expect(result.status).toBe(200);
+    expect(result.contentType).toBe("application/json; charset=utf-8");
+    const payload = JSON.parse(result.body);
+    expect(payload.schema).toBe("graphify_ontology_class_hierarchies_v1");
+    const tree = payload.hierarchies.proc_tree;
+    // Two classes, nested A → A.1, member_ids joined by registry_record_id.
+    expect(tree.classes_by_id[registryClassNodeId("proc_tree", "A")].child_ids).toEqual([
+      registryClassNodeId("proc_tree", "A.1"),
+    ]);
+    expect(tree.classes_by_id[registryClassNodeId("proc_tree", "A.1")].member_ids).toEqual([
+      "registry_procs_A_1",
+    ]);
+  });
+
+  it("serves the hand-authored class_hierarchies artifact", () => {
+    const fixture = writeOntologyWriteFixture(makeTempDir(), { classHierarchies: TAXONOMY });
+    writeGraph(fixture.stateDir, GRAPH_FIXTURE);
+
+    const result = handleOntologyStudioRequest(
+      { profileStatePath: fixture.profileStatePath },
+      "GET",
+      "/api/ontology/class-hierarchies.json",
+    );
+
+    expect(result.status).toBe(200);
+    const payload = JSON.parse(result.body);
+    expect(payload.hierarchies.tax.classes_by_id["class:Person"].member_ids).toEqual([
+      "n1",
+      "n2",
+      "n3",
+    ]);
+  });
+
+  it("404s (client-tolerated) when the profile declares neither source", () => {
+    const fixture = writeOntologyWriteFixture(makeTempDir());
+    writeGraph(fixture.stateDir, GRAPH_FIXTURE);
+
+    const result = handleOntologyStudioRequest(
+      { profileStatePath: fixture.profileStatePath },
+      "GET",
+      "/api/ontology/class-hierarchies.json",
+    );
+    expect(result.status).toBe(404);
+    expect(JSON.parse(result.body).error).toMatch(/class_hierarchies|registry/);
+  });
+
+  it("404s when graph.json is absent", () => {
+    const fixture = writeOntologyWriteFixture(makeTempDir(), {
+      hierarchies: HIERARCHIES,
+      registries: { procs: PROC_REGISTRY },
+    });
+    const result = handleOntologyStudioRequest(
+      { profileStatePath: fixture.profileStatePath },
+      "GET",
+      "/api/ontology/class-hierarchies.json",
     );
     expect(result.status).toBe(404);
     expect(JSON.parse(result.body)).toEqual({ error: "graph.json not found" });

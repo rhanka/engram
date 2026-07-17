@@ -264,3 +264,176 @@ describe("buildClassHierarchies — graphify_ontology_class_hierarchies_v1", () 
     expect(artifact.hierarchies["taxB"]!.root_class_ids).toEqual(["class:Root"]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Registry-DERIVED class hierarchies (one class per registry row).
+// ---------------------------------------------------------------------------
+
+import type {
+  NormalizedOntologyHierarchySpec,
+  RegistryRecord,
+} from "../src/types.js";
+import { registryClassNodeId } from "../src/ontology-class-hierarchies.js";
+
+/** A registry-bound `hierarchies:` spec over a self-referential parent column. */
+function hierarchySpec(
+  overrides: Partial<NormalizedOntologyHierarchySpec> = {},
+): NormalizedOntologyHierarchySpec {
+  return {
+    registry: overrides.registry ?? "procs",
+    parent_column: overrides.parent_column ?? "parent_id",
+    child_column: overrides.child_column ?? "id",
+    relation_type: overrides.relation_type ?? "parent_process",
+    parent_node_type: overrides.parent_node_type ?? "Proc",
+    child_node_type: overrides.child_node_type ?? "Proc",
+  };
+}
+
+/** A terse RegistryRecord builder (raw carries the parent column). */
+function rec(
+  id: string,
+  parentId: string,
+  label?: string,
+  nodeType = "Proc",
+): RegistryRecord {
+  return {
+    registryId: "procs",
+    id,
+    label: label ?? id,
+    aliases: [],
+    nodeType,
+    sourceFile: "/procs.csv",
+    raw: { id, parent_id: parentId, label: label ?? id },
+  };
+}
+
+describe("buildClassHierarchies — registry-derived (parent columns)", () => {
+  const RECORDS: RegistryRecord[] = [
+    rec("A", "", "Root A"),
+    rec("A.1", "A", "Child A1"),
+    rec("A.1.1", "A.1", "Leaf A11"),
+    rec("B", "", "Root B"),
+    rec("C", "MISSING", "Orphan C"), // dangling parent → promoted to root
+  ];
+  // Graph nodes: A + A.1 + B joined by registry_record_id; A.1.1 has NO node.
+  const NODES = [
+    { id: "registry_procs_A", node_type: "Proc", registry_record_id: "A" },
+    { id: "registry_procs_A_1", node_type: "Proc", registry_record_id: "A.1" },
+    { id: "registry_procs_B", node_type: "Proc", registry_record_id: "B" },
+    { id: "unrelated", node_type: "Other" },
+  ];
+
+  function build() {
+    return buildClassHierarchies({}, NODES, {
+      registryHierarchies: { proc_tree: hierarchySpec() },
+      registries: { procs: RECORDS },
+    }).hierarchies["proc_tree"]!;
+  }
+
+  it("builds one class per registry row, nested by parent column", () => {
+    const h = build();
+    expect(Object.keys(h.classes_by_id).sort()).toEqual(
+      [
+        registryClassNodeId("proc_tree", "A"),
+        registryClassNodeId("proc_tree", "A.1"),
+        registryClassNodeId("proc_tree", "A.1.1"),
+        registryClassNodeId("proc_tree", "B"),
+        registryClassNodeId("proc_tree", "C"),
+      ].sort(),
+    );
+    const a = h.classes_by_id[registryClassNodeId("proc_tree", "A")]!;
+    const a1 = h.classes_by_id[registryClassNodeId("proc_tree", "A.1")]!;
+    const a11 = h.classes_by_id[registryClassNodeId("proc_tree", "A.1.1")]!;
+    expect(a.parent_id).toBeNull();
+    expect(a.child_ids).toEqual([registryClassNodeId("proc_tree", "A.1")]);
+    expect(a1.parent_id).toBe(registryClassNodeId("proc_tree", "A"));
+    expect(a1.child_ids).toEqual([registryClassNodeId("proc_tree", "A.1.1")]);
+    expect(a11.parent_id).toBe(registryClassNodeId("proc_tree", "A.1"));
+  });
+
+  it("derives roots (incl. dangling-parent orphans), levels and depth", () => {
+    const h = build();
+    expect(h.root_class_ids).toEqual(
+      [
+        registryClassNodeId("proc_tree", "A"),
+        registryClassNodeId("proc_tree", "B"),
+        registryClassNodeId("proc_tree", "C"),
+      ].sort(),
+    );
+    expect(h.orphan_class_names).toEqual(["C"]);
+    expect(h.classes_by_id[registryClassNodeId("proc_tree", "A")]!.level).toBe(0);
+    expect(h.classes_by_id[registryClassNodeId("proc_tree", "A.1")]!.level).toBe(1);
+    expect(h.classes_by_id[registryClassNodeId("proc_tree", "A.1.1")]!.level).toBe(2);
+    expect(h.max_depth).toBe(2);
+  });
+
+  it("joins member_ids by registry_record_id (empty when no graph node)", () => {
+    const h = build();
+    expect(h.classes_by_id[registryClassNodeId("proc_tree", "A")]!.member_ids).toEqual([
+      "registry_procs_A",
+    ]);
+    expect(h.classes_by_id[registryClassNodeId("proc_tree", "A.1")]!.member_ids).toEqual([
+      "registry_procs_A_1",
+    ]);
+    // No graph node for A.1.1 ⇒ empty members (the tree class still exists).
+    expect(h.classes_by_id[registryClassNodeId("proc_tree", "A.1.1")]!.member_ids).toEqual([]);
+  });
+
+  it("labels each class from the registry label; carries the node_type", () => {
+    const h = build();
+    expect(h.classes_by_id[registryClassNodeId("proc_tree", "A")]!.label).toBe("Root A");
+    expect(h.classes_by_id[registryClassNodeId("proc_tree", "A.1")]!.member_node_types).toEqual([
+      "Proc",
+    ]);
+    expect(h.relation_type).toBe("subclass_of");
+    expect(h.membership_relation_type).toBe("has_instance");
+  });
+
+  it("falls back to the predicted registry_<reg>_<row> node id (no rri)", () => {
+    // A graph node that carries the native id but NOT registry_record_id.
+    const nodes = [{ id: "registry_procs_A", node_type: "Proc" }];
+    const h = buildClassHierarchies({}, nodes, {
+      registryHierarchies: { proc_tree: hierarchySpec() },
+      registries: { procs: [rec("A", "")] },
+    }).hierarchies["proc_tree"]!;
+    expect(h.classes_by_id[registryClassNodeId("proc_tree", "A")]!.member_ids).toEqual([
+      "registry_procs_A",
+    ]);
+  });
+
+  it("tallies unattached entities of the node_type", () => {
+    // 3 Proc graph nodes, all attached (A, A.1, B) ⇒ 0 unattached.
+    expect(build().unattached_entity_count).toBe(0);
+    // A registry with a row that has NO matching graph node, plus a stray Proc
+    // node that matches no row ⇒ that stray is unattached.
+    const h = buildClassHierarchies(
+      {},
+      [{ id: "registry_procs_Z", node_type: "Proc", registry_record_id: "Z" }],
+      {
+        registryHierarchies: { proc_tree: hierarchySpec() },
+        registries: { procs: [rec("A", "")] },
+      },
+    ).hierarchies["proc_tree"]!;
+    expect(h.unattached_entity_count).toBe(1);
+  });
+
+  it("merges registry-derived and hand-authored hierarchies (profile wins on key)", () => {
+    const artifact = buildClassHierarchies(
+      { tax: spec({ Thing: { parent: null } }) },
+      NODES,
+      {
+        registryHierarchies: { proc_tree: hierarchySpec() },
+        registries: { procs: RECORDS },
+      },
+    );
+    expect(Object.keys(artifact.hierarchies).sort()).toEqual(["proc_tree", "tax"]);
+    expect(artifact.hierarchies["tax"]!.root_class_ids).toEqual(["class:Thing"]);
+  });
+
+  it("is a no-op for the registry path when no registries are supplied", () => {
+    const artifact = buildClassHierarchies({}, NODES, {
+      registryHierarchies: { proc_tree: hierarchySpec() },
+    });
+    expect(artifact.hierarchies).toEqual({});
+  });
+});

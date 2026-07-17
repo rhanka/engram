@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
-import { extname, resolve } from "node:path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { extname, join, resolve } from "node:path";
 import { parse as parseCsv } from "csv-parse/sync";
 import { parse as parseYaml } from "yaml";
 
@@ -99,6 +99,29 @@ export function loadProfileRegistries(
       loadProfileRegistry(registryId, registrySpec),
     ]),
   );
+}
+
+/**
+ * Load the DATAPREP-NORMALIZED registry records from a `<profile>/registries/`
+ * directory (one `<registryId>.json` array of {@link RegistryRecord} per
+ * registry, as written by `graphify profile dataprep`). This is the
+ * binding-free counterpart to {@link loadProfileRegistries}: it reads the
+ * already-materialized rows straight off disk, so the live studio server and the
+ * static export can derive registry class-hierarchies without re-binding the
+ * profile to its source files. Returns `{}` when the directory is absent.
+ */
+export function loadNormalizedRegistriesFromDir(
+  registriesDir: string,
+): Record<string, RegistryRecord[]> {
+  const out: Record<string, RegistryRecord[]> = {};
+  if (!existsSync(registriesDir)) return out;
+  for (const file of readdirSync(registriesDir)) {
+    if (!file.endsWith(".json")) continue;
+    const registryId = file.slice(0, -".json".length);
+    const parsed = JSON.parse(readFileSync(join(registriesDir, file), "utf-8")) as unknown;
+    if (Array.isArray(parsed)) out[registryId] = parsed as RegistryRecord[];
+  }
+  return out;
 }
 
 function safeIdPart(value: string): string {
