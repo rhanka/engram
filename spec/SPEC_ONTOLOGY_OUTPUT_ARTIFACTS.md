@@ -253,22 +253,29 @@ Rules:
 ]
 ```
 
-`occurrences.json` records profile-selected source-backed observations:
+`occurrences.json` records profile-selected mention-level typed entity occurrences:
 
 ```json
 [
   {
     "id": "occurrence-id",
-    "type": "Observation",
-    "summary": "Synthetic source-backed observation.",
-    "linked_node_ids": ["stable-node-id"],
-    "source_refs": ["source-ref-id"],
-    "confidence": 0.7
+    "node_type": "Component",
+    "raw_span": "Synthetic component label",
+    "normalized": "synthetic component label",
+    "source_file": "source.md",
+    "page": null,
+    "offsets": { "start": 0, "end": 25 },
+    "detector": "lexicon",
+    "resolution": "linked",
+    "registry_record_id": "component-1",
+    "registry_partition": null
   }
 ]
 ```
 
-The profile decides which node types are occurrence-like. Graphify must not ship a built-in domain concept for occurrences.
+The profile decides which node types are occurrence-like. `raw_span` is verbatim source text; offsets are 0-based,
+half-open UTF-16 offsets in that raw source file. A linked occurrence has exactly one `registry_record_id`; unlinked
+and ambiguous occurrences have none. Graphify must not ship a built-in domain concept for occurrences.
 
 ## Entity Wiki
 
@@ -374,7 +381,25 @@ Ontology output validation checks:
 - wiki pages reference only exported node IDs
 - generated summaries cite evidence when citation policy requires it
 
-Validation output goes to `.graphify/ontology/validation.json` and profile reports.
+Validation output goes to `.graphify/ontology/validation.json` and profile reports. Its v1 envelope is structured:
+
+```json
+{
+  "schema": "graphify_ontology_validation_v1",
+  "issues": [
+    {
+      "code": "ALIAS_AMBIGUOUS",
+      "severity": "warning",
+      "node_type": "Component",
+      "message": "alias \"alternate label\" ambiguously attaches to component-a, component-b",
+      "refs": ["record:component-a", "record:component-b"]
+    }
+  ]
+}
+```
+
+`issues` previously contained free-form strings. Consumers must now read the stable `code`, `severity`,
+`node_type`, and prefixed `refs`; `message` preserves the human-readable diagnostic.
 
 ## Tests
 

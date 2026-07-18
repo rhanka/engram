@@ -254,6 +254,39 @@ describe("ontology profile loader", () => {
     );
   });
 
+  it("normalizes partition_column and requires node-type registry declarations to be coherent", () => {
+    const partitioned = parseOntologyProfile(
+      validProfileYaml().replace("    node_type: Component", "    node_type: Component\n    partition_column: municipality"),
+      "ontology-profile.yaml",
+    );
+    expect(normalizeOntologyProfile(partitioned).registries.components.partition_column).toBe("municipality");
+
+    const incoherent = parseOntologyProfile(
+      [
+        "id: registry-coherence",
+        "version: 1",
+        "node_types:",
+        "  Component:",
+        "    registry: missing",
+        "  Tool:",
+        "    registry: components",
+        "relation_types: {}",
+        "registries:",
+        "  components:",
+        "    source: components",
+        "    id_column: component_id",
+        "    label_column: component_name",
+        "    node_type: Component",
+        "",
+      ].join("\n"),
+      "ontology-profile.yaml",
+    );
+
+    const errors = validateOntologyProfile(incoherent);
+    expect(errors).toContain("node_types.Component.registry references unknown registry missing");
+    expect(errors).toContain("node_types.Tool.registry components has node_type Component, expected Tool");
+  });
+
   it("rejects ontology output declarations that reference unknown profile types", () => {
     const raw = parseOntologyProfile(
       [

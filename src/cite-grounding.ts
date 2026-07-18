@@ -1,338 +1,84 @@
 /**
- * Heuristic citation GROUNDING (WP #24 — `graphify cite`).
- *
- * Symmetric to `node-descriptions.ts` (describe) and `community-labeling.ts`
- * (label): a producer pass over an already-built graph that POPULATES
- * `node.citations[]` by SCANNING the corpus source text, as opposed to
- * `backfill-citations` which only PROJECTS pre-existing citations.
- *
- * This is the productization of ia-aero's hand-coded `ground.py` / `ground2.py`
- * (876/876 entities cited, zero API calls) and is the no-key DEFAULT path.
- *
- * ── ANTI-HALLUCINATION (HARD INVARIANT) ──────────────────────────────────────
- * Every emitted `quote` is a VERIFIED VERBATIM substring of the NORMALIZED
- * source text. A citation cannot be emitted unless its windowed quote, after the
- * same NFKD-deaccent/lowercase/whitespace-collapse normalization, is found as a
- * substring of the normalized source. There is no path to invent text. The LLM
- * (assistant/api) modes are gated by the SAME structural check: an LLM proposes
- * a quote, the heuristic verifier re-locates it in the source, and a quote that
- * does not match is DROPPED, never emitted. See `verifyVerbatim`.
- *
- * No network, no secrets in the heuristic path. Deterministic and replayable.
+ * Heuristic citation grounding. Source parsing, raw-offset relocation, and
+ * verbatim verification live in source-grounding so link and cite share the
+ * same proof substrate.
  */
 import { readFileSync } from "node:fs";
-import { isAbsolute, resolve as resolvePath } from "node:path";
 import type Graph from "graphology";
+
 import type { CitationConfidence, OntologyCitation } from "./types.js";
 import { unionCitations } from "./citations.js";
+import {
+  deaccent,
+  detectModality,
+  normalizeForMatch,
+  parseSource,
+  rawOffsetForTerm,
+  resolveSourcePath,
+  verifyVerbatim,
+  windowQuote,
+} from "./source-grounding.js";
+import type { ParsedSource } from "./source-grounding.js";
 
-// ---------------------------------------------------------------------------
-// Normalization (the matcher substrate, shared by grounding + verification)
-// ---------------------------------------------------------------------------
+// Public compatibility surface: all historical cite exports now come from the
+// shared source module, with no behavioural fork.
+export {
+  buildNormToRawMap,
+  deaccent,
+  detectModality,
+  normalizeForMatch,
+  parseSource,
+  rawOffsetForTerm,
+  resolveSourcePath,
+  verifyVerbatim,
+  windowQuote,
+} from "./source-grounding.js";
+export type {
+  ImageContext,
+  ParsedSource,
+  ResolveSourceOptions,
+  SourceModality,
+  SourceUnit,
+} from "./source-grounding.js";
 
-/** NFKD deaccent + ascii-fold (drops combining marks, ligatures degrade). */
-export function deaccent(s: string): string {
-  return (s ?? "").normalize("NFKD").replace(/[̀-ͯ]/g, "");
-}
-
-/**
- * Dotted initial runs normalize spacing around the points only when at least
- * two one-letter initials are present: `A. J.` / `A . J .` / `A.J.` all become
- * `a.j.`. This preserves the letters and points and avoids numeric padding or
- * other cross-entity folds.
- */
-const DOTTED_INITIAL_RUN_RE = /\b[a-z]\s*\.(?:\s*[a-z]\s*\.)+/g;
-
-function normalizeForMatchBase(s: string): string {
-  return deaccent(s ?? "")
-    .replace(/œ/g, "oe")
-    .replace(/æ/g, "ae")
-    .replace(/Œ/g, "OE")
-    .replace(/Æ/g, "AE")
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function foldDottedInitialSpacing(s: string): string {
-  return s.replace(DOTTED_INITIAL_RUN_RE, (run) => run.replace(/\s+/g, ""));
-}
-
-/**
- * Canonical match form: deaccent → lowercase → collapse whitespace → trim →
- * fold dotted-initial spacing. Ligatures (œ/æ) are folded so `cœur` matches
- * `coeur`. Used for BOTH the candidate-term match and the anti-hallucination
- * verbatim check, so the two are guaranteed to agree.
- */
-export function normalizeForMatch(s: string): string {
-  return foldDottedInitialSpacing(normalizeForMatchBase(s));
-}
-
-// ---------------------------------------------------------------------------
-// Modality-aware source parsing
-// ---------------------------------------------------------------------------
-
-export type SourceModality = "ocr-markdown" | "plain-text";
-
-/** A locatable text unit (paragraph) parsed from a source file. */
-export interface SourceUnit {
-  /** Verbatim (raw) paragraph text. */
-  text: string;
-  /** Page number (OCR-markdown; 1 for plain text where pages are meaningless). */
-  page: number;
-  /** Section / chapter heading in effect for this unit (raw). */
-  section: string;
-  /** 0-based paragraph index within the source. */
-  paragraphIndex: number;
-}
-
-/** Image reference + its surrounding prose context (OCR-markdown). */
-export interface ImageContext {
-  /** Image basename, e.g. `image-000.jpg`. */
-  basename: string;
-  page: number;
-  section: string;
-  /** Preceding paragraph text (raw), or "". */
-  prev: string;
-  /** Following paragraph text (raw), or "". */
-  next: string;
-}
-
-export interface ParsedSource {
-  modality: SourceModality;
-  units: SourceUnit[];
-  /** section heading → unit indices, for type-aware person-section matching. */
-  sectionToIndices: Map<string, number[]>;
-  /** image basename → context (OCR-markdown only). */
-  images: Map<string, ImageContext>;
-  /** Highest page seen (1 for plain text). */
-  pageCount: number;
-}
-
-/** Detect modality from a source path. `.md` → OCR-markdown, else plain-text. */
-export function detectModality(sourceFile: string): SourceModality {
-  return /\.(md|markdown)$/i.test(sourceFile) ? "ocr-markdown" : "plain-text";
-}
-
-const FRONT_MATTER_KEY = /^[a-z_]+:\s/i;
-
-/**
- * Parse an OCR-markdown file into locatable units (ia-aero `ground.py` parser,
- * hardened for graphify's front-matter):
- *   - the leading `---` … `---` front-matter block is SKIPPED (it is metadata,
- *     not a page break — without this, page numbering starts at 2);
- *   - a bare `---` outside front-matter → page increment (Mistral page break);
- *   - `#{1,4} ` → section heading (the section for following units);
- *   - `![alt](path)` → an image; its prev paragraph + the next paragraph become
- *     its context;
- *   - blank line / heading / image / page-break → flush the current paragraph.
- */
-function parseOcrMarkdown(raw: string): ParsedSource {
-  const lines = raw.split("\n");
-  const units: SourceUnit[] = [];
-  const sectionToIndices = new Map<string, number[]>();
-  const images = new Map<string, ImageContext>();
-  let page = 1;
-  let section = "";
-  let buf: string[] = [];
-  let pendingImages: string[] = [];
-
-  // Front-matter detection: a `---` on the FIRST line opens a metadata block
-  // that closes at the next `---`. Those two `---` are not page breaks.
-  let inFrontMatter = false;
-  let frontMatterDone = false;
-  let i = 0;
-  if (lines[0]?.trim() === "---") {
-    inFrontMatter = true;
-    i = 1;
-  }
-
-  const flush = (): void => {
-    if (buf.length === 0) return;
-    const text = buf.map((x) => x.trim()).join(" ").trim();
-    buf = [];
-    if (!text || text.startsWith("![")) return;
-    const idx = units.length;
-    units.push({ text, page, section, paragraphIndex: idx });
-    const arr = sectionToIndices.get(section) ?? [];
-    arr.push(idx);
-    sectionToIndices.set(section, arr);
-    // Resolve any image awaiting its `next` paragraph.
-    for (const fn of pendingImages) {
-      const ctx = images.get(fn);
-      if (ctx && !ctx.next) ctx.next = text;
-    }
-    pendingImages = [];
-  };
-
-  for (; i < lines.length; i += 1) {
-    const s = (lines[i] ?? "").trim();
-
-    if (inFrontMatter && !frontMatterDone) {
-      // Skip metadata lines; the closing `---` ends the block (not a page break).
-      if (s === "---") {
-        frontMatterDone = true;
-        inFrontMatter = false;
-      } else if (s !== "" && !FRONT_MATTER_KEY.test(s)) {
-        // A non-key line before a closing fence: not real front matter — bail
-        // out and reprocess this line as content.
-        inFrontMatter = false;
-        frontMatterDone = true;
-        i -= 1;
-      }
-      continue;
-    }
-
-    if (s === "---") {
-      flush();
-      page += 1;
-      continue;
-    }
-    if (/^#{1,4}\s/.test(s)) {
-      flush();
-      section = s.replace(/^#{1,4}\s+/, "").trim();
-      continue;
-    }
-    const img = /^!\[[^\]]*\]\(([^)]+)\)/.exec(s);
-    if (img) {
-      flush();
-      const fn = basenameOf(img[1] ?? "");
-      const prev = units.length > 0 ? (units[units.length - 1]?.text ?? "") : "";
-      images.set(fn, { basename: fn, page, section, prev, next: "" });
-      pendingImages.push(fn);
-      continue;
-    }
-    if (s === "") {
-      flush();
-      continue;
-    }
-    buf.push(s);
-  }
-  flush();
-
-  return { modality: "ocr-markdown", units, sectionToIndices, images, pageCount: page };
-}
-
-/**
- * Parse a plain-text file (mystery novels) into locatable units. Chapter / story
- * headings (heuristic: short, mostly-uppercase or `Chapter N`/`Part N` lines on
- * their own, or markdown `#` headings if present) become sections; paragraphs
- * (blank-line separated) are the units. Pages are meaningless → page 1.
- */
-function parsePlainText(raw: string): ParsedSource {
-  const lines = raw.split("\n");
-  const units: SourceUnit[] = [];
-  const sectionToIndices = new Map<string, number[]>();
-  let section = "";
-  let buf: string[] = [];
-
-  const flush = (): void => {
-    if (buf.length === 0) return;
-    const text = buf.map((x) => x.trim()).join(" ").trim();
-    buf = [];
-    if (!text) return;
-    const idx = units.length;
-    units.push({ text, page: 1, section, paragraphIndex: idx });
-    const arr = sectionToIndices.get(section) ?? [];
-    arr.push(idx);
-    sectionToIndices.set(section, arr);
-  };
-
-  for (const line of lines) {
-    const s = line.trim();
-    if (/^#{1,4}\s/.test(s)) {
-      flush();
-      section = s.replace(/^#{1,4}\s+/, "").trim();
-      continue;
-    }
-    if (isHeadingLine(s, buf.length === 0)) {
-      flush();
-      section = s.trim();
-      continue;
-    }
-    if (s === "") {
-      flush();
-      continue;
-    }
-    buf.push(s);
-  }
-  flush();
-
-  return { modality: "plain-text", units, sectionToIndices, images: new Map(), pageCount: 1 };
-}
-
-/**
- * Heuristic chapter/story heading for plain text: a `Chapter N`/`Part N`/`Book N`
- * marker, or a short standalone line (≤ 8 words) that is mostly upper-case
- * letters and starts a paragraph. Conservative — false negatives only narrow the
- * section, never break grounding.
- */
-function isHeadingLine(s: string, atParagraphStart: boolean): boolean {
-  if (!s || !atParagraphStart) return false;
-  if (/^(chapter|part|book|adventure|story)\b/i.test(s) && s.length <= 80) return true;
-  const words = s.split(/\s+/);
-  if (words.length > 8 || s.length > 80) return false;
-  const letters = s.replace(/[^a-zA-ZÀ-ÿ]/g, "");
-  if (letters.length < 3) return false;
-  const upper = s.replace(/[^A-ZÀ-Þ]/g, "");
-  return upper.length / letters.length >= 0.7;
-}
-
-function basenameOf(p: string): string {
-  const norm = p.replace(/\\/g, "/");
-  const idx = norm.lastIndexOf("/");
-  return idx >= 0 ? norm.slice(idx + 1) : norm;
-}
-
-/** Parse any supported source modality. */
-export function parseSource(raw: string, modality: SourceModality): ParsedSource {
-  return modality === "ocr-markdown" ? parseOcrMarkdown(raw) : parsePlainText(raw);
-}
-
-// ---------------------------------------------------------------------------
-// Quote windowing + verbatim verification (anti-hallucination)
-// ---------------------------------------------------------------------------
-
-const QUOTE_BEFORE = 110;
-const QUOTE_AFTER = 210;
 const QUOTE_MAXLEN = 320;
-const OPEN_BOUNDARY = new Set([" ", "\n", "«", "(", '"', "“"]);
-const CLOSE_BOUNDARY = new Set([" ", "\n", ".", "!", "?", "»", ")", '"', "”"]);
 
-/**
- * Window a verbatim quote around a match offset (ia-aero `make_quote`): grab
- * ±~110/210 chars, snap the start back to an opening boundary and the end
- * forward to a sentence/quote boundary, ellipsis-pad the truncated sides, cap
- * length. Returns the RAW (verbatim) text — never normalized.
- */
-export function windowQuote(text: string, offset: number): string {
-  let a = Math.max(0, offset - QUOTE_BEFORE);
-  let b = Math.min(text.length, offset + QUOTE_AFTER);
-  while (a > 0 && !OPEN_BOUNDARY.has(text[a] ?? "")) a -= 1;
-  while (b < text.length && !CLOSE_BOUNDARY.has(text[b] ?? "")) b += 1;
-  let q = text.slice(a, b).trim();
-  if (a > 0) q = "… " + q;
-  if (b < text.length) q = q + " …";
-  q = q.replace(/\s+/g, " ");
-  return q.length > QUOTE_MAXLEN ? q.slice(0, QUOTE_MAXLEN).trim() : q;
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/**
- * THE anti-hallucination gate. A quote is verbatim iff its normalized form,
- * stripped of the ellipsis padding `windowQuote` adds, is a non-empty substring
- * of the normalized source text. Used to verify EVERY emitted citation —
- * heuristic and LLM alike.
- */
-export function verifyVerbatim(quote: string, normalizedSource: string): boolean {
-  if (!quote) return false;
-  // Strip the ellipsis padding we may have added, then normalize.
-  const core = quote.replace(/^…\s*/, "").replace(/\s*…$/, "");
-  const needle = normalizeForMatch(core);
-  if (!needle) return false;
-  return normalizedSource.includes(needle);
+function tokenize(normalized: string): string[] {
+  return normalized.match(/[a-z0-9]+/g) ?? [];
 }
 
-// ---------------------------------------------------------------------------
+function tokensContainRun(tokens: string[], needle: string[]): boolean {
+  if (needle.length === 0) return false;
+  for (let i = 0; i + needle.length <= tokens.length; i += 1) {
+    let matches = true;
+    for (let j = 0; j < needle.length; j += 1) {
+      if (tokens[i + j] !== needle[j]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) return true;
+  }
+  return false;
+}
+
+function basenameOf(path: string): string {
+  const normalized = path.replace(/\\/g, "/");
+  const index = normalized.lastIndexOf("/");
+  return index >= 0 ? normalized.slice(index + 1) : normalized;
+}
+
+/** Map an OCR-extracted image path to its containing OCR markdown document. */
+export function containingDocumentFor(imagePath: string): string | null {
+  const normalized = imagePath.replace(/\\/g, "/");
+  const match = /^(.*)_images\/[^/]+$/.exec(normalized);
+  return match ? `${match[1]}.md` : null;
+}
+
 // Type-aware term selection
 // ---------------------------------------------------------------------------
 
@@ -681,157 +427,6 @@ function indexOfUnit(source: ParsedSource, rawText: string): number {
  * one raw char at a time, tracking collapsed whitespace, then applying the same
  * dotted-initial fold to the normalized chars and their raw-offset map.
  */
-function buildNormToRawMap(rawText: string): { norm: string; map: number[] } {
-  const normChars: string[] = [];
-  const map: number[] = [];
-  let pendingSpace = false; // a run of whitespace not yet emitted
-  let sawNonSpace = false; // have we emitted any non-space char yet (for trim)
-  for (let i = 0; i < rawText.length; i += 1) {
-    const ch = rawText[i] ?? "";
-    // Per-char base normalization; dotted-initial folding is applied below
-    // because it depends on neighboring normalized characters.
-    const piece = normalizeForMatchBase(ch);
-    if (piece === "") {
-      // Whitespace (or a char that normalizes away, e.g. a combining mark).
-      // Treat only real whitespace as a collapsible separator.
-      if (/\s/.test(ch)) pendingSpace = true;
-      continue;
-    }
-    if (pendingSpace && sawNonSpace) {
-      normChars.push(" ");
-      map.push(i); // the collapsed space anchors at the start of this token
-    }
-    pendingSpace = false;
-    // A single raw char can normalize to multiple chars (œ→oe). Map them all to
-    // the same raw offset.
-    for (const c of piece) {
-      normChars.push(c);
-      map.push(i);
-    }
-    sawNonSpace = true;
-  }
-
-  const norm = normChars.join("");
-  const foldedChars: string[] = [];
-  const foldedMap: number[] = [];
-  let copiedUntil = 0;
-  DOTTED_INITIAL_RUN_RE.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = DOTTED_INITIAL_RUN_RE.exec(norm)) !== null) {
-    const start = match.index;
-    const end = start + match[0].length;
-    for (let i = copiedUntil; i < start; i += 1) {
-      foldedChars.push(norm[i] ?? "");
-      foldedMap.push(map[i] ?? 0);
-    }
-    for (let i = start; i < end; i += 1) {
-      const c = norm[i] ?? "";
-      if (c === " ") continue;
-      foldedChars.push(c);
-      foldedMap.push(map[i] ?? 0);
-    }
-    copiedUntil = end;
-  }
-  for (let i = copiedUntil; i < norm.length; i += 1) {
-    foldedChars.push(norm[i] ?? "");
-    foldedMap.push(map[i] ?? 0);
-  }
-
-  return { norm: foldedChars.join(""), map: foldedMap };
-}
-
-/**
- * Map a normalized term to its exact RAW offset in the unit text via the
- * normalized→raw offset map, so windowing centers on the matched term even when
- * the raw text has heavy/NBSP whitespace (a windowed quote must contain the
- * term, not drift off it). Returns -1 if the term is not present.
- */
-function rawOffsetForTerm(rawText: string, normTerm: string): number {
-  if (!normTerm) return -1;
-  const { norm, map } = buildNormToRawMap(rawText);
-  const at = norm.indexOf(normTerm);
-  if (at < 0) return -1;
-  return map[at] ?? -1;
-}
-
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/**
- * Split a NORMALIZED string into word tokens (letters/digits runs). Used for
- * whole-word surname matching against section headings so a surname is never a
- * mid-word substring (e.g. "Mat" must not match inside "Mathématiques").
- */
-function tokenize(normalized: string): string[] {
-  return normalized.match(/[a-z0-9]+/g) ?? [];
-}
-
-/**
- * True iff `needle` (a token run) appears as a CONTIGUOUS whole-token run inside
- * `tokens`. Single-token surnames match a single heading token; multi-token
- * surnames ("de la tour") match the contiguous run. Empty needle → false.
- */
-function tokensContainRun(tokens: string[], needle: string[]): boolean {
-  if (needle.length === 0) return false;
-  for (let i = 0; i + needle.length <= tokens.length; i += 1) {
-    let ok = true;
-    for (let j = 0; j < needle.length; j += 1) {
-      if (tokens[i + j] !== needle[j]) {
-        ok = false;
-        break;
-      }
-    }
-    if (ok) return true;
-  }
-  return false;
-}
-
-/**
- * Map an OCR-extracted image path back to the markdown document that contains
- * it. graphify's pdf-ocr writes `<stem>.md` alongside `<stem>_images/image-N.*`
- * (pdf-ocr.ts), so `…/<stem>_images/image-000.jpg` → `…/<stem>.md`. Returns null
- * when the path does not match that convention.
- */
-export function containingDocumentFor(imagePath: string): string | null {
-  const norm = imagePath.replace(/\\/g, "/");
-  const m = /^(.*)_images\/[^/]+$/.exec(norm);
-  if (!m) return null;
-  return `${m[1]}.md`;
-}
-
-// ---------------------------------------------------------------------------
-// Source resolution + the graph-level driver
-// ---------------------------------------------------------------------------
-
-export interface ResolveSourceOptions {
-  /** Project root; `source_file` is resolved relative to it. */
-  root: string;
-  /** Extra search roots (e.g. `.graphify/converted`). */
-  searchRoots?: string[];
-}
-
-/**
- * Resolve a node's `source_file` to an on-disk path. Tries: absolute as-is,
- * relative to root, then relative to each search root. Returns null if none
- * exists. Pure (only fs.existsSync via readFileSync try/catch in the caller).
- */
-export function resolveSourcePath(sourceFile: string, options: ResolveSourceOptions): string | null {
-  if (!sourceFile) return null;
-  const candidates: string[] = [];
-  if (isAbsolute(sourceFile)) candidates.push(sourceFile);
-  candidates.push(resolvePath(options.root, sourceFile));
-  for (const r of options.searchRoots ?? []) candidates.push(resolvePath(r, sourceFile));
-  for (const c of candidates) {
-    try {
-      readFileSync(c);
-      return c;
-    } catch {
-      /* not here */
-    }
-  }
-  return null;
-}
 
 export interface CiteGraphOptions {
   /** Project root for resolving each node's `source_file`. */

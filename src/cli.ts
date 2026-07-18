@@ -6,6 +6,7 @@ import {
   writeFileSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   renameSync,
   realpathSync,
   rmSync,
@@ -24,10 +25,13 @@ import type {
   Extraction,
   GraphifyInputScopeMode,
   InputScopeSource,
+  NormalizedLlmExecutionPolicy,
   NormalizedOntologyProfile,
   NormalizedProjectConfig,
+  RegistryRecord,
+  TypedEntityOccurrenceV1,
 } from "./types.js";
-import type { ProfileState } from "./configured-dataprep.js";
+import { runConfiguredDataprep, type ProfileState } from "./configured-dataprep.js";
 import {
   inspectInputScope,
   resolveCliInputScopeSelection,
@@ -51,6 +55,24 @@ import { DEFAULT_GRAPHIFY_STATE_DIR, defaultManifestPath, resolveGraphInputPath,
 import { normalizeSearchText, scoreSearchText } from "./search.js";
 import { makeGraphPortable, projectRootLabel, scanPortableGraphifyArtifacts } from "./portable-artifacts.js";
 import { loadOntologyPatchContext } from "./ontology-patch-context.js";
+import {
+  directLlmSpanProposer,
+  linkEntities,
+  requiresLlmProposer,
+  writeEntityLinkingArtifacts,
+  type LlmSpanProposer,
+} from "./entity-linking.js";
+import {
+  createDirectTextJsonClient,
+  isDirectLlmProvider,
+  preflightLlmExecution,
+} from "./llm-execution.js";
+import {
+  evaluateOccurrences,
+  formatEvaluationReport,
+  GoldValidationError,
+  parseGold,
+} from "./profile-evaluate.js";
 import { persistCommunityLabels, resolveCommunityLabels } from "./community-labels.js";
 import type { WikiDescriptionSidecarIndex } from "./wiki-descriptions.js";
 import { replaceOrAppendSection } from "./skill-install.js";
@@ -132,6 +154,75 @@ function resolvePortableCheckDir(inputPath: string = ".graphify"): string {
 
 function readJson<T>(path: string): T {
   return JSON.parse(readFileSync(resolve(path), "utf-8")) as T;
+}
+
+/** Coerce an unknown `{ metric: number }` config block into numeric thresholds. */
+function coerceThresholds(value: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    for (const [metric, raw] of Object.entries(value as Record<string, unknown>)) {
+      if (typeof raw === "number" && Number.isFinite(raw)) out[metric] = raw;
+    }
+  }
+  return out;
+}
+
+/** Parse repeatable `--floor metric=value` flags. Returns null on a bad value. */
+function parseThresholdFlags(flags: unknown): Record<string, number> | null {
+  const out: Record<string, number> = {};
+  if (!Array.isArray(flags)) return out;
+  for (const flag of flags) {
+    if (typeof flag !== "string") return null;
+    const eq = flag.indexOf("=");
+    if (eq <= 0) return null;
+    const metric = flag.slice(0, eq).trim();
+    const value = Number.parseFloat(flag.slice(eq + 1).trim());
+    if (!metric || !Number.isFinite(value)) return null;
+    out[metric] = value;
+  }
+  return out;
+}
+
+interface LinkRuntimeContext {
+  root: string;
+  stateDir: string;
+  profile: NormalizedOntologyProfile;
+  registries: Record<string, RegistryRecord[]>;
+  sourceFiles: string[];
+  llmExecution?: NormalizedLlmExecutionPolicy;
+}
+
+function linkingSourceFiles(detection: DetectionResult): string[] {
+  return [...(detection.files.document ?? []), ...(detection.files.paper ?? [])]
+    .filter((file): file is string => typeof file === "string")
+    .sort();
+}
+
+function loadLinkRuntimeContext(profileStatePath: string): LinkRuntimeContext {
+  const statePath = resolve(profileStatePath);
+  const profileDir = dirname(statePath);
+  const state = readJson<ProfileState>(statePath);
+  const profile = readJson<NormalizedOntologyProfile>(join(profileDir, "ontology-profile.normalized.json"));
+  const projectConfigPath = join(profileDir, "project-config.normalized.json");
+  const projectConfig = existsSync(projectConfigPath)
+    ? readJson<NormalizedProjectConfig>(projectConfigPath)
+    : undefined;
+  const registries: Record<string, RegistryRecord[]> = {};
+  const registriesDir = join(profileDir, "registries");
+  if (existsSync(registriesDir)) {
+    for (const file of readdirSync(registriesDir).filter((entry) => entry.endsWith(".json")).sort()) {
+      registries[file.slice(0, -".json".length)] = readJson<RegistryRecord[]>(join(registriesDir, file));
+    }
+  }
+  const detection = readJson<DetectionResult>(join(profileDir, "semantic-detection.json"));
+  return {
+    root: projectConfig?.configDir ?? dirname(resolve(state.project_config_path)),
+    stateDir: state.state_dir,
+    profile,
+    registries,
+    sourceFiles: linkingSourceFiles(detection),
+    ...(projectConfig?.llm_execution ? { llmExecution: projectConfig.llm_execution } : {}),
+  };
 }
 
 function isJsonRecord(value: unknown): value is Record<string, unknown> {
@@ -2833,6 +2924,106 @@ export async function main(): Promise<void> {
       if (!result.valid) process.exit(1);
     });
 
+  // graphify profile evaluate  (L5)
+  // Deterministic, $0 (no LLM) measurement of a `graphify link` run against a
+  // hand-labelled gold in the SAME occurrence schema. Emits evaluation.json and
+  // a CI gate: exit 0 iff validation + floors + ceilings pass, non-zero
+  // otherwise. Precision and unresolved-rate are always reported together.
+  profile
+    .command("evaluate")
+    .description("Measure a link run's occurrences.json against a gold set ($0, deterministic; gate on floors/ceilings)")
+    .requiredOption("--run <path>", "occurrences.json produced by graphify link")
+    .requiredOption("--gold <path>", "gold occurrence set (graphify_typed_linking_gold_v1 envelope)")
+    .option("--out <path>", "Write evaluation.json here")
+    .option("--profile-state <path>", "Stamp profile_hash + normalizer_hashes from a profile state")
+    .option("--corpus <root>", "Corpus root to verify gold raw_span slices (stale-gold detection)")
+    .option("--floors <path>", "JSON gate config { floors, ceilings } (or an { evaluation } block)")
+    .option("--floor <metric=value>", "Floor override metric=value (repeatable)", (value: string, acc: string[]) => [...acc, value], [] as string[])
+    .option("--ceiling <metric=value>", "Ceiling override metric=value (repeatable)", (value: string, acc: string[]) => [...acc, value], [] as string[])
+    .option("--json", "Print evaluation.json to stdout instead of the report")
+    .action(async (opts) => {
+      const run = readJson<unknown>(opts.run);
+      let gold;
+      try {
+        gold = parseGold(readJson<unknown>(opts.gold));
+      } catch (error) {
+        if (error instanceof GoldValidationError) {
+          console.error(`profile evaluate: ${error.message}`);
+          process.exitCode = 1;
+          return;
+        }
+        throw error;
+      }
+
+      const floors: Record<string, number> = {};
+      const ceilings: Record<string, number> = {};
+      if (opts.floors) {
+        const raw = readJson<Record<string, unknown>>(opts.floors);
+        const block = (raw && typeof raw.evaluation === "object" && raw.evaluation !== null ? raw.evaluation : raw) as Record<string, unknown>;
+        Object.assign(floors, coerceThresholds(block.floors));
+        Object.assign(ceilings, coerceThresholds(block.ceilings));
+      }
+      const flagFloors = parseThresholdFlags(opts.floor);
+      const flagCeilings = parseThresholdFlags(opts.ceiling);
+      if (flagFloors === null || flagCeilings === null) {
+        console.error("profile evaluate: --floor/--ceiling must be metric=value with a numeric value");
+        process.exitCode = 1;
+        return;
+      }
+      Object.assign(floors, flagFloors);
+      Object.assign(ceilings, flagCeilings);
+
+      let profileHash: string | null = null;
+      let normalizerHashes: Record<string, string> = {};
+      if (opts.profileState) {
+        const runtime = loadLinkRuntimeContext(resolve(opts.profileState));
+        profileHash = runtime.profile.profile_hash ?? null;
+        for (const [nodeType, config] of Object.entries(runtime.profile.node_types)) {
+          const hash = config.linking?.normalizer?.normalizer_hash;
+          if (hash) normalizerHashes[nodeType] = hash;
+        }
+      }
+
+      let corpusSlice: ((occurrence: TypedEntityOccurrenceV1) => string | null) | undefined;
+      if (opts.corpus) {
+        const corpusRoot = resolve(opts.corpus);
+        corpusSlice = (occurrence) => {
+          const path = resolve(corpusRoot, occurrence.source_file);
+          if (!existsSync(path)) return null;
+          const raw = readFileSync(path, "utf-8");
+          return raw.slice(occurrence.offsets.start, occurrence.offsets.end);
+        };
+      }
+
+      let result;
+      try {
+        result = evaluateOccurrences({
+          run: run as TypedEntityOccurrenceV1[],
+          gold,
+          floors,
+          ceilings,
+          profileHash,
+          normalizerHashes,
+          ...(corpusSlice ? { corpusSlice } : {}),
+        });
+      } catch (error) {
+        if (error instanceof GoldValidationError) {
+          console.error(`profile evaluate: ${error.message}`);
+          process.exitCode = 1;
+          return;
+        }
+        throw error;
+      }
+
+      if (opts.out) writeJson(resolve(opts.out), result);
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(formatEvaluationReport(result));
+      }
+      if (result.gate === "fail") process.exitCode = 1;
+    });
+
   profile
     .command("discover")
     .description("Sample profile inputs and write assistant discovery proposals instructions")
@@ -4387,6 +4578,98 @@ export async function main(): Promise<void> {
           "The original duplicate-discard dropped citations a backfill cannot recover. " +
           "Re-extract the corpus for true exhaustive counts.",
       );
+    });
+
+  // ---------------------------------------------------------------------------
+  // graphify link [path]
+  // Deterministic document-centric typed entity linking. It consumes the
+  // configured dataprep corpus (or an existing profile-state) and is explicitly
+  // opt-in: profiles without a linking block leave artifacts untouched.
+  // ---------------------------------------------------------------------------
+  program
+    .command("link [path]")
+    .description("Link verified entity mentions to configured registries (deterministic, no-key)")
+    .option("--profile-state <path>", "Path to configured .graphify/profile/profile-state.json")
+    .option("--node-types <list>", "Restrict to comma-separated linked node types")
+    .option("--preset <name>", "Override the profile linking preset for this run")
+    .option("--out <path>", "Occurrence list output path", ".graphify/ontology/occurrences.json")
+    .option("--dry-run", "Calculate occurrences without writing artifacts")
+    .action(async (linkPath = ".", opts) => {
+      const requestedRoot = resolve(linkPath);
+      let runtime: LinkRuntimeContext;
+      const defaultState = join(requestedRoot, ".graphify", "profile", "profile-state.json");
+      const statePath = opts.profileState ? resolve(requestedRoot, opts.profileState) : defaultState;
+      if (existsSync(statePath)) {
+        runtime = loadLinkRuntimeContext(statePath);
+      } else {
+        // First run: delegate corpus discovery/preparation to the configured
+        // dataprep owner instead of maintaining a second discovery path here.
+        const prepared = await runConfiguredDataprep(requestedRoot);
+        runtime = {
+          root: prepared.root,
+          stateDir: prepared.paths.stateDir,
+          profile: prepared.profile,
+          registries: prepared.registries,
+          sourceFiles: linkingSourceFiles(prepared.semanticDetection),
+          ...(prepared.projectConfig?.llm_execution ? { llmExecution: prepared.projectConfig.llm_execution } : {}),
+        };
+      }
+      const nodeTypes = typeof opts.nodeTypes === "string"
+        ? opts.nodeTypes.split(",").map((value: string) => value.trim()).filter(Boolean)
+        : [];
+      const preset = typeof opts.preset === "string" && opts.preset.trim() ? opts.preset.trim() : undefined;
+      const dryRun = Boolean(opts.dryRun);
+
+      // Wire the opt-in LLM span proposer ONLY when a linking node_type could
+      // use it AND a live `direct` provider is configured AND this is not a
+      // dry-run. The proposer PROPOSES spans; graphify still resolves via the
+      // exact/none resolver + verbatim gate. Absent all this ⇒ zero LLM calls
+      // (the $0 default is preserved for gazetteer-exact / no linking block).
+      let llmProposer: LlmSpanProposer | undefined;
+      const wantsLlm = requiresLlmProposer(runtime.profile, {
+        ...(nodeTypes.length > 0 ? { nodeTypes } : {}),
+        ...(preset ? { preset } : {}),
+      });
+      if (wantsLlm && !dryRun && runtime.llmExecution?.mode === "direct" && isDirectLlmProvider(runtime.llmExecution.provider)) {
+        preflightLlmExecution(runtime.llmExecution, "text_json");
+        const client = createDirectTextJsonClient({
+          provider: runtime.llmExecution.provider,
+          ...(runtime.llmExecution.text_json.model ? { model: runtime.llmExecution.text_json.model } : {}),
+        });
+        llmProposer = directLlmSpanProposer(client, { stateDir: runtime.stateDir });
+      }
+
+      const result = await linkEntities({
+        root: runtime.root,
+        profile: runtime.profile,
+        registries: runtime.registries,
+        sourceFiles: runtime.sourceFiles,
+        ...(nodeTypes.length > 0 ? { nodeTypes } : {}),
+        ...(preset ? { preset } : {}),
+        ...(llmProposer ? { llmProposer } : {}),
+        ...(dryRun ? { llmDryRun: true } : {}),
+      });
+      if (result.noOp) {
+        console.log("link: no node_type declares linking; no-op. Existing occurrences.json unchanged.");
+        return;
+      }
+      const outputPath = resolve(runtime.root, opts.out);
+      if (opts.dryRun) {
+        console.log(
+          `link (dry-run): ${result.occurrences.length} occurrence(s) across ${result.scannedDocuments} document(s); no files written.`,
+        );
+      } else {
+        writeEntityLinkingArtifacts(dirname(outputPath), runtime.profile, result);
+        console.log(
+          `link: wrote ${result.occurrences.length} occurrence(s) from ${result.scannedDocuments} document(s) to ${outputPath}.`,
+        );
+      }
+      for (const finding of result.issues) {
+        const output = `link: ${finding.severity.toUpperCase()} ${finding.code}: ${finding.message}`;
+        if (finding.severity === "error") console.error(output);
+        else console.warn(output);
+      }
+      if (result.issues.some((finding) => finding.severity === "error")) process.exitCode = 1;
     });
 
   // ---------------------------------------------------------------------------
