@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
+import { compileNormalizerByNodeType } from "./entity-normalizer.js";
+import type { NormalizerByNodeType } from "./entity-normalizer.js";
 import type {
   Extraction,
   GraphEdge,
@@ -143,6 +145,7 @@ function compileNodes(
   extraction: Extraction,
   profile: NormalizedOntologyProfile,
   config: OntologyOutputConfig,
+  normalizers: NormalizerByNodeType,
 ): { nodes: CompiledNode[]; aliasIssues: LinkValidationIssue[] } {
   const allowedTypes = new Set(config.canonical_node_types ?? Object.keys(profile.node_types));
   const nodes = extraction.nodes
@@ -153,7 +156,8 @@ function compileNodes(
     .map((node): CompiledNode => {
       const type = ontologyNodeType(node)!;
       const aliases = stringArray(node.aliases);
-      const terms = [node.label, ...aliases].map(normalizedTerm).filter(Boolean);
+      const normalize = normalizers[type] ?? normalizedTerm;
+      const terms = [node.label, ...aliases].map(normalize).filter(Boolean);
       const status = typeof node.status === "string" ? node.status : profile.hardening.default_status;
       const registryId = stringValue(node.registry_id);
       const registryRecordId = stringValue(node.registry_record_id);
@@ -178,7 +182,8 @@ function compileNodes(
 
   const aliases = new Map<string, { alias: string; ids: string[] }>();
   for (const node of nodes) {
-    for (const alias of node.aliases.map(normalizedTerm)) {
+    const normalize = normalizers[node.type] ?? normalizedTerm;
+    for (const alias of node.aliases.map(normalize)) {
       if (!alias) continue;
       const key = aliasAmbiguityKey(node, profile, alias);
       const group = aliases.get(key);
@@ -377,7 +382,8 @@ export function compileOntologyOutputs(options: CompileOntologyOutputsOptions): 
     return { enabled: false, nodeCount: 0, relationCount: 0, wikiPageCount: 0, validationIssues: [], hierarchyArcCount: 0 };
   }
 
-  const { nodes, aliasIssues } = compileNodes(options.extraction, options.profile, options.config);
+  const normalizers = compileNormalizerByNodeType(options.profile);
+  const { nodes, aliasIssues } = compileNodes(options.extraction, options.profile, options.config, normalizers);
   const compiledOccurrences = compileOccurrences(options.occurrences, options.config);
   const relations = compileRelations(options.extraction, nodes, options.config);
   const validationIssues = [...aliasIssues, ...compiledOccurrences.validationIssues];
@@ -422,7 +428,7 @@ export function compileOntologyOutputs(options: CompileOntologyOutputsOptions): 
   writeJson(join(options.outputDir, "aliases.json"), nodes.flatMap((node) =>
     node.aliases.map((alias) => ({
       term: alias,
-      normalized: normalizedTerm(alias),
+      normalized: (normalizers[node.type] ?? normalizedTerm)(alias),
       node_id: node.id,
       source: "extraction",
       confidence: node.confidence,

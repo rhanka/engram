@@ -52,11 +52,15 @@ export type {
   ProjectConfigDiscoveryResult,
   ProjectConfigValidationIssue,
   NormalizedOntologyProfile,
+  NormalizedOntologyNodeType,
   NormalizedOntologyRegistrySpec,
   NormalizedOntologyRelationType,
   OntologyCitationPolicy,
   OntologyHardeningPolicy,
   OntologyNodeType,
+  OntologyNodeTypeLinking,
+  OntologyNodeTypeNormalize,
+  EntityNormalizerDescriptor,
   OntologyOutputPolicy,
   OntologyOutputWikiPolicy,
   OntologyProfile,
@@ -82,6 +86,13 @@ export type {
   ClassHierarchyClassEntry,
   ClassHierarchiesArtifact,
 } from "./types.js";
+export {
+  ENTITY_NORMALIZER_CONTRACT,
+  auditNormalizerContracts,
+  compileNormalizerByNodeType,
+  normalizeNodeTypeLinking,
+} from "./entity-normalizer.js";
+export type { EntityNormalizer, NormalizerByNodeType } from "./entity-normalizer.js";
 export { inspectInputScope } from "./input-scope.js";
 export type { InputScopeInventory, InspectInputScopeOptions } from "./input-scope.js";
 export {
