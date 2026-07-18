@@ -2,13 +2,22 @@ import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import type { Extraction, GraphEdge, GraphNode, NormalizedOntologyProfile, RegistryRecord } from "./types.js";
+import type {
+  Extraction,
+  GraphEdge,
+  GraphNode,
+  LinkValidationIssue,
+  NormalizedOntologyProfile,
+  RegistryRecord,
+  TypedEntityOccurrenceV1,
+} from "./types.js";
 import type { WikiDescriptionSidecarIndex } from "./wiki-descriptions.js";
 import { buildHierarchyIndex, compileHierarchies } from "./ontology-hierarchies.js";
 
 export interface OntologyOutputConfig {
   enabled: boolean;
   canonical_node_types?: string[];
+  occurrence_node_types?: string[];
   relation_exports?: string[];
   wiki?: {
     enabled?: boolean;
@@ -36,6 +45,11 @@ export interface CompileOntologyOutputsOptions {
    * `hierarchies.json` and `hierarchy-index.json` in `outputDir`.
    */
   registries?: Record<string, RegistryRecord[]>;
+  /**
+   * Mention-level typed entity occurrences produced by an explicit linking
+   * pass. Omitted inputs preserve the historical empty-array artifact.
+   */
+  occurrences?: TypedEntityOccurrenceV1[];
 }
 
 export interface CompileOntologyOutputsResult {
@@ -43,7 +57,7 @@ export interface CompileOntologyOutputsResult {
   nodeCount: number;
   relationCount: number;
   wikiPageCount: number;
-  validationIssues: string[];
+  validationIssues: LinkValidationIssue[];
   /** Number of hierarchy arcs written to hierarchies.json (0 when no hierarchies declared). */
   hierarchyArcCount: number;
 }
@@ -115,7 +129,7 @@ function compileNodes(
   extraction: Extraction,
   profile: NormalizedOntologyProfile,
   config: OntologyOutputConfig,
-): { nodes: CompiledNode[]; aliasIssues: string[] } {
+): { nodes: CompiledNode[]; aliasIssues: LinkValidationIssue[] } {
   const allowedTypes = new Set(config.canonical_node_types ?? Object.keys(profile.node_types));
   const nodes = extraction.nodes
     .filter((node) => {
@@ -149,18 +163,123 @@ function compileNodes(
     }
   }
 
-  const aliasIssues: string[] = [];
+  const aliasIssues: LinkValidationIssue[] = [];
   for (const [alias, ids] of aliases.entries()) {
     const uniqueIds = Array.from(new Set(ids));
     if (uniqueIds.length > 1) {
-      aliasIssues.push(`alias "${alias}" ambiguously attaches to ${uniqueIds.join(", ")}`);
-      for (const node of nodes) {
-        if (uniqueIds.includes(node.id)) node.status = "needs_review";
+      const affectedNodes = nodes.filter((node) => uniqueIds.includes(node.id));
+      const nodeTypes = Array.from(new Set(affectedNodes.map((node) => node.type)));
+      aliasIssues.push({
+        code: "ALIAS_AMBIGUOUS",
+        severity: "warning",
+        node_type: nodeTypes.length === 1 ? nodeTypes[0]! : null,
+        message: `alias "${alias}" ambiguously attaches to ${uniqueIds.join(", ")}`,
+        refs: uniqueIds.map((id) => `record:${id}`),
+      });
+      for (const node of affectedNodes) {
+        node.status = "needs_review";
       }
     }
   }
 
   return { nodes, aliasIssues };
+}
+
+function occurrenceRefs(occurrence: TypedEntityOccurrenceV1): string[] {
+  const refs: string[] = [];
+  if (occurrence.id) refs.push(`occurrence:${occurrence.id}`);
+  if (occurrence.source_file) refs.push(`source:${occurrence.source_file}`);
+  if (occurrence.registry_record_id !== undefined) refs.push(`record:${occurrence.registry_record_id}`);
+  return refs;
+}
+
+function validateOccurrence(occurrence: TypedEntityOccurrenceV1): LinkValidationIssue[] {
+  const refs = occurrenceRefs(occurrence);
+  const issues: LinkValidationIssue[] = [];
+
+  if (occurrence.raw_span.length === 0) {
+    issues.push({
+      code: "OCCURRENCE_EMPTY_RAW_SPAN",
+      severity: "error",
+      node_type: occurrence.node_type,
+      message: "occurrence raw_span must not be empty",
+      refs,
+    });
+  }
+
+  const { start, end } = occurrence.offsets;
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || start >= end) {
+    issues.push({
+      code: "OCCURRENCE_INVALID_OFFSETS",
+      severity: "error",
+      node_type: occurrence.node_type,
+      message: "occurrence offsets must be non-negative integers with start < end",
+      refs,
+    });
+  }
+
+  if (occurrence.resolution === "linked" && (!occurrence.registry_record_id || !occurrence.registry_record_id.trim())) {
+    issues.push({
+      code: "OCCURRENCE_LINKED_MISSING_REGISTRY_RECORD_ID",
+      severity: "error",
+      node_type: occurrence.node_type,
+      message: "linked occurrence must include exactly one registry_record_id",
+      refs,
+    });
+  }
+
+  if (
+    (occurrence.resolution === "unlinked" || occurrence.resolution === "ambiguous")
+    && occurrence.registry_record_id !== undefined
+  ) {
+    issues.push({
+      code: "OCCURRENCE_UNRESOLVED_HAS_REGISTRY_RECORD_ID",
+      severity: "error",
+      node_type: occurrence.node_type,
+      message: `${occurrence.resolution} occurrence must not include registry_record_id`,
+      refs,
+    });
+  }
+
+  return issues;
+}
+
+function compareText(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
+function compareOccurrences(left: TypedEntityOccurrenceV1, right: TypedEntityOccurrenceV1): number {
+  const sourceComparison = compareText(left.source_file, right.source_file);
+  if (sourceComparison !== 0) return sourceComparison;
+  if (left.offsets.start !== right.offsets.start) return left.offsets.start - right.offsets.start;
+  if (left.offsets.end !== right.offsets.end) return left.offsets.end - right.offsets.end;
+
+  const nodeTypeComparison = compareText(left.node_type, right.node_type);
+  if (nodeTypeComparison !== 0) return nodeTypeComparison;
+  return compareText(left.id, right.id);
+}
+
+function compileOccurrences(
+  occurrences: TypedEntityOccurrenceV1[] | undefined,
+  config: OntologyOutputConfig,
+): { occurrences: TypedEntityOccurrenceV1[]; validationIssues: LinkValidationIssue[] } {
+  if (occurrences === undefined) return { occurrences: [], validationIssues: [] };
+
+  const allowedTypes = new Set(config.occurrence_node_types ?? []);
+  const validationIssues: LinkValidationIssue[] = [];
+  const validOccurrences: TypedEntityOccurrenceV1[] = [];
+
+  for (const occurrence of occurrences) {
+    const issues = validateOccurrence(occurrence);
+    validationIssues.push(...issues);
+    if (issues.length === 0 && allowedTypes.has(occurrence.node_type)) {
+      validOccurrences.push(occurrence);
+    }
+  }
+
+  return { occurrences: validOccurrences.sort(compareOccurrences), validationIssues };
 }
 
 function compileRelations(extraction: Extraction, nodes: CompiledNode[], config: OntologyOutputConfig): CompiledRelation[] {
@@ -232,8 +351,9 @@ export function compileOntologyOutputs(options: CompileOntologyOutputsOptions): 
   }
 
   const { nodes, aliasIssues } = compileNodes(options.extraction, options.profile, options.config);
+  const compiledOccurrences = compileOccurrences(options.occurrences, options.config);
   const relations = compileRelations(options.extraction, nodes, options.config);
-  const validationIssues = [...aliasIssues];
+  const validationIssues = [...aliasIssues, ...compiledOccurrences.validationIssues];
   const wikiPageCount = writeWiki(options.outputDir, nodes, relations, options.config, options.descriptions);
 
   // ---- Hierarchy artefacts (increment A — additive, no-op when no hierarchies) ----
@@ -283,8 +403,11 @@ export function compileOntologyOutputs(options: CompileOntologyOutputsOptions): 
   ));
   writeJson(join(options.outputDir, "relations.json"), relations);
   writeJson(join(options.outputDir, "sources.json"), nodes.flatMap((node) => node.source_refs.map((ref) => ({ id: ref, source_file: ref }))));
-  writeJson(join(options.outputDir, "occurrences.json"), []);
-  writeJson(join(options.outputDir, "validation.json"), { issues: validationIssues });
+  writeJson(join(options.outputDir, "occurrences.json"), compiledOccurrences.occurrences);
+  writeJson(join(options.outputDir, "validation.json"), {
+    schema: "graphify_ontology_validation_v1",
+    issues: validationIssues,
+  });
   writeJson(join(options.outputDir, "index.json"), {
     schema: "graphify_ontology_index_v1",
     entries: nodes.map((node) => ({
