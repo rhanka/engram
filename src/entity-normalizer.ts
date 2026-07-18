@@ -12,6 +12,8 @@ import type {
   OntologyLinkingEvidence,
   OntologyLinkingPartitionFrom,
   OntologyLinkingResolve,
+  OntologyLinkLlmConfig,
+  OntologyLinkLlmTrigger,
   OntologyNodeTypeLinking,
   OntologyNodeTypeNormalize,
   RegistryRecord,
@@ -187,14 +189,49 @@ function normalizePattern(value: unknown, context: string): Extract<OntologyLink
   };
 }
 
+const LLM_TRIGGERS = new Set<OntologyLinkLlmTrigger>([
+  "zero_candidates",
+  "unresolved_candidates",
+  "below_min_candidates",
+]);
+
+/**
+ * Normalize the declarative `llm` detector config. The trigger is a BOUNDED
+ * enum (never a free expression); budget/dry_run/min_candidates are validated
+ * at load so no corpus scan starts against an ill-formed LLM policy.
+ */
+function normalizeLlmConfig(value: unknown, context: string): OntologyLinkLlmConfig {
+  if (value !== undefined && !isRecord(value)) throw new Error(`${context} must be an object`);
+  const raw = isRecord(value) ? value : {};
+  const trigger = raw.trigger === undefined ? "zero_candidates" : raw.trigger;
+  if (typeof trigger !== "string" || !LLM_TRIGGERS.has(trigger as OntologyLinkLlmTrigger)) {
+    throw new Error(`${context}.trigger must be one of ${Array.from(LLM_TRIGGERS).join(", ")}`);
+  }
+  const config: OntologyLinkLlmConfig = { trigger: trigger as OntologyLinkLlmTrigger };
+  if (raw.budget_usd !== undefined) {
+    if (typeof raw.budget_usd !== "number" || !Number.isFinite(raw.budget_usd) || raw.budget_usd < 0) {
+      throw new Error(`${context}.budget_usd must be a non-negative number`);
+    }
+    config.budget_usd = raw.budget_usd;
+  }
+  if (raw.dry_run !== undefined) {
+    if (typeof raw.dry_run !== "boolean") throw new Error(`${context}.dry_run must be a boolean`);
+    config.dry_run = raw.dry_run;
+  }
+  if (raw.min_candidates !== undefined) {
+    if (!Number.isInteger(raw.min_candidates) || Number(raw.min_candidates) < 0) {
+      throw new Error(`${context}.min_candidates must be a non-negative integer`);
+    }
+    config.min_candidates = Number(raw.min_candidates);
+  }
+  return config;
+}
+
 function normalizeDetector(value: unknown, context: string): OntologyLinkDetector {
   if (value === "lexicon" || value === "pattern" || value === "llm") return value;
   if (!isRecord(value)) throw new Error(`${context} must be lexicon, pattern, llm, or a detector object`);
   if ("pattern" in value) return normalizePattern(value.pattern, context);
-  if ("llm" in value) {
-    if (value.llm !== undefined && !isRecord(value.llm)) throw new Error(`${context}.llm must be an object`);
-    return { llm: isRecord(value.llm) ? { ...value.llm } : {} };
-  }
+  if ("llm" in value) return { llm: normalizeLlmConfig(value.llm, `${context}.llm`) };
   throw new Error(`${context} must have a pattern or llm key`);
 }
 
@@ -216,9 +253,16 @@ function normalizePartitionFrom(value: unknown, context: string): OntologyLinkin
   };
 }
 
-function normalizeResolve(value: unknown, context: string): OntologyLinkingResolve {
+function presetResolveMode(preset: string): OntologyLinkingResolve["mode"] {
+  // Open extraction has no registry target to hit, so its preset expands to a
+  // `none` resolver at load time (mirrors the runtime preset override). Every
+  // other preset resolves exactly. An explicit `resolve` always wins.
+  return preset === "open-extraction" ? "none" : "exact";
+}
+
+function normalizeResolve(value: unknown, context: string, preset: string): OntologyLinkingResolve {
   const mode = typeof value === "string" ? value : isRecord(value) ? value.mode : undefined;
-  if (mode === undefined) return { mode: "exact" };
+  if (mode === undefined) return { mode: presetResolveMode(preset) };
   if (mode !== "exact" && mode !== "none") throw new Error(`${context}.resolve.mode must be exact or none`);
   return { mode };
 }
@@ -303,7 +347,7 @@ export function normalizeNodeTypeLinking(
       partition_from: normalizePartitionFrom(linking.partition_from, context)!,
     } : {}),
     detect: [...configuredDetectors, ...patterns],
-    resolve: normalizeResolve(linking.resolve, context),
+    resolve: normalizeResolve(linking.resolve, context, preset),
     evidence: normalizeEvidence(linking.evidence, context),
     normalizer: descriptorFor(normalize, profile, context),
   };

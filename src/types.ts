@@ -755,12 +755,37 @@ export interface OntologyLinkingPattern {
   membership?: "required";
 }
 
+/**
+ * Bounded trigger enum deciding when the opt-in `llm` detector may propose
+ * spans. There is NO free-form expression: hybrid recall only calls the model
+ * when the declared condition over the $0 detectors' output holds.
+ */
+export type OntologyLinkLlmTrigger =
+  | "zero_candidates"
+  | "unresolved_candidates"
+  | "below_min_candidates";
+
+/**
+ * Declarative configuration for the `llm` detector. The model PROPOSES typed
+ * spans only; resolution stays with graphify's exact/none resolver + the
+ * verbatim gate. Budget/dry_run are honored before any provider call is made.
+ */
+export interface OntologyLinkLlmConfig {
+  trigger: OntologyLinkLlmTrigger;
+  /** Non-negative USD ceiling. `0` disables the detector (no proposals). */
+  budget_usd?: number;
+  /** When true, never make a paid proposal call for this detector. */
+  dry_run?: boolean;
+  /** Companion threshold for `below_min_candidates` (defaults to 1). */
+  min_candidates?: number;
+}
+
 export type OntologyLinkDetector =
   | "lexicon"
   | "pattern"
   | "llm"
   | { pattern: OntologyLinkingPattern }
-  | { llm: Record<string, unknown> };
+  | { llm: OntologyLinkLlmConfig };
 
 export interface OntologyLinkingResolve {
   mode: "exact" | "none";
