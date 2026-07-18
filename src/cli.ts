@@ -25,6 +25,7 @@ import type {
   Extraction,
   GraphifyInputScopeMode,
   InputScopeSource,
+  NormalizedLlmExecutionPolicy,
   NormalizedOntologyProfile,
   NormalizedProjectConfig,
   RegistryRecord,
@@ -54,7 +55,18 @@ import { DEFAULT_GRAPHIFY_STATE_DIR, defaultManifestPath, resolveGraphInputPath,
 import { normalizeSearchText, scoreSearchText } from "./search.js";
 import { makeGraphPortable, projectRootLabel, scanPortableGraphifyArtifacts } from "./portable-artifacts.js";
 import { loadOntologyPatchContext } from "./ontology-patch-context.js";
-import { linkEntities, writeEntityLinkingArtifacts } from "./entity-linking.js";
+import {
+  directLlmSpanProposer,
+  linkEntities,
+  requiresLlmProposer,
+  writeEntityLinkingArtifacts,
+  type LlmSpanProposer,
+} from "./entity-linking.js";
+import {
+  createDirectTextJsonClient,
+  isDirectLlmProvider,
+  preflightLlmExecution,
+} from "./llm-execution.js";
 import {
   evaluateOccurrences,
   formatEvaluationReport,
@@ -177,6 +189,7 @@ interface LinkRuntimeContext {
   profile: NormalizedOntologyProfile;
   registries: Record<string, RegistryRecord[]>;
   sourceFiles: string[];
+  llmExecution?: NormalizedLlmExecutionPolicy;
 }
 
 function linkingSourceFiles(detection: DetectionResult): string[] {
@@ -208,6 +221,7 @@ function loadLinkRuntimeContext(profileStatePath: string): LinkRuntimeContext {
     profile,
     registries,
     sourceFiles: linkingSourceFiles(detection),
+    ...(projectConfig?.llm_execution ? { llmExecution: projectConfig.llm_execution } : {}),
   };
 }
 
@@ -4597,18 +4611,43 @@ export async function main(): Promise<void> {
           profile: prepared.profile,
           registries: prepared.registries,
           sourceFiles: linkingSourceFiles(prepared.semanticDetection),
+          ...(prepared.projectConfig?.llm_execution ? { llmExecution: prepared.projectConfig.llm_execution } : {}),
         };
       }
       const nodeTypes = typeof opts.nodeTypes === "string"
         ? opts.nodeTypes.split(",").map((value: string) => value.trim()).filter(Boolean)
         : [];
-      const result = linkEntities({
+      const preset = typeof opts.preset === "string" && opts.preset.trim() ? opts.preset.trim() : undefined;
+      const dryRun = Boolean(opts.dryRun);
+
+      // Wire the opt-in LLM span proposer ONLY when a linking node_type could
+      // use it AND a live `direct` provider is configured AND this is not a
+      // dry-run. The proposer PROPOSES spans; graphify still resolves via the
+      // exact/none resolver + verbatim gate. Absent all this ⇒ zero LLM calls
+      // (the $0 default is preserved for gazetteer-exact / no linking block).
+      let llmProposer: LlmSpanProposer | undefined;
+      const wantsLlm = requiresLlmProposer(runtime.profile, {
+        ...(nodeTypes.length > 0 ? { nodeTypes } : {}),
+        ...(preset ? { preset } : {}),
+      });
+      if (wantsLlm && !dryRun && runtime.llmExecution?.mode === "direct" && isDirectLlmProvider(runtime.llmExecution.provider)) {
+        preflightLlmExecution(runtime.llmExecution, "text_json");
+        const client = createDirectTextJsonClient({
+          provider: runtime.llmExecution.provider,
+          ...(runtime.llmExecution.text_json.model ? { model: runtime.llmExecution.text_json.model } : {}),
+        });
+        llmProposer = directLlmSpanProposer(client, { stateDir: runtime.stateDir });
+      }
+
+      const result = await linkEntities({
         root: runtime.root,
         profile: runtime.profile,
         registries: runtime.registries,
         sourceFiles: runtime.sourceFiles,
         ...(nodeTypes.length > 0 ? { nodeTypes } : {}),
-        ...(typeof opts.preset === "string" && opts.preset.trim() ? { preset: opts.preset.trim() } : {}),
+        ...(preset ? { preset } : {}),
+        ...(llmProposer ? { llmProposer } : {}),
+        ...(dryRun ? { llmDryRun: true } : {}),
       });
       if (result.noOp) {
         console.log("link: no node_type declares linking; no-op. Existing occurrences.json unchanged.");
