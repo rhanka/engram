@@ -88,6 +88,9 @@ export function loadOntologyPatchContext(profileStatePath: string): OntologyPatc
         aliases: stringArray(node.aliases),
         normalized_terms: stringArray(node.normalized_terms),
         source_refs: stringArray(node.source_refs),
+        registry_id: stringValue(node.registry_id) ?? undefined,
+        registry_record_id: stringValue(node.registry_record_id) ?? undefined,
+        registry_partition: stringValue(node.registry_partition) ?? undefined,
         registry_refs: stringArray(node.registry_refs),
       }))
       .filter((node) => node.id.length > 0),

@@ -71,6 +71,9 @@ interface CompiledNode {
   status: string;
   confidence: number | null;
   source_refs: string[];
+  registry_id?: string;
+  registry_record_id?: string;
+  registry_partition?: string;
   registry_refs: string[];
   graph_node_ids: string[];
 }
@@ -125,6 +128,17 @@ function safeFilename(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]+/gu, "-").replace(/^-+|-+$/gu, "") || "entity";
 }
 
+function partitionedRegistryId(profile: NormalizedOntologyProfile, nodeType: string): string | null {
+  const registryId = profile.node_types[nodeType]?.registry;
+  if (!registryId || !profile.registries[registryId]?.partition_column) return null;
+  return registryId;
+}
+
+function aliasAmbiguityKey(node: CompiledNode, profile: NormalizedOntologyProfile, alias: string): string {
+  if (partitionedRegistryId(profile, node.type) === null) return alias;
+  return [node.type, node.registry_id ?? "", node.registry_partition ?? "", alias].join("\0");
+}
+
 function compileNodes(
   extraction: Extraction,
   profile: NormalizedOntologyProfile,
@@ -141,6 +155,10 @@ function compileNodes(
       const aliases = stringArray(node.aliases);
       const terms = [node.label, ...aliases].map(normalizedTerm).filter(Boolean);
       const status = typeof node.status === "string" ? node.status : profile.hardening.default_status;
+      const registryId = stringValue(node.registry_id);
+      const registryRecordId = stringValue(node.registry_record_id);
+      const registryPartition = stringValue(node.registry_partition);
+      const isPartitionedRegistryType = partitionedRegistryId(profile, type) !== null;
       return {
         id: node.id,
         type,
@@ -150,21 +168,30 @@ function compileNodes(
         status,
         confidence: confidenceScore(node),
         source_refs: sourceRef(node.source_file, node.source_location),
+        ...(isPartitionedRegistryType && registryId ? { registry_id: registryId } : {}),
+        ...(isPartitionedRegistryType && registryRecordId ? { registry_record_id: registryRecordId } : {}),
+        ...(isPartitionedRegistryType && registryPartition ? { registry_partition: registryPartition } : {}),
         registry_refs: stringArray(node.registry_refs),
         graph_node_ids: [node.id],
       };
     });
 
-  const aliases = new Map<string, string[]>();
+  const aliases = new Map<string, { alias: string; ids: string[] }>();
   for (const node of nodes) {
     for (const alias of node.aliases.map(normalizedTerm)) {
       if (!alias) continue;
-      aliases.set(alias, [...(aliases.get(alias) ?? []), node.id]);
+      const key = aliasAmbiguityKey(node, profile, alias);
+      const group = aliases.get(key);
+      if (group) {
+        group.ids.push(node.id);
+      } else {
+        aliases.set(key, { alias, ids: [node.id] });
+      }
     }
   }
 
   const aliasIssues: LinkValidationIssue[] = [];
-  for (const [alias, ids] of aliases.entries()) {
+  for (const { alias, ids } of aliases.values()) {
     const uniqueIds = Array.from(new Set(ids));
     if (uniqueIds.length > 1) {
       const affectedNodes = nodes.filter((node) => uniqueIds.includes(node.id));

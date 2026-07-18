@@ -410,4 +410,160 @@ describe("ontology output artifacts", () => {
     const nodes = JSON.parse(readFileSync(join(outputDir, "nodes.json"), "utf-8")) as Array<{ status: string }>;
     expect(nodes.every((node) => node.status === "needs_review")).toBe(true);
   });
+
+  it("keeps alias collision output byte-identical when a registry has no partition_column", () => {
+    const root = makeTempDir();
+    const legacyDir = join(root, "legacy");
+    const unpartitionedDir = join(root, "unpartitioned");
+    const ambiguous: Extraction = {
+      input_tokens: 0,
+      output_tokens: 0,
+      nodes: [
+        {
+          ...extraction.nodes[0]!,
+          id: "a",
+          label: "A",
+          aliases: ["same"],
+          registry_id: "components",
+          registry_record_id: "CMP-001",
+        },
+        {
+          ...extraction.nodes[0]!,
+          id: "b",
+          label: "B",
+          aliases: ["same"],
+          registry_id: "components",
+          registry_record_id: "CMP-002",
+        },
+      ],
+      edges: [],
+    };
+    const unpartitionedProfile = {
+      ...profile,
+      node_types: { Component: { registry: "components" }, Tool: {} },
+      registries: {
+        components: {
+          source: "components",
+          id_column: "component_id",
+          label_column: "component_name",
+          alias_columns: [],
+          node_type: "Component",
+        },
+      },
+    } as NormalizedOntologyProfile;
+
+    compileOntologyOutputs({
+      outputDir: legacyDir,
+      extraction: ambiguous,
+      profile,
+      config: { enabled: true, canonical_node_types: ["Component"] },
+    });
+    compileOntologyOutputs({
+      outputDir: unpartitionedDir,
+      extraction: ambiguous,
+      profile: unpartitionedProfile,
+      config: { enabled: true, canonical_node_types: ["Component"] },
+    });
+
+    for (const artifact of ["nodes.json", "aliases.json", "validation.json", "occurrences.json"]) {
+      expect(readFileSync(join(unpartitionedDir, artifact), "utf-8")).toBe(
+        readFileSync(join(legacyDir, artifact), "utf-8"),
+      );
+    }
+  });
+
+  it("scopes shared aliases by partition and preserves registry metadata in nodes.json", () => {
+    const root = makeTempDir();
+    const outputDir = join(root, ".graphify", "ontology");
+    const partitionedProfile = {
+      ...profile,
+      node_types: { Component: { registry: "components" }, Tool: {} },
+      registries: {
+        components: {
+          source: "components",
+          id_column: "component_id",
+          label_column: "component_name",
+          alias_columns: [],
+          node_type: "Component",
+          partition_column: "municipality",
+        },
+      },
+    } as NormalizedOntologyProfile;
+    const partitioned: Extraction = {
+      input_tokens: 0,
+      output_tokens: 0,
+      nodes: [
+        {
+          ...extraction.nodes[0]!,
+          id: "compton-a",
+          label: "Compton A",
+          aliases: ["C-15"],
+          registry_id: "components",
+          registry_record_id: "C-15-A",
+          registry_partition: "compton",
+        },
+        {
+          ...extraction.nodes[0]!,
+          id: "other-a",
+          label: "Other A",
+          aliases: ["C-15"],
+          registry_id: "components",
+          registry_record_id: "C-15-B",
+          registry_partition: "other",
+        },
+        {
+          ...extraction.nodes[0]!,
+          id: "compton-b",
+          label: "Compton B",
+          aliases: ["C-15"],
+          registry_id: "components",
+          registry_record_id: "C-15-C",
+          registry_partition: "compton",
+        },
+      ],
+      edges: [],
+    };
+
+    const result = compileOntologyOutputs({
+      outputDir,
+      extraction: partitioned,
+      profile: partitionedProfile,
+      config: { enabled: true, canonical_node_types: ["Component"] },
+    });
+
+    expect(result.validationIssues).toEqual([expect.objectContaining({
+      code: "ALIAS_AMBIGUOUS",
+      refs: ["record:compton-a", "record:compton-b"],
+    })]);
+    const nodes = JSON.parse(readFileSync(join(outputDir, "nodes.json"), "utf-8")) as Array<{
+      id: string;
+      status: string;
+      registry_id?: string;
+      registry_record_id?: string;
+      registry_partition?: string;
+    }>;
+    expect(nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "compton-a",
+        status: "needs_review",
+        registry_id: "components",
+        registry_record_id: "C-15-A",
+        registry_partition: "compton",
+      }),
+      expect.objectContaining({
+        id: "other-a",
+        status: "validated",
+        registry_id: "components",
+        registry_record_id: "C-15-B",
+        registry_partition: "other",
+      }),
+      expect.objectContaining({
+        id: "compton-b",
+        status: "needs_review",
+        registry_id: "components",
+        registry_record_id: "C-15-C",
+        registry_partition: "compton",
+      }),
+    ]));
+  });
 });
