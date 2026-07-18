@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { compileOntologyOutputs } from "../src/ontology-output.js";
 import { validateProfileExtraction } from "../src/profile-validate.js";
-import type { Extraction, NormalizedOntologyProfile } from "../src/types.js";
+import type { Extraction, NormalizedOntologyProfile, TypedEntityOccurrenceV1 } from "../src/types.js";
 
 const cleanupDirs: string[] = [];
 
@@ -78,6 +78,23 @@ const extraction: Extraction = {
   }],
 };
 
+function occurrence(overrides: Partial<TypedEntityOccurrenceV1> = {}): TypedEntityOccurrenceV1 {
+  return {
+    id: "occurrence-1",
+    node_type: "Component",
+    raw_span: "Component A",
+    normalized: "component a",
+    source_file: "manual.md",
+    page: null,
+    offsets: { start: 0, end: 11 },
+    detector: "lexicon",
+    resolution: "linked",
+    registry_record_id: "component-a",
+    registry_partition: null,
+    ...overrides,
+  };
+}
+
 describe("ontology output artifacts", () => {
   it("does not generate ontology outputs when disabled", () => {
     const root = makeTempDir();
@@ -121,6 +138,102 @@ describe("ontology output artifacts", () => {
     expect(readFileSync(join(outputDir, "wiki", "entities", "component-a.md"), "utf-8")).toContain(
       "# Synthetic Component",
     );
+  });
+
+  it("writes the byte-identical empty occurrence array when occurrences are omitted", () => {
+    const root = makeTempDir();
+    const outputDir = join(root, ".graphify", "ontology");
+
+    compileOntologyOutputs({
+      outputDir,
+      extraction,
+      profile,
+      config: { enabled: true, canonical_node_types: ["Component", "Tool"] },
+    });
+
+    expect(readFileSync(join(outputDir, "occurrences.json"), "utf-8")).toBe("[]\n");
+  });
+
+  it("does not clobber a fresh link occurrence list when compile receives no occurrences input", () => {
+    const root = makeTempDir();
+    const outputDir = join(root, ".graphify", "ontology");
+    mkdirSync(outputDir, { recursive: true });
+    writeFileSync(join(outputDir, "occurrences.json"), JSON.stringify([occurrence()], null, 2) + "\n", "utf-8");
+
+    compileOntologyOutputs({
+      outputDir,
+      extraction,
+      profile,
+      config: { enabled: true, canonical_node_types: ["Component", "Tool"] },
+    });
+
+    expect(JSON.parse(readFileSync(join(outputDir, "occurrences.json"), "utf-8"))).toEqual([occurrence()]);
+  });
+
+  it("writes valid occurrences sorted and filtered by occurrence_node_types", () => {
+    const root = makeTempDir();
+    const outputDir = join(root, ".graphify", "ontology");
+    const occurrences = [
+      occurrence({ id: "occ-c", source_file: "b.md", offsets: { start: 1, end: 3 }, raw_span: "BC" }),
+      occurrence({
+        id: "occ-excluded",
+        node_type: "Tool",
+        source_file: "a.md",
+        offsets: { start: 0, end: 2 },
+        raw_span: "AA",
+        registry_record_id: "tool-a",
+      }),
+      occurrence({ id: "occ-b", source_file: "a.md", offsets: { start: 4, end: 6 }, raw_span: "BB" }),
+      occurrence({ id: "occ-a", source_file: "a.md", offsets: { start: 1, end: 3 }, raw_span: "AB" }),
+    ];
+
+    compileOntologyOutputs({
+      outputDir,
+      extraction,
+      profile,
+      config: { enabled: true, occurrence_node_types: ["Component"] },
+      occurrences,
+    });
+
+    const written = JSON.parse(readFileSync(join(outputDir, "occurrences.json"), "utf-8")) as TypedEntityOccurrenceV1[];
+    expect(written.map((item) => item.id)).toEqual(["occ-a", "occ-b", "occ-c"]);
+  });
+
+  it("reports invalid occurrences as structured errors without throwing", () => {
+    const root = makeTempDir();
+    const outputDir = join(root, ".graphify", "ontology");
+    const linkedWithoutRecord = occurrence({ id: "missing-record" });
+    delete linkedWithoutRecord.registry_record_id;
+
+    const result = compileOntologyOutputs({
+      outputDir,
+      extraction,
+      profile,
+      config: { enabled: true, occurrence_node_types: ["Component"] },
+      occurrences: [
+        linkedWithoutRecord,
+        occurrence({ id: "unlinked-with-record", resolution: "unlinked" }),
+        occurrence({ id: "invalid-offsets", offsets: { start: 5, end: 5 } }),
+      ],
+    });
+
+    expect(result.validationIssues).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: "OCCURRENCE_LINKED_MISSING_REGISTRY_RECORD_ID",
+        severity: "error",
+        refs: ["occurrence:missing-record", "source:manual.md"],
+      }),
+      expect.objectContaining({ code: "OCCURRENCE_UNRESOLVED_HAS_REGISTRY_RECORD_ID", severity: "error" }),
+      expect.objectContaining({ code: "OCCURRENCE_INVALID_OFFSETS", severity: "error" }),
+    ]));
+    expect(JSON.parse(readFileSync(join(outputDir, "occurrences.json"), "utf-8"))).toEqual([]);
+
+    const validation = JSON.parse(readFileSync(join(outputDir, "validation.json"), "utf-8")) as {
+      schema: string;
+      issues: Array<{ code: string; severity: string; message: string; refs: string[] }>;
+    };
+    expect(validation.schema).toBe("graphify_ontology_validation_v1");
+    expect(validation.issues.every((issue) => issue.severity === "error" && issue.message.length > 0)).toBe(true);
   });
 
   it("compiles profile-validated node_type nodes into ontology outputs", () => {
@@ -297,8 +410,176 @@ describe("ontology output artifacts", () => {
       config: { enabled: true, canonical_node_types: ["Component"] },
     });
 
-    expect(result.validationIssues).toContain("alias \"same\" ambiguously attaches to a, b");
+    expect(result.validationIssues).toContainEqual({
+      code: "ALIAS_AMBIGUOUS",
+      severity: "warning",
+      node_type: "Component",
+      message: "alias \"same\" ambiguously attaches to a, b",
+      refs: ["record:a", "record:b"],
+    });
+    const validation = JSON.parse(readFileSync(join(outputDir, "validation.json"), "utf-8")) as {
+      schema: string;
+      issues: Array<{ message: string }>;
+    };
+    expect(validation.schema).toBe("graphify_ontology_validation_v1");
+    expect(validation.issues.map((issue) => issue.message)).toContain("alias \"same\" ambiguously attaches to a, b");
     const nodes = JSON.parse(readFileSync(join(outputDir, "nodes.json"), "utf-8")) as Array<{ status: string }>;
     expect(nodes.every((node) => node.status === "needs_review")).toBe(true);
+  });
+
+  it("keeps alias collision output byte-identical when a registry has no partition_column", () => {
+    const root = makeTempDir();
+    const legacyDir = join(root, "legacy");
+    const unpartitionedDir = join(root, "unpartitioned");
+    const ambiguous: Extraction = {
+      input_tokens: 0,
+      output_tokens: 0,
+      nodes: [
+        {
+          ...extraction.nodes[0]!,
+          id: "a",
+          label: "A",
+          aliases: ["same"],
+          registry_id: "components",
+          registry_record_id: "CMP-001",
+        },
+        {
+          ...extraction.nodes[0]!,
+          id: "b",
+          label: "B",
+          aliases: ["same"],
+          registry_id: "components",
+          registry_record_id: "CMP-002",
+        },
+      ],
+      edges: [],
+    };
+    const unpartitionedProfile = {
+      ...profile,
+      node_types: { Component: { registry: "components" }, Tool: {} },
+      registries: {
+        components: {
+          source: "components",
+          id_column: "component_id",
+          label_column: "component_name",
+          alias_columns: [],
+          node_type: "Component",
+        },
+      },
+    } as NormalizedOntologyProfile;
+
+    compileOntologyOutputs({
+      outputDir: legacyDir,
+      extraction: ambiguous,
+      profile,
+      config: { enabled: true, canonical_node_types: ["Component"] },
+    });
+    compileOntologyOutputs({
+      outputDir: unpartitionedDir,
+      extraction: ambiguous,
+      profile: unpartitionedProfile,
+      config: { enabled: true, canonical_node_types: ["Component"] },
+    });
+
+    for (const artifact of ["nodes.json", "aliases.json", "validation.json", "occurrences.json"]) {
+      expect(readFileSync(join(unpartitionedDir, artifact), "utf-8")).toBe(
+        readFileSync(join(legacyDir, artifact), "utf-8"),
+      );
+    }
+  });
+
+  it("scopes shared aliases by partition and preserves registry metadata in nodes.json", () => {
+    const root = makeTempDir();
+    const outputDir = join(root, ".graphify", "ontology");
+    const partitionedProfile = {
+      ...profile,
+      node_types: { Component: { registry: "components" }, Tool: {} },
+      registries: {
+        components: {
+          source: "components",
+          id_column: "component_id",
+          label_column: "component_name",
+          alias_columns: [],
+          node_type: "Component",
+          partition_column: "municipality",
+        },
+      },
+    } as NormalizedOntologyProfile;
+    const partitioned: Extraction = {
+      input_tokens: 0,
+      output_tokens: 0,
+      nodes: [
+        {
+          ...extraction.nodes[0]!,
+          id: "compton-a",
+          label: "Compton A",
+          aliases: ["C-15"],
+          registry_id: "components",
+          registry_record_id: "C-15-A",
+          registry_partition: "compton",
+        },
+        {
+          ...extraction.nodes[0]!,
+          id: "other-a",
+          label: "Other A",
+          aliases: ["C-15"],
+          registry_id: "components",
+          registry_record_id: "C-15-B",
+          registry_partition: "other",
+        },
+        {
+          ...extraction.nodes[0]!,
+          id: "compton-b",
+          label: "Compton B",
+          aliases: ["C-15"],
+          registry_id: "components",
+          registry_record_id: "C-15-C",
+          registry_partition: "compton",
+        },
+      ],
+      edges: [],
+    };
+
+    const result = compileOntologyOutputs({
+      outputDir,
+      extraction: partitioned,
+      profile: partitionedProfile,
+      config: { enabled: true, canonical_node_types: ["Component"] },
+    });
+
+    expect(result.validationIssues).toEqual([expect.objectContaining({
+      code: "ALIAS_AMBIGUOUS",
+      refs: ["record:compton-a", "record:compton-b"],
+    })]);
+    const nodes = JSON.parse(readFileSync(join(outputDir, "nodes.json"), "utf-8")) as Array<{
+      id: string;
+      status: string;
+      registry_id?: string;
+      registry_record_id?: string;
+      registry_partition?: string;
+    }>;
+    expect(nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "compton-a",
+        status: "needs_review",
+        registry_id: "components",
+        registry_record_id: "C-15-A",
+        registry_partition: "compton",
+      }),
+      expect.objectContaining({
+        id: "other-a",
+        status: "validated",
+        registry_id: "components",
+        registry_record_id: "C-15-B",
+        registry_partition: "other",
+      }),
+      expect.objectContaining({
+        id: "compton-b",
+        status: "needs_review",
+        registry_id: "components",
+        registry_record_id: "C-15-C",
+        registry_partition: "compton",
+      }),
+    ]));
   });
 });
