@@ -649,6 +649,28 @@ export interface OntologyOccurrence {
   [key: string]: unknown;
 }
 
+export interface TypedEntityOccurrenceV1 {
+  id: string;
+  node_type: string;
+  raw_span: string;
+  normalized: string;
+  source_file: string;
+  page: number | null;
+  offsets: { start: number; end: number };
+  detector: "lexicon" | "pattern" | "llm";
+  resolution: "linked" | "unlinked" | "ambiguous";
+  registry_record_id?: string;
+  registry_partition: string | null;
+}
+
+export interface LinkValidationIssue {
+  code: string;
+  severity: "error" | "warning" | "info";
+  node_type: string | null;
+  message: string;
+  refs: string[];
+}
+
 export interface OntologyMapping {
   id: string;
   source_id: string;
