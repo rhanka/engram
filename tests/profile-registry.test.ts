@@ -11,6 +11,7 @@ import {
   normalizeRegistryRecord,
   registryRecordsToExtraction,
 } from "../src/profile-registry.js";
+import type { NormalizedOntologyProfile } from "../src/types.js";
 import { validateExtraction } from "../src/validate.js";
 
 const cleanupDirs: string[] = [];
@@ -156,6 +157,49 @@ describe("profile registry loader", () => {
     ).toThrow("components record is missing id_column component_id");
   });
 
+  it("loads a declared partition column, rejects missing values, and keeps IDs globally unique", () => {
+    const root = makeTempDir();
+    const partitionedPath = join(root, "partitioned.csv");
+    writeFileSync(
+      partitionedPath,
+      "component_id,component_name,municipality\nCMP-001,Demo One,compton\n",
+      "utf-8",
+    );
+    const spec = {
+      source: "components",
+      id_column: "component_id",
+      label_column: "component_name",
+      alias_columns: [],
+      node_type: "Component",
+      partition_column: "municipality",
+      bound_source_path: partitionedPath,
+    };
+
+    expect(loadProfileRegistry("components", spec)[0]).toMatchObject({ partition: "compton" });
+
+    const missingColumnPath = join(root, "missing-column.csv");
+    writeFileSync(missingColumnPath, "component_id,component_name\nCMP-002,Demo Two\n", "utf-8");
+    expect(() => loadProfileRegistry("components", { ...spec, bound_source_path: missingColumnPath })).toThrow(
+      `registries.components.partition_column municipality does not exist in ${missingColumnPath}`,
+    );
+
+    const missingValuePath = join(root, "missing-value.csv");
+    writeFileSync(missingValuePath, "component_id,component_name,municipality\nCMP-003,Demo Three,\n", "utf-8");
+    expect(() => loadProfileRegistry("components", { ...spec, bound_source_path: missingValuePath })).toThrow(
+      "components record CMP-003 is missing partition_column municipality",
+    );
+
+    const duplicateAcrossPartitionsPath = join(root, "duplicate-across-partitions.csv");
+    writeFileSync(
+      duplicateAcrossPartitionsPath,
+      "component_id,component_name,municipality\nC-15,C-15,compton\nC-15,C-15,other\n",
+      "utf-8",
+    );
+    expect(() => loadProfileRegistry("components", { ...spec, bound_source_path: duplicateAcrossPartitionsPath })).toThrow(
+      "duplicate registry record id C-15 in components",
+    );
+  });
+
   it("rejects unbound registry sources", () => {
     expect(() =>
       loadProfileRegistry("components", {
@@ -207,5 +251,32 @@ describe("profile registry loader", () => {
         profile_hash: profile.profile_hash,
       }),
     );
+  });
+
+  it("propagates registry_partition without changing the registry seed node ID", () => {
+    const profile = {
+      id: "partitioned",
+      version: "1",
+      profile_hash: "profile-hash",
+    } as NormalizedOntologyProfile;
+    const extraction = registryRecordsToExtraction({
+      zones: [{
+        registryId: "zones",
+        id: "C-15",
+        label: "C-15",
+        aliases: [],
+        nodeType: "Zone",
+        partition: "compton",
+        sourceFile: "/tmp/zones.csv",
+        raw: { code: "C-15", municipality: "compton" },
+      }],
+    }, profile);
+
+    expect(extraction.nodes).toContainEqual(expect.objectContaining({
+      id: "registry_zones_C_15",
+      registry_id: "zones",
+      registry_record_id: "C-15",
+      registry_partition: "compton",
+    }));
   });
 });

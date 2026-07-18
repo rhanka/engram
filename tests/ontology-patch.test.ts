@@ -12,7 +12,9 @@ import {
   type OntologyPatch,
   type OntologyPatchContext,
 } from "../src/ontology-patch.js";
+import { loadOntologyPatchContext } from "../src/ontology-patch-context.js";
 import type { NormalizedOntologyProfile } from "../src/types.js";
+import { writeOntologyWriteFixture } from "./helpers/ontology-write-fixture.js";
 
 const cleanupDirs: string[] = [];
 
@@ -146,6 +148,32 @@ function makeContext(root: string, overrides: Partial<OntologyPatchContext> = {}
 }
 
 describe("ontology patch core", () => {
+  it("preserves registry identity and partition fields when loading nodes.json", () => {
+    const fixture = writeOntologyWriteFixture(makeTempDir());
+    writeFileSync(
+      join(fixture.stateDir, "ontology", "nodes.json"),
+      JSON.stringify([
+        {
+          id: "partitioned-component",
+          type: "Component",
+          registry_id: "components",
+          registry_record_id: "C-15",
+          registry_partition: "compton",
+        },
+      ]),
+      "utf-8",
+    );
+
+    expect(loadOntologyPatchContext(fixture.profileStatePath).nodes).toEqual([
+      expect.objectContaining({
+        id: "partitioned-component",
+        registry_id: "components",
+        registry_record_id: "C-15",
+        registry_partition: "compton",
+      }),
+    ]);
+  });
+
   it("validates schema, profile hash, graph hash, target nodes and evidence", () => {
     const root = makeTempDir();
 

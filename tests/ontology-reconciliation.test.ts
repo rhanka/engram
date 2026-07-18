@@ -273,4 +273,97 @@ describe("ontology reconciliation candidates", () => {
     });
     expect(first.candidates[0]!.score).toBeGreaterThan(0.8);
   });
+
+  it("keeps unpartitioned registry reconciliation byte-identical to the legacy path", () => {
+    const legacy = context();
+    legacy.nodes = legacy.nodes.map((node, index) => ({
+      ...node,
+      registry_id: "components",
+      registry_record_id: `CMP-00${index + 1}`,
+    }));
+    legacy.profile = {
+      ...profile,
+      node_types: { Component: { registry: "components" } },
+      registries: {
+        components: {
+          source: "components",
+          id_column: "component_id",
+          label_column: "component_name",
+          alias_columns: [],
+          node_type: "Component",
+        },
+      },
+    } as unknown as NormalizedOntologyProfile;
+
+    const baseline = context();
+    baseline.nodes = legacy.nodes;
+
+    const generatedAt = "2026-05-09T00:00:00.000Z";
+    expect(JSON.stringify(generateOntologyReconciliationCandidates(legacy, { generatedAt }))).toBe(
+      JSON.stringify(generateOntologyReconciliationCandidates(baseline, { generatedAt })),
+    );
+  });
+
+  it("rejects C-15 exact candidates across partitions while retaining same-partition exact matches", () => {
+    const partitioned = context();
+    partitioned.profile = {
+      ...profile,
+      node_types: { Zone: { registry: "zones" } },
+      registries: {
+        zones: {
+          source: "zones",
+          id_column: "zone_id",
+          label_column: "zone_code",
+          alias_columns: [],
+          node_type: "Zone",
+          partition_column: "municipality",
+        },
+      },
+    } as unknown as NormalizedOntologyProfile;
+    partitioned.nodes = [
+      {
+        id: "compton-c-15",
+        label: "C-15",
+        type: "Zone",
+        registry_id: "zones",
+        registry_record_id: "C-15",
+        registry_partition: "compton",
+      },
+      {
+        id: "other-c-15",
+        label: "C-15",
+        type: "Zone",
+        registry_id: "zones",
+        registry_record_id: "C-15",
+        registry_partition: "other",
+      },
+      {
+        id: "compton-c-15-duplicate",
+        label: "C-15",
+        type: "Zone",
+        registry_id: "zones",
+        registry_record_id: "C-15-2",
+        registry_partition: "compton",
+      },
+      {
+        id: "missing-partition-c-15",
+        label: "C-15",
+        type: "Zone",
+        registry_id: "zones",
+        registry_record_id: "C-15-3",
+      },
+    ];
+
+    const queue = generateOntologyReconciliationCandidates(partitioned, {
+      generatedAt: "2026-05-09T00:00:00.000Z",
+    });
+
+    expect(queue.candidates).toHaveLength(1);
+    expect(queue.candidates[0]).toMatchObject({
+      tier: "exact",
+      score: 1,
+      canonical_id: "compton-c-15",
+      candidate_id: "compton-c-15-duplicate",
+    });
+  });
 });
