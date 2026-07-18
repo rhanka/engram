@@ -101,6 +101,7 @@ function normalizeRegistry(registry: OntologyRegistrySpec): NormalizedOntologyRe
     label_column: String(registry.label_column ?? ""),
     alias_columns: asStringArray(registry.alias_columns),
     node_type: String(registry.node_type ?? ""),
+    ...(registry.partition_column ? { partition_column: String(registry.partition_column) } : {}),
     ...(registry.bound_source_path ? { bound_source_path: registry.bound_source_path } : {}),
   };
 }
@@ -299,6 +300,18 @@ export function validateOntologyProfile(profile: OntologyProfile): string[] {
   // Track C-3.5: validate optional visual_encoding (shape + color_hex, plus the
   // additive fill / border variant dimensions) per node type.
   for (const [nodeTypeId, nodeType] of Object.entries(nodeTypes)) {
+    if (nodeType.registry !== undefined) {
+      const registryId = typeof nodeType.registry === "string" ? nodeType.registry.trim() : "";
+      const registry = registryId ? registries[registryId] : undefined;
+      if (!registry) {
+        errors.push(`node_types.${nodeTypeId}.registry references unknown registry ${String(nodeType.registry)}`);
+      } else if (registry.node_type !== nodeTypeId) {
+        errors.push(
+          `node_types.${nodeTypeId}.registry ${registryId} has node_type ${String(registry.node_type)}, expected ${nodeTypeId}`,
+        );
+      }
+    }
+
     const visual = (nodeType as { visual_encoding?: unknown }).visual_encoding;
     if (visual === undefined || visual === null) continue;
     if (typeof visual !== "object" || Array.isArray(visual)) {
