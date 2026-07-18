@@ -13,11 +13,13 @@ import {
   type ParsedSource,
   type SourceUnit,
 } from "./source-grounding.js";
+import type { TextJsonGenerationClient } from "./llm-execution.js";
 import type {
   LinkValidationIssue,
   NormalizedOntologyNodeTypeLinking,
   NormalizedOntologyProfile,
   OntologyLinkDetector,
+  OntologyLinkLlmConfig,
   RegistryRecord,
   TypedEntityOccurrenceV1,
 } from "./types.js";
@@ -59,6 +61,36 @@ export interface DetectorContext {
 
 export type EntityDetector = (units: SourceUnit[], context: DetectorContext) => RawCandidate[];
 
+/**
+ * A single LLM-proposed candidate. The model PROPOSES a verbatim span only:
+ * `registry_record_id` is an optional HINT that the exact resolver revalidates
+ * against the document's partition — it is never authoritative.
+ */
+export interface LlmSpanProposal {
+  raw_span: string;
+  node_type?: string;
+  registry_record_id?: string;
+}
+
+export interface LlmProposeRequest {
+  nodeType: string;
+  sourceFile: string;
+  rawSource: string;
+  units: SourceUnit[];
+  partition: string | null;
+  allowedNodeTypes: string[];
+  budgetUsd?: number;
+}
+
+/**
+ * The span-proposal seam. Injected so the deterministic core stays $0 and
+ * tests mock it with zero network. The CLI adapts a `TextJsonGenerationClient`
+ * into this shape (see `directLlmSpanProposer`).
+ */
+export type LlmSpanProposer = (
+  request: LlmProposeRequest,
+) => Promise<LlmSpanProposal[]> | LlmSpanProposal[];
+
 interface LinkingType {
   nodeType: string;
   registryId: string;
@@ -74,6 +106,14 @@ export interface EntityLinkingInput {
   sourceFiles: string[];
   nodeTypes?: string[];
   preset?: string;
+  /**
+   * Opt-in span proposer for `llm` detectors. Absent ⇒ zero LLM calls (the $0
+   * default is preserved). Present ⇒ still only invoked when a node type
+   * declares an `llm` detector AND its trigger fires.
+   */
+  llmProposer?: LlmSpanProposer;
+  /** When true, `llm` detectors never make a paid proposal call (CLI --dry-run). */
+  llmDryRun?: boolean;
 }
 
 export interface EntityLinkingResult {
@@ -216,6 +256,231 @@ export function detectPattern(units: SourceUnit[], context: DetectorContext, det
     }
   }
   return candidates;
+}
+
+/** The bounded default when a preset expands `detect` to a bare `llm` string. */
+const DEFAULT_LLM_CONFIG: OntologyLinkLlmConfig = { trigger: "zero_candidates" };
+
+/** The declarative `llm` config for a detect list, or undefined if none opts in. */
+export function llmConfigFromDetectors(detectors: OntologyLinkDetector[]): OntologyLinkLlmConfig | undefined {
+  for (const detector of detectors) {
+    if (detector === "llm") return DEFAULT_LLM_CONFIG;
+    if (typeof detector === "object" && "llm" in detector) return detector.llm;
+  }
+  return undefined;
+}
+
+/**
+ * Relocate an LLM proposal onto raw-file coordinates. The proposal is only
+ * accepted when its `raw_span` occurs VERBATIM inside a scanned document unit
+ * (never the frontmatter) and passes the same `verifyRawCandidate` gate as the
+ * $0 detectors. A proposal that cannot be relocated verbatim is dropped.
+ */
+function relocateProposal(
+  rawSource: string,
+  units: SourceUnit[],
+  sourceFile: string,
+  proposal: LlmSpanProposal,
+): RawCandidate | null {
+  const span = proposal.raw_span;
+  if (typeof span !== "string" || span.length === 0) return null;
+  for (const unit of units) {
+    if (unit.documentStart === undefined || unit.documentEnd === undefined) continue;
+    const region = rawSource.slice(unit.documentStart, unit.documentEnd);
+    const idx = region.indexOf(span);
+    if (idx < 0) continue;
+    const start = unit.documentStart + idx;
+    const end = start + span.length;
+    const candidate: RawCandidate = {
+      node_type: "",
+      detector: "llm",
+      raw_span: span,
+      source_file: sourceFile,
+      page: unit.page,
+      offsets: { start, end },
+      // The id is only a HINT; resolveEntityCandidate revalidates it against
+      // the partition (`ids.has`) and never trusts it as authoritative.
+      ...(proposal.registry_record_id ? { registry_record_id: proposal.registry_record_id } : {}),
+    };
+    if (verifyRawCandidate(rawSource, candidate)) return candidate;
+  }
+  return null;
+}
+
+/**
+ * The `llm` detector: it PROPOSES spans (via the injected proposer) and never
+ * resolves. Every proposal is relocated verbatim into the raw source; the
+ * caller then runs the SAME exact/none resolver used by lexicon/pattern.
+ */
+export async function detectLlm(
+  proposer: LlmSpanProposer,
+  request: LlmProposeRequest,
+): Promise<RawCandidate[]> {
+  const proposals = await proposer(request);
+  const candidates: RawCandidate[] = [];
+  for (const proposal of Array.isArray(proposals) ? proposals : []) {
+    if (!proposal || typeof proposal.raw_span !== "string") continue;
+    // Type discipline: a proposal for another node_type is discarded, not
+    // re-homed. The proposer is asked per node type.
+    if (proposal.node_type && proposal.node_type !== request.nodeType) continue;
+    const candidate = relocateProposal(request.rawSource, request.units, request.sourceFile, proposal);
+    if (candidate) candidates.push(candidate);
+  }
+  return candidates;
+}
+
+/**
+ * Decide whether the declared trigger fires, given the VERIFIED $0 candidates
+ * and their exact/none resolutions. `zero_candidates` (the default) always
+ * fires for an `llm`-only preset because there are no $0 detectors to satisfy.
+ */
+function shouldTriggerLlm(
+  verifiedZero: RawCandidate[],
+  config: OntologyLinkLlmConfig,
+  registryIndex: RegistryIndex,
+  normalizer: EntityNormalizer,
+  mode: "exact" | "none",
+): boolean {
+  const count = verifiedZero.length;
+  switch (config.trigger) {
+    case "zero_candidates":
+      return count === 0;
+    case "below_min_candidates":
+      return count < (config.min_candidates ?? 1);
+    case "unresolved_candidates": {
+      if (count === 0) return true;
+      return verifiedZero.some(
+        (candidate) => resolveEntityCandidate(candidate, registryIndex, normalizer, mode).resolution !== "linked",
+      );
+    }
+    default:
+      return false;
+  }
+}
+
+/**
+ * Why an otherwise-triggered `llm` detector must NOT call the provider this
+ * run. Returns null when a paid proposal is allowed. Order matters: a missing
+ * proposer (the $0 default / non-direct mode) is reported before dry-run and
+ * budget, since without a proposer nothing else applies.
+ */
+function llmSkipReason(
+  config: OntologyLinkLlmConfig,
+  dryRun: boolean | undefined,
+  proposer: LlmSpanProposer | undefined,
+): { code: string; severity: LinkValidationIssue["severity"]; message: string } | null {
+  if (!proposer) {
+    return {
+      code: "LINK_LLM_PROVIDER_UNAVAILABLE",
+      severity: "warning",
+      message: "llm detector triggered but no proposer is wired (llm_execution is not a live direct provider); ran $0 detectors only",
+    };
+  }
+  if (dryRun || config.dry_run) {
+    return {
+      code: "LINK_LLM_DRY_RUN",
+      severity: "info",
+      message: "llm detector triggered but skipped (dry-run); no paid proposal made",
+    };
+  }
+  if (config.budget_usd !== undefined && config.budget_usd <= 0) {
+    return {
+      code: "LINK_LLM_BUDGET_EXHAUSTED",
+      severity: "warning",
+      message: "llm detector triggered but budget_usd is 0; no proposal made",
+    };
+  }
+  return null;
+}
+
+/**
+ * True when a link run over this profile could invoke the `llm` detector, so
+ * the CLI only constructs a paid provider when it is actually needed. Mirrors
+ * how `linkingTypes` maps a preset override or per-type detect list.
+ */
+export function requiresLlmProposer(
+  profile: NormalizedOntologyProfile,
+  options: { nodeTypes?: string[]; preset?: string } = {},
+): boolean {
+  const allowed = options.nodeTypes && options.nodeTypes.length > 0 ? new Set(options.nodeTypes) : null;
+  const presetHasLlm = options.preset === "open-extraction" || options.preset === "hybrid-recall";
+  for (const [nodeType, config] of Object.entries(profile.node_types)) {
+    if (!config.linking || (allowed && !allowed.has(nodeType))) continue;
+    if (options.preset) {
+      if (presetHasLlm) return true;
+      continue;
+    }
+    if (hasLlmDetector(config.linking.detect)) return true;
+  }
+  return false;
+}
+
+const LLM_SPAN_PROPOSAL_SCHEMA = "graphify_typed_link_span_proposal_v1";
+
+function buildSpanProposalPrompt(request: LlmProposeRequest): string {
+  return [
+    "You are proposing candidate VERBATIM text spans for typed entity linking.",
+    `Node type to find: ${request.nodeType}.`,
+    "",
+    "Rules:",
+    "- Copy each span EXACTLY as it appears in the SOURCE (same characters, casing, punctuation).",
+    `- Propose only spans that are mentions of a ${request.nodeType}.`,
+    "- Do NOT invent identifiers, do NOT normalize, do NOT paraphrase or translate.",
+    "- If unsure, omit the span. graphify resolves ids itself; you only propose spans.",
+    "",
+    'Return JSON of the form: {"spans": [{"raw_span": "<verbatim substring>"}]}.',
+    "",
+    "SOURCE:",
+    request.rawSource,
+  ].join("\n");
+}
+
+/**
+ * Adapt the shared `TextJsonGenerationClient` (llm-execution.ts) — the same
+ * profile-LLM execution seam — into a span proposer. The model is constrained
+ * to PROPOSE spans; graphify still relocates + resolves them. No network is
+ * initiated here beyond the injected client's own call, so a fake client makes
+ * this fully testable offline.
+ */
+export function directLlmSpanProposer(
+  client: TextJsonGenerationClient,
+  options: { stateDir: string },
+): LlmSpanProposer {
+  return async (request: LlmProposeRequest): Promise<LlmSpanProposal[]> => {
+    const slug = `${request.nodeType}-${sha256(request.sourceFile).slice(0, 16)}`.replace(/[^A-Za-z0-9._-]+/g, "_");
+    const outputPath = join(options.stateDir, "llm-link-proposals", `${slug}.json`);
+    await client.generateJson({
+      schema: LLM_SPAN_PROPOSAL_SCHEMA,
+      prompt: buildSpanProposalPrompt(request),
+      outputPath,
+    });
+    // Assistant mode writes an instruction file (no JSON payload) and returns;
+    // the absence of the parsed sidecar then simply yields zero proposals.
+    if (!existsSync(outputPath)) return [];
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(readFileSync(outputPath, "utf-8"));
+    } catch {
+      return [];
+    }
+    const spans = Array.isArray(parsed)
+      ? parsed
+      : parsed && typeof parsed === "object" && Array.isArray((parsed as { spans?: unknown }).spans)
+        ? (parsed as { spans: unknown[] }).spans
+        : [];
+    const proposals: LlmSpanProposal[] = [];
+    for (const span of spans) {
+      if (!span || typeof span !== "object") continue;
+      const rawSpan = (span as { raw_span?: unknown }).raw_span;
+      if (typeof rawSpan !== "string" || !rawSpan) continue;
+      const recordId = (span as { registry_record_id?: unknown }).registry_record_id;
+      proposals.push({
+        raw_span: rawSpan,
+        ...(typeof recordId === "string" && recordId ? { registry_record_id: recordId } : {}),
+      });
+    }
+    return proposals;
+  };
 }
 
 function registryIndexKey(registryId: string, partition: string | null, normalizerHash: string): string {
@@ -371,8 +636,14 @@ function issue(code: string, severity: LinkValidationIssue["severity"], nodeType
   return { code, severity, node_type: nodeType, message, refs };
 }
 
-/** Execute the deterministic producer pass without writing artifacts. */
-export function linkEntities(input: EntityLinkingInput): EntityLinkingResult {
+/**
+ * Execute the deterministic producer pass without writing artifacts. Async so
+ * an opt-in `llm` detector can PROPOSE spans (via `input.llmProposer`); every
+ * proposal still flows through the SAME exact/none resolver + verbatim gate as
+ * the $0 detectors. With no `llm` detector (or no proposer) zero LLM calls are
+ * made and the pass is byte-for-byte the deterministic $0 pass.
+ */
+export async function linkEntities(input: EntityLinkingInput): Promise<EntityLinkingResult> {
   const normalizers = compileNormalizerByNodeType(input.profile);
   const types = linkingTypes(input.profile, input.nodeTypes, normalizers, input.preset);
   if (types.length === 0) return { occurrences: [], issues: [], scannedDocuments: 0, noOp: true };
@@ -381,17 +652,6 @@ export function linkEntities(input: EntityLinkingInput): EntityLinkingResult {
   const deduped = new Map<string, RawCandidate & { nodeType: LinkingType; partition: string | null }>();
   const indexCache = new Map<string, RegistryIndex>();
   let scannedDocuments = 0;
-
-  for (const nodeType of types) {
-    if (!hasLlmDetector(nodeType.linking.detect)) continue;
-    issues.push(issue(
-      "LINK_LLM_DETECTOR_UNAVAILABLE",
-      "warning",
-      nodeType.nodeType,
-      `preset ${nodeType.linking.preset ?? "custom"} requires L4b / llm detector not yet available`,
-      [`registry:${nodeType.registryId}`],
-    ));
-  }
 
   for (const rawPath of Array.from(new Set(input.sourceFiles.map((file) => resolve(file)))).sort()) {
     let rawSource: string;
@@ -430,18 +690,19 @@ export function linkEntities(input: EntityLinkingInput): EntityLinkingResult {
         indexCache.set(key, registryIndex);
       }
       const context: DetectorContext = { rawSource, sourceFile: label, normalizer: nodeType.normalizer, registryIndex };
-      const candidates: RawCandidate[] = [];
-      if (nodeType.linking.detect.some((detector) => detector === "lexicon")) candidates.push(...detectLexicon(parsed.units, context));
+
+      // 1) $0 detectors first. Their VERIFIED output is what the llm trigger reads.
+      const zeroCandidates: RawCandidate[] = [];
+      if (nodeType.linking.detect.some((detector) => detector === "lexicon")) zeroCandidates.push(...detectLexicon(parsed.units, context));
       if (nodeType.linking.detect.some((detector) => detector === "pattern" || (typeof detector === "object" && "pattern" in detector))) {
-        candidates.push(...detectPattern(parsed.units, context, nodeType.linking.detect));
+        zeroCandidates.push(...detectPattern(parsed.units, context, nodeType.linking.detect));
       }
-      for (const candidate of candidates) {
+      const verifiedZero: RawCandidate[] = [];
+      for (const candidate of zeroCandidates) {
         candidate.node_type = nodeType.nodeType;
         // The source slice check is stronger than the normalised verifier and
         // keeps the occurrence coordinate system pinned to the raw file.
-        if (
-          !verifyRawCandidate(rawSource, candidate)
-        ) {
+        if (!verifyRawCandidate(rawSource, candidate)) {
           issues.push(issue(
             "LINK_VERBATIM_UNRELOCATABLE",
             "warning",
@@ -451,6 +712,38 @@ export function linkEntities(input: EntityLinkingInput): EntityLinkingResult {
           ));
           continue;
         }
+        verifiedZero.push(candidate);
+      }
+
+      const candidates: RawCandidate[] = [...verifiedZero];
+
+      // 2) Opt-in llm detector: PROPOSES spans only. It runs strictly after the
+      //    $0 detectors, only when its declared trigger fires, and its output is
+      //    relocated verbatim then resolved by the SAME exact/none resolver.
+      const llmConfig = llmConfigFromDetectors(nodeType.linking.detect);
+      if (llmConfig && shouldTriggerLlm(verifiedZero, llmConfig, registryIndex, nodeType.normalizer, nodeType.linking.resolve.mode)) {
+        const skip = llmSkipReason(llmConfig, input.llmDryRun, input.llmProposer);
+        if (skip) {
+          issues.push(issue(skip.code, skip.severity, nodeType.nodeType, `${skip.message} (${label})`, [`source:${label}`, `registry:${nodeType.registryId}`]));
+        } else if (input.llmProposer) {
+          const proposed = await detectLlm(input.llmProposer, {
+            nodeType: nodeType.nodeType,
+            sourceFile: label,
+            rawSource,
+            units: parsed.units,
+            partition,
+            allowedNodeTypes: [nodeType.nodeType],
+            ...(llmConfig.budget_usd !== undefined ? { budgetUsd: llmConfig.budget_usd } : {}),
+          });
+          for (const candidate of proposed) {
+            candidate.node_type = nodeType.nodeType;
+            candidates.push(candidate);
+          }
+        }
+      }
+
+      // 3) Dedup across detectors within (document, node_type): lexicon > pattern > llm.
+      for (const candidate of candidates) {
         const keyForCandidate = [input.profile.profile_hash, label, nodeType.nodeType, candidate.offsets.start, candidate.offsets.end].join("|");
         const previous = deduped.get(keyForCandidate);
         if (!previous || DETECTOR_PRIORITY[candidate.detector] < DETECTOR_PRIORITY[previous.detector]) {

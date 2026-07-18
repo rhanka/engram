@@ -100,9 +100,13 @@ export {
 export type { EntityNormalizer, NormalizerByNodeType } from "./entity-normalizer.js";
 export {
   detectLexicon,
+  detectLlm,
   detectPattern,
+  directLlmSpanProposer,
   buildRegistryIndex,
   linkEntities,
+  llmConfigFromDetectors,
+  requiresLlmProposer,
   resolveEntityCandidate,
   summarizeEntityOccurrences,
   verifyRawCandidate,
@@ -114,6 +118,9 @@ export type {
   EntityLinkingInput,
   EntityLinkingResult,
   EntityOccurrenceSummary,
+  LlmProposeRequest,
+  LlmSpanProposal,
+  LlmSpanProposer,
   RawCandidate,
   RegistryIndex,
 } from "./entity-linking.js";
