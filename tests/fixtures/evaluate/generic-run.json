@@ -1,0 +1,53 @@
+[
+  {
+    "id": "run-0001",
+    "node_type": "Component",
+    "raw_span": "Widget-A",
+    "normalized": "widget-a",
+    "source_file": "manual/setup.md",
+    "page": null,
+    "offsets": { "start": 10, "end": 18 },
+    "detector": "lexicon",
+    "resolution": "linked",
+    "registry_record_id": "comp-a",
+    "registry_partition": null
+  },
+  {
+    "id": "run-0002",
+    "node_type": "Component",
+    "raw_span": "Widget-B",
+    "normalized": "widget-b",
+    "source_file": "manual/setup.md",
+    "page": null,
+    "offsets": { "start": 40, "end": 48 },
+    "detector": "lexicon",
+    "resolution": "linked",
+    "registry_record_id": "comp-b",
+    "registry_partition": null
+  },
+  {
+    "id": "run-0003",
+    "node_type": "Component",
+    "raw_span": "Widget-A",
+    "normalized": "widget-a",
+    "source_file": "manual/api.md",
+    "page": null,
+    "offsets": { "start": 5, "end": 13 },
+    "detector": "lexicon",
+    "resolution": "linked",
+    "registry_record_id": "comp-a",
+    "registry_partition": null
+  },
+  {
+    "id": "run-0004",
+    "node_type": "Component",
+    "raw_span": "Gadget-Z",
+    "normalized": "gadget-z",
+    "source_file": "manual/api.md",
+    "page": null,
+    "offsets": { "start": 60, "end": 68 },
+    "detector": "pattern",
+    "resolution": "unlinked",
+    "registry_partition": null
+  }
+]
