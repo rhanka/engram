@@ -2,7 +2,16 @@
  * graphify - extract · build · cluster · analyze · report.
  */
 
-export { type GraphNode, type GraphEdge, type Extraction, type Hyperedge, type DetectionResult, FileType } from "./types.js";
+export {
+  type GraphNode,
+  type GraphEdge,
+  type Extraction,
+  type Hyperedge,
+  type DetectionResult,
+  type LinkValidationIssue,
+  type TypedEntityOccurrenceV1,
+  FileType,
+} from "./types.js";
 export {
   HYPEREDGES_ATTRIBUTE,
   loadHyperedges,
@@ -43,11 +52,20 @@ export type {
   ProjectConfigDiscoveryResult,
   ProjectConfigValidationIssue,
   NormalizedOntologyProfile,
+  NormalizedOntologyNodeType,
   NormalizedOntologyRegistrySpec,
   NormalizedOntologyRelationType,
   OntologyCitationPolicy,
   OntologyHardeningPolicy,
   OntologyNodeType,
+  OntologyNodeTypeLinking,
+  OntologyLinkDetector,
+  OntologyLinkingEvidence,
+  OntologyLinkingPartitionFrom,
+  OntologyLinkingPattern,
+  OntologyLinkingResolve,
+  OntologyNodeTypeNormalize,
+  EntityNormalizerDescriptor,
   OntologyOutputPolicy,
   OntologyOutputWikiPolicy,
   OntologyProfile,
@@ -73,6 +91,51 @@ export type {
   ClassHierarchyClassEntry,
   ClassHierarchiesArtifact,
 } from "./types.js";
+export {
+  ENTITY_NORMALIZER_CONTRACT,
+  auditNormalizerContracts,
+  compileNormalizerByNodeType,
+  normalizeNodeTypeLinking,
+} from "./entity-normalizer.js";
+export type { EntityNormalizer, NormalizerByNodeType } from "./entity-normalizer.js";
+export {
+  detectLexicon,
+  detectLlm,
+  detectPattern,
+  directLlmSpanProposer,
+  buildRegistryIndex,
+  linkEntities,
+  llmConfigFromDetectors,
+  requiresLlmProposer,
+  resolveEntityCandidate,
+  summarizeEntityOccurrences,
+  verifyRawCandidate,
+  writeEntityLinkingArtifacts,
+} from "./entity-linking.js";
+export type {
+  DetectorContext,
+  EntityDetector,
+  EntityLinkingInput,
+  EntityLinkingResult,
+  EntityOccurrenceSummary,
+  LlmProposeRequest,
+  LlmSpanProposal,
+  LlmSpanProposer,
+  RawCandidate,
+  RegistryIndex,
+} from "./entity-linking.js";
+export {
+  buildNormToRawMap,
+  deaccent,
+  detectModality,
+  normalizeForMatch,
+  parseSource,
+  rawOffsetForTerm,
+  resolveSourcePath,
+  verifyVerbatim,
+  windowQuote,
+} from "./source-grounding.js";
+export type { ImageContext, ParsedSource, ResolveSourceOptions, SourceModality, SourceUnit } from "./source-grounding.js";
 export { inspectInputScope } from "./input-scope.js";
 export type { InputScopeInventory, InspectInputScopeOptions } from "./input-scope.js";
 export {

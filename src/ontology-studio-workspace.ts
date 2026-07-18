@@ -702,7 +702,11 @@ function loadDescriptionIndex(stateDir: string): WikiDescriptionSidecarIndex | n
  * empty file yields an empty map (the panel omits the section).
  */
 function loadOccurrences(stateDir: string): EntityPanelOccurrences {
-  const path = join(stateDir, "ontology", "occurrences.json");
+  // `occurrences.json` is now the canonical mention-level LIST. The Studio
+  // consumes the deliberately derived node-id map so it never conflates the
+  // two schemas. Fall back to the legacy occurrence map when no sidecar exists.
+  const summaryPath = join(stateDir, "ontology", "entity-occurrence-summary.json");
+  const path = existsSync(summaryPath) ? summaryPath : join(stateDir, "ontology", "occurrences.json");
   if (!existsSync(path)) return {};
   try {
     return normaliseOccurrences(JSON.parse(readFileSync(path, "utf-8")) as unknown);

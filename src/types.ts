@@ -56,6 +56,7 @@ export interface GraphNode {
   node_type?: string;
   registry_id?: string;
   registry_record_id?: string;
+  registry_partition?: string;
   registry_refs?: string[];
   aliases?: string[];
   status?: OntologyStatus;
@@ -649,6 +650,28 @@ export interface OntologyOccurrence {
   [key: string]: unknown;
 }
 
+export interface TypedEntityOccurrenceV1 {
+  id: string;
+  node_type: string;
+  raw_span: string;
+  normalized: string;
+  source_file: string;
+  page: number | null;
+  offsets: { start: number; end: number };
+  detector: "lexicon" | "pattern" | "llm";
+  resolution: "linked" | "unlinked" | "ambiguous";
+  registry_record_id?: string;
+  registry_partition: string | null;
+}
+
+export interface LinkValidationIssue {
+  code: string;
+  severity: "error" | "warning" | "info";
+  node_type: string | null;
+  message: string;
+  refs: string[];
+}
+
 export interface OntologyMapping {
   id: string;
   source_id: string;
@@ -705,17 +728,125 @@ export interface OntologyVisualEncoding {
   border?: OntologyVisualEncodingBorder;
 }
 
+/**
+ * Declarative composition for a registry entity normalizer. Built-ins are
+ * applied left-to-right, then the optional synchronous local ESM export runs.
+ */
+export interface OntologyNodeTypeNormalize {
+  builtin?: string[];
+  fn?: string;
+}
+
+/** Document metadata binding used to scope a partitioned registry. */
+export interface OntologyLinkingPartitionFrom {
+  /** Front-matter field preferred over any path-layout fallback. */
+  source_frontmatter: string;
+  /** Declarative fallback: zero-based segment of the source path. */
+  else?: { path_segment: number };
+}
+
+/** A $0 regex detector. Matches are always intersected with registry membership. */
+export interface OntologyLinkingPattern {
+  form: string;
+  flags?: string;
+  /** Kept declarative for consumers; L4a never emits a non-member expansion. */
+  expand?: { ranges?: string };
+  /** Normalized to `required`; values outside the registry are never emitted. */
+  membership?: "required";
+}
+
+/**
+ * Bounded trigger enum deciding when the opt-in `llm` detector may propose
+ * spans. There is NO free-form expression: hybrid recall only calls the model
+ * when the declared condition over the $0 detectors' output holds.
+ */
+export type OntologyLinkLlmTrigger =
+  | "zero_candidates"
+  | "unresolved_candidates"
+  | "below_min_candidates";
+
+/**
+ * Declarative configuration for the `llm` detector. The model PROPOSES typed
+ * spans only; resolution stays with graphify's exact/none resolver + the
+ * verbatim gate. Budget/dry_run are honored before any provider call is made.
+ */
+export interface OntologyLinkLlmConfig {
+  trigger: OntologyLinkLlmTrigger;
+  /** Non-negative USD ceiling. `0` disables the detector (no proposals). */
+  budget_usd?: number;
+  /** When true, never make a paid proposal call for this detector. */
+  dry_run?: boolean;
+  /** Companion threshold for `below_min_candidates` (defaults to 1). */
+  min_candidates?: number;
+}
+
+export type OntologyLinkDetector =
+  | "lexicon"
+  | "pattern"
+  | "llm"
+  | { pattern: OntologyLinkingPattern }
+  | { llm: OntologyLinkLlmConfig };
+
+export interface OntologyLinkingResolve {
+  mode: "exact" | "none";
+}
+
+export interface OntologyLinkingEvidence {
+  verbatim: "required";
+  context_window?: number;
+}
+
+/**
+ * Typed entity-linking declaration. Every field is optional at the profile
+ * boundary; presets are expanded into the three explicit axes at load time.
+ */
+export interface OntologyNodeTypeLinking {
+  preset?: string;
+  normalize?: OntologyNodeTypeNormalize;
+  partition_from?: OntologyLinkingPartitionFrom;
+  detect?: OntologyLinkDetector[];
+  /** Convenience spelling for profile authors; normalized into `detect`. */
+  patterns?: OntologyLinkingPattern[];
+  resolve?: "exact" | "none" | OntologyLinkingResolve;
+  evidence?: Partial<OntologyLinkingEvidence>;
+}
+
+/** Portable fingerprint of the effective normalizer; runtime paths are absent. */
+export interface EntityNormalizerDescriptor {
+  contract: "graphify_entity_normalizer_v1";
+  builtins: string[];
+  export?: string;
+  module_sha256?: string;
+  normalizer_hash: string;
+}
+
+export interface NormalizedOntologyNodeTypeLinking {
+  preset?: string;
+  normalize?: OntologyNodeTypeNormalize;
+  partition_from?: OntologyLinkingPartitionFrom;
+  detect: OntologyLinkDetector[];
+  resolve: OntologyLinkingResolve;
+  evidence: OntologyLinkingEvidence;
+  normalizer: EntityNormalizerDescriptor;
+}
+
 export interface OntologyNodeType {
   aliases?: string[];
   registry?: string;
   source_backed?: boolean;
   status_policy?: string;
+  linking?: OntologyNodeTypeLinking;
   /**
    * Per-node-type visual encoding override consumed by the static studio scene
    * builder (`studio-scene.ts`): `shape` / `fill` / `border` drive the glyph.
    * (`color_hex` is accepted + format-validated but inert — see above.)
    */
   visual_encoding?: OntologyVisualEncoding;
+}
+
+/** Node-type configuration after the L3 linking contract has been compiled. */
+export interface NormalizedOntologyNodeType extends Omit<OntologyNodeType, "linking"> {
+  linking?: NormalizedOntologyNodeTypeLinking;
 }
 
 export interface OntologyRelationType {
@@ -735,6 +866,8 @@ export interface OntologyRegistrySpec {
   label_column?: string;
   alias_columns?: string[];
   node_type?: string;
+  /** Registry column that scopes label and alias identity. */
+  partition_column?: string;
   bound_source_path?: string;
 }
 
@@ -1042,6 +1175,8 @@ export interface NormalizedOntologyRegistrySpec {
   label_column: string;
   alias_columns: string[];
   node_type: string;
+  /** Present only for registries whose labels and aliases are partition-scoped. */
+  partition_column?: string;
   bound_source_path?: string;
 }
 
@@ -1071,7 +1206,7 @@ export interface NormalizedOntologyProfile {
   default_language: string;
   sourcePath?: string;
   profile_hash: string;
-  node_types: Record<string, OntologyNodeType>;
+  node_types: Record<string, NormalizedOntologyNodeType>;
   relation_types: Record<string, NormalizedOntologyRelationType>;
   registries: Record<string, NormalizedOntologyRegistrySpec>;
   citation_policy: Required<OntologyCitationPolicy>;
@@ -1101,6 +1236,8 @@ export interface RegistryRecord {
   label: string;
   aliases: string[];
   nodeType: string;
+  /** Present only when the registry declares partition_column. */
+  partition?: string;
   sourceFile: string;
   raw: Record<string, unknown>;
 }
