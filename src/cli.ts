@@ -28,6 +28,7 @@ import type {
   NormalizedOntologyProfile,
   NormalizedProjectConfig,
   RegistryRecord,
+  TypedEntityOccurrenceV1,
 } from "./types.js";
 import { runConfiguredDataprep, type ProfileState } from "./configured-dataprep.js";
 import {
@@ -54,6 +55,12 @@ import { normalizeSearchText, scoreSearchText } from "./search.js";
 import { makeGraphPortable, projectRootLabel, scanPortableGraphifyArtifacts } from "./portable-artifacts.js";
 import { loadOntologyPatchContext } from "./ontology-patch-context.js";
 import { linkEntities, writeEntityLinkingArtifacts } from "./entity-linking.js";
+import {
+  evaluateOccurrences,
+  formatEvaluationReport,
+  GoldValidationError,
+  parseGold,
+} from "./profile-evaluate.js";
 import { persistCommunityLabels, resolveCommunityLabels } from "./community-labels.js";
 import type { WikiDescriptionSidecarIndex } from "./wiki-descriptions.js";
 import { replaceOrAppendSection } from "./skill-install.js";
@@ -135,6 +142,33 @@ function resolvePortableCheckDir(inputPath: string = ".graphify"): string {
 
 function readJson<T>(path: string): T {
   return JSON.parse(readFileSync(resolve(path), "utf-8")) as T;
+}
+
+/** Coerce an unknown `{ metric: number }` config block into numeric thresholds. */
+function coerceThresholds(value: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    for (const [metric, raw] of Object.entries(value as Record<string, unknown>)) {
+      if (typeof raw === "number" && Number.isFinite(raw)) out[metric] = raw;
+    }
+  }
+  return out;
+}
+
+/** Parse repeatable `--floor metric=value` flags. Returns null on a bad value. */
+function parseThresholdFlags(flags: unknown): Record<string, number> | null {
+  const out: Record<string, number> = {};
+  if (!Array.isArray(flags)) return out;
+  for (const flag of flags) {
+    if (typeof flag !== "string") return null;
+    const eq = flag.indexOf("=");
+    if (eq <= 0) return null;
+    const metric = flag.slice(0, eq).trim();
+    const value = Number.parseFloat(flag.slice(eq + 1).trim());
+    if (!metric || !Number.isFinite(value)) return null;
+    out[metric] = value;
+  }
+  return out;
 }
 
 interface LinkRuntimeContext {
@@ -2874,6 +2908,106 @@ export async function main(): Promise<void> {
         console.log(profileValidationResultToMarkdown(result));
       }
       if (!result.valid) process.exit(1);
+    });
+
+  // graphify profile evaluate  (L5)
+  // Deterministic, $0 (no LLM) measurement of a `graphify link` run against a
+  // hand-labelled gold in the SAME occurrence schema. Emits evaluation.json and
+  // a CI gate: exit 0 iff validation + floors + ceilings pass, non-zero
+  // otherwise. Precision and unresolved-rate are always reported together.
+  profile
+    .command("evaluate")
+    .description("Measure a link run's occurrences.json against a gold set ($0, deterministic; gate on floors/ceilings)")
+    .requiredOption("--run <path>", "occurrences.json produced by graphify link")
+    .requiredOption("--gold <path>", "gold occurrence set (graphify_typed_linking_gold_v1 envelope)")
+    .option("--out <path>", "Write evaluation.json here")
+    .option("--profile-state <path>", "Stamp profile_hash + normalizer_hashes from a profile state")
+    .option("--corpus <root>", "Corpus root to verify gold raw_span slices (stale-gold detection)")
+    .option("--floors <path>", "JSON gate config { floors, ceilings } (or an { evaluation } block)")
+    .option("--floor <metric=value>", "Floor override metric=value (repeatable)", (value: string, acc: string[]) => [...acc, value], [] as string[])
+    .option("--ceiling <metric=value>", "Ceiling override metric=value (repeatable)", (value: string, acc: string[]) => [...acc, value], [] as string[])
+    .option("--json", "Print evaluation.json to stdout instead of the report")
+    .action(async (opts) => {
+      const run = readJson<unknown>(opts.run);
+      let gold;
+      try {
+        gold = parseGold(readJson<unknown>(opts.gold));
+      } catch (error) {
+        if (error instanceof GoldValidationError) {
+          console.error(`profile evaluate: ${error.message}`);
+          process.exitCode = 1;
+          return;
+        }
+        throw error;
+      }
+
+      const floors: Record<string, number> = {};
+      const ceilings: Record<string, number> = {};
+      if (opts.floors) {
+        const raw = readJson<Record<string, unknown>>(opts.floors);
+        const block = (raw && typeof raw.evaluation === "object" && raw.evaluation !== null ? raw.evaluation : raw) as Record<string, unknown>;
+        Object.assign(floors, coerceThresholds(block.floors));
+        Object.assign(ceilings, coerceThresholds(block.ceilings));
+      }
+      const flagFloors = parseThresholdFlags(opts.floor);
+      const flagCeilings = parseThresholdFlags(opts.ceiling);
+      if (flagFloors === null || flagCeilings === null) {
+        console.error("profile evaluate: --floor/--ceiling must be metric=value with a numeric value");
+        process.exitCode = 1;
+        return;
+      }
+      Object.assign(floors, flagFloors);
+      Object.assign(ceilings, flagCeilings);
+
+      let profileHash: string | null = null;
+      let normalizerHashes: Record<string, string> = {};
+      if (opts.profileState) {
+        const runtime = loadLinkRuntimeContext(resolve(opts.profileState));
+        profileHash = runtime.profile.profile_hash ?? null;
+        for (const [nodeType, config] of Object.entries(runtime.profile.node_types)) {
+          const hash = config.linking?.normalizer?.normalizer_hash;
+          if (hash) normalizerHashes[nodeType] = hash;
+        }
+      }
+
+      let corpusSlice: ((occurrence: TypedEntityOccurrenceV1) => string | null) | undefined;
+      if (opts.corpus) {
+        const corpusRoot = resolve(opts.corpus);
+        corpusSlice = (occurrence) => {
+          const path = resolve(corpusRoot, occurrence.source_file);
+          if (!existsSync(path)) return null;
+          const raw = readFileSync(path, "utf-8");
+          return raw.slice(occurrence.offsets.start, occurrence.offsets.end);
+        };
+      }
+
+      let result;
+      try {
+        result = evaluateOccurrences({
+          run: run as TypedEntityOccurrenceV1[],
+          gold,
+          floors,
+          ceilings,
+          profileHash,
+          normalizerHashes,
+          ...(corpusSlice ? { corpusSlice } : {}),
+        });
+      } catch (error) {
+        if (error instanceof GoldValidationError) {
+          console.error(`profile evaluate: ${error.message}`);
+          process.exitCode = 1;
+          return;
+        }
+        throw error;
+      }
+
+      if (opts.out) writeJson(resolve(opts.out), result);
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(formatEvaluationReport(result));
+      }
+      if (result.gate === "fail") process.exitCode = 1;
     });
 
   profile
