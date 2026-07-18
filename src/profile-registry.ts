@@ -10,29 +10,46 @@ import type {
   RegistryRecord,
 } from "./types.js";
 
-function readRegistryRows(path: string): Array<Record<string, unknown>> {
+interface RegistryRows {
+  rows: Array<Record<string, unknown>>;
+  columns: Set<string>;
+}
+
+function columnsOf(rows: Array<Record<string, unknown>>): Set<string> {
+  return new Set(rows.flatMap((row) => Object.keys(row)));
+}
+
+function readRegistryRows(path: string): RegistryRows {
   const ext = extname(path).toLowerCase();
   const raw = readFileSync(path, "utf-8");
   if (ext === ".csv") {
-    return parseCsv(raw, {
+    const rows = parseCsv(raw, {
       columns: true,
       skip_empty_lines: true,
       trim: true,
     }) as Array<Record<string, unknown>>;
+    const [header = []] = parseCsv(raw, {
+      to_line: 1,
+      skip_empty_lines: true,
+      trim: true,
+    }) as string[][];
+    return { rows, columns: new Set(header) };
   }
   if (ext === ".json") {
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) {
       throw new Error(`registry file must contain an array: ${path}`);
     }
-    return parsed.map((item) => item as Record<string, unknown>);
+    const rows = parsed.map((item) => item as Record<string, unknown>);
+    return { rows, columns: columnsOf(rows) };
   }
   if (ext === ".yaml" || ext === ".yml") {
     const parsed = parseYaml(raw) as unknown;
     if (!Array.isArray(parsed)) {
       throw new Error(`registry file must contain an array: ${path}`);
     }
-    return parsed.map((item) => item as Record<string, unknown>);
+    const rows = parsed.map((item) => item as Record<string, unknown>);
+    return { rows, columns: columnsOf(rows) };
   }
   throw new Error(`unsupported registry file extension: ${ext || path}`);
 }
@@ -56,6 +73,12 @@ export function normalizeRegistryRecord(
   if (!label) {
     throw new Error(`${registryId} record ${id} is missing label_column ${registrySpec.label_column}`);
   }
+  const partition = registrySpec.partition_column
+    ? field(rawRecord, registrySpec.partition_column)
+    : undefined;
+  if (registrySpec.partition_column && !partition) {
+    throw new Error(`${registryId} record ${id} is missing partition_column ${registrySpec.partition_column}`);
+  }
   return {
     registryId,
     id,
@@ -64,6 +87,7 @@ export function normalizeRegistryRecord(
       .map((column) => field(rawRecord, column))
       .filter(Boolean),
     nodeType: registrySpec.node_type,
+    ...(partition ? { partition } : {}),
     sourceFile: resolve(sourceFile),
     raw: { ...rawRecord },
   };
@@ -77,7 +101,13 @@ export function loadProfileRegistry(
     throw new Error(`registries.${registryId} is not bound to a source file`);
   }
   const sourceFile = resolve(registrySpec.bound_source_path);
-  const records = readRegistryRows(sourceFile).map((rawRecord) =>
+  const { rows, columns } = readRegistryRows(sourceFile);
+  if (registrySpec.partition_column && !columns.has(registrySpec.partition_column)) {
+    throw new Error(
+      `registries.${registryId}.partition_column ${registrySpec.partition_column} does not exist in ${sourceFile}`,
+    );
+  }
+  const records = rows.map((rawRecord) =>
     normalizeRegistryRecord(registryId, registrySpec, rawRecord, sourceFile),
   );
   const seen = new Set<string>();
@@ -127,6 +157,7 @@ export function registryRecordsToExtraction(
         node_type: record.nodeType,
         registry_id: record.registryId,
         registry_record_id: record.id,
+        ...(record.partition ? { registry_partition: record.partition } : {}),
         aliases: record.aliases,
         status: "validated",
         profile_id: profile.id,

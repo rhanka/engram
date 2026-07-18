@@ -103,6 +103,22 @@ function nodeTerms(node: OntologyPatchNode): string[] {
   ]);
 }
 
+function violatesPartitionScope(
+  context: OntologyPatchContext,
+  nodeType: string,
+  left: OntologyPatchNode,
+  right: OntologyPatchNode,
+): boolean {
+  const registryId = context.profile.node_types?.[nodeType]?.registry;
+  if (!registryId || !context.profile.registries?.[registryId]?.partition_column) return false;
+
+  return left.registry_id !== registryId
+    || right.registry_id !== registryId
+    || !left.registry_partition
+    || !right.registry_partition
+    || left.registry_partition !== right.registry_partition;
+}
+
 // --- Fuzzy tier ------------------------------------------------------------
 //
 // A LOWER-confidence tier over the exact-normalized-label tier. It compares
@@ -805,7 +821,12 @@ export function generateOntologyReconciliationCandidates(
       const left = comparableNodes[i]!;
       const right = comparableNodes[j]!;
       // Type-guard applies AFTER schema hygiene has canonicalized types.
-      if (left.type !== right.type) continue;
+      if (!left.type || left.type !== right.type) continue;
+
+      // Partitioned registries scope both reconciliation tiers. This guard is
+      // deliberately before sharedTerms so a cross-partition label can never
+      // become a score-1.0 exact candidate.
+      if (violatesPartitionScope(context, left.type, left, right)) continue;
 
       const leftTerms = new Set(nodeTerms(left));
       const sharedTerms = nodeTerms(right).filter((term) => leftTerms.has(term));

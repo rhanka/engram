@@ -56,6 +56,7 @@ export interface GraphNode {
   node_type?: string;
   registry_id?: string;
   registry_record_id?: string;
+  registry_partition?: string;
   registry_refs?: string[];
   aliases?: string[];
   status?: OntologyStatus;
@@ -757,6 +758,8 @@ export interface OntologyRegistrySpec {
   label_column?: string;
   alias_columns?: string[];
   node_type?: string;
+  /** Registry column that scopes label and alias identity. */
+  partition_column?: string;
   bound_source_path?: string;
 }
 
@@ -1064,6 +1067,8 @@ export interface NormalizedOntologyRegistrySpec {
   label_column: string;
   alias_columns: string[];
   node_type: string;
+  /** Present only for registries whose labels and aliases are partition-scoped. */
+  partition_column?: string;
   bound_source_path?: string;
 }
 
@@ -1123,6 +1128,8 @@ export interface RegistryRecord {
   label: string;
   aliases: string[];
   nodeType: string;
+  /** Present only when the registry declares partition_column. */
+  partition?: string;
   sourceFile: string;
   raw: Record<string, unknown>;
 }
