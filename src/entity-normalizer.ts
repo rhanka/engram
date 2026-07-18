@@ -8,6 +8,10 @@ import type {
   EntityNormalizerDescriptor,
   NormalizedOntologyNodeType,
   NormalizedOntologyProfile,
+  OntologyLinkDetector,
+  OntologyLinkingEvidence,
+  OntologyLinkingPartitionFrom,
+  OntologyLinkingResolve,
   OntologyNodeTypeLinking,
   OntologyNodeTypeNormalize,
   RegistryRecord,
@@ -154,10 +158,104 @@ function descriptorFor(
   };
 }
 
+const LINK_PRESETS = new Set(["gazetteer-exact", "open-extraction", "hybrid-recall"]);
+
+function normalizePattern(value: unknown, context: string): Extract<OntologyLinkDetector, { pattern: unknown }> {
+  if (!isRecord(value) || typeof value.form !== "string" || !value.form.trim()) {
+    throw new Error(`${context}.pattern.form must be a non-empty regex string`);
+  }
+  const flags = value.flags === undefined ? undefined : String(value.flags);
+  try {
+    // Validate at profile load, before a corpus document is read.
+    new RegExp(value.form, flags);
+  } catch (error) {
+    throw new Error(`${context}.pattern.form is not a valid regex: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (value.membership !== undefined && value.membership !== "required") {
+    throw new Error(`${context}.pattern.membership must be "required"`);
+  }
+  const expand = isRecord(value.expand) && typeof value.expand.ranges === "string"
+    ? { ranges: value.expand.ranges }
+    : undefined;
+  return {
+    pattern: {
+      form: value.form,
+      ...(flags ? { flags } : {}),
+      ...(expand ? { expand } : {}),
+      membership: "required",
+    },
+  };
+}
+
+function normalizeDetector(value: unknown, context: string): OntologyLinkDetector {
+  if (value === "lexicon" || value === "pattern" || value === "llm") return value;
+  if (!isRecord(value)) throw new Error(`${context} must be lexicon, pattern, llm, or a detector object`);
+  if ("pattern" in value) return normalizePattern(value.pattern, context);
+  if ("llm" in value) {
+    if (value.llm !== undefined && !isRecord(value.llm)) throw new Error(`${context}.llm must be an object`);
+    return { llm: isRecord(value.llm) ? { ...value.llm } : {} };
+  }
+  throw new Error(`${context} must have a pattern or llm key`);
+}
+
+function normalizePartitionFrom(value: unknown, context: string): OntologyLinkingPartitionFrom | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value) || typeof value.source_frontmatter !== "string" || !value.source_frontmatter.trim()) {
+    throw new Error(`${context}.partition_from.source_frontmatter must be a non-empty string`);
+  }
+  let fallback: { path_segment: number } | undefined;
+  if (value.else !== undefined) {
+    if (!isRecord(value.else) || !Number.isInteger(value.else.path_segment) || Number(value.else.path_segment) < 0) {
+      throw new Error(`${context}.partition_from.else.path_segment must be a non-negative integer`);
+    }
+    fallback = { path_segment: Number(value.else.path_segment) };
+  }
+  return {
+    source_frontmatter: value.source_frontmatter.trim(),
+    ...(fallback ? { else: fallback } : {}),
+  };
+}
+
+function normalizeResolve(value: unknown, context: string): OntologyLinkingResolve {
+  const mode = typeof value === "string" ? value : isRecord(value) ? value.mode : undefined;
+  if (mode === undefined) return { mode: "exact" };
+  if (mode !== "exact" && mode !== "none") throw new Error(`${context}.resolve.mode must be exact or none`);
+  return { mode };
+}
+
+function normalizeEvidence(value: unknown, context: string): OntologyLinkingEvidence {
+  if (value === undefined) return { verbatim: "required" };
+  if (!isRecord(value) || (value.verbatim !== undefined && value.verbatim !== "required")) {
+    throw new Error(`${context}.evidence.verbatim must be "required"`);
+  }
+  const contextWindow = value.context_window;
+  if (contextWindow !== undefined && (!Number.isFinite(contextWindow) || Number(contextWindow) < 0)) {
+    throw new Error(`${context}.evidence.context_window must be a non-negative number`);
+  }
+  return {
+    verbatim: "required",
+    ...(contextWindow === undefined ? {} : { context_window: Number(contextWindow) }),
+  };
+}
+
+function presetDetectors(preset: string): OntologyLinkDetector[] {
+  switch (preset) {
+    case "gazetteer-exact":
+      return ["lexicon", "pattern"];
+    case "open-extraction":
+      return ["llm"];
+    case "hybrid-recall":
+      return ["lexicon", "pattern", "llm"];
+    default:
+      throw new Error(`unknown linking preset ${preset}`);
+  }
+}
+
 /**
- * Normalize the declarative L3 linking block. `preset` is deliberately stored
- * but not executed until L4. The descriptor contains no absolute module path;
- * it is the portable hash input for a configured normalizer.
+ * Normalize the declarative linking block. Presets expand here into explicit
+ * detectors/resolution/evidence so downstream passes never interpret an opaque
+ * strategy enum. The descriptor contains no absolute module path; it is the
+ * portable hash input for a configured normalizer.
  */
 export function normalizeNodeTypeLinking(
   linking: OntologyNodeTypeLinking,
@@ -167,6 +265,10 @@ export function normalizeNodeTypeLinking(
   if (!isRecord(linking)) throw new Error(`${context}.linking must be an object`);
   if (linking.preset !== undefined && (typeof linking.preset !== "string" || !linking.preset.trim())) {
     throw new Error(`${context}.linking.preset must be a non-empty string`);
+  }
+  const preset = String(linking.preset ?? "gazetteer-exact").trim();
+  if (!LINK_PRESETS.has(preset)) {
+    throw new Error(`${context}.linking.preset must be one of ${Array.from(LINK_PRESETS).join(", ")}`);
   }
   if (linking.normalize !== undefined && !isRecord(linking.normalize)) {
     throw new Error(`${context}.linking.normalize must be an object`);
@@ -182,9 +284,27 @@ export function normalizeNodeTypeLinking(
       ...(linking.normalize.builtin === undefined ? {} : { builtin: normalizeBuiltins(linking.normalize, context) }),
       ...(linking.normalize.fn === undefined ? {} : { fn: linking.normalize.fn.trim() }),
     };
+  if (linking.detect !== undefined && !Array.isArray(linking.detect)) {
+    throw new Error(`${context}.linking.detect must be an array`);
+  }
+  if (linking.patterns !== undefined && !Array.isArray(linking.patterns)) {
+    throw new Error(`${context}.linking.patterns must be an array`);
+  }
+  const configuredDetectors = linking.detect === undefined
+    ? presetDetectors(preset)
+    : linking.detect.map((detector, index) => normalizeDetector(detector, `${context}.linking.detect[${index}]`));
+  const patterns = (linking.patterns ?? []).map((pattern, index) =>
+    normalizePattern(pattern, `${context}.linking.patterns[${index}]`),
+  );
   return {
-    ...(linking.preset === undefined ? {} : { preset: linking.preset.trim() }),
+    preset,
     ...(normalize === undefined ? {} : { normalize }),
+    ...(normalizePartitionFrom(linking.partition_from, context) ? {
+      partition_from: normalizePartitionFrom(linking.partition_from, context)!,
+    } : {}),
+    detect: [...configuredDetectors, ...patterns],
+    resolve: normalizeResolve(linking.resolve, context),
+    evidence: normalizeEvidence(linking.evidence, context),
     normalizer: descriptorFor(normalize, profile, context),
   };
 }

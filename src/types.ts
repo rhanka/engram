@@ -737,13 +737,53 @@ export interface OntologyNodeTypeNormalize {
   fn?: string;
 }
 
+/** Document metadata binding used to scope a partitioned registry. */
+export interface OntologyLinkingPartitionFrom {
+  /** Front-matter field preferred over any path-layout fallback. */
+  source_frontmatter: string;
+  /** Declarative fallback: zero-based segment of the source path. */
+  else?: { path_segment: number };
+}
+
+/** A $0 regex detector. Matches are always intersected with registry membership. */
+export interface OntologyLinkingPattern {
+  form: string;
+  flags?: string;
+  /** Kept declarative for consumers; L4a never emits a non-member expansion. */
+  expand?: { ranges?: string };
+  /** Normalized to `required`; values outside the registry are never emitted. */
+  membership?: "required";
+}
+
+export type OntologyLinkDetector =
+  | "lexicon"
+  | "pattern"
+  | "llm"
+  | { pattern: OntologyLinkingPattern }
+  | { llm: Record<string, unknown> };
+
+export interface OntologyLinkingResolve {
+  mode: "exact" | "none";
+}
+
+export interface OntologyLinkingEvidence {
+  verbatim: "required";
+  context_window?: number;
+}
+
 /**
- * Typed entity-linking declaration. `preset` is parsed and stored in L3 but
- * intentionally not executed until the L4 linking producer exists.
+ * Typed entity-linking declaration. Every field is optional at the profile
+ * boundary; presets are expanded into the three explicit axes at load time.
  */
 export interface OntologyNodeTypeLinking {
   preset?: string;
   normalize?: OntologyNodeTypeNormalize;
+  partition_from?: OntologyLinkingPartitionFrom;
+  detect?: OntologyLinkDetector[];
+  /** Convenience spelling for profile authors; normalized into `detect`. */
+  patterns?: OntologyLinkingPattern[];
+  resolve?: "exact" | "none" | OntologyLinkingResolve;
+  evidence?: Partial<OntologyLinkingEvidence>;
 }
 
 /** Portable fingerprint of the effective normalizer; runtime paths are absent. */
@@ -758,6 +798,10 @@ export interface EntityNormalizerDescriptor {
 export interface NormalizedOntologyNodeTypeLinking {
   preset?: string;
   normalize?: OntologyNodeTypeNormalize;
+  partition_from?: OntologyLinkingPartitionFrom;
+  detect: OntologyLinkDetector[];
+  resolve: OntologyLinkingResolve;
+  evidence: OntologyLinkingEvidence;
   normalizer: EntityNormalizerDescriptor;
 }
 
