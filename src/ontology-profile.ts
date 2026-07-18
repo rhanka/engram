@@ -12,6 +12,7 @@ import type {
   NormalizedOntologyEvidencePolicy,
   NormalizedOntologyHierarchySpec,
   NormalizedOntologyInferencePolicy,
+  NormalizedOntologyNodeType,
   NormalizedOntologyProfileOutputs,
   NormalizedOntologyRegistrySpec,
   NormalizedOntologyRelationType,
@@ -29,6 +30,7 @@ import type {
   OntologyRelationType,
   OntologyStatusTransition,
 } from "./types.js";
+import { compileNormalizerByNodeType, normalizeNodeTypeLinking } from "./entity-normalizer.js";
 
 const DEFAULT_STATUSES = ["candidate", "attached", "needs_review", "validated", "rejected", "superseded"];
 const VALID_CITATION_MINIMUMS = new Set(["file", "page", "section", "paragraph"]);
@@ -64,13 +66,16 @@ function normalizeStringMap<T>(value: unknown): Record<string, T> {
   ) as Record<string, T>;
 }
 
-function stableForHash(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stableForHash);
+function stableForHash(value: unknown, path: string[] = []): unknown {
+  if (Array.isArray(value)) return value.map((item, index) => stableForHash(item, [...path, String(index)]));
   if (typeof value === "object" && value !== null) {
     const result: Record<string, unknown> = {};
     for (const key of Object.keys(value as Record<string, unknown>).sort()) {
       if (key === "sourcePath" || key === "profile_hash" || key === "bound_source_path") continue;
-      result[key] = stableForHash((value as Record<string, unknown>)[key]);
+      // The local module path is runtime-only. Its portable descriptor (export
+      // name + file-content hash) is hashed instead under linking.normalizer.
+      if (key === "fn" && path.at(-1) === "normalize" && path.at(-2) === "linking") continue;
+      result[key] = stableForHash((value as Record<string, unknown>)[key], [...path, key]);
     }
     return result;
   }
@@ -103,6 +108,26 @@ function normalizeRegistry(registry: OntologyRegistrySpec): NormalizedOntologyRe
     node_type: String(registry.node_type ?? ""),
     ...(registry.partition_column ? { partition_column: String(registry.partition_column) } : {}),
     ...(registry.bound_source_path ? { bound_source_path: registry.bound_source_path } : {}),
+  };
+}
+
+function normalizeNodeType(
+  nodeType: OntologyNodeType,
+  sourcePath: string | undefined,
+  nodeTypeId: string,
+): NormalizedOntologyNodeType {
+  if (nodeType.linking === undefined) {
+    const { linking: _linking, ...withoutLinking } = nodeType;
+    return withoutLinking;
+  }
+  const profileLocation = sourcePath ? { sourcePath } : {};
+  return {
+    ...nodeType,
+    linking: normalizeNodeTypeLinking(
+      nodeType.linking,
+      profileLocation,
+      `node_types.${nodeTypeId}`,
+    ),
   };
 }
 
@@ -499,7 +524,9 @@ export function normalizeOntologyProfile(profile: OntologyProfile, sourcePath?: 
     version: String(profile.version),
     default_language: profile.default_language ?? "en",
     ...(sourcePath ? { sourcePath: resolve(sourcePath) } : profile.sourcePath ? { sourcePath: profile.sourcePath } : {}),
-    node_types: nodeTypes,
+    node_types: Object.fromEntries(
+      Object.entries(nodeTypes).map(([id, nodeType]) => [id, normalizeNodeType(nodeType, sourcePath ?? profile.sourcePath, id)]),
+    ),
     relation_types: Object.fromEntries(
       Object.entries(relationTypes).map(([id, relation]) => [id, normalizeRelation(relation)]),
     ),
@@ -514,6 +541,10 @@ export function normalizeOntologyProfile(profile: OntologyProfile, sourcePath?: 
     class_hierarchies: normalizeClassHierarchies(profile.class_hierarchies),
     outputs: normalizeOutputs(profile.outputs),
   };
+
+  // Resolve module exports while the profile is loaded. Registry-key-specific
+  // checks happen later in loadProfileRegistries, before corpus scanning.
+  compileNormalizerByNodeType(normalized as NormalizedOntologyProfile);
 
   return {
     ...normalized,
