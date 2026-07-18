@@ -6,6 +6,7 @@ import {
   writeFileSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   renameSync,
   realpathSync,
   rmSync,
@@ -26,8 +27,9 @@ import type {
   InputScopeSource,
   NormalizedOntologyProfile,
   NormalizedProjectConfig,
+  RegistryRecord,
 } from "./types.js";
-import type { ProfileState } from "./configured-dataprep.js";
+import { runConfiguredDataprep, type ProfileState } from "./configured-dataprep.js";
 import {
   inspectInputScope,
   resolveCliInputScopeSelection,
@@ -51,6 +53,7 @@ import { DEFAULT_GRAPHIFY_STATE_DIR, defaultManifestPath, resolveGraphInputPath,
 import { normalizeSearchText, scoreSearchText } from "./search.js";
 import { makeGraphPortable, projectRootLabel, scanPortableGraphifyArtifacts } from "./portable-artifacts.js";
 import { loadOntologyPatchContext } from "./ontology-patch-context.js";
+import { linkEntities, writeEntityLinkingArtifacts } from "./entity-linking.js";
 import { persistCommunityLabels, resolveCommunityLabels } from "./community-labels.js";
 import type { WikiDescriptionSidecarIndex } from "./wiki-descriptions.js";
 import { replaceOrAppendSection } from "./skill-install.js";
@@ -132,6 +135,46 @@ function resolvePortableCheckDir(inputPath: string = ".graphify"): string {
 
 function readJson<T>(path: string): T {
   return JSON.parse(readFileSync(resolve(path), "utf-8")) as T;
+}
+
+interface LinkRuntimeContext {
+  root: string;
+  stateDir: string;
+  profile: NormalizedOntologyProfile;
+  registries: Record<string, RegistryRecord[]>;
+  sourceFiles: string[];
+}
+
+function linkingSourceFiles(detection: DetectionResult): string[] {
+  return [...(detection.files.document ?? []), ...(detection.files.paper ?? [])]
+    .filter((file): file is string => typeof file === "string")
+    .sort();
+}
+
+function loadLinkRuntimeContext(profileStatePath: string): LinkRuntimeContext {
+  const statePath = resolve(profileStatePath);
+  const profileDir = dirname(statePath);
+  const state = readJson<ProfileState>(statePath);
+  const profile = readJson<NormalizedOntologyProfile>(join(profileDir, "ontology-profile.normalized.json"));
+  const projectConfigPath = join(profileDir, "project-config.normalized.json");
+  const projectConfig = existsSync(projectConfigPath)
+    ? readJson<NormalizedProjectConfig>(projectConfigPath)
+    : undefined;
+  const registries: Record<string, RegistryRecord[]> = {};
+  const registriesDir = join(profileDir, "registries");
+  if (existsSync(registriesDir)) {
+    for (const file of readdirSync(registriesDir).filter((entry) => entry.endsWith(".json")).sort()) {
+      registries[file.slice(0, -".json".length)] = readJson<RegistryRecord[]>(join(registriesDir, file));
+    }
+  }
+  const detection = readJson<DetectionResult>(join(profileDir, "semantic-detection.json"));
+  return {
+    root: projectConfig?.configDir ?? dirname(resolve(state.project_config_path)),
+    stateDir: state.state_dir,
+    profile,
+    registries,
+    sourceFiles: linkingSourceFiles(detection),
+  };
 }
 
 function isJsonRecord(value: unknown): value is Record<string, unknown> {
@@ -4387,6 +4430,73 @@ export async function main(): Promise<void> {
           "The original duplicate-discard dropped citations a backfill cannot recover. " +
           "Re-extract the corpus for true exhaustive counts.",
       );
+    });
+
+  // ---------------------------------------------------------------------------
+  // graphify link [path]
+  // Deterministic document-centric typed entity linking. It consumes the
+  // configured dataprep corpus (or an existing profile-state) and is explicitly
+  // opt-in: profiles without a linking block leave artifacts untouched.
+  // ---------------------------------------------------------------------------
+  program
+    .command("link [path]")
+    .description("Link verified entity mentions to configured registries (deterministic, no-key)")
+    .option("--profile-state <path>", "Path to configured .graphify/profile/profile-state.json")
+    .option("--node-types <list>", "Restrict to comma-separated linked node types")
+    .option("--preset <name>", "Override the profile linking preset for this run")
+    .option("--out <path>", "Occurrence list output path", ".graphify/ontology/occurrences.json")
+    .option("--dry-run", "Calculate occurrences without writing artifacts")
+    .action(async (linkPath = ".", opts) => {
+      const requestedRoot = resolve(linkPath);
+      let runtime: LinkRuntimeContext;
+      const defaultState = join(requestedRoot, ".graphify", "profile", "profile-state.json");
+      const statePath = opts.profileState ? resolve(requestedRoot, opts.profileState) : defaultState;
+      if (existsSync(statePath)) {
+        runtime = loadLinkRuntimeContext(statePath);
+      } else {
+        // First run: delegate corpus discovery/preparation to the configured
+        // dataprep owner instead of maintaining a second discovery path here.
+        const prepared = await runConfiguredDataprep(requestedRoot);
+        runtime = {
+          root: prepared.root,
+          stateDir: prepared.paths.stateDir,
+          profile: prepared.profile,
+          registries: prepared.registries,
+          sourceFiles: linkingSourceFiles(prepared.semanticDetection),
+        };
+      }
+      const nodeTypes = typeof opts.nodeTypes === "string"
+        ? opts.nodeTypes.split(",").map((value: string) => value.trim()).filter(Boolean)
+        : [];
+      const result = linkEntities({
+        root: runtime.root,
+        profile: runtime.profile,
+        registries: runtime.registries,
+        sourceFiles: runtime.sourceFiles,
+        ...(nodeTypes.length > 0 ? { nodeTypes } : {}),
+        ...(typeof opts.preset === "string" && opts.preset.trim() ? { preset: opts.preset.trim() } : {}),
+      });
+      if (result.noOp) {
+        console.log("link: no node_type declares linking; no-op. Existing occurrences.json unchanged.");
+        return;
+      }
+      const outputPath = resolve(runtime.root, opts.out);
+      if (opts.dryRun) {
+        console.log(
+          `link (dry-run): ${result.occurrences.length} occurrence(s) across ${result.scannedDocuments} document(s); no files written.`,
+        );
+      } else {
+        writeEntityLinkingArtifacts(dirname(outputPath), runtime.profile, result);
+        console.log(
+          `link: wrote ${result.occurrences.length} occurrence(s) from ${result.scannedDocuments} document(s) to ${outputPath}.`,
+        );
+      }
+      for (const finding of result.issues) {
+        const output = `link: ${finding.severity.toUpperCase()} ${finding.code}: ${finding.message}`;
+        if (finding.severity === "error") console.error(output);
+        else console.warn(output);
+      }
+      if (result.issues.some((finding) => finding.severity === "error")) process.exitCode = 1;
     });
 
   // ---------------------------------------------------------------------------

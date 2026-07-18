@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { compileNormalizerByNodeType } from "./entity-normalizer.js";
@@ -296,8 +296,27 @@ function compareOccurrences(left: TypedEntityOccurrenceV1, right: TypedEntityOcc
 function compileOccurrences(
   occurrences: TypedEntityOccurrenceV1[] | undefined,
   config: OntologyOutputConfig,
+  outputDir: string,
 ): { occurrences: TypedEntityOccurrenceV1[]; validationIssues: LinkValidationIssue[] } {
-  if (occurrences === undefined) return { occurrences: [], validationIssues: [] };
+  // A standalone `graphify link` run owns the canonical mention list. A later
+  // ontology compile without an explicit occurrences input must not replace
+  // that fresh list with L1's historical empty stub.
+  if (occurrences === undefined) {
+    const existingPath = join(outputDir, "occurrences.json");
+    if (!existsSync(existingPath)) return { occurrences: [], validationIssues: [] };
+    try {
+      const existing = JSON.parse(readFileSync(existingPath, "utf-8")) as unknown;
+      if (Array.isArray(existing)) {
+        return {
+          occurrences: (existing as TypedEntityOccurrenceV1[]).slice().sort(compareOccurrences),
+          validationIssues: [],
+        };
+      }
+    } catch {
+      // Preserve the historical empty fallback for unreadable/non-list files.
+    }
+    return { occurrences: [], validationIssues: [] };
+  }
 
   const allowedTypes = new Set(config.occurrence_node_types ?? []);
   const validationIssues: LinkValidationIssue[] = [];
@@ -384,7 +403,7 @@ export function compileOntologyOutputs(options: CompileOntologyOutputsOptions): 
 
   const normalizers = compileNormalizerByNodeType(options.profile);
   const { nodes, aliasIssues } = compileNodes(options.extraction, options.profile, options.config, normalizers);
-  const compiledOccurrences = compileOccurrences(options.occurrences, options.config);
+  const compiledOccurrences = compileOccurrences(options.occurrences, options.config, options.outputDir);
   const relations = compileRelations(options.extraction, nodes, options.config);
   const validationIssues = [...aliasIssues, ...compiledOccurrences.validationIssues];
   const wikiPageCount = writeWiki(options.outputDir, nodes, relations, options.config, options.descriptions);
