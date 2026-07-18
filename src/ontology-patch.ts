@@ -44,6 +44,9 @@ export interface OntologyPatchNode {
   aliases?: string[];
   normalized_terms?: string[];
   source_refs?: string[];
+  registry_id?: string;
+  registry_record_id?: string;
+  registry_partition?: string;
   registry_refs?: string[];
 }
 
