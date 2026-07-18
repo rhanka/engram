@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
+import { compileNormalizerByNodeType } from "./entity-normalizer.js";
+import type { EntityNormalizer, NormalizerByNodeType } from "./entity-normalizer.js";
 import type { OntologyPatchContext, OntologyPatchNode } from "./ontology-patch.js";
 
 export const ONTOLOGY_RECONCILIATION_CANDIDATES_SCHEMA = "graphify_ontology_reconciliation_candidates_v1" as const;
@@ -100,6 +102,16 @@ function nodeTerms(node: OntologyPatchNode): string[] {
     ...(node.label ? [normalizeTerm(node.label)] : []),
     ...(node.aliases ?? []).map(normalizeTerm),
     ...(node.normalized_terms ?? []).map(normalizeTerm),
+  ]);
+}
+
+/** Exact-tier terms only. Fuzzy keeps its own legacy tokenization below. */
+function exactNodeTerms(node: OntologyPatchNode, normalizers: NormalizerByNodeType): string[] {
+  const normalize = node.type ? normalizers[node.type] ?? normalizeTerm : normalizeTerm;
+  return uniqueSorted([
+    ...(node.label ? [normalize(node.label)] : []),
+    ...(node.aliases ?? []).map(normalize),
+    ...(node.normalized_terms ?? []).map(normalize),
   ]);
 }
 
@@ -700,9 +712,15 @@ function chooseCanonicalPair(a: OntologyPatchNode, b: OntologyPatchNode): {
   return a.id.localeCompare(b.id) <= 0 ? { canonical: a, candidate: b } : { canonical: b, candidate: a };
 }
 
-function candidateScore(sharedTerms: string[], canonical: OntologyPatchNode, candidate: OntologyPatchNode): number {
-  const canonicalLabel = canonical.label ? normalizeTerm(canonical.label) : null;
-  const candidateLabel = candidate.label ? normalizeTerm(candidate.label) : null;
+function candidateScore(
+  sharedTerms: string[],
+  canonical: OntologyPatchNode,
+  candidate: OntologyPatchNode,
+  normalizer: EntityNormalizer | undefined,
+): number {
+  const normalize = normalizer ?? normalizeTerm;
+  const canonicalLabel = canonical.label ? normalize(canonical.label) : null;
+  const candidateLabel = candidate.label ? normalize(candidate.label) : null;
   const exactLabelMatch = canonicalLabel !== null && canonicalLabel === candidateLabel && sharedTerms.includes(canonicalLabel);
   // Exact normalized-label match is the top tier: score 1.0 (canonical pair).
   // A shared non-label term (alias/normalized_term) is strong but sub-exact.
@@ -809,10 +827,12 @@ export function generateOntologyReconciliationCandidates(
   const fuzzyThreshold = options.fuzzyThreshold ?? DEFAULT_FUZZY_TOKEN_JACCARD_THRESHOLD;
   const cap = options.cap ?? DEFAULT_RECONCILIATION_CANDIDATE_CAP;
   const fuzzyExcludeTypes = new Set(options.fuzzyExcludeTypes ?? DEFAULT_FUZZY_EXCLUDE_TYPES);
+  const normalizers = compileNormalizerByNodeType(context.profile);
 
   const candidates: OntologyReconciliationCandidate[] = [];
   const emittedPairs = new Set<string>();
   const comparableNodes = context.nodes
+    // Keep the fuzzy tier's legacy admission/tokenization independent from N.
     .filter((node) => node.type && nodeTerms(node).length > 0)
     .sort((a, b) => a.id.localeCompare(b.id));
 
@@ -828,8 +848,8 @@ export function generateOntologyReconciliationCandidates(
       // become a score-1.0 exact candidate.
       if (violatesPartitionScope(context, left.type, left, right)) continue;
 
-      const leftTerms = new Set(nodeTerms(left));
-      const sharedTerms = nodeTerms(right).filter((term) => leftTerms.has(term));
+      const leftTerms = new Set(exactNodeTerms(left, normalizers));
+      const sharedTerms = exactNodeTerms(right, normalizers).filter((term) => leftTerms.has(term));
 
       const { canonical, candidate } = chooseCanonicalPair(left, right);
       const pairKey = `${canonical.id}|${candidate.id}`;
@@ -851,7 +871,7 @@ export function generateOntologyReconciliationCandidates(
           id: candidateId(canonical, candidate, sharedTerms),
           kind: "entity_match",
           status: "candidate",
-          score: candidateScore(sharedTerms, canonical, candidate),
+          score: candidateScore(sharedTerms, canonical, candidate, normalizers[left.type]),
           tier: "exact",
           candidate_id: candidate.id,
           canonical_id: canonical.id,

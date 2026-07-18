@@ -3,6 +3,7 @@ import { extname, resolve } from "node:path";
 import { parse as parseCsv } from "csv-parse/sync";
 import { parse as parseYaml } from "yaml";
 
+import { auditNormalizerContracts, compileNormalizerByNodeType } from "./entity-normalizer.js";
 import type {
   Extraction,
   NormalizedOntologyProfile,
@@ -123,12 +124,16 @@ export function loadProfileRegistry(
 export function loadProfileRegistries(
   profile: NormalizedOntologyProfile,
 ): Record<string, RegistryRecord[]> {
-  return Object.fromEntries(
+  const registries = Object.fromEntries(
     Object.entries(profile.registries).map(([registryId, registrySpec]) => [
       registryId,
       loadProfileRegistry(registryId, registrySpec),
     ]),
-  );
+  ) as Record<string, RegistryRecord[]>;
+  // The whole registry is now in memory, but no corpus source has been read:
+  // this is the L3 $0 boundary for idempotence and partition-scoped anti-merge.
+  auditNormalizerContracts(profile, registries, compileNormalizerByNodeType(profile));
+  return registries;
 }
 
 function safeIdPart(value: string): string {

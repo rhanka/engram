@@ -728,17 +728,56 @@ export interface OntologyVisualEncoding {
   border?: OntologyVisualEncodingBorder;
 }
 
+/**
+ * Declarative composition for a registry entity normalizer. Built-ins are
+ * applied left-to-right, then the optional synchronous local ESM export runs.
+ */
+export interface OntologyNodeTypeNormalize {
+  builtin?: string[];
+  fn?: string;
+}
+
+/**
+ * Typed entity-linking declaration. `preset` is parsed and stored in L3 but
+ * intentionally not executed until the L4 linking producer exists.
+ */
+export interface OntologyNodeTypeLinking {
+  preset?: string;
+  normalize?: OntologyNodeTypeNormalize;
+}
+
+/** Portable fingerprint of the effective normalizer; runtime paths are absent. */
+export interface EntityNormalizerDescriptor {
+  contract: "graphify_entity_normalizer_v1";
+  builtins: string[];
+  export?: string;
+  module_sha256?: string;
+  normalizer_hash: string;
+}
+
+export interface NormalizedOntologyNodeTypeLinking {
+  preset?: string;
+  normalize?: OntologyNodeTypeNormalize;
+  normalizer: EntityNormalizerDescriptor;
+}
+
 export interface OntologyNodeType {
   aliases?: string[];
   registry?: string;
   source_backed?: boolean;
   status_policy?: string;
+  linking?: OntologyNodeTypeLinking;
   /**
    * Per-node-type visual encoding override consumed by the static studio scene
    * builder (`studio-scene.ts`): `shape` / `fill` / `border` drive the glyph.
    * (`color_hex` is accepted + format-validated but inert — see above.)
    */
   visual_encoding?: OntologyVisualEncoding;
+}
+
+/** Node-type configuration after the L3 linking contract has been compiled. */
+export interface NormalizedOntologyNodeType extends Omit<OntologyNodeType, "linking"> {
+  linking?: NormalizedOntologyNodeTypeLinking;
 }
 
 export interface OntologyRelationType {
@@ -1098,7 +1137,7 @@ export interface NormalizedOntologyProfile {
   default_language: string;
   sourcePath?: string;
   profile_hash: string;
-  node_types: Record<string, OntologyNodeType>;
+  node_types: Record<string, NormalizedOntologyNodeType>;
   relation_types: Record<string, NormalizedOntologyRelationType>;
   registries: Record<string, NormalizedOntologyRegistrySpec>;
   citation_policy: Required<OntologyCitationPolicy>;
