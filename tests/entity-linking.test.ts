@@ -68,14 +68,14 @@ afterEach(() => {
 });
 
 describe("graphify link deterministic core", () => {
-  it("links a lexicon mention only within its frontmatter partition with raw-file offsets", () => {
+  it("links a lexicon mention only within its frontmatter partition with raw-file offsets", async () => {
     const root = tempRoot();
     const source = writeDoc(root, "compton.md", "---\nmunicipality: compton\n---\n\nLe code C-15 est applicable.\n");
     const normalized = profile(root, {
       preset: "gazetteer-exact",
       partition_from: { source_frontmatter: "municipality" },
     });
-    const result = linkEntities({
+    const result = await linkEntities({
       root,
       profile: normalized,
       registries: { zones: [record("compton-c15", "C-15", "compton"), record("other-c15", "C-15", "other")] },
@@ -96,10 +96,10 @@ describe("graphify link deterministic core", () => {
     expect(readFileSync(source, "utf-8").slice(occurrence.offsets.start, occurrence.offsets.end)).toBe(occurrence.raw_span);
   });
 
-  it("fails closed before detection when a partitioned document has no binding", () => {
+  it("fails closed before detection when a partitioned document has no binding", async () => {
     const root = tempRoot();
     const source = writeDoc(root, "missing.md", "C-15\n");
-    const result = linkEntities({
+    const result = await linkEntities({
       root,
       profile: profile(root, { preset: "gazetteer-exact", partition_from: { source_frontmatter: "municipality" } }),
       registries: { zones: [record("compton-c15", "C-15")] },
@@ -110,10 +110,10 @@ describe("graphify link deterministic core", () => {
     expect(result.issues).toEqual(expect.arrayContaining([expect.objectContaining({ code: "LINK_PARTITION_UNRESOLVED", severity: "error" })]));
   });
 
-  it("does not turn a pattern-shaped non-member into an invented registry value", () => {
+  it("does not turn a pattern-shaped non-member into an invented registry value", async () => {
     const root = tempRoot();
     const source = writeDoc(root, "compton.md", "---\nmunicipality: compton\n---\n\nC-999\n");
-    const result = linkEntities({
+    const result = await linkEntities({
       root,
       profile: profile(root, {
         detect: [{ pattern: { form: "C-\\d+" } }],
@@ -127,7 +127,7 @@ describe("graphify link deterministic core", () => {
     expect(result.occurrences).toEqual([]);
   });
 
-  it("keeps exact linked, ambiguous, and unlinked buckets deterministic", () => {
+  it("keeps exact linked, ambiguous, and unlinked buckets deterministic", async () => {
     const root = tempRoot();
     const source = writeDoc(root, "buckets.md", "---\nmunicipality: compton\n---\n\nC-15\n");
     const normalized = profile(root, { preset: "gazetteer-exact", partition_from: { source_frontmatter: "municipality" } });
@@ -144,7 +144,7 @@ describe("graphify link deterministic core", () => {
     expect(resolveEntityCandidate({ ...candidate, raw_span: "C-99" }, unique, normalizer, "exact")).toMatchObject({ resolution: "unlinked" });
     expect(resolveEntityCandidate(candidate, unique, normalizer, "none")).toEqual({ resolution: "unlinked", candidateIds: [] });
 
-    const ambiguousRun = linkEntities({
+    const ambiguousRun = await linkEntities({
       root,
       profile: normalized,
       registries: { zones: [record("c15-a", "C-15"), record("c15-b", "C-15")] },
@@ -155,7 +155,7 @@ describe("graphify link deterministic core", () => {
       expect.objectContaining({ code: "LINK_RESOLUTION_AMBIGUOUS", refs: expect.arrayContaining(["record:c15-a", "record:c15-b"]) }),
     ]));
 
-    const noneRun = linkEntities({
+    const noneRun = await linkEntities({
       root,
       profile: profile(root, {
         detect: ["lexicon"],
@@ -176,7 +176,7 @@ describe("graphify link deterministic core", () => {
     })).toBe(false);
   });
 
-  it("keeps absent linking opt-in as an explicit no-op and reports deferred LLM presets", () => {
+  it("keeps absent linking opt-in as an explicit no-op and reports an unwired LLM proposer", async () => {
     const root = tempRoot();
     const noLink = normalizeOntologyProfile({
       id: "no-link",
@@ -185,19 +185,25 @@ describe("graphify link deterministic core", () => {
       relation_types: {},
       registries: { zones: { source: "zones", id_column: "id", label_column: "label", node_type: "Zone" } },
     }, join(root, "profile.yaml"));
-    expect(linkEntities({ root, profile: noLink, registries: { zones: [record("c15", "C-15")] }, sourceFiles: [] }).noOp).toBe(true);
+    expect((await linkEntities({ root, profile: noLink, registries: { zones: [record("c15", "C-15")] }, sourceFiles: [] })).noOp).toBe(true);
 
+    // open-extraction triggers the llm detector, but with no injected proposer
+    // the run degrades gracefully (no crash, no fabricated occurrence) and says so.
+    const source = writeDoc(root, "compton.md", "---\nmunicipality: compton\n---\n\nC-15\n");
     const pending = profile(root, { preset: "open-extraction", partition_from: { source_frontmatter: "municipality" } });
-    expect(linkEntities({ root, profile: pending, registries: { zones: [record("c15", "C-15")] }, sourceFiles: [] }).issues).toEqual(
-      expect.arrayContaining([expect.objectContaining({ code: "LINK_LLM_DETECTOR_UNAVAILABLE" })]),
+    const pendingRun = await linkEntities({ root, profile: pending, registries: { zones: [record("c15", "C-15")] }, sourceFiles: [source] });
+    expect(pendingRun.occurrences).toEqual([]);
+    expect(pendingRun.issues).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "LINK_LLM_PROVIDER_UNAVAILABLE" })]),
     );
+    expect(pendingRun.issues.some((finding) => finding.code === "LINK_LLM_DETECTOR_UNAVAILABLE")).toBe(false);
   });
 
-  it("writes the canonical sorted list and a Studio node summary sidecar", () => {
+  it("writes the canonical sorted list and a Studio node summary sidecar", async () => {
     const root = tempRoot();
     const source = writeDoc(root, "compton.md", "---\nmunicipality: compton\n---\n\nC-15 puis C-15.\n");
     const normalized = profile(root, { preset: "gazetteer-exact", partition_from: { source_frontmatter: "municipality" } });
-    const result = linkEntities({
+    const result = await linkEntities({
       root,
       profile: normalized,
       registries: { zones: [record("c15", "C-15")] },
