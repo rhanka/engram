@@ -508,7 +508,13 @@ export function buildEntitySidecar(
     }
   }
 
-  const occRaw = loadJsonSafe<Record<string, unknown>>(join(stateDir, "ontology", "occurrences.json"));
+  // Keep mention-level occurrences canonical and serve the Studio only the
+  // derived node-id summary. Old map-shaped occurrences remain a fallback for
+  // pre-link workspaces.
+  const summaryRaw = loadJsonSafe<Record<string, unknown>>(
+    join(stateDir, "ontology", "entity-occurrence-summary.json"),
+  );
+  const occRaw = summaryRaw ?? loadJsonSafe<Record<string, unknown>>(join(stateDir, "ontology", "occurrences.json"));
   let occurrences: unknown = null;
   if (occRaw) {
     const nodes =

@@ -59,6 +59,11 @@ export type {
   OntologyHardeningPolicy,
   OntologyNodeType,
   OntologyNodeTypeLinking,
+  OntologyLinkDetector,
+  OntologyLinkingEvidence,
+  OntologyLinkingPartitionFrom,
+  OntologyLinkingPattern,
+  OntologyLinkingResolve,
   OntologyNodeTypeNormalize,
   EntityNormalizerDescriptor,
   OntologyOutputPolicy,
@@ -93,6 +98,37 @@ export {
   normalizeNodeTypeLinking,
 } from "./entity-normalizer.js";
 export type { EntityNormalizer, NormalizerByNodeType } from "./entity-normalizer.js";
+export {
+  detectLexicon,
+  detectPattern,
+  buildRegistryIndex,
+  linkEntities,
+  resolveEntityCandidate,
+  summarizeEntityOccurrences,
+  verifyRawCandidate,
+  writeEntityLinkingArtifacts,
+} from "./entity-linking.js";
+export type {
+  DetectorContext,
+  EntityDetector,
+  EntityLinkingInput,
+  EntityLinkingResult,
+  EntityOccurrenceSummary,
+  RawCandidate,
+  RegistryIndex,
+} from "./entity-linking.js";
+export {
+  buildNormToRawMap,
+  deaccent,
+  detectModality,
+  normalizeForMatch,
+  parseSource,
+  rawOffsetForTerm,
+  resolveSourcePath,
+  verifyVerbatim,
+  windowQuote,
+} from "./source-grounding.js";
+export type { ImageContext, ParsedSource, ResolveSourceOptions, SourceModality, SourceUnit } from "./source-grounding.js";
 export { inspectInputScope } from "./input-scope.js";
 export type { InputScopeInventory, InspectInputScopeOptions } from "./input-scope.js";
 export {

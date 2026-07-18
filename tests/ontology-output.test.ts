@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -152,6 +152,22 @@ describe("ontology output artifacts", () => {
     });
 
     expect(readFileSync(join(outputDir, "occurrences.json"), "utf-8")).toBe("[]\n");
+  });
+
+  it("does not clobber a fresh link occurrence list when compile receives no occurrences input", () => {
+    const root = makeTempDir();
+    const outputDir = join(root, ".graphify", "ontology");
+    mkdirSync(outputDir, { recursive: true });
+    writeFileSync(join(outputDir, "occurrences.json"), JSON.stringify([occurrence()], null, 2) + "\n", "utf-8");
+
+    compileOntologyOutputs({
+      outputDir,
+      extraction,
+      profile,
+      config: { enabled: true, canonical_node_types: ["Component", "Tool"] },
+    });
+
+    expect(JSON.parse(readFileSync(join(outputDir, "occurrences.json"), "utf-8"))).toEqual([occurrence()]);
   });
 
   it("writes valid occurrences sorted and filtered by occurrence_node_types", () => {
