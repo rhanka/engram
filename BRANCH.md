@@ -1,55 +1,79 @@
-# codex/quality-target-qa
+# main
 
 ## Objective
 
-- [ ] Implement `SPEC_EVOL_TARGET_CONFIGURATION_QA`: persisted quality targets, resolved run manifest, deterministic `graphify qa`, and publication preflight gates.
-- [ ] Preserve the validated distinction between exhaustive citation extraction and bounded inline `top_k` display.
-- [ ] Reject the Opus incident class: scratch provenance, bounded/minimum citation producer, partial sidecar, zero reconciliation, stale QA report.
+- [x] Advance Track leaf `01KW89F63YJXN551TEXZCE2ZHB` with the highest coherent T5 slice: a provider-neutral temporal `queryWindow` port plus a Postgres implementation.
+- [x] Preserve the shipped temporal representation: `t` is epoch-ms start, missing `t_end` is open-ended, and `t_end === t` is a point.
+- [x] Deliver T6 as a read-only **temporal graph recall** surface: `recall --as-of` delegates to `queryWindow(t,t)` for a configured capable store, otherwise filters `graph.json` deterministically.
+- [x] Preserve configured-store failure/capability visibility, configured namespace isolation, unverified provenance attributes, and distinct file/store snapshot disclosure.
+- [x] Keep MemoryNote/authored-memory, persona policy, h2a knowledge envelopes, pagination, namespace selection, and non-Postgres store adapters explicitly pending.
 
 ## Scope / Guardrails
 
-- [ ] Allowed: `src/types.ts`, `src/project-config.ts`, `src/cli.ts`, `src/citations.ts`, `src/workspace-manifest*.ts`, new `src/quality-target*.ts`, new `src/qa*.ts`, focused tests under `tests/`, `spec/SPEC_EVOL_TARGET_CONFIGURATION_QA.md`.
-- [ ] Forbidden: `Makefile`, `docker-compose*.yml`, `.cursor/rules/**`, unrelated studio UI redesign, Mystery pack data regeneration, provider/network extraction.
-- [ ] Conditional BR-EX1: `src/ontology-studio*.ts` only if a local publication/preflight command already exists there and needs target gating.
-- [ ] Conditional BR-EX2: `.track/**` only via `track branch import` bookkeeping, not staged in feature commits unless explicitly requested.
+- [x] Keep `.graphify/graph.json` as source of truth and GraphStore backends as opt-in mirrors.
+- [x] Keep temporal membership provider-neutral: inclusive overlap, untimed/malformed records excluded, namespace parameterized, and node/edge membership evaluated independently.
+- [x] Preserve unrelated dirty Studio, graph, Track, remote-job, and golden-output work; never reset, clean, publish, or stage it.
 
-## Lot 0 - Spec And Branch Plan
+## Branch Scope Boundaries
 
-- [x] Commit validated EVOL spec and this branch plan.
-- [x] Verify spec has two-pass xhigh validation log and implementation status.
-- [x] Gate: `git diff --cached --stat` contains only `BRANCH.md` and `spec/SPEC_EVOL_TARGET_CONFIGURATION_QA.md`.
+**Allowed Paths (implementation scope)**
 
-## Lot 1 - Target Config And Contract Model
+  - `BRANCH.md`
+  - `spec/SPEC_AGENTSTATS_TIMEORIENTED.md`
+  - `src/storage/types.ts`
+  - `src/storage/postgres.ts`
+  - `src/temporal-recall.ts`
+  - `src/cli.ts`
+  - `src/index.ts`
+  - `tests/storage-postgres-time-window.test.ts`
+  - `tests/temporal-recall.test.ts`
+  - `tests/cli-temporal-recall.test.ts`
 
-- [x] Add quality target types and target-only loader that can parse `quality.targets` without requiring `profile.path` or `inputs.corpus`.
-- [x] Add structured citation extraction contract canonicalization and hash validation.
-- [x] Add unit tests for target parsing, invalid target shape, contract hash mismatch, unknown/bounded citation mode, extraction-unit coverage.
-- [x] Gate: targeted vitest for quality-target tests and `npm run lint`.
+**Forbidden Paths**
 
-## Lot 2 - Manifest And QA Evaluators
+  - `src/storage/vector/**`
+  - `src/llm-mesh-bridge.ts`
+  - `package.json`
+  - `**/package-lock.json`
+  - `UPSTREAM_GAP.md`
+  - `spec/SPEC_EVOL_WP6_PLATFORM_PARITY.md`
+  - `studio/**`
+  - other GraphStore adapters, authored-memory/persona write commands, h2a product envelopes, and npm publication
 
-- [x] Add resolved target manifest model with structured artifact provenance and extraction units.
-- [x] Add pure QA evaluators for manifest, graph counts, citation sidecar coverage, reconciliation completeness, data-only chrome tree hashes.
-- [x] Add fixture tests for scratch provenance rejection, sidecar partial/stale rejection, truncated reconciliation response rejection, stale QA report hash rejection.
-- [x] Gate: targeted vitest for QA evaluator tests and `npm run lint`.
+**Conditional Paths**
 
-## Lot 3 - CLI Surface
+  - `.track/**` — BR05-EX1: Track CLI writes/imports only from this designated main checkout; preserve the pre-existing log tail.
+  - `.graphify/graph.json` — BR05-EX2: required `npx graphify hook-rebuild` only; preserve pre-existing changes.
+  - `.graphify/GRAPH_REPORT.md` — BR05-EX2: required `npx graphify hook-rebuild` only; preserve pre-existing changes.
 
-- [x] Add `graphify qa --target <id> --bundle <path> [--config <path>] [--write-report] [--fail-on-error]`.
-- [x] Emit deterministic JSON QA report and human-readable failure summary.
-- [x] Add CLI tests for pass/fail exit behavior and report writing.
-- [x] Gate: targeted vitest for CLI QA tests and `npm run lint`.
+## Plan / TODO
 
-## Lot 4 - Publication Preflight And Final Review
+- [x] **Lot 0 - Contract, Plan, And Track**
+  - [x] Reconcile the draft spec with shipped T0/T2 semantics: open-ended missing `t_end`, explicit point `t_end === t`, inclusive overlap, malformed-span exclusion, independent edge membership.
+  - [x] Record two independent adversarial reviews and the WP5/WP6 h2a scope boundary.
+  - [x] Import this plan and mark the existing Knowledge-time leaf in progress without claiming T6 or h2a knowledge completion.
+  - [x] Gate: `track validate`, current-main branch/scope checks, and no changes outside Allowed/Conditional paths attributable to this slice.
 
-- [x] Wire QA preflight into any existing targetable bundle/publication path that serves/copies/pushes a studio bundle.
-- [x] Add final regression fixture representing the Opus incident failure class.
-- [x] Run `npm test`, `npm run lint`, and `npm run build`.
-- [x] Run double xhigh implementation review and resolve blocking findings.
-- [x] Run `npx graphify hook-rebuild` after code edits.
-- [x] Gate: PR opened only after tests, review, graph rebuild, and clean intended diff.
+- [x] **Lot 1 - Temporal Store Port And Postgres**
+  - [x] Add optional `capabilities.queryWindow` plus typed, flattened provider-neutral time-window node/edge results and namespace-only options.
+  - [x] Implement Postgres `queryWindow(fromMs, toMs, options)` with finite ordered bounds, parameterized namespace, safe JSONB numeric expressions, and inclusive open-span overlap.
+  - [x] Add safe numeric expression indexes for `t` and `t_end` on both node and edge mirrors without migrating or reinterpreting stored props.
+  - [x] Add a fake-driver round-trip suite for boundaries, open spans, points, malformed/untimed exclusion, namespace isolation, canonical records, capability pairing, schema qualification, parameterization, and `graphWindow` coexistence.
+  - [x] Run focused storage tests, `npm run lint`, `npm run build`, harness verification, two-peer consensus review, and `npx graphify hook-rebuild`.
+  - [x] Record exact test/build evidence in Track while leaving the parent leaf in progress for T6, h2a knowledge, non-Postgres adapters, and pagination.
+
+- [x] **Lot 2 - T6 Read-Only Temporal Graph Recall**
+  - [x] Specify `graphify.temporal-recall/v1`, strict epoch-ms / timezone-explicit ISO parsing, source selection, deterministic ordering, and unpaged/snapshot disclosures.
+  - [x] Add a provider-neutral `recallAsOf` API and `graphify recall --as-of <timestamp>` CLI; configured stores must expose the T5 capability/method pair and receive no caller-controlled namespace override.
+  - [x] Add the pure `graph.json` overlap fallback only for the no-store-configured path, preserving pass-through attributes/provenance without asserting trust or induced-subgraph closure.
+  - [x] Test inclusive boundaries, points, open spans, malformed/inverted exclusion, independent edges, deterministic sorting, timestamp parsing, file/store selection, configured namespace use, capability/error/no-fallback behavior, JSON purity, and human rendering.
+  - [x] Run focused T5/T6 tests, lint, build, harness verification, two-peer consensus review, and `npx graphify hook-rebuild`.
+  - [x] Record exact evidence in Track; leave the parent leaf in progress for authored-memory/persona policy, a versioned h2a knowledge contract, pagination, namespace authorization, and other backends.
 
 ## Feedback Loop
 
-- [x] BLOCKER: no existing publication command may exist; if so, implement `graphify qa` first and defer preflight wiring to the nearest existing command with explicit note.
-- [ ] BLOCKER: deploy/merge requires GitHub permissions and CI green.
+- [ ] BLOCKER: any requested change to WP6-owned vector/LLM/package/spec paths requires coordination with `codex:graphify:46788d039b48` before editing.
+- [ ] BLOCKER: a real Postgres live round-trip remains gated on `GRAPHIFY_TEST_POSTGRES_URL`; the driver-injected suite is the local authority when that environment is absent.
+- [ ] HUMAN GATE: authored/personal memory requires owner/data-controller approval for privacy, access, retention, deletion, authorship, and persona semantics plus a ratified versioned h2a body contract.
+- [ ] HUMAN GATE: exposing caller-selected namespaces or cross-workspace results requires consumer-owner authorization design; T6 reads only the selected store's configured namespace.
+- [ ] BLOCKER: any npm publish, merge, or remote push requires separate owner authorization and is outside this task.
