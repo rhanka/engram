@@ -32,6 +32,10 @@ import type {
   GraphStore,
   GraphStoreConfig,
   GraphStoreSnapshotMeta,
+  GraphTimeWindow,
+  GraphTimeWindowEdge,
+  GraphTimeWindowNode,
+  GraphTimeWindowOptions,
   GraphWindow,
   GraphWindowEdge,
   GraphWindowNode,
@@ -197,6 +201,89 @@ function chunk<T>(arr: T[], size: number): T[][] {
 }
 
 /**
+ * A safe numeric view over one of the two fixed temporal JSONB properties.
+ * jsonb_typeof guards the cast, so legacy string/null/object attributes are
+ * excluded instead of aborting a whole index build or query.
+ */
+function temporalNumberExpression(
+  propsSql: string,
+  key: "t" | "t_end",
+): string {
+  return (
+    `CASE WHEN jsonb_typeof(${propsSql}->'${key}') = 'number' THEN ` +
+    `CASE WHEN abs((${propsSql}->>'${key}')::numeric) ` +
+    `<= 1.7976931348623155e308::numeric ` +
+    `THEN (${propsSql}->>'${key}')::double precision END END`
+  );
+}
+
+/** Parse the pg JSONB surface defensively (real pg returns objects; fakes may return JSON). */
+function parseProps(value: unknown): Record<string, unknown> {
+  if (typeof value === "string") {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return {};
+    }
+  }
+  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return {};
+}
+
+function temporalNodeFromRow(row: Record<string, unknown>): GraphTimeWindowNode {
+  const props = parseProps(row.props);
+  const id = String(row.id);
+  const node: GraphTimeWindowNode = {
+    ...props,
+    id,
+    label: typeof row.label === "string" && row.label.length > 0 ? row.label : id,
+    t: Number(props.t),
+  };
+
+  // Canonical fields come from typed provider columns, never spoofable props.
+  delete node.node_type;
+  delete node.community;
+  if (typeof row.type === "string" && row.type.length > 0) node.node_type = row.type;
+  if (row.community != null) {
+    const community = Number(row.community);
+    if (Number.isFinite(community)) node.community = community;
+  }
+  if (Object.prototype.hasOwnProperty.call(props, "t_end")) {
+    node.t_end = Number(props.t_end);
+  } else {
+    delete node.t_end;
+  }
+  return node;
+}
+
+function temporalEdgeFromRow(row: Record<string, unknown>): GraphTimeWindowEdge {
+  const props = parseProps(row.props);
+  const edge: GraphTimeWindowEdge = {
+    ...props,
+    source: String(row.source_id),
+    target: String(row.target_id),
+    relation: typeof row.relation === "string" ? row.relation : "RELATES_TO",
+    t: Number(props.t),
+  };
+
+  delete edge.confidence;
+  if (typeof row.confidence === "string" && row.confidence.length > 0) {
+    edge.confidence = row.confidence;
+  }
+  if (Object.prototype.hasOwnProperty.call(props, "t_end")) {
+    edge.t_end = Number(props.t_end);
+  } else {
+    delete edge.t_end;
+  }
+  return edge;
+}
+
+/**
  * The native Postgres schema as individual executable DDL statements. This is
  * the single source of truth for the live `postgres` GraphStore adapter
  * (ensure-exists). `city_slug` carries the namespace/citySlug so multiple
@@ -211,6 +298,10 @@ function chunk<T>(arr: T[], size: number): T[][] {
  *       group-by aggregate (LOT 1); rebuilt only inside a replace-mode push
  *   - graph_positions(city_slug, layout_id, node_id) PRIMARY KEY — precomputed
  *       per-layout positions + degree (LOT 3); rebuilt only inside a replace push
+ *
+ * Temporal `t` / `t_end` remain in props jsonb, indexed as numeric expression
+ * indexes so queryWindow can use inclusive span-overlap predicates without a
+ * schema migration for existing mirrors.
  *
  * Indexes:
  *   - (city_slug, type) composite, for type-scoped scans
@@ -345,6 +436,23 @@ export function postgresDdlStatements(schema?: string): string[] {
       `ON ${q(NODE_TABLE)} USING gin (props jsonb_path_ops)`,
   );
 
+  // Numeric temporal expression indexes. `t` / `t_end` intentionally remain
+  // pass-through props. The type guards make index creation safe for legacy
+  // mirrors carrying malformed/null/string values.
+  for (const [table, prefix] of [
+    [NODE_TABLE, "graph_nodes"],
+    [EDGE_TABLE, "graph_edges"],
+  ] as const) {
+    for (const key of ["t", "t_end"] as const) {
+      const expression = temporalNumberExpression("props", key);
+      statements.push(
+        `CREATE INDEX IF NOT EXISTS ${ix(`${prefix}_city_${key}_idx`)} ` +
+          `ON ${q(table)} (city_slug, (${expression})) ` +
+          `WHERE jsonb_typeof(props->'${key}') = 'number'`,
+      );
+    }
+  }
+
   // Neighbor-JOIN indexes: outgoing and incoming edges per city.
   statements.push(
     `CREATE INDEX IF NOT EXISTS ${ix("graph_edges_city_source_idx")} ` +
@@ -410,6 +518,12 @@ export interface PostgresGraphStore extends GraphStore {
    * REPLACE snapshot. The node cap is clamped to `MAX_WINDOW_LIMIT`.
    */
   graphWindow(options?: GraphWindowOptions): Promise<GraphWindow>;
+  /** Inclusive temporal-overlap read over indexed `t` / `t_end` props. */
+  queryWindow(
+    fromMs: number,
+    toMs: number,
+    options?: GraphTimeWindowOptions,
+  ): Promise<GraphTimeWindow>;
 }
 
 // ---------------------------------------------------------------------------
@@ -776,6 +890,7 @@ export async function createPostgresGraphStore(
         layouts: [DEFAULT_LAYOUT],
         strategies: [...WINDOW_STRATEGIES],
       },
+      queryWindow: true,
     },
 
     async verifyConnection(): Promise<void> {
@@ -1031,6 +1146,65 @@ export async function createPostgresGraphStore(
       }
 
       return { strategy, layout, limit, nodes, edges };
+    },
+
+    async queryWindow(
+      fromMs: number,
+      toMs: number,
+      options: GraphTimeWindowOptions = {},
+    ): Promise<GraphTimeWindow> {
+      // Validate before ensureSchema() so invalid caller input performs no I/O.
+      if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) {
+        throw new RangeError("queryWindow bounds must be finite numbers");
+      }
+      if (fromMs > toMs) {
+        throw new RangeError("queryWindow requires fromMs <= toMs");
+      }
+
+      await ensureSchema();
+      const targetSlug = options.namespace ?? citySlug;
+      const nodeStart = temporalNumberExpression("n.props", "t");
+      const nodeEnd = temporalNumberExpression("n.props", "t_end");
+      const edgeStart = temporalNumberExpression("e.props", "t");
+      const edgeEnd = temporalNumberExpression("e.props", "t_end");
+
+      // Missing t_end is open-ended. A present malformed/inverted t_end is
+      // excluded. The fixed expressions keep JSONB casts safe, while the only
+      // caller-controlled scope (namespace) remains a bind parameter.
+      const nodeResult = await pool.query(
+          `SELECT n.id, n.label, n.type, n.community, n.props ` +
+          `FROM ${q(NODE_TABLE)} n ` +
+          `WHERE n.city_slug = $1 ` +
+          `AND jsonb_typeof(n.props->'t') = 'number' ` +
+          `AND (${nodeStart}) IS NOT NULL ` +
+          `AND (${nodeStart}) <= $3 ` +
+          `AND (NOT (n.props ? 't_end') OR (` +
+          `jsonb_typeof(n.props->'t_end') = 'number' ` +
+          `AND (${nodeEnd}) IS NOT NULL AND (${nodeEnd}) >= (${nodeStart}) ` +
+          `AND (${nodeEnd}) >= $2)) ` +
+          `ORDER BY (${nodeStart}) ASC, n.id ASC`,
+        [targetSlug, fromMs, toMs],
+      );
+
+      const edgeResult = await pool.query(
+          `SELECT e.source_id, e.target_id, e.relation, e.confidence, e.props ` +
+          `FROM ${q(EDGE_TABLE)} e ` +
+          `WHERE e.city_slug = $1 ` +
+          `AND jsonb_typeof(e.props->'t') = 'number' ` +
+          `AND (${edgeStart}) IS NOT NULL ` +
+          `AND (${edgeStart}) <= $3 ` +
+          `AND (NOT (e.props ? 't_end') OR (` +
+          `jsonb_typeof(e.props->'t_end') = 'number' ` +
+          `AND (${edgeEnd}) IS NOT NULL AND (${edgeEnd}) >= (${edgeStart}) ` +
+          `AND (${edgeEnd}) >= $2)) ` +
+          `ORDER BY (${edgeStart}) ASC, e.source_id ASC, e.target_id ASC, e.relation ASC`,
+        [targetSlug, fromMs, toMs],
+      );
+
+      return {
+        nodes: (nodeResult.rows ?? []).map(temporalNodeFromRow),
+        edges: (edgeResult.rows ?? []).map(temporalEdgeFromRow),
+      };
     },
 
     async clear(options?: string | PostgresClearOptions): Promise<void> {
