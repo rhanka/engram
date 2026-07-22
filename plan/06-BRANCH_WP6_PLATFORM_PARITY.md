@@ -62,7 +62,7 @@
 
 ## Gate Evidence
 
-- Clean isolated commit: `db575d8` (no shared-checkout WIP in the artifact).
+- Clean isolated functional commit: `027dac8` (no shared-checkout WIP in the artifact).
 - Focused: 53 passed, 4 live-database skips; lint passed.
 - Full smoke: build passed; 2,418 passed, 13 intentional skips; tarball pack/install, CLI, bundled files, and library exports passed.
 - Graph: `review-delta` found no likely test gaps; hook rebuild produced 8,841 nodes / 80,646 edges and `stale=false`.
@@ -70,7 +70,7 @@
 
 ## Feedback Loop
 
-- **Accepted / resolved:** completion review found an unbudgeted traversal header, narrow provider-package denylist, stale Repowise head, broken h2a anchor, and incomplete plan evidence. The response envelope now includes headers/notices in the approximate bound, vector imports use an infrastructure allowlist, Repowise is locked through `210b8fa`, the anchor exists, and clean-clone evidence is recorded.
+- **Accepted / resolved:** completion review found an unbudgeted traversal header, under-budget seed-header compatibility regression, narrow provider-package denylist, stale Repowise head, broken h2a anchor, and incomplete plan evidence. The response envelope now includes headers/notices in the approximate bound while preserving complete under-budget headers; vector imports use an infrastructure allowlist, Repowise is locked through `210b8fa`, the anchor exists, and clean-clone evidence is recorded.
 - **Rejected:** bumping to `0.17.3`. Registry evidence shows npm `latest=0.17.1`, no `v0.17.2` tag exists, and repository release tests identify `0.17.2` as the prepared candidate. Owner: WP6 conductor. Status: resolved by evidence and corrected wording.
 - **Deferred / publish blocker:** `graphify portable-check .graphify` reports 2,510 pre-existing paths in corpus snapshots, historical research, fixtures, and route-like labels. WP6 changed none of those committed artifacts and did not mass-rewrite them. Owner: repository portability/data-curation follow-up. Status: open before publication under the spec's full-repository gate.
 - **Deferred / publish blocker:** dependency audit reports 5 high advisories in the full install (1 high runtime through `mistral-ocr -> ws`, plus dev/optional findings) and low no-fix Ollama exposure. Owner: dependency-security follow-up. Status: open before publication; no broad lockfile refresh was folded into WP6.
