@@ -35,7 +35,7 @@
 - [x] Add a repository test forbidding provider SDK and gateway imports under `src/storage/vector/**`.
 - [x] Keep `EmbeddingProvider` injection as the active production boundary.
 - [x] Do not add `MeshEmbeddingProvider` until a published mesh tarball closes the contract gate.
-- [ ] Run focused vector storage and import-guard tests.
+- [x] Run focused vector storage and import-guard tests.
 
 ## Lot 3 — Intake Ledger And Coordination
 
