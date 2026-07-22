@@ -39,9 +39,9 @@
 
 ## Lot 3 — Intake Ledger And Coordination
 
-- [ ] Refresh `UPSTREAM_GAP.md` to the 2026-07-22 locks and `0.17.2` baseline.
-- [ ] Record concrete adopt/defer/reject outputs for all three upstreams.
-- [ ] Record shared-root h2a conductor, mesh-owner response, subagent reviews, and collision avoidance.
+- [x] Refresh `UPSTREAM_GAP.md` to the 2026-07-22 locks and `0.17.2` baseline.
+- [x] Record concrete adopt/defer/reject outputs for all three upstreams.
+- [x] Record shared-root h2a conductor, mesh-owner response, subagent reviews, and collision avoidance.
 - [ ] Update Track through the CLI without rewriting or staging unrelated pre-existing events.
 
 ## Lot 4 — Release Gates And Completion Review
