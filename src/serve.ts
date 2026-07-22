@@ -329,47 +329,55 @@ function dfs(
   return { visited, edges };
 }
 
+const MIN_RESPONSE_TOKEN_BUDGET = 128;
+
 function responseTokenBudget(value: unknown, fallback: number = 2000): number {
   const parsed = Number(value ?? fallback);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
-  return Math.max(1, Math.floor(parsed));
+  return Math.max(MIN_RESPONSE_TOKEN_BUDGET, Math.floor(parsed));
 }
 
 /**
  * Render complete response lines under the same approximate three-characters
- * per token rule used by graph traversal. Wrapper notices are deliberately
- * outside the budget: callers must see that evidence was omitted, at both the
- * beginning and end of the bounded result.
+ * per token rule used by graph traversal. Truncation notices are included in
+ * the bound so even adversarial labels or seed lists cannot flood MCP context.
  */
 function cutLinesToBudget(
   lines: string[],
   tokenBudget: number,
   narrowHint: string,
 ): string {
+  const boundedBudget = responseTokenBudget(tokenBudget);
   const output = lines.join("\n");
-  const charBudget = tokenBudget * 3;
+  const charBudget = boundedBudget * 3;
   if (output.length <= charBudget) return output;
 
-  let shown = 0;
-  let used = 0;
-  for (const line of lines) {
-    const nextLength = line.length + (shown > 0 ? 1 : 0);
-    if (used + nextLength > charBudget) break;
-    used += nextLength;
-    shown++;
+  let bestShown = -1;
+  let keptLength = 0;
+  for (let shown = 0; shown <= lines.length; shown++) {
+    if (shown > 0) {
+      const line = lines[shown - 1];
+      if (line === undefined) break;
+      keptLength += line.length + (shown > 1 ? 1 : 0);
+    }
+    const omitted = lines.length - shown;
+    const notice =
+      `[!] TRUNCATED: showing ${shown} of ${lines.length} lines ` +
+      `(${omitted} omitted; ~${boundedBudget}-token budget). ${narrowHint}`;
+    const tail = `[!] END TRUNCATED: ${omitted} lines omitted.`;
+    const candidateLength = notice.length + 1 + tail.length +
+      (shown > 0 ? keptLength + 1 : 0);
+    if (candidateLength > charBudget) break;
+    bestShown = shown;
   }
-
-  const cutCount = lines.length - shown;
+  if (bestShown < 0) return `[!] TRUNCATED: ${lines.length} lines omitted.`;
+  const omitted = lines.length - bestShown;
   const notice =
-    `[!] TRUNCATED: showing ${shown} of ${lines.length} lines ` +
-    `(~${tokenBudget}-token budget). ${narrowHint}`;
-  const tail =
-    `... (truncated — ${cutCount} more lines cut by ~${tokenBudget}-token budget. ` +
-    `${narrowHint})`;
-  const kept = lines.slice(0, shown).join("\n");
-  return kept.length > 0
-    ? `${notice}\n\n${kept}\n${tail}`
-    : `${notice}\n\n${tail}`;
+    `[!] TRUNCATED: showing ${bestShown} of ${lines.length} lines ` +
+    `(${omitted} omitted; ~${boundedBudget}-token budget). ${narrowHint}`;
+  const tail = `[!] END TRUNCATED: ${omitted} lines omitted.`;
+  const kept = lines.slice(0, bestShown).join("\n");
+  return kept.length > 0 ? `${notice}\n${kept}\n${tail}` : `${notice}\n${tail}`;
 }
 
 function edgeSourceSuffix(data: Record<string, unknown>): string {
@@ -386,8 +394,9 @@ function subgraphToText(
   edges: Array<[string, string]>,
   tokenBudget: number = 2000,
   seeds: string[] = [],
+  prefixLines: string[] = [],
 ): string {
-  const lines: string[] = [];
+  const lines: string[] = [...prefixLines];
 
   const seedSet = new Set(seeds);
   const sorted = [
@@ -462,8 +471,17 @@ function toolQueryGraph(G: Graph, args: Record<string, unknown>): string {
   const startLabels = startNodes.map(
     (n) => nodeDisplayLabel(G, n),
   );
-  const header = `Traversal: ${mode.toUpperCase()} depth=${depth} | Start: [${startLabels.join(", ")}] | ${visited.size} nodes found\n\n`;
-  return header + subgraphToText(G, visited, edges, budget, startNodes);
+  const shownStartLabels = startLabels.slice(0, 3).map((label) =>
+    label.length > 60 ? `${label.slice(0, 59)}…` : label,
+  );
+  const hiddenStartCount = startLabels.length - shownStartLabels.length;
+  const startSummary = hiddenStartCount > 0
+    ? `${shownStartLabels.join(", ")}, … +${hiddenStartCount}`
+    : shownStartLabels.join(", ");
+  const header =
+    `Traversal: ${mode.toUpperCase()} depth=${depth} | Start: [${startSummary}] | ` +
+    `${visited.size} nodes found`;
+  return subgraphToText(G, visited, edges, budget, startNodes, [header, ""]);
 }
 
 /**
@@ -1038,8 +1056,9 @@ export async function serve(
             },
             token_budget: {
               type: "integer",
+              minimum: MIN_RESPONSE_TOKEN_BUDGET,
               default: 2000,
-              description: "Max output tokens",
+              description: "Approximate max output tokens (3 chars/token; minimum 128)",
             },
           },
           required: ["question"],
@@ -1103,8 +1122,9 @@ export async function serve(
             },
             token_budget: {
               type: "integer",
+              minimum: MIN_RESPONSE_TOKEN_BUDGET,
               default: 2000,
-              description: "Max output tokens",
+              description: "Approximate max output tokens (3 chars/token; minimum 128)",
             },
           },
           required: ["label"],
@@ -1122,8 +1142,9 @@ export async function serve(
             },
             token_budget: {
               type: "integer",
+              minimum: MIN_RESPONSE_TOKEN_BUDGET,
               default: 2000,
-              description: "Max output tokens",
+              description: "Approximate max output tokens (3 chars/token; minimum 128)",
             },
           },
           required: ["community_id"],
