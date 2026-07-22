@@ -5,8 +5,8 @@ This document tracks the delta between this TypeScript port and upstream Python 
 ## Scope
 
 - Current TypeScript product branch: `main`
-- Current TypeScript baseline: `1f30efa7afaf5c98f06fcaebbb727fd4f2fb3f8a`
-- Current TypeScript package target: `@sentropic/graphify@0.10.0` (package rename of the `graphifyy@0.9.8` line; closest audited parity point remains upstream `v0.8.18`, with F-0819-P1/P2 and F-0831-P1-security early ports merged on `main` unreleased)
+- Current TypeScript WP6 code baseline: `705ada4` (`@sentropic/graphify@0.17.2`; bounded MCP parity at `e34cdfe`, embedding-neutrality guard at `705ada4`)
+- Current TypeScript package target: `@sentropic/graphify@0.17.2`; a patch candidate is allowed only after the WP6 gates in `spec/SPEC_EVOL_WP6_PLATFORM_PARITY.md`
 - Durable traceability spec: `spec/SPEC_UPSTREAM_TRACEABILITY.md`
 - Closed upstream `v3` baseline: `upstream/v3` at `699e996`
 - Closed Python parity target: remote tag `v0.4.23` at `8d908c5d43d079579604a82873fd7cff33a1b343`
@@ -17,10 +17,38 @@ This document tracks the delta between this TypeScript port and upstream Python 
 - Closed parity target commit for `0.7.4`: `26a5a35200dda6207bf6fc16afed83c71238bb65` on `upstream/v7`, with feature commit `741ac3655bd33314e1aaca51e6fd30271c74c61b`
 - Closed Python `0.7.10` drift lock: remote `upstream/v7` observed on 2026-05-08 at `0c29b2cb88c6274d889ca7c33a684ce103808715`, with remote tag `v0.7.10` at `ef1050b0e4134df0bd59956b0f900dc3c83e8184`
 - Observed Python drift lock for the next pass: remote `upstream/v7` observed on 2026-05-12 at `ab32098063adb1ab4d9247747742958ad185db41`, with remote tag `v0.7.16` at the same commit
-- Active CRG stable review reference: `tirth8205/code-review-graph` tag `v2.3.6` at `935695f800f2b02e71aae6d463f3df65f0c6493e` (advanced from `v2.3.3` on 2026-07-06; see `Drift Re-Scan (2026-07-06)`)
+- Active CRG stable review reference: `tirth8205/code-review-graph` tag `v2.3.7` at `6a1ee1c` with `main` at `6ce25b4e53f9df397f5136e86a59e17c02a610fe` (observed 2026-07-22; additive reference, not a parity driver)
 - Active Codeflow graph-UX reference: `braedonsaunders/codeflow` tag `v1` / `main` at `af3b0073f2b41c9f54938c6520509fd97d133803` (added 2026-07-09 for prettier/faster parametric graph rendering and stronger filtering UX; additive only, no npm parity impact — see `Codeflow intake (2026-07-09)` and `spec/SPEC_STUDIO_GRAPH_UX_CODEFLOW_PARITY.md`)
-- Reference upstream (functional, no code ports — AGPL): `repowise-dev/repowise` at `6680c2822a64ee2c0bc53c196fe7a321df9aaf8a` (`v0.27.0`+1); see `Repowise Reference Intake (2026-07-06)` and `spec/SPEC_EVOL_CURATED_RESPONSES.md`
-- Current released line: `@sentropic/graphify@0.10.0` (rename, 2026-05-26); the `0.8.16` and `0.8.18` drift intakes below are both closed for the TypeScript line. F-0819-P1/P2 (PRs #87/#88, upstream `#1075`/`#1077`/`#1007`/`#1010`) and F-0831-P1-security (PR #93) are merged on `main` and unreleased; the next traceability pass formalizes the `v0.8.18..v0.8.31` window (`upstream/v8` fetched locally through `v0.8.31` at `7a588fb`) and reconciles those early ports
+- Reference upstream (functional, no code ports — AGPL): `repowise-dev/repowise` tag `v0.34.0` at `741e129` with `main` at `c47b8d497a3d61affa48030b989d9ae56c59e11f`; see `Repowise Reference Intake (2026-07-06)` and the superseding WP6 disposition below
+- Current released line: `@sentropic/graphify@0.17.2`; historical version-alignment rows remain evidence for their own observed dates, while the 2026-07-22 WP6 section below is authoritative for current intake and release posture
+
+## WP6 Coordinated Intake (2026-07-22)
+
+This section supersedes older "current" locks and open-bucket summaries without
+rewriting their historical evidence. Full decisions and acceptance live in
+`spec/SPEC_EVOL_WP6_PLATFORM_PARITY.md`.
+
+| Source | Current lock | Window reviewed | Adopt | Defer | Reject |
+| --- | --- | --- | --- | --- | --- |
+| Python Graphify (MIT) | `v8` `82c46e5358d5b3185b7d66573b52f01e59bd2d06`; stable `v0.9.23` `c83085cf` | `31211a0..82c46e5` = 230 commits | Bounded MCP line-list/traversal responses (`fef9dbb`, `deb2620`) and verified relation-site provenance slice (`1fbc623`), ported in `e34cdfe` | Atomic writer consolidation, cache/watch/partial-build integrity, update/ignore semantics, language/resolution clusters; each requires a bounded reproducer lot | Python packaging/release mechanics, Python-only runtime refactors, provider-specific embedding wiring |
+| CodeReviewGraph (MIT) | `main` `6ce25b4`; stable `v2.3.7` `6a1ee1c` | `935695f..6ce25b4` = 226 commits | No direct port; summary, review-delta/analysis/eval, install preview, provenance, and query tools are already represented | Weighted impact radius, transitive-test lookup, churn risk, review-pr, additional languages, persisted flow tables | SQLite/daemon defaults, direct embedding baseline, editor parity, Python plumbing, reverted IBM Bob support |
+| Repowise (AGPL-3.0) | `main` `c47b8d4`; stable `v0.34.0` `741e129` | `6680c282..c47b8d4` = 237 commits | Design-only refusal-over-fabrication and bounded-response principles; no copied/translated code | SCC/cycles, per-test maps, curated responses, no-LLM wiki, code health/dead code, git risk/provenance, tours, savings/context blocks | AGPL code/templates/constants, resident server/database/provider-key stack, provider routing, uncalibrated scores, core dollar ledger |
+
+Embedding neutrality is specified but externally blocked. The published
+`@sentropic/llm-mesh@0.10.0` and `@sentropic/llm-gateway@0.9.0` tarballs expose
+generation/streaming and gateway routing only: no embedding request/response,
+adapter operation, mesh operation, capability, hook, or gateway route exists.
+Graphify therefore retains the injected `EmbeddingProvider` boundary and the
+test guard at `705ada4`; it does not add direct Cohere/Ollama/provider SDKs or a
+speculative gateway protocol. The exact published-contract gate is in the WP6
+spec and Track blocker `01KY5D7FYNAHJ0GYDGMP8RF018`.
+
+The h2a evidence for this pass used the shared active root
+`/home/antoinefa/h2a-workspace/.h2a`, conductor
+`codex:graphify:46788d039b48`, and a live response from
+`claude:llm-mesh:e5f8b95941e9` confirming the same external contract gap.
+Concurrent temporal-storage and Studio changes were explicitly excluded and
+preserved.
 
 ## Drift Re-Scan (2026-07-06): Python `v0.9.7+1` And CRG `v2.3.6`
 
@@ -352,7 +380,7 @@ Observed on 2026-05-23 after merging PRs #33 (A-final), #34 (F cadrage bilan #1)
 
 Row-level table is in `spec/SPEC_TRACK_F_0816_BILAN.md > Drift table`. The 18-row matrix splits omnibus PR `#956` (`b6127aa`) into 8 sub-rows (11a..11h) to keep one-row-per-feature traceability.
 
-**F-Opt-LLM-Triage closure (2026-05-23):** F-Opt-LLM-Triage is closed as already-covered by `src/llm-mesh.ts`, which provides multi-provider routing generically across the entire CLI surface (not just `graphify pr`). Per user decision 2026-05-23, no separate triage code path is ported. The upstream multi-backend resolution (`anthropic` + `openai` + `gemini` + `ollama` + `claude-cli` + `ollama-fallback`) maps onto our existing llm-mesh provider abstraction; any future TS user request for `graphify pr --triage` becomes a thin wiring of `src/pr.ts` into the mesh rather than a new provider stack. Reopen condition is unchanged in spirit but redirected: a TS user asks for explicit `pr --triage` UX, not a new backend surface.
+**F-Opt-LLM-Triage closure (2026-05-23; corrected 2026-07-22):** the earlier text named nonexistent `src/llm-mesh.ts` and overstated full-CLI routing. The actual integration is the generation-only scaffold `src/llm-mesh-bridge.ts` plus the direct-provider execution path in `src/llm-execution.ts`. The no-separate-triage decision remains, but it is an intentional product delta rather than proof that mesh already routes the whole CLI. A future triage feature requires a current execution-port spec and tests; it must not infer embedding support from the generation bridge.
 
 ## Active `0.7.16` Drift Intake
 
