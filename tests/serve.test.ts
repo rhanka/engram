@@ -149,6 +149,45 @@ function rewriteFixtureGraphForHotReload(graphPath: string): void {
   utimesSync(graphPath, bumped, bumped);
 }
 
+function writeBudgetFixtureGraph(dir: string): string {
+  const graphPath = join(dir, "graph.json");
+  const neighbors = Array.from({ length: 12 }, (_, index) => ({
+    id: `neighbor-${index + 1}`,
+    label: `Neighbor${String(index + 1).padStart(2, "0")}-${"x".repeat(24)}`,
+    source_file: `src/neighbor-${index + 1}.ts`,
+    source_location: `${index + 10}`,
+    file_type: "code",
+    community: 0,
+  }));
+  writeFileSync(
+    graphPath,
+    JSON.stringify({
+      directed: true,
+      nodes: [
+        {
+          id: "hub",
+          label: "HubService",
+          source_file: "src/hub.ts",
+          source_location: "5",
+          file_type: "code",
+          community: 0,
+        },
+        ...neighbors,
+      ],
+      links: neighbors.map((neighbor, index) => ({
+        source: "hub",
+        target: neighbor.id,
+        relation: index % 2 === 0 ? "calls" : "uses",
+        confidence: "EXTRACTED",
+        source_file: "src/hub.ts",
+        source_location: `L${100 + index}`,
+      })),
+    }, null, 2),
+    "utf-8",
+  );
+  return graphPath;
+}
+
 function toolText(result: { content?: Array<{ type?: string; text?: string }> }): string {
   return (result.content ?? [])
     .map((item) => (item.type === "text" ? item.text ?? "" : ""))
@@ -418,6 +457,76 @@ describe("MCP stdio server", () => {
       );
       expect(names).not.toContain("validate_ontology_patch");
       expect(names).not.toContain("apply_ontology_patch");
+      for (const toolName of ["get_neighbors", "get_community"]) {
+        const tool = result.tools.find((candidate) => candidate.name === toolName);
+        expect(tool?.inputSchema.properties).toMatchObject({
+          token_budget: {
+            type: "integer",
+            default: 2000,
+            description: "Max output tokens",
+          },
+        });
+      }
+    } finally {
+      await client.close().catch(() => undefined);
+      await clientTransport.close().catch(() => undefined);
+      await serverPromise.catch(() => undefined);
+    }
+  });
+
+  it("should bound line-list and traversal responses without cutting evidence lines", async () => {
+    const dir = makeTempDir();
+    const graphPath = writeBudgetFixtureGraph(dir);
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const serverPromise = serve(graphPath, serverTransport);
+    const client = new Client({ name: "graphify-serve-test", version: "0.0.0" });
+
+    try {
+      await client.connect(clientTransport);
+
+      const fullNeighbors = toolText(await client.callTool({
+        name: "get_neighbors",
+        arguments: { label: "HubService", token_budget: 2000 },
+      }));
+      expect(fullNeighbors).not.toContain("TRUNCATED");
+      expect(fullNeighbors).toContain(
+        "Neighbor01-xxxxxxxxxxxxxxxxxxxxxxxx [calls] [EXTRACTED] at=src/hub.ts:L100",
+      );
+
+      const boundedNeighbors = toolText(await client.callTool({
+        name: "get_neighbors",
+        arguments: { label: "HubService", token_budget: 45 },
+      }));
+      expect(boundedNeighbors).toMatch(/^\[!\] TRUNCATED: showing \d+ of 13 lines/);
+      expect(boundedNeighbors).toContain("Narrow with relation_filter or use get_node");
+      expect(boundedNeighbors).toMatch(/\.\.\. \(truncated — \d+ more lines cut/);
+      expect(boundedNeighbors).not.toContain("Neighbor12-");
+      for (const line of boundedNeighbors.split("\n")) {
+        if (!line.startsWith("  -->")) continue;
+        expect(line).toMatch(/^  --> Neighbor\d{2}-x{24} \[(calls|uses)\] \[EXTRACTED\] at=src\/hub\.ts:L\d+$/);
+      }
+
+      const boundedCommunity = toolText(await client.callTool({
+        name: "get_community",
+        arguments: { community_id: 0, token_budget: 40 },
+      }));
+      expect(boundedCommunity).toMatch(/^\[!\] TRUNCATED: showing \d+ of 14 lines/);
+      expect(boundedCommunity).toContain("Raise token_budget or use get_node");
+      expect(boundedCommunity).not.toContain("Neighbor12-");
+
+      const boundedTraversal = toolText(await client.callTool({
+        name: "query_graph",
+        arguments: { question: "HubService", depth: 1, token_budget: 45 },
+      }));
+      expect(boundedTraversal).toContain("\n\n[!] TRUNCATED:");
+      expect(boundedTraversal).toContain("NODE HubService");
+      expect(boundedTraversal).toContain("Narrow the query or raise token_budget");
+
+      const fullTraversal = toolText(await client.callTool({
+        name: "query_graph",
+        arguments: { question: "HubService", depth: 1, token_budget: 2000 },
+      }));
+      expect(fullTraversal).toContain("at=src/hub.ts:L100");
     } finally {
       await client.close().catch(() => undefined);
       await clientTransport.close().catch(() => undefined);
