@@ -329,16 +329,73 @@ function dfs(
   return { visited, edges };
 }
 
+function responseTokenBudget(value: unknown, fallback: number = 2000): number {
+  const parsed = Number(value ?? fallback);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.max(1, Math.floor(parsed));
+}
+
+/**
+ * Render complete response lines under the same approximate three-characters
+ * per token rule used by graph traversal. Wrapper notices are deliberately
+ * outside the budget: callers must see that evidence was omitted, at both the
+ * beginning and end of the bounded result.
+ */
+function cutLinesToBudget(
+  lines: string[],
+  tokenBudget: number,
+  narrowHint: string,
+): string {
+  const output = lines.join("\n");
+  const charBudget = tokenBudget * 3;
+  if (output.length <= charBudget) return output;
+
+  let shown = 0;
+  let used = 0;
+  for (const line of lines) {
+    const nextLength = line.length + (shown > 0 ? 1 : 0);
+    if (used + nextLength > charBudget) break;
+    used += nextLength;
+    shown++;
+  }
+
+  const cutCount = lines.length - shown;
+  const notice =
+    `[!] TRUNCATED: showing ${shown} of ${lines.length} lines ` +
+    `(~${tokenBudget}-token budget). ${narrowHint}`;
+  const tail =
+    `... (truncated — ${cutCount} more lines cut by ~${tokenBudget}-token budget. ` +
+    `${narrowHint})`;
+  const kept = lines.slice(0, shown).join("\n");
+  return kept.length > 0
+    ? `${notice}\n\n${kept}\n${tail}`
+    : `${notice}\n\n${tail}`;
+}
+
+function edgeSourceSuffix(data: Record<string, unknown>): string {
+  const location = data.source_location;
+  if (location === undefined || location === null || String(location).length === 0) {
+    return "";
+  }
+  return ` at=${mcpField(data.source_file)}:${mcpField(location)}`;
+}
+
 function subgraphToText(
   G: Graph,
   nodes: Set<string>,
   edges: Array<[string, string]>,
   tokenBudget: number = 2000,
+  seeds: string[] = [],
 ): string {
-  const charBudget = tokenBudget * 3;
   const lines: string[] = [];
 
-  const sorted = [...nodes].sort((a, b) => G.degree(b) - G.degree(a));
+  const seedSet = new Set(seeds);
+  const sorted = [
+    ...seeds.filter((node, index) => nodes.has(node) && seeds.indexOf(node) === index),
+    ...[...nodes]
+      .filter((node) => !seedSet.has(node))
+      .sort((a, b) => G.degree(b) - G.degree(a) || a.localeCompare(b)),
+  ];
   for (const nid of sorted) {
     const d = G.getNodeAttributes(nid);
     lines.push(
@@ -351,15 +408,16 @@ function subgraphToText(
       if (!edgeKey) continue;
       const d = G.getEdgeAttributes(edgeKey);
       lines.push(
-        `EDGE ${nodeDisplayLabel(G, u)} --${mcpField(d.relation)} [${mcpField(d.confidence)}]--> ${nodeDisplayLabel(G, v)}`,
+        `EDGE ${nodeDisplayLabel(G, u)} --${mcpField(d.relation)} [${mcpField(d.confidence)}]--> ` +
+        `${nodeDisplayLabel(G, v)}${edgeSourceSuffix(d)}`,
       );
     }
   }
-  let output = lines.join("\n");
-  if (output.length > charBudget) {
-    output = output.slice(0, charBudget) + `\n... (truncated to ~${tokenBudget} token budget)`;
-  }
-  return output;
+  return cutLinesToBudget(
+    lines,
+    tokenBudget,
+    "Narrow the query or raise token_budget",
+  );
 }
 
 function findNode(G: Graph, label: string): string[] {
@@ -384,7 +442,7 @@ function toolQueryGraph(G: Graph, args: Record<string, unknown>): string {
   const question = args.question as string;
   const mode = (args.mode as string) ?? "bfs";
   const depth = Math.min(Number(args.depth ?? 3), 6);
-  const budget = Number(args.token_budget ?? 2000);
+  const budget = responseTokenBudget(args.token_budget);
   // Track F F-0816-P2 row 12 (port safishamsi 020cca2 / #964):
   // queryTerms() centralises the "filter short English noise only" rule
   // so two-character non-English query tokens (e.g. 前端) remain searchable.
@@ -405,7 +463,7 @@ function toolQueryGraph(G: Graph, args: Record<string, unknown>): string {
     (n) => nodeDisplayLabel(G, n),
   );
   const header = `Traversal: ${mode.toUpperCase()} depth=${depth} | Start: [${startLabels.join(", ")}] | ${visited.size} nodes found\n\n`;
-  return header + subgraphToText(G, visited, edges, budget);
+  return header + subgraphToText(G, visited, edges, budget, startNodes);
 }
 
 /**
@@ -469,10 +527,15 @@ function toolGetNeighbors(G: Graph, args: Record<string, unknown>): string {
     const rel = (d.relation as string) ?? "";
     if (relFilter && !rel.toLowerCase().includes(relFilter)) return;
     lines.push(
-      `  --> ${nodeDisplayLabel(G, neighbor)} [${mcpField(rel)}] [${mcpField(d.confidence)}]`,
+      `  --> ${nodeDisplayLabel(G, neighbor)} [${mcpField(rel)}] ` +
+      `[${mcpField(d.confidence)}]${edgeSourceSuffix(d)}`,
     );
   });
-  return lines.join("\n");
+  return cutLinesToBudget(
+    lines,
+    responseTokenBudget(args.token_budget),
+    "Narrow with relation_filter or use get_node for a specific symbol",
+  );
 }
 
 function toolGetCommunity(
@@ -491,7 +554,11 @@ function toolGetCommunity(
     const d = G.getNodeAttributes(n);
     lines.push(`  ${mcpField(d.label ?? n)} [${mcpField(d.source_file)}]`);
   }
-  return lines.join("\n");
+  return cutLinesToBudget(
+    lines,
+    responseTokenBudget(args.token_budget),
+    "Raise token_budget or use get_node for specific members",
+  );
 }
 
 function toolGodNodes(G: Graph, args: Record<string, unknown>): string {
@@ -1034,6 +1101,11 @@ export async function serve(
               type: "string",
               description: "Optional: filter by relation type",
             },
+            token_budget: {
+              type: "integer",
+              default: 2000,
+              description: "Max output tokens",
+            },
           },
           required: ["label"],
         },
@@ -1047,6 +1119,11 @@ export async function serve(
             community_id: {
               type: "integer",
               description: "Community ID (0-indexed by size)",
+            },
+            token_budget: {
+              type: "integer",
+              default: 2000,
+              description: "Max output tokens",
             },
           },
           required: ["community_id"],

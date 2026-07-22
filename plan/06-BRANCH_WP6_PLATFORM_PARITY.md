@@ -23,18 +23,18 @@
 
 ## Lot 1 — Bounded MCP Parity
 
-- [ ] Add a shared line-boundary response budget helper in `src/serve.ts`.
-- [ ] Add `token_budget` to `get_neighbors` and `get_community` schemas and handlers.
-- [ ] Put truncation notices at the top and bottom with shown/omitted counts and narrowing hints.
-- [ ] Preserve under-budget output and expose edge relation-site provenance when present.
-- [ ] Make traversal output cut at line boundaries with prominent honest truncation.
-- [ ] Add focused MCP tests for schemas, compatibility, bounds, counts, hints, and provenance.
+- [x] Add a shared line-boundary response budget helper in `src/serve.ts`.
+- [x] Add `token_budget` to `get_neighbors` and `get_community` schemas and handlers.
+- [x] Put truncation notices at the top and bottom with shown/omitted counts and narrowing hints.
+- [x] Preserve under-budget output and expose edge relation-site provenance when present.
+- [x] Make traversal output cut at line boundaries with prominent honest truncation.
+- [x] Add focused MCP tests for schemas, compatibility, bounds, counts, hints, and provenance.
 
 ## Lot 2 — Embedding Neutrality Guard
 
-- [ ] Add a repository test forbidding provider SDK and gateway imports under `src/storage/vector/**`.
-- [ ] Keep `EmbeddingProvider` injection as the active production boundary.
-- [ ] Do not add `MeshEmbeddingProvider` until a published mesh tarball closes the contract gate.
+- [x] Add a repository test forbidding provider SDK and gateway imports under `src/storage/vector/**`.
+- [x] Keep `EmbeddingProvider` injection as the active production boundary.
+- [x] Do not add `MeshEmbeddingProvider` until a published mesh tarball closes the contract gate.
 - [ ] Run focused vector storage and import-guard tests.
 
 ## Lot 3 — Intake Ledger And Coordination
