@@ -541,6 +541,20 @@ describe("MCP stdio server", () => {
       expect(manySeedTraversal.length).toBeLessThanOrEqual(128 * 3);
       expect(manySeedTraversal).not.toContain("Neighbor12-xxxxxxxxxxxxxxxxxxxxxxxx");
 
+      const fullManySeedTraversal = toolText(await client.callTool({
+        name: "query_graph",
+        arguments: {
+          question: "Neighbor01 Neighbor02 Neighbor03 Neighbor04",
+          depth: 0,
+          token_budget: 2000,
+        },
+      }));
+      expect(fullManySeedTraversal).not.toContain("TRUNCATED");
+      expect(fullManySeedTraversal).toContain(
+        "Start: [Neighbor01-xxxxxxxxxxxxxxxxxxxxxxxx, Neighbor02-xxxxxxxxxxxxxxxxxxxxxxxx, " +
+        "Neighbor03-xxxxxxxxxxxxxxxxxxxxxxxx, Neighbor04-xxxxxxxxxxxxxxxxxxxxxxxx]",
+      );
+
       const fullTraversal = toolText(await client.callTool({
         name: "query_graph",
         arguments: { question: "HubService", depth: 1, token_budget: 2000 },

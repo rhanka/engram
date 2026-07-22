@@ -471,15 +471,8 @@ function toolQueryGraph(G: Graph, args: Record<string, unknown>): string {
   const startLabels = startNodes.map(
     (n) => nodeDisplayLabel(G, n),
   );
-  const shownStartLabels = startLabels.slice(0, 3).map((label) =>
-    label.length > 60 ? `${label.slice(0, 59)}…` : label,
-  );
-  const hiddenStartCount = startLabels.length - shownStartLabels.length;
-  const startSummary = hiddenStartCount > 0
-    ? `${shownStartLabels.join(", ")}, … +${hiddenStartCount}`
-    : shownStartLabels.join(", ");
   const header =
-    `Traversal: ${mode.toUpperCase()} depth=${depth} | Start: [${startSummary}] | ` +
+    `Traversal: ${mode.toUpperCase()} depth=${depth} | Start: [${startLabels.join(", ")}] | ` +
     `${visited.size} nodes found`;
   return subgraphToText(G, visited, edges, budget, startNodes, [header, ""]);
 }
