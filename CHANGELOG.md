@@ -4,7 +4,7 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
-## 0.17.2 (2026-07-22)
+## 0.17.2 (2026-06-24)
 
 - **Mistral OCR v4 default.** Bumps `mistral-ocr` to `^0.1.3` and pins Graphify's default PDF OCR model to `mistral-ocr-4-0` instead of the moving `mistral-ocr-latest` alias. `GRAPHIFY_PDF_OCR_MODEL` still overrides the model when needed.
 - **Bounded MCP parity responses.** `get_neighbors` and `get_community` now accept a `token_budget` (default 2,000), truncate only at line boundaries, and report shown/omitted counts plus narrowing hints. Traversal output uses the same honest truncation, while edge output preserves relation-site `source_file` and `source_location` provenance when available.
