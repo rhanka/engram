@@ -6,7 +6,7 @@ This document tracks the delta between this TypeScript port and upstream Python 
 
 - Current TypeScript product branch: `main`
 - Current TypeScript WP6 code baseline: `705ada4` (`@sentropic/graphify@0.17.2`; bounded MCP parity at `e34cdfe`, embedding-neutrality guard at `705ada4`)
-- Current TypeScript package target: `@sentropic/graphify@0.17.2`; a patch candidate is allowed only after the WP6 gates in `spec/SPEC_EVOL_WP6_PLATFORM_PARITY.md`
+- Current TypeScript package target: the pending, untagged `@sentropic/graphify@0.17.2` source version (npm `latest` remains `0.17.1` as observed 2026-07-22); publication is allowed only after the WP6 gates in `spec/SPEC_EVOL_WP6_PLATFORM_PARITY.md`
 - Durable traceability spec: `spec/SPEC_UPSTREAM_TRACEABILITY.md`
 - Closed upstream `v3` baseline: `upstream/v3` at `699e996`
 - Closed Python parity target: remote tag `v0.4.23` at `8d908c5d43d079579604a82873fd7cff33a1b343`
@@ -19,8 +19,8 @@ This document tracks the delta between this TypeScript port and upstream Python 
 - Observed Python drift lock for the next pass: remote `upstream/v7` observed on 2026-05-12 at `ab32098063adb1ab4d9247747742958ad185db41`, with remote tag `v0.7.16` at the same commit
 - Active CRG stable review reference: `tirth8205/code-review-graph` tag `v2.3.7` at `6a1ee1c` with `main` at `6ce25b4e53f9df397f5136e86a59e17c02a610fe` (observed 2026-07-22; additive reference, not a parity driver)
 - Active Codeflow graph-UX reference: `braedonsaunders/codeflow` tag `v1` / `main` at `af3b0073f2b41c9f54938c6520509fd97d133803` (added 2026-07-09 for prettier/faster parametric graph rendering and stronger filtering UX; additive only, no npm parity impact — see `Codeflow intake (2026-07-09)` and `spec/SPEC_STUDIO_GRAPH_UX_CODEFLOW_PARITY.md`)
-- Reference upstream (functional, no code ports — AGPL): `repowise-dev/repowise` tag `v0.34.0` at `741e129` with `main` at `c47b8d497a3d61affa48030b989d9ae56c59e11f`; see `Repowise Reference Intake (2026-07-06)` and the superseding WP6 disposition below
-- Current released line: `@sentropic/graphify@0.17.2`; historical version-alignment rows remain evidence for their own observed dates, while the 2026-07-22 WP6 section below is authoritative for current intake and release posture
+- Reference upstream (functional, no code ports — AGPL): `repowise-dev/repowise` tag `v0.34.0` at `741e129` with `main` at `210b8fa350359d867e0e1da24d6e79dd0b1f51d9`; see `Repowise Reference Intake (2026-07-06)` and the superseding WP6 disposition below
+- Current source line: the pending, untagged `@sentropic/graphify@0.17.2`; npm `latest` is `0.17.1`. Historical version-alignment rows remain evidence for their own observed dates, while the 2026-07-22 WP6 section below is authoritative for current intake and release posture
 
 ## WP6 Coordinated Intake (2026-07-22)
 
@@ -32,7 +32,12 @@ rewriting their historical evidence. Full decisions and acceptance live in
 | --- | --- | --- | --- | --- | --- |
 | Python Graphify (MIT) | `v8` `82c46e5358d5b3185b7d66573b52f01e59bd2d06`; stable `v0.9.23` `c83085cf` | `31211a0..82c46e5` = 230 commits | Bounded MCP line-list/traversal responses (`fef9dbb`, `deb2620`) and verified relation-site provenance slice (`1fbc623`), ported in `e34cdfe` | Atomic writer consolidation, cache/watch/partial-build integrity, update/ignore semantics, language/resolution clusters; each requires a bounded reproducer lot | Python packaging/release mechanics, Python-only runtime refactors, provider-specific embedding wiring |
 | CodeReviewGraph (MIT) | `main` `6ce25b4`; stable `v2.3.7` `6a1ee1c` | `935695f..6ce25b4` = 226 commits | No direct port; summary, review-delta/analysis/eval, install preview, provenance, and query tools are already represented | Weighted impact radius, transitive-test lookup, churn risk, review-pr, additional languages, persisted flow tables | SQLite/daemon defaults, direct embedding baseline, editor parity, Python plumbing, reverted IBM Bob support |
-| Repowise (AGPL-3.0) | `main` `c47b8d4`; stable `v0.34.0` `741e129` | `6680c282..c47b8d4` = 237 commits | Design-only refusal-over-fabrication and bounded-response principles; no copied/translated code | SCC/cycles, per-test maps, curated responses, no-LLM wiki, code health/dead code, git risk/provenance, tours, savings/context blocks | AGPL code/templates/constants, resident server/database/provider-key stack, provider routing, uncalibrated scores, core dollar ledger |
+| Repowise (AGPL-3.0) | `main` `210b8fa`; stable `v0.34.0` `741e129` | `6680c282..210b8fa` = 241 commits | Design-only refusal-over-fabrication and bounded-response principles; no copied/translated code | SCC/cycles, per-test maps, curated responses, no-LLM wiki, code health/dead code, git risk/provenance, tours, savings/context blocks | AGPL code/templates/constants, resident server/database/provider-key stack, provider routing, uncalibrated scores, core dollar ledger |
+
+The four-commit Repowise tail `c47b8d4..210b8fa` adds honest deferred-workspace
+reporting and no-provider `init`/template-wiki fallbacks (`#1000`–`#1003`). It
+does not change the AGPL design-only disposition: the UX principles remain
+deferred references, and no code, template, or provider stack is adopted.
 
 Embedding neutrality is specified but externally blocked. The published
 `@sentropic/llm-mesh@0.10.0` and `@sentropic/llm-gateway@0.9.0` tarballs expose

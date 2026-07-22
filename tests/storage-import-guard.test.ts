@@ -32,15 +32,7 @@ const DRIVER_PACKAGES = [
   "pgvector",
 ];
 
-const FORBIDDEN_VECTOR_PROVIDER_PACKAGES = [
-  "@sentropic/llm-gateway",
-  "@anthropic-ai/sdk",
-  "@google/generative-ai",
-  "@mistralai/mistralai",
-  "cohere-ai",
-  "ollama",
-  "openai",
-];
+const ALLOWED_VECTOR_PACKAGE_IMPORTS = ["pg", "pgvector"];
 
 /** Recursively collect every .ts file under src/storage (incl. vector/). */
 function collectStorageFiles(dir: string): string[] {
@@ -87,11 +79,18 @@ describe("storage import guard", () => {
 
     for (const file of files) {
       const content = readFileSync(file, "utf-8");
-      for (const pkg of FORBIDDEN_VECTOR_PROVIDER_PACKAGES) {
-        const escaped = pkg.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
-        expect(content, `${file} must not import or require ${pkg}`).not.toMatch(
-          new RegExp(`(from\\s*|import\\s*\\(|require\\(\\s*)["']${escaped}["']`),
+      const importSpecifiers = [...content.matchAll(
+        /(?:from\s*|import\s*\(\s*|require\(\s*)["']([^"']+)["']/g,
+      )].map((match) => match[1]);
+      for (const specifier of importSpecifiers) {
+        if (specifier.startsWith(".") || specifier.startsWith("node:")) continue;
+        const allowed = ALLOWED_VECTOR_PACKAGE_IMPORTS.some(
+          (pkg) => specifier === pkg || specifier.startsWith(`${pkg}/`),
         );
+        expect(
+          allowed,
+          `${file} must not import non-storage package ${specifier}; inject providers through EmbeddingProvider`,
+        ).toBe(true);
       }
     }
   });

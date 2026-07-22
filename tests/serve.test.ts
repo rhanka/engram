@@ -462,8 +462,9 @@ describe("MCP stdio server", () => {
         expect(tool?.inputSchema.properties).toMatchObject({
           token_budget: {
             type: "integer",
+            minimum: 128,
             default: 2000,
-            description: "Max output tokens",
+            description: "Approximate max output tokens (3 chars/token; minimum 128)",
           },
         });
       }
@@ -495,11 +496,12 @@ describe("MCP stdio server", () => {
 
       const boundedNeighbors = toolText(await client.callTool({
         name: "get_neighbors",
-        arguments: { label: "HubService", token_budget: 45 },
+        arguments: { label: "HubService", token_budget: 128 },
       }));
       expect(boundedNeighbors).toMatch(/^\[!\] TRUNCATED: showing \d+ of 13 lines/);
       expect(boundedNeighbors).toContain("Narrow with relation_filter or use get_node");
-      expect(boundedNeighbors).toMatch(/\.\.\. \(truncated — \d+ more lines cut/);
+      expect(boundedNeighbors).toMatch(/\[!\] END TRUNCATED: \d+ lines omitted\.$/);
+      expect(boundedNeighbors.length).toBeLessThanOrEqual(128 * 3);
       expect(boundedNeighbors).not.toContain("Neighbor12-");
       for (const line of boundedNeighbors.split("\n")) {
         if (!line.startsWith("  -->")) continue;
@@ -508,19 +510,36 @@ describe("MCP stdio server", () => {
 
       const boundedCommunity = toolText(await client.callTool({
         name: "get_community",
-        arguments: { community_id: 0, token_budget: 40 },
+        arguments: { community_id: 0, token_budget: 128 },
       }));
       expect(boundedCommunity).toMatch(/^\[!\] TRUNCATED: showing \d+ of 14 lines/);
       expect(boundedCommunity).toContain("Raise token_budget or use get_node");
+      expect(boundedCommunity.length).toBeLessThanOrEqual(128 * 3);
       expect(boundedCommunity).not.toContain("Neighbor12-");
 
       const boundedTraversal = toolText(await client.callTool({
         name: "query_graph",
-        arguments: { question: "HubService", depth: 1, token_budget: 45 },
+        arguments: { question: "HubService", depth: 1, token_budget: 128 },
       }));
-      expect(boundedTraversal).toContain("\n\n[!] TRUNCATED:");
+      expect(boundedTraversal).toMatch(/^\[!\] TRUNCATED:/);
       expect(boundedTraversal).toContain("NODE HubService");
       expect(boundedTraversal).toContain("Narrow the query or raise token_budget");
+      expect(boundedTraversal.length).toBeLessThanOrEqual(128 * 3);
+
+      const manySeedTraversal = toolText(await client.callTool({
+        name: "query_graph",
+        arguments: {
+          question: Array.from(
+            { length: 12 },
+            (_, index) => `Neighbor${String(index + 1).padStart(2, "0")}`,
+          ).join(" "),
+          depth: 0,
+          token_budget: 128,
+        },
+      }));
+      expect(manySeedTraversal).toContain("TRUNCATED");
+      expect(manySeedTraversal.length).toBeLessThanOrEqual(128 * 3);
+      expect(manySeedTraversal).not.toContain("Neighbor12-xxxxxxxxxxxxxxxxxxxxxxxx");
 
       const fullTraversal = toolText(await client.callTool({
         name: "query_graph",
