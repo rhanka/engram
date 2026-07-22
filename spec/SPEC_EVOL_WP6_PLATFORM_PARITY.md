@@ -4,7 +4,7 @@ Status: validated for implementation
 
 Date: 2026-07-22
 
-Local baseline: `main` at `d9d2b23` (`@sentropic/graphify@0.17.2`)
+Local baseline: `main` at `d9d2b23` (pending, untagged `@sentropic/graphify@0.17.2`; npm `latest` was `0.17.1` on 2026-07-22)
 
 Track parent: `01KW89F1ZD6TSXAWRXYQQPSD9Y`
 
@@ -33,7 +33,7 @@ Observed by authoritative remote refs on 2026-07-22:
 | --- | --- | --- | --- |
 | `safishamsi/graphify` | `v8` `82c46e5358d5b3185b7d66573b52f01e59bd2d06` | `v0.9.23` `c83085cf` | Sole port-parity authority |
 | `tirth8205/code-review-graph` | `main` `6ce25b4e53f9df397f5136e86a59e17c02a610fe` | `v2.3.7` `6a1ee1c` | Additive product reference |
-| `repowise-dev/repowise` | `main` `c47b8d497a3d61affa48030b989d9ae56c59e11f` | `v0.34.0` `741e129` | AGPL design reference only |
+| `repowise-dev/repowise` | `main` `210b8fa350359d867e0e1da24d6e79dd0b1f51d9` | `v0.34.0` `741e129` | AGPL design reference only |
 | `@sentropic/llm-mesh` | npm `0.10.0` | published tarball | Generation/stream contract; no embedding operation |
 | `@sentropic/llm-gateway` | npm `0.9.0` | published tarball | Gateway routing contract; no embedding route |
 
@@ -99,6 +99,8 @@ Source-branch promises do not close this gate; a published tarball integration
 test does.
 
 ### D4 — h2a/subagent coordination
+
+#### h2a coordination evidence
 
 The active h2a root is `/home/antoinefa/h2a-workspace/.h2a`; the repo-local
 `.h2a` is dormant and must not be used as a second authority. WP6 uses one
