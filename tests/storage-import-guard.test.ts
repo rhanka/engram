@@ -22,6 +22,7 @@ vi.mock("neo4j-driver", () => {
 });
 
 const storageDir = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "storage");
+const vectorStorageDir = join(storageDir, "vector");
 
 const DRIVER_PACKAGES = [
   "neo4j-driver",
@@ -29,6 +30,16 @@ const DRIVER_PACKAGES = [
   "better-sqlite3",
   "pg",
   "pgvector",
+];
+
+const FORBIDDEN_VECTOR_PROVIDER_PACKAGES = [
+  "@sentropic/llm-gateway",
+  "@anthropic-ai/sdk",
+  "@google/generative-ai",
+  "@mistralai/mistralai",
+  "cohere-ai",
+  "ollama",
+  "openai",
 ];
 
 /** Recursively collect every .ts file under src/storage (incl. vector/). */
@@ -65,6 +76,21 @@ describe("storage import guard", () => {
         // CJS require("pkg").
         expect(content, `${file} must not require ${pkg}`).not.toMatch(
           new RegExp(`require\\(\\s*["']${escaped}["']\\s*\\)`),
+        );
+      }
+    }
+  });
+
+  it("keeps vector storage provider-neutral and gateway-unaware", () => {
+    const files = collectStorageFiles(vectorStorageDir);
+    expect(files.length).toBeGreaterThan(0);
+
+    for (const file of files) {
+      const content = readFileSync(file, "utf-8");
+      for (const pkg of FORBIDDEN_VECTOR_PROVIDER_PACKAGES) {
+        const escaped = pkg.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+        expect(content, `${file} must not import or require ${pkg}`).not.toMatch(
+          new RegExp(`(from\\s*|import\\s*\\(|require\\(\\s*)["']${escaped}["']`),
         );
       }
     }
