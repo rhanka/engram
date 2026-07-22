@@ -521,6 +521,23 @@ export type {
 export type { LlmExecutionMode } from "./llm-execution.js";
 export { buildFirstHopSummary, firstHopSummaryToText } from "./summary.js";
 export type { FirstHopSummary, FirstHopHub, FirstHopCommunity, FirstHopSummaryOptions } from "./summary.js";
+export {
+  TEMPORAL_RECALL_SCHEMA,
+  filterTemporalWindow,
+  formatTemporalRecall,
+  parseRecallTimestamp,
+  recallAsOf,
+  runTemporalRecall,
+} from "./temporal-recall.js";
+export type {
+  TemporalRecallCliDeps,
+  TemporalRecallCliOptions,
+  TemporalRecallDeps,
+  TemporalRecallOptions,
+  TemporalRecallResult,
+  TemporalRecallSnapshot,
+  TemporalRecallSource,
+} from "./temporal-recall.js";
 export { buildReviewDelta, reviewDeltaToText, computeAffectedFiles, affectedFilesToText } from "./review.js";
 export type { ReviewDelta, ReviewNode, ReviewChain, ReviewDeltaOptions, ComputeAffectedFilesOptions } from "./review.js";
 export { buildReviewAnalysis, reviewAnalysisToText, evaluateReviewAnalysis, reviewEvaluationToText } from "./review-analysis.js";

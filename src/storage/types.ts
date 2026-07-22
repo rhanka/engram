@@ -44,6 +44,12 @@ export interface GraphStoreCapabilities {
    * coherent with a committed full snapshot.
    */
   window?: GraphStoreWindowCapability;
+  /**
+   * Optional temporal overlap reader. Backends that persist the shared `t` /
+   * `t_end` contract as indexed fields expose `queryWindow`; all other
+   * backends omit both this flag and the method.
+   */
+  queryWindow?: true;
 }
 
 /** Versioned descriptor for the optional group-by aggregate capability (LOT 1). */
@@ -114,6 +120,42 @@ export interface GraphWindow {
   limit: number;
   nodes: GraphWindowNode[];
   edges: GraphWindowEdge[];
+}
+
+/** A canonical, flattened node returned by a temporal overlap query. */
+export interface GraphTimeWindowNode {
+  id: string;
+  label: string;
+  node_type?: string;
+  community?: number;
+  t: number;
+  t_end?: number;
+  /** Provider-neutral pass-through graph attributes. */
+  [key: string]: unknown;
+}
+
+/** A canonical, flattened edge returned by a temporal overlap query. */
+export interface GraphTimeWindowEdge {
+  source: string;
+  target: string;
+  relation: string;
+  confidence?: string;
+  t: number;
+  t_end?: number;
+  /** Provider-neutral pass-through graph attributes. */
+  [key: string]: unknown;
+}
+
+/** Result of a temporal overlap query. Untimed/invalid elements are excluded. */
+export interface GraphTimeWindow {
+  nodes: GraphTimeWindowNode[];
+  edges: GraphTimeWindowEdge[];
+}
+
+/** Options which scope a temporal overlap query without changing its interval. */
+export interface GraphTimeWindowOptions {
+  /** Optional backend namespace override. Providers must parameterize it. */
+  namespace?: string;
 }
 
 /** One group bucket: a distinct value of an axis and its node count. */
@@ -201,6 +243,19 @@ export interface GraphStore {
    * ships the full multi-MB scene. Scoped to the latest REPLACE snapshot.
    */
   graphWindow?(options?: GraphWindowOptions): Promise<GraphWindow>;
+  /**
+   * Capability-gated temporal overlap read. Returns elements whose interval
+   * starts at `t` and either ends at `t_end` or remains open when `t_end` is
+   * absent, overlapping the inclusive `[fromMs, toMs]` range. Untimed and
+   * malformed elements are excluded. Node and edge membership is independent,
+   * so returned edges are not guaranteed to have both endpoints in `nodes`.
+   * Present ONLY with `capabilities.queryWindow`.
+   */
+  queryWindow?(
+    fromMs: number,
+    toMs: number,
+    options?: GraphTimeWindowOptions,
+  ): Promise<GraphTimeWindow>;
   close(): Promise<void>;
 }
 

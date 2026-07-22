@@ -5768,6 +5768,44 @@ export async function main(): Promise<void> {
     });
 
   program
+    .command("recall")
+    .description(
+      "Read-only temporal graph recall at one instant (chronological projection, not authored memory)",
+    )
+    .requiredOption(
+      "--as-of <timestamp>",
+      "Safe integer epoch-ms or ISO-8601 with an explicit Z/UTC offset",
+    )
+    .option(
+      "--graph <path>",
+      "Explicit graph.json source (forces deterministic file recall)",
+    )
+    .option(
+      "--config <path>",
+      "Graphify config for the state-dir and optional configured store",
+    )
+    .option(
+      "--store <id>",
+      "GraphStore id (default: GRAPHIFY_STORE or storage.mirrors[0].backend)",
+    )
+    .option("--json", "Emit only graphify.temporal-recall/v1 JSON")
+    .action(async (opts) => {
+      try {
+        const { runTemporalRecall } = await import("./temporal-recall.js");
+        await runTemporalRecall({
+          asOf: String(opts.asOf),
+          ...(opts.graph ? { graph: String(opts.graph) } : {}),
+          ...(opts.config ? { config: String(opts.config) } : {}),
+          ...(opts.store ? { store: String(opts.store) } : {}),
+          ...(opts.json ? { json: true } : {}),
+        });
+      } catch (error) {
+        console.error(`error: ${error instanceof Error ? error.message : String(error)}`);
+        process.exit(1);
+      }
+    });
+
+  program
     .command("query <question>")
     .description("BFS traversal of graph.json for a question")
     .option("--dfs", "Use depth-first instead of breadth-first")
