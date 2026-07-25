@@ -189,6 +189,10 @@ function buildOneClassHierarchy(
       child_ids: (childIdsByParent.get(id) ?? []).sort(compareStrings),
       level: index.ancestor_paths[id]?.length ?? 0,
       member_node_types: memberNodeTypesByClass.get(className) ?? [],
+      // Declarative binding only: the forest itself stays in the scene
+      // hierarchies sidecar (D1), the class just names which one it owns so a
+      // consumer can splice it in place and keep ONE ontology tree.
+      member_hierarchies: [...new Set(klass.member_hierarchies)].sort(compareStrings),
       member_ids: (memberIdsByClass.get(className) ?? []).sort(compareStrings),
       source: "profile",
       status: "reference",
