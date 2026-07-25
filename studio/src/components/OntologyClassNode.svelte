@@ -183,6 +183,12 @@
   /* These rules used to live in LeftRail's scoped block; they move WITH the
      markup so the recursive node stays self-contained at any depth. */
   .rail-onto-head {
+    /* Width of the visibility control + the row gap. The nested region is pulled
+       back by exactly this, so a child row aligns under its parent's EYE rather
+       than under its parent's TITLE. Without it every class level costs ~37px of
+       dead gutter before the adaptive step is even applied, and by the time the
+       process tree starts a third of the 306px rail is already gone. */
+    --rail-eye-col: calc(2rem + 0.3rem);
     display: flex;
     align-items: flex-start;
     gap: 0.3rem;
@@ -208,8 +214,14 @@
     display: inline-flex;
     align-items: center;
   }
-  /* Kill the nested Collapsible region's inline padding so the rail's single
-     indent step (--rail-indent, set by LeftRail) is the only offset. */
+  /* Kill the nested Collapsible region's inline padding so the ADAPTIVE step is
+     the only offset, and pull the region back across the eye column (see
+     --rail-eye-col) so nesting costs the step ALONE. */
+  .rail-onto-head > :global(.st-collapsible) > :global(.st-collapsible__region) {
+    padding-left: 0;
+    padding-right: 0;
+    margin-left: calc(-1 * var(--rail-eye-col));
+  }
   .rail-onto-head :global(.st-collapsible__region) {
     padding-left: 0;
     padding-right: 0;
