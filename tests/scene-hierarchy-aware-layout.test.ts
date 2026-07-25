@@ -139,6 +139,88 @@ describe("hierarchy-aware layout", () => {
     expect(distinct.size).toBe(ids.length);
   });
 
+  it("spreads a wide ring so consecutive siblings stay ~nodeGap apart", () => {
+    // 1000 leaves on ONE ring: sizing on sqrt(size) alone would leave them a
+    // few units apart — a solid donut with no separable branch.
+    const ids = ["R"];
+    const children: string[] = [];
+    for (let i = 0; i < 1000; i++) {
+      const id = `R.${String(i).padStart(4, "0")}`;
+      ids.push(id);
+      children.push(id);
+    }
+    const wide: HierarchyLayoutForest = {
+      root_ids: ["R"],
+      nodes_by_id: {
+        R: { parent_id: null, child_ids: children },
+        ...Object.fromEntries(children.map((id) => [id, { parent_id: "R", child_ids: [] }])),
+      },
+    };
+    const nodeGap = 44;
+    const { positions } = computeHierarchyAwarePositions(scene(ids).nodes, { wide }, { nodeGap });
+
+    // The root is the cluster centre; measure the leaf ring around it.
+    const centre = { x: positions[0]!, y: positions[1]! };
+    const angles = children
+      .map((_, i) => {
+        const index = (i + 1) * 2;
+        return Math.atan2(positions[index + 1]! - centre.y, positions[index]! - centre.x);
+      })
+      .sort((a, b) => a - b);
+    const ringRadius = radius(
+      { x: positions[2]!, y: positions[3]! },
+      centre,
+    );
+    let minArc = Infinity;
+    for (let i = 1; i < angles.length; i++) {
+      minArc = Math.min(minArc, (angles[i]! - angles[i - 1]!) * ringRadius);
+    }
+    expect(minArc).toBeGreaterThan(nodeGap * 0.8);
+  });
+
+  it("packs clusters on their OWN radius, so a small one is not adrift", () => {
+    const smallForest: HierarchyLayoutForest = {
+      root_ids: ["S"],
+      nodes_by_id: {
+        S: { parent_id: null, child_ids: ["S.01", "S.02"] },
+        "S.01": { parent_id: "S", child_ids: [] },
+        "S.02": { parent_id: "S", child_ids: [] },
+      },
+    };
+    const smallIds = ["S", "S.01", "S.02"];
+    const looseIds = Array.from({ length: 4000 }, (_, i) => `loose-${String(i).padStart(4, "0")}`);
+    const ids = [...smallIds, ...looseIds];
+    const types = Object.fromEntries(looseIds.map((id) => [id, "Tool"]));
+    const { positions } = computeHierarchyAwarePositions(scene(ids, types).nodes, {
+      s: smallForest,
+    });
+
+    const extent = (from: number, count: number) => {
+      let sumX = 0;
+      let sumY = 0;
+      for (let i = from; i < from + count; i++) {
+        sumX += positions[i * 2]!;
+        sumY += positions[i * 2 + 1]!;
+      }
+      const centre = { x: sumX / count, y: sumY / count };
+      let max = 0;
+      for (let i = from; i < from + count; i++) {
+        max = Math.max(max, radius({ x: positions[i * 2]!, y: positions[i * 2 + 1]! }, centre));
+      }
+      return { centre, radius: max };
+    };
+
+    const small = extent(0, smallIds.length);
+    const big = extent(smallIds.length, looseIds.length);
+    const separation = radius(small.centre, big.centre);
+
+    // Disjoint (no cluster bleeds into another)…
+    expect(separation).toBeGreaterThan(small.radius);
+    // …but NOT parked a whole big-cluster cell away, which is what a uniform
+    // grid does to every cluster that is not the largest.
+    expect(separation).toBeLessThan((small.radius + big.radius) * 2);
+  });
+
   it("pins positions and stamps the scene contract", () => {
     const target = scene(ALL);
     attachHierarchyAwarePositions(target, { t: forest() });
