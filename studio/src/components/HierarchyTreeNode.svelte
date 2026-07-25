@@ -31,7 +31,16 @@
   const entry = $derived(nodesById?.[nodeId] ?? null);
   const childIds = $derived(entry?.child_ids ?? []);
   const hasChildren = $derived(childIds.length > 0);
-  const label = $derived(labelFor(nodeId));
+  // Prefer the sidecar's OWN label: the artifact is self-describing, so a row
+  // stays readable even for a record with no joinable scene node. Fall back to
+  // the graph join, then to the raw id (which is itself the process code).
+  const entryLabel = $derived(
+    typeof entry?.label === "string" && entry.label ? entry.label : null,
+  );
+  const label = $derived(entryLabel ?? labelFor(nodeId));
+  // "process code + label" — show the code alongside the name, unless the row is
+  // self-labelled (label === id) and the code would just be printed twice.
+  const code = $derived(label === String(nodeId) ? null : String(nodeId));
   const level = $derived(entry?.level ?? 0);
   const sceneId = $derived(sceneIdFor(nodeId));
   const selected = $derived(sceneId != null && selectedSet.has(sceneId));
@@ -60,7 +69,9 @@
       title={nodeId}
       onclick={() => onSelectSubtree(nodeId)}
     >
-      <span class="rail-hier-text">{label}</span>
+      <span class="rail-hier-text">
+        {#if code}<span class="rail-hier-code">{code}</span>{/if}{label}
+      </span>
       <span class="rail-hier-badges">
         <Badge shape="circle" size="sm" tone="neutral">L{level}</Badge>
         {#if hasChildren}
@@ -145,6 +156,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .rail-hier-code {
+    margin-right: 0.4rem;
+    color: var(--st-color-text-muted, #7a8194);
+    font-family: var(--st-font-mono, ui-monospace, monospace);
+    font-size: 0.85em;
   }
   .rail-hier-badges {
     flex: 0 0 auto;
