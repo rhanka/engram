@@ -4,6 +4,7 @@ import { parse as parseCsv } from "csv-parse/sync";
 import { parse as parseYaml } from "yaml";
 
 import { auditNormalizerContracts, compileNormalizerByNodeType } from "./entity-normalizer.js";
+import { normalizeIdPart } from "./node-id.js";
 import type {
   Extraction,
   NormalizedOntologyProfile,
@@ -136,11 +137,16 @@ export function loadProfileRegistries(
   return registries;
 }
 
+/**
+ * Case-preserving, Unicode-safe id fragment.
+ *
+ * An ASCII-only fold collapsed every non-Latin record id to the empty string,
+ * so two records such as `日本語` and `中文` produced the same `registry_<id>_`
+ * node id and the second was silently dropped by the `seen` guard below.
+ * Registries are exactly where non-Latin proper names live.
+ */
 function safeIdPart(value: string): string {
-  return value
-    .trim()
-    .replace(/[^A-Za-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
+  return normalizeIdPart(value);
 }
 
 export function registryRecordsToExtraction(
