@@ -10,7 +10,8 @@
  * the live server uses (no duplicated scene/sidecar/reconciliation logic):
  *
  *   index.html + assets/        <- copy of dist/studio-app (the Vite build)
- *   graph.json                  <- copy of <state>/graph.json (verbatim)
+ *   graph.json                  <- copy of <state>/graph.json (verbatim, unless
+ *                                  --complete-registry-seeds adds seed nodes)
  *   scene.json                  <- buildStudioScene(graph)        (./scene.json)
  *   reconciliation-candidates.json
  *                               <- queryOntologyReconciliationCandidates(...)
@@ -33,6 +34,20 @@
  *   --profile  profile path/dir for reconciliation context. Optional: when
  *              omitted the reconciliation candidates are emitted from the state's
  *              candidates.json as-is (no profile-hash staleness check).
+ *
+ *   --layout   build-time layout id: force | typed-layer | time-oriented |
+ *              hierarchy-aware. Omitted => hierarchy-aware when the bundle
+ *              carries declared hierarchies, force otherwise.
+ *   --complete-registry-seeds <normalized-profile.json>
+ *              Materialise the registry rows MISSING from graph.json as seed
+ *              nodes before the scene is built. Takes a NORMALIZED profile JSON
+ *              (its registries must carry `bound_source_path`; the YAML profile
+ *              alone does not bind sources). Off by default — and while it is
+ *              off graph.json stays a verbatim byte-identical copy.
+ *   --complete-registry-seeds-scope hierarchies|all
+ *              Which registries to complete. `hierarchies` (default) completes
+ *              only those backing a declared hierarchy — the ones whose
+ *              incompleteness silently breaks the sidecar join.
  *
  *   --qa-target        quality.targets.<id> preflight to run after bundle emit.
  *   --qa-config        graphify.yaml / .graphify/config.yaml containing target.
@@ -64,6 +79,9 @@ function parseArgs(argv) {
     state: ".graphify",
     out: "docs/studio",
     profile: null,
+    layout: null,
+    completeRegistrySeeds: null,
+    completeRegistrySeedsScope: "hierarchies",
     qaConfig: null,
     qaFailOnError: false,
     qaManifest: null,
@@ -75,6 +93,9 @@ function parseArgs(argv) {
     if (arg === "--state") args.state = argv[++i];
     else if (arg === "--out") args.out = argv[++i];
     else if (arg === "--profile") args.profile = argv[++i];
+    else if (arg === "--layout") args.layout = argv[++i];
+    else if (arg === "--complete-registry-seeds") args.completeRegistrySeeds = argv[++i];
+    else if (arg === "--complete-registry-seeds-scope") args.completeRegistrySeedsScope = argv[++i];
     else if (arg === "--qa-config") args.qaConfig = argv[++i];
     else if (arg === "--qa-fail-on-error") args.qaFailOnError = true;
     else if (arg === "--qa-manifest") args.qaManifest = argv[++i];
@@ -94,7 +115,7 @@ function die(msg) {
 const args = parseArgs(process.argv.slice(2));
 if (args.help) {
   console.log(
-    "Usage: node scripts/build-studio-demo.mjs --state <dir> --out <dir> [--profile <p>] [--qa-target <id> [--qa-config <path>] [--qa-manifest <path>] [--qa-report <path>] [--qa-fail-on-error]]",
+    "Usage: node scripts/build-studio-demo.mjs --state <dir> --out <dir> [--profile <p>] [--layout <id>] [--complete-registry-seeds <normalized-profile.json> [--complete-registry-seeds-scope hierarchies|all]] [--qa-target <id> [--qa-config <path>] [--qa-manifest <path>] [--qa-report <path>] [--qa-fail-on-error]]",
   );
   process.exit(0);
 }
@@ -114,7 +135,11 @@ if (!existsSync(join(spaDir, "index.html"))) {
 
 // Import the SAME builders the live server uses. Requires the server build.
 let buildStudioScene;
-let attachLayoutPositions;
+let applySceneLayout;
+let selectDefaultSceneLayoutId;
+let completeRegistrySeeds;
+let registriesBackingHierarchies;
+let loadProfileRegistries;
 let buildEntitySidecar;
 let emitSceneHierarchies;
 let emitClassHierarchies;
@@ -131,10 +156,14 @@ let loadOntologyReconciliationCandidates;
 let queryOntologyReconciliationCandidates;
 try {
   ({
+    applySceneLayout,
     buildStudioScene,
-    attachLayoutPositions,
     buildEntitySidecar,
+    completeRegistrySeeds,
     discoverQualityTargetsConfig,
+    loadProfileRegistries,
+    registriesBackingHierarchies,
+    selectDefaultSceneLayoutId,
     emitSceneHierarchies,
     emitClassHierarchies,
     loadOntologyProfile,
@@ -291,33 +320,108 @@ for (const f of [
 rmSync(join(outDir, "assets"), { recursive: true, force: true });
 cpSync(spaDir, outDir, { recursive: true });
 
-// --- 2. graph.json: verbatim copy (byte-identical to the artifact). ---
+// --- 2. graph.json (verbatim copy unless registry seeds are completed). ---
 const graphRaw = readFileSync(graphPath, "utf-8");
-writeFileSync(join(outDir, "graph.json"), graphRaw);
 const graph = JSON.parse(graphRaw);
-const nodes = Array.isArray(graph.nodes) ? graph.nodes : [];
+if (!Array.isArray(graph.nodes)) graph.nodes = [];
+
+// --- 2b. Registry-seed completion (OPT-IN). ---
+// A node_type bound to a registry declares EVERY registry row an entity, but
+// extraction only seeds a record the corpus mentions. Registries whose rows are
+// mostly uncited therefore land famished, which stays invisible until something
+// joins on the registry ids — at which point the hierarchy sidecar silently
+// drops the whole forest into dangling_arc_count. Completing the seeds is
+// deterministic and LLM-free, and strictly ADDITIVE: no existing node changes.
+let seedCompletion = null;
+if (args.completeRegistrySeeds) {
+  const scope = String(args.completeRegistrySeedsScope ?? "hierarchies");
+  if (scope !== "hierarchies" && scope !== "all") {
+    die(`--complete-registry-seeds-scope must be "hierarchies" or "all"; got ${scope}`);
+  }
+  const normalizedProfilePath = resolve(args.completeRegistrySeeds);
+  if (!existsSync(normalizedProfilePath)) {
+    die(`--complete-registry-seeds: normalized profile not found: ${normalizedProfilePath}`);
+  }
+  const normalizedProfile = JSON.parse(readFileSync(normalizedProfilePath, "utf-8"));
+  const unbound = Object.entries(normalizedProfile.registries ?? {})
+    .filter(([, spec]) => !spec?.bound_source_path)
+    .map(([id]) => id);
+  if (unbound.length === Object.keys(normalizedProfile.registries ?? {}).length) {
+    die(
+      `--complete-registry-seeds: no registry in ${normalizedProfilePath} carries bound_source_path; ` +
+        "pass the NORMALIZED profile (e.g. <state>/profile/ontology-profile.normalized.json), not the YAML.",
+    );
+  }
+  // Only load the registries we intend to complete: an unbound one would throw.
+  const scoped = scope === "all"
+    ? Object.keys(normalizedProfile.registries ?? {})
+    : registriesBackingHierarchies(normalizedProfile);
+  const selectable = scoped.filter((id) => !unbound.includes(id));
+  const profileForLoad = {
+    ...normalizedProfile,
+    registries: Object.fromEntries(
+      selectable.map((id) => [id, normalizedProfile.registries[id]]),
+    ),
+  };
+  const registries = loadProfileRegistries(profileForLoad);
+  seedCompletion = completeRegistrySeeds({
+    registries,
+    profile: normalizedProfile,
+    graphNodes: graph.nodes,
+  });
+  graph.nodes.push(...seedCompletion.nodes);
+}
+
+// Re-serialize only when completion actually changed the node set; otherwise
+// the bundle's graph.json stays byte-identical to the state artifact.
+writeFileSync(
+  join(outDir, "graph.json"),
+  seedCompletion && seedCompletion.added > 0 ? JSON.stringify(graph) : graphRaw,
+);
+const nodes = graph.nodes;
 
 // --- 3. scene.json: the light Studio scene (server's sceneJsonResult). ---
-// Pre-compute and pin node positions (x,y + fx,fy) so the SPA renders the
-// settled layout with iterations=1 — no O(n²) force sim on the main thread at
-// mount. Matches the live server route byte-for-byte (deterministic layout).
-const scene = attachLayoutPositions(buildStudioScene(graph));
-writeFileSync(join(outDir, "scene.json"), JSON.stringify(scene));
+// Built FIRST but positioned LAST: the hierarchy sidecar (3b) is an input to
+// the hierarchy-aware layout, so the scene cannot be baked before it exists.
+const scene = buildStudioScene(graph);
 
 // --- 3b. scene-hierarchies.json (workspace-bundle-contract-v1, D1). ---
 // STANDALONE sidecar (never embedded in scene.json), emitted iff the
 // ontology compile produced <state>/ontology/hierarchies.json. Joins on the
 // raw registry ids: the scene contributes its lossless `registry_record_id`s.
 const sceneRawIds = new Set();
+// Raw id -> label, so tree rows render a readable name instead of a bare code.
+const sceneLabels = new Map();
 for (const node of scene.nodes) {
   const raw = typeof node.registry_record_id === "string" ? node.registry_record_id : node.id;
-  if (raw) sceneRawIds.add(raw);
+  if (!raw) continue;
+  sceneRawIds.add(raw);
+  if (typeof node.label === "string" && node.label && !sceneLabels.has(raw)) {
+    sceneLabels.set(raw, node.label);
+  }
 }
 const hierarchiesResult = emitSceneHierarchies({
   ontologyOutputDir: join(stateDir, "ontology"),
   sceneDir: outDir,
   sceneNodeIds: sceneRawIds,
+  labels: sceneLabels,
 });
+
+// --- 3c. Bake the layout. ---
+// Pre-compute and pin node positions (x,y + fx,fy) so the SPA renders the
+// settled layout with iterations=1 — no O(n²) force sim on the main thread at
+// mount. A corpus with declared hierarchies defaults to `hierarchy-aware`
+// (deterministic, O(n), no simulation); everything else keeps `force`.
+const sidecarHierarchies = hierarchiesResult.sidecar?.hierarchies ?? {};
+const hasHierarchies = Object.values(sidecarHierarchies).some(
+  (forest) => Object.keys(forest?.nodes_by_id ?? {}).length > 0,
+);
+const layoutId = selectDefaultSceneLayoutId({
+  hasHierarchies,
+  explicit: args.layout ?? undefined,
+});
+applySceneLayout(scene, layoutId, { hierarchies: sidecarHierarchies });
+writeFileSync(join(outDir, "scene.json"), JSON.stringify(scene));
 
 // --- 3c. class-hierarchies.json (EVOL 2.c). ---
 // SEPARATE, additive ontology artifact (never embedded in scene/graph),
@@ -391,13 +495,37 @@ for (const node of nodes) {
 }
 writeFileSync(join(outDir, "entities.json"), JSON.stringify(entities));
 
+// --- 5b. COHERENCE GATE (hard failure). ---
+// graph.json, scene.json and entities.json describe the SAME entity set. A
+// divergence means the bundle silently lost or duplicated entities somewhere
+// between the three writers, and every count the UI shows becomes a lie. This
+// is the check that would have caught a scene truncated to 4000 nodes, so it
+// fails the BUILD rather than shipping a bundle that disagrees with itself.
+const entityCount = Object.keys(entities).length;
+const counts = {
+  graph_nodes: nodes.length,
+  scene_nodes: scene.nodes.length,
+  entities: entityCount,
+};
+if (
+  counts.graph_nodes !== counts.scene_nodes ||
+  counts.scene_nodes !== counts.entities
+) {
+  die(
+    "bundle incoherent — graph.json, scene.json and entities.json disagree on the node count:\n" +
+      `    graph.json    nodes: ${counts.graph_nodes}\n` +
+      `    scene.json    nodes: ${counts.scene_nodes}\n` +
+      `    entities.json ids:   ${counts.entities}`,
+  );
+}
+
 // --- 6. workspace-manifest.json (workspace-bundle-contract-v1). ---
 // The bundle descriptor the process-std-am peer consumes first: it discovers the
 // artifacts, validates their schema ids, and verifies integrity via the
 // per-artifact sha256 + size. Emitted LAST so it hashes the final bytes of
 // every artifact above; absent artifacts are recorded present:false (the
 // scene is OPTIONAL per F1, so a no-scene bundle stays valid).
-const manifestResult = emitWorkspaceManifest({ bundleDir: outDir });
+const manifestResult = emitWorkspaceManifest({ bundleDir: outDir, counts });
 
 // --- 7. Quality target preflight. ---
 let qaReport = null;
@@ -446,6 +574,14 @@ if (selectedQualityTarget) {
 // --- Summary. ---
 console.log(`build-studio-demo: wrote standalone studio export to ${outDir}`);
 console.log(`  nodes: ${nodes.length} | scene nodes: ${scene.nodes.length} | scene edges: ${scene.edges.length}`);
+console.log(`  coherence: graph ${counts.graph_nodes} = scene ${counts.scene_nodes} = entities ${counts.entities} OK`);
+console.log(`  layout: ${layoutId}${hasHierarchies ? " (declared hierarchies present)" : ""}`);
+if (seedCompletion) {
+  const detail = Object.entries(seedCompletion.byRegistry)
+    .map(([id, stat]) => `${id} ${stat.existing}+${stat.added}/${stat.total}`)
+    .join(", ");
+  console.log(`  registry seeds completed: +${seedCompletion.added} (${detail})`);
+}
 console.log(
   hierarchiesResult.path
     ? `  scene-hierarchies: ${Object.keys(hierarchiesResult.sidecar.hierarchies).length} hierarchies (${hierarchiesResult.path})`
