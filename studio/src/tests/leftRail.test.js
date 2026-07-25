@@ -13,6 +13,13 @@ const railSource = readFileSync(
   "utf8",
 );
 const appSource = readFileSync(resolve(process.cwd(), "src/App.svelte"), "utf8");
+// The ontology CLASS row markup lives in the recursive OntologyClassNode (the
+// tree is no longer capped at Domain → Sub-domain → Type), so the per-row locks
+// below assert against that component.
+const classNodeSource = readFileSync(
+  resolve(process.cwd(), "src/components/OntologyClassNode.svelte"),
+  "utf8",
+);
 
 describe("LeftRail — T13 F2 visible-UI lock (PER-ITEM group-by checkboxes)", () => {
   it("NO 'Show ontology classes' checkbox remains (input nor label text)", () => {
@@ -45,13 +52,17 @@ describe("LeftRail — T13 F2 visible-UI lock (PER-ITEM group-by checkboxes)", (
     // The old group checkbox is SUPERSEDED by EntityStateControl (Normal · Grouped
     // · Hidden · Solo). Domain + Sub-domain class headers each instantiate it,
     // keyed by the namespaced ontology key + wired to onSetEntityState.
-    expect(railSource).toMatch(/import EntityStateControl from "\.\/EntityStateControl\.svelte"/);
-    expect(railSource).toMatch(/key=\{groupKeyForOntology\(domain\.id\)\}/);
-    expect(railSource).toMatch(/key=\{groupKeyForOntology\(sub\.id\)\}/);
+    expect(classNodeSource).toMatch(
+      /import EntityStateControl from "\.\/EntityStateControl\.svelte"/,
+    );
+    // ONE recursive row definition now covers EVERY class level (not just two),
+    // keyed by the namespaced ontology key of the class it renders.
+    expect(classNodeSource).toMatch(/groupKeyForOntology\(node\.id\)/);
     // The displayed state comes from the D2 storage (Solo > Hidden > Grouped > Normal).
-    expect(railSource).toMatch(/state=\{entityStateOf\(groupKeyForOntology\(domain\.id\)\)\}/);
-    expect(railSource).toMatch(/state=\{entityStateOf\(groupKeyForOntology\(sub\.id\)\)\}/);
-    expect(railSource).toMatch(/onSetState=\{onSetEntityState\}/);
+    expect(classNodeSource).toMatch(/state=\{ctx\.entityStateOf\(key\)\}/);
+    expect(classNodeSource).toMatch(/onSetState=\{ctx\.onSetEntityState\}/);
+    // …and the rail renders one node per taxonomy root, recursing from there.
+    expect(railSource).toMatch(/<OntologyClassNode node=\{domain\} ctx=\{ontologyCtx\} \/>/);
     // App wires the reducer setter + the visibility overlay + availability flags.
     expect(appSource).toMatch(/onSetEntityState=\{handleSetEntityState\}/);
     expect(appSource).toMatch(/visibility=\{viewerState\.options\.visibility\}/);
@@ -62,11 +73,15 @@ describe("LeftRail — T13 F2 visible-UI lock (PER-ITEM group-by checkboxes)", (
   it("each leaf TYPE row owns its OWN visibility control (§2), separate from the FILTER row", () => {
     // The Type control targets that `type`'s namespaced key; it is a SEPARATE
     // concern from the Type FILTER SelectableRow (onToggleType) that follows it.
-    expect(railSource).toMatch(/key=\{groupKeyForType\(t\.key\)\}/);
-    expect(railSource).toMatch(/state=\{entityStateOf\(groupKeyForType\(t\.key\)\)\}/);
-    expect(railSource).toMatch(/rail-type-group-check/);
-    // Its own control is disabled (absorbed) when a parent Sub-domain/Domain is grouped.
-    expect(railSource).toMatch(/disabled=\{ontologyCheckedSet\.has\(sub\.id\) \|\|/);
+    expect(classNodeSource).toMatch(/key=\{groupKeyForType\(t\.key\)\}/);
+    expect(classNodeSource).toMatch(/state=\{ctx\.entityStateOf\(groupKeyForType\(t\.key\)\)\}/);
+    expect(classNodeSource).toMatch(/rail-type-group-check/);
+    // Its own control is disabled (absorbed) when ANY ancestor class is grouped —
+    // at any depth now, via the inherited `childAbsorbedBy`.
+    expect(classNodeSource).toMatch(/disabled=\{childAbsorbedBy != null\}/);
+    expect(classNodeSource).toMatch(
+      /absorbedBy \?\? \(ctx\.ontologyCheckedSet\.has\(node\.id\) \? node\.label : null\)/,
+    );
     expect(appSource).toMatch(/onSetEntityState=\{handleSetEntityState\}/);
   });
 
@@ -110,24 +125,25 @@ describe("LeftRail — T13 F2 visible-UI lock (PER-ITEM group-by checkboxes)", (
   it("the visibility control is on the LEFT of every row, superseding the checkbox (D6)", () => {
     // D6: the per-entity control is the FIRST element on the row. There are FOUR
     // EntityStateControl instances — Domain, Sub-domain, Type, Community.
-    const controls = railSource.match(/<EntityStateControl/g) ?? [];
-    expect(controls.length).toBe(4);
+    // The rail itself keeps only the Community control; the class + leaf-type
+    // controls moved into the recursive node (one definition, every depth).
+    expect((railSource.match(/<EntityStateControl/g) ?? []).length).toBe(1);
+    expect((classNodeSource.match(/<EntityStateControl/g) ?? []).length).toBe(2);
     // The old bare-checkbox affordance is gone (no <input type="checkbox"> group-by).
     expect(railSource).not.toMatch(/class="rail-group-check"/);
     expect(railSource).not.toMatch(/class:rail-group-check--on=/);
-    // FIX (preserved): the DS Collapsible exposes NO `leading` slot, so the Domain
-    // + Sub-domain controls are SIBLINGS *before* <Collapsible> in a `.rail-onto-head`
-    // flex row — NOT in a (silently dropped) leading() snippet.
-    const ontoHeads = railSource.match(/<li class="rail-onto-head">/g) ?? [];
-    expect(ontoHeads.length).toBe(2); // Domain + Sub-domain rows
-    expect(railSource).toMatch(
-      /<li class="rail-onto-head">[\s\S]*?<EntityStateControl[\s\S]*?groupKeyForOntology[\s\S]*?<Collapsible/,
+    // FIX (preserved): the DS Collapsible exposes NO `leading` slot, so the class
+    // control is a SIBLING *before* <Collapsible> in a `.rail-onto-head` flex row
+    // — NOT in a (silently dropped) leading() snippet.
+    expect(classNodeSource).toMatch(
+      /<li class="rail-onto-head">\s*<EntityStateControl[\s\S]*?<Collapsible/,
     );
     // Regression guard: NEVER put the control in a Collapsible leading() snippet.
+    expect(classNodeSource).not.toMatch(/<Collapsible[^>]*>\s*\{#snippet leading\(\)\}/);
     expect(railSource).not.toMatch(/<Collapsible[^>]*>\s*\{#snippet leading\(\)\}/);
     // The leaf Type control sits FIRST in its flex row, BEFORE the FILTER
     // SelectableRow — separate from the Type FILTER select (§2).
-    expect(railSource).toMatch(
+    expect(classNodeSource).toMatch(
       /rail-type-group-check[\s\S]*?<EntityStateControl[\s\S]*?<SelectableRow/,
     );
     // NO persistent "group" text label anywhere — the rail-group-hint span is gone.
@@ -145,8 +161,8 @@ describe("LeftRail — T13 F2 visible-UI lock (PER-ITEM group-by checkboxes)", (
     // The Ontology accordion (taxonomy facet) renders SelectableRow + TypeShapeGlyph
     // + onToggleType — the FILTER concern, distinct from the group-by checkbox.
     expect(railSource).toMatch(/<Collapsible title="Ontology"/);
-    expect(railSource).toMatch(/<TypeShapeGlyph type=\{t\.key\}/);
-    expect(railSource).toMatch(/onselect=\{\(\) => onToggleType\?\.\(t\.key\)\}/);
+    expect(classNodeSource).toMatch(/<TypeShapeGlyph type=\{t\.key\}/);
+    expect(classNodeSource).toMatch(/onselect=\{\(\) => ctx\.onToggleType\?\.\(t\.key\)\}/);
     // The group-by checkbox calls onToggleGroupOntology, NEVER onToggleType —
     // grouping a class is not selecting/filtering it.
     expect(railSource).not.toMatch(/onToggleType\?\.\([^)]*\)[\s\S]{0,40}rail-group-check/);
@@ -164,30 +180,60 @@ describe("LeftRail — Lot 1: strict taxonomy validation (kills 'Other 47575')",
     // A dedicated validator picks the first VALID type-taxonomy: prefers the
     // conventional `am_class_tree`, requires leaf classes with member_node_types,
     // and gates on a coverage threshold; returns null ⇒ flat SelectableList.
-    expect(railSource).toMatch(/function selectTaxonomyHierarchy/);
-    expect(railSource).toMatch(/TAXONOMY_MIN_COVERAGE/);
-    expect(railSource).toMatch(/am_class_tree/);
-    expect(railSource).toMatch(/const h = selectTaxonomyHierarchy\(hs, countByType, total\)/);
+    const treeSource = readFileSync(
+      resolve(process.cwd(), "src/lib/ontologyTree.js"),
+      "utf8",
+    );
+    expect(treeSource).toMatch(/export function selectTaxonomyHierarchy/);
+    expect(treeSource).toMatch(/TAXONOMY_MIN_COVERAGE/);
+    expect(treeSource).toMatch(/am_class_tree/);
+    expect(treeSource).toMatch(/selectTaxonomyHierarchy\(classHierarchies\?\.hierarchies/);
     // Canonical first-level order mirrors the native viewer taxonomy.
-    expect(railSource).toMatch(/CANONICAL_ROOT_ORDER = \["Process", "Tool", "Data", "Org"\]/);
+    expect(treeSource).toMatch(
+      /CANONICAL_ROOT_ORDER = \["Process", "Tool", "Data", "Org"\]/,
+    );
   });
 });
 
-describe("LeftRail — Lot 2: Hierarchies accordion (ABP / PROCESS_STD process trees)", () => {
-  it("renders a Hierarchies Collapsible only when the sidecar is present", () => {
-    expect(railSource).toMatch(/\{#if hierarchyList\.length\}/);
-    expect(railSource).toMatch(/<Collapsible title="Hierarchies"/);
-    expect(railSource).toMatch(/import HierarchyTreeNode from "\.\/HierarchyTreeNode\.svelte"/);
+describe("LeftRail — ONE ontology: the process forests are NESTED, not a second accordion", () => {
+  it("has NO separate 'Hierarchies' accordion any more", () => {
+    // The trees ARE the ontology's Process branch; a parallel accordion was the
+    // design error. Communities keep their own accordion (they are not ontology).
+    expect(railSource).not.toMatch(/<Collapsible title="Hierarchies"/);
+    expect(railSource).not.toMatch(/hierarchyList/);
+    expect(railSource).toMatch(/<Collapsible title="Communities"/);
   });
 
-  it("navigates each forest separately (never merged) with subtree-select", () => {
-    // One sub-accordion per hierarchy, direct-child lazy drill-down via the
-    // recursive node, and checking a node selects its subtree.
-    expect(railSource).toMatch(/<HierarchyTreeNode/);
-    expect(railSource).toMatch(/onSelectSubtree=\{\(raw\) => selectSubtree\(hx\.hierarchy, raw\)\}/);
+  it("splices each forest under the CLASS that declares member_hierarchies", () => {
+    // The binding is read off the compiled taxonomy (class-hierarchies.json), so
+    // the mapping stays repo-declared — nothing process-std-specific in studio core.
+    // (The derivation itself is unit-tested in ontologyTree.test.js.)
+    expect(railSource).toMatch(
+      /buildOntologyTree\(typeList, classHierarchies, forestList\)/,
+    );
+    expect(railSource).toMatch(/buildForestList\(sceneHierarchies\)/);
+    expect(classNodeSource).toMatch(/\{#each node\.forests as forest \(forest\.key\)\}/);
+    expect(classNodeSource).toMatch(/<HierarchyTreeNode/);
+    expect(classNodeSource).toMatch(
+      /onSelectSubtree=\{\(raw\) => ctx\.onSelectSubtree\(forest\.hierarchy, raw\)\}/,
+    );
     expect(railSource).toMatch(/function selectSubtree\(hierarchy, rootRawId\)/);
     // The join maps raw registry ids (scene-hierarchies keys) to scene-node ids.
     expect(railSource).toMatch(/registry_record_id/);
+  });
+
+  it("never merges two forests on one class", () => {
+    // Several forests on one class ⇒ one sub-accordion EACH (separate root sets).
+    expect(classNodeSource).toMatch(/\{#if node\.forests\.length === 1\}/);
+  });
+
+  it("renders classes RECURSIVELY (no 2-level cap)", () => {
+    expect(classNodeSource).toMatch(/import Self from "\.\/OntologyClassNode\.svelte"/);
+    expect(classNodeSource).toMatch(/<Self node=\{sub\} absorbedBy=\{childAbsorbedBy\} \{ctx\} \/>/);
+    // A class renders its forests, then its child classes, then its own types.
+    expect(classNodeSource).toMatch(
+      /node\.forests[\s\S]*?\{#if node\.subs\.length\}[\s\S]*?\{#if node\.types\.length\}/,
+    );
   });
 
   it("App threads the sidecar + subtree-select handler to the rail", () => {
