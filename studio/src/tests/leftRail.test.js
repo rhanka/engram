@@ -153,6 +153,51 @@ describe("LeftRail — T13 F2 visible-UI lock (PER-ITEM group-by checkboxes)", (
   });
 });
 
+describe("LeftRail — Lot 1: strict taxonomy validation (kills 'Other 47575')", () => {
+  it("no longer blindly takes the FIRST class-hierarchy (hs[keys[0]])", () => {
+    // The blind first-key pick is what let an ABP process forest masquerade as an
+    // ontology taxonomy → the 'Other 47575' bucket. It must be gone.
+    expect(railSource).not.toMatch(/hs\[Object\.keys\(hs\)\[0\]\]/);
+  });
+
+  it("selects a taxonomy by CONVENTION + coverage, else falls back to the flat list", () => {
+    // A dedicated validator picks the first VALID type-taxonomy: prefers the
+    // conventional `am_class_tree`, requires leaf classes with member_node_types,
+    // and gates on a coverage threshold; returns null ⇒ flat SelectableList.
+    expect(railSource).toMatch(/function selectTaxonomyHierarchy/);
+    expect(railSource).toMatch(/TAXONOMY_MIN_COVERAGE/);
+    expect(railSource).toMatch(/am_class_tree/);
+    expect(railSource).toMatch(/const h = selectTaxonomyHierarchy\(hs, countByType, total\)/);
+    // Canonical first-level order mirrors the native viewer taxonomy.
+    expect(railSource).toMatch(/CANONICAL_ROOT_ORDER = \["Process", "Tool", "Data", "Org"\]/);
+  });
+});
+
+describe("LeftRail — Lot 2: Hierarchies accordion (ABP / PROCESS_STD process trees)", () => {
+  it("renders a Hierarchies Collapsible only when the sidecar is present", () => {
+    expect(railSource).toMatch(/\{#if hierarchyList\.length\}/);
+    expect(railSource).toMatch(/<Collapsible title="Hierarchies"/);
+    expect(railSource).toMatch(/import HierarchyTreeNode from "\.\/HierarchyTreeNode\.svelte"/);
+  });
+
+  it("navigates each forest separately (never merged) with subtree-select", () => {
+    // One sub-accordion per hierarchy, direct-child lazy drill-down via the
+    // recursive node, and checking a node selects its subtree.
+    expect(railSource).toMatch(/<HierarchyTreeNode/);
+    expect(railSource).toMatch(/onSelectSubtree=\{\(raw\) => selectSubtree\(hx\.hierarchy, raw\)\}/);
+    expect(railSource).toMatch(/function selectSubtree\(hierarchy, rootRawId\)/);
+    // The join maps raw registry ids (scene-hierarchies keys) to scene-node ids.
+    expect(railSource).toMatch(/registry_record_id/);
+  });
+
+  it("App threads the sidecar + subtree-select handler to the rail", () => {
+    expect(appSource).toMatch(/\{sceneHierarchies\}/);
+    expect(appSource).toMatch(/onToggleHierarchySubtree=\{handleToggleHierarchySubtree\}/);
+    expect(appSource).toMatch(/fetchSceneHierarchies/);
+    expect(appSource).toMatch(/toggleEntitySet/);
+  });
+});
+
 describe("LeftRail — tracked UI: count badges relocated + reactive filtered count", () => {
   it("the count badges live under the search bar, not in the header", () => {
     expect(railSource).toMatch(/class="rail-search"[\s\S]*class="rail-stats"/);

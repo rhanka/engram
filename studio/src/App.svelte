@@ -38,6 +38,7 @@
     fetchGroupCounts,
     fetchModelsManifest,
     fetchScene,
+    fetchSceneHierarchies,
     fetchSearchIndex,
     setStaticBaseProvider,
     __resetEntitiesIndexCache,
@@ -80,6 +81,7 @@
     toggleType,
     toggleCommunity,
     toggleEntity,
+    toggleEntitySet,
     focusEntity as focusEntityAction,
     setFocus,
     clearSelection,
@@ -126,6 +128,11 @@
   // absent, in which case the toggle injects nothing. $state.raw — only ever
   // reassigned in bulk, never mutated in place.
   let classHierarchies = $state.raw(null);
+  // Lot 2: the scene-hierarchies sidecar (graphify_scene_hierarchies_v1) — the
+  // registry process forests (ABP / PROCESS_STD / org unit trees) the Hierarchies rail
+  // navigates. Lazily fetched once (like class-hierarchies); null until loaded /
+  // when absent, in which case the rail hides its Hierarchies section.
+  let sceneHierarchies = $state.raw(null);
   // Work-stream C: the offline retrieval substrate (search-index.json) backing
   // the Answer view's in-browser BM25 + PPR. Lazily fetched once on first entry
   // to the Answer view (like models.json); null until loaded / when absent, in
@@ -399,6 +406,13 @@
     viewerState = toggleEntity(viewerState, id);
     if (viewerState.focusId) void ensureEntity(viewerState.focusId);
   }
+  // Lot 2: select/deselect a hierarchy subtree as one unit. The rail has already
+  // mapped the subtree's raw registry ids to scene-node ids (via
+  // registry_record_id), so we just fold them into the selection.
+  function handleToggleHierarchySubtree(sceneIds) {
+    viewerState = toggleEntitySet(viewerState, sceneIds);
+    if (viewerState.focusId) void ensureEntity(viewerState.focusId);
+  }
   function handleFocusEntity(id) {
     // Double-click on a group node = ungroup toggle too (no entity detail).
     const groupKey = groupNodeToggleKey(id);
@@ -528,6 +542,16 @@
     if (classHierarchiesFetched) return;
     classHierarchiesFetched = true;
     classHierarchies = await fetchClassHierarchies();
+  }
+
+  // Lot 2: fetch scene-hierarchies.json at most once (per model). A null result
+  // (absent sidecar) is cached as "attempted" so we never re-fetch; the rail then
+  // hides its Hierarchies section. Reset on a model switch (per-model artifact).
+  let sceneHierarchiesFetched = false;
+  async function ensureSceneHierarchies() {
+    if (sceneHierarchiesFetched) return;
+    sceneHierarchiesFetched = true;
+    sceneHierarchies = await fetchSceneHierarchies();
   }
 
   // Work-stream C: fetch search-index.json at most once (per model). A null
@@ -692,6 +716,9 @@
     // the class taxonomy, so fetch class-hierarchies eagerly (not just on the
     // class-display toggle). Cached; a no-op when the artifact is absent.
     await ensureClassHierarchies();
+    // Lot 2: fetch the scene-hierarchies sidecar eagerly too, so the Hierarchies
+    // rail (ABP / PROCESS_STD process trees) is ready without a separate trigger.
+    await ensureSceneHierarchies();
     // Storage LOT 2: prefer the store's precomputed `node_type` counts for the
     // Types rail when a mirror is configured. Resolves null off the default
     // flat-JSON studio, in which case the rail keeps computing counts in-memory.
@@ -721,6 +748,10 @@
     // re-fetches under the new model's base.
     classHierarchies = null;
     classHierarchiesFetched = false;
+    // The scene-hierarchies sidecar is per-model; drop it so the next load
+    // re-fetches under the new model's base.
+    sceneHierarchies = null;
+    sceneHierarchiesFetched = false;
     // The search index is per-model; drop it so the Answer view re-fetches under
     // the new model's base on its next open.
     searchIndex = null;
@@ -848,6 +879,7 @@
           <LeftRail
             graph={facetGraph}
             {classHierarchies}
+            {sceneHierarchies}
             {serverTypeCounts}
             query={viewerState.query}
             selection={viewerState.selection}
@@ -867,6 +899,7 @@
             onToggleType={handleToggleType}
             onToggleCommunity={handleToggleCommunity}
             onToggleEntity={handleToggleEntity}
+            onToggleHierarchySubtree={handleToggleHierarchySubtree}
             onSetQuery={handleSetQuery}
             onToggleWeak={handleToggleWeak}
             {timeRange}
