@@ -8,9 +8,9 @@
  * worktree under it) lands inside the registered workspace path.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { pathToTilde } from "./normalize.js";
 import type { AgentHost } from "./types.js";
 
@@ -48,6 +48,74 @@ export function loadH2aInstances(repoRoot: string): H2aInstance[] {
     }
   }
   return out;
+}
+
+/** Compare strings by Unicode code point rather than locale-specific collation. */
+function codePointCompare(a: string, b: string): number {
+  const left = Array.from(a);
+  const right = Array.from(b);
+  for (let i = 0; i < left.length && i < right.length; i++) {
+    const delta = left[i]!.codePointAt(0)! - right[i]!.codePointAt(0)!;
+    if (delta !== 0) return delta;
+  }
+  return left.length - right.length;
+}
+
+/** Expand only the tilde form the registry is already documented to accept. */
+function expandWorkspacePath(path: string, home: string): string | null {
+  if (path === "~") return home;
+  if (path.startsWith("~/")) return join(home, path.slice(2));
+  return isAbsolute(path) ? path : null;
+}
+
+/**
+ * Read instance records that are safe to expose as *workspace-local* evidence.
+ *
+ * This is deliberately stricter than {@link loadH2aInstances}, which supports
+ * general agent-stats attribution by workspace-prefix matching. Coordination
+ * evidence may only come from the current project's own, non-symlinked
+ * registry file and from records whose declared workspace resolves exactly to
+ * that project root. It returns no raw registry fields beyond the existing
+ * in-memory identity record and does not write to `.h2a`.
+ */
+export function filterWorkspaceLocalH2aInstances(
+  repoRoot: string,
+  instances: H2aInstance[],
+  home = homedir(),
+): H2aInstance[] {
+  let root: string;
+  let registryFile: string;
+  try {
+    root = realpathSync(repoRoot);
+    registryFile = join(root, ".h2a", "registry", "instances.jsonl");
+    // Fail closed when `.h2a`, its registry directory, or the file points
+    // outside this workspace. A shared h2a root is coordination input, not
+    // workspace-local evidence.
+    if (realpathSync(registryFile) !== registryFile) return [];
+  } catch {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  return instances
+    .filter((instance) => {
+      if (!instance.id || instance.host !== instance.id.split(":")[0]) return false;
+      const workspacePath = expandWorkspacePath(instance.workspacePath, home);
+      if (!workspacePath) return false;
+      try {
+        if (realpathSync(workspacePath) !== root || seen.has(instance.id)) return false;
+      } catch {
+        return false;
+      }
+      seen.add(instance.id);
+      return true;
+    })
+    .sort((a, b) => codePointCompare(a.id, b.id));
+}
+
+/** Read and then strictly filter the local registry for standalone consumers. */
+export function loadWorkspaceLocalH2aInstances(repoRoot: string, home = homedir()): H2aInstance[] {
+  return filterWorkspaceLocalH2aInstances(repoRoot, loadH2aInstances(repoRoot), home);
 }
 
 /**

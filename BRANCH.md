@@ -6,6 +6,7 @@
 - [x] Preserve the shipped temporal representation: `t` is epoch-ms start, missing `t_end` is open-ended, and `t_end === t` is a point.
 - [x] Deliver T6 as a read-only **temporal graph recall** surface: `recall --as-of` delegates to `queryWindow(t,t)` for a configured capable store, otherwise filters `graph.json` deterministically.
 - [x] Preserve configured-store failure/capability visibility, configured namespace isolation, unverified provenance attributes, and distinct file/store snapshot disclosure.
+- [x] Deliver T7 as a read-only projection of strictly local h2a registry coordination evidence in `agent-stats project-graph`, with explicit unverified provenance and no temporal or knowledge semantics.
 - [x] Keep MemoryNote/authored-memory, persona policy, h2a knowledge envelopes, pagination, namespace selection, and non-Postgres store adapters explicitly pending.
 
 ## Scope / Guardrails
@@ -25,9 +26,13 @@
   - `src/temporal-recall.ts`
   - `src/cli.ts`
   - `src/index.ts`
+  - `src/agent-stats/registry.ts`
+  - `src/agent-stats/project-graph.ts`
+  - `src/agent-stats/index.ts`
   - `tests/storage-postgres-time-window.test.ts`
   - `tests/temporal-recall.test.ts`
   - `tests/cli-temporal-recall.test.ts`
+  - `tests/agent-stats-h2a-evidence.test.ts`
 
 **Forbidden Paths**
 
@@ -70,10 +75,18 @@
   - [x] Run focused T5/T6 tests, lint, build, harness verification, two-peer consensus review, and `npx graphify hook-rebuild`.
   - [x] Record exact evidence in Track; leave the parent leaf in progress for authored-memory/persona policy, a versioned h2a knowledge contract, pagination, namespace authorization, and other backends.
 
+- [x] **Lot 3 - T7 Local H2A Coordination Evidence Projection**
+  - [x] Project only an exact local, non-symlinked h2a registry record that was actually matched to an in-project session; filter parent/foreign workspaces, malformed entries, and normalized-id collisions.
+  - [x] Emit deterministic `CoordinationEvidence` / `registered-in` records with fixed `provenance`, `scope: workspace-local`, and `trust: unverified`; serialize no raw workspace or h2a record fields.
+  - [x] Keep evidence timeless and outside derived spans, `recall --as-of`, h2a envelopes, namespace selection, pagination, and all write paths.
+  - [x] Test local registry validation, symlink rejection, de-duplication/order, matched-session gating, raw-field redaction, id collision fail-closed behavior, and `t`/`t_end` neutrality.
+  - [x] Gate: focused agent-stats tests, lint, build, graph hook rebuild, static scope verification, and two-peer adversarial review.
+
 ## Feedback Loop
 
 - [ ] BLOCKER: any requested change to WP6-owned vector/LLM/package/spec paths requires coordination with `codex:graphify:46788d039b48` before editing.
 - [ ] BLOCKER: a real Postgres live round-trip remains gated on `GRAPHIFY_TEST_POSTGRES_URL`; the driver-injected suite is the local authority when that environment is absent.
 - [ ] HUMAN GATE: authored/personal memory requires owner/data-controller approval for privacy, access, retention, deletion, authorship, and persona semantics plus a ratified versioned h2a body contract.
 - [ ] HUMAN GATE: exposing caller-selected namespaces or cross-workspace results requires consumer-owner authorization design; T6 reads only the selected store's configured namespace.
+- [ ] HUMAN GATE: any h2a knowledge/envelope, binding, presence, inbox, run, or write/read semantic requires a ratified versioned product contract; T7 consumes only local registry coordination evidence.
 - [ ] BLOCKER: any npm publish, merge, or remote push requires separate owner authorization and is outside this task.
