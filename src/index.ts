@@ -701,6 +701,7 @@ export type {
 export {
   completeRegistrySeeds,
   registriesBackingHierarchies,
+  registryDisplayLabels,
 } from "./registry-seed-completion.js";
 export type {
   CompleteRegistrySeedsOptions,
