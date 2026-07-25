@@ -1018,6 +1018,16 @@ export interface ClassHierarchyClass {
    * as conflicts and only the first (by sorted class name) wins.
    */
   member_node_types?: string[];
+  /**
+   * Ids of the REGISTRY hierarchies (`hierarchies:` block → the
+   * `graphify_scene_hierarchies_v1` sidecar) whose forest this class OWNS.
+   * The taxonomy stays one tree: a consumer splices each named forest under
+   * this class, so a class like `ABP` is the navigable multi-level process
+   * tree instead of a node-type dead end. Purely declarative — the compiled
+   * class hierarchy only carries the binding, never the forest itself (the
+   * sidecar remains the autonomous transport, D1).
+   */
+  member_hierarchies?: string[];
 }
 
 /** A profile-declared class hierarchy (profile input). */
@@ -1038,6 +1048,8 @@ export interface NormalizedClassHierarchyClass {
   parent: string | null;
   label: string | null;
   member_node_types: string[];
+  /** Registry hierarchy ids spliced under this class (see ClassHierarchyClass). */
+  member_hierarchies: string[];
 }
 
 /** Normalized class hierarchy spec (all optionals defaulted). */
@@ -1061,6 +1073,12 @@ export interface ClassHierarchyClassEntry {
   level: number;
   /** Node types whose entities are instances of this class, sorted. */
   member_node_types: string[];
+  /**
+   * Registry hierarchy ids whose forest belongs under this class (sorted).
+   * A consumer joins them against `scene-hierarchies.json` to render the real
+   * multi-level tree in place — the taxonomy therefore stays a SINGLE tree.
+   */
+  member_hierarchies: string[];
   /**
    * Graph/scene node ids (NOT registry_record_id) of the entities attached to
    * this leaf class via `member_node_types`. Sorted; empty for inner classes.
