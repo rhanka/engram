@@ -699,6 +699,9 @@
     margin: 0;
     padding: 0;
     display: grid;
+    /* minmax(0, …): a content-sized `auto` track lets a deep tree row push the
+       whole rail into (clipped) horizontal overflow. */
+    grid-template-columns: minmax(0, 1fr);
     gap: 0.15rem;
   }
   .rail-empty {
