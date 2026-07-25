@@ -135,6 +135,88 @@ function looksLikePdf(locator) {
   return /\.pdf(?:[?#]|$)/i.test(locator);
 }
 
+/* ---------------------------------------------------------------------------
+ * PROVENANCE CHAIN: original document → converted markdown → citation.
+ *
+ * A PDF corpus is OCR'd to markdown before extraction, so a citation's
+ * `source_file` is the CONVERTED artifact — e.g.
+ * `.graphify/converted/pdf/AM10014.02.01.09_R19.page-images_7668479ef707.md`.
+ * That is a true provenance step, but it is NOT the document the reader wants
+ * to see: showing it presents a machine intermediate as if it were the source,
+ * with none of the original's pagination, figures or layout.
+ *
+ * The exporter records the chain in `sources/provenance.json`
+ * (`graphify_cited_source_provenance_v1`), mapping each cited locator to its
+ * original. When the original is bundled we open THAT, at the citation's page;
+ * the markdown stays as the intermediate breadcrumb rather than the presented
+ * artifact. When it is not bundled (a PDF corpus can run to tens of GB — the
+ * PROCESS_STD one is 28 GB across 2230 files) we fall back to the markdown, and the
+ * caller can still surface the original's path as provenance.
+ * ------------------------------------------------------------------------ */
+
+const PROVENANCE_URL = "./sources/provenance.json";
+let provenancePromise = null;
+
+/** Reset the memoized provenance sidecar (tests / bundle reload). */
+export function resetProvenanceCache() {
+  provenancePromise = null;
+}
+
+/**
+ * Load + memoize the bundle's provenance sidecar. A bundle exported without it
+ * is the normal case, not an error: resolve to an empty map and let every
+ * locator resolve directly.
+ * @returns {Promise<Record<string, {original: string, conversion?: string, via?: string, bundled?: boolean}>>}
+ */
+export function loadCitedSourceProvenance() {
+  if (!provenancePromise) {
+    provenancePromise = (async () => {
+      try {
+        const res = await fetch(PROVENANCE_URL);
+        if (!res.ok) return {};
+        // A static server that SPA-falls-back would hand us index.html here;
+        // parsing it as JSON throws, and the catch below yields the empty map.
+        const json = await res.json();
+        const docs = json?.documents;
+        return docs && typeof docs === "object" ? docs : {};
+      } catch {
+        return {};
+      }
+    })();
+  }
+  return provenancePromise;
+}
+
+/** The locator a ref cites, before any provenance hop. */
+function citedLocator(ref) {
+  return ref?.rawRef ?? ref?.sourceUrl ?? null;
+}
+
+/**
+ * Resolve a ref to the document that should actually be PRESENTED, plus the
+ * chain that led there.
+ *
+ * @param {object} ref  CitedSourceRef
+ * @param {Record<string, object>} provenance  the sidecar's `documents` map
+ * @returns {{locator: string, original: string|null, via: string|null}|null}
+ *   `locator` is what to fetch; `via` is the converted intermediate when the
+ *   original superseded it (null when the citation already pointed at the
+ *   original); `original` is the original's path whether or not it is bundled.
+ */
+export function resolveSourceChain(ref, provenance) {
+  const cited = citedLocator(ref);
+  if (!cited) return null;
+  const entry = provenance?.[cited] ?? provenance?.[String(cited).replace(/^\.\//, "")] ?? null;
+  const original = typeof entry?.original === "string" && entry.original ? entry.original : null;
+  // Only HOP when the original is actually in the bundle; otherwise the
+  // markdown intermediate is the best artifact we can show, and the original
+  // stays a breadcrumb.
+  if (original && entry?.bundled === true) {
+    return { locator: original, original, via: cited };
+  }
+  return { locator: cited, original, via: null };
+}
+
 /**
  * Normalize a citation locator (usually a project-relative `source_file` such
  * as `corpus/report.pdf` or `.graphify/converted/pdf/report.md`) into the
@@ -156,8 +238,11 @@ export function bundleSourcePath(locator) {
  * @param {object} ref  CitedSourceRef
  * @returns {string|null}
  */
-export function sourceHrefFor(ref) {
-  const locator = ref?.rawRef ?? ref?.sourceUrl ?? null;
+export function sourceHrefFor(ref, provenance = null) {
+  // With the provenance sidecar loaded, "Ouvrir ↗" points at the ORIGINAL
+  // document when it is bundled — the reader wants the PDF, not the OCR dump.
+  const chain = provenance ? resolveSourceChain(ref, provenance) : null;
+  const locator = chain?.locator ?? citedLocator(ref);
   return locator ? bundleSourcePath(locator) : null;
 }
 
@@ -176,10 +261,11 @@ export function sourceHrefFor(ref) {
  * @returns {Promise<{kind:"pdf",data:ArrayBuffer}|{kind:"markdown",text:string}>}
  */
 export async function resolveBundleSource(ref) {
-  const locator = ref?.rawRef ?? ref?.sourceUrl ?? null;
-  if (!locator) {
+  if (!citedLocator(ref)) {
     throw new Error("citation carries no source locator (rawRef/sourceUrl)");
   }
+  const chain = resolveSourceChain(ref, await loadCitedSourceProvenance());
+  const locator = chain.locator;
   const url = bundleSourcePath(locator);
   const res = await fetch(url);
   if (!res.ok) {
@@ -188,7 +274,28 @@ export async function resolveBundleSource(ref) {
         "Re-export with `graphify studio export <out> --include-sources` to bundle cited files.",
     );
   }
-  if ((ref?.modality === "pdf") || (!ref?.modality && looksLikePdf(locator))) {
+  // A missing file must FAIL, never render as a document. Most static servers
+  // (and graphify's own studio route) SPA-fall-back an unknown deep path to
+  // index.html with HTTP 200, so `res.ok` alone is not evidence that we got the
+  // cited file — it is exactly how the viewer ended up displaying the studio's
+  // own shell as the "cited source". An HTML content-type for a locator that is
+  // not itself an HTML file is proof of that fallback, not a document.
+  const contentType = res.headers?.get?.("content-type") ?? "";
+  if (/\btext\/html\b/i.test(contentType) && !/\.x?html?(?:[?#]|$)/i.test(locator)) {
+    throw new Error(
+      `${url} returned HTML, not the cited source — the server fell back to the ` +
+        "SPA shell, which means the file is not in the bundle. Re-export with " +
+        "`graphify studio export <out> --include-sources`.",
+    );
+  }
+  // Modality follows the RESOLVED file. After a provenance hop the citation's
+  // own modality describes the markdown intermediate ("ocr-markdown"), not the
+  // original we just fetched — trusting it would hand PDF bytes to the markdown
+  // renderer. The locator's own suffix is authoritative once we have hopped.
+  const isPdf = chain.via
+    ? looksLikePdf(locator)
+    : ref?.modality === "pdf" || (!ref?.modality && looksLikePdf(locator));
+  if (isPdf) {
     return { kind: "pdf", data: await res.arrayBuffer() };
   }
   return { kind: "markdown", text: await res.text() };
