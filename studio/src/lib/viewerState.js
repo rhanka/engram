@@ -291,6 +291,35 @@ export function toggleEntity(state, id) {
 }
 
 /**
+ * Toggle a SET of entity ids in/out of the selection as ONE unit — the
+ * subtree-select used by the Hierarchies rail (checking a process node selects
+ * its whole subtree). If EVERY id is already selected, the set is removed;
+ * otherwise the missing ids are added. Adding makes the first newly-added id the
+ * focus; removing the set clears the focus when it was inside. Empty / non-string
+ * ids are dropped. PURE.
+ */
+export function toggleEntitySet(state, ids) {
+  const list = uniqueStrings(ids);
+  if (list.length === 0) return normalizeViewerState(state);
+  const current = new Set(state.selection.entities);
+  const allSelected = list.every((id) => current.has(id));
+  let focusId = state.focusId;
+  if (allSelected) {
+    for (const id of list) current.delete(id);
+    if (focusId && list.includes(focusId)) focusId = null;
+  } else {
+    const firstAdded = list.find((id) => !current.has(id));
+    for (const id of list) current.add(id);
+    if (firstAdded) focusId = firstAdded;
+  }
+  return normalizeViewerState({
+    ...state,
+    selection: { ...state.selection, entities: [...current] },
+    focusId,
+  });
+}
+
+/**
  * Focus an entity (right-column drill-down or graph dblclick): ensure it is
  * selected AND make it the focus, without touching the other buckets.
  */

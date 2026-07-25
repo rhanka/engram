@@ -25,6 +25,7 @@ import {
   soloActive,
   hasAnyVisibilityOverride,
   groupOntologyLevel,
+  toggleEntitySet,
 } from "../lib/viewerState.js";
 
 /* ===========================================================================
@@ -456,5 +457,35 @@ describe("viewerState — 4-state reducer (setEntityState / toggleSolo / resetVi
     // K_ONTO(class:People) is now grouped → normalize drops it from hidden.
     expect(displayedEntityState(s, groupKeyForOntology("class:People"))).toBe("grouped");
     expect(s.options.visibility.hidden).toEqual([]);
+  });
+});
+
+describe("toggleEntitySet (Lot 2 — Hierarchies subtree select)", () => {
+  it("adds every id of a not-fully-selected set and focuses the first added", () => {
+    let s = createDefaultViewerState();
+    s = toggleEntitySet(s, ["a", "b", "c"]);
+    expect(s.selection.entities.sort()).toEqual(["a", "b", "c"]);
+    expect(s.focusId).toBe("a");
+  });
+
+  it("removes the whole set when every id is already selected", () => {
+    let s = toggleEntitySet(createDefaultViewerState(), ["a", "b"]);
+    s = toggleEntitySet(s, ["a", "b"]);
+    expect(s.selection.entities).toEqual([]);
+    expect(s.focusId).toBeNull();
+  });
+
+  it("adds only the MISSING ids of a partially-selected set (union, not toggle-each)", () => {
+    let s = toggleEntitySet(createDefaultViewerState(), ["a"]);
+    s = toggleEntitySet(s, ["a", "b", "c"]);
+    expect(s.selection.entities.sort()).toEqual(["a", "b", "c"]);
+    // 'a' stays selected (subtree-select is add-union, never per-id toggle).
+    expect(s.focusId).toBe("b");
+  });
+
+  it("is a normalize-only no-op for an empty / all-blank set", () => {
+    const s0 = createDefaultViewerState();
+    expect(toggleEntitySet(s0, []).selection.entities).toEqual([]);
+    expect(toggleEntitySet(s0, ["", null, undefined]).selection.entities).toEqual([]);
   });
 });
