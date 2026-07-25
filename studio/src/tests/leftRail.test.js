@@ -135,8 +135,10 @@ describe("LeftRail — T13 F2 visible-UI lock (PER-ITEM group-by checkboxes)", (
     // FIX (preserved): the DS Collapsible exposes NO `leading` slot, so the class
     // control is a SIBLING *before* <Collapsible> in a `.rail-onto-head` flex row
     // — NOT in a (silently dropped) leading() snippet.
+    // The `<li>` may carry attributes (e.g. the truncation-tooltip action); what
+    // is locked is the ORDER — control first, Collapsible after.
     expect(classNodeSource).toMatch(
-      /<li class="rail-onto-head">\s*<EntityStateControl[\s\S]*?<Collapsible/,
+      /<li class="rail-onto-head"[^>]*>\s*<EntityStateControl[\s\S]*?<Collapsible/,
     );
     // Regression guard: NEVER put the control in a Collapsible leading() snippet.
     expect(classNodeSource).not.toMatch(/<Collapsible[^>]*>\s*\{#snippet leading\(\)\}/);
