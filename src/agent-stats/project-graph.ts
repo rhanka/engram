@@ -90,6 +90,15 @@ export interface SessionInput {
   parentThreadId?: string;
 }
 
+/**
+ * A selected h2a registry identity safe for graph projection. The loader only
+ * supplies ids matched to an in-project session from the local registry; no
+ * raw h2a record, workspace path, envelope, or binding crosses this boundary.
+ */
+export interface H2aCoordinationEvidence {
+  instanceId: string;
+}
+
 /** Node in the node-link graph (matches graphify GraphNode minimal subset). */
 interface GraphNodeOut {
   id: string;
@@ -125,6 +134,11 @@ export interface ProjectGraph {
 export interface BuildProjectGraphOptions {
   identity: ProjectIdentity;
   sessions: SessionInput[];
+  /**
+   * Read-only h2a registry identities selected by the project loader. Only an
+   * existing Agent with an exactly matching id can receive an evidence node.
+   */
+  h2aCoordinationEvidence?: H2aCoordinationEvidence[];
   /** Include commit nodes (one per distinct attributed sha). Default true. */
   includeCommits?: boolean;
   /** Include branch nodes. Default true. */
@@ -225,6 +239,7 @@ const COMMUNITY = {
   session: 3,
   branch: 4,
   commit: 5,
+  coordinationEvidence: 6,
 } as const;
 
 const COMMUNITY_LABELS: Record<string, string> = {
@@ -234,7 +249,28 @@ const COMMUNITY_LABELS: Record<string, string> = {
   "3": "Conversation / session",
   "4": "Branch",
   "5": "Commit",
+  "6": "Coordination evidence",
 };
+
+const H2A_REGISTRY_PROVENANCE = ".h2a/registry/instances.jsonl";
+const H2A_COORDINATION_SCOPE = "workspace-local";
+const H2A_COORDINATION_TRUST = "unverified";
+
+/** A reversible, collision-free graph id for an h2a instance id. */
+function coordinationEvidenceNodeId(instanceId: string): string {
+  return `coordination_evidence${Array.from(instanceId, (char) => `_${char.codePointAt(0)!.toString(16)}`).join("")}`;
+}
+
+/** Compare strings by Unicode code point rather than locale-specific collation. */
+function codePointCompare(a: string, b: string): number {
+  const left = Array.from(a);
+  const right = Array.from(b);
+  for (let i = 0; i < left.length && i < right.length; i++) {
+    const delta = left[i]!.codePointAt(0)! - right[i]!.codePointAt(0)!;
+    if (delta !== 0) return delta;
+  }
+  return left.length - right.length;
+}
 
 function nodeId(kind: string, key: string): string {
   // Deterministic, filesystem-safe id.
@@ -418,6 +454,9 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
 
   // 3. SESSION / AGENT / BRANCH / COMMIT nodes from each in-identity session.
   const agentSessions = new Map<string, number>();
+  const agentNodeIdByAgentId = new Map<string, string>();
+  const agentIdByNodeId = new Map<string, string>();
+  const ambiguousAgentIds = new Set<string>();
   const sessionNodeBySessionId = new Map<string, string>();
   // T0 temporal stamp per session, reused for the session-owned derived-from
   // edge built in step 4 (which is sourced from the CHILD session node).
@@ -474,8 +513,18 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
     }
 
     // agent node + conducted-by edge
+    const agentNodeId = nodeId("agent", s.agentId);
+    const agentIdAlreadyAtNode = agentIdByNodeId.get(agentNodeId);
+    if (agentIdAlreadyAtNode && agentIdAlreadyAtNode !== s.agentId) {
+      // `nodeId()` predates this projection and normalizes punctuation. Do not
+      // attach security-relevant evidence when that lossy form is ambiguous.
+      ambiguousAgentIds.add(agentIdAlreadyAtNode);
+      ambiguousAgentIds.add(s.agentId);
+    } else {
+      agentIdByNodeId.set(agentNodeId, s.agentId);
+    }
     const agentId = addNode({
-      id: nodeId("agent", s.agentId),
+      id: agentNodeId,
       label: s.agentId,
       file_type: "concept",
       source_file: `agent-stats://agent/${s.agentId}`,
@@ -485,6 +534,7 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
       host: s.host,
       agent_kind: s.host,
     });
+    agentNodeIdByAgentId.set(s.agentId, agentId);
     agentSessions.set(agentId, (agentSessions.get(agentId) ?? 0) + 1);
     if (includeHubEdges) {
       addEdge({
@@ -566,7 +616,50 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
     }
   }
 
-  // 4. HYBRID GIT SKELETON: recent git DAG + session-produced commits.
+  // 4. READ-ONLY h2a coordination evidence. This represents only a local
+  // registry record already selected while resolving an in-project session;
+  // it does not claim that the record is authentic, current, or knowledge.
+  // Registry order cannot affect the graph, and no temporal anchor is
+  // invented for an undated coordination record.
+  const coordinationIds = Array.from(
+    new Set(
+      (opts.h2aCoordinationEvidence ?? [])
+        .map((evidence) => evidence.instanceId)
+        .filter((instanceId): instanceId is string => typeof instanceId === "string" && instanceId.length > 0),
+    ),
+  ).sort(codePointCompare);
+  for (const instanceId of coordinationIds) {
+    if (ambiguousAgentIds.has(instanceId)) continue;
+    const agentNodeId = agentNodeIdByAgentId.get(instanceId);
+    if (!agentNodeId) continue;
+    const evidenceNodeId = addNode({
+      id: coordinationEvidenceNodeId(instanceId),
+      label: "h2a registry evidence",
+      file_type: "rationale",
+      source_file: H2A_REGISTRY_PROVENANCE,
+      community: COMMUNITY.coordinationEvidence,
+      community_name: COMMUNITY_LABELS["6"]!,
+      node_type: "CoordinationEvidence",
+      evidence_type: "h2a-instance-registry",
+      instance_id: instanceId,
+      provenance: H2A_REGISTRY_PROVENANCE,
+      scope: H2A_COORDINATION_SCOPE,
+      trust: H2A_COORDINATION_TRUST,
+    });
+    addEdge({
+      source: agentNodeId,
+      target: evidenceNodeId,
+      relation: "registered-in",
+      confidence: "EXTRACTED",
+      source_file: H2A_REGISTRY_PROVENANCE,
+      weight: 1,
+      provenance: H2A_REGISTRY_PROVENANCE,
+      scope: H2A_COORDINATION_SCOPE,
+      trust: H2A_COORDINATION_TRUST,
+    });
+  }
+
+  // 5. HYBRID GIT SKELETON: recent git DAG + session-produced commits.
   // Commits come from the bounded git-log window plus any session shas the loader
   // forced in. This is the real branch/commit ossature: commit -> parent and
   // branch -> head commit. Branch/session attachment remains `touched-branch`.
@@ -671,7 +764,7 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
     }
   }
 
-  // 5. derived-from edges between sessions (codex sub-agent lineage).
+  // 6. derived-from edges between sessions (codex sub-agent lineage).
   for (const s of opts.sessions) {
     if (!s.parentThreadId) continue;
     const childNode = sessionNodeBySessionId.get(s.sessionId);
@@ -691,7 +784,7 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
     }
   }
 
-  // 6. T2 DERIVED-SPAN second pass — pure over the structure built above, so the
+  // 7. T2 DERIVED-SPAN second pass — pure over the structure built above, so the
   //    builder stays deterministic. Container nodes get t = min / t_end = max
   //    (FIRST / LAST activity) over their owned children's timestamps:
   //      • Branch  ← the sessions that touched it (touched-branch) PLUS the

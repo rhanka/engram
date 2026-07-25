@@ -32,7 +32,12 @@ import {
   normalizeCodex,
   type RepoScope,
 } from "./normalize.js";
-import { loadH2aInstances, matchInstance, type H2aInstance } from "./registry.js";
+import {
+  filterWorkspaceLocalH2aInstances,
+  loadH2aInstances,
+  matchInstance,
+  type H2aInstance,
+} from "./registry.js";
 import { aggregate, costWeightedTokens, formatSessionsTable, formatStatsTable } from "./stats.js";
 import {
   appendLinks,
@@ -52,6 +57,7 @@ import {
   buildProjectGraph,
   sessionFactToInput,
   PROJECT_GRAPH_SCHEMA,
+  type H2aCoordinationEvidence,
   type ProjectGraph,
   type ProjectIdentity,
   type SessionInput,
@@ -659,12 +665,17 @@ export interface LoadSessionsOptions {
   home?: string;
 }
 
+interface ProjectSessionLoad {
+  sessions: SessionInput[];
+  h2aCoordinationEvidence: H2aCoordinationEvidence[];
+}
+
 /**
  * Discover + parse transcripts for every alias of a project identity, returning
  * deduped session inputs (one per factId, latest wins). Reuses the same host
  * parsers as `sync`, but discovers across ALL the project's historical paths.
  */
-export function loadSessionsForIdentity(opts: LoadSessionsOptions): SessionInput[] {
+function loadProjectSessionsForIdentity(opts: LoadSessionsOptions): ProjectSessionLoad {
   const home = opts.home ?? homedir();
   const aliasPrefixes = opts.identity.aliases.flatMap((a) =>
     a.pathPrefixes.map((p) => (p.startsWith("~") ? p.replace(/^~/, home) : p)),
@@ -694,8 +705,14 @@ export function loadSessionsForIdentity(opts: LoadSessionsOptions): SessionInput
     }
   }
 
-  const instances = loadH2aInstances(opts.identity.repoRootForRegistry ?? aliasPrefixes[0] ?? ".");
+  const registryRoot = opts.identity.repoRootForRegistry ?? aliasPrefixes[0] ?? ".";
+  // Preserve the established project-graph identity matcher (including rename
+  // aliases). T7's evidence selection is a strict subset of this SAME local
+  // registry snapshot, so it cannot alter existing Agent ids or read twice.
+  const instances = loadH2aInstances(registryRoot);
+  const localEvidenceInstances = filterWorkspaceLocalH2aInstances(registryRoot, instances, home);
   const byFactId = new Map<string, SessionInput>();
+  const matchedInstanceIds = new Set<string>();
   for (const file of files) {
     // Cheap codex pre-filter: ~3000 rollouts mostly belong to OTHER repos. Skip a
     // multi-MB read when the session_meta header cwd is outside this project's
@@ -715,10 +732,22 @@ export function loadSessionsForIdentity(opts: LoadSessionsOptions): SessionInput
       if (!inIdentity(cwds)) continue;
       const inst = matchInstance(instances, fact.host, fact.cwds);
       const agentId = resolveIdentity(fact, inst).agentId;
+      const evidenceInstance = matchInstance(localEvidenceInstances, fact.host, fact.cwds);
+      if (evidenceInstance && evidenceInstance.id === agentId) matchedInstanceIds.add(evidenceInstance.id);
       byFactId.set(fact.factId, sessionFactToInput(fact, agentId));
     }
   }
-  return Array.from(byFactId.values());
+  return {
+    sessions: Array.from(byFactId.values()),
+    h2aCoordinationEvidence: Array.from(matchedInstanceIds)
+      .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+      .map((instanceId) => ({ instanceId })),
+  };
+}
+
+/** Discover + parse project sessions without exposing h2a evidence details. */
+export function loadSessionsForIdentity(opts: LoadSessionsOptions): SessionInput[] {
+  return loadProjectSessionsForIdentity(opts).sessions;
 }
 
 /** Identity passed to the project-graph loader (adds a registry-root hint). */
@@ -744,7 +773,8 @@ export function buildProjectGraphForIdentity(
   } = {},
 ): { graph: ProjectGraph; sessions: number } {
   const home = opts.home ?? homedir();
-  const sessions = loadSessionsForIdentity({ identity, home });
+  const loaded = loadProjectSessionsForIdentity({ identity, home });
+  const { sessions, h2aCoordinationEvidence } = loaded;
   // T2: stamp Commit nodes (and widen derived Branch/Agent/Project spans) from
   // git committer-dates. Read `git log` from the registry / current-incarnation
   // root (the same root loadSessionsForIdentity uses for the h2a registry). A
@@ -760,6 +790,7 @@ export function buildProjectGraphForIdentity(
   const graph = buildProjectGraph({
     identity,
     sessions,
+    h2aCoordinationEvidence,
     includeCommits: opts.includeCommits,
     includeBranches: opts.includeBranches,
     commits,
@@ -793,6 +824,7 @@ export {
   type ProjectGraph,
   type ProjectIdentity,
   type ProjectAlias,
+  type H2aCoordinationEvidence,
   type SessionInput,
 } from "./project-graph.js";
 export {
