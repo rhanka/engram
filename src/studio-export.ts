@@ -22,6 +22,8 @@
  *   reconciliation-candidates.json  <- the reconciliation queue (iff present)
  *   entities.json                   <- { id: buildEntitySidecar } index
  *   ontology/citations.json         <- verbatim copy (iff present)
+ *   sources/provenance.json         <- original -> converted -> citation chain
+ *                                      (always, iff any cited doc was converted)
  *   workspace-manifest.json         <- emitWorkspaceManifest (bundle descriptor)
  *   studio.html                     <- self-contained single-file studio, opens
  *                                      from a bare file:// (default-on; the
@@ -40,6 +42,11 @@ import {
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
+import {
+  buildCitedSourceProvenance,
+  PROVENANCE_SIDECAR_RELPATH,
+  type ProvenanceEntry,
+} from "./converted-provenance.js";
 import { applySceneLayout, resolveSceneLayoutId } from "./scene-layout.js";
 import { loadGraphFromData, type SerializedGraphData } from "./graph.js";
 import { emitClassHierarchies } from "./ontology-class-hierarchies-emitter.js";
@@ -102,6 +109,18 @@ export interface BuildStaticStudioOptions {
    */
   includeSources?: boolean;
   /**
+   * Also copy the ORIGINAL documents the cited markdown was CONVERTED from (the
+   * PDFs behind `.graphify/converted/pdf/*.md`) into `<out>/sources/<rel>`, so
+   * the viewer can open the paper itself rather than its OCR transcript.
+   *
+   * Separate from {@link includeSources} and default `false` on purpose: the
+   * provenance CHAIN is always recorded (`sources/provenance.json`, a few
+   * thousand short strings), while the originals behind it are a PDF corpus that
+   * can weigh tens of gigabytes. Opting in trades bundle size for offline
+   * openability.
+   */
+  includeOriginalSources?: boolean;
+  /**
    * Root the relative `source_file` locators resolve against (typically the
    * project root the graph was extracted from). Default: the parent of
    * `stateDir` (source_file values like `corpus/x.pdf` or
@@ -134,6 +153,15 @@ export interface BuildStaticStudioResult {
   studioHtmlBytes: number | null;
   /** `--include-sources` summary, or null when the option was off. */
   sources: { copied: number; missing: number; bytes: number } | null;
+  /**
+   * Absolute path of the emitted `sources/provenance.json`, or null when no
+   * cited locator resolved to a converted document (a corpus with no PDFs).
+   */
+  provenancePath: string | null;
+  /** Cited documents with a recorded original-document chain. */
+  provenanceCount: number;
+  /** `--include-original-sources` summary, or null when the option was off. */
+  originalSources: { copied: number; missing: number; bytes: number } | null;
 }
 
 const GENERATED_DATA_FILES = [
@@ -350,6 +378,64 @@ function emitCitedSources(
   if (missing > 0) {
     warn(
       `studio export: --include-sources could not bundle ${missing} cited file(s) ` +
+        `(searched ${roots.join(", ")}): ${missingSamples.join("; ")}${missing > missingSamples.length ? "; …" : ""}`,
+    );
+  }
+  return { copied, missing, bytes };
+}
+
+/**
+ * Copy the ORIGINAL documents named by an already-built provenance map into
+ * `<outDir>/sources/<rel>`, and stamp `bundled` on the entries that landed.
+ *
+ * Runs AFTER the map is built (and mutates it) so `bundled` is a statement about
+ * the bundle on disk, not an intention: an original that was moved, renamed or
+ * lives outside every root stays `bundled: false` and the viewer keeps showing
+ * the chain as a non-openable breadcrumb instead of linking to a 404. Several
+ * citations routinely share one original, so copies are deduped by path.
+ * Missing/unsafe originals are counted and warned, never fatal.
+ */
+function emitOriginalSources(
+  documents: Record<string, ProvenanceEntry>,
+  roots: string[],
+  outDir: string,
+  warn: (message: string) => void,
+): { copied: number; missing: number; bytes: number } {
+  let copied = 0;
+  let missing = 0;
+  let bytes = 0;
+  const missingSamples: string[] = [];
+  const done = new Set<string>();
+  for (const entry of Object.values(documents)) {
+    const rel = normalizeSourceRelPath(entry.original);
+    if (!rel) {
+      // An original outside every root (absolute) cannot be mirrored under
+      // sources/ without escaping the bundle. Recorded, never copied.
+      missing += 1;
+      if (missingSamples.length < 5) missingSamples.push(`${entry.original} (outside the roots)`);
+      continue;
+    }
+    if (done.has(rel)) {
+      entry.bundled = true;
+      continue;
+    }
+    const from = roots.map((root) => join(root, rel)).find((p) => existsSync(p));
+    if (!from) {
+      missing += 1;
+      if (missingSamples.length < 5) missingSamples.push(rel);
+      continue;
+    }
+    const to = join(outDir, "sources", rel);
+    mkdirSync(dirname(to), { recursive: true });
+    cpSync(from, to);
+    done.add(rel);
+    entry.bundled = true;
+    copied += 1;
+    bytes += statSync(to).size;
+  }
+  if (missing > 0) {
+    warn(
+      `studio export: --include-original-sources could not bundle ${missing} original document(s) ` +
         `(searched ${roots.join(", ")}): ${missingSamples.join("; ")}${missing > missingSamples.length ? "; …" : ""}`,
     );
   }
@@ -643,13 +729,16 @@ export function buildStaticStudio(
   //     overridable via sourcesRoot), then the state dir. Size-conscious: only
   //     files actually referenced by citations; missing files warn, never fail.
   let sources: BuildStaticStudioResult["sources"] = null;
-  if (options.includeSources) {
+  let originalSources: BuildStaticStudioResult["originalSources"] = null;
+  let provenancePath: string | null = null;
+  let provenanceCount = 0;
+  {
     let citationsSidecarJson: unknown = null;
     if (citationsRaw !== null) {
       try {
         citationsSidecarJson = JSON.parse(citationsRaw.toString("utf-8"));
       } catch {
-        warn("studio export: could not parse ontology/citations.json for --include-sources; using graph citations only.");
+        warn("studio export: could not parse ontology/citations.json for the cited-source pass; using graph citations only.");
       }
     }
     const citedFiles = collectCitedSourceFiles(
@@ -657,7 +746,38 @@ export function buildStaticStudio(
       citationsSidecarJson,
     );
     const roots = [resolve(options.sourcesRoot ?? dirname(resolve(stateDir))), resolve(stateDir)];
-    sources = emitCitedSources(citedFiles, roots, outDir, warn);
+    if (options.includeSources) {
+      sources = emitCitedSources(citedFiles, roots, outDir, warn);
+    }
+
+    // 5d. sources/provenance.json: the original -> converted -> citation chain,
+    //     emitted UNCONDITIONALLY (a citation whose source_file is an OCR
+    //     transcript must never be the last word on where the passage came
+    //     from). Recording the chain costs a few thousand short strings;
+    //     bundling the PDFs behind it is the expensive half, and stays behind
+    //     --include-original-sources.
+    try {
+      const provenance = buildCitedSourceProvenance(citedFiles, { roots });
+      provenanceCount = Object.keys(provenance.documents).length;
+      if (provenanceCount > 0) {
+        if (options.includeOriginalSources) {
+          originalSources = emitOriginalSources(provenance.documents, roots, outDir, warn);
+        }
+        const target = join(outDir, PROVENANCE_SIDECAR_RELPATH);
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, JSON.stringify(provenance));
+        provenancePath = target;
+      } else if (options.includeOriginalSources) {
+        warn(
+          "studio export: --include-original-sources found no cited document with a recorded " +
+            "conversion origin (no PDF-derived markdown among the cited sources); nothing to bundle.",
+        );
+      }
+    } catch (err) {
+      warn(
+        `studio export: could not emit ${PROVENANCE_SIDECAR_RELPATH} (${err instanceof Error ? err.message : String(err)}); the bundle is unaffected.`,
+      );
+    }
   }
 
   // 6. workspace-manifest.json: the bundle descriptor (hashes the final bytes of
@@ -738,5 +858,8 @@ export function buildStaticStudio(
     studioHtmlPath,
     studioHtmlBytes,
     sources,
+    provenancePath,
+    provenanceCount,
+    originalSources,
   };
 }
