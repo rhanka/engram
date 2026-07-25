@@ -139,6 +139,7 @@
     /* SAME row contract as a class row (.rail-onto-head): the visibility control
        and the DS row sit side by side, and the item is allowed to shrink so a
        deep row never pushes its trailing badge out of the x-clipped rail. */
+    --rail-eye-col: calc(2rem + 0.3rem);
     display: flex;
     align-items: flex-start;
     gap: 0.3rem;
@@ -146,8 +147,38 @@
     min-width: 0;
   }
   /* The DS row takes the remaining width next to the fixed-size eye. */
-  .rail-hier-node > :global(*:not(.esc-slot)) {
+  .rail-hier-node > :global(.st-collapsible),
+  .rail-hier-node > :global(.st-selectableRow) {
     flex: 1 1 auto;
+    min-width: 0;
+  }
+  .rail-hier-node > :global(.esc) {
+    flex-shrink: 0;
+    /* match the sm Collapsible header height so the glyph centres on the title */
+    min-height: 1.85rem;
+    align-items: center;
+  }
+  /* The DS Collapsible indents its own region. Nested one level per tree level
+     that is a CONSTANT cost stacked on top of the adaptive ladder — by depth 3
+     it dwarfs the decaying step and the title wraps to a column. Kill that
+     padding and pull the region back across the eye column, exactly as the class
+     row does, so a level costs the ADAPTIVE STEP and nothing else. */
+  .rail-hier-node > :global(.st-collapsible) > :global(.st-collapsible__region) {
+    padding-left: 0;
+    padding-right: 0;
+    margin-left: calc(-1 * var(--rail-eye-col));
+  }
+  .rail-hier-node :global(.st-collapsible__region) {
+    padding-left: 0;
+    padding-right: 0;
+  }
+  /* One row = one line: a long process title truncates instead of wrapping into
+     a multi-line column that pushes the whole subtree down. */
+  .rail-hier-node :global(.st-collapsible__title),
+  .rail-hier-node :global(.st-selectableRow__label) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     min-width: 0;
   }
   .rail-hier-children {
