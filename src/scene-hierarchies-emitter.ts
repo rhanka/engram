@@ -43,6 +43,12 @@ export interface EmitSceneHierarchiesOptions {
   sceneNodeIds?: Set<string>;
   /** Optional per-hierarchy relation_type overrides. */
   specs?: Record<string, { relation_type?: string }>;
+  /**
+   * Optional RAW-id → display label map (same key space as `sceneNodeIds`),
+   * forwarded to `nodes_by_id[*].label` so tree rows are readable without a
+   * second join into the graph.
+   */
+  labels?: ReadonlyMap<string, string>;
   /** Optional graph hash stamped on the envelope. */
   graphHash?: string;
 }
@@ -80,12 +86,21 @@ function sourceKeyFor(
   const sceneIdsKey = options.sceneNodeIds
     ? [...options.sceneNodeIds].sort().join("")
     : "*";
+  // Labels shape the emitted entries, so they belong in the cache identity —
+  // otherwise a first labelless run would pin an unlabelled sidecar forever.
+  const labelsKey = options.labels
+    ? [...options.labels.entries()]
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        .map(([id, label]) => `${id}=${label}`)
+        .join("|")
+    : "*";
   return [
     hierarchiesPath,
     String(stat.mtimeMs),
     String(stat.size),
     options.graphHash ?? "",
     sceneIdsKey,
+    labelsKey,
   ].join("\u0000");
 }
 
@@ -133,6 +148,7 @@ export function emitSceneHierarchies(
       arcs,
       sceneNodeIds: options.sceneNodeIds ?? arcNodeIds(arcs),
       ...(options.specs !== undefined ? { specs: options.specs } : {}),
+      ...(options.labels !== undefined ? { labels: options.labels } : {}),
       ...(options.graphHash !== undefined ? { graphHash: options.graphHash } : {}),
     });
     emitterCache.set(targetPath, { sourceKey, sidecar });
