@@ -157,20 +157,40 @@ export function densityScale(nodeCount) {
 // perfect and still read as a blob. Below EDGE_DENSITY_REF nothing changes (a
 // few-thousand-edge graph already reads well at 0.5); past it the base decays
 // as 1/sqrt(edges) and clamps, so a dense graph shows its edges as a texture
-// rather than a fill. The user's opacity slider still multiplies from there.
-const EDGE_DENSITY_REF = 6000; // edge count at/below which the base alpha is unchanged
-const EDGE_DENSITY_MIN = 0.35; // floor for the base-alpha scale on very dense graphs
+// rather than a fill.
+//
+// This picks the DEFAULT opacity for a scene — it is NOT a multiplier applied on
+// top of the user's choice. It used to be, and that made the Edge-opacity slider
+// a control that did almost nothing: on the 25k-edge PROCESS_STD scene the rendered
+// base alpha spanned only 13→100 of 255 across the slider's whole 0.1..0.8
+// travel, and the dense fade mode then multiplied hub edges by 0.15 on top,
+// leaving 2→15. The slider also *reported* 0.50 while 0.245 was in effect, so
+// the number on screen was not the number being rendered. The user's control is
+// the AUTHORITY over the base alpha; density only decides where it starts.
+const EDGE_DENSITY_REF = 6000; // edge count at/below which the default opacity is unchanged
+const EDGE_DENSITY_MIN = 0.35; // floor for the density factor on very dense graphs
 
 /**
- * Density factor for the base edge alpha given an edge count.
+ * Density factor for the DEFAULT edge opacity given an edge count.
  * edgeDensityScale(m) = clamp(sqrt(EDGE_DENSITY_REF / m), EDGE_DENSITY_MIN, 1).
  * @param {number} edgeCount  number of edges in the scene
- * @returns {number} a multiplier in [EDGE_DENSITY_MIN, 1] applied to the base alpha
+ * @returns {number} a factor in [EDGE_DENSITY_MIN, 1]
  */
 export function edgeDensityScale(edgeCount) {
   const m = Number.isFinite(edgeCount) && edgeCount > 0 ? edgeCount : 1;
   const raw = Math.sqrt(EDGE_DENSITY_REF / m);
   return Math.min(1, Math.max(EDGE_DENSITY_MIN, raw));
+}
+
+/**
+ * The edge opacity a scene STARTS at, before the user touches anything: the
+ * historical 0.5 faded by the scene's edge density. A caller that passes an
+ * explicit `edgeOpacity` overrides this completely.
+ * @param {number} edgeCount  number of edges in the scene
+ * @returns {number} an opacity in (0, 1]
+ */
+export function defaultEdgeOpacityFor(edgeCount) {
+  return DEFAULT_EDGE_OPACITY * edgeDensityScale(edgeCount);
 }
 
 function finite(value) {
@@ -750,14 +770,19 @@ export function buildGraphRendererPayload(scene, options = {}) {
   const edgeAlphaMode = EDGE_ALPHA_MODES.includes(options.edgeAlphaMode)
     ? options.edgeAlphaMode
     : EDGE_ALPHA_DENSE;
-  const edgeOpacity = Number.isFinite(options.edgeOpacity)
-    ? clampUnit(options.edgeOpacity)
-    : DEFAULT_EDGE_OPACITY;
   const sceneNodes = scene?.nodes ?? [];
   const sceneEdges = scene?.edges ?? [];
-  // Fade the BASE alpha on dense graphs (see edgeDensityScale): 25k edges at
-  // 0.5 composite into an opaque sheet over the whole layout.
-  const edgeBaseAlpha = Math.round(255 * edgeOpacity * edgeDensityScale(sceneEdges.length));
+  // An EXPLICIT edgeOpacity is the base alpha, full stop — the user's control
+  // governs what is rendered, and 1.0 means fully opaque edges. Only when the
+  // caller passes nothing does density pick the starting point
+  // (defaultEdgeOpacityFor): 25k edges at a flat 0.5 composite into an opaque
+  // sheet over the whole layout. Density must not silently scale a value the
+  // user chose, or the slider becomes a control that reports one number and
+  // renders another.
+  const edgeOpacity = Number.isFinite(options.edgeOpacity)
+    ? clampUnit(options.edgeOpacity)
+    : defaultEdgeOpacityFor(sceneEdges.length);
+  const edgeBaseAlpha = Math.round(255 * edgeOpacity);
   // One degree pass serves both churn fallback and density-graded edge alpha.
   const degreeById = nodeDegreeFallback(sceneNodes, sceneEdges);
   const churnById =
