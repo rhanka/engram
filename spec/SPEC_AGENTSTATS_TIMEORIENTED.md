@@ -9,7 +9,8 @@
 - Spec state: **PARTIAL IMPLEMENTATION.** The additive `t` / `t_end` contract is
   already emitted by agent-stats (T0/T2). T5 defines the provider-neutral store
   port and its first Postgres implementation. T6 defines a read-only temporal
-  graph recall contract; authored-memory and h2a persona/knowledge semantics
+  graph recall contract. T7 projects strictly local h2a *coordination evidence*
+  into the agent-stats graph; authored-memory and h2a persona/knowledge semantics
   remain unapproved and out of scope.
 - State root: `.graphify/`
 - Companion design: `.graphify/scratch/DESIGN_AGENTSTATS_TIMEORIENTED_KNOWLEDGE.md`
@@ -294,6 +295,40 @@ owner ratification of a versioned body contract. Caller-selected namespaces or
 cross-workspace results additionally require an authorization design and
 consumer-owner approval.
 
+### 4.4 Read-only h2a coordination evidence (T7)
+
+`graphify agent-stats project-graph` MAY project an existing h2a registry
+instance as a `CoordinationEvidence` node and an Agent → Evidence
+`registered-in` edge. This is a local graph projection, not an h2a command,
+envelope, knowledge retrieval, or write path.
+
+Projection is fail-closed and deterministic:
+
+- The sole input is the exact, non-symlinked
+  `<project-root>/.h2a/registry/instances.jsonl` file. Shared h2a roots,
+  bindings, aliases, presence, runs, inboxes, envelopes, and unknown record
+  fields are excluded.
+- An instance must declare a workspace resolving exactly to the selected project
+  root and must be the exact h2a instance matched to at least one session already
+  retained in that project's rename lineage. Parent/foreign workspaces, unmatched
+  instances, malformed records, and ambiguous normalized Agent ids emit no proof.
+- The node and edge each carry fixed fields
+  `provenance: ".h2a/registry/instances.jsonl"`, `scope: "workspace-local"`,
+  and `trust: "unverified"`. `EXTRACTED` on the edge means the local record was
+  read, not that its identity, authority, freshness, authorship, or truth was
+  verified.
+- Only the matched instance id is projected. Workspace paths, labels, names,
+  keys, capabilities, policies, endpoints, and arbitrary raw JSONL fields are
+  never serialized. Instance ids are deduplicated and code-point sorted; evidence
+  node ids are collision-free even where legacy Agent ids normalize punctuation.
+- Registry records have no defensible time anchor, so the evidence node and edge
+  MUST carry no `t`, `t_end`, or `t_src`. They do not participate in derived
+  Agent spans and are naturally absent from an `as-of` temporal slice.
+
+This additive evidence view retains `project-graph/v1`; it creates no h2a product
+schema and does not modify T5/T6 store, namespace, pagination, or source-selection
+contracts.
+
 ---
 
 ## 5. Decision status
@@ -313,5 +348,9 @@ consumer-owner approval.
    at the point window `[t,t]`; no authored-memory/persona semantics, no caller
    namespace override, no fallback after a store has been selected, and no
    implicit pagination or truncation.
+7. **D7 — h2a coordination evidence (T7).** A local, read-only registry record
+   may support an agent identity only when it is matched to an in-project session;
+   the projection is explicitly workspace-local and unverified, carries no time
+   stamp, and is not a knowledge/persona/envelope contract.
 
 This SPEC is generic and additive; it introduces no real customer/proprietary data.
