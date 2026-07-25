@@ -12,6 +12,7 @@
     COLOR_BY_FOLDER,
     COLOR_BY_LAYER,
     DEFAULT_EDGE_OPACITY,
+    defaultEdgeOpacityFor,
     EDGE_ALPHA_DENSE,
     EDGE_ALPHA_FLAT,
     EDGE_ALPHA_INVERSE,
@@ -270,11 +271,20 @@
   // Configurable edge-transparency: the along-edge fade MODE + the flat base
   // OPACITY. Both re-style LIVE like Color-by (per-render edge attributes: the
   // alpha SHAPE + the base alpha), so a change rebuilds the payload + re-renders
-  // with NO layout recompute + NO morph. Defaults (dense fade, 0.5 opacity) match
-  // the studio's prior ~0.5 base + hub density-falloff, so an untouched control
-  // is byte-identical to before.
+  // with NO layout recompute + NO morph.
   let edgeAlphaMode = $state(EDGE_ALPHA_DENSE);
-  let edgeOpacity = $state(DEFAULT_EDGE_OPACITY);
+  // The opacity the USER explicitly chose, or null while the control is
+  // untouched. Density then picks the starting point from the scene's edge count
+  // (defaultEdgeOpacityFor) — 0.5 on anything under 6000 edges, faded on a dense
+  // graph. Splitting "the user's choice" from "the effective value" is what makes
+  // the slider honest: it renders the number it displays, and the displayed
+  // number is the one actually in effect at mount. (Density used to MULTIPLY the
+  // slider instead, so on the 25k-edge PROCESS_STD scene the control read 0.50, rendered
+  // 0.245, and its whole travel moved the base alpha only 13→100 of 255.)
+  let edgeOpacityOverride = $state(null);
+  const edgeOpacity = $derived(
+    edgeOpacityOverride ?? defaultEdgeOpacityFor(scene?.edges?.length ?? 0),
+  );
   // The Edge-fade options exposed by the segmented control (default first).
   const EDGE_FADE_MODES = [
     { id: EDGE_ALPHA_DENSE, label: "Dense" },
@@ -2583,16 +2593,19 @@
                     >{mode.label}</Button>
                   {/each}
                 </ButtonGroup>
+                <!-- Full 0.02..1 travel: the slider GOVERNS the base alpha, so
+                     1.00 must mean fully opaque edges. It starts wherever the
+                     scene's density default put it, not at a fixed 0.50. -->
                 <label class="edge-opacity-row">
                   <span>Edge opacity {edgeOpacity.toFixed(2)}</span>
                   <input
                     type="range"
-                    min="0.1"
-                    max="0.8"
-                    step="0.05"
+                    min="0.02"
+                    max="1"
+                    step="0.02"
                     value={edgeOpacity}
                     aria-label="Edge opacity"
-                    oninput={(event) => (edgeOpacity = Number(event.currentTarget.value))}
+                    oninput={(event) => (edgeOpacityOverride = Number(event.currentTarget.value))}
                   />
                 </label>
               </section>
