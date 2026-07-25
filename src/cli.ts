@@ -50,6 +50,7 @@ import { safeExecGit } from "./git.js";
 import { safeGitRevParse } from "./git.js";
 import { discoverProjectConfig, loadProjectConfig } from "./project-config.js";
 import { loadOntologyProfile } from "./ontology-profile.js";
+import { loadProfileRegistries } from "./profile-registry.js";
 import { normalizeLanguageSelection } from "./description-language.js";
 import { DEFAULT_GRAPHIFY_STATE_DIR, defaultManifestPath, resolveGraphInputPath, resolveGraphifyPaths } from "./paths.js";
 import { normalizeSearchText, scoreSearchText } from "./search.js";
@@ -3126,6 +3127,7 @@ export async function main(): Promise<void> {
         extraction: readJson(opts.input),
         profile: context.profile,
         config: context.profile.outputs.ontology,
+        registries: loadProfileRegistries(context.profile),
         ...(descriptions ? { descriptions } : {}),
       });
       if (!result.enabled) {
@@ -3203,6 +3205,7 @@ export async function main(): Promise<void> {
           extraction,
           profile: ontologyProfile,
           config: ontologyConfig,
+          registries: loadProfileRegistries(ontologyProfile),
         });
         if (result.enabled) {
           ontologyRan = true;
