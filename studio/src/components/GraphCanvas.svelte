@@ -193,6 +193,13 @@
   // The CACHED pristine force positions captured at scene-build time — the
   // morph TARGET for switch-to-Force (Lot 1 never cold re-solves force).
   let forceBaseBuffer = null;
+  // The BAKED positions that came with scene.json, captured once per scene and
+  // NEVER overwritten by a re-solve (unlike forceBaseBuffer, which a Spread /
+  // Links solve replaces). This is what "Reset layout" restores: the build-time
+  // bake is a deliberate, deterministic artifact — on a hierarchy-aware scene it
+  // is the only layout that shows the corpus structure — so throwing it away for
+  // a cold client-side force solve loses information the server computed.
+  let bakedPositionBuffer = null;
   // True while a layout morph is in flight: hides labels + locks canvas
   // interaction for the (~480 ms) tween, exactly as pan/zoom already do.
   let morphActive = $state(false);
@@ -863,6 +870,9 @@
   function captureForceBaseBuffer() {
     const positions = payload?.renderGraph?.positions;
     forceBaseBuffer = positions ? new Float32Array(positions) : null;
+    // Same bytes, but a SEPARATE immutable copy: forceBaseBuffer is replaced by
+    // every force re-solve, so it cannot double as the restore point.
+    bakedPositionBuffer = positions ? new Float32Array(positions) : null;
   }
 
   // Selection/focus update — preserves the user's current zoom and pan.
@@ -1513,10 +1523,28 @@
     return map;
   }
 
+  // The baked scene positions as a solver seed map. Reads the scene's own
+  // x/y (falling back to the fx/fy pins), so it is available even before the
+  // first payload rebuild has captured a buffer.
+  function bakedPositionMap() {
+    if (!scene?.nodes) return undefined;
+    const map = new Map();
+    for (const node of scene.nodes) {
+      const x = Number.isFinite(node.x) ? node.x : node.fx;
+      const y = Number.isFinite(node.y) ? node.y : node.fy;
+      if (Number.isFinite(x) && Number.isFinite(y)) map.set(node.id, { x, y });
+    }
+    return map.size > 0 ? map : undefined;
+  }
+
   async function computeForceRelayoutBuffer({ warmStart = true } = {}) {
     const graph = payload?.renderGraph;
     if (!graph || !scene?.nodes) return null;
-    const initialPositions = warmStart ? currentPositionMap() : undefined;
+    // A cold solve used to seed from an arbitrary circle, throwing away the
+    // deterministic build-time bake entirely. Seed from the BAKED positions
+    // instead, so even a cold re-solve is a refinement of the shipped layout
+    // rather than an unrelated one.
+    const initialPositions = (warmStart ? currentPositionMap() : null) ?? bakedPositionMap();
     // Lot 7: off-main-thread solve when a Worker is available (falls back to a
     // synchronous solve in SSR / tests). Debounced to drag-end by the caller.
     // A worker error (postMessage/onerror rejection) must NOT surface as an
@@ -1526,7 +1554,18 @@
     let solved;
     try {
       solved = await solveForce(
-        scene.nodes.map((node) => ({ id: node.id })),
+        // Pins reach the solver, but only where a pin is MEANT.
+        //
+        // computeLayout treats a node with finite fx/fy as immovable (velocity
+        // forced to 0 every step). The build-time bake pins EVERY node, so
+        // forwarding all of them wholesale would freeze the entire graph and turn
+        // the Spread/Links sliders into no-ops. Only a node the user explicitly
+        // dragged is a genuine pin; the baked coordinates are a starting point,
+        // not a constraint, so they travel via `initialPositions` below.
+        scene.nodes.map((node) => {
+          const pinned = draggedPositions.get(node.id);
+          return pinned ? { id: node.id, fx: pinned.x, fy: pinned.y } : { id: node.id };
+        }),
         scene.edges ?? [],
         {
           repulsion: forceSpread,
@@ -1572,7 +1611,27 @@
     startLayoutMorphToBuffer(LAYOUT_MODE_FORCE, target);
   }
 
+  // "Reset layout" = go back to the BAKED layout that shipped in scene.json,
+  // not a cold re-solve. The bake is deterministic and structure-aware (the
+  // hierarchy-aware variant lays the declared forests out as tidy trees); a cold
+  // force solve would discard that and settle into an unrelated blob, so Reset
+  // would destroy exactly what the user wants to get back to.
+  // Only when there is no bake to return to do we fall back to a cold solve.
   function resetForceLayout() {
+    const target = bakedPositionBuffer;
+    const expected = payload?.renderGraph?.nodeIds?.length;
+    // Guard the buffer against a scene whose node count changed under it.
+    if (target && Number.isInteger(expected) && target.length === expected * 2) {
+      if (layoutMode !== LAYOUT_MODE_FORCE) layoutMode = LAYOUT_MODE_FORCE;
+      // Supersede any in-flight solve so it cannot land on top of the restore.
+      forceSolveToken += 1;
+      draggedPositions.clear();
+      const restored = new Float32Array(target);
+      forceBaseBuffer = new Float32Array(target);
+      coordinateEpoch += 1;
+      startLayoutMorphToBuffer(LAYOUT_MODE_FORCE, restored);
+      return;
+    }
     resolveForceLayout({ warmStart: false });
   }
 
