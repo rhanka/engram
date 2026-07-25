@@ -518,10 +518,16 @@ describe("GraphCanvas edge-transparency controls (Edge fade + Edge opacity)", ()
     expect(source).toContain("DEFAULT_EDGE_OPACITY");
   });
 
-  it("defaults to dense fade + the default edge opacity", () => {
+  it("defaults to dense fade + the scene's DENSITY-derived edge opacity", () => {
     const source = graphCanvasSource();
     expect(source).toMatch(/let edgeAlphaMode = \$state\(EDGE_ALPHA_DENSE\)/);
-    expect(source).toMatch(/let edgeOpacity = \$state\(DEFAULT_EDGE_OPACITY\)/);
+    // The user's explicit choice is held SEPARATELY from the effective value, so
+    // the slider renders exactly the number it displays. Untouched (null) ⇒ the
+    // effective opacity is the scene's density default, not a fixed 0.5.
+    expect(source).toMatch(/let edgeOpacityOverride = \$state\(null\)/);
+    expect(source).toMatch(
+      /const edgeOpacity = \$derived\(\s*edgeOpacityOverride \?\? defaultEdgeOpacityFor\(scene\?\.edges\?\.length \?\? 0\),\s*\)/,
+    );
   });
 
   it("renders the Edge fade segmented group (English labels) + Edge opacity slider in the Display section", () => {
@@ -539,8 +545,12 @@ describe("GraphCanvas edge-transparency controls (Edge fade + Edge opacity)", ()
     expect(source).toMatch(/\{ id: EDGE_ALPHA_FLAT, label: "Flat" \}/);
     // Native range slider for the base opacity.
     expect(gated).toContain('aria-label="Edge opacity"');
-    expect(gated).toMatch(/type="range"[\s\S]{0,120}min="0\.1"[\s\S]{0,120}max="0\.8"/);
-    expect(gated).toMatch(/oninput=\{\(event\) => \(edgeOpacity = Number\(event\.currentTarget\.value\)\)\}/);
+    // FULL travel: the slider governs the base alpha, so 1.00 must be reachable
+    // and mean fully opaque. A 0.1..0.8 cap could never render an opaque edge.
+    expect(gated).toMatch(/type="range"[\s\S]{0,160}min="0\.02"[\s\S]{0,160}max="1"/);
+    expect(gated).toMatch(
+      /oninput=\{\(event\) => \(edgeOpacityOverride = Number\(event\.currentTarget\.value\)\)\}/,
+    );
   });
 
   it("passes edgeAlphaMode + edgeOpacity through rebuildPayload", () => {
