@@ -139,6 +139,7 @@ let applySceneLayout;
 let selectDefaultSceneLayoutId;
 let completeRegistrySeeds;
 let registriesBackingHierarchies;
+let registryDisplayLabels;
 let loadProfileRegistries;
 let buildEntitySidecar;
 let emitSceneHierarchies;
@@ -163,6 +164,7 @@ try {
     discoverQualityTargetsConfig,
     loadProfileRegistries,
     registriesBackingHierarchies,
+    registryDisplayLabels,
     selectDefaultSceneLayoutId,
     emitSceneHierarchies,
     emitClassHierarchies,
@@ -333,6 +335,11 @@ if (!Array.isArray(graph.nodes)) graph.nodes = [];
 // drops the whole forest into dangling_arc_count. Completing the seeds is
 // deterministic and LLM-free, and strictly ADDITIVE: no existing node changes.
 let seedCompletion = null;
+// Raw registry id -> the registry's OWN display label, for the rows whose label
+// is not just their id. The registry is the authority on what a record is
+// called; the graph's node label is only as good as the extraction that seeded
+// it (see 3b, where a self-labelled node falls back to this index).
+let registryLabels = new Map();
 if (args.completeRegistrySeeds) {
   const scope = String(args.completeRegistrySeedsScope ?? "hierarchies");
   if (scope !== "hierarchies" && scope !== "all") {
@@ -364,6 +371,7 @@ if (args.completeRegistrySeeds) {
     ),
   };
   const registries = loadProfileRegistries(profileForLoad);
+  registryLabels = registryDisplayLabels(registries);
   seedCompletion = completeRegistrySeeds({
     registries,
     profile: normalizedProfile,
@@ -399,6 +407,15 @@ for (const node of scene.nodes) {
   if (typeof node.label === "string" && node.label && !sceneLabels.has(raw)) {
     sceneLabels.set(raw, node.label);
   }
+}
+// A node seeded before its registry carried human names is SELF-LABELLED
+// (label === the raw id), which renders as a bare code (`AM0104`) with no name.
+// The registry is authoritative for the display name, so it repairs exactly
+// those rows — and only those: a real graph label is never overwritten.
+for (const [raw, label] of registryLabels) {
+  if (!sceneRawIds.has(raw)) continue;
+  const current = sceneLabels.get(raw);
+  if (!current || current === raw) sceneLabels.set(raw, label);
 }
 const hierarchiesResult = emitSceneHierarchies({
   ontologyOutputDir: join(stateDir, "ontology"),
