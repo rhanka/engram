@@ -525,10 +525,29 @@ export {
   TEMPORAL_RECALL_SCHEMA,
   filterTemporalWindow,
   formatTemporalRecall,
+  overlapsTemporalWindow,
   parseRecallTimestamp,
   recallAsOf,
   runTemporalRecall,
 } from "./temporal-recall.js";
+export {
+  GRAPH_TIME_SLICE_SCHEMA,
+  GRAPH_WINDOW_SCHEMA,
+  formatGraphTimeSlice,
+  runGraphTimeSlice,
+  sliceGraphByTime,
+  toGraphTimeSliceReport,
+} from "./graph-time-slice.js";
+export type {
+  GraphTimeSliceBounds,
+  GraphTimeSliceCounts,
+  GraphTimeSliceDeps,
+  GraphTimeSliceOptions,
+  GraphTimeSliceReport,
+  GraphTimeSliceResult,
+  GraphTimeSliceRun,
+  GraphTimeSliceWindow,
+} from "./graph-time-slice.js";
 export type {
   TemporalRecallCliDeps,
   TemporalRecallCliOptions,
