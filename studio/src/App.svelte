@@ -173,7 +173,12 @@
   const hasOntologyGroup = $derived(groupedSplit.ontologyClassIds.length > 0);
   const hasCommunityGroup = $derived(groupedSplit.communityKeys.length > 0);
   const hasTypeGroup = $derived(groupedSplit.typeNames.length > 0);
-  const hasAnyGroup = $derived(hasOntologyGroup || hasCommunityGroup || hasTypeGroup);
+  // The registry-FOREST axis: a process-tree row is an ontology row, so grouping
+  // it folds its subtree into that node (see groupBy's hierarchy index).
+  const hasHierarchyGroup = $derived(groupedSplit.hierarchyRefs.length > 0);
+  const hasAnyGroup = $derived(
+    hasOntologyGroup || hasCommunityGroup || hasTypeGroup || hasHierarchyGroup,
+  );
 
   // C4: which kinds are AVAILABLE to group. Ontology needs the class-hierarchies
   // artifact; Community needs at least one live community. The rail hides the
@@ -231,6 +236,7 @@
     computeGroupedGraph({
       graph,
       classHierarchies,
+      sceneHierarchies,
       communityCtx,
       typeCtx,
       grouped: viewerState.options.groupBy.grouped,
@@ -305,6 +311,7 @@
           hiddenKeys: viewerState.options.visibility.hidden,
           soloKeys: viewerState.options.visibility.solo,
           classHierarchies,
+          sceneHierarchies,
         })
       : EMPTY_HIDDEN_IDS,
   );

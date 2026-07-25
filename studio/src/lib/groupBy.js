@@ -32,11 +32,82 @@ import {
 import { splitGroupedKeys } from "./viewerState.js";
 
 /**
+ * Build the registry-FOREST collapse index (the ontology's deep branches).
+ *
+ * Unlike the other three axes there is NOTHING to inject: a forest node IS a real
+ * graph entity (joined on `registry_record_id`), so folding node `DE` folds its
+ * descendants INTO the existing `DE` node. The index is therefore just
+ *   child scene id -> parent scene id      (the tree, mapped through the join)
+ *   target scene id -> its descendant scene ids
+ * which `applyGroupCollapse` consumes exactly as it does the class index.
+ *
+ * Generic: nothing here knows ABP from PROCESS_STD — it walks whatever forests the
+ * sidecar carries. Forest records that do not join to a graph node are skipped
+ * (they can neither be a fold target nor be folded).
+ *
+ * @param {{ nodes?: object[] }} graph
+ * @param {object|null} sceneHierarchies  the scene-hierarchies sidecar.
+ * @param {{forestKey: string, nodeId: string}[]} refs  the grouped forest nodes.
+ * @returns {{ parentById: Map<string,string>, descendantsByTarget: Map<string,Set<string>>,
+ *   collapseTargets: string[] }}
+ */
+export function buildHierarchyCollapseIndex(graph, sceneHierarchies, refs = []) {
+  const parentById = new Map();
+  const descendantsByTarget = new Map();
+  const collapseTargets = [];
+  const forests = sceneHierarchies?.hierarchies;
+  if (!forests || typeof forests !== "object" || refs.length === 0) {
+    return { parentById, descendantsByTarget, collapseTargets };
+  }
+
+  // Raw registry id -> scene/graph node id (first wins, mirroring the rail's join).
+  const sceneIdByRaw = new Map();
+  for (const node of graph?.nodes ?? []) {
+    const raw = node?.registry_record_id;
+    if (typeof raw === "string" && raw && !sceneIdByRaw.has(raw)) sceneIdByRaw.set(raw, node.id);
+  }
+
+  for (const ref of refs) {
+    const nodesById = forests[ref?.forestKey]?.nodes_by_id;
+    if (!nodesById || typeof nodesById !== "object") continue;
+    if (!Object.prototype.hasOwnProperty.call(nodesById, ref.nodeId)) continue;
+    const targetId = sceneIdByRaw.get(ref.nodeId);
+    if (typeof targetId !== "string") continue;
+
+    // Walk the subtree once: record every joined descendant and the child->parent
+    // edge that lets `nearestVisibleAncestor` bubble a folded edge to the target.
+    const descendants = descendantsByTarget.get(targetId) ?? new Set();
+    const stack = [ref.nodeId];
+    const seen = new Set();
+    while (stack.length) {
+      const raw = stack.pop();
+      if (typeof raw !== "string" || seen.has(raw)) continue;
+      seen.add(raw);
+      const parentSceneId = sceneIdByRaw.get(raw);
+      for (const child of nodesById[raw]?.child_ids ?? []) {
+        const childSceneId = sceneIdByRaw.get(child);
+        if (typeof childSceneId === "string" && typeof parentSceneId === "string") {
+          if (!parentById.has(childSceneId)) parentById.set(childSceneId, parentSceneId);
+          descendants.add(childSceneId);
+        }
+        stack.push(child);
+      }
+    }
+    descendants.delete(targetId);
+    descendantsByTarget.set(targetId, descendants);
+    collapseTargets.push(targetId);
+  }
+  return { parentById, descendantsByTarget, collapseTargets };
+}
+
+/**
  * Compute the COLLAPSED graph for a grouped-key set — the real App `groupedGraph`.
  *
  * @param {object} args
  * @param {{ nodes?: object[], links?: object[] }} args.graph  the raw graph.
  * @param {object|null} args.classHierarchies  the class-hierarchies.json artifact.
+ * @param {object|null} [args.sceneHierarchies]  the scene-hierarchies.json sidecar
+ *        (the registry forests). Needed only when a forest NODE is grouped.
  * @param {object|null} [args.communityCtx]  the App's per-key community context
  *        ({ liveKeys, idByKey, communityOf, ... }); null when no community is
  *        grouped or none are live. Pre-built by the App so injector + index agree
@@ -50,26 +121,39 @@ import { splitGroupedKeys } from "./viewerState.js";
 export function computeGroupedGraph({
   graph,
   classHierarchies = null,
+  sceneHierarchies = null,
   communityCtx = null,
   typeCtx = null,
   grouped = [],
 } = {}) {
-  const { ontologyClassIds, communityKeys, typeNames } = splitGroupedKeys(grouped);
+  const { ontologyClassIds, communityKeys, typeNames, hierarchyRefs } = splitGroupedKeys(grouped);
   const hasOntologyGroup = ontologyClassIds.length > 0;
   const hasCommunityGroup = communityKeys.length > 0;
   const hasTypeGroup = typeNames.length > 0;
-  if (!hasOntologyGroup && !hasCommunityGroup && !hasTypeGroup) return graph;
+  const hasHierarchyGroup = hierarchyRefs.length > 0;
+  if (!hasOntologyGroup && !hasCommunityGroup && !hasTypeGroup && !hasHierarchyGroup) return graph;
 
   let injected = graph;
   const parentById = new Map();
   const descendantsByTarget = new Map();
   const collapseTargets = [];
 
+  // HIERARCHY first: a forest node is the MOST SPECIFIC ontology row a member
+  // entity has (its exact position in the process tree), so its parent mapping
+  // wins over the coarser class/community/type ones for the entities it covers.
+  if (hasHierarchyGroup && sceneHierarchies?.hierarchies) {
+    const hier = buildHierarchyCollapseIndex(injected, sceneHierarchies, hierarchyRefs);
+    for (const [k, v] of hier.parentById) parentById.set(k, v);
+    for (const [k, v] of hier.descendantsByTarget) descendantsByTarget.set(k, v);
+    for (const id of hier.collapseTargets) collapseTargets.push(id);
+  }
+
   if (hasOntologyGroup && classHierarchies?.hierarchies) {
     injected = injectOntologyClassNodes(injected, classHierarchies, { levels: "all" });
     const { parentById: classParents, descendantClassIds } =
       buildClassParentIndex(classHierarchies);
-    for (const [k, v] of classParents) parentById.set(k, v);
+    // Don't clobber a hierarchy parent: the forest position is the finer truth.
+    for (const [k, v] of classParents) if (!parentById.has(k)) parentById.set(k, v);
     for (const [k, v] of descendantClassIds) descendantsByTarget.set(k, v);
     for (const id of ontologyClassIds) collapseTargets.push(id);
   }
