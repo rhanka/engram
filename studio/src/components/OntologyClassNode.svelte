@@ -25,6 +25,7 @@
   import Self from "./OntologyClassNode.svelte";
   import { groupKeyForOntology, groupKeyForType } from "../lib/viewerState.js";
   import { indentStepCss } from "../lib/railIndent.js";
+  import { collapsibleTitleTooltip } from "../lib/rowTooltip.js";
 
   let {
     // { id, label, count, types[], forests[], subs[] } — see LeftRail.typeTree.
@@ -56,7 +57,7 @@
   const forestIndent = $derived(indentStepCss(forestDepth - 1));
 </script>
 
-<li class="rail-onto-head">
+<li class="rail-onto-head" use:collapsibleTitleTooltip={node.label}>
   <EntityStateControl
     {key}
     label={node.label}
@@ -98,6 +99,9 @@
           {/each}
         </ul>
       {:else}
+        <!-- `display: contents` wrapper: it exists ONLY to scope the tooltip
+             action to this forest's own trigger, and costs no layout box. -->
+        <div class="rail-forest-head" use:collapsibleTitleTooltip={forest.label}>
         <Collapsible title={forest.label} open={false} size="sm">
           {#snippet trailing()}
             <Badge shape="circle" size="sm" tone="neutral">{forest.nodeCount}</Badge>
@@ -123,6 +127,7 @@
             {/each}
           </ul>
         </Collapsible>
+        </div>
       {/if}
       {#if forest.orphanCount || forest.danglingCount}
         <p class="rail-hier-note">
@@ -167,7 +172,9 @@
               {#snippet leading()}
                 <TypeShapeGlyph type={t.key} />
               {/snippet}
-              {t.key}
+              <!-- The row content ellipsizes in the rail; the titled span keeps
+                   a long node-type name readable on hover. -->
+              <span class="rail-type-label" title={t.key}>{t.key}</span>
               {#snippet trailing()}
                 <Badge shape="circle" size="sm" tone="neutral">{t.count}</Badge>
               {/snippet}
@@ -213,6 +220,19 @@
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
+  }
+  /* Tooltip-scoping wrapper only — never a layout box (see the markup). */
+  .rail-forest-head {
+    display: contents;
+  }
+  /* A long node-type name ellipsizes inside the row; the span carries the full
+     text in its native tooltip. */
+  .rail-type-label {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
   }
   /* Kill the nested Collapsible region's inline padding so the ADAPTIVE step is
      the only offset, and pull the region back across the eye column (see
