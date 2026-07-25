@@ -5814,7 +5814,7 @@ export async function main(): Promise<void> {
     .action(async (question, opts) => {
       const { readFileSync: rf } = await import("node:fs");
       const { resolve: res } = await import("node:path");
-      const { dropQueryStopwords, scoreSearchText } = await import("./search.js");
+      const { dropQueryStopwords, queryTerms, scoreSearchText } = await import("./search.js");
       const gp = res(opts.graph);
       if (!existsSync(gp)) {
         console.error(`error: graph file not found: ${gp}`);
@@ -5832,9 +5832,15 @@ export async function main(): Promise<void> {
         // Question/filler stopwords are dropped from the QUERY terms only
         // (node text is never filtered) so content words drive seeding —
         // port of upstream 6e97088.
-        const terms = dropQueryStopwords(
-          normalizeSearchText(question).split(/\s+/).filter((t: string) => t.length > 2),
-        );
+        //
+        // Tokenisation goes through the shared `queryTerms` helper (upstream
+        // 020cca2 / #964 directive: CLI, MCP query, and benchmark must share
+        // one rule). The previous `split(/\s+/).filter(len > 2)` here applied
+        // the short-token gate to every script, so two-character non-ASCII
+        // terms (前端, 東京, Ελ) were silently dropped on this path only.
+        // `normalizeSearchText` runs first because `scoreSearchText` compares
+        // against deaccented labels.
+        const terms = dropQueryStopwords(queryTerms(normalizeSearchText(question)));
         const scored: [number, string][] = [];
         G.forEachNode((nid: string, data: Record<string, unknown>) => {
           const score = scoreSearchText(
