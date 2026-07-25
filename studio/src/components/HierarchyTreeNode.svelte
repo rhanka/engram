@@ -1,19 +1,42 @@
 <script>
   /**
-   * Lot 2 — one node of a scene-hierarchies process tree (ABP / PROCESS_STD / org),
-   * rendered recursively. Drill-down is LAZY and CHILD-DIRECT: children mount
-   * only when the row is expanded, and only the direct children are listed
-   * (never a merged/flattened subtree). Selecting a node selects its whole
-   * subtree (the rail maps raw registry ids → scene-node ids and folds them into
-   * the selection). Cross-tree bridges (candidate_maps_to / evidence_maps_to) are
-   * NOT children here — they stay weak scene edges, never tree structure.
+   * One node of a registry FOREST (ABP / PROCESS_STD / org unit tree), rendered
+   * recursively — and a FIRST-CLASS ontology row.
+   *
+   * The forests are spliced into the ontology tree (OntologyClassNode), so a
+   * process node is not "extra navigation" hanging off the ontology: it IS the
+   * ontology, several levels below its class. It therefore carries exactly the
+   * affordances of a class row:
+   *
+   *   - the 4-state VISIBILITY control (Normal · Grouped · Hidden · Show only),
+   *     keyed by `hierarchy:<forestKey>:<rawId>`. Hiding a node hides its whole
+   *     SUBTREE of entities (entityVisibility expands the key through the
+   *     sidecar), and grouping folds that subtree INTO this node (groupBy's
+   *     hierarchy axis). A node under a GROUPED ancestor is absorbed ⇒ disabled,
+   *     the same rule the class rows follow.
+   *   - subtree SELECTION (click the label = select every entity below).
+   *
+   * Drill-down stays LAZY and CHILD-DIRECT: children mount only when expanded,
+   * and only direct children are listed (never a merged/flattened subtree).
+   * Cross-tree bridges (candidate_maps_to / evidence_maps_to) are NOT children —
+   * they stay weak scene edges, never tree structure.
+   *
+   * Indentation is ADAPTIVE (lib/railIndent.js): the step decays with the row's
+   * rendered depth and the total is budget-capped, so a level-5 row keeps a
+   * readable label and its badges inside the 306px rail.
    */
   import { Badge } from "@sentropic/design-system-svelte";
+  import EntityStateControl from "./EntityStateControl.svelte";
   import Self from "./HierarchyTreeNode.svelte";
+  import { indentStepCss } from "../lib/railIndent.js";
+  import { groupKeyForHierarchy } from "../lib/viewerState.js";
 
   let {
     // Raw registry id of this node (the scene-hierarchies key, e.g. "AM01"/"DE").
     nodeId,
+    // The forest this node belongs to (the scene-hierarchies hierarchy key). Part
+    // of the visibility/group key, because two forests may reuse a code.
+    forestKey,
     // The hierarchy's `nodes_by_id` map (raw id → { child_ids, level, … }).
     nodesById,
     // Resolver: raw id → display label (from the graph, falls back to the id).
@@ -24,6 +47,14 @@
     selectedSet,
     // Select/deselect this node's subtree (called with THIS node's raw id).
     onSelectSubtree,
+    // Shared rail render context (entityStateOf / onSetEntityState / soloActive).
+    // Absent ⇒ the row renders without its visibility control (never crashes).
+    ctx = null,
+    // Rendered depth in the ONE ontology ladder (class levels included), so the
+    // adaptive indent keeps decaying instead of restarting at the forest root.
+    depth = 0,
+    // Label of the nearest GROUPED ancestor (class or forest node), or null.
+    absorbedBy = null,
   } = $props();
 
   let expanded = $state(false);
@@ -44,6 +75,13 @@
   const level = $derived(entry?.level ?? 0);
   const sceneId = $derived(sceneIdFor(nodeId));
   const selected = $derived(sceneId != null && selectedSet.has(sceneId));
+
+  // This row's own ontology key — the SAME vocabulary as a class row's.
+  const key = $derived(groupKeyForHierarchy(String(forestKey), String(nodeId)));
+  const grouped = $derived(ctx?.entityStateOf?.(key) === "grouped");
+  // A node grouped HERE absorbs everything below it (class-row rule, recursively).
+  const childAbsorbedBy = $derived(absorbedBy ?? (grouped ? label : null));
+  const childIndent = $derived(indentStepCss(depth));
 </script>
 
 <li class="rail-hier-node">
@@ -60,6 +98,19 @@
       </button>
     {:else}
       <span class="rail-hier-toggle rail-hier-leaf" aria-hidden="true">·</span>
+    {/if}
+    {#if ctx?.entityStateOf}
+      <span class="rail-hier-eye">
+        <EntityStateControl
+          {key}
+          {label}
+          state={ctx.entityStateOf(key)}
+          disabled={absorbedBy != null}
+          {absorbedBy}
+          dim={ctx.soloActive}
+          onSetState={ctx.onSetEntityState}
+        />
+      </span>
     {/if}
     <button
       type="button"
@@ -81,15 +132,19 @@
     </button>
   </div>
   {#if hasChildren && expanded}
-    <ul class="rail-hier-children">
+    <ul class="rail-hier-children" style={`padding-left: ${childIndent}`}>
       {#each childIds as cid (cid)}
         <Self
           nodeId={cid}
+          {forestKey}
           {nodesById}
           {labelFor}
           {sceneIdFor}
           {selectedSet}
           {onSelectSubtree}
+          {ctx}
+          depth={depth + 1}
+          absorbedBy={childAbsorbedBy}
         />
       {/each}
     </ul>
@@ -103,7 +158,7 @@
   .rail-hier-row {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: 0.15rem;
     min-width: 0;
     border-radius: var(--st-radius-sm, 4px);
   }
@@ -112,7 +167,7 @@
   }
   .rail-hier-toggle {
     flex: 0 0 auto;
-    width: 1.25rem;
+    width: 1rem;
     height: 1.25rem;
     display: inline-flex;
     align-items: center;
@@ -131,14 +186,21 @@
   .rail-hier-leaf {
     cursor: default;
   }
+  /* The eye keeps its intrinsic size at every depth — the indent budget, not the
+     control, is what gives way as the tree deepens. */
+  .rail-hier-eye {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+  }
   .rail-hier-label {
     flex: 1 1 auto;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
+    gap: 0.35rem;
     min-width: 0;
-    padding: 0.15rem 0.35rem;
+    padding: 0.15rem 0.2rem;
     border: none;
     background: transparent;
     color: inherit;
@@ -165,7 +227,7 @@
     white-space: nowrap;
   }
   .rail-hier-code {
-    margin-right: 0.4rem;
+    margin-right: 0.35rem;
     color: var(--st-color-text-muted, #7a8194);
     font-family: var(--st-font-mono, ui-monospace, monospace);
     font-size: 0.85em;
@@ -173,13 +235,13 @@
   .rail-hier-badges {
     flex: 0 0 auto;
     display: inline-flex;
-    gap: 0.25rem;
+    gap: 0.2rem;
   }
   .rail-hier-children {
     margin: 0;
-    /* One deep tree can nest many levels inside the ontology accordion; keep the
-       per-level step small so a level-5 row still has usable label width. */
-    padding: 0 0 0 0.55rem;
+    /* padding-left is ADAPTIVE (inline, from lib/railIndent.js): the step decays
+       with depth and the cumulative indent is budget-capped, so a deep row keeps
+       usable label width inside the narrow rail. */
     border-left: 1px solid var(--st-color-border-subtle, rgba(128, 128, 128, 0.22));
   }
 </style>
