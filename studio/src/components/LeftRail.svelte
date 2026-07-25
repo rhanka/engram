@@ -16,7 +16,7 @@
   import TypeShapeGlyph from "./TypeShapeGlyph.svelte";
   import TimeScrub from "./TimeScrub.svelte";
   import EntityStateControl from "./EntityStateControl.svelte";
-  import HierarchyTreeNode from "./HierarchyTreeNode.svelte";
+  import OntologyClassNode from "./OntologyClassNode.svelte";
   import {
     graphNodes,
     nodeType,
@@ -24,18 +24,18 @@
     groupCounts,
     communityStats,
   } from "../lib/graphAdapter.js";
-  import {
-    groupKeyForOntology,
-    groupKeyForCommunity,
-    groupKeyForType,
-  } from "../lib/viewerState.js";
+  // The ontology/type keys are minted inside OntologyClassNode (which owns those
+  // rows now); the rail keeps only the community key.
+  import { groupKeyForCommunity } from "../lib/viewerState.js";
+  import { buildForestList, buildOntologyTree } from "../lib/ontologyTree.js";
 
   let {
     graph,
     classHierarchies = null,
-    // Lot 2: the scene-hierarchies sidecar (graphify_scene_hierarchies_v1) — the
-    // registry process forests (ABP / PROCESS_STD / org unit trees). null on repos
-    // without registry hierarchies ⇒ the Hierarchies section hides itself.
+    // The scene-hierarchies sidecar (graphify_scene_hierarchies_v1) — the
+    // registry process forests (ABP / PROCESS_STD / org unit trees). Spliced INTO the
+    // ontology tree under the class that declares them (never a separate
+    // accordion). null on repos without registry hierarchies.
     sceneHierarchies = null,
     // Storage LOT 2 (prefer-server): the store's precomputed `node_type`
     // group-by counts (the `GET /api/ontology/groups` payload), or null. When
@@ -160,100 +160,11 @@
 
   const typeSet = $derived(new Set(selection.types));
 
-  // Lot 1 — STRICT taxonomy validation (replaces the blind `hs[keys[0]]`).
-  // A `class-hierarchies.json` may carry SEVERAL hierarchies, and a mis-built
-  // bundle can even emit a registry PROCESS forest (abp_process_tree, …) into
-  // that file. The rail must render one ONLY when it is genuinely a type
-  // taxonomy: leaf classes with non-empty `member_node_types` whose live node
-  // counts cover a meaningful share of the scene. Otherwise the Types facet
-  // falls back to the flat type list — never a bogus "Other 47575" bucket.
-  const TAXONOMY_MIN_COVERAGE = 0.5;
-  // Canonical first-level order mirrors the verified native viewer taxonomy
-  // (Process / Tool / Data / Org first; any extra folded domains follow).
-  const CANONICAL_ROOT_ORDER = ["Process", "Tool", "Data", "Org"];
-
-  // Sum of live node counts for the DISTINCT member_node_types a hierarchy's
-  // leaf classes declare (the taxonomy's coverage of the scene).
-  function taxonomyCoveredCount(h, countByType) {
-    const seen = new Set();
-    let covered = 0;
-    for (const cls of Object.values(h.classes_by_id ?? {})) {
-      for (const t of cls.member_node_types ?? []) {
-        if (seen.has(t)) continue;
-        seen.add(t);
-        covered += countByType.get(t) ?? 0;
-      }
-    }
-    return covered;
-  }
-
-  // Pick the FIRST VALID type-taxonomy by CONVENTION, not JSON object order:
-  // prefer the conventional `am_class_tree` id, then any other, but always gate
-  // on shape + coverage. Returns the hierarchy or null (⇒ flat-list fallback).
-  function selectTaxonomyHierarchy(hs, countByType, total) {
-    if (!hs || total <= 0) return null;
-    const ids = Object.keys(hs);
-    const ordered = ids.includes("am_class_tree")
-      ? ["am_class_tree", ...ids.filter((id) => id !== "am_class_tree")]
-      : ids;
-    for (const id of ordered) {
-      const h = hs[id];
-      if (!h?.classes_by_id || !(h.root_class_ids?.length)) continue;
-      const hasLeafTypes = Object.values(h.classes_by_id).some(
-        (c) => (c.member_node_types?.length ?? 0) > 0,
-      );
-      if (!hasLeafTypes) continue;
-      if (taxonomyCoveredCount(h, countByType) / total >= TAXONOMY_MIN_COVERAGE) return h;
-    }
-    return null;
-  }
-
-  // EVOL: nested Domain → Sub-domain → Type tree from the ontology class
-  // taxonomy (class-hierarchies.json). Each leaf type keeps its live count and
-  // its toggle behaviour; when no VALID taxonomy is present the Types facet
-  // falls back to the previous flat list.
-  const typeTree = $derived.by(() => {
-    const hs = classHierarchies?.hierarchies;
-    const countByType = new Map(typeList.map((t) => [t.key, t.count]));
-    const total = typeList.reduce((n, t) => n + t.count, 0);
-    const h = selectTaxonomyHierarchy(hs, countByType, total);
-    if (!h) return null;
-    const classes = h.classes_by_id;
-    const labelOf = (id) => classes[id]?.label || String(id).replace(/^class:/, "");
-    const seen = new Set();
-    const domains = h.root_class_ids
-      .map((rootId) => {
-        const subs = (classes[rootId]?.child_ids ?? [])
-          .map((subId) => {
-            const types = (classes[subId]?.member_node_types ?? []).map((t) => {
-              seen.add(t);
-              return { key: t, count: countByType.get(t) ?? 0 };
-            });
-            return { id: subId, label: labelOf(subId), types, count: types.reduce((n, t) => n + t.count, 0) };
-          })
-          .filter((s) => s.types.length);
-        return { id: rootId, label: labelOf(rootId), subs, count: subs.reduce((n, s) => n + s.count, 0) };
-      })
-      .filter((d) => d.subs.length);
-    // Canonical first-level order: Process / Tool / Data / Org, then extras by label.
-    domains.sort((a, b) => {
-      const ia = CANONICAL_ROOT_ORDER.indexOf(a.label);
-      const ib = CANONICAL_ROOT_ORDER.indexOf(b.label);
-      const ra = ia < 0 ? CANONICAL_ROOT_ORDER.length : ia;
-      const rb = ib < 0 ? CANONICAL_ROOT_ORDER.length : ib;
-      return ra - rb || a.label.localeCompare(b.label);
-    });
-    // Types not covered by the taxonomy (and not synthetic class nodes) keep a
-    // home so nothing disappears from the facet. With a full-coverage taxonomy
-    // this bucket is EMPTY (no "Other 47575").
-    const other = typeList.filter((t) => !seen.has(t.key) && t.key !== "OntologyClass");
-    if (other.length) {
-      const types = other.map((t) => ({ key: t.key, count: t.count }));
-      const count = types.reduce((n, t) => n + t.count, 0);
-      domains.push({ id: "__other__", label: "Other", count, subs: [{ id: "__other_sub__", label: "Ungrouped", types, count }] });
-    }
-    return domains;
-  });
+  // THE ontology tree — ONE tree: the class taxonomy with each registry forest
+  // (ABP / PROCESS_STD / org) spliced under the class that declares it, at arbitrary
+  // depth. Null ⇒ no trustworthy taxonomy ⇒ the flat type list below.
+  // Built in `lib/ontologyTree.js` so the derivation is unit-testable.
+  const typeTree = $derived(buildOntologyTree(typeList, classHierarchies, forestList));
 
   // Entities grouped by type (count) -> rows, filtered by the search query.
   // No cap: per-type accordions stay collapsed so all entities are reachable.
@@ -320,10 +231,11 @@
     if (key != null) toggle?.(key);
   }
 
-  // Lot 2 — Hierarchies. The scene-hierarchies sidecar keys nodes by their RAW
-  // registry id ("AM01", "DE"); the scene/graph nodes carry that same value in
-  // `registry_record_id`. Build the join maps once: raw id → scene-node id (for
-  // selection) and raw id → display label (for the tree rows).
+  // --- Registry forests (scene-hierarchies sidecar) ------------------------
+  // The sidecar keys nodes by their RAW registry id ("AM01", "DE"); the
+  // scene/graph nodes carry that same value in `registry_record_id`. Build the
+  // join maps once: raw id → scene-node id (for selection) and raw id → display
+  // label (for the tree rows).
   const rawToSceneId = $derived.by(() => {
     const m = new Map();
     for (const n of graphNodes(graph)) {
@@ -343,36 +255,12 @@
   const labelForRaw = (raw) => rawToLabel.get(raw) ?? String(raw);
   const sceneIdForRaw = (raw) => rawToSceneId.get(raw) ?? null;
 
-  // Friendly names for the well-known process-std-AM forests; anything else derives a
-  // label from its key. The two process trees are NEVER merged — one navigable
-  // sub-accordion each (mirrors the native viewer's separate ABP / PROCESS_STD trees).
-  const HIERARCHY_LABELS = {
-    abp_process_tree: "ABP",
-    process_std_process_tree: "PROCESS_STD",
-    org_unit_tree: "Org units",
-  };
-  const HIERARCHY_ORDER = ["abp_process_tree", "process_std_process_tree", "org_unit_tree"];
-  const hierarchyList = $derived.by(() => {
-    const hs = sceneHierarchies?.hierarchies;
-    if (!hs || typeof hs !== "object") return [];
-    return Object.entries(hs)
-      .map(([key, h]) => ({
-        key,
-        label: HIERARCHY_LABELS[key] ?? key.replace(/_/g, " "),
-        hierarchy: h,
-        rootIds: Array.isArray(h?.root_ids) ? h.root_ids : [],
-        nodeCount: h?.nodes_by_id ? Object.keys(h.nodes_by_id).length : 0,
-        orphanCount: Array.isArray(h?.orphan_ids) ? h.orphan_ids.length : 0,
-        danglingCount: typeof h?.dangling_arc_count === "number" ? h.dangling_arc_count : 0,
-      }))
-      .sort((a, b) => {
-        const ia = HIERARCHY_ORDER.indexOf(a.key);
-        const ib = HIERARCHY_ORDER.indexOf(b.key);
-        const ra = ia < 0 ? HIERARCHY_ORDER.length : ia;
-        const rb = ib < 0 ? HIERARCHY_ORDER.length : ib;
-        return ra - rb || a.key.localeCompare(b.key);
-      });
-  });
+  // Every forest the sidecar carries, in a render-ready shape. They are only
+  // ever consumed THROUGH the ontology tree (spliced under the class that
+  // declares `member_hierarchies`, else appended as its own root class) — there
+  // is no separate "Hierarchies" accordion any more. Two forests are never
+  // merged: each keeps its own root set.
+  const forestList = $derived(buildForestList(sceneHierarchies));
 
   // Selecting a node selects its WHOLE subtree: walk the (child-direct) closure,
   // map each raw id that joins to the scene, and toggle that scene-node id set.
@@ -391,6 +279,21 @@
     }
     if (ids.length) onToggleHierarchySubtree?.(ids);
   }
+
+  // Everything the recursive OntologyClassNode needs, in one object.
+  const ontologyCtx = $derived({
+    entityStateOf,
+    ontologyAbsorbed,
+    ontologyCheckedSet,
+    soloActive,
+    onSetEntityState,
+    typeSet,
+    onToggleType,
+    entitySet: entSet,
+    labelForRaw,
+    sceneIdForRaw,
+    onSelectSubtree: selectSubtree,
+  });
 </script>
 
 <aside class="rail" aria-label="Search">
@@ -438,92 +341,16 @@
     {#if typeList.length === 0}
       <p class="rail-empty">No types.</p>
     {:else if typeTree}
-      <!-- EVOL: nested Domain → Sub-domain → Type accordions (taxonomy-driven).
-           B2 (per-item): each Ontology CLASS node (Domain + Sub-domain) carries an
-           always-visible GROUP-BY checkbox in its header. Checking it GROUPS
-           (collapses) that class; the FILTER facet (leaf Type SelectableRows →
-           onToggleType) stays a SEPARATE concern. -->
+      <!-- THE ontology tree — one tree, rendered recursively. A class that owns
+           a registry hierarchy (ABP / PROCESS_STD / org) expands straight into that
+           REAL multi-level forest; the trees are no longer a separate accordion
+           and no longer node-type dead ends.
+           B2 (per-item): every class row keeps its always-visible GROUP-BY
+           control; the FILTER facet (leaf Type rows → onToggleType) stays a
+           SEPARATE concern. -->
       <ul class="rail-type-groups rail-onto-tree" aria-label="Ontology classes">
         {#each typeTree as domain (domain.id)}
-          {@const dAbs = ontologyAbsorbed.get(domain.id)}
-          <li class="rail-onto-head">
-            <EntityStateControl
-              key={groupKeyForOntology(domain.id)}
-              label={domain.label}
-              state={entityStateOf(groupKeyForOntology(domain.id))}
-              disabled={dAbs?.absorbed === true}
-              absorbedBy={dAbs?.absorbed ? dAbs.byLabel : null}
-              dim={soloActive}
-              onSetState={onSetEntityState}
-            />
-            <Collapsible title={domain.label} open={false} size="sm">
-              {#snippet trailing()}
-                <Badge shape="circle" size="sm" tone="neutral">{domain.count}</Badge>
-              {/snippet}
-              <ul class="rail-type-groups">
-                {#each domain.subs as sub (sub.id)}
-                  {@const sAbs = ontologyAbsorbed.get(sub.id)}
-                  <li class="rail-onto-head">
-                    <EntityStateControl
-                      key={groupKeyForOntology(sub.id)}
-                      label={sub.label}
-                      state={entityStateOf(groupKeyForOntology(sub.id))}
-                      disabled={sAbs?.absorbed === true}
-                      absorbedBy={sAbs?.absorbed ? sAbs.byLabel : null}
-                      dim={soloActive}
-                      onSetState={onSetEntityState}
-                    />
-                    <Collapsible title={sub.label} open={false} size="sm">
-                      {#snippet trailing()}
-                        <Badge shape="circle" size="sm" tone="neutral">{sub.count}</Badge>
-                      {/snippet}
-                      <ul class="rail-list">
-                        {#each sub.types as t (t.key)}
-                          <li class="rail-type-row">
-                            <!-- 4-STATE control (D6): the leaf TYPE row carries its
-                                 OWN per-entity visibility control on the LEFT —
-                                 Normal/Grouped/Hidden/Solo over this `type`. It is
-                                 SEPARATE from the Type FILTER SelectableRow
-                                 (onToggleType) that follows it. Disabled (absorbed)
-                                 when a parent Sub-domain/Domain is grouped. -->
-                            <span class="esc-slot rail-type-group-check">
-                              <EntityStateControl
-                                key={groupKeyForType(t.key)}
-                                label={t.key}
-                                state={entityStateOf(groupKeyForType(t.key))}
-                                disabled={ontologyCheckedSet.has(sub.id) ||
-                                  ontologyCheckedSet.has(domain.id)}
-                                absorbedBy={ontologyCheckedSet.has(sub.id)
-                                  ? sub.label
-                                  : ontologyCheckedSet.has(domain.id)
-                                    ? domain.label
-                                    : null}
-                                dim={soloActive}
-                                onSetState={onSetEntityState}
-                              />
-                            </span>
-                            <SelectableRow
-                              value={t.key}
-                              selected={typeSet.has(t.key)}
-                              onselect={() => onToggleType?.(t.key)}
-                            >
-                              {#snippet leading()}
-                                <TypeShapeGlyph type={t.key} />
-                              {/snippet}
-                              {t.key}
-                              {#snippet trailing()}
-                                <Badge shape="circle" size="sm" tone="neutral">{t.count}</Badge>
-                              {/snippet}
-                            </SelectableRow>
-                          </li>
-                        {/each}
-                      </ul>
-                    </Collapsible>
-                  </li>
-                {/each}
-              </ul>
-            </Collapsible>
-          </li>
+          <OntologyClassNode node={domain} ctx={ontologyCtx} />
         {/each}
       </ul>
       <!-- B2 (§4): TRI-STATE bulk "Group all to: Domain | Sub-domain | Type" via
@@ -608,51 +435,6 @@
     {/if}
   </Collapsible>
 
-  <!-- Lot 2: Hierarchies — the registry process forests. Rendered ONLY when the
-       scene-hierarchies sidecar is present. One navigable sub-accordion per
-       hierarchy (ABP / PROCESS_STD / org), never merged; lazy child-direct drill-down;
-       checking a node selects its subtree. Cross-tree mappings are weak scene
-       edges, never children. -->
-  {#if hierarchyList.length}
-    <Collapsible title="Hierarchies" open={true}>
-      {#snippet trailing()}
-        <Badge shape="circle" size="sm" tone="neutral">{hierarchyList.length}</Badge>
-      {/snippet}
-      <ul class="rail-list rail-hier-forests" aria-label="Process hierarchies">
-        {#each hierarchyList as hx (hx.key)}
-          <li class="rail-hier-forest">
-            <Collapsible title={hx.label} open={false} size="sm">
-              {#snippet trailing()}
-                <Badge shape="circle" size="sm" tone="neutral">{hx.nodeCount}</Badge>
-              {/snippet}
-              {#if hx.rootIds.length === 0}
-                <p class="rail-empty">No joinable records.</p>
-              {:else}
-                <ul class="rail-hier-children rail-hier-root" aria-label={`${hx.label} tree`}>
-                  {#each hx.rootIds as rid (rid)}
-                    <HierarchyTreeNode
-                      nodeId={rid}
-                      nodesById={hx.hierarchy.nodes_by_id}
-                      labelFor={labelForRaw}
-                      sceneIdFor={sceneIdForRaw}
-                      selectedSet={entSet}
-                      onSelectSubtree={(raw) => selectSubtree(hx.hierarchy, raw)}
-                    />
-                  {/each}
-                </ul>
-                {#if hx.orphanCount || hx.danglingCount}
-                  <p class="rail-hier-note">
-                    {hx.orphanCount} orphan{hx.orphanCount === 1 ? "" : "s"} ·
-                    {hx.danglingCount} unjoined arc{hx.danglingCount === 1 ? "" : "s"}
-                  </p>
-                {/if}
-              {/if}
-            </Collapsible>
-          </li>
-        {/each}
-      </ul>
-    </Collapsible>
-  {/if}
 
   <Collapsible title="Communities" open={true}>
     {#snippet trailing()}
@@ -925,25 +707,6 @@
     font-size: 0.82rem;
     font-style: italic;
   }
-  /* Lot 2 — Hierarchies rail. */
-  ul.rail-hier-forests,
-  ul.rail-hier-root {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-  .rail-hier-forest {
-    list-style: none;
-  }
-  .rail-hier-root {
-    padding-left: 0.15rem;
-  }
-  .rail-hier-note {
-    margin: 0.35rem 0 0;
-    color: var(--st-semantic-text-muted, #64748b);
-    font-size: 0.75rem;
-    font-variant-numeric: tabular-nums;
-  }
   .rail-isolated {
     margin: 0.35rem 0 0;
     padding: 0.3rem 0.5rem;
@@ -985,65 +748,15 @@
        L2→L3 are all equal. Aligned with the Community first-level checkbox (UI-5). */
     padding-left: var(--rail-indent);
   }
-  /* Kill the nested Collapsible region's inline padding INSIDE the tree (keep the
-     bottom padding) so our per-level indent is the only horizontal offset. */
-  .rail-onto-tree :global(.st-collapsible__region) {
-    padding-left: 0;
-    padding-right: 0;
-  }
-  /* One equal indent step applied to each nested level's list. The Domain list
-     (rail-onto-tree itself) gets NONE → Domain checkbox aligns with the Ontology
-     header; the Sub-domain list and the Type/leaf list each add one step. */
-  .rail-onto-tree .rail-type-groups,
-  .rail-onto-tree .rail-list {
-    /* B2-UI-8: the Domain step (rail-onto-tree padding, 0.75rem) is kept (user:
-       "perfect, don't touch"); the DEEPER steps (Domain→Sub-domain, Sub-domain→
-       Type) were too large — reduce them. (UI-10: still ~2× too big → halve to 0.2rem.) */
-    padding-left: 0.2rem;
-  }
-  /* B2 (§2): the leaf Type row puts its bare group-by checkbox FIRST (left),
-     then the Type FILTER SelectableRow — two separate concerns on one line. */
-  .rail-type-row {
-    display: flex;
-    align-items: center;
-    /* B2-UI-11: checkbox→glyph gap. Measured 17px (too large) — the DS SelectableRow's
-       own left padding inflated it. Drop that padding (below) + set the gap so the
-       checkbox→glyph distance (~8px) matches the community checkbox→swatch. */
-    gap: 0.5rem;
-  }
-  .rail-type-row :global(.st-selectableRow) {
-    flex: 1;
-    min-width: 0;
-    padding-left: 0;
-  }
-  .rail-type-group-check {
-    flex-shrink: 0;
-  }
-  /* B2 FIX: the DS Collapsible exposes NO `leading` slot, so the Domain/Sub-domain
-     group-by checkbox is rendered as a SIBLING before <Collapsible> (not in a
-     dropped leading() snippet). align-start keeps the bare checkbox on the header
-     line even when the accordion body is expanded below. */
-  .rail-onto-head {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.3rem;
-  }
-  .rail-onto-head > :global(.st-collapsible) {
-    flex: 1 1 auto;
-    min-width: 0;
-  }
+  /* The class ROWS themselves (and their indentation rules) now live with the
+     recursive OntologyClassNode, which owns that markup at every depth. Only the
+     tree's OUTER indent step stays here. */
   /* 4-STATE control (D6): the per-entity visibility control (EntityStateControl)
-     replaces the old group checkbox at each row's LEFT edge. Its root is `.esc`;
-     leaf-type / community rows wrap it in a `.esc-slot` for flex alignment. */
+     sits at each row's LEFT edge. Its root is `.esc`; the community rows wrap it
+     in a `.esc-slot` for flex alignment. */
   .esc-slot {
     flex-shrink: 0;
     display: inline-flex;
-    align-items: center;
-  }
-  .rail-onto-head > :global(.esc) {
-    flex-shrink: 0;
-    /* match the sm Collapsible header height so the glyph centres on the title. */
-    min-height: 1.85rem;
     align-items: center;
   }
   /* Global "Reset visibility" — sits under the search count badges (D6). */
