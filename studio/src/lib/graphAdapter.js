@@ -49,6 +49,22 @@ function finiteNumber(value) {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+/**
+ * A citation's page as a NUMBER, or null when it has none.
+ *
+ * Mirrors the frozen public converter `asNumberPage` (src/cited-source-refs.ts)
+ * byte for byte, so the entity panel and the cited-source viewer never disagree
+ * about which passages carry a navigable page.
+ * @param {number|string|null|undefined} page
+ * @returns {number|null}
+ */
+function citationPage(page) {
+  if (finiteNumber(page)) return page;
+  if (typeof page !== "string") return null;
+  const parsed = Number.parseInt(page, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function copyOwnFields(source, target, fields) {
   if (!source || typeof source !== "object") return;
   for (const field of fields) {
@@ -973,7 +989,21 @@ export function citationsByFileFrom(list, fallbackSourceFile = null) {
       // locator; `index` is the passage's position in the ORIGINAL citation
       // list, so the open-source click can activate the exact citation after
       // the list is converted via the frozen CitedSourceRef projection.
-      page: finiteNumber(c?.page) ? c.page : (displayValue(c?.page) ?? null),
+      //
+      // A page is a PAGE NUMBER or nothing. `OntologyCitation.page` is typed
+      // `number | string`, and an LLM-extracted corpus routinely carries the
+      // literal `"unknown"` (43 297 of them in the PROCESS_STD graph) — passing that
+      // through rendered the locator "p.unknown", which is worse than no
+      // locator: it looks like a real reference to a page called "unknown" and
+      // it cannot be navigated to. Non-numeric ⇒ null, and the panel falls back
+      // to its "(passage)" marker.
+      //
+      // The coercion is deliberately IDENTICAL to the frozen public converter
+      // (src/cited-source-refs.ts `asNumberPage`): a numeric string is a real
+      // page and is parsed, anything else is dropped. The panel and the viewer
+      // must agree on which citations have a page, or the panel offers "p.N" on
+      // a passage the viewer cannot navigate to (or hides one it could).
+      page: citationPage(c?.page),
       index: i,
     });
   }
