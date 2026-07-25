@@ -681,11 +681,32 @@ export type {
 } from "./graph-layout.js";
 export {
   applySceneLayout,
+  attachHierarchyAwarePositions,
   attachTypedLayerPositions,
+  HIERARCHY_AWARE_SCENE_LAYOUT_ID,
   resolveSceneLayoutId,
+  selectDefaultSceneLayoutId,
   TYPED_LAYER_SCENE_LAYOUT_ID,
 } from "./scene-layout.js";
-export type { SceneLayoutId } from "./scene-layout.js";
+export type {
+  ApplySceneLayoutOptions,
+  SceneLayoutId,
+} from "./scene-layout.js";
+export { computeHierarchyAwarePositions } from "./hierarchy-layout.js";
+export type {
+  HierarchyAwareLayoutOptions,
+  HierarchyAwareLayoutResult,
+  HierarchyLayoutForest,
+} from "./hierarchy-layout.js";
+export {
+  completeRegistrySeeds,
+  registriesBackingHierarchies,
+} from "./registry-seed-completion.js";
+export type {
+  CompleteRegistrySeedsOptions,
+  RegistrySeedCompletionResult,
+  RegistrySeedCompletionStat,
+} from "./registry-seed-completion.js";
 export { buildStudioRenderBuffers } from "./studio-render-buffers.js";
 export type {
   BuildStudioRenderBuffersOptions,
