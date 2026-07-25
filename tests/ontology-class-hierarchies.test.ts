@@ -15,7 +15,12 @@ import type {
 function spec(
   classes: Record<
     string,
-    { parent?: string | null; label?: string | null; member_node_types?: string[] }
+    {
+      parent?: string | null;
+      label?: string | null;
+      member_node_types?: string[];
+      member_hierarchies?: string[];
+    }
   >,
   overrides: Partial<NormalizedClassHierarchySpec> = {},
 ): NormalizedClassHierarchySpec {
@@ -29,6 +34,7 @@ function spec(
           parent: klass.parent ?? null,
           label: klass.label ?? null,
           member_node_types: klass.member_node_types ?? [],
+          member_hierarchies: klass.member_hierarchies ?? [],
         },
       ]),
     ),
@@ -251,6 +257,34 @@ describe("buildClassHierarchies — graphify_ontology_class_hierarchies_v1", () 
     expect(
       a.hierarchies["tax"]!.classes_by_id["class:Person"]!.member_ids,
     ).toEqual(["a", "b"]);
+  });
+
+  it("carries the registry-hierarchy binding (member_hierarchies) on the class", () => {
+    const block = {
+      tax: spec({
+        Process: { parent: null },
+        ABP: {
+          parent: "Process",
+          member_node_types: ["ABPProcess"],
+          member_hierarchies: ["abp_process_tree", "abp_process_tree"],
+        },
+        PROCESS_STD: {
+          parent: "Process",
+          member_node_types: ["ProcessStdProcess"],
+          member_hierarchies: ["process_std_process_tree"],
+        },
+        Unreconciled: { parent: "Process", member_node_types: ["Process"] },
+      }),
+    };
+    const classes = buildClassHierarchies(block, []).hierarchies["tax"]!.classes_by_id;
+    // De-duplicated + sorted, and NEVER merged across the two process trees.
+    expect(classes["class:ABP"]!.member_hierarchies).toEqual(["abp_process_tree"]);
+    expect(classes["class:PROCESS_STD"]!.member_hierarchies).toEqual(["process_std_process_tree"]);
+    // A class with no binding keeps an empty list (not undefined).
+    expect(classes["class:Unreconciled"]!.member_hierarchies).toEqual([]);
+    expect(classes["class:Process"]!.member_hierarchies).toEqual([]);
+    // The binding is declarative: the forest itself is NOT inlined here.
+    expect(classes["class:ABP"]!.member_ids).toEqual([]);
   });
 
   it("compiles multiple hierarchies independently", () => {
