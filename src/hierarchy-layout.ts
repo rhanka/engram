@@ -445,9 +445,11 @@ export function computeHierarchyAwarePositions(
     if (radius > widest) widest = radius;
     totalArea += radius * radius;
   }
-  // Row width targets a square-ish overall footprint: sqrt of the summed
-  // bounding-box area, never narrower than the widest cluster.
-  const rowWidth = Math.max(widest * 2, Math.sqrt(totalArea * 4));
+  // Row width targets a square-ish overall footprint: the side of a square
+  // holding every cluster's bounding box (sum of (2r)^2 = 4 * totalArea), with
+  // room to spare so two comparable clusters share a row instead of each
+  // claiming its own — the stack is what makes the scene tall and thin.
+  const rowWidth = Math.max(widest * 2, 2 * Math.sqrt(2 * totalArea));
   const gap = widest * 2 * clusterPadding;
 
   /** [clusterIndex, centreX offset within the row] per row, then centred. */
