@@ -23,13 +23,21 @@
  *      classic radial tidy-tree allocation), so siblings never overlap and
  *      dense branches get the room they need. Two passes: leaf counts up, then
  *      wedges down.
- *   2. Every node NOT in any hierarchy is grouped by `type` into its own
+ *   2. A tree is then scaled by its BUSIEST RING, not by its node count: a ring
+ *      holding C nodes needs radius >= C * nodeGap / 2pi for consecutive nodes
+ *      to be `nodeGap` apart. Sizing on sqrt(size) alone crushes 2000 leaves
+ *      into one ring at ~6 units apart — a solid donut in which no branch is
+ *      separable — which is exactly what "hierarchy-aware" is supposed to fix.
+ *   3. Every node NOT in any hierarchy is grouped by `type` into its own
  *      cluster, laid out as a phyllotaxis (sunflower) disc — uniform density,
- *      no gaps, no sort, O(1) per node.
- *   3. Clusters are packed largest-first into a square-ish grid, each cell
- *      sized by sqrt(cluster size) so a 2282-node forest gets ~7x the radius of
- *      a 47-node one. Hierarchy clusters sort before type clusters, so the
- *      declared structure lands top-left where the camera opens.
+ *      no gaps, no sort, O(1) per node. The disc spacing is the SAME `nodeGap`,
+ *      so a tree and a disc read at one density.
+ *   4. Clusters are packed largest-first by SHELF (rows of their own true
+ *      radius), not into a uniform grid: one cell size for everything is set by
+ *      the biggest cluster, so a 470-node forest next to a 12k-node disc lands
+ *      as a dot adrift in whitespace. Rows are centred; hierarchy clusters sort
+ *      before type clusters, so the declared structure lands top-left where the
+ *      camera opens.
  *
  * The result reads as separated, individually-legible structures rather than
  * one disc. Positions are PINNED (`x`/`y` AND `fx`/`fy`) exactly like the force
@@ -61,16 +69,24 @@ export interface HierarchyAwareLayoutOptions {
    * the floor that keeps a small, shallow forest from collapsing to a point.
    */
   ringGap?: number;
-  /** Gap between neighbouring cluster cells, as a fraction of cell size. */
+  /** Gap between neighbouring clusters, as a fraction of their radii. */
   clusterPadding?: number;
-  /** Scene units per sqrt(node) used to size a cluster cell. */
+  /** Scene units per sqrt(node) used as a cluster's MINIMUM radius. */
   clusterScale?: number;
+  /**
+   * Target distance between two NEIGHBOURING nodes, in scene units — the one
+   * knob that sets how spread out everything is. It drives both the ring radius
+   * of a tidy tree (via its busiest ring) and the phyllotaxis disc spacing, so
+   * every cluster renders at the same density and none reads as a solid blob.
+   */
+  nodeGap?: number;
 }
 
 const DEFAULTS = {
   ringGap: 130,
-  clusterPadding: 0.22,
+  clusterPadding: 0.18,
   clusterScale: 46,
+  nodeGap: 44,
 } as const;
 
 /** Result of a layout pass: a flat [x0,y0,x1,y1,...] buffer + diagnostics. */
@@ -94,6 +110,8 @@ interface Cluster {
   rank: 0 | 1;
   /** Indices into the caller's node array. */
   members: number[];
+  /** The cluster's own footprint radius, in scene units. */
+  radius: number;
 }
 
 function compareStrings(a: string, b: string): number {
@@ -121,14 +139,21 @@ function typeOf(node: HierarchyLayoutNode): string {
  * 2030-node forest is shallow, but recursion is avoided so a pathological
  * chain cannot blow the stack.
  *
- * Returns polar placements keyed by raw id, plus the depth reached.
+ * Returns polar placements keyed by raw id, the depth reached, and how many
+ * nodes each ring carries (`ringCounts[level]`) — the occupancy the caller
+ * scales the tree by, so its busiest ring is never overpacked.
  */
 function layoutForest(
   forest: HierarchyLayoutForest,
   present: (rawId: string) => boolean,
   ringGap: number,
-): { placements: Map<string, { x: number; y: number }>; depth: number } {
+): {
+  placements: Map<string, { x: number; y: number }>;
+  depth: number;
+  ringCounts: number[];
+} {
   const placements = new Map<string, { x: number; y: number }>();
+  const ringCounts: number[] = [];
   const nodes = forest.nodes_by_id ?? {};
 
   const childrenOf = (id: string): string[] => {
@@ -142,7 +167,7 @@ function layoutForest(
   const roots = [...(forest.root_ids ?? [])]
     .filter((id) => nodes[id] !== undefined)
     .sort(compareStrings);
-  if (roots.length === 0) return { placements, depth: 0 };
+  if (roots.length === 0) return { placements, depth: 0, ringCounts };
 
   // --- Pass 1: leaf weights (post-order, iterative). ---
   const weight = new Map<string, number>();
@@ -197,6 +222,10 @@ function layoutForest(
     const mid = (frame.start + frame.end) / 2;
     const radius = frame.level * ringGap;
     if (frame.level > depth) depth = frame.level;
+    // Occupancy counts the STRUCTURE, not just the present nodes: an absent
+    // node still consumes its wedge, so its neighbours can end up as close as
+    // the full ring's spacing.
+    ringCounts[frame.level] = (ringCounts[frame.level] ?? 0) + 1;
     if (present(frame.id)) {
       placements.set(frame.id, {
         x: Math.cos(mid) * radius,
@@ -227,7 +256,7 @@ function layoutForest(
     }
   }
 
-  return { placements, depth };
+  return { placements, depth, ringCounts };
 }
 
 /**
@@ -259,6 +288,7 @@ export function computeHierarchyAwarePositions(
   const ringGap = options.ringGap ?? DEFAULTS.ringGap;
   const clusterPadding = options.clusterPadding ?? DEFAULTS.clusterPadding;
   const clusterScale = options.clusterScale ?? DEFAULTS.clusterScale;
+  const nodeGap = options.nodeGap ?? DEFAULTS.nodeGap;
 
   const positions = new Float64Array(nodes.length * 2);
   if (nodes.length === 0) {
@@ -297,15 +327,33 @@ export function computeHierarchyAwarePositions(
     // footprint its size deserves. A fixed ring gap would cram a 2030-node
     // forest into the same small disc as a 20-node one, so a large hierarchy
     // would render as an illegible dot next to the type clusters.
-    const { placements, depth } = layoutForest(
+    const { placements, depth, ringCounts } = layoutForest(
       forest,
       (rawId) => indicesByRawId.has(rawId),
       1,
     );
     if (placements.size === 0) continue;
     if (depth > maxDepth) maxDepth = depth;
+    // The BUSIEST RING sets the scale: a ring at unit radius `level` carrying
+    // `count` nodes needs `level * scale >= count * nodeGap / 2pi` for two
+    // consecutive nodes to sit `nodeGap` apart. Without this a wide-but-shallow
+    // forest (2000 leaves, 4 levels) packs its whole leaf population onto one
+    // ring a few units apart and renders as a solid donut — structure erased.
+    let ringScale = 0;
+    for (let level = 1; level < ringCounts.length; level++) {
+      const count = ringCounts[level] ?? 0;
+      if (count === 0) continue;
+      const needed = (count * nodeGap) / (2 * Math.PI * level);
+      if (needed > ringScale) ringScale = needed;
+    }
+    // The sqrt(size) target is kept as a FLOOR so a tiny forest still occupies a
+    // sane footprint next to the discs; `ringGap` is the floor under both.
     const targetRadius = clusterScale * Math.sqrt(placements.size);
-    const scale = Math.max(ringGap, depth > 0 ? targetRadius / depth : ringGap);
+    const scale = Math.max(
+      ringGap,
+      ringScale,
+      depth > 0 ? targetRadius / depth : ringGap,
+    );
 
     const members: number[] = [];
     const local: Array<{ x: number; y: number }> = [];
@@ -324,7 +372,12 @@ export function computeHierarchyAwarePositions(
       }
     }
     if (members.length === 0) continue;
-    clusters.push({ key: hierarchyId, rank: 0, members });
+    clusters.push({
+      key: hierarchyId,
+      rank: 0,
+      members,
+      radius: Math.max(depth * scale, clusterScale),
+    });
     localPositions.push(local);
   }
 
@@ -342,9 +395,16 @@ export function computeHierarchyAwarePositions(
   for (const type of [...looseByType.keys()].sort(compareStrings)) {
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const members = looseByType.get(type)!;
-    const local = members.map((_, index) => sunflower(index, ringGap * 0.34));
+    // Same `nodeGap` as the trees: a phyllotaxis disc of spacing s gives each
+    // node an area of pi*s^2, i.e. a nearest-neighbour distance of ~s.
+    const local = members.map((_, index) => sunflower(index, nodeGap));
     looseNodeCount += members.length;
-    clusters.push({ key: type, rank: 1, members });
+    clusters.push({
+      key: type,
+      rank: 1,
+      members,
+      radius: Math.max(nodeGap * Math.sqrt(members.length), clusterScale),
+    });
     localPositions.push(local);
   }
 
@@ -374,36 +434,64 @@ export function computeHierarchyAwarePositions(
     );
   });
 
-  const columns = Math.max(1, Math.ceil(Math.sqrt(order.length)));
-  // One cell size for the whole grid keeps the packing trivially deterministic;
-  // it is driven by the LARGEST cluster so nothing overflows its cell.
+  // SHELF packing on each cluster's OWN radius. A uniform grid sized by the
+  // largest cluster turns every smaller one into a dot lost in its cell — which
+  // is precisely how a 470-node forest disappears next to a 12k-node disc.
   let widest = 0;
+  let totalArea = 0;
   for (const index of order) {
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    const radius = clusterScale * Math.sqrt(clusters[index]!.members.length);
+    const radius = clusters[index]!.radius;
     if (radius > widest) widest = radius;
+    totalArea += radius * radius;
   }
-  const cell = widest * 2 * (1 + clusterPadding);
+  // Row width targets a square-ish overall footprint: sqrt of the summed
+  // bounding-box area, never narrower than the widest cluster.
+  const rowWidth = Math.max(widest * 2, Math.sqrt(totalArea * 4));
+  const gap = widest * 2 * clusterPadding;
 
-  for (let slot = 0; slot < order.length; slot++) {
+  /** [clusterIndex, centreX offset within the row] per row, then centred. */
+  const rows: Array<{ indices: number[]; centres: number[]; width: number; height: number }> = [];
+  let current = { indices: [] as number[], centres: [] as number[], width: 0, height: 0 };
+  for (const clusterIndex of order) {
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    const clusterIndex = order[slot]!;
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    const cluster = clusters[clusterIndex]!;
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    const local = localPositions[clusterIndex]!;
-    const column = slot % columns;
-    const row = Math.floor(slot / columns);
-    const originX = (column - (columns - 1) / 2) * cell;
-    const originY = row * cell;
-    for (let m = 0; m < cluster.members.length; m++) {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      const nodeIndex = cluster.members[m]!;
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      const point = local[m]!;
-      positions[nodeIndex * 2] = originX + point.x;
-      positions[nodeIndex * 2 + 1] = originY + point.y;
+    const radius = clusters[clusterIndex]!.radius;
+    const span = radius * 2;
+    if (current.indices.length > 0 && current.width + gap + span > rowWidth) {
+      rows.push(current);
+      current = { indices: [], centres: [], width: 0, height: 0 };
     }
+    const offset = current.width === 0 ? radius : current.width + gap + radius;
+    current.indices.push(clusterIndex);
+    current.centres.push(offset);
+    current.width = offset + radius;
+    if (radius * 2 > current.height) current.height = radius * 2;
+  }
+  if (current.indices.length > 0) rows.push(current);
+
+  let rowTop = 0;
+  for (const row of rows) {
+    const shift = -row.width / 2;
+    const centreY = rowTop + row.height / 2;
+    for (let slot = 0; slot < row.indices.length; slot++) {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      const clusterIndex = row.indices[slot]!;
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      const cluster = clusters[clusterIndex]!;
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      const local = localPositions[clusterIndex]!;
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      const originX = shift + row.centres[slot]!;
+      for (let m = 0; m < cluster.members.length; m++) {
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const nodeIndex = cluster.members[m]!;
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const point = local[m]!;
+        positions[nodeIndex * 2] = originX + point.x;
+        positions[nodeIndex * 2 + 1] = centreY + point.y;
+      }
+    }
+    rowTop += row.height + gap;
   }
 
   return {
