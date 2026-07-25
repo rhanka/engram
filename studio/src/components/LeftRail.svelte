@@ -16,6 +16,7 @@
   import TypeShapeGlyph from "./TypeShapeGlyph.svelte";
   import TimeScrub from "./TimeScrub.svelte";
   import EntityStateControl from "./EntityStateControl.svelte";
+  import HierarchyTreeNode from "./HierarchyTreeNode.svelte";
   import {
     graphNodes,
     nodeType,
@@ -32,6 +33,10 @@
   let {
     graph,
     classHierarchies = null,
+    // Lot 2: the scene-hierarchies sidecar (graphify_scene_hierarchies_v1) — the
+    // registry process forests (ABP / PROCESS_STD / org unit trees). null on repos
+    // without registry hierarchies ⇒ the Hierarchies section hides itself.
+    sceneHierarchies = null,
     // Storage LOT 2 (prefer-server): the store's precomputed `node_type`
     // group-by counts (the `GET /api/ontology/groups` payload), or null. When
     // present the Types rail uses these O(#groups) counts instead of an O(#nodes)
@@ -75,6 +80,9 @@
     onToggleType,
     onToggleCommunity,
     onToggleEntity,
+    // Lot 2: select/deselect a hierarchy subtree (called with the subtree's
+    // already-resolved scene-node ids).
+    onToggleHierarchySubtree,
     onSetQuery,
     onToggleWeak,
     // Time-scrub (opt-in, #234): the scene's temporal bounds ({min,max} epoch-ms
@@ -151,17 +159,66 @@
   const typeBtn = $derived(levelButton(ontologyLevelStates.type));
 
   const typeSet = $derived(new Set(selection.types));
+
+  // Lot 1 — STRICT taxonomy validation (replaces the blind `hs[keys[0]]`).
+  // A `class-hierarchies.json` may carry SEVERAL hierarchies, and a mis-built
+  // bundle can even emit a registry PROCESS forest (abp_process_tree, …) into
+  // that file. The rail must render one ONLY when it is genuinely a type
+  // taxonomy: leaf classes with non-empty `member_node_types` whose live node
+  // counts cover a meaningful share of the scene. Otherwise the Types facet
+  // falls back to the flat type list — never a bogus "Other 47575" bucket.
+  const TAXONOMY_MIN_COVERAGE = 0.5;
+  // Canonical first-level order mirrors the verified native viewer taxonomy
+  // (Process / Tool / Data / Org first; any extra folded domains follow).
+  const CANONICAL_ROOT_ORDER = ["Process", "Tool", "Data", "Org"];
+
+  // Sum of live node counts for the DISTINCT member_node_types a hierarchy's
+  // leaf classes declare (the taxonomy's coverage of the scene).
+  function taxonomyCoveredCount(h, countByType) {
+    const seen = new Set();
+    let covered = 0;
+    for (const cls of Object.values(h.classes_by_id ?? {})) {
+      for (const t of cls.member_node_types ?? []) {
+        if (seen.has(t)) continue;
+        seen.add(t);
+        covered += countByType.get(t) ?? 0;
+      }
+    }
+    return covered;
+  }
+
+  // Pick the FIRST VALID type-taxonomy by CONVENTION, not JSON object order:
+  // prefer the conventional `am_class_tree` id, then any other, but always gate
+  // on shape + coverage. Returns the hierarchy or null (⇒ flat-list fallback).
+  function selectTaxonomyHierarchy(hs, countByType, total) {
+    if (!hs || total <= 0) return null;
+    const ids = Object.keys(hs);
+    const ordered = ids.includes("am_class_tree")
+      ? ["am_class_tree", ...ids.filter((id) => id !== "am_class_tree")]
+      : ids;
+    for (const id of ordered) {
+      const h = hs[id];
+      if (!h?.classes_by_id || !(h.root_class_ids?.length)) continue;
+      const hasLeafTypes = Object.values(h.classes_by_id).some(
+        (c) => (c.member_node_types?.length ?? 0) > 0,
+      );
+      if (!hasLeafTypes) continue;
+      if (taxonomyCoveredCount(h, countByType) / total >= TAXONOMY_MIN_COVERAGE) return h;
+    }
+    return null;
+  }
+
   // EVOL: nested Domain → Sub-domain → Type tree from the ontology class
   // taxonomy (class-hierarchies.json). Each leaf type keeps its live count and
-  // its toggle behaviour; when no taxonomy is loaded the Types facet falls back
-  // to the previous flat list.
+  // its toggle behaviour; when no VALID taxonomy is present the Types facet
+  // falls back to the previous flat list.
   const typeTree = $derived.by(() => {
     const hs = classHierarchies?.hierarchies;
-    if (!hs) return null;
-    const h = hs[Object.keys(hs)[0]];
-    if (!h?.classes_by_id || !(h.root_class_ids?.length)) return null;
-    const classes = h.classes_by_id;
     const countByType = new Map(typeList.map((t) => [t.key, t.count]));
+    const total = typeList.reduce((n, t) => n + t.count, 0);
+    const h = selectTaxonomyHierarchy(hs, countByType, total);
+    if (!h) return null;
+    const classes = h.classes_by_id;
     const labelOf = (id) => classes[id]?.label || String(id).replace(/^class:/, "");
     const seen = new Set();
     const domains = h.root_class_ids
@@ -178,8 +235,17 @@
         return { id: rootId, label: labelOf(rootId), subs, count: subs.reduce((n, s) => n + s.count, 0) };
       })
       .filter((d) => d.subs.length);
+    // Canonical first-level order: Process / Tool / Data / Org, then extras by label.
+    domains.sort((a, b) => {
+      const ia = CANONICAL_ROOT_ORDER.indexOf(a.label);
+      const ib = CANONICAL_ROOT_ORDER.indexOf(b.label);
+      const ra = ia < 0 ? CANONICAL_ROOT_ORDER.length : ia;
+      const rb = ib < 0 ? CANONICAL_ROOT_ORDER.length : ib;
+      return ra - rb || a.label.localeCompare(b.label);
+    });
     // Types not covered by the taxonomy (and not synthetic class nodes) keep a
-    // home so nothing disappears from the facet.
+    // home so nothing disappears from the facet. With a full-coverage taxonomy
+    // this bucket is EMPTY (no "Other 47575").
     const other = typeList.filter((t) => !seen.has(t.key) && t.key !== "OntologyClass");
     if (other.length) {
       const types = other.map((t) => ({ key: t.key, count: t.count }));
@@ -252,6 +318,78 @@
   function onListChange(prev, next, toggle) {
     const key = toggledKey(prev, next);
     if (key != null) toggle?.(key);
+  }
+
+  // Lot 2 — Hierarchies. The scene-hierarchies sidecar keys nodes by their RAW
+  // registry id ("AM01", "DE"); the scene/graph nodes carry that same value in
+  // `registry_record_id`. Build the join maps once: raw id → scene-node id (for
+  // selection) and raw id → display label (for the tree rows).
+  const rawToSceneId = $derived.by(() => {
+    const m = new Map();
+    for (const n of graphNodes(graph)) {
+      const raw = n?.registry_record_id;
+      if (typeof raw === "string" && raw && !m.has(raw)) m.set(raw, n.id);
+    }
+    return m;
+  });
+  const rawToLabel = $derived.by(() => {
+    const m = new Map();
+    for (const n of graphNodes(graph)) {
+      const raw = n?.registry_record_id;
+      if (typeof raw === "string" && raw && !m.has(raw)) m.set(raw, nodeLabel(n));
+    }
+    return m;
+  });
+  const labelForRaw = (raw) => rawToLabel.get(raw) ?? String(raw);
+  const sceneIdForRaw = (raw) => rawToSceneId.get(raw) ?? null;
+
+  // Friendly names for the well-known process-std-AM forests; anything else derives a
+  // label from its key. The two process trees are NEVER merged — one navigable
+  // sub-accordion each (mirrors the native viewer's separate ABP / PROCESS_STD trees).
+  const HIERARCHY_LABELS = {
+    abp_process_tree: "ABP",
+    process_std_process_tree: "PROCESS_STD",
+    org_unit_tree: "Org units",
+  };
+  const HIERARCHY_ORDER = ["abp_process_tree", "process_std_process_tree", "org_unit_tree"];
+  const hierarchyList = $derived.by(() => {
+    const hs = sceneHierarchies?.hierarchies;
+    if (!hs || typeof hs !== "object") return [];
+    return Object.entries(hs)
+      .map(([key, h]) => ({
+        key,
+        label: HIERARCHY_LABELS[key] ?? key.replace(/_/g, " "),
+        hierarchy: h,
+        rootIds: Array.isArray(h?.root_ids) ? h.root_ids : [],
+        nodeCount: h?.nodes_by_id ? Object.keys(h.nodes_by_id).length : 0,
+        orphanCount: Array.isArray(h?.orphan_ids) ? h.orphan_ids.length : 0,
+        danglingCount: typeof h?.dangling_arc_count === "number" ? h.dangling_arc_count : 0,
+      }))
+      .sort((a, b) => {
+        const ia = HIERARCHY_ORDER.indexOf(a.key);
+        const ib = HIERARCHY_ORDER.indexOf(b.key);
+        const ra = ia < 0 ? HIERARCHY_ORDER.length : ia;
+        const rb = ib < 0 ? HIERARCHY_ORDER.length : ib;
+        return ra - rb || a.key.localeCompare(b.key);
+      });
+  });
+
+  // Selecting a node selects its WHOLE subtree: walk the (child-direct) closure,
+  // map each raw id that joins to the scene, and toggle that scene-node id set.
+  function selectSubtree(hierarchy, rootRawId) {
+    const nodesById = hierarchy?.nodes_by_id ?? {};
+    const ids = [];
+    const seen = new Set();
+    const stack = [rootRawId];
+    while (stack.length) {
+      const raw = stack.pop();
+      if (seen.has(raw)) continue;
+      seen.add(raw);
+      const sid = rawToSceneId.get(raw);
+      if (sid) ids.push(sid);
+      for (const c of nodesById[raw]?.child_ids ?? []) stack.push(c);
+    }
+    if (ids.length) onToggleHierarchySubtree?.(ids);
   }
 </script>
 
@@ -469,6 +607,52 @@
       </SelectableList>
     {/if}
   </Collapsible>
+
+  <!-- Lot 2: Hierarchies — the registry process forests. Rendered ONLY when the
+       scene-hierarchies sidecar is present. One navigable sub-accordion per
+       hierarchy (ABP / PROCESS_STD / org), never merged; lazy child-direct drill-down;
+       checking a node selects its subtree. Cross-tree mappings are weak scene
+       edges, never children. -->
+  {#if hierarchyList.length}
+    <Collapsible title="Hierarchies" open={true}>
+      {#snippet trailing()}
+        <Badge shape="circle" size="sm" tone="neutral">{hierarchyList.length}</Badge>
+      {/snippet}
+      <ul class="rail-list rail-hier-forests" aria-label="Process hierarchies">
+        {#each hierarchyList as hx (hx.key)}
+          <li class="rail-hier-forest">
+            <Collapsible title={hx.label} open={false} size="sm">
+              {#snippet trailing()}
+                <Badge shape="circle" size="sm" tone="neutral">{hx.nodeCount}</Badge>
+              {/snippet}
+              {#if hx.rootIds.length === 0}
+                <p class="rail-empty">No joinable records.</p>
+              {:else}
+                <ul class="rail-hier-children rail-hier-root" aria-label={`${hx.label} tree`}>
+                  {#each hx.rootIds as rid (rid)}
+                    <HierarchyTreeNode
+                      nodeId={rid}
+                      nodesById={hx.hierarchy.nodes_by_id}
+                      labelFor={labelForRaw}
+                      sceneIdFor={sceneIdForRaw}
+                      selectedSet={entSet}
+                      onSelectSubtree={(raw) => selectSubtree(hx.hierarchy, raw)}
+                    />
+                  {/each}
+                </ul>
+                {#if hx.orphanCount || hx.danglingCount}
+                  <p class="rail-hier-note">
+                    {hx.orphanCount} orphan{hx.orphanCount === 1 ? "" : "s"} ·
+                    {hx.danglingCount} unjoined arc{hx.danglingCount === 1 ? "" : "s"}
+                  </p>
+                {/if}
+              {/if}
+            </Collapsible>
+          </li>
+        {/each}
+      </ul>
+    </Collapsible>
+  {/if}
 
   <Collapsible title="Communities" open={true}>
     {#snippet trailing()}
@@ -740,6 +924,25 @@
     color: var(--st-semantic-text-muted, #64748b);
     font-size: 0.82rem;
     font-style: italic;
+  }
+  /* Lot 2 — Hierarchies rail. */
+  ul.rail-hier-forests,
+  ul.rail-hier-root {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .rail-hier-forest {
+    list-style: none;
+  }
+  .rail-hier-root {
+    padding-left: 0.15rem;
+  }
+  .rail-hier-note {
+    margin: 0.35rem 0 0;
+    color: var(--st-semantic-text-muted, #64748b);
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
   }
   .rail-isolated {
     margin: 0.35rem 0 0;
