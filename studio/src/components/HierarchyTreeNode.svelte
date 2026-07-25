@@ -136,7 +136,19 @@
 
 <style>
   .rail-hier-node {
+    /* SAME row contract as a class row (.rail-onto-head): the visibility control
+       and the DS row sit side by side, and the item is allowed to shrink so a
+       deep row never pushes its trailing badge out of the x-clipped rail. */
+    display: flex;
+    align-items: flex-start;
+    gap: 0.3rem;
     list-style: none;
+    min-width: 0;
+  }
+  /* The DS row takes the remaining width next to the fixed-size eye. */
+  .rail-hier-node > :global(*:not(.esc-slot)) {
+    flex: 1 1 auto;
+    min-width: 0;
   }
   .rail-hier-children {
     margin: 0;
