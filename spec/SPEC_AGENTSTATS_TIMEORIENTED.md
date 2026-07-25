@@ -9,7 +9,9 @@
 - Spec state: **PARTIAL IMPLEMENTATION.** The additive `t` / `t_end` contract is
   already emitted by agent-stats (T0/T2). T5 defines the provider-neutral store
   port and its first Postgres implementation. T6 defines a read-only temporal
-  graph recall contract. T7 projects strictly local h2a *coordination evidence*
+  graph recall contract. §3(a) now also ships the file-backend build-time window
+  (`graphify time-slice`) on that same predicate; the §2 `timeline` scene block
+  and the non-Postgres store adapters remain unimplemented. T7 projects strictly local h2a *coordination evidence*
   into the agent-stats graph; authored-memory and h2a persona/knowledge semantics
   remain unapproved and out of scope.
 - State root: `.graphify/`
@@ -110,9 +112,67 @@ opt-in/lazy).
 
 Two levels, both opt-in:
 
-**(a) Build-time window (file backend).** `--since`/`--until` slice the emitted
-`graph.json` to elements whose `[t,t_end]` overlaps the window; the chosen window is
-stamped on `graph.graph.window`.
+**(a) File-backend window (shipped).** `--since`/`--until` slice an emitted
+`graph.json` to the elements whose `[t,t_end]` overlaps the window; the chosen window is
+stamped on `graph.graph.window`. Membership is the same predicate as (b) — it is the
+single exported implementation, not a copy — so inclusive overlap, open-ended missing
+`t_end`, explicit `t_end === t` points, and untimed/malformed/inverted exclusion are
+identical on both levels.
+
+Unlike (b), the output is a re-emittable graph document rather than a flat projection,
+which forces two file-backend-only rules, both stamped on the window block so no
+consumer has to guess:
+
+- **Edges are endpoint-induced.** (b) evaluates node and edge membership independently
+  and may return an edge whose endpoints are absent; a `graph.json` with a dangling link
+  is not loadable, so an in-window edge (or hyperedge) whose endpoint did not survive is
+  dropped and counted separately. This narrows structure only — it never widens temporal
+  membership.
+- **A graph with no numeric `t` anywhere is rejected**, rather than silently emitting an
+  empty graph.
+
+```jsonc
+"graph": {
+  "window": {
+    "schema": "graphify.graph-window/v1",
+    "since": 1750000000000, "until": 1750010000000,   // null on an open side
+    "since_iso": "…", "until_iso": null,
+    "predicate": "inclusive-overlap",
+    "untimed": "excluded",
+    "edges": "endpoint-induced",
+    "derived_from": {
+      "topology_signature_sha256": "sha256:…", "nodes": 4, "links": 3, "hyperedges": 0
+    }
+  }
+}
+```
+
+```text
+graphify time-slice [--since <epoch-ms|ISO-8601>] [--until <epoch-ms|ISO-8601>]
+                    [--graph <path>] [--config <path>] [--out <path>] [--force] [--json]
+```
+
+At least one bound is required and `since <= until`; bounds use the same strict T6
+timestamp contract (safe integer epoch-ms, or ISO-8601 with an explicit `Z`/UTC offset —
+date-only and local-time inputs are rejected). Source selection is the T6 file order
+(`--graph`, else the config state-dir `graph.json`, else the default); no store is
+consulted, since this is the file backend. `--out` is required to write anything (the
+default is a counted dry run), writing never targets the source graph, and an existing
+destination needs `--force`. `--json` emits only the `graphify.graph-time-slice/v1`
+report (window + counts + source/out), never the graph payload.
+
+The slice is pure and deterministic: retained records are carried verbatim in source
+order with all pass-through attributes (positions, descriptions, citations, `t_src`), the
+rest of the `graph` block and unrelated siblings are preserved, and `topology_signature`
+is recomputed because the slice is a different topology. The source document is never
+mutated.
+
+Because the output is an ordinary `graph.json`, every existing file surface consumes a
+temporal slice with no new reader (`graphify summary --graph`, `graphify recall --graph`,
+the studio export). Two limits are deliberate and remain **pending**: no `citations.json`
+sidecar is co-emitted for a slice, and the flag is *not* wired into the build/watch/merge
+writers — slicing runs as an explicit pass over an already-emitted graph, so the
+LLM-driven build path and its co-emit chokepoint stay untouched.
 
 **(b) Store-level window (SQL/GQL backends).** Backends persist `t`/`t_end` as
 indexed columns/properties and MAY expose:
@@ -352,5 +412,13 @@ contracts.
    may support an agent identity only when it is matched to an in-project session;
    the projection is explicitly workspace-local and unverified, carries no time
    stamp, and is not a knowledge/persona/envelope contract.
+8. **D8 — file-backend window rules (§3(a), shipped).** The build-time window
+   ships as an explicit, deterministic pass over an emitted `graph.json`
+   (`graphify time-slice`), not as a flag on the LLM build path: temporal
+   membership reuses the single shared predicate, edges/hyperedges are
+   additionally endpoint-induced so the output stays loadable, a graph with no
+   `t` anywhere is rejected rather than emptied, and bounds reuse the strict T6
+   timestamp contract. Build/watch/merge wiring and a sliced `citations.json`
+   sidecar remain pending.
 
 This SPEC is generic and additive; it introduces no real customer/proprietary data.
