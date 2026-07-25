@@ -229,7 +229,9 @@ describe("LeftRail — ONE ontology: the process forests are NESTED, not a secon
 
   it("renders classes RECURSIVELY (no 2-level cap)", () => {
     expect(classNodeSource).toMatch(/import Self from "\.\/OntologyClassNode\.svelte"/);
-    expect(classNodeSource).toMatch(/<Self node=\{sub\} absorbedBy=\{childAbsorbedBy\} \{ctx\} \/>/);
+    expect(classNodeSource).toMatch(
+      /<Self node=\{sub\} absorbedBy=\{childAbsorbedBy\} depth=\{childDepth\} \{ctx\} \/>/,
+    );
     // A class renders its forests, then its child classes, then its own types.
     expect(classNodeSource).toMatch(
       /node\.forests[\s\S]*?\{#if node\.subs\.length\}[\s\S]*?\{#if node\.types\.length\}/,
@@ -260,5 +262,67 @@ describe("LeftRail — tracked UI: count badges relocated + reactive filtered co
     // The badge shows "x / total nodes" while filtering, "total nodes" otherwise.
     expect(railSource).toMatch(/\{#if hasQuery\}\{entityTotal\} \/ \{totalNodeCount\} nodes/);
     expect(railSource).toMatch(/\{:else\}\{totalNodeCount\} nodes\{\/if\}/);
+  });
+});
+
+/* --- the RENDERED row: the eye is there, at every depth ------------------ */
+const treeNodeSource = readFileSync(
+  resolve(process.cwd(), "src/components/HierarchyTreeNode.svelte"),
+  "utf8",
+);
+
+/** Drop JS/CSS block comments + HTML comments so prose never fakes a code lock. */
+function stripComments(source) {
+  return source
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+}
+
+describe("the tree ROW carries the same affordances as a class row", () => {
+  it("renders the 4-state visibility control keyed by its hierarchy key", () => {
+    expect(treeNodeSource).toMatch(/import EntityStateControl from "\.\/EntityStateControl\.svelte"/);
+    expect(treeNodeSource).toMatch(/<EntityStateControl/);
+    expect(treeNodeSource).toMatch(/groupKeyForHierarchy\(String\(forestKey\), String\(nodeId\)\)/);
+    expect(treeNodeSource).toMatch(/state=\{ctx\.entityStateOf\(key\)\}/);
+    expect(treeNodeSource).toMatch(/onSetState=\{ctx\.onSetEntityState\}/);
+  });
+
+  it("keeps the subtree SELECTION affordance next to the new control", () => {
+    expect(treeNodeSource).toMatch(/onSelectSubtree\(nodeId\)/);
+  });
+
+  it("absorbs a row under a GROUPED ancestor, exactly like a class row", () => {
+    expect(treeNodeSource).toMatch(/childAbsorbedBy = \$derived\(absorbedBy \?\? \(grouped \? label : null\)\)/);
+    expect(treeNodeSource).toMatch(/disabled=\{absorbedBy != null\}/);
+  });
+
+  it("is handed the forest key + the rail context by the class that splices it", () => {
+    expect(classNodeSource).toMatch(/forestKey=\{forest\.key\}/);
+    expect(classNodeSource).toMatch(/absorbedBy=\{childAbsorbedBy\}/);
+  });
+
+  it("indents ADAPTIVELY from the shared ladder, never from a hardcoded step", () => {
+    expect(treeNodeSource).toMatch(/import \{ indentStepCss \} from "\.\.\/lib\/railIndent\.js"/);
+    expect(treeNodeSource).toMatch(/indentStepCss\(depth\)/);
+    expect(treeNodeSource).toMatch(/depth=\{depth \+ 1\}/);
+    // The step is applied inline; no fixed padding survives in the stylesheet.
+    expect(treeNodeSource).toMatch(/style=\{`padding-left: \$\{childIndent\}`\}/);
+    expect(stripComments(treeNodeSource)).not.toMatch(
+      /\.rail-hier-children\s*\{[^}]*padding-left\s*:/,
+    );
+    expect(stripComments(classNodeSource)).not.toMatch(
+      /ul\.rail-hier-root\s*\{[^}]*padding\s*:\s*0\s+0\s+0\s+[\d.]/,
+    );
+  });
+
+  it("stays generic — no repo, forest or process code is hardcoded in studio core", () => {
+    // Prose may name ABP/PROCESS_STD as the motivating example; the CODE may not.
+    for (const source of [treeNodeSource, classNodeSource]) {
+      const code = stripComments(source);
+      expect(code).not.toMatch(/\bABP\b/);
+      expect(code).not.toMatch(/\bPROCESS_STD\b/);
+      expect(code).not.toMatch(/abp_process_tree|process_std_process_tree/);
+    }
   });
 });
