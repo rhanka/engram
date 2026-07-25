@@ -151,6 +151,24 @@ function temporalBounds(
   return { t, tEnd };
 }
 
+/**
+ * The shared T5/T6 record-level membership predicate: `t <= toMs AND (t_end
+ * absent OR t_end >= fromMs)`, with untimed, malformed and inverted spans
+ * excluded.
+ *
+ * Exported so the file-backend build-time window (SPEC §3(a)) slices with the
+ * exact same semantics instead of keeping a second, drifting copy. Infinite
+ * bounds are accepted here (a half-open slice); the T5 store port still
+ * requires finite ordered bounds.
+ */
+export function overlapsTemporalWindow(
+  record: Record<string, unknown>,
+  fromMs: number,
+  toMs: number,
+): boolean {
+  return temporalBounds(record, fromMs, toMs) !== undefined;
+}
+
 function canonicalTemporalNode(
   raw: Record<string, unknown>,
   fromMs: number,
