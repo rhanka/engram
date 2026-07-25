@@ -159,6 +159,11 @@
     align-items: flex-start;
     gap: 0.3rem;
     list-style: none;
+    /* A grid/flex item defaults to `min-width: auto`, i.e. it never shrinks
+       below its content — so a deep class row grew to its widest descendant and
+       pushed the whole tree out of the (x-clipped) rail, taking the trailing
+       badges with it. Every level of the tree must be allowed to shrink. */
+    min-width: 0;
   }
   .rail-onto-head > :global(.st-collapsible) {
     flex: 1 1 auto;
@@ -187,6 +192,9 @@
     margin: 0;
     padding: 0 0 0 0.2rem;
     display: grid;
+    /* minmax(0, …) so the single column may shrink; the default `auto` track
+       is content-sized and would re-introduce the overflow. */
+    grid-template-columns: minmax(0, 1fr);
     gap: 0.15rem;
   }
   ul.rail-list {
