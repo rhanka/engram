@@ -42,7 +42,16 @@ export const ONTOLOGY_LEVELS = { domain: 0, subDomain: 1, type: 2 };
  * or a colon-bearing community key both round-trip losslessly.
  * ------------------------------------------------------------------------- */
 
-export const GROUP_KIND = { ontology: "ontology", community: "community", type: "type" };
+export const GROUP_KIND = {
+  ontology: "ontology",
+  community: "community",
+  type: "type",
+  // A node of a registry FOREST (`scene-hierarchies.json`) spliced into the
+  // ontology tree. The forests ARE the ontology's deep branches, so their rows
+  // are first-class ontology rows: same namespaced key vocabulary, same 4-state
+  // visibility control, same grouping storage as a class row.
+  hierarchy: "hierarchy",
+};
 
 /** Build the grouped key for an Ontology class node id (e.g. "class:People"). */
 export function groupKeyForOntology(classId) {
@@ -66,18 +75,50 @@ export function groupKeyForType(typeName) {
 }
 
 /**
- * Split a flat grouped-key set back into its two engine inputs:
+ * Build the grouped/visibility key for ONE node of a registry forest. The key
+ * carries BOTH the forest it belongs to and the node's raw registry id, because
+ * two forests may legitimately reuse the same code. The forest key is an
+ * artifact identifier (no `:`), so the pair round-trips on the first two
+ * `:`-segments even when the raw record id itself contains colons.
+ *
+ * @param {string} forestKey  the `scene-hierarchies.json` hierarchy key.
+ * @param {string} nodeId     the raw registry record id of the tree node.
+ */
+export function groupKeyForHierarchy(forestKey, nodeId) {
+  return `${GROUP_KIND.hierarchy}:${forestKey}:${nodeId}`;
+}
+
+/**
+ * Parse a `hierarchy:` key back to `{ forestKey, nodeId }` (null when the key is
+ * not a well-formed hierarchy key). PURE.
+ */
+export function parseHierarchyKey(key) {
+  if (typeof key !== "string") return null;
+  const prefix = `${GROUP_KIND.hierarchy}:`;
+  if (!key.startsWith(prefix)) return null;
+  const rest = key.slice(prefix.length);
+  const sep = rest.indexOf(":");
+  if (sep <= 0 || sep === rest.length - 1) return null;
+  return { forestKey: rest.slice(0, sep), nodeId: rest.slice(sep + 1) };
+}
+
+/**
+ * Split a flat grouped-key set back into its per-axis engine inputs:
  *   - ontologyClassIds : the raw class ids to collapse on the ontology axis.
  *   - communityKeys    : the raw community keys to collapse on the community axis.
+ *   - typeNames        : the entity `type` values to collapse on the type axis.
+ *   - hierarchyRefs    : `{ forestKey, nodeId }` pairs for the registry-forest
+ *     axis (the ontology's deep branches).
  * Unknown / malformed prefixes are ignored. PURE (no graph context).
  *
  * @param {string[]} grouped  the namespaced grouped-key set.
- * @returns {{ ontologyClassIds: string[], communityKeys: string[] }}
  */
 export function splitGroupedKeys(grouped = []) {
   const ontologyClassIds = [];
   const communityKeys = [];
   const typeNames = [];
+  const hierarchyRefs = [];
+  const seenHierarchy = new Set();
   for (const key of grouped ?? []) {
     if (typeof key !== "string" || key.length === 0) continue;
     const sep = key.indexOf(":");
@@ -88,11 +129,19 @@ export function splitGroupedKeys(grouped = []) {
     if (kind === GROUP_KIND.ontology) ontologyClassIds.push(rest);
     else if (kind === GROUP_KIND.community) communityKeys.push(rest);
     else if (kind === GROUP_KIND.type) typeNames.push(rest);
+    else if (kind === GROUP_KIND.hierarchy) {
+      const ref = parseHierarchyKey(key);
+      if (ref && !seenHierarchy.has(key)) {
+        seenHierarchy.add(key);
+        hierarchyRefs.push(ref);
+      }
+    }
   }
   return {
     ontologyClassIds: uniqueStrings(ontologyClassIds),
     communityKeys: uniqueStrings(communityKeys),
     typeNames: uniqueStrings(typeNames),
+    hierarchyRefs,
   };
 }
 
@@ -137,7 +186,8 @@ function hasKnownNamespace(key) {
     typeof key === "string" &&
     (key.startsWith(`${GROUP_KIND.ontology}:`) ||
       key.startsWith(`${GROUP_KIND.community}:`) ||
-      key.startsWith(`${GROUP_KIND.type}:`))
+      key.startsWith(`${GROUP_KIND.type}:`) ||
+      key.startsWith(`${GROUP_KIND.hierarchy}:`))
   );
 }
 
@@ -428,6 +478,13 @@ export function toggleGroupType(state, typeName) {
   return toggleGroupItem(state, groupKeyForType(typeName));
 }
 
+/** Toggle a registry-forest NODE into/out of the grouped set. */
+export function toggleGroupHierarchy(state, forestKey, nodeId) {
+  if (typeof forestKey !== "string" || !forestKey) return normalizeViewerState(state);
+  if (typeof nodeId !== "string" || !nodeId) return normalizeViewerState(state);
+  return toggleGroupItem(state, groupKeyForHierarchy(forestKey, nodeId));
+}
+
 /** Is this Ontology class node currently grouped (checked)? PURE predicate. */
 export function isOntologyGrouped(state, classId) {
   return state?.options?.groupBy?.grouped?.includes(groupKeyForOntology(classId)) ?? false;
@@ -457,15 +514,17 @@ function keysExceptKind(state, kind) {
 
 /**
  * Ungroup ALL ontology-scoped keys (spec §4 — the Ontology section's
- * `Ungroup all`). Both class ids (Domain/Sub-domain) AND leaf TYPE keys are
- * ontology-scoped; communities are untouched.
+ * `Ungroup all`). Class ids (Domain/Sub-domain), leaf TYPE keys AND registry
+ * HIERARCHY nodes are all ontology-scoped — the forests are the ontology's deep
+ * branches, so `Ungroup all` must reach them too. Communities are untouched.
  */
 export function clearOntologyGrouping(state) {
   const kept = (state.options.groupBy.grouped ?? []).filter(
     (k) =>
       typeof k === "string" &&
       !k.startsWith(`${GROUP_KIND.ontology}:`) &&
-      !k.startsWith(`${GROUP_KIND.type}:`),
+      !k.startsWith(`${GROUP_KIND.type}:`) &&
+      !k.startsWith(`${GROUP_KIND.hierarchy}:`),
   );
   return withGrouped(state, kept);
 }
@@ -475,12 +534,14 @@ export function clearCommunityGrouping(state) {
   return withGrouped(state, keysExceptKind(state, GROUP_KIND.community));
 }
 
-/** Are ANY ontology-scoped (class OR type) items grouped? (disables Ungroup all) */
+/** Are ANY ontology-scoped (class, type OR hierarchy) items grouped? (disables Ungroup all) */
 export function hasOntologyGrouping(state) {
   return (state?.options?.groupBy?.grouped ?? []).some(
     (k) =>
       typeof k === "string" &&
-      (k.startsWith(`${GROUP_KIND.ontology}:`) || k.startsWith(`${GROUP_KIND.type}:`)),
+      (k.startsWith(`${GROUP_KIND.ontology}:`) ||
+        k.startsWith(`${GROUP_KIND.type}:`) ||
+        k.startsWith(`${GROUP_KIND.hierarchy}:`)),
   );
 }
 
