@@ -316,6 +316,15 @@ describe("the tree ROW carries the same affordances as a class row", () => {
     );
   });
 
+  it("nesting a class costs the STEP alone, not the width of its eye", () => {
+    // The eye sits before the Collapsible in the row's flex, so without pulling
+    // the region back every class level burned ~37px of gutter before the
+    // adaptive step even applied — a third of the rail was gone by the time the
+    // process tree started.
+    expect(classNodeSource).toMatch(/--rail-eye-col:/);
+    expect(classNodeSource).toMatch(/margin-left: calc\(-1 \* var\(--rail-eye-col\)\)/);
+  });
+
   it("stays generic — no repo, forest or process code is hardcoded in studio core", () => {
     // Prose may name ABP/PROCESS_STD as the motivating example; the CODE may not.
     for (const source of [treeNodeSource, classNodeSource]) {
