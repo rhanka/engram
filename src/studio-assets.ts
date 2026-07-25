@@ -87,6 +87,22 @@ function isText(filePath: string): boolean {
 }
 
 /**
+ * True when a relative request path could be a CLIENT-SIDE ROUTE rather than a
+ * file the bundle was supposed to contain — i.e. its LAST segment carries no
+ * extension (`entity/work_a`, `answer`, `reconciliation/queue`).
+ *
+ * The distinction is what keeps the SPA fallback honest: routes are invented by
+ * the client and legitimately absent from disk, whereas `sources/report.pdf` or
+ * `entities.json` is a promise the bundle failed to keep and must surface as a
+ * 404 rather than as the studio shell wearing the document's URL.
+ */
+export function looksLikeClientRoute(relPath: string): boolean {
+  const segments = relPath.split(/[\\/]+/).filter(Boolean);
+  const last = segments.length > 0 ? segments[segments.length - 1]! : "";
+  return !/\.[^.\\/]+$/.test(last);
+}
+
+/**
  * Serve a static file from the built SPA. `pathname` is the request path
  * (already URL-decoded). "/" maps to index.html. Path traversal is rejected.
  * Returns null when the request is not a studio-app asset (so the caller can
@@ -110,14 +126,21 @@ export function serveStudioAsset(pathname: string): StudioAssetResult | null {
     return { status: 403, contentType: "text/plain; charset=utf-8", body: "forbidden" };
   }
   if (!existsSync(target) || !statSync(target).isFile()) {
-    // SPA fallback: unknown deep paths return index.html so client routing works.
-    const index = join(appDir, "index.html");
-    if (existsSync(index)) {
-      return {
-        status: 200,
-        contentType: "text/html; charset=utf-8",
-        body: readFileSync(index, "utf-8"),
-      };
+    // SPA fallback: an unknown path that could be a CLIENT ROUTE returns
+    // index.html so client-side routing works. A path that names a FILE
+    // (`sources/report.pdf`, `entities.json`, an asset hash) must 404 instead:
+    // answering 200 + the SPA shell makes a missing cited source render as if
+    // the document had loaded — the reader sees the studio chrome and believes
+    // it is looking at the source. A wrong document is worse than none.
+    if (looksLikeClientRoute(rel)) {
+      const index = join(appDir, "index.html");
+      if (existsSync(index)) {
+        return {
+          status: 200,
+          contentType: "text/html; charset=utf-8",
+          body: readFileSync(index, "utf-8"),
+        };
+      }
     }
     return { status: 404, contentType: "text/plain; charset=utf-8", body: "not found" };
   }
