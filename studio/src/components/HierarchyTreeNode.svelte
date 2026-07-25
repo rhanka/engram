@@ -29,6 +29,7 @@
   import EntityStateControl from "./EntityStateControl.svelte";
   import Self from "./HierarchyTreeNode.svelte";
   import { indentStepCss } from "../lib/railIndent.js";
+  import { collapsibleTitleTooltip } from "../lib/rowTooltip.js";
   import { groupKeyForHierarchy } from "../lib/viewerState.js";
 
   let {
@@ -85,7 +86,7 @@
   const childIndent = $derived(indentStepCss(depth));
 </script>
 
-<li class="rail-hier-node">
+<li class="rail-hier-node" use:collapsibleTitleTooltip={hasChildren ? rowTitle : ""}>
   {#if ctx?.entityStateOf}
     <EntityStateControl
       {key}
@@ -100,6 +101,8 @@
   {#if hasChildren}
     <!-- A node WITH children IS a class row: the DS Collapsible owns the
          disclosure and its chevron, so there is no bespoke triangle here. -->
+    <!-- The trigger's title span clips (see the ellipsis rule below), so the
+         FULL "CODE Label" is stamped on it as a native hover tooltip. -->
     <Collapsible title={rowTitle} open={false} size="sm">
       {#snippet trailing()}
         <Badge shape="circle" size="sm" tone="neutral">{childIds.length}</Badge>
@@ -129,7 +132,9 @@
       {selected}
       onselect={() => onSelectSubtree(nodeId)}
     >
-      {rowTitle}
+      <!-- The row content ellipsizes (LeftRail's .st-selectableRow__content
+           rule); the titled span carries the full text on hover. -->
+      <span class="rail-hier-label" title={rowTitle}>{rowTitle}</span>
     </SelectableRow>
   {/if}
 </li>
@@ -173,9 +178,18 @@
     padding-right: 0;
   }
   /* One row = one line: a long process title truncates instead of wrapping into
-     a multi-line column that pushes the whole subtree down. */
+     a multi-line column that pushes the whole subtree down. Nothing is LOST to
+     the ellipsis — every truncating row carries its full text as a native hover
+     tooltip (lib/rowTooltip.js for the trigger, .rail-hier-label for a leaf). */
   .rail-hier-node :global(.st-collapsible__title),
   .rail-hier-node :global(.st-selectableRow__label) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .rail-hier-label {
+    display: block;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
