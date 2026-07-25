@@ -55,8 +55,10 @@ export interface HierarchyLayoutNode {
 
 export interface HierarchyAwareLayoutOptions {
   /**
-   * Spacing between consecutive depth rings of a tidy tree, in scene units.
-   * Cluster radius is roughly `depth * ringGap`.
+   * MINIMUM spacing between consecutive depth rings of a tidy tree, in scene
+   * units. The effective spacing is normally derived from the forest's size, so
+   * a tree fills a footprint comparable to a same-sized disc cluster; this is
+   * the floor that keeps a small, shallow forest from collapsing to a point.
    */
   ringGap?: number;
   /** Gap between neighbouring cluster cells, as a fraction of cell size. */
@@ -291,13 +293,19 @@ export function computeHierarchyAwarePositions(
   for (const hierarchyId of hierarchyIds) {
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const forest = hierarchies[hierarchyId]!;
+    // Lay the tree out on UNIT rings (radius === level), then scale it to the
+    // footprint its size deserves. A fixed ring gap would cram a 2030-node
+    // forest into the same small disc as a 20-node one, so a large hierarchy
+    // would render as an illegible dot next to the type clusters.
     const { placements, depth } = layoutForest(
       forest,
       (rawId) => indicesByRawId.has(rawId),
-      ringGap,
+      1,
     );
     if (placements.size === 0) continue;
     if (depth > maxDepth) maxDepth = depth;
+    const targetRadius = clusterScale * Math.sqrt(placements.size);
+    const scale = Math.max(ringGap, depth > 0 ? targetRadius / depth : ringGap);
 
     const members: number[] = [];
     const local: Array<{ x: number; y: number }> = [];
@@ -306,11 +314,12 @@ export function computeHierarchyAwarePositions(
     for (const rawId of [...placements.keys()].sort(compareStrings)) {
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const point = placements.get(rawId)!;
+      const scaled = { x: point.x * scale, y: point.y * scale };
       for (const index of indicesByRawId.get(rawId) ?? []) {
         if (claimed[index]) continue; // first forest by sorted id wins
         claimed[index] = 1;
         members.push(index);
-        local.push(point);
+        local.push(scaled);
         hierarchyNodeCount += 1;
       }
     }
