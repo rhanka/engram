@@ -48,6 +48,14 @@ export interface SceneHierarchyNodeEntry {
   child_ids: string[];
   /** Depth from the root (0 = root). */
   level: number;
+  /**
+   * Human-readable name of the entity, for consumers that render tree ROWS
+   * (the studio hierarchy rail) and would otherwise have nothing but the raw
+   * id to show. Emitted only when a label is known AND differs from the id
+   * (many registry rows are self-labelled, e.g. `AM0104.01`), so the artifact
+   * never repeats the key as a "label". NOT a join key — see D2.
+   */
+  label?: string;
   /** Optional display code (NOT the join key). */
   code?: string;
   /** Lifecycle status of the arc that attached this node to its parent. */
@@ -107,6 +115,12 @@ export interface BuildSceneHierarchySidecarOptions {
   sceneNodeIds: Set<string>;
   /** Optional hierarchy specs (relation_type override per hierarchy_id). */
   specs?: Record<string, { relation_type?: string }>;
+  /**
+   * Optional RAW-id → display label map (same key space as `sceneNodeIds`).
+   * Supplies `nodes_by_id[*].label` so consumers can render readable rows
+   * without a second join into the graph. A label equal to its id is dropped.
+   */
+  labels?: ReadonlyMap<string, string>;
   /** Optional graph hash stamped on the envelope. */
   graphHash?: string;
 }
@@ -119,7 +133,7 @@ export interface BuildSceneHierarchySidecarOptions {
 export function buildSceneHierarchySidecar(
   options: BuildSceneHierarchySidecarOptions,
 ): SceneHierarchySidecar {
-  const { arcs, sceneNodeIds, specs, graphHash } = options;
+  const { arcs, sceneNodeIds, specs, labels, graphHash } = options;
 
   const byHierarchy = new Map<string, OntologyHierarchyArc[]>();
   for (const arc of arcs) {
@@ -137,6 +151,7 @@ export function buildSceneHierarchySidecar(
       hierarchyArcs,
       sceneNodeIds,
       specs?.[hierarchyId],
+      labels,
     );
   }
 
@@ -196,6 +211,7 @@ function buildOneHierarchy(
   arcs: OntologyHierarchyArc[],
   sceneNodeIds: Set<string>,
   spec: { relation_type?: string } | undefined,
+  labels: ReadonlyMap<string, string> | undefined,
 ): SceneHierarchy {
   let danglingArcCount = 0;
   const overlayArcs: SceneHierarchyOverlayArc[] = [];
@@ -323,10 +339,14 @@ function buildOneHierarchy(
       : // Roots/orphans have no attaching arc: orphan keeps the tolerated
         // arc's status; plain roots default to the authoritative lane.
         (orphanStatusByChild.get(id) ?? "reference");
+    // A self-labelled row (label === id) carries no extra information, so the
+    // key is left to speak for itself rather than duplicated into `label`.
+    const label = labels?.get(id);
     nodesById[id] = {
       parent_id: parentId,
       child_ids: (childIdsByParent.get(id) ?? []).sort(compareStrings),
       level: index.ancestor_paths[id]?.length ?? 0,
+      ...(label && label !== id ? { label } : {}),
       status,
       // D2: the entry key IS the raw registry id; repeated verbatim so each
       // entry is self-describing once detached from the map.
