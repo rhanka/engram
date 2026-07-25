@@ -150,6 +150,29 @@ export function densityScale(nodeCount) {
   return Math.min(1, Math.max(DENSITY_MIN, raw));
 }
 
+// Density-aware edge opacity — the same idea as the node radius above, applied
+// to the one thing that actually hides a large graph's structure. Alpha
+// ACCUMULATES: 25k overlapping edges at the 0.5 base composite into an opaque
+// grey sheet that buries the node clusters entirely, so the layout can be
+// perfect and still read as a blob. Below EDGE_DENSITY_REF nothing changes (a
+// few-thousand-edge graph already reads well at 0.5); past it the base decays
+// as 1/sqrt(edges) and clamps, so a dense graph shows its edges as a texture
+// rather than a fill. The user's opacity slider still multiplies from there.
+const EDGE_DENSITY_REF = 6000; // edge count at/below which the base alpha is unchanged
+const EDGE_DENSITY_MIN = 0.35; // floor for the base-alpha scale on very dense graphs
+
+/**
+ * Density factor for the base edge alpha given an edge count.
+ * edgeDensityScale(m) = clamp(sqrt(EDGE_DENSITY_REF / m), EDGE_DENSITY_MIN, 1).
+ * @param {number} edgeCount  number of edges in the scene
+ * @returns {number} a multiplier in [EDGE_DENSITY_MIN, 1] applied to the base alpha
+ */
+export function edgeDensityScale(edgeCount) {
+  const m = Number.isFinite(edgeCount) && edgeCount > 0 ? edgeCount : 1;
+  const raw = Math.sqrt(EDGE_DENSITY_REF / m);
+  return Math.min(1, Math.max(EDGE_DENSITY_MIN, raw));
+}
+
 function finite(value) {
   return typeof value === "number" && Number.isFinite(value);
 }
@@ -730,9 +753,11 @@ export function buildGraphRendererPayload(scene, options = {}) {
   const edgeOpacity = Number.isFinite(options.edgeOpacity)
     ? clampUnit(options.edgeOpacity)
     : DEFAULT_EDGE_OPACITY;
-  const edgeBaseAlpha = Math.round(255 * edgeOpacity);
   const sceneNodes = scene?.nodes ?? [];
   const sceneEdges = scene?.edges ?? [];
+  // Fade the BASE alpha on dense graphs (see edgeDensityScale): 25k edges at
+  // 0.5 composite into an opaque sheet over the whole layout.
+  const edgeBaseAlpha = Math.round(255 * edgeOpacity * edgeDensityScale(sceneEdges.length));
   // One degree pass serves both churn fallback and density-graded edge alpha.
   const degreeById = nodeDegreeFallback(sceneNodes, sceneEdges);
   const churnById =

@@ -14,6 +14,7 @@ import {
   DEFAULT_EDGE_CURVATURE,
   DEFAULT_EDGE_OPACITY,
   densityScale,
+  edgeDensityScale,
   DEFAULT_LABEL_MAX_CHARS,
   EDGE_ALPHA_DENSE,
   EDGE_ALPHA_FLAT,
@@ -712,6 +713,27 @@ describe("graphRendererPayload", () => {
     for (let e = 0; e < edgeCount; e++) {
       expect(payload.style.edgeColors[e * 4 + 3]).toBe(128); // 255 * 0.5
     }
+  });
+
+  it("fades the base edge alpha on dense graphs so the layout stays visible", () => {
+    // Below the reference count nothing changes: a small graph keeps 0.5 (128).
+    expect(edgeDensityScale(1)).toBe(1);
+    expect(edgeDensityScale(6000)).toBe(1);
+    // Past it the base decays as 1/sqrt(edges) and clamps at the floor.
+    expect(edgeDensityScale(24000)).toBeCloseTo(0.5, 2);
+    expect(edgeDensityScale(1_000_000)).toBe(0.35);
+
+    const nodes = Array.from({ length: 200 }, (_, i) => ({ id: `n${i}`, x: i, y: i }));
+    const edges = Array.from({ length: 24000 }, (_, i) => ({
+      source: `n${i % 200}`,
+      target: `n${(i * 7 + 1) % 200}`,
+    }));
+    const payload = buildGraphRendererPayload({ nodes, edges });
+    // 255 * 0.5 * edgeDensityScale(24000) — well under the 128 a sparse graph gets.
+    expect(payload.style.edgeColors[3]).toBe(
+      Math.round(255 * 0.5 * edgeDensityScale(edges.length)),
+    );
+    expect(payload.style.edgeColors[3]).toBeLessThan(128);
   });
 
   it("grades the density falloff via edgeAlphaShape (not the base alpha) at the dense endpoint", () => {
