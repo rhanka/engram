@@ -104,6 +104,7 @@
     display: flex;
     align-items: center;
     gap: 0.25rem;
+    min-width: 0;
     border-radius: var(--st-radius-sm, 4px);
   }
   .rail-hier-row.is-selected {
@@ -153,6 +154,12 @@
     font-weight: 600;
   }
   .rail-hier-text {
+    /* Nested INSIDE the ontology tree these rows can sit 5+ levels deep, so the
+       label must be allowed to shrink: without `min-width: 0` a flex item never
+       goes below its content width, the row overflows the rail (which clips on
+       x) and the trailing badges disappear off the right edge. */
+    flex: 1 1 auto;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -170,7 +177,9 @@
   }
   .rail-hier-children {
     margin: 0;
-    padding: 0 0 0 0.9rem;
+    /* One deep tree can nest many levels inside the ontology accordion; keep the
+       per-level step small so a level-5 row still has usable label width. */
+    padding: 0 0 0 0.55rem;
     border-left: 1px solid var(--st-color-border-subtle, rgba(128, 128, 128, 0.22));
   }
 </style>
