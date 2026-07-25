@@ -55,6 +55,71 @@ The h2a evidence for this pass used the shared active root
 Concurrent temporal-storage and Studio changes were explicitly excluded and
 preserved.
 
+## Track F Residual Reconciliation (2026-07-25): Unicode Node Identity
+
+This pass re-verified the open "Track F upstream parity residuals" leaf against
+the **current** code rather than against the ledger's own claims, and closed the
+one residual that was both genuinely unimplemented and squarely on graphify's
+identity as a *generic multimodal* knowledge-graph product (French / Japanese /
+Russian / Greek corpora, not ASCII source code only).
+
+### Methodological caveat — this file has been audited with a broken tool
+
+`grep` classifies `src/extract.ts` as **binary** and silently returns nothing
+(`grep -c id src/extract.ts` → exit 1). Any audit of that file with plain
+`grep` produces false negatives; `grep -a` is required. At least one prior
+ledger claim below is consistent with having been written from such a false
+negative. Treat "not found in `src/extract.ts`" in any earlier row as unproven
+unless it was re-checked with `grep -a`.
+
+### Row corrections
+
+| Ledger row | Old claim | Verified reality (2026-07-25) |
+| --- | --- | --- |
+| `0.7.14` Unicode IDs `95e2c5e` (row in *Active `0.7.16` Drift Intake*) | `must-port` | **Claim was ACCURATE and still open.** `src/extract.ts` `_makeId` was byte-equivalent to upstream's pre-`95e2c5e` fold. **Now ported** — see below. |
+| `0.8.14..0.8.16` Unicode/query row (`86109e9` #937, `020cca2` #964) | `must-port` | **STALE — both were already ported** in PR #62 (`c230eca`, `3254b2b`), shipped in `graphifyy@0.9.7`. Evidence: `src/build.ts` `UNICODE_NON_WORD` / `normalizedLabel` / ASCII-gated noise filter; `src/search.ts` `queryTerms`; tests `tests/build-cjk-label-dedup.test.ts`, `tests/serve-query-terms.test.ts`. Now `already-covered`. |
+| Same row, `020cca2` (#964) sub-claim | implied fully covered by `0.9.7` | **Partially false.** The port landed in `src/search.ts` and on the MCP path, but the `graphify query` CLI command kept its own `split(/\s+/).filter(len > 2)`, re-applying the short-token gate to every script. Two-character CJK terms were still dropped on that path. **Fixed this pass.** |
+| F-0818-M3 "constrained query expansion" (release table, `graphifyy@0.9.8`) | listed as shipped | **Misleading as written.** What shipped is *skill guidance* (prompt text instructing the host assistant to build `.graphify/.vocab.txt`). There is **zero engine-side query expansion** in `src/search.ts` / `src/retrieval/` / `src/serve.ts`; `src/skills/skill-claw.md` says so outright ("no stemming, no synonyms, no cross-language match"). Engine-side expansion remains genuinely absent. |
+| Repowise #4 SCC / import-cycle detection | `Absent` | **Confirmed genuinely absent** (re-verified). No SCC pass over the graph and no SCC-capable graphology package installed. Near-miss for future readers: `src/ontology-hierarchies.ts` *does* run a Tarjan-style cycle detector, but only over ontology class parent/child arcs — never over `calls`/`imports` edges. Do not mistake it for coverage. |
+
+### Closed this pass — Unicode node identity (`95e2c5e` / #811)
+
+Measured on the pre-fix implementation:
+
+```text
+_makeId("doc", "日本語")     -> "doc"         // collides with the file node
+_makeId("doc", "中文")       -> "doc"         // ...and with every other symbol
+_makeId("notes", "café")     -> "notes_caf"   // composed U+00E9 dropped
+_makeId("notes", "café")     -> "notes_cafe"  // decomposed e+U+0301 kept
+_makeId("notes", "Évariste") -> "notes_variste"
+```
+
+| Upstream | TS change | Test | Status |
+| --- | --- | --- | --- |
+| `95e2c5e` (#811) Unicode IDs | new `src/node-id.ts` (`makeNodeId` / `normalizeIdPart`), consumed by `src/extract.ts` `_makeId` and its `src/extract-git.ts` twin | `tests/node-id-unicode.test.ts` | **ported + verified-local** (bug was live, incl. the prose `.md` path) |
+| `95e2c5e` follow-through | `src/profile-registry.ts` `safeIdPart` + `src/entity-linking.ts` `registrySeedNodeId` | same | **ported + verified-local** (silent record loss: non-Latin registry ids collapsed and were dropped by the `seen` guard) |
+| `020cca2` (#964) CLI leak | `src/cli.ts` `query` now uses the shared `queryTerms` | same | **ported + verified-local** (closes the gap left by the `0.9.7` port) |
+
+Deliberate deltas, recorded rather than hidden:
+
+- **`toLowerCase()` instead of `casefold()`** — JavaScript has no `str.casefold()`. This matches the convention already shipped by the `86109e9` port in `src/build.ts`. Residual: characters whose full case folding differs from simple lowercasing (German `ß`/`SS`, Greek final sigma `ς`/`σ`) do not fold together.
+- **Combining marks are still dropped.** `[^\p{L}\p{N}_]` mirrors Python's unicode `\w`, and neither treats Unicode `M*` as a word character, so scripts carrying meaning in spacing marks (Devanagari matras, Thai vowel signs) remain degraded. Matching the parity source was preferred over a silent unilateral divergence. **Open residual.**
+- **ASCII ids are byte-for-byte unchanged**, asserted in the test against the pre-fix implementation kept inline as an oracle. Only previously-broken non-ASCII ids move.
+
+### Newly identified residuals — genuinely missing, deliberately deferred
+
+Found while auditing this cluster; none is required by the increment above and
+each needs its own bounded lot. Listed so the ledger stops under-reporting.
+
+| # | Residual | Evidence | Why deferred |
+| --- | --- | --- | --- |
+| U1 | No NFC normalization before wiki/export filename slugging | `src/wiki.ts` `safeFilename`, `src/export.ts` `safeName` | An NFD-spelled and an NFC-spelled label are distinct JS strings, so `uniquePageRefs` applies no `_2` suffix, yet macOS APFS/HFS+ normalizes and the two files collide — silent overwrite. Filesystem-behaviour lot, needs a macOS reproducer. |
+| U2 | Filename truncation counts UTF-16 code units, not bytes | `src/wiki.ts` `safeFilename` `.slice(0, 200)` | 200 CJK characters is ~600 UTF-8 bytes, past the 255-byte ext4/APFS limit; can also split a surrogate pair. Same lot as U1. |
+| U3 | `cypherIdentifier` is ASCII-only | `src/export.ts` | A non-Latin ontology type (`人物`) or relation silently degrades to the `"Entity"` / `"RELATES_TO"` fallback, flattening the type system in the Cypher/Neo4j export. Needs a backtick-quoting decision, not a regex swap. |
+| U4 | Citation grounding tokenizer is ASCII-only | `src/cite-grounding.ts` `tokenize` uses `/[a-z0-9]+/g` | Latin corpora are fine (`deaccent` runs first), but CJK citations cannot ground at all. Separate lot: the grounding substrate is Latin-first by construction. |
+| U5 | Engine-side query expansion absent | `src/search.ts`, `src/retrieval/` | See the F-0818-M3 correction above. Product decision (delegated-to-assistant vs in-engine), not a port. |
+| U6 | Residual ASCII-only folds outside identity | `src/ingest.ts`, `src/recommend.ts`, `src/agent-stats/discover.ts` | These build slugs/prefixes, not node identity, so no data is lost. Cosmetic; fold in opportunistically. |
+
 ## Drift Re-Scan (2026-07-06): Python `v0.9.7+1` And CRG `v2.3.6`
 
 Observed on 2026-07-06 (upstream-intake wave, same pass as the Repowise intake below). Both reference upstreams **have drifted** since the 2026-07-01 census lock.
@@ -373,7 +438,7 @@ Observed on 2026-05-23 after merging PRs #33 (A-final), #34 (F cadrage bilan #1)
 | --- | --- | --- | --- | --- |
 | Python `v0.8.14`..`v0.8.16` | Security hardening | graph.json 512 MiB load cap, sanitize_metadata at export boundaries, vis-network CDN SRI pin (`#956` cluster `b6127aa`), NAT64 SSRF false-positive fix (`9e6192a`) | `must-port` | F-0816-P3 / part of F-0816-P4. Verify partial G overlap on vis-network pin (Track G `workspace/graph-panel.ts`). |
 | Python `v0.8.14`..`v0.8.16` | Wiki / detect correctness | stale wiki node filter (`#936` in `9e6192a`), gitignore fallback + `--exclude` flag (`#945`/`#947`), cluster-only crash when `graphify-out/` absent (`#934` in `076e6b7c`) | `must-port` | F-0816-P4. Wiki portion is G-adjacent (Track G `workspace/display-model.ts` reads wiki sidecars) — port strengthens contract, no conflict expected. |
-| Python `v0.8.14`..`v0.8.16` | Unicode / query | CJK/Unicode dedup in `_norm`/`_norm_label` (`#937` in `86109e9`), non-English query terms searchable (`#964` in `020cca2`) | `must-port` | F-0816-P2 + lineage from the still-open `0.7.14` Unicode-IDs row (`_makeId` in `src/extract.ts` strips non-ASCII). |
+| Python `v0.8.14`..`v0.8.16` | Unicode / query | CJK/Unicode dedup in `_norm`/`_norm_label` (`#937` in `86109e9`), non-English query terms searchable (`#964` in `020cca2`) | ~~`must-port`~~ → **`already-covered`** (corrected 2026-07-25) | Both ported in PR #62 (`c230eca`, `3254b2b`), shipped `graphifyy@0.9.7`; see `src/build.ts` `normalizedLabel` and `src/search.ts` `queryTerms`. One leak found and fixed 2026-07-25: the `graphify query` CLI bypassed `queryTerms`. The `0.7.14` Unicode-IDs lineage was real and is now closed — see *Track F Residual Reconciliation (2026-07-25)*. |
 | Python `v0.8.14`..`v0.8.16` | LLM / CLI hygiene | exit non-zero on all-chunk extract failure (`#889` in `3238b32`), honor `GRAPHIFY_MAX_OUTPUT_TOKENS` for OpenAI-compatible backends (`#973` in `06a9b72`) | `must-port` | F-0816-P2. Trivial line-level ports. |
 | Python `v0.8.14`..`v0.8.16` | Install surface | project-scoped skill installs (`#931` in `b347492`) | `must-port` | F-0816-P1. Audit `src/skill-install.ts` for `--scope project` + per-platform target dirs. Soft G overlap on workspace bootstrap. |
 | Python `v0.8.14`..`v0.8.16` | Language / parser | `.ets` (ArkTS) extension (`#926` in `52d75bd`), Swift cross-file extension dedup (`#969` in `406bea4`), JS/TS barrel re-exports as explicit graph edges (`1494874`), bash extractor hardening (part of `#956`) | `must-port (M)` | F-0816-M1 (extensions + Swift), F-0816-M2 (barrel re-exports), F-0816-M3 (bash hardening — pairs with still-open F-P3 bash extractor port from bilan #1). |
@@ -420,7 +485,7 @@ Row-level audit for the post-`0.7.10` drift observed at `ab32098063adb1ab4d92477
 | `0.7.13` callflow hook/watch regeneration | `5ead190` | Regenerate callflow HTML automatically when the artifact already exists. | `defer` | Depends on the callflow HTML decision; do not add watch churn until the export surface is accepted. |
 | `0.7.13` dynamic Ollama `num_ctx` | `8c4c67f` | Derive Ollama context size from actual chunk size instead of hardcoding. | `must-port` | In Lot M2, decide whether the TS direct-extract chunker should compute per-call context or expose only explicit env overrides first. |
 | `0.7.13` Ollama env docs | `4cec58e` | Document `GRAPHIFY_OLLAMA_NUM_CTX` and `GRAPHIFY_OLLAMA_KEEP_ALIVE`. | `must-port` | Update README once the envs are implemented in `src/llm-execution.ts`. |
-| `0.7.14` Unicode IDs | `95e2c5e` | Normalize IDs with Unicode-aware NFKC/casefold semantics. | `must-port` | Update `_makeId` and build endpoint normalization so non-ASCII identifiers do not collapse; add extraction/build regression tests. |
+| `0.7.14` Unicode IDs | `95e2c5e` | Normalize IDs with Unicode-aware NFKC/casefold semantics. | ~~`must-port`~~ → **`ported`** (2026-07-25) | Closed: `src/node-id.ts` (`makeNodeId`/`normalizeIdPart`) now backs `_makeId`, its `extract-git` twin, and the registry seed ids; `tests/node-id-unicode.test.ts`. Deltas (`toLowerCase` vs `casefold`, combining marks) recorded in *Track F Residual Reconciliation (2026-07-25)*. |
 | `0.7.14` legacy edge-key cleanup | `95e2c5e` | Handle LLM `from`/`to` edge keys during dedup and avoid leaking stale keys. | `must-port` | Add validation/build normalization for legacy edge aliases before graph construction, with tests. |
 | `0.7.14` direction flip and chunk paths | `95e2c5e` | Avoid update direction flip and make skill chunks addressable by absolute paths. | `already-covered` | Direction preservation is already covered by `tests/build-merge.test.ts`; TS skill-runtime writes explicit scratch paths rather than Python subagent chunk files. |
 | `0.7.15` help/version/Ollama fallback | `094d8ba` | Universal help guard, `--version`, and Ollama `num_ctx` fallback. | `must-port` | `--version` is already handled by Commander; carry the Ollama fallback into Lot M2 and add one CLI/help regression if stale-version noise reappears. |
