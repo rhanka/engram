@@ -344,12 +344,14 @@ describe("deOrphanByContainer (D) — giant-component steering", () => {
     expect(added).toHaveLength(1); // one anchor edge only, no chapter+Work double
   });
 
-  it("joins the giant via its global hub — never anchors to its own isolated Work (no disconnected star)", () => {
+  it("anchors to its own (off-giant) container rather than inventing a bridge to an unrelated giant", () => {
     // The giant lives in an UNRELATED work; this work's chapter+Work are both
-    // OUTSIDE the giant (the orphan's whole Work is isolated). Anchoring the
-    // orphan to that isolated Work would spawn a disconnected star that never
-    // reaches the giant — the bug. The orphan must instead join the giant
-    // THROUGH its highest-degree node (here work_other, degree 3).
+    // OUTSIDE the giant. There is a TRUE anchor available — the orphan's own
+    // chapter, which really does contain it — so we use it, and accept that the
+    // component stays separate. Wiring the orphan to the unrelated giant's hub
+    // (the previous `deorphan:giant-hub-global`) would assert a relationship the
+    // corpus does not contain; at PROCESS_STD scale that path emitted 19 542 such
+    // edges onto a single anchor.
     const otherWork = node({ id: "work_other", label: "Other", type: "Work", source_file: "corpus/other/text.txt" });
     const a = node({ id: "character_a", label: "A", type: "Character", source_file: "corpus/other/text.txt" });
     const b = node({ id: "character_b", label: "B", type: "Character", source_file: "corpus/other/text.txt" });
@@ -367,14 +369,13 @@ describe("deOrphanByContainer (D) — giant-component steering", () => {
     const out = deOrphanByContainer(ex);
     const added = out.extraction.edges.filter((e) => e.source === "character_x");
     expect(added).toHaveLength(1);
-    // Anchored to the giant's global hub (work_other, degree 3), NOT to the
-    // isolated work_w — and via a generic relation, not a false appears_in.
-    expect(added[0]!.target).toBe("work_other");
-    expect(added[0]!.relation).toBe("related_to");
-    expect(added[0]!.derivation_method).toBe("deorphan:giant-hub-global");
-    // And no isolated-Work star: work_w stays where it was (still isolated, the
-    // separate re-index concern), the orphan is in the giant.
-    expect(out.extraction.edges.some((e) => e.source === "character_x" && e.target === "work_w")).toBe(false);
+    // Anchored to its OWN finest container (ch9) — a true containment fact —
+    // not to the unrelated giant's hub.
+    expect(added[0]!.target).toBe("chapter_the-work_ch9");
+    expect(added[0]!.relation).toBe("appears_in");
+    expect(added[0]!.derivation_method).toBe("deorphan:container-offgiant");
+    expect(out.extraction.edges.some((e) => e.source === "character_x" && e.target === "work_other")).toBe(false);
+    expect(out.unattachable).toBe(0);
   });
 
   it("is idempotent in giant mode (re-run adds nothing, byte-equal edges)", () => {
@@ -388,9 +389,10 @@ describe("deOrphanByContainer (D) — giant-component steering", () => {
 
 // ---------------------------------------------------------------------------
 // (D) De-orphan — ABSOLUTE topology invariants on a representative graph
-//   (1) no 2-node islands  (2) no artificial hub-spoke star  (3) every orphan
-//   ends up in the SINGLE giant connected component. These are absolute (not
-//   relative-to-legacy) guarantees of the giant-hub join.
+//   (1) no 2-node islands  (2) every derived edge is GROUNDED in provenance
+//   (3) every orphan joins the giant, or its own work's real component. These
+//   are absolute (not relative-to-legacy) guarantees. Fan-out bounds and the
+//   unattachable-is-reported rule live in deorphan-attachment-policy.test.ts.
 // ---------------------------------------------------------------------------
 describe("deOrphanByContainer (D) — absolute topology invariants", () => {
   function endpoint(v: unknown): string {
@@ -484,32 +486,27 @@ describe("deOrphanByContainer (D) — absolute topology invariants", () => {
     expect(twoNodeIslands).toHaveLength(0);
   });
 
-  it("INVARIANT 2: introduces NO artificial hub-spoke star (no node becomes a synthetic hub with many derived degree-1 leaves)", () => {
+  it("INVARIANT 2: every derived edge is GROUNDED — the anchor shares the orphan's provenance", () => {
     const before = representativeGraph();
     const out = deOrphanByContainer(before);
-    const { adj, degree } = topology(out.extraction.nodes, out.extraction.edges);
-
-    // A node only the DE-ORPHAN pass connected to (degree 0 before) must not
-    // emerge as a hub of derived degree-1 leaves — that is the synthetic star.
-    const beforeDeg = topology(before.nodes, before.edges).degree;
+    const byId = new Map(out.extraction.nodes.map((n) => [String(n.id), n]));
+    const slug = (sf: string) => {
+      const parts = sf.split("/").filter(Boolean);
+      return parts.length >= 2 ? parts[parts.length - 2]! : "";
+    };
     const derived = out.extraction.edges.filter(
       (e) => String((e as Record<string, unknown>).derivation_method ?? "").startsWith("deorphan"),
     );
-    const derivedTargets = new Set(derived.map((e) => endpoint(e.target)));
-    for (const hub of derivedTargets) {
-      // Any node a derived edge points at must already have been connected
-      // (degree>0) BEFORE de-orphan — i.e. it is a real, pre-existing hub of the
-      // giant, never a node de-orphan itself first wired up.
-      expect(beforeDeg.get(hub) ?? 0).toBeGreaterThan(0);
-      // And its leaves are not ALL synthetic degree-1 spokes: the hub is part of
-      // the giant, so it has non-leaf neighbours too.
-      const neighbours = [...(adj.get(hub) ?? [])];
-      const nonLeaf = neighbours.filter((v) => (degree.get(v) ?? 0) > 1);
-      expect(nonLeaf.length).toBeGreaterThan(0);
+    expect(derived.length).toBeGreaterThan(0);
+    for (const e of derived) {
+      const src = String(byId.get(endpoint(e.source))!.source_file);
+      const tgt = String(byId.get(endpoint(e.target))!.source_file);
+      // same document, or same work directory (containment) — never unrelated.
+      expect(src === tgt || slug(src) === slug(tgt)).toBe(true);
     }
   });
 
-  it("INVARIANT 3: every orphan ends up in the SINGLE giant connected component", () => {
+  it("INVARIANT 3: every orphan is either in the giant or attached to a TRUE container of its own work", () => {
     const before = representativeGraph();
     const beforeTopo = topology(before.nodes, before.edges);
     const orphansBefore = before.nodes
@@ -519,10 +516,20 @@ describe("deOrphanByContainer (D) — absolute topology invariants", () => {
     expect(orphansBefore.length).toBeGreaterThan(0); // the scenario IS orphan-rich
 
     const out = deOrphanByContainer(before);
-    const { giant } = topology(out.extraction.nodes, out.extraction.edges);
+    const { giant, comps, degree } = topology(out.extraction.nodes, out.extraction.edges);
     for (const o of orphansBefore) {
-      expect(giant.has(String(o.id))).toBe(true);
+      const id = String(o.id);
+      expect(degree.get(id) ?? 0).toBeGreaterThan(0); // nobody is left dangling here
+      if (giant.has(id)) continue;
+      // Off-giant is allowed ONLY when the orphan sits inside its own work's
+      // component — the lonely work is genuinely separate in this corpus, and
+      // faking a bridge to the saga would be the invented structure.
+      const comp = comps.find((c) => c.has(id))!;
+      expect(comp.has("work_lonely")).toBe(true);
     }
+    // The saga orphans DID join the giant through their work.
+    expect(giant.has("character_o1")).toBe(true);
+    expect(giant.has("object_o3")).toBe(true);
   });
 
   it("anchors every entity orphan THROUGH a high-degree giant node (degree >= castle)", () => {
@@ -545,20 +552,22 @@ describe("deOrphanByContainer (D) — absolute topology invariants", () => {
     expect(second.extraction.edges).toEqual(first.extraction.edges);
   });
 
-  it("REGRESSION LOCK: legacy isolated-Work fallback (joinGiantViaHub:false) DOES strand the lonely orphans in a separate star", () => {
-    // Same representative graph, but with the fix disabled, reproduces the bug:
-    // the lonely orphans anchor to their isolated Work and form a SEPARATE
-    // hub-spoke component that never reaches the giant. This locks in that the
-    // giant-hub join (default ON) is what fixes it.
-    const out = deOrphanByContainer(representativeGraph(), { joinGiantViaHub: false });
-    const { giant } = topology(out.extraction.nodes, out.extraction.edges);
-    // The lonely orphans are NOT in the giant under the legacy fallback.
+  it("the lonely work stays a SEPARATE honest component — we do not fake a bridge to the saga", () => {
+    // The lonely work shares nothing with the saga: no document, no container.
+    // Its entities attach to their own Work (true containment) and the component
+    // remains separate. That separation is a FACT about the corpus, and the
+    // remedy is cross-work extraction, not a synthetic edge.
+    const out = deOrphanByContainer(representativeGraph());
+    const { giant, comps } = topology(out.extraction.nodes, out.extraction.edges);
     expect(giant.has("character_l1")).toBe(false);
-    // work_lonely is the synthetic hub of a separate star (degree 3, its leaves).
-    const lonelyComp = topology(out.extraction.nodes, out.extraction.edges).comps.find((c) =>
-      c.has("work_lonely"),
-    )!;
+    const lonelyComp = comps.find((c) => c.has("work_lonely"))!;
+    expect(lonelyComp.has("character_l1")).toBe(true);
     expect(lonelyComp.has("character_hero")).toBe(false); // separate from the giant
+    // Disabling peer attachment does not change this container-only case.
+    const noPeers = deOrphanByContainer(representativeGraph(), { joinGiantViaHub: false });
+    expect(
+      noPeers.extraction.edges.filter((e) => e.source === "character_l1"),
+    ).toHaveLength(1);
   });
 });
 
