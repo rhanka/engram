@@ -4,7 +4,7 @@ import { dirname, resolve } from "node:path";
 
 import { compileNormalizerByNodeType } from "./entity-normalizer.js";
 import type { EntityNormalizer, NormalizerByNodeType } from "./entity-normalizer.js";
-import type { OntologyPatchContext, OntologyPatchNode } from "./ontology-patch.js";
+import type { OntologyPatchContext, OntologyPatchNode, OntologyPatchRelation } from "./ontology-patch.js";
 
 export const ONTOLOGY_RECONCILIATION_CANDIDATES_SCHEMA = "graphify_ontology_reconciliation_candidates_v1" as const;
 export const ONTOLOGY_RECONCILIATION_CANDIDATES_RESPONSE_SCHEMA =
@@ -13,8 +13,39 @@ export const ONTOLOGY_RECONCILIATION_CANDIDATES_RESPONSE_SCHEMA =
 export type OntologyReconciliationCandidateKind = "entity_match";
 export type OntologyReconciliationCandidateStatus = "candidate";
 
-/** Matching tier that produced a candidate. */
-export type OntologyReconciliationCandidateTier = "exact" | "fuzzy";
+/** Matching tier that produced a candidate. Ranked: exact > fuzzy > structural. */
+export type OntologyReconciliationCandidateTier = "exact" | "fuzzy" | "structural";
+
+/**
+ * Per-signal score contributions for a candidate (spec: "the studio review
+ * queue renders the breakdown so the user sees why a pair was proposed").
+ * Optional and additive — the queue schema stays `…_v1`.
+ */
+export interface OntologyReconciliationScoreBreakdown {
+  /** Jaccard over the two INFORMATIVE neighbour sets (structural tier). */
+  neighbour_jaccard?: number;
+  /** Count of informative (non-hub) neighbours the two nodes share. */
+  shared_neighbours?: number;
+  /** Jaccard over the two directed relation-type profiles. */
+  relation_profile_jaccard?: number;
+  /** Count of shared provenance refs (source_refs / registry_refs). */
+  shared_provenance?: number;
+}
+
+/**
+ * The explicit STRUCTURAL basis of a structural-tier candidate, so a human can
+ * judge the proposal without re-deriving it. Deterministic, evidence-carrying.
+ */
+export interface OntologyReconciliationStructuralBasis {
+  /** Informative neighbours shared by both nodes (sorted, capped for payload). */
+  shared_neighbour_ids: string[];
+  /** True count before the payload cap above. */
+  shared_neighbour_count: number;
+  /** Directed relation-type signatures shared by both nodes (`out:type`/`in:type`). */
+  shared_relation_types: string[];
+  /** Provenance refs (source_refs / registry_refs) shared by both nodes. */
+  shared_provenance_refs: string[];
+}
 
 export interface OntologyReconciliationCandidate {
   id: string;
@@ -29,6 +60,10 @@ export interface OntologyReconciliationCandidate {
   evidence_refs: string[];
   reasons: string[];
   proposed_patch_operation: "accept_match";
+  /** Per-signal contributions. Present on structural-tier candidates. */
+  score_breakdown?: OntologyReconciliationScoreBreakdown;
+  /** Structural evidence. Present on structural-tier candidates only. */
+  structural_basis?: OntologyReconciliationStructuralBasis;
 }
 
 export interface OntologyReconciliationCandidateQueue {
@@ -83,6 +118,14 @@ export interface GenerateOntologyReconciliationCandidatesOptions {
    * The exact tier always runs on every type.
    */
   fuzzyExcludeTypes?: readonly string[];
+  /**
+   * Enable the LOWEST-confidence STRUCTURAL tier (shared-neighbour Jaccard +
+   * relation-type profile + shared provenance). CAPABILITY-GATED: default OFF,
+   * so enabling it can only ADD candidates and never changes an existing queue.
+   */
+  structural?: boolean;
+  /** Thresholds/guard knobs for the structural tier. */
+  structuralConfig?: Partial<StructuralTierConfig>;
 }
 
 function sha256(value: string): string {
@@ -685,6 +728,428 @@ export function differentEntityReason(
   return null;
 }
 
+// --- Structural tier -------------------------------------------------------
+//
+// The LOWEST-confidence tier, capability-gated (`structural`, default OFF) and
+// ranked strictly BELOW exact and fuzzy. It answers the case the lexical tiers
+// cannot: two entities that are the SAME real thing but whose strings do not
+// look alike. Signals (spec `SPEC_ONTOLOGY_RECONCILIATION_ALGORITHM.md` §2,
+// "Structural — shared-neighbour overlap (Jaccard on neighbour sets),
+// same-source co-occurrence, type compatibility"):
+//
+//   1. shared-neighbour Jaccard over INFORMATIVE (non-hub) neighbours,
+//   2. directed relation-type profile overlap,
+//   3. shared registry/source provenance.
+//
+// It is deterministic (no LLM), it emits CANDIDATES ONLY (status "candidate",
+// `accept_match` proposal for a human to adjudicate — nothing is ever applied),
+// and every candidate carries its `structural_basis` so the human sees the
+// exact shared neighbours the proposal rests on.
+//
+// FALSE-POSITIVE GUARD (the central design concern). The structural analogue of
+// the known fuzzy false positive (HC-14 → COMPTON:C-15 at 0.45) is the
+// SIBLING trap: two DISTINCT children of the same parent are, structurally, as
+// similar as two duplicates of one entity — a pair of leaves under one hub has
+// neighbour-Jaccard 1.0 while naming two different things. Four guards, each
+// pinned by a test in tests/ontology-reconciliation-structural.test.ts:
+//
+//   (S1) EVIDENTIAL MASS — both nodes need degree ≥ `minDegree` AND
+//        ≥ `minSharedNeighbours` shared informative neighbours. One shared
+//        parent is never evidence, which kills the sibling-leaf explosion at
+//        the root.
+//   (S2) HUB DISCOUNTING — a neighbour whose degree exceeds `hubDegreeMax`
+//        carries no identifying information (it connects to everything), so it
+//        is removed from BOTH neighbour sets before any overlap is computed.
+//        This is the structural analogue of the lexical generic-noun stop-list.
+//   (S3) LEXICAL CONTRADICTION — `differentEntityReason` runs on the pair and
+//        VETOES it. Structure may never re-admit a pair the lexical guards
+//        confidently rejected (siblings, opposite-gender titles, address
+//        divergence, place re-qualification): the structural tier must not
+//        resurrect the HC-14 class through a different door.
+//   (S4) SERIAL DIVERGENCE — two labels bearing DISJOINT numeric identifiers
+//        ("HC-14" vs "COMPTON:C-15", "Step 3" vs "Step 7") are distinct members
+//        of a series, never the same entity, however similar their context is.
+//        This is the direct, explicit guard against repeating HC-14 → C-15.
+
+/** Thresholds and guard knobs for the structural tier. */
+export interface StructuralTierConfig {
+  /** (S1) Minimum informative degree required on BOTH sides. */
+  minDegree: number;
+  /** (S1) Minimum number of shared informative neighbours. */
+  minSharedNeighbours: number;
+  /** (S2) A neighbour with a degree above this is a hub and carries no signal. */
+  hubDegreeMax: number;
+  /** Minimum Jaccard over the informative neighbour sets. */
+  neighbourJaccardThreshold: number;
+  /** Minimum Jaccard over the directed relation-type profiles. */
+  relationProfileThreshold: number;
+  /** Max shared-neighbour ids embedded in a candidate's `structural_basis`. */
+  maxBasisNeighbours: number;
+  /**
+   * (S6) Neighbour types that carry CO-OCCURRENCE, not identity. Sharing a
+   * chapter/work/scene means two entities were mentioned together, which every
+   * pair of protagonists does — it is not evidence of being the same entity.
+   */
+  containerNeighbourTypes: readonly string[];
+  /**
+   * (S5) Relation types that ASSERT identity. A direct edge of any OTHER type
+   * between the two nodes is the corpus asserting they are different things.
+   */
+  identityRelationTypes: readonly string[];
+  /**
+   * (S7) Require the two nodes' SOURCE provenance to be disjoint. Two nodes
+   * emitted by one extraction pass over one document were distinguished BY that
+   * pass; structural similarity between them is co-occurrence, not identity.
+   */
+  requireDisjointSourceProvenance: boolean;
+}
+
+export const DEFAULT_STRUCTURAL_TIER_CONFIG: StructuralTierConfig = {
+  minDegree: 3,
+  minSharedNeighbours: 3,
+  hubDegreeMax: 50,
+  neighbourJaccardThreshold: 0.5,
+  relationProfileThreshold: 0.5,
+  maxBasisNeighbours: 12,
+  containerNeighbourTypes: DEFAULT_FUZZY_EXCLUDE_TYPES,
+  identityRelationTypes: ["alias_of", "same_as", "duplicate_of", "canonical_of"],
+  requireDisjointSourceProvenance: true,
+};
+
+/**
+ * Score ceiling of the structural tier. MUST stay strictly below the fuzzy
+ * floor (0.7) so the tier can never outrank a lexical match. Pinned by a test.
+ */
+export const STRUCTURAL_TIER_MAX_SCORE = 0.65;
+/** Score floor of the structural tier (neighbour overlap alone). */
+export const STRUCTURAL_TIER_BASE_SCORE = 0.5;
+
+/**
+ * Structural container types excluded from the structural tier by default —
+ * the SAME list the fuzzy tier excludes. Two distinct chapters of one work, or
+ * two distinct sections of one document, share almost their entire
+ * neighbourhood (the work, its characters) while never being the same thing:
+ * containers are exactly where the sibling trap is densest.
+ */
+export const DEFAULT_STRUCTURAL_EXCLUDE_TYPES = DEFAULT_FUZZY_EXCLUDE_TYPES;
+
+/** Undirected neighbourhood + directed relation-type profile of every node. */
+export interface StructuralIndex {
+  neighbours: Map<string, Set<string>>;
+  /** Directed relation-type signatures, `out:<type>` / `in:<type>`. */
+  relationProfile: Map<string, Set<string>>;
+  /** Node type by id — used to discount CONTAINER neighbours (S6). */
+  nodeTypes: Map<string, string>;
+  /** Relation types joining an unordered pair — used by the direct-edge veto (S5). */
+  edgeTypes: Map<string, Set<string>>;
+}
+
+/** Unordered pair key. JSON encoding so no separator can collide with an id. */
+function pairKeyOf(a: string, b: string): string {
+  return a <= b ? JSON.stringify([a, b]) : JSON.stringify([b, a]);
+}
+
+/** Build the structural index from the context relations. Deterministic. */
+export function buildStructuralIndex(
+  relations: readonly OntologyPatchRelation[],
+  nodes: readonly OntologyPatchNode[] = [],
+): StructuralIndex {
+  const neighbours = new Map<string, Set<string>>();
+  const relationProfile = new Map<string, Set<string>>();
+  const edgeTypes = new Map<string, Set<string>>();
+  const add = (map: Map<string, Set<string>>, key: string, value: string): void => {
+    let bucket = map.get(key);
+    if (!bucket) {
+      bucket = new Set<string>();
+      map.set(key, bucket);
+    }
+    bucket.add(value);
+  };
+  for (const relation of relations) {
+    const source = relation.source_id;
+    const target = relation.target_id;
+    if (!source || !target || source === target) continue;
+    add(neighbours, source, target);
+    add(neighbours, target, source);
+    const type = relation.type ?? "related";
+    add(relationProfile, source, `out:${type}`);
+    add(relationProfile, target, `in:${type}`);
+    add(edgeTypes, pairKeyOf(source, target), type);
+  }
+  const nodeTypes = new Map<string, string>();
+  for (const node of nodes) if (node.type) nodeTypes.set(node.id, node.type);
+  return { neighbours, relationProfile, nodeTypes, edgeTypes };
+}
+
+/** Digit-only tokens of a label surface (serial identifiers). */
+function numericTokens(tokens: readonly string[]): Set<string> {
+  return new Set(tokens.filter((token) => /^\d+$/u.test(token)));
+}
+
+function setsDisjoint(a: Set<string>, b: Set<string>): boolean {
+  for (const value of a) if (b.has(value)) return false;
+  return true;
+}
+
+/**
+ * (S3)+(S4) LABEL-level veto for the structural tier: a reason why the two
+ * nodes are confidently DIFFERENT entities regardless of how alike their
+ * neighbourhoods are, or null.
+ *
+ * (S3) delegates to `differentEntityReason` — every measured lexical
+ * false-positive class stays rejected when the proposal arrives structurally.
+ * (S4) rejects DISJOINT numeric identifiers: "HC-14" vs "COMPTON:C-15" are
+ * members 14 and 15 of a series. This is the explicit guard against reproducing
+ * the known 0.45 fuzzy false positive in structural form.
+ */
+export function structuralLabelRejectReason(
+  left: OntologyPatchNode,
+  right: OntologyPatchNode,
+): string | null {
+  // (S3) the lexical guards VETO the pair — structure never overrides them.
+  const lexical = differentEntityReason(left, right);
+  if (lexical) return `lexically rejected pair: ${lexical}`;
+
+  const a = nodeGuardSurface(left);
+  const b = nodeGuardSurface(right);
+  // (S4) disjoint serial identifiers => distinct members of a series.
+  const aNums = numericTokens([...a.allTokens]);
+  const bNums = numericTokens([...b.allTokens]);
+  if (aNums.size > 0 && bNums.size > 0 && setsDisjoint(aNums, bNums)) {
+    return `divergent serial identifiers: ${[...aNums].sort().join(",")} vs ${[...bNums].sort().join(",")}`;
+  }
+  // Roman-numeral / ordinal series over an otherwise shared name.
+  if (a.name.length > 0 && b.name.length > 0 && differsOnlyByOrdinal(a.name, b.name)) {
+    return `formulaic series (ordinal delta): ${a.name.join(" ")} vs ${b.name.join(" ")}`;
+  }
+  return null;
+}
+
+export interface StructuralMatchResult {
+  matched: boolean;
+  /** Null when the pair was vetoed; otherwise the guard that failed, if any. */
+  rejectReason: string | null;
+  neighbourJaccard: number;
+  relationProfileJaccard: number;
+  sharedNeighbours: string[];
+  sharedRelationTypes: string[];
+  sharedProvenance: string[];
+  score: number;
+}
+
+function jaccardOfSets(a: Set<string>, b: Set<string>): { jaccard: number; shared: string[] } {
+  const shared: string[] = [];
+  for (const value of a) if (b.has(value)) shared.push(value);
+  const union = a.size + b.size - shared.length;
+  return { jaccard: union === 0 ? 0 : shared.length / union, shared: shared.sort((x, y) => x.localeCompare(y)) };
+}
+
+/**
+ * SOURCE provenance — the documents an entity was extracted FROM. Overlap here
+ * is a NEGATIVE identity signal (S7): one pass over one document that emitted
+ * two nodes was distinguishing them.
+ */
+function sourceProvenanceRefs(node: OntologyPatchNode): Set<string> {
+  return new Set((node.source_refs ?? []).filter((ref) => ref.length > 0));
+}
+
+/**
+ * REGISTRY provenance — references to canonical registry records. Overlap here
+ * is a POSITIVE identity signal: two nodes pointing at the same registry record
+ * are pointing at the same real thing.
+ */
+function registryProvenanceRefs(node: OntologyPatchNode): Set<string> {
+  const refs = new Set((node.registry_refs ?? []).filter((ref) => ref.length > 0));
+  if (node.registry_id && node.registry_record_id) refs.add(`${node.registry_id}#${node.registry_record_id}`);
+  return refs;
+}
+
+/**
+ * Structural similarity between two nodes. Returns `matched: false` with a
+ * `rejectReason` whenever a guard fires, so the guards are observable (and
+ * testable) rather than silent threshold arithmetic.
+ */
+export function structuralMatchNodes(
+  left: OntologyPatchNode,
+  right: OntologyPatchNode,
+  index: StructuralIndex,
+  config: StructuralTierConfig = DEFAULT_STRUCTURAL_TIER_CONFIG,
+): StructuralMatchResult {
+  const empty = {
+    neighbourJaccard: 0,
+    relationProfileJaccard: 0,
+    sharedNeighbours: [] as string[],
+    sharedRelationTypes: [] as string[],
+    sharedProvenance: [] as string[],
+    score: 0,
+  };
+  // (S3)+(S4) label veto first — cheapest and the strongest precision guard.
+  const labelReject = structuralLabelRejectReason(left, right);
+  if (labelReject) return { matched: false, rejectReason: labelReject, ...empty };
+
+  // (S5) DIRECT-EDGE VETO. A relation between the two nodes is the CORPUS
+  // asserting they are distinct things: "Prasville OPPOSES Daubrecq",
+  // "Gilbert ACCOMPLICE_OF Vaucheray" — an entity does not oppose or assist
+  // itself. Only identity relations (alias_of/same_as/…) are compatible with
+  // the pair being one entity, and those are already a settled merge.
+  const joining = index.edgeTypes.get(pairKeyOf(left.id, right.id));
+  if (joining) {
+    const identity = new Set(config.identityRelationTypes);
+    const asserted = [...joining].filter((type) => !identity.has(type));
+    if (asserted.length > 0) {
+      return {
+        matched: false,
+        rejectReason: `direct relation asserts distinct entities: ${asserted.sort().join(", ")}`,
+        ...empty,
+      };
+    }
+  }
+
+  const rawLeft = index.neighbours.get(left.id) ?? new Set<string>();
+  const rawRight = index.neighbours.get(right.id) ?? new Set<string>();
+  const containerTypes = new Set(config.containerNeighbourTypes);
+  // (S2) HUB DISCOUNTING: drop neighbours that connect to everything — and drop
+  // the two nodes themselves so a direct edge between them is not "context".
+  // (S6) CONTAINER DISCOUNTING: drop neighbours that are structural CONTAINERS
+  // (chapter/work/scene/section/saga). Sharing a chapter means the two entities
+  // were mentioned together — every pair of protagonists in a book shares most
+  // of its chapters. Co-occurrence is not identity, and this is the guard that
+  // separates a genuine duplicate from a narrative SIBLING.
+  const informative = (own: Set<string>, other: string): Set<string> => {
+    const out = new Set<string>();
+    for (const id of own) {
+      if (id === other || id === left.id || id === right.id) continue;
+      if ((index.neighbours.get(id)?.size ?? 0) > config.hubDegreeMax) continue;
+      const type = index.nodeTypes.get(id);
+      if (type && containerTypes.has(type)) continue;
+      out.add(id);
+    }
+    return out;
+  };
+  const leftNeighbours = informative(rawLeft, right.id);
+  const rightNeighbours = informative(rawRight, left.id);
+
+  // (S1) EVIDENTIAL MASS: a node with almost no informative context cannot be
+  // structurally identified — this is what stops two sibling leaves under one
+  // shared parent from reading as a perfect (Jaccard 1.0) duplicate pair.
+  if (leftNeighbours.size < config.minDegree || rightNeighbours.size < config.minDegree) {
+    return {
+      matched: false,
+      rejectReason: `insufficient informative degree: ${leftNeighbours.size}/${rightNeighbours.size} < ${config.minDegree}`,
+      ...empty,
+    };
+  }
+
+  const neighbourOverlap = jaccardOfSets(leftNeighbours, rightNeighbours);
+  if (neighbourOverlap.shared.length < config.minSharedNeighbours) {
+    return {
+      matched: false,
+      rejectReason: `too few shared informative neighbours: ${neighbourOverlap.shared.length} < ${config.minSharedNeighbours}`,
+      ...empty,
+      neighbourJaccard: neighbourOverlap.jaccard,
+    };
+  }
+  if (neighbourOverlap.jaccard < config.neighbourJaccardThreshold) {
+    return {
+      matched: false,
+      rejectReason: `neighbour Jaccard ${neighbourOverlap.jaccard.toFixed(2)} < ${config.neighbourJaccardThreshold}`,
+      ...empty,
+      neighbourJaccard: neighbourOverlap.jaccard,
+    };
+  }
+
+  const profileOverlap = jaccardOfSets(
+    index.relationProfile.get(left.id) ?? new Set<string>(),
+    index.relationProfile.get(right.id) ?? new Set<string>(),
+  );
+  if (profileOverlap.jaccard < config.relationProfileThreshold) {
+    return {
+      matched: false,
+      rejectReason: `relation-type profile Jaccard ${profileOverlap.jaccard.toFixed(2)} < ${config.relationProfileThreshold}`,
+      ...empty,
+      neighbourJaccard: neighbourOverlap.jaccard,
+      relationProfileJaccard: profileOverlap.jaccard,
+    };
+  }
+
+  const registry = jaccardOfSets(registryProvenanceRefs(left), registryProvenanceRefs(right));
+  const sources = jaccardOfSets(sourceProvenanceRefs(left), sourceProvenanceRefs(right));
+
+  // (S7) SAME-SOURCE SIBLING VETO. The decisive precision guard, measured on
+  // both corpora: two nodes extracted from the SAME document were separated by
+  // that extraction pass, so their structural resemblance is co-occurrence
+  // ("Google Sheets" and "Google Drive" support the same five processes;
+  // "Father Brown" and "Flambeau" appear in the same stories). Only entities
+  // seen in DIFFERENT sources can be two records of one thing. A shared
+  // REGISTRY record overrides the veto — that is positive identity evidence.
+  if (
+    config.requireDisjointSourceProvenance &&
+    sources.shared.length > 0 &&
+    registry.shared.length === 0
+  ) {
+    return {
+      matched: false,
+      rejectReason: `same-source siblings: ${sources.shared.length} shared source ref(s), no shared registry record`,
+      ...empty,
+      neighbourJaccard: neighbourOverlap.jaccard,
+      relationProfileJaccard: profileOverlap.jaccard,
+    };
+  }
+
+  // Score bands, all strictly below the fuzzy floor (0.70). Base = neighbour
+  // overlap alone; each corroborating signal adds 0.05, ceiling 0.65.
+  let score = STRUCTURAL_TIER_BASE_SCORE;
+  if (registry.shared.length > 0) score += 0.05;
+  if (profileOverlap.jaccard >= 1) score += 0.05;
+  if (neighbourOverlap.shared.length >= config.minSharedNeighbours * 2) score += 0.05;
+  score = Math.min(score, STRUCTURAL_TIER_MAX_SCORE);
+  const provenance = registry;
+
+  return {
+    matched: true,
+    rejectReason: null,
+    neighbourJaccard: neighbourOverlap.jaccard,
+    relationProfileJaccard: profileOverlap.jaccard,
+    sharedNeighbours: neighbourOverlap.shared,
+    sharedRelationTypes: profileOverlap.shared,
+    sharedProvenance: provenance.shared,
+    score: Number(score.toFixed(2)),
+  };
+}
+
+/**
+ * BLOCKING for the structural tier (spec §1): candidate pairs are drawn ONLY
+ * from nodes that share at least one INFORMATIVE neighbour, via an inverted
+ * neighbour → nodes index. Because a neighbour is informative only when its
+ * degree is ≤ `hubDegreeMax`, every block holds at most `hubDegreeMax` nodes,
+ * so the pass is bounded by O(|E| · hubDegreeMax) instead of the O(n²) scan the
+ * lexical tiers use. Returns pair keys `a|b` with `a < b`, sorted, deterministic.
+ */
+export function structuralCandidatePairs(
+  index: StructuralIndex,
+  config: StructuralTierConfig = DEFAULT_STRUCTURAL_TIER_CONFIG,
+): Array<[string, string]> {
+  // Pairs are keyed through a Map so no separator character is ever embedded in
+  // a key: a node id may legitimately contain any character.
+  const pairs = new Map<string, [string, string]>();
+  for (const members of index.neighbours.values()) {
+    // (S2) a hub block carries no identifying signal — skip it wholesale.
+    if (members.size > config.hubDegreeMax) continue;
+    if (members.size < 2) continue;
+    const ids = [...members].sort((a, b) => a.localeCompare(b));
+    for (let i = 0; i < ids.length; i += 1) {
+      for (let j = i + 1; j < ids.length; j += 1) {
+        const left = ids[i]!;
+        const right = ids[j]!;
+        pairs.set(JSON.stringify([left, right]), [left, right]);
+      }
+    }
+  }
+  return [...pairs.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([, pair]) => pair);
+}
+
 function statusRank(status: string | undefined): number {
   switch (status) {
     case "validated":
@@ -917,6 +1382,92 @@ export function generateOntologyReconciliationCandidates(
           `fuzzy match: ${reasonDetail}`,
         ],
         proposed_patch_operation: "accept_match",
+      });
+    }
+  }
+
+  // --- Structural tier (capability-gated, LAST, strictly additive) ----------
+  //
+  // Runs only when explicitly enabled, only on pairs the lexical tiers did NOT
+  // already emit, and only over BLOCKED pairs (nodes sharing an informative
+  // neighbour) — so switching it on can add candidates but never alter, rescore
+  // or remove an existing one. Every emitted candidate is `status: "candidate"`
+  // with an `accept_match` PROPOSAL: nothing is merged, here or downstream.
+  if (options.structural === true) {
+    const structuralConfig: StructuralTierConfig = {
+      ...DEFAULT_STRUCTURAL_TIER_CONFIG,
+      ...(options.structuralConfig ?? {}),
+    };
+    const nodeById = new Map(comparableNodes.map((node) => [node.id, node]));
+    const index = buildStructuralIndex(context.relations, context.nodes);
+    for (const [leftId, rightId] of structuralCandidatePairs(index, structuralConfig)) {
+      const left = nodeById.get(leftId);
+      const right = nodeById.get(rightId);
+      if (!left || !right) continue;
+      if (!left.type || left.type !== right.type) continue;
+      // Containers are where the sibling trap is densest — same exclusion list
+      // as the fuzzy tier.
+      if (fuzzyExcludeTypes.has(String(left.type))) continue;
+      if (violatesPartitionScope(context, left.type, left, right)) continue;
+
+      const { canonical, candidate } = chooseCanonicalPair(left, right);
+      const pairKey = `${canonical.id}|${candidate.id}`;
+      // Strictly additive: never restate a pair a lexical tier already emitted.
+      if (emittedPairs.has(pairKey)) continue;
+
+      const structural = structuralMatchNodes(left, right, index, structuralConfig);
+      if (!structural.matched) continue;
+      emittedPairs.add(pairKey);
+
+      const basisNeighbours = structural.sharedNeighbours.slice(0, structuralConfig.maxBasisNeighbours);
+      const overflow = structural.sharedNeighbours.length - basisNeighbours.length;
+      const neighbourList = basisNeighbours
+        .map((id) => nodeById.get(id)?.label ?? id)
+        .join(", ") + (overflow > 0 ? `, +${overflow} more` : "");
+      candidates.push({
+        id: candidateId(canonical, candidate, [
+          "structural",
+          `j${structural.neighbourJaccard.toFixed(3)}`,
+          ...basisNeighbours,
+        ]),
+        kind: "entity_match",
+        status: "candidate",
+        score: structural.score,
+        tier: "structural",
+        candidate_id: candidate.id,
+        canonical_id: canonical.id,
+        shared_terms: [],
+        evidence_refs: uniqueSorted([
+          ...(canonical.source_refs ?? []),
+          ...(candidate.source_refs ?? []),
+        ]),
+        reasons: [
+          `same node type: ${canonical.type}`,
+          `structural match: ${structural.sharedNeighbours.length} shared informative neighbour(s), `
+            + `neighbour Jaccard ${structural.neighbourJaccard.toFixed(2)}`,
+          `shared neighbours: ${neighbourList}`,
+          `relation-type profile Jaccard ${structural.relationProfileJaccard.toFixed(2)}`
+            + (structural.sharedRelationTypes.length > 0
+              ? ` (${structural.sharedRelationTypes.join(", ")})`
+              : ""),
+          structural.sharedProvenance.length > 0
+            ? `shared provenance: ${structural.sharedProvenance.length} ref(s)`
+            : "no shared provenance",
+          "structural evidence only — no lexical agreement; human adjudication required",
+        ],
+        proposed_patch_operation: "accept_match",
+        score_breakdown: {
+          neighbour_jaccard: Number(structural.neighbourJaccard.toFixed(4)),
+          shared_neighbours: structural.sharedNeighbours.length,
+          relation_profile_jaccard: Number(structural.relationProfileJaccard.toFixed(4)),
+          shared_provenance: structural.sharedProvenance.length,
+        },
+        structural_basis: {
+          shared_neighbour_ids: basisNeighbours,
+          shared_neighbour_count: structural.sharedNeighbours.length,
+          shared_relation_types: structural.sharedRelationTypes,
+          shared_provenance_refs: structural.sharedProvenance.slice(0, structuralConfig.maxBasisNeighbours),
+        },
       });
     }
   }
