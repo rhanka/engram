@@ -672,6 +672,16 @@ export { buildEntitySidecar, resolveStudioAppDir } from "./studio-assets.js";
 export type { EntitySidecarResponse } from "./studio-assets.js";
 export { buildStaticStudio, StudioSpaNotBuiltError, removeLegacyGraphViz } from "./studio-export.js";
 export type { BuildStaticStudioOptions, BuildStaticStudioResult } from "./studio-export.js";
+export {
+  buildLiveProvenance,
+  serveStudioSource,
+  serveCitedSourceFile,
+  resolveSourceFile,
+  studioSourcePathname,
+  studioSourceRoots,
+  sourceMimeFor,
+  SOURCES_ROUTE_PREFIX,
+} from "./studio-sources.js";
 export { computeLayout, attachLayoutPositions } from "./graph-layout.js";
 export type {
   ComputeLayoutOptions,
