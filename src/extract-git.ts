@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { resolve, relative, basename, dirname, extname, sep, isAbsolute } from "node:path";
 import { repoKey, commitId, branchId } from "./repo-key.js";
+import { makeNodeId } from "./node-id.js";
 import type { Extraction, GitDetectionWindow, GraphEdge, GraphNode, OntologyProfile } from "./types.js";
 
 export const GIT_EXTRACT_ADAPTER_VERSION = "graphify-git/1";
@@ -180,14 +181,11 @@ function portablePath(path: string): string {
   return path.replace(/\\/g, "/");
 }
 
-function makeId(...parts: string[]): string {
-  const combined = parts
-    .filter(Boolean)
-    .map((p) => p.replace(/^[_.]+|[_.]+$/g, ""))
-    .join("_");
-  const cleaned = combined.replace(/[^a-zA-Z0-9]+/g, "_");
-  return cleaned.replace(/^_+|_+$/g, "").toLowerCase();
-}
+/**
+ * Twin of the extractor's `_makeId`: `codeFileNodeId` must resolve to exactly
+ * the file node id the extractor emits, so both share one implementation.
+ */
+const makeId = makeNodeId;
 
 function qualifiedFileStem(filePath: string, rootDir: string): string {
   const resolved = resolve(filePath);
