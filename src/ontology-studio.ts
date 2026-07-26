@@ -14,7 +14,11 @@ import {
   serveStudioAsset,
   type StudioAssetResult,
 } from "./studio-assets.js";
-import { serveStudioSource, studioSourcePathname } from "./studio-sources.js";
+import {
+  resolveStudioStateDir,
+  serveStudioSource,
+  studioSourcePathname,
+} from "./studio-sources.js";
 import { buildStudioScene, type StudioScene } from "./studio-scene.js";
 import { attachLayoutPositions } from "./graph-layout.js";
 import { buildSearchIndex } from "./search-index-emitter.js";
@@ -575,11 +579,16 @@ export function createOntologyStudioRequestHandler(options: OntologyStudioHandle
           sendResult(response, jsonResult(400, { error: "malformed source path" }));
           return;
         }
-        const context = loadOntologyPatchContext(options.profileStatePath);
-        sendAsset(
-          response,
-          serveStudioSource(decoded, context.stateDir, options.sourcesRoot),
-        );
+        // Guarded: this handler is async, so an uncaught throw here is an
+        // unhandled rejection that takes the whole server process down — which
+        // is exactly what a state dir with no compiled profile used to do.
+        try {
+          const stateDir = resolveStudioStateDir(options.profileStatePath);
+          sendAsset(response, serveStudioSource(decoded, stateDir, options.sourcesRoot));
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          sendResult(response, jsonResult(500, { error: message }));
+        }
         return;
       }
       if (spaPath !== null) {
