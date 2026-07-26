@@ -47,7 +47,11 @@ import {
   PROVENANCE_SIDECAR_RELPATH,
   type ProvenanceEntry,
 } from "./converted-provenance.js";
-import { applySceneLayout, resolveSceneLayoutId } from "./scene-layout.js";
+import {
+  applySceneLayout,
+  resolveSceneLayoutId,
+  selectDefaultSceneLayoutId,
+} from "./scene-layout.js";
 import { loadGraphFromData, type SerializedGraphData } from "./graph.js";
 import { emitClassHierarchies } from "./ontology-class-hierarchies-emitter.js";
 import { loadOntologyProfile } from "./ontology-profile.js";
@@ -87,6 +91,39 @@ export interface BuildStaticStudioOptions {
   profilePath?: string;
   /** Override the resolved SPA dir (tests). */
   spaDir?: string;
+  /**
+   * Extra nodes to APPEND to the graph before the scene is built — the registry
+   * seeds `completeRegistrySeeds` materialises for registry rows the corpus
+   * never mentioned.
+   *
+   * Strictly additive: no existing node is touched. Supplying any seed does mean
+   * the bundle's `graph.json` is re-serialized rather than copied byte-for-byte,
+   * because it no longer describes the same node set as the state artifact — so
+   * an empty/absent list keeps the historical verbatim copy.
+   */
+  seedNodes?: Array<Record<string, unknown>>;
+  /**
+   * Raw-id -> display label overrides for the hierarchy sidecar's tree rows.
+   *
+   * A node seeded before its registry carried human names is SELF-LABELLED (its
+   * label IS its raw id) and renders as a bare code. The registry is the
+   * authority on what a record is called, so these labels repair exactly those
+   * rows; a real graph label always wins.
+   */
+  hierarchyLabels?: ReadonlyMap<string, string>;
+  /**
+   * Scene layout for the baked positions.
+   *
+   * A layout id (`force` | `typed-layer` | `time-oriented` | `hierarchy-aware`)
+   * is used as given. The literal `"auto"` asks for the CONTENT-DERIVED default:
+   * a corpus that declares hierarchies gets `hierarchy-aware` (baking a
+   * structure-blind force disc over a known structure throws away the one thing
+   * that would make it readable), everything else keeps `force`.
+   *
+   * Omitted keeps the historical behaviour — `GRAPHIFY_LAYOUT` or `force` — so
+   * no existing export changes shape by upgrading.
+   */
+  layoutId?: string;
   /**
    * Emit the self-contained, double-clickable `studio.html` (single-file,
    * scene-inlined). Default `true`. `--no-single-file` sets this `false` to emit
@@ -162,6 +199,10 @@ export interface BuildStaticStudioResult {
   provenanceCount: number;
   /** `--include-original-sources` summary, or null when the option was off. */
   originalSources: { copied: number; missing: number; bytes: number } | null;
+  /** The layout id the scene positions were baked with. */
+  layoutId: string;
+  /** How many `seedNodes` were appended to the graph (0 = verbatim graph.json). */
+  seedNodeCount: number;
 }
 
 const GENERATED_DATA_FILES = [
@@ -555,7 +596,16 @@ export function buildStaticStudio(
   const graph = JSON.parse(graphRaw) as StudioSceneGraphLike & {
     nodes?: Array<{ id?: unknown }>;
   };
-  const nodes = Array.isArray(graph.nodes) ? graph.nodes : [];
+  if (!Array.isArray(graph.nodes)) graph.nodes = [];
+  // Registry-seed completion (opt-in, additive): a node_type bound to a registry
+  // declares EVERY registry row an entity, but extraction only seeds the rows the
+  // corpus mentions. Registries whose rows are mostly uncited therefore land
+  // famished, which stays invisible until something joins on the registry ids —
+  // at which point the hierarchy sidecar silently drops the whole forest into
+  // dangling_arc_count.
+  const seedNodes = options.seedNodes ?? [];
+  if (seedNodes.length > 0) graph.nodes.push(...(seedNodes as Array<{ id?: unknown }>));
+  const nodes = graph.nodes;
 
   // Profile is loaded UP FRONT (before scene construction) so its
   // visual_encoding can drive the scene. A profile that cannot be loaded is
@@ -629,8 +679,13 @@ export function buildStaticStudio(
   for (const d of GENERATED_DATA_DIRS) rmSync(join(outDir, d), { recursive: true, force: true });
   cpSync(spaDir, outDir, { recursive: true });
 
-  // 2. graph.json: verbatim copy (byte-identical to the artifact).
-  writeFileSync(join(outDir, "graph.json"), graphRaw);
+  // 2. graph.json: verbatim copy (byte-identical to the artifact) — unless seeds
+  //    were completed, in which case it no longer describes the same node set
+  //    and must be re-serialized.
+  writeFileSync(
+    join(outDir, "graph.json"),
+    seedNodes.length > 0 ? JSON.stringify(graph) : graphRaw,
+  );
 
   // 3. scene.json: the light Studio scene, with pinned positions (x,y + fx,fy)
   //    so the SPA renders the settled layout without re-running the O(n^2) sim at
@@ -640,30 +695,55 @@ export function buildStaticStudio(
   //    byte-identical to before. The bound profile's per-type visual_encoding
   //    (shape/fill/border) drives the scene encoding; absent a profile the
   //    built-in type defaults apply.
-  const scene = applySceneLayout(
-    buildStudioScene(graph, ontologyProfile ? { profile: ontologyProfile } : {}),
-    resolveSceneLayoutId(),
-  );
-  // The exact serialized scene bytes — reused verbatim for the inlined offline
-  // bundle so the inlined scene is byte-identical to scene.json (T5/C3b: carries
-  // the same x,y + fx,fy positions; no recompute, no degenerate circle).
-  const sceneJsonText = JSON.stringify(scene);
-  writeFileSync(join(outDir, "scene.json"), sceneJsonText);
+  //    The scene is built FIRST but POSITIONED LAST: the hierarchy sidecar (3b)
+  //    is an input to the hierarchy-aware layout, so positions cannot be baked
+  //    before it exists.
+  const scene = buildStudioScene(graph, ontologyProfile ? { profile: ontologyProfile } : {});
 
   // 3b. scene-hierarchies.json: standalone sidecar, emitted iff the ontology
   //     compile produced <state>/ontology/hierarchies.json. Joins on the raw
   //     registry ids the scene contributes.
   const sceneRawIds = new Set<string>();
+  // Raw id -> label, so a tree row renders a readable name instead of a bare code.
+  const sceneLabels = new Map<string, string>();
   for (const node of scene.nodes) {
     const rawRecordId = (node as { registry_record_id?: unknown }).registry_record_id;
     const raw = typeof rawRecordId === "string" ? rawRecordId : node.id;
-    if (raw) sceneRawIds.add(raw);
+    if (!raw) continue;
+    sceneRawIds.add(raw);
+    const label = (node as { label?: unknown }).label;
+    if (typeof label === "string" && label && !sceneLabels.has(raw)) sceneLabels.set(raw, label);
+  }
+  // The registry is authoritative for a display name, so its labels repair
+  // exactly the SELF-LABELLED rows (label === raw id, which renders as a bare
+  // code) and only those: a real graph label is never overwritten.
+  for (const [raw, label] of options.hierarchyLabels ?? []) {
+    if (!sceneRawIds.has(raw)) continue;
+    const current = sceneLabels.get(raw);
+    if (!current || current === raw) sceneLabels.set(raw, label);
   }
   const hierarchiesResult = emitSceneHierarchies({
     ontologyOutputDir: join(stateDir, "ontology"),
     sceneDir: outDir,
     sceneNodeIds: sceneRawIds,
+    labels: sceneLabels,
   });
+
+  // 3b-bis. Bake the layout, now that the hierarchies it may consume exist.
+  const sidecarHierarchies = hierarchiesResult.sidecar?.hierarchies ?? {};
+  const hasHierarchies = Object.values(sidecarHierarchies).some(
+    (forest) => Object.keys(forest?.nodes_by_id ?? {}).length > 0,
+  );
+  const layoutId =
+    options.layoutId === "auto"
+      ? selectDefaultSceneLayoutId({ hasHierarchies })
+      : resolveSceneLayoutId(options.layoutId);
+  applySceneLayout(scene, layoutId, { hierarchies: sidecarHierarchies });
+  // The exact serialized scene bytes — reused verbatim for the inlined offline
+  // bundle so the inlined scene is byte-identical to scene.json (T5/C3b: carries
+  // the same x,y + fx,fy positions; no recompute, no degenerate circle).
+  const sceneJsonText = JSON.stringify(scene);
+  writeFileSync(join(outDir, "scene.json"), sceneJsonText);
 
   // 3c. class-hierarchies.json: separate, additive ontology artifact, emitted
   //     into the OUT dir iff the bound profile (loaded up front) carries a
@@ -784,7 +864,17 @@ export function buildStaticStudio(
   //    every artifact above). Emitted LAST of the MULTI-FILE bundle. studio.html
   //    is NOT one of its artifacts, so the manifest bytes are identical whether
   //    or not the single-file emit runs (INV-2 / T6).
-  const manifestResult = emitWorkspaceManifest({ bundleDir: outDir });
+  //    The measured node counts are stamped so the manifest carries the
+  //    coherence invariant (graph = scene = entities) rather than leaving a
+  //    consumer to recompute it over three multi-MB artifacts.
+  const manifestResult = emitWorkspaceManifest({
+    bundleDir: outDir,
+    counts: {
+      graph_nodes: nodes.length,
+      scene_nodes: scene.nodes.length,
+      entities: Object.keys(entities).length,
+    },
+  });
 
   // 7. studio.html: the self-contained, double-clickable single-file studio
   //    (default-on, additive, AFTER the manifest). Inlines the position-bearing
@@ -861,5 +951,7 @@ export function buildStaticStudio(
     provenancePath,
     provenanceCount,
     originalSources,
+    layoutId,
+    seedNodeCount: seedNodes.length,
   };
 }
