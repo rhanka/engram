@@ -20,6 +20,15 @@
   // bundle resolver, Ouvrir href) stays local in ./lib/citedSources.js — the
   // lib only takes pure props + resolver/href callbacks (purity seam §S.3).
   import CitedSourceViewer from "@sentropic/cited-source-viewer/CitedSourceViewer.svelte";
+  import { registerBodyRenderer } from "@sentropic/cited-source-viewer/bodies/registry";
+  import HtmlSourceBody from "./components/HtmlSourceBody.svelte";
+
+  // Register the consumer-owned `html` body against the lib's PUBLISHED body
+  // seam. The package ships pdf/markdown/text only and closes its v1 payload
+  // union on purpose; a new kind is meant to arrive exactly this way, so the
+  // frozen component is neither modified nor forked. Registered at module scope
+  // so it is in place before any viewer mounts.
+  registerBodyRenderer("html", HtmlSourceBody);
   import GraphCanvas from "./components/GraphCanvas.svelte";
   import LeftRail from "./components/LeftRail.svelte";
   import ReconciliationView from "./components/ReconciliationView.svelte";
