@@ -23,7 +23,14 @@
  *     Provenance is an enrichment; losing it must never cost the bundle.
  */
 
-import { existsSync, openSync, readFileSync, readSync, closeSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readFileSync,
+  readSync,
+  writeFileSync,
+} from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 /** Schema stamp of the emitted `sources/provenance.json`. */
@@ -53,6 +60,18 @@ export interface ConvertedOrigin {
 const FRONTMATTER_SOURCE_KEY = "graphify_source_file";
 /** The frontmatter key carrying the conversion provider label. */
 const FRONTMATTER_CONVERSION_KEY = "graphify_conversion";
+/**
+ * Frontmatter keys carrying the WEB address a document was acquired from.
+ *
+ * Two spellings because two writers exist and neither is going to change:
+ * `src/ingest.ts` stamps a bare `source_url` on the markdown it renders from a
+ * webpage/tweet/arXiv fetch, and `src/google-workspace.ts` stamps the same key
+ * beside a Drive export. A `graphify_`-prefixed spelling is accepted for
+ * symmetry with the conversion keys. Unlike a path, a URL is unambiguous, so
+ * reading the bare key here cannot collide with an unrelated document's
+ * metadata the way a bare `source_file` would.
+ */
+const FRONTMATTER_URL_KEYS = ["graphify_source_url", "source_url"];
 
 /**
  * How many leading bytes of a converted markdown are scanned for frontmatter.
@@ -121,23 +140,33 @@ function readHead(path: string): string | null {
 export function parseConvertedFrontmatter(head: string): {
   source_file?: string;
   conversion?: string;
+  source_url?: string;
 } {
   const text = head.replace(/^﻿/, "");
   const lines = text.split(/\r?\n/);
   if ((lines[0] ?? "").trim() !== "---") return {};
-  const out: { source_file?: string; conversion?: string } = {};
+  const out: { source_file?: string; conversion?: string; source_url?: string } = {};
   for (let i = 1; i < lines.length; i += 1) {
     const line = lines[i] ?? "";
     if (line.trim() === "---") break;
     const match = /^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$/.exec(line);
     if (!match) continue;
-    const key = match[1];
+    const key = match[1] ?? "";
     const value = decodeScalar(match[2] ?? "");
     if (!value) continue;
     if (key === FRONTMATTER_SOURCE_KEY) out.source_file = value;
     else if (key === FRONTMATTER_CONVERSION_KEY) out.conversion = value;
+    // First spelling wins, so the graphify_-prefixed key outranks the bare one.
+    else if (FRONTMATTER_URL_KEYS.includes(key) && !out.source_url && isUrl(value)) {
+      out.source_url = value;
+    }
   }
   return out;
+}
+
+/** True for an absolute `scheme://…` locator — the only shape a web link takes. */
+export function isUrl(value: string): boolean {
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(value.trim());
 }
 
 /**
@@ -160,9 +189,17 @@ function decodeScalar(raw: string): string {
   return trimmed;
 }
 
-/** `<dir>/<stem>.md` -> `<dir>/<stem>.<suffix>` (the converter's sidecar naming). */
-function sidecarPath(markdownPath: string, suffix: string): string {
-  return markdownPath.replace(/\.md$/i, suffix);
+/**
+ * `<dir>/<stem>.<ext>` -> `<dir>/<stem><suffix>` (the converter's sidecar naming).
+ *
+ * The stem is taken by dropping the FINAL extension, whatever it is — not just
+ * `.md`. The converter writes `<stem>.md` beside `<stem>.prep.json`, so for
+ * markdown this is what it always was; generalising it lets the same lookup find
+ * the conversion record of a NON-markdown artifact, which is what a chain longer
+ * than one rung needs (a PDF that was itself produced from something else).
+ */
+function sidecarPath(documentPath: string, suffix: string): string {
+  return `${documentPath.replace(/\.[^.\\/]+$/, "")}${suffix}`;
 }
 
 /**
@@ -235,16 +272,281 @@ export function resolveConvertedOrigin(markdownPath: string): ConvertedOrigin | 
   return { original, ...(conversion ? { conversion } : {}), via };
 }
 
-/** One cited locator's resolved provenance chain, as serialized in the sidecar. */
+/**
+ * Resolve the document ANY local artifact was produced from.
+ *
+ * For markdown this is {@link resolveConvertedOrigin} unchanged. For anything
+ * else it consults the two conversion sidecars directly, without the
+ * markdown-only guard: a `.prep.json` next to a PDF is an unambiguous statement
+ * that the PDF was produced from the file it names, and refusing to read it
+ * would truncate every chain at its first non-markdown rung — which is exactly
+ * where an interesting chain (HTML -> PDF -> OCR markdown) starts.
+ */
+function resolveDocumentOrigin(documentPath: string): ConvertedOrigin | null {
+  if (/\.md$/i.test(documentPath)) return resolveConvertedOrigin(documentPath);
+
+  for (const [suffix, carrier] of [
+    [".prep.json", "prep-json"],
+    [".ocr.json", "ocr-json"],
+  ] as const) {
+    const sidecar = readJsonSafe(sidecarPath(documentPath, suffix));
+    if (!sidecar) continue;
+    const found = safeString(sidecar.source_file);
+    if (!found) continue;
+    const conversion = safeString(sidecar.provider) ?? safeString(sidecar.conversion);
+    return { original: found, ...(conversion ? { conversion } : {}), via: carrier };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// ACQUISITION origin: the WEB address a local artifact was downloaded from.
+//
+// This is the rung the chain was missing. `resolveConvertedOrigin` walks
+// converted markdown back to the local document it came from, and stops there —
+// but that document was itself acquired from somewhere, and for a downloaded PDF
+// nothing recorded where. `src/ingest.ts` renders frontmatter carrying
+// `source_url` for the branches that produce MARKDOWN (webpage/tweet/arXiv), yet
+// its `downloadBinary` path — the one that fetches a PDF — wrote the bytes and
+// dropped the URL on the floor. So a corpus of downloaded PDFs, OCR'd to
+// markdown and then cited, kept a chain that ended at a local path with no way
+// back to the page it came from.
+//
+// `<file>.origin.json` is that record: a tiny sidecar written AT ACQUISITION
+// time, next to the artifact, in the same naming convention the OCR sidecars
+// already use. It is deliberately separate from `.prep.json` (which describes a
+// CONVERSION, and is written by a different step at a different time) and is
+// read here as one more best-effort carrier.
+// ---------------------------------------------------------------------------
+
+/** Schema stamp of `<file>.origin.json`. */
+export const SOURCE_ORIGIN_SCHEMA = "graphify_source_origin_v1";
+
+export interface SourceOriginSidecar {
+  schema: string;
+  /** The URL the artifact was downloaded from. */
+  source_url: string;
+  /** ISO timestamp of the fetch, when known. */
+  retrieved_at?: string;
+  /** Response content-type, when known. */
+  content_type?: string;
+}
+
+/** `<file>` -> `<file>.origin.json` (suffix APPENDED, so `a.pdf` -> `a.pdf.origin.json`). */
+export function sourceOriginSidecarPath(filePath: string): string {
+  return `${filePath}.origin.json`;
+}
+
+/**
+ * Record where a just-downloaded artifact came from. Best-effort by contract:
+ * an unwritable sidecar must never fail the download that produced the bytes,
+ * so failures are swallowed and reported as `false`.
+ */
+export function writeSourceOriginSidecar(
+  filePath: string,
+  origin: { source_url: string; retrieved_at?: string; content_type?: string },
+): boolean {
+  try {
+    const payload: SourceOriginSidecar = {
+      schema: SOURCE_ORIGIN_SCHEMA,
+      source_url: origin.source_url,
+      ...(origin.retrieved_at ? { retrieved_at: origin.retrieved_at } : {}),
+      ...(origin.content_type ? { content_type: origin.content_type } : {}),
+    };
+    writeFileSync(sourceOriginSidecarPath(filePath), `${JSON.stringify(payload, null, 2)}\n`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Which carrier answered for a web origin. */
+export type AcquisitionOriginCarrier = "origin-json" | "prep-json" | "frontmatter";
+
+export interface AcquisitionOrigin {
+  /** The URL the document was acquired from. */
+  url: string;
+  via: AcquisitionOriginCarrier;
+}
+
+/**
+ * Resolve the WEB address a local document was acquired from, across the three
+ * carriers that can hold one, first hit wins:
+ *   1. `<file>.origin.json` — written at download time, the only carrier that
+ *      exists for a binary;
+ *   2. `<stem>.prep.json` — the conversion record, which may have carried the
+ *      URL forward;
+ *   3. for markdown only, the document's own frontmatter (`source_url`).
+ * Returns null when nothing records one — the overwhelmingly common case for a
+ * corpus assembled by hand.
+ */
+export function resolveAcquisitionOrigin(path: string): AcquisitionOrigin | null {
+  const origin = readJsonSafe(sourceOriginSidecarPath(path));
+  const fromSidecar = origin ? safeString(origin.source_url) : null;
+  if (fromSidecar && isUrl(fromSidecar)) return { url: fromSidecar, via: "origin-json" };
+
+  const prep = readJsonSafe(sidecarPath(path, ".prep.json"));
+  const fromPrep = prep ? safeString(prep.source_url) : null;
+  if (fromPrep && isUrl(fromPrep)) return { url: fromPrep, via: "prep-json" };
+
+  if (/\.md$/i.test(path)) {
+    const head = readHead(path);
+    if (head !== null) {
+      const front = parseConvertedFrontmatter(head);
+      if (front.source_url) return { url: front.source_url, via: "frontmatter" };
+    }
+  }
+  return null;
+}
+
+/** Whether a chain link names a local artifact or a remote address. */
+export type ProvenanceLinkKind = "file" | "url";
+
+/** One rung of a provenance ladder. */
+export interface ProvenanceLink {
+  /**
+   * Project-relative path when the artifact lives under a root, absolute when it
+   * escapes them, or the URL itself when `kind` is `"url"`.
+   */
+  ref: string;
+  kind: ProvenanceLinkKind;
+  /** Which carrier answered for this rung. */
+  via: string;
+  /** Conversion / acquisition label, when known. */
+  conversion?: string;
+  /** True when the artifact is openable (bundled, or servable by the live route). */
+  bundled?: boolean;
+}
+
+/**
+ * One cited locator's resolved provenance chain, as serialized in the sidecar.
+ *
+ * The four original fields describe the PREFERRED link — the artifact a viewer
+ * should present and highlight — so a consumer that only knows the single-level
+ * shape keeps working unchanged and simply lands on the best target instead of
+ * the nearest one.
+ */
 export interface ProvenanceEntry {
-  /** Project-relative path of the original when it lives under a root, else absolute. */
+  /** Project-relative path of the preferred artifact when it lives under a root, else absolute. */
   original: string;
   /** Conversion provider label (`graphify_conversion`), when known. */
   conversion?: string;
-  /** Which carrier answered for the original path. */
+  /** Which carrier answered for the preferred artifact. */
   via: string;
-  /** True when the original was copied into the bundle (openable offline). */
+  /** True when the preferred artifact is openable (bundled / servable). */
   bundled: boolean;
+  /**
+   * The FULL ladder above the cited document, nearest ancestor first, root last.
+   * Emitted only when it has more than one rung — a single-level chain is fully
+   * described by the fields above, so the common payload is unchanged.
+   */
+  chain?: ProvenanceLink[];
+  /** `ref` of the preferred link. Emitted only alongside `chain`. */
+  preferred?: string;
+}
+
+/**
+ * How many rungs a chain may have before the walk gives up. A provenance ladder
+ * is a handful of steps in every real corpus (web -> PDF -> OCR markdown is the
+ * deep case at three); the cap exists so a hand-edited or adversarial set of
+ * sidecars cannot turn one cited document into an unbounded walk.
+ */
+const MAX_CHAIN_DEPTH = 8;
+
+/**
+ * Walk the full provenance ladder above a resolved local document.
+ *
+ * Each rung is tried as a CONVERSION first (a local ancestor, which the walk
+ * then continues from) and only then as an ACQUISITION (a URL, which is
+ * terminal — nothing above a web address is recorded anywhere). Visited
+ * absolute paths are remembered, so a pair of sidecars pointing at each other
+ * ends the walk instead of spinning.
+ */
+function walkProvenanceChain(
+  startPath: string,
+  roots: string[],
+  isBundled: (rel: string) => boolean,
+): ProvenanceLink[] {
+  const links: ProvenanceLink[] = [];
+  const seen = new Set<string>([resolve(startPath)]);
+  let current = startPath;
+
+  for (let depth = 0; depth < MAX_CHAIN_DEPTH; depth += 1) {
+    const converted = resolveDocumentOrigin(current);
+    if (converted) {
+      const absolute = resolve(converted.original);
+      if (seen.has(absolute)) break;
+      seen.add(absolute);
+      const ref = relativizeToRoots(absolute, roots);
+      links.push({
+        ref,
+        kind: "file",
+        via: converted.via,
+        ...(converted.conversion ? { conversion: converted.conversion } : {}),
+        bundled: !isAbsolute(ref) && isBundled(ref),
+      });
+      current = absolute;
+      continue;
+    }
+    const acquired = resolveAcquisitionOrigin(current);
+    if (acquired) {
+      // Terminal: a URL has no local ancestor to walk to, and is never openable
+      // from the bundle — the viewer links out to it rather than rendering it.
+      links.push({ ref: acquired.url, kind: "url", via: acquired.via, bundled: false });
+    }
+    break;
+  }
+  return links;
+}
+
+/**
+ * Suffixes of documents that can honour a citation's `page`.
+ *
+ * This is what decides the PROCESS_STD question — "highlight the PDF, not the source
+ * HTML" — and the reason is addressing, not format snobbery. A citation carries
+ * a page number; a PDF can scroll to it and mark the passage, while the web page
+ * the PDF was published behind has no page 3 to go to. Preferring the paginated
+ * artifact is what keeps the citation's own coordinates meaningful.
+ */
+const PAGE_ADDRESSABLE_EXTS = [".pdf"];
+
+function isPageAddressable(ref: string): boolean {
+  const lower = ref.toLowerCase();
+  return PAGE_ADDRESSABLE_EXTS.some((ext) => lower.endsWith(ext));
+}
+
+/**
+ * Choose the link a viewer should PRESENT and highlight.
+ *
+ * Four steps, each a fallback for the one above:
+ *   1. the deepest openable, PAGE-ADDRESSABLE local file. For the PROCESS_STD chain
+ *      (web page -> PDF -> OCR markdown) that is the PDF — and it stays the PDF
+ *      even when the chain also records the HTML the paper was published behind,
+ *      because only the PDF can honour the citation's page;
+ *   2. the deepest openable local file of any kind (a corpus with no paginated
+ *      artifact at all — a captured HTML page, say);
+ *   3. the deepest local file, openable or not — worth naming as a breadcrumb
+ *      even when its bytes are unavailable;
+ *   4. the nearest link at all, which is a bare URL origin.
+ *
+ * A URL therefore never wins over a local file that exists: it is an address to
+ * link out to, not a document this viewer can render or highlight inside.
+ */
+export function preferredProvenanceLink(links: ProvenanceLink[]): ProvenanceLink | null {
+  const deepestMatching = (predicate: (link: ProvenanceLink) => boolean): ProvenanceLink | null => {
+    for (let i = links.length - 1; i >= 0; i -= 1) {
+      const link = links[i]!;
+      if (predicate(link)) return link;
+    }
+    return null;
+  };
+  return (
+    deepestMatching((l) => l.kind === "file" && l.bundled === true && isPageAddressable(l.ref)) ??
+    deepestMatching((l) => l.kind === "file" && l.bundled === true) ??
+    deepestMatching((l) => l.kind === "file") ??
+    links[0] ??
+    null
+  );
 }
 
 /** The `sources/provenance.json` payload: locator -> provenance chain. */
@@ -322,21 +624,23 @@ export function buildCitedSourceProvenance(
   const documents: Record<string, ProvenanceEntry> = {};
   // Sorted so the emitted sidecar is byte-stable across runs (it is hashed by
   // the workspace manifest and diffed by humans).
+  const isBundled = options.isBundled ?? (() => false);
   for (const locator of [...locators].sort()) {
     const trimmed = locator.trim();
     if (!trimmed || documents[trimmed]) continue;
-    const markdownPath = resolveLocatorPath(trimmed, roots);
-    if (!markdownPath) continue;
-    const origin = resolveConvertedOrigin(markdownPath);
-    if (!origin) continue;
-    const original = relativizeToRoots(origin.original, roots);
-    const bundled =
-      !isAbsolute(original) && options.isBundled ? options.isBundled(original) : false;
+    const citedPath = resolveLocatorPath(trimmed, roots);
+    if (!citedPath) continue;
+    const chain = walkProvenanceChain(citedPath, roots, isBundled);
+    const preferred = preferredProvenanceLink(chain);
+    if (!preferred) continue;
     documents[trimmed] = {
-      original,
-      ...(origin.conversion ? { conversion: origin.conversion } : {}),
-      via: origin.via,
-      bundled,
+      original: preferred.ref,
+      ...(preferred.conversion ? { conversion: preferred.conversion } : {}),
+      via: preferred.via,
+      bundled: preferred.bundled === true,
+      // A single-rung ladder is fully described by the fields above, so the
+      // payload for an ordinary converted corpus stays exactly what it was.
+      ...(chain.length > 1 ? { chain, preferred: preferred.ref } : {}),
     };
   }
   return { schema: CITED_SOURCE_PROVENANCE_SCHEMA, documents };
