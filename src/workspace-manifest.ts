@@ -92,8 +92,27 @@ export interface WorkspaceManifest {
   graph_hash: string | null;
   /** Count of artifacts with `present: true`. */
   present_count: number;
+  /**
+   * Node-count coherence stamp. The bundle's three node-bearing artifacts must
+   * describe the SAME entity set; recording each count makes a divergence
+   * auditable from the manifest alone, without re-parsing 100+ MB of JSON.
+   * Omitted when the producer did not measure them.
+   */
+  counts?: WorkspaceManifestCounts;
   /** Artifacts, sorted by `name`. */
   artifacts: WorkspaceManifestArtifact[];
+}
+
+/** Per-artifact node counts stamped on the manifest (coherence gate). */
+export interface WorkspaceManifestCounts {
+  /** `graph.json` → `nodes.length`. */
+  graph_nodes: number;
+  /** `scene.json` → `nodes.length`. */
+  scene_nodes: number;
+  /** `entities.json` → number of indexed entity ids. */
+  entities: number;
+  /** True when all three agree — the invariant the build gate enforces. */
+  coherent: boolean;
 }
 
 export interface BuildWorkspaceManifestOptions {
@@ -102,6 +121,11 @@ export interface BuildWorkspaceManifestOptions {
   graphHash?: string | null;
   /** Override the timestamp (tests / reproducible builds). */
   generatedAt?: string;
+  /**
+   * Measured node counts. `coherent` is DERIVED here (never trusted from the
+   * caller) so the manifest cannot claim coherence its own numbers refute.
+   */
+  counts?: Omit<WorkspaceManifestCounts, "coherent">;
 }
 
 function sha256Hex(bytes: Buffer | string): string {
@@ -153,6 +177,16 @@ export function buildWorkspaceManifest(
     generated_at: options.generatedAt ?? new Date().toISOString(),
     graph_hash: options.graphHash ?? null,
     present_count: artifacts.filter((a) => a.present).length,
+    ...(options.counts
+      ? {
+          counts: {
+            ...options.counts,
+            coherent:
+              options.counts.graph_nodes === options.counts.scene_nodes &&
+              options.counts.scene_nodes === options.counts.entities,
+          },
+        }
+      : {}),
     artifacts,
   };
 }

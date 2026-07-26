@@ -7,7 +7,7 @@
  * the WP11 precedence where each graph.json node's own `description` wins over
  * the opt-in wiki sidecar.
  */
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -16,6 +16,8 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   buildEntitySidecar,
+  looksLikeClientRoute,
+  resolveStudioAppDir,
   serveStudioAsset,
   __resetGraphDescriptionCache,
   __resetCitationsSidecarCache,
@@ -318,5 +320,48 @@ describe("serveStudioAsset", () => {
     expect(res).not.toBeNull();
     // Either 403 (app built, guard tripped) or 404 (app not built); never 200.
     expect(res!.status).not.toBe(200);
+  });
+
+  it("404s a missing FILE path instead of serving the SPA shell", () => {
+    // A cited source the bundle failed to carry must never come back as
+    // 200 + index.html: the viewer would render the studio chrome under the
+    // document's URL and the reader would believe the source had loaded.
+    for (const path of [
+      "/sources/corpus/report.md",
+      "/sources/corpus/paper.pdf",
+      "/sources/provenance.json",
+      "/assets/never-built-abcdef.js",
+    ]) {
+      const res = serveStudioAsset(path);
+      expect(res).not.toBeNull();
+      expect(res!.status).toBe(404);
+      expect(String(res!.body)).not.toContain("<html");
+    }
+  });
+
+  it("still serves index.html for an extension-less CLIENT ROUTE", () => {
+    const appDir = resolveStudioAppDir();
+    // Only meaningful when the SPA has been built (otherwise every path 404s
+    // with the build hint, which the case above already covers).
+    if (!appDir) return;
+    for (const route of ["/entity/work_a", "/answer", "/reconciliation/queue/42"]) {
+      const res = serveStudioAsset(route);
+      expect(res).not.toBeNull();
+      expect(res!.status).toBe(200);
+      expect(res!.contentType).toBe("text/html; charset=utf-8");
+      expect(String(res!.body)).toBe(readFileSync(join(appDir, "index.html"), "utf-8"));
+    }
+  });
+});
+
+describe("looksLikeClientRoute", () => {
+  it("treats an extension-less last segment as a route, anything else as a file", () => {
+    expect(looksLikeClientRoute("entity/work_a")).toBe(true);
+    expect(looksLikeClientRoute("answer")).toBe(true);
+    expect(looksLikeClientRoute("a.b/route")).toBe(true);
+    expect(looksLikeClientRoute("sources/corpus/report.md")).toBe(false);
+    expect(looksLikeClientRoute("sources/provenance.json")).toBe(false);
+    expect(looksLikeClientRoute("assets/index-a1b2c3.js")).toBe(false);
+    expect(looksLikeClientRoute("logo.png")).toBe(false);
   });
 });

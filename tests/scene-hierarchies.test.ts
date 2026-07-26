@@ -321,3 +321,43 @@ describe("buildSceneHierarchySidecar — graphify_scene_hierarchies_v1", () => {
     expect(JSON.parse(JSON.stringify(sidecar))).toEqual(sidecar);
   });
 });
+
+describe("scene hierarchy labels", () => {
+  it("carries the supplied display label on each entry", () => {
+    const sidecar = buildSceneHierarchySidecar({
+      arcs: [arc("h", "DE", "DE.AI")],
+      sceneNodeIds: ids("DE", "DE.AI"),
+      labels: new Map([
+        ["DE", "Develop"],
+        ["DE.AI", "Architect and Integrate the Aircraft"],
+      ]),
+    });
+    const entries = sidecar.hierarchies["h"]!.nodes_by_id;
+    expect(entries["DE"]!.label).toBe("Develop");
+    expect(entries["DE.AI"]!.label).toBe("Architect and Integrate the Aircraft");
+  });
+
+  it("omits a label that merely repeats the id (self-labelled registry rows)", () => {
+    const sidecar = buildSceneHierarchySidecar({
+      arcs: [arc("h", "AM01", "AM0104")],
+      sceneNodeIds: ids("AM01", "AM0104"),
+      labels: new Map([
+        ["AM01", "AM01"],
+        ["AM0104", "Manage the Programme"],
+      ]),
+    });
+    const entries = sidecar.hierarchies["h"]!.nodes_by_id;
+    expect(entries["AM01"]!.label).toBeUndefined();
+    expect(entries["AM0104"]!.label).toBe("Manage the Programme");
+  });
+
+  it("stays label-free when no map is supplied (unchanged contract)", () => {
+    const sidecar = buildSceneHierarchySidecar({
+      arcs: [arc("h", "r", "a")],
+      sceneNodeIds: ids("r", "a"),
+    });
+    for (const entry of Object.values(sidecar.hierarchies["h"]!.nodes_by_id)) {
+      expect(entry.label).toBeUndefined();
+    }
+  });
+});
