@@ -141,6 +141,35 @@ describe("GET /studio/sources/", () => {
     expect(res.headers.get("content-type")).toBe("application/pdf");
   });
 
+  it("serves sources from a state dir whose ontology profile was never compiled", async () => {
+    // Found on the real PROCESS_STD corpus: the route resolved its state dir through
+    // loadOntologyPatchContext, which also parses ontology-profile.normalized.json
+    // and THROWS when the profile compile has not run. In an async handler that
+    // throw is an unhandled rejection — it killed the server process on the first
+    // sources request. Opening a cited PDF must not depend on a compiled profile.
+    const { profileStatePath, originalRel } = makeServedProject();
+    rmSync(join(profileStatePath, "..", "ontology-profile.normalized.json"), { force: true });
+    const url = await startServer(profileStatePath);
+
+    const res = await fetch(`${url}/studio/sources/${encodeSourcePath(originalRel)}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/pdf");
+    // And the process is still alive to answer the next one.
+    expect((await fetch(`${url}/studio/sources/provenance.json`)).status).toBe(200);
+  });
+
+  it("reports a broken profile state as a 500 instead of dying", async () => {
+    const { profileStatePath } = makeServedProject();
+    writeFileSync(profileStatePath, "{ not json");
+    const url = await startServer(profileStatePath);
+
+    const res = await fetch(`${url}/studio/sources/provenance.json`);
+    expect(res.status).toBe(500);
+    expect((await res.json()).error).toBeTruthy();
+    // Still serving.
+    expect((await fetch(`${url}/studio/sources/x.pdf`)).status).toBe(500);
+  });
+
   it("leaves the other studio routes untouched", async () => {
     const { profileStatePath } = makeServedProject();
     const url = await startServer(profileStatePath);
