@@ -50,6 +50,7 @@ import { safeExecGit } from "./git.js";
 import { safeGitRevParse } from "./git.js";
 import { discoverProjectConfig, loadProjectConfig } from "./project-config.js";
 import { loadOntologyProfile } from "./ontology-profile.js";
+import { loadProfileRegistries } from "./profile-registry.js";
 import { normalizeLanguageSelection } from "./description-language.js";
 import { DEFAULT_GRAPHIFY_STATE_DIR, defaultManifestPath, resolveGraphInputPath, resolveGraphifyPaths } from "./paths.js";
 import { normalizeSearchText, scoreSearchText } from "./search.js";
@@ -3126,6 +3127,7 @@ export async function main(): Promise<void> {
         extraction: readJson(opts.input),
         profile: context.profile,
         config: context.profile.outputs.ontology,
+        registries: loadProfileRegistries(context.profile),
         ...(descriptions ? { descriptions } : {}),
       });
       if (!result.enabled) {
@@ -3203,6 +3205,7 @@ export async function main(): Promise<void> {
           extraction,
           profile: ontologyProfile,
           config: ontologyConfig,
+          registries: loadProfileRegistries(ontologyProfile),
         });
         if (result.enabled) {
           ontologyRan = true;
@@ -3373,6 +3376,10 @@ export async function main(): Promise<void> {
     .option("--write", "Enable POST /api/ontology/patch/{validate,dry-run,apply} routes (loopback only)")
     .option("--token <token>", "Bearer token for write routes (default: random hex24 generated at startup)")
     .option("--store <id>", "GraphStore backend id to serve group counts from (default: GRAPHIFY_STORE or storage.mirrors[0].backend)")
+    .option(
+      "--sources-root <dir>",
+      "Root the cited-source route (GET /studio/sources/<source_file>) resolves relative locators against (default: the parent of the state dir)",
+    )
     .action(async (opts) => {
       const projectConfig = loadProjectConfig(resolve(opts.config));
       const profileStatePath = join(projectConfig.outputs.state_dir, "profile", "profile-state.json");
@@ -3427,6 +3434,7 @@ export async function main(): Promise<void> {
           ...(opts.write ? { write: true } : {}),
           ...(opts.token ? { token: String(opts.token) } : {}),
           ...(groupCountsStore ? { store: groupCountsStore } : {}),
+          ...(opts.sourcesRoot ? { sourcesRoot: resolve(String(opts.sourcesRoot)) } : {}),
         });
         if (started.writeEnabled) {
           console.log(`Ontology studio (write-enabled) listening at ${started.url}`);
@@ -5122,6 +5130,7 @@ export async function main(): Promise<void> {
     .option("--no-single-file", "Skip the self-contained studio.html; emit only the multi-file bundle")
     .option("--full-offline", "Inline graph.json + entities.json into studio.html too (not just the scene) so the offline studio needs zero network")
     .option("--include-sources", "Copy the CITED source documents into <out>/sources/ so the cited-source viewer can open them from the served bundle (opt-in; only files referenced by citations)")
+    .option("--include-original-sources", "Also copy the ORIGINAL documents the cited markdown was converted from (the PDFs behind .graphify/converted/pdf/*.md) into <out>/sources/ so the viewer can open the paper itself. Opt-in and potentially VERY large — a PDF corpus can weigh tens of GB; the provenance chain (sources/provenance.json) is always emitted without it")
     .option("--sources-root <dir>", "Root the relative source_file locators resolve against (default: the parent of --state)")
     .action(async (out, opts) => {
       try {
@@ -5140,6 +5149,7 @@ export async function main(): Promise<void> {
             singleFile: opts.singleFile !== false,
             fullOffline: opts.fullOffline === true,
             includeSources: opts.includeSources === true,
+            includeOriginalSources: opts.includeOriginalSources === true,
             ...(typeof opts.sourcesRoot === "string" && opts.sourcesRoot.trim()
               ? { sourcesRoot: resolve(opts.sourcesRoot.trim()) }
               : {}),
@@ -5171,6 +5181,20 @@ export async function main(): Promise<void> {
             console.log(
               `  cited sources: ${result.sources.copied} file(s) (${mb} MB) under sources/` +
                 (result.sources.missing > 0 ? ` — ${result.sources.missing} missing (see warnings)` : ""),
+            );
+          }
+          if (result.provenancePath) {
+            console.log(
+              `  source provenance: ${result.provenanceCount} converted document(s) linked to their original in sources/provenance.json`,
+            );
+          }
+          if (result.originalSources) {
+            const mb = (result.originalSources.bytes / (1024 * 1024)).toFixed(1);
+            console.log(
+              `  original documents: ${result.originalSources.copied} file(s) (${mb} MB) under sources/` +
+                (result.originalSources.missing > 0
+                  ? ` — ${result.originalSources.missing} missing (see warnings)`
+                  : ""),
             );
           }
           console.log(`  open: serve ${result.outDir} with any static file server (index.html)`);

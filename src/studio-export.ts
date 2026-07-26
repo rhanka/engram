@@ -22,6 +22,8 @@
  *   reconciliation-candidates.json  <- the reconciliation queue (iff present)
  *   entities.json                   <- { id: buildEntitySidecar } index
  *   ontology/citations.json         <- verbatim copy (iff present)
+ *   sources/provenance.json         <- original -> converted -> citation chain
+ *                                      (always, iff any cited doc was converted)
  *   workspace-manifest.json         <- emitWorkspaceManifest (bundle descriptor)
  *   studio.html                     <- self-contained single-file studio, opens
  *                                      from a bare file:// (default-on; the
@@ -40,7 +42,16 @@ import {
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
-import { applySceneLayout, resolveSceneLayoutId } from "./scene-layout.js";
+import {
+  buildCitedSourceProvenance,
+  PROVENANCE_SIDECAR_RELPATH,
+  type ProvenanceEntry,
+} from "./converted-provenance.js";
+import {
+  applySceneLayout,
+  resolveSceneLayoutId,
+  selectDefaultSceneLayoutId,
+} from "./scene-layout.js";
 import { loadGraphFromData, type SerializedGraphData } from "./graph.js";
 import { emitClassHierarchies } from "./ontology-class-hierarchies-emitter.js";
 import { loadOntologyProfile } from "./ontology-profile.js";
@@ -81,6 +92,39 @@ export interface BuildStaticStudioOptions {
   /** Override the resolved SPA dir (tests). */
   spaDir?: string;
   /**
+   * Extra nodes to APPEND to the graph before the scene is built — the registry
+   * seeds `completeRegistrySeeds` materialises for registry rows the corpus
+   * never mentioned.
+   *
+   * Strictly additive: no existing node is touched. Supplying any seed does mean
+   * the bundle's `graph.json` is re-serialized rather than copied byte-for-byte,
+   * because it no longer describes the same node set as the state artifact — so
+   * an empty/absent list keeps the historical verbatim copy.
+   */
+  seedNodes?: Array<Record<string, unknown>>;
+  /**
+   * Raw-id -> display label overrides for the hierarchy sidecar's tree rows.
+   *
+   * A node seeded before its registry carried human names is SELF-LABELLED (its
+   * label IS its raw id) and renders as a bare code. The registry is the
+   * authority on what a record is called, so these labels repair exactly those
+   * rows; a real graph label always wins.
+   */
+  hierarchyLabels?: ReadonlyMap<string, string>;
+  /**
+   * Scene layout for the baked positions.
+   *
+   * A layout id (`force` | `typed-layer` | `time-oriented` | `hierarchy-aware`)
+   * is used as given. The literal `"auto"` asks for the CONTENT-DERIVED default:
+   * a corpus that declares hierarchies gets `hierarchy-aware` (baking a
+   * structure-blind force disc over a known structure throws away the one thing
+   * that would make it readable), everything else keeps `force`.
+   *
+   * Omitted keeps the historical behaviour — `GRAPHIFY_LAYOUT` or `force` — so
+   * no existing export changes shape by upgrading.
+   */
+  layoutId?: string;
+  /**
    * Emit the self-contained, double-clickable `studio.html` (single-file,
    * scene-inlined). Default `true`. `--no-single-file` sets this `false` to emit
    * only the multi-file bundle. Best-effort: a missing single-file template (or
@@ -101,6 +145,18 @@ export interface BuildStaticStudioOptions {
    * referenced by citations are copied; missing files warn, never fail.
    */
   includeSources?: boolean;
+  /**
+   * Also copy the ORIGINAL documents the cited markdown was CONVERTED from (the
+   * PDFs behind `.graphify/converted/pdf/*.md`) into `<out>/sources/<rel>`, so
+   * the viewer can open the paper itself rather than its OCR transcript.
+   *
+   * Separate from {@link includeSources} and default `false` on purpose: the
+   * provenance CHAIN is always recorded (`sources/provenance.json`, a few
+   * thousand short strings), while the originals behind it are a PDF corpus that
+   * can weigh tens of gigabytes. Opting in trades bundle size for offline
+   * openability.
+   */
+  includeOriginalSources?: boolean;
   /**
    * Root the relative `source_file` locators resolve against (typically the
    * project root the graph was extracted from). Default: the parent of
@@ -134,6 +190,19 @@ export interface BuildStaticStudioResult {
   studioHtmlBytes: number | null;
   /** `--include-sources` summary, or null when the option was off. */
   sources: { copied: number; missing: number; bytes: number } | null;
+  /**
+   * Absolute path of the emitted `sources/provenance.json`, or null when no
+   * cited locator resolved to a converted document (a corpus with no PDFs).
+   */
+  provenancePath: string | null;
+  /** Cited documents with a recorded original-document chain. */
+  provenanceCount: number;
+  /** `--include-original-sources` summary, or null when the option was off. */
+  originalSources: { copied: number; missing: number; bytes: number } | null;
+  /** The layout id the scene positions were baked with. */
+  layoutId: string;
+  /** How many `seedNodes` were appended to the graph (0 = verbatim graph.json). */
+  seedNodeCount: number;
 }
 
 const GENERATED_DATA_FILES = [
@@ -356,6 +425,64 @@ function emitCitedSources(
   return { copied, missing, bytes };
 }
 
+/**
+ * Copy the ORIGINAL documents named by an already-built provenance map into
+ * `<outDir>/sources/<rel>`, and stamp `bundled` on the entries that landed.
+ *
+ * Runs AFTER the map is built (and mutates it) so `bundled` is a statement about
+ * the bundle on disk, not an intention: an original that was moved, renamed or
+ * lives outside every root stays `bundled: false` and the viewer keeps showing
+ * the chain as a non-openable breadcrumb instead of linking to a 404. Several
+ * citations routinely share one original, so copies are deduped by path.
+ * Missing/unsafe originals are counted and warned, never fatal.
+ */
+function emitOriginalSources(
+  documents: Record<string, ProvenanceEntry>,
+  roots: string[],
+  outDir: string,
+  warn: (message: string) => void,
+): { copied: number; missing: number; bytes: number } {
+  let copied = 0;
+  let missing = 0;
+  let bytes = 0;
+  const missingSamples: string[] = [];
+  const done = new Set<string>();
+  for (const entry of Object.values(documents)) {
+    const rel = normalizeSourceRelPath(entry.original);
+    if (!rel) {
+      // An original outside every root (absolute) cannot be mirrored under
+      // sources/ without escaping the bundle. Recorded, never copied.
+      missing += 1;
+      if (missingSamples.length < 5) missingSamples.push(`${entry.original} (outside the roots)`);
+      continue;
+    }
+    if (done.has(rel)) {
+      entry.bundled = true;
+      continue;
+    }
+    const from = roots.map((root) => join(root, rel)).find((p) => existsSync(p));
+    if (!from) {
+      missing += 1;
+      if (missingSamples.length < 5) missingSamples.push(rel);
+      continue;
+    }
+    const to = join(outDir, "sources", rel);
+    mkdirSync(dirname(to), { recursive: true });
+    cpSync(from, to);
+    done.add(rel);
+    entry.bundled = true;
+    copied += 1;
+    bytes += statSync(to).size;
+  }
+  if (missing > 0) {
+    warn(
+      `studio export: --include-original-sources could not bundle ${missing} original document(s) ` +
+        `(searched ${roots.join(", ")}): ${missingSamples.join("; ")}${missing > missingSamples.length ? "; …" : ""}`,
+    );
+  }
+  return { copied, missing, bytes };
+}
+
 // ---------------------------------------------------------------------------
 // Single-file (`studio.html`) offline export — see SPEC_STUDIO_OFFLINE_EXPORT.md.
 // The exporter injects the inlined data + reads the prebuilt single-file template
@@ -469,7 +596,16 @@ export function buildStaticStudio(
   const graph = JSON.parse(graphRaw) as StudioSceneGraphLike & {
     nodes?: Array<{ id?: unknown }>;
   };
-  const nodes = Array.isArray(graph.nodes) ? graph.nodes : [];
+  if (!Array.isArray(graph.nodes)) graph.nodes = [];
+  // Registry-seed completion (opt-in, additive): a node_type bound to a registry
+  // declares EVERY registry row an entity, but extraction only seeds the rows the
+  // corpus mentions. Registries whose rows are mostly uncited therefore land
+  // famished, which stays invisible until something joins on the registry ids —
+  // at which point the hierarchy sidecar silently drops the whole forest into
+  // dangling_arc_count.
+  const seedNodes = options.seedNodes ?? [];
+  if (seedNodes.length > 0) graph.nodes.push(...(seedNodes as Array<{ id?: unknown }>));
+  const nodes = graph.nodes;
 
   // Profile is loaded UP FRONT (before scene construction) so its
   // visual_encoding can drive the scene. A profile that cannot be loaded is
@@ -543,8 +679,13 @@ export function buildStaticStudio(
   for (const d of GENERATED_DATA_DIRS) rmSync(join(outDir, d), { recursive: true, force: true });
   cpSync(spaDir, outDir, { recursive: true });
 
-  // 2. graph.json: verbatim copy (byte-identical to the artifact).
-  writeFileSync(join(outDir, "graph.json"), graphRaw);
+  // 2. graph.json: verbatim copy (byte-identical to the artifact) — unless seeds
+  //    were completed, in which case it no longer describes the same node set
+  //    and must be re-serialized.
+  writeFileSync(
+    join(outDir, "graph.json"),
+    seedNodes.length > 0 ? JSON.stringify(graph) : graphRaw,
+  );
 
   // 3. scene.json: the light Studio scene, with pinned positions (x,y + fx,fy)
   //    so the SPA renders the settled layout without re-running the O(n^2) sim at
@@ -554,30 +695,55 @@ export function buildStaticStudio(
   //    byte-identical to before. The bound profile's per-type visual_encoding
   //    (shape/fill/border) drives the scene encoding; absent a profile the
   //    built-in type defaults apply.
-  const scene = applySceneLayout(
-    buildStudioScene(graph, ontologyProfile ? { profile: ontologyProfile } : {}),
-    resolveSceneLayoutId(),
-  );
-  // The exact serialized scene bytes — reused verbatim for the inlined offline
-  // bundle so the inlined scene is byte-identical to scene.json (T5/C3b: carries
-  // the same x,y + fx,fy positions; no recompute, no degenerate circle).
-  const sceneJsonText = JSON.stringify(scene);
-  writeFileSync(join(outDir, "scene.json"), sceneJsonText);
+  //    The scene is built FIRST but POSITIONED LAST: the hierarchy sidecar (3b)
+  //    is an input to the hierarchy-aware layout, so positions cannot be baked
+  //    before it exists.
+  const scene = buildStudioScene(graph, ontologyProfile ? { profile: ontologyProfile } : {});
 
   // 3b. scene-hierarchies.json: standalone sidecar, emitted iff the ontology
   //     compile produced <state>/ontology/hierarchies.json. Joins on the raw
   //     registry ids the scene contributes.
   const sceneRawIds = new Set<string>();
+  // Raw id -> label, so a tree row renders a readable name instead of a bare code.
+  const sceneLabels = new Map<string, string>();
   for (const node of scene.nodes) {
     const rawRecordId = (node as { registry_record_id?: unknown }).registry_record_id;
     const raw = typeof rawRecordId === "string" ? rawRecordId : node.id;
-    if (raw) sceneRawIds.add(raw);
+    if (!raw) continue;
+    sceneRawIds.add(raw);
+    const label = (node as { label?: unknown }).label;
+    if (typeof label === "string" && label && !sceneLabels.has(raw)) sceneLabels.set(raw, label);
+  }
+  // The registry is authoritative for a display name, so its labels repair
+  // exactly the SELF-LABELLED rows (label === raw id, which renders as a bare
+  // code) and only those: a real graph label is never overwritten.
+  for (const [raw, label] of options.hierarchyLabels ?? []) {
+    if (!sceneRawIds.has(raw)) continue;
+    const current = sceneLabels.get(raw);
+    if (!current || current === raw) sceneLabels.set(raw, label);
   }
   const hierarchiesResult = emitSceneHierarchies({
     ontologyOutputDir: join(stateDir, "ontology"),
     sceneDir: outDir,
     sceneNodeIds: sceneRawIds,
+    labels: sceneLabels,
   });
+
+  // 3b-bis. Bake the layout, now that the hierarchies it may consume exist.
+  const sidecarHierarchies = hierarchiesResult.sidecar?.hierarchies ?? {};
+  const hasHierarchies = Object.values(sidecarHierarchies).some(
+    (forest) => Object.keys(forest?.nodes_by_id ?? {}).length > 0,
+  );
+  const layoutId =
+    options.layoutId === "auto"
+      ? selectDefaultSceneLayoutId({ hasHierarchies })
+      : resolveSceneLayoutId(options.layoutId);
+  applySceneLayout(scene, layoutId, { hierarchies: sidecarHierarchies });
+  // The exact serialized scene bytes — reused verbatim for the inlined offline
+  // bundle so the inlined scene is byte-identical to scene.json (T5/C3b: carries
+  // the same x,y + fx,fy positions; no recompute, no degenerate circle).
+  const sceneJsonText = JSON.stringify(scene);
+  writeFileSync(join(outDir, "scene.json"), sceneJsonText);
 
   // 3c. class-hierarchies.json: separate, additive ontology artifact, emitted
   //     into the OUT dir iff the bound profile (loaded up front) carries a
@@ -643,13 +809,16 @@ export function buildStaticStudio(
   //     overridable via sourcesRoot), then the state dir. Size-conscious: only
   //     files actually referenced by citations; missing files warn, never fail.
   let sources: BuildStaticStudioResult["sources"] = null;
-  if (options.includeSources) {
+  let originalSources: BuildStaticStudioResult["originalSources"] = null;
+  let provenancePath: string | null = null;
+  let provenanceCount = 0;
+  {
     let citationsSidecarJson: unknown = null;
     if (citationsRaw !== null) {
       try {
         citationsSidecarJson = JSON.parse(citationsRaw.toString("utf-8"));
       } catch {
-        warn("studio export: could not parse ontology/citations.json for --include-sources; using graph citations only.");
+        warn("studio export: could not parse ontology/citations.json for the cited-source pass; using graph citations only.");
       }
     }
     const citedFiles = collectCitedSourceFiles(
@@ -657,14 +826,55 @@ export function buildStaticStudio(
       citationsSidecarJson,
     );
     const roots = [resolve(options.sourcesRoot ?? dirname(resolve(stateDir))), resolve(stateDir)];
-    sources = emitCitedSources(citedFiles, roots, outDir, warn);
+    if (options.includeSources) {
+      sources = emitCitedSources(citedFiles, roots, outDir, warn);
+    }
+
+    // 5d. sources/provenance.json: the original -> converted -> citation chain,
+    //     emitted UNCONDITIONALLY (a citation whose source_file is an OCR
+    //     transcript must never be the last word on where the passage came
+    //     from). Recording the chain costs a few thousand short strings;
+    //     bundling the PDFs behind it is the expensive half, and stays behind
+    //     --include-original-sources.
+    try {
+      const provenance = buildCitedSourceProvenance(citedFiles, { roots });
+      provenanceCount = Object.keys(provenance.documents).length;
+      if (provenanceCount > 0) {
+        if (options.includeOriginalSources) {
+          originalSources = emitOriginalSources(provenance.documents, roots, outDir, warn);
+        }
+        const target = join(outDir, PROVENANCE_SIDECAR_RELPATH);
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, JSON.stringify(provenance));
+        provenancePath = target;
+      } else if (options.includeOriginalSources) {
+        warn(
+          "studio export: --include-original-sources found no cited document with a recorded " +
+            "conversion origin (no PDF-derived markdown among the cited sources); nothing to bundle.",
+        );
+      }
+    } catch (err) {
+      warn(
+        `studio export: could not emit ${PROVENANCE_SIDECAR_RELPATH} (${err instanceof Error ? err.message : String(err)}); the bundle is unaffected.`,
+      );
+    }
   }
 
   // 6. workspace-manifest.json: the bundle descriptor (hashes the final bytes of
   //    every artifact above). Emitted LAST of the MULTI-FILE bundle. studio.html
   //    is NOT one of its artifacts, so the manifest bytes are identical whether
   //    or not the single-file emit runs (INV-2 / T6).
-  const manifestResult = emitWorkspaceManifest({ bundleDir: outDir });
+  //    The measured node counts are stamped so the manifest carries the
+  //    coherence invariant (graph = scene = entities) rather than leaving a
+  //    consumer to recompute it over three multi-MB artifacts.
+  const manifestResult = emitWorkspaceManifest({
+    bundleDir: outDir,
+    counts: {
+      graph_nodes: nodes.length,
+      scene_nodes: scene.nodes.length,
+      entities: Object.keys(entities).length,
+    },
+  });
 
   // 7. studio.html: the self-contained, double-clickable single-file studio
   //    (default-on, additive, AFTER the manifest). Inlines the position-bearing
@@ -738,5 +948,10 @@ export function buildStaticStudio(
     studioHtmlPath,
     studioHtmlBytes,
     sources,
+    provenancePath,
+    provenanceCount,
+    originalSources,
+    layoutId,
+    seedNodeCount: seedNodes.length,
   };
 }
