@@ -673,6 +673,24 @@ export type { EntitySidecarResponse } from "./studio-assets.js";
 export { buildStaticStudio, StudioSpaNotBuiltError, removeLegacyGraphViz } from "./studio-export.js";
 export type { BuildStaticStudioOptions, BuildStaticStudioResult } from "./studio-export.js";
 export {
+  buildCitedSourceProvenance,
+  preferredProvenanceLink,
+  resolveAcquisitionOrigin,
+  resolveConvertedOrigin,
+  writeSourceOriginSidecar,
+  sourceOriginSidecarPath,
+  CITED_SOURCE_PROVENANCE_SCHEMA,
+  PROVENANCE_SIDECAR_RELPATH,
+  SOURCE_ORIGIN_SCHEMA,
+} from "./converted-provenance.js";
+export type {
+  CitedSourceProvenance,
+  ProvenanceEntry,
+  ProvenanceLink,
+  ProvenanceLinkKind,
+  SourceOriginSidecar,
+} from "./converted-provenance.js";
+export {
   buildLiveProvenance,
   serveStudioSource,
   serveCitedSourceFile,
