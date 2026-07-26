@@ -234,13 +234,27 @@ export {
   compileHierarchies,
 } from "./ontology-hierarchies.js";
 export {
+  buildStructuralIndex,
+  DEFAULT_STRUCTURAL_TIER_CONFIG,
   filterOntologyReconciliationCandidates,
   generateOntologyReconciliationCandidates,
   loadOntologyReconciliationCandidates,
   ONTOLOGY_RECONCILIATION_CANDIDATES_SCHEMA,
   ONTOLOGY_RECONCILIATION_CANDIDATES_RESPONSE_SCHEMA,
   queryOntologyReconciliationCandidates,
+  STRUCTURAL_TIER_BASE_SCORE,
+  STRUCTURAL_TIER_MAX_SCORE,
+  structuralCandidatePairs,
+  structuralLabelRejectReason,
+  structuralMatchNodes,
   writeOntologyReconciliationCandidates,
+} from "./ontology-reconciliation.js";
+export type {
+  OntologyReconciliationScoreBreakdown,
+  OntologyReconciliationStructuralBasis,
+  StructuralIndex,
+  StructuralMatchResult,
+  StructuralTierConfig,
 } from "./ontology-reconciliation.js";
 export {
   loadOntologyReconciliationDecisionLog,
