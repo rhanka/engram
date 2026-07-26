@@ -158,9 +158,13 @@ describe("resolveBundleSource — opens the original PDF, never the SPA shell", 
         headers: { "content-type": "text/html" },
       },
     });
+    // It passes the SPA-shell guard (an HTML content-type is legitimate for an
+    // HTML locator) and is now served AS HTML: handing it to the markdown body
+    // showed the reader the page's raw markup, since MarkdownBody escapes HTML
+    // by design. `kind: "html"` is the consumer-registered body.
     expect(await resolveBundleSource({ rawRef: "corpus/page.html" })).toEqual({
-      kind: "markdown",
-      text: "<h1>a real cited page</h1>",
+      kind: "html",
+      html: "<h1>a real cited page</h1>",
     });
   });
 

@@ -15,6 +15,7 @@
  */
 
 import { citationsToCitedSourceRefs } from "@graphify/cited-source-refs";
+import { looksLikeHtml } from "./htmlSource.js";
 
 /**
  * Convert a node's citations to viewer refs.
@@ -330,6 +331,18 @@ export async function resolveBundleSource(ref) {
     : ref?.modality === "pdf" || (!ref?.modality && looksLikePdf(locator));
   if (isPdf) {
     return { kind: "pdf", data: await res.arrayBuffer() };
+  }
+  // An HTML source is HTML. Handing it to the markdown body means the reader is
+  // shown the page's raw markup — MarkdownBody escapes HTML by design, which is
+  // right for markdown and useless for a captured web page. `kind: "html"` is a
+  // CONSUMER-registered body (components/HtmlSourceBody.svelte, wired through
+  // the lib's published registerBodyRenderer seam), so the frozen package is
+  // untouched: an unregistered consumer simply never emits this kind.
+  const isHtml = chain.via
+    ? looksLikeHtml(locator)
+    : ref?.modality === "web" || ref?.modality === "html" || (!ref?.modality && looksLikeHtml(locator));
+  if (isHtml) {
+    return { kind: "html", html: await res.text() };
   }
   return { kind: "markdown", text: await res.text() };
 }
