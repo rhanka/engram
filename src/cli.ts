@@ -3376,6 +3376,10 @@ export async function main(): Promise<void> {
     .option("--write", "Enable POST /api/ontology/patch/{validate,dry-run,apply} routes (loopback only)")
     .option("--token <token>", "Bearer token for write routes (default: random hex24 generated at startup)")
     .option("--store <id>", "GraphStore backend id to serve group counts from (default: GRAPHIFY_STORE or storage.mirrors[0].backend)")
+    .option(
+      "--sources-root <dir>",
+      "Root the cited-source route (GET /studio/sources/<source_file>) resolves relative locators against (default: the parent of the state dir)",
+    )
     .action(async (opts) => {
       const projectConfig = loadProjectConfig(resolve(opts.config));
       const profileStatePath = join(projectConfig.outputs.state_dir, "profile", "profile-state.json");
@@ -3430,6 +3434,7 @@ export async function main(): Promise<void> {
           ...(opts.write ? { write: true } : {}),
           ...(opts.token ? { token: String(opts.token) } : {}),
           ...(groupCountsStore ? { store: groupCountsStore } : {}),
+          ...(opts.sourcesRoot ? { sourcesRoot: resolve(String(opts.sourcesRoot)) } : {}),
         });
         if (started.writeEnabled) {
           console.log(`Ontology studio (write-enabled) listening at ${started.url}`);
