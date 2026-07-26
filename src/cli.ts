@@ -3363,16 +3363,17 @@ export async function main(): Promise<void> {
     .command("studio")
     .description(
       "Start a local ontology reconciliation studio API; --write enables patch mutation routes (loopback only). " +
-        "When --store (or GRAPHIFY_STORE / storage.mirrors) names an aggregate-capable GraphStore that has been " +
+        "When --store (or GRAPHIFY_STORE / storage.mirrors) names a capable GraphStore that has been " +
         "`graphify store push`ed, GET /api/ontology/groups serves O(#groups) counts from the store instead of an " +
-        "O(#nodes) client recompute.",
+        "O(#nodes) client recompute, and GET /api/ontology/window serves a bounded top-N first-paint slice so the " +
+        "studio renders without transferring the full multi-MB scene.",
     )
     .requiredOption("--config <path>", "Graphify project config path")
     .option("--host <host>", "Host to bind", "127.0.0.1")
     .option("--port <port>", "Port to bind; defaults to an ephemeral port")
     .option("--write", "Enable POST /api/ontology/patch/{validate,dry-run,apply} routes (loopback only)")
     .option("--token <token>", "Bearer token for write routes (default: random hex24 generated at startup)")
-    .option("--store <id>", "GraphStore backend id to serve group counts from (default: GRAPHIFY_STORE or storage.mirrors[0].backend)")
+    .option("--store <id>", "GraphStore backend id to serve group counts and the first-paint window from (default: GRAPHIFY_STORE or storage.mirrors[0].backend)")
     .action(async (opts) => {
       const projectConfig = loadProjectConfig(resolve(opts.config));
       const profileStatePath = join(projectConfig.outputs.state_dir, "profile", "profile-state.json");
@@ -3381,16 +3382,19 @@ export async function main(): Promise<void> {
         process.exit(1);
       }
       const { startOntologyStudioServer } = await import("./ontology-studio.js");
-      // Storage LOT 2: when an aggregate-capable GraphStore mirror is configured
-      // (env GRAPHIFY_STORE, or a storage.mirrors[] backend in the project
-      // config), wire it so the SPA group rail reads precomputed O(#groups)
-      // counts via GET /api/ontology/groups. Resolution is best-effort and
-      // NON-FATAL: with no backend configured — or on any connect/capability
-      // miss — the studio keeps serving flat JSON only (the route 404s and the
-      // SPA falls back to client-side group-by). Never blocks the default studio.
-      let groupCountsStore:
-        | import("./ontology-studio.js").StudioGroupCountsStore
-        | undefined;
+      // Storage LOT 2/3: when a capable GraphStore mirror is configured (env
+      // GRAPHIFY_STORE, or a storage.mirrors[] backend in the project config),
+      // wire it so the SPA can read precomputed O(#groups) counts via
+      // GET /api/ontology/groups (the `aggregate` capability) AND a bounded
+      // first-paint slice via GET /api/ontology/window (the `window`
+      // capability). The two are gated INDEPENDENTLY: a backend may declare
+      // either, both, or neither, and each route 404s on its own miss. Wiring on
+      // `aggregate` alone would silently drop a window-only backend.
+      // Resolution is best-effort and NON-FATAL: with no backend configured — or
+      // on any connect/capability miss — the studio keeps serving flat JSON only
+      // (the routes 404 and the SPA falls back to client-side group-by + the
+      // full scene). Never blocks the default studio.
+      let studioStore: import("./ontology-studio.js").StudioStore | undefined;
       const storeBackendId =
         opts.store ?? process.env.GRAPHIFY_STORE ?? projectConfig.storage?.mirrors?.[0]?.backend;
       if (storeBackendId) {
@@ -3399,11 +3403,17 @@ export async function main(): Promise<void> {
           const { resolveGraphStore } = await import("./storage/registry.js");
           const storeConfig = resolveStoreConfig(storeBackendId, { projectConfig });
           const resolved = await resolveGraphStore(storeBackendId, storeConfig);
-          if (resolved.capabilities.aggregate && typeof resolved.groupCounts === "function") {
-            groupCountsStore = resolved;
+          const canCount =
+            Boolean(resolved.capabilities.aggregate) && typeof resolved.groupCounts === "function";
+          const canWindow =
+            Boolean(resolved.capabilities.window) && typeof resolved.graphWindow === "function";
+          if (canCount || canWindow) {
+            studioStore = resolved;
+          }
+          if (canCount) {
             console.log(
               `Group-by counts served from the '${storeBackendId}' store aggregate ` +
-                `(axes: ${resolved.capabilities.aggregate.axes.join(", ")}).`,
+                `(axes: ${resolved.capabilities.aggregate!.axes.join(", ")}).`,
             );
           } else {
             console.warn(
@@ -3411,11 +3421,23 @@ export async function main(): Promise<void> {
                 `the studio will compute group counts client-side.`,
             );
           }
+          if (canWindow) {
+            const window = resolved.capabilities.window!;
+            console.log(
+              `Windowed first paint served from the '${storeBackendId}' store ` +
+                `(strategies: ${window.strategies.join(", ")}; layouts: ${window.layouts.join(", ")}).`,
+            );
+          } else {
+            console.warn(
+              `Store '${storeBackendId}' declares no windowed-loader capability; ` +
+                `the studio will load the full scene at first paint.`,
+            );
+          }
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           console.warn(
-            `Could not wire a group-by counts store (${message}); ` +
-              `the studio will compute group counts client-side.`,
+            `Could not wire a studio store (${message}); the studio will compute ` +
+              `group counts client-side and load the full scene at first paint.`,
           );
         }
       }
@@ -3426,7 +3448,7 @@ export async function main(): Promise<void> {
           ...(opts.port ? { port: Number.parseInt(opts.port, 10) } : {}),
           ...(opts.write ? { write: true } : {}),
           ...(opts.token ? { token: String(opts.token) } : {}),
-          ...(groupCountsStore ? { store: groupCountsStore } : {}),
+          ...(studioStore ? { store: studioStore } : {}),
         });
         if (started.writeEnabled) {
           console.log(`Ontology studio (write-enabled) listening at ${started.url}`);
