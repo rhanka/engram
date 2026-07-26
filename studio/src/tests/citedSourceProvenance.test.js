@@ -71,19 +71,23 @@ afterEach(() => {
 describe("resolveSourceChain — which artifact is PRESENTED", () => {
   it("hops to the original and keeps the markdown as the intermediate", () => {
     const chain = resolveSourceChain({ rawRef: CONVERTED }, PROVENANCE.documents);
-    expect(chain).toEqual({ locator: ORIGINAL, original: ORIGINAL, via: CONVERTED });
+    expect(chain).toMatchObject({ locator: ORIGINAL, original: ORIGINAL, via: CONVERTED });
+    // A single-rung ladder is synthesized from `original` so callers always see one.
+    expect(chain.chain).toEqual([
+      { ref: ORIGINAL, kind: "file", via: "frontmatter", bundled: true },
+    ]);
   });
 
   it("stays on the markdown when the original is NOT bundled, but still names it", () => {
     const docs = { [CONVERTED]: { ...PROVENANCE.documents[CONVERTED], bundled: false } };
     const chain = resolveSourceChain({ rawRef: CONVERTED }, docs);
     // The markdown is what we can show; the original stays a breadcrumb.
-    expect(chain).toEqual({ locator: CONVERTED, original: ORIGINAL, via: null });
+    expect(chain).toMatchObject({ locator: CONVERTED, original: ORIGINAL, via: null });
   });
 
   it("passes a citation that already points at the original straight through", () => {
     const chain = resolveSourceChain({ rawRef: "corpus/report.pdf" }, PROVENANCE.documents);
-    expect(chain).toEqual({ locator: "corpus/report.pdf", original: null, via: null });
+    expect(chain).toEqual({ locator: "corpus/report.pdf", original: null, via: null, chain: [] });
   });
 
   it("tolerates a `./`-prefixed locator and an absent sidecar", () => {
