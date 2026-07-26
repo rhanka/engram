@@ -1,3 +1,32 @@
+# feat/wp5-graph-time-slice (off main @ a7d605a)
+
+## Lot 4 - §3(a) File-Backend Build-Time Window
+
+- [x] Ship the specified-but-unimplemented §3(a) window as `graphify time-slice`:
+      `--since`/`--until` slice an emitted `graph.json` and stamp `graph.window`.
+- [x] Reuse the T5/T6 membership predicate as a single exported implementation
+      (`overlapsTemporalWindow`) instead of a second, drifting copy — inclusive
+      overlap, open-ended missing `t_end`, `t_end === t` points, and
+      untimed/malformed exclusion all unchanged.
+- [x] Keep the output a re-emittable, loadable `graph.json`: edges/hyperedges are
+      additionally endpoint-induced (counted separately), `topology_signature` is
+      recomputed, and retained records are carried verbatim in source order.
+- [x] Fail closed on a graph with no `t` anywhere; never write over the source graph;
+      dry run unless `--out`; `--force` for an existing destination.
+- [x] Focused tests (`tests/graph-time-slice.test.ts`, `tests/cli-graph-time-slice.test.ts`),
+      `npm run lint`, `npm run build`, and a CLI end-to-end smoke composing the slice
+      with `graphify summary --graph` and `graphify recall --graph`.
+
+**Deliberately NOT done (the parent leaf stays in progress; T6 remains the
+boundary):** no build/watch/merge wiring of the flag, no sliced `citations.json`
+sidecar, no §2 `timeline` scene block, no second store adapter, no authored
+memory / persona / h2a knowledge envelope, no caller-selected namespace, no
+pagination. `.track/**` was NOT written from this worktree: the designated main
+checkout is concurrently owned by another agent and Track is append-only /
+single-writer.
+
+---
+
 # main
 
 ## Objective
