@@ -156,10 +156,20 @@ function looksLikePdf(locator) {
 
 const PROVENANCE_URL = "./sources/provenance.json";
 let provenancePromise = null;
+/**
+ * The resolved map, kept SYNCHRONOUSLY reachable once the promise above has
+ * settled. The viewer's `sourceHref` prop is synchronous by contract
+ * (`(ref) => string | null`), so without this snapshot the "Ouvrir ↗" link could
+ * never consult provenance and pointed at the cited OCR markdown while the
+ * rendered document was the original PDF — the toolbar disagreeing with the
+ * pane it sits above.
+ */
+let provenanceSnapshot = null;
 
 /** Reset the memoized provenance sidecar (tests / bundle reload). */
 export function resetProvenanceCache() {
   provenancePromise = null;
+  provenanceSnapshot = null;
 }
 
 /**
@@ -178,9 +188,11 @@ export function loadCitedSourceProvenance() {
         // parsing it as JSON throws, and the catch below yields the empty map.
         const json = await res.json();
         const docs = json?.documents;
-        return docs && typeof docs === "object" ? docs : {};
+        provenanceSnapshot = docs && typeof docs === "object" ? docs : {};
+        return provenanceSnapshot;
       } catch {
-        return {};
+        provenanceSnapshot = {};
+        return provenanceSnapshot;
       }
     })();
   }
@@ -196,25 +208,41 @@ function citedLocator(ref) {
  * Resolve a ref to the document that should actually be PRESENTED, plus the
  * chain that led there.
  *
+ * The sidecar may describe a chain SEVERAL rungs long — a paper downloaded from
+ * a web page, converted to PDF, OCR'd to markdown — in which case `entry.chain`
+ * carries the whole ladder and `entry.original` is the rung the EXPORTER already
+ * chose as the preferred target (the deepest openable, page-addressable
+ * document: the PDF, not the web page it was published behind, because only the
+ * PDF can honour the citation's page). So the hop rule below is unchanged
+ * whatever the chain's length; the extra rungs are returned for display only.
+ *
  * @param {object} ref  CitedSourceRef
  * @param {Record<string, object>} provenance  the sidecar's `documents` map
- * @returns {{locator: string, original: string|null, via: string|null}|null}
+ * @returns {{locator: string, original: string|null, via: string|null, chain: Array<object>}|null}
  *   `locator` is what to fetch; `via` is the converted intermediate when the
  *   original superseded it (null when the citation already pointed at the
- *   original); `original` is the original's path whether or not it is bundled.
+ *   original); `original` is the preferred target whether or not it is openable;
+ *   `chain` is the full ladder above the citation (empty when unrecorded).
  */
 export function resolveSourceChain(ref, provenance) {
   const cited = citedLocator(ref);
   if (!cited) return null;
   const entry = provenance?.[cited] ?? provenance?.[String(cited).replace(/^\.\//, "")] ?? null;
   const original = typeof entry?.original === "string" && entry.original ? entry.original : null;
-  // Only HOP when the original is actually in the bundle; otherwise the
-  // markdown intermediate is the best artifact we can show, and the original
-  // stays a breadcrumb.
+  // A single-rung ladder omits `chain` (it is fully described by `original`), so
+  // synthesize the one-element form rather than reporting "no provenance".
+  const chain = Array.isArray(entry?.chain)
+    ? entry.chain
+    : original
+      ? [{ ref: original, kind: "file", via: entry?.via ?? null, bundled: entry?.bundled === true }]
+      : [];
+  // Only HOP when the preferred document is actually openable; otherwise the
+  // markdown intermediate is the best artifact we can show, and the rest of the
+  // chain stays a breadcrumb.
   if (original && entry?.bundled === true) {
-    return { locator: original, original, via: cited };
+    return { locator: original, original, via: cited, chain };
   }
-  return { locator: cited, original, via: null };
+  return { locator: cited, original, via: null, chain };
 }
 
 /**
@@ -239,9 +267,14 @@ export function bundleSourcePath(locator) {
  * @returns {string|null}
  */
 export function sourceHrefFor(ref, provenance = null) {
-  // With the provenance sidecar loaded, "Ouvrir ↗" points at the ORIGINAL
-  // document when it is bundled — the reader wants the PDF, not the OCR dump.
-  const chain = provenance ? resolveSourceChain(ref, provenance) : null;
+  // "Ouvrir ↗" points at the ORIGINAL document when it is openable — the reader
+  // wants the PDF, not the OCR dump. The viewer passes this prop BY REFERENCE
+  // and calls it with one argument, so the explicit `provenance` argument is
+  // only ever supplied by direct callers; falling back to the snapshot is what
+  // makes the toolbar link agree with the document actually being rendered
+  // beneath it (they previously disagreed on every hopped citation).
+  const map = provenance ?? provenanceSnapshot;
+  const chain = map ? resolveSourceChain(ref, map) : null;
   const locator = chain?.locator ?? citedLocator(ref);
   return locator ? bundleSourcePath(locator) : null;
 }
