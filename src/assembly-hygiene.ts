@@ -16,11 +16,16 @@
  *       honorifics/titles, strip parentheticals, lowercase. No fuzzy stemming
  *       (no invented collisions).
  *
- *   (D) `deOrphanByContainer` — link every degree-0 entity node to its FINEST
- *       available container (ChapterOrStory/Scene/Section matching provenance,
- *       else the Work) via a derived `appears_in` edge. Idempotent: respects
- *       pre-existing `appears_in`, never double-adds. Finest-container (not
- *       straight-to-Work) keeps Work hubs from outranking real protagonists.
+ *   (D) `deOrphanByContainer` — link every degree-0 entity node into the graph
+ *       through an edge the corpus actually supports: CONTAINMENT (its finest
+ *       matching ChapterOrStory/Scene/Section, else the Work → `appears_in`) or
+ *       CO-PROVENANCE (an already-connected node sharing its exact
+ *       `source_file` → `related_to`), preferring whichever lands it in the
+ *       giant component. Co-provenance attachments are SPREAD (√-rule) so no
+ *       node becomes a synthetic hub-spoke star. An orphan with neither ground
+ *       STAYS ORPHANED and is reported as `unattachable` — de-orphaning never
+ *       invents an edge. Idempotent: respects pre-existing edges, never
+ *       double-adds.
  *
  * Everything here is deterministic and replayable: no LLM, no network, no
  * secrets, stable ordering, and re-running on its own output is a no-op.
@@ -339,33 +344,42 @@ export interface DeOrphanConfig {
   /** The coarsest fallback container type (the Work). */
   workType?: string;
   /**
-   * When true (default), an orphan is linked to the finest container that is
-   * ITSELF in the giant connected component. If every finer container sharing
-   * the orphan's provenance is isolated (would create a 2-node island or
-   * amplify a poorly-connected satellite), fall back to a coarser container
-   * that IS in the giant component (typically the Work). This guarantees a
-   * de-orphaned node joins the giant component and never forms an island.
+   * When true (default), anchor resolution is component-aware: among the
+   * GROUNDED anchors available to an orphan we prefer the one that lands it in
+   * the largest reachable component (the giant), so de-orphaning grows the
+   * connected component instead of spawning satellites.
    *
    * Set false to restore the legacy "strict finest container" behavior.
    */
   preferGiantComponent?: boolean;
   /**
-   * When true (default, only effective with `preferGiantComponent`), if NO
-   * container sharing the orphan's provenance is in the giant component — i.e.
-   * the orphan's Work is itself isolated — the orphan is anchored to a
-   * HIGH-DEGREE node OF THE GIANT COMPONENT instead of to its isolated Work.
-   * This is what keeps the giant-mode promise absolute: an orphan always lands
-   * in the giant component, attached THROUGH a densely-connected, semantically-
-   * relevant node, and we never emit a disconnected 2-node island nor an
-   * isolated synthetic Work star (the old `work-fallback` failure mode).
+   * When true (default, only effective with `preferGiantComponent`), an orphan
+   * with NO container of its own may attach to a CO-PROVENANCE PEER: a node
+   * that is already connected (degree ≥ 1) and shares the orphan's EXACT
+   * `source_file`. Same-document co-occurrence is the grounding; attachments are
+   * SPREAD over the top-ranked peers (see `maxAnchorFanOut`) so no single node
+   * becomes a synthetic hub of degree-1 spokes.
    *
-   * The anchor is chosen as: (1) the highest-degree giant-component node that
-   * shares the orphan's provenance (a real, same-work hub), else (2) the
-   * highest-degree giant-component node overall (the global hub). Ties broken
-   * by smallest id for determinism. Set false to keep the legacy isolated-Work
-   * `work-fallback` (which can leave disconnected stars/islands).
+   * Set false to disable peer attachment entirely (containers only).
    */
   joinGiantViaHub?: boolean;
+  /**
+   * Hard cap on how many derived edges a single co-provenance anchor may
+   * receive. Default: the √-rule — attachments for one source_file are spread
+   * over `ceil(sqrt(orphanCount))` distinct peers, so the worst fan-out grows
+   * like √n instead of n. A smaller explicit cap spreads further (bounded by the
+   * number of grounded peers actually available).
+   */
+  maxAnchorFanOut?: number;
+  /**
+   * OFF by default and deliberately so. When true, an orphan that has NO
+   * grounded anchor (no container, no co-provenance peer) is wired to the
+   * global highest-degree node of the giant component. That edge asserts a
+   * relationship the corpus does not support — it is pure invented structure,
+   * and at corpus scale it collapses into one enormous hub-spoke star. Left
+   * false, such orphans STAY ORPHANED and are reported as `unattachable`.
+   */
+  allowGlobalHubFallback?: boolean;
 }
 
 /** Default container ranking: chapter/scene/section first, Work last. */
@@ -376,6 +390,7 @@ export const DEFAULT_CONTAINER_TYPES_FINEST_FIRST = [
 ] as const;
 export const DEFAULT_WORK_TYPE = "Work";
 const APPEARS_IN = "appears_in";
+const RELATED_TO = "related_to";
 
 function edgeEndpoint(value: unknown): string {
   if (value && typeof value === "object" && "id" in (value as Record<string, unknown>)) {
@@ -405,13 +420,25 @@ export interface DeOrphanResult {
   orphansBefore: number;
   orphansAfter: number;
   appearsInAdded: number;
+  /** Orphans left unlinked (container-type orphans + ungrounded ones). */
   unresolved: number;
+  /**
+   * Orphans left orphaned ON PURPOSE: no container and no co-provenance peer
+   * exists, so every possible edge would have been invented. Reported, never
+   * papered over.
+   */
+  unattachable: number;
+  /** Container-type orphans (a Work has no Work parent) — skipped by design. */
+  containerOrphans: number;
+  /** Count of derived edges per `derivation_method`. */
+  byMethod: Record<string, number>;
+  /** Largest number of derived edges landing on any single anchor node. */
+  maxAnchorFanOut: number;
 }
 
 /**
  * Build an undirected adjacency map over the given nodes/edges (self-loops and
- * dangling endpoints ignored). Used to identify the giant connected component
- * so de-orphan can link into it rather than into an isolated island.
+ * dangling endpoints ignored).
  */
 function buildAdjacency(nodes: GraphNode[], edges: GraphEdge[]): Map<string, Set<string>> {
   const adj = new Map<string, Set<string>>();
@@ -430,45 +457,49 @@ function buildAdjacency(nodes: GraphNode[], edges: GraphEdge[]): Map<string, Set
   return adj;
 }
 
-/**
- * Return the set of node ids belonging to the giant (largest) connected
- * component of `adj`. Ties broken by the smallest member id for determinism.
- * An empty graph yields an empty set.
- */
-function giantComponent(adj: Map<string, Set<string>>): Set<string> {
-  const seen = new Set<string>();
-  let best: Set<string> = new Set();
-  let bestKey = "";
-  // Iterate ids in sorted order so component discovery is deterministic.
-  const ids = Array.from(adj.keys()).sort((a, b) => a.localeCompare(b));
-  for (const start of ids) {
-    if (seen.has(start)) continue;
-    const comp = new Set<string>();
-    const stack = [start];
-    while (stack.length > 0) {
-      const u = stack.pop()!;
-      if (comp.has(u)) continue;
-      comp.add(u);
-      seen.add(u);
-      for (const v of adj.get(u) ?? []) if (!comp.has(v)) stack.push(v);
-    }
-    // Deterministic tiebreak: prefer the larger component; on equal size prefer
-    // the one whose smallest member id sorts first.
-    const minId = comp.size > 0 ? Array.from(comp).sort((a, b) => a.localeCompare(b))[0]! : "";
-    if (comp.size > best.size || (comp.size === best.size && minId < bestKey)) {
-      best = comp;
-      bestKey = minId;
-    }
-  }
-  return best;
+interface ComponentIndex {
+  /** component index per node id */
+  of: Map<string, number>;
+  /** size of each component, by index */
+  size: number[];
+  /** index of the largest component (giant); -1 when the graph has no nodes */
+  giant: number;
 }
 
 /**
- * Pick the highest-degree node id within `candidates` (a subset of `giant`),
- * using the giant-component degree from `adj`. Ties broken by smallest id for
- * determinism. Returns undefined when `candidates` is empty. This is the
- * "high-degree, semantically-relevant" anchor an orphan attaches to so it joins
- * the giant component THROUGH a real hub instead of forming an isolated star.
+ * Label every node with its connected-component index and record component
+ * sizes. Ids are visited in sorted order so component numbering — and the
+ * giant tie-break (smallest member id wins on equal size) — is deterministic.
+ */
+function componentIndex(adj: Map<string, Set<string>>): ComponentIndex {
+  const of = new Map<string, number>();
+  const size: number[] = [];
+  const ids = Array.from(adj.keys()).sort((a, b) => a.localeCompare(b));
+  for (const start of ids) {
+    if (of.has(start)) continue;
+    const index = size.length;
+    let count = 0;
+    const stack = [start];
+    while (stack.length > 0) {
+      const u = stack.pop()!;
+      if (of.has(u)) continue;
+      of.set(u, index);
+      count += 1;
+      for (const v of adj.get(u) ?? []) if (!of.has(v)) stack.push(v);
+    }
+    size.push(count);
+  }
+  let giant = -1;
+  for (let i = 0; i < size.length; i += 1) {
+    // Strictly greater keeps the earliest (smallest-min-id) component on ties.
+    if (giant === -1 || size[i]! > size[giant]!) giant = i;
+  }
+  return { of, size, giant };
+}
+
+/**
+ * Pick the highest-degree node id within `candidates`. Ties broken by smallest
+ * id for determinism. Returns undefined when `candidates` is empty.
  */
 function highestDegreeIn(
   candidates: Iterable<string>,
@@ -487,28 +518,39 @@ function highestDegreeIn(
 }
 
 /**
- * (D) Link each degree-0 entity node into the graph via a derived edge,
- * steering the orphan INTO the giant connected component so it NEVER forms a
- * 2-node island nor an isolated synthetic star. Anchor resolution, per orphan
- * (giant mode, default):
- *   1. the FINEST container (chapter→scene→section, then Work) sharing the
- *      orphan's source_file / slug that is ITSELF in the giant component
- *      (`appears_in`, method `deorphan:giant-component`);
- *   2. else — the orphan's whole Work is isolated — attach to a HIGH-DEGREE
- *      node OF THE GIANT COMPONENT instead of to that isolated Work: the densest
- *      giant member sharing the orphan's provenance (`related_to`, method
- *      `deorphan:giant-hub-provenance`), else the global giant hub (method
- *      `deorphan:giant-hub-global`). This is the absolute-join guarantee: an
- *      orphan always lands in the giant THROUGH a real, dense, semantically-
- *      relevant node — no disconnected stars, no islands.
- *   3. else (NO giant component at all — empty/edgeless graph) fall back to the
- *      Work, then the strict finest container, as a best-effort.
- * Exactly one anchor is chosen per orphan, so no redundant entity→Work edge is
- * added when a finer container already carries the orphan toward the Work.
- * Set `preferGiantComponent: false` for the legacy strict-finest behavior;
- * `joinGiantViaHub: false` to keep the old isolated-Work fallback (stars/islands).
- * Idempotent: skips nodes that already have any edge, never duplicates an anchor
- * pair it (or a prior run) already created.
+ * (D) Link each degree-0 entity node into the graph — but ONLY through an edge
+ * the corpus actually supports.
+ *
+ * TWO grounds are admitted, and nothing else:
+ *   - CONTAINMENT — a container node (chapter → scene → section → Work) whose
+ *     provenance (`source_file`, else path slug) matches the orphan's. Emitted
+ *     as `appears_in`.
+ *   - CO-PROVENANCE — an already-connected node sharing the orphan's EXACT
+ *     `source_file` (same document). Emitted as `related_to`.
+ *
+ * Among grounded anchors we prefer the one that lands the orphan in the giant
+ * component, so de-orphaning GROWS the connected component:
+ *   1. container in the giant   (`deorphan:giant-component`)
+ *   2. co-provenance peer in the giant (`deorphan:co-provenance-peer`)
+ *   3. container outside the giant (`deorphan:container-offgiant`) — real
+ *      containment is still true even when the whole work sits apart
+ *   4. co-provenance peer outside the giant (`deorphan:co-provenance-peer`)
+ *   5. NOTHING — the orphan stays orphaned and is counted in `unattachable`
+ *
+ * Anti-star: co-provenance attachments for one source_file are SPREAD over the
+ * top-ranked peers (√-rule, or `maxAnchorFanOut`), ranked by component size then
+ * degree then id. Every peer of that document is an equally valid ground, so
+ * funnelling them all onto the single densest node would manufacture a hub-spoke
+ * star that says more about the algorithm than about the corpus. Containment is
+ * NOT spread: a chapter really does contain all its entities.
+ *
+ * The path this replaces — "attach to the global highest-degree node of the
+ * giant" — is available only behind `allowGlobalHubFallback: true`, because on a
+ * real corpus it wires every otherwise-unattachable orphan to one node (measured
+ * on PROCESS_STD: 19 542 invented edges onto a single anchor).
+ *
+ * Deterministic (orphans processed in sorted id order, added edges sorted),
+ * O(n log n), no LLM, idempotent: re-running on its own output adds nothing.
  */
 export function deOrphanByContainer(
   extraction: Extraction,
@@ -542,8 +584,8 @@ export function deOrphanByContainer(
     byRankSource.push(new Map());
     byRankSlug.push(new Map());
   }
-  const containerOrdered = [...nodes].sort((a, b) => String(a.id).localeCompare(String(b.id)));
-  for (const n of containerOrdered) {
+  const orderedNodes = [...nodes].sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  for (const n of orderedNodes) {
     const rank = rankOf.get(String(n.type));
     if (rank === undefined) continue;
     const srcMap = byRankSource[rank]!;
@@ -561,142 +603,195 @@ export function deOrphanByContainer(
 
   const containerTypeSet = new Set([...containerTypes, workType]);
   const workRank = containerTypes.length;
-  const orphans = nodes.filter((n) => (degree.get(String(n.id)) ?? 0) === 0);
-  const added: GraphEdge[] = [];
-  let unresolved = 0;
+  // Orphans in sorted id order → the whole pass is input-order independent.
+  const orphans = orderedNodes.filter((n) => (degree.get(String(n.id)) ?? 0) === 0);
 
-  // Giant connected component over the EXISTING edges. Used to steer orphans
-  // into the giant component instead of into an isolated finest-container
-  // (which would otherwise create a 2-node island or amplify a poor satellite).
   const preferGiant = config.preferGiantComponent ?? true;
   const adjacency = preferGiant ? buildAdjacency(nodes, edges) : new Map<string, Set<string>>();
-  const giant = preferGiant ? giantComponent(adjacency) : new Set<string>();
-  const joinViaHub = (config.joinGiantViaHub ?? true) && preferGiant && giant.size > 0;
+  const comps: ComponentIndex = preferGiant
+    ? componentIndex(adjacency)
+    : { of: new Map(), size: [], giant: -1 };
+  const usePeers = (config.joinGiantViaHub ?? true) && preferGiant;
 
-  // Index giant-component members by provenance so an orphan whose Work is
-  // ISOLATED can still attach to a high-degree node that is genuinely related
-  // (same source_file / slug) AND inside the giant — rather than to its own
-  // isolated Work (which would spawn a disconnected star). Built once, lazily.
-  const giantBySource = new Map<string, Set<string>>();
-  const giantBySlug = new Map<string, Set<string>>();
-  if (joinViaHub) {
-    const byId = new Map<string, GraphNode>(nodes.map((n) => [String(n.id), n]));
-    for (const id of giant) {
-      const n = byId.get(id);
-      if (!n) continue;
+  // CO-PROVENANCE index: already-connected nodes keyed by their EXACT
+  // source_file. Slug (same folder) is NOT admitted here — "same directory" is
+  // not evidence that two entities are related; only "same document" is. Peers
+  // are ranked once: component size ↓, degree ↓, id ↑.
+  const peersBySource = new Map<string, string[]>();
+  if (usePeers) {
+    for (const n of orderedNodes) {
+      const id = String(n.id);
+      if ((degree.get(id) ?? 0) === 0) continue; // orphans cannot anchor orphans
       for (const sf of nodeSourceFiles(n)) {
-        if (!giantBySource.has(sf)) giantBySource.set(sf, new Set());
-        giantBySource.get(sf)!.add(id);
-        const slug = slugOfSourceFile(sf);
-        if (slug) {
-          if (!giantBySlug.has(slug)) giantBySlug.set(slug, new Set());
-          giantBySlug.get(slug)!.add(id);
+        let bucket = peersBySource.get(sf);
+        if (!bucket) {
+          bucket = [];
+          peersBySource.set(sf, bucket);
         }
+        bucket.push(id);
       }
     }
+    const rank = (id: string): number => comps.size[comps.of.get(id) ?? -1] ?? 0;
+    for (const bucket of peersBySource.values()) {
+      bucket.sort((a, b) => {
+        const cs = rank(b) - rank(a);
+        if (cs !== 0) return cs;
+        const dd = (adjacency.get(b)?.size ?? 0) - (adjacency.get(a)?.size ?? 0);
+        if (dd !== 0) return dd;
+        return a.localeCompare(b);
+      });
+    }
   }
-  // The global highest-degree node of the giant component — the universal hub
-  // an orphan attaches to when nothing in the giant shares its provenance. This
-  // guarantees the orphan ALWAYS lands in the giant via a real, dense node.
-  const globalGiantHub = joinViaHub ? highestDegreeIn(giant, adjacency) : undefined;
+
+  const globalGiantHub =
+    config.allowGlobalHubFallback === true && preferGiant && comps.giant >= 0
+      ? highestDegreeIn(
+          orderedNodes.map((n) => String(n.id)).filter((id) => comps.of.get(id) === comps.giant),
+          adjacency,
+        )
+      : undefined;
+
+  interface Decision {
+    orphan: string;
+    anchor: string;
+    relation: string;
+    method: string;
+  }
+  const decisions: Decision[] = [];
+  /** Orphans deferred to the spread pass, grouped by their chosen source_file. */
+  const peerGroups = new Map<string, string[]>();
+  let containerOrphans = 0;
+  let unattachable = 0;
 
   for (const orphan of orphans) {
+    const orphanId = String(orphan.id);
     // A container node that is itself an orphan has no parent of its own kind
     // to link into (a Work has no Work parent). Leave it as-is.
     if (containerTypeSet.has(String(orphan.type))) {
-      unresolved += 1;
+      containerOrphans += 1;
       continue;
     }
     const sources = nodeSourceFiles(orphan);
-    let linked = false;
-    // Resolve candidate containers per rank (finest→coarsest), recording the
-    // finest hit AND the finest hit that is itself in the giant component.
+
+    // --- containment candidates (finest → coarsest) ---
     let finestId: string | undefined; // strict finest container (legacy choice)
-    let giantId: string | undefined; // finest container that is in the giant component
-    let workId: string | undefined; // the Work container (rank === workRank), if any
+    let giantContainerId: string | undefined; // finest container inside the giant
     for (let rank = 0; rank <= containerTypes.length; rank += 1) {
       let hit: string | undefined;
       for (const sf of sources) {
         const candidate = byRankSource[rank]!.get(sf) ?? byRankSlug[rank]!.get(slugOfSourceFile(sf) ?? "");
-        if (candidate && candidate !== String(orphan.id)) {
+        if (candidate && candidate !== orphanId) {
           hit = candidate;
           break;
         }
       }
       if (!hit) continue;
       if (finestId === undefined) finestId = hit;
-      if (rank === workRank) workId = hit;
-      if (preferGiant && giantId === undefined && giant.has(hit)) giantId = hit;
+      if (preferGiant && giantContainerId === undefined && comps.of.get(hit) === comps.giant) {
+        giantContainerId = hit;
+      }
     }
-    // Selection — exactly ONE anchor per orphan (no redundant entity→Work edge:
-    // when a finer container is chosen the orphan already reaches the Work
-    // through it, so we never additionally wire the Work):
-    //   - giant mode: prefer the finest container that is IN the giant
-    //     component; if none of the orphan's provenance containers is in the
-    //     giant (its whole Work is isolated), DO NOT anchor to that isolated
-    //     Work — that would spawn a disconnected 2-node island / synthetic star
-    //     that never joins the giant. Instead attach to a HIGH-DEGREE giant
-    //     node: the densest giant member sharing the orphan's provenance, else
-    //     the global giant hub. Only when there is no giant at all (empty graph)
-    //     do we fall back to the Work / strict finest container.
-    //   - legacy mode: take the strict finest container.
-    let containerId: string | undefined;
-    let method = "deorphan:finest-container";
-    let relation = APPEARS_IN;
+
     if (!preferGiant) {
-      containerId = finestId;
-    } else if (giantId !== undefined) {
-      containerId = giantId;
-      method = "deorphan:giant-component";
-    } else if (joinViaHub) {
-      // No provenance container is in the giant → join the giant THROUGH a
-      // high-degree node. Prefer a same-provenance giant hub (semantically
-      // related, same work), then the global giant hub (always connects).
-      const provenanceGiant = new Set<string>();
-      for (const sf of sources) {
-        for (const id of giantBySource.get(sf) ?? []) provenanceGiant.add(id);
-        const slug = slugOfSourceFile(sf);
-        if (slug) for (const id of giantBySlug.get(slug) ?? []) provenanceGiant.add(id);
-      }
-      provenanceGiant.delete(String(orphan.id));
-      const provenanceHub = highestDegreeIn(provenanceGiant, adjacency);
-      if (provenanceHub !== undefined) {
-        containerId = provenanceHub;
-        method = "deorphan:giant-hub-provenance";
-        relation = "related_to";
-      } else if (globalGiantHub !== undefined && globalGiantHub !== String(orphan.id)) {
-        containerId = globalGiantHub;
-        method = "deorphan:giant-hub-global";
-        relation = "related_to";
-      } else if (workId !== undefined) {
-        containerId = workId;
-        method = "deorphan:work-fallback";
+      if (finestId !== undefined) {
+        decisions.push({ orphan: orphanId, anchor: finestId, relation: APPEARS_IN, method: "deorphan:finest-container" });
       } else {
-        containerId = finestId;
+        unattachable += 1;
       }
-    } else if (workId !== undefined) {
-      containerId = workId;
-      method = "deorphan:work-fallback";
+      continue;
+    }
+
+    // --- co-provenance candidate: best peer over the orphan's source_files ---
+    let peerSource: string | undefined;
+    let peerTop: string | undefined;
+    if (usePeers) {
+      for (const sf of [...sources].sort((a, b) => a.localeCompare(b))) {
+        const bucket = peersBySource.get(sf);
+        const top = bucket?.[0];
+        if (!top || top === orphanId) continue;
+        if (peerTop === undefined) {
+          peerSource = sf;
+          peerTop = top;
+          continue;
+        }
+        const better =
+          (comps.size[comps.of.get(top) ?? -1] ?? 0) > (comps.size[comps.of.get(peerTop) ?? -1] ?? 0);
+        if (better) {
+          peerSource = sf;
+          peerTop = top;
+        }
+      }
+    }
+    const peerInGiant = peerTop !== undefined && comps.of.get(peerTop) === comps.giant;
+
+    if (giantContainerId !== undefined) {
+      decisions.push({ orphan: orphanId, anchor: giantContainerId, relation: APPEARS_IN, method: "deorphan:giant-component" });
+    } else if (peerInGiant && peerSource !== undefined) {
+      const group = peerGroups.get(peerSource) ?? [];
+      group.push(orphanId);
+      peerGroups.set(peerSource, group);
+    } else if (finestId !== undefined) {
+      decisions.push({ orphan: orphanId, anchor: finestId, relation: APPEARS_IN, method: "deorphan:container-offgiant" });
+    } else if (peerSource !== undefined) {
+      const group = peerGroups.get(peerSource) ?? [];
+      group.push(orphanId);
+      peerGroups.set(peerSource, group);
+    } else if (globalGiantHub !== undefined && globalGiantHub !== orphanId) {
+      decisions.push({ orphan: orphanId, anchor: globalGiantHub, relation: RELATED_TO, method: "deorphan:giant-hub-global" });
     } else {
-      containerId = finestId;
+      // No container, no co-provenance peer. Any edge here would be invented.
+      unattachable += 1;
     }
-    if (containerId) {
-      const key = `${String(orphan.id)} ${containerId}`;
-      if (!existingPair.has(key)) {
-        existingPair.add(key);
-        added.push({
-          source: String(orphan.id),
-          target: containerId,
-          relation,
-          confidence: "INFERRED",
-          source_file: typeof orphan.source_file === "string" ? orphan.source_file : "",
-          derived: true,
-          derivation_method: method,
-        } as GraphEdge);
-      }
-      linked = true;
+  }
+
+  // --- spread pass: co-provenance attachments fan out over the top peers ------
+  for (const source of [...peerGroups.keys()].sort((a, b) => a.localeCompare(b))) {
+    const group = peerGroups.get(source)!;
+    const groupSet = new Set(group);
+    const candidates = (peersBySource.get(source) ?? []).filter((id) => !groupSet.has(id));
+    if (candidates.length === 0) {
+      unattachable += group.length;
+      continue;
     }
-    if (!linked) unresolved += 1;
+    // √-rule: spreading over ceil(√count) anchors bounds the worst fan-out at
+    // ~√count instead of count. An explicit cap can only widen the spread.
+    let width = Math.max(1, Math.ceil(Math.sqrt(group.length)));
+    if (config.maxAnchorFanOut !== undefined && config.maxAnchorFanOut > 0) {
+      width = Math.max(width, Math.ceil(group.length / config.maxAnchorFanOut));
+    }
+    width = Math.min(width, candidates.length);
+    for (let i = 0; i < group.length; i += 1) {
+      decisions.push({
+        orphan: group[i]!,
+        anchor: candidates[i % width]!,
+        relation: RELATED_TO,
+        method: "deorphan:co-provenance-peer",
+      });
+    }
+  }
+
+  // --- emit, in a stable (orphan, anchor) order ------------------------------
+  decisions.sort((a, b) => a.orphan.localeCompare(b.orphan) || a.anchor.localeCompare(b.anchor));
+  const added: GraphEdge[] = [];
+  const byMethod: Record<string, number> = {};
+  const fanOut = new Map<string, number>();
+  const orphanById = new Map<string, GraphNode>(orphans.map((n) => [String(n.id), n]));
+  for (const d of decisions) {
+    const key = `${d.orphan} ${d.anchor}`;
+    if (existingPair.has(key)) continue;
+    existingPair.add(key);
+    const orphan = orphanById.get(d.orphan);
+    added.push({
+      source: d.orphan,
+      target: d.anchor,
+      relation: d.relation,
+      confidence: "INFERRED",
+      source_file: typeof orphan?.source_file === "string" ? orphan.source_file : "",
+      derived: true,
+      derivation_method: d.method,
+    } as GraphEdge);
+    byMethod[d.method] = (byMethod[d.method] ?? 0) + 1;
+    fanOut.set(d.anchor, (fanOut.get(d.anchor) ?? 0) + 1);
   }
 
   const nextExtraction: Extraction = { ...extraction, edges: [...edges, ...added] };
@@ -710,12 +805,18 @@ export function deOrphanByContainer(
     if (degreeAfter.has(t)) degreeAfter.set(t, degreeAfter.get(t)! + 1);
   }
   const orphansAfter = nodes.filter((n) => (degreeAfter.get(String(n.id)) ?? 0) === 0).length;
+  let maxAnchorFanOut = 0;
+  for (const v of fanOut.values()) if (v > maxAnchorFanOut) maxAnchorFanOut = v;
 
   return {
     extraction: nextExtraction,
     orphansBefore: orphans.length,
     orphansAfter,
     appearsInAdded: added.length,
-    unresolved,
+    unresolved: containerOrphans + unattachable,
+    unattachable,
+    containerOrphans,
+    byMethod,
+    maxAnchorFanOut,
   };
 }
