@@ -217,6 +217,7 @@ function normalizeClassHierarchyClass(value: ClassHierarchyClass): NormalizedCla
     parent: typeof parent === "string" && parent.trim().length > 0 ? parent.trim() : null,
     label: typeof value.label === "string" && value.label.trim().length > 0 ? value.label.trim() : null,
     member_node_types: asStringArray(value.member_node_types),
+    member_hierarchies: asStringArray(value.member_hierarchies),
   };
 }
 

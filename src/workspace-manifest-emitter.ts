@@ -41,6 +41,7 @@ import {
   buildWorkspaceManifest,
   type WorkspaceManifest,
   type WorkspaceManifestArtifactInput,
+  type WorkspaceManifestCounts,
 } from "./workspace-manifest.js";
 
 export { WORKSPACE_MANIFEST_FILENAME } from "./workspace-manifest.js";
@@ -95,6 +96,11 @@ export interface EmitWorkspaceManifestOptions {
   graphHash?: string | null;
   /** Override the timestamp (reproducible builds / tests). */
   generatedAt?: string;
+  /**
+   * Measured node counts to stamp (`counts`). The producer supplies them — it
+   * already holds the parsed artifacts, so the emitter never re-parses them.
+   */
+  counts?: Omit<WorkspaceManifestCounts, "coherent">;
 }
 
 export interface EmitWorkspaceManifestResult {
@@ -137,6 +143,7 @@ export function emitWorkspaceManifest(
     artifacts: inputs,
     ...(options.graphHash !== undefined ? { graphHash: options.graphHash } : {}),
     ...(options.generatedAt !== undefined ? { generatedAt: options.generatedAt } : {}),
+    ...(options.counts !== undefined ? { counts: options.counts } : {}),
   });
 
   const targetPath = join(options.bundleDir, WORKSPACE_MANIFEST_FILENAME);

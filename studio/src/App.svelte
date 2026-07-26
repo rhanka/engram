@@ -20,6 +20,15 @@
   // bundle resolver, Ouvrir href) stays local in ./lib/citedSources.js — the
   // lib only takes pure props + resolver/href callbacks (purity seam §S.3).
   import CitedSourceViewer from "@sentropic/cited-source-viewer/CitedSourceViewer.svelte";
+  import { registerBodyRenderer } from "@sentropic/cited-source-viewer/bodies/registry";
+  import HtmlSourceBody from "./components/HtmlSourceBody.svelte";
+
+  // Register the consumer-owned `html` body against the lib's PUBLISHED body
+  // seam. The package ships pdf/markdown/text only and closes its v1 payload
+  // union on purpose; a new kind is meant to arrive exactly this way, so the
+  // frozen component is neither modified nor forked. Registered at module scope
+  // so it is in place before any viewer mounts.
+  registerBodyRenderer("html", HtmlSourceBody);
   import GraphCanvas from "./components/GraphCanvas.svelte";
   import LeftRail from "./components/LeftRail.svelte";
   import ReconciliationView from "./components/ReconciliationView.svelte";
@@ -27,6 +36,7 @@
   import WorkspaceShell from "./components/WorkspaceShell.svelte";
   import {
     buildSelectionThread,
+    loadCitedSourceProvenance,
     resolveBundleSource,
     sameCitation,
     sourceHrefFor,
@@ -38,6 +48,7 @@
     fetchGroupCounts,
     fetchModelsManifest,
     fetchScene,
+    fetchSceneHierarchies,
     fetchSearchIndex,
     setStaticBaseProvider,
     __resetEntitiesIndexCache,
@@ -80,6 +91,7 @@
     toggleType,
     toggleCommunity,
     toggleEntity,
+    toggleEntitySet,
     focusEntity as focusEntityAction,
     setFocus,
     clearSelection,
@@ -126,6 +138,11 @@
   // absent, in which case the toggle injects nothing. $state.raw — only ever
   // reassigned in bulk, never mutated in place.
   let classHierarchies = $state.raw(null);
+  // Lot 2: the scene-hierarchies sidecar (graphify_scene_hierarchies_v1) — the
+  // registry process forests (ABP / PROCESS_STD / org unit trees) the Hierarchies rail
+  // navigates. Lazily fetched once (like class-hierarchies); null until loaded /
+  // when absent, in which case the rail hides its Hierarchies section.
+  let sceneHierarchies = $state.raw(null);
   // Work-stream C: the offline retrieval substrate (search-index.json) backing
   // the Answer view's in-browser BM25 + PPR. Lazily fetched once on first entry
   // to the Answer view (like models.json); null until loaded / when absent, in
@@ -166,7 +183,12 @@
   const hasOntologyGroup = $derived(groupedSplit.ontologyClassIds.length > 0);
   const hasCommunityGroup = $derived(groupedSplit.communityKeys.length > 0);
   const hasTypeGroup = $derived(groupedSplit.typeNames.length > 0);
-  const hasAnyGroup = $derived(hasOntologyGroup || hasCommunityGroup || hasTypeGroup);
+  // The registry-FOREST axis: a process-tree row is an ontology row, so grouping
+  // it folds its subtree into that node (see groupBy's hierarchy index).
+  const hasHierarchyGroup = $derived(groupedSplit.hierarchyRefs.length > 0);
+  const hasAnyGroup = $derived(
+    hasOntologyGroup || hasCommunityGroup || hasTypeGroup || hasHierarchyGroup,
+  );
 
   // C4: which kinds are AVAILABLE to group. Ontology needs the class-hierarchies
   // artifact; Community needs at least one live community. The rail hides the
@@ -224,6 +246,7 @@
     computeGroupedGraph({
       graph,
       classHierarchies,
+      sceneHierarchies,
       communityCtx,
       typeCtx,
       grouped: viewerState.options.groupBy.grouped,
@@ -298,6 +321,7 @@
           hiddenKeys: viewerState.options.visibility.hidden,
           soloKeys: viewerState.options.visibility.solo,
           classHierarchies,
+          sceneHierarchies,
         })
       : EMPTY_HIDDEN_IDS,
   );
@@ -397,6 +421,13 @@
       return;
     }
     viewerState = toggleEntity(viewerState, id);
+    if (viewerState.focusId) void ensureEntity(viewerState.focusId);
+  }
+  // Lot 2: select/deselect a hierarchy subtree as one unit. The rail has already
+  // mapped the subtree's raw registry ids to scene-node ids (via
+  // registry_record_id), so we just fold them into the selection.
+  function handleToggleHierarchySubtree(sceneIds) {
+    viewerState = toggleEntitySet(viewerState, sceneIds);
     if (viewerState.focusId) void ensureEntity(viewerState.focusId);
   }
   function handleFocusEntity(id) {
@@ -530,6 +561,16 @@
     classHierarchies = await fetchClassHierarchies();
   }
 
+  // Lot 2: fetch scene-hierarchies.json at most once (per model). A null result
+  // (absent sidecar) is cached as "attempted" so we never re-fetch; the rail then
+  // hides its Hierarchies section. Reset on a model switch (per-model artifact).
+  let sceneHierarchiesFetched = false;
+  async function ensureSceneHierarchies() {
+    if (sceneHierarchiesFetched) return;
+    sceneHierarchiesFetched = true;
+    sceneHierarchies = await fetchSceneHierarchies();
+  }
+
   // Work-stream C: fetch search-index.json at most once (per model). A null
   // result (absent substrate) is cached as "attempted" so we never re-fetch; the
   // Answer panel then shows its "no index" state. Reset on a model switch.
@@ -580,7 +621,15 @@
     });
   }
 
-  function handleOpenSource({ citations, index, fallbackSourceFile, label, entityId = null }) {
+  async function handleOpenSource({ citations, index, fallbackSourceFile, label, entityId = null }) {
+    // Load the provenance chain BEFORE the viewer mounts. The frozen viewer
+    // takes `sourceHref` as a plain synchronous function and calls it once per
+    // ref, with no reactive dependency we could invalidate later — so a map that
+    // arrives after first render never reaches the toolbar, and "Ouvrir" kept
+    // linking to the OCR markdown while the pane beneath it rendered the
+    // original PDF. Awaiting here is cheap: the map is memoized, so only the
+    // first open in a session pays a fetch.
+    await loadCitedSourceProvenance();
     const clicked = Array.isArray(citations)
       ? (citations[Number.isInteger(index) && index >= 0 ? index : 0] ?? null)
       : null;
@@ -692,6 +741,9 @@
     // the class taxonomy, so fetch class-hierarchies eagerly (not just on the
     // class-display toggle). Cached; a no-op when the artifact is absent.
     await ensureClassHierarchies();
+    // Lot 2: fetch the scene-hierarchies sidecar eagerly too, so the Hierarchies
+    // rail (ABP / PROCESS_STD process trees) is ready without a separate trigger.
+    await ensureSceneHierarchies();
     // Storage LOT 2: prefer the store's precomputed `node_type` counts for the
     // Types rail when a mirror is configured. Resolves null off the default
     // flat-JSON studio, in which case the rail keeps computing counts in-memory.
@@ -721,6 +773,10 @@
     // re-fetches under the new model's base.
     classHierarchies = null;
     classHierarchiesFetched = false;
+    // The scene-hierarchies sidecar is per-model; drop it so the next load
+    // re-fetches under the new model's base.
+    sceneHierarchies = null;
+    sceneHierarchiesFetched = false;
     // The search index is per-model; drop it so the Answer view re-fetches under
     // the new model's base on its next open.
     searchIndex = null;
@@ -848,6 +904,7 @@
           <LeftRail
             graph={facetGraph}
             {classHierarchies}
+            {sceneHierarchies}
             {serverTypeCounts}
             query={viewerState.query}
             selection={viewerState.selection}
@@ -867,6 +924,7 @@
             onToggleType={handleToggleType}
             onToggleCommunity={handleToggleCommunity}
             onToggleEntity={handleToggleEntity}
+            onToggleHierarchySubtree={handleToggleHierarchySubtree}
             onSetQuery={handleSetQuery}
             onToggleWeak={handleToggleWeak}
             {timeRange}

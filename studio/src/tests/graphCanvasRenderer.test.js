@@ -321,14 +321,62 @@ describe("GraphCanvas force Spread/Links controls (Lot 3)", () => {
     expect(source).toMatch(/onDestroy\([\s\S]*terminateForceWorker\(\)/);
   });
 
-  it("debounces expensive solves to drag-end and keeps Reset cold/deterministic", () => {
+  it("debounces expensive solves to drag-end", () => {
     const source = graphCanvasSource();
     const gated = source.slice(source.indexOf('aria-label="Force spacing controls"'));
     expect(gated).toMatch(/oninput=\{\(event\) => \(forceSpread = Number\(event\.currentTarget\.value\)\)\}/);
     expect(gated).toMatch(/onchange=\{commitForceSpread\}/);
     expect(gated).toMatch(/oninput=\{\(event\) => \(forceLinks = Number\(event\.currentTarget\.value\)\)\}/);
     expect(gated).toMatch(/onchange=\{commitForceLinks\}/);
-    expect(source).toMatch(/function resetForceLayout\(\) \{\s*resolveForceLayout\(\{ warmStart: false \}\);\s*\}/);
+  });
+
+  it("Reset restores the BAKED scene positions instead of cold-solving them away", () => {
+    const source = graphCanvasSource();
+    const reset = source.slice(
+      source.indexOf("function resetForceLayout"),
+      source.indexOf("function commitForceSpread"),
+    );
+    // The build-time bake is deterministic and (for hierarchy-aware scenes) the
+    // only layout that shows the corpus structure. Reset must return TO it.
+    expect(reset).toMatch(/const target = bakedPositionBuffer;/);
+    expect(reset).toMatch(/startLayoutMorphToBuffer\(LAYOUT_MODE_FORCE, restored\)/);
+    // Guarded against a stale buffer, and a cold solve remains the fallback for
+    // a scene that shipped without baked positions.
+    expect(reset).toMatch(/target\.length === expected \* 2/);
+    expect(reset).toMatch(/resolveForceLayout\(\{ warmStart: false \}\)/);
+  });
+
+  it("keeps the baked buffer immutable across force re-solves", () => {
+    const source = graphCanvasSource();
+    // forceBaseBuffer is REPLACED by every re-solve, so it cannot double as the
+    // restore point — bakedPositionBuffer is captured separately and only ever
+    // written where the scene's own positions are captured.
+    const resolve = source.slice(
+      source.indexOf("async function resolveForceLayout"),
+      source.indexOf("function resetForceLayout"),
+    );
+    expect(resolve).not.toMatch(/bakedPositionBuffer\s*=/);
+    const capture = source.slice(
+      source.indexOf("function captureForceBaseBuffer"),
+      source.indexOf("// Selection/focus update"),
+    );
+    expect(capture).toMatch(/bakedPositionBuffer = positions \? new Float32Array\(positions\) : null;/);
+  });
+
+  it("forwards only USER pins to the solver, and seeds it from the bake", () => {
+    const source = graphCanvasSource();
+    const compute = source.slice(
+      source.indexOf("async function computeForceRelayoutBuffer"),
+      source.indexOf("async function resolveForceLayout"),
+    );
+    // computeLayout freezes any node carrying fx/fy. The bake pins EVERY node,
+    // so forwarding all pins would freeze the graph and make the sliders inert:
+    // only a dragged node is a genuine pin.
+    expect(compute).toMatch(/const pinned = draggedPositions\.get\(node\.id\);/);
+    expect(compute).toMatch(/pinned \? \{ id: node\.id, fx: pinned\.x, fy: pinned\.y \} : \{ id: node\.id \}/);
+    // Baked coordinates travel as a SEED, not a constraint — so even a cold
+    // solve refines the shipped layout instead of starting from a circle.
+    expect(compute).toMatch(/\(warmStart \? currentPositionMap\(\) : null\) \?\? bakedPositionMap\(\)/);
   });
 });
 
@@ -470,10 +518,16 @@ describe("GraphCanvas edge-transparency controls (Edge fade + Edge opacity)", ()
     expect(source).toContain("DEFAULT_EDGE_OPACITY");
   });
 
-  it("defaults to dense fade + the default edge opacity", () => {
+  it("defaults to dense fade + the scene's DENSITY-derived edge opacity", () => {
     const source = graphCanvasSource();
     expect(source).toMatch(/let edgeAlphaMode = \$state\(EDGE_ALPHA_DENSE\)/);
-    expect(source).toMatch(/let edgeOpacity = \$state\(DEFAULT_EDGE_OPACITY\)/);
+    // The user's explicit choice is held SEPARATELY from the effective value, so
+    // the slider renders exactly the number it displays. Untouched (null) ⇒ the
+    // effective opacity is the scene's density default, not a fixed 0.5.
+    expect(source).toMatch(/let edgeOpacityOverride = \$state\(null\)/);
+    expect(source).toMatch(
+      /const edgeOpacity = \$derived\(\s*edgeOpacityOverride \?\? defaultEdgeOpacityFor\(scene\?\.edges\?\.length \?\? 0\),\s*\)/,
+    );
   });
 
   it("renders the Edge fade segmented group (English labels) + Edge opacity slider in the Display section", () => {
@@ -491,8 +545,12 @@ describe("GraphCanvas edge-transparency controls (Edge fade + Edge opacity)", ()
     expect(source).toMatch(/\{ id: EDGE_ALPHA_FLAT, label: "Flat" \}/);
     // Native range slider for the base opacity.
     expect(gated).toContain('aria-label="Edge opacity"');
-    expect(gated).toMatch(/type="range"[\s\S]{0,120}min="0\.1"[\s\S]{0,120}max="0\.8"/);
-    expect(gated).toMatch(/oninput=\{\(event\) => \(edgeOpacity = Number\(event\.currentTarget\.value\)\)\}/);
+    // FULL travel: the slider governs the base alpha, so 1.00 must be reachable
+    // and mean fully opaque. A 0.1..0.8 cap could never render an opaque edge.
+    expect(gated).toMatch(/type="range"[\s\S]{0,160}min="0\.02"[\s\S]{0,160}max="1"/);
+    expect(gated).toMatch(
+      /oninput=\{\(event\) => \(edgeOpacityOverride = Number\(event\.currentTarget\.value\)\)\}/,
+    );
   });
 
   it("passes edgeAlphaMode + edgeOpacity through rebuildPayload", () => {

@@ -49,9 +49,18 @@ import type {
 } from "@sentropic/graph";
 
 import { attachLayoutPositions } from "./graph-layout.js";
+import {
+  computeHierarchyAwarePositions,
+  type HierarchyAwareLayoutOptions,
+  type HierarchyLayoutForest,
+} from "./hierarchy-layout.js";
 
 /** Selectable build-time layout ids. `"force"` is the default. */
-export type SceneLayoutId = "force" | "typed-layer" | "time-oriented";
+export type SceneLayoutId =
+  | "force"
+  | "typed-layer"
+  | "time-oriented"
+  | "hierarchy-aware";
 
 /** Shared scene-contract layout id stamped when typed-layer is selected (#234). */
 export const TYPED_LAYER_SCENE_LAYOUT_ID = "typed-layer";
@@ -59,10 +68,15 @@ export const TYPED_LAYER_SCENE_LAYOUT_ID = "typed-layer";
 /** Shared scene-contract layout id stamped when time-oriented is selected (#234). */
 export const TIME_ORIENTED_SCENE_LAYOUT_ID = "time-oriented";
 
+/** Shared scene-contract layout id stamped when hierarchy-aware is selected. */
+export const HIERARCHY_AWARE_SCENE_LAYOUT_ID = "hierarchy-aware";
+
 /** A scene node that can be positioned + pinned (loose, build-time shape). */
 interface LayoutableSceneNode {
   id: string;
   type?: unknown;
+  /** Raw registry id — the key declared hierarchies are expressed in (D2). */
+  registry_record_id?: unknown;
   /** Shared scene contract — interval start, epoch-ms (#234). Read by Variant E. */
   t?: unknown;
   x?: number;
@@ -95,7 +109,35 @@ export function resolveSceneLayoutId(explicit?: string): SceneLayoutId {
   const value = String(raw ?? "").trim().toLowerCase();
   if (value === "typed-layer") return "typed-layer";
   if (value === "time-oriented") return "time-oriented";
+  if (value === "hierarchy-aware") return "hierarchy-aware";
   return "force";
+}
+
+/**
+ * Pick the layout a corpus should be baked with WHEN NOTHING IS EXPLICITLY
+ * REQUESTED.
+ *
+ * An explicit id (arg or `GRAPHIFY_LAYOUT`) always wins — this only decides the
+ * unset case. A corpus that DECLARES hierarchies gets `hierarchy-aware`: its
+ * structure is known, so baking a structure-blind force disc over it throws
+ * away the one thing that would make it readable. Everything else keeps the
+ * historical `force` default, byte-identical to before.
+ */
+export function selectDefaultSceneLayoutId(context: {
+  /** True when the bundle carries at least one non-empty declared hierarchy. */
+  hasHierarchies: boolean;
+  /** Explicit id from a flag; when set it is simply resolved and returned. */
+  explicit?: string | undefined;
+}): SceneLayoutId {
+  const explicitRaw =
+    context.explicit ??
+    (typeof process !== "undefined" && process.env
+      ? process.env.GRAPHIFY_LAYOUT
+      : undefined);
+  if (String(explicitRaw ?? "").trim() !== "") {
+    return resolveSceneLayoutId(explicitRaw);
+  }
+  return context.hasHierarchies ? "hierarchy-aware" : "force";
 }
 
 /**
@@ -172,22 +214,79 @@ export function attachTimeOrientedPositions<T extends LayoutableScene>(
 }
 
 /**
+ * Hierarchy-aware wiring — lay the scene out from its DECLARED hierarchies
+ * (radial tidy tree per forest + phyllotaxis discs for everything else), PIN the
+ * positions, and stamp `layout_id: "hierarchy-aware"` / `layout_dims: 2`.
+ * Strictly O(n), no simulation: it can neither OOM nor collapse to a filament.
+ *
+ * With no usable forest there is nothing hierarchy-aware to express, so this
+ * falls back to the force bake rather than emitting an arbitrary grid.
+ */
+export function attachHierarchyAwarePositions<T extends LayoutableScene>(
+  scene: T,
+  hierarchies: Record<string, HierarchyLayoutForest>,
+  options: HierarchyAwareLayoutOptions = {},
+): T {
+  if (!scene || !Array.isArray(scene.nodes) || scene.nodes.length === 0) return scene;
+  const forests = hierarchies ?? {};
+  const usable = Object.values(forests).some(
+    (forest) => forest && Object.keys(forest.nodes_by_id ?? {}).length > 0,
+  );
+  if (!usable) return attachLayoutPositions(scene);
+
+  const { positions } = computeHierarchyAwarePositions(scene.nodes, forests, options);
+
+  for (let i = 0; i < scene.nodes.length; i++) {
+    const node = scene.nodes[i];
+    if (!node) continue;
+    const x = positions[i * 2] ?? 0;
+    const y = positions[i * 2 + 1] ?? 0;
+    node.x = x;
+    node.y = y;
+    node.fx = x;
+    node.fy = y;
+  }
+
+  scene.layout_id = HIERARCHY_AWARE_SCENE_LAYOUT_ID;
+  scene.layout_dims = 2;
+  return scene;
+}
+
+/** Extra inputs some layouts need beyond the scene itself. */
+export interface ApplySceneLayoutOptions {
+  /** Declared hierarchy forests — required by `"hierarchy-aware"`. */
+  hierarchies?: Record<string, HierarchyLayoutForest>;
+  /** Tuning forwarded to the hierarchy-aware layout. */
+  hierarchyLayout?: HierarchyAwareLayoutOptions;
+}
+
+/**
  * Apply the selected build-time layout to a scene and return it.
  *
  *   • `"force"` (default) → {@link attachLayoutPositions} (FA2), UNCHANGED — no
  *     `layout_id` stamped, byte-identical to the pre-Lot-1 export.
  *   • `"typed-layer"`     → {@link attachTypedLayerPositions} (Variant A).
  *   • `"time-oriented"`   → {@link attachTimeOrientedPositions} (Variant E).
+ *   • `"hierarchy-aware"` → {@link attachHierarchyAwarePositions}. Needs
+ *     `options.hierarchies`; without them it degrades to the force bake.
  */
 export function applySceneLayout<T extends LayoutableScene>(
   scene: T,
   layoutId: SceneLayoutId = "force",
+  options: ApplySceneLayoutOptions = {},
 ): T {
   if (layoutId === "typed-layer") {
     return attachTypedLayerPositions(scene);
   }
   if (layoutId === "time-oriented") {
     return attachTimeOrientedPositions(scene);
+  }
+  if (layoutId === "hierarchy-aware") {
+    return attachHierarchyAwarePositions(
+      scene,
+      options.hierarchies ?? {},
+      options.hierarchyLayout ?? {},
+    );
   }
   return attachLayoutPositions(scene);
 }

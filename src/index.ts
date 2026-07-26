@@ -691,6 +691,34 @@ export { buildEntitySidecar, resolveStudioAppDir } from "./studio-assets.js";
 export type { EntitySidecarResponse } from "./studio-assets.js";
 export { buildStaticStudio, StudioSpaNotBuiltError, removeLegacyGraphViz } from "./studio-export.js";
 export type { BuildStaticStudioOptions, BuildStaticStudioResult } from "./studio-export.js";
+export {
+  buildCitedSourceProvenance,
+  preferredProvenanceLink,
+  resolveAcquisitionOrigin,
+  resolveConvertedOrigin,
+  writeSourceOriginSidecar,
+  sourceOriginSidecarPath,
+  CITED_SOURCE_PROVENANCE_SCHEMA,
+  PROVENANCE_SIDECAR_RELPATH,
+  SOURCE_ORIGIN_SCHEMA,
+} from "./converted-provenance.js";
+export type {
+  CitedSourceProvenance,
+  ProvenanceEntry,
+  ProvenanceLink,
+  ProvenanceLinkKind,
+  SourceOriginSidecar,
+} from "./converted-provenance.js";
+export {
+  buildLiveProvenance,
+  serveStudioSource,
+  serveCitedSourceFile,
+  resolveSourceFile,
+  studioSourcePathname,
+  studioSourceRoots,
+  sourceMimeFor,
+  SOURCES_ROUTE_PREFIX,
+} from "./studio-sources.js";
 export { computeLayout, attachLayoutPositions } from "./graph-layout.js";
 export type {
   ComputeLayoutOptions,
@@ -700,11 +728,33 @@ export type {
 } from "./graph-layout.js";
 export {
   applySceneLayout,
+  attachHierarchyAwarePositions,
   attachTypedLayerPositions,
+  HIERARCHY_AWARE_SCENE_LAYOUT_ID,
   resolveSceneLayoutId,
+  selectDefaultSceneLayoutId,
   TYPED_LAYER_SCENE_LAYOUT_ID,
 } from "./scene-layout.js";
-export type { SceneLayoutId } from "./scene-layout.js";
+export type {
+  ApplySceneLayoutOptions,
+  SceneLayoutId,
+} from "./scene-layout.js";
+export { computeHierarchyAwarePositions } from "./hierarchy-layout.js";
+export type {
+  HierarchyAwareLayoutOptions,
+  HierarchyAwareLayoutResult,
+  HierarchyLayoutForest,
+} from "./hierarchy-layout.js";
+export {
+  completeRegistrySeeds,
+  registriesBackingHierarchies,
+  registryDisplayLabels,
+} from "./registry-seed-completion.js";
+export type {
+  CompleteRegistrySeedsOptions,
+  RegistrySeedCompletionResult,
+  RegistrySeedCompletionStat,
+} from "./registry-seed-completion.js";
 export { buildStudioRenderBuffers } from "./studio-render-buffers.js";
 export type {
   BuildStudioRenderBuffersOptions,
