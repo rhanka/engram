@@ -50,12 +50,14 @@
     fetchScene,
     fetchSceneHierarchies,
     fetchSearchIndex,
+    fetchWindow,
     setStaticBaseProvider,
     __resetEntitiesIndexCache,
   } from "./lib/api.js";
   import { createModelStore } from "./lib/modelStore.svelte.js";
   import {
     buildScene,
+    buildWindowScene,
     applyWeakFilter,
     applyTimeFilter,
     sceneTimeRange,
@@ -81,7 +83,7 @@
     ontologyAbsorption,
   } from "./lib/groupBy.js";
   import { computeDisplayHiddenIds, applyVisibilityToScene } from "./lib/entityVisibility.js";
-  import { loadWorkspace } from "./lib/sceneLoader.js";
+  import { loadWorkspaceWindowed } from "./lib/sceneLoader.js";
   import {
     createDefaultViewerState,
     splitGroupedKeys,
@@ -383,6 +385,19 @@
   // `type` + `community`/`community_name` per node (+ its edges), so fall back to
   // it: the facets populate from the scene alone. The scene's edges drive the
   // community live/degree computation, identical to the graph path.
+  // Storage LOT 3 (honest counters): the CORPUS node total, summed from the
+  // store's precomputed `node_type` aggregate — O(#groups), a few KB, and the
+  // only corpus-wide number available while a bounded window is on screen. null
+  // off a store (or before the counts land), in which case the rail says
+  // "bounded slice" instead of inventing a denominator.
+  const corpusNodeCount = $derived(
+    Array.isArray(serverTypeCounts?.groups)
+      ? serverTypeCounts.groups.reduce(
+          (sum, g) => sum + (Number.isFinite(g?.count) ? g.count : 0),
+          0,
+        )
+      : null,
+  );
   const facetGraph = $derived(
     (graph?.nodes?.length ?? 0) > 0
       ? graph
@@ -716,7 +731,40 @@
    * are fetched fresh, and clears selection (ids don't carry across models).
    */
   async function loadActiveModel() {
-    const result = await loadWorkspace({
+    // Storage LOT 1/3: the corpus group counts are a few KB and independent of
+    // the scene, so start them HERE — concurrently with the windowed first paint
+    // below — instead of after the (multi-MB) full load. That way the honest
+    // "visible of corpus" rail badge has its denominator while the window is on
+    // screen. Never throws (fetchGroupCounts resolves null off a store).
+    const groupCountsLoad = fetchGroupCounts("node_type").then(
+      (counts) => {
+        serverTypeCounts = counts;
+      },
+      () => {
+        serverTypeCounts = null;
+      },
+    );
+    const result = await loadWorkspaceWindowed({
+      // Storage LOT 3: when a window-capable GraphStore mirror is configured,
+      // paint its BOUNDED slice (top-N by degree + induced edges + precomputed
+      // positions) FIRST, before a single byte of scene.json/graph.json is
+      // requested. With no store — the default flat-JSON studio, an offline
+      // bundle, or a 404 — the probe resolves null and this is EXACTLY the
+      // previous loadWorkspace path.
+      fetchWindow,
+      buildWindowScene: (win) =>
+        buildWindowScene(win, { showWeakLinks: viewerState.options.showWeakLinks }),
+      onFirstPaint: (windowScene) => {
+        loadError = null;
+        // Never pair the new window with a stale (previous-model) raw graph; the
+        // facets fall back to the window scene until hydration lands, which is
+        // what keeps the rail counts honest about what is actually drawn.
+        graph = EMPTY_GRAPH;
+        sceneData = windowScene;
+        // Unlock the template now — onMount only flips `loaded` after the FULL
+        // load, which is precisely the wait this window exists to remove.
+        loaded = true;
+      },
       fetchScene,
       fetchGraph,
       buildScene: (g) => buildScene(g, { showWeakLinks: viewerState.options.showWeakLinks }),
@@ -747,7 +795,10 @@
     // Storage LOT 2: prefer the store's precomputed `node_type` counts for the
     // Types rail when a mirror is configured. Resolves null off the default
     // flat-JSON studio, in which case the rail keeps computing counts in-memory.
-    serverTypeCounts = await fetchGroupCounts("node_type");
+    // Kicked off at the top of this function so the windowed first paint can
+    // show a corpus denominator; awaited here so the post-conditions are the
+    // same as before (counts settled when loadActiveModel resolves).
+    await groupCountsLoad;
   }
 
   /** Flip the active model and re-render the SAME studio in place. */
@@ -921,6 +972,7 @@
             {ontologyGrouped}
             {communityGrouped}
             stats={scene.stats}
+            {corpusNodeCount}
             onToggleType={handleToggleType}
             onToggleCommunity={handleToggleCommunity}
             onToggleEntity={handleToggleEntity}
