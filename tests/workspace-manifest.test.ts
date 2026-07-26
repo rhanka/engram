@@ -286,3 +286,37 @@ describe("emitWorkspaceManifest — owns the I/O, hashes real bytes", () => {
     expect(manifestIssues).toEqual([]);
   });
 });
+
+describe("workspace manifest node counts", () => {
+  it("stamps the three counts and derives coherent:true when they agree", () => {
+    const manifest = buildWorkspaceManifest({
+      artifacts: [{ name: "graph", path: "graph.json", schema: null, bytes: "{}" }],
+      generatedAt: "t",
+      counts: { graph_nodes: 47762, scene_nodes: 47762, entities: 47762 },
+    });
+    expect(manifest.counts).toEqual({
+      graph_nodes: 47762,
+      scene_nodes: 47762,
+      entities: 47762,
+      coherent: true,
+    });
+  });
+
+  it("derives coherent:false rather than trusting a caller's claim", () => {
+    const manifest = buildWorkspaceManifest({
+      artifacts: [{ name: "graph", path: "graph.json", schema: null, bytes: "{}" }],
+      generatedAt: "t",
+      // A scene truncated to 4000 nodes must never read as coherent.
+      counts: { graph_nodes: 47762, scene_nodes: 4000, entities: 47762 },
+    });
+    expect(manifest.counts?.coherent).toBe(false);
+  });
+
+  it("omits counts entirely when the producer did not measure them", () => {
+    const manifest = buildWorkspaceManifest({
+      artifacts: [{ name: "graph", path: "graph.json", schema: null, bytes: "{}" }],
+      generatedAt: "t",
+    });
+    expect(manifest.counts).toBeUndefined();
+  });
+});

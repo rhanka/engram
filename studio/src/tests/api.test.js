@@ -10,6 +10,7 @@ import {
   fetchModelsManifest,
   fetchReconciliationCandidates,
   fetchScene,
+  fetchSceneHierarchies,
   fetchWindow,
 } from "../lib/api.js";
 
@@ -135,6 +136,44 @@ describe("fetchClassHierarchies (EVOL 2.a)", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(fetchClassHierarchies()).resolves.toBeNull();
+  });
+});
+
+describe("fetchSceneHierarchies (Lot 2)", () => {
+  const artifact = {
+    schema: "graphify_scene_hierarchies_v1",
+    hierarchies: {
+      process_std_process_tree: { root_ids: ["AM01"], nodes_by_id: { AM01: { child_ids: [] } } },
+    },
+  };
+
+  it("returns the sidecar from the same-origin route", async () => {
+    const fetchMock = vi.fn(async (url) => {
+      if (url === "/api/ontology/scene-hierarchies.json") return jsonResponse(artifact);
+      throw new Error(`unexpected url ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchSceneHierarchies()).resolves.toEqual(artifact);
+  });
+
+  it("falls back to the bundle-relative ./scene-hierarchies.json (standalone file://)", async () => {
+    const fetchMock = vi.fn(async (url) => {
+      if (url === "/api/ontology/scene-hierarchies.json") return jsonResponse({ error: "nope" }, false);
+      if (url === "./scene-hierarchies.json") return jsonResponse(artifact);
+      throw new Error(`unexpected url ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchSceneHierarchies()).resolves.toEqual(artifact);
+    expect(fetchMock).toHaveBeenCalledWith("./scene-hierarchies.json", expect.anything());
+  });
+
+  it("returns null when the sidecar is absent (never throws)", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ error: "nope" }, false));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchSceneHierarchies()).resolves.toBeNull();
   });
 });
 

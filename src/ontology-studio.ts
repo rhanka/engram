@@ -14,6 +14,11 @@ import {
   serveStudioAsset,
   type StudioAssetResult,
 } from "./studio-assets.js";
+import {
+  resolveStudioStateDir,
+  serveStudioSource,
+  studioSourcePathname,
+} from "./studio-sources.js";
 import { buildStudioScene, type StudioScene } from "./studio-scene.js";
 import { attachLayoutPositions } from "./graph-layout.js";
 import { buildSearchIndex } from "./search-index-emitter.js";
@@ -75,6 +80,13 @@ export interface OntologyStudioHandlerOptions {
    * its in-memory group-by + full scene — so the default is unchanged.
    */
   store?: StudioStore;
+  /**
+   * Root the relative `source_file` locators of the `sources/` route resolve
+   * against. Defaults to the parent of the state dir (the project root), exactly
+   * like the static exporter's `sourcesRoot`. Set it when the corpus lives
+   * outside the project the graph was extracted into.
+   */
+  sourcesRoot?: string;
 }
 
 export interface StartOntologyStudioServerOptions {
@@ -90,6 +102,8 @@ export interface StartOntologyStudioServerOptions {
    * then 404 and the SPA falls back to client group-by + the full scene.
    */
   store?: StudioStore;
+  /** Root the `sources/` route resolves cited locators against (default: the project root). */
+  sourcesRoot?: string;
 }
 
 export interface StartedOntologyStudioServer {
@@ -550,6 +564,33 @@ export function createOntologyStudioRequestHandler(options: OntologyStudioHandle
         return;
       }
       const spaPath = studioSpaPathname(url.pathname);
+      // Cited sources + the provenance chain, served BEFORE the SPA assets: a
+      // `sources/…` request names a document in the CORPUS, which the Vite build
+      // never contains, so letting it reach `serveStudioAsset` could only 404.
+      // Serving it here is what makes the live studio's cited-source viewer
+      // behave identically to a static export — until now the whole provenance
+      // chain worked only in an exported bundle.
+      const sourcePath = studioSourcePathname(spaPath ?? url.pathname);
+      if (sourcePath !== null) {
+        let decoded: string;
+        try {
+          decoded = decodeURIComponent(sourcePath);
+        } catch {
+          sendResult(response, jsonResult(400, { error: "malformed source path" }));
+          return;
+        }
+        // Guarded: this handler is async, so an uncaught throw here is an
+        // unhandled rejection that takes the whole server process down — which
+        // is exactly what a state dir with no compiled profile used to do.
+        try {
+          const stateDir = resolveStudioStateDir(options.profileStatePath);
+          sendAsset(response, serveStudioSource(decoded, stateDir, options.sourcesRoot));
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          sendResult(response, jsonResult(500, { error: message }));
+        }
+        return;
+      }
       if (spaPath !== null) {
         const asset = serveStudioAsset(spaPath);
         if (asset) {
@@ -663,6 +704,9 @@ export async function startOntologyStudioServer(
   }
   if (options.store) {
     handlerOptions.store = options.store;
+  }
+  if (options.sourcesRoot !== undefined) {
+    handlerOptions.sourcesRoot = options.sourcesRoot;
   }
   const server = createServer(createOntologyStudioRequestHandler(handlerOptions));
   await new Promise<void>((resolve, reject) => {
