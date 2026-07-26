@@ -27,6 +27,7 @@
   import WorkspaceShell from "./components/WorkspaceShell.svelte";
   import {
     buildSelectionThread,
+    loadCitedSourceProvenance,
     resolveBundleSource,
     sameCitation,
     sourceHrefFor,
@@ -611,7 +612,15 @@
     });
   }
 
-  function handleOpenSource({ citations, index, fallbackSourceFile, label, entityId = null }) {
+  async function handleOpenSource({ citations, index, fallbackSourceFile, label, entityId = null }) {
+    // Load the provenance chain BEFORE the viewer mounts. The frozen viewer
+    // takes `sourceHref` as a plain synchronous function and calls it once per
+    // ref, with no reactive dependency we could invalidate later — so a map that
+    // arrives after first render never reaches the toolbar, and "Ouvrir" kept
+    // linking to the OCR markdown while the pane beneath it rendered the
+    // original PDF. Awaiting here is cheap: the map is memoized, so only the
+    // first open in a session pays a fetch.
+    await loadCitedSourceProvenance();
     const clicked = Array.isArray(citations)
       ? (citations[Number.isInteger(index) && index >= 0 ? index : 0] ?? null)
       : null;
