@@ -5806,6 +5806,42 @@ export async function main(): Promise<void> {
     });
 
   program
+    .command("time-slice")
+    .description(
+      "Write a graph.json sliced to the elements overlapping [--since, --until] (stamps graph.window)",
+    )
+    .option(
+      "--since <timestamp>",
+      "Inclusive lower bound: safe integer epoch-ms or ISO-8601 with an explicit Z/UTC offset",
+    )
+    .option(
+      "--until <timestamp>",
+      "Inclusive upper bound: safe integer epoch-ms or ISO-8601 with an explicit Z/UTC offset",
+    )
+    .option("--graph <path>", "Explicit source graph.json")
+    .option("--config <path>", "Graphify config supplying the state-dir source")
+    .option("--out <path>", "Destination graph.json (omitted: dry run, nothing is written)")
+    .option("--force", "Overwrite an existing --out file (never the source graph)")
+    .option("--json", "Emit only the graphify.graph-time-slice/v1 report")
+    .action(async (opts) => {
+      try {
+        const { runGraphTimeSlice } = await import("./graph-time-slice.js");
+        runGraphTimeSlice({
+          ...(opts.since !== undefined ? { since: String(opts.since) } : {}),
+          ...(opts.until !== undefined ? { until: String(opts.until) } : {}),
+          ...(opts.graph ? { graph: String(opts.graph) } : {}),
+          ...(opts.config ? { config: String(opts.config) } : {}),
+          ...(opts.out ? { out: String(opts.out) } : {}),
+          ...(opts.force ? { force: true } : {}),
+          ...(opts.json ? { json: true } : {}),
+        });
+      } catch (error) {
+        console.error(`error: ${error instanceof Error ? error.message : String(error)}`);
+        process.exit(1);
+      }
+    });
+
+  program
     .command("query <question>")
     .description("BFS traversal of graph.json for a question")
     .option("--dfs", "Use depth-first instead of breadth-first")
