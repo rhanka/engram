@@ -72,6 +72,13 @@
     communityGrouped = false,
     // The scene's count badges (relocated under the search bar).
     stats = { nodeCount: 0, edgeCount: 0, communityCount: 0 },
+    // Storage LOT 3 (honest counters): the CORPUS node total, when a store can
+    // tell us one (summed from the `node_type` aggregate). Only meaningful while
+    // `stats.windowed` is set — during a bounded first paint the rail renders
+    // "visible of corpus" so the slice is never mistaken for the whole graph.
+    // null (the default studio, or before the counts land) degrades to a plain
+    // "bounded slice" note, never to a fabricated total.
+    corpusNodeCount = null,
     onToggleType,
     onToggleCommunity,
     onToggleEntity,
@@ -225,6 +232,26 @@
   const totalNodeCount = $derived(graphNodes(graph).length);
   const hasQuery = $derived(query.trim().length > 0);
 
+  // Storage LOT 3 — HONEST COUNTERS for the windowed first paint. When the
+  // rendered scene is a BOUNDED store window, `totalNodeCount` above is the
+  // window's own node count (App falls back to the scene for facets while the
+  // raw graph is still hydrating), so the badge is already truthful about what
+  // is drawn — but on its own it would understate the graph, letting the user
+  // read a 2 000-node slice as the entire corpus. This extra badge names the
+  // slice explicitly and, whenever the store's aggregate gives us a corpus
+  // total, renders "visible of corpus". Without a total we say "bounded slice"
+  // rather than invent a denominator. Both badges disappear once hydration
+  // swaps in the full scene (`stats.windowed` is only set by buildWindowScene).
+  const windowed = $derived(stats?.windowed === true);
+  const corpusTotal = $derived(
+    Number.isFinite(corpusNodeCount) && corpusNodeCount > 0 ? corpusNodeCount : null,
+  );
+  const windowSummary = $derived(
+    corpusTotal
+      ? `${totalNodeCount} of ${corpusTotal} nodes`
+      : `${totalNodeCount} nodes (bounded slice)`,
+  );
+
   // Communities + Entities use STANDALONE SelectableRows (selected/onselect), so
   // they need the selection-membership sets for the per-row `selected` flag.
   // (Types uses a SelectableList controlled by selection.types — see below.)
@@ -276,6 +303,11 @@
       </Badge>
       <Badge tone="neutral">{stats.edgeCount} edges</Badge>
       <Badge tone="info">{stats.communityCount} groups</Badge>
+      {#if windowed}
+        <!-- Storage LOT 3: this paint is a BOUNDED store window, not the corpus.
+             Say so, and give the corpus total when the store aggregate knows it. -->
+        <Badge tone="warning">windowed · {windowSummary}</Badge>
+      {/if}
     </span>
     <!-- 4-STATE control (D6): the GLOBAL "Reset visibility" affordance — clears
          every Grouped + Hidden + Solo override back to Normal in one click. It is
