@@ -6552,7 +6552,7 @@ export function extractMcpConfig(filePath: string, rootDir?: string): Extraction
 
   function addEdge(source: string, target: string, relation: string): void {
     if (!source || !target || source === target) return;
-    const key = `${source} ${target} ${relation}`;
+    const key = `${source}\u0000${target}\u0000${relation}`;
     if (seenEdges.has(key)) return;
     seenEdges.add(key);
     edges.push({
