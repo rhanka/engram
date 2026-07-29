@@ -1106,7 +1106,7 @@ export function candidateUnionSubgraph(
     const s = rep(e.source), t = rep(e.target);
     if (s === t) continue; // self-loop created by the fold — drop it.
     const rel = e.relation ?? e.relation_type ?? "";
-    const key = `${s} ${t} ${rel}`;
+    const key = `${s}\u0000${t}\u0000${rel}`;
     if (seen.has(key)) continue;
     seen.add(key);
     links.push({ ...e, source: s, target: t });
