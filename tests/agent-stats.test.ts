@@ -40,6 +40,42 @@ describe("agent-stats redaction (privacy)", () => {
     expect(out).toContain("~");
   });
 
+  // REGRESSION (2026-07-30): an agent ran `kubectl exec … -- printenv | grep -iE
+  // 's3|aws'` intending to list variable NAMES. `printenv` emits `NAME=VALUE`, so
+  // the grep matched whole lines and the transcript captured live OVH Object
+  // Storage credentials in clear. The redactor did not catch them: its pattern
+  // required `secret`/`api_key` to sit IMMEDIATELY before the `=`, and in
+  // `S3_SECRET_KEY=` there is a `_KEY` in between. Every case below is a shape the
+  // old pattern let through.
+  it("strips secret-bearing environment assignments (NAME=VALUE from printenv/env)", () => {
+    const leaked = [
+      "S3_ACCESS_KEY=0123456789abcdef0123456789abcdef",
+      "S3_SECRET_KEY=fedcba9876543210fedcba9876543210",
+      "AWS_SECRET_ACCESS_KEY=fedcba9876543210fedcba9876543210",
+      "OVH_S3_SECRET_KEY=fedcba9876543210fedcba9876543210",
+      "POSTGRES_PASSWORD=hunter2hunter2hunter2hunter2",
+      "TENANT_S3_ACCESS_KEY=0123456789abcdef0123456789abcdef",
+      "GITHUB_TOKEN=0123456789abcdef0123456789abcdef",
+      "SECRET_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef",
+    ];
+    for (const line of leaked) {
+      const out = redact(line);
+      const value = line.split("=")[1];
+      expect(out, `value leaked for ${line.split("=")[0]}`).not.toContain(value);
+      expect(out).toContain("<token>");
+      // The NAME must survive: it is the diagnostic signal we keep on purpose.
+      expect(out).toContain(line.split("=")[0]);
+    }
+  });
+
+  it("leaves non-secret environment assignments intact", () => {
+    // Over-redacting is a real cost: these are the values an operator reads to
+    // diagnose, and none of them is a credential.
+    for (const line of ["S3_ENDPOINT=https://s3.bhs.io.cloud.ovh.net", "S3_REGION=bhs", "LOG_LEVEL=debug"]) {
+      expect(redact(line)).toBe(line);
+    }
+  });
+
   it("clamps long excerpts", () => {
     const long = "x".repeat(500);
     expect(redactExcerpt(long, "", 50).length).toBeLessThanOrEqual(51);
