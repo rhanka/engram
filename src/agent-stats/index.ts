@@ -30,6 +30,7 @@ import {
   normalizeAgy,
   normalizeClaude,
   normalizeCodex,
+  pathToTilde,
   type RepoScope,
 } from "./normalize.js";
 import {
@@ -680,10 +681,19 @@ function loadProjectSessionsForIdentity(opts: LoadSessionsOptions): ProjectSessi
   const aliasPrefixes = opts.identity.aliases.flatMap((a) =>
     a.pathPrefixes.map((p) => (p.startsWith("~") ? p.replace(/^~/, home) : p)),
   );
+  // Compare in tilde-space on BOTH sides — the same idiom cwdInRepo already
+  // uses. Re-expanding `~` against `home` is unsound: pathToTilde emits `~` via
+  // a generic /home|Users/<user> fallback for paths that are NOT under `home`,
+  // so expanding it against an injected `home` rebuilds a path that exists
+  // nowhere. That made membership depend on whether tmpdir sat under the real
+  // home directory rather than on the caller-supplied `home`.
   const inIdentity = (cwds: string[]): boolean =>
     cwds.some((c) => {
-      const abs = c.startsWith("~") ? c.replace(/^~/, home) : c;
-      return aliasPrefixes.some((p) => abs === p || abs.startsWith(p.replace(/\/+$/, "") + "/"));
+      const norm = pathToTilde(c, home);
+      return aliasPrefixes.some((p) => {
+        const prefix = pathToTilde(p.replace(/\/+$/, ""), home);
+        return norm === prefix || norm.startsWith(prefix + "/");
+      });
     });
 
   // Discover: Claude transcripts per alias slug; codex/agy scanned globally and
@@ -727,12 +737,11 @@ function loadProjectSessionsForIdentity(opts: LoadSessionsOptions): ProjectSessi
       continue;
     }
     for (const { fact } of results) {
-      // Tilde-normalize cwds for the membership test (parsers redact to `~`).
-      const cwds = fact.cwds.map((c) => (c.startsWith("~") ? c.replace(/^~/, home) : c));
-      if (!inIdentity(cwds)) continue;
-      const inst = matchInstance(instances, fact.host, fact.cwds);
+      // Parsers already redact cwds to `~`; inIdentity normalizes both sides.
+      if (!inIdentity(fact.cwds)) continue;
+      const inst = matchInstance(instances, fact.host, fact.cwds, home);
       const agentId = resolveIdentity(fact, inst).agentId;
-      const evidenceInstance = matchInstance(localEvidenceInstances, fact.host, fact.cwds);
+      const evidenceInstance = matchInstance(localEvidenceInstances, fact.host, fact.cwds, home);
       if (evidenceInstance && evidenceInstance.id === agentId) matchedInstanceIds.add(evidenceInstance.id);
       byFactId.set(fact.factId, sessionFactToInput(fact, agentId));
     }
