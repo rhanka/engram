@@ -6,6 +6,34 @@
  */
 import type Graph from "graphology";
 
+/**
+ * NORMATIVE — what a capability means, and what it deliberately does NOT mean.
+ *
+ * A capability declares an IMPLEMENTED METHOD. It does NOT declare the PRESENCE
+ * OF DATA. `capabilities.window` means "this adapter implements graphWindow()",
+ * never "graph_positions holds rows"; `capabilities.aggregate` means "this
+ * adapter implements groupCounts()", never "graph_group_counts holds rows".
+ *
+ * The declaration is therefore STATIC and I/O-FREE. It must not be derived from
+ * table state, because a consumer reads `capabilities` exactly ONCE: a
+ * state-derived flag would hand that consumer a value that was only true at
+ * construction time, and would go stale the moment a push (or a clear) changed
+ * the table. A flag that is true-then-false without the holder ever being told
+ * is a WORSE contract than an optimistic declaration — so the declaration stays
+ * optimistic on purpose.
+ *
+ * "Declared but never built" is answered by the METHOD instead, which returns a
+ * readable-empty discriminant alongside its payload:
+ *   - `graphWindow()`  → `populated` + `positions_built_at`
+ *   - `groupCounts()`  → `populated` + `counts_built_at`
+ * This lets a consumer ACT on the difference between "nothing was ever baked"
+ * (fall back, or warn) and "baked, and genuinely empty" — a distinction a
+ * boolean capability cannot express, at the only moment it actually matters:
+ * the call. Both replace-scoped derived tables carry the SAME shape by design;
+ * they are one family, not two independent flags.
+ *
+ * @see GraphWindow, GraphGroupCounts
+ */
 export interface GraphStoreCapabilities {
   push: true;
   query: boolean;
@@ -120,6 +148,20 @@ export interface GraphWindow {
   limit: number;
   nodes: GraphWindowNode[];
   edges: GraphWindowEdge[];
+  /**
+   * Readable-empty discriminant (see {@link GraphStoreCapabilities}). `false`
+   * means the backing positions table holds NO row for the requested layout:
+   * the method is implemented, but nothing was ever baked for it. `true` with an
+   * empty `nodes` is a real, baked, empty slice. Only the first warrants a
+   * fallback — telling them apart is the entire point.
+   */
+  populated: boolean;
+  /**
+   * The `snapshot_id` of the push that baked these positions (equal to
+   * `graph_meta.pushed_at`), or `null` when `populated` is false. A stamp the
+   * push itself wrote — never a value synthesised at read time.
+   */
+  positions_built_at: string | null;
 }
 
 /** A canonical, flattened node returned by a temporal overlap query. */
@@ -174,6 +216,19 @@ export interface GraphGroupCount {
 export interface GraphGroupCounts {
   axis: string;
   groups: GraphGroupCount[];
+  /**
+   * Readable-empty discriminant (see {@link GraphStoreCapabilities}). Same shape
+   * and same meaning as {@link GraphWindow.populated}, deliberately: `false`
+   * means the backing counts table holds NO row for the requested axis, `true`
+   * with empty `groups` is a real, baked, empty aggregate.
+   */
+  populated: boolean;
+  /**
+   * The `snapshot_id` of the push that baked these counts (equal to
+   * `graph_meta.pushed_at`), or `null` when `populated` is false. A stamp the
+   * push itself wrote — never a value synthesised at read time.
+   */
+  counts_built_at: string | null;
 }
 
 export interface GraphPushOptions {

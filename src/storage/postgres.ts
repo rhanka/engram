@@ -1042,8 +1042,10 @@ export async function createPostgresGraphStore(
       // O(#groups): read the precomputed aggregate, never the 47k node rows.
       // The (city_slug, axis, key) primary key serves this as a prefix scan.
       await ensureSchema();
+      // `snapshot_id` rides along on the SAME scan (no extra round-trip): it is
+      // the readable-empty stamp, written by the push that baked these rows.
       const result = await pool.query(
-        `SELECT key, label, count, parent_key FROM ${q(COUNT_TABLE)} ` +
+        `SELECT key, label, count, parent_key, snapshot_id FROM ${q(COUNT_TABLE)} ` +
           `WHERE city_slug = $1 AND axis = $2 ORDER BY count DESC, key ASC`,
         [citySlug, axis],
       );
@@ -1059,7 +1061,16 @@ export async function createPostgresGraphStore(
         if (row.parent_key != null) group.parent_key = String(row.parent_key);
         return group;
       });
-      return { axis, groups };
+      // A capability declares an implemented METHOD, not the presence of data —
+      // so the method, not the flag, reports whether this axis was ever baked.
+      const rows = result.rows ?? [];
+      const stamp = rows[0]?.snapshot_id;
+      return {
+        axis,
+        groups,
+        populated: rows.length > 0,
+        counts_built_at: stamp != null ? String(stamp) : null,
+      };
     },
 
     async layoutPositions(layout: string): Promise<GraphLayoutPosition[]> {
@@ -1090,8 +1101,10 @@ export async function createPostgresGraphStore(
       const limit = Math.max(1, Math.min(MAX_WINDOW_LIMIT, Math.floor(requested)));
 
       // (1) top-N nodes by degree for the layout (indexed by (city, layout, degree)).
+      // `snapshot_id` rides along on the SAME indexed scan (no extra round-trip):
+      // it is the readable-empty stamp, written by the push that baked the rows.
       const posResult = await pool.query(
-        `SELECT node_id, x, y, degree FROM ${q(POSITION_TABLE)} ` +
+        `SELECT node_id, x, y, degree, snapshot_id FROM ${q(POSITION_TABLE)} ` +
           `WHERE city_slug = $1 AND layout_id = $2 ORDER BY degree DESC, node_id ASC LIMIT $3`,
         [citySlug, layout, limit],
       );
@@ -1145,7 +1158,19 @@ export async function createPostgresGraphStore(
         }
       }
 
-      return { strategy, layout, limit, nodes, edges };
+      // A capability declares an implemented METHOD, not the presence of data —
+      // so the method, not the flag, reports whether this layout was ever baked.
+      // Zero rows here means exactly that: nothing baked for (snapshot, layout).
+      const stamp = posRows[0]?.snapshot_id;
+      return {
+        strategy,
+        layout,
+        limit,
+        nodes,
+        edges,
+        populated: posRows.length > 0,
+        positions_built_at: stamp != null ? String(stamp) : null,
+      };
     },
 
     async queryWindow(
