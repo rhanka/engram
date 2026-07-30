@@ -191,11 +191,14 @@ export async function runStorePush(
       mode,
       ...(opts.dryRun ? { dryRun: true } : {}),
     });
-    // Aggregate + positions are REPLACE-snapshot scoped: only a replace push
-    // rebuilds them (a merge leaves the previous counts/positions in place).
-    const rebuilt = mode === "replace" && !opts.dryRun;
-    const axes = rebuilt ? [...(store.capabilities.aggregate?.axes ?? [])] : [];
-    const layouts = rebuilt ? [...(store.capabilities.window?.layouts ?? [])] : [];
+    // What got rebuilt is the ADAPTER's policy, so we report what the push tells
+    // us instead of re-deriving it from `mode` + the capability list. The old
+    // inference read the capability as if it described DATA ("window is declared,
+    // and this was a replace, so positions must have been rebuilt") — the very
+    // conflation the capability contract now forbids. An adapter that reports
+    // nothing rebuilt is believed, even when it declares the capability.
+    const axes = [...(result.rebuilt?.axes ?? [])];
+    const layouts = [...(result.rebuilt?.layouts ?? [])];
 
     const summary: StorePushSummary = {
       storeId,
