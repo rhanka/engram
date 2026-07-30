@@ -48,6 +48,38 @@ test guard at `705ada4`; it does not add direct Cohere/Ollama/provider SDKs or a
 speculative gateway protocol. The exact published-contract gate is in the WP6
 spec and Track blocker `01KY5D7FYNAHJ0GYDGMP8RF018`.
 
+### Embedding-gate re-verification (2026-07-30): mesh has drifted, the gate has not
+
+The 2026-07-22 evidence above was two minor versions stale. Re-measured against
+the **published** registry, not a source branch:
+
+| Package | 2026-07-22 lock | Observed 2026-07-30 | Embedding contract |
+| --- | --- | --- | --- |
+| `@sentropic/llm-mesh` | `0.10.0` | **`0.12.0`** (drifted) | still **absent** |
+| `@sentropic/llm-gateway` | `0.9.0` | `0.9.0` (unchanged) | still absent |
+
+Method: `npm pack @sentropic/llm-mesh@0.12.0`, unpack, and read every shipped
+`dist/*.d.ts` plus `package.json` case-insensitively for `embed`. The tarball
+ships `account-transports`, `adapter-auth`, `adapter-core`, `adapters`, `auth`,
+`capabilities`, `catalog`, `errors`, `generation`, `index`, `mesh`, `messages`,
+`providers`, `registry`, `streaming`, and `tools` declarations — there is no
+`embedding.d.ts`. The only `embed` matches in the whole tarball are
+`ToolResultEmbeddedResourceContent` / `type: 'embedded-resource'` in
+`tools.d.ts`, which is an MCP tool-result content type and not an embedding API.
+
+Measured against the six symbols the WP6 spec requires (§D3): no
+`EmbeddingRequest`, no `EmbeddingResponse`, no `ProviderAdapter.embed`, no
+`LlmMesh.embed`, no embedding capability metadata, no `operation: "embed"` hook.
+Zero of six.
+
+Disposition unchanged and deliberately so: the blocker
+`01KY5D7FYNAHJ0GYDGMP8RF018` is **upheld**, the injected `EmbeddingProvider`
+boundary stays, and no provider SDK is added. This row re-dates the evidence; it
+does not close the gate. The `705ada4` guard was re-run at this observation on
+`origin/main` `54d771ae`: `tests/storage-import-guard.test.ts`, 3/3 green,
+including its positive control (the probe trips when the driver really loads, so
+the assertions measure evaluation rather than passing vacuously).
+
 The h2a evidence for this pass used the shared active root
 `/home/antoinefa/h2a-workspace/.h2a`, conductor
 `codex:graphify:46788d039b48`, and a live response from
