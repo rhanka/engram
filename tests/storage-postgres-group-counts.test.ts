@@ -105,7 +105,16 @@ function answer(state: InMemoryPgState, text: string, params?: unknown[]) {
     const rows = state.countRows
       .filter((r) => r.city_slug === slug && r.axis === axis)
       .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
-      .map((r) => ({ key: r.key, label: r.label, count: r.count, parent_key: r.parent_key }));
+      .map((r) => ({
+        key: r.key,
+        label: r.label,
+        count: r.count,
+        parent_key: r.parent_key,
+        // Projected because the adapter now selects it for the readable-empty
+        // stamp. Without this the fake would answer the new column with
+        // `undefined` and the discriminant test would pass on a lie.
+        snapshot_id: r.snapshot_id,
+      }));
     return { rows, rowCount: rows.length };
   }
   // graph_meta SELECT: no preseeded rows here (local cache covers reads).
@@ -201,6 +210,87 @@ describe("Postgres group counts: capability", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Readable empty: a capability declares an IMPLEMENTED METHOD, not DATA
+//
+// Same shape as the window capability, deliberately: both are replace-scoped
+// derived tables, so they answer "declared but never built" the same way.
+// ---------------------------------------------------------------------------
+
+describe("Postgres group counts: readable empty", () => {
+  it("declares the capability even when EVERY query fails — the declaration is not I/O-derived", async () => {
+    // Regression GUARD for the retained contract, not a proof of change.
+    const { createPostgresGraphStore } = await import("../src/storage/postgres.js");
+    class ThrowingPool {
+      constructor(_config?: Record<string, unknown>) {}
+      query() {
+        return Promise.reject(new Error("database unreachable"));
+      }
+      connect() {
+        return Promise.reject(new Error("database unreachable"));
+      }
+      end() {
+        return Promise.resolve();
+      }
+    }
+    const store = await createPostgresGraphStore(
+      {
+        connectionString: "postgres://user:pass@localhost:5432/testdb",
+        citySlug: "caps_agg_no_io",
+        target: freshArtifactBase(),
+      },
+      { driverModule: { Pool: ThrowingPool } } as unknown as StoreTestDeps,
+    );
+    expect(store.capabilities.aggregate).toBeDefined();
+    expect(store.capabilities.aggregate!.version).toBe(1);
+    await store.close();
+  });
+
+  it("reports populated:false + counts_built_at:null when nothing was ever baked", async () => {
+    const state = freshState();
+    const store = await makePostgresStore(state, "gc_never_baked");
+    const counts = await store.groupCounts("node_type");
+    await store.close();
+
+    expect(store.capabilities.aggregate).toBeDefined();
+    expect(counts.groups).toEqual([]);
+    expect(counts.populated).toBe(false);
+    expect(counts.counts_built_at).toBeNull();
+  });
+
+  it("reports populated:true + the producing snapshot stamp after a REPLACE push", async () => {
+    const state = freshState();
+    const store = await makePostgresStore(state, "gc_baked");
+    const { G, communities } = typedGraph();
+
+    await store.pushGraph(G, communities, { mode: "replace" });
+    const counts = await store.groupCounts("node_type");
+    await store.close();
+
+    const stamped = state.countRows.find(
+      (r) => r.city_slug === "gc_baked" && r.axis === "node_type",
+    );
+    expect(stamped).toBeDefined();
+    expect(counts.populated).toBe(true);
+    // Not an invented value: the snapshot_id the push itself stamped on the rows.
+    expect(counts.counts_built_at).toBe(stamped!.snapshot_id);
+  });
+
+  it("reports populated:false for an axis never baked, even though another one was", async () => {
+    const state = freshState();
+    const store = await makePostgresStore(state, "gc_other_axis");
+    const { G, communities } = typedGraph();
+
+    await store.pushGraph(G, communities, { mode: "replace" });
+    const counts = await store.groupCounts("no_such_axis");
+    await store.close();
+
+    expect(counts.groups).toEqual([]);
+    expect(counts.populated).toBe(false);
+    expect(counts.counts_built_at).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // REPLACE push → groupCounts
 // ---------------------------------------------------------------------------
 
@@ -266,7 +356,15 @@ describe("Postgres group counts: replace push aggregate", () => {
     const result = await store.groupCounts!("class_id");
     await store.close();
 
-    expect(result).toEqual({ axis: "class_id", groups: [] });
+    // The result carries the readable-empty discriminant: an axis the push never
+    // baked reads `populated: false`, which is what lets a consumer tell "never
+    // built" apart from "built and legitimately empty".
+    expect(result).toEqual({
+      axis: "class_id",
+      groups: [],
+      populated: false,
+      counts_built_at: null,
+    });
   });
 });
 

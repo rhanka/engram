@@ -168,7 +168,16 @@ function answer(state: InMemoryPgState, text: string, params?: unknown[]) {
       .filter((r) => r.city_slug === slug && r.layout_id === layout)
       .sort((a, b) => b.degree - a.degree || a.node_id.localeCompare(b.node_id))
       .slice(0, limit)
-      .map((r) => ({ node_id: r.node_id, x: r.x, y: r.y, degree: r.degree }));
+      .map((r) => ({
+        node_id: r.node_id,
+        x: r.x,
+        y: r.y,
+        degree: r.degree,
+        // Projected because the adapter now selects it for the readable-empty
+        // stamp. Without this the fake would answer the new column with
+        // `undefined` and the discriminant test would pass on a lie.
+        snapshot_id: r.snapshot_id,
+      }));
     return { rows, rowCount: rows.length };
   }
   // layoutPositions: ORDER BY node_id ASC (no degree column projected).
@@ -292,6 +301,88 @@ describe("Postgres windowed loader: capability", () => {
     expect(store.capabilities.window!.layouts).toContain("force");
     expect(store.capabilities.window!.strategies).toContain("degree-top-n");
     await store.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Readable empty: a capability declares an IMPLEMENTED METHOD, not DATA
+// ---------------------------------------------------------------------------
+
+describe("Postgres windowed loader: readable empty", () => {
+  it("declares the capability even when EVERY query fails — the declaration is not I/O-derived", async () => {
+    // Regression GUARD for the retained contract, not a proof of change: a
+    // consumer reads `capabilities` ONCE, so deriving it from table state would
+    // hand it a value that was only true at construction time.
+    const { createPostgresGraphStore } = await import("../src/storage/postgres.js");
+    class ThrowingPool {
+      constructor(_config?: Record<string, unknown>) {}
+      query() {
+        return Promise.reject(new Error("database unreachable"));
+      }
+      connect() {
+        return Promise.reject(new Error("database unreachable"));
+      }
+      end() {
+        return Promise.resolve();
+      }
+    }
+    const store = await createPostgresGraphStore(
+      {
+        connectionString: "postgres://user:pass@localhost:5432/testdb",
+        citySlug: "caps_no_io",
+        target: freshArtifactBase(),
+      },
+      { driverModule: { Pool: ThrowingPool } } as unknown as StoreTestDeps,
+    );
+    expect(store.capabilities.window).toBeDefined();
+    expect(store.capabilities.window!.version).toBe(1);
+    await store.close();
+  });
+
+  it("reports populated:false + positions_built_at:null when nothing was ever baked", async () => {
+    const state = freshState();
+    const store = await makePostgresStore(state, "wl_never_baked");
+    const window = await store.graphWindow({ layout: "force" });
+    await store.close();
+
+    // The capability IS declared (the method is implemented) but no REPLACE push
+    // ever populated graph_positions. The consumer must be able to tell that
+    // apart from a genuinely empty slice — a boolean capability cannot.
+    expect(store.capabilities.window).toBeDefined();
+    expect(window.nodes).toEqual([]);
+    expect(window.populated).toBe(false);
+    expect(window.positions_built_at).toBeNull();
+  });
+
+  it("reports populated:true + the producing snapshot stamp after a REPLACE push", async () => {
+    const state = freshState();
+    const store = await makePostgresStore(state, "wl_baked");
+    const { G, communities } = positionedGraph();
+
+    await store.pushGraph(G, communities, { mode: "replace" });
+    const window = await store.graphWindow({ layout: "force", limit: 100 });
+    await store.close();
+
+    const stamped = state.positions.find((r) => r.city_slug === "wl_baked");
+    expect(stamped).toBeDefined();
+    expect(window.populated).toBe(true);
+    // Not an invented value: the snapshot_id the push itself stamped on the rows.
+    expect(window.positions_built_at).toBe(stamped!.snapshot_id);
+  });
+
+  it("reports populated:false for a layout never baked, even though another one was", async () => {
+    const state = freshState();
+    const store = await makePostgresStore(state, "wl_other_layout");
+    const { G, communities } = positionedGraph();
+
+    await store.pushGraph(G, communities, { mode: "replace" });
+    const window = await store.graphWindow({ layout: "dag", limit: 100 });
+    await store.close();
+
+    // 'force' IS baked, 'dag' never was: populated is scoped to what was asked.
+    expect(window.nodes).toEqual([]);
+    expect(window.populated).toBe(false);
+    expect(window.positions_built_at).toBeNull();
   });
 });
 
