@@ -242,11 +242,31 @@ export interface GraphPushOptions {
   namespace?: string;
 }
 
+/** What a push rebuilt: aggregate axes and windowed-loader layouts. */
+export interface GraphPushRebuilt {
+  /** Group-by axes whose counts this push rebuilt; empty when it rebuilt none. */
+  axes: readonly string[];
+  /** Layouts whose positions this push rebuilt; empty when it rebuilt none. */
+  layouts: readonly string[];
+}
+
 export interface GraphPushResult {
   nodes: number;
   edges: number;
   warnings: string[];
   durationMs: number;
+  /**
+   * The derived tables this push ACTUALLY rebuilt, reported by the adapter that
+   * owns the policy. Optional: adapters with no derived tables omit it, and a
+   * caller reads the absence as "nothing was rebuilt".
+   *
+   * A caller must NOT re-derive this from `mode`. Whether a replace push
+   * rebuilds the aggregate or the positions is the ADAPTER's decision, so a
+   * caller that reimplements the rule is printing a guess — one that silently
+   * becomes a lie the moment any adapter decides differently. Same principle as
+   * the readable-empty discriminant: ask the component that knows.
+   */
+  rebuilt?: GraphPushRebuilt;
 }
 
 export interface GraphStoreSnapshotMeta {
