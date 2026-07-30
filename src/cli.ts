@@ -3250,13 +3250,20 @@ export async function main(): Promise<void> {
     .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
     .requiredOption("--out <path>", "Candidate queue JSON output path")
     .option("--json", "Print JSON result")
+    .option(
+      "--structural",
+      "Also emit the LOWEST-confidence structural tier (shared-neighbour Jaccard + "
+        + "relation-type profile + registry provenance). Proposes candidates only — never merges.",
+    )
     .action(async (opts) => {
       const {
         generateOntologyReconciliationCandidates,
         writeOntologyReconciliationCandidates,
       } = await import("./ontology-reconciliation.js");
       const context = loadOntologyPatchContext(opts.profileState);
-      const queue = generateOntologyReconciliationCandidates(context);
+      const queue = generateOntologyReconciliationCandidates(context, {
+        structural: opts.structural === true,
+      });
       writeOntologyReconciliationCandidates(opts.out, queue);
       if (opts.json) {
         console.log(JSON.stringify(queue, null, 2));
