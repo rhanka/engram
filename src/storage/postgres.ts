@@ -914,6 +914,8 @@ export async function createPostgresGraphStore(
           edges: edgeCount,
           warnings: [],
           durationMs: Date.now() - start,
+          // A dry run plans without writing, so it rebuilds nothing.
+          rebuilt: { axes: [], layouts: [] },
         };
       }
 
@@ -1001,6 +1003,12 @@ export async function createPostgresGraphStore(
         edges: edgeCount,
         warnings: [],
         durationMs: Date.now() - start,
+        // Reported from the branch actually taken above, so the caller never has
+        // to reimplement this adapter's replace-only rebuild policy.
+        rebuilt:
+          mode === "replace"
+            ? { axes: [...AGGREGATE_AXES], layouts: [DEFAULT_LAYOUT] }
+            : { axes: [], layouts: [] },
       };
     },
 
