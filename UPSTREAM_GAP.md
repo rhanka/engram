@@ -136,6 +136,96 @@ Lot roll-up of the 30 actionable rows:
 
 Honesty caveats (unchanged from prior passes): optional tree-sitter WASM grammars (kotlin, swift, c#, ruby, objc) are absent in this sandbox — language-gap rows were verified by reading `src/extract.ts`, not by running extraction; `9811def`/`1256d65`/`b70a6d7` look already-covered but are kept `must-audit` pending test confirmation. (2026-07-06 port pass correction: `tree-sitter-ruby` WASM **is** present in this sandbox — the ruby ports below were verified by live extraction; kotlin/swift/c# remain absent.)
 
+### Method re-audit (2026-07-30): the "verified by reading `src/extract.ts`" rows were unproven
+
+The caveat immediately above states that language-gap rows were *verified by
+reading* `src/extract.ts`. That verification method was **invalid**, so every
+row established that way was neither true nor false but **unproven**. This
+section re-verifies them. It supersedes nothing factual above; it supplies the
+proof that was missing.
+
+**Root cause, measured — and narrower than "ugrep is not GNU grep".** The
+`grep` an agent runs in this harness is a shell function wrapping ugrep 7.5.0
+with a fixed flag set that includes **`-I`** (skip binary files). `src/extract.ts`
+carries 2 NUL bytes at offsets 241837 and 241847 — inside a template literal on
+line 6555, where they read as ordinary spaces. Consequence on `origin/main`
+`54d771ae`:
+
+| Probe on `src/extract.ts` | stdout | exit |
+| --- | --- | --- |
+| `grep -n _makeId` (wrapper) | *nothing* | 1 |
+| `grep -c _makeId` (wrapper) | *nothing* | 1 |
+| `grep -l _makeId` (wrapper) | *nothing* | 1 |
+| `grep -rn _makeId src/` (wrapper) | file silently missing from results | 1 |
+| `grep -an _makeId` (wrapper, `-a`) | 151 matches | 0 |
+| `command grep -c _makeId` (bare ugrep) | 151 | 0 |
+| `command grep -Ic _makeId` (bare ugrep, `-I`) | 0 | 1 |
+
+Bare ugrep reads the file correctly; `-I` alone destroys the result. The failure
+is total across every mode, emits nothing on stderr — not even GNU's "binary
+file matches" — and the recursive form is the worst case, since it succeeds on
+every other file while dropping this one. Any "not found in `src/extract.ts`"
+conclusion reached without `-a` is therefore unproven.
+
+Two corrections to how this trap has been described. First, `git ls-files --eol`
+**does** flag this file (`i/-text w/-text`), so git was not fooled here even
+though the NULs sit far past its 8000-byte sniff window; the claim that git saw
+plain text while grep stayed mute does not hold for `src/extract.ts` as measured.
+Second, the operative rule is unaffected and is stated on effect, not cause:
+**always `-a`, and never conclude an absence without it.**
+
+**Scope.** Five files still carry NUL on `origin/main` — `src/extract.ts` (2),
+`src/ontology-class-hierarchies-emitter.ts` (4), `src/ontology-studio.ts` (2),
+`src/search-index-emitter.ts` (1), `tests/sanitize-metadata.test.ts` (2). Only
+`src/extract.ts` is cited by this document (25 citations), so rows grounded in
+the other four are **not concerned**. Rows grounded in NUL-free files are also
+not concerned: their greps did not lie.
+
+**Result — 16 assertions re-probed with `grep -a`, 15 confirmed, 1 refuted.**
+
+| Row | Assertion re-probed | Verdict |
+| --- | --- | --- |
+| 284 | project-relative ids via `qualifiedFileStem` | confirmée (25 hits) |
+| 289 | `resolveJsImportTarget*` present | confirmée (7 hits) |
+| 289 | tsconfig alias loader present | confirmée (15 hits) |
+| 283 | post-extract cross-file resolution pass exists | confirmée (2 hits) |
+| 269/307 | `extractGroovy` exists and emits `inherits` + `implements` | confirmée |
+| 105 | ruby `mixes_in` (`6631af7`) | confirmée (2 hits) |
+| 105 | kotlin `by` delegation (`9b04022`) | confirmée (7 hits) |
+| 105 | `extractPowershell` (`a129ff2`) | confirmée (2 hits) |
+| 105 | `extractObjc` (`cd3a376`) | confirmée (3 hits) |
+| 105 | import-equals already covered (`9811def`) | **INFIRMÉE** |
+| 117 | `_SHEBANG_DISPATCH` + `_getExtractor` (`2ab0867`) | confirmée |
+| 84 | `collectFiles` (`aa1bbda`) | confirmée (3 hits) |
+| 86 | `_makeId` (`e2ef4ef`) | confirmée (151 hits) |
+
+**The refuted row, with its evidence chain.** `9811def` (import-equals) was
+recorded as "likely covered, test-confirm". It is not covered. Seven spellings
+return zero matches under `-a`: `import_equals`, `ImportEquals`, `importEquals`,
+`import_alias`, `import_alias_declaration`, `import_require`, `TSImportEquals`.
+The import node types the TS walker does handle are `import_clause`,
+`import_declaration`, `import_from_statement`, `import_header`, `import_spec`,
+`import_spec_list`, `import_specifier`, and `import_statement` — the
+tree-sitter-typescript node for `import x = require("y")` is
+`import_alias_declaration`, and it is absent. The CommonJS fallback does not
+rescue it either: `_findRequireCall` is reached from exactly one call site,
+which gates on `node.type === "lexical_declaration" || "variable_declaration"`
+and then requires a `variable_declarator` child. An `import_alias_declaration`
+is none of those, so the require detector is never invoked for it. **This row
+returns to a genuine `must-audit`/`port` state; the "already-covered"
+presumption is withdrawn.**
+
+**Line references that have drifted** (a provenance defect, not a wrong claim —
+the assertions above all still hold, only the coordinates are stale): row 261
+describes the extractor as "5.4k lines" where `src/extract.ts` is now 7063; row
+307 cites `extractGroovy` at `:2827-2837` where it is defined at `:4091`; row 84
+cites `collectFiles` at `:6339` where it is at `:6622`. Line-anchored citations
+in this document should be read as of their own pass date.
+
+The probe is replayable and was kept out of the repo: it lives in the WP6
+scratch worktree as `reaudit-extract-claims.sh`, takes the worktree root as its
+only argument, and is read-only.
+
 ### Closed this pass — 2026-07-06 port wave (WP6 upstream-ports branch)
 
 Verified-local = regression test ran green in this sandbox; CI-only = integration test soft-skips locally (optional grammar absent) and asserts where the grammar installs.
