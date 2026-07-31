@@ -41,6 +41,14 @@ The Python window `31211a0..82c46e5` contains 230 commits. A source lock is not
 a mandate to port every commit. Each actionable cluster must be independently
 classified and tested under the Track F rules.
 
+**Mesh re-observation (2026-07-30).** `@sentropic/llm-mesh` has drifted from the
+`0.10.0` lock above to npm `0.12.0`; `@sentropic/llm-gateway` is unchanged at
+`0.9.0`. The published `0.12.0` tarball was unpacked and read: it satisfies
+**zero of the six** symbols §D3 requires. The two rows above remain the
+2026-07-22 historical lock; this line is the current observation. The gate
+stays closed and the blocker stays open — see the re-verification section in
+`UPSTREAM_GAP.md` for the measured symbol list and method.
+
 ## 3. Decisions
 
 ### D1 — Parity authority
