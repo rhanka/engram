@@ -127,12 +127,33 @@ interface NodeTerms {
 }
 
 /**
+ * CJK scripts, plus Hangul, carry far more meaning per character than
+ * alphabetic ones: `東京` says in two graphemes what "Tokyo" needs five to say.
+ * A flat `length >= 4` gate is therefore calibrated for the Latin case only,
+ * and drops short CJK entities in silence.
+ *
+ * Weighting those code points double lets ONE width rule serve both scripts
+ * without moving the Latin threshold by a single character: `abc` (3) stays
+ * out, `abcd` (4) stays in, `東京` (2 × 2 = 4) comes in, and a lone ideograph
+ * (2) stays out — one character being too ambiguous to ground on.
+ */
+const CJK_WIDE_RE =
+  /[ᄀ-ᇿ぀-ヿ㐀-䶿一-鿿가-힯豈-﫿]|[\u{20000}-\u{2FA1F}]/u;
+
+function termWidth(term: string): number {
+  let width = 0;
+  // Iterate by code point so astral-plane ideographs count once, not twice.
+  for (const ch of term) width += CJK_WIDE_RE.test(ch) ? 2 : 1;
+  return width;
+}
+
+/**
  * Type-aware term selection (ia-aero `ground.py`/`ground2.py`):
  *  - person   → surname (matched against section headings first, then body).
  *  - reference→ the `[N]` bracketed marker, resolved back into the body.
  *  - acronym  → whole-word regex on the raw label (3-6 caps).
  *  - concept… → the most specific content word (≥ 5 chars, stopword-filtered).
- *  - any      → the label base + full label (≥ 4 chars) as fallbacks.
+ *  - any      → the label base + full label (width ≥ 4) as fallbacks.
  */
 export function selectNodeTerms(attrs: Record<string, unknown>): NodeTerms {
   const label = safeStr(attrs.label);
@@ -143,12 +164,12 @@ export function selectNodeTerms(attrs: Record<string, unknown>): NodeTerms {
   const normLabel = normalizeForMatch(label);
 
   const terms = new Set<string>();
-  for (const t of [normBase, normLabel]) if (t.length >= 4) terms.add(t);
+  for (const t of [normBase, normLabel]) if (termWidth(t) >= 4) terms.add(t);
   // Aliases are strong, distinct grounding terms.
   if (Array.isArray(attrs.aliases)) {
     for (const a of attrs.aliases) {
       const na = normalizeForMatch(safeStr(a));
-      if (na.length >= 4) terms.add(na);
+      if (termWidth(na) >= 4) terms.add(na);
     }
   }
 
