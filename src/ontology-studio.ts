@@ -306,7 +306,7 @@ function searchIndexJsonResult(stateDir: string): OntologyStudioRouteResult {
     return jsonResult(404, { error: "graph.json not found" });
   }
   const stat = statSync(graphPath);
-  const key = `${graphPath} ${stat.mtimeMs} ${stat.size}`;
+  const key = `${graphPath}\u0000${stat.mtimeMs}\u0000${stat.size}`;
   let cached = searchIndexCache;
   if (!cached || cached.key !== key) {
     const data = JSON.parse(readFileSync(graphPath, "utf-8")) as SerializedGraphData;
