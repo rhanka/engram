@@ -76,6 +76,7 @@ import { parsePdfOcrMode } from "./pdf-preflight.js";
 import { prepareSemanticDetection } from "./semantic-prepare.js";
 import { discoverProjectConfig, loadProjectConfig } from "./project-config.js";
 import { loadOntologyProfile } from "./ontology-profile.js";
+import { loadProfileRegistries } from "./profile-registry.js";
 import { runConfiguredDataprep, type ProfileState } from "./configured-dataprep.js";
 import { buildProfileExtractionPrompt, type ProfilePromptState } from "./profile-prompts.js";
 import { buildProfileDiscoveryPrompt } from "./profile-prompts.js";
@@ -844,6 +845,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         extraction,
         profile: context.profile,
         config: context.profile.outputs.ontology,
+        registries: loadProfileRegistries(context.profile),
       });
       if (!result.enabled) {
         console.log("Ontology outputs disabled by profile config");

@@ -6,6 +6,7 @@
  */
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve as pathResolve, basename, extname } from "node:path";
+import { writeSourceOriginSidecar } from "./converted-provenance.js";
 import { safeFetch, safeFetchText, validateUrl } from "./security.js";
 import { downloadAudio } from "./transcribe.js";
 
@@ -236,6 +237,22 @@ Source: ${url}
   return [content, filename];
 }
 
+/**
+ * Download a binary artifact AND record where it came from.
+ *
+ * The markdown-producing branches (webpage/tweet/arXiv) stamp `source_url` into
+ * the frontmatter of the document they render, so their web origin survives.
+ * This branch has no document to stamp — it writes bytes — and used to return
+ * the path with the URL discarded. A downloaded PDF therefore lost its origin
+ * immediately, and irreversibly: `pdf-ocr.ts` later stamps only the LOCAL path
+ * it converted from, so by the time a citation exists the chain reads
+ * `citation -> markdown -> local pdf` and simply stops, with nothing to say the
+ * paper was ever fetched from the web.
+ *
+ * `<file>.origin.json` is the missing rung, written next to the bytes at the one
+ * moment the URL is still known. Best-effort by design: a sidecar that cannot be
+ * written must never fail a download that succeeded.
+ */
 async function downloadBinary(
   url: string,
   suffix: string,
@@ -245,6 +262,10 @@ async function downloadBinary(
   const outPath = pathResolve(targetDir, filename);
   const data = await safeFetch(url);
   writeFileSync(outPath, data);
+  writeSourceOriginSidecar(outPath, {
+    source_url: url,
+    retrieved_at: new Date().toISOString(),
+  });
   return outPath;
 }
 

@@ -50,6 +50,7 @@ import { safeExecGit } from "./git.js";
 import { safeGitRevParse } from "./git.js";
 import { discoverProjectConfig, loadProjectConfig } from "./project-config.js";
 import { loadOntologyProfile } from "./ontology-profile.js";
+import { loadProfileRegistries } from "./profile-registry.js";
 import { normalizeLanguageSelection } from "./description-language.js";
 import { DEFAULT_GRAPHIFY_STATE_DIR, defaultManifestPath, resolveGraphInputPath, resolveGraphifyPaths } from "./paths.js";
 import { normalizeSearchText, scoreSearchText } from "./search.js";
@@ -3126,6 +3127,7 @@ export async function main(): Promise<void> {
         extraction: readJson(opts.input),
         profile: context.profile,
         config: context.profile.outputs.ontology,
+        registries: loadProfileRegistries(context.profile),
         ...(descriptions ? { descriptions } : {}),
       });
       if (!result.enabled) {
@@ -3203,6 +3205,7 @@ export async function main(): Promise<void> {
           extraction,
           profile: ontologyProfile,
           config: ontologyConfig,
+          registries: loadProfileRegistries(ontologyProfile),
         });
         if (result.enabled) {
           ontologyRan = true;
@@ -3247,13 +3250,20 @@ export async function main(): Promise<void> {
     .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
     .requiredOption("--out <path>", "Candidate queue JSON output path")
     .option("--json", "Print JSON result")
+    .option(
+      "--structural",
+      "Also emit the LOWEST-confidence structural tier (shared-neighbour Jaccard + "
+        + "relation-type profile + registry provenance). Proposes candidates only — never merges.",
+    )
     .action(async (opts) => {
       const {
         generateOntologyReconciliationCandidates,
         writeOntologyReconciliationCandidates,
       } = await import("./ontology-reconciliation.js");
       const context = loadOntologyPatchContext(opts.profileState);
-      const queue = generateOntologyReconciliationCandidates(context);
+      const queue = generateOntologyReconciliationCandidates(context, {
+        structural: opts.structural === true,
+      });
       writeOntologyReconciliationCandidates(opts.out, queue);
       if (opts.json) {
         console.log(JSON.stringify(queue, null, 2));
@@ -3363,16 +3373,21 @@ export async function main(): Promise<void> {
     .command("studio")
     .description(
       "Start a local ontology reconciliation studio API; --write enables patch mutation routes (loopback only). " +
-        "When --store (or GRAPHIFY_STORE / storage.mirrors) names an aggregate-capable GraphStore that has been " +
+        "When --store (or GRAPHIFY_STORE / storage.mirrors) names a capable GraphStore that has been " +
         "`graphify store push`ed, GET /api/ontology/groups serves O(#groups) counts from the store instead of an " +
-        "O(#nodes) client recompute.",
+        "O(#nodes) client recompute, and GET /api/ontology/window serves a bounded top-N first-paint slice so the " +
+        "studio renders without transferring the full multi-MB scene.",
     )
     .requiredOption("--config <path>", "Graphify project config path")
     .option("--host <host>", "Host to bind", "127.0.0.1")
     .option("--port <port>", "Port to bind; defaults to an ephemeral port")
     .option("--write", "Enable POST /api/ontology/patch/{validate,dry-run,apply} routes (loopback only)")
     .option("--token <token>", "Bearer token for write routes (default: random hex24 generated at startup)")
-    .option("--store <id>", "GraphStore backend id to serve group counts from (default: GRAPHIFY_STORE or storage.mirrors[0].backend)")
+    .option("--store <id>", "GraphStore backend id to serve group counts and the first-paint window from (default: GRAPHIFY_STORE or storage.mirrors[0].backend)")
+    .option(
+      "--sources-root <dir>",
+      "Root the cited-source route (GET /studio/sources/<source_file>) resolves relative locators against (default: the parent of the state dir)",
+    )
     .action(async (opts) => {
       const projectConfig = loadProjectConfig(resolve(opts.config));
       const profileStatePath = join(projectConfig.outputs.state_dir, "profile", "profile-state.json");
@@ -3381,16 +3396,19 @@ export async function main(): Promise<void> {
         process.exit(1);
       }
       const { startOntologyStudioServer } = await import("./ontology-studio.js");
-      // Storage LOT 2: when an aggregate-capable GraphStore mirror is configured
-      // (env GRAPHIFY_STORE, or a storage.mirrors[] backend in the project
-      // config), wire it so the SPA group rail reads precomputed O(#groups)
-      // counts via GET /api/ontology/groups. Resolution is best-effort and
-      // NON-FATAL: with no backend configured — or on any connect/capability
-      // miss — the studio keeps serving flat JSON only (the route 404s and the
-      // SPA falls back to client-side group-by). Never blocks the default studio.
-      let groupCountsStore:
-        | import("./ontology-studio.js").StudioGroupCountsStore
-        | undefined;
+      // Storage LOT 2/3: when a capable GraphStore mirror is configured (env
+      // GRAPHIFY_STORE, or a storage.mirrors[] backend in the project config),
+      // wire it so the SPA can read precomputed O(#groups) counts via
+      // GET /api/ontology/groups (the `aggregate` capability) AND a bounded
+      // first-paint slice via GET /api/ontology/window (the `window`
+      // capability). The two are gated INDEPENDENTLY: a backend may declare
+      // either, both, or neither, and each route 404s on its own miss. Wiring on
+      // `aggregate` alone would silently drop a window-only backend.
+      // Resolution is best-effort and NON-FATAL: with no backend configured — or
+      // on any connect/capability miss — the studio keeps serving flat JSON only
+      // (the routes 404 and the SPA falls back to client-side group-by + the
+      // full scene). Never blocks the default studio.
+      let studioStore: import("./ontology-studio.js").StudioStore | undefined;
       const storeBackendId =
         opts.store ?? process.env.GRAPHIFY_STORE ?? projectConfig.storage?.mirrors?.[0]?.backend;
       if (storeBackendId) {
@@ -3399,11 +3417,17 @@ export async function main(): Promise<void> {
           const { resolveGraphStore } = await import("./storage/registry.js");
           const storeConfig = resolveStoreConfig(storeBackendId, { projectConfig });
           const resolved = await resolveGraphStore(storeBackendId, storeConfig);
-          if (resolved.capabilities.aggregate && typeof resolved.groupCounts === "function") {
-            groupCountsStore = resolved;
+          const canCount =
+            Boolean(resolved.capabilities.aggregate) && typeof resolved.groupCounts === "function";
+          const canWindow =
+            Boolean(resolved.capabilities.window) && typeof resolved.graphWindow === "function";
+          if (canCount || canWindow) {
+            studioStore = resolved;
+          }
+          if (canCount) {
             console.log(
               `Group-by counts served from the '${storeBackendId}' store aggregate ` +
-                `(axes: ${resolved.capabilities.aggregate.axes.join(", ")}).`,
+                `(axes: ${resolved.capabilities.aggregate!.axes.join(", ")}).`,
             );
           } else {
             console.warn(
@@ -3411,11 +3435,23 @@ export async function main(): Promise<void> {
                 `the studio will compute group counts client-side.`,
             );
           }
+          if (canWindow) {
+            const window = resolved.capabilities.window!;
+            console.log(
+              `Windowed first paint served from the '${storeBackendId}' store ` +
+                `(strategies: ${window.strategies.join(", ")}; layouts: ${window.layouts.join(", ")}).`,
+            );
+          } else {
+            console.warn(
+              `Store '${storeBackendId}' declares no windowed-loader capability; ` +
+                `the studio will load the full scene at first paint.`,
+            );
+          }
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           console.warn(
-            `Could not wire a group-by counts store (${message}); ` +
-              `the studio will compute group counts client-side.`,
+            `Could not wire a studio store (${message}); the studio will compute ` +
+              `group counts client-side and load the full scene at first paint.`,
           );
         }
       }
@@ -3426,7 +3462,8 @@ export async function main(): Promise<void> {
           ...(opts.port ? { port: Number.parseInt(opts.port, 10) } : {}),
           ...(opts.write ? { write: true } : {}),
           ...(opts.token ? { token: String(opts.token) } : {}),
-          ...(groupCountsStore ? { store: groupCountsStore } : {}),
+          ...(studioStore ? { store: studioStore } : {}),
+          ...(opts.sourcesRoot ? { sourcesRoot: resolve(String(opts.sourcesRoot)) } : {}),
         });
         if (started.writeEnabled) {
           console.log(`Ontology studio (write-enabled) listening at ${started.url}`);
@@ -5122,6 +5159,7 @@ export async function main(): Promise<void> {
     .option("--no-single-file", "Skip the self-contained studio.html; emit only the multi-file bundle")
     .option("--full-offline", "Inline graph.json + entities.json into studio.html too (not just the scene) so the offline studio needs zero network")
     .option("--include-sources", "Copy the CITED source documents into <out>/sources/ so the cited-source viewer can open them from the served bundle (opt-in; only files referenced by citations)")
+    .option("--include-original-sources", "Also copy the ORIGINAL documents the cited markdown was converted from (the PDFs behind .graphify/converted/pdf/*.md) into <out>/sources/ so the viewer can open the paper itself. Opt-in and potentially VERY large — a PDF corpus can weigh tens of GB; the provenance chain (sources/provenance.json) is always emitted without it")
     .option("--sources-root <dir>", "Root the relative source_file locators resolve against (default: the parent of --state)")
     .action(async (out, opts) => {
       try {
@@ -5140,6 +5178,7 @@ export async function main(): Promise<void> {
             singleFile: opts.singleFile !== false,
             fullOffline: opts.fullOffline === true,
             includeSources: opts.includeSources === true,
+            includeOriginalSources: opts.includeOriginalSources === true,
             ...(typeof opts.sourcesRoot === "string" && opts.sourcesRoot.trim()
               ? { sourcesRoot: resolve(opts.sourcesRoot.trim()) }
               : {}),
@@ -5171,6 +5210,20 @@ export async function main(): Promise<void> {
             console.log(
               `  cited sources: ${result.sources.copied} file(s) (${mb} MB) under sources/` +
                 (result.sources.missing > 0 ? ` — ${result.sources.missing} missing (see warnings)` : ""),
+            );
+          }
+          if (result.provenancePath) {
+            console.log(
+              `  source provenance: ${result.provenanceCount} converted document(s) linked to their original in sources/provenance.json`,
+            );
+          }
+          if (result.originalSources) {
+            const mb = (result.originalSources.bytes / (1024 * 1024)).toFixed(1);
+            console.log(
+              `  original documents: ${result.originalSources.copied} file(s) (${mb} MB) under sources/` +
+                (result.originalSources.missing > 0
+                  ? ` — ${result.originalSources.missing} missing (see warnings)`
+                  : ""),
             );
           }
           console.log(`  open: serve ${result.outDir} with any static file server (index.html)`);
@@ -5806,6 +5859,42 @@ export async function main(): Promise<void> {
     });
 
   program
+    .command("time-slice")
+    .description(
+      "Write a graph.json sliced to the elements overlapping [--since, --until] (stamps graph.window)",
+    )
+    .option(
+      "--since <timestamp>",
+      "Inclusive lower bound: safe integer epoch-ms or ISO-8601 with an explicit Z/UTC offset",
+    )
+    .option(
+      "--until <timestamp>",
+      "Inclusive upper bound: safe integer epoch-ms or ISO-8601 with an explicit Z/UTC offset",
+    )
+    .option("--graph <path>", "Explicit source graph.json")
+    .option("--config <path>", "Graphify config supplying the state-dir source")
+    .option("--out <path>", "Destination graph.json (omitted: dry run, nothing is written)")
+    .option("--force", "Overwrite an existing --out file (never the source graph)")
+    .option("--json", "Emit only the graphify.graph-time-slice/v1 report")
+    .action(async (opts) => {
+      try {
+        const { runGraphTimeSlice } = await import("./graph-time-slice.js");
+        runGraphTimeSlice({
+          ...(opts.since !== undefined ? { since: String(opts.since) } : {}),
+          ...(opts.until !== undefined ? { until: String(opts.until) } : {}),
+          ...(opts.graph ? { graph: String(opts.graph) } : {}),
+          ...(opts.config ? { config: String(opts.config) } : {}),
+          ...(opts.out ? { out: String(opts.out) } : {}),
+          ...(opts.force ? { force: true } : {}),
+          ...(opts.json ? { json: true } : {}),
+        });
+      } catch (error) {
+        console.error(`error: ${error instanceof Error ? error.message : String(error)}`);
+        process.exit(1);
+      }
+    });
+
+  program
     .command("query <question>")
     .description("BFS traversal of graph.json for a question")
     .option("--dfs", "Use depth-first instead of breadth-first")
@@ -5814,7 +5903,7 @@ export async function main(): Promise<void> {
     .action(async (question, opts) => {
       const { readFileSync: rf } = await import("node:fs");
       const { resolve: res } = await import("node:path");
-      const { dropQueryStopwords, scoreSearchText } = await import("./search.js");
+      const { dropQueryStopwords, queryTerms, scoreSearchText } = await import("./search.js");
       const gp = res(opts.graph);
       if (!existsSync(gp)) {
         console.error(`error: graph file not found: ${gp}`);
@@ -5832,9 +5921,15 @@ export async function main(): Promise<void> {
         // Question/filler stopwords are dropped from the QUERY terms only
         // (node text is never filtered) so content words drive seeding —
         // port of upstream 6e97088.
-        const terms = dropQueryStopwords(
-          normalizeSearchText(question).split(/\s+/).filter((t: string) => t.length > 2),
-        );
+        //
+        // Tokenisation goes through the shared `queryTerms` helper (upstream
+        // 020cca2 / #964 directive: CLI, MCP query, and benchmark must share
+        // one rule). The previous `split(/\s+/).filter(len > 2)` here applied
+        // the short-token gate to every script, so two-character non-ASCII
+        // terms (前端, 東京, Ελ) were silently dropped on this path only.
+        // `normalizeSearchText` runs first because `scoreSearchText` compares
+        // against deaccented labels.
+        const terms = dropQueryStopwords(queryTerms(normalizeSearchText(question)));
         const scored: [number, string][] = [];
         G.forEachNode((nid: string, data: Record<string, unknown>) => {
           const score = scoreSearchText(
