@@ -260,6 +260,29 @@ export async function fetchClassHierarchies() {
 }
 
 /**
+ * Lot 2: fetch the `scene-hierarchies.json` sidecar (graphify_scene_hierarchies_v1)
+ * — the standalone registry process forests (ABP / PROCESS_STD / org unit trees) the
+ * Hierarchies rail navigates. Same resolution ladder as fetchClassHierarchies:
+ * inlined offline bundle → same-origin server route → bundle-relative static
+ * copy. Resolves `null` when absent (a repo without registry hierarchies) so the
+ * rail simply hides its Hierarchies section and never throws.
+ */
+export async function fetchSceneHierarchies() {
+  const inlined = bundleGet("scene-hierarchies.json");
+  if (inlined !== BUNDLE_ABSENT) return inlined;
+  if (bundlePresent()) return null;
+  try {
+    return await getJson("/api/ontology/scene-hierarchies.json");
+  } catch {
+    try {
+      return await getJson(staticPath("scene-hierarchies.json"));
+    } catch {
+      return null;
+    }
+  }
+}
+
+/**
  * Work-stream C: fetch the offline retrieval substrate `search-index.json` (the
  * self-contained BM25F postings + CSR adjacency + community membership the
  * in-browser answer-pack runs over). Same resolution ladder as the other

@@ -13,6 +13,7 @@ import {
   type ParsedSource,
   type SourceUnit,
 } from "./source-grounding.js";
+import { normalizeIdPart } from "./node-id.js";
 import type { TextJsonGenerationClient } from "./llm-execution.js";
 import type {
   LinkValidationIssue,
@@ -813,12 +814,13 @@ function readNodeIdentityMap(outputDir: string): Map<string, string> {
   return map;
 }
 
+/**
+ * Must stay byte-for-byte equal to the seed id built in
+ * `profile-registry.registryRecordsToExtraction`, so both use the same
+ * Unicode-safe fragment normalizer.
+ */
 function registrySeedNodeId(registryId: string, recordId: string): string {
-  const safe = (value: string) => value
-    .trim()
-    .replace(/[^A-Za-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-  return `registry_${safe(registryId)}_${safe(recordId)}`;
+  return `registry_${normalizeIdPart(registryId)}_${normalizeIdPart(recordId)}`;
 }
 
 /** Aggregate linked mention occurrences into the legacy Studio node-id view. */

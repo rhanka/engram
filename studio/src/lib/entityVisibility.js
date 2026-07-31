@@ -9,8 +9,10 @@
  *     the byte-identity fast path, mirroring applyWeakFilter/applyTimeFilter).
  *
  * D1 ownership rule (both review passes dissent from spec §6.1). A node's owning
- * rail entities span three axes: its community, its type, and its ontology leaf
- * class + that class's ANCESTOR chain. Each entity's stored state votes:
+ * rail entities span four axes: its community, its type, its ontology leaf class
+ * + that class's ANCESTOR chain, and — when the repo binds registry forests — its
+ * position in those forests (a forest node owns its whole subtree). Each entity's
+ * stored state votes:
  *   - soloActive?  visible = owned-by-≥1-Solo  AND  NOT owned-by-(storedHidden\solo)
  *   - else         hidden  = owned-by-≥1-Hidden           (Normal owners abstain)
  * so "hide type:Character" hides EVERY Character even though their communities are
@@ -40,28 +42,76 @@ function expandClassIds(classIds, descendantClassIds) {
   return out;
 }
 
+/** Identity of a `{forestKey, nodeId}` ref, for set membership. */
+function refKey(ref) {
+  return `${ref?.forestKey}\0${ref?.nodeId}`;
+}
+
+/**
+ * Expand a set of registry-forest node refs to the RAW RECORD IDS of their whole
+ * subtree (self included). A forest row is an ontology row: hiding/soloing it
+ * must govern every entity beneath it, exactly as a class governs its subclasses.
+ *
+ * Generic — nothing here knows ABP from PROCESS_STD; it walks whatever forests the
+ * `scene-hierarchies.json` sidecar carries. A ref whose forest or node is absent
+ * contributes nothing (a stale key can never mask the scene).
+ *
+ * @param {{forestKey: string, nodeId: string}[]} refs
+ * @param {object|null} sceneHierarchies  the scene-hierarchies sidecar.
+ * @returns {Set<string>} raw registry record ids covered by the refs' subtrees.
+ */
+export function expandHierarchyRefs(refs, sceneHierarchies) {
+  const out = new Set();
+  const forests = sceneHierarchies?.hierarchies;
+  if (!forests || typeof forests !== "object") return out;
+  for (const ref of refs ?? []) {
+    const nodesById = forests[ref?.forestKey]?.nodes_by_id;
+    if (!nodesById || typeof nodesById !== "object") continue;
+    if (!Object.prototype.hasOwnProperty.call(nodesById, ref.nodeId)) continue;
+    // Iterative DFS with a visited set — never trust an artifact enough to recurse.
+    const stack = [ref.nodeId];
+    while (stack.length) {
+      const raw = stack.pop();
+      if (typeof raw !== "string" || out.has(raw)) continue;
+      out.add(raw);
+      for (const child of nodesById[raw]?.child_ids ?? []) stack.push(child);
+    }
+  }
+  return out;
+}
+
 /**
  * The owning entity keys of a scene node, split per axis. A SYNTHETIC group node
  * is owned by ITS OWN key (so "a grouped entity's group node follows the entity"
  * falls out for free); an entity node is owned by its community, its type, and its
  * ontology leaf class. Never parses a synthetic id — reads `community_key` /
  * `type_name` / the class node's own id, matching the A2 discipline.
- * @returns {{ community: string|null, type: string|null, classId: string|null }}
+ * A plain entity additionally carries its RAW REGISTRY id (`registry_record_id`),
+ * the join key of the registry forests — that is its hierarchy-axis ownership.
+ * @returns {{ community: string|null, type: string|null, classId: string|null,
+ *   registryId: string|null }}
  */
 function nodeOwnership(node, classIdByMemberId) {
   if (node?.community_node_kind === "community") {
-    return { community: node.community_key ?? null, type: null, classId: null };
+    return { community: node.community_key ?? null, type: null, classId: null, registryId: null };
   }
   if (node?.type_node_kind === "type") {
-    return { community: null, type: node.type_name ?? null, classId: null };
+    return { community: null, type: node.type_name ?? null, classId: null, registryId: null };
   }
   if (node?.ontology_node_kind === "class") {
-    return { community: null, type: null, classId: typeof node.id === "string" ? node.id : null };
+    return {
+      community: null,
+      type: null,
+      classId: typeof node.id === "string" ? node.id : null,
+      registryId: null,
+    };
   }
+  const raw = node?.registry_record_id;
   return {
     community: nodeCommunity(node),
     type: nodeType(node),
     classId: classIdByMemberId.get(node?.id) ?? null,
+    registryId: typeof raw === "string" && raw ? raw : null,
   };
 }
 
@@ -73,9 +123,18 @@ function nodeOwnership(node, classIdByMemberId) {
  * @param {string[]} args.hiddenKeys       stored Hidden namespaced keys (visibility.hidden).
  * @param {string[]} args.soloKeys         Solo overlay namespaced keys (visibility.solo).
  * @param {object|null} args.classHierarchies  the class-hierarchies.json artifact.
+ * @param {object|null} args.sceneHierarchies  the scene-hierarchies.json sidecar —
+ *        the registry FORESTS. Their rows are ontology rows, so a Hidden/Solo
+ *        forest node governs its whole subtree of entities.
  * @returns {Set<string>} the ids to remove from the rendered scene (empty ⇒ nothing hidden).
  */
-export function computeDisplayHiddenIds({ nodes = [], hiddenKeys = [], soloKeys = [], classHierarchies = null } = {}) {
+export function computeDisplayHiddenIds({
+  nodes = [],
+  hiddenKeys = [],
+  soloKeys = [],
+  classHierarchies = null,
+  sceneHierarchies = null,
+} = {}) {
   const hiddenSplit = splitGroupedKeys(hiddenKeys);
   const soloSplit = splitGroupedKeys(soloKeys);
   const soloActive = soloKeys.length > 0;
@@ -88,6 +147,7 @@ export function computeDisplayHiddenIds({ nodes = [], hiddenKeys = [], soloKeys 
   const soloCommunities = new Set(soloSplit.communityKeys);
   const soloTypes = new Set(soloSplit.typeNames);
   const soloClasses = expandClassIds(soloSplit.ontologyClassIds, descendantClassIds);
+  const soloRegistryIds = expandHierarchyRefs(soloSplit.hierarchyRefs, sceneHierarchies);
 
   const effHiddenCommunities = new Set(
     hiddenSplit.communityKeys.filter((k) => !soloActive || !soloCommunities.has(k)),
@@ -101,6 +161,11 @@ export function computeDisplayHiddenIds({ nodes = [], hiddenKeys = [], soloKeys 
     ),
     descendantClassIds,
   );
+  const soloRefKeys = new Set(soloSplit.hierarchyRefs.map(refKey));
+  const effHiddenRegistryIds = expandHierarchyRefs(
+    hiddenSplit.hierarchyRefs.filter((r) => !soloActive || !soloRefKeys.has(refKey(r))),
+    sceneHierarchies,
+  );
 
   const hiddenIds = new Set();
   for (const node of nodes) {
@@ -111,13 +176,15 @@ export function computeDisplayHiddenIds({ nodes = [], hiddenKeys = [], soloKeys 
     const suppressed =
       (own.community != null && effHiddenCommunities.has(own.community)) ||
       (own.type != null && effHiddenTypes.has(own.type)) ||
-      (own.classId != null && effHiddenClasses.has(own.classId));
+      (own.classId != null && effHiddenClasses.has(own.classId)) ||
+      (own.registryId != null && effHiddenRegistryIds.has(own.registryId));
 
     if (soloActive) {
       const soloed =
         (own.community != null && soloCommunities.has(own.community)) ||
         (own.type != null && soloTypes.has(own.type)) ||
-        (own.classId != null && soloClasses.has(own.classId));
+        (own.classId != null && soloClasses.has(own.classId)) ||
+        (own.registryId != null && soloRegistryIds.has(own.registryId));
       // Solo tier: visible iff owned by a Solo entity AND not effectively hidden.
       if (!soloed || suppressed) hiddenIds.add(id);
     } else if (suppressed) {

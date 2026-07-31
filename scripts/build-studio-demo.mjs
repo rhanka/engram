@@ -4,35 +4,63 @@
  * graphify state dir, so it can be served by GitHub Pages (or opened off the
  * filesystem) WITHOUT the `graphify ontology studio` server.
  *
- * The SPA's data layer (studio/src/lib/api.js) tries the same-origin server
- * routes first, then falls back to static files next to index.html. This script
- * produces exactly those fallback files, reusing the SAME server-side builders
- * the live server uses (no duplicated scene/sidecar/reconciliation logic):
+ * THE BUNDLE IS PRODUCED BY THE REAL EXPORTER. `buildStaticStudio`
+ * (src/studio-export.ts) — the engine behind `graphify studio export` — writes
+ * every artifact; this script only supplies the two demo-specific INPUTS it
+ * cannot derive (completed registry seeds and their display labels) and applies
+ * the two demo-specific GATES it must not own (bundle coherence, publication QA).
  *
- *   index.html + assets/        <- copy of dist/studio-app (the Vite build)
- *   graph.json                  <- copy of <state>/graph.json (verbatim)
- *   scene.json                  <- buildStudioScene(graph)        (./scene.json)
- *   reconciliation-candidates.json
- *                               <- queryOntologyReconciliationCandidates(...)
- *                                  matching the SPA's request
- *                                  (?sort=score&order=desc&limit=50)
- *   entities.json               <- { id: buildEntitySidecar(state, id) } for
- *                                  every graph node (./entities.json index;
- *                                  fetchEntity looks up by id). A single index
- *                                  is used instead of 1193 per-entity files so
- *                                  the file:// export stays light — most sidecars
- *                                  are empty (no description / no occurrences).
+ * It used to write the artifacts itself. That duplication is exactly how the
+ * demo bundles ended up missing everything the exporter had learned to emit
+ * since the fork — `search-index.json`, `ontology/citations.json`, the
+ * `studio.html` single-file studio, and (the reason this was rewritten)
+ * `sources/` + `sources/provenance.json`, so a demo bundle could show WHICH file
+ * a passage came from but never the document itself. A published demo now
+ * carries the same provenance chain as any other export, and any artifact the
+ * exporter learns to emit next arrives here for free.
+ *
+ * Emitted artifacts: see the header of src/studio-export.ts (single source of
+ * truth). Additionally written HERE:
+ *   resolved-target.json      <- producer manifest for the quality preflight
+ *   quality-qa-report.json    <- the preflight report
  *
  * Usage:
  *   node scripts/build-studio-demo.mjs --state <dir> --out <dir> [--profile <p>]
+ *     [--layout <id>] [--complete-registry-seeds <normalized-profile.json>
+ *      [--complete-registry-seeds-scope hierarchies|all]]
+ *     [--include-sources] [--include-original-sources] [--sources-root <dir>]
+ *     [--no-single-file]
  *     [--qa-target <id> [--qa-config <path>] [--qa-manifest <path>]
  *      [--qa-report <path>] [--qa-fail-on-error]]
  *
  *   --state    graphify state dir (default: .graphify). Must contain graph.json.
  *   --out      target export dir (default: docs/studio). Created if missing.
- *   --profile  profile path/dir for reconciliation context. Optional: when
- *              omitted the reconciliation candidates are emitted from the state's
- *              candidates.json as-is (no profile-hash staleness check).
+ *   --profile  profile path/dir. Drives class-hierarchies.json + the scene's
+ *              per-type visual encoding. Optional.
+ *
+ *   --layout   build-time layout id: force | typed-layer | time-oriented |
+ *              hierarchy-aware. Omitted => `auto` (hierarchy-aware when the
+ *              bundle carries declared hierarchies, force otherwise).
+ *   --complete-registry-seeds <normalized-profile.json>
+ *              Materialise the registry rows MISSING from graph.json as seed
+ *              nodes before the scene is built. Takes a NORMALIZED profile JSON
+ *              (its registries must carry `bound_source_path`; the YAML profile
+ *              alone does not bind sources). Off by default — and while it is
+ *              off graph.json stays a verbatim byte-identical copy.
+ *   --complete-registry-seeds-scope hierarchies|all
+ *              Which registries to complete. `hierarchies` (default) completes
+ *              only those backing a declared hierarchy — the ones whose
+ *              incompleteness silently breaks the sidecar join.
+ *
+ *   --include-sources           bundle the CITED documents under sources/.
+ *   --include-original-sources  also bundle the ORIGINALS behind converted
+ *                               markdown (the PDFs an OCR transcript came from),
+ *                               so the viewer opens the paper, not the
+ *                               transcript. Unbounded in size — opt in
+ *                               deliberately.
+ *   --sources-root <dir>        root the relative source_file locators resolve
+ *                               against (default: the parent of --state).
+ *   --no-single-file            skip the self-contained studio.html.
  *
  *   --qa-target        quality.targets.<id> preflight to run after bundle emit.
  *   --qa-config        graphify.yaml / .graphify/config.yaml containing target.
@@ -46,14 +74,7 @@
  * Requires the server build (dist/) and the SPA build (dist/studio-app). Run
  * `npm run build` first, or `node scripts/build-studio-app.mjs` for just the SPA.
  */
-import {
-  cpSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -64,6 +85,13 @@ function parseArgs(argv) {
     state: ".graphify",
     out: "docs/studio",
     profile: null,
+    layout: null,
+    completeRegistrySeeds: null,
+    completeRegistrySeedsScope: "hierarchies",
+    includeSources: false,
+    includeOriginalSources: false,
+    sourcesRoot: null,
+    singleFile: true,
     qaConfig: null,
     qaFailOnError: false,
     qaManifest: null,
@@ -75,6 +103,13 @@ function parseArgs(argv) {
     if (arg === "--state") args.state = argv[++i];
     else if (arg === "--out") args.out = argv[++i];
     else if (arg === "--profile") args.profile = argv[++i];
+    else if (arg === "--layout") args.layout = argv[++i];
+    else if (arg === "--complete-registry-seeds") args.completeRegistrySeeds = argv[++i];
+    else if (arg === "--complete-registry-seeds-scope") args.completeRegistrySeedsScope = argv[++i];
+    else if (arg === "--include-sources") args.includeSources = true;
+    else if (arg === "--include-original-sources") args.includeOriginalSources = true;
+    else if (arg === "--sources-root") args.sourcesRoot = argv[++i];
+    else if (arg === "--no-single-file") args.singleFile = false;
     else if (arg === "--qa-config") args.qaConfig = argv[++i];
     else if (arg === "--qa-fail-on-error") args.qaFailOnError = true;
     else if (arg === "--qa-manifest") args.qaManifest = argv[++i];
@@ -94,7 +129,10 @@ function die(msg) {
 const args = parseArgs(process.argv.slice(2));
 if (args.help) {
   console.log(
-    "Usage: node scripts/build-studio-demo.mjs --state <dir> --out <dir> [--profile <p>] [--qa-target <id> [--qa-config <path>] [--qa-manifest <path>] [--qa-report <path>] [--qa-fail-on-error]]",
+    "Usage: node scripts/build-studio-demo.mjs --state <dir> --out <dir> [--profile <p>] [--layout <id>] " +
+      "[--complete-registry-seeds <normalized-profile.json> [--complete-registry-seeds-scope hierarchies|all]] " +
+      "[--include-sources] [--include-original-sources] [--sources-root <dir>] [--no-single-file] " +
+      "[--qa-target <id> [--qa-config <path>] [--qa-manifest <path>] [--qa-report <path>] [--qa-fail-on-error]]",
   );
   process.exit(0);
 }
@@ -112,14 +150,12 @@ if (!existsSync(join(spaDir, "index.html"))) {
   );
 }
 
-// Import the SAME builders the live server uses. Requires the server build.
-let buildStudioScene;
-let attachLayoutPositions;
-let buildEntitySidecar;
-let emitSceneHierarchies;
-let emitClassHierarchies;
-let loadOntologyProfile;
-let emitWorkspaceManifest;
+// Import the REAL exporter + the demo-specific helpers. Requires the server build.
+let buildStaticStudio;
+let completeRegistrySeeds;
+let registriesBackingHierarchies;
+let registryDisplayLabels;
+let loadProfileRegistries;
 let discoverQualityTargetsConfig;
 let hashQualityTarget;
 let loadQualityTargetsConfig;
@@ -127,25 +163,19 @@ let QA_REPORT_FILENAME;
 let RESOLVED_TARGET_MANIFEST_SCHEMA;
 let evaluateQualityBundle;
 let sha256File;
-let loadOntologyReconciliationCandidates;
-let queryOntologyReconciliationCandidates;
 try {
   ({
-    buildStudioScene,
-    attachLayoutPositions,
-    buildEntitySidecar,
+    buildStaticStudio,
+    completeRegistrySeeds,
     discoverQualityTargetsConfig,
-    emitSceneHierarchies,
-    emitClassHierarchies,
-    loadOntologyProfile,
-    emitWorkspaceManifest,
+    loadProfileRegistries,
+    registriesBackingHierarchies,
+    registryDisplayLabels,
     evaluateQualityBundle,
     hashQualityTarget,
     loadQualityTargetsConfig,
-    loadOntologyReconciliationCandidates,
     QA_REPORT_FILENAME,
     RESOLVED_TARGET_MANIFEST_SCHEMA,
-    queryOntologyReconciliationCandidates,
     sha256File,
   } = await import(join(root, "dist", "index.js")));
 } catch (err) {
@@ -271,135 +301,101 @@ function selectQualityTargetForPreflight(outDir) {
   return null;
 }
 
-// --- 1. Copy the built SPA (index.html + assets) into the export dir. ---
-mkdirSync(outDir, { recursive: true });
-// Wipe stale generated data files but keep the dir (so an external .nojekyll or
-// similar is not collateral). We copy the SPA over the top.
-for (const f of [
-  "scene.json",
-  "scene-hierarchies.json",
-  "class-hierarchies.json",
-  "graph.json",
-  "reconciliation-candidates.json",
-  "entities.json",
-  "quality-qa-report.json",
-  "resolved-target.json",
-  "workspace-manifest.json",
-]) {
+// --- 1. Registry-seed completion (OPT-IN) — the one INPUT the exporter cannot
+// derive on its own, because it needs the NORMALIZED profile's bound registry
+// sources rather than the graph. Strictly additive: no existing node changes.
+let seedCompletion = null;
+// Raw registry id -> the registry's OWN display label, for the rows whose label
+// is not just their id. The registry is the authority on what a record is
+// called; the graph's node label is only as good as the extraction that seeded it.
+let registryLabels = new Map();
+if (args.completeRegistrySeeds) {
+  const scope = String(args.completeRegistrySeedsScope ?? "hierarchies");
+  if (scope !== "hierarchies" && scope !== "all") {
+    die(`--complete-registry-seeds-scope must be "hierarchies" or "all"; got ${scope}`);
+  }
+  const normalizedProfilePath = resolve(args.completeRegistrySeeds);
+  if (!existsSync(normalizedProfilePath)) {
+    die(`--complete-registry-seeds: normalized profile not found: ${normalizedProfilePath}`);
+  }
+  const normalizedProfile = JSON.parse(readFileSync(normalizedProfilePath, "utf-8"));
+  const unbound = Object.entries(normalizedProfile.registries ?? {})
+    .filter(([, spec]) => !spec?.bound_source_path)
+    .map(([id]) => id);
+  if (unbound.length === Object.keys(normalizedProfile.registries ?? {}).length) {
+    die(
+      `--complete-registry-seeds: no registry in ${normalizedProfilePath} carries bound_source_path; ` +
+        "pass the NORMALIZED profile (e.g. <state>/profile/ontology-profile.normalized.json), not the YAML.",
+    );
+  }
+  // Only load the registries we intend to complete: an unbound one would throw.
+  const scoped = scope === "all"
+    ? Object.keys(normalizedProfile.registries ?? {})
+    : registriesBackingHierarchies(normalizedProfile);
+  const selectable = scoped.filter((id) => !unbound.includes(id));
+  const profileForLoad = {
+    ...normalizedProfile,
+    registries: Object.fromEntries(
+      selectable.map((id) => [id, normalizedProfile.registries[id]]),
+    ),
+  };
+  const registries = loadProfileRegistries(profileForLoad);
+  registryLabels = registryDisplayLabels(registries);
+  const graph = JSON.parse(readFileSync(graphPath, "utf-8"));
+  seedCompletion = completeRegistrySeeds({
+    registries,
+    profile: normalizedProfile,
+    graphNodes: Array.isArray(graph.nodes) ? graph.nodes : [],
+  });
+}
+
+// Stale preflight artifacts from a previous run. The exporter wipes everything
+// IT emits, but these two are written here, so they are cleaned here.
+for (const f of ["quality-qa-report.json", "resolved-target.json"]) {
   rmSync(join(outDir, f), { force: true });
 }
-rmSync(join(outDir, "assets"), { recursive: true, force: true });
-cpSync(spaDir, outDir, { recursive: true });
 
-// --- 2. graph.json: verbatim copy (byte-identical to the artifact). ---
-const graphRaw = readFileSync(graphPath, "utf-8");
-writeFileSync(join(outDir, "graph.json"), graphRaw);
-const graph = JSON.parse(graphRaw);
-const nodes = Array.isArray(graph.nodes) ? graph.nodes : [];
-
-// --- 3. scene.json: the light Studio scene (server's sceneJsonResult). ---
-// Pre-compute and pin node positions (x,y + fx,fy) so the SPA renders the
-// settled layout with iterations=1 — no O(n²) force sim on the main thread at
-// mount. Matches the live server route byte-for-byte (deterministic layout).
-const scene = attachLayoutPositions(buildStudioScene(graph));
-writeFileSync(join(outDir, "scene.json"), JSON.stringify(scene));
-
-// --- 3b. scene-hierarchies.json (workspace-bundle-contract-v1, D1). ---
-// STANDALONE sidecar (never embedded in scene.json), emitted iff the
-// ontology compile produced <state>/ontology/hierarchies.json. Joins on the
-// raw registry ids: the scene contributes its lossless `registry_record_id`s.
-const sceneRawIds = new Set();
-for (const node of scene.nodes) {
-  const raw = typeof node.registry_record_id === "string" ? node.registry_record_id : node.id;
-  if (raw) sceneRawIds.add(raw);
-}
-const hierarchiesResult = emitSceneHierarchies({
-  ontologyOutputDir: join(stateDir, "ontology"),
-  sceneDir: outDir,
-  sceneNodeIds: sceneRawIds,
+// --- 2. The bundle itself — every artifact, by the real exporter. ---
+const result = buildStaticStudio({
+  stateDir,
+  outDir,
+  spaDir,
+  ...(args.profile ? { profilePath: args.profile } : {}),
+  // Omitted --layout means `auto`: hierarchy-aware iff the bundle declares
+  // hierarchies. A demo is a reading surface, so a known structure should be
+  // shown as structure rather than as a force disc.
+  layoutId: args.layout ?? "auto",
+  ...(seedCompletion ? { seedNodes: seedCompletion.nodes } : {}),
+  ...(registryLabels.size > 0 ? { hierarchyLabels: registryLabels } : {}),
+  ...(args.includeSources ? { includeSources: true } : {}),
+  ...(args.includeOriginalSources ? { includeOriginalSources: true } : {}),
+  ...(args.sourcesRoot ? { sourcesRoot: resolve(args.sourcesRoot) } : {}),
+  ...(args.singleFile ? {} : { singleFile: false }),
+  onWarning: (message) => console.warn(message),
 });
 
-// --- 3c. class-hierarchies.json (EVOL 2.c). ---
-// SEPARATE, additive ontology artifact (never embedded in scene/graph),
-// emitted into <state>/ontology IFF the bound profile carries a non-empty
-// `class_hierarchies` block. Entities join leaf classes by their graph node
-// `id` (NOT registry_record_id). Absent block / no --profile => no file
-// (byte-identical to today). A profile that cannot be loaded is non-fatal.
-let classHierarchiesResult = { written: false, path: null, artifact: null };
-if (args.profile) {
-  try {
-    const ontologyProfile = loadOntologyProfile(args.profile);
-    // Emit into the bundle OUT dir (next to scene.json), mirroring
-    // emitSceneHierarchies(sceneDir: outDir) + buildStaticStudio — the SPA
-    // fetches class-hierarchies.json from the bundle root to drive the group-by
-    // / ontology-tree facets. (Previously written to <state>/ontology, so static
-    // exports shipped WITHOUT it and lost the group-by taxonomy.)
-    classHierarchiesResult = emitClassHierarchies({
-      classHierarchies: ontologyProfile.class_hierarchies,
-      graphNodes: nodes,
-      ontologyOutputDir: outDir,
-      profileHash: ontologyProfile.profile_hash,
-    });
-  } catch (err) {
-    console.warn(
-      `build-studio-demo: could not load profile for class-hierarchies (${err instanceof Error ? err.message : String(err)}); skipping class-hierarchies.json.`,
-    );
-  }
-}
-
-// --- 4. reconciliation-candidates.json: publish the complete candidate set. ---
-// The SPA can page client-side from this static artifact. Publication QA must
-// see the full queue/response, not a UI page capped at 50.
-let candidatesResponse = { items: [], total: 0 };
-const candidatesPath = join(stateDir, "ontology", "reconciliation", "candidates.json");
-if (existsSync(candidatesPath)) {
-  try {
-    const queue = loadOntologyReconciliationCandidates(candidatesPath);
-    candidatesResponse = queryOntologyReconciliationCandidates(queue, {
-      sort: "score",
-      order: "desc",
-      stale: false,
-    });
-  } catch (err) {
-    console.warn(
-      `build-studio-demo: could not read reconciliation candidates (${err instanceof Error ? err.message : String(err)}); emitting an empty queue.`,
-    );
-  }
-} else {
-  console.warn(
-    `build-studio-demo: no candidates.json at ${candidatesPath}; emitting an empty reconciliation queue.`,
+// --- 3. COHERENCE GATE (hard failure). ---
+// graph.json, scene.json and entities.json describe the SAME entity set. A
+// divergence means the bundle silently lost or duplicated entities somewhere
+// between the three writers, and every count the UI shows becomes a lie. This is
+// the check that would have caught a scene truncated to 4000 nodes, so it fails
+// the BUILD rather than shipping a bundle that disagrees with itself.
+const counts = {
+  graph_nodes: result.nodeCount,
+  scene_nodes: result.sceneNodeCount,
+  entities: result.entityCount,
+};
+if (counts.graph_nodes !== counts.scene_nodes || counts.scene_nodes !== counts.entities) {
+  die(
+    "bundle incoherent — graph.json, scene.json and entities.json disagree on the node count:\n" +
+      `    graph.json    nodes: ${counts.graph_nodes}\n` +
+      `    scene.json    nodes: ${counts.scene_nodes}\n` +
+      `    entities.json ids:   ${counts.entities}`,
   );
 }
-writeFileSync(
-  join(outDir, "reconciliation-candidates.json"),
-  JSON.stringify(candidatesResponse),
-);
 
-// --- 5. entities.json: { id: sidecar } index for the entity panel. ---
-// buildEntitySidecar reads the wiki description index + occurrences from the
-// state dir; nodes with neither yield an empty sidecar.
-const entities = {};
-let withDescription = 0;
-let withOccurrences = 0;
-for (const node of nodes) {
-  const id = node?.id;
-  if (typeof id !== "string" || !id) continue;
-  const sidecar = buildEntitySidecar(stateDir, id);
-  entities[id] = sidecar;
-  if (sidecar.description) withDescription += 1;
-  if (sidecar.occurrences) withOccurrences += 1;
-}
-writeFileSync(join(outDir, "entities.json"), JSON.stringify(entities));
-
-// --- 6. workspace-manifest.json (workspace-bundle-contract-v1). ---
-// The bundle descriptor the process-std-am peer consumes first: it discovers the
-// artifacts, validates their schema ids, and verifies integrity via the
-// per-artifact sha256 + size. Emitted LAST so it hashes the final bytes of
-// every artifact above; absent artifacts are recorded present:false (the
-// scene is OPTIONAL per F1, so a no-scene bundle stays valid).
-const manifestResult = emitWorkspaceManifest({ bundleDir: outDir });
-
-// --- 7. Quality target preflight. ---
+// --- 4. Quality target preflight. ---
+const candidatesPath = join(stateDir, "ontology", "reconciliation", "candidates.json");
 let qaReport = null;
 const selectedQualityTarget = selectQualityTargetForPreflight(outDir);
 if (selectedQualityTarget) {
@@ -445,21 +441,52 @@ if (selectedQualityTarget) {
 
 // --- Summary. ---
 console.log(`build-studio-demo: wrote standalone studio export to ${outDir}`);
-console.log(`  nodes: ${nodes.length} | scene nodes: ${scene.nodes.length} | scene edges: ${scene.edges.length}`);
+console.log(`  nodes: ${result.nodeCount} | scene nodes: ${result.sceneNodeCount} | scene edges: ${result.sceneEdgeCount}`);
+console.log(`  coherence: graph ${counts.graph_nodes} = scene ${counts.scene_nodes} = entities ${counts.entities} OK`);
+console.log(`  layout: ${result.layoutId}`);
+if (seedCompletion) {
+  const detail = Object.entries(seedCompletion.byRegistry)
+    .map(([id, stat]) => `${id} ${stat.existing}+${stat.added}/${stat.total}`)
+    .join(", ");
+  console.log(`  registry seeds completed: +${seedCompletion.added} (${detail})`);
+}
 console.log(
-  hierarchiesResult.path
-    ? `  scene-hierarchies: ${Object.keys(hierarchiesResult.sidecar.hierarchies).length} hierarchies (${hierarchiesResult.path})`
+  result.sceneHierarchiesPath
+    ? `  scene-hierarchies: ${result.sceneHierarchiesPath}`
     : "  scene-hierarchies: none (no ontology/hierarchies.json in state dir)",
 );
 console.log(
-  classHierarchiesResult.path
-    ? `  class-hierarchies: ${Object.keys(classHierarchiesResult.artifact.hierarchies).length} hierarchies (${classHierarchiesResult.path})`
+  result.classHierarchiesPath
+    ? `  class-hierarchies: ${result.classHierarchiesPath}`
     : "  class-hierarchies: none (no class_hierarchies block in profile)",
 );
-console.log(`  reconciliation candidates: ${candidatesResponse.total ?? candidatesResponse.items.length}`);
-console.log(`  entities index: ${Object.keys(entities).length} ids (${withDescription} with description, ${withOccurrences} with occurrences)`);
+console.log(`  reconciliation candidates: ${result.reconciliationCount}`);
+console.log(`  search index: ${result.searchIndexNodeCount} docs`);
 console.log(
-  `  workspace-manifest: ${manifestResult.manifest.present_count}/${manifestResult.manifest.artifacts.length} artifacts present (${manifestResult.path})`,
+  `  entities index: ${result.entityCount} ids (${result.descriptionCoverage.described} described, ${result.descriptionCoverage.provisional} provisional)`,
+);
+console.log(
+  result.provenancePath
+    ? `  cited-source provenance: ${result.provenanceCount} converted document(s) -> originals (${result.provenancePath})`
+    : "  cited-source provenance: none (no cited document records a conversion origin)",
+);
+if (result.sources) {
+  console.log(
+    `  sources: ${result.sources.copied} cited file(s), ${(result.sources.bytes / 1e6).toFixed(1)} MB (${result.sources.missing} missing)`,
+  );
+}
+if (result.originalSources) {
+  console.log(
+    `  original sources: ${result.originalSources.copied} document(s), ${(result.originalSources.bytes / 1e6).toFixed(1)} MB (${result.originalSources.missing} missing)`,
+  );
+}
+console.log(
+  `  workspace-manifest: ${result.manifestPresentCount}/${result.manifestArtifactCount} artifacts present (${result.manifestPath})`,
+);
+console.log(
+  result.studioHtmlPath
+    ? `  studio.html: ${(result.studioHtmlBytes / 1e6).toFixed(1)} MB single-file studio`
+    : "  studio.html: not emitted",
 );
 if (qaReport) {
   console.log(
