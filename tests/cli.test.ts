@@ -348,6 +348,68 @@ describe("profile CLI commands", () => {
     expect(existsSync(join(ontologyDir, "manifest.json"))).toBe(true);
   });
 
+  it("loads bound registries when compiling profile-declared hierarchies", async () => {
+    const dir = tempProfileProject();
+    const profilePath = join(dir, "graphify", "ontology-profile.yaml");
+    const componentsPath = join(dir, "references", "components.csv");
+    const statePath = join(dir, ".graphify", "profile", "profile-state.json");
+    const extractionPath = join(dir, ".graphify", "profile", "registry-extraction.json");
+    const ontologyDir = join(dir, ".graphify", "ontology");
+
+    writeFileSync(
+      componentsPath,
+      [
+        "component_id,component_name,component_code,parent_id",
+        "CMP-ROOT,Demo Root,DR-001,",
+        "CMP-CHILD,Demo Child,DC-001,CMP-ROOT",
+      ].join("\n") + "\n",
+      "utf-8",
+    );
+    writeFileSync(
+      profilePath,
+      readFileSync(profilePath, "utf-8").replace(
+        "relation_types:\n",
+        "relation_types:\n  parent_component:\n    source: Component\n    target: Component\n",
+      ) + [
+        "",
+        "hierarchies:",
+        "  component_tree:",
+        "    registry: components",
+        "    parent_column: parent_id",
+        "    child_column: component_id",
+        "    relation_type: parent_component",
+        "    parent_node_type: Component",
+        "    child_node_type: Component",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const dataprep = await runCli([
+      "profile", "dataprep", dir,
+      "--config", join(dir, "graphify.yaml"),
+      "--out-dir", ".graphify",
+    ], dir);
+    const ontology = await runCli([
+      "profile", "ontology-output",
+      "--profile-state", statePath,
+      "--input", extractionPath,
+      "--out-dir", ontologyDir,
+    ], dir);
+
+    expect(dataprep.exitCode).toBe(0);
+    expect(ontology.exitCode).toBe(0);
+    const arcs = JSON.parse(readFileSync(join(ontologyDir, "hierarchies.json"), "utf-8"));
+    expect(arcs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        hierarchy_id: "component_tree",
+        parent_id: "CMP-ROOT",
+        child_id: "CMP-CHILD",
+        type: "parent_component",
+      }),
+    ]));
+  });
+
   it("does not fake local LLM extraction through an implicit graphify path command", async () => {
     const dir = tempProfileProject();
 

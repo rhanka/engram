@@ -11,6 +11,7 @@ import { resolve, basename, extname, dirname, join, relative, sep } from "node:p
 import { createRequire } from "node:module";
 import type { GraphNode, GraphEdge, Extraction } from "./types.js";
 import { loadCached, saveCached } from "./cache.js";
+import { makeNodeId } from "./node-id.js";
 import { sanitizeLabel } from "./security.js";
 import { shebangInterpreter } from "./detect.js";
 
@@ -108,15 +109,15 @@ async function loadLanguage(langName: string): Promise<TreeSitter.Language | nul
   }
 }
 
-/** Build a stable node ID from one or more name parts. */
-function _makeId(...parts: string[]): string {
-  const combined = parts
-    .filter(Boolean)
-    .map((p) => p.replace(/^[_.]+|[_.]+$/g, ""))
-    .join("_");
-  const cleaned = combined.replace(/[^a-zA-Z0-9]+/g, "_");
-  return cleaned.replace(/^_+|_+$/g, "").toLowerCase();
-}
+/**
+ * Build a stable node ID from one or more name parts.
+ *
+ * Delegates to the shared Unicode-safe implementation so that the extractor,
+ * the git projection, and the registry seeds cannot drift apart (upstream keeps
+ * `_make_id` and `_normalize_id` byte-for-byte equivalent — see
+ * `src/node-id.ts`).
+ */
+const _makeId = makeNodeId;
 
 function toPortablePath(path: string): string {
   return path.replace(/\\/g, "/");

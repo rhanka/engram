@@ -49,6 +49,22 @@ function finiteNumber(value) {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+/**
+ * A citation's page as a NUMBER, or null when it has none.
+ *
+ * Mirrors the frozen public converter `asNumberPage` (src/cited-source-refs.ts)
+ * byte for byte, so the entity panel and the cited-source viewer never disagree
+ * about which passages carry a navigable page.
+ * @param {number|string|null|undefined} page
+ * @returns {number|null}
+ */
+function citationPage(page) {
+  if (finiteNumber(page)) return page;
+  if (typeof page !== "string") return null;
+  const parsed = Number.parseInt(page, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function copyOwnFields(source, target, fields) {
   if (!source || typeof source !== "object") return;
   for (const field of fields) {
@@ -547,6 +563,63 @@ export function communityColorMap(cstats) {
 }
 
 /**
+ * Storage LOT 3 (windowed first paint): adapt a store window document — the
+ * `GET /api/ontology/window` payload `{ strategy, layout?, limit, nodes, edges }`
+ * (the N highest-degree nodes plus the edges induced among them, annotated with
+ * a layout's precomputed x/y) — into a renderable Studio scene.
+ *
+ * The window's nodes/edges are already graph-like (`node_type`, `source`/
+ * `target`/`relation`), so the scene comes from the SAME buildScene() as every
+ * other path: shapes, weights, dashes, weak flags and community colours stay
+ * consistent, and the precomputed x/y carry through (buildScene copies finite
+ * node positions verbatim). If ANY node lacks a position the whole window is
+ * force-laid-out client-side — the window is BOUNDED (N nodes), so this is cheap
+ * and it keeps first paint from degenerating into the renderer's fallback ring.
+ *
+ * HONEST COUNTERS. A window is a SLICE, so the scene must never be mistaken for
+ * the corpus. The returned stats carry:
+ *   - `nodeCount`/`edgeCount`: what is actually rendered (buildScene's own,
+ *     scene-local counts — unchanged semantics);
+ *   - `windowed: true`: this scene is a bounded first-paint slice, so consumers
+ *     render "visible / corpus" instead of a bare total;
+ *   - `windowLimit`: the cap the store applied.
+ * `scene.window = { strategy, layout?, limit }` additionally tags the provenance.
+ * Both survive applyWeakFilter / applyTimeFilter / applyVisibilityToScene, which
+ * spread `...scene` and `...scene.stats`. A FULL scene never sets `windowed`, so
+ * the default (no-store) studio renders exactly the counters it renders today.
+ *
+ * Honest sizing caveat: buildScene recomputes degrees over the INDUCED edges, so
+ * a window node's weight reflects its in-window degree, not its store-wide
+ * `degree`. Hydration replaces the window with the full scene and corrects it.
+ *
+ * @param {{ strategy?: string, layout?: string, limit?: number,
+ *   nodes?: object[], edges?: object[] } | null | undefined} windowDoc
+ * @param {object} [options]  forwarded to buildScene (e.g. showWeakLinks)
+ * @returns {{ nodes: object[], edges: object[], stats: object,
+ *   window: { strategy: string, layout?: string, limit: number } }}
+ */
+export function buildWindowScene(windowDoc, options = {}) {
+  const scene = buildScene(
+    { nodes: windowDoc?.nodes ?? [], links: windowDoc?.edges ?? [] },
+    options,
+  );
+  const positioned =
+    scene.nodes.length > 0 &&
+    scene.nodes.every((n) => finiteNumber(n.x) && finiteNumber(n.y));
+  const out = positioned ? scene : attachForceLayout(scene);
+  const limit = finiteNumber(windowDoc?.limit) ? windowDoc.limit : out.nodes.length;
+  out.window = {
+    strategy: windowDoc?.strategy ?? "degree-top-n",
+    ...(windowDoc?.layout != null ? { layout: windowDoc.layout } : {}),
+    limit,
+  };
+  // Marked on the stats (not only on the scene) because the counters read
+  // `scene.stats`, and the derived scenes downstream spread `...scene.stats`.
+  out.stats = { ...out.stats, windowed: true, windowLimit: limit };
+  return out;
+}
+
+/**
  * ÉTAPE 1b: re-apply the weak-link filter on an ALREADY-BUILT scene, without the
  * raw graph. The SPA mounts the light `scene.json` (the full scene, weak links
  * included), then the Options toggle flips weak links on/off purely on the scene
@@ -973,7 +1046,21 @@ export function citationsByFileFrom(list, fallbackSourceFile = null) {
       // locator; `index` is the passage's position in the ORIGINAL citation
       // list, so the open-source click can activate the exact citation after
       // the list is converted via the frozen CitedSourceRef projection.
-      page: finiteNumber(c?.page) ? c.page : (displayValue(c?.page) ?? null),
+      //
+      // A page is a PAGE NUMBER or nothing. `OntologyCitation.page` is typed
+      // `number | string`, and an LLM-extracted corpus routinely carries the
+      // literal `"unknown"` (43 297 of them in the PROCESS_STD graph) — passing that
+      // through rendered the locator "p.unknown", which is worse than no
+      // locator: it looks like a real reference to a page called "unknown" and
+      // it cannot be navigated to. Non-numeric ⇒ null, and the panel falls back
+      // to its "(passage)" marker.
+      //
+      // The coercion is deliberately IDENTICAL to the frozen public converter
+      // (src/cited-source-refs.ts `asNumberPage`): a numeric string is a real
+      // page and is parsed, anything else is dropped. The panel and the viewer
+      // must agree on which citations have a page, or the panel offers "p.N" on
+      // a passage the viewer cannot navigate to (or hides one it could).
+      page: citationPage(c?.page),
       index: i,
     });
   }
