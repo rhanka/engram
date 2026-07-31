@@ -14,6 +14,8 @@ import {
   DEFAULT_EDGE_CURVATURE,
   DEFAULT_EDGE_OPACITY,
   densityScale,
+  edgeDensityScale,
+  defaultEdgeOpacityFor,
   DEFAULT_LABEL_MAX_CHARS,
   EDGE_ALPHA_DENSE,
   EDGE_ALPHA_FLAT,
@@ -712,6 +714,55 @@ describe("graphRendererPayload", () => {
     for (let e = 0; e < edgeCount; e++) {
       expect(payload.style.edgeColors[e * 4 + 3]).toBe(128); // 255 * 0.5
     }
+  });
+
+  it("fades the DEFAULT edge alpha on dense graphs so the layout stays visible", () => {
+    // Below the reference count nothing changes: a small graph keeps 0.5 (128).
+    expect(edgeDensityScale(1)).toBe(1);
+    expect(edgeDensityScale(6000)).toBe(1);
+    // Past it the default decays as 1/sqrt(edges) and clamps at the floor.
+    expect(edgeDensityScale(24000)).toBeCloseTo(0.5, 2);
+    expect(edgeDensityScale(1_000_000)).toBe(0.35);
+    expect(defaultEdgeOpacityFor(6000)).toBeCloseTo(0.5, 5);
+    expect(defaultEdgeOpacityFor(24000)).toBeCloseTo(0.25, 2);
+
+    const nodes = Array.from({ length: 200 }, (_, i) => ({ id: `n${i}`, x: i, y: i }));
+    const edges = Array.from({ length: 24000 }, (_, i) => ({
+      source: `n${i % 200}`,
+      target: `n${(i * 7 + 1) % 200}`,
+    }));
+    // No explicit opacity ⇒ the density default applies.
+    const payload = buildGraphRendererPayload({ nodes, edges });
+    expect(payload.style.edgeColors[3]).toBe(
+      Math.round(255 * defaultEdgeOpacityFor(edges.length)),
+    );
+    expect(payload.style.edgeColors[3]).toBeLessThan(128);
+  });
+
+  it("lets an EXPLICIT edge opacity govern the base alpha, undiluted by density", () => {
+    // The regression this locks: density used to MULTIPLY the user's value, so on
+    // a 24k-edge scene the Edge-opacity control spanned only 13→100 of 255 across
+    // its whole travel while reporting 0.10→0.80 — a control that reported one
+    // number and rendered another. An explicit value is now the base alpha.
+    const nodes = Array.from({ length: 200 }, (_, i) => ({ id: `n${i}`, x: i, y: i }));
+    const edges = Array.from({ length: 24000 }, (_, i) => ({
+      source: `n${i % 200}`,
+      target: `n${(i * 7 + 1) % 200}`,
+    }));
+    const alphaAt = (edgeOpacity) =>
+      buildGraphRendererPayload({ nodes, edges }, { edgeOpacity }).style.edgeColors[3];
+
+    expect(alphaAt(1)).toBe(255); // 1.00 really is opaque
+    expect(alphaAt(0.5)).toBe(128);
+    expect(alphaAt(0.02)).toBe(5);
+    // The SAME value renders the same alpha whatever the scene's density.
+    const sparse = buildGraphRendererPayload(
+      { nodes, edges: edges.slice(0, 100) },
+      { edgeOpacity: 0.75 },
+    );
+    expect(sparse.style.edgeColors[3]).toBe(alphaAt(0.75));
+    // And the control's travel now spans essentially the whole 0..255 range.
+    expect(alphaAt(1) - alphaAt(0.02)).toBeGreaterThan(240);
   });
 
   it("grades the density falloff via edgeAlphaShape (not the base alpha) at the dense endpoint", () => {

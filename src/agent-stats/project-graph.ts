@@ -24,6 +24,7 @@
  * a `SerializedGraphData` object ready to be JSON-stringified to a graph.json.
  */
 
+import { pathToTilde } from "./normalize.js";
 import type { SessionFact } from "./types.js";
 import type { GitCommitMeta } from "./correlate.js";
 
@@ -207,12 +208,17 @@ function normPath(p: string): string {
  * resolve to the alias whose prefix is the longest match.
  */
 export function aliasForCwd(identity: ProjectIdentity, cwd: string): number {
-  const c = normPath(cwd);
+  // Session cwds arrive tilde-redacted (privacy), while pathPrefixes are
+  // supplied raw. Normalize BOTH sides — the cwdInRepo idiom — so membership
+  // does not depend on whether the paths happen to sit under the real home
+  // directory. Comparing a `~`-form cwd to an absolute prefix silently drops
+  // the session.
+  const c = pathToTilde(normPath(cwd));
   let best = -1;
   let bestLen = -1;
   identity.aliases.forEach((alias, i) => {
     for (const prefix of alias.pathPrefixes) {
-      const p = normPath(prefix);
+      const p = pathToTilde(normPath(prefix));
       if ((c === p || c.startsWith(p + "/")) && p.length > bestLen) {
         best = i;
         bestLen = p.length;
