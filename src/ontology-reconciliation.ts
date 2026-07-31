@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 import { compileNormalizerByNodeType } from "./entity-normalizer.js";
-import type { EntityNormalizer, NormalizerByNodeType } from "./entity-normalizer.js";
+import type { NormalizerByNodeType } from "./entity-normalizer.js";
 import type { OntologyPatchContext, OntologyPatchNode, OntologyPatchRelation } from "./ontology-patch.js";
 
 export const ONTOLOGY_RECONCILIATION_CANDIDATES_SCHEMA = "graphify_ontology_reconciliation_candidates_v1" as const;
@@ -277,9 +277,13 @@ function surfaceVariants(term: string): FuzzyVariant[] {
 
 /** All distinct tagged token sets across a node's terms + variants. */
 function fuzzyVariants(node: OntologyPatchNode): FuzzyVariant[] {
+  return fuzzyVariantsForTerms(nodeTerms(node));
+}
+
+function fuzzyVariantsForTerms(terms: readonly string[]): FuzzyVariant[] {
   const seen = new Set<string>();
   const variants: FuzzyVariant[] = [];
-  for (const term of nodeTerms(node)) {
+  for (const term of terms) {
     for (const variant of surfaceVariants(term)) {
       // Order-preserving dedup key: token SEQUENCE matters (so "Part I Chapter
       // II" and "Part II Chapter I" stay distinct variants).
@@ -373,6 +377,19 @@ export function fuzzyMatchNodes(
 ): FuzzyMatchResult {
   const leftSets = fuzzyVariants(left);
   const rightSets = fuzzyVariants(right);
+  return fuzzyMatchVariants(leftSets, rightSets, threshold);
+}
+
+/**
+ * Fuzzy matching over already-derived variants. Keeping this separate lets the
+ * reconciliation queue compute each node's variants once rather than once for
+ * every candidate pair.
+ */
+function fuzzyMatchVariants(
+  leftSets: readonly FuzzyVariant[],
+  rightSets: readonly FuzzyVariant[],
+  threshold: number,
+): FuzzyMatchResult {
   let best = 0;
   let equal = false;
   let contained = false;
@@ -585,6 +602,20 @@ export function differentEntityReason(
 ): string | null {
   const a = nodeGuardSurface(left);
   const b = nodeGuardSurface(right);
+  return differentEntityReasonFromGuardSurfaces(left, right, a, b);
+}
+
+/**
+ * Precision guard over already-derived node surfaces. The public predicate
+ * above remains the single-node API; the queue uses this form to avoid
+ * rebuilding either surface for every blocked pair.
+ */
+function differentEntityReasonFromGuardSurfaces(
+  left: OntologyPatchNode,
+  right: OntologyPatchNode,
+  a: GuardSurface,
+  b: GuardSurface,
+): string | null {
   if (a.name.length === 0 || b.name.length === 0) return null;
   // Gender/relational title rules apply to PERSON-like entities only: a place
   // name beginning with "Queen"/"King"/"Lord" ("Queen Square", "King's Bench
@@ -1179,14 +1210,13 @@ function chooseCanonicalPair(a: OntologyPatchNode, b: OntologyPatchNode): {
 
 function candidateScore(
   sharedTerms: string[],
-  canonical: OntologyPatchNode,
-  candidate: OntologyPatchNode,
-  normalizer: EntityNormalizer | undefined,
+  canonicalNormalizedLabel: string | null,
+  candidateNormalizedLabel: string | null,
 ): number {
-  const normalize = normalizer ?? normalizeTerm;
-  const canonicalLabel = canonical.label ? normalize(canonical.label) : null;
-  const candidateLabel = candidate.label ? normalize(candidate.label) : null;
-  const exactLabelMatch = canonicalLabel !== null && canonicalLabel === candidateLabel && sharedTerms.includes(canonicalLabel);
+  const exactLabelMatch =
+    canonicalNormalizedLabel !== null &&
+    canonicalNormalizedLabel === candidateNormalizedLabel &&
+    sharedTerms.includes(canonicalNormalizedLabel);
   // Exact normalized-label match is the top tier: score 1.0 (canonical pair).
   // A shared non-label term (alias/normalized_term) is strong but sub-exact.
   return exactLabelMatch ? 1 : 0.85;
@@ -1199,6 +1229,257 @@ function candidateId(canonical: OntologyPatchNode, candidate: OntologyPatchNode,
     candidate.id,
     ...sharedTerms,
   ].join("|")).slice(0, 24)}`;
+}
+
+interface MemoizedReconciliationNode {
+  node: OntologyPatchNode;
+  /** Normalized terms, in the exact tier's existing stable order. */
+  exactTerms: string[];
+  exactTermSet: Set<string>;
+  /** Normalized primary label used only for exact-tier scoring. */
+  normalizedLabel: string | null;
+  /** Fuzzy variants and guard data are both derived once per comparable node. */
+  fuzzyVariants: FuzzyVariant[];
+  guardSurface: GuardSurface;
+  exactBlockingKeys: string[];
+  fuzzyBlockingKeys: string[];
+  /** All fuzzy token keys; queried only if some variant is repeated-token-only. */
+  fuzzySingleTokenKeys: string[];
+  /** A legacy containment edge case: ≥2 tokens but only one distinct token. */
+  fuzzyDegenerateTokenKeys: string[];
+}
+
+/**
+ * Mutable real production buckets, exposed for blocking-losslessness tests.
+ * This module-level API is intentionally not re-exported from the package root.
+ */
+export interface OntologyReconciliationLexicalBlockingIndex {
+  exact: Map<string, number[]>;
+  fuzzy: Map<string, number[]>;
+  fuzzySingles?: Map<string, number[]>;
+  fuzzyDegenerate?: Map<string, number[]>;
+}
+
+/** Opaque row-major pair identity used by the exported blocking inspection API. */
+export type OntologyReconciliationBlockedPair = `${number}:${number}`;
+
+const BLOCKING_KEY_SEPARATOR = "\u0000";
+
+function typedBlockingKey(type: string, value: string): string {
+  return `${type}${BLOCKING_KEY_SEPARATOR}${value}`;
+}
+
+function fuzzyBlockingKeysForNode(
+  type: string,
+  variants: readonly FuzzyVariant[],
+  threshold: number,
+): string[] {
+  const keys = new Set<string>();
+
+  // fuzzyMatchNodes treats a non-positive threshold as a match even when the
+  // Jaccard intersection is empty. Preserve that degenerate caller override
+  // with a type-local wildcard; positive thresholds use the lossless keys
+  // below and never fall back to a cross product.
+  if (threshold <= 0) {
+    keys.add(typedBlockingKey(type, "*"));
+    return [...keys];
+  }
+
+  if (threshold <= 0.5) {
+    // A pair-token block is lossless only above 0.5. For every positive caller
+    // threshold at or below 0.5, a shared single token is the lossless fuzzy
+    // blocking key (equality and containment also necessarily share one).
+    for (const variant of variants) {
+      for (const token of variant.tokens) keys.add(typedBlockingKey(type, token));
+    }
+    return [...keys];
+  }
+
+  for (const variant of variants) {
+    // Fuzzy matching itself rejects a variant pair whose smaller side has
+    // fewer than two tokens. A multiset pair (including token/token for a
+    // repeated token) keeps that same condition lossless for sequence-equal
+    // variants as well as ordinary distinct-token variants.
+    for (let left = 0; left < variant.tokens.length; left += 1) {
+      for (let right = left + 1; right < variant.tokens.length; right += 1) {
+        const a = variant.tokens[left]!;
+        const b = variant.tokens[right]!;
+        const pair = a <= b
+          ? `${a}${BLOCKING_KEY_SEPARATOR}${b}`
+          : `${b}${BLOCKING_KEY_SEPARATOR}${a}`;
+        keys.add(typedBlockingKey(type, pair));
+      }
+    }
+  }
+  return [...keys];
+}
+
+function fuzzySingleTokenKeysForNode(type: string, variants: readonly FuzzyVariant[]): string[] {
+  const keys = new Set<string>();
+  for (const variant of variants) {
+    for (const token of variant.tokens) keys.add(typedBlockingKey(type, token));
+  }
+  return [...keys];
+}
+
+function fuzzyDegenerateTokenKeysForNode(type: string, variants: readonly FuzzyVariant[]): string[] {
+  const keys = new Set<string>();
+  for (const variant of variants) {
+    if (variant.tokens.length < 2 || new Set(variant.tokens).size >= 2) continue;
+    // The legacy `tokenSubset` predicate works over token Sets but gates on
+    // token-array length. Thus "echo echo" can contain-match "echo bravo".
+    // Keep a narrowly-scoped single-token side index for that exact legacy
+    // case; ordinary variants still use only the pair-token index above.
+    for (const token of variant.tokens) keys.add(typedBlockingKey(type, token));
+  }
+  return [...keys];
+}
+
+function memoizeComparableNodes(
+  nodes: readonly OntologyPatchNode[],
+  normalizers: NormalizerByNodeType,
+  fuzzyEnabled: boolean,
+  fuzzyThreshold: number,
+): MemoizedReconciliationNode[] {
+  const memoized: MemoizedReconciliationNode[] = [];
+  for (const node of nodes) {
+    // Keep the fuzzy tier's legacy admission/tokenization independent from
+    // exact normalization, as the previous comparableNodes filter did.
+    const terms = nodeTerms(node);
+    if (!node.type || terms.length === 0) continue;
+
+    const normalize = normalizers[node.type] ?? normalizeTerm;
+    const exactTerms = exactNodeTerms(node, normalizers);
+    const variants = fuzzyEnabled ? fuzzyVariantsForTerms(terms) : [];
+    const fuzzySingleTokenKeys = fuzzyEnabled ? fuzzySingleTokenKeysForNode(node.type, variants) : [];
+    memoized.push({
+      node,
+      exactTerms,
+      exactTermSet: new Set(exactTerms),
+      normalizedLabel: node.label ? normalize(node.label) : null,
+      fuzzyVariants: variants,
+      guardSurface: nodeGuardSurface(node),
+      exactBlockingKeys: exactTerms.map((term) => typedBlockingKey(node.type!, term)),
+      fuzzyBlockingKeys: fuzzyEnabled ? fuzzyBlockingKeysForNode(node.type, variants, fuzzyThreshold) : [],
+      fuzzySingleTokenKeys,
+      fuzzyDegenerateTokenKeys: fuzzyEnabled && !(fuzzyThreshold <= 0.5)
+        ? fuzzyDegenerateTokenKeysForNode(node.type, variants)
+        : [],
+    });
+  }
+  return memoized.sort((a, b) => a.node.id.localeCompare(b.node.id));
+}
+
+function addToInvertedIndex(index: Map<string, number[]>, key: string, nodeIndex: number): void {
+  const bucket = index.get(key);
+  if (bucket) bucket.push(nodeIndex);
+  else index.set(key, [nodeIndex]);
+}
+
+function buildLexicalBlockingIndex(
+  nodes: readonly MemoizedReconciliationNode[],
+): OntologyReconciliationLexicalBlockingIndex {
+  const exact = new Map<string, number[]>();
+  const fuzzy = new Map<string, number[]>();
+  const hasDegenerateFuzzyVariant = nodes.some((node) => node.fuzzyDegenerateTokenKeys.length > 0);
+  const fuzzySingles = hasDegenerateFuzzyVariant ? new Map<string, number[]>() : undefined;
+  const fuzzyDegenerate = hasDegenerateFuzzyVariant ? new Map<string, number[]>() : undefined;
+  for (let nodeIndex = 0; nodeIndex < nodes.length; nodeIndex += 1) {
+    const node = nodes[nodeIndex]!;
+    for (const key of node.exactBlockingKeys) addToInvertedIndex(exact, key, nodeIndex);
+    for (const key of node.fuzzyBlockingKeys) addToInvertedIndex(fuzzy, key, nodeIndex);
+    if (fuzzySingles && fuzzyDegenerate) {
+      for (const key of node.fuzzySingleTokenKeys) addToInvertedIndex(fuzzySingles, key, nodeIndex);
+      for (const key of node.fuzzyDegenerateTokenKeys) addToInvertedIndex(fuzzyDegenerate, key, nodeIndex);
+    }
+  }
+  return { exact, fuzzy, fuzzySingles, fuzzyDegenerate };
+}
+
+/**
+ * Yields the union of exact and fuzzy blocks in precisely the old nested-loop
+ * order: ascending (i, j) over the id-sorted comparable-node list. Index
+ * buckets are only candidate generators; all existing type/scope/precision
+ * guards remain per-pair filters in the queue generator.
+ */
+function* enumerateBlockedPairIndexes(
+  nodes: readonly MemoizedReconciliationNode[],
+  index: OntologyReconciliationLexicalBlockingIndex,
+): IterableIterator<readonly [number, number]> {
+  for (let leftIndex = 0; leftIndex < nodes.length; leftIndex += 1) {
+    const rightIndexes = new Set<number>();
+    const left = nodes[leftIndex]!;
+    for (const key of left.exactBlockingKeys) {
+      for (const rightIndex of index.exact.get(key) ?? []) {
+        if (rightIndex > leftIndex) rightIndexes.add(rightIndex);
+      }
+    }
+    for (const key of left.fuzzyBlockingKeys) {
+      for (const rightIndex of index.fuzzy.get(key) ?? []) {
+        if (rightIndex > leftIndex) rightIndexes.add(rightIndex);
+      }
+    }
+    // `tokenSubset` uses token Sets after a token-array-length gate. Repeated
+    // one-token variants are therefore the one case outside the two-distinct-
+    // token proof for pair keys; connect them through a narrow side index.
+    if (index.fuzzySingles && index.fuzzyDegenerate) {
+      for (const key of left.fuzzyDegenerateTokenKeys) {
+        for (const rightIndex of index.fuzzySingles.get(key) ?? []) {
+          if (rightIndex > leftIndex) rightIndexes.add(rightIndex);
+        }
+      }
+      for (const key of left.fuzzySingleTokenKeys) {
+        for (const rightIndex of index.fuzzyDegenerate.get(key) ?? []) {
+          if (rightIndex > leftIndex) rightIndexes.add(rightIndex);
+        }
+      }
+    }
+    for (const rightIndex of [...rightIndexes].sort((a, b) => a - b)) {
+      yield [leftIndex, rightIndex];
+    }
+  }
+}
+
+/** Builds the real lexical buckets for losslessness tests and diagnostics. */
+export function buildOntologyReconciliationLexicalBlockingIndex(
+  context: OntologyPatchContext,
+  options: Pick<GenerateOntologyReconciliationCandidatesOptions, "fuzzy" | "fuzzyThreshold"> = {},
+): OntologyReconciliationLexicalBlockingIndex {
+  const fuzzyEnabled = options.fuzzy ?? true;
+  const fuzzyThreshold = options.fuzzyThreshold ?? DEFAULT_FUZZY_TOKEN_JACCARD_THRESHOLD;
+  const memoized = memoizeComparableNodes(
+    context.nodes,
+    compileNormalizerByNodeType(context.profile),
+    fuzzyEnabled,
+    fuzzyThreshold,
+  );
+  return buildLexicalBlockingIndex(memoized);
+}
+
+/**
+ * Exposes the lossless lexical blocked-pair set for validation and diagnostic
+ * tooling. Members use indices in the id-sorted comparable-node array, so the
+ * insertion order is the generator's original ascending (i, j) order.
+ */
+export function enumerateOntologyReconciliationBlockedPairs(
+  context: OntologyPatchContext,
+  options: Pick<GenerateOntologyReconciliationCandidatesOptions, "fuzzy" | "fuzzyThreshold"> = {},
+  blockingIndex?: OntologyReconciliationLexicalBlockingIndex,
+): Set<OntologyReconciliationBlockedPair> {
+  const fuzzyEnabled = options.fuzzy ?? true;
+  const fuzzyThreshold = options.fuzzyThreshold ?? DEFAULT_FUZZY_TOKEN_JACCARD_THRESHOLD;
+  const memoized = memoizeComparableNodes(
+    context.nodes,
+    compileNormalizerByNodeType(context.profile),
+    fuzzyEnabled,
+    fuzzyThreshold,
+  );
+  const index = blockingIndex ?? buildLexicalBlockingIndex(memoized);
+  const pairs = new Set<OntologyReconciliationBlockedPair>();
+  for (const [leftIndex, rightIndex] of enumerateBlockedPairIndexes(memoized, index)) {
+    pairs.add(`${leftIndex}:${rightIndex}`);
+  }
+  return pairs;
 }
 
 export function loadOntologyReconciliationCandidates(path: string): OntologyReconciliationCandidateQueue {
@@ -1284,9 +1565,10 @@ export function filterOntologyReconciliationCandidates(
   return queryOntologyReconciliationCandidates(queue, options);
 }
 
-export function generateOntologyReconciliationCandidates(
+function generateOntologyReconciliationCandidatesWithBlockingIndex(
   context: OntologyPatchContext,
   options: GenerateOntologyReconciliationCandidatesOptions = {},
+  suppliedBlockingIndex?: OntologyReconciliationLexicalBlockingIndex,
 ): OntologyReconciliationCandidateQueue {
   const fuzzyEnabled = options.fuzzy ?? true;
   const fuzzyThreshold = options.fuzzyThreshold ?? DEFAULT_FUZZY_TOKEN_JACCARD_THRESHOLD;
@@ -1296,94 +1578,102 @@ export function generateOntologyReconciliationCandidates(
 
   const candidates: OntologyReconciliationCandidate[] = [];
   const emittedPairs = new Set<string>();
-  const comparableNodes = context.nodes
-    // Keep the fuzzy tier's legacy admission/tokenization independent from N.
-    .filter((node) => node.type && nodeTerms(node).length > 0)
-    .sort((a, b) => a.id.localeCompare(b.id));
+  const comparableNodes = memoizeComparableNodes(context.nodes, normalizers, fuzzyEnabled, fuzzyThreshold);
+  const blockingIndex = suppliedBlockingIndex ?? buildLexicalBlockingIndex(comparableNodes);
 
-  for (let i = 0; i < comparableNodes.length; i += 1) {
-    for (let j = i + 1; j < comparableNodes.length; j += 1) {
-      const left = comparableNodes[i]!;
-      const right = comparableNodes[j]!;
-      // Type-guard applies AFTER schema hygiene has canonicalized types.
-      if (!left.type || left.type !== right.type) continue;
+  for (const [leftIndex, rightIndex] of enumerateBlockedPairIndexes(comparableNodes, blockingIndex)) {
+    const leftMemo = comparableNodes[leftIndex]!;
+    const rightMemo = comparableNodes[rightIndex]!;
+    const left = leftMemo.node;
+    const right = rightMemo.node;
+    // Type-guard applies AFTER schema hygiene has canonicalized types.
+    if (!left.type || left.type !== right.type) continue;
 
-      // Partitioned registries scope both reconciliation tiers. This guard is
-      // deliberately before sharedTerms so a cross-partition label can never
-      // become a score-1.0 exact candidate.
-      if (violatesPartitionScope(context, left.type, left, right)) continue;
+    // Partitioned registries scope both reconciliation tiers. This guard is
+    // deliberately before sharedTerms so a cross-partition label can never
+    // become a score-1.0 exact candidate.
+    if (violatesPartitionScope(context, left.type, left, right)) continue;
 
-      const leftTerms = new Set(exactNodeTerms(left, normalizers));
-      const sharedTerms = exactNodeTerms(right, normalizers).filter((term) => leftTerms.has(term));
+    const sharedTerms = rightMemo.exactTerms.filter((term) => leftMemo.exactTermSet.has(term));
 
-      const { canonical, candidate } = chooseCanonicalPair(left, right);
-      const pairKey = `${canonical.id}|${candidate.id}`;
-      const evidenceRefs = uniqueSorted([
-        ...(canonical.source_refs ?? []),
-        ...(candidate.source_refs ?? []),
-      ]);
+    const { canonical, candidate } = chooseCanonicalPair(left, right);
+    const canonicalMemo = canonical === left ? leftMemo : rightMemo;
+    const candidateMemo = candidate === left ? leftMemo : rightMemo;
+    const pairKey = `${canonical.id}|${candidate.id}`;
+    const evidenceRefs = uniqueSorted([
+      ...(canonical.source_refs ?? []),
+      ...(candidate.source_refs ?? []),
+    ]);
 
-      // Precision guards reject confidently-different entities in BOTH tiers
-      // (role-noun collisions, opposite-gender/relational pairs, place
-      // containment with a new head-noun, address/serial divergence).
-      const rejectReason = differentEntityReason(left, right);
+    // Precision guards reject confidently-different entities in BOTH tiers
+    // (role-noun collisions, opposite-gender/relational pairs, place
+    // containment with a new head-noun, address/serial divergence).
+    const rejectReason = differentEntityReasonFromGuardSurfaces(
+      left,
+      right,
+      leftMemo.guardSurface,
+      rightMemo.guardSurface,
+    );
 
-      if (sharedTerms.length > 0) {
-        if (rejectReason) continue;
-        // Exact tier: shared normalized term (label/alias/normalized_term).
-        emittedPairs.add(pairKey);
-        candidates.push({
-          id: candidateId(canonical, candidate, sharedTerms),
-          kind: "entity_match",
-          status: "candidate",
-          score: candidateScore(sharedTerms, canonical, candidate, normalizers[left.type]),
-          tier: "exact",
-          candidate_id: candidate.id,
-          canonical_id: canonical.id,
-          shared_terms: sharedTerms,
-          evidence_refs: evidenceRefs,
-          reasons: [
-            `same node type: ${canonical.type}`,
-            `shared normalized term(s): ${sharedTerms.join(", ")}`,
-          ],
-          proposed_patch_operation: "accept_match",
-        });
-        continue;
-      }
-
-      if (!fuzzyEnabled) continue;
-      // Fuzzy tier is for ENTITIES — skip structural container types (their
-      // formulaic titles are non-mergeable noise). Types are equal here.
-      if (fuzzyExcludeTypes.has(String(left.type))) continue;
-      // Precision guard: same rejection classes as the exact tier.
+    if (sharedTerms.length > 0) {
       if (rejectReason) continue;
-      // Fuzzy tier: honorific-stripped token containment / Jaccard.
-      const fuzzy = fuzzyMatchNodes(left, right, fuzzyThreshold);
-      if (!fuzzy.matched) continue;
-      if (emittedPairs.has(pairKey)) continue;
+      // Exact tier: shared normalized term (label/alias/normalized_term).
       emittedPairs.add(pairKey);
-      const reasonDetail = fuzzy.equal
-        ? "token-set equal (honorific/parenthetical-stripped)"
-        : fuzzy.contained
-          ? "token containment (honorific/parenthetical-stripped)"
-          : `token Jaccard ${fuzzy.jaccard.toFixed(2)} ≥ ${fuzzyThreshold}`;
       candidates.push({
-        id: candidateId(canonical, candidate, [reasonDetail]),
+        id: candidateId(canonical, candidate, sharedTerms),
         kind: "entity_match",
         status: "candidate",
-        score: fuzzyScore(fuzzy),
-        tier: "fuzzy",
+        score: candidateScore(
+          sharedTerms,
+          canonicalMemo.normalizedLabel,
+          candidateMemo.normalizedLabel,
+        ),
+        tier: "exact",
         candidate_id: candidate.id,
         canonical_id: canonical.id,
-        shared_terms: [],
+        shared_terms: sharedTerms,
         evidence_refs: evidenceRefs,
         reasons: [
           `same node type: ${canonical.type}`,
-          `fuzzy match: ${reasonDetail}`,
+          `shared normalized term(s): ${sharedTerms.join(", ")}`,
         ],
         proposed_patch_operation: "accept_match",
       });
+      continue;
     }
+
+    if (!fuzzyEnabled) continue;
+    // Fuzzy tier is for ENTITIES — skip structural container types (their
+    // formulaic titles are non-mergeable noise). Types are equal here.
+    if (fuzzyExcludeTypes.has(String(left.type))) continue;
+    // Precision guard: same rejection classes as the exact tier.
+    if (rejectReason) continue;
+    // Fuzzy tier: honorific-stripped token containment / Jaccard.
+    const fuzzy = fuzzyMatchVariants(leftMemo.fuzzyVariants, rightMemo.fuzzyVariants, fuzzyThreshold);
+    if (!fuzzy.matched) continue;
+    if (emittedPairs.has(pairKey)) continue;
+    emittedPairs.add(pairKey);
+    const reasonDetail = fuzzy.equal
+      ? "token-set equal (honorific/parenthetical-stripped)"
+      : fuzzy.contained
+        ? "token containment (honorific/parenthetical-stripped)"
+        : `token Jaccard ${fuzzy.jaccard.toFixed(2)} ≥ ${fuzzyThreshold}`;
+    candidates.push({
+      id: candidateId(canonical, candidate, [reasonDetail]),
+      kind: "entity_match",
+      status: "candidate",
+      score: fuzzyScore(fuzzy),
+      tier: "fuzzy",
+      candidate_id: candidate.id,
+      canonical_id: canonical.id,
+      shared_terms: [],
+      evidence_refs: evidenceRefs,
+      reasons: [
+        `same node type: ${canonical.type}`,
+        `fuzzy match: ${reasonDetail}`,
+      ],
+      proposed_patch_operation: "accept_match",
+    });
   }
 
   // --- Structural tier (capability-gated, LAST, strictly additive) ----------
@@ -1398,7 +1688,7 @@ export function generateOntologyReconciliationCandidates(
       ...DEFAULT_STRUCTURAL_TIER_CONFIG,
       ...(options.structuralConfig ?? {}),
     };
-    const nodeById = new Map(comparableNodes.map((node) => [node.id, node]));
+    const nodeById = new Map(comparableNodes.map(({ node }) => [node.id, node]));
     const index = buildStructuralIndex(context.relations, context.nodes);
     for (const [leftId, rightId] of structuralCandidatePairs(index, structuralConfig)) {
       const left = nodeById.get(leftId);
@@ -1482,6 +1772,26 @@ export function generateOntologyReconciliationCandidates(
     candidate_count: capped.length,
     candidates: capped,
   };
+}
+
+export function generateOntologyReconciliationCandidates(
+  context: OntologyPatchContext,
+  options: GenerateOntologyReconciliationCandidatesOptions = {},
+): OntologyReconciliationCandidateQueue {
+  return generateOntologyReconciliationCandidatesWithBlockingIndex(context, options);
+}
+
+/**
+ * Test-only seam for proving that the production generator consumes every
+ * required entry in its real lexical inverted index. Not re-exported from the
+ * package root.
+ */
+export function generateOntologyReconciliationCandidatesWithLexicalBlockingIndexForTest(
+  context: OntologyPatchContext,
+  options: GenerateOntologyReconciliationCandidatesOptions,
+  blockingIndex: OntologyReconciliationLexicalBlockingIndex,
+): OntologyReconciliationCandidateQueue {
+  return generateOntologyReconciliationCandidatesWithBlockingIndex(context, options, blockingIndex);
 }
 
 export function writeOntologyReconciliationCandidates(
