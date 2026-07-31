@@ -138,6 +138,39 @@ function deps(state: FakePgState, lines: string[]): StoreCliDeps {
 
 const allSql = (state: FakePgState) => state.queries.map((q) => q.text);
 
+/**
+ * A store whose DECLARED capabilities and ACTUAL rebuild disagree: it advertises
+ * the aggregate + window capabilities (both methods are implemented) but this
+ * particular replace push rebuilt nothing. Legitimate — a capability declares an
+ * implemented method, not that any given push touched the derived tables.
+ *
+ * It exists to pin the summary on what the push REPORTS rather than on what the
+ * CLI can infer from `mode` + the capability list.
+ */
+function storeWithNoRebuild(): GraphStore {
+  return {
+    id: "postgres",
+    capabilities: {
+      push: true,
+      query: true,
+      clear: true,
+      snapshotMeta: true,
+      aggregate: { version: 1, axes: ["node_type", "community"] },
+      window: { version: 1, layouts: ["force"], strategies: ["degree-top-n"] },
+    },
+    verifyConnection: async () => {},
+    pushGraph: async () => ({
+      nodes: 3,
+      edges: 1,
+      warnings: [],
+      durationMs: 1,
+      rebuilt: { axes: [], layouts: [] },
+    }),
+    readSnapshotMeta: async () => undefined,
+    close: async () => {},
+  } as unknown as GraphStore;
+}
+
 // ---------------------------------------------------------------------------
 // store push — replace mode rebuilds the aggregate + positions.
 // ---------------------------------------------------------------------------
@@ -269,5 +302,35 @@ describe("graphify store status", () => {
     await expect(
       runStoreStatus({}, { env: {} as NodeJS.ProcessEnv, log: () => {} }),
     ).rejects.toThrow(/no GraphStore configured/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The summary reports what the PUSH rebuilt, never what the CLI can infer.
+// ---------------------------------------------------------------------------
+
+describe("graphify store push (rebuild reporting)", () => {
+  it("believes a replace push that reports rebuilding nothing, despite the declared capabilities", async () => {
+    const lines: string[] = [];
+    const graph = writeGraphFixture();
+
+    const summary = await runStorePush(
+      { graph, mode: "replace" },
+      {
+        env: {
+          GRAPHIFY_STORE: "postgres",
+          GRAPHIFY_POSTGRES_URL: "postgres://user:pass@localhost:5432/testdb",
+        } as NodeJS.ProcessEnv,
+        log: (line) => lines.push(line),
+        resolveStore: async () => storeWithNoRebuild(),
+      },
+    );
+
+    // Inferring from `mode === "replace"` + the capability list would print
+    // "node_type, community" and "force" here — a rebuild that never happened.
+    expect(summary.axes).toEqual([]);
+    expect(summary.layouts).toEqual([]);
+    expect(lines.join("\n")).not.toMatch(/aggregate rebuilt/i);
+    expect(lines.join("\n")).not.toMatch(/node_type/);
   });
 });
