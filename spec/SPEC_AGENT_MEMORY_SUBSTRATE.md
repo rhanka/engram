@@ -8,14 +8,16 @@
   (§3.3 — `subject` + event-shaped predicate + projection prohibition); (2)
   subject-human retention controls with a deletion path (§3.5); (3) the
   cross-tier reconciliation reject (§3.4); (4) versioned append capability
-  (§5); (5) the multi-tenant identity + private/capitalised scope + exec
-  arbitration hook (§3.6). **These carriers are what go to FINAL ratification
+  (§5); (5) the multi-tenant identity + private/capitalised scope + a NEUTRAL
+  projection hook (§3.6). **These carriers are what go to FINAL ratification
   (D1).** The remainder of §9 (exact producer wire-shape, full promotion rule)
   stays **co-spec** with the h2a `memory` lane after ratification.
 - Scope of graphify ownership: the **schema fields, the capability gating, and
-  the code predicates** are graphify-side. The **executive role** that
-  arbitrates cross-principal capitalisation/contradiction is an **h2a concept**
-  (flagged to the conductor); graphify provides only the **hook point** (§3.6).
+  the code predicates** are graphify-side. The **projector/executive role** that
+  would pick a view over cross-principal capitalisation/contradiction is an
+  **h2a concept and a PARKED owner decision** (condition absent — single human
+  today; §3.6); graphify provides only a **neutral reversible hook point**, no
+  arbitration semantic.
   The **reconciliation application point** is the **ontology lot** (D9), not
   this spec's code (§3.4).
 - Co-spec peer: h2a `memory` (`claude:h2a:b4ec36679141`, thread
@@ -64,7 +66,7 @@ An agent-memory node is a normal graph node carrying the shared `t`/`t_end`/
 | `t_end` | absent ⇒ still-current; `=== t` ⇒ closed point | pass-through |
 | `t_src` | which coordinate produced `t` | pass-through, UNVERIFIED |
 | `provenance` | structured citation: cited string + named source (§4) | admission (citation check, §4) |
-| `event_shaped` | the note describes something that HAPPENED at `t`, not a standing trait — a **TYPE predicate** (§3.3) | admission (form predicate) |
+| `event_shaped` | a mandatory machine-verifiable event ANCHOR: `t` + the assertion as an anchored event, not free prose (§3.3 — **structural**, not a writer flag, not a prose classifier) | admission (structural predicate) |
 | `trust: "asserted"` | fixed | — |
 | `reconcilable: false` | **opt-out by construction** (C1, §3.4): a non-earned tier is NOT reconciled by default | reconciliation gate |
 | `principal_owner` | tenant identity: the principal/owner this note belongs to (§3.6) | admission + gate |
@@ -103,10 +105,17 @@ convention and NOT by `verifyVerbatim` (which only checks a citation, §4):
    agent persona, identity, voice, or values. `subject ∈ { "agent-work",
    "human:<id>" }` only; a human subject is a *fact-as-context*, never an
    identity model.
-2. **`event_shaped` TYPE predicate.** Admission rejects a note that is not
-   event-shaped: it MUST assert something that happened at `t` (an episode),
-   not a standing/permanent rule or trait. This is the real FORM check — a
-   deterministic predicate over the note's shape, independent of the citation.
+2. **`event_shaped` — a STRUCTURAL predicate (co-spec correction).** Admission
+   requires a machine-verifiable EVENT ANCHOR: a `t` (the instant it happened)
+   with the assertion encoded as an anchored event, NOT free prose. A
+   generalization ("always X") has no single instant at which it happened →
+   structurally non-anchorable → REFUSED. It is deterministic ONLY because it
+   is structural: it is **NOT** a boolean the writer sets (that would be
+   self-declared and unverified — the exact `t_src` trap), and **NOT** a
+   semantic judgment over prose (that would be an LLM call belonging to the D11
+   gate, not admission). A trait-shaped content is thereby forced to express as
+   its episodic ORIGIN ("on `<date>`, correction Y"); the derived standing rule
+   lives in h2a (WP11).
 3. **Projection prohibition — ENFORCED, not documented (see §3.2).** The
    query/recall surface MUST NOT offer an identity-profile projection that
    aggregates `subject = "human:<id>"` notes into a persistent ranked view;
@@ -146,8 +155,17 @@ append-only journal (D12) does **not** provide them by itself:
   **folded OUT at projection** (consistent with D12 journal+fold and the D-rewind
   "kept but marked not-current" decision). A subject-human fact MUST be
   erasable this way; a substrate that cannot honour a deletion request cannot
-  hold subject-human facts. The tombstone/fold semantics are specified with the
-  storage role (co-owns the port) and the ontology/recall fold.
+  hold subject-human facts. Two co-spec corrections from the memory peer:
+  - **Authority.** A tombstone passes the SAME `principal_owner`/`scope` gate as
+    admission: only the `principal_owner` (or an agent it MANDATES) may erase a
+    private fact, or one agent erases another principal's memory.
+  - **Edge cascade.** A recall result is NOT an induced subgraph (measured: an
+    edge can surface without its endpoint). So a tombstoned node MUST fold out
+    its EDGES too, or an erased human-fact resurfaces through an edge that
+    references it. For A2 (GDPR-type) erasure the disappearance must be COMPLETE
+    at projection, edges included.
+  The tombstone/fold semantics are specified with the storage role (co-owns the
+  port) and the ontology/recall fold.
 
 ### 3.6 Multi-tenant identity, private/capitalised scope, exec hook — NORMATIVE (new carrier)
 
@@ -160,12 +178,25 @@ distinction:
 2. **`scope`: `"private"` vs `"capitalised"`.** `private` = readable only within
    `principal_owner`. `capitalised` = shared across principals (the common
    history).
-3. **Exec-arbitration HOOK in the D11 control (§9.3).** Promoting a note to
-   `capitalised`, and resolving a CONTRADICTION between two principals'
-   capitalised notes, is decided by an **executive role above the principal**.
-   That executive role is an **h2a concept** (flagged to the conductor); graphify
-   provides only the **hook point** — the gate calls out to an arbitration
-   decision and records its verdict; it does not implement the exec logic.
+3. **A NEUTRAL PROJECTION HOOK in the D11 control (§9.3) — NOT a resolving
+   arbiter (co-spec reframe, h2a architect).** On an append-only substrate two
+   contradictory `capitalised` notes COEXIST (D12); nothing is destroyed.
+   Promotion to `capitalised`, and the handling of a cross-principal
+   CONTRADICTION, is therefore a **PROJECTION** decision (which view to present),
+   never a destructive resolution. graphify exposes only a **neutral, reversible
+   hook point**; it wires no arbitration/resolution semantic.
+   The ROLE that would make that projection decision (an executive/projector
+   above the principal) is a **PARKED owner decision**, not a role graphify+h2a
+   co-specify: (a) instituting an executive above the principal AMENDS the
+   already-ratified RACI actor model (escalation AGENTS←CONDUCTOR←PRINCIPAL; the
+   owner is terminal); (b) the triggering condition — 2+ principals actually
+   sharing a role memory — does not exist today (a single human). So the hook
+   ships neutral; the role is design-only, parked, triggered when the condition
+   appears. IF such a role is ever instituted, two h2a invariants bind its
+   view (memory's): (i) the promoted view is SIGNED (Ed25519 — the `signed`
+   tier h2a owns, never an uncontrolled journal `by`); (ii) separation of
+   powers — the projector is neither the note's author nor a D11 leg that
+   promoted it.
 
 ## 4. Provenance — what `verifyVerbatim` DOES and does NOT do (B1 correction)
 
@@ -228,7 +259,8 @@ mechanism (code), §3.4 reconciliation opt-out + cross-tier reject, §3.5 retent
    `appendNode`/`appendEdge` signature and tombstone semantics (co-owned storage).
 2. **The binary-gate promotion rule (§9.3 D11)** — validator independence,
    eligible grades, threshold, disagreement-to-human path, audit record, PLUS
-   the §3.6 exec-arbitration point and the `principal_owner`/`scope` checks.
+   the §3.6 neutral projection hook (role parked) and the
+   `principal_owner`/`scope` checks.
 
 ### 9.3 D11 gate — normative carriers to fold in
 
@@ -237,8 +269,11 @@ mechanism (code), §3.4 reconciliation opt-out + cross-tier reject, §3.5 retent
   (no self-report); disagreement escalates to the human.
 - Audit: each promotion appends to the journal (D12) the two verdicts + the
   independence attestation + the note provenance + `principal_owner`/`scope`.
-- **Exec-arbitration point (§3.6):** capitalisation and cross-principal
-  contradiction resolution invoke the exec hook; its verdict is recorded.
+- **Neutral projection hook (§3.6):** capitalisation and cross-principal
+  contradiction invoke a NEUTRAL projection hook — no destructive resolution;
+  the notes coexist (append-only). The projector ROLE is a parked owner
+  decision; if ever instituted, its view is SIGNED (Ed25519) and it is neither
+  the note's author nor a D11 leg.
 
 Nothing here is implemented until final ratification (D1) and the storage/exec
 owners of the touched surfaces consent. Reversible until then.
