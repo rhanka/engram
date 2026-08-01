@@ -267,6 +267,19 @@ export interface GraphPushResult {
    * the readable-empty discriminant: ask the component that knows.
    */
   rebuilt?: GraphPushRebuilt;
+  /**
+   * Windowed-loader position rows this push actually wrote (storage LOT 3).
+   * Reported by window-capable adapters (which maintain `graph_positions`) so a
+   * caller can tell a real rebuild from an empty one; omitted by adapters that
+   * do not touch positions. This is the honest COUNT, distinct from
+   * `rebuilt.layouts` (which layouts a push touched): an adapter may legitimately
+   * report rebuilding nothing (`rebuilt.layouts: []`, believed as policy), but an
+   * adapter that DECLARES the window capability and reports writing 0 positions
+   * for a non-empty replace produced no windowed first paint — the CLI rejects
+   * that rather than reporting a success without an effect. Source-agnostic:
+   * whatever feeds the layout, the count is of rows actually persisted.
+   */
+  positions?: number;
 }
 
 export interface GraphStoreSnapshotMeta {

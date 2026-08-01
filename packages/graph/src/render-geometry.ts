@@ -480,6 +480,17 @@ export interface EdgeGeometry {
   /** Clipped stroke end (target border) — raw target when not clipped. */
   endX: number;
   endY: number;
+  /**
+   * Explicit POLYLINE of the drawn route in device px, first point `start*` and
+   * last point `end*`. Set ONLY by routes whose shape is a chain of straight
+   * segments that no Bézier can express — today the octilinear metro route.
+   *
+   * Additive: `edgeGeometry` and `flowPortEdgeGeometry` leave it `undefined`, so
+   * their tessellation (and the golden output) is byte-identical. When present it
+   * WINS over `curved`/`cubic` in {@link tessellateEdge} — an octilinear route is
+   * `curved: false` yet must keep its intermediate waypoints.
+   */
+  polyline?: ReadonlyArray<readonly [number, number]>;
 }
 
 /**
@@ -582,6 +593,29 @@ export const ROUTE_STYLE_FLOW_PORT_REVERSE = 2;
  */
 export const ROUTE_STYLE_FLOW_PORT_NO_ARROW = 3;
 export const ROUTE_STYLE_FLOW_PORT_REVERSE_NO_ARROW = 4;
+/**
+ * OCTILINEAR route (metro Lot 6): a chain of straight segments constrained to
+ * multiples of 45°, drawn centre-to-centre with border clipping — the transit-map
+ * look. NOT a flow-port style: it has no ports, no S, and no arrow suppression.
+ */
+export const ROUTE_STYLE_OCTILINEAR = 5;
+
+/**
+ * True when a route code draws FLOW-PORT geometry (codes 1-4).
+ *
+ * Both draw paths (Canvas2D fallback + WebGL2 instanced) historically dispatched
+ * on `route !== 0`, which was correct only while flow-port was the sole non-default
+ * style. Any new style added under that test would be SILENTLY rendered as a
+ * flow-port S. Dispatch on this predicate instead.
+ */
+export function routeIsFlowPort(route: number): boolean {
+  return (
+    route === ROUTE_STYLE_FLOW_PORT ||
+    route === ROUTE_STYLE_FLOW_PORT_REVERSE ||
+    route === ROUTE_STYLE_FLOW_PORT_NO_ARROW ||
+    route === ROUTE_STYLE_FLOW_PORT_REVERSE_NO_ARROW
+  );
+}
 
 /** True when a route code draws flow-port geometry with the endpoints swapped. */
 export function routeIsReversed(route: number): boolean {
@@ -680,8 +714,163 @@ export function flowPortEdgeGeometry(
   };
 }
 
+// ---------------------------------------------------------------------------
+// OCTILINEAR edge routing (metro Lot 6 — the deferral D1 lifted). Segments are
+// constrained to multiples of 45°, the transit-map grammar the METRO layout's
+// grid-snapped lanes were built for. Pure device-px math, single-sourced for the
+// Canvas2D fallback and the WebGL2 instanced path (same anti-divergence rule).
+// ---------------------------------------------------------------------------
+
+/** Below this, two coordinates are the same point / a run has no length. */
+const OCTILINEAR_EPS = 1e-6;
+
 /**
- * Tessellate the drawn edge into a polyline of device-pixel points. A straight
+ * Route P0 → P1 with segments constrained to multiples of 45°.
+ *
+ * The excess of the dominant axis over the other is split EVENLY into two runs
+ * that bracket a single 45° diagonal covering the whole minor-axis extent:
+ *
+ *   run(r/2) → diagonal(d, d) → run(r/2),   d = min(|dx|,|dy|), r = ||dx|−|dy||
+ *
+ * The runs are HORIZONTAL when |dx| > |dy| and VERTICAL otherwise, so a route
+ * always LEAVES and ARRIVES along the dominant axis — the symmetric shape a
+ * transit map draws. When the segment is already octilinear (r ≈ 0 ⇒ pure 45°,
+ * or d ≈ 0 ⇒ pure horizontal/vertical) it stays a SINGLE segment: no gratuitous
+ * bend is ever introduced.
+ */
+function octilinearRoute(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+): Array<readonly [number, number]> {
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const adx = Math.abs(dx);
+  const ady = Math.abs(dy);
+  const d = Math.min(adx, ady);
+  const r = Math.abs(adx - ady);
+
+  // Already octilinear (pure diagonal, pure horizontal, pure vertical, or a
+  // degenerate point): one segment, no waypoint.
+  if (r < OCTILINEAR_EPS || d < OCTILINEAR_EPS) {
+    return [
+      [x0, y0],
+      [x1, y1],
+    ];
+  }
+
+  const sx = Math.sign(dx);
+  const sy = Math.sign(dy);
+  const half = r / 2;
+
+  if (adx > ady) {
+    // Horizontal runs bracket the diagonal.
+    const ax = x0 + sx * half;
+    const bx = ax + sx * d;
+    return [
+      [x0, y0],
+      [ax, y0],
+      [bx, y0 + sy * d],
+      [x1, y1],
+    ];
+  }
+  // Vertical runs bracket the diagonal.
+  const ay = y0 + sy * half;
+  const by = ay + sy * d;
+  return [
+    [x0, y0],
+    [x0, ay],
+    [x0 + sx * d, by],
+    [x1, y1],
+  ];
+}
+
+/** Unit direction from `a` to `b`; (0,0) when they coincide. */
+function unitBetween(
+  a: readonly [number, number],
+  b: readonly [number, number],
+): [number, number] {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const len = Math.hypot(dx, dy);
+  if (len < OCTILINEAR_EPS) return [0, 0];
+  return [dx / len, dy / len];
+}
+
+/**
+ * Compute an OCTILINEAR edge's drawn geometry from the endpoint node CENTRES
+ * (device px). The route is planned centre-to-centre, the endpoints are clipped
+ * to the node borders ALONG the first / last segment direction, and the route is
+ * then re-planned between the clipped endpoints so every drawn segment — not
+ * merely the centre-to-centre plan — is a multiple of 45°.
+ *
+ * `offsetForDir` is the same border-offset callback `edgeGeometry` takes, so the
+ * box-rect / circular-clip choice stays single-sourced with the node pass. The
+ * clip test matches `edgeGeometry` exactly (`dist > offsetSource + offsetTarget
+ * + 1e-3`), so an edge between two overlapping nodes degrades the same way: raw
+ * endpoints, `clipped: false`, and the caller draws no arrowhead (E13).
+ *
+ * The result is a straight-segment route: `curved` and `cubic` are both false and
+ * the shape travels in {@link EdgeGeometry.polyline}.
+ */
+export function octilinearEdgeGeometry(
+  source: { x: number; y: number },
+  target: { x: number; y: number },
+  offsetForDir: (end: "source" | "target", dirX: number, dirY: number) => number,
+): EdgeGeometry {
+  const dx = target.x - source.x;
+  const dy = target.y - source.y;
+  const distance = Math.hypot(dx, dy);
+  const degenerate = distance < OCTILINEAR_EPS;
+
+  // Plan on the CENTRES first: the first/last segment directions are what the
+  // border offsets must be measured along.
+  const planned = octilinearRoute(source.x, source.y, target.x, target.y);
+  const plannedOut = unitBetween(planned[0]!, planned[1]!);
+  const plannedIn = unitBetween(planned[planned.length - 2]!, planned[planned.length - 1]!);
+
+  const offsetSource = offsetForDir("source", plannedOut[0], plannedOut[1]);
+  const offsetTarget = offsetForDir("target", -plannedIn[0], -plannedIn[1]);
+  const clipped = !degenerate && distance > offsetSource + offsetTarget + 1e-3;
+
+  const startX = clipped ? source.x + plannedOut[0] * offsetSource : source.x;
+  const startY = clipped ? source.y + plannedOut[1] * offsetSource : source.y;
+  const endX = clipped ? target.x - plannedIn[0] * offsetTarget : target.x;
+  const endY = clipped ? target.y - plannedIn[1] * offsetTarget : target.y;
+
+  // Re-plan between the DRAWN endpoints so the invariant holds for what is
+  // actually painted, then read the tangents off the drawn route.
+  const polyline = clipped ? octilinearRoute(startX, startY, endX, endY) : planned;
+  const out = unitBetween(polyline[0]!, polyline[1]!);
+  const inTangent = unitBetween(polyline[polyline.length - 2]!, polyline[polyline.length - 1]!);
+
+  return {
+    degenerate,
+    clipped,
+    curved: false,
+    cubic: false,
+    controlX: 0,
+    controlY: 0,
+    control2X: 0,
+    control2Y: 0,
+    outSx: out[0],
+    outSy: out[1],
+    inTx: inTangent[0],
+    inTy: inTangent[1],
+    startX,
+    startY,
+    endX,
+    endY,
+    polyline,
+  };
+}
+
+/**
+ * Tessellate the drawn edge into a polyline of device-pixel points. A route that
+ * carries an explicit {@link EdgeGeometry.polyline} (octilinear) returns it
+ * VERBATIM — it is already a chain of straight segments, and resampling it as a
+ * curve would round off the very bends that define it. Otherwise: a straight
  * edge is the single [start, end] segment; a curved edge samples the quadratic
  * Bézier (start, control, end) at `segments+1` points. The polyline is what the
  * WebGL capsule pipeline expands, and (sampled at the same steps) what the
@@ -689,6 +878,11 @@ export function flowPortEdgeGeometry(
  * endpoints from `edgeGeometry`, so the curve starts/ends on the node borders.
  */
 export function tessellateEdge(geom: EdgeGeometry, segments = 16): Array<[number, number]> {
+  // Explicit routes win over curved/cubic: an octilinear route is NOT curved,
+  // yet collapsing it to [start, end] would erase every bend.
+  if (geom.polyline) {
+    return geom.polyline.map((point) => [point[0], point[1]] as [number, number]);
+  }
   if (!geom.curved) {
     return [
       [geom.startX, geom.startY],

@@ -14,11 +14,12 @@
  *     graph with no edges) are parked on ONE extra lane below the deepest level,
  *     node-id order, evenly gridded.
  *
- * MVP scope (D1): grid-snapped nodes only. TRUE octilinear/orthogonal EDGE
- * routing (straight + 45° segments) is deliberately deferred — it touches the
- * golden-tested draw path (`render-geometry.ts`) and belongs to its own
- * golden-gated lot. Edges render with the existing straight/curved renderer, so
- * this engine is purely additive and morphs for free (§2.6, index-parallel).
+ * NODE placement is this engine's whole job. The matching EDGE grammar — true
+ * octilinear routing (straight + 45° segments) — shipped separately as route
+ * style `octilinear` (`render-geometry.octilinearEdgeGeometry`, D1 deferral
+ * lifted); opt in per edge via `edge_style: "octilinear"`. Edges without it
+ * render straight/curved as before, so this engine stays purely additive and
+ * morphs for free (§2.6, index-parallel).
  *
  * Pure, deterministic (no randomness), O(n + e). Returns a fresh node-order-keyed
  * `Float32Array` of `2 · nodeCount` floats, index-parallel to `graph.nodeIds`.

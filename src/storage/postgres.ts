@@ -916,6 +916,7 @@ export async function createPostgresGraphStore(
           durationMs: Date.now() - start,
           // A dry run plans without writing, so it rebuilds nothing.
           rebuilt: { axes: [], layouts: [] },
+          positions: 0,
         };
       }
 
@@ -925,6 +926,11 @@ export async function createPostgresGraphStore(
       const nodeRows = buildNodeRows(G, communityMap);
       const edgeRows = buildEdgeRows(G);
       const pushedAt = new Date().toISOString();
+      // Windowed-loader position rows actually written (storage LOT 3). Stays 0
+      // on a merge push (positions are replace-snapshot scoped) and reflects the
+      // rows upserted on a replace — the honest count the CLI fail-loud guard
+      // reads to reject a windowed rebuild that produced nothing.
+      let positions = 0;
 
       // All writes for one push run in a single transaction so a backend error
       // leaves the previous snapshot intact (SPEC: "the push aborts").
@@ -972,7 +978,7 @@ export async function createPostgresGraphStore(
           // leaves positions for deleted nodes behind. Delete-all-then-upsert
           // keeps exactly one snapshot of positions per (city, layout).
           await deleteCityRows(client, q(POSITION_TABLE), citySlug);
-          await upsertBatched(
+          positions = await upsertBatched(
             client,
             q(POSITION_TABLE),
             POSITION_COLUMNS,
@@ -1009,6 +1015,10 @@ export async function createPostgresGraphStore(
           mode === "replace"
             ? { axes: [...AGGREGATE_AXES], layouts: [DEFAULT_LAYOUT] }
             : { axes: [], layouts: [] },
+        // Honest count of position rows persisted (0 on merge, or on a replace of
+        // a graph with no baked layout) — the CLI reads it to fail loud rather
+        // than report a windowed rebuild that wrote nothing.
+        positions,
       };
     },
 
