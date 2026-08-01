@@ -98,6 +98,42 @@ describe("reconciliation fuzzy tier — precision on known mystery pairs", () =>
     const queue = generateOntologyReconciliationCandidates(ctx(nodes), { generatedAt: "t", fuzzy: false });
     // labels differ → no exact shared term → no candidate without fuzzy.
     expect(queue.candidates).toHaveLength(0);
+    // The optional floor describes a tier that did not run, so it is absent.
+    expect(queue.fuzzy_tier_eligibility).toBeUndefined();
+  });
+
+  it("discloses the fuzzy tier's minimum-token floor and exact single-token exclusion count", () => {
+    const queue = generateOntologyReconciliationCandidates(ctx([
+      n("Watson"),
+      n("Holmes"),
+      n("Adler"),
+      n("Sherlock Holmes"),
+      n("Irene Adler"),
+    ]), { generatedAt: "t" });
+
+    expect(queue.fuzzy_tier_eligibility).toEqual({
+      criterion:
+        "A fuzzy variant needs at least 2 tokens on the smaller side; nodes whose every variant falls below that minimum can never fuzzy-match.",
+      minimum_smaller_side_token_count: 2,
+      excluded_comparable_node_count: 3,
+      comparable_node_count: 5,
+      excluded_comparable_node_share: 0.6,
+    });
+  });
+
+  it("keeps the fuzzy eligibility disclosure present when every comparable node is eligible", () => {
+    const queue = generateOntologyReconciliationCandidates(ctx([
+      n("Sherlock Holmes"),
+      n("Irene Adler"),
+      n("John Watson"),
+    ]), { generatedAt: "t" });
+
+    expect(queue.fuzzy_tier_eligibility).toMatchObject({
+      minimum_smaller_side_token_count: 2,
+      excluded_comparable_node_count: 0,
+      comparable_node_count: 3,
+      excluded_comparable_node_share: 0,
+    });
   });
 
   it("caps the output and ranks exact above fuzzy", () => {
