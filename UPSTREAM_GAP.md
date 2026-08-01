@@ -291,6 +291,35 @@ The probe is replayable and was kept out of the repo: it lives in the WP6
 scratch worktree as `reaudit-extract-claims.sh`, takes the worktree root as its
 only argument, and is read-only.
 
+**Re-validated at `4178a51a` (2026-08-01). The trap is closed; the finding is
+not.** The section above was measured against `origin/main` `54d771ae`. Two
+trains have since landed, one of them the NUL hygiene work, so the probe was
+replayed against the new baseline. Three things are now true at once and should
+not be confused:
+
+1. **The tooling trap is gone for this file.** `src/extract.ts` carries **zero**
+   NUL bytes at `4178a51a`, and so does every other file under `src/` and
+   `tests/`. The wrapper `grep` now reads `src/extract.ts` correctly without
+   `-a`, and `tests/source-nul-hygiene.test.ts` is merged and green, so a
+   regression would be caught. The probe table above documents a condition that
+   was real on `54d771ae` and is no longer reproducible on `4178a51a`.
+2. **The audit result is unchanged.** All 16 assertions were re-probed on the
+   new baseline. `src/extract.ts` moved by 11 insertions / 10 deletions in
+   between, which shifted the reported lines by one and changed nothing else.
+3. **The one row this pass had reported as refuted is not refuted** — it is
+   already covered, and the refutation was mine. The seven import-equals
+   spellings do return zero matches at `4178a51a`, but the node they search for
+   does not exist in tree-sitter-typescript, so those zeros never meant what
+   they were read to mean. `9811def` was closed on 2026-07-06 by `5cb21e75`
+   (#270) and is pinned by `tests/extract-ts-import-equals.test.ts`. The full
+   parser and render evidence, and the two mistakes behind the false positive,
+   are recorded in the correction that follows the re-audit table above. The
+   pass therefore stands at **16 confirmed of 16**, with no open port.
+
+The method rule survives the fix and is not weakened by it: `-a` always. The
+NULs were removed from this repo, not from the world, and the wrapper still
+passes `-I`.
+
 ### Closed this pass — 2026-07-06 port wave (WP6 upstream-ports branch)
 
 Verified-local = regression test ran green in this sandbox; CI-only = integration test soft-skips locally (optional grammar absent) and asserts where the grammar installs.
