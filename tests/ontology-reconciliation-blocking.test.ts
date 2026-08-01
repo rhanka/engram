@@ -8,6 +8,7 @@ import {
   DEFAULT_FUZZY_TOKEN_JACCARD_THRESHOLD,
   DEFAULT_RECONCILIATION_CANDIDATE_CAP,
   DEFAULT_STRUCTURAL_TIER_CONFIG,
+  GENERIC_ENTITY_NOUNS,
   buildOntologyReconciliationLexicalBlockingIndex,
   buildStructuralIndex,
   differentEntityReason,
@@ -28,6 +29,14 @@ import type { NormalizedOntologyProfile } from "../src/types.js";
 
 const profile = { profile_hash: "blocking-profile" } as unknown as NormalizedOntologyProfile;
 const generatedAt = "2026-07-30T00:00:00.000Z";
+const FUZZY_HONORIFICS = new Set([
+  "mr", "mrs", "ms", "miss", "lord", "lady", "captain", "capt", "professor", "prof", "doctor", "madame",
+  "madam", "monsieur", "m", "mme", "mlle", "the",
+]);
+const NON_WORD = /[^\p{L}\p{N}]+/gu;
+const PARENTHETICAL = /\([^)]*\)/gu;
+const fuzzyTierEligibilityCriterion =
+  "A fuzzy variant needs at least 2 tokens on the smaller side, except that a single non-generic token is eligible; nodes whose every variant is empty or a single generic entity noun can never fuzzy-match.";
 
 function context(nodes: OntologyPatchNode[], relations: OntologyPatchRelation[] = []): OntologyPatchContext {
   return {
@@ -68,6 +77,76 @@ function nodeTerms(value: OntologyPatchNode): string[] {
     ...(value.aliases ?? []).map(normalizeTerm),
     ...(value.normalized_terms ?? []).map(normalizeTerm),
   ]);
+}
+
+function fuzzyTokens(value: string): string[] {
+  return value
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(NON_WORD, " ")
+    .split(/\s+/u)
+    .filter((token) => token.length > 0 && !FUZZY_HONORIFICS.has(token));
+}
+
+/** Independent naïve derivation of every fuzzy variant's tokens. */
+function fuzzyVariantTokens(value: OntologyPatchNode): string[][] {
+  const result: string[][] = [];
+  const seen = new Set<string>();
+  for (const term of nodeTerms(value)) {
+    const variants = [
+      ["name", fuzzyTokens(term.replace(PARENTHETICAL, " "))] as const,
+      ...(term.match(/\(([^)]*)\)/gu) ?? []).map((match) => ["paren", fuzzyTokens(match.slice(1, -1))] as const),
+    ];
+    for (const [kind, tokens] of variants) {
+      if (tokens.length === 0) continue;
+      const key = `${kind}:${tokens.join(" ")}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      result.push(tokens);
+    }
+  }
+  return result;
+}
+
+function naiveFuzzyVariantIsEligible(tokens: readonly string[]): boolean {
+  return tokens.length >= 2 || (tokens.length === 1 && !GENERIC_ENTITY_NOUNS.has(tokens[0]!));
+}
+
+function naiveFuzzyTierEligibility(comparableNodes: readonly OntologyPatchNode[]) {
+  const excludedComparableNodeCount = comparableNodes.filter((entry) =>
+    fuzzyVariantTokens(entry).every((tokens) => !naiveFuzzyVariantIsEligible(tokens)),
+  ).length;
+  const comparableNodeCount = comparableNodes.length;
+  return {
+    criterion: fuzzyTierEligibilityCriterion,
+    minimum_smaller_side_token_count: 2,
+    excluded_comparable_node_count: excludedComparableNodeCount,
+    comparable_node_count: comparableNodeCount,
+    excluded_comparable_node_share: comparableNodeCount === 0 ? 0 : excludedComparableNodeCount / comparableNodeCount,
+  };
+}
+
+function naiveFuzzyTokenIdfs(comparableNodes: readonly OntologyPatchNode[]): Map<string, number> {
+  const documentFrequency = new Map<string, number>();
+  for (const entry of comparableNodes) {
+    const tokens = new Set(fuzzyVariantTokens(entry).flat());
+    for (const token of tokens) documentFrequency.set(token, (documentFrequency.get(token) ?? 0) + 1);
+  }
+  return new Map(
+    [...documentFrequency].map(([token, frequency]) => [token, Math.log(comparableNodes.length / frequency)]),
+  );
+}
+
+function naiveHasSharedFuzzyTokenAtOrAboveIdf(
+  left: OntologyPatchNode,
+  right: OntologyPatchNode,
+  tokenIdfs: ReadonlyMap<string, number>,
+  minimumIdf: number,
+): boolean {
+  const rightTokens = new Set(fuzzyVariantTokens(right).flat());
+  return fuzzyVariantTokens(left).some((tokens) => tokens.some((token) =>
+    rightTokens.has(token) && (tokenIdfs.get(token) ?? 0) >= minimumIdf,
+  ));
 }
 
 function exactNodeTerms(value: OntologyPatchNode, normalizers: ReturnType<typeof compileNormalizerByNodeType>): string[] {
@@ -130,6 +209,10 @@ function naiveQueue(
 ): OntologyReconciliationCandidateQueue {
   const fuzzyEnabled = options.fuzzy ?? true;
   const fuzzyThreshold = options.fuzzyThreshold ?? DEFAULT_FUZZY_TOKEN_JACCARD_THRESHOLD;
+  const fuzzyMinimumSharedTokenIdf = typeof options.fuzzyMinimumSharedTokenIdf === "number"
+    && !Number.isNaN(options.fuzzyMinimumSharedTokenIdf)
+    ? options.fuzzyMinimumSharedTokenIdf
+    : undefined;
   const cap = options.cap ?? DEFAULT_RECONCILIATION_CANDIDATE_CAP;
   const fuzzyExcludeTypes = new Set(options.fuzzyExcludeTypes ?? DEFAULT_FUZZY_EXCLUDE_TYPES);
   const normalizers = compileNormalizerByNodeType(value.profile);
@@ -138,6 +221,8 @@ function naiveQueue(
   const comparableNodes = value.nodes
     .filter((entry) => entry.type && nodeTerms(entry).length > 0)
     .sort((left, right) => left.id.localeCompare(right.id));
+  const fuzzyTierEligibility = fuzzyEnabled ? naiveFuzzyTierEligibility(comparableNodes) : undefined;
+  const fuzzyTokenIdfs = fuzzyMinimumSharedTokenIdf === undefined ? undefined : naiveFuzzyTokenIdfs(comparableNodes);
 
   for (let i = 0; i < comparableNodes.length; i += 1) {
     for (let j = i + 1; j < comparableNodes.length; j += 1) {
@@ -188,6 +273,10 @@ function naiveQueue(
       if (!fuzzyEnabled || fuzzyExcludeTypes.has(String(left.type)) || rejectReason) continue;
       const fuzzy = fuzzyMatchNodes(left, right, fuzzyThreshold);
       if (!fuzzy.matched || emittedPairs.has(pairKey)) continue;
+      if (
+        fuzzyMinimumSharedTokenIdf !== undefined
+        && !naiveHasSharedFuzzyTokenAtOrAboveIdf(left, right, fuzzyTokenIdfs!, fuzzyMinimumSharedTokenIdf)
+      ) continue;
       emittedPairs.add(pairKey);
       const reasonDetail = fuzzy.equal
         ? "token-set equal (honorific/parenthetical-stripped)"
@@ -292,6 +381,7 @@ function naiveQueue(
     profile_hash: value.profile.profile_hash,
     generated_at: options.generatedAt ?? new Date().toISOString(),
     candidate_count: capped.length,
+    ...(fuzzyTierEligibility ? { fuzzy_tier_eligibility: fuzzyTierEligibility } : {}),
     candidates: capped,
   };
 }
@@ -430,6 +520,17 @@ describe("ontology reconciliation lexical blocking", () => {
     const value = context(nodes);
     expect(enumerateOntologyReconciliationBlockedPairs(value, options)).toEqual(new Set(["0:1"]));
     expectGolden(nodes, [], options);
+  });
+
+  it("uses the existing single-token side index for O3 mono-to-multi candidates", () => {
+    const nodes = [
+      node("o3-mono", "Oberstein!"),
+      node("o3-multi", "Oberstein dossier"),
+    ];
+    const value = context(nodes);
+
+    expect(enumerateOntologyReconciliationBlockedPairs(value)).toEqual(new Set(["0:1"]));
+    expectGolden(nodes);
   });
 
   it("processes 40k selectively-blocked nodes inside the scale budget", () => {

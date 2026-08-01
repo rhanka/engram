@@ -98,6 +98,79 @@ describe("reconciliation fuzzy tier — precision on known mystery pairs", () =>
     const queue = generateOntologyReconciliationCandidates(ctx(nodes), { generatedAt: "t", fuzzy: false });
     // labels differ → no exact shared term → no candidate without fuzzy.
     expect(queue.candidates).toHaveLength(0);
+    // The optional floor describes a tier that did not run, so it is absent.
+    expect(queue.fuzzy_tier_eligibility).toBeUndefined();
+  });
+
+  it("admits a distinctive single-token fuzzy match", () => {
+    const nodes = [n("Oberstein!"), n("Oberstein?")];
+
+    expect(fuzzyMatchNodes(nodes[0]!, nodes[1]!).matched).toBe(true);
+    expect(pairsLabels(
+      generateOntologyReconciliationCandidates(ctx(nodes), { generatedAt: "t" }).candidates,
+      nodes,
+      "Oberstein!",
+      "Oberstein?",
+    )).toBe(true);
+  });
+
+  it("keeps generic single-token fuzzy labels excluded", () => {
+    const nodes = [n("Butler!"), n("Butler?")];
+
+    expect(fuzzyMatchNodes(nodes[0]!, nodes[1]!).matched).toBe(false);
+    expect(pairsLabels(
+      generateOntologyReconciliationCandidates(ctx(nodes), { generatedAt: "t" }).candidates,
+      nodes,
+      "Butler!",
+      "Butler?",
+    )).toBe(false);
+  });
+
+  it("admits a distinctive single-token variant against a multi-token variant", () => {
+    const nodes = [n("Oberstein!"), n("Oberstein dossier")];
+
+    expect(fuzzyMatchNodes(nodes[0]!, nodes[1]!)).toMatchObject({ matched: true, contained: true });
+    expect(pairsLabels(
+      generateOntologyReconciliationCandidates(ctx(nodes), { generatedAt: "t" }).candidates,
+      nodes,
+      "Oberstein!",
+      "Oberstein dossier",
+    )).toBe(true);
+  });
+
+  it("discloses the baseline floor, single-token exception, and exact ineligible count", () => {
+    const queue = generateOntologyReconciliationCandidates(ctx([
+      n("Butler"),
+      n("Inn"),
+      n("The"),
+      n("Oberstein"),
+      n("Sherlock Holmes"),
+      n("Irene Adler"),
+    ]), { generatedAt: "t" });
+
+    expect(queue.fuzzy_tier_eligibility).toEqual({
+      criterion:
+        "A fuzzy variant needs at least 2 tokens on the smaller side, except that a single non-generic token is eligible; nodes whose every variant is empty or a single generic entity noun can never fuzzy-match.",
+      minimum_smaller_side_token_count: 2,
+      excluded_comparable_node_count: 3,
+      comparable_node_count: 6,
+      excluded_comparable_node_share: 0.5,
+    });
+  });
+
+  it("keeps the fuzzy eligibility disclosure present when every comparable node is eligible", () => {
+    const queue = generateOntologyReconciliationCandidates(ctx([
+      n("Sherlock Holmes"),
+      n("Irene Adler"),
+      n("John Watson"),
+    ]), { generatedAt: "t" });
+
+    expect(queue.fuzzy_tier_eligibility).toMatchObject({
+      minimum_smaller_side_token_count: 2,
+      excluded_comparable_node_count: 0,
+      comparable_node_count: 3,
+      excluded_comparable_node_share: 0,
+    });
   });
 
   it("caps the output and ranks exact above fuzzy", () => {
@@ -110,6 +183,31 @@ describe("reconciliation fuzzy tier — precision on known mystery pairs", () =>
     const queue = generateOntologyReconciliationCandidates(ctx(nodes), { generatedAt: "t", cap: 1 });
     expect(queue.candidates).toHaveLength(1);
     expect(queue.candidates[0]!.tier).toBe("exact");
+  });
+
+  it("leaves full O3 fuzzy volume on by default and lets an IDF threshold reduce it", () => {
+    const nodes = [
+      n("Rare!"),
+      n("Rare?"),
+      n("Common!"),
+      n("Common?"),
+      n("Common."),
+    ];
+    const fullQueue = generateOntologyReconciliationCandidates(ctx(nodes), { generatedAt: "t" });
+    const idfTappedQueue = generateOntologyReconciliationCandidates(ctx(nodes), {
+      generatedAt: "t",
+      fuzzyMinimumSharedTokenIdf: 0.7,
+    });
+
+    expect(fullQueue.candidates).toHaveLength(4);
+    expect(idfTappedQueue.candidates).toHaveLength(1);
+    expect(idfTappedQueue.candidates).toEqual(
+      fullQueue.candidates.filter((candidate) =>
+        [candidate.canonical_id, candidate.candidate_id].every((id) =>
+          id === nodes[0]!.id || id === nodes[1]!.id,
+        ),
+      ),
+    );
   });
 
   it("is deterministic", () => {
@@ -136,9 +234,9 @@ describe("reconciliation fuzzy tier — precision on known mystery pairs", () =>
     expect(fuzzyMatchNodes(n("Edward I"), n("Edward III")).matched).toBe(false);
   });
 
-  it("rejects generic single-token locator collisions via parentheticals", () => {
-    // name "Greenford" must not match the "(Greenford)" locator inside another label.
-    expect(fuzzyMatchNodes(n("Greenford"), n("Revival Mission (Greenford)")).matched).toBe(false);
+  it("admits distinctive single-token locators while retaining descriptor guards", () => {
+    // "Greenford" is distinctive, so O3 permits its parenthetical locator variant.
+    expect(fuzzyMatchNodes(n("Greenford"), n("Revival Mission (Greenford)")).matched).toBe(true);
     // generic descriptor parens never collide.
     expect(fuzzyMatchNodes(n("Bannister (Servant)"), n("Green (the servant)")).matched).toBe(false);
     expect(fuzzyMatchNodes(n("Small hammer (murder weapon)"), n("Lift shaft (murder weapon)")).matched).toBe(false);
