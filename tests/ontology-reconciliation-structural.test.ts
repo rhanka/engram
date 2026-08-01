@@ -99,6 +99,18 @@ describe("structural tier — positive control (the tier is not vacuous)", () =>
     expect(result.neighbourJaccard).toBe(1);
   });
 
+  it("actually EMITS through the generator and cannot go silently mute", () => {
+    const fixture = twinFixture({ shared: 6 });
+    const queue = generateOntologyReconciliationCandidates(ctx(fixture.nodes, fixture.relations), {
+      structural: true,
+      generatedAt: "2026-07-26T00:00:00.000Z",
+    });
+    const structural = queue.candidates.filter((candidate) => candidate.tier === "structural");
+
+    expect(structural.length).toBeGreaterThan(0);
+    expect(structural).toContainEqual(expect.objectContaining({ canonical_id: "a", candidate_id: "b" }));
+  });
+
   it("carries its evidence: shared neighbours, relation profile, score breakdown", () => {
     const fixture = twinFixture({ shared: 6 });
     const queue = generateOntologyReconciliationCandidates(ctx(fixture.nodes, fixture.relations), {
@@ -124,7 +136,9 @@ describe("structural tier — never auto-applies, always ranked below lexical", 
     const queue = generateOntologyReconciliationCandidates(ctx(fixture.nodes, fixture.relations), {
       structural: true,
     });
-    for (const candidate of queue.candidates.filter((c) => c.tier === "structural")) {
+    const structural = queue.candidates.filter((candidate) => candidate.tier === "structural");
+    expect(structural.length).toBeGreaterThan(0);
+    for (const candidate of structural) {
       expect(candidate.status).toBe("candidate");
       expect(candidate.proposed_patch_operation).toBe("accept_match");
     }
@@ -150,7 +164,8 @@ describe("structural tier — never auto-applies, always ranked below lexical", 
       const after = on.candidates.find((c) => c.id === before.id);
       expect(after).toEqual(before);
     }
-    expect(on.candidates.length).toBeGreaterThanOrEqual(off.candidates.length);
+    expect(on.candidates.some((candidate) => candidate.tier === "structural")).toBe(true);
+    expect(on.candidates.length).toBeGreaterThan(off.candidates.length);
   });
 });
 
