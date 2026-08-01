@@ -183,6 +183,34 @@ function exactNodeTerms(node: OntologyPatchNode, normalizers: NormalizerByNodeTy
   ]);
 }
 
+/**
+ * INTER-TIER REJECTION — memory contract §3.4, backed by M2.
+ *
+ * Two nodes of DIFFERENT provenance tiers are never the same record for
+ * reconciliation purposes: an `asserted` claim must not be able to take over
+ * an `earned` node just because their labels look alike. Reconciliation had no
+ * notion of tiers at all, so `chooseCanonicalPair`/`statusRank` ranked purely
+ * on status — meaning the invariant was enforced NOWHERE.
+ *
+ * This predicate sits beside `violatesPartitionScope`, runs before either
+ * lexical tier emits and before the structural tier emits, and is a FILTER: it
+ * removes candidate pairs, it never creates one.
+ *
+ * MISSING TIER IS NOT A VIOLATION, deliberately. Today no corpus carries
+ * `trust`, so treating an absent tier as a mismatch would reject every pair in
+ * every existing corpus. The consequence is stated plainly rather than hidden:
+ * while one side is untagged, the pair is NOT rejected, so the invariant only
+ * bites once both sides declare a tier. Making an absent tier fail closed —
+ * the posture `violatesPartitionScope` takes once a partitioned registry IS
+ * declared — requires a signal that the tier regime is in force, which the
+ * contract does not yet define. Defaulting an untagged node to `earned` was
+ * rejected outright: it would fabricate provenance the data does not carry.
+ */
+function violatesTrustTier(left: OntologyPatchNode, right: OntologyPatchNode): boolean {
+  if (left.trust === undefined || right.trust === undefined) return false;
+  return left.trust !== right.trust;
+}
+
 function violatesPartitionScope(
   context: OntologyPatchContext,
   nodeType: string,
@@ -1665,6 +1693,11 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
     // become a score-1.0 exact candidate.
     if (violatesPartitionScope(context, left.type, left, right)) continue;
 
+    // Inter-tier rejection (§3.4): an asserted claim never merges with an
+    // earned node, whatever their labels look like. Same standing as the
+    // partition guard, and applied before EITHER lexical tier can emit.
+    if (violatesTrustTier(left, right)) continue;
+
     const sharedTerms = rightMemo.exactTerms.filter((term) => leftMemo.exactTermSet.has(term));
 
     const { canonical, candidate } = chooseCanonicalPair(left, right);
@@ -1770,6 +1803,10 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
       // as the fuzzy tier.
       if (fuzzyExcludeTypes.has(String(left.type))) continue;
       if (violatesPartitionScope(context, left.type, left, right)) continue;
+      // Inter-tier rejection (§3.4) applies to the structural tier too: shared
+      // neighbours are even weaker evidence than a shared label, so they must
+      // not be allowed to bridge tiers either.
+      if (violatesTrustTier(left, right)) continue;
 
       const { canonical, candidate } = chooseCanonicalPair(left, right);
       const pairKey = `${canonical.id}|${candidate.id}`;
