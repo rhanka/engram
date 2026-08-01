@@ -109,6 +109,23 @@ path or invented product envelope, caller-selected namespaces, cross-workspace
 reads, pagination/cursors. These remain exactly as `SPEC_AGENTSTATS_TIMEORIENTED`
 §4.3 states them. This spec does not touch them.
 
+**The `UserModel` exclusion is enforced at PROJECTION, not only admission.** A
+`context` note whose subject is the human is admitted individually (§3.1.1c),
+but a recall/query that AGGREGATES all subject-is-human notes into a ranked
+persistent view reconstructs a `UserModel` de facto — the exclusion defeated
+through the back door. So when the query/recall surface lands (charter:
+temporal-recall), it MUST NOT offer an identity-profile projection over
+subject-is-human notes. The persona/identity boundary is an invariant of BOTH
+the admission gate AND every projection, or D8's one-substrate property fails.
+
+**Adjacent OPEN — NOT in this closure (h2a WP11).** The episodic-cited form
+admits the cited EVENT ("on `<date>`, correction Y, cf artifact A"), never the
+derived STANDING rule ("always X") — a standing rule cannot be cited verbatim,
+so it fails the gate by construction. Where derived standing-rules live (an
+agent-policy layer above the substrate, an episode→rule promotion) is a WP11
+concern owned by the h2a memory peer; the substrate stores the episode, not the
+rule. Recorded here only so the boundary is not mistaken for a gap in graphify.
+
 ## 4. Provenance as a GUARANTEE, not a habit
 
 Each `MemoryNote` carries a **structured** citation (cited string + named
