@@ -323,6 +323,7 @@ export type {
   OntologyReconciliationCandidateFilter,
   OntologyReconciliationCandidateQueue,
   OntologyReconciliationCandidatesResponse,
+  OntologyReconciliationFuzzyBlockingCap,
 } from "./ontology-reconciliation.js";
 export type {
   OntologyReconciliationDecisionLogItem,
@@ -415,6 +416,7 @@ export type {
 } from "./assembly-hygiene.js";
 export {
   fuzzyMatchNodes,
+  DEFAULT_FUZZY_BUCKET_MAX,
   DEFAULT_FUZZY_TOKEN_JACCARD_THRESHOLD,
   DEFAULT_RECONCILIATION_CANDIDATE_CAP,
   DEFAULT_FUZZY_EXCLUDE_TYPES,
