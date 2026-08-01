@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CAPSULE_FLOATS_PER_INSTANCE,
+  buildEdgeInstances,
+  decodeCapsule,
+  type WebGLEdgeFrame,
+} from "../src/webgl-edges";
+import {
   EDGE_CURVE_FACTOR,
   ROUTE_STYLE_DEFAULT,
   ROUTE_STYLE_FLOW_PORT,
@@ -189,6 +195,87 @@ describe("tessellateEdge with an octilinear route", () => {
     // a plain straight line — the bend would vanish at render time.
     const geom = octilinearEdgeGeometry({ x: 0, y: 0 }, { x: 100, y: 20 }, noOffset);
     expect(tessellateEdge(geom, 16).length).toBeGreaterThan(2);
+  });
+});
+
+/**
+ * A single-edge frame whose endpoints are NOT axis-aligned and NOT at 45°, so a
+ * correct octilinear route must bend. `route` goes into `edgeRouteStyles`.
+ */
+function routedFrame(route: number): WebGLEdgeFrame {
+  return {
+    positions: new Float32Array([-100, -20, 100, 20]),
+    nodeCount: 2,
+    edges: new Uint32Array([0, 1]),
+    style: {
+      nodeSizes: new Float32Array([8, 8]),
+      nodeColors: new Uint8Array([200, 200, 200, 255, 200, 200, 200, 255]),
+      nodeShapes: new Uint8Array([0, 0]),
+      nodeLabels: ["", ""],
+      edgeWidths: new Float32Array([4]),
+      edgeColors: new Uint8Array([29, 78, 216, 255]),
+      edgeDash: new Uint8Array([0]),
+      edgeCurvatures: new Float32Array([0]),
+      edgeRouteStyles: new Uint8Array([route]),
+    },
+    camera: { x: 0, y: 0, zoom: 1 },
+    pixelRatio: 2,
+    viewportWidth: 400,
+    viewportHeight: 400,
+  };
+}
+
+function capsulesOf(route: number): Array<ReturnType<typeof decodeCapsule>> {
+  const set = buildEdgeInstances(routedFrame(route));
+  return Array.from({ length: set.capsules.length / CAPSULE_FLOATS_PER_INSTANCE }, (_, index) =>
+    decodeCapsule(set.capsules, index),
+  );
+}
+
+describe("RENDER wiring — the WebGL2 instanced path actually draws the route", () => {
+  it("emits capsules that are every one a multiple of 45°, and more than one", () => {
+    // This is the test that proves the ROUTE renders, not merely that the
+    // geometry function exists: these are the capsule instances the GPU draws.
+    const capsules = capsulesOf(ROUTE_STYLE_OCTILINEAR);
+    expect(capsules.length).toBeGreaterThan(1);
+    const points: Array<readonly [number, number]> = [
+      [capsules[0]!.p0[0], capsules[0]!.p0[1]],
+      ...capsules.map((capsule) => [capsule.p1[0], capsule.p1[1]] as const),
+    ];
+    assertOctilinear(points);
+  });
+
+  it("draws a CONTIGUOUS chain — each capsule starts where the previous ended", () => {
+    const capsules = capsulesOf(ROUTE_STYLE_OCTILINEAR);
+    for (let i = 0; i < capsules.length - 1; i += 1) {
+      expect(capsules[i]!.p1[0]).toBeCloseTo(capsules[i + 1]!.p0[0], 6);
+      expect(capsules[i]!.p1[1]).toBeCloseTo(capsules[i + 1]!.p0[1], 6);
+    }
+  });
+
+  it("does NOT render an octilinear edge as a flow-port S", () => {
+    // The dispatch regression: both draw paths keyed off `route !== 0`, so code
+    // 5 would have produced the horizontal-port cubic S instead of the metro
+    // route. A flow-port S leaves its source HORIZONTALLY from the right port;
+    // this edge is vertical-dominant-free but its first segment must follow the
+    // octilinear plan, and the two routes must not coincide.
+    const octilinear = capsulesOf(ROUTE_STYLE_OCTILINEAR);
+    const flowPort = capsulesOf(ROUTE_STYLE_FLOW_PORT);
+    const sameShape =
+      octilinear.length === flowPort.length &&
+      octilinear.every(
+        (capsule, index) =>
+          Math.abs(capsule.p1[0] - flowPort[index]!.p1[0]) < 1e-6 &&
+          Math.abs(capsule.p1[1] - flowPort[index]!.p1[1]) < 1e-6,
+      );
+    expect(sameShape).toBe(false);
+  });
+
+  it("leaves the flow-port and default routes rendering exactly as before", () => {
+    // Flow-port stays a resampled cubic S (CURVE_SEGMENTS capsules), default
+    // stays the single straight segment.
+    expect(capsulesOf(ROUTE_STYLE_FLOW_PORT).length).toBeGreaterThan(2);
+    expect(capsulesOf(ROUTE_STYLE_DEFAULT).length).toBe(1);
   });
 });
 
