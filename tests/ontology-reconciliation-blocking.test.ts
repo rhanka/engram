@@ -28,6 +28,14 @@ import type { NormalizedOntologyProfile } from "../src/types.js";
 
 const profile = { profile_hash: "blocking-profile" } as unknown as NormalizedOntologyProfile;
 const generatedAt = "2026-07-30T00:00:00.000Z";
+const FUZZY_HONORIFICS = new Set([
+  "mr", "mrs", "ms", "miss", "lord", "lady", "captain", "capt", "professor", "prof", "doctor", "madame",
+  "madam", "monsieur", "m", "mme", "mlle", "the",
+]);
+const NON_WORD = /[^\p{L}\p{N}]+/gu;
+const PARENTHETICAL = /\([^)]*\)/gu;
+const fuzzyTierEligibilityCriterion =
+  "A fuzzy variant needs at least 2 tokens on the smaller side; nodes whose every variant falls below that minimum can never fuzzy-match.";
 
 function context(nodes: OntologyPatchNode[], relations: OntologyPatchRelation[] = []): OntologyPatchContext {
   return {
@@ -68,6 +76,49 @@ function nodeTerms(value: OntologyPatchNode): string[] {
     ...(value.aliases ?? []).map(normalizeTerm),
     ...(value.normalized_terms ?? []).map(normalizeTerm),
   ]);
+}
+
+function fuzzyTokens(value: string): string[] {
+  return value
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(NON_WORD, " ")
+    .split(/\s+/u)
+    .filter((token) => token.length > 0 && !FUZZY_HONORIFICS.has(token));
+}
+
+/** Independent naïve derivation of every fuzzy variant's token count. */
+function fuzzyVariantTokenCounts(value: OntologyPatchNode): number[] {
+  const counts: number[] = [];
+  const seen = new Set<string>();
+  for (const term of nodeTerms(value)) {
+    const variants = [
+      ["name", fuzzyTokens(term.replace(PARENTHETICAL, " "))] as const,
+      ...(term.match(/\(([^)]*)\)/gu) ?? []).map((match) => ["paren", fuzzyTokens(match.slice(1, -1))] as const),
+    ];
+    for (const [kind, tokens] of variants) {
+      if (tokens.length === 0) continue;
+      const key = `${kind}:${tokens.join(" ")}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      counts.push(tokens.length);
+    }
+  }
+  return counts;
+}
+
+function naiveFuzzyTierEligibility(comparableNodes: readonly OntologyPatchNode[]) {
+  const excludedComparableNodeCount = comparableNodes.filter((entry) =>
+    fuzzyVariantTokenCounts(entry).every((count) => count < 2),
+  ).length;
+  const comparableNodeCount = comparableNodes.length;
+  return {
+    criterion: fuzzyTierEligibilityCriterion,
+    minimum_smaller_side_token_count: 2,
+    excluded_comparable_node_count: excludedComparableNodeCount,
+    comparable_node_count: comparableNodeCount,
+    excluded_comparable_node_share: comparableNodeCount === 0 ? 0 : excludedComparableNodeCount / comparableNodeCount,
+  };
 }
 
 function exactNodeTerms(value: OntologyPatchNode, normalizers: ReturnType<typeof compileNormalizerByNodeType>): string[] {
@@ -138,6 +189,7 @@ function naiveQueue(
   const comparableNodes = value.nodes
     .filter((entry) => entry.type && nodeTerms(entry).length > 0)
     .sort((left, right) => left.id.localeCompare(right.id));
+  const fuzzyTierEligibility = fuzzyEnabled ? naiveFuzzyTierEligibility(comparableNodes) : undefined;
 
   for (let i = 0; i < comparableNodes.length; i += 1) {
     for (let j = i + 1; j < comparableNodes.length; j += 1) {
@@ -292,6 +344,7 @@ function naiveQueue(
     profile_hash: value.profile.profile_hash,
     generated_at: options.generatedAt ?? new Date().toISOString(),
     candidate_count: capped.length,
+    ...(fuzzyTierEligibility ? { fuzzy_tier_eligibility: fuzzyTierEligibility } : {}),
     candidates: capped,
   };
 }
