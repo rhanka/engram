@@ -164,8 +164,15 @@ append-only journal (D12) does **not** provide them by itself:
     its EDGES too, or an erased human-fact resurfaces through an edge that
     references it. For A2 (GDPR-type) erasure the disappearance must be COMPLETE
     at projection, edges included.
-  The tombstone/fold semantics are specified with the storage role (co-owns the
-  port) and the ontology/recall fold.
+  - **Every read surface, aggregates included (storage-signed).** The finalized
+    port contract folds a tombstoned target out of **EVERY** read a backend
+    exposes — `query`, `groupCounts`, `layoutPositions`, `graphWindow`,
+    `queryWindow`, and any element read. Otherwise an erased element still
+    **counts** in a derived aggregate = an A2 erasure hole. A backend that
+    cannot fold tombstones out of its aggregates within its freshness contract
+    **MUST NOT declare `append`** (M4, §5). A2 with teeth.
+  The tombstone signature is FINAL and storage-consented — see §5 and
+  `.graphify/scratch/roles/DESIGN-storage-append-port-D5.md`.
 
 ### 3.6 Multi-tenant identity, private/capitalised scope, exec hook — NORMATIVE (new carrier)
 
@@ -218,15 +225,48 @@ A living memory adds **one note at a time**. Measured: the `GraphStore` port
 (`src/storage/types.ts`) exposes only `pushGraph` (whole-graph). Re-pushing per
 note is not viable.
 
-**`append` is a VERSIONED, capability-gated feature** (mirrors `queryWindow`,
-inherits the A3-1 pattern): a backend exposes both `capabilities.append` (with
-its version) AND `appendNode`/`appendEdge`, or **neither**. A backend that
-cannot do element-level append **OMITS the capability** — callers see it is
-absent and fall back explicitly. It MUST NEVER be a **silent no-op** (a write
-that reports success and stores nothing is the exact failure the whole review
-guards against). The append surface, its tombstone/deletion counterpart (§3.5),
-and the versioning are **co-owned with the storage role**; graphify defines the
-contract signature, storage implements it, and the dependency is one-way.
+**The signature is FINAL and storage-consented** (full types in
+`.graphify/scratch/roles/DESIGN-storage-append-port-D5.md`). Summary of the
+port additions (`src/storage/types.ts`):
+
+- **Data-pure inputs (anti-cycle).** `GraphNodeInput` / `GraphEdgeInput` /
+  `GraphTombstoneInput` are plain data (no graphology, no storage internals):
+  h2a imports only the SIGNATURE (types + method shapes), never an
+  implementation, and graphify never imports h2a.
+- **Three optional methods** — `appendNode`, `appendEdge`, `appendTombstone`
+  (each `Promise` returning a `created`/`applied` outcome).
+- **M4 — a VERSIONED capability, OMITTED ENTIRELY when incapable** (mirrors
+  `queryWindow`): a backend either declares `capabilities.append` (version 1)
+  **AND** implements all three methods with REAL effect, or **omits the
+  capability and all three methods**. NEVER a method present that silently
+  no-ops. A tombstone that no-ops = "an erasure that does not erase" = false A2
+  conformity = the exact "success without effect" lie the whole review guards
+  against; omit-entirely makes it structurally impossible.
+- **Fold-out contract.** A backend that declares `append` MUST fold a
+  tombstoned target out of EVERY read surface it exposes (§3.5, aggregates
+  included), or it must not declare `append`.
+
+Forks storage raised and this closure resolves (graphify-side, for the
+principal gate):
+
+1. **A2 vs derived tables (load-bearing):** the fold-out MUST cover
+   `groupCounts`/`layoutPositions`/window reads too, or an erased element still
+   counts — a backend that cannot doesn't declare `append` (§3.5).
+2. **Edge integrity:** `appendEdge` is **strict** — it throws if an endpoint is
+   absent (no dangling edge). A **tombstone requires no existing endpoint**
+   (defensive erasure is allowed).
+3. **Unit, not batch:** the v1 contract is element-by-element; a batch variant
+   is a forward-compatible later addition.
+4. **Anti-cycle placement:** the types are exported from graphify's published
+   port surface; h2a imports ONLY the types.
+5. **`created`/`applied` booleans:** insert-vs-update / new-vs-already at low
+   cost (e.g. Postgres `ON CONFLICT … RETURNING`); an incapable backend simply
+   omits the capability (M4).
+
+The surface is **co-owned with storage** (who consents to it); graphify defines
+the contract signature, storage implements it after the principal gate, and the
+dependency stays one-way. **Impl + merge are AFTER the principal gate; nothing
+is implemented or published here.**
 
 ## 6. Ordering coordinate (D10) — unchanged
 
@@ -255,8 +295,10 @@ mechanism (code), §3.4 reconciliation opt-out + cross-tier reject, §3.5 retent
 + deletion path, §3.6 tenancy + exec hook, §5 versioned append capability.
 
 **Co-spec after ratification:**
-1. The exact producer wire-shape (how a note is handed over) + the storage
-   `appendNode`/`appendEdge` signature and tombstone semantics (co-owned storage).
+1. The storage `appendNode`/`appendEdge`/`appendTombstone` signature + M4
+   versioned capability + fold-out contract is **FINAL and storage-consented**
+   (§5). What remains co-spec with the memory peer is the exact **producer
+   wire-shape** — how h2a hands a note over to that signature.
 2. **The binary-gate promotion rule (§9.3 D11)** — validator independence,
    eligible grades, threshold, disagreement-to-human path, audit record, PLUS
    the §3.6 neutral projection hook (role parked) and the
