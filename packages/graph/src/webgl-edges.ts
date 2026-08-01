@@ -45,13 +45,16 @@ import {
   ARROW_LENGTH,
   ARROW_WIDTH_RATIO,
   FLOW_PORT_MIN_STUB,
+  ROUTE_STYLE_OCTILINEAR,
   borderOffset,
   dashPattern,
   edgeGeometry,
   edgeStrokeWidth,
   flowPortEdgeGeometry,
   nodeGeometry,
+  octilinearEdgeGeometry,
   routeIsArrowless,
+  routeIsFlowPort,
   routeIsReversed,
   tessellateEdge,
   type NodeGeometry,
@@ -420,21 +423,25 @@ export function buildEdgeInstances(frame: WebGLEdgeFrame): EdgeInstanceSet {
     const curvature = style?.edgeCurvatures?.[edgeIndex] ?? 0;
     const width = style?.edgeWidths?.[edgeIndex] ?? 1;
 
-    // FLOW-PORT routing (route codes 1-4): right-port → left-port smooth S,
-    // single-sourced with the Canvas2D fallback via flowPortEdgeGeometry.
-    // Default (0): the historical centre-to-centre geometry, byte-identical.
-    const geom =
-      route !== 0
-        ? flowPortEdgeGeometry(
-            source,
-            target,
-            borderOffset(geometry, style?.nodeShapes, sourceIndex, 1, 0),
-            borderOffset(geometry, style?.nodeShapes, targetIndex, -1, 0),
-            FLOW_PORT_MIN_STUB * frame.pixelRatio * frame.camera.zoom,
-          )
-        : edgeGeometry(source, target, curvature, (end, dx, dy) =>
-            borderOffset(geometry, style?.nodeShapes, end === "source" ? sourceIndex : targetIndex, dx, dy),
-          );
+    // Route dispatch — EXPLICIT per family, never `route !== 0` (a new style
+    // under that test would silently draw as a flow-port S):
+    //   • FLOW-PORT (1-4): right-port → left-port smooth S;
+    //   • OCTILINEAR (5): 45°-constrained straight-segment metro route;
+    //   • DEFAULT (0): the historical centre-to-centre geometry, byte-identical.
+    // All three single-sourced with the Canvas2D fallback via render-geometry.
+    const nodeOffset = (end: "source" | "target", dx: number, dy: number): number =>
+      borderOffset(geometry, style?.nodeShapes, end === "source" ? sourceIndex : targetIndex, dx, dy);
+    const geom = routeIsFlowPort(route)
+      ? flowPortEdgeGeometry(
+          source,
+          target,
+          borderOffset(geometry, style?.nodeShapes, sourceIndex, 1, 0),
+          borderOffset(geometry, style?.nodeShapes, targetIndex, -1, 0),
+          FLOW_PORT_MIN_STUB * frame.pixelRatio * frame.camera.zoom,
+        )
+      : route === ROUTE_STYLE_OCTILINEAR
+        ? octilinearEdgeGeometry(source, target, nodeOffset)
+        : edgeGeometry(source, target, curvature, nodeOffset);
     if (geom.degenerate) continue;
 
     const color = edgeColorAt(style?.edgeColors, edgeIndex * 4);
