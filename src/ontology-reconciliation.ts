@@ -73,11 +73,30 @@ export interface OntologyReconciliationCandidateQueue {
   generated_at: string;
   candidate_count: number;
   /**
+   * Present only when oversized FUZZY blocking buckets were skipped. This is
+   * additive to the v1 queue: without it, the fuzzy blocking pass was
+   * lossless.
+   */
+  fuzzy_blocking_cap?: OntologyReconciliationFuzzyBlockingCap;
+  /**
    * Present whenever the fuzzy tier runs. Omitted when `fuzzy: false`, because
    * the eligibility criterion is then inapplicable.
    */
   fuzzy_tier_eligibility?: OntologyReconciliationFuzzyTierEligibilityDisclosure;
   candidates: OntologyReconciliationCandidate[];
+}
+
+/**
+ * Disclosure that an opt-in fuzzy blocking cap omitted whole candidate blocks.
+ * Consumers must treat a queue carrying this stamp as incomplete.
+ */
+export interface OntologyReconciliationFuzzyBlockingCap {
+  applied: true;
+  scope: "fuzzy_blocking";
+  threshold: number;
+  skipped_key_count: number;
+  largest_skipped_block_size: number;
+  note: string;
 }
 
 /**
@@ -134,6 +153,12 @@ export interface GenerateOntologyReconciliationCandidatesOptions {
   /** Token-Jaccard threshold for the fuzzy tier. */
   fuzzyThreshold?: number;
   /**
+   * Opt-in maximum FUZZY blocking-bucket size. Oversized fuzzy blocks are
+   * skipped wholesale, and the emitted queue declares that recall loss. The
+   * exact blocking tier is never capped. Undefined keeps the lossless default.
+   */
+  fuzzyBucketMax?: number;
+  /**
    * Optional tuning dial between VOLUME and PRECISION: emit only pairs sharing
    * a fuzzy token whose inverse document frequency meets this value. Raising it
    * emits fewer candidates AND raises measured precision, so it trades recall
@@ -189,6 +214,34 @@ function exactNodeTerms(node: OntologyPatchNode, normalizers: NormalizerByNodeTy
     ...(node.aliases ?? []).map(normalize),
     ...(node.normalized_terms ?? []).map(normalize),
   ]);
+}
+
+/**
+ * INTER-TIER REJECTION — memory contract §3.4, backed by M2.
+ *
+ * Two nodes of DIFFERENT provenance tiers are never the same record for
+ * reconciliation purposes: an `asserted` claim must not be able to take over
+ * an `earned` node just because their labels look alike. Reconciliation had no
+ * notion of tiers at all, so `chooseCanonicalPair`/`statusRank` ranked purely
+ * on status — meaning the invariant was enforced NOWHERE.
+ *
+ * This predicate sits beside `violatesPartitionScope`, runs before either
+ * lexical tier emits and before the structural tier emits, and is a FILTER: it
+ * removes candidate pairs, it never creates one.
+ *
+ * MISSING TIER IS NOT A VIOLATION, deliberately. Today no corpus carries
+ * `trust`, so treating an absent tier as a mismatch would reject every pair in
+ * every existing corpus. The consequence is stated plainly rather than hidden:
+ * while one side is untagged, the pair is NOT rejected, so the invariant only
+ * bites once both sides declare a tier. Making an absent tier fail closed —
+ * the posture `violatesPartitionScope` takes once a partitioned registry IS
+ * declared — requires a signal that the tier regime is in force, which the
+ * contract does not yet define. Defaulting an untagged node to `earned` was
+ * rejected outright: it would fabricate provenance the data does not carry.
+ */
+function violatesTrustTier(left: OntologyPatchNode, right: OntologyPatchNode): boolean {
+  if (left.trust === undefined || right.trust === undefined) return false;
+  return left.trust !== right.trust;
 }
 
 function violatesPartitionScope(
@@ -250,6 +303,8 @@ const FUZZY_HONORIFICS = new Set([
 
 /** Default token-Jaccard threshold for the fuzzy tier. */
 export const DEFAULT_FUZZY_TOKEN_JACCARD_THRESHOLD = 0.6;
+/** Recommended opt-in ceiling for fuzzy blocking buckets; not applied by default. */
+export const DEFAULT_FUZZY_BUCKET_MAX = 50;
 const FUZZY_MINIMUM_SMALLER_SIDE_TOKEN_COUNT = 2;
 const FUZZY_TIER_ELIGIBILITY_CRITERION =
   "A fuzzy variant needs at least 2 tokens on the smaller side, except that a single non-generic token is eligible; nodes whose every variant is empty or a single generic entity noun can never fuzzy-match.";
@@ -1342,6 +1397,10 @@ export interface OntologyReconciliationLexicalBlockingIndex {
   fuzzy: Map<string, number[]>;
   fuzzySingles?: Map<string, number[]>;
   fuzzyDegenerate?: Map<string, number[]>;
+  /** The configured opt-in fuzzy bucket ceiling, if it is active. */
+  fuzzyBucketMax?: number;
+  /** Present exactly when this index skipped one or more fuzzy blocks. */
+  fuzzyBucketCap?: OntologyReconciliationFuzzyBlockingCap;
 }
 
 /** Opaque row-major pair identity used by the exported blocking inspection API. */
@@ -1462,8 +1521,46 @@ function addToInvertedIndex(index: Map<string, number[]>, key: string, nodeIndex
   else index.set(key, [nodeIndex]);
 }
 
+function configuredFuzzyBucketMax(value: number | undefined): number | undefined {
+  return value !== undefined && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function capFuzzyBlockingBuckets(
+  index: OntologyReconciliationLexicalBlockingIndex,
+  fuzzyBucketMax: number | undefined,
+): void {
+  if (fuzzyBucketMax === undefined) return;
+
+  index.fuzzyBucketMax = fuzzyBucketMax;
+  let skippedKeyCount = 0;
+  let largestSkippedBlockSize = 0;
+  for (const buckets of [index.fuzzy, index.fuzzySingles, index.fuzzyDegenerate]) {
+    if (!buckets) continue;
+    for (const [key, members] of buckets) {
+      // Like structural hub discounting, a frequent fuzzy token carries no
+      // identifying signal. Delete the WHOLE block: keeping the first N would
+      // introduce an arbitrary, id-order-biased candidate subset.
+      if (members.length <= fuzzyBucketMax) continue;
+      buckets.delete(key);
+      skippedKeyCount += 1;
+      largestSkippedBlockSize = Math.max(largestSkippedBlockSize, members.length);
+    }
+  }
+
+  if (skippedKeyCount === 0) return;
+  index.fuzzyBucketCap = {
+    applied: true,
+    scope: "fuzzy_blocking",
+    threshold: fuzzyBucketMax,
+    skipped_key_count: skippedKeyCount,
+    largest_skipped_block_size: largestSkippedBlockSize,
+    note: "This queue is incomplete because oversized fuzzy blocking buckets were skipped; rerun without fuzzyBucketMax for a lossless pass.",
+  };
+}
+
 function buildLexicalBlockingIndex(
   nodes: readonly MemoizedReconciliationNode[],
+  requestedFuzzyBucketMax?: number,
 ): OntologyReconciliationLexicalBlockingIndex {
   const exact = new Map<string, number[]>();
   const fuzzy = new Map<string, number[]>();
@@ -1479,7 +1576,9 @@ function buildLexicalBlockingIndex(
       for (const key of node.fuzzyDegenerateTokenKeys) addToInvertedIndex(fuzzyDegenerate, key, nodeIndex);
     }
   }
-  return { exact, fuzzy, fuzzySingles, fuzzyDegenerate };
+  const index: OntologyReconciliationLexicalBlockingIndex = { exact, fuzzy, fuzzySingles, fuzzyDegenerate };
+  capFuzzyBlockingBuckets(index, configuredFuzzyBucketMax(requestedFuzzyBucketMax));
+  return index;
 }
 
 /**
@@ -1528,7 +1627,7 @@ function* enumerateBlockedPairIndexes(
 /** Builds the real lexical buckets for losslessness tests and diagnostics. */
 export function buildOntologyReconciliationLexicalBlockingIndex(
   context: OntologyPatchContext,
-  options: Pick<GenerateOntologyReconciliationCandidatesOptions, "fuzzy" | "fuzzyThreshold"> = {},
+  options: Pick<GenerateOntologyReconciliationCandidatesOptions, "fuzzy" | "fuzzyThreshold" | "fuzzyBucketMax"> = {},
 ): OntologyReconciliationLexicalBlockingIndex {
   const fuzzyEnabled = options.fuzzy ?? true;
   const fuzzyThreshold = options.fuzzyThreshold ?? DEFAULT_FUZZY_TOKEN_JACCARD_THRESHOLD;
@@ -1538,7 +1637,7 @@ export function buildOntologyReconciliationLexicalBlockingIndex(
     fuzzyEnabled,
     fuzzyThreshold,
   );
-  return buildLexicalBlockingIndex(memoized);
+  return buildLexicalBlockingIndex(memoized, options.fuzzyBucketMax);
 }
 
 /**
@@ -1548,7 +1647,7 @@ export function buildOntologyReconciliationLexicalBlockingIndex(
  */
 export function enumerateOntologyReconciliationBlockedPairs(
   context: OntologyPatchContext,
-  options: Pick<GenerateOntologyReconciliationCandidatesOptions, "fuzzy" | "fuzzyThreshold"> = {},
+  options: Pick<GenerateOntologyReconciliationCandidatesOptions, "fuzzy" | "fuzzyThreshold" | "fuzzyBucketMax"> = {},
   blockingIndex?: OntologyReconciliationLexicalBlockingIndex,
 ): Set<OntologyReconciliationBlockedPair> {
   const fuzzyEnabled = options.fuzzy ?? true;
@@ -1559,7 +1658,7 @@ export function enumerateOntologyReconciliationBlockedPairs(
     fuzzyEnabled,
     fuzzyThreshold,
   );
-  const index = blockingIndex ?? buildLexicalBlockingIndex(memoized);
+  const index = blockingIndex ?? buildLexicalBlockingIndex(memoized, options.fuzzyBucketMax);
   const pairs = new Set<OntologyReconciliationBlockedPair>();
   for (const [leftIndex, rightIndex] of enumerateBlockedPairIndexes(memoized, index)) {
     pairs.add(`${leftIndex}:${rightIndex}`);
@@ -1670,7 +1769,9 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
   const comparableNodes = memoizeComparableNodes(context.nodes, normalizers, fuzzyEnabled, fuzzyThreshold);
   const fuzzyTierEligibility = fuzzyEnabled ? fuzzyTierEligibilityDisclosure(comparableNodes) : undefined;
   const tokenIdfs = fuzzyMinimumSharedTokenIdf === undefined ? undefined : fuzzyTokenIdfs(comparableNodes);
-  const blockingIndex = suppliedBlockingIndex ?? buildLexicalBlockingIndex(comparableNodes);
+  // Keeps A2-2's opt-in bucket cap wired: dropping the argument here would
+  // leave `fuzzyBucketMax` accepted and silently inert.
+  const blockingIndex = suppliedBlockingIndex ?? buildLexicalBlockingIndex(comparableNodes, options.fuzzyBucketMax);
 
   for (const [leftIndex, rightIndex] of enumerateBlockedPairIndexes(comparableNodes, blockingIndex)) {
     const leftMemo = comparableNodes[leftIndex]!;
@@ -1684,6 +1785,11 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
     // deliberately before sharedTerms so a cross-partition label can never
     // become a score-1.0 exact candidate.
     if (violatesPartitionScope(context, left.type, left, right)) continue;
+
+    // Inter-tier rejection (§3.4): an asserted claim never merges with an
+    // earned node, whatever their labels look like. Same standing as the
+    // partition guard, and applied before EITHER lexical tier can emit.
+    if (violatesTrustTier(left, right)) continue;
 
     const sharedTerms = rightMemo.exactTerms.filter((term) => leftMemo.exactTermSet.has(term));
 
@@ -1799,6 +1905,10 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
       // as the fuzzy tier.
       if (fuzzyExcludeTypes.has(String(left.type))) continue;
       if (violatesPartitionScope(context, left.type, left, right)) continue;
+      // Inter-tier rejection (§3.4) applies to the structural tier too: shared
+      // neighbours are even weaker evidence than a shared label, so they must
+      // not be allowed to bridge tiers either.
+      if (violatesTrustTier(left, right)) continue;
 
       const { canonical, candidate } = chooseCanonicalPair(left, right);
       const pairKey = `${canonical.id}|${candidate.id}`;
@@ -1870,6 +1980,7 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
     profile_hash: context.profile.profile_hash,
     generated_at: options.generatedAt ?? new Date().toISOString(),
     candidate_count: capped.length,
+    ...(blockingIndex.fuzzyBucketCap ? { fuzzy_blocking_cap: blockingIndex.fuzzyBucketCap } : {}),
     ...(fuzzyTierEligibility ? { fuzzy_tier_eligibility: fuzzyTierEligibility } : {}),
     candidates: capped,
   };

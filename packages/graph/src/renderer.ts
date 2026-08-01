@@ -2,10 +2,13 @@ import { computePositionBounds, copyPositions } from "./positions";
 import { BOX_GLYPH_CORNER_RATIO, SQUARE_INSET_RATIO, shapePolygonPoints } from "./shape-geometry";
 import {
   FLOW_PORT_MIN_STUB,
+  ROUTE_STYLE_OCTILINEAR,
   borderStrokeWidthPx,
   boxDimensions,
   flowPortEdgeGeometry,
+  octilinearEdgeGeometry,
   routeIsArrowless,
+  routeIsFlowPort,
   routeIsReversed,
 } from "./render-geometry";
 import { cameraToViewProjection } from "./mat4";
@@ -950,14 +953,22 @@ function drawFallback2D(
     // git-flow FORK descents) draw the bare S. Single-sourced with the WebGL2
     // instanced path via render-geometry.flowPortEdgeGeometry.
     // Default (0) falls through to the historical path below, byte-identical.
-    if (route !== 0) {
-      const geom = flowPortEdgeGeometry(
-        source,
-        target,
-        borderOffset(sourceIndex, 1, 0),
-        borderOffset(targetIndex, -1, 0),
-        FLOW_PORT_MIN_STUB * pixelRatio * camera.zoom,
-      );
+    // OCTILINEAR routing (route code 5): a 45°-constrained chain of straight
+    // segments (metro Lot 6), drawn centre-to-centre with border clipping.
+    // Single-sourced with the WebGL2 instanced path via octilinearEdgeGeometry.
+    const isFlowPort = routeIsFlowPort(route);
+    if (isFlowPort || route === ROUTE_STYLE_OCTILINEAR) {
+      const geom = isFlowPort
+        ? flowPortEdgeGeometry(
+            source,
+            target,
+            borderOffset(sourceIndex, 1, 0),
+            borderOffset(targetIndex, -1, 0),
+            FLOW_PORT_MIN_STUB * pixelRatio * camera.zoom,
+          )
+        : octilinearEdgeGeometry(source, target, (end, dirX, dirY) =>
+            borderOffset(end === "source" ? sourceIndex : targetIndex, dirX, dirY),
+          );
       if (geom.degenerate) continue;
       const flowColor = cssColor(state.style?.edgeColors, colorOffset, DEFAULT_EDGE_COLOR);
       context.beginPath();
@@ -965,15 +976,22 @@ function drawFallback2D(
       context.lineWidth = Math.max(1, width * pixelRatio);
       applyDash(context, state.style?.edgeDash[edgeIndex] ?? 0, pixelRatio);
       context.moveTo(geom.startX, geom.startY);
-      if (geom.cubic) {
+      if (geom.polyline) {
+        // Walk the routed waypoints: the bends ARE the route.
+        for (let i = 1; i < geom.polyline.length; i += 1) {
+          context.lineTo(geom.polyline[i]![0], geom.polyline[i]![1]);
+        }
+      } else if (geom.cubic) {
         context.bezierCurveTo(geom.controlX, geom.controlY, geom.control2X, geom.control2Y, geom.endX, geom.endY);
       } else {
         context.lineTo(geom.endX, geom.endY);
       }
       context.stroke();
-      if (!routeIsArrowless(route)) {
-        // Arrow ON the target's left port, pointing right (incoming tangent is
-        // horizontal by construction; ports sit on the borders).
+      if (geom.clipped && !routeIsArrowless(route)) {
+        // Arrow on the target border, oriented by the incoming tangent — the
+        // LAST drawn segment for an octilinear route, horizontal by
+        // construction for a flow-port one. Skipped when the endpoints could
+        // not clip (overlapping nodes, E13).
         const flowArrowLength = ARROW_LENGTH * width * pixelRatio * camera.zoom;
         context.setLineDash([]);
         context.fillStyle = flowColor;
