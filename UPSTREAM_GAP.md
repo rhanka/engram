@@ -246,7 +246,9 @@ Second, the operative rule is unaffected and is stated on effect, not cause:
 the other four are **not concerned**. Rows grounded in NUL-free files are also
 not concerned: their greps did not lie.
 
-**Result — 16 assertions re-probed with `grep -a`, 15 confirmed, 1 refuted.**
+**Result — 16 assertions re-probed with `grep -a`, 16 confirmed.** (This line
+read "15 confirmed, 1 refuted" until 2026-08-01; the refutation was mine and it
+was wrong — see the correction after the table.)
 
 | Row | Assertion re-probed | Verdict |
 | --- | --- | --- |
@@ -259,26 +261,64 @@ not concerned: their greps did not lie.
 | 105 | kotlin `by` delegation (`9b04022`) | confirmée (7 hits) |
 | 105 | `extractPowershell` (`a129ff2`) | confirmée (2 hits) |
 | 105 | `extractObjc` (`cd3a376`) | confirmée (3 hits) |
-| 105 | import-equals already covered (`9811def`) | **INFIRMÉE** |
+| 105 | import-equals already covered (`9811def`) | confirmée (corrigé le 2026-08-01 — voir ci-dessous) |
 | 117 | `_SHEBANG_DISPATCH` + `_getExtractor` (`2ab0867`) | confirmée |
 | 84 | `collectFiles` (`aa1bbda`) | confirmée (3 hits) |
 | 86 | `_makeId` (`e2ef4ef`) | confirmée (151 hits) |
 
-**The refuted row, with its evidence chain.** `9811def` (import-equals) was
-recorded as "likely covered, test-confirm". It is not covered. Seven spellings
-return zero matches under `-a`: `import_equals`, `ImportEquals`, `importEquals`,
-`import_alias`, `import_alias_declaration`, `import_require`, `TSImportEquals`.
-The import node types the TS walker does handle are `import_clause`,
-`import_declaration`, `import_from_statement`, `import_header`, `import_spec`,
-`import_spec_list`, `import_specifier`, and `import_statement` — the
-tree-sitter-typescript node for `import x = require("y")` is
-`import_alias_declaration`, and it is absent. The CommonJS fallback does not
-rescue it either: `_findRequireCall` is reached from exactly one call site,
-which gates on `node.type === "lexical_declaration" || "variable_declaration"`
-and then requires a `variable_declarator` child. An `import_alias_declaration`
-is none of those, so the require detector is never invoked for it. **This row
-returns to a genuine `must-audit`/`port` state; the "already-covered"
-presumption is withdrawn.**
+**CORRECTION (2026-08-01) — the refutation was wrong, and it is worth reading
+why.** This section previously claimed `9811def` (import-equals) was *not*
+covered, on the strength of seven spellings returning zero matches under `-a`:
+`import_equals`, `ImportEquals`, `importEquals`, `import_alias`,
+`import_alias_declaration`, `import_require`, `TSImportEquals`. The zero matches
+were real. The conclusion drawn from them was not.
+
+Measured against the parser instead of against a guess:
+
+```text
+import fs = require("node:fs");   ->  import_statement > import_require_clause
+import Alias = Foo.Bar.Baz;       ->  import_alias
+import { x } from "./m";          ->  import_statement > import_clause
+```
+
+`import_alias_declaration` **is not a node in tree-sitter-typescript at all**, so
+searching for it could only ever return nothing. The real node for the module
+form is a plain `import_statement`, which `_TS_CONFIG.importTypes` already
+contains, so the construct reaches `_importJs`, whose `readStringSpecifier`
+recurses into `import_require_clause` and finds the specifier. Verified at the
+render, not in the source — a four-file fixture extracted through
+`extractWithDiagnostics` emits:
+
+```text
+import helper = require("./helper")   ->  viarequire --imports_from--> helper  @L1
+import { helped } from "./helper"     ->  viaplain  --imports_from--> helper  @L1   (control)
+```
+
+The file-level import edge is identical for both forms. The plain form
+additionally emits a symbol-level `imports` edge because it names a specifier;
+the `require` form binds the whole module and has no specifier to name, so no
+symbol edge is expected. `import Alias = NS` (node `import_alias`) emits no
+import edge, which is correct here — it aliases a namespace, not a module, so
+there is no module target to point at. Whether upstream emits anything for that
+third form is **not verified** and is not claimed either way.
+
+The row was in fact closed on 2026-07-06 by the port wave `5cb21e75` (#270) and
+pinned by `tests/extract-ts-import-equals.test.ts`, which is green at
+`4178a51a`; the port-wave table later in this document already recorded it as
+"already-covered, test-pinned" with the same `readStringSpecifier` mechanism.
+
+**Two compounding mistakes, both mine, both instructive.** First, I concluded an
+absence from a vocabulary I never validated — the `-a` rule fixes grep's
+blindness to NUL bytes, but nothing protects against searching diligently for a
+symbol that does not exist. An absence is only evidence once the search term is
+known to be the right one; against a grammar, that means asking the parser.
+Second, I anchored on the 2026-07-06 honesty caveat and never grepped this
+document for `9811def` itself, which would have surfaced the closing row
+immediately. A re-audit that does not read the whole ledger repeats its gaps.
+
+**Disposition: `9811def` is already covered and test-pinned. No port is
+required. The `must-audit` reopening is withdrawn, and the 2026-07-06
+classification stands as originally written.**
 
 **Line references that have drifted** (a provenance defect, not a wrong claim —
 the assertions above all still hold, only the coordinates are stale): row 261
