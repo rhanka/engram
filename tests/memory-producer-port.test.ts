@@ -19,6 +19,9 @@ import {
   MEMORY_PRODUCER_PORT_VERSION,
   validateMemoryNoteShape,
   type MemoryProducerPort,
+  type MemoryRecallPort,
+  type MemoryPort,
+  type MemoryRecallResultView,
   type MemoryNoteInput,
 } from "../src/memory-producer-port.js";
 
@@ -136,5 +139,50 @@ describe("MemoryProducerPort — the three entry points a consumer codes against
       ctx,
     );
     expect(tomb.applied).toBe(false);
+  });
+});
+
+describe("MemoryRecallPort — the read-side wake-recall surface (§3.3.3/§7)", () => {
+  const view: MemoryRecallResultView = {
+    schema: "graphify.memory-recall/v1",
+    notes: [],
+    projection: "notes-only",
+    requestingPrincipal: "human:antoinefa",
+    freshness: "unverified",
+    unpaged: true,
+  };
+
+  it("a consumer can implement the recall port; the projection discloses notes-only + freshness", async () => {
+    const consumer: MemoryRecallPort = {
+      async recallMemory() {
+        return view;
+      },
+    };
+    const out = await consumer.recallMemory({ asOf: T }, { principal_owner: "human:antoinefa" });
+    // projection prohibition disclosed structurally, and the T6 no-truncation contract.
+    expect(out.projection).toBe("notes-only");
+    expect(out.freshness).toBe("unverified");
+    expect(out.unpaged).toBe(true);
+  });
+
+  it("a consumer can depend on the combined MemoryPort (write-side + read-side)", async () => {
+    const port: MemoryPort = {
+      async admitMemoryNote() {
+        return { admitted: true, id: "mem:x" };
+      },
+      async promoteNote() {
+        return { promoted: false, reason: "awaiting the D11 double-consensus artefacts" };
+      },
+      async requestTombstone() {
+        return { applied: false };
+      },
+      async recallMemory() {
+        return view;
+      },
+    };
+    const ctx = { principal_owner: "human:antoinefa" };
+    // Both sides reachable through one imported surface (data-pure, anti-cycle).
+    expect((await port.recallMemory({ window: { sinceMs: null, untilMs: T } }, ctx)).notes).toEqual([]);
+    expect((await port.admitMemoryNote(note(), ctx)).admitted).toBe(true);
   });
 });
