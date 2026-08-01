@@ -230,3 +230,57 @@ describe("buildOntologyTree — ONE ontology with the process forests nested", (
     expect(buildOntologyTree(typeList, null, [])).toBeNull();
   });
 });
+
+/**
+ * F6 — the SCHEMA is the first line of defence, the shape filter the second.
+ *
+ * The "Other 47575" regression was caught by shape alone (a registry forest has
+ * no `member_node_types`). That only works because the mis-emitted artifact
+ * happened to look wrong. An artifact that declares itself a DIFFERENT contract
+ * while still being class-shaped walks straight past a shape-only gate — so the
+ * declared `schema` is checked BEFORE any shape reasoning.
+ */
+describe("F6 — artifacts are gated on their declared schema first", () => {
+  it("refuses a class-shaped taxonomy that declares the SIDECAR schema", () => {
+    // Same object the happy path accepts — only the declared contract differs.
+    // A shape-only gate accepts this; reading the schema first refuses it.
+    const misdeclared = { ...amClassTree, schema: "graphify_scene_hierarchies_v1" };
+    expect(buildOntologyTree(typeList, misdeclared, forests)).toBeNull();
+  });
+
+  it("still accepts the taxonomy when it declares the RIGHT schema", () => {
+    const declared = {
+      ...amClassTree,
+      schema: "graphify_ontology_class_hierarchies_v1",
+    };
+    expect(buildOntologyTree(typeList, declared, forests)).toBeTruthy();
+  });
+
+  it("buildForestList refuses a document declaring the class-hierarchies schema", () => {
+    const misdeclared = { ...sidecar, schema: "graphify_ontology_class_hierarchies_v1" };
+    expect(buildForestList(misdeclared)).toEqual([]);
+  });
+
+  it("buildForestList keeps a correctly-declared sidecar", () => {
+    const declared = { ...sidecar, schema: "graphify_scene_hierarchies_v1" };
+    expect(buildForestList(declared).map((f) => f.key)).toEqual([
+      "abp_process_tree",
+      "process_std_process_tree",
+      "org_unit_tree",
+    ]);
+  });
+
+  it("buildForestList drops entries that are not forest objects", () => {
+    // Without a per-entry guard these become phantom forests: a real key, a
+    // real label, and zero counts -- a rail row that expands to nothing.
+    const malformed = {
+      hierarchies: {
+        good: { root_ids: ["A"], nodes_by_id: { A: { child_ids: [] } } },
+        nulled: null,
+        stringly: "abp_process_tree",
+        listed: [],
+      },
+    };
+    expect(buildForestList(malformed).map((f) => f.key)).toEqual(["good"]);
+  });
+});
