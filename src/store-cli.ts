@@ -18,6 +18,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+import type Graph from "graphology";
+
 import { loadGraphFromData } from "./graph.js";
 import { communitiesFromGraph } from "./graph-communities.js";
 import { resolveGraphInputPath } from "./paths.js";
@@ -43,6 +45,15 @@ export interface StorePushCliOptions {
   mode?: string;
   /** Plan and report without writing to the backend. */
   dryRun?: boolean;
+  /**
+   * Opt-in path to a Studio `scene.json` whose PINNED positions (x/y, or fx/fy)
+   * are consumed and applied onto the graph before the push, so the windowed
+   * loader persists a real layout instead of an empty one. Additive: the default
+   * (no `--scene`) is unchanged. Fails loud when the scene yields no finite
+   * position — consuming a positionless scene would silently produce the empty
+   * windowed first paint this whole path exists to prevent.
+   */
+  scene?: string;
 }
 
 /** Options accepted by `graphify store status`. */
@@ -155,6 +166,67 @@ const NO_STORE_ERROR =
   "or pass --store <id>.";
 
 /**
+ * Consume the PINNED positions from a Studio `scene.json` and apply them onto
+ * the graph before the push (D3 push contract). A scene node's coordinate is its
+ * `x`/`y`, or the pinned `fx`/`fy` when `x`/`y` is absent — the same precedence
+ * the scene builder bakes with (studio-scene.ts). Only ids present in the graph
+ * are applied; scene-only ids are ignored. Returns the number of positions
+ * applied.
+ *
+ * Fails loud when the scene applies NO position — either it carries no finite
+ * coordinate at all (the mystery-studio "scene.json with 0 positions" case) or
+ * none of its positioned nodes match a graph node id. Consuming such a scene
+ * would silently persist an empty windowed layout — the circular-hairball
+ * republish this `--scene` path exists to prevent.
+ */
+function applyScenePositions(G: Graph, scenePath: string): number {
+  const resolved = resolve(scenePath);
+  if (!existsSync(resolved)) {
+    throw new Error(`--scene file not found: ${resolved}.`);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(resolved, "utf-8"));
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(`--scene file is not valid JSON: ${resolved} (${detail}).`);
+  }
+  const rawNodes = (parsed as { nodes?: unknown }).nodes;
+  const sceneNodes = Array.isArray(rawNodes) ? rawNodes : [];
+  const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+  let finitePositions = 0;
+  let applied = 0;
+  for (const raw of sceneNodes) {
+    const n = raw as Record<string, unknown>;
+    const id = typeof n.id === "string" ? n.id : undefined;
+    if (!id) continue;
+    const x = finite(n.x) ? n.x : finite(n.fx) ? n.fx : undefined;
+    const y = finite(n.y) ? n.y : finite(n.fy) ? n.fy : undefined;
+    if (x === undefined || y === undefined) continue;
+    finitePositions++;
+    if (G.hasNode(id)) {
+      G.setNodeAttribute(id, "x", x);
+      G.setNodeAttribute(id, "y", y);
+      applied++;
+    }
+  }
+
+  if (applied === 0) {
+    const detail =
+      finitePositions === 0
+        ? "the scene carries no finite pinned position (no node has a finite x/y or fx/fy)"
+        : `none of the scene's ${finitePositions} positioned node(s) match a graph node id`;
+    throw new Error(
+      `--scene ${resolved} applied no position: ${detail}. Pushing it would persist ` +
+        "an empty windowed layout — the circular-hairball republish. Bake matching " +
+        "positions into the scene first.",
+    );
+  }
+  return applied;
+}
+
+/**
  * Push a `.graphify` graph to the configured GraphStore. REPLACE mode (the
  * default) is what makes the aggregate + windowed positions valid — they are
  * rebuilt only inside a full-snapshot replace. Reuses the adapter's pushGraph;
@@ -182,6 +254,11 @@ export async function runStorePush(
     );
   }
   const G = loadGraphFromData(JSON.parse(readFileSync(graphPath, "utf-8")));
+  // Opt-in: consume pinned positions from a Studio scene.json onto the graph
+  // before the push, failing loud if the scene applies none (D3 push contract).
+  if (opts.scene) {
+    applyScenePositions(G, opts.scene);
+  }
   const communities = communitiesFromGraph(G);
 
   const storeConfig = resolveStoreConfig(storeId, { projectConfig, env });
@@ -199,6 +276,32 @@ export async function runStorePush(
     // nothing rebuilt is believed, even when it declares the capability.
     const axes = [...(result.rebuilt?.axes ?? [])];
     const layouts = [...(result.rebuilt?.layouts ?? [])];
+
+    // Fail loud rather than report a success without an effect. A replace push to
+    // a window-capable store that persisted ZERO positions for a non-empty graph
+    // would still print "Pushed N nodes …" at exit 0 while the studio's windowed
+    // first paint is empty — the exact defect behind a circular-hairball
+    // republish. Fires ONLY on a count the adapter EXPLICITLY reported as 0: an
+    // adapter that stays silent about positions is believed (same "ask the
+    // component that knows" contract as `rebuilt`), never falsely failed. This is
+    // independent of where positions come from — whatever feeds the layout, a
+    // windowed rebuild that produced nothing is not a successful push.
+    if (
+      mode === "replace" &&
+      !opts.dryRun &&
+      (store.capabilities.window?.layouts?.length ?? 0) > 0 &&
+      result.nodes > 0 &&
+      result.positions === 0
+    ) {
+      throw new Error(
+        `push wrote 0 windowed-loader positions for ${result.nodes} nodes to the ` +
+          `'${storeId}' store (window layouts: ` +
+          `${store.capabilities.window?.layouts?.join(", ")}) — the studio's ` +
+          `windowed first paint would be empty, so this is not a successful push. ` +
+          `The graph has no baked layout (no finite x/y on any node): bake a ` +
+          `layout before pushing, or target a backend without the window capability.`,
+      );
+    }
 
     const summary: StorePushSummary = {
       storeId,
