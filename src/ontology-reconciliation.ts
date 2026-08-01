@@ -72,7 +72,26 @@ export interface OntologyReconciliationCandidateQueue {
   profile_hash: string;
   generated_at: string;
   candidate_count: number;
+  /**
+   * Present only when oversized FUZZY blocking buckets were skipped. This is
+   * additive to the v1 queue: without it, the fuzzy blocking pass was
+   * lossless.
+   */
+  fuzzy_blocking_cap?: OntologyReconciliationFuzzyBlockingCap;
   candidates: OntologyReconciliationCandidate[];
+}
+
+/**
+ * Disclosure that an opt-in fuzzy blocking cap omitted whole candidate blocks.
+ * Consumers must treat a queue carrying this stamp as incomplete.
+ */
+export interface OntologyReconciliationFuzzyBlockingCap {
+  applied: true;
+  scope: "fuzzy_blocking";
+  threshold: number;
+  skipped_key_count: number;
+  largest_skipped_block_size: number;
+  note: string;
 }
 
 export interface OntologyReconciliationCandidateFilter {
@@ -111,6 +130,12 @@ export interface GenerateOntologyReconciliationCandidatesOptions {
   fuzzy?: boolean;
   /** Token-Jaccard threshold for the fuzzy tier. */
   fuzzyThreshold?: number;
+  /**
+   * Opt-in maximum FUZZY blocking-bucket size. Oversized fuzzy blocks are
+   * skipped wholesale, and the emitted queue declares that recall loss. The
+   * exact blocking tier is never capped. Undefined keeps the lossless default.
+   */
+  fuzzyBucketMax?: number;
   /** Cap on the total number of emitted candidates (after ranking by score). */
   cap?: number;
   /**
@@ -217,6 +242,8 @@ const FUZZY_HONORIFICS = new Set([
 
 /** Default token-Jaccard threshold for the fuzzy tier. */
 export const DEFAULT_FUZZY_TOKEN_JACCARD_THRESHOLD = 0.6;
+/** Recommended opt-in ceiling for fuzzy blocking buckets; not applied by default. */
+export const DEFAULT_FUZZY_BUCKET_MAX = 50;
 /** Default cap on the number of emitted candidates (exact + fuzzy). */
 export const DEFAULT_RECONCILIATION_CANDIDATE_CAP = 200;
 /**
@@ -1258,6 +1285,10 @@ export interface OntologyReconciliationLexicalBlockingIndex {
   fuzzy: Map<string, number[]>;
   fuzzySingles?: Map<string, number[]>;
   fuzzyDegenerate?: Map<string, number[]>;
+  /** The configured opt-in fuzzy bucket ceiling, if it is active. */
+  fuzzyBucketMax?: number;
+  /** Present exactly when this index skipped one or more fuzzy blocks. */
+  fuzzyBucketCap?: OntologyReconciliationFuzzyBlockingCap;
 }
 
 /** Opaque row-major pair identity used by the exported blocking inspection API. */
@@ -1376,8 +1407,46 @@ function addToInvertedIndex(index: Map<string, number[]>, key: string, nodeIndex
   else index.set(key, [nodeIndex]);
 }
 
+function configuredFuzzyBucketMax(value: number | undefined): number | undefined {
+  return value !== undefined && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function capFuzzyBlockingBuckets(
+  index: OntologyReconciliationLexicalBlockingIndex,
+  fuzzyBucketMax: number | undefined,
+): void {
+  if (fuzzyBucketMax === undefined) return;
+
+  index.fuzzyBucketMax = fuzzyBucketMax;
+  let skippedKeyCount = 0;
+  let largestSkippedBlockSize = 0;
+  for (const buckets of [index.fuzzy, index.fuzzySingles, index.fuzzyDegenerate]) {
+    if (!buckets) continue;
+    for (const [key, members] of buckets) {
+      // Like structural hub discounting, a frequent fuzzy token carries no
+      // identifying signal. Delete the WHOLE block: keeping the first N would
+      // introduce an arbitrary, id-order-biased candidate subset.
+      if (members.length <= fuzzyBucketMax) continue;
+      buckets.delete(key);
+      skippedKeyCount += 1;
+      largestSkippedBlockSize = Math.max(largestSkippedBlockSize, members.length);
+    }
+  }
+
+  if (skippedKeyCount === 0) return;
+  index.fuzzyBucketCap = {
+    applied: true,
+    scope: "fuzzy_blocking",
+    threshold: fuzzyBucketMax,
+    skipped_key_count: skippedKeyCount,
+    largest_skipped_block_size: largestSkippedBlockSize,
+    note: "This queue is incomplete because oversized fuzzy blocking buckets were skipped; rerun without fuzzyBucketMax for a lossless pass.",
+  };
+}
+
 function buildLexicalBlockingIndex(
   nodes: readonly MemoizedReconciliationNode[],
+  requestedFuzzyBucketMax?: number,
 ): OntologyReconciliationLexicalBlockingIndex {
   const exact = new Map<string, number[]>();
   const fuzzy = new Map<string, number[]>();
@@ -1393,7 +1462,9 @@ function buildLexicalBlockingIndex(
       for (const key of node.fuzzyDegenerateTokenKeys) addToInvertedIndex(fuzzyDegenerate, key, nodeIndex);
     }
   }
-  return { exact, fuzzy, fuzzySingles, fuzzyDegenerate };
+  const index: OntologyReconciliationLexicalBlockingIndex = { exact, fuzzy, fuzzySingles, fuzzyDegenerate };
+  capFuzzyBlockingBuckets(index, configuredFuzzyBucketMax(requestedFuzzyBucketMax));
+  return index;
 }
 
 /**
@@ -1443,7 +1514,7 @@ function* enumerateBlockedPairIndexes(
 /** Builds the real lexical buckets for losslessness tests and diagnostics. */
 export function buildOntologyReconciliationLexicalBlockingIndex(
   context: OntologyPatchContext,
-  options: Pick<GenerateOntologyReconciliationCandidatesOptions, "fuzzy" | "fuzzyThreshold"> = {},
+  options: Pick<GenerateOntologyReconciliationCandidatesOptions, "fuzzy" | "fuzzyThreshold" | "fuzzyBucketMax"> = {},
 ): OntologyReconciliationLexicalBlockingIndex {
   const fuzzyEnabled = options.fuzzy ?? true;
   const fuzzyThreshold = options.fuzzyThreshold ?? DEFAULT_FUZZY_TOKEN_JACCARD_THRESHOLD;
@@ -1453,7 +1524,7 @@ export function buildOntologyReconciliationLexicalBlockingIndex(
     fuzzyEnabled,
     fuzzyThreshold,
   );
-  return buildLexicalBlockingIndex(memoized);
+  return buildLexicalBlockingIndex(memoized, options.fuzzyBucketMax);
 }
 
 /**
@@ -1463,7 +1534,7 @@ export function buildOntologyReconciliationLexicalBlockingIndex(
  */
 export function enumerateOntologyReconciliationBlockedPairs(
   context: OntologyPatchContext,
-  options: Pick<GenerateOntologyReconciliationCandidatesOptions, "fuzzy" | "fuzzyThreshold"> = {},
+  options: Pick<GenerateOntologyReconciliationCandidatesOptions, "fuzzy" | "fuzzyThreshold" | "fuzzyBucketMax"> = {},
   blockingIndex?: OntologyReconciliationLexicalBlockingIndex,
 ): Set<OntologyReconciliationBlockedPair> {
   const fuzzyEnabled = options.fuzzy ?? true;
@@ -1474,7 +1545,7 @@ export function enumerateOntologyReconciliationBlockedPairs(
     fuzzyEnabled,
     fuzzyThreshold,
   );
-  const index = blockingIndex ?? buildLexicalBlockingIndex(memoized);
+  const index = blockingIndex ?? buildLexicalBlockingIndex(memoized, options.fuzzyBucketMax);
   const pairs = new Set<OntologyReconciliationBlockedPair>();
   for (const [leftIndex, rightIndex] of enumerateBlockedPairIndexes(memoized, index)) {
     pairs.add(`${leftIndex}:${rightIndex}`);
@@ -1579,7 +1650,7 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
   const candidates: OntologyReconciliationCandidate[] = [];
   const emittedPairs = new Set<string>();
   const comparableNodes = memoizeComparableNodes(context.nodes, normalizers, fuzzyEnabled, fuzzyThreshold);
-  const blockingIndex = suppliedBlockingIndex ?? buildLexicalBlockingIndex(comparableNodes);
+  const blockingIndex = suppliedBlockingIndex ?? buildLexicalBlockingIndex(comparableNodes, options.fuzzyBucketMax);
 
   for (const [leftIndex, rightIndex] of enumerateBlockedPairIndexes(comparableNodes, blockingIndex)) {
     const leftMemo = comparableNodes[leftIndex]!;
@@ -1770,6 +1841,7 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
     profile_hash: context.profile.profile_hash,
     generated_at: options.generatedAt ?? new Date().toISOString(),
     candidate_count: capped.length,
+    ...(blockingIndex.fuzzyBucketCap ? { fuzzy_blocking_cap: blockingIndex.fuzzyBucketCap } : {}),
     candidates: capped,
   };
 }
