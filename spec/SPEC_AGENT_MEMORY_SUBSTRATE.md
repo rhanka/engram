@@ -297,8 +297,8 @@ mechanism (code), §3.4 reconciliation opt-out + cross-tier reject, §3.5 retent
 **Co-spec after ratification:**
 1. The storage `appendNode`/`appendEdge`/`appendTombstone` signature + M4
    versioned capability + fold-out contract is **FINAL and storage-consented**
-   (§5). What remains co-spec with the memory peer is the exact **producer
-   wire-shape** — how h2a hands a note over to that signature.
+   (§5). The **producer wire-shape** — how h2a hands a note over — has now
+   **CONVERGED** with the memory peer and is inscribed in §9.4.
 2. **The binary-gate promotion rule (§9.3 D11)** — validator independence,
    eligible grades, threshold, disagreement-to-human path, audit record, PLUS
    the §3.6 neutral projection hook (role parked) and the
@@ -317,5 +317,46 @@ mechanism (code), §3.4 reconciliation opt-out + cross-tier reject, §3.5 retent
   decision; if ever instituted, its view is SIGNED (Ed25519) and it is neither
   the note's author nor a D11 leg.
 
-Nothing here is implemented until final ratification (D1) and the storage/exec
-owners of the touched surfaces consent. Reversible until then.
+### 9.4 Producer wire-shape — CO-SPEC CONVERGED with the memory peer
+
+graphify DEFINES three entry points; h2a imports ONLY the signature (types +
+method shapes) and never graphify internals; graphify never imports h2a
+(anti-cycle). h2a authors ALL content — graphify validates and admits, it
+authors no memory (hard gate).
+
+- **`admitMemoryNote(note, ctx) → {admitted:true, id} | {admitted:false,
+  reason}`.** h2a builds the COMPLETE note (§3.1 fields). graphify runs the
+  admission checks IN ORDER, all must pass: (1) `memory_kind` enum; (2)
+  `subject` predicate (§3.3.1); (3) `event_shaped` STRUCTURAL predicate
+  (§3.3.2, the anchor below); (4) `verifyVerbatim` citation (§4); (5) tenancy
+  (`principal_owner` + `scope`, §3.6); (6) retention required when `subject`
+  is a human (§3.5). On pass → `appendNode` (§5), enters `pending`. On fail →
+  refused, NOTHING stored (no silent no-op).
+- **`promoteNote(noteId, {leg1_verdict_ref, leg2_verdict_ref,
+  independence_attestation}, ctx) → {promoted|rejected}`** — SEPARATE from
+  admission (separation of powers; the trigger is never the note's author). The
+  double-consensus is scheduled by the conductor; two independent high-grade
+  legs emit verdict ARTEFACTS; verdicts travel by REFERENCE (a locator to the
+  file), never a self-report; graphify appends the two refs + the independence
+  attestation + provenance to the journal (D12).
+- **`requestTombstone(target, auth, ctx) → outcome`** — h2a REQUESTS, graphify
+  KEEPS the `principal_owner` authority check (§3.5). For a subject-human fact
+  `auth` is a SIGNED authorization (Ed25519 of `principal_owner` or a signed
+  mandate), NOT an asserted requester field — authority never rests on a
+  fabricable `by`. graphify checks, then `appendTombstone` (§5).
+
+**The event anchor (the crux — what makes `event_shaped` structural, not
+prose).** The note carries `event: { at: <typed REQUIRED instant>, kind:
+<closed event-kind aligned to memory_kind>, ref: <structured locator> }`. `at`
+is required: a generalization ("always X") has no single `at` → structurally
+non-fillable → refused (this IS the §3.3.2 check, deterministic because
+structural). `ref` is the SAME locator as the §4 provenance — `verifyVerbatim`
+checks the cited string against the source named by `ref`; anchor and
+provenance share the handle. Prose remains a readable summary FIELD, never the
+admission key. **LIMIT (do not over-claim):** `at` is h2a-authored and
+UNVERIFIED (D10, `t_src` pass-through) — the anchor guarantees FORM (there is an
+instant), not TRUTH.
+
+Nothing here is implemented until the durable ratification record + the storage
+gate, and the storage/exec owners of the touched surfaces consent. This §9.4 is
+reversible design (spec, not code). Reversible until then.
