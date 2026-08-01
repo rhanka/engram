@@ -1,9 +1,13 @@
 /**
- * The agent-memory PRODUCER PORT — the anti-cycle SEAM (SPEC_AGENT_MEMORY_SUBSTRATE
- * §9.4, ratified @87a8cd05..cd7fad55). graphify DEFINES three entry points; h2a
- * imports ONLY this signature (types + method shapes) and never graphify internals;
- * graphify never imports h2a. h2a authors ALL content — graphify validates and
- * admits, it authors no memory (hard gate §3.2).
+ * The agent-memory PORT — the anti-cycle SEAM (SPEC_AGENT_MEMORY_SUBSTRATE §9.4,
+ * ratified @87a8cd05..cd7fad55). Two sides, ONE data-pure surface a consumer imports:
+ *   - the PRODUCER (write-side): three entry points admitMemoryNote / promoteNote /
+ *     requestTombstone (`MemoryProducerPort`);
+ *   - the RECALL (read-side): recallMemory (`MemoryRecallPort`) — the surface h2a's
+ *     wake-recall codes against (read the memory at wake).
+ * h2a imports ONLY this signature (types + method shapes) and never graphify
+ * internals; graphify never imports h2a. h2a authors ALL content — graphify
+ * validates, admits and projects, it authors no memory (hard gate §3.2).
  *
  * ANTI-CYCLE, MADE STRUCTURAL: this module imports NOTHING — no node builtins, no
  * storage, no source-grounding — so a consumer (h2a) that imports the port drags
@@ -144,6 +148,72 @@ export interface MemoryProducerPort {
     ctx: MemoryContext,
   ): Promise<TombstoneOutcome>;
 }
+
+// ---------------------------------------------------------------------------
+// THE RECALL PORT (read-side, §3.3.3/§7) — the surface h2a's wake-recall codes
+// against. graphify projects; h2a consumes. Data-pure signature (no import).
+// ---------------------------------------------------------------------------
+
+/** Exactly one of `asOf` (T6 point) or `window` (T5 span) is supplied. */
+export interface MemoryRecallQuery {
+  /** T6 point recall: the note must be live at this instant, `[asOf, asOf]`. */
+  asOf?: number;
+  /** T5 window recall: inclusive `[since, until]`; `null` leaves that side open. */
+  window?: { sinceMs: number | null; untilMs: number | null };
+}
+
+/**
+ * A recalled note as PROJECTED. The tier (`trust`, `review_status`) and `provenance`
+ * are RETAINED (§1: every projection retains tier + provenance), so a `pending` note
+ * is disclosed as pending and never dressed as ground truth. Carried verbatim beyond
+ * these keys.
+ */
+export interface RecalledMemoryNoteView {
+  id: string;
+  node_type: "MemoryNote";
+  memory_kind: MemoryKind;
+  subject: string;
+  t: number;
+  t_end?: number;
+  trust: TrustTier;
+  review_status: string;
+  scope: MemoryScope;
+  principal_owner: string;
+  provenance: MemoryProvenance;
+  event: MemoryEventAnchor;
+  [key: string]: unknown;
+}
+
+/**
+ * The recall projection. `projection: "notes-only"` is the structural disclosure of
+ * the projection prohibition (§3.3.3): individual notes, NEVER an assembled identity
+ * profile. `freshness` discloses that the recall does not verify a store snapshot's
+ * freshness (mirrors the T6 `unverified` disclosure); `unpaged` is the T6
+ * no-silent-truncation contract.
+ */
+export interface MemoryRecallResultView {
+  schema: string;
+  notes: RecalledMemoryNoteView[];
+  projection: "notes-only";
+  requestingPrincipal: string;
+  freshness: "unverified";
+  unpaged: true;
+}
+
+/**
+ * The recall entry point h2a codes against. Like the producer port it is
+ * ctx-carrying (tenancy, NOT storage/graph deps): graphify binds the concrete pure
+ * `recallMemory` (memory-recall.ts) behind a `createMemoryRecall(deps)` factory that
+ * closes over the graph source + tombstone journal and exposes this ctx port. The
+ * read-side enforces tenancy access (private ⇒ owner-only), tombstone fold-out and
+ * the projection prohibition — graphify-side invariants, not the caller's to bypass.
+ */
+export interface MemoryRecallPort {
+  recallMemory(query: MemoryRecallQuery, ctx: MemoryContext): Promise<MemoryRecallResultView>;
+}
+
+/** The whole memory port a consumer may depend on — write-side + read-side. */
+export interface MemoryPort extends MemoryProducerPort, MemoryRecallPort {}
 
 // ---------------------------------------------------------------------------
 // The shared STRUCTURAL shape contract — a data-pure pre-flight (no citation).
