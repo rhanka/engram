@@ -21,6 +21,34 @@
 /** A taxonomy must cover this share of the scene's nodes to be trusted. */
 export const TAXONOMY_MIN_COVERAGE = 0.5;
 
+/** The contract each artifact declares in its own `schema` field. */
+export const CLASS_HIERARCHIES_SCHEMA = "graphify_ontology_class_hierarchies_v1";
+export const SCENE_HIERARCHIES_SCHEMA = "graphify_scene_hierarchies_v1";
+
+/**
+ * FIRST line of defence: what the artifact DECLARES ITSELF to be.
+ *
+ * The shape filters below catch a mis-emitted artifact only when it happens to
+ * look wrong — the "Other 47575" forest was caught because a process forest has
+ * no `member_node_types`. That is luck, not a gate: an artifact that is
+ * class-SHAPED but belongs to the other contract walks straight through. So the
+ * declared schema is read before any shape reasoning.
+ *
+ * A DECLARED-AND-WRONG schema is refused outright. An ABSENT schema is NOT
+ * refused: hand-made and pre-schema artifacts predate the field, and for those
+ * the shape + coverage gates remain the second line.
+ */
+function declaresSchema(doc, expected) {
+  const declared = doc?.schema;
+  return declared == null || declared === expected;
+}
+
+/** A forest entry must be a plain object that actually carries a forest. */
+function isForestEntry(h) {
+  if (!h || typeof h !== "object" || Array.isArray(h)) return false;
+  return Array.isArray(h.root_ids) || (h.nodes_by_id != null && typeof h.nodes_by_id === "object");
+}
+
 /**
  * Canonical first-level order (mirrors the verified native PROCESS_STD viewer
  * taxonomy). Roots not named here follow, ordered by label.
@@ -78,17 +106,24 @@ export function selectTaxonomyHierarchy(hierarchies, countByType, total) {
  * de-underscored key).
  */
 export function buildForestList(sceneHierarchies) {
+  // Schema first (see declaresSchema), then shape — this function had NO gate at
+  // all, so any `{ hierarchies: {...} }` produced rail rows, including entries
+  // that are not forests: a phantom row with a real key and zero counts that
+  // expands to nothing.
+  if (!declaresSchema(sceneHierarchies, SCENE_HIERARCHIES_SCHEMA)) return [];
   const hs = sceneHierarchies?.hierarchies;
   if (!hs || typeof hs !== "object") return [];
-  return Object.entries(hs).map(([key, h]) => ({
-    key,
-    label: key.replace(/_/g, " "),
-    hierarchy: h,
-    rootIds: Array.isArray(h?.root_ids) ? h.root_ids : [],
-    nodeCount: h?.nodes_by_id ? Object.keys(h.nodes_by_id).length : 0,
-    orphanCount: Array.isArray(h?.orphan_ids) ? h.orphan_ids.length : 0,
-    danglingCount: typeof h?.dangling_arc_count === "number" ? h.dangling_arc_count : 0,
-  }));
+  return Object.entries(hs)
+    .filter(([, h]) => isForestEntry(h))
+    .map(([key, h]) => ({
+      key,
+      label: key.replace(/_/g, " "),
+      hierarchy: h,
+      rootIds: Array.isArray(h?.root_ids) ? h.root_ids : [],
+      nodeCount: h?.nodes_by_id ? Object.keys(h.nodes_by_id).length : 0,
+      orphanCount: Array.isArray(h?.orphan_ids) ? h.orphan_ids.length : 0,
+      danglingCount: typeof h?.dangling_arc_count === "number" ? h.dangling_arc_count : 0,
+    }));
 }
 
 /**
@@ -102,6 +137,11 @@ export function buildForestList(sceneHierarchies) {
  *          or null when no taxonomy is trustworthy (⇒ flat-list fallback).
  */
 export function buildOntologyTree(typeList, classHierarchies, forestList = []) {
+  // Schema first: a sidecar handed in as a taxonomy is refused HERE, because
+  // selectTaxonomyHierarchy only ever sees the inner `hierarchies` map and so
+  // cannot read the document's declared contract. Its shape + coverage gates
+  // stay the second line, for artifacts that declare nothing.
+  if (!declaresSchema(classHierarchies, CLASS_HIERARCHIES_SCHEMA)) return null;
   const countByType = new Map(typeList.map((t) => [t.key, t.count]));
   const total = typeList.reduce((n, t) => n + t.count, 0);
   const h = selectTaxonomyHierarchy(classHierarchies?.hierarchies, countByType, total);
