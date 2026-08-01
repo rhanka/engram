@@ -113,15 +113,30 @@ changing the emitter's `0x01` would alter hash inputs and invalidate caches.
 
 ## R3 — The tooling trap: `grep` lies, and at least one document rests on it
 
-**Root cause identified.** The local `grep` is **ugrep 7.5.0**, not GNU grep.
-On a NUL-bearing file it emits **nothing at all** — no match on stdout, and not
-even GNU's "binary file matches" notice on stderr — and exits 1. It is a
-completely silent false negative, which is worse than the charter described.
+**Root cause — corrected 2026-07-31, an earlier revision of this file blamed the
+wrong component.** It is not ugrep's own binary handling. `grep` here is not a
+binary at all: it is a **shell function** that calls ugrep 7.5.0 with a fixed
+flag set that includes **`-I`** (skip binary files). Measured on a two-line
+probe file carrying one NUL and two matches:
 
-Note also that ugrep scans the whole file for a NUL while git only sniffs the
-first 8000 bytes, so **the set of files that lie to grep is strictly larger than
-the set git calls binary**. A file can read as perfectly normal text in `git
-diff` and still be invisible to `grep`.
+| invocation | result |
+|---|---|
+| `grep -c MARKER` (the wrapper) | no output, exit 1 |
+| `command grep -c MARKER` (bare ugrep) | **2**, exit 0 |
+| `command grep -Ic MARKER` | 0, exit 1 |
+| `command grep -ac MARKER` | 2, exit 0 |
+
+So ugrep reads a NUL-bearing file perfectly well; **`-I` alone destroys the
+result**, and the wrapper injects it. The failure is silent and total across
+modes — `-n`, `-c`, `-l`, bare, and `-r`, which drops the offending file without
+a word while still succeeding on every other file. That last mode is the worst
+case, because the command looks like it worked.
+
+One earlier claim in this file also over-reached and is withdrawn: "a file can
+read as normal text in `git diff` and still be invisible to grep" was not true of
+`src/extract.ts`, where `git ls-files --eol` did flag it (`i/-text`). The
+operative rule is unchanged: **`-a` always**, and no conclusion of absence
+without it.
 
 **Verified closed.** `grep -n _makeId src/extract.ts` now returns line 112 —
 the exact symbol a previous pass concluded did not exist. It was always there;

@@ -3509,6 +3509,10 @@ export async function main(): Promise<void> {
     .option("--store <id>", "Store backend id (default: GRAPHIFY_STORE or storage.mirrors[0].backend)")
     .option("--mode <mode>", "Push mode: replace (default; rebuilds the aggregate + positions) or merge", "replace")
     .option("--dry-run", "Plan and report counts without writing to the backend")
+    .option(
+      "--scene <path>",
+      "Consume the pinned positions (x/y, fx/fy) from a Studio scene.json onto the graph before pushing so the windowed loader persists a real layout; fails loud if the scene applies no position",
+    )
     .action(async (opts) => {
       try {
         const { runStorePush } = await import("./store-cli.js");
@@ -3518,6 +3522,7 @@ export async function main(): Promise<void> {
           ...(opts.store ? { store: String(opts.store) } : {}),
           ...(opts.mode ? { mode: String(opts.mode) } : {}),
           ...(opts.dryRun ? { dryRun: true } : {}),
+          ...(opts.scene ? { scene: String(opts.scene) } : {}),
         });
       } catch (err) {
         console.error(`error: ${err instanceof Error ? err.message : String(err)}`);

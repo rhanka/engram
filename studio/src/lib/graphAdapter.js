@@ -583,7 +583,12 @@ export function communityColorMap(cstats) {
  *   - `windowed: true`: this scene is a bounded first-paint slice, so consumers
  *     render "visible / corpus" instead of a bare total;
  *   - `windowLimit`: the cap the store applied.
- * `scene.window = { strategy, layout?, limit }` additionally tags the provenance.
+ * `scene.paint_window = { strategy, layout?, limit }` additionally tags the
+ * provenance. It is NAMED `paint_window`, not `window`, because a scene has a
+ * second, unrelated window: the TEMPORAL one ([t, t_end], carried by the shared
+ * scene contract and schema-declared). This one is a PAINT slice — top-N by
+ * degree, no schema — so sharing the bare name `window` would make two
+ * different contracts indistinguishable to any consumer that reads `.window`.
  * Both survive applyWeakFilter / applyTimeFilter / applyVisibilityToScene, which
  * spread `...scene` and `...scene.stats`. A FULL scene never sets `windowed`, so
  * the default (no-store) studio renders exactly the counters it renders today.
@@ -596,7 +601,7 @@ export function communityColorMap(cstats) {
  *   nodes?: object[], edges?: object[] } | null | undefined} windowDoc
  * @param {object} [options]  forwarded to buildScene (e.g. showWeakLinks)
  * @returns {{ nodes: object[], edges: object[], stats: object,
- *   window: { strategy: string, layout?: string, limit: number } }}
+ *   paint_window: { strategy: string, layout?: string, limit: number } }}
  */
 export function buildWindowScene(windowDoc, options = {}) {
   const scene = buildScene(
@@ -608,7 +613,7 @@ export function buildWindowScene(windowDoc, options = {}) {
     scene.nodes.every((n) => finiteNumber(n.x) && finiteNumber(n.y));
   const out = positioned ? scene : attachForceLayout(scene);
   const limit = finiteNumber(windowDoc?.limit) ? windowDoc.limit : out.nodes.length;
-  out.window = {
+  out.paint_window = {
     strategy: windowDoc?.strategy ?? "degree-top-n",
     ...(windowDoc?.layout != null ? { layout: windowDoc.layout } : {}),
     limit,
