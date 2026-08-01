@@ -65,7 +65,15 @@ describe("buildWindowScene (storage LOT 3 windowed first paint)", () => {
   it("tags the scene as a bounded slice so counters can stay honest", () => {
     const scene = buildWindowScene(WINDOW);
 
-    expect(scene.window).toEqual({ strategy: "degree-top-n", layout: "force", limit: 3 });
+    // `paint_window`, not `window`: a scene's OTHER window is the temporal one
+    // [t, t_end], which is schema-carried. This one is a PAINT slice (top-N by
+    // degree) and carries no schema, so the two must not share a bare name.
+    expect(scene.paint_window).toEqual({
+      strategy: "degree-top-n",
+      layout: "force",
+      limit: 3,
+    });
+    expect(scene.window).toBeUndefined();
     expect(scene.stats.windowed).toBe(true);
     expect(scene.stats.windowLimit).toBe(3);
   });
@@ -74,7 +82,7 @@ describe("buildWindowScene (storage LOT 3 windowed first paint)", () => {
     const full = buildScene({ nodes: WINDOW.nodes, links: WINDOW.edges });
 
     expect(full.stats.windowed).toBeUndefined();
-    expect(full.window).toBeUndefined();
+    expect(full.paint_window).toBeUndefined();
   });
 
   it("keeps the windowed tag across the derived weak-link filter", () => {
@@ -83,7 +91,11 @@ describe("buildWindowScene (storage LOT 3 windowed first paint)", () => {
     const filtered = applyWeakFilter(buildWindowScene(WINDOW), false);
 
     expect(filtered.stats.windowed).toBe(true);
-    expect(filtered.window).toEqual({ strategy: "degree-top-n", layout: "force", limit: 3 });
+    expect(filtered.paint_window).toEqual({
+      strategy: "degree-top-n",
+      layout: "force",
+      limit: 3,
+    });
   });
 
   it("survives an empty or malformed window document without throwing", () => {
