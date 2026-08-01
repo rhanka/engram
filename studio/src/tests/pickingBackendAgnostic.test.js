@@ -74,6 +74,13 @@ function createFakeWebGl2Context() {
     getUniformLocation: (_p, name) => ({ name }),
     uniform1f: () => undefined,
     uniform2f: () => undefined,
+    // The renderer binds the camera as a mat4 view-projection (bindCameraUniforms),
+    // so a double claiming to be WebGL2 MUST answer uniformMatrix4fv -- a real
+    // context does. Omitting it does not weaken the double, it makes render()
+    // throw, which is indistinguishable here from the picking regression this
+    // suite exists to catch. The sibling doubles in packages/graph/tests already
+    // carry it; this one was missed when the renderer left the hand-rolled affine.
+    uniformMatrix4fv: () => undefined,
     enableVertexAttribArray: () => undefined,
     vertexAttribPointer: () => undefined,
     viewport: () => undefined,
