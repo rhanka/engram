@@ -68,10 +68,15 @@ export function refsForCitations(citations, fallbackSourceFile = null) {
  * `onFocusChange(groupId, refIndex)` back to the exact citation object for the
  * right-panel sync. The component itself never sees `meta` (purity seam).
  *
+ * A group's `label` also names the ORIGINAL document when exactly one can be
+ * resolved for it (A4 local bridge, see `groupOriginalName`) — otherwise it is
+ * the entity label untouched.
+ *
  * @param {Array<{id: string, label?: string|null, citations?: Array<object>|null, fallbackSourceFile?: string|null}>} entities
+ * @param {object|null} [provenance]  Provenance documents map; defaults to the loaded snapshot.
  * @returns {{ groups: Array<{id: string, label: string|null, refs: Array<object>}>, meta: Array<{id: string, citations: Array<object>}> }}
  */
-export function buildSelectionThread(entities) {
+export function buildSelectionThread(entities, provenance = null) {
   const groups = [];
   const meta = [];
   for (const entity of Array.isArray(entities) ? entities : []) {
@@ -91,10 +96,14 @@ export function buildSelectionThread(entities) {
       if (docDelta !== 0) return docDelta;
       return threadPageRank(a.ref) - threadPageRank(b.ref);
     });
+    const orderedRefs = pairs.map((p) => p.ref);
+    // A4 bridge: name the ORIGINAL alongside the entity, when one can be named.
+    const baseLabel = entity.label ?? null;
+    const original = baseLabel ? groupOriginalName(orderedRefs, provenance) : null;
     groups.push({
       id: entity.id,
-      label: entity.label ?? null,
-      refs: pairs.map((p) => p.ref),
+      label: original ? `${baseLabel} · ${original}` : baseLabel,
+      refs: orderedRefs,
     });
     meta.push({ id: entity.id, citations: pairs.map((p) => p.citation) });
   }
@@ -104,6 +113,41 @@ export function buildSelectionThread(entities) {
 /** Document identity for the thread order (mirrors the viewer's locatorOf). */
 function threadDocKey(ref) {
   return ref?.rawRef ?? ref?.sourceUrl ?? ref?.docSha ?? "";
+}
+
+/**
+ * A4 LOCAL BRIDGE — the single ORIGINAL document a group can honestly speak
+ * for, as a display basename, or null when it cannot speak for one.
+ *
+ * The viewer's frame reads only `kind` back from ResolveSource, so after a
+ * provenance hop its header describes the markdown intermediate while the
+ * ORIGINAL pdf is on screen. Until the additive field is negotiated with the
+ * lib's owner, the group label — which the frame already prefixes — is the one
+ * channel we own. Zero lib change, instantly reversible.
+ *
+ * Deliberately SILENT rather than approximate: no provenance, one unmapped ref,
+ * or several distinct originals in the group all return null and leave the
+ * label exactly as it is today. A label may name a document only when there is
+ * exactly one to name.
+ *
+ * This reads provenance; it never WRITES to a ref. `ref.rawRef` keeps naming
+ * the intermediate, because it is the thread's document identity
+ * (`threadDocKey`): rewriting it would merge two distinct converted markdowns
+ * of one PDF into a single document group and falsify the provenance the chain
+ * exists to preserve.
+ */
+function groupOriginalName(refs, provenance) {
+  const map = provenance ?? provenanceSnapshot;
+  if (!map) return null;
+  const originals = new Set();
+  for (const ref of refs) {
+    const original = resolveSourceChain(ref, map)?.original ?? null;
+    if (!original) return null;
+    originals.add(original);
+  }
+  if (originals.size !== 1) return null;
+  const [only] = [...originals];
+  return String(only).split("/").pop() || null;
 }
 
 /** Page sort rank: numeric pages ascending, page-less refs last (stable). */
