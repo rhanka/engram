@@ -48,7 +48,22 @@ export interface OntologyPatchNode {
   registry_record_id?: string;
   registry_partition?: string;
   registry_refs?: string[];
+  /**
+   * Provenance TIER of the node (memory contract §3.4, backed by M2).
+   *
+   * `earned` — established by the pipeline from evidence in the corpus.
+   * `asserted` — stated by an outside party (a memory note, a manual claim)
+   * without the corpus having earned it.
+   *
+   * The distinction exists so an assertion can never quietly take over a node
+   * the corpus earned. Optional: a node that does not carry it has an UNKNOWN
+   * tier, which is not the same as `earned` — see `violatesTrustTier`.
+   */
+  trust?: OntologyNodeTrustTier;
 }
+
+/** Provenance tiers a node may declare. See `OntologyPatchNode.trust`. */
+export type OntologyNodeTrustTier = "earned" | "asserted";
 
 export interface OntologyPatchRelation {
   id?: string;
