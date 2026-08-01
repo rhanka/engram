@@ -28,10 +28,15 @@
  *
  *   TEMPORAL (per node AND per edge, both optional):
  *     • `t`     — interval START, epoch milliseconds.
- *     • `t_end` — interval END,   epoch milliseconds.
- *     Semantics: a half-open span [t, t_end); membership in a time window is
- *     SPAN-OVERLAP (an element is "in window [w0, w1)" iff t < w1 && t_end > w0).
- *     A point-in-time element sets `t_end === t`. The agreed source-of-truth
+ *     • `t_end` — interval END, epoch milliseconds. OPTIONAL: ABSENT means the
+ *                 element is open-ended (still current at query time); PRESENT
+ *                 means a CLOSED end and MUST be >= `t`.
+ *     Semantics: a CLOSED span [t, t_end]; membership in a time window is
+ *     INCLUSIVE OVERLAP (an element is "in window [w0, w1]" iff
+ *     t <= w1 && (t_end ?? t) >= w0). A point-in-time element sets
+ *     `t_end === t` and matches a window containing that instant. This is the
+ *     convention implemented by temporal-recall.ts and the store queryWindow,
+ *     and stated by the agent-stats charter. The agreed source-of-truth
  *     representation is bigint epoch-ms; the JSON scene carries the value
  *     verbatim as a `number` (JSON has no bigint) — no coercion happens here.
  *
@@ -274,7 +279,7 @@ const NODE_PROFILE_FIELDS = [
   "hierarchy_ids",
   "badges",
   "documents",
-  // Shared scene contract (additive, opt-in): temporal interval [t, t_end),
+  // Shared scene contract (additive, opt-in): temporal interval [t, t_end],
   // epoch-ms. copyOwnFields only copies an own, defined value, so a node
   // WITHOUT these fields yields NO key (byte-identical scene). Pass-through
   // only — not consumed here. See the module-header SHARED SCENE CONTRACT.
@@ -291,7 +296,7 @@ const EDGE_PROFILE_FIELDS = [
   "evidence_refs",
   "hierarchy_id",
   "structural",
-  // Shared scene contract (additive, opt-in): temporal interval [t, t_end),
+  // Shared scene contract (additive, opt-in): temporal interval [t, t_end],
   // epoch-ms. Omitted when absent on the input edge (byte-identical scene).
   // Pass-through only. See the module-header SHARED SCENE CONTRACT.
   "t",
