@@ -5,7 +5,7 @@
 - **RATIFIED by the principal, 2026-08-01.** Commit-of-record **`87a8cd05`**
   (the scope was ratified on `16c657f3`; `87a8cd05` = `16c657f3` + 3 strict
   co-spec corrections, scope unchanged). **Durable authoritative records
-  (append-only, principal-authored, peer-verifiable):** Track decision
+  (append-only, hash-chained, peer-verifiable):** Track decision
   `01KYYTFXVVE9Y46X06H6HFXJT8` — "Contrat mémoire RATIFIÉ par le principal"
   (normative carriers code-enforced) — and the impl-gate Track decision
   `01KYYVM09TRWT1BA43S0ZBHPWW` — "Impl surface storage append/tombstone §5
@@ -15,6 +15,15 @@
   signature); the converged producer wire-shape is §9.4 (`67596e07`). Normative
   carriers hold; the executive role is **PARKED** (h2a-side, condition absent).
   **No merge/push/publish without the principal.**
+- **Attestation caveat (the arc's own discipline, applied to the ratification
+  itself).** The Track record proves the durable, chained
+  (`contentHash`/`prevHash`) RECORDING that the principal ratified. The `by`
+  field is the CONFIGURED identity (`human:antoinefa` / `human:fabien.antoine`),
+  NOT cryptographic proof of human-vs-agent-under-config — the SAME `actor`/`by`
+  scar the rest of this design guards against (the signed verdict §9.3/§9.4, the
+  signed authorization §3.5/§9.4). The immune attestation of human intent is the
+  owner's own word (an independent memory-lane escalation is in progress). The
+  **MERGE-GATE remains the real irreversible line.**
 - **Revised per the principal's 3-review dossier** (A2 / B1 / C1 / D1 / M4 +
   the multi-tenant carrier). This revision makes the **load-bearing carriers
   NORMATIVE and code-enforced**, not conventions: (1) the persona mechanism
