@@ -78,6 +78,11 @@ export interface OntologyReconciliationCandidateQueue {
    * lossless.
    */
   fuzzy_blocking_cap?: OntologyReconciliationFuzzyBlockingCap;
+  /**
+   * Present whenever the fuzzy tier runs. Omitted when `fuzzy: false`, because
+   * the eligibility criterion is then inapplicable.
+   */
+  fuzzy_tier_eligibility?: OntologyReconciliationFuzzyTierEligibilityDisclosure;
   candidates: OntologyReconciliationCandidate[];
 }
 
@@ -92,6 +97,23 @@ export interface OntologyReconciliationFuzzyBlockingCap {
   skipped_key_count: number;
   largest_skipped_block_size: number;
   note: string;
+}
+
+/**
+ * An explicit disclosure of the fuzzy tier's baseline token floor and
+ * single-token exception. Optional and additive — the queue schema stays `…_v1`.
+ */
+export interface OntologyReconciliationFuzzyTierEligibilityDisclosure {
+  /** Plain-language explanation of the fuzzy eligibility rule. */
+  criterion: string;
+  /** Baseline minimum token count on the smaller side before the documented exception. */
+  minimum_smaller_side_token_count: number;
+  /** Comparable nodes for which every fuzzy variant is empty or a single generic noun. */
+  excluded_comparable_node_count: number;
+  /** Total id-sorted comparable nodes considered by reconciliation. */
+  comparable_node_count: number;
+  /** `excluded_comparable_node_count / comparable_node_count`, or 0 when empty. */
+  excluded_comparable_node_share: number;
 }
 
 export interface OntologyReconciliationCandidateFilter {
@@ -136,6 +158,17 @@ export interface GenerateOntologyReconciliationCandidatesOptions {
    * exact blocking tier is never capped. Undefined keeps the lossless default.
    */
   fuzzyBucketMax?: number;
+  /**
+   * Optional tuning dial between VOLUME and PRECISION: emit only pairs sharing
+   * a fuzzy token whose inverse document frequency meets this value. Raising it
+   * emits fewer candidates AND raises measured precision, so it trades recall
+   * for precision rather than merely thinning the queue.
+   *
+   * It is NOT a correctness guard: eligibility is decided by the token floor
+   * and the generic-noun exclusion, never by this dial, and it is OFF by
+   * default so the shipped behaviour is full O3 admission.
+   */
+  fuzzyMinimumSharedTokenIdf?: number;
   /** Cap on the total number of emitted candidates (after ranking by score). */
   cap?: number;
   /**
@@ -234,8 +267,8 @@ function violatesPartitionScope(
 // (the full surface, the parenthetical-stripped surface, and the
 // parenthetical CONTENT on its own). Two entities are a fuzzy match when some
 // variant pair is token-set-EQUAL, or one variant's tokens are a strict subset
-// of the other's (≥ 2 meaningful tokens), or their best token Jaccard clears
-// the threshold. This surfaces genuine qualifier-variants
+// of the other's (under the baseline floor or single-token exception), or their
+// best token Jaccard clears the threshold. This surfaces genuine qualifier-variants
 // ("Hugo Oberstein" ↔ "Hugo Oberstein (spy)";
 //  "Devonshire (Exmoor estate)" ↔ "Exmoor estate") while rejecting siblings
 // ("Sir Henry" ↔ "Sir Charles"), regnal series ("Edward I/II/III"), generic
@@ -272,6 +305,9 @@ const FUZZY_HONORIFICS = new Set([
 export const DEFAULT_FUZZY_TOKEN_JACCARD_THRESHOLD = 0.6;
 /** Recommended opt-in ceiling for fuzzy blocking buckets; not applied by default. */
 export const DEFAULT_FUZZY_BUCKET_MAX = 50;
+const FUZZY_MINIMUM_SMALLER_SIDE_TOKEN_COUNT = 2;
+const FUZZY_TIER_ELIGIBILITY_CRITERION =
+  "A fuzzy variant needs at least 2 tokens on the smaller side, except that a single non-generic token is eligible; nodes whose every variant is empty or a single generic entity noun can never fuzzy-match.";
 /** Default cap on the number of emitted candidates (exact + fuzzy). */
 export const DEFAULT_RECONCILIATION_CANDIDATE_CAP = 200;
 /**
@@ -410,7 +446,7 @@ export interface FuzzyMatchResult {
   jaccard: number;
   /** True when some name↔name variant pair was token-set-equal. */
   equal: boolean;
-  /** True when a ≥2-token strict containment held (incl. paren↔name). */
+  /** True when a strict containment held between eligible variants (incl. paren↔name). */
   contained: boolean;
 }
 
@@ -420,9 +456,9 @@ export interface FuzzyMatchResult {
  *
  * Admissibility:
  *   - name↔name: equality / containment / Jaccard all eligible.
- *   - paren↔name: only token-set EQUALITY or strict containment with ≥2 tokens
- *     (captures "Exmoor estate" ⊆ "Devonshire (Exmoor estate)"), so a generic
- *     ≥2-word descriptor never matches by mere Jaccard.
+ *   - paren↔name: only token-set EQUALITY or strict containment between
+ *     eligible variants (captures "Exmoor estate" ⊆ "Devonshire (Exmoor
+ *     estate)"), so a descriptor never matches by mere Jaccard.
  *   - paren↔paren: NEVER (generic-descriptor collision guard).
  */
 export function fuzzyMatchNodes(
@@ -452,11 +488,10 @@ function fuzzyMatchVariants(
     for (const b of rightSets) {
       // paren↔paren is never admissible (generic-descriptor collision guard).
       if (a.kind === "paren" && b.kind === "paren") continue;
-      // A match needs ≥2 meaningful tokens on the smaller side so a single
-      // generic locator ("Greenford", "Seawood", "butler", "inn") cannot match
-      // every node that merely mentions it in a parenthetical.
-      const minLen = Math.min(a.tokens.length, b.tokens.length);
-      if (minLen < 2) continue;
+      // The baseline needs ≥2 meaningful tokens on the smaller side. The O3
+      // exception admits a distinctive one-token variant, while keeping a
+      // generic one-token locator ("butler", "inn") out of fuzzy matching.
+      if (!fuzzyVariantIsEligible(a.tokens) || !fuzzyVariantIsEligible(b.tokens)) continue;
       // Formulaic-series guard: a one-numeral delta is a distinct member, not a
       // variant ("Edward I/II"). Also reject a same-token-set pair whose
       // sequences differ AND that carries ordinal tokens ("Part I, Chapter II"
@@ -510,7 +545,7 @@ function fuzzyScore(result: FuzzyMatchResult): number {
  * only "revolver". A surname ("Robinson", "Oberstein") or a place name is NOT
  * here — those legitimately identify an entity.
  */
-const GENERIC_ENTITY_NOUNS = new Set([
+export const GENERIC_ENTITY_NOUNS = new Set([
   // narrative / role nouns
   "narrator", "author", "writer", "editor", "client", "victim", "witness",
   "suspect", "murderer", "killer", "thief", "criminal", "detective", "prisoner",
@@ -541,6 +576,11 @@ const GENERIC_ENTITY_NOUNS = new Set([
   "shop", "office", "club", "school", "river", "wood", "woods", "hill", "town",
   "village", "city", "country", "estate", "manor", "castle", "cottage",
 ]);
+
+function fuzzyVariantIsEligible(tokens: readonly string[]): boolean {
+  return tokens.length >= FUZZY_MINIMUM_SMALLER_SIDE_TOKEN_COUNT
+    || (tokens.length === 1 && !GENERIC_ENTITY_NOUNS.has(tokens[0]!));
+}
 
 /** Opposite-gender honorific pairs — a label-prefix delta that means
  * spouse/relative, never the same person. Stored as a canonical-keyed map. */
@@ -1298,10 +1338,54 @@ interface MemoizedReconciliationNode {
   guardSurface: GuardSurface;
   exactBlockingKeys: string[];
   fuzzyBlockingKeys: string[];
-  /** All fuzzy token keys; queried only if some variant is repeated-token-only. */
+  /** All fuzzy token keys; paired with a variant that needs the side index. */
   fuzzySingleTokenKeys: string[];
-  /** A legacy containment edge case: ≥2 tokens but only one distinct token. */
+  /** Variants that need a single-token-side lookup: O3 mono or repeated-only. */
   fuzzyDegenerateTokenKeys: string[];
+}
+
+function fuzzyTierEligibilityDisclosure(
+  comparableNodes: readonly MemoizedReconciliationNode[],
+): OntologyReconciliationFuzzyTierEligibilityDisclosure {
+  const excludedComparableNodeCount = comparableNodes.filter(({ fuzzyVariants }) =>
+    fuzzyVariants.every(({ tokens }) => !fuzzyVariantIsEligible(tokens)),
+  ).length;
+  const comparableNodeCount = comparableNodes.length;
+  return {
+    criterion: FUZZY_TIER_ELIGIBILITY_CRITERION,
+    minimum_smaller_side_token_count: FUZZY_MINIMUM_SMALLER_SIDE_TOKEN_COUNT,
+    excluded_comparable_node_count: excludedComparableNodeCount,
+    comparable_node_count: comparableNodeCount,
+    excluded_comparable_node_share: comparableNodeCount === 0
+      ? 0
+      : excludedComparableNodeCount / comparableNodeCount,
+  };
+}
+
+function fuzzyTokenIdfs(
+  comparableNodes: readonly MemoizedReconciliationNode[],
+): Map<string, number> {
+  const documentFrequency = new Map<string, number>();
+  for (const { fuzzyVariants } of comparableNodes) {
+    const tokens = new Set(fuzzyVariants.flatMap(({ tokens: variantTokens }) => variantTokens));
+    for (const token of tokens) documentFrequency.set(token, (documentFrequency.get(token) ?? 0) + 1);
+  }
+  const documentCount = comparableNodes.length;
+  return new Map(
+    [...documentFrequency].map(([token, frequency]) => [token, Math.log(documentCount / frequency)]),
+  );
+}
+
+function hasSharedFuzzyTokenAtOrAboveIdf(
+  leftVariants: readonly FuzzyVariant[],
+  rightVariants: readonly FuzzyVariant[],
+  tokenIdfs: ReadonlyMap<string, number>,
+  minimumIdf: number,
+): boolean {
+  const rightTokens = new Set(rightVariants.flatMap(({ tokens }) => tokens));
+  return leftVariants.some(({ tokens }) => tokens.some((token) =>
+    rightTokens.has(token) && (tokenIdfs.get(token) ?? 0) >= minimumIdf,
+  ));
 }
 
 /**
@@ -1355,10 +1439,9 @@ function fuzzyBlockingKeysForNode(
   }
 
   for (const variant of variants) {
-    // Fuzzy matching itself rejects a variant pair whose smaller side has
-    // fewer than two tokens. A multiset pair (including token/token for a
-    // repeated token) keeps that same condition lossless for sequence-equal
-    // variants as well as ordinary distinct-token variants.
+    // A multiset pair (including token/token for a repeated token) is
+    // lossless for eligible variants with at least two tokens. O3's eligible
+    // distinctive mono variants use the existing side index below instead.
     for (let left = 0; left < variant.tokens.length; left += 1) {
       for (let right = left + 1; right < variant.tokens.length; right += 1) {
         const a = variant.tokens[left]!;
@@ -1384,11 +1467,14 @@ function fuzzySingleTokenKeysForNode(type: string, variants: readonly FuzzyVaria
 function fuzzyDegenerateTokenKeysForNode(type: string, variants: readonly FuzzyVariant[]): string[] {
   const keys = new Set<string>();
   for (const variant of variants) {
-    if (variant.tokens.length < 2 || new Set(variant.tokens).size >= 2) continue;
-    // The legacy `tokenSubset` predicate works over token Sets but gates on
-    // token-array length. Thus "echo echo" can contain-match "echo bravo".
-    // Keep a narrowly-scoped single-token side index for that exact legacy
-    // case; ordinary variants still use only the pair-token index above.
+    const isDistinctiveMonoVariant = variant.tokens.length === 1
+      && !GENERIC_ENTITY_NOUNS.has(variant.tokens[0]!);
+    const isRepeatedTokenOnlyVariant = variant.tokens.length >= 2
+      && new Set(variant.tokens).size < 2;
+    if (!isDistinctiveMonoVariant && !isRepeatedTokenOnlyVariant) continue;
+    // The existing single-token side index covers both the legacy repeated
+    // token containment case ("echo echo" ↔ "echo bravo") and O3's
+    // distinctive mono variants, which cannot be represented by pair keys.
     for (const token of variant.tokens) keys.add(typedBlockingKey(type, token));
   }
   return [...keys];
@@ -1478,9 +1564,9 @@ function buildLexicalBlockingIndex(
 ): OntologyReconciliationLexicalBlockingIndex {
   const exact = new Map<string, number[]>();
   const fuzzy = new Map<string, number[]>();
-  const hasDegenerateFuzzyVariant = nodes.some((node) => node.fuzzyDegenerateTokenKeys.length > 0);
-  const fuzzySingles = hasDegenerateFuzzyVariant ? new Map<string, number[]>() : undefined;
-  const fuzzyDegenerate = hasDegenerateFuzzyVariant ? new Map<string, number[]>() : undefined;
+  const hasSingleSideFuzzyVariant = nodes.some((node) => node.fuzzyDegenerateTokenKeys.length > 0);
+  const fuzzySingles = hasSingleSideFuzzyVariant ? new Map<string, number[]>() : undefined;
+  const fuzzyDegenerate = hasSingleSideFuzzyVariant ? new Map<string, number[]>() : undefined;
   for (let nodeIndex = 0; nodeIndex < nodes.length; nodeIndex += 1) {
     const node = nodes[nodeIndex]!;
     for (const key of node.exactBlockingKeys) addToInvertedIndex(exact, key, nodeIndex);
@@ -1518,9 +1604,8 @@ function* enumerateBlockedPairIndexes(
         if (rightIndex > leftIndex) rightIndexes.add(rightIndex);
       }
     }
-    // `tokenSubset` uses token Sets after a token-array-length gate. Repeated
-    // one-token variants are therefore the one case outside the two-distinct-
-    // token proof for pair keys; connect them through a narrow side index.
+    // Pair keys cannot represent O3's distinctive mono variants. The same
+    // side index also preserves the legacy repeated-token containment case.
     if (index.fuzzySingles && index.fuzzyDegenerate) {
       for (const key of left.fuzzyDegenerateTokenKeys) {
         for (const rightIndex of index.fuzzySingles.get(key) ?? []) {
@@ -1671,6 +1756,10 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
 ): OntologyReconciliationCandidateQueue {
   const fuzzyEnabled = options.fuzzy ?? true;
   const fuzzyThreshold = options.fuzzyThreshold ?? DEFAULT_FUZZY_TOKEN_JACCARD_THRESHOLD;
+  const fuzzyMinimumSharedTokenIdf = typeof options.fuzzyMinimumSharedTokenIdf === "number"
+    && !Number.isNaN(options.fuzzyMinimumSharedTokenIdf)
+    ? options.fuzzyMinimumSharedTokenIdf
+    : undefined;
   const cap = options.cap ?? DEFAULT_RECONCILIATION_CANDIDATE_CAP;
   const fuzzyExcludeTypes = new Set(options.fuzzyExcludeTypes ?? DEFAULT_FUZZY_EXCLUDE_TYPES);
   const normalizers = compileNormalizerByNodeType(context.profile);
@@ -1678,6 +1767,10 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
   const candidates: OntologyReconciliationCandidate[] = [];
   const emittedPairs = new Set<string>();
   const comparableNodes = memoizeComparableNodes(context.nodes, normalizers, fuzzyEnabled, fuzzyThreshold);
+  const fuzzyTierEligibility = fuzzyEnabled ? fuzzyTierEligibilityDisclosure(comparableNodes) : undefined;
+  const tokenIdfs = fuzzyMinimumSharedTokenIdf === undefined ? undefined : fuzzyTokenIdfs(comparableNodes);
+  // Keeps A2-2's opt-in bucket cap wired: dropping the argument here would
+  // leave `fuzzyBucketMax` accepted and silently inert.
   const blockingIndex = suppliedBlockingIndex ?? buildLexicalBlockingIndex(comparableNodes, options.fuzzyBucketMax);
 
   for (const [leftIndex, rightIndex] of enumerateBlockedPairIndexes(comparableNodes, blockingIndex)) {
@@ -1755,6 +1848,15 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
     // Fuzzy tier: honorific-stripped token containment / Jaccard.
     const fuzzy = fuzzyMatchVariants(leftMemo.fuzzyVariants, rightMemo.fuzzyVariants, fuzzyThreshold);
     if (!fuzzy.matched) continue;
+    if (
+      fuzzyMinimumSharedTokenIdf !== undefined
+      && !hasSharedFuzzyTokenAtOrAboveIdf(
+        leftMemo.fuzzyVariants,
+        rightMemo.fuzzyVariants,
+        tokenIdfs!,
+        fuzzyMinimumSharedTokenIdf,
+      )
+    ) continue;
     if (emittedPairs.has(pairKey)) continue;
     emittedPairs.add(pairKey);
     const reasonDetail = fuzzy.equal
@@ -1879,6 +1981,7 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
     generated_at: options.generatedAt ?? new Date().toISOString(),
     candidate_count: capped.length,
     ...(blockingIndex.fuzzyBucketCap ? { fuzzy_blocking_cap: blockingIndex.fuzzyBucketCap } : {}),
+    ...(fuzzyTierEligibility ? { fuzzy_tier_eligibility: fuzzyTierEligibility } : {}),
     candidates: capped,
   };
 }
