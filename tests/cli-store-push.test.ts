@@ -111,6 +111,58 @@ function writeGraphFixture(): string {
 }
 
 /**
+ * Same nodes/edges as {@link writeGraphFixture} but with NO baked layout — no
+ * finite x/y on any node. A replace push then writes ZERO windowed-loader
+ * positions even though postgres advertises the window capability, so reporting
+ * "Pushed 3 nodes … force" at exit 0 is a success without an effect: the
+ * studio's windowed first paint would be empty. Fixture for the fail-loud guard.
+ */
+function writeGraphFixtureNoPositions(): string {
+  const dir = freshTmp("graphify-storecli-noposgraph-");
+  const graphPath = join(dir, "graph.json");
+  writeFileSync(
+    graphPath,
+    JSON.stringify({
+      directed: false,
+      nodes: [
+        { id: "a", label: "Alpha", node_type: "Character", community: 0 },
+        { id: "b", label: "Beta", node_type: "Character", community: 0 },
+        { id: "c", label: "Gamma", node_type: "Place", community: 1 },
+      ],
+      links: [
+        { source: "a", target: "b", relation: "knows" },
+        { source: "b", target: "c", relation: "at" },
+      ],
+    }),
+  );
+  return graphPath;
+}
+
+/**
+ * Write a Studio scene.json. With positions: node `a` carries x/y, `b` carries
+ * ONLY pinned fx/fy (exercises the fx/fy fallback), `c` carries x/y. Without:
+ * the same ids but no finite coordinate anywhere — the positionless scene the
+ * `--scene` fail-loud must reject.
+ */
+function writeSceneFixture(withPositions: boolean): string {
+  const dir = freshTmp("graphify-storecli-scene-");
+  const scenePath = join(dir, "scene.json");
+  const nodes = withPositions
+    ? [
+        { id: "a", label: "Alpha", x: 1.5, y: 2.5 },
+        { id: "b", label: "Beta", fx: 3.5, fy: 4.5 },
+        { id: "c", label: "Gamma", x: 5.5, y: 6.5 },
+      ]
+    : [
+        { id: "a", label: "Alpha" },
+        { id: "b", label: "Beta" },
+        { id: "c", label: "Gamma" },
+      ];
+  writeFileSync(scenePath, JSON.stringify({ nodes, edges: [] }));
+  return scenePath;
+}
+
+/**
  * Build StoreCliDeps that route store resolution through the REAL production
  * chain (resolveStoreConfig already ran to produce `cfg`); we only inject the
  * fake `pg` driver and redirect the artifact `target` to a tmp dir.
@@ -204,6 +256,77 @@ describe("graphify store push (replace mode)", () => {
     // Human summary was printed.
     expect(lines.join("\n")).toMatch(/Pushed 3 nodes, 2 edges .*replace mode/);
     expect(lines.join("\n")).toMatch(/Group-by aggregate rebuilt for axes: node_type, community/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// store push — FAIL LOUD: a replace push to a window-capable store that writes
+// zero positions for a non-empty graph is a success without an effect, and the
+// windowed first paint it claims would be empty — reject it loudly. This is
+// independent of where positions come from (the --scene source is a separate
+// decision): whatever feeds the layout, a rebuild that produced nothing is a lie.
+// ---------------------------------------------------------------------------
+
+describe("graphify store push (fail loud on zero positions)", () => {
+  it("throws when a replace push to a window-capable store writes 0 positions for a non-empty graph", async () => {
+    const state = freshState();
+    const lines: string[] = [];
+    const graph = writeGraphFixtureNoPositions();
+
+    // postgres advertises window.layouts = [force]; without the guard this
+    // resolves and prints "Pushed 3 nodes … force" at exit 0 while
+    // graph_positions got zero rows — a reported success that produced no
+    // windowed first paint.
+    await expect(
+      runStorePush({ graph, mode: "replace" }, deps(state, lines)),
+    ).rejects.toThrow(/0 .*position|windowed|no baked layout/i);
+  });
+
+  it("does NOT throw on a merge push with 0 positions (merge never claims to rebuild positions)", async () => {
+    const state = freshState();
+    const lines: string[] = [];
+    const graph = writeGraphFixtureNoPositions();
+
+    const summary = await runStorePush({ graph, mode: "merge" }, deps(state, lines));
+    expect(summary.mode).toBe("merge");
+    expect(summary.nodes).toBe(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// store push --scene — consume the pinned positions from a Studio scene.json
+// and apply them before the push (D3 contract), and fail loud on a scene that
+// carries no finite position. Additive + opt-in: no --scene ⇒ behaviour above.
+// ---------------------------------------------------------------------------
+
+describe("graphify store push (--scene consume)", () => {
+  it("applies pinned positions from scene.json so a positionless graph pushes real windowed positions", async () => {
+    const state = freshState();
+    const lines: string[] = [];
+    const graph = writeGraphFixtureNoPositions(); // graph.json has NO baked layout
+    const scene = writeSceneFixture(true); // scene supplies x/y (+ fx/fy pins)
+
+    const summary = await runStorePush({ graph, scene, mode: "replace" }, deps(state, lines));
+
+    expect(summary.nodes).toBe(3);
+    // The scene's coordinates were persisted to graph_positions (the graph itself
+    // had none, so without the consume the fail-loud guard would have thrown).
+    const posParams = state.queries
+      .filter((qy) => qy.text.includes("INSERT INTO graph_positions"))
+      .flatMap((qy) => qy.params ?? []);
+    expect(posParams).toContain(1.5); // a.x, straight from the scene
+    expect(posParams).toContain(4.5); // b.y resolved from the fy pin (fx/fy fallback)
+  });
+
+  it("fails loud when --scene yields no finite position (the empty-window republish)", async () => {
+    const state = freshState();
+    const lines: string[] = [];
+    const graph = writeGraphFixtureNoPositions();
+    const scene = writeSceneFixture(false); // scene has NO finite coordinate
+
+    await expect(
+      runStorePush({ graph, scene, mode: "replace" }, deps(state, lines)),
+    ).rejects.toThrow(/scene/i);
   });
 });
 

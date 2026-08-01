@@ -350,6 +350,11 @@ export function computeCitationSignature(G: Graph): string {
       projection[nodeId] = inline as OntologyCitation[];
     }
   });
+  return citationSignatureFromProjection(projection);
+}
+
+/** Compute the citation-content signature from `{ node_id -> inline citations }`. */
+export function citationSignatureFromProjection(projection: Record<string, OntologyCitation[]>): string {
   const sortedIds = Object.keys(projection).sort();
   const canonical = sortedIds.map((id) => [id, projection[id]] as const);
   const hash = createHash("sha256");
@@ -369,6 +374,19 @@ export function writeCitationsSidecar(
   map: CitationAggregateMap,
   G: Graph,
 ): string | null {
+  return writeCitationsSidecarWithSignature(outDir, map, computeCitationSignature(G));
+}
+
+/**
+ * Write the Level-2 keyed store with a signature computed by a non-graphology
+ * caller. This shares the canonical payload shape and ordering with the graph
+ * writer above.
+ */
+export function writeCitationsSidecarWithSignature(
+  outDir: string,
+  map: CitationAggregateMap,
+  graphSignature: string,
+): string | null {
   if (Object.keys(map).length === 0) return null;
   const target = join(outDir, CITATIONS_SIDECAR_RELPATH);
   const dir = dirname(target);
@@ -381,7 +399,7 @@ export function writeCitationsSidecar(
   }
   const payload = {
     schema: CITATIONS_SIDECAR_SCHEMA,
-    graph_signature: computeCitationSignature(G),
+    graph_signature: graphSignature,
     nodes,
   };
   writeFileSync(target, JSON.stringify(payload, null, 2), "utf-8");

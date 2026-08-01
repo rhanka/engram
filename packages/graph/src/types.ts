@@ -67,14 +67,16 @@ export interface HighLevelGraphEdge {
  * centre-to-centre routing; see {@link HighLevelGraphEdge.edge_style} for the
  * flow-port semantics. Encoded per edge in
  * {@link GraphStyleBuffers.edgeRouteStyles} as 0 default / 1 flow-port /
- * 2 flow-port-reverse / 3 flow-port-no-arrow / 4 flow-port-reverse-no-arrow.
+ * 2 flow-port-reverse / 3 flow-port-no-arrow / 4 flow-port-reverse-no-arrow /
+ * 5 octilinear (the metro transit-map route: straight + 45° segments).
  */
 export type EdgeRouteStyle =
   | "default"
   | "flow-port"
   | "flow-port-reverse"
   | "flow-port-no-arrow"
-  | "flow-port-reverse-no-arrow";
+  | "flow-port-reverse-no-arrow"
+  | "octilinear";
 
 export interface HighLevelGraphInput {
   nodes: readonly HighLevelGraphNode[];
@@ -140,10 +142,11 @@ export interface GraphStyleBuffers {
    * Optional per-edge ROUTE-style codes (parallel to edges): 0 default
    * (centre-to-centre, historical), 1 flow-port (right-port → left-port smooth
    * S with a rightward arrow), 2 flow-port with the endpoints SWAPPED before
-   * drawing (for new→old data edges like git `commit-parent`). Additive:
-   * absent ⇒ every edge draws the historical routing (golden-stable). Drawn by
-   * the Canvas2D fallback AND the WebGL2 instanced-edge path (single-sourced
-   * via render-geometry.flowPortEdgeGeometry).
+   * drawing (for new→old data edges like git `commit-parent`), 5 octilinear
+   * (45°-constrained straight-segment metro route). Additive: absent ⇒ every
+   * edge draws the historical routing (golden-stable). Drawn by the Canvas2D
+   * fallback AND the WebGL2 instanced-edge path (single-sourced via
+   * render-geometry.flowPortEdgeGeometry / octilinearEdgeGeometry).
    */
   edgeRouteStyles?: Uint8Array;
   /**

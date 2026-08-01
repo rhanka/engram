@@ -24,15 +24,21 @@
  */
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
+import {
+  CITATIONS_SIDECAR_RELPATH,
+  citationSignatureFromProjection,
+  readCitationsSidecar,
+  writeCitationsSidecarWithSignature,
+} from "./citations.js";
 import { computeTopologySignatureFromLinks } from "./export.js";
 import type { SerializedGraphData } from "./graph.js";
 import { assertGraphJsonFileSize, assertGraphJsonSize } from "./graph-size-guard.js";
 import { resolveGraphInputPath } from "./paths.js";
 import { loadProjectConfig } from "./project-config.js";
 import { overlapsTemporalWindow, parseRecallTimestamp } from "./temporal-recall.js";
-import type { NormalizedProjectConfig } from "./types.js";
+import type { NormalizedProjectConfig, OntologyCitation } from "./types.js";
 
 export const GRAPH_TIME_SLICE_SCHEMA = "graphify.graph-time-slice/v1" as const;
 export const GRAPH_WINDOW_SCHEMA = "graphify.graph-window/v1" as const;
@@ -124,6 +130,8 @@ export interface GraphTimeSliceRun {
   sourcePath: string;
   outPath: string | null;
   written: boolean;
+  citationSidecarPath: string | null;
+  citationSidecarNodeCount: number;
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -290,6 +298,34 @@ function readGraphDocument(path: string, deps: GraphTimeSliceDeps): SerializedGr
   return parsed as SerializedGraphData;
 }
 
+function writeSlicedCitationsSidecar(
+  sourcePath: string,
+  outPath: string,
+  graph: SerializedGraphData,
+): { path: string | null; nodeCount: number } {
+  const source = readCitationsSidecar(dirname(sourcePath));
+  if (!source) return { path: null, nodeCount: 0 };
+
+  const nodes: Record<string, typeof source[string]> = {};
+  const projection: Record<string, OntologyCitation[]> = {};
+  for (const node of graph.nodes ?? []) {
+    const entry = source[node.id];
+    if (entry) nodes[node.id] = entry;
+
+    const citations = node.citations;
+    if (Array.isArray(citations) && citations.length > 0) {
+      projection[node.id] = citations as OntologyCitation[];
+    }
+  }
+
+  const path = writeCitationsSidecarWithSignature(
+    dirname(outPath),
+    nodes,
+    citationSignatureFromProjection(projection),
+  );
+  return { path, nodeCount: path ? Object.keys(nodes).length : 0 };
+}
+
 export function toGraphTimeSliceReport(run: GraphTimeSliceRun): GraphTimeSliceReport {
   return {
     schema: run.result.schema,
@@ -315,7 +351,9 @@ export function formatGraphTimeSlice(run: GraphTimeSliceRun): string {
     `Hyperedges: ${counts.hyperedges.retained}/${counts.hyperedges.total}`,
     "Untimed elements are excluded; edges are endpoint-induced; the window is stamped on graph.window.",
     run.written
-      ? `Wrote ${run.outPath} (no citations sidecar is co-emitted for a slice)`
+      ? run.citationSidecarPath
+        ? `Wrote ${run.outPath}; citations sidecar: ${run.citationSidecarPath} (${run.citationSidecarNodeCount} nodes)`
+        : `Wrote ${run.outPath}; citations sidecar: none (source sidecar absent or empty)`
       : "Dry run: pass --out <path> to write the sliced graph.json",
   ].join("\n");
 }
@@ -351,6 +389,11 @@ export function runGraphTimeSlice(
     if (outPath === sourcePath) {
       throw new Error("refusing to overwrite the source graph; choose a different --out");
     }
+    const sourceSidecarPath = join(dirname(sourcePath), CITATIONS_SIDECAR_RELPATH);
+    const outSidecarPath = join(dirname(outPath), CITATIONS_SIDECAR_RELPATH);
+    if (existsSync(sourceSidecarPath) && sourceSidecarPath === outSidecarPath) {
+      throw new Error("refusing to overwrite the source citations sidecar; choose an --out in a different directory");
+    }
     if (existsSync(outPath) && !options.force) {
       throw new Error(`output already exists: ${outPath} (pass --force to overwrite)`);
     }
@@ -361,7 +404,17 @@ export function runGraphTimeSlice(
     written = true;
   }
 
-  const run: GraphTimeSliceRun = { result, sourcePath, outPath, written };
+  const citationSidecar = outPath
+    ? writeSlicedCitationsSidecar(sourcePath, outPath, result.graph)
+    : { path: null, nodeCount: 0 };
+  const run: GraphTimeSliceRun = {
+    result,
+    sourcePath,
+    outPath,
+    written,
+    citationSidecarPath: citationSidecar.path,
+    citationSidecarNodeCount: citationSidecar.nodeCount,
+  };
   const log = deps.log ?? ((line: string) => console.log(line));
   log(
     options.json
