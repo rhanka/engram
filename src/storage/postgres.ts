@@ -25,14 +25,20 @@ import { mkdirSync, readFileSync } from "node:fs";
 import type Graph from "graphology";
 import { toJson } from "../export.js";
 import type {
+  GraphAppendOptions,
+  GraphAppendOutcome,
+  GraphEdgeInput,
   GraphGroupCounts,
   GraphLayoutPosition,
+  GraphNodeInput,
   GraphPushOptions,
   GraphPushResult,
   GraphStore,
   GraphStoreConfig,
   GraphStoreSnapshotMeta,
   GraphTimeWindow,
+  GraphTombstoneInput,
+  GraphTombstoneOutcome,
   GraphTimeWindowEdge,
   GraphTimeWindowNode,
   GraphTimeWindowOptions,
@@ -54,6 +60,8 @@ const META_TABLE = "graph_meta";
 const COUNT_TABLE = "graph_group_counts";
 /** Precomputed per-layout positions (storage LOT 3); rebuilt on replace pushes. */
 const POSITION_TABLE = "graph_positions";
+/** Append-only erasure log (D5 §3.5); folded out of every structured read. */
+const TOMBSTONE_TABLE = "graph_tombstones";
 
 /**
  * Axes the precomputed aggregate serves in LOT 1. `node_type` + `community` are
@@ -463,6 +471,36 @@ export function postgresDdlStatements(schema?: string): string[] {
       `ON ${q(EDGE_TABLE)} (city_slug, target_id)`,
   );
 
+  // graph_tombstones — append-only erasure log (D5 §3.5, carries A2). A row marks
+  // a node (node_id) or an edge (edge_source, edge_target, edge_relation) as
+  // erased; NO base row is deleted. Every structured read folds these out. The
+  // key columns default to '' (not NULL) so the composite PRIMARY KEY makes a
+  // re-tombstone idempotent (ON CONFLICT DO NOTHING).
+  statements.push(
+    [
+      `CREATE TABLE IF NOT EXISTS ${q(TOMBSTONE_TABLE)} (`,
+      "  city_slug text NOT NULL,",
+      "  target_kind text NOT NULL,",
+      "  node_id text NOT NULL DEFAULT '',",
+      "  edge_source text NOT NULL DEFAULT '',",
+      "  edge_target text NOT NULL DEFAULT '',",
+      "  edge_relation text NOT NULL DEFAULT '',",
+      "  t bigint,",
+      "  reason text,",
+      "  PRIMARY KEY (city_slug, target_kind, node_id, edge_source, edge_target, edge_relation)",
+      ")",
+    ].join("\n"),
+  );
+  // Fold-out lookup indexes: node exclusion + edge-triple exclusion, per city.
+  statements.push(
+    `CREATE INDEX IF NOT EXISTS ${ix("graph_tombstones_node_idx")} ` +
+      `ON ${q(TOMBSTONE_TABLE)} (city_slug, target_kind, node_id)`,
+  );
+  statements.push(
+    `CREATE INDEX IF NOT EXISTS ${ix("graph_tombstones_edge_idx")} ` +
+      `ON ${q(TOMBSTONE_TABLE)} (city_slug, target_kind, edge_source, edge_target, edge_relation)`,
+  );
+
   return statements;
 }
 
@@ -821,6 +859,34 @@ export async function createPostgresGraphStore(
     await runner.query(`DELETE FROM ${table} WHERE city_slug = $1`, [slug]);
   }
 
+  // -------------------------------------------------------------------------
+  // Tombstone fold-out (D5 §3.5) — SQL predicates that exclude tombstoned
+  // targets, appended to every structured read. `cityParam` is the placeholder
+  // ALREADY bound to city_slug in the enclosing query (reused verbatim — no new
+  // parameter is added), so a read's params array is unchanged.
+  // -------------------------------------------------------------------------
+
+  /** SQL: the node at `nodeIdExpr` is NOT tombstoned. */
+  function nodeLiveClause(nodeIdExpr: string, cityParam: string): string {
+    return (
+      `NOT EXISTS (SELECT 1 FROM ${q(TOMBSTONE_TABLE)} ts ` +
+      `WHERE ts.city_slug = ${cityParam} AND ts.target_kind = 'node' ` +
+      `AND ts.node_id = ${nodeIdExpr})`
+    );
+  }
+
+  /** SQL: the edge at alias `e` is NOT tombstoned — neither its own triple nor
+   *  either endpoint (an erased endpoint folds its incident edges out too). */
+  function edgeLiveClause(e: string, cityParam: string): string {
+    return (
+      `NOT EXISTS (SELECT 1 FROM ${q(TOMBSTONE_TABLE)} ts WHERE ts.city_slug = ${cityParam} ` +
+      `AND ts.target_kind = 'edge' AND ts.edge_source = ${e}.source_id ` +
+      `AND ts.edge_target = ${e}.target_id AND ts.edge_relation = ${e}.relation) ` +
+      `AND ${nodeLiveClause(`${e}.source_id`, cityParam)} ` +
+      `AND ${nodeLiveClause(`${e}.target_id`, cityParam)}`
+    );
+  }
+
   async function writeMeta(
     runner: { query(text: string, params?: unknown[]): Promise<PgQueryResult> },
     topologySignature: string,
@@ -891,6 +957,15 @@ export async function createPostgresGraphStore(
         strategies: [...WINDOW_STRATEGIES],
       },
       queryWindow: true,
+      // Incremental append + append-only tombstone erasure (D5 §5/§3.5). Declared
+      // with the three methods (M4): postgres upserts element-by-element and folds
+      // tombstones out of every read, so it never no-ops silently.
+      append: {
+        version: 1,
+        upsert: true,
+        requiresExistingEndpoints: true,
+        tombstone: true,
+      },
     },
 
     async verifyConnection(): Promise<void> {
@@ -1045,13 +1120,15 @@ export async function createPostgresGraphStore(
         `JOIN ${q(NODE_TABLE)} n ` +
         `ON n.city_slug = e.city_slug AND n.id = e.target_id ` +
         `WHERE e.city_slug = $1 AND e.source_id = $2 ` +
+        `AND ${nodeLiveClause("n.id", "$1")} AND ${edgeLiveClause("e", "$1")} ` +
         `UNION ALL ` +
         `SELECT n.id, n.label, n.type, n.community, n.props, ` +
         `e.relation, e.confidence, 'in' AS direction ` +
         `FROM ${q(EDGE_TABLE)} e ` +
         `JOIN ${q(NODE_TABLE)} n ` +
         `ON n.city_slug = e.city_slug AND n.id = e.source_id ` +
-        `WHERE e.city_slug = $1 AND e.target_id = $2`;
+        `WHERE e.city_slug = $1 AND e.target_id = $2 ` +
+        `AND ${nodeLiveClause("n.id", "$1")} AND ${edgeLiveClause("e", "$1")}`;
       const result = await pool.query(sql, [targetSlug, nodeId]);
       return result.rows ?? [];
     },
@@ -1062,9 +1139,27 @@ export async function createPostgresGraphStore(
       await ensureSchema();
       // `snapshot_id` rides along on the SAME scan (no extra round-trip): it is
       // the readable-empty stamp, written by the push that baked these rows.
+      // Tombstone fold-out (§3.5): the precomputed count is corrected by the
+      // number of tombstoned nodes in each group, so an erased node stops being
+      // counted the moment it is tombstoned — not only at the next replace. The
+      // per-group key of a tombstoned node comes from its still-present row
+      // (append-only: the row is not deleted). `axisKeyExpr` is chosen from a
+      // FIXED set by axis value (never interpolating the raw axis — no injection).
+      // GREATEST clamps at 0 so a node appended-then-tombstoned after the last
+      // replace (absent from the snapshot count) can never drive a group negative.
+      const axisKeyExpr =
+        axis === "community" ? "n.community::text" : axis === "node_type" ? "n.type" : "NULL::text";
       const result = await pool.query(
-        `SELECT key, label, count, parent_key, snapshot_id FROM ${q(COUNT_TABLE)} ` +
-          `WHERE city_slug = $1 AND axis = $2 ORDER BY count DESC, key ASC`,
+        `SELECT gc.key, gc.label, ` +
+          `GREATEST(gc.count - COALESCE(tomb.n, 0), 0) AS count, gc.parent_key, gc.snapshot_id ` +
+          `FROM ${q(COUNT_TABLE)} gc ` +
+          `LEFT JOIN (SELECT ${axisKeyExpr} AS key, COUNT(*) AS n ` +
+          `FROM ${q(TOMBSTONE_TABLE)} ts JOIN ${q(NODE_TABLE)} n ` +
+          `ON n.city_slug = ts.city_slug AND n.id = ts.node_id ` +
+          `WHERE ts.city_slug = $1 AND ts.target_kind = 'node' GROUP BY ${axisKeyExpr}) tomb ` +
+          `ON tomb.key = gc.key ` +
+          `WHERE gc.city_slug = $1 AND gc.axis = $2 ` +
+          `ORDER BY GREATEST(gc.count - COALESCE(tomb.n, 0), 0) DESC, gc.key ASC`,
         [citySlug, axis],
       );
       const groups = (result.rows ?? []).map((row) => {
@@ -1096,8 +1191,9 @@ export async function createPostgresGraphStore(
       // latest REPLACE snapshot. An unknown layout yields an empty array.
       await ensureSchema();
       const result = await pool.query(
-        `SELECT node_id, x, y FROM ${q(POSITION_TABLE)} ` +
-          `WHERE city_slug = $1 AND layout_id = $2 ORDER BY node_id ASC`,
+        `SELECT p.node_id, p.x, p.y FROM ${q(POSITION_TABLE)} p ` +
+          `WHERE p.city_slug = $1 AND p.layout_id = $2 ` +
+          `AND ${nodeLiveClause("p.node_id", "$1")} ORDER BY p.node_id ASC`,
         [citySlug, layout],
       );
       return (result.rows ?? []).map((row) => ({
@@ -1122,8 +1218,10 @@ export async function createPostgresGraphStore(
       // `snapshot_id` rides along on the SAME indexed scan (no extra round-trip):
       // it is the readable-empty stamp, written by the push that baked the rows.
       const posResult = await pool.query(
-        `SELECT node_id, x, y, degree, snapshot_id FROM ${q(POSITION_TABLE)} ` +
-          `WHERE city_slug = $1 AND layout_id = $2 ORDER BY degree DESC, node_id ASC LIMIT $3`,
+        `SELECT p.node_id, p.x, p.y, p.degree, p.snapshot_id FROM ${q(POSITION_TABLE)} p ` +
+          `WHERE p.city_slug = $1 AND p.layout_id = $2 ` +
+          `AND ${nodeLiveClause("p.node_id", "$1")} ` +
+          `ORDER BY p.degree DESC, p.node_id ASC LIMIT $3`,
         [citySlug, layout, limit],
       );
       const posRows = posResult.rows ?? [];
@@ -1163,8 +1261,9 @@ export async function createPostgresGraphStore(
       const edges: GraphWindowEdge[] = [];
       if (ids.length > 0) {
         const edgeResult = await pool.query(
-          `SELECT source_id, target_id, relation FROM ${q(EDGE_TABLE)} ` +
-            `WHERE city_slug = $1 AND source_id = ANY($2) AND target_id = ANY($2)`,
+          `SELECT e.source_id, e.target_id, e.relation FROM ${q(EDGE_TABLE)} e ` +
+            `WHERE e.city_slug = $1 AND e.source_id = ANY($2) AND e.target_id = ANY($2) ` +
+            `AND ${edgeLiveClause("e", "$1")}`,
           [citySlug, ids],
         );
         for (const row of edgeResult.rows ?? []) {
@@ -1218,6 +1317,7 @@ export async function createPostgresGraphStore(
           `SELECT n.id, n.label, n.type, n.community, n.props ` +
           `FROM ${q(NODE_TABLE)} n ` +
           `WHERE n.city_slug = $1 ` +
+          `AND ${nodeLiveClause("n.id", "$1")} ` +
           `AND jsonb_typeof(n.props->'t') = 'number' ` +
           `AND (${nodeStart}) IS NOT NULL ` +
           `AND (${nodeStart}) <= $3 ` +
@@ -1233,6 +1333,7 @@ export async function createPostgresGraphStore(
           `SELECT e.source_id, e.target_id, e.relation, e.confidence, e.props ` +
           `FROM ${q(EDGE_TABLE)} e ` +
           `WHERE e.city_slug = $1 ` +
+          `AND ${edgeLiveClause("e", "$1")} ` +
           `AND jsonb_typeof(e.props->'t') = 'number' ` +
           `AND (${edgeStart}) IS NOT NULL ` +
           `AND (${edgeStart}) <= $3 ` +
@@ -1248,6 +1349,95 @@ export async function createPostgresGraphStore(
         nodes: (nodeResult.rows ?? []).map(temporalNodeFromRow),
         edges: (edgeResult.rows ?? []).map(temporalEdgeFromRow),
       };
+    },
+
+    async appendNode(
+      node: GraphNodeInput,
+      options: GraphAppendOptions = {},
+    ): Promise<GraphAppendOutcome> {
+      await ensureSchema();
+      const slug = options.namespace ?? citySlug;
+      const a = node as Record<string, unknown>;
+      const row = [
+        slug,
+        node.id,
+        typeof node.label === "string" ? node.label : node.id,
+        resolveNodeType(a),
+        typeof node.community === "number" ? node.community : null,
+        JSON.stringify(buildPropsBag(a, NODE_SCHEMA_COLS)),
+      ];
+      const { text, params } = buildUpsert(q(NODE_TABLE), NODE_COLUMNS, ["city_slug", "id"], [row]);
+      // xmax = 0 on the returned row iff this was an INSERT (created), not an UPDATE.
+      const res = await pool.query(`${text} RETURNING (xmax = 0) AS created`, params);
+      return { created: Boolean(res.rows?.[0]?.created) };
+    },
+
+    async appendEdge(
+      edge: GraphEdgeInput,
+      options: GraphAppendOptions = {},
+    ): Promise<GraphAppendOutcome> {
+      await ensureSchema();
+      const slug = options.namespace ?? citySlug;
+      // Strict referential integrity (requiresExistingEndpoints): both endpoints
+      // must already exist. A dangling edge fails loud rather than being written —
+      // the incremental analogue of refusing a push that produced no effect.
+      const endpoints = await pool.query(
+        `SELECT id FROM ${q(NODE_TABLE)} WHERE city_slug = $1 AND id = ANY($2)`,
+        [slug, [edge.source, edge.target]],
+      );
+      const present = new Set((endpoints.rows ?? []).map((r) => String(r.id)));
+      const missing = [edge.source, edge.target].filter((id) => !present.has(id));
+      if (missing.length > 0) {
+        throw new Error(
+          `appendEdge: endpoint node(s) ${missing.join(", ")} do not exist — a dangling ` +
+            "edge is refused (requiresExistingEndpoints). Append the node(s) first.",
+        );
+      }
+      const a = edge as Record<string, unknown>;
+      const row = [
+        slug,
+        edge.source,
+        edge.target,
+        typeof edge.relation === "string" ? edge.relation : "RELATES_TO",
+        typeof edge.confidence === "string" ? edge.confidence : "EXTRACTED",
+        JSON.stringify(buildPropsBag(a, EDGE_SCHEMA_COLS)),
+      ];
+      const { text, params } = buildUpsert(
+        q(EDGE_TABLE),
+        EDGE_COLUMNS,
+        ["city_slug", "source_id", "target_id", "relation"],
+        [row],
+      );
+      const res = await pool.query(`${text} RETURNING (xmax = 0) AS created`, params);
+      return { created: Boolean(res.rows?.[0]?.created) };
+    },
+
+    async appendTombstone(
+      tombstone: GraphTombstoneInput,
+      options: GraphAppendOptions = {},
+    ): Promise<GraphTombstoneOutcome> {
+      await ensureSchema();
+      const slug = options.namespace ?? citySlug;
+      const target = tombstone.target;
+      const nodeId = target.kind === "node" ? target.id : "";
+      const edgeSource = target.kind === "edge" ? target.source : "";
+      const edgeTarget = target.kind === "edge" ? target.target : "";
+      const edgeRelation =
+        target.kind === "edge" ? (typeof target.relation === "string" ? target.relation : "RELATES_TO") : "";
+      const t =
+        typeof tombstone.t === "number" && Number.isFinite(tombstone.t) ? tombstone.t : null;
+      const reason = typeof tombstone.reason === "string" ? tombstone.reason : null;
+      // Append-only erasure: ON CONFLICT DO NOTHING makes a re-tombstone idempotent.
+      // A row is RETURNED only when a NEW tombstone was inserted (target was live).
+      const res = await pool.query(
+        `INSERT INTO ${q(TOMBSTONE_TABLE)} ` +
+          `(city_slug, target_kind, node_id, edge_source, edge_target, edge_relation, t, reason) ` +
+          `VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ` +
+          `ON CONFLICT (city_slug, target_kind, node_id, edge_source, edge_target, edge_relation) ` +
+          `DO NOTHING RETURNING 1 AS applied`,
+        [slug, target.kind, nodeId, edgeSource, edgeTarget, edgeRelation, t, reason],
+      );
+      return { applied: (res.rowCount ?? 0) > 0 };
     },
 
     async clear(options?: string | PostgresClearOptions): Promise<void> {
@@ -1266,6 +1456,7 @@ export async function createPostgresGraphStore(
         await deleteCityRows(client, q(META_TABLE), targetSlug);
         await deleteCityRows(client, q(COUNT_TABLE), targetSlug);
         await deleteCityRows(client, q(POSITION_TABLE), targetSlug);
+        await deleteCityRows(client, q(TOMBSTONE_TABLE), targetSlug);
         await client.query("COMMIT");
       } catch (err) {
         try {
