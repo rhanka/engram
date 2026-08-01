@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { computeMetroPositions } from "../src/layout-metro";
 import {
   CAPSULE_FLOATS_PER_INSTANCE,
   buildEdgeInstances,
@@ -276,6 +277,54 @@ describe("RENDER wiring — the WebGL2 instanced path actually draws the route",
     // stays the single straight segment.
     expect(capsulesOf(ROUTE_STYLE_FLOW_PORT).length).toBeGreaterThan(2);
     expect(capsulesOf(ROUTE_STYLE_DEFAULT).length).toBe(1);
+  });
+});
+
+describe("METRO composition — the layout the route was built for", () => {
+  /** Star + a chain, so the BFS produces several lanes with several columns. */
+  function metroGraph() {
+    const nodeIds = ["hub", "a", "b", "c", "leaf"];
+    return {
+      nodeIds,
+      idToIndex: new Map(nodeIds.map((id, index) => [id, index])),
+      positions: new Float32Array(nodeIds.length * 2),
+      // hub–a, hub–b, hub–c, c–leaf
+      edges: new Uint32Array([0, 1, 0, 2, 0, 3, 3, 4]),
+      droppedEdges: 0,
+    };
+  }
+
+  it("routes every metro edge octilinearly from the layout's own positions", () => {
+    const graph = metroGraph();
+    const positions = computeMetroPositions(graph);
+    let bent = 0;
+    for (let e = 0; e + 1 < graph.edges.length; e += 2) {
+      const s = graph.edges[e]!;
+      const t = graph.edges[e + 1]!;
+      const geom = octilinearEdgeGeometry(
+        { x: positions[s * 2]!, y: positions[s * 2 + 1]! },
+        { x: positions[t * 2]!, y: positions[t * 2 + 1]! },
+        noOffset,
+      );
+      assertOctilinear(geom.polyline!);
+      if (geom.polyline!.length > 2) bent += 1;
+    }
+    // A transit map is not a fan of straight spokes: lane-crossing edges whose
+    // columns differ MUST bend, otherwise the route adds nothing over default.
+    expect(bent).toBeGreaterThan(0);
+  });
+
+  it("keeps a same-column lane change a single vertical segment", () => {
+    // hub sits alone on lane 0 at x=0; its middle child also lands on x=0.
+    const graph = metroGraph();
+    const positions = computeMetroPositions(graph);
+    const hub = { x: positions[0]!, y: positions[1]! };
+    const middleChild = { x: positions[2 * 2]!, y: positions[2 * 2 + 1]! };
+    expect(middleChild.x).toBeCloseTo(hub.x, 10);
+    const geom = octilinearEdgeGeometry(hub, middleChild, noOffset);
+    expect(geom.polyline).toHaveLength(2);
+    expect(geom.outSx).toBeCloseTo(0, 10);
+    expect(Math.abs(geom.outSy)).toBeCloseTo(1, 10);
   });
 });
 
