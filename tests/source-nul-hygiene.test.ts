@@ -6,11 +6,13 @@ import { join, resolve } from "node:path";
 /**
  * A raw NUL byte in a tracked text source is a tooling hazard, not a style nit.
  *
- * 1. `grep`/`rg` classify a NUL-bearing file as binary and report NO match — the
- *    local `grep` is ugrep 7.5.0, which prints nothing at all (not even the GNU
- *    "binary file matches" notice) and exits 1. Every "not found in <file>"
- *    conclusion drawn over such a file is a silent false negative. This has
- *    already produced two wrong readings in this repo.
+ * 1. `grep` reports NO match on a NUL-bearing file. The cause is not ugrep
+ *    itself: `grep` is a shell function that calls ugrep with a fixed flag set
+ *    including `-I` (skip binary files). Bare `command grep -c` finds the
+ *    matches; adding `-I` alone drops them and exits 1. Every "not found in
+ *    <file>" conclusion drawn over such a file is a silent false negative, and
+ *    `-r` is the worst case: it skips the file without a word. This has already
+ *    produced two wrong readings in this repo.
  * 2. If the NUL falls in the first 8000 bytes, git's own binary sniff trips too:
  *    diffs degrade to "Bin N -> M bytes" and 3-way merge stops working, so any
  *    concurrent edit becomes an all-or-nothing conflict.
