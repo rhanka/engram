@@ -42,7 +42,16 @@ export type TrustTier = "earned" | "asserted" | "signed";
 export interface MemoryEventAnchor {
   /** The instant it happened (epoch-ms or turn count). REQUIRED — a generalization has none. */
   at: number;
-  /** A closed event-kind aligned to `memory_kind`. */
+  /**
+   * A DESCRIPTIVE event-kind label (h2a's vocabulary), structurally required as a
+   * non-empty string. It is NOT a gate-closed set: the load-bearing closure is
+   * `memory_kind` {context,decision,evidence} (enforced), and the structural
+   * anchor is the REQUIRED numeric `at`. (Doc corrected 2026-08-01: the earlier
+   * "closed event-kind" wording over-claimed — the code checks PRESENCE, not
+   * membership in a set. The ratified spec §9.4 carries the same over-claim in its
+   * prose; flagged to memory + conductor for reconciliation, since the spec never
+   * enumerates the set, so a closed check is not implementable as written.)
+   */
   kind: string;
   /** A structured locator; the SAME handle as `provenance.source` (§9.4). */
   ref: string;
