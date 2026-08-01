@@ -71,9 +71,36 @@ NOT voice, NOT identity.
 | `trust: "asserted"` | fixed | — |
 | `review_status` | `"pending" \| "accepted"` (the binary gate, D11) | — |
 
-`memory_kind` is the load-bearing closure knob: it is exactly what keeps
-persona/authored-identity OUT. The enum is CLOSED and its membership is
-co-specified with the peer; anything not in it is refused at admission.
+`memory_kind` is the load-bearing closure knob, but it is NOT the whole
+boundary. The enum is CLOSED at THREE — `context | decision | evidence` —
+and anything outside it is refused at admission. What actually keeps
+persona/authored-identity OUT is the **episodic-cited FORM** (§4): a genre in
+the enum, a verifiable provenance, and an event-shaped statement — never a
+standing trait, an identity, a voice, or an assembled profile.
+
+#### 3.1.1 Foldings — how neighbouring memory shapes map INTO the closed enum
+
+Co-specified with the h2a `memory` peer against the four-genre taxonomy that
+ships in Claude Code today (`user | feedback | project | reference`). The enum
+stays at three; the other shapes FOLD in, and each fold carries an explicit
+admission rule so it cannot leak persona:
+
+- **`reference` (URL / dashboard / ticket) → `provenance`, not a genre.** A
+  reference is a *locator*, not an assertion. The host node is a `context`
+  note whose named source (§4) is the URL/ticket. Admitted.
+- **`feedback` / work-guidance → `decision`, GATED on episodic-cited form.**
+  Admitted ONLY as an *episodic, cited event*: a dated decision/correction
+  (`t` = when decided) that CITES the correction artifact (`verifyVerbatim`
+  checks the citation). REFUSED as a *standing trait* ("the agent is X", "the
+  agent must always Y"), identity, voice, or values — that is persona, OUT.
+  The boundary is the FORM (event-cited vs trait-standing), not the subject.
+- **`user` / fact-about-the-human → `context`, subject named, NEVER a
+  profile.** A fact-about-the-human used as work context (e.g. "the owner
+  juggles ~50 projects ⇒ requests must be self-contained") enters as a
+  `context` note with the human as named subject. But such notes MUST NOT be
+  aggregated or queried AS a `UserModel` (a persistent identity profile) —
+  that assembly reconstructs, through the back door, the identity model §3.2
+  keeps OUT. Isolated context fact IN; assembled identity profile OUT.
 
 ### 3.2 Deliberately OUT (hard gate — separate principal ratification required)
 
@@ -94,6 +121,15 @@ source is **refused**.
 **cites the artifact it names**. It does **not** guarantee the lesson is TRUE.
 It forbids an invented citation; it does not validate an assertion. graphify
 guarantees FORM, never TRUTH. (Same boundary as citations and as `t_src` in §6.)
+
+**Episodic-cited form is the persona boundary (admission rule).** Provenance is
+not only a truth hedge — combined with the enum it is what keeps persona OUT
+(§3.1.1). Admission requires all three: (1) a genre in the closed enum; (2) a
+verifiable structured provenance; (3) an **event-shaped** statement (something
+that happened at a `t`), never a standing trait, identity, voice, or an
+assembled profile. A note framed as a permanent trait fails admission even
+with a valid citation; reframed as a dated, cited event it passes. This is a
+FORM check graphify can enforce, not a convention it merely agrees to.
 
 ## 5. The write path — the measured gap (REQUIRED, not shipped)
 
