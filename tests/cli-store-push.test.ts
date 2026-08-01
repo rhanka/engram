@@ -139,6 +139,30 @@ function writeGraphFixtureNoPositions(): string {
 }
 
 /**
+ * Write a Studio scene.json. With positions: node `a` carries x/y, `b` carries
+ * ONLY pinned fx/fy (exercises the fx/fy fallback), `c` carries x/y. Without:
+ * the same ids but no finite coordinate anywhere — the positionless scene the
+ * `--scene` fail-loud must reject.
+ */
+function writeSceneFixture(withPositions: boolean): string {
+  const dir = freshTmp("graphify-storecli-scene-");
+  const scenePath = join(dir, "scene.json");
+  const nodes = withPositions
+    ? [
+        { id: "a", label: "Alpha", x: 1.5, y: 2.5 },
+        { id: "b", label: "Beta", fx: 3.5, fy: 4.5 },
+        { id: "c", label: "Gamma", x: 5.5, y: 6.5 },
+      ]
+    : [
+        { id: "a", label: "Alpha" },
+        { id: "b", label: "Beta" },
+        { id: "c", label: "Gamma" },
+      ];
+  writeFileSync(scenePath, JSON.stringify({ nodes, edges: [] }));
+  return scenePath;
+}
+
+/**
  * Build StoreCliDeps that route store resolution through the REAL production
  * chain (resolveStoreConfig already ran to produce `cfg`); we only inject the
  * fake `pg` driver and redirect the artifact `target` to a tmp dir.
@@ -266,6 +290,43 @@ describe("graphify store push (fail loud on zero positions)", () => {
     const summary = await runStorePush({ graph, mode: "merge" }, deps(state, lines));
     expect(summary.mode).toBe("merge");
     expect(summary.nodes).toBe(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// store push --scene — consume the pinned positions from a Studio scene.json
+// and apply them before the push (D3 contract), and fail loud on a scene that
+// carries no finite position. Additive + opt-in: no --scene ⇒ behaviour above.
+// ---------------------------------------------------------------------------
+
+describe("graphify store push (--scene consume)", () => {
+  it("applies pinned positions from scene.json so a positionless graph pushes real windowed positions", async () => {
+    const state = freshState();
+    const lines: string[] = [];
+    const graph = writeGraphFixtureNoPositions(); // graph.json has NO baked layout
+    const scene = writeSceneFixture(true); // scene supplies x/y (+ fx/fy pins)
+
+    const summary = await runStorePush({ graph, scene, mode: "replace" }, deps(state, lines));
+
+    expect(summary.nodes).toBe(3);
+    // The scene's coordinates were persisted to graph_positions (the graph itself
+    // had none, so without the consume the fail-loud guard would have thrown).
+    const posParams = state.queries
+      .filter((qy) => qy.text.includes("INSERT INTO graph_positions"))
+      .flatMap((qy) => qy.params ?? []);
+    expect(posParams).toContain(1.5); // a.x, straight from the scene
+    expect(posParams).toContain(4.5); // b.y resolved from the fy pin (fx/fy fallback)
+  });
+
+  it("fails loud when --scene yields no finite position (the empty-window republish)", async () => {
+    const state = freshState();
+    const lines: string[] = [];
+    const graph = writeGraphFixtureNoPositions();
+    const scene = writeSceneFixture(false); // scene has NO finite coordinate
+
+    await expect(
+      runStorePush({ graph, scene, mode: "replace" }, deps(state, lines)),
+    ).rejects.toThrow(/scene/i);
   });
 });
 
