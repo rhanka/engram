@@ -1,7 +1,20 @@
-# SPEC_AGENT_MEMORY_SUBSTRATE (revised for FINAL ratification)
+# SPEC_AGENT_MEMORY_SUBSTRATE (RATIFIED 2026-08-01)
 
 ## Status
 
+- **RATIFIED by the principal, 2026-08-01.** Commit-of-record **`87a8cd05`**
+  (the scope was ratified on `16c657f3`; `87a8cd05` = `16c657f3` + 3 strict
+  co-spec corrections, scope unchanged). **Durable authoritative records
+  (append-only, principal-authored, peer-verifiable):** Track decision
+  `01KYYTFXVVE9Y46X06H6HFXJT8` — "Contrat mémoire RATIFIÉ par le principal"
+  (normative carriers code-enforced) — and the impl-gate Track decision
+  `01KYYVM09TRWT1BA43S0ZBHPWW` — "Impl surface storage append/tombstone §5
+  AUTORISÉE" (in-session/worktree, **MERGE gated**). This committed §Status is
+  itself a peer-durable record of the ratification (readable in git, not a
+  scratch ledger). Complete contract = `3920c284` (scope + consented storage
+  signature); the converged producer wire-shape is §9.4 (`67596e07`). Normative
+  carriers hold; the executive role is **PARKED** (h2a-side, condition absent).
+  **No merge/push/publish without the principal.**
 - **Revised per the principal's 3-review dossier** (A2 / B1 / C1 / D1 / M4 +
   the multi-tenant carrier). This revision makes the **load-bearing carriers
   NORMATIVE and code-enforced**, not conventions: (1) the persona mechanism
@@ -9,9 +22,9 @@
   subject-human retention controls with a deletion path (§3.5); (3) the
   cross-tier reconciliation reject (§3.4); (4) versioned append capability
   (§5); (5) the multi-tenant identity + private/capitalised scope + a NEUTRAL
-  projection hook (§3.6). **These carriers are what go to FINAL ratification
-  (D1).** The remainder of §9 (exact producer wire-shape, full promotion rule)
-  stays **co-spec** with the h2a `memory` lane after ratification.
+  projection hook (§3.6). **These carriers are what the principal RATIFIED
+  (D1).** The remainder of §9 (full promotion-rule detail) stays **co-spec**
+  with the h2a `memory` lane; the producer wire-shape has since converged (§9.4).
 - Scope of graphify ownership: the **schema fields, the capability gating, and
   the code predicates** are graphify-side. The **projector/executive role** that
   would pick a view over cross-principal capitalisation/contradiction is an
@@ -265,8 +278,9 @@ principal gate):
 
 The surface is **co-owned with storage** (who consents to it); graphify defines
 the contract signature, storage implements it after the principal gate, and the
-dependency stays one-way. **Impl + merge are AFTER the principal gate; nothing
-is implemented or published here.**
+dependency stays one-way. **The impl of this surface is AUTHORIZED by the
+principal (in-session/worktree, Track `01KYYVM09TRWT1BA43S0ZBHPWW`); the MERGE
+stays gated (train). Nothing is implemented or published in this spec.**
 
 ## 6. Ordering coordinate (D10) — unchanged
 
@@ -290,7 +304,7 @@ imports h2a. Measured on origin/main: no h2a dependency in `package.json`, no
 
 ## 9. What is NORMATIVE now vs. co-spec after ratification (D1)
 
-**NORMATIVE now (goes to FINAL ratification):** §3.1 schema fields, §3.3 persona
+**NORMATIVE (ratified D1, 2026-08-01):** §3.1 schema fields, §3.3 persona
 mechanism (code), §3.4 reconciliation opt-out + cross-tier reject, §3.5 retention
 + deletion path, §3.6 tenancy + exec hook, §5 versioned append capability.
 
