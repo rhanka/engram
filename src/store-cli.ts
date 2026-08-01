@@ -200,6 +200,32 @@ export async function runStorePush(
     const axes = [...(result.rebuilt?.axes ?? [])];
     const layouts = [...(result.rebuilt?.layouts ?? [])];
 
+    // Fail loud rather than report a success without an effect. A replace push to
+    // a window-capable store that persisted ZERO positions for a non-empty graph
+    // would still print "Pushed N nodes …" at exit 0 while the studio's windowed
+    // first paint is empty — the exact defect behind a circular-hairball
+    // republish. Fires ONLY on a count the adapter EXPLICITLY reported as 0: an
+    // adapter that stays silent about positions is believed (same "ask the
+    // component that knows" contract as `rebuilt`), never falsely failed. This is
+    // independent of where positions come from — whatever feeds the layout, a
+    // windowed rebuild that produced nothing is not a successful push.
+    if (
+      mode === "replace" &&
+      !opts.dryRun &&
+      (store.capabilities.window?.layouts?.length ?? 0) > 0 &&
+      result.nodes > 0 &&
+      result.positions === 0
+    ) {
+      throw new Error(
+        `push wrote 0 windowed-loader positions for ${result.nodes} nodes to the ` +
+          `'${storeId}' store (window layouts: ` +
+          `${store.capabilities.window?.layouts?.join(", ")}) — the studio's ` +
+          `windowed first paint would be empty, so this is not a successful push. ` +
+          `The graph has no baked layout (no finite x/y on any node): bake a ` +
+          `layout before pushing, or target a backend without the window capability.`,
+      );
+    }
+
     const summary: StorePushSummary = {
       storeId,
       mode,
