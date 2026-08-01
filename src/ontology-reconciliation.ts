@@ -72,7 +72,29 @@ export interface OntologyReconciliationCandidateQueue {
   profile_hash: string;
   generated_at: string;
   candidate_count: number;
+  /**
+   * Present whenever the fuzzy tier runs. Omitted when `fuzzy: false`, because
+   * the eligibility criterion is then inapplicable.
+   */
+  fuzzy_tier_eligibility?: OntologyReconciliationFuzzyTierEligibilityDisclosure;
   candidates: OntologyReconciliationCandidate[];
+}
+
+/**
+ * An explicit disclosure of the fuzzy tier's minimum-token eligibility floor.
+ * Optional and additive — the queue schema stays `…_v1`.
+ */
+export interface OntologyReconciliationFuzzyTierEligibilityDisclosure {
+  /** Plain-language explanation of the structural eligibility floor. */
+  criterion: string;
+  /** Minimum token count required on the smaller side of a fuzzy variant pair. */
+  minimum_smaller_side_token_count: number;
+  /** Comparable nodes for which no fuzzy variant meets the minimum. */
+  excluded_comparable_node_count: number;
+  /** Total id-sorted comparable nodes considered by reconciliation. */
+  comparable_node_count: number;
+  /** `excluded_comparable_node_count / comparable_node_count`, or 0 when empty. */
+  excluded_comparable_node_share: number;
 }
 
 export interface OntologyReconciliationCandidateFilter {
@@ -217,6 +239,9 @@ const FUZZY_HONORIFICS = new Set([
 
 /** Default token-Jaccard threshold for the fuzzy tier. */
 export const DEFAULT_FUZZY_TOKEN_JACCARD_THRESHOLD = 0.6;
+const FUZZY_MINIMUM_SMALLER_SIDE_TOKEN_COUNT = 2;
+const FUZZY_TIER_ELIGIBILITY_CRITERION =
+  "A fuzzy variant needs at least 2 tokens on the smaller side; nodes whose every variant falls below that minimum can never fuzzy-match.";
 /** Default cap on the number of emitted candidates (exact + fuzzy). */
 export const DEFAULT_RECONCILIATION_CANDIDATE_CAP = 200;
 /**
@@ -401,7 +426,7 @@ function fuzzyMatchVariants(
       // generic locator ("Greenford", "Seawood", "butler", "inn") cannot match
       // every node that merely mentions it in a parenthetical.
       const minLen = Math.min(a.tokens.length, b.tokens.length);
-      if (minLen < 2) continue;
+      if (minLen < FUZZY_MINIMUM_SMALLER_SIDE_TOKEN_COUNT) continue;
       // Formulaic-series guard: a one-numeral delta is a distinct member, not a
       // variant ("Edward I/II"). Also reject a same-token-set pair whose
       // sequences differ AND that carries ordinal tokens ("Part I, Chapter II"
@@ -1249,6 +1274,24 @@ interface MemoizedReconciliationNode {
   fuzzyDegenerateTokenKeys: string[];
 }
 
+function fuzzyTierEligibilityDisclosure(
+  comparableNodes: readonly MemoizedReconciliationNode[],
+): OntologyReconciliationFuzzyTierEligibilityDisclosure {
+  const excludedComparableNodeCount = comparableNodes.filter(({ fuzzyVariants }) =>
+    fuzzyVariants.every(({ tokens }) => tokens.length < FUZZY_MINIMUM_SMALLER_SIDE_TOKEN_COUNT),
+  ).length;
+  const comparableNodeCount = comparableNodes.length;
+  return {
+    criterion: FUZZY_TIER_ELIGIBILITY_CRITERION,
+    minimum_smaller_side_token_count: FUZZY_MINIMUM_SMALLER_SIDE_TOKEN_COUNT,
+    excluded_comparable_node_count: excludedComparableNodeCount,
+    comparable_node_count: comparableNodeCount,
+    excluded_comparable_node_share: comparableNodeCount === 0
+      ? 0
+      : excludedComparableNodeCount / comparableNodeCount,
+  };
+}
+
 /**
  * Mutable real production buckets, exposed for blocking-losslessness tests.
  * This module-level API is intentionally not re-exported from the package root.
@@ -1579,6 +1622,7 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
   const candidates: OntologyReconciliationCandidate[] = [];
   const emittedPairs = new Set<string>();
   const comparableNodes = memoizeComparableNodes(context.nodes, normalizers, fuzzyEnabled, fuzzyThreshold);
+  const fuzzyTierEligibility = fuzzyEnabled ? fuzzyTierEligibilityDisclosure(comparableNodes) : undefined;
   const blockingIndex = suppliedBlockingIndex ?? buildLexicalBlockingIndex(comparableNodes);
 
   for (const [leftIndex, rightIndex] of enumerateBlockedPairIndexes(comparableNodes, blockingIndex)) {
@@ -1770,6 +1814,7 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
     profile_hash: context.profile.profile_hash,
     generated_at: options.generatedAt ?? new Date().toISOString(),
     candidate_count: capped.length,
+    ...(fuzzyTierEligibility ? { fuzzy_tier_eligibility: fuzzyTierEligibility } : {}),
     candidates: capped,
   };
 }
