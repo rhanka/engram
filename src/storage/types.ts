@@ -78,6 +78,19 @@ export interface GraphStoreCapabilities {
    * backends omit both this flag and the method.
    */
   queryWindow?: true;
+  /**
+   * Optional, VERSIONED incremental-append capability (D5 — perennial-memory
+   * seam). Absent on backends that cannot upsert element-by-element or cannot
+   * fold tombstones out of their reads (they omit BOTH this descriptor and the
+   * three methods — never a silent no-op, mirror of `queryWindow`/M4). When
+   * present, the adapter exposes `appendNode`/`appendEdge` (single-element
+   * upserts) and `appendTombstone` (append-only erasure: a tombstone is appended
+   * and folded out of EVERY read surface, aggregates included — §3.5, carries
+   * A2). Append/tombstone do NOT rebuild the replace-scoped aggregate/positions
+   * tables; the tombstone fold-out is applied at read time so erasure is
+   * immediate on every surface the backend serves.
+   */
+  append?: GraphStoreAppendCapability;
 }
 
 /** Versioned descriptor for the optional group-by aggregate capability (LOT 1). */
@@ -250,6 +263,93 @@ export interface GraphPushRebuilt {
   layouts: readonly string[];
 }
 
+/**
+ * Versioned descriptor for the optional incremental-append capability (D5).
+ * The three append methods and this descriptor travel together (M4): a backend
+ * either declares it AND implements all three with real effect, or omits both
+ * entirely — never a present-but-no-op method.
+ */
+export interface GraphStoreAppendCapability {
+  /** Schema/behaviour version of the append contract; consumers gate on it. */
+  version: 1;
+  /** v1 append is an upsert by primary key (node=id, edge=(source,target,relation)). */
+  upsert: true;
+  /** v1 appendEdge requires BOTH endpoints to already exist (strict referential
+   * integrity — a dangling edge fails loud). Tombstones do NOT require existence. */
+  requiresExistingEndpoints: true;
+  /** v1 includes the append-only erasure path: a tombstone is appended and folded
+   * out of EVERY read this backend serves (§3.5, carries A2). A backend that
+   * cannot guarantee fold-out MUST NOT declare `append`. */
+  tombstone: true;
+}
+
+/**
+ * Input for an incrementally-appended node (D5). Plain data — no graphology dep —
+ * so a consumer (e.g. the agent-memory seam) can construct it without importing
+ * storage internals (anti-cycle: the consumer depends on the SIGNATURE only).
+ */
+export interface GraphNodeInput {
+  id: string;
+  label?: string;
+  node_type?: string;
+  community?: number;
+  /** Shared temporal contract (epoch-ms), when the element is timed. */
+  t?: number;
+  t_end?: number;
+  /** Provider-neutral pass-through attributes (persisted in the props bag). */
+  [key: string]: unknown;
+}
+
+/** Input for an incrementally-appended edge (D5). */
+export interface GraphEdgeInput {
+  source: string;
+  target: string;
+  relation?: string;
+  confidence?: string;
+  t?: number;
+  t_end?: number;
+  [key: string]: unknown;
+}
+
+/** Options scoping a single append/tombstone without changing its element. */
+export interface GraphAppendOptions {
+  /** Target namespace; defaults to the store's configured namespace. */
+  namespace?: string;
+}
+
+/** Outcome of a single node/edge append. */
+export interface GraphAppendOutcome {
+  /** true = the primary key did not exist and was inserted; false = upserted in place. */
+  created: boolean;
+}
+
+/** What a tombstone erases: a node by id, or an edge by its (source,target,relation) key. */
+export type GraphTombstoneTarget =
+  | { kind: "node"; id: string }
+  | { kind: "edge"; source: string; target: string; relation?: string };
+
+/**
+ * Input for an appended tombstone event (§3.5 erasure path). Append-only stores
+ * have no delete: a tombstone is APPENDED and folded out of every read. Carries
+ * the erasure requirement A2.
+ */
+export interface GraphTombstoneInput {
+  target: GraphTombstoneTarget;
+  /** Epoch-ms of the erasure event. */
+  t?: number;
+  /** Reason/authority for the erasure (audit; provider-neutral). */
+  reason?: string;
+  [key: string]: unknown;
+}
+
+/** Outcome of a tombstone append. */
+export interface GraphTombstoneOutcome {
+  /** true = a fresh tombstone was appended (target was live); false = already
+   * tombstoned (idempotent — still excluded). The post-condition "target is
+   * excluded from every read" holds in both cases, or the method throws. */
+  applied: boolean;
+}
+
 export interface GraphPushResult {
   nodes: number;
   edges: number;
@@ -344,6 +444,29 @@ export interface GraphStore {
     toMs: number,
     options?: GraphTimeWindowOptions,
   ): Promise<GraphTimeWindow>;
+  /**
+   * Capability-gated (append) incremental upsert of ONE node by id. Present ONLY
+   * with `capabilities.append`. Does not rebuild the replace-scoped
+   * aggregate/positions tables.
+   */
+  appendNode?(node: GraphNodeInput, options?: GraphAppendOptions): Promise<GraphAppendOutcome>;
+  /**
+   * Capability-gated (append) incremental upsert of ONE edge by
+   * (source, target, relation). Throws when either endpoint node is absent
+   * (`requiresExistingEndpoints`). Present ONLY with `capabilities.append`.
+   */
+  appendEdge?(edge: GraphEdgeInput, options?: GraphAppendOptions): Promise<GraphAppendOutcome>;
+  /**
+   * Capability-gated (append) append-only erasure (§3.5). Appends a tombstone
+   * that folds the target out of EVERY read this store serves — element reads,
+   * neighbours, group-by aggregate, positions, window, temporal window. No row
+   * is deleted; reads exclude tombstoned targets. Present ONLY with
+   * `capabilities.append`.
+   */
+  appendTombstone?(
+    tombstone: GraphTombstoneInput,
+    options?: GraphAppendOptions,
+  ): Promise<GraphTombstoneOutcome>;
   close(): Promise<void>;
 }
 
